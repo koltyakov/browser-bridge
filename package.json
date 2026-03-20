@@ -1,0 +1,15 @@
+{
+  "name": "browser-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test packages/protocol/test/*.test.js packages/native-host/test/*.test.js packages/agent-client/test/*.test.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.24",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.3"
+  }
+}

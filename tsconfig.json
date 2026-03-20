@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023", "DOM", "DOM.Iterable", "WebWorker"],
+    "types": ["node", "chrome"],
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "useUnknownInCatchVariables": false,
+    "skipLibCheck": true,
+    "resolveJsonModule": true
+  },
+  "include": [
+    "packages/**/*.js"
+  ]
+}

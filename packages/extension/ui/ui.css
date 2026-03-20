@@ -1,0 +1,268 @@
+:root {
+  color-scheme: light;
+  --bg: #f5f1e8;
+  --panel: #fffaf2;
+  --ink: #1f2430;
+  --accent: #b24c2d;
+  --accent-strong: #8e331a;
+  --stroke: #d8cbb6;
+}
+
+html {
+  min-height: 100%;
+  background:
+    radial-gradient(140% 42% at 50% 0%, rgba(255, 248, 234, 0.98) 0%, rgba(255, 248, 234, 0.72) 46%, rgba(255, 248, 234, 0) 100%),
+    linear-gradient(180deg, #f7f1e6 0%, #f3ecdf 100%);
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  background-size: 100% 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: Georgia, "Iowan Old Style", serif;
+  background: transparent;
+  color: var(--ink);
+  overflow-x: hidden;
+  border-radius: 12px;
+}
+
+.panel {
+  min-width: 0;
+  min-height: 160px;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.panel-popup {
+  min-width: 340px;
+  padding-top: 18px;
+  padding-bottom: 4px;
+  border-radius: 12px;
+}
+
+.panel-wide {
+  width: 100%;
+  max-width: 440px;
+}
+
+.panel section + section {
+  margin-top: 16px;
+}
+
+.panel header {
+  margin-bottom: 16px;
+}
+
+.panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stack {
+  display: grid;
+  gap: 12px;
+}
+
+.card {
+  padding: 12px;
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgba(31, 36, 48, 0.08);
+  overflow-wrap: anywhere;
+}
+
+.activity-card {
+  padding-bottom: 8px;
+}
+
+.card-title {
+  margin: 0 0 6px;
+  overflow-wrap: anywhere;
+}
+
+.popup-title {
+  margin: 10px 0 0;
+  max-width: 320px;
+  line-height: 1.02;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7a6247;
+}
+
+.muted {
+  margin: 0 0 12px;
+  color: #625643;
+  overflow-wrap: anywhere;
+}
+
+.control-card {
+  display: grid;
+  gap: 0;
+}
+
+.popup-control-card {
+  margin-top: 6px;
+  padding-right: 10px;
+  padding-left: 10px;
+}
+
+.scope-url {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+}
+
+.activity-meta {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 12px;
+}
+
+.activity-time {
+  margin: 0;
+}
+
+.activity-scope {
+  margin: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+}
+
+.status-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  color: #4f4638;
+  font-size: 14px;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #b85a40;
+  box-shadow: 0 0 0 4px rgba(184, 90, 64, 0.12);
+  flex: 0 0 auto;
+}
+
+.status-dot[data-connected="true"] {
+  background: #2d8a57;
+  box-shadow: 0 0 0 4px rgba(45, 138, 87, 0.12);
+}
+
+.header-status-indicator {
+  margin-top: 10px;
+  margin-right: 5px;
+  cursor: help;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.toggle-row input[type="checkbox"] {
+  width: 42px;
+  height: 24px;
+  accent-color: var(--accent);
+}
+
+button {
+  margin-right: 8px;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--accent-strong);
+}
+
+.popup-action {
+  margin-top: 0;
+  width: 100%;
+  margin-right: 0;
+}
+
+.popup-power-button {
+  min-height: 48px;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 12px;
+}
+
+.power-button {
+  width: 100%;
+  min-height: 48px;
+  margin-right: 0;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 12px;
+}
+
+.power-button:disabled {
+  background: #c9bba5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 360px) {
+  .panel {
+    padding: 12px;
+  }
+
+  .panel header {
+    margin-bottom: 12px;
+  }
+
+  .panel-header {
+    gap: 8px;
+  }
+
+  .panel-header h1 {
+    margin: 0;
+    font-size: 24px;
+    line-height: 1.05;
+  }
+
+  .card {
+    padding: 10px;
+  }
+
+  .control-card {
+    gap: 0;
+  }
+
+  .power-button {
+    min-height: 44px;
+    font-size: 15px;
+  }
+
+  .stack {
+    gap: 10px;
+  }
+}

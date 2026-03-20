@@ -1,0 +1,4 @@
+interface:
+  display_name: "Browser Bridge"
+  short_description: "Operate a scoped Chrome bridge"
+  default_prompt: "Use $browser-bridge to inspect a Chrome tab with agent communication enabled through the local bridge with minimal token usage."

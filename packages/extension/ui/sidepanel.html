@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Browser Bridge</title>
+    <link rel="stylesheet" href="./ui.css">
+  </head>
+  <body>
+    <main class="panel panel-wide">
+      <header class="panel-header">
+        <h1>Browser Bridge</h1>
+        <span
+          id="native-indicator"
+          class="status-dot header-status-indicator"
+          title="Connecting to native host…"></span>
+      </header>
+      <section class="card control-card">
+        <div class="control-copy">
+          <div id="agent-status" class="eyebrow">Agent access</div>
+        </div>
+        <button id="bridge-toggle" class="power-button" type="button">Enable</button>
+      </section>
+      <section>
+        <h2>Recent agent activity</h2>
+        <div id="action-log" class="stack"></div>
+      </section>
+    </main>
+    <script type="module" src="./sidepanel.js"></script>
+  </body>
+</html>

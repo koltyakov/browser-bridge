@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "Browser Bridge",
+  "version": "0.1.0",
+  "description": "Scoped, token-efficient Codex access to an authenticated browser tab.",
+  "permissions": [
+    "activeTab",
+    "debugger",
+    "nativeMessaging",
+    "scripting",
+    "sidePanel",
+    "storage",
+    "tabs",
+    "offscreen"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "packages/extension/src/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Browser Bridge",
+    "default_popup": "packages/extension/ui/popup.html"
+  },
+  "side_panel": {
+    "default_path": "packages/extension/ui/sidepanel.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "packages/extension/src/content-script.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "packages/extension/ui/ui.css"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
+}

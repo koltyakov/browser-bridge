@@ -1,0 +1,68 @@
+// @ts-check
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import net from 'node:net';
+
+import { BridgeDaemon } from '../src/daemon.js';
+
+/**
+ * @returns {net.Socket & { writes: string[] }}
+ */
+function createFakeSocket() {
+  const socket = {
+    writes: [],
+    /**
+     * @param {string} chunk
+     * @returns {boolean}
+     */
+    write(chunk) {
+      socket.writes.push(chunk);
+      return true;
+    }
+  };
+  return /** @type {net.Socket & { writes: string[] }} */ (/** @type {unknown} */ (socket));
+}
+
+/** Ensure health checks succeed even before the extension connects. */
+test('daemon responds to health checks without extension', async () => {
+  const silentConsole = /** @type {Console} */ ({
+    ...console,
+    log() {},
+    error() {}
+  });
+  const daemon = new BridgeDaemon({ logger: silentConsole });
+  const socket = createFakeSocket();
+
+  await daemon.handleAgentRequest(socket, {
+    request: {
+      id: 'req_health',
+      method: 'health.ping',
+      session_id: null,
+      params: {},
+      meta: {
+        protocol_version: '1.0',
+        token_budget: null
+      }
+    }
+  });
+
+  assert.equal(socket.writes.length, 1);
+  const payload = JSON.parse(socket.writes[0].trim());
+  assert.equal(payload.type, 'agent.response');
+  assert.equal(payload.response.result.daemon, 'ok');
+  assert.equal(payload.response.result.extensionConnected, false);
+});
+
+/** Ensure repeated shutdown calls share one cleanup path safely. */
+test('daemon stop is idempotent when called concurrently', async () => {
+  const daemon = new BridgeDaemon({
+    listenOptions: { host: '127.0.0.1', port: 0 },
+    logger: console
+  });
+
+  await daemon.start();
+  await Promise.all([daemon.stop(), daemon.stop(), daemon.stop()]);
+
+  assert.equal(daemon.server, null);
+});

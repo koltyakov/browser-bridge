@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Browser Bridge</title>
+    <link rel="stylesheet" href="./ui.css">
+  </head>
+  <body>
+    <main class="panel panel-popup">
+      <header class="panel-header">
+        <h1 class="popup-title">Browser Bridge</h1>
+        <span
+          id="native-indicator"
+          class="status-dot header-status-indicator"
+          title="Connecting to native host…"></span>
+      </header>
+      <section class="card control-card popup-control-card">
+        <div class="control-copy">
+          <div class="eyebrow">Agent access</div>
+        </div>
+        <button id="communication-action" class="popup-action popup-power-button" type="button">Enable</button>
+      </section>
+    </main>
+    <script type="module" src="./popup.js"></script>
+  </body>
+</html>
