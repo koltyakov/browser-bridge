@@ -39,6 +39,10 @@ npx bb skill                   # live runtime presets
 10. **Wait after change** — after editing source files or triggering navigation, use `dom.wait_for` or `page.wait_for_load_state` before inspecting.
 11. **Console after interaction** — call `page.get_console` after mutations to catch runtime errors early.
 12. **Semantic finding** — use `dom.find_by_text` / `dom.find_by_role` when you know the label but not the selector.
+13. **Text extraction** — use `page.get_text` for full page text instead of `dom.query` on body.
+14. **Network monitoring** — use `page.get_network` to inspect API calls; auto-installs interceptor.
+15. **Accessibility tree** — use `dom.get_accessibility_tree` for semantic structure and interactive element discovery.
+16. **Tailwind-aware** — when `page.get_state` returns `hints.tailwind: true`, load `references/tailwind.md`; avoid selecting by utility classes, prefer `find_by_text`/`find_by_role`; `dom.query` auto-escapes `[]` brackets.
 
 ## Method Quick Reference
 
@@ -46,11 +50,14 @@ npx bb skill                   # live runtime presets
 | ---------- | ---------------------------------------------------------------------------------------- |
 | Session    | `session.request_access`, `session.get_status`, `page.get_state`                         |
 | Inspect    | `dom.query`, `dom.describe`, `dom.get_html`, `styles.get_computed`, `layout.get_box_model`|
-| Find       | `dom.find_by_text`, `dom.find_by_role`, `dom.wait_for`                                   |
-| Page State | `page.evaluate`, `page.get_console`, `page.get_storage`, `page.wait_for_load_state`      |
+| Find       | `dom.find_by_text`, `dom.find_by_role`, `dom.wait_for`, `dom.get_accessibility_tree`     |
+| Page State | `page.evaluate`, `page.get_console`, `page.get_storage`, `page.get_text`, `page.wait_for_load_state` |
+| Network    | `page.get_network`                                                                       |
 | Interact   | `input.click`, `input.type`, `input.focus`, `input.press_key`, `input.hover`, `input.drag`|
+| Tabs       | `tabs.list`, `tabs.create`, `tabs.close`                                                 |
 | Patch      | `patch.apply_styles`, `patch.apply_dom`, `patch.rollback`                                |
-| Navigate   | `navigation.navigate`, `viewport.scroll`                                                 |
+| Navigate   | `navigation.navigate`, `viewport.scroll`, `viewport.resize`                              |
+| Performance| `performance.get_metrics`                                                                |
 | Escalate   | `screenshot.capture_element`, `cdp.*` methods                                            |
 
 ## Dev-Server Workflow (HMR-aware)
@@ -94,6 +101,7 @@ dom.find_by_role('button', 'Login') → input.click
 - **[Patching workflows](references/patch-workflow.md)** — style-first loop, DOM patches, verification, cleanup
 - **[Full protocol reference](references/protocol.md)** — all RPC methods, error codes
 - **[Interaction patterns](references/interaction.md)** — input methods, navigation, form controls, hover, drag
+- **[Tailwind CSS guide](references/tailwind.md)** — selector escaping, semantic alternatives, patching strategy (load when `hints.tailwind: true`)
 
 ## Subagent Output
 

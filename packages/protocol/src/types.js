@@ -3,7 +3,7 @@
 export {};
 
 /**
- * @typedef {'page.read' | 'page.evaluate' | 'dom.read' | 'styles.read' | 'layout.read' | 'viewport.control' | 'navigation.control' | 'screenshot.partial' | 'patch.dom' | 'patch.styles' | 'cdp.dom_snapshot' | 'cdp.box_model' | 'cdp.styles' | 'automation.input'} Capability
+ * @typedef {'page.read' | 'page.evaluate' | 'dom.read' | 'styles.read' | 'layout.read' | 'viewport.control' | 'navigation.control' | 'screenshot.partial' | 'patch.dom' | 'patch.styles' | 'cdp.dom_snapshot' | 'cdp.box_model' | 'cdp.styles' | 'automation.input' | 'tabs.manage' | 'performance.read' | 'network.read'} Capability
  */
 
 /**
@@ -11,7 +11,7 @@ export {};
  */
 
 /**
- * @typedef {'tabs.list' | 'session.request_access' | 'session.get_status' | 'session.revoke' | 'skill.get_runtime_context' | 'page.get_state' | 'page.evaluate' | 'page.get_console' | 'page.wait_for_load_state' | 'page.get_storage' | 'navigation.navigate' | 'navigation.reload' | 'navigation.go_back' | 'navigation.go_forward' | 'dom.query' | 'dom.describe' | 'dom.get_text' | 'dom.get_attributes' | 'dom.wait_for' | 'dom.find_by_text' | 'dom.find_by_role' | 'dom.get_html' | 'layout.get_box_model' | 'layout.hit_test' | 'styles.get_computed' | 'styles.get_matched_rules' | 'viewport.scroll' | 'input.click' | 'input.focus' | 'input.type' | 'input.press_key' | 'input.set_checked' | 'input.select_option' | 'input.hover' | 'input.drag' | 'screenshot.capture_region' | 'screenshot.capture_element' | 'patch.apply_styles' | 'patch.apply_dom' | 'patch.list' | 'patch.rollback' | 'patch.commit_session_baseline' | 'cdp.get_document' | 'cdp.get_dom_snapshot' | 'cdp.get_box_model' | 'cdp.get_computed_styles_for_node' | 'log.tail' | 'health.ping'} BridgeMethod
+ * @typedef {'tabs.list' | 'tabs.create' | 'tabs.close' | 'session.request_access' | 'session.get_status' | 'session.revoke' | 'skill.get_runtime_context' | 'page.get_state' | 'page.evaluate' | 'page.get_console' | 'page.wait_for_load_state' | 'page.get_storage' | 'page.get_text' | 'page.get_network' | 'navigation.navigate' | 'navigation.reload' | 'navigation.go_back' | 'navigation.go_forward' | 'dom.query' | 'dom.describe' | 'dom.get_text' | 'dom.get_attributes' | 'dom.wait_for' | 'dom.find_by_text' | 'dom.find_by_role' | 'dom.get_html' | 'dom.get_accessibility_tree' | 'layout.get_box_model' | 'layout.hit_test' | 'styles.get_computed' | 'styles.get_matched_rules' | 'viewport.scroll' | 'viewport.resize' | 'input.click' | 'input.focus' | 'input.type' | 'input.press_key' | 'input.set_checked' | 'input.select_option' | 'input.hover' | 'input.drag' | 'screenshot.capture_region' | 'screenshot.capture_element' | 'patch.apply_styles' | 'patch.apply_dom' | 'patch.list' | 'patch.rollback' | 'patch.commit_session_baseline' | 'cdp.get_document' | 'cdp.get_dom_snapshot' | 'cdp.get_box_model' | 'cdp.get_computed_styles_for_node' | 'performance.get_metrics' | 'log.tail' | 'health.ping'} BridgeMethod
  */
 
 /**
@@ -451,4 +451,88 @@ export {};
  *   waitForLoad: boolean,
  *   timeoutMs: number
  * }} NormalizedWaitForLoadStateParams
+ */
+
+/**
+ * @typedef {{
+ *   url?: string,
+ *   active?: boolean
+ * }} TabCreateParams
+ */
+
+/**
+ * @typedef {{
+ *   url: string,
+ *   active: boolean
+ * }} NormalizedTabCreateParams
+ */
+
+/**
+ * @typedef {{
+ *   tabId?: number
+ * }} TabCloseParams
+ */
+
+/**
+ * @typedef {{
+ *   tabId: number
+ * }} NormalizedTabCloseParams
+ */
+
+/**
+ * @typedef {{
+ *   maxDepth?: number,
+ *   maxNodes?: number
+ * }} AccessibilityTreeParams
+ */
+
+/**
+ * @typedef {{
+ *   maxDepth: number,
+ *   maxNodes: number
+ * }} NormalizedAccessibilityTreeParams
+ */
+
+/**
+ * @typedef {{
+ *   clear?: boolean,
+ *   limit?: number,
+ *   urlPattern?: string
+ * }} NetworkParams
+ */
+
+/**
+ * @typedef {{
+ *   clear: boolean,
+ *   limit: number,
+ *   urlPattern: string | null
+ * }} NormalizedNetworkParams
+ */
+
+/**
+ * @typedef {{
+ *   textBudget?: number
+ * }} PageTextParams
+ */
+
+/**
+ * @typedef {{
+ *   textBudget: number
+ * }} NormalizedPageTextParams
+ */
+
+/**
+ * @typedef {{
+ *   width?: number,
+ *   height?: number,
+ *   deviceScaleFactor?: number
+ * }} ViewportResizeParams
+ */
+
+/**
+ * @typedef {{
+ *   width: number,
+ *   height: number,
+ *   deviceScaleFactor: number
+ * }} NormalizedViewportResizeParams
  */

@@ -27,9 +27,17 @@ async function crop(imageUrl, rect) {
   const response = await fetch(imageUrl);
   const blob = await response.blob();
   const bitmap = await createImageBitmap(blob);
-  const canvas = new OffscreenCanvas(rect.width, rect.height);
+
+  // Clamp crop rect to bitmap bounds to prevent out-of-bounds draws
+  const x = Math.max(0, Math.min(rect.x, bitmap.width - 1));
+  const y = Math.max(0, Math.min(rect.y, bitmap.height - 1));
+  const w = Math.max(1, Math.min(rect.width, bitmap.width - x));
+  const h = Math.max(1, Math.min(rect.height, bitmap.height - y));
+
+  const canvas = new OffscreenCanvas(w, h);
   const context = canvas.getContext('2d');
-  context.drawImage(bitmap, rect.x, rect.y, rect.width, rect.height, 0, 0, rect.width, rect.height);
+  context.drawImage(bitmap, x, y, w, h, 0, 0, w, h);
+  bitmap.close();
   const croppedBlob = await canvas.convertToBlob({ type: 'image/png' });
   return blobToDataUrl(croppedBlob);
 }
@@ -40,6 +48,11 @@ async function crop(imageUrl, rect) {
  */
 async function blobToDataUrl(blob) {
   const arrayBuffer = await blob.arrayBuffer();
-  const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+  const bytes = new Uint8Array(arrayBuffer);
+  const chunks = [];
+  for (let i = 0; i < bytes.length; i += 8192) {
+    chunks.push(String.fromCharCode.apply(null, bytes.subarray(i, i + 8192)));
+  }
+  const base64 = btoa(chunks.join(''));
   return `data:${blob.type};base64,${base64}`;
 }

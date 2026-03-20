@@ -7,8 +7,10 @@ import {
   createRuntimeContext,
   createSuccess,
   normalizeAccessRequest,
+  normalizeAccessibilityTreeParams,
   normalizeCheckedAction,
   normalizeConsoleParams,
+  normalizeDomQuery,
   normalizeDragParams,
   normalizeEvaluateParams,
   normalizeFindByRoleParams,
@@ -17,11 +19,16 @@ import {
   normalizeHoverParams,
   normalizeInputAction,
   normalizeNavigationAction,
+  normalizeNetworkParams,
+  normalizePageTextParams,
   normalizePatchOperation,
   normalizeSelectAction,
   normalizeStorageParams,
   normalizeStyleQuery,
+  normalizeTabCloseParams,
+  normalizeTabCreateParams,
   normalizeViewportAction,
+  normalizeViewportResizeParams,
   normalizeWaitForLoadStateParams,
   normalizeWaitForParams
 } from '../../protocol/src/index.js';
@@ -89,6 +96,7 @@ import {
 
 const NATIVE_APP_NAME = 'com.codex.browser_bridge';
 const CONTENT_SCRIPT_TIMEOUT_MS = 5_000;
+const SCREENSHOT_TIMEOUT_MS = 10_000;
 const MAX_ACTION_LOG_ENTRIES = 50;
 const ENABLED_TAB_STORAGE_PREFIX = 'enabledTab:';
 const ACTION_LOG_STORAGE_KEY = 'actionLog';
@@ -242,6 +250,10 @@ async function dispatchBridgeRequest(request) {
       return createSuccess(request.id, createRuntimeContext(), { method: request.method });
     case 'tabs.list':
       return handleListTabs(request);
+    case 'tabs.create':
+      return handleCreateTab(request);
+    case 'tabs.close':
+      return handleCloseTab(request);
     case 'session.request_access':
       return handleAccessRequest(request);
     case 'session.get_status':
@@ -254,6 +266,14 @@ async function dispatchBridgeRequest(request) {
       return handlePageGetConsole(request);
     case 'page.wait_for_load_state':
       return handleWaitForLoadState(request);
+    case 'dom.get_accessibility_tree':
+      return handleAccessibilityTree(request);
+    case 'page.get_network':
+      return handleGetNetwork(request);
+    case 'viewport.resize':
+      return handleViewportResize(request);
+    case 'performance.get_metrics':
+      return handlePerformanceMetrics(request);
     case 'navigation.navigate':
     case 'navigation.reload':
     case 'navigation.go_back':
@@ -261,6 +281,7 @@ async function dispatchBridgeRequest(request) {
       return handleNavigationRequest(request);
     case 'page.get_state':
     case 'page.get_storage':
+    case 'page.get_text':
     case 'dom.query':
     case 'dom.describe':
     case 'dom.get_text':
@@ -443,7 +464,9 @@ async function handleTabBoundRequest(request) {
   const session = await requireSession(request, inferCapability(request.method));
   await ensureContentScript(session.tabId);
   let payload = request.params;
-  if (request.method.startsWith('styles.')) {
+  if (request.method === 'dom.query') {
+    payload = normalizeDomQuery(request.params);
+  } else if (request.method.startsWith('styles.')) {
     payload = normalizeStyleQuery(request.params);
   } else if (request.method === 'viewport.scroll') {
     payload = normalizeViewportAction(request.params);
@@ -469,6 +492,8 @@ async function handleTabBoundRequest(request) {
     payload = normalizeGetHtmlParams(request.params);
   } else if (request.method === 'page.get_storage') {
     payload = normalizeStorageParams(request.params);
+  } else if (request.method === 'page.get_text') {
+    payload = normalizePageTextParams(request.params);
   }
 
   if (request.method.startsWith('screenshot.')) {
@@ -607,6 +632,303 @@ async function handlePageGetConsole(request) {
 }
 
 /**
+ * Create a new tab with an optional URL.
+ *
+ * @param {BridgeRequest} request
+ * @returns {Promise<BridgeResponse>}
+ */
+async function handleCreateTab(request) {
+  const params = normalizeTabCreateParams(request.params);
+  const tab = await chrome.tabs.create({ url: params.url, active: params.active });
+  return createSuccess(request.id, summarizeTabResult(tab, request.method), { method: request.method });
+}
+
+/**
+ * Close a tab by tabId.
+ *
+ * @param {BridgeRequest} request
+ * @returns {Promise<BridgeResponse>}
+ */
+async function handleCloseTab(request) {
+  const params = normalizeTabCloseParams(request.params);
+  await chrome.tabs.remove(params.tabId);
+  return createSuccess(request.id, { closed: true, tabId: params.tabId }, { method: request.method });
+}
+
+/**
+ * Return the full accessibility tree for the target tab via CDP
+ * Accessibility.getFullAXTree. Returns a pruned, token-efficient tree with
+ * roles, names, descriptions, and interactive states.
+ *
+ * @param {BridgeRequest} request
+ * @returns {Promise<BridgeResponse>}
+ */
+async function handleAccessibilityTree(request) {
+  const session = await requireSession(request, CAPABILITIES.DOM_READ);
+  const params = normalizeAccessibilityTreeParams(request.params);
+  const target = { tabId: session.tabId };
+  await chrome.debugger.attach(target, '1.3');
+  try {
+    await chrome.debugger.sendCommand(target, 'Accessibility.enable', {});
+    const result = await chrome.debugger.sendCommand(target, 'Accessibility.getFullAXTree', {
+      depth: params.maxDepth
+    });
+    const cdpResult = /** @type {{ nodes?: Array<Record<string, unknown>> }} */ (result);
+    const rawNodes = cdpResult.nodes || [];
+    const pruned = rawNodes.slice(0, params.maxNodes).map(simplifyAXNode);
+    await chrome.debugger.sendCommand(target, 'Accessibility.disable', {});
+    return createSuccess(request.id, {
+      nodes: pruned,
+      count: pruned.length,
+      total: rawNodes.length,
+      truncated: rawNodes.length > params.maxNodes
+    }, { method: request.method });
+  } finally {
+    await chrome.debugger.detach(target);
+  }
+}
+
+/**
+ * Simplify a CDP AXNode into a compact representation.
+ *
+ * @param {Record<string, unknown>} node
+ * @returns {{ nodeId: string, role: string, name: string, description: string, value: string, focused: boolean, required: boolean, checked: string | null, disabled: boolean, interactive: boolean, childIds: string[] }}
+ */
+function simplifyAXNode(node) {
+  const role = axValue(node.role);
+  const interactiveRoles = new Set([
+    'button', 'link', 'textbox', 'checkbox', 'radio', 'combobox',
+    'listbox', 'menuitem', 'tab', 'switch', 'slider', 'spinbutton',
+    'searchbox', 'menuitemcheckbox', 'menuitemradio', 'option'
+  ]);
+  return {
+    nodeId: String(node.nodeId ?? ''),
+    role,
+    name: axValue(node.name),
+    description: axValue(node.description),
+    value: axValue(node.value),
+    focused: axBool(node.focused),
+    required: axBool(node.required),
+    checked: axTristateValue(node.checked),
+    disabled: axBool(node.disabled),
+    interactive: interactiveRoles.has(role) || axBool(node.focusable),
+    childIds: Array.isArray(node.childIds) ? node.childIds.map(String) : []
+  };
+}
+
+/**
+ * Extract a string value from a CDP AXValue-shaped property.
+ *
+ * @param {unknown} prop
+ * @returns {string}
+ */
+function axValue(prop) {
+  if (!prop || typeof prop !== 'object') return '';
+  const val = /** @type {{ value?: unknown }} */ (prop).value;
+  return typeof val === 'string' ? val : '';
+}
+
+/**
+ * Extract a boolean value from a CDP AXValue-shaped property.
+ *
+ * @param {unknown} prop
+ * @returns {boolean}
+ */
+function axBool(prop) {
+  if (!prop || typeof prop !== 'object') return false;
+  return /** @type {{ value?: unknown }} */ (prop).value === true;
+}
+
+/**
+ * Extract a tristate string from a CDP AXValue-shaped property.
+ *
+ * @param {unknown} prop
+ * @returns {string | null}
+ */
+function axTristateValue(prop) {
+  if (!prop || typeof prop !== 'object') return null;
+  const val = /** @type {{ value?: unknown }} */ (prop).value;
+  if (val === 'true' || val === true) return 'true';
+  if (val === 'false' || val === false) return 'false';
+  if (val === 'mixed') return 'mixed';
+  return null;
+}
+
+/**
+ * Install a network interceptor and retrieve buffered request/response entries
+ * via chrome.scripting.executeScript in the MAIN world, capturing fetch/XHR.
+ *
+ * @param {BridgeRequest} request
+ * @returns {Promise<BridgeResponse>}
+ */
+async function handleGetNetwork(request) {
+  const session = await requireSession(request, CAPABILITIES.PAGE_READ);
+  const params = normalizeNetworkParams(request.params);
+  await ensureNetworkInterceptor(session.tabId);
+  const entries = await readNetworkBuffer(session.tabId, params.clear);
+  const filtered = params.urlPattern
+    ? entries.filter((/** @type {{ url: string }} */ e) => e.url.includes(params.urlPattern))
+    : entries;
+  const limited = filtered.slice(-params.limit);
+  return createSuccess(request.id, { entries: limited, count: limited.length, total: entries.length }, { method: request.method });
+}
+
+/**
+ * Inject the network interceptor into the page's main world. Patches
+ * fetch and XMLHttpRequest to capture request/response metadata.
+ *
+ * @param {number} tabId
+ * @returns {Promise<void>}
+ */
+async function ensureNetworkInterceptor(tabId) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    func: () => {
+      // @ts-ignore
+      if (globalThis.__bb_network_installed) return;
+      // @ts-ignore
+      globalThis.__bb_network_installed = true;
+      /** @type {Array<{method: string, url: string, status: number, duration: number, type: string, ts: number, size: number}>} */
+      const buffer = [];
+      // @ts-ignore
+      globalThis.__bb_network_buffer = buffer;
+      const MAX = 200;
+
+      const origFetch = globalThis.fetch;
+      // @ts-ignore — intentional main-world global override
+      globalThis.fetch = async function (...args) {
+        // @ts-ignore
+        const req = new Request(...args);
+        const entry = { method: req.method, url: req.url, status: 0, duration: 0, type: 'fetch', ts: Date.now(), size: 0 };
+        const startTime = performance.now();
+        try {
+          const resp = await origFetch.apply(globalThis, args);
+          entry.status = resp.status;
+          entry.duration = Math.round(performance.now() - startTime);
+          const cl = resp.headers.get('content-length');
+          if (cl) entry.size = Number(cl);
+          return resp;
+        } catch (err) {
+          entry.status = 0;
+          entry.duration = Math.round(performance.now() - startTime);
+          throw err;
+        } finally {
+          buffer.push(entry);
+          if (buffer.length > MAX) buffer.splice(0, buffer.length - MAX);
+        }
+      };
+
+      const origOpen = XMLHttpRequest.prototype.open;
+      const origSend = XMLHttpRequest.prototype.send;
+      XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+        // @ts-ignore — stashing method/url for XHR interception
+        this.__bb_method = method;
+        // @ts-ignore
+        this.__bb_url = String(url);
+        return origOpen.call(this, method, url, ...rest);
+      };
+      XMLHttpRequest.prototype.send = function (...args) {
+        // @ts-ignore
+        const entry = { method: this.__bb_method || 'GET', url: this.__bb_url || '', status: 0, duration: 0, type: 'xhr', ts: Date.now(), size: 0 };
+        const startTime = performance.now();
+        this.addEventListener('loadend', () => {
+          entry.status = this.status;
+          entry.duration = Math.round(performance.now() - startTime);
+          const cl = this.getResponseHeader('content-length');
+          if (cl) entry.size = Number(cl);
+          buffer.push(entry);
+          if (buffer.length > MAX) buffer.splice(0, buffer.length - MAX);
+        });
+        return origSend.apply(this, args);
+      };
+    }
+  });
+}
+
+/**
+ * Read and optionally clear the network buffer from the page's main world.
+ *
+ * @param {number} tabId
+ * @param {boolean} clear
+ * @returns {Promise<Array<{method: string, url: string, status: number, duration: number, type: string, ts: number, size: number}>>}
+ */
+async function readNetworkBuffer(tabId, clear) {
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    func: (shouldClear) => {
+      // @ts-ignore
+      const buf = globalThis.__bb_network_buffer || [];
+      const copy = [...buf];
+      // @ts-ignore
+      if (shouldClear) globalThis.__bb_network_buffer = [];
+      return copy;
+    },
+    args: [clear]
+  });
+  return /** @type {any} */ (results?.[0]?.result) || [];
+}
+
+/**
+ * Resize the browser viewport via CDP Emulation.setDeviceMetricsOverride
+ * or reset to natural size when width/height are 0.
+ *
+ * @param {BridgeRequest} request
+ * @returns {Promise<BridgeResponse>}
+ */
+async function handleViewportResize(request) {
+  const session = await requireSession(request, CAPABILITIES.VIEWPORT_CONTROL);
+  const params = normalizeViewportResizeParams(request.params);
+  const target = { tabId: session.tabId };
+  await chrome.debugger.attach(target, '1.3');
+  try {
+    if (params.width === 0 && params.height === 0) {
+      await chrome.debugger.sendCommand(target, 'Emulation.clearDeviceMetricsOverride', {});
+    } else {
+      await chrome.debugger.sendCommand(target, 'Emulation.setDeviceMetricsOverride', {
+        width: params.width,
+        height: params.height,
+        deviceScaleFactor: params.deviceScaleFactor,
+        mobile: params.width < 768
+      });
+    }
+    return createSuccess(request.id, {
+      width: params.width,
+      height: params.height,
+      deviceScaleFactor: params.deviceScaleFactor
+    }, { method: request.method });
+  } finally {
+    await chrome.debugger.detach(target);
+  }
+}
+
+/**
+ * Return browser performance metrics via CDP Performance.getMetrics.
+ *
+ * @param {BridgeRequest} request
+ * @returns {Promise<BridgeResponse>}
+ */
+async function handlePerformanceMetrics(request) {
+  const session = await requireSession(request, CAPABILITIES.PAGE_READ);
+  const target = { tabId: session.tabId };
+  await chrome.debugger.attach(target, '1.3');
+  try {
+    await chrome.debugger.sendCommand(target, 'Performance.enable', { timeDomain: 'timeTicks' });
+    const result = await chrome.debugger.sendCommand(target, 'Performance.getMetrics', {});
+    await chrome.debugger.sendCommand(target, 'Performance.disable', {});
+    const cdpResult = /** @type {{ metrics?: Array<{ name: string, value: number }> }} */ (result);
+    const metrics = (cdpResult.metrics || []).reduce((acc, m) => {
+      acc[m.name] = m.value;
+      return acc;
+    }, /** @type {Record<string, number>} */ ({}));
+    return createSuccess(request.id, { metrics }, { method: request.method });
+  } finally {
+    await chrome.debugger.detach(target);
+  }
+}
+
+/**
  * Wait for the tab to reach the 'complete' load state.
  *
  * @param {BridgeRequest} request
@@ -716,23 +1038,75 @@ async function readConsoleBuffer(tabId, clear) {
  * @returns {Promise<{ rect: unknown, image: string }>}
  */
 async function handleScreenshot(session, method, params) {
-  await ensureContentScript(session.tabId);
-  const rect = method === 'screenshot.capture_element'
-    ? await sendTabMessage(session.tabId, {
-      type: 'bridge.execute',
-      method,
-      params,
-      session
-    }, CONTENT_SCRIPT_TIMEOUT_MS)
-    : params;
+  const target = { tabId: session.tabId };
 
-  const tab = await chrome.tabs.get(session.tabId);
-  const image = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
-  const cropped = await cropImage({ image, rect: normalizeCropRect(rect) });
-  return {
-    rect,
-    image: cropped
-  };
+  /** @type {{ x: number, y: number, width: number, height: number, scale: number }} */
+  let clip;
+
+  if (method === 'screenshot.capture_element') {
+    await ensureContentScript(session.tabId);
+    try {
+      clip = await sendTabMessage(session.tabId, {
+        type: 'bridge.execute', method, params, session
+      }, CONTENT_SCRIPT_TIMEOUT_MS);
+    } catch (err) {
+      // Retry once after a brief pause — the page may have been mid-render
+      if (err instanceof Error && /stale/i.test(err.message)) {
+        await new Promise(r => setTimeout(r, 250));
+        clip = await sendTabMessage(session.tabId, {
+          type: 'bridge.execute', method, params, session
+        }, CONTENT_SCRIPT_TIMEOUT_MS);
+      } else {
+        throw err;
+      }
+    }
+  } else {
+    // capture_region: params already carry viewport coordinates
+    const scale = Number(params.scale) || 1;
+    clip = {
+      x: Number(params.x) || 0,
+      y: Number(params.y) || 0,
+      width: Math.max(1, Number(params.width) || 1),
+      height: Math.max(1, Number(params.height) || 1),
+      scale
+    };
+  }
+
+  if (clip.width < 1 || clip.height < 1) {
+    throw new Error(
+      `Capture target has no visible area (${clip.width}\u00d7${clip.height}px). ` +
+      'It may be hidden, collapsed, or not yet rendered.'
+    );
+  }
+
+  // Use CDP Page.captureScreenshot — works regardless of tab focus,
+  // captures renderer output directly with built-in clip support.
+  await chrome.debugger.attach(target, '1.3');
+  try {
+    const dpr = clip.scale || 1;
+    const cdpResult = /** @type {{ data?: string }} */ (
+      await chrome.debugger.sendCommand(target, 'Page.captureScreenshot', {
+        format: 'png',
+        clip: {
+          x: Math.max(0, clip.x),
+          y: Math.max(0, clip.y),
+          width: clip.width,
+          height: clip.height,
+          scale: dpr
+        },
+        captureBeyondViewport: false
+      })
+    );
+    if (!cdpResult?.data) {
+      throw new Error('CDP Page.captureScreenshot returned empty data.');
+    }
+    return {
+      rect: clip,
+      image: `data:image/png;base64,${cdpResult.data}`
+    };
+  } finally {
+    await chrome.debugger.detach(target);
+  }
 }
 
 /**
@@ -748,6 +1122,24 @@ async function sendTabMessage(tabId, message, timeoutMs) {
     chrome.tabs.sendMessage(tabId, message),
     new Promise((_, reject) => {
       setTimeout(() => reject(new Error(`Timed out waiting for content script response after ${timeoutMs}ms.`)), timeoutMs);
+    })
+  ]);
+}
+
+/**
+ * Race a promise against a timeout, throwing on expiry.
+ *
+ * @template T
+ * @param {Promise<T>} promise
+ * @param {number} ms
+ * @param {string} message
+ * @returns {Promise<T>}
+ */
+function withTimeout(promise, ms, message) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(message)), ms);
     })
   ]);
 }
@@ -1460,6 +1852,9 @@ function inferCapability(method) {
   if (method === 'page.evaluate') {
     return CAPABILITIES.PAGE_EVALUATE;
   }
+  if (method === 'page.get_network') {
+    return CAPABILITIES.NETWORK_READ;
+  }
   if (method.startsWith('page.')) {
     return CAPABILITIES.PAGE_READ;
   }
@@ -1481,7 +1876,7 @@ function inferCapability(method) {
   if (method.startsWith('input.')) {
     return CAPABILITIES.AUTOMATION_INPUT;
   }
-  if (method.startsWith('patch.apply_styles')) {
+  if (method === 'patch.apply_styles') {
     return CAPABILITIES.PATCH_STYLES;
   }
   if (method.startsWith('patch.')) {
@@ -1490,8 +1885,20 @@ function inferCapability(method) {
   if (method.startsWith('screenshot.')) {
     return CAPABILITIES.SCREENSHOT_PARTIAL;
   }
+  if (method === 'cdp.get_box_model') {
+    return CAPABILITIES.CDP_BOX_MODEL;
+  }
+  if (method === 'cdp.get_computed_styles_for_node') {
+    return CAPABILITIES.CDP_STYLES;
+  }
   if (method.startsWith('cdp.')) {
     return CAPABILITIES.CDP_DOM_SNAPSHOT;
+  }
+  if (method.startsWith('performance.')) {
+    return CAPABILITIES.PERFORMANCE_READ;
+  }
+  if (method.startsWith('tabs.') && method !== 'tabs.list') {
+    return CAPABILITIES.TABS_MANAGE;
   }
   return null;
 }

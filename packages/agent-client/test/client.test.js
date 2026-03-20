@@ -68,3 +68,44 @@ test('methodNeedsSession distinguishes tab-bound methods', () => {
   assert.equal(methodNeedsSession('page.get_state'), true);
   assert.equal(methodNeedsSession('tabs.list'), false);
 });
+
+/** Ensure network response summarization handles fetch entries correctly. */
+test('summarizeBridgeResponse summarizes network entries', () => {
+  const summary = summarizeBridgeResponse({
+    id: 'req_net',
+    ok: true,
+    result: {
+      entries: [
+        { type: 'fetch', method: 'GET', url: '/api/data', status: 200, duration: 50 },
+        { type: 'xhr', method: 'POST', url: '/api/save', status: 201, duration: 120 }
+      ],
+      count: 2,
+      total: 2
+    },
+    error: null,
+    meta: { protocol_version: '1.0' }
+  });
+
+  assert.equal(summary.ok, true);
+  assert.match(summary.summary, /Network: 2 requests/);
+});
+
+/** Ensure non-fetch/xhr entries are NOT matched as network. */
+test('summarizeBridgeResponse does not misidentify non-network entries', () => {
+  const summary = summarizeBridgeResponse({
+    id: 'req_console',
+    ok: true,
+    result: {
+      entries: [
+        { level: 'warn', args: ['test'], ts: 123 }
+      ],
+      count: 1,
+      total: 1
+    },
+    error: null,
+    meta: { protocol_version: '1.0' }
+  });
+
+  assert.equal(summary.ok, true);
+  assert.match(summary.summary, /Console/);
+});

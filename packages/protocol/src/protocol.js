@@ -4,6 +4,7 @@ import { applyBudget } from './budget.js';
 import { DEFAULT_CAPABILITIES, isCapability } from './capabilities.js';
 import { BridgeError, ERROR_CODES } from './errors.js';
 
+/** @typedef {import('./types.js').AccessibilityTreeParams} AccessibilityTreeParams */
 /** @typedef {import('./types.js').AccessRequestParams} AccessRequestParams */
 /** @typedef {import('./types.js').BridgeFailureResponse} BridgeFailureResponse */
 /** @typedef {import('./types.js').BridgeMeta} BridgeMeta */
@@ -21,6 +22,8 @@ import { BridgeError, ERROR_CODES } from './errors.js';
 /** @typedef {import('./types.js').HoverParams} HoverParams */
 /** @typedef {import('./types.js').InputActionParams} InputActionParams */
 /** @typedef {import('./types.js').NavigationActionParams} NavigationActionParams */
+/** @typedef {import('./types.js').NetworkParams} NetworkParams */
+/** @typedef {import('./types.js').NormalizedAccessibilityTreeParams} NormalizedAccessibilityTreeParams */
 /** @typedef {import('./types.js').NormalizedAccessRequest} NormalizedAccessRequest */
 /** @typedef {import('./types.js').NormalizedCheckedAction} NormalizedCheckedAction */
 /** @typedef {import('./types.js').NormalizedConsoleParams} NormalizedConsoleParams */
@@ -33,18 +36,27 @@ import { BridgeError, ERROR_CODES } from './errors.js';
 /** @typedef {import('./types.js').NormalizedHoverParams} NormalizedHoverParams */
 /** @typedef {import('./types.js').NormalizedInputAction} NormalizedInputAction */
 /** @typedef {import('./types.js').NormalizedNavigationAction} NormalizedNavigationAction */
+/** @typedef {import('./types.js').NormalizedNetworkParams} NormalizedNetworkParams */
+/** @typedef {import('./types.js').NormalizedPageTextParams} NormalizedPageTextParams */
 /** @typedef {import('./types.js').NormalizedPatchOperation} NormalizedPatchOperation */
 /** @typedef {import('./types.js').NormalizedSelectAction} NormalizedSelectAction */
 /** @typedef {import('./types.js').NormalizedStorageParams} NormalizedStorageParams */
 /** @typedef {import('./types.js').NormalizedStyleQuery} NormalizedStyleQuery */
+/** @typedef {import('./types.js').NormalizedTabCloseParams} NormalizedTabCloseParams */
+/** @typedef {import('./types.js').NormalizedTabCreateParams} NormalizedTabCreateParams */
 /** @typedef {import('./types.js').NormalizedViewportAction} NormalizedViewportAction */
+/** @typedef {import('./types.js').NormalizedViewportResizeParams} NormalizedViewportResizeParams */
 /** @typedef {import('./types.js').NormalizedWaitForLoadStateParams} NormalizedWaitForLoadStateParams */
 /** @typedef {import('./types.js').NormalizedWaitForParams} NormalizedWaitForParams */
+/** @typedef {import('./types.js').PageTextParams} PageTextParams */
 /** @typedef {import('./types.js').PatchOperationParams} PatchOperationParams */
 /** @typedef {import('./types.js').SelectActionParams} SelectActionParams */
 /** @typedef {import('./types.js').StorageParams} StorageParams */
 /** @typedef {import('./types.js').StyleQueryParams} StyleQueryParams */
+/** @typedef {import('./types.js').TabCloseParams} TabCloseParams */
+/** @typedef {import('./types.js').TabCreateParams} TabCreateParams */
 /** @typedef {import('./types.js').ViewportActionParams} ViewportActionParams */
+/** @typedef {import('./types.js').ViewportResizeParams} ViewportResizeParams */
 /** @typedef {import('./types.js').WaitForLoadStateParams} WaitForLoadStateParams */
 /** @typedef {import('./types.js').WaitForParams} WaitForParams */
 
@@ -54,6 +66,8 @@ const NON_EXPIRING_SESSION_TTL_MS = 10 * 365 * 24 * 60 * 60 * 1000;
 /** @type {ReadonlyArray<BridgeMethod>} */
 export const METHODS = Object.freeze([
   'tabs.list',
+  'tabs.create',
+  'tabs.close',
   'session.request_access',
   'session.get_status',
   'session.revoke',
@@ -63,6 +77,8 @@ export const METHODS = Object.freeze([
   'page.get_console',
   'page.wait_for_load_state',
   'page.get_storage',
+  'page.get_text',
+  'page.get_network',
   'navigation.navigate',
   'navigation.reload',
   'navigation.go_back',
@@ -75,11 +91,13 @@ export const METHODS = Object.freeze([
   'dom.find_by_text',
   'dom.find_by_role',
   'dom.get_html',
+  'dom.get_accessibility_tree',
   'layout.get_box_model',
   'layout.hit_test',
   'styles.get_computed',
   'styles.get_matched_rules',
   'viewport.scroll',
+  'viewport.resize',
   'input.click',
   'input.focus',
   'input.type',
@@ -99,6 +117,7 @@ export const METHODS = Object.freeze([
   'cdp.get_dom_snapshot',
   'cdp.get_box_model',
   'cdp.get_computed_styles_for_node',
+  'performance.get_metrics',
   'log.tail',
   'health.ping'
 ]);
@@ -246,8 +265,12 @@ export function normalizeDomQuery(params = {}) {
  * @returns {NormalizedStyleQuery}
  */
 export function normalizeStyleQuery(params = {}) {
+  const elementRef = String(params.elementRef || '');
+  if (!elementRef) {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'elementRef is required for style queries.');
+  }
   return {
-    elementRef: String(params.elementRef || ''),
+    elementRef,
     properties: Array.isArray(params.properties) ? params.properties.filter(Boolean) : []
   };
 }
@@ -353,8 +376,23 @@ export function normalizeViewportAction(params = {}) {
  * @returns {NormalizedNavigationAction}
  */
 export function normalizeNavigationAction(params = {}) {
+  const url = typeof params.url === 'string' ? params.url.trim() : '';
+  if (url) {
+    try {
+      const parsed = new URL(url);
+      if (!['http:', 'https:', 'about:'].includes(parsed.protocol)) {
+        throw new BridgeError(
+          ERROR_CODES.INVALID_REQUEST,
+          `Navigation blocked: unsupported protocol "${parsed.protocol}". Only http:, https:, and about: are allowed.`
+        );
+      }
+    } catch (error) {
+      if (error instanceof BridgeError) throw error;
+      throw new BridgeError(ERROR_CODES.INVALID_REQUEST, `Invalid navigation URL: ${url}`);
+    }
+  }
   return {
-    url: typeof params.url === 'string' ? params.url.trim() : '',
+    url,
     waitForLoad: params.waitForLoad !== false,
     timeoutMs: Math.min(Math.max(Number(params.timeoutMs) || 15_000, 500), 120_000)
   };
@@ -385,8 +423,15 @@ export function normalizePatchOperation(params = {}) {
  * @returns {NormalizedEvaluateParams}
  */
 export function normalizeEvaluateParams(params = {}) {
+  const expression = typeof params.expression === 'string' ? params.expression : '';
+  if (expression.length > 100_000) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      `Expression too large (${expression.length} chars). Maximum is 100,000.`
+    );
+  }
   return {
-    expression: typeof params.expression === 'string' ? params.expression : '',
+    expression,
     awaitPromise: Boolean(params.awaitPromise),
     timeoutMs: Math.min(Math.max(Number(params.timeoutMs) || 5_000, 100), 30_000),
     returnByValue: params.returnByValue !== false
@@ -519,12 +564,85 @@ export function normalizeWaitForLoadStateParams(params = {}) {
 }
 
 /**
+ * @param {TabCreateParams} [params={}]
+ * @returns {NormalizedTabCreateParams}
+ */
+export function normalizeTabCreateParams(params = {}) {
+  return {
+    url: typeof params.url === 'string' && params.url.trim() ? params.url.trim() : 'about:blank',
+    active: params.active !== false
+  };
+}
+
+/**
+ * @param {TabCloseParams} [params={}]
+ * @returns {NormalizedTabCloseParams}
+ */
+export function normalizeTabCloseParams(params = {}) {
+  const tabId = Number(params.tabId);
+  if (!Number.isFinite(tabId) || tabId <= 0) {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'tabId is required for tabs.close.');
+  }
+  return { tabId };
+}
+
+/**
+ * @param {AccessibilityTreeParams} [params={}]
+ * @returns {NormalizedAccessibilityTreeParams}
+ */
+export function normalizeAccessibilityTreeParams(params = {}) {
+  return {
+    maxDepth: Math.min(Math.max(Number(params.maxDepth) || 6, 1), 20),
+    maxNodes: Math.min(Math.max(Number(params.maxNodes) || 500, 10), 5000)
+  };
+}
+
+/**
+ * @param {NetworkParams} [params={}]
+ * @returns {NormalizedNetworkParams}
+ */
+export function normalizeNetworkParams(params = {}) {
+  return {
+    clear: Boolean(params.clear),
+    limit: Math.min(Math.max(Number(params.limit) || 50, 1), 500),
+    urlPattern: typeof params.urlPattern === 'string' && params.urlPattern.trim()
+      ? params.urlPattern.trim()
+      : null
+  };
+}
+
+/**
+ * @param {PageTextParams} [params={}]
+ * @returns {NormalizedPageTextParams}
+ */
+export function normalizePageTextParams(params = {}) {
+  return {
+    textBudget: Math.min(Math.max(Number(params.textBudget) || 8000, 100), 100_000)
+  };
+}
+
+/**
+ * @param {ViewportResizeParams} [params={}]
+ * @returns {NormalizedViewportResizeParams}
+ */
+export function normalizeViewportResizeParams(params = {}) {
+  return {
+    width: Math.min(Math.max(Number(params.width) || 1280, 320), 7680),
+    height: Math.min(Math.max(Number(params.height) || 720, 200), 4320),
+    deviceScaleFactor: Math.min(Math.max(Number(params.deviceScaleFactor) || 0, 0), 4)
+  };
+}
+
+/**
  * @returns {{
  *   v: string,
  *   budgets: Record<string, { n: number, d: number, t: number }>,
  *   methods: Record<string, string[]>,
+ *   errors: Record<string, string>,
+ *   capabilities: Record<string, string>,
  *   tips: string[],
- *   flow: BridgeMethod[]
+ *   flow: BridgeMethod[],
+ *   limits: Record<string, { min: number, max: number, default: number }>
  * }}
  */
 export function createRuntimeContext() {
@@ -536,13 +654,15 @@ export function createRuntimeContext() {
       deep: { n: 100, d: 8, t: 2000 }
     },
     methods: {
+      session: ['session.request_access', 'session.get_status', 'session.revoke',
+        'skill.get_runtime_context'],
       inspect: ['dom.query', 'dom.describe', 'dom.get_text', 'dom.get_attributes',
-        'dom.find_by_text', 'dom.find_by_role', 'dom.get_html',
+        'dom.find_by_text', 'dom.find_by_role', 'dom.get_html', 'dom.get_accessibility_tree',
         'styles.get_computed', 'styles.get_matched_rules', 'layout.get_box_model', 'layout.hit_test'],
       page: ['page.get_state', 'page.evaluate', 'page.get_console', 'page.get_storage',
-        'page.wait_for_load_state'],
+        'page.wait_for_load_state', 'page.get_text', 'page.get_network'],
       navigate: ['navigation.navigate', 'navigation.reload', 'navigation.go_back',
-        'navigation.go_forward', 'viewport.scroll'],
+        'navigation.go_forward', 'viewport.scroll', 'viewport.resize'],
       interact: ['input.click', 'input.type', 'input.focus', 'input.press_key',
         'input.set_checked', 'input.select_option', 'input.hover', 'input.drag'],
       wait: ['dom.wait_for', 'page.wait_for_load_state'],
@@ -550,7 +670,38 @@ export function createRuntimeContext() {
         'patch.commit_session_baseline'],
       capture: ['screenshot.capture_element', 'screenshot.capture_region'],
       cdp: ['cdp.get_document', 'cdp.get_dom_snapshot', 'cdp.get_box_model',
-        'cdp.get_computed_styles_for_node']
+        'cdp.get_computed_styles_for_node'],
+      tabs: ['tabs.list', 'tabs.create', 'tabs.close'],
+      performance: ['performance.get_metrics']
+    },
+    errors: {
+      ACCESS_DENIED: 'Tab not enabled — user must allow in extension UI',
+      SESSION_EXPIRED: 'Session invalid — call session.request_access again',
+      APPROVAL_PENDING: 'Access prompt opened — retry after ~3s',
+      TAB_MISMATCH: 'Tab closed or not found',
+      ORIGIN_MISMATCH: 'Tab navigated to different origin',
+      CAPABILITY_MISSING: 'Session lacks needed capability',
+      ELEMENT_STALE: 'Element removed from DOM — re-query',
+      INVALID_REQUEST: 'Malformed method or params',
+      TIMEOUT: 'Operation exceeded time limit',
+      RATE_LIMITED: 'Too many requests — back off',
+      INTERNAL_ERROR: 'Unexpected extension error'
+    },
+    capabilities: {
+      'page.read': 'page.get_state, page.get_console, page.get_storage, page.get_text, page.get_network',
+      'page.evaluate': 'page.evaluate (JS in page context via CDP)',
+      'dom.read': 'dom.query, dom.describe, dom.get_text, dom.find_by_text, dom.find_by_role, dom.get_html, dom.get_accessibility_tree',
+      'styles.read': 'styles.get_computed, styles.get_matched_rules',
+      'layout.read': 'layout.get_box_model, layout.hit_test',
+      'automation.input': 'input.click, input.type, input.focus, input.press_key, input.hover, input.drag',
+      'patch.styles': 'patch.apply_styles',
+      'patch.dom': 'patch.apply_dom, patch.list, patch.rollback',
+      'screenshot.partial': 'screenshot.capture_element, screenshot.capture_region',
+      'navigation.control': 'navigation.navigate, navigation.reload, navigation.go_back/forward',
+      'viewport.control': 'viewport.scroll, viewport.resize',
+      'tabs.manage': 'tabs.create, tabs.close',
+      'network.read': 'page.get_network',
+      'performance.read': 'performance.get_metrics'
     },
     tips: [
       'dom.query quick budget first; widen only if truncated',
@@ -562,9 +713,16 @@ export function createRuntimeContext() {
       'Rollback all patches before finishing',
       'page.evaluate to read framework state (React, Vue, Next.js data)',
       'dom.find_by_text / dom.find_by_role for semantic element finding',
+      'dom.get_accessibility_tree for reliable interactive element discovery',
       'dom.wait_for after HMR / navigation to detect page updates',
       'page.get_console to catch runtime errors after interactions',
-      'input.hover before screenshot to inspect hover states'
+      'page.get_network to inspect XHR/fetch API calls',
+      'page.get_text for full-page content extraction',
+      'input.hover before screenshot to inspect hover states',
+      'performance.get_metrics for Core Web Vitals and load timing',
+      'viewport.resize to test responsive layouts',
+      'screenshot.capture_element only when structured data is ambiguous',
+      'page.get_storage reads localStorage/sessionStorage without evaluate'
     ],
     flow: [
       'session.request_access',
@@ -573,7 +731,21 @@ export function createRuntimeContext() {
       'styles.get_computed',
       'patch.apply_styles',
       'layout.get_box_model',
+      'page.get_console',
       'patch.rollback'
-    ]
+    ],
+    limits: {
+      maxNodes: { min: 1, max: 250, default: 25 },
+      maxDepth: { min: 1, max: 20, default: 4 },
+      textBudget: { min: 32, max: 10000, default: 600 },
+      evalTimeout: { min: 100, max: 30000, default: 5000 },
+      navTimeout: { min: 500, max: 120000, default: 15000 },
+      waitTimeout: { min: 100, max: 30000, default: 5000 },
+      maxHtmlLength: { min: 32, max: 50000, default: 2000 },
+      a11yMaxNodes: { min: 10, max: 5000, default: 500 },
+      networkLimit: { min: 1, max: 500, default: 50 },
+      consoleLimit: { min: 1, max: 200, default: 50 },
+      pageTextBudget: { min: 100, max: 100000, default: 8000 }
+    }
   };
 }

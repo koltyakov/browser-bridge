@@ -15,6 +15,21 @@
 			"label": "TypeCheck",
 			"type": "shell",
 			"command": "npx tsc --noEmit"
+		},
+		{
+			"label": "Run Protocol Tests",
+			"type": "shell",
+			"command": "node --test packages/protocol/test/protocol.test.js"
+		},
+		{
+			"label": "Run All Tests",
+			"type": "shell",
+			"command": "node --test packages/protocol/test/protocol.test.js packages/native-host/test/daemon.test.js packages/native-host/test/native-host.test.js packages/agent-client/test/client.test.js && npx tsc --noEmit"
+		},
+		{
+			"label": "Tests + Typecheck",
+			"type": "shell",
+			"command": "node --test packages/protocol/test/protocol.test.js packages/native-host/test/daemon.test.js packages/native-host/test/native-host.test.js packages/agent-client/test/client.test.js && npx tsc --noEmit"
 		}
 	]
 }

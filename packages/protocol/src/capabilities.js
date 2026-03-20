@@ -16,7 +16,10 @@ export const CAPABILITIES = Object.freeze({
   CDP_DOM_SNAPSHOT: 'cdp.dom_snapshot',
   CDP_BOX_MODEL: 'cdp.box_model',
   CDP_STYLES: 'cdp.styles',
-  AUTOMATION_INPUT: 'automation.input'
+  AUTOMATION_INPUT: 'automation.input',
+  TABS_MANAGE: 'tabs.manage',
+  PERFORMANCE_READ: 'performance.read',
+  NETWORK_READ: 'network.read'
 });
 
 export const DEFAULT_CAPABILITIES = Object.freeze([
@@ -33,7 +36,10 @@ export const DEFAULT_CAPABILITIES = Object.freeze([
   CAPABILITIES.AUTOMATION_INPUT,
   CAPABILITIES.CDP_DOM_SNAPSHOT,
   CAPABILITIES.CDP_BOX_MODEL,
-  CAPABILITIES.CDP_STYLES
+  CAPABILITIES.CDP_STYLES,
+  CAPABILITIES.TABS_MANAGE,
+  CAPABILITIES.PERFORMANCE_READ,
+  CAPABILITIES.NETWORK_READ
 ]);
 
 /**

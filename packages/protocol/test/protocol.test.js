@@ -28,7 +28,14 @@ import {
   normalizeHoverParams,
   normalizeDragParams,
   normalizeStorageParams,
-  normalizeWaitForLoadStateParams
+  normalizeWaitForLoadStateParams,
+  normalizeTabCreateParams,
+  normalizeTabCloseParams,
+  normalizeAccessibilityTreeParams,
+  normalizeNetworkParams,
+  normalizePageTextParams,
+  normalizeViewportResizeParams,
+  normalizeStyleQuery
 } from '../src/index.js';
 
 /** Ensure budgeting normalizes user-provided limits safely. */
@@ -371,4 +378,191 @@ test('DEFAULT_CAPABILITIES includes page.evaluate', () => {
 /** Ensure TIMEOUT error code exists. */
 test('ERROR_CODES includes TIMEOUT', () => {
   assert.equal(ERROR_CODES.TIMEOUT, 'TIMEOUT');
+});
+
+// ── New method normalizer tests ─────────────────────────────────────
+
+/** Ensure tab create params default to about:blank and active. */
+test('normalizeTabCreateParams defaults to about:blank and active', () => {
+  const params = normalizeTabCreateParams({});
+  assert.equal(params.url, 'about:blank');
+  assert.equal(params.active, true);
+});
+
+test('normalizeTabCreateParams preserves URL', () => {
+  const params = normalizeTabCreateParams({ url: 'https://example.com', active: false });
+  assert.equal(params.url, 'https://example.com');
+  assert.equal(params.active, false);
+});
+
+/** Ensure tab close params require a valid tabId. */
+test('normalizeTabCloseParams requires valid tabId', () => {
+  assert.throws(() => normalizeTabCloseParams({}), /tabId is required/);
+  assert.throws(() => normalizeTabCloseParams({ tabId: -1 }), /tabId is required/);
+});
+
+test('normalizeTabCloseParams accepts valid tabId', () => {
+  const params = normalizeTabCloseParams({ tabId: 42 });
+  assert.equal(params.tabId, 42);
+});
+
+/** Ensure accessibility tree params clamp depth and node count. */
+test('normalizeAccessibilityTreeParams clamps depth and nodes', () => {
+  const params = normalizeAccessibilityTreeParams({ maxDepth: 100, maxNodes: 99999 });
+  assert.equal(params.maxDepth, 20);
+  assert.equal(params.maxNodes, 5000);
+});
+
+test('normalizeAccessibilityTreeParams defaults sensibly', () => {
+  const params = normalizeAccessibilityTreeParams({});
+  assert.equal(params.maxDepth, 6);
+  assert.equal(params.maxNodes, 500);
+});
+
+/** Ensure network params validate and clamp. */
+test('normalizeNetworkParams clamps limit and handles urlPattern', () => {
+  const params = normalizeNetworkParams({ limit: 9999, urlPattern: '/api/', clear: true });
+  assert.equal(params.limit, 500);
+  assert.equal(params.urlPattern, '/api/');
+  assert.equal(params.clear, true);
+});
+
+test('normalizeNetworkParams defaults sensibly', () => {
+  const params = normalizeNetworkParams({});
+  assert.equal(params.limit, 50);
+  assert.equal(params.urlPattern, null);
+  assert.equal(params.clear, false);
+});
+
+/** Ensure page text params clamp budget. */
+test('normalizePageTextParams clamps budget', () => {
+  const params = normalizePageTextParams({ textBudget: 999999 });
+  assert.equal(params.textBudget, 100000);
+});
+
+test('normalizePageTextParams defaults to 8000', () => {
+  const params = normalizePageTextParams({});
+  assert.equal(params.textBudget, 8000);
+});
+
+/** Ensure viewport resize params clamp dimensions. */
+test('normalizeViewportResizeParams clamps dimensions', () => {
+  const params = normalizeViewportResizeParams({ width: 99999, height: 99999, deviceScaleFactor: 10 });
+  assert.equal(params.width, 7680);
+  assert.equal(params.height, 4320);
+  assert.equal(params.deviceScaleFactor, 4);
+});
+
+test('normalizeViewportResizeParams defaults to 1280x720', () => {
+  const params = normalizeViewportResizeParams({});
+  assert.equal(params.width, 1280);
+  assert.equal(params.height, 720);
+  assert.equal(params.deviceScaleFactor, 0);
+});
+
+/** Ensure new capabilities are in defaults. */
+test('DEFAULT_CAPABILITIES includes new capabilities', () => {
+  assert.ok(DEFAULT_CAPABILITIES.includes('tabs.manage'));
+  assert.ok(DEFAULT_CAPABILITIES.includes('performance.read'));
+  assert.ok(DEFAULT_CAPABILITIES.includes('network.read'));
+});
+
+/** Ensure runtime context includes new method groups. */
+test('runtime context includes new method groups', () => {
+  const context = createRuntimeContext();
+  assert.ok(context.methods.tabs.includes('tabs.create'));
+  assert.ok(context.methods.tabs.includes('tabs.close'));
+  assert.ok(context.methods.inspect.includes('dom.get_accessibility_tree'));
+  assert.ok(context.methods.page.includes('page.get_text'));
+  assert.ok(context.methods.page.includes('page.get_network'));
+  assert.ok(context.methods.navigate.includes('viewport.resize'));
+  assert.ok(context.methods.performance.includes('performance.get_metrics'));
+});
+
+/** Ensure runtime context includes error code descriptions. */
+test('runtime context includes error descriptions', () => {
+  const context = createRuntimeContext();
+  assert.ok(context.errors);
+  assert.ok(context.errors.ACCESS_DENIED);
+  assert.ok(context.errors.SESSION_EXPIRED);
+  assert.ok(context.errors.APPROVAL_PENDING);
+  assert.ok(context.errors.ELEMENT_STALE);
+  assert.ok(context.errors.TIMEOUT);
+  assert.ok(context.errors.INVALID_REQUEST);
+});
+
+/** Ensure runtime context includes capability-to-method mappings. */
+test('runtime context includes capability descriptions', () => {
+  const context = createRuntimeContext();
+  assert.ok(context.capabilities);
+  assert.ok(context.capabilities['page.read']);
+  assert.ok(context.capabilities['dom.read']);
+  assert.ok(context.capabilities['automation.input']);
+  assert.ok(context.capabilities['network.read']);
+});
+
+/** Ensure runtime context includes session method group. */
+test('runtime context includes session method group', () => {
+  const context = createRuntimeContext();
+  assert.ok(context.methods.session);
+  assert.ok(context.methods.session.includes('session.request_access'));
+  assert.ok(context.methods.session.includes('session.revoke'));
+});
+
+/** Ensure runtime context includes parameter limits. */
+test('runtime context includes parameter limits', () => {
+  const context = createRuntimeContext();
+  assert.ok(context.limits);
+  assert.ok(context.limits.maxNodes);
+  assert.equal(context.limits.maxNodes.default, 25);
+  assert.equal(context.limits.evalTimeout.max, 30000);
+  assert.equal(context.limits.pageTextBudget.default, 8000);
+});
+
+/** Ensure runtime context flow includes page.get_console. */
+test('runtime context flow includes console check', () => {
+  const context = createRuntimeContext();
+  assert.ok(context.flow.includes('page.get_console'));
+});
+
+/** Ensure navigation URL validation rejects unsafe protocols. */
+test('normalizeNavigationAction rejects unsafe protocols', () => {
+  assert.throws(
+    () => normalizeNavigationAction({ url: 'javascript:alert(1)' }),
+    /unsupported protocol/
+  );
+  assert.throws(
+    () => normalizeNavigationAction({ url: 'file:///etc/passwd' }),
+    /unsupported protocol/
+  );
+  assert.throws(
+    () => normalizeNavigationAction({ url: 'data:text/html,<h1>XSS</h1>' }),
+    /unsupported protocol/
+  );
+});
+
+/** Ensure navigation URL validation allows safe protocols. */
+test('normalizeNavigationAction allows http/https/about', () => {
+  const http = normalizeNavigationAction({ url: 'http://example.com' });
+  assert.equal(http.url, 'http://example.com');
+
+  const https = normalizeNavigationAction({ url: 'https://example.com' });
+  assert.equal(https.url, 'https://example.com');
+
+  const about = normalizeNavigationAction({ url: 'about:blank' });
+  assert.equal(about.url, 'about:blank');
+});
+
+/** Ensure style query requires elementRef. */
+test('normalizeStyleQuery requires elementRef', () => {
+  assert.throws(() => normalizeStyleQuery({}), /elementRef is required/);
+  assert.throws(() => normalizeStyleQuery({ elementRef: '' }), /elementRef is required/);
+});
+
+/** Ensure evaluate params reject oversized expressions. */
+test('normalizeEvaluateParams rejects oversized expression', () => {
+  assert.throws(
+    () => normalizeEvaluateParams({ expression: 'x'.repeat(100_001) }),
+    /Expression too large/
+  );
 });

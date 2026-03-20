@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { createRuntimeContext } from '../../protocol/src/index.js';
+import { createRuntimeContext, METHODS } from '../../protocol/src/index.js';
 import { BridgeClient } from './client.js';
 import { methodNeedsSession, parseCommaList, parseJsonObject, parsePropertyAssignments } from './cli-helpers.js';
 import { clearSession, loadSession, saveSession } from './session-store.js';
@@ -14,6 +14,25 @@ import { summarizeBridgeResponse } from './subagent.js';
 /** @typedef {import('../../protocol/src/types.js').SessionState} SessionState */
 /** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
 /** @typedef {{ image: string, rect: Record<string, unknown> }} ScreenshotResult */
+
+/**
+ * Read all of stdin as UTF-8 text. Resolves once stdin closes.
+ *
+ * @returns {Promise<string>}
+ */
+function readStdin() {
+  return new Promise((resolve, reject) => {
+    const chunks = /** @type {Buffer[]} */ ([]);
+    process.stdin.setEncoding('utf8');
+    process.stdin.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+    process.stdin.on('end', () => resolve(Buffer.concat(chunks).toString('utf8').trim()));
+    process.stdin.on('error', reject);
+    // If stdin is a TTY and nothing is piped, read nothing
+    if (process.stdin.isTTY) {
+      resolve('');
+    }
+  });
+}
 
 const [, , command, ...rest] = process.argv;
 
@@ -61,6 +80,29 @@ async function main() {
       return;
     }
 
+    if (command === 'tab-create') {
+      const [url] = rest;
+      const response = await client.request({
+        method: 'tabs.create',
+        params: { url: url || undefined }
+      });
+      printJson(response.ok ? response.result : response);
+      return;
+    }
+
+    if (command === 'tab-close') {
+      const [tabId] = rest;
+      if (!tabId) {
+        throw new Error('Usage: tab-close <tabId>');
+      }
+      const response = await client.request({
+        method: 'tabs.close',
+        params: { tabId: Number(tabId) }
+      });
+      printJson(response.ok ? response.result : response);
+      return;
+    }
+
     if (command === 'call') {
       const { sessionId, method, params } = await parseCallCommand(rest);
       const response = await client.request({
@@ -94,7 +136,8 @@ async function main() {
           });
           results.push(summarizeBridgeResponse(response));
         } catch (err) {
-          results.push({ ok: false, summary: `${call.method}: ${err.message}`, evidence: null });
+          const message = err instanceof Error ? err.message : String(err);
+          results.push({ ok: false, summary: `${call.method}: ${message}`, evidence: null });
         }
       }
       printJson(results);
@@ -349,9 +392,13 @@ async function main() {
     }
 
     if (command === 'eval') {
-      const expression = rest.join(' ');
+      let expression = rest.join(' ');
+      // Support piped stdin: `echo 'expr' | bb eval -` or `bb eval -`
+      if (!expression || expression === '-') {
+        expression = await readStdin();
+      }
       if (!expression) {
-        throw new Error('Usage: eval <expression>');
+        throw new Error('Usage: eval <expression>  (or pipe via stdin: echo "expr" | bb eval -)');
       }
       const response = await client.request({
         method: 'page.evaluate',
@@ -473,14 +520,78 @@ async function main() {
       return;
     }
 
+    if (command === 'page-text') {
+      const [budgetArg] = rest;
+      const response = await client.request({
+        method: 'page.get_text',
+        sessionId: session.sessionId,
+        params: { textBudget: budgetArg ? Number(budgetArg) : undefined }
+      });
+      printJson(response.ok ? response.result : response);
+      return;
+    }
+
+    if (command === 'network') {
+      const [limitArg] = rest;
+      const response = await client.request({
+        method: 'page.get_network',
+        sessionId: session.sessionId,
+        params: { limit: limitArg ? Number(limitArg) : undefined }
+      });
+      printJson(response.ok ? response.result : response);
+      return;
+    }
+
+    if (command === 'a11y-tree') {
+      const [maxNodesArg, maxDepthArg] = rest;
+      const response = await client.request({
+        method: 'dom.get_accessibility_tree',
+        sessionId: session.sessionId,
+        params: {
+          maxNodes: maxNodesArg ? Number(maxNodesArg) : undefined,
+          maxDepth: maxDepthArg ? Number(maxDepthArg) : undefined
+        }
+      });
+      printJson(response.ok ? response.result : response);
+      return;
+    }
+
+    if (command === 'perf') {
+      const response = await client.request({
+        method: 'performance.get_metrics',
+        sessionId: session.sessionId
+      });
+      printJson(response.ok ? response.result : response);
+      return;
+    }
+
+    if (command === 'resize') {
+      const [widthArg, heightArg] = rest;
+      if (!widthArg || !heightArg) {
+        throw new Error('Usage: resize <width> <height>');
+      }
+      const response = await client.request({
+        method: 'viewport.resize',
+        sessionId: session.sessionId,
+        params: {
+          width: Number(widthArg),
+          height: Number(heightArg)
+        }
+      });
+      printJson(response.ok ? response.result : response);
+      return;
+    }
+
     process.stderr.write(`Unknown command: ${command}\n`);
     printUsage();
     process.exitCode = 1;
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const code = error instanceof Error && 'code' in error ? /** @type {any} */ (error).code : 'ERROR';
     printJson({
       ok: false,
-      summary: `Bridge unavailable: ${error.code ?? 'ERROR'}`,
-      evidence: error.message
+      summary: `Bridge unavailable: ${code}`,
+      evidence: message
     });
     process.exitCode = 1;
   } finally {
@@ -551,6 +662,8 @@ Setup:
   bb status                          Check bridge connection
   bb logs                            Recent bridge logs
   bb tabs                            List available tabs
+  bb tab-create [url]                Create a new tab
+  bb tab-close <tabId>               Close a tab
   bb skill                           Runtime budget presets and method groups
 
 Session:
@@ -559,7 +672,7 @@ Session:
   bb revoke                          End current session
 
 Generic RPC:
-  bb call <method> [paramsJson]      Call any bridge method
+  bb call <method> [paramsJson|-]    Call any bridge method (- reads JSON from stdin)
   bb call <sessionId> <method> [json] Call with explicit session
   bb batch '[{method,params},...]'   Parallel method calls
 
@@ -570,6 +683,7 @@ Inspect:
   bb html <elementRef> [maxLength]   Get element HTML
   bb styles <ref> [prop1,prop2]      Get computed styles
   bb box <elementRef>                Get box model
+  bb a11y-tree [maxNodes] [maxDepth] Get accessibility tree
 
 Find:
   bb find <text>                     Find elements by text content
@@ -577,10 +691,14 @@ Find:
   bb wait <selector> [timeoutMs]     Wait for DOM element
 
 Page:
-  bb eval <expression>               Evaluate JS in page context
+  bb eval <expression>               Evaluate JS in page context (use - for stdin)
   bb console [level]                 Get console output (log|warn|error|all)
+  bb network [limit]                 Get network requests (fetch/XHR)
+  bb page-text [textBudget]          Get full page text content
   bb storage [local|session] [keys]  Read browser storage
   bb navigate <url>                  Navigate to URL
+  bb perf                            Get performance metrics
+  bb resize <width> <height>         Resize viewport
 
 Interact:
   bb click <elementRef> [button]     Click element
@@ -612,10 +730,18 @@ async function parseCallCommand(args) {
 
   if (first.includes('.')) {
     const method = /** @type {BridgeMethod} */ (first);
+    if (!METHODS.includes(method)) {
+      throw new Error(`Unknown method "${first}". Run bb skill to see available methods.`);
+    }
+    let rawParams = second;
+    // Support piped stdin: `echo '{"key":"val"}' | bb call method -`
+    if (rawParams === '-') {
+      rawParams = await readStdin();
+    }
     return {
       method,
       sessionId: methodNeedsSession(method) ? (await requireSession()).sessionId : null,
-      params: parseJsonObject(second)
+      params: parseJsonObject(rawParams)
     };
   }
 

@@ -22,8 +22,13 @@ These presets are also available at runtime via `node packages/agent-client/src/
 6. **Need styles?** → `styles.get_computed` with explicit `properties` list
 7. **Need framework/app state?** → `page.evaluate` (read JS directly, skip DOM guessing)
 8. **Need runtime errors?** → `page.get_console` with `level: 'error'`
-9. **Visual ambiguity?** → `screenshot.capture_element` with small crop
-10. **Content-script blocked?** → `cdp.get_document` or `cdp.get_dom_snapshot`
+9. **Need full page text?** → `page.get_text` (cheaper than `dom.query` on body)
+10. **Need semantic structure?** → `dom.get_accessibility_tree` (role/name tree, no selectors)
+11. **Need API call history?** → `page.get_network` (intercepted fetch/XHR log)
+12. **Need performance data?** → `performance.get_metrics` (heap, layout counts, task duration)
+13. **Testing responsive?** → `viewport.resize` (set exact dimensions, then inspect)
+14. **Visual ambiguity?** → `screenshot.capture_element` with small crop
+15. **Content-script blocked?** → `cdp.get_document` or `cdp.get_dom_snapshot`
 
 ## Allowlist Strategy
 
@@ -54,6 +59,10 @@ Omitting allowlists returns all attributes/styles — often 3–5× the tokens n
 | Polling page state with repeated queries | ~500 tok/poll | Use `dom.wait_for` (single call, waits async) |
 | Inspecting DOM to read app state | ~800 tok | Use `page.evaluate` to read JS directly |
 | Re-querying after HMR without waiting | ~500 tok stale | `dom.wait_for` first, then query |
+| `dom.query` on body for page text | ~2000 tok | Use `page.get_text` (extracts innerText directly) |
+| Guessing interactive elements from DOM | ~600 tok/try | Use `dom.get_accessibility_tree` for semantic roles |
+| Fetching network via evaluate hacks | ~400 tok | Use `page.get_network` (auto-interceptor) |
+| Full a11y tree with no limits | ~3000 tok | Set `maxNodes` ≤ 50, `maxDepth` ≤ 4 |
 
 ## Efficient Loop
 
@@ -89,7 +98,39 @@ npx bb console error    # just errors and exceptions
 
 Install early — the buffer auto-activates on first call. Captured levels: log, warn, error, info, debug, exception, rejection.
 
-## Semantic Finding Saves Selector Guessing
+## Page Text Instead of DOM Scan
+
+When you need the page's visible text — for summarization, search, or content extraction — use `page.get_text` instead of `dom.query` on `body`:
+
+```bash
+npx bb page-text           # default 4000 char budget
+npx bb page-text 8000      # larger budget for long pages
+```
+
+This is 3–5× cheaper than querying the body's subtree with `dom.query`.
+
+## Network Monitoring
+
+Check API calls without manual `page.evaluate` fetch interception:
+
+```bash
+npx bb network              # recent fetch/XHR entries
+npx bb network 50           # last 50 entries
+```
+
+The interceptor auto-installs on first call. Each entry shows `method`, `url`, `status`, `duration`. Use `clear: true` to reset the buffer.
+
+## Accessibility Tree for Semantic Discovery
+
+When you need to understand the page's interactive structure without guessing selectors:
+
+```bash
+npx bb a11y-tree 30 3       # 30 nodes, depth 3
+```
+
+Returns role/name/interactive flag per node. Much cheaper than screenshot + OCR, and more accurate than `dom.query` on generic selectors.
+
+## Semantic finding Saves Selector Guessing
 
 When you know the text label but not the selector, `find_by_text` and `find_by_role` skip the trial-and-error:
 

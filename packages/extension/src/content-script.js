@@ -40,7 +40,9 @@
   */
 
   const elementRegistry = new Map();
+  const reverseRegistry = new WeakMap();
   const patchRegistry = new Map();
+  const MAX_REGISTRY_SIZE = 2000;
   const NON_TEXT_INPUT_TYPES = new Set([
     "button",
     "checkbox",
@@ -87,6 +89,8 @@
         return getPageState();
       case "page.get_storage":
         return getStorageData(params);
+      case "page.get_text":
+        return getFullPageText(params);
       case "navigation.navigate":
       case "navigation.reload":
       case "navigation.go_back":
@@ -163,7 +167,8 @@
    *   viewport: { width: number, height: number, devicePixelRatio: number },
    *   scroll: { x: number, y: number, maxX: number, maxY: number },
    *   activeElement: NodeSummary | null,
-   *   selection: { value: string, truncated: boolean, omitted: number }
+   *   selection: { value: string, truncated: boolean, omitted: number },
+   *   hints: { tailwind: boolean }
    * }}
    */
   function getPageState() {
@@ -205,6 +210,65 @@
             ).node
           : null,
       selection: truncateText(selection.trim(), 200),
+      hints: detectPageHints(),
+    };
+  }
+
+  /**
+   * Detect CSS frameworks and page characteristics for agent guidance.
+   * Lightweight — only checks a few DOM/stylesheet signals.
+   *
+   * @returns {{ tailwind: boolean }}
+   */
+  function detectPageHints() {
+    let tailwind = false;
+    // Check for Tailwind's characteristic patterns:
+    // 1. A <style> or <link> with tailwind-related id/href
+    // 2. Elements using Tailwind's arbitrary-value syntax: class="...-[...]"
+    // 3. Tailwind's reset styles injected by @tailwind base
+    try {
+      tailwind = Boolean(
+        document.querySelector(
+          'link[href*="tailwind"], style[id*="tailwind"], script[src*="tailwindcss"]'
+        )
+      );
+      if (!tailwind) {
+        // Check for Tailwind's characteristic class patterns on a sample of elements
+        const sample = document.querySelectorAll('[class]');
+        const twPattern = /\b(?:flex|grid|bg-|text-|p[xytblr]?-|m[xytblr]?-|w-|h-|rounded|shadow|border)-/;
+        for (let i = 0; i < Math.min(sample.length, 30); i++) {
+          const cls = sample[i].className;
+          if (typeof cls === 'string' && twPattern.test(cls)) {
+            tailwind = true;
+            break;
+          }
+        }
+      }
+    } catch {
+      // Ignore — cross-origin or other DOM access issues
+    }
+    return { tailwind };
+  }
+
+  /**
+   * Extract the full visible text content of the page.
+   *
+   * @param {Record<string, any>} params
+   * @returns {{ value: string, truncated: boolean, omitted: number, length: number }}
+   */
+  function getFullPageText(params) {
+    const budget = Number(params.textBudget) || 8000;
+    const body = document.body;
+    if (!body) {
+      return { value: '', truncated: false, omitted: 0, length: 0 };
+    }
+    const raw = (body.innerText || body.textContent || '').trim();
+    const result = truncateText(raw, budget);
+    return {
+      value: result.value,
+      truncated: result.truncated,
+      omitted: result.omitted,
+      length: raw.length
     };
   }
 
@@ -742,13 +806,19 @@
   function applyDomPatch(params) {
     const element = resolveTarget(params.target);
     const patchId = params.patchId || `patch_${crypto.randomUUID()}`;
+    const operation = params.operation;
+
+    /** @type {{ text: string | null, attributes: Record<string, string | null>, toggledClass: string | null, hadClass: boolean | null }} */
     const previous = {
-      text: element.textContent,
+      text: null,
       attributes: {},
+      toggledClass: null,
+      hadClass: null,
     };
 
-    switch (params.operation) {
+    switch (operation) {
       case "set_text":
+        previous.text = element.textContent;
         element.textContent = String(params.value ?? "");
         break;
       case "set_attribute":
@@ -759,17 +829,21 @@
         previous.attributes[params.name] = element.getAttribute(params.name);
         element.removeAttribute(params.name);
         break;
-      case "toggle_class":
-        element.classList.toggle(String(params.value));
+      case "toggle_class": {
+        const className = String(params.value);
+        previous.toggledClass = className;
+        previous.hadClass = element.classList.contains(className);
+        element.classList.toggle(className);
         break;
+      }
       default:
-        throw new Error(`Unsupported DOM patch operation ${params.operation}`);
+        throw new Error(`Unsupported DOM patch operation ${operation}`);
     }
 
     patchRegistry.set(patchId, {
       kind: "dom",
       elementRef: rememberElement(element),
-      operation: params.operation,
+      operation,
       previous,
     });
     return { patchId, applied: true };
@@ -811,12 +885,23 @@
         }
       }
     } else if (patch.kind === "dom") {
-      element.textContent = patch.previous.text;
-      for (const [name, value] of Object.entries(patch.previous.attributes)) {
-        if (value == null) {
-          element.removeAttribute(name);
-        } else {
-          element.setAttribute(name, value);
+      if (patch.operation === "set_text" && patch.previous.text !== null) {
+        element.textContent = patch.previous.text;
+      } else if (patch.operation === "toggle_class" && patch.previous.toggledClass) {
+        const hasNow = element.classList.contains(patch.previous.toggledClass);
+        if (hasNow !== patch.previous.hadClass) {
+          element.classList.toggle(patch.previous.toggledClass);
+        }
+      } else {
+        if (patch.previous.text !== null && patch.operation === "set_text") {
+          element.textContent = patch.previous.text;
+        }
+        for (const [name, value] of Object.entries(patch.previous.attributes || {})) {
+          if (value == null) {
+            element.removeAttribute(name);
+          } else {
+            element.setAttribute(name, value);
+          }
         }
       }
     }
@@ -832,12 +917,21 @@
    * @returns {{ x: number, y: number, width: number, height: number, scale: number }}
    */
   function getElementRect(elementRef) {
-    const rect = getRequiredElement(elementRef).getBoundingClientRect();
+    const el = getRequiredElement(elementRef);
+    // Scroll into view so captureVisibleTab can see it
+    el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) {
+      throw new Error(
+        `Element has no visible area (${rect.width}\u00d7${rect.height}). ` +
+        'It may be hidden, collapsed, or not yet rendered.'
+      );
+    }
     return {
-      x: rect.x,
-      y: rect.y,
-      width: rect.width,
-      height: rect.height,
+      x: Math.max(0, rect.x),
+      y: Math.max(0, rect.y),
+      width: Math.min(rect.width, window.innerWidth - Math.max(0, rect.x)),
+      height: Math.min(rect.height, window.innerHeight - Math.max(0, rect.y)),
       scale: window.devicePixelRatio || 1,
     };
   }
@@ -1321,7 +1415,12 @@
    */
   function getRequiredElement(elementRef) {
     const element = elementRegistry.get(elementRef);
-    if (!element || !document.contains(element)) {
+    if (!element) {
+      throw new Error("Element reference is stale.");
+    }
+    if (!document.contains(element)) {
+      elementRegistry.delete(elementRef);
+      reverseRegistry.delete(element);
       throw new Error("Element reference is stale.");
     }
     return element;
@@ -1329,19 +1428,39 @@
 
   /**
    * Reuse or create a stable element reference for later bridge calls.
+   * Uses a reverse WeakMap for O(1) lookup instead of scanning the registry.
    *
    * @param {Element} element
    * @returns {string}
    */
   function rememberElement(element) {
-    for (const [key, value] of elementRegistry.entries()) {
-      if (value === element) {
-        return key;
-      }
+    const existing = reverseRegistry.get(element);
+    if (existing && elementRegistry.has(existing)) {
+      return existing;
+    }
+    // Prune stale entries when registry grows too large
+    if (elementRegistry.size >= MAX_REGISTRY_SIZE) {
+      pruneElementRegistry();
     }
     const elementRef = `el_${crypto.randomUUID()}`;
     elementRegistry.set(elementRef, element);
+    reverseRegistry.set(element, elementRef);
     return elementRef;
+  }
+
+  /**
+   * Remove entries for elements no longer in the document, keeping the
+   * registry bounded.
+   *
+   * @returns {void}
+   */
+  function pruneElementRegistry() {
+    for (const [ref, element] of elementRegistry.entries()) {
+      if (!document.contains(element)) {
+        elementRegistry.delete(ref);
+        // WeakMap entry will be GC'd automatically
+      }
+    }
   }
 
   /**
@@ -1830,15 +1949,37 @@
    * @returns {NormalizedDomQuery}
    */
   function normalizeDomQuery(params = {}) {
+    const rawSelector =
+      typeof params.selector === "string" && params.selector.trim()
+        ? params.selector
+        : "body";
     return {
-      selector:
-        typeof params.selector === "string" && params.selector.trim()
-          ? params.selector
-          : "body",
+      selector: escapeTailwindSelector(rawSelector),
       withinRef: typeof params.withinRef === "string" ? params.withinRef : null,
       budget: applyBudget(params),
       includeRoles: params.includeRoles !== false,
     };
+  }
+
+  /**
+   * Escape Tailwind arbitrary-value bracket syntax in CSS selectors so that
+   * class names like `top-[30px]` work with `querySelector`.
+   *
+   * Tailwind classes use `[` and `]` for arbitrary values (e.g. `w-[200px]`,
+   * `bg-[#f00]`). These are invalid in bare CSS selectors and must be escaped.
+   * This function detects `.class-name-[value]` patterns and escapes the
+   * brackets, converting e.g. `.top-[30px]` to `.top-\\[30px\\]`.
+   *
+   * @param {string} selector
+   * @returns {string}
+   */
+  function escapeTailwindSelector(selector) {
+    // Match class selectors containing brackets: .word-[...]
+    // Captures: (dot + class-prefix-)(bracket-content)
+    return selector.replace(
+      /(\.[-\w]+)\[([^\]]+)\]/g,
+      (_, prefix, value) => `${prefix}\\[${value}\\]`
+    );
   }
 
   /**

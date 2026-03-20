@@ -104,6 +104,16 @@ export function summarizeBridgeResponse(response) {
       evidence: result
     };
   }
+  if (Array.isArray(result.entries) && result.entries.length > 0 && (result.entries[0]?.type === 'fetch' || result.entries[0]?.type === 'xhr')) {
+    const entries = /** @type {Array<Record<string, unknown>>} */ (result.entries);
+    return {
+      ok: true,
+      summary: `Network: ${result.count ?? entries.length} requests (${result.total ?? '?'} total).`,
+      evidence: entries.slice(0, 20).map((/** @type {Record<string, unknown>} */ e) => ({
+        method: e.method, url: e.url, status: e.status, duration: e.duration
+      }))
+    };
+  }
   if (Array.isArray(result.entries)) {
     return {
       ok: true,
@@ -130,6 +140,31 @@ export function summarizeBridgeResponse(response) {
       ok: true,
       summary: `Drag ${result.dragged ? 'completed' : 'failed'}: ${result.sourceRef} → ${result.destinationRef}.`,
       evidence: result
+    };
+  }
+  if (typeof result.closed === 'boolean') {
+    return {
+      ok: true,
+      summary: `Tab ${result.tabId} closed.`,
+      evidence: result
+    };
+  }
+  if (typeof result.metrics === 'object' && result.metrics !== null) {
+    const keys = Object.keys(result.metrics);
+    return {
+      ok: true,
+      summary: `Performance: ${keys.length} metrics collected.`,
+      evidence: result.metrics
+    };
+  }
+  if (Array.isArray(result.nodes) && typeof result.total === 'number' && result.nodes[0]?.role !== undefined) {
+    const interactive = result.nodes.filter((/** @type {Record<string, unknown>} */ n) => n.interactive);
+    return {
+      ok: true,
+      summary: `Accessibility tree: ${result.count} nodes (${interactive.length} interactive)${result.truncated ? ', truncated' : ''}.`,
+      evidence: interactive.slice(0, 20).map((/** @type {Record<string, unknown>} */ n) => ({
+        nodeId: n.nodeId, role: n.role, name: n.name
+      }))
     };
   }
   if (typeof result.count === 'number' && typeof result.type === 'string' && result.entries) {

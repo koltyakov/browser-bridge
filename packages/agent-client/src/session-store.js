@@ -24,7 +24,16 @@ export async function saveSession(session) {
 export async function loadSession() {
   try {
     const contents = await fs.promises.readFile(SESSION_FILE, 'utf8');
-    return /** @type {SessionState} */ (JSON.parse(contents));
+    const parsed = JSON.parse(contents);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return null;
+    }
+    // Only extract known session fields to prevent prototype pollution
+    const { sessionId, tabId, origin, expiresAt, capabilities } = parsed;
+    if (typeof sessionId !== 'string' || typeof tabId !== 'number') {
+      return null;
+    }
+    return /** @type {SessionState} */ ({ sessionId, tabId, origin, expiresAt, capabilities });
   } catch {
     return null;
   }

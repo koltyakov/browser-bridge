@@ -48,6 +48,8 @@ export function methodNeedsSession(method) {
     'health.ping',
     'log.tail',
     'tabs.list',
+    'tabs.create',
+    'tabs.close',
     'session.request_access',
     'skill.get_runtime_context'
   ].includes(method);

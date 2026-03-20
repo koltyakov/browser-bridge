@@ -35,6 +35,70 @@ npx bb call viewport.scroll '{"elementRef":"el_123","top":200}'
 
 Scrolls the window or a specific scrollable element.
 
+### Resize Viewport
+
+Set device viewport dimensions (useful for responsive testing):
+```bash
+npx bb resize 375 812                           # iPhone-size
+npx bb resize 1024 768                          # tablet
+npx bb call viewport.resize '{"reset":true}'    # restore original
+```
+
+Uses CDP device emulation — the page re-renders at the new size immediately.
+
+## Tab Management
+
+Open and close tabs programmatically. Neither requires a session.
+
+```bash
+npx bb tab-create https://example.com     # open new tab
+npx bb tab-create                          # open blank tab
+npx bb tab-close 12345                     # close tab by ID
+npx bb call tabs.create '{"url":"https://example.com","active":false}'
+```
+
+Typical workflow — compare two pages:
+1. `tabs.list` to see current tabs
+2. `tabs.create` with second URL
+3. Inspect both tabs (each needs its own session)
+4. `tabs.close` when done
+
+## Accessibility Tree
+
+Retrieve the full accessibility tree for the page. Useful for understanding semantic structure, finding interactive elements, and accessibility audits.
+
+```bash
+npx bb a11y-tree                   # default limits
+npx bb a11y-tree 50 3              # max 50 nodes, depth 3
+npx bb call dom.get_accessibility_tree '{"maxNodes":100,"maxDepth":5}'
+```
+
+Each node: `role`, `name`, `description`, `value`, `focused`, `required`, `checked`, `disabled`, `interactive`, `childIds`.
+
+Typical workflow — find interactive controls:
+1. `dom.get_accessibility_tree` with small `maxNodes`
+2. Scan for nodes with `interactive: true`
+3. Use role/name to identify the right control
+4. `dom.find_by_role` to get an `elementRef` for interaction
+
+## Network Monitoring
+
+Read intercepted fetch/XHR requests. The interceptor auto-installs on first call.
+
+```bash
+npx bb network                     # recent requests
+npx bb network 50                  # last 50
+npx bb call page.get_network '{"limit":20,"clear":true}'
+```
+
+Each entry: `method`, `url`, `status`, `duration`, `initiator`.
+
+Typical workflow — debug API calls:
+1. `page.get_network` to see recent requests
+2. Filter by URL pattern or status code
+3. Cross-reference with `page.get_console` for errors
+4. Use `page.evaluate` to replay or inspect response data
+
 ## Form Controls
 
 **Checkbox/radio:**
