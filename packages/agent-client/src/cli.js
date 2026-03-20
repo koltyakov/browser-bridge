@@ -348,6 +348,131 @@ async function main() {
       return;
     }
 
+    if (command === 'eval') {
+      const expression = rest.join(' ');
+      if (!expression) {
+        throw new Error('Usage: eval <expression>');
+      }
+      const response = await client.request({
+        method: 'page.evaluate',
+        sessionId: session.sessionId,
+        params: { expression, returnByValue: true }
+      });
+      printJson(response.ok ? response.result : response);
+      return;
+    }
+
+    if (command === 'console') {
+      const [level] = rest;
+      const response = await client.request({
+        method: 'page.get_console',
+        sessionId: session.sessionId,
+        params: { level: level || 'all', clear: false }
+      });
+      printJson(response.ok ? response.result : response);
+      return;
+    }
+
+    if (command === 'wait') {
+      const [selector, timeoutArg] = rest;
+      if (!selector) {
+        throw new Error('Usage: wait <selector> [timeoutMs]');
+      }
+      const response = await client.request({
+        method: 'dom.wait_for',
+        sessionId: session.sessionId,
+        params: {
+          selector,
+          timeoutMs: timeoutArg ? Number(timeoutArg) : 5000
+        }
+      });
+      printJson(response.ok ? response.result : response);
+      return;
+    }
+
+    if (command === 'find') {
+      const searchText = rest.join(' ');
+      if (!searchText) {
+        throw new Error('Usage: find <text>');
+      }
+      const response = await client.request({
+        method: 'dom.find_by_text',
+        sessionId: session.sessionId,
+        params: { text: searchText }
+      });
+      await printSummary(response);
+      return;
+    }
+
+    if (command === 'find-role') {
+      const [role, ...nameParts] = rest;
+      if (!role) {
+        throw new Error('Usage: find-role <role> [name]');
+      }
+      const response = await client.request({
+        method: 'dom.find_by_role',
+        sessionId: session.sessionId,
+        params: { role, name: nameParts.join(' ') || undefined }
+      });
+      await printSummary(response);
+      return;
+    }
+
+    if (command === 'html') {
+      const [elementRef, maxLengthArg] = rest;
+      const response = await client.request({
+        method: 'dom.get_html',
+        sessionId: session.sessionId,
+        params: {
+          elementRef,
+          maxLength: maxLengthArg ? Number(maxLengthArg) : undefined
+        }
+      });
+      printJson(response.ok ? response.result : response);
+      return;
+    }
+
+    if (command === 'hover') {
+      const [elementRef] = rest;
+      const response = await client.request({
+        method: 'input.hover',
+        sessionId: session.sessionId,
+        params: {
+          target: { elementRef }
+        }
+      });
+      printJson(response.ok ? response.result : response);
+      return;
+    }
+
+    if (command === 'navigate') {
+      const [url] = rest;
+      if (!url) {
+        throw new Error('Usage: navigate <url>');
+      }
+      const response = await client.request({
+        method: 'navigation.navigate',
+        sessionId: session.sessionId,
+        params: { url }
+      });
+      printJson(response.ok ? response.result : response);
+      return;
+    }
+
+    if (command === 'storage') {
+      const [storageType, ...keys] = rest;
+      const response = await client.request({
+        method: 'page.get_storage',
+        sessionId: session.sessionId,
+        params: {
+          type: storageType === 'session' ? 'session' : 'local',
+          keys: keys.length ? keys : undefined
+        }
+      });
+      printJson(response.ok ? response.result : response);
+      return;
+    }
+
     process.stderr.write(`Unknown command: ${command}\n`);
     printUsage();
     process.exitCode = 1;
@@ -442,14 +567,27 @@ Inspect:
   bb dom-query [selector]            Query DOM subtree
   bb describe <elementRef>           Describe one element
   bb text <elementRef> [textBudget]  Get element text
+  bb html <elementRef> [maxLength]   Get element HTML
   bb styles <ref> [prop1,prop2]      Get computed styles
   bb box <elementRef>                Get box model
+
+Find:
+  bb find <text>                     Find elements by text content
+  bb find-role <role> [name]         Find elements by ARIA role
+  bb wait <selector> [timeoutMs]     Wait for DOM element
+
+Page:
+  bb eval <expression>               Evaluate JS in page context
+  bb console [level]                 Get console output (log|warn|error|all)
+  bb storage [local|session] [keys]  Read browser storage
+  bb navigate <url>                  Navigate to URL
 
 Interact:
   bb click <elementRef> [button]     Click element
   bb focus <elementRef>              Focus element
   bb type <elementRef> <text...>     Type into element
   bb press-key <key> [elementRef]    Send key event
+  bb hover <elementRef>              Hover over element
 
 Patch:
   bb patch-style <ref> prop=val...   Apply style patch

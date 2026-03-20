@@ -18,7 +18,17 @@ import {
   normalizePatchOperation,
   normalizeSelectAction,
   normalizeViewportAction,
-  truncateText
+  truncateText,
+  normalizeEvaluateParams,
+  normalizeConsoleParams,
+  normalizeWaitForParams,
+  normalizeFindByTextParams,
+  normalizeFindByRoleParams,
+  normalizeGetHtmlParams,
+  normalizeHoverParams,
+  normalizeDragParams,
+  normalizeStorageParams,
+  normalizeWaitForLoadStateParams
 } from '../src/index.js';
 
 /** Ensure budgeting normalizes user-provided limits safely. */
@@ -176,4 +186,189 @@ test('normalizeNavigationAction keeps navigation actions bounded', () => {
   assert.equal(action.url, 'https://example.com/path');
   assert.equal(action.waitForLoad, true);
   assert.equal(action.timeoutMs, 120000);
+});
+
+// ── New normalization function tests ────────────────────────────────
+
+/** Ensure evaluate params clamp timeout and default awaitPromise. */
+test('normalizeEvaluateParams clamps timeout and defaults', () => {
+  const params = normalizeEvaluateParams({
+    expression: 'document.title',
+    timeoutMs: 999999
+  });
+
+  assert.equal(params.expression, 'document.title');
+  assert.equal(params.awaitPromise, false);
+  assert.equal(params.timeoutMs, 30000);
+  assert.equal(params.returnByValue, true);
+});
+
+test('normalizeEvaluateParams handles empty input', () => {
+  const params = normalizeEvaluateParams({});
+  assert.equal(params.expression, '');
+  assert.equal(params.timeoutMs, 5000);
+});
+
+/** Ensure console params validate level and clamp limit. */
+test('normalizeConsoleParams validates level and clamps limit', () => {
+  const params = normalizeConsoleParams({
+    level: 'error',
+    clear: true,
+    limit: 500
+  });
+
+  assert.equal(params.level, 'error');
+  assert.equal(params.clear, true);
+  assert.equal(params.limit, 200);
+});
+
+test('normalizeConsoleParams rejects invalid level', () => {
+  const params = normalizeConsoleParams({ level: 'bogus' });
+  assert.equal(params.level, 'all');
+});
+
+/** Ensure wait-for params validate state and clamp timeout. */
+test('normalizeWaitForParams validates state and clamps timeout', () => {
+  const params = normalizeWaitForParams({
+    selector: '.modal',
+    text: 'Welcome',
+    state: 'visible',
+    timeoutMs: 50000
+  });
+
+  assert.equal(params.selector, '.modal');
+  assert.equal(params.text, 'Welcome');
+  assert.equal(params.state, 'visible');
+  assert.equal(params.timeoutMs, 30000);
+});
+
+test('normalizeWaitForParams defaults state to attached', () => {
+  const params = normalizeWaitForParams({ selector: 'div', state: /** @type {*} */ ('bogus') });
+  assert.equal(params.state, 'attached');
+});
+
+/** Ensure find-by-text params default scope and clamp maxResults. */
+test('normalizeFindByTextParams defaults scope and clamps maxResults', () => {
+  const params = normalizeFindByTextParams({
+    text: 'Submit',
+    maxResults: 100
+  });
+
+  assert.equal(params.text, 'Submit');
+  assert.equal(params.exact, false);
+  assert.equal(params.selector, '*');
+  assert.equal(params.maxResults, 50);
+});
+
+/** Ensure find-by-role params normalize role and name. */
+test('normalizeFindByRoleParams normalizes role and name', () => {
+  const params = normalizeFindByRoleParams({
+    role: 'button',
+    name: 'Save'
+  });
+
+  assert.equal(params.role, 'button');
+  assert.equal(params.name, 'Save');
+  assert.equal(params.selector, '*');
+  assert.equal(params.maxResults, 10);
+});
+
+/** Ensure getHtml params clamp maxLength. */
+test('normalizeGetHtmlParams clamps maxLength', () => {
+  const params = normalizeGetHtmlParams({
+    elementRef: 'el_abc',
+    outer: true,
+    maxLength: 100000
+  });
+
+  assert.equal(params.elementRef, 'el_abc');
+  assert.equal(params.outer, true);
+  assert.equal(params.maxLength, 50000);
+});
+
+test('normalizeGetHtmlParams defaults sensibly', () => {
+  const params = normalizeGetHtmlParams({});
+  assert.equal(params.outer, false);
+  assert.equal(params.maxLength, 2000);
+});
+
+/** Ensure hover params normalize target and clamp duration. */
+test('normalizeHoverParams clamps duration', () => {
+  const params = normalizeHoverParams({
+    target: { elementRef: 'el_abc' },
+    duration: 99999
+  });
+
+  assert.equal(params.target.elementRef, 'el_abc');
+  assert.equal(params.duration, 5000);
+});
+
+test('normalizeHoverParams defaults duration to 0', () => {
+  const params = normalizeHoverParams({ target: { selector: '.btn' } });
+  assert.equal(params.duration, 0);
+  assert.equal(params.target.selector, '.btn');
+});
+
+/** Ensure drag params normalize source, destination, and offsets. */
+test('normalizeDragParams normalizes source and destination targets', () => {
+  const params = normalizeDragParams({
+    source: { elementRef: 'el_src' },
+    destination: { elementRef: 'el_dst' },
+    offsetX: 10,
+    offsetY: 20
+  });
+
+  assert.equal(params.source.elementRef, 'el_src');
+  assert.equal(params.destination.elementRef, 'el_dst');
+  assert.equal(params.offsetX, 10);
+  assert.equal(params.offsetY, 20);
+});
+
+test('normalizeDragParams defaults offsets to zero', () => {
+  const params = normalizeDragParams({});
+  assert.equal(params.offsetX, 0);
+  assert.equal(params.offsetY, 0);
+});
+
+/** Ensure storage params validate type and filter keys. */
+test('normalizeStorageParams validates type and filters keys', () => {
+  const params = normalizeStorageParams({
+    type: 'session',
+    keys: /** @type {*} */ (['token', 42, 'user'])
+  });
+
+  assert.equal(params.type, 'session');
+  assert.deepEqual(params.keys, ['token', 'user']);
+});
+
+test('normalizeStorageParams defaults to local with null keys', () => {
+  const params = normalizeStorageParams({});
+  assert.equal(params.type, 'local');
+  assert.equal(params.keys, null);
+});
+
+/** Ensure wait-for-load-state params clamp timeout. */
+test('normalizeWaitForLoadStateParams clamps timeout', () => {
+  const params = normalizeWaitForLoadStateParams({
+    timeoutMs: 999999
+  });
+
+  assert.equal(params.waitForLoad, true);
+  assert.equal(params.timeoutMs, 120000);
+});
+
+test('normalizeWaitForLoadStateParams defaults sensibly', () => {
+  const params = normalizeWaitForLoadStateParams({});
+  assert.equal(params.timeoutMs, 15000);
+  assert.equal(params.waitForLoad, true);
+});
+
+/** Ensure page.evaluate capability is included in defaults. */
+test('DEFAULT_CAPABILITIES includes page.evaluate', () => {
+  assert.ok(DEFAULT_CAPABILITIES.includes('page.evaluate'));
+});
+
+/** Ensure TIMEOUT error code exists. */
+test('ERROR_CODES includes TIMEOUT', () => {
+  assert.equal(ERROR_CODES.TIMEOUT, 'TIMEOUT');
 });

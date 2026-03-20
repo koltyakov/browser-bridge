@@ -85,6 +85,8 @@
     switch (method) {
       case "page.get_state":
         return getPageState();
+      case "page.get_storage":
+        return getStorageData(params);
       case "navigation.navigate":
       case "navigation.reload":
       case "navigation.go_back":
@@ -98,6 +100,14 @@
         return getText(params.elementRef, params.textBudget);
       case "dom.get_attributes":
         return getAttributes(params.elementRef, params.attributes ?? []);
+      case "dom.wait_for":
+        return waitForDom(params);
+      case "dom.find_by_text":
+        return findByText(params);
+      case "dom.find_by_role":
+        return findByRole(params);
+      case "dom.get_html":
+        return getHtml(params);
       case "layout.get_box_model":
         return getBoxModel(params.elementRef);
       case "layout.hit_test":
@@ -120,6 +130,10 @@
         return setCheckedTarget(params);
       case "input.select_option":
         return selectOptionTarget(params);
+      case "input.hover":
+        return hoverTarget(params);
+      case "input.drag":
+        return dragTarget(params);
       case "patch.apply_styles":
         return applyStylePatch(params);
       case "patch.apply_dom":
@@ -826,6 +840,397 @@
       height: rect.height,
       scale: window.devicePixelRatio || 1,
     };
+  }
+
+  // ── New methods: DOM wait, find, HTML, hover, drag, storage ────────
+
+  /**
+   * Wait for a DOM condition using MutationObserver + polling fallback.
+   *
+   * @param {Record<string, any>} params
+   * @returns {Promise<{ found: boolean, elementRef: string | null, duration: number }>}
+   */
+  function waitForDom(params) {
+    const selector = String(params.selector || "");
+    if (!selector) {
+      throw new Error("selector is required for dom.wait_for");
+    }
+    const text = params.text != null ? String(params.text) : null;
+    const waitState = params.state || "attached";
+    const timeout = clamp(params.timeoutMs ?? 5000, 100, 30000);
+    const start = Date.now();
+
+    /**
+     * @returns {{ found: boolean, element: Element | null }}
+     */
+    function check() {
+      if (waitState === "detached") {
+        const exists = text
+          ? findElementWithText(selector, text) !== null
+          : document.querySelector(selector) !== null;
+        return { found: !exists, element: null };
+      }
+      const candidates = document.querySelectorAll(selector);
+      for (const el of candidates) {
+        if (text !== null && !elementMatchesText(el, text)) {
+          continue;
+        }
+        if (waitState === "visible") {
+          const r = el.getBoundingClientRect();
+          if (r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden") {
+            return { found: true, element: el };
+          }
+        } else if (waitState === "hidden") {
+          const r = el.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0 || getComputedStyle(el).visibility === "hidden") {
+            return { found: true, element: el };
+          }
+        } else {
+          return { found: true, element: el };
+        }
+      }
+      return { found: false, element: null };
+    }
+
+    const immediate = check();
+    if (immediate.found) {
+      return Promise.resolve({
+        found: true,
+        elementRef: immediate.element ? rememberElement(immediate.element) : null,
+        duration: 0,
+      });
+    }
+
+    return new Promise((resolve) => {
+      let observer;
+      let timeoutHandle;
+      let pollHandle;
+
+      function cleanup() {
+        if (observer) observer.disconnect();
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        if (pollHandle) clearInterval(pollHandle);
+      }
+
+      function tryResolve() {
+        const result = check();
+        if (result.found) {
+          cleanup();
+          resolve({
+            found: true,
+            elementRef: result.element ? rememberElement(result.element) : null,
+            duration: Date.now() - start,
+          });
+        }
+      }
+
+      observer = new MutationObserver(tryResolve);
+      observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        characterData: true,
+      });
+      pollHandle = setInterval(tryResolve, 250);
+      timeoutHandle = setTimeout(() => {
+        cleanup();
+        resolve({
+          found: false,
+          elementRef: null,
+          duration: Date.now() - start,
+        });
+      }, timeout);
+    });
+  }
+
+  /**
+   * Find elements matching visible text content.
+   *
+   * @param {Record<string, any>} params
+   * @returns {{ nodes: NodeSummary[], count: number }}
+   */
+  function findByText(params) {
+    const searchText = String(params.text || "");
+    if (!searchText) {
+      throw new Error("text is required for dom.find_by_text");
+    }
+    const exact = Boolean(params.exact);
+    const scope = String(params.selector || "*");
+    const maxResults = clamp(params.maxResults ?? 10, 1, 50);
+    const candidates = document.querySelectorAll(scope);
+    const results = [];
+
+    for (const el of candidates) {
+      if (results.length >= maxResults) break;
+      const visibleText = extractElementText(el);
+      if (!visibleText) continue;
+      const matches = exact
+        ? visibleText === searchText
+        : visibleText.toLowerCase().includes(searchText.toLowerCase());
+      if (matches) {
+        results.push(summarizeNode(el, ["id", "class", "role", "href", "data-testid"], 120).node);
+      }
+    }
+
+    return { nodes: results, count: results.length };
+  }
+
+  /**
+   * Find elements matching ARIA role and optional accessible name.
+   *
+   * @param {Record<string, any>} params
+   * @returns {{ nodes: NodeSummary[], count: number }}
+   */
+  function findByRole(params) {
+    const role = String(params.role || "");
+    if (!role) {
+      throw new Error("role is required for dom.find_by_role");
+    }
+    const name = params.name ? String(params.name) : null;
+    const scope = String(params.selector || "*");
+    const maxResults = clamp(params.maxResults ?? 10, 1, 50);
+
+    const candidates = document.querySelectorAll(
+      scope === "*" ? `[role="${CSS.escape(role)}"]` : scope
+    );
+    const results = [];
+
+    for (const el of candidates) {
+      if (results.length >= maxResults) break;
+      const elRole = el.getAttribute("role") || getImplicitRole(el);
+      if (elRole !== role) continue;
+      if (name !== null) {
+        const accName =
+          el.getAttribute("aria-label") ||
+          el.getAttribute("aria-labelledby") ||
+          el.getAttribute("title") ||
+          extractElementText(el);
+        if (!accName || !accName.toLowerCase().includes(name.toLowerCase())) {
+          continue;
+        }
+      }
+      results.push(summarizeNode(el, ["id", "class", "role", "aria-label", "href"], 120).node);
+    }
+
+    return { nodes: results, count: results.length };
+  }
+
+  /**
+   * Return innerHTML or outerHTML of an element, truncated to budget.
+   *
+   * @param {Record<string, any>} params
+   * @returns {{ html: string, truncated: boolean, omitted: number }}
+   */
+  function getHtml(params) {
+    const element = getRequiredElement(String(params.elementRef || ""));
+    const outer = Boolean(params.outer);
+    const maxLength = clamp(params.maxLength ?? 2000, 32, 50000);
+    const raw = outer ? element.outerHTML : element.innerHTML;
+    const t = truncateText(raw, maxLength);
+    return { html: t.value, truncated: t.truncated, omitted: t.omitted };
+  }
+
+  /**
+   * Trigger hover state on an element by dispatching mouse events.
+   *
+   * @param {Record<string, any>} params
+   * @returns {Promise<{ elementRef: string, hovered: boolean }> | { elementRef: string, hovered: boolean }}
+   */
+  function hoverTarget(params) {
+    const element = resolveTarget(params.target);
+    const point = getViewportPoint(element);
+    const modifiers = normalizeModifierState(params.modifiers);
+    const duration = clamp(params.duration ?? 0, 0, 5000);
+
+    scrollTargetIntoView(element);
+    dispatchMouseEvent(element, "mouseenter", point, "left", 0, modifiers);
+    dispatchMouseEvent(element, "mouseover", point, "left", 0, modifiers);
+    dispatchMouseEvent(element, "mousemove", point, "left", 0, modifiers);
+
+    const ref = rememberElement(element);
+    if (duration > 0) {
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          resolve({ elementRef: ref, hovered: true });
+        }, duration);
+      });
+    }
+    return { elementRef: ref, hovered: true };
+  }
+
+  /**
+   * Perform a drag-and-drop operation between two elements.
+   *
+   * @param {Record<string, any>} params
+   * @returns {{ sourceRef: string, destinationRef: string, dragged: boolean }}
+   */
+  function dragTarget(params) {
+    const source = resolveTarget(params.source);
+    const destination = resolveTarget(params.destination);
+    const sourcePoint = getViewportPoint(source);
+    const destPoint = getViewportPoint(destination);
+    const offsetX = Number(params.offsetX) || 0;
+    const offsetY = Number(params.offsetY) || 0;
+    const endPoint = { x: destPoint.x + offsetX, y: destPoint.y + offsetY };
+    const emptyMods = { altKey: false, ctrlKey: false, metaKey: false, shiftKey: false };
+
+    scrollTargetIntoView(source);
+
+    const dataTransfer = new DataTransfer();
+
+    source.dispatchEvent(new MouseEvent("mousedown", {
+      bubbles: true, cancelable: true, composed: true,
+      clientX: sourcePoint.x, clientY: sourcePoint.y, ...emptyMods,
+    }));
+    source.dispatchEvent(new DragEvent("dragstart", {
+      bubbles: true, cancelable: true, composed: true,
+      clientX: sourcePoint.x, clientY: sourcePoint.y, dataTransfer,
+    }));
+    source.dispatchEvent(new DragEvent("drag", {
+      bubbles: true, cancelable: true, composed: true,
+      clientX: sourcePoint.x, clientY: sourcePoint.y, dataTransfer,
+    }));
+
+    scrollTargetIntoView(destination);
+
+    destination.dispatchEvent(new DragEvent("dragenter", {
+      bubbles: true, cancelable: true, composed: true,
+      clientX: endPoint.x, clientY: endPoint.y, dataTransfer,
+    }));
+    destination.dispatchEvent(new DragEvent("dragover", {
+      bubbles: true, cancelable: true, composed: true,
+      clientX: endPoint.x, clientY: endPoint.y, dataTransfer,
+    }));
+    destination.dispatchEvent(new DragEvent("drop", {
+      bubbles: true, cancelable: true, composed: true,
+      clientX: endPoint.x, clientY: endPoint.y, dataTransfer,
+    }));
+    source.dispatchEvent(new DragEvent("dragend", {
+      bubbles: true, cancelable: true, composed: true,
+      clientX: endPoint.x, clientY: endPoint.y, dataTransfer,
+    }));
+    source.dispatchEvent(new MouseEvent("mouseup", {
+      bubbles: true, cancelable: true, composed: true,
+      clientX: endPoint.x, clientY: endPoint.y, ...emptyMods,
+    }));
+
+    return {
+      sourceRef: rememberElement(source),
+      destinationRef: rememberElement(destination),
+      dragged: true,
+    };
+  }
+
+  /**
+   * Read localStorage or sessionStorage entries.
+   *
+   * @param {Record<string, any>} params
+   * @returns {{ type: string, entries: Record<string, string | null>, count: number }}
+   */
+  function getStorageData(params) {
+    const type = params.type === "session" ? "session" : "local";
+    const storage = type === "session" ? sessionStorage : localStorage;
+    const keys = Array.isArray(params.keys) ? params.keys.filter((k) => typeof k === "string") : null;
+    /** @type {Record<string, string | null>} */
+    const result = {};
+    if (keys) {
+      for (const key of keys) {
+        result[key] = storage.getItem(key);
+      }
+    } else {
+      for (let i = 0; i < Math.min(storage.length, 100); i++) {
+        const key = storage.key(i);
+        if (key !== null) {
+          const val = storage.getItem(key);
+          result[key] = val !== null && val.length > 500 ? val.slice(0, 500) + "\u2026" : val;
+        }
+      }
+    }
+    return { type, entries: result, count: Object.keys(result).length };
+  }
+
+  // ── Helpers for new methods ────────────────────────────────────────
+
+  /**
+   * Check whether an element's visible text contains the given string.
+   *
+   * @param {Element} element
+   * @param {string} text
+   * @returns {boolean}
+   */
+  function elementMatchesText(element, text) {
+    const visible = extractElementText(element);
+    return visible.toLowerCase().includes(text.toLowerCase());
+  }
+
+  /**
+   * Find the first element matching a selector whose text contains a string.
+   *
+   * @param {string} selector
+   * @param {string} text
+   * @returns {Element | null}
+   */
+  function findElementWithText(selector, text) {
+    for (const el of document.querySelectorAll(selector)) {
+      if (elementMatchesText(el, text)) {
+        return el;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Return a basic implicit ARIA role for common HTML elements.
+   *
+   * @param {Element} el
+   * @returns {string}
+   */
+  function getImplicitRole(el) {
+    const tag = el.tagName.toLowerCase();
+    const roleMap = {
+      a: el.hasAttribute("href") ? "link" : "",
+      article: "article",
+      aside: "complementary",
+      button: "button",
+      dialog: "dialog",
+      footer: "contentinfo",
+      form: "form",
+      h1: "heading", h2: "heading", h3: "heading",
+      h4: "heading", h5: "heading", h6: "heading",
+      header: "banner",
+      img: "img",
+      input: getInputImplicitRole(el),
+      li: "listitem",
+      main: "main",
+      nav: "navigation",
+      ol: "list",
+      option: "option",
+      progress: "progressbar",
+      section: "region",
+      select: "listbox",
+      table: "table",
+      td: "cell",
+      textarea: "textbox",
+      th: "columnheader",
+      tr: "row",
+      ul: "list",
+    };
+    return roleMap[tag] || "";
+  }
+
+  /**
+   * @param {Element} el
+   * @returns {string}
+   */
+  function getInputImplicitRole(el) {
+    if (!(el instanceof HTMLInputElement)) return "textbox";
+    const type = el.type.toLowerCase();
+    const map = {
+      button: "button", checkbox: "checkbox", radio: "radio",
+      range: "slider", search: "searchbox", submit: "button",
+      reset: "button", image: "button",
+    };
+    return map[type] || "textbox";
   }
 
   /**

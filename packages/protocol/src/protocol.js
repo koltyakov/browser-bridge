@@ -11,22 +11,42 @@ import { BridgeError, ERROR_CODES } from './errors.js';
 /** @typedef {import('./types.js').BridgeRequest} BridgeRequest */
 /** @typedef {import('./types.js').BridgeSuccessResponse} BridgeSuccessResponse */
 /** @typedef {import('./types.js').CheckedActionParams} CheckedActionParams */
+/** @typedef {import('./types.js').ConsoleParams} ConsoleParams */
 /** @typedef {import('./types.js').DomQueryParams} DomQueryParams */
+/** @typedef {import('./types.js').DragParams} DragParams */
+/** @typedef {import('./types.js').EvaluateParams} EvaluateParams */
+/** @typedef {import('./types.js').FindByRoleParams} FindByRoleParams */
+/** @typedef {import('./types.js').FindByTextParams} FindByTextParams */
+/** @typedef {import('./types.js').GetHtmlParams} GetHtmlParams */
+/** @typedef {import('./types.js').HoverParams} HoverParams */
 /** @typedef {import('./types.js').InputActionParams} InputActionParams */
 /** @typedef {import('./types.js').NavigationActionParams} NavigationActionParams */
 /** @typedef {import('./types.js').NormalizedAccessRequest} NormalizedAccessRequest */
 /** @typedef {import('./types.js').NormalizedCheckedAction} NormalizedCheckedAction */
+/** @typedef {import('./types.js').NormalizedConsoleParams} NormalizedConsoleParams */
 /** @typedef {import('./types.js').NormalizedDomQuery} NormalizedDomQuery */
+/** @typedef {import('./types.js').NormalizedDragParams} NormalizedDragParams */
+/** @typedef {import('./types.js').NormalizedEvaluateParams} NormalizedEvaluateParams */
+/** @typedef {import('./types.js').NormalizedFindByRoleParams} NormalizedFindByRoleParams */
+/** @typedef {import('./types.js').NormalizedFindByTextParams} NormalizedFindByTextParams */
+/** @typedef {import('./types.js').NormalizedGetHtmlParams} NormalizedGetHtmlParams */
+/** @typedef {import('./types.js').NormalizedHoverParams} NormalizedHoverParams */
 /** @typedef {import('./types.js').NormalizedInputAction} NormalizedInputAction */
 /** @typedef {import('./types.js').NormalizedNavigationAction} NormalizedNavigationAction */
 /** @typedef {import('./types.js').NormalizedPatchOperation} NormalizedPatchOperation */
 /** @typedef {import('./types.js').NormalizedSelectAction} NormalizedSelectAction */
+/** @typedef {import('./types.js').NormalizedStorageParams} NormalizedStorageParams */
 /** @typedef {import('./types.js').NormalizedStyleQuery} NormalizedStyleQuery */
 /** @typedef {import('./types.js').NormalizedViewportAction} NormalizedViewportAction */
+/** @typedef {import('./types.js').NormalizedWaitForLoadStateParams} NormalizedWaitForLoadStateParams */
+/** @typedef {import('./types.js').NormalizedWaitForParams} NormalizedWaitForParams */
 /** @typedef {import('./types.js').PatchOperationParams} PatchOperationParams */
 /** @typedef {import('./types.js').SelectActionParams} SelectActionParams */
+/** @typedef {import('./types.js').StorageParams} StorageParams */
 /** @typedef {import('./types.js').StyleQueryParams} StyleQueryParams */
 /** @typedef {import('./types.js').ViewportActionParams} ViewportActionParams */
+/** @typedef {import('./types.js').WaitForLoadStateParams} WaitForLoadStateParams */
+/** @typedef {import('./types.js').WaitForParams} WaitForParams */
 
 export const PROTOCOL_VERSION = '1.0';
 const NON_EXPIRING_SESSION_TTL_MS = 10 * 365 * 24 * 60 * 60 * 1000;
@@ -39,6 +59,10 @@ export const METHODS = Object.freeze([
   'session.revoke',
   'skill.get_runtime_context',
   'page.get_state',
+  'page.evaluate',
+  'page.get_console',
+  'page.wait_for_load_state',
+  'page.get_storage',
   'navigation.navigate',
   'navigation.reload',
   'navigation.go_back',
@@ -47,6 +71,10 @@ export const METHODS = Object.freeze([
   'dom.describe',
   'dom.get_text',
   'dom.get_attributes',
+  'dom.wait_for',
+  'dom.find_by_text',
+  'dom.find_by_role',
+  'dom.get_html',
   'layout.get_box_model',
   'layout.hit_test',
   'styles.get_computed',
@@ -58,6 +86,8 @@ export const METHODS = Object.freeze([
   'input.press_key',
   'input.set_checked',
   'input.select_option',
+  'input.hover',
+  'input.drag',
   'screenshot.capture_region',
   'screenshot.capture_element',
   'patch.apply_styles',
@@ -351,6 +381,144 @@ export function normalizePatchOperation(params = {}) {
 }
 
 /**
+ * @param {EvaluateParams} [params={}]
+ * @returns {NormalizedEvaluateParams}
+ */
+export function normalizeEvaluateParams(params = {}) {
+  return {
+    expression: typeof params.expression === 'string' ? params.expression : '',
+    awaitPromise: Boolean(params.awaitPromise),
+    timeoutMs: Math.min(Math.max(Number(params.timeoutMs) || 5_000, 100), 30_000),
+    returnByValue: params.returnByValue !== false
+  };
+}
+
+/**
+ * @param {ConsoleParams} [params={}]
+ * @returns {NormalizedConsoleParams}
+ */
+export function normalizeConsoleParams(params = {}) {
+  const validLevels = ['all', 'log', 'warn', 'error', 'info', 'debug', 'exception', 'rejection'];
+  return {
+    level: validLevels.includes(String(params.level ?? '')) ? String(params.level) : 'all',
+    clear: Boolean(params.clear),
+    limit: Math.min(Math.max(Number(params.limit) || 50, 1), 200)
+  };
+}
+
+/**
+ * @param {WaitForParams} [params={}]
+ * @returns {NormalizedWaitForParams}
+ */
+export function normalizeWaitForParams(params = {}) {
+  const validStates = ['attached', 'detached', 'visible', 'hidden'];
+  return {
+    selector: typeof params.selector === 'string' && params.selector.trim() ? params.selector : '',
+    text: params.text != null ? String(params.text) : null,
+    state: validStates.includes(String(params.state ?? ''))
+      ? /** @type {'attached' | 'detached' | 'visible' | 'hidden'} */ (String(params.state))
+      : 'attached',
+    timeoutMs: Math.min(Math.max(Number(params.timeoutMs) || 5_000, 100), 30_000)
+  };
+}
+
+/**
+ * @param {FindByTextParams} [params={}]
+ * @returns {NormalizedFindByTextParams}
+ */
+export function normalizeFindByTextParams(params = {}) {
+  return {
+    text: typeof params.text === 'string' ? params.text : '',
+    exact: Boolean(params.exact),
+    selector: typeof params.selector === 'string' && params.selector.trim() ? params.selector : '*',
+    maxResults: Math.min(Math.max(Number(params.maxResults) || 10, 1), 50)
+  };
+}
+
+/**
+ * @param {FindByRoleParams} [params={}]
+ * @returns {NormalizedFindByRoleParams}
+ */
+export function normalizeFindByRoleParams(params = {}) {
+  return {
+    role: typeof params.role === 'string' ? params.role : '',
+    name: typeof params.name === 'string' ? params.name : '',
+    selector: typeof params.selector === 'string' && params.selector.trim() ? params.selector : '*',
+    maxResults: Math.min(Math.max(Number(params.maxResults) || 10, 1), 50)
+  };
+}
+
+/**
+ * @param {GetHtmlParams} [params={}]
+ * @returns {NormalizedGetHtmlParams}
+ */
+export function normalizeGetHtmlParams(params = {}) {
+  return {
+    elementRef: String(params.elementRef || ''),
+    outer: Boolean(params.outer),
+    maxLength: Math.min(Math.max(Number(params.maxLength) || 2000, 32), 50_000)
+  };
+}
+
+/**
+ * @param {HoverParams} [params={}]
+ * @returns {NormalizedHoverParams}
+ */
+export function normalizeHoverParams(params = {}) {
+  return {
+    target: normalizeTarget(
+      params.target && typeof params.target === 'object'
+        ? /** @type {{ elementRef?: string, selector?: string }} */ (params.target)
+        : undefined
+    ),
+    duration: Math.min(Math.max(Number(params.duration) || 0, 0), 5_000)
+  };
+}
+
+/**
+ * @param {DragParams} [params={}]
+ * @returns {NormalizedDragParams}
+ */
+export function normalizeDragParams(params = {}) {
+  return {
+    source: normalizeTarget(
+      params.source && typeof params.source === 'object'
+        ? /** @type {{ elementRef?: string, selector?: string }} */ (params.source)
+        : undefined
+    ),
+    destination: normalizeTarget(
+      params.destination && typeof params.destination === 'object'
+        ? /** @type {{ elementRef?: string, selector?: string }} */ (params.destination)
+        : undefined
+    ),
+    offsetX: Number.isFinite(Number(params.offsetX)) ? Number(params.offsetX) : 0,
+    offsetY: Number.isFinite(Number(params.offsetY)) ? Number(params.offsetY) : 0
+  };
+}
+
+/**
+ * @param {StorageParams} [params={}]
+ * @returns {NormalizedStorageParams}
+ */
+export function normalizeStorageParams(params = {}) {
+  return {
+    type: params.type === 'session' ? 'session' : 'local',
+    keys: Array.isArray(params.keys) ? params.keys.filter((k) => typeof k === 'string') : null
+  };
+}
+
+/**
+ * @param {WaitForLoadStateParams} [params={}]
+ * @returns {NormalizedWaitForLoadStateParams}
+ */
+export function normalizeWaitForLoadStateParams(params = {}) {
+  return {
+    waitForLoad: params.waitForLoad !== false,
+    timeoutMs: Math.min(Math.max(Number(params.timeoutMs) || 15_000, 500), 120_000)
+  };
+}
+
+/**
  * @returns {{
  *   v: string,
  *   budgets: Record<string, { n: number, d: number, t: number }>,
@@ -369,11 +537,15 @@ export function createRuntimeContext() {
     },
     methods: {
       inspect: ['dom.query', 'dom.describe', 'dom.get_text', 'dom.get_attributes',
+        'dom.find_by_text', 'dom.find_by_role', 'dom.get_html',
         'styles.get_computed', 'styles.get_matched_rules', 'layout.get_box_model', 'layout.hit_test'],
+      page: ['page.get_state', 'page.evaluate', 'page.get_console', 'page.get_storage',
+        'page.wait_for_load_state'],
       navigate: ['navigation.navigate', 'navigation.reload', 'navigation.go_back',
         'navigation.go_forward', 'viewport.scroll'],
       interact: ['input.click', 'input.type', 'input.focus', 'input.press_key',
-        'input.set_checked', 'input.select_option'],
+        'input.set_checked', 'input.select_option', 'input.hover', 'input.drag'],
+      wait: ['dom.wait_for', 'page.wait_for_load_state'],
       patch: ['patch.apply_styles', 'patch.apply_dom', 'patch.list', 'patch.rollback',
         'patch.commit_session_baseline'],
       capture: ['screenshot.capture_element', 'screenshot.capture_region'],
@@ -387,7 +559,12 @@ export function createRuntimeContext() {
       'patch.apply_styles before patch.apply_dom',
       'Verify with get_box_model not screenshots',
       'batch independent reads',
-      'Rollback all patches before finishing'
+      'Rollback all patches before finishing',
+      'page.evaluate to read framework state (React, Vue, Next.js data)',
+      'dom.find_by_text / dom.find_by_role for semantic element finding',
+      'dom.wait_for after HMR / navigation to detect page updates',
+      'page.get_console to catch runtime errors after interactions',
+      'input.hover before screenshot to inspect hover states'
     ],
     flow: [
       'session.request_access',

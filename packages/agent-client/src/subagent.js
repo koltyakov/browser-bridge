@@ -85,6 +85,60 @@ export function summarizeBridgeResponse(response) {
       evidence: result
     };
   }
+  if (typeof result.found === 'boolean') {
+    return {
+      ok: true,
+      summary: result.found
+        ? `Element found after ${result.duration ?? 0}ms.`
+        : `Element not found (timed out after ${result.duration ?? 0}ms).`,
+      evidence: { elementRef: result.elementRef, duration: result.duration }
+    };
+  }
+  if (typeof result.value !== 'undefined' && typeof result.type === 'string') {
+    const repr = typeof result.value === 'string'
+      ? result.value.length > 200 ? `${result.value.slice(0, 199)}\u2026` : result.value
+      : JSON.stringify(result.value);
+    return {
+      ok: true,
+      summary: `Evaluated to ${result.type}: ${repr}`,
+      evidence: result
+    };
+  }
+  if (Array.isArray(result.entries)) {
+    return {
+      ok: true,
+      summary: `Console: ${result.count ?? result.entries.length} entries (${result.total ?? '?'} total).`,
+      evidence: result.entries.slice(0, 20)
+    };
+  }
+  if (typeof result.html === 'string') {
+    return {
+      ok: true,
+      summary: `HTML fragment: ${result.html.length} chars${result.truncated ? ' (truncated)' : ''}.`,
+      evidence: { html: result.html.slice(0, 500), truncated: result.truncated }
+    };
+  }
+  if (typeof result.hovered === 'boolean') {
+    return {
+      ok: true,
+      summary: `Hover ${result.hovered ? 'active' : 'failed'} on ${result.elementRef}.`,
+      evidence: result
+    };
+  }
+  if (typeof result.dragged === 'boolean') {
+    return {
+      ok: true,
+      summary: `Drag ${result.dragged ? 'completed' : 'failed'}: ${result.sourceRef} → ${result.destinationRef}.`,
+      evidence: result
+    };
+  }
+  if (typeof result.count === 'number' && typeof result.type === 'string' && result.entries) {
+    return {
+      ok: true,
+      summary: `Storage (${result.type}): ${result.count} entries.`,
+      evidence: result.entries
+    };
+  }
   const keys = Object.keys(result);
   return {
     ok: true,

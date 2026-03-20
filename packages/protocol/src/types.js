@@ -3,15 +3,15 @@
 export {};
 
 /**
- * @typedef {'page.read' | 'dom.read' | 'styles.read' | 'layout.read' | 'viewport.control' | 'navigation.control' | 'screenshot.partial' | 'patch.dom' | 'patch.styles' | 'cdp.dom_snapshot' | 'cdp.box_model' | 'cdp.styles' | 'automation.input'} Capability
+ * @typedef {'page.read' | 'page.evaluate' | 'dom.read' | 'styles.read' | 'layout.read' | 'viewport.control' | 'navigation.control' | 'screenshot.partial' | 'patch.dom' | 'patch.styles' | 'cdp.dom_snapshot' | 'cdp.box_model' | 'cdp.styles' | 'automation.input'} Capability
  */
 
 /**
- * @typedef {'ACCESS_DENIED' | 'SESSION_EXPIRED' | 'TAB_MISMATCH' | 'ORIGIN_MISMATCH' | 'CAPABILITY_MISSING' | 'ELEMENT_STALE' | 'RESULT_TRUNCATED' | 'RATE_LIMITED' | 'INTERNAL_ERROR' | 'INVALID_REQUEST' | 'NATIVE_HOST_UNAVAILABLE' | 'APPROVAL_PENDING'} ErrorCode
+ * @typedef {'ACCESS_DENIED' | 'SESSION_EXPIRED' | 'TAB_MISMATCH' | 'ORIGIN_MISMATCH' | 'CAPABILITY_MISSING' | 'ELEMENT_STALE' | 'RESULT_TRUNCATED' | 'RATE_LIMITED' | 'INTERNAL_ERROR' | 'INVALID_REQUEST' | 'NATIVE_HOST_UNAVAILABLE' | 'APPROVAL_PENDING' | 'TIMEOUT'} ErrorCode
  */
 
 /**
- * @typedef {'tabs.list' | 'session.request_access' | 'session.get_status' | 'session.revoke' | 'skill.get_runtime_context' | 'page.get_state' | 'navigation.navigate' | 'navigation.reload' | 'navigation.go_back' | 'navigation.go_forward' | 'dom.query' | 'dom.describe' | 'dom.get_text' | 'dom.get_attributes' | 'layout.get_box_model' | 'layout.hit_test' | 'styles.get_computed' | 'styles.get_matched_rules' | 'viewport.scroll' | 'input.click' | 'input.focus' | 'input.type' | 'input.press_key' | 'input.set_checked' | 'input.select_option' | 'screenshot.capture_region' | 'screenshot.capture_element' | 'patch.apply_styles' | 'patch.apply_dom' | 'patch.list' | 'patch.rollback' | 'patch.commit_session_baseline' | 'cdp.get_document' | 'cdp.get_dom_snapshot' | 'cdp.get_box_model' | 'cdp.get_computed_styles_for_node' | 'log.tail' | 'health.ping'} BridgeMethod
+ * @typedef {'tabs.list' | 'session.request_access' | 'session.get_status' | 'session.revoke' | 'skill.get_runtime_context' | 'page.get_state' | 'page.evaluate' | 'page.get_console' | 'page.wait_for_load_state' | 'page.get_storage' | 'navigation.navigate' | 'navigation.reload' | 'navigation.go_back' | 'navigation.go_forward' | 'dom.query' | 'dom.describe' | 'dom.get_text' | 'dom.get_attributes' | 'dom.wait_for' | 'dom.find_by_text' | 'dom.find_by_role' | 'dom.get_html' | 'layout.get_box_model' | 'layout.hit_test' | 'styles.get_computed' | 'styles.get_matched_rules' | 'viewport.scroll' | 'input.click' | 'input.focus' | 'input.type' | 'input.press_key' | 'input.set_checked' | 'input.select_option' | 'input.hover' | 'input.drag' | 'screenshot.capture_region' | 'screenshot.capture_element' | 'patch.apply_styles' | 'patch.apply_dom' | 'patch.list' | 'patch.rollback' | 'patch.commit_session_baseline' | 'cdp.get_document' | 'cdp.get_dom_snapshot' | 'cdp.get_box_model' | 'cdp.get_computed_styles_for_node' | 'log.tail' | 'health.ping'} BridgeMethod
  */
 
 /**
@@ -287,4 +287,168 @@ export {};
  *   capabilities: Capability[],
  *   expiresAt: number
  * }} SessionState
+ */
+
+/**
+ * @typedef {{
+ *   expression?: string,
+ *   awaitPromise?: boolean,
+ *   timeoutMs?: number,
+ *   returnByValue?: boolean
+ * }} EvaluateParams
+ */
+
+/**
+ * @typedef {{
+ *   expression: string,
+ *   awaitPromise: boolean,
+ *   timeoutMs: number,
+ *   returnByValue: boolean
+ * }} NormalizedEvaluateParams
+ */
+
+/**
+ * @typedef {{
+ *   level?: string,
+ *   clear?: boolean,
+ *   limit?: number
+ * }} ConsoleParams
+ */
+
+/**
+ * @typedef {{
+ *   level: string,
+ *   clear: boolean,
+ *   limit: number
+ * }} NormalizedConsoleParams
+ */
+
+/**
+ * @typedef {{
+ *   selector?: string,
+ *   text?: string,
+ *   state?: 'attached' | 'detached' | 'visible' | 'hidden',
+ *   timeoutMs?: number
+ * }} WaitForParams
+ */
+
+/**
+ * @typedef {{
+ *   selector: string,
+ *   text: string | null,
+ *   state: 'attached' | 'detached' | 'visible' | 'hidden',
+ *   timeoutMs: number
+ * }} NormalizedWaitForParams
+ */
+
+/**
+ * @typedef {{
+ *   text?: string,
+ *   exact?: boolean,
+ *   selector?: string,
+ *   maxResults?: number
+ * }} FindByTextParams
+ */
+
+/**
+ * @typedef {{
+ *   text: string,
+ *   exact: boolean,
+ *   selector: string,
+ *   maxResults: number
+ * }} NormalizedFindByTextParams
+ */
+
+/**
+ * @typedef {{
+ *   role?: string,
+ *   name?: string,
+ *   selector?: string,
+ *   maxResults?: number
+ * }} FindByRoleParams
+ */
+
+/**
+ * @typedef {{
+ *   role: string,
+ *   name: string,
+ *   selector: string,
+ *   maxResults: number
+ * }} NormalizedFindByRoleParams
+ */
+
+/**
+ * @typedef {{
+ *   elementRef?: string,
+ *   outer?: boolean,
+ *   maxLength?: number
+ * }} GetHtmlParams
+ */
+
+/**
+ * @typedef {{
+ *   elementRef: string,
+ *   outer: boolean,
+ *   maxLength: number
+ * }} NormalizedGetHtmlParams
+ */
+
+/**
+ * @typedef {{
+ *   target?: InputTarget,
+ *   duration?: number
+ * }} HoverParams
+ */
+
+/**
+ * @typedef {{
+ *   target: InputTarget,
+ *   duration: number
+ * }} NormalizedHoverParams
+ */
+
+/**
+ * @typedef {{
+ *   source?: InputTarget,
+ *   destination?: InputTarget,
+ *   offsetX?: number,
+ *   offsetY?: number
+ * }} DragParams
+ */
+
+/**
+ * @typedef {{
+ *   source: InputTarget,
+ *   destination: InputTarget,
+ *   offsetX: number,
+ *   offsetY: number
+ * }} NormalizedDragParams
+ */
+
+/**
+ * @typedef {{
+ *   type?: 'local' | 'session',
+ *   keys?: string[]
+ * }} StorageParams
+ */
+
+/**
+ * @typedef {{
+ *   type: 'local' | 'session',
+ *   keys: string[] | null
+ * }} NormalizedStorageParams
+ */
+
+/**
+ * @typedef {{
+ *   waitForLoad?: boolean,
+ *   timeoutMs?: number
+ * }} WaitForLoadStateParams
+ */
+
+/**
+ * @typedef {{
+ *   waitForLoad: boolean,
+ *   timeoutMs: number
+ * }} NormalizedWaitForLoadStateParams
  */

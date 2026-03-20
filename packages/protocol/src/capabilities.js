@@ -4,6 +4,7 @@
 
 export const CAPABILITIES = Object.freeze({
   PAGE_READ: 'page.read',
+  PAGE_EVALUATE: 'page.evaluate',
   DOM_READ: 'dom.read',
   STYLES_READ: 'styles.read',
   LAYOUT_READ: 'layout.read',
@@ -20,6 +21,7 @@ export const CAPABILITIES = Object.freeze({
 
 export const DEFAULT_CAPABILITIES = Object.freeze([
   CAPABILITIES.PAGE_READ,
+  CAPABILITIES.PAGE_EVALUATE,
   CAPABILITIES.DOM_READ,
   CAPABILITIES.STYLES_READ,
   CAPABILITIES.LAYOUT_READ,

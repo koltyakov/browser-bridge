@@ -8,12 +8,22 @@ import {
   createSuccess,
   normalizeAccessRequest,
   normalizeCheckedAction,
+  normalizeConsoleParams,
+  normalizeDragParams,
+  normalizeEvaluateParams,
+  normalizeFindByRoleParams,
+  normalizeFindByTextParams,
+  normalizeGetHtmlParams,
+  normalizeHoverParams,
   normalizeInputAction,
   normalizeNavigationAction,
   normalizePatchOperation,
   normalizeSelectAction,
+  normalizeStorageParams,
   normalizeStyleQuery,
-  normalizeViewportAction
+  normalizeViewportAction,
+  normalizeWaitForLoadStateParams,
+  normalizeWaitForParams
 } from '../../protocol/src/index.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */
@@ -238,16 +248,27 @@ async function dispatchBridgeRequest(request) {
       return handleSessionStatus(request);
     case 'session.revoke':
       return handleRevoke(request);
+    case 'page.evaluate':
+      return handlePageEvaluate(request);
+    case 'page.get_console':
+      return handlePageGetConsole(request);
+    case 'page.wait_for_load_state':
+      return handleWaitForLoadState(request);
     case 'navigation.navigate':
     case 'navigation.reload':
     case 'navigation.go_back':
     case 'navigation.go_forward':
       return handleNavigationRequest(request);
     case 'page.get_state':
+    case 'page.get_storage':
     case 'dom.query':
     case 'dom.describe':
     case 'dom.get_text':
     case 'dom.get_attributes':
+    case 'dom.wait_for':
+    case 'dom.find_by_text':
+    case 'dom.find_by_role':
+    case 'dom.get_html':
     case 'layout.get_box_model':
     case 'layout.hit_test':
     case 'styles.get_computed':
@@ -259,6 +280,8 @@ async function dispatchBridgeRequest(request) {
     case 'input.press_key':
     case 'input.set_checked':
     case 'input.select_option':
+    case 'input.hover':
+    case 'input.drag':
     case 'patch.apply_styles':
     case 'patch.apply_dom':
     case 'patch.list':
@@ -428,10 +451,24 @@ async function handleTabBoundRequest(request) {
     payload = normalizeCheckedAction(request.params);
   } else if (request.method === 'input.select_option') {
     payload = normalizeSelectAction(request.params);
+  } else if (request.method === 'input.hover') {
+    payload = normalizeHoverParams(request.params);
+  } else if (request.method === 'input.drag') {
+    payload = normalizeDragParams(request.params);
   } else if (request.method.startsWith('input.')) {
     payload = normalizeInputAction(request.params);
   } else if (request.method.startsWith('patch.')) {
     payload = normalizePatchOperation(request.params);
+  } else if (request.method === 'dom.wait_for') {
+    payload = normalizeWaitForParams(request.params);
+  } else if (request.method === 'dom.find_by_text') {
+    payload = normalizeFindByTextParams(request.params);
+  } else if (request.method === 'dom.find_by_role') {
+    payload = normalizeFindByRoleParams(request.params);
+  } else if (request.method === 'dom.get_html') {
+    payload = normalizeGetHtmlParams(request.params);
+  } else if (request.method === 'page.get_storage') {
+    payload = normalizeStorageParams(request.params);
   }
 
   if (request.method.startsWith('screenshot.')) {
@@ -439,12 +476,13 @@ async function handleTabBoundRequest(request) {
     return createSuccess(request.id, result, { method: request.method });
   }
 
+  const timeoutMs = getContentScriptTimeout(request.method, payload);
   const response = await sendTabMessage(session.tabId, {
     type: 'bridge.execute',
     method: request.method,
     params: payload,
     session
-  }, CONTENT_SCRIPT_TIMEOUT_MS);
+  }, timeoutMs);
   if (response?.error) {
     return toFailureResponse(request, response.error);
   }
@@ -485,6 +523,187 @@ async function handleNavigationRequest(request) {
   await emitUiState();
 
   return createSuccess(request.id, summarizeTabResult(tab, request.method), { method: request.method });
+}
+
+/**
+ * Compute a per-method content script timeout that accommodates long-running
+ * operations such as dom.wait_for or hover-with-duration.
+ *
+ * @param {string} method
+ * @param {Record<string, unknown>} params
+ * @returns {number}
+ */
+function getContentScriptTimeout(method, params) {
+  if (method === 'dom.wait_for') {
+    return Math.min(Math.max(Number(params?.timeoutMs) || 5_000, 100), 30_000) + 2_000;
+  }
+  if (method === 'input.hover' && Number(params?.duration) > 0) {
+    return CONTENT_SCRIPT_TIMEOUT_MS + Math.min(Number(params.duration), 5_000) + 1_000;
+  }
+  return CONTENT_SCRIPT_TIMEOUT_MS;
+}
+
+/**
+ * Evaluate a JavaScript expression in the page's main context using the
+ * Chrome DevTools Protocol, avoiding content-script CSP restrictions.
+ *
+ * @param {BridgeRequest} request
+ * @returns {Promise<BridgeResponse>}
+ */
+async function handlePageEvaluate(request) {
+  const session = await requireSession(request, CAPABILITIES.PAGE_EVALUATE);
+  const params = normalizeEvaluateParams(request.params);
+  if (!params.expression) {
+    return createFailure(request.id, ERROR_CODES.INVALID_REQUEST, 'expression is required.', null, { method: request.method });
+  }
+  const target = { tabId: session.tabId };
+  await chrome.debugger.attach(target, '1.3');
+  try {
+    const result = await chrome.debugger.sendCommand(target, 'Runtime.evaluate', {
+      expression: params.expression,
+      returnByValue: params.returnByValue,
+      awaitPromise: params.awaitPromise,
+      timeout: params.timeoutMs,
+      userGesture: true,
+      generatePreview: false,
+      replMode: true
+    });
+    const cdpResult = /** @type {{ result?: { type?: string, value?: unknown, description?: string }, exceptionDetails?: { text?: string, exception?: { description?: string } } }} */ (result);
+    if (cdpResult.exceptionDetails) {
+      const errText = cdpResult.exceptionDetails.exception?.description
+        || cdpResult.exceptionDetails.text
+        || 'Evaluation failed.';
+      return createFailure(request.id, ERROR_CODES.INTERNAL_ERROR, errText, null, { method: request.method });
+    }
+    return createSuccess(request.id, {
+      value: cdpResult.result?.value ?? null,
+      type: cdpResult.result?.type ?? 'undefined'
+    }, { method: request.method });
+  } finally {
+    await chrome.debugger.detach(target);
+  }
+}
+
+/**
+ * Install a console interceptor on the page and retrieve buffered messages.
+ * Uses chrome.scripting.executeScript in the MAIN world.
+ *
+ * @param {BridgeRequest} request
+ * @returns {Promise<BridgeResponse>}
+ */
+async function handlePageGetConsole(request) {
+  const session = await requireSession(request, CAPABILITIES.PAGE_READ);
+  const params = normalizeConsoleParams(request.params);
+
+  await ensureConsoleInterceptor(session.tabId);
+
+  const entries = await readConsoleBuffer(session.tabId, params.clear);
+  const filtered = params.level === 'all'
+    ? entries
+    : entries.filter((/** @type {{ level: string }} */ e) => e.level === params.level);
+  const limited = filtered.slice(-params.limit);
+
+  return createSuccess(request.id, { entries: limited, count: limited.length, total: entries.length }, { method: request.method });
+}
+
+/**
+ * Wait for the tab to reach the 'complete' load state.
+ *
+ * @param {BridgeRequest} request
+ * @returns {Promise<BridgeResponse>}
+ */
+async function handleWaitForLoadState(request) {
+  const session = await requireSession(request, CAPABILITIES.PAGE_READ);
+  const params = normalizeWaitForLoadStateParams(request.params);
+  const tab = params.waitForLoad
+    ? await waitForTabComplete(session.tabId, params.timeoutMs)
+    : await chrome.tabs.get(session.tabId);
+  if (tab.url) {
+    await syncTabSessionsOrigin(session.tabId, tab.url);
+  }
+  return createSuccess(request.id, summarizeTabResult(tab, request.method), { method: request.method });
+}
+
+/**
+ * Inject the console interceptor into the page's main world if not already
+ * present. The interceptor patches console methods and captures unhandled
+ * errors into a bounded in-page buffer.
+ *
+ * @param {number} tabId
+ * @returns {Promise<void>}
+ */
+async function ensureConsoleInterceptor(tabId) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    func: () => {
+      // @ts-ignore — intentional main-world global
+      if (globalThis.__bb_console_installed) return;
+      // @ts-ignore
+      globalThis.__bb_console_installed = true;
+      /** @type {Array<{level: string, args: string[], ts: number}>} */
+      const buffer = [];
+      // @ts-ignore
+      globalThis.__bb_console_buffer = buffer;
+      const MAX = 200;
+      const orig = /** @type {Record<string, Function>} */ ({});
+      for (const level of ['log', 'warn', 'error', 'info', 'debug']) {
+        orig[level] = /** @type {any} */ (console)[level];
+        /** @type {any} */ (console)[level] = function (...args) {
+          buffer.push({
+            level,
+            args: args.map((a) => {
+              try { return typeof a === 'object' ? JSON.stringify(a).slice(0, 500) : String(a).slice(0, 500); }
+              catch { return String(a).slice(0, 500); }
+            }),
+            ts: Date.now()
+          });
+          if (buffer.length > MAX) buffer.splice(0, buffer.length - MAX);
+          orig[level].apply(console, args);
+        };
+      }
+      globalThis.addEventListener('error', (e) => {
+        buffer.push({
+          level: 'exception',
+          args: [e.message || 'Unknown error', e.filename ? `${e.filename}:${e.lineno}:${e.colno}` : ''],
+          ts: Date.now()
+        });
+        if (buffer.length > MAX) buffer.splice(0, buffer.length - MAX);
+      });
+      globalThis.addEventListener('unhandledrejection', (e) => {
+        buffer.push({
+          level: 'rejection',
+          args: [String(e.reason).slice(0, 500)],
+          ts: Date.now()
+        });
+        if (buffer.length > MAX) buffer.splice(0, buffer.length - MAX);
+      });
+    }
+  });
+}
+
+/**
+ * Read and optionally clear the console buffer from the page's main world.
+ *
+ * @param {number} tabId
+ * @param {boolean} clear
+ * @returns {Promise<Array<{level: string, args: string[], ts: number}>>}
+ */
+async function readConsoleBuffer(tabId, clear) {
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    func: (shouldClear) => {
+      // @ts-ignore
+      const buf = globalThis.__bb_console_buffer || [];
+      const copy = [...buf];
+      // @ts-ignore
+      if (shouldClear) globalThis.__bb_console_buffer = [];
+      return copy;
+    },
+    args: [clear]
+  });
+  return /** @type {any} */ (results?.[0]?.result) || [];
 }
 
 /**
@@ -1238,6 +1457,9 @@ function safeOrigin(url) {
  * @returns {Capability | null}
  */
 function inferCapability(method) {
+  if (method === 'page.evaluate') {
+    return CAPABILITIES.PAGE_EVALUATE;
+  }
   if (method.startsWith('page.')) {
     return CAPABILITIES.PAGE_READ;
   }

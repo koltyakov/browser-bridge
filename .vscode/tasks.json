@@ -1,0 +1,20 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run Tests",
+			"type": "shell",
+			"command": "node --test packages/protocol/test/*.test.js packages/agent-client/test/*.test.js"
+		},
+		{
+			"label": "Run Native Host Tests",
+			"type": "shell",
+			"command": "node --test packages/native-host/test/*.test.js"
+		},
+		{
+			"label": "TypeCheck",
+			"type": "shell",
+			"command": "npx tsc --noEmit"
+		}
+	]
+}
