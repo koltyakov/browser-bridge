@@ -3,9 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "bb": "packages/agent-client/src/cli.js",
+    "bb-daemon": "packages/native-host/bin/bridge-daemon.js",
+    "bb-install": "packages/native-host/bin/install-manifest.js"
+  },
   "scripts": {
     "test": "node --test packages/protocol/test/*.test.js packages/native-host/test/*.test.js packages/agent-client/test/*.test.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "status": "node packages/agent-client/src/cli.js status",
+    "daemon": "node packages/native-host/bin/bridge-daemon.js",
+    "install-manifest": "node packages/native-host/bin/install-manifest.js"
   },
   "devDependencies": {
     "@types/chrome": "^0.1.24",

@@ -4,7 +4,7 @@ This project has three moving pieces:
 
 - the Browser Bridge Chrome extension
 - the local Native Messaging host
-- the local agent CLI
+- the local agent CLI (`npx bb`)
 
 When local debugging breaks, it is usually one of these:
 
@@ -15,10 +15,14 @@ When local debugging breaks, it is usually one of these:
 
 ## Local Paths
 
-- Native host manifest: `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.codex.browser_bridge.json`
-- Bridge working directory: `~/.codex/browser-bridge`
-- Bridge socket: `~/.codex/browser-bridge/bridge.sock`
-- Saved session: `~/.codex/browser-bridge/current-session.json`
+| Path | Purpose |
+|------|---------|
+| `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.codex.browser_bridge.json` | Native host manifest (macOS) |
+| `~/.config/google-chrome/NativeMessagingHosts/com.codex.browser_bridge.json` | Native host manifest (Linux) |
+| `%LOCALAPPDATA%\Google\Chrome\User Data\NativeMessagingHosts\com.codex.browser_bridge.json` | Native host manifest (Windows) |
+| `~/.codex/browser-bridge/` | Bridge working directory |
+| `~/.codex/browser-bridge/bridge.sock` | Daemon socket |
+| `~/.codex/browser-bridge/current-session.json` | Saved session |
 
 ## First-Time Local Setup
 
@@ -30,57 +34,45 @@ npm run typecheck
 npm test
 ```
 
-2. Install the Native Messaging manifest.
-
-```bash
-node packages/native-host/bin/install-manifest.js
-```
-
-This writes:
-
-- the manifest JSON under Chrome's `NativeMessagingHosts` directory
-- a launcher script under `~/.codex/browser-bridge/native-host-launcher.sh`
-
-3. Load the extension as an unpacked extension.
+2. Load the extension as an unpacked extension.
 
 - Open `chrome://extensions`
 - Turn on Developer mode
 - Click `Load unpacked`
 - Select this repository root
+- **Copy the extension ID** shown on the card (32 lowercase letters)
 
-4. Bind the native host manifest to the actual extension id.
+3. Install the Native Messaging manifest with the extension ID.
 
-- Copy the extension id shown in `chrome://extensions`
-- Open `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.codex.browser_bridge.json`
-- Replace `chrome-extension://__REPLACE_WITH_EXTENSION_ID__/` with `chrome-extension://<your-extension-id>/`
-
-Example:
-
-```json
-{
-  "allowed_origins": [
-    "chrome-extension://abcdefghijklmnopabcdefghijklmnop/"
-  ]
-}
+```bash
+npx bb install <extension-id>
 ```
 
-5. Reload the extension in `chrome://extensions`.
+This writes:
 
-The installer preserves `allowed_origins` if the manifest already exists, so after the first bind you can usually rerun `node packages/native-host/bin/install-manifest.js` without editing the id again.
+- the manifest JSON under Chrome's `NativeMessagingHosts` directory (auto-detected per platform)
+- a launcher script under `~/.codex/browser-bridge/native-host-launcher.sh`
+- the correct `allowed_origins` entry for your extension
+
+If you skip the extension ID, the manifest gets a placeholder that you must edit manually later.
+
+4. Reload the extension in `chrome://extensions`.
+
+The installer merges with existing `allowed_origins`, so rerunning `npx bb install <id>` after code changes is safe.
 
 ## Normal Local Debug Flow
 
 1. Start the daemon explicitly in one terminal when debugging startup issues.
 
 ```bash
-node packages/native-host/bin/bridge-daemon.js
+npx bb-daemon
 ```
 
 2. In another terminal, check bridge health.
 
 ```bash
-node packages/agent-client/src/cli.js status
-node packages/agent-client/src/cli.js skill
+npx bb status
+npx bb skill
 ```
 
 Expected result:
@@ -95,15 +87,15 @@ Expected result:
 4. Request a session.
 
 ```bash
-node packages/agent-client/src/cli.js request-access
+npx bb request-access
 ```
 
 5. Verify the saved session and basic bridge calls.
 
 ```bash
-node packages/agent-client/src/cli.js session
-node packages/agent-client/src/cli.js tabs
-node packages/agent-client/src/cli.js dom-query body
+npx bb session
+npx bb tabs
+npx bb dom-query body
 ```
 
 6. Use the generic `call` path for methods without dedicated CLI commands.
@@ -111,10 +103,10 @@ node packages/agent-client/src/cli.js dom-query body
 Examples:
 
 ```bash
-node packages/agent-client/src/cli.js call dom.get_attributes '{"elementRef":"el_123"}'
-node packages/agent-client/src/cli.js call styles.get_matched_rules '{"elementRef":"el_123"}'
-node packages/agent-client/src/cli.js call screenshot.capture_region '{"x":0,"y":0,"width":320,"height":180}'
-node packages/agent-client/src/cli.js call cdp.get_dom_snapshot '{"selector":"body"}'
+npx bb call dom.get_attributes '{"elementRef":"el_123"}'
+npx bb call styles.get_matched_rules '{"elementRef":"el_123"}'
+npx bb call screenshot.capture_region '{"x":0,"y":0,"width":320,"height":180}'
+npx bb call cdp.get_dom_snapshot '{"selector":"body"}'
 ```
 
 ## Smoke Test
@@ -122,10 +114,10 @@ node packages/agent-client/src/cli.js call cdp.get_dom_snapshot '{"selector":"bo
 Use this short end-to-end check after reloads or local changes:
 
 ```bash
-node packages/agent-client/src/cli.js status
-node packages/agent-client/src/cli.js request-access
-node packages/agent-client/src/cli.js call dom.query '{"selector":"body","maxNodes":4,"maxDepth":2}'
-node packages/agent-client/src/cli.js tabs
+npx bb status
+npx bb request-access
+npx bb call dom.query '{"selector":"body","maxNodes":4,"maxDepth":2}'
+npx bb tabs
 ```
 
 If that works, the extension, native host, session storage, and RPC path are all basically healthy.
@@ -139,14 +131,14 @@ The daemon is up, but Chrome has not connected the extension to the native host.
 Check:
 
 - the extension is loaded and reloaded after recent code changes
-- the native host manifest exists at `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.codex.browser_bridge.json`
+- the native host manifest exists at the correct platform path (see Local Paths above)
 - `allowed_origins` contains the real unpacked extension id
 - the extension service worker has no startup error
 
 Useful command:
 
 ```bash
-node packages/agent-client/src/cli.js status
+npx bb status
 ```
 
 ### Native host placeholder id still present
@@ -155,8 +147,11 @@ If the manifest still contains `__REPLACE_WITH_EXTENSION_ID__`, Chrome will not 
 
 Fix:
 
-- update `allowed_origins`
-- reload the extension
+```bash
+npx bb install <your-extension-id>
+```
+
+Then reload the extension.
 
 ### Bridge socket problems
 
@@ -166,13 +161,13 @@ Check:
 
 ```bash
 ls -l ~/.codex/browser-bridge
-node packages/native-host/bin/bridge-daemon.js
+npx bb-daemon
 ```
 
 If the daemon starts manually, retry:
 
 ```bash
-node packages/agent-client/src/cli.js status
+npx bb status
 ```
 
 ### Method works in protocol but not as a top-level CLI command
@@ -182,7 +177,7 @@ The agent client only wraps the most common flows. Many valid methods are availa
 Use:
 
 ```bash
-node packages/agent-client/src/cli.js call <method> '<params-json>'
+npx bb call <method> '<params-json>'
 ```
 
 Common examples:
@@ -204,9 +199,9 @@ If tab-scoped calls fail after reloads, the saved session may point at an old ta
 Fix:
 
 ```bash
-node packages/agent-client/src/cli.js revoke
+npx bb revoke
 rm -f ~/.codex/browser-bridge/current-session.json
-node packages/agent-client/src/cli.js request-access
+npx bb request-access
 ```
 
 ### Extension UI says native host is disconnected
@@ -220,23 +215,23 @@ Open the service worker inspector from `chrome://extensions` and look for Native
 If needed, reinstall the manifest:
 
 ```bash
-node packages/native-host/bin/install-manifest.js
+npx bb install <extension-id>
 ```
 
 ## Useful Commands
 
 ```bash
-node packages/agent-client/src/cli.js status
-node packages/agent-client/src/cli.js logs
-node packages/agent-client/src/cli.js skill
-node packages/agent-client/src/cli.js tabs
-node packages/agent-client/src/cli.js request-access
-node packages/agent-client/src/cli.js session
-node packages/agent-client/src/cli.js dom-query body
-node packages/agent-client/src/cli.js describe <elementRef>
-node packages/agent-client/src/cli.js styles <elementRef> display,position
-node packages/agent-client/src/cli.js box <elementRef>
-node packages/agent-client/src/cli.js revoke
+npx bb status
+npx bb logs
+npx bb skill
+npx bb tabs
+npx bb request-access
+npx bb session
+npx bb dom-query body
+npx bb describe <elementRef>
+npx bb styles <elementRef> display,position
+npx bb box <elementRef>
+npx bb revoke
 ```
 
 ## Clean Reset
@@ -254,16 +249,15 @@ rm -f ~/.codex/browser-bridge/current-session.json
 3. Reinstall the native host manifest.
 
 ```bash
-node packages/native-host/bin/install-manifest.js
+npx bb install <extension-id>
 ```
 
-4. Confirm `allowed_origins` still contains the real extension id.
-5. Reload the unpacked extension.
-6. Run the smoke test again.
+4. Reload the unpacked extension.
+5. Run the smoke test again.
 
 ## Notes
 
-- This setup path is currently macOS-specific because the manifest installer targets `~/Library/Application Support/Google/Chrome/NativeMessagingHosts`.
+- The manifest installer auto-detects the platform (macOS, Linux, Windows).
 - The client talks directly to the local daemon socket. It does not launch Chrome for you.
 - `request-access` depends on a tab being explicitly enabled in the extension UI.
 - Input, patch, screenshot, and CDP methods all require an active session for the enabled tab.

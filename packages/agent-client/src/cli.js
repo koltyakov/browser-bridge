@@ -27,6 +27,17 @@ if (command === 'skill') {
   process.exit(0);
 }
 
+if (command === 'install') {
+  const { execFileSync } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  const installScript = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    '../../native-host/bin/install-manifest.js'
+  );
+  execFileSync(process.execPath, [installScript, ...rest], { stdio: 'inherit' });
+  process.exit(0);
+}
+
 const client = new BridgeClient();
 
 await main();
@@ -408,32 +419,46 @@ function printJson(value) {
 }
 
 function printUsage() {
-  process.stdout.write(`Usage:
-  node packages/agent-client/src/cli.js status
-  node packages/agent-client/src/cli.js tabs
-  node packages/agent-client/src/cli.js call <method> [paramsJson]
-  node packages/agent-client/src/cli.js call <sessionId|null> <method> [paramsJson]
-  node packages/agent-client/src/cli.js batch '[{"method":"...","params":{...}},...]'
-  # The target tab must already be enabled in the extension UI.
-  node packages/agent-client/src/cli.js request-access [tabId] [origin]
-  node packages/agent-client/src/cli.js request-access [origin]
-  node packages/agent-client/src/cli.js session
-  node packages/agent-client/src/cli.js dom-query [selector]
-  node packages/agent-client/src/cli.js describe <elementRef>
-  node packages/agent-client/src/cli.js text <elementRef> [textBudget]
-  node packages/agent-client/src/cli.js styles <elementRef> [prop1,prop2]
-  node packages/agent-client/src/cli.js box <elementRef>
-  node packages/agent-client/src/cli.js click <elementRef> [left|middle|right]
-  node packages/agent-client/src/cli.js focus <elementRef>
-  node packages/agent-client/src/cli.js type <elementRef> <text...>
-  node packages/agent-client/src/cli.js press-key <key> [elementRef]
-  node packages/agent-client/src/cli.js patch-style <elementRef> prop=value [prop=value...]
-  node packages/agent-client/src/cli.js patch-text <elementRef> <text...>
-  node packages/agent-client/src/cli.js patches
-  node packages/agent-client/src/cli.js rollback <patchId>
-  node packages/agent-client/src/cli.js screenshot <elementRef> [outputPath]
-  node packages/agent-client/src/cli.js revoke
-  node packages/agent-client/src/cli.js skill
+  process.stdout.write(`Usage: bb <command> [args]
+
+Setup:
+  bb install [extension-id]          Install native messaging manifest
+  bb status                          Check bridge connection
+  bb logs                            Recent bridge logs
+  bb tabs                            List available tabs
+  bb skill                           Runtime budget presets and method groups
+
+Session:
+  bb request-access [tabId] [origin] Create session for enabled tab
+  bb session                         Show current session
+  bb revoke                          End current session
+
+Generic RPC:
+  bb call <method> [paramsJson]      Call any bridge method
+  bb call <sessionId> <method> [json] Call with explicit session
+  bb batch '[{method,params},...]'   Parallel method calls
+
+Inspect:
+  bb dom-query [selector]            Query DOM subtree
+  bb describe <elementRef>           Describe one element
+  bb text <elementRef> [textBudget]  Get element text
+  bb styles <ref> [prop1,prop2]      Get computed styles
+  bb box <elementRef>                Get box model
+
+Interact:
+  bb click <elementRef> [button]     Click element
+  bb focus <elementRef>              Focus element
+  bb type <elementRef> <text...>     Type into element
+  bb press-key <key> [elementRef]    Send key event
+
+Patch:
+  bb patch-style <ref> prop=val...   Apply style patch
+  bb patch-text <ref> <text...>      Apply text patch
+  bb patches                         List active patches
+  bb rollback <patchId>              Rollback a patch
+
+Capture:
+  bb screenshot <ref> [outputPath]   Capture element screenshot
 `);
 }
 

@@ -4,11 +4,32 @@
 
 - `Browser Bridge` is a Chrome extension plus local Native Messaging bridge for token-efficient, scoped browser inspection and patching.
 - Main areas:
-- `packages/extension`: MV3 extension runtime, content script, popup, side panel, offscreen cropper
-- `packages/native-host`: local daemon, native host bootstrap, manifest installer
-- `packages/protocol`: shared protocol shapes, normalization, error codes, budgeting
-- `packages/agent-client`: local CLI and subagent-facing bridge client
-- `skills/browser-bridge`: skill instructions for using the bridge from Codex
+  - `packages/extension`: MV3 extension runtime, content script, popup, side panel, offscreen cropper
+  - `packages/native-host`: local daemon, native host bootstrap, manifest installer
+  - `packages/protocol`: shared protocol shapes, normalization, error codes, budgeting
+  - `packages/agent-client`: CLI (`npx bb`) and subagent-facing bridge client
+  - `skills/browser-bridge`: modular skill — core SKILL.md loaded first, reference docs on demand
+
+## CLI Quick Reference
+
+```bash
+npx bb status                          # bridge health
+npx bb install <extension-id>          # install native manifest
+npx bb request-access                  # session for active tab
+npx bb call <method> '{"key":"val"}'   # any RPC method
+npx bb batch '[{...}]'                 # parallel reads
+npx bb skill                           # runtime presets
+```
+
+Also: `npx bb-daemon` (start daemon), `npx bb-install <ext-id>` (install manifest directly).
+
+## Skill Structure
+
+- `skills/browser-bridge/SKILL.md` — core rules, quick reference, access flow (always loaded)
+- `skills/browser-bridge/references/protocol.md` — full method table, error codes (load when exploring methods)
+- `skills/browser-bridge/references/token-efficiency.md` — budget presets, anti-patterns (load when optimizing)
+- `skills/browser-bridge/references/patch-workflow.md` — style/DOM patch loops (load when patching)
+- `skills/browser-bridge/references/interaction.md` — input, navigation, form controls (load when interacting)
 
 ## Working Rules
 
@@ -34,6 +55,6 @@
 
 ## CLI and Protocol Expectations
 
-- `packages/agent-client/src/cli.js` should remain usable as a generic bridge tool.
+- `packages/agent-client/src/cli.js` is registered as `npx bb` via the `bin` field in package.json.
 - Prefer the generic `call` path for arbitrary bridge methods.
 - High-level helper commands are acceptable only when they map cleanly onto shared protocol methods and do not narrow the protocol surface.

@@ -352,22 +352,22 @@ export function normalizePatchOperation(params = {}) {
 
 /**
  * @returns {{
- *   protocolVersion: string,
- *   budgetPresets: Record<string, { maxNodes: number, maxDepth: number, textBudget: number }>,
- *   methodGroups: Record<string, string[]>,
- *   guidance: string[],
- *   exampleFlow: BridgeMethod[]
+ *   v: string,
+ *   budgets: Record<string, { n: number, d: number, t: number }>,
+ *   methods: Record<string, string[]>,
+ *   tips: string[],
+ *   flow: BridgeMethod[]
  * }}
  */
 export function createRuntimeContext() {
   return {
-    protocolVersion: PROTOCOL_VERSION,
-    budgetPresets: {
-      quick: { maxNodes: 5, maxDepth: 2, textBudget: 300 },
-      normal: { maxNodes: 25, maxDepth: 4, textBudget: 600 },
-      deep: { maxNodes: 100, maxDepth: 8, textBudget: 2000 }
+    v: PROTOCOL_VERSION,
+    budgets: {
+      quick: { n: 5, d: 2, t: 300 },
+      normal: { n: 25, d: 4, t: 600 },
+      deep: { n: 100, d: 8, t: 2000 }
     },
-    methodGroups: {
+    methods: {
       inspect: ['dom.query', 'dom.describe', 'dom.get_text', 'dom.get_attributes',
         'styles.get_computed', 'styles.get_matched_rules', 'layout.get_box_model', 'layout.hit_test'],
       navigate: ['navigation.navigate', 'navigation.reload', 'navigation.go_back',
@@ -380,16 +380,16 @@ export function createRuntimeContext() {
       cdp: ['cdp.get_document', 'cdp.get_dom_snapshot', 'cdp.get_box_model',
         'cdp.get_computed_styles_for_node']
     },
-    guidance: [
-      'Start with dom.query at quick budget; widen only if truncated.',
-      'Reuse elementRef from prior results instead of re-querying.',
-      'Set attributeAllowlist and styleAllowlist to limit payload size.',
-      'Try patch.apply_styles before patch.apply_dom for visual experiments.',
-      'Verify patches with layout.get_box_model, not screenshots.',
-      'Use batch command for independent multi-step reads.',
-      'Rollback all patches before finishing.'
+    tips: [
+      'dom.query quick budget first; widen only if truncated',
+      'Reuse elementRef; don\'t re-query',
+      'Set attributeAllowlist + styleAllowlist',
+      'patch.apply_styles before patch.apply_dom',
+      'Verify with get_box_model not screenshots',
+      'batch independent reads',
+      'Rollback all patches before finishing'
     ],
-    exampleFlow: [
+    flow: [
       'session.request_access',
       'page.get_state',
       'dom.query',

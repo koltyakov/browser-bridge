@@ -23,12 +23,27 @@ export function getSocketPath() {
  * @returns {string}
  */
 export function getManifestInstallDir() {
-  return path.join(
-    os.homedir(),
-    'Library',
-    'Application Support',
-    'Google',
-    'Chrome',
-    'NativeMessagingHosts'
-  );
+  const platform = os.platform();
+  if (platform === 'darwin') {
+    return path.join(
+      os.homedir(),
+      'Library',
+      'Application Support',
+      'Google',
+      'Chrome',
+      'NativeMessagingHosts'
+    );
+  }
+  if (platform === 'win32') {
+    // Windows uses registry, but manifest file goes here by convention
+    return path.join(
+      process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
+      'Google',
+      'Chrome',
+      'User Data',
+      'NativeMessagingHosts'
+    );
+  }
+  // Linux / others
+  return path.join(os.homedir(), '.config', 'google-chrome', 'NativeMessagingHosts');
 }

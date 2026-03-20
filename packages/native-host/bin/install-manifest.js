@@ -13,14 +13,15 @@ const launcherPath = path.join(getBridgeDir(), 'native-host-launcher.sh');
 const installDir = getManifestInstallDir();
 const manifestPath = path.join(installDir, `${APP_NAME}.json`);
 const nodePath = process.execPath;
-const placeholderOrigin = 'chrome-extension://__REPLACE_WITH_EXTENSION_ID__/';
+
+const extensionIdArg = parseExtensionId(process.argv[2]);
 
 const launcher = `#!/bin/sh
 exec '${escapeSingleQuotes(nodePath)}' '${escapeSingleQuotes(hostPath)}' "$@"
 `;
 
 const existingManifest = await readExistingManifest(manifestPath);
-const allowedOrigins = getAllowedOrigins(existingManifest);
+const allowedOrigins = getAllowedOrigins(existingManifest, extensionIdArg);
 
 /** @type {{name: string, description: string, path: string, type: 'stdio', allowed_origins: string[]}} */
 const manifest = {
@@ -43,8 +44,33 @@ await fs.promises.writeFile(
 
 process.stdout.write(`Wrote ${manifestPath}\n`);
 process.stdout.write(`Wrote ${launcherPath}\n`);
-if (allowedOrigins.includes(placeholderOrigin)) {
-  process.stdout.write('Replace __REPLACE_WITH_EXTENSION_ID__ with the installed extension id before using Chrome Native Messaging.\n');
+
+const hasPlaceholder = allowedOrigins.some((o) => o.includes('__REPLACE_WITH_EXTENSION_ID__'));
+if (hasPlaceholder) {
+  process.stdout.write(
+    'Tip: pass the extension ID to set allowed_origins automatically:\n' +
+    '  npx bb install <extension-id>\n'
+  );
+}
+
+/**
+ * Parse and validate a Chrome extension ID from a CLI argument.
+ * Accepts a raw 32-char ID or a full `chrome-extension://<id>/` origin.
+ * @param {string | undefined} arg
+ * @returns {string | null} The validated extension ID, or null.
+ */
+function parseExtensionId(arg) {
+  if (!arg) return null;
+
+  // Accept full origin format: chrome-extension://<id>/
+  const originMatch = arg.match(/^chrome-extension:\/\/([a-z]{32})\/?$/);
+  if (originMatch) return originMatch[1];
+
+  // Accept raw 32-character lowercase ID
+  if (/^[a-z]{32}$/.test(arg)) return arg;
+
+  process.stderr.write(`Invalid extension ID: ${arg}\nExpected 32 lowercase letters (e.g. abcdefghijklmnopabcdefghijklmnop)\n`);
+  process.exit(1);
 }
 
 /**
@@ -69,12 +95,29 @@ async function readExistingManifest(filePath) {
 }
 
 /**
+ * Build the allowed_origins list.
+ * If an extension ID was provided, ensures its origin is present.
+ * Otherwise falls back to existing origins or a placeholder.
  * @param {{allowed_origins?: string[]} | null} existingManifest
+ * @param {string | null} extensionId
  * @returns {string[]}
  */
-function getAllowedOrigins(existingManifest) {
-  if (existingManifest && Array.isArray(existingManifest.allowed_origins) && existingManifest.allowed_origins.length > 0) {
-    return existingManifest.allowed_origins;
+function getAllowedOrigins(existingManifest, extensionId) {
+  const existing = (existingManifest && Array.isArray(existingManifest.allowed_origins))
+    ? existingManifest.allowed_origins
+    : [];
+
+  if (extensionId) {
+    const origin = `chrome-extension://${extensionId}/`;
+    // Merge with existing, dedup, and remove placeholder
+    const merged = new Set(existing);
+    merged.add(origin);
+    for (const o of merged) {
+      if (o.includes('__REPLACE_WITH_EXTENSION_ID__')) merged.delete(o);
+    }
+    return [...merged];
   }
-  return [placeholderOrigin];
+
+  if (existing.length > 0) return existing;
+  return ['chrome-extension://__REPLACE_WITH_EXTENSION_ID__/'];
 }

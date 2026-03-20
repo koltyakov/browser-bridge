@@ -1,4 +1,4 @@
 interface:
   display_name: "Browser Bridge"
   short_description: "Token-efficient Chrome tab inspection and patching"
-  default_prompt: "Use $browser-bridge for Chrome tab inspection, interaction, and patching via the local bridge. Start with `status`, then `request-access`, then structured reads (`dom.query`, `styles.get_computed`) before screenshots. Use `batch` for multi-step independent reads. Use `skill` for runtime budget presets and method groups. Do not use Playwright or other browser automation; use browser-bridge only."
+  default_prompt: "Use $browser-bridge for Chrome tab inspection, interaction, and patching via the local bridge. Start with `npx bb status`, then `npx bb request-access`, then structured reads (`dom.query`, `styles.get_computed`) before screenshots. Use `npx bb batch` for independent reads. Use `npx bb skill` for runtime presets. Do not use Playwright or other browser automation; use browser-bridge only."

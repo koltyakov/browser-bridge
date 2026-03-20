@@ -92,9 +92,9 @@ test('truncateText reports truncation metadata', () => {
 /** Ensure runtime guidance remains compact and opinionated. */
 test('runtime context stays compact and opinionated', () => {
   const context = createRuntimeContext();
-  assert.equal(context.protocolVersion, '1.0');
-  assert.ok(context.guidance.length >= 3);
-  assert.equal(context.exampleFlow.includes('page.get_state'), true);
+  assert.equal(context.v, '1.0');
+  assert.ok(context.tips.length >= 3);
+  assert.equal(context.flow.includes('page.get_state'), true);
 });
 
 /** Ensure DOM patch metadata is preserved by normalization. */
