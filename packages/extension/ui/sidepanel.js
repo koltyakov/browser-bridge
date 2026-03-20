@@ -143,19 +143,16 @@ function renderActionLogEntry(entry) {
   timestamp.className = 'muted activity-time';
   timestamp.textContent = new Date(entry.at).toLocaleTimeString();
 
-  const scopeLine = document.createElement('div');
-  scopeLine.className = 'muted activity-scope';
-  const scope = entry.url
-    ? `${entry.url}${entry.tabId === null ? '' : ` • tab ${entry.tabId}`}`
-    : entry.tabId === null
-      ? 'No tab scope'
-      : `Tab ${entry.tabId}`;
-  scopeLine.textContent = scope;
-
   const summary = document.createElement('div');
   summary.textContent = `${entry.ok ? 'OK' : 'Error'}: ${entry.summary}`;
 
-  details.append(timestamp, scopeLine);
+  details.append(timestamp);
+  if (!(Number.isFinite(requestedTabId) && requestedTabId > 0) && entry.url) {
+    const scopeLine = document.createElement('div');
+    scopeLine.className = 'muted activity-scope';
+    scopeLine.textContent = entry.url;
+    details.append(scopeLine);
+  }
   container.append(title, details, summary);
   return container;
 }

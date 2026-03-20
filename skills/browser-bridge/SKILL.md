@@ -17,6 +17,17 @@ node packages/agent-client/src/cli.js call dom.query '{"selector":"main","maxNod
 
 Run `node packages/agent-client/src/cli.js skill` for live runtime guidance including budget presets and method groups.
 
+## Access Retry Flow
+
+`request-access` may return `APPROVAL_PENDING` or `ACCESS_DENIED` because the user must first enable the tab in the extension popup or side panel. Handle this as follows:
+
+1. Call `request-access`. If it succeeds, proceed.
+2. If it returns `APPROVAL_PENDING` or `ACCESS_DENIED`, **wait ~3 seconds** and retry.
+3. Retry up to **4 more times** (5 attempts total), waiting ~3 s between each.
+4. If all retries fail, **tell the user**:
+   > Please enable agent communication for the active tab in the Browser Bridge extension (popup or side panel), then type **ready** so I can continue.
+5. When the user replies "ready", call `request-access` once more and proceed normally.
+
 ## Core Rules
 
 1. **Structured first** — `dom.query` → `styles.get_computed` → `layout.get_box_model` before any screenshot.
