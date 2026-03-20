@@ -1,5 +1,22 @@
 # Protocol Reference
 
+## Method Categories
+
+| Category | Methods | When to Use |
+|----------|---------|-------------|
+| Session | `session.request_access`, `session.get_status`, `session.revoke` | Setup, verify, or tear down a tab session |
+| Page | `page.get_state` | Confirm URL, readiness, focus, scroll before acting |
+| Inspect | `dom.query`, `dom.describe`, `dom.get_text`, `dom.get_attributes` | Read DOM structure and content |
+| Layout | `layout.get_box_model`, `layout.hit_test` | Measure element geometry |
+| Styles | `styles.get_computed`, `styles.get_matched_rules` | Read CSS properties and matching rules |
+| Navigate | `navigation.navigate`, `navigation.reload`, `navigation.go_back`, `navigation.go_forward` | Tab-level URL movement |
+| Scroll | `viewport.scroll` | Reposition viewport or scrollable element |
+| Input | `input.click`, `input.type`, `input.focus`, `input.press_key`, `input.set_checked`, `input.select_option` | Interact with page elements |
+| Patch | `patch.apply_styles`, `patch.apply_dom`, `patch.list`, `patch.rollback`, `patch.commit_session_baseline` | Reversible CSS/DOM experiments |
+| Capture | `screenshot.capture_element`, `screenshot.capture_region` | Visual evidence (last resort) |
+| CDP | `cdp.get_document`, `cdp.get_dom_snapshot`, `cdp.get_box_model`, `cdp.get_computed_styles_for_node` | DevTools-backed reads when content script is insufficient |
+| Utility | `tabs.list`, `health.ping`, `log.tail`, `skill.get_runtime_context` | Bridge status and diagnostics |
+
 ## Core commands
 
 Use the agent client CLI for the common bridge entry points:
@@ -11,6 +28,7 @@ node packages/agent-client/src/cli.js skill
 node packages/agent-client/src/cli.js request-access
 node packages/agent-client/src/cli.js call <method> '{"params":"go-here"}'
 node packages/agent-client/src/cli.js call "<session-id>" <method> '{"params":"go-here"}'
+node packages/agent-client/src/cli.js batch '[{"method":"...","params":{...}},...]'
 ```
 
 The CLI should stay generic. For tab-bound methods, `call <method>` reuses the saved session automatically. For richer browser actions, the subagent should speak the shared RPC methods through `call` or by using the bridge client library directly.

@@ -353,6 +353,8 @@ export function normalizePatchOperation(params = {}) {
 /**
  * @returns {{
  *   protocolVersion: string,
+ *   budgetPresets: Record<string, { maxNodes: number, maxDepth: number, textBudget: number }>,
+ *   methodGroups: Record<string, string[]>,
  *   guidance: string[],
  *   exampleFlow: BridgeMethod[]
  * }}
@@ -360,14 +362,32 @@ export function normalizePatchOperation(params = {}) {
 export function createRuntimeContext() {
   return {
     protocolVersion: PROTOCOL_VERSION,
+    budgetPresets: {
+      quick: { maxNodes: 5, maxDepth: 2, textBudget: 300 },
+      normal: { maxNodes: 25, maxDepth: 4, textBudget: 600 },
+      deep: { maxNodes: 100, maxDepth: 8, textBudget: 2000 }
+    },
+    methodGroups: {
+      inspect: ['dom.query', 'dom.describe', 'dom.get_text', 'dom.get_attributes',
+        'styles.get_computed', 'styles.get_matched_rules', 'layout.get_box_model', 'layout.hit_test'],
+      navigate: ['navigation.navigate', 'navigation.reload', 'navigation.go_back',
+        'navigation.go_forward', 'viewport.scroll'],
+      interact: ['input.click', 'input.type', 'input.focus', 'input.press_key',
+        'input.set_checked', 'input.select_option'],
+      patch: ['patch.apply_styles', 'patch.apply_dom', 'patch.list', 'patch.rollback',
+        'patch.commit_session_baseline'],
+      capture: ['screenshot.capture_element', 'screenshot.capture_region'],
+      cdp: ['cdp.get_document', 'cdp.get_dom_snapshot', 'cdp.get_box_model',
+        'cdp.get_computed_styles_for_node']
+    },
     guidance: [
-      'Use page.get_state to confirm document readiness, focus, and scroll context before acting.',
-      'Use navigation.* for tab-level movement and viewport.scroll for page positioning.',
-      'Prefer dom.query and styles.get_computed before screenshots.',
-      'Keep maxNodes, maxDepth, attributeAllowlist, and styleAllowlist tight.',
-      'Use input.click, input.type, input.set_checked, and input.select_option only after the operator has enabled the tab.',
-      'Use patch.apply_styles for visual experiments and rollback before exit.',
-      'Scope every result to the enabled tab and origin.'
+      'Start with dom.query at quick budget; widen only if truncated.',
+      'Reuse elementRef from prior results instead of re-querying.',
+      'Set attributeAllowlist and styleAllowlist to limit payload size.',
+      'Try patch.apply_styles before patch.apply_dom for visual experiments.',
+      'Verify patches with layout.get_box_model, not screenshots.',
+      'Use batch command for independent multi-step reads.',
+      'Rollback all patches before finishing.'
     ],
     exampleFlow: [
       'session.request_access',

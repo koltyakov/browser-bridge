@@ -60,10 +60,22 @@ export function summarizeBridgeResponse(response) {
     };
   }
   if (Array.isArray(result.nodes)) {
+    const nodes = /** @type {Array<Record<string, unknown>>} */ (result.nodes);
+    const compact = nodes.slice(0, 15).map((n) => {
+      /** @type {Record<string, unknown>} */
+      const entry = { ref: n.elementRef, tag: n.tag };
+      if (typeof n.text === 'string' && n.text) {
+        entry.text = n.text.length > 80 ? `${n.text.slice(0, 79)}\u2026` : n.text;
+      }
+      if (Array.isArray(n.children) && n.children.length) {
+        entry.childCount = n.children.length;
+      }
+      return entry;
+    });
     return {
       ok: true,
-      summary: `DOM query returned ${result.nodes.length} node(s).`,
-      evidence: result.nodes
+      summary: `DOM query returned ${nodes.length} node(s)${nodes.length > 15 ? '; showing first 15' : ''}.`,
+      evidence: compact
     };
   }
   if (typeof result.patchId === 'string') {

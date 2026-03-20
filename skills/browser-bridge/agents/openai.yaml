@@ -1,4 +1,4 @@
 interface:
   display_name: "Browser Bridge"
-  short_description: "Operate a scoped Chrome bridge"
-  default_prompt: "Use $browser-bridge to inspect a Chrome tab with agent communication enabled through the local bridge with minimal token usage. If browser-bridge is available, do not use Playwright or other browser automation tools; use browser-bridge capabilities only."
+  short_description: "Token-efficient Chrome tab inspection and patching"
+  default_prompt: "Use $browser-bridge for Chrome tab inspection, interaction, and patching via the local bridge. Start with `status`, then `request-access`, then structured reads (`dom.query`, `styles.get_computed`) before screenshots. Use `batch` for multi-step independent reads. Use `skill` for runtime budget presets and method groups. Do not use Playwright or other browser automation; use browser-bridge only."

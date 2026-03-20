@@ -23,7 +23,7 @@ if (!command || ['help', '--help', '-h'].includes(command)) {
 }
 
 if (command === 'skill') {
-  process.stdout.write(`${JSON.stringify(createRuntimeContext(), null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify(createRuntimeContext(), null, process.stdout.isTTY ? 2 : undefined)}\n`);
   process.exit(0);
 }
 
@@ -58,6 +58,35 @@ async function main() {
         params
       });
       printJson(response.ok ? response.result : response);
+      return;
+    }
+
+    if (command === 'batch') {
+      const input = rest[0];
+      if (!input) {
+        throw new Error('Usage: batch \'[{"method":"...","params":{...}}, ...]\'');
+      }
+      const calls = JSON.parse(input);
+      if (!Array.isArray(calls)) {
+        throw new Error('Batch input must be a JSON array.');
+      }
+      const needsSession = calls.some((c) => methodNeedsSession(c.method));
+      const session = needsSession ? await requireSession() : null;
+      /** @type {unknown[]} */
+      const results = [];
+      for (const call of calls) {
+        try {
+          const response = await client.request({
+            method: /** @type {BridgeMethod} */ (call.method),
+            sessionId: methodNeedsSession(call.method) ? session?.sessionId ?? null : null,
+            params: call.params || {}
+          });
+          results.push(summarizeBridgeResponse(response));
+        } catch (err) {
+          results.push({ ok: false, summary: `${call.method}: ${err.message}`, evidence: null });
+        }
+      }
+      printJson(results);
       return;
     }
 
@@ -375,7 +404,7 @@ async function printSummary(response) {
  * @returns {void}
  */
 function printJson(value) {
-  process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify(value, null, process.stdout.isTTY ? 2 : undefined)}\n`);
 }
 
 function printUsage() {
@@ -384,6 +413,7 @@ function printUsage() {
   node packages/agent-client/src/cli.js tabs
   node packages/agent-client/src/cli.js call <method> [paramsJson]
   node packages/agent-client/src/cli.js call <sessionId|null> <method> [paramsJson]
+  node packages/agent-client/src/cli.js batch '[{"method":"...","params":{...}},...]'
   # The target tab must already be enabled in the extension UI.
   node packages/agent-client/src/cli.js request-access [tabId] [origin]
   node packages/agent-client/src/cli.js request-access [origin]
