@@ -3,7 +3,7 @@
 export {};
 
 /**
- * @typedef {'dom.read' | 'styles.read' | 'layout.read' | 'screenshot.partial' | 'patch.dom' | 'patch.styles' | 'cdp.dom_snapshot' | 'cdp.box_model' | 'cdp.styles' | 'automation.input'} Capability
+ * @typedef {'page.read' | 'dom.read' | 'styles.read' | 'layout.read' | 'viewport.control' | 'navigation.control' | 'screenshot.partial' | 'patch.dom' | 'patch.styles' | 'cdp.dom_snapshot' | 'cdp.box_model' | 'cdp.styles' | 'automation.input'} Capability
  */
 
 /**
@@ -11,7 +11,7 @@ export {};
  */
 
 /**
- * @typedef {'tabs.list' | 'session.request_access' | 'session.get_status' | 'session.revoke' | 'skill.get_runtime_context' | 'dom.query' | 'dom.describe' | 'dom.get_text' | 'dom.get_attributes' | 'layout.get_box_model' | 'layout.hit_test' | 'styles.get_computed' | 'styles.get_matched_rules' | 'input.click' | 'input.focus' | 'input.type' | 'input.press_key' | 'screenshot.capture_region' | 'screenshot.capture_element' | 'patch.apply_styles' | 'patch.apply_dom' | 'patch.list' | 'patch.rollback' | 'patch.commit_session_baseline' | 'cdp.get_document' | 'cdp.get_dom_snapshot' | 'cdp.get_box_model' | 'cdp.get_computed_styles_for_node' | 'log.tail' | 'health.ping'} BridgeMethod
+ * @typedef {'tabs.list' | 'session.request_access' | 'session.get_status' | 'session.revoke' | 'skill.get_runtime_context' | 'page.get_state' | 'navigation.navigate' | 'navigation.reload' | 'navigation.go_back' | 'navigation.go_forward' | 'dom.query' | 'dom.describe' | 'dom.get_text' | 'dom.get_attributes' | 'layout.get_box_model' | 'layout.hit_test' | 'styles.get_computed' | 'styles.get_matched_rules' | 'viewport.scroll' | 'input.click' | 'input.focus' | 'input.type' | 'input.press_key' | 'input.set_checked' | 'input.select_option' | 'screenshot.capture_region' | 'screenshot.capture_element' | 'patch.apply_styles' | 'patch.apply_dom' | 'patch.list' | 'patch.rollback' | 'patch.commit_session_baseline' | 'cdp.get_document' | 'cdp.get_dom_snapshot' | 'cdp.get_box_model' | 'cdp.get_computed_styles_for_node' | 'log.tail' | 'health.ping'} BridgeMethod
  */
 
 /**
@@ -185,6 +185,74 @@ export {};
  *   key: string,
  *   modifiers: string[]
  * }} NormalizedInputAction
+ */
+
+/**
+ * @typedef {{
+ *   target?: InputTarget,
+ *   checked?: boolean
+ * }} CheckedActionParams
+ */
+
+/**
+ * @typedef {{
+ *   target: InputTarget,
+ *   checked: boolean
+ * }} NormalizedCheckedAction
+ */
+
+/**
+ * @typedef {{
+ *   target?: InputTarget,
+ *   values?: string[],
+ *   labels?: string[],
+ *   indexes?: number[]
+ * }} SelectActionParams
+ */
+
+/**
+ * @typedef {{
+ *   target: InputTarget,
+ *   values: string[],
+ *   labels: string[],
+ *   indexes: number[]
+ * }} NormalizedSelectAction
+ */
+
+/**
+ * @typedef {{
+ *   target?: InputTarget,
+ *   top?: number,
+ *   left?: number,
+ *   behavior?: 'auto' | 'smooth',
+ *   relative?: boolean
+ * }} ViewportActionParams
+ */
+
+/**
+ * @typedef {{
+ *   target: InputTarget,
+ *   top: number,
+ *   left: number,
+ *   behavior: 'auto' | 'smooth',
+ *   relative: boolean
+ * }} NormalizedViewportAction
+ */
+
+/**
+ * @typedef {{
+ *   url?: string,
+ *   waitForLoad?: boolean,
+ *   timeoutMs?: number
+ * }} NavigationActionParams
+ */
+
+/**
+ * @typedef {{
+ *   url: string,
+ *   waitForLoad: boolean,
+ *   timeoutMs: number
+ * }} NormalizedNavigationAction
  */
 
 /**

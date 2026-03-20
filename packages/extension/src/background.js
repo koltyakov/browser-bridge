@@ -7,9 +7,13 @@ import {
   createRuntimeContext,
   createSuccess,
   normalizeAccessRequest,
+  normalizeCheckedAction,
   normalizeInputAction,
+  normalizeNavigationAction,
   normalizePatchOperation,
-  normalizeStyleQuery
+  normalizeSelectAction,
+  normalizeStyleQuery,
+  normalizeViewportAction
 } from '../../protocol/src/index.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */
@@ -234,6 +238,12 @@ async function dispatchBridgeRequest(request) {
       return handleSessionStatus(request);
     case 'session.revoke':
       return handleRevoke(request);
+    case 'navigation.navigate':
+    case 'navigation.reload':
+    case 'navigation.go_back':
+    case 'navigation.go_forward':
+      return handleNavigationRequest(request);
+    case 'page.get_state':
     case 'dom.query':
     case 'dom.describe':
     case 'dom.get_text':
@@ -242,10 +252,13 @@ async function dispatchBridgeRequest(request) {
     case 'layout.hit_test':
     case 'styles.get_computed':
     case 'styles.get_matched_rules':
+    case 'viewport.scroll':
     case 'input.click':
     case 'input.focus':
     case 'input.type':
     case 'input.press_key':
+    case 'input.set_checked':
+    case 'input.select_option':
     case 'patch.apply_styles':
     case 'patch.apply_dom':
     case 'patch.list':
@@ -406,13 +419,20 @@ async function handleListTabs(request) {
 async function handleTabBoundRequest(request) {
   const session = await requireSession(request, inferCapability(request.method));
   await ensureContentScript(session.tabId);
-  const payload = request.method.startsWith('styles.')
-    ? normalizeStyleQuery(request.params)
-    : request.method.startsWith('input.')
-      ? normalizeInputAction(request.params)
-    : request.method.startsWith('patch.')
-      ? normalizePatchOperation(request.params)
-      : request.params;
+  let payload = request.params;
+  if (request.method.startsWith('styles.')) {
+    payload = normalizeStyleQuery(request.params);
+  } else if (request.method === 'viewport.scroll') {
+    payload = normalizeViewportAction(request.params);
+  } else if (request.method === 'input.set_checked') {
+    payload = normalizeCheckedAction(request.params);
+  } else if (request.method === 'input.select_option') {
+    payload = normalizeSelectAction(request.params);
+  } else if (request.method.startsWith('input.')) {
+    payload = normalizeInputAction(request.params);
+  } else if (request.method.startsWith('patch.')) {
+    payload = normalizePatchOperation(request.params);
+  }
 
   if (request.method.startsWith('screenshot.')) {
     const result = await handleScreenshot(session, request.method, request.params);
@@ -429,6 +449,42 @@ async function handleTabBoundRequest(request) {
     return toFailureResponse(request, response.error);
   }
   return createSuccess(request.id, response, { method: request.method });
+}
+
+/**
+ * Execute a tab-level navigation action and optionally wait for the next load
+ * cycle to complete.
+ *
+ * @param {BridgeRequest} request
+ * @returns {Promise<BridgeResponse>}
+ */
+async function handleNavigationRequest(request) {
+  const session = await requireSession(request, inferCapability(request.method));
+  const action = normalizeNavigationAction(request.params);
+
+  if (request.method === 'navigation.navigate') {
+    if (!action.url) {
+      throw new Error(ERROR_CODES.INVALID_REQUEST);
+    }
+    await chrome.tabs.update(session.tabId, { url: action.url });
+  } else if (request.method === 'navigation.reload') {
+    await chrome.tabs.reload(session.tabId);
+  } else if (request.method === 'navigation.go_back') {
+    await chrome.tabs.goBack(session.tabId);
+  } else {
+    await chrome.tabs.goForward(session.tabId);
+  }
+
+  const tab = action.waitForLoad
+    ? await waitForTabComplete(session.tabId, action.timeoutMs)
+    : await chrome.tabs.get(session.tabId);
+
+  if (tab.url) {
+    await syncTabSessionsOrigin(session.tabId, tab.url);
+  }
+  await emitUiState();
+
+  return createSuccess(request.id, summarizeTabResult(tab, request.method), { method: request.method });
 }
 
 /**
@@ -566,6 +622,88 @@ async function handleCdpRequest(request) {
   } finally {
     await chrome.debugger.detach(target);
   }
+}
+
+/**
+ * Wait for a tab to reach the `complete` status after a navigation-like action.
+ *
+ * @param {number} tabId
+ * @param {number} timeoutMs
+ * @returns {Promise<chrome.tabs.Tab>}
+ */
+async function waitForTabComplete(tabId, timeoutMs) {
+  const initialTab = await chrome.tabs.get(tabId);
+  if (initialTab.status === 'complete') {
+    return initialTab;
+  }
+
+  return new Promise((resolve, reject) => {
+    let finished = false;
+    const timeoutId = setTimeout(() => {
+      cleanup();
+      reject(new Error(`Timed out waiting for tab ${tabId} to finish loading after ${timeoutMs}ms.`));
+    }, timeoutMs);
+
+    /**
+     * @returns {void}
+     */
+    function cleanup() {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      clearTimeout(timeoutId);
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      chrome.tabs.onRemoved.removeListener(onRemoved);
+    }
+
+    /**
+     * @param {number} updatedTabId
+     * @param {TabChangeInfo} changeInfo
+     * @param {chrome.tabs.Tab} tab
+     * @returns {void}
+     */
+    function onUpdated(updatedTabId, changeInfo, tab) {
+      if (updatedTabId !== tabId || changeInfo.status !== 'complete') {
+        return;
+      }
+      cleanup();
+      resolve(tab);
+    }
+
+    /**
+     * @param {number} removedTabId
+     * @returns {void}
+     */
+    function onRemoved(removedTabId) {
+      if (removedTabId !== tabId) {
+        return;
+      }
+      cleanup();
+      reject(new Error(ERROR_CODES.TAB_MISMATCH));
+    }
+
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    chrome.tabs.onRemoved.addListener(onRemoved);
+  });
+}
+
+/**
+ * Return a compact tab snapshot after a navigation operation.
+ *
+ * @param {chrome.tabs.Tab} tab
+ * @param {string} method
+ * @returns {{ method: string, tabId: number | null, windowId: number | null, url: string, title: string, status: string }}
+ */
+function summarizeTabResult(tab, method) {
+  return {
+    method,
+    tabId: typeof tab.id === 'number' ? tab.id : null,
+    windowId: typeof tab.windowId === 'number' ? tab.windowId : null,
+    url: tab.url ?? '',
+    title: tab.title ?? '',
+    status: tab.status ?? 'unknown'
+  };
 }
 
 /**
@@ -1100,6 +1238,9 @@ function safeOrigin(url) {
  * @returns {Capability | null}
  */
 function inferCapability(method) {
+  if (method.startsWith('page.')) {
+    return CAPABILITIES.PAGE_READ;
+  }
   if (method.startsWith('dom.')) {
     return CAPABILITIES.DOM_READ;
   }
@@ -1108,6 +1249,12 @@ function inferCapability(method) {
   }
   if (method.startsWith('layout.')) {
     return CAPABILITIES.LAYOUT_READ;
+  }
+  if (method.startsWith('viewport.')) {
+    return CAPABILITIES.VIEWPORT_CONTROL;
+  }
+  if (method.startsWith('navigation.')) {
+    return CAPABILITIES.NAVIGATION_CONTROL;
   }
   if (method.startsWith('input.')) {
     return CAPABILITIES.AUTOMATION_INPUT;

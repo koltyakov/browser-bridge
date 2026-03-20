@@ -10,10 +10,14 @@ import {
   createFailure,
   createRequest,
   createRuntimeContext,
+  normalizeCheckedAction,
   createSuccess,
   normalizeAccessRequest,
   normalizeInputAction,
+  normalizeNavigationAction,
   normalizePatchOperation,
+  normalizeSelectAction,
+  normalizeViewportAction,
   truncateText
 } from '../src/index.js';
 
@@ -51,6 +55,9 @@ test('normalizeAccessRequest falls back to default capabilities', () => {
 
   assert.deepEqual(access.capabilities, DEFAULT_CAPABILITIES);
   assert.equal(access.capabilities.includes('automation.input'), true);
+  assert.equal(access.capabilities.includes('page.read'), true);
+  assert.equal(access.capabilities.includes('navigation.control'), true);
+  assert.equal(access.capabilities.includes('viewport.control'), true);
   assert.equal(access.tabId, 5);
   assert.ok(access.ttlMs >= 10 * 365 * 24 * 60 * 60 * 1000);
 });
@@ -87,6 +94,7 @@ test('runtime context stays compact and opinionated', () => {
   const context = createRuntimeContext();
   assert.equal(context.protocolVersion, '1.0');
   assert.ok(context.guidance.length >= 3);
+  assert.equal(context.exampleFlow.includes('page.get_state'), true);
 });
 
 /** Ensure DOM patch metadata is preserved by normalization. */
@@ -116,4 +124,56 @@ test('normalizeInputAction preserves interactive intent', () => {
   assert.equal(input.clickCount, 2);
   assert.equal(input.key, 'Enter');
   assert.deepEqual(input.modifiers, ['Shift']);
+});
+
+/** Ensure checked actions default to an affirmative toggle with a normalized target. */
+test('normalizeCheckedAction defaults to checked=true', () => {
+  const action = normalizeCheckedAction({
+    target: { selector: 'input[type=checkbox]' }
+  });
+
+  assert.equal(action.target.selector, 'input[type=checkbox]');
+  assert.equal(action.checked, true);
+});
+
+/** Ensure select actions keep only useful selectors. */
+test('normalizeSelectAction preserves selection intent', () => {
+  const action = normalizeSelectAction({
+    target: { elementRef: 'el_1' },
+    values: ['us', ''],
+    labels: ['United States'],
+    indexes: [0, -1, 2.5, 3]
+  });
+
+  assert.equal(action.target.elementRef, 'el_1');
+  assert.deepEqual(action.values, ['us']);
+  assert.deepEqual(action.labels, ['United States']);
+  assert.deepEqual(action.indexes, [0, 3]);
+});
+
+/** Ensure viewport actions clamp to the supported behavior set. */
+test('normalizeViewportAction preserves scroll behavior', () => {
+  const action = normalizeViewportAction({
+    top: 120,
+    left: -45,
+    behavior: 'smooth',
+    relative: true
+  });
+
+  assert.equal(action.top, 120);
+  assert.equal(action.left, -45);
+  assert.equal(action.behavior, 'smooth');
+  assert.equal(action.relative, true);
+});
+
+/** Ensure navigation actions stay bounded and wait by default. */
+test('normalizeNavigationAction keeps navigation actions bounded', () => {
+  const action = normalizeNavigationAction({
+    url: ' https://example.com/path ',
+    timeoutMs: 999999
+  });
+
+  assert.equal(action.url, 'https://example.com/path');
+  assert.equal(action.waitForLoad, true);
+  assert.equal(action.timeoutMs, 120000);
 });

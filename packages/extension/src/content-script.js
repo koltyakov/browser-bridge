@@ -83,6 +83,13 @@
    */
   function handleCommand(method, params) {
     switch (method) {
+      case "page.get_state":
+        return getPageState();
+      case "navigation.navigate":
+      case "navigation.reload":
+      case "navigation.go_back":
+      case "navigation.go_forward":
+        throw new Error(`Unsupported content-script method ${method}`);
       case "dom.query":
         return domQuery(params);
       case "dom.describe":
@@ -99,6 +106,8 @@
         return getComputedStyles(params.elementRef, params.properties);
       case "styles.get_matched_rules":
         return getMatchedRules(params.elementRef);
+      case "viewport.scroll":
+        return scrollViewport(params);
       case "input.click":
         return clickTarget(params);
       case "input.focus":
@@ -107,6 +116,10 @@
         return typeIntoTarget(params);
       case "input.press_key":
         return pressKeyTarget(params);
+      case "input.set_checked":
+        return setCheckedTarget(params);
+      case "input.select_option":
+        return selectOptionTarget(params);
       case "patch.apply_styles":
         return applyStylePatch(params);
       case "patch.apply_dom":
@@ -122,6 +135,63 @@
       default:
         throw new Error(`Unsupported method ${method}`);
     }
+  }
+
+  /**
+   * Return lightweight page state useful for browser automation decisions.
+   *
+   * @returns {{
+   *   url: string,
+   *   origin: string,
+   *   title: string,
+   *   readyState: DocumentReadyState,
+   *   focused: boolean,
+   *   viewport: { width: number, height: number, devicePixelRatio: number },
+   *   scroll: { x: number, y: number, maxX: number, maxY: number },
+   *   activeElement: NodeSummary | null,
+   *   selection: { value: string, truncated: boolean, omitted: number }
+   * }}
+   */
+  function getPageState() {
+    const scrollingElement =
+      document.scrollingElement || document.documentElement || document.body;
+    const selection = document.getSelection?.()?.toString() || "";
+
+    return {
+      url: window.location.href,
+      origin: window.location.origin,
+      title: document.title,
+      readyState: document.readyState,
+      focused: document.hasFocus(),
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        devicePixelRatio: window.devicePixelRatio || 1,
+      },
+      scroll: {
+        x: window.scrollX,
+        y: window.scrollY,
+        maxX: Math.max(
+          0,
+          (scrollingElement?.scrollWidth || document.documentElement.scrollWidth || 0) -
+            window.innerWidth,
+        ),
+        maxY: Math.max(
+          0,
+          (scrollingElement?.scrollHeight || document.documentElement.scrollHeight || 0) -
+            window.innerHeight,
+        ),
+      },
+      activeElement:
+        document.activeElement instanceof Element
+          ? summarizeNode(
+              document.activeElement,
+              ["id", "class", "name", "type", "href", "role"],
+              120,
+            ).node
+          : null,
+      selection: truncateText(selection.trim(), 200),
+    };
   }
 
   /**
@@ -328,6 +398,73 @@
   }
 
   /**
+   * Scroll the window or a specific scrollable element.
+   *
+   * @param {Record<string, any>} params
+   * @returns {{
+   *   target: string,
+   *   top: number,
+   *   left: number,
+   *   behavior: 'auto' | 'smooth',
+   *   relative: boolean
+   * }}
+   */
+  function scrollViewport(params) {
+    const top = Number(params.top) || 0;
+    const left = Number(params.left) || 0;
+    const behavior = params.behavior === "smooth" ? "smooth" : "auto";
+    const relative = Boolean(params.relative);
+
+    if (params.target?.elementRef || params.target?.selector) {
+      const element = resolveTarget(params.target);
+      const scrollTarget = getScrollableElementTarget(element);
+      if (relative) {
+        scrollTarget.scrollBy({
+          top,
+          left,
+          behavior,
+        });
+      } else {
+        scrollTarget.scrollTo({
+          top,
+          left,
+          behavior,
+        });
+      }
+
+      return {
+        target: rememberElement(scrollTarget),
+        top: scrollTarget.scrollTop,
+        left: scrollTarget.scrollLeft,
+        behavior,
+        relative,
+      };
+    }
+
+    if (relative) {
+      window.scrollBy({
+        top,
+        left,
+        behavior,
+      });
+    } else {
+      window.scrollTo({
+        top,
+        left,
+        behavior,
+      });
+    }
+
+    return {
+      target: "window",
+      top: window.scrollY,
+      left: window.scrollX,
+      behavior,
+      relative,
+    };
+  }
+
+  /**
    * Trigger a click-like interaction on a target element.
    *
    * @param {Record<string, any>} params
@@ -454,6 +591,105 @@
           : null,
       key: result.key,
       handled: result.handled,
+    };
+  }
+
+  /**
+   * Toggle a checkbox-like control to a desired checked state.
+   *
+   * @param {Record<string, any>} params
+   * @returns {{ elementRef: string, checked: boolean, changed: boolean, type: string }}
+   */
+  function setCheckedTarget(params) {
+    const element = resolveCheckableTarget(params.target);
+    const checked = params.checked !== false;
+    if (element.type === "radio" && !checked && element.checked) {
+      throw new Error("Radio inputs cannot be unchecked directly.");
+    }
+
+    scrollTargetIntoView(element);
+    focusElement(element);
+    const changed = element.checked !== checked;
+    if (changed) {
+      element.click();
+      if (element.checked !== checked) {
+        element.checked = checked;
+        element.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+        element.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+      }
+    }
+
+    return {
+      elementRef: rememberElement(element),
+      checked: element.checked,
+      changed,
+      type: element.type,
+    };
+  }
+
+  /**
+   * Select options in a native select control by value, label, or index.
+   *
+   * @param {Record<string, any>} params
+   * @returns {{ elementRef: string, changed: boolean, multiple: boolean, selectedValues: string[] }}
+   */
+  function selectOptionTarget(params) {
+    const element = resolveSelectTarget(params.target);
+    const values = Array.isArray(params.values)
+      ? params.values.filter((value) => typeof value === "string")
+      : [];
+    const labels = Array.isArray(params.labels)
+      ? params.labels.filter((label) => typeof label === "string")
+      : [];
+    const indexes = Array.isArray(params.indexes)
+      ? params.indexes
+          .map((index) => Number(index))
+          .filter((index) => Number.isInteger(index) && index >= 0)
+      : [];
+
+    if (!values.length && !labels.length && !indexes.length) {
+      throw new Error("At least one option selector is required.");
+    }
+
+    scrollTargetIntoView(element);
+    focusElement(element);
+
+    const options = [...element.options];
+    const selectedBefore = getSelectedOptionValues(element);
+    const matchingOptions = options.filter((option, index) => {
+      return (
+        values.includes(option.value) ||
+        labels.includes(option.label) ||
+        labels.includes(option.text.trim()) ||
+        indexes.includes(index)
+      );
+    });
+
+    if (!matchingOptions.length) {
+      throw new Error("No matching option found.");
+    }
+
+    if (element.multiple) {
+      const matchedValues = new Set(matchingOptions.map((option) => option.value));
+      for (const option of options) {
+        option.selected = matchedValues.has(option.value);
+      }
+    } else {
+      element.value = matchingOptions[0].value;
+    }
+
+    const selectedAfter = getSelectedOptionValues(element);
+    const changed = !areStringArraysEqual(selectedBefore, selectedAfter);
+    if (changed) {
+      element.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+      element.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    }
+
+    return {
+      elementRef: rememberElement(element),
+      changed,
+      multiple: element.multiple,
+      selectedValues: selectedAfter,
     };
   }
 
@@ -609,6 +845,67 @@
       }
     }
     throw new Error("Target not found.");
+  }
+
+  /**
+   * @param {{ elementRef?: string, selector?: string }} [target={}]
+   * @returns {HTMLInputElement}
+   */
+  function resolveCheckableTarget(target = {}) {
+    const element = resolveTarget(target);
+    if (
+      element instanceof HTMLInputElement &&
+      ["checkbox", "radio"].includes(element.type.toLowerCase())
+    ) {
+      return element;
+    }
+
+    if (element instanceof HTMLElement) {
+      const nested = element.querySelector('input[type="checkbox"], input[type="radio"]');
+      if (nested instanceof HTMLInputElement) {
+        return nested;
+      }
+    }
+
+    throw new Error("Target is not a checkbox or radio input.");
+  }
+
+  /**
+   * @param {{ elementRef?: string, selector?: string }} [target={}]
+   * @returns {HTMLSelectElement}
+   */
+  function resolveSelectTarget(target = {}) {
+    const element = resolveTarget(target);
+    if (element instanceof HTMLSelectElement) {
+      return element;
+    }
+
+    if (element instanceof HTMLOptionElement && element.parentElement instanceof HTMLSelectElement) {
+      return element.parentElement;
+    }
+
+    if (element instanceof HTMLElement) {
+      const nested = element.querySelector("select");
+      if (nested instanceof HTMLSelectElement) {
+        return nested;
+      }
+    }
+
+    throw new Error("Target is not a select control.");
+  }
+
+  /**
+   * @param {Element} element
+   * @returns {HTMLElement}
+   */
+  function getScrollableElementTarget(element) {
+    if (element instanceof HTMLElement) {
+      return element;
+    }
+    if (document.scrollingElement instanceof HTMLElement) {
+      return document.scrollingElement;
+    }
+    return document.documentElement;
   }
 
   /**
@@ -803,6 +1100,27 @@
     }
 
     return element.innerText || element.textContent || "";
+  }
+
+  /**
+   * @param {HTMLSelectElement} element
+   * @returns {string[]}
+   */
+  function getSelectedOptionValues(element) {
+    return [...element.selectedOptions].map((option) => option.value);
+  }
+
+  /**
+   * @param {string[]} left
+   * @param {string[]} right
+   * @returns {boolean}
+   */
+  function areStringArraysEqual(left, right) {
+    if (left.length !== right.length) {
+      return false;
+    }
+
+    return left.every((value, index) => value === right[index]);
   }
 
   /**

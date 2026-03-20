@@ -10,15 +10,23 @@ import { BridgeError, ERROR_CODES } from './errors.js';
 /** @typedef {import('./types.js').BridgeMethod} BridgeMethod */
 /** @typedef {import('./types.js').BridgeRequest} BridgeRequest */
 /** @typedef {import('./types.js').BridgeSuccessResponse} BridgeSuccessResponse */
+/** @typedef {import('./types.js').CheckedActionParams} CheckedActionParams */
 /** @typedef {import('./types.js').DomQueryParams} DomQueryParams */
 /** @typedef {import('./types.js').InputActionParams} InputActionParams */
+/** @typedef {import('./types.js').NavigationActionParams} NavigationActionParams */
 /** @typedef {import('./types.js').NormalizedAccessRequest} NormalizedAccessRequest */
+/** @typedef {import('./types.js').NormalizedCheckedAction} NormalizedCheckedAction */
 /** @typedef {import('./types.js').NormalizedDomQuery} NormalizedDomQuery */
 /** @typedef {import('./types.js').NormalizedInputAction} NormalizedInputAction */
+/** @typedef {import('./types.js').NormalizedNavigationAction} NormalizedNavigationAction */
 /** @typedef {import('./types.js').NormalizedPatchOperation} NormalizedPatchOperation */
+/** @typedef {import('./types.js').NormalizedSelectAction} NormalizedSelectAction */
 /** @typedef {import('./types.js').NormalizedStyleQuery} NormalizedStyleQuery */
+/** @typedef {import('./types.js').NormalizedViewportAction} NormalizedViewportAction */
 /** @typedef {import('./types.js').PatchOperationParams} PatchOperationParams */
+/** @typedef {import('./types.js').SelectActionParams} SelectActionParams */
 /** @typedef {import('./types.js').StyleQueryParams} StyleQueryParams */
+/** @typedef {import('./types.js').ViewportActionParams} ViewportActionParams */
 
 export const PROTOCOL_VERSION = '1.0';
 const NON_EXPIRING_SESSION_TTL_MS = 10 * 365 * 24 * 60 * 60 * 1000;
@@ -30,6 +38,11 @@ export const METHODS = Object.freeze([
   'session.get_status',
   'session.revoke',
   'skill.get_runtime_context',
+  'page.get_state',
+  'navigation.navigate',
+  'navigation.reload',
+  'navigation.go_back',
+  'navigation.go_forward',
   'dom.query',
   'dom.describe',
   'dom.get_text',
@@ -38,10 +51,13 @@ export const METHODS = Object.freeze([
   'layout.hit_test',
   'styles.get_computed',
   'styles.get_matched_rules',
+  'viewport.scroll',
   'input.click',
   'input.focus',
   'input.type',
   'input.press_key',
+  'input.set_checked',
+  'input.select_option',
   'screenshot.capture_region',
   'screenshot.capture_element',
   'patch.apply_styles',
@@ -207,6 +223,17 @@ export function normalizeStyleQuery(params = {}) {
 }
 
 /**
+ * @param {{ elementRef?: string, selector?: string } | null | undefined} target
+ * @returns {import('./types.js').InputTarget}
+ */
+function normalizeTarget(target) {
+  return {
+    elementRef: typeof target?.elementRef === 'string' ? target.elementRef : undefined,
+    selector: typeof target?.selector === 'string' ? target.selector : undefined
+  };
+}
+
+/**
  * @param {InputActionParams} [params={}]
  * @returns {NormalizedInputAction}
  */
@@ -214,15 +241,13 @@ export function normalizeInputAction(params = {}) {
   const button = params.button === 'middle' || params.button === 'right'
     ? params.button
     : 'left';
-  const target = params.target && typeof params.target === 'object'
-    ? /** @type {{ elementRef?: string, selector?: string }} */ (params.target)
-    : {};
 
   return {
-    target: {
-      elementRef: typeof target.elementRef === 'string' ? target.elementRef : undefined,
-      selector: typeof target.selector === 'string' ? target.selector : undefined
-    },
+    target: normalizeTarget(
+      params.target && typeof params.target === 'object'
+        ? /** @type {{ elementRef?: string, selector?: string }} */ (params.target)
+        : undefined
+    ),
     button,
     clickCount: Math.min(Math.max(Number(params.clickCount) || 1, 1), 2),
     text: typeof params.text === 'string' ? params.text : '',
@@ -232,6 +257,76 @@ export function normalizeInputAction(params = {}) {
     modifiers: Array.isArray(params.modifiers)
       ? params.modifiers.filter((modifier) => typeof modifier === 'string' && modifier.trim())
       : []
+  };
+}
+
+/**
+ * @param {CheckedActionParams} [params={}]
+ * @returns {NormalizedCheckedAction}
+ */
+export function normalizeCheckedAction(params = {}) {
+  return {
+    target: normalizeTarget(
+      params.target && typeof params.target === 'object'
+        ? /** @type {{ elementRef?: string, selector?: string }} */ (params.target)
+        : undefined
+    ),
+    checked: params.checked !== false
+  };
+}
+
+/**
+ * @param {SelectActionParams} [params={}]
+ * @returns {NormalizedSelectAction}
+ */
+export function normalizeSelectAction(params = {}) {
+  return {
+    target: normalizeTarget(
+      params.target && typeof params.target === 'object'
+        ? /** @type {{ elementRef?: string, selector?: string }} */ (params.target)
+        : undefined
+    ),
+    values: Array.isArray(params.values)
+      ? params.values.filter((value) => typeof value === 'string' && value.trim())
+      : [],
+    labels: Array.isArray(params.labels)
+      ? params.labels.filter((label) => typeof label === 'string' && label.trim())
+      : [],
+    indexes: Array.isArray(params.indexes)
+      ? params.indexes
+        .map((index) => Number(index))
+        .filter((index) => Number.isInteger(index) && index >= 0)
+      : []
+  };
+}
+
+/**
+ * @param {ViewportActionParams} [params={}]
+ * @returns {NormalizedViewportAction}
+ */
+export function normalizeViewportAction(params = {}) {
+  return {
+    target: normalizeTarget(
+      params.target && typeof params.target === 'object'
+        ? /** @type {{ elementRef?: string, selector?: string }} */ (params.target)
+        : undefined
+    ),
+    top: Number.isFinite(Number(params.top)) ? Number(params.top) : 0,
+    left: Number.isFinite(Number(params.left)) ? Number(params.left) : 0,
+    behavior: params.behavior === 'smooth' ? 'smooth' : 'auto',
+    relative: Boolean(params.relative)
+  };
+}
+
+/**
+ * @param {NavigationActionParams} [params={}]
+ * @returns {NormalizedNavigationAction}
+ */
+export function normalizeNavigationAction(params = {}) {
+  return {
+    url: typeof params.url === 'string' ? params.url.trim() : '',
+    waitForLoad: params.waitForLoad !== false,
+    timeoutMs: Math.min(Math.max(Number(params.timeoutMs) || 15_000, 500), 120_000)
   };
 }
 
@@ -266,14 +361,17 @@ export function createRuntimeContext() {
   return {
     protocolVersion: PROTOCOL_VERSION,
     guidance: [
+      'Use page.get_state to confirm document readiness, focus, and scroll context before acting.',
+      'Use navigation.* for tab-level movement and viewport.scroll for page positioning.',
       'Prefer dom.query and styles.get_computed before screenshots.',
       'Keep maxNodes, maxDepth, attributeAllowlist, and styleAllowlist tight.',
-      'Use input.click and input.type only after the operator has enabled the tab.',
+      'Use input.click, input.type, input.set_checked, and input.select_option only after the operator has enabled the tab.',
       'Use patch.apply_styles for visual experiments and rollback before exit.',
       'Scope every result to the enabled tab and origin.'
     ],
     exampleFlow: [
       'session.request_access',
+      'page.get_state',
       'dom.query',
       'styles.get_computed',
       'patch.apply_styles',

@@ -64,5 +64,7 @@ test('parseJsonObject parses objects and rejects arrays', () => {
 test('methodNeedsSession distinguishes tab-bound methods', () => {
   assert.equal(methodNeedsSession('dom.query'), true);
   assert.equal(methodNeedsSession('input.click'), true);
+  assert.equal(methodNeedsSession('navigation.navigate'), true);
+  assert.equal(methodNeedsSession('page.get_state'), true);
   assert.equal(methodNeedsSession('tabs.list'), false);
 });
