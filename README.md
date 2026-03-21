@@ -1,6 +1,6 @@
 # Browser Bridge
 
-Chrome extension + local Native Messaging stack that lets AI agents inspect and patch an authenticated tab with tight scope and low token overhead.
+Browser Bridge for agentic AI development: browser extension, CLI, and skill for scoped browser inspection and patching with low token overhead.
 
 For end-user setup in other repos, see [QUICKSTART.md](QUICKSTART.md).
 
@@ -106,8 +106,18 @@ bbx skill                     # runtime budget presets + method groups
 - All patch operations are reversible and session-scoped
 - Native host auto-bootstraps the daemon on demand
 
-## Bundling
+## Distribution
 
-See [BUNDLING.md](BUNDLING.md) for the Zig daemon research and bundling strategy.
+Browser Bridge currently ships as a Node/npm CLI stack:
+
+- `bbx` for agent and developer commands
+- `bbx-daemon` for the local bridge daemon
+- `bbx-install` for native messaging manifest installation
+
+The current path is to keep the native host and daemon on the existing Node-based install flow.
 
 For setup troubleshooting, see [DEBUG.md](DEBUG.md).
+
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.

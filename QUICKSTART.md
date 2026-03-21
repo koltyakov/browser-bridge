@@ -1,6 +1,8 @@
 # Browser Bridge Quick Start
 
-This guide is for people using Browser Bridge from another repo while the extension and package are still unpublished.
+Browser Bridge is a browser extension, CLI, and skill for agentic AI development.
+This guide covers using it from another repo.
+Install the CLI from npm as `@browserbridge/bbx`, and keep a local checkout of this repo for the unpacked extension until the extension is published.
 
 ## Prerequisites
 
@@ -8,7 +10,8 @@ Before setup, the user machine needs:
 
 - Google Chrome installed
 - Node.js and npm installed on the machine running Browser Bridge
-- A local checkout of this Browser Bridge repo in a stable path
+- The Browser Bridge CLI installed from npm as `@browserbridge/bbx`
+- A local checkout of this Browser Bridge repo in a stable path for the unpacked extension
 - A local checkout of the app repo where `bbx ...` will be used
 - A locally running coding agent or IDE integration if you want Browser Bridge to work from that tool
 
@@ -21,17 +24,23 @@ For example, GitHub Copilot coding agent on GitHub.com cannot use Browser Bridge
 
 ## 1. Install Browser Bridge once
 
-Pick one stable checkout location for this repo and keep it there.
+Install the CLI from npm:
 
 ```bash
-cd /absolute/path/to/browser-bridge
-npm install
-npm link
+npm install -g @browserbridge/bbx
 ```
 
-`npm link` makes `bbx`, `bbx-daemon`, and `bbx-install` available from any repo on your machine.
+That exposes `bbx`, `bbx-daemon`, and `bbx-install` on your machine.
 
-If you move this checkout later, rerun `npm link` and `bbx install <extension-id>`.
+Then keep one stable checkout of this repo for the unpacked extension:
+
+```bash
+git clone <repo-url> /absolute/path/to/browser-bridge
+cd /absolute/path/to/browser-bridge
+npm install
+```
+
+If you move this checkout later, rerun `bbx install <extension-id>`.
 
 ## 2. Load the Chrome extension
 
@@ -42,18 +51,18 @@ If you move this checkout later, rerun `npm link` and `bbx install <extension-id
 5. Copy the extension ID.
 6. On the page you want to inspect, open the Browser Bridge popup or side panel and enable agent communication for that tab.
 
-This is the temporary setup until the extension is published.
+This local checkout is only for the unpacked extension until the extension is published.
 
 ## 3. Use `bbx` from any repo
 
-After `npm link`, you can run Browser Bridge commands from your app repo or any other shell:
+After installing `@browserbridge/bbx`, you can run Browser Bridge commands from your app repo or any other shell:
 
 ```bash
 bbx status
 ```
 
-Do not add Browser Bridge to the consumer repo as a path-based dependency.
-That would write a machine-specific absolute path that will not work on another user's machine.
+Do not wire the consumer repo to a local path checkout of Browser Bridge.
+Install the CLI from npm instead.
 
 ## 4. Install the local native host
 
@@ -153,7 +162,7 @@ No documented native project skill install target yet.
 
 - If you pull changes into your Browser Bridge checkout, rerun `npm install` there when dependencies change.
 - Rerun `bbx install-skill` in repos where you want the latest skill files.
-- If the Browser Bridge checkout path changes, rerun `npm link` and `bbx install <extension-id>` from the new path.
+- If the Browser Bridge checkout path changes, rerun `bbx install <extension-id>` from the new path.
 
 ## Troubleshooting
 
