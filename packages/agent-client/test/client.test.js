@@ -2,8 +2,12 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 import { methodNeedsSession, parseCommaList, parseJsonObject, parsePropertyAssignments } from '../src/cli-helpers.js';
+import { installAgentFiles, parseInstallAgentArgs } from '../src/install.js';
 import { summarizeBridgeResponse } from '../src/subagent.js';
 
 /** Ensure failures stay compact for parent-agent reporting. */
@@ -459,4 +463,35 @@ test('summarizer: DOM query evidence includes role and label', () => {
   const evidence = /** @type {Array<Record<string, unknown>>} */ (s.evidence);
   assert.equal(evidence[0].role, 'button');
   assert.equal(evidence[0].label, 'Submit form');
+});
+
+test('parseInstallAgentArgs defaults to all supported targets', () => {
+  const options = parseInstallAgentArgs([], '/tmp/example');
+  assert.deepEqual(options.targets, ['copilot', 'claude', 'opencode', 'agents']);
+  assert.equal(options.projectPath, '/tmp/example');
+});
+
+test('parseInstallAgentArgs supports explicit selection and project path', () => {
+  const options = parseInstallAgentArgs(['copilot,claude', '--project', './demo'], '/tmp/example');
+  assert.deepEqual(options.targets, ['copilot', 'claude']);
+  assert.equal(options.projectPath, path.resolve('/tmp/example', './demo'));
+});
+
+test('installAgentFiles writes managed files for supported runtimes', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-agent-'));
+  const installed = await installAgentFiles({
+    targets: ['copilot', 'claude', 'opencode', 'agents'],
+    projectPath: tempDir
+  });
+
+  assert.ok(installed.some((entry) => entry.endsWith(path.join('.github', 'skills', 'browser-bridge'))));
+  assert.ok(installed.some((entry) => entry.endsWith(path.join('.claude', 'skills', 'browser-bridge'))));
+  assert.ok(installed.some((entry) => entry.endsWith(path.join('.opencode', 'skills', 'browser-bridge'))));
+  assert.ok(installed.some((entry) => entry.endsWith(path.join('.agents', 'skills', 'browser-bridge'))));
+
+  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.github', 'skills', 'browser-bridge', 'SKILL.md')));
+  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.claude', 'skills', 'browser-bridge', 'SKILL.md')));
+  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.opencode', 'skills', 'browser-bridge', 'SKILL.md')));
+  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.agents', 'skills', 'browser-bridge', 'SKILL.md')));
+  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.agents', 'skills', 'browser-bridge', 'references', 'protocol.md')));
 });

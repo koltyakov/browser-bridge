@@ -2,6 +2,8 @@
 
 Chrome extension + local Native Messaging stack that lets AI agents inspect and patch an authenticated tab with tight scope and low token overhead.
 
+For end-user setup in other repos, see [QUICKSTART.md](QUICKSTART.md).
+
 ## What's in this repo
 
 | Path | Purpose |
@@ -20,6 +22,8 @@ npm install
 npm run typecheck       # validate JSDoc types
 npm test                # run protocol + daemon + client tests
 ```
+
+For consumer repo setup, install the native host with `npx bb install <extension-id>` and install/update Browser Bridge skill files with `npx bb install-skill`.
 
 ### Setup Native Messaging
 

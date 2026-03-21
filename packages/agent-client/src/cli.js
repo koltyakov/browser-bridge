@@ -8,6 +8,7 @@ import path from 'node:path';
 import { createRuntimeContext, METHODS } from '../../protocol/src/index.js';
 import { BridgeClient } from './client.js';
 import { methodNeedsSession, parseCommaList, parseJsonObject, parsePropertyAssignments } from './cli-helpers.js';
+import { installAgentFiles, parseInstallAgentArgs } from './install.js';
 import { clearSession, loadSession, saveSession } from './session-store.js';
 import { summarizeBridgeResponse } from './subagent.js';
 
@@ -54,6 +55,15 @@ if (command === 'install') {
     '../../native-host/bin/install-manifest.js'
   );
   execFileSync(process.execPath, [installScript, ...rest], { stdio: 'inherit' });
+  process.exit(0);
+}
+
+if (command === 'install-skill') {
+  const options = parseInstallAgentArgs(rest);
+  const installedPaths = await installAgentFiles(options);
+  for (const installedPath of installedPaths) {
+    process.stdout.write(`Installed ${installedPath}\n`);
+  }
   process.exit(0);
 }
 
@@ -709,6 +719,8 @@ function printUsage() {
 
 Setup:
   bb install [extension-id]          Install native messaging manifest
+  bb install-skill [targets|all] [--project <path>]
+                                     Install/update Browser Bridge skill files in a repo
   bb status                          Check bridge connection
   bb logs                            Recent bridge logs
   bb tabs                            List available tabs

@@ -1,0 +1,196 @@
+// @ts-check
+
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const packageRoot = path.resolve(__dirname, '../../..');
+const skillSourceDir = path.join(packageRoot, 'skills', 'browser-bridge');
+const supportedTargets = /** @type {const} */ (['copilot', 'claude', 'opencode', 'agents']);
+
+/**
+ * @typedef {'copilot' | 'claude' | 'opencode' | 'agents'} SupportedTarget
+ */
+
+/**
+ * @typedef {{
+ *   targets: SupportedTarget[],
+ *   projectPath: string
+ * }} InstallAgentOptions
+ */
+
+/**
+ * @param {string[]} args
+ * @param {string} [cwd]
+ * @returns {InstallAgentOptions}
+ */
+export function parseInstallAgentArgs(args, cwd = process.cwd()) {
+  /** @type {SupportedTarget[]} */
+  let targets = [...supportedTargets];
+  let projectPath = cwd;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (arg === '--agents' || arg === '--agent') {
+      const value = args[index + 1];
+      if (!value) {
+        throw new Error(`Usage: install-skill [targets|all] [--project <path>]`);
+      }
+      targets = parseTargetList(value);
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith('--agents=')) {
+      targets = parseTargetList(arg.slice('--agents='.length));
+      continue;
+    }
+
+    if (arg.startsWith('--agent=')) {
+      targets = parseTargetList(arg.slice('--agent='.length));
+      continue;
+    }
+
+    if (arg === '--project') {
+      const value = args[index + 1];
+      if (!value) {
+        throw new Error('Usage: install-skill [targets|all] [--project <path>]');
+      }
+      projectPath = path.resolve(cwd, value);
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith('--project=')) {
+      projectPath = path.resolve(cwd, arg.slice('--project='.length));
+      continue;
+    }
+
+    if (arg.startsWith('--')) {
+      throw new Error(`Unknown install-skill option "${arg}".`);
+    }
+
+    if (index > 0) {
+      throw new Error(`Unexpected extra argument "${arg}".`);
+    }
+    targets = parseTargetList(arg);
+  }
+
+  return {
+    targets,
+    projectPath
+  };
+}
+
+/**
+ * @param {InstallAgentOptions} options
+ * @returns {Promise<string[]>}
+ */
+export async function installAgentFiles(options) {
+  /** @type {string[]} */
+  const created = [];
+
+  for (const target of options.targets) {
+    const skillTargetDir = path.join(options.projectPath, getSkillRelativePath(target), 'browser-bridge');
+    await installManagedSkill(skillTargetDir);
+    created.push(skillTargetDir);
+  }
+
+  return created;
+}
+
+/**
+ * @param {string} raw
+ * @returns {SupportedTarget[]}
+ */
+function parseTargetList(raw) {
+  const input = raw.trim();
+  if (!input) {
+    throw new Error('Target list cannot be empty.');
+  }
+
+  const values = input.split(',').map((value) => value.trim().toLowerCase()).filter(Boolean);
+  if (values.includes('all')) {
+    return [...supportedTargets];
+  }
+
+  /** @type {Set<SupportedTarget>} */
+  const parsed = new Set();
+  for (const value of values) {
+    if (!supportedTargets.includes(/** @type {SupportedTarget} */ (value))) {
+      throw new Error(`Unknown install-skill target "${value}". Supported targets: ${supportedTargets.join(', ')}, all.`);
+    }
+    parsed.add(/** @type {SupportedTarget} */ (value));
+  }
+
+  return [...parsed];
+}
+
+/**
+ * @param {SupportedTarget} target
+ * @returns {string}
+ */
+function getSkillRelativePath(target) {
+  if (target === 'copilot') {
+    return path.join('.github', 'skills');
+  }
+  if (target === 'claude') {
+    return path.join('.claude', 'skills');
+  }
+  if (target === 'opencode') {
+    return path.join('.opencode', 'skills');
+  }
+  return path.join('.agents', 'skills');
+}
+
+/**
+ * @param {string} targetDir
+ * @returns {Promise<void>}
+ */
+async function installManagedSkill(targetDir) {
+  const sentinelPath = path.join(targetDir, '.browser-bridge-managed');
+  const targetExists = await pathExists(targetDir);
+
+  if (targetExists && !(await pathExists(sentinelPath))) {
+    throw new Error(`Refusing to overwrite unmanaged skill directory: ${targetDir}`);
+  }
+
+  await fs.promises.rm(targetDir, { recursive: true, force: true });
+  await copyDir(skillSourceDir, targetDir);
+  await fs.promises.writeFile(sentinelPath, 'browser-bridge managed\n', 'utf8');
+}
+
+/**
+ * @param {string} sourceDir
+ * @param {string} targetDir
+ * @returns {Promise<void>}
+ */
+async function copyDir(sourceDir, targetDir) {
+  await fs.promises.mkdir(targetDir, { recursive: true });
+  const entries = await fs.promises.readdir(sourceDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const sourcePath = path.join(sourceDir, entry.name);
+    const targetPath = path.join(targetDir, entry.name);
+    if (entry.isDirectory()) {
+      await copyDir(sourcePath, targetPath);
+      continue;
+    }
+    await fs.promises.copyFile(sourcePath, targetPath);
+  }
+}
+
+/**
+ * @param {string} targetPath
+ * @returns {Promise<boolean>}
+ */
+async function pathExists(targetPath) {
+  try {
+    await fs.promises.access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
