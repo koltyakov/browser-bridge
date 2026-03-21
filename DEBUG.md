@@ -4,7 +4,7 @@ This project has three moving pieces:
 
 - the Browser Bridge Chrome extension
 - the local Native Messaging host
-- the local agent CLI (`npx bb`)
+- the local agent CLI (`bbx`)
 
 When local debugging breaks, it is usually one of these:
 
@@ -32,7 +32,10 @@ When local debugging breaks, it is usually one of these:
 npm install
 npm run typecheck
 npm test
+npm link
 ```
+
+`npm link` is recommended when you want `bbx` and `bbx-daemon` available outside this repo checkout.
 
 2. Load the extension as an unpacked extension.
 
@@ -45,7 +48,7 @@ npm test
 3. Install the Native Messaging manifest with the extension ID.
 
 ```bash
-npx bb install <extension-id>
+bbx install <extension-id>
 ```
 
 This writes:
@@ -58,21 +61,21 @@ If you skip the extension ID, the manifest gets a placeholder that you must edit
 
 4. Reload the extension in `chrome://extensions`.
 
-The installer merges with existing `allowed_origins`, so rerunning `npx bb install <id>` after code changes is safe.
+The installer merges with existing `allowed_origins`, so rerunning `bbx install <id>` after code changes is safe.
 
 ## Normal Local Debug Flow
 
 1. Start the daemon explicitly in one terminal when debugging startup issues.
 
 ```bash
-npx bb-daemon
+bbx-daemon
 ```
 
 2. In another terminal, check bridge health.
 
 ```bash
-npx bb status
-npx bb skill
+bbx status
+bbx skill
 ```
 
 Expected result:
@@ -87,15 +90,15 @@ Expected result:
 4. Request a session.
 
 ```bash
-npx bb request-access
+bbx request-access
 ```
 
 5. Verify the saved session and basic bridge calls.
 
 ```bash
-npx bb session
-npx bb tabs
-npx bb dom-query body
+bbx session
+bbx tabs
+bbx dom-query body
 ```
 
 6. Use the generic `call` path for methods without dedicated CLI commands.
@@ -103,10 +106,10 @@ npx bb dom-query body
 Examples:
 
 ```bash
-npx bb call dom.get_attributes '{"elementRef":"el_123"}'
-npx bb call styles.get_matched_rules '{"elementRef":"el_123"}'
-npx bb call screenshot.capture_region '{"x":0,"y":0,"width":320,"height":180}'
-npx bb call cdp.get_dom_snapshot '{"selector":"body"}'
+bbx call dom.get_attributes '{"elementRef":"el_123"}'
+bbx call styles.get_matched_rules '{"elementRef":"el_123"}'
+bbx call screenshot.capture_region '{"x":0,"y":0,"width":320,"height":180}'
+bbx call cdp.get_dom_snapshot '{"selector":"body"}'
 ```
 
 ## Smoke Test
@@ -114,10 +117,10 @@ npx bb call cdp.get_dom_snapshot '{"selector":"body"}'
 Use this short end-to-end check after reloads or local changes:
 
 ```bash
-npx bb status
-npx bb request-access
-npx bb call dom.query '{"selector":"body","maxNodes":4,"maxDepth":2}'
-npx bb tabs
+bbx status
+bbx request-access
+bbx call dom.query '{"selector":"body","maxNodes":4,"maxDepth":2}'
+bbx tabs
 ```
 
 If that works, the extension, native host, session storage, and RPC path are all basically healthy.
@@ -138,7 +141,7 @@ Check:
 Useful command:
 
 ```bash
-npx bb status
+bbx status
 ```
 
 ### Native host placeholder id still present
@@ -148,7 +151,7 @@ If the manifest still contains `__REPLACE_WITH_EXTENSION_ID__`, Chrome will not 
 Fix:
 
 ```bash
-npx bb install <your-extension-id>
+bbx install <your-extension-id>
 ```
 
 Then reload the extension.
@@ -161,13 +164,13 @@ Check:
 
 ```bash
 ls -l ~/.codex/browser-bridge
-npx bb-daemon
+bbx-daemon
 ```
 
 If the daemon starts manually, retry:
 
 ```bash
-npx bb status
+bbx status
 ```
 
 ### Method works in protocol but not as a top-level CLI command
@@ -177,7 +180,7 @@ The agent client only wraps the most common flows. Many valid methods are availa
 Use:
 
 ```bash
-npx bb call <method> '<params-json>'
+bbx call <method> '<params-json>'
 ```
 
 Common examples:
@@ -199,9 +202,9 @@ If tab-scoped calls fail after reloads, the saved session may point at an old ta
 Fix:
 
 ```bash
-npx bb revoke
+bbx revoke
 rm -f ~/.codex/browser-bridge/current-session.json
-npx bb request-access
+bbx request-access
 ```
 
 ### Extension UI says native host is disconnected
@@ -215,23 +218,23 @@ Open the service worker inspector from `chrome://extensions` and look for Native
 If needed, reinstall the manifest:
 
 ```bash
-npx bb install <extension-id>
+bbx install <extension-id>
 ```
 
 ## Useful Commands
 
 ```bash
-npx bb status
-npx bb logs
-npx bb skill
-npx bb tabs
-npx bb request-access
-npx bb session
-npx bb dom-query body
-npx bb describe <elementRef>
-npx bb styles <elementRef> display,position
-npx bb box <elementRef>
-npx bb revoke
+bbx status
+bbx logs
+bbx skill
+bbx tabs
+bbx request-access
+bbx session
+bbx dom-query body
+bbx describe <elementRef>
+bbx styles <elementRef> display,position
+bbx box <elementRef>
+bbx revoke
 ```
 
 ## Clean Reset
@@ -249,7 +252,7 @@ rm -f ~/.codex/browser-bridge/current-session.json
 3. Reinstall the native host manifest.
 
 ```bash
-npx bb install <extension-id>
+bbx install <extension-id>
 ```
 
 4. Reload the unpacked extension.

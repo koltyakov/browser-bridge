@@ -16,11 +16,11 @@
 ## Navigation
 
 ```bash
-npx bb navigate 'https://localhost:3000/dashboard'
-npx bb call navigation.navigate '{"url":"https://example.com","waitForLoad":true}'
-npx bb call navigation.reload '{"waitForLoad":true}'
-npx bb call navigation.go_back
-npx bb call navigation.go_forward
+bbx navigate 'https://localhost:3000/dashboard'
+bbx call navigation.navigate '{"url":"https://example.com","waitForLoad":true}'
+bbx call navigation.reload '{"waitForLoad":true}'
+bbx call navigation.go_back
+bbx call navigation.go_forward
 ```
 
 - `waitForLoad` defaults `true`; set `false` for long-lived pages.
@@ -29,8 +29,8 @@ npx bb call navigation.go_forward
 ## Viewport
 
 ```bash
-npx bb call viewport.scroll '{"top":640,"behavior":"smooth"}'
-npx bb call viewport.scroll '{"elementRef":"el_123","top":200}'
+bbx call viewport.scroll '{"top":640,"behavior":"smooth"}'
+bbx call viewport.scroll '{"elementRef":"el_123","top":200}'
 ```
 
 Scrolls the window or a specific scrollable element.
@@ -39,9 +39,9 @@ Scrolls the window or a specific scrollable element.
 
 Set device viewport dimensions (useful for responsive testing):
 ```bash
-npx bb resize 375 812                           # iPhone-size
-npx bb resize 1024 768                          # tablet
-npx bb call viewport.resize '{"reset":true}'    # restore original
+bbx resize 375 812                           # iPhone-size
+bbx resize 1024 768                          # tablet
+bbx call viewport.resize '{"reset":true}'    # restore original
 ```
 
 Uses CDP device emulation — the page re-renders at the new size immediately.
@@ -51,10 +51,10 @@ Uses CDP device emulation — the page re-renders at the new size immediately.
 Open and close tabs programmatically. Neither requires a session.
 
 ```bash
-npx bb tab-create https://example.com     # open new tab
-npx bb tab-create                          # open blank tab
-npx bb tab-close 12345                     # close tab by ID
-npx bb call tabs.create '{"url":"https://example.com","active":false}'
+bbx tab-create https://example.com     # open new tab
+bbx tab-create                          # open blank tab
+bbx tab-close 12345                     # close tab by ID
+bbx call tabs.create '{"url":"https://example.com","active":false}'
 ```
 
 Typical workflow — compare two pages:
@@ -68,9 +68,9 @@ Typical workflow — compare two pages:
 Retrieve the full accessibility tree for the page. Useful for understanding semantic structure, finding interactive elements, and accessibility audits.
 
 ```bash
-npx bb a11y-tree                   # default limits
-npx bb a11y-tree 50 3              # max 50 nodes, depth 3
-npx bb call dom.get_accessibility_tree '{"maxNodes":100,"maxDepth":5}'
+bbx a11y-tree                   # default limits
+bbx a11y-tree 50 3              # max 50 nodes, depth 3
+bbx call dom.get_accessibility_tree '{"maxNodes":100,"maxDepth":5}'
 ```
 
 Each node: `role`, `name`, `description`, `value`, `focused`, `required`, `checked`, `disabled`, `interactive`, `childIds`.
@@ -86,9 +86,9 @@ Typical workflow — find interactive controls:
 Read intercepted fetch/XHR requests. The interceptor auto-installs on first call.
 
 ```bash
-npx bb network                     # recent requests
-npx bb network 50                  # last 50
-npx bb call page.get_network '{"limit":20,"clear":true}'
+bbx network                     # recent requests
+bbx network 50                  # last 50
+bbx call page.get_network '{"limit":20,"clear":true}'
 ```
 
 Each entry: `method`, `url`, `status`, `duration`, `initiator`.
@@ -103,12 +103,12 @@ Typical workflow — debug API calls:
 
 **Checkbox/radio:**
 ```bash
-npx bb call input.set_checked '{"target":{"elementRef":"el_123"},"checked":true}'
+bbx call input.set_checked '{"target":{"elementRef":"el_123"},"checked":true}'
 ```
 
 **Select dropdown:**
 ```bash
-npx bb call input.select_option '{"target":{"elementRef":"el_456"},"values":["us"]}'
+bbx call input.select_option '{"target":{"elementRef":"el_456"},"values":["us"]}'
 ```
 
 Select by value, label, or index. Multiple values for multi-select.
@@ -118,13 +118,13 @@ Select by value, label, or index. Multiple values for multi-select.
 Dispatch mouse events to trigger CSS `:hover` rules, tooltip display, dropdown menus, etc.
 
 ```bash
-npx bb hover el_abc123
-npx bb call input.hover '{"target":{"elementRef":"el_abc123"}}'
+bbx hover el_abc123
+bbx call input.hover '{"target":{"elementRef":"el_abc123"}}'
 ```
 
 **Hold hover for inspection:** set `duration` (ms) to keep hover active before auto-releasing with `mouseleave`:
 ```bash
-npx bb call input.hover '{"target":{"elementRef":"el_abc123"},"duration":2000}'
+bbx call input.hover '{"target":{"elementRef":"el_abc123"},"duration":2000}'
 ```
 
 Typical workflow — inspect a tooltip:
@@ -138,12 +138,12 @@ Typical workflow — inspect a tooltip:
 Full drag-and-drop requires source and destination element refs:
 
 ```bash
-npx bb call input.drag '{"source":{"elementRef":"el_src"},"destination":{"elementRef":"el_dst"}}'
+bbx call input.drag '{"source":{"elementRef":"el_src"},"destination":{"elementRef":"el_dst"}}'
 ```
 
 With pixel offsets for precise positioning:
 ```bash
-npx bb call input.drag '{"source":{"elementRef":"el_src"},"destination":{"elementRef":"el_dst"},"sourceOffset":{"x":10,"y":10},"destinationOffset":{"x":5,"y":5}}'
+bbx call input.drag '{"source":{"elementRef":"el_src"},"destination":{"elementRef":"el_dst"},"sourceOffset":{"x":10,"y":10},"destinationOffset":{"x":5,"y":5}}'
 ```
 
 Event sequence: `mousedown → dragstart → drag → dragenter → dragover → drop → dragend → mouseup`.
@@ -159,8 +159,8 @@ Typical workflow — reorder a list:
 ### By text content
 Find elements matching visible text. Faster than `dom.query` when you know the label:
 ```bash
-npx bb find 'Submit Order'
-npx bb call dom.find_by_text '{"text":"Add to Cart","scope":"button","exact":false}'
+bbx find 'Submit Order'
+bbx call dom.find_by_text '{"text":"Add to Cart","scope":"button","exact":false}'
 ```
 - `scope`: optional CSS selector to narrow search (e.g. `"button"`, `".sidebar"`)
 - `exact`: `true` for exact match, `false` (default) for substring/case-insensitive
@@ -168,18 +168,18 @@ npx bb call dom.find_by_text '{"text":"Add to Cart","scope":"button","exact":fal
 ### By ARIA role
 Find elements by explicit `role` attribute or implicit HTML role (e.g. `<nav>` → `navigation`):
 ```bash
-npx bb find-role button 'Save'
-npx bb call dom.find_by_role '{"role":"navigation"}'
-npx bb call dom.find_by_role '{"role":"heading","name":"Dashboard"}'
+bbx find-role button 'Save'
+bbx call dom.find_by_role '{"role":"navigation"}'
+bbx call dom.find_by_role '{"role":"heading","name":"Dashboard"}'
 ```
 
 ## Waiting
 
 ### Wait for DOM condition
 ```bash
-npx bb wait '.success-message' 10000
-npx bb call dom.wait_for '{"selector":".modal","state":"visible","timeoutMs":10000}'
-npx bb call dom.wait_for '{"selector":".spinner","state":"detached","timeoutMs":5000}'
+bbx wait '.success-message' 10000
+bbx call dom.wait_for '{"selector":".modal","state":"visible","timeoutMs":10000}'
+bbx call dom.wait_for '{"selector":".spinner","state":"detached","timeoutMs":5000}'
 ```
 - `state`: `attached` (exists in DOM), `detached` (removed), `visible` (non-zero size), `hidden`
 - Uses MutationObserver + 250 ms polling fallback
@@ -187,7 +187,7 @@ npx bb call dom.wait_for '{"selector":".spinner","state":"detached","timeoutMs":
 
 ### Wait for page load
 ```bash
-npx bb call page.wait_for_load_state '{"timeoutMs":10000}'
+bbx call page.wait_for_load_state '{"timeoutMs":10000}'
 ```
 Use after clicking navigation links.
 

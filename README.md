@@ -12,7 +12,7 @@ For end-user setup in other repos, see [QUICKSTART.md](QUICKSTART.md).
 | `packages/extension` | Extension service worker, content script, popup, side panel, offscreen cropper |
 | `packages/protocol` | Shared RPC schema, token-budget utilities |
 | `packages/native-host` | Local bridge daemon, Chrome native host adapter, manifest installer |
-| `packages/agent-client` | CLI (`npx bb`) for agents and developers |
+| `packages/agent-client` | CLI (`bbx`) for agents and developers |
 | `skills/browser-bridge` | Agent skill with modular reference docs |
 
 ## Quick Start
@@ -21,24 +21,28 @@ For end-user setup in other repos, see [QUICKSTART.md](QUICKSTART.md).
 npm install
 npm run typecheck       # validate JSDoc types
 npm test                # run protocol + daemon + client tests
+npm link                # optional but recommended: expose bbx/bbx-daemon machine-wide
 ```
 
-For consumer repo setup, install the native host with `npx bb install <extension-id>` and install/update Browser Bridge skill files with `npx bb install-skill`.
+After `npm link`, the `bbx` CLI works from any repo, including non-Node repos.
+After publish, the package entry point will be `npx @browserbridge/bbx ...`.
+
+For consumer repo setup, install the native host with `bbx install <extension-id>` and install/update Browser Bridge skill files with `bbx install-skill`.
 
 ### Setup Native Messaging
 
 ```bash
 # Install manifest with your extension ID (from chrome://extensions)
-npx bb install <extension-id>
+bbx install <extension-id>
 
 # Or without ID (you'll need to edit the manifest later)
-npx bb install
+bbx install
 ```
 
 ### Start the Daemon
 
 ```bash
-npx bb-daemon           # explicit start (native host also auto-bootstraps)
+bbx-daemon           # explicit start (native host also auto-bootstraps)
 ```
 
 ### Load Extension
@@ -49,13 +53,13 @@ npx bb-daemon           # explicit start (native host also auto-bootstraps)
 ### Use the CLI
 
 ```bash
-npx bb status                    # check bridge connection
-npx bb tabs                      # list available tabs
-npx bb request-access            # get session for active tab
-npx bb call dom.query '{"selector":"main","maxNodes":8}'
-npx bb call patch.apply_styles '{"target":{"selector":"body"},"declarations":{"background":"teal"}}'
-npx bb batch '[{"method":"dom.query","params":{"selector":"h1"}},{"method":"page.get_state","params":{}}]'
-npx bb skill                     # runtime budget presets + method groups
+bbx status                    # check bridge connection
+bbx tabs                      # list available tabs
+bbx request-access            # get session for active tab
+bbx call dom.query '{"selector":"main","maxNodes":8}'
+bbx call patch.apply_styles '{"target":{"selector":"body"},"declarations":{"background":"teal"}}'
+bbx batch '[{"method":"dom.query","params":{"selector":"h1"}},{"method":"page.get_state","params":{}}]'
+bbx skill                     # runtime budget presets + method groups
 ```
 
 ## npm Scripts
@@ -68,7 +72,7 @@ npx bb skill                     # runtime budget presets + method groups
 | `npm run daemon` | Start bridge daemon |
 | `npm run install-manifest` | Install native messaging manifest |
 
-## CLI Aliases (via `npx bb`)
+## CLI Aliases (via `bbx`)
 
 | Category | Commands |
 |----------|----------|

@@ -399,7 +399,7 @@ async function main() {
       }
 
       const screenshotResult = /** @type {ScreenshotResult} */ (response.result);
-      const filePath = outputPath || path.join(os.tmpdir(), `browser-bridge-${Date.now()}.png`);
+      const filePath = outputPath || path.join(os.tmpdir(), `bbx-${Date.now()}.png`);
       const data = screenshotResult.image.replace(/^data:image\/png;base64,/, '');
       await fs.promises.writeFile(filePath, Buffer.from(data, 'base64'));
       printJson({
@@ -412,12 +412,12 @@ async function main() {
 
     if (command === 'eval') {
       let expression = rest.join(' ');
-      // Support piped stdin: `echo 'expr' | bb eval -` or `bb eval -`
+      // Support piped stdin: `echo 'expr' | bbx eval -` or `bbx eval -`
       if (!expression || expression === '-') {
         expression = await readStdin();
       }
       if (!expression) {
-        throw new Error('Usage: eval <expression>  (or pipe via stdin: echo "expr" | bb eval -)');
+        throw new Error('Usage: eval <expression>  (or pipe via stdin: echo "expr" | bbx eval -)');
       }
       const response = await client.request({
         method: 'page.evaluate',
@@ -715,68 +715,68 @@ function printJson(value) {
 }
 
 function printUsage() {
-  process.stdout.write(`Usage: bb <command> [args]
+  process.stdout.write(`Usage: bbx <command> [args]
 
 Setup:
-  bb install [extension-id]          Install native messaging manifest
-  bb install-skill [targets|all] [--project <path>]
+  bbx install [extension-id]          Install native messaging manifest
+  bbx install-skill [targets|all] [--project <path>]
                                      Install/update Browser Bridge skill files in a repo
-  bb status                          Check bridge connection
-  bb logs                            Recent bridge logs
-  bb tabs                            List available tabs
-  bb tab-create [url]                Create a new tab
-  bb tab-close <tabId>               Close a tab
-  bb skill                           Runtime budget presets and method groups
+  bbx status                          Check bridge connection
+  bbx logs                            Recent bridge logs
+  bbx tabs                            List available tabs
+  bbx tab-create [url]                Create a new tab
+  bbx tab-close <tabId>               Close a tab
+  bbx skill                           Runtime budget presets and method groups
 
 Session:
-  bb request-access [tabId] [origin] Create session for enabled tab
-  bb session                         Show current session
-  bb revoke                          End current session
+  bbx request-access [tabId] [origin] Create session for enabled tab
+  bbx session                         Show current session
+  bbx revoke                          End current session
 
 Generic RPC:
-  bb call <method> [paramsJson|-]    Call any bridge method (- reads JSON from stdin)
-  bb call <sessionId> <method> [json] Call with explicit session
-  bb batch '[{method,params},...]'   Parallel method calls
+  bbx call <method> [paramsJson|-]    Call any bridge method (- reads JSON from stdin)
+  bbx call <sessionId> <method> [json] Call with explicit session
+  bbx batch '[{method,params},...]'   Parallel method calls
 
 Inspect:
-  bb dom-query [selector]            Query DOM subtree
-  bb describe <ref|selector>         Describe one element
-  bb text <ref|selector> [budget]    Get element text
-  bb html <ref|selector> [maxLen]    Get element HTML
-  bb styles <ref|selector> [props]   Get computed styles
-  bb box <ref|selector>              Get box model
-  bb a11y-tree [maxNodes] [maxDepth] Get accessibility tree
+  bbx dom-query [selector]            Query DOM subtree
+  bbx describe <ref|selector>         Describe one element
+  bbx text <ref|selector> [budget]    Get element text
+  bbx html <ref|selector> [maxLen]    Get element HTML
+  bbx styles <ref|selector> [props]   Get computed styles
+  bbx box <ref|selector>              Get box model
+  bbx a11y-tree [maxNodes] [maxDepth] Get accessibility tree
 
 Find:
-  bb find <text>                     Find elements by text content
-  bb find-role <role> [name]         Find elements by ARIA role
-  bb wait <selector> [timeoutMs]     Wait for DOM element
+  bbx find <text>                     Find elements by text content
+  bbx find-role <role> [name]         Find elements by ARIA role
+  bbx wait <selector> [timeoutMs]     Wait for DOM element
 
 Page:
-  bb eval <expression>               Evaluate JS in page context (use - for stdin)
-  bb console [level]                 Get console output (log|warn|error|all)
-  bb network [limit]                 Get network requests (fetch/XHR)
-  bb page-text [textBudget]          Get full page text content
-  bb storage [local|session] [keys]  Read browser storage
-  bb navigate <url>                  Navigate to URL
-  bb perf                            Get performance metrics
-  bb resize <width> <height>         Resize viewport
+  bbx eval <expression>               Evaluate JS in page context (use - for stdin)
+  bbx console [level]                 Get console output (log|warn|error|all)
+  bbx network [limit]                 Get network requests (fetch/XHR)
+  bbx page-text [textBudget]          Get full page text content
+  bbx storage [local|session] [keys]  Read browser storage
+  bbx navigate <url>                  Navigate to URL
+  bbx perf                            Get performance metrics
+  bbx resize <width> <height>         Resize viewport
 
 Interact:
-  bb click <ref|selector> [button]   Click element
-  bb focus <ref|selector>            Focus element
-  bb type <ref|selector> <text...>   Type into element
-  bb press-key <key> [ref|selector]  Send key event
-  bb hover <ref|selector>            Hover over element
+  bbx click <ref|selector> [button]   Click element
+  bbx focus <ref|selector>            Focus element
+  bbx type <ref|selector> <text...>   Type into element
+  bbx press-key <key> [ref|selector]  Send key event
+  bbx hover <ref|selector>            Hover over element
 
 Patch:
-  bb patch-style <ref|sel> prop=val  Apply style patch
-  bb patch-text <ref|sel> <text...>  Apply text patch
-  bb patches                         List active patches
-  bb rollback <patchId>              Rollback a patch
+  bbx patch-style <ref|sel> prop=val  Apply style patch
+  bbx patch-text <ref|sel> <text...>  Apply text patch
+  bbx patches                         List active patches
+  bbx rollback <patchId>              Rollback a patch
 
 Capture:
-  bb screenshot <ref|selector> [path] Capture element screenshot
+  bbx screenshot <ref|selector> [path] Capture element screenshot
 `);
 }
 
@@ -793,10 +793,10 @@ async function parseCallCommand(args) {
   if (first.includes('.')) {
     const method = /** @type {BridgeMethod} */ (first);
     if (!METHODS.includes(method)) {
-      throw new Error(`Unknown method "${first}". Run bb skill to see available methods.`);
+      throw new Error(`Unknown method "${first}". Run bbx skill to see available methods.`);
     }
     let rawParams = second;
-    // Support piped stdin: `echo '{"key":"val"}' | bb call method -`
+    // Support piped stdin: `echo '{"key":"val"}' | bbx call method -`
     if (rawParams === '-') {
       rawParams = await readStdin();
     }

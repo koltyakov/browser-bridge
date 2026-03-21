@@ -63,11 +63,11 @@
 ## CLI
 
 ```bash
-npx bb status | logs | tabs | skill         # no session needed
-npx bb request-access [tabId] [origin]       # create session
-npx bb call <method> '{"key":"val"}'         # generic RPC (auto-session)
-npx bb call <sessionId> <method> '{...}'     # explicit session
-npx bb batch '[{"method":"...","params":{}}]'  # parallel calls
+bbx status | logs | tabs | skill            # no session needed
+bbx request-access [tabId] [origin]         # create session
+bbx call <method> '{"key":"val"}'           # generic RPC (auto-session)
+bbx call <sessionId> <method> '{...}'       # explicit session
+bbx batch '[{"method":"...","params":{}}]'  # parallel calls
 ```
 
 **Convenience shortcuts:** `dom-query`, `describe`, `text`, `styles`, `box`, `click`, `focus`, `type`, `press-key`, `patch-style`, `patch-text`, `patches`, `rollback`, `screenshot`, `session`, `revoke`, `eval`, `console`, `wait`, `find`, `find-role`, `html`, `hover`, `navigate`, `storage`, `tab-create`, `tab-close`, `page-text`, `network`, `a11y-tree`, `perf`, `resize`
@@ -77,32 +77,32 @@ npx bb batch '[{"method":"...","params":{}}]'  # parallel calls
 ### page.evaluate
 Run a JS expression in the page context via CDP `Runtime.evaluate`. Expression is evaluated as a statement and the return value is serialized. Supports `awaitPromise` for async expressions. Requires the `page.evaluate` capability.
 ```bash
-npx bb eval 'document.title'
-npx bb eval 'window.__NEXT_DATA__.props'
-npx bb call page.evaluate '{"expression":"await fetch(\"/api/health\").then(r=>r.json())","awaitPromise":true}'
+bbx eval 'document.title'
+bbx eval 'window.__NEXT_DATA__.props'
+bbx call page.evaluate '{"expression":"await fetch(\"/api/health\").then(r=>r.json())","awaitPromise":true}'
 ```
 
 ### page.get_console
 Read buffered console output. The console interceptor is auto-installed on first call. Captures `log`, `warn`, `error`, `info`, `debug` plus uncaught exceptions and unhandled rejections.
 ```bash
-npx bb console                    # all levels
-npx bb console error              # errors only
-npx bb call page.get_console '{"level":"error","limit":20,"clear":true}'
+bbx console                    # all levels
+bbx console error              # errors only
+bbx call page.get_console '{"level":"error","limit":20,"clear":true}'
 ```
 
 ### page.wait_for_load_state
 Block until the tab reaches `complete` status. Useful after `input.click` on a navigation link.
 ```bash
-npx bb wait-load 10000
-npx bb call page.wait_for_load_state '{"timeoutMs":10000}'
+bbx wait-load 10000
+bbx call page.wait_for_load_state '{"timeoutMs":10000}'
 ```
 
 ### page.get_storage
 Read `localStorage` or `sessionStorage` entries. Values truncated at 500 chars each.
 ```bash
-npx bb storage                        # all localStorage
-npx bb storage session token,user     # specific sessionStorage keys
-npx bb call page.get_storage '{"type":"session","keys":["token"]}'
+bbx storage                        # all localStorage
+bbx storage session token,user     # specific sessionStorage keys
+bbx call page.get_storage '{"type":"session","keys":["token"]}'
 ```
 
 ### dom.wait_for
@@ -111,97 +111,97 @@ Wait for a DOM condition using MutationObserver + 250 ms polling fallback. Retur
 - `text`: optional text content filter
 - `timeoutMs`: 100–30000 (default 5000)
 ```bash
-npx bb wait '.toast-success' 5000
-npx bb call dom.wait_for '{"selector":".modal","state":"visible","timeoutMs":10000}'
+bbx wait '.toast-success' 5000
+bbx call dom.wait_for '{"selector":".modal","state":"visible","timeoutMs":10000}'
 ```
 
 ### dom.find_by_text
 Find elements matching visible text content. Like Playwright's `getByText`.
 ```bash
-npx bb find 'Submit Order'
-npx bb call dom.find_by_text '{"text":"Submit","scope":"button","exact":false}'
+bbx find 'Submit Order'
+bbx call dom.find_by_text '{"text":"Submit","scope":"button","exact":false}'
 ```
 
 ### dom.find_by_role
 Find elements by ARIA role (explicit `role` attribute or implicit from HTML tag). Covers 25+ implicit role mappings.
 ```bash
-npx bb find-role button 'Save'
-npx bb call dom.find_by_role '{"role":"navigation"}'
+bbx find-role button 'Save'
+bbx call dom.find_by_role '{"role":"navigation"}'
 ```
 
 ### dom.get_html
 Get raw HTML of an element. Defaults to `innerHTML`; set `outer: true` for `outerHTML`.
 ```bash
-npx bb html el_abc123
-npx bb call dom.get_html '{"elementRef":"el_abc123","outer":true,"maxLength":2000}'
+bbx html el_abc123
+bbx call dom.get_html '{"elementRef":"el_abc123","outer":true,"maxLength":2000}'
 ```
 
 ### input.hover
 Trigger CSS `:hover` state by dispatching `mouseenter`, `mouseover`, `mousemove`. Optional `duration` to hold hover before auto-releasing.
 ```bash
-npx bb hover el_abc123
-npx bb call input.hover '{"target":{"elementRef":"el_abc123"},"duration":1000}'
+bbx hover el_abc123
+bbx call input.hover '{"target":{"elementRef":"el_abc123"},"duration":1000}'
 ```
 
 ### input.drag
 Full drag-and-drop sequence: `mousedown → dragstart → drag → dragenter → dragover → drop → dragend → mouseup`. Accepts source target, destination target, and optional pixel offsets.
 ```bash
-npx bb call input.drag '{"source":{"elementRef":"el_src"},"destination":{"elementRef":"el_dst"}}'
-npx bb call input.drag '{"source":{"elementRef":"el_src"},"destination":{"elementRef":"el_dst"},"sourceOffset":{"x":10,"y":10}}'
+bbx call input.drag '{"source":{"elementRef":"el_src"},"destination":{"elementRef":"el_dst"}}'
+bbx call input.drag '{"source":{"elementRef":"el_src"},"destination":{"elementRef":"el_dst"},"sourceOffset":{"x":10,"y":10}}'
 ```
 
 ### tabs.create
 Open a new browser tab. Optional `url` (defaults to `about:blank`) and `active` flag (defaults to `true`). Does not require a session.
 ```bash
-npx bb tab-create https://example.com
-npx bb call tabs.create '{"url":"https://example.com","active":false}'
+bbx tab-create https://example.com
+bbx call tabs.create '{"url":"https://example.com","active":false}'
 ```
 
 ### tabs.close
 Close a tab by its `tabId`. Does not require a session.
 ```bash
-npx bb tab-close 12345
-npx bb call tabs.close '{"tabId":12345}'
+bbx tab-close 12345
+bbx call tabs.close '{"tabId":12345}'
 ```
 
 ### page.get_text
 Extract the full visible text content of the page (`document.body.innerText`). Truncated to `textBudget` (default 4000 chars). Lighter than `dom.query` on `body` when you only need text.
 ```bash
-npx bb page-text
-npx bb page-text 8000
-npx bb call page.get_text '{"textBudget":2000}'
+bbx page-text
+bbx page-text 8000
+bbx call page.get_text '{"textBudget":2000}'
 ```
 
 ### page.get_network
 Read intercepted fetch/XHR requests. The interceptor is auto-installed on first call (via MAIN world script). Returns `{entries, count}` sorted newest-first.
 ```bash
-npx bb network
-npx bb network 50
-npx bb call page.get_network '{"limit":20,"clear":true}'
+bbx network
+bbx network 50
+bbx call page.get_network '{"limit":20,"clear":true}'
 ```
 Each entry: `{method, url, status, duration, initiator}`. Requires the `network.read` capability.
 
 ### dom.get_accessibility_tree
 Retrieve the page's accessibility tree via CDP `Accessibility.getFullAXTree`. Each node is simplified to: `role`, `name`, `description`, `value`, `focused`, `required`, `checked`, `disabled`, `interactive`, `childIds`. Use `maxNodes` and `maxDepth` to control size.
 ```bash
-npx bb a11y-tree
-npx bb a11y-tree 50 3
-npx bb call dom.get_accessibility_tree '{"maxNodes":100,"maxDepth":5}'
+bbx a11y-tree
+bbx a11y-tree 50 3
+bbx call dom.get_accessibility_tree '{"maxNodes":100,"maxDepth":5}'
 ```
 
 ### viewport.resize
 Set the browser viewport to specific dimensions using CDP device emulation. Pass `reset: true` to clear the override.
 ```bash
-npx bb resize 375 812
-npx bb call viewport.resize '{"width":1024,"height":768}'
-npx bb call viewport.resize '{"reset":true}'
+bbx resize 375 812
+bbx call viewport.resize '{"width":1024,"height":768}'
+bbx call viewport.resize '{"reset":true}'
 ```
 
 ### performance.get_metrics
 Read Chrome performance counters via CDP `Performance.getMetrics`. Returns a flat `{metrics}` object with keys like `JSHeapUsedSize`, `LayoutCount`, `TaskDuration`, etc.
 ```bash
-npx bb perf
-npx bb call performance.get_metrics
+bbx perf
+bbx call performance.get_metrics
 ```
 Requires the `performance.read` capability.
 
@@ -220,7 +220,7 @@ Requires the `performance.read` capability.
 | `ORIGIN_MISMATCH` | Session bound to different origin |
 | `CAPABILITY_MISSING` | Request capability not in session |
 | `ELEMENT_STALE` | Re-query DOM for fresh `elementRef` |
-| `NATIVE_HOST_UNAVAILABLE` | Check daemon: `npx bb status` |
+| `NATIVE_HOST_UNAVAILABLE` | Check daemon: `bbx status` |
 | `APPROVAL_PENDING` | Wait + retry (see access retry flow) |
 | `TIMEOUT` | Wait/evaluate exceeded `timeoutMs`; increase timeout or check condition |
 

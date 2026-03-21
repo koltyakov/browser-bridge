@@ -33,7 +33,7 @@ Don't try to parse Tailwind classes to understand styles. Use bridge methods ins
 ```bash
 # ❌ Parsing classes: "flex items-center gap-4 p-6 bg-white rounded-lg shadow-md"
 # ✅ Read the actual computed styles:
-npx bb styles el_abc 'display,alignItems,gap,padding,backgroundColor,borderRadius,boxShadow'
+bbx styles el_abc 'display,alignItems,gap,padding,backgroundColor,borderRadius,boxShadow'
 ```
 
 Key patterns:
@@ -48,10 +48,10 @@ Tailwind uses utility classes, but `patch.apply_styles` works at the inline-styl
 
 ```bash
 # This overrides Tailwind's p-4 (padding: 1rem):
-npx bb patch-style el_abc 'padding=2rem'
+bbx patch-style el_abc 'padding=2rem'
 
 # Override responsive breakpoints:
-npx bb patch-style el_abc 'display=grid;gridTemplateColumns=1fr 1fr'
+bbx patch-style el_abc 'display=grid;gridTemplateColumns=1fr 1fr'
 ```
 
 No need to understand or modify Tailwind classes — patch inline and it wins.
@@ -61,14 +61,14 @@ No need to understand or modify Tailwind classes — patch inline and it wins.
 Tailwind uses breakpoint prefixes (`sm:`, `md:`, `lg:`, `xl:`, `2xl:`). To test responsive behavior:
 
 ```bash
-npx bb resize 375 812      # mobile
-npx bb styles el_abc 'display,flexDirection,gridTemplateColumns'
+bbx resize 375 812      # mobile
+bbx styles el_abc 'display,flexDirection,gridTemplateColumns'
 
-npx bb resize 768 1024     # tablet (md: breakpoint)
-npx bb styles el_abc 'display,flexDirection,gridTemplateColumns'
+bbx resize 768 1024     # tablet (md: breakpoint)
+bbx styles el_abc 'display,flexDirection,gridTemplateColumns'
 
-npx bb resize 1280 800     # desktop (xl: breakpoint)
-npx bb styles el_abc 'display,flexDirection,gridTemplateColumns'
+bbx resize 1280 800     # desktop (xl: breakpoint)
+bbx styles el_abc 'display,flexDirection,gridTemplateColumns'
 ```
 
 Default Tailwind breakpoints: `sm: 640px`, `md: 768px`, `lg: 1024px`, `xl: 1280px`, `2xl: 1536px`.

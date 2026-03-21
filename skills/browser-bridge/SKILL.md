@@ -1,65 +1,67 @@
 ---
-name: bb
+name: browser-bridge
 description: "Browser Bridge — Token-efficient Chrome tab inspection and patching via local bridge extension. Use instead of Playwright or screenshot-heavy automation when a Chrome tab has agent communication enabled."
 ---
 
 # Browser Bridge
 
 Scoped Chrome tab inspection, interaction, and CSS/DOM patching through a local native-messaging bridge. Use a subagent for bridge calls; return only concise findings to the parent.
+Prompt name: `$browser-bridge`. Prompt shorthand: `$bbx` where aliases are supported.
+Example prompt: `Using bbx skill verify a component works and corresponds a design`.
 
 ## CLI
 
 ```bash
-npx bb status                  # daemon + extension health
-npx bb request-access          # get session for active tab
-npx bb call <method> '{...}'   # any RPC method (raw output)
-npx bb batch '[{...},...]'     # parallel reads (concurrent)
-npx bb tabs                    # list available tabs
-npx bb logs                    # recent bridge request log
-npx bb skill                   # live runtime presets + limits
+bbx status                  # daemon + extension health
+bbx request-access          # get session for active tab
+bbx call <method> '{...}'   # any RPC method (raw output)
+bbx batch '[{...},...]'     # parallel reads (concurrent)
+bbx tabs                    # list available tabs
+bbx logs                    # recent bridge request log
+bbx skill                   # live runtime presets + limits
 ```
 
 ### Inspect & Find
 
 ```bash
-npx bb dom-query [selector]             # query DOM subtree
-npx bb describe <ref>                   # describe one element
-npx bb text <ref> [budget]              # element text content
-npx bb html <ref> [maxLen]              # element HTML
-npx bb styles <ref> [prop1,prop2,...]   # computed styles
-npx bb box <ref>                        # box model dimensions
-npx bb find <text>                      # find by text content
-npx bb find-role <role> [name]          # find by ARIA role
-npx bb wait <selector> [timeoutMs]      # wait for DOM element
-npx bb a11y-tree [maxNodes] [maxDepth]  # accessibility tree
+bbx dom-query [selector]             # query DOM subtree
+bbx describe <ref>                   # describe one element
+bbx text <ref> [budget]              # element text content
+bbx html <ref> [maxLen]              # element HTML
+bbx styles <ref> [prop1,prop2,...]   # computed styles
+bbx box <ref>                        # box model dimensions
+bbx find <text>                      # find by text content
+bbx find-role <role> [name]          # find by ARIA role
+bbx wait <selector> [timeoutMs]      # wait for DOM element
+bbx a11y-tree [maxNodes] [maxDepth]  # accessibility tree
 ```
 
 ### Page & Evaluate
 
 ```bash
-npx bb eval <expression>                # JS eval (- for stdin)
-npx bb console [level]                  # console output
-npx bb network [limit]                  # network requests
-npx bb page-text [budget]               # full page text
-npx bb storage [local|session] [keys]   # browser storage
-npx bb perf                             # performance metrics
-npx bb navigate <url>                   # navigate to URL
-npx bb resize <width> <height>          # resize viewport
+bbx eval <expression>                # JS eval (- for stdin)
+bbx console [level]                  # console output
+bbx network [limit]                  # network requests
+bbx page-text [budget]               # full page text
+bbx storage [local|session] [keys]   # browser storage
+bbx perf                             # performance metrics
+bbx navigate <url>                   # navigate to URL
+bbx resize <width> <height>          # resize viewport
 ```
 
 ### Interact & Patch
 
 ```bash
-npx bb click <ref> [button]             # click element
-npx bb focus <ref>                      # focus element
-npx bb type <ref> <text...>             # type into element
-npx bb press-key <key> [ref]            # send key event
-npx bb hover <ref>                      # hover over element
-npx bb patch-style <ref> prop=val...    # apply style patch
-npx bb patch-text <ref> <text...>       # apply text patch
-npx bb patches                          # list active patches
-npx bb rollback <patchId>               # rollback a patch
-npx bb screenshot <ref> [outPath]       # capture screenshot
+bbx click <ref> [button]             # click element
+bbx focus <ref>                      # focus element
+bbx type <ref> <text...>             # type into element
+bbx press-key <key> [ref]            # send key event
+bbx hover <ref>                      # hover over element
+bbx patch-style <ref> prop=val...    # apply style patch
+bbx patch-text <ref> <text...>       # apply text patch
+bbx patches                          # list active patches
+bbx rollback <patchId>               # rollback a patch
+bbx screenshot <ref> [outPath]       # capture screenshot
 ```
 
 ## Access Retry Flow
@@ -80,7 +82,7 @@ npx bb screenshot <ref> [outPath]       # capture screenshot
 | `ORIGIN_MISMATCH` | Tab navigated — `request-access` for new origin |
 | `TIMEOUT` | Extension overloaded or CDP stalled — retry once, then simplify the request |
 | `CAPABILITY_MISSING` | Session lacks permission — `request-access` with needed capability |
-| `DAEMON_OFFLINE` | Daemon not running — start with `npx bb-daemon` |
+| `DAEMON_OFFLINE` | Daemon not running — start with `bbx-daemon` |
 | `CONNECTION_LOST` | Socket dropped mid-request — retry; if persistent, restart daemon |
 | `BRIDGE_TIMEOUT` | Extension took too long to respond — retry once with simpler call |
 
@@ -168,7 +170,7 @@ Return: verdict, tab id + origin, minimal evidence set. No raw HTML or base64 im
 
 ## Output Format
 
-Every CLI shortcut command produces consistent `{ok, summary, evidence}` JSON. Use `bb call <method>` for raw protocol output when needed.
+Every CLI shortcut command produces consistent `{ok, summary, evidence}` JSON. Use `bbx call <method>` for raw protocol output when needed.
 
 ## Response Shapes
 

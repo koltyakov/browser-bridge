@@ -10,7 +10,7 @@
 
 Always start at **quick** or **normal**; widen only if the result indicates truncation.
 
-These presets are also available at runtime via `node packages/agent-client/src/cli.js skill`.
+These presets are also available at runtime via `bbx skill`.
 
 ## Decision Tree
 
@@ -79,13 +79,13 @@ When you need app state (router, store, config), `page.evaluate` is far cheaper 
 
 ```bash
 # Read Next.js route — 1 call vs. parsing URL from dom.query on <head>
-npx bb eval 'window.__NEXT_DATA__?.page'
+bbx eval 'window.__NEXT_DATA__?.page'
 
 # Read React store state
-npx bb eval 'document.querySelector("[data-reactroot]")?.__reactFiber$?.memoizedState'
+bbx eval 'document.querySelector("[data-reactroot]")?.__reactFiber$?.memoizedState'
 
 # Check feature flag
-npx bb eval 'window.__APP_CONFIG__?.features?.darkMode'
+bbx eval 'window.__APP_CONFIG__?.features?.darkMode'
 ```
 
 ## Console for Error Detection
@@ -93,7 +93,7 @@ npx bb eval 'window.__APP_CONFIG__?.features?.darkMode'
 After interactions, check for runtime errors instead of guessing from DOM:
 
 ```bash
-npx bb console error    # just errors and exceptions
+bbx console error    # just errors and exceptions
 ```
 
 Install early — the buffer auto-activates on first call. Captured levels: log, warn, error, info, debug, exception, rejection.
@@ -103,8 +103,8 @@ Install early — the buffer auto-activates on first call. Captured levels: log,
 When you need the page's visible text — for summarization, search, or content extraction — use `page.get_text` instead of `dom.query` on `body`:
 
 ```bash
-npx bb page-text           # default 4000 char budget
-npx bb page-text 8000      # larger budget for long pages
+bbx page-text           # default 4000 char budget
+bbx page-text 8000      # larger budget for long pages
 ```
 
 This is 3–5× cheaper than querying the body's subtree with `dom.query`.
@@ -114,8 +114,8 @@ This is 3–5× cheaper than querying the body's subtree with `dom.query`.
 Check API calls without manual `page.evaluate` fetch interception:
 
 ```bash
-npx bb network              # recent fetch/XHR entries
-npx bb network 50           # last 50 entries
+bbx network              # recent fetch/XHR entries
+bbx network 50           # last 50 entries
 ```
 
 The interceptor auto-installs on first call. Each entry shows `method`, `url`, `status`, `duration`. Use `clear: true` to reset the buffer.
@@ -125,7 +125,7 @@ The interceptor auto-installs on first call. Each entry shows `method`, `url`, `
 When you need to understand the page's interactive structure without guessing selectors:
 
 ```bash
-npx bb a11y-tree 30 3       # 30 nodes, depth 3
+bbx a11y-tree 30 3       # 30 nodes, depth 3
 ```
 
 Returns role/name/interactive flag per node. Much cheaper than screenshot + OCR, and more accurate than `dom.query` on generic selectors.
@@ -136,10 +136,10 @@ When you know the text label but not the selector, `find_by_text` and `find_by_r
 
 ```bash
 # Instead of guessing: dom.query '.btn-primary', '.submit-btn', 'button[type=submit]'...
-npx bb find 'Submit Order'   # finds it in one call
+bbx find 'Submit Order'   # finds it in one call
 
 # Instead of dom.query 'nav', '.navigation', '#main-nav'...
-npx bb find-role navigation  # semantic, works regardless of classes
+bbx find-role navigation  # semantic, works regardless of classes
 ```
 
 ## HMR-Aware Waiting
@@ -147,9 +147,9 @@ npx bb find-role navigation  # semantic, works regardless of classes
 After modifying source code, the dev server hot-reloads. Always wait before inspecting:
 
 ```bash
-npx bb wait '[data-component="Header"]' 5000   # wait for component re-mount
-npx bb console error                            # check for HMR errors
-npx bb eval 'module.hot?.status?.()'            # check HMR status (webpack)
+bbx wait '[data-component="Header"]' 5000   # wait for component re-mount
+bbx console error                            # check for HMR errors
+bbx eval 'module.hot?.status?.()'            # check HMR status (webpack)
 ```
 
 ## Parent-Agent Response Policy

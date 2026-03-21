@@ -49,7 +49,7 @@ const hasPlaceholder = allowedOrigins.some((o) => o.includes('__REPLACE_WITH_EXT
 if (hasPlaceholder) {
   process.stdout.write(
     'Tip: pass the extension ID to set allowed_origins automatically:\n' +
-    '  npx bb install <extension-id>\n'
+    '  bbx install <extension-id>\n'
   );
 }
 

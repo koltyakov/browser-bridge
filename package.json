@@ -1,12 +1,12 @@
 {
-  "name": "browser-bridge",
+  "name": "@browserbridge/bbx",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "bin": {
-    "bb": "packages/agent-client/src/cli.js",
-    "bb-daemon": "packages/native-host/bin/bridge-daemon.js",
-    "bb-install": "packages/native-host/bin/install-manifest.js"
+    "bbx": "packages/agent-client/src/cli.js",
+    "bbx-daemon": "packages/native-host/bin/bridge-daemon.js",
+    "bbx-install": "packages/native-host/bin/install-manifest.js"
   },
   "scripts": {
     "test": "node --test packages/protocol/test/*.test.js packages/native-host/test/*.test.js packages/agent-client/test/*.test.js packages/extension/test/*.test.js",

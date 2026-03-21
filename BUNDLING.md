@@ -58,8 +58,8 @@ A Zig native host eliminates the shell launcher entirely. Chrome starts the bina
 
 ### Phase 1: Keep Node for Development (current)
 
-- `npx bb daemon` starts the Node daemon
-- `npx bb install <ext-id>` installs shell launcher + manifest
+- `bbx-daemon` starts the Node daemon
+- `bbx install <ext-id>` installs shell launcher + manifest
 - Full development flexibility, easy debugging
 
 ### Phase 2: Zig Daemon Binary
@@ -72,9 +72,9 @@ A Zig native host eliminates the shell launcher entirely. Chrome starts the bina
 ### Phase 3: Zig Native Host
 
 - Combine daemon + native host into one Zig binary with subcommands:
-  - `bb-native daemon` — run standalone daemon
-  - `bb-native host` — run as Chrome native messaging host (auto-starts daemon)
-  - `bb-native install <ext-id>` — install manifest pointing to self
+  - `bbx-native daemon` — run standalone daemon
+  - `bbx-native host` — run as Chrome native messaging host (auto-starts daemon)
+  - `bbx-native install <ext-id>` — install manifest pointing to self
 - Single ~200KB binary replaces shell launcher, Node daemon, and Node native host
 
 ### Phase 4: Extension Bundling

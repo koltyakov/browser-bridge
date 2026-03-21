@@ -7,21 +7,21 @@
   - `packages/extension`: MV3 extension runtime, content script, popup, side panel, offscreen cropper
   - `packages/native-host`: local daemon, native host bootstrap, manifest installer
   - `packages/protocol`: shared protocol shapes, normalization, error codes, budgeting
-  - `packages/agent-client`: CLI (`npx bb`) and subagent-facing bridge client
+  - `packages/agent-client`: CLI (`bbx`) and subagent-facing bridge client
   - `skills/browser-bridge`: modular skill — core SKILL.md loaded first, reference docs on demand
 
 ## CLI Quick Reference
 
 ```bash
-npx bb status                          # bridge health
-npx bb install <extension-id>          # install native manifest
-npx bb request-access                  # session for active tab
-npx bb call <method> '{"key":"val"}'   # any RPC method
-npx bb batch '[{...}]'                 # parallel reads
-npx bb skill                           # runtime presets
+bbx status                          # bridge health
+bbx install <extension-id>          # install native manifest
+bbx request-access                  # session for active tab
+bbx call <method> '{"key":"val"}'   # any RPC method
+bbx batch '[{...}]'                 # parallel reads
+bbx skill                           # runtime presets
 ```
 
-Also: `npx bb-daemon` (start daemon), `npx bb-install <ext-id>` (install manifest directly).
+Also: `bbx-daemon` (start daemon), `bbx-install <ext-id>` (install manifest directly).
 
 ## Skill Structure
 
@@ -55,6 +55,8 @@ Also: `npx bb-daemon` (start daemon), `npx bb-install <ext-id>` (install manifes
 
 ## CLI and Protocol Expectations
 
-- `packages/agent-client/src/cli.js` is registered as `npx bb` via the `bin` field in package.json.
+- `packages/agent-client/src/cli.js` is registered as `bbx` via the `bin` field in `package.json`.
+- `package.json` uses the publish name `@browserbridge/bbx`.
+- `npm link` from this repo exposes `bbx`, `bbx-daemon`, and `bbx-install` machine-wide for consumer repos.
 - Prefer the generic `call` path for arbitrary bridge methods.
 - High-level helper commands are acceptable only when they map cleanly onto shared protocol methods and do not narrow the protocol surface.
