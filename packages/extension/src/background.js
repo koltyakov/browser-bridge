@@ -32,6 +32,7 @@ import {
   normalizeWaitForLoadStateParams,
   normalizeWaitForParams
 } from '../../protocol/src/index.js';
+import { TabDebuggerCoordinator } from './debugger-coordinator.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
@@ -102,6 +103,7 @@ const ENABLED_TAB_STORAGE_PREFIX = 'enabledTab:';
 const ACTION_LOG_STORAGE_KEY = 'actionLog';
 const SIDEPANEL_PATH = 'packages/extension/ui/sidepanel.html';
 const ENABLED_BADGE_TEXT = 'AI';
+const DEBUGGER_PROTOCOL_VERSION = '1.3';
 
 /** @type {ExtensionState} */
 const state = {
@@ -111,6 +113,12 @@ const state = {
   actionLog: [],
   uiPorts: new Map()
 };
+
+const tabDebugger = new TabDebuggerCoordinator({
+  attach: (target, protocolVersion) => chrome.debugger.attach(target, protocolVersion),
+  detach: (target) => chrome.debugger.detach(target),
+  protocolVersion: DEBUGGER_PROTOCOL_VERSION
+});
 
 void initializeState().catch(reportAsyncError);
 connectNative();
@@ -581,9 +589,7 @@ async function handlePageEvaluate(request) {
   if (!params.expression) {
     return createFailure(request.id, ERROR_CODES.INVALID_REQUEST, 'expression is required.', null, { method: request.method });
   }
-  const target = { tabId: session.tabId };
-  await chrome.debugger.attach(target, '1.3');
-  try {
+  return tabDebugger.run(session.tabId, async (target) => {
     const result = await chrome.debugger.sendCommand(target, 'Runtime.evaluate', {
       expression: params.expression,
       returnByValue: params.returnByValue,
@@ -604,9 +610,7 @@ async function handlePageEvaluate(request) {
       value: cdpResult.result?.value ?? null,
       type: cdpResult.result?.type ?? 'undefined'
     }, { method: request.method });
-  } finally {
-    await chrome.debugger.detach(target);
-  }
+  });
 }
 
 /**
@@ -666,9 +670,7 @@ async function handleCloseTab(request) {
 async function handleAccessibilityTree(request) {
   const session = await requireSession(request, CAPABILITIES.DOM_READ);
   const params = normalizeAccessibilityTreeParams(request.params);
-  const target = { tabId: session.tabId };
-  await chrome.debugger.attach(target, '1.3');
-  try {
+  return tabDebugger.run(session.tabId, async (target) => {
     await chrome.debugger.sendCommand(target, 'Accessibility.enable', {});
     const result = await chrome.debugger.sendCommand(target, 'Accessibility.getFullAXTree', {
       depth: params.maxDepth
@@ -683,9 +685,7 @@ async function handleAccessibilityTree(request) {
       total: rawNodes.length,
       truncated: rawNodes.length > params.maxNodes
     }, { method: request.method });
-  } finally {
-    await chrome.debugger.detach(target);
-  }
+  });
 }
 
 /**
@@ -880,9 +880,7 @@ async function readNetworkBuffer(tabId, clear) {
 async function handleViewportResize(request) {
   const session = await requireSession(request, CAPABILITIES.VIEWPORT_CONTROL);
   const params = normalizeViewportResizeParams(request.params);
-  const target = { tabId: session.tabId };
-  await chrome.debugger.attach(target, '1.3');
-  try {
+  return tabDebugger.run(session.tabId, async (target) => {
     if (params.width === 0 && params.height === 0) {
       await chrome.debugger.sendCommand(target, 'Emulation.clearDeviceMetricsOverride', {});
     } else {
@@ -898,9 +896,7 @@ async function handleViewportResize(request) {
       height: params.height,
       deviceScaleFactor: params.deviceScaleFactor
     }, { method: request.method });
-  } finally {
-    await chrome.debugger.detach(target);
-  }
+  });
 }
 
 /**
@@ -911,9 +907,7 @@ async function handleViewportResize(request) {
  */
 async function handlePerformanceMetrics(request) {
   const session = await requireSession(request, CAPABILITIES.PAGE_READ);
-  const target = { tabId: session.tabId };
-  await chrome.debugger.attach(target, '1.3');
-  try {
+  return tabDebugger.run(session.tabId, async (target) => {
     await chrome.debugger.sendCommand(target, 'Performance.enable', { timeDomain: 'timeTicks' });
     const result = await chrome.debugger.sendCommand(target, 'Performance.getMetrics', {});
     await chrome.debugger.sendCommand(target, 'Performance.disable', {});
@@ -923,9 +917,7 @@ async function handlePerformanceMetrics(request) {
       return acc;
     }, /** @type {Record<string, number>} */ ({}));
     return createSuccess(request.id, { metrics }, { method: request.method });
-  } finally {
-    await chrome.debugger.detach(target);
-  }
+  });
 }
 
 /**
@@ -1038,8 +1030,6 @@ async function readConsoleBuffer(tabId, clear) {
  * @returns {Promise<{ rect: unknown, image: string }>}
  */
 async function handleScreenshot(session, method, params) {
-  const target = { tabId: session.tabId };
-
   /** @type {{ x: number, y: number, width: number, height: number, scale: number }} */
   let clip;
 
@@ -1081,8 +1071,7 @@ async function handleScreenshot(session, method, params) {
 
   // Use CDP Page.captureScreenshot — works regardless of tab focus,
   // captures renderer output directly with built-in clip support.
-  await chrome.debugger.attach(target, '1.3');
-  try {
+  return tabDebugger.run(session.tabId, async (target) => {
     const dpr = clip.scale || 1;
     const cdpResult = /** @type {{ data?: string }} */ (
       await chrome.debugger.sendCommand(target, 'Page.captureScreenshot', {
@@ -1104,9 +1093,7 @@ async function handleScreenshot(session, method, params) {
       rect: clip,
       image: `data:image/png;base64,${cdpResult.data}`
     };
-  } finally {
-    await chrome.debugger.detach(target);
-  }
+  });
 }
 
 /**
@@ -1205,10 +1192,7 @@ async function ensureOffscreenDocument() {
  */
 async function handleCdpRequest(request) {
   const session = await requireSession(request, inferCapability(request.method));
-  const target = { tabId: session.tabId };
-  await chrome.debugger.attach(target, '1.3');
-
-  try {
+  return tabDebugger.run(session.tabId, async (target) => {
     let command;
     let params = {};
     if (request.method === 'cdp.get_document') {
@@ -1230,9 +1214,7 @@ async function handleCdpRequest(request) {
       /** @type {Record<string, unknown>} */ (params)
     );
     return createSuccess(request.id, result, { method: request.method });
-  } finally {
-    await chrome.debugger.detach(target);
-  }
+  });
 }
 
 /**

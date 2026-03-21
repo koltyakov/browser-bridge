@@ -1084,9 +1084,12 @@
     const scope = String(params.selector || "*");
     const maxResults = clamp(params.maxResults ?? 10, 1, 50);
 
-    const candidates = document.querySelectorAll(
-      scope === "*" ? `[role="${CSS.escape(role)}"]` : scope
-    );
+    const implicitSelector = getImplicitRoleSelector(role);
+    const attrSelector = `[role="${CSS.escape(role)}"]`;
+    const combinedSelector = scope === "*"
+      ? (implicitSelector ? `${attrSelector}, ${implicitSelector}` : attrSelector)
+      : scope;
+    const candidates = document.querySelectorAll(combinedSelector);
     const results = [];
 
     for (const el of candidates) {
@@ -1271,6 +1274,47 @@
       }
     }
     return null;
+  }
+
+  /**
+   * Return a CSS selector that matches elements whose implicit role is `role`.
+   * Returns empty string if no tag maps to the role.
+   *
+   * @param {string} role
+   * @returns {string}
+   */
+  function getImplicitRoleSelector(role) {
+    /** @type {Record<string, string>} */
+    const map = {
+      link: "a[href]",
+      article: "article",
+      complementary: "aside",
+      button: "button, input[type=button], input[type=submit], input[type=reset], input[type=image]",
+      dialog: "dialog",
+      contentinfo: "footer",
+      form: "form",
+      heading: "h1, h2, h3, h4, h5, h6",
+      banner: "header",
+      img: "img",
+      textbox: "input:not([type=button]):not([type=checkbox]):not([type=radio]):not([type=range]):not([type=submit]):not([type=reset]):not([type=image]):not([type=hidden]), textarea",
+      listitem: "li",
+      main: "main",
+      navigation: "nav",
+      list: "ol, ul",
+      option: "option",
+      progressbar: "progress",
+      region: "section",
+      listbox: "select",
+      table: "table",
+      cell: "td",
+      columnheader: "th",
+      row: "tr",
+      checkbox: "input[type=checkbox]",
+      radio: "input[type=radio]",
+      slider: "input[type=range]",
+      searchbox: "input[type=search]",
+    };
+    return map[role] || "";
   }
 
   /**

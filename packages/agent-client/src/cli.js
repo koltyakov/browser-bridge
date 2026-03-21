@@ -86,7 +86,7 @@ async function main() {
         method: 'tabs.create',
         params: { url: url || undefined }
       });
-      printJson(response.ok ? response.result : response);
+      await printSummary(response);
       return;
     }
 
@@ -99,7 +99,7 @@ async function main() {
         method: 'tabs.close',
         params: { tabId: Number(tabId) }
       });
-      printJson(response.ok ? response.result : response);
+      await printSummary(response);
       return;
     }
 
@@ -125,21 +125,19 @@ async function main() {
       }
       const needsSession = calls.some((c) => methodNeedsSession(c.method));
       const session = needsSession ? await requireSession() : null;
-      /** @type {unknown[]} */
-      const results = [];
-      for (const call of calls) {
+      const results = await Promise.all(calls.map(async (call) => {
         try {
           const response = await client.request({
             method: /** @type {BridgeMethod} */ (call.method),
             sessionId: methodNeedsSession(call.method) ? session?.sessionId ?? null : null,
             params: call.params || {}
           });
-          results.push(summarizeBridgeResponse(response));
+          return summarizeBridgeResponse(response, call.method);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
-          results.push({ ok: false, summary: `${call.method}: ${message}`, evidence: null });
+          return { ok: false, summary: `${call.method}: ${message}`, evidence: null };
         }
-      }
+      }));
       printJson(results);
       return;
     }
@@ -196,7 +194,7 @@ async function main() {
     }
 
     if (command === 'describe') {
-      const elementRef = rest[0];
+      const elementRef = await resolveRef(rest[0], session.sessionId);
       const response = await client.request({
         method: 'dom.describe',
         sessionId: session.sessionId,
@@ -204,12 +202,13 @@ async function main() {
           elementRef
         }
       });
-      printJson(response.ok ? response.result : response);
+      await printSummary(response, 'dom.describe');
       return;
     }
 
     if (command === 'text') {
-      const [elementRef, textBudget] = rest;
+      const [refOrSelector, textBudget] = rest;
+      const elementRef = await resolveRef(refOrSelector, session.sessionId);
       const response = await client.request({
         method: 'dom.get_text',
         sessionId: session.sessionId,
@@ -218,12 +217,13 @@ async function main() {
           textBudget: textBudget ? Number(textBudget) : undefined
         }
       });
-      printJson(response.ok ? response.result : response);
+      await printSummary(response, 'dom.get_text');
       return;
     }
 
     if (command === 'styles') {
-      const [elementRef, propertyList] = rest;
+      const [refOrSelector, propertyList] = rest;
+      const elementRef = await resolveRef(refOrSelector, session.sessionId);
       const response = await client.request({
         method: 'styles.get_computed',
         sessionId: session.sessionId,
@@ -232,12 +232,13 @@ async function main() {
           properties: parseCommaList(propertyList)
         }
       });
-      printJson(response.ok ? response.result : response);
+      await printSummary(response, 'styles.get_computed');
       return;
     }
 
     if (command === 'box') {
-      const [elementRef] = rest;
+      const [refOrSelector] = rest;
+      const elementRef = await resolveRef(refOrSelector, session.sessionId);
       const response = await client.request({
         method: 'layout.get_box_model',
         sessionId: session.sessionId,
@@ -245,12 +246,13 @@ async function main() {
           elementRef
         }
       });
-      printJson(response.ok ? response.result : response);
+      await printSummary(response, 'layout.get_box_model');
       return;
     }
 
     if (command === 'click') {
-      const [elementRef, button] = rest;
+      const [refOrSelector, button] = rest;
+      const elementRef = await resolveRef(refOrSelector, session.sessionId);
       const response = await client.request({
         method: 'input.click',
         sessionId: session.sessionId,
@@ -261,12 +263,13 @@ async function main() {
           button
         }
       });
-      printJson(response.ok ? response.result : response);
+      await printSummary(response);
       return;
     }
 
     if (command === 'focus') {
-      const [elementRef] = rest;
+      const [refOrSelector] = rest;
+      const elementRef = await resolveRef(refOrSelector, session.sessionId);
       const response = await client.request({
         method: 'input.focus',
         sessionId: session.sessionId,
@@ -276,12 +279,13 @@ async function main() {
           }
         }
       });
-      printJson(response.ok ? response.result : response);
+      await printSummary(response);
       return;
     }
 
     if (command === 'type') {
-      const [elementRef, ...textParts] = rest;
+      const [refOrSelector, ...textParts] = rest;
+      const elementRef = await resolveRef(refOrSelector, session.sessionId);
       const response = await client.request({
         method: 'input.type',
         sessionId: session.sessionId,
@@ -292,12 +296,13 @@ async function main() {
           text: textParts.join(' ')
         }
       });
-      printJson(response.ok ? response.result : response);
+      await printSummary(response);
       return;
     }
 
     if (command === 'press-key') {
-      const [key, elementRef] = rest;
+      const [key, refOrSelector] = rest;
+      const elementRef = refOrSelector ? await resolveRef(refOrSelector, session.sessionId) : undefined;
       const response = await client.request({
         method: 'input.press_key',
         sessionId: session.sessionId,
@@ -310,12 +315,13 @@ async function main() {
             : undefined
         }
       });
-      printJson(response.ok ? response.result : response);
+      await printSummary(response);
       return;
     }
 
     if (command === 'patch-style') {
-      const [elementRef, ...assignments] = rest;
+      const [refOrSelector, ...assignments] = rest;
+      const elementRef = await resolveRef(refOrSelector, session.sessionId);
       const response = await client.request({
         method: 'patch.apply_styles',
         sessionId: session.sessionId,
@@ -329,7 +335,8 @@ async function main() {
     }
 
     if (command === 'patch-text') {
-      const [elementRef, ...textParts] = rest;
+      const [refOrSelector, ...textParts] = rest;
+      const elementRef = await resolveRef(refOrSelector, session.sessionId);
       const response = await client.request({
         method: 'patch.apply_dom',
         sessionId: session.sessionId,
@@ -348,7 +355,7 @@ async function main() {
         method: 'patch.list',
         sessionId: session.sessionId
       });
-      printJson(response.ok ? response.result : response);
+      await printSummary(response);
       return;
     }
 
@@ -361,12 +368,13 @@ async function main() {
           patchId
         }
       });
-      printJson(response.ok ? response.result : response);
+      await printSummary(response);
       return;
     }
 
     if (command === 'screenshot') {
-      const [elementRef, outputPath] = rest;
+      const [refOrSelector, outputPath] = rest;
+      const elementRef = await resolveRef(refOrSelector, session.sessionId);
       const response = await client.request({
         method: 'screenshot.capture_element',
         sessionId: session.sessionId,
@@ -376,7 +384,7 @@ async function main() {
       });
 
       if (!response.ok) {
-        printJson(response);
+        await printSummary(response);
         return;
       }
 
@@ -385,8 +393,9 @@ async function main() {
       const data = screenshotResult.image.replace(/^data:image\/png;base64,/, '');
       await fs.promises.writeFile(filePath, Buffer.from(data, 'base64'));
       printJson({
-        savedTo: filePath,
-        rect: screenshotResult.rect
+        ok: true,
+        summary: `Screenshot saved to ${filePath}.`,
+        evidence: { savedTo: filePath, rect: screenshotResult.rect }
       });
       return;
     }
@@ -405,7 +414,7 @@ async function main() {
         sessionId: session.sessionId,
         params: { expression, returnByValue: true }
       });
-      printJson(response.ok ? response.result : response);
+      await printSummary(response);
       return;
     }
 
@@ -416,7 +425,7 @@ async function main() {
         sessionId: session.sessionId,
         params: { level: level || 'all', clear: false }
       });
-      printJson(response.ok ? response.result : response);
+      await printSummary(response, 'page.get_console');
       return;
     }
 
@@ -433,7 +442,7 @@ async function main() {
           timeoutMs: timeoutArg ? Number(timeoutArg) : 5000
         }
       });
-      printJson(response.ok ? response.result : response);
+      await printSummary(response);
       return;
     }
 
@@ -447,7 +456,7 @@ async function main() {
         sessionId: session.sessionId,
         params: { text: searchText }
       });
-      await printSummary(response);
+      await printSummary(response, 'dom.find_by_text');
       return;
     }
 
@@ -461,12 +470,13 @@ async function main() {
         sessionId: session.sessionId,
         params: { role, name: nameParts.join(' ') || undefined }
       });
-      await printSummary(response);
+      await printSummary(response, 'dom.find_by_role');
       return;
     }
 
     if (command === 'html') {
-      const [elementRef, maxLengthArg] = rest;
+      const [refOrSelector, maxLengthArg] = rest;
+      const elementRef = await resolveRef(refOrSelector, session.sessionId);
       const response = await client.request({
         method: 'dom.get_html',
         sessionId: session.sessionId,
@@ -475,12 +485,13 @@ async function main() {
           maxLength: maxLengthArg ? Number(maxLengthArg) : undefined
         }
       });
-      printJson(response.ok ? response.result : response);
+      await printSummary(response);
       return;
     }
 
     if (command === 'hover') {
-      const [elementRef] = rest;
+      const [refOrSelector] = rest;
+      const elementRef = await resolveRef(refOrSelector, session.sessionId);
       const response = await client.request({
         method: 'input.hover',
         sessionId: session.sessionId,
@@ -488,7 +499,7 @@ async function main() {
           target: { elementRef }
         }
       });
-      printJson(response.ok ? response.result : response);
+      await printSummary(response);
       return;
     }
 
@@ -502,7 +513,7 @@ async function main() {
         sessionId: session.sessionId,
         params: { url }
       });
-      printJson(response.ok ? response.result : response);
+      await printSummary(response);
       return;
     }
 
@@ -516,7 +527,7 @@ async function main() {
           keys: keys.length ? keys : undefined
         }
       });
-      printJson(response.ok ? response.result : response);
+      await printSummary(response);
       return;
     }
 
@@ -527,7 +538,7 @@ async function main() {
         sessionId: session.sessionId,
         params: { textBudget: budgetArg ? Number(budgetArg) : undefined }
       });
-      printJson(response.ok ? response.result : response);
+      await printSummary(response, 'page.get_text');
       return;
     }
 
@@ -538,7 +549,7 @@ async function main() {
         sessionId: session.sessionId,
         params: { limit: limitArg ? Number(limitArg) : undefined }
       });
-      printJson(response.ok ? response.result : response);
+      await printSummary(response, 'page.get_network');
       return;
     }
 
@@ -552,7 +563,7 @@ async function main() {
           maxDepth: maxDepthArg ? Number(maxDepthArg) : undefined
         }
       });
-      printJson(response.ok ? response.result : response);
+      await printSummary(response);
       return;
     }
 
@@ -561,7 +572,7 @@ async function main() {
         method: 'performance.get_metrics',
         sessionId: session.sessionId
       });
-      printJson(response.ok ? response.result : response);
+      await printSummary(response);
       return;
     }
 
@@ -578,7 +589,7 @@ async function main() {
           height: Number(heightArg)
         }
       });
-      printJson(response.ok ? response.result : response);
+      await printSummary(response);
       return;
     }
 
@@ -587,11 +598,21 @@ async function main() {
     process.exitCode = 1;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const code = error instanceof Error && 'code' in error ? /** @type {any} */ (error).code : 'ERROR';
+    const raw = error instanceof Error && 'code' in error ? /** @type {any} */ (error).code : '';
+    let code = 'ERROR';
+    if (raw === 'ENOENT' || raw === 'ECONNREFUSED') {
+      code = 'DAEMON_OFFLINE';
+    } else if (raw === 'BRIDGE_TIMEOUT') {
+      code = 'BRIDGE_TIMEOUT';
+    } else if (/socket closed/i.test(message)) {
+      code = 'CONNECTION_LOST';
+    } else if (raw) {
+      code = String(raw);
+    }
     printJson({
       ok: false,
-      summary: `Bridge unavailable: ${code}`,
-      evidence: message
+      summary: `${code}: ${message}`,
+      evidence: null
     });
     process.exitCode = 1;
   } finally {
@@ -639,11 +660,40 @@ async function requireSession() {
 }
 
 /**
+ * Resolve an argument that may be a CSS selector or an element reference.
+ * If the argument starts with `el_`, it is treated as an element reference.
+ * Otherwise, it is treated as a CSS selector and resolved via dom.query.
+ *
+ * @param {string} refOrSelector
+ * @param {string} sessionId
+ * @returns {Promise<string>}
+ */
+async function resolveRef(refOrSelector, sessionId) {
+  if (refOrSelector.startsWith('el_')) {
+    return refOrSelector;
+  }
+  const response = await client.request({
+    method: 'dom.query',
+    sessionId,
+    params: { selector: refOrSelector }
+  });
+  if (!response.ok) {
+    throw new Error(response.error.message);
+  }
+  const result = /** @type {{ nodes: Array<{ elementRef: string }> }} */ (response.result);
+  if (!result.nodes || result.nodes.length === 0) {
+    throw new Error(`No element found for selector "${refOrSelector}".`);
+  }
+  return result.nodes[0].elementRef;
+}
+
+/**
  * @param {import('../../protocol/src/types.js').BridgeResponse} response
+ * @param {string} [method] - Optional method name for disambiguation
  * @returns {Promise<void>}
  */
-async function printSummary(response) {
-  printJson(summarizeBridgeResponse(response));
+async function printSummary(response, method) {
+  printJson(summarizeBridgeResponse(response, method));
 }
 
 /**
@@ -678,11 +728,11 @@ Generic RPC:
 
 Inspect:
   bb dom-query [selector]            Query DOM subtree
-  bb describe <elementRef>           Describe one element
-  bb text <elementRef> [textBudget]  Get element text
-  bb html <elementRef> [maxLength]   Get element HTML
-  bb styles <ref> [prop1,prop2]      Get computed styles
-  bb box <elementRef>                Get box model
+  bb describe <ref|selector>         Describe one element
+  bb text <ref|selector> [budget]    Get element text
+  bb html <ref|selector> [maxLen]    Get element HTML
+  bb styles <ref|selector> [props]   Get computed styles
+  bb box <ref|selector>              Get box model
   bb a11y-tree [maxNodes] [maxDepth] Get accessibility tree
 
 Find:
@@ -701,20 +751,20 @@ Page:
   bb resize <width> <height>         Resize viewport
 
 Interact:
-  bb click <elementRef> [button]     Click element
-  bb focus <elementRef>              Focus element
-  bb type <elementRef> <text...>     Type into element
-  bb press-key <key> [elementRef]    Send key event
-  bb hover <elementRef>              Hover over element
+  bb click <ref|selector> [button]   Click element
+  bb focus <ref|selector>            Focus element
+  bb type <ref|selector> <text...>   Type into element
+  bb press-key <key> [ref|selector]  Send key event
+  bb hover <ref|selector>            Hover over element
 
 Patch:
-  bb patch-style <ref> prop=val...   Apply style patch
-  bb patch-text <ref> <text...>      Apply text patch
+  bb patch-style <ref|sel> prop=val  Apply style patch
+  bb patch-text <ref|sel> <text...>  Apply text patch
   bb patches                         List active patches
   bb rollback <patchId>              Rollback a patch
 
 Capture:
-  bb screenshot <ref> [outputPath]   Capture element screenshot
+  bb screenshot <ref|selector> [path] Capture element screenshot
 `);
 }
 

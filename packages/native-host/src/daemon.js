@@ -11,6 +11,7 @@ import { writeJsonLine } from './framing.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */
 /** @typedef {import('node:net').Socket & { __clientId?: string }} ClientSocket */
+/** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout }} PendingEntry */
 
 /**
  * @typedef {{
@@ -62,7 +63,9 @@ export class BridgeDaemon {
     this.serverAddress = null;
     this.extensionSocket = null;
     this.agentSockets = new Map();
+    /** @type {Map<string, PendingEntry>} */
     this.pendingRequests = new Map();
+    this.pendingTimeoutMs = 30_000;
     this.recentLog = [];
     this.stopPromise = null;
   }
@@ -121,6 +124,11 @@ export class BridgeDaemon {
    * @returns {Promise<void>}
    */
   async stopInternal() {
+    for (const pending of this.pendingRequests.values()) {
+      clearTimeout(pending.timeoutId);
+    }
+    this.pendingRequests.clear();
+
     for (const socket of this.agentSockets.values()) {
       socket.destroy();
     }
@@ -235,7 +243,16 @@ export class BridgeDaemon {
       return;
     }
 
-    this.pendingRequests.set(request.id, socket);
+    this.pendingRequests.set(request.id, {
+      socket,
+      timeoutId: setTimeout(() => {
+        const pending = this.pendingRequests.get(request.id);
+        if (!pending) return;
+        this.pendingRequests.delete(request.id);
+        const response = createFailure(request.id, ERROR_CODES.TIMEOUT, 'Extension did not respond in time.');
+        void writeJsonLine(pending.socket, { type: 'agent.response', response });
+      }, this.pendingTimeoutMs)
+    });
     await writeJsonLine(this.extensionSocket, {
       type: 'extension.request',
       request
@@ -247,11 +264,12 @@ export class BridgeDaemon {
    * @returns {Promise<void>}
    */
   async handleExtensionResponse(message) {
-    const socket = this.pendingRequests.get(message.response?.id);
-    if (!socket) {
+    const pending = this.pendingRequests.get(message.response?.id);
+    if (!pending) {
       return;
     }
 
+    clearTimeout(pending.timeoutId);
     this.pendingRequests.delete(message.response.id);
     this.pushLog({
       at: new Date().toISOString(),
@@ -259,7 +277,7 @@ export class BridgeDaemon {
       ok: message.response.ok,
       id: message.response.id
     });
-    await writeJsonLine(socket, {
+    await writeJsonLine(pending.socket, {
       type: 'agent.response',
       response: message.response
     });
@@ -278,8 +296,9 @@ export class BridgeDaemon {
       this.agentSockets.delete(socket.__clientId);
     }
 
-    for (const [id, pendingSocket] of this.pendingRequests.entries()) {
-      if (pendingSocket === socket) {
+    for (const [id, pending] of this.pendingRequests.entries()) {
+      if (pending.socket === socket) {
+        clearTimeout(pending.timeoutId);
         this.pendingRequests.delete(id);
       }
     }
