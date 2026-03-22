@@ -16,7 +16,8 @@
     "packages/native-host/bin",
     "packages/native-host/src",
     "packages/protocol/src",
-    "skills/browser-bridge"
+    "skills/browser-bridge",
+    "skills/browser-bridge-mcp"
   ],
   "bin": {
     "bbx": "packages/agent-client/src/cli.js",

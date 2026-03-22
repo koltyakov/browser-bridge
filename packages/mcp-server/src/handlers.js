@@ -584,6 +584,22 @@ export async function handleCaptureTool(args) {
 }
 
 /**
+ * Returns the live runtime context: budget presets, method groups, and active limits.
+ * Equivalent to `bbx skill`. Use this first to discover safe defaults before inspecting.
+ *
+ * @returns {Promise<ToolResult>}
+ */
+export async function handleSkillTool() {
+  try {
+    const { createRuntimeContext } = await import('../../protocol/src/index.js');
+    const ctx = createRuntimeContext();
+    return createToolResult('Runtime context retrieved.', { ok: true, runtimeContext: ctx });
+  } catch (error) {
+    return summarizeToolError(error);
+  }
+}
+
+/**
  * @param {{ method: string, params?: Record<string, unknown>, sessionId?: string }} args
  * @returns {Promise<ToolResult>}
  */

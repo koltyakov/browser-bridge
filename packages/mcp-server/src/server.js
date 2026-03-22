@@ -13,6 +13,7 @@ import {
   handlePatchTool,
   handleRawCallTool,
   handleSessionTool,
+  handleSkillTool,
   handleStatusTool,
   handleStylesLayoutTool,
   handleTabsTool
@@ -200,6 +201,12 @@ export function createBridgeMcpServer() {
       sessionId: z.string().optional()
     }
   }, handleRawCallTool);
+
+  server.registerTool('browser_skill', {
+    title: 'Browser Bridge Runtime Context',
+    description: 'Return live runtime context: budget presets, method groups, and active limits. Call this first to discover safe defaults before inspecting a page.',
+    inputSchema: {}
+  }, async () => handleSkillTool());
 
   return server;
 }

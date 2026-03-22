@@ -7,10 +7,13 @@ import { APP_NAME, getBridgeDir, getManifestInstallDir } from './config.js';
 
 export const DEFAULT_EXTENSION_ID_ENV = 'BROWSER_BRIDGE_EXTENSION_ID';
 
+/** @typedef {import('./config.js').SupportedBrowser} SupportedBrowser */
+
 /**
  * @typedef {{
  *   repoRoot: string,
  *   extensionIdArg?: string | undefined,
+ *   browser?: SupportedBrowser | undefined,
  *   nodePath?: string | undefined,
  *   installDir?: string | undefined,
  *   bridgeDir?: string | undefined,
@@ -105,8 +108,9 @@ export async function installNativeManifest(options) {
   const {
     repoRoot,
     extensionIdArg,
+    browser,
     nodePath = process.execPath,
-    installDir = getManifestInstallDir(),
+    installDir = getManifestInstallDir(browser),
     bridgeDir = getBridgeDir(),
     stdout = process.stdout,
     env = process.env

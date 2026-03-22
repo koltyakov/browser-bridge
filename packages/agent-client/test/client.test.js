@@ -62,7 +62,8 @@ test('parseCommaList splits and trims values', () => {
 /** Ensure JSON object parsing rejects non-object shapes. */
 test('parseJsonObject parses objects and rejects arrays', () => {
   assert.deepEqual(parseJsonObject('{"selector":"body"}'), { selector: 'body' });
-  assert.throws(() => parseJsonObject('[1,2,3]'), /Expected JSON object input/);
+  assert.throws(() => parseJsonObject('[1,2,3]'), /Expected a JSON object but got array/);
+  assert.throws(() => parseJsonObject('{bad json'), /Invalid JSON syntax/);
 });
 
 /** Ensure session requirements are inferred correctly for generic calls. */

@@ -31,12 +31,34 @@ export function parseJsonObject(value) {
     return {};
   }
 
-  const parsed = JSON.parse(value);
+  let parsed;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error('Invalid JSON syntax. Expected a JSON object, e.g. \'{"key":"value"}\'.');
+  }
+
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('Expected JSON object input.');
+    throw new Error(`Expected a JSON object but got ${Array.isArray(parsed) ? 'array' : typeof parsed}. Wrap your input in {}.`);
   }
 
   return /** @type {Record<string, unknown>} */ (parsed);
+}
+
+/**
+ * Parse a CLI argument as a positive integer, throwing a user-friendly error
+ * if the value is missing or not a finite number.
+ *
+ * @param {string | undefined} value
+ * @param {string} argName - The argument name shown in the error message
+ * @returns {number}
+ */
+export function parseIntArg(value, argName) {
+  const n = Number(value);
+  if (!value || !Number.isFinite(n)) {
+    throw new Error(`${argName} must be a number (got ${JSON.stringify(value)}).`);
+  }
+  return n;
 }
 
 /**

@@ -21,30 +21,55 @@ export function getSocketPath() {
 }
 
 /**
+ * @typedef {'chrome' | 'edge' | 'brave' | 'chromium'} SupportedBrowser
+ */
+
+/**
+ * Supported browser identifiers, in display order.
+ *
+ * @type {SupportedBrowser[]}
+ */
+export const SUPPORTED_BROWSERS = ['chrome', 'edge', 'brave', 'chromium'];
+
+/**
+ * Return the native messaging host manifest install directory for the given
+ * browser on the current platform.
+ *
+ * @param {SupportedBrowser} [browser='chrome']
  * @returns {string}
  */
-export function getManifestInstallDir() {
+export function getManifestInstallDir(browser = 'chrome') {
   const platform = os.platform();
+  const home = os.homedir();
+
   if (platform === 'darwin') {
-    return path.join(
-      os.homedir(),
-      'Library',
-      'Application Support',
-      'Google',
-      'Chrome',
-      'NativeMessagingHosts'
-    );
+    const macBase = path.join(home, 'Library', 'Application Support');
+    const macPaths = {
+      chrome: path.join(macBase, 'Google', 'Chrome', 'NativeMessagingHosts'),
+      edge: path.join(macBase, 'Microsoft Edge', 'NativeMessagingHosts'),
+      brave: path.join(macBase, 'BraveSoftware', 'Brave-Browser', 'NativeMessagingHosts'),
+      chromium: path.join(macBase, 'Chromium', 'NativeMessagingHosts')
+    };
+    return macPaths[browser] ?? macPaths.chrome;
   }
+
   if (platform === 'win32') {
-    // Windows uses registry, but manifest file goes here by convention
-    return path.join(
-      process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
-      'Google',
-      'Chrome',
-      'User Data',
-      'NativeMessagingHosts'
-    );
+    const winBase = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+    const winPaths = {
+      chrome: path.join(winBase, 'Google', 'Chrome', 'User Data', 'NativeMessagingHosts'),
+      edge: path.join(winBase, 'Microsoft', 'Edge', 'User Data', 'NativeMessagingHosts'),
+      brave: path.join(winBase, 'BraveSoftware', 'Brave-Browser', 'User Data', 'NativeMessagingHosts'),
+      chromium: path.join(winBase, 'Chromium', 'User Data', 'NativeMessagingHosts')
+    };
+    return winPaths[browser] ?? winPaths.chrome;
   }
+
   // Linux / others
-  return path.join(os.homedir(), '.config', 'google-chrome', 'NativeMessagingHosts');
+  const linuxPaths = {
+    chrome: path.join(home, '.config', 'google-chrome', 'NativeMessagingHosts'),
+    edge: path.join(home, '.config', 'microsoft-edge', 'NativeMessagingHosts'),
+    brave: path.join(home, '.config', 'BraveSoftware', 'Brave-Browser', 'NativeMessagingHosts'),
+    chromium: path.join(home, '.config', 'chromium', 'NativeMessagingHosts')
+  };
+  return linuxPaths[browser] ?? linuxPaths.chrome;
 }

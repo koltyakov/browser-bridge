@@ -18,7 +18,7 @@ Example prompt: `Using bbx-mcp verify the current page layout matches the design
 
 1. Call `browser_status` first. Stop on daemon, extension, or session readiness failures.
 2. Ensure access with `browser_session`.
-3. Call `browser_call` with `method: "skill.get_runtime_context"` once near the start of the task when you need live budgets, method groups, limits, or capability hints.
+3. Call `browser_skill` once near the start of the task to get live budgets, method groups, limits, and capability hints. (This replaces the old `browser_call(method="skill.get_runtime_context")` pattern.)
 4. Prefer grouped MCP tools over raw calls:
    - `browser_dom`
    - `browser_styles_layout`

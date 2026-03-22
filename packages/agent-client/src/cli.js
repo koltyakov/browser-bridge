@@ -8,7 +8,7 @@ import path from 'node:path';
 import { createRuntimeContext, METHODS } from '../../protocol/src/index.js';
 import { startBridgeMcpServer } from '../../mcp-server/src/server.js';
 import { BridgeClient } from './client.js';
-import { methodNeedsSession, parseCommaList, parseJsonObject, parsePropertyAssignments } from './cli-helpers.js';
+import { methodNeedsSession, parseCommaList, parseIntArg, parseJsonObject, parsePropertyAssignments } from './cli-helpers.js';
 import { installAgentFiles, parseInstallAgentArgs } from './install.js';
 import { formatMcpConfig, isMcpClientName } from './mcp-config.js';
 import { getDoctorReport, requestBridge, requireSession, resolveRef } from './runtime.js';
@@ -135,7 +135,7 @@ async function main() {
         throw new Error('Usage: tab-close <tabId>');
       }
       const response = await requestBridge(client, 'tabs.close', {
-        tabId: Number(tabId)
+        tabId: parseIntArg(tabId, 'tabId')
       });
       await printSummary(response);
       return;
@@ -215,7 +215,11 @@ async function main() {
     }
 
     if (command === 'describe') {
-      const elementRef = await resolveRef(client, rest[0], session.sessionId);
+      const [refOrSelector] = rest;
+      if (!refOrSelector) {
+        throw new Error('Usage: describe <ref|selector>');
+      }
+      const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
       const response = await requestBridge(client, 'dom.describe', { elementRef }, {
         sessionId: session.sessionId
       });
@@ -225,10 +229,13 @@ async function main() {
 
     if (command === 'text') {
       const [refOrSelector, textBudget] = rest;
+      if (!refOrSelector) {
+        throw new Error('Usage: text <ref|selector> [budget]');
+      }
       const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
       const response = await requestBridge(client, 'dom.get_text', {
         elementRef,
-        textBudget: textBudget ? Number(textBudget) : undefined
+        textBudget: textBudget ? parseIntArg(textBudget, 'budget') : undefined
       }, { sessionId: session.sessionId });
       await printSummary(response, 'dom.get_text');
       return;
@@ -236,6 +243,9 @@ async function main() {
 
     if (command === 'styles') {
       const [refOrSelector, propertyList] = rest;
+      if (!refOrSelector) {
+        throw new Error('Usage: styles <ref|selector> [prop1,prop2,...]');
+      }
       const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
       const response = await requestBridge(client, 'styles.get_computed', {
         elementRef,
@@ -247,6 +257,9 @@ async function main() {
 
     if (command === 'box') {
       const [refOrSelector] = rest;
+      if (!refOrSelector) {
+        throw new Error('Usage: box <ref|selector>');
+      }
       const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
       const response = await requestBridge(client, 'layout.get_box_model', {
         elementRef
@@ -257,6 +270,9 @@ async function main() {
 
     if (command === 'click') {
       const [refOrSelector, button] = rest;
+      if (!refOrSelector) {
+        throw new Error('Usage: click <ref|selector> [left|middle|right]');
+      }
       const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
       const response = await requestBridge(client, 'input.click', {
         target: { elementRef },
@@ -289,6 +305,9 @@ async function main() {
 
     if (command === 'press-key') {
       const [key, refOrSelector] = rest;
+      if (!key) {
+        throw new Error('Usage: press-key <key> [ref|selector]');
+      }
       const elementRef = refOrSelector ? await resolveRef(client, refOrSelector, session.sessionId) : undefined;
       const response = await requestBridge(client, 'input.press_key', {
         key,
@@ -333,6 +352,9 @@ async function main() {
 
     if (command === 'rollback') {
       const [patchId] = rest;
+      if (!patchId) {
+        throw new Error('Usage: rollback <patchId>');
+      }
       const response = await requestBridge(client, 'patch.rollback', {
         patchId
       }, { sessionId: session.sessionId });
@@ -398,7 +420,7 @@ async function main() {
       }
       const response = await requestBridge(client, 'dom.wait_for', {
         selector,
-        timeoutMs: timeoutArg ? Number(timeoutArg) : 5000
+        timeoutMs: timeoutArg ? parseIntArg(timeoutArg, 'timeoutMs') : 5000
       }, { sessionId: session.sessionId });
       await printSummary(response);
       return;
@@ -434,7 +456,7 @@ async function main() {
       const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
       const response = await requestBridge(client, 'dom.get_html', {
         elementRef,
-        maxLength: maxLengthArg ? Number(maxLengthArg) : undefined
+        maxLength: maxLengthArg ? parseIntArg(maxLengthArg, 'maxLen') : undefined
       }, { sessionId: session.sessionId });
       await printSummary(response);
       return;
@@ -475,7 +497,7 @@ async function main() {
     if (command === 'page-text') {
       const [budgetArg] = rest;
       const response = await requestBridge(client, 'page.get_text', {
-        textBudget: budgetArg ? Number(budgetArg) : undefined
+        textBudget: budgetArg ? parseIntArg(budgetArg, 'textBudget') : undefined
       }, { sessionId: session.sessionId });
       await printSummary(response, 'page.get_text');
       return;
@@ -484,7 +506,7 @@ async function main() {
     if (command === 'network') {
       const [limitArg] = rest;
       const response = await requestBridge(client, 'page.get_network', {
-        limit: limitArg ? Number(limitArg) : undefined
+        limit: limitArg ? parseIntArg(limitArg, 'limit') : undefined
       }, { sessionId: session.sessionId });
       await printSummary(response, 'page.get_network');
       return;
@@ -493,8 +515,8 @@ async function main() {
     if (command === 'a11y-tree') {
       const [maxNodesArg, maxDepthArg] = rest;
       const response = await requestBridge(client, 'dom.get_accessibility_tree', {
-        maxNodes: maxNodesArg ? Number(maxNodesArg) : undefined,
-        maxDepth: maxDepthArg ? Number(maxDepthArg) : undefined
+        maxNodes: maxNodesArg ? parseIntArg(maxNodesArg, 'maxNodes') : undefined,
+        maxDepth: maxDepthArg ? parseIntArg(maxDepthArg, 'maxDepth') : undefined
       }, { sessionId: session.sessionId });
       await printSummary(response);
       return;
@@ -508,14 +530,27 @@ async function main() {
       return;
     }
 
+    if (command === 'scroll') {
+      const [topArg, leftArg] = rest;
+      if (!topArg && !leftArg) {
+        throw new Error('Usage: scroll <top> [left]');
+      }
+      const response = await requestBridge(client, 'viewport.scroll', {
+        top: topArg ? parseIntArg(topArg, 'top') : undefined,
+        left: leftArg ? parseIntArg(leftArg, 'left') : undefined
+      }, { sessionId: session.sessionId });
+      await printSummary(response);
+      return;
+    }
+
     if (command === 'resize') {
       const [widthArg, heightArg] = rest;
       if (!widthArg || !heightArg) {
         throw new Error('Usage: resize <width> <height>');
       }
       const response = await requestBridge(client, 'viewport.resize', {
-        width: Number(widthArg),
-        height: Number(heightArg)
+        width: parseIntArg(widthArg, 'width'),
+        height: parseIntArg(heightArg, 'height')
       }, { sessionId: session.sessionId });
       await printSummary(response);
       return;
@@ -578,7 +613,8 @@ function printUsage() {
   process.stdout.write(`Usage: bbx <command> [args]
 
 Setup:
-  bbx install [extension-id]          Install native messaging manifest
+  bbx install [--browser chrome|edge|brave|chromium] [extension-id]
+                                     Install native messaging manifest
   bbx install-skill [targets|all] [--project <path>]
                                      Install/update managed Browser Bridge skills in a repo
   bbx status                          Check bridge connection
@@ -623,6 +659,7 @@ Page:
   bbx storage [local|session] [keys]  Read browser storage
   bbx navigate <url>                  Navigate to URL
   bbx perf                            Get performance metrics
+  bbx scroll <top> [left]             Scroll viewport
   bbx resize <width> <height>         Resize viewport
 
 Interact:

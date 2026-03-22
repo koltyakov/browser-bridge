@@ -170,8 +170,11 @@ dom.find_by_role('button', 'Login') → input.click
 - **[Inspection & token efficiency](references/token-efficiency.md)** — budget presets, decision tree, allowlist strategy, anti-patterns
 - **[Patching workflows](references/patch-workflow.md)** — style-first loop, DOM patches, verification, cleanup
 - **[Full protocol reference](references/protocol.md)** — all RPC methods, error codes
-- **[Interaction patterns](references/interaction.md)** — input methods, navigation, form controls, hover, drag
+- **[Interaction patterns](references/interaction.md)** — input methods, navigation, form controls, hover, drag, multi-tab workflows
+- **[Capabilities reference](references/capabilities.md)** — full capability table, how to request subsets, `CAPABILITY_MISSING` recovery
 - **[Tailwind CSS guide](references/tailwind.md)** — selector escaping, semantic alternatives, patching strategy (load when `hints.tailwind: true`)
+
+> **MCP mode:** If Browser Bridge is connected through an MCP server (tools named `browser_dom`, `browser_call`, etc.) rather than the CLI, use the `$browser-bridge-mcp` / `$bbx-mcp` skill instead which covers MCP-specific tool schemas and patterns.
 
 ## Subagent Output
 

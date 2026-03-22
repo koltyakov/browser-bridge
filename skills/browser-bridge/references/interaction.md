@@ -81,9 +81,50 @@ Typical workflow — find interactive controls:
 3. Use role/name to identify the right control
 4. `dom.find_by_role` to get an `elementRef` for interaction
 
-## Network Monitoring
+## Multi-Tab Workflows
 
-Read intercepted fetch/XHR requests. The interceptor auto-installs on first call.
+Each tab requires its own session. Sessions are not shared between tabs.
+
+```bash
+# Inspect two tabs side-by-side:
+bbx tabs                             # find tabId values
+bbx request-access 100               # create session for tab 100
+bbx page-text                        # read from tab 100
+
+bbx revoke                           # end tab 100 session
+bbx request-access 200               # switch to tab 200
+bbx page-text                        # read from tab 200
+```
+
+Open a new tab programmatically:
+```bash
+bbx tab-create https://example.com   # creates and returns new tabId
+bbx request-access <new-tabId>       # start a session on the new tab
+```
+
+Close comparison tabs when done:
+```bash
+bbx revoke
+bbx tab-close <tabId>
+```
+
+**Note:** `tabs.list`, `tabs.create`, and `tabs.close` do not require an active session.
+
+## Scroll
+
+Scroll the viewport or a scrollable element:
+
+```bash
+bbx scroll 640              # scroll down 640px
+bbx scroll 0 200            # scroll right 200px
+bbx scroll 0                # scroll to top (top=0)
+bbx call viewport.scroll '{"top":640,"behavior":"smooth"}'
+bbx call viewport.scroll '{"elementRef":"el_123","top":200}'
+```
+
+Scrolls the window by default. Pass an `elementRef` to scroll an inner scrollable container.
+
+
 
 ```bash
 bbx network                     # recent requests

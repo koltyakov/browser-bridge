@@ -76,6 +76,12 @@ export class BridgeDaemon {
   async start() {
     if (!this.listenOptions) {
       await fs.promises.mkdir(path.dirname(this.socketPath), { recursive: true });
+      try {
+        await fs.promises.access(this.socketPath);
+        this.logger.log('[daemon] Removing stale socket from previous run:', this.socketPath);
+      } catch {
+        // Socket does not exist — normal startup.
+      }
       await fs.promises.rm(this.socketPath, { force: true });
     }
 
