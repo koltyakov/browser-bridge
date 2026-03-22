@@ -675,16 +675,16 @@ export function createRuntimeContext() {
       performance: ['performance.get_metrics']
     },
     errors: {
-      ACCESS_DENIED: 'Tab not enabled — user must allow in extension UI',
-      SESSION_EXPIRED: 'Session invalid — call session.request_access again',
-      APPROVAL_PENDING: 'Access prompt opened — retry after ~3s',
+      ACCESS_DENIED: 'Tab not enabled - user must allow in extension UI',
+      SESSION_EXPIRED: 'Session invalid - call session.request_access again',
+      APPROVAL_PENDING: 'Access prompt opened - retry after ~3s',
       TAB_MISMATCH: 'Tab closed or not found',
       ORIGIN_MISMATCH: 'Tab navigated to different origin',
       CAPABILITY_MISSING: 'Session lacks needed capability',
-      ELEMENT_STALE: 'Element removed from DOM — re-query',
+      ELEMENT_STALE: 'Element removed from DOM - re-query',
       INVALID_REQUEST: 'Malformed method or params',
       TIMEOUT: 'Operation exceeded time limit',
-      RATE_LIMITED: 'Too many requests — back off',
+      RATE_LIMITED: 'Too many requests - back off',
       INTERNAL_ERROR: 'Unexpected extension error'
     },
     capabilities: {

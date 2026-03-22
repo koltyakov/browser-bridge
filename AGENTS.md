@@ -9,7 +9,7 @@
   - `packages/protocol`: shared protocol shapes, normalization, error codes, budgeting
   - `packages/agent-client`: CLI (`bbx`) and subagent-facing bridge client
   - `packages/mcp-server`: MCP stdio server exposing Browser Bridge tools
-  - `skills/browser-bridge`: modular skill — core SKILL.md loaded first, reference docs on demand
+  - `skills/browser-bridge`: modular skill - core SKILL.md loaded first, reference docs on demand
 
 ## CLI Quick Reference
 
@@ -20,7 +20,7 @@ bbx install [extension-id]          # install native manifest
 bbx request-access                  # session for active tab
 bbx call <method> '{"key":"val"}'   # any RPC method
 bbx batch '[{...}]'                 # parallel reads
-bbx mcp config <client>             # print MCP config
+bbx install-mcp [client]            # write MCP config (all clients if omitted)
 bbx skill                           # runtime presets
 ```
 
@@ -30,11 +30,11 @@ For agent debugging inside this repo, prefer `npx bbx ...` when a user asks to u
 
 ## Skill Structure
 
-- `skills/browser-bridge/SKILL.md` — core rules, quick reference, access flow (always loaded)
-- `skills/browser-bridge/references/protocol.md` — full method table, error codes (load when exploring methods)
-- `skills/browser-bridge/references/token-efficiency.md` — budget presets, anti-patterns (load when optimizing)
-- `skills/browser-bridge/references/patch-workflow.md` — style/DOM patch loops (load when patching)
-- `skills/browser-bridge/references/interaction.md` — input, navigation, form controls (load when interacting)
+- `skills/browser-bridge/SKILL.md` - core rules, quick reference, access flow (always loaded)
+- `skills/browser-bridge/references/protocol.md` - full method table, error codes (load when exploring methods)
+- `skills/browser-bridge/references/token-efficiency.md` - budget presets, anti-patterns (load when optimizing)
+- `skills/browser-bridge/references/patch-workflow.md` - style/DOM patch loops (load when patching)
+- `skills/browser-bridge/references/interaction.md` - input, navigation, form controls (load when interacting)
 
 ## Working Rules
 

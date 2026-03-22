@@ -8,9 +8,10 @@ import path from 'node:path';
 import { createRuntimeContext, METHODS } from '../../protocol/src/index.js';
 import { startBridgeMcpServer } from '../../mcp-server/src/server.js';
 import { BridgeClient } from './client.js';
-import { methodNeedsSession, parseCommaList, parseIntArg, parseJsonObject, parsePropertyAssignments } from './cli-helpers.js';
+import { interactiveCheckbox, methodNeedsSession, parseCommaList, parseIntArg, parseJsonObject, parsePropertyAssignments } from './cli-helpers.js';
+import { detectMcpClients, detectSkillTargets } from './detect.js';
 import { installAgentFiles, parseInstallAgentArgs } from './install.js';
-import { formatMcpConfig, isMcpClientName } from './mcp-config.js';
+import { formatMcpConfig, installMcpConfig, isMcpClientName, MCP_CLIENT_NAMES } from './mcp-config.js';
 import { getDoctorReport, requestBridge, requireSession, resolveRef } from './runtime.js';
 import { summarizeBridgeResponse } from './subagent.js';
 
@@ -61,10 +62,133 @@ if (command === 'install') {
 }
 
 if (command === 'install-skill') {
+  // When no positional target is given, detect installed agents and prompt.
+  const positional = rest.filter((a) => !a.startsWith('--'));
+
+  if (positional.length === 0) {
+    // Parse scope flags without going through parseInstallAgentArgs.
+    let isGlobal = true;
+    if (rest.includes('--local')) isGlobal = false;
+    if (rest.includes('--global')) isGlobal = true;
+
+    /** @type {import('./install.js').SupportedTarget[]} */
+    const detected = detectSkillTargets();
+
+    // 'openai' shares the same path as 'codex' - omit from interactive list.
+    /** @type {Array<import('./install.js').SupportedTarget>} */
+    const interactiveTargets = ['copilot', 'codex', 'claude', 'opencode', 'agents'];
+    /** @type {Record<string, string>} */
+    const targetLabels = {
+      copilot: 'GitHub Copilot (VS Code)',
+      codex: 'OpenAI Codex CLI',
+      claude: 'Claude Code / Claude Desktop',
+      opencode: 'OpenCode',
+      agents: 'Generic agents  (.agents/skills/)'
+    };
+    const items = interactiveTargets.map((t) => ({
+      value: t,
+      label: `${t.padEnd(10)}  ${targetLabels[t]}`,
+      hint: detected.includes(t) ? '● detected' : undefined,
+      checked: detected.includes(t)
+    }));
+
+    const selected = await interactiveCheckbox(
+      'Select agents to install skill for  (↑↓ move · space toggle · a all · enter confirm)',
+      items
+    );
+
+    /** @type {import('./install.js').SupportedTarget[]} */
+    let targets;
+    if (selected === null) {
+      // Non-TTY: fall back to detected targets (always includes 'agents').
+      targets = detected;
+    } else if (selected.length === 0) {
+      process.stdout.write('No targets selected.\n');
+      process.exit(0);
+    } else {
+      targets = /** @type {import('./install.js').SupportedTarget[]} */ (selected);
+    }
+
+    const projectPath = isGlobal ? os.homedir() : process.cwd();
+    const installedPaths = await installAgentFiles({ targets, projectPath, global: isGlobal });
+    for (const p of installedPaths) process.stdout.write(`Installed ${p}\n`);
+    process.exit(0);
+  }
+
+  // Explicit targets or 'all' provided - use existing arg-parsing logic.
   const options = parseInstallAgentArgs(rest);
   const installedPaths = await installAgentFiles(options);
   for (const installedPath of installedPaths) {
     process.stdout.write(`Installed ${installedPath}\n`);
+  }
+  process.exit(0);
+}
+
+if (command === 'install-mcp') {
+  const argsLeft = [...rest];
+  let isGlobal = true;
+
+  const localIdx = argsLeft.indexOf('--local');
+  if (localIdx !== -1) { isGlobal = false; argsLeft.splice(localIdx, 1); }
+  const globalIdx = argsLeft.indexOf('--global');
+  if (globalIdx !== -1) { argsLeft.splice(globalIdx, 1); }
+
+  const clientArg = argsLeft[0];
+
+  /** @type {import('./mcp-config.js').McpClientName[]} */
+  let clients;
+
+  if (!clientArg) {
+    // No client specified: detect installed clients and prompt interactively.
+    const detected = detectMcpClients();
+    /** @type {Record<string, string>} */
+    const clientLabels = {
+      copilot: 'GitHub Copilot (VS Code)',
+      codex: 'OpenAI Codex CLI',
+      cursor: 'Cursor',
+      claude: 'Claude Desktop / Claude Code'
+    };
+    const items = MCP_CLIENT_NAMES.map((c) => ({
+      value: c,
+      label: `${c.padEnd(10)}  ${clientLabels[c]}`,
+      hint: detected.includes(c) ? '● detected' : undefined,
+      checked: detected.includes(c)
+    }));
+
+    const selected = await interactiveCheckbox(
+      'Select clients to configure  (↑↓ move · space toggle · a all · enter confirm)',
+      items
+    );
+
+    if (selected === null) {
+      // Non-TTY: fall back to detected clients, or all if nothing detected.
+      clients = detected.length > 0 ? detected : [...MCP_CLIENT_NAMES];
+    } else if (selected.length === 0) {
+      process.stdout.write('No clients selected.\n');
+      process.exit(0);
+    } else {
+      clients = /** @type {import('./mcp-config.js').McpClientName[]} */ (selected);
+    }
+  } else if (clientArg === 'all') {
+    clients = [...MCP_CLIENT_NAMES];
+  } else {
+    const parts = clientArg.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+    if (parts.includes('all')) {
+      clients = [...MCP_CLIENT_NAMES];
+    } else {
+      clients = [];
+      for (const part of parts) {
+        if (!isMcpClientName(part)) {
+          process.stderr.write(`Unknown client "${part}". Supported: ${MCP_CLIENT_NAMES.join(', ')}, all\n`);
+          process.exit(1);
+        }
+        clients.push(part);
+      }
+    }
+  }
+
+  for (const clientName of clients) {
+    await installMcpConfig(clientName, { global: isGlobal, cwd: process.cwd() });
   }
   process.exit(0);
 }
@@ -77,7 +201,7 @@ if (command === 'mcp') {
   }
   if (subcommand === 'config') {
     if (!clientName || !isMcpClientName(clientName)) {
-      process.stderr.write('Usage: bbx mcp config <claude|cursor|vscode>\n');
+      process.stderr.write('Usage: bbx mcp config <claude|cursor|copilot|codex>\n');
       process.exit(1);
     }
     process.stdout.write(formatMcpConfig(clientName));
@@ -615,8 +739,10 @@ function printUsage() {
 Setup:
   bbx install [--browser chrome|edge|brave|chromium] [extension-id]
                                      Install native messaging manifest
-  bbx install-skill [targets|all] [--project <path>]
-                                     Install/update managed Browser Bridge skills in a repo
+  bbx install-skill [targets|all] [--global] [--project <path>]
+                                     Install/update managed Browser Bridge skills (global by default)
+  bbx install-mcp [client|all] [--local]
+                                     Write MCP config for vscode|codex|cursor|claude (global by default)
   bbx status                          Check bridge connection
   bbx doctor                          Diagnose install, daemon, extension, and session readiness
   bbx logs                            Recent bridge logs
@@ -625,7 +751,6 @@ Setup:
   bbx tab-close <tabId>               Close a tab
   bbx skill                           Runtime budget presets and method groups
   bbx mcp serve                       Start Browser Bridge as an MCP stdio server
-  bbx mcp config <client>             Print MCP config for claude|cursor|vscode
 
 Session:
   bbx request-access [tabId] [origin] Create session for enabled tab

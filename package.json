@@ -31,6 +31,7 @@
   "scripts": {
     "test": "node --test packages/protocol/test/*.test.js packages/native-host/test/*.test.js packages/agent-client/test/*.test.js packages/mcp-server/test/*.test.js packages/extension/test/*.test.js",
     "typecheck": "tsc --noEmit",
+    "postinstall": "node packages/native-host/bin/postinstall.js",
     "package:extension": "node scripts/package-extension.mjs",
     "release:check": "npm run typecheck && npm test && npm run package:extension && npm pack --dry-run",
     "status": "node packages/agent-client/src/cli.js status",

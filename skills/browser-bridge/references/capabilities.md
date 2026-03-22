@@ -4,7 +4,7 @@ Sessions are scoped by capabilities. The extension enforces them; any method cal
 
 ## Default Capabilities
 
-All methods in the table below are included in the **default** capability set. You do not need to request them explicitly — `bbx request-access` grants them by default.
+All methods in the table below are included in the **default** capability set. You do not need to request them explicitly - `bbx request-access` grants them by default.
 
 | Capability | Methods Unlocked |
 |---|---|

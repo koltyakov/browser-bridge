@@ -1,6 +1,6 @@
 ---
 name: browser-bridge-mcp
-description: "Browser Bridge MCP mode — token-efficient Chrome tab inspection and patching via MCP tools. Use when Browser Bridge is connected through an MCP server instead of the bbx CLI."
+description: "Browser Bridge MCP mode - token-efficient Chrome tab inspection and patching via MCP tools. Use when Browser Bridge is connected through an MCP server instead of the bbx CLI."
 ---
 
 # Browser Bridge MCP

@@ -483,7 +483,8 @@ test('installAgentFiles writes managed files for supported runtimes', async () =
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-agent-'));
   const installed = await installAgentFiles({
     targets: ['copilot', 'claude', 'opencode', 'agents', 'codex', 'openai'],
-    projectPath: tempDir
+    projectPath: tempDir,
+    global: false
   });
 
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.github', 'skills', 'browser-bridge'))));
@@ -515,7 +516,9 @@ test('installAgentFiles writes managed files for supported runtimes', async () =
 test('isMcpClientName recognizes supported clients', () => {
   assert.equal(isMcpClientName('claude'), true);
   assert.equal(isMcpClientName('cursor'), true);
-  assert.equal(isMcpClientName('vscode'), true);
+  assert.equal(isMcpClientName('copilot'), true);
+  assert.equal(isMcpClientName('codex'), true);
+  assert.equal(isMcpClientName('vscode'), false);
   assert.equal(isMcpClientName('other'), false);
 });
 
@@ -541,7 +544,7 @@ test('buildMcpConfig produces client-specific config shapes', () => {
     }
   });
 
-  assert.deepEqual(buildMcpConfig('vscode'), {
+  assert.deepEqual(buildMcpConfig('copilot'), {
     servers: {
       'browser-bridge': {
         type: 'stdio',

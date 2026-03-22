@@ -47,7 +47,7 @@ export async function loadSession() {
     // Distinguish corruption from a missing file so callers can log if needed.
     const code = /** @type {any} */ (err)?.code;
     if (code !== 'ENOENT') {
-      // JSON parse error or unexpected I/O — session file may be corrupted.
+      // JSON parse error or unexpected I/O - session file may be corrupted.
       process.stderr.write(`[bbx] Warning: Failed to load session (${code || 'PARSE_ERROR'}). Run 'bbx request-access' to create a new one.\n`);
     }
     return null;

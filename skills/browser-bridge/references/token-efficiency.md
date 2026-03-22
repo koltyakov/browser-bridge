@@ -43,7 +43,7 @@ Always set allowlists when you know what you need:
 }
 ```
 
-Omitting allowlists returns all attributes/styles — often 3–5× the tokens needed.
+Omitting allowlists returns all attributes/styles - often 3–5× the tokens needed.
 
 ## Anti-Patterns (Token Waste)
 
@@ -78,7 +78,7 @@ Omitting allowlists returns all attributes/styles — often 3–5× the tokens n
 When you need app state (router, store, config), `page.evaluate` is far cheaper than parsing DOM:
 
 ```bash
-# Read Next.js route — 1 call vs. parsing URL from dom.query on <head>
+# Read Next.js route - 1 call vs. parsing URL from dom.query on <head>
 bbx eval 'window.__NEXT_DATA__?.page'
 
 # Read React store state
@@ -96,11 +96,11 @@ After interactions, check for runtime errors instead of guessing from DOM:
 bbx console error    # just errors and exceptions
 ```
 
-Install early — the buffer auto-activates on first call. Captured levels: log, warn, error, info, debug, exception, rejection.
+Install early - the buffer auto-activates on first call. Captured levels: log, warn, error, info, debug, exception, rejection.
 
 ## Page Text Instead of DOM Scan
 
-When you need the page's visible text — for summarization, search, or content extraction — use `page.get_text` instead of `dom.query` on `body`:
+When you need the page's visible text - for summarization, search, or content extraction - use `page.get_text` instead of `dom.query` on `body`:
 
 ```bash
 bbx page-text           # default 4000 char budget

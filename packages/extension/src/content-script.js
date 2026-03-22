@@ -216,7 +216,7 @@
 
   /**
    * Detect CSS frameworks and page characteristics for agent guidance.
-   * Lightweight — only checks a few DOM/stylesheet signals.
+   * Lightweight - only checks a few DOM/stylesheet signals.
    *
    * @returns {{ tailwind: boolean }}
    */
@@ -245,7 +245,7 @@
         }
       }
     } catch {
-      // Ignore — cross-origin or other DOM access issues
+      // Ignore - cross-origin or other DOM access issues
     }
     return { tailwind };
   }

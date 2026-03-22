@@ -1,4 +1,4 @@
-# Tailwind CSS — Agent Guide
+# Tailwind CSS - Agent Guide
 
 > Load this reference when `page.get_state` returns `hints.tailwind: true`.
 
@@ -18,11 +18,11 @@ Tailwind arbitrary-value classes use `[]` which are invalid in CSS selectors:
 
 Tailwind class names are styling implementation details. Prefer semantic selectors:
 
-1. **By text** — `dom.find_by_text('Submit')` — works regardless of styling
-2. **By role** — `dom.find_by_role('button', 'Save')` — semantic, stable
-3. **By data attribute** — `dom.query '[data-testid="header"]'` — CI-friendly
-4. **By tag structure** — `dom.query 'nav > ul > li:first-child a'` — layout-based
-5. **By ID** — `dom.query '#checkout-form'` — unique, fast
+1. **By text** - `dom.find_by_text('Submit')` - works regardless of styling
+2. **By role** - `dom.find_by_role('button', 'Save')` - semantic, stable
+3. **By data attribute** - `dom.query '[data-testid="header"]'` - CI-friendly
+4. **By tag structure** - `dom.query 'nav > ul > li:first-child a'` - layout-based
+5. **By ID** - `dom.query '#checkout-form'` - unique, fast
 
 Only use Tailwind class selectors as a last resort when no semantic handle exists.
 
@@ -38,7 +38,7 @@ bbx styles el_abc 'display,align-items,gap,padding,background-color,border-radiu
 
 Key patterns:
 - **Layout**: `styles.get_computed` with `display, flex-direction, gap, grid-template-columns`
-- **Spacing**: `layout.get_box_model` — gives padding/margin/border as numbers
+- **Spacing**: `layout.get_box_model` - gives padding/margin/border as numbers
 - **Colors**: `styles.get_computed` with `background-color, color, border-color`
 - **Visibility**: `styles.get_computed` with `display, visibility, opacity`
 
@@ -54,7 +54,7 @@ bbx patch-style el_abc 'padding=2rem'
 bbx patch-style el_abc display=grid grid-template-columns='1fr 1fr'
 ```
 
-No need to understand or modify Tailwind classes — patch inline and it wins.
+No need to understand or modify Tailwind classes - patch inline and it wins.
 
 ## Responsive Testing
 

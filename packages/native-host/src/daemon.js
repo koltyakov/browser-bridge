@@ -80,7 +80,7 @@ export class BridgeDaemon {
         await fs.promises.access(this.socketPath);
         this.logger.log('[daemon] Removing stale socket from previous run:', this.socketPath);
       } catch {
-        // Socket does not exist — normal startup.
+        // Socket does not exist - normal startup.
       }
       await fs.promises.rm(this.socketPath, { force: true });
     }

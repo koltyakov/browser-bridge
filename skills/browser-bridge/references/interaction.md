@@ -44,7 +44,7 @@ bbx resize 1024 768                          # tablet
 bbx call viewport.resize '{"reset":true}'    # restore original
 ```
 
-Uses CDP device emulation — the page re-renders at the new size immediately.
+Uses CDP device emulation - the page re-renders at the new size immediately.
 
 ## Tab Management
 
@@ -57,7 +57,7 @@ bbx tab-close 12345                     # close tab by ID
 bbx call tabs.create '{"url":"https://example.com","active":false}'
 ```
 
-Typical workflow — compare two pages:
+Typical workflow - compare two pages:
 1. `tabs.list` to see current tabs
 2. `tabs.create` with second URL
 3. Inspect both tabs (each needs its own session)
@@ -75,7 +75,7 @@ bbx call dom.get_accessibility_tree '{"maxNodes":100,"maxDepth":5}'
 
 Each node: `role`, `name`, `description`, `value`, `focused`, `required`, `checked`, `disabled`, `interactive`, `childIds`.
 
-Typical workflow — find interactive controls:
+Typical workflow - find interactive controls:
 1. `dom.get_accessibility_tree` with small `maxNodes`
 2. Scan for nodes with `interactive: true`
 3. Use role/name to identify the right control
@@ -134,7 +134,7 @@ bbx call page.get_network '{"limit":20,"clear":true}'
 
 Each entry: `method`, `url`, `status`, `duration`, `initiator`.
 
-Typical workflow — debug API calls:
+Typical workflow - debug API calls:
 1. `page.get_network` to see recent requests
 2. Filter by URL pattern or status code
 3. Cross-reference with `page.get_console` for errors
@@ -168,7 +168,7 @@ bbx call input.hover '{"target":{"elementRef":"el_abc123"}}'
 bbx call input.hover '{"target":{"elementRef":"el_abc123"},"duration":2000}'
 ```
 
-Typical workflow — inspect a tooltip:
+Typical workflow - inspect a tooltip:
 1. `dom.query` to find the trigger element → `elementRef`
 2. `input.hover` with `duration: 2000`
 3. While hover holds, `dom.query` for tooltip content (e.g. `[role="tooltip"]`)
@@ -189,7 +189,7 @@ bbx call input.drag '{"source":{"elementRef":"el_src"},"destination":{"elementRe
 
 Event sequence: `mousedown → dragstart → drag → dragenter → dragover → drop → dragend → mouseup`.
 
-Typical workflow — reorder a list:
+Typical workflow - reorder a list:
 1. `dom.query` to find draggable items → get source and destination `elementRef` values
 2. `input.drag` from source to destination
 3. `dom.wait_for` to confirm the DOM updated
@@ -224,7 +224,7 @@ bbx call dom.wait_for '{"selector":".spinner","state":"detached","timeoutMs":500
 ```
 - `state`: `attached` (exists in DOM), `detached` (removed), `visible` (non-zero size), `hidden`
 - Uses MutationObserver + 250 ms polling fallback
-- Returns `{found, elementRef, duration}` — NOT an error on timeout
+- Returns `{found, elementRef, duration}` - NOT an error on timeout
 
 ### Wait for page load
 ```bash

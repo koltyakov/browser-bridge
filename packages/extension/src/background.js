@@ -796,7 +796,7 @@ async function ensureNetworkInterceptor(tabId) {
       const MAX = 200;
 
       const origFetch = globalThis.fetch;
-      // @ts-ignore — intentional main-world global override
+      // @ts-ignore - intentional main-world global override
       globalThis.fetch = async function (...args) {
         // @ts-ignore
         const req = new Request(...args);
@@ -822,7 +822,7 @@ async function ensureNetworkInterceptor(tabId) {
       const origOpen = XMLHttpRequest.prototype.open;
       const origSend = XMLHttpRequest.prototype.send;
       XMLHttpRequest.prototype.open = function (method, url, ...rest) {
-        // @ts-ignore — stashing method/url for XHR interception
+        // @ts-ignore - stashing method/url for XHR interception
         this.__bb_method = method;
         // @ts-ignore
         this.__bb_url = String(url);
@@ -951,7 +951,7 @@ async function ensureConsoleInterceptor(tabId) {
     target: { tabId },
     world: 'MAIN',
     func: () => {
-      // @ts-ignore — intentional main-world global
+      // @ts-ignore - intentional main-world global
       if (globalThis.__bb_console_installed) return;
       // @ts-ignore
       globalThis.__bb_console_installed = true;
@@ -1040,7 +1040,7 @@ async function handleScreenshot(session, method, params) {
         type: 'bridge.execute', method, params, session
       }, CONTENT_SCRIPT_TIMEOUT_MS);
     } catch (err) {
-      // Retry once after a brief pause — the page may have been mid-render
+      // Retry once after a brief pause - the page may have been mid-render
       if (err instanceof Error && /stale/i.test(err.message)) {
         await new Promise(r => setTimeout(r, 250));
         clip = await sendTabMessage(session.tabId, {
@@ -1069,7 +1069,7 @@ async function handleScreenshot(session, method, params) {
     );
   }
 
-  // Use CDP Page.captureScreenshot — works regardless of tab focus,
+  // Use CDP Page.captureScreenshot - works regardless of tab focus,
   // captures renderer output directly with built-in clip support.
   return tabDebugger.run(session.tabId, async (target) => {
     const dpr = clip.scale || 1;

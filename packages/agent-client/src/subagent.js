@@ -174,7 +174,7 @@ export function summarizeBridgeResponse(response, method) {
     } else if (typeof result.value === 'string') {
       repr = result.value.length > 200 ? `${result.value.slice(0, 199)}\u2026` : result.value;
     } else if (typeof result.value === 'object' && result.value !== null && Object.keys(result.value).length === 0) {
-      repr = '(empty — may be a Promise, Map, or non-serializable value)';
+      repr = '(empty - may be a Promise, Map, or non-serializable value)';
     } else {
       repr = JSON.stringify(result.value);
     }

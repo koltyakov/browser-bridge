@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { APP_NAME, getBridgeDir, getManifestInstallDir } from './config.js';
+import { APP_NAME, getBridgeDir, getManifestInstallDir, PUBLISHED_EXTENSION_ID } from './config.js';
 
 export const DEFAULT_EXTENSION_ID_ENV = 'BROWSER_BRIDGE_EXTENSION_ID';
 
@@ -46,7 +46,14 @@ export function parseExtensionId(arg) {
  */
 export function getDefaultExtensionId(env = process.env) {
   const candidate = env[DEFAULT_EXTENSION_ID_ENV];
-  return parseExtensionId(candidate);
+  const parsed = parseExtensionId(candidate);
+  // If an env var was explicitly set but invalid, surface null so callers can error.
+  if (candidate !== undefined) {
+    return parsed;
+  }
+  // No env var - fall back to the published Web Store extension ID so
+  // `bbx install` works zero-config for end users.
+  return PUBLISHED_EXTENSION_ID;
 }
 
 /**

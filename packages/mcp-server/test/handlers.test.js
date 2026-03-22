@@ -192,7 +192,7 @@ test('handleStatusTool returns doctor report without bridge calls', async () => 
   // handleStatusTool calls getDoctorReport, which tries to connect. Since there is no
   // daemon running in tests it should catch the error and still return a tool result.
   const result = await handleStatusTool();
-  // Either success or error — the key is it must return a ToolResult, never throw.
+  // Either success or error - the key is it must return a ToolResult, never throw.
   assert.ok(typeof result.structuredContent === 'object');
   assert.ok(Array.isArray(result.content));
   assert.equal(result.content[0].type, 'text');

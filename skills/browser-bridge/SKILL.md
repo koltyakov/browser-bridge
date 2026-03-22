@@ -1,6 +1,6 @@
 ---
 name: browser-bridge
-description: "Browser Bridge — Token-efficient Chrome tab inspection and patching via local bridge extension. Use instead of Playwright or screenshot-heavy automation when a Chrome tab has agent communication enabled."
+description: "Browser Bridge - Token-efficient Chrome tab inspection and patching via local bridge extension. Use instead of Playwright or screenshot-heavy automation when a Chrome tab has agent communication enabled."
 ---
 
 # Browser Bridge
@@ -88,31 +88,31 @@ bbx screenshot <ref> [outPath]       # capture screenshot
 | `SESSION_EXPIRED` | Auto-refreshed by CLI; if it fails, `request-access` again |
 | `APPROVAL_PENDING` | Retry loop (see above) |
 | `ELEMENT_STALE` | Re-query with `dom.query` or `dom.find_by_text` |
-| `ORIGIN_MISMATCH` | Tab navigated — `request-access` for new origin |
-| `TIMEOUT` | Extension overloaded or CDP stalled — retry once, then simplify the request |
-| `CAPABILITY_MISSING` | Session lacks permission — `request-access` with needed capability |
-| `DAEMON_OFFLINE` | Daemon not running — start with `bbx-daemon` |
-| `CONNECTION_LOST` | Socket dropped mid-request — retry; if persistent, restart daemon |
-| `BRIDGE_TIMEOUT` | Extension took too long to respond — retry once with simpler call |
+| `ORIGIN_MISMATCH` | Tab navigated - `request-access` for new origin |
+| `TIMEOUT` | Extension overloaded or CDP stalled - retry once, then simplify the request |
+| `CAPABILITY_MISSING` | Session lacks permission - `request-access` with needed capability |
+| `DAEMON_OFFLINE` | Daemon not running - start with `bbx-daemon` |
+| `CONNECTION_LOST` | Socket dropped mid-request - retry; if persistent, restart daemon |
+| `BRIDGE_TIMEOUT` | Extension took too long to respond - retry once with simpler call |
 
 ## Core Rules
 
-1. **Structured first** — `dom.query` → `styles.get_computed` → `layout.get_box_model` before screenshots.
-2. **Budget tight** — `maxNodes≤20`, `maxDepth≤4`, `textBudget≤800`. Always set allowlists.
-3. **Reuse refs** — use returned `elementRef` for follow-ups; don't rescan.
-4. **Style before DOM** — `patch.apply_styles` before `patch.apply_dom`.
-5. **Rollback** — revert every patch before finishing unless user wants mutations kept.
-6. **Confirm scope** — `status` first; stop if no extension connection.
-7. **Screenshots last** — only when structured evidence is ambiguous; keep crops small.
-8. **Batch reads** — combine independent reads in one `batch` call (executes concurrently via Promise.all).
-9. **Evaluate for state** — use `page.evaluate` to read framework state (React, Vue, Next.js `__NEXT_DATA__`, router, stores) instead of guessing from DOM.
-10. **Wait after change** — after editing source files or triggering navigation, use `dom.wait_for` or `page.wait_for_load_state` before inspecting.
-11. **Console after interaction** — call `page.get_console` after mutations to catch runtime errors early.
-12. **Semantic finding** — use `dom.find_by_text` / `dom.find_by_role` when you know the label but not the selector.
-13. **Text extraction** — use `page.get_text` for full page text instead of `dom.query` on body.
-14. **Network monitoring** — use `page.get_network` to inspect API calls; auto-installs interceptor.
-15. **Accessibility tree** — use `dom.get_accessibility_tree` for semantic structure and interactive element discovery.
-16. **Tailwind-aware** — when `page.get_state` returns `hints.tailwind: true`, load `references/tailwind.md`; avoid selecting by utility classes, prefer `find_by_text`/`find_by_role`; `dom.query` auto-escapes `[]` brackets.
+1. **Structured first** - `dom.query` → `styles.get_computed` → `layout.get_box_model` before screenshots.
+2. **Budget tight** - `maxNodes≤20`, `maxDepth≤4`, `textBudget≤800`. Always set allowlists.
+3. **Reuse refs** - use returned `elementRef` for follow-ups; don't rescan.
+4. **Style before DOM** - `patch.apply_styles` before `patch.apply_dom`.
+5. **Rollback** - revert every patch before finishing unless user wants mutations kept.
+6. **Confirm scope** - `status` first; stop if no extension connection.
+7. **Screenshots last** - only when structured evidence is ambiguous; keep crops small.
+8. **Batch reads** - combine independent reads in one `batch` call (executes concurrently via Promise.all).
+9. **Evaluate for state** - use `page.evaluate` to read framework state (React, Vue, Next.js `__NEXT_DATA__`, router, stores) instead of guessing from DOM.
+10. **Wait after change** - after editing source files or triggering navigation, use `dom.wait_for` or `page.wait_for_load_state` before inspecting.
+11. **Console after interaction** - call `page.get_console` after mutations to catch runtime errors early.
+12. **Semantic finding** - use `dom.find_by_text` / `dom.find_by_role` when you know the label but not the selector.
+13. **Text extraction** - use `page.get_text` for full page text instead of `dom.query` on body.
+14. **Network monitoring** - use `page.get_network` to inspect API calls; auto-installs interceptor.
+15. **Accessibility tree** - use `dom.get_accessibility_tree` for semantic structure and interactive element discovery.
+16. **Tailwind-aware** - when `page.get_state` returns `hints.tailwind: true`, load `references/tailwind.md`; avoid selecting by utility classes, prefer `find_by_text`/`find_by_role`; `dom.query` auto-escapes `[]` brackets.
 
 ## Method Quick Reference
 
@@ -134,15 +134,15 @@ bbx screenshot <ref> [outPath]       # capture screenshot
 
 When the user has a localhost dev server with watch/HMR:
 
-1. **Inspect current state** — `page.get_state` + quick `dom.query` on the relevant area.
-2. **Read framework state** — `page.evaluate` to check router, component props, store values.
-3. **Identify the problem** — use `styles.get_computed`, `dom.get_html`, or `page.get_console` for errors.
-4. **Prototype with patches** — `patch.apply_styles` / `patch.apply_dom` to verify the fix visually.
-5. **Edit source files** — modify the actual code in the agent's workspace.
-6. **Wait for HMR** — `dom.wait_for` with the selector that should change, or `page.wait_for_load_state`.
-7. **Verify the change** — re-inspect the same area; compare with patch expectations.
-8. **Check for regressions** — `page.get_console` for new errors; scroll and inspect adjacent areas.
-9. **Rollback patches** — `patch.rollback` all temporary patches.
+1. **Inspect current state** - `page.get_state` + quick `dom.query` on the relevant area.
+2. **Read framework state** - `page.evaluate` to check router, component props, store values.
+3. **Identify the problem** - use `styles.get_computed`, `dom.get_html`, or `page.get_console` for errors.
+4. **Prototype with patches** - `patch.apply_styles` / `patch.apply_dom` to verify the fix visually.
+5. **Edit source files** - modify the actual code in the agent's workspace.
+6. **Wait for HMR** - `dom.wait_for` with the selector that should change, or `page.wait_for_load_state`.
+7. **Verify the change** - re-inspect the same area; compare with patch expectations.
+8. **Check for regressions** - `page.get_console` for new errors; scroll and inspect adjacent areas.
+9. **Rollback patches** - `patch.rollback` all temporary patches.
 
 ## Investigate-a-Bug Workflow
 
@@ -167,12 +167,12 @@ dom.find_by_role('button', 'Login') → input.click
 
 ## Detailed References (load only when needed)
 
-- **[Inspection & token efficiency](references/token-efficiency.md)** — budget presets, decision tree, allowlist strategy, anti-patterns
-- **[Patching workflows](references/patch-workflow.md)** — style-first loop, DOM patches, verification, cleanup
-- **[Full protocol reference](references/protocol.md)** — all RPC methods, error codes
-- **[Interaction patterns](references/interaction.md)** — input methods, navigation, form controls, hover, drag, multi-tab workflows
-- **[Capabilities reference](references/capabilities.md)** — full capability table, how to request subsets, `CAPABILITY_MISSING` recovery
-- **[Tailwind CSS guide](references/tailwind.md)** — selector escaping, semantic alternatives, patching strategy (load when `hints.tailwind: true`)
+- **[Inspection & token efficiency](references/token-efficiency.md)** - budget presets, decision tree, allowlist strategy, anti-patterns
+- **[Patching workflows](references/patch-workflow.md)** - style-first loop, DOM patches, verification, cleanup
+- **[Full protocol reference](references/protocol.md)** - all RPC methods, error codes
+- **[Interaction patterns](references/interaction.md)** - input methods, navigation, form controls, hover, drag, multi-tab workflows
+- **[Capabilities reference](references/capabilities.md)** - full capability table, how to request subsets, `CAPABILITY_MISSING` recovery
+- **[Tailwind CSS guide](references/tailwind.md)** - selector escaping, semantic alternatives, patching strategy (load when `hints.tailwind: true`)
 
 > **MCP mode:** If Browser Bridge is connected through an MCP server (tools named `browser_dom`, `browser_call`, etc.) rather than the CLI, use the `$browser-bridge-mcp` / `$bbx-mcp` skill instead which covers MCP-specific tool schemas and patterns.
 

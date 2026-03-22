@@ -1,6 +1,7 @@
 // @ts-check
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,10 +16,7 @@ const supportedTargets = /** @type {const} */ (['copilot', 'claude', 'opencode',
  */
 
 /**
- * @typedef {{
- *   targets: SupportedTarget[],
- *   projectPath: string
- * }} InstallAgentOptions
+ * @typedef {{targets: SupportedTarget[], projectPath: string, global: boolean}} InstallAgentOptions
  */
 
 /**
@@ -30,6 +28,7 @@ export function parseInstallAgentArgs(args, cwd = process.cwd()) {
   /** @type {SupportedTarget[]} */
   let targets = [...supportedTargets];
   let projectPath = cwd;
+  let isGlobal = true; // default to global install
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -57,15 +56,27 @@ export function parseInstallAgentArgs(args, cwd = process.cwd()) {
     if (arg === '--project') {
       const value = args[index + 1];
       if (!value) {
-        throw new Error('Usage: install-skill [targets|all] [--project <path>]');
+        throw new Error('Usage: install-skill [targets|all] [--project <path>] [--global]');
       }
       projectPath = path.resolve(cwd, value);
+      isGlobal = false;
       index += 1;
       continue;
     }
 
     if (arg.startsWith('--project=')) {
       projectPath = path.resolve(cwd, arg.slice('--project='.length));
+      isGlobal = false;
+      continue;
+    }
+
+    if (arg === '--global') {
+      isGlobal = true;
+      continue;
+    }
+
+    if (arg === '--local') {
+      isGlobal = false;
       continue;
     }
 
@@ -81,7 +92,8 @@ export function parseInstallAgentArgs(args, cwd = process.cwd()) {
 
   return {
     targets,
-    projectPath
+    projectPath,
+    global: isGlobal
   };
 }
 
@@ -90,13 +102,14 @@ export function parseInstallAgentArgs(args, cwd = process.cwd()) {
  * @returns {Promise<string[]>}
  */
 export async function installAgentFiles(options) {
+  const basePath = options.global ? os.homedir() : options.projectPath;
   /** @type {string[]} */
   const created = [];
   /** @type {Set<string>} */
   const seenTargets = new Set();
 
   for (const target of options.targets) {
-    const skillBaseDir = path.join(options.projectPath, getSkillRelativePath(target));
+    const skillBaseDir = path.join(basePath, getSkillRelativePath(target));
 
     for (const skillName of managedSkillNames) {
       const skillTargetDir = path.join(skillBaseDir, skillName);
