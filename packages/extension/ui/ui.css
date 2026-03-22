@@ -8,6 +8,10 @@
   --stroke: #d8cbb6;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html {
   min-height: 100%;
   background:
@@ -170,9 +174,19 @@ body {
   box-shadow: 0 0 0 4px rgba(45, 138, 87, 0.12);
 }
 
+.github-link {
+  color: var(--muted);
+  transition: color 0.15s;
+  line-height: 0;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+.github-link:hover {
+  color: var(--fg);
+}
+
 .header-status-indicator {
   margin-top: 10px;
-  margin-right: 5px;
   cursor: help;
 }
 
@@ -228,6 +242,96 @@ button:hover {
 .power-button:disabled {
   background: #c9bba5;
   cursor: not-allowed;
+}
+
+.setup-steps {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.examples-eyebrow {
+  margin-bottom: 8px;
+}
+
+.examples-list {
+  display: grid;
+  gap: 6px;
+}
+
+.example-cmd {
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
+}
+
+.setup-step-hint {
+  display: block;
+  font-size: 11px;
+  color: #7a6247;
+  margin-top: 6px;
+}
+
+.setup-step-hint:first-child {
+  margin-top: 0;
+}
+
+.setup-cmd {
+  display: block;
+  position: relative;
+  padding: 7px 10px;
+  padding-right: 28px;
+  border-radius: 6px;
+  background: rgba(31, 36, 48, 0.06);
+  border: 1px solid var(--stroke);
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  color: var(--ink);
+  cursor: pointer;
+  word-break: break-all;
+  user-select: all;
+}
+
+.setup-cmd:hover {
+  background: rgba(31, 36, 48, 0.10);
+}
+
+.setup-cmd::after {
+  content: '⧉';
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  font-size: 14px;
+  font-family: system-ui, sans-serif;
+  color: #9a8470;
+  user-select: none;
+  line-height: 1;
+}
+
+.setup-cmd:hover::after {
+  color: var(--ink);
+}
+
+.setup-cmd.copied {
+  background: rgba(45, 138, 87, 0.08);
+  border-color: rgba(45, 138, 87, 0.3);
+}
+
+.setup-cmd.copied::after {
+  content: '✓';
+  color: #2d8a57;
+}
+
+.setup-link {
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.setup-link:hover {
+  text-decoration: underline;
 }
 
 @media (max-width: 360px) {

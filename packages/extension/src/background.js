@@ -201,20 +201,29 @@ async function initializeState() {
  */
 function connectNative() {
   try {
-    state.nativePort = chrome.runtime.connectNative(NATIVE_APP_NAME);
-    state.nativePort.onMessage.addListener((request) => {
+    const candidatePort = chrome.runtime.connectNative(NATIVE_APP_NAME);
+    const stabilityTimer = setTimeout(() => {
+      state.nativePort = candidatePort;
+      broadcastUi({ type: 'native.status', connected: true });
+      void emitUiState();
+    }, 500);
+    candidatePort.onMessage.addListener((request) => {
       void handleBridgeRequest(request).catch(reportAsyncError);
     });
-    state.nativePort.onDisconnect.addListener(() => {
-      state.nativePort = null;
-      broadcastUi({
-        type: 'native.status',
-        connected: false,
-        error: chrome.runtime.lastError?.message ?? 'Native host disconnected.'
-      });
+    candidatePort.onDisconnect.addListener(() => {
+      clearTimeout(stabilityTimer);
+      // lastError must always be read in onDisconnect to suppress the unchecked warning
+      const disconnectError = chrome.runtime.lastError?.message ?? 'Native host disconnected.';
+      if (state.nativePort === candidatePort) {
+        state.nativePort = null;
+        broadcastUi({
+          type: 'native.status',
+          connected: false,
+          error: disconnectError
+        });
+      }
       setTimeout(connectNative, 2_000);
     });
-    broadcastUi({ type: 'native.status', connected: true });
   } catch (error) {
     broadcastUi({ type: 'native.status', connected: false, error: error.message });
   }

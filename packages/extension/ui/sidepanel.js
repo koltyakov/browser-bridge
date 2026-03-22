@@ -41,13 +41,33 @@
  * }} SidePanelMessage
  */
 
+const PUBLISHED_EXTENSION_ID = 'niaidbpnkbfbjgdfieabpmlomilpdipn';
+
 const nativeIndicator = /** @type {HTMLSpanElement} */ (document.getElementById('native-indicator'));
 const toggleButton = /** @type {HTMLButtonElement} */ (document.getElementById('bridge-toggle'));
 const actionLog = /** @type {HTMLDivElement} */ (document.getElementById('action-log'));
+const setupSection = /** @type {HTMLElement} */ (document.getElementById('native-setup'));
+const setupInstallCmd = /** @type {HTMLElement} */ (document.getElementById('setup-install-cmd'));
+const setupSkillCmd = /** @type {HTMLElement} */ (document.getElementById('setup-skill-cmd'));
+const setupMcpCmd = /** @type {HTMLElement} */ (document.getElementById('setup-mcp-cmd'));
+const controlSection = /** @type {HTMLElement} */ (document.getElementById('control-section'));
+const activitySection = /** @type {HTMLElement} */ (document.getElementById('activity-section'));
+const examplesSection = /** @type {HTMLElement} */ (document.getElementById('examples-section'));
 const port = chrome.runtime.connect({ name: 'ui' });
 const requestedTabId = Number(new URLSearchParams(window.location.search).get('tabId'));
 /** @type {SidePanelCurrentTab | null} */
 let currentTabState = null;
+
+for (const cmd of /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('.setup-cmd'))) {
+  cmd.addEventListener('click', () => {
+    const text = cmd.textContent?.trim() ?? '';
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      cmd.classList.add('copied');
+      setTimeout(() => { cmd.classList.remove('copied'); }, 1500);
+    }).catch(() => { /* clipboard unavailable, user-select:all allows manual copy */ });
+  });
+}
 
 /** @param {SidePanelMessage} message */
 port.onMessage.addListener((message) => {
@@ -122,6 +142,19 @@ function renderNativeStatus(connected, error) {
   nativeIndicator.dataset.connected = String(connected);
   nativeIndicator.title = label;
   nativeIndicator.setAttribute('aria-label', label);
+
+  setupSection.hidden = connected;
+  controlSection.hidden = !connected;
+  examplesSection.hidden = !connected;
+  activitySection.hidden = !connected;
+  if (!connected) {
+    const extId = chrome.runtime.id;
+    setupInstallCmd.textContent = extId === PUBLISHED_EXTENSION_ID
+      ? 'bbx install'
+      : `bbx install ${extId}`;
+    setupSkillCmd.textContent = 'bbx install-skill';
+    setupMcpCmd.textContent = 'bbx install-mcp';
+  }
 }
 
 /**
