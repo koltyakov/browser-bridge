@@ -1098,7 +1098,10 @@ async function ensureContentScript(tabId) {
   } catch {
     await chrome.scripting.executeScript({
       target: { tabId },
-      files: ['packages/extension/src/content-script.js']
+      files: [
+        'packages/extension/src/content-script-helpers.js',
+        'packages/extension/src/content-script.js'
+      ]
     });
   }
 }
