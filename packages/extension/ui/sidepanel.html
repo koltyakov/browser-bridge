@@ -25,20 +25,22 @@
         </div>
         <button id="bridge-toggle" class="power-button" type="button">Enable</button>
       </section>
-      <section id="installation-section" class="card" hidden>
-        <div class="eyebrow">Host setup</div>
-        <p id="setup-status-note" class="muted setup-status-note">Checking global install status…</p>
-        <div class="setup-status-columns">
-          <div class="setup-status-group">
-            <h2 class="setup-status-heading">MCP clients</h2>
-            <div id="mcp-status-list" class="setup-status-list"></div>
-          </div>
-          <div class="setup-status-group">
-            <h2 class="setup-status-heading">Skills</h2>
-            <div id="skill-status-list" class="setup-status-list"></div>
+      <details id="installation-section" class="card setup-details" hidden>
+        <summary><span class="eyebrow">Host setup</span></summary>
+        <div class="setup-details-body">
+          <p id="setup-status-note" class="muted setup-status-note">Checking global install status…</p>
+          <div class="setup-status-columns">
+            <div class="setup-status-group">
+              <h2 class="setup-status-heading">MCP clients</h2>
+              <div id="mcp-status-list" class="setup-status-list"></div>
+            </div>
+            <div class="setup-status-group">
+              <h2 class="setup-status-heading">Skills</h2>
+              <div id="skill-status-list" class="setup-status-list"></div>
+            </div>
           </div>
         </div>
-      </section>
+      </details>
       <details id="examples-section" class="examples-details" open hidden>
         <summary><span class="eyebrow examples-eyebrow">Prompts examples</span></summary>
         <div class="examples-list">

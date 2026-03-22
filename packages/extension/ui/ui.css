@@ -552,12 +552,14 @@ button:hover {
 }
 
 /* Collapsible examples section */
-.examples-details {
+.examples-details,
+.setup-details {
   flex-shrink: 0;
   margin-top: 16px;
 }
 
-.examples-details summary {
+.examples-details summary,
+.setup-details summary {
   cursor: pointer;
   list-style: none;
   display: flex;
@@ -565,26 +567,31 @@ button:hover {
   gap: 6px;
 }
 
-.examples-details summary::-webkit-details-marker {
+.examples-details summary::-webkit-details-marker,
+.setup-details summary::-webkit-details-marker {
   display: none;
 }
 
-.examples-details summary .eyebrow {
+.examples-details summary .eyebrow,
+.setup-details summary .eyebrow {
   margin: 0;
 }
 
-.examples-details summary::after {
+.examples-details summary::after,
+.setup-details summary::after {
   content: '\25B6';
   font-size: 8px;
   color: var(--muted);
   transition: transform 0.15s;
 }
 
-.examples-details[open] summary::after {
+.examples-details[open] summary::after,
+.setup-details[open] summary::after {
   transform: rotate(90deg);
 }
 
-.examples-details .examples-list {
+.examples-details .examples-list,
+.setup-details .setup-details-body {
   margin-top: 8px;
 }
 

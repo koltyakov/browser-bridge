@@ -101,7 +101,7 @@ const setupInstallCmd = /** @type {HTMLElement} */ (document.getElementById('set
 const setupSkillCmd = /** @type {HTMLElement} */ (document.getElementById('setup-skill-cmd'));
 const setupMcpCmd = /** @type {HTMLElement} */ (document.getElementById('setup-mcp-cmd'));
 const controlSection = /** @type {HTMLElement} */ (document.getElementById('control-section'));
-const installationSection = /** @type {HTMLElement} */ (document.getElementById('installation-section'));
+const installationSection = /** @type {HTMLDetailsElement} */ (document.getElementById('installation-section'));
 const setupStatusNote = /** @type {HTMLParagraphElement} */ (document.getElementById('setup-status-note'));
 const mcpStatusList = /** @type {HTMLDivElement} */ (document.getElementById('mcp-status-list'));
 const skillStatusList = /** @type {HTMLDivElement} */ (document.getElementById('skill-status-list'));
@@ -155,6 +155,10 @@ toggleButton.addEventListener('click', () => {
   });
 });
 
+installationSection.addEventListener('toggle', () => {
+  syncConnectedSectionsVisibility();
+});
+
 /**
  * @param {UiSnapshot} state
  * @returns {void}
@@ -174,6 +178,7 @@ function renderState(state) {
   if (state.actionLog.length) {
     examplesSection.removeAttribute('open');
   }
+  syncConnectedSectionsVisibility();
 }
 
 /**
@@ -210,8 +215,6 @@ function renderNativeStatus(connected, error) {
   setupSection.hidden = connected;
   controlSection.hidden = !connected;
   installationSection.hidden = !connected;
-  examplesSection.hidden = !connected;
-  activitySection.hidden = !connected;
   if (!connected) {
     const extId = chrome.runtime.id;
     setupInstallCmd.textContent = extId === PUBLISHED_EXTENSION_ID
@@ -220,6 +223,22 @@ function renderNativeStatus(connected, error) {
     setupSkillCmd.textContent = 'bbx install-skill';
     setupMcpCmd.textContent = 'bbx install-mcp';
   }
+  syncConnectedSectionsVisibility();
+}
+
+/**
+ * @returns {void}
+ */
+function syncConnectedSectionsVisibility() {
+  const connected = nativeIndicator.dataset.connected === 'true';
+  if (!connected) {
+    examplesSection.hidden = true;
+    activitySection.hidden = true;
+    return;
+  }
+  const hostSetupExpanded = installationSection.open;
+  examplesSection.hidden = hostSetupExpanded;
+  activitySection.hidden = hostSetupExpanded;
 }
 
 /**
