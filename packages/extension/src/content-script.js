@@ -931,7 +931,7 @@
    */
   function getElementRect(elementRef) {
     const el = getRequiredElement(elementRef);
-    // Scroll into view so captureVisibleTab can see it
+    // Scroll into view so CDP can capture it in the visible viewport
     el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
     const rect = el.getBoundingClientRect();
     if (rect.width < 1 || rect.height < 1) {
@@ -940,13 +940,18 @@
         'It may be hidden, collapsed, or not yet rendered.'
       );
     }
-    return {
-      x: Math.max(0, rect.x),
-      y: Math.max(0, rect.y),
-      width: Math.min(rect.width, window.innerWidth - Math.max(0, rect.x)),
-      height: Math.min(rect.height, window.innerHeight - Math.max(0, rect.y)),
-      scale: window.devicePixelRatio || 1,
-    };
+    const x = Math.max(0, rect.x);
+    const y = Math.max(0, rect.y);
+    const width = Math.max(0, Math.min(rect.width, window.innerWidth - x));
+    const height = Math.max(0, Math.min(rect.height, window.innerHeight - y));
+    if (width < 1 || height < 1) {
+      throw new Error(
+        `Element is outside the visible viewport after scroll ` +
+        `(${Math.round(rect.x)},${Math.round(rect.y)} ${Math.round(rect.width)}\u00d7${Math.round(rect.height)}). ` +
+        'It may be in a fixed/sticky container or an iframe.'
+      );
+    }
+    return { x, y, width, height, scale: window.devicePixelRatio || 1 };
   }
 
   // ── New methods: DOM wait, find, HTML, hover, drag, storage ────────

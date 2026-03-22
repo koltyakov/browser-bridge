@@ -181,13 +181,39 @@ function renderActionLogEntry(entry) {
   title.className = 'card-title';
   title.textContent = entry.method;
 
-  const rightCol = document.createElement('div');
-  rightCol.className = 'activity-right';
-
   const timestamp = document.createElement('span');
   timestamp.className = 'muted activity-time';
   timestamp.textContent = new Date(entry.at).toLocaleTimeString();
-  rightCol.append(timestamp);
+
+  header.append(title, timestamp);
+
+  const footer = document.createElement('div');
+  footer.className = 'activity-footer';
+
+  const summary = document.createElement('span');
+  summary.className = 'activity-summary';
+  const dot = document.createElement('span');
+  dot.className = 'activity-status-dot';
+  dot.dataset.ok = String(entry.ok);
+  const summaryText = document.createElement('span');
+  summaryText.textContent = entry.summary;
+  summary.append(dot, summaryText);
+  footer.append(summary);
+
+  const badges = document.createElement('span');
+  badges.className = 'activity-badges';
+
+  const showScope = !(Number.isFinite(requestedTabId) && requestedTabId > 0) && entry.url;
+  if (showScope) {
+    const scopeLink = document.createElement('a');
+    scopeLink.className = 'activity-scope-link';
+    scopeLink.href = entry.url;
+    scopeLink.target = '_blank';
+    scopeLink.rel = 'noopener';
+    scopeLink.title = entry.url;
+    scopeLink.innerHTML = '<svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4.5 1.5H2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V8"/><path d="M7 1h4v4"/><path d="M5 7L11 1"/></svg>';
+    badges.append(scopeLink);
+  }
 
   if (entry.approxTokens > 0) {
     const tokenLine = document.createElement('span');
@@ -200,27 +226,11 @@ function renderActionLogEntry(entry) {
       parts.push('img');
     }
     tokenLine.textContent = parts.join(' \u00b7 ');
-    rightCol.append(tokenLine);
+    badges.append(tokenLine);
   }
 
-  header.append(title, rightCol);
+  if (badges.childElementCount) footer.append(badges);
 
-  const showScope = !(Number.isFinite(requestedTabId) && requestedTabId > 0) && entry.url;
-  if (showScope) {
-    const scopeLine = document.createElement('div');
-    scopeLine.className = 'muted activity-scope';
-    scopeLine.textContent = entry.url;
-    scopeLine.title = entry.url;
-    container.append(header, scopeLine);
-  } else {
-    container.append(header);
-  }
-
-  const summary = document.createElement('div');
-  summary.className = 'activity-summary';
-  summary.textContent = `${entry.ok ? 'OK' : 'Error'}: ${entry.summary}`;
-
-  container.append(summary);
-
+  container.append(header, footer);
   return container;
 }

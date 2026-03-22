@@ -1007,6 +1007,15 @@ async function handleScreenshot(session, method, params) {
         throw err;
       }
     }
+    // Defensively coerce content-script values — NaN / undefined / negative
+    // would slip past the < 1 guard and reach CDP as invalid values.
+    clip = {
+      x: Math.max(0, Number(clip.x) || 0),
+      y: Math.max(0, Number(clip.y) || 0),
+      width: Math.max(0, Number(clip.width) || 0),
+      height: Math.max(0, Number(clip.height) || 0),
+      scale: Number(clip.scale) || 1
+    };
   } else {
     // capture_region: params already carry viewport coordinates
     const scale = Number(params.scale) || 1;
