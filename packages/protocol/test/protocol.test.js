@@ -122,6 +122,7 @@ test('bridge method registry is the source of truth for method ordering and sess
   assert.deepEqual(BRIDGE_METHODS, Object.keys(BRIDGE_METHOD_REGISTRY));
   assert.equal(bridgeMethodNeedsSession('health.ping'), false);
   assert.equal(bridgeMethodNeedsSession('setup.get_status'), false);
+  assert.equal(bridgeMethodNeedsSession('setup.install'), false);
   assert.equal(bridgeMethodNeedsSession('dom.query'), true);
 });
 

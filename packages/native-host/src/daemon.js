@@ -5,12 +5,16 @@ import net from 'node:net';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
+import { installAgentFiles, isSupportedTarget } from '../../agent-client/src/install.js';
+import { installMcpConfig, isMcpClientName } from '../../agent-client/src/mcp-config.js';
 import { collectSetupStatus } from '../../agent-client/src/setup-status.js';
 import { createFailure, createSuccess, ERROR_CODES, validateBridgeRequest } from '../../protocol/src/index.js';
 import { getBridgeDir, getSocketPath } from './config.js';
 import { writeJsonLine } from './framing.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */
+/** @typedef {import('../../protocol/src/types.js').SetupInstallParams} SetupInstallParams */
+/** @typedef {import('../../protocol/src/types.js').SetupInstallResult} SetupInstallResult */
 /** @typedef {import('../../protocol/src/types.js').SetupStatus} SetupStatus */
 /** @typedef {import('node:net').Socket & { __clientId?: string }} ClientSocket */
 /** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout }} PendingEntry */
@@ -58,13 +62,15 @@ export class BridgeDaemon {
    *   socketPath?: string,
    *   listenOptions?: import('node:net').ListenOptions | null,
    *   setupStatusLoader?: () => Promise<SetupStatus>,
+   *   setupInstaller?: (params: Record<string, unknown>) => Promise<SetupInstallResult>,
    *   logger?: Pick<Console, 'log' | 'error'>
    * }} [options={}]
    */
-  constructor({ socketPath = getSocketPath(), listenOptions = null, setupStatusLoader = collectSetupStatus, logger = console } = {}) {
+  constructor({ socketPath = getSocketPath(), listenOptions = null, setupStatusLoader = collectSetupStatus, setupInstaller = installSetupTarget, logger = console } = {}) {
     this.socketPath = socketPath;
     this.listenOptions = listenOptions;
     this.setupStatusLoader = setupStatusLoader;
+    this.setupInstaller = setupInstaller;
     this.logger = logger;
     this.server = null;
     this.serverAddress = null;
@@ -258,6 +264,25 @@ export class BridgeDaemon {
       return;
     }
 
+    if (request.method === 'setup.install') {
+      try {
+        const response = createSuccess(request.id, await this.setupInstaller(request.params), {
+          method: request.method
+        });
+        await writeJsonLine(socket, { type: 'agent.response', response });
+      } catch (error) {
+        const response = createFailure(
+          request.id,
+          ERROR_CODES.INVALID_REQUEST,
+          error instanceof Error ? error.message : String(error),
+          null,
+          { method: request.method }
+        );
+        await writeJsonLine(socket, { type: 'agent.response', response });
+      }
+      return;
+    }
+
     if (!this.extensionSocket) {
       const response = createFailure(
         request.id,
@@ -362,4 +387,54 @@ export class BridgeDaemon {
       this.recentLog.shift();
     }
   }
+}
+
+/**
+ * @param {Record<string, unknown>} params
+ * @returns {SetupInstallParams & { kind: 'mcp' | 'skill', target: string }}
+ */
+function normalizeSetupInstallParams(params) {
+  const kind = params.kind === 'mcp' || params.kind === 'skill' ? params.kind : null;
+  const target = typeof params.target === 'string' ? params.target.trim().toLowerCase() : '';
+  if (!kind) {
+    throw new Error('setup.install requires kind to be "mcp" or "skill".');
+  }
+  if (!target) {
+    throw new Error('setup.install requires a target.');
+  }
+  return { kind, target };
+}
+
+/**
+ * @param {Record<string, unknown>} params
+ * @returns {Promise<SetupInstallResult>}
+ */
+async function installSetupTarget(params) {
+  const normalized = normalizeSetupInstallParams(params);
+  if (normalized.kind === 'mcp') {
+    if (!isMcpClientName(normalized.target)) {
+      throw new Error(`Unsupported MCP client "${normalized.target}".`);
+    }
+    const configPath = await installMcpConfig(normalized.target, { global: true });
+    return {
+      kind: 'mcp',
+      target: normalized.target,
+      paths: [configPath]
+    };
+  }
+
+  if (!isSupportedTarget(normalized.target)) {
+    throw new Error(`Unsupported skill target "${normalized.target}".`);
+  }
+
+  const paths = await installAgentFiles({
+    targets: [normalized.target],
+    projectPath: process.cwd(),
+    global: true
+  });
+  return {
+    kind: 'skill',
+    target: normalized.target,
+    paths
+  };
 }

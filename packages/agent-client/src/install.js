@@ -22,6 +22,14 @@ const targetAliases = /** @type {const} */ ({
 export const SUPPORTED_TARGETS = [...supportedTargets];
 
 /**
+ * @param {string} value
+ * @returns {value is SupportedTarget}
+ */
+export function isSupportedTarget(value) {
+  return supportedTargets.includes(/** @type {SupportedTarget} */ (value));
+}
+
+/**
  * @typedef {{targets: SupportedTarget[], projectPath: string, global: boolean}} InstallAgentOptions
  */
 

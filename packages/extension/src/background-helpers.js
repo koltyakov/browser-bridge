@@ -91,6 +91,7 @@ export function shouldLogAction(method) {
     'log.tail',
     'skill.get_runtime_context',
     'setup.get_status',
+    'setup.install',
     'tabs.list',
     'session.get_status'
   ].includes(method);

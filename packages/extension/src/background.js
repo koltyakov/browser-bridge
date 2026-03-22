@@ -114,6 +114,13 @@ import { TabDebuggerCoordinator } from './debugger-coordinator.js';
 
 /**
  * @typedef {{
+ *   kind: 'mcp' | 'skill',
+ *   target: string
+ * }} SetupInstallAction
+ */
+
+/**
+ * @typedef {{
  *   nativePort: chrome.runtime.Port | null,
  *   sessions: Map<string, SessionState>,
   *   enabledScopes: Map<string, EnabledScope>,
@@ -122,11 +129,14 @@ import { TabDebuggerCoordinator } from './debugger-coordinator.js';
   *   consoleTrackedTabIds: Set<number>,
   *   uiPorts: Map<chrome.runtime.Port, UiPortState>,
   *   setupStatus: SetupStatus | null,
-  *   setupStatusPending: boolean,
+ *   setupStatusPending: boolean,
  *   setupStatusPendingRequestId: string | null,
-  *   setupStatusUpdatedAt: number,
-  *   setupStatusError: string | null,
-  *   setupStatusTimeoutId: ReturnType<typeof setTimeout> | null
+ *   setupStatusUpdatedAt: number,
+ *   setupStatusError: string | null,
+ *   setupStatusTimeoutId: ReturnType<typeof setTimeout> | null,
+ *   setupInstallPendingRequestId: string | null,
+ *   setupInstallPendingKey: string | null,
+ *   setupInstallError: string | null
  * }} ExtensionState
  */
 
@@ -156,7 +166,10 @@ const state = {
   setupStatusPendingRequestId: null,
   setupStatusUpdatedAt: 0,
   setupStatusError: null,
-  setupStatusTimeoutId: null
+  setupStatusTimeoutId: null,
+  setupInstallPendingRequestId: null,
+  setupInstallPendingKey: null,
+  setupInstallError: null
 };
 
 const tabDebugger = new TabDebuggerCoordinator({
@@ -2112,6 +2125,8 @@ async function emitUiStateForPort(port) {
       setupStatus: state.setupStatus,
       setupStatusPending: state.setupStatusPending,
       setupStatusError: state.setupStatusError,
+      setupInstallPendingKey: state.setupInstallPendingKey,
+      setupInstallError: state.setupInstallError,
       actionLog: [...state.actionLog]
         .filter((entry) => scopedTabId == null || entry.tabId === scopedTabId)
         .reverse()
@@ -2133,6 +2148,18 @@ function handleHostStatusMessage(message) {
     const response = candidate.response && typeof candidate.response === 'object'
       ? /** @type {BridgeResponse} */ (candidate.response)
       : null;
+    if (response?.id === state.setupInstallPendingRequestId) {
+      state.setupInstallPendingRequestId = null;
+      state.setupInstallPendingKey = null;
+      if (response.ok) {
+        state.setupInstallError = null;
+        refreshSetupStatus(true);
+      } else {
+        state.setupInstallError = response.error.message;
+      }
+      void emitUiState().catch(reportAsyncError);
+      return true;
+    }
     if (response?.id === state.setupStatusPendingRequestId) {
       clearSetupStatusTimer();
       state.setupStatusPending = false;
@@ -2150,6 +2177,17 @@ function handleHostStatusMessage(message) {
   }
 
   if (candidate.type === 'host.bridge_error') {
+    if (candidate.requestId === state.setupInstallPendingRequestId) {
+      state.setupInstallPendingRequestId = null;
+      state.setupInstallPendingKey = null;
+      state.setupInstallError = typeof candidate.error === 'object'
+        && candidate.error
+        && typeof /** @type {Record<string, unknown>} */ (candidate.error).message === 'string'
+        ? /** @type {Record<string, string>} */ (candidate.error).message
+        : 'Could not install host setup.';
+      void emitUiState().catch(reportAsyncError);
+      return true;
+    }
     if (candidate.requestId === state.setupStatusPendingRequestId) {
       clearSetupStatusTimer();
       state.setupStatusPending = false;
@@ -2246,6 +2284,9 @@ function clearSetupStatus(errorMessage = null) {
   state.setupStatusPendingRequestId = null;
   state.setupStatusUpdatedAt = 0;
   state.setupStatusError = errorMessage;
+  state.setupInstallPendingRequestId = null;
+  state.setupInstallPendingKey = null;
+  state.setupInstallError = null;
 }
 
 /**
@@ -2302,6 +2343,60 @@ async function handleUiMessage(port, message) {
     }
     return;
   }
+
+  if (message?.type === 'setup.install') {
+    await handleSetupInstallAction(message);
+  }
+}
+
+/**
+ * @param {Record<string, unknown>} message
+ * @returns {Promise<void>}
+ */
+async function handleSetupInstallAction(message) {
+  if (!state.nativePort) {
+    state.setupInstallError = 'Native host is not connected.';
+    await emitUiState();
+    return;
+  }
+  if (state.setupInstallPendingRequestId) {
+    return;
+  }
+  const action = normalizeSetupInstallAction(message);
+  const requestId = crypto.randomUUID();
+  state.setupInstallPendingRequestId = requestId;
+  state.setupInstallPendingKey = getSetupInstallKey(action);
+  state.setupInstallError = null;
+  state.nativePort.postMessage({
+    type: 'host.bridge_request',
+    request: createRequest({
+      id: requestId,
+      method: 'setup.install',
+      params: action
+    })
+  });
+  await emitUiState();
+}
+
+/**
+ * @param {Record<string, unknown>} message
+ * @returns {SetupInstallAction}
+ */
+function normalizeSetupInstallAction(message) {
+  const kind = message.kind === 'skill' ? 'skill' : message.kind === 'mcp' ? 'mcp' : null;
+  const target = typeof message.target === 'string' ? message.target.trim().toLowerCase() : '';
+  if (!kind || !target) {
+    throw new Error(ERROR_CODES.INVALID_REQUEST);
+  }
+  return { kind, target };
+}
+
+/**
+ * @param {SetupInstallAction} action
+ * @returns {string}
+ */
+function getSetupInstallKey(action) {
+  return `${action.kind}:${action.target}`;
 }
 
 /**

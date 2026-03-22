@@ -42,6 +42,15 @@
 
 /**
  * @typedef {{
+ *   key: string,
+ *   label: string,
+ *   mcpClient: McpClientStatus | null,
+ *   skillTarget: SkillTargetStatus | null
+ * }} SetupMatrixRow
+ */
+
+/**
+ * @typedef {{
  *   tabId: number,
  *   windowId: number,
  *   title: string,
@@ -73,6 +82,8 @@
  *   setupStatus: SetupStatus | null,
  *   setupStatusPending: boolean,
  *   setupStatusError: string | null,
+ *   setupInstallPendingKey: string | null,
+ *   setupInstallError: string | null,
  *   actionLog: ActionLogEntry[]
  * }} UiSnapshot
  */
@@ -103,10 +114,9 @@ const setupMcpCmd = /** @type {HTMLElement} */ (document.getElementById('setup-m
 const controlSection = /** @type {HTMLElement} */ (document.getElementById('control-section'));
 const installationSection = /** @type {HTMLDetailsElement} */ (document.getElementById('installation-section'));
 const setupStatusNote = /** @type {HTMLParagraphElement} */ (document.getElementById('setup-status-note'));
-const mcpStatusList = /** @type {HTMLDivElement} */ (document.getElementById('mcp-status-list'));
-const skillStatusList = /** @type {HTMLDivElement} */ (document.getElementById('skill-status-list'));
+const setupStatusMatrix = /** @type {HTMLDivElement} */ (document.getElementById('setup-status-matrix'));
 const activitySection = /** @type {HTMLElement} */ (document.getElementById('activity-section'));
-const examplesSection = /** @type {HTMLElement} */ (document.getElementById('examples-section'));
+const examplesSection = /** @type {HTMLDetailsElement} */ (document.getElementById('examples-section'));
 const port = chrome.runtime.connect({ name: 'ui' });
 const requestedTabId = Number(new URLSearchParams(window.location.search).get('tabId'));
 /** @type {SidePanelCurrentTab | null} */
@@ -156,7 +166,25 @@ toggleButton.addEventListener('click', () => {
 });
 
 installationSection.addEventListener('toggle', () => {
+  syncExclusiveDetailsSections(installationSection, examplesSection);
   syncConnectedSectionsVisibility();
+});
+
+examplesSection.addEventListener('toggle', () => {
+  syncExclusiveDetailsSections(examplesSection, installationSection);
+  syncConnectedSectionsVisibility();
+});
+
+installationSection.addEventListener('click', (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLButtonElement) || target.dataset.action !== 'setup-install') {
+    return;
+  }
+  port.postMessage({
+    type: 'setup.install',
+    kind: target.dataset.kind,
+    target: target.dataset.target
+  });
 });
 
 /**
@@ -166,7 +194,13 @@ installationSection.addEventListener('toggle', () => {
 function renderState(state) {
   renderNativeStatus(state.nativeConnected);
   renderCurrentTab(state.currentTab);
-  renderSetupStatus(state.setupStatus, state.setupStatusPending, state.setupStatusError);
+  renderSetupStatus(
+    state.setupStatus,
+    state.setupStatusPending,
+    state.setupStatusError,
+    state.setupInstallPendingKey,
+    state.setupInstallError
+  );
 
   actionLog.replaceChildren(...state.actionLog.map((entry) => renderActionLogEntry(entry)));
 
@@ -236,105 +270,243 @@ function syncConnectedSectionsVisibility() {
     activitySection.hidden = true;
     return;
   }
-  const hostSetupExpanded = installationSection.open;
-  examplesSection.hidden = hostSetupExpanded;
-  activitySection.hidden = hostSetupExpanded;
+  examplesSection.hidden = false;
+  activitySection.hidden = false;
+}
+
+/**
+ * @param {HTMLDetailsElement} source
+ * @param {HTMLDetailsElement} other
+ * @returns {void}
+ */
+function syncExclusiveDetailsSections(source, other) {
+  if (!source.open || !other.open) {
+    return;
+  }
+  other.open = false;
 }
 
 /**
  * @param {SetupStatus | null} setupStatus
  * @param {boolean} pending
  * @param {string | null} error
+ * @param {string | null} installPendingKey
+ * @param {string | null} installError
  * @returns {void}
  */
-function renderSetupStatus(setupStatus, pending, error) {
+function renderSetupStatus(setupStatus, pending, error, installPendingKey, installError) {
   if (!setupStatus && pending) {
     setupStatusNote.textContent = 'Checking global host setup…';
-    mcpStatusList.replaceChildren(createStatusPlaceholder('Checking MCP clients…'));
-    skillStatusList.replaceChildren(createStatusPlaceholder('Checking skills…'));
+    setupStatusMatrix.replaceChildren(createStatusPlaceholder('Checking detected clients…'));
     return;
   }
 
   if (!setupStatus) {
-    setupStatusNote.textContent = error || 'Global host setup is unavailable.';
-    mcpStatusList.replaceChildren(createStatusPlaceholder('No MCP status yet.'));
-    skillStatusList.replaceChildren(createStatusPlaceholder('No skill status yet.'));
+    setupStatusNote.textContent = installError || error || 'Global host setup is unavailable.';
+    setupStatusMatrix.replaceChildren(createStatusPlaceholder('No host setup status yet.'));
     return;
   }
 
-  setupStatusNote.textContent = setupStatus.scope === 'global'
-    ? 'Showing global host setup only. Project-local installs are not visible from the extension.'
-    : 'Showing project-local host setup.';
-  mcpStatusList.replaceChildren(...setupStatus.mcpClients.map((entry) => renderMcpStatus(entry)));
-  skillStatusList.replaceChildren(...setupStatus.skillTargets.map((entry) => renderSkillStatus(entry)));
+  const noteParts = [
+    setupStatus.scope === 'global'
+      ? 'Showing detected global clients only. Project-local installs are not visible from the extension.'
+      : 'Showing detected project-local clients.'
+  ];
+  if (installError) {
+    noteParts.push(`Last install failed: ${installError}`);
+  } else if (error) {
+    noteParts.push(error);
+  }
+  setupStatusNote.textContent = noteParts.join(' ');
+
+  const rows = buildSetupMatrixRows(setupStatus);
+  if (!rows.length) {
+    setupStatusMatrix.replaceChildren(createStatusPlaceholder('No supported clients or agents were detected.'));
+    return;
+  }
+  setupStatusMatrix.replaceChildren(renderSetupMatrix(rows, installPendingKey));
 }
 
 /**
- * @param {McpClientStatus} entry
- * @returns {HTMLElement}
+ * @param {SetupStatus} setupStatus
+ * @returns {SetupMatrixRow[]}
  */
-function renderMcpStatus(entry) {
-  const status = entry.configured
-    ? 'Configured'
-    : entry.configExists
-      ? 'Config found'
-      : 'Missing';
-  const hint = entry.detected
-    ? (entry.configured ? 'Detected' : 'Detected, not configured')
-    : 'Not detected';
-  return renderSetupStatusItem(entry.label, status, hint, entry.configured, entry.configPath);
+function buildSetupMatrixRows(setupStatus) {
+  /** @type {Map<string, SetupMatrixRow>} */
+  const rowsByKey = new Map();
+  /** @type {string[]} */
+  const order = [];
+
+  for (const entry of setupStatus.mcpClients) {
+    if (!entry.detected) {
+      continue;
+    }
+    if (!rowsByKey.has(entry.key)) {
+      rowsByKey.set(entry.key, {
+        key: entry.key,
+        label: entry.label,
+        mcpClient: entry,
+        skillTarget: null
+      });
+      order.push(entry.key);
+    } else {
+      rowsByKey.get(entry.key).mcpClient = entry;
+    }
+  }
+
+  for (const entry of setupStatus.skillTargets) {
+    if (!entry.detected) {
+      continue;
+    }
+    if (!rowsByKey.has(entry.key)) {
+      rowsByKey.set(entry.key, {
+        key: entry.key,
+        label: entry.label,
+        mcpClient: null,
+        skillTarget: entry
+      });
+      order.push(entry.key);
+    } else {
+      rowsByKey.get(entry.key).skillTarget = entry;
+    }
+  }
+
+  return order.map((key) => rowsByKey.get(key)).filter(Boolean);
 }
 
 /**
- * @param {SkillTargetStatus} entry
+ * @param {SetupMatrixRow[]} rows
+ * @param {string | null} installPendingKey
  * @returns {HTMLElement}
  */
-function renderSkillStatus(entry) {
-  const installedCount = entry.skills.filter((skill) => skill.exists).length;
-  const status = entry.installed
-    ? (entry.managed ? 'Installed' : 'Custom')
-    : installedCount > 0
-      ? 'Partial'
-      : 'Missing';
-  const hint = entry.detected
-    ? `${installedCount}/${entry.skills.length} skill dirs`
-    : `Not detected · ${installedCount}/${entry.skills.length} skill dirs`;
-  return renderSetupStatusItem(entry.label, status, hint, entry.installed, entry.basePath);
+function renderSetupMatrix(rows, installPendingKey) {
+  const table = document.createElement('table');
+  table.className = 'setup-status-matrix';
+
+  const thead = document.createElement('thead');
+  const headerRow = document.createElement('tr');
+  for (const heading of ['Client', 'MCP', 'Skills']) {
+    const th = document.createElement('th');
+    th.textContent = heading;
+    headerRow.append(th);
+  }
+  thead.append(headerRow);
+
+  const tbody = document.createElement('tbody');
+  for (const row of rows) {
+    const tr = document.createElement('tr');
+
+    const labelCell = document.createElement('td');
+    labelCell.className = 'setup-matrix-client';
+    labelCell.textContent = row.label;
+
+    const mcpCell = document.createElement('td');
+    mcpCell.append(renderMcpMatrixCell(row, installPendingKey));
+
+    const skillCell = document.createElement('td');
+    skillCell.append(renderSkillMatrixCell(row, installPendingKey));
+
+    tr.append(labelCell, mcpCell, skillCell);
+    tbody.append(tr);
+  }
+
+  table.append(thead, tbody);
+  return table;
+}
+
+/**
+ * @param {SetupMatrixRow} row
+ * @param {string | null} installPendingKey
+ * @returns {HTMLElement}
+ */
+function renderMcpMatrixCell(row, installPendingKey) {
+  const entry = row.mcpClient;
+  if (!entry) {
+    return createMatrixMutedValue('\u2014');
+  }
+  if (entry.configured) {
+    return createMatrixBadge('Configured', true, entry.configPath);
+  }
+  const button = createInstallButton('mcp', row.key, installPendingKey === getInstallKey('mcp', row.key));
+  button.title = entry.configPath;
+  return button;
+}
+
+/**
+ * @param {SetupMatrixRow} row
+ * @param {string | null} installPendingKey
+ * @returns {HTMLElement}
+ */
+function renderSkillMatrixCell(row, installPendingKey) {
+  const entry = row.skillTarget;
+  if (!entry) {
+    return createMatrixMutedValue('\u2014');
+  }
+
+  const installable = entry.skills.every((skill) => !skill.exists || skill.managed);
+  if (entry.installed && entry.managed) {
+    return createMatrixBadge('Installed', true, entry.basePath);
+  }
+  if (!installable) {
+    return createMatrixBadge('Custom', false, entry.basePath);
+  }
+
+  const button = createInstallButton('skill', row.key, installPendingKey === getInstallKey('skill', row.key));
+  button.title = entry.basePath;
+  return button;
+}
+
+/**
+ * @param {'mcp' | 'skill'} kind
+ * @param {string} target
+ * @param {boolean} pending
+ * @returns {HTMLButtonElement}
+ */
+function createInstallButton(kind, target, pending) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'setup-install-button';
+  button.dataset.action = 'setup-install';
+  button.dataset.kind = kind;
+  button.dataset.target = target;
+  button.disabled = pending;
+  button.textContent = pending ? 'Installing…' : 'Install';
+  return button;
 }
 
 /**
  * @param {string} label
- * @param {string} status
- * @param {string} hint
  * @param {boolean} ok
  * @param {string} title
  * @returns {HTMLElement}
  */
-function renderSetupStatusItem(label, status, hint, ok, title) {
-  const row = document.createElement('div');
-  row.className = 'setup-status-item';
-  row.title = title;
-
-  const copy = document.createElement('div');
-  copy.className = 'setup-status-copy';
-
-  const name = document.createElement('span');
-  name.className = 'setup-status-label';
-  name.textContent = label;
-
-  const detail = document.createElement('span');
-  detail.className = 'setup-status-detail';
-  detail.textContent = hint;
-
-  copy.append(name, detail);
-
+function createMatrixBadge(label, ok, title) {
   const badge = document.createElement('span');
   badge.className = 'setup-status-badge';
   badge.dataset.ok = String(ok);
-  badge.textContent = status;
+  badge.textContent = label;
+  badge.title = title;
+  return badge;
+}
 
-  row.append(copy, badge);
-  return row;
+/**
+ * @param {string} text
+ * @returns {HTMLElement}
+ */
+function createMatrixMutedValue(text) {
+  const value = document.createElement('span');
+  value.className = 'setup-matrix-muted';
+  value.textContent = text;
+  return value;
+}
+
+/**
+ * @param {'mcp' | 'skill'} kind
+ * @param {string} target
+ * @returns {string}
+ */
+function getInstallKey(kind, target) {
+  return `${kind}:${target}`;
 }
 
 /**

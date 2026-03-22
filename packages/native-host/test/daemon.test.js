@@ -91,6 +91,44 @@ test('daemon responds to setup status requests without extension', async () => {
   assert.deepEqual(payload.response.result, expectedStatus);
 });
 
+test('daemon installs setup targets without extension', async () => {
+  const daemon = new BridgeDaemon({
+    logger: console,
+    setupInstaller: async (params) => ({
+      kind: params.kind === 'skill' ? 'skill' : 'mcp',
+      target: typeof params.target === 'string' ? params.target : 'codex',
+      paths: ['/tmp/mock-install']
+    })
+  });
+  const socket = createFakeSocket();
+
+  await daemon.handleAgentRequest(socket, {
+    request: {
+      id: 'req_setup_install',
+      method: 'setup.install',
+      session_id: null,
+      params: {
+        kind: 'mcp',
+        target: 'codex'
+      },
+      meta: {
+        protocol_version: '1.0',
+        token_budget: null
+      }
+    }
+  });
+
+  assert.equal(socket.writes.length, 1);
+  const payload = JSON.parse(socket.writes[0].trim());
+  assert.equal(payload.type, 'agent.response');
+  assert.equal(payload.response.ok, true);
+  assert.deepEqual(payload.response.result, {
+    kind: 'mcp',
+    target: 'codex',
+    paths: ['/tmp/mock-install']
+  });
+});
+
 test('daemon handles extension setup status requests', async () => {
   /** @type {import('../../protocol/src/types.js').SetupStatus} */
   const expectedStatus = {

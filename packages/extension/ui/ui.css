@@ -273,25 +273,6 @@ body {
   font-size: 12px;
 }
 
-.setup-status-columns {
-  display: grid;
-  gap: 12px;
-}
-
-.setup-status-group {
-  min-width: 0;
-}
-
-.setup-status-heading {
-  margin: 0 0 8px;
-  font-size: 13px;
-}
-
-.setup-status-list {
-  display: grid;
-  gap: 8px;
-}
-
 .setup-status-item,
 .setup-status-placeholder {
   display: flex;
@@ -335,6 +316,68 @@ body {
 .setup-status-badge[data-ok="true"] {
   background: rgba(45, 138, 87, 0.12);
   color: #2d8a57;
+}
+
+.setup-status-matrix-wrap {
+  overflow-x: auto;
+}
+
+.setup-status-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.setup-status-matrix th:first-child,
+.setup-status-matrix td:first-child {
+  width: 46%;
+}
+
+.setup-status-matrix th:nth-child(2),
+.setup-status-matrix td:nth-child(2),
+.setup-status-matrix th:nth-child(3),
+.setup-status-matrix td:nth-child(3) {
+  width: 27%;
+}
+
+.setup-status-matrix th,
+.setup-status-matrix td {
+  padding: 8px 6px;
+  text-align: left;
+  vertical-align: middle;
+  border-top: 1px solid var(--stroke);
+}
+
+.setup-status-matrix thead th {
+  padding-top: 0;
+  border-top: 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.setup-matrix-client {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.setup-matrix-muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.setup-install-button {
+  margin-right: 0;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.setup-install-button:disabled {
+  background: var(--disabled-bg);
+  cursor: progress;
 }
 
 .status-line {
@@ -593,12 +636,6 @@ button:hover {
 .examples-details .examples-list,
 .setup-details .setup-details-body {
   margin-top: 8px;
-}
-
-@media (min-width: 380px) {
-  .setup-status-columns {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 360px) {
