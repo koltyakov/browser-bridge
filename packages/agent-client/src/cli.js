@@ -327,160 +327,147 @@ async function main() {
       return;
     }
 
-    const session = await requireSession(client);
+    // ── Session command dispatch table ──────────────────────────────
 
-    if (command === 'dom-query') {
-      const selector = rest[0] || 'body';
-      const response = await requestBridge(client, 'dom.query', { selector }, {
-        sessionId: session.sessionId
-      });
-      await printSummary(response);
-      return;
-    }
+    /**
+     * @typedef {{
+     *   method: BridgeMethod,
+     *   resolve?: boolean,
+     *   printMethod?: string,
+     *   build: (r: string[], ref?: string) => Record<string, unknown>
+     * }} SessionCommand
+     */
 
-    if (command === 'describe') {
-      const [refOrSelector] = rest;
-      if (!refOrSelector) {
-        throw new Error('Usage: describe <ref|selector>');
+    /** @type {Record<string, SessionCommand>} */
+    const sessionCommands = {
+      'dom-query': {
+        method: 'dom.query',
+        build: (r) => ({ selector: r[0] || 'body' })
+      },
+      'describe': {
+        method: 'dom.describe', resolve: true, printMethod: 'dom.describe',
+        build: (_r, ref) => ({ elementRef: ref })
+      },
+      'text': {
+        method: 'dom.get_text', resolve: true, printMethod: 'dom.get_text',
+        build: (r, ref) => ({ elementRef: ref, textBudget: r[1] ? parseIntArg(r[1], 'budget') : undefined })
+      },
+      'styles': {
+        method: 'styles.get_computed', resolve: true, printMethod: 'styles.get_computed',
+        build: (r, ref) => ({ elementRef: ref, properties: parseCommaList(r[1]) })
+      },
+      'box': {
+        method: 'layout.get_box_model', resolve: true, printMethod: 'layout.get_box_model',
+        build: (_r, ref) => ({ elementRef: ref })
+      },
+      'click': {
+        method: 'input.click', resolve: true,
+        build: (r, ref) => ({ target: { elementRef: ref }, button: r[1] })
+      },
+      'focus': {
+        method: 'input.focus', resolve: true,
+        build: (_r, ref) => ({ target: { elementRef: ref } })
+      },
+      'type': {
+        method: 'input.type', resolve: true,
+        build: (r, ref) => ({ target: { elementRef: ref }, text: r.slice(1).join(' ') })
+      },
+      'hover': {
+        method: 'input.hover', resolve: true,
+        build: (_r, ref) => ({ target: { elementRef: ref } })
+      },
+      'html': {
+        method: 'dom.get_html', resolve: true,
+        build: (r, ref) => ({ elementRef: ref, maxLength: r[1] ? parseIntArg(r[1], 'maxLen') : undefined })
+      },
+      'patch-style': {
+        method: 'patch.apply_styles', resolve: true,
+        build: (r, ref) => ({ target: { elementRef: ref }, declarations: parsePropertyAssignments(r.slice(1)) })
+      },
+      'patch-text': {
+        method: 'patch.apply_dom', resolve: true,
+        build: (r, ref) => ({ target: { elementRef: ref }, operation: 'set_text', value: r.slice(1).join(' ') })
+      },
+      'patches': {
+        method: 'patch.list',
+        build: () => ({})
+      },
+      'rollback': {
+        method: 'patch.rollback',
+        build: (r) => { if (!r[0]) throw new Error('Usage: rollback <patchId>'); return { patchId: r[0] }; }
+      },
+      'console': {
+        method: 'page.get_console', printMethod: 'page.get_console',
+        build: (r) => ({ level: r[0] || 'all', clear: false })
+      },
+      'wait': {
+        method: 'dom.wait_for',
+        build: (r) => { if (!r[0]) throw new Error('Usage: wait <selector> [timeoutMs]'); return { selector: r[0], timeoutMs: r[1] ? parseIntArg(r[1], 'timeoutMs') : 5000 }; }
+      },
+      'find': {
+        method: 'dom.find_by_text', printMethod: 'dom.find_by_text',
+        build: (r) => { const t = r.join(' '); if (!t) throw new Error('Usage: find <text>'); return { text: t }; }
+      },
+      'find-role': {
+        method: 'dom.find_by_role', printMethod: 'dom.find_by_role',
+        build: (r) => { if (!r[0]) throw new Error('Usage: find-role <role> [name]'); return { role: r[0], name: r.slice(1).join(' ') || undefined }; }
+      },
+      'navigate': {
+        method: 'navigation.navigate',
+        build: (r) => { if (!r[0]) throw new Error('Usage: navigate <url>'); return { url: r[0] }; }
+      },
+      'storage': {
+        method: 'page.get_storage',
+        build: (r) => ({ type: r[0] === 'session' ? 'session' : 'local', keys: r.slice(1).length ? r.slice(1) : undefined })
+      },
+      'page-text': {
+        method: 'page.get_text', printMethod: 'page.get_text',
+        build: (r) => ({ textBudget: r[0] ? parseIntArg(r[0], 'textBudget') : undefined })
+      },
+      'network': {
+        method: 'page.get_network', printMethod: 'page.get_network',
+        build: (r) => ({ limit: r[0] ? parseIntArg(r[0], 'limit') : undefined })
+      },
+      'a11y-tree': {
+        method: 'dom.get_accessibility_tree',
+        build: (r) => ({ maxNodes: r[0] ? parseIntArg(r[0], 'maxNodes') : undefined, maxDepth: r[1] ? parseIntArg(r[1], 'maxDepth') : undefined })
+      },
+      'perf': {
+        method: 'performance.get_metrics',
+        build: () => ({})
+      },
+      'scroll': {
+        method: 'viewport.scroll',
+        build: (r) => { if (!r[0] && !r[1]) throw new Error('Usage: scroll <top> [left]'); return { top: r[0] ? parseIntArg(r[0], 'top') : undefined, left: r[1] ? parseIntArg(r[1], 'left') : undefined }; }
+      },
+      'resize': {
+        method: 'viewport.resize',
+        build: (r) => { if (!r[0] || !r[1]) throw new Error('Usage: resize <width> <height>'); return { width: parseIntArg(r[0], 'width'), height: parseIntArg(r[1], 'height') }; }
       }
-      const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
-      const response = await requestBridge(client, 'dom.describe', { elementRef }, {
-        sessionId: session.sessionId
-      });
-      await printSummary(response, 'dom.describe');
-      return;
-    }
+    };
 
-    if (command === 'text') {
-      const [refOrSelector, textBudget] = rest;
-      if (!refOrSelector) {
-        throw new Error('Usage: text <ref|selector> [budget]');
+    const sessionCmd = sessionCommands[command];
+    if (sessionCmd) {
+      const session = await requireSession(client);
+      let elementRef;
+      if (sessionCmd.resolve) {
+        if (!rest[0]) throw new Error(`Usage: ${command} <ref|selector>`);
+        elementRef = await resolveRef(client, rest[0], session.sessionId);
       }
-      const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
-      const response = await requestBridge(client, 'dom.get_text', {
-        elementRef,
-        textBudget: textBudget ? parseIntArg(textBudget, 'budget') : undefined
-      }, { sessionId: session.sessionId });
-      await printSummary(response, 'dom.get_text');
+      const response = await requestBridge(client, sessionCmd.method,
+        sessionCmd.build(rest, elementRef), { sessionId: session.sessionId });
+      await printSummary(response, sessionCmd.printMethod);
       return;
     }
 
-    if (command === 'styles') {
-      const [refOrSelector, propertyList] = rest;
-      if (!refOrSelector) {
-        throw new Error('Usage: styles <ref|selector> [prop1,prop2,...]');
-      }
-      const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
-      const response = await requestBridge(client, 'styles.get_computed', {
-        elementRef,
-        properties: parseCommaList(propertyList)
-      }, { sessionId: session.sessionId });
-      await printSummary(response, 'styles.get_computed');
-      return;
-    }
-
-    if (command === 'box') {
-      const [refOrSelector] = rest;
-      if (!refOrSelector) {
-        throw new Error('Usage: box <ref|selector>');
-      }
-      const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
-      const response = await requestBridge(client, 'layout.get_box_model', {
-        elementRef
-      }, { sessionId: session.sessionId });
-      await printSummary(response, 'layout.get_box_model');
-      return;
-    }
-
-    if (command === 'click') {
-      const [refOrSelector, button] = rest;
-      if (!refOrSelector) {
-        throw new Error('Usage: click <ref|selector> [left|middle|right]');
-      }
-      const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
-      const response = await requestBridge(client, 'input.click', {
-        target: { elementRef },
-        button
-      }, { sessionId: session.sessionId });
-      await printSummary(response);
-      return;
-    }
-
-    if (command === 'focus') {
-      const [refOrSelector] = rest;
-      const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
-      const response = await requestBridge(client, 'input.focus', {
-        target: { elementRef }
-      }, { sessionId: session.sessionId });
-      await printSummary(response);
-      return;
-    }
-
-    if (command === 'type') {
-      const [refOrSelector, ...textParts] = rest;
-      const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
-      const response = await requestBridge(client, 'input.type', {
-        target: { elementRef },
-        text: textParts.join(' ')
-      }, { sessionId: session.sessionId });
-      await printSummary(response);
-      return;
-    }
-
+    // Special session commands requiring custom control flow
     if (command === 'press-key') {
       const [key, refOrSelector] = rest;
-      if (!key) {
-        throw new Error('Usage: press-key <key> [ref|selector]');
-      }
+      if (!key) throw new Error('Usage: press-key <key> [ref|selector]');
+      const session = await requireSession(client);
       const elementRef = refOrSelector ? await resolveRef(client, refOrSelector, session.sessionId) : undefined;
       const response = await requestBridge(client, 'input.press_key', {
-        key,
-        target: elementRef
-          ? { elementRef }
-          : undefined
-      }, { sessionId: session.sessionId });
-      await printSummary(response);
-      return;
-    }
-
-    if (command === 'patch-style') {
-      const [refOrSelector, ...assignments] = rest;
-      const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
-      const response = await requestBridge(client, 'patch.apply_styles', {
-        target: { elementRef },
-        declarations: parsePropertyAssignments(assignments)
-      }, { sessionId: session.sessionId });
-      await printSummary(response);
-      return;
-    }
-
-    if (command === 'patch-text') {
-      const [refOrSelector, ...textParts] = rest;
-      const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
-      const response = await requestBridge(client, 'patch.apply_dom', {
-        target: { elementRef },
-        operation: 'set_text',
-        value: textParts.join(' ')
-      }, { sessionId: session.sessionId });
-      await printSummary(response);
-      return;
-    }
-
-    if (command === 'patches') {
-      const response = await requestBridge(client, 'patch.list', {}, {
-        sessionId: session.sessionId
-      });
-      await printSummary(response);
-      return;
-    }
-
-    if (command === 'rollback') {
-      const [patchId] = rest;
-      if (!patchId) {
-        throw new Error('Usage: rollback <patchId>');
-      }
-      const response = await requestBridge(client, 'patch.rollback', {
-        patchId
+        key, target: elementRef ? { elementRef } : undefined
       }, { sessionId: session.sessionId });
       await printSummary(response);
       return;
@@ -488,16 +475,12 @@ async function main() {
 
     if (command === 'screenshot') {
       const [refOrSelector, outputPath] = rest;
+      const session = await requireSession(client);
       const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
       const response = await requestBridge(client, 'screenshot.capture_element', {
         elementRef
       }, { sessionId: session.sessionId });
-
-      if (!response.ok) {
-        await printSummary(response);
-        return;
-      }
-
+      if (!response.ok) { await printSummary(response); return; }
       const screenshotResult = /** @type {ScreenshotResult} */ (response.result);
       const filePath = outputPath || path.join(os.tmpdir(), `bbx-${Date.now()}.png`);
       const data = screenshotResult.image.replace(/^data:image\/png;base64,/, '');
@@ -512,169 +495,11 @@ async function main() {
 
     if (command === 'eval') {
       let expression = rest.join(' ');
-      // Support piped stdin: `echo 'expr' | bbx eval -` or `bbx eval -`
-      if (!expression || expression === '-') {
-        expression = await readStdin();
-      }
-      if (!expression) {
-        throw new Error('Usage: eval <expression>  (or pipe via stdin: echo "expr" | bbx eval -)');
-      }
+      if (!expression || expression === '-') expression = await readStdin();
+      if (!expression) throw new Error('Usage: eval <expression>  (or pipe via stdin: echo "expr" | bbx eval -)');
+      const session = await requireSession(client);
       const response = await requestBridge(client, 'page.evaluate', {
-        expression,
-        returnByValue: true
-      }, { sessionId: session.sessionId });
-      await printSummary(response);
-      return;
-    }
-
-    if (command === 'console') {
-      const [level] = rest;
-      const response = await requestBridge(client, 'page.get_console', {
-        level: level || 'all',
-        clear: false
-      }, { sessionId: session.sessionId });
-      await printSummary(response, 'page.get_console');
-      return;
-    }
-
-    if (command === 'wait') {
-      const [selector, timeoutArg] = rest;
-      if (!selector) {
-        throw new Error('Usage: wait <selector> [timeoutMs]');
-      }
-      const response = await requestBridge(client, 'dom.wait_for', {
-        selector,
-        timeoutMs: timeoutArg ? parseIntArg(timeoutArg, 'timeoutMs') : 5000
-      }, { sessionId: session.sessionId });
-      await printSummary(response);
-      return;
-    }
-
-    if (command === 'find') {
-      const searchText = rest.join(' ');
-      if (!searchText) {
-        throw new Error('Usage: find <text>');
-      }
-      const response = await requestBridge(client, 'dom.find_by_text', {
-        text: searchText
-      }, { sessionId: session.sessionId });
-      await printSummary(response, 'dom.find_by_text');
-      return;
-    }
-
-    if (command === 'find-role') {
-      const [role, ...nameParts] = rest;
-      if (!role) {
-        throw new Error('Usage: find-role <role> [name]');
-      }
-      const response = await requestBridge(client, 'dom.find_by_role', {
-        role,
-        name: nameParts.join(' ') || undefined
-      }, { sessionId: session.sessionId });
-      await printSummary(response, 'dom.find_by_role');
-      return;
-    }
-
-    if (command === 'html') {
-      const [refOrSelector, maxLengthArg] = rest;
-      const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
-      const response = await requestBridge(client, 'dom.get_html', {
-        elementRef,
-        maxLength: maxLengthArg ? parseIntArg(maxLengthArg, 'maxLen') : undefined
-      }, { sessionId: session.sessionId });
-      await printSummary(response);
-      return;
-    }
-
-    if (command === 'hover') {
-      const [refOrSelector] = rest;
-      const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
-      const response = await requestBridge(client, 'input.hover', {
-        target: { elementRef }
-      }, { sessionId: session.sessionId });
-      await printSummary(response);
-      return;
-    }
-
-    if (command === 'navigate') {
-      const [url] = rest;
-      if (!url) {
-        throw new Error('Usage: navigate <url>');
-      }
-      const response = await requestBridge(client, 'navigation.navigate', {
-        url
-      }, { sessionId: session.sessionId });
-      await printSummary(response);
-      return;
-    }
-
-    if (command === 'storage') {
-      const [storageType, ...keys] = rest;
-      const response = await requestBridge(client, 'page.get_storage', {
-        type: storageType === 'session' ? 'session' : 'local',
-        keys: keys.length ? keys : undefined
-      }, { sessionId: session.sessionId });
-      await printSummary(response);
-      return;
-    }
-
-    if (command === 'page-text') {
-      const [budgetArg] = rest;
-      const response = await requestBridge(client, 'page.get_text', {
-        textBudget: budgetArg ? parseIntArg(budgetArg, 'textBudget') : undefined
-      }, { sessionId: session.sessionId });
-      await printSummary(response, 'page.get_text');
-      return;
-    }
-
-    if (command === 'network') {
-      const [limitArg] = rest;
-      const response = await requestBridge(client, 'page.get_network', {
-        limit: limitArg ? parseIntArg(limitArg, 'limit') : undefined
-      }, { sessionId: session.sessionId });
-      await printSummary(response, 'page.get_network');
-      return;
-    }
-
-    if (command === 'a11y-tree') {
-      const [maxNodesArg, maxDepthArg] = rest;
-      const response = await requestBridge(client, 'dom.get_accessibility_tree', {
-        maxNodes: maxNodesArg ? parseIntArg(maxNodesArg, 'maxNodes') : undefined,
-        maxDepth: maxDepthArg ? parseIntArg(maxDepthArg, 'maxDepth') : undefined
-      }, { sessionId: session.sessionId });
-      await printSummary(response);
-      return;
-    }
-
-    if (command === 'perf') {
-      const response = await requestBridge(client, 'performance.get_metrics', {}, {
-        sessionId: session.sessionId
-      });
-      await printSummary(response);
-      return;
-    }
-
-    if (command === 'scroll') {
-      const [topArg, leftArg] = rest;
-      if (!topArg && !leftArg) {
-        throw new Error('Usage: scroll <top> [left]');
-      }
-      const response = await requestBridge(client, 'viewport.scroll', {
-        top: topArg ? parseIntArg(topArg, 'top') : undefined,
-        left: leftArg ? parseIntArg(leftArg, 'left') : undefined
-      }, { sessionId: session.sessionId });
-      await printSummary(response);
-      return;
-    }
-
-    if (command === 'resize') {
-      const [widthArg, heightArg] = rest;
-      if (!widthArg || !heightArg) {
-        throw new Error('Usage: resize <width> <height>');
-      }
-      const response = await requestBridge(client, 'viewport.resize', {
-        width: parseIntArg(widthArg, 'width'),
-        height: parseIntArg(heightArg, 'height')
+        expression, returnByValue: true
       }, { sessionId: session.sessionId });
       await printSummary(response);
       return;

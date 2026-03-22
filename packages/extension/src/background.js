@@ -102,7 +102,7 @@ const MAX_ACTION_LOG_ENTRIES = 50;
 const ENABLED_TAB_STORAGE_PREFIX = 'enabledTab:';
 const ACTION_LOG_STORAGE_KEY = 'actionLog';
 const SIDEPANEL_PATH = 'packages/extension/ui/sidepanel.html';
-const ENABLED_BADGE_TEXT = '💡'; // 'AI';
+const ENABLED_BADGE_TEXT = 'AI';
 const DEBUGGER_PROTOCOL_VERSION = '1.3';
 
 /** @type {ExtensionState} */
@@ -477,41 +477,38 @@ async function handleListTabs(request) {
  * @param {BridgeRequest} request
  * @returns {Promise<BridgeResponse>}
  */
+/** @type {Record<string, ((params: Record<string, unknown>) => Record<string, unknown>) | undefined>} */
+const TAB_BOUND_NORMALIZERS = {
+  'dom.query': normalizeDomQuery,
+  'dom.wait_for': normalizeWaitForParams,
+  'dom.find_by_text': normalizeFindByTextParams,
+  'dom.find_by_role': normalizeFindByRoleParams,
+  'dom.get_html': normalizeGetHtmlParams,
+  'styles.get_computed': normalizeStyleQuery,
+  'styles.get_matched_rules': normalizeStyleQuery,
+  'viewport.scroll': normalizeViewportAction,
+  'input.click': normalizeInputAction,
+  'input.focus': normalizeInputAction,
+  'input.type': normalizeInputAction,
+  'input.press_key': normalizeInputAction,
+  'input.set_checked': normalizeCheckedAction,
+  'input.select_option': normalizeSelectAction,
+  'input.hover': normalizeHoverParams,
+  'input.drag': normalizeDragParams,
+  'patch.apply_styles': normalizePatchOperation,
+  'patch.apply_dom': normalizePatchOperation,
+  'patch.list': normalizePatchOperation,
+  'patch.rollback': normalizePatchOperation,
+  'patch.commit_session_baseline': normalizePatchOperation,
+  'page.get_storage': normalizeStorageParams,
+  'page.get_text': normalizePageTextParams
+};
+
 async function handleTabBoundRequest(request) {
   const session = await requireSession(request, inferCapability(request.method));
   await ensureContentScript(session.tabId);
-  let payload = request.params;
-  if (request.method === 'dom.query') {
-    payload = normalizeDomQuery(request.params);
-  } else if (request.method.startsWith('styles.')) {
-    payload = normalizeStyleQuery(request.params);
-  } else if (request.method === 'viewport.scroll') {
-    payload = normalizeViewportAction(request.params);
-  } else if (request.method === 'input.set_checked') {
-    payload = normalizeCheckedAction(request.params);
-  } else if (request.method === 'input.select_option') {
-    payload = normalizeSelectAction(request.params);
-  } else if (request.method === 'input.hover') {
-    payload = normalizeHoverParams(request.params);
-  } else if (request.method === 'input.drag') {
-    payload = normalizeDragParams(request.params);
-  } else if (request.method.startsWith('input.')) {
-    payload = normalizeInputAction(request.params);
-  } else if (request.method.startsWith('patch.')) {
-    payload = normalizePatchOperation(request.params);
-  } else if (request.method === 'dom.wait_for') {
-    payload = normalizeWaitForParams(request.params);
-  } else if (request.method === 'dom.find_by_text') {
-    payload = normalizeFindByTextParams(request.params);
-  } else if (request.method === 'dom.find_by_role') {
-    payload = normalizeFindByRoleParams(request.params);
-  } else if (request.method === 'dom.get_html') {
-    payload = normalizeGetHtmlParams(request.params);
-  } else if (request.method === 'page.get_storage') {
-    payload = normalizeStorageParams(request.params);
-  } else if (request.method === 'page.get_text') {
-    payload = normalizePageTextParams(request.params);
-  }
+  const normalizer = TAB_BOUND_NORMALIZERS[request.method];
+  const payload = normalizer ? normalizer(request.params) : request.params;
 
   if (request.method.startsWith('screenshot.')) {
     const result = await handleScreenshot(session, request.method, request.params);

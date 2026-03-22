@@ -118,6 +118,30 @@ async function callBridgeTool(method, params = {}, options = {}) {
 }
 
 /**
+ * @typedef {{ ref: boolean, method: BridgeMethod, params: (args: Record<string, unknown>, ref?: string) => Record<string, unknown> }} ToolAction
+ */
+
+/**
+ * Generic dispatcher for table-driven tool handlers. Each action entry
+ * declares a bridge method, whether it needs an element ref, and a function
+ * mapping args (and optional ref) to bridge params.
+ *
+ * @param {Record<string, ToolAction>} actions
+ * @param {Record<string, unknown> & { action: string }} args
+ * @param {string} toolName
+ * @returns {Promise<ToolResult>}
+ */
+async function dispatchToolAction(actions, args, toolName) {
+  const entry = actions[args.action];
+  if (!entry) return summarizeToolError(`Unsupported ${toolName} action "${args.action}".`);
+  return withToolClient(async (client) => {
+    const ref = entry.ref ? await resolveToolRef(client, /** @type {{ elementRef?: string, selector?: string }} */ (args)) : undefined;
+    const response = await requestBridge(client, entry.method, entry.params(args, ref));
+    return summarizeToolResponse(response, entry.method);
+  });
+}
+
+/**
  * @returns {Promise<ToolResult>}
  */
 export async function handleStatusTool() {
@@ -187,226 +211,83 @@ export async function handleSessionTool(args) {
   return summarizeToolError(`Unsupported session action "${args.action}".`);
 }
 
+/** @type {Record<string, ToolAction>} */
+const DOM_ACTIONS = {
+  query:              { ref: false, method: 'dom.query',                  params: a => ({ selector: a.selector || 'body', withinRef: a.withinRef, maxNodes: a.maxNodes, maxDepth: a.maxDepth, textBudget: a.textBudget, includeHtml: a.includeHtml, includeScreenshot: a.includeScreenshot, attributeAllowlist: a.attributeAllowlist, styleAllowlist: a.styleAllowlist, includeRoles: a.includeRoles }) },
+  describe:           { ref: true,  method: 'dom.describe',               params: (_, r) => ({ elementRef: r }) },
+  text:               { ref: true,  method: 'dom.get_text',               params: (a, r) => ({ elementRef: r, textBudget: a.textBudget }) },
+  attributes:         { ref: true,  method: 'dom.get_attributes',         params: (a, r) => ({ elementRef: r, attributes: a.attributes || [] }) },
+  wait:               { ref: false, method: 'dom.wait_for',               params: a => ({ selector: a.selector, text: a.text, state: a.state, timeoutMs: a.timeoutMs }) },
+  find_text:          { ref: false, method: 'dom.find_by_text',           params: a => ({ text: a.text, exact: a.exact, selector: a.selector, maxResults: a.maxResults }) },
+  find_role:          { ref: false, method: 'dom.find_by_role',           params: a => ({ role: a.role, name: a.name, selector: a.selector, maxResults: a.maxResults }) },
+  html:               { ref: true,  method: 'dom.get_html',               params: (a, r) => ({ elementRef: r, outer: a.outer, maxLength: a.maxLength }) },
+  accessibility_tree: { ref: false, method: 'dom.get_accessibility_tree', params: a => ({ maxNodes: a.maxNodes, maxDepth: a.maxDepth }) },
+};
+
 /**
  * @param {{ action: string, selector?: string, elementRef?: string, withinRef?: string, maxNodes?: number, maxDepth?: number, textBudget?: number, includeHtml?: boolean, includeScreenshot?: boolean, attributeAllowlist?: string[], styleAllowlist?: string[], includeRoles?: boolean, attributes?: string[], text?: string, exact?: boolean, maxResults?: number, role?: string, name?: string, state?: string, timeoutMs?: number, outer?: boolean, maxLength?: number }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleDomTool(args) {
-  return withToolClient(async (client) => {
-    switch (args.action) {
-      case 'query': {
-        const response = await requestBridge(client, 'dom.query', {
-          selector: args.selector || 'body',
-          withinRef: args.withinRef,
-          maxNodes: args.maxNodes,
-          maxDepth: args.maxDepth,
-          textBudget: args.textBudget,
-          includeHtml: args.includeHtml,
-          includeScreenshot: args.includeScreenshot,
-          attributeAllowlist: args.attributeAllowlist,
-          styleAllowlist: args.styleAllowlist,
-          includeRoles: args.includeRoles
-        });
-        return summarizeToolResponse(response, 'dom.query');
-      }
-      case 'describe': {
-        const elementRef = await resolveToolRef(client, args);
-        const response = await requestBridge(client, 'dom.describe', { elementRef });
-        return summarizeToolResponse(response, 'dom.describe');
-      }
-      case 'text': {
-        const elementRef = await resolveToolRef(client, args);
-        const response = await requestBridge(client, 'dom.get_text', {
-          elementRef,
-          textBudget: args.textBudget
-        });
-        return summarizeToolResponse(response, 'dom.get_text');
-      }
-      case 'attributes': {
-        const elementRef = await resolveToolRef(client, args);
-        const response = await requestBridge(client, 'dom.get_attributes', {
-          elementRef,
-          attributes: args.attributes || []
-        });
-        return summarizeToolResponse(response, 'dom.get_attributes');
-      }
-      case 'wait': {
-        const response = await requestBridge(client, 'dom.wait_for', {
-          selector: args.selector,
-          text: args.text,
-          state: args.state,
-          timeoutMs: args.timeoutMs
-        });
-        return summarizeToolResponse(response, 'dom.wait_for');
-      }
-      case 'find_text': {
-        const response = await requestBridge(client, 'dom.find_by_text', {
-          text: args.text,
-          exact: args.exact,
-          selector: args.selector,
-          maxResults: args.maxResults
-        });
-        return summarizeToolResponse(response, 'dom.find_by_text');
-      }
-      case 'find_role': {
-        const response = await requestBridge(client, 'dom.find_by_role', {
-          role: args.role,
-          name: args.name,
-          selector: args.selector,
-          maxResults: args.maxResults
-        });
-        return summarizeToolResponse(response, 'dom.find_by_role');
-      }
-      case 'html': {
-        const elementRef = await resolveToolRef(client, args);
-        const response = await requestBridge(client, 'dom.get_html', {
-          elementRef,
-          outer: args.outer,
-          maxLength: args.maxLength
-        });
-        return summarizeToolResponse(response, 'dom.get_html');
-      }
-      case 'accessibility_tree': {
-        const response = await requestBridge(client, 'dom.get_accessibility_tree', {
-          maxNodes: args.maxNodes,
-          maxDepth: args.maxDepth
-        });
-        return summarizeToolResponse(response, 'dom.get_accessibility_tree');
-      }
-      default:
-        return summarizeToolError(`Unsupported DOM action "${args.action}".`);
-    }
-  });
+  return dispatchToolAction(DOM_ACTIONS, args, 'DOM');
 }
+
+/** @type {Record<string, ToolAction>} */
+const STYLES_LAYOUT_ACTIONS = {
+  computed:      { ref: true,  method: 'styles.get_computed',       params: (a, r) => ({ elementRef: r, properties: a.properties }) },
+  matched_rules: { ref: true,  method: 'styles.get_matched_rules', params: (_, r) => ({ elementRef: r }) },
+  box_model:     { ref: true,  method: 'layout.get_box_model',     params: (_, r) => ({ elementRef: r }) },
+  hit_test:      { ref: false, method: 'layout.hit_test',          params: a => ({ x: a.x, y: a.y }) },
+};
 
 /**
  * @param {{ action: string, elementRef?: string, selector?: string, properties?: string[], x?: number, y?: number }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleStylesLayoutTool(args) {
-  return withToolClient(async (client) => {
-    switch (args.action) {
-      case 'computed': {
-        const elementRef = await resolveToolRef(client, args);
-        const response = await requestBridge(client, 'styles.get_computed', {
-          elementRef,
-          properties: args.properties
-        });
-        return summarizeToolResponse(response, 'styles.get_computed');
-      }
-      case 'matched_rules': {
-        const elementRef = await resolveToolRef(client, args);
-        const response = await requestBridge(client, 'styles.get_matched_rules', { elementRef });
-        return summarizeToolResponse(response, 'styles.get_matched_rules');
-      }
-      case 'box_model': {
-        const elementRef = await resolveToolRef(client, args);
-        const response = await requestBridge(client, 'layout.get_box_model', { elementRef });
-        return summarizeToolResponse(response, 'layout.get_box_model');
-      }
-      case 'hit_test': {
-        const response = await requestBridge(client, 'layout.hit_test', {
-          x: args.x,
-          y: args.y
-        });
-        return summarizeToolResponse(response, 'layout.hit_test');
-      }
-      default:
-        return summarizeToolError(`Unsupported styles/layout action "${args.action}".`);
-    }
-  });
+  return dispatchToolAction(STYLES_LAYOUT_ACTIONS, args, 'styles/layout');
 }
+
+/** @type {Record<string, { method: BridgeMethod, params: (a: Record<string, unknown>) => Record<string, unknown> }>} */
+const PAGE_ACTIONS = {
+  state:         { method: 'page.get_state',           params: () => ({}) },
+  evaluate:      { method: 'page.evaluate',            params: a => ({ expression: a.expression, awaitPromise: a.awaitPromise, timeoutMs: a.timeoutMs, returnByValue: a.returnByValue }) },
+  console:       { method: 'page.get_console',         params: a => ({ level: a.level, clear: a.clear, limit: a.limit }) },
+  wait_for_load: { method: 'page.wait_for_load_state', params: a => ({ timeoutMs: a.timeoutMs }) },
+  storage:       { method: 'page.get_storage',         params: a => ({ type: a.type, keys: a.keys }) },
+  text:          { method: 'page.get_text',            params: a => ({ textBudget: a.textBudget }) },
+  network:       { method: 'page.get_network',         params: a => ({ clear: a.clear, limit: a.limit, urlPattern: a.urlPattern }) },
+  performance:   { method: 'performance.get_metrics',  params: () => ({}) },
+};
 
 /**
  * @param {{ action: string, expression?: string, awaitPromise?: boolean, timeoutMs?: number, returnByValue?: boolean, level?: string, clear?: boolean, limit?: number, type?: string, keys?: string[], textBudget?: number, urlPattern?: string }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handlePageTool(args) {
-  switch (args.action) {
-    case 'state':
-      return callBridgeTool('page.get_state');
-    case 'evaluate':
-      return callBridgeTool('page.evaluate', {
-        expression: args.expression,
-        awaitPromise: args.awaitPromise,
-        timeoutMs: args.timeoutMs,
-        returnByValue: args.returnByValue
-      }, { summaryMethod: 'page.evaluate' });
-    case 'console':
-      return callBridgeTool('page.get_console', {
-        level: args.level,
-        clear: args.clear,
-        limit: args.limit
-      }, { summaryMethod: 'page.get_console' });
-    case 'wait_for_load':
-      return callBridgeTool('page.wait_for_load_state', {
-        timeoutMs: args.timeoutMs
-      }, { summaryMethod: 'page.wait_for_load_state' });
-    case 'storage':
-      return callBridgeTool('page.get_storage', {
-        type: args.type,
-        keys: args.keys
-      }, { summaryMethod: 'page.get_storage' });
-    case 'text':
-      return callBridgeTool('page.get_text', {
-        textBudget: args.textBudget
-      }, { summaryMethod: 'page.get_text' });
-    case 'network':
-      return callBridgeTool('page.get_network', {
-        clear: args.clear,
-        limit: args.limit,
-        urlPattern: args.urlPattern
-      }, { summaryMethod: 'page.get_network' });
-    case 'performance':
-      return callBridgeTool('performance.get_metrics', {}, { summaryMethod: 'performance.get_metrics' });
-    default:
-      return summarizeToolError(`Unsupported page action "${args.action}".`);
-  }
+  const entry = PAGE_ACTIONS[args.action];
+  if (!entry) return summarizeToolError(`Unsupported page action "${args.action}".`);
+  return callBridgeTool(entry.method, entry.params(args));
 }
+
+/** @type {Record<string, { method: BridgeMethod, params: (a: Record<string, unknown>) => Record<string, unknown> }>} */
+const NAVIGATION_ACTIONS = {
+  navigate:   { method: 'navigation.navigate',   params: a => ({ url: a.url, waitForLoad: a.waitForLoad, timeoutMs: a.timeoutMs }) },
+  reload:     { method: 'navigation.reload',     params: a => ({ waitForLoad: a.waitForLoad, timeoutMs: a.timeoutMs }) },
+  go_back:    { method: 'navigation.go_back',    params: a => ({ waitForLoad: a.waitForLoad, timeoutMs: a.timeoutMs }) },
+  go_forward: { method: 'navigation.go_forward', params: a => ({ waitForLoad: a.waitForLoad, timeoutMs: a.timeoutMs }) },
+  scroll:     { method: 'viewport.scroll',       params: a => ({ top: a.top, left: a.left, behavior: a.behavior, relative: a.relative }) },
+  resize:     { method: 'viewport.resize',       params: a => ({ width: a.width, height: a.height, reset: a.reset }) },
+};
 
 /**
  * @param {{ action: string, url?: string, waitForLoad?: boolean, timeoutMs?: number, top?: number, left?: number, behavior?: string, relative?: boolean, width?: number, height?: number, reset?: boolean }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleNavigationTool(args) {
-  switch (args.action) {
-    case 'navigate':
-      return callBridgeTool('navigation.navigate', {
-        url: args.url,
-        waitForLoad: args.waitForLoad,
-        timeoutMs: args.timeoutMs
-      });
-    case 'reload':
-      return callBridgeTool('navigation.reload', {
-        waitForLoad: args.waitForLoad,
-        timeoutMs: args.timeoutMs
-      });
-    case 'go_back':
-      return callBridgeTool('navigation.go_back', {
-        waitForLoad: args.waitForLoad,
-        timeoutMs: args.timeoutMs
-      });
-    case 'go_forward':
-      return callBridgeTool('navigation.go_forward', {
-        waitForLoad: args.waitForLoad,
-        timeoutMs: args.timeoutMs
-      });
-    case 'scroll':
-      return callBridgeTool('viewport.scroll', {
-        top: args.top,
-        left: args.left,
-        behavior: args.behavior,
-        relative: args.relative
-      }, { summaryMethod: 'viewport.scroll' });
-    case 'resize':
-      return callBridgeTool('viewport.resize', {
-        width: args.width,
-        height: args.height,
-        reset: args.reset
-      }, { summaryMethod: 'viewport.resize' });
-    default:
-      return summarizeToolError(`Unsupported navigation action "${args.action}".`);
-  }
+  const entry = NAVIGATION_ACTIONS[args.action];
+  if (!entry) return summarizeToolError(`Unsupported navigation action "${args.action}".`);
+  return callBridgeTool(entry.method, entry.params(args));
 }
 
 /**
@@ -497,90 +378,39 @@ export async function handleInputTool(args) {
   });
 }
 
+/** @type {Record<string, ToolAction>} */
+const PATCH_ACTIONS = {
+  apply_styles:    { ref: true,  method: 'patch.apply_styles',            params: (a, r) => ({ target: { elementRef: r }, declarations: a.declarations, important: a.important }) },
+  apply_dom:       { ref: true,  method: 'patch.apply_dom',               params: (a, r) => ({ target: { elementRef: r }, operation: a.operation, value: a.value, name: a.name }) },
+  list:            { ref: false, method: 'patch.list',                    params: () => ({}) },
+  rollback:        { ref: false, method: 'patch.rollback',                params: a => ({ patchId: a.patchId }) },
+  commit_baseline: { ref: false, method: 'patch.commit_session_baseline', params: () => ({}) },
+};
+
 /**
  * @param {{ action: string, elementRef?: string, selector?: string, declarations?: Record<string, string>, important?: boolean, operation?: string, value?: unknown, name?: string, patchId?: string }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handlePatchTool(args) {
-  return withToolClient(async (client) => {
-    switch (args.action) {
-      case 'apply_styles': {
-        const elementRef = await resolveToolRef(client, args);
-        const response = await requestBridge(client, 'patch.apply_styles', {
-          target: { elementRef },
-          declarations: args.declarations,
-          important: args.important
-        });
-        return summarizeToolResponse(response, 'patch.apply_styles');
-      }
-      case 'apply_dom': {
-        const elementRef = await resolveToolRef(client, args);
-        const response = await requestBridge(client, 'patch.apply_dom', {
-          target: { elementRef },
-          operation: args.operation,
-          value: args.value,
-          name: args.name
-        });
-        return summarizeToolResponse(response, 'patch.apply_dom');
-      }
-      case 'list': {
-        const response = await requestBridge(client, 'patch.list');
-        return summarizeToolResponse(response, 'patch.list');
-      }
-      case 'rollback': {
-        const response = await requestBridge(client, 'patch.rollback', {
-          patchId: args.patchId
-        });
-        return summarizeToolResponse(response, 'patch.rollback');
-      }
-      case 'commit_baseline': {
-        const response = await requestBridge(client, 'patch.commit_session_baseline');
-        return summarizeToolResponse(response, 'patch.commit_session_baseline');
-      }
-      default:
-        return summarizeToolError(`Unsupported patch action "${args.action}".`);
-    }
-  });
+  return dispatchToolAction(PATCH_ACTIONS, args, 'patch');
 }
+
+/** @type {Record<string, ToolAction>} */
+const CAPTURE_ACTIONS = {
+  element:             { ref: true,  method: 'screenshot.capture_element',       params: (_, r) => ({ elementRef: r }) },
+  region:              { ref: false, method: 'screenshot.capture_region',        params: a => /** @type {Record<string, unknown>} */ (a.rect || {}) },
+  cdp_document:        { ref: false, method: 'cdp.get_document',                params: () => ({}) },
+  cdp_dom_snapshot:    { ref: false, method: 'cdp.get_dom_snapshot',             params: () => ({}) },
+  cdp_box_model:       { ref: true,  method: 'cdp.get_box_model',               params: (_, r) => ({ elementRef: r }) },
+  cdp_computed_styles: { ref: true,  method: 'cdp.get_computed_styles_for_node', params: (_, r) => ({ elementRef: r }) },
+};
 
 /**
  * @param {{ action: string, elementRef?: string, selector?: string, rect?: Record<string, unknown> }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleCaptureTool(args) {
-  return withToolClient(async (client) => {
-    switch (args.action) {
-      case 'element': {
-        const elementRef = await resolveToolRef(client, args);
-        const response = await requestBridge(client, 'screenshot.capture_element', { elementRef });
-        return summarizeToolResponse(response, 'screenshot.capture_element');
-      }
-      case 'region': {
-        const response = await requestBridge(client, 'screenshot.capture_region', args.rect || {});
-        return summarizeToolResponse(response, 'screenshot.capture_region');
-      }
-      case 'cdp_document': {
-        const response = await requestBridge(client, 'cdp.get_document');
-        return summarizeToolResponse(response, 'cdp.get_document');
-      }
-      case 'cdp_dom_snapshot': {
-        const response = await requestBridge(client, 'cdp.get_dom_snapshot');
-        return summarizeToolResponse(response, 'cdp.get_dom_snapshot');
-      }
-      case 'cdp_box_model': {
-        const elementRef = await resolveToolRef(client, args);
-        const response = await requestBridge(client, 'cdp.get_box_model', { elementRef });
-        return summarizeToolResponse(response, 'cdp.get_box_model');
-      }
-      case 'cdp_computed_styles': {
-        const elementRef = await resolveToolRef(client, args);
-        const response = await requestBridge(client, 'cdp.get_computed_styles_for_node', { elementRef });
-        return summarizeToolResponse(response, 'cdp.get_computed_styles_for_node');
-      }
-      default:
-        return summarizeToolError(`Unsupported capture action "${args.action}".`);
-    }
-  });
+  return dispatchToolAction(CAPTURE_ACTIONS, args, 'capture');
 }
 
 /**

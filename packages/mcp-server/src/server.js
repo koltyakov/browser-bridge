@@ -32,7 +32,7 @@ export function createBridgeMcpServer() {
     title: 'Browser Bridge Status',
     description: 'Check Browser Bridge readiness, daemon connectivity, extension state, and session health.',
     inputSchema: {}
-  }, async () => handleStatusTool());
+  }, handleStatusTool);
 
   server.registerTool('browser_tabs', {
     title: 'Browser Tabs',
@@ -206,7 +206,7 @@ export function createBridgeMcpServer() {
     title: 'Browser Bridge Runtime Context',
     description: 'Return live runtime context: budget presets, method groups, and active limits. Call this first to discover safe defaults before inspecting a page.',
     inputSchema: {}
-  }, async () => handleSkillTool());
+  }, handleSkillTool);
 
   return server;
 }

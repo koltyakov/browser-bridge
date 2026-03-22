@@ -79,19 +79,28 @@ function detectOpencode() {
   return commandExists('opencode');
 }
 
+/** @type {Record<string, () => boolean>} */
+const DETECTORS = {
+  copilot: detectCopilot,
+  cursor: detectCursor,
+  claude: detectClaude,
+  codex: detectCodex,
+  opencode: detectOpencode
+};
+
+/** @type {McpClientName[]} */
+const MCP_CLIENT_KEYS = ['copilot', 'codex', 'cursor', 'claude'];
+
+/** @type {SupportedTarget[]} */
+const SKILL_TARGET_KEYS = ['copilot', 'codex', 'claude', 'opencode'];
+
 /**
  * Detect which MCP clients are installed on this machine.
  *
  * @returns {McpClientName[]}
  */
 export function detectMcpClients() {
-  /** @type {McpClientName[]} */
-  const detected = [];
-  if (detectCopilot()) detected.push('copilot');
-  if (detectCodex()) detected.push('codex');
-  if (detectCursor()) detected.push('cursor');
-  if (detectClaude()) detected.push('claude');
-  return detected;
+  return MCP_CLIENT_KEYS.filter(name => DETECTORS[name]());
 }
 
 /**
@@ -102,11 +111,7 @@ export function detectMcpClients() {
  */
 export function detectSkillTargets() {
   /** @type {SupportedTarget[]} */
-  const detected = [];
-  if (detectCopilot()) detected.push('copilot');
-  if (detectCodex()) detected.push('codex');
-  if (detectClaude()) detected.push('claude');
-  if (detectOpencode()) detected.push('opencode');
+  const detected = SKILL_TARGET_KEYS.filter(name => DETECTORS[name]());
   detected.push('agents');
   return detected;
 }

@@ -1,5 +1,6 @@
 // @ts-check
 
+import { once } from 'node:events';
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
 
@@ -165,7 +166,9 @@ export class BridgeClient {
       });
     });
 
-    this.socket.write(`${JSON.stringify({ type: 'agent.request', request })}\n`);
+    if (!this.socket.write(`${JSON.stringify({ type: 'agent.request', request })}\n`)) {
+      await once(this.socket, 'drain');
+    }
     return responsePromise;
   }
 

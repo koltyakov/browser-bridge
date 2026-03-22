@@ -220,6 +220,7 @@ Requires the `performance.read` capability.
 | `CAPABILITY_MISSING` | Request capability not in session |
 | `ELEMENT_STALE` | Re-query DOM for fresh `elementRef` |
 | `NATIVE_HOST_UNAVAILABLE` | Check daemon: `bbx status` |
+| `EXTENSION_DISCONNECTED` | Extension not connected to daemon - check Chrome |
 | `APPROVAL_PENDING` | Wait + retry (see access retry flow) |
 | `TIMEOUT` | Wait/evaluate exceeded `timeoutMs`; increase timeout or check condition |
 

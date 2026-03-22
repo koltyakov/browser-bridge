@@ -242,7 +242,7 @@ export class BridgeDaemon {
     if (!this.extensionSocket) {
       const response = createFailure(
         request.id,
-        ERROR_CODES.NATIVE_HOST_UNAVAILABLE,
+        ERROR_CODES.EXTENSION_DISCONNECTED,
         'The Chrome extension is not connected to the local bridge daemon.'
       );
       await writeJsonLine(socket, { type: 'agent.response', response });

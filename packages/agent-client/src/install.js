@@ -152,24 +152,21 @@ function parseTargetList(raw) {
   return [...parsed];
 }
 
+/** @type {Partial<Record<SupportedTarget, string>>} */
+const SKILL_PATHS = {
+  copilot:  path.join('.github', 'skills'),
+  claude:   path.join('.claude', 'skills'),
+  opencode: path.join('.opencode', 'skills'),
+  codex:    path.join('.codex', 'skills'),
+  openai:   path.join('.codex', 'skills'),
+};
+
 /**
  * @param {SupportedTarget} target
  * @returns {string}
  */
 function getSkillRelativePath(target) {
-  if (target === 'copilot') {
-    return path.join('.github', 'skills');
-  }
-  if (target === 'claude') {
-    return path.join('.claude', 'skills');
-  }
-  if (target === 'opencode') {
-    return path.join('.opencode', 'skills');
-  }
-  if (target === 'codex' || target === 'openai') {
-    return path.join('.codex', 'skills');
-  }
-  return path.join('.agents', 'skills');
+  return SKILL_PATHS[target] || path.join('.agents', 'skills');
 }
 
 /**

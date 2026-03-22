@@ -20,6 +20,24 @@
  */
 
 /**
+ * @typedef {{ text: (r: Record<string, unknown>) => string, evidence: (r: Record<string, unknown>) => unknown }} ActionSummary
+ */
+
+/** @type {Record<string, ActionSummary>} */
+const ACTION_SUMMARIES = {
+  hovered:   { text: r => `Hover ${r.hovered ? 'active' : 'failed'} on ${r.elementRef}.`, evidence: r => r },
+  dragged:   { text: r => `Drag ${r.dragged ? 'completed' : 'failed'}: ${r.sourceRef} → ${r.destinationRef}.`, evidence: r => r },
+  closed:    { text: r => `Tab ${r.tabId} closed.`, evidence: r => r },
+  clicked:   { text: r => `Clicked ${r.elementRef ?? 'element'}.`, evidence: r => ({ elementRef: r.elementRef }) },
+  focused:   { text: r => `Focused ${r.elementRef ?? 'element'}.`, evidence: r => ({ elementRef: r.elementRef }) },
+  typed:     { text: r => `Typed into ${r.elementRef ?? 'element'}.`, evidence: r => ({ elementRef: r.elementRef }) },
+  pressed:   { text: r => `Key pressed${r.key ? ` (${r.key})` : ''}.`, evidence: r => r },
+  navigated: { text: r => `Navigated to ${r.url ?? 'page'}.`, evidence: r => ({ url: r.url }) },
+  scrolled:  { text: r => `Scrolled to (${r.x ?? 0}, ${r.y ?? 0}).`, evidence: r => r },
+  resized:   { text: r => `Viewport resized to ${r.width ?? '?'}×${r.height ?? '?'}.`, evidence: r => r },
+};
+
+/**
  * @param {BridgeResponse} response
  * @param {string} [method] - Optional bridge method name for disambiguation
  * @returns {{ ok: boolean, summary: string, evidence: unknown }}
@@ -227,80 +245,15 @@ export function summarizeBridgeResponse(response, method) {
       evidence: { html: result.html.slice(0, 500), truncated: result.truncated }
     };
   }
-  if (typeof result.hovered === 'boolean') {
-    return {
-      ok: true,
-      summary: `Hover ${result.hovered ? 'active' : 'failed'} on ${result.elementRef}.`,
-      evidence: result
-    };
-  }
-  if (typeof result.dragged === 'boolean') {
-    return {
-      ok: true,
-      summary: `Drag ${result.dragged ? 'completed' : 'failed'}: ${result.sourceRef} → ${result.destinationRef}.`,
-      evidence: result
-    };
-  }
-  if (typeof result.closed === 'boolean') {
-    return {
-      ok: true,
-      summary: `Tab ${result.tabId} closed.`,
-      evidence: result
-    };
+  for (const [field, handler] of Object.entries(ACTION_SUMMARIES)) {
+    if (typeof result[field] === 'boolean') {
+      return { ok: true, summary: handler.text(result), evidence: handler.evidence(result) };
+    }
   }
   if (typeof result.tabId === 'number' && typeof result.url === 'string' && !result.sessionId) {
     return {
       ok: true,
       summary: `Tab ${result.tabId} created${result.url ? ` (${result.url})` : ''}.`,
-      evidence: result
-    };
-  }
-  if (typeof result.clicked === 'boolean') {
-    return {
-      ok: true,
-      summary: `Clicked ${result.elementRef ?? 'element'}.`,
-      evidence: { elementRef: result.elementRef }
-    };
-  }
-  if (typeof result.focused === 'boolean') {
-    return {
-      ok: true,
-      summary: `Focused ${result.elementRef ?? 'element'}.`,
-      evidence: { elementRef: result.elementRef }
-    };
-  }
-  if (typeof result.typed === 'boolean') {
-    return {
-      ok: true,
-      summary: `Typed into ${result.elementRef ?? 'element'}.`,
-      evidence: { elementRef: result.elementRef }
-    };
-  }
-  if (typeof result.pressed === 'boolean') {
-    return {
-      ok: true,
-      summary: `Key pressed${result.key ? ` (${result.key})` : ''}.`,
-      evidence: result
-    };
-  }
-  if (typeof result.navigated === 'boolean') {
-    return {
-      ok: true,
-      summary: `Navigated to ${result.url ?? 'page'}.`,
-      evidence: { url: result.url }
-    };
-  }
-  if (typeof result.scrolled === 'boolean') {
-    return {
-      ok: true,
-      summary: `Scrolled to (${result.x ?? 0}, ${result.y ?? 0}).`,
-      evidence: result
-    };
-  }
-  if (typeof result.resized === 'boolean') {
-    return {
-      ok: true,
-      summary: `Viewport resized to ${result.width ?? '?'}×${result.height ?? '?'}.`,
       evidence: result
     };
   }

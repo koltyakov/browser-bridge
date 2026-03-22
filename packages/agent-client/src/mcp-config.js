@@ -30,41 +30,23 @@ function createBaseServerConfig() {
   };
 }
 
+/** @type {Record<McpClientName, { key: string, includeType: boolean }>} */
+const MCP_CONFIG_SHAPES = {
+  claude:  { key: 'mcpServers', includeType: true },
+  copilot: { key: 'servers',    includeType: true },
+  cursor:  { key: 'mcpServers', includeType: false },
+  codex:   { key: 'mcpServers', includeType: false },
+};
+
 /**
  * @param {McpClientName} clientName
  * @returns {Record<string, unknown>}
  */
 export function buildMcpConfig(clientName) {
   const serverConfig = createBaseServerConfig();
-
-  if (clientName === 'claude') {
-    return {
-      mcpServers: {
-        'browser-bridge': {
-          type: 'stdio',
-          ...serverConfig
-        }
-      }
-    };
-  }
-
-  if (clientName === 'copilot') {
-    return {
-      servers: {
-        'browser-bridge': {
-          type: 'stdio',
-          ...serverConfig
-        }
-      }
-    };
-  }
-
-  // cursor, codex, and others use the mcpServers shape
-  return {
-    mcpServers: {
-      'browser-bridge': serverConfig
-    }
-  };
+  const shape = MCP_CONFIG_SHAPES[clientName] ?? { key: 'mcpServers', includeType: false };
+  const entry = shape.includeType ? { type: 'stdio', ...serverConfig } : serverConfig;
+  return { [shape.key]: { 'browser-bridge': entry } };
 }
 
 /**
@@ -148,7 +130,7 @@ export async function installMcpConfig(clientName, options) {
   }
 
   // Merge only the browser-bridge entry under the relevant top-level key.
-  const topKey = clientName === 'copilot' ? 'servers' : 'mcpServers';
+  const topKey = (MCP_CONFIG_SHAPES[clientName] ?? MCP_CONFIG_SHAPES.cursor).key;
   const entryBlock = /** @type {Record<string, unknown>} */ (newEntry[topKey]);
 
   const merged = {

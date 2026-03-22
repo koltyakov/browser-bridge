@@ -63,6 +63,19 @@ import { BridgeError, ERROR_CODES } from './errors.js';
 export const PROTOCOL_VERSION = '1.0';
 const NON_EXPIRING_SESSION_TTL_MS = 10 * 365 * 24 * 60 * 60 * 1000;
 
+/**
+ * Clamp a numeric value between min and max, falling back to a default.
+ *
+ * @param {unknown} value
+ * @param {number} min
+ * @param {number} max
+ * @param {number} fallback
+ * @returns {number}
+ */
+function clampInt(value, min, max, fallback) {
+  return Math.min(Math.max(Number(value) || fallback, min), max);
+}
+
 /** @type {ReadonlyArray<BridgeMethod>} */
 export const METHODS = Object.freeze([
   'tabs.list',
@@ -242,7 +255,7 @@ export function normalizeAccessRequest(params = {}) {
     tabId: Number.isFinite(parsedTabId) && parsedTabId > 0 ? parsedTabId : null,
     origin: String(params.origin || ''),
     capabilities,
-    ttlMs: Math.max(NON_EXPIRING_SESSION_TTL_MS, Number(params.ttlMs) || NON_EXPIRING_SESSION_TTL_MS),
+    ttlMs: Number(params.ttlMs) || NON_EXPIRING_SESSION_TTL_MS,
     label: params.label ? String(params.label) : ''
   };
 }
@@ -302,7 +315,7 @@ export function normalizeInputAction(params = {}) {
         : undefined
     ),
     button,
-    clickCount: Math.min(Math.max(Number(params.clickCount) || 1, 1), 2),
+    clickCount: clampInt(params.clickCount, 1, 2, 1),
     text: typeof params.text === 'string' ? params.text : '',
     clear: Boolean(params.clear),
     submit: Boolean(params.submit),
@@ -394,7 +407,7 @@ export function normalizeNavigationAction(params = {}) {
   return {
     url,
     waitForLoad: params.waitForLoad !== false,
-    timeoutMs: Math.min(Math.max(Number(params.timeoutMs) || 15_000, 500), 120_000)
+    timeoutMs: clampInt(params.timeoutMs, 500, 120_000, 15_000)
   };
 }
 
@@ -433,7 +446,7 @@ export function normalizeEvaluateParams(params = {}) {
   return {
     expression,
     awaitPromise: Boolean(params.awaitPromise),
-    timeoutMs: Math.min(Math.max(Number(params.timeoutMs) || 5_000, 100), 30_000),
+    timeoutMs: clampInt(params.timeoutMs, 100, 30_000, 5_000),
     returnByValue: params.returnByValue !== false
   };
 }
@@ -447,7 +460,7 @@ export function normalizeConsoleParams(params = {}) {
   return {
     level: validLevels.includes(String(params.level ?? '')) ? String(params.level) : 'all',
     clear: Boolean(params.clear),
-    limit: Math.min(Math.max(Number(params.limit) || 50, 1), 200)
+    limit: clampInt(params.limit, 1, 200, 50)
   };
 }
 
@@ -463,7 +476,7 @@ export function normalizeWaitForParams(params = {}) {
     state: validStates.includes(String(params.state ?? ''))
       ? /** @type {'attached' | 'detached' | 'visible' | 'hidden'} */ (String(params.state))
       : 'attached',
-    timeoutMs: Math.min(Math.max(Number(params.timeoutMs) || 5_000, 100), 30_000)
+    timeoutMs: clampInt(params.timeoutMs, 100, 30_000, 5_000)
   };
 }
 
@@ -476,7 +489,7 @@ export function normalizeFindByTextParams(params = {}) {
     text: typeof params.text === 'string' ? params.text : '',
     exact: Boolean(params.exact),
     selector: typeof params.selector === 'string' && params.selector.trim() ? params.selector : '*',
-    maxResults: Math.min(Math.max(Number(params.maxResults) || 10, 1), 50)
+    maxResults: clampInt(params.maxResults, 1, 50, 10)
   };
 }
 
@@ -489,7 +502,7 @@ export function normalizeFindByRoleParams(params = {}) {
     role: typeof params.role === 'string' ? params.role : '',
     name: typeof params.name === 'string' ? params.name : '',
     selector: typeof params.selector === 'string' && params.selector.trim() ? params.selector : '*',
-    maxResults: Math.min(Math.max(Number(params.maxResults) || 10, 1), 50)
+    maxResults: clampInt(params.maxResults, 1, 50, 10)
   };
 }
 
@@ -501,7 +514,7 @@ export function normalizeGetHtmlParams(params = {}) {
   return {
     elementRef: String(params.elementRef || ''),
     outer: Boolean(params.outer),
-    maxLength: Math.min(Math.max(Number(params.maxLength) || 2000, 32), 50_000)
+    maxLength: clampInt(params.maxLength, 32, 50_000, 2000)
   };
 }
 
@@ -516,7 +529,7 @@ export function normalizeHoverParams(params = {}) {
         ? /** @type {{ elementRef?: string, selector?: string }} */ (params.target)
         : undefined
     ),
-    duration: Math.min(Math.max(Number(params.duration) || 0, 0), 5_000)
+    duration: clampInt(params.duration, 0, 5_000, 0)
   };
 }
 
@@ -559,7 +572,7 @@ export function normalizeStorageParams(params = {}) {
 export function normalizeWaitForLoadStateParams(params = {}) {
   return {
     waitForLoad: params.waitForLoad !== false,
-    timeoutMs: Math.min(Math.max(Number(params.timeoutMs) || 15_000, 500), 120_000)
+    timeoutMs: clampInt(params.timeoutMs, 500, 120_000, 15_000)
   };
 }
 
@@ -592,8 +605,8 @@ export function normalizeTabCloseParams(params = {}) {
  */
 export function normalizeAccessibilityTreeParams(params = {}) {
   return {
-    maxDepth: Math.min(Math.max(Number(params.maxDepth) || 6, 1), 20),
-    maxNodes: Math.min(Math.max(Number(params.maxNodes) || 500, 10), 5000)
+    maxDepth: clampInt(params.maxDepth, 1, 20, 6),
+    maxNodes: clampInt(params.maxNodes, 10, 5000, 500)
   };
 }
 
@@ -604,7 +617,7 @@ export function normalizeAccessibilityTreeParams(params = {}) {
 export function normalizeNetworkParams(params = {}) {
   return {
     clear: Boolean(params.clear),
-    limit: Math.min(Math.max(Number(params.limit) || 50, 1), 500),
+    limit: clampInt(params.limit, 1, 500, 50),
     urlPattern: typeof params.urlPattern === 'string' && params.urlPattern.trim()
       ? params.urlPattern.trim()
       : null
@@ -617,7 +630,7 @@ export function normalizeNetworkParams(params = {}) {
  */
 export function normalizePageTextParams(params = {}) {
   return {
-    textBudget: Math.min(Math.max(Number(params.textBudget) || 8000, 100), 100_000)
+    textBudget: clampInt(params.textBudget, 100, 100_000, 8000)
   };
 }
 
@@ -627,9 +640,9 @@ export function normalizePageTextParams(params = {}) {
  */
 export function normalizeViewportResizeParams(params = {}) {
   return {
-    width: Math.min(Math.max(Number(params.width) || 1280, 320), 7680),
-    height: Math.min(Math.max(Number(params.height) || 720, 200), 4320),
-    deviceScaleFactor: Math.min(Math.max(Number(params.deviceScaleFactor) || 0, 0), 4)
+    width: clampInt(params.width, 320, 7680, 1280),
+    height: clampInt(params.height, 200, 4320, 720),
+    deviceScaleFactor: clampInt(params.deviceScaleFactor, 0, 4, 0)
   };
 }
 
@@ -685,7 +698,8 @@ export function createRuntimeContext() {
       INVALID_REQUEST: 'Malformed method or params',
       TIMEOUT: 'Operation exceeded time limit',
       RATE_LIMITED: 'Too many requests - back off',
-      INTERNAL_ERROR: 'Unexpected extension error'
+      INTERNAL_ERROR: 'Unexpected extension error',
+      EXTENSION_DISCONNECTED: 'Extension not connected to daemon - check Chrome'
     },
     capabilities: {
       'page.read': 'page.get_state, page.get_console, page.get_storage, page.get_text, page.get_network',
