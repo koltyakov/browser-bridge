@@ -154,6 +154,17 @@ body {
   gap: 0;
 }
 
+@keyframes attention-pulse {
+  0%   { box-shadow: 0 0 0 0 var(--accent); }
+  30%  { box-shadow: 0 0 0 4px var(--accent); }
+  60%  { box-shadow: 0 0 0 0 var(--accent); }
+  100% { box-shadow: 0 0 0 0 var(--accent); }
+}
+
+.control-card.attention {
+  animation: attention-pulse 0.7s ease-out 3;
+}
+
 .popup-control-card {
   margin-top: 6px;
   padding-right: 10px;
@@ -179,7 +190,7 @@ body {
 
 .activity-footer {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 6px;
   margin-top: 3px;
@@ -224,19 +235,23 @@ body {
 
 .activity-summary {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
   font-size: 11px;
   line-height: 1.3;
   color: var(--muted);
   min-width: 0;
-  overflow: hidden;
+  flex: 1 1 auto;
 }
 
 .activity-summary > span:last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.activity-summary.activity-summary-error > span:last-child {
+  color: var(--ink);
 }
 
 .activity-status-dot {
@@ -246,6 +261,7 @@ body {
   border-radius: 50%;
   background: #3faa6f;
   flex-shrink: 0;
+  margin-top: 4px;
 }
 
 .activity-status-dot[data-ok="false"] {

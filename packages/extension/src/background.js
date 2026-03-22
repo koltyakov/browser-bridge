@@ -369,12 +369,15 @@ async function handleAccessRequest(request) {
     return createFailure(
       request.id,
       ERROR_CODES.APPROVAL_PENDING,
-      'Permission request opened for the tab.',
+      prompt.attentionSent
+        ? 'Waiting for operator approval in the side panel.'
+        : 'Permission request opened for the tab.',
       {
         tabId: access.tabId,
         url: tab.url ?? '',
         popupOpened: prompt.popupOpened,
-        sidePanelOpened: prompt.sidePanelOpened
+        sidePanelOpened: prompt.sidePanelOpened,
+        attentionSent: prompt.attentionSent
       },
       { method: request.method }
     );
@@ -1844,15 +1847,31 @@ async function openSidePanelForTab(tabId, windowId) {
 }
 
 /**
+ * Timestamps of the most recent access prompt per tab so repeated agent
+ * retries do not keep reopening the popup or side panel.
+ *
+ * @type {Map<number, number>}
+ */
+const recentAccessPrompts = new Map();
+
+/** Stale prompt threshold – 90 seconds. */
+const ACCESS_PROMPT_COOLDOWN_MS = 90_000;
+
+/**
  * Ask the operator to grant bridge access for one tab by surfacing the popup,
  * with the tab-scoped side panel as a fallback when popup opening is blocked.
  *
+ * On retries (within the cooldown window) or when a side panel is already
+ * connected, the function sends an attention pulse to the open UI instead of
+ * reopening the popup.
+ *
  * @param {chrome.tabs.Tab} tab
- * @returns {Promise<{ popupOpened: boolean, sidePanelOpened: boolean }>}
+ * @returns {Promise<{ popupOpened: boolean, sidePanelOpened: boolean, attentionSent: boolean }>}
  */
 async function promptForTabAccess(tab) {
   let popupOpened = false;
   let sidePanelOpened = false;
+  let attentionSent = false;
 
   if (typeof tab.id === 'number' && typeof tab.windowId === 'number') {
     if (!tab.active) {
@@ -1861,16 +1880,47 @@ async function promptForTabAccess(tab) {
 
     await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
 
-    try {
-      await chrome.action.openPopup({ windowId: tab.windowId });
-      popupOpened = true;
-    } catch {
+    const hasUiPort = state.uiPorts.size > 0;
+    const lastPrompt = recentAccessPrompts.get(tab.id);
+    const isRetry = lastPrompt != null && (Date.now() - lastPrompt) < ACCESS_PROMPT_COOLDOWN_MS;
+
+    if (hasUiPort) {
+      // Side panel already open – draw attention instead of opening popup.
+      broadcastAttention(tab.id);
+      attentionSent = true;
+    } else if (isRetry) {
+      // Already prompted recently – open side panel as a gentler nudge.
       await openSidePanelForTab(tab.id, tab.windowId);
       sidePanelOpened = true;
+    } else {
+      try {
+        await chrome.action.openPopup({ windowId: tab.windowId });
+        popupOpened = true;
+      } catch {
+        await openSidePanelForTab(tab.id, tab.windowId);
+        sidePanelOpened = true;
+      }
     }
+
+    recentAccessPrompts.set(tab.id, Date.now());
   }
 
-  return { popupOpened, sidePanelOpened };
+  return { popupOpened, sidePanelOpened, attentionSent };
+}
+
+/**
+ * Send an attention pulse to every connected UI port that is scoped to the
+ * given tab (or globally scoped).
+ *
+ * @param {number} tabId
+ * @returns {void}
+ */
+function broadcastAttention(tabId) {
+  for (const [port, portState] of state.uiPorts) {
+    if (portState.scopeTabId == null || portState.scopeTabId === tabId) {
+      port.postMessage({ type: 'attention.request', tabId });
+    }
+  }
 }
 
 /**

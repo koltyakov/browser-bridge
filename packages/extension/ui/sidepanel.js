@@ -42,6 +42,9 @@
  * } | {
  *   type: 'state.sync',
  *   state: UiSnapshot
+ * } | {
+ *   type: 'attention.request',
+ *   tabId: number
  * }} SidePanelMessage
  */
 
@@ -81,6 +84,10 @@ port.onMessage.addListener((message) => {
 
   if (message.type === 'state.sync') {
     renderState(message.state);
+  }
+
+  if (message.type === 'attention.request') {
+    pulseAttention();
   }
 });
 
@@ -167,6 +174,22 @@ function renderNativeStatus(connected, error) {
 }
 
 /**
+ * Briefly highlight the control card to draw attention when an agent is waiting
+ * for permission and the side panel is already visible.
+ *
+ * @returns {void}
+ */
+function pulseAttention() {
+  controlSection.classList.remove('attention');
+  // Force a reflow so re-adding the class restarts the animation.
+  void controlSection.offsetWidth;
+  controlSection.classList.add('attention');
+  controlSection.addEventListener('animationend', () => {
+    controlSection.classList.remove('attention');
+  }, { once: true });
+}
+
+/**
  * @param {ActionLogEntry} entry
  * @returns {HTMLElement}
  */
@@ -192,6 +215,7 @@ function renderActionLogEntry(entry) {
 
   const summary = document.createElement('span');
   summary.className = 'activity-summary';
+  if (!entry.ok) summary.classList.add('activity-summary-error');
   const dot = document.createElement('span');
   dot.className = 'activity-status-dot';
   dot.dataset.ok = String(entry.ok);
