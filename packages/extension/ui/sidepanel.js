@@ -110,6 +110,11 @@ function renderState(state) {
   if (!state.actionLog.length) {
     actionLog.textContent = 'No recent agent actions.';
   }
+
+  // Auto-collapse examples when there is activity
+  if (state.actionLog.length) {
+    examplesSection.removeAttribute('open');
+  }
 }
 
 /**
@@ -165,27 +170,34 @@ function renderActionLogEntry(entry) {
   const container = document.createElement('article');
   container.className = 'card activity-card';
 
+  const header = document.createElement('div');
+  header.className = 'activity-header';
+
   const title = document.createElement('h3');
   title.className = 'card-title';
   title.textContent = entry.method;
 
-  const details = document.createElement('div');
-  details.className = 'activity-meta';
-
-  const timestamp = document.createElement('div');
+  const timestamp = document.createElement('span');
   timestamp.className = 'muted activity-time';
   timestamp.textContent = new Date(entry.at).toLocaleTimeString();
 
-  const summary = document.createElement('div');
-  summary.textContent = `${entry.ok ? 'OK' : 'Error'}: ${entry.summary}`;
+  header.append(title, timestamp);
 
-  details.append(timestamp);
-  if (!(Number.isFinite(requestedTabId) && requestedTabId > 0) && entry.url) {
+  const showScope = !(Number.isFinite(requestedTabId) && requestedTabId > 0) && entry.url;
+  if (showScope) {
     const scopeLine = document.createElement('div');
     scopeLine.className = 'muted activity-scope';
     scopeLine.textContent = entry.url;
-    details.append(scopeLine);
+    scopeLine.title = entry.url;
+    container.append(header, scopeLine);
+  } else {
+    container.append(header);
   }
-  container.append(title, details, summary);
+
+  const summary = document.createElement('div');
+  summary.className = 'activity-summary';
+  summary.textContent = `${entry.ok ? 'OK' : 'Error'}: ${entry.summary}`;
+
+  container.append(summary);
   return container;
 }
