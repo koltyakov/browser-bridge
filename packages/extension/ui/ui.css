@@ -1,11 +1,17 @@
 :root {
-  color-scheme: light;
+  color-scheme: light dark;
   --bg: #f5f1e8;
   --panel: #fffaf2;
   --ink: #1f2430;
+  --fg: #1f2430;
+  --muted: #7a6247;
   --accent: #b24c2d;
   --accent-strong: #8e331a;
   --stroke: #d8cbb6;
+  --cmd-bg: rgba(31, 36, 48, 0.06);
+  --cmd-bg-hover: rgba(31, 36, 48, 0.10);
+  --card-shadow: rgba(31, 36, 48, 0.08);
+  --disabled-bg: #c9bba5;
 }
 
 [hidden] {
@@ -20,6 +26,29 @@ html {
   background-repeat: no-repeat;
   background-attachment: fixed;
   background-size: 100% 100%;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1c1b1a;
+    --panel: #262421;
+    --ink: #e8e0d4;
+    --fg: #e8e0d4;
+    --muted: #9a8e7e;
+    --accent: #d4714e;
+    --accent-strong: #e8845e;
+    --stroke: #3d3830;
+    --cmd-bg: rgba(255, 255, 255, 0.06);
+    --cmd-bg-hover: rgba(255, 255, 255, 0.10);
+    --card-shadow: rgba(0, 0, 0, 0.25);
+    --disabled-bg: #4a4039;
+  }
+
+  html {
+    background:
+      radial-gradient(140% 42% at 50% 0%, rgba(38, 36, 33, 0.98) 0%, rgba(38, 36, 33, 0.72) 46%, rgba(38, 36, 33, 0) 100%),
+      linear-gradient(180deg, #1c1b1a 0%, #171614 100%);
+  }
 }
 
 body {
@@ -76,7 +105,7 @@ body {
   border: 1px solid var(--stroke);
   border-radius: 12px;
   background: var(--panel);
-  box-shadow: 0 8px 24px rgba(31, 36, 48, 0.08);
+  box-shadow: 0 8px 24px var(--card-shadow);
   overflow-wrap: anywhere;
 }
 
@@ -100,12 +129,12 @@ body {
   font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #7a6247;
+  color: var(--muted);
 }
 
 .muted {
   margin: 0 0 12px;
-  color: #625643;
+  color: var(--muted);
   overflow-wrap: anywhere;
 }
 
@@ -156,7 +185,7 @@ body {
   align-items: center;
   gap: 10px;
   margin: 0;
-  color: #4f4638;
+  color: var(--muted);
   font-size: 14px;
 }
 
@@ -164,7 +193,7 @@ body {
   width: 10px;
   height: 10px;
   border-radius: 999px;
-  background: #b85a40;
+  background: var(--accent);
   box-shadow: 0 0 0 4px rgba(184, 90, 64, 0.12);
   flex: 0 0 auto;
 }
@@ -240,7 +269,7 @@ button:hover {
 }
 
 .power-button:disabled {
-  background: #c9bba5;
+  background: var(--disabled-bg);
   cursor: not-allowed;
 }
 
@@ -270,7 +299,7 @@ button:hover {
 .setup-step-hint {
   display: block;
   font-size: 11px;
-  color: #7a6247;
+  color: var(--muted);
   margin-top: 6px;
 }
 
@@ -284,7 +313,7 @@ button:hover {
   padding: 7px 10px;
   padding-right: 28px;
   border-radius: 6px;
-  background: rgba(31, 36, 48, 0.06);
+  background: var(--cmd-bg);
   border: 1px solid var(--stroke);
   font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
   font-size: 12px;
@@ -295,7 +324,7 @@ button:hover {
 }
 
 .setup-cmd:hover {
-  background: rgba(31, 36, 48, 0.10);
+  background: var(--cmd-bg-hover);
 }
 
 .setup-cmd::after {
@@ -305,7 +334,7 @@ button:hover {
   top: 6px;
   font-size: 14px;
   font-family: system-ui, sans-serif;
-  color: #9a8470;
+  color: var(--muted);
   user-select: none;
   line-height: 1;
 }
