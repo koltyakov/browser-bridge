@@ -11,8 +11,10 @@ Use this skill when the client exposes Browser Bridge as MCP tools. Do not shell
 
 This mode is usually better inside MCP-native clients because tool schemas, discovery, and invocation stay inside the client's MCP flow. The CLI-oriented skill is usually better for terminal-driven debugging, manual reproduction, install/doctor flows, or any environment where MCP is unavailable or awkward to configure.
 
-Prompt name: `$browser-bridge-mcp`. Prompt shorthand: `$bbx-mcp` where aliases are supported.
-Example prompt: `Using bbx-mcp verify the current page layout matches the design and keep reads token-efficient`.
+Skill name: `browser-bridge-mcp`.
+In GitHub Copilot, invoke it as `/browser-bridge-mcp` or ask for the `browser-bridge-mcp` skill by name. `bbx-mcp` is not a portable Copilot skill alias.
+Some clients may support shorthand aliases such as `$bbx-mcp`, but do not assume that across clients.
+Example prompt: `Use the browser-bridge-mcp skill to verify the current page layout matches the design and keep reads token-efficient.`
 
 ## Core Flow
 

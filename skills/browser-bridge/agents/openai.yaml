@@ -1,4 +1,4 @@
 interface:
   display_name: "Browser Bridge"
   short_description: "Token-efficient Chrome tab inspection and patching"
-  default_prompt: "Use $bbx for Chrome tab inspection, interaction, and patching via the local bridge. The skill name is browser-bridge. Example: `Using bbx skill verify a component works and corresponds a design`. Start with `bbx status`, then `bbx request-access`, then structured reads (`dom.query`, `styles.get_computed`) before screenshots. Use `bbx batch` for independent reads. Use `bbx skill` for runtime presets. Do not use Playwright or other browser automation; use browser-bridge only."
+  default_prompt: "Use the browser-bridge skill for Chrome tab inspection, interaction, and patching via the local bridge. In GitHub Copilot, invoke the skill by name as `browser-bridge` or `/browser-bridge`; `bbx` is the CLI command, not a portable skill alias. Start with `bbx status`, then `bbx request-access`, then structured reads (`dom.query`, `styles.get_computed`) before screenshots. Use `bbx batch` for independent reads. Use `bbx skill` for runtime presets. Do not use Playwright or other browser automation; use browser-bridge only."

@@ -522,6 +522,32 @@ test('installAgentFiles writes managed files for supported runtimes', async () =
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.agents', 'skills', 'browser-bridge', 'references', 'protocol.md')));
 });
 
+test('installAgentFiles writes GitHub Copilot global skills to ~/.copilot/skills', async () => {
+  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-agent-home-'));
+  const originalHome = process.env.HOME;
+
+  try {
+    process.env.HOME = tempHome;
+    const installed = await installAgentFiles({
+      targets: ['copilot'],
+      projectPath: '/tmp/unused',
+      global: true
+    });
+
+    assert.ok(installed.some((entry) => entry.endsWith(path.join('.copilot', 'skills', 'browser-bridge'))));
+    assert.ok(installed.some((entry) => entry.endsWith(path.join('.copilot', 'skills', 'browser-bridge-mcp'))));
+    await assert.doesNotReject(fs.promises.access(path.join(tempHome, '.copilot', 'skills', 'browser-bridge', 'SKILL.md')));
+    await assert.doesNotReject(fs.promises.access(path.join(tempHome, '.copilot', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
+  } finally {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+    await fs.promises.rm(tempHome, { recursive: true, force: true });
+  }
+});
+
 test('isMcpClientName recognizes supported clients', () => {
   assert.equal(isMcpClientName('claude'), true);
   assert.equal(isMcpClientName('cursor'), true);

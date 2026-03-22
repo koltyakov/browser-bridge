@@ -171,7 +171,16 @@ function parseTargetList(raw) {
 }
 
 /** @type {Partial<Record<SupportedTarget, string>>} */
-const SKILL_PATHS = {
+const GLOBAL_SKILL_PATHS = {
+  copilot:  path.join('.copilot', 'skills'),
+  claude:   path.join('.claude', 'skills'),
+  cursor:   path.join('.cursor', 'skills'),
+  opencode: path.join('.opencode', 'skills'),
+  codex:    path.join('.codex', 'skills')
+};
+
+/** @type {Partial<Record<SupportedTarget, string>>} */
+const LOCAL_SKILL_PATHS = {
   copilot:  path.join('.github', 'skills'),
   claude:   path.join('.claude', 'skills'),
   cursor:   path.join('.cursor', 'skills'),
@@ -181,10 +190,12 @@ const SKILL_PATHS = {
 
 /**
  * @param {SupportedTarget} target
+ * @param {{ global: boolean }} options
  * @returns {string}
  */
-export function getSkillRelativePath(target) {
-  return SKILL_PATHS[target] || path.join('.agents', 'skills');
+export function getSkillRelativePath(target, options) {
+  const paths = options.global ? GLOBAL_SKILL_PATHS : LOCAL_SKILL_PATHS;
+  return paths[target] || path.join('.agents', 'skills');
 }
 
 /**
@@ -194,7 +205,7 @@ export function getSkillRelativePath(target) {
  */
 export function getSkillBasePath(target, options) {
   const basePath = options.global ? os.homedir() : options.projectPath;
-  return path.join(basePath, getSkillRelativePath(target));
+  return path.join(basePath, getSkillRelativePath(target, options));
 }
 
 /**

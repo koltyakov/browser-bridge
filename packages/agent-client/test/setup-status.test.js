@@ -123,3 +123,45 @@ test('collectSetupStatus treats detected MCP runtimes as skill-install targets t
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }
 });
+
+test('collectSetupStatus uses ~/.copilot/skills for GitHub Copilot global skills', async () => {
+  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-setup-status-copilot-home-'));
+  const originalHome = process.env.HOME;
+  const sentinel = getManagedSkillSentinelFilename();
+
+  try {
+    process.env.HOME = tempHome;
+
+    const copilotBase = getSkillBasePath('copilot', {
+      global: true,
+      projectPath: '/tmp/unused'
+    });
+    for (const skillName of getManagedSkillNames()) {
+      const skillPath = path.join(copilotBase, skillName);
+      await fs.promises.mkdir(skillPath, { recursive: true });
+      await fs.promises.writeFile(path.join(skillPath, sentinel), `${skillName} managed\n`, 'utf8');
+    }
+
+    const status = await collectSetupStatus({
+      global: true,
+      cwd: tempHome,
+      projectPath: tempHome,
+      mcpDetectors: createDetectors([]),
+      skillDetectors: createDetectors(['copilot'])
+    });
+
+    const copilotSkills = status.skillTargets.find((entry) => entry.key === 'copilot');
+    assert.ok(copilotSkills);
+    assert.equal(copilotSkills.detected, true);
+    assert.equal(copilotSkills.installed, true);
+    assert.equal(copilotSkills.managed, true);
+    assert.equal(copilotSkills.basePath, path.join(tempHome, '.copilot', 'skills'));
+  } finally {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+    await fs.promises.rm(tempHome, { recursive: true, force: true });
+  }
+});

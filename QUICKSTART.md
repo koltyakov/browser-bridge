@@ -64,7 +64,10 @@ Your agent can now inspect and patch that tab over MCP.
 
 **Skill + CLI mode** - reference the skill explicitly so the agent knows to use `bbx`:
 
-> *"Using $bbx skill, check why the sidebar layout is broken."*
+> *"Use the browser-bridge skill to check why the sidebar layout is broken."*
 > *"Using browser-bridge skill, verify the hero section spacing and fix it."*
+
+For GitHub Copilot, invoke the skill by name, for example `/browser-bridge`.
+`bbx` is the Browser Bridge CLI command, not a guaranteed Copilot skill alias.
 
 In both cases the agent reads live DOM, styles, console, and network state from your real tab. Patches are reversible and session-scoped - the agent verifies the fix in the browser before writing it back to source.
