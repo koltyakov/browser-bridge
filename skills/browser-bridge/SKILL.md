@@ -23,6 +23,8 @@ bbx call <method> '{...}'   # any RPC method (raw output)
 bbx batch '[{...},...]'     # parallel reads (concurrent)
 bbx tabs                    # list available tabs
 bbx logs                    # recent bridge request log
+bbx tab-create [url]        # open a new tab
+bbx tab-close <tabId>       # close a tab
 bbx skill                   # live runtime presets + limits
 ```
 

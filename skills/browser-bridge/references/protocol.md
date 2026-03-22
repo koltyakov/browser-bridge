@@ -93,7 +93,6 @@ bbx call page.get_console '{"level":"error","limit":20,"clear":true}'
 ### page.wait_for_load_state
 Block until the tab reaches `complete` status. Useful after `input.click` on a navigation link.
 ```bash
-bbx wait-load 10000
 bbx call page.wait_for_load_state '{"timeoutMs":10000}'
 ```
 

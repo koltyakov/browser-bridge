@@ -102,7 +102,7 @@ const MAX_ACTION_LOG_ENTRIES = 50;
 const ENABLED_TAB_STORAGE_PREFIX = 'enabledTab:';
 const ACTION_LOG_STORAGE_KEY = 'actionLog';
 const SIDEPANEL_PATH = 'packages/extension/ui/sidepanel.html';
-const ENABLED_BADGE_TEXT = 'AI';
+const ENABLED_BADGE_TEXT = '💡'; // 'AI';
 const DEBUGGER_PROTOCOL_VERSION = '1.3';
 
 /** @type {ExtensionState} */
@@ -1622,20 +1622,27 @@ async function refreshActionIndicators() {
  */
 async function updateActionIndicatorForTab(tabId) {
   const enabled = isTabEnabled(tabId);
-  if (enabled) {
-    await chrome.action.setBadgeBackgroundColor({
+  try {
+    if (enabled) {
+      await chrome.action.setBadgeBackgroundColor({
+        tabId,
+        color: '#8e331a'
+      });
+      await chrome.action.setBadgeTextColor({
+        tabId,
+        color: '#ffffff'
+      });
+    }
+    await chrome.action.setBadgeText({
       tabId,
-      color: '#8e331a'
+      text: enabled ? ENABLED_BADGE_TEXT : ''
     });
-    await chrome.action.setBadgeTextColor({
-      tabId,
-      color: '#ffffff'
-    });
+  } catch (error) {
+    if (normalizeRuntimeErrorMessage(getErrorMessage(error)) === ERROR_CODES.TAB_MISMATCH) {
+      return;
+    }
+    throw error;
   }
-  await chrome.action.setBadgeText({
-    tabId,
-    text: enabled ? ENABLED_BADGE_TEXT : ''
-  });
 }
 
 /**
@@ -1771,6 +1778,35 @@ function summarizeActionResult(response) {
 }
 
 /**
+ * Convert an unknown thrown value into a stable message string.
+ *
+ * @param {unknown} error
+ * @returns {string}
+ */
+function getErrorMessage(error) {
+  if (typeof error === 'string') {
+    return error;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return 'Unexpected extension error.';
+}
+
+/**
+ * Normalize browser runtime wording into extension-level error codes so tab
+ * lifecycle races produce stable responses and logs.
+ *
+ * @param {string} message
+ * @returns {string}
+ */
+function normalizeRuntimeErrorMessage(message) {
+  return /^No tab with id[: ]/i.test(message)
+    ? ERROR_CODES.TAB_MISMATCH
+    : message;
+}
+
+/**
  * Map thrown runtime errors to structured bridge failures.
  *
  * @param {BridgeRequest} request
@@ -1778,11 +1814,7 @@ function summarizeActionResult(response) {
  * @returns {BridgeResponse}
  */
 function toFailureResponse(request, error) {
-  const message = typeof error === 'string'
-    ? error
-    : error instanceof Error
-      ? error.message
-      : 'Unexpected extension error.';
+  const message = normalizeRuntimeErrorMessage(getErrorMessage(error));
   const knownErrorCodes = /** @type {string[]} */ (Object.values(ERROR_CODES));
   /** @type {ErrorCode} */
   const code = knownErrorCodes.includes(message)
@@ -2067,5 +2099,8 @@ async function promptForTabAccess(tab) {
  * @returns {void}
  */
 function reportAsyncError(error) {
+  if (normalizeRuntimeErrorMessage(getErrorMessage(error)) === ERROR_CODES.TAB_MISMATCH) {
+    return;
+  }
   console.error(error);
 }

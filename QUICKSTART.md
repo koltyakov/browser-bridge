@@ -4,9 +4,9 @@ Browser Bridge helps coding agents debug real web apps in the real browser tab y
 
 The primary path is:
 
-1. Install the Browser Bridge extension
+1. Load the Browser Bridge extension
 2. Install the CLI: `npm install -g @browserbridge/bbx`
-3. Install the native host: `bbx install`
+3. Install the native host: `bbx install <extension-id>`
 4. Verify readiness: `bbx doctor`
 5. Choose either MCP mode or skill/CLI mode
 
@@ -30,13 +30,9 @@ That exposes `bbx`, `bbx-mcp`, `bbx-daemon`, and `bbx-install`.
 
 ## 2. Install the extension
 
-### Preferred path
-
-Install the Browser Bridge extension from the Chrome Web Store when it is available for your environment.
-
 ### Repo-development path
 
-If you are testing the repo before the store path is live:
+Browser Bridge currently ships the extension from this repository. Clone it, install dependencies, then load it unpacked:
 
 ```bash
 git clone <repo-url> /absolute/path/to/browser-bridge
@@ -48,17 +44,19 @@ Then load the extension from `chrome://extensions` with **Load unpacked** and se
 
 ## 3. Install the native host
 
-For the published extension path:
+If you already have `BROWSER_BRIDGE_EXTENSION_ID` set in your shell environment:
 
 ```bash
 bbx install
 ```
 
-For unpacked/dev extension builds:
+For the current unpacked/dev extension flow, pass the extension ID from `chrome://extensions`:
 
 ```bash
 bbx install <extension-id>
 ```
+
+`bbx install` also accepts a full `chrome-extension://<id>/` origin and normalizes it to the extension ID.
 
 Then verify:
 
@@ -188,4 +186,4 @@ Use Copilot locally in the IDE or CLI. Do not rely on the GitHub.com coding agen
 - `bbx doctor` is the fastest way to see whether the manifest, daemon, extension, and session are ready.
 - `DAEMON_OFFLINE`: run `bbx-daemon`
 - `APPROVAL_PENDING` or `ACCESS_DENIED`: enable the tab in the extension UI, then rerun `bbx request-access`
-- `NATIVE_HOST_UNAVAILABLE`: rerun `bbx install` or `bbx install <extension-id>`
+- `NATIVE_HOST_UNAVAILABLE`: rerun `bbx install <extension-id>` or set `BROWSER_BRIDGE_EXTENSION_ID` and rerun `bbx install`

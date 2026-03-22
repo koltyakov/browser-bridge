@@ -20,9 +20,10 @@ When local debugging breaks, it is usually one of these:
 | `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.codex.browser_bridge.json` | Native host manifest (macOS) |
 | `~/.config/google-chrome/NativeMessagingHosts/com.codex.browser_bridge.json` | Native host manifest (Linux) |
 | `%LOCALAPPDATA%\Google\Chrome\User Data\NativeMessagingHosts\com.codex.browser_bridge.json` | Native host manifest (Windows) |
-| `~/.codex/browser-bridge/` | Bridge working directory |
-| `~/.codex/browser-bridge/bridge.sock` | Daemon socket |
-| `~/.codex/browser-bridge/current-session.json` | Saved session |
+| `$CODEX_HOME/browser-bridge/` | Bridge working directory (`CODEX_HOME` defaults to `~/.codex`) |
+| `$CODEX_HOME/browser-bridge/bridge.sock` | Daemon socket |
+| `$CODEX_HOME/browser-bridge/current-session.json` | Saved session |
+| `$CODEX_HOME/browser-bridge/native-host-launcher.sh` | Native host launcher script |
 
 ## First-Time Local Setup
 
@@ -50,6 +51,8 @@ npm link
 ```bash
 bbx install <extension-id>
 ```
+
+`bbx install` with no argument only works when `BROWSER_BRIDGE_EXTENSION_ID` is already set in the environment.
 
 This writes:
 
@@ -81,7 +84,7 @@ bbx skill
 Expected result:
 
 - `daemon: "ok"`
-- `socketPath` points at `~/.codex/browser-bridge/bridge.sock`
+- `socketPath` points at `$CODEX_HOME/browser-bridge/bridge.sock`
 - `extensionConnected` becomes `true` after the extension service worker connects
 - `skill` returns the runtime guidance and example flow from the shared protocol layer
 
@@ -225,6 +228,7 @@ bbx install <extension-id>
 
 ```bash
 bbx status
+bbx doctor
 bbx logs
 bbx skill
 bbx tabs
@@ -245,8 +249,8 @@ When local state is suspect, do a full reset:
 2. Remove bridge state.
 
 ```bash
-rm -f ~/.codex/browser-bridge/bridge.sock
-rm -f ~/.codex/browser-bridge/current-session.json
+rm -f "${CODEX_HOME:-$HOME/.codex}/browser-bridge/bridge.sock"
+rm -f "${CODEX_HOME:-$HOME/.codex}/browser-bridge/current-session.json"
 ```
 
 3. Reinstall the native host manifest.

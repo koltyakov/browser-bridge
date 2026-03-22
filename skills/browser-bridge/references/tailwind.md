@@ -33,13 +33,13 @@ Don't try to parse Tailwind classes to understand styles. Use bridge methods ins
 ```bash
 # ❌ Parsing classes: "flex items-center gap-4 p-6 bg-white rounded-lg shadow-md"
 # ✅ Read the actual computed styles:
-bbx styles el_abc 'display,alignItems,gap,padding,backgroundColor,borderRadius,boxShadow'
+bbx styles el_abc 'display,align-items,gap,padding,background-color,border-radius,box-shadow'
 ```
 
 Key patterns:
-- **Layout**: `styles.get_computed` with `display, flexDirection, gap, gridTemplateColumns`
+- **Layout**: `styles.get_computed` with `display, flex-direction, gap, grid-template-columns`
 - **Spacing**: `layout.get_box_model` — gives padding/margin/border as numbers
-- **Colors**: `styles.get_computed` with `backgroundColor, color, borderColor`
+- **Colors**: `styles.get_computed` with `background-color, color, border-color`
 - **Visibility**: `styles.get_computed` with `display, visibility, opacity`
 
 ## Patching Tailwind Pages
@@ -51,7 +51,7 @@ Tailwind uses utility classes, but `patch.apply_styles` works at the inline-styl
 bbx patch-style el_abc 'padding=2rem'
 
 # Override responsive breakpoints:
-bbx patch-style el_abc 'display=grid;gridTemplateColumns=1fr 1fr'
+bbx patch-style el_abc display=grid grid-template-columns='1fr 1fr'
 ```
 
 No need to understand or modify Tailwind classes — patch inline and it wins.
@@ -62,13 +62,13 @@ Tailwind uses breakpoint prefixes (`sm:`, `md:`, `lg:`, `xl:`, `2xl:`). To test 
 
 ```bash
 bbx resize 375 812      # mobile
-bbx styles el_abc 'display,flexDirection,gridTemplateColumns'
+bbx styles el_abc 'display,flex-direction,grid-template-columns'
 
 bbx resize 768 1024     # tablet (md: breakpoint)
-bbx styles el_abc 'display,flexDirection,gridTemplateColumns'
+bbx styles el_abc 'display,flex-direction,grid-template-columns'
 
 bbx resize 1280 800     # desktop (xl: breakpoint)
-bbx styles el_abc 'display,flexDirection,gridTemplateColumns'
+bbx styles el_abc 'display,flex-direction,grid-template-columns'
 ```
 
 Default Tailwind breakpoints: `sm: 640px`, `md: 768px`, `lg: 1024px`, `xl: 1280px`, `2xl: 1536px`.

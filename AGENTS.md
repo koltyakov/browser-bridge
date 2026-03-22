@@ -8,20 +8,23 @@
   - `packages/native-host`: local daemon, native host bootstrap, manifest installer
   - `packages/protocol`: shared protocol shapes, normalization, error codes, budgeting
   - `packages/agent-client`: CLI (`bbx`) and subagent-facing bridge client
+  - `packages/mcp-server`: MCP stdio server exposing Browser Bridge tools
   - `skills/browser-bridge`: modular skill — core SKILL.md loaded first, reference docs on demand
 
 ## CLI Quick Reference
 
 ```bash
 bbx status                          # bridge health
-bbx install <extension-id>          # install native manifest
+bbx doctor                          # install/session readiness
+bbx install [extension-id]          # install native manifest
 bbx request-access                  # session for active tab
 bbx call <method> '{"key":"val"}'   # any RPC method
 bbx batch '[{...}]'                 # parallel reads
+bbx mcp config <client>             # print MCP config
 bbx skill                           # runtime presets
 ```
 
-Also: `bbx-daemon` (start daemon), `bbx-install <ext-id>` (install manifest directly).
+Also: `bbx-daemon` (start daemon), `bbx-install <ext-id>` (install manifest directly), `bbx-mcp` (start MCP server directly).
 
 For agent debugging inside this repo, prefer `npx bbx ...` when a user asks to use the browser-bridge skill or `bbx` commands so the workspace CLI is exercised directly. Keep end-user documentation, the shipped skill, and consumer-facing guidance using `bbx`, `bbx-daemon`, and `bbx-install` as globally installed commands.
 
@@ -59,7 +62,7 @@ For agent debugging inside this repo, prefer `npx bbx ...` when a user asks to u
 
 - `packages/agent-client/src/cli.js` is registered as `bbx` via the `bin` field in `package.json`.
 - `package.json` uses the publish name `@browserbridge/bbx`.
-- `npm link` from this repo exposes `bbx`, `bbx-daemon`, and `bbx-install` machine-wide for consumer repos.
+- `npm link` from this repo exposes `bbx`, `bbx-mcp`, `bbx-daemon`, and `bbx-install` machine-wide for consumer repos.
 - When working from this repository for debugging, treat `npx bbx` as the default agent invocation even if the user says `bbx` or asks to use the skill.
 - Do not rewrite end-user docs or skill guidance to `npx`; published instructions should continue to assume the CLI is globally installed and invoked as `bbx`.
 - Prefer the generic `call` path for arbitrary bridge methods.

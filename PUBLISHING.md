@@ -6,6 +6,7 @@ This repo has two release artifacts:
 2. The npm package for the local CLI and native host
 
 The extension is not a standalone product. A store release only becomes usable once the npm package is also published, because the extension depends on the local native host installed by `bbx install <extension-id>`.
+The current installer does not embed a store extension ID in the package. Until the code changes, published setup docs should continue to show `bbx install <store-extension-id>` or set `BROWSER_BRIDGE_EXTENSION_ID=<store-extension-id>` before running `bbx install`.
 
 ## Release Checklist
 
@@ -15,7 +16,7 @@ The extension is not a standalone product. A store release only becomes usable o
 4. Publish the npm package.
 5. Upload the extension ZIP from `dist/browser-bridge-extension-v<version>.zip`.
 6. Complete the Chrome Web Store listing, privacy fields, and reviewer instructions.
-7. Smoke-test the published extension against the published CLI using the final store extension ID.
+7. Smoke-test the published extension against the published CLI using `bbx install <store-extension-id>`.
 
 ## Build The Extension ZIP
 
@@ -40,7 +41,7 @@ npm pack --dry-run
 npm publish
 ```
 
-The published package must stay aligned with the extension release because the native host installer depends on the final store extension ID.
+The published package must stay aligned with the extension release because users still need the final store extension ID at install time unless the installer gains a baked-in default.
 
 ## Chrome Web Store Submission
 
@@ -103,6 +104,5 @@ Replace `<store-extension-id>` with the final Chrome Web Store extension ID befo
 
 ## Post-Publish Follow-Up
 
-- Update [README.md](/Users/andrew/Projects/GitHub/follow/README.md) and [QUICKSTART.md](/Users/andrew/Projects/GitHub/follow/QUICKSTART.md) with the real store install path once the extension is live.
-- Add the final store extension ID to all setup docs and examples that currently assume an unpacked install.
+- Update [README.md](/Users/andrew/Projects/GitHub/follow/README.md) and [QUICKSTART.md](/Users/andrew/Projects/GitHub/follow/QUICKSTART.md) with the real store listing URL and the explicit `bbx install <store-extension-id>` flow, unless the installer is updated to embed a default ID.
 - Re-run a live flow with `bbx install <store-extension-id>` after the first published build is available.

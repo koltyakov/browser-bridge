@@ -1,14 +1,14 @@
 # Browser Bridge
 
 <p align="center">
-  <img src="./assets/logo.png" alt="expose logo" width="220" />
+  <img src="./assets/logo.png" alt="Browser Bridge logo" width="220" />
 </p>
 
 Browser Bridge is a dev-first interface between a local coding agent and a real Chrome tab. It gives the agent structured access to DOM, styles, layout, console state, interactions, and reversible patches through a local extension plus native host, instead of forcing the workflow through repeated screenshots, raw HTML dumps, or a full end-to-end automation stack.
 
 The goal is simple: let any local AI coding agent inspect what the browser is doing, verify a change, try a patch, and carry the real fix back into source code with minimal token waste and tight scope control.
 
-For end-user setup in other repos, see [QUICKSTART.md](QUICKSTART.md). For the category-level comparison and benchmark structure, see [docs/browser-automation-comparison.md](docs/browser-automation-comparison.md).
+For end-user setup in other repos, see [QUICKSTART.md](QUICKSTART.md). For maintainer troubleshooting and release flow, see [DEBUG.md](DEBUG.md) and [PUBLISHING.md](PUBLISHING.md).
 
 ## What Browser Bridge Is For
 
@@ -59,8 +59,6 @@ Browser Bridge is optimized for the opposite starting point: inspect the browser
 
 If you want an AI to operate the browser as a general assistant, the other tools may be a closer match. If you want a browser companion for coding agents that is local, inspectable, scriptable, and optimized for debugging a real app, that is the lane Browser Bridge is trying to own.
 
-For the comparison page, feature matrix, and benchmark scenario templates, see [docs/browser-automation-comparison.md](docs/browser-automation-comparison.md) and [benchmarks/browser-automation-comparison/README.md](benchmarks/browser-automation-comparison/README.md).
-
 ## What's in this repo
 
 | Path | Purpose |
@@ -79,23 +77,23 @@ For the comparison page, feature matrix, and benchmark scenario templates, see [
 npm install
 npm run typecheck       # validate JSDoc types
 npm test                # run protocol + daemon + client tests
-npm link                # optional but recommended: expose bbx/bbx-daemon machine-wide
+npm link                # optional but recommended: expose bbx/bbx-mcp/bbx-daemon/bbx-install machine-wide
 ```
 
 After `npm link`, the `bbx` CLI works from any repo, including non-Node repos.
-After publish, the package entry point will be `npx @browserbridge/bbx ...`.
+`npm link` also exposes `bbx-mcp`, `bbx-daemon`, and `bbx-install` machine-wide for local testing.
 
-For consumer repo setup, install the native host with `bbx install`, use `bbx doctor` to verify readiness, connect MCP clients with `bbx mcp config <client>`, or install/update Browser Bridge skill files with `bbx install-skill`.
+For consumer repo setup, install the native host with `bbx install <extension-id>` for unpacked builds, or use `bbx install` only when `BROWSER_BRIDGE_EXTENSION_ID` is already configured in the environment. Then use `bbx doctor` to verify readiness, connect MCP clients with `bbx mcp config <client>`, or install/update Browser Bridge skill files with `bbx install-skill`.
 
 For maintainer release steps, see [PUBLISHING.md](PUBLISHING.md).
 
 ### Setup Native Messaging
 
 ```bash
-# Install manifest using the official extension ID when configured
+# Install manifest when BROWSER_BRIDGE_EXTENSION_ID is already configured
 bbx install
 
-# For unpacked dev builds or before the store ID is wired in:
+# For unpacked dev builds, pass the extension ID explicitly
 bbx install <extension-id>
 ```
 
@@ -107,8 +105,8 @@ bbx-daemon           # explicit start (native host also auto-bootstraps)
 
 ### Load Extension
 
-1. Preferred user path: install the Browser Bridge extension from the Chrome Web Store when available.
-2. Repo-development path: go to `chrome://extensions` → Load unpacked → select this repo root.
+1. Current repo-development path: go to `chrome://extensions` → Load unpacked → select this repo root.
+2. Copy the unpacked extension ID if you plan to run `bbx install <extension-id>`.
 3. Open the popup or side panel → enable agent communication for the current tab.
 
 ### Use the CLI
@@ -141,26 +139,27 @@ bbx skill                     # runtime budget presets + method groups
 
 | Category | Commands |
 |----------|----------|
-| Setup | `install [ext-id]`, `status`, `doctor`, `logs`, `tabs`, `skill`, `mcp serve`, `mcp config <client>` |
+| Setup | `install [ext-id]`, `install-skill [targets|all] [--project <path>]`, `status`, `doctor`, `logs`, `tabs`, `tab-create [url]`, `tab-close <tabId>`, `skill`, `mcp serve`, `mcp config <client>` |
 | Session | `request-access [tabId] [origin]`, `session`, `revoke` |
 | Generic RPC | `call <method> [json]`, `batch '[...]'` |
-| Inspect | `dom-query [sel]`, `describe <ref>`, `text <ref>`, `styles <ref> [props]`, `box <ref>` |
-| Interact | `click <ref>`, `focus <ref>`, `type <ref> <text>`, `press-key <key> [ref]` |
+| Inspect | `dom-query [sel]`, `describe <ref>`, `text <ref>`, `html <ref> [maxLen]`, `styles <ref> [props]`, `box <ref>`, `a11y-tree [maxNodes] [maxDepth]` |
+| Find | `find <text>`, `find-role <role> [name]`, `wait <selector> [timeoutMs]` |
+| Page | `eval <expression>`, `console [level]`, `network [limit]`, `page-text [textBudget]`, `storage [local|session] [keys]`, `navigate <url>`, `perf`, `resize <width> <height>` |
+| Interact | `click <ref>`, `focus <ref>`, `type <ref> <text>`, `press-key <key> [ref]`, `hover <ref>` |
 | Patch | `patch-style <ref> prop=val`, `patch-text <ref> <text>`, `patches`, `rollback <id>` |
 | Capture | `screenshot <ref> [path]` |
 
-## Supported Capabilities (55 RPC methods)
+## Supported Capabilities (55 RPC methods total)
 
-- **Session**: `tabs.list`, `session.request_access`, `session.get_status`, `session.revoke`
-- **Page/Nav**: `page.get_state`, `navigation.navigate`, `navigation.reload`, `navigation.go_back`, `navigation.go_forward`
-- **DOM**: `dom.query`, `dom.describe`, `dom.get_text`, `dom.get_attributes`
+- **Tabs/Session**: `tabs.list`, `tabs.create`, `tabs.close`, `session.request_access`, `session.get_status`, `session.revoke`
+- **Page**: `page.get_state`, `page.evaluate`, `page.get_console`, `page.wait_for_load_state`, `page.get_storage`, `page.get_text`, `page.get_network`
+- **Navigation/Viewport**: `navigation.navigate`, `navigation.reload`, `navigation.go_back`, `navigation.go_forward`, `viewport.scroll`, `viewport.resize`
+- **DOM**: `dom.query`, `dom.describe`, `dom.get_text`, `dom.get_attributes`, `dom.wait_for`, `dom.find_by_text`, `dom.find_by_role`, `dom.get_html`, `dom.get_accessibility_tree`
 - **Styles/Layout**: `styles.get_computed`, `styles.get_matched_rules`, `layout.get_box_model`, `layout.hit_test`
-- **Viewport**: `viewport.scroll`
-- **Input**: `input.click`, `input.focus`, `input.type`, `input.press_key`, `input.set_checked`, `input.select_option`
+- **Input**: `input.click`, `input.focus`, `input.type`, `input.press_key`, `input.set_checked`, `input.select_option`, `input.hover`, `input.drag`
 - **Patch**: `patch.apply_styles`, `patch.apply_dom`, `patch.list`, `patch.rollback`, `patch.commit_session_baseline`
-- **Capture**: `screenshot.capture_element`, `screenshot.capture_region`
-- **CDP**: `cdp.get_document`, `cdp.get_dom_snapshot`, `cdp.get_box_model`, `cdp.get_computed_styles_for_node`
-- **Utility**: `health.ping`, `log.tail`, `skill.get_runtime_context`
+- **Capture/CDP**: `screenshot.capture_element`, `screenshot.capture_region`, `cdp.get_document`, `cdp.get_dom_snapshot`, `cdp.get_box_model`, `cdp.get_computed_styles_for_node`
+- **Utility**: `health.ping`, `log.tail`, `skill.get_runtime_context`, `performance.get_metrics`
 
 ## Key Concepts
 
