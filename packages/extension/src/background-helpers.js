@@ -132,6 +132,24 @@ export function summarizeActionResult(response) {
 }
 
 /**
+ * Estimate approximate token cost from a bridge response.
+ *
+ * @param {BridgeResponse} response
+ * @returns {{ responseBytes: number, approxTokens: number, hasScreenshot: boolean, nodeCount: number | null }}
+ */
+export function estimateResponseTokens(response) {
+  const resultJson = response.ok ? JSON.stringify(response.result) : '';
+  const responseBytes = resultJson.length;
+  const approxTokens = Math.ceil(responseBytes / 4);
+  const result = response.ok && response.result && typeof response.result === 'object'
+    ? /** @type {Record<string, unknown>} */ (response.result)
+    : null;
+  const hasScreenshot = result != null && typeof result.image === 'string';
+  const nodeCount = result != null && Array.isArray(result.nodes) ? result.nodes.length : null;
+  return { responseBytes, approxTokens, hasScreenshot, nodeCount };
+}
+
+/**
  * @param {unknown} error
  * @returns {string}
  */

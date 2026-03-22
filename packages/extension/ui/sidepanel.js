@@ -18,7 +18,11 @@
  *   tabId: number | null,
  *   url: string,
  *   ok: boolean,
- *   summary: string
+ *   summary: string,
+ *   responseBytes: number,
+ *   approxTokens: number,
+ *   hasScreenshot: boolean,
+ *   nodeCount: number | null
  * }} ActionLogEntry
  */
 
@@ -177,11 +181,29 @@ function renderActionLogEntry(entry) {
   title.className = 'card-title';
   title.textContent = entry.method;
 
+  const rightCol = document.createElement('div');
+  rightCol.className = 'activity-right';
+
   const timestamp = document.createElement('span');
   timestamp.className = 'muted activity-time';
   timestamp.textContent = new Date(entry.at).toLocaleTimeString();
+  rightCol.append(timestamp);
 
-  header.append(title, timestamp);
+  if (entry.approxTokens > 0) {
+    const tokenLine = document.createElement('span');
+    tokenLine.className = 'muted activity-tokens';
+    const parts = [`\u2248${entry.approxTokens.toLocaleString()} tok`];
+    if (entry.nodeCount != null) {
+      parts.push(`${entry.nodeCount}n`);
+    }
+    if (entry.hasScreenshot) {
+      parts.push('img');
+    }
+    tokenLine.textContent = parts.join(' \u00b7 ');
+    rightCol.append(tokenLine);
+  }
+
+  header.append(title, rightCol);
 
   const showScope = !(Number.isFinite(requestedTabId) && requestedTabId > 0) && entry.url;
   if (showScope) {
@@ -199,5 +221,6 @@ function renderActionLogEntry(entry) {
   summary.textContent = `${entry.ok ? 'OK' : 'Error'}: ${entry.summary}`;
 
   container.append(summary);
+
   return container;
 }

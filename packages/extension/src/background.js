@@ -33,6 +33,7 @@ import {
   normalizeWaitForParams
 } from '../../protocol/src/index.js';
 import {
+  estimateResponseTokens,
   getErrorMessage,
   inferCapability,
   normalizeCropRect,
@@ -68,7 +69,11 @@ import { TabDebuggerCoordinator } from './debugger-coordinator.js';
  *   tabId: number | null,
  *   url: string,
  *   ok: boolean,
- *   summary: string
+ *   summary: string,
+ *   responseBytes: number,
+ *   approxTokens: number,
+ *   hasScreenshot: boolean,
+ *   nodeCount: number | null
  * }} ActionLogEntry
  */
 
@@ -1640,6 +1645,8 @@ async function logBridgeAction(request, response, actionContext) {
     return;
   }
 
+  const tokenEstimate = estimateResponseTokens(response);
+
   state.actionLog = [
     ...state.actionLog,
     {
@@ -1649,7 +1656,11 @@ async function logBridgeAction(request, response, actionContext) {
       tabId: actionContext?.tabId ?? null,
       url: actionContext?.url ?? '',
       ok: response.ok,
-      summary: summarizeActionResult(response)
+      summary: summarizeActionResult(response),
+      responseBytes: tokenEstimate.responseBytes,
+      approxTokens: tokenEstimate.approxTokens,
+      hasScreenshot: tokenEstimate.hasScreenshot,
+      nodeCount: tokenEstimate.nodeCount
     }
   ].slice(-MAX_ACTION_LOG_ENTRIES);
 

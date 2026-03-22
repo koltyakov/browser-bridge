@@ -174,11 +174,23 @@ body {
   gap: 8px;
 }
 
+.activity-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+
 .activity-time {
   margin: 0;
   font-size: 11px;
   white-space: nowrap;
-  flex-shrink: 0;
+}
+
+.activity-tokens {
+  margin: 1px 0 0;
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 .activity-scope {
@@ -193,6 +205,8 @@ body {
   font-size: 12px;
   line-height: 1.3;
 }
+
+
 
 .status-line {
   display: flex;

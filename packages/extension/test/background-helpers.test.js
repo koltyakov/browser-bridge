@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  estimateResponseTokens,
   inferCapability,
   normalizeCropRect,
   normalizeRuntimeErrorMessage,
@@ -92,4 +93,39 @@ test('background helpers expose log and origin helpers', () => {
   assert.equal(shouldLogAction('health.ping'), false);
   assert.equal(safeOrigin('https://example.com/path?q=1'), 'https://example.com');
   assert.equal(safeOrigin('not-a-url'), '');
+});
+
+test('estimateResponseTokens computes metrics for success responses', () => {
+  const nodesResponse = /** @type {any} */ ({
+    ok: true,
+    result: { nodes: [{ tag: 'div' }, { tag: 'span' }] }
+  });
+  const estimate = estimateResponseTokens(nodesResponse);
+  assert.equal(estimate.responseBytes, JSON.stringify(nodesResponse.result).length);
+  assert.equal(estimate.approxTokens, Math.ceil(estimate.responseBytes / 4));
+  assert.equal(estimate.hasScreenshot, false);
+  assert.equal(estimate.nodeCount, 2);
+});
+
+test('estimateResponseTokens detects screenshots', () => {
+  const screenshotResponse = /** @type {any} */ ({
+    ok: true,
+    result: { image: 'data:image/png;base64,AAAA' }
+  });
+  const estimate = estimateResponseTokens(screenshotResponse);
+  assert.equal(estimate.hasScreenshot, true);
+  assert.equal(estimate.nodeCount, null);
+});
+
+test('estimateResponseTokens handles failure responses', () => {
+  const failResponse = /** @type {any} */ ({
+    ok: false,
+    result: null,
+    error: { code: 'ACCESS_DENIED', message: 'Denied', details: null }
+  });
+  const estimate = estimateResponseTokens(failResponse);
+  assert.equal(estimate.responseBytes, 0);
+  assert.equal(estimate.approxTokens, 0);
+  assert.equal(estimate.hasScreenshot, false);
+  assert.equal(estimate.nodeCount, null);
 });
