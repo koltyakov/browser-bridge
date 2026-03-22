@@ -43,6 +43,7 @@
         "<all_urls>"
       ],
       "js": [
+        "packages/extension/src/content-script-helpers.js",
         "packages/extension/src/content-script.js"
       ],
       "run_at": "document_idle"

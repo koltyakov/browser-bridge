@@ -469,7 +469,7 @@ test('summarizer: DOM query evidence includes role and label', () => {
 
 test('parseInstallAgentArgs defaults to all supported targets', () => {
   const options = parseInstallAgentArgs([], '/tmp/example');
-  assert.deepEqual(options.targets, ['copilot', 'claude', 'opencode', 'agents', 'codex', 'openai']);
+  assert.deepEqual(options.targets, ['copilot', 'claude', 'opencode', 'agents', 'codex']);
   assert.equal(options.projectPath, '/tmp/example');
 });
 
@@ -479,10 +479,15 @@ test('parseInstallAgentArgs supports explicit selection and project path', () =>
   assert.equal(options.projectPath, path.resolve('/tmp/example', './demo'));
 });
 
+test('parseInstallAgentArgs accepts openai as a codex alias', () => {
+  const options = parseInstallAgentArgs(['openai'], '/tmp/example');
+  assert.deepEqual(options.targets, ['codex']);
+});
+
 test('installAgentFiles writes managed files for supported runtimes', async () => {
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-agent-'));
   const installed = await installAgentFiles({
-    targets: ['copilot', 'claude', 'opencode', 'agents', 'codex', 'openai'],
+    targets: ['copilot', 'claude', 'opencode', 'agents', 'codex'],
     projectPath: tempDir,
     global: false
   });

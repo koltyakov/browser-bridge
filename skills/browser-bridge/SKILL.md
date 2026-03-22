@@ -188,6 +188,8 @@ Every CLI shortcut command produces consistent `{ok, summary, evidence}` JSON. U
 
 The summarizer auto-detects response types and produces concise summaries:
 
+Shortcut commands intentionally expose only the common case. Use `bbx call <method> '{...}'` when you need method-specific fields that are not surfaced by a shortcut, such as `tabs.create.active`.
+
 | Response Type | Detection | Summary Format |
 |---|---|---|
 | Health ping | `result.daemon` | `Daemon: ok. Extension: connected/disconnected.` |

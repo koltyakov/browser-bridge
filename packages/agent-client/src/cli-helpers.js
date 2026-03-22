@@ -1,6 +1,7 @@
 // @ts-check
 
 import readline from 'node:readline';
+import { bridgeMethodNeedsSession } from '../../protocol/src/index.js';
 
 /**
  * @param {string[]} values
@@ -76,15 +77,7 @@ export function parseIntArg(value, argName) {
  * @returns {boolean}
  */
 export function methodNeedsSession(method) {
-  return ![
-    'health.ping',
-    'log.tail',
-    'tabs.list',
-    'tabs.create',
-    'tabs.close',
-    'session.request_access',
-    'skill.get_runtime_context'
-  ].includes(method);
+  return bridgeMethodNeedsSession(method);
 }
 
 /**

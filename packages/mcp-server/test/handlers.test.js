@@ -6,9 +6,17 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import { BRIDGE_METHOD_REGISTRY } from '../../protocol/src/index.js';
 import { BridgeClient } from '../../agent-client/src/client.js';
 import { clearSession, saveSession } from '../../agent-client/src/session-store.js';
 import {
+  CAPTURE_ACTIONS,
+  DOM_ACTIONS,
+  INPUT_ACTION_METHODS,
+  NAVIGATION_ACTIONS,
+  PAGE_ACTIONS,
+  PATCH_ACTIONS,
+  STYLES_LAYOUT_ACTIONS,
   handleCaptureTool,
   handleDomTool,
   handleInputTool,
@@ -135,6 +143,17 @@ test('handleTabsTool maps list to tabs.list and returns summarized output', asyn
     assert.equal(result.isError, undefined);
     assert.match(result.content[0].text, /Bridge listed 1 tab/);
     assert.equal(result.structuredContent.ok, true);
+  });
+});
+
+test('handleTabsTool forwards active for tabs.create', async () => {
+  await withMockedBridge(async () => ok({ tabId: 4, url: 'https://example.com', active: false }), async (calls) => {
+    const result = await handleTabsTool({ action: 'create', url: 'https://example.com', active: false });
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].method, 'tabs.create');
+    assert.equal(calls[0].params.active, false);
+    assert.equal(result.isError, undefined);
   });
 });
 
@@ -373,4 +392,25 @@ test('handleCaptureTool element resolves ref and calls screenshot.capture_elemen
       assert.equal(result.isError, undefined);
     });
   });
+});
+
+test('grouped MCP tool action maps stay aligned with the bridge method registry', () => {
+  const actionCollections = [
+    DOM_ACTIONS,
+    STYLES_LAYOUT_ACTIONS,
+    PAGE_ACTIONS,
+    NAVIGATION_ACTIONS,
+    PATCH_ACTIONS,
+    CAPTURE_ACTIONS
+  ];
+
+  for (const collection of actionCollections) {
+    for (const entry of Object.values(collection)) {
+      assert.ok(BRIDGE_METHOD_REGISTRY[entry.method], `${entry.method} should exist in the bridge registry`);
+    }
+  }
+
+  for (const method of Object.values(INPUT_ACTION_METHODS)) {
+    assert.ok(BRIDGE_METHOD_REGISTRY[method], `${method} should exist in the bridge registry`);
+  }
 });

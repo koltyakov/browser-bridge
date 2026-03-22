@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { APP_NAME, getManifestInstallDir } from '../../native-host/src/config.js';
-import { getDefaultExtensionId } from '../../native-host/src/install-manifest.js';
+import { resolveDefaultExtensionId } from '../../native-host/src/install-manifest.js';
 import { methodNeedsSession } from './cli-helpers.js';
 import { BridgeClient } from './client.js';
 import { clearSession, loadSession, saveSession } from './session-store.js';
@@ -19,6 +19,7 @@ import { clearSession, loadSession, saveSession } from './session-store.js';
  *   manifestPath: string,
  *   allowedOrigins: string[],
  *   defaultExtensionId: string | null,
+ *   defaultExtensionIdSource: string,
  *   daemonReachable: boolean,
  *   extensionConnected: boolean,
  *   savedSession: SessionState | null,
@@ -172,23 +173,35 @@ export async function loadInstalledManifest() {
 }
 
 /**
+ * @typedef {{
+ *   loadManifest?: () => Promise<{allowed_origins?: string[]} | null>,
+ *   manifestPath?: string,
+ *   defaultExtensionIdInfo?: { extensionId: string | null, source: string },
+ *   loadSavedSession?: () => Promise<SessionState | null>,
+ *   bridgeClientRunner?: <T>(callback: (client: BridgeClient) => Promise<T>) => Promise<T>
+ * }} DoctorReportOptions
+ */
+
+/**
+ * @param {DoctorReportOptions} [options={}]
  * @returns {Promise<DoctorReport>}
  */
-export async function getDoctorReport() {
-  const manifest = await loadInstalledManifest();
+export async function getDoctorReport(options = {}) {
+  const manifest = await (options.loadManifest || loadInstalledManifest)();
   const allowedOrigins = Array.isArray(manifest?.allowed_origins)
     ? manifest.allowed_origins
     : [];
   const manifestInstalled = Boolean(manifest);
-  const defaultExtensionId = getDefaultExtensionId();
-  const savedSession = await loadSession();
+  const defaultExtensionId = options.defaultExtensionIdInfo || resolveDefaultExtensionId();
+  const savedSession = await (options.loadSavedSession || loadSession)();
 
   /** @type {DoctorReport} */
   const report = {
     manifestInstalled,
-    manifestPath: getManifestPath(),
+    manifestPath: options.manifestPath || getManifestPath(),
     allowedOrigins,
-    defaultExtensionId,
+    defaultExtensionId: defaultExtensionId.extensionId,
+    defaultExtensionIdSource: defaultExtensionId.source,
     daemonReachable: false,
     extensionConnected: false,
     savedSession,
@@ -198,7 +211,7 @@ export async function getDoctorReport() {
   };
 
   try {
-    await withBridgeClient(async (client) => {
+    await (options.bridgeClientRunner || withBridgeClient)(async (client) => {
       const response = await client.request({ method: 'health.ping' });
       if (!response.ok) {
         throw new Error(response.error.message);
@@ -224,7 +237,7 @@ export async function getDoctorReport() {
 
   if (!report.manifestInstalled) {
     report.issues.push('native_host_manifest_missing');
-    report.nextSteps.push(defaultExtensionId
+    report.nextSteps.push(defaultExtensionId.extensionId
       ? 'Run `bbx install` to install the native host manifest for the official extension.'
       : 'Run `bbx install <extension-id>` to install the native host manifest.');
   }

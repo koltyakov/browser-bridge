@@ -2,11 +2,15 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 import {
   DEFAULT_EXTENSION_ID_ENV,
   getAllowedOrigins,
   getDefaultExtensionId,
+  installNativeManifest,
   parseExtensionId
 } from '../src/install-manifest.js';
 import { getManifestInstallDir } from '../src/config.js';
@@ -26,6 +30,56 @@ test('getDefaultExtensionId reads a valid env override', () => {
   assert.equal(getDefaultExtensionId({
     [DEFAULT_EXTENSION_ID_ENV]: 'invalid'
   }), null);
+});
+
+test('installNativeManifest reports whether the extension id came from env or built-in default', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-install-manifest-'));
+  /** @type {string[]} */
+  const output = [];
+
+  try {
+    await installNativeManifest({
+      repoRoot: process.cwd(),
+      installDir: path.join(tempDir, 'manifest'),
+      bridgeDir: path.join(tempDir, 'bridge'),
+      stdout: { write: (value) => { output.push(value); return true; } },
+      env: { ...process.env, [DEFAULT_EXTENSION_ID_ENV]: 'abcdefghijklmnopabcdefghijklmnop' }
+    });
+
+    assert.ok(output.some((line) => line.includes(`Used extension ID from ${DEFAULT_EXTENSION_ID_ENV}.`)));
+
+    output.length = 0;
+
+    await installNativeManifest({
+      repoRoot: process.cwd(),
+      installDir: path.join(tempDir, 'manifest-built-in'),
+      bridgeDir: path.join(tempDir, 'bridge-built-in'),
+      stdout: { write: (value) => { output.push(value); return true; } },
+      env: { ...process.env, [DEFAULT_EXTENSION_ID_ENV]: undefined }
+    });
+
+    assert.ok(output.some((line) => line.includes('Used built-in Browser Bridge extension ID.')));
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('installNativeManifest rejects an invalid env extension id override', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-install-manifest-invalid-'));
+
+  try {
+    await assert.rejects(
+      installNativeManifest({
+        repoRoot: process.cwd(),
+        installDir: path.join(tempDir, 'manifest'),
+        bridgeDir: path.join(tempDir, 'bridge'),
+        env: { ...process.env, [DEFAULT_EXTENSION_ID_ENV]: 'invalid' }
+      }),
+      /Invalid BROWSER_BRIDGE_EXTENSION_ID/
+    );
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
 });
 
 test('getAllowedOrigins merges explicit ids and removes placeholders', () => {

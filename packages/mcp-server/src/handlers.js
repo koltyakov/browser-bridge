@@ -160,7 +160,7 @@ export async function handleStatusTool() {
 }
 
 /**
- * @param {{ action: string, url?: string, tabId?: number }} args
+ * @param {{ action: string, url?: string, active?: boolean, tabId?: number }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleTabsTool(args) {
@@ -169,7 +169,8 @@ export async function handleTabsTool(args) {
   }
   if (args.action === 'create') {
     return callBridgeTool('tabs.create', {
-      url: args.url
+      url: args.url,
+      active: args.active
     });
   }
   if (args.action === 'close') {
@@ -212,7 +213,7 @@ export async function handleSessionTool(args) {
 }
 
 /** @type {Record<string, ToolAction>} */
-const DOM_ACTIONS = {
+export const DOM_ACTIONS = {
   query:              { ref: false, method: 'dom.query',                  params: a => ({ selector: a.selector || 'body', withinRef: a.withinRef, maxNodes: a.maxNodes, maxDepth: a.maxDepth, textBudget: a.textBudget, includeHtml: a.includeHtml, includeScreenshot: a.includeScreenshot, attributeAllowlist: a.attributeAllowlist, styleAllowlist: a.styleAllowlist, includeRoles: a.includeRoles }) },
   describe:           { ref: true,  method: 'dom.describe',               params: (_, r) => ({ elementRef: r }) },
   text:               { ref: true,  method: 'dom.get_text',               params: (a, r) => ({ elementRef: r, textBudget: a.textBudget }) },
@@ -233,7 +234,7 @@ export async function handleDomTool(args) {
 }
 
 /** @type {Record<string, ToolAction>} */
-const STYLES_LAYOUT_ACTIONS = {
+export const STYLES_LAYOUT_ACTIONS = {
   computed:      { ref: true,  method: 'styles.get_computed',       params: (a, r) => ({ elementRef: r, properties: a.properties }) },
   matched_rules: { ref: true,  method: 'styles.get_matched_rules', params: (_, r) => ({ elementRef: r }) },
   box_model:     { ref: true,  method: 'layout.get_box_model',     params: (_, r) => ({ elementRef: r }) },
@@ -249,7 +250,7 @@ export async function handleStylesLayoutTool(args) {
 }
 
 /** @type {Record<string, { method: BridgeMethod, params: (a: Record<string, unknown>) => Record<string, unknown> }>} */
-const PAGE_ACTIONS = {
+export const PAGE_ACTIONS = {
   state:         { method: 'page.get_state',           params: () => ({}) },
   evaluate:      { method: 'page.evaluate',            params: a => ({ expression: a.expression, awaitPromise: a.awaitPromise, timeoutMs: a.timeoutMs, returnByValue: a.returnByValue }) },
   console:       { method: 'page.get_console',         params: a => ({ level: a.level, clear: a.clear, limit: a.limit }) },
@@ -271,7 +272,7 @@ export async function handlePageTool(args) {
 }
 
 /** @type {Record<string, { method: BridgeMethod, params: (a: Record<string, unknown>) => Record<string, unknown> }>} */
-const NAVIGATION_ACTIONS = {
+export const NAVIGATION_ACTIONS = {
   navigate:   { method: 'navigation.navigate',   params: a => ({ url: a.url, waitForLoad: a.waitForLoad, timeoutMs: a.timeoutMs }) },
   reload:     { method: 'navigation.reload',     params: a => ({ waitForLoad: a.waitForLoad, timeoutMs: a.timeoutMs }) },
   go_back:    { method: 'navigation.go_back',    params: a => ({ waitForLoad: a.waitForLoad, timeoutMs: a.timeoutMs }) },
@@ -289,6 +290,18 @@ export async function handleNavigationTool(args) {
   if (!entry) return summarizeToolError(`Unsupported navigation action "${args.action}".`);
   return callBridgeTool(entry.method, entry.params(args));
 }
+
+/** @type {Record<string, BridgeMethod>} */
+export const INPUT_ACTION_METHODS = {
+  click: 'input.click',
+  focus: 'input.focus',
+  type: 'input.type',
+  press_key: 'input.press_key',
+  set_checked: 'input.set_checked',
+  select_option: 'input.select_option',
+  hover: 'input.hover',
+  drag: 'input.drag'
+};
 
 /**
  * @param {{ action: string, elementRef?: string, selector?: string, button?: string, clickCount?: number, text?: string, clear?: boolean, submit?: boolean, key?: string, modifiers?: string[], checked?: boolean, values?: string[], labels?: string[], indexes?: number[], duration?: number, sourceElementRef?: string, sourceSelector?: string, destinationElementRef?: string, destinationSelector?: string, offsetX?: number, offsetY?: number }} args
@@ -379,7 +392,7 @@ export async function handleInputTool(args) {
 }
 
 /** @type {Record<string, ToolAction>} */
-const PATCH_ACTIONS = {
+export const PATCH_ACTIONS = {
   apply_styles:    { ref: true,  method: 'patch.apply_styles',            params: (a, r) => ({ target: { elementRef: r }, declarations: a.declarations, important: a.important }) },
   apply_dom:       { ref: true,  method: 'patch.apply_dom',               params: (a, r) => ({ target: { elementRef: r }, operation: a.operation, value: a.value, name: a.name }) },
   list:            { ref: false, method: 'patch.list',                    params: () => ({}) },
@@ -396,7 +409,7 @@ export async function handlePatchTool(args) {
 }
 
 /** @type {Record<string, ToolAction>} */
-const CAPTURE_ACTIONS = {
+export const CAPTURE_ACTIONS = {
   element:             { ref: true,  method: 'screenshot.capture_element',       params: (_, r) => ({ elementRef: r }) },
   region:              { ref: false, method: 'screenshot.capture_region',        params: a => /** @type {Record<string, unknown>} */ (a.rect || {}) },
   cdp_document:        { ref: false, method: 'cdp.get_document',                params: () => ({}) },

@@ -6,8 +6,8 @@ import path from 'node:path';
 export const APP_NAME = 'com.browserbridge.browser_bridge';
 
 /**
- * The published Chrome Web Store extension ID.
- * TODO: replace with final ID once published.
+ * The official Chrome Web Store extension ID used when callers do not provide
+ * an explicit override.
  *
  * @type {string}
  */

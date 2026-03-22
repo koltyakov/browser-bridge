@@ -32,6 +32,17 @@ import {
   normalizeWaitForLoadStateParams,
   normalizeWaitForParams
 } from '../../protocol/src/index.js';
+import {
+  getErrorMessage,
+  inferCapability,
+  normalizeCropRect,
+  normalizeRuntimeErrorMessage,
+  safeOrigin,
+  shouldLogAction,
+  simplifyAXNode,
+  summarizeActionResult,
+  summarizeTabResult
+} from './background-helpers.js';
 import { TabDebuggerCoordinator } from './debugger-coordinator.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */
@@ -695,72 +706,6 @@ async function handleAccessibilityTree(request) {
 }
 
 /**
- * Simplify a CDP AXNode into a compact representation.
- *
- * @param {Record<string, unknown>} node
- * @returns {{ nodeId: string, role: string, name: string, description: string, value: string, focused: boolean, required: boolean, checked: string | null, disabled: boolean, interactive: boolean, childIds: string[] }}
- */
-function simplifyAXNode(node) {
-  const role = axValue(node.role);
-  const interactiveRoles = new Set([
-    'button', 'link', 'textbox', 'checkbox', 'radio', 'combobox',
-    'listbox', 'menuitem', 'tab', 'switch', 'slider', 'spinbutton',
-    'searchbox', 'menuitemcheckbox', 'menuitemradio', 'option'
-  ]);
-  return {
-    nodeId: String(node.nodeId ?? ''),
-    role,
-    name: axValue(node.name),
-    description: axValue(node.description),
-    value: axValue(node.value),
-    focused: axBool(node.focused),
-    required: axBool(node.required),
-    checked: axTristateValue(node.checked),
-    disabled: axBool(node.disabled),
-    interactive: interactiveRoles.has(role) || axBool(node.focusable),
-    childIds: Array.isArray(node.childIds) ? node.childIds.map(String) : []
-  };
-}
-
-/**
- * Extract a string value from a CDP AXValue-shaped property.
- *
- * @param {unknown} prop
- * @returns {string}
- */
-function axValue(prop) {
-  if (!prop || typeof prop !== 'object') return '';
-  const val = /** @type {{ value?: unknown }} */ (prop).value;
-  return typeof val === 'string' ? val : '';
-}
-
-/**
- * Extract a boolean value from a CDP AXValue-shaped property.
- *
- * @param {unknown} prop
- * @returns {boolean}
- */
-function axBool(prop) {
-  if (!prop || typeof prop !== 'object') return false;
-  return /** @type {{ value?: unknown }} */ (prop).value === true;
-}
-
-/**
- * Extract a tristate string from a CDP AXValue-shaped property.
- *
- * @param {unknown} prop
- * @returns {string | null}
- */
-function axTristateValue(prop) {
-  if (!prop || typeof prop !== 'object') return null;
-  const val = /** @type {{ value?: unknown }} */ (prop).value;
-  if (val === 'true' || val === true) return 'true';
-  if (val === 'false' || val === false) return 'false';
-  if (val === 'mixed') return 'mixed';
-  return null;
-}
-
-/**
  * Install a network interceptor and retrieve buffered request/response entries
  * via chrome.scripting.executeScript in the MAIN world, capturing fetch/XHR.
  *
@@ -887,7 +832,7 @@ async function handleViewportResize(request) {
   const session = await requireSession(request, CAPABILITIES.VIEWPORT_CONTROL);
   const params = normalizeViewportResizeParams(request.params);
   return tabDebugger.run(session.tabId, async (target) => {
-    if (params.width === 0 && params.height === 0) {
+    if (params.reset || (params.width === 0 && params.height === 0)) {
       await chrome.debugger.sendCommand(target, 'Emulation.clearDeviceMetricsOverride', {});
     } else {
       await chrome.debugger.sendCommand(target, 'Emulation.setDeviceMetricsOverride', {
@@ -900,7 +845,8 @@ async function handleViewportResize(request) {
     return createSuccess(request.id, {
       width: params.width,
       height: params.height,
-      deviceScaleFactor: params.deviceScaleFactor
+      deviceScaleFactor: params.deviceScaleFactor,
+      reset: params.reset
     }, { method: request.method });
   });
 }
@@ -1288,24 +1234,6 @@ async function waitForTabComplete(tabId, timeoutMs) {
 }
 
 /**
- * Return a compact tab snapshot after a navigation operation.
- *
- * @param {chrome.tabs.Tab} tab
- * @param {string} method
- * @returns {{ method: string, tabId: number | null, windowId: number | null, url: string, title: string, status: string }}
- */
-function summarizeTabResult(tab, method) {
-  return {
-    method,
-    tabId: typeof tab.id === 'number' ? tab.id : null,
-    windowId: typeof tab.windowId === 'number' ? tab.windowId : null,
-    url: tab.url ?? '',
-    title: tab.title ?? '',
-    status: tab.status ?? 'unknown'
-  };
-}
-
-/**
  * Validate that a request belongs to an active session and that the
  * tab still matches the stored origin/capability scope.
  *
@@ -1663,23 +1591,6 @@ function isTabEnabled(tabId) {
 }
 
 /**
- * Decide whether a bridge method should appear in the operator-facing action
- * log.
- *
- * @param {string} method
- * @returns {boolean}
- */
-function shouldLogAction(method) {
-  return ![
-    'health.ping',
-    'log.tail',
-    'skill.get_runtime_context',
-    'tabs.list',
-    'session.get_status'
-  ].includes(method);
-}
-
-/**
  * Resolve the scope context for a bridge request so the action log can show
  * where an operation happened even if that operation later revokes the session.
  *
@@ -1746,73 +1657,6 @@ async function logBridgeAction(request, response, actionContext) {
 }
 
 /**
- * Turn one bridge response into a short human-readable log line.
- *
- * @param {BridgeResponse} response
- * @returns {string}
- */
-function summarizeActionResult(response) {
-  if (!response.ok) {
-    return response.error.message;
-  }
-
-  const result = response.result && typeof response.result === 'object'
-    ? /** @type {Record<string, unknown>} */ (response.result)
-    : {};
-
-  if (typeof result.patchId === 'string') {
-    return `Patch ${result.patchId} applied.`;
-  }
-
-  if (Array.isArray(result.nodes)) {
-    return `${result.nodes.length} node(s) returned.`;
-  }
-
-  if (result.revoked === true) {
-    return 'Session revoked.';
-  }
-
-  if (typeof result.sessionId === 'string') {
-    return 'Session ready.';
-  }
-
-  if (typeof result.image === 'string') {
-    return 'Partial screenshot captured.';
-  }
-
-  return 'Completed successfully.';
-}
-
-/**
- * Convert an unknown thrown value into a stable message string.
- *
- * @param {unknown} error
- * @returns {string}
- */
-function getErrorMessage(error) {
-  if (typeof error === 'string') {
-    return error;
-  }
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return 'Unexpected extension error.';
-}
-
-/**
- * Normalize browser runtime wording into extension-level error codes so tab
- * lifecycle races produce stable responses and logs.
- *
- * @param {string} message
- * @returns {string}
- */
-function normalizeRuntimeErrorMessage(message) {
-  return /^No tab with id[: ]/i.test(message)
-    ? ERROR_CODES.TAB_MISMATCH
-    : message;
-}
-
-/**
  * Map thrown runtime errors to structured bridge failures.
  *
  * @param {BridgeRequest} request
@@ -1830,97 +1674,6 @@ function toFailureResponse(request, error) {
       : ERROR_CODES.INTERNAL_ERROR;
 
   return createFailure(request.id, code, message, null, { method: request.method });
-}
-
-/**
- * Normalize screenshot crop coordinates into positive integer pixel bounds.
- *
- * @param {{ x?: number, y?: number, width?: number, height?: number, scale?: number }} [rect={}]
- * @returns {{ x: number, y: number, width: number, height: number }}
- */
-function normalizeCropRect(rect = {}) {
-  const scale = Number(rect.scale) || 1;
-  return {
-    x: Math.max(0, Math.round((rect.x || 0) * scale)),
-    y: Math.max(0, Math.round((rect.y || 0) * scale)),
-    width: Math.max(1, Math.round((rect.width || 1) * scale)),
-    height: Math.max(1, Math.round((rect.height || 1) * scale))
-  };
-}
-
-/**
- * Convert a possibly invalid URL string into an origin for display/scoping.
- *
- * @param {string} url
- * @returns {string}
- */
-function safeOrigin(url) {
-  try {
-    return new URL(url).origin;
-  } catch {
-    return '';
-  }
-}
-
-/**
- * Infer the required capability gate for a bridge method.
- *
- * @param {string} method
- * @returns {Capability | null}
- */
-function inferCapability(method) {
-  if (method === 'page.evaluate') {
-    return CAPABILITIES.PAGE_EVALUATE;
-  }
-  if (method === 'page.get_network') {
-    return CAPABILITIES.NETWORK_READ;
-  }
-  if (method.startsWith('page.')) {
-    return CAPABILITIES.PAGE_READ;
-  }
-  if (method.startsWith('dom.')) {
-    return CAPABILITIES.DOM_READ;
-  }
-  if (method.startsWith('styles.')) {
-    return CAPABILITIES.STYLES_READ;
-  }
-  if (method.startsWith('layout.')) {
-    return CAPABILITIES.LAYOUT_READ;
-  }
-  if (method.startsWith('viewport.')) {
-    return CAPABILITIES.VIEWPORT_CONTROL;
-  }
-  if (method.startsWith('navigation.')) {
-    return CAPABILITIES.NAVIGATION_CONTROL;
-  }
-  if (method.startsWith('input.')) {
-    return CAPABILITIES.AUTOMATION_INPUT;
-  }
-  if (method === 'patch.apply_styles') {
-    return CAPABILITIES.PATCH_STYLES;
-  }
-  if (method.startsWith('patch.')) {
-    return CAPABILITIES.PATCH_DOM;
-  }
-  if (method.startsWith('screenshot.')) {
-    return CAPABILITIES.SCREENSHOT_PARTIAL;
-  }
-  if (method === 'cdp.get_box_model') {
-    return CAPABILITIES.CDP_BOX_MODEL;
-  }
-  if (method === 'cdp.get_computed_styles_for_node') {
-    return CAPABILITIES.CDP_STYLES;
-  }
-  if (method.startsWith('cdp.')) {
-    return CAPABILITIES.CDP_DOM_SNAPSHOT;
-  }
-  if (method.startsWith('performance.')) {
-    return CAPABILITIES.PERFORMANCE_READ;
-  }
-  if (method.startsWith('tabs.') && method !== 'tabs.list') {
-    return CAPABILITIES.TABS_MANAGE;
-  }
-  return null;
 }
 
 /**

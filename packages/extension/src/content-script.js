@@ -43,18 +43,31 @@
   const reverseRegistry = new WeakMap();
   const patchRegistry = new Map();
   const MAX_REGISTRY_SIZE = 2000;
-  const NON_TEXT_INPUT_TYPES = new Set([
-    "button",
-    "checkbox",
-    "color",
-    "file",
-    "hidden",
-    "image",
-    "radio",
-    "range",
-    "reset",
-    "submit",
-  ]);
+  const contentHelpers = /** @type {typeof globalThis & { __BBX_CONTENT_HELPERS__?: {
+    NON_TEXT_INPUT_TYPES: Set<string>,
+    applyBudget: (options?: Record<string, any>) => Budget,
+    clamp: (value: number | string | null | undefined, minimum: number, maximum: number) => number,
+    escapeTailwindSelector: (selector: string) => string,
+    extractElementText: (element: Element) => string,
+    getImplicitRole: (element: Element) => string,
+    getImplicitRoleSelector: (role: string) => string,
+    toRect: (rect: DOMRect | DOMRectReadOnly) => { x: number, y: number, width: number, height: number },
+    truncateText: (value: string, budget: number) => { value: string, truncated: boolean, omitted: number }
+  } }} */ (globalThis).__BBX_CONTENT_HELPERS__;
+  if (!contentHelpers) {
+    throw new Error('Browser Bridge content-script helpers must load before content-script.js.');
+  }
+  const {
+    NON_TEXT_INPUT_TYPES,
+    applyBudget,
+    clamp,
+    escapeTailwindSelector,
+    extractElementText,
+    getImplicitRole,
+    getImplicitRoleSelector,
+    toRect,
+    truncateText
+  } = contentHelpers;
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === "bridge.ping") {
@@ -1277,101 +1290,6 @@
   }
 
   /**
-   * Return a CSS selector that matches elements whose implicit role is `role`.
-   * Returns empty string if no tag maps to the role.
-   *
-   * @param {string} role
-   * @returns {string}
-   */
-  function getImplicitRoleSelector(role) {
-    /** @type {Record<string, string>} */
-    const map = {
-      link: "a[href]",
-      article: "article",
-      complementary: "aside",
-      button: "button, input[type=button], input[type=submit], input[type=reset], input[type=image]",
-      dialog: "dialog",
-      contentinfo: "footer",
-      form: "form",
-      heading: "h1, h2, h3, h4, h5, h6",
-      banner: "header",
-      img: "img",
-      textbox: "input:not([type=button]):not([type=checkbox]):not([type=radio]):not([type=range]):not([type=submit]):not([type=reset]):not([type=image]):not([type=hidden]), textarea",
-      listitem: "li",
-      main: "main",
-      navigation: "nav",
-      list: "ol, ul",
-      option: "option",
-      progressbar: "progress",
-      region: "section",
-      listbox: "select",
-      table: "table",
-      cell: "td",
-      columnheader: "th",
-      row: "tr",
-      checkbox: "input[type=checkbox]",
-      radio: "input[type=radio]",
-      slider: "input[type=range]",
-      searchbox: "input[type=search]",
-    };
-    return map[role] || "";
-  }
-
-  /**
-   * Return a basic implicit ARIA role for common HTML elements.
-   *
-   * @param {Element} el
-   * @returns {string}
-   */
-  function getImplicitRole(el) {
-    const tag = el.tagName.toLowerCase();
-    const roleMap = {
-      a: el.hasAttribute("href") ? "link" : "",
-      article: "article",
-      aside: "complementary",
-      button: "button",
-      dialog: "dialog",
-      footer: "contentinfo",
-      form: "form",
-      h1: "heading", h2: "heading", h3: "heading",
-      h4: "heading", h5: "heading", h6: "heading",
-      header: "banner",
-      img: "img",
-      input: getInputImplicitRole(el),
-      li: "listitem",
-      main: "main",
-      nav: "navigation",
-      ol: "list",
-      option: "option",
-      progress: "progressbar",
-      section: "region",
-      select: "listbox",
-      table: "table",
-      td: "cell",
-      textarea: "textbox",
-      th: "columnheader",
-      tr: "row",
-      ul: "list",
-    };
-    return roleMap[tag] || "";
-  }
-
-  /**
-   * @param {Element} el
-   * @returns {string}
-   */
-  function getInputImplicitRole(el) {
-    if (!(el instanceof HTMLInputElement)) return "textbox";
-    const type = el.type.toLowerCase();
-    const map = {
-      button: "button", checkbox: "checkbox", radio: "radio",
-      range: "slider", search: "searchbox", submit: "button",
-      reset: "button", image: "button",
-    };
-    return map[type] || "textbox";
-  }
-
-  /**
    * Resolve a patch target from either an element reference or a selector.
    *
    * @param {{ elementRef?: string, selector?: string }} [target={}]
@@ -1902,87 +1820,12 @@
   }
 
   /**
-   * Convert a DOMRect into page-relative coordinates.
-   *
-   * @param {DOMRect | DOMRectReadOnly} rect
-   * @returns {{ x: number, y: number, width: number, height: number }}
-   */
-  function toRect(rect) {
-    return {
-      x: rect.x + window.scrollX,
-      y: rect.y + window.scrollY,
-      width: rect.width,
-      height: rect.height,
-    };
-  }
-
-  /**
    * Return a cheap document revision marker for change detection.
    *
    * @returns {number}
    */
   function getDocumentRevision() {
     return (document.body?.textContent || "").length;
-  }
-
-  /**
-   * Build a lightweight text description for an element without walking the full
-   * subtree like `innerText` does.
-   *
-   * @param {Element} element
-   * @returns {string}
-   */
-  function extractElementText(element) {
-    const parts = [];
-
-    pushUnique(parts, element.getAttribute("aria-label"));
-    pushUnique(parts, element.getAttribute("name"));
-    pushUnique(parts, element.getAttribute("placeholder"));
-    pushUnique(parts, element.getAttribute("title"));
-
-    if (
-      "value" in element &&
-      typeof element.value === "string" &&
-      element.value.trim()
-    ) {
-      pushUnique(parts, element.value);
-    }
-
-    const ownText = [...element.childNodes]
-      .filter((node) => node.nodeType === Node.TEXT_NODE)
-      .map((node) => node.textContent || "")
-      .join(" ")
-      .replace(/\s+/g, " ")
-      .trim();
-
-    pushUnique(parts, ownText);
-
-    if (!parts.length && element.childElementCount === 0) {
-      pushUnique(
-        parts,
-        (element.textContent || "").replace(/\s+/g, " ").trim(),
-      );
-    }
-
-    return parts.join(" | ");
-  }
-
-  /**
-   * Push a normalized string into a list only if it is non-empty and unique.
-   *
-   * @param {string[]} values
-   * @param {string | null | undefined} candidate
-   * @returns {void}
-   */
-  function pushUnique(values, candidate) {
-    if (!candidate) {
-      return;
-    }
-
-    const normalized = candidate.replace(/\s+/g, " ").trim();
-    if (normalized && !values.includes(normalized)) {
-      values.push(normalized);
-    }
   }
 
   /**
@@ -2005,87 +1848,4 @@
     };
   }
 
-  /**
-   * Escape Tailwind arbitrary-value bracket syntax in CSS selectors so that
-   * class names like `top-[30px]` work with `querySelector`.
-   *
-   * Tailwind classes use `[` and `]` for arbitrary values (e.g. `w-[200px]`,
-   * `bg-[#f00]`). These are invalid in bare CSS selectors and must be escaped.
-   * This function detects `.class-name-[value]` patterns and escapes the
-   * brackets, converting e.g. `.top-[30px]` to `.top-\\[30px\\]`.
-   *
-   * @param {string} selector
-   * @returns {string}
-   */
-  function escapeTailwindSelector(selector) {
-    // Match class selectors containing brackets: .word-[...]
-    // Captures: (dot + class-prefix-)(bracket-content)
-    return selector.replace(
-      /(\.[-\w]+)\[([^\]]+)\]/g,
-      (_, prefix, value) => `${prefix}\\[${value}\\]`
-    );
-  }
-
-  /**
-   * @param {Record<string, any>} [options={}]
-   * @returns {Budget}
-   */
-  function applyBudget(options = {}) {
-    return {
-      maxNodes: clamp(options.maxNodes ?? 25, 1, 250),
-      maxDepth: clamp(options.maxDepth ?? 4, 1, 20),
-      textBudget: clamp(options.textBudget ?? 600, 32, 10000),
-      includeHtml: Boolean(options.includeHtml),
-      includeScreenshot: Boolean(options.includeScreenshot),
-      attributeAllowlist: normalizeList(options.attributeAllowlist),
-      styleAllowlist: normalizeList(options.styleAllowlist),
-    };
-  }
-
-  /**
-   * @param {string} value
-   * @param {number} budget
-   * @returns {{ value: string, truncated: boolean, omitted: number }}
-   */
-  function truncateText(value, budget) {
-    if (!value) {
-      return { value: "", truncated: false, omitted: 0 };
-    }
-
-    if (value.length <= budget) {
-      return { value, truncated: false, omitted: 0 };
-    }
-
-    return {
-      value: `${value.slice(0, Math.max(0, budget - 1))}\u2026`,
-      truncated: true,
-      omitted: value.length - budget,
-    };
-  }
-
-  /**
-   * @param {unknown} value
-   * @returns {string[]}
-   */
-  function normalizeList(value) {
-    if (!Array.isArray(value)) {
-      return [];
-    }
-
-    return [
-      ...new Set(
-        value.filter((item) => typeof item === "string" && item.trim()),
-      ),
-    ];
-  }
-
-  /**
-   * @param {number | string | null | undefined} value
-   * @param {number} minimum
-   * @param {number} maximum
-   * @returns {number}
-   */
-  function clamp(value, minimum, maximum) {
-    return Math.min(Math.max(Number(value) || minimum, minimum), maximum);
-  }
 })();

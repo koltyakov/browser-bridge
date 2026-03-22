@@ -4,6 +4,7 @@
   "private": false,
   "type": "module",
   "files": [
+    "assets",
     "LICENSE",
     "README.md",
     "QUICKSTART.md",

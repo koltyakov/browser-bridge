@@ -156,6 +156,8 @@ bbx tab-create https://example.com
 bbx call tabs.create '{"url":"https://example.com","active":false}'
 ```
 
+The `bbx tab-create` shortcut intentionally covers the common case. Use `bbx call tabs.create ...` when you need advanced fields such as `active:false`.
+
 ### tabs.close
 Close a tab by its `tabId`. Does not require a session.
 ```bash

@@ -40,6 +40,7 @@ export function createBridgeMcpServer() {
     inputSchema: {
       action: z.enum(['list', 'create', 'close']),
       url: z.string().optional(),
+      active: z.boolean().optional(),
       tabId: z.number().optional()
     }
   }, handleTabsTool);

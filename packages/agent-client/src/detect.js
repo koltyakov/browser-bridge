@@ -97,21 +97,23 @@ const SKILL_TARGET_KEYS = ['copilot', 'codex', 'claude', 'opencode'];
 /**
  * Detect which MCP clients are installed on this machine.
  *
+ * @param {Record<string, () => boolean>} [detectors=DETECTORS]
  * @returns {McpClientName[]}
  */
-export function detectMcpClients() {
-  return MCP_CLIENT_KEYS.filter(name => DETECTORS[name]());
+export function detectMcpClients(detectors = DETECTORS) {
+  return MCP_CLIENT_KEYS.filter(name => detectors[name]());
 }
 
 /**
  * Detect which skill targets are installed on this machine.
  * Always includes 'agents' as a generic fallback.
  *
+ * @param {Record<string, () => boolean>} [detectors=DETECTORS]
  * @returns {SupportedTarget[]}
  */
-export function detectSkillTargets() {
+export function detectSkillTargets(detectors = DETECTORS) {
   /** @type {SupportedTarget[]} */
-  const detected = SKILL_TARGET_KEYS.filter(name => DETECTORS[name]());
+  const detected = SKILL_TARGET_KEYS.filter(name => detectors[name]());
   detected.push('agents');
   return detected;
 }

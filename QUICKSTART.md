@@ -42,6 +42,8 @@ bbx install-skill copilot --local  # scope to current project instead of global
 
 Skills are installed globally by default. The skill teaches your agent to call `bbx` commands directly for structured, token-efficient browser output. No MCP wiring needed.
 
+Shortcut commands cover the common cases. Advanced protocol fields stay available through `bbx call <method> '{...}'` when you need the full bridge surface.
+
 > Both paths can be used together - MCP for tool calls, skill for usage guidance.
 
 ## 4. Enable a tab
@@ -66,4 +68,3 @@ Your agent can now inspect and patch that tab over MCP.
 > *"Using browser-bridge skill, verify the hero section spacing and fix it."*
 
 In both cases the agent reads live DOM, styles, console, and network state from your real tab. Patches are reversible and session-scoped - the agent verifies the fix in the browser before writing it back to source.
-

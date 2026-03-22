@@ -5,9 +5,13 @@ import assert from 'node:assert/strict';
 
 import {
   DEFAULT_CAPABILITIES,
+  BRIDGE_METHODS,
+  BRIDGE_METHOD_REGISTRY,
   ERROR_CODES,
   applyBudget,
+  bridgeMethodNeedsSession,
   createFailure,
+  createBridgeMethodGroups,
   createRequest,
   createRuntimeContext,
   normalizeCheckedAction,
@@ -112,6 +116,19 @@ test('runtime context stays compact and opinionated', () => {
   assert.equal(context.v, '1.0');
   assert.ok(context.tips.length >= 3);
   assert.equal(context.flow.includes('page.get_state'), true);
+});
+
+test('bridge method registry is the source of truth for method ordering and session requirements', () => {
+  assert.deepEqual(BRIDGE_METHODS, Object.keys(BRIDGE_METHOD_REGISTRY));
+  assert.equal(bridgeMethodNeedsSession('health.ping'), false);
+  assert.equal(bridgeMethodNeedsSession('dom.query'), true);
+});
+
+test('bridge method groups are derived from the registry', () => {
+  const groups = createBridgeMethodGroups();
+  assert.ok(groups.tabs.includes('tabs.create'));
+  assert.ok(groups.inspect.includes('dom.find_by_role'));
+  assert.ok(groups.wait.includes('page.wait_for_load_state'));
 });
 
 /** Ensure DOM patch metadata is preserved by normalization. */
@@ -447,10 +464,11 @@ test('normalizePageTextParams defaults to 8000', () => {
 
 /** Ensure viewport resize params clamp dimensions. */
 test('normalizeViewportResizeParams clamps dimensions', () => {
-  const params = normalizeViewportResizeParams({ width: 99999, height: 99999, deviceScaleFactor: 10 });
+  const params = normalizeViewportResizeParams({ width: 99999, height: 99999, deviceScaleFactor: 10, reset: true });
   assert.equal(params.width, 7680);
   assert.equal(params.height, 4320);
   assert.equal(params.deviceScaleFactor, 4);
+  assert.equal(params.reset, true);
 });
 
 test('normalizeViewportResizeParams defaults to 1280x720', () => {
@@ -458,6 +476,7 @@ test('normalizeViewportResizeParams defaults to 1280x720', () => {
   assert.equal(params.width, 1280);
   assert.equal(params.height, 720);
   assert.equal(params.deviceScaleFactor, 0);
+  assert.equal(params.reset, false);
 });
 
 /** Ensure new capabilities are in defaults. */

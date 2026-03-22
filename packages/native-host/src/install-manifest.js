@@ -6,8 +6,10 @@ import path from 'node:path';
 import { APP_NAME, getBridgeDir, getManifestInstallDir, PUBLISHED_EXTENSION_ID } from './config.js';
 
 export const DEFAULT_EXTENSION_ID_ENV = 'BROWSER_BRIDGE_EXTENSION_ID';
+export const BUILT_IN_EXTENSION_ID_SOURCE = 'built_in';
 
 /** @typedef {import('./config.js').SupportedBrowser} SupportedBrowser */
+/** @typedef {'env' | 'built_in' | 'none' | 'invalid_env'} ExtensionIdSource */
 
 /**
  * @typedef {{
@@ -42,18 +44,30 @@ export function parseExtensionId(arg) {
 
 /**
  * @param {NodeJS.ProcessEnv} [env=process.env]
+ * @returns {{ extensionId: string | null, source: ExtensionIdSource }}
+ */
+export function resolveDefaultExtensionId(env = process.env) {
+  const candidate = env[DEFAULT_EXTENSION_ID_ENV];
+  if (candidate !== undefined) {
+    const parsed = parseExtensionId(candidate);
+    return {
+      extensionId: parsed,
+      source: parsed ? 'env' : 'invalid_env'
+    };
+  }
+
+  return {
+    extensionId: PUBLISHED_EXTENSION_ID || null,
+    source: PUBLISHED_EXTENSION_ID ? 'built_in' : 'none'
+  };
+}
+
+/**
+ * @param {NodeJS.ProcessEnv} [env=process.env]
  * @returns {string | null}
  */
 export function getDefaultExtensionId(env = process.env) {
-  const candidate = env[DEFAULT_EXTENSION_ID_ENV];
-  const parsed = parseExtensionId(candidate);
-  // If an env var was explicitly set but invalid, surface null so callers can error.
-  if (candidate !== undefined) {
-    return parsed;
-  }
-  // No env var - fall back to the published Web Store extension ID so
-  // `bbx install` works zero-config for end users.
-  return PUBLISHED_EXTENSION_ID;
+  return resolveDefaultExtensionId(env).extensionId;
 }
 
 /**
@@ -130,8 +144,13 @@ export async function installNativeManifest(options) {
     );
   }
 
-  const defaultExtensionId = getDefaultExtensionId(env);
-  const extensionId = parsedExtensionId || defaultExtensionId;
+  const defaultExtensionId = resolveDefaultExtensionId(env);
+  if (!parsedExtensionId && defaultExtensionId.source === 'invalid_env') {
+    throw new Error(
+      `Invalid ${DEFAULT_EXTENSION_ID_ENV}: ${env[DEFAULT_EXTENSION_ID_ENV]}\nExpected 32 lowercase letters or chrome-extension://<id>/`
+    );
+  }
+  const extensionId = parsedExtensionId || defaultExtensionId.extensionId;
   const hostPath = path.join(repoRoot, 'packages', 'native-host', 'bin', 'native-host.js');
   const launcherPath = path.join(bridgeDir, 'native-host-launcher.sh');
   const manifestPath = path.join(installDir, `${APP_NAME}.json`);
@@ -161,8 +180,12 @@ exec '${escapeSingleQuotes(nodePath)}' '${escapeSingleQuotes(hostPath)}' "$@"
   stdout.write(`Wrote ${manifestPath}\n`);
   stdout.write(`Wrote ${launcherPath}\n`);
 
-  if (!parsedExtensionId && extensionIdArg == null && defaultExtensionId) {
-    stdout.write(`Used default extension ID from ${DEFAULT_EXTENSION_ID_ENV}.\n`);
+  if (!parsedExtensionId && extensionIdArg == null && extensionId) {
+    if (defaultExtensionId.source === 'env') {
+      stdout.write(`Used extension ID from ${DEFAULT_EXTENSION_ID_ENV}.\n`);
+    } else if (defaultExtensionId.source === BUILT_IN_EXTENSION_ID_SOURCE) {
+      stdout.write('Used built-in Browser Bridge extension ID.\n');
+    }
   }
 
   const hasPlaceholder = allowedOrigins.some((origin) => origin.includes('__REPLACE_WITH_EXTENSION_ID__'));

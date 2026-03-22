@@ -525,7 +525,8 @@ export {};
  * @typedef {{
  *   width?: number,
  *   height?: number,
- *   deviceScaleFactor?: number
+ *   deviceScaleFactor?: number,
+ *   reset?: boolean
  * }} ViewportResizeParams
  */
 
@@ -533,6 +534,7 @@ export {};
  * @typedef {{
  *   width: number,
  *   height: number,
- *   deviceScaleFactor: number
+ *   deviceScaleFactor: number,
+ *   reset: boolean
  * }} NormalizedViewportResizeParams
  */
