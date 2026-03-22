@@ -23,60 +23,13 @@ Browser Bridge is optimized for the opposite starting point: **inspect the state
 
 ## Setup
 
-**1. Install the CLI**
+1. Install [Browser Bridge from the Chrome Web Store](https://chrome.google.com/webstore/detail/niaidbpnkbfbjgdfieabpmlomilpdipn) <!-- TODO: replace with final store link after publishing -->
+2. `npm install -g @browserbridge/bbx` - installs the CLI and native host
+3. `bbx install-mcp` - connect your agent via MCP
+4. `bbx install-skill` - install skill+CLI
+5. Enable extension session in side panel
+6. Ask your agent to use Browser Bridge (`$bbx` skill or MCP)
 
-```bash
-npm install -g @browserbridge/bbx
-```
-
-This also installs the native host automatically.
-
-**2. Install the extension**
-
-Install [Browser Bridge from the Chrome Web Store](https://chrome.google.com/webstore/detail/niaidbpnkbfbjgdfieabpmlomilpdipn). <!-- TODO: replace with final store link after publishing -->
-
-**3. Verify**
-
-```bash
-bbx doctor
-```
-
-**4. Enable a tab**
-
-Open the Browser Bridge popup or side panel and enable agent communication for the tab you want to inspect.
-
-## Connect your agent
-
-```bash
-bbx install-mcp           # all supported clients
-bbx install-mcp copilot   # GitHub Copilot in VS Code
-bbx install-mcp codex     # OpenAI Codex CLI
-bbx install-mcp cursor    # Cursor
-bbx install-mcp claude    # Claude Code
-```
-
-This writes the MCP config directly into each client's settings file. Once connected, your agent drives the browser through MCP - you don't need to run bridge commands manually.
-
-To add the Browser Bridge skill to your project so your agent knows how to use it:
-
-```bash
-bbx install-skill
-```
-
-## CLI reference
-
-These are the commands you'll use directly. The inspection and patching methods are consumed by your agent over MCP.
-
-```bash
-bbx install [ext-id]      # install native host (pass ext ID for unpacked builds)
-bbx doctor                # diagnose install and session readiness
-bbx status                # check bridge connection
-bbx install-mcp [client]  # write MCP config for copilot / codex / cursor / claude (or all)
-bbx install-skill         # install the skill into the current project
-bbx request-access        # open a session for the active tab
-bbx logs                  # tail bridge logs
-bbx tabs                  # list available tabs
-```
 
 ## How it works
 
