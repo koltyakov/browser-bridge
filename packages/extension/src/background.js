@@ -1626,7 +1626,7 @@ async function updateActionIndicatorForTab(tabId) {
     if (enabled) {
       await chrome.action.setBadgeBackgroundColor({
         tabId,
-        color: '#8e331a'
+        color: '#787878'
       });
       await chrome.action.setBadgeTextColor({
         tabId,
