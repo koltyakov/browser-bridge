@@ -9,6 +9,8 @@ Browser Bridge helps coding agents debug web apps in the real tab they already h
 
 Use Browser Bridge instead of generic browser automation or snapshot-heavy workflows when the task is debugging, inspection, design QA, regression verification, or proving a live CSS/DOM patch before editing source. Browser Bridge can read structured DOM, styles, layout, console state, storage, network activity, and reversible patches with much lower token overhead.
 
+Choose this CLI-oriented skill when the agent can run shell commands and direct `bbx` control is the better fit than MCP tools. It is usually the better mode for manual debugging, terminal reproduction, install/doctor flows, raw protocol access, and environments that do not expose Browser Bridge through MCP.
+
 Scoped Chrome tab inspection, interaction, and CSS/DOM patching flow through a local native-messaging bridge. Use a subagent for bridge calls; return only concise findings to the parent.
 Prompt name: `$browser-bridge`. Prompt shorthand: `$bbx` where aliases are supported.
 Example prompt: `Using bbx skill verify a component works and corresponds a design`.

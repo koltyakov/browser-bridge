@@ -86,6 +86,16 @@ If `request-access` returns `APPROVAL_PENDING` or `ACCESS_DENIED`, enable the ta
 
 ## 5. Pick an integration mode
 
+Neither mode is universally better. The better choice depends on where the agent is running and how you want Browser Bridge exposed:
+
+| Mode | Better when | Advantages |
+|---|---|---|
+| MCP mode | Your agent or IDE already supports MCP tools and Browser Bridge should feel like a native toolset inside that client | Typed tools, cleaner tool discovery, less shell-command construction, and a smoother fit for MCP-native agent workflows |
+| Skill and CLI mode | Your agent can run shell commands directly, you want explicit terminal control, or you need a setup/debug fallback that works even without MCP wiring | Easy to reproduce by hand in a terminal, raw `bbx call` and `bbx batch` access, straightforward troubleshooting, and useful outside of MCP-capable clients |
+| Both | You want the most flexible local setup | MCP is convenient for day-to-day agent use, while the CLI remains the best path for install, diagnostics, smoke tests, and manual recovery |
+
+In practice: use MCP mode as the default inside MCP-native clients, use CLI mode when you want direct command control, and keep both available if you expect to debug the bridge itself.
+
 ### MCP mode
 
 Print a ready-to-paste MCP config snippet:

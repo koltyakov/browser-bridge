@@ -9,6 +9,8 @@ Browser Bridge MCP is the MCP-first companion to the CLI-oriented `browser-bridg
 
 Use this skill when the client exposes Browser Bridge as MCP tools. Do not shell out to `bbx` commands when the MCP tools are already available.
 
+This mode is usually better inside MCP-native clients because tool schemas, discovery, and invocation stay inside the client's MCP flow. The CLI-oriented skill is usually better for terminal-driven debugging, manual reproduction, install/doctor flows, or any environment where MCP is unavailable or awkward to configure.
+
 Prompt name: `$browser-bridge-mcp`. Prompt shorthand: `$bbx-mcp` where aliases are supported.
 Example prompt: `Using bbx-mcp verify the current page layout matches the design and keep reads token-efficient`.
 
