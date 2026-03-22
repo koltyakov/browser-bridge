@@ -580,7 +580,7 @@ function printUsage() {
 Setup:
   bbx install [extension-id]          Install native messaging manifest
   bbx install-skill [targets|all] [--project <path>]
-                                     Install/update Browser Bridge skill files in a repo
+                                     Install/update managed Browser Bridge skills in a repo
   bbx status                          Check bridge connection
   bbx doctor                          Diagnose install, daemon, extension, and session readiness
   bbx logs                            Recent bridge logs

@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, '../../..');
-const skillSourceDir = path.join(packageRoot, 'skills', 'browser-bridge');
+const managedSkillNames = /** @type {const} */ (['browser-bridge', 'browser-bridge-mcp']);
+const managedSentinelFilename = '.browser-bridge-managed';
 const supportedTargets = /** @type {const} */ (['copilot', 'claude', 'opencode', 'agents', 'codex', 'openai']);
 
 /**
@@ -95,13 +96,17 @@ export async function installAgentFiles(options) {
   const seenTargets = new Set();
 
   for (const target of options.targets) {
-    const skillTargetDir = path.join(options.projectPath, getSkillRelativePath(target), 'browser-bridge');
-    if (seenTargets.has(skillTargetDir)) {
-      continue;
+    const skillBaseDir = path.join(options.projectPath, getSkillRelativePath(target));
+
+    for (const skillName of managedSkillNames) {
+      const skillTargetDir = path.join(skillBaseDir, skillName);
+      if (seenTargets.has(skillTargetDir)) {
+        continue;
+      }
+      seenTargets.add(skillTargetDir);
+      await installManagedSkill(skillName, skillTargetDir);
+      created.push(skillTargetDir);
     }
-    seenTargets.add(skillTargetDir);
-    await installManagedSkill(skillTargetDir);
-    created.push(skillTargetDir);
   }
 
   return created;
@@ -155,11 +160,13 @@ function getSkillRelativePath(target) {
 }
 
 /**
+ * @param {string} skillName
  * @param {string} targetDir
  * @returns {Promise<void>}
  */
-async function installManagedSkill(targetDir) {
-  const sentinelPath = path.join(targetDir, '.browser-bridge-managed');
+async function installManagedSkill(skillName, targetDir) {
+  const sourceDir = path.join(packageRoot, 'skills', skillName);
+  const sentinelPath = path.join(targetDir, managedSentinelFilename);
   const targetExists = await pathExists(targetDir);
 
   if (targetExists && !(await pathExists(sentinelPath))) {
@@ -167,8 +174,8 @@ async function installManagedSkill(targetDir) {
   }
 
   await fs.promises.rm(targetDir, { recursive: true, force: true });
-  await copyDir(skillSourceDir, targetDir);
-  await fs.promises.writeFile(sentinelPath, 'browser-bridge managed\n', 'utf8');
+  await copyDir(sourceDir, targetDir);
+  await fs.promises.writeFile(sentinelPath, `${skillName} managed\n`, 'utf8');
 }
 
 /**

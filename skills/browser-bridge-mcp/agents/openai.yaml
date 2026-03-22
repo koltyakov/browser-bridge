@@ -1,0 +1,4 @@
+interface:
+  display_name: "Browser Bridge MCP"
+  short_description: "Token-efficient Chrome inspection via MCP"
+  default_prompt: "Use $bbx-mcp for Chrome tab inspection, interaction, and patching through Browser Bridge MCP tools. Start with `browser_status`, then `browser_session`, then a single `browser_call` for `skill.get_runtime_context` if you need live budgets or capability guidance. Prefer grouped MCP tools such as `browser_dom`, `browser_styles_layout`, `browser_page`, and `browser_patch` before screenshots or raw calls. Reuse `elementRef` values, keep budgets tight, and avoid Playwright or shelling out to bbx when MCP tools are available."

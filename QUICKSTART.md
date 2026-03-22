@@ -8,7 +8,7 @@ The primary path is:
 2. Install the CLI: `npm install -g @browserbridge/bbx`
 3. Install the native host: `bbx install <extension-id>`
 4. Verify readiness: `bbx doctor`
-5. Choose either MCP mode or skill/CLI mode
+5. Choose MCP mode, skill/CLI mode, or both
 
 Browser Bridge depends on a local Chrome instance and a local native host. Remote-only agents do not work with it.
 
@@ -126,11 +126,16 @@ bbx-mcp
 
 ### Skill and CLI mode
 
-Install the Browser Bridge skill into a repo:
+Install the managed Browser Bridge skills into a repo:
 
 ```bash
 bbx install-skill
 ```
+
+This installs both:
+
+- `browser-bridge` for CLI-oriented flows
+- `browser-bridge-mcp` for MCP-oriented flows
 
 Supported targets:
 
@@ -150,7 +155,7 @@ bbx install-skill copilot,openai
 bbx install-skill --project /absolute/path/to/your-app
 ```
 
-`install-skill` copies the managed Browser Bridge skill into project-local skill locations and does not modify `AGENTS.md`, `CLAUDE.md`, or `.github/copilot-instructions.md`.
+`install-skill` copies the managed Browser Bridge skills into project-local skill locations and does not modify `AGENTS.md`, `CLAUDE.md`, or `.github/copilot-instructions.md`.
 
 ## 6. Basic verification
 
@@ -175,7 +180,10 @@ Use:
 bbx install-skill codex
 ```
 
-That installs the managed skill under `.codex/skills/browser-bridge/`.
+That installs the managed skills under:
+
+- `.codex/skills/browser-bridge/`
+- `.codex/skills/browser-bridge-mcp/`
 
 ### GitHub Copilot
 

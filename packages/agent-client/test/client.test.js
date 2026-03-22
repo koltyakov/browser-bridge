@@ -486,17 +486,28 @@ test('installAgentFiles writes managed files for supported runtimes', async () =
   });
 
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.github', 'skills', 'browser-bridge'))));
+  assert.ok(installed.some((entry) => entry.endsWith(path.join('.github', 'skills', 'browser-bridge-mcp'))));
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.claude', 'skills', 'browser-bridge'))));
+  assert.ok(installed.some((entry) => entry.endsWith(path.join('.claude', 'skills', 'browser-bridge-mcp'))));
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.opencode', 'skills', 'browser-bridge'))));
+  assert.ok(installed.some((entry) => entry.endsWith(path.join('.opencode', 'skills', 'browser-bridge-mcp'))));
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.agents', 'skills', 'browser-bridge'))));
+  assert.ok(installed.some((entry) => entry.endsWith(path.join('.agents', 'skills', 'browser-bridge-mcp'))));
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.codex', 'skills', 'browser-bridge'))));
+  assert.ok(installed.some((entry) => entry.endsWith(path.join('.codex', 'skills', 'browser-bridge-mcp'))));
 
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.github', 'skills', 'browser-bridge', 'SKILL.md')));
+  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.github', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.claude', 'skills', 'browser-bridge', 'SKILL.md')));
+  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.claude', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.opencode', 'skills', 'browser-bridge', 'SKILL.md')));
+  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.opencode', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.agents', 'skills', 'browser-bridge', 'SKILL.md')));
+  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.agents', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.codex', 'skills', 'browser-bridge', 'SKILL.md')));
+  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.codex', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.codex', 'skills', 'browser-bridge', 'agents', 'openai.yaml')));
+  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.codex', 'skills', 'browser-bridge-mcp', 'agents', 'openai.yaml')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.agents', 'skills', 'browser-bridge', 'references', 'protocol.md')));
 });
 
