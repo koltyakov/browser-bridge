@@ -89,10 +89,10 @@ const DETECTORS = {
 };
 
 /** @type {McpClientName[]} */
-const MCP_CLIENT_KEYS = ['copilot', 'codex', 'cursor', 'claude'];
+const MCP_CLIENT_KEYS = ['copilot', 'codex', 'cursor', 'claude', 'opencode'];
 
 /** @type {SupportedTarget[]} */
-const SKILL_TARGET_KEYS = ['copilot', 'codex', 'claude', 'opencode'];
+const SKILL_TARGET_KEYS = ['copilot', 'codex', 'cursor', 'claude', 'opencode'];
 
 /**
  * Detect which MCP clients are installed on this machine.

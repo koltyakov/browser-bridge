@@ -5,11 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 
 /**
- * @typedef {'claude' | 'cursor' | 'copilot' | 'codex'} McpClientName
+ * @typedef {'claude' | 'cursor' | 'copilot' | 'codex' | 'opencode'} McpClientName
  */
 
 /** @type {McpClientName[]} */
-export const MCP_CLIENT_NAMES = ['copilot', 'codex', 'cursor', 'claude'];
+export const MCP_CLIENT_NAMES = ['copilot', 'codex', 'cursor', 'claude', 'opencode'];
 
 /**
  * @param {string} value
@@ -28,9 +28,23 @@ export function getMcpConfigShape(clientName) {
 }
 
 /**
- * @returns {{ command: string, args: string[], env: Record<string, string> }}
+ * @param {McpClientName} clientName
+ * @returns {{
+ *   command: string,
+ *   args: string[],
+ *   env: Record<string, string>
+ * } | {
+ *   type: 'local',
+ *   command: string[]
+ * }}
  */
-function createBaseServerConfig() {
+function createBaseServerConfig(clientName) {
+  if (clientName === 'opencode') {
+    return {
+      type: 'local',
+      command: ['bbx', 'mcp', 'serve']
+    };
+  }
   return {
     command: 'bbx',
     args: ['mcp', 'serve'],
@@ -44,6 +58,7 @@ const MCP_CONFIG_SHAPES = {
   copilot: { key: 'servers',    includeType: true },
   cursor:  { key: 'mcpServers', includeType: false },
   codex:   { key: 'mcpServers', includeType: false },
+  opencode:{ key: 'mcp',        includeType: false },
 };
 
 /**
@@ -51,7 +66,7 @@ const MCP_CONFIG_SHAPES = {
  * @returns {Record<string, unknown>}
  */
 export function buildMcpConfig(clientName) {
-  const serverConfig = createBaseServerConfig();
+  const serverConfig = createBaseServerConfig(clientName);
   const shape = getMcpConfigShape(clientName);
   const entry = shape.includeType ? { type: 'stdio', ...serverConfig } : serverConfig;
   return { [shape.key]: { 'browser-bridge': entry } };
@@ -82,7 +97,8 @@ export function getMcpConfigPath(clientName, { global: isGlobal, cwd = process.c
       copilot: path.join(cwd, '.vscode', 'mcp.json'),
       codex: path.join(cwd, '.codex', 'mcp.json'),
       cursor: path.join(cwd, '.cursor', 'mcp.json'),
-      claude: path.join(cwd, '.claude', 'mcp.json')
+      claude: path.join(cwd, '.claude', 'mcp.json'),
+      opencode: path.join(cwd, 'opencode.json')
     };
     return localPaths[clientName];
   }
@@ -106,6 +122,10 @@ export function getMcpConfigPath(clientName, { global: isGlobal, cwd = process.c
   if (clientName === 'codex') {
     const codexHome = process.env.CODEX_HOME || path.join(home, '.codex');
     return path.join(codexHome, 'mcp.json');
+  }
+
+  if (clientName === 'opencode') {
+    return path.join(home, '.config', 'opencode', 'opencode.json');
   }
 
   // cursor

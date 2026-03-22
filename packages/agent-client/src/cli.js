@@ -147,7 +147,8 @@ if (command === 'install-mcp') {
       copilot: 'GitHub Copilot (VS Code)',
       codex: 'OpenAI Codex CLI',
       cursor: 'Cursor',
-      claude: 'Claude Desktop / Claude Code'
+      claude: 'Claude Desktop / Claude Code',
+      opencode: 'OpenCode'
     };
     const items = MCP_CLIENT_NAMES.map((c) => ({
       value: c,
@@ -202,7 +203,7 @@ if (command === 'mcp') {
   }
   if (subcommand === 'config') {
     if (!clientName || !isMcpClientName(clientName)) {
-      process.stderr.write('Usage: bbx mcp config <claude|cursor|copilot|codex>\n');
+      process.stderr.write('Usage: bbx mcp config <claude|cursor|copilot|codex|opencode>\n');
       process.exit(1);
     }
     process.stdout.write(formatMcpConfig(clientName));

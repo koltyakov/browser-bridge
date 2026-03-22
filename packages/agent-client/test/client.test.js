@@ -8,7 +8,7 @@ import path from 'node:path';
 
 import { methodNeedsSession, parseCommaList, parseJsonObject, parsePropertyAssignments } from '../src/cli-helpers.js';
 import { installAgentFiles, parseInstallAgentArgs } from '../src/install.js';
-import { buildMcpConfig, formatMcpConfig, isMcpClientName } from '../src/mcp-config.js';
+import { buildMcpConfig, formatMcpConfig, getMcpConfigPath, isMcpClientName } from '../src/mcp-config.js';
 import { summarizeBridgeResponse } from '../src/subagent.js';
 
 /** Ensure failures stay compact for parent-agent reporting. */
@@ -469,7 +469,7 @@ test('summarizer: DOM query evidence includes role and label', () => {
 
 test('parseInstallAgentArgs defaults to all supported targets', () => {
   const options = parseInstallAgentArgs([], '/tmp/example');
-  assert.deepEqual(options.targets, ['copilot', 'claude', 'opencode', 'agents', 'codex']);
+  assert.deepEqual(options.targets, ['copilot', 'claude', 'cursor', 'opencode', 'agents', 'codex']);
   assert.equal(options.projectPath, '/tmp/example');
 });
 
@@ -487,7 +487,7 @@ test('parseInstallAgentArgs accepts openai as a codex alias', () => {
 test('installAgentFiles writes managed files for supported runtimes', async () => {
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-agent-'));
   const installed = await installAgentFiles({
-    targets: ['copilot', 'claude', 'opencode', 'agents', 'codex'],
+    targets: ['copilot', 'claude', 'cursor', 'opencode', 'agents', 'codex'],
     projectPath: tempDir,
     global: false
   });
@@ -496,6 +496,8 @@ test('installAgentFiles writes managed files for supported runtimes', async () =
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.github', 'skills', 'browser-bridge-mcp'))));
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.claude', 'skills', 'browser-bridge'))));
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.claude', 'skills', 'browser-bridge-mcp'))));
+  assert.ok(installed.some((entry) => entry.endsWith(path.join('.cursor', 'skills', 'browser-bridge'))));
+  assert.ok(installed.some((entry) => entry.endsWith(path.join('.cursor', 'skills', 'browser-bridge-mcp'))));
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.opencode', 'skills', 'browser-bridge'))));
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.opencode', 'skills', 'browser-bridge-mcp'))));
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.agents', 'skills', 'browser-bridge'))));
@@ -507,6 +509,8 @@ test('installAgentFiles writes managed files for supported runtimes', async () =
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.github', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.claude', 'skills', 'browser-bridge', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.claude', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
+  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.cursor', 'skills', 'browser-bridge', 'SKILL.md')));
+  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.cursor', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.opencode', 'skills', 'browser-bridge', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.opencode', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.agents', 'skills', 'browser-bridge', 'SKILL.md')));
@@ -523,6 +527,7 @@ test('isMcpClientName recognizes supported clients', () => {
   assert.equal(isMcpClientName('cursor'), true);
   assert.equal(isMcpClientName('copilot'), true);
   assert.equal(isMcpClientName('codex'), true);
+  assert.equal(isMcpClientName('opencode'), true);
   assert.equal(isMcpClientName('vscode'), false);
   assert.equal(isMcpClientName('other'), false);
 });
@@ -559,10 +564,31 @@ test('buildMcpConfig produces client-specific config shapes', () => {
       }
     }
   });
+
+  assert.deepEqual(buildMcpConfig('opencode'), {
+    mcp: {
+      'browser-bridge': {
+        type: 'local',
+        command: ['bbx', 'mcp', 'serve']
+      }
+    }
+  });
 });
 
 test('formatMcpConfig returns pretty JSON with newline', () => {
   const formatted = formatMcpConfig('cursor');
   assert.match(formatted, /"browser-bridge"/);
   assert.ok(formatted.endsWith('\n'));
+});
+
+test('getMcpConfigPath supports OpenCode global and local locations', () => {
+  const home = os.homedir();
+  assert.equal(
+    getMcpConfigPath('opencode', { global: false, cwd: '/tmp/demo' }),
+    path.join('/tmp/demo', 'opencode.json')
+  );
+  assert.equal(
+    getMcpConfigPath('opencode', { global: true }),
+    path.join(home, '.config', 'opencode', 'opencode.json')
+  );
 });

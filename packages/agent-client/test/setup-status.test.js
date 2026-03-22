@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { installMcpConfig } from '../src/mcp-config.js';
-import { getManagedSkillNames, getManagedSkillSentinelFilename } from '../src/install.js';
+import { getManagedSkillNames, getManagedSkillSentinelFilename, getSkillBasePath } from '../src/install.js';
 import { collectSetupStatus } from '../src/setup-status.js';
 
 /**
@@ -43,6 +43,16 @@ test('collectSetupStatus reports local MCP and skill installation state', async 
       await fs.promises.writeFile(path.join(skillPath, sentinel), `${skillName} managed\n`, 'utf8');
     }
 
+    const cursorBase = getSkillBasePath('cursor', {
+      global: false,
+      projectPath: tempDir
+    });
+    for (const skillName of getManagedSkillNames()) {
+      const skillPath = path.join(cursorBase, skillName);
+      await fs.promises.mkdir(skillPath, { recursive: true });
+      await fs.promises.writeFile(path.join(skillPath, sentinel), `${skillName} managed\n`, 'utf8');
+    }
+
     const opencodeSkillPath = path.join(tempDir, '.opencode', 'skills', 'browser-bridge');
     await fs.promises.mkdir(opencodeSkillPath, { recursive: true });
 
@@ -51,7 +61,7 @@ test('collectSetupStatus reports local MCP and skill installation state', async 
       cwd: tempDir,
       projectPath: tempDir,
       mcpDetectors: createDetectors(['cursor']),
-      skillDetectors: createDetectors(['codex', 'opencode'])
+      skillDetectors: createDetectors(['codex', 'cursor', 'opencode'])
     });
 
     assert.equal(status.scope, 'local');
@@ -66,6 +76,14 @@ test('collectSetupStatus reports local MCP and skill installation state', async 
       configured: true
     });
 
+    const cursorSkills = status.skillTargets.find((entry) => entry.key === 'cursor');
+    assert.ok(cursorSkills);
+    assert.equal(cursorSkills.label, 'Cursor');
+    assert.equal(cursorSkills.detected, true);
+    assert.equal(cursorSkills.installed, true);
+    assert.equal(cursorSkills.managed, true);
+    assert.equal(cursorSkills.basePath, path.join(tempDir, '.cursor', 'skills'));
+
     const codex = status.skillTargets.find((entry) => entry.key === 'codex');
     assert.ok(codex);
     assert.equal(codex.detected, true);
@@ -79,6 +97,28 @@ test('collectSetupStatus reports local MCP and skill installation state', async 
     assert.equal(opencode.installed, false);
     assert.equal(opencode.managed, false);
     assert.equal(opencode.skills.filter((skill) => skill.exists).length, 1);
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('collectSetupStatus treats detected MCP runtimes as skill-install targets too', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-setup-status-mcp-skill-'));
+
+  try {
+    const status = await collectSetupStatus({
+      global: false,
+      cwd: tempDir,
+      projectPath: tempDir,
+      mcpDetectors: createDetectors(['cursor']),
+      skillDetectors: createDetectors([])
+    });
+
+    const cursorSkills = status.skillTargets.find((entry) => entry.key === 'cursor');
+    assert.ok(cursorSkills);
+    assert.equal(cursorSkills.detected, true);
+    assert.equal(cursorSkills.installed, false);
+    assert.equal(cursorSkills.basePath, path.join(tempDir, '.cursor', 'skills'));
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }

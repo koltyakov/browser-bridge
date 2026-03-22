@@ -49,6 +49,19 @@ test('detectMcpClients and detectSkillTargets use injected detectors', () => {
   assert.deepEqual(detectSkillTargets(detectors), ['copilot', 'codex', 'claude', 'agents']);
 });
 
+test('detectSkillTargets includes cursor when detected', () => {
+  /** @type {Record<string, () => boolean>} */
+  const detectors = {
+    copilot: () => false,
+    cursor: () => true,
+    claude: () => false,
+    codex: () => false,
+    opencode: () => false
+  };
+
+  assert.deepEqual(detectSkillTargets(detectors), ['cursor', 'agents']);
+});
+
 test('installMcpConfig preserves unrelated config entries when merging', async () => {
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-mcp-config-'));
   const configPath = path.join(tempDir, '.cursor', 'mcp.json');

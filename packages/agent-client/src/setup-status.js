@@ -28,13 +28,15 @@ const MCP_CLIENT_LABELS = {
   copilot: 'GitHub Copilot',
   codex: 'OpenAI Codex',
   cursor: 'Cursor',
-  claude: 'Claude'
+  claude: 'Claude',
+  opencode: 'OpenCode'
 };
 
 /** @type {Record<SupportedTarget, string>} */
 const SKILL_TARGET_LABELS = {
   copilot: 'GitHub Copilot',
   claude: 'Claude',
+  cursor: 'Cursor',
   opencode: 'OpenCode',
   agents: 'Generic agents',
   codex: 'OpenAI Codex'
@@ -66,6 +68,11 @@ export async function collectSetupStatus(options = {}) {
   const readFile = options.readFile || fs.promises.readFile.bind(fs.promises);
   const detectedMcpClients = new Set(detectMcpClients(options.mcpDetectors));
   const detectedSkillTargets = new Set(detectSkillTargets(options.skillDetectors));
+  for (const clientName of detectedMcpClients) {
+    if (SUPPORTED_TARGETS.includes(/** @type {SupportedTarget} */ (clientName))) {
+      detectedSkillTargets.add(/** @type {SupportedTarget} */ (clientName));
+    }
+  }
 
   const mcpClients = await Promise.all(MCP_CLIENT_NAMES.map(async (clientName) => {
     return collectMcpClientStatus(clientName, {

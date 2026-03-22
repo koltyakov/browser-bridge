@@ -26,7 +26,13 @@
         <button id="bridge-toggle" class="power-button" type="button">Enable</button>
       </section>
       <details id="installation-section" class="card setup-details" hidden>
-        <summary><span class="eyebrow">Host setup</span></summary>
+        <summary>
+          <span class="setup-details-summary-heading">
+            <span class="eyebrow">Host setup</span>
+            <span class="setup-details-summary-icon" aria-hidden="true"></span>
+          </span>
+          <span id="setup-status-summary-note" class="setup-summary-note" hidden></span>
+        </summary>
         <div class="setup-details-body">
           <p id="setup-status-note" class="muted setup-status-note">Checking global install status…</p>
           <div id="setup-status-matrix" class="setup-status-matrix-wrap"></div>

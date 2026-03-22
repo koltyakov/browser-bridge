@@ -20,13 +20,13 @@ This also installs the native messaging host automatically.
 
 There are two integration paths - pick the one that fits how your agent works:
 
-Supported clients: `copilot` (GitHub Copilot / VS Code), `codex` (OpenAI Codex CLI), `cursor` (Cursor), `claude` (Claude Desktop / Claude Code).
+Supported clients: `copilot` (GitHub Copilot / VS Code), `codex` (OpenAI Codex CLI), `cursor` (Cursor), `claude` (Claude Desktop / Claude Code), `opencode` (OpenCode).
 
 **MCP** - for agents with native MCP tool support. Write the config directly into each client's settings file:
 
 ```bash
 bbx install-mcp                  # all supported clients
-bbx install-mcp copilot          # or pick one: copilot, codex, cursor, claude
+bbx install-mcp copilot          # or pick one: copilot, codex, cursor, claude, opencode
 bbx install-mcp copilot --local  # scope to current project instead of global
 ```
 
@@ -36,7 +36,7 @@ Configs are written globally by default. MCP is better with `$bbx-mcp` skill tha
 
 ```bash
 bbx install-skill                  # all supported clients
-bbx install-skill copilot          # or pick one: copilot, codex, claude, opencode, agents
+bbx install-skill copilot          # or pick one: copilot, codex, cursor, claude, opencode, agents
 bbx install-skill copilot --local  # scope to current project instead of global
 ```
 

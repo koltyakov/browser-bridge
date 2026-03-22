@@ -9,13 +9,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, '../../..');
 const managedSkillNames = /** @type {const} */ (['browser-bridge', 'browser-bridge-mcp']);
 const managedSentinelFilename = '.browser-bridge-managed';
-const supportedTargets = /** @type {const} */ (['copilot', 'claude', 'opencode', 'agents', 'codex']);
+const supportedTargets = /** @type {const} */ (['copilot', 'claude', 'cursor', 'opencode', 'agents', 'codex']);
 const targetAliases = /** @type {const} */ ({
   openai: 'codex'
 });
 
 /**
- * @typedef {'copilot' | 'claude' | 'opencode' | 'agents' | 'codex'} SupportedTarget
+ * @typedef {'copilot' | 'claude' | 'cursor' | 'opencode' | 'agents' | 'codex'} SupportedTarget
  */
 
 /** @type {SupportedTarget[]} */
@@ -174,6 +174,7 @@ function parseTargetList(raw) {
 const SKILL_PATHS = {
   copilot:  path.join('.github', 'skills'),
   claude:   path.join('.claude', 'skills'),
+  cursor:   path.join('.cursor', 'skills'),
   opencode: path.join('.opencode', 'skills'),
   codex:    path.join('.codex', 'skills')
 };

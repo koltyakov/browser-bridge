@@ -114,6 +114,7 @@ const setupMcpCmd = /** @type {HTMLElement} */ (document.getElementById('setup-m
 const controlSection = /** @type {HTMLElement} */ (document.getElementById('control-section'));
 const installationSection = /** @type {HTMLDetailsElement} */ (document.getElementById('installation-section'));
 const setupStatusNote = /** @type {HTMLParagraphElement} */ (document.getElementById('setup-status-note'));
+const setupStatusSummaryNote = /** @type {HTMLSpanElement} */ (document.getElementById('setup-status-summary-note'));
 const setupStatusMatrix = /** @type {HTMLDivElement} */ (document.getElementById('setup-status-matrix'));
 const activitySection = /** @type {HTMLElement} */ (document.getElementById('activity-section'));
 const examplesSection = /** @type {HTMLDetailsElement} */ (document.getElementById('examples-section'));
@@ -296,28 +297,37 @@ function syncExclusiveDetailsSections(source, other) {
  */
 function renderSetupStatus(setupStatus, pending, error, installPendingKey, installError) {
   if (!setupStatus && pending) {
+    setupStatusSummaryNote.hidden = true;
+    setupStatusSummaryNote.textContent = '';
     setupStatusNote.textContent = 'Checking global host setup…';
+    setupStatusNote.hidden = false;
     setupStatusMatrix.replaceChildren(createStatusPlaceholder('Checking detected clients…'));
     return;
   }
 
   if (!setupStatus) {
+    setupStatusSummaryNote.hidden = true;
+    setupStatusSummaryNote.textContent = '';
     setupStatusNote.textContent = installError || error || 'Global host setup is unavailable.';
+    setupStatusNote.hidden = false;
     setupStatusMatrix.replaceChildren(createStatusPlaceholder('No host setup status yet.'));
     return;
   }
 
-  const noteParts = [
-    setupStatus.scope === 'global'
-      ? 'Showing detected global clients only. Project-local installs are not visible from the extension.'
-      : 'Showing detected project-local clients.'
-  ];
+  const scopeNote = setupStatus.scope === 'global'
+    ? 'Global installs only'
+    : 'Project installs only';
+  setupStatusSummaryNote.textContent = `* ${scopeNote}`;
+  setupStatusSummaryNote.hidden = false;
+
+  const noteParts = [];
   if (installError) {
     noteParts.push(`Last install failed: ${installError}`);
   } else if (error) {
     noteParts.push(error);
   }
   setupStatusNote.textContent = noteParts.join(' ');
+  setupStatusNote.hidden = noteParts.length === 0;
 
   const rows = buildSetupMatrixRows(setupStatus);
   if (!rows.length) {
