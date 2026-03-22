@@ -3,7 +3,7 @@
 import os from 'node:os';
 import path from 'node:path';
 
-export const APP_NAME = 'com.codex.browser_bridge';
+export const APP_NAME = 'com.browserbridge.browser_bridge';
 
 /**
  * @returns {string}

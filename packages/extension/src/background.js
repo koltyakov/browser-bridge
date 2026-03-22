@@ -95,7 +95,7 @@ import { TabDebuggerCoordinator } from './debugger-coordinator.js';
  * }} ExtensionState
  */
 
-const NATIVE_APP_NAME = 'com.codex.browser_bridge';
+const NATIVE_APP_NAME = 'com.browserbridge.browser_bridge';
 const CONTENT_SCRIPT_TIMEOUT_MS = 5_000;
 const SCREENSHOT_TIMEOUT_MS = 10_000;
 const MAX_ACTION_LOG_ENTRIES = 50;

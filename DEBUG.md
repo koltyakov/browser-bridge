@@ -17,9 +17,9 @@ When local debugging breaks, it is usually one of these:
 
 | Path | Purpose |
 |------|---------|
-| `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.codex.browser_bridge.json` | Native host manifest (macOS) |
-| `~/.config/google-chrome/NativeMessagingHosts/com.codex.browser_bridge.json` | Native host manifest (Linux) |
-| `%LOCALAPPDATA%\Google\Chrome\User Data\NativeMessagingHosts\com.codex.browser_bridge.json` | Native host manifest (Windows) |
+| `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.browserbridge.browser_bridge.json` | Native host manifest (macOS) |
+| `~/.config/google-chrome/NativeMessagingHosts/com.browserbridge.browser_bridge.json` | Native host manifest (Linux) |
+| `%LOCALAPPDATA%\Google\Chrome\User Data\NativeMessagingHosts\com.browserbridge.browser_bridge.json` | Native host manifest (Windows) |
 | `$CODEX_HOME/browser-bridge/` | Bridge working directory (`CODEX_HOME` defaults to `~/.codex`) |
 | `$CODEX_HOME/browser-bridge/bridge.sock` | Daemon socket |
 | `$CODEX_HOME/browser-bridge/current-session.json` | Saved session |
