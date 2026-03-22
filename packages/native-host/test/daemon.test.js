@@ -54,6 +54,68 @@ test('daemon responds to health checks without extension', async () => {
   assert.equal(payload.response.result.extensionConnected, false);
 });
 
+test('daemon responds to setup status requests without extension', async () => {
+  const silentConsole = /** @type {Console} */ ({
+    ...console,
+    log() {},
+    error() {}
+  });
+  /** @type {import('../../protocol/src/types.js').SetupStatus} */
+  const expectedStatus = {
+    scope: 'global',
+    mcpClients: [{ key: 'codex', label: 'OpenAI Codex', detected: true, configPath: '/tmp/mcp.json', configExists: true, configured: true }],
+    skillTargets: [{ key: 'codex', label: 'OpenAI Codex', detected: true, basePath: '/tmp/skills', installed: true, managed: true, skills: [] }]
+  };
+  const daemon = new BridgeDaemon({
+    logger: silentConsole,
+    setupStatusLoader: async () => expectedStatus
+  });
+  const socket = createFakeSocket();
+
+  await daemon.handleAgentRequest(socket, {
+    request: {
+      id: 'req_setup',
+      method: 'setup.get_status',
+      session_id: null,
+      params: {},
+      meta: {
+        protocol_version: '1.0',
+        token_budget: null
+      }
+    }
+  });
+
+  assert.equal(socket.writes.length, 1);
+  const payload = JSON.parse(socket.writes[0].trim());
+  assert.equal(payload.type, 'agent.response');
+  assert.deepEqual(payload.response.result, expectedStatus);
+});
+
+test('daemon handles extension setup status requests', async () => {
+  /** @type {import('../../protocol/src/types.js').SetupStatus} */
+  const expectedStatus = {
+    scope: 'global',
+    mcpClients: [],
+    skillTargets: []
+  };
+  const daemon = new BridgeDaemon({
+    logger: console,
+    setupStatusLoader: async () => expectedStatus
+  });
+  const socket = createFakeSocket();
+
+  await daemon.handleClientMessage(socket, {
+    type: 'extension.setup_status.request',
+    requestId: 'setup_1'
+  });
+
+  assert.equal(socket.writes.length, 1);
+  const payload = JSON.parse(socket.writes[0].trim());
+  assert.equal(payload.type, 'extension.setup_status.response');
+  assert.equal(payload.requestId, 'setup_1');
+  assert.deepEqual(payload.status, expectedStatus);
+});
+
 /** Ensure repeated shutdown calls share one cleanup path safely. */
 test('daemon stop is idempotent when called concurrently', async () => {
   const daemon = new BridgeDaemon({

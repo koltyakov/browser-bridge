@@ -13,6 +13,46 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const daemonEntryPath = path.resolve(__dirname, '../bin/bridge-daemon.js');
 
 /**
+ * @typedef {{
+ *   type?: string,
+ *   request?: unknown
+ * }} HostBridgeRequestMessage
+ */
+
+/**
+ * @typedef {{
+ *   type?: string,
+ *   requestId?: string
+ * }} HostStatusRequestMessage
+ */
+
+/**
+ * @param {unknown} message
+ * @returns {message is HostBridgeRequestMessage}
+ */
+function isHostBridgeRequest(message) {
+  return Boolean(
+    message
+    && typeof message === 'object'
+    && /** @type {Record<string, unknown>} */ (message).type === 'host.bridge_request'
+    && typeof /** @type {Record<string, unknown>} */ (message).request === 'object'
+  );
+}
+
+/**
+ * @param {unknown} message
+ * @returns {message is HostStatusRequestMessage}
+ */
+function isHostStatusRequest(message) {
+  return Boolean(
+    message
+    && typeof message === 'object'
+    && /** @type {Record<string, unknown>} */ (message).type === 'host.setup_status.request'
+    && typeof /** @type {Record<string, unknown>} */ (message).requestId === 'string'
+  );
+}
+
+/**
  * @param {{ socketPath?: string }} [options={}]
  * @returns {Promise<void>}
  */
@@ -49,11 +89,43 @@ export async function runNativeHost({ socketPath = getSocketPath() } = {}) {
       const message = JSON.parse(line);
       if (message.type === 'extension.request') {
         await writeNativeMessage(process.stdout, message.request);
+        continue;
+      }
+      if (message.type === 'agent.response') {
+        await writeNativeMessage(process.stdout, {
+          type: 'host.bridge_response',
+          response: message.response
+        });
+        continue;
+      }
+      if (message.type === 'extension.setup_status.response' || message.type === 'extension.setup_status.error') {
+        await writeNativeMessage(process.stdout, {
+          type: message.type === 'extension.setup_status.response'
+            ? 'host.setup_status.response'
+            : 'host.setup_status.error',
+          requestId: message.requestId,
+          status: message.status,
+          error: message.error
+        });
       }
     }
   });
 
   createNativeMessageReader(process.stdin, async (message) => {
+    if (isHostBridgeRequest(message)) {
+      await writeJsonLine(socket, {
+        type: 'agent.request',
+        request: message.request
+      });
+      return;
+    }
+    if (isHostStatusRequest(message)) {
+      await writeJsonLine(socket, {
+        type: 'extension.setup_status.request',
+        requestId: message.requestId
+      });
+      return;
+    }
     await writeJsonLine(socket, {
       type: 'extension.response',
       response: message

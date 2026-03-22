@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import {
   estimateResponseTokens,
   inferCapability,
+  matchesConsoleLevel,
   normalizeCropRect,
   normalizeRuntimeErrorMessage,
   safeOrigin,
@@ -91,6 +92,9 @@ test('background helpers normalize crop rects and accessibility nodes', () => {
 test('background helpers expose log and origin helpers', () => {
   assert.equal(shouldLogAction('dom.query'), true);
   assert.equal(shouldLogAction('health.ping'), false);
+  assert.equal(matchesConsoleLevel('error', 'exception'), true);
+  assert.equal(matchesConsoleLevel('error', 'rejection'), true);
+  assert.equal(matchesConsoleLevel('warn', 'exception'), false);
   assert.equal(safeOrigin('https://example.com/path?q=1'), 'https://example.com');
   assert.equal(safeOrigin('not-a-url'), '');
 });

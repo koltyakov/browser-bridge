@@ -18,6 +18,9 @@ const targetAliases = /** @type {const} */ ({
  * @typedef {'copilot' | 'claude' | 'opencode' | 'agents' | 'codex'} SupportedTarget
  */
 
+/** @type {SupportedTarget[]} */
+export const SUPPORTED_TARGETS = [...supportedTargets];
+
 /**
  * @typedef {{targets: SupportedTarget[], projectPath: string, global: boolean}} InstallAgentOptions
  */
@@ -105,14 +108,13 @@ export function parseInstallAgentArgs(args, cwd = process.cwd()) {
  * @returns {Promise<string[]>}
  */
 export async function installAgentFiles(options) {
-  const basePath = options.global ? os.homedir() : options.projectPath;
   /** @type {string[]} */
   const created = [];
   /** @type {Set<string>} */
   const seenTargets = new Set();
 
   for (const target of options.targets) {
-    const skillBaseDir = path.join(basePath, getSkillRelativePath(target));
+    const skillBaseDir = getSkillBasePath(target, options);
 
     for (const skillName of managedSkillNames) {
       const skillTargetDir = path.join(skillBaseDir, skillName);
@@ -172,8 +174,32 @@ const SKILL_PATHS = {
  * @param {SupportedTarget} target
  * @returns {string}
  */
-function getSkillRelativePath(target) {
+export function getSkillRelativePath(target) {
   return SKILL_PATHS[target] || path.join('.agents', 'skills');
+}
+
+/**
+ * @param {SupportedTarget} target
+ * @param {{ global: boolean, projectPath: string }} options
+ * @returns {string}
+ */
+export function getSkillBasePath(target, options) {
+  const basePath = options.global ? os.homedir() : options.projectPath;
+  return path.join(basePath, getSkillRelativePath(target));
+}
+
+/**
+ * @returns {string[]}
+ */
+export function getManagedSkillNames() {
+  return [...managedSkillNames];
+}
+
+/**
+ * @returns {string}
+ */
+export function getManagedSkillSentinelFilename() {
+  return managedSentinelFilename;
 }
 
 /**

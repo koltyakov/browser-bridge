@@ -5,11 +5,13 @@ import net from 'node:net';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
+import { collectSetupStatus } from '../../agent-client/src/setup-status.js';
 import { createFailure, createSuccess, ERROR_CODES, validateBridgeRequest } from '../../protocol/src/index.js';
 import { getBridgeDir, getSocketPath } from './config.js';
 import { writeJsonLine } from './framing.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */
+/** @typedef {import('../../protocol/src/types.js').SetupStatus} SetupStatus */
 /** @typedef {import('node:net').Socket & { __clientId?: string }} ClientSocket */
 /** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout }} PendingEntry */
 
@@ -18,9 +20,12 @@ import { writeJsonLine } from './framing.js';
  *   type?: string,
  *   role?: string,
  *   clientId?: string,
+ *   requestId?: string,
  *   entry?: Record<string, unknown>,
- *   request?: BridgeRequest,
- *   response?: import('../../protocol/src/types.js').BridgeResponse
+  *   request?: BridgeRequest,
+ *   status?: SetupStatus,
+ *   error?: { message?: string },
+  *   response?: import('../../protocol/src/types.js').BridgeResponse
  * }} DaemonMessage
  */
 
@@ -52,12 +57,14 @@ export class BridgeDaemon {
    * @param {{
    *   socketPath?: string,
    *   listenOptions?: import('node:net').ListenOptions | null,
+   *   setupStatusLoader?: () => Promise<SetupStatus>,
    *   logger?: Pick<Console, 'log' | 'error'>
    * }} [options={}]
    */
-  constructor({ socketPath = getSocketPath(), listenOptions = null, logger = console } = {}) {
+  constructor({ socketPath = getSocketPath(), listenOptions = null, setupStatusLoader = collectSetupStatus, logger = console } = {}) {
     this.socketPath = socketPath;
     this.listenOptions = listenOptions;
+    this.setupStatusLoader = setupStatusLoader;
     this.logger = logger;
     this.server = null;
     this.serverAddress = null;
@@ -183,6 +190,10 @@ export class BridgeDaemon {
       return this.handleExtensionResponse(message);
     }
 
+    if (message?.type === 'extension.setup_status.request') {
+      return this.handleExtensionSetupStatus(socket, message);
+    }
+
     if (message?.type === 'agent.request') {
       return this.handleAgentRequest(socket, message);
     }
@@ -239,6 +250,14 @@ export class BridgeDaemon {
       return;
     }
 
+    if (request.method === 'setup.get_status') {
+      const response = createSuccess(request.id, await this.setupStatusLoader(), {
+        method: request.method
+      });
+      await writeJsonLine(socket, { type: 'agent.response', response });
+      return;
+    }
+
     if (!this.extensionSocket) {
       const response = createFailure(
         request.id,
@@ -263,6 +282,29 @@ export class BridgeDaemon {
       type: 'extension.request',
       request
     });
+  }
+
+  /**
+   * @param {ClientSocket} socket
+   * @param {DaemonMessage} message
+   * @returns {Promise<void>}
+   */
+  async handleExtensionSetupStatus(socket, message) {
+    try {
+      await writeJsonLine(socket, {
+        type: 'extension.setup_status.response',
+        requestId: message.requestId,
+        status: await this.setupStatusLoader()
+      });
+    } catch (error) {
+      await writeJsonLine(socket, {
+        type: 'extension.setup_status.error',
+        requestId: message.requestId,
+        error: {
+          message: error instanceof Error ? error.message : String(error)
+        }
+      });
+    }
   }
 
   /**

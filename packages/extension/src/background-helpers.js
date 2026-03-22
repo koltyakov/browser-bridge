@@ -90,9 +90,28 @@ export function shouldLogAction(method) {
     'health.ping',
     'log.tail',
     'skill.get_runtime_context',
+    'setup.get_status',
     'tabs.list',
     'session.get_status'
   ].includes(method);
+}
+
+/**
+ * Treat page exceptions as part of the error stream so filtered reads return
+ * runtime failures alongside explicit `console.error` calls.
+ *
+ * @param {string} requestedLevel
+ * @param {string} entryLevel
+ * @returns {boolean}
+ */
+export function matchesConsoleLevel(requestedLevel, entryLevel) {
+  if (requestedLevel === entryLevel) {
+    return true;
+  }
+  if (requestedLevel === 'error') {
+    return entryLevel === 'exception' || entryLevel === 'rejection';
+  }
+  return false;
 }
 
 /**

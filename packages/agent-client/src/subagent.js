@@ -59,6 +59,15 @@ export function summarizeBridgeResponse(response, method) {
       evidence: result
     };
   }
+  if (Array.isArray(result.mcpClients) && Array.isArray(result.skillTargets)) {
+    const configuredMcp = result.mcpClients.filter((entry) => entry && typeof entry === 'object' && /** @type {Record<string, unknown>} */ (entry).configured).length;
+    const installedSkills = result.skillTargets.filter((entry) => entry && typeof entry === 'object' && /** @type {Record<string, unknown>} */ (entry).installed).length;
+    return {
+      ok: true,
+      summary: `Setup: MCP configured for ${configuredMcp}/${result.mcpClients.length} clients; skills installed for ${installedSkills}/${result.skillTargets.length} targets.`,
+      evidence: result
+    };
+  }
   if (typeof result.url === 'string' && typeof result.title === 'string' && typeof result.origin === 'string') {
     /** @type {string[]} */
     const hints = [];

@@ -2,6 +2,46 @@
 
 /**
  * @typedef {{
+ *   key: string,
+ *   label: string,
+ *   detected: boolean,
+ *   configPath: string,
+ *   configExists: boolean,
+ *   configured: boolean
+ * }} McpClientStatus
+ */
+
+/**
+ * @typedef {{
+ *   name: string,
+ *   path: string,
+ *   exists: boolean,
+ *   managed: boolean
+ * }} SkillInstallationStatus
+ */
+
+/**
+ * @typedef {{
+ *   key: string,
+ *   label: string,
+ *   detected: boolean,
+ *   basePath: string,
+ *   installed: boolean,
+ *   managed: boolean,
+ *   skills: SkillInstallationStatus[]
+ * }} SkillTargetStatus
+ */
+
+/**
+ * @typedef {{
+ *   scope: 'global' | 'local',
+ *   mcpClients: McpClientStatus[],
+ *   skillTargets: SkillTargetStatus[]
+ * }} SetupStatus
+ */
+
+/**
+ * @typedef {{
  *   tabId: number,
  *   windowId: number,
  *   title: string,
@@ -30,6 +70,9 @@
  * @typedef {{
  *   nativeConnected: boolean,
  *   currentTab: SidePanelCurrentTab | null,
+ *   setupStatus: SetupStatus | null,
+ *   setupStatusPending: boolean,
+ *   setupStatusError: string | null,
  *   actionLog: ActionLogEntry[]
  * }} UiSnapshot
  */
@@ -58,6 +101,10 @@ const setupInstallCmd = /** @type {HTMLElement} */ (document.getElementById('set
 const setupSkillCmd = /** @type {HTMLElement} */ (document.getElementById('setup-skill-cmd'));
 const setupMcpCmd = /** @type {HTMLElement} */ (document.getElementById('setup-mcp-cmd'));
 const controlSection = /** @type {HTMLElement} */ (document.getElementById('control-section'));
+const installationSection = /** @type {HTMLElement} */ (document.getElementById('installation-section'));
+const setupStatusNote = /** @type {HTMLParagraphElement} */ (document.getElementById('setup-status-note'));
+const mcpStatusList = /** @type {HTMLDivElement} */ (document.getElementById('mcp-status-list'));
+const skillStatusList = /** @type {HTMLDivElement} */ (document.getElementById('skill-status-list'));
 const activitySection = /** @type {HTMLElement} */ (document.getElementById('activity-section'));
 const examplesSection = /** @type {HTMLElement} */ (document.getElementById('examples-section'));
 const port = chrome.runtime.connect({ name: 'ui' });
@@ -115,6 +162,7 @@ toggleButton.addEventListener('click', () => {
 function renderState(state) {
   renderNativeStatus(state.nativeConnected);
   renderCurrentTab(state.currentTab);
+  renderSetupStatus(state.setupStatus, state.setupStatusPending, state.setupStatusError);
 
   actionLog.replaceChildren(...state.actionLog.map((entry) => renderActionLogEntry(entry)));
 
@@ -161,6 +209,7 @@ function renderNativeStatus(connected, error) {
 
   setupSection.hidden = connected;
   controlSection.hidden = !connected;
+  installationSection.hidden = !connected;
   examplesSection.hidden = !connected;
   activitySection.hidden = !connected;
   if (!connected) {
@@ -171,6 +220,113 @@ function renderNativeStatus(connected, error) {
     setupSkillCmd.textContent = 'bbx install-skill';
     setupMcpCmd.textContent = 'bbx install-mcp';
   }
+}
+
+/**
+ * @param {SetupStatus | null} setupStatus
+ * @param {boolean} pending
+ * @param {string | null} error
+ * @returns {void}
+ */
+function renderSetupStatus(setupStatus, pending, error) {
+  if (!setupStatus && pending) {
+    setupStatusNote.textContent = 'Checking global host setup…';
+    mcpStatusList.replaceChildren(createStatusPlaceholder('Checking MCP clients…'));
+    skillStatusList.replaceChildren(createStatusPlaceholder('Checking skills…'));
+    return;
+  }
+
+  if (!setupStatus) {
+    setupStatusNote.textContent = error || 'Global host setup is unavailable.';
+    mcpStatusList.replaceChildren(createStatusPlaceholder('No MCP status yet.'));
+    skillStatusList.replaceChildren(createStatusPlaceholder('No skill status yet.'));
+    return;
+  }
+
+  setupStatusNote.textContent = setupStatus.scope === 'global'
+    ? 'Showing global host setup only. Project-local installs are not visible from the extension.'
+    : 'Showing project-local host setup.';
+  mcpStatusList.replaceChildren(...setupStatus.mcpClients.map((entry) => renderMcpStatus(entry)));
+  skillStatusList.replaceChildren(...setupStatus.skillTargets.map((entry) => renderSkillStatus(entry)));
+}
+
+/**
+ * @param {McpClientStatus} entry
+ * @returns {HTMLElement}
+ */
+function renderMcpStatus(entry) {
+  const status = entry.configured
+    ? 'Configured'
+    : entry.configExists
+      ? 'Config found'
+      : 'Missing';
+  const hint = entry.detected
+    ? (entry.configured ? 'Detected' : 'Detected, not configured')
+    : 'Not detected';
+  return renderSetupStatusItem(entry.label, status, hint, entry.configured, entry.configPath);
+}
+
+/**
+ * @param {SkillTargetStatus} entry
+ * @returns {HTMLElement}
+ */
+function renderSkillStatus(entry) {
+  const installedCount = entry.skills.filter((skill) => skill.exists).length;
+  const status = entry.installed
+    ? (entry.managed ? 'Installed' : 'Custom')
+    : installedCount > 0
+      ? 'Partial'
+      : 'Missing';
+  const hint = entry.detected
+    ? `${installedCount}/${entry.skills.length} skill dirs`
+    : `Not detected · ${installedCount}/${entry.skills.length} skill dirs`;
+  return renderSetupStatusItem(entry.label, status, hint, entry.installed, entry.basePath);
+}
+
+/**
+ * @param {string} label
+ * @param {string} status
+ * @param {string} hint
+ * @param {boolean} ok
+ * @param {string} title
+ * @returns {HTMLElement}
+ */
+function renderSetupStatusItem(label, status, hint, ok, title) {
+  const row = document.createElement('div');
+  row.className = 'setup-status-item';
+  row.title = title;
+
+  const copy = document.createElement('div');
+  copy.className = 'setup-status-copy';
+
+  const name = document.createElement('span');
+  name.className = 'setup-status-label';
+  name.textContent = label;
+
+  const detail = document.createElement('span');
+  detail.className = 'setup-status-detail';
+  detail.textContent = hint;
+
+  copy.append(name, detail);
+
+  const badge = document.createElement('span');
+  badge.className = 'setup-status-badge';
+  badge.dataset.ok = String(ok);
+  badge.textContent = status;
+
+  row.append(copy, badge);
+  return row;
+}
+
+/**
+ * @param {string} text
+ * @returns {HTMLElement}
+ */
+function createStatusPlaceholder(text) {
+  const row = document.createElement('div');
+  row.className = 'setup-status-placeholder';
+  row.textContent = text;
+  return row;
 }
 
 /**

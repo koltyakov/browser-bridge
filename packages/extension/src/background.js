@@ -4,6 +4,7 @@ import {
   CAPABILITIES,
   ERROR_CODES,
   createFailure,
+  createRequest,
   createRuntimeContext,
   createSuccess,
   normalizeAccessRequest,
@@ -36,6 +37,7 @@ import {
   estimateResponseTokens,
   getErrorMessage,
   inferCapability,
+  matchesConsoleLevel,
   normalizeCropRect,
   normalizeRuntimeErrorMessage,
   safeOrigin,
@@ -52,6 +54,7 @@ import { TabDebuggerCoordinator } from './debugger-coordinator.js';
 /** @typedef {import('../../protocol/src/types.js').ErrorCode} ErrorCode */
 /** @typedef {import('../../protocol/src/types.js').SessionState} SessionState */
 /** @typedef {import('../../protocol/src/types.js').NormalizedAccessRequest} NormalizedAccessRequest */
+/** @typedef {import('../../protocol/src/types.js').SetupStatus} SetupStatus */
 
 /**
  * @typedef {{
@@ -75,6 +78,14 @@ import { TabDebuggerCoordinator } from './debugger-coordinator.js';
  *   hasScreenshot: boolean,
  *   nodeCount: number | null
  * }} ActionLogEntry
+ */
+
+/**
+ * @typedef {{
+ *   level: string,
+ *   args: string[],
+ *   ts: number
+ * }} ConsoleEntry
  */
 
 /**
@@ -105,9 +116,17 @@ import { TabDebuggerCoordinator } from './debugger-coordinator.js';
  * @typedef {{
  *   nativePort: chrome.runtime.Port | null,
  *   sessions: Map<string, SessionState>,
- *   enabledScopes: Map<string, EnabledScope>,
+  *   enabledScopes: Map<string, EnabledScope>,
  *   actionLog: ActionLogEntry[],
- *   uiPorts: Map<chrome.runtime.Port, UiPortState>
+  *   consoleEntriesByTab: Map<number, ConsoleEntry[]>,
+  *   consoleTrackedTabIds: Set<number>,
+  *   uiPorts: Map<chrome.runtime.Port, UiPortState>,
+  *   setupStatus: SetupStatus | null,
+  *   setupStatusPending: boolean,
+ *   setupStatusPendingRequestId: string | null,
+  *   setupStatusUpdatedAt: number,
+  *   setupStatusError: string | null,
+  *   setupStatusTimeoutId: ReturnType<typeof setTimeout> | null
  * }} ExtensionState
  */
 
@@ -120,6 +139,8 @@ const ACTION_LOG_STORAGE_KEY = 'actionLog';
 const SIDEPANEL_PATH = 'packages/extension/ui/sidepanel.html';
 const ENABLED_BADGE_TEXT = 'AI';
 const DEBUGGER_PROTOCOL_VERSION = '1.3';
+const SETUP_STATUS_STALE_MS = 30_000;
+const SETUP_STATUS_TIMEOUT_MS = 5_000;
 
 /** @type {ExtensionState} */
 const state = {
@@ -127,7 +148,15 @@ const state = {
   sessions: new Map(),
   enabledScopes: new Map(),
   actionLog: [],
-  uiPorts: new Map()
+  consoleEntriesByTab: new Map(),
+  consoleTrackedTabIds: new Set(),
+  uiPorts: new Map(),
+  setupStatus: null,
+  setupStatusPending: false,
+  setupStatusPendingRequestId: null,
+  setupStatusUpdatedAt: 0,
+  setupStatusError: null,
+  setupStatusTimeoutId: null
 };
 
 const tabDebugger = new TabDebuggerCoordinator({
@@ -153,6 +182,14 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   void handleTabRemoved(tabId).catch(reportAsyncError);
+});
+
+chrome.debugger.onEvent.addListener((source, method, params) => {
+  void handleDebuggerEvent(source, method, params).catch(reportAsyncError);
+});
+
+chrome.debugger.onDetach.addListener((source) => {
+  void handleDebuggerDetach(source).catch(reportAsyncError);
 });
 
 chrome.runtime.onConnect.addListener((port) => {
@@ -206,6 +243,7 @@ async function initializeState() {
   await restorePersistedSessions();
   await restoreEnabledScopes();
   await restoreActionLog();
+  await primeEnabledTabInstrumentation();
   await refreshActionIndicators();
 }
 
@@ -221,15 +259,20 @@ function connectNative() {
     const stabilityTimer = setTimeout(() => {
       state.nativePort = candidatePort;
       broadcastUi({ type: 'native.status', connected: true });
+      refreshSetupStatus(true);
       void emitUiState();
     }, 500);
     candidatePort.onMessage.addListener((request) => {
+      if (handleHostStatusMessage(request)) {
+        return;
+      }
       void handleBridgeRequest(request).catch(reportAsyncError);
     });
     candidatePort.onDisconnect.addListener(() => {
       clearTimeout(stabilityTimer);
       // lastError must always be read in onDisconnect to suppress the unchecked warning
       const disconnectError = chrome.runtime.lastError?.message ?? 'Native host disconnected.';
+      clearSetupStatus(disconnectError);
       if (state.nativePort === candidatePort) {
         state.nativePort = null;
         broadcastUi({
@@ -407,6 +450,19 @@ async function restoreEnabledScopes() {
     const scope = /** @type {EnabledScope} */ (value);
     state.enabledScopes.set(String(scope.tabId), scope);
   }
+}
+
+/**
+ * Best-effort reinjection of passive instrumentation for enabled tabs so reads
+ * like `page.get_console` can see activity that happened before the first read.
+ *
+ * @returns {Promise<void>}
+ */
+async function primeEnabledTabInstrumentation() {
+  await Promise.all([...state.enabledScopes.values()].map(async (scope) => {
+    await primeTabConsoleCapture(scope.tabId);
+    await ensureDebuggerConsoleTracking(scope.tabId);
+  }));
 }
 
 /**
@@ -649,12 +705,16 @@ async function handlePageGetConsole(request) {
   const session = await requireSession(request, CAPABILITIES.PAGE_READ);
   const params = normalizeConsoleParams(request.params);
 
-  await ensureConsoleInterceptor(session.tabId);
+  await primeTabConsoleCapture(session.tabId);
+  await ensureDebuggerConsoleTracking(session.tabId);
 
-  const entries = await readConsoleBuffer(session.tabId, params.clear);
+  const entries = mergeConsoleEntries(
+    await readConsoleBuffer(session.tabId, params.clear),
+    readTrackedConsoleBuffer(session.tabId, params.clear)
+  );
   const filtered = params.level === 'all'
     ? entries
-    : entries.filter((/** @type {{ level: string }} */ e) => e.level === params.level);
+    : entries.filter((/** @type {{ level: string }} */ e) => matchesConsoleLevel(params.level, e.level));
   const limited = filtered.slice(-params.limit);
 
   return createSuccess(request.id, { entries: limited, count: limited.length, total: entries.length }, { method: request.method });
@@ -954,6 +1014,291 @@ async function ensureConsoleInterceptor(tabId) {
       });
     }
   });
+}
+
+/**
+ * Best-effort console capture installation for enabled tabs. Some URLs cannot
+ * be scripted; those failures should not block enablement or navigation.
+ *
+ * @param {number} tabId
+ * @param {boolean} [resetBuffer=false]
+ * @returns {Promise<void>}
+ */
+async function primeTabConsoleCapture(tabId, resetBuffer = false) {
+  try {
+    await ensureConsoleInterceptor(tabId);
+    if (resetBuffer) {
+      await readConsoleBuffer(tabId, true);
+    }
+  } catch (error) {
+    if (isRecoverableInstrumentationError(error)) {
+      return;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Attach a passive CDP listener for console/runtime events when possible. This
+ * complements the page-world interceptor and can surface messages that bypass
+ * the patched `console` object.
+ *
+ * @param {number} tabId
+ * @param {boolean} [resetBuffer=false]
+ * @returns {Promise<void>}
+ */
+async function ensureDebuggerConsoleTracking(tabId, resetBuffer = false) {
+  if (resetBuffer) {
+    state.consoleEntriesByTab.set(tabId, []);
+  }
+  if (state.consoleTrackedTabIds.has(tabId)) {
+    return;
+  }
+  try {
+    await tabDebugger.acquire(tabId, async (target) => {
+      await chrome.debugger.sendCommand(target, 'Runtime.enable', {});
+      await chrome.debugger.sendCommand(target, 'Log.enable', {});
+    });
+    state.consoleTrackedTabIds.add(tabId);
+  } catch (error) {
+    if (isRecoverableInstrumentationError(error)) {
+      return;
+    }
+    throw error;
+  }
+}
+
+/**
+ * @param {number} tabId
+ * @returns {Promise<void>}
+ */
+async function disableDebuggerConsoleTracking(tabId) {
+  state.consoleTrackedTabIds.delete(tabId);
+  state.consoleEntriesByTab.delete(tabId);
+  try {
+    await tabDebugger.release(tabId, async (target) => {
+      await chrome.debugger.sendCommand(target, 'Log.disable', {}).catch(() => {});
+      await chrome.debugger.sendCommand(target, 'Runtime.disable', {}).catch(() => {});
+    });
+  } catch (error) {
+    if (isRecoverableInstrumentationError(error)) {
+      return;
+    }
+    throw error;
+  }
+}
+
+/**
+ * @param {chrome.debugger.Debuggee} source
+ * @param {string} method
+ * @param {unknown} params
+ * @returns {Promise<void>}
+ */
+async function handleDebuggerEvent(source, method, params) {
+  const tabId = Number(source.tabId);
+  if (!Number.isFinite(tabId) || !state.consoleTrackedTabIds.has(tabId)) {
+    return;
+  }
+
+  if (method === 'Runtime.consoleAPICalled') {
+    appendTrackedConsoleEntry(tabId, normalizeConsoleApiCalled(params));
+    return;
+  }
+
+  if (method === 'Runtime.exceptionThrown') {
+    appendTrackedConsoleEntry(tabId, normalizeExceptionThrown(params));
+    return;
+  }
+
+  if (method === 'Log.entryAdded') {
+    appendTrackedConsoleEntry(tabId, normalizeLogEntry(params));
+  }
+}
+
+/**
+ * @param {chrome.debugger.Debuggee} source
+ * @returns {Promise<void>}
+ */
+async function handleDebuggerDetach(source) {
+  const tabId = Number(source.tabId);
+  if (!Number.isFinite(tabId)) {
+    return;
+  }
+  state.consoleTrackedTabIds.delete(tabId);
+}
+
+/**
+ * @param {number} tabId
+ * @param {boolean} clear
+ * @returns {ConsoleEntry[]}
+ */
+function readTrackedConsoleBuffer(tabId, clear) {
+  const entries = [...(state.consoleEntriesByTab.get(tabId) ?? [])];
+  if (clear) {
+    state.consoleEntriesByTab.set(tabId, []);
+  }
+  return entries;
+}
+
+/**
+ * @param {number} tabId
+ * @param {ConsoleEntry | null} entry
+ * @returns {void}
+ */
+function appendTrackedConsoleEntry(tabId, entry) {
+  if (!entry) {
+    return;
+  }
+  const buffer = state.consoleEntriesByTab.get(tabId) ?? [];
+  buffer.push(entry);
+  if (buffer.length > 200) {
+    buffer.splice(0, buffer.length - 200);
+  }
+  state.consoleEntriesByTab.set(tabId, buffer);
+}
+
+/**
+ * @param {unknown} params
+ * @returns {ConsoleEntry | null}
+ */
+function normalizeConsoleApiCalled(params) {
+  if (!params || typeof params !== 'object') {
+    return null;
+  }
+  const event = /** @type {Record<string, unknown>} */ (params);
+  const rawLevel = typeof event.type === 'string' ? event.type : 'log';
+  const level = rawLevel === 'warning' ? 'warn' : rawLevel;
+  const args = Array.isArray(event.args)
+    ? event.args.map((arg) => stringifyRemoteObject(arg))
+    : [];
+  return {
+    level,
+    args,
+    ts: toEpochMilliseconds(event.timestamp)
+  };
+}
+
+/**
+ * @param {unknown} params
+ * @returns {ConsoleEntry | null}
+ */
+function normalizeExceptionThrown(params) {
+  if (!params || typeof params !== 'object') {
+    return null;
+  }
+  const event = /** @type {Record<string, unknown>} */ (params);
+  const details = event.exceptionDetails && typeof event.exceptionDetails === 'object'
+    ? /** @type {Record<string, unknown>} */ (event.exceptionDetails)
+    : {};
+  const location = typeof details.url === 'string'
+    ? `${details.url}:${Number(details.lineNumber ?? 0) + 1}:${Number(details.columnNumber ?? 0) + 1}`
+    : '';
+  return {
+    level: 'exception',
+    args: [typeof details.text === 'string' ? details.text : 'Uncaught exception', location].filter(Boolean),
+    ts: toEpochMilliseconds(event.timestamp)
+  };
+}
+
+/**
+ * @param {unknown} params
+ * @returns {ConsoleEntry | null}
+ */
+function normalizeLogEntry(params) {
+  if (!params || typeof params !== 'object') {
+    return null;
+  }
+  const payload = /** @type {Record<string, unknown>} */ (params);
+  const entry = payload.entry && typeof payload.entry === 'object'
+    ? /** @type {Record<string, unknown>} */ (payload.entry)
+    : null;
+  if (!entry) {
+    return null;
+  }
+  const level = typeof entry.level === 'string'
+    ? entry.level === 'verbose' ? 'debug' : entry.level
+    : 'log';
+  const location = typeof entry.url === 'string'
+    ? `${entry.url}:${Number(entry.lineNumber ?? 0) + 1}`
+    : '';
+  return {
+    level,
+    args: [typeof entry.text === 'string' ? entry.text : '', location].filter(Boolean),
+    ts: toEpochMilliseconds(entry.timestamp)
+  };
+}
+
+/**
+ * @param {ConsoleEntry[]} pageEntries
+ * @param {ConsoleEntry[]} debuggerEntries
+ * @returns {ConsoleEntry[]}
+ */
+function mergeConsoleEntries(pageEntries, debuggerEntries) {
+  const deduped = new Map();
+  for (const entry of [...pageEntries, ...debuggerEntries]) {
+    const key = `${entry.level}|${entry.ts}|${entry.args.join('\u241f')}`;
+    if (!deduped.has(key)) {
+      deduped.set(key, entry);
+    }
+  }
+  return [...deduped.values()].sort((left, right) => left.ts - right.ts);
+}
+
+/**
+ * @param {unknown} value
+ * @returns {number}
+ */
+function toEpochMilliseconds(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return Date.now();
+  }
+  return numeric < 10_000_000_000 ? Math.round(numeric * 1000) : Math.round(numeric);
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function stringifyRemoteObject(value) {
+  if (!value || typeof value !== 'object') {
+    return String(value);
+  }
+  const remote = /** @type {Record<string, unknown>} */ (value);
+  if (typeof remote.description === 'string' && remote.description) {
+    return remote.description.slice(0, 500);
+  }
+  if (typeof remote.value === 'string') {
+    return remote.value.slice(0, 500);
+  }
+  if (typeof remote.value === 'number' || typeof remote.value === 'boolean') {
+    return String(remote.value);
+  }
+  if (remote.value === null) {
+    return 'null';
+  }
+  if (typeof remote.unserializableValue === 'string') {
+    return remote.unserializableValue;
+  }
+  if (typeof remote.type === 'string') {
+    return remote.type;
+  }
+  return '[object]';
+}
+
+/**
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+function isRecoverableInstrumentationError(error) {
+  const message = normalizeRuntimeErrorMessage(getErrorMessage(error));
+  return message === ERROR_CODES.TAB_MISMATCH
+    || /Cannot access contents of url/i.test(message)
+    || /The extensions gallery cannot be scripted/i.test(message)
+    || /Cannot access a chrome:\/\//i.test(message)
+    || /No tab with id/i.test(message)
+    || /Cannot attach to this target/i.test(message)
+    || /Another debugger is already attached/i.test(message);
 }
 
 /**
@@ -1468,6 +1813,8 @@ async function setTabEnabled(tabId, title, enabled) {
     await chrome.storage.session.set({
       [`${ENABLED_TAB_STORAGE_PREFIX}${scope.tabId}`]: scope
     });
+    await primeTabConsoleCapture(scope.tabId, true);
+    await ensureDebuggerConsoleTracking(scope.tabId, true);
   } else {
     await disableTab(scope.tabId);
   }
@@ -1483,6 +1830,7 @@ async function setTabEnabled(tabId, title, enabled) {
  * @returns {Promise<void>}
  */
 async function disableTab(tabId) {
+  await disableDebuggerConsoleTracking(tabId);
   state.enabledScopes.delete(String(tabId));
   await chrome.storage.session.remove(`${ENABLED_TAB_STORAGE_PREFIX}${tabId}`);
   await revokeSessionsForScope(tabId, null);
@@ -1538,6 +1886,10 @@ async function handleTabUpdated(tabId, changeInfo, tab) {
   if (typeof changeInfo.url === 'string' || typeof changeInfo.title === 'string' || changeInfo.status === 'complete') {
     if (tab.url) {
       await syncTabSessionsOrigin(tabId, tab.url);
+    }
+    if (changeInfo.status === 'complete' && isTabEnabled(tabId)) {
+      await primeTabConsoleCapture(tabId);
+      await ensureDebuggerConsoleTracking(tabId);
     }
     await updateActionIndicatorForTab(tabId);
     await emitUiState();
@@ -1745,6 +2097,8 @@ async function emitUiStateForPort(port) {
     return;
   }
 
+  refreshSetupStatus();
+
   const currentTab = portState.scopeTabId
     ? await getTabState(portState.scopeTabId)
     : await getCurrentTabState();
@@ -1755,11 +2109,166 @@ async function emitUiStateForPort(port) {
     state: {
       nativeConnected: Boolean(state.nativePort),
       currentTab,
+      setupStatus: state.setupStatus,
+      setupStatusPending: state.setupStatusPending,
+      setupStatusError: state.setupStatusError,
       actionLog: [...state.actionLog]
         .filter((entry) => scopedTabId == null || entry.tabId === scopedTabId)
         .reverse()
     }
   });
+}
+
+/**
+ * @param {unknown} message
+ * @returns {boolean}
+ */
+function handleHostStatusMessage(message) {
+  if (!message || typeof message !== 'object') {
+    return false;
+  }
+
+  const candidate = /** @type {Record<string, unknown>} */ (message);
+  if (candidate.type === 'host.bridge_response') {
+    const response = candidate.response && typeof candidate.response === 'object'
+      ? /** @type {BridgeResponse} */ (candidate.response)
+      : null;
+    if (response?.id === state.setupStatusPendingRequestId) {
+      clearSetupStatusTimer();
+      state.setupStatusPending = false;
+      state.setupStatusPendingRequestId = null;
+      if (response.ok) {
+        state.setupStatus = isSetupStatus(response.result) ? response.result : null;
+        state.setupStatusUpdatedAt = Date.now();
+        state.setupStatusError = null;
+      } else {
+        state.setupStatusError = response.error.message;
+      }
+      void emitUiState().catch(reportAsyncError);
+    }
+    return true;
+  }
+
+  if (candidate.type === 'host.bridge_error') {
+    if (candidate.requestId === state.setupStatusPendingRequestId) {
+      clearSetupStatusTimer();
+      state.setupStatusPending = false;
+      state.setupStatusPendingRequestId = null;
+      state.setupStatusError = typeof candidate.error === 'object'
+        && candidate.error
+        && typeof /** @type {Record<string, unknown>} */ (candidate.error).message === 'string'
+        ? /** @type {Record<string, string>} */ (candidate.error).message
+        : 'Could not inspect host setup.';
+      void emitUiState().catch(reportAsyncError);
+    }
+    return true;
+  }
+
+  if (candidate.type === 'host.setup_status.response') {
+    if (candidate.requestId === state.setupStatusPendingRequestId) {
+      clearSetupStatusTimer();
+      state.setupStatus = isSetupStatus(candidate.status) ? candidate.status : null;
+      state.setupStatusPending = false;
+      state.setupStatusPendingRequestId = null;
+      state.setupStatusUpdatedAt = Date.now();
+      state.setupStatusError = null;
+      void emitUiState().catch(reportAsyncError);
+    }
+    return true;
+  }
+
+  if (candidate.type === 'host.setup_status.error') {
+    if (candidate.requestId === state.setupStatusPendingRequestId) {
+      clearSetupStatusTimer();
+      state.setupStatusPending = false;
+      state.setupStatusPendingRequestId = null;
+      state.setupStatusError = typeof candidate.error === 'object'
+        && candidate.error
+        && typeof /** @type {Record<string, unknown>} */ (candidate.error).message === 'string'
+        ? /** @type {Record<string, string>} */ (candidate.error).message
+        : 'Could not inspect host setup.';
+      void emitUiState().catch(reportAsyncError);
+    }
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * @param {boolean} [force=false]
+ * @returns {void}
+ */
+function refreshSetupStatus(force = false) {
+  if (!state.nativePort) {
+    clearSetupStatus();
+    return;
+  }
+
+  const isFresh = state.setupStatusUpdatedAt > 0
+    && (Date.now() - state.setupStatusUpdatedAt) < SETUP_STATUS_STALE_MS;
+  if (state.setupStatusPending || (!force && isFresh && !state.setupStatusError)) {
+    return;
+  }
+
+  const requestId = crypto.randomUUID();
+  state.setupStatusPending = true;
+  state.setupStatusPendingRequestId = requestId;
+  state.setupStatusError = null;
+  clearSetupStatusTimer();
+  state.nativePort.postMessage({
+    type: 'host.bridge_request',
+    request: createRequest({
+      id: requestId,
+      method: 'setup.get_status'
+    })
+  });
+  state.setupStatusTimeoutId = setTimeout(() => {
+    if (state.setupStatusPendingRequestId !== requestId) {
+      return;
+    }
+    state.setupStatusPending = false;
+    state.setupStatusPendingRequestId = null;
+    state.setupStatusError = 'Host setup request timed out.';
+    state.setupStatusTimeoutId = null;
+    void emitUiState().catch(reportAsyncError);
+  }, SETUP_STATUS_TIMEOUT_MS);
+}
+
+/**
+ * @param {string | null} [errorMessage=null]
+ * @returns {void}
+ */
+function clearSetupStatus(errorMessage = null) {
+  clearSetupStatusTimer();
+  state.setupStatus = null;
+  state.setupStatusPending = false;
+  state.setupStatusPendingRequestId = null;
+  state.setupStatusUpdatedAt = 0;
+  state.setupStatusError = errorMessage;
+}
+
+/**
+ * @returns {void}
+ */
+function clearSetupStatusTimer() {
+  if (!state.setupStatusTimeoutId) {
+    return;
+  }
+  clearTimeout(state.setupStatusTimeoutId);
+  state.setupStatusTimeoutId = null;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is SetupStatus}
+ */
+function isSetupStatus(value) {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const candidate = /** @type {Record<string, unknown>} */ (value);
+  return Array.isArray(candidate.mcpClients) && Array.isArray(candidate.skillTargets);
 }
 
 /**
@@ -1775,6 +2284,7 @@ async function handleUiMessage(port, message) {
     state.uiPorts.set(port, {
       scopeTabId: Number.isFinite(scopeTabId) && scopeTabId > 0 ? scopeTabId : null
     });
+    refreshSetupStatus();
     await emitUiStateForPort(port);
     return;
   }

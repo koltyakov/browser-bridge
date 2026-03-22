@@ -23,6 +23,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
   'session.get_status': { group: 'session', session: true, params: [] },
   'session.revoke': { group: 'session', session: true, params: [] },
   'skill.get_runtime_context': { group: 'session', session: false, params: [] },
+  'setup.get_status': { group: 'session', session: false, params: [] },
   'page.get_state': { group: 'page', session: true, params: [] },
   'page.evaluate': {
     group: 'page',

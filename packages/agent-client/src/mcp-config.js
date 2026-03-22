@@ -20,6 +20,14 @@ export function isMcpClientName(value) {
 }
 
 /**
+ * @param {McpClientName} clientName
+ * @returns {{ key: string, includeType: boolean }}
+ */
+export function getMcpConfigShape(clientName) {
+  return MCP_CONFIG_SHAPES[clientName] ?? { key: 'mcpServers', includeType: false };
+}
+
+/**
  * @returns {{ command: string, args: string[], env: Record<string, string> }}
  */
 function createBaseServerConfig() {
@@ -44,7 +52,7 @@ const MCP_CONFIG_SHAPES = {
  */
 export function buildMcpConfig(clientName) {
   const serverConfig = createBaseServerConfig();
-  const shape = MCP_CONFIG_SHAPES[clientName] ?? { key: 'mcpServers', includeType: false };
+  const shape = getMcpConfigShape(clientName);
   const entry = shape.includeType ? { type: 'stdio', ...serverConfig } : serverConfig;
   return { [shape.key]: { 'browser-bridge': entry } };
 }
@@ -130,7 +138,7 @@ export async function installMcpConfig(clientName, options) {
   }
 
   // Merge only the browser-bridge entry under the relevant top-level key.
-  const topKey = (MCP_CONFIG_SHAPES[clientName] ?? MCP_CONFIG_SHAPES.cursor).key;
+  const topKey = getMcpConfigShape(clientName).key;
   const entryBlock = /** @type {Record<string, unknown>} */ (newEntry[topKey]);
 
   const merged = {

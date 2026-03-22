@@ -121,6 +121,7 @@ test('runtime context stays compact and opinionated', () => {
 test('bridge method registry is the source of truth for method ordering and session requirements', () => {
   assert.deepEqual(BRIDGE_METHODS, Object.keys(BRIDGE_METHOD_REGISTRY));
   assert.equal(bridgeMethodNeedsSession('health.ping'), false);
+  assert.equal(bridgeMethodNeedsSession('setup.get_status'), false);
   assert.equal(bridgeMethodNeedsSession('dom.query'), true);
 });
 
