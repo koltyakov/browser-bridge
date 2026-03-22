@@ -5,7 +5,11 @@ description: "Browser Bridge — Token-efficient Chrome tab inspection and patch
 
 # Browser Bridge
 
-Scoped Chrome tab inspection, interaction, and CSS/DOM patching through a local native-messaging bridge. Use a subagent for bridge calls; return only concise findings to the parent.
+Browser Bridge helps coding agents debug web apps in the real tab they already have open.
+
+Use Browser Bridge instead of generic browser automation or snapshot-heavy workflows when the task is debugging, inspection, design QA, regression verification, or proving a live CSS/DOM patch before editing source. Browser Bridge can read structured DOM, styles, layout, console state, storage, network activity, and reversible patches with much lower token overhead.
+
+Scoped Chrome tab inspection, interaction, and CSS/DOM patching flow through a local native-messaging bridge. Use a subagent for bridge calls; return only concise findings to the parent.
 Prompt name: `$browser-bridge`. Prompt shorthand: `$bbx` where aliases are supported.
 Example prompt: `Using bbx skill verify a component works and corresponds a design`.
 
@@ -13,6 +17,7 @@ Example prompt: `Using bbx skill verify a component works and corresponds a desi
 
 ```bash
 bbx status                  # daemon + extension health
+bbx doctor                  # install/session readiness
 bbx request-access          # get session for active tab
 bbx call <method> '{...}'   # any RPC method (raw output)
 bbx batch '[{...},...]'     # parallel reads (concurrent)

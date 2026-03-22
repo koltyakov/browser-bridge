@@ -6,10 +6,12 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { createRuntimeContext, METHODS } from '../../protocol/src/index.js';
+import { startBridgeMcpServer } from '../../mcp-server/src/server.js';
 import { BridgeClient } from './client.js';
 import { methodNeedsSession, parseCommaList, parseJsonObject, parsePropertyAssignments } from './cli-helpers.js';
 import { installAgentFiles, parseInstallAgentArgs } from './install.js';
-import { clearSession, loadSession, saveSession } from './session-store.js';
+import { formatMcpConfig, isMcpClientName } from './mcp-config.js';
+import { getDoctorReport, requestBridge, requireSession, resolveRef } from './runtime.js';
 import { summarizeBridgeResponse } from './subagent.js';
 
 /** @typedef {import('../../protocol/src/types.js').SessionState} SessionState */
@@ -67,34 +69,61 @@ if (command === 'install-skill') {
   process.exit(0);
 }
 
+if (command === 'mcp') {
+  const [subcommand, clientName] = rest;
+  if (subcommand === 'serve') {
+    await startBridgeMcpServer();
+    await new Promise(() => {});
+  }
+  if (subcommand === 'config') {
+    if (!clientName || !isMcpClientName(clientName)) {
+      process.stderr.write('Usage: bbx mcp config <claude|cursor|vscode>\n');
+      process.exit(1);
+    }
+    process.stdout.write(formatMcpConfig(clientName));
+    process.exit(0);
+  }
+  process.stderr.write('Usage: bbx mcp <serve|config>\n');
+  process.exit(1);
+}
+
 const client = new BridgeClient();
 
 await main();
 
 async function main() {
   try {
-    await client.connect();
-
     if (command === 'status') {
-      await printSummary(await client.request({ method: 'health.ping' }));
+      await printSummary(await requestBridge(client, 'health.ping'));
+      return;
+    }
+
+    if (command === 'doctor') {
+      const report = await getDoctorReport();
+      printJson({
+        ok: report.issues.length === 0,
+        summary: report.issues.length === 0
+          ? 'Browser Bridge is ready.'
+          : `Browser Bridge has ${report.issues.length} setup issue(s).`,
+        evidence: report
+      });
       return;
     }
 
     if (command === 'logs') {
-      await printSummary(await client.request({ method: 'log.tail' }));
+      await printSummary(await requestBridge(client, 'log.tail'));
       return;
     }
 
     if (command === 'tabs') {
-      await printSummary(await client.request({ method: 'tabs.list' }));
+      await printSummary(await requestBridge(client, 'tabs.list'));
       return;
     }
 
     if (command === 'tab-create') {
       const [url] = rest;
-      const response = await client.request({
-        method: 'tabs.create',
-        params: { url: url || undefined }
+      const response = await requestBridge(client, 'tabs.create', {
+        url: url || undefined
       });
       await printSummary(response);
       return;
@@ -105,9 +134,8 @@ async function main() {
       if (!tabId) {
         throw new Error('Usage: tab-close <tabId>');
       }
-      const response = await client.request({
-        method: 'tabs.close',
-        params: { tabId: Number(tabId) }
+      const response = await requestBridge(client, 'tabs.close', {
+        tabId: Number(tabId)
       });
       await printSummary(response);
       return;
@@ -115,16 +143,13 @@ async function main() {
 
     if (command === 'call') {
       const { sessionId, method, params } = await parseCallCommand(rest);
-      const response = await client.request({
-        method,
-        sessionId,
-        params
-      });
+      const response = await requestBridge(client, method, params, { sessionId });
       printJson(response.ok ? response.result : response);
       return;
     }
 
     if (command === 'batch') {
+      await ensureClientConnection();
       const input = rest[0];
       if (!input) {
         throw new Error('Usage: batch \'[{"method":"...","params":{...}}, ...]\'');
@@ -134,7 +159,7 @@ async function main() {
         throw new Error('Batch input must be a JSON array.');
       }
       const needsSession = calls.some((c) => methodNeedsSession(c.method));
-      const session = needsSession ? await requireSession() : null;
+      const session = needsSession ? await requireSession(client) : null;
       const results = await Promise.all(calls.map(async (call) => {
         try {
           const response = await client.request({
@@ -155,62 +180,44 @@ async function main() {
     if (command === 'request-access') {
       const [tabIdOrOrigin, originArg] = rest;
       const parsedTabId = Number(tabIdOrOrigin);
-      const response = await client.request({
-        method: 'session.request_access',
-        params: {
-          tabId: Number.isFinite(parsedTabId) && parsedTabId > 0 ? parsedTabId : undefined,
-          origin: Number.isFinite(parsedTabId) && parsedTabId > 0 ? originArg : (tabIdOrOrigin || undefined)
-        }
+      const response = await requestBridge(client, 'session.request_access', {
+        tabId: Number.isFinite(parsedTabId) && parsedTabId > 0 ? parsedTabId : undefined,
+        origin: Number.isFinite(parsedTabId) && parsedTabId > 0 ? originArg : (tabIdOrOrigin || undefined)
       });
-      if (response.ok) {
-        await saveSession(/** @type {SessionState} */ (response.result));
-      }
       await printSummary(response);
       return;
     }
 
     if (command === 'session') {
-      const session = await requireSession();
+      const session = await requireSession(client);
       printJson(session);
       return;
     }
 
     if (command === 'revoke') {
-      const session = await requireSession();
-      const response = await client.request({
-        method: 'session.revoke',
+      const session = await requireSession(client);
+      const response = await requestBridge(client, 'session.revoke', {}, {
         sessionId: session.sessionId
       });
-      if (response.ok) {
-        await clearSession();
-      }
       await printSummary(response);
       return;
     }
 
-    const session = await requireSession();
+    const session = await requireSession(client);
 
     if (command === 'dom-query') {
       const selector = rest[0] || 'body';
-      const response = await client.request({
-        method: 'dom.query',
-        sessionId: session.sessionId,
-        params: {
-          selector
-        }
+      const response = await requestBridge(client, 'dom.query', { selector }, {
+        sessionId: session.sessionId
       });
       await printSummary(response);
       return;
     }
 
     if (command === 'describe') {
-      const elementRef = await resolveRef(rest[0], session.sessionId);
-      const response = await client.request({
-        method: 'dom.describe',
-        sessionId: session.sessionId,
-        params: {
-          elementRef
-        }
+      const elementRef = await resolveRef(client, rest[0], session.sessionId);
+      const response = await requestBridge(client, 'dom.describe', { elementRef }, {
+        sessionId: session.sessionId
       });
       await printSummary(response, 'dom.describe');
       return;
@@ -218,151 +225,106 @@ async function main() {
 
     if (command === 'text') {
       const [refOrSelector, textBudget] = rest;
-      const elementRef = await resolveRef(refOrSelector, session.sessionId);
-      const response = await client.request({
-        method: 'dom.get_text',
-        sessionId: session.sessionId,
-        params: {
-          elementRef,
-          textBudget: textBudget ? Number(textBudget) : undefined
-        }
-      });
+      const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
+      const response = await requestBridge(client, 'dom.get_text', {
+        elementRef,
+        textBudget: textBudget ? Number(textBudget) : undefined
+      }, { sessionId: session.sessionId });
       await printSummary(response, 'dom.get_text');
       return;
     }
 
     if (command === 'styles') {
       const [refOrSelector, propertyList] = rest;
-      const elementRef = await resolveRef(refOrSelector, session.sessionId);
-      const response = await client.request({
-        method: 'styles.get_computed',
-        sessionId: session.sessionId,
-        params: {
-          elementRef,
-          properties: parseCommaList(propertyList)
-        }
-      });
+      const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
+      const response = await requestBridge(client, 'styles.get_computed', {
+        elementRef,
+        properties: parseCommaList(propertyList)
+      }, { sessionId: session.sessionId });
       await printSummary(response, 'styles.get_computed');
       return;
     }
 
     if (command === 'box') {
       const [refOrSelector] = rest;
-      const elementRef = await resolveRef(refOrSelector, session.sessionId);
-      const response = await client.request({
-        method: 'layout.get_box_model',
-        sessionId: session.sessionId,
-        params: {
-          elementRef
-        }
-      });
+      const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
+      const response = await requestBridge(client, 'layout.get_box_model', {
+        elementRef
+      }, { sessionId: session.sessionId });
       await printSummary(response, 'layout.get_box_model');
       return;
     }
 
     if (command === 'click') {
       const [refOrSelector, button] = rest;
-      const elementRef = await resolveRef(refOrSelector, session.sessionId);
-      const response = await client.request({
-        method: 'input.click',
-        sessionId: session.sessionId,
-        params: {
-          target: {
-            elementRef
-          },
-          button
-        }
-      });
+      const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
+      const response = await requestBridge(client, 'input.click', {
+        target: { elementRef },
+        button
+      }, { sessionId: session.sessionId });
       await printSummary(response);
       return;
     }
 
     if (command === 'focus') {
       const [refOrSelector] = rest;
-      const elementRef = await resolveRef(refOrSelector, session.sessionId);
-      const response = await client.request({
-        method: 'input.focus',
-        sessionId: session.sessionId,
-        params: {
-          target: {
-            elementRef
-          }
-        }
-      });
+      const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
+      const response = await requestBridge(client, 'input.focus', {
+        target: { elementRef }
+      }, { sessionId: session.sessionId });
       await printSummary(response);
       return;
     }
 
     if (command === 'type') {
       const [refOrSelector, ...textParts] = rest;
-      const elementRef = await resolveRef(refOrSelector, session.sessionId);
-      const response = await client.request({
-        method: 'input.type',
-        sessionId: session.sessionId,
-        params: {
-          target: {
-            elementRef
-          },
-          text: textParts.join(' ')
-        }
-      });
+      const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
+      const response = await requestBridge(client, 'input.type', {
+        target: { elementRef },
+        text: textParts.join(' ')
+      }, { sessionId: session.sessionId });
       await printSummary(response);
       return;
     }
 
     if (command === 'press-key') {
       const [key, refOrSelector] = rest;
-      const elementRef = refOrSelector ? await resolveRef(refOrSelector, session.sessionId) : undefined;
-      const response = await client.request({
-        method: 'input.press_key',
-        sessionId: session.sessionId,
-        params: {
-          key,
-          target: elementRef
-            ? {
-              elementRef
-            }
-            : undefined
-        }
-      });
+      const elementRef = refOrSelector ? await resolveRef(client, refOrSelector, session.sessionId) : undefined;
+      const response = await requestBridge(client, 'input.press_key', {
+        key,
+        target: elementRef
+          ? { elementRef }
+          : undefined
+      }, { sessionId: session.sessionId });
       await printSummary(response);
       return;
     }
 
     if (command === 'patch-style') {
       const [refOrSelector, ...assignments] = rest;
-      const elementRef = await resolveRef(refOrSelector, session.sessionId);
-      const response = await client.request({
-        method: 'patch.apply_styles',
-        sessionId: session.sessionId,
-        params: {
-          target: { elementRef },
-          declarations: parsePropertyAssignments(assignments)
-        }
-      });
+      const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
+      const response = await requestBridge(client, 'patch.apply_styles', {
+        target: { elementRef },
+        declarations: parsePropertyAssignments(assignments)
+      }, { sessionId: session.sessionId });
       await printSummary(response);
       return;
     }
 
     if (command === 'patch-text') {
       const [refOrSelector, ...textParts] = rest;
-      const elementRef = await resolveRef(refOrSelector, session.sessionId);
-      const response = await client.request({
-        method: 'patch.apply_dom',
-        sessionId: session.sessionId,
-        params: {
-          target: { elementRef },
-          operation: 'set_text',
-          value: textParts.join(' ')
-        }
-      });
+      const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
+      const response = await requestBridge(client, 'patch.apply_dom', {
+        target: { elementRef },
+        operation: 'set_text',
+        value: textParts.join(' ')
+      }, { sessionId: session.sessionId });
       await printSummary(response);
       return;
     }
 
     if (command === 'patches') {
-      const response = await client.request({
-        method: 'patch.list',
+      const response = await requestBridge(client, 'patch.list', {}, {
         sessionId: session.sessionId
       });
       await printSummary(response);
@@ -371,27 +333,19 @@ async function main() {
 
     if (command === 'rollback') {
       const [patchId] = rest;
-      const response = await client.request({
-        method: 'patch.rollback',
-        sessionId: session.sessionId,
-        params: {
-          patchId
-        }
-      });
+      const response = await requestBridge(client, 'patch.rollback', {
+        patchId
+      }, { sessionId: session.sessionId });
       await printSummary(response);
       return;
     }
 
     if (command === 'screenshot') {
       const [refOrSelector, outputPath] = rest;
-      const elementRef = await resolveRef(refOrSelector, session.sessionId);
-      const response = await client.request({
-        method: 'screenshot.capture_element',
-        sessionId: session.sessionId,
-        params: {
-          elementRef
-        }
-      });
+      const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
+      const response = await requestBridge(client, 'screenshot.capture_element', {
+        elementRef
+      }, { sessionId: session.sessionId });
 
       if (!response.ok) {
         await printSummary(response);
@@ -419,22 +373,20 @@ async function main() {
       if (!expression) {
         throw new Error('Usage: eval <expression>  (or pipe via stdin: echo "expr" | bbx eval -)');
       }
-      const response = await client.request({
-        method: 'page.evaluate',
-        sessionId: session.sessionId,
-        params: { expression, returnByValue: true }
-      });
+      const response = await requestBridge(client, 'page.evaluate', {
+        expression,
+        returnByValue: true
+      }, { sessionId: session.sessionId });
       await printSummary(response);
       return;
     }
 
     if (command === 'console') {
       const [level] = rest;
-      const response = await client.request({
-        method: 'page.get_console',
-        sessionId: session.sessionId,
-        params: { level: level || 'all', clear: false }
-      });
+      const response = await requestBridge(client, 'page.get_console', {
+        level: level || 'all',
+        clear: false
+      }, { sessionId: session.sessionId });
       await printSummary(response, 'page.get_console');
       return;
     }
@@ -444,14 +396,10 @@ async function main() {
       if (!selector) {
         throw new Error('Usage: wait <selector> [timeoutMs]');
       }
-      const response = await client.request({
-        method: 'dom.wait_for',
-        sessionId: session.sessionId,
-        params: {
-          selector,
-          timeoutMs: timeoutArg ? Number(timeoutArg) : 5000
-        }
-      });
+      const response = await requestBridge(client, 'dom.wait_for', {
+        selector,
+        timeoutMs: timeoutArg ? Number(timeoutArg) : 5000
+      }, { sessionId: session.sessionId });
       await printSummary(response);
       return;
     }
@@ -461,11 +409,9 @@ async function main() {
       if (!searchText) {
         throw new Error('Usage: find <text>');
       }
-      const response = await client.request({
-        method: 'dom.find_by_text',
-        sessionId: session.sessionId,
-        params: { text: searchText }
-      });
+      const response = await requestBridge(client, 'dom.find_by_text', {
+        text: searchText
+      }, { sessionId: session.sessionId });
       await printSummary(response, 'dom.find_by_text');
       return;
     }
@@ -475,40 +421,31 @@ async function main() {
       if (!role) {
         throw new Error('Usage: find-role <role> [name]');
       }
-      const response = await client.request({
-        method: 'dom.find_by_role',
-        sessionId: session.sessionId,
-        params: { role, name: nameParts.join(' ') || undefined }
-      });
+      const response = await requestBridge(client, 'dom.find_by_role', {
+        role,
+        name: nameParts.join(' ') || undefined
+      }, { sessionId: session.sessionId });
       await printSummary(response, 'dom.find_by_role');
       return;
     }
 
     if (command === 'html') {
       const [refOrSelector, maxLengthArg] = rest;
-      const elementRef = await resolveRef(refOrSelector, session.sessionId);
-      const response = await client.request({
-        method: 'dom.get_html',
-        sessionId: session.sessionId,
-        params: {
-          elementRef,
-          maxLength: maxLengthArg ? Number(maxLengthArg) : undefined
-        }
-      });
+      const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
+      const response = await requestBridge(client, 'dom.get_html', {
+        elementRef,
+        maxLength: maxLengthArg ? Number(maxLengthArg) : undefined
+      }, { sessionId: session.sessionId });
       await printSummary(response);
       return;
     }
 
     if (command === 'hover') {
       const [refOrSelector] = rest;
-      const elementRef = await resolveRef(refOrSelector, session.sessionId);
-      const response = await client.request({
-        method: 'input.hover',
-        sessionId: session.sessionId,
-        params: {
-          target: { elementRef }
-        }
-      });
+      const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
+      const response = await requestBridge(client, 'input.hover', {
+        target: { elementRef }
+      }, { sessionId: session.sessionId });
       await printSummary(response);
       return;
     }
@@ -518,68 +455,53 @@ async function main() {
       if (!url) {
         throw new Error('Usage: navigate <url>');
       }
-      const response = await client.request({
-        method: 'navigation.navigate',
-        sessionId: session.sessionId,
-        params: { url }
-      });
+      const response = await requestBridge(client, 'navigation.navigate', {
+        url
+      }, { sessionId: session.sessionId });
       await printSummary(response);
       return;
     }
 
     if (command === 'storage') {
       const [storageType, ...keys] = rest;
-      const response = await client.request({
-        method: 'page.get_storage',
-        sessionId: session.sessionId,
-        params: {
-          type: storageType === 'session' ? 'session' : 'local',
-          keys: keys.length ? keys : undefined
-        }
-      });
+      const response = await requestBridge(client, 'page.get_storage', {
+        type: storageType === 'session' ? 'session' : 'local',
+        keys: keys.length ? keys : undefined
+      }, { sessionId: session.sessionId });
       await printSummary(response);
       return;
     }
 
     if (command === 'page-text') {
       const [budgetArg] = rest;
-      const response = await client.request({
-        method: 'page.get_text',
-        sessionId: session.sessionId,
-        params: { textBudget: budgetArg ? Number(budgetArg) : undefined }
-      });
+      const response = await requestBridge(client, 'page.get_text', {
+        textBudget: budgetArg ? Number(budgetArg) : undefined
+      }, { sessionId: session.sessionId });
       await printSummary(response, 'page.get_text');
       return;
     }
 
     if (command === 'network') {
       const [limitArg] = rest;
-      const response = await client.request({
-        method: 'page.get_network',
-        sessionId: session.sessionId,
-        params: { limit: limitArg ? Number(limitArg) : undefined }
-      });
+      const response = await requestBridge(client, 'page.get_network', {
+        limit: limitArg ? Number(limitArg) : undefined
+      }, { sessionId: session.sessionId });
       await printSummary(response, 'page.get_network');
       return;
     }
 
     if (command === 'a11y-tree') {
       const [maxNodesArg, maxDepthArg] = rest;
-      const response = await client.request({
-        method: 'dom.get_accessibility_tree',
-        sessionId: session.sessionId,
-        params: {
-          maxNodes: maxNodesArg ? Number(maxNodesArg) : undefined,
-          maxDepth: maxDepthArg ? Number(maxDepthArg) : undefined
-        }
-      });
+      const response = await requestBridge(client, 'dom.get_accessibility_tree', {
+        maxNodes: maxNodesArg ? Number(maxNodesArg) : undefined,
+        maxDepth: maxDepthArg ? Number(maxDepthArg) : undefined
+      }, { sessionId: session.sessionId });
       await printSummary(response);
       return;
     }
 
     if (command === 'perf') {
-      const response = await client.request({
-        method: 'performance.get_metrics',
+      const response = await requestBridge(client, 'performance.get_metrics', {}, {
         sessionId: session.sessionId
       });
       await printSummary(response);
@@ -591,14 +513,10 @@ async function main() {
       if (!widthArg || !heightArg) {
         throw new Error('Usage: resize <width> <height>');
       }
-      const response = await client.request({
-        method: 'viewport.resize',
-        sessionId: session.sessionId,
-        params: {
-          width: Number(widthArg),
-          height: Number(heightArg)
-        }
-      });
+      const response = await requestBridge(client, 'viewport.resize', {
+        width: Number(widthArg),
+        height: Number(heightArg)
+      }, { sessionId: session.sessionId });
       await printSummary(response);
       return;
     }
@@ -631,70 +549,12 @@ async function main() {
 }
 
 /**
- * @returns {Promise<SessionState>}
+ * @returns {Promise<void>}
  */
-async function requireSession() {
-  const session = await loadSession();
-  if (!session?.sessionId) {
-    throw new Error('No active saved session. Enable agent communication for the tab in the extension and run `request-access` first.');
+async function ensureClientConnection() {
+  if (!client.connected) {
+    await client.connect();
   }
-
-  const status = await client.request({
-    method: 'session.get_status',
-    sessionId: session.sessionId
-  });
-  if (status.ok) {
-    const activeSession = /** @type {SessionState} */ (status.result);
-    await saveSession(activeSession);
-    return activeSession;
-  }
-
-  if (status.error.code !== 'SESSION_EXPIRED') {
-    throw new Error(status.error.message);
-  }
-
-  const refreshed = await client.request({
-    method: 'session.request_access',
-    params: {
-      tabId: session.tabId,
-      origin: session.origin
-    }
-  });
-  if (!refreshed.ok) {
-    throw new Error(refreshed.error.message);
-  }
-
-  const renewedSession = /** @type {SessionState} */ (refreshed.result);
-  await saveSession(renewedSession);
-  return renewedSession;
-}
-
-/**
- * Resolve an argument that may be a CSS selector or an element reference.
- * If the argument starts with `el_`, it is treated as an element reference.
- * Otherwise, it is treated as a CSS selector and resolved via dom.query.
- *
- * @param {string} refOrSelector
- * @param {string} sessionId
- * @returns {Promise<string>}
- */
-async function resolveRef(refOrSelector, sessionId) {
-  if (refOrSelector.startsWith('el_')) {
-    return refOrSelector;
-  }
-  const response = await client.request({
-    method: 'dom.query',
-    sessionId,
-    params: { selector: refOrSelector }
-  });
-  if (!response.ok) {
-    throw new Error(response.error.message);
-  }
-  const result = /** @type {{ nodes: Array<{ elementRef: string }> }} */ (response.result);
-  if (!result.nodes || result.nodes.length === 0) {
-    throw new Error(`No element found for selector "${refOrSelector}".`);
-  }
-  return result.nodes[0].elementRef;
 }
 
 /**
@@ -722,11 +582,14 @@ Setup:
   bbx install-skill [targets|all] [--project <path>]
                                      Install/update Browser Bridge skill files in a repo
   bbx status                          Check bridge connection
+  bbx doctor                          Diagnose install, daemon, extension, and session readiness
   bbx logs                            Recent bridge logs
   bbx tabs                            List available tabs
   bbx tab-create [url]                Create a new tab
   bbx tab-close <tabId>               Close a tab
   bbx skill                           Runtime budget presets and method groups
+  bbx mcp serve                       Start Browser Bridge as an MCP stdio server
+  bbx mcp config <client>             Print MCP config for claude|cursor|vscode
 
 Session:
   bbx request-access [tabId] [origin] Create session for enabled tab
@@ -802,7 +665,7 @@ async function parseCallCommand(args) {
     }
     return {
       method,
-      sessionId: methodNeedsSession(method) ? (await requireSession()).sessionId : null,
+      sessionId: methodNeedsSession(method) ? (await requireSession(client)).sessionId : null,
       params: parseJsonObject(rawParams)
     };
   }

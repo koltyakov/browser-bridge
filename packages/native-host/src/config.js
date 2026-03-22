@@ -9,7 +9,8 @@ export const APP_NAME = 'com.codex.browser_bridge';
  * @returns {string}
  */
 export function getBridgeDir() {
-  return path.join(os.homedir(), '.codex', 'browser-bridge');
+  const codexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
+  return path.join(codexHome, 'browser-bridge');
 }
 
 /**

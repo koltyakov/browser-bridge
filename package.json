@@ -1,16 +1,37 @@
 {
   "name": "@browserbridge/bbx",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "type": "module",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "QUICKSTART.md",
+    "manifest.json",
+    "packages/agent-client/src",
+    "packages/extension/assets",
+    "packages/extension/src",
+    "packages/extension/ui",
+    "packages/mcp-server/src",
+    "packages/native-host/bin",
+    "packages/native-host/src",
+    "packages/protocol/src",
+    "skills/browser-bridge"
+  ],
   "bin": {
     "bbx": "packages/agent-client/src/cli.js",
+    "bbx-mcp": "packages/mcp-server/src/bin.js",
     "bbx-daemon": "packages/native-host/bin/bridge-daemon.js",
     "bbx-install": "packages/native-host/bin/install-manifest.js"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "test": "node --test packages/protocol/test/*.test.js packages/native-host/test/*.test.js packages/agent-client/test/*.test.js packages/extension/test/*.test.js",
+    "test": "node --test packages/protocol/test/*.test.js packages/native-host/test/*.test.js packages/agent-client/test/*.test.js packages/mcp-server/test/*.test.js packages/extension/test/*.test.js",
     "typecheck": "tsc --noEmit",
+    "package:extension": "node scripts/package-extension.mjs",
+    "release:check": "npm run typecheck && npm test && npm run package:extension && npm pack --dry-run",
     "status": "node packages/agent-client/src/cli.js status",
     "daemon": "node packages/native-host/bin/bridge-daemon.js",
     "install-manifest": "node packages/native-host/bin/install-manifest.js"
@@ -19,5 +40,9 @@
     "@types/chrome": "^0.1.24",
     "@types/node": "^24.0.0",
     "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "zod": "^4.3.6"
   }
 }

@@ -7,10 +7,10 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, '../../..');
 const skillSourceDir = path.join(packageRoot, 'skills', 'browser-bridge');
-const supportedTargets = /** @type {const} */ (['copilot', 'claude', 'opencode', 'agents']);
+const supportedTargets = /** @type {const} */ (['copilot', 'claude', 'opencode', 'agents', 'codex', 'openai']);
 
 /**
- * @typedef {'copilot' | 'claude' | 'opencode' | 'agents'} SupportedTarget
+ * @typedef {'copilot' | 'claude' | 'opencode' | 'agents' | 'codex' | 'openai'} SupportedTarget
  */
 
 /**
@@ -91,9 +91,15 @@ export function parseInstallAgentArgs(args, cwd = process.cwd()) {
 export async function installAgentFiles(options) {
   /** @type {string[]} */
   const created = [];
+  /** @type {Set<string>} */
+  const seenTargets = new Set();
 
   for (const target of options.targets) {
     const skillTargetDir = path.join(options.projectPath, getSkillRelativePath(target), 'browser-bridge');
+    if (seenTargets.has(skillTargetDir)) {
+      continue;
+    }
+    seenTargets.add(skillTargetDir);
     await installManagedSkill(skillTargetDir);
     created.push(skillTargetDir);
   }
@@ -141,6 +147,9 @@ function getSkillRelativePath(target) {
   }
   if (target === 'opencode') {
     return path.join('.opencode', 'skills');
+  }
+  if (target === 'codex' || target === 'openai') {
+    return path.join('.codex', 'skills');
   }
   return path.join('.agents', 'skills');
 }

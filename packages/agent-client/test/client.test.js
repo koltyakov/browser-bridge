@@ -8,6 +8,7 @@ import path from 'node:path';
 
 import { methodNeedsSession, parseCommaList, parseJsonObject, parsePropertyAssignments } from '../src/cli-helpers.js';
 import { installAgentFiles, parseInstallAgentArgs } from '../src/install.js';
+import { buildMcpConfig, formatMcpConfig, isMcpClientName } from '../src/mcp-config.js';
 import { summarizeBridgeResponse } from '../src/subagent.js';
 
 /** Ensure failures stay compact for parent-agent reporting. */
@@ -467,20 +468,20 @@ test('summarizer: DOM query evidence includes role and label', () => {
 
 test('parseInstallAgentArgs defaults to all supported targets', () => {
   const options = parseInstallAgentArgs([], '/tmp/example');
-  assert.deepEqual(options.targets, ['copilot', 'claude', 'opencode', 'agents']);
+  assert.deepEqual(options.targets, ['copilot', 'claude', 'opencode', 'agents', 'codex', 'openai']);
   assert.equal(options.projectPath, '/tmp/example');
 });
 
 test('parseInstallAgentArgs supports explicit selection and project path', () => {
-  const options = parseInstallAgentArgs(['copilot,claude', '--project', './demo'], '/tmp/example');
-  assert.deepEqual(options.targets, ['copilot', 'claude']);
+  const options = parseInstallAgentArgs(['copilot,codex', '--project', './demo'], '/tmp/example');
+  assert.deepEqual(options.targets, ['copilot', 'codex']);
   assert.equal(options.projectPath, path.resolve('/tmp/example', './demo'));
 });
 
 test('installAgentFiles writes managed files for supported runtimes', async () => {
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-agent-'));
   const installed = await installAgentFiles({
-    targets: ['copilot', 'claude', 'opencode', 'agents'],
+    targets: ['copilot', 'claude', 'opencode', 'agents', 'codex', 'openai'],
     projectPath: tempDir
   });
 
@@ -488,10 +489,60 @@ test('installAgentFiles writes managed files for supported runtimes', async () =
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.claude', 'skills', 'browser-bridge'))));
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.opencode', 'skills', 'browser-bridge'))));
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.agents', 'skills', 'browser-bridge'))));
+  assert.ok(installed.some((entry) => entry.endsWith(path.join('.codex', 'skills', 'browser-bridge'))));
 
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.github', 'skills', 'browser-bridge', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.claude', 'skills', 'browser-bridge', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.opencode', 'skills', 'browser-bridge', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.agents', 'skills', 'browser-bridge', 'SKILL.md')));
+  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.codex', 'skills', 'browser-bridge', 'SKILL.md')));
+  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.codex', 'skills', 'browser-bridge', 'agents', 'openai.yaml')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.agents', 'skills', 'browser-bridge', 'references', 'protocol.md')));
+});
+
+test('isMcpClientName recognizes supported clients', () => {
+  assert.equal(isMcpClientName('claude'), true);
+  assert.equal(isMcpClientName('cursor'), true);
+  assert.equal(isMcpClientName('vscode'), true);
+  assert.equal(isMcpClientName('other'), false);
+});
+
+test('buildMcpConfig produces client-specific config shapes', () => {
+  assert.deepEqual(buildMcpConfig('cursor'), {
+    mcpServers: {
+      'browser-bridge': {
+        command: 'bbx',
+        args: ['mcp', 'serve'],
+        env: {}
+      }
+    }
+  });
+
+  assert.deepEqual(buildMcpConfig('claude'), {
+    mcpServers: {
+      'browser-bridge': {
+        type: 'stdio',
+        command: 'bbx',
+        args: ['mcp', 'serve'],
+        env: {}
+      }
+    }
+  });
+
+  assert.deepEqual(buildMcpConfig('vscode'), {
+    servers: {
+      'browser-bridge': {
+        type: 'stdio',
+        command: 'bbx',
+        args: ['mcp', 'serve'],
+        env: {}
+      }
+    }
+  });
+});
+
+test('formatMcpConfig returns pretty JSON with newline', () => {
+  const formatted = formatMcpConfig('cursor');
+  assert.match(formatted, /"browser-bridge"/);
+  assert.ok(formatted.endsWith('\n'));
 });
