@@ -14,6 +14,10 @@ const targetAliases = /** @type {const} */ ({
   openai: 'codex'
 });
 
+const packageManifest = loadPackageManifest();
+const managedPackageName = typeof packageManifest.name === 'string' ? packageManifest.name : '@browserbridge/bbx';
+const managedPackageVersion = typeof packageManifest.version === 'string' ? packageManifest.version : null;
+
 /**
  * @typedef {'copilot' | 'claude' | 'cursor' | 'opencode' | 'agents' | 'codex'} SupportedTarget
  */
@@ -223,6 +227,65 @@ export function getManagedSkillSentinelFilename() {
 }
 
 /**
+ * @returns {string | null}
+ */
+export function getManagedPackageVersion() {
+  return managedPackageVersion;
+}
+
+/**
+ * @param {string} skillName
+ * @returns {string}
+ */
+export function formatManagedSkillSentinel(skillName) {
+  return `${JSON.stringify({
+    skill: skillName,
+    managedBy: managedPackageName,
+    version: managedPackageVersion
+  }, null, 2)}\n`;
+}
+
+/**
+ * @param {string} raw
+ * @returns {{ managed: boolean, version: string | null }}
+ */
+export function parseManagedSkillSentinel(raw) {
+  const text = raw.trim();
+  if (!text) {
+    return { managed: true, version: null };
+  }
+
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return {
+        managed: true,
+        version: typeof parsed.version === 'string' ? parsed.version : null
+      };
+    }
+  } catch {
+    // Legacy sentinel contents were plain text. Treat them as managed but unversioned.
+  }
+
+  return { managed: true, version: null };
+}
+
+/**
+ * @param {string | null} installedVersion
+ * @param {string | null} [currentVersion=managedPackageVersion]
+ * @returns {boolean}
+ */
+export function isManagedVersionOutdated(installedVersion, currentVersion = managedPackageVersion) {
+  if (!currentVersion) {
+    return false;
+  }
+  if (!installedVersion) {
+    return true;
+  }
+  return compareSemver(installedVersion, currentVersion) < 0;
+}
+
+/**
  * @param {string} skillName
  * @param {string} targetDir
  * @returns {Promise<void>}
@@ -238,7 +301,7 @@ async function installManagedSkill(skillName, targetDir) {
 
   await fs.promises.rm(targetDir, { recursive: true, force: true });
   await copyDir(sourceDir, targetDir);
-  await fs.promises.writeFile(sentinelPath, `${skillName} managed\n`, 'utf8');
+  await fs.promises.writeFile(sentinelPath, formatManagedSkillSentinel(skillName), 'utf8');
 }
 
 /**
@@ -259,6 +322,63 @@ async function copyDir(sourceDir, targetDir) {
     }
     await fs.promises.copyFile(sourcePath, targetPath);
   }
+}
+
+/**
+ * @returns {{ name?: unknown, version?: unknown }}
+ */
+function loadPackageManifest() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * @param {string} left
+ * @param {string} right
+ * @returns {number}
+ */
+function compareSemver(left, right) {
+  const leftParts = parseSemver(left);
+  const rightParts = parseSemver(right);
+
+  for (let index = 0; index < 3; index += 1) {
+    const diff = leftParts.core[index] - rightParts.core[index];
+    if (diff !== 0) {
+      return diff < 0 ? -1 : 1;
+    }
+  }
+
+  if (leftParts.prerelease === rightParts.prerelease) {
+    return 0;
+  }
+  if (!leftParts.prerelease) {
+    return 1;
+  }
+  if (!rightParts.prerelease) {
+    return -1;
+  }
+  return leftParts.prerelease < rightParts.prerelease ? -1 : 1;
+}
+
+/**
+ * @param {string} value
+ * @returns {{ core: [number, number, number], prerelease: string }}
+ */
+function parseSemver(value) {
+  const normalized = value.trim().replace(/^v/i, '');
+  const [corePart, prerelease = ''] = normalized.split('-', 2);
+  const parts = corePart.split('.');
+  return {
+    core: [
+      Number.parseInt(parts[0] || '0', 10) || 0,
+      Number.parseInt(parts[1] || '0', 10) || 0,
+      Number.parseInt(parts[2] || '0', 10) || 0
+    ],
+    prerelease
+  };
 }
 
 /**

@@ -16,7 +16,8 @@
  *   name: string,
  *   path: string,
  *   exists: boolean,
- *   managed: boolean
+ *   managed: boolean,
+ *   version: string | null
  * }} SkillInstallationStatus
  */
 
@@ -28,6 +29,9 @@
  *   basePath: string,
  *   installed: boolean,
  *   managed: boolean,
+ *   installedVersion: string | null,
+ *   currentVersion: string | null,
+ *   updateAvailable: boolean,
  *   skills: SkillInstallationStatus[]
  * }} SkillTargetStatus
  */
@@ -435,9 +439,16 @@ function renderMcpMatrixCell(row, installPendingKey) {
     return createMatrixMutedValue('\u2014');
   }
   if (entry.configured) {
-    return createMatrixBadge('Configured', true, entry.configPath);
+    return createMatrixBadge('Installed', true, entry.configPath);
   }
-  const button = createInstallButton('mcp', row.key, installPendingKey === getInstallKey('mcp', row.key));
+  const button = createSetupActionButton(
+    'mcp',
+    row.key,
+    installPendingKey === getInstallKey('mcp', row.key),
+    'install',
+    'Install',
+    'Installing…'
+  );
   button.title = entry.configPath;
   return button;
 }
@@ -454,14 +465,33 @@ function renderSkillMatrixCell(row, installPendingKey) {
   }
 
   const installable = entry.skills.every((skill) => !skill.exists || skill.managed);
-  if (entry.installed && entry.managed) {
-    return createMatrixBadge('Installed', true, entry.basePath);
+  if (entry.installed && entry.managed && !entry.updateAvailable) {
+    return createMatrixBadge('Installed', true, createSkillCellTitle(entry));
+  }
+  if (entry.installed && entry.managed && entry.updateAvailable) {
+    const button = createSetupActionButton(
+      'skill',
+      row.key,
+      installPendingKey === getInstallKey('skill', row.key),
+      'update',
+      'Update',
+      'Updating…'
+    );
+    button.title = createSkillCellTitle(entry);
+    return button;
   }
   if (!installable) {
     return createMatrixBadge('Custom', false, entry.basePath);
   }
 
-  const button = createInstallButton('skill', row.key, installPendingKey === getInstallKey('skill', row.key));
+  const button = createSetupActionButton(
+    'skill',
+    row.key,
+    installPendingKey === getInstallKey('skill', row.key),
+    'install',
+    'Install',
+    'Installing…'
+  );
   button.title = entry.basePath;
   return button;
 }
@@ -470,18 +500,36 @@ function renderSkillMatrixCell(row, installPendingKey) {
  * @param {'mcp' | 'skill'} kind
  * @param {string} target
  * @param {boolean} pending
+ * @param {'install' | 'update'} variant
+ * @param {string} label
+ * @param {string} pendingLabel
  * @returns {HTMLButtonElement}
  */
-function createInstallButton(kind, target, pending) {
+function createSetupActionButton(kind, target, pending, variant, label, pendingLabel) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'setup-install-button';
   button.dataset.action = 'setup-install';
   button.dataset.kind = kind;
   button.dataset.target = target;
+  button.dataset.variant = variant;
   button.disabled = pending;
-  button.textContent = pending ? 'Installing…' : 'Install';
+  button.textContent = pending ? pendingLabel : label;
   return button;
+}
+
+/**
+ * @param {SkillTargetStatus} entry
+ * @returns {string}
+ */
+function createSkillCellTitle(entry) {
+  if (entry.installedVersion && entry.currentVersion) {
+    return `${entry.basePath}\nInstalled with bbx ${entry.installedVersion}\nCurrent bbx ${entry.currentVersion}`;
+  }
+  if (entry.currentVersion) {
+    return `${entry.basePath}\nCurrent bbx ${entry.currentVersion}`;
+  }
+  return entry.basePath;
 }
 
 /**

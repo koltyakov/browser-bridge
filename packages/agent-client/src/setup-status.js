@@ -10,9 +10,12 @@ import {
   MCP_CLIENT_NAMES
 } from './mcp-config.js';
 import {
+  getManagedPackageVersion,
   getManagedSkillNames,
   getManagedSkillSentinelFilename,
   getSkillBasePath,
+  isManagedVersionOutdated,
+  parseManagedSkillSentinel,
   SUPPORTED_TARGETS
 } from './install.js';
 
@@ -88,7 +91,8 @@ export async function collectSetupStatus(options = {}) {
       global: isGlobal,
       projectPath,
       detected: detectedSkillTargets.has(target),
-      access
+      access,
+      readFile
     });
   }));
 
@@ -132,7 +136,8 @@ async function collectMcpClientStatus(clientName, options) {
  *   global: boolean,
  *   projectPath: string,
  *   detected: boolean,
- *   access: (targetPath: string) => Promise<void>
+ *   access: (targetPath: string) => Promise<void>,
+ *   readFile: (targetPath: string, encoding: BufferEncoding) => Promise<string>
  * }} options
  * @returns {Promise<SkillTargetStatus>}
  */
@@ -143,9 +148,13 @@ async function collectSkillTargetStatus(target, options) {
   });
   const managedSkillNames = getManagedSkillNames();
   const sentinelFilename = getManagedSkillSentinelFilename();
+  const currentVersion = getManagedPackageVersion();
   const skills = await Promise.all(managedSkillNames.map(async (skillName) => {
-    return collectInstalledSkillStatus(basePath, skillName, sentinelFilename, options.access);
+    return collectInstalledSkillStatus(basePath, skillName, sentinelFilename, options.access, options.readFile);
   }));
+  const installedVersion = getInstalledSkillBundleVersion(skills);
+  const updateAvailable = skills.every((skill) => skill.exists && skill.managed)
+    && skills.some((skill) => isManagedVersionOutdated(skill.version, currentVersion));
 
   return {
     key: target,
@@ -154,6 +163,9 @@ async function collectSkillTargetStatus(target, options) {
     basePath,
     installed: skills.every((skill) => skill.exists),
     managed: skills.every((skill) => skill.exists && skill.managed),
+    installedVersion,
+    currentVersion,
+    updateAvailable,
     skills
   };
 }
@@ -163,19 +175,52 @@ async function collectSkillTargetStatus(target, options) {
  * @param {string} skillName
  * @param {string} sentinelFilename
  * @param {(targetPath: string) => Promise<void>} access
+ * @param {(targetPath: string, encoding: BufferEncoding) => Promise<string>} readFile
  * @returns {Promise<SkillInstallationStatus>}
  */
-async function collectInstalledSkillStatus(basePath, skillName, sentinelFilename, access) {
+async function collectInstalledSkillStatus(basePath, skillName, sentinelFilename, access, readFile) {
   const skillPath = path.join(basePath, skillName);
   const exists = await pathExists(skillPath, access);
-  const managed = exists && await pathExists(path.join(skillPath, sentinelFilename), access);
+  const sentinelPath = path.join(skillPath, sentinelFilename);
+  const managed = exists && await pathExists(sentinelPath, access);
+  const version = managed ? await readManagedSkillVersion(sentinelPath, readFile) : null;
 
   return {
     name: skillName,
     path: skillPath,
     exists,
-    managed
+    managed,
+    version
   };
+}
+
+/**
+ * @param {SkillInstallationStatus[]} skills
+ * @returns {string | null}
+ */
+function getInstalledSkillBundleVersion(skills) {
+  if (!skills.length) {
+    return null;
+  }
+  const [first] = skills;
+  if (!first || typeof first.version !== 'string') {
+    return null;
+  }
+  return skills.every((skill) => skill.version === first.version) ? first.version : null;
+}
+
+/**
+ * @param {string} sentinelPath
+ * @param {(targetPath: string, encoding: BufferEncoding) => Promise<string>} readFile
+ * @returns {Promise<string | null>}
+ */
+async function readManagedSkillVersion(sentinelPath, readFile) {
+  try {
+    const raw = await readFile(sentinelPath, 'utf8');
+    return parseManagedSkillSentinel(raw).version;
+  } catch {
+    return null;
+  }
 }
 
 /**

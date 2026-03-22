@@ -305,7 +305,8 @@ export {};
  *   name: string,
  *   path: string,
  *   exists: boolean,
- *   managed: boolean
+ *   managed: boolean,
+ *   version: string | null
  * }} SkillInstallationStatus
  */
 
@@ -317,6 +318,9 @@ export {};
  *   basePath: string,
  *   installed: boolean,
  *   managed: boolean,
+ *   installedVersion: string | null,
+ *   currentVersion: string | null,
+ *   updateAvailable: boolean,
  *   skills: SkillInstallationStatus[]
  * }} SkillTargetStatus
  */

@@ -165,3 +165,38 @@ test('collectSetupStatus uses ~/.copilot/skills for GitHub Copilot global skills
     await fs.promises.rm(tempHome, { recursive: true, force: true });
   }
 });
+
+test('collectSetupStatus marks legacy managed skills as updateable', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-setup-status-legacy-skill-'));
+  const sentinel = getManagedSkillSentinelFilename();
+
+  try {
+    const cursorBase = getSkillBasePath('cursor', {
+      global: false,
+      projectPath: tempDir
+    });
+    for (const skillName of getManagedSkillNames()) {
+      const skillPath = path.join(cursorBase, skillName);
+      await fs.promises.mkdir(skillPath, { recursive: true });
+      await fs.promises.writeFile(path.join(skillPath, sentinel), `${skillName} managed\n`, 'utf8');
+    }
+
+    const status = await collectSetupStatus({
+      global: false,
+      cwd: tempDir,
+      projectPath: tempDir,
+      mcpDetectors: createDetectors([]),
+      skillDetectors: createDetectors(['cursor'])
+    });
+
+    const cursorSkills = status.skillTargets.find((entry) => entry.key === 'cursor');
+    assert.ok(cursorSkills);
+    assert.equal(cursorSkills.installed, true);
+    assert.equal(cursorSkills.managed, true);
+    assert.equal(cursorSkills.installedVersion, null);
+    assert.equal(typeof cursorSkills.currentVersion, 'string');
+    assert.equal(cursorSkills.updateAvailable, true);
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});

@@ -7,6 +7,8 @@
   --muted: #7a6247;
   --accent: #b24c2d;
   --accent-strong: #8e331a;
+  --update-bg: #5d7d86;
+  --update-bg-hover: #48666f;
   --stroke: #d8cbb6;
   --cmd-bg: rgba(31, 36, 48, 0.06);
   --cmd-bg-hover: rgba(31, 36, 48, 0.10);
@@ -37,6 +39,8 @@ html {
     --muted: #9a8e7e;
     --accent: #d4714e;
     --accent-strong: #e8845e;
+    --update-bg: #7898a1;
+    --update-bg-hover: #8eb0b9;
     --stroke: #3d3830;
     --cmd-bg: rgba(255, 255, 255, 0.06);
     --cmd-bg-hover: rgba(255, 255, 255, 0.10);
@@ -388,6 +392,14 @@ body {
   font-weight: 600;
   line-height: 1.1;
   white-space: nowrap;
+}
+
+.setup-install-button[data-variant="update"] {
+  background: var(--update-bg);
+}
+
+.setup-install-button[data-variant="update"]:hover {
+  background: var(--update-bg-hover);
 }
 
 .setup-install-button:disabled {

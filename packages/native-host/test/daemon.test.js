@@ -64,7 +64,18 @@ test('daemon responds to setup status requests without extension', async () => {
   const expectedStatus = {
     scope: 'global',
     mcpClients: [{ key: 'codex', label: 'OpenAI Codex', detected: true, configPath: '/tmp/mcp.json', configExists: true, configured: true }],
-    skillTargets: [{ key: 'codex', label: 'OpenAI Codex', detected: true, basePath: '/tmp/skills', installed: true, managed: true, skills: [] }]
+    skillTargets: [{
+      key: 'codex',
+      label: 'OpenAI Codex',
+      detected: true,
+      basePath: '/tmp/skills',
+      installed: true,
+      managed: true,
+      installedVersion: '0.1.0',
+      currentVersion: '0.1.0',
+      updateAvailable: false,
+      skills: []
+    }]
   };
   const daemon = new BridgeDaemon({
     logger: silentConsole,
