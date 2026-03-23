@@ -79,3 +79,47 @@ For GitHub Copilot, invoke the skill by name, for example `/browser-bridge`.
 `bbx` is the Browser Bridge CLI command, not a guaranteed Copilot skill alias.
 
 In both cases the agent reads live DOM, styles, console, and network state from your real tab. Patches are reversible and session-scoped - the agent verifies the fix in the browser before writing it back to source.
+
+## 6. Ad-Hoc installation
+
+### Installing MCP for custom agent
+
+For custom agents or clients not listed above, you can manually configure MCP if your agent supports the [Model Context Protocol](https://modelcontextprotocol.io/clients).
+
+Most MCP clients use a `mcpServers` (or `mcp_servers`) key in their configuration:
+
+```json
+{
+  "mcpServers": {
+    "browser-bridge": {
+      "type": "stdio",
+      "command": "bbx",
+      "args": ["mcp", "serve"],
+      "env": {}
+    }
+  }
+}
+```
+
+Some clients use different configuration keys or formats:
+- **OpenCode** uses `"mcp"` with `"type": "local"` and a command array
+- **Codex** uses TOML format with `[mcp_servers."browser-bridge"]`
+
+Check your agent's documentation for the exact configuration location and format. The key requirement is that your agent must be able to launch the Browser Bridge MCP server via `bbx mcp serve`.
+
+### Installing skills for a custom agent
+
+For custom agents that use CLI skills instead of MCP, you can install the Browser Bridge skill to a location your agent expects:
+
+```bash
+bbx install-skill --local
+```
+
+This installs the Browser Bridge skill to the `.agents/skills/` directory in your current project. Custom agents can then reference the skill from this location.
+
+Some agents may expect skills in different locations:
+- **Generic agents** typically look in `.agents/skills/`
+- **Project-specific setups** can use `--local` to install to the current project
+- **Global installations** can omit `--local` to install to `~/.agents/skills/`
+
+The skill includes a `SKILL.md` file that agents can read to understand how to use Browser Bridge commands. Your agent must be able to execute shell commands and read skill documentation to make use of this integration.
