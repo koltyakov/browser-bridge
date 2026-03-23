@@ -9,9 +9,9 @@ import { createRuntimeContext, METHODS } from '../../protocol/src/index.js';
 import { startBridgeMcpServer } from '../../mcp-server/src/server.js';
 import { BridgeClient } from './client.js';
 import { CLI_HELP_SECTIONS, SESSION_COMMANDS } from './command-registry.js';
-import { interactiveCheckbox, methodNeedsSession, parseIntArg, parseJsonObject } from './cli-helpers.js';
+import { interactiveCheckbox, interactiveConfirm, methodNeedsSession, parseIntArg, parseJsonObject } from './cli-helpers.js';
 import { detectMcpClients, detectSkillTargets } from './detect.js';
-import { installAgentFiles, parseInstallAgentArgs } from './install.js';
+import { findInstalledManagedTargets, installAgentFiles, parseInstallAgentArgs, removeAgentFiles } from './install.js';
 import { formatMcpConfig, installMcpConfig, isMcpClientName, MCP_CLIENT_NAMES } from './mcp-config.js';
 import { getDoctorReport, requestBridge, requireSession, resolveRef } from './runtime.js';
 import { summarizeBridgeResponse } from './subagent.js';
@@ -106,14 +106,38 @@ if (command === 'install-skill') {
     if (selected === null) {
       // Non-TTY: fall back to detected targets (always includes 'agents').
       targets = detected;
-    } else if (selected.length === 0) {
-      process.stdout.write('No targets selected.\n');
-      process.exit(0);
     } else {
       targets = /** @type {import('./install.js').SupportedTarget[]} */ (selected);
     }
 
     const projectPath = isGlobal ? os.homedir() : process.cwd();
+    if (selected !== null) {
+      const deselectedTargets = detected.filter((target) => !targets.includes(target));
+      const removableTargets = await findInstalledManagedTargets({
+        targets: deselectedTargets,
+        projectPath,
+        global: isGlobal
+      });
+      if (removableTargets.length > 0) {
+        const confirmed = await interactiveConfirm(
+          `Remove Browser Bridge skills from deselected targets: ${removableTargets.join(', ')}?`
+        );
+        if (confirmed) {
+          const removedPaths = await removeAgentFiles({
+            targets: removableTargets,
+            projectPath,
+            global: isGlobal
+          });
+          for (const p of removedPaths) process.stdout.write(`Removed ${p}\n`);
+        }
+      }
+    }
+
+    if (targets.length === 0) {
+      process.stdout.write('No targets selected.\n');
+      process.exit(0);
+    }
+
     const installedPaths = await installAgentFiles({ targets, projectPath, global: isGlobal });
     for (const p of installedPaths) process.stdout.write(`Installed ${p}\n`);
     process.exit(0);

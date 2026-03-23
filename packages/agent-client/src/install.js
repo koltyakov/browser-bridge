@@ -153,6 +153,56 @@ export async function installAgentFiles(options) {
 }
 
 /**
+ * @param {InstallAgentOptions} options
+ * @returns {Promise<SupportedTarget[]>}
+ */
+export async function findInstalledManagedTargets(options) {
+  /** @type {SupportedTarget[]} */
+  const installedTargets = [];
+
+  for (const target of options.targets) {
+    if (await hasManagedSkillInstall(target, options)) {
+      installedTargets.push(target);
+    }
+  }
+
+  return installedTargets;
+}
+
+/**
+ * Remove only Browser Bridge-managed skill directories for the given targets.
+ * Unmanaged custom skill folders are preserved.
+ *
+ * @param {InstallAgentOptions} options
+ * @returns {Promise<string[]>}
+ */
+export async function removeAgentFiles(options) {
+  /** @type {string[]} */
+  const removed = [];
+  /** @type {Set<string>} */
+  const seenTargets = new Set();
+
+  for (const target of options.targets) {
+    const skillBaseDir = getSkillBasePath(target, options);
+
+    for (const skillName of managedSkillNames) {
+      const skillTargetDir = path.join(skillBaseDir, skillName);
+      if (seenTargets.has(skillTargetDir)) {
+        continue;
+      }
+      seenTargets.add(skillTargetDir);
+      if (!(await isManagedSkillInstall(skillTargetDir))) {
+        continue;
+      }
+      await fs.promises.rm(skillTargetDir, { recursive: true, force: true });
+      removed.push(skillTargetDir);
+    }
+  }
+
+  return removed;
+}
+
+/**
  * @param {string} raw
  * @returns {SupportedTarget[]}
  */
@@ -316,6 +366,32 @@ async function installManagedSkill(skillName, targetDir) {
   await fs.promises.rm(targetDir, { recursive: true, force: true });
   await copyDir(sourceDir, targetDir);
   await fs.promises.writeFile(sentinelPath, formatManagedSkillSentinel(skillName), 'utf8');
+}
+
+/**
+ * @param {SupportedTarget} target
+ * @param {{ global: boolean, projectPath: string }} options
+ * @returns {Promise<boolean>}
+ */
+async function hasManagedSkillInstall(target, options) {
+  const skillBaseDir = getSkillBasePath(target, options);
+  for (const skillName of managedSkillNames) {
+    if (await isManagedSkillInstall(path.join(skillBaseDir, skillName))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * @param {string} targetDir
+ * @returns {Promise<boolean>}
+ */
+async function isManagedSkillInstall(targetDir) {
+  if (!(await pathExists(targetDir))) {
+    return false;
+  }
+  return pathExists(path.join(targetDir, managedSentinelFilename));
 }
 
 /**

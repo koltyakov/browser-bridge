@@ -184,3 +184,37 @@ export async function interactiveCheckbox(title, items) {
     process.stdin.on('keypress', onKeypress);
   });
 }
+
+/**
+ * Present a yes/no confirmation prompt on the terminal.
+ * Returns null when stdin is not a TTY.
+ *
+ * @param {string} prompt
+ * @param {{ defaultValue?: boolean }} [options]
+ * @returns {Promise<boolean | null>}
+ */
+export async function interactiveConfirm(prompt, options = {}) {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    return null;
+  }
+
+  const defaultValue = options.defaultValue ?? false;
+  const suffix = defaultValue ? ' [Y/n] ' : ' [y/N] ';
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  try {
+    const answer = await new Promise((resolve) => {
+      rl.question(`${prompt}${suffix}`, resolve);
+    });
+    const normalized = String(answer).trim().toLowerCase();
+    if (!normalized) {
+      return defaultValue;
+    }
+    return normalized === 'y' || normalized === 'yes';
+  } finally {
+    rl.close();
+  }
+}

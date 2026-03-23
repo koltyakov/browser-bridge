@@ -6,8 +6,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { methodNeedsSession, parseCommaList, parseJsonObject, parsePropertyAssignments } from '../src/cli-helpers.js';
-import { installAgentFiles, parseInstallAgentArgs } from '../src/install.js';
+import { interactiveConfirm, methodNeedsSession, parseCommaList, parseJsonObject, parsePropertyAssignments } from '../src/cli-helpers.js';
+import { findInstalledManagedTargets, getManagedSkillSentinelFilename, getSkillBasePath, installAgentFiles, parseInstallAgentArgs, removeAgentFiles } from '../src/install.js';
 import { buildMcpConfig, formatMcpConfig, getMcpConfigPath, getMcpConfigPaths, isMcpClientName } from '../src/mcp-config.js';
 import { summarizeBridgeResponse } from '../src/subagent.js';
 
@@ -489,6 +489,22 @@ test('parseInstallAgentArgs accepts google as an antigravity alias', () => {
   assert.deepEqual(options.targets, ['antigravity']);
 });
 
+test('interactiveConfirm returns null without a TTY', async () => {
+  const originalIn = process.stdin.isTTY;
+  const originalOut = process.stdout.isTTY;
+
+  Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
+  Object.defineProperty(process.stdout, 'isTTY', { value: false, configurable: true });
+
+  try {
+    const result = await interactiveConfirm('Remove skills?');
+    assert.equal(result, null);
+  } finally {
+    Object.defineProperty(process.stdin, 'isTTY', { value: originalIn, configurable: true });
+    Object.defineProperty(process.stdout, 'isTTY', { value: originalOut, configurable: true });
+  }
+});
+
 test('installAgentFiles writes managed files for supported runtimes', async () => {
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-agent-'));
   const installed = await installAgentFiles({
@@ -554,6 +570,68 @@ test('installAgentFiles writes GitHub Copilot global skills to ~/.copilot/skills
       process.env.HOME = originalHome;
     }
     await fs.promises.rm(tempHome, { recursive: true, force: true });
+  }
+});
+
+test('findInstalledManagedTargets reports targets with managed skill installs', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-find-managed-targets-'));
+
+  try {
+    await installAgentFiles({
+      targets: ['cursor'],
+      projectPath: tempDir,
+      global: false
+    });
+
+    const installed = await findInstalledManagedTargets({
+      targets: ['cursor', 'copilot'],
+      projectPath: tempDir,
+      global: false
+    });
+
+    assert.deepEqual(installed, ['cursor']);
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('removeAgentFiles removes only managed Browser Bridge skill directories', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-remove-agent-files-'));
+
+  try {
+    await installAgentFiles({
+      targets: ['cursor'],
+      projectPath: tempDir,
+      global: false
+    });
+
+    const skillBasePath = getSkillBasePath('cursor', {
+      projectPath: tempDir,
+      global: false
+    });
+    const unmanagedSkillPath = path.join(skillBasePath, 'custom-skill');
+    const managedSentinel = getManagedSkillSentinelFilename();
+    await fs.promises.mkdir(unmanagedSkillPath, { recursive: true });
+    await fs.promises.writeFile(path.join(unmanagedSkillPath, 'SKILL.md'), '# Custom\n', 'utf8');
+    await fs.promises.mkdir(path.join(skillBasePath, 'browser-bridge-extra'), { recursive: true });
+    await fs.promises.writeFile(path.join(skillBasePath, 'browser-bridge-extra', 'SKILL.md'), '# Extra\n', 'utf8');
+    await fs.promises.writeFile(path.join(skillBasePath, 'browser-bridge-extra', managedSentinel), 'managed\n', 'utf8');
+
+    const removed = await removeAgentFiles({
+      targets: ['cursor'],
+      projectPath: tempDir,
+      global: false
+    });
+
+    assert.ok(removed.some((entry) => entry.endsWith(path.join('.cursor', 'skills', 'browser-bridge'))));
+    assert.ok(removed.some((entry) => entry.endsWith(path.join('.cursor', 'skills', 'browser-bridge-mcp'))));
+    assert.equal(await fs.promises.access(unmanagedSkillPath).then(() => true, () => false), true);
+    assert.equal(
+      await fs.promises.access(path.join(skillBasePath, 'browser-bridge-extra')).then(() => true, () => false),
+      true
+    );
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
   }
 });
 
