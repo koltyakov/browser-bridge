@@ -10,7 +10,9 @@ See [QUICKSTART.md](QUICKSTART.md) to get started in another repo.
 
 ## Supported Agents
 
-Managed CLI skill installs support OpenAI Codex, Claude Code, Cursor, GitHub Copilot, OpenCode, Antigravity, and Windsurf. `bbx install-mcp` writes MCP config for OpenAI Codex, Claude Code, Cursor, GitHub Copilot, OpenCode, Antigravity, and Windsurf. `bbx install-skill` installs the managed Browser Bridge CLI skill for shell-driven agents and generic `.agents/skills/` runtimes.
+Managed CLI skill installs support OpenAI Codex, Claude Code, Cursor, GitHub Copilot, OpenCode, Antigravity, and Windsurf.
+
+Generic agents can connect via MCP or the CLI skill interface, but would need a manual setup.
 
 <table align="center">
   <tr>

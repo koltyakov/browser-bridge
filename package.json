@@ -29,6 +29,7 @@
     "access": "public"
   },
   "scripts": {
+    "lint": "eslint .",
     "test": "node --test packages/protocol/test/*.test.js packages/native-host/test/*.test.js packages/agent-client/test/*.test.js packages/mcp-server/test/*.test.js packages/extension/test/*.test.js",
     "typecheck": "tsc --noEmit",
     "postinstall": "node packages/native-host/bin/postinstall.js",
@@ -39,8 +40,11 @@
     "install-manifest": "node packages/native-host/bin/install-manifest.js"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/chrome": "^0.1.24",
     "@types/node": "^24.0.0",
+    "eslint": "^10.1.0",
+    "globals": "^17.4.0",
     "typescript": "^5.8.3"
   },
   "dependencies": {

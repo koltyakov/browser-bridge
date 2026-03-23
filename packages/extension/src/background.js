@@ -38,7 +38,6 @@ import {
   getErrorMessage,
   inferCapability,
   matchesConsoleLevel,
-  normalizeCropRect,
   normalizeRuntimeErrorMessage,
   safeOrigin,
   shouldLogAction,
@@ -145,7 +144,6 @@ import { TabDebuggerCoordinator } from './debugger-coordinator.js';
 
 const NATIVE_APP_NAME = 'com.browserbridge.browser_bridge';
 const CONTENT_SCRIPT_TIMEOUT_MS = 5_000;
-const SCREENSHOT_TIMEOUT_MS = 10_000;
 const MAX_ACTION_LOG_ENTRIES = 50;
 const ENABLED_TAB_STORAGE_PREFIX = 'enabledTab:';
 const ACTION_LOG_STORAGE_KEY = 'actionLog';
@@ -1447,24 +1445,6 @@ async function sendTabMessage(tabId, message, timeoutMs) {
 }
 
 /**
- * Race a promise against a timeout, throwing on expiry.
- *
- * @template T
- * @param {Promise<T>} promise
- * @param {number} ms
- * @param {string} message
- * @returns {Promise<T>}
- */
-function withTimeout(promise, ms, message) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => {
-      setTimeout(() => reject(new Error(message)), ms);
-    })
-  ]);
-}
-
-/**
  * Ensure the content script is present on the target tab before issuing
  * content-script-backed requests. This makes page operations resilient after
  * extension reloads or on tabs that predate the current extension version.
@@ -1485,38 +1465,6 @@ async function ensureContentScript(tabId) {
       ]
     });
   }
-}
-
-/**
- * Crop a full-tab screenshot down to the requested rectangle.
- *
- * @param {{ image: string, rect: Record<string, unknown> }} input
- * @returns {Promise<string>}
- */
-async function cropImage({ image, rect }) {
-  await ensureOffscreenDocument();
-  return chrome.runtime.sendMessage({
-    type: 'bridge.crop-image',
-    image,
-    rect
-  });
-}
-
-/**
- * Lazily create the offscreen document used for screenshot cropping.
- *
- * @returns {Promise<void>}
- */
-async function ensureOffscreenDocument() {
-  const contexts = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
-  if (contexts.length) {
-    return;
-  }
-  await chrome.offscreen.createDocument({
-    url: 'packages/extension/ui/offscreen.html',
-    reasons: ['BLOBS'],
-    justification: 'Crop targeted screenshots for token-efficient capture.'
-  });
 }
 
 /**

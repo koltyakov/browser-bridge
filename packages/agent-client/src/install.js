@@ -20,23 +20,27 @@ const supportedTargets = /** @type {const} */ ([
   'opencode',
   'antigravity',
   'windsurf',
-  'agents'
+  'agents',
 ]);
 const targetAliases = /** @type {const} */ ({
   openai: 'codex',
-  google: 'antigravity'
+  google: 'antigravity',
 });
 
 const packageManifest = loadPackageManifest();
-const managedPackageName = typeof packageManifest.name === 'string' ? packageManifest.name : '@browserbridge/bbx';
-const managedPackageVersion = typeof packageManifest.version === 'string' ? packageManifest.version : null;
+const managedPackageName =
+  typeof packageManifest.name === 'string'
+    ? packageManifest.name
+    : '@browserbridge/bbx';
+const managedPackageVersion =
+  typeof packageManifest.version === 'string' ? packageManifest.version : null;
 const copilotBrowserBridgeNote = [
   '## GitHub Copilot Note',
   '',
   'When this skill is installed for GitHub Copilot, do not keep retrying `bbx` inside a sandboxed shell if Browser Bridge MCP is already configured for Copilot.',
   'If Browser Bridge MCP is installed, use the MCP tools directly instead of shelling out to `bbx`.',
   'If `bbx` fails with a bridge socket permission error such as `EPERM`, stop retrying in the sandbox and ask the user to run the command locally or use MCP.',
-  ''
+  '',
 ].join('\n');
 
 /**
@@ -75,7 +79,9 @@ export function parseInstallAgentArgs(args, cwd = process.cwd()) {
     if (arg === '--agents' || arg === '--agent') {
       const value = args[index + 1];
       if (!value) {
-        throw new Error(`Usage: install-skill [targets|all] [--project <path>]`);
+        throw new Error(
+          'Usage: install-skill [targets|all] [--project <path>]',
+        );
       }
       targets = parseTargetList(value);
       index += 1;
@@ -95,7 +101,9 @@ export function parseInstallAgentArgs(args, cwd = process.cwd()) {
     if (arg === '--project') {
       const value = args[index + 1];
       if (!value) {
-        throw new Error('Usage: install-skill [targets|all] [--project <path>] [--global]');
+        throw new Error(
+          'Usage: install-skill [targets|all] [--project <path>] [--global]',
+        );
       }
       projectPath = path.resolve(cwd, value);
       isGlobal = false;
@@ -132,7 +140,7 @@ export function parseInstallAgentArgs(args, cwd = process.cwd()) {
   return {
     targets,
     projectPath,
-    global: isGlobal
+    global: isGlobal,
   };
 }
 
@@ -179,11 +187,13 @@ export async function installMcpClientSetup(clients, options) {
   const uniqueClients = [...new Set(clients)];
 
   for (const clientName of uniqueClients) {
-    configPaths.push(await installMcpConfig(clientName, {
-      global: options.global,
-      cwd: options.projectPath,
-      stdout: options.stdout
-    }));
+    configPaths.push(
+      await installMcpConfig(clientName, {
+        global: options.global,
+        cwd: options.projectPath,
+        stdout: options.stdout,
+      }),
+    );
   }
 
   return { configPaths };
@@ -249,7 +259,10 @@ function parseTargetList(raw) {
     throw new Error('Target list cannot be empty.');
   }
 
-  const values = input.split(',').map((value) => value.trim().toLowerCase()).filter(Boolean);
+  const values = input
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
   if (values.includes('all')) {
     return [...supportedTargets];
   }
@@ -263,7 +276,9 @@ function parseTargetList(raw) {
         : targetAliases[/** @type {keyof typeof targetAliases} */ (value)]
     );
     if (!canonical) {
-      throw new Error(`Unknown install-skill target "${value}". Supported targets: ${supportedTargets.join(', ')}, all. Aliases: openai -> codex, google -> antigravity.`);
+      throw new Error(
+        `Unknown install-skill target "${value}". Supported targets: ${supportedTargets.join(', ')}, all. Aliases: openai -> codex, google -> antigravity.`,
+      );
     }
     parsed.add(canonical);
   }
@@ -273,24 +288,24 @@ function parseTargetList(raw) {
 
 /** @type {Partial<Record<SupportedTarget, string>>} */
 const GLOBAL_SKILL_PATHS = {
-  copilot:  path.join('.copilot', 'skills'),
-  claude:   path.join('.claude', 'skills'),
-  cursor:   path.join('.cursor', 'skills'),
+  copilot: path.join('.copilot', 'skills'),
+  claude: path.join('.claude', 'skills'),
+  cursor: path.join('.cursor', 'skills'),
   windsurf: path.join('.codeium', 'windsurf', 'skills'),
   opencode: path.join('.opencode', 'skills'),
   antigravity: path.join('.gemini', 'antigravity', 'skills'),
-  codex:    path.join('.codex', 'skills')
+  codex: path.join('.codex', 'skills'),
 };
 
 /** @type {Partial<Record<SupportedTarget, string>>} */
 const LOCAL_SKILL_PATHS = {
-  copilot:  path.join('.github', 'skills'),
-  claude:   path.join('.claude', 'skills'),
-  cursor:   path.join('.cursor', 'skills'),
+  copilot: path.join('.github', 'skills'),
+  claude: path.join('.claude', 'skills'),
+  cursor: path.join('.cursor', 'skills'),
   windsurf: path.join('.windsurf', 'skills'),
   opencode: path.join('.opencode', 'skills'),
   antigravity: path.join('.agents', 'skills'),
-  codex:    path.join('.codex', 'skills')
+  codex: path.join('.codex', 'skills'),
 };
 
 /**
@@ -346,11 +361,15 @@ export function getManagedPackageVersion() {
  * @returns {string}
  */
 export function formatManagedSkillSentinel(skillName) {
-  return `${JSON.stringify({
-    skill: skillName,
-    managedBy: managedPackageName,
-    version: managedPackageVersion
-  }, null, 2)}\n`;
+  return `${JSON.stringify(
+    {
+      skill: skillName,
+      managedBy: managedPackageName,
+      version: managedPackageVersion,
+    },
+    null,
+    2,
+  )}\n`;
 }
 
 /**
@@ -368,7 +387,7 @@ export function parseManagedSkillSentinel(raw) {
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       return {
         managed: true,
-        version: typeof parsed.version === 'string' ? parsed.version : null
+        version: typeof parsed.version === 'string' ? parsed.version : null,
       };
     }
   } catch {
@@ -383,7 +402,10 @@ export function parseManagedSkillSentinel(raw) {
  * @param {string | null} [currentVersion=managedPackageVersion]
  * @returns {boolean}
  */
-export function isManagedVersionOutdated(installedVersion, currentVersion = managedPackageVersion) {
+export function isManagedVersionOutdated(
+  installedVersion,
+  currentVersion = managedPackageVersion,
+) {
   if (!currentVersion) {
     return false;
   }
@@ -405,13 +427,19 @@ async function installManagedSkill(skillName, target, targetDir) {
   const targetExists = await pathExists(targetDir);
 
   if (targetExists && !(await pathExists(sentinelPath))) {
-    throw new Error(`Refusing to overwrite unmanaged skill directory: ${targetDir}`);
+    throw new Error(
+      `Refusing to overwrite unmanaged skill directory: ${targetDir}`,
+    );
   }
 
   await fs.promises.rm(targetDir, { recursive: true, force: true });
   await copyDir(sourceDir, targetDir);
   await applyManagedSkillPatches(skillName, target, targetDir);
-  await fs.promises.writeFile(sentinelPath, formatManagedSkillSentinel(skillName), 'utf8');
+  await fs.promises.writeFile(
+    sentinelPath,
+    formatManagedSkillSentinel(skillName),
+    'utf8',
+  );
 }
 
 /**
@@ -492,7 +520,9 @@ async function applyManagedSkillPatches(skillName, target, targetDir) {
  */
 function loadPackageManifest() {
   try {
-    return JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
+    return JSON.parse(
+      fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8'),
+    );
   } catch {
     return {};
   }
@@ -538,9 +568,9 @@ function parseSemver(value) {
     core: [
       Number.parseInt(parts[0] || '0', 10) || 0,
       Number.parseInt(parts[1] || '0', 10) || 0,
-      Number.parseInt(parts[2] || '0', 10) || 0
+      Number.parseInt(parts[2] || '0', 10) || 0,
     ],
-    prerelease
+    prerelease,
   };
 }
 

@@ -8,7 +8,7 @@ import {
   getMcpConfigPath,
   getMcpConfigPaths,
   MCP_CLIENT_NAMES,
-  parseInstalledMcpConfig
+  parseInstalledMcpConfig,
 } from './mcp-config.js';
 import {
   getCoreManagedSkillName,
@@ -18,7 +18,7 @@ import {
   getSkillBasePath,
   isManagedVersionOutdated,
   parseManagedSkillSentinel,
-  SUPPORTED_TARGETS
+  SUPPORTED_TARGETS,
 } from './install.js';
 
 /** @typedef {import('./mcp-config.js').McpClientName} McpClientName */
@@ -36,7 +36,7 @@ const MCP_CLIENT_LABELS = {
   copilot: 'GitHub Copilot',
   opencode: 'OpenCode',
   antigravity: 'Antigravity',
-  windsurf: 'Windsurf'
+  windsurf: 'Windsurf',
 };
 
 /** @type {Record<SupportedTarget, string>} */
@@ -48,7 +48,7 @@ const SKILL_TARGET_LABELS = {
   opencode: 'OpenCode',
   antigravity: 'Antigravity',
   windsurf: 'Windsurf',
-  agents: 'Generic agents'
+  agents: 'Generic agents',
 };
 
 /**
@@ -76,35 +76,43 @@ export async function collectSetupStatus(options = {}) {
   const access = options.access || fs.promises.access.bind(fs.promises);
   const readFile = options.readFile || fs.promises.readFile.bind(fs.promises);
   const detectedMcpClients = new Set(detectMcpClients(options.mcpDetectors));
-  const detectedSkillTargets = new Set(detectSkillTargets(options.skillDetectors));
+  const detectedSkillTargets = new Set(
+    detectSkillTargets(options.skillDetectors),
+  );
   for (const clientName of detectedMcpClients) {
-    if (SUPPORTED_TARGETS.includes(/** @type {SupportedTarget} */ (clientName))) {
+    if (
+      SUPPORTED_TARGETS.includes(/** @type {SupportedTarget} */ (clientName))
+    ) {
       detectedSkillTargets.add(/** @type {SupportedTarget} */ (clientName));
     }
   }
 
-  const mcpClients = await Promise.all(MCP_CLIENT_NAMES.map(async (clientName) => {
-    return collectMcpClientStatus(clientName, {
-      global: isGlobal,
-      cwd,
-      detected: detectedMcpClients.has(clientName),
-      readFile
-    });
-  }));
-  const skillTargets = await Promise.all(SUPPORTED_TARGETS.map(async (target) => {
-    return collectSkillTargetStatus(target, {
-      global: isGlobal,
-      projectPath,
-      detected: detectedSkillTargets.has(target),
-      access,
-      readFile
-    });
-  }));
+  const mcpClients = await Promise.all(
+    MCP_CLIENT_NAMES.map(async (clientName) => {
+      return collectMcpClientStatus(clientName, {
+        global: isGlobal,
+        cwd,
+        detected: detectedMcpClients.has(clientName),
+        readFile,
+      });
+    }),
+  );
+  const skillTargets = await Promise.all(
+    SUPPORTED_TARGETS.map(async (target) => {
+      return collectSkillTargetStatus(target, {
+        global: isGlobal,
+        projectPath,
+        detected: detectedSkillTargets.has(target),
+        access,
+        readFile,
+      });
+    }),
+  );
 
   return {
     scope: isGlobal ? 'global' : 'local',
     mcpClients,
-    skillTargets
+    skillTargets,
   };
 }
 
@@ -121,18 +129,25 @@ export async function collectSetupStatus(options = {}) {
 async function collectMcpClientStatus(clientName, options) {
   const primaryConfigPath = getMcpConfigPath(clientName, {
     global: options.global,
-    cwd: options.cwd
+    cwd: options.cwd,
   });
   const configPaths = await getMcpConfigPaths(clientName, {
     global: options.global,
-    cwd: options.cwd
+    cwd: options.cwd,
   });
-  const entries = await Promise.all(configPaths.map(async (configPath) => {
-    return readBrowserBridgeMcpEntry(clientName, configPath, options.readFile);
-  }));
-  const preferredEntry = entries.find((entry) => entry.configured)
-    || entries.find((entry) => entry.configExists)
-    || null;
+  const entries = await Promise.all(
+    configPaths.map(async (configPath) => {
+      return readBrowserBridgeMcpEntry(
+        clientName,
+        configPath,
+        options.readFile,
+      );
+    }),
+  );
+  const preferredEntry =
+    entries.find((entry) => entry.configured) ||
+    entries.find((entry) => entry.configExists) ||
+    null;
   const preferredPath = preferredEntry?.configPath || primaryConfigPath;
 
   return {
@@ -141,7 +156,7 @@ async function collectMcpClientStatus(clientName, options) {
     detected: options.detected,
     configPath: preferredPath,
     configExists: entries.some((entry) => entry.configExists),
-    configured: entries.some((entry) => entry.configured)
+    configured: entries.some((entry) => entry.configured),
   };
 }
 
@@ -159,22 +174,33 @@ async function collectMcpClientStatus(clientName, options) {
 async function collectSkillTargetStatus(target, options) {
   const basePath = getSkillBasePath(target, {
     global: options.global,
-    projectPath: options.projectPath
+    projectPath: options.projectPath,
   });
   const managedSkillNames = getManagedSkillNames();
   const coreSkillName = getCoreManagedSkillName();
   const sentinelFilename = getManagedSkillSentinelFilename();
   const currentVersion = getManagedPackageVersion();
-  const skills = await Promise.all(managedSkillNames.map(async (skillName) => {
-    return collectInstalledSkillStatus(basePath, skillName, sentinelFilename, options.access, options.readFile);
-  }));
+  const skills = await Promise.all(
+    managedSkillNames.map(async (skillName) => {
+      return collectInstalledSkillStatus(
+        basePath,
+        skillName,
+        sentinelFilename,
+        options.access,
+        options.readFile,
+      );
+    }),
+  );
   const skillByName = new Map(skills.map((skill) => [skill.name, skill]));
   const coreSkill = skillByName.get(coreSkillName) || null;
   const coreInstalled = Boolean(coreSkill?.exists);
   const coreManaged = Boolean(coreSkill?.exists && coreSkill.managed);
-  const installedVersion = getInstalledSkillBundleVersion(coreSkill ? [coreSkill] : []);
-  const updateAvailable = coreManaged
-    && isManagedVersionOutdated(coreSkill?.version || null, currentVersion);
+  const installedVersion = getInstalledSkillBundleVersion(
+    coreSkill ? [coreSkill] : [],
+  );
+  const updateAvailable =
+    coreManaged &&
+    isManagedVersionOutdated(coreSkill?.version || null, currentVersion);
 
   return {
     key: target,
@@ -186,7 +212,7 @@ async function collectSkillTargetStatus(target, options) {
     installedVersion,
     currentVersion,
     updateAvailable,
-    skills
+    skills,
   };
 }
 
@@ -198,19 +224,27 @@ async function collectSkillTargetStatus(target, options) {
  * @param {(targetPath: string, encoding: BufferEncoding) => Promise<string>} readFile
  * @returns {Promise<SkillInstallationStatus>}
  */
-async function collectInstalledSkillStatus(basePath, skillName, sentinelFilename, access, readFile) {
+async function collectInstalledSkillStatus(
+  basePath,
+  skillName,
+  sentinelFilename,
+  access,
+  readFile,
+) {
   const skillPath = path.join(basePath, skillName);
   const exists = await pathExists(skillPath, access);
   const sentinelPath = path.join(skillPath, sentinelFilename);
-  const managed = exists && await pathExists(sentinelPath, access);
-  const version = managed ? await readManagedSkillVersion(sentinelPath, readFile) : null;
+  const managed = exists && (await pathExists(sentinelPath, access));
+  const version = managed
+    ? await readManagedSkillVersion(sentinelPath, readFile)
+    : null;
 
   return {
     name: skillName,
     path: skillPath,
     exists,
     managed,
-    version
+    version,
   };
 }
 
@@ -226,7 +260,9 @@ function getInstalledSkillBundleVersion(skills) {
   if (!first || typeof first.version !== 'string') {
     return null;
   }
-  return skills.every((skill) => skill.version === first.version) ? first.version : null;
+  return skills.every((skill) => skill.version === first.version)
+    ? first.version
+    : null;
 }
 
 /**
@@ -255,7 +291,7 @@ async function readBrowserBridgeMcpEntry(clientName, configPath, readFile) {
     return {
       configPath,
       configExists: true,
-      configured: parseInstalledMcpConfig(clientName, raw).configured
+      configured: parseInstalledMcpConfig(clientName, raw).configured,
     };
   } catch {
     try {
@@ -263,13 +299,13 @@ async function readBrowserBridgeMcpEntry(clientName, configPath, readFile) {
       return {
         configPath,
         configExists: true,
-        configured: false
+        configured: false,
       };
     } catch {
       return {
         configPath,
         configExists: false,
-        configured: false
+        configured: false,
       };
     }
   }

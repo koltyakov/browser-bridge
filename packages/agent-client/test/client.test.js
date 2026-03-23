@@ -6,9 +6,31 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { interactiveConfirm, methodNeedsSession, parseCommaList, parseJsonObject, parsePropertyAssignments } from '../src/cli-helpers.js';
-import { findInstalledManagedTargets, getManagedSkillSentinelFilename, getSkillBasePath, installAgentFiles, installMcpClientSetup, parseInstallAgentArgs, removeAgentFiles } from '../src/install.js';
-import { buildMcpConfig, formatMcpConfig, getMcpConfigPath, getMcpConfigPaths, installMcpConfig, isMcpClientName, removeMcpConfig } from '../src/mcp-config.js';
+import {
+  interactiveConfirm,
+  methodNeedsSession,
+  parseCommaList,
+  parseJsonObject,
+  parsePropertyAssignments,
+} from '../src/cli-helpers.js';
+import {
+  findInstalledManagedTargets,
+  getManagedSkillSentinelFilename,
+  getSkillBasePath,
+  installAgentFiles,
+  installMcpClientSetup,
+  parseInstallAgentArgs,
+  removeAgentFiles,
+} from '../src/install.js';
+import {
+  buildMcpConfig,
+  formatMcpConfig,
+  getMcpConfigPath,
+  getMcpConfigPaths,
+  installMcpConfig,
+  isMcpClientName,
+  removeMcpConfig,
+} from '../src/mcp-config.js';
 import { summarizeBridgeResponse } from '../src/subagent.js';
 
 /** Ensure failures stay compact for parent-agent reporting. */
@@ -20,9 +42,9 @@ test('summarizeBridgeResponse condenses failures', () => {
     error: {
       code: 'ACCESS_DENIED',
       message: 'Denied',
-      details: { scope: 'tab' }
+      details: { scope: 'tab' },
     },
-    meta: { protocol_version: '1.0' }
+    meta: { protocol_version: '1.0' },
   });
 
   assert.equal(summary.ok, false);
@@ -36,10 +58,10 @@ test('summarizeBridgeResponse condenses success payloads', () => {
     ok: true,
     result: {
       a: 1,
-      b: 2
+      b: 2,
     },
     error: null,
-    meta: { protocol_version: '1.0' }
+    meta: { protocol_version: '1.0' },
   });
 
   assert.equal(summary.ok, true);
@@ -50,19 +72,28 @@ test('summarizeBridgeResponse condenses success payloads', () => {
 test('parsePropertyAssignments handles css style pairs', () => {
   assert.deepEqual(
     parsePropertyAssignments(['display=flex', 'gap=8px', 'broken']),
-    { display: 'flex', gap: '8px' }
+    { display: 'flex', gap: '8px' },
   );
 });
 
 /** Ensure property lists split cleanly for style queries. */
 test('parseCommaList splits and trims values', () => {
-  assert.deepEqual(parseCommaList('display, color, width'), ['display', 'color', 'width']);
+  assert.deepEqual(parseCommaList('display, color, width'), [
+    'display',
+    'color',
+    'width',
+  ]);
 });
 
 /** Ensure JSON object parsing rejects non-object shapes. */
 test('parseJsonObject parses objects and rejects arrays', () => {
-  assert.deepEqual(parseJsonObject('{"selector":"body"}'), { selector: 'body' });
-  assert.throws(() => parseJsonObject('[1,2,3]'), /Expected a JSON object but got array/);
+  assert.deepEqual(parseJsonObject('{"selector":"body"}'), {
+    selector: 'body',
+  });
+  assert.throws(
+    () => parseJsonObject('[1,2,3]'),
+    /Expected a JSON object but got array/,
+  );
   assert.throws(() => parseJsonObject('{bad json'), /Invalid JSON syntax/);
 });
 
@@ -82,14 +113,26 @@ test('summarizeBridgeResponse summarizes network entries', () => {
     ok: true,
     result: {
       entries: [
-        { type: 'fetch', method: 'GET', url: '/api/data', status: 200, duration: 50 },
-        { type: 'xhr', method: 'POST', url: '/api/save', status: 201, duration: 120 }
+        {
+          type: 'fetch',
+          method: 'GET',
+          url: '/api/data',
+          status: 200,
+          duration: 50,
+        },
+        {
+          type: 'xhr',
+          method: 'POST',
+          url: '/api/save',
+          status: 201,
+          duration: 120,
+        },
       ],
       count: 2,
-      total: 2
+      total: 2,
     },
     error: null,
-    meta: { protocol_version: '1.0' }
+    meta: { protocol_version: '1.0' },
   });
 
   assert.equal(summary.ok, true);
@@ -102,14 +145,12 @@ test('summarizeBridgeResponse does not misidentify non-network entries', () => {
     id: 'req_console',
     ok: true,
     result: {
-      entries: [
-        { level: 'warn', args: ['test'], ts: 123 }
-      ],
+      entries: [{ level: 'warn', args: ['test'], ts: 123 }],
       count: 1,
-      total: 1
+      total: 1,
     },
     error: null,
-    meta: { protocol_version: '1.0' }
+    meta: { protocol_version: '1.0' },
   });
 
   assert.equal(summary.ok, true);
@@ -121,9 +162,13 @@ test('summarizeBridgeResponse formats health ping correctly', () => {
   const connected = summarizeBridgeResponse({
     id: 'req_health',
     ok: true,
-    result: { daemon: 'ok', extensionConnected: true, socketPath: '/tmp/test.sock' },
+    result: {
+      daemon: 'ok',
+      extensionConnected: true,
+      socketPath: '/tmp/test.sock',
+    },
     error: null,
-    meta: { protocol_version: '1.0' }
+    meta: { protocol_version: '1.0' },
   });
   assert.equal(connected.ok, true);
   assert.match(connected.summary, /Daemon: ok/);
@@ -132,9 +177,13 @@ test('summarizeBridgeResponse formats health ping correctly', () => {
   const disconnected = summarizeBridgeResponse({
     id: 'req_health2',
     ok: true,
-    result: { daemon: 'ok', extensionConnected: false, socketPath: '/tmp/test.sock' },
+    result: {
+      daemon: 'ok',
+      extensionConnected: false,
+      socketPath: '/tmp/test.sock',
+    },
     error: null,
-    meta: { protocol_version: '1.0' }
+    meta: { protocol_version: '1.0' },
   });
   assert.match(disconnected.summary, /Extension: disconnected/);
 });
@@ -148,10 +197,10 @@ test('summarizeBridgeResponse formats page state correctly', () => {
       url: 'https://example.com/page',
       title: 'Example Page',
       origin: 'https://example.com',
-      hints: { tailwind: true, react: false }
+      hints: { tailwind: true, react: false },
     },
     error: null,
-    meta: { protocol_version: '1.0' }
+    meta: { protocol_version: '1.0' },
   });
   assert.equal(summary.ok, true);
   assert.match(summary.summary, /Page: Example Page/);
@@ -166,7 +215,7 @@ test('summarizeBridgeResponse formats page text correctly', () => {
     ok: true,
     result: { text: 'Hello world content...', length: 22, truncated: false },
     error: null,
-    meta: { protocol_version: '1.0' }
+    meta: { protocol_version: '1.0' },
   });
   assert.equal(summary.ok, true);
   assert.match(summary.summary, /Page text: 22 chars/);
@@ -177,9 +226,14 @@ test('summarizeBridgeResponse formats page.get_text value field', () => {
   const summary = summarizeBridgeResponse({
     id: 'req_text_val',
     ok: true,
-    result: { value: 'Some page content...', length: 5000, truncated: true, omitted: 3000 },
+    result: {
+      value: 'Some page content...',
+      length: 5000,
+      truncated: true,
+      omitted: 3000,
+    },
     error: null,
-    meta: { protocol_version: '1.0' }
+    meta: { protocol_version: '1.0' },
   });
   assert.equal(summary.ok, true);
   assert.match(summary.summary, /Page text: 5000 chars \(truncated\)/);
@@ -192,12 +246,22 @@ test('summarizeBridgeResponse formats daemon log entries correctly', () => {
     ok: true,
     result: {
       entries: [
-        { at: '2026-01-01T00:00:00Z', method: 'dom.query', ok: true, id: 'req_1' },
-        { at: '2026-01-01T00:00:01Z', method: 'page.evaluate', ok: false, id: 'req_2' }
-      ]
+        {
+          at: '2026-01-01T00:00:00Z',
+          method: 'dom.query',
+          ok: true,
+          id: 'req_1',
+        },
+        {
+          at: '2026-01-01T00:00:01Z',
+          method: 'page.evaluate',
+          ok: false,
+          id: 'req_2',
+        },
+      ],
     },
     error: null,
-    meta: { protocol_version: '1.0' }
+    meta: { protocol_version: '1.0' },
   });
   assert.equal(summary.ok, true);
   assert.match(summary.summary, /Log: 2 entries/);
@@ -212,14 +276,14 @@ test('summarizeBridgeResponse formats accessibility tree correctly', () => {
     result: {
       nodes: [
         { nodeId: 1, role: 'button', name: 'Submit', interactive: true },
-        { nodeId: 2, role: 'heading', name: 'Title', interactive: false }
+        { nodeId: 2, role: 'heading', name: 'Title', interactive: false },
       ],
       total: 2,
       count: 2,
-      truncated: false
+      truncated: false,
     },
     error: null,
-    meta: { protocol_version: '1.0' }
+    meta: { protocol_version: '1.0' },
   });
   assert.equal(summary.ok, true);
   assert.match(summary.summary, /Accessibility tree/);
@@ -229,17 +293,25 @@ test('summarizeBridgeResponse formats accessibility tree correctly', () => {
 /** @param {unknown} result */
 function ok(result) {
   return /** @type {import('../../protocol/src/types.js').BridgeResponse} */ ({
-    id: 'req_test', ok: true, result, error: null, meta: { protocol_version: '1.0' }
+    id: 'req_test',
+    ok: true,
+    result,
+    error: null,
+    meta: { protocol_version: '1.0' },
   });
 }
 
 test('summarizer: clicked action', () => {
-  const s = summarizeBridgeResponse(ok({ clicked: true, elementRef: 'el_abc' }));
+  const s = summarizeBridgeResponse(
+    ok({ clicked: true, elementRef: 'el_abc' }),
+  );
   assert.match(s.summary, /Clicked el_abc/);
 });
 
 test('summarizer: focused action', () => {
-  const s = summarizeBridgeResponse(ok({ focused: true, elementRef: 'el_def' }));
+  const s = summarizeBridgeResponse(
+    ok({ focused: true, elementRef: 'el_def' }),
+  );
   assert.match(s.summary, /Focused el_def/);
 });
 
@@ -254,7 +326,9 @@ test('summarizer: pressed key action', () => {
 });
 
 test('summarizer: navigated action', () => {
-  const s = summarizeBridgeResponse(ok({ navigated: true, url: 'https://example.com' }));
+  const s = summarizeBridgeResponse(
+    ok({ navigated: true, url: 'https://example.com' }),
+  );
   assert.match(s.summary, /Navigated to https:\/\/example\.com/);
 });
 
@@ -264,7 +338,9 @@ test('summarizer: scrolled action', () => {
 });
 
 test('summarizer: resized viewport', () => {
-  const s = summarizeBridgeResponse(ok({ resized: true, width: 1024, height: 768 }));
+  const s = summarizeBridgeResponse(
+    ok({ resized: true, width: 1024, height: 768 }),
+  );
   assert.match(s.summary, /Viewport resized to 1024\u00d7768/);
 });
 
@@ -274,53 +350,82 @@ test('summarizer: tab created', () => {
 });
 
 test('summarizer: element describe', () => {
-  const s = summarizeBridgeResponse(ok({
-    tag: 'button', elementRef: 'el_xyz', id: 'submit',
-    text: 'Save', bbox: { x: 10, y: 20, width: 80, height: 30 }, role: 'button'
-  }));
+  const s = summarizeBridgeResponse(
+    ok({
+      tag: 'button',
+      elementRef: 'el_xyz',
+      id: 'submit',
+      text: 'Save',
+      bbox: { x: 10, y: 20, width: 80, height: 30 },
+      role: 'button',
+    }),
+  );
   assert.match(s.summary, /Element button#submit, Save, 80\u00d730/);
 });
 
 test('summarizer: element describe with object text', () => {
-  const s = summarizeBridgeResponse(ok({
-    tag: 'h1', elementRef: 'el_h1',
-    text: { value: 'Page Title', truncated: false, omitted: 0 },
-    bbox: { x: 0, y: 0, width: 400, height: 30 }
-  }));
+  const s = summarizeBridgeResponse(
+    ok({
+      tag: 'h1',
+      elementRef: 'el_h1',
+      text: { value: 'Page Title', truncated: false, omitted: 0 },
+      bbox: { x: 0, y: 0, width: 400, height: 30 },
+    }),
+  );
   assert.match(s.summary, /Element h1, Page Title, 400\u00d730/);
   assert.equal(/** @type {any} */ (s.evidence).text, 'Page Title');
 });
 
 test('summarizer: computed styles', () => {
-  const s = summarizeBridgeResponse(ok({
-    elementRef: 'el_css', properties: { display: 'flex', color: 'red', gap: '8px' }
-  }));
+  const s = summarizeBridgeResponse(
+    ok({
+      elementRef: 'el_css',
+      properties: { display: 'flex', color: 'red', gap: '8px' },
+    }),
+  );
   assert.match(s.summary, /Computed 3 style\(s\) for el_css/);
 });
 
 test('summarizer: flat computed styles via method hint', () => {
-  const s = summarizeBridgeResponse(ok({
-    color: 'rgb(0,0,0)', display: 'block', 'font-size': '16px'
-  }), 'styles.get_computed');
+  const s = summarizeBridgeResponse(
+    ok({
+      color: 'rgb(0,0,0)',
+      display: 'block',
+      'font-size': '16px',
+    }),
+    'styles.get_computed',
+  );
   assert.match(s.summary, /Computed 3 style\(s\)/);
-  assert.deepEqual(s.evidence, { color: 'rgb(0,0,0)', display: 'block', 'font-size': '16px' });
+  assert.deepEqual(s.evidence, {
+    color: 'rgb(0,0,0)',
+    display: 'block',
+    'font-size': '16px',
+  });
 });
 
 test('summarizer: box model', () => {
-  const s = summarizeBridgeResponse(ok({
-    content: { x: 10, y: 20, width: 200, height: 100 },
-    padding: { top: 5 }, border: { top: 1 }, margin: { top: 0 }
-  }));
+  const s = summarizeBridgeResponse(
+    ok({
+      content: { x: 10, y: 20, width: 200, height: 100 },
+      padding: { top: 5 },
+      border: { top: 1 },
+      margin: { top: 0 },
+    }),
+  );
   assert.match(s.summary, /Box model: 200\u00d7100 at \(10, 20\)/);
 });
 
 test('summarizer: flat box model', () => {
-  const s = summarizeBridgeResponse(ok({ x: 104, y: 105, width: 1183, height: 30 }));
+  const s = summarizeBridgeResponse(
+    ok({ x: 104, y: 105, width: 1183, height: 30 }),
+  );
   assert.match(s.summary, /Box model: 1183\u00d730 at \(104, 105\)/);
 });
 
 test('summarizer: patch list', () => {
-  const s = summarizeBridgeResponse(ok({ patches: [{ id: 'p1' }, { id: 'p2' }] }));
+  const s = summarizeBridgeResponse(
+    ok({ patches: [{ id: 'p1' }, { id: 'p2' }] }),
+  );
   assert.match(s.summary, /2 active patch\(es\)/);
 });
 
@@ -336,10 +441,13 @@ test('summarizer: session revoked', () => {
 
 test('summarizer: storage truncates long values', () => {
   const longValue = 'x'.repeat(200);
-  const s = summarizeBridgeResponse(ok({
-    type: 'local', count: 2,
-    entries: { key1: 'short', key2: longValue }
-  }));
+  const s = summarizeBridgeResponse(
+    ok({
+      type: 'local',
+      count: 2,
+      entries: { key1: 'short', key2: longValue },
+    }),
+  );
   assert.match(s.summary, /Storage \(local\): 2 entries/);
   const evidence = /** @type {Record<string, string>} */ (s.evidence);
   assert.equal(evidence.key1, 'short');
@@ -348,41 +456,71 @@ test('summarizer: storage truncates long values', () => {
 });
 
 test('summarizer: empty network uses method hint', () => {
-  const s = summarizeBridgeResponse(ok({
-    entries: [], count: 0, total: 0
-  }), 'page.get_network');
+  const s = summarizeBridgeResponse(
+    ok({
+      entries: [],
+      count: 0,
+      total: 0,
+    }),
+    'page.get_network',
+  );
   assert.match(s.summary, /Network: 0 requests/);
 });
 
 test('summarizer: empty console without method hint', () => {
-  const s = summarizeBridgeResponse(ok({
-    entries: [], count: 0, total: 0
-  }));
+  const s = summarizeBridgeResponse(
+    ok({
+      entries: [],
+      count: 0,
+      total: 0,
+    }),
+  );
   assert.match(s.summary, /Console: 0 entries/);
 });
 
 test('summarizer: find by text uses specific label', () => {
-  const s = summarizeBridgeResponse(ok({
-    nodes: [
-      { elementRef: 'el_a', tag: 'button', textExcerpt: 'Submit', attrs: {}, bbox: {} }
-    ]
-  }), 'dom.find_by_text');
+  const s = summarizeBridgeResponse(
+    ok({
+      nodes: [
+        {
+          elementRef: 'el_a',
+          tag: 'button',
+          textExcerpt: 'Submit',
+          attrs: {},
+          bbox: {},
+        },
+      ],
+    }),
+    'dom.find_by_text',
+  );
   assert.match(s.summary, /Found 1 element/);
 });
 
 test('summarizer: find by role uses specific label', () => {
-  const s = summarizeBridgeResponse(ok({
-    nodes: [], count: 0
-  }), 'dom.find_by_role');
+  const s = summarizeBridgeResponse(
+    ok({
+      nodes: [],
+      count: 0,
+    }),
+    'dom.find_by_role',
+  );
   assert.match(s.summary, /Found 0 element/);
 });
 
 test('summarizer: DOM query evidence includes textExcerpt and attrs', () => {
-  const s = summarizeBridgeResponse(ok({
-    nodes: [
-      { elementRef: 'el_1', tag: 'div', textExcerpt: 'Hello', attrs: { id: 'main', class: 'container wide' }, bbox: {} }
-    ]
-  }));
+  const s = summarizeBridgeResponse(
+    ok({
+      nodes: [
+        {
+          elementRef: 'el_1',
+          tag: 'div',
+          textExcerpt: 'Hello',
+          attrs: { id: 'main', class: 'container wide' },
+          bbox: {},
+        },
+      ],
+    }),
+  );
   const evidence = /** @type {Array<Record<string, unknown>>} */ (s.evidence);
   assert.equal(evidence[0].ref, 'el_1');
   assert.equal(evidence[0].text, 'Hello');
@@ -408,60 +546,99 @@ test('summarizer: eval empty object hints non-serializable', () => {
 });
 
 test('summarizer: wait timeout returns ok false', () => {
-  const s = summarizeBridgeResponse(ok({ found: false, elementRef: null, duration: 5000 }));
+  const s = summarizeBridgeResponse(
+    ok({ found: false, elementRef: null, duration: 5000 }),
+  );
   assert.equal(s.ok, false);
   assert.match(s.summary, /not found/);
 });
 
 test('summarizer: wait success returns ok true', () => {
-  const s = summarizeBridgeResponse(ok({ found: true, elementRef: 'el_abc', duration: 200 }));
+  const s = summarizeBridgeResponse(
+    ok({ found: true, elementRef: 'el_abc', duration: 200 }),
+  );
   assert.equal(s.ok, true);
   assert.match(s.summary, /Element found/);
 });
 
 test('summarizer: network URLs are truncated', () => {
-  const longUrl = 'https://example.com/api/v2/endpoint?' + 'param=value&'.repeat(20);
-  const s = summarizeBridgeResponse(ok({
-    entries: [{ type: 'fetch', method: 'GET', url: longUrl, status: 200, duration: 50 }],
-    count: 1, total: 1
-  }));
+  const longUrl =
+    'https://example.com/api/v2/endpoint?' + 'param=value&'.repeat(20);
+  const s = summarizeBridgeResponse(
+    ok({
+      entries: [
+        {
+          type: 'fetch',
+          method: 'GET',
+          url: longUrl,
+          status: 200,
+          duration: 50,
+        },
+      ],
+      count: 1,
+      total: 1,
+    }),
+  );
   const evidence = /** @type {Array<Record<string, unknown>>} */ (s.evidence);
   assert.ok(/** @type {string} */ (evidence[0].url).length <= 130);
 });
 
 test('summarizer: a11y tree shows non-interactive nodes when no interactive found', () => {
-  const s = summarizeBridgeResponse(ok({
-    nodes: [
-      { nodeId: '1', role: 'heading', name: 'Title', interactive: false },
-      { nodeId: '2', role: 'generic', name: '', interactive: false }
-    ],
-    total: 2, count: 2, truncated: false
-  }));
+  const s = summarizeBridgeResponse(
+    ok({
+      nodes: [
+        { nodeId: '1', role: 'heading', name: 'Title', interactive: false },
+        { nodeId: '2', role: 'generic', name: '', interactive: false },
+      ],
+      total: 2,
+      count: 2,
+      truncated: false,
+    }),
+  );
   const evidence = /** @type {Array<Record<string, unknown>>} */ (s.evidence);
   assert.ok(evidence.length > 0, 'should show non-interactive nodes');
   assert.equal(evidence[0].role, 'heading');
 });
 
 test('summarizer: dom.get_text uses Element text label', () => {
-  const s = summarizeBridgeResponse(ok({
-    text: 'Hello world', truncated: false, length: 11
-  }), 'dom.get_text');
+  const s = summarizeBridgeResponse(
+    ok({
+      text: 'Hello world',
+      truncated: false,
+      length: 11,
+    }),
+    'dom.get_text',
+  );
   assert.match(s.summary, /Element text/);
 });
 
 test('summarizer: page.get_text still uses Page text label', () => {
-  const s = summarizeBridgeResponse(ok({
-    text: 'Hello world', truncated: false, length: 11
-  }), 'page.get_text');
+  const s = summarizeBridgeResponse(
+    ok({
+      text: 'Hello world',
+      truncated: false,
+      length: 11,
+    }),
+    'page.get_text',
+  );
   assert.match(s.summary, /Page text/);
 });
 
 test('summarizer: DOM query evidence includes role and label', () => {
-  const s = summarizeBridgeResponse(ok({
-    nodes: [
-      { elementRef: 'el_1', tag: 'button', role: 'button', name: 'Submit', attrs: { role: 'button', 'aria-label': 'Submit form' }, bbox: {} }
-    ]
-  }));
+  const s = summarizeBridgeResponse(
+    ok({
+      nodes: [
+        {
+          elementRef: 'el_1',
+          tag: 'button',
+          role: 'button',
+          name: 'Submit',
+          attrs: { role: 'button', 'aria-label': 'Submit form' },
+          bbox: {},
+        },
+      ],
+    }),
+  );
   const evidence = /** @type {Array<Record<string, unknown>>} */ (s.evidence);
   assert.equal(evidence[0].role, 'button');
   assert.equal(evidence[0].label, 'Submit form');
@@ -469,12 +646,24 @@ test('summarizer: DOM query evidence includes role and label', () => {
 
 test('parseInstallAgentArgs defaults to all supported targets', () => {
   const options = parseInstallAgentArgs([], '/tmp/example');
-  assert.deepEqual(options.targets, ['codex', 'claude', 'cursor', 'copilot', 'opencode', 'antigravity', 'windsurf', 'agents']);
+  assert.deepEqual(options.targets, [
+    'codex',
+    'claude',
+    'cursor',
+    'copilot',
+    'opencode',
+    'antigravity',
+    'windsurf',
+    'agents',
+  ]);
   assert.equal(options.projectPath, '/tmp/example');
 });
 
 test('parseInstallAgentArgs supports explicit selection and project path', () => {
-  const options = parseInstallAgentArgs(['copilot,codex', '--project', './demo'], '/tmp/example');
+  const options = parseInstallAgentArgs(
+    ['copilot,codex', '--project', './demo'],
+    '/tmp/example',
+  );
   assert.deepEqual(options.targets, ['copilot', 'codex']);
   assert.equal(options.projectPath, path.resolve('/tmp/example', './demo'));
 });
@@ -493,62 +682,177 @@ test('interactiveConfirm returns null without a TTY', async () => {
   const originalIn = process.stdin.isTTY;
   const originalOut = process.stdout.isTTY;
 
-  Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
-  Object.defineProperty(process.stdout, 'isTTY', { value: false, configurable: true });
+  Object.defineProperty(process.stdin, 'isTTY', {
+    value: false,
+    configurable: true,
+  });
+  Object.defineProperty(process.stdout, 'isTTY', {
+    value: false,
+    configurable: true,
+  });
 
   try {
     const result = await interactiveConfirm('Remove skills?');
     assert.equal(result, null);
   } finally {
-    Object.defineProperty(process.stdin, 'isTTY', { value: originalIn, configurable: true });
-    Object.defineProperty(process.stdout, 'isTTY', { value: originalOut, configurable: true });
+    Object.defineProperty(process.stdin, 'isTTY', {
+      value: originalIn,
+      configurable: true,
+    });
+    Object.defineProperty(process.stdout, 'isTTY', {
+      value: originalOut,
+      configurable: true,
+    });
   }
 });
 
 test('installAgentFiles writes managed files for supported runtimes', async () => {
-  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-agent-'));
+  const tempDir = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bb-install-agent-'),
+  );
   await installMcpConfig('copilot', {
     global: false,
     cwd: tempDir,
-    stdout: { write() { return true; } }
+    stdout: {
+      write() {
+        return true;
+      },
+    },
   });
   await installMcpConfig('cursor', {
     global: false,
     cwd: tempDir,
-    stdout: { write() { return true; } }
+    stdout: {
+      write() {
+        return true;
+      },
+    },
   });
   await installMcpConfig('codex', {
     global: false,
     cwd: tempDir,
-    stdout: { write() { return true; } }
+    stdout: {
+      write() {
+        return true;
+      },
+    },
   });
   const installed = await installAgentFiles({
-    targets: ['codex', 'claude', 'cursor', 'copilot', 'opencode', 'antigravity', 'windsurf', 'agents'],
+    targets: [
+      'codex',
+      'claude',
+      'cursor',
+      'copilot',
+      'opencode',
+      'antigravity',
+      'windsurf',
+      'agents',
+    ],
     projectPath: tempDir,
-    global: false
+    global: false,
   });
 
-  assert.ok(installed.some((entry) => entry.endsWith(path.join('.github', 'skills', 'browser-bridge'))));
-  assert.ok(installed.some((entry) => entry.endsWith(path.join('.claude', 'skills', 'browser-bridge'))));
-  assert.ok(installed.some((entry) => entry.endsWith(path.join('.cursor', 'skills', 'browser-bridge'))));
-  assert.ok(installed.some((entry) => entry.endsWith(path.join('.windsurf', 'skills', 'browser-bridge'))));
-  assert.ok(installed.some((entry) => entry.endsWith(path.join('.opencode', 'skills', 'browser-bridge'))));
-  assert.ok(installed.some((entry) => entry.endsWith(path.join('.agents', 'skills', 'browser-bridge'))));
-  assert.ok(installed.some((entry) => entry.endsWith(path.join('.codex', 'skills', 'browser-bridge'))));
+  assert.ok(
+    installed.some((entry) =>
+      entry.endsWith(path.join('.github', 'skills', 'browser-bridge')),
+    ),
+  );
+  assert.ok(
+    installed.some((entry) =>
+      entry.endsWith(path.join('.claude', 'skills', 'browser-bridge')),
+    ),
+  );
+  assert.ok(
+    installed.some((entry) =>
+      entry.endsWith(path.join('.cursor', 'skills', 'browser-bridge')),
+    ),
+  );
+  assert.ok(
+    installed.some((entry) =>
+      entry.endsWith(path.join('.windsurf', 'skills', 'browser-bridge')),
+    ),
+  );
+  assert.ok(
+    installed.some((entry) =>
+      entry.endsWith(path.join('.opencode', 'skills', 'browser-bridge')),
+    ),
+  );
+  assert.ok(
+    installed.some((entry) =>
+      entry.endsWith(path.join('.agents', 'skills', 'browser-bridge')),
+    ),
+  );
+  assert.ok(
+    installed.some((entry) =>
+      entry.endsWith(path.join('.codex', 'skills', 'browser-bridge')),
+    ),
+  );
 
-  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.github', 'skills', 'browser-bridge', 'SKILL.md')));
-  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.claude', 'skills', 'browser-bridge', 'SKILL.md')));
-  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.cursor', 'skills', 'browser-bridge', 'SKILL.md')));
-  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.windsurf', 'skills', 'browser-bridge', 'SKILL.md')));
-  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.opencode', 'skills', 'browser-bridge', 'SKILL.md')));
-  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.agents', 'skills', 'browser-bridge', 'SKILL.md')));
-  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.codex', 'skills', 'browser-bridge', 'SKILL.md')));
-  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.codex', 'skills', 'browser-bridge', 'agents', 'openai.yaml')));
-  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.agents', 'skills', 'browser-bridge', 'references', 'protocol.md')));
+  await assert.doesNotReject(
+    fs.promises.access(
+      path.join(tempDir, '.github', 'skills', 'browser-bridge', 'SKILL.md'),
+    ),
+  );
+  await assert.doesNotReject(
+    fs.promises.access(
+      path.join(tempDir, '.claude', 'skills', 'browser-bridge', 'SKILL.md'),
+    ),
+  );
+  await assert.doesNotReject(
+    fs.promises.access(
+      path.join(tempDir, '.cursor', 'skills', 'browser-bridge', 'SKILL.md'),
+    ),
+  );
+  await assert.doesNotReject(
+    fs.promises.access(
+      path.join(tempDir, '.windsurf', 'skills', 'browser-bridge', 'SKILL.md'),
+    ),
+  );
+  await assert.doesNotReject(
+    fs.promises.access(
+      path.join(tempDir, '.opencode', 'skills', 'browser-bridge', 'SKILL.md'),
+    ),
+  );
+  await assert.doesNotReject(
+    fs.promises.access(
+      path.join(tempDir, '.agents', 'skills', 'browser-bridge', 'SKILL.md'),
+    ),
+  );
+  await assert.doesNotReject(
+    fs.promises.access(
+      path.join(tempDir, '.codex', 'skills', 'browser-bridge', 'SKILL.md'),
+    ),
+  );
+  await assert.doesNotReject(
+    fs.promises.access(
+      path.join(
+        tempDir,
+        '.codex',
+        'skills',
+        'browser-bridge',
+        'agents',
+        'openai.yaml',
+      ),
+    ),
+  );
+  await assert.doesNotReject(
+    fs.promises.access(
+      path.join(
+        tempDir,
+        '.agents',
+        'skills',
+        'browser-bridge',
+        'references',
+        'protocol.md',
+      ),
+    ),
+  );
 });
 
 test('installAgentFiles writes GitHub Copilot global skills to ~/.copilot/skills', async () => {
-  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-agent-home-'));
+  const tempHome = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bb-install-agent-home-'),
+  );
   const originalHome = process.env.HOME;
 
   try {
@@ -556,11 +860,19 @@ test('installAgentFiles writes GitHub Copilot global skills to ~/.copilot/skills
     const installed = await installAgentFiles({
       targets: ['copilot'],
       projectPath: '/tmp/unused',
-      global: true
+      global: true,
     });
 
-    assert.ok(installed.some((entry) => entry.endsWith(path.join('.copilot', 'skills', 'browser-bridge'))));
-    await assert.doesNotReject(fs.promises.access(path.join(tempHome, '.copilot', 'skills', 'browser-bridge', 'SKILL.md')));
+    assert.ok(
+      installed.some((entry) =>
+        entry.endsWith(path.join('.copilot', 'skills', 'browser-bridge')),
+      ),
+    );
+    await assert.doesNotReject(
+      fs.promises.access(
+        path.join(tempHome, '.copilot', 'skills', 'browser-bridge', 'SKILL.md'),
+      ),
+    );
   } finally {
     if (originalHome === undefined) {
       delete process.env.HOME;
@@ -572,26 +884,31 @@ test('installAgentFiles writes GitHub Copilot global skills to ~/.copilot/skills
 });
 
 test('installAgentFiles applies the GitHub Copilot-specific CLI skill note', async () => {
-  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-agent-copilot-note-'));
+  const tempDir = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bb-install-agent-copilot-note-'),
+  );
 
   try {
     await installAgentFiles({
       targets: ['copilot', 'cursor'],
       projectPath: tempDir,
-      global: false
+      global: false,
     });
 
     const copilotSkill = await fs.promises.readFile(
       path.join(tempDir, '.github', 'skills', 'browser-bridge', 'SKILL.md'),
-      'utf8'
+      'utf8',
     );
     const cursorSkill = await fs.promises.readFile(
       path.join(tempDir, '.cursor', 'skills', 'browser-bridge', 'SKILL.md'),
-      'utf8'
+      'utf8',
     );
 
     assert.match(copilotSkill, /## GitHub Copilot Note/);
-    assert.match(copilotSkill, /use the MCP tools directly instead of shelling out to `bbx`/);
+    assert.match(
+      copilotSkill,
+      /use the MCP tools directly instead of shelling out to `bbx`/,
+    );
     assert.doesNotMatch(cursorSkill, /## GitHub Copilot Note/);
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
@@ -599,7 +916,9 @@ test('installAgentFiles applies the GitHub Copilot-specific CLI skill note', asy
 });
 
 test('installAgentFiles still installs only the CLI skill when global MCP is configured', async () => {
-  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-agent-copilot-mcp-home-'));
+  const tempHome = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bb-install-agent-copilot-mcp-home-'),
+  );
   const originalHome = process.env.HOME;
   const originalAppData = process.env.APPDATA;
 
@@ -610,17 +929,29 @@ test('installAgentFiles still installs only the CLI skill when global MCP is con
     }
     await installMcpConfig('copilot', {
       global: true,
-      stdout: { write() { return true; } }
+      stdout: {
+        write() {
+          return true;
+        },
+      },
     });
 
     const installed = await installAgentFiles({
       targets: ['copilot'],
       projectPath: '/tmp/unused',
-      global: true
+      global: true,
     });
 
-    assert.ok(installed.some((entry) => entry.endsWith(path.join('.copilot', 'skills', 'browser-bridge'))));
-    await assert.doesNotReject(fs.promises.access(path.join(tempHome, '.copilot', 'skills', 'browser-bridge', 'SKILL.md')));
+    assert.ok(
+      installed.some((entry) =>
+        entry.endsWith(path.join('.copilot', 'skills', 'browser-bridge')),
+      ),
+    );
+    await assert.doesNotReject(
+      fs.promises.access(
+        path.join(tempHome, '.copilot', 'skills', 'browser-bridge', 'SKILL.md'),
+      ),
+    );
   } finally {
     if (originalHome === undefined) {
       delete process.env.HOME;
@@ -637,7 +968,9 @@ test('installAgentFiles still installs only the CLI skill when global MCP is con
 });
 
 test('installMcpClientSetup writes GitHub Copilot MCP config without installing the CLI skill', async () => {
-  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-copilot-setup-home-'));
+  const tempHome = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bb-install-copilot-setup-home-'),
+  );
   const originalHome = process.env.HOME;
   const originalAppData = process.env.APPDATA;
 
@@ -650,12 +983,26 @@ test('installMcpClientSetup writes GitHub Copilot MCP config without installing 
     const result = await installMcpClientSetup(['copilot'], {
       global: true,
       projectPath: '/tmp/unused',
-      stdout: { write() { return true; } }
+      stdout: {
+        write() {
+          return true;
+        },
+      },
     });
 
-    assert.ok(result.configPaths.some((entry) => entry.endsWith(path.join('.copilot', 'mcp-config.json'))));
-    await assert.doesNotReject(fs.promises.access(path.join(tempHome, '.copilot', 'mcp-config.json')));
-    await assert.rejects(fs.promises.access(path.join(tempHome, '.copilot', 'skills', 'browser-bridge', 'SKILL.md')));
+    assert.ok(
+      result.configPaths.some((entry) =>
+        entry.endsWith(path.join('.copilot', 'mcp-config.json')),
+      ),
+    );
+    await assert.doesNotReject(
+      fs.promises.access(path.join(tempHome, '.copilot', 'mcp-config.json')),
+    );
+    await assert.rejects(
+      fs.promises.access(
+        path.join(tempHome, '.copilot', 'skills', 'browser-bridge', 'SKILL.md'),
+      ),
+    );
   } finally {
     if (originalHome === undefined) {
       delete process.env.HOME;
@@ -672,41 +1019,61 @@ test('installMcpClientSetup writes GitHub Copilot MCP config without installing 
 });
 
 test('installMcpClientSetup keeps Codex MCP setup separate from CLI skill install', async () => {
-  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-codex-mcp-'));
+  const tempDir = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bb-install-codex-mcp-'),
+  );
 
   try {
     const result = await installMcpClientSetup(['codex'], {
       global: false,
       projectPath: tempDir,
-      stdout: { write() { return true; } }
+      stdout: {
+        write() {
+          return true;
+        },
+      },
     });
 
-    assert.ok(result.configPaths.some((entry) => entry.endsWith(path.join('.codex', 'config.toml'))));
-    await assert.rejects(fs.promises.access(path.join(tempDir, '.codex', 'skills', 'browser-bridge', 'SKILL.md')));
+    assert.ok(
+      result.configPaths.some((entry) =>
+        entry.endsWith(path.join('.codex', 'config.toml')),
+      ),
+    );
+    await assert.rejects(
+      fs.promises.access(
+        path.join(tempDir, '.codex', 'skills', 'browser-bridge', 'SKILL.md'),
+      ),
+    );
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }
 });
 
 test('findInstalledManagedTargets reports targets with managed skill installs', async () => {
-  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-find-managed-targets-'));
+  const tempDir = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bb-find-managed-targets-'),
+  );
 
   try {
     await installMcpConfig('cursor', {
       global: false,
       cwd: tempDir,
-      stdout: { write() { return true; } }
+      stdout: {
+        write() {
+          return true;
+        },
+      },
     });
     await installAgentFiles({
       targets: ['cursor'],
       projectPath: tempDir,
-      global: false
+      global: false,
     });
 
     const installed = await findInstalledManagedTargets({
       targets: ['cursor', 'copilot'],
       projectPath: tempDir,
-      global: false
+      global: false,
     });
 
     assert.deepEqual(installed, ['cursor']);
@@ -716,43 +1083,78 @@ test('findInstalledManagedTargets reports targets with managed skill installs', 
 });
 
 test('removeAgentFiles removes only managed Browser Bridge skill directories', async () => {
-  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-remove-agent-files-'));
+  const tempDir = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bb-remove-agent-files-'),
+  );
 
   try {
     await installMcpConfig('cursor', {
       global: false,
       cwd: tempDir,
-      stdout: { write() { return true; } }
+      stdout: {
+        write() {
+          return true;
+        },
+      },
     });
     await installAgentFiles({
       targets: ['cursor'],
       projectPath: tempDir,
-      global: false
+      global: false,
     });
 
     const skillBasePath = getSkillBasePath('cursor', {
       projectPath: tempDir,
-      global: false
+      global: false,
     });
     const unmanagedSkillPath = path.join(skillBasePath, 'custom-skill');
     const managedSentinel = getManagedSkillSentinelFilename();
     await fs.promises.mkdir(unmanagedSkillPath, { recursive: true });
-    await fs.promises.writeFile(path.join(unmanagedSkillPath, 'SKILL.md'), '# Custom\n', 'utf8');
-    await fs.promises.mkdir(path.join(skillBasePath, 'browser-bridge-extra'), { recursive: true });
-    await fs.promises.writeFile(path.join(skillBasePath, 'browser-bridge-extra', 'SKILL.md'), '# Extra\n', 'utf8');
-    await fs.promises.writeFile(path.join(skillBasePath, 'browser-bridge-extra', managedSentinel), 'managed\n', 'utf8');
+    await fs.promises.writeFile(
+      path.join(unmanagedSkillPath, 'SKILL.md'),
+      '# Custom\n',
+      'utf8',
+    );
+    await fs.promises.mkdir(path.join(skillBasePath, 'browser-bridge-extra'), {
+      recursive: true,
+    });
+    await fs.promises.writeFile(
+      path.join(skillBasePath, 'browser-bridge-extra', 'SKILL.md'),
+      '# Extra\n',
+      'utf8',
+    );
+    await fs.promises.writeFile(
+      path.join(skillBasePath, 'browser-bridge-extra', managedSentinel),
+      'managed\n',
+      'utf8',
+    );
 
     const removed = await removeAgentFiles({
       targets: ['cursor'],
       projectPath: tempDir,
-      global: false
+      global: false,
     });
 
-    assert.ok(removed.some((entry) => entry.endsWith(path.join('.cursor', 'skills', 'browser-bridge'))));
-    assert.equal(await fs.promises.access(unmanagedSkillPath).then(() => true, () => false), true);
+    assert.ok(
+      removed.some((entry) =>
+        entry.endsWith(path.join('.cursor', 'skills', 'browser-bridge')),
+      ),
+    );
     assert.equal(
-      await fs.promises.access(path.join(skillBasePath, 'browser-bridge-extra')).then(() => true, () => false),
-      true
+      await fs.promises.access(unmanagedSkillPath).then(
+        () => true,
+        () => false,
+      ),
+      true,
+    );
+    assert.equal(
+      await fs.promises
+        .access(path.join(skillBasePath, 'browser-bridge-extra'))
+        .then(
+          () => true,
+          () => false,
+        ),
+      true,
     );
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
@@ -760,25 +1162,65 @@ test('removeAgentFiles removes only managed Browser Bridge skill directories', a
 });
 
 test('installAgentFiles writes Windsurf and Antigravity global skills to their documented locations', async () => {
-  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-agent-home-'));
+  const tempHome = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bb-install-agent-home-'),
+  );
   const originalHome = process.env.HOME;
 
   try {
     process.env.HOME = tempHome;
     await installMcpConfig('windsurf', {
       global: true,
-      stdout: { write() { return true; } }
+      stdout: {
+        write() {
+          return true;
+        },
+      },
     });
     const installed = await installAgentFiles({
       targets: ['windsurf', 'antigravity'],
       projectPath: '/tmp/unused',
-      global: true
+      global: true,
     });
 
-    assert.ok(installed.some((entry) => entry.endsWith(path.join('.codeium', 'windsurf', 'skills', 'browser-bridge'))));
-    assert.ok(installed.some((entry) => entry.endsWith(path.join('.gemini', 'antigravity', 'skills', 'browser-bridge'))));
-    await assert.doesNotReject(fs.promises.access(path.join(tempHome, '.codeium', 'windsurf', 'skills', 'browser-bridge', 'SKILL.md')));
-    await assert.doesNotReject(fs.promises.access(path.join(tempHome, '.gemini', 'antigravity', 'skills', 'browser-bridge', 'SKILL.md')));
+    assert.ok(
+      installed.some((entry) =>
+        entry.endsWith(
+          path.join('.codeium', 'windsurf', 'skills', 'browser-bridge'),
+        ),
+      ),
+    );
+    assert.ok(
+      installed.some((entry) =>
+        entry.endsWith(
+          path.join('.gemini', 'antigravity', 'skills', 'browser-bridge'),
+        ),
+      ),
+    );
+    await assert.doesNotReject(
+      fs.promises.access(
+        path.join(
+          tempHome,
+          '.codeium',
+          'windsurf',
+          'skills',
+          'browser-bridge',
+          'SKILL.md',
+        ),
+      ),
+    );
+    await assert.doesNotReject(
+      fs.promises.access(
+        path.join(
+          tempHome,
+          '.gemini',
+          'antigravity',
+          'skills',
+          'browser-bridge',
+          'SKILL.md',
+        ),
+      ),
+    );
   } finally {
     if (originalHome === undefined) {
       delete process.env.HOME;
@@ -806,9 +1248,9 @@ test('buildMcpConfig produces client-specific config shapes', () => {
       'browser-bridge': {
         command: 'bbx',
         args: ['mcp', 'serve'],
-        env: {}
-      }
-    }
+        env: {},
+      },
+    },
   });
 
   assert.deepEqual(buildMcpConfig('windsurf'), {
@@ -816,9 +1258,9 @@ test('buildMcpConfig produces client-specific config shapes', () => {
       'browser-bridge': {
         command: 'bbx',
         args: ['mcp', 'serve'],
-        env: {}
-      }
-    }
+        env: {},
+      },
+    },
   });
 
   assert.deepEqual(buildMcpConfig('claude'), {
@@ -827,9 +1269,9 @@ test('buildMcpConfig produces client-specific config shapes', () => {
         type: 'stdio',
         command: 'bbx',
         args: ['mcp', 'serve'],
-        env: {}
-      }
-    }
+        env: {},
+      },
+    },
   });
 
   assert.deepEqual(buildMcpConfig('copilot'), {
@@ -838,27 +1280,27 @@ test('buildMcpConfig produces client-specific config shapes', () => {
         type: 'stdio',
         command: 'bbx',
         args: ['mcp', 'serve'],
-        env: {}
-      }
-    }
+        env: {},
+      },
+    },
   });
 
   assert.deepEqual(buildMcpConfig('opencode'), {
     mcp: {
       'browser-bridge': {
         type: 'local',
-        command: ['bbx', 'mcp', 'serve']
-      }
-    }
+        command: ['bbx', 'mcp', 'serve'],
+      },
+    },
   });
 
   assert.deepEqual(buildMcpConfig('codex'), {
     mcp_servers: {
       'browser-bridge': {
         command: 'bbx',
-        args: ['mcp', 'serve']
-      }
-    }
+        args: ['mcp', 'serve'],
+      },
+    },
   });
 });
 
@@ -881,23 +1323,20 @@ test('getMcpConfigPath supports Copilot global and local locations', () => {
 
   assert.equal(
     getMcpConfigPath('copilot', { global: false, cwd: '/tmp/demo' }),
-    path.join('/tmp/demo', '.vscode', 'mcp.json')
+    path.join('/tmp/demo', '.vscode', 'mcp.json'),
   );
-  assert.equal(
-    getMcpConfigPath('copilot', { global: true }),
-    expectedGlobal
-  );
+  assert.equal(getMcpConfigPath('copilot', { global: true }), expectedGlobal);
 });
 
 test('getMcpConfigPath supports Claude Code global and local locations', () => {
   const home = os.homedir();
   assert.equal(
     getMcpConfigPath('claude', { global: false, cwd: '/tmp/demo' }),
-    path.join('/tmp/demo', '.mcp.json')
+    path.join('/tmp/demo', '.mcp.json'),
   );
   assert.equal(
     getMcpConfigPath('claude', { global: true }),
-    path.join(home, '.claude.json')
+    path.join(home, '.claude.json'),
   );
 });
 
@@ -905,11 +1344,14 @@ test('getMcpConfigPath supports Codex global and local locations', () => {
   const home = os.homedir();
   assert.equal(
     getMcpConfigPath('codex', { global: false, cwd: '/tmp/demo' }),
-    path.join('/tmp/demo', '.codex', 'config.toml')
+    path.join('/tmp/demo', '.codex', 'config.toml'),
   );
   assert.equal(
     getMcpConfigPath('codex', { global: true }),
-    path.join(process.env.CODEX_HOME || path.join(home, '.codex'), 'config.toml')
+    path.join(
+      process.env.CODEX_HOME || path.join(home, '.codex'),
+      'config.toml',
+    ),
   );
 });
 
@@ -917,11 +1359,11 @@ test('getMcpConfigPath supports OpenCode global and local locations', () => {
   const home = os.homedir();
   assert.equal(
     getMcpConfigPath('opencode', { global: false, cwd: '/tmp/demo' }),
-    path.join('/tmp/demo', 'opencode.json')
+    path.join('/tmp/demo', 'opencode.json'),
   );
   assert.equal(
     getMcpConfigPath('opencode', { global: true }),
-    path.join(home, '.config', 'opencode', 'opencode.json')
+    path.join(home, '.config', 'opencode', 'opencode.json'),
   );
 });
 
@@ -929,11 +1371,11 @@ test('getMcpConfigPath supports Windsurf global and local locations', () => {
   const home = os.homedir();
   assert.equal(
     getMcpConfigPath('windsurf', { global: false, cwd: '/tmp/demo' }),
-    path.join('/tmp/demo', '.windsurf', 'mcp_config.json')
+    path.join('/tmp/demo', '.windsurf', 'mcp_config.json'),
   );
   assert.equal(
     getMcpConfigPath('windsurf', { global: true }),
-    path.join(home, '.codeium', 'windsurf', 'mcp_config.json')
+    path.join(home, '.codeium', 'windsurf', 'mcp_config.json'),
   );
 });
 
@@ -941,16 +1383,18 @@ test('getMcpConfigPath supports Antigravity global and local locations', () => {
   const home = os.homedir();
   assert.equal(
     getMcpConfigPath('antigravity', { global: false, cwd: '/tmp/demo' }),
-    path.join('/tmp/demo', '.gemini', 'antigravity', 'mcp_config.json')
+    path.join('/tmp/demo', '.gemini', 'antigravity', 'mcp_config.json'),
   );
   assert.equal(
     getMcpConfigPath('antigravity', { global: true }),
-    path.join(home, '.gemini', 'antigravity', 'mcp_config.json')
+    path.join(home, '.gemini', 'antigravity', 'mcp_config.json'),
   );
 });
 
 test('getMcpConfigPaths includes existing Copilot profile configs for global installs', async () => {
-  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-copilot-mcp-paths-'));
+  const tempHome = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bbx-copilot-mcp-paths-'),
+  );
   const originalHome = process.env.HOME;
   const originalAppData = process.env.APPDATA;
 
@@ -959,11 +1403,33 @@ test('getMcpConfigPaths includes existing Copilot profile configs for global ins
     if (process.platform === 'win32') {
       process.env.APPDATA = path.join(tempHome, 'AppData', 'Roaming');
     }
-    const profileDir = process.platform === 'win32'
-      ? path.join(process.env.APPDATA || path.join(tempHome, 'AppData', 'Roaming'), 'Code', 'User', 'profiles', 'profile-a')
-      : process.platform === 'linux'
-        ? path.join(tempHome, '.config', 'Code', 'User', 'profiles', 'profile-a')
-        : path.join(tempHome, 'Library', 'Application Support', 'Code', 'User', 'profiles', 'profile-a');
+    const profileDir =
+      process.platform === 'win32'
+        ? path.join(
+          process.env.APPDATA || path.join(tempHome, 'AppData', 'Roaming'),
+          'Code',
+          'User',
+          'profiles',
+          'profile-a',
+        )
+        : process.platform === 'linux'
+          ? path.join(
+            tempHome,
+            '.config',
+            'Code',
+            'User',
+            'profiles',
+            'profile-a',
+          )
+          : path.join(
+            tempHome,
+            'Library',
+            'Application Support',
+            'Code',
+            'User',
+            'profiles',
+            'profile-a',
+          );
     await fs.promises.mkdir(profileDir, { recursive: true });
 
     const paths = await getMcpConfigPaths('copilot', { global: true });
@@ -987,28 +1453,42 @@ test('getMcpConfigPaths includes existing Copilot profile configs for global ins
 });
 
 test('installMcpConfig migrates Copilot legacy servers config to mcpServers', async () => {
-  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-copilot-mcp-migrate-'));
+  const tempHome = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bbx-copilot-mcp-migrate-'),
+  );
   const originalHome = process.env.HOME;
 
   try {
     process.env.HOME = tempHome;
     const configPath = getMcpConfigPath('copilot', { global: true });
     await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
-    await fs.promises.writeFile(configPath, `${JSON.stringify({
-      servers: {
-        existing: {
-          type: 'stdio',
-          command: 'node',
-          args: ['existing.js'],
-          env: {}
-        }
-      },
-      unrelated: true
-    }, null, 2)}\n`, 'utf8');
+    await fs.promises.writeFile(
+      configPath,
+      `${JSON.stringify(
+        {
+          servers: {
+            existing: {
+              type: 'stdio',
+              command: 'node',
+              args: ['existing.js'],
+              env: {},
+            },
+          },
+          unrelated: true,
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
+    );
 
     await installMcpConfig('copilot', {
       global: true,
-      stdout: { write() { return true; } }
+      stdout: {
+        write() {
+          return true;
+        },
+      },
     });
 
     const updated = JSON.parse(await fs.promises.readFile(configPath, 'utf8'));
@@ -1018,14 +1498,14 @@ test('installMcpConfig migrates Copilot legacy servers config to mcpServers', as
       type: 'stdio',
       command: 'node',
       args: ['existing.js'],
-      env: {}
+      env: {},
     });
     assert.equal(updated.unrelated, true);
     assert.deepEqual(updated.mcpServers['browser-bridge'], {
       type: 'stdio',
       command: 'bbx',
       args: ['mcp', 'serve'],
-      env: {}
+      env: {},
     });
   } finally {
     if (originalHome === undefined) {
@@ -1038,7 +1518,9 @@ test('installMcpConfig migrates Copilot legacy servers config to mcpServers', as
 });
 
 test('removeMcpConfig keeps Copilot mcpServers object after removing browser-bridge', async () => {
-  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-copilot-mcp-remove-'));
+  const tempHome = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bbx-copilot-mcp-remove-'),
+  );
   const originalHome = process.env.HOME;
 
   try {
@@ -1046,11 +1528,19 @@ test('removeMcpConfig keeps Copilot mcpServers object after removing browser-bri
 
     await installMcpConfig('copilot', {
       global: true,
-      stdout: { write() { return true; } }
+      stdout: {
+        write() {
+          return true;
+        },
+      },
     });
     await removeMcpConfig('copilot', {
       global: true,
-      stdout: { write() { return true; } }
+      stdout: {
+        write() {
+          return true;
+        },
+      },
     });
 
     const configPath = getMcpConfigPath('copilot', { global: true });

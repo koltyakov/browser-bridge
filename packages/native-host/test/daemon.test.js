@@ -2,12 +2,11 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import net from 'node:net';
 
 import { BridgeDaemon } from '../src/daemon.js';
 
 /**
- * @returns {net.Socket & { writes: string[] }}
+ * @returns {import('node:net').Socket & { writes: string[] }}
  */
 function createFakeSocket() {
   const socket = {
@@ -21,7 +20,7 @@ function createFakeSocket() {
       return true;
     }
   };
-  return /** @type {net.Socket & { writes: string[] }} */ (/** @type {unknown} */ (socket));
+  return /** @type {import('node:net').Socket & { writes: string[] }} */ (/** @type {unknown} */ (socket));
 }
 
 /** Ensure health checks succeed even before the extension connects. */

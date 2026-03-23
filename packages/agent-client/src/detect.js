@@ -16,7 +16,8 @@ const platform = process.platform;
  */
 function getVsCodeUserDataDir() {
   if (platform === 'win32') {
-    const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+    const appData =
+      process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
     return path.join(appData, 'Code');
   }
   if (platform === 'linux') {
@@ -44,7 +45,9 @@ function fsExists(p) {
  */
 function commandExists(cmd) {
   try {
-    execFileSync(platform === 'win32' ? 'where' : 'which', [cmd], { stdio: 'ignore' });
+    execFileSync(platform === 'win32' ? 'where' : 'which', [cmd], {
+      stdio: 'ignore',
+    });
     return true;
   } catch {
     return false;
@@ -55,9 +58,11 @@ function commandExists(cmd) {
 function detectCopilot() {
   if (fsExists(path.join(getVsCodeUserDataDir(), 'User'))) return true;
   if (fsExists(path.join(home, '.vscode'))) return true;
-  if (platform === 'darwin') return fsExists('/Applications/Visual Studio Code.app');
+  if (platform === 'darwin')
+    return fsExists('/Applications/Visual Studio Code.app');
   if (platform === 'win32') {
-    const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+    const localAppData =
+      process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
     return fsExists(path.join(localAppData, 'Programs', 'Microsoft VS Code'));
   }
   return commandExists('code');
@@ -111,14 +116,30 @@ const DETECTORS = {
   copilot: detectCopilot,
   opencode: detectOpencode,
   antigravity: detectAntigravity,
-  windsurf: detectWindsurf
+  windsurf: detectWindsurf,
 };
 
 /** @type {McpClientName[]} */
-const MCP_CLIENT_KEYS = ['codex', 'claude', 'cursor', 'copilot', 'opencode', 'antigravity', 'windsurf'];
+const MCP_CLIENT_KEYS = [
+  'codex',
+  'claude',
+  'cursor',
+  'copilot',
+  'opencode',
+  'antigravity',
+  'windsurf',
+];
 
 /** @type {SupportedTarget[]} */
-const SKILL_TARGET_KEYS = ['codex', 'claude', 'cursor', 'copilot', 'opencode', 'antigravity', 'windsurf'];
+const SKILL_TARGET_KEYS = [
+  'codex',
+  'claude',
+  'cursor',
+  'copilot',
+  'opencode',
+  'antigravity',
+  'windsurf',
+];
 
 /**
  * Detect which MCP clients are installed on this machine.
@@ -127,7 +148,7 @@ const SKILL_TARGET_KEYS = ['codex', 'claude', 'cursor', 'copilot', 'opencode', '
  * @returns {McpClientName[]}
  */
 export function detectMcpClients(detectors = DETECTORS) {
-  return MCP_CLIENT_KEYS.filter(name => detectors[name]());
+  return MCP_CLIENT_KEYS.filter((name) => detectors[name]());
 }
 
 /**
@@ -139,7 +160,7 @@ export function detectMcpClients(detectors = DETECTORS) {
  */
 export function detectSkillTargets(detectors = DETECTORS) {
   /** @type {SupportedTarget[]} */
-  const detected = SKILL_TARGET_KEYS.filter(name => detectors[name]());
+  const detected = SKILL_TARGET_KEYS.filter((name) => detectors[name]());
   detected.push('agents');
   return detected;
 }

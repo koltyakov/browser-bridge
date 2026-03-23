@@ -9,7 +9,15 @@ import path from 'node:path';
  */
 
 /** @type {McpClientName[]} */
-export const MCP_CLIENT_NAMES = ['codex', 'claude', 'cursor', 'copilot', 'opencode', 'antigravity', 'windsurf'];
+export const MCP_CLIENT_NAMES = [
+  'codex',
+  'claude',
+  'cursor',
+  'copilot',
+  'opencode',
+  'antigravity',
+  'windsurf',
+];
 
 /**
  * @param {string} value
@@ -27,7 +35,8 @@ const BROWSER_BRIDGE_SERVER_NAME = 'browser-bridge';
 function getVsCodeUserDataDir() {
   const home = os.homedir();
   if (process.platform === 'win32') {
-    const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+    const appData =
+      process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
     return path.join(appData, 'Code');
   }
   if (process.platform === 'linux') {
@@ -57,7 +66,9 @@ function getLegacyCopilotVsCodeConfigPath() {
  * @returns {{ key: string, includeType: boolean, legacyKeys?: string[], keepEmptyBlock?: boolean }}
  */
 export function getMcpConfigShape(clientName) {
-  return MCP_CONFIG_SHAPES[clientName] ?? { key: 'mcpServers', includeType: false };
+  return (
+    MCP_CONFIG_SHAPES[clientName] ?? { key: 'mcpServers', includeType: false }
+  );
 }
 
 /**
@@ -75,25 +86,30 @@ function createBaseServerConfig(clientName) {
   if (clientName === 'opencode') {
     return {
       type: 'local',
-      command: ['bbx', 'mcp', 'serve']
+      command: ['bbx', 'mcp', 'serve'],
     };
   }
   return {
     command: 'bbx',
     args: ['mcp', 'serve'],
-    env: {}
+    env: {},
   };
 }
 
 /** @type {Record<McpClientName, { key: string, includeType: boolean, legacyKeys?: string[], keepEmptyBlock?: boolean }>} */
 const MCP_CONFIG_SHAPES = {
   antigravity: { key: 'mcpServers', includeType: false },
-  claude:  { key: 'mcpServers', includeType: true },
-  copilot: { key: 'mcpServers', includeType: true, legacyKeys: ['servers'], keepEmptyBlock: true },
-  cursor:  { key: 'mcpServers', includeType: false },
-  windsurf:{ key: 'mcpServers', includeType: false },
-  codex:   { key: 'mcp_servers', includeType: false },
-  opencode:{ key: 'mcp',        includeType: false },
+  claude: { key: 'mcpServers', includeType: true },
+  copilot: {
+    key: 'mcpServers',
+    includeType: true,
+    legacyKeys: ['servers'],
+    keepEmptyBlock: true,
+  },
+  cursor: { key: 'mcpServers', includeType: false },
+  windsurf: { key: 'mcpServers', includeType: false },
+  codex: { key: 'mcp_servers', includeType: false },
+  opencode: { key: 'mcp', includeType: false },
 };
 
 /**
@@ -106,14 +122,16 @@ export function buildMcpConfig(clientName) {
       mcp_servers: {
         [BROWSER_BRIDGE_SERVER_NAME]: {
           command: 'bbx',
-          args: ['mcp', 'serve']
-        }
-      }
+          args: ['mcp', 'serve'],
+        },
+      },
     };
   }
   const serverConfig = createBaseServerConfig(clientName);
   const shape = getMcpConfigShape(clientName);
-  const entry = shape.includeType ? { type: 'stdio', ...serverConfig } : serverConfig;
+  const entry = shape.includeType
+    ? { type: 'stdio', ...serverConfig }
+    : serverConfig;
   return { [shape.key]: { [BROWSER_BRIDGE_SERVER_NAME]: entry } };
 }
 
@@ -137,7 +155,10 @@ export function formatMcpConfig(clientName) {
  * @param {{ global: boolean, cwd?: string }} options
  * @returns {string}
  */
-export function getMcpConfigPath(clientName, { global: isGlobal, cwd = process.cwd() }) {
+export function getMcpConfigPath(
+  clientName,
+  { global: isGlobal, cwd = process.cwd() },
+) {
   const home = os.homedir();
 
   if (!isGlobal) {
@@ -149,7 +170,7 @@ export function getMcpConfigPath(clientName, { global: isGlobal, cwd = process.c
       windsurf: path.join(cwd, '.windsurf', 'mcp_config.json'),
       claude: path.join(cwd, '.mcp.json'),
       opencode: path.join(cwd, 'opencode.json'),
-      antigravity: path.join(cwd, '.gemini', 'antigravity', 'mcp_config.json')
+      antigravity: path.join(cwd, '.gemini', 'antigravity', 'mcp_config.json'),
     };
     return localPaths[clientName];
   }
@@ -232,7 +253,7 @@ function formatCodexServerBlock() {
     `[mcp_servers."${BROWSER_BRIDGE_SERVER_NAME}"]`,
     'command = "bbx"',
     'args = ["mcp", "serve"]',
-    ''
+    '',
   ].join('\n');
 }
 
@@ -241,8 +262,10 @@ function formatCodexServerBlock() {
  * @returns {boolean}
  */
 function hasCodexServerBlock(raw) {
-  return raw.includes(`[mcp_servers.${BROWSER_BRIDGE_SERVER_NAME}]`)
-    || raw.includes(`[mcp_servers."${BROWSER_BRIDGE_SERVER_NAME}"]`);
+  return (
+    raw.includes(`[mcp_servers.${BROWSER_BRIDGE_SERVER_NAME}]`) ||
+    raw.includes(`[mcp_servers."${BROWSER_BRIDGE_SERVER_NAME}"]`)
+  );
 }
 
 /**
@@ -251,8 +274,10 @@ function hasCodexServerBlock(raw) {
  */
 function isCodexServerHeader(line) {
   const trimmed = line?.trim();
-  return trimmed === `[mcp_servers.${BROWSER_BRIDGE_SERVER_NAME}]`
-    || trimmed === `[mcp_servers."${BROWSER_BRIDGE_SERVER_NAME}"]`;
+  return (
+    trimmed === `[mcp_servers.${BROWSER_BRIDGE_SERVER_NAME}]` ||
+    trimmed === `[mcp_servers."${BROWSER_BRIDGE_SERVER_NAME}"]`
+  );
 }
 
 /**
@@ -324,7 +349,12 @@ function removeCodexServerBlock(raw) {
   }
 
   lines.splice(start, end - start);
-  while (start < lines.length && lines[start]?.trim() === '' && start > 0 && lines[start - 1]?.trim() === '') {
+  while (
+    start < lines.length &&
+    lines[start]?.trim() === '' &&
+    start > 0 &&
+    lines[start - 1]?.trim() === ''
+  ) {
     lines.splice(start, 1);
   }
   const trimmed = lines.join('\n').replace(/\s+$/, '');
@@ -476,15 +506,19 @@ async function installJsonMcpConfig(clientName, configPath, stdout) {
     ...existing,
     [topKey]: {
       ...existingBlock,
-      ...entryBlock
-    }
+      ...entryBlock,
+    },
   };
   for (const key of shape.legacyKeys ?? []) {
     delete merged[key];
   }
 
   await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
-  await fs.promises.writeFile(configPath, `${JSON.stringify(merged, null, 2)}\n`, 'utf8');
+  await fs.promises.writeFile(
+    configPath,
+    `${JSON.stringify(merged, null, 2)}\n`,
+    'utf8',
+  );
   stdout.write(`Wrote ${configPath}\n`);
 }
 
@@ -547,7 +581,11 @@ async function removeJsonMcpConfig(clientName, configPath, stdout) {
   }
 
   await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
-  await fs.promises.writeFile(configPath, `${JSON.stringify(merged, null, 2)}\n`, 'utf8');
+  await fs.promises.writeFile(
+    configPath,
+    `${JSON.stringify(merged, null, 2)}\n`,
+    'utf8',
+  );
   stdout.write(`Removed ${configPath}\n`);
   return true;
 }
@@ -588,11 +626,19 @@ export function parseInstalledMcpConfig(clientName, raw) {
 
   try {
     const parsed = JSON.parse(raw);
-    const block = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? getMergedJsonMcpBlock(/** @type {Record<string, unknown>} */ (parsed), clientName)
-      : {};
+    const block =
+      parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? getMergedJsonMcpBlock(
+          /** @type {Record<string, unknown>} */ (parsed),
+          clientName,
+        )
+        : {};
     return {
-      configured: Boolean(block && typeof block === 'object' && Object.hasOwn(block, BROWSER_BRIDGE_SERVER_NAME))
+      configured: Boolean(
+        block &&
+        typeof block === 'object' &&
+        Object.hasOwn(block, BROWSER_BRIDGE_SERVER_NAME),
+      ),
     };
   } catch {
     return { configured: false };

@@ -70,12 +70,12 @@
   } = contentHelpers;
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.type === "bridge.ping") {
+    if (message?.type === 'bridge.ping') {
       sendResponse({ ok: true });
       return false;
     }
 
-    if (message?.type !== "bridge.execute") {
+    if (message?.type !== 'bridge.execute') {
       return false;
     }
 
@@ -98,70 +98,70 @@
    */
   function handleCommand(method, params) {
     switch (method) {
-      case "page.get_state":
+      case 'page.get_state':
         return getPageState();
-      case "page.get_storage":
+      case 'page.get_storage':
         return getStorageData(params);
-      case "page.get_text":
+      case 'page.get_text':
         return getFullPageText(params);
-      case "navigation.navigate":
-      case "navigation.reload":
-      case "navigation.go_back":
-      case "navigation.go_forward":
+      case 'navigation.navigate':
+      case 'navigation.reload':
+      case 'navigation.go_back':
+      case 'navigation.go_forward':
         throw new Error(`Unsupported content-script method ${method}`);
-      case "dom.query":
+      case 'dom.query':
         return domQuery(params);
-      case "dom.describe":
+      case 'dom.describe':
         return describeElement(params.elementRef);
-      case "dom.get_text":
+      case 'dom.get_text':
         return getText(params.elementRef, params.textBudget);
-      case "dom.get_attributes":
+      case 'dom.get_attributes':
         return getAttributes(params.elementRef, params.attributes ?? []);
-      case "dom.wait_for":
+      case 'dom.wait_for':
         return waitForDom(params);
-      case "dom.find_by_text":
+      case 'dom.find_by_text':
         return findByText(params);
-      case "dom.find_by_role":
+      case 'dom.find_by_role':
         return findByRole(params);
-      case "dom.get_html":
+      case 'dom.get_html':
         return getHtml(params);
-      case "layout.get_box_model":
+      case 'layout.get_box_model':
         return getBoxModel(params.elementRef);
-      case "layout.hit_test":
+      case 'layout.hit_test':
         return hitTest(params.x, params.y);
-      case "styles.get_computed":
+      case 'styles.get_computed':
         return getComputedStyles(params.elementRef, params.properties);
-      case "styles.get_matched_rules":
+      case 'styles.get_matched_rules':
         return getMatchedRules(params.elementRef);
-      case "viewport.scroll":
+      case 'viewport.scroll':
         return scrollViewport(params);
-      case "input.click":
+      case 'input.click':
         return clickTarget(params);
-      case "input.focus":
+      case 'input.focus':
         return focusTarget(params);
-      case "input.type":
+      case 'input.type':
         return typeIntoTarget(params);
-      case "input.press_key":
+      case 'input.press_key':
         return pressKeyTarget(params);
-      case "input.set_checked":
+      case 'input.set_checked':
         return setCheckedTarget(params);
-      case "input.select_option":
+      case 'input.select_option':
         return selectOptionTarget(params);
-      case "input.hover":
+      case 'input.hover':
         return hoverTarget(params);
-      case "input.drag":
+      case 'input.drag':
         return dragTarget(params);
-      case "patch.apply_styles":
+      case 'patch.apply_styles':
         return applyStylePatch(params);
-      case "patch.apply_dom":
+      case 'patch.apply_dom':
         return applyDomPatch(params);
-      case "patch.list":
+      case 'patch.list':
         return listPatches();
-      case "patch.rollback":
+      case 'patch.rollback':
         return rollbackPatch(params.patchId);
-      case "patch.commit_session_baseline":
+      case 'patch.commit_session_baseline':
         return { committed: true };
-      case "screenshot.capture_element":
+      case 'screenshot.capture_element':
         return getElementRect(params.elementRef);
       default:
         throw new Error(`Unsupported method ${method}`);
@@ -187,7 +187,7 @@
   function getPageState() {
     const scrollingElement =
       document.scrollingElement || document.documentElement || document.body;
-    const selection = document.getSelection?.()?.toString() || "";
+    const selection = document.getSelection?.()?.toString() || '';
 
     return {
       url: window.location.href,
@@ -217,10 +217,10 @@
       activeElement:
         document.activeElement instanceof Element
           ? summarizeNode(
-              document.activeElement,
-              ["id", "class", "name", "type", "href", "role"],
-              120,
-            ).node
+            document.activeElement,
+            ['id', 'class', 'name', 'type', 'href', 'role'],
+            120,
+          ).node
           : null,
       selection: truncateText(selection.trim(), 200),
       hints: detectPageHints(),
@@ -354,10 +354,10 @@
       node: {
         elementRef,
         tag: element.tagName.toLowerCase(),
-        role: element.getAttribute("role"),
+        role: element.getAttribute('role'),
         name:
-          element.getAttribute("aria-label") ||
-          element.getAttribute("name") ||
+          element.getAttribute('aria-label') ||
+          element.getAttribute('name') ||
           null,
         textExcerpt: text.value,
         attrs: summarizeAttributes(element, attributeAllowlist),
@@ -411,7 +411,7 @@
   function getText(elementRef, budget = 600) {
     const element = /** @type {HTMLElement} */ (getRequiredElement(elementRef));
     return truncateText(
-      (element.innerText || element.textContent || "").trim(),
+      (element.innerText || element.textContent || '').trim(),
       budget,
     );
   }
@@ -452,7 +452,7 @@
    */
   function hitTest(x, y) {
     const element = document.elementFromPoint(x, y);
-    return element ? summarizeNode(element, ["id", "class"], 120).node : null;
+    return element ? summarizeNode(element, ['id', 'class'], 120).node : null;
   }
 
   /**
@@ -466,7 +466,7 @@
     const styles = window.getComputedStyle(getRequiredElement(elementRef));
     const requested = properties.length
       ? properties
-      : ["display", "position", "width", "height", "color"];
+      : ['display', 'position', 'width', 'height', 'color'];
     return requested.reduce((accumulator, property) => {
       accumulator[property] = styles.getPropertyValue(property);
       return accumulator;
@@ -484,7 +484,7 @@
     return {
       elementRef,
       classes: [...element.classList],
-      inlineStyle: element.getAttribute("style") || "",
+      inlineStyle: element.getAttribute('style') || '',
     };
   }
 
@@ -503,7 +503,7 @@
   function scrollViewport(params) {
     const top = Number(params.top) || 0;
     const left = Number(params.left) || 0;
-    const behavior = params.behavior === "smooth" ? "smooth" : "auto";
+    const behavior = params.behavior === 'smooth' ? 'smooth' : 'auto';
     const relative = Boolean(params.relative);
 
     if (params.target?.elementRef || params.target?.selector) {
@@ -547,7 +547,7 @@
     }
 
     return {
-      target: "window",
+      target: 'window',
       top: window.scrollY,
       left: window.scrollX,
       behavior,
@@ -570,27 +570,27 @@
 
     scrollTargetIntoView(element);
     focusElement(element);
-    dispatchMouseEvent(element, "mousemove", point, button, 0, modifiers);
-    dispatchMouseEvent(element, "mousedown", point, button, clickCount, modifiers);
-    dispatchMouseEvent(element, "mouseup", point, button, clickCount, modifiers);
+    dispatchMouseEvent(element, 'mousemove', point, button, 0, modifiers);
+    dispatchMouseEvent(element, 'mousedown', point, button, clickCount, modifiers);
+    dispatchMouseEvent(element, 'mouseup', point, button, clickCount, modifiers);
 
-    if (button === "left") {
+    if (button === 'left') {
       if (element instanceof HTMLElement) {
         element.click();
         if (clickCount === 2) {
           element.click();
-          dispatchMouseEvent(element, "dblclick", point, button, clickCount, modifiers);
+          dispatchMouseEvent(element, 'dblclick', point, button, clickCount, modifiers);
         }
       } else {
-        dispatchMouseEvent(element, "click", point, button, clickCount, modifiers);
+        dispatchMouseEvent(element, 'click', point, button, clickCount, modifiers);
         if (clickCount === 2) {
-          dispatchMouseEvent(element, "dblclick", point, button, clickCount, modifiers);
+          dispatchMouseEvent(element, 'dblclick', point, button, clickCount, modifiers);
         }
       }
-    } else if (button === "right") {
-      dispatchMouseEvent(element, "contextmenu", point, button, clickCount, modifiers);
+    } else if (button === 'right') {
+      dispatchMouseEvent(element, 'contextmenu', point, button, clickCount, modifiers);
     } else {
-      dispatchMouseEvent(element, "auxclick", point, button, clickCount, modifiers);
+      dispatchMouseEvent(element, 'auxclick', point, button, clickCount, modifiers);
     }
 
     return {
@@ -628,7 +628,7 @@
     const element = resolveTarget(params.target);
     const editable = getEditableTarget(element);
     if (!editable) {
-      throw new Error("Target is not an editable control.");
+      throw new Error('Target is not an editable control.');
     }
 
     scrollTargetIntoView(editable);
@@ -638,7 +638,7 @@
       clearEditableValue(editable);
     }
 
-    const text = String(params.text ?? "");
+    const text = String(params.text ?? '');
     for (const character of text) {
       runKeyAction(editable, character, params.modifiers);
     }
@@ -669,9 +669,9 @@
           : document.body;
     scrollTargetIntoView(target);
     focusElement(target);
-    const key = String(params.key ?? "");
+    const key = String(params.key ?? '');
     if (!key) {
-      throw new Error("A key is required.");
+      throw new Error('A key is required.');
     }
 
     const result = runKeyAction(target, key, params.modifiers);
@@ -694,8 +694,8 @@
   function setCheckedTarget(params) {
     const element = resolveCheckableTarget(params.target);
     const checked = params.checked !== false;
-    if (element.type === "radio" && !checked && element.checked) {
-      throw new Error("Radio inputs cannot be unchecked directly.");
+    if (element.type === 'radio' && !checked && element.checked) {
+      throw new Error('Radio inputs cannot be unchecked directly.');
     }
 
     scrollTargetIntoView(element);
@@ -705,8 +705,8 @@
       element.click();
       if (element.checked !== checked) {
         element.checked = checked;
-        element.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
-        element.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+        element.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+        element.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
       }
     }
 
@@ -727,19 +727,19 @@
   function selectOptionTarget(params) {
     const element = resolveSelectTarget(params.target);
     const values = Array.isArray(params.values)
-      ? params.values.filter((value) => typeof value === "string")
+      ? params.values.filter((value) => typeof value === 'string')
       : [];
     const labels = Array.isArray(params.labels)
-      ? params.labels.filter((label) => typeof label === "string")
+      ? params.labels.filter((label) => typeof label === 'string')
       : [];
     const indexes = Array.isArray(params.indexes)
       ? params.indexes
-          .map((index) => Number(index))
-          .filter((index) => Number.isInteger(index) && index >= 0)
+        .map((index) => Number(index))
+        .filter((index) => Number.isInteger(index) && index >= 0)
       : [];
 
     if (!values.length && !labels.length && !indexes.length) {
-      throw new Error("At least one option selector is required.");
+      throw new Error('At least one option selector is required.');
     }
 
     scrollTargetIntoView(element);
@@ -757,7 +757,7 @@
     });
 
     if (!matchingOptions.length) {
-      throw new Error("No matching option found.");
+      throw new Error('No matching option found.');
     }
 
     if (element.multiple) {
@@ -772,8 +772,8 @@
     const selectedAfter = getSelectedOptionValues(element);
     const changed = !areStringArraysEqual(selectedBefore, selectedAfter);
     if (changed) {
-      element.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
-      element.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+      element.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+      element.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
     }
 
     return {
@@ -799,11 +799,11 @@
       element.style.setProperty(
         property,
         value,
-        params.important ? "important" : "",
+        params.important ? 'important' : '',
       );
     }
     patchRegistry.set(patchId, {
-      kind: "style",
+      kind: 'style',
       elementRef: rememberElement(element),
       previous,
     });
@@ -830,19 +830,19 @@
     };
 
     switch (operation) {
-      case "set_text":
+      case 'set_text':
         previous.text = element.textContent;
-        element.textContent = String(params.value ?? "");
+        element.textContent = String(params.value ?? '');
         break;
-      case "set_attribute":
+      case 'set_attribute':
         previous.attributes[params.name] = element.getAttribute(params.name);
-        element.setAttribute(params.name, String(params.value ?? ""));
+        element.setAttribute(params.name, String(params.value ?? ''));
         break;
-      case "remove_attribute":
+      case 'remove_attribute':
         previous.attributes[params.name] = element.getAttribute(params.name);
         element.removeAttribute(params.name);
         break;
-      case "toggle_class": {
+      case 'toggle_class': {
         const className = String(params.value);
         previous.toggledClass = className;
         previous.hadClass = element.classList.contains(className);
@@ -854,7 +854,7 @@
     }
 
     patchRegistry.set(patchId, {
-      kind: "dom",
+      kind: 'dom',
       elementRef: rememberElement(element),
       operation,
       previous,
@@ -888,7 +888,7 @@
     }
 
     const element = getRequiredElement(patch.elementRef);
-    if (patch.kind === "style") {
+    if (patch.kind === 'style') {
       const htmlElement = /** @type {HTMLElement} */ (element);
       for (const [property, value] of Object.entries(patch.previous)) {
         if (value) {
@@ -897,16 +897,16 @@
           htmlElement.style.removeProperty(property);
         }
       }
-    } else if (patch.kind === "dom") {
-      if (patch.operation === "set_text" && patch.previous.text !== null) {
+    } else if (patch.kind === 'dom') {
+      if (patch.operation === 'set_text' && patch.previous.text !== null) {
         element.textContent = patch.previous.text;
-      } else if (patch.operation === "toggle_class" && patch.previous.toggledClass) {
+      } else if (patch.operation === 'toggle_class' && patch.previous.toggledClass) {
         const hasNow = element.classList.contains(patch.previous.toggledClass);
         if (hasNow !== patch.previous.hadClass) {
           element.classList.toggle(patch.previous.toggledClass);
         }
       } else {
-        if (patch.previous.text !== null && patch.operation === "set_text") {
+        if (patch.previous.text !== null && patch.operation === 'set_text') {
           element.textContent = patch.previous.text;
         }
         for (const [name, value] of Object.entries(patch.previous.attributes || {})) {
@@ -946,7 +946,7 @@
     const height = Math.max(0, Math.min(rect.height, window.innerHeight - y));
     if (width < 1 || height < 1) {
       throw new Error(
-        `Element is outside the visible viewport after scroll ` +
+        'Element is outside the visible viewport after scroll ' +
         `(${Math.round(rect.x)},${Math.round(rect.y)} ${Math.round(rect.width)}\u00d7${Math.round(rect.height)}). ` +
         'It may be in a fixed/sticky container or an iframe.'
       );
@@ -963,12 +963,12 @@
    * @returns {Promise<{ found: boolean, elementRef: string | null, duration: number }>}
    */
   function waitForDom(params) {
-    const selector = String(params.selector || "");
+    const selector = String(params.selector || '');
     if (!selector) {
-      throw new Error("selector is required for dom.wait_for");
+      throw new Error('selector is required for dom.wait_for');
     }
     const text = params.text != null ? String(params.text) : null;
-    const waitState = params.state || "attached";
+    const waitState = params.state || 'attached';
     const timeout = clamp(params.timeoutMs ?? 5000, 100, 30000);
     const start = Date.now();
 
@@ -976,7 +976,7 @@
      * @returns {{ found: boolean, element: Element | null }}
      */
     function check() {
-      if (waitState === "detached") {
+      if (waitState === 'detached') {
         const exists = text
           ? findElementWithText(selector, text) !== null
           : document.querySelector(selector) !== null;
@@ -987,14 +987,14 @@
         if (text !== null && !elementMatchesText(el, text)) {
           continue;
         }
-        if (waitState === "visible") {
+        if (waitState === 'visible') {
           const r = el.getBoundingClientRect();
-          if (r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden") {
+          if (r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden') {
             return { found: true, element: el };
           }
-        } else if (waitState === "hidden") {
+        } else if (waitState === 'hidden') {
           const r = el.getBoundingClientRect();
-          if (r.width === 0 || r.height === 0 || getComputedStyle(el).visibility === "hidden") {
+          if (r.width === 0 || r.height === 0 || getComputedStyle(el).visibility === 'hidden') {
             return { found: true, element: el };
           }
         } else {
@@ -1062,12 +1062,12 @@
    * @returns {{ nodes: NodeSummary[], count: number }}
    */
   function findByText(params) {
-    const searchText = String(params.text || "");
+    const searchText = String(params.text || '');
     if (!searchText) {
-      throw new Error("text is required for dom.find_by_text");
+      throw new Error('text is required for dom.find_by_text');
     }
     const exact = Boolean(params.exact);
-    const scope = String(params.selector || "*");
+    const scope = String(params.selector || '*');
     const maxResults = clamp(params.maxResults ?? 10, 1, 50);
     const candidates = document.querySelectorAll(scope);
     const results = [];
@@ -1080,7 +1080,7 @@
         ? visibleText === searchText
         : visibleText.toLowerCase().includes(searchText.toLowerCase());
       if (matches) {
-        results.push(summarizeNode(el, ["id", "class", "role", "href", "data-testid"], 120).node);
+        results.push(summarizeNode(el, ['id', 'class', 'role', 'href', 'data-testid'], 120).node);
       }
     }
 
@@ -1094,17 +1094,17 @@
    * @returns {{ nodes: NodeSummary[], count: number }}
    */
   function findByRole(params) {
-    const role = String(params.role || "");
+    const role = String(params.role || '');
     if (!role) {
-      throw new Error("role is required for dom.find_by_role");
+      throw new Error('role is required for dom.find_by_role');
     }
     const name = params.name ? String(params.name) : null;
-    const scope = String(params.selector || "*");
+    const scope = String(params.selector || '*');
     const maxResults = clamp(params.maxResults ?? 10, 1, 50);
 
     const implicitSelector = getImplicitRoleSelector(role);
     const attrSelector = `[role="${CSS.escape(role)}"]`;
-    const combinedSelector = scope === "*"
+    const combinedSelector = scope === '*'
       ? (implicitSelector ? `${attrSelector}, ${implicitSelector}` : attrSelector)
       : scope;
     const candidates = document.querySelectorAll(combinedSelector);
@@ -1112,19 +1112,19 @@
 
     for (const el of candidates) {
       if (results.length >= maxResults) break;
-      const elRole = el.getAttribute("role") || getImplicitRole(el);
+      const elRole = el.getAttribute('role') || getImplicitRole(el);
       if (elRole !== role) continue;
       if (name !== null) {
         const accName =
-          el.getAttribute("aria-label") ||
-          el.getAttribute("aria-labelledby") ||
-          el.getAttribute("title") ||
+          el.getAttribute('aria-label') ||
+          el.getAttribute('aria-labelledby') ||
+          el.getAttribute('title') ||
           extractElementText(el);
         if (!accName || !accName.toLowerCase().includes(name.toLowerCase())) {
           continue;
         }
       }
-      results.push(summarizeNode(el, ["id", "class", "role", "aria-label", "href"], 120).node);
+      results.push(summarizeNode(el, ['id', 'class', 'role', 'aria-label', 'href'], 120).node);
     }
 
     return { nodes: results, count: results.length };
@@ -1137,7 +1137,7 @@
    * @returns {{ html: string, truncated: boolean, omitted: number }}
    */
   function getHtml(params) {
-    const element = getRequiredElement(String(params.elementRef || ""));
+    const element = getRequiredElement(String(params.elementRef || ''));
     const outer = Boolean(params.outer);
     const maxLength = clamp(params.maxLength ?? 2000, 32, 50000);
     const raw = outer ? element.outerHTML : element.innerHTML;
@@ -1158,9 +1158,9 @@
     const duration = clamp(params.duration ?? 0, 0, 5000);
 
     scrollTargetIntoView(element);
-    dispatchMouseEvent(element, "mouseenter", point, "left", 0, modifiers);
-    dispatchMouseEvent(element, "mouseover", point, "left", 0, modifiers);
-    dispatchMouseEvent(element, "mousemove", point, "left", 0, modifiers);
+    dispatchMouseEvent(element, 'mouseenter', point, 'left', 0, modifiers);
+    dispatchMouseEvent(element, 'mouseover', point, 'left', 0, modifiers);
+    dispatchMouseEvent(element, 'mousemove', point, 'left', 0, modifiers);
 
     const ref = rememberElement(element);
     if (duration > 0) {
@@ -1193,38 +1193,38 @@
 
     const dataTransfer = new DataTransfer();
 
-    source.dispatchEvent(new MouseEvent("mousedown", {
+    source.dispatchEvent(new MouseEvent('mousedown', {
       bubbles: true, cancelable: true, composed: true,
       clientX: sourcePoint.x, clientY: sourcePoint.y, ...emptyMods,
     }));
-    source.dispatchEvent(new DragEvent("dragstart", {
+    source.dispatchEvent(new DragEvent('dragstart', {
       bubbles: true, cancelable: true, composed: true,
       clientX: sourcePoint.x, clientY: sourcePoint.y, dataTransfer,
     }));
-    source.dispatchEvent(new DragEvent("drag", {
+    source.dispatchEvent(new DragEvent('drag', {
       bubbles: true, cancelable: true, composed: true,
       clientX: sourcePoint.x, clientY: sourcePoint.y, dataTransfer,
     }));
 
     scrollTargetIntoView(destination);
 
-    destination.dispatchEvent(new DragEvent("dragenter", {
+    destination.dispatchEvent(new DragEvent('dragenter', {
       bubbles: true, cancelable: true, composed: true,
       clientX: endPoint.x, clientY: endPoint.y, dataTransfer,
     }));
-    destination.dispatchEvent(new DragEvent("dragover", {
+    destination.dispatchEvent(new DragEvent('dragover', {
       bubbles: true, cancelable: true, composed: true,
       clientX: endPoint.x, clientY: endPoint.y, dataTransfer,
     }));
-    destination.dispatchEvent(new DragEvent("drop", {
+    destination.dispatchEvent(new DragEvent('drop', {
       bubbles: true, cancelable: true, composed: true,
       clientX: endPoint.x, clientY: endPoint.y, dataTransfer,
     }));
-    source.dispatchEvent(new DragEvent("dragend", {
+    source.dispatchEvent(new DragEvent('dragend', {
       bubbles: true, cancelable: true, composed: true,
       clientX: endPoint.x, clientY: endPoint.y, dataTransfer,
     }));
-    source.dispatchEvent(new MouseEvent("mouseup", {
+    source.dispatchEvent(new MouseEvent('mouseup', {
       bubbles: true, cancelable: true, composed: true,
       clientX: endPoint.x, clientY: endPoint.y, ...emptyMods,
     }));
@@ -1243,9 +1243,9 @@
    * @returns {{ type: string, entries: Record<string, string | null>, count: number }}
    */
   function getStorageData(params) {
-    const type = params.type === "session" ? "session" : "local";
-    const storage = type === "session" ? sessionStorage : localStorage;
-    const keys = Array.isArray(params.keys) ? params.keys.filter((k) => typeof k === "string") : null;
+    const type = params.type === 'session' ? 'session' : 'local';
+    const storage = type === 'session' ? sessionStorage : localStorage;
+    const keys = Array.isArray(params.keys) ? params.keys.filter((k) => typeof k === 'string') : null;
     /** @type {Record<string, string | null>} */
     const result = {};
     if (keys) {
@@ -1257,7 +1257,7 @@
         const key = storage.key(i);
         if (key !== null) {
           const val = storage.getItem(key);
-          result[key] = val !== null && val.length > 500 ? val.slice(0, 500) + "\u2026" : val;
+          result[key] = val !== null && val.length > 500 ? val.slice(0, 500) + '\u2026' : val;
         }
       }
     }
@@ -1310,7 +1310,7 @@
         return element;
       }
     }
-    throw new Error("Target not found.");
+    throw new Error('Target not found.');
   }
 
   /**
@@ -1321,7 +1321,7 @@
     const element = resolveTarget(target);
     if (
       element instanceof HTMLInputElement &&
-      ["checkbox", "radio"].includes(element.type.toLowerCase())
+      ['checkbox', 'radio'].includes(element.type.toLowerCase())
     ) {
       return element;
     }
@@ -1333,7 +1333,7 @@
       }
     }
 
-    throw new Error("Target is not a checkbox or radio input.");
+    throw new Error('Target is not a checkbox or radio input.');
   }
 
   /**
@@ -1351,13 +1351,13 @@
     }
 
     if (element instanceof HTMLElement) {
-      const nested = element.querySelector("select");
+      const nested = element.querySelector('select');
       if (nested instanceof HTMLSelectElement) {
         return nested;
       }
     }
 
-    throw new Error("Target is not a select control.");
+    throw new Error('Target is not a select control.');
   }
 
   /**
@@ -1383,12 +1383,12 @@
   function getRequiredElement(elementRef) {
     const element = elementRegistry.get(elementRef);
     if (!element) {
-      throw new Error("Element reference is stale.");
+      throw new Error('Element reference is stale.');
     }
     if (!document.contains(element)) {
       elementRegistry.delete(elementRef);
       reverseRegistry.delete(element);
-      throw new Error("Element reference is stale.");
+      throw new Error('Element reference is stale.');
     }
     return element;
   }
@@ -1438,8 +1438,8 @@
    */
   function scrollTargetIntoView(element) {
     element.scrollIntoView({
-      block: "center",
-      inline: "center",
+      block: 'center',
+      inline: 'center',
     });
   }
 
@@ -1450,7 +1450,7 @@
    * @returns {Element}
    */
   function focusElement(element) {
-    if ("focus" in element && typeof element.focus === "function") {
+    if ('focus' in element && typeof element.focus === 'function') {
       element.focus({
         preventScroll: true,
       });
@@ -1486,7 +1486,7 @@
    * @returns {'left' | 'middle' | 'right'}
    */
   function normalizeMouseButton(value) {
-    return value === "middle" || value === "right" ? value : "left";
+    return value === 'middle' || value === 'right' ? value : 'left';
   }
 
   /**
@@ -1495,13 +1495,13 @@
    */
   function normalizeModifierState(value) {
     const modifiers = Array.isArray(value)
-      ? value.filter((modifier) => typeof modifier === "string")
+      ? value.filter((modifier) => typeof modifier === 'string')
       : [];
     return {
-      altKey: modifiers.includes("Alt"),
-      ctrlKey: modifiers.includes("Control") || modifiers.includes("Ctrl"),
-      metaKey: modifiers.includes("Meta") || modifiers.includes("Command"),
-      shiftKey: modifiers.includes("Shift"),
+      altKey: modifiers.includes('Alt'),
+      ctrlKey: modifiers.includes('Control') || modifiers.includes('Ctrl'),
+      metaKey: modifiers.includes('Meta') || modifiers.includes('Command'),
+      shiftKey: modifiers.includes('Shift'),
     };
   }
 
@@ -1511,9 +1511,9 @@
    */
   function getMouseButtonState(button) {
     switch (button) {
-      case "middle":
+      case 'middle':
         return { button: 1, buttons: 4 };
-      case "right":
+      case 'right':
         return { button: 2, buttons: 2 };
       default:
         return { button: 0, buttons: 1 };
@@ -1590,7 +1590,7 @@
       return element.value;
     }
 
-    return element.innerText || element.textContent || "";
+    return element.innerText || element.textContent || '';
   }
 
   /**
@@ -1623,16 +1623,16 @@
       return;
     }
 
-    dispatchKeyboardEvent(element, "keydown", "Backspace", {});
-    if (dispatchBeforeInputEvent(element, "", "deleteContentBackward")) {
+    dispatchKeyboardEvent(element, 'keydown', 'Backspace', {});
+    if (dispatchBeforeInputEvent(element, '', 'deleteContentBackward')) {
       if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-        element.value = "";
+        element.value = '';
       } else {
-        element.textContent = "";
+        element.textContent = '';
       }
-      dispatchInputEvent(element, "", "deleteContentBackward");
+      dispatchInputEvent(element, '', 'deleteContentBackward');
     }
-    dispatchKeyboardEvent(element, "keyup", "Backspace", {});
+    dispatchKeyboardEvent(element, 'keyup', 'Backspace', {});
   }
 
   /**
@@ -1642,10 +1642,10 @@
    * @returns {{ target: Element, key: string, handled: boolean }}
    */
   function runKeyAction(element, key, modifiers) {
-    const normalizedKey = key === "Space" ? " " : key;
+    const normalizedKey = key === 'Space' ? ' ' : key;
     const keyboardTarget = focusElement(element);
     const modifierState = normalizeModifierState(modifiers);
-    dispatchKeyboardEvent(keyboardTarget, "keydown", normalizedKey, modifierState);
+    dispatchKeyboardEvent(keyboardTarget, 'keydown', normalizedKey, modifierState);
 
     let handled = false;
     const editable = getEditableTarget(keyboardTarget);
@@ -1657,15 +1657,15 @@
       !modifierState.metaKey
     ) {
       handled = insertTextIntoEditable(editable, normalizedKey);
-    } else if (editable && normalizedKey === "Backspace") {
-      handled = deleteTextFromEditable(editable, "backward");
-    } else if (editable && normalizedKey === "Delete") {
-      handled = deleteTextFromEditable(editable, "forward");
-    } else if (normalizedKey === "Enter") {
+    } else if (editable && normalizedKey === 'Backspace') {
+      handled = deleteTextFromEditable(editable, 'backward');
+    } else if (editable && normalizedKey === 'Delete') {
+      handled = deleteTextFromEditable(editable, 'forward');
+    } else if (normalizedKey === 'Enter') {
       handled = handleEnterKey(keyboardTarget);
     }
 
-    dispatchKeyboardEvent(keyboardTarget, "keyup", normalizedKey, modifierState);
+    dispatchKeyboardEvent(keyboardTarget, 'keyup', normalizedKey, modifierState);
     return {
       target: keyboardTarget,
       key: normalizedKey,
@@ -1700,7 +1700,7 @@
    */
   function dispatchBeforeInputEvent(element, value, inputType) {
     return element.dispatchEvent(
-      new InputEvent("beforeinput", {
+      new InputEvent('beforeinput', {
         data: value,
         inputType,
         bubbles: true,
@@ -1718,7 +1718,7 @@
    */
   function dispatchInputEvent(element, value, inputType) {
     return element.dispatchEvent(
-      new InputEvent("input", {
+      new InputEvent('input', {
         data: value,
         inputType,
         bubbles: true,
@@ -1733,19 +1733,19 @@
    * @returns {boolean}
    */
   function insertTextIntoEditable(element, value) {
-    if (!dispatchBeforeInputEvent(element, value, "insertText")) {
+    if (!dispatchBeforeInputEvent(element, value, 'insertText')) {
       return false;
     }
 
     if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
       const start = element.selectionStart ?? element.value.length;
       const end = element.selectionEnd ?? element.value.length;
-      element.setRangeText(value, start, end, "end");
+      element.setRangeText(value, start, end, 'end');
     } else {
-      element.textContent = `${element.textContent || ""}${value}`;
+      element.textContent = `${element.textContent || ''}${value}`;
     }
 
-    dispatchInputEvent(element, value, "insertText");
+    dispatchInputEvent(element, value, 'insertText');
     return true;
   }
 
@@ -1756,8 +1756,8 @@
    */
   function deleteTextFromEditable(element, direction) {
     const inputType =
-      direction === "backward" ? "deleteContentBackward" : "deleteContentForward";
-    if (!dispatchBeforeInputEvent(element, "", inputType)) {
+      direction === 'backward' ? 'deleteContentBackward' : 'deleteContentForward';
+    if (!dispatchBeforeInputEvent(element, '', inputType)) {
       return false;
     }
 
@@ -1765,21 +1765,21 @@
       const start = element.selectionStart ?? element.value.length;
       const end = element.selectionEnd ?? element.value.length;
       if (start !== end) {
-        element.setRangeText("", start, end, "end");
-      } else if (direction === "backward" && start > 0) {
-        element.setRangeText("", start - 1, start, "end");
-      } else if (direction === "forward" && end < element.value.length) {
-        element.setRangeText("", end, end + 1, "end");
+        element.setRangeText('', start, end, 'end');
+      } else if (direction === 'backward' && start > 0) {
+        element.setRangeText('', start - 1, start, 'end');
+      } else if (direction === 'forward' && end < element.value.length) {
+        element.setRangeText('', end, end + 1, 'end');
       }
     } else {
-      const text = element.textContent || "";
+      const text = element.textContent || '';
       element.textContent =
-        direction === "backward"
+        direction === 'backward'
           ? text.slice(0, Math.max(0, text.length - 1))
           : text.slice(1);
     }
 
-    dispatchInputEvent(element, "", inputType);
+    dispatchInputEvent(element, '', inputType);
     return true;
   }
 
@@ -1790,7 +1790,7 @@
   function handleEnterKey(element) {
     const editable = getEditableTarget(element);
     if (editable instanceof HTMLTextAreaElement || (editable instanceof HTMLElement && editable.isContentEditable)) {
-      return insertTextIntoEditable(editable, "\n");
+      return insertTextIntoEditable(editable, '\n');
     }
 
     if (editable instanceof HTMLInputElement) {
@@ -1798,12 +1798,12 @@
       return true;
     }
 
-    if (element instanceof HTMLButtonElement || (element instanceof HTMLInputElement && ["button", "submit"].includes(element.type))) {
+    if (element instanceof HTMLButtonElement || (element instanceof HTMLInputElement && ['button', 'submit'].includes(element.type))) {
       element.click();
       return true;
     }
 
-    const form = element instanceof HTMLElement ? element.closest("form") : null;
+    const form = element instanceof HTMLElement ? element.closest('form') : null;
     if (form) {
       form.requestSubmit();
       return true;
@@ -1817,10 +1817,10 @@
    * @returns {void}
    */
   function submitElement(element) {
-    const form = element instanceof HTMLElement ? element.closest("form") : null;
+    const form = element instanceof HTMLElement ? element.closest('form') : null;
     if (form) {
       form.requestSubmit();
-      element.dispatchEvent(new Event("change", { bubbles: true }));
+      element.dispatchEvent(new Event('change', { bubbles: true }));
     }
   }
 
@@ -1830,7 +1830,7 @@
    * @returns {number}
    */
   function getDocumentRevision() {
-    return (document.body?.textContent || "").length;
+    return (document.body?.textContent || '').length;
   }
 
   /**
@@ -1842,12 +1842,12 @@
    */
   function normalizeDomQuery(params = {}) {
     const rawSelector =
-      typeof params.selector === "string" && params.selector.trim()
+      typeof params.selector === 'string' && params.selector.trim()
         ? params.selector
-        : "body";
+        : 'body';
     return {
       selector: escapeTailwindSelector(rawSelector),
-      withinRef: typeof params.withinRef === "string" ? params.withinRef : null,
+      withinRef: typeof params.withinRef === 'string' ? params.withinRef : null,
       budget: applyBudget(params),
       includeRoles: params.includeRoles !== false,
     };

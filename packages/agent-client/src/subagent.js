@@ -159,9 +159,12 @@ export function summarizeBridgeResponse(response, method) {
       }
       return entry;
     });
-    const label = method === 'dom.find_by_text' ? 'Found'
-      : method === 'dom.find_by_role' ? 'Found'
-      : 'DOM query returned';
+    let label;
+    if (method === 'dom.find_by_text' || method === 'dom.find_by_role') {
+      label = 'Found';
+    } else {
+      label = 'DOM query returned';
+    }
     return {
       ok: true,
       summary: `${label} ${nodes.length} element(s)${nodes.length > 15 ? '; showing first 15' : ''}.`,
@@ -171,7 +174,7 @@ export function summarizeBridgeResponse(response, method) {
   if (typeof result.rolledBack === 'boolean' || typeof result.rolled_back === 'boolean') {
     return {
       ok: true,
-      summary: `Patch rolled back.`,
+      summary: 'Patch rolled back.',
       evidence: result
     };
   }

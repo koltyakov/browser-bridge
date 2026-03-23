@@ -9,7 +9,7 @@ import { installAgentFiles, isSupportedTarget, removeAgentFiles } from '../../ag
 import { installMcpConfig, isMcpClientName, removeMcpConfig } from '../../agent-client/src/mcp-config.js';
 import { collectSetupStatus } from '../../agent-client/src/setup-status.js';
 import { createFailure, createSuccess, ERROR_CODES, validateBridgeRequest } from '../../protocol/src/index.js';
-import { getBridgeDir, getSocketPath } from './config.js';
+import { getSocketPath } from './config.js';
 import { writeJsonLine } from './framing.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */

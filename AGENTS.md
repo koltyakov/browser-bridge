@@ -56,7 +56,35 @@ For agent debugging inside this repo, prefer `npx bbx ...` when a user asks to u
 
 - Run `npm run typecheck`.
 - Run `npm test`.
+- Run `npm run lint` to check code style and formatting.
+- **After any AI edits**: Always run `npm run lint`, `npm run typecheck`, and `npm test` to ensure changes don't break existing functionality.
 - When touching the extension/browser protocol path, verify at least one live CLI flow against Chrome if possible.
+
+## Agent Support Maintenance
+
+When adding or modifying agent/editor support (e.g., adding a new IDE or agent client):
+
+1. **Alignment requirement**: Agent support must be kept consistent across:
+   - Code base: `packages/agent-client/src/install.js` (supportedTargets, skill paths)
+   - Code base: `packages/agent-client/src/mcp-config.js` (MCP_CLIENT_NAMES, config shapes, paths)
+   - Documentation: `README.md` (text descriptions, example commands)
+   - Documentation: `QUICKSTART.md` (supported clients list, example commands)
+   - Extension UI: Side panel settings and host setup UI
+
+2. **Order preservation**: Maintain the same agent order across all locations. Current order:
+   - codex, claude, cursor, copilot, opencode, antigravity, windsurf, agents
+
+3. **README.md table restriction**: The "Supported Agents" table in `README.md` is **manually maintained** and should NOT be modified by AI agents. Only update text descriptions and example commands in README.md, not the visual table layout.
+
+4. **When adding a new agent**:
+   - Add to `supportedTargets` array in `install.js`
+   - Add to `MCP_CLIENT_NAMES` in `mcp-config.js`
+   - Add MCP config shape (key, includeType) to `MCP_CONFIG_SHAPES`
+   - Add global and local config paths to `getMcpConfigPath`
+   - Add global and local skill paths to `GLOBAL_SKILL_PATHS` and `LOCAL_SKILL_PATHS`
+   - Update text descriptions in README.md and QUICKSTART.md
+   - Update example commands in QUICKSTART.md
+   - Do NOT modify the Supported Agents table in README.md
 
 ## CLI and Protocol Expectations
 

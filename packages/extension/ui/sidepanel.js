@@ -1,6 +1,10 @@
 // @ts-check
 
-import { getActivitySourceTag, getPromptExamplesMode, shouldAutoExpandHostSetup } from '../src/sidepanel-helpers.js';
+import {
+  getActivitySourceTag,
+  getPromptExamplesMode,
+  shouldAutoExpandHostSetup,
+} from '../src/sidepanel-helpers.js';
 
 /**
  * @typedef {{
@@ -130,28 +134,62 @@ const SETUP_MATRIX_ORDER = /** @type {const} */ ([
   'opencode',
   'antigravity',
   'windsurf',
-  'agents'
+  'agents',
 ]);
 /** @type {Map<string, number>} */
-const SETUP_MATRIX_RANK = new Map(SETUP_MATRIX_ORDER.map((key, index) => [key, index]));
+const SETUP_MATRIX_RANK = new Map(
+  SETUP_MATRIX_ORDER.map((key, index) => [key, index]),
+);
 
-const nativeIndicator = /** @type {HTMLSpanElement} */ (document.getElementById('native-indicator'));
-const toggleButton = /** @type {HTMLButtonElement} */ (document.getElementById('bridge-toggle'));
-const actionLog = /** @type {HTMLDivElement} */ (document.getElementById('action-log'));
-const setupSection = /** @type {HTMLElement} */ (document.getElementById('native-setup'));
-const setupInstallCmd = /** @type {HTMLElement} */ (document.getElementById('setup-install-cmd'));
-const setupSkillCmd = /** @type {HTMLElement} */ (document.getElementById('setup-skill-cmd'));
-const setupMcpCmd = /** @type {HTMLElement} */ (document.getElementById('setup-mcp-cmd'));
-const controlSection = /** @type {HTMLElement} */ (document.getElementById('control-section'));
-const installationSection = /** @type {HTMLDetailsElement} */ (document.getElementById('installation-section'));
-const setupStatusNote = /** @type {HTMLParagraphElement} */ (document.getElementById('setup-status-note'));
-const setupStatusSummaryNote = /** @type {HTMLSpanElement} */ (document.getElementById('setup-status-summary-note'));
-const setupStatusMatrix = /** @type {HTMLDivElement} */ (document.getElementById('setup-status-matrix'));
-const activitySection = /** @type {HTMLElement} */ (document.getElementById('activity-section'));
-const examplesSection = /** @type {HTMLDetailsElement} */ (document.getElementById('examples-section'));
-const examplesContent = /** @type {HTMLDivElement} */ (document.getElementById('examples-content'));
+const nativeIndicator = /** @type {HTMLSpanElement} */ (
+  document.getElementById('native-indicator')
+);
+const toggleButton = /** @type {HTMLButtonElement} */ (
+  document.getElementById('bridge-toggle')
+);
+const actionLog = /** @type {HTMLDivElement} */ (
+  document.getElementById('action-log')
+);
+const setupSection = /** @type {HTMLElement} */ (
+  document.getElementById('native-setup')
+);
+const setupInstallCmd = /** @type {HTMLElement} */ (
+  document.getElementById('setup-install-cmd')
+);
+const setupSkillCmd = /** @type {HTMLElement} */ (
+  document.getElementById('setup-skill-cmd')
+);
+const setupMcpCmd = /** @type {HTMLElement} */ (
+  document.getElementById('setup-mcp-cmd')
+);
+const controlSection = /** @type {HTMLElement} */ (
+  document.getElementById('control-section')
+);
+const installationSection = /** @type {HTMLDetailsElement} */ (
+  document.getElementById('installation-section')
+);
+const setupStatusNote = /** @type {HTMLParagraphElement} */ (
+  document.getElementById('setup-status-note')
+);
+const setupStatusSummaryNote = /** @type {HTMLSpanElement} */ (
+  document.getElementById('setup-status-summary-note')
+);
+const setupStatusMatrix = /** @type {HTMLDivElement} */ (
+  document.getElementById('setup-status-matrix')
+);
+const activitySection = /** @type {HTMLElement} */ (
+  document.getElementById('activity-section')
+);
+const examplesSection = /** @type {HTMLDetailsElement} */ (
+  document.getElementById('examples-section')
+);
+const examplesContent = /** @type {HTMLDivElement} */ (
+  document.getElementById('examples-content')
+);
 const port = chrome.runtime.connect({ name: 'ui' });
-const requestedTabId = Number(new URLSearchParams(window.location.search).get('tabId'));
+const requestedTabId = Number(
+  new URLSearchParams(window.location.search).get('tabId'),
+);
 /** @type {SidePanelCurrentTab | null} */
 let currentTabState = null;
 /** @type {ReturnType<typeof setInterval> | null} */
@@ -166,17 +204,19 @@ const CLI_PROMPT_EXAMPLES = Object.freeze([
   '$bbx check why the button looks broken',
   '$bbx inspect the layout and fix spacing issues',
   '$bbx verify the form validation works correctly',
-  '$bbx check console errors on this page'
+  '$bbx check console errors on this page',
 ]);
 
 const MCP_PROMPT_EXAMPLES = Object.freeze([
   'Use BB MCP to inspect why the button looks broken.',
   'Use BB MCP to compare the live layout to the design and fix spacing issues.',
   'Use BB MCP to verify the form validation flow works correctly.',
-  'Use BB MCP to inspect console and network errors on this page.'
+  'Use BB MCP to inspect console and network errors on this page.',
 ]);
 
-for (const cmd of /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('.setup-cmd'))) {
+for (const cmd of /** @type {NodeListOf<HTMLElement>} */ (
+  document.querySelectorAll('.setup-cmd')
+)) {
   if (cmd.classList.contains('example-cmd')) {
     continue;
   }
@@ -194,22 +234,26 @@ function copySetupText(target, text) {
   if (!text) {
     return;
   }
-  navigator.clipboard.writeText(text).then(() => {
-    target.classList.add('copied');
-    const copyButton = target.querySelector('.example-copy-button');
-    const resetLabel = copyButton instanceof HTMLButtonElement ? copyButton.textContent : null;
-    if (copyButton instanceof HTMLButtonElement) {
-      copyButton.textContent = '✓';
-    }
-    setTimeout(() => {
-      target.classList.remove('copied');
+  navigator.clipboard
+    .writeText(text)
+    .then(() => {
+      target.classList.add('copied');
+      const copyButton = target.querySelector('.example-copy-button');
+      const resetLabel =
+        copyButton instanceof HTMLButtonElement ? copyButton.textContent : null;
       if (copyButton instanceof HTMLButtonElement) {
-        copyButton.textContent = resetLabel || '⧉';
+        copyButton.textContent = '✓';
       }
-    }, 1500);
-  }).catch(() => {
-    // Ignore clipboard failures; prompt chips expose a dedicated copy button.
-  });
+      setTimeout(() => {
+        target.classList.remove('copied');
+        if (copyButton instanceof HTMLButtonElement) {
+          copyButton.textContent = resetLabel || '⧉';
+        }
+      }, 1500);
+    })
+    .catch(() => {
+      // Ignore clipboard failures; prompt chips expose a dedicated copy button.
+    });
 }
 
 /** @param {SidePanelMessage} message */
@@ -229,7 +273,10 @@ port.onMessage.addListener((message) => {
 
 port.postMessage({
   type: 'state.request',
-  scopeTabId: Number.isFinite(requestedTabId) && requestedTabId > 0 ? requestedTabId : undefined
+  scopeTabId:
+    Number.isFinite(requestedTabId) && requestedTabId > 0
+      ? requestedTabId
+      : undefined,
 });
 
 toggleButton.addEventListener('click', () => {
@@ -239,8 +286,11 @@ toggleButton.addEventListener('click', () => {
 
   port.postMessage({
     type: 'scope.set_enabled',
-    tabId: Number.isFinite(requestedTabId) && requestedTabId > 0 ? requestedTabId : undefined,
-    enabled: !currentTabState.enabled
+    tabId:
+      Number.isFinite(requestedTabId) && requestedTabId > 0
+        ? requestedTabId
+        : undefined,
+    enabled: !currentTabState.enabled,
   });
 });
 
@@ -261,7 +311,9 @@ setupStatusMatrix.addEventListener('contextmenu', (event) => {
   if (!(target instanceof HTMLElement)) {
     return;
   }
-  const actionTarget = target.closest('[data-context-kind][data-context-target]');
+  const actionTarget = target.closest(
+    '[data-context-kind][data-context-target]',
+  );
   if (!(actionTarget instanceof HTMLElement)) {
     hideSetupContextMenu();
     return;
@@ -273,7 +325,12 @@ setupStatusMatrix.addEventListener('contextmenu', (event) => {
   const copyText = actionTarget.dataset.contextCopyText;
   const reinstallLabel = actionTarget.dataset.contextReinstallLabel;
   const uninstallLabel = actionTarget.dataset.contextUninstallLabel;
-  if ((kind !== 'mcp' && kind !== 'skill') || !targetKey || !copyLabel || !copyText) {
+  if (
+    (kind !== 'mcp' && kind !== 'skill') ||
+    !targetKey ||
+    !copyLabel ||
+    !copyText
+  ) {
     hideSetupContextMenu();
     return;
   }
@@ -285,7 +342,7 @@ setupStatusMatrix.addEventListener('contextmenu', (event) => {
     copyLabel,
     copyText,
     reinstallLabel: reinstallLabel || undefined,
-    uninstallLabel: uninstallLabel || undefined
+    uninstallLabel: uninstallLabel || undefined,
   });
 });
 
@@ -313,10 +370,14 @@ function renderState(state) {
     state.setupStatusPending,
     state.setupStatusError,
     state.setupInstallPendingKey,
-    state.setupInstallError
+    state.setupInstallError,
   );
 
-  actionLog.replaceChildren(...state.actionLog.map((entry) => renderActionLogEntry(entry, state.setupStatus)));
+  actionLog.replaceChildren(
+    ...state.actionLog.map((entry) =>
+      renderActionLogEntry(entry, state.setupStatus),
+    ),
+  );
 
   if (!state.actionLog.length) {
     actionLog.textContent = 'No recent agent actions.';
@@ -366,9 +427,8 @@ function renderNativeStatus(connected, error) {
   installationSection.hidden = !connected;
   if (!connected) {
     const extId = chrome.runtime.id;
-    setupInstallCmd.textContent = extId === PUBLISHED_EXTENSION_ID
-      ? 'bbx install'
-      : `bbx install ${extId}`;
+    setupInstallCmd.textContent =
+      extId === PUBLISHED_EXTENSION_ID ? 'bbx install' : `bbx install ${extId}`;
     setupSkillCmd.textContent = 'bbx install-skill';
     setupMcpCmd.textContent = 'bbx install-mcp';
     hideSetupContextMenu();
@@ -394,9 +454,10 @@ function syncConnectedSectionsVisibility() {
  * @returns {void}
  */
 function syncSetupStatusPolling() {
-  const shouldPoll = nativeIndicator.dataset.connected === 'true'
-    && !installationSection.hidden
-    && installationSection.open;
+  const shouldPoll =
+    nativeIndicator.dataset.connected === 'true' &&
+    !installationSection.hidden &&
+    installationSection.open;
 
   if (!shouldPoll) {
     stopSetupStatusPolling();
@@ -451,7 +512,7 @@ function renderPromptExamples(setupStatus) {
 
   examplesContent.replaceChildren(
     createExamplesGroup('CLI skill', CLI_PROMPT_EXAMPLES),
-    createExamplesGroup('MCP', MCP_PROMPT_EXAMPLES)
+    createExamplesGroup('MCP', MCP_PROMPT_EXAMPLES),
   );
 }
 
@@ -531,28 +592,40 @@ function syncExclusiveDetailsSections(source, other) {
  * @param {string | null} installError
  * @returns {void}
  */
-function renderSetupStatus(setupStatus, pending, error, installPendingKey, installError) {
+function renderSetupStatus(
+  setupStatus,
+  pending,
+  error,
+  installPendingKey,
+  installError,
+) {
   if (!setupStatus && pending) {
     setupStatusSummaryNote.hidden = true;
     setupStatusSummaryNote.textContent = '';
     setupStatusNote.textContent = 'Checking global host setup…';
     setupStatusNote.hidden = false;
-    setupStatusMatrix.replaceChildren(createStatusPlaceholder('Checking detected clients…'));
+    setupStatusMatrix.replaceChildren(
+      createStatusPlaceholder('Checking detected clients…'),
+    );
     return;
   }
 
   if (!setupStatus) {
     setupStatusSummaryNote.hidden = true;
     setupStatusSummaryNote.textContent = '';
-    setupStatusNote.textContent = installError || error || 'Global host setup is unavailable.';
+    setupStatusNote.textContent =
+      installError || error || 'Global host setup is unavailable.';
     setupStatusNote.hidden = false;
-    setupStatusMatrix.replaceChildren(createStatusPlaceholder('No host setup status yet.'));
+    setupStatusMatrix.replaceChildren(
+      createStatusPlaceholder('No host setup status yet.'),
+    );
     return;
   }
 
-  const scopeNote = setupStatus.scope === 'global'
-    ? 'Global installs only'
-    : 'Project installs only';
+  const scopeNote =
+    setupStatus.scope === 'global'
+      ? 'Global installs only'
+      : 'Project installs only';
   setupStatusSummaryNote.textContent = `* ${scopeNote}`;
   setupStatusSummaryNote.hidden = false;
 
@@ -572,7 +645,9 @@ function renderSetupStatus(setupStatus, pending, error, installPendingKey, insta
 
   const rows = buildSetupMatrixRows(setupStatus);
   if (!rows.length) {
-    setupStatusMatrix.replaceChildren(createStatusPlaceholder('No supported clients or agents were detected.'));
+    setupStatusMatrix.replaceChildren(
+      createStatusPlaceholder('No supported clients or agents were detected.'),
+    );
     return;
   }
   setupStatusMatrix.replaceChildren(renderSetupMatrix(rows, installPendingKey));
@@ -595,7 +670,7 @@ function buildSetupMatrixRows(setupStatus) {
         key: entry.key,
         label: entry.label,
         mcpClient: entry,
-        skillTarget: null
+        skillTarget: null,
       });
     } else {
       rowsByKey.get(entry.key).mcpClient = entry;
@@ -611,7 +686,7 @@ function buildSetupMatrixRows(setupStatus) {
         key: entry.key,
         label: entry.label,
         mcpClient: null,
-        skillTarget: entry
+        skillTarget: entry,
       });
     } else {
       rowsByKey.get(entry.key).skillTarget = entry;
@@ -657,7 +732,11 @@ function shouldRenderMcpClientRow(entry) {
  * @returns {boolean}
  */
 function shouldRenderSkillTargetRow(entry) {
-  return entry.detected || entry.installed || entry.skills.some((skill) => skill.exists);
+  return (
+    entry.detected ||
+    entry.installed ||
+    entry.skills.some((skill) => skill.exists)
+  );
 }
 
 /**
@@ -717,7 +796,7 @@ function renderMcpMatrixCell(row, installPendingKey) {
       copyLabel: 'Copy MCP config path',
       copyText: entry.configPath,
       reinstallLabel: 'Re-install MCP',
-      uninstallLabel: `Uninstall MCP`
+      uninstallLabel: 'Uninstall MCP',
     });
   }
   const button = createSetupActionButton(
@@ -726,7 +805,7 @@ function renderMcpMatrixCell(row, installPendingKey) {
     installPendingKey === getInstallKey('mcp', row.key),
     'install',
     'Install',
-    '...'
+    '...',
   );
   button.title = entry.configPath;
   return button;
@@ -745,13 +824,15 @@ function renderSkillMatrixCell(row, installPendingKey) {
   const reinstallLabel = getSkillReinstallLabel(entry);
   const uninstallLabel = getSkillUninstallLabel(entry);
 
-  const installable = entry.skills.every((skill) => !skill.exists || skill.managed);
+  const installable = entry.skills.every(
+    (skill) => !skill.exists || skill.managed,
+  );
   if (!installable) {
     return createMatrixBadge('Custom', false, entry.basePath, {
       kind: 'skill',
       target: row.key,
       copyLabel: 'Copy CLI skill folder path',
-      copyText: entry.basePath
+      copyText: entry.basePath,
     });
   }
   if (entry.installed && entry.managed && !entry.updateAvailable) {
@@ -761,7 +842,7 @@ function renderSkillMatrixCell(row, installPendingKey) {
       copyLabel: 'Copy CLI skill folder path',
       copyText: entry.basePath,
       reinstallLabel,
-      uninstallLabel
+      uninstallLabel,
     });
   }
   if (entry.installed && entry.managed && entry.updateAvailable) {
@@ -771,7 +852,7 @@ function renderSkillMatrixCell(row, installPendingKey) {
       installPendingKey === getInstallKey('skill', row.key),
       'update',
       'Update',
-      'Updating…'
+      'Updating…',
     );
     button.title = createSkillCellTitle(entry);
     assignSetupContext(button, {
@@ -780,7 +861,7 @@ function renderSkillMatrixCell(row, installPendingKey) {
       copyLabel: 'Copy CLI skill folder path',
       copyText: entry.basePath,
       reinstallLabel,
-      uninstallLabel
+      uninstallLabel,
     });
     return button;
   }
@@ -791,7 +872,7 @@ function renderSkillMatrixCell(row, installPendingKey) {
     installPendingKey === getInstallKey('skill', row.key),
     'install',
     'Install',
-    '...'
+    '...',
   );
   button.title = entry.basePath;
   return button;
@@ -806,7 +887,14 @@ function renderSkillMatrixCell(row, installPendingKey) {
  * @param {string} pendingLabel
  * @returns {HTMLButtonElement}
  */
-function createSetupActionButton(kind, target, pending, variant, label, pendingLabel) {
+function createSetupActionButton(
+  kind,
+  target,
+  pending,
+  variant,
+  label,
+  pendingLabel,
+) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'setup-install-button';
@@ -827,7 +915,7 @@ function createSetupActionButton(kind, target, pending, variant, label, pendingL
       type: 'setup.install',
       action: 'install',
       kind,
-      target
+      target,
     });
   });
   return button;
@@ -848,18 +936,18 @@ function createSkillCellTitle(entry) {
 }
 
 /**
- * @param {SkillTargetStatus} entry
+ * @param {SkillTargetStatus} _entry
  * @returns {string}
  */
-function getSkillUninstallLabel(entry) {
+function getSkillUninstallLabel(_entry) {
   return 'Uninstall CLI skill';
 }
 
 /**
- * @param {SkillTargetStatus} entry
+ * @param {SkillTargetStatus} _entry
  * @returns {string}
  */
-function getSkillReinstallLabel(entry) {
+function getSkillReinstallLabel(_entry) {
   return 'Re-install CLI skill';
 }
 
@@ -937,12 +1025,16 @@ function showSetupContextMenu(clientX, clientY, contextAction) {
   copyButton.type = 'button';
   copyButton.className = 'setup-context-menu-item';
   copyButton.textContent = contextAction.copyLabel;
-  copyButton.addEventListener('click', () => {
-    navigator.clipboard.writeText(contextAction.copyText).catch(() => {
-      // Ignore clipboard failures; the menu still exposes the path in the title.
-    });
-    hideSetupContextMenu();
-  }, { once: true });
+  copyButton.addEventListener(
+    'click',
+    () => {
+      navigator.clipboard.writeText(contextAction.copyText).catch(() => {
+        // Ignore clipboard failures; the menu still exposes the path in the title.
+      });
+      hideSetupContextMenu();
+    },
+    { once: true },
+  );
   setupContextMenu.append(copyButton);
 
   if (contextAction.reinstallLabel) {
@@ -950,15 +1042,19 @@ function showSetupContextMenu(clientX, clientY, contextAction) {
     reinstallButton.type = 'button';
     reinstallButton.className = 'setup-context-menu-item';
     reinstallButton.textContent = contextAction.reinstallLabel;
-    reinstallButton.addEventListener('click', () => {
-      port.postMessage({
-        type: 'setup.install',
-        action: 'install',
-        kind: contextAction.kind,
-        target: contextAction.target
-      });
-      hideSetupContextMenu();
-    }, { once: true });
+    reinstallButton.addEventListener(
+      'click',
+      () => {
+        port.postMessage({
+          type: 'setup.install',
+          action: 'install',
+          kind: contextAction.kind,
+          target: contextAction.target,
+        });
+        hideSetupContextMenu();
+      },
+      { once: true },
+    );
     setupContextMenu.append(reinstallButton);
   }
 
@@ -967,15 +1063,19 @@ function showSetupContextMenu(clientX, clientY, contextAction) {
     uninstallButton.type = 'button';
     uninstallButton.className = 'setup-context-menu-item';
     uninstallButton.textContent = contextAction.uninstallLabel;
-    uninstallButton.addEventListener('click', () => {
-      port.postMessage({
-        type: 'setup.install',
-        action: 'uninstall',
-        kind: contextAction.kind,
-        target: contextAction.target
-      });
-      hideSetupContextMenu();
-    }, { once: true });
+    uninstallButton.addEventListener(
+      'click',
+      () => {
+        port.postMessage({
+          type: 'setup.install',
+          action: 'uninstall',
+          kind: contextAction.kind,
+          target: contextAction.target,
+        });
+        hideSetupContextMenu();
+      },
+      { once: true },
+    );
     setupContextMenu.append(uninstallButton);
   }
 
@@ -1020,9 +1120,13 @@ function pulseAttention() {
   // Force a reflow so re-adding the class restarts the animation.
   void controlSection.offsetWidth;
   controlSection.classList.add('attention');
-  controlSection.addEventListener('animationend', () => {
-    controlSection.classList.remove('attention');
-  }, { once: true });
+  controlSection.addEventListener(
+    'animationend',
+    () => {
+      controlSection.classList.remove('attention');
+    },
+    { once: true },
+  );
 }
 
 /**
@@ -1074,7 +1178,8 @@ function renderActionLogEntry(entry, setupStatus) {
   const badges = document.createElement('span');
   badges.className = 'activity-badges';
 
-  const showScope = !(Number.isFinite(requestedTabId) && requestedTabId > 0) && entry.url;
+  const showScope =
+    !(Number.isFinite(requestedTabId) && requestedTabId > 0) && entry.url;
   if (showScope) {
     const scopeLink = document.createElement('a');
     scopeLink.className = 'activity-scope-link';
@@ -1082,7 +1187,8 @@ function renderActionLogEntry(entry, setupStatus) {
     scopeLink.target = '_blank';
     scopeLink.rel = 'noopener';
     scopeLink.title = entry.url;
-    scopeLink.innerHTML = '<svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4.5 1.5H2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V8"/><path d="M7 1h4v4"/><path d="M5 7L11 1"/></svg>';
+    scopeLink.innerHTML =
+      '<svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4.5 1.5H2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V8"/><path d="M7 1h4v4"/><path d="M5 7L11 1"/></svg>';
     badges.append(scopeLink);
   }
 
