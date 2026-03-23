@@ -8,6 +8,88 @@ A local bridge between your coding agent and a real Chrome tab. Browser Bridge g
 
 See [QUICKSTART.md](QUICKSTART.md) to get started in another repo.
 
+## Supported Agents
+
+Managed skill installs support GitHub Copilot, OpenAI Codex, Claude Code, Cursor, Windsurf, OpenCode, and Antigravity. `bbx install-mcp` can write MCP config for GitHub Copilot, OpenAI Codex, Claude Code, Cursor, Windsurf, and OpenCode. Generic `.agents/skills/` runtimes work too.
+
+<table align="center">
+  <tr>
+    <td align="center" width="96">
+      <a href="https://github.com/features/copilot">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="https://unpkg.com/@lobehub/icons-static-png@latest/dark/githubcopilot.png" />
+          <img src="https://unpkg.com/@lobehub/icons-static-png@latest/light/githubcopilot.png" alt="GitHub Copilot" style="width: 44px; height: 44px; object-fit: contain;" />
+        </picture>
+      </a>
+    </td>
+    <td align="center" width="96">
+      <a href="https://openai.com/index/introducing-gpt-5-3-codex/">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="https://unpkg.com/@lobehub/icons-static-png@latest/dark/codex.png" />
+          <img src="https://unpkg.com/@lobehub/icons-static-png@latest/light/codex.png" alt="OpenAI Codex" style="width: 44px; height: 44px; object-fit: contain;" />
+        </picture>
+      </a>
+    </td>
+    <td align="center" width="96">
+      <a href="https://claude.com/product/claude-code">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="https://unpkg.com/@lobehub/icons-static-png@latest/dark/claude.png" />
+          <img src="https://unpkg.com/@lobehub/icons-static-png@latest/light/claude.png" alt="Claude Code" style="width: 44px; height: 44px; object-fit: contain;" />
+        </picture>
+      </a>
+    </td>
+    <td align="center" width="96">
+      <a href="https://cursor.com/">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="https://unpkg.com/@lobehub/icons-static-png@latest/dark/cursor.png" />
+          <img src="https://unpkg.com/@lobehub/icons-static-png@latest/light/cursor.png" alt="Cursor" style="width: 44px; height: 44px; object-fit: contain;" />
+        </picture>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">GitHub Copilot</td>
+    <td align="center">OpenAI Codex</td>
+    <td align="center">Claude Code</td>
+    <td align="center">Cursor</td>
+  </tr>
+  <tr>
+    <td align="center" width="96">
+      <a href="https://opencode.ai/">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="https://unpkg.com/@lobehub/icons-static-png@latest/dark/opencode.png" />
+          <img src="https://unpkg.com/@lobehub/icons-static-png@latest/light/opencode.png" alt="OpenCode" style="width: 44px; height: 44px; object-fit: contain;" />
+        </picture>
+      </a>
+    </td>
+    <td align="center" width="96">
+      <a href="https://antigravity.google/">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="https://unpkg.com/@lobehub/icons-static-png@latest/dark/antigravity.png" />
+          <img src="https://unpkg.com/@lobehub/icons-static-png@latest/light/antigravity.png" alt="Antigravity" style="width: 44px; height: 44px; object-fit: contain;" />
+        </picture>
+      </a>
+    </td>
+    <td align="center" width="96">
+      <a href="https://windsurf.com/">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="https://unpkg.com/@lobehub/icons-static-png@latest/dark/windsurf.png" />
+          <img src="https://unpkg.com/@lobehub/icons-static-png@latest/light/windsurf.png" alt="Windsurf" style="width: 44px; height: 44px; object-fit: contain;" />
+        </picture>
+      </a>
+    </td>
+    <td align="center" width="96">
+      <code>.agents</code>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">OpenCode</td>
+    <td align="center">Antigravity</td>
+    <td align="center">Windsurf</td>
+    <td align="center">Generic agents</td>
+  </tr>
+</table>
+
 ## What it's for
 
 - Debugging a UI on `localhost`: read DOM, computed styles, layout, console logs, and network state without a screenshot
