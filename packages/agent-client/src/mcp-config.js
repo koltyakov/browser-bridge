@@ -54,7 +54,7 @@ function getLegacyCopilotVsCodeConfigPath() {
 
 /**
  * @param {McpClientName} clientName
- * @returns {{ key: string, includeType: boolean }}
+ * @returns {{ key: string, includeType: boolean, legacyKeys?: string[], keepEmptyBlock?: boolean }}
  */
 export function getMcpConfigShape(clientName) {
   return MCP_CONFIG_SHAPES[clientName] ?? { key: 'mcpServers', includeType: false };
@@ -85,10 +85,10 @@ function createBaseServerConfig(clientName) {
   };
 }
 
-/** @type {Record<McpClientName, { key: string, includeType: boolean }>} */
+/** @type {Record<McpClientName, { key: string, includeType: boolean, legacyKeys?: string[], keepEmptyBlock?: boolean }>} */
 const MCP_CONFIG_SHAPES = {
   claude:  { key: 'mcpServers', includeType: true },
-  copilot: { key: 'servers',    includeType: true },
+  copilot: { key: 'mcpServers', includeType: true, legacyKeys: ['servers'], keepEmptyBlock: true },
   cursor:  { key: 'mcpServers', includeType: false },
   windsurf:{ key: 'mcpServers', includeType: false },
   codex:   { key: 'mcp_servers', includeType: false },
@@ -326,6 +326,37 @@ function removeCodexServerBlock(raw) {
 }
 
 /**
+ * @param {McpClientName} clientName
+ * @returns {string[]}
+ */
+function getJsonMcpBlockKeys(clientName) {
+  const shape = getMcpConfigShape(clientName);
+  return [...(shape.legacyKeys ?? []), shape.key];
+}
+
+/**
+ * Merge MCP entries from the current config key plus any legacy aliases.
+ *
+ * @param {Record<string, unknown>} config
+ * @param {McpClientName} clientName
+ * @returns {Record<string, unknown>}
+ */
+function getMergedJsonMcpBlock(config, clientName) {
+  /** @type {Record<string, unknown>} */
+  const merged = {};
+
+  for (const key of getJsonMcpBlockKeys(clientName)) {
+    const block = config[key];
+    if (!block || typeof block !== 'object' || Array.isArray(block)) {
+      continue;
+    }
+    Object.assign(merged, /** @type {Record<string, unknown>} */ (block));
+  }
+
+  return merged;
+}
+
+/**
  * Merge the browser-bridge entry into an existing client config file, or
  * create it if it does not exist. Existing unrelated entries are preserved.
  *
@@ -430,16 +461,21 @@ async function installJsonMcpConfig(clientName, configPath, stdout) {
     // File missing or unparseable - start fresh.
   }
 
-  const topKey = getMcpConfigShape(clientName).key;
+  const shape = getMcpConfigShape(clientName);
+  const topKey = shape.key;
   const entryBlock = /** @type {Record<string, unknown>} */ (newEntry[topKey]);
+  const existingBlock = getMergedJsonMcpBlock(existing, clientName);
 
   const merged = {
     ...existing,
     [topKey]: {
-      .../** @type {Record<string, unknown>} */ (existing[topKey] ?? {}),
+      ...existingBlock,
       ...entryBlock
     }
   };
+  for (const key of shape.legacyKeys ?? []) {
+    delete merged[key];
+  }
 
   await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
   await fs.promises.writeFile(configPath, `${JSON.stringify(merged, null, 2)}\n`, 'utf8');
@@ -486,19 +522,21 @@ async function removeJsonMcpConfig(clientName, configPath, stdout) {
     return false;
   }
 
-  const topKey = getMcpConfigShape(clientName).key;
-  const block = existing[topKey];
-  if (!block || typeof block !== 'object' || Array.isArray(block) || !Object.hasOwn(block, BROWSER_BRIDGE_SERVER_NAME)) {
+  const shape = getMcpConfigShape(clientName);
+  const topKey = shape.key;
+  const block = getMergedJsonMcpBlock(existing, clientName);
+  if (!Object.hasOwn(block, BROWSER_BRIDGE_SERVER_NAME)) {
     return false;
   }
 
-  const updatedBlock = { .../** @type {Record<string, unknown>} */ (block) };
+  const updatedBlock = { ...block };
   delete updatedBlock[BROWSER_BRIDGE_SERVER_NAME];
 
   const merged = { ...existing };
-  if (Object.keys(updatedBlock).length === 0) {
-    delete merged[topKey];
-  } else {
+  for (const key of getJsonMcpBlockKeys(clientName)) {
+    delete merged[key];
+  }
+  if (Object.keys(updatedBlock).length > 0 || shape.keepEmptyBlock) {
     merged[topKey] = updatedBlock;
   }
 
@@ -544,9 +582,8 @@ export function parseInstalledMcpConfig(clientName, raw) {
 
   try {
     const parsed = JSON.parse(raw);
-    const topKey = getMcpConfigShape(clientName).key;
-    const block = parsed && typeof parsed === 'object'
-      ? /** @type {Record<string, unknown>} */ (parsed[topKey] ?? {})
+    const block = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? getMergedJsonMcpBlock(/** @type {Record<string, unknown>} */ (parsed), clientName)
       : {};
     return {
       configured: Boolean(block && typeof block === 'object' && Object.hasOwn(block, BROWSER_BRIDGE_SERVER_NAME))

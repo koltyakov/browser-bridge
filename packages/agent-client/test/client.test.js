@@ -8,7 +8,7 @@ import path from 'node:path';
 
 import { interactiveConfirm, methodNeedsSession, parseCommaList, parseJsonObject, parsePropertyAssignments } from '../src/cli-helpers.js';
 import { findInstalledManagedTargets, getManagedSkillSentinelFilename, getSkillBasePath, installAgentFiles, parseInstallAgentArgs, removeAgentFiles } from '../src/install.js';
-import { buildMcpConfig, formatMcpConfig, getMcpConfigPath, getMcpConfigPaths, installMcpConfig, isMcpClientName } from '../src/mcp-config.js';
+import { buildMcpConfig, formatMcpConfig, getMcpConfigPath, getMcpConfigPaths, installMcpConfig, isMcpClientName, removeMcpConfig } from '../src/mcp-config.js';
 import { summarizeBridgeResponse } from '../src/subagent.js';
 
 /** Ensure failures stay compact for parent-agent reporting. */
@@ -803,7 +803,7 @@ test('buildMcpConfig produces client-specific config shapes', () => {
   });
 
   assert.deepEqual(buildMcpConfig('copilot'), {
-    servers: {
+    mcpServers: {
       'browser-bridge': {
         type: 'stdio',
         command: 'bbx',
@@ -939,6 +939,86 @@ test('getMcpConfigPaths includes existing Copilot profile configs for global ins
       delete process.env.APPDATA;
     } else {
       process.env.APPDATA = originalAppData;
+    }
+    await fs.promises.rm(tempHome, { recursive: true, force: true });
+  }
+});
+
+test('installMcpConfig migrates Copilot legacy servers config to mcpServers', async () => {
+  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-copilot-mcp-migrate-'));
+  const originalHome = process.env.HOME;
+
+  try {
+    process.env.HOME = tempHome;
+    const configPath = getMcpConfigPath('copilot', { global: true });
+    await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
+    await fs.promises.writeFile(configPath, `${JSON.stringify({
+      servers: {
+        existing: {
+          type: 'stdio',
+          command: 'node',
+          args: ['existing.js'],
+          env: {}
+        }
+      },
+      unrelated: true
+    }, null, 2)}\n`, 'utf8');
+
+    await installMcpConfig('copilot', {
+      global: true,
+      stdout: { write() { return true; } }
+    });
+
+    const updated = JSON.parse(await fs.promises.readFile(configPath, 'utf8'));
+    assert.equal(typeof updated.mcpServers, 'object');
+    assert.equal(updated.servers, undefined);
+    assert.deepEqual(updated.mcpServers.existing, {
+      type: 'stdio',
+      command: 'node',
+      args: ['existing.js'],
+      env: {}
+    });
+    assert.equal(updated.unrelated, true);
+    assert.deepEqual(updated.mcpServers['browser-bridge'], {
+      type: 'stdio',
+      command: 'bbx',
+      args: ['mcp', 'serve'],
+      env: {}
+    });
+  } finally {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+    await fs.promises.rm(tempHome, { recursive: true, force: true });
+  }
+});
+
+test('removeMcpConfig keeps Copilot mcpServers object after removing browser-bridge', async () => {
+  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-copilot-mcp-remove-'));
+  const originalHome = process.env.HOME;
+
+  try {
+    process.env.HOME = tempHome;
+
+    await installMcpConfig('copilot', {
+      global: true,
+      stdout: { write() { return true; } }
+    });
+    await removeMcpConfig('copilot', {
+      global: true,
+      stdout: { write() { return true; } }
+    });
+
+    const configPath = getMcpConfigPath('copilot', { global: true });
+    const updated = JSON.parse(await fs.promises.readFile(configPath, 'utf8'));
+    assert.deepEqual(updated, { mcpServers: {} });
+  } finally {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
     }
     await fs.promises.rm(tempHome, { recursive: true, force: true });
   }
