@@ -115,7 +115,7 @@ const DETECTORS = {
 };
 
 /** @type {McpClientName[]} */
-const MCP_CLIENT_KEYS = ['copilot', 'codex', 'cursor', 'windsurf', 'claude', 'opencode'];
+const MCP_CLIENT_KEYS = ['copilot', 'codex', 'cursor', 'windsurf', 'claude', 'opencode', 'antigravity'];
 
 /** @type {SupportedTarget[]} */
 const SKILL_TARGET_KEYS = ['copilot', 'codex', 'cursor', 'windsurf', 'claude', 'opencode', 'antigravity'];

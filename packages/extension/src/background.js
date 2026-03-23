@@ -69,6 +69,7 @@ import { TabDebuggerCoordinator } from './debugger-coordinator.js';
  *   id: string,
  *   at: number,
  *   method: string,
+ *   source: string,
  *   tabId: number | null,
  *   url: string,
  *   ok: boolean,
@@ -490,7 +491,9 @@ async function restoreActionLog() {
   const stored = await chrome.storage.session.get(ACTION_LOG_STORAGE_KEY);
   const entries = stored[ACTION_LOG_STORAGE_KEY];
   if (Array.isArray(entries)) {
-    state.actionLog = /** @type {ActionLogEntry[]} */ (entries);
+    state.actionLog = entries
+      .map((entry) => normalizeActionLogEntry(entry))
+      .filter(Boolean);
   }
 }
 
@@ -2029,6 +2032,7 @@ async function logBridgeAction(request, response, actionContext) {
 
   await appendActionLogEntry({
     method: request.method,
+    source: normalizeActionLogSource(request.meta?.source),
     tabId: actionContext?.tabId ?? null,
     url: actionContext?.url ?? '',
     ok: response.ok,
@@ -2046,6 +2050,7 @@ async function logBridgeAction(request, response, actionContext) {
  *
  * @param {{
  *   method: string,
+ *   source?: string,
  *   tabId?: number | null,
  *   url?: string,
  *   ok: boolean,
@@ -2064,6 +2069,7 @@ async function appendActionLogEntry(entry) {
       id: crypto.randomUUID(),
       at: Date.now(),
       method: entry.method,
+      source: normalizeActionLogSource(entry.source),
       tabId: entry.tabId ?? null,
       url: entry.url ?? '',
       ok: entry.ok,
@@ -2078,6 +2084,44 @@ async function appendActionLogEntry(entry) {
   await chrome.storage.session.set({
     [ACTION_LOG_STORAGE_KEY]: state.actionLog
   });
+}
+
+/**
+ * @param {unknown} source
+ * @returns {string}
+ */
+function normalizeActionLogSource(source) {
+  return source === 'cli' || source === 'mcp' ? source : '';
+}
+
+/**
+ * @param {unknown} entry
+ * @returns {ActionLogEntry | null}
+ */
+function normalizeActionLogEntry(entry) {
+  if (!entry || typeof entry !== 'object') {
+    return null;
+  }
+
+  const candidate = /** @type {Record<string, unknown>} */ (entry);
+  if (typeof candidate.id !== 'string' || typeof candidate.method !== 'string') {
+    return null;
+  }
+
+  return {
+    id: candidate.id,
+    at: Number(candidate.at) || 0,
+    method: candidate.method,
+    source: normalizeActionLogSource(candidate.source),
+    tabId: typeof candidate.tabId === 'number' ? candidate.tabId : null,
+    url: typeof candidate.url === 'string' ? candidate.url : '',
+    ok: candidate.ok === true,
+    summary: typeof candidate.summary === 'string' ? candidate.summary : '',
+    responseBytes: Number(candidate.responseBytes) || 0,
+    approxTokens: Number(candidate.approxTokens) || 0,
+    hasScreenshot: candidate.hasScreenshot === true,
+    nodeCount: typeof candidate.nodeCount === 'number' ? candidate.nodeCount : null
+  };
 }
 
 /**

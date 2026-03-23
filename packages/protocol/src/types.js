@@ -3,6 +3,10 @@
 export {};
 
 /**
+ * @typedef {'cli' | 'mcp'} BridgeRequestSource
+ */
+
+/**
  * @typedef {'page.read' | 'page.evaluate' | 'dom.read' | 'styles.read' | 'layout.read' | 'viewport.control' | 'navigation.control' | 'screenshot.partial' | 'patch.dom' | 'patch.styles' | 'cdp.dom_snapshot' | 'cdp.box_model' | 'cdp.styles' | 'automation.input' | 'tabs.manage' | 'performance.read' | 'network.read'} Capability
  */
 
@@ -18,6 +22,7 @@ export {};
  * @typedef {{
  *   protocol_version?: string,
  *   token_budget?: number | null,
+ *   source?: BridgeRequestSource,
  *   [key: string]: unknown
  * }} BridgeMeta
  */

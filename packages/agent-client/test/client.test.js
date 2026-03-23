@@ -529,36 +529,21 @@ test('installAgentFiles writes managed files for supported runtimes', async () =
   });
 
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.github', 'skills', 'browser-bridge'))));
-  assert.ok(installed.some((entry) => entry.endsWith(path.join('.github', 'skills', 'browser-bridge-mcp'))));
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.claude', 'skills', 'browser-bridge'))));
-  assert.ok(!installed.some((entry) => entry.endsWith(path.join('.claude', 'skills', 'browser-bridge-mcp'))));
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.cursor', 'skills', 'browser-bridge'))));
-  assert.ok(installed.some((entry) => entry.endsWith(path.join('.cursor', 'skills', 'browser-bridge-mcp'))));
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.windsurf', 'skills', 'browser-bridge'))));
-  assert.ok(!installed.some((entry) => entry.endsWith(path.join('.windsurf', 'skills', 'browser-bridge-mcp'))));
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.opencode', 'skills', 'browser-bridge'))));
-  assert.ok(!installed.some((entry) => entry.endsWith(path.join('.opencode', 'skills', 'browser-bridge-mcp'))));
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.agents', 'skills', 'browser-bridge'))));
-  assert.ok(!installed.some((entry) => entry.endsWith(path.join('.agents', 'skills', 'browser-bridge-mcp'))));
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.codex', 'skills', 'browser-bridge'))));
-  assert.ok(installed.some((entry) => entry.endsWith(path.join('.codex', 'skills', 'browser-bridge-mcp'))));
 
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.github', 'skills', 'browser-bridge', 'SKILL.md')));
-  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.github', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.claude', 'skills', 'browser-bridge', 'SKILL.md')));
-  await assert.rejects(fs.promises.access(path.join(tempDir, '.claude', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.cursor', 'skills', 'browser-bridge', 'SKILL.md')));
-  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.cursor', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.windsurf', 'skills', 'browser-bridge', 'SKILL.md')));
-  await assert.rejects(fs.promises.access(path.join(tempDir, '.windsurf', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.opencode', 'skills', 'browser-bridge', 'SKILL.md')));
-  await assert.rejects(fs.promises.access(path.join(tempDir, '.opencode', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.agents', 'skills', 'browser-bridge', 'SKILL.md')));
-  await assert.rejects(fs.promises.access(path.join(tempDir, '.agents', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.codex', 'skills', 'browser-bridge', 'SKILL.md')));
-  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.codex', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.codex', 'skills', 'browser-bridge', 'agents', 'openai.yaml')));
-  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.codex', 'skills', 'browser-bridge-mcp', 'agents', 'openai.yaml')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.agents', 'skills', 'browser-bridge', 'references', 'protocol.md')));
 });
 
@@ -575,9 +560,7 @@ test('installAgentFiles writes GitHub Copilot global skills to ~/.copilot/skills
     });
 
     assert.ok(installed.some((entry) => entry.endsWith(path.join('.copilot', 'skills', 'browser-bridge'))));
-    assert.ok(!installed.some((entry) => entry.endsWith(path.join('.copilot', 'skills', 'browser-bridge-mcp'))));
     await assert.doesNotReject(fs.promises.access(path.join(tempHome, '.copilot', 'skills', 'browser-bridge', 'SKILL.md')));
-    await assert.rejects(fs.promises.access(path.join(tempHome, '.copilot', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
   } finally {
     if (originalHome === undefined) {
       delete process.env.HOME;
@@ -608,14 +591,14 @@ test('installAgentFiles applies the GitHub Copilot-specific CLI skill note', asy
     );
 
     assert.match(copilotSkill, /## GitHub Copilot Note/);
-    assert.match(copilotSkill, /switch to `\/browser-bridge-mcp`/);
+    assert.match(copilotSkill, /use the MCP tools directly instead of shelling out to `bbx`/);
     assert.doesNotMatch(cursorSkill, /## GitHub Copilot Note/);
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }
 });
 
-test('installAgentFiles adds the GitHub Copilot MCP companion when global MCP is configured', async () => {
+test('installAgentFiles still installs only the CLI skill when global MCP is configured', async () => {
   const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-agent-copilot-mcp-home-'));
   const originalHome = process.env.HOME;
   const originalAppData = process.env.APPDATA;
@@ -636,8 +619,8 @@ test('installAgentFiles adds the GitHub Copilot MCP companion when global MCP is
       global: true
     });
 
-    assert.ok(installed.some((entry) => entry.endsWith(path.join('.copilot', 'skills', 'browser-bridge-mcp'))));
-    await assert.doesNotReject(fs.promises.access(path.join(tempHome, '.copilot', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
+    assert.ok(installed.some((entry) => entry.endsWith(path.join('.copilot', 'skills', 'browser-bridge'))));
+    await assert.doesNotReject(fs.promises.access(path.join(tempHome, '.copilot', 'skills', 'browser-bridge', 'SKILL.md')));
   } finally {
     if (originalHome === undefined) {
       delete process.env.HOME;
@@ -653,7 +636,7 @@ test('installAgentFiles adds the GitHub Copilot MCP companion when global MCP is
   }
 });
 
-test('installMcpClientSetup writes GitHub Copilot MCP config and matching skills together', async () => {
+test('installMcpClientSetup writes GitHub Copilot MCP config without installing the CLI skill', async () => {
   const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-copilot-setup-home-'));
   const originalHome = process.env.HOME;
   const originalAppData = process.env.APPDATA;
@@ -671,11 +654,8 @@ test('installMcpClientSetup writes GitHub Copilot MCP config and matching skills
     });
 
     assert.ok(result.configPaths.some((entry) => entry.endsWith(path.join('.copilot', 'mcp-config.json'))));
-    assert.ok(result.skillPaths.some((entry) => entry.endsWith(path.join('.copilot', 'skills', 'browser-bridge'))));
-    assert.ok(result.skillPaths.some((entry) => entry.endsWith(path.join('.copilot', 'skills', 'browser-bridge-mcp'))));
     await assert.doesNotReject(fs.promises.access(path.join(tempHome, '.copilot', 'mcp-config.json')));
-    await assert.doesNotReject(fs.promises.access(path.join(tempHome, '.copilot', 'skills', 'browser-bridge', 'SKILL.md')));
-    await assert.doesNotReject(fs.promises.access(path.join(tempHome, '.copilot', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
+    await assert.rejects(fs.promises.access(path.join(tempHome, '.copilot', 'skills', 'browser-bridge', 'SKILL.md')));
   } finally {
     if (originalHome === undefined) {
       delete process.env.HOME;
@@ -688,6 +668,23 @@ test('installMcpClientSetup writes GitHub Copilot MCP config and matching skills
       process.env.APPDATA = originalAppData;
     }
     await fs.promises.rm(tempHome, { recursive: true, force: true });
+  }
+});
+
+test('installMcpClientSetup keeps Codex MCP setup separate from CLI skill install', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-codex-mcp-'));
+
+  try {
+    const result = await installMcpClientSetup(['codex'], {
+      global: false,
+      projectPath: tempDir,
+      stdout: { write() { return true; } }
+    });
+
+    assert.ok(result.configPaths.some((entry) => entry.endsWith(path.join('.codex', 'config.toml'))));
+    await assert.rejects(fs.promises.access(path.join(tempDir, '.codex', 'skills', 'browser-bridge', 'SKILL.md')));
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
   }
 });
 
@@ -752,7 +749,6 @@ test('removeAgentFiles removes only managed Browser Bridge skill directories', a
     });
 
     assert.ok(removed.some((entry) => entry.endsWith(path.join('.cursor', 'skills', 'browser-bridge'))));
-    assert.ok(removed.some((entry) => entry.endsWith(path.join('.cursor', 'skills', 'browser-bridge-mcp'))));
     assert.equal(await fs.promises.access(unmanagedSkillPath).then(() => true, () => false), true);
     assert.equal(
       await fs.promises.access(path.join(skillBasePath, 'browser-bridge-extra')).then(() => true, () => false),
@@ -780,13 +776,9 @@ test('installAgentFiles writes Windsurf and Antigravity global skills to their d
     });
 
     assert.ok(installed.some((entry) => entry.endsWith(path.join('.codeium', 'windsurf', 'skills', 'browser-bridge'))));
-    assert.ok(installed.some((entry) => entry.endsWith(path.join('.codeium', 'windsurf', 'skills', 'browser-bridge-mcp'))));
     assert.ok(installed.some((entry) => entry.endsWith(path.join('.gemini', 'antigravity', 'skills', 'browser-bridge'))));
-    assert.ok(!installed.some((entry) => entry.endsWith(path.join('.gemini', 'antigravity', 'skills', 'browser-bridge-mcp'))));
     await assert.doesNotReject(fs.promises.access(path.join(tempHome, '.codeium', 'windsurf', 'skills', 'browser-bridge', 'SKILL.md')));
-    await assert.doesNotReject(fs.promises.access(path.join(tempHome, '.codeium', 'windsurf', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
     await assert.doesNotReject(fs.promises.access(path.join(tempHome, '.gemini', 'antigravity', 'skills', 'browser-bridge', 'SKILL.md')));
-    await assert.rejects(fs.promises.access(path.join(tempHome, '.gemini', 'antigravity', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
   } finally {
     if (originalHome === undefined) {
       delete process.env.HOME;
@@ -942,6 +934,18 @@ test('getMcpConfigPath supports Windsurf global and local locations', () => {
   assert.equal(
     getMcpConfigPath('windsurf', { global: true }),
     path.join(home, '.codeium', 'windsurf', 'mcp_config.json')
+  );
+});
+
+test('getMcpConfigPath supports Antigravity global and local locations', () => {
+  const home = os.homedir();
+  assert.equal(
+    getMcpConfigPath('antigravity', { global: false, cwd: '/tmp/demo' }),
+    path.join('/tmp/demo', '.gemini', 'antigravity', 'mcp_config.json')
+  );
+  assert.equal(
+    getMcpConfigPath('antigravity', { global: true }),
+    path.join(home, '.gemini', 'antigravity', 'mcp_config.json')
   );
 });
 

@@ -11,7 +11,7 @@
 | 5 | `session.get_status` | Yes | Confirm session validity |
 | 6 | `session.revoke` | Yes | End session |
 | 7 | `skill.get_runtime_context` | No | Live budget presets + method groups |
-| 8 | `setup.get_status` | No | Global MCP + skill install status from the host |
+| 8 | `setup.get_status` | No | Global MCP config + CLI skill install status from the host |
 | 9 | `health.ping` | No | Bridge connectivity check |
 | 10 | `log.tail` | No | Recent bridge logs |
 | 11 | `page.get_state` | Yes | URL, readiness, focus, scroll, viewport |
@@ -160,7 +160,7 @@ bbx call tabs.create '{"url":"https://example.com","active":false}'
 The `bbx tab-create` shortcut intentionally covers the common case. Use `bbx call tabs.create ...` when you need advanced fields such as `active:false`.
 
 ### setup.get_status
-Inspect the host-side Browser Bridge setup. Returns global MCP config status for supported clients and global skill install status for supported targets.
+Inspect the host-side Browser Bridge setup. Returns global MCP config status for supported clients and global CLI skill install status for supported targets.
 ```bash
 bbx call setup.get_status
 ```

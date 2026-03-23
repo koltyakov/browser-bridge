@@ -242,8 +242,8 @@ export const CLI_HELP_SECTIONS = Object.freeze([
     lines: [
       'bbx install [--browser chrome|edge|brave|chromium] [extension-id]  Install native messaging manifest',
       'bbx uninstall                                                      Remove native host manifests, Browser Bridge runtime files, and managed MCP/skill installs',
-      'bbx install-skill [targets|all] [--global] [--project <path>]      Install/update managed Browser Bridge skills (adds MCP companion when MCP is configured)',
-      'bbx install-mcp [client|all] [--local]                             Write MCP config for copilot|codex|cursor|windsurf|claude|opencode and install matching managed skills',
+      'bbx install-skill [targets|all] [--global] [--project <path>]      Install/update the managed Browser Bridge CLI skill',
+      'bbx install-mcp [client|all] [--local]                             Write MCP config for copilot|codex|cursor|windsurf|claude|opencode|antigravity',
       'bbx status                                                         Check bridge connection',
       'bbx doctor                                                         Diagnose install, daemon, extension, and session readiness',
       'bbx logs                                                           Recent bridge logs',

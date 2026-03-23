@@ -133,6 +133,33 @@ body {
   min-width: 0;
 }
 
+.activity-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.activity-method {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-source-tag {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--cmd-bg);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .popup-title {
   margin: 10px 0 0;
   max-width: 320px;
@@ -543,14 +570,77 @@ button:hover {
 .examples-list {
   display: grid;
   gap: 6px;
+  min-width: 0;
+}
+
+.examples-content {
+  display: grid;
+  gap: 0px;
+  padding-top: 12px;
+}
+
+.examples-group {
+  display: grid;
+  gap: 4px;
+}
+
+.examples-group-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .example-cmd {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  user-select: none;
+}
+
+.example-cmd::after {
+  display: none;
+}
+
+.example-cmd-text {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   font-size: 11px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   word-break: normal;
+  user-select: none;
+}
+
+.example-copy-button {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  font-size: 14px;
+  font-family: system-ui, sans-serif;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.example-copy-button:hover {
+  background: transparent;
+  color: var(--muted);
+}
+
+.example-copy-button:focus-visible {
+  outline: 1px solid rgba(104, 76, 41, 0.35);
+  outline-offset: 2px;
 }
 
 .setup-step-hint {
@@ -577,7 +667,7 @@ button:hover {
   color: var(--ink);
   cursor: pointer;
   word-break: break-all;
-  user-select: all;
+  user-select: none;
 }
 
 .setup-cmd:hover {

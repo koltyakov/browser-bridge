@@ -64,7 +64,7 @@ export function summarizeBridgeResponse(response, method) {
     const installedSkills = result.skillTargets.filter((entry) => entry && typeof entry === 'object' && /** @type {Record<string, unknown>} */ (entry).installed).length;
     return {
       ok: true,
-      summary: `Setup: MCP configured for ${configuredMcp}/${result.mcpClients.length} clients; skills installed for ${installedSkills}/${result.skillTargets.length} targets.`,
+      summary: `Setup: MCP configured for ${configuredMcp}/${result.mcpClients.length} clients; skill installed for ${installedSkills}/${result.skillTargets.length} targets.`,
       evidence: result
     };
   }
@@ -218,7 +218,7 @@ export function summarizeBridgeResponse(response, method) {
       ok: true,
       summary: `Log: ${entries.length} entries.`,
       evidence: entries.slice(-10).map((/** @type {Record<string, unknown>} */ e) => ({
-        at: e.at, method: e.method, ok: e.ok
+        at: e.at, method: e.method, ok: e.ok, ...(typeof e.source === 'string' && e.source ? { source: e.source } : {})
       }))
     };
   }

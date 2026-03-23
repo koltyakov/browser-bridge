@@ -39,13 +39,8 @@
         </div>
       </details>
       <details id="examples-section" class="card examples-details" open hidden>
-        <summary><span class="eyebrow examples-eyebrow">Prompts examples</span></summary>
-        <div class="examples-list">
-          <code class="setup-cmd example-cmd">$bbx check why the button looks broken</code>
-          <code class="setup-cmd example-cmd">$bbx inspect the layout and fix spacing issues</code>
-          <code class="setup-cmd example-cmd">$bbx verify the form validation works correctly</code>
-          <code class="setup-cmd example-cmd">$bbx check console errors on this page</code>
-        </div>
+        <summary><span class="eyebrow examples-eyebrow">Prompt examples</span></summary>
+        <div id="examples-content" class="examples-content"></div>
       </details>
       <section id="native-setup" class="card">
         <div class="eyebrow">Not connected</div>
@@ -54,9 +49,9 @@
           <code class="setup-cmd">npm install -g @browserbridge/bbx</code>
           <span class="setup-step-hint">2. Connect this extension (if didn't run automatically):</span>
           <code id="setup-install-cmd" class="setup-cmd">bbx install</code>
-          <span class="setup-step-hint">3. Install skill for CLI-driven agents (optional):</span>
+          <span class="setup-step-hint">3. Install CLI skill for shell-driven agents (optional):</span>
           <code id="setup-skill-cmd" class="setup-cmd">bbx install-skill</code>
-          <span class="setup-step-hint">Or install MCP server + matching skills instead (optional):</span>
+          <span class="setup-step-hint">Or configure MCP for MCP-capable agents (optional):</span>
           <code id="setup-mcp-cmd" class="setup-cmd">bbx install-mcp</code>
         </div>
         <a class="setup-link" href="https://github.com/koltyakov/browser-bridge/blob/main/QUICKSTART.md" target="_blank" rel="noopener noreferrer">Setup guide on GitHub ↗</a>

@@ -5,11 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 
 /**
- * @typedef {'claude' | 'cursor' | 'windsurf' | 'copilot' | 'codex' | 'opencode'} McpClientName
+ * @typedef {'claude' | 'cursor' | 'windsurf' | 'copilot' | 'codex' | 'opencode' | 'antigravity'} McpClientName
  */
 
 /** @type {McpClientName[]} */
-export const MCP_CLIENT_NAMES = ['copilot', 'codex', 'cursor', 'windsurf', 'claude', 'opencode'];
+export const MCP_CLIENT_NAMES = ['copilot', 'codex', 'cursor', 'windsurf', 'claude', 'opencode', 'antigravity'];
 
 /**
  * @param {string} value
@@ -87,6 +87,7 @@ function createBaseServerConfig(clientName) {
 
 /** @type {Record<McpClientName, { key: string, includeType: boolean, legacyKeys?: string[], keepEmptyBlock?: boolean }>} */
 const MCP_CONFIG_SHAPES = {
+  antigravity: { key: 'mcpServers', includeType: false },
   claude:  { key: 'mcpServers', includeType: true },
   copilot: { key: 'mcpServers', includeType: true, legacyKeys: ['servers'], keepEmptyBlock: true },
   cursor:  { key: 'mcpServers', includeType: false },
@@ -147,7 +148,8 @@ export function getMcpConfigPath(clientName, { global: isGlobal, cwd = process.c
       // Windsurf documents the global file; use the repo-local analogue for --local installs.
       windsurf: path.join(cwd, '.windsurf', 'mcp_config.json'),
       claude: path.join(cwd, '.mcp.json'),
-      opencode: path.join(cwd, 'opencode.json')
+      opencode: path.join(cwd, 'opencode.json'),
+      antigravity: path.join(cwd, '.gemini', 'antigravity', 'mcp_config.json')
     };
     return localPaths[clientName];
   }
@@ -171,6 +173,10 @@ export function getMcpConfigPath(clientName, { global: isGlobal, cwd = process.c
 
   if (clientName === 'windsurf') {
     return path.join(home, '.codeium', 'windsurf', 'mcp_config.json');
+  }
+
+  if (clientName === 'antigravity') {
+    return path.join(home, '.gemini', 'antigravity', 'mcp_config.json');
   }
 
   // cursor

@@ -5,13 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { getMcpConfigPaths, installMcpConfig, isMcpClientName, parseInstalledMcpConfig } from './mcp-config.js';
+import { installMcpConfig } from './mcp-config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, '../../..');
 const coreManagedSkillName = 'browser-bridge';
-const mcpManagedSkillName = 'browser-bridge-mcp';
-const managedSkillNames = /** @type {const} */ ([coreManagedSkillName, mcpManagedSkillName]);
+const managedSkillNames = /** @type {const} */ ([coreManagedSkillName]);
 const managedSentinelFilename = '.browser-bridge-managed';
 const supportedTargets = /** @type {const} */ ([
   'copilot',
@@ -35,7 +34,7 @@ const copilotBrowserBridgeNote = [
   '## GitHub Copilot Note',
   '',
   'When this skill is installed for GitHub Copilot, do not keep retrying `bbx` inside a sandboxed shell if Browser Bridge MCP is already configured for Copilot.',
-  'If Browser Bridge MCP is installed, switch to `/browser-bridge-mcp` and use the MCP tools instead of shelling out to `bbx`.',
+  'If Browser Bridge MCP is installed, use the MCP tools directly instead of shelling out to `bbx`.',
   'If `bbx` fails with a bridge socket permission error such as `EPERM`, stop retrying in the sandbox and ask the user to run the command locally or use MCP.',
   ''
 ].join('\n');
@@ -149,9 +148,7 @@ export async function installAgentFiles(options) {
 
   for (const target of options.targets) {
     const skillBaseDir = getSkillBasePath(target, options);
-    const requiredSkillNames = await getRequiredManagedSkillNames(target, options);
-
-    for (const skillName of requiredSkillNames) {
+    for (const skillName of managedSkillNames) {
       const skillTargetDir = path.join(skillBaseDir, skillName);
       if (seenTargets.has(skillTargetDir)) {
         continue;
@@ -166,8 +163,7 @@ export async function installAgentFiles(options) {
 }
 
 /**
- * Write MCP config for the given clients, then install the matching managed
- * Browser Bridge skills for those same runtimes.
+ * Write MCP config for the given clients.
  *
  * @param {import('./mcp-config.js').McpClientName[]} clients
  * @param {{
@@ -175,7 +171,7 @@ export async function installAgentFiles(options) {
  *   projectPath: string,
  *   stdout?: Pick<NodeJS.WriteStream, 'write'>
  * }} options
- * @returns {Promise<{ configPaths: string[], skillPaths: string[] }>}
+ * @returns {Promise<{ configPaths: string[] }>}
  */
 export async function installMcpClientSetup(clients, options) {
   /** @type {string[]} */
@@ -190,13 +186,7 @@ export async function installMcpClientSetup(clients, options) {
     }));
   }
 
-  const skillPaths = await installAgentFiles({
-    targets: /** @type {SupportedTarget[]} */ (uniqueClients),
-    projectPath: options.projectPath,
-    global: options.global
-  });
-
-  return { configPaths, skillPaths };
+  return { configPaths };
 }
 
 /**
@@ -340,26 +330,6 @@ export function getCoreManagedSkillName() {
 /**
  * @returns {string}
  */
-export function getMcpManagedSkillName() {
-  return mcpManagedSkillName;
-}
-
-/**
- * @param {SupportedTarget} target
- * @param {{ global: boolean, projectPath: string }} options
- * @returns {Promise<string[]>}
- */
-export async function getRequiredManagedSkillNames(target, options) {
-  const names = [coreManagedSkillName];
-  if (await hasConfiguredMcpForTarget(target, options)) {
-    names.push(mcpManagedSkillName);
-  }
-  return names;
-}
-
-/**
- * @returns {string}
- */
 export function getManagedSkillSentinelFilename() {
   return managedSentinelFilename;
 }
@@ -468,35 +438,6 @@ async function isManagedSkillInstall(targetDir) {
     return false;
   }
   return pathExists(path.join(targetDir, managedSentinelFilename));
-}
-
-/**
- * @param {SupportedTarget} target
- * @param {{ global: boolean, projectPath: string }} options
- * @returns {Promise<boolean>}
- */
-async function hasConfiguredMcpForTarget(target, options) {
-  if (!isMcpClientName(target)) {
-    return false;
-  }
-
-  const configPaths = await getMcpConfigPaths(target, {
-    global: options.global,
-    cwd: options.projectPath
-  });
-
-  for (const configPath of configPaths) {
-    try {
-      const raw = await fs.promises.readFile(configPath, 'utf8');
-      if (parseInstalledMcpConfig(target, raw).configured) {
-        return true;
-      }
-    } catch {
-      // Missing or unreadable config is treated as absent.
-    }
-  }
-
-  return false;
 }
 
 /**

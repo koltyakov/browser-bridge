@@ -176,7 +176,7 @@ dom.find_by_role('button', 'Login') → input.click
 - **[Capabilities reference](references/capabilities.md)** - full capability table, how to request subsets, `CAPABILITY_MISSING` recovery
 - **[Tailwind CSS guide](references/tailwind.md)** - selector escaping, semantic alternatives, patching strategy (load when `hints.tailwind: true`)
 
-> **MCP mode:** If Browser Bridge is connected through an MCP server (tools named `browser_dom`, `browser_call`, etc.) rather than the CLI, use the `$browser-bridge-mcp` / `$bbx-mcp` skill instead which covers MCP-specific tool schemas and patterns.
+> **MCP mode:** If Browser Bridge is connected through an MCP server (tools named `browser_dom`, `browser_call`, etc.) rather than the CLI, use those MCP tools directly instead of shelling out to `bbx`. In prompts, `BB MCP` and `Browser Bridge MCP` are both acceptable references. Do not treat `bbx-mcp` as a skill alias in MCP-capable clients.
 
 ## Subagent Output
 

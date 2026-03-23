@@ -178,10 +178,12 @@ export function validateBridgeRequest(request) {
       ? /** @type {Record<string, unknown>} */ (candidate.params)
       : {},
     meta: {
+      ...meta,
       protocol_version: typeof meta.protocol_version === 'string'
         ? meta.protocol_version
         : PROTOCOL_VERSION,
-      token_budget: typeof meta.token_budget === 'number' ? meta.token_budget : null
+      token_budget: typeof meta.token_budget === 'number' ? meta.token_budget : null,
+      source: meta.source === 'cli' || meta.source === 'mcp' ? meta.source : undefined
     }
   };
 }

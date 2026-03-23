@@ -10,6 +10,8 @@ import { BridgeClient } from './client.js';
 import { clearSession, loadSession, saveSession } from './session-store.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
+/** @typedef {import('../../protocol/src/types.js').BridgeMeta} BridgeMeta */
+/** @typedef {import('../../protocol/src/types.js').BridgeRequestSource} BridgeRequestSource */
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
 /** @typedef {import('../../protocol/src/types.js').SessionState} SessionState */
 
@@ -41,9 +43,10 @@ export async function ensureClientConnected(client) {
 
 /**
  * @param {BridgeClient} client
+ * @param {{ source?: BridgeRequestSource }} [options]
  * @returns {Promise<SessionState>}
  */
-export async function requireSession(client) {
+export async function requireSession(client, options = {}) {
   await ensureClientConnected(client);
 
   const session = await loadSession();
@@ -53,7 +56,8 @@ export async function requireSession(client) {
 
   const status = await client.request({
     method: 'session.get_status',
-    sessionId: session.sessionId
+    sessionId: session.sessionId,
+    meta: withRequestSource(options.source)
   });
   if (status.ok) {
     const activeSession = /** @type {SessionState} */ (status.result);
@@ -70,7 +74,8 @@ export async function requireSession(client) {
     params: {
       tabId: session.tabId,
       origin: session.origin
-    }
+    },
+    meta: withRequestSource(options.source)
   });
   if (!refreshed.ok) {
     throw new Error(refreshed.error.message);
@@ -85,7 +90,7 @@ export async function requireSession(client) {
  * @param {BridgeClient} client
  * @param {BridgeMethod} method
  * @param {Record<string, unknown>} [params={}]
- * @param {{ sessionId?: string | null }} [options]
+ * @param {{ sessionId?: string | null, source?: BridgeRequestSource }} [options]
  * @returns {Promise<BridgeResponse>}
  */
 export async function requestBridge(client, method, params = {}, options = {}) {
@@ -93,13 +98,14 @@ export async function requestBridge(client, method, params = {}, options = {}) {
   let sessionId = options.sessionId ?? null;
 
   if (sessionId == null && methodNeedsSession(method)) {
-    sessionId = (await requireSession(client)).sessionId;
+    sessionId = (await requireSession(client, { source: options.source })).sessionId;
   }
 
   const response = await client.request({
     method,
     params,
-    sessionId
+    sessionId,
+    meta: withRequestSource(options.source)
   });
 
   if (method === 'session.request_access' && response.ok) {
@@ -116,16 +122,17 @@ export async function requestBridge(client, method, params = {}, options = {}) {
  * @param {BridgeClient} client
  * @param {string} refOrSelector
  * @param {string | null} [sessionId=null]
+ * @param {BridgeRequestSource} [source]
  * @returns {Promise<string>}
  */
-export async function resolveRef(client, refOrSelector, sessionId = null) {
+export async function resolveRef(client, refOrSelector, sessionId = null, source) {
   if (refOrSelector.startsWith('el_')) {
     return refOrSelector;
   }
 
   const response = await requestBridge(client, 'dom.query', {
     selector: refOrSelector
-  }, { sessionId });
+  }, { sessionId, source });
 
   if (!response.ok) {
     throw new Error(response.error.message);
@@ -136,6 +143,14 @@ export async function resolveRef(client, refOrSelector, sessionId = null) {
     throw new Error(`No element found for selector "${refOrSelector}".`);
   }
   return result.nodes[0].elementRef;
+}
+
+/**
+ * @param {BridgeRequestSource | undefined} source
+ * @returns {BridgeMeta}
+ */
+function withRequestSource(source) {
+  return source ? { source } : {};
 }
 
 /**

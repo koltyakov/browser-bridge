@@ -17,7 +17,7 @@ import { writeJsonLine } from './framing.js';
 /** @typedef {import('../../protocol/src/types.js').SetupInstallResult} SetupInstallResult */
 /** @typedef {import('../../protocol/src/types.js').SetupStatus} SetupStatus */
 /** @typedef {import('node:net').Socket & { __clientId?: string }} ClientSocket */
-/** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout }} PendingEntry */
+/** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string }} PendingEntry */
 
 /**
  * @typedef {{
@@ -295,6 +295,7 @@ export class BridgeDaemon {
 
     this.pendingRequests.set(request.id, {
       socket,
+      source: typeof request.meta?.source === 'string' ? request.meta.source : '',
       timeoutId: setTimeout(() => {
         const pending = this.pendingRequests.get(request.id);
         if (!pending) return;
@@ -348,7 +349,8 @@ export class BridgeDaemon {
       at: new Date().toISOString(),
       method: message.response.meta?.method ?? null,
       ok: message.response.ok,
-      id: message.response.id
+      id: message.response.id,
+      source: pending.source || null
     });
     await writeJsonLine(pending.socket, {
       type: 'agent.response',

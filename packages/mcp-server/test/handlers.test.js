@@ -68,7 +68,8 @@ async function withTestSession(callback) {
  * @typedef {{
  *   method: import('../../protocol/src/types.js').BridgeMethod,
  *   params?: Record<string, unknown>,
- *   sessionId?: string | null
+ *   sessionId?: string | null,
+ *   meta?: Record<string, unknown>
  * }} RequestRecord
  */
 
@@ -88,8 +89,8 @@ async function withMockedBridge(responder, callback) {
     this.connected = true;
   };
   BridgeClient.prototype.close = async function close() {};
-  BridgeClient.prototype.request = async function request({ method, params = {}, sessionId = null }) {
-    const record = { method, params, sessionId };
+  BridgeClient.prototype.request = async function request({ method, params = {}, sessionId = null, meta = {} }) {
+    const record = { method, params, sessionId, meta };
     calls.push(record);
     return responder(record, calls.length - 1);
   };
@@ -306,6 +307,7 @@ test('handlePageTool evaluate calls page.evaluate with given expression', async 
       const evalCall = calls.find((c) => c.method === 'page.evaluate');
       assert.ok(evalCall, 'page.evaluate should be called');
       assert.equal(evalCall.params.expression, '1+1');
+      assert.equal(evalCall.meta?.source, 'mcp');
       assert.equal(result.isError, undefined);
     });
   });

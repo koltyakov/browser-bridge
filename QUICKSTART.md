@@ -18,7 +18,7 @@ This also installs the native messaging host automatically.
 
 ## 3. Connect your agent
 
-There are two integration paths - pick the one that fits how your agent works:
+There are two integration paths. Pick the one that matches how your agent works:
 
 Supported clients: `copilot` (GitHub Copilot / VS Code), `codex` (OpenAI Codex CLI), `cursor` (Cursor), `windsurf` (Windsurf), `claude` (Claude Code), `opencode` (OpenCode).
 
@@ -26,11 +26,11 @@ Supported clients: `copilot` (GitHub Copilot / VS Code), `codex` (OpenAI Codex C
 
 ```bash
 bbx install-mcp                  # all supported clients
-bbx install-mcp copilot          # or pick one: copilot, codex, cursor, windsurf, claude, opencode
+bbx install-mcp copilot          # or pick one: copilot, codex, cursor, windsurf, claude, opencode, antigravity
 bbx install-mcp copilot --local  # scope to current project instead of global
 ```
 
-Configs are written globally by default. For GitHub Copilot, that means `~/.copilot/mcp-config.json`; project installs still use `.vscode/mcp.json`. Browser Bridge also writes the older VS Code `User/mcp.json` locations as compatibility fallbacks. `bbx install-mcp` also installs or updates the matching managed skills for those same clients, including the MCP companion.
+Configs are written globally by default. For GitHub Copilot, that means `~/.copilot/mcp-config.json`; project installs still use `.vscode/mcp.json`. Browser Bridge also writes the older VS Code `User/mcp.json` locations as compatibility fallbacks.
 
 **Skill + CLI** - for agents that run shell commands. Install the Browser Bridge skill so your agent knows how to drive `bbx`:
 
@@ -40,11 +40,11 @@ bbx install-skill copilot          # or pick one: copilot, codex, cursor, windsu
 bbx install-skill copilot --local  # scope to current project instead of global
 ```
 
-Skills are installed globally by default. The core `browser-bridge` skill is always installed; the `browser-bridge-mcp` companion is installed only when Browser Bridge MCP is already configured for that same client. `bbx install-mcp` now handles that combined setup automatically for MCP-capable clients, while `bbx install-skill` remains useful for CLI-only flows and generic agent runtimes.
+The Browser Bridge skill is a CLI path. Use `bbx install-skill` for shell-driven agent flows and generic agent runtimes.
 
 Shortcut commands cover the common cases. Advanced protocol fields stay available through `bbx call <method> '{...}'` when you need the full bridge surface.
 
-> Both paths can be used together - MCP for tool calls, skill for usage guidance.
+> The paths are independent. MCP clients use MCP tools; CLI skill clients use `bbx`. Install both only if you want both behaviors explicitly.
 
 ## 4. Enable a tab
 
@@ -52,13 +52,16 @@ Shortcut commands cover the common cases. Advanced protocol fields stay availabl
 2. Click the Browser Bridge toolbar icon or open the side panel.
 3. Enable agent communication for that tab.
 
-Your agent can now inspect and patch that tab over MCP.
+Your agent can now inspect and patch that tab through Browser Bridge.
 
 ## 5. Use it
 
 **MCP mode** - tools are auto-discovered by the client. Just ask naturally:
 
+You can refer to it as `BB MCP` or `Browser Bridge MCP`; both should work.
+
 > *"Why is the sidebar layout broken on this page?"*
+> *"Use BB MCP to inspect why the sidebar layout is broken."*
 > *"Check the CSS on the hero section and fix the spacing."*
 > *"Does my latest change actually render correctly in the browser?"*
 

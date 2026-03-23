@@ -15,7 +15,6 @@ import { interactiveCheckbox, interactiveConfirm, methodNeedsSession, parseIntAr
 import { detectMcpClients, detectSkillTargets } from './detect.js';
 import {
   findInstalledManagedTargets,
-  getRequiredManagedSkillNames,
   installAgentFiles,
   installMcpClientSetup,
   parseInstallAgentArgs,
@@ -30,6 +29,8 @@ import { summarizeBridgeResponse } from './subagent.js';
 /** @typedef {import('../../protocol/src/types.js').SessionState} SessionState */
 /** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
 /** @typedef {{ image: string, rect: Record<string, unknown> }} ScreenshotResult */
+
+const REQUEST_SOURCE = 'cli';
 
 /**
  * Read all of stdin as UTF-8 text. Resolves once stdin closes.
@@ -148,7 +149,6 @@ if (command === 'install-skill') {
     }
 
     const projectPath = isGlobal ? os.homedir() : process.cwd();
-    const targetsWithoutMcpCompanion = [];
     if (selected !== null) {
       const deselectedTargets = /** @type {import('./install.js').SupportedTarget[]} */ (
         installedManagedTargetList.filter((target) => !targets.includes(target))
@@ -160,7 +160,7 @@ if (command === 'install-skill') {
       });
       if (removableTargets.length > 0) {
         const confirmed = await interactiveConfirm(
-          `Remove Browser Bridge skills from deselected targets: ${removableTargets.join(', ')}?`
+          `Remove Browser Bridge skill from deselected targets: ${removableTargets.join(', ')}?`
         );
         if (confirmed) {
           const removedPaths = await removeAgentFiles({
@@ -178,50 +178,16 @@ if (command === 'install-skill') {
       process.exit(0);
     }
 
-    for (const target of targets) {
-      const requiredSkillNames = await getRequiredManagedSkillNames(target, {
-        projectPath,
-        global: isGlobal
-      });
-      if (isMcpClientName(target) && !requiredSkillNames.includes('browser-bridge-mcp')) {
-        targetsWithoutMcpCompanion.push(target);
-      }
-    }
-
     const installedPaths = await installAgentFiles({ targets, projectPath, global: isGlobal });
     for (const p of installedPaths) process.stdout.write(`Installed ${p}\n`);
-    if (targetsWithoutMcpCompanion.length > 0) {
-      process.stdout.write(
-        `Note: skipped the MCP companion skill for ${targetsWithoutMcpCompanion.join(', ')} because Browser Bridge MCP is not configured there yet.\n`
-      );
-      process.stdout.write(
-        `Run bbx install-mcp ${targetsWithoutMcpCompanion[0]}${isGlobal ? '' : ' --local'} to add it automatically later.\n`
-      );
-    }
     process.exit(0);
   }
 
   // Explicit targets or 'all' provided - use existing arg-parsing logic.
   const options = parseInstallAgentArgs(rest);
-  /** @type {import('./install.js').SupportedTarget[]} */
-  const targetsWithoutMcpCompanion = [];
-  for (const target of options.targets) {
-    const requiredSkillNames = await getRequiredManagedSkillNames(target, options);
-    if (isMcpClientName(target) && !requiredSkillNames.includes('browser-bridge-mcp')) {
-      targetsWithoutMcpCompanion.push(target);
-    }
-  }
   const installedPaths = await installAgentFiles(options);
   for (const installedPath of installedPaths) {
     process.stdout.write(`Installed ${installedPath}\n`);
-  }
-  if (targetsWithoutMcpCompanion.length > 0) {
-    process.stdout.write(
-      `Note: skipped the MCP companion skill for ${targetsWithoutMcpCompanion.join(', ')} because Browser Bridge MCP is not configured there yet.\n`
-    );
-    process.stdout.write(
-      `Run bbx install-mcp ${targetsWithoutMcpCompanion[0]}${options.global ? '' : ' --local'} to add it automatically later.\n`
-    );
   }
   process.exit(0);
 }
@@ -261,7 +227,8 @@ if (command === 'install-mcp') {
       cursor: 'Cursor',
       windsurf: 'Windsurf',
       claude: 'Claude Code',
-      opencode: 'OpenCode'
+      opencode: 'OpenCode',
+      antigravity: 'Antigravity'
     };
     const items = MCP_CLIENT_NAMES.map((c) => ({
       value: c,
@@ -333,14 +300,11 @@ if (command === 'install-mcp') {
     }
   }
 
-  const { skillPaths } = await installMcpClientSetup(clients, {
+  await installMcpClientSetup(clients, {
     global: isGlobal,
     projectPath: process.cwd(),
     stdout: process.stdout
   });
-  for (const installedPath of skillPaths) {
-    process.stdout.write(`Installed ${installedPath}\n`);
-  }
   process.exit(0);
 }
 
@@ -352,7 +316,7 @@ if (command === 'mcp') {
   }
   if (subcommand === 'config') {
     if (!clientName || !isMcpClientName(clientName)) {
-      process.stderr.write('Usage: bbx mcp config <claude|cursor|windsurf|copilot|codex|opencode>\n');
+      process.stderr.write('Usage: bbx mcp config <claude|cursor|windsurf|copilot|codex|opencode|antigravity>\n');
       process.exit(1);
     }
     process.stdout.write(formatMcpConfig(clientName));
@@ -369,7 +333,7 @@ await main();
 async function main() {
   try {
     if (command === 'status') {
-      await printSummary(await requestBridge(client, 'health.ping'));
+      await printSummary(await requestBridge(client, 'health.ping', {}, { source: REQUEST_SOURCE }));
       return;
     }
 
@@ -386,12 +350,12 @@ async function main() {
     }
 
     if (command === 'logs') {
-      await printSummary(await requestBridge(client, 'log.tail'));
+      await printSummary(await requestBridge(client, 'log.tail', {}, { source: REQUEST_SOURCE }));
       return;
     }
 
     if (command === 'tabs') {
-      await printSummary(await requestBridge(client, 'tabs.list'));
+      await printSummary(await requestBridge(client, 'tabs.list', {}, { source: REQUEST_SOURCE }));
       return;
     }
 
@@ -399,7 +363,7 @@ async function main() {
       const [url] = rest;
       const response = await requestBridge(client, 'tabs.create', {
         url: url || undefined
-      });
+      }, { source: REQUEST_SOURCE });
       await printSummary(response);
       return;
     }
@@ -411,14 +375,17 @@ async function main() {
       }
       const response = await requestBridge(client, 'tabs.close', {
         tabId: parseIntArg(tabId, 'tabId')
-      });
+      }, { source: REQUEST_SOURCE });
       await printSummary(response);
       return;
     }
 
     if (command === 'call') {
       const { sessionId, method, params } = await parseCallCommand(rest);
-      const response = await requestBridge(client, method, params, { sessionId });
+      const response = await requestBridge(client, method, params, {
+        sessionId,
+        source: REQUEST_SOURCE
+      });
       printJson(response.ok ? response.result : response);
       return;
     }
@@ -434,13 +401,14 @@ async function main() {
         throw new Error('Batch input must be a JSON array.');
       }
       const needsSession = calls.some((c) => methodNeedsSession(c.method));
-      const session = needsSession ? await requireSession(client) : null;
+      const session = needsSession ? await requireSession(client, { source: REQUEST_SOURCE }) : null;
       const results = await Promise.all(calls.map(async (call) => {
         try {
           const response = await client.request({
             method: /** @type {BridgeMethod} */ (call.method),
             sessionId: methodNeedsSession(call.method) ? session?.sessionId ?? null : null,
-            params: call.params || {}
+            params: call.params || {},
+            meta: { source: REQUEST_SOURCE }
           });
           return summarizeBridgeResponse(response, call.method);
         } catch (err) {
@@ -458,21 +426,22 @@ async function main() {
       const response = await requestBridge(client, 'session.request_access', {
         tabId: Number.isFinite(parsedTabId) && parsedTabId > 0 ? parsedTabId : undefined,
         origin: Number.isFinite(parsedTabId) && parsedTabId > 0 ? originArg : (tabIdOrOrigin || undefined)
-      });
+      }, { source: REQUEST_SOURCE });
       await printSummary(response);
       return;
     }
 
     if (command === 'session') {
-      const session = await requireSession(client);
+      const session = await requireSession(client, { source: REQUEST_SOURCE });
       printJson(session);
       return;
     }
 
     if (command === 'revoke') {
-      const session = await requireSession(client);
+      const session = await requireSession(client, { source: REQUEST_SOURCE });
       const response = await requestBridge(client, 'session.revoke', {}, {
-        sessionId: session.sessionId
+        sessionId: session.sessionId,
+        source: REQUEST_SOURCE
       });
       await printSummary(response);
       return;
@@ -480,14 +449,14 @@ async function main() {
 
     const sessionCmd = SESSION_COMMANDS[command];
     if (sessionCmd) {
-      const session = await requireSession(client);
+      const session = await requireSession(client, { source: REQUEST_SOURCE });
       let elementRef;
       if (sessionCmd.resolve) {
         if (!rest[0]) throw new Error(`Usage: ${command} <ref|selector>`);
-        elementRef = await resolveRef(client, rest[0], session.sessionId);
+        elementRef = await resolveRef(client, rest[0], session.sessionId, REQUEST_SOURCE);
       }
       const response = await requestBridge(client, sessionCmd.method,
-        sessionCmd.build(rest, elementRef), { sessionId: session.sessionId });
+        sessionCmd.build(rest, elementRef), { sessionId: session.sessionId, source: REQUEST_SOURCE });
       await printSummary(response, sessionCmd.printMethod);
       return;
     }
@@ -496,22 +465,22 @@ async function main() {
     if (command === 'press-key') {
       const [key, refOrSelector] = rest;
       if (!key) throw new Error('Usage: press-key <key> [ref|selector]');
-      const session = await requireSession(client);
-      const elementRef = refOrSelector ? await resolveRef(client, refOrSelector, session.sessionId) : undefined;
+      const session = await requireSession(client, { source: REQUEST_SOURCE });
+      const elementRef = refOrSelector ? await resolveRef(client, refOrSelector, session.sessionId, REQUEST_SOURCE) : undefined;
       const response = await requestBridge(client, 'input.press_key', {
         key, target: elementRef ? { elementRef } : undefined
-      }, { sessionId: session.sessionId });
+      }, { sessionId: session.sessionId, source: REQUEST_SOURCE });
       await printSummary(response);
       return;
     }
 
     if (command === 'screenshot') {
       const [refOrSelector, outputPath] = rest;
-      const session = await requireSession(client);
-      const elementRef = await resolveRef(client, refOrSelector, session.sessionId);
+      const session = await requireSession(client, { source: REQUEST_SOURCE });
+      const elementRef = await resolveRef(client, refOrSelector, session.sessionId, REQUEST_SOURCE);
       const response = await requestBridge(client, 'screenshot.capture_element', {
         elementRef
-      }, { sessionId: session.sessionId });
+      }, { sessionId: session.sessionId, source: REQUEST_SOURCE });
       if (!response.ok) { await printSummary(response); return; }
       const screenshotResult = /** @type {ScreenshotResult} */ (response.result);
       const filePath = outputPath || path.join(os.tmpdir(), `bbx-${Date.now()}.png`);
@@ -529,10 +498,10 @@ async function main() {
       let expression = rest.join(' ');
       if (!expression || expression === '-') expression = await readStdin();
       if (!expression) throw new Error('Usage: eval <expression>  (or pipe via stdin: echo "expr" | bbx eval -)');
-      const session = await requireSession(client);
+      const session = await requireSession(client, { source: REQUEST_SOURCE });
       const response = await requestBridge(client, 'page.evaluate', {
         expression, returnByValue: true
-      }, { sessionId: session.sessionId });
+      }, { sessionId: session.sessionId, source: REQUEST_SOURCE });
       await printSummary(response);
       return;
     }
@@ -678,7 +647,7 @@ async function parseCallCommand(args) {
     }
     return {
       method,
-      sessionId: methodNeedsSession(method) ? (await requireSession(client)).sessionId : null,
+      sessionId: methodNeedsSession(method) ? (await requireSession(client, { source: REQUEST_SOURCE })).sessionId : null,
       params: parseJsonObject(rawParams)
     };
   }

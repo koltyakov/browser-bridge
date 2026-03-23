@@ -15,7 +15,6 @@ import {
   getManagedPackageVersion,
   getManagedSkillNames,
   getManagedSkillSentinelFilename,
-  getMcpManagedSkillName,
   getSkillBasePath,
   isManagedVersionOutdated,
   parseManagedSkillSentinel,
@@ -36,7 +35,8 @@ const MCP_CLIENT_LABELS = {
   cursor: 'Cursor',
   windsurf: 'Windsurf',
   claude: 'Claude Code',
-  opencode: 'OpenCode'
+  opencode: 'OpenCode',
+  antigravity: 'Antigravity'
 };
 
 /** @type {Record<SupportedTarget, string>} */
@@ -91,18 +91,11 @@ export async function collectSetupStatus(options = {}) {
       readFile
     });
   }));
-  const configuredMcpClients = new Set(
-    mcpClients
-      .filter((entry) => entry.configured)
-      .map((entry) => entry.key)
-  );
-
   const skillTargets = await Promise.all(SUPPORTED_TARGETS.map(async (target) => {
     return collectSkillTargetStatus(target, {
       global: isGlobal,
       projectPath,
       detected: detectedSkillTargets.has(target),
-      mcpConfigured: configuredMcpClients.has(/** @type {McpClientName} */ (target)),
       access,
       readFile
     });
@@ -158,7 +151,6 @@ async function collectMcpClientStatus(clientName, options) {
  *   global: boolean,
  *   projectPath: string,
  *   detected: boolean,
- *   mcpConfigured: boolean,
  *   access: (targetPath: string) => Promise<void>,
  *   readFile: (targetPath: string, encoding: BufferEncoding) => Promise<string>
  * }} options
@@ -171,33 +163,18 @@ async function collectSkillTargetStatus(target, options) {
   });
   const managedSkillNames = getManagedSkillNames();
   const coreSkillName = getCoreManagedSkillName();
-  const mcpSkillName = getMcpManagedSkillName();
   const sentinelFilename = getManagedSkillSentinelFilename();
   const currentVersion = getManagedPackageVersion();
   const skills = await Promise.all(managedSkillNames.map(async (skillName) => {
     return collectInstalledSkillStatus(basePath, skillName, sentinelFilename, options.access, options.readFile);
   }));
   const skillByName = new Map(skills.map((skill) => [skill.name, skill]));
-  const requiredSkillNames = options.mcpConfigured
-    ? [coreSkillName, mcpSkillName]
-    : [coreSkillName];
-  const requiredSkills = requiredSkillNames
-    .map((skillName) => skillByName.get(skillName))
-    .filter((skill) => Boolean(skill));
   const coreSkill = skillByName.get(coreSkillName) || null;
   const coreInstalled = Boolean(coreSkill?.exists);
   const coreManaged = Boolean(coreSkill?.exists && coreSkill.managed);
-  const missingRequiredSkills = requiredSkills.some((skill) => !skill.exists);
-  const unmanagedRequiredSkills = requiredSkills.some((skill) => skill.exists && !skill.managed);
-  const outdatedRequiredSkills = requiredSkills.some((skill) => {
-    return skill.exists
-      && skill.managed
-      && isManagedVersionOutdated(skill.version, currentVersion);
-  });
-  const installedVersion = getInstalledSkillBundleVersion(requiredSkills);
+  const installedVersion = getInstalledSkillBundleVersion(coreSkill ? [coreSkill] : []);
   const updateAvailable = coreManaged
-    && !unmanagedRequiredSkills
-    && (missingRequiredSkills || outdatedRequiredSkills);
+    && isManagedVersionOutdated(coreSkill?.version || null, currentVersion);
 
   return {
     key: target,

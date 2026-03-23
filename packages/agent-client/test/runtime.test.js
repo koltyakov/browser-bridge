@@ -11,7 +11,7 @@ import { CLI_METHOD_BINDINGS } from '../src/command-registry.js';
 import { detectMcpClients, detectSkillTargets } from '../src/detect.js';
 import { findConfiguredMcpClients, installMcpConfig, removeMcpConfig } from '../src/mcp-config.js';
 import { clearSession, loadSession, saveSession } from '../src/session-store.js';
-import { getDoctorReport, requireSession, resolveRef } from '../src/runtime.js';
+import { getDoctorReport, requestBridge, requireSession, resolveRef } from '../src/runtime.js';
 
 /**
  * @param {() => Promise<void>} callback
@@ -47,7 +47,7 @@ test('detectMcpClients and detectSkillTargets use injected detectors', () => {
     antigravity: () => true
   };
 
-  assert.deepEqual(detectMcpClients(detectors), ['copilot', 'codex', 'windsurf', 'claude']);
+  assert.deepEqual(detectMcpClients(detectors), ['copilot', 'codex', 'windsurf', 'claude', 'antigravity']);
   assert.deepEqual(detectSkillTargets(detectors), ['copilot', 'codex', 'windsurf', 'claude', 'antigravity', 'agents']);
 });
 
@@ -301,7 +301,7 @@ test('requireSession refreshes an expired saved session', async () => {
       }
     };
 
-    const session = await requireSession(/** @type {any} */ (client));
+    const session = await requireSession(/** @type {any} */ (client), { source: 'cli' });
     assert.equal(session.sessionId, 'sess_new');
     assert.deepEqual(calls.map((call) => call.method), ['session.get_status', 'session.request_access']);
     assert.equal(calls[1].params?.tabId, 7);
@@ -309,6 +309,29 @@ test('requireSession refreshes an expired saved session', async () => {
     const saved = await loadSession();
     assert.equal(saved?.sessionId, 'sess_new');
   });
+});
+
+test('requestBridge forwards request source metadata', async () => {
+  /** @type {Array<{ method: string, sessionId?: string | null, params?: Record<string, unknown>, meta?: Record<string, unknown> }>} */
+  const calls = [];
+  const client = {
+    connected: true,
+    async connect() {},
+    async request({ method, params = {}, sessionId = null, meta = {} }) {
+      calls.push({ method, params, sessionId, meta });
+      return {
+        id: 'req_1',
+        ok: true,
+        result: { daemon: 'ok', extensionConnected: true },
+        error: null,
+        meta: { protocol_version: '1.0' }
+      };
+    }
+  };
+
+  await requestBridge(/** @type {any} */ (client), 'health.ping', {}, { source: 'cli' });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].meta?.source, 'cli');
 });
 
 test('resolveRef returns the first matching elementRef', async () => {

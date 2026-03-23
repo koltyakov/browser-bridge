@@ -167,6 +167,42 @@ test('daemon handles extension setup status requests', async () => {
   assert.deepEqual(payload.status, expectedStatus);
 });
 
+test('daemon log entries retain request source metadata', async () => {
+  const daemon = new BridgeDaemon({
+    logger: console
+  });
+  const agentSocket = createFakeSocket();
+  const extensionSocket = createFakeSocket();
+  daemon.extensionSocket = extensionSocket;
+
+  await daemon.handleAgentRequest(agentSocket, {
+    request: {
+      id: 'req_eval',
+      method: 'page.evaluate',
+      session_id: 'sess_test',
+      params: { expression: '1+1' },
+      meta: {
+        protocol_version: '1.0',
+        token_budget: null,
+        source: 'mcp'
+      }
+    }
+  });
+
+  await daemon.handleExtensionResponse({
+    response: {
+      id: 'req_eval',
+      ok: false,
+      result: null,
+      error: { code: 'CAPABILITY_MISSING', message: 'Missing capability', details: null },
+      meta: { protocol_version: '1.0', method: 'page.evaluate' }
+    }
+  });
+
+  assert.equal(daemon.recentLog.length, 1);
+  assert.equal(daemon.recentLog[0].source, 'mcp');
+});
+
 /** Ensure repeated shutdown calls share one cleanup path safely. */
 test('daemon stop is idempotent when called concurrently', async () => {
   const daemon = new BridgeDaemon({

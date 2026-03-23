@@ -13,6 +13,8 @@ import { summarizeBridgeResponse } from '../../agent-client/src/subagent.js';
 /** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
 
+const REQUEST_SOURCE = 'mcp';
+
 /**
  * @typedef {{
  *   content: Array<{ type: 'text', text: string }>,
@@ -82,7 +84,7 @@ async function resolveToolRef(client, input) {
     return input.elementRef;
   }
   if (typeof input.selector === 'string' && input.selector) {
-    return resolveRef(client, input.selector);
+    return resolveRef(client, input.selector, null, REQUEST_SOURCE);
   }
   throw new Error('Provide either elementRef or selector.');
 }
@@ -111,7 +113,8 @@ async function getRequestedSessionId(requestedSessionId) {
 async function callBridgeTool(method, params = {}, options = {}) {
   return withToolClient(async (client) => {
     const response = await requestBridge(client, method, params, {
-      sessionId: options.sessionId ?? null
+      sessionId: options.sessionId ?? null,
+      source: REQUEST_SOURCE
     });
     return summarizeToolResponse(response, options.summaryMethod || method);
   });
@@ -136,7 +139,9 @@ async function dispatchToolAction(actions, args, toolName) {
   if (!entry) return summarizeToolError(`Unsupported ${toolName} action "${args.action}".`);
   return withToolClient(async (client) => {
     const ref = entry.ref ? await resolveToolRef(client, /** @type {{ elementRef?: string, selector?: string }} */ (args)) : undefined;
-    const response = await requestBridge(client, entry.method, entry.params(args, ref));
+    const response = await requestBridge(client, entry.method, entry.params(args, ref), {
+      source: REQUEST_SOURCE
+    });
     return summarizeToolResponse(response, entry.method);
   });
 }
@@ -317,13 +322,13 @@ export async function handleInputTool(args) {
           target: await elementTarget(),
           button: args.button,
           clickCount: args.clickCount
-        });
+        }, { source: REQUEST_SOURCE });
         return summarizeToolResponse(response, 'input.click');
       }
       case 'focus': {
         const response = await requestBridge(client, 'input.focus', {
           target: await elementTarget()
-        });
+        }, { source: REQUEST_SOURCE });
         return summarizeToolResponse(response, 'input.focus');
       }
       case 'type': {
@@ -332,7 +337,7 @@ export async function handleInputTool(args) {
           text: args.text,
           clear: args.clear,
           submit: args.submit
-        });
+        }, { source: REQUEST_SOURCE });
         return summarizeToolResponse(response, 'input.type');
       }
       case 'press_key': {
@@ -341,14 +346,14 @@ export async function handleInputTool(args) {
           target,
           key: args.key,
           modifiers: args.modifiers
-        });
+        }, { source: REQUEST_SOURCE });
         return summarizeToolResponse(response, 'input.press_key');
       }
       case 'set_checked': {
         const response = await requestBridge(client, 'input.set_checked', {
           target: await elementTarget(),
           checked: args.checked
-        });
+        }, { source: REQUEST_SOURCE });
         return summarizeToolResponse(response, 'input.set_checked');
       }
       case 'select_option': {
@@ -357,22 +362,22 @@ export async function handleInputTool(args) {
           values: args.values,
           labels: args.labels,
           indexes: args.indexes
-        });
+        }, { source: REQUEST_SOURCE });
         return summarizeToolResponse(response, 'input.select_option');
       }
       case 'hover': {
         const response = await requestBridge(client, 'input.hover', {
           target: await elementTarget(),
           duration: args.duration
-        });
+        }, { source: REQUEST_SOURCE });
         return summarizeToolResponse(response, 'input.hover');
       }
       case 'drag': {
         const source = {
-          elementRef: args.sourceElementRef || (args.sourceSelector ? await resolveRef(client, args.sourceSelector) : '')
+          elementRef: args.sourceElementRef || (args.sourceSelector ? await resolveRef(client, args.sourceSelector, null, REQUEST_SOURCE) : '')
         };
         const destination = {
-          elementRef: args.destinationElementRef || (args.destinationSelector ? await resolveRef(client, args.destinationSelector) : '')
+          elementRef: args.destinationElementRef || (args.destinationSelector ? await resolveRef(client, args.destinationSelector, null, REQUEST_SOURCE) : '')
         };
         if (!source.elementRef || !destination.elementRef) {
           return summarizeToolError('sourceElementRef/sourceSelector and destinationElementRef/destinationSelector are required for drag.');
@@ -382,7 +387,7 @@ export async function handleInputTool(args) {
           destination,
           offsetX: args.offsetX,
           offsetY: args.offsetY
-        });
+        }, { source: REQUEST_SOURCE });
         return summarizeToolResponse(response, 'input.drag');
       }
       default:
@@ -456,7 +461,7 @@ export async function handleRawCallTool(args) {
       client,
       /** @type {BridgeMethod} */ (args.method),
       args.params || {},
-      { sessionId: args.sessionId || null }
+      { sessionId: args.sessionId || null, source: REQUEST_SOURCE }
     );
 
     if (!response.ok) {

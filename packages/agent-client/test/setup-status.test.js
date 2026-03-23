@@ -11,7 +11,6 @@ import {
   getCoreManagedSkillName,
   getManagedSkillNames,
   getManagedSkillSentinelFilename,
-  getMcpManagedSkillName,
   getSkillBasePath
 } from '../src/install.js';
 import { installMcpConfig } from '../src/mcp-config.js';
@@ -114,7 +113,7 @@ test('collectSetupStatus reports local MCP and skill installation state', async 
     assert.equal(codex.detected, true);
     assert.equal(codex.installed, true);
     assert.equal(codex.managed, true);
-    assert.equal(codex.skills.length, 2);
+    assert.equal(codex.skills.length, 1);
     assert.equal(codex.updateAvailable, false);
 
     const windsurfSkills = status.skillTargets.find((entry) => entry.key === 'windsurf');
@@ -255,6 +254,48 @@ test('collectSetupStatus reads Copilot global MCP from the user config path', as
   }
 });
 
+test('collectSetupStatus reads Antigravity global MCP from the documented config path', async () => {
+  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-setup-status-antigravity-mcp-home-'));
+  const originalHome = process.env.HOME;
+
+  try {
+    process.env.HOME = tempHome;
+
+    await installMcpConfig('antigravity', {
+      global: true,
+      stdout: { write() { return true; } }
+    });
+
+    const status = await collectSetupStatus({
+      global: true,
+      cwd: tempHome,
+      projectPath: tempHome,
+      mcpDetectors: createDetectors(['antigravity']),
+      skillDetectors: createDetectors(['antigravity'])
+    });
+
+    const antigravityMcp = status.mcpClients.find((entry) => entry.key === 'antigravity');
+    assert.ok(antigravityMcp);
+    assert.equal(antigravityMcp.label, 'Antigravity');
+    assert.equal(antigravityMcp.detected, true);
+    assert.equal(antigravityMcp.configExists, true);
+    assert.equal(antigravityMcp.configured, true);
+    assert.equal(antigravityMcp.configPath, path.join(tempHome, '.gemini', 'antigravity', 'mcp_config.json'));
+
+    const antigravitySkills = status.skillTargets.find((entry) => entry.key === 'antigravity');
+    assert.ok(antigravitySkills);
+    assert.equal(antigravitySkills.detected, true);
+    assert.equal(antigravitySkills.basePath, path.join(tempHome, '.gemini', 'antigravity', 'skills'));
+  } finally {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+    await fs.promises.rm(tempHome, { recursive: true, force: true });
+  }
+});
+
 test('collectSetupStatus marks legacy managed skills as updateable', async () => {
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-setup-status-legacy-skill-'));
   const sentinel = getManagedSkillSentinelFilename();
@@ -286,8 +327,8 @@ test('collectSetupStatus marks legacy managed skills as updateable', async () =>
   }
 });
 
-test('collectSetupStatus marks managed core skill as updateable when MCP is configured later', async () => {
-  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-setup-status-mcp-companion-'));
+test('collectSetupStatus keeps managed core skill current when MCP is configured later', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-setup-status-mcp-unchanged-'));
   const sentinel = getManagedSkillSentinelFilename();
 
   try {
@@ -314,11 +355,8 @@ test('collectSetupStatus marks managed core skill as updateable when MCP is conf
     assert.ok(cursorSkills);
     assert.equal(cursorSkills.installed, true);
     assert.equal(cursorSkills.managed, true);
-    assert.equal(cursorSkills.updateAvailable, true);
-    assert.equal(
-      cursorSkills.skills.some((skill) => skill.name === getMcpManagedSkillName() && skill.exists),
-      false
-    );
+    assert.equal(cursorSkills.updateAvailable, false);
+    assert.equal(cursorSkills.skills.length, 1);
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }
