@@ -6,7 +6,7 @@
 
 A local bridge between your coding agent and a real Chrome tab. Browser Bridge gives the agent structured access to DOM, styles, layout, console, network, and reversible patches - starting from the actual tab you already have open, with all its real state intact.
 
-See [QUICKSTART.md](QUICKSTART.md) to get started in another repo.
+See [Quick Start](./docs/QUICKSTART.md) to get started in another repo.
 
 ## Supported Agents
 
