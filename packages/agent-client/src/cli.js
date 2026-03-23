@@ -14,6 +14,7 @@ import { detectMcpClients, detectSkillTargets } from './detect.js';
 import { findInstalledManagedTargets, installAgentFiles, parseInstallAgentArgs, removeAgentFiles } from './install.js';
 import { findConfiguredMcpClients, formatMcpConfig, installMcpConfig, isMcpClientName, MCP_CLIENT_NAMES, removeMcpConfig } from './mcp-config.js';
 import { getDoctorReport, requestBridge, requireSession, resolveRef } from './runtime.js';
+import { collectSetupStatus } from './setup-status.js';
 import { summarizeBridgeResponse } from './subagent.js';
 
 /** @typedef {import('../../protocol/src/types.js').SessionState} SessionState */
@@ -72,8 +73,18 @@ if (command === 'install-skill') {
     if (rest.includes('--local')) isGlobal = false;
     if (rest.includes('--global')) isGlobal = true;
 
+    const setupStatus = await collectSetupStatus({
+      global: isGlobal,
+      cwd: process.cwd(),
+      projectPath: isGlobal ? os.homedir() : process.cwd()
+    });
     /** @type {import('./install.js').SupportedTarget[]} */
     const detected = detectSkillTargets();
+    const installedManagedTargets = new Set(
+      setupStatus.skillTargets
+        .filter((entry) => entry.installed && entry.managed)
+        .map((entry) => entry.key)
+    );
 
     // Aliases like 'openai' and 'google' map to canonical targets and stay omitted.
     /** @type {Array<import('./install.js').SupportedTarget>} */
@@ -92,8 +103,11 @@ if (command === 'install-skill') {
     const items = interactiveTargets.map((t) => ({
       value: t,
       label: `${t.padEnd(10)}  ${targetLabels[t]}`,
-      hint: detected.includes(t) ? '● detected' : undefined,
-      checked: detected.includes(t)
+      hint: formatSelectionHint({
+        detected: detected.includes(t),
+        installed: installedManagedTargets.has(t)
+      }),
+      checked: installedManagedTargets.has(t)
     }));
 
     const selected = await interactiveCheckbox(
@@ -104,15 +118,17 @@ if (command === 'install-skill') {
     /** @type {import('./install.js').SupportedTarget[]} */
     let targets;
     if (selected === null) {
-      // Non-TTY: fall back to detected targets (always includes 'agents').
-      targets = detected;
+      // Non-TTY: prefer managed installs, then detected targets (always includes 'agents').
+      targets = installedManagedTargets.size > 0
+        ? /** @type {import('./install.js').SupportedTarget[]} */ ([...installedManagedTargets])
+        : detected;
     } else {
       targets = /** @type {import('./install.js').SupportedTarget[]} */ (selected);
     }
 
     const projectPath = isGlobal ? os.homedir() : process.cwd();
     if (selected !== null) {
-      const deselectedTargets = detected.filter((target) => !targets.includes(target));
+      const deselectedTargets = [...installedManagedTargets].filter((target) => !targets.includes(target));
       const removableTargets = await findInstalledManagedTargets({
         targets: deselectedTargets,
         projectPath,
@@ -167,8 +183,18 @@ if (command === 'install-mcp') {
   let clients;
 
   if (!clientArg) {
-    // No client specified: detect installed clients and prompt interactively.
+    // No client specified: inspect current MCP config and prompt interactively.
+    const setupStatus = await collectSetupStatus({
+      global: isGlobal,
+      cwd: process.cwd(),
+      projectPath: process.cwd()
+    });
     const detected = detectMcpClients();
+    const configuredClients = new Set(
+      setupStatus.mcpClients
+        .filter((entry) => entry.configured)
+        .map((entry) => entry.key)
+    );
     /** @type {Record<string, string>} */
     const clientLabels = {
       copilot: 'GitHub Copilot (VS Code)',
@@ -181,8 +207,11 @@ if (command === 'install-mcp') {
     const items = MCP_CLIENT_NAMES.map((c) => ({
       value: c,
       label: `${c.padEnd(10)}  ${clientLabels[c]}`,
-      hint: detected.includes(c) ? '● detected' : undefined,
-      checked: detected.includes(c)
+      hint: formatSelectionHint({
+        detected: detected.includes(c),
+        installed: configuredClients.has(c)
+      }),
+      checked: configuredClients.has(c)
     }));
 
     const selected = await interactiveCheckbox(
@@ -191,17 +220,16 @@ if (command === 'install-mcp') {
     );
 
     if (selected === null) {
-      // Non-TTY: fall back to detected clients, or all if nothing detected.
-      clients = detected.length > 0 ? detected : [...MCP_CLIENT_NAMES];
-    } else if (selected.length === 0) {
-      process.stdout.write('No clients selected.\n');
-      process.exit(0);
+      // Non-TTY: prefer configured clients, then detected clients, then all.
+      clients = configuredClients.size > 0
+        ? /** @type {import('./mcp-config.js').McpClientName[]} */ ([...configuredClients])
+        : detected.length > 0 ? detected : [...MCP_CLIENT_NAMES];
     } else {
       clients = /** @type {import('./mcp-config.js').McpClientName[]} */ (selected);
     }
 
     if (selected !== null) {
-      const deselectedClients = detected.filter((clientName) => !clients.includes(clientName));
+      const deselectedClients = [...configuredClients].filter((clientName) => !clients.includes(clientName));
       const removableClients = await findConfiguredMcpClients({
         clients: deselectedClients,
         global: isGlobal,
@@ -220,6 +248,11 @@ if (command === 'install-mcp') {
           }
         }
       }
+    }
+
+    if (clients.length === 0) {
+      process.stdout.write('No clients selected.\n');
+      process.exit(0);
     }
   } else if (clientArg === 'all') {
     clients = [...MCP_CLIENT_NAMES];
@@ -463,6 +496,22 @@ async function main() {
   } finally {
     await client.close();
   }
+}
+
+/**
+ * @param {{ detected: boolean, installed: boolean }} options
+ * @returns {string | undefined}
+ */
+function formatSelectionHint(options) {
+  /** @type {string[]} */
+  const parts = [];
+  if (options.detected) {
+    parts.push('● detected');
+  }
+  if (options.installed) {
+    parts.push('installed');
+  }
+  return parts.length > 0 ? parts.join(' · ') : undefined;
 }
 
 /**

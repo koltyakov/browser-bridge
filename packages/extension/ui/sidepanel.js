@@ -107,6 +107,7 @@
  */
 
 const PUBLISHED_EXTENSION_ID = 'ahhmghheecmambjebhfjkngdggghbkno';
+const SETUP_STATUS_POLL_MS = 15_000;
 
 const nativeIndicator = /** @type {HTMLSpanElement} */ (document.getElementById('native-indicator'));
 const toggleButton = /** @type {HTMLButtonElement} */ (document.getElementById('bridge-toggle'));
@@ -126,6 +127,8 @@ const port = chrome.runtime.connect({ name: 'ui' });
 const requestedTabId = Number(new URLSearchParams(window.location.search).get('tabId'));
 /** @type {SidePanelCurrentTab | null} */
 let currentTabState = null;
+/** @type {ReturnType<typeof setInterval> | null} */
+let setupStatusPollTimer = null;
 
 for (const cmd of /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('.setup-cmd'))) {
   cmd.addEventListener('click', () => {
@@ -173,11 +176,13 @@ toggleButton.addEventListener('click', () => {
 installationSection.addEventListener('toggle', () => {
   syncExclusiveDetailsSections(installationSection, examplesSection);
   syncConnectedSectionsVisibility();
+  syncSetupStatusPolling();
 });
 
 examplesSection.addEventListener('toggle', () => {
   syncExclusiveDetailsSections(examplesSection, installationSection);
   syncConnectedSectionsVisibility();
+  syncSetupStatusPolling();
 });
 
 installationSection.addEventListener('click', (event) => {
@@ -218,6 +223,7 @@ function renderState(state) {
     examplesSection.removeAttribute('open');
   }
   syncConnectedSectionsVisibility();
+  syncSetupStatusPolling();
 }
 
 /**
@@ -278,6 +284,51 @@ function syncConnectedSectionsVisibility() {
   examplesSection.hidden = false;
   activitySection.hidden = false;
 }
+
+/**
+ * @returns {void}
+ */
+function syncSetupStatusPolling() {
+  const shouldPoll = nativeIndicator.dataset.connected === 'true'
+    && !installationSection.hidden
+    && installationSection.open;
+
+  if (!shouldPoll) {
+    stopSetupStatusPolling();
+    return;
+  }
+
+  requestSetupStatusRefresh();
+  if (setupStatusPollTimer) {
+    return;
+  }
+
+  setupStatusPollTimer = setInterval(() => {
+    requestSetupStatusRefresh();
+  }, SETUP_STATUS_POLL_MS);
+}
+
+/**
+ * @returns {void}
+ */
+function stopSetupStatusPolling() {
+  if (!setupStatusPollTimer) {
+    return;
+  }
+  clearInterval(setupStatusPollTimer);
+  setupStatusPollTimer = null;
+}
+
+/**
+ * @returns {void}
+ */
+function requestSetupStatusRefresh() {
+  port.postMessage({ type: 'setup.status.refresh' });
+}
+
+window.addEventListener('beforeunload', () => {
+  stopSetupStatusPolling();
+});
 
 /**
  * @param {HTMLDetailsElement} source

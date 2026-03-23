@@ -2330,6 +2330,12 @@ async function handleUiMessage(port, message) {
     return;
   }
 
+  if (message?.type === 'setup.status.refresh') {
+    refreshSetupStatus(true);
+    await emitUiStateForPort(port);
+    return;
+  }
+
   if (message?.type === 'scope.set_enabled') {
     const requestedTabId = Number(message.tabId);
     if (Number.isFinite(requestedTabId) && requestedTabId > 0) {
