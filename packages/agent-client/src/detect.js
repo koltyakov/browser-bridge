@@ -12,6 +12,20 @@ const home = os.homedir();
 const platform = process.platform;
 
 /**
+ * @returns {string}
+ */
+function getVsCodeUserDataDir() {
+  if (platform === 'win32') {
+    const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+    return path.join(appData, 'Code');
+  }
+  if (platform === 'linux') {
+    return path.join(home, '.config', 'Code');
+  }
+  return path.join(home, 'Library', 'Application Support', 'Code');
+}
+
+/**
  * @param {string} p
  * @returns {boolean}
  */
@@ -39,6 +53,7 @@ function commandExists(cmd) {
 
 /** @returns {boolean} */
 function detectCopilot() {
+  if (fsExists(path.join(getVsCodeUserDataDir(), 'User'))) return true;
   if (fsExists(path.join(home, '.vscode'))) return true;
   if (platform === 'darwin') return fsExists('/Applications/Visual Studio Code.app');
   if (platform === 'win32') {
@@ -64,14 +79,9 @@ function detectWindsurf() {
 
 /** @returns {boolean} */
 function detectClaude() {
-  if (platform === 'darwin') {
-    return fsExists(path.join(home, 'Library', 'Application Support', 'Claude'));
-  }
-  if (platform === 'win32') {
-    const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
-    return fsExists(path.join(appData, 'Claude'));
-  }
-  return fsExists(path.join(home, '.config', 'Claude'));
+  if (fsExists(path.join(home, '.claude'))) return true;
+  if (fsExists(path.join(home, '.claude.json'))) return true;
+  return commandExists('claude');
 }
 
 /** @returns {boolean} */
@@ -82,6 +92,7 @@ function detectCodex() {
 
 /** @returns {boolean} */
 function detectOpencode() {
+  if (fsExists(path.join(home, '.config', 'opencode'))) return true;
   if (fsExists(path.join(home, '.opencode'))) return true;
   return commandExists('opencode');
 }

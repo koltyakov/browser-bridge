@@ -82,7 +82,7 @@ if (command === 'install-skill') {
     const targetLabels = {
       copilot: 'GitHub Copilot (VS Code)',
       codex: 'OpenAI Codex CLI',
-      claude: 'Claude Code / Claude Desktop',
+      claude: 'Claude Code',
       cursor: 'Cursor',
       windsurf: 'Windsurf',
       opencode: 'OpenCode',
@@ -151,7 +151,7 @@ if (command === 'install-mcp') {
       codex: 'OpenAI Codex CLI',
       cursor: 'Cursor',
       windsurf: 'Windsurf',
-      claude: 'Claude Desktop / Claude Code',
+      claude: 'Claude Code',
       opencode: 'OpenCode'
     };
     const items = MCP_CLIENT_NAMES.map((c) => ({

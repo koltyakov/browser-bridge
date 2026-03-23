@@ -20,23 +20,23 @@ This also installs the native messaging host automatically.
 
 There are two integration paths - pick the one that fits how your agent works:
 
-Supported clients: `copilot` (GitHub Copilot / VS Code), `codex` (OpenAI Codex CLI), `cursor` (Cursor), `claude` (Claude Desktop / Claude Code), `opencode` (OpenCode).
+Supported clients: `copilot` (GitHub Copilot / VS Code), `codex` (OpenAI Codex CLI), `cursor` (Cursor), `windsurf` (Windsurf), `claude` (Claude Code), `opencode` (OpenCode).
 
 **MCP** - for agents with native MCP tool support. Write the config directly into each client's settings file:
 
 ```bash
 bbx install-mcp                  # all supported clients
-bbx install-mcp copilot          # or pick one: copilot, codex, cursor, claude, opencode
+bbx install-mcp copilot          # or pick one: copilot, codex, cursor, windsurf, claude, opencode
 bbx install-mcp copilot --local  # scope to current project instead of global
 ```
 
-Configs are written globally by default. MCP is better with `$bbx-mcp` skill that teaches your agent to call methods directly for more structured, token-efficient output. No manual `bbx` calls needed.
+Configs are written globally by default. For GitHub Copilot, that means the VS Code user-profile `mcp.json`; project installs still use `.vscode/mcp.json`. MCP is better with `$bbx-mcp` skill that teaches your agent to call methods directly for more structured, token-efficient output. No manual `bbx` calls needed.
 
 **Skill + CLI** - for agents that run shell commands. Install the Browser Bridge skill so your agent knows how to drive `bbx`:
 
 ```bash
 bbx install-skill                  # all supported clients
-bbx install-skill copilot          # or pick one: copilot, codex, cursor, claude, opencode, agents
+bbx install-skill copilot          # or pick one: copilot, codex, cursor, windsurf, claude, opencode, antigravity, agents
 bbx install-skill copilot --local  # scope to current project instead of global
 ```
 

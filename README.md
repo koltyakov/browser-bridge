@@ -15,14 +15,6 @@ Managed skill installs support GitHub Copilot, OpenAI Codex, Claude Code, Cursor
 <table align="center">
   <tr>
     <td align="center" width="140">
-      <a href="https://github.com/features/copilot">
-        <picture>
-          <source media="(prefers-color-scheme: dark)" srcset="https://unpkg.com/@lobehub/icons-static-png@latest/dark/githubcopilot.png" />
-          <img src="https://unpkg.com/@lobehub/icons-static-png@latest/light/githubcopilot.png" alt="GitHub Copilot" style="width: 44px; height: 44px; object-fit: contain;" />
-        </picture>
-      </a>
-    </td>
-    <td align="center" width="140">
       <a href="https://openai.com/codex/">
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="https://unpkg.com/@lobehub/icons-static-png@latest/dark/codex.png" />
@@ -46,12 +38,20 @@ Managed skill installs support GitHub Copilot, OpenAI Codex, Claude Code, Cursor
         </picture>
       </a>
     </td>
+    <td align="center" width="140">
+      <a href="https://github.com/features/copilot">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="https://unpkg.com/@lobehub/icons-static-png@latest/dark/githubcopilot.png" />
+          <img src="https://unpkg.com/@lobehub/icons-static-png@latest/light/githubcopilot.png" alt="GitHub Copilot" style="width: 44px; height: 44px; object-fit: contain;" />
+        </picture>
+      </a>
+    </td>
   </tr>
   <tr>
-    <td align="center">GitHub Copilot</td>
     <td align="center">OpenAI Codex</td>
     <td align="center">Claude Code</td>
     <td align="center">Cursor</td>
+    <td align="center">GitHub Copilot</td>
   </tr>
   <tr>
     <td align="center" width="140">

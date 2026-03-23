@@ -95,6 +95,78 @@ test('installMcpConfig preserves unrelated config entries when merging', async (
   }
 });
 
+test('installMcpConfig upserts Codex TOML config without dropping other sections', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-codex-mcp-config-'));
+  const configPath = path.join(tempDir, '.codex', 'config.toml');
+  await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
+  await fs.promises.writeFile(configPath, [
+    'model = "gpt-5"',
+    '',
+    '[sandbox_workspace_write]',
+    'network_access = true',
+    ''
+  ].join('\n'), 'utf8');
+
+  try {
+    await installMcpConfig('codex', {
+      global: false,
+      cwd: tempDir,
+      stdout: { write() { return true; } }
+    });
+
+    const merged = await fs.promises.readFile(configPath, 'utf8');
+    assert.match(merged, /model = "gpt-5"/);
+    assert.match(merged, /\[sandbox_workspace_write\]/);
+    assert.match(merged, /\[mcp_servers\."browser-bridge"\]/);
+    assert.match(merged, /command = "bbx"/);
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('installMcpConfig writes Copilot global config to default and existing profile files', async () => {
+  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-copilot-mcp-config-'));
+  const originalHome = process.env.HOME;
+  const originalAppData = process.env.APPDATA;
+
+  try {
+    process.env.HOME = tempHome;
+    if (process.platform === 'win32') {
+      process.env.APPDATA = path.join(tempHome, 'AppData', 'Roaming');
+    }
+
+    const userDir = process.platform === 'win32'
+      ? path.join(process.env.APPDATA || path.join(tempHome, 'AppData', 'Roaming'), 'Code', 'User')
+      : process.platform === 'linux'
+        ? path.join(tempHome, '.config', 'Code', 'User')
+        : path.join(tempHome, 'Library', 'Application Support', 'Code', 'User');
+    const profileConfigPath = path.join(userDir, 'profiles', 'profile-a', 'mcp.json');
+    await fs.promises.mkdir(path.dirname(profileConfigPath), { recursive: true });
+
+    await installMcpConfig('copilot', {
+      global: true,
+      stdout: { write() { return true; } }
+    });
+
+    const defaultConfig = await fs.promises.readFile(path.join(userDir, 'mcp.json'), 'utf8');
+    const profileConfig = await fs.promises.readFile(profileConfigPath, 'utf8');
+    assert.match(defaultConfig, /"browser-bridge"/);
+    assert.match(profileConfig, /"browser-bridge"/);
+  } finally {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+    if (originalAppData === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = originalAppData;
+    }
+    await fs.promises.rm(tempHome, { recursive: true, force: true });
+  }
+});
+
 test('requireSession refreshes an expired saved session', async () => {
   await withTempCodexHome(async () => {
     await saveSession({

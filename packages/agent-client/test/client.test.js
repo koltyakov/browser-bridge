@@ -8,7 +8,7 @@ import path from 'node:path';
 
 import { methodNeedsSession, parseCommaList, parseJsonObject, parsePropertyAssignments } from '../src/cli-helpers.js';
 import { installAgentFiles, parseInstallAgentArgs } from '../src/install.js';
-import { buildMcpConfig, formatMcpConfig, getMcpConfigPath, isMcpClientName } from '../src/mcp-config.js';
+import { buildMcpConfig, formatMcpConfig, getMcpConfigPath, getMcpConfigPaths, isMcpClientName } from '../src/mcp-config.js';
 import { summarizeBridgeResponse } from '../src/subagent.js';
 
 /** Ensure failures stay compact for parent-agent reporting. */
@@ -649,12 +649,70 @@ test('buildMcpConfig produces client-specific config shapes', () => {
       }
     }
   });
+
+  assert.deepEqual(buildMcpConfig('codex'), {
+    mcp_servers: {
+      'browser-bridge': {
+        command: 'bbx',
+        args: ['mcp', 'serve']
+      }
+    }
+  });
 });
 
 test('formatMcpConfig returns pretty JSON with newline', () => {
   const formatted = formatMcpConfig('cursor');
   assert.match(formatted, /"browser-bridge"/);
   assert.ok(formatted.endsWith('\n'));
+});
+
+test('formatMcpConfig returns Codex TOML with newline', () => {
+  const formatted = formatMcpConfig('codex');
+  assert.match(formatted, /\[mcp_servers\."browser-bridge"\]/);
+  assert.match(formatted, /command = "bbx"/);
+  assert.ok(formatted.endsWith('\n'));
+});
+
+test('getMcpConfigPath supports Copilot global and local locations', () => {
+  const home = os.homedir();
+  const expectedGlobal = process.platform === 'win32'
+    ? path.join(process.env.APPDATA || path.join(home, 'AppData', 'Roaming'), 'Code', 'User', 'mcp.json')
+    : process.platform === 'linux'
+      ? path.join(home, '.config', 'Code', 'User', 'mcp.json')
+      : path.join(home, 'Library', 'Application Support', 'Code', 'User', 'mcp.json');
+
+  assert.equal(
+    getMcpConfigPath('copilot', { global: false, cwd: '/tmp/demo' }),
+    path.join('/tmp/demo', '.vscode', 'mcp.json')
+  );
+  assert.equal(
+    getMcpConfigPath('copilot', { global: true }),
+    expectedGlobal
+  );
+});
+
+test('getMcpConfigPath supports Claude Code global and local locations', () => {
+  const home = os.homedir();
+  assert.equal(
+    getMcpConfigPath('claude', { global: false, cwd: '/tmp/demo' }),
+    path.join('/tmp/demo', '.mcp.json')
+  );
+  assert.equal(
+    getMcpConfigPath('claude', { global: true }),
+    path.join(home, '.claude.json')
+  );
+});
+
+test('getMcpConfigPath supports Codex global and local locations', () => {
+  const home = os.homedir();
+  assert.equal(
+    getMcpConfigPath('codex', { global: false, cwd: '/tmp/demo' }),
+    path.join('/tmp/demo', '.codex', 'config.toml')
+  );
+  assert.equal(
+    getMcpConfigPath('codex', { global: true }),
+    path.join(process.env.CODEX_HOME || path.join(home, '.codex'), 'config.toml')
+  );
 });
 
 test('getMcpConfigPath supports OpenCode global and local locations', () => {
@@ -679,4 +737,39 @@ test('getMcpConfigPath supports Windsurf global and local locations', () => {
     getMcpConfigPath('windsurf', { global: true }),
     path.join(home, '.codeium', 'windsurf', 'mcp_config.json')
   );
+});
+
+test('getMcpConfigPaths includes existing Copilot profile configs for global installs', async () => {
+  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-copilot-mcp-paths-'));
+  const originalHome = process.env.HOME;
+  const originalAppData = process.env.APPDATA;
+
+  try {
+    process.env.HOME = tempHome;
+    if (process.platform === 'win32') {
+      process.env.APPDATA = path.join(tempHome, 'AppData', 'Roaming');
+    }
+    const profileDir = process.platform === 'win32'
+      ? path.join(process.env.APPDATA || path.join(tempHome, 'AppData', 'Roaming'), 'Code', 'User', 'profiles', 'profile-a')
+      : process.platform === 'linux'
+        ? path.join(tempHome, '.config', 'Code', 'User', 'profiles', 'profile-a')
+        : path.join(tempHome, 'Library', 'Application Support', 'Code', 'User', 'profiles', 'profile-a');
+    await fs.promises.mkdir(profileDir, { recursive: true });
+
+    const paths = await getMcpConfigPaths('copilot', { global: true });
+    assert.equal(paths.length, 2);
+    assert.equal(paths[1], path.join(profileDir, 'mcp.json'));
+  } finally {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+    if (originalAppData === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = originalAppData;
+    }
+    await fs.promises.rm(tempHome, { recursive: true, force: true });
+  }
 });

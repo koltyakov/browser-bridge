@@ -5,9 +5,10 @@ import path from 'node:path';
 
 import { detectMcpClients, detectSkillTargets } from './detect.js';
 import {
-  getMcpConfigShape,
   getMcpConfigPath,
-  MCP_CLIENT_NAMES
+  getMcpConfigPaths,
+  MCP_CLIENT_NAMES,
+  parseInstalledMcpConfig
 } from './mcp-config.js';
 import {
   getManagedPackageVersion,
@@ -32,14 +33,14 @@ const MCP_CLIENT_LABELS = {
   codex: 'OpenAI Codex',
   cursor: 'Cursor',
   windsurf: 'Windsurf',
-  claude: 'Claude',
+  claude: 'Claude Code',
   opencode: 'OpenCode'
 };
 
 /** @type {Record<SupportedTarget, string>} */
 const SKILL_TARGET_LABELS = {
   copilot: 'GitHub Copilot',
-  claude: 'Claude',
+  claude: 'Claude Code',
   cursor: 'Cursor',
   windsurf: 'Windsurf',
   opencode: 'OpenCode',
@@ -117,19 +118,29 @@ export async function collectSetupStatus(options = {}) {
  * @returns {Promise<McpClientStatus>}
  */
 async function collectMcpClientStatus(clientName, options) {
-  const configPath = getMcpConfigPath(clientName, {
+  const primaryConfigPath = getMcpConfigPath(clientName, {
     global: options.global,
     cwd: options.cwd
   });
-  const entry = await readBrowserBridgeMcpEntry(clientName, configPath, options.readFile);
+  const configPaths = await getMcpConfigPaths(clientName, {
+    global: options.global,
+    cwd: options.cwd
+  });
+  const entries = await Promise.all(configPaths.map(async (configPath) => {
+    return readBrowserBridgeMcpEntry(clientName, configPath, options.readFile);
+  }));
+  const preferredEntry = entries.find((entry) => entry.configured)
+    || entries.find((entry) => entry.configExists)
+    || null;
+  const preferredPath = preferredEntry?.configPath || primaryConfigPath;
 
   return {
     key: clientName,
     label: MCP_CLIENT_LABELS[clientName],
     detected: options.detected,
-    configPath,
-    configExists: entry.configExists,
-    configured: entry.configured
+    configPath: preferredPath,
+    configExists: entries.some((entry) => entry.configExists),
+    configured: entries.some((entry) => entry.configured)
   };
 }
 
@@ -230,29 +241,27 @@ async function readManagedSkillVersion(sentinelPath, readFile) {
  * @param {McpClientName} clientName
  * @param {string} configPath
  * @param {(targetPath: string, encoding: BufferEncoding) => Promise<string>} readFile
- * @returns {Promise<{ configExists: boolean, configured: boolean }>}
+ * @returns {Promise<{ configPath: string, configExists: boolean, configured: boolean }>}
  */
 async function readBrowserBridgeMcpEntry(clientName, configPath, readFile) {
   try {
     const raw = await readFile(configPath, 'utf8');
-    const parsed = JSON.parse(raw);
-    const topKey = getMcpConfigShape(clientName).key;
-    const block = parsed && typeof parsed === 'object'
-      ? /** @type {Record<string, unknown>} */ (parsed[topKey] ?? {})
-      : {};
     return {
+      configPath,
       configExists: true,
-      configured: Boolean(block && typeof block === 'object' && Object.hasOwn(block, 'browser-bridge'))
+      configured: parseInstalledMcpConfig(clientName, raw).configured
     };
   } catch {
     try {
       await readFile(configPath, 'utf8');
       return {
+        configPath,
         configExists: true,
         configured: false
       };
     } catch {
       return {
+        configPath,
         configExists: false,
         configured: false
       };

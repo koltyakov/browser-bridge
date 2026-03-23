@@ -199,6 +199,52 @@ test('collectSetupStatus uses ~/.copilot/skills for GitHub Copilot global skills
   }
 });
 
+test('collectSetupStatus reads Copilot global MCP from the VS Code user profile path', async () => {
+  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-setup-status-copilot-mcp-home-'));
+  const originalHome = process.env.HOME;
+  const originalAppData = process.env.APPDATA;
+
+  try {
+    process.env.HOME = tempHome;
+    if (process.platform === 'win32') {
+      process.env.APPDATA = path.join(tempHome, 'AppData', 'Roaming');
+    }
+
+    await installMcpConfig('copilot', {
+      global: true,
+      stdout: { write() { return true; } }
+    });
+
+    const status = await collectSetupStatus({
+      global: true,
+      cwd: tempHome,
+      projectPath: tempHome,
+      mcpDetectors: createDetectors(['copilot']),
+      skillDetectors: createDetectors([])
+    });
+
+    const copilot = status.mcpClients.find((entry) => entry.key === 'copilot');
+    assert.ok(copilot);
+    assert.equal(copilot.detected, true);
+    assert.equal(copilot.configExists, true);
+    assert.equal(copilot.configured, true);
+    assert.match(copilot.configPath, /mcp\.json$/);
+    assert.ok(!copilot.configPath.endsWith(path.join('.vscode', 'mcp.json')));
+  } finally {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+    if (originalAppData === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = originalAppData;
+    }
+    await fs.promises.rm(tempHome, { recursive: true, force: true });
+  }
+});
+
 test('collectSetupStatus marks legacy managed skills as updateable', async () => {
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-setup-status-legacy-skill-'));
   const sentinel = getManagedSkillSentinelFilename();
