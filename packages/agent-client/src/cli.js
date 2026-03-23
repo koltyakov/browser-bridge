@@ -5,13 +5,22 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import { SUPPORTED_BROWSERS } from '../../native-host/src/config.js';
+import { uninstallNativeManifest } from '../../native-host/src/install-manifest.js';
 import { createRuntimeContext, METHODS } from '../../protocol/src/index.js';
 import { startBridgeMcpServer } from '../../mcp-server/src/server.js';
 import { BridgeClient } from './client.js';
 import { CLI_HELP_SECTIONS, SESSION_COMMANDS } from './command-registry.js';
 import { interactiveCheckbox, interactiveConfirm, methodNeedsSession, parseIntArg, parseJsonObject } from './cli-helpers.js';
 import { detectMcpClients, detectSkillTargets } from './detect.js';
-import { findInstalledManagedTargets, installAgentFiles, parseInstallAgentArgs, removeAgentFiles } from './install.js';
+import {
+  findInstalledManagedTargets,
+  getRequiredManagedSkillNames,
+  installAgentFiles,
+  parseInstallAgentArgs,
+  removeAgentFiles,
+  SUPPORTED_TARGETS
+} from './install.js';
 import { findConfiguredMcpClients, formatMcpConfig, installMcpConfig, isMcpClientName, MCP_CLIENT_NAMES, removeMcpConfig } from './mcp-config.js';
 import { getDoctorReport, requestBridge, requireSession, resolveRef } from './runtime.js';
 import { collectSetupStatus } from './setup-status.js';
@@ -63,6 +72,16 @@ if (command === 'install') {
   process.exit(0);
 }
 
+if (command === 'uninstall') {
+  if (rest.length > 0) {
+    process.stderr.write('Usage: bbx uninstall\n');
+    process.exit(1);
+  }
+
+  await uninstallBrowserBridge();
+  process.exit(0);
+}
+
 if (command === 'install-skill') {
   // When no positional target is given, detect installed agents and prompt.
   const positional = rest.filter((a) => !a.startsWith('--'));
@@ -85,6 +104,7 @@ if (command === 'install-skill') {
         .filter((entry) => entry.installed && entry.managed)
         .map((entry) => entry.key)
     );
+    const installedManagedTargetList = /** @type {import('./install.js').SupportedTarget[]} */ ([...installedManagedTargets]);
 
     // Aliases like 'openai' and 'google' map to canonical targets and stay omitted.
     /** @type {Array<import('./install.js').SupportedTarget>} */
@@ -120,15 +140,18 @@ if (command === 'install-skill') {
     if (selected === null) {
       // Non-TTY: prefer managed installs, then detected targets (always includes 'agents').
       targets = installedManagedTargets.size > 0
-        ? /** @type {import('./install.js').SupportedTarget[]} */ ([...installedManagedTargets])
+        ? installedManagedTargetList
         : detected;
     } else {
       targets = /** @type {import('./install.js').SupportedTarget[]} */ (selected);
     }
 
     const projectPath = isGlobal ? os.homedir() : process.cwd();
+    const targetsWithoutMcpCompanion = [];
     if (selected !== null) {
-      const deselectedTargets = [...installedManagedTargets].filter((target) => !targets.includes(target));
+      const deselectedTargets = /** @type {import('./install.js').SupportedTarget[]} */ (
+        installedManagedTargetList.filter((target) => !targets.includes(target))
+      );
       const removableTargets = await findInstalledManagedTargets({
         targets: deselectedTargets,
         projectPath,
@@ -154,16 +177,50 @@ if (command === 'install-skill') {
       process.exit(0);
     }
 
+    for (const target of targets) {
+      const requiredSkillNames = await getRequiredManagedSkillNames(target, {
+        projectPath,
+        global: isGlobal
+      });
+      if (isMcpClientName(target) && !requiredSkillNames.includes('browser-bridge-mcp')) {
+        targetsWithoutMcpCompanion.push(target);
+      }
+    }
+
     const installedPaths = await installAgentFiles({ targets, projectPath, global: isGlobal });
     for (const p of installedPaths) process.stdout.write(`Installed ${p}\n`);
+    if (targetsWithoutMcpCompanion.length > 0) {
+      process.stdout.write(
+        `Note: skipped the MCP companion skill for ${targetsWithoutMcpCompanion.join(', ')} because Browser Bridge MCP is not configured there yet.\n`
+      );
+      process.stdout.write(
+        `Run bbx install-mcp ${targetsWithoutMcpCompanion[0]} and then bbx install-skill ${targetsWithoutMcpCompanion[0]} to add it later.\n`
+      );
+    }
     process.exit(0);
   }
 
   // Explicit targets or 'all' provided - use existing arg-parsing logic.
   const options = parseInstallAgentArgs(rest);
+  /** @type {import('./install.js').SupportedTarget[]} */
+  const targetsWithoutMcpCompanion = [];
+  for (const target of options.targets) {
+    const requiredSkillNames = await getRequiredManagedSkillNames(target, options);
+    if (isMcpClientName(target) && !requiredSkillNames.includes('browser-bridge-mcp')) {
+      targetsWithoutMcpCompanion.push(target);
+    }
+  }
   const installedPaths = await installAgentFiles(options);
   for (const installedPath of installedPaths) {
     process.stdout.write(`Installed ${installedPath}\n`);
+  }
+  if (targetsWithoutMcpCompanion.length > 0) {
+    process.stdout.write(
+      `Note: skipped the MCP companion skill for ${targetsWithoutMcpCompanion.join(', ')} because Browser Bridge MCP is not configured there yet.\n`
+    );
+    process.stdout.write(
+      `Run bbx install-mcp ${targetsWithoutMcpCompanion[0]} and then bbx install-skill ${targetsWithoutMcpCompanion[0]} to add it later.\n`
+    );
   }
   process.exit(0);
 }
@@ -195,6 +252,7 @@ if (command === 'install-mcp') {
         .filter((entry) => entry.configured)
         .map((entry) => entry.key)
     );
+    const configuredClientList = /** @type {import('./mcp-config.js').McpClientName[]} */ ([...configuredClients]);
     /** @type {Record<string, string>} */
     const clientLabels = {
       copilot: 'GitHub Copilot (VS Code)',
@@ -222,14 +280,16 @@ if (command === 'install-mcp') {
     if (selected === null) {
       // Non-TTY: prefer configured clients, then detected clients, then all.
       clients = configuredClients.size > 0
-        ? /** @type {import('./mcp-config.js').McpClientName[]} */ ([...configuredClients])
+        ? configuredClientList
         : detected.length > 0 ? detected : [...MCP_CLIENT_NAMES];
     } else {
       clients = /** @type {import('./mcp-config.js').McpClientName[]} */ (selected);
     }
 
     if (selected !== null) {
-      const deselectedClients = [...configuredClients].filter((clientName) => !clients.includes(clientName));
+      const deselectedClients = /** @type {import('./mcp-config.js').McpClientName[]} */ (
+        configuredClientList.filter((clientName) => !clients.includes(clientName))
+      );
       const removableClients = await findConfiguredMcpClients({
         clients: deselectedClients,
         global: isGlobal,
@@ -274,6 +334,9 @@ if (command === 'install-mcp') {
 
   for (const clientName of clients) {
     await installMcpConfig(clientName, { global: isGlobal, cwd: process.cwd() });
+    process.stdout.write(
+      `Tip: run bbx install-skill ${clientName}${isGlobal ? '' : ' --local'} to install or update the MCP companion skill.\n`
+    );
   }
   process.exit(0);
 }
@@ -547,6 +610,47 @@ function printUsage() {
     blocks.push(...section.lines.map((line) => `  ${line}`));
   }
   process.stdout.write(`${blocks.join('\n')}\n`);
+}
+
+/**
+ * @returns {Promise<void>}
+ */
+async function uninstallBrowserBridge() {
+  const cwd = process.cwd();
+  const globalProjectPath = os.homedir();
+
+  for (const clientName of MCP_CLIENT_NAMES) {
+    await removeMcpConfig(clientName, { global: true, cwd });
+  }
+
+  const removedGlobalSkillPaths = await removeAgentFiles({
+    targets: SUPPORTED_TARGETS,
+    projectPath: globalProjectPath,
+    global: true
+  });
+  for (const removedPath of removedGlobalSkillPaths) {
+    process.stdout.write(`Removed ${removedPath}\n`);
+  }
+
+  for (const clientName of MCP_CLIENT_NAMES) {
+    await removeMcpConfig(clientName, { global: false, cwd });
+  }
+
+  const removedLocalSkillPaths = await removeAgentFiles({
+    targets: SUPPORTED_TARGETS,
+    projectPath: cwd,
+    global: false
+  });
+  for (const removedPath of removedLocalSkillPaths) {
+    process.stdout.write(`Removed ${removedPath}\n`);
+  }
+
+  for (const [index, browser] of SUPPORTED_BROWSERS.entries()) {
+    await uninstallNativeManifest({
+      browser,
+      removeBridgeDir: index === SUPPORTED_BROWSERS.length - 1
+    });
+  }
 }
 
 /**

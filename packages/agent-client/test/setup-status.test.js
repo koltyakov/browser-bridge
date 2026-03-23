@@ -6,8 +6,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import {
+  formatManagedSkillSentinel,
+  getCoreManagedSkillName,
+  getManagedSkillNames,
+  getManagedSkillSentinelFilename,
+  getMcpManagedSkillName,
+  getSkillBasePath
+} from '../src/install.js';
 import { installMcpConfig } from '../src/mcp-config.js';
-import { getManagedSkillNames, getManagedSkillSentinelFilename, getSkillBasePath } from '../src/install.js';
 import { collectSetupStatus } from '../src/setup-status.js';
 
 /**
@@ -27,6 +34,22 @@ function createDetectors(detectedNames) {
   };
 }
 
+/**
+ * @param {string} basePath
+ * @param {string} skillName
+ * @param {string} sentinel
+ * @param {string} [sentinelBody]
+ * @returns {Promise<void>}
+ */
+async function writeManagedSkill(basePath, skillName, sentinel, sentinelBody = `${skillName} managed\n`) {
+  const skillPath = path.join(basePath, skillName);
+  await fs.promises.mkdir(skillPath, { recursive: true });
+  const content = sentinelBody === `${skillName} managed\n`
+    ? formatManagedSkillSentinel(skillName)
+    : sentinelBody;
+  await fs.promises.writeFile(path.join(skillPath, sentinel), content, 'utf8');
+}
+
 test('collectSetupStatus reports local MCP and skill installation state', async () => {
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-setup-status-'));
 
@@ -39,30 +62,20 @@ test('collectSetupStatus reports local MCP and skill installation state', async 
 
     const codexBase = path.join(tempDir, '.codex', 'skills');
     const sentinel = getManagedSkillSentinelFilename();
-    for (const skillName of getManagedSkillNames()) {
-      const skillPath = path.join(codexBase, skillName);
-      await fs.promises.mkdir(skillPath, { recursive: true });
-      await fs.promises.writeFile(path.join(skillPath, sentinel), `${skillName} managed\n`, 'utf8');
-    }
+    await writeManagedSkill(codexBase, getCoreManagedSkillName(), sentinel);
 
     const cursorBase = getSkillBasePath('cursor', {
       global: false,
       projectPath: tempDir
     });
-    for (const skillName of getManagedSkillNames()) {
-      const skillPath = path.join(cursorBase, skillName);
-      await fs.promises.mkdir(skillPath, { recursive: true });
-      await fs.promises.writeFile(path.join(skillPath, sentinel), `${skillName} managed\n`, 'utf8');
-    }
+    await writeManagedSkill(cursorBase, getCoreManagedSkillName(), sentinel, 'legacy managed\n');
 
     const windsurfBase = getSkillBasePath('windsurf', {
       global: false,
       projectPath: tempDir
     });
     for (const skillName of getManagedSkillNames()) {
-      const skillPath = path.join(windsurfBase, skillName);
-      await fs.promises.mkdir(skillPath, { recursive: true });
-      await fs.promises.writeFile(path.join(skillPath, sentinel), `${skillName} managed\n`, 'utf8');
+      await writeManagedSkill(windsurfBase, skillName, sentinel);
     }
 
     const opencodeSkillPath = path.join(tempDir, '.opencode', 'skills', 'browser-bridge');
@@ -102,6 +115,7 @@ test('collectSetupStatus reports local MCP and skill installation state', async 
     assert.equal(codex.installed, true);
     assert.equal(codex.managed, true);
     assert.equal(codex.skills.length, 2);
+    assert.equal(codex.updateAvailable, false);
 
     const windsurfSkills = status.skillTargets.find((entry) => entry.key === 'windsurf');
     assert.ok(windsurfSkills);
@@ -121,7 +135,7 @@ test('collectSetupStatus reports local MCP and skill installation state', async 
     const opencode = status.skillTargets.find((entry) => entry.key === 'opencode');
     assert.ok(opencode);
     assert.equal(opencode.detected, true);
-    assert.equal(opencode.installed, false);
+    assert.equal(opencode.installed, true);
     assert.equal(opencode.managed, false);
     assert.equal(opencode.skills.filter((skill) => skill.exists).length, 1);
   } finally {
@@ -169,11 +183,7 @@ test('collectSetupStatus uses ~/.copilot/skills for GitHub Copilot global skills
       global: true,
       projectPath: '/tmp/unused'
     });
-    for (const skillName of getManagedSkillNames()) {
-      const skillPath = path.join(copilotBase, skillName);
-      await fs.promises.mkdir(skillPath, { recursive: true });
-      await fs.promises.writeFile(path.join(skillPath, sentinel), `${skillName} managed\n`, 'utf8');
-    }
+    await writeManagedSkill(copilotBase, getCoreManagedSkillName(), sentinel);
 
     const status = await collectSetupStatus({
       global: true,
@@ -189,6 +199,7 @@ test('collectSetupStatus uses ~/.copilot/skills for GitHub Copilot global skills
     assert.equal(copilotSkills.installed, true);
     assert.equal(copilotSkills.managed, true);
     assert.equal(copilotSkills.basePath, path.join(tempHome, '.copilot', 'skills'));
+    assert.equal(copilotSkills.updateAvailable, false);
   } finally {
     if (originalHome === undefined) {
       delete process.env.HOME;
@@ -253,11 +264,7 @@ test('collectSetupStatus marks legacy managed skills as updateable', async () =>
       global: false,
       projectPath: tempDir
     });
-    for (const skillName of getManagedSkillNames()) {
-      const skillPath = path.join(cursorBase, skillName);
-      await fs.promises.mkdir(skillPath, { recursive: true });
-      await fs.promises.writeFile(path.join(skillPath, sentinel), `${skillName} managed\n`, 'utf8');
-    }
+    await writeManagedSkill(cursorBase, getCoreManagedSkillName(), sentinel, 'legacy managed\n');
 
     const status = await collectSetupStatus({
       global: false,
@@ -274,6 +281,44 @@ test('collectSetupStatus marks legacy managed skills as updateable', async () =>
     assert.equal(cursorSkills.installedVersion, null);
     assert.equal(typeof cursorSkills.currentVersion, 'string');
     assert.equal(cursorSkills.updateAvailable, true);
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('collectSetupStatus marks managed core skill as updateable when MCP is configured later', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-setup-status-mcp-companion-'));
+  const sentinel = getManagedSkillSentinelFilename();
+
+  try {
+    const cursorBase = getSkillBasePath('cursor', {
+      global: false,
+      projectPath: tempDir
+    });
+    await writeManagedSkill(cursorBase, getCoreManagedSkillName(), sentinel);
+    await installMcpConfig('cursor', {
+      global: false,
+      cwd: tempDir,
+      stdout: { write() { return true; } }
+    });
+
+    const status = await collectSetupStatus({
+      global: false,
+      cwd: tempDir,
+      projectPath: tempDir,
+      mcpDetectors: createDetectors(['cursor']),
+      skillDetectors: createDetectors(['cursor'])
+    });
+
+    const cursorSkills = status.skillTargets.find((entry) => entry.key === 'cursor');
+    assert.ok(cursorSkills);
+    assert.equal(cursorSkills.installed, true);
+    assert.equal(cursorSkills.managed, true);
+    assert.equal(cursorSkills.updateAvailable, true);
+    assert.equal(
+      cursorSkills.skills.some((skill) => skill.name === getMcpManagedSkillName() && skill.exists),
+      false
+    );
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }

@@ -106,6 +106,17 @@
  * }} SidePanelMessage
  */
 
+/**
+ * @typedef {{
+ *   kind: 'mcp' | 'skill',
+ *   target: string,
+ *   copyLabel: string,
+ *   copyText: string,
+ *   reinstallLabel?: string,
+ *   uninstallLabel?: string
+ * }} SetupContextAction
+ */
+
 const PUBLISHED_EXTENSION_ID = 'ahhmghheecmambjebhfjkngdggghbkno';
 const SETUP_STATUS_POLL_MS = 15_000;
 
@@ -129,6 +140,10 @@ const requestedTabId = Number(new URLSearchParams(window.location.search).get('t
 let currentTabState = null;
 /** @type {ReturnType<typeof setInterval> | null} */
 let setupStatusPollTimer = null;
+const setupContextMenu = document.createElement('div');
+setupContextMenu.className = 'setup-context-menu';
+setupContextMenu.hidden = true;
+document.body.append(setupContextMenu);
 
 for (const cmd of /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('.setup-cmd'))) {
   cmd.addEventListener('click', () => {
@@ -185,16 +200,47 @@ examplesSection.addEventListener('toggle', () => {
   syncSetupStatusPolling();
 });
 
-installationSection.addEventListener('click', (event) => {
+setupStatusMatrix.addEventListener('contextmenu', (event) => {
   const target = event.target;
-  if (!(target instanceof HTMLButtonElement) || target.dataset.action !== 'setup-install') {
+  if (!(target instanceof HTMLElement)) {
     return;
   }
-  port.postMessage({
-    type: 'setup.install',
-    kind: target.dataset.kind,
-    target: target.dataset.target
+  const actionTarget = target.closest('[data-context-kind][data-context-target]');
+  if (!(actionTarget instanceof HTMLElement)) {
+    hideSetupContextMenu();
+    return;
+  }
+
+  const kind = actionTarget.dataset.contextKind;
+  const targetKey = actionTarget.dataset.contextTarget;
+  const copyLabel = actionTarget.dataset.contextCopyLabel;
+  const copyText = actionTarget.dataset.contextCopyText;
+  const reinstallLabel = actionTarget.dataset.contextReinstallLabel;
+  const uninstallLabel = actionTarget.dataset.contextUninstallLabel;
+  if ((kind !== 'mcp' && kind !== 'skill') || !targetKey || !copyLabel || !copyText) {
+    hideSetupContextMenu();
+    return;
+  }
+
+  event.preventDefault();
+  showSetupContextMenu(event.clientX, event.clientY, {
+    kind,
+    target: targetKey,
+    copyLabel,
+    copyText,
+    reinstallLabel: reinstallLabel || undefined,
+    uninstallLabel: uninstallLabel || undefined
   });
+});
+
+document.addEventListener('click', () => {
+  hideSetupContextMenu();
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    hideSetupContextMenu();
+  }
 });
 
 /**
@@ -202,6 +248,7 @@ installationSection.addEventListener('click', (event) => {
  * @returns {void}
  */
 function renderState(state) {
+  hideSetupContextMenu();
   renderNativeStatus(state.nativeConnected);
   renderCurrentTab(state.currentTab);
   renderSetupStatus(
@@ -267,6 +314,7 @@ function renderNativeStatus(connected, error) {
       : `bbx install ${extId}`;
     setupSkillCmd.textContent = 'bbx install-skill';
     setupMcpCmd.textContent = 'bbx install-mcp';
+    hideSetupContextMenu();
   }
   syncConnectedSectionsVisibility();
 }
@@ -298,11 +346,14 @@ function syncSetupStatusPolling() {
     return;
   }
 
-  requestSetupStatusRefresh();
   if (setupStatusPollTimer) {
     return;
   }
 
+  // Only kick off an immediate refresh when polling starts. Doing this on every
+  // render causes a state.sync -> refresh -> state.sync loop that can peg the
+  // extension renderer while Host Setup is open.
+  requestSetupStatusRefresh();
   setupStatusPollTimer = setInterval(() => {
     requestSetupStatusRefresh();
   }, SETUP_STATUS_POLL_MS);
@@ -328,6 +379,7 @@ function requestSetupStatusRefresh() {
 
 window.addEventListener('beforeunload', () => {
   stopSetupStatusPolling();
+  hideSetupContextMenu();
 });
 
 /**
@@ -403,7 +455,7 @@ function buildSetupMatrixRows(setupStatus) {
   const order = [];
 
   for (const entry of setupStatus.mcpClients) {
-    if (!entry.detected) {
+    if (!shouldRenderMcpClientRow(entry)) {
       continue;
     }
     if (!rowsByKey.has(entry.key)) {
@@ -420,7 +472,7 @@ function buildSetupMatrixRows(setupStatus) {
   }
 
   for (const entry of setupStatus.skillTargets) {
-    if (!entry.detected) {
+    if (!shouldRenderSkillTargetRow(entry)) {
       continue;
     }
     if (!rowsByKey.has(entry.key)) {
@@ -437,6 +489,22 @@ function buildSetupMatrixRows(setupStatus) {
   }
 
   return order.map((key) => rowsByKey.get(key)).filter(Boolean);
+}
+
+/**
+ * @param {McpClientStatus} entry
+ * @returns {boolean}
+ */
+function shouldRenderMcpClientRow(entry) {
+  return entry.detected || entry.configured;
+}
+
+/**
+ * @param {SkillTargetStatus} entry
+ * @returns {boolean}
+ */
+function shouldRenderSkillTargetRow(entry) {
+  return entry.detected || entry.installed || entry.skills.some((skill) => skill.exists);
 }
 
 /**
@@ -490,7 +558,14 @@ function renderMcpMatrixCell(row, installPendingKey) {
     return createMatrixMutedValue('\u2014');
   }
   if (entry.configured) {
-    return createMatrixBadge('Installed', true, entry.configPath);
+    return createMatrixBadge('Installed', true, entry.configPath, {
+      kind: 'mcp',
+      target: row.key,
+      copyLabel: 'Copy MCP config path',
+      copyText: entry.configPath,
+      reinstallLabel: 'Re-install MCP',
+      uninstallLabel: `Uninstall MCP for ${row.label}`
+    });
   }
   const button = createSetupActionButton(
     'mcp',
@@ -498,7 +573,7 @@ function renderMcpMatrixCell(row, installPendingKey) {
     installPendingKey === getInstallKey('mcp', row.key),
     'install',
     'Install',
-    'Installing…'
+    '...'
   );
   button.title = entry.configPath;
   return button;
@@ -514,10 +589,27 @@ function renderSkillMatrixCell(row, installPendingKey) {
   if (!entry) {
     return createMatrixMutedValue('\u2014');
   }
+  const reinstallLabel = getSkillReinstallLabel(entry);
+  const uninstallLabel = getSkillUninstallLabel(entry);
 
   const installable = entry.skills.every((skill) => !skill.exists || skill.managed);
+  if (!installable) {
+    return createMatrixBadge('Custom', false, entry.basePath, {
+      kind: 'skill',
+      target: row.key,
+      copyLabel: 'Copy skills folder path',
+      copyText: entry.basePath
+    });
+  }
   if (entry.installed && entry.managed && !entry.updateAvailable) {
-    return createMatrixBadge('Installed', true, createSkillCellTitle(entry));
+    return createMatrixBadge('Installed', true, createSkillCellTitle(entry), {
+      kind: 'skill',
+      target: row.key,
+      copyLabel: 'Copy skills folder path',
+      copyText: entry.basePath,
+      reinstallLabel,
+      uninstallLabel
+    });
   }
   if (entry.installed && entry.managed && entry.updateAvailable) {
     const button = createSetupActionButton(
@@ -529,10 +621,15 @@ function renderSkillMatrixCell(row, installPendingKey) {
       'Updating…'
     );
     button.title = createSkillCellTitle(entry);
+    assignSetupContext(button, {
+      kind: 'skill',
+      target: row.key,
+      copyLabel: 'Copy skills folder path',
+      copyText: entry.basePath,
+      reinstallLabel,
+      uninstallLabel
+    });
     return button;
-  }
-  if (!installable) {
-    return createMatrixBadge('Custom', false, entry.basePath);
   }
 
   const button = createSetupActionButton(
@@ -541,7 +638,7 @@ function renderSkillMatrixCell(row, installPendingKey) {
     installPendingKey === getInstallKey('skill', row.key),
     'install',
     'Install',
-    'Installing…'
+    '...'
   );
   button.title = entry.basePath;
   return button;
@@ -566,6 +663,20 @@ function createSetupActionButton(kind, target, pending, variant, label, pendingL
   button.dataset.variant = variant;
   button.disabled = pending;
   button.textContent = pending ? pendingLabel : label;
+  button.addEventListener('click', () => {
+    if (button.disabled) {
+      return;
+    }
+    hideSetupContextMenu();
+    button.disabled = true;
+    button.textContent = pendingLabel;
+    port.postMessage({
+      type: 'setup.install',
+      action: 'install',
+      kind,
+      target
+    });
+  });
   return button;
 }
 
@@ -584,17 +695,39 @@ function createSkillCellTitle(entry) {
 }
 
 /**
+ * @param {SkillTargetStatus} entry
+ * @returns {string}
+ */
+function getSkillUninstallLabel(entry) {
+  const installedManagedSkills = entry.skills.filter((skill) => skill.exists && skill.managed).length;
+  return installedManagedSkills === 1 ? 'Uninstall skill' : 'Uninstall skills';
+}
+
+/**
+ * @param {SkillTargetStatus} entry
+ * @returns {string}
+ */
+function getSkillReinstallLabel(entry) {
+  const installedManagedSkills = entry.skills.filter((skill) => skill.exists && skill.managed).length;
+  return installedManagedSkills === 1 ? 'Re-install skill' : 'Re-install skills';
+}
+
+/**
  * @param {string} label
  * @param {boolean} ok
  * @param {string} title
+ * @param {SetupContextAction | null} [contextAction=null]
  * @returns {HTMLElement}
  */
-function createMatrixBadge(label, ok, title) {
+function createMatrixBadge(label, ok, title, contextAction = null) {
   const badge = document.createElement('span');
   badge.className = 'setup-status-badge';
   badge.dataset.ok = String(ok);
   badge.textContent = label;
   badge.title = title;
+  if (contextAction) {
+    assignSetupContext(badge, contextAction);
+  }
   return badge;
 }
 
@@ -616,6 +749,102 @@ function createMatrixMutedValue(text) {
  */
 function getInstallKey(kind, target) {
   return `${kind}:${target}`;
+}
+
+/**
+ * @param {HTMLElement} element
+ * @param {SetupContextAction} contextAction
+ * @returns {void}
+ */
+function assignSetupContext(element, contextAction) {
+  element.dataset.contextKind = contextAction.kind;
+  element.dataset.contextTarget = contextAction.target;
+  element.dataset.contextCopyLabel = contextAction.copyLabel;
+  element.dataset.contextCopyText = contextAction.copyText;
+  if (contextAction.reinstallLabel) {
+    element.dataset.contextReinstallLabel = contextAction.reinstallLabel;
+  } else {
+    delete element.dataset.contextReinstallLabel;
+  }
+  if (contextAction.uninstallLabel) {
+    element.dataset.contextUninstallLabel = contextAction.uninstallLabel;
+  } else {
+    delete element.dataset.contextUninstallLabel;
+  }
+}
+
+/**
+ * @param {number} clientX
+ * @param {number} clientY
+ * @param {SetupContextAction} contextAction
+ * @returns {void}
+ */
+function showSetupContextMenu(clientX, clientY, contextAction) {
+  setupContextMenu.replaceChildren();
+
+  const copyButton = document.createElement('button');
+  copyButton.type = 'button';
+  copyButton.className = 'setup-context-menu-item';
+  copyButton.textContent = contextAction.copyLabel;
+  copyButton.addEventListener('click', () => {
+    navigator.clipboard.writeText(contextAction.copyText).catch(() => {
+      // Ignore clipboard failures; the menu still exposes the path in the title.
+    });
+    hideSetupContextMenu();
+  }, { once: true });
+  setupContextMenu.append(copyButton);
+
+  if (contextAction.reinstallLabel) {
+    const reinstallButton = document.createElement('button');
+    reinstallButton.type = 'button';
+    reinstallButton.className = 'setup-context-menu-item';
+    reinstallButton.textContent = contextAction.reinstallLabel;
+    reinstallButton.addEventListener('click', () => {
+      port.postMessage({
+        type: 'setup.install',
+        action: 'install',
+        kind: contextAction.kind,
+        target: contextAction.target
+      });
+      hideSetupContextMenu();
+    }, { once: true });
+    setupContextMenu.append(reinstallButton);
+  }
+
+  if (contextAction.uninstallLabel) {
+    const uninstallButton = document.createElement('button');
+    uninstallButton.type = 'button';
+    uninstallButton.className = 'setup-context-menu-item';
+    uninstallButton.textContent = contextAction.uninstallLabel;
+    uninstallButton.addEventListener('click', () => {
+      port.postMessage({
+        type: 'setup.install',
+        action: 'uninstall',
+        kind: contextAction.kind,
+        target: contextAction.target
+      });
+      hideSetupContextMenu();
+    }, { once: true });
+    setupContextMenu.append(uninstallButton);
+  }
+
+  setupContextMenu.hidden = false;
+  setupContextMenu.style.left = `${clientX}px`;
+  setupContextMenu.style.top = `${clientY}px`;
+
+  const rect = setupContextMenu.getBoundingClientRect();
+  const left = Math.min(clientX, window.innerWidth - rect.width - 12);
+  const top = Math.min(clientY, window.innerHeight - rect.height - 12);
+  setupContextMenu.style.left = `${Math.max(8, left)}px`;
+  setupContextMenu.style.top = `${Math.max(8, top)}px`;
+}
+
+/**
+ * @returns {void}
+ */
+function hideSetupContextMenu() {
+  setupContextMenu.hidden = true;
+  setupContextMenu.replaceChildren();
 }
 
 /**

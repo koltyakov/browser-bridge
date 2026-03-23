@@ -8,7 +8,7 @@ import { getBridgeDir } from '../../native-host/src/config.js';
 /** @typedef {import('../../protocol/src/types.js').SessionState} SessionState */
 
 /**
- * Lazily compute the session file path so that CODEX_HOME overrides set after
+ * Lazily compute the session file path so that BROWSER_BRIDGE_HOME overrides set after
  * module load (e.g. in tests) are respected.
  *
  * @returns {string}

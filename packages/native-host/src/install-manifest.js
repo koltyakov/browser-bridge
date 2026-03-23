@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { APP_NAME, getBridgeDir, getManifestInstallDir, PUBLISHED_EXTENSION_ID } from './config.js';
+import { APP_NAME, getBridgeDir, getLauncherFilename, getManifestInstallDir, PUBLISHED_EXTENSION_ID } from './config.js';
 
 export const DEFAULT_EXTENSION_ID_ENV = 'BROWSER_BRIDGE_EXTENSION_ID';
 export const BUILT_IN_EXTENSION_ID_SOURCE = 'built_in';
@@ -23,6 +23,16 @@ export const BUILT_IN_EXTENSION_ID_SOURCE = 'built_in';
  *   stderr?: Pick<NodeJS.WriteStream, 'write'>,
  *   env?: NodeJS.ProcessEnv
  * }} InstallManifestOptions
+ */
+
+/**
+ * @typedef {{
+ *   browser?: SupportedBrowser | undefined,
+ *   installDir?: string | undefined,
+ *   bridgeDir?: string | undefined,
+ *   removeBridgeDir?: boolean | undefined,
+ *   stdout?: Pick<NodeJS.WriteStream, 'write'>
+ * }} UninstallManifestOptions
  */
 
 /**
@@ -152,10 +162,12 @@ export async function installNativeManifest(options) {
   }
   const extensionId = parsedExtensionId || defaultExtensionId.extensionId;
   const hostPath = path.join(repoRoot, 'packages', 'native-host', 'bin', 'native-host.js');
-  const launcherPath = path.join(bridgeDir, 'native-host-launcher.sh');
+  const launcherPath = path.join(bridgeDir, getLauncherFilename());
   const manifestPath = path.join(installDir, `${APP_NAME}.json`);
 
-  const launcher = `#!/bin/sh
+  const launcher = process.platform === 'win32'
+    ? `@echo off\r\n"${nodePath}" "${hostPath}" %*\r\n`
+    : `#!/bin/sh
 exec '${escapeSingleQuotes(nodePath)}' '${escapeSingleQuotes(hostPath)}' "$@"
 `;
 
@@ -174,7 +186,9 @@ exec '${escapeSingleQuotes(nodePath)}' '${escapeSingleQuotes(hostPath)}' "$@"
   await fs.promises.mkdir(installDir, { recursive: true });
   await fs.promises.mkdir(bridgeDir, { recursive: true });
   await fs.promises.writeFile(launcherPath, launcher, 'utf8');
-  await fs.promises.chmod(launcherPath, 0o755);
+  if (process.platform !== 'win32') {
+    await fs.promises.chmod(launcherPath, 0o755);
+  }
   await fs.promises.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
 
   stdout.write(`Wrote ${manifestPath}\n`);
@@ -202,4 +216,61 @@ exec '${escapeSingleQuotes(nodePath)}' '${escapeSingleQuotes(hostPath)}' "$@"
     allowedOrigins,
     extensionId
   };
+}
+
+/**
+ * @param {UninstallManifestOptions} [options={}]
+ * @returns {Promise<{ manifestPath: string, bridgeDir: string, removedManifest: boolean, removedBridgeDir: boolean }>}
+ */
+export async function uninstallNativeManifest(options = {}) {
+  const {
+    browser,
+    installDir = getManifestInstallDir(browser),
+    bridgeDir = getBridgeDir(),
+    removeBridgeDir = false,
+    stdout = process.stdout
+  } = options;
+
+  const manifestPath = path.join(installDir, `${APP_NAME}.json`);
+  const removedManifest = await removePathIfExists(manifestPath);
+  if (removedManifest) {
+    stdout.write(`Removed ${manifestPath}\n`);
+  }
+
+  const removedBridgeDir = removeBridgeDir
+    ? await removePathIfExists(bridgeDir)
+    : false;
+  if (removedBridgeDir) {
+    stdout.write(`Removed ${bridgeDir}\n`);
+  }
+
+  return {
+    manifestPath,
+    bridgeDir,
+    removedManifest,
+    removedBridgeDir
+  };
+}
+
+/**
+ * @param {string} targetPath
+ * @returns {Promise<boolean>}
+ */
+async function removePathIfExists(targetPath) {
+  try {
+    await fs.promises.access(targetPath);
+  } catch {
+    return false;
+  }
+
+  try {
+    await fs.promises.rm(targetPath, { recursive: true, force: true });
+    return true;
+  } catch (error) {
+    const code = /** @type {{ code?: string } | undefined} */ (error)?.code;
+    if (code === 'ENOENT') {
+      return false;
+    }
+    throw error;
+  }
 }

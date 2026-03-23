@@ -11,9 +11,10 @@ import {
   getAllowedOrigins,
   getDefaultExtensionId,
   installNativeManifest,
+  uninstallNativeManifest,
   parseExtensionId
 } from '../src/install-manifest.js';
-import { getManifestInstallDir } from '../src/config.js';
+import { getLauncherFilename, getManifestInstallDir } from '../src/config.js';
 
 test('parseExtensionId accepts raw ids and extension origins', () => {
   const id = 'abcdefghijklmnopabcdefghijklmnop';
@@ -130,5 +131,41 @@ test('getManifestInstallDir contains browser-specific directory segment', () => 
     assert.match(getManifestInstallDir('edge'), /microsoft-edge/);
     assert.match(getManifestInstallDir('brave'), /BraveSoftware/);
     assert.match(getManifestInstallDir('chromium'), /chromium/);
+  }
+});
+
+test('getLauncherFilename matches the current platform', () => {
+  if (process.platform === 'win32') {
+    assert.equal(getLauncherFilename(), 'native-host-launcher.cmd');
+    return;
+  }
+
+  assert.equal(getLauncherFilename(), 'native-host-launcher.sh');
+});
+
+test('uninstallNativeManifest removes the native host manifest and bridge dir', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-uninstall-manifest-'));
+  const installDir = path.join(tempDir, 'manifest');
+  const bridgeDir = path.join(tempDir, 'bridge');
+
+  await fs.promises.mkdir(installDir, { recursive: true });
+  await fs.promises.mkdir(bridgeDir, { recursive: true });
+  await fs.promises.writeFile(path.join(installDir, 'com.browserbridge.browser_bridge.json'), '{}\n', 'utf8');
+  await fs.promises.writeFile(path.join(bridgeDir, getLauncherFilename()), 'launcher\n', 'utf8');
+
+  try {
+    const result = await uninstallNativeManifest({
+      installDir,
+      bridgeDir,
+      removeBridgeDir: true,
+      stdout: { write() { return true; } }
+    });
+
+    assert.equal(result.removedManifest, true);
+    assert.equal(result.removedBridgeDir, true);
+    await assert.rejects(fs.promises.access(path.join(installDir, 'com.browserbridge.browser_bridge.json')));
+    await assert.rejects(fs.promises.access(bridgeDir));
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
   }
 });

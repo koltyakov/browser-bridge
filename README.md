@@ -10,7 +10,7 @@ See [QUICKSTART.md](QUICKSTART.md) to get started in another repo.
 
 ## Supported Agents
 
-Managed skill installs support GitHub Copilot, OpenAI Codex, Claude Code, Cursor, Windsurf, OpenCode, and Antigravity. `bbx install-mcp` can write MCP config for GitHub Copilot, OpenAI Codex, Claude Code, Cursor, Windsurf, and OpenCode. Generic `.agents/skills/` runtimes work too.
+Managed skill installs support GitHub Copilot, OpenAI Codex, Claude Code, Cursor, Windsurf, OpenCode, and Antigravity. `bbx install-mcp` can write MCP config for GitHub Copilot, OpenAI Codex, Claude Code, Cursor, Windsurf, and OpenCode, and `bbx install-skill` installs the MCP companion only for clients where Browser Bridge MCP is configured. Generic `.agents/skills/` runtimes work too.
 
 <table align="center">
   <tr>
@@ -108,7 +108,7 @@ Browser Bridge is optimized for the opposite starting point: **inspect the state
 1. Install [Browser Bridge from the Chrome Web Store](https://chrome.google.com/webstore/detail/ahhmghheecmambjebhfjkngdggghbkno) <!-- TODO: replace with final store link after publishing -->
 2. `npm install -g @browserbridge/bbx` - installs the CLI and native host
 3. `bbx install-mcp` - connect your agent via MCP
-4. `bbx install-skill` - install skill+CLI
+4. `bbx install-skill` - install the core skill; rerun after `install-mcp` to add/update the MCP companion for that client
 5. Enable extension session in side panel
 6. Ask your agent to use Browser Bridge (`$bbx` skill or MCP)
 

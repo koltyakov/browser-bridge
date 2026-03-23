@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 export const APP_NAME = 'com.browserbridge.browser_bridge';
+export const BRIDGE_HOME_ENV = 'BROWSER_BRIDGE_HOME';
 
 /**
  * The official Chrome Web Store extension ID used when callers do not provide
@@ -17,8 +18,25 @@ export const PUBLISHED_EXTENSION_ID = 'ahhmghheecmambjebhfjkngdggghbkno';
  * @returns {string}
  */
 export function getBridgeDir() {
-  const codexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
-  return path.join(codexHome, 'browser-bridge');
+  const override = process.env[BRIDGE_HOME_ENV];
+  if (override) {
+    return override;
+  }
+
+  const home = os.homedir();
+  const platform = os.platform();
+
+  if (platform === 'darwin') {
+    return path.join(home, 'Library', 'Application Support', 'Browser Bridge');
+  }
+
+  if (platform === 'win32') {
+    const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+    return path.join(localAppData, 'Browser Bridge');
+  }
+
+  const xdgDataHome = process.env.XDG_DATA_HOME || path.join(home, '.local', 'share');
+  return path.join(xdgDataHome, 'browser-bridge');
 }
 
 /**
@@ -26,6 +44,15 @@ export function getBridgeDir() {
  */
 export function getSocketPath() {
   return path.join(getBridgeDir(), 'bridge.sock');
+}
+
+/**
+ * @returns {string}
+ */
+export function getLauncherFilename() {
+  return os.platform() === 'win32'
+    ? 'native-host-launcher.cmd'
+    : 'native-host-launcher.sh';
 }
 
 /**

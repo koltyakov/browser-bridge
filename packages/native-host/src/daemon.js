@@ -5,8 +5,8 @@ import net from 'node:net';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-import { installAgentFiles, isSupportedTarget } from '../../agent-client/src/install.js';
-import { installMcpConfig, isMcpClientName } from '../../agent-client/src/mcp-config.js';
+import { installAgentFiles, isSupportedTarget, removeAgentFiles } from '../../agent-client/src/install.js';
+import { installMcpConfig, isMcpClientName, removeMcpConfig } from '../../agent-client/src/mcp-config.js';
 import { collectSetupStatus } from '../../agent-client/src/setup-status.js';
 import { createFailure, createSuccess, ERROR_CODES, validateBridgeRequest } from '../../protocol/src/index.js';
 import { getBridgeDir, getSocketPath } from './config.js';
@@ -391,9 +391,10 @@ export class BridgeDaemon {
 
 /**
  * @param {Record<string, unknown>} params
- * @returns {SetupInstallParams & { kind: 'mcp' | 'skill', target: string }}
+ * @returns {SetupInstallParams & { action: 'install' | 'uninstall', kind: 'mcp' | 'skill', target: string }}
  */
 function normalizeSetupInstallParams(params) {
+  const action = params.action === 'uninstall' ? 'uninstall' : 'install';
   const kind = params.kind === 'mcp' || params.kind === 'skill' ? params.kind : null;
   const target = typeof params.target === 'string' ? params.target.trim().toLowerCase() : '';
   if (!kind) {
@@ -402,7 +403,7 @@ function normalizeSetupInstallParams(params) {
   if (!target) {
     throw new Error('setup.install requires a target.');
   }
-  return { kind, target };
+  return { action, kind, target };
 }
 
 /**
@@ -415,11 +416,14 @@ async function installSetupTarget(params) {
     if (!isMcpClientName(normalized.target)) {
       throw new Error(`Unsupported MCP client "${normalized.target}".`);
     }
-    const configPath = await installMcpConfig(normalized.target, { global: true });
+    const paths = normalized.action === 'uninstall'
+      ? await removeMcpConfig(normalized.target, { global: true })
+      : [await installMcpConfig(normalized.target, { global: true })];
     return {
+      action: normalized.action,
       kind: 'mcp',
       target: normalized.target,
-      paths: [configPath]
+      paths
     };
   }
 
@@ -427,12 +431,19 @@ async function installSetupTarget(params) {
     throw new Error(`Unsupported skill target "${normalized.target}".`);
   }
 
-  const paths = await installAgentFiles({
-    targets: [normalized.target],
-    projectPath: process.cwd(),
-    global: true
-  });
+  const paths = normalized.action === 'uninstall'
+    ? await removeAgentFiles({
+      targets: [normalized.target],
+      projectPath: process.cwd(),
+      global: true
+    })
+    : await installAgentFiles({
+      targets: [normalized.target],
+      projectPath: process.cwd(),
+      global: true
+    });
   return {
+    action: normalized.action,
     kind: 'skill',
     target: normalized.target,
     paths

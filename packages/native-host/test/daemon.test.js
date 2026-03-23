@@ -106,6 +106,7 @@ test('daemon installs setup targets without extension', async () => {
   const daemon = new BridgeDaemon({
     logger: console,
     setupInstaller: async (params) => ({
+      action: params.action === 'uninstall' ? 'uninstall' : 'install',
       kind: params.kind === 'skill' ? 'skill' : 'mcp',
       target: typeof params.target === 'string' ? params.target : 'codex',
       paths: ['/tmp/mock-install']
@@ -134,6 +135,7 @@ test('daemon installs setup targets without extension', async () => {
   assert.equal(payload.type, 'agent.response');
   assert.equal(payload.response.ok, true);
   assert.deepEqual(payload.response.result, {
+    action: 'install',
     kind: 'mcp',
     target: 'codex',
     paths: ['/tmp/mock-install']

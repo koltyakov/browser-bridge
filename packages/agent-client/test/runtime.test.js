@@ -18,18 +18,18 @@ import { getDoctorReport, requireSession, resolveRef } from '../src/runtime.js';
  * @returns {Promise<void>}
  */
 async function withTempCodexHome(callback) {
-  const previous = process.env.CODEX_HOME;
+  const previous = process.env.BROWSER_BRIDGE_HOME;
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-agent-runtime-'));
-  process.env.CODEX_HOME = tempDir;
+  process.env.BROWSER_BRIDGE_HOME = tempDir;
 
   try {
     await callback();
   } finally {
     await clearSession();
     if (previous === undefined) {
-      delete process.env.CODEX_HOME;
+      delete process.env.BROWSER_BRIDGE_HOME;
     } else {
-      process.env.CODEX_HOME = previous;
+      process.env.BROWSER_BRIDGE_HOME = previous;
     }
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }

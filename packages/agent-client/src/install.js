@@ -5,9 +5,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { getMcpConfigPaths, isMcpClientName, parseInstalledMcpConfig } from './mcp-config.js';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, '../../..');
-const managedSkillNames = /** @type {const} */ (['browser-bridge', 'browser-bridge-mcp']);
+const coreManagedSkillName = 'browser-bridge';
+const mcpManagedSkillName = 'browser-bridge-mcp';
+const managedSkillNames = /** @type {const} */ ([coreManagedSkillName, mcpManagedSkillName]);
 const managedSentinelFilename = '.browser-bridge-managed';
 const supportedTargets = /** @type {const} */ ([
   'copilot',
@@ -27,6 +31,14 @@ const targetAliases = /** @type {const} */ ({
 const packageManifest = loadPackageManifest();
 const managedPackageName = typeof packageManifest.name === 'string' ? packageManifest.name : '@browserbridge/bbx';
 const managedPackageVersion = typeof packageManifest.version === 'string' ? packageManifest.version : null;
+const copilotBrowserBridgeNote = [
+  '## GitHub Copilot Note',
+  '',
+  'When this skill is installed for GitHub Copilot, do not keep retrying `bbx` inside a sandboxed shell if Browser Bridge MCP is already configured for Copilot.',
+  'If Browser Bridge MCP is installed, switch to `/browser-bridge-mcp` and use the MCP tools instead of shelling out to `bbx`.',
+  'If `bbx` fails with a bridge socket permission error such as `EPERM`, stop retrying in the sandbox and ask the user to run the command locally or use MCP.',
+  ''
+].join('\n');
 
 /**
  * @typedef {'copilot' | 'claude' | 'cursor' | 'windsurf' | 'opencode' | 'antigravity' | 'agents' | 'codex'} SupportedTarget
@@ -137,14 +149,15 @@ export async function installAgentFiles(options) {
 
   for (const target of options.targets) {
     const skillBaseDir = getSkillBasePath(target, options);
+    const requiredSkillNames = await getRequiredManagedSkillNames(target, options);
 
-    for (const skillName of managedSkillNames) {
+    for (const skillName of requiredSkillNames) {
       const skillTargetDir = path.join(skillBaseDir, skillName);
       if (seenTargets.has(skillTargetDir)) {
         continue;
       }
       seenTargets.add(skillTargetDir);
-      await installManagedSkill(skillName, skillTargetDir);
+      await installManagedSkill(skillName, target, skillTargetDir);
       created.push(skillTargetDir);
     }
   }
@@ -286,6 +299,33 @@ export function getManagedSkillNames() {
 /**
  * @returns {string}
  */
+export function getCoreManagedSkillName() {
+  return coreManagedSkillName;
+}
+
+/**
+ * @returns {string}
+ */
+export function getMcpManagedSkillName() {
+  return mcpManagedSkillName;
+}
+
+/**
+ * @param {SupportedTarget} target
+ * @param {{ global: boolean, projectPath: string }} options
+ * @returns {Promise<string[]>}
+ */
+export async function getRequiredManagedSkillNames(target, options) {
+  const names = [coreManagedSkillName];
+  if (await hasConfiguredMcpForTarget(target, options)) {
+    names.push(mcpManagedSkillName);
+  }
+  return names;
+}
+
+/**
+ * @returns {string}
+ */
 export function getManagedSkillSentinelFilename() {
   return managedSentinelFilename;
 }
@@ -351,10 +391,11 @@ export function isManagedVersionOutdated(installedVersion, currentVersion = mana
 
 /**
  * @param {string} skillName
+ * @param {SupportedTarget} target
  * @param {string} targetDir
  * @returns {Promise<void>}
  */
-async function installManagedSkill(skillName, targetDir) {
+async function installManagedSkill(skillName, target, targetDir) {
   const sourceDir = path.join(packageRoot, 'skills', skillName);
   const sentinelPath = path.join(targetDir, managedSentinelFilename);
   const targetExists = await pathExists(targetDir);
@@ -365,6 +406,7 @@ async function installManagedSkill(skillName, targetDir) {
 
   await fs.promises.rm(targetDir, { recursive: true, force: true });
   await copyDir(sourceDir, targetDir);
+  await applyManagedSkillPatches(skillName, target, targetDir);
   await fs.promises.writeFile(sentinelPath, formatManagedSkillSentinel(skillName), 'utf8');
 }
 
@@ -395,6 +437,35 @@ async function isManagedSkillInstall(targetDir) {
 }
 
 /**
+ * @param {SupportedTarget} target
+ * @param {{ global: boolean, projectPath: string }} options
+ * @returns {Promise<boolean>}
+ */
+async function hasConfiguredMcpForTarget(target, options) {
+  if (!isMcpClientName(target)) {
+    return false;
+  }
+
+  const configPaths = await getMcpConfigPaths(target, {
+    global: options.global,
+    cwd: options.projectPath
+  });
+
+  for (const configPath of configPaths) {
+    try {
+      const raw = await fs.promises.readFile(configPath, 'utf8');
+      if (parseInstalledMcpConfig(target, raw).configured) {
+        return true;
+      }
+    } catch {
+      // Missing or unreadable config is treated as absent.
+    }
+  }
+
+  return false;
+}
+
+/**
  * @param {string} sourceDir
  * @param {string} targetDir
  * @returns {Promise<void>}
@@ -412,6 +483,33 @@ async function copyDir(sourceDir, targetDir) {
     }
     await fs.promises.copyFile(sourcePath, targetPath);
   }
+}
+
+/**
+ * @param {string} skillName
+ * @param {SupportedTarget} target
+ * @param {string} targetDir
+ * @returns {Promise<void>}
+ */
+async function applyManagedSkillPatches(skillName, target, targetDir) {
+  if (target !== 'copilot' || skillName !== coreManagedSkillName) {
+    return;
+  }
+
+  const skillPath = path.join(targetDir, 'SKILL.md');
+  let raw = '';
+  try {
+    raw = await fs.promises.readFile(skillPath, 'utf8');
+  } catch {
+    return;
+  }
+
+  if (raw.includes('## GitHub Copilot Note')) {
+    return;
+  }
+
+  const updated = `${raw.trimEnd()}\n\n${copilotBrowserBridgeNote}`;
+  await fs.promises.writeFile(skillPath, `${updated}\n`, 'utf8');
 }
 
 /**

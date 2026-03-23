@@ -114,6 +114,7 @@ import { TabDebuggerCoordinator } from './debugger-coordinator.js';
 
 /**
  * @typedef {{
+ *   action?: 'install' | 'uninstall',
  *   kind: 'mcp' | 'skill',
  *   target: string
  * }} SetupInstallAction
@@ -135,6 +136,7 @@ import { TabDebuggerCoordinator } from './debugger-coordinator.js';
  *   setupStatusError: string | null,
  *   setupStatusTimeoutId: ReturnType<typeof setTimeout> | null,
  *   setupInstallPendingRequestId: string | null,
+ *   setupInstallPendingAction: SetupInstallAction | null,
  *   setupInstallPendingKey: string | null,
  *   setupInstallError: string | null
  * }} ExtensionState
@@ -168,6 +170,7 @@ const state = {
   setupStatusError: null,
   setupStatusTimeoutId: null,
   setupInstallPendingRequestId: null,
+  setupInstallPendingAction: null,
   setupInstallPendingKey: null,
   setupInstallError: null
 };
@@ -2024,27 +2027,57 @@ async function logBridgeAction(request, response, actionContext) {
 
   const tokenEstimate = estimateResponseTokens(response);
 
+  await appendActionLogEntry({
+    method: request.method,
+    tabId: actionContext?.tabId ?? null,
+    url: actionContext?.url ?? '',
+    ok: response.ok,
+    summary: summarizeActionResult(response),
+    responseBytes: tokenEstimate.responseBytes,
+    approxTokens: tokenEstimate.approxTokens,
+    hasScreenshot: tokenEstimate.hasScreenshot,
+    nodeCount: tokenEstimate.nodeCount
+  });
+  await emitUiState();
+}
+
+/**
+ * Append one action log entry and persist the bounded history.
+ *
+ * @param {{
+ *   method: string,
+ *   tabId?: number | null,
+ *   url?: string,
+ *   ok: boolean,
+ *   summary: string,
+ *   responseBytes?: number,
+ *   approxTokens?: number,
+ *   hasScreenshot?: boolean,
+ *   nodeCount?: number | null
+ * }} entry
+ * @returns {Promise<void>}
+ */
+async function appendActionLogEntry(entry) {
   state.actionLog = [
     ...state.actionLog,
     {
       id: crypto.randomUUID(),
       at: Date.now(),
-      method: request.method,
-      tabId: actionContext?.tabId ?? null,
-      url: actionContext?.url ?? '',
-      ok: response.ok,
-      summary: summarizeActionResult(response),
-      responseBytes: tokenEstimate.responseBytes,
-      approxTokens: tokenEstimate.approxTokens,
-      hasScreenshot: tokenEstimate.hasScreenshot,
-      nodeCount: tokenEstimate.nodeCount
+      method: entry.method,
+      tabId: entry.tabId ?? null,
+      url: entry.url ?? '',
+      ok: entry.ok,
+      summary: entry.summary,
+      responseBytes: entry.responseBytes ?? 0,
+      approxTokens: entry.approxTokens ?? 0,
+      hasScreenshot: entry.hasScreenshot ?? false,
+      nodeCount: entry.nodeCount ?? null
     }
   ].slice(-MAX_ACTION_LOG_ENTRIES);
 
   await chrome.storage.session.set({
     [ACTION_LOG_STORAGE_KEY]: state.actionLog
   });
-  await emitUiState();
 }
 
 /**
@@ -2085,7 +2118,25 @@ function reply(response) {
  */
 function broadcastUi(message) {
   for (const port of state.uiPorts.keys()) {
+    postToUiPort(port, message);
+  }
+}
+
+/**
+ * Post a message to a UI surface, pruning the port if Chrome has already
+ * disconnected it.
+ *
+ * @param {chrome.runtime.Port} port
+ * @param {Record<string, unknown>} message
+ * @returns {boolean}
+ */
+function postToUiPort(port, message) {
+  try {
     port.postMessage(message);
+    return true;
+  } catch {
+    state.uiPorts.delete(port);
+    return false;
   }
 }
 
@@ -2117,7 +2168,7 @@ async function emitUiStateForPort(port) {
     : await getCurrentTabState();
   const scopedTabId = currentTab?.tabId ?? portState.scopeTabId ?? null;
 
-  port.postMessage({
+  postToUiPort(port, {
     type: 'state.sync',
     state: {
       nativeConnected: Boolean(state.nativePort),
@@ -2149,13 +2200,29 @@ function handleHostStatusMessage(message) {
       ? /** @type {BridgeResponse} */ (candidate.response)
       : null;
     if (response?.id === state.setupInstallPendingRequestId) {
+      const action = state.setupInstallPendingAction;
       state.setupInstallPendingRequestId = null;
-      state.setupInstallPendingKey = null;
+      state.setupInstallPendingAction = null;
       if (response.ok) {
         state.setupInstallError = null;
+        if (action) {
+          void appendActionLogEntry({
+            method: getSetupActionMethodLabel(action),
+            ok: true,
+            summary: getSetupActionSuccessSummary(action)
+          }).catch(reportAsyncError);
+        }
         refreshSetupStatus(true);
       } else {
         state.setupInstallError = response.error.message;
+        if (action) {
+          void appendActionLogEntry({
+            method: getSetupActionMethodLabel(action),
+            ok: false,
+            summary: getSetupActionErrorSummary(action, response.error.message)
+          }).catch(reportAsyncError);
+        }
+        state.setupInstallPendingKey = null;
       }
       void emitUiState().catch(reportAsyncError);
       return true;
@@ -2164,6 +2231,7 @@ function handleHostStatusMessage(message) {
       clearSetupStatusTimer();
       state.setupStatusPending = false;
       state.setupStatusPendingRequestId = null;
+      state.setupInstallPendingKey = null;
       if (response.ok) {
         state.setupStatus = isSetupStatus(response.result) ? response.result : null;
         state.setupStatusUpdatedAt = Date.now();
@@ -2178,13 +2246,22 @@ function handleHostStatusMessage(message) {
 
   if (candidate.type === 'host.bridge_error') {
     if (candidate.requestId === state.setupInstallPendingRequestId) {
+      const action = state.setupInstallPendingAction;
       state.setupInstallPendingRequestId = null;
+      state.setupInstallPendingAction = null;
       state.setupInstallPendingKey = null;
       state.setupInstallError = typeof candidate.error === 'object'
         && candidate.error
         && typeof /** @type {Record<string, unknown>} */ (candidate.error).message === 'string'
         ? /** @type {Record<string, string>} */ (candidate.error).message
         : 'Could not install host setup.';
+      if (action) {
+        void appendActionLogEntry({
+          method: getSetupActionMethodLabel(action),
+          ok: false,
+          summary: getSetupActionErrorSummary(action, state.setupInstallError)
+        }).catch(reportAsyncError);
+      }
       void emitUiState().catch(reportAsyncError);
       return true;
     }
@@ -2192,6 +2269,8 @@ function handleHostStatusMessage(message) {
       clearSetupStatusTimer();
       state.setupStatusPending = false;
       state.setupStatusPendingRequestId = null;
+      state.setupInstallPendingAction = null;
+      state.setupInstallPendingKey = null;
       state.setupStatusError = typeof candidate.error === 'object'
         && candidate.error
         && typeof /** @type {Record<string, unknown>} */ (candidate.error).message === 'string'
@@ -2208,6 +2287,8 @@ function handleHostStatusMessage(message) {
       state.setupStatus = isSetupStatus(candidate.status) ? candidate.status : null;
       state.setupStatusPending = false;
       state.setupStatusPendingRequestId = null;
+      state.setupInstallPendingAction = null;
+      state.setupInstallPendingKey = null;
       state.setupStatusUpdatedAt = Date.now();
       state.setupStatusError = null;
       void emitUiState().catch(reportAsyncError);
@@ -2220,6 +2301,8 @@ function handleHostStatusMessage(message) {
       clearSetupStatusTimer();
       state.setupStatusPending = false;
       state.setupStatusPendingRequestId = null;
+      state.setupInstallPendingAction = null;
+      state.setupInstallPendingKey = null;
       state.setupStatusError = typeof candidate.error === 'object'
         && candidate.error
         && typeof /** @type {Record<string, unknown>} */ (candidate.error).message === 'string'
@@ -2267,6 +2350,8 @@ function refreshSetupStatus(force = false) {
     }
     state.setupStatusPending = false;
     state.setupStatusPendingRequestId = null;
+    state.setupInstallPendingAction = null;
+    state.setupInstallPendingKey = null;
     state.setupStatusError = 'Host setup request timed out.';
     state.setupStatusTimeoutId = null;
     void emitUiState().catch(reportAsyncError);
@@ -2285,6 +2370,7 @@ function clearSetupStatus(errorMessage = null) {
   state.setupStatusUpdatedAt = 0;
   state.setupStatusError = errorMessage;
   state.setupInstallPendingRequestId = null;
+  state.setupInstallPendingAction = null;
   state.setupInstallPendingKey = null;
   state.setupInstallError = null;
 }
@@ -2362,6 +2448,11 @@ async function handleUiMessage(port, message) {
 async function handleSetupInstallAction(message) {
   if (!state.nativePort) {
     state.setupInstallError = 'Native host is not connected.';
+    await appendActionLogEntry({
+      method: 'Host setup',
+      ok: false,
+      summary: 'Install failed: Native host is not connected.'
+    });
     await emitUiState();
     return;
   }
@@ -2371,8 +2462,14 @@ async function handleSetupInstallAction(message) {
   const action = normalizeSetupInstallAction(message);
   const requestId = crypto.randomUUID();
   state.setupInstallPendingRequestId = requestId;
+  state.setupInstallPendingAction = action;
   state.setupInstallPendingKey = getSetupInstallKey(action);
   state.setupInstallError = null;
+  await appendActionLogEntry({
+    method: getSetupActionMethodLabel(action),
+    ok: true,
+    summary: getSetupActionStartSummary(action)
+  });
   state.nativePort.postMessage({
     type: 'host.bridge_request',
     request: createRequest({
@@ -2389,12 +2486,13 @@ async function handleSetupInstallAction(message) {
  * @returns {SetupInstallAction}
  */
 function normalizeSetupInstallAction(message) {
+  const action = message.action === 'uninstall' ? 'uninstall' : 'install';
   const kind = message.kind === 'skill' ? 'skill' : message.kind === 'mcp' ? 'mcp' : null;
   const target = typeof message.target === 'string' ? message.target.trim().toLowerCase() : '';
   if (!kind || !target) {
     throw new Error(ERROR_CODES.INVALID_REQUEST);
   }
-  return { kind, target };
+  return { action, kind, target };
 }
 
 /**
@@ -2403,6 +2501,50 @@ function normalizeSetupInstallAction(message) {
  */
 function getSetupInstallKey(action) {
   return `${action.kind}:${action.target}`;
+}
+
+/**
+ * @param {SetupInstallAction} action
+ * @returns {string}
+ */
+function getSetupActionMethodLabel(action) {
+  return action.kind === 'mcp' ? 'Host setup: MCP' : 'Host setup: Skills';
+}
+
+/**
+ * @param {SetupInstallAction} action
+ * @returns {string}
+ */
+function getSetupActionTargetLabel(action) {
+  return action.target;
+}
+
+/**
+ * @param {SetupInstallAction} action
+ * @returns {string}
+ */
+function getSetupActionStartSummary(action) {
+  const verb = action.action === 'uninstall' ? 'Removing' : 'Installing';
+  return `${verb} ${action.kind.toUpperCase()} for ${getSetupActionTargetLabel(action)}…`;
+}
+
+/**
+ * @param {SetupInstallAction} action
+ * @returns {string}
+ */
+function getSetupActionSuccessSummary(action) {
+  const verb = action.action === 'uninstall' ? 'Removed' : 'Installed';
+  return `${verb} ${action.kind.toUpperCase()} for ${getSetupActionTargetLabel(action)}.`;
+}
+
+/**
+ * @param {SetupInstallAction} action
+ * @param {string} message
+ * @returns {string}
+ */
+function getSetupActionErrorSummary(action, message) {
+  const verb = action.action === 'uninstall' ? 'Removal' : 'Install';
+  return `${verb} failed for ${action.kind.toUpperCase()} on ${getSetupActionTargetLabel(action)}: ${message}`;
 }
 
 /**
@@ -2529,7 +2671,7 @@ async function promptForTabAccess(tab) {
 function broadcastAttention(tabId) {
   for (const [port, portState] of state.uiPorts) {
     if (portState.scopeTabId == null || portState.scopeTabId === tabId) {
-      port.postMessage({ type: 'attention.request', tabId });
+      postToUiPort(port, { type: 'attention.request', tabId });
     }
   }
 }

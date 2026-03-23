@@ -30,7 +30,7 @@ bbx install-mcp copilot          # or pick one: copilot, codex, cursor, windsurf
 bbx install-mcp copilot --local  # scope to current project instead of global
 ```
 
-Configs are written globally by default. For GitHub Copilot, that means `~/.copilot/mcp-config.json`; project installs still use `.vscode/mcp.json`. Browser Bridge also writes the older VS Code `User/mcp.json` locations as compatibility fallbacks. MCP is better with `$bbx-mcp` skill that teaches your agent to call methods directly for more structured, token-efficient output. No manual `bbx` calls needed.
+Configs are written globally by default. For GitHub Copilot, that means `~/.copilot/mcp-config.json`; project installs still use `.vscode/mcp.json`. Browser Bridge also writes the older VS Code `User/mcp.json` locations as compatibility fallbacks. `bbx install-mcp` suggests the matching `bbx install-skill <client>` follow-up so the MCP companion skill gets installed or updated too.
 
 **Skill + CLI** - for agents that run shell commands. Install the Browser Bridge skill so your agent knows how to drive `bbx`:
 
@@ -40,7 +40,7 @@ bbx install-skill copilot          # or pick one: copilot, codex, cursor, windsu
 bbx install-skill copilot --local  # scope to current project instead of global
 ```
 
-Skills are installed globally by default. The skill teaches your agent to call `bbx` commands directly for structured, token-efficient browser output. No MCP wiring needed.
+Skills are installed globally by default. The core `browser-bridge` skill is always installed; the `browser-bridge-mcp` companion is installed only when Browser Bridge MCP is already configured for that same client. If you add MCP later, run `bbx install-skill <client>` again and the UI/CLI will offer an update path.
 
 Shortcut commands cover the common cases. Advanced protocol fields stay available through `bbx call <method> '{...}'` when you need the full bridge surface.
 

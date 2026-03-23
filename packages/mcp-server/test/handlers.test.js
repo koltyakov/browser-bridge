@@ -32,18 +32,18 @@ import {
 } from '../src/handlers.js';
 
 /**
- * Set CODEX_HOME to a temp dir, save a test session, run the callback, then
+ * Set BROWSER_BRIDGE_HOME to a temp dir, save a test session, run the callback, then
  * restore the original env and clean up the session. Using a temp dir ensures
  * session reads/writes stay isolated and don't require permissions on the real
- * ~/.codex directory.
+ * ~/.browser-bridge directory.
  *
  * @param {() => Promise<void>} callback
  * @returns {Promise<void>}
  */
 async function withTestSession(callback) {
-  const prevCodexHome = process.env.CODEX_HOME;
-  const tempCodexHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-handler-test-'));
-  process.env.CODEX_HOME = tempCodexHome;
+  const prevBridgeHome = process.env.BROWSER_BRIDGE_HOME;
+  const tempBridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-handler-test-'));
+  process.env.BROWSER_BRIDGE_HOME = tempBridgeHome;
   await saveSession({
     sessionId: 'sess_test',
     tabId: 42,
@@ -55,12 +55,12 @@ async function withTestSession(callback) {
     await callback();
   } finally {
     await clearSession();
-    if (prevCodexHome !== undefined) {
-      process.env.CODEX_HOME = prevCodexHome;
+    if (prevBridgeHome !== undefined) {
+      process.env.BROWSER_BRIDGE_HOME = prevBridgeHome;
     } else {
-      delete process.env.CODEX_HOME;
+      delete process.env.BROWSER_BRIDGE_HOME;
     }
-    await fs.promises.rm(tempCodexHome, { recursive: true, force: true });
+    await fs.promises.rm(tempBridgeHome, { recursive: true, force: true });
   }
 }
 

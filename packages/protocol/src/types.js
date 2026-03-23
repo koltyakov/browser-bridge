@@ -335,6 +335,7 @@ export {};
 
 /**
  * @typedef {{
+ *   action?: 'install' | 'uninstall',
  *   kind?: 'mcp' | 'skill',
  *   target?: string
  * }} SetupInstallParams
@@ -342,6 +343,7 @@ export {};
 
 /**
  * @typedef {{
+ *   action: 'install' | 'uninstall',
  *   kind: 'mcp' | 'skill',
  *   target: string,
  *   paths: string[]
