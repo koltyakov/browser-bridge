@@ -19,9 +19,11 @@ function createDetectors(detectedNames) {
   return {
     copilot: () => detected.has('copilot'),
     cursor: () => detected.has('cursor'),
+    windsurf: () => detected.has('windsurf'),
     claude: () => detected.has('claude'),
     codex: () => detected.has('codex'),
-    opencode: () => detected.has('opencode')
+    opencode: () => detected.has('opencode'),
+    antigravity: () => detected.has('antigravity')
   };
 }
 
@@ -29,7 +31,7 @@ test('collectSetupStatus reports local MCP and skill installation state', async 
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-setup-status-'));
 
   try {
-    await installMcpConfig('cursor', {
+    await installMcpConfig('windsurf', {
       global: false,
       cwd: tempDir,
       stdout: { write() { return true; } }
@@ -53,6 +55,16 @@ test('collectSetupStatus reports local MCP and skill installation state', async 
       await fs.promises.writeFile(path.join(skillPath, sentinel), `${skillName} managed\n`, 'utf8');
     }
 
+    const windsurfBase = getSkillBasePath('windsurf', {
+      global: false,
+      projectPath: tempDir
+    });
+    for (const skillName of getManagedSkillNames()) {
+      const skillPath = path.join(windsurfBase, skillName);
+      await fs.promises.mkdir(skillPath, { recursive: true });
+      await fs.promises.writeFile(path.join(skillPath, sentinel), `${skillName} managed\n`, 'utf8');
+    }
+
     const opencodeSkillPath = path.join(tempDir, '.opencode', 'skills', 'browser-bridge');
     await fs.promises.mkdir(opencodeSkillPath, { recursive: true });
 
@@ -60,18 +72,18 @@ test('collectSetupStatus reports local MCP and skill installation state', async 
       global: false,
       cwd: tempDir,
       projectPath: tempDir,
-      mcpDetectors: createDetectors(['cursor']),
-      skillDetectors: createDetectors(['codex', 'cursor', 'opencode'])
+      mcpDetectors: createDetectors(['windsurf']),
+      skillDetectors: createDetectors(['codex', 'cursor', 'windsurf', 'opencode', 'antigravity'])
     });
 
     assert.equal(status.scope, 'local');
 
-    const cursor = status.mcpClients.find((entry) => entry.key === 'cursor');
-    assert.deepEqual(cursor, {
-      key: 'cursor',
-      label: 'Cursor',
+    const windsurf = status.mcpClients.find((entry) => entry.key === 'windsurf');
+    assert.deepEqual(windsurf, {
+      key: 'windsurf',
+      label: 'Windsurf',
       detected: true,
-      configPath: path.join(tempDir, '.cursor', 'mcp.json'),
+      configPath: path.join(tempDir, '.windsurf', 'mcp_config.json'),
       configExists: true,
       configured: true
     });
@@ -90,6 +102,21 @@ test('collectSetupStatus reports local MCP and skill installation state', async 
     assert.equal(codex.installed, true);
     assert.equal(codex.managed, true);
     assert.equal(codex.skills.length, 2);
+
+    const windsurfSkills = status.skillTargets.find((entry) => entry.key === 'windsurf');
+    assert.ok(windsurfSkills);
+    assert.equal(windsurfSkills.label, 'Windsurf');
+    assert.equal(windsurfSkills.detected, true);
+    assert.equal(windsurfSkills.installed, true);
+    assert.equal(windsurfSkills.managed, true);
+    assert.equal(windsurfSkills.basePath, path.join(tempDir, '.windsurf', 'skills'));
+
+    const antigravity = status.skillTargets.find((entry) => entry.key === 'antigravity');
+    assert.ok(antigravity);
+    assert.equal(antigravity.detected, true);
+    assert.equal(antigravity.installed, false);
+    assert.equal(antigravity.managed, false);
+    assert.equal(antigravity.basePath, path.join(tempDir, '.agents', 'skills'));
 
     const opencode = status.skillTargets.find((entry) => entry.key === 'opencode');
     assert.ok(opencode);
@@ -110,7 +137,7 @@ test('collectSetupStatus treats detected MCP runtimes as skill-install targets t
       global: false,
       cwd: tempDir,
       projectPath: tempDir,
-      mcpDetectors: createDetectors(['cursor']),
+      mcpDetectors: createDetectors(['cursor', 'windsurf']),
       skillDetectors: createDetectors([])
     });
 
@@ -119,6 +146,12 @@ test('collectSetupStatus treats detected MCP runtimes as skill-install targets t
     assert.equal(cursorSkills.detected, true);
     assert.equal(cursorSkills.installed, false);
     assert.equal(cursorSkills.basePath, path.join(tempDir, '.cursor', 'skills'));
+
+    const windsurfSkills = status.skillTargets.find((entry) => entry.key === 'windsurf');
+    assert.ok(windsurfSkills);
+    assert.equal(windsurfSkills.detected, true);
+    assert.equal(windsurfSkills.installed, false);
+    assert.equal(windsurfSkills.basePath, path.join(tempDir, '.windsurf', 'skills'));
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }

@@ -242,7 +242,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
     lines: [
       'bbx install [--browser chrome|edge|brave|chromium] [extension-id]  Install native messaging manifest',
       'bbx install-skill [targets|all] [--global] [--project <path>]      Install/update managed Browser Bridge skills (global by default)',
-      'bbx install-mcp [client|all] [--local]                             Write MCP config for copilot|codex|cursor|claude|opencode (global by default)',
+      'bbx install-mcp [client|all] [--local]                             Write MCP config for copilot|codex|cursor|windsurf|claude|opencode (global by default)',
       'bbx status                                                         Check bridge connection',
       'bbx doctor                                                         Diagnose install, daemon, extension, and session readiness',
       'bbx logs                                                           Recent bridge logs',

@@ -9,9 +9,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, '../../..');
 const managedSkillNames = /** @type {const} */ (['browser-bridge', 'browser-bridge-mcp']);
 const managedSentinelFilename = '.browser-bridge-managed';
-const supportedTargets = /** @type {const} */ (['copilot', 'claude', 'cursor', 'opencode', 'agents', 'codex']);
+const supportedTargets = /** @type {const} */ ([
+  'copilot',
+  'claude',
+  'cursor',
+  'windsurf',
+  'opencode',
+  'antigravity',
+  'agents',
+  'codex'
+]);
 const targetAliases = /** @type {const} */ ({
-  openai: 'codex'
+  openai: 'codex',
+  google: 'antigravity'
 });
 
 const packageManifest = loadPackageManifest();
@@ -19,7 +29,7 @@ const managedPackageName = typeof packageManifest.name === 'string' ? packageMan
 const managedPackageVersion = typeof packageManifest.version === 'string' ? packageManifest.version : null;
 
 /**
- * @typedef {'copilot' | 'claude' | 'cursor' | 'opencode' | 'agents' | 'codex'} SupportedTarget
+ * @typedef {'copilot' | 'claude' | 'cursor' | 'windsurf' | 'opencode' | 'antigravity' | 'agents' | 'codex'} SupportedTarget
  */
 
 /** @type {SupportedTarget[]} */
@@ -166,7 +176,7 @@ function parseTargetList(raw) {
         : targetAliases[/** @type {keyof typeof targetAliases} */ (value)]
     );
     if (!canonical) {
-      throw new Error(`Unknown install-skill target "${value}". Supported targets: ${supportedTargets.join(', ')}, all. Alias: openai -> codex.`);
+      throw new Error(`Unknown install-skill target "${value}". Supported targets: ${supportedTargets.join(', ')}, all. Aliases: openai -> codex, google -> antigravity.`);
     }
     parsed.add(canonical);
   }
@@ -179,7 +189,9 @@ const GLOBAL_SKILL_PATHS = {
   copilot:  path.join('.copilot', 'skills'),
   claude:   path.join('.claude', 'skills'),
   cursor:   path.join('.cursor', 'skills'),
+  windsurf: path.join('.codeium', 'windsurf', 'skills'),
   opencode: path.join('.opencode', 'skills'),
+  antigravity: path.join('.gemini', 'antigravity', 'skills'),
   codex:    path.join('.codex', 'skills')
 };
 
@@ -188,7 +200,9 @@ const LOCAL_SKILL_PATHS = {
   copilot:  path.join('.github', 'skills'),
   claude:   path.join('.claude', 'skills'),
   cursor:   path.join('.cursor', 'skills'),
+  windsurf: path.join('.windsurf', 'skills'),
   opencode: path.join('.opencode', 'skills'),
+  antigravity: path.join('.agents', 'skills'),
   codex:    path.join('.codex', 'skills')
 };
 

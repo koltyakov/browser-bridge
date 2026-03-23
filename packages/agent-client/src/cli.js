@@ -75,15 +75,18 @@ if (command === 'install-skill') {
     /** @type {import('./install.js').SupportedTarget[]} */
     const detected = detectSkillTargets();
 
-    // 'openai' shares the same path as 'codex' - omit from interactive list.
+    // Aliases like 'openai' and 'google' map to canonical targets and stay omitted.
     /** @type {Array<import('./install.js').SupportedTarget>} */
-    const interactiveTargets = ['copilot', 'codex', 'claude', 'opencode', 'agents'];
+    const interactiveTargets = ['copilot', 'codex', 'claude', 'cursor', 'windsurf', 'opencode', 'antigravity', 'agents'];
     /** @type {Record<string, string>} */
     const targetLabels = {
       copilot: 'GitHub Copilot (VS Code)',
       codex: 'OpenAI Codex CLI',
       claude: 'Claude Code / Claude Desktop',
+      cursor: 'Cursor',
+      windsurf: 'Windsurf',
       opencode: 'OpenCode',
+      antigravity: 'Google Antigravity',
       agents: 'Generic agents  (.agents/skills/)'
     };
     const items = interactiveTargets.map((t) => ({
@@ -147,6 +150,7 @@ if (command === 'install-mcp') {
       copilot: 'GitHub Copilot (VS Code)',
       codex: 'OpenAI Codex CLI',
       cursor: 'Cursor',
+      windsurf: 'Windsurf',
       claude: 'Claude Desktop / Claude Code',
       opencode: 'OpenCode'
     };
@@ -203,7 +207,7 @@ if (command === 'mcp') {
   }
   if (subcommand === 'config') {
     if (!clientName || !isMcpClientName(clientName)) {
-      process.stderr.write('Usage: bbx mcp config <claude|cursor|copilot|codex|opencode>\n');
+      process.stderr.write('Usage: bbx mcp config <claude|cursor|windsurf|copilot|codex|opencode>\n');
       process.exit(1);
     }
     process.stdout.write(formatMcpConfig(clientName));

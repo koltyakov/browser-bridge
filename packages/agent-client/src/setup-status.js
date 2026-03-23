@@ -31,6 +31,7 @@ const MCP_CLIENT_LABELS = {
   copilot: 'GitHub Copilot',
   codex: 'OpenAI Codex',
   cursor: 'Cursor',
+  windsurf: 'Windsurf',
   claude: 'Claude',
   opencode: 'OpenCode'
 };
@@ -40,7 +41,9 @@ const SKILL_TARGET_LABELS = {
   copilot: 'GitHub Copilot',
   claude: 'Claude',
   cursor: 'Cursor',
+  windsurf: 'Windsurf',
   opencode: 'OpenCode',
+  antigravity: 'Antigravity',
   agents: 'Generic agents',
   codex: 'OpenAI Codex'
 };

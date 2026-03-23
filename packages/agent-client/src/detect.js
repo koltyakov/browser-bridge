@@ -56,6 +56,13 @@ function detectCursor() {
 }
 
 /** @returns {boolean} */
+function detectWindsurf() {
+  if (fsExists(path.join(home, '.codeium', 'windsurf'))) return true;
+  if (platform === 'darwin') return fsExists('/Applications/Windsurf.app');
+  return commandExists('windsurf');
+}
+
+/** @returns {boolean} */
 function detectClaude() {
   if (platform === 'darwin') {
     return fsExists(path.join(home, 'Library', 'Application Support', 'Claude'));
@@ -79,20 +86,28 @@ function detectOpencode() {
   return commandExists('opencode');
 }
 
+/** @returns {boolean} */
+function detectAntigravity() {
+  if (fsExists(path.join(home, '.gemini', 'antigravity'))) return true;
+  return commandExists('agy');
+}
+
 /** @type {Record<string, () => boolean>} */
 const DETECTORS = {
   copilot: detectCopilot,
   cursor: detectCursor,
+  windsurf: detectWindsurf,
   claude: detectClaude,
   codex: detectCodex,
-  opencode: detectOpencode
+  opencode: detectOpencode,
+  antigravity: detectAntigravity
 };
 
 /** @type {McpClientName[]} */
-const MCP_CLIENT_KEYS = ['copilot', 'codex', 'cursor', 'claude', 'opencode'];
+const MCP_CLIENT_KEYS = ['copilot', 'codex', 'cursor', 'windsurf', 'claude', 'opencode'];
 
 /** @type {SupportedTarget[]} */
-const SKILL_TARGET_KEYS = ['copilot', 'codex', 'cursor', 'claude', 'opencode'];
+const SKILL_TARGET_KEYS = ['copilot', 'codex', 'cursor', 'windsurf', 'claude', 'opencode', 'antigravity'];
 
 /**
  * Detect which MCP clients are installed on this machine.

@@ -469,7 +469,7 @@ test('summarizer: DOM query evidence includes role and label', () => {
 
 test('parseInstallAgentArgs defaults to all supported targets', () => {
   const options = parseInstallAgentArgs([], '/tmp/example');
-  assert.deepEqual(options.targets, ['copilot', 'claude', 'cursor', 'opencode', 'agents', 'codex']);
+  assert.deepEqual(options.targets, ['copilot', 'claude', 'cursor', 'windsurf', 'opencode', 'antigravity', 'agents', 'codex']);
   assert.equal(options.projectPath, '/tmp/example');
 });
 
@@ -484,10 +484,15 @@ test('parseInstallAgentArgs accepts openai as a codex alias', () => {
   assert.deepEqual(options.targets, ['codex']);
 });
 
+test('parseInstallAgentArgs accepts google as an antigravity alias', () => {
+  const options = parseInstallAgentArgs(['google'], '/tmp/example');
+  assert.deepEqual(options.targets, ['antigravity']);
+});
+
 test('installAgentFiles writes managed files for supported runtimes', async () => {
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-agent-'));
   const installed = await installAgentFiles({
-    targets: ['copilot', 'claude', 'cursor', 'opencode', 'agents', 'codex'],
+    targets: ['copilot', 'claude', 'cursor', 'windsurf', 'opencode', 'antigravity', 'agents', 'codex'],
     projectPath: tempDir,
     global: false
   });
@@ -498,6 +503,8 @@ test('installAgentFiles writes managed files for supported runtimes', async () =
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.claude', 'skills', 'browser-bridge-mcp'))));
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.cursor', 'skills', 'browser-bridge'))));
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.cursor', 'skills', 'browser-bridge-mcp'))));
+  assert.ok(installed.some((entry) => entry.endsWith(path.join('.windsurf', 'skills', 'browser-bridge'))));
+  assert.ok(installed.some((entry) => entry.endsWith(path.join('.windsurf', 'skills', 'browser-bridge-mcp'))));
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.opencode', 'skills', 'browser-bridge'))));
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.opencode', 'skills', 'browser-bridge-mcp'))));
   assert.ok(installed.some((entry) => entry.endsWith(path.join('.agents', 'skills', 'browser-bridge'))));
@@ -511,6 +518,8 @@ test('installAgentFiles writes managed files for supported runtimes', async () =
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.claude', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.cursor', 'skills', 'browser-bridge', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.cursor', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
+  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.windsurf', 'skills', 'browser-bridge', 'SKILL.md')));
+  await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.windsurf', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.opencode', 'skills', 'browser-bridge', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.opencode', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
   await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.agents', 'skills', 'browser-bridge', 'SKILL.md')));
@@ -548,9 +557,40 @@ test('installAgentFiles writes GitHub Copilot global skills to ~/.copilot/skills
   }
 });
 
+test('installAgentFiles writes Windsurf and Antigravity global skills to their documented locations', async () => {
+  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-agent-home-'));
+  const originalHome = process.env.HOME;
+
+  try {
+    process.env.HOME = tempHome;
+    const installed = await installAgentFiles({
+      targets: ['windsurf', 'antigravity'],
+      projectPath: '/tmp/unused',
+      global: true
+    });
+
+    assert.ok(installed.some((entry) => entry.endsWith(path.join('.codeium', 'windsurf', 'skills', 'browser-bridge'))));
+    assert.ok(installed.some((entry) => entry.endsWith(path.join('.codeium', 'windsurf', 'skills', 'browser-bridge-mcp'))));
+    assert.ok(installed.some((entry) => entry.endsWith(path.join('.gemini', 'antigravity', 'skills', 'browser-bridge'))));
+    assert.ok(installed.some((entry) => entry.endsWith(path.join('.gemini', 'antigravity', 'skills', 'browser-bridge-mcp'))));
+    await assert.doesNotReject(fs.promises.access(path.join(tempHome, '.codeium', 'windsurf', 'skills', 'browser-bridge', 'SKILL.md')));
+    await assert.doesNotReject(fs.promises.access(path.join(tempHome, '.codeium', 'windsurf', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
+    await assert.doesNotReject(fs.promises.access(path.join(tempHome, '.gemini', 'antigravity', 'skills', 'browser-bridge', 'SKILL.md')));
+    await assert.doesNotReject(fs.promises.access(path.join(tempHome, '.gemini', 'antigravity', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
+  } finally {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+    await fs.promises.rm(tempHome, { recursive: true, force: true });
+  }
+});
+
 test('isMcpClientName recognizes supported clients', () => {
   assert.equal(isMcpClientName('claude'), true);
   assert.equal(isMcpClientName('cursor'), true);
+  assert.equal(isMcpClientName('windsurf'), true);
   assert.equal(isMcpClientName('copilot'), true);
   assert.equal(isMcpClientName('codex'), true);
   assert.equal(isMcpClientName('opencode'), true);
@@ -560,6 +600,16 @@ test('isMcpClientName recognizes supported clients', () => {
 
 test('buildMcpConfig produces client-specific config shapes', () => {
   assert.deepEqual(buildMcpConfig('cursor'), {
+    mcpServers: {
+      'browser-bridge': {
+        command: 'bbx',
+        args: ['mcp', 'serve'],
+        env: {}
+      }
+    }
+  });
+
+  assert.deepEqual(buildMcpConfig('windsurf'), {
     mcpServers: {
       'browser-bridge': {
         command: 'bbx',
@@ -616,5 +666,17 @@ test('getMcpConfigPath supports OpenCode global and local locations', () => {
   assert.equal(
     getMcpConfigPath('opencode', { global: true }),
     path.join(home, '.config', 'opencode', 'opencode.json')
+  );
+});
+
+test('getMcpConfigPath supports Windsurf global and local locations', () => {
+  const home = os.homedir();
+  assert.equal(
+    getMcpConfigPath('windsurf', { global: false, cwd: '/tmp/demo' }),
+    path.join('/tmp/demo', '.windsurf', 'mcp_config.json')
+  );
+  assert.equal(
+    getMcpConfigPath('windsurf', { global: true }),
+    path.join(home, '.codeium', 'windsurf', 'mcp_config.json')
   );
 });
