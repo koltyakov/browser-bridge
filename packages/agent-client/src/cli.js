@@ -17,11 +17,12 @@ import {
   findInstalledManagedTargets,
   getRequiredManagedSkillNames,
   installAgentFiles,
+  installMcpClientSetup,
   parseInstallAgentArgs,
   removeAgentFiles,
   SUPPORTED_TARGETS
 } from './install.js';
-import { findConfiguredMcpClients, formatMcpConfig, installMcpConfig, isMcpClientName, MCP_CLIENT_NAMES, removeMcpConfig } from './mcp-config.js';
+import { findConfiguredMcpClients, formatMcpConfig, isMcpClientName, MCP_CLIENT_NAMES, removeMcpConfig } from './mcp-config.js';
 import { getDoctorReport, requestBridge, requireSession, resolveRef } from './runtime.js';
 import { collectSetupStatus } from './setup-status.js';
 import { summarizeBridgeResponse } from './subagent.js';
@@ -194,7 +195,7 @@ if (command === 'install-skill') {
         `Note: skipped the MCP companion skill for ${targetsWithoutMcpCompanion.join(', ')} because Browser Bridge MCP is not configured there yet.\n`
       );
       process.stdout.write(
-        `Run bbx install-mcp ${targetsWithoutMcpCompanion[0]} and then bbx install-skill ${targetsWithoutMcpCompanion[0]} to add it later.\n`
+        `Run bbx install-mcp ${targetsWithoutMcpCompanion[0]}${isGlobal ? '' : ' --local'} to add it automatically later.\n`
       );
     }
     process.exit(0);
@@ -219,7 +220,7 @@ if (command === 'install-skill') {
       `Note: skipped the MCP companion skill for ${targetsWithoutMcpCompanion.join(', ')} because Browser Bridge MCP is not configured there yet.\n`
     );
     process.stdout.write(
-      `Run bbx install-mcp ${targetsWithoutMcpCompanion[0]} and then bbx install-skill ${targetsWithoutMcpCompanion[0]} to add it later.\n`
+      `Run bbx install-mcp ${targetsWithoutMcpCompanion[0]}${options.global ? '' : ' --local'} to add it automatically later.\n`
     );
   }
   process.exit(0);
@@ -332,11 +333,13 @@ if (command === 'install-mcp') {
     }
   }
 
-  for (const clientName of clients) {
-    await installMcpConfig(clientName, { global: isGlobal, cwd: process.cwd() });
-    process.stdout.write(
-      `Tip: run bbx install-skill ${clientName}${isGlobal ? '' : ' --local'} to install or update the MCP companion skill.\n`
-    );
+  const { skillPaths } = await installMcpClientSetup(clients, {
+    global: isGlobal,
+    projectPath: process.cwd(),
+    stdout: process.stdout
+  });
+  for (const installedPath of skillPaths) {
+    process.stdout.write(`Installed ${installedPath}\n`);
   }
   process.exit(0);
 }

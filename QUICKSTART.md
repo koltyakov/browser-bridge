@@ -30,7 +30,7 @@ bbx install-mcp copilot          # or pick one: copilot, codex, cursor, windsurf
 bbx install-mcp copilot --local  # scope to current project instead of global
 ```
 
-Configs are written globally by default. For GitHub Copilot, that means `~/.copilot/mcp-config.json`; project installs still use `.vscode/mcp.json`. Browser Bridge also writes the older VS Code `User/mcp.json` locations as compatibility fallbacks. `bbx install-mcp` suggests the matching `bbx install-skill <client>` follow-up so the MCP companion skill gets installed or updated too.
+Configs are written globally by default. For GitHub Copilot, that means `~/.copilot/mcp-config.json`; project installs still use `.vscode/mcp.json`. Browser Bridge also writes the older VS Code `User/mcp.json` locations as compatibility fallbacks. `bbx install-mcp` also installs or updates the matching managed skills for those same clients, including the MCP companion.
 
 **Skill + CLI** - for agents that run shell commands. Install the Browser Bridge skill so your agent knows how to drive `bbx`:
 
@@ -40,7 +40,7 @@ bbx install-skill copilot          # or pick one: copilot, codex, cursor, windsu
 bbx install-skill copilot --local  # scope to current project instead of global
 ```
 
-Skills are installed globally by default. The core `browser-bridge` skill is always installed; the `browser-bridge-mcp` companion is installed only when Browser Bridge MCP is already configured for that same client. If you add MCP later, run `bbx install-skill <client>` again and the UI/CLI will offer an update path.
+Skills are installed globally by default. The core `browser-bridge` skill is always installed; the `browser-bridge-mcp` companion is installed only when Browser Bridge MCP is already configured for that same client. `bbx install-mcp` now handles that combined setup automatically for MCP-capable clients, while `bbx install-skill` remains useful for CLI-only flows and generic agent runtimes.
 
 Shortcut commands cover the common cases. Advanced protocol fields stay available through `bbx call <method> '{...}'` when you need the full bridge surface.
 

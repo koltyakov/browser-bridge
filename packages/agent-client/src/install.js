@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { getMcpConfigPaths, isMcpClientName, parseInstalledMcpConfig } from './mcp-config.js';
+import { getMcpConfigPaths, installMcpConfig, isMcpClientName, parseInstalledMcpConfig } from './mcp-config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, '../../..');
@@ -163,6 +163,40 @@ export async function installAgentFiles(options) {
   }
 
   return created;
+}
+
+/**
+ * Write MCP config for the given clients, then install the matching managed
+ * Browser Bridge skills for those same runtimes.
+ *
+ * @param {import('./mcp-config.js').McpClientName[]} clients
+ * @param {{
+ *   global: boolean,
+ *   projectPath: string,
+ *   stdout?: Pick<NodeJS.WriteStream, 'write'>
+ * }} options
+ * @returns {Promise<{ configPaths: string[], skillPaths: string[] }>}
+ */
+export async function installMcpClientSetup(clients, options) {
+  /** @type {string[]} */
+  const configPaths = [];
+  const uniqueClients = [...new Set(clients)];
+
+  for (const clientName of uniqueClients) {
+    configPaths.push(await installMcpConfig(clientName, {
+      global: options.global,
+      cwd: options.projectPath,
+      stdout: options.stdout
+    }));
+  }
+
+  const skillPaths = await installAgentFiles({
+    targets: /** @type {SupportedTarget[]} */ (uniqueClients),
+    projectPath: options.projectPath,
+    global: options.global
+  });
+
+  return { configPaths, skillPaths };
 }
 
 /**

@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { interactiveConfirm, methodNeedsSession, parseCommaList, parseJsonObject, parsePropertyAssignments } from '../src/cli-helpers.js';
-import { findInstalledManagedTargets, getManagedSkillSentinelFilename, getSkillBasePath, installAgentFiles, parseInstallAgentArgs, removeAgentFiles } from '../src/install.js';
+import { findInstalledManagedTargets, getManagedSkillSentinelFilename, getSkillBasePath, installAgentFiles, installMcpClientSetup, parseInstallAgentArgs, removeAgentFiles } from '../src/install.js';
 import { buildMcpConfig, formatMcpConfig, getMcpConfigPath, getMcpConfigPaths, installMcpConfig, isMcpClientName, removeMcpConfig } from '../src/mcp-config.js';
 import { summarizeBridgeResponse } from '../src/subagent.js';
 
@@ -637,6 +637,44 @@ test('installAgentFiles adds the GitHub Copilot MCP companion when global MCP is
     });
 
     assert.ok(installed.some((entry) => entry.endsWith(path.join('.copilot', 'skills', 'browser-bridge-mcp'))));
+    await assert.doesNotReject(fs.promises.access(path.join(tempHome, '.copilot', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
+  } finally {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+    if (originalAppData === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = originalAppData;
+    }
+    await fs.promises.rm(tempHome, { recursive: true, force: true });
+  }
+});
+
+test('installMcpClientSetup writes GitHub Copilot MCP config and matching skills together', async () => {
+  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-copilot-setup-home-'));
+  const originalHome = process.env.HOME;
+  const originalAppData = process.env.APPDATA;
+
+  try {
+    process.env.HOME = tempHome;
+    if (process.platform === 'win32') {
+      process.env.APPDATA = path.join(tempHome, 'AppData', 'Roaming');
+    }
+
+    const result = await installMcpClientSetup(['copilot'], {
+      global: true,
+      projectPath: '/tmp/unused',
+      stdout: { write() { return true; } }
+    });
+
+    assert.ok(result.configPaths.some((entry) => entry.endsWith(path.join('.copilot', 'mcp-config.json'))));
+    assert.ok(result.skillPaths.some((entry) => entry.endsWith(path.join('.copilot', 'skills', 'browser-bridge'))));
+    assert.ok(result.skillPaths.some((entry) => entry.endsWith(path.join('.copilot', 'skills', 'browser-bridge-mcp'))));
+    await assert.doesNotReject(fs.promises.access(path.join(tempHome, '.copilot', 'mcp-config.json')));
+    await assert.doesNotReject(fs.promises.access(path.join(tempHome, '.copilot', 'skills', 'browser-bridge', 'SKILL.md')));
     await assert.doesNotReject(fs.promises.access(path.join(tempHome, '.copilot', 'skills', 'browser-bridge-mcp', 'SKILL.md')));
   } finally {
     if (originalHome === undefined) {

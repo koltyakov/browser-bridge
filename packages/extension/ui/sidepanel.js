@@ -564,7 +564,7 @@ function renderMcpMatrixCell(row, installPendingKey) {
       copyLabel: 'Copy MCP config path',
       copyText: entry.configPath,
       reinstallLabel: 'Re-install MCP',
-      uninstallLabel: `Uninstall MCP for ${row.label}`
+      uninstallLabel: `Uninstall MCP`
     });
   }
   const button = createSetupActionButton(
