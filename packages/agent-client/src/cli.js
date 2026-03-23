@@ -110,19 +110,18 @@ if (command === 'install-skill') {
 
     // Aliases like 'openai' and 'google' map to canonical targets and stay omitted.
     /** @type {Array<import('./install.js').SupportedTarget>} */
-    const interactiveTargets = ['copilot', 'codex', 'claude', 'cursor', 'windsurf', 'opencode', 'antigravity', 'agents'];
     /** @type {Record<string, string>} */
     const targetLabels = {
-      copilot: 'GitHub Copilot (VS Code)',
       codex: 'OpenAI Codex CLI',
       claude: 'Claude Code',
       cursor: 'Cursor',
-      windsurf: 'Windsurf',
+      copilot: 'GitHub Copilot (VS Code)',
       opencode: 'OpenCode',
       antigravity: 'Google Antigravity',
+      windsurf: 'Windsurf',
       agents: 'Generic agents  (.agents/skills/)'
     };
-    const items = interactiveTargets.map((t) => ({
+    const items = SUPPORTED_TARGETS.map((t) => ({
       value: t,
       label: `${t.padEnd(10)}  ${targetLabels[t]}`,
       hint: formatSelectionHint({
@@ -222,13 +221,13 @@ if (command === 'install-mcp') {
     const configuredClientList = /** @type {import('./mcp-config.js').McpClientName[]} */ ([...configuredClients]);
     /** @type {Record<string, string>} */
     const clientLabels = {
-      copilot: 'GitHub Copilot (VS Code)',
       codex: 'OpenAI Codex CLI',
-      cursor: 'Cursor',
-      windsurf: 'Windsurf',
       claude: 'Claude Code',
+      cursor: 'Cursor',
+      copilot: 'GitHub Copilot (VS Code)',
       opencode: 'OpenCode',
-      antigravity: 'Antigravity'
+      antigravity: 'Antigravity',
+      windsurf: 'Windsurf'
     };
     const items = MCP_CLIENT_NAMES.map((c) => ({
       value: c,
@@ -316,7 +315,7 @@ if (command === 'mcp') {
   }
   if (subcommand === 'config') {
     if (!clientName || !isMcpClientName(clientName)) {
-      process.stderr.write('Usage: bbx mcp config <claude|cursor|windsurf|copilot|codex|opencode|antigravity>\n');
+      process.stderr.write('Usage: bbx mcp config <codex|claude|cursor|copilot|opencode|antigravity|windsurf>\n');
       process.exit(1);
     }
     process.stdout.write(formatMcpConfig(clientName));

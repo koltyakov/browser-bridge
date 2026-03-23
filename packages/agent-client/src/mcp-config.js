@@ -5,11 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 
 /**
- * @typedef {'claude' | 'cursor' | 'windsurf' | 'copilot' | 'codex' | 'opencode' | 'antigravity'} McpClientName
+ * @typedef {'codex' | 'claude' | 'cursor' | 'copilot' | 'opencode' | 'antigravity' | 'windsurf'} McpClientName
  */
 
 /** @type {McpClientName[]} */
-export const MCP_CLIENT_NAMES = ['copilot', 'codex', 'cursor', 'windsurf', 'claude', 'opencode', 'antigravity'];
+export const MCP_CLIENT_NAMES = ['codex', 'claude', 'cursor', 'copilot', 'opencode', 'antigravity', 'windsurf'];
 
 /**
  * @param {string} value

@@ -122,6 +122,18 @@ import { getActivitySourceTag, getPromptExamplesMode, shouldAutoExpandHostSetup 
 
 const PUBLISHED_EXTENSION_ID = 'ahhmghheecmambjebhfjkngdggghbkno';
 const SETUP_STATUS_POLL_MS = 15_000;
+const SETUP_MATRIX_ORDER = /** @type {const} */ ([
+  'codex',
+  'claude',
+  'cursor',
+  'copilot',
+  'opencode',
+  'antigravity',
+  'windsurf',
+  'agents'
+]);
+/** @type {Map<string, number>} */
+const SETUP_MATRIX_RANK = new Map(SETUP_MATRIX_ORDER.map((key, index) => [key, index]));
 
 const nativeIndicator = /** @type {HTMLSpanElement} */ (document.getElementById('native-indicator'));
 const toggleButton = /** @type {HTMLButtonElement} */ (document.getElementById('bridge-toggle'));
@@ -573,8 +585,6 @@ function renderSetupStatus(setupStatus, pending, error, installPendingKey, insta
 function buildSetupMatrixRows(setupStatus) {
   /** @type {Map<string, SetupMatrixRow>} */
   const rowsByKey = new Map();
-  /** @type {string[]} */
-  const order = [];
 
   for (const entry of setupStatus.mcpClients) {
     if (!shouldRenderMcpClientRow(entry)) {
@@ -587,7 +597,6 @@ function buildSetupMatrixRows(setupStatus) {
         mcpClient: entry,
         skillTarget: null
       });
-      order.push(entry.key);
     } else {
       rowsByKey.get(entry.key).mcpClient = entry;
     }
@@ -604,13 +613,35 @@ function buildSetupMatrixRows(setupStatus) {
         mcpClient: null,
         skillTarget: entry
       });
-      order.push(entry.key);
     } else {
       rowsByKey.get(entry.key).skillTarget = entry;
     }
   }
 
-  return order.map((key) => rowsByKey.get(key)).filter(Boolean);
+  return [...rowsByKey.entries()]
+    .sort(([leftKey], [rightKey]) => compareSetupMatrixKeys(leftKey, rightKey))
+    .map(([, row]) => row);
+}
+
+/**
+ * @param {string} leftKey
+ * @param {string} rightKey
+ * @returns {number}
+ */
+function compareSetupMatrixKeys(leftKey, rightKey) {
+  const leftRank = SETUP_MATRIX_RANK.get(leftKey);
+  const rightRank = SETUP_MATRIX_RANK.get(rightKey);
+
+  if (leftRank !== undefined && rightRank !== undefined) {
+    return leftRank - rightRank;
+  }
+  if (leftRank !== undefined) {
+    return -1;
+  }
+  if (rightRank !== undefined) {
+    return 1;
+  }
+  return leftKey.localeCompare(rightKey);
 }
 
 /**

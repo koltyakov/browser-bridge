@@ -30,25 +30,25 @@ import {
 
 /** @type {Record<McpClientName, string>} */
 const MCP_CLIENT_LABELS = {
-  copilot: 'GitHub Copilot',
   codex: 'OpenAI Codex',
-  cursor: 'Cursor',
-  windsurf: 'Windsurf',
   claude: 'Claude Code',
+  cursor: 'Cursor',
+  copilot: 'GitHub Copilot',
   opencode: 'OpenCode',
-  antigravity: 'Antigravity'
+  antigravity: 'Antigravity',
+  windsurf: 'Windsurf'
 };
 
 /** @type {Record<SupportedTarget, string>} */
 const SKILL_TARGET_LABELS = {
-  copilot: 'GitHub Copilot',
+  codex: 'OpenAI Codex',
   claude: 'Claude Code',
   cursor: 'Cursor',
-  windsurf: 'Windsurf',
+  copilot: 'GitHub Copilot',
   opencode: 'OpenCode',
   antigravity: 'Antigravity',
-  agents: 'Generic agents',
-  codex: 'OpenAI Codex'
+  windsurf: 'Windsurf',
+  agents: 'Generic agents'
 };
 
 /**

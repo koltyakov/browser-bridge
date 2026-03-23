@@ -47,8 +47,8 @@ test('detectMcpClients and detectSkillTargets use injected detectors', () => {
     antigravity: () => true
   };
 
-  assert.deepEqual(detectMcpClients(detectors), ['copilot', 'codex', 'windsurf', 'claude', 'antigravity']);
-  assert.deepEqual(detectSkillTargets(detectors), ['copilot', 'codex', 'windsurf', 'claude', 'antigravity', 'agents']);
+  assert.deepEqual(detectMcpClients(detectors), ['codex', 'claude', 'copilot', 'antigravity', 'windsurf']);
+  assert.deepEqual(detectSkillTargets(detectors), ['codex', 'claude', 'copilot', 'antigravity', 'windsurf', 'agents']);
 });
 
 test('detectSkillTargets includes cursor when detected', () => {

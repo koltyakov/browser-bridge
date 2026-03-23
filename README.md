@@ -10,7 +10,7 @@ See [QUICKSTART.md](QUICKSTART.md) to get started in another repo.
 
 ## Supported Agents
 
-Managed CLI skill installs support GitHub Copilot, OpenAI Codex, Claude Code, Cursor, Windsurf, OpenCode, and Antigravity. `bbx install-mcp` writes MCP config for GitHub Copilot, OpenAI Codex, Claude Code, Cursor, Windsurf, OpenCode, and Antigravity. `bbx install-skill` installs the managed Browser Bridge CLI skill for shell-driven agents and generic `.agents/skills/` runtimes.
+Managed CLI skill installs support OpenAI Codex, Claude Code, Cursor, GitHub Copilot, OpenCode, Antigravity, and Windsurf. `bbx install-mcp` writes MCP config for OpenAI Codex, Claude Code, Cursor, GitHub Copilot, OpenCode, Antigravity, and Windsurf. `bbx install-skill` installs the managed Browser Bridge CLI skill for shell-driven agents and generic `.agents/skills/` runtimes.
 
 <table align="center">
   <tr>
@@ -105,12 +105,11 @@ Browser Bridge is optimized for the opposite starting point: **inspect the state
 
 ## Setup
 
-1. Install [Browser Bridge from the Chrome Web Store](https://chrome.google.com/webstore/detail/ahhmghheecmambjebhfjkngdggghbkno) <!-- TODO: replace with final store link after publishing -->
-2. `npm install -g @browserbridge/bbx` - installs the CLI and native host
-3. `bbx install-mcp` - connect MCP-capable agents
-4. `bbx install-skill` - optional for CLI or shell-driven agents and generic skill runtimes
-5. Enable extension session in side panel
-6. Ask your agent to use Browser Bridge via MCP (`BB MCP` or `Browser Bridge MCP`), or invoke the `browser-bridge` / `$bbx` skill in CLI mode
+1. `npm install -g @browserbridge/bbx` - installs the CLI and native host
+2. Install [Browser Bridge from the Chrome Web Store](https://chrome.google.com/webstore/detail/ahhmghheecmambjebhfjkngdggghbkno) <!-- TODO: replace with final store link after publishing -->
+3. In extension side panel, install MCP or CLI (skill) for your agent of choice
+4. Enable access for the tab you want to inspect/control with the AI agent
+5. Ask your agent to use Browser Bridge via MCP (`BB MCP` or `Browser Bridge MCP`), or invoke the `browser-bridge` / `$bbx` skill in CLI mode
 
 
 ## How it works

@@ -469,7 +469,7 @@ test('summarizer: DOM query evidence includes role and label', () => {
 
 test('parseInstallAgentArgs defaults to all supported targets', () => {
   const options = parseInstallAgentArgs([], '/tmp/example');
-  assert.deepEqual(options.targets, ['copilot', 'claude', 'cursor', 'windsurf', 'opencode', 'antigravity', 'agents', 'codex']);
+  assert.deepEqual(options.targets, ['codex', 'claude', 'cursor', 'copilot', 'opencode', 'antigravity', 'windsurf', 'agents']);
   assert.equal(options.projectPath, '/tmp/example');
 });
 
@@ -523,7 +523,7 @@ test('installAgentFiles writes managed files for supported runtimes', async () =
     stdout: { write() { return true; } }
   });
   const installed = await installAgentFiles({
-    targets: ['copilot', 'claude', 'cursor', 'windsurf', 'opencode', 'antigravity', 'agents', 'codex'],
+    targets: ['codex', 'claude', 'cursor', 'copilot', 'opencode', 'antigravity', 'windsurf', 'agents'],
     projectPath: tempDir,
     global: false
   });

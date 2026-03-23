@@ -105,20 +105,20 @@ function detectAntigravity() {
 
 /** @type {Record<string, () => boolean>} */
 const DETECTORS = {
-  copilot: detectCopilot,
-  cursor: detectCursor,
-  windsurf: detectWindsurf,
-  claude: detectClaude,
   codex: detectCodex,
+  claude: detectClaude,
+  cursor: detectCursor,
+  copilot: detectCopilot,
   opencode: detectOpencode,
-  antigravity: detectAntigravity
+  antigravity: detectAntigravity,
+  windsurf: detectWindsurf
 };
 
 /** @type {McpClientName[]} */
-const MCP_CLIENT_KEYS = ['copilot', 'codex', 'cursor', 'windsurf', 'claude', 'opencode', 'antigravity'];
+const MCP_CLIENT_KEYS = ['codex', 'claude', 'cursor', 'copilot', 'opencode', 'antigravity', 'windsurf'];
 
 /** @type {SupportedTarget[]} */
-const SKILL_TARGET_KEYS = ['copilot', 'codex', 'cursor', 'windsurf', 'claude', 'opencode', 'antigravity'];
+const SKILL_TARGET_KEYS = ['codex', 'claude', 'cursor', 'copilot', 'opencode', 'antigravity', 'windsurf'];
 
 /**
  * Detect which MCP clients are installed on this machine.

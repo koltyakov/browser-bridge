@@ -13,14 +13,14 @@ const coreManagedSkillName = 'browser-bridge';
 const managedSkillNames = /** @type {const} */ ([coreManagedSkillName]);
 const managedSentinelFilename = '.browser-bridge-managed';
 const supportedTargets = /** @type {const} */ ([
-  'copilot',
+  'codex',
   'claude',
   'cursor',
-  'windsurf',
+  'copilot',
   'opencode',
   'antigravity',
-  'agents',
-  'codex'
+  'windsurf',
+  'agents'
 ]);
 const targetAliases = /** @type {const} */ ({
   openai: 'codex',
@@ -40,7 +40,7 @@ const copilotBrowserBridgeNote = [
 ].join('\n');
 
 /**
- * @typedef {'copilot' | 'claude' | 'cursor' | 'windsurf' | 'opencode' | 'antigravity' | 'agents' | 'codex'} SupportedTarget
+ * @typedef {'codex' | 'claude' | 'cursor' | 'copilot' | 'opencode' | 'antigravity' | 'windsurf' | 'agents'} SupportedTarget
  */
 
 /** @type {SupportedTarget[]} */
