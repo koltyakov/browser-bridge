@@ -22,7 +22,7 @@ There are two integration paths. Pick the one that matches how your agent works:
 
 Supported clients: `codex` (OpenAI Codex CLI), `claude` (Claude Code), `cursor` (Cursor), `copilot` (GitHub Copilot / VS Code), `opencode` (OpenCode), `antigravity` (Antigravity), `windsurf` (Windsurf).
 
-After installing the extension and CLI, you can finish the rest from the extension's **Host Setup** section. The `bbx install-*` commands below are optional if you prefer to do setup from the terminal.
+After installing the extension and CLI, finish the rest from the extension side panel's **Host Setup** section, or use the `bbx install-mcp` / `bbx install-skill` commands below if you prefer terminal setup.
 
 > **Recommendation:** MCP and the CLI skill are not meant to be installed together by default. Prefer MCP when your agent supports it. If CLI mode is unreliable because the agent runs in a sandboxed shell, such as GitHub Copilot, use MCP instead.
 
