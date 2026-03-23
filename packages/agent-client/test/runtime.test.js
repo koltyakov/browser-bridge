@@ -9,7 +9,7 @@ import path from 'node:path';
 import { BRIDGE_METHOD_REGISTRY } from '../../protocol/src/index.js';
 import { CLI_METHOD_BINDINGS } from '../src/command-registry.js';
 import { detectMcpClients, detectSkillTargets } from '../src/detect.js';
-import { installMcpConfig } from '../src/mcp-config.js';
+import { findConfiguredMcpClients, installMcpConfig, removeMcpConfig } from '../src/mcp-config.js';
 import { clearSession, loadSession, saveSession } from '../src/session-store.js';
 import { getDoctorReport, requireSession, resolveRef } from '../src/runtime.js';
 
@@ -119,6 +119,95 @@ test('installMcpConfig upserts Codex TOML config without dropping other sections
     assert.match(merged, /\[sandbox_workspace_write\]/);
     assert.match(merged, /\[mcp_servers\."browser-bridge"\]/);
     assert.match(merged, /command = "bbx"/);
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('findConfiguredMcpClients reports configured MCP clients', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-find-mcp-configured-'));
+
+  try {
+    await installMcpConfig('cursor', {
+      global: false,
+      cwd: tempDir,
+      stdout: { write() { return true; } }
+    });
+
+    const configured = await findConfiguredMcpClients({
+      clients: ['cursor', 'claude'],
+      global: false,
+      cwd: tempDir
+    });
+
+    assert.deepEqual(configured, ['cursor']);
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('removeMcpConfig removes only Browser Bridge from JSON MCP config', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-remove-json-mcp-config-'));
+  const configPath = path.join(tempDir, '.cursor', 'mcp.json');
+  await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
+  await fs.promises.writeFile(configPath, `${JSON.stringify({
+    mcpServers: {
+      existing: {
+        command: 'other-server'
+      },
+      'browser-bridge': {
+        command: 'bbx',
+        args: ['mcp', 'serve']
+      }
+    },
+    theme: 'dark'
+  }, null, 2)}\n`, 'utf8');
+
+  try {
+    const removed = await removeMcpConfig('cursor', {
+      global: false,
+      cwd: tempDir,
+      stdout: { write() { return true; } }
+    });
+
+    const merged = JSON.parse(await fs.promises.readFile(configPath, 'utf8'));
+    assert.deepEqual(removed, [configPath]);
+    assert.equal(merged.theme, 'dark');
+    assert.equal(merged.mcpServers.existing.command, 'other-server');
+    assert.equal(Object.hasOwn(merged.mcpServers, 'browser-bridge'), false);
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('removeMcpConfig removes Browser Bridge from Codex TOML without dropping other sections', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-remove-codex-mcp-config-'));
+  const configPath = path.join(tempDir, '.codex', 'config.toml');
+  await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
+  await fs.promises.writeFile(configPath, [
+    'model = "gpt-5"',
+    '',
+    '[mcp_servers."browser-bridge"]',
+    'command = "bbx"',
+    'args = ["mcp", "serve"]',
+    '',
+    '[sandbox_workspace_write]',
+    'network_access = true',
+    ''
+  ].join('\n'), 'utf8');
+
+  try {
+    const removed = await removeMcpConfig('codex', {
+      global: false,
+      cwd: tempDir,
+      stdout: { write() { return true; } }
+    });
+
+    const merged = await fs.promises.readFile(configPath, 'utf8');
+    assert.deepEqual(removed, [configPath]);
+    assert.match(merged, /model = "gpt-5"/);
+    assert.match(merged, /\[sandbox_workspace_write\]/);
+    assert.doesNotMatch(merged, /\[mcp_servers\."browser-bridge"\]/);
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }

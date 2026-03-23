@@ -288,6 +288,44 @@ function upsertCodexServerBlock(raw) {
 }
 
 /**
+ * Remove the Browser Bridge server block from a Codex TOML config while
+ * preserving unrelated content.
+ *
+ * @param {string} raw
+ * @returns {string}
+ */
+function removeCodexServerBlock(raw) {
+  const lines = raw.split(/\r?\n/);
+
+  let start = -1;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (isCodexServerHeader(lines[index])) {
+      start = index;
+      break;
+    }
+  }
+
+  if (start === -1) {
+    return raw;
+  }
+
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (lines[index]?.trim().startsWith('[')) {
+      end = index;
+      break;
+    }
+  }
+
+  lines.splice(start, end - start);
+  while (start < lines.length && lines[start]?.trim() === '' && start > 0 && lines[start - 1]?.trim() === '') {
+    lines.splice(start, 1);
+  }
+  const trimmed = lines.join('\n').replace(/\s+$/, '');
+  return trimmed ? `${trimmed}\n` : '';
+}
+
+/**
  * Merge the browser-bridge entry into an existing client config file, or
  * create it if it does not exist. Existing unrelated entries are preserved.
  *
@@ -308,6 +346,67 @@ export async function installMcpConfig(clientName, options) {
   }
 
   return configPaths[0] || getMcpConfigPath(clientName, options);
+}
+
+/**
+ * @param {{ clients: McpClientName[], global: boolean, cwd?: string }} options
+ * @returns {Promise<McpClientName[]>}
+ */
+export async function findConfiguredMcpClients(options) {
+  /** @type {McpClientName[]} */
+  const configuredClients = [];
+
+  for (const clientName of options.clients) {
+    const configPaths = await getMcpConfigPaths(clientName, options);
+    let configured = false;
+
+    for (const configPath of configPaths) {
+      try {
+        const raw = await fs.promises.readFile(configPath, 'utf8');
+        if (parseInstalledMcpConfig(clientName, raw).configured) {
+          configured = true;
+          break;
+        }
+      } catch {
+        // Missing or unreadable config is treated as absent.
+      }
+    }
+
+    if (configured) {
+      configuredClients.push(clientName);
+    }
+  }
+
+  return configuredClients;
+}
+
+/**
+ * Remove only the Browser Bridge MCP server entry for the given client while
+ * preserving unrelated config.
+ *
+ * @param {McpClientName} clientName
+ * @param {{ global: boolean, cwd?: string, stdout?: Pick<NodeJS.WriteStream, 'write'> }} options
+ * @returns {Promise<string[]>}
+ */
+export async function removeMcpConfig(clientName, options) {
+  const stdout = options.stdout ?? process.stdout;
+  const configPaths = await getMcpConfigPaths(clientName, options);
+  /** @type {string[]} */
+  const updatedPaths = [];
+
+  for (const configPath of configPaths) {
+    let changed = false;
+    if (clientName === 'codex') {
+      changed = await removeCodexMcpConfig(configPath, stdout);
+    } else {
+      changed = await removeJsonMcpConfig(clientName, configPath, stdout);
+    }
+    if (changed) {
+      updatedPaths.push(configPath);
+    }
+  }
+
+  return updatedPaths;
 }
 
 /**
@@ -364,6 +463,73 @@ async function installCodexMcpConfig(configPath, stdout) {
   await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
   await fs.promises.writeFile(configPath, updated, 'utf8');
   stdout.write(`Wrote ${configPath}\n`);
+}
+
+/**
+ * @param {McpClientName} clientName
+ * @param {string} configPath
+ * @param {Pick<NodeJS.WriteStream, 'write'>} stdout
+ * @returns {Promise<boolean>}
+ */
+async function removeJsonMcpConfig(clientName, configPath, stdout) {
+  /** @type {Record<string, unknown>} */
+  let existing = {};
+  try {
+    const raw = await fs.promises.readFile(configPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      existing = parsed;
+    } else {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+
+  const topKey = getMcpConfigShape(clientName).key;
+  const block = existing[topKey];
+  if (!block || typeof block !== 'object' || Array.isArray(block) || !Object.hasOwn(block, BROWSER_BRIDGE_SERVER_NAME)) {
+    return false;
+  }
+
+  const updatedBlock = { .../** @type {Record<string, unknown>} */ (block) };
+  delete updatedBlock[BROWSER_BRIDGE_SERVER_NAME];
+
+  const merged = { ...existing };
+  if (Object.keys(updatedBlock).length === 0) {
+    delete merged[topKey];
+  } else {
+    merged[topKey] = updatedBlock;
+  }
+
+  await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
+  await fs.promises.writeFile(configPath, `${JSON.stringify(merged, null, 2)}\n`, 'utf8');
+  stdout.write(`Removed ${configPath}\n`);
+  return true;
+}
+
+/**
+ * @param {string} configPath
+ * @param {Pick<NodeJS.WriteStream, 'write'>} stdout
+ * @returns {Promise<boolean>}
+ */
+async function removeCodexMcpConfig(configPath, stdout) {
+  let raw = '';
+  try {
+    raw = await fs.promises.readFile(configPath, 'utf8');
+  } catch {
+    return false;
+  }
+
+  if (!hasCodexServerBlock(raw)) {
+    return false;
+  }
+
+  const updated = removeCodexServerBlock(raw);
+  await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
+  await fs.promises.writeFile(configPath, updated, 'utf8');
+  stdout.write(`Removed ${configPath}\n`);
+  return true;
 }
 
 /**

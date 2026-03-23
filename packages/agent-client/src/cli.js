@@ -12,7 +12,7 @@ import { CLI_HELP_SECTIONS, SESSION_COMMANDS } from './command-registry.js';
 import { interactiveCheckbox, interactiveConfirm, methodNeedsSession, parseIntArg, parseJsonObject } from './cli-helpers.js';
 import { detectMcpClients, detectSkillTargets } from './detect.js';
 import { findInstalledManagedTargets, installAgentFiles, parseInstallAgentArgs, removeAgentFiles } from './install.js';
-import { formatMcpConfig, installMcpConfig, isMcpClientName, MCP_CLIENT_NAMES } from './mcp-config.js';
+import { findConfiguredMcpClients, formatMcpConfig, installMcpConfig, isMcpClientName, MCP_CLIENT_NAMES, removeMcpConfig } from './mcp-config.js';
 import { getDoctorReport, requestBridge, requireSession, resolveRef } from './runtime.js';
 import { summarizeBridgeResponse } from './subagent.js';
 
@@ -198,6 +198,28 @@ if (command === 'install-mcp') {
       process.exit(0);
     } else {
       clients = /** @type {import('./mcp-config.js').McpClientName[]} */ (selected);
+    }
+
+    if (selected !== null) {
+      const deselectedClients = detected.filter((clientName) => !clients.includes(clientName));
+      const removableClients = await findConfiguredMcpClients({
+        clients: deselectedClients,
+        global: isGlobal,
+        cwd: process.cwd()
+      });
+      if (removableClients.length > 0) {
+        const confirmed = await interactiveConfirm(
+          `Remove Browser Bridge MCP config from deselected clients: ${removableClients.join(', ')}?`
+        );
+        if (confirmed) {
+          for (const clientName of removableClients) {
+            await removeMcpConfig(clientName, {
+              global: isGlobal,
+              cwd: process.cwd()
+            });
+          }
+        }
+      }
     }
   } else if (clientArg === 'all') {
     clients = [...MCP_CLIENT_NAMES];
