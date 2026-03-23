@@ -14,7 +14,7 @@ Managed skill installs support GitHub Copilot, OpenAI Codex, Claude Code, Cursor
 
 <table align="center">
   <tr>
-    <td align="center" width="96">
+    <td align="center" width="140">
       <a href="https://github.com/features/copilot">
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="https://unpkg.com/@lobehub/icons-static-png@latest/dark/githubcopilot.png" />
@@ -22,15 +22,15 @@ Managed skill installs support GitHub Copilot, OpenAI Codex, Claude Code, Cursor
         </picture>
       </a>
     </td>
-    <td align="center" width="96">
-      <a href="https://openai.com/index/introducing-gpt-5-3-codex/">
+    <td align="center" width="140">
+      <a href="https://openai.com/codex/">
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="https://unpkg.com/@lobehub/icons-static-png@latest/dark/codex.png" />
           <img src="https://unpkg.com/@lobehub/icons-static-png@latest/light/codex.png" alt="OpenAI Codex" style="width: 44px; height: 44px; object-fit: contain;" />
         </picture>
       </a>
     </td>
-    <td align="center" width="96">
+    <td align="center" width="140">
       <a href="https://claude.com/product/claude-code">
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="https://unpkg.com/@lobehub/icons-static-png@latest/dark/claude.png" />
@@ -38,7 +38,7 @@ Managed skill installs support GitHub Copilot, OpenAI Codex, Claude Code, Cursor
         </picture>
       </a>
     </td>
-    <td align="center" width="96">
+    <td align="center" width="140">
       <a href="https://cursor.com/">
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="https://unpkg.com/@lobehub/icons-static-png@latest/dark/cursor.png" />
@@ -54,7 +54,7 @@ Managed skill installs support GitHub Copilot, OpenAI Codex, Claude Code, Cursor
     <td align="center">Cursor</td>
   </tr>
   <tr>
-    <td align="center" width="96">
+    <td align="center" width="140">
       <a href="https://opencode.ai/">
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="https://unpkg.com/@lobehub/icons-static-png@latest/dark/opencode.png" />
@@ -62,7 +62,7 @@ Managed skill installs support GitHub Copilot, OpenAI Codex, Claude Code, Cursor
         </picture>
       </a>
     </td>
-    <td align="center" width="96">
+    <td align="center" width="140">
       <a href="https://antigravity.google/">
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="https://unpkg.com/@lobehub/icons-static-png@latest/dark/antigravity.png" />
@@ -70,7 +70,7 @@ Managed skill installs support GitHub Copilot, OpenAI Codex, Claude Code, Cursor
         </picture>
       </a>
     </td>
-    <td align="center" width="96">
+    <td align="center" width="140">
       <a href="https://windsurf.com/">
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="https://unpkg.com/@lobehub/icons-static-png@latest/dark/windsurf.png" />
@@ -78,7 +78,7 @@ Managed skill installs support GitHub Copilot, OpenAI Codex, Claude Code, Cursor
         </picture>
       </a>
     </td>
-    <td align="center" width="96">
+    <td align="center" width="140">
       <code>.agents</code>
     </td>
   </tr>
