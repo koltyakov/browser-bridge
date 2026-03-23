@@ -11,7 +11,7 @@ export const APP_NAME = 'com.browserbridge.browser_bridge';
  *
  * @type {string}
  */
-export const PUBLISHED_EXTENSION_ID = 'niaidbpnkbfbjgdfieabpmlomilpdipn';
+export const PUBLISHED_EXTENSION_ID = 'ahhmghheecmambjebhfjkngdggghbkno';
 
 /**
  * @returns {string}

@@ -106,7 +106,7 @@
  * }} SidePanelMessage
  */
 
-const PUBLISHED_EXTENSION_ID = 'niaidbpnkbfbjgdfieabpmlomilpdipn';
+const PUBLISHED_EXTENSION_ID = 'ahhmghheecmambjebhfjkngdggghbkno';
 
 const nativeIndicator = /** @type {HTMLSpanElement} */ (document.getElementById('native-indicator'));
 const toggleButton = /** @type {HTMLButtonElement} */ (document.getElementById('bridge-toggle'));

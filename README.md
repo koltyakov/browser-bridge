@@ -105,7 +105,7 @@ Browser Bridge is optimized for the opposite starting point: **inspect the state
 
 ## Setup
 
-1. Install [Browser Bridge from the Chrome Web Store](https://chrome.google.com/webstore/detail/niaidbpnkbfbjgdfieabpmlomilpdipn) <!-- TODO: replace with final store link after publishing -->
+1. Install [Browser Bridge from the Chrome Web Store](https://chrome.google.com/webstore/detail/ahhmghheecmambjebhfjkngdggghbkno) <!-- TODO: replace with final store link after publishing -->
 2. `npm install -g @browserbridge/bbx` - installs the CLI and native host
 3. `bbx install-mcp` - connect your agent via MCP
 4. `bbx install-skill` - install skill+CLI
