@@ -30,7 +30,7 @@ bbx install-mcp copilot          # or pick one: copilot, codex, cursor, windsurf
 bbx install-mcp copilot --local  # scope to current project instead of global
 ```
 
-Configs are written globally by default. For GitHub Copilot, that means the VS Code user-profile `mcp.json`; project installs still use `.vscode/mcp.json`. MCP is better with `$bbx-mcp` skill that teaches your agent to call methods directly for more structured, token-efficient output. No manual `bbx` calls needed.
+Configs are written globally by default. For GitHub Copilot, that means `~/.copilot/mcp-config.json`; project installs still use `.vscode/mcp.json`. Browser Bridge also writes the older VS Code `User/mcp.json` locations as compatibility fallbacks. MCP is better with `$bbx-mcp` skill that teaches your agent to call methods directly for more structured, token-efficient output. No manual `bbx` calls needed.
 
 **Skill + CLI** - for agents that run shell commands. Install the Browser Bridge skill so your agent knows how to drive `bbx`:
 

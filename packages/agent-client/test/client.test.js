@@ -675,11 +675,7 @@ test('formatMcpConfig returns Codex TOML with newline', () => {
 
 test('getMcpConfigPath supports Copilot global and local locations', () => {
   const home = os.homedir();
-  const expectedGlobal = process.platform === 'win32'
-    ? path.join(process.env.APPDATA || path.join(home, 'AppData', 'Roaming'), 'Code', 'User', 'mcp.json')
-    : process.platform === 'linux'
-      ? path.join(home, '.config', 'Code', 'User', 'mcp.json')
-      : path.join(home, 'Library', 'Application Support', 'Code', 'User', 'mcp.json');
+  const expectedGlobal = path.join(home, '.copilot', 'mcp-config.json');
 
   assert.equal(
     getMcpConfigPath('copilot', { global: false, cwd: '/tmp/demo' }),
@@ -757,8 +753,10 @@ test('getMcpConfigPaths includes existing Copilot profile configs for global ins
     await fs.promises.mkdir(profileDir, { recursive: true });
 
     const paths = await getMcpConfigPaths('copilot', { global: true });
-    assert.equal(paths.length, 2);
-    assert.equal(paths[1], path.join(profileDir, 'mcp.json'));
+    assert.equal(paths.length, 3);
+    assert.equal(paths[0], path.join(tempHome, '.copilot', 'mcp-config.json'));
+    assert.ok(paths[1]?.endsWith(path.join('Code', 'User', 'mcp.json')));
+    assert.equal(paths[2], path.join(profileDir, 'mcp.json'));
   } finally {
     if (originalHome === undefined) {
       delete process.env.HOME;

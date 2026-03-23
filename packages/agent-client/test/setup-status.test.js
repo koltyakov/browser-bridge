@@ -199,7 +199,7 @@ test('collectSetupStatus uses ~/.copilot/skills for GitHub Copilot global skills
   }
 });
 
-test('collectSetupStatus reads Copilot global MCP from the VS Code user profile path', async () => {
+test('collectSetupStatus reads Copilot global MCP from the user config path', async () => {
   const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-setup-status-copilot-mcp-home-'));
   const originalHome = process.env.HOME;
   const originalAppData = process.env.APPDATA;
@@ -228,8 +228,7 @@ test('collectSetupStatus reads Copilot global MCP from the VS Code user profile 
     assert.equal(copilot.detected, true);
     assert.equal(copilot.configExists, true);
     assert.equal(copilot.configured, true);
-    assert.match(copilot.configPath, /mcp\.json$/);
-    assert.ok(!copilot.configPath.endsWith(path.join('.vscode', 'mcp.json')));
+    assert.equal(copilot.configPath, path.join(tempHome, '.copilot', 'mcp-config.json'));
   } finally {
     if (originalHome === undefined) {
       delete process.env.HOME;

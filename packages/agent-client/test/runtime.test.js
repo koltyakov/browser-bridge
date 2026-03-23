@@ -140,6 +140,7 @@ test('installMcpConfig writes Copilot global config to default and existing prof
       : process.platform === 'linux'
         ? path.join(tempHome, '.config', 'Code', 'User')
         : path.join(tempHome, 'Library', 'Application Support', 'Code', 'User');
+    const userConfigPath = path.join(tempHome, '.copilot', 'mcp-config.json');
     const profileConfigPath = path.join(userDir, 'profiles', 'profile-a', 'mcp.json');
     await fs.promises.mkdir(path.dirname(profileConfigPath), { recursive: true });
 
@@ -148,8 +149,10 @@ test('installMcpConfig writes Copilot global config to default and existing prof
       stdout: { write() { return true; } }
     });
 
+    const userConfig = await fs.promises.readFile(userConfigPath, 'utf8');
     const defaultConfig = await fs.promises.readFile(path.join(userDir, 'mcp.json'), 'utf8');
     const profileConfig = await fs.promises.readFile(profileConfigPath, 'utf8');
+    assert.match(userConfig, /"browser-bridge"/);
     assert.match(defaultConfig, /"browser-bridge"/);
     assert.match(profileConfig, /"browser-bridge"/);
   } finally {

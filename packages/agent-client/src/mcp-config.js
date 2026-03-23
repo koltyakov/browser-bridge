@@ -37,6 +37,22 @@ function getVsCodeUserDataDir() {
 }
 
 /**
+ * @returns {string}
+ */
+function getCopilotUserConfigPath() {
+  return path.join(os.homedir(), '.copilot', 'mcp-config.json');
+}
+
+/**
+ * Legacy global path used by older VS Code Copilot MCP wiring.
+ *
+ * @returns {string}
+ */
+function getLegacyCopilotVsCodeConfigPath() {
+  return path.join(getVsCodeUserDataDir(), 'User', 'mcp.json');
+}
+
+/**
  * @param {McpClientName} clientName
  * @returns {{ key: string, includeType: boolean }}
  */
@@ -141,7 +157,7 @@ export function getMcpConfigPath(clientName, { global: isGlobal, cwd = process.c
   }
 
   if (clientName === 'copilot') {
-    return path.join(getVsCodeUserDataDir(), 'User', 'mcp.json');
+    return getCopilotUserConfigPath();
   }
 
   if (clientName === 'codex') {
@@ -176,17 +192,29 @@ export async function getMcpConfigPaths(clientName, options) {
     return [primaryPath];
   }
 
+  /** @type {string[]} */
+  const paths = [primaryPath];
+  const legacyVsCodePath = getLegacyCopilotVsCodeConfigPath();
+  if (!paths.includes(legacyVsCodePath)) {
+    paths.push(legacyVsCodePath);
+  }
+
   const readdir = options.readdir ?? fs.promises.readdir.bind(fs.promises);
-  const profilesDir = path.join(path.dirname(primaryPath), 'profiles');
+  const profilesDir = path.join(path.dirname(legacyVsCodePath), 'profiles');
 
   try {
     const entries = await readdir(profilesDir, { withFileTypes: true });
     const profilePaths = entries
       .filter((entry) => entry.isDirectory())
       .map((entry) => path.join(profilesDir, entry.name, 'mcp.json'));
-    return [primaryPath, ...profilePaths];
+    for (const profilePath of profilePaths) {
+      if (!paths.includes(profilePath)) {
+        paths.push(profilePath);
+      }
+    }
+    return paths;
   } catch {
-    return [primaryPath];
+    return paths;
   }
 }
 
