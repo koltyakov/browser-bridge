@@ -14,6 +14,7 @@
    *   textBudget: number,
    *   includeHtml: boolean,
    *   includeScreenshot: boolean,
+   *   includeBbox: boolean,
    *   attributeAllowlist: string[],
    *   styleAllowlist: string[]
    * }} Budget
@@ -69,6 +70,7 @@
       textBudget: clamp(options.textBudget ?? 600, 32, 10000),
       includeHtml: Boolean(options.includeHtml),
       includeScreenshot: Boolean(options.includeScreenshot),
+      includeBbox: options.includeBbox !== false,
       attributeAllowlist: normalizeList(options.attributeAllowlist),
       styleAllowlist: normalizeList(options.styleAllowlist)
     };

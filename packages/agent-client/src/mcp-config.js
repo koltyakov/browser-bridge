@@ -19,6 +19,17 @@ export const MCP_CLIENT_NAMES = [
   'windsurf',
 ];
 
+/** @type {Readonly<Record<McpClientName, string>>} */
+export const MCP_CLIENT_LABELS = Object.freeze({
+  codex: 'OpenAI Codex',
+  claude: 'Claude Code',
+  cursor: 'Cursor',
+  copilot: 'GitHub Copilot',
+  opencode: 'OpenCode',
+  antigravity: 'Antigravity',
+  windsurf: 'Windsurf',
+});
+
 /**
  * @param {string} value
  * @returns {value is McpClientName}

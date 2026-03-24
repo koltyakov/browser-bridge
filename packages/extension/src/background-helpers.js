@@ -160,12 +160,21 @@ export function summarizeActionResult(response) {
 export function estimateResponseTokens(response) {
   const resultJson = response.ok ? JSON.stringify(response.result) : '';
   const responseBytes = resultJson.length;
-  const approxTokens = Math.ceil(responseBytes / 4);
   const result = response.ok && response.result && typeof response.result === 'object'
     ? /** @type {Record<string, unknown>} */ (response.result)
     : null;
   const hasScreenshot = result != null && typeof result.image === 'string';
   const nodeCount = result != null && Array.isArray(result.nodes) ? result.nodes.length : null;
+
+  let approxTokens;
+  if (hasScreenshot && typeof result.image === 'string') {
+    const imageLength = result.image.length;
+    const otherBytes = responseBytes - imageLength;
+    approxTokens = Math.ceil(otherBytes / 4 + imageLength / 6);
+  } else {
+    approxTokens = Math.ceil(responseBytes / 4);
+  }
+
   return { responseBytes, approxTokens, hasScreenshot, nodeCount };
 }
 

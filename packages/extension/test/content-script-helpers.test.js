@@ -27,6 +27,7 @@ test('content script helpers clamp, truncate, and normalize budgets', () => {
     textBudget: 32,
     includeHtml: false,
     includeScreenshot: false,
+    includeBbox: true,
     attributeAllowlist: ['id'],
     styleAllowlist: []
   });

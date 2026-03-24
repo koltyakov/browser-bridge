@@ -25,9 +25,9 @@ bbx doctor                  # install/session readiness
 bbx request-access          # get session for active tab
 bbx call <method> '{...}'   # any RPC method (raw output)
 bbx batch '[{...},...]'     # parallel reads (concurrent)
-bbx tabs                    # list available tabs
+bbx tabs                    # list available tabs (prefer this)
 bbx logs                    # recent bridge request log
-bbx tab-create [url]        # open a new tab
+bbx tab-create [url]        # open a new tab (avoid unless necessary)
 bbx tab-close <tabId>       # close a tab
 bbx skill                   # live runtime presets + limits
 ```
@@ -75,20 +75,27 @@ bbx rollback <patchId>               # rollback a patch
 bbx screenshot <ref> [outPath]       # capture screenshot
 ```
 
-## Access Retry Flow
+## Access Request Flow
 
-`request-access` may return `APPROVAL_PENDING` because the user must enable the tab in the extension UI first.
+When you request access to a tab, the user must approve it in the Browser Bridge extension popup. This is normal and expected - there will be a brief delay while the user grants access.
 
-1. Call `request-access`. If success, proceed.
-2. On `APPROVAL_PENDING` / `ACCESS_DENIED`, wait ~3s, retry up to 4 more times.
-3. If all fail, ask the user to enable the tab and type **ready**, then retry once.
+**Retry pattern:**
+1. Call `request-access`. If immediate success, proceed.
+2. On `APPROVAL_PENDING`, wait ~3 seconds and retry up to 4 more times (the user is likely approving).
+3. If all retries fail, output this message and wait:
+   
+   > "I need access to the browser tab. Please approve the request in the Browser Bridge extension popup, then type **ready** so I can continue."
+
+4. After user responds "ready" (or similar), retry `request-access` once more.
+
+**Do not** repeatedly spam requests - use the retry delays.
 
 ## Error Recovery
 
 | Error | Recovery |
 |---|---|
 | `SESSION_EXPIRED` | Auto-refreshed by CLI; if it fails, `request-access` again |
-| `APPROVAL_PENDING` | Retry loop (see above) |
+| `APPROVAL_PENDING` | Wait ~3s, retry up to 4 times; then ask user to approve and type "ready" |
 | `ELEMENT_STALE` | Re-query with `dom.query` or `dom.find_by_text` |
 | `ORIGIN_MISMATCH` | Tab navigated - `request-access` for new origin |
 | `TIMEOUT` | Extension overloaded or CDP stalled - retry once, then simplify the request |
@@ -99,22 +106,23 @@ bbx screenshot <ref> [outPath]       # capture screenshot
 
 ## Core Rules
 
-1. **Structured first** - `dom.query` → `styles.get_computed` → `layout.get_box_model` before screenshots.
-2. **Budget tight** - `maxNodes≤20`, `maxDepth≤4`, `textBudget≤800`. Always set allowlists.
-3. **Reuse refs** - use returned `elementRef` for follow-ups; don't rescan.
-4. **Style before DOM** - `patch.apply_styles` before `patch.apply_dom`.
-5. **Rollback** - revert every patch before finishing unless user wants mutations kept.
-6. **Confirm scope** - `status` first; stop if no extension connection.
-7. **Screenshots last** - only when structured evidence is ambiguous; keep crops small.
-8. **Batch reads** - combine independent reads in one `batch` call (executes concurrently via Promise.all).
-9. **Evaluate for state** - use `page.evaluate` to read framework state (React, Vue, Next.js `__NEXT_DATA__`, router, stores) instead of guessing from DOM.
-10. **Wait after change** - after editing source files or triggering navigation, use `dom.wait_for` or `page.wait_for_load_state` before inspecting.
-11. **Console after interaction** - call `page.get_console` after mutations to catch runtime errors early.
-12. **Semantic finding** - use `dom.find_by_text` / `dom.find_by_role` when you know the label but not the selector.
-13. **Text extraction** - use `page.get_text` for full page text instead of `dom.query` on body.
-14. **Network monitoring** - use `page.get_network` to inspect API calls; auto-installs interceptor.
-15. **Accessibility tree** - use `dom.get_accessibility_tree` for semantic structure and interactive element discovery.
-16. **Tailwind-aware** - when `page.get_state` returns `hints.tailwind: true`, load `references/tailwind.md`; avoid selecting by utility classes, prefer `find_by_text`/`find_by_role`; `dom.query` auto-escapes `[]` brackets.
+1. **Work in existing tabs** - Never create new tabs unless the user explicitly asks for it, or the task absolutely requires a fresh page (e.g., testing a clean state, comparing across URLs). Prefer `tabs.list` to find an appropriate existing tab.
+2. **Structured first** - `dom.query` → `styles.get_computed` → `layout.get_box_model` before screenshots.
+3. **Budget tight** - `maxNodes≤20`, `maxDepth≤4`, `textBudget≤800`. Always set allowlists.
+4. **Reuse refs** - use returned `elementRef` for follow-ups; don't rescan.
+5. **Style before DOM** - `patch.apply_styles` before `patch.apply_dom`.
+6. **Rollback** - revert every patch before finishing unless user wants mutations kept.
+7. **Confirm scope** - `status` first; stop if no extension connection.
+8. **Screenshots last** - only when structured evidence is ambiguous; keep crops small.
+9. **Batch reads** - combine independent reads in one `batch` call (executes concurrently via Promise.all).
+10. **Evaluate for state** - use `page.evaluate` to read framework state (React, Vue, Next.js `__NEXT_DATA__`, router, stores) instead of guessing from DOM.
+11. **Wait after change** - after editing source files or triggering navigation, use `dom.wait_for` or `page.wait_for_load_state` before inspecting.
+12. **Console after interaction** - call `page.get_console` after mutations to catch runtime errors early.
+13. **Semantic finding** - use `dom.find_by_text` / `dom.find_by_role` when you know the label but not the selector.
+14. **Text extraction** - use `page.get_text` for full page text instead of `dom.query` on body.
+15. **Network monitoring** - use `page.get_network` to inspect API calls; auto-installs interceptor.
+16. **Accessibility tree** - use `dom.get_accessibility_tree` for semantic structure and interactive element discovery.
+17. **Tailwind-aware** - when `page.get_state` returns `hints.tailwind: true`, load `references/tailwind.md`; avoid selecting by utility classes, prefer `find_by_text`/`find_by_role`; `dom.query` auto-escapes `[]` brackets.
 
 ## Method Quick Reference
 
@@ -126,7 +134,7 @@ bbx screenshot <ref> [outPath]       # capture screenshot
 | Page State | `page.evaluate`, `page.get_console`, `page.get_storage`, `page.get_text`, `page.wait_for_load_state` |
 | Network    | `page.get_network`                                                                       |
 | Interact   | `input.click`, `input.type`, `input.focus`, `input.press_key`, `input.hover`, `input.drag`|
-| Tabs       | `tabs.list`, `tabs.create`, `tabs.close`                                                 |
+| Tabs       | `tabs.list` (preferred), `tabs.create` (avoid unless necessary), `tabs.close`           |
 | Patch      | `patch.apply_styles`, `patch.apply_dom`, `patch.rollback`                                |
 | Navigate   | `navigation.navigate`, `viewport.scroll`, `viewport.resize`                              |
 | Performance| `performance.get_metrics`                                                                |

@@ -76,6 +76,7 @@ export {};
  *   textBudget?: number,
  *   includeHtml?: boolean,
  *   includeScreenshot?: boolean,
+ *   includeBbox?: boolean,
  *   attributeAllowlist?: string[],
  *   styleAllowlist?: string[]
  * }} BudgetOptions
@@ -88,6 +89,7 @@ export {};
  *   textBudget: number,
  *   includeHtml: boolean,
  *   includeScreenshot: boolean,
+ *   includeBbox: boolean,
  *   attributeAllowlist: string[],
  *   styleAllowlist: string[]
  * }} Budget

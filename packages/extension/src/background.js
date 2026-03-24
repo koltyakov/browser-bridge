@@ -928,6 +928,7 @@ async function handleViewportResize(request) {
       });
     }
     return createSuccess(request.id, {
+      resized: true,
       width: params.width,
       height: params.height,
       deviceScaleFactor: params.deviceScaleFactor,

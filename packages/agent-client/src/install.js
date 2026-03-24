@@ -50,6 +50,18 @@ const copilotBrowserBridgeNote = [
 /** @type {SupportedTarget[]} */
 export const SUPPORTED_TARGETS = [...supportedTargets];
 
+/** @type {Readonly<Record<SupportedTarget, string>>} */
+export const TARGET_LABELS = Object.freeze({
+  codex: 'OpenAI Codex',
+  claude: 'Claude Code',
+  cursor: 'Cursor',
+  copilot: 'GitHub Copilot',
+  opencode: 'OpenCode',
+  antigravity: 'Antigravity',
+  windsurf: 'Windsurf',
+  agents: 'Generic agents',
+});
+
 /**
  * @param {string} value
  * @returns {value is SupportedTarget}

@@ -13,6 +13,7 @@
    *   textBudget: number,
    *   includeHtml: boolean,
    *   includeScreenshot: boolean,
+   *   includeBbox: boolean,
    *   attributeAllowlist: string[],
    *   styleAllowlist: string[]
    * }} Budget
@@ -35,9 +36,9 @@
    *   name: string | null,
    *   textExcerpt: string,
    *   attrs: Record<string, string | null>,
-   *   bbox: { x: number, y: number, width: number, height: number }
+   *   bbox?: { x: number, y: number, width: number, height: number }
    * }} NodeSummary
-  */
+   */
 
   const elementRegistry = new Map();
   const reverseRegistry = new WeakMap();
@@ -220,6 +221,7 @@
             document.activeElement,
             ['id', 'class', 'name', 'type', 'href', 'role'],
             120,
+            true,
           ).node
           : null,
       selection: truncateText(selection.trim(), 200),
@@ -319,6 +321,7 @@
         element,
         query.budget.attributeAllowlist,
         remaining,
+        query.budget.includeBbox,
       );
       remaining -= summary.textLength;
       nodes.push(summary.node);
@@ -341,9 +344,10 @@
    * @param {Element} element
    * @param {string[]} attributeAllowlist
    * @param {number} remainingText
+   * @param {boolean} includeBbox
    * @returns {{ textLength: number, node: NodeSummary }}
    */
-  function summarizeNode(element, attributeAllowlist, remainingText) {
+  function summarizeNode(element, attributeAllowlist, remainingText, includeBbox) {
     const elementRef = rememberElement(element);
     const text = truncateText(
       extractElementText(element),
@@ -361,7 +365,7 @@
           null,
         textExcerpt: text.value,
         attrs: summarizeAttributes(element, attributeAllowlist),
-        bbox: toRect(element.getBoundingClientRect()),
+        ...(includeBbox ? { bbox: toRect(element.getBoundingClientRect()) } : {}),
       },
     };
   }
@@ -452,7 +456,7 @@
    */
   function hitTest(x, y) {
     const element = document.elementFromPoint(x, y);
-    return element ? summarizeNode(element, ['id', 'class'], 120).node : null;
+    return element ? summarizeNode(element, ['id', 'class'], 120, true).node : null;
   }
 
   /**
@@ -493,7 +497,10 @@
    *
    * @param {Record<string, any>} params
    * @returns {{
+   *   scrolled: boolean,
    *   target: string,
+   *   x: number,
+   *   y: number,
    *   top: number,
    *   left: number,
    *   behavior: 'auto' | 'smooth',
@@ -524,7 +531,10 @@
       }
 
       return {
+        scrolled: true,
         target: rememberElement(scrollTarget),
+        x: scrollTarget.scrollLeft,
+        y: scrollTarget.scrollTop,
         top: scrollTarget.scrollTop,
         left: scrollTarget.scrollLeft,
         behavior,
@@ -547,7 +557,10 @@
     }
 
     return {
+      scrolled: true,
       target: 'window',
+      x: window.scrollX,
+      y: window.scrollY,
       top: window.scrollY,
       left: window.scrollX,
       behavior,
@@ -662,7 +675,7 @@
    */
   function pressKeyTarget(params) {
     const target =
-      params.target
+      params.target?.elementRef || params.target?.selector
         ? resolveTarget(params.target)
         : document.activeElement instanceof Element
           ? document.activeElement
@@ -1080,7 +1093,7 @@
         ? visibleText === searchText
         : visibleText.toLowerCase().includes(searchText.toLowerCase());
       if (matches) {
-        results.push(summarizeNode(el, ['id', 'class', 'role', 'href', 'data-testid'], 120).node);
+        results.push(summarizeNode(el, ['id', 'class', 'role', 'href', 'data-testid'], 120, true).node);
       }
     }
 
@@ -1124,7 +1137,7 @@
           continue;
         }
       }
-      results.push(summarizeNode(el, ['id', 'class', 'role', 'aria-label', 'href'], 120).node);
+      results.push(summarizeNode(el, ['id', 'class', 'role', 'aria-label', 'href'], 120, true).node);
     }
 
     return { nodes: results, count: results.length };

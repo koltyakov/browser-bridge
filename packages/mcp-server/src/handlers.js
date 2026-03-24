@@ -32,10 +32,7 @@ const REQUEST_SOURCE = 'mcp';
 function createToolResult(summary, structuredContent = {}, isError = false) {
   return {
     content: [{ type: 'text', text: summary }],
-    structuredContent: {
-      summary,
-      ...structuredContent
-    },
+    structuredContent,
     ...(isError ? { isError: true } : {})
   };
 }
@@ -219,7 +216,7 @@ export async function handleSessionTool(args) {
 
 /** @type {Record<string, ToolAction>} */
 export const DOM_ACTIONS = {
-  query:              { ref: false, method: 'dom.query',                  params: a => ({ selector: a.selector || 'body', withinRef: a.withinRef, maxNodes: a.maxNodes, maxDepth: a.maxDepth, textBudget: a.textBudget, includeHtml: a.includeHtml, includeScreenshot: a.includeScreenshot, attributeAllowlist: a.attributeAllowlist, styleAllowlist: a.styleAllowlist, includeRoles: a.includeRoles }) },
+  query:              { ref: false, method: 'dom.query',                  params: a => ({ selector: a.selector || 'body', withinRef: a.withinRef, maxNodes: a.maxNodes, maxDepth: a.maxDepth, textBudget: a.textBudget, includeHtml: a.includeHtml, includeScreenshot: a.includeScreenshot, includeBbox: a.includeBbox, attributeAllowlist: a.attributeAllowlist, styleAllowlist: a.styleAllowlist, includeRoles: a.includeRoles }) },
   describe:           { ref: true,  method: 'dom.describe',               params: (_, r) => ({ elementRef: r }) },
   text:               { ref: true,  method: 'dom.get_text',               params: (a, r) => ({ elementRef: r, textBudget: a.textBudget }) },
   attributes:         { ref: true,  method: 'dom.get_attributes',         params: (a, r) => ({ elementRef: r, attributes: a.attributes || [] }) },
@@ -231,7 +228,7 @@ export const DOM_ACTIONS = {
 };
 
 /**
- * @param {{ action: string, selector?: string, elementRef?: string, withinRef?: string, maxNodes?: number, maxDepth?: number, textBudget?: number, includeHtml?: boolean, includeScreenshot?: boolean, attributeAllowlist?: string[], styleAllowlist?: string[], includeRoles?: boolean, attributes?: string[], text?: string, exact?: boolean, maxResults?: number, role?: string, name?: string, state?: string, timeoutMs?: number, outer?: boolean, maxLength?: number }} args
+ * @param {{ action: string, selector?: string, elementRef?: string, withinRef?: string, maxNodes?: number, maxDepth?: number, textBudget?: number, includeHtml?: boolean, includeScreenshot?: boolean, includeBbox?: boolean, attributeAllowlist?: string[], styleAllowlist?: string[], includeRoles?: boolean, attributes?: string[], text?: string, exact?: boolean, maxResults?: number, role?: string, name?: string, state?: string, timeoutMs?: number, outer?: boolean, maxLength?: number }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleDomTool(args) {
@@ -445,6 +442,47 @@ export async function handleSkillTool() {
   } catch (error) {
     return summarizeToolError(error);
   }
+}
+
+/**
+ * Check MCP config and CLI skill installation status.
+ *
+ * @param {{ global?: boolean }} args
+ * @returns {Promise<ToolResult>}
+ */
+export async function handleSetupTool(args) {
+  const { collectSetupStatus } = await import('../../agent-client/src/setup-status.js');
+  const projectPath = args.global !== false ? (await import('node:os')).homedir() : process.cwd();
+  const status = await collectSetupStatus({
+    global: args.global !== false,
+    cwd: process.cwd(),
+    projectPath
+  });
+  const configuredMcp = status.mcpClients.filter((e) => e.configured).length;
+  const installedSkills = status.skillTargets.filter((e) => e.installed).length;
+  const summary = configuredMcp === 0 && installedSkills === 0
+    ? 'No MCP or skill setup found. Run `bbx install-mcp` and `bbx install-skill`.'
+    : `Setup: ${configuredMcp}/${status.mcpClients.length} MCP clients configured, ${installedSkills}/${status.skillTargets.length} skills installed.`;
+  return createToolResult(summary, { ok: true, status });
+}
+
+/**
+ * Tail recent bridge logs for debugging.
+ *
+ * @param {{ limit?: number }} args
+ * @returns {Promise<ToolResult>}
+ */
+export async function handleLogTool(args) {
+  return callBridgeTool('log.tail', { limit: args.limit ?? 50 });
+}
+
+/**
+ * Ping the bridge to check connectivity.
+ *
+ * @returns {Promise<ToolResult>}
+ */
+export async function handleHealthTool() {
+  return callBridgeTool('health.ping');
 }
 
 /**

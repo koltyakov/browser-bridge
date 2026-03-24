@@ -119,6 +119,11 @@ test('estimateResponseTokens detects screenshots', () => {
   const estimate = estimateResponseTokens(screenshotResponse);
   assert.equal(estimate.hasScreenshot, true);
   assert.equal(estimate.nodeCount, null);
+  const imageLength = 'data:image/png;base64,AAAA'.length;
+  const totalBytes = JSON.stringify(screenshotResponse.result).length;
+  const otherBytes = totalBytes - imageLength;
+  const expectedTokens = Math.ceil(otherBytes / 4 + imageLength / 6);
+  assert.equal(estimate.approxTokens, expectedTokens);
 });
 
 test('estimateResponseTokens handles failure responses', () => {

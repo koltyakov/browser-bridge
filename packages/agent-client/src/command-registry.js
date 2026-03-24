@@ -106,6 +106,7 @@ export const SESSION_COMMANDS = {
   },
   patches: {
     method: 'patch.list',
+    printMethod: 'patch.list',
     usage: 'bbx patches',
     description: 'List active patches',
     build: () => ({})

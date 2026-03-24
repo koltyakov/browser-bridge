@@ -26,11 +26,13 @@ import {
   parseInstallAgentArgs,
   removeAgentFiles,
   SUPPORTED_TARGETS,
+  TARGET_LABELS,
 } from './install.js';
 import {
   findConfiguredMcpClients,
   formatMcpConfig,
   isMcpClientName,
+  MCP_CLIENT_LABELS,
   MCP_CLIENT_NAMES,
   removeMcpConfig,
 } from './mcp-config.js';
@@ -135,21 +137,9 @@ if (command === 'install-skill') {
       ]);
 
     // Aliases like 'openai' and 'google' map to canonical targets and stay omitted.
-    /** @type {Array<import('./install.js').SupportedTarget>} */
-    /** @type {Record<string, string>} */
-    const targetLabels = {
-      codex: 'OpenAI Codex CLI',
-      claude: 'Claude Code',
-      cursor: 'Cursor',
-      copilot: 'GitHub Copilot (VS Code)',
-      opencode: 'OpenCode',
-      antigravity: 'Google Antigravity',
-      windsurf: 'Windsurf',
-      agents: 'Generic agents  (.agents/skills/)',
-    };
     const items = SUPPORTED_TARGETS.map((t) => ({
       value: t,
-      label: `${t.padEnd(10)}  ${targetLabels[t]}`,
+      label: `${t.padEnd(10)}  ${TARGET_LABELS[t]}`,
       hint: formatSelectionHint({
         detected: detected.includes(t),
         installed: installedManagedTargets.has(t),
@@ -263,19 +253,9 @@ if (command === 'install-mcp') {
       /** @type {import('./mcp-config.js').McpClientName[]} */ ([
         ...configuredClients,
       ]);
-    /** @type {Record<string, string>} */
-    const clientLabels = {
-      codex: 'OpenAI Codex CLI',
-      claude: 'Claude Code',
-      cursor: 'Cursor',
-      copilot: 'GitHub Copilot (VS Code)',
-      opencode: 'OpenCode',
-      antigravity: 'Antigravity',
-      windsurf: 'Windsurf',
-    };
     const items = MCP_CLIENT_NAMES.map((c) => ({
       value: c,
-      label: `${c.padEnd(10)}  ${clientLabels[c]}`,
+      label: `${c.padEnd(10)}  ${MCP_CLIENT_LABELS[c]}`,
       hint: formatSelectionHint({
         detected: detected.includes(c),
         installed: configuredClients.has(c),

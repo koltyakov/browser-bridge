@@ -340,6 +340,14 @@ export function summarizeBridgeResponse(response, method) {
       evidence: result
     };
   }
+  if (Array.isArray(response.result) && looksLikePatchArray(response.result, method)) {
+    const patches = /** @type {Array<Record<string, unknown>>} */ (response.result);
+    return {
+      ok: true,
+      summary: `${patches.length} active patch(es).`,
+      evidence: patches.slice(0, 10)
+    };
+  }
   if (Array.isArray(result.patches)) {
     return {
       ok: true,
@@ -389,6 +397,26 @@ function truncateUrl(url) {
   } catch {
     return url.length > 120 ? `${url.slice(0, 119)}\u2026` : url;
   }
+}
+
+/**
+ * Check if an array looks like a list of patch entries.
+ * Returns true for empty arrays when method context suggests patch.list.
+ *
+ * @param {unknown[]} arr
+ * @param {string} [method]
+ * @returns {boolean}
+ */
+function looksLikePatchArray(arr, method) {
+  if (!Array.isArray(arr)) return false;
+  if (arr.length === 0) return method === 'patch.list';
+  const first = arr[0];
+  return (
+    first !== null &&
+    typeof first === 'object' &&
+    'patchId' in first &&
+    'kind' in first
+  );
 }
 
 /**

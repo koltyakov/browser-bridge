@@ -19,6 +19,7 @@ export function applyBudget(options = {}) {
     textBudget: clamp(options.textBudget ?? DEFAULT_TEXT_BUDGET, 32, 10000),
     includeHtml: Boolean(options.includeHtml),
     includeScreenshot: Boolean(options.includeScreenshot),
+    includeBbox: options.includeBbox !== false,
     attributeAllowlist: normalizeList(options.attributeAllowlist),
     styleAllowlist: normalizeList(options.styleAllowlist)
   };

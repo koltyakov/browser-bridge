@@ -48,16 +48,22 @@ Uses CDP device emulation - the page re-renders at the new size immediately.
 
 ## Tab Management
 
-Open and close tabs programmatically. Neither requires a session.
+**IMPORTANT: Prefer existing tabs.** Never create new tabs unless:
+- The user explicitly requests opening a new page
+- The task requires a clean/fresh page state (e.g., testing initial load)
+- You need to compare multiple pages simultaneously
+
+Always start with `tabs.list` to find an appropriate existing tab before considering `tabs.create`.
 
 ```bash
-bbx tab-create https://example.com     # open new tab
-bbx tab-create                          # open blank tab
-bbx tab-close 12345                     # close tab by ID
+bbx tabs                                 # list available tabs (start here)
+bbx tab-create https://example.com       # open new tab (avoid unless necessary)
+bbx tab-create                           # open blank tab (avoid unless necessary)
+bbx tab-close 12345                      # close tab by ID
 bbx call tabs.create '{"url":"https://example.com","active":false}'
 ```
 
-Typical workflow - compare two pages:
+Typical workflow - compare two pages (only when comparison is required):
 1. `tabs.list` to see current tabs
 2. `tabs.create` with second URL
 3. Inspect both tabs (each needs its own session)
