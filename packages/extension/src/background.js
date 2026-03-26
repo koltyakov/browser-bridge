@@ -82,14 +82,6 @@ import { TabDebuggerCoordinator } from './debugger-coordinator.js';
 
 /**
  * @typedef {{
- *   level: string,
- *   args: string[],
- *   ts: number
- * }} ConsoleEntry
- */
-
-/**
- * @typedef {{
  *   tabId: number,
  *   windowId: number,
  *   title: string,
@@ -124,12 +116,10 @@ import { TabDebuggerCoordinator } from './debugger-coordinator.js';
  * @typedef {{
  *   nativePort: chrome.runtime.Port | null,
  *   sessions: Map<string, SessionState>,
-  *   enabledScopes: Map<string, EnabledScope>,
+ *   enabledScopes: Map<string, EnabledScope>,
  *   actionLog: ActionLogEntry[],
-  *   consoleEntriesByTab: Map<number, ConsoleEntry[]>,
-  *   consoleTrackedTabIds: Set<number>,
-  *   uiPorts: Map<chrome.runtime.Port, UiPortState>,
-  *   setupStatus: SetupStatus | null,
+ *   uiPorts: Map<chrome.runtime.Port, UiPortState>,
+ *   setupStatus: SetupStatus | null,
  *   setupStatusPending: boolean,
  *   setupStatusPendingRequestId: string | null,
  *   setupStatusUpdatedAt: number,
@@ -159,8 +149,6 @@ const state = {
   sessions: new Map(),
   enabledScopes: new Map(),
   actionLog: [],
-  consoleEntriesByTab: new Map(),
-  consoleTrackedTabIds: new Set(),
   uiPorts: new Map(),
   setupStatus: null,
   setupStatusPending: false,
@@ -197,14 +185,6 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   void handleTabRemoved(tabId).catch(reportAsyncError);
-});
-
-chrome.debugger.onEvent.addListener((source, method, params) => {
-  void handleDebuggerEvent(source, method, params).catch(reportAsyncError);
-});
-
-chrome.debugger.onDetach.addListener((source) => {
-  void handleDebuggerDetach(source).catch(reportAsyncError);
 });
 
 chrome.runtime.onConnect.addListener((port) => {
@@ -476,7 +456,6 @@ async function restoreEnabledScopes() {
 async function primeEnabledTabInstrumentation() {
   await Promise.all([...state.enabledScopes.values()].map(async (scope) => {
     await primeTabConsoleCapture(scope.tabId);
-    await ensureDebuggerConsoleTracking(scope.tabId);
   }));
 }
 
@@ -723,12 +702,7 @@ async function handlePageGetConsole(request) {
   const params = normalizeConsoleParams(request.params);
 
   await primeTabConsoleCapture(session.tabId);
-  await ensureDebuggerConsoleTracking(session.tabId);
-
-  const entries = mergeConsoleEntries(
-    await readConsoleBuffer(session.tabId, params.clear),
-    readTrackedConsoleBuffer(session.tabId, params.clear)
-  );
+  const entries = await readConsoleBuffer(session.tabId, params.clear);
   const filtered = params.level === 'all'
     ? entries
     : entries.filter((/** @type {{ level: string }} */ e) => matchesConsoleLevel(params.level, e.level));
@@ -1054,254 +1028,6 @@ async function primeTabConsoleCapture(tabId, resetBuffer = false) {
     }
     throw error;
   }
-}
-
-/**
- * Attach a passive CDP listener for console/runtime events when possible. This
- * complements the page-world interceptor and can surface messages that bypass
- * the patched `console` object.
- *
- * @param {number} tabId
- * @param {boolean} [resetBuffer=false]
- * @returns {Promise<void>}
- */
-async function ensureDebuggerConsoleTracking(tabId, resetBuffer = false) {
-  if (resetBuffer) {
-    state.consoleEntriesByTab.set(tabId, []);
-  }
-  if (state.consoleTrackedTabIds.has(tabId)) {
-    return;
-  }
-  try {
-    await tabDebugger.acquire(tabId, async (target) => {
-      await chrome.debugger.sendCommand(target, 'Runtime.enable', {});
-      await chrome.debugger.sendCommand(target, 'Log.enable', {});
-    });
-    state.consoleTrackedTabIds.add(tabId);
-  } catch (error) {
-    if (isRecoverableInstrumentationError(error)) {
-      return;
-    }
-    throw error;
-  }
-}
-
-/**
- * @param {number} tabId
- * @returns {Promise<void>}
- */
-async function disableDebuggerConsoleTracking(tabId) {
-  state.consoleTrackedTabIds.delete(tabId);
-  state.consoleEntriesByTab.delete(tabId);
-  try {
-    await tabDebugger.release(tabId, async (target) => {
-      await chrome.debugger.sendCommand(target, 'Log.disable', {}).catch(() => {});
-      await chrome.debugger.sendCommand(target, 'Runtime.disable', {}).catch(() => {});
-    });
-  } catch (error) {
-    if (isRecoverableInstrumentationError(error)) {
-      return;
-    }
-    throw error;
-  }
-}
-
-/**
- * @param {chrome.debugger.Debuggee} source
- * @param {string} method
- * @param {unknown} params
- * @returns {Promise<void>}
- */
-async function handleDebuggerEvent(source, method, params) {
-  const tabId = Number(source.tabId);
-  if (!Number.isFinite(tabId) || !state.consoleTrackedTabIds.has(tabId)) {
-    return;
-  }
-
-  if (method === 'Runtime.consoleAPICalled') {
-    appendTrackedConsoleEntry(tabId, normalizeConsoleApiCalled(params));
-    return;
-  }
-
-  if (method === 'Runtime.exceptionThrown') {
-    appendTrackedConsoleEntry(tabId, normalizeExceptionThrown(params));
-    return;
-  }
-
-  if (method === 'Log.entryAdded') {
-    appendTrackedConsoleEntry(tabId, normalizeLogEntry(params));
-  }
-}
-
-/**
- * @param {chrome.debugger.Debuggee} source
- * @returns {Promise<void>}
- */
-async function handleDebuggerDetach(source) {
-  const tabId = Number(source.tabId);
-  if (!Number.isFinite(tabId)) {
-    return;
-  }
-  state.consoleTrackedTabIds.delete(tabId);
-}
-
-/**
- * @param {number} tabId
- * @param {boolean} clear
- * @returns {ConsoleEntry[]}
- */
-function readTrackedConsoleBuffer(tabId, clear) {
-  const entries = [...(state.consoleEntriesByTab.get(tabId) ?? [])];
-  if (clear) {
-    state.consoleEntriesByTab.set(tabId, []);
-  }
-  return entries;
-}
-
-/**
- * @param {number} tabId
- * @param {ConsoleEntry | null} entry
- * @returns {void}
- */
-function appendTrackedConsoleEntry(tabId, entry) {
-  if (!entry) {
-    return;
-  }
-  const buffer = state.consoleEntriesByTab.get(tabId) ?? [];
-  buffer.push(entry);
-  if (buffer.length > 200) {
-    buffer.splice(0, buffer.length - 200);
-  }
-  state.consoleEntriesByTab.set(tabId, buffer);
-}
-
-/**
- * @param {unknown} params
- * @returns {ConsoleEntry | null}
- */
-function normalizeConsoleApiCalled(params) {
-  if (!params || typeof params !== 'object') {
-    return null;
-  }
-  const event = /** @type {Record<string, unknown>} */ (params);
-  const rawLevel = typeof event.type === 'string' ? event.type : 'log';
-  const level = rawLevel === 'warning' ? 'warn' : rawLevel;
-  const args = Array.isArray(event.args)
-    ? event.args.map((arg) => stringifyRemoteObject(arg))
-    : [];
-  return {
-    level,
-    args,
-    ts: toEpochMilliseconds(event.timestamp)
-  };
-}
-
-/**
- * @param {unknown} params
- * @returns {ConsoleEntry | null}
- */
-function normalizeExceptionThrown(params) {
-  if (!params || typeof params !== 'object') {
-    return null;
-  }
-  const event = /** @type {Record<string, unknown>} */ (params);
-  const details = event.exceptionDetails && typeof event.exceptionDetails === 'object'
-    ? /** @type {Record<string, unknown>} */ (event.exceptionDetails)
-    : {};
-  const location = typeof details.url === 'string'
-    ? `${details.url}:${Number(details.lineNumber ?? 0) + 1}:${Number(details.columnNumber ?? 0) + 1}`
-    : '';
-  return {
-    level: 'exception',
-    args: [typeof details.text === 'string' ? details.text : 'Uncaught exception', location].filter(Boolean),
-    ts: toEpochMilliseconds(event.timestamp)
-  };
-}
-
-/**
- * @param {unknown} params
- * @returns {ConsoleEntry | null}
- */
-function normalizeLogEntry(params) {
-  if (!params || typeof params !== 'object') {
-    return null;
-  }
-  const payload = /** @type {Record<string, unknown>} */ (params);
-  const entry = payload.entry && typeof payload.entry === 'object'
-    ? /** @type {Record<string, unknown>} */ (payload.entry)
-    : null;
-  if (!entry) {
-    return null;
-  }
-  const level = typeof entry.level === 'string'
-    ? entry.level === 'verbose' ? 'debug' : entry.level
-    : 'log';
-  const location = typeof entry.url === 'string'
-    ? `${entry.url}:${Number(entry.lineNumber ?? 0) + 1}`
-    : '';
-  return {
-    level,
-    args: [typeof entry.text === 'string' ? entry.text : '', location].filter(Boolean),
-    ts: toEpochMilliseconds(entry.timestamp)
-  };
-}
-
-/**
- * @param {ConsoleEntry[]} pageEntries
- * @param {ConsoleEntry[]} debuggerEntries
- * @returns {ConsoleEntry[]}
- */
-function mergeConsoleEntries(pageEntries, debuggerEntries) {
-  const deduped = new Map();
-  for (const entry of [...pageEntries, ...debuggerEntries]) {
-    const key = `${entry.level}|${entry.ts}|${entry.args.join('\u241f')}`;
-    if (!deduped.has(key)) {
-      deduped.set(key, entry);
-    }
-  }
-  return [...deduped.values()].sort((left, right) => left.ts - right.ts);
-}
-
-/**
- * @param {unknown} value
- * @returns {number}
- */
-function toEpochMilliseconds(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric) || numeric <= 0) {
-    return Date.now();
-  }
-  return numeric < 10_000_000_000 ? Math.round(numeric * 1000) : Math.round(numeric);
-}
-
-/**
- * @param {unknown} value
- * @returns {string}
- */
-function stringifyRemoteObject(value) {
-  if (!value || typeof value !== 'object') {
-    return String(value);
-  }
-  const remote = /** @type {Record<string, unknown>} */ (value);
-  if (typeof remote.description === 'string' && remote.description) {
-    return remote.description.slice(0, 500);
-  }
-  if (typeof remote.value === 'string') {
-    return remote.value.slice(0, 500);
-  }
-  if (typeof remote.value === 'number' || typeof remote.value === 'boolean') {
-    return String(remote.value);
-  }
-  if (remote.value === null) {
-    return 'null';
-  }
-  if (typeof remote.unserializableValue === 'string') {
-    return remote.unserializableValue;
-  }
-  if (typeof remote.type === 'string') {
-    return remote.type;
-  }
-  return '[object]';
 }
 
 /**
@@ -1782,7 +1508,6 @@ async function setTabEnabled(tabId, title, enabled) {
       [`${ENABLED_TAB_STORAGE_PREFIX}${scope.tabId}`]: scope
     });
     await primeTabConsoleCapture(scope.tabId, true);
-    await ensureDebuggerConsoleTracking(scope.tabId, true);
   } else {
     await disableTab(scope.tabId);
   }
@@ -1798,7 +1523,6 @@ async function setTabEnabled(tabId, title, enabled) {
  * @returns {Promise<void>}
  */
 async function disableTab(tabId) {
-  await disableDebuggerConsoleTracking(tabId);
   state.enabledScopes.delete(String(tabId));
   await chrome.storage.session.remove(`${ENABLED_TAB_STORAGE_PREFIX}${tabId}`);
   await revokeSessionsForScope(tabId, null);
@@ -1857,7 +1581,6 @@ async function handleTabUpdated(tabId, changeInfo, tab) {
     }
     if (changeInfo.status === 'complete' && isTabEnabled(tabId)) {
       await primeTabConsoleCapture(tabId);
-      await ensureDebuggerConsoleTracking(tabId);
     }
     await updateActionIndicatorForTab(tabId);
     await emitUiState();
