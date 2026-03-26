@@ -115,14 +115,16 @@ When you request access to a tab, the user must approve it in the Browser Bridge
 7. **Confirm scope** - `status` first; stop if no extension connection.
 8. **Screenshots last** - only when structured evidence is ambiguous; keep crops small.
 9. **Batch reads** - combine independent reads in one `batch` call (executes concurrently via Promise.all).
-10. **Evaluate for state** - use `page.evaluate` to read framework state (React, Vue, Next.js `__NEXT_DATA__`, router, stores) instead of guessing from DOM.
-11. **Wait after change** - after editing source files or triggering navigation, use `dom.wait_for` or `page.wait_for_load_state` before inspecting.
-12. **Console after interaction** - call `page.get_console` after mutations to catch runtime errors early.
-13. **Semantic finding** - use `dom.find_by_text` / `dom.find_by_role` when you know the label but not the selector.
-14. **Text extraction** - use `page.get_text` for full page text instead of `dom.query` on body.
-15. **Network monitoring** - use `page.get_network` to inspect API calls; auto-installs interceptor.
-16. **Accessibility tree** - use `dom.get_accessibility_tree` for semantic structure and interactive element discovery.
-17. **Tailwind-aware** - when `page.get_state` returns `hints.tailwind: true`, load `references/tailwind.md`; avoid selecting by utility classes, prefer `find_by_text`/`find_by_role`; `dom.query` auto-escapes `[]` brackets.
+10. **Avoid debugger first** - prefer DOM/content-script methods (`dom.*`, `styles.*`, `layout.get_box_model`, `page.get_console`, `page.get_text`, `page.get_storage`, `page.get_network`) before any debugger-backed method. Escalate to CDP only when those cannot answer the question.
+11. **Evaluate only when needed** - `page.evaluate` is powerful but debugger-backed; use it only when DOM, storage, console, network, or text reads cannot expose the needed state.
+12. **Debugger-backed methods are last resort** - treat `page.evaluate`, `dom.get_accessibility_tree`, `viewport.resize`, `performance.get_metrics`, `screenshot.capture_*`, and all `cdp.*` methods as escalation steps because they attach `chrome.debugger`.
+13. **Wait after change** - after editing source files or triggering navigation, use `dom.wait_for` or `page.wait_for_load_state` before inspecting.
+14. **Console after interaction** - call `page.get_console` after mutations to catch runtime errors early.
+15. **Semantic finding** - use `dom.find_by_text` / `dom.find_by_role` when you know the label but not the selector.
+16. **Text extraction** - use `page.get_text` for full page text instead of `dom.query` on body.
+17. **Network monitoring** - use `page.get_network` to inspect API calls; auto-installs interceptor.
+18. **Accessibility tree only when necessary** - `dom.get_accessibility_tree` is debugger-backed; use it when semantic structure cannot be inferred from DOM queries and role/text search.
+19. **Tailwind-aware** - when `page.get_state` returns `hints.tailwind: true`, load `references/tailwind.md`; avoid selecting by utility classes, prefer `find_by_text`/`find_by_role`; `dom.query` auto-escapes `[]` brackets.
 
 ## Method Quick Reference
 
@@ -131,14 +133,14 @@ When you request access to a tab, the user must approve it in the Browser Bridge
 | Session    | `session.request_access`, `session.get_status`, `page.get_state`                         |
 | Inspect    | `dom.query`, `dom.describe`, `dom.get_html`, `styles.get_computed`, `layout.get_box_model`|
 | Find       | `dom.find_by_text`, `dom.find_by_role`, `dom.wait_for`, `dom.get_accessibility_tree`     |
-| Page State | `page.evaluate`, `page.get_console`, `page.get_storage`, `page.get_text`, `page.wait_for_load_state` |
+| Page State | `page.get_console`, `page.get_storage`, `page.get_text`, `page.wait_for_load_state`, `page.evaluate` (debugger-backed) |
 | Network    | `page.get_network`                                                                       |
 | Interact   | `input.click`, `input.type`, `input.focus`, `input.press_key`, `input.hover`, `input.drag`|
 | Tabs       | `tabs.list` (preferred), `tabs.create` (avoid unless necessary), `tabs.close`           |
 | Patch      | `patch.apply_styles`, `patch.apply_dom`, `patch.rollback`                                |
 | Navigate   | `navigation.navigate`, `viewport.scroll`, `viewport.resize`                              |
-| Performance| `performance.get_metrics`                                                                |
-| Escalate   | `screenshot.capture_element`, `cdp.*` methods                                            |
+| Performance| `performance.get_metrics` (debugger-backed)                                              |
+| Escalate   | `dom.get_accessibility_tree`, `screenshot.capture_element`, `screenshot.capture_region`, `viewport.resize`, `cdp.*` methods |
 
 ## Dev-Server Workflow (HMR-aware)
 

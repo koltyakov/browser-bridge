@@ -1,5 +1,7 @@
 # Protocol Reference
 
+Prefer non-debugger methods first. `chrome.debugger`-backed methods can cause Chrome to show its native "started debugging this browser" banner across the running browser instance, so use them only when DOM/content-script/native-script methods cannot answer the question.
+
 ## All Methods (56)
 
 | # | Method | Session? | Notes |
@@ -15,7 +17,7 @@
 | 9 | `health.ping` | No | Bridge connectivity check |
 | 10 | `log.tail` | No | Recent bridge logs |
 | 11 | `page.get_state` | Yes | URL, readiness, focus, scroll, viewport |
-| 12 | `page.evaluate` | Yes | Run JS expression in page context (CDP); requires `page.evaluate` capability |
+| 12 | `page.evaluate` | Yes | Run JS expression in page context (CDP); debugger-backed, last resort for app state reads |
 | 13 | `page.get_console` | Yes | Buffered console messages; filter by `level`, `limit` entries |
 | 14 | `page.wait_for_load_state` | Yes | Block until tab status is 'complete'; `timeoutMs` capped at 30 s |
 | 15 | `page.get_storage` | Yes | Read `localStorage` or `sessionStorage`; optional `keys` filter |
@@ -33,13 +35,13 @@
 | 27 | `dom.find_by_text` | Yes | Find elements by visible text content; returns `{nodes, count}` |
 | 28 | `dom.find_by_role` | Yes | Find elements by ARIA role (explicit or implicit); optional `name` filter |
 | 29 | `dom.get_html` | Yes | Get `innerHTML`/`outerHTML` of element; `maxLength` truncation |
-| 30 | `dom.get_accessibility_tree` | Yes | Full accessibility tree via CDP; `maxNodes` and `maxDepth` limits |
+| 30 | `dom.get_accessibility_tree` | Yes | Full accessibility tree via CDP; debugger-backed; `maxNodes` and `maxDepth` limits |
 | 31 | `layout.get_box_model` | Yes | Element geometry (no budget needed) |
 | 32 | `layout.hit_test` | Yes | Element at viewport point |
 | 33 | `styles.get_computed` | Yes | Computed CSS; always set `properties` |
 | 34 | `styles.get_matched_rules` | Yes | Matching CSS rules |
 | 35 | `viewport.scroll` | Yes | Window or element scroll |
-| 36 | `viewport.resize` | Yes | Set viewport dimensions via CDP device emulation; reset with `reset: true` |
+| 36 | `viewport.resize` | Yes | Set viewport dimensions via CDP device emulation; debugger-backed; reset with `reset: true` |
 | 37 | `input.click` | Yes | DOM-level click |
 | 38 | `input.focus` | Yes | Focus element |
 | 39 | `input.type` | Yes | Type text into input/textarea/contenteditable |
@@ -48,18 +50,18 @@
 | 42 | `input.select_option` | Yes | Native select by value/label/index |
 | 43 | `input.hover` | Yes | Dispatch mouseenter/mouseover/mousemove; optional `duration` ms to hold |
 | 44 | `input.drag` | Yes | Full drag-and-drop event sequence (mousedown→dragstart→drag→drop→dragend) |
-| 45 | `screenshot.capture_element` | Yes | Cropped element screenshot |
-| 46 | `screenshot.capture_region` | Yes | Cropped viewport region |
+| 45 | `screenshot.capture_element` | Yes | Cropped element screenshot; debugger-backed |
+| 46 | `screenshot.capture_region` | Yes | Cropped viewport region; debugger-backed |
 | 47 | `patch.apply_styles` | Yes | Reversible CSS patch |
 | 48 | `patch.apply_dom` | Yes | Reversible DOM mutation |
 | 49 | `patch.list` | Yes | Active patches |
 | 50 | `patch.rollback` | Yes | Revert one patch |
 | 51 | `patch.commit_session_baseline` | Yes | Accept current state as baseline |
-| 52 | `performance.get_metrics` | Yes | Chrome performance metrics via CDP; requires `performance.read` capability |
-| 53 | `cdp.get_document` | Yes | DevTools document tree |
-| 54 | `cdp.get_dom_snapshot` | Yes | DevTools DOM snapshot |
-| 55 | `cdp.get_box_model` | Yes | DevTools-backed element geometry |
-| 56 | `cdp.get_computed_styles_for_node` | Yes | DevTools-backed computed styles |
+| 52 | `performance.get_metrics` | Yes | Chrome performance metrics via CDP; debugger-backed; requires `performance.read` capability |
+| 53 | `cdp.get_document` | Yes | DevTools document tree; debugger-backed |
+| 54 | `cdp.get_dom_snapshot` | Yes | DevTools DOM snapshot; debugger-backed |
+| 55 | `cdp.get_box_model` | Yes | DevTools-backed element geometry; debugger-backed |
+| 56 | `cdp.get_computed_styles_for_node` | Yes | DevTools-backed computed styles; debugger-backed |
 
 ## CLI
 
@@ -77,6 +79,8 @@ bbx batch '[{"method":"...","params":{}}]'  # parallel calls
 
 ### page.evaluate
 Run a JS expression in the page context via CDP `Runtime.evaluate`. Expression is evaluated as a statement and the return value is serialized. Supports `awaitPromise` for async expressions. Requires the `page.evaluate` capability.
+
+Use only when non-debugger reads are insufficient. Prefer `page.get_storage`, `page.get_text`, `page.get_console`, `page.get_network`, or DOM methods first.
 ```bash
 bbx eval 'document.title'
 bbx eval 'window.__NEXT_DATA__.props'
@@ -191,6 +195,8 @@ Each entry: `{method, url, status, duration, initiator}`. Requires the `network.
 
 ### dom.get_accessibility_tree
 Retrieve the page's accessibility tree via CDP `Accessibility.getFullAXTree`. Each node is simplified to: `role`, `name`, `description`, `value`, `focused`, `required`, `checked`, `disabled`, `interactive`, `childIds`. Use `maxNodes` and `maxDepth` to control size.
+
+This is debugger-backed. Prefer `dom.find_by_role`, `dom.find_by_text`, and targeted `dom.query`/`dom.describe` first.
 ```bash
 bbx a11y-tree
 bbx a11y-tree 50 3
@@ -199,6 +205,8 @@ bbx call dom.get_accessibility_tree '{"maxNodes":100,"maxDepth":5}'
 
 ### viewport.resize
 Set the browser viewport to specific dimensions using CDP device emulation. Pass `reset: true` to clear the override.
+
+Debugger-backed. Use only when an exact viewport override is required for responsive verification.
 ```bash
 bbx resize 375 812
 bbx call viewport.resize '{"width":1024,"height":768}'
@@ -207,6 +215,8 @@ bbx call viewport.resize '{"reset":true}'
 
 ### performance.get_metrics
 Read Chrome performance counters via CDP `Performance.getMetrics`. Returns a flat `{metrics}` object with keys like `JSHeapUsedSize`, `LayoutCount`, `TaskDuration`, etc.
+
+Debugger-backed. Use after lighter reads fail to explain a performance symptom.
 ```bash
 bbx perf
 bbx call performance.get_metrics

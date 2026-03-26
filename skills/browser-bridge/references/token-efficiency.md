@@ -12,6 +12,10 @@ Always start at **quick** or **normal**; widen only if the result indicates trun
 
 These presets are also available at runtime via `bbx skill`.
 
+## Debugger Policy
+
+Avoid debugger-backed methods until they are clearly necessary. In Browser Bridge, `page.evaluate`, `dom.get_accessibility_tree`, `viewport.resize`, `performance.get_metrics`, `screenshot.capture_*`, and `cdp.*` attach `chrome.debugger`, which can make Chrome show its native debugging banner across the running browser instance.
+
 ## Decision Tree
 
 1. **Know the selector?** → `dom.query` with quick budget
@@ -20,15 +24,15 @@ These presets are also available at runtime via `bbx skill`.
 4. **Need one element's details?** → `dom.describe` with elementRef
 5. **Need layout metrics?** → `layout.get_box_model` (no budget needed)
 6. **Need styles?** → `styles.get_computed` with explicit `properties` list
-7. **Need framework/app state?** → `page.evaluate` (read JS directly, skip DOM guessing)
-8. **Need runtime errors?** → `page.get_console` with `level: 'error'`
-9. **Need full page text?** → `page.get_text` (cheaper than `dom.query` on body)
-10. **Need semantic structure?** → `dom.get_accessibility_tree` (role/name tree, no selectors)
-11. **Need API call history?** → `page.get_network` (intercepted fetch/XHR log)
-12. **Need performance data?** → `performance.get_metrics` (heap, layout counts, task duration)
-13. **Testing responsive?** → `viewport.resize` (set exact dimensions, then inspect)
-14. **Visual ambiguity?** → `screenshot.capture_element` with small crop
-15. **Content-script blocked?** → `cdp.get_document` or `cdp.get_dom_snapshot`
+7. **Need runtime errors?** → `page.get_console` with `level: 'error'`
+8. **Need full page text?** → `page.get_text` (cheaper than `dom.query` on body)
+9. **Need API call history?** → `page.get_network` (intercepted fetch/XHR log)
+10. **Need framework/app state and no lighter read can expose it?** → `page.evaluate` (debugger-backed)
+11. **Need semantic structure and role/text queries are insufficient?** → `dom.get_accessibility_tree` (debugger-backed)
+12. **Need performance data?** → `performance.get_metrics` (debugger-backed)
+13. **Testing responsive with an exact forced viewport?** → `viewport.resize` (debugger-backed)
+14. **Visual ambiguity after structured reads?** → `screenshot.capture_element` with small crop (debugger-backed)
+15. **Content-script blocked?** → `cdp.get_document` or `cdp.get_dom_snapshot` (debugger-backed fallback)
 
 ## Allowlist Strategy
 
@@ -70,12 +74,14 @@ Omitting allowlists returns all attributes/styles - often 3–5× the tokens nee
 2. Pick one `elementRef`.
 3. Read only needed styles/layout.
 4. Patch narrowly.
-5. Verify with `layout.get_box_model` or `styles.get_computed`.
-6. Screenshot only if structured evidence is ambiguous.
+5. Check `page.get_console` if the behavior might be error-driven.
+6. Verify with `layout.get_box_model` or `styles.get_computed`.
+7. Escalate to debugger-backed methods only if the answer is still missing.
+8. Screenshot only if structured evidence is ambiguous.
 
 ## Evaluate Instead of DOM Scan
 
-When you need app state (router, store, config), `page.evaluate` is far cheaper than parsing DOM:
+When you need app state (router, store, config), `page.evaluate` can be far cheaper than parsing DOM, but it is debugger-backed. Use it only after DOM, text, storage, console, and network reads still leave uncertainty:
 
 ```bash
 # Read Next.js route - 1 call vs. parsing URL from dom.query on <head>
