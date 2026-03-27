@@ -1276,16 +1276,14 @@ function renderActionLogEntry(entry, setupStatus, entries, index) {
     badges.append(scopeLink);
   }
 
-  if (entry.approxTokens > 0 || entry.imageApproxTokens > 0 || entry.imageBytes > 0) {
+  const transportTokens = getEntryTransportTokens(entry);
+  if (transportTokens > 0 || entry.imageBytes > 0) {
     const tokenLine = document.createElement('span');
     tokenLine.className = 'muted activity-tokens';
     /** @type {string[]} */
     const parts = [];
-    if (entry.approxTokens > 0) {
-      parts.push(`\u2248${entry.approxTokens.toLocaleString()} tok`);
-    }
-    if (entry.imageApproxTokens > 0) {
-      parts.push(`\u2248${entry.imageApproxTokens.toLocaleString()} img tok`);
+    if (transportTokens > 0) {
+      parts.push(`\u2248${transportTokens.toLocaleString()} tok`);
     }
     if (entry.nodeCount != null) {
       parts.push(`${entry.nodeCount}n`);
@@ -1378,6 +1376,28 @@ function formatByteCount(value) {
 }
 
 /**
+ * @param {ActionLogEntry} entry
+ * @returns {number}
+ */
+function getEntryTransportTokens(entry) {
+  return Math.max(0, entry.approxTokens + entry.imageApproxTokens);
+}
+
+/**
+ * Snap the histogram window to the active bucket boundary so bars only shift
+ * when the 30s bin rolls over instead of drifting on every refresh tick.
+ *
+ * @param {number} value
+ * @returns {number}
+ */
+function alignHistogramEndAt(value) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return ACTIVITY_HISTOGRAM_BUCKET_MS;
+  }
+  return Math.ceil(value / ACTIVITY_HISTOGRAM_BUCKET_MS) * ACTIVITY_HISTOGRAM_BUCKET_MS;
+}
+
+/**
  * @typedef {{
  *   startAt: number,
  *   endAt: number,
@@ -1399,7 +1419,7 @@ function buildActivityHistogram(entries) {
     (maxAt, entry) => Math.max(maxAt, Number.isFinite(entry.at) ? entry.at : 0),
     0,
   );
-  const endAt = Math.max(Date.now(), latestAt);
+  const endAt = alignHistogramEndAt(Math.max(Date.now(), latestAt));
   const startAt = endAt - ACTIVITY_HISTOGRAM_WINDOW_MS;
   const buckets = Array.from({ length: ACTIVITY_HISTOGRAM_BARS }, (_, index) => ({
     bucketStart: startAt + index * ACTIVITY_HISTOGRAM_BUCKET_MS,
@@ -1414,7 +1434,8 @@ function buildActivityHistogram(entries) {
   let totalTokens = 0;
 
   for (const entry of entries) {
-    if (!Number.isFinite(entry.approxTokens) || entry.approxTokens <= 0) {
+    const transportTokens = getEntryTransportTokens(entry);
+    if (!Number.isFinite(transportTokens) || transportTokens <= 0) {
       continue;
     }
     if (!Number.isFinite(entry.at) || entry.at < startAt || entry.at > endAt) {
@@ -1427,9 +1448,9 @@ function buildActivityHistogram(entries) {
     );
     const family = getHistogramMethodFamily(entry.method);
     const familyTotals = /** @type {Map<string, number>} */ (bucketFamilies.get(offset));
-    familyTotals.set(family, (familyTotals.get(family) ?? 0) + entry.approxTokens);
-    buckets[offset].totalTokens += entry.approxTokens;
-    totalTokens += entry.approxTokens;
+    familyTotals.set(family, (familyTotals.get(family) ?? 0) + transportTokens);
+    buckets[offset].totalTokens += transportTokens;
+    totalTokens += transportTokens;
   }
 
   for (let index = 0; index < buckets.length; index += 1) {
@@ -1526,7 +1547,7 @@ function createHistogramBar(bucket, maxTokens) {
     bar.title = `${new Date(bucket.bucketStart).toLocaleTimeString()} · no activity`;
     bar.setAttribute(
       'aria-label',
-      `${new Date(bucket.bucketStart).toLocaleTimeString()}, no text token activity`,
+      `${new Date(bucket.bucketStart).toLocaleTimeString()}, no token activity`,
     );
     return bar;
   }
@@ -1537,7 +1558,7 @@ function createHistogramBar(bucket, maxTokens) {
   bar.title = `${new Date(bucket.bucketStart).toLocaleTimeString()} · ${bucket.totalTokens.toLocaleString()} tok\n${tooltipParts.join('\n')}`;
   bar.setAttribute(
     'aria-label',
-    `${new Date(bucket.bucketStart).toLocaleTimeString()}, approximately ${bucket.totalTokens.toLocaleString()} text tokens`,
+    `${new Date(bucket.bucketStart).toLocaleTimeString()}, approximately ${bucket.totalTokens.toLocaleString()} tokens`,
   );
   bar.append(
     ...bucket.segments.map((segment) => createHistogramSegment(segment, bucket.totalTokens)),
