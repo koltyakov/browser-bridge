@@ -42,7 +42,10 @@ import {
   resolveRef,
 } from './runtime.js';
 import { collectSetupStatus } from './setup-status.js';
-import { summarizeBridgeResponse } from './subagent.js';
+import {
+  annotateBridgeSummary,
+  summarizeBridgeResponse,
+} from './subagent.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
 /** @typedef {{ image: string, rect: Record<string, unknown> }} ScreenshotResult */
@@ -476,7 +479,10 @@ async function main() {
               params: call.params || {},
               meta: { source: REQUEST_SOURCE },
             });
-            return summarizeBridgeResponse(response, call.method);
+            return annotateBridgeSummary(
+              summarizeBridgeResponse(response, call.method),
+              response,
+            );
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             return {
@@ -672,7 +678,10 @@ async function ensureClientConnection() {
  * @returns {Promise<void>}
  */
 async function printSummary(response, method) {
-  printJson(summarizeBridgeResponse(response, method));
+  printJson(annotateBridgeSummary(
+    summarizeBridgeResponse(response, method),
+    response,
+  ));
 }
 
 /**

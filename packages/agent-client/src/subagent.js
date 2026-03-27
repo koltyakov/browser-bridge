@@ -1,5 +1,10 @@
 // @ts-check
 
+import {
+  estimateJsonPayloadCost,
+  getCostClass,
+} from '../../protocol/src/index.js';
+
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
 /**
  * @typedef {{
@@ -12,6 +17,25 @@
 
 /**
  * @typedef {{ text: (r: Record<string, unknown>) => string, evidence: (r: Record<string, unknown>) => unknown }} ActionSummary
+ */
+
+/**
+ * @typedef {{
+ *   ok: boolean,
+ *   summary: string,
+ *   evidence: unknown
+ * }} BridgeSummary
+ */
+
+/**
+ * @typedef {BridgeSummary & {
+ *   transportBytes: number,
+ *   transportTokens: number,
+ *   transportCostClass: 'cheap' | 'moderate' | 'heavy' | 'extreme',
+ *   summaryBytes: number,
+ *   summaryTokens: number,
+ *   summaryCostClass: 'cheap' | 'moderate' | 'heavy' | 'extreme'
+ * }} AnnotatedBridgeSummary
  */
 
 /** @type {Record<string, ActionSummary>} */
@@ -29,9 +53,61 @@ const ACTION_SUMMARIES = {
 };
 
 /**
+ * Add transport and summary payload estimates without changing the compact
+ * shape consumed by existing clients.
+ *
+ * @param {BridgeSummary} summary
+ * @param {BridgeResponse} response
+ * @returns {AnnotatedBridgeSummary}
+ */
+export function annotateBridgeSummary(summary, response) {
+  const transportBytes = getNumericMetaField(response.meta, 'transport_bytes')
+    ?? getNumericMetaField(response.meta, 'response_bytes')
+    ?? estimateJsonPayloadCost(response.ok ? response.result : { error: response.error }).bytes;
+  const transportTokens = getNumericMetaField(response.meta, 'transport_approx_tokens')
+    ?? getNumericMetaField(response.meta, 'approx_tokens')
+    ?? estimateJsonPayloadCost(response.ok ? response.result : { error: response.error }).approxTokens;
+  const summaryCost = estimateJsonPayloadCost(summary);
+
+  return {
+    ...summary,
+    transportBytes,
+    transportTokens,
+    transportCostClass: getMetaCostClass(response.meta, 'transport_cost_class')
+      ?? getMetaCostClass(response.meta, 'cost_class')
+      ?? getCostClass(transportTokens),
+    summaryBytes: summaryCost.bytes,
+    summaryTokens: summaryCost.approxTokens,
+    summaryCostClass: summaryCost.costClass,
+  };
+}
+
+/**
+ * @param {Record<string, unknown> | null | undefined} meta
+ * @param {string} field
+ * @returns {number | null}
+ */
+function getNumericMetaField(meta, field) {
+  const value = meta?.[field];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * @param {Record<string, unknown> | null | undefined} meta
+ * @param {string} field
+ * @returns {'cheap' | 'moderate' | 'heavy' | 'extreme' | null}
+ */
+function getMetaCostClass(meta, field) {
+  const value = meta?.[field];
+  return value === 'moderate' || value === 'heavy' || value === 'extreme' || value === 'cheap'
+    ? value
+    : null;
+}
+
+/**
  * @param {BridgeResponse} response
  * @param {string} [method] - Optional bridge method name for disambiguation
- * @returns {{ ok: boolean, summary: string, evidence: unknown }}
+ * @returns {BridgeSummary}
  */
 export function summarizeBridgeResponse(response, method) {
   if (!response.ok) {

@@ -3,6 +3,7 @@
 import {
   CAPABILITIES,
   ERROR_CODES,
+  estimateJsonPayloadCost,
   getCostClass,
   isDebuggerBackedMethod,
 } from '../../protocol/src/index.js';
@@ -154,24 +155,23 @@ export function summarizeActionResult(response) {
  * @returns {{ responseBytes: number, approxTokens: number, hasScreenshot: boolean, nodeCount: number | null }}
  */
 export function estimateResponseTokens(response) {
-  const resultJson = response.ok ? JSON.stringify(response.result) : '';
-  const responseBytes = resultJson.length;
+  const payload = response.ok
+    ? response.result
+    : { error: response.error };
+  const estimate = estimateJsonPayloadCost(payload);
+  const responseBytes = estimate.bytes;
   const result = response.ok && response.result && typeof response.result === 'object'
     ? /** @type {Record<string, unknown>} */ (response.result)
     : null;
   const hasScreenshot = result != null && typeof result.image === 'string';
   const nodeCount = result != null && Array.isArray(result.nodes) ? result.nodes.length : null;
 
-  let approxTokens;
-  if (hasScreenshot && typeof result.image === 'string') {
-    const imageLength = result.image.length;
-    const otherBytes = responseBytes - imageLength;
-    approxTokens = Math.ceil(otherBytes / 4 + imageLength / 6);
-  } else {
-    approxTokens = Math.ceil(responseBytes / 4);
-  }
-
-  return { responseBytes, approxTokens, hasScreenshot, nodeCount };
+  return {
+    responseBytes,
+    approxTokens: estimate.approxTokens,
+    hasScreenshot,
+    nodeCount,
+  };
 }
 
 /**
@@ -211,7 +211,7 @@ export function enforceTokenBudget(method, response, tokenBudget) {
   }
 
   const maxBytes = Math.max(128, Math.floor(tokenBudget * 4));
-  const responseBytes = JSON.stringify(response.result).length;
+  const responseBytes = estimateJsonPayloadCost(response.result).bytes;
   if (responseBytes <= maxBytes) {
     return {
       ...response,
@@ -226,12 +226,12 @@ export function enforceTokenBudget(method, response, tokenBudget) {
 
   const cloned = cloneJsonValue(response.result);
   let truncated = false;
-  while (JSON.stringify(cloned).length > maxBytes && shrinkForBudget(cloned)) {
+  while (estimateJsonPayloadCost(cloned).bytes > maxBytes && shrinkForBudget(cloned)) {
     truncated = true;
   }
 
   let result = cloned;
-  if (JSON.stringify(result).length > maxBytes) {
+  if (estimateJsonPayloadCost(result).bytes > maxBytes) {
     result = {
       truncated: true,
       continuationHint: `Retry ${method} with a larger token budget or tighter params.`,

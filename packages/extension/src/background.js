@@ -7,6 +7,7 @@ import {
   createRequest,
   createRuntimeContext,
   createSuccess,
+  estimateJsonPayloadCost,
   normalizeAccessibilityTreeParams,
   normalizeCheckedAction,
   normalizeConsoleParams,
@@ -32,6 +33,9 @@ import {
   normalizeWaitForLoadStateParams,
   normalizeWaitForParams
 } from '../../protocol/src/index.js';
+import {
+  summarizeBridgeResponse,
+} from '../../agent-client/src/subagent.js';
 import {
   enforceTokenBudget,
   getResponseDiagnostics,
@@ -81,6 +85,9 @@ import { TabDebuggerCoordinator } from './debugger-coordinator.js';
  *   responseBytes: number,
  *   approxTokens: number,
  *   costClass: 'cheap' | 'moderate' | 'heavy' | 'extreme',
+ *   summaryBytes: number,
+ *   summaryTokens: number,
+ *   summaryCostClass: 'cheap' | 'moderate' | 'heavy' | 'extreme',
  *   debuggerBacked: boolean,
  *   overBudget: boolean,
  *   hasScreenshot: boolean,
@@ -1938,6 +1945,8 @@ async function logBridgeAction(request, response, actionContext) {
   }
 
   const diagnostics = getResponseDiagnostics(request.method, response);
+  const summaryPayload = summarizeBridgeResponse(response, request.method);
+  const summaryCost = estimateJsonPayloadCost(summaryPayload);
 
   await appendActionLogEntry({
     method: request.method,
@@ -1949,6 +1958,9 @@ async function logBridgeAction(request, response, actionContext) {
     responseBytes: diagnostics.responseBytes,
     approxTokens: diagnostics.approxTokens,
     costClass: diagnostics.costClass,
+    summaryBytes: summaryCost.bytes,
+    summaryTokens: summaryCost.approxTokens,
+    summaryCostClass: summaryCost.costClass,
     debuggerBacked: diagnostics.debuggerBacked,
     overBudget: response.meta?.budget_truncated === true,
     hasScreenshot: diagnostics.hasScreenshot,
@@ -1973,6 +1985,9 @@ async function logBridgeAction(request, response, actionContext) {
  *   responseBytes?: number,
  *   approxTokens?: number,
  *   costClass?: 'cheap' | 'moderate' | 'heavy' | 'extreme',
+ *   summaryBytes?: number,
+ *   summaryTokens?: number,
+ *   summaryCostClass?: 'cheap' | 'moderate' | 'heavy' | 'extreme',
  *   debuggerBacked?: boolean,
  *   overBudget?: boolean,
  *   hasScreenshot?: boolean,
@@ -1996,6 +2011,9 @@ async function appendActionLogEntry(entry) {
       responseBytes: entry.responseBytes ?? 0,
       approxTokens: entry.approxTokens ?? 0,
       costClass: entry.costClass ?? 'cheap',
+      summaryBytes: entry.summaryBytes ?? 0,
+      summaryTokens: entry.summaryTokens ?? 0,
+      summaryCostClass: entry.summaryCostClass ?? 'cheap',
       debuggerBacked: entry.debuggerBacked === true,
       overBudget: entry.overBudget === true,
       hasScreenshot: entry.hasScreenshot ?? false,
@@ -2045,6 +2063,11 @@ function normalizeActionLogEntry(entry) {
     costClass: candidate.costClass === 'moderate' || candidate.costClass === 'heavy' || candidate.costClass === 'extreme'
       ? candidate.costClass
       : 'cheap',
+    summaryBytes: Number(candidate.summaryBytes) || 0,
+    summaryTokens: Number(candidate.summaryTokens) || 0,
+    summaryCostClass: candidate.summaryCostClass === 'moderate' || candidate.summaryCostClass === 'heavy' || candidate.summaryCostClass === 'extreme'
+      ? candidate.summaryCostClass
+      : 'cheap',
     debuggerBacked: candidate.debuggerBacked === true,
     overBudget: candidate.overBudget === true,
     hasScreenshot: candidate.hasScreenshot === true,
@@ -2092,6 +2115,9 @@ function enrichBridgeResponse(request, response) {
     ...budgetedResponse,
     meta: {
       ...budgetedResponse.meta,
+      transport_bytes: diagnostics.responseBytes,
+      transport_approx_tokens: diagnostics.approxTokens,
+      transport_cost_class: diagnostics.costClass,
       response_bytes: diagnostics.responseBytes,
       approx_tokens: diagnostics.approxTokens,
       cost_class: diagnostics.costClass,

@@ -107,13 +107,14 @@ test('estimateResponseTokens computes metrics for success responses', () => {
     result: { nodes: [{ tag: 'div' }, { tag: 'span' }] }
   });
   const estimate = estimateResponseTokens(nodesResponse);
-  assert.equal(estimate.responseBytes, JSON.stringify(nodesResponse.result).length);
-  assert.equal(estimate.approxTokens, Math.ceil(estimate.responseBytes / 4));
+  const expectedBytes = new TextEncoder().encode(JSON.stringify(nodesResponse.result)).length;
+  assert.equal(estimate.responseBytes, expectedBytes);
+  assert.equal(estimate.approxTokens, Math.ceil(expectedBytes / 4));
   assert.equal(estimate.hasScreenshot, false);
   assert.equal(estimate.nodeCount, 2);
 });
 
-test('estimateResponseTokens detects screenshots', () => {
+test('estimateResponseTokens counts screenshot payloads conservatively', () => {
   const screenshotResponse = /** @type {any} */ ({
     ok: true,
     result: { image: 'data:image/png;base64,AAAA' }
@@ -121,24 +122,34 @@ test('estimateResponseTokens detects screenshots', () => {
   const estimate = estimateResponseTokens(screenshotResponse);
   assert.equal(estimate.hasScreenshot, true);
   assert.equal(estimate.nodeCount, null);
-  const imageLength = 'data:image/png;base64,AAAA'.length;
-  const totalBytes = JSON.stringify(screenshotResponse.result).length;
-  const otherBytes = totalBytes - imageLength;
-  const expectedTokens = Math.ceil(otherBytes / 4 + imageLength / 6);
-  assert.equal(estimate.approxTokens, expectedTokens);
+  const expectedBytes = new TextEncoder().encode(JSON.stringify(screenshotResponse.result)).length;
+  assert.equal(estimate.responseBytes, expectedBytes);
+  assert.equal(estimate.approxTokens, Math.ceil(expectedBytes / 4));
 });
 
-test('estimateResponseTokens handles failure responses', () => {
+test('estimateResponseTokens counts failure payloads', () => {
   const failResponse = /** @type {any} */ ({
     ok: false,
     result: null,
     error: { code: 'ACCESS_DENIED', message: 'Denied', details: null }
   });
   const estimate = estimateResponseTokens(failResponse);
-  assert.equal(estimate.responseBytes, 0);
-  assert.equal(estimate.approxTokens, 0);
+  const expectedBytes = new TextEncoder().encode(JSON.stringify({ error: failResponse.error })).length;
+  assert.equal(estimate.responseBytes, expectedBytes);
+  assert.equal(estimate.approxTokens, Math.ceil(expectedBytes / 4));
   assert.equal(estimate.hasScreenshot, false);
   assert.equal(estimate.nodeCount, null);
+});
+
+test('estimateResponseTokens uses UTF-8 byte length for unicode payloads', () => {
+  const response = /** @type {any} */ ({
+    ok: true,
+    result: { value: 'こんにちは' }
+  });
+  const estimate = estimateResponseTokens(response);
+  const expectedBytes = new TextEncoder().encode(JSON.stringify(response.result)).length;
+  assert.equal(estimate.responseBytes, expectedBytes);
+  assert.ok(expectedBytes > JSON.stringify(response.result).length);
 });
 
 test('getResponseDiagnostics marks debugger-backed heavy responses', () => {

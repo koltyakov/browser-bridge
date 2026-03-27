@@ -22,6 +22,9 @@ export {};
  * @typedef {{
  *   protocol_version?: string,
  *   token_budget?: number | null,
+ *   transport_bytes?: number,
+ *   transport_approx_tokens?: number,
+ *   transport_cost_class?: 'cheap' | 'moderate' | 'heavy' | 'extreme',
  *   source?: BridgeRequestSource,
  *   response_bytes?: number,
  *   approx_tokens?: number,

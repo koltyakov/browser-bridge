@@ -5,6 +5,7 @@ import {
   DEFAULT_CONSOLE_LIMIT,
   DEFAULT_MAX_HTML_LENGTH,
   DEFAULT_NETWORK_LIMIT,
+  estimateJsonPayloadCost,
   getBudgetPreset,
   isBudgetPresetName,
   METHODS,
@@ -15,7 +16,10 @@ import {
   resolveRef,
   withBridgeClient
 } from '../../agent-client/src/runtime.js';
-import { summarizeBridgeResponse } from '../../agent-client/src/subagent.js';
+import {
+  annotateBridgeSummary,
+  summarizeBridgeResponse,
+} from '../../agent-client/src/subagent.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
@@ -37,10 +41,20 @@ const REQUEST_SOURCE = 'mcp';
  * @returns {ToolResult}
  */
 function createToolResult(summary, structuredContent = {}, isError = false) {
-  return {
-    content: [{ type: 'text', text: summary }],
+  const toolResult = {
+    content: [{ type: /** @type {'text'} */ ('text'), text: summary }],
     structuredContent,
     ...(isError ? { isError: true } : {})
+  };
+  const delivered = estimateJsonPayloadCost(toolResult);
+  return {
+    ...toolResult,
+    structuredContent: {
+      ...structuredContent,
+      deliveredBytes: delivered.bytes,
+      deliveredTokens: delivered.approxTokens,
+      deliveredCostClass: delivered.costClass,
+    },
   };
 }
 
@@ -50,7 +64,7 @@ function createToolResult(summary, structuredContent = {}, isError = false) {
  * @returns {ToolResult}
  */
 function summarizeToolResponse(response, method) {
-  const summary = summarizeBridgeResponse(response, method);
+  const summary = annotateBridgeSummary(summarizeBridgeResponse(response, method), response);
   return createToolResult(summary.summary, summary, !summary.ok);
 }
 
@@ -679,7 +693,7 @@ export async function handleBatchTool(args) {
             ...(tokenBudget != null ? { token_budget: tokenBudget } : {}),
           },
         });
-        const summary = summarizeBridgeResponse(response, method);
+        const summary = annotateBridgeSummary(summarizeBridgeResponse(response, method), response);
         return {
           method,
           tabId,

@@ -83,6 +83,9 @@ import {
  *   responseBytes: number,
  *   approxTokens: number,
  *   costClass: 'cheap' | 'moderate' | 'heavy' | 'extreme',
+ *   summaryBytes: number,
+ *   summaryTokens: number,
+ *   summaryCostClass: 'cheap' | 'moderate' | 'heavy' | 'extreme',
  *   debuggerBacked: boolean,
  *   overBudget: boolean,
  *   hasScreenshot: boolean,
@@ -1186,6 +1189,7 @@ function renderActionLogEntry(entry, setupStatus, entries, index) {
   if (entry.approxTokens > 0) {
     const tokenLine = document.createElement('span');
     tokenLine.className = 'muted activity-tokens';
+    /** @type {string[]} */
     const parts = [`\u2248${entry.approxTokens.toLocaleString()} tok`];
     if (entry.nodeCount != null) {
       parts.push(`${entry.nodeCount}n`);
@@ -1250,7 +1254,10 @@ function createActivityBadge(label, className) {
  */
 function countRecentExpensiveRepeats(entries, index) {
   const current = entries[index];
-  if (!current || (!current.debuggerBacked && current.costClass !== 'heavy' && current.costClass !== 'extreme')) {
+  const currentCostClass = current?.summaryTokens > 0
+    ? current.summaryCostClass
+    : current?.costClass;
+  if (!current || (!current.debuggerBacked && currentCostClass !== 'heavy' && currentCostClass !== 'extreme')) {
     return 0;
   }
 
@@ -1260,7 +1267,10 @@ function countRecentExpensiveRepeats(entries, index) {
     if (!candidate || candidate.method !== current.method) {
       break;
     }
-    if (candidate.debuggerBacked || candidate.costClass === 'heavy' || candidate.costClass === 'extreme') {
+    const candidateCostClass = candidate.summaryTokens > 0
+      ? candidate.summaryCostClass
+      : candidate.costClass;
+    if (candidate.debuggerBacked || candidateCostClass === 'heavy' || candidateCostClass === 'extreme') {
       count += 1;
     }
   }

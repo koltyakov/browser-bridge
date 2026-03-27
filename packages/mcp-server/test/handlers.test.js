@@ -285,7 +285,7 @@ test('grouped MCP tools accept explicit tabId and budget presets', async () => {
     }
     return ok({ value: 'Ready', truncated: false, length: 5 });
   }, async (calls) => {
-    await handleDomTool({
+    const domResult = await handleDomTool({
       action: 'query',
       selector: 'main',
       tabId: 88,
@@ -306,6 +306,12 @@ test('grouped MCP tools accept explicit tabId and budget presets', async () => {
     assert.equal(domCall.params.maxDepth, 2);
     assert.equal(domCall.params.textBudget, 300);
     assert.equal(domCall.meta.token_budget, 500);
+    const deliveredTokens = Number(domResult.structuredContent.deliveredTokens);
+    const summaryTokens = Number(domResult.structuredContent.summaryTokens);
+    const transportTokens = Number(domResult.structuredContent.transportTokens);
+    assert.ok(deliveredTokens > 0);
+    assert.ok(summaryTokens > 0);
+    assert.ok(transportTokens > 0);
 
     assert.ok(pageTextCall);
     assert.equal(pageTextCall.tabId, 88);

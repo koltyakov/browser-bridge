@@ -31,7 +31,10 @@ import {
   isMcpClientName,
   removeMcpConfig,
 } from '../src/mcp-config.js';
-import { summarizeBridgeResponse } from '../src/subagent.js';
+import {
+  annotateBridgeSummary,
+  summarizeBridgeResponse,
+} from '../src/subagent.js';
 
 /** Ensure failures stay compact for parent-agent reporting. */
 test('summarizeBridgeResponse condenses failures', () => {
@@ -49,6 +52,32 @@ test('summarizeBridgeResponse condenses failures', () => {
 
   assert.equal(summary.ok, false);
   assert.match(summary.summary, /ACCESS_DENIED/);
+});
+
+test('annotateBridgeSummary exposes transport and summary estimates', () => {
+  const response = /** @type {import('../../protocol/src/types.js').BridgeResponse} */ ({
+    id: 'req_meta',
+    ok: true,
+    result: { nodes: [{ tag: 'div', textExcerpt: 'hello' }] },
+    error: null,
+    meta: {
+      protocol_version: '1.0',
+      transport_bytes: 640,
+      transport_approx_tokens: 160,
+      transport_cost_class: 'moderate',
+    },
+  });
+
+  const summary = annotateBridgeSummary(
+    summarizeBridgeResponse(response),
+    response,
+  );
+
+  assert.equal(summary.transportBytes, 640);
+  assert.equal(summary.transportTokens, 160);
+  assert.equal(summary.transportCostClass, 'moderate');
+  assert.ok(summary.summaryBytes > 0);
+  assert.ok(summary.summaryTokens > 0);
 });
 
 test('summarizeBridgeResponse adds stale element recovery hint', () => {
