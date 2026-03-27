@@ -15,7 +15,6 @@ import {
   handlePageTool,
   handlePatchTool,
   handleRawCallTool,
-  handleSessionTool,
   handleSetupTool,
   handleSkillTool,
   handleStatusTool,
@@ -24,7 +23,6 @@ import {
 } from './handlers.js';
 import {
   BUDGET_PRESETS,
-  DEFAULT_CAPABILITIES,
   DEFAULT_CONSOLE_LIMIT,
   DEFAULT_MAX_DEPTH,
   DEFAULT_MAX_HTML_LENGTH,
@@ -35,8 +33,8 @@ import {
 } from '../../protocol/src/index.js';
 
 export const BUDGET_PRESET_DESCRIPTION = `Budget preset: "quick", "normal", or "deep" (defaults: query ${BUDGET_PRESETS.normal.maxNodes} nodes / depth ${BUDGET_PRESETS.normal.maxDepth} / text ${BUDGET_PRESETS.normal.textBudget}). Numeric fields override the preset when both are provided.`;
-export const SESSION_ID_DESCRIPTION = 'Explicit session ID. Use to target a specific approved tab instead of the saved default session.';
-export const CAPABILITY_DESCRIPTION = `Requested capabilities. Defaults to: ${DEFAULT_CAPABILITIES.join(', ')}.`;
+export const TAB_ID_DESCRIPTION = 'Explicit tab ID. Use to target a specific tab inside the enabled window instead of the default active-tab routing.';
+export const ACCESS_REQUEST_FLOW_DESCRIPTION = 'If a tab-bound call returns ACCESS_DENIED because Browser Bridge is off, that failed call already surfaces an Enable cue in the extension popup/side panel for the relevant window. Ask the user to click Enable, then retry once.';
 
 /**
  * @returns {McpServer}
@@ -49,7 +47,7 @@ export function createBridgeMcpServer() {
 
   server.registerTool('browser_status', {
     title: 'Browser Bridge Status',
-    description: 'Check Browser Bridge readiness, daemon connectivity, extension state, and session health.',
+    description: `Check Browser Bridge readiness, daemon connectivity, extension state, and access routing health. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
     inputSchema: {}
   }, handleStatusTool);
 
@@ -63,7 +61,7 @@ export function createBridgeMcpServer() {
 
   server.registerTool('browser_logs', {
     title: 'Browser Bridge Logs',
-    description: 'Tail recent bridge logs for debugging connection or session issues.',
+    description: 'Tail recent bridge logs for debugging connection or access-routing issues.',
     inputSchema: {
       limit: z.number().optional().describe(`Maximum log entries to return (default: ${DEFAULT_CONSOLE_LIMIT})`),
       budgetPreset: z.enum(['quick', 'normal', 'deep']).optional().describe(BUDGET_PRESET_DESCRIPTION)
@@ -72,7 +70,7 @@ export function createBridgeMcpServer() {
 
   server.registerTool('browser_health', {
     title: 'Browser Bridge Health',
-    description: 'Ping the bridge to verify daemon and extension connectivity.',
+    description: `Ping the bridge to verify daemon and extension connectivity. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
     inputSchema: {}
   }, handleHealthTool);
 
@@ -87,26 +85,12 @@ export function createBridgeMcpServer() {
     }
   }, handleTabsTool);
 
-  server.registerTool('browser_session', {
-    title: 'Browser Session',
-    description: 'Request access to a tab, inspect the saved session, or revoke the current session. ACCESS REQUEST FLOW: request_access requires user approval in the extension popup - expect a brief delay. On APPROVAL_PENDING, wait ~3s and retry up to 4 times. If still pending, tell the user: "Please approve the request in the Browser Bridge extension popup, then type READY so I can continue." Retry once after they respond.',
-    inputSchema: {
-      action: z.enum(['request_access', 'get_status', 'revoke']).describe('Session operation: request_access prompts user, get_status/revoke use saved session'),
-      sessionId: z.string().optional().describe('Explicit session ID (uses saved session if omitted)'),
-      tabId: z.number().optional().describe('Tab ID to request access to (uses active tab if omitted)'),
-      origin: z.string().optional().describe('Origin pattern to match (e.g., "https://example.com")'),
-      capabilities: z.array(z.string()).optional().describe(CAPABILITY_DESCRIPTION),
-      ttlMs: z.number().optional().describe('Session lifetime in milliseconds'),
-      label: z.string().optional().describe('Human-readable label for the session')
-    }
-  }, handleSessionTool);
-
   server.registerTool('browser_dom', {
     title: 'Browser DOM',
-    description: 'Query, describe, read, wait for, or search DOM elements in the approved live tab. Use elementRef from prior results to avoid re-querying. `accessibility_tree` is debugger-backed and should be a last resort after query/find actions.',
+    description: `Query, describe, read, wait for, or search DOM elements in the live tab. Default routing follows the active tab in the enabled window. Use elementRef from prior results to avoid re-querying. \`accessibility_tree\` is debugger-backed and should be a last resort after query/find actions. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
     inputSchema: {
       action: z.enum(['query', 'describe', 'text', 'attributes', 'wait', 'find_text', 'find_role', 'html', 'accessibility_tree']).describe('DOM operation to perform'),
-      sessionId: z.string().optional().describe(SESSION_ID_DESCRIPTION),
+      tabId: z.number().optional().describe(TAB_ID_DESCRIPTION),
       budgetPreset: z.enum(['quick', 'normal', 'deep']).optional().describe(BUDGET_PRESET_DESCRIPTION),
       selector: z.string().optional().describe('CSS selector (used if no elementRef; resolves to first match)'),
       elementRef: z.string().optional().describe('Element reference from prior query (preferred over selector)'),
@@ -131,10 +115,10 @@ export function createBridgeMcpServer() {
 
   server.registerTool('browser_styles_layout', {
     title: 'Browser Styles And Layout',
-    description: 'Read computed styles, matched CSS rules, box models, and perform hit tests. Use elementRef from prior queries.',
+    description: `Read computed styles, matched CSS rules, box models, and perform hit tests. Default routing follows the active tab in the enabled window. Use elementRef from prior queries. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
     inputSchema: {
       action: z.enum(['computed', 'matched_rules', 'box_model', 'hit_test']).describe('Style/layout operation to perform'),
-      sessionId: z.string().optional().describe(SESSION_ID_DESCRIPTION),
+      tabId: z.number().optional().describe(TAB_ID_DESCRIPTION),
       budgetPreset: z.enum(['quick', 'normal', 'deep']).optional().describe(BUDGET_PRESET_DESCRIPTION),
       elementRef: z.string().optional().describe('Element reference (preferred over selector)'),
       selector: z.string().optional().describe('CSS selector (used if no elementRef)'),
@@ -146,10 +130,10 @@ export function createBridgeMcpServer() {
 
   server.registerTool('browser_page', {
     title: 'Browser Page State',
-    description: 'Read page state, evaluate JavaScript, inspect console/network, fetch storage, or get performance metrics. `evaluate` and `performance` are debugger-backed and should be used only after lighter reads fail.',
+    description: `Read page state, evaluate JavaScript, inspect console/network, fetch storage, or get performance metrics. Default routing follows the active tab in the enabled window. \`evaluate\` and \`performance\` are debugger-backed and should be used only after lighter reads fail. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
     inputSchema: {
       action: z.enum(['state', 'evaluate', 'console', 'wait_for_load', 'storage', 'text', 'network', 'performance']).describe('Page operation to perform'),
-      sessionId: z.string().optional().describe(SESSION_ID_DESCRIPTION),
+      tabId: z.number().optional().describe(TAB_ID_DESCRIPTION),
       budgetPreset: z.enum(['quick', 'normal', 'deep']).optional().describe(BUDGET_PRESET_DESCRIPTION),
       expression: z.string().optional().describe('JavaScript expression to evaluate (for evaluate action)'),
       awaitPromise: z.boolean().optional().describe('Await returned promises (default: false)'),
@@ -167,10 +151,10 @@ export function createBridgeMcpServer() {
 
   server.registerTool('browser_navigation', {
     title: 'Browser Navigation',
-    description: 'Navigate, reload, move through history, scroll, or resize the approved live tab. `resize` is debugger-backed and should be used only when an exact viewport override is required.',
+    description: `Navigate, reload, move through history, scroll, or resize the live tab. Default routing follows the active tab in the enabled window. \`resize\` is debugger-backed and should be used only when an exact viewport override is required. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
     inputSchema: {
       action: z.enum(['navigate', 'reload', 'go_back', 'go_forward', 'scroll', 'resize']).describe('Navigation operation to perform'),
-      sessionId: z.string().optional().describe(SESSION_ID_DESCRIPTION),
+      tabId: z.number().optional().describe(TAB_ID_DESCRIPTION),
       budgetPreset: z.enum(['quick', 'normal', 'deep']).optional().describe(BUDGET_PRESET_DESCRIPTION),
       url: z.string().optional().describe('URL to navigate to (for navigate action)'),
       waitForLoad: z.boolean().optional().describe('Wait for load event (default: true)'),
@@ -187,10 +171,10 @@ export function createBridgeMcpServer() {
 
   server.registerTool('browser_input', {
     title: 'Browser Input',
-    description: 'Simulate user input: click, focus, type, press keys, set checked, select options, hover, or drag. Use elementRef from prior queries.',
+    description: `Simulate user input: click, focus, type, press keys, set checked, select options, hover, or drag. Default routing follows the active tab in the enabled window. Use elementRef from prior queries. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
     inputSchema: {
       action: z.enum(['click', 'focus', 'type', 'press_key', 'set_checked', 'select_option', 'hover', 'drag']).describe('Input operation to perform'),
-      sessionId: z.string().optional().describe(SESSION_ID_DESCRIPTION),
+      tabId: z.number().optional().describe(TAB_ID_DESCRIPTION),
       budgetPreset: z.enum(['quick', 'normal', 'deep']).optional().describe(BUDGET_PRESET_DESCRIPTION),
       elementRef: z.string().optional().describe('Target element reference (preferred over selector)'),
       selector: z.string().optional().describe('CSS selector (used if no elementRef)'),
@@ -217,10 +201,10 @@ export function createBridgeMcpServer() {
 
   server.registerTool('browser_patch', {
     title: 'Browser Patch',
-    description: 'Apply reversible style or DOM patches. All patches can be rolled back. Use to prototype UI changes without modifying source.',
+    description: `Apply reversible style or DOM patches. All patches can be rolled back. Use to prototype UI changes without modifying source. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
     inputSchema: {
       action: z.enum(['apply_styles', 'apply_dom', 'list', 'rollback', 'commit_baseline']).describe('Patch operation to perform'),
-      sessionId: z.string().optional().describe(SESSION_ID_DESCRIPTION),
+      tabId: z.number().optional().describe(TAB_ID_DESCRIPTION),
       budgetPreset: z.enum(['quick', 'normal', 'deep']).optional().describe(BUDGET_PRESET_DESCRIPTION),
       elementRef: z.string().optional().describe('Target element reference (preferred over selector)'),
       selector: z.string().optional().describe('CSS selector (used if no elementRef)'),
@@ -235,10 +219,10 @@ export function createBridgeMcpServer() {
 
   server.registerTool('browser_capture', {
     title: 'Browser Capture',
-    description: 'Capture screenshots or CDP snapshots. Use only when structured reads are insufficient. All capture actions are debugger-backed and token-expensive.',
+    description: `Capture screenshots or CDP snapshots. Use only when structured reads are insufficient. All capture actions are debugger-backed and token-expensive. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
     inputSchema: {
       action: z.enum(['element', 'region', 'cdp_document', 'cdp_dom_snapshot', 'cdp_box_model', 'cdp_computed_styles']).describe('Capture operation: element/region for screenshots, cdp_* for low-level data'),
-      sessionId: z.string().optional().describe(SESSION_ID_DESCRIPTION),
+      tabId: z.number().optional().describe(TAB_ID_DESCRIPTION),
       budgetPreset: z.enum(['quick', 'normal', 'deep']).optional().describe(BUDGET_PRESET_DESCRIPTION),
       elementRef: z.string().optional().describe('Element reference to screenshot (for element action)'),
       selector: z.string().optional().describe('CSS selector (used if no elementRef)'),
@@ -253,12 +237,12 @@ export function createBridgeMcpServer() {
 
   server.registerTool('browser_batch', {
     title: 'Browser Bridge Batch',
-    description: 'Execute multiple existing Browser Bridge calls in parallel. Preserves call order in the response and reuses one resolved default session when possible.',
+    description: `Execute multiple existing Browser Bridge calls in parallel. Preserves call order in the response and reuses one resolved default routed tab when possible. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
     inputSchema: {
       calls: z.array(z.object({
         method: z.string().describe('Bridge method name (e.g. "dom.query", "page.get_text")'),
         params: z.record(z.string(), z.unknown()).optional().describe('Method params for this call'),
-        sessionId: z.string().optional().describe(SESSION_ID_DESCRIPTION),
+        tabId: z.number().optional().describe(TAB_ID_DESCRIPTION),
         budgetPreset: z.enum(['quick', 'normal', 'deep']).optional().describe(BUDGET_PRESET_DESCRIPTION)
       })).min(1).describe('Calls to execute in parallel')
     }
@@ -266,11 +250,11 @@ export function createBridgeMcpServer() {
 
   server.registerTool('browser_call', {
     title: 'Raw Browser Bridge Call',
-    description: 'Call any Browser Bridge method directly. Escape hatch when grouped tools are insufficient. Prefer specific tools when available.',
+    description: `Call any Browser Bridge method directly. Escape hatch when grouped tools are insufficient. Prefer specific tools when available. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
     inputSchema: {
       method: z.string().describe('Bridge method name (e.g., "dom.query", "input.click")'),
       params: z.record(z.string(), z.unknown()).optional().describe('Method parameters as object'),
-      sessionId: z.string().optional().describe('Explicit session ID (uses saved session if omitted)')
+      tabId: z.number().optional().describe(TAB_ID_DESCRIPTION)
     }
   }, handleRawCallTool);
 

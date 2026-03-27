@@ -12,11 +12,11 @@ import { parseCommaList, parseIntArg, parsePropertyAssignments } from './cli-hel
  *   usage: string,
  *   description: string,
  *   build: (r: string[], ref?: string) => Record<string, unknown>
- * }} SessionCommand
+ * }} ShortcutCommand
  */
 
-/** @type {Record<string, SessionCommand>} */
-export const SESSION_COMMANDS = {
+/** @type {Record<string, ShortcutCommand>} */
+export const SHORTCUT_COMMANDS = {
   'dom-query': {
     method: 'dom.query',
     usage: 'bbx dom-query [selector]',
@@ -225,11 +225,8 @@ export const CLI_METHOD_BINDINGS = Object.freeze({
   tabs: 'tabs.list',
   'tab-create': 'tabs.create',
   'tab-close': 'tabs.close',
-  'request-access': 'session.request_access',
-  session: 'session.get_status',
-  revoke: 'session.revoke',
   ...Object.fromEntries(
-    Object.entries(SESSION_COMMANDS).map(([command, definition]) => [command, definition.method])
+    Object.entries(SHORTCUT_COMMANDS).map(([command, definition]) => [command, definition.method])
   ),
   'press-key': 'input.press_key',
   screenshot: 'screenshot.capture_element',
@@ -246,7 +243,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
       'bbx install-skill [targets|all] [--global] [--project <path>]      Install/update the managed Browser Bridge CLI skill',
       'bbx install-mcp [client|all] [--local]                             Write MCP config for codex|claude|cursor|copilot|opencode|antigravity|windsurf',
       'bbx status                                                         Check bridge connection',
-      'bbx doctor                                                         Diagnose install, daemon, extension, and session readiness',
+      'bbx doctor                                                         Diagnose install, daemon, extension, and access readiness',
       'bbx logs                                                           Recent bridge logs',
       'bbx tabs                                                           List available tabs',
       'bbx tab-create [url]                                               Create a new tab',
@@ -256,19 +253,10 @@ export const CLI_HELP_SECTIONS = Object.freeze([
     ]
   },
   {
-    title: 'Session',
-    lines: [
-      'bbx request-access [tabId] [origin]                                Create session for enabled tab',
-      'bbx session                                                        Show current session',
-      'bbx revoke                                                         End current session'
-    ]
-  },
-  {
     title: 'Generic RPC',
     lines: [
-      'bbx call <method> [paramsJson|-]                                   Call any bridge method (- reads JSON from stdin)',
-      'bbx call <sessionId> <method> [json]                               Call with explicit session',
-      'bbx batch \'[{method,params},...]\'                                  Parallel method calls',
+      'bbx call [--tab <tabId>] <method> [paramsJson|-]                   Call any bridge method (- reads JSON from stdin)',
+      'bbx batch \'[{method,params,tabId?},...]\'                           Parallel method calls',
       'Advanced bridge params stay available through `bbx call`, even when shortcuts expose only the common case.'
     ]
   },
@@ -283,7 +271,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
         'styles',
         'box',
         'a11y-tree'
-      ].map((command) => `${SESSION_COMMANDS[command].usage.padEnd(64)} ${SESSION_COMMANDS[command].description}`)
+      ].map((command) => `${SHORTCUT_COMMANDS[command].usage.padEnd(64)} ${SHORTCUT_COMMANDS[command].description}`)
     ]
   },
   {
@@ -293,7 +281,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
         'find',
         'find-role',
         'wait'
-      ].map((command) => `${SESSION_COMMANDS[command].usage.padEnd(64)} ${SESSION_COMMANDS[command].description}`)
+      ].map((command) => `${SHORTCUT_COMMANDS[command].usage.padEnd(64)} ${SHORTCUT_COMMANDS[command].description}`)
     ]
   },
   {
@@ -309,7 +297,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
         'perf',
         'scroll',
         'resize'
-      ].map((command) => `${SESSION_COMMANDS[command].usage.padEnd(64)} ${SESSION_COMMANDS[command].description}`)
+      ].map((command) => `${SHORTCUT_COMMANDS[command].usage.padEnd(64)} ${SHORTCUT_COMMANDS[command].description}`)
     ]
   },
   {
@@ -320,7 +308,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
         'focus',
         'type',
         'hover'
-      ].map((command) => `${SESSION_COMMANDS[command].usage.padEnd(64)} ${SESSION_COMMANDS[command].description}`),
+      ].map((command) => `${SHORTCUT_COMMANDS[command].usage.padEnd(64)} ${SHORTCUT_COMMANDS[command].description}`),
       'bbx press-key <key> [ref|selector]                                 Send key event'
     ]
   },
@@ -332,7 +320,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
         'patch-text',
         'patches',
         'rollback'
-      ].map((command) => `${SESSION_COMMANDS[command].usage.padEnd(64)} ${SESSION_COMMANDS[command].description}`)
+      ].map((command) => `${SHORTCUT_COMMANDS[command].usage.padEnd(64)} ${SHORTCUT_COMMANDS[command].description}`)
     ]
   },
   {

@@ -6,7 +6,8 @@
  *   windowId: number,
  *   title: string,
  *   url: string,
- *   enabled: boolean
+ *   enabled: boolean,
+ *   accessRequested: boolean
  * }} PopupCurrentTab
  */
 
@@ -22,7 +23,8 @@
 
 const nativeIndicator = /** @type {HTMLSpanElement} */ (document.getElementById('native-indicator'));
 const button = /** @type {HTMLButtonElement} */ (document.getElementById('communication-action'));
-const port = chrome.runtime.connect({ name: 'ui' });
+const controlCard = /** @type {HTMLElement | null} */ (document.querySelector('.popup-control-card'));
+const port = chrome.runtime.connect({ name: 'ui-popup' });
 /** @type {PopupCurrentTab | null} */
 let currentTabState = null;
 
@@ -54,11 +56,13 @@ function renderPopupState(currentTab) {
   if (!currentTab) {
     button.textContent = 'Enable';
     button.disabled = true;
+    controlCard?.classList.remove('attention');
     return;
   }
 
   button.textContent = currentTab.enabled ? 'Disable' : 'Enable';
   button.disabled = !currentTab.url;
+  controlCard?.classList.toggle('attention', currentTab.accessRequested && !currentTab.enabled);
 }
 
 /**

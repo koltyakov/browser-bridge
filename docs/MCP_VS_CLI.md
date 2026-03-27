@@ -19,9 +19,7 @@ This document provides a comprehensive comparison of the two integration paths f
 | Capability | MCP Tool | CLI Command | Notes |
 |------------|----------|-------------|-------|
 | Health check | `browser_status` | `bbx status`, `bbx doctor` | CLI has separate status/doctor |
-| Request tab access | `browser_session` (request_access) | `bbx request-access` | Equivalent |
-| Session status | `browser_session` (get_status) | `bbx call session.get_status` | CLI uses raw call |
-| Revoke session | `browser_session` (revoke) | `bbx call session.revoke` | CLI uses raw call |
+| Access state | `browser_status`, `browser_health` | `bbx status`, `bbx doctor` | Reports window-scoped access and routed tab readiness |
 | Runtime presets | `browser_skill` | `bbx skill` | Equivalent |
 
 ### Tab Management
@@ -179,8 +177,8 @@ bbx call dom.query '{"selector": ".sidebar", "maxNodes": 20}'
 | Parameter format | JSON object | CLI args or JSON string |
 | Output format | Tool result content | `{ok, summary, evidence}` JSON |
 | Error handling | Tool error response | JSON with `ok: false` |
-| Session management | Automatic via tool context | Auto-refreshed, or via `request-access` |
-| Explicit session targeting | `sessionId` on grouped tools | explicit session id with `bbx call <sessionId> ...` |
+| Access routing | Follows active tab in enabled window by default | Follows active tab in enabled window by default |
+| Explicit targeting | `tabId` on grouped tools | `bbx call --tab <tabId> ...` |
 | Concurrency | Multiple tool calls | `batch` command or parallel shells |
 
 ## Use Case Recommendations

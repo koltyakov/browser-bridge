@@ -17,7 +17,7 @@ import { writeJsonLine } from './framing.js';
 /** @typedef {import('../../protocol/src/types.js').SetupInstallResult} SetupInstallResult */
 /** @typedef {import('../../protocol/src/types.js').SetupStatus} SetupStatus */
 /** @typedef {import('node:net').Socket & { __clientId?: string }} ClientSocket */
-/** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string }} PendingEntry */
+/** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string, method?: string }} PendingEntry */
 
 /**
  * @typedef {{
@@ -239,13 +239,15 @@ export class BridgeDaemon {
   async handleAgentRequest(socket, message) {
     const request = validateBridgeRequest(message.request);
     if (request.method === 'health.ping') {
-      const response = createSuccess(request.id, {
-        daemon: 'ok',
-        extensionConnected: Boolean(this.extensionSocket),
-        socketPath: this.socketPath
-      });
-      await writeJsonLine(socket, { type: 'agent.response', response });
-      return;
+      if (!this.extensionSocket) {
+        const response = createSuccess(request.id, {
+          daemon: 'ok',
+          extensionConnected: false,
+          socketPath: this.socketPath
+        });
+        await writeJsonLine(socket, { type: 'agent.response', response });
+        return;
+      }
     }
 
     if (request.method === 'log.tail') {
@@ -295,6 +297,7 @@ export class BridgeDaemon {
 
     this.pendingRequests.set(request.id, {
       socket,
+      method: request.method,
       source: typeof request.meta?.source === 'string' ? request.meta.source : '',
       timeoutId: setTimeout(() => {
         const pending = this.pendingRequests.get(request.id);
@@ -352,9 +355,21 @@ export class BridgeDaemon {
       id: message.response.id,
       source: pending.source || null
     });
+    const response = pending.method === 'health.ping' && message.response.ok
+      ? createSuccess(message.response.id, {
+        daemon: 'ok',
+        extensionConnected: true,
+        socketPath: this.socketPath,
+        .../** @type {Record<string, unknown>} */ (message.response.result)
+      }, {
+        ...message.response.meta,
+        method: message.response.meta?.method ?? pending.method
+      })
+      : message.response;
+
     await writeJsonLine(pending.socket, {
       type: 'agent.response',
-      response: message.response
+      response
     });
   }
 

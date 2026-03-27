@@ -1,7 +1,7 @@
 // @ts-check
 
 import readline from 'node:readline';
-import { bridgeMethodNeedsSession } from '../../protocol/src/index.js';
+import { bridgeMethodNeedsTab } from '../../protocol/src/index.js';
 
 /**
  * @param {string[]} values
@@ -76,9 +76,11 @@ export function parseIntArg(value, argName) {
  * @param {string} method
  * @returns {boolean}
  */
-export function methodNeedsSession(method) {
-  return bridgeMethodNeedsSession(method);
+export function methodNeedsTab(method) {
+  return bridgeMethodNeedsTab(method);
 }
+
+export const methodNeedsSession = methodNeedsTab;
 
 /**
  * Present an interactive checkbox list on the terminal.

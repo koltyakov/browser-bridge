@@ -138,18 +138,18 @@ export class BridgeClient {
    * @param {{
    *   method: BridgeMethod,
    *   params?: Record<string, unknown>,
-   *   sessionId?: string | null,
+   *   tabId?: number | null,
    *   meta?: BridgeMeta,
    *   timeoutMs?: number
    * }} options
    * @returns {Promise<BridgeResponse>}
    */
-  async request({ method, params = {}, sessionId = null, meta = {}, timeoutMs = this.defaultTimeoutMs }) {
+  async request({ method, params = {}, tabId = null, meta = {}, timeoutMs = this.defaultTimeoutMs }) {
     const request = createRequest({
       id: `req_${randomUUID()}`,
       method,
       params,
-      sessionId,
+      tabId,
       meta
     });
 

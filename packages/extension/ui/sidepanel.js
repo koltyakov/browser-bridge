@@ -65,7 +65,8 @@ import {
  *   windowId: number,
  *   title: string,
  *   url: string,
- *   enabled: boolean
+ *   enabled: boolean,
+ *   accessRequested: boolean
  * }} SidePanelCurrentTab
  */
 
@@ -92,19 +93,8 @@ import {
 
 /**
  * @typedef {{
- *   sessionId: string,
- *   tabId: number,
- *   origin: string,
- *   capabilities: string[],
- *   expiresAt: number
- * }} SidePanelSession
- */
-
-/**
- * @typedef {{
  *   nativeConnected: boolean,
  *   currentTab: SidePanelCurrentTab | null,
- *   activeSession: SidePanelSession | null,
  *   setupStatus: SetupStatus | null,
  *   setupStatusPending: boolean,
  *   setupStatusError: string | null,
@@ -122,9 +112,6 @@ import {
  * } | {
  *   type: 'state.sync',
  *   state: UiSnapshot
- * } | {
- *   type: 'attention.request',
- *   tabId: number
  * }} SidePanelMessage
  */
 
@@ -201,7 +188,7 @@ const examplesSection = /** @type {HTMLDetailsElement} */ (
 const examplesContent = /** @type {HTMLDivElement} */ (
   document.getElementById('examples-content')
 );
-const port = chrome.runtime.connect({ name: 'ui' });
+const port = chrome.runtime.connect({ name: 'ui-sidepanel' });
 const requestedTabId = Number(
   new URLSearchParams(window.location.search).get('tabId'),
 );
@@ -279,10 +266,6 @@ port.onMessage.addListener((message) => {
 
   if (message.type === 'state.sync') {
     renderState(message.state);
-  }
-
-  if (message.type === 'attention.request') {
-    pulseAttention();
   }
 });
 
@@ -417,12 +400,14 @@ function renderCurrentTab(currentTab) {
   if (!currentTab) {
     toggleButton.textContent = 'Unavailable';
     toggleButton.disabled = true;
+    controlSection.classList.remove('attention');
     return;
   }
 
   toggleButton.textContent = currentTab.enabled ? 'Disable' : 'Enable';
   toggleButton.disabled = !currentTab.url;
   toggleButton.dataset.enabled = String(currentTab.enabled);
+  controlSection.classList.toggle('attention', currentTab.accessRequested && !currentTab.enabled);
 }
 
 /**
@@ -1131,26 +1116,6 @@ function createStatusPlaceholder(text) {
   row.className = 'setup-status-placeholder';
   row.textContent = text;
   return row;
-}
-
-/**
- * Briefly highlight the control card to draw attention when an agent is waiting
- * for permission and the side panel is already visible.
- *
- * @returns {void}
- */
-function pulseAttention() {
-  controlSection.classList.remove('attention');
-  // Force a reflow so re-adding the class restarts the animation.
-  void controlSection.offsetWidth;
-  controlSection.classList.add('attention');
-  controlSection.addEventListener(
-    'animationend',
-    () => {
-      controlSection.classList.remove('attention');
-    },
-    { once: true },
-  );
 }
 
 /**

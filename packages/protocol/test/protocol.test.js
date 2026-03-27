@@ -4,20 +4,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  DEFAULT_CAPABILITIES,
   BUDGET_PRESETS,
   BRIDGE_METHODS,
   BRIDGE_METHOD_REGISTRY,
   ERROR_CODES,
   applyBudget,
-  bridgeMethodNeedsSession,
+  bridgeMethodNeedsTab,
   createFailure,
   createBridgeMethodGroups,
   createRequest,
   createRuntimeContext,
   normalizeCheckedAction,
   createSuccess,
-  normalizeAccessRequest,
   normalizeInputAction,
   normalizeNavigationAction,
   normalizePatchOperation,
@@ -68,30 +66,14 @@ test('createRequest adds protocol metadata', () => {
   assert.equal(request.meta.protocol_version, '1.0');
 });
 
-/** Ensure access requests inherit the default capability bundle. */
-test('normalizeAccessRequest falls back to default capabilities', () => {
-  const access = normalizeAccessRequest({
+test('createRequest includes explicit tab_id when provided', () => {
+  const request = createRequest({
+    id: 'req_2',
+    method: 'dom.query',
     tabId: 5,
-    origin: 'https://example.com'
   });
 
-  assert.deepEqual(access.capabilities, DEFAULT_CAPABILITIES);
-  assert.equal(access.capabilities.includes('automation.input'), true);
-  assert.equal(access.capabilities.includes('page.read'), true);
-  assert.equal(access.capabilities.includes('navigation.control'), true);
-  assert.equal(access.capabilities.includes('viewport.control'), true);
-  assert.equal(access.tabId, 5);
-  assert.ok(access.ttlMs >= 10 * 365 * 24 * 60 * 60 * 1000);
-});
-
-/** Ensure tab resolution can be deferred to the extension. */
-test('normalizeAccessRequest allows extension-side tab resolution', () => {
-  const access = normalizeAccessRequest({
-    origin: ''
-  });
-
-  assert.equal(access.tabId, null);
-  assert.equal(access.origin, '');
+  assert.equal(request.tab_id, 5);
 });
 
 /** Ensure success and failure responses keep the shared envelope shape. */
@@ -119,12 +101,12 @@ test('runtime context stays compact and opinionated', () => {
   assert.equal(context.flow.includes('page.get_state'), true);
 });
 
-test('bridge method registry is the source of truth for method ordering and session requirements', () => {
+test('bridge method registry is the source of truth for method ordering and tab-routing requirements', () => {
   assert.deepEqual(BRIDGE_METHODS, Object.keys(BRIDGE_METHOD_REGISTRY));
-  assert.equal(bridgeMethodNeedsSession('health.ping'), false);
-  assert.equal(bridgeMethodNeedsSession('setup.get_status'), false);
-  assert.equal(bridgeMethodNeedsSession('setup.install'), false);
-  assert.equal(bridgeMethodNeedsSession('dom.query'), true);
+  assert.equal(bridgeMethodNeedsTab('health.ping'), false);
+  assert.equal(bridgeMethodNeedsTab('setup.get_status'), false);
+  assert.equal(bridgeMethodNeedsTab('setup.install'), false);
+  assert.equal(bridgeMethodNeedsTab('dom.query'), true);
 });
 
 test('bridge method groups are derived from the registry', () => {
@@ -390,11 +372,6 @@ test('normalizeWaitForLoadStateParams defaults sensibly', () => {
   assert.equal(params.waitForLoad, true);
 });
 
-/** Ensure page.evaluate capability is included in defaults. */
-test('DEFAULT_CAPABILITIES includes page.evaluate', () => {
-  assert.ok(DEFAULT_CAPABILITIES.includes('page.evaluate'));
-});
-
 /** Ensure TIMEOUT error code exists. */
 test('ERROR_CODES includes TIMEOUT', () => {
   assert.equal(ERROR_CODES.TIMEOUT, 'TIMEOUT');
@@ -482,13 +459,6 @@ test('normalizeViewportResizeParams defaults to 1280x720', () => {
   assert.equal(params.reset, false);
 });
 
-/** Ensure new capabilities are in defaults. */
-test('DEFAULT_CAPABILITIES includes new capabilities', () => {
-  assert.ok(DEFAULT_CAPABILITIES.includes('tabs.manage'));
-  assert.ok(DEFAULT_CAPABILITIES.includes('performance.read'));
-  assert.ok(DEFAULT_CAPABILITIES.includes('network.read'));
-});
-
 /** Ensure runtime context includes new method groups. */
 test('runtime context includes new method groups', () => {
   const context = createRuntimeContext();
@@ -506,29 +476,15 @@ test('runtime context includes error descriptions', () => {
   const context = createRuntimeContext();
   assert.ok(context.errors);
   assert.ok(context.errors.ACCESS_DENIED);
-  assert.ok(context.errors.SESSION_EXPIRED);
-  assert.ok(context.errors.APPROVAL_PENDING);
   assert.ok(context.errors.ELEMENT_STALE);
   assert.ok(context.errors.TIMEOUT);
   assert.ok(context.errors.INVALID_REQUEST);
 });
 
-/** Ensure runtime context includes capability-to-method mappings. */
-test('runtime context includes capability descriptions', () => {
+test('runtime context excludes legacy capability descriptions and session methods', () => {
   const context = createRuntimeContext();
-  assert.ok(context.capabilities);
-  assert.ok(context.capabilities['page.read']);
-  assert.ok(context.capabilities['dom.read']);
-  assert.ok(context.capabilities['automation.input']);
-  assert.ok(context.capabilities['network.read']);
-});
-
-/** Ensure runtime context includes session method group. */
-test('runtime context includes session method group', () => {
-  const context = createRuntimeContext();
-  assert.ok(context.methods.session);
-  assert.ok(context.methods.session.includes('session.request_access'));
-  assert.ok(context.methods.session.includes('session.revoke'));
+  assert.equal('capabilities' in context, false);
+  assert.equal('session' in context.methods, false);
 });
 
 /** Ensure runtime context includes parameter limits. */

@@ -66,7 +66,7 @@ bbx call tabs.create '{"url":"https://example.com","active":false}'
 Typical workflow - compare two pages (only when comparison is required):
 1. `tabs.list` to see current tabs
 2. `tabs.create` with second URL
-3. Inspect both tabs (each needs its own session)
+3. Inspect both tabs (`--tab <id>` or MCP `tabId` only when you need the non-active tab)
 4. `tabs.close` when done
 
 ## Accessibility Tree
@@ -89,32 +89,25 @@ Typical workflow - find interactive controls:
 
 ## Multi-Tab Workflows
 
-Each tab requires its own session. Sessions are not shared between tabs.
+Access is window-scoped. Once the user enables Browser Bridge for a browser window, the bridge follows the active tab in that window automatically.
 
 ```bash
-# Inspect two tabs side-by-side:
-bbx tabs                             # find tabId values
-bbx request-access 100               # create session for tab 100
-bbx page-text                        # read from tab 100
+# Default routing follows the active tab in the enabled window:
+bbx tabs
+bbx page-text
 
-bbx revoke                           # end tab 100 session
-bbx request-access 200               # switch to tab 200
-bbx page-text                        # read from tab 200
+# Explicit non-active tab targeting when needed:
+bbx call --tab 100 page.get_text
+bbx call --tab 200 dom.query '{"selector":"main"}'
 ```
 
 Open a new tab programmatically:
 ```bash
-bbx tab-create https://example.com   # creates and returns new tabId
-bbx request-access <new-tabId>       # start a session on the new tab
+bbx tab-create https://example.com   # creates a new tab in the enabled window
+bbx call --tab <new-tabId> page.get_state
 ```
 
-Close comparison tabs when done:
-```bash
-bbx revoke
-bbx tab-close <tabId>
-```
-
-**Note:** `tabs.list`, `tabs.create`, and `tabs.close` do not require an active session.
+**Note:** `tabs.list`, `tabs.create`, and `tabs.close` do not require a routed tab.
 
 ## Scroll
 

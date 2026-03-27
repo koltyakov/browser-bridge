@@ -15,9 +15,8 @@
 
 ```bash
 bbx status                          # bridge health
-bbx doctor                          # install/session readiness
+bbx doctor                          # install/access readiness
 bbx install [extension-id]          # install native manifest
-bbx request-access                  # session for active tab
 bbx call <method> '{"key":"val"}'   # any RPC method
 bbx batch '[{...}]'                 # parallel reads
 bbx install-mcp [client]            # write MCP config (all clients if omitted)

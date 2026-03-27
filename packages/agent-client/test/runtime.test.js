@@ -3,37 +3,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 
 import { BRIDGE_METHOD_REGISTRY } from '../../protocol/src/index.js';
 import { CLI_METHOD_BINDINGS } from '../src/command-registry.js';
 import { detectMcpClients, detectSkillTargets } from '../src/detect.js';
 import { findConfiguredMcpClients, installMcpConfig, removeMcpConfig } from '../src/mcp-config.js';
-import { clearSession, loadSession, saveSession } from '../src/session-store.js';
-import { getDoctorReport, requestBridge, requireSession, resolveRef } from '../src/runtime.js';
+import os from 'node:os';
+import path from 'node:path';
 
-/**
- * @param {() => Promise<void>} callback
- * @returns {Promise<void>}
- */
-async function withTempCodexHome(callback) {
-  const previous = process.env.BROWSER_BRIDGE_HOME;
-  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-agent-runtime-'));
-  process.env.BROWSER_BRIDGE_HOME = tempDir;
-
-  try {
-    await callback();
-  } finally {
-    await clearSession();
-    if (previous === undefined) {
-      delete process.env.BROWSER_BRIDGE_HOME;
-    } else {
-      process.env.BROWSER_BRIDGE_HOME = previous;
-    }
-    await fs.promises.rm(tempDir, { recursive: true, force: true });
-  }
-}
+import { getDoctorReport, requestBridge, resolveRef } from '../src/runtime.js';
 
 test('detectMcpClients and detectSkillTargets use injected detectors', () => {
   /** @type {Record<string, () => boolean>} */
@@ -259,66 +237,14 @@ test('installMcpConfig writes Copilot global config to default and existing prof
   }
 });
 
-test('requireSession refreshes an expired saved session', async () => {
-  await withTempCodexHome(async () => {
-    await saveSession({
-      sessionId: 'sess_old',
-      tabId: 7,
-      origin: 'https://example.com',
-      capabilities: [],
-      expiresAt: Date.now() - 1
-    });
-
-    /** @type {Array<{ method: string, sessionId?: string | null, params?: Record<string, unknown> }>} */
-    const calls = [];
-    const client = {
-      connected: true,
-      async connect() {},
-      async request({ method, params = {}, sessionId = null }) {
-        calls.push({ method, params, sessionId });
-        if (method === 'session.get_status') {
-          return {
-            id: 'req_1',
-            ok: false,
-            result: null,
-            error: { code: 'SESSION_EXPIRED', message: 'Expired', details: null },
-            meta: { protocol_version: '1.0' }
-          };
-        }
-        return {
-          id: 'req_2',
-          ok: true,
-          result: {
-            sessionId: 'sess_new',
-            tabId: 7,
-            origin: 'https://example.com',
-            capabilities: [],
-            expiresAt: Date.now() + 60_000
-          },
-          error: null,
-          meta: { protocol_version: '1.0' }
-        };
-      }
-    };
-
-    const session = await requireSession(/** @type {any} */ (client), { source: 'cli' });
-    assert.equal(session.sessionId, 'sess_new');
-    assert.deepEqual(calls.map((call) => call.method), ['session.get_status', 'session.request_access']);
-    assert.equal(calls[1].params?.tabId, 7);
-
-    const saved = await loadSession();
-    assert.equal(saved?.sessionId, 'sess_new');
-  });
-});
-
 test('requestBridge forwards request source metadata', async () => {
-  /** @type {Array<{ method: string, sessionId?: string | null, params?: Record<string, unknown>, meta?: Record<string, unknown> }>} */
+  /** @type {Array<{ method: string, tabId?: number | null, params?: Record<string, unknown>, meta?: Record<string, unknown> }>} */
   const calls = [];
   const client = {
     connected: true,
     async connect() {},
-    async request({ method, params = {}, sessionId = null, meta = {} }) {
-      calls.push({ method, params, sessionId, meta });
+    async request({ method, params = {}, tabId = null, meta = {} }) {
+      calls.push({ method, params, tabId, meta });
       return {
         id: 'req_1',
         ok: true,
@@ -332,6 +258,30 @@ test('requestBridge forwards request source metadata', async () => {
   await requestBridge(/** @type {any} */ (client), 'health.ping', {}, { source: 'cli' });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].meta?.source, 'cli');
+  assert.equal(calls[0].tabId, null);
+});
+
+test('requestBridge forwards explicit tabId for tab-bound methods', async () => {
+  /** @type {Array<{ method: string, tabId?: number | null, params?: Record<string, unknown>, meta?: Record<string, unknown> }>} */
+  const calls = [];
+  const client = {
+    connected: true,
+    async connect() {},
+    async request({ method, params = {}, tabId = null, meta = {} }) {
+      calls.push({ method, params, tabId, meta });
+      return {
+        id: 'req_2',
+        ok: true,
+        result: { nodes: [] },
+        error: null,
+        meta: { protocol_version: '1.0' }
+      };
+    }
+  };
+
+  await requestBridge(/** @type {any} */ (client), 'dom.query', { selector: 'main' }, { source: 'cli', tabId: 77 });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].tabId, 77);
 });
 
 test('resolveRef returns the first matching elementRef', async () => {
@@ -353,7 +303,7 @@ test('resolveRef returns the first matching elementRef', async () => {
     }
   };
 
-  const ref = await resolveRef(/** @type {any} */ (client), 'main', 'sess_test');
+  const ref = await resolveRef(/** @type {any} */ (client), 'main', 42);
   assert.equal(ref, 'el_main');
 });
 
@@ -365,7 +315,6 @@ test('getDoctorReport exposes extension id source and next steps without a live 
       source: 'built_in'
     },
     loadManifest: async () => null,
-    loadSavedSession: async () => null,
     bridgeClientRunner: async () => {
       throw new Error('offline');
     }

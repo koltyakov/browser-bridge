@@ -434,9 +434,17 @@ test('summarizer: patch rolled back', () => {
   assert.match(s.summary, /Patch rolled back/);
 });
 
-test('summarizer: session revoked', () => {
-  const s = summarizeBridgeResponse(ok({ revoked: true }));
-  assert.match(s.summary, /Session revoked/);
+test('summarizer: health includes access routing state', () => {
+  const s = summarizeBridgeResponse(ok({
+    daemon: 'ok',
+    extensionConnected: true,
+    access: {
+      enabled: true,
+      routeReady: true,
+      routeTabId: 42,
+    },
+  }));
+  assert.match(s.summary, /Access: ready on tab 42/);
 });
 
 test('summarizer: storage truncates long values', () => {

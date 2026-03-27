@@ -1,13 +1,12 @@
 // @ts-check
 
 import {
-  CAPABILITIES,
+  bridgeMethodNeedsTab,
   ERROR_CODES,
   createFailure,
   createRequest,
   createRuntimeContext,
   createSuccess,
-  normalizeAccessRequest,
   normalizeAccessibilityTreeParams,
   normalizeCheckedAction,
   normalizeConsoleParams,
@@ -37,7 +36,6 @@ import {
   enforceTokenBudget,
   getResponseDiagnostics,
   getErrorMessage,
-  inferCapability,
   matchesConsoleLevel,
   normalizeRuntimeErrorMessage,
   safeOrigin,
@@ -50,18 +48,24 @@ import { TabDebuggerCoordinator } from './debugger-coordinator.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
-/** @typedef {import('../../protocol/src/types.js').Capability} Capability */
 /** @typedef {import('../../protocol/src/types.js').ErrorCode} ErrorCode */
-/** @typedef {import('../../protocol/src/types.js').SessionState} SessionState */
-/** @typedef {import('../../protocol/src/types.js').NormalizedAccessRequest} NormalizedAccessRequest */
 /** @typedef {import('../../protocol/src/types.js').SetupStatus} SetupStatus */
 
 /**
  * @typedef {{
- *   tabId: number,
+ *   windowId: number,
  *   title: string,
  *   enabledAt: number
- * }} EnabledScope
+ * }} EnabledWindowState
+ */
+
+/**
+ * @typedef {{
+ *   tabId: number,
+ *   windowId: number,
+ *   title: string,
+ *   url: string
+ * }} ResolvedTabTarget
  */
 
 /**
@@ -91,7 +95,8 @@ import { TabDebuggerCoordinator } from './debugger-coordinator.js';
  *   windowId: number,
  *   title: string,
  *   url: string,
- *   enabled: boolean
+ *   enabled: boolean,
+ *   accessRequested: boolean
  * }} CurrentTabState
  */
 
@@ -105,7 +110,8 @@ import { TabDebuggerCoordinator } from './debugger-coordinator.js';
 
 /**
  * @typedef {{
- *   scopeTabId: number | null
+ *   scopeTabId: number | null,
+ *   surface: 'popup' | 'sidepanel'
  * }} UiPortState
  */
 
@@ -120,8 +126,8 @@ import { TabDebuggerCoordinator } from './debugger-coordinator.js';
 /**
  * @typedef {{
  *   nativePort: chrome.runtime.Port | null,
- *   sessions: Map<string, SessionState>,
- *   enabledScopes: Map<string, EnabledScope>,
+ *   enabledWindow: EnabledWindowState | null,
+ *   requestedAccessWindowId: number | null,
  *   actionLog: ActionLogEntry[],
  *   uiPorts: Map<chrome.runtime.Port, UiPortState>,
  *   setupStatus: SetupStatus | null,
@@ -140,10 +146,11 @@ import { TabDebuggerCoordinator } from './debugger-coordinator.js';
 const NATIVE_APP_NAME = 'com.browserbridge.browser_bridge';
 const CONTENT_SCRIPT_TIMEOUT_MS = 5_000;
 const MAX_ACTION_LOG_ENTRIES = 50;
-const ENABLED_TAB_STORAGE_PREFIX = 'enabledTab:';
+const ENABLED_WINDOW_STORAGE_KEY = 'enabledWindow';
 const ACTION_LOG_STORAGE_KEY = 'actionLog';
 const SIDEPANEL_PATH = 'packages/extension/ui/sidepanel.html';
 const ENABLED_BADGE_TEXT = 'AI';
+const ACCESS_REQUEST_BADGE_TEXT = '!';
 const DEBUGGER_PROTOCOL_VERSION = '1.3';
 const SETUP_STATUS_STALE_MS = 30_000;
 const SETUP_STATUS_TIMEOUT_MS = 5_000;
@@ -151,8 +158,8 @@ const SETUP_STATUS_TIMEOUT_MS = 5_000;
 /** @type {ExtensionState} */
 const state = {
   nativePort: null,
-  sessions: new Map(),
-  enabledScopes: new Map(),
+  enabledWindow: null,
+  requestedAccessWindowId: null,
   actionLog: [],
   uiPorts: new Map(),
   setupStatus: null,
@@ -188,13 +195,14 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   void handleTabUpdated(tabId, changeInfo, tab).catch(reportAsyncError);
 });
 
-chrome.tabs.onRemoved.addListener((tabId) => {
-  void handleTabRemoved(tabId).catch(reportAsyncError);
+chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
+  void handleTabRemoved(tabId, removeInfo).catch(reportAsyncError);
 });
 
 chrome.runtime.onConnect.addListener((port) => {
-  if (port.name === 'ui') {
-    state.uiPorts.set(port, { scopeTabId: null });
+  const surface = getUiSurfaceFromPortName(port.name);
+  if (surface) {
+    state.uiPorts.set(port, { scopeTabId: null, surface });
     port.onMessage.addListener((message) => {
       void handleUiMessage(port, message).catch(reportAsyncError);
     });
@@ -234,16 +242,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 /**
- * Restore persisted session state when the service worker starts so client-side
- * saved sessions survive extension worker restarts.
+ * Restore persisted window access state when the service worker starts so the
+ * current browser-run grant survives worker restarts.
  *
  * @returns {Promise<void>}
  */
 async function initializeState() {
-  await restorePersistedSessions();
-  await restoreEnabledScopes();
+  await restoreEnabledWindow();
   await restoreActionLog();
-  await primeEnabledTabInstrumentation();
+  await primeEnabledWindowInstrumentation();
   await refreshActionIndicators();
 }
 
@@ -308,6 +315,14 @@ async function handleBridgeRequest(request) {
     response = toFailureResponse(request, error);
   }
 
+  if (
+    !response.ok &&
+    response.error.code === ERROR_CODES.ACCESS_DENIED &&
+    response.error.message === 'Browser Bridge is off for this window.'
+  ) {
+    await requestEnableFromAgentSide(request);
+  }
+
   response = enrichBridgeResponse(request, response);
 
   await logBridgeAction(request, response, actionContext);
@@ -323,7 +338,10 @@ async function handleBridgeRequest(request) {
 async function dispatchBridgeRequest(request) {
   switch (request.method) {
     case 'health.ping':
-      return createSuccess(request.id, { extension: 'ok' }, { method: request.method });
+      return createSuccess(request.id, {
+        extension: 'ok',
+        access: await getAccessStatus()
+      }, { method: request.method });
     case 'skill.get_runtime_context':
       return createSuccess(request.id, createRuntimeContext(), { method: request.method });
     case 'tabs.list':
@@ -332,12 +350,6 @@ async function dispatchBridgeRequest(request) {
       return handleCreateTab(request);
     case 'tabs.close':
       return handleCloseTab(request);
-    case 'session.request_access':
-      return handleAccessRequest(request);
-    case 'session.get_status':
-      return handleSessionStatus(request);
-    case 'session.revoke':
-      return handleRevoke(request);
     case 'page.evaluate':
       return handlePageEvaluate(request);
     case 'page.get_console':
@@ -400,70 +412,44 @@ async function dispatchBridgeRequest(request) {
 }
 
 /**
- * Create or reuse a session only when the current tab scope has been explicitly
- * enabled by the operator in the extension UI.
- *
- * @param {BridgeRequest} request
- * @returns {Promise<BridgeResponse>}
- */
-async function handleAccessRequest(request) {
-  const access = await resolveAccessRequest(normalizeAccessRequest(request.params));
-  const tab = await chrome.tabs.get(access.tabId);
-  if (!isTabEnabled(access.tabId)) {
-    const prompt = await promptForTabAccess(tab);
-    return createFailure(
-      request.id,
-      ERROR_CODES.APPROVAL_PENDING,
-      prompt.attentionSent
-        ? 'Waiting for operator approval in the side panel.'
-        : 'Permission request opened for the tab.',
-      {
-        tabId: access.tabId,
-        url: tab.url ?? '',
-        popupOpened: prompt.popupOpened,
-        sidePanelOpened: prompt.sidePanelOpened,
-        attentionSent: prompt.attentionSent
-      },
-      { method: request.method }
-    );
-  }
-
-  const session = await createScopedSession({
-    ...access,
-    origin: safeOrigin(tab.url ?? '')
-  });
-  await emitUiState();
-  return createSuccess(request.id, session, { method: request.method });
-}
-
-/**
- * Restore previously persisted enabled tab scopes into in-memory worker state.
+ * Restore the enabled window for the current browser run.
  *
  * @returns {Promise<void>}
  */
-async function restoreEnabledScopes() {
-  const stored = await chrome.storage.session.get(null);
-
-  for (const [key, value] of Object.entries(stored)) {
-    if (!key.startsWith(ENABLED_TAB_STORAGE_PREFIX) || !value || typeof value !== 'object') {
-      continue;
-    }
-
-    const scope = /** @type {EnabledScope} */ (value);
-    state.enabledScopes.set(String(scope.tabId), scope);
+async function restoreEnabledWindow() {
+  const stored = await chrome.storage.session.get(ENABLED_WINDOW_STORAGE_KEY);
+  const enabledWindow = stored[ENABLED_WINDOW_STORAGE_KEY];
+  if (!enabledWindow || typeof enabledWindow !== 'object') {
+    state.enabledWindow = null;
+    return;
   }
+
+  const candidate = /** @type {Record<string, unknown>} */ (enabledWindow);
+  const windowId = Number(candidate.windowId);
+  if (!Number.isFinite(windowId) || windowId <= 0) {
+    state.enabledWindow = null;
+    return;
+  }
+
+  state.enabledWindow = {
+    windowId,
+    title: typeof candidate.title === 'string' ? candidate.title : '',
+    enabledAt: Number(candidate.enabledAt) || Date.now(),
+  };
 }
 
 /**
- * Best-effort reinjection of passive instrumentation for enabled tabs so reads
- * like `page.get_console` can see activity that happened before the first read.
+ * Best-effort reinjection of passive instrumentation for tabs in the enabled
+ * window so reads like `page.get_console` can see activity that happened
+ * before the first explicit read.
  *
  * @returns {Promise<void>}
  */
-async function primeEnabledTabInstrumentation() {
-  await Promise.all([...state.enabledScopes.values()].map(async (scope) => {
-    await primeTabConsoleCapture(scope.tabId);
-  }));
+async function primeEnabledWindowInstrumentation() {
+  if (!state.enabledWindow) {
+    return;
+  }
+  await primeWindowConsoleCapture(state.enabledWindow.windowId);
 }
 
 /**
@@ -482,59 +468,94 @@ async function restoreActionLog() {
 }
 
 /**
- * Restore previously persisted sessions into the in-memory worker state so
- * access survives service-worker restarts until the tab is disabled.
+ * Build a compact access-status payload for health and doctor flows.
  *
- * @returns {Promise<void>}
+ * @returns {Promise<{
+ *   enabled: boolean,
+ *   windowId: number | null,
+ *   routeTabId: number | null,
+ *   routeReady: boolean,
+ *   routeUrl: string,
+ *   reason: 'enabled' | 'access_disabled' | 'enabled_window_missing' | 'no_routable_active_tab' | 'restricted_page'
+ * }>}
  */
-async function restorePersistedSessions() {
-  const stored = await chrome.storage.session.get(null);
-
-  for (const [key, value] of Object.entries(stored)) {
-    if (!key.startsWith('session:') || !value || typeof value !== 'object') {
-      continue;
-    }
-
-    const session = /** @type {SessionState} */ (value);
-    state.sessions.set(session.sessionId, session);
+async function getAccessStatus() {
+  if (!state.enabledWindow) {
+    return {
+      enabled: false,
+      windowId: null,
+      routeTabId: null,
+      routeReady: false,
+      routeUrl: '',
+      reason: 'access_disabled',
+    };
   }
-}
 
-/**
- * Return the current session metadata for the requested session id.
- *
- * @param {BridgeRequest} request
- * @returns {Promise<BridgeResponse>}
- */
-async function handleSessionStatus(request) {
-  const session = await getSessionById(request.session_id);
-  if (!session) {
-    return createFailure(request.id, ERROR_CODES.SESSION_EXPIRED, 'Session not found.', null, { method: request.method });
+  try {
+    await chrome.windows.get(state.enabledWindow.windowId);
+  } catch {
+    state.enabledWindow = null;
+    await chrome.storage.session.remove(ENABLED_WINDOW_STORAGE_KEY);
+    return {
+      enabled: false,
+      windowId: null,
+      routeTabId: null,
+      routeReady: false,
+      routeUrl: '',
+      reason: 'enabled_window_missing',
+    };
   }
-  return createSuccess(request.id, session, { method: request.method });
+
+  const tabs = await chrome.tabs.query({
+    active: true,
+    windowId: state.enabledWindow.windowId,
+  });
+  const tab = tabs[0];
+  if (!tab?.id || typeof tab.url !== 'string') {
+    return {
+      enabled: true,
+      windowId: state.enabledWindow.windowId,
+      routeTabId: null,
+      routeReady: false,
+      routeUrl: '',
+      reason: 'no_routable_active_tab',
+    };
+  }
+
+  if (isRestrictedAutomationUrl(tab.url)) {
+    return {
+      enabled: true,
+      windowId: state.enabledWindow.windowId,
+      routeTabId: tab.id,
+      routeReady: false,
+      routeUrl: tab.url,
+      reason: 'restricted_page',
+    };
+  }
+
+  return {
+    enabled: true,
+    windowId: state.enabledWindow.windowId,
+    routeTabId: tab.id,
+    routeReady: true,
+    routeUrl: tab.url,
+    reason: 'enabled',
+  };
 }
 
 /**
- * Revoke a previously created session.
- *
- * @param {BridgeRequest} request
- * @returns {Promise<BridgeResponse>}
- */
-async function handleRevoke(request) {
-  state.sessions.delete(request.session_id);
-  await chrome.storage.session.remove(`session:${request.session_id}`);
-  await emitUiState();
-  return createSuccess(request.id, { revoked: true }, { method: request.method });
-}
-
-/**
- * Summarize the currently open tabs so the client can choose a scope.
+ * Summarize the currently open tabs in the enabled window so the client can
+ * inspect or explicitly target them.
  *
  * @param {BridgeRequest} request
  * @returns {Promise<BridgeResponse>}
  */
 async function handleListTabs(request) {
-  const tabs = await chrome.tabs.query({});
+  if (!state.enabledWindow) {
+    return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, 'Browser Bridge is off for this window.', null, { method: request.method });
+  }
+
+  const tabs = await chrome.tabs.query({ windowId: state.enabledWindow.windowId });
   const summarized = tabs
     .filter((tab) => typeof tab.id === 'number' && typeof tab.url === 'string')
     .map((tab) => ({
@@ -583,22 +604,21 @@ const TAB_BOUND_NORMALIZERS = {
 };
 
 async function handleTabBoundRequest(request) {
-  const session = await requireSession(request, inferCapability(request.method));
-  await ensureContentScript(session.tabId);
+  const target = await resolveRequestTarget(request);
+  await ensureContentScript(target.tabId);
   const normalizer = TAB_BOUND_NORMALIZERS[request.method];
   const payload = normalizer ? normalizer(request.params) : request.params;
 
   if (request.method.startsWith('screenshot.')) {
-    const result = await handleScreenshot(session, request.method, request.params);
+    const result = await handleScreenshot(target, request.method, request.params);
     return createSuccess(request.id, result, { method: request.method });
   }
 
   const timeoutMs = getContentScriptTimeout(request.method, payload);
-  const response = await sendTabMessage(session.tabId, {
+  const response = await sendTabMessage(target.tabId, {
     type: 'bridge.execute',
     method: request.method,
-    params: payload,
-    session
+    params: payload
   }, timeoutMs);
   if (response?.error) {
     return toFailureResponse(request, response.error);
@@ -614,29 +634,25 @@ async function handleTabBoundRequest(request) {
  * @returns {Promise<BridgeResponse>}
  */
 async function handleNavigationRequest(request) {
-  const session = await requireSession(request, inferCapability(request.method));
+  const target = await resolveRequestTarget(request);
   const action = normalizeNavigationAction(request.params);
 
   if (request.method === 'navigation.navigate') {
     if (!action.url) {
       throw new Error(ERROR_CODES.INVALID_REQUEST);
     }
-    await chrome.tabs.update(session.tabId, { url: action.url });
+    await chrome.tabs.update(target.tabId, { url: action.url });
   } else if (request.method === 'navigation.reload') {
-    await chrome.tabs.reload(session.tabId);
+    await chrome.tabs.reload(target.tabId);
   } else if (request.method === 'navigation.go_back') {
-    await chrome.tabs.goBack(session.tabId);
+    await chrome.tabs.goBack(target.tabId);
   } else {
-    await chrome.tabs.goForward(session.tabId);
+    await chrome.tabs.goForward(target.tabId);
   }
 
   const tab = action.waitForLoad
-    ? await waitForTabComplete(session.tabId, action.timeoutMs)
-    : await chrome.tabs.get(session.tabId);
-
-  if (tab.url) {
-    await syncTabSessionsOrigin(session.tabId, tab.url);
-  }
+    ? await waitForTabComplete(target.tabId, action.timeoutMs)
+    : await chrome.tabs.get(target.tabId);
   await emitUiState();
 
   return createSuccess(request.id, summarizeTabResult(tab, request.method), { method: request.method });
@@ -668,13 +684,13 @@ function getContentScriptTimeout(method, params) {
  * @returns {Promise<BridgeResponse>}
  */
 async function handlePageEvaluate(request) {
-  const session = await requireSession(request, CAPABILITIES.PAGE_EVALUATE);
+  const target = await resolveRequestTarget(request);
   const params = normalizeEvaluateParams(request.params);
   if (!params.expression) {
     return createFailure(request.id, ERROR_CODES.INVALID_REQUEST, 'expression is required.', null, { method: request.method });
   }
-  return tabDebugger.run(session.tabId, async (target) => {
-    const result = await chrome.debugger.sendCommand(target, 'Runtime.evaluate', {
+  return tabDebugger.run(target.tabId, async (debugTarget) => {
+    const result = await chrome.debugger.sendCommand(debugTarget, 'Runtime.evaluate', {
       expression: params.expression,
       returnByValue: params.returnByValue,
       awaitPromise: params.awaitPromise,
@@ -705,11 +721,11 @@ async function handlePageEvaluate(request) {
  * @returns {Promise<BridgeResponse>}
  */
 async function handlePageGetConsole(request) {
-  const session = await requireSession(request, CAPABILITIES.PAGE_READ);
+  const target = await resolveRequestTarget(request);
   const params = normalizeConsoleParams(request.params);
 
-  await primeTabConsoleCapture(session.tabId);
-  const entries = await readConsoleBuffer(session.tabId, params.clear);
+  await primeTabConsoleCapture(target.tabId);
+  const entries = await readConsoleBuffer(target.tabId, params.clear);
   const filtered = params.level === 'all'
     ? entries
     : entries.filter((/** @type {{ level: string }} */ e) => matchesConsoleLevel(params.level, e.level));
@@ -725,8 +741,15 @@ async function handlePageGetConsole(request) {
  * @returns {Promise<BridgeResponse>}
  */
 async function handleCreateTab(request) {
+  if (!state.enabledWindow) {
+    return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, 'Browser Bridge is off for this window.', null, { method: request.method });
+  }
   const params = normalizeTabCreateParams(request.params);
-  const tab = await chrome.tabs.create({ url: params.url, active: params.active });
+  const tab = await chrome.tabs.create({
+    url: params.url,
+    active: params.active,
+    windowId: state.enabledWindow.windowId
+  });
   return createSuccess(request.id, summarizeTabResult(tab, request.method), { method: request.method });
 }
 
@@ -738,6 +761,13 @@ async function handleCreateTab(request) {
  */
 async function handleCloseTab(request) {
   const params = normalizeTabCloseParams(request.params);
+  if (!state.enabledWindow) {
+    return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, 'Browser Bridge is off for this window.', null, { method: request.method });
+  }
+  const tab = await chrome.tabs.get(params.tabId);
+  if (tab.windowId !== state.enabledWindow.windowId) {
+    return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, 'tabs.close only works inside the enabled window.', null, { method: request.method });
+  }
   await chrome.tabs.remove(params.tabId);
   return createSuccess(request.id, { closed: true, tabId: params.tabId }, { method: request.method });
 }
@@ -751,17 +781,17 @@ async function handleCloseTab(request) {
  * @returns {Promise<BridgeResponse>}
  */
 async function handleAccessibilityTree(request) {
-  const session = await requireSession(request, CAPABILITIES.DOM_READ);
+  const target = await resolveRequestTarget(request);
   const params = normalizeAccessibilityTreeParams(request.params);
-  return tabDebugger.run(session.tabId, async (target) => {
-    await chrome.debugger.sendCommand(target, 'Accessibility.enable', {});
-    const result = await chrome.debugger.sendCommand(target, 'Accessibility.getFullAXTree', {
+  return tabDebugger.run(target.tabId, async (debugTarget) => {
+    await chrome.debugger.sendCommand(debugTarget, 'Accessibility.enable', {});
+    const result = await chrome.debugger.sendCommand(debugTarget, 'Accessibility.getFullAXTree', {
       depth: params.maxDepth
     });
     const cdpResult = /** @type {{ nodes?: Array<Record<string, unknown>> }} */ (result);
     const rawNodes = cdpResult.nodes || [];
     const pruned = rawNodes.slice(0, params.maxNodes).map(simplifyAXNode);
-    await chrome.debugger.sendCommand(target, 'Accessibility.disable', {});
+    await chrome.debugger.sendCommand(debugTarget, 'Accessibility.disable', {});
     return createSuccess(request.id, {
       nodes: pruned,
       count: pruned.length,
@@ -779,10 +809,10 @@ async function handleAccessibilityTree(request) {
  * @returns {Promise<BridgeResponse>}
  */
 async function handleGetNetwork(request) {
-  const session = await requireSession(request, CAPABILITIES.PAGE_READ);
+  const target = await resolveRequestTarget(request);
   const params = normalizeNetworkParams(request.params);
-  await ensureNetworkInterceptor(session.tabId);
-  const entries = await readNetworkBuffer(session.tabId, params.clear);
+  await ensureNetworkInterceptor(target.tabId);
+  const entries = await readNetworkBuffer(target.tabId, params.clear);
   const filtered = params.urlPattern
     ? entries.filter((/** @type {{ url: string }} */ e) => e.url.includes(params.urlPattern))
     : entries;
@@ -895,13 +925,13 @@ async function readNetworkBuffer(tabId, clear) {
  * @returns {Promise<BridgeResponse>}
  */
 async function handleViewportResize(request) {
-  const session = await requireSession(request, CAPABILITIES.VIEWPORT_CONTROL);
+  const target = await resolveRequestTarget(request);
   const params = normalizeViewportResizeParams(request.params);
-  return tabDebugger.run(session.tabId, async (target) => {
+  return tabDebugger.run(target.tabId, async (debugTarget) => {
     if (params.reset || (params.width === 0 && params.height === 0)) {
-      await chrome.debugger.sendCommand(target, 'Emulation.clearDeviceMetricsOverride', {});
+      await chrome.debugger.sendCommand(debugTarget, 'Emulation.clearDeviceMetricsOverride', {});
     } else {
-      await chrome.debugger.sendCommand(target, 'Emulation.setDeviceMetricsOverride', {
+      await chrome.debugger.sendCommand(debugTarget, 'Emulation.setDeviceMetricsOverride', {
         width: params.width,
         height: params.height,
         deviceScaleFactor: params.deviceScaleFactor,
@@ -925,11 +955,11 @@ async function handleViewportResize(request) {
  * @returns {Promise<BridgeResponse>}
  */
 async function handlePerformanceMetrics(request) {
-  const session = await requireSession(request, CAPABILITIES.PAGE_READ);
-  return tabDebugger.run(session.tabId, async (target) => {
-    await chrome.debugger.sendCommand(target, 'Performance.enable', { timeDomain: 'timeTicks' });
-    const result = await chrome.debugger.sendCommand(target, 'Performance.getMetrics', {});
-    await chrome.debugger.sendCommand(target, 'Performance.disable', {});
+  const target = await resolveRequestTarget(request);
+  return tabDebugger.run(target.tabId, async (debugTarget) => {
+    await chrome.debugger.sendCommand(debugTarget, 'Performance.enable', { timeDomain: 'timeTicks' });
+    const result = await chrome.debugger.sendCommand(debugTarget, 'Performance.getMetrics', {});
+    await chrome.debugger.sendCommand(debugTarget, 'Performance.disable', {});
     const cdpResult = /** @type {{ metrics?: Array<{ name: string, value: number }> }} */ (result);
     const metrics = (cdpResult.metrics || []).reduce((acc, m) => {
       acc[m.name] = m.value;
@@ -946,14 +976,11 @@ async function handlePerformanceMetrics(request) {
  * @returns {Promise<BridgeResponse>}
  */
 async function handleWaitForLoadState(request) {
-  const session = await requireSession(request, CAPABILITIES.PAGE_READ);
+  const target = await resolveRequestTarget(request);
   const params = normalizeWaitForLoadStateParams(request.params);
   const tab = params.waitForLoad
-    ? await waitForTabComplete(session.tabId, params.timeoutMs)
-    : await chrome.tabs.get(session.tabId);
-  if (tab.url) {
-    await syncTabSessionsOrigin(session.tabId, tab.url);
-  }
+    ? await waitForTabComplete(target.tabId, params.timeoutMs)
+    : await chrome.tabs.get(target.tabId);
   return createSuccess(request.id, summarizeTabResult(tab, request.method), { method: request.method });
 }
 
@@ -1077,30 +1104,143 @@ async function readConsoleBuffer(tabId, clear) {
 }
 
 /**
- * Capture a targeted screenshot for the current session by asking the content
+ * Prime console capture for every tab in one window.
+ *
+ * @param {number} windowId
+ * @param {boolean} [resetBuffer=false]
+ * @returns {Promise<void>}
+ */
+async function primeWindowConsoleCapture(windowId, resetBuffer = false) {
+  const tabs = await chrome.tabs.query({ windowId });
+  await Promise.all(tabs
+    .filter((tab) => typeof tab.id === 'number')
+    .map((tab) => primeTabConsoleCapture(tab.id, resetBuffer)));
+}
+
+/**
+ * Clear bridge buffers and roll back active patches for one tab.
+ *
+ * @param {number} tabId
+ * @returns {Promise<void>}
+ */
+async function clearTabBridgeState(tabId) {
+  await rollbackAllPatchesForTab(tabId);
+  try {
+    await readConsoleBuffer(tabId, true);
+  } catch (error) {
+    if (!isRecoverableInstrumentationError(error)) {
+      throw error;
+    }
+  }
+  try {
+    await readNetworkBuffer(tabId, true);
+  } catch (error) {
+    if (!isRecoverableInstrumentationError(error)) {
+      throw error;
+    }
+  }
+}
+
+/**
+ * Clear tab-local bridge state for all tabs in one window.
+ *
+ * @param {number} windowId
+ * @returns {Promise<void>}
+ */
+async function clearWindowBridgeState(windowId) {
+  const tabs = await chrome.tabs.query({ windowId });
+  await Promise.all(tabs
+    .filter((tab) => typeof tab.id === 'number')
+    .map((tab) => clearTabBridgeState(tab.id)));
+}
+
+/**
+ * Roll back all reversible patches currently tracked in one tab.
+ *
+ * @param {number} tabId
+ * @returns {Promise<void>}
+ */
+async function rollbackAllPatchesForTab(tabId) {
+  try {
+    await ensureContentScript(tabId);
+    const listed = await sendTabMessage(tabId, {
+      type: 'bridge.execute',
+      method: 'patch.list',
+      params: {}
+    }, CONTENT_SCRIPT_TIMEOUT_MS);
+    const patches = Array.isArray(listed) ? listed : listed?.patches;
+    if (!Array.isArray(patches)) {
+      return;
+    }
+    for (const patch of patches) {
+      const patchId = patch && typeof patch === 'object'
+        ? /** @type {Record<string, unknown>} */ (patch).patchId
+        : null;
+      if (typeof patchId !== 'string' || !patchId) {
+        continue;
+      }
+      await sendTabMessage(tabId, {
+        type: 'bridge.execute',
+        method: 'patch.rollback',
+        params: { patchId }
+      }, CONTENT_SCRIPT_TIMEOUT_MS);
+    }
+  } catch (error) {
+    if (!isRecoverableInstrumentationError(error)) {
+      throw error;
+    }
+  }
+}
+
+/**
+ * @param {number} tabId
+ * @returns {Promise<boolean>}
+ */
+async function isTabEnabled(tabId) {
+  if (!state.enabledWindow) {
+    return false;
+  }
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    return tab.windowId === state.enabledWindow.windowId;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * @param {string} url
+ * @returns {boolean}
+ */
+function isRestrictedAutomationUrl(url) {
+  return /^(about:|chrome:|chrome-extension:|chrome-search:|devtools:|edge:|brave:|moz-extension:|view-source:)/i.test(url);
+}
+
+/**
+ * Capture a targeted screenshot for the current target tab by asking the content
  * script for an element rect and then cropping the visible tab image.
  *
- * @param {SessionState} session
+ * @param {ResolvedTabTarget} target
  * @param {string} method
  * @param {Record<string, unknown>} params
  * @returns {Promise<{ rect: unknown, image: string }>}
  */
-async function handleScreenshot(session, method, params) {
+async function handleScreenshot(target, method, params) {
   /** @type {{ x: number, y: number, width: number, height: number, scale: number }} */
   let clip;
 
   if (method === 'screenshot.capture_element') {
-    await ensureContentScript(session.tabId);
+    await ensureContentScript(target.tabId);
     try {
-      clip = await sendTabMessage(session.tabId, {
-        type: 'bridge.execute', method, params, session
+      clip = await sendTabMessage(target.tabId, {
+        type: 'bridge.execute', method, params
       }, CONTENT_SCRIPT_TIMEOUT_MS);
     } catch (err) {
       // Retry once after a brief pause - the page may have been mid-render
       if (err instanceof Error && /stale/i.test(err.message)) {
         await new Promise(r => setTimeout(r, 250));
-        clip = await sendTabMessage(session.tabId, {
-          type: 'bridge.execute', method, params, session
+        clip = await sendTabMessage(target.tabId, {
+          type: 'bridge.execute', method, params
         }, CONTENT_SCRIPT_TIMEOUT_MS);
       } else {
         throw err;
@@ -1136,10 +1276,10 @@ async function handleScreenshot(session, method, params) {
 
   // Use CDP Page.captureScreenshot - works regardless of tab focus,
   // captures renderer output directly with built-in clip support.
-  return tabDebugger.run(session.tabId, async (target) => {
+  return tabDebugger.run(target.tabId, async (debugTarget) => {
     const dpr = clip.scale || 1;
     const cdpResult = /** @type {{ data?: string }} */ (
-      await chrome.debugger.sendCommand(target, 'Page.captureScreenshot', {
+      await chrome.debugger.sendCommand(debugTarget, 'Page.captureScreenshot', {
         format: 'png',
         clip: {
           x: Math.max(0, clip.x),
@@ -1209,8 +1349,8 @@ async function ensureContentScript(tabId) {
  * @returns {Promise<BridgeResponse>}
  */
 async function handleCdpRequest(request) {
-  const session = await requireSession(request, inferCapability(request.method));
-  return tabDebugger.run(session.tabId, async (target) => {
+  const target = await resolveRequestTarget(request);
+  return tabDebugger.run(target.tabId, async (debugTarget) => {
     let command;
     let params = {};
     if (request.method === 'cdp.get_document') {
@@ -1227,7 +1367,7 @@ async function handleCdpRequest(request) {
       params = { nodeId: request.params?.nodeId };
     }
     const result = await chrome.debugger.sendCommand(
-      target,
+      debugTarget,
       command,
       /** @type {Record<string, unknown>} */ (params)
     );
@@ -1300,163 +1440,58 @@ async function waitForTabComplete(tabId, timeoutMs) {
 }
 
 /**
- * Validate that a request belongs to an active session and that the
- * tab still matches the stored origin/capability scope.
+ * Resolve the tab a request should operate on. Requests may explicitly target
+ * one tab via `tab_id`; otherwise they follow the active tab in the enabled
+ * window.
  *
  * @param {BridgeRequest} request
- * @param {Capability | null} capability
- * @returns {Promise<SessionState>}
+ * @param {{ requireScriptable?: boolean }} [options]
+ * @returns {Promise<ResolvedTabTarget>}
  */
-async function requireSession(request, capability) {
-  const session = await getSessionById(request.session_id);
-  if (!session) {
-    if (request.session_id) {
-      state.sessions.delete(request.session_id);
-      await chrome.storage.session.remove(`session:${request.session_id}`);
-    }
-    throw new Error(ERROR_CODES.SESSION_EXPIRED);
-  }
-
-  const tab = await chrome.tabs.get(session.tabId);
-  if (!isTabEnabled(session.tabId)) {
+async function resolveRequestTarget(request, options = {}) {
+  const requireScriptable = options.requireScriptable !== false;
+  if (!state.enabledWindow) {
     throw new Error(ERROR_CODES.ACCESS_DENIED);
   }
 
-  if (capability && !session.capabilities.includes(capability)) {
-    throw new Error(ERROR_CODES.CAPABILITY_MISSING);
+  try {
+    await chrome.windows.get(state.enabledWindow.windowId);
+  } catch {
+    state.enabledWindow = null;
+    await chrome.storage.session.remove(ENABLED_WINDOW_STORAGE_KEY);
+    throw new Error(ERROR_CODES.ACCESS_DENIED);
   }
 
-  const currentOrigin = safeOrigin(tab.url ?? '');
-  if (currentOrigin && session.origin !== currentOrigin) {
-    session.origin = currentOrigin;
-    state.sessions.set(session.sessionId, session);
-    await chrome.storage.session.set({
-      [`session:${session.sessionId}`]: session
+  /** @type {chrome.tabs.Tab | null} */
+  let tab = null;
+  if (typeof request.tab_id === 'number' && Number.isFinite(request.tab_id)) {
+    tab = await chrome.tabs.get(request.tab_id);
+  } else {
+    const [activeTab] = await chrome.tabs.query({
+      active: true,
+      windowId: state.enabledWindow.windowId,
     });
+    tab = activeTab ?? null;
   }
 
-  return session;
-}
-
-/**
- * Read a session from memory first, then fall back to persisted worker storage.
- *
- * @param {string | null} sessionId
- * @returns {Promise<SessionState | null>}
- */
-async function getSessionById(sessionId) {
-  if (!sessionId) {
-    return null;
-  }
-
-  const inMemory = state.sessions.get(sessionId);
-  if (inMemory) {
-    return inMemory;
-  }
-
-  const stored = await chrome.storage.session.get(`session:${sessionId}`);
-  const session = stored[`session:${sessionId}`];
-  if (!session || typeof session !== 'object') {
-    return null;
-  }
-
-  const typedSession = /** @type {SessionState} */ (session);
-  state.sessions.set(typedSession.sessionId, typedSession);
-  return typedSession;
-}
-
-/**
- * Pick the most relevant session for a tab, preferring an origin match with the
- * current URL when available.
- *
- * @param {number | null | undefined} tabId
- * @param {string | undefined} [url]
- * @returns {Promise<SessionState | null>}
- */
-async function getSessionForTab(tabId, url = '') {
-  if (!Number.isFinite(tabId)) {
-    return null;
-  }
-
-  const currentOrigin = safeOrigin(url || '');
-  /** @type {SessionState | null} */
-  let fallback = null;
-
-  for (const session of state.sessions.values()) {
-    if (session.tabId !== tabId) {
-      continue;
-    }
-    if (!fallback) {
-      fallback = session;
-    }
-    if (currentOrigin && session.origin === currentOrigin) {
-      return session;
-    }
-  }
-
-  return fallback;
-}
-
-/**
- * Create a new scoped session or reuse one that already covers the requested
- * tab, origin, and capabilities.
- *
- * @param {NormalizedAccessRequest} access
- * @returns {Promise<SessionState>}
- */
-async function createScopedSession(access) {
-  for (const session of state.sessions.values()) {
-    if (
-      session.tabId === access.tabId &&
-      access.capabilities.every((capability) => session.capabilities.includes(capability))
-    ) {
-      if (session.origin !== access.origin) {
-        session.origin = access.origin;
-        state.sessions.set(session.sessionId, session);
-        await chrome.storage.session.set({
-          [`session:${session.sessionId}`]: session
-        });
-      }
-      return session;
-    }
-  }
-
-  const sessionId = crypto.randomUUID();
-  const session = {
-    sessionId,
-    tabId: access.tabId,
-    origin: access.origin,
-    capabilities: access.capabilities,
-    expiresAt: Date.now() + access.ttlMs
-  };
-  state.sessions.set(sessionId, session);
-  await chrome.storage.session.set({
-    [`session:${sessionId}`]: session
-  });
-  return session;
-}
-
-/**
- * Fill in missing tab or origin fields from the current active tab so the CLI
- * can request access without forcing the user to pass identifiers manually.
- *
- * @param {ReturnType<typeof normalizeAccessRequest>} access
- * @returns {Promise<ReturnType<typeof normalizeAccessRequest>>}
- */
-async function resolveAccessRequest(access) {
-  if (access.tabId && access.origin) {
-    return access;
-  }
-
-  const [activeTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  if (!activeTab?.id || !activeTab.url) {
+  if (!tab?.id || typeof tab.windowId !== 'number') {
     throw new Error(ERROR_CODES.TAB_MISMATCH);
+  }
+  if (tab.windowId !== state.enabledWindow.windowId) {
+    throw new Error(ERROR_CODES.ACCESS_DENIED);
+  }
+  if (typeof tab.url !== 'string' || !tab.url) {
+    throw new Error(ERROR_CODES.TAB_MISMATCH);
+  }
+  if (requireScriptable && isRestrictedAutomationUrl(tab.url)) {
+    throw new Error(ERROR_CODES.ACCESS_DENIED);
   }
 
   return {
-    ...access,
-    tabId: access.tabId ?? activeTab.id,
-    origin: access.origin || safeOrigin(activeTab.url)
+    tabId: tab.id,
+    windowId: tab.windowId,
+    title: tab.title ?? '',
+    url: tab.url,
   };
 }
 
@@ -1477,7 +1512,8 @@ async function getCurrentTabState() {
     windowId: activeTab.windowId,
     title: activeTab.title ?? '',
     url: activeTab.url,
-    enabled: isTabEnabled(activeTab.id)
+    enabled: isWindowEnabled(activeTab.windowId),
+    accessRequested: isAccessRequestedWindow(activeTab.windowId)
   };
 }
 
@@ -1503,7 +1539,8 @@ async function getTabState(tabId) {
       windowId: tab.windowId,
       title: tab.title ?? '',
       url: tab.url,
-      enabled: isTabEnabled(tab.id)
+      enabled: isWindowEnabled(tab.windowId),
+      accessRequested: isAccessRequestedWindow(tab.windowId)
     };
   } catch {
     return null;
@@ -1511,86 +1548,65 @@ async function getTabState(tabId) {
 }
 
 /**
- * Enable or disable bridge communication for the active tab. Disabling also
- * revokes any live sessions bound to that tab.
+ * Enable or disable bridge communication for the current window.
  *
  * @param {boolean} enabled
  * @returns {Promise<void>}
  */
-async function setCurrentTabEnabled(enabled) {
+async function setCurrentWindowEnabled(enabled) {
   const currentTab = await getCurrentTabState();
   if (!currentTab?.url) {
     throw new Error(ERROR_CODES.TAB_MISMATCH);
   }
 
-  await setTabEnabled(currentTab.tabId, currentTab.title, enabled);
+  await setWindowEnabled(currentTab.windowId, currentTab.title, enabled);
 }
 
 /**
- * Enable or disable bridge communication for one specific tab.
+ * Enable or disable bridge communication for one specific window.
  *
- * @param {number} tabId
+ * @param {number} windowId
  * @param {string} title
  * @param {boolean} enabled
  * @returns {Promise<void>}
  */
-async function setTabEnabled(tabId, title, enabled) {
-  const scope = {
-    tabId,
+async function setWindowEnabled(windowId, title, enabled) {
+  clearRequestedAccessWindow();
+  const access = {
+    windowId,
     title,
     enabledAt: Date.now()
   };
 
   if (enabled) {
-    state.enabledScopes.set(String(scope.tabId), scope);
+    state.enabledWindow = access;
     await chrome.storage.session.set({
-      [`${ENABLED_TAB_STORAGE_PREFIX}${scope.tabId}`]: scope
+      [ENABLED_WINDOW_STORAGE_KEY]: access
     });
-    await primeTabConsoleCapture(scope.tabId, true);
+    await primeWindowConsoleCapture(access.windowId, true);
   } else {
-    await disableTab(scope.tabId);
+    await disableWindow(windowId);
   }
 
-  await updateActionIndicatorForTab(scope.tabId);
+  await refreshActionIndicators();
   await emitUiState();
 }
 
 /**
- * Remove one enabled tab and revoke all sessions that are bound to it.
+ * Remove bridge communication for the enabled window and clear per-tab bridge
+ * state across that window.
  *
- * @param {number} tabId
+ * @param {number} windowId
  * @returns {Promise<void>}
  */
-async function disableTab(tabId) {
-  state.enabledScopes.delete(String(tabId));
-  await chrome.storage.session.remove(`${ENABLED_TAB_STORAGE_PREFIX}${tabId}`);
-  await revokeSessionsForScope(tabId, null);
-  await updateActionIndicatorForTab(tabId);
-}
-
-/**
- * Revoke sessions for one tab.
- *
- * @param {number} tabId
- * @param {string | null} _origin
- * @returns {Promise<void>}
- */
-async function revokeSessionsForScope(tabId, _origin) {
-  /** @type {string[]} */
-  const storageKeys = [];
-
-  for (const [sessionId, session] of state.sessions.entries()) {
-    if (session.tabId !== tabId) {
-      continue;
-    }
-
-    state.sessions.delete(sessionId);
-    storageKeys.push(`session:${sessionId}`);
+async function disableWindow(windowId) {
+  if (!state.enabledWindow || state.enabledWindow.windowId !== windowId) {
+    return;
   }
-
-  if (storageKeys.length) {
-    await chrome.storage.session.remove(storageKeys);
-  }
+  state.enabledWindow = null;
+  await chrome.storage.session.remove(ENABLED_WINDOW_STORAGE_KEY);
+  await clearWindowBridgeState(windowId);
+  await refreshActionIndicators();
 }
 
 /**
@@ -1603,22 +1619,18 @@ async function revokeSessionsForScope(tabId, _origin) {
  * @returns {Promise<void>}
  */
 async function handleTabUpdated(tabId, changeInfo, tab) {
-  if (typeof changeInfo.title === 'string' && isTabEnabled(tabId)) {
-    const enabledTab = state.enabledScopes.get(String(tabId));
-    if (enabledTab) {
-      enabledTab.title = changeInfo.title;
-      state.enabledScopes.set(String(tabId), enabledTab);
-      await chrome.storage.session.set({
-        [`${ENABLED_TAB_STORAGE_PREFIX}${tabId}`]: enabledTab
-      });
-    }
+  if (typeof changeInfo.title === 'string' && state.enabledWindow && tab.windowId === state.enabledWindow.windowId) {
+    state.enabledWindow = {
+      ...state.enabledWindow,
+      title: changeInfo.title
+    };
+    await chrome.storage.session.set({
+      [ENABLED_WINDOW_STORAGE_KEY]: state.enabledWindow
+    });
   }
 
   if (typeof changeInfo.url === 'string' || typeof changeInfo.title === 'string' || changeInfo.status === 'complete') {
-    if (tab.url) {
-      await syncTabSessionsOrigin(tabId, tab.url);
-    }
-    if (changeInfo.status === 'complete' && isTabEnabled(tabId)) {
+    if (changeInfo.status === 'complete' && state.enabledWindow && tab.windowId === state.enabledWindow.windowId) {
       await primeTabConsoleCapture(tabId);
     }
     await updateActionIndicatorForTab(tabId);
@@ -1627,13 +1639,21 @@ async function handleTabUpdated(tabId, changeInfo, tab) {
 }
 
 /**
- * Remove any persisted enablement and live sessions when a tab closes.
+ * Remove any persisted enablement when the enabled window closes.
  *
  * @param {number} tabId
+ * @param {{ windowId: number, isWindowClosing: boolean }} removeInfo
  * @returns {Promise<void>}
  */
-async function handleTabRemoved(tabId) {
-  await disableTab(tabId);
+async function handleTabRemoved(tabId, removeInfo) {
+  if (state.enabledWindow && removeInfo.isWindowClosing && removeInfo.windowId === state.enabledWindow.windowId) {
+    state.enabledWindow = null;
+    await chrome.storage.session.remove(ENABLED_WINDOW_STORAGE_KEY);
+  }
+  if (removeInfo.isWindowClosing && removeInfo.windowId === state.requestedAccessWindowId) {
+    clearRequestedAccessWindow(removeInfo.windowId);
+  }
+  await updateActionIndicatorForTab(tabId);
   await emitUiState();
 }
 
@@ -1650,14 +1670,15 @@ async function refreshActionIndicators() {
 }
 
 /**
- * Update the action badge and title for one tab so enabled scopes are visibly
+ * Update the action badge and title for one tab so enabled windows are visibly
  * marked from the Chrome toolbar.
  *
  * @param {number} tabId
  * @returns {Promise<void>}
  */
 async function updateActionIndicatorForTab(tabId) {
-  const enabled = isTabEnabled(tabId);
+  const enabled = await isTabEnabled(tabId);
+  const accessRequested = await isAccessRequestedTab(tabId);
   try {
     if (enabled) {
       await chrome.action.setBadgeBackgroundColor({
@@ -1668,10 +1689,32 @@ async function updateActionIndicatorForTab(tabId) {
         tabId,
         color: '#ffffff'
       });
+      await chrome.action.setTitle({
+        tabId,
+        title: 'Browser Bridge is enabled for this window.'
+      });
+    } else if (accessRequested) {
+      await chrome.action.setBadgeBackgroundColor({
+        tabId,
+        color: '#b84d27'
+      });
+      await chrome.action.setBadgeTextColor({
+        tabId,
+        color: '#ffffff'
+      });
+      await chrome.action.setTitle({
+        tabId,
+        title: 'Agent requested Browser Bridge access for this window. Click to open Browser Bridge, then click Enable.'
+      });
+    } else {
+      await chrome.action.setTitle({
+        tabId,
+        title: 'Browser Bridge'
+      });
     }
     await chrome.action.setBadgeText({
       tabId,
-      text: enabled ? ENABLED_BADGE_TEXT : ''
+      text: enabled ? ENABLED_BADGE_TEXT : accessRequested ? ACCESS_REQUEST_BADGE_TEXT : ''
     });
   } catch (error) {
     if (normalizeRuntimeErrorMessage(getErrorMessage(error)) === ERROR_CODES.TAB_MISMATCH) {
@@ -1683,13 +1726,170 @@ async function updateActionIndicatorForTab(tabId) {
 
 /**
  * Check whether the user explicitly enabled bridge communication for a given
- * tab.
+ * window.
  *
- * @param {number} tabId
+ * @param {number} windowId
  * @returns {boolean}
  */
-function isTabEnabled(tabId) {
-  return state.enabledScopes.has(String(tabId));
+function isWindowEnabled(windowId) {
+  return state.enabledWindow?.windowId === windowId;
+}
+
+/**
+ * @param {number} windowId
+ * @returns {boolean}
+ */
+function isAccessRequestedWindow(windowId) {
+  return state.requestedAccessWindowId === windowId;
+}
+
+/**
+ * @param {number} tabId
+ * @returns {Promise<boolean>}
+ */
+async function isAccessRequestedTab(tabId) {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    return typeof tab.windowId === 'number' && isAccessRequestedWindow(tab.windowId);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * @param {number | null} [windowId=null]
+ * @returns {void}
+ */
+function clearRequestedAccessWindow(windowId = null) {
+  if (windowId == null || state.requestedAccessWindowId === windowId) {
+    state.requestedAccessWindowId = null;
+  }
+}
+
+/**
+ * Surface an enable cue in the extension UI when an agent-side request fails
+ * because Browser Bridge is off for the target window.
+ *
+ * @param {BridgeRequest} request
+ * @returns {Promise<void>}
+ */
+async function requestEnableFromAgentSide(request) {
+  const target = await resolveRequestedAccessTarget(request);
+  if (!target) {
+    return;
+  }
+
+  if (state.requestedAccessWindowId !== target.windowId) {
+    state.requestedAccessWindowId = target.windowId;
+    await refreshActionIndicators();
+    await emitUiState();
+  }
+
+  await openRequestedAccessUi(target);
+}
+
+/**
+ * @param {BridgeRequest} request
+ * @returns {Promise<ResolvedTabTarget | null>}
+ */
+async function resolveRequestedAccessTarget(request) {
+  if (typeof request.tab_id === 'number' && request.tab_id > 0) {
+    try {
+      const tab = await chrome.tabs.get(request.tab_id);
+      return normalizeRequestedAccessTab(tab);
+    } catch {
+      return null;
+    }
+  }
+
+  const tabs = await chrome.tabs.query({
+    active: true,
+    lastFocusedWindow: true,
+  });
+  return normalizeRequestedAccessTab(tabs[0] ?? null);
+}
+
+/**
+ * @param {chrome.tabs.Tab | null | undefined} tab
+ * @returns {ResolvedTabTarget | null}
+ */
+function normalizeRequestedAccessTab(tab) {
+  if (!tab?.id || typeof tab.windowId !== 'number' || typeof tab.url !== 'string' || !tab.url) {
+    return null;
+  }
+  if (isRestrictedAutomationUrl(tab.url)) {
+    return null;
+  }
+  return {
+    tabId: tab.id,
+    windowId: tab.windowId,
+    title: tab.title ?? '',
+    url: tab.url
+  };
+}
+
+/**
+ * Open Browser Bridge UI for an agent-side access request. If the side panel
+ * is already open for that window, leave it in place so its existing attention
+ * state continues to guide the user. Otherwise prefer the popup and fall back
+ * to the tab-scoped side panel when Chrome refuses to open the popup.
+ *
+ * @param {ResolvedTabTarget} target
+ * @returns {Promise<void>}
+ */
+async function openRequestedAccessUi(target) {
+  if (await isSidePanelOpenForWindow(target.windowId)) {
+    return;
+  }
+
+  try {
+    await chrome.action.openPopup({ windowId: target.windowId });
+    return;
+  } catch (error) {
+    console.warn('Could not open Browser Bridge popup for access request.', error);
+  }
+
+  try {
+    await openSidePanelForTab(target.tabId, target.windowId);
+  } catch (error) {
+    console.warn('Could not open Browser Bridge side panel for access request.', error);
+  }
+}
+
+/**
+ * @param {number} windowId
+ * @returns {Promise<boolean>}
+ */
+async function isSidePanelOpenForWindow(windowId) {
+  for (const portState of state.uiPorts.values()) {
+    if (portState.surface !== 'sidepanel') {
+      continue;
+    }
+    const currentTab = portState.scopeTabId
+      ? await getTabState(portState.scopeTabId)
+      : await getCurrentTabState();
+    if (currentTab?.windowId === windowId) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * @param {string} portName
+ * @returns {'popup' | 'sidepanel' | null}
+ */
+function getUiSurfaceFromPortName(portName) {
+  if (portName === 'ui-popup') {
+    return 'popup';
+  }
+  if (portName === 'ui-sidepanel') {
+    return 'sidepanel';
+  }
+  if (portName === 'ui') {
+    return 'popup';
+  }
+  return null;
 }
 
 /**
@@ -1701,25 +1901,23 @@ function isTabEnabled(tabId) {
  */
 async function getActionContext(request) {
   try {
-    if (request.method === 'session.request_access') {
-      const access = await resolveAccessRequest(normalizeAccessRequest(request.params));
-      const tab = await chrome.tabs.get(access.tabId);
+    if (request.method === 'tabs.close') {
+      const params = normalizeTabCloseParams(request.params);
+      const tab = await chrome.tabs.get(params.tabId);
       return {
-        tabId: access.tabId,
+        tabId: params.tabId,
         url: tab.url ?? ''
       };
     }
-
-    const session = await getSessionById(request.session_id);
-    if (!session) {
+    if (!bridgeMethodNeedsTab(request.method)) {
       return null;
     }
-
-    const tab = await chrome.tabs.get(session.tabId);
-
+    const tab = await resolveRequestTarget(request, {
+      requireScriptable: request.method !== 'tabs.create'
+    });
     return {
-      tabId: session.tabId,
-      url: tab.url ?? ''
+      tabId: tab.tabId,
+      url: tab.url
     };
   } catch {
     return null;
@@ -1969,16 +2167,12 @@ async function emitUiStateForPort(port) {
     ? await getTabState(portState.scopeTabId)
     : await getCurrentTabState();
   const scopedTabId = currentTab?.tabId ?? portState.scopeTabId ?? null;
-  const activeSession = currentTab
-    ? await getSessionForTab(currentTab.tabId, currentTab.url)
-    : null;
 
   postToUiPort(port, {
     type: 'state.sync',
     state: {
       nativeConnected: Boolean(state.nativePort),
       currentTab,
-      activeSession,
       setupStatus: state.setupStatus,
       setupStatusPending: state.setupStatusPending,
       setupStatusError: state.setupStatusError,
@@ -2214,7 +2408,12 @@ function isSetupStatus(value) {
 async function handleUiMessage(port, message) {
   if (message?.type === 'state.request') {
     const scopeTabId = Number(message.scopeTabId);
+    const currentPortState = state.uiPorts.get(port);
+    if (!currentPortState) {
+      return;
+    }
     state.uiPorts.set(port, {
+      surface: currentPortState.surface,
       scopeTabId: Number.isFinite(scopeTabId) && scopeTabId > 0 ? scopeTabId : null
     });
     refreshSetupStatus();
@@ -2235,9 +2434,9 @@ async function handleUiMessage(port, message) {
       if (!tabState) {
         throw new Error(ERROR_CODES.TAB_MISMATCH);
       }
-      await setTabEnabled(tabState.tabId, tabState.title, Boolean(message.enabled));
+      await setWindowEnabled(tabState.windowId, tabState.title, Boolean(message.enabled));
     } else {
-      await setCurrentTabEnabled(Boolean(message.enabled));
+      await setCurrentWindowEnabled(Boolean(message.enabled));
     }
     return;
   }
@@ -2354,38 +2553,6 @@ function getSetupActionErrorSummary(action, message) {
 }
 
 /**
- * Keep stored session origins in sync with the tab's current URL so bridge
- * results stay descriptive after in-tab navigation.
- *
- * @param {number} tabId
- * @param {string} url
- * @returns {Promise<void>}
- */
-async function syncTabSessionsOrigin(tabId, url) {
-  const currentOrigin = safeOrigin(url);
-  if (!currentOrigin) {
-    return;
-  }
-
-  /** @type {Record<string, SessionState>} */
-  const updated = {};
-
-  for (const session of state.sessions.values()) {
-    if (session.tabId !== tabId || session.origin === currentOrigin) {
-      continue;
-    }
-
-    session.origin = currentOrigin;
-    state.sessions.set(session.sessionId, session);
-    updated[`session:${session.sessionId}`] = session;
-  }
-
-  if (Object.keys(updated).length) {
-    await chrome.storage.session.set(updated);
-  }
-}
-
-/**
  * Configure and open the side panel for a single tab so the panel is attached
  * to the current tab instead of acting like a window-global surface.
  *
@@ -2403,83 +2570,6 @@ async function openSidePanelForTab(tabId, windowId) {
     tabId,
     windowId
   });
-}
-
-/**
- * Timestamps of the most recent access prompt per tab so repeated agent
- * retries do not keep reopening the popup or side panel.
- *
- * @type {Map<number, number>}
- */
-const recentAccessPrompts = new Map();
-
-/** Stale prompt threshold – 90 seconds. */
-const ACCESS_PROMPT_COOLDOWN_MS = 90_000;
-
-/**
- * Ask the operator to grant bridge access for one tab by surfacing the popup,
- * with the tab-scoped side panel as a fallback when popup opening is blocked.
- *
- * On retries (within the cooldown window) or when a side panel is already
- * connected, the function sends an attention pulse to the open UI instead of
- * reopening the popup.
- *
- * @param {chrome.tabs.Tab} tab
- * @returns {Promise<{ popupOpened: boolean, sidePanelOpened: boolean, attentionSent: boolean }>}
- */
-async function promptForTabAccess(tab) {
-  let popupOpened = false;
-  let sidePanelOpened = false;
-  let attentionSent = false;
-
-  if (typeof tab.id === 'number' && typeof tab.windowId === 'number') {
-    if (!tab.active) {
-      await chrome.tabs.update(tab.id, { active: true });
-    }
-
-    await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
-
-    const hasUiPort = state.uiPorts.size > 0;
-    const lastPrompt = recentAccessPrompts.get(tab.id);
-    const isRetry = lastPrompt != null && (Date.now() - lastPrompt) < ACCESS_PROMPT_COOLDOWN_MS;
-
-    if (hasUiPort) {
-      // Side panel already open – draw attention instead of opening popup.
-      broadcastAttention(tab.id);
-      attentionSent = true;
-    } else if (isRetry) {
-      // Already prompted recently – open side panel as a gentler nudge.
-      await openSidePanelForTab(tab.id, tab.windowId);
-      sidePanelOpened = true;
-    } else {
-      try {
-        await chrome.action.openPopup({ windowId: tab.windowId });
-        popupOpened = true;
-      } catch {
-        await openSidePanelForTab(tab.id, tab.windowId);
-        sidePanelOpened = true;
-      }
-    }
-
-    recentAccessPrompts.set(tab.id, Date.now());
-  }
-
-  return { popupOpened, sidePanelOpened, attentionSent };
-}
-
-/**
- * Send an attention pulse to every connected UI port that is scoped to the
- * given tab (or globally scoped).
- *
- * @param {number} tabId
- * @returns {void}
- */
-function broadcastAttention(tabId) {
-  for (const [port, portState] of state.uiPorts) {
-    if (portState.scopeTabId == null || portState.scopeTabId === tabId) {
-      postToUiPort(port, { type: 'attention.request', tabId });
-    }
-  }
 }
 
 /**

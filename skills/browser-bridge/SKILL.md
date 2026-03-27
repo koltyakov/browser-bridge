@@ -21,9 +21,9 @@ Example prompt: `Use the browser-bridge skill to verify a component works and ma
 
 ```bash
 bbx status                  # daemon + extension health
-bbx doctor                  # install/session readiness
-bbx request-access          # get session for active tab
+bbx doctor                  # install/access readiness
 bbx call <method> '{...}'   # any RPC method (raw output)
+bbx call --tab 123 <method> '{...}' # explicit tab override
 bbx batch '[{...},...]'     # parallel reads (concurrent)
 bbx tabs                    # list available tabs (prefer this)
 bbx logs                    # recent bridge request log
@@ -75,31 +75,30 @@ bbx rollback <patchId>               # rollback a patch
 bbx screenshot <ref> [outPath]       # capture screenshot
 ```
 
-## Access Request Flow
+## Access Flow
 
-When you request access to a tab, the user must approve it in the Browser Bridge extension popup. This is normal and expected - there will be a brief delay while the user grants access.
+Browser Bridge access is window-scoped. The user turns it on once for the current browser window in the popup or side panel.
 
-**Retry pattern:**
-1. Call `request-access`. If immediate success, proceed.
-2. On `APPROVAL_PENDING`, wait ~3 seconds and retry up to 4 more times (the user is likely approving).
-3. If all retries fail, output this message and wait:
-   
-   > "I need access to the browser tab. Please approve the request in the Browser Bridge extension popup, then type **ready** so I can continue."
+There is no separate "request access" command anymore. Agents should just make the intended Browser Bridge call.
 
-4. After user responds "ready" (or similar), retry `request-access` once more.
+If the first tab-bound call fails with `ACCESS_DENIED` because Browser Bridge is off:
+1. That failed call already surfaces an enable cue in the extension popup/side panel for the relevant window.
+2. Ask the user to open the Browser Bridge popup or side panel and click `Enable`.
+3. After the user confirms, retry the same call once.
 
-**Do not** repeatedly spam requests - use the retry delays.
+After access is enabled:
+1. Default routing follows the active tab in that enabled window.
+2. If the user switches tabs in that window, Browser Bridge follows automatically.
+3. Use `tabId` only when you intentionally need a non-active tab in the same enabled window.
+4. Do not stop at a generic "no access" message before making a real Browser Bridge call, because the first denied call is what triggers the UI cue.
 
 ## Error Recovery
 
 | Error | Recovery |
 |---|---|
-| `SESSION_EXPIRED` | Auto-refreshed by CLI; if it fails, `request-access` again |
-| `APPROVAL_PENDING` | Wait ~3s, retry up to 4 times; then ask user to approve and type "ready" |
+| `ACCESS_DENIED` | The failed call already surfaced an `Enable` cue in the extension UI; ask the user to click `Enable` in the popup/side panel, then retry once |
 | `ELEMENT_STALE` | Re-query with `dom.query` or `dom.find_by_text` |
-| `ORIGIN_MISMATCH` | Tab navigated - `request-access` for new origin |
 | `TIMEOUT` | Extension overloaded or CDP stalled - retry once, then simplify the request |
-| `CAPABILITY_MISSING` | Session lacks permission - `request-access` with needed capability |
 | `DAEMON_OFFLINE` | Daemon not running - start with `bbx-daemon` |
 | `CONNECTION_LOST` | Socket dropped mid-request - retry; if persistent, restart daemon |
 | `BRIDGE_TIMEOUT` | Extension took too long to respond - retry once with simpler call |
@@ -130,7 +129,7 @@ When you request access to a tab, the user must approve it in the Browser Bridge
 
 | Category   | Key Methods                                                                              |
 | ---------- | ---------------------------------------------------------------------------------------- |
-| Session    | `session.request_access`, `session.get_status`, `page.get_state`                         |
+| Access     | `health.ping`, `tabs.list`, `page.get_state`                                             |
 | Inspect    | `dom.query`, `dom.describe`, `dom.get_html`, `styles.get_computed`, `layout.get_box_model`|
 | Find       | `dom.find_by_text`, `dom.find_by_role`, `dom.wait_for`, `dom.get_accessibility_tree`     |
 | Page State | `page.get_console`, `page.get_storage`, `page.get_text`, `page.wait_for_load_state`, `page.evaluate` (debugger-backed) |
@@ -184,7 +183,7 @@ dom.find_by_role('button', 'Login') → input.click
 - **[UI development workflows](references/ui-workflows.md)** - localhost HMR, form triage, design QA, responsive checks, hover/drag, accessibility
 - **[Full protocol reference](references/protocol.md)** - all RPC methods, error codes
 - **[Interaction patterns](references/interaction.md)** - input methods, navigation, form controls, hover, drag, multi-tab workflows
-- **[Capabilities reference](references/capabilities.md)** - full capability table, how to request subsets, `CAPABILITY_MISSING` recovery
+- **[Access and method coverage](references/capabilities.md)** - window-scoped access model and method group overview
 - **[Tailwind CSS guide](references/tailwind.md)** - selector escaping, semantic alternatives, patching strategy (load when `hints.tailwind: true`)
 
 > **MCP mode:** If Browser Bridge is connected through an MCP server (tools named `browser_dom`, `browser_call`, etc.) rather than the CLI, use those MCP tools directly instead of shelling out to `bbx`. In prompts, `BB MCP` and `Browser Bridge MCP` are both acceptable references. Do not treat `bbx-mcp` as a skill alias in MCP-capable clients.
@@ -205,8 +204,7 @@ Shortcut commands intentionally expose only the common case. Use `bbx call <meth
 
 | Response Type | Detection | Summary Format |
 |---|---|---|
-| Health ping | `result.daemon` | `Daemon: ok. Extension: connected/disconnected.` |
-| Session | `result.sessionId` | `Session ready for tab N at origin.` |
+| Health ping | `result.daemon` | `Daemon: ok. Extension: connected/disconnected. Access: ...` |
 | Tab list | `result.tabs` | `Bridge listed N tab(s).` |
 | Page state | `result.url + title + origin` | `Page: Title (origin) [hints].` |
 | Page/DOM text | `result.text/value + truncated` | `Page text: N chars.` |
@@ -234,4 +232,3 @@ Shortcut commands intentionally expose only the common case. Use `bbx call <meth
 | Drag | `result.dragged` | `Drag completed/failed.` |
 | Tab close | `result.closed` | `Tab N closed.` |
 | Tab create | `result.tabId + url` | `Tab N created (url).` |
-| Session revoke | `result.revoked` | `Session revoked.` |

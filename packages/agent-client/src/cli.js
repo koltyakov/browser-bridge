@@ -10,11 +10,11 @@ import { uninstallNativeManifest } from '../../native-host/src/install-manifest.
 import { createRuntimeContext, METHODS } from '../../protocol/src/index.js';
 import { startBridgeMcpServer } from '../../mcp-server/src/server.js';
 import { BridgeClient } from './client.js';
-import { CLI_HELP_SECTIONS, SESSION_COMMANDS } from './command-registry.js';
+import { CLI_HELP_SECTIONS, SHORTCUT_COMMANDS } from './command-registry.js';
 import {
   interactiveCheckbox,
   interactiveConfirm,
-  methodNeedsSession,
+  methodNeedsTab,
   parseIntArg,
   parseJsonObject,
 } from './cli-helpers.js';
@@ -39,13 +39,11 @@ import {
 import {
   getDoctorReport,
   requestBridge,
-  requireSession,
   resolveRef,
 } from './runtime.js';
 import { collectSetupStatus } from './setup-status.js';
 import { summarizeBridgeResponse } from './subagent.js';
 
-/** @typedef {import('../../protocol/src/types.js').SessionState} SessionState */
 /** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
 /** @typedef {{ image: string, rect: Record<string, unknown> }} ScreenshotResult */
 
@@ -446,9 +444,9 @@ async function main() {
     }
 
     if (command === 'call') {
-      const { sessionId, method, params } = await parseCallCommand(rest);
+      const { tabId, method, params } = await parseCallCommand(rest);
       const response = await requestBridge(client, method, params, {
-        sessionId,
+        tabId,
         source: REQUEST_SOURCE,
       });
       printJson(response.ok ? response.result : response);
@@ -467,17 +465,13 @@ async function main() {
       if (!Array.isArray(calls)) {
         throw new Error('Batch input must be a JSON array.');
       }
-      const needsSession = calls.some((c) => methodNeedsSession(c.method));
-      const session = needsSession
-        ? await requireSession(client, { source: REQUEST_SOURCE })
-        : null;
       const results = await Promise.all(
         calls.map(async (call) => {
           try {
             const response = await client.request({
               method: /** @type {BridgeMethod} */ (call.method),
-              sessionId: methodNeedsSession(call.method)
-                ? (session?.sessionId ?? null)
+              tabId: methodNeedsTab(call.method) && typeof call.tabId === 'number'
+                ? call.tabId
                 : null,
               params: call.params || {},
               meta: { source: REQUEST_SOURCE },
@@ -497,82 +491,36 @@ async function main() {
       return;
     }
 
-    if (command === 'request-access') {
-      const [tabIdOrOrigin, originArg] = rest;
-      const parsedTabId = Number(tabIdOrOrigin);
-      const response = await requestBridge(
-        client,
-        'session.request_access',
-        {
-          tabId:
-            Number.isFinite(parsedTabId) && parsedTabId > 0
-              ? parsedTabId
-              : undefined,
-          origin:
-            Number.isFinite(parsedTabId) && parsedTabId > 0
-              ? originArg
-              : tabIdOrOrigin || undefined,
-        },
-        { source: REQUEST_SOURCE },
-      );
-      await printSummary(response);
-      return;
-    }
-
-    if (command === 'session') {
-      const session = await requireSession(client, { source: REQUEST_SOURCE });
-      printJson(session);
-      return;
-    }
-
-    if (command === 'revoke') {
-      const session = await requireSession(client, { source: REQUEST_SOURCE });
-      const response = await requestBridge(
-        client,
-        'session.revoke',
-        {},
-        {
-          sessionId: session.sessionId,
-          source: REQUEST_SOURCE,
-        },
-      );
-      await printSummary(response);
-      return;
-    }
-
-    const sessionCmd = SESSION_COMMANDS[command];
-    if (sessionCmd) {
-      const session = await requireSession(client, { source: REQUEST_SOURCE });
+    const shortcutCmd = SHORTCUT_COMMANDS[command];
+    if (shortcutCmd) {
       let elementRef;
-      if (sessionCmd.resolve) {
+      if (shortcutCmd.resolve) {
         if (!rest[0]) throw new Error(`Usage: ${command} <ref|selector>`);
         elementRef = await resolveRef(
           client,
           rest[0],
-          session.sessionId,
+          null,
           REQUEST_SOURCE,
         );
       }
       const response = await requestBridge(
         client,
-        sessionCmd.method,
-        sessionCmd.build(rest, elementRef),
-        { sessionId: session.sessionId, source: REQUEST_SOURCE },
+        shortcutCmd.method,
+        shortcutCmd.build(rest, elementRef),
+        { source: REQUEST_SOURCE },
       );
-      await printSummary(response, sessionCmd.printMethod);
+      await printSummary(response, shortcutCmd.printMethod);
       return;
     }
 
-    // Special session commands requiring custom control flow
     if (command === 'press-key') {
       const [key, refOrSelector] = rest;
       if (!key) throw new Error('Usage: press-key <key> [ref|selector]');
-      const session = await requireSession(client, { source: REQUEST_SOURCE });
       const elementRef = refOrSelector
         ? await resolveRef(
           client,
           refOrSelector,
-          session.sessionId,
+          null,
           REQUEST_SOURCE,
         )
         : undefined;
@@ -583,7 +531,7 @@ async function main() {
           key,
           target: elementRef ? { elementRef } : undefined,
         },
-        { sessionId: session.sessionId, source: REQUEST_SOURCE },
+        { source: REQUEST_SOURCE },
       );
       await printSummary(response);
       return;
@@ -591,11 +539,10 @@ async function main() {
 
     if (command === 'screenshot') {
       const [refOrSelector, outputPath] = rest;
-      const session = await requireSession(client, { source: REQUEST_SOURCE });
       const elementRef = await resolveRef(
         client,
         refOrSelector,
-        session.sessionId,
+        null,
         REQUEST_SOURCE,
       );
       const response = await requestBridge(
@@ -604,7 +551,7 @@ async function main() {
         {
           elementRef,
         },
-        { sessionId: session.sessionId, source: REQUEST_SOURCE },
+        { source: REQUEST_SOURCE },
       );
       if (!response.ok) {
         await printSummary(response);
@@ -635,7 +582,6 @@ async function main() {
         throw new Error(
           'Usage: eval <expression>  (or pipe via stdin: echo "expr" | bbx eval -)',
         );
-      const session = await requireSession(client, { source: REQUEST_SOURCE });
       const response = await requestBridge(
         client,
         'page.evaluate',
@@ -643,7 +589,7 @@ async function main() {
           expression,
           returnByValue: true,
         },
-        { sessionId: session.sessionId, source: REQUEST_SOURCE },
+        { source: REQUEST_SOURCE },
       );
       await printSummary(response);
       return;
@@ -775,14 +721,13 @@ async function uninstallBrowserBridge() {
 
 /**
  * @param {string[]} args
- * @returns {Promise<{ sessionId: string | null, method: BridgeMethod, params: Record<string, unknown> }>}
+ * @returns {Promise<{ tabId: number | null, method: BridgeMethod, params: Record<string, unknown> }>}
  */
 async function parseCallCommand(args) {
-  const [first, second, third] = args;
+  const parsed = extractTabFlag(args);
+  const [first, second] = parsed.rest;
   if (!first) {
-    throw new Error(
-      'Usage: call <method> [paramsJson] or call <sessionId|null> <method> [paramsJson]',
-    );
+    throw new Error('Usage: call [--tab <tabId>] <method> [paramsJson]');
   }
 
   if (first.includes('.')) {
@@ -799,20 +744,25 @@ async function parseCallCommand(args) {
     }
     return {
       method,
-      sessionId: methodNeedsSession(method)
-        ? (await requireSession(client, { source: REQUEST_SOURCE })).sessionId
-        : null,
+      tabId: methodNeedsTab(method) ? parsed.tabId : null,
       params: parseJsonObject(rawParams),
     };
   }
 
-  if (!second) {
-    throw new Error('Usage: call <sessionId|null> <method> [paramsJson]');
-  }
+  throw new Error('Usage: call [--tab <tabId>] <method> [paramsJson]');
+}
 
-  return {
-    sessionId: first === 'null' ? null : first,
-    method: /** @type {BridgeMethod} */ (second),
-    params: parseJsonObject(third),
-  };
+/**
+ * @param {string[]} args
+ * @returns {{ tabId: number | null, rest: string[] }}
+ */
+function extractTabFlag(args) {
+  const rest = [...args];
+  let tabId = null;
+  const tabIndex = rest.indexOf('--tab');
+  if (tabIndex !== -1) {
+    tabId = parseIntArg(rest[tabIndex + 1], 'tabId');
+    rest.splice(tabIndex, 2);
+  }
+  return { tabId, rest };
 }

@@ -1,7 +1,6 @@
 // @ts-check
 
 import { applyBudget } from './budget.js';
-import { DEFAULT_CAPABILITIES, isCapability } from './capabilities.js';
 import {
   BUDGET_PRESETS,
   DEFAULT_A11Y_MAX_DEPTH,
@@ -23,7 +22,6 @@ import { BridgeError, ERROR_CODES } from './errors.js';
 import { BRIDGE_METHODS, createBridgeMethodGroups } from './registry.js';
 
 /** @typedef {import('./types.js').AccessibilityTreeParams} AccessibilityTreeParams */
-/** @typedef {import('./types.js').AccessRequestParams} AccessRequestParams */
 /** @typedef {import('./types.js').BridgeFailureResponse} BridgeFailureResponse */
 /** @typedef {import('./types.js').BridgeMeta} BridgeMeta */
 /** @typedef {import('./types.js').BridgeMethod} BridgeMethod */
@@ -42,7 +40,6 @@ import { BRIDGE_METHODS, createBridgeMethodGroups } from './registry.js';
 /** @typedef {import('./types.js').NavigationActionParams} NavigationActionParams */
 /** @typedef {import('./types.js').NetworkParams} NetworkParams */
 /** @typedef {import('./types.js').NormalizedAccessibilityTreeParams} NormalizedAccessibilityTreeParams */
-/** @typedef {import('./types.js').NormalizedAccessRequest} NormalizedAccessRequest */
 /** @typedef {import('./types.js').NormalizedCheckedAction} NormalizedCheckedAction */
 /** @typedef {import('./types.js').NormalizedConsoleParams} NormalizedConsoleParams */
 /** @typedef {import('./types.js').NormalizedDomQuery} NormalizedDomQuery */
@@ -79,7 +76,6 @@ import { BRIDGE_METHODS, createBridgeMethodGroups } from './registry.js';
 /** @typedef {import('./types.js').WaitForParams} WaitForParams */
 
 export const PROTOCOL_VERSION = '1.0';
-const NON_EXPIRING_SESSION_TTL_MS = 10 * 365 * 24 * 60 * 60 * 1000;
 
 /**
  * Clamp a numeric value between min and max, falling back to a default.
@@ -101,17 +97,17 @@ export const METHODS = BRIDGE_METHODS;
  * @param {{
  *   id: string,
  *   method: BridgeMethod,
- *   sessionId?: string | null,
+ *   tabId?: number | null,
  *   params?: Record<string, unknown>,
  *   meta?: BridgeMeta
  * }} input
  * @returns {BridgeRequest}
  */
-export function createRequest({ id, method, sessionId = null, params = {}, meta = {} }) {
+export function createRequest({ id, method, tabId = null, params = {}, meta = {} }) {
   return validateBridgeRequest({
     id,
     method,
-    session_id: sessionId,
+    tab_id: tabId,
     params,
     meta: {
       protocol_version: PROTOCOL_VERSION,
@@ -186,11 +182,15 @@ export function validateBridgeRequest(request) {
   const meta = candidate.meta && typeof candidate.meta === 'object'
     ? /** @type {Record<string, unknown>} */ (candidate.meta)
     : {};
+  if (candidate.session_id != null) {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'session_id is no longer supported. Use tab_id or window-scoped default routing.');
+  }
+  const parsedTabId = Number(candidate.tab_id);
 
   return {
     id: candidate.id,
     method: /** @type {BridgeMethod} */ (candidate.method),
-    session_id: typeof candidate.session_id === 'string' ? candidate.session_id : null,
+    tab_id: Number.isFinite(parsedTabId) && parsedTabId > 0 ? parsedTabId : null,
     params: candidate.params && typeof candidate.params === 'object'
       ? /** @type {Record<string, unknown>} */ (candidate.params)
       : {},
@@ -202,25 +202,6 @@ export function validateBridgeRequest(request) {
       token_budget: typeof meta.token_budget === 'number' ? meta.token_budget : null,
       source: meta.source === 'cli' || meta.source === 'mcp' ? meta.source : undefined
     }
-  };
-}
-
-/**
- * @param {AccessRequestParams} [params={}]
- * @returns {NormalizedAccessRequest}
- */
-export function normalizeAccessRequest(params = {}) {
-  const capabilities = Array.isArray(params.capabilities) && params.capabilities.length
-    ? params.capabilities.filter(isCapability)
-    : [...DEFAULT_CAPABILITIES];
-  const parsedTabId = Number(params.tabId);
-
-  return {
-    tabId: Number.isFinite(parsedTabId) && parsedTabId > 0 ? parsedTabId : null,
-    origin: String(params.origin || ''),
-    capabilities,
-    ttlMs: Number(params.ttlMs) || NON_EXPIRING_SESSION_TTL_MS,
-    label: params.label ? String(params.label) : ''
   };
 }
 
@@ -616,7 +597,6 @@ export function normalizeViewportResizeParams(params = {}) {
  *   budgets: Record<string, { n: number, d: number, t: number }>,
  *   methods: Record<string, string[]>,
  *   errors: Record<string, string>,
- *   capabilities: Record<string, string>,
  *   tips: string[],
  *   flow: BridgeMethod[],
  *   limits: Record<string, { min: number, max: number, default: number }>
@@ -634,34 +614,14 @@ export function createRuntimeContext() {
     },
     methods: methodGroups,
     errors: {
-      ACCESS_DENIED: 'Tab not enabled - user must allow in extension UI',
-      SESSION_EXPIRED: 'Session invalid - call session.request_access again',
-      APPROVAL_PENDING: 'Access prompt opened - retry after ~3s',
+      ACCESS_DENIED: 'Browser Bridge is off for this window or the page is restricted; if access is off, the first denied call surfaces an Enable cue in the extension UI',
       TAB_MISMATCH: 'Tab closed or not found',
-      ORIGIN_MISMATCH: 'Tab navigated to different origin',
-      CAPABILITY_MISSING: 'Session lacks needed capability',
       ELEMENT_STALE: 'Element removed from DOM - re-query',
       INVALID_REQUEST: 'Malformed method or params',
       TIMEOUT: 'Operation exceeded time limit',
       RATE_LIMITED: 'Too many requests - back off',
       INTERNAL_ERROR: 'Unexpected extension error',
       EXTENSION_DISCONNECTED: 'Extension not connected to daemon - check Chrome'
-    },
-    capabilities: {
-      'page.read': 'page.get_state, page.get_console, page.get_storage, page.get_text, page.get_network',
-      'page.evaluate': 'page.evaluate (JS in page context via CDP)',
-      'dom.read': 'dom.query, dom.describe, dom.get_text, dom.find_by_text, dom.find_by_role, dom.get_html, dom.get_accessibility_tree',
-      'styles.read': 'styles.get_computed, styles.get_matched_rules',
-      'layout.read': 'layout.get_box_model, layout.hit_test',
-      'automation.input': 'input.click, input.type, input.focus, input.press_key, input.hover, input.drag',
-      'patch.styles': 'patch.apply_styles',
-      'patch.dom': 'patch.apply_dom, patch.list, patch.rollback',
-      'screenshot.partial': 'screenshot.capture_element, screenshot.capture_region',
-      'navigation.control': 'navigation.navigate, navigation.reload, navigation.go_back/forward',
-      'viewport.control': 'viewport.scroll, viewport.resize',
-      'tabs.manage': 'tabs.create, tabs.close',
-      'network.read': 'page.get_network',
-      'performance.read': 'performance.get_metrics'
     },
     tips: [
       'dom.query quick budget first; widen only if truncated',
@@ -674,6 +634,7 @@ export function createRuntimeContext() {
       'page.evaluate to read framework state (React, Vue, Next.js data)',
       'dom.find_by_text / dom.find_by_role for semantic element finding',
       'dom.get_accessibility_tree for reliable interactive element discovery',
+      'If a tab-bound call returns ACCESS_DENIED because access is off, ask the user to click Enable in the Browser Bridge popup or side panel, then retry once',
       'dom.wait_for after HMR / navigation to detect page updates',
       'page.get_console to catch runtime errors after interactions',
       'page.get_network to inspect XHR/fetch API calls',
@@ -685,7 +646,7 @@ export function createRuntimeContext() {
       'page.get_storage reads localStorage/sessionStorage without evaluate'
     ],
     flow: [
-      'session.request_access',
+      'health.ping',
       'page.get_state',
       'dom.query',
       'styles.get_computed',

@@ -5,15 +5,13 @@ import path from 'node:path';
 
 import { APP_NAME, getManifestInstallDir } from '../../native-host/src/config.js';
 import { resolveDefaultExtensionId } from '../../native-host/src/install-manifest.js';
-import { methodNeedsSession } from './cli-helpers.js';
+import { methodNeedsTab } from './cli-helpers.js';
 import { BridgeClient } from './client.js';
-import { clearSession, loadSession, saveSession } from './session-store.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
 /** @typedef {import('../../protocol/src/types.js').BridgeMeta} BridgeMeta */
 /** @typedef {import('../../protocol/src/types.js').BridgeRequestSource} BridgeRequestSource */
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
-/** @typedef {import('../../protocol/src/types.js').SessionState} SessionState */
 
 /**
  * @typedef {{
@@ -24,8 +22,11 @@ import { clearSession, loadSession, saveSession } from './session-store.js';
  *   defaultExtensionIdSource: string,
  *   daemonReachable: boolean,
  *   extensionConnected: boolean,
- *   savedSession: SessionState | null,
- *   activeSession: SessionState | null,
+ *   accessEnabled: boolean,
+ *   enabledWindowId: number | null,
+ *   routeTabId: number | null,
+ *   routeReady: boolean,
+ *   routeReason: string,
  *   issues: string[],
  *   nextSteps: string[]
  * }} DoctorReport
@@ -43,96 +44,36 @@ export async function ensureClientConnected(client) {
 
 /**
  * @param {BridgeClient} client
- * @param {{ source?: BridgeRequestSource }} [options]
- * @returns {Promise<SessionState>}
- */
-export async function requireSession(client, options = {}) {
-  await ensureClientConnected(client);
-
-  const session = await loadSession();
-  if (!session?.sessionId) {
-    throw new Error('No active saved session. Enable agent communication for the tab in the extension and run `request-access` first.');
-  }
-
-  const status = await client.request({
-    method: 'session.get_status',
-    sessionId: session.sessionId,
-    meta: withRequestMeta(options.source, null)
-  });
-  if (status.ok) {
-    const activeSession = /** @type {SessionState} */ (status.result);
-    await saveSession(activeSession);
-    return activeSession;
-  }
-
-  if (status.error.code !== 'SESSION_EXPIRED') {
-    throw new Error(status.error.message);
-  }
-
-  const refreshed = await client.request({
-    method: 'session.request_access',
-    params: {
-      tabId: session.tabId,
-      origin: session.origin
-    },
-    meta: withRequestMeta(options.source, null)
-  });
-  if (!refreshed.ok) {
-    throw new Error(refreshed.error.message);
-  }
-
-  const renewedSession = /** @type {SessionState} */ (refreshed.result);
-  await saveSession(renewedSession);
-  return renewedSession;
-}
-
-/**
- * @param {BridgeClient} client
  * @param {BridgeMethod} method
  * @param {Record<string, unknown>} [params={}]
- * @param {{ sessionId?: string | null, source?: BridgeRequestSource, tokenBudget?: number | null }} [options]
+ * @param {{ tabId?: number | null, source?: BridgeRequestSource, tokenBudget?: number | null }} [options]
  * @returns {Promise<BridgeResponse>}
  */
 export async function requestBridge(client, method, params = {}, options = {}) {
   await ensureClientConnected(client);
-  let sessionId = options.sessionId ?? null;
-
-  if (sessionId == null && methodNeedsSession(method)) {
-    sessionId = (await requireSession(client, { source: options.source })).sessionId;
-  }
-
-  const response = await client.request({
+  return client.request({
     method,
     params,
-    sessionId,
+    tabId: methodNeedsTab(method) ? (options.tabId ?? null) : null,
     meta: withRequestMeta(options.source, options.tokenBudget)
   });
-
-  if (method === 'session.request_access' && response.ok) {
-    await saveSession(/** @type {SessionState} */ (response.result));
-  }
-  if (method === 'session.revoke' && response.ok) {
-    await clearSession();
-  }
-
-  return response;
 }
 
 /**
  * @param {BridgeClient} client
  * @param {string} refOrSelector
- * @param {string | null} [sessionId=null]
+ * @param {number | null} [tabId=null]
  * @param {BridgeRequestSource} [source]
  * @returns {Promise<string>}
  */
-export async function resolveRef(client, refOrSelector, sessionId = null, source) {
+export async function resolveRef(client, refOrSelector, tabId = null, source) {
   if (refOrSelector.startsWith('el_')) {
     return refOrSelector;
   }
 
   const response = await requestBridge(client, 'dom.query', {
     selector: refOrSelector
-  }, { sessionId, source });
+  }, { tabId, source });
 
   if (!response.ok) {
     throw new Error(response.error.message);
@@ -201,7 +142,6 @@ export async function loadInstalledManifest() {
  *   loadManifest?: () => Promise<{allowed_origins?: string[]} | null>,
  *   manifestPath?: string,
  *   defaultExtensionIdInfo?: { extensionId: string | null, source: string },
- *   loadSavedSession?: () => Promise<SessionState | null>,
  *   bridgeClientRunner?: <T>(callback: (client: BridgeClient) => Promise<T>) => Promise<T>
  * }} DoctorReportOptions
  */
@@ -217,7 +157,6 @@ export async function getDoctorReport(options = {}) {
     : [];
   const manifestInstalled = Boolean(manifest);
   const defaultExtensionId = options.defaultExtensionIdInfo || resolveDefaultExtensionId();
-  const savedSession = await (options.loadSavedSession || loadSession)();
 
   /** @type {DoctorReport} */
   const report = {
@@ -228,8 +167,11 @@ export async function getDoctorReport(options = {}) {
     defaultExtensionIdSource: defaultExtensionId.source,
     daemonReachable: false,
     extensionConnected: false,
-    savedSession,
-    activeSession: null,
+    accessEnabled: false,
+    enabledWindowId: null,
+    routeTabId: null,
+    routeReady: false,
+    routeReason: 'access_disabled',
     issues: [],
     nextSteps: []
   };
@@ -240,19 +182,20 @@ export async function getDoctorReport(options = {}) {
       if (!response.ok) {
         throw new Error(response.error.message);
       }
-      const result = /** @type {{ daemon?: string, extensionConnected?: boolean }} */ (response.result);
+      const result = /** @type {{ daemon?: string, extensionConnected?: boolean, access?: {
+        enabled?: boolean,
+        windowId?: number | null,
+        routeTabId?: number | null,
+        routeReady?: boolean,
+        reason?: string
+      } }} */ (response.result);
       report.daemonReachable = result.daemon === 'ok';
       report.extensionConnected = result.extensionConnected === true;
-
-      if (savedSession?.sessionId) {
-        const sessionStatus = await client.request({
-          method: 'session.get_status',
-          sessionId: savedSession.sessionId
-        });
-        if (sessionStatus.ok) {
-          report.activeSession = /** @type {SessionState} */ (sessionStatus.result);
-        }
-      }
+      report.accessEnabled = result.access?.enabled === true;
+      report.enabledWindowId = typeof result.access?.windowId === 'number' ? result.access.windowId : null;
+      report.routeTabId = typeof result.access?.routeTabId === 'number' ? result.access.routeTabId : null;
+      report.routeReady = result.access?.routeReady === true;
+      report.routeReason = typeof result.access?.reason === 'string' ? result.access.reason : 'access_disabled';
     });
   } catch {
     report.daemonReachable = false;
@@ -273,9 +216,12 @@ export async function getDoctorReport(options = {}) {
     report.issues.push('extension_disconnected');
     report.nextSteps.push('Open Chrome and make sure the Browser Bridge extension is installed and active.');
   }
-  if (report.daemonReachable && report.extensionConnected && !report.activeSession) {
-    report.issues.push('session_not_ready');
-    report.nextSteps.push('Enable agent communication for the target tab in the extension UI, then run `bbx request-access`.');
+  if (report.daemonReachable && report.extensionConnected && !report.accessEnabled) {
+    report.issues.push('access_disabled');
+    report.nextSteps.push('Make the intended Browser Bridge call. If it returns ACCESS_DENIED, the extension popup or side panel will surface an Enable cue for that window; ask the user to click Enable, then retry once.');
+  } else if (report.daemonReachable && report.extensionConnected && !report.routeReady) {
+    report.issues.push(report.routeReason || 'no_routable_active_tab');
+    report.nextSteps.push('Switch to a supported page in the enabled window, or use an explicit tabId override.');
   }
 
   return report;

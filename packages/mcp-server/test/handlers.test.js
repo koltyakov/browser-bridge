@@ -2,21 +2,15 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 
 import {
   BUDGET_PRESETS,
   BRIDGE_METHOD_REGISTRY,
-  DEFAULT_CAPABILITIES,
   DEFAULT_PAGE_TEXT_BUDGET,
 } from '../../protocol/src/index.js';
 import { BridgeClient } from '../../agent-client/src/client.js';
-import { clearSession, saveSession } from '../../agent-client/src/session-store.js';
 import {
   BUDGET_PRESET_DESCRIPTION,
-  CAPABILITY_DESCRIPTION,
 } from '../src/server.js';
 import {
   CAPTURE_ACTIONS,
@@ -34,7 +28,6 @@ import {
   handlePageTool,
   handlePatchTool,
   handleRawCallTool,
-  handleSessionTool,
   handleSkillTool,
   handleStatusTool,
   handleStylesLayoutTool,
@@ -42,43 +35,10 @@ import {
 } from '../src/handlers.js';
 
 /**
- * Set BROWSER_BRIDGE_HOME to a temp dir, save a test session, run the callback, then
- * restore the original env and clean up the session. Using a temp dir ensures
- * session reads/writes stay isolated and don't require permissions on the real
- * ~/.browser-bridge directory.
- *
- * @param {() => Promise<void>} callback
- * @returns {Promise<void>}
- */
-async function withTestSession(callback) {
-  const prevBridgeHome = process.env.BROWSER_BRIDGE_HOME;
-  const tempBridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-handler-test-'));
-  process.env.BROWSER_BRIDGE_HOME = tempBridgeHome;
-  await saveSession({
-    sessionId: 'sess_test',
-    tabId: 42,
-    origin: 'https://example.com',
-    capabilities: [],
-    expiresAt: Date.now() + 60_000
-  });
-  try {
-    await callback();
-  } finally {
-    await clearSession();
-    if (prevBridgeHome !== undefined) {
-      process.env.BROWSER_BRIDGE_HOME = prevBridgeHome;
-    } else {
-      delete process.env.BROWSER_BRIDGE_HOME;
-    }
-    await fs.promises.rm(tempBridgeHome, { recursive: true, force: true });
-  }
-}
-
-/**
  * @typedef {{
  *   method: import('../../protocol/src/types.js').BridgeMethod,
  *   params?: Record<string, unknown>,
- *   sessionId?: string | null,
+ *   tabId?: number | null,
  *   meta?: Record<string, unknown>
  * }} RequestRecord
  */
@@ -99,8 +59,8 @@ async function withMockedBridge(responder, callback) {
     this.connected = true;
   };
   BridgeClient.prototype.close = async function close() {};
-  BridgeClient.prototype.request = async function request({ method, params = {}, sessionId = null, meta = {} }) {
-    const record = { method, params, sessionId, meta };
+  BridgeClient.prototype.request = async function request({ method, params = {}, tabId = null, meta = {} }) {
+    const record = { method, params, tabId, meta };
     calls.push(record);
     return responder(record, calls.length - 1);
   };
@@ -168,35 +128,22 @@ test('handleTabsTool forwards active for tabs.create', async () => {
   });
 });
 
-test('handleDomTool reuses the saved session for session-bound calls', async () => {
-  await withTestSession(async () => {
-    await withMockedBridge(async (record, index) => {
-      if (index === 0) {
-        assert.equal(record.method, 'session.get_status');
-        return ok({
-          sessionId: 'sess_test',
-          tabId: 42,
-          origin: 'https://example.com',
-          capabilities: [],
-          expiresAt: Date.now() + 60_000
-        });
-      }
-
-      assert.equal(record.method, 'dom.query');
-      assert.equal(record.sessionId, 'sess_test');
-      return ok({
-        nodes: [
-          { elementRef: 'el_main', tag: 'main', attrs: {}, bbox: {}, textExcerpt: 'Hello' }
-        ]
-      });
-    }, async (calls) => {
-      const result = await handleDomTool({ action: 'query', selector: 'main' });
-
-      assert.equal(calls.length, 2);
-      assert.equal(calls[1].sessionId, 'sess_test');
-      assert.match(result.content[0].text, /DOM query returned 1 element/);
-      assert.equal(result.structuredContent.ok, true);
+test('handleDomTool uses default active-tab routing when no tabId is provided', async () => {
+  await withMockedBridge(async (record) => {
+    assert.equal(record.method, 'dom.query');
+    assert.equal(record.tabId, null);
+    return ok({
+      nodes: [
+        { elementRef: 'el_main', tag: 'main', attrs: {}, bbox: {}, textExcerpt: 'Hello' }
+      ]
     });
+  }, async (calls) => {
+    const result = await handleDomTool({ action: 'query', selector: 'main' });
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].tabId, null);
+    assert.match(result.content[0].text, /DOM query returned 1 element/);
+    assert.equal(result.structuredContent.ok, true);
   });
 });
 
@@ -235,178 +182,103 @@ test('handleSkillTool returns runtime context without a bridge connection', asyn
   assert.ok(result.structuredContent.runtimeContext);
 });
 
-/** A minimal resolved session returned by session.get_status mocks. */
-const TEST_SESSION = Object.freeze({
-  sessionId: 'sess_test',
-  tabId: 42,
-  origin: 'https://example.com',
-  capabilities: [],
-  expiresAt: Date.now() + 60_000
-});
-
-/**
- * Return a mock responder that always responds to session.get_status with the
- * test session and delegates all other calls to `inner`.
- *
- * @param {(record: import('./handlers.test.js').RequestRecord, index: number) => Promise<import('../../protocol/src/types.js').BridgeResponse>} inner
- * @returns {(record: import('./handlers.test.js').RequestRecord, index: number) => Promise<import('../../protocol/src/types.js').BridgeResponse>}
- */
-function withSessionMock(inner) {
-  return async (record, index) => {
-    if (record.method === 'session.get_status') {
-      return ok(TEST_SESSION);
-    }
-    return inner(record, index);
-  };
-}
-
-test('handleSessionTool request_access calls session.request_access', async () => {
-  // request_access does not need a session but does call saveSession on success.
-  await withTestSession(async () => {
-    await withMockedBridge(async () => ok({
-      sessionId: 'sess_new',
-      tabId: 5,
-      origin: 'https://example.com',
-      capabilities: [],
-      expiresAt: Date.now() + 60_000
-    }), async (calls) => {
-      const result = await handleSessionTool({ action: 'request_access', tabId: 5 });
-      assert.equal(calls.length, 1);
-      assert.equal(calls[0].method, 'session.request_access');
-      assert.equal(result.isError, undefined);
-    });
-  });
-});
-
-test('handleSessionTool get_status calls session.get_status with the provided sessionId', async () => {
+test('handlePageTool state calls page.get_state', async () => {
   await withMockedBridge(async () => ok({
-    sessionId: 'sess_abc',
-    tabId: 7,
+    url: 'https://example.com/',
+    title: 'Example',
     origin: 'https://example.com',
-    capabilities: [],
-    expiresAt: Date.now() + 60_000
+    hints: {}
   }), async (calls) => {
-    const result = await handleSessionTool({ action: 'get_status', sessionId: 'sess_abc' });
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].method, 'session.get_status');
-    assert.equal(calls[0].sessionId, 'sess_abc');
+    const result = await handlePageTool({ action: 'state' });
+    const pageCall = calls.find((c) => c.method === 'page.get_state');
+    assert.ok(pageCall, 'page.get_state should be called');
     assert.equal(result.isError, undefined);
   });
 });
 
-test('handlePageTool state calls page.get_state', async () => {
-  await withTestSession(async () => {
-    await withMockedBridge(withSessionMock(async () => ok({
-      url: 'https://example.com/',
-      title: 'Example',
-      origin: 'https://example.com',
-      hints: {}
-    })), async (calls) => {
-      const result = await handlePageTool({ action: 'state' });
-      const pageCall = calls.find((c) => c.method === 'page.get_state');
-      assert.ok(pageCall, 'page.get_state should be called');
-      assert.equal(result.isError, undefined);
-    });
-  });
-});
-
 test('handlePageTool evaluate calls page.evaluate with given expression', async () => {
-  await withTestSession(async () => {
-    await withMockedBridge(withSessionMock(async () => ok({ value: 42, type: 'number' })), async (calls) => {
-      const result = await handlePageTool({ action: 'evaluate', expression: '1+1' });
-      const evalCall = calls.find((c) => c.method === 'page.evaluate');
-      assert.ok(evalCall, 'page.evaluate should be called');
-      assert.equal(evalCall.params.expression, '1+1');
-      assert.equal(evalCall.meta?.source, 'mcp');
-      assert.equal(result.isError, undefined);
-    });
+  await withMockedBridge(async () => ok({ value: 42, type: 'number' }), async (calls) => {
+    const result = await handlePageTool({ action: 'evaluate', expression: '1+1' });
+    const evalCall = calls.find((c) => c.method === 'page.evaluate');
+    assert.ok(evalCall, 'page.evaluate should be called');
+    assert.equal(evalCall.params.expression, '1+1');
+    assert.equal(evalCall.meta?.source, 'mcp');
+    assert.equal(result.isError, undefined);
   });
 });
 
 test('handleNavigationTool navigate calls navigation.navigate', async () => {
-  await withTestSession(async () => {
-    await withMockedBridge(withSessionMock(async () => ok({ navigated: true })), async (calls) => {
-      const result = await handleNavigationTool({ action: 'navigate', url: 'https://example.com' });
-      const navCall = calls.find((c) => c.method === 'navigation.navigate');
-      assert.ok(navCall, 'navigation.navigate should be called');
-      assert.equal(navCall.params.url, 'https://example.com');
-      assert.equal(result.isError, undefined);
-    });
+  await withMockedBridge(async () => ok({ navigated: true }), async (calls) => {
+    const result = await handleNavigationTool({ action: 'navigate', url: 'https://example.com' });
+    const navCall = calls.find((c) => c.method === 'navigation.navigate');
+    assert.ok(navCall, 'navigation.navigate should be called');
+    assert.equal(navCall.params.url, 'https://example.com');
+    assert.equal(result.isError, undefined);
   });
 });
 
 test('handleNavigationTool scroll calls viewport.scroll', async () => {
-  await withTestSession(async () => {
-    await withMockedBridge(withSessionMock(async () => ok({})), async (calls) => {
-      const result = await handleNavigationTool({ action: 'scroll', top: 500 });
-      const scrollCall = calls.find((c) => c.method === 'viewport.scroll');
-      assert.ok(scrollCall, 'viewport.scroll should be called');
-      assert.equal(scrollCall.params.top, 500);
-      assert.equal(result.isError, undefined);
-    });
+  await withMockedBridge(async () => ok({}), async (calls) => {
+    const result = await handleNavigationTool({ action: 'scroll', top: 500 });
+    const scrollCall = calls.find((c) => c.method === 'viewport.scroll');
+    assert.ok(scrollCall, 'viewport.scroll should be called');
+    assert.equal(scrollCall.params.top, 500);
+    assert.equal(result.isError, undefined);
   });
 });
 
 test('handleInputTool click resolves elementRef and calls input.click', async () => {
-  await withTestSession(async () => {
-    await withMockedBridge(withSessionMock(async (record) => {
-      if (record.method === 'dom.query') {
-        return ok({ nodes: [{ elementRef: 'el_btn', tag: 'button', attrs: {}, bbox: {}, textExcerpt: 'OK' }] });
-      }
-      return ok({});
-    }), async (calls) => {
-      const result = await handleInputTool({ action: 'click', selector: 'button' });
-      const clickCall = calls.find((c) => c.method === 'input.click');
-      assert.ok(clickCall, 'input.click should be called');
-      assert.equal(result.isError, undefined);
-    });
+  await withMockedBridge(async (record) => {
+    if (record.method === 'dom.query') {
+      return ok({ nodes: [{ elementRef: 'el_btn', tag: 'button', attrs: {}, bbox: {}, textExcerpt: 'OK' }] });
+    }
+    return ok({});
+  }, async (calls) => {
+    const result = await handleInputTool({ action: 'click', selector: 'button' });
+    const clickCall = calls.find((c) => c.method === 'input.click');
+    assert.ok(clickCall, 'input.click should be called');
+    assert.equal(result.isError, undefined);
   });
 });
 
 test('handleStylesLayoutTool computed resolves ref and calls styles.get_computed', async () => {
-  await withTestSession(async () => {
-    await withMockedBridge(withSessionMock(async (record) => {
-      if (record.method === 'dom.query') {
-        return ok({ nodes: [{ elementRef: 'el_div', tag: 'div', attrs: {}, bbox: {}, textExcerpt: '' }] });
-      }
-      return ok({ properties: { color: 'red' }, elementRef: 'el_div' });
-    }), async (calls) => {
-      const result = await handleStylesLayoutTool({ action: 'computed', selector: 'div', properties: ['color'] });
-      const styleCall = calls.find((c) => c.method === 'styles.get_computed');
-      assert.ok(styleCall, 'styles.get_computed should be called');
-      assert.equal(result.isError, undefined);
-    });
+  await withMockedBridge(async (record) => {
+    if (record.method === 'dom.query') {
+      return ok({ nodes: [{ elementRef: 'el_div', tag: 'div', attrs: {}, bbox: {}, textExcerpt: '' }] });
+    }
+    return ok({ properties: { color: 'red' }, elementRef: 'el_div' });
+  }, async (calls) => {
+    const result = await handleStylesLayoutTool({ action: 'computed', selector: 'div', properties: ['color'] });
+    const styleCall = calls.find((c) => c.method === 'styles.get_computed');
+    assert.ok(styleCall, 'styles.get_computed should be called');
+    assert.equal(result.isError, undefined);
   });
 });
 
 test('handlePatchTool list calls patch.list', async () => {
-  await withTestSession(async () => {
-    await withMockedBridge(withSessionMock(async () => ok({ patches: [] })), async (calls) => {
-      const result = await handlePatchTool({ action: 'list' });
-      const patchCall = calls.find((c) => c.method === 'patch.list');
-      assert.ok(patchCall, 'patch.list should be called');
-      assert.equal(result.isError, undefined);
-    });
+  await withMockedBridge(async () => ok({ patches: [] }), async (calls) => {
+    const result = await handlePatchTool({ action: 'list' });
+    const patchCall = calls.find((c) => c.method === 'patch.list');
+    assert.ok(patchCall, 'patch.list should be called');
+    assert.equal(result.isError, undefined);
   });
 });
 
 test('handleCaptureTool element resolves ref and calls screenshot.capture_element', async () => {
-  await withTestSession(async () => {
-    await withMockedBridge(withSessionMock(async (record) => {
-      if (record.method === 'dom.query') {
-        return ok({ nodes: [{ elementRef: 'el_hero', tag: 'div', attrs: {}, bbox: {}, textExcerpt: '' }] });
-      }
-      return ok({ image: 'data:image/png;base64,abc', rect: {} });
-    }), async (calls) => {
-      const result = await handleCaptureTool({ action: 'element', selector: '.hero' });
-      const captureCall = calls.find((c) => c.method === 'screenshot.capture_element');
-      assert.ok(captureCall, 'screenshot.capture_element should be called');
-      assert.equal(result.isError, undefined);
-    });
+  await withMockedBridge(async (record) => {
+    if (record.method === 'dom.query') {
+      return ok({ nodes: [{ elementRef: 'el_hero', tag: 'div', attrs: {}, bbox: {}, textExcerpt: '' }] });
+    }
+    return ok({ image: 'data:image/png;base64,abc', rect: {} });
+  }, async (calls) => {
+    const result = await handleCaptureTool({ action: 'element', selector: '.hero' });
+    const captureCall = calls.find((c) => c.method === 'screenshot.capture_element');
+    assert.ok(captureCall, 'screenshot.capture_element should be called');
+    assert.equal(result.isError, undefined);
   });
 });
 
-test('grouped MCP tools accept explicit sessionId and budget presets', async () => {
+test('grouped MCP tools accept explicit tabId and budget presets', async () => {
   await withMockedBridge(async (record) => {
     if (record.method === 'dom.query') {
       return ok({ nodes: [{ elementRef: 'el_main', tag: 'main', attrs: {}, bbox: {}, textExcerpt: 'Hello' }] });
@@ -416,75 +288,68 @@ test('grouped MCP tools accept explicit sessionId and budget presets', async () 
     await handleDomTool({
       action: 'query',
       selector: 'main',
-      sessionId: 'sess_explicit',
+      tabId: 88,
       budgetPreset: 'quick',
     });
 
     await handlePageTool({
       action: 'text',
-      sessionId: 'sess_explicit',
+      tabId: 88,
       budgetPreset: 'deep',
     });
 
     const domCall = calls.find((call) => call.method === 'dom.query');
     const pageTextCall = calls.find((call) => call.method === 'page.get_text');
     assert.ok(domCall);
-    assert.equal(domCall.sessionId, 'sess_explicit');
+    assert.equal(domCall.tabId, 88);
     assert.equal(domCall.params.maxNodes, 5);
     assert.equal(domCall.params.maxDepth, 2);
     assert.equal(domCall.params.textBudget, 300);
     assert.equal(domCall.meta.token_budget, 500);
 
     assert.ok(pageTextCall);
-    assert.equal(pageTextCall.sessionId, 'sess_explicit');
+    assert.equal(pageTextCall.tabId, 88);
     assert.equal(pageTextCall.params.textBudget, 2000);
     assert.equal(pageTextCall.meta.token_budget, 4000);
   });
 });
 
-test('handleBatchTool preserves order, reuses one default session, and reports mixed results', async () => {
-  await withTestSession(async () => {
-    await withMockedBridge(async (record) => {
-      if (record.method === 'session.get_status') {
-        return ok(TEST_SESSION);
-      }
-      if (record.method === 'dom.query') {
-        return ok({ nodes: [{ elementRef: 'el_main', tag: 'main', attrs: {}, bbox: {}, textExcerpt: 'Hello' }] });
-      }
-      if (record.method === 'page.get_text') {
-        return fail('TIMEOUT', 'Slow page text');
-      }
-      return ok({ daemon: 'ok', extensionConnected: true });
-    }, async (calls) => {
-      const result = await handleBatchTool({
-        calls: [
-          { method: 'health.ping' },
-          { method: 'dom.query', params: { selector: 'main' }, budgetPreset: 'quick' },
-          { method: 'page.get_text', budgetPreset: 'normal' },
-        ],
-      });
-
-      const batchResults = /** @type {Array<{ method: string }>} */ (
-        result.structuredContent.results
-      );
-      assert.equal(result.isError, true);
-      assert.equal(result.structuredContent.ok, false);
-      assert.equal(batchResults.length, 3);
-      assert.equal(batchResults[0].method, 'health.ping');
-      assert.equal(batchResults[1].method, 'dom.query');
-      assert.equal(batchResults[2].method, 'page.get_text');
-
-      assert.equal(calls.filter((call) => call.method === 'session.get_status').length, 1);
-      const domCall = calls.find((call) => call.method === 'dom.query');
-      const pageTextCall = calls.find((call) => call.method === 'page.get_text');
-      assert.equal(domCall?.sessionId, 'sess_test');
-      assert.equal(pageTextCall?.sessionId, 'sess_test');
+test('handleBatchTool preserves order and reports mixed results with tab routing', async () => {
+  await withMockedBridge(async (record) => {
+    if (record.method === 'dom.query') {
+      return ok({ nodes: [{ elementRef: 'el_main', tag: 'main', attrs: {}, bbox: {}, textExcerpt: 'Hello' }] });
+    }
+    if (record.method === 'page.get_text') {
+      return fail('TIMEOUT', 'Slow page text');
+    }
+    return ok({ daemon: 'ok', extensionConnected: true });
+  }, async (calls) => {
+    const result = await handleBatchTool({
+      calls: [
+        { method: 'health.ping' },
+        { method: 'dom.query', params: { selector: 'main' }, budgetPreset: 'quick', tabId: 91 },
+        { method: 'page.get_text', budgetPreset: 'normal' },
+      ],
     });
+
+    const batchResults = /** @type {Array<{ method: string }>} */ (
+      result.structuredContent.results
+    );
+    assert.equal(result.isError, true);
+    assert.equal(result.structuredContent.ok, false);
+    assert.equal(batchResults.length, 3);
+    assert.equal(batchResults[0].method, 'health.ping');
+    assert.equal(batchResults[1].method, 'dom.query');
+    assert.equal(batchResults[2].method, 'page.get_text');
+
+    const domCall = calls.find((call) => call.method === 'dom.query');
+    const pageTextCall = calls.find((call) => call.method === 'page.get_text');
+    assert.equal(domCall?.tabId, 91);
+    assert.equal(pageTextCall?.tabId, null);
   });
 });
 
 test('MCP descriptions stay aligned with protocol defaults', () => {
-  assert.match(CAPABILITY_DESCRIPTION, new RegExp(DEFAULT_CAPABILITIES[0]));
   assert.match(BUDGET_PRESET_DESCRIPTION, /quick/);
   assert.match(BUDGET_PRESET_DESCRIPTION, /normal/);
   assert.match(BUDGET_PRESET_DESCRIPTION, new RegExp(String(BUDGET_PRESETS.normal.maxNodes)));

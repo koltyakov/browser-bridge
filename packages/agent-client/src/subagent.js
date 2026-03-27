@@ -3,15 +3,6 @@
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
 /**
  * @typedef {{
- *   sessionId: string,
- *   tabId: number,
- *   origin: string,
- *   expiresAt: number
- * }} SessionResult
- */
-
-/**
- * @typedef {{
  *   tabId: number,
  *   active: boolean,
  *   origin: string,
@@ -53,9 +44,17 @@ export function summarizeBridgeResponse(response, method) {
 
   const result = toRecord(response.result);
   if (typeof result.daemon === 'string') {
+    const access = result.access && typeof result.access === 'object'
+      ? /** @type {Record<string, unknown>} */ (result.access)
+      : null;
+    const accessSummary = access == null
+      ? ''
+      : access.enabled
+        ? ` Access: ${access.routeReady ? `ready on tab ${access.routeTabId}.` : `enabled${typeof access.reason === 'string' ? ` (${access.reason})` : '.'}`}`
+        : ' Access: disabled.';
     return {
       ok: true,
-      summary: `Daemon: ${result.daemon}. Extension: ${result.extensionConnected ? 'connected' : 'disconnected'}.`,
+      summary: `Daemon: ${result.daemon}. Extension: ${result.extensionConnected ? 'connected' : 'disconnected'}.${accessSummary}`,
       evidence: result
     };
   }
@@ -90,19 +89,6 @@ export function summarizeBridgeResponse(response, method) {
       ok: true,
       summary: `${label}: ${len} chars${result.truncated ? ' (truncated)' : ''}.`,
       evidence: { text: text.slice(0, 500), length: len, truncated: result.truncated }
-    };
-  }
-  if (typeof result.sessionId === 'string') {
-    const sessionResult = /** @type {SessionResult} */ (result);
-    return {
-      ok: true,
-      summary: `Session ready for tab ${sessionResult.tabId} at ${sessionResult.origin}.`,
-      evidence: {
-        sessionId: sessionResult.sessionId,
-        tabId: sessionResult.tabId,
-        origin: sessionResult.origin,
-        expiresAt: sessionResult.expiresAt
-      }
     };
   }
   if (Array.isArray(result.tabs)) {
@@ -262,7 +248,7 @@ export function summarizeBridgeResponse(response, method) {
       return { ok: true, summary: handler.text(result), evidence: handler.evidence(result) };
     }
   }
-  if (typeof result.tabId === 'number' && typeof result.url === 'string' && !result.sessionId) {
+  if (typeof result.tabId === 'number' && typeof result.url === 'string') {
     return {
       ok: true,
       summary: `Tab ${result.tabId} created${result.url ? ` (${result.url})` : ''}.`,
@@ -353,13 +339,6 @@ export function summarizeBridgeResponse(response, method) {
       ok: true,
       summary: `${result.patches.length} active patch(es).`,
       evidence: result.patches.slice(0, 10)
-    };
-  }
-  if (typeof result.revoked === 'boolean') {
-    return {
-      ok: true,
-      summary: result.revoked ? 'Session revoked.' : 'Session revoke failed.',
-      evidence: result
     };
   }
   const keys = Object.keys(result);

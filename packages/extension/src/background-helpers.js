@@ -97,8 +97,7 @@ export function shouldLogAction(method) {
     'skill.get_runtime_context',
     'setup.get_status',
     'setup.install',
-    'tabs.list',
-    'session.get_status'
+    'tabs.list'
   ].includes(method);
 }
 
@@ -139,14 +138,6 @@ export function summarizeActionResult(response) {
 
   if (Array.isArray(result.nodes)) {
     return `${result.nodes.length} node(s) returned.`;
-  }
-
-  if (result.revoked === true) {
-    return 'Session revoked.';
-  }
-
-  if (typeof result.sessionId === 'string') {
-    return 'Session ready.';
   }
 
   if (typeof result.image === 'string') {

@@ -97,8 +97,8 @@ Use the Test Instructions tab if the reviewer needs local setup context. Suggest
 4. Run `bbx install <store-extension-id>`.
 5. Run `bbx-daemon`.
 6. Open any normal web page in Chrome.
-7. Open the Browser Bridge popup or side panel and enable agent communication for the current tab.
-8. In a terminal, run `bbx status`, `bbx tabs`, and `bbx request-access`.
+7. Open the Browser Bridge popup or side panel and enable Browser Bridge for the current browser window.
+8. In a terminal, run `bbx status`, `bbx tabs`, and `bbx page-text`.
 
 Replace `<store-extension-id>` with the final Chrome Web Store extension ID before submitting.
 

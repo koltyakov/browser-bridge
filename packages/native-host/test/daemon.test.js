@@ -37,7 +37,7 @@ test('daemon responds to health checks without extension', async () => {
     request: {
       id: 'req_health',
       method: 'health.ping',
-      session_id: null,
+      tab_id: null,
       params: {},
       meta: {
         protocol_version: '1.0',
@@ -86,7 +86,7 @@ test('daemon responds to setup status requests without extension', async () => {
     request: {
       id: 'req_setup',
       method: 'setup.get_status',
-      session_id: null,
+      tab_id: null,
       params: {},
       meta: {
         protocol_version: '1.0',
@@ -117,7 +117,7 @@ test('daemon installs setup targets without extension', async () => {
     request: {
       id: 'req_setup_install',
       method: 'setup.install',
-      session_id: null,
+      tab_id: null,
       params: {
         kind: 'mcp',
         target: 'codex'
@@ -178,7 +178,7 @@ test('daemon log entries retain request source metadata', async () => {
     request: {
       id: 'req_eval',
       method: 'page.evaluate',
-      session_id: 'sess_test',
+      tab_id: 42,
       params: { expression: '1+1' },
       meta: {
         protocol_version: '1.0',
@@ -193,13 +193,60 @@ test('daemon log entries retain request source metadata', async () => {
       id: 'req_eval',
       ok: false,
       result: null,
-      error: { code: 'CAPABILITY_MISSING', message: 'Missing capability', details: null },
+      error: { code: 'ACCESS_DENIED', message: 'Access denied', details: null },
       meta: { protocol_version: '1.0', method: 'page.evaluate' }
     }
   });
 
   assert.equal(daemon.recentLog.length, 1);
   assert.equal(daemon.recentLog[0].source, 'mcp');
+});
+
+test('daemon forwards health checks to the extension and merges access state', async () => {
+  const daemon = new BridgeDaemon({ logger: console });
+  const agentSocket = createFakeSocket();
+  const extensionSocket = createFakeSocket();
+  daemon.extensionSocket = extensionSocket;
+
+  await daemon.handleAgentRequest(agentSocket, {
+    request: {
+      id: 'req_health_ext',
+      method: 'health.ping',
+      tab_id: null,
+      params: {},
+      meta: {
+        protocol_version: '1.0',
+        token_budget: null
+      }
+    }
+  });
+
+  assert.equal(extensionSocket.writes.length, 1);
+
+  await daemon.handleExtensionResponse({
+    response: {
+      id: 'req_health_ext',
+      ok: true,
+      result: {
+        extension: 'ok',
+        access: {
+          enabled: true,
+          windowId: 9,
+          routeTabId: 42,
+          routeReady: true,
+          reason: 'enabled'
+        }
+      },
+      error: null,
+      meta: { protocol_version: '1.0', method: 'health.ping' }
+    }
+  });
+
+  assert.equal(agentSocket.writes.length, 1);
+  const payload = JSON.parse(agentSocket.writes[0].trim());
+  assert.equal(payload.response.result.daemon, 'ok');
+  assert.equal(payload.response.result.extensionConnected, true);
+  assert.equal(payload.response.result.access.routeTabId, 42);
 });
 
 /** Ensure repeated shutdown calls share one cleanup path safely. */

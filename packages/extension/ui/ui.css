@@ -204,7 +204,7 @@ body {
 }
 
 .control-card.attention {
-  animation: attention-pulse 0.7s ease-out 3;
+  animation: attention-pulse 0.9s ease-out infinite;
 }
 
 .popup-control-card {
