@@ -14,6 +14,19 @@
   --cmd-bg-hover: rgba(31, 36, 48, 0.10);
   --card-shadow: rgba(31, 36, 48, 0.08);
   --disabled-bg: #c9bba5;
+  --hist-surface-top: rgba(255, 255, 255, 0.38);
+  --hist-surface-bottom: rgba(255, 255, 255, 0.12);
+  --hist-border: rgba(216, 203, 182, 0.72);
+  --hist-bar-bg: rgba(122, 98, 71, 0.08);
+  --hist-bar-border: rgba(122, 98, 71, 0.08);
+  --hist-dom: rgba(178, 76, 45, 0.85);
+  --hist-page: rgba(142, 51, 26, 0.7);
+  --hist-layout: rgba(93, 125, 134, 0.82);
+  --hist-style: rgba(120, 152, 161, 0.72);
+  --hist-input: rgba(122, 98, 71, 0.78);
+  --hist-patch: rgba(201, 187, 165, 0.88);
+  --hist-capture: rgba(216, 203, 182, 0.96);
+  --hist-other: rgba(122, 98, 71, 0.4);
 }
 
 [hidden] {
@@ -46,6 +59,19 @@ html {
     --cmd-bg-hover: rgba(255, 255, 255, 0.10);
     --card-shadow: rgba(0, 0, 0, 0.25);
     --disabled-bg: #4a4039;
+    --hist-surface-top: rgba(232, 224, 212, 0.08);
+    --hist-surface-bottom: rgba(232, 224, 212, 0.02);
+    --hist-border: rgba(154, 142, 126, 0.24);
+    --hist-bar-bg: rgba(232, 224, 212, 0.04);
+    --hist-bar-border: rgba(232, 224, 212, 0.05);
+    --hist-dom: #d4714e;
+    --hist-page: #b85d40;
+    --hist-layout: #7898a1;
+    --hist-style: #658088;
+    --hist-input: #8d7d6b;
+    --hist-patch: #b9a78f;
+    --hist-capture: #d9c7b4;
+    --hist-other: rgba(154, 142, 126, 0.5);
   }
 
   html {
@@ -775,10 +801,135 @@ button:hover {
   overflow: hidden;
 }
 
-#activity-section h2 {
+.activity-histogram {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 8px 10px 10px;
+  border: 1px solid var(--hist-border);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, var(--hist-surface-top) 0%, var(--hist-surface-bottom) 100%),
+    var(--panel);
+  box-shadow: 0 6px 18px var(--card-shadow);
+  flex-shrink: 0;
+}
+
+.activity-histogram-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.activity-histogram-label {
+  margin: 0;
+}
+
+.activity-histogram-range {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.1;
+  letter-spacing: 0.03em;
+  opacity: 0.58;
+  white-space: nowrap;
+}
+
+.activity-histogram-bars {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  align-items: end;
+  gap: 4px;
+  height: 58px;
+  padding-top: 2px;
+}
+
+.activity-histogram-bar {
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-start;
+  min-width: 0;
+  min-height: 8px;
+  overflow: hidden;
+  background: var(--hist-bar-bg);
+  border: 1px solid var(--hist-bar-border);
+  opacity: 0.9;
+}
+
+.activity-histogram-bar[data-empty="true"] {
+  opacity: 0.42;
+}
+
+.activity-histogram-segment {
+  display: block;
+  width: 100%;
+  min-height: 2px;
+}
+
+.activity-histogram-segment[data-family="dom"] {
+  background: var(--hist-dom);
+}
+
+.activity-histogram-segment[data-family="page"] {
+  background: var(--hist-page);
+}
+
+.activity-histogram-segment[data-family="layout"] {
+  background: var(--hist-layout);
+}
+
+.activity-histogram-segment[data-family="style"] {
+  background: var(--hist-style);
+}
+
+.activity-histogram-segment[data-family="input"] {
+  background: var(--hist-input);
+}
+
+.activity-histogram-segment[data-family="patch"] {
+  background: var(--hist-patch);
+}
+
+.activity-histogram-segment[data-family="capture"] {
+  background: var(--hist-capture);
+}
+
+.activity-histogram-segment[data-family="other"] {
+  background: var(--hist-other);
+}
+
+.activity-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin: 0 0 8px;
+  flex-shrink: 0;
+}
+
+#activity-section h2 {
+  margin: 0;
   font-size: 15px;
   flex-shrink: 0;
+}
+
+.activity-summary-tokens {
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--muted);
+  white-space: nowrap;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--cmd-bg);
+  letter-spacing: 0.02em;
+}
+
+.activity-summary-tokens[data-cost-class="heavy"],
+.activity-summary-tokens[data-cost-class="extreme"] {
+  background: rgba(178, 76, 45, 0.14);
+  color: var(--ink);
 }
 
 #activity-section .stack {

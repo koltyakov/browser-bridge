@@ -185,6 +185,18 @@ const setupStatusMatrix = /** @type {HTMLDivElement} */ (
 const activitySection = /** @type {HTMLElement} */ (
   document.getElementById('activity-section')
 );
+const activityHistogram = /** @type {HTMLDivElement} */ (
+  document.getElementById('activity-histogram')
+);
+const activityHistogramBars = /** @type {HTMLDivElement} */ (
+  document.getElementById('activity-histogram-bars')
+);
+const activityHistogramRange = /** @type {HTMLSpanElement} */ (
+  document.getElementById('activity-histogram-range')
+);
+const activitySummaryTokens = /** @type {HTMLSpanElement} */ (
+  document.getElementById('activity-summary-tokens')
+);
 const examplesSection = /** @type {HTMLDetailsElement} */ (
   document.getElementById('examples-section')
 );
@@ -197,6 +209,8 @@ const requestedTabId = Number(
 );
 /** @type {SidePanelCurrentTab | null} */
 let currentTabState = null;
+/** @type {ActionLogEntry[]} */
+let currentActionLog = [];
 /** @type {ReturnType<typeof setInterval> | null} */
 let setupStatusPollTimer = null;
 let hasAutoExpandedHostSetup = false;
@@ -217,6 +231,22 @@ const MCP_PROMPT_EXAMPLES = Object.freeze([
   'Use BB MCP to compare the live layout to the design and fix spacing issues.',
   'Use BB MCP to verify the form validation flow works correctly.',
   'Use BB MCP to inspect console and network errors on this page.',
+]);
+const ACTIVITY_HISTOGRAM_WINDOW_MS = 10 * 60 * 1000;
+const ACTIVITY_HISTOGRAM_BUCKET_MS = 30 * 1000;
+const ACTIVITY_HISTOGRAM_BARS = Math.floor(
+  ACTIVITY_HISTOGRAM_WINDOW_MS / ACTIVITY_HISTOGRAM_BUCKET_MS,
+);
+const ACTIVITY_HISTOGRAM_TICK_MS = 5 * 1000;
+const HISTOGRAM_METHOD_FAMILIES = /** @type {const} */ ([
+  'dom',
+  'page',
+  'layout',
+  'style',
+  'input',
+  'patch',
+  'capture',
+  'other',
 ]);
 
 for (const cmd of /** @type {NodeListOf<HTMLElement>} */ (
@@ -279,6 +309,9 @@ port.postMessage({
       ? requestedTabId
       : undefined,
 });
+const activityHistogramTimer = setInterval(() => {
+  updateActivityVisualizations();
+}, ACTIVITY_HISTOGRAM_TICK_MS);
 
 toggleButton.addEventListener('click', () => {
   if (!currentTabState) {
@@ -357,6 +390,10 @@ document.addEventListener('keydown', (event) => {
   }
 });
 
+window.addEventListener('beforeunload', () => {
+  clearInterval(activityHistogramTimer);
+});
+
 /**
  * @param {UiSnapshot} state
  * @returns {void}
@@ -380,6 +417,8 @@ function renderState(state) {
       renderActionLogEntry(entry, state.setupStatus, entries, index),
     ),
   );
+  currentActionLog = state.actionLog;
+  updateActivityVisualizations();
 
   if (!state.actionLog.length) {
     actionLog.textContent = 'No recent agent actions.';
@@ -391,6 +430,15 @@ function renderState(state) {
   }
   syncConnectedSectionsVisibility();
   syncSetupStatusPolling();
+}
+
+/**
+ * @returns {void}
+ */
+function updateActivityVisualizations() {
+  const histogram = buildActivityHistogram(currentActionLog);
+  renderActivityHistogram(histogram);
+  renderActivitySummary(histogram.totalTokens);
 }
 
 /**
@@ -643,7 +691,11 @@ function renderSetupStatus(
 
   if (!hasAutoExpandedHostSetup) {
     hasAutoExpandedHostSetup = true;
-    installationSection.open = shouldAutoExpandHostSetup(setupStatus);
+    const autoExpandHostSetup = shouldAutoExpandHostSetup(setupStatus);
+    installationSection.open = autoExpandHostSetup;
+    if (autoExpandHostSetup) {
+      examplesSection.open = false;
+    }
   }
 
   const noteParts = [];
@@ -1245,6 +1297,233 @@ function createActivityBadge(label, className) {
   badge.className = `activity-badge ${className}`;
   badge.textContent = label;
   return badge;
+}
+
+/**
+ * @param {number} totalTokens
+ * @returns {void}
+ */
+function renderActivitySummary(totalTokens) {
+  if (totalTokens <= 0) {
+    activitySummaryTokens.hidden = true;
+    activitySummaryTokens.textContent = '';
+    activitySummaryTokens.removeAttribute('data-cost-class');
+    return;
+  }
+
+  activitySummaryTokens.hidden = false;
+  activitySummaryTokens.textContent = `≈${formatCompactCount(totalTokens)} tok`;
+  activitySummaryTokens.dataset.costClass = getAggregateCostClass(totalTokens);
+}
+
+/**
+ * @typedef {{
+ *   startAt: number,
+ *   endAt: number,
+ *   totalTokens: number,
+ *   buckets: Array<{
+ *     bucketStart: number,
+ *     totalTokens: number,
+ *     segments: Array<{ family: string, tokens: number }>
+ *   }>
+ * }} ActivityHistogramModel
+ */
+
+/**
+ * @param {ActionLogEntry[]} entries
+ * @returns {ActivityHistogramModel}
+ */
+function buildActivityHistogram(entries) {
+  const latestAt = entries.reduce(
+    (maxAt, entry) => Math.max(maxAt, Number.isFinite(entry.at) ? entry.at : 0),
+    0,
+  );
+  const endAt = Math.max(Date.now(), latestAt);
+  const startAt = endAt - ACTIVITY_HISTOGRAM_WINDOW_MS;
+  const buckets = Array.from({ length: ACTIVITY_HISTOGRAM_BARS }, (_, index) => ({
+    bucketStart: startAt + index * ACTIVITY_HISTOGRAM_BUCKET_MS,
+    totalTokens: 0,
+    segments: [],
+  }));
+
+  /** @type {Map<number, Map<string, number>>} */
+  const bucketFamilies = new Map(
+    buckets.map((_, index) => [index, new Map()]),
+  );
+  let totalTokens = 0;
+
+  for (const entry of entries) {
+    if (!Number.isFinite(entry.approxTokens) || entry.approxTokens <= 0) {
+      continue;
+    }
+    if (!Number.isFinite(entry.at) || entry.at < startAt || entry.at > endAt) {
+      continue;
+    }
+
+    const offset = Math.min(
+      ACTIVITY_HISTOGRAM_BARS - 1,
+      Math.max(0, Math.floor((entry.at - startAt) / ACTIVITY_HISTOGRAM_BUCKET_MS)),
+    );
+    const family = getHistogramMethodFamily(entry.method);
+    const familyTotals = /** @type {Map<string, number>} */ (bucketFamilies.get(offset));
+    familyTotals.set(family, (familyTotals.get(family) ?? 0) + entry.approxTokens);
+    buckets[offset].totalTokens += entry.approxTokens;
+    totalTokens += entry.approxTokens;
+  }
+
+  for (let index = 0; index < buckets.length; index += 1) {
+    const familyTotals = /** @type {Map<string, number>} */ (bucketFamilies.get(index));
+    buckets[index].segments = HISTOGRAM_METHOD_FAMILIES
+      .map((family) => ({
+        family,
+        tokens: familyTotals.get(family) ?? 0,
+      }))
+      .filter((segment) => segment.tokens > 0);
+  }
+
+  return {
+    startAt,
+    endAt,
+    totalTokens,
+    buckets,
+  };
+}
+
+/**
+ * @param {ActivityHistogramModel} histogram
+ * @returns {void}
+ */
+function renderActivityHistogram(histogram) {
+  const activeBuckets = histogram.buckets.filter((bucket) => bucket.totalTokens > 0);
+  if (!activeBuckets.length) {
+    activityHistogram.hidden = true;
+    activityHistogramBars.replaceChildren();
+    activityHistogramRange.textContent = '';
+    return;
+  }
+
+  const maxTokens = Math.max(...histogram.buckets.map((bucket) => bucket.totalTokens), 1);
+  activityHistogram.hidden = false;
+  activityHistogramRange.textContent = '10m window · 30s bins';
+  activityHistogramBars.replaceChildren(
+    ...histogram.buckets.map((bucket) =>
+      createHistogramBar(
+        bucket,
+        maxTokens,
+      )
+    ),
+  );
+}
+
+/**
+ * @param {number} value
+ * @returns {string}
+ */
+function formatCompactCount(value) {
+  if (value >= 1000) {
+    const compact = value >= 10000
+      ? Math.round(value / 1000)
+      : Math.round(value / 100) / 10;
+    return `${compact}k`;
+  }
+  return String(value);
+}
+
+/**
+ * @param {number} approxTokens
+ * @returns {'cheap' | 'moderate' | 'heavy' | 'extreme'}
+ */
+function getAggregateCostClass(approxTokens) {
+  if (approxTokens <= 250) {
+    return 'cheap';
+  }
+  if (approxTokens <= 1000) {
+    return 'moderate';
+  }
+  if (approxTokens <= 3000) {
+    return 'heavy';
+  }
+  return 'extreme';
+}
+
+/**
+ * @param {ActivityHistogramModel['buckets'][number]} bucket
+ * @param {number} maxTokens
+ * @returns {HTMLElement}
+ */
+function createHistogramBar(bucket, maxTokens) {
+  const bar = document.createElement('span');
+  const ratio = Math.log1p(bucket.totalTokens) / Math.log1p(maxTokens);
+  const height = bucket.totalTokens > 0
+    ? Math.max(14, Math.round(ratio * 100))
+    : 6;
+  bar.className = 'activity-histogram-bar';
+  bar.style.height = `${height}%`;
+
+  if (!bucket.totalTokens) {
+    bar.dataset.empty = 'true';
+    bar.title = `${new Date(bucket.bucketStart).toLocaleTimeString()} · no activity`;
+    bar.setAttribute(
+      'aria-label',
+      `${new Date(bucket.bucketStart).toLocaleTimeString()}, no wire token activity`,
+    );
+    return bar;
+  }
+
+  const tooltipParts = bucket.segments.map(
+    (segment) => `${segment.family}: ${segment.tokens.toLocaleString()} tok`,
+  );
+  bar.title = `${new Date(bucket.bucketStart).toLocaleTimeString()} · ${bucket.totalTokens.toLocaleString()} tok\n${tooltipParts.join('\n')}`;
+  bar.setAttribute(
+    'aria-label',
+    `${new Date(bucket.bucketStart).toLocaleTimeString()}, approximately ${bucket.totalTokens.toLocaleString()} wire tokens`,
+  );
+  bar.append(
+    ...bucket.segments.map((segment) => createHistogramSegment(segment, bucket.totalTokens)),
+  );
+  return bar;
+}
+
+/**
+ * @param {{ family: string, tokens: number }} segment
+ * @param {number} totalTokens
+ * @returns {HTMLElement}
+ */
+function createHistogramSegment(segment, totalTokens) {
+  const el = document.createElement('span');
+  el.className = 'activity-histogram-segment';
+  el.dataset.family = segment.family;
+  el.style.height = `${(segment.tokens / totalTokens) * 100}%`;
+  return el;
+}
+
+/**
+ * @param {string} method
+ * @returns {string}
+ */
+function getHistogramMethodFamily(method) {
+  if (method.startsWith('dom.')) {
+    return 'dom';
+  }
+  if (method.startsWith('page.')) {
+    return 'page';
+  }
+  if (method.startsWith('layout.')) {
+    return 'layout';
+  }
+  if (method.startsWith('styles.')) {
+    return 'style';
+  }
+  if (method.startsWith('input.') || method.startsWith('navigation.') || method.startsWith('viewport.')) {
+    return 'input';
+  }
+  if (method.startsWith('patch.')) {
+    return 'patch';
+  }
+  if (method.startsWith('screenshot.') || method.startsWith('cdp.') || method.startsWith('performance.')) {
+    return 'capture';
+  }
+  return 'other';
 }
 
 /**

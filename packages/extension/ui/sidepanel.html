@@ -57,7 +57,17 @@
         <a class="setup-link" href="https://github.com/koltyakov/browser-bridge/blob/main/QUICKSTART.md" target="_blank" rel="noopener noreferrer">Setup guide on GitHub ↗</a>
       </section>
       <section id="activity-section" hidden>
-        <h2>Recent activity</h2>
+        <div id="activity-histogram" class="activity-histogram" hidden>
+          <div class="activity-histogram-meta">
+            <span class="eyebrow activity-histogram-label">Wire tokens</span>
+            <span id="activity-histogram-range" class="muted activity-histogram-range"></span>
+          </div>
+          <div id="activity-histogram-bars" class="activity-histogram-bars"></div>
+        </div>
+        <div class="activity-section-header">
+          <h2>Recent activity</h2>
+          <span id="activity-summary-tokens" class="activity-summary-tokens" hidden></span>
+        </div>
         <div id="action-log" class="stack"></div>
       </section>
     </main>
