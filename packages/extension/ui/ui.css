@@ -24,8 +24,8 @@
   --hist-layout: rgba(93, 125, 134, 0.82);
   --hist-style: rgba(120, 152, 161, 0.72);
   --hist-input: rgba(122, 98, 71, 0.78);
-  --hist-patch: rgba(201, 187, 165, 0.88);
-  --hist-capture: rgba(216, 203, 182, 0.96);
+  --hist-patch: rgba(164, 132, 96, 0.9);
+  --hist-capture: rgba(188, 141, 91, 0.92);
   --hist-other: rgba(122, 98, 71, 0.4);
 }
 
@@ -73,8 +73,8 @@ html[data-windowed="true"] {
     --hist-layout: #7898a1;
     --hist-style: #658088;
     --hist-input: #8d7d6b;
-    --hist-patch: #b9a78f;
-    --hist-capture: #d9c7b4;
+    --hist-patch: #c59f72;
+    --hist-capture: #ddb07b;
     --hist-other: rgba(154, 142, 126, 0.5);
   }
 
