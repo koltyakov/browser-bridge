@@ -234,19 +234,21 @@ body {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 6px;
   margin-top: 3px;
 }
 
 .activity-badges {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 4px;
-  flex: 0 1 50%;
-  max-width: 50%;
+  flex: 0 1 auto;
+  max-width: 100%;
   min-width: 0;
   justify-content: flex-end;
+  margin-left: auto;
 }
 
 .activity-time {
@@ -259,10 +261,11 @@ body {
 .activity-tokens {
   margin: 0;
   font-size: 10px;
-  flex: 0 1 100%;
+  flex: 0 1 auto;
   max-width: 100%;
-  white-space: normal;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   text-align: right;
   line-height: 1.25;
   padding: 1px 5px;
@@ -318,6 +321,8 @@ body {
 .activity-summary {
   display: flex;
   align-items: flex-start;
+  flex: 1 1 auto;
+  min-width: 0;
   gap: 4px;
   font-size: 11px;
   line-height: 1.3;
