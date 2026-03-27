@@ -5,6 +5,7 @@ import {
   ERROR_CODES,
   estimateJsonPayloadCost,
   getCostClass,
+  getUtf8ByteLength,
   isDebuggerBackedMethod,
 } from '../../protocol/src/index.js';
 
@@ -152,7 +153,16 @@ export function summarizeActionResult(response) {
  * Estimate approximate token cost from a bridge response.
  *
  * @param {BridgeResponse} response
- * @returns {{ responseBytes: number, approxTokens: number, hasScreenshot: boolean, nodeCount: number | null }}
+ * @returns {{
+ *   responseBytes: number,
+ *   approxTokens: number,
+ *   textBytes: number,
+ *   textApproxTokens: number,
+ *   imageApproxTokens: number,
+ *   imageBytes: number,
+ *   hasScreenshot: boolean,
+ *   nodeCount: number | null
+ * }}
  */
 export function estimateResponseTokens(response) {
   const payload = response.ok
@@ -165,10 +175,22 @@ export function estimateResponseTokens(response) {
     : null;
   const hasScreenshot = result != null && typeof result.image === 'string';
   const nodeCount = result != null && Array.isArray(result.nodes) ? result.nodes.length : null;
+  const textPayload = hasScreenshot && result != null
+    ? omitScreenshotImage(result)
+    : payload;
+  const textEstimate = estimateJsonPayloadCost(textPayload);
+  const imageTransportBytes = Math.max(0, responseBytes - textEstimate.bytes);
+  const imageBytes = hasScreenshot && result != null
+    ? estimateInlineImageBytes(result.image)
+    : 0;
 
   return {
     responseBytes,
     approxTokens: estimate.approxTokens,
+    textBytes: textEstimate.bytes,
+    textApproxTokens: textEstimate.approxTokens,
+    imageApproxTokens: imageTransportBytes === 0 ? 0 : Math.ceil(imageTransportBytes / 4),
+    imageBytes,
     hasScreenshot,
     nodeCount,
   };
@@ -180,9 +202,14 @@ export function estimateResponseTokens(response) {
  * @returns {{
  *   responseBytes: number,
  *   approxTokens: number,
+ *   textBytes: number,
+ *   textApproxTokens: number,
+ *   imageApproxTokens: number,
+ *   imageBytes: number,
  *   hasScreenshot: boolean,
  *   nodeCount: number | null,
  *   costClass: 'cheap' | 'moderate' | 'heavy' | 'extreme',
+ *   textCostClass: 'cheap' | 'moderate' | 'heavy' | 'extreme',
  *   debuggerBacked: boolean
  * }}
  */
@@ -191,8 +218,52 @@ export function getResponseDiagnostics(method, response) {
   return {
     ...estimate,
     costClass: getCostClass(estimate.approxTokens),
+    textCostClass: getCostClass(estimate.textApproxTokens),
     debuggerBacked: isDebuggerBackedMethod(method),
   };
+}
+
+/**
+ * Keep screenshot metadata while excluding the large inline image payload from
+ * token-oriented UI estimates.
+ *
+ * @param {Record<string, unknown>} result
+ * @returns {Record<string, unknown>}
+ */
+function omitScreenshotImage(result) {
+  const textPayload = { ...result };
+  delete textPayload.image;
+  return textPayload;
+}
+
+/**
+ * Estimate decoded image bytes for data URLs so the UI can show image size
+ * without pretending the base64 blob is text-token traffic.
+ *
+ * @param {unknown} image
+ * @returns {number}
+ */
+function estimateInlineImageBytes(image) {
+  if (typeof image !== 'string' || image.length === 0) {
+    return 0;
+  }
+
+  const match = /^data:[^;]+;base64,([A-Za-z0-9+/=\s]+)$/u.exec(image);
+  if (!match) {
+    return getUtf8ByteLength(image);
+  }
+
+  const base64 = match[1].replace(/\s+/gu, '');
+  if (base64.length === 0) {
+    return 0;
+  }
+
+  const padding = base64.endsWith('==')
+    ? 2
+    : base64.endsWith('=')
+      ? 1
+      : 0;
+  return Math.max(0, Math.floor((base64.length * 3) / 4) - padding);
 }
 
 /**

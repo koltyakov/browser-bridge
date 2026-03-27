@@ -110,21 +110,34 @@ test('estimateResponseTokens computes metrics for success responses', () => {
   const expectedBytes = new TextEncoder().encode(JSON.stringify(nodesResponse.result)).length;
   assert.equal(estimate.responseBytes, expectedBytes);
   assert.equal(estimate.approxTokens, Math.ceil(expectedBytes / 4));
+  assert.equal(estimate.textBytes, expectedBytes);
+  assert.equal(estimate.textApproxTokens, Math.ceil(expectedBytes / 4));
+  assert.equal(estimate.imageApproxTokens, 0);
+  assert.equal(estimate.imageBytes, 0);
   assert.equal(estimate.hasScreenshot, false);
   assert.equal(estimate.nodeCount, 2);
 });
 
-test('estimateResponseTokens counts screenshot payloads conservatively', () => {
+test('estimateResponseTokens separates screenshot image bytes from text tokens', () => {
   const screenshotResponse = /** @type {any} */ ({
     ok: true,
-    result: { image: 'data:image/png;base64,AAAA' }
+    result: {
+      rect: { width: 10, height: 10, scale: 2 },
+      image: 'data:image/png;base64,AAAA'
+    }
   });
   const estimate = estimateResponseTokens(screenshotResponse);
   assert.equal(estimate.hasScreenshot, true);
   assert.equal(estimate.nodeCount, null);
   const expectedBytes = new TextEncoder().encode(JSON.stringify(screenshotResponse.result)).length;
+  const expectedTextBytes = new TextEncoder().encode(JSON.stringify({ rect: screenshotResponse.result.rect })).length;
+  const expectedImageTransportBytes = expectedBytes - expectedTextBytes;
   assert.equal(estimate.responseBytes, expectedBytes);
   assert.equal(estimate.approxTokens, Math.ceil(expectedBytes / 4));
+  assert.equal(estimate.textBytes, expectedTextBytes);
+  assert.equal(estimate.textApproxTokens, Math.ceil(expectedTextBytes / 4));
+  assert.equal(estimate.imageApproxTokens, Math.ceil(expectedImageTransportBytes / 4));
+  assert.equal(estimate.imageBytes, 3);
 });
 
 test('estimateResponseTokens counts failure payloads', () => {
@@ -137,6 +150,10 @@ test('estimateResponseTokens counts failure payloads', () => {
   const expectedBytes = new TextEncoder().encode(JSON.stringify({ error: failResponse.error })).length;
   assert.equal(estimate.responseBytes, expectedBytes);
   assert.equal(estimate.approxTokens, Math.ceil(expectedBytes / 4));
+  assert.equal(estimate.textBytes, expectedBytes);
+  assert.equal(estimate.textApproxTokens, Math.ceil(expectedBytes / 4));
+  assert.equal(estimate.imageApproxTokens, 0);
+  assert.equal(estimate.imageBytes, 0);
   assert.equal(estimate.hasScreenshot, false);
   assert.equal(estimate.nodeCount, null);
 });

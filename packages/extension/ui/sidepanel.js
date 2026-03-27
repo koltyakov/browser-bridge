@@ -82,7 +82,9 @@ import {
  *   summary: string,
  *   responseBytes: number,
  *   approxTokens: number,
+ *   imageApproxTokens: number,
  *   costClass: 'cheap' | 'moderate' | 'heavy' | 'extreme',
+ *   imageBytes: number,
  *   summaryBytes: number,
  *   summaryTokens: number,
  *   summaryCostClass: 'cheap' | 'moderate' | 'heavy' | 'extreme',
@@ -1274,16 +1276,22 @@ function renderActionLogEntry(entry, setupStatus, entries, index) {
     badges.append(scopeLink);
   }
 
-  if (entry.approxTokens > 0) {
+  if (entry.approxTokens > 0 || entry.imageApproxTokens > 0 || entry.imageBytes > 0) {
     const tokenLine = document.createElement('span');
     tokenLine.className = 'muted activity-tokens';
     /** @type {string[]} */
-    const parts = [`\u2248${entry.approxTokens.toLocaleString()} tok`];
+    const parts = [];
+    if (entry.approxTokens > 0) {
+      parts.push(`\u2248${entry.approxTokens.toLocaleString()} tok`);
+    }
+    if (entry.imageApproxTokens > 0) {
+      parts.push(`\u2248${entry.imageApproxTokens.toLocaleString()} img tok`);
+    }
     if (entry.nodeCount != null) {
       parts.push(`${entry.nodeCount}n`);
     }
-    if (entry.hasScreenshot) {
-      parts.push('img');
+    if (entry.imageBytes > 0) {
+      parts.push(`${formatByteCount(entry.imageBytes)} img`);
     }
     if (entry.debuggerBacked) {
       parts.push('cdp');
@@ -1350,6 +1358,23 @@ function renderActivitySummary(totalTokens) {
   activitySummaryTokens.hidden = false;
   activitySummaryTokens.textContent = `≈${formatCompactCount(totalTokens)} tok`;
   activitySummaryTokens.dataset.costClass = getAggregateCostClass(totalTokens);
+}
+
+/**
+ * @param {number} value
+ * @returns {string}
+ */
+function formatByteCount(value) {
+  if (value < 1024) {
+    return `${value} B`;
+  }
+  if (value < 10 * 1024) {
+    return `${Math.round((value / 1024) * 10) / 10} KB`;
+  }
+  if (value < 1024 * 1024) {
+    return `${Math.round(value / 1024)} KB`;
+  }
+  return `${Math.round((value / (1024 * 1024)) * 10) / 10} MB`;
 }
 
 /**
@@ -1501,7 +1526,7 @@ function createHistogramBar(bucket, maxTokens) {
     bar.title = `${new Date(bucket.bucketStart).toLocaleTimeString()} · no activity`;
     bar.setAttribute(
       'aria-label',
-      `${new Date(bucket.bucketStart).toLocaleTimeString()}, no wire token activity`,
+      `${new Date(bucket.bucketStart).toLocaleTimeString()}, no text token activity`,
     );
     return bar;
   }
@@ -1512,7 +1537,7 @@ function createHistogramBar(bucket, maxTokens) {
   bar.title = `${new Date(bucket.bucketStart).toLocaleTimeString()} · ${bucket.totalTokens.toLocaleString()} tok\n${tooltipParts.join('\n')}`;
   bar.setAttribute(
     'aria-label',
-    `${new Date(bucket.bucketStart).toLocaleTimeString()}, approximately ${bucket.totalTokens.toLocaleString()} wire tokens`,
+    `${new Date(bucket.bucketStart).toLocaleTimeString()}, approximately ${bucket.totalTokens.toLocaleString()} text tokens`,
   );
   bar.append(
     ...bucket.segments.map((segment) => createHistogramSegment(segment, bucket.totalTokens)),

@@ -336,7 +336,8 @@ body[data-windowed="true"] .panel-popup {
   line-height: 1.25;
   padding: 1px 5px;
   border-radius: 4px;
-  background: var(--cmd-bg);
+  background: var(--panel);
+  border: 1px solid var(--stroke);
   letter-spacing: 0.01em;
 }
 
@@ -851,9 +852,7 @@ button:hover {
   padding: 8px 10px 10px;
   border: 1px solid var(--hist-border);
   border-radius: 12px;
-  background:
-    linear-gradient(180deg, var(--hist-surface-top) 0%, var(--hist-surface-bottom) 100%),
-    var(--panel);
+  background: var(--panel);
   box-shadow: 0 6px 18px var(--card-shadow);
   flex-shrink: 0;
 }
@@ -964,7 +963,8 @@ button:hover {
   white-space: nowrap;
   padding: 2px 7px;
   border-radius: 999px;
-  background: var(--cmd-bg);
+  background: var(--panel);
+  border: 1px solid var(--stroke);
   letter-spacing: 0.02em;
 }
 
