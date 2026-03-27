@@ -219,19 +219,19 @@ export function createBridgeMcpServer() {
 
   server.registerTool('browser_capture', {
     title: 'Browser Capture',
-    description: `Capture screenshots or CDP snapshots. Use only when structured reads are insufficient. All capture actions are debugger-backed and token-expensive. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
+    description: `Capture screenshots or CDP snapshots. Use only when structured reads are insufficient. Prefer element captures or tight region crops instead of larger screenshots. All capture actions are debugger-backed and token-expensive. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
     inputSchema: {
-      action: z.enum(['element', 'region', 'cdp_document', 'cdp_dom_snapshot', 'cdp_box_model', 'cdp_computed_styles']).describe('Capture operation: element/region for screenshots, cdp_* for low-level data'),
+      action: z.enum(['element', 'region', 'cdp_document', 'cdp_dom_snapshot', 'cdp_box_model', 'cdp_computed_styles']).describe('Capture operation: prefer element first, then tight region crops only when element capture cannot express the needed area; cdp_* for low-level data'),
       tabId: z.number().optional().describe(TAB_ID_DESCRIPTION),
       budgetPreset: z.enum(['quick', 'normal', 'deep']).optional().describe(BUDGET_PRESET_DESCRIPTION),
-      elementRef: z.string().optional().describe('Element reference to screenshot (for element action)'),
+      elementRef: z.string().optional().describe('Element reference to screenshot (for element action; preferred for partial captures)'),
       selector: z.string().optional().describe('CSS selector (used if no elementRef)'),
       rect: z.object({
         x: z.number().describe('Region left edge (viewport pixels)'),
         y: z.number().describe('Region top edge (viewport pixels)'),
         width: z.number().describe('Region width (pixels)'),
         height: z.number().describe('Region height (pixels)')
-      }).optional().describe('Screenshot region (for region action)')
+      }).optional().describe('Screenshot region (for region action; keep this crop as tight as possible)')
     }
   }, handleCaptureTool);
 

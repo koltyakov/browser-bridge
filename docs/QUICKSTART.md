@@ -80,7 +80,7 @@ You can refer to it as `BB MCP` or `Browser Bridge MCP`; both should work.
 For GitHub Copilot, invoke the skill by name, for example `/browser-bridge`.
 `bbx` is the Browser Bridge CLI command, not a guaranteed Copilot skill alias.
 
-In both cases the agent reads live DOM, styles, console, and network state from your real tab. Patches are reversible and session-scoped - the agent verifies the fix in the browser before writing it back to source.
+In both cases the agent reads live DOM, styles, console, and network state from your real tab. Patches are reversible and session-scoped. When visual confirmation is still needed after structured reads, prefer a partial element screenshot or a tight region crop instead of a larger page capture before writing the fix back to source.
 
 ## 6. Ad-Hoc installation
 

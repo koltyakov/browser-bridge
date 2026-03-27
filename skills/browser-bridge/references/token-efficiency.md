@@ -31,7 +31,7 @@ Avoid debugger-backed methods until they are clearly necessary. In Browser Bridg
 11. **Need semantic structure and role/text queries are insufficient?** → `dom.get_accessibility_tree` (debugger-backed)
 12. **Need performance data?** → `performance.get_metrics` (debugger-backed)
 13. **Testing responsive with an exact forced viewport?** → `viewport.resize` (debugger-backed)
-14. **Visual ambiguity after structured reads?** → `screenshot.capture_element` with small crop (debugger-backed)
+14. **Visual ambiguity after structured reads?** → `screenshot.capture_element` first, or `screenshot.capture_region` with a tight crop when one element is not enough (debugger-backed)
 15. **Content-script blocked?** → `cdp.get_document` or `cdp.get_dom_snapshot` (debugger-backed fallback)
 
 ## Allowlist Strategy
@@ -56,7 +56,7 @@ Omitting allowlists or leaving the text budget wide open often returns 3–5× t
 | `dom.query` on `body` with no budget | ~2000 tok | Use specific selector + quick budget |
 | Screenshot before structured read | ~1500 tok wasted | Always `dom.query` or `styles.get_computed` first |
 | Re-querying DOM for same element | ~500 tok/call | Reuse `elementRef` from prior result |
-| Full-page screenshot | ~3000 tok | Use `screenshot.capture_element` with small rect |
+| Full-page screenshot | ~3000 tok | Use `screenshot.capture_element`, or `screenshot.capture_region` with a tight rect |
 | Requesting all computed styles | ~800 tok | Set `properties` list (usually 3–8 props) |
 | Multiple CLI calls for independent reads | overhead/call | Use `batch` command |
 | Guessing selectors for known labels | ~300 tok wasted/try | Use `dom.find_by_text` or `dom.find_by_role` |
@@ -77,7 +77,7 @@ Omitting allowlists or leaving the text budget wide open often returns 3–5× t
 5. Check `page.get_console` if the behavior might be error-driven.
 6. Verify with `layout.get_box_model` or `styles.get_computed`.
 7. Escalate to debugger-backed methods only if the answer is still missing.
-8. Screenshot only if structured evidence is ambiguous.
+8. Screenshot only if structured evidence is ambiguous, and keep the capture partial.
 
 ## Evaluate Instead of DOM Scan
 

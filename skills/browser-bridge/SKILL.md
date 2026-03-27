@@ -73,7 +73,7 @@ bbx patch-style <ref> prop=val...    # apply style patch
 bbx patch-text <ref> <text...>       # apply text patch
 bbx patches                          # list active patches
 bbx rollback <patchId>               # rollback a patch
-bbx screenshot <ref> [outPath]       # capture screenshot
+bbx screenshot <ref> [outPath]       # capture partial element screenshot
 ```
 
 ## Access Flow
@@ -113,7 +113,7 @@ After access is enabled:
 5. **Style before DOM** - `patch.apply_styles` before `patch.apply_dom`.
 6. **Rollback** - revert every patch before finishing unless user wants mutations kept.
 7. **Confirm scope** - `status` first; stop if no extension connection.
-8. **Screenshots last** - only when structured evidence is ambiguous; keep crops small.
+8. **Screenshots last** - only when structured evidence is ambiguous; prefer `screenshot.capture_element`, or a tight `screenshot.capture_region` when the target is not one clean element.
 9. **Batch reads** - combine independent reads in one `batch` call (executes concurrently via Promise.all).
 10. **Avoid debugger first** - prefer DOM/content-script methods (`dom.*`, `styles.*`, `layout.get_box_model`, `page.get_console`, `page.get_text`, `page.get_storage`, `page.get_network`) before any debugger-backed method. Escalate to CDP only when those cannot answer the question.
 11. **Evaluate only when needed** - `page.evaluate` is powerful but debugger-backed; use it only when DOM, storage, console, network, or text reads cannot expose the needed state.
@@ -140,7 +140,7 @@ After access is enabled:
 | Patch      | `patch.apply_styles`, `patch.apply_dom`, `patch.rollback`                                |
 | Navigate   | `navigation.navigate`, `viewport.scroll`, `viewport.resize`                              |
 | Performance| `performance.get_metrics` (debugger-backed)                                              |
-| Escalate   | `dom.get_accessibility_tree`, `screenshot.capture_element`, `screenshot.capture_region`, `viewport.resize`, `cdp.*` methods |
+| Escalate   | `dom.get_accessibility_tree`, `screenshot.capture_element`, `screenshot.capture_region` (tight crops only), `viewport.resize`, `cdp.*` methods |
 
 ## Dev-Server Workflow (HMR-aware)
 

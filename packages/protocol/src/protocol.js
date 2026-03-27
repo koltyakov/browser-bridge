@@ -642,7 +642,7 @@ export function createRuntimeContext() {
       'input.hover before screenshot to inspect hover states',
       'performance.get_metrics for Core Web Vitals and load timing',
       'viewport.resize to test responsive layouts',
-      'screenshot.capture_element only when structured data is ambiguous',
+      'Prefer screenshot.capture_element, or a tight screenshot.capture_region when element capture cannot express the needed area',
       'page.get_storage reads localStorage/sessionStorage without evaluate'
     ],
     flow: [
