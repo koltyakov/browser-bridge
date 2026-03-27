@@ -197,6 +197,15 @@ const activityHistogramRange = /** @type {HTMLSpanElement} */ (
 const activitySummaryTokens = /** @type {HTMLSpanElement} */ (
   document.getElementById('activity-summary-tokens')
 );
+const agentStatus = /** @type {HTMLDivElement} */ (
+  document.getElementById('agent-status')
+);
+const agentStatusDetail = /** @type {HTMLParagraphElement} */ (
+  document.getElementById('agent-status-detail')
+);
+const agentDisclosure = /** @type {HTMLParagraphElement} */ (
+  document.getElementById('agent-disclosure')
+);
 const examplesSection = /** @type {HTMLDetailsElement} */ (
   document.getElementById('examples-section')
 );
@@ -449,13 +458,16 @@ function renderCurrentTab(currentTab) {
   currentTabState = currentTab;
 
   if (!currentTab) {
-    toggleButton.textContent = 'Unavailable';
+    toggleButton.textContent = 'Window Access Unavailable';
     toggleButton.disabled = true;
+    toggleButton.dataset.enabled = 'false';
     controlSection.classList.remove('attention');
     return;
   }
 
-  toggleButton.textContent = currentTab.enabled ? 'Disable' : 'Enable';
+  toggleButton.textContent = currentTab.enabled
+    ? 'Disable Window Access'
+    : 'Enable Window Access';
   toggleButton.disabled = !currentTab.url;
   toggleButton.dataset.enabled = String(currentTab.enabled);
   controlSection.classList.toggle('attention', currentTab.accessRequested && !currentTab.enabled);
@@ -466,7 +478,31 @@ function renderCurrentTab(currentTab) {
  * @returns {void}
  */
 function renderAgentStatus(state) {
-  void state;
+  const currentTab = state.currentTab;
+
+  if (!currentTab) {
+    agentStatus.textContent = 'Window access unavailable';
+    agentStatusDetail.textContent = 'Open a normal web page in this Chrome window to enable Browser Bridge.';
+    agentDisclosure.hidden = false;
+    return;
+  }
+
+  agentDisclosure.hidden = currentTab.enabled;
+
+  if (currentTab.enabled) {
+    agentStatus.textContent = 'Window access enabled';
+    agentStatusDetail.textContent = 'Browser Bridge is enabled for this Chrome window. Requests default to the active tab, or can target another tab in this window explicitly.';
+    return;
+  }
+
+  if (currentTab.accessRequested) {
+    agentStatus.textContent = 'Window access requested';
+    agentStatusDetail.textContent = 'An agent requested access for this Chrome window. Enable it to allow page inspection and interaction.';
+    return;
+  }
+
+  agentStatus.textContent = 'Window access';
+  agentStatusDetail.textContent = 'Enable Browser Bridge to let your connected agent inspect and interact with pages in this Chrome window.';
 }
 
 /**

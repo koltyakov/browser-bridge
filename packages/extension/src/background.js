@@ -156,6 +156,7 @@ const MAX_ACTION_LOG_ENTRIES = 50;
 const ENABLED_WINDOW_STORAGE_KEY = 'enabledWindow';
 const ACTION_LOG_STORAGE_KEY = 'actionLog';
 const SIDEPANEL_PATH = 'packages/extension/ui/sidepanel.html';
+const POPUP_PATH = 'packages/extension/ui/popup.html';
 const ENABLED_BADGE_TEXT = 'AI';
 const ACCESS_REQUEST_BADGE_TEXT = '!';
 const DEBUGGER_PROTOCOL_VERSION = '1.3';
@@ -1703,11 +1704,11 @@ async function updateActionIndicatorForTab(tabId) {
     } else if (accessRequested) {
       await chrome.action.setBadgeBackgroundColor({
         tabId,
-        color: '#b84d27'
+        color: '#f2cf2f'
       });
       await chrome.action.setBadgeTextColor({
         tabId,
-        color: '#ffffff'
+        color: '#000000'
       });
       await chrome.action.setTitle({
         tabId,
@@ -1838,8 +1839,8 @@ function normalizeRequestedAccessTab(tab) {
 /**
  * Open Browser Bridge UI for an agent-side access request. If the side panel
  * is already open for that window, leave it in place so its existing attention
- * state continues to guide the user. Otherwise prefer the popup and fall back
- * to the tab-scoped side panel when Chrome refuses to open the popup.
+ * state continues to guide the user. Otherwise prefer the action popup and
+ * fall back to a scoped extension popup window when Chrome refuses to open it.
  *
  * @param {ResolvedTabTarget} target
  * @returns {Promise<void>}
@@ -1857,10 +1858,52 @@ async function openRequestedAccessUi(target) {
   }
 
   try {
-    await openSidePanelForTab(target.tabId, target.windowId);
+    await openRequestedAccessPopupWindow(target);
   } catch (error) {
-    console.warn('Could not open Browser Bridge side panel for access request.', error);
+    console.warn('Could not open Browser Bridge fallback popup window for access request.', error);
   }
+}
+
+/**
+ * Open the popup UI in its own small extension window, scoped to the requested
+ * tab, so agent-side access requests still surface an enable control even when
+ * Chrome declines to open the toolbar popup directly.
+ *
+ * @param {ResolvedTabTarget} target
+ * @returns {Promise<void>}
+ */
+async function openRequestedAccessPopupWindow(target) {
+  const popupUrl = chrome.runtime.getURL(
+    `${POPUP_PATH}?tabId=${encodeURIComponent(String(target.tabId))}&windowed=1`
+  );
+  const popupWidth = 420;
+  const popupHeight = 320;
+  let createData = /** @type {chrome.windows.CreateData} */ ({
+    url: popupUrl,
+    type: 'popup',
+    focused: true,
+    width: popupWidth,
+    height: popupHeight
+  });
+
+  try {
+    const browserWindow = await chrome.windows.get(target.windowId);
+    if (
+      typeof browserWindow.left === 'number'
+      && typeof browserWindow.top === 'number'
+      && typeof browserWindow.width === 'number'
+    ) {
+      createData = {
+        ...createData,
+        left: browserWindow.left + Math.max(24, browserWindow.width - popupWidth - 40),
+        top: browserWindow.top + 72
+      };
+    }
+  } catch {
+    // Ignore window positioning failures and fall back to Chrome defaults.
+  }
+
+  await chrome.windows.create(createData);
 }
 
 /**

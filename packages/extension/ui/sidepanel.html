@@ -21,9 +21,24 @@
       </header>
       <section id="control-section" class="card control-card" hidden>
         <div class="control-copy">
-          <div id="agent-status" class="eyebrow">Agent access</div>
+          <div class="control-heading">
+            <div id="agent-status" class="eyebrow">Window access</div>
+            <div class="control-links">
+              <a
+                class="setup-link"
+                href="https://github.com/koltyakov/browser-bridge/blob/main/PRIVACY.md"
+                target="_blank"
+                rel="noopener noreferrer">Privacy policy ↗</a>
+            </div>
+          </div>
+          <p id="agent-status-detail" class="control-detail">
+            Enable Browser Bridge to let your connected agent inspect and interact with pages in this Chrome window.
+          </p>
+          <p id="agent-disclosure" class="control-detail control-disclosure">
+            When enabled, Browser Bridge may access page content, styles and layout, console output, network metadata, screenshots, and browser storage when requested.
+          </p>
         </div>
-        <button id="bridge-toggle" class="power-button" type="button">Enable</button>
+        <button id="bridge-toggle" class="power-button" type="button">Enable Window Access</button>
       </section>
       <details id="installation-section" class="card setup-details" hidden>
         <summary>
@@ -44,6 +59,9 @@
       </details>
       <section id="native-setup" class="card">
         <div class="eyebrow">Not connected</div>
+        <p class="control-detail">
+          Browser Bridge works with a local companion host on this machine. After the host connects, you can enable window access for the current Chrome window.
+        </p>
         <div class="setup-steps">
           <span class="setup-step-hint">1. Install CLI (skip if done):</span>
           <code class="setup-cmd">npm install -g @browserbridge/bbx</code>
@@ -54,7 +72,10 @@
           <span class="setup-step-hint">Or configure MCP for MCP-capable agents (optional):</span>
           <code id="setup-mcp-cmd" class="setup-cmd">bbx install-mcp</code>
         </div>
-        <a class="setup-link" href="https://github.com/koltyakov/browser-bridge/blob/main/QUICKSTART.md" target="_blank" rel="noopener noreferrer">Setup guide on GitHub ↗</a>
+        <div class="control-links">
+          <a class="setup-link" href="https://github.com/koltyakov/browser-bridge/blob/main/docs/QUICKSTART.md" target="_blank" rel="noopener noreferrer">Setup guide on GitHub ↗</a>
+          <a class="setup-link" href="https://github.com/koltyakov/browser-bridge/blob/main/PRIVACY.md" target="_blank" rel="noopener noreferrer">Privacy policy ↗</a>
+        </div>
       </section>
       <section id="activity-section" hidden>
         <div id="activity-histogram" class="activity-histogram" hidden>

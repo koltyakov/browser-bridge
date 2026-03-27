@@ -17,9 +17,24 @@
       </header>
       <section class="card control-card popup-control-card">
         <div class="control-copy">
-          <div class="eyebrow">Agent access</div>
+          <div class="control-heading">
+            <div id="popup-access-eyebrow" class="eyebrow">Window access</div>
+            <div class="control-links">
+              <a
+                class="setup-link"
+                href="https://github.com/koltyakov/browser-bridge/blob/main/PRIVACY.md"
+                target="_blank"
+                rel="noopener noreferrer">Privacy policy ↗</a>
+            </div>
+          </div>
+          <p id="popup-access-detail" class="control-detail">
+            Enable Browser Bridge to let your connected agent inspect and interact with pages in this Chrome window.
+          </p>
+          <p id="popup-disclosure" class="control-detail control-disclosure">
+            When enabled, Browser Bridge may access page content, styles and layout, console output, network metadata, screenshots, and browser storage when requested.
+          </p>
         </div>
-        <button id="communication-action" class="popup-action popup-power-button" type="button">Enable</button>
+        <button id="communication-action" class="popup-action popup-power-button" type="button">Enable Window Access</button>
       </section>
     </main>
     <script type="module" src="./popup.js"></script>

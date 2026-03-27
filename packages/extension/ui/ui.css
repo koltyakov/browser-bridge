@@ -43,6 +43,10 @@ html {
   background-size: 100% 100%;
 }
 
+html[data-windowed="true"] {
+  min-height: 0;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #1c1b1a;
@@ -91,6 +95,11 @@ body {
   border-radius: 12px;
 }
 
+body[data-windowed="true"] {
+  height: auto;
+  overflow: visible;
+}
+
 .panel {
   min-width: 0;
   min-height: 160px;
@@ -102,10 +111,21 @@ body {
   overflow: hidden;
 }
 
+body[data-windowed="true"] .panel {
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+}
+
+body[data-windowed="true"] .panel-popup {
+  min-height: 0;
+}
+
 .panel-popup {
-  min-width: 340px;
-  padding-top: 18px;
-  padding-bottom: 4px;
+  min-width: 390px;
+  min-height: 264px;
+  padding-top: 14px;
+  padding-bottom: 16px;
   border-radius: 12px;
 }
 
@@ -187,8 +207,8 @@ body {
 }
 
 .popup-title {
-  margin: 10px 0 0;
-  max-width: 320px;
+  margin: 6px 0 0;
+  max-width: 360px;
   line-height: 1.02;
 }
 
@@ -213,13 +233,39 @@ body {
 
 .control-copy {
   display: grid;
-  gap: 4px;
+  gap: 6px;
+}
+
+.control-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.control-heading .eyebrow {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .control-detail {
   margin: 0;
   font-size: 12px;
   line-height: 1.4;
+}
+
+.control-disclosure {
+  color: var(--muted);
+}
+
+.control-links {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 10px;
+  margin-bottom: 0;
+  justify-content: flex-end;
+  flex: 0 0 auto;
 }
 
 @keyframes attention-pulse {
@@ -234,19 +280,13 @@ body {
 }
 
 .popup-control-card {
-  margin-top: 6px;
-  padding-right: 10px;
-  padding-left: 10px;
+  margin-top: 2px;
+  padding-right: 12px;
+  padding-left: 12px;
 }
 
-.scope-url {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
-  line-clamp: 4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  overflow-wrap: anywhere;
+.panel-popup .panel-header {
+  margin-bottom: 10px;
 }
 
 .activity-header {
@@ -613,7 +653,7 @@ button:hover {
 }
 
 .popup-action {
-  margin-top: 0;
+  margin-top: 12px;
   width: 100%;
   margin-right: 0;
 }
@@ -628,6 +668,7 @@ button:hover {
 .power-button {
   width: 100%;
   min-height: 48px;
+  margin-top: 12px;
   margin-right: 0;
   font-size: 16px;
   font-weight: 600;
@@ -786,6 +827,7 @@ button:hover {
   font-size: 12px;
   color: var(--accent);
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .setup-link:hover {
@@ -1021,7 +1063,6 @@ button:hover {
   color: var(--muted);
   opacity: 0.72;
   font-size: 12px;
-  font-style: italic;
   flex: 1 1 auto;
   min-width: 0;
   text-align: right;
