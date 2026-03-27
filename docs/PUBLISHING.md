@@ -58,19 +58,19 @@ The manifest now includes packaged extension icons, but the promo image and scre
 
 Use one narrow sentence. Suggested draft:
 
-`Browser Bridge lets a local developer agent inspect and patch the currently approved Chrome tab through a local native messaging bridge.`
+`Browser Bridge lets a local developer agent inspect and patch web pages in an explicitly enabled Chrome window through a local native messaging bridge.`
 
 ### Permission justifications
 
 Use reviewer-facing explanations tied to the product purpose:
 
 - `activeTab`: used to bootstrap inspection against the tab the user explicitly enables
-- `debugger`: used for Chrome DevTools Protocol reads such as DOM snapshots, computed styles, and element screenshots
+- `debugger`: used for Chrome DevTools Protocol reads and page-context evaluation, such as DOM snapshots, computed styles, screenshots, accessibility data, and page inspection helpers
 - `nativeMessaging`: required to communicate with the local Browser Bridge daemon
 - `scripting`: used to inject and coordinate the scoped page instrumentation flow
 - `sidePanel`: provides the side panel control surface
-- `storage`: persists tab approvals, sessions, and recent UI state
-- `tabs`: enumerates tabs and validates that a session still matches the active tab and origin
+- `storage`: persists window approvals, session state, and recent UI state for the current browser session
+- `tabs`: enumerates tabs and validates that a request stays inside the enabled window
 - `offscreen`: used for screenshot cropping in the offscreen document
 - `host_permissions` on `<all_urls>`: needed because the tool is designed to inspect whichever site the user explicitly approves, not a fixed site list
 
@@ -78,24 +78,25 @@ Reviewers will likely scrutinize `debugger`, `nativeMessaging`, and `<all_urls>`
 
 ### Privacy fields
 
-Current expected answers, assuming you do not add telemetry before release:
+Current expected answers with the code as it exists today:
 
-- Remote code: `No`
-- Data collection: only the page data needed to serve the local user request, transmitted to the local native host on the same machine
-- Data sale or transfer: `No`
-- Privacy policy: must clearly state what extension data can be read, that approval is tab-scoped, and that the bridge talks to a local process
+- Remote code: do not default this to `No`. Browser Bridge can execute user-requested expressions in page context through the Chrome Debugger API. Answer this honestly in the dashboard and explain that the extension does not load remote-hosted extension scripts.
+- Data collection: disclose the page data the product can access for the enabled window, including browsing/page content, DOM/style/layout data, console output, network metadata, storage values when requested, and screenshots when requested
+- Data sale: `No`
+- Data handling: Browser Bridge itself routes data locally to the native host and connected local client; a connected agent or IDE may still forward data onward under its own policy
+- Privacy policy: must clearly state what data the extension can access, that approval is window-scoped, and that Browser Bridge itself does not operate a Browser Bridge cloud service
 
 If product behavior changes, update the privacy answers before submission.
 
 ### Reviewer test instructions
 
-Use the Test Instructions tab if the reviewer needs local setup context. Suggested draft:
+Google marks the Test Instructions tab as optional, but Browser Bridge should still provide it because the product depends on local CLI/native-host setup. Suggested draft:
 
 1. Install the published extension from the draft listing.
 2. Install Node.js 18+ on the same machine.
 3. Run `npm install -g @browserbridge/bbx`.
 4. Run `bbx install <store-extension-id>`.
-5. Run `bbx-daemon`.
+5. If needed, run `bbx-daemon`.
 6. Open any normal web page in Chrome.
 7. Open the Browser Bridge popup or side panel and enable Browser Bridge for the current browser window.
 8. In a terminal, run `bbx status`, `bbx tabs`, and `bbx page-text`.

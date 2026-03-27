@@ -3,6 +3,8 @@
 Browser Bridge lets your coding agent inspect and patch the real Chrome tab you already have open - DOM, styles, console, network, and more - without screenshots or raw HTML dumps.
 
 > **Requires:** Google Chrome and Node.js on the same machine as your agent. Remote-only agents (e.g. GitHub.com Copilot) cannot reach a local Chrome instance.
+>
+> **Privacy:** Browser Bridge itself sends extension data locally to the companion host and connected local client. Your chosen agent or IDE may still forward tool results onward under its own policy. See [`PRIVACY.md`](../PRIVACY.md).
 
 ## 1. Install the extension
 
@@ -50,14 +52,14 @@ Shortcut commands cover the common cases. Advanced protocol fields stay availabl
 
 > The paths are independent. MCP clients use MCP tools; CLI skill clients use `bbx`. You do not need both, and most users should start with MCP if it is available.
 
-## 4. Enable a tab
+## 4. Enable a window
 
 1. Open the page you want your agent to inspect.
 2. Click the Browser Bridge toolbar icon or open the side panel.
 3. If needed, finish MCP or CLI skill setup from **Host Setup**.
-4. Enable agent communication for that tab.
+4. Enable agent communication for the current Chrome window.
 
-Your agent can now inspect and patch that tab through Browser Bridge.
+Your agent can now inspect and patch the active tab in that enabled window, or other tabs in the same window when explicitly targeted.
 
 ## 5. Use it
 

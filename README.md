@@ -110,16 +110,23 @@ Browser Bridge is optimized for the opposite starting point: **inspect the state
 1. Install [Browser Bridge from the Chrome Web Store](https://chrome.google.com/webstore/detail/ahhmghheecmambjebhfjkngdggghbkno) <!-- TODO: replace with final store link after publishing -->
 2. `npm install -g @browserbridge/bbx` - installs the CLI and native host
 3. In the extension side panel, install MCP or CLI (skill) for your agent of choice, or run the `bbx install-mcp` / `bbx install-skill` commands if you prefer terminal setup
-4. Enable access for the tab you want to inspect/control with the AI agent
+4. Enable Browser Bridge for the Chrome window you want to inspect/control with the AI agent
 5. Ask your agent to use Browser Bridge via MCP (`BB MCP` or `Browser Bridge MCP`), or invoke the `browser-bridge` / `$bbx` skill in CLI mode
 
 ## How it works
 
-- The extension is scoped to explicitly enabled tabs only - no ambient browser access
+- The extension is scoped to one explicitly enabled Chrome window at a time - no ambient browser access
+- Requests default to the active tab in that window unless a tab is targeted explicitly
 - Sessions are tab and origin scoped, auto-refreshed when possible
 - All patch operations are reversible and session-scoped
 - Structured DOM/style/layout reads are the primary transport; screenshots are a fallback
 - The native host daemon auto-starts on demand
+
+## Privacy
+
+Browser Bridge itself routes extension data locally through the Chrome extension, native host, and the local client you choose to connect. Browser Bridge does not operate a Browser Bridge cloud service.
+
+Your connected agent or IDE may still forward tool calls or tool results to remote services under that product's own settings and privacy policy. See [PRIVACY.md](./PRIVACY.md) for the Browser Bridge policy.
 
 ## License
 
