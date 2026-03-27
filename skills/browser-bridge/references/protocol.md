@@ -177,7 +177,7 @@ bbx call tabs.close '{"tabId":12345}'
 ```
 
 ### page.get_text
-Extract the full visible text content of the page (`document.body.innerText`). Truncated to `textBudget` (default 4000 chars). Lighter than `dom.query` on `body` when you only need text.
+Extract the full visible text content of the page (`document.body.innerText`). Truncated to `textBudget` (default 8000 chars). Lighter than `dom.query` on `body` when you only need text.
 ```bash
 bbx page-text
 bbx page-text 8000

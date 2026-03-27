@@ -57,7 +57,7 @@ export async function requireSession(client, options = {}) {
   const status = await client.request({
     method: 'session.get_status',
     sessionId: session.sessionId,
-    meta: withRequestSource(options.source)
+    meta: withRequestMeta(options.source, null)
   });
   if (status.ok) {
     const activeSession = /** @type {SessionState} */ (status.result);
@@ -75,7 +75,7 @@ export async function requireSession(client, options = {}) {
       tabId: session.tabId,
       origin: session.origin
     },
-    meta: withRequestSource(options.source)
+    meta: withRequestMeta(options.source, null)
   });
   if (!refreshed.ok) {
     throw new Error(refreshed.error.message);
@@ -90,7 +90,7 @@ export async function requireSession(client, options = {}) {
  * @param {BridgeClient} client
  * @param {BridgeMethod} method
  * @param {Record<string, unknown>} [params={}]
- * @param {{ sessionId?: string | null, source?: BridgeRequestSource }} [options]
+ * @param {{ sessionId?: string | null, source?: BridgeRequestSource, tokenBudget?: number | null }} [options]
  * @returns {Promise<BridgeResponse>}
  */
 export async function requestBridge(client, method, params = {}, options = {}) {
@@ -105,7 +105,7 @@ export async function requestBridge(client, method, params = {}, options = {}) {
     method,
     params,
     sessionId,
-    meta: withRequestSource(options.source)
+    meta: withRequestMeta(options.source, options.tokenBudget)
   });
 
   if (method === 'session.request_access' && response.ok) {
@@ -147,10 +147,19 @@ export async function resolveRef(client, refOrSelector, sessionId = null, source
 
 /**
  * @param {BridgeRequestSource | undefined} source
+ * @param {number | null | undefined} tokenBudget
  * @returns {BridgeMeta}
  */
-function withRequestSource(source) {
-  return source ? { source } : {};
+function withRequestMeta(source, tokenBudget) {
+  /** @type {BridgeMeta} */
+  const meta = {};
+  if (source) {
+    meta.source = source;
+  }
+  if (typeof tokenBudget === 'number' && Number.isFinite(tokenBudget)) {
+    meta.token_budget = tokenBudget;
+  }
+  return meta;
 }
 
 /**

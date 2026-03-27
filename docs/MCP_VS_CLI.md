@@ -110,15 +110,16 @@ This document provides a comprehensive comparison of the two integration paths f
 | Element screenshot | `browser_capture` (element) | `bbx screenshot <ref> [outPath]` | Equivalent |
 | Region screenshot | `browser_capture` (region) | `bbx call screenshot.capture_region` | CLI uses raw call |
 | CDP document | `browser_capture` (cdp_document) | `bbx call cdp.get_document` | CLI uses raw call |
-| CDP DOM snapshot | `browser_capture` (cdp_dom_snapshot) | `bbx call cdp.capture_dom_snapshot` | CLI uses raw call |
+| CDP DOM snapshot | `browser_capture` (cdp_dom_snapshot) | `bbx call cdp.get_dom_snapshot` | CLI uses raw call |
 | CDP box model | `browser_capture` (cdp_box_model) | `bbx call cdp.get_box_model` | CLI uses raw call |
-| CDP computed styles | `browser_capture` (cdp_computed_styles) | `bbx call cdp.get_computed_styles` | CLI uses raw call |
+| CDP computed styles | `browser_capture` (cdp_computed_styles) | `bbx call cdp.get_computed_styles_for_node` | CLI uses raw call |
 
 ### Advanced & Raw Protocol
 
 | Capability | MCP Tool | CLI Command | Notes |
 |------------|----------|-------------|-------|
 | Raw protocol call | `browser_call` | `bbx call <method> '{...}'` | Equivalent |
+| Ordered batch calls | `browser_batch` | `bbx batch '[{...}]'` | Both preserve request order |
 | Batch parallel reads | N/A (multiple tool calls) | `bbx batch '[{...}]'` | CLI has explicit batch |
 | Request log | N/A | `bbx logs` | CLI-only feature |
 | Install manifest | N/A | `bbx install <ext-id>` | CLI-only (setup) |
@@ -179,6 +180,7 @@ bbx call dom.query '{"selector": ".sidebar", "maxNodes": 20}'
 | Output format | Tool result content | `{ok, summary, evidence}` JSON |
 | Error handling | Tool error response | JSON with `ok: false` |
 | Session management | Automatic via tool context | Auto-refreshed, or via `request-access` |
+| Explicit session targeting | `sessionId` on grouped tools | explicit session id with `bbx call <sessionId> ...` |
 | Concurrency | Multiple tool calls | `batch` command or parallel shells |
 
 ## Use Case Recommendations

@@ -181,6 +181,7 @@ dom.find_by_role('button', 'Login') → input.click
 
 - **[Inspection & token efficiency](references/token-efficiency.md)** - budget presets, decision tree, allowlist strategy, anti-patterns
 - **[Patching workflows](references/patch-workflow.md)** - style-first loop, DOM patches, verification, cleanup
+- **[UI development workflows](references/ui-workflows.md)** - localhost HMR, form triage, design QA, responsive checks, hover/drag, accessibility
 - **[Full protocol reference](references/protocol.md)** - all RPC methods, error codes
 - **[Interaction patterns](references/interaction.md)** - input methods, navigation, form controls, hover, drag, multi-tab workflows
 - **[Capabilities reference](references/capabilities.md)** - full capability table, how to request subsets, `CAPABILITY_MISSING` recovery

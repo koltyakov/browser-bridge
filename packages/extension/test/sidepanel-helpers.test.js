@@ -3,7 +3,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { getActivitySourceTag, getPromptExamplesMode, shouldAutoExpandHostSetup } from '../src/sidepanel-helpers.js';
+import {
+  getActivitySourceTag,
+  getPromptExamplesMode,
+  shouldAutoExpandHostSetup,
+} from '../src/sidepanel-helpers.js';
 
 test('shouldAutoExpandHostSetup returns true when no MCP or CLI skill is installed', () => {
   assert.equal(shouldAutoExpandHostSetup({

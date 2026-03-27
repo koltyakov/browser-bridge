@@ -1,9 +1,18 @@
 // @ts-check
 
-import { METHODS } from '../../protocol/src/index.js';
+import {
+  bridgeMethodNeedsSession,
+  DEFAULT_CONSOLE_LIMIT,
+  DEFAULT_MAX_HTML_LENGTH,
+  DEFAULT_NETWORK_LIMIT,
+  getBudgetPreset,
+  isBudgetPresetName,
+  METHODS,
+} from '../../protocol/src/index.js';
 import { loadSession } from '../../agent-client/src/session-store.js';
 import {
   getDoctorReport,
+  requireSession,
   requestBridge,
   resolveRef,
   withBridgeClient
@@ -74,16 +83,125 @@ async function withToolClient(callback) {
 /**
  * @param {import('../../agent-client/src/client.js').BridgeClient} client
  * @param {{ elementRef?: string | undefined, selector?: string | undefined }} input
+ * @param {string | null | undefined} [sessionId]
  * @returns {Promise<string>}
  */
-async function resolveToolRef(client, input) {
+async function resolveToolRef(client, input, sessionId = null) {
   if (typeof input.elementRef === 'string' && input.elementRef) {
     return input.elementRef;
   }
   if (typeof input.selector === 'string' && input.selector) {
-    return resolveRef(client, input.selector, null, REQUEST_SOURCE);
+    return resolveRef(client, input.selector, sessionId, REQUEST_SOURCE);
   }
   throw new Error('Provide either elementRef or selector.');
+}
+
+/**
+ * @param {unknown} value
+ * @returns {'quick' | 'normal' | 'deep' | null}
+ */
+function getBudgetPresetName(value) {
+  return isBudgetPresetName(value) ? value : null;
+}
+
+/**
+ * @param {{ budgetPreset?: unknown }} args
+ * @returns {number | null}
+ */
+function getToolTokenBudget(args) {
+  const presetName = getBudgetPresetName(args.budgetPreset);
+  return presetName ? getBudgetPreset(presetName).tokenBudget : null;
+}
+
+/**
+ * @template {{ budgetPreset?: unknown, maxNodes?: unknown, maxDepth?: unknown, textBudget?: unknown }} T
+ * @param {T} args
+ * @returns {T}
+ */
+function applyTreeBudgetPreset(args) {
+  const presetName = getBudgetPresetName(args.budgetPreset);
+  if (!presetName) {
+    return args;
+  }
+  const preset = getBudgetPreset(presetName);
+  return /** @type {T} */ ({
+    ...args,
+    maxNodes: args.maxNodes ?? preset.maxNodes,
+    maxDepth: args.maxDepth ?? preset.maxDepth,
+    textBudget: args.textBudget ?? preset.textBudget,
+  });
+}
+
+/**
+ * @template {{ budgetPreset?: unknown, textBudget?: unknown }} T
+ * @param {T} args
+ * @returns {T}
+ */
+function applyTextBudgetPreset(args) {
+  const presetName = getBudgetPresetName(args.budgetPreset);
+  if (!presetName) {
+    return args;
+  }
+  const preset = getBudgetPreset(presetName);
+  return /** @type {T} */ ({
+    ...args,
+    textBudget: args.textBudget ?? preset.textBudget,
+  });
+}
+
+/**
+ * @template {{ budgetPreset?: unknown, limit?: unknown }} T
+ * @param {T} args
+ * @param {{ quick: number, normal: number, deep: number }} defaults
+ * @returns {T}
+ */
+function applyLimitBudgetPreset(args, defaults) {
+  const presetName = getBudgetPresetName(args.budgetPreset);
+  if (!presetName) {
+    return args;
+  }
+  return /** @type {T} */ ({
+    ...args,
+    limit: args.limit ?? defaults[presetName],
+  });
+}
+
+/**
+ * @template {{ budgetPreset?: unknown, maxLength?: unknown }} T
+ * @param {T} args
+ * @returns {T}
+ */
+function applyHtmlBudgetPreset(args) {
+  const presetName = getBudgetPresetName(args.budgetPreset);
+  if (!presetName) {
+    return args;
+  }
+  const maxLengthByPreset = {
+    quick: 600,
+    normal: DEFAULT_MAX_HTML_LENGTH,
+    deep: 6000,
+  };
+  return /** @type {T} */ ({
+    ...args,
+    maxLength: args.maxLength ?? maxLengthByPreset[presetName],
+  });
+}
+
+/**
+ * @param {BridgeMethod} method
+ * @param {Record<string, unknown>} [params={}]
+ * @param {{ sessionId?: string | null, summaryMethod?: string, tokenBudget?: number | null }} [options]
+ * @returns {Promise<ToolResult>}
+ */
+async function callBridgeTool(method, params = {}, options = {}) {
+  return withToolClient(async (client) => {
+    const response = await requestBridge(client, method, params, {
+      sessionId: options.sessionId ?? null,
+      source: REQUEST_SOURCE,
+      tokenBudget: options.tokenBudget ?? null,
+    });
+    return summarizeToolResponse(response, options.summaryMethod || method);
+  });
 }
 
 /**
@@ -99,22 +217,6 @@ async function getRequestedSessionId(requestedSessionId) {
     throw new Error('No saved session available. Run `bbx request-access` first.');
   }
   return session.sessionId;
-}
-
-/**
- * @param {BridgeMethod} method
- * @param {Record<string, unknown>} [params={}]
- * @param {{ sessionId?: string | null, summaryMethod?: string }} [options]
- * @returns {Promise<ToolResult>}
- */
-async function callBridgeTool(method, params = {}, options = {}) {
-  return withToolClient(async (client) => {
-    const response = await requestBridge(client, method, params, {
-      sessionId: options.sessionId ?? null,
-      source: REQUEST_SOURCE
-    });
-    return summarizeToolResponse(response, options.summaryMethod || method);
-  });
 }
 
 /**
@@ -135,9 +237,18 @@ async function dispatchToolAction(actions, args, toolName) {
   const entry = actions[args.action];
   if (!entry) return summarizeToolError(`Unsupported ${toolName} action "${args.action}".`);
   return withToolClient(async (client) => {
-    const ref = entry.ref ? await resolveToolRef(client, /** @type {{ elementRef?: string, selector?: string }} */ (args)) : undefined;
+    const requestedSessionId = typeof args.sessionId === 'string' ? args.sessionId : null;
+    const ref = entry.ref
+      ? await resolveToolRef(
+        client,
+        /** @type {{ elementRef?: string, selector?: string }} */ (args),
+        requestedSessionId,
+      )
+      : undefined;
     const response = await requestBridge(client, entry.method, entry.params(args, ref), {
-      source: REQUEST_SOURCE
+      sessionId: requestedSessionId,
+      source: REQUEST_SOURCE,
+      tokenBudget: getToolTokenBudget(/** @type {{ budgetPreset?: unknown }} */ (args)),
     });
     return summarizeToolResponse(response, entry.method);
   });
@@ -216,7 +327,7 @@ export async function handleSessionTool(args) {
 
 /** @type {Record<string, ToolAction>} */
 export const DOM_ACTIONS = {
-  query:              { ref: false, method: 'dom.query',                  params: a => ({ selector: a.selector || 'body', withinRef: a.withinRef, maxNodes: a.maxNodes, maxDepth: a.maxDepth, textBudget: a.textBudget, includeHtml: a.includeHtml, includeScreenshot: a.includeScreenshot, includeBbox: a.includeBbox, attributeAllowlist: a.attributeAllowlist, styleAllowlist: a.styleAllowlist, includeRoles: a.includeRoles }) },
+  query:              { ref: false, method: 'dom.query',                  params: a => ({ selector: a.selector || 'body', withinRef: a.withinRef, maxNodes: a.maxNodes, maxDepth: a.maxDepth, textBudget: a.textBudget, includeBbox: a.includeBbox, attributeAllowlist: a.attributeAllowlist }) },
   describe:           { ref: true,  method: 'dom.describe',               params: (_, r) => ({ elementRef: r }) },
   text:               { ref: true,  method: 'dom.get_text',               params: (a, r) => ({ elementRef: r, textBudget: a.textBudget }) },
   attributes:         { ref: true,  method: 'dom.get_attributes',         params: (a, r) => ({ elementRef: r, attributes: a.attributes || [] }) },
@@ -228,10 +339,19 @@ export const DOM_ACTIONS = {
 };
 
 /**
- * @param {{ action: string, selector?: string, elementRef?: string, withinRef?: string, maxNodes?: number, maxDepth?: number, textBudget?: number, includeHtml?: boolean, includeScreenshot?: boolean, includeBbox?: boolean, attributeAllowlist?: string[], styleAllowlist?: string[], includeRoles?: boolean, attributes?: string[], text?: string, exact?: boolean, maxResults?: number, role?: string, name?: string, state?: string, timeoutMs?: number, outer?: boolean, maxLength?: number }} args
+ * @param {{ action: string, selector?: string, elementRef?: string, withinRef?: string, maxNodes?: number, maxDepth?: number, textBudget?: number, includeBbox?: boolean, attributeAllowlist?: string[], attributes?: string[], text?: string, exact?: boolean, maxResults?: number, role?: string, name?: string, state?: string, timeoutMs?: number, outer?: boolean, maxLength?: number, sessionId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleDomTool(args) {
+  if (args.action === 'query' || args.action === 'accessibility_tree') {
+    return dispatchToolAction(DOM_ACTIONS, applyTreeBudgetPreset(args), 'DOM');
+  }
+  if (args.action === 'text') {
+    return dispatchToolAction(DOM_ACTIONS, applyTextBudgetPreset(args), 'DOM');
+  }
+  if (args.action === 'html') {
+    return dispatchToolAction(DOM_ACTIONS, applyHtmlBudgetPreset(args), 'DOM');
+  }
   return dispatchToolAction(DOM_ACTIONS, args, 'DOM');
 }
 
@@ -244,7 +364,7 @@ export const STYLES_LAYOUT_ACTIONS = {
 };
 
 /**
- * @param {{ action: string, elementRef?: string, selector?: string, properties?: string[], x?: number, y?: number }} args
+ * @param {{ action: string, elementRef?: string, selector?: string, properties?: string[], x?: number, y?: number, sessionId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleStylesLayoutTool(args) {
@@ -264,13 +384,32 @@ export const PAGE_ACTIONS = {
 };
 
 /**
- * @param {{ action: string, expression?: string, awaitPromise?: boolean, timeoutMs?: number, returnByValue?: boolean, level?: string, clear?: boolean, limit?: number, type?: string, keys?: string[], textBudget?: number, urlPattern?: string }} args
+ * @param {{ action: string, expression?: string, awaitPromise?: boolean, timeoutMs?: number, returnByValue?: boolean, level?: string, clear?: boolean, limit?: number, type?: string, keys?: string[], textBudget?: number, urlPattern?: string, sessionId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handlePageTool(args) {
-  const entry = PAGE_ACTIONS[args.action];
+  let normalizedArgs = args;
+  if (args.action === 'text') {
+    normalizedArgs = applyTextBudgetPreset(args);
+  } else if (args.action === 'console') {
+    normalizedArgs = applyLimitBudgetPreset(args, {
+      quick: 10,
+      normal: DEFAULT_CONSOLE_LIMIT,
+      deep: 100,
+    });
+  } else if (args.action === 'network') {
+    normalizedArgs = applyLimitBudgetPreset(args, {
+      quick: 10,
+      normal: DEFAULT_NETWORK_LIMIT,
+      deep: 100,
+    });
+  }
+  const entry = PAGE_ACTIONS[normalizedArgs.action];
   if (!entry) return summarizeToolError(`Unsupported page action "${args.action}".`);
-  return callBridgeTool(entry.method, entry.params(args));
+  return callBridgeTool(entry.method, entry.params(normalizedArgs), {
+    sessionId: normalizedArgs.sessionId || null,
+    tokenBudget: getToolTokenBudget(normalizedArgs),
+  });
 }
 
 /** @type {Record<string, { method: BridgeMethod, params: (a: Record<string, unknown>) => Record<string, unknown> }>} */
@@ -284,13 +423,16 @@ export const NAVIGATION_ACTIONS = {
 };
 
 /**
- * @param {{ action: string, url?: string, waitForLoad?: boolean, timeoutMs?: number, top?: number, left?: number, behavior?: string, relative?: boolean, width?: number, height?: number, reset?: boolean }} args
+ * @param {{ action: string, url?: string, waitForLoad?: boolean, timeoutMs?: number, top?: number, left?: number, behavior?: string, relative?: boolean, width?: number, height?: number, reset?: boolean, sessionId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleNavigationTool(args) {
   const entry = NAVIGATION_ACTIONS[args.action];
   if (!entry) return summarizeToolError(`Unsupported navigation action "${args.action}".`);
-  return callBridgeTool(entry.method, entry.params(args));
+  return callBridgeTool(entry.method, entry.params(args), {
+    sessionId: args.sessionId || null,
+    tokenBudget: getToolTokenBudget(args),
+  });
 }
 
 /** @type {Record<string, BridgeMethod>} */
@@ -306,12 +448,15 @@ export const INPUT_ACTION_METHODS = {
 };
 
 /**
- * @param {{ action: string, elementRef?: string, selector?: string, button?: string, clickCount?: number, text?: string, clear?: boolean, submit?: boolean, key?: string, modifiers?: string[], checked?: boolean, values?: string[], labels?: string[], indexes?: number[], duration?: number, sourceElementRef?: string, sourceSelector?: string, destinationElementRef?: string, destinationSelector?: string, offsetX?: number, offsetY?: number }} args
+ * @param {{ action: string, elementRef?: string, selector?: string, button?: string, clickCount?: number, text?: string, clear?: boolean, submit?: boolean, key?: string, modifiers?: string[], checked?: boolean, values?: string[], labels?: string[], indexes?: number[], duration?: number, sourceElementRef?: string, sourceSelector?: string, destinationElementRef?: string, destinationSelector?: string, offsetX?: number, offsetY?: number, sessionId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleInputTool(args) {
   return withToolClient(async (client) => {
-    const elementTarget = async () => ({ elementRef: await resolveToolRef(client, args) });
+    const requestedSessionId = args.sessionId || null;
+    const elementTarget = async () => ({
+      elementRef: await resolveToolRef(client, args, requestedSessionId),
+    });
 
     switch (args.action) {
       case 'click': {
@@ -319,13 +464,21 @@ export async function handleInputTool(args) {
           target: await elementTarget(),
           button: args.button,
           clickCount: args.clickCount
-        }, { source: REQUEST_SOURCE });
+        }, {
+          sessionId: requestedSessionId,
+          source: REQUEST_SOURCE,
+          tokenBudget: getToolTokenBudget(args),
+        });
         return summarizeToolResponse(response, 'input.click');
       }
       case 'focus': {
         const response = await requestBridge(client, 'input.focus', {
           target: await elementTarget()
-        }, { source: REQUEST_SOURCE });
+        }, {
+          sessionId: requestedSessionId,
+          source: REQUEST_SOURCE,
+          tokenBudget: getToolTokenBudget(args),
+        });
         return summarizeToolResponse(response, 'input.focus');
       }
       case 'type': {
@@ -334,7 +487,11 @@ export async function handleInputTool(args) {
           text: args.text,
           clear: args.clear,
           submit: args.submit
-        }, { source: REQUEST_SOURCE });
+        }, {
+          sessionId: requestedSessionId,
+          source: REQUEST_SOURCE,
+          tokenBudget: getToolTokenBudget(args),
+        });
         return summarizeToolResponse(response, 'input.type');
       }
       case 'press_key': {
@@ -343,14 +500,22 @@ export async function handleInputTool(args) {
           target,
           key: args.key,
           modifiers: args.modifiers
-        }, { source: REQUEST_SOURCE });
+        }, {
+          sessionId: requestedSessionId,
+          source: REQUEST_SOURCE,
+          tokenBudget: getToolTokenBudget(args),
+        });
         return summarizeToolResponse(response, 'input.press_key');
       }
       case 'set_checked': {
         const response = await requestBridge(client, 'input.set_checked', {
           target: await elementTarget(),
           checked: args.checked
-        }, { source: REQUEST_SOURCE });
+        }, {
+          sessionId: requestedSessionId,
+          source: REQUEST_SOURCE,
+          tokenBudget: getToolTokenBudget(args),
+        });
         return summarizeToolResponse(response, 'input.set_checked');
       }
       case 'select_option': {
@@ -359,22 +524,30 @@ export async function handleInputTool(args) {
           values: args.values,
           labels: args.labels,
           indexes: args.indexes
-        }, { source: REQUEST_SOURCE });
+        }, {
+          sessionId: requestedSessionId,
+          source: REQUEST_SOURCE,
+          tokenBudget: getToolTokenBudget(args),
+        });
         return summarizeToolResponse(response, 'input.select_option');
       }
       case 'hover': {
         const response = await requestBridge(client, 'input.hover', {
           target: await elementTarget(),
           duration: args.duration
-        }, { source: REQUEST_SOURCE });
+        }, {
+          sessionId: requestedSessionId,
+          source: REQUEST_SOURCE,
+          tokenBudget: getToolTokenBudget(args),
+        });
         return summarizeToolResponse(response, 'input.hover');
       }
       case 'drag': {
         const source = {
-          elementRef: args.sourceElementRef || (args.sourceSelector ? await resolveRef(client, args.sourceSelector, null, REQUEST_SOURCE) : '')
+          elementRef: args.sourceElementRef || (args.sourceSelector ? await resolveRef(client, args.sourceSelector, requestedSessionId, REQUEST_SOURCE) : '')
         };
         const destination = {
-          elementRef: args.destinationElementRef || (args.destinationSelector ? await resolveRef(client, args.destinationSelector, null, REQUEST_SOURCE) : '')
+          elementRef: args.destinationElementRef || (args.destinationSelector ? await resolveRef(client, args.destinationSelector, requestedSessionId, REQUEST_SOURCE) : '')
         };
         if (!source.elementRef || !destination.elementRef) {
           return summarizeToolError('sourceElementRef/sourceSelector and destinationElementRef/destinationSelector are required for drag.');
@@ -384,7 +557,11 @@ export async function handleInputTool(args) {
           destination,
           offsetX: args.offsetX,
           offsetY: args.offsetY
-        }, { source: REQUEST_SOURCE });
+        }, {
+          sessionId: requestedSessionId,
+          source: REQUEST_SOURCE,
+          tokenBudget: getToolTokenBudget(args),
+        });
         return summarizeToolResponse(response, 'input.drag');
       }
       default:
@@ -403,7 +580,7 @@ export const PATCH_ACTIONS = {
 };
 
 /**
- * @param {{ action: string, elementRef?: string, selector?: string, declarations?: Record<string, string>, important?: boolean, operation?: string, value?: unknown, name?: string, patchId?: string }} args
+ * @param {{ action: string, elementRef?: string, selector?: string, declarations?: Record<string, string>, important?: boolean, operation?: string, value?: unknown, name?: string, patchId?: string, sessionId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handlePatchTool(args) {
@@ -421,7 +598,7 @@ export const CAPTURE_ACTIONS = {
 };
 
 /**
- * @param {{ action: string, elementRef?: string, selector?: string, rect?: Record<string, unknown> }} args
+ * @param {{ action: string, elementRef?: string, selector?: string, rect?: Record<string, unknown>, sessionId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleCaptureTool(args) {
@@ -469,11 +646,20 @@ export async function handleSetupTool(args) {
 /**
  * Tail recent bridge logs for debugging.
  *
- * @param {{ limit?: number }} args
+ * @param {{ limit?: number, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleLogTool(args) {
-  return callBridgeTool('log.tail', { limit: args.limit ?? 50 });
+  const normalizedArgs = applyLimitBudgetPreset(args, {
+    quick: 10,
+    normal: DEFAULT_CONSOLE_LIMIT,
+    deep: 100,
+  });
+  return callBridgeTool('log.tail', {
+    limit: normalizedArgs.limit ?? DEFAULT_CONSOLE_LIMIT,
+  }, {
+    tokenBudget: getToolTokenBudget(normalizedArgs),
+  });
 }
 
 /**
@@ -483,6 +669,105 @@ export async function handleLogTool(args) {
  */
 export async function handleHealthTool() {
   return callBridgeTool('health.ping');
+}
+
+/**
+ * @param {{ calls?: Array<{ method?: string, params?: Record<string, unknown>, sessionId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }> }} args
+ * @returns {Promise<ToolResult>}
+ */
+export async function handleBatchTool(args) {
+  if (!Array.isArray(args.calls) || args.calls.length === 0) {
+    return summarizeToolError('calls must be a non-empty array.');
+  }
+
+  return withToolClient(async (client) => {
+    const needsDefaultSession = args.calls.some((call) => (
+      call &&
+      typeof call.method === 'string' &&
+      METHODS.includes(/** @type {BridgeMethod} */ (call.method)) &&
+      bridgeMethodNeedsSession(call.method) &&
+      !(typeof call.sessionId === 'string' && call.sessionId)
+    ));
+    const defaultSessionId = needsDefaultSession
+      ? (await requireSession(client, { source: REQUEST_SOURCE })).sessionId
+      : null;
+
+    const results = await Promise.all(args.calls.map(async (call) => {
+      if (!call || typeof call !== 'object' || typeof call.method !== 'string') {
+        return {
+          method: '',
+          sessionId: null,
+          ok: false,
+          summary: 'INVALID_REQUEST: Each batch call needs a method.',
+          evidence: null,
+          error: { code: 'INVALID_REQUEST', message: 'Each batch call needs a method.' },
+          response: null,
+        };
+      }
+
+      if (!METHODS.includes(/** @type {BridgeMethod} */ (call.method))) {
+        return {
+          method: call.method,
+          sessionId: null,
+          ok: false,
+          summary: `INVALID_REQUEST: Unknown bridge method "${call.method}".`,
+          evidence: null,
+          error: {
+            code: 'INVALID_REQUEST',
+            message: `Unknown bridge method "${call.method}".`,
+          },
+          response: null,
+        };
+      }
+
+      const method = /** @type {BridgeMethod} */ (call.method);
+      const sessionId = bridgeMethodNeedsSession(method)
+        ? (call.sessionId || defaultSessionId)
+        : null;
+      const tokenBudget = getToolTokenBudget(call);
+
+      try {
+        const response = await client.request({
+          method,
+          params: call.params || {},
+          sessionId,
+          meta: {
+            source: REQUEST_SOURCE,
+            ...(tokenBudget != null ? { token_budget: tokenBudget } : {}),
+          },
+        });
+        const summary = summarizeBridgeResponse(response, method);
+        return {
+          method,
+          sessionId,
+          ...summary,
+          meta: response.meta,
+          error: response.ok ? null : response.error,
+          response: response.ok ? response.result : null,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          method,
+          sessionId,
+          ok: false,
+          summary: `${method}: ${message}`,
+          evidence: null,
+          error: { code: 'INTERNAL_ERROR', message },
+          response: null,
+        };
+      }
+    }));
+
+    const failureCount = results.filter((result) => !result.ok).length;
+    const summary = failureCount === 0
+      ? `Batch executed ${results.length} call(s).`
+      : `Batch executed ${results.length} call(s) with ${failureCount} error(s).`;
+    return createToolResult(summary, {
+      ok: failureCount === 0,
+      results,
+    }, failureCount > 0);
+  });
 }
 
 /**

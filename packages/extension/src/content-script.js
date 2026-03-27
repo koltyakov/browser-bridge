@@ -11,11 +11,8 @@
    *   maxNodes: number,
    *   maxDepth: number,
    *   textBudget: number,
-   *   includeHtml: boolean,
-   *   includeScreenshot: boolean,
    *   includeBbox: boolean,
-   *   attributeAllowlist: string[],
-   *   styleAllowlist: string[]
+   *   attributeAllowlist: string[]
    * }} Budget
    */
 
@@ -23,8 +20,7 @@
    * @typedef {{
    *   selector: string,
    *   withinRef: string | null,
-   *   budget: Budget,
-   *   includeRoles: boolean
+   *   budget: Budget
    * }} NormalizedDomQuery
    */
 
@@ -1862,7 +1858,6 @@
       selector: escapeTailwindSelector(rawSelector),
       withinRef: typeof params.withinRef === 'string' ? params.withinRef : null,
       budget: applyBudget(params),
-      includeRoles: params.includeRoles !== false,
     };
   }
 

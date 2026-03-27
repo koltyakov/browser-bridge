@@ -1,6 +1,11 @@
 // @ts-check
 
-import { CAPABILITIES, ERROR_CODES } from '../../protocol/src/index.js';
+import {
+  CAPABILITIES,
+  ERROR_CODES,
+  getCostClass,
+  isDebuggerBackedMethod,
+} from '../../protocol/src/index.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
 /** @typedef {import('../../protocol/src/types.js').Capability} Capability */
@@ -176,6 +181,158 @@ export function estimateResponseTokens(response) {
   }
 
   return { responseBytes, approxTokens, hasScreenshot, nodeCount };
+}
+
+/**
+ * @param {string} method
+ * @param {BridgeResponse} response
+ * @returns {{
+ *   responseBytes: number,
+ *   approxTokens: number,
+ *   hasScreenshot: boolean,
+ *   nodeCount: number | null,
+ *   costClass: 'cheap' | 'moderate' | 'heavy' | 'extreme',
+ *   debuggerBacked: boolean
+ * }}
+ */
+export function getResponseDiagnostics(method, response) {
+  const estimate = estimateResponseTokens(response);
+  return {
+    ...estimate,
+    costClass: getCostClass(estimate.approxTokens),
+    debuggerBacked: isDebuggerBackedMethod(method),
+  };
+}
+
+/**
+ * Deterministically trim oversized success payloads to fit within an
+ * approximate token budget. This prefers shrinking large strings and slicing
+ * top-level result arrays before falling back to a compact continuation payload.
+ *
+ * @param {string} method
+ * @param {BridgeResponse} response
+ * @param {number | null | undefined} tokenBudget
+ * @returns {BridgeResponse}
+ */
+export function enforceTokenBudget(method, response, tokenBudget) {
+  if (!response.ok || typeof tokenBudget !== 'number' || !Number.isFinite(tokenBudget) || tokenBudget <= 0) {
+    return response;
+  }
+
+  const maxBytes = Math.max(128, Math.floor(tokenBudget * 4));
+  const responseBytes = JSON.stringify(response.result).length;
+  if (responseBytes <= maxBytes) {
+    return {
+      ...response,
+      meta: {
+        ...response.meta,
+        budget_applied: false,
+        budget_truncated: false,
+        continuation_hint: null,
+      },
+    };
+  }
+
+  const cloned = cloneJsonValue(response.result);
+  let truncated = false;
+  while (JSON.stringify(cloned).length > maxBytes && shrinkForBudget(cloned)) {
+    truncated = true;
+  }
+
+  let result = cloned;
+  if (JSON.stringify(result).length > maxBytes) {
+    result = {
+      truncated: true,
+      continuationHint: `Retry ${method} with a larger token budget or tighter params.`,
+    };
+    truncated = true;
+  }
+
+  return {
+    ...response,
+    result,
+    meta: {
+      ...response.meta,
+      budget_applied: true,
+      budget_truncated: truncated,
+      continuation_hint: truncated
+        ? `Retry ${method} with a larger token budget or tighter params.`
+        : null,
+    },
+  };
+}
+
+/**
+ * @param {unknown} value
+ * @returns {any}
+ */
+function cloneJsonValue(value) {
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+/**
+ * @param {any} value
+ * @returns {boolean}
+ */
+function shrinkForBudget(value) {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length > 1) {
+      const nextLength = Math.max(1, Math.floor(value.length * 0.75));
+      value.splice(nextLength);
+      return true;
+    }
+    return value.length === 1 ? shrinkForBudget(value[0]) : false;
+  }
+
+  for (const key of ['image', 'html', 'text', 'value']) {
+    if (typeof value[key] === 'string' && value[key].length > 64) {
+      value[key] = key === 'image'
+        ? '[omitted image over token budget]'
+        : `${value[key].slice(0, Math.max(32, Math.floor(value[key].length * 0.75) - 1))}\u2026`;
+      if (typeof value.truncated !== 'boolean') {
+        value.truncated = true;
+      }
+      return true;
+    }
+  }
+
+  for (const key of ['nodes', 'entries', 'tabs', 'patches']) {
+    if (Array.isArray(value[key]) && value[key].length > 1) {
+      const originalLength = value[key].length;
+      const nextLength = Math.max(1, Math.floor(originalLength * 0.75));
+      value[key].splice(nextLength);
+      if (typeof value.count !== 'number') {
+        value.count = originalLength;
+      }
+      if (typeof value.total !== 'number') {
+        value.total = originalLength;
+      }
+      value.truncated = true;
+      return true;
+    }
+  }
+
+  for (const entry of Object.values(value)) {
+    if (shrinkForBudget(entry)) {
+      if (typeof value.truncated !== 'boolean') {
+        value.truncated = true;
+      }
+      return true;
+    }
+  }
+
+  const keys = Object.keys(value);
+  if (keys.length > 2) {
+    delete value[keys[keys.length - 1]];
+    value.truncated = true;
+    return true;
+  }
+
+  return false;
 }
 
 /**

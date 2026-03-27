@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 
 import {
   DEFAULT_CAPABILITIES,
+  BUDGET_PRESETS,
   BRIDGE_METHODS,
   BRIDGE_METHOD_REGISTRY,
   ERROR_CODES,
@@ -538,6 +539,32 @@ test('runtime context includes parameter limits', () => {
   assert.equal(context.limits.maxNodes.default, 25);
   assert.equal(context.limits.evalTimeout.max, 30000);
   assert.equal(context.limits.pageTextBudget.default, 8000);
+});
+
+test('runtime context budgets stay aligned with shared presets', () => {
+  const context = createRuntimeContext();
+  assert.deepEqual(context.budgets.quick, {
+    n: BUDGET_PRESETS.quick.maxNodes,
+    d: BUDGET_PRESETS.quick.maxDepth,
+    t: BUDGET_PRESETS.quick.textBudget,
+  });
+  assert.deepEqual(context.budgets.normal, {
+    n: BUDGET_PRESETS.normal.maxNodes,
+    d: BUDGET_PRESETS.normal.maxDepth,
+    t: BUDGET_PRESETS.normal.textBudget,
+  });
+});
+
+test('dom.query registry excludes removed no-op params', () => {
+  assert.deepEqual(BRIDGE_METHOD_REGISTRY['dom.query'].params, [
+    'selector',
+    'withinRef',
+    'maxNodes',
+    'maxDepth',
+    'textBudget',
+    'includeBbox',
+    'attributeAllowlist',
+  ]);
 });
 
 /** Ensure runtime context flow includes page.get_console. */

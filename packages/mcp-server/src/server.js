@@ -6,6 +6,7 @@ import * as z from 'zod/v4';
 
 import {
   handleCaptureTool,
+  handleBatchTool,
   handleDomTool,
   handleHealthTool,
   handleInputTool,
@@ -21,6 +22,21 @@ import {
   handleStylesLayoutTool,
   handleTabsTool
 } from './handlers.js';
+import {
+  BUDGET_PRESETS,
+  DEFAULT_CAPABILITIES,
+  DEFAULT_CONSOLE_LIMIT,
+  DEFAULT_MAX_DEPTH,
+  DEFAULT_MAX_HTML_LENGTH,
+  DEFAULT_MAX_NODES,
+  DEFAULT_PAGE_TEXT_BUDGET,
+  DEFAULT_TEXT_BUDGET,
+  DEFAULT_WAIT_TIMEOUT_MS,
+} from '../../protocol/src/index.js';
+
+export const BUDGET_PRESET_DESCRIPTION = `Budget preset: "quick", "normal", or "deep" (defaults: query ${BUDGET_PRESETS.normal.maxNodes} nodes / depth ${BUDGET_PRESETS.normal.maxDepth} / text ${BUDGET_PRESETS.normal.textBudget}). Numeric fields override the preset when both are provided.`;
+export const SESSION_ID_DESCRIPTION = 'Explicit session ID. Use to target a specific approved tab instead of the saved default session.';
+export const CAPABILITY_DESCRIPTION = `Requested capabilities. Defaults to: ${DEFAULT_CAPABILITIES.join(', ')}.`;
 
 /**
  * @returns {McpServer}
@@ -49,7 +65,8 @@ export function createBridgeMcpServer() {
     title: 'Browser Bridge Logs',
     description: 'Tail recent bridge logs for debugging connection or session issues.',
     inputSchema: {
-      limit: z.number().optional().describe('Maximum log entries to return (default: 50)')
+      limit: z.number().optional().describe(`Maximum log entries to return (default: ${DEFAULT_CONSOLE_LIMIT})`),
+      budgetPreset: z.enum(['quick', 'normal', 'deep']).optional().describe(BUDGET_PRESET_DESCRIPTION)
     }
   }, handleLogTool);
 
@@ -78,7 +95,7 @@ export function createBridgeMcpServer() {
       sessionId: z.string().optional().describe('Explicit session ID (uses saved session if omitted)'),
       tabId: z.number().optional().describe('Tab ID to request access to (uses active tab if omitted)'),
       origin: z.string().optional().describe('Origin pattern to match (e.g., "https://example.com")'),
-      capabilities: z.array(z.string()).optional().describe('Requested capabilities (default: ["inspect", "interact"])'),
+      capabilities: z.array(z.string()).optional().describe(CAPABILITY_DESCRIPTION),
       ttlMs: z.number().optional().describe('Session lifetime in milliseconds'),
       label: z.string().optional().describe('Human-readable label for the session')
     }
@@ -86,21 +103,19 @@ export function createBridgeMcpServer() {
 
   server.registerTool('browser_dom', {
     title: 'Browser DOM',
-    description: 'Query, describe, read, wait for, or search DOM elements in the approved live tab. Use elementRef from prior results to avoid re-querying.',
+    description: 'Query, describe, read, wait for, or search DOM elements in the approved live tab. Use elementRef from prior results to avoid re-querying. `accessibility_tree` is debugger-backed and should be a last resort after query/find actions.',
     inputSchema: {
       action: z.enum(['query', 'describe', 'text', 'attributes', 'wait', 'find_text', 'find_role', 'html', 'accessibility_tree']).describe('DOM operation to perform'),
+      sessionId: z.string().optional().describe(SESSION_ID_DESCRIPTION),
+      budgetPreset: z.enum(['quick', 'normal', 'deep']).optional().describe(BUDGET_PRESET_DESCRIPTION),
       selector: z.string().optional().describe('CSS selector (used if no elementRef; resolves to first match)'),
       elementRef: z.string().optional().describe('Element reference from prior query (preferred over selector)'),
       withinRef: z.string().optional().describe('Scope query to this elementRef subtree'),
-      maxNodes: z.number().optional().describe('Maximum nodes to return (default: 25)'),
-      maxDepth: z.number().optional().describe('Maximum tree depth (default: 4)'),
-      textBudget: z.number().optional().describe('Max chars of text content per node (default: 160)'),
-      includeHtml: z.boolean().optional().describe('Include innerHTML in results (expensive)'),
-      includeScreenshot: z.boolean().optional().describe('Include base64 screenshot (very expensive)'),
+      maxNodes: z.number().optional().describe(`Maximum nodes to return (default: ${DEFAULT_MAX_NODES})`),
+      maxDepth: z.number().optional().describe(`Maximum tree depth (default: ${DEFAULT_MAX_DEPTH})`),
+      textBudget: z.number().optional().describe(`Max chars of text content per node (default: ${DEFAULT_TEXT_BUDGET})`),
       includeBbox: z.boolean().optional().describe('Include bounding box (default: true, set false to save tokens)'),
       attributeAllowlist: z.array(z.string()).optional().describe('Only include these attributes (reduces tokens)'),
-      styleAllowlist: z.array(z.string()).optional().describe('Only include these style properties (reduces tokens)'),
-      includeRoles: z.boolean().optional().describe('Include ARIA role and accessible name (default: true)'),
       attributes: z.array(z.string()).optional().describe('Attribute names to fetch (for attributes action)'),
       text: z.string().optional().describe('Text to search for (for find_text/wait actions)'),
       exact: z.boolean().optional().describe('Require exact text match (default: false, substring match)'),
@@ -108,9 +123,9 @@ export function createBridgeMcpServer() {
       role: z.string().optional().describe('ARIA role to search for (for find_role action)'),
       name: z.string().optional().describe('Accessible name to match with role'),
       state: z.enum(['attached', 'detached', 'visible', 'hidden']).optional().describe('Expected element state (for wait action)'),
-      timeoutMs: z.number().optional().describe('Timeout for wait operations (default: 5000)'),
+      timeoutMs: z.number().optional().describe(`Timeout for wait operations (default: ${DEFAULT_WAIT_TIMEOUT_MS})`),
       outer: z.boolean().optional().describe('Return outerHTML instead of innerHTML (default: false)'),
-      maxLength: z.number().optional().describe('Max HTML chars to return (default: 10000)')
+      maxLength: z.number().optional().describe(`Max HTML chars to return (default: ${DEFAULT_MAX_HTML_LENGTH})`)
     }
   }, handleDomTool);
 
@@ -119,6 +134,8 @@ export function createBridgeMcpServer() {
     description: 'Read computed styles, matched CSS rules, box models, and perform hit tests. Use elementRef from prior queries.',
     inputSchema: {
       action: z.enum(['computed', 'matched_rules', 'box_model', 'hit_test']).describe('Style/layout operation to perform'),
+      sessionId: z.string().optional().describe(SESSION_ID_DESCRIPTION),
+      budgetPreset: z.enum(['quick', 'normal', 'deep']).optional().describe(BUDGET_PRESET_DESCRIPTION),
       elementRef: z.string().optional().describe('Element reference (preferred over selector)'),
       selector: z.string().optional().describe('CSS selector (used if no elementRef)'),
       properties: z.array(z.string()).optional().describe('Style properties to fetch (omitting returns all - expensive)'),
@@ -129,28 +146,32 @@ export function createBridgeMcpServer() {
 
   server.registerTool('browser_page', {
     title: 'Browser Page State',
-    description: 'Read page state, evaluate JavaScript, inspect console/network, fetch storage, or get performance metrics.',
+    description: 'Read page state, evaluate JavaScript, inspect console/network, fetch storage, or get performance metrics. `evaluate` and `performance` are debugger-backed and should be used only after lighter reads fail.',
     inputSchema: {
       action: z.enum(['state', 'evaluate', 'console', 'wait_for_load', 'storage', 'text', 'network', 'performance']).describe('Page operation to perform'),
+      sessionId: z.string().optional().describe(SESSION_ID_DESCRIPTION),
+      budgetPreset: z.enum(['quick', 'normal', 'deep']).optional().describe(BUDGET_PRESET_DESCRIPTION),
       expression: z.string().optional().describe('JavaScript expression to evaluate (for evaluate action)'),
       awaitPromise: z.boolean().optional().describe('Await returned promises (default: false)'),
-      timeoutMs: z.number().optional().describe('Timeout for evaluate/wait operations (default: 5000)'),
+      timeoutMs: z.number().optional().describe(`Timeout for evaluate/wait operations (default: ${DEFAULT_WAIT_TIMEOUT_MS})`),
       returnByValue: z.boolean().optional().describe('Return actual value vs JSON (default: true)'),
       level: z.string().optional().describe('Minimum console level: log, warn, error (default: all)'),
       clear: z.boolean().optional().describe('Clear buffer after reading (default: false)'),
-      limit: z.number().optional().describe('Maximum entries to return (default: 50)'),
+      limit: z.number().optional().describe(`Maximum entries to return (default: ${DEFAULT_CONSOLE_LIMIT})`),
       type: z.enum(['local', 'session']).optional().describe('Storage type to read (default: local)'),
       keys: z.array(z.string()).optional().describe('Specific storage keys to fetch (omitting returns all)'),
-      textBudget: z.number().optional().describe('Max chars for page text (default: 4000)'),
+      textBudget: z.number().optional().describe(`Max chars for page text (default: ${DEFAULT_PAGE_TEXT_BUDGET})`),
       urlPattern: z.string().optional().describe('Filter network entries by URL pattern')
     }
   }, handlePageTool);
 
   server.registerTool('browser_navigation', {
     title: 'Browser Navigation',
-    description: 'Navigate, reload, move through history, scroll, or resize the approved live tab.',
+    description: 'Navigate, reload, move through history, scroll, or resize the approved live tab. `resize` is debugger-backed and should be used only when an exact viewport override is required.',
     inputSchema: {
       action: z.enum(['navigate', 'reload', 'go_back', 'go_forward', 'scroll', 'resize']).describe('Navigation operation to perform'),
+      sessionId: z.string().optional().describe(SESSION_ID_DESCRIPTION),
+      budgetPreset: z.enum(['quick', 'normal', 'deep']).optional().describe(BUDGET_PRESET_DESCRIPTION),
       url: z.string().optional().describe('URL to navigate to (for navigate action)'),
       waitForLoad: z.boolean().optional().describe('Wait for load event (default: true)'),
       timeoutMs: z.number().optional().describe('Timeout for navigation (default: 30000)'),
@@ -169,6 +190,8 @@ export function createBridgeMcpServer() {
     description: 'Simulate user input: click, focus, type, press keys, set checked, select options, hover, or drag. Use elementRef from prior queries.',
     inputSchema: {
       action: z.enum(['click', 'focus', 'type', 'press_key', 'set_checked', 'select_option', 'hover', 'drag']).describe('Input operation to perform'),
+      sessionId: z.string().optional().describe(SESSION_ID_DESCRIPTION),
+      budgetPreset: z.enum(['quick', 'normal', 'deep']).optional().describe(BUDGET_PRESET_DESCRIPTION),
       elementRef: z.string().optional().describe('Target element reference (preferred over selector)'),
       selector: z.string().optional().describe('CSS selector (used if no elementRef)'),
       button: z.enum(['left', 'middle', 'right']).optional().describe('Mouse button for click (default: left)'),
@@ -197,6 +220,8 @@ export function createBridgeMcpServer() {
     description: 'Apply reversible style or DOM patches. All patches can be rolled back. Use to prototype UI changes without modifying source.',
     inputSchema: {
       action: z.enum(['apply_styles', 'apply_dom', 'list', 'rollback', 'commit_baseline']).describe('Patch operation to perform'),
+      sessionId: z.string().optional().describe(SESSION_ID_DESCRIPTION),
+      budgetPreset: z.enum(['quick', 'normal', 'deep']).optional().describe(BUDGET_PRESET_DESCRIPTION),
       elementRef: z.string().optional().describe('Target element reference (preferred over selector)'),
       selector: z.string().optional().describe('CSS selector (used if no elementRef)'),
       declarations: z.record(z.string(), z.string()).optional().describe('CSS property: value pairs (for apply_styles)'),
@@ -210,9 +235,11 @@ export function createBridgeMcpServer() {
 
   server.registerTool('browser_capture', {
     title: 'Browser Capture',
-    description: 'Capture screenshots or CDP snapshots. Use only when structured reads are insufficient - screenshots are token-expensive.',
+    description: 'Capture screenshots or CDP snapshots. Use only when structured reads are insufficient. All capture actions are debugger-backed and token-expensive.',
     inputSchema: {
       action: z.enum(['element', 'region', 'cdp_document', 'cdp_dom_snapshot', 'cdp_box_model', 'cdp_computed_styles']).describe('Capture operation: element/region for screenshots, cdp_* for low-level data'),
+      sessionId: z.string().optional().describe(SESSION_ID_DESCRIPTION),
+      budgetPreset: z.enum(['quick', 'normal', 'deep']).optional().describe(BUDGET_PRESET_DESCRIPTION),
       elementRef: z.string().optional().describe('Element reference to screenshot (for element action)'),
       selector: z.string().optional().describe('CSS selector (used if no elementRef)'),
       rect: z.object({
@@ -223,6 +250,19 @@ export function createBridgeMcpServer() {
       }).optional().describe('Screenshot region (for region action)')
     }
   }, handleCaptureTool);
+
+  server.registerTool('browser_batch', {
+    title: 'Browser Bridge Batch',
+    description: 'Execute multiple existing Browser Bridge calls in parallel. Preserves call order in the response and reuses one resolved default session when possible.',
+    inputSchema: {
+      calls: z.array(z.object({
+        method: z.string().describe('Bridge method name (e.g. "dom.query", "page.get_text")'),
+        params: z.record(z.string(), z.unknown()).optional().describe('Method params for this call'),
+        sessionId: z.string().optional().describe(SESSION_ID_DESCRIPTION),
+        budgetPreset: z.enum(['quick', 'normal', 'deep']).optional().describe(BUDGET_PRESET_DESCRIPTION)
+      })).min(1).describe('Calls to execute in parallel')
+    }
+  }, handleBatchTool);
 
   server.registerTool('browser_call', {
     title: 'Raw Browser Bridge Call',

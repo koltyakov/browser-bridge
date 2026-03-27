@@ -6,9 +6,18 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { BRIDGE_METHOD_REGISTRY } from '../../protocol/src/index.js';
+import {
+  BUDGET_PRESETS,
+  BRIDGE_METHOD_REGISTRY,
+  DEFAULT_CAPABILITIES,
+  DEFAULT_PAGE_TEXT_BUDGET,
+} from '../../protocol/src/index.js';
 import { BridgeClient } from '../../agent-client/src/client.js';
 import { clearSession, saveSession } from '../../agent-client/src/session-store.js';
+import {
+  BUDGET_PRESET_DESCRIPTION,
+  CAPABILITY_DESCRIPTION,
+} from '../src/server.js';
 import {
   CAPTURE_ACTIONS,
   DOM_ACTIONS,
@@ -17,6 +26,7 @@ import {
   PAGE_ACTIONS,
   PATCH_ACTIONS,
   STYLES_LAYOUT_ACTIONS,
+  handleBatchTool,
   handleCaptureTool,
   handleDomTool,
   handleInputTool,
@@ -394,6 +404,92 @@ test('handleCaptureTool element resolves ref and calls screenshot.capture_elemen
       assert.equal(result.isError, undefined);
     });
   });
+});
+
+test('grouped MCP tools accept explicit sessionId and budget presets', async () => {
+  await withMockedBridge(async (record) => {
+    if (record.method === 'dom.query') {
+      return ok({ nodes: [{ elementRef: 'el_main', tag: 'main', attrs: {}, bbox: {}, textExcerpt: 'Hello' }] });
+    }
+    return ok({ value: 'Ready', truncated: false, length: 5 });
+  }, async (calls) => {
+    await handleDomTool({
+      action: 'query',
+      selector: 'main',
+      sessionId: 'sess_explicit',
+      budgetPreset: 'quick',
+    });
+
+    await handlePageTool({
+      action: 'text',
+      sessionId: 'sess_explicit',
+      budgetPreset: 'deep',
+    });
+
+    const domCall = calls.find((call) => call.method === 'dom.query');
+    const pageTextCall = calls.find((call) => call.method === 'page.get_text');
+    assert.ok(domCall);
+    assert.equal(domCall.sessionId, 'sess_explicit');
+    assert.equal(domCall.params.maxNodes, 5);
+    assert.equal(domCall.params.maxDepth, 2);
+    assert.equal(domCall.params.textBudget, 300);
+    assert.equal(domCall.meta.token_budget, 500);
+
+    assert.ok(pageTextCall);
+    assert.equal(pageTextCall.sessionId, 'sess_explicit');
+    assert.equal(pageTextCall.params.textBudget, 2000);
+    assert.equal(pageTextCall.meta.token_budget, 4000);
+  });
+});
+
+test('handleBatchTool preserves order, reuses one default session, and reports mixed results', async () => {
+  await withTestSession(async () => {
+    await withMockedBridge(async (record) => {
+      if (record.method === 'session.get_status') {
+        return ok(TEST_SESSION);
+      }
+      if (record.method === 'dom.query') {
+        return ok({ nodes: [{ elementRef: 'el_main', tag: 'main', attrs: {}, bbox: {}, textExcerpt: 'Hello' }] });
+      }
+      if (record.method === 'page.get_text') {
+        return fail('TIMEOUT', 'Slow page text');
+      }
+      return ok({ daemon: 'ok', extensionConnected: true });
+    }, async (calls) => {
+      const result = await handleBatchTool({
+        calls: [
+          { method: 'health.ping' },
+          { method: 'dom.query', params: { selector: 'main' }, budgetPreset: 'quick' },
+          { method: 'page.get_text', budgetPreset: 'normal' },
+        ],
+      });
+
+      const batchResults = /** @type {Array<{ method: string }>} */ (
+        result.structuredContent.results
+      );
+      assert.equal(result.isError, true);
+      assert.equal(result.structuredContent.ok, false);
+      assert.equal(batchResults.length, 3);
+      assert.equal(batchResults[0].method, 'health.ping');
+      assert.equal(batchResults[1].method, 'dom.query');
+      assert.equal(batchResults[2].method, 'page.get_text');
+
+      assert.equal(calls.filter((call) => call.method === 'session.get_status').length, 1);
+      const domCall = calls.find((call) => call.method === 'dom.query');
+      const pageTextCall = calls.find((call) => call.method === 'page.get_text');
+      assert.equal(domCall?.sessionId, 'sess_test');
+      assert.equal(pageTextCall?.sessionId, 'sess_test');
+    });
+  });
+});
+
+test('MCP descriptions stay aligned with protocol defaults', () => {
+  assert.match(CAPABILITY_DESCRIPTION, new RegExp(DEFAULT_CAPABILITIES[0]));
+  assert.match(BUDGET_PRESET_DESCRIPTION, /quick/);
+  assert.match(BUDGET_PRESET_DESCRIPTION, /normal/);
+  assert.match(BUDGET_PRESET_DESCRIPTION, new RegExp(String(BUDGET_PRESETS.normal.maxNodes)));
+  assert.match(BUDGET_PRESET_DESCRIPTION, new RegExp(String(BUDGET_PRESETS.normal.textBudget)));
+  assert.equal(DEFAULT_PAGE_TEXT_BUDGET, 8000);
 });
 
 test('grouped MCP tool action maps stay aligned with the bridge method registry', () => {

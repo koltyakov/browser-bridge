@@ -34,7 +34,8 @@ import {
   normalizeWaitForParams
 } from '../../protocol/src/index.js';
 import {
-  estimateResponseTokens,
+  enforceTokenBudget,
+  getResponseDiagnostics,
   getErrorMessage,
   inferCapability,
   matchesConsoleLevel,
@@ -75,8 +76,12 @@ import { TabDebuggerCoordinator } from './debugger-coordinator.js';
  *   summary: string,
  *   responseBytes: number,
  *   approxTokens: number,
+ *   costClass: 'cheap' | 'moderate' | 'heavy' | 'extreme',
+ *   debuggerBacked: boolean,
+ *   overBudget: boolean,
  *   hasScreenshot: boolean,
- *   nodeCount: number | null
+ *   nodeCount: number | null,
+ *   continuationHint: string | null
  * }} ActionLogEntry
  */
 
@@ -302,6 +307,8 @@ async function handleBridgeRequest(request) {
   } catch (error) {
     response = toFailureResponse(request, error);
   }
+
+  response = enrichBridgeResponse(request, response);
 
   await logBridgeAction(request, response, actionContext);
   reply(response);
@@ -1359,6 +1366,38 @@ async function getSessionById(sessionId) {
 }
 
 /**
+ * Pick the most relevant session for a tab, preferring an origin match with the
+ * current URL when available.
+ *
+ * @param {number | null | undefined} tabId
+ * @param {string | undefined} [url]
+ * @returns {Promise<SessionState | null>}
+ */
+async function getSessionForTab(tabId, url = '') {
+  if (!Number.isFinite(tabId)) {
+    return null;
+  }
+
+  const currentOrigin = safeOrigin(url || '');
+  /** @type {SessionState | null} */
+  let fallback = null;
+
+  for (const session of state.sessions.values()) {
+    if (session.tabId !== tabId) {
+      continue;
+    }
+    if (!fallback) {
+      fallback = session;
+    }
+    if (currentOrigin && session.origin === currentOrigin) {
+      return session;
+    }
+  }
+
+  return fallback;
+}
+
+/**
  * Create a new scoped session or reuse one that already covers the requested
  * tab, origin, and capabilities.
  *
@@ -1700,7 +1739,7 @@ async function logBridgeAction(request, response, actionContext) {
     return;
   }
 
-  const tokenEstimate = estimateResponseTokens(response);
+  const diagnostics = getResponseDiagnostics(request.method, response);
 
   await appendActionLogEntry({
     method: request.method,
@@ -1709,10 +1748,16 @@ async function logBridgeAction(request, response, actionContext) {
     url: actionContext?.url ?? '',
     ok: response.ok,
     summary: summarizeActionResult(response),
-    responseBytes: tokenEstimate.responseBytes,
-    approxTokens: tokenEstimate.approxTokens,
-    hasScreenshot: tokenEstimate.hasScreenshot,
-    nodeCount: tokenEstimate.nodeCount
+    responseBytes: diagnostics.responseBytes,
+    approxTokens: diagnostics.approxTokens,
+    costClass: diagnostics.costClass,
+    debuggerBacked: diagnostics.debuggerBacked,
+    overBudget: response.meta?.budget_truncated === true,
+    hasScreenshot: diagnostics.hasScreenshot,
+    nodeCount: diagnostics.nodeCount,
+    continuationHint: typeof response.meta?.continuation_hint === 'string'
+      ? response.meta.continuation_hint
+      : null,
   });
   await emitUiState();
 }
@@ -1729,8 +1774,12 @@ async function logBridgeAction(request, response, actionContext) {
  *   summary: string,
  *   responseBytes?: number,
  *   approxTokens?: number,
+ *   costClass?: 'cheap' | 'moderate' | 'heavy' | 'extreme',
+ *   debuggerBacked?: boolean,
+ *   overBudget?: boolean,
  *   hasScreenshot?: boolean,
- *   nodeCount?: number | null
+ *   nodeCount?: number | null,
+ *   continuationHint?: string | null
  * }} entry
  * @returns {Promise<void>}
  */
@@ -1748,8 +1797,12 @@ async function appendActionLogEntry(entry) {
       summary: entry.summary,
       responseBytes: entry.responseBytes ?? 0,
       approxTokens: entry.approxTokens ?? 0,
+      costClass: entry.costClass ?? 'cheap',
+      debuggerBacked: entry.debuggerBacked === true,
+      overBudget: entry.overBudget === true,
       hasScreenshot: entry.hasScreenshot ?? false,
-      nodeCount: entry.nodeCount ?? null
+      nodeCount: entry.nodeCount ?? null,
+      continuationHint: entry.continuationHint ?? null
     }
   ].slice(-MAX_ACTION_LOG_ENTRIES);
 
@@ -1791,8 +1844,14 @@ function normalizeActionLogEntry(entry) {
     summary: typeof candidate.summary === 'string' ? candidate.summary : '',
     responseBytes: Number(candidate.responseBytes) || 0,
     approxTokens: Number(candidate.approxTokens) || 0,
+    costClass: candidate.costClass === 'moderate' || candidate.costClass === 'heavy' || candidate.costClass === 'extreme'
+      ? candidate.costClass
+      : 'cheap',
+    debuggerBacked: candidate.debuggerBacked === true,
+    overBudget: candidate.overBudget === true,
     hasScreenshot: candidate.hasScreenshot === true,
-    nodeCount: typeof candidate.nodeCount === 'number' ? candidate.nodeCount : null
+    nodeCount: typeof candidate.nodeCount === 'number' ? candidate.nodeCount : null,
+    continuationHint: typeof candidate.continuationHint === 'string' ? candidate.continuationHint : null
   };
 }
 
@@ -1814,6 +1873,33 @@ function toFailureResponse(request, error) {
       : ERROR_CODES.INTERNAL_ERROR;
 
   return createFailure(request.id, code, message, null, { method: request.method });
+}
+
+/**
+ * Apply token-budget truncation and attach cost/debugger metadata for the
+ * response that will be sent back to the agent.
+ *
+ * @param {BridgeRequest} request
+ * @param {BridgeResponse} response
+ * @returns {BridgeResponse}
+ */
+function enrichBridgeResponse(request, response) {
+  const budgetedResponse = enforceTokenBudget(
+    request.method,
+    response,
+    request.meta?.token_budget,
+  );
+  const diagnostics = getResponseDiagnostics(request.method, budgetedResponse);
+  return {
+    ...budgetedResponse,
+    meta: {
+      ...budgetedResponse.meta,
+      response_bytes: diagnostics.responseBytes,
+      approx_tokens: diagnostics.approxTokens,
+      cost_class: diagnostics.costClass,
+      debugger_backed: diagnostics.debuggerBacked,
+    },
+  };
 }
 
 /**
@@ -1883,12 +1969,16 @@ async function emitUiStateForPort(port) {
     ? await getTabState(portState.scopeTabId)
     : await getCurrentTabState();
   const scopedTabId = currentTab?.tabId ?? portState.scopeTabId ?? null;
+  const activeSession = currentTab
+    ? await getSessionForTab(currentTab.tabId, currentTab.url)
+    : null;
 
   postToUiPort(port, {
     type: 'state.sync',
     state: {
       nativeConnected: Boolean(state.nativePort),
       currentTab,
+      activeSession,
       setupStatus: state.setupStatus,
       setupStatusPending: state.setupStatusPending,
       setupStatusError: state.setupStatusError,

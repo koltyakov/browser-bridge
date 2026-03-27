@@ -2,6 +2,23 @@
 
 import { applyBudget } from './budget.js';
 import { DEFAULT_CAPABILITIES, isCapability } from './capabilities.js';
+import {
+  BUDGET_PRESETS,
+  DEFAULT_A11Y_MAX_DEPTH,
+  DEFAULT_A11Y_MAX_NODES,
+  DEFAULT_CONSOLE_LIMIT,
+  DEFAULT_EVAL_TIMEOUT_MS,
+  DEFAULT_MAX_DEPTH,
+  DEFAULT_MAX_HTML_LENGTH,
+  DEFAULT_MAX_NODES,
+  DEFAULT_NAV_TIMEOUT_MS,
+  DEFAULT_NETWORK_LIMIT,
+  DEFAULT_PAGE_TEXT_BUDGET,
+  DEFAULT_TEXT_BUDGET,
+  DEFAULT_VIEWPORT_HEIGHT,
+  DEFAULT_VIEWPORT_WIDTH,
+  DEFAULT_WAIT_TIMEOUT_MS,
+} from './defaults.js';
 import { BridgeError, ERROR_CODES } from './errors.js';
 import { BRIDGE_METHODS, createBridgeMethodGroups } from './registry.js';
 
@@ -215,8 +232,7 @@ export function normalizeDomQuery(params = {}) {
   return {
     selector: typeof params.selector === 'string' && params.selector.trim() ? params.selector : 'body',
     withinRef: typeof params.withinRef === 'string' ? params.withinRef : null,
-    budget: applyBudget(params),
-    includeRoles: params.includeRoles !== false
+    budget: applyBudget(params)
   };
 }
 
@@ -552,8 +568,8 @@ export function normalizeTabCloseParams(params = {}) {
  */
 export function normalizeAccessibilityTreeParams(params = {}) {
   return {
-    maxDepth: clampInt(params.maxDepth, 1, 20, 6),
-    maxNodes: clampInt(params.maxNodes, 10, 5000, 500)
+    maxDepth: clampInt(params.maxDepth, 1, 20, DEFAULT_A11Y_MAX_DEPTH),
+    maxNodes: clampInt(params.maxNodes, 10, 5000, DEFAULT_A11Y_MAX_NODES)
   };
 }
 
@@ -564,7 +580,7 @@ export function normalizeAccessibilityTreeParams(params = {}) {
 export function normalizeNetworkParams(params = {}) {
   return {
     clear: Boolean(params.clear),
-    limit: clampInt(params.limit, 1, 500, 50),
+    limit: clampInt(params.limit, 1, 500, DEFAULT_NETWORK_LIMIT),
     urlPattern: typeof params.urlPattern === 'string' && params.urlPattern.trim()
       ? params.urlPattern.trim()
       : null
@@ -577,7 +593,7 @@ export function normalizeNetworkParams(params = {}) {
  */
 export function normalizePageTextParams(params = {}) {
   return {
-    textBudget: clampInt(params.textBudget, 100, 100_000, 8000)
+    textBudget: clampInt(params.textBudget, 100, 100_000, DEFAULT_PAGE_TEXT_BUDGET)
   };
 }
 
@@ -587,8 +603,8 @@ export function normalizePageTextParams(params = {}) {
  */
 export function normalizeViewportResizeParams(params = {}) {
   return {
-    width: clampInt(params.width, 320, 7680, 1280),
-    height: clampInt(params.height, 200, 4320, 720),
+    width: clampInt(params.width, 320, 7680, DEFAULT_VIEWPORT_WIDTH),
+    height: clampInt(params.height, 200, 4320, DEFAULT_VIEWPORT_HEIGHT),
     deviceScaleFactor: clampInt(params.deviceScaleFactor, 0, 4, 0),
     reset: Boolean(params.reset)
   };
@@ -612,9 +628,9 @@ export function createRuntimeContext() {
   return {
     v: PROTOCOL_VERSION,
     budgets: {
-      quick: { n: 5, d: 2, t: 300 },
-      normal: { n: 25, d: 4, t: 600 },
-      deep: { n: 100, d: 8, t: 2000 }
+      quick: { n: BUDGET_PRESETS.quick.maxNodes, d: BUDGET_PRESETS.quick.maxDepth, t: BUDGET_PRESETS.quick.textBudget },
+      normal: { n: BUDGET_PRESETS.normal.maxNodes, d: BUDGET_PRESETS.normal.maxDepth, t: BUDGET_PRESETS.normal.textBudget },
+      deep: { n: BUDGET_PRESETS.deep.maxNodes, d: BUDGET_PRESETS.deep.maxDepth, t: BUDGET_PRESETS.deep.textBudget }
     },
     methods: methodGroups,
     errors: {
@@ -650,7 +666,7 @@ export function createRuntimeContext() {
     tips: [
       'dom.query quick budget first; widen only if truncated',
       'Reuse elementRef; don\'t re-query',
-      'Set attributeAllowlist + styleAllowlist',
+      'Set attributeAllowlist for focused DOM reads',
       'patch.apply_styles before patch.apply_dom',
       'Verify with get_box_model not screenshots',
       'batch independent reads',
@@ -679,17 +695,17 @@ export function createRuntimeContext() {
       'patch.rollback'
     ],
     limits: {
-      maxNodes: { min: 1, max: 250, default: 25 },
-      maxDepth: { min: 1, max: 20, default: 4 },
-      textBudget: { min: 32, max: 10000, default: 600 },
-      evalTimeout: { min: 100, max: 30000, default: 5000 },
-      navTimeout: { min: 500, max: 120000, default: 15000 },
-      waitTimeout: { min: 100, max: 30000, default: 5000 },
-      maxHtmlLength: { min: 32, max: 50000, default: 2000 },
-      a11yMaxNodes: { min: 10, max: 5000, default: 500 },
-      networkLimit: { min: 1, max: 500, default: 50 },
-      consoleLimit: { min: 1, max: 200, default: 50 },
-      pageTextBudget: { min: 100, max: 100000, default: 8000 }
+      maxNodes: { min: 1, max: 250, default: DEFAULT_MAX_NODES },
+      maxDepth: { min: 1, max: 20, default: DEFAULT_MAX_DEPTH },
+      textBudget: { min: 32, max: 10000, default: DEFAULT_TEXT_BUDGET },
+      evalTimeout: { min: 100, max: 30000, default: DEFAULT_EVAL_TIMEOUT_MS },
+      navTimeout: { min: 500, max: 120000, default: DEFAULT_NAV_TIMEOUT_MS },
+      waitTimeout: { min: 100, max: 30000, default: DEFAULT_WAIT_TIMEOUT_MS },
+      maxHtmlLength: { min: 32, max: 50000, default: DEFAULT_MAX_HTML_LENGTH },
+      a11yMaxNodes: { min: 10, max: 5000, default: DEFAULT_A11Y_MAX_NODES },
+      networkLimit: { min: 1, max: 500, default: DEFAULT_NETWORK_LIMIT },
+      consoleLimit: { min: 1, max: 200, default: DEFAULT_CONSOLE_LIMIT },
+      pageTextBudget: { min: 100, max: 100000, default: DEFAULT_PAGE_TEXT_BUDGET }
     }
   };
 }

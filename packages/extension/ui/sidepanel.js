@@ -81,15 +81,30 @@ import {
  *   summary: string,
  *   responseBytes: number,
  *   approxTokens: number,
+ *   costClass: 'cheap' | 'moderate' | 'heavy' | 'extreme',
+ *   debuggerBacked: boolean,
+ *   overBudget: boolean,
  *   hasScreenshot: boolean,
- *   nodeCount: number | null
+ *   nodeCount: number | null,
+ *   continuationHint: string | null
  * }} ActionLogEntry
+ */
+
+/**
+ * @typedef {{
+ *   sessionId: string,
+ *   tabId: number,
+ *   origin: string,
+ *   capabilities: string[],
+ *   expiresAt: number
+ * }} SidePanelSession
  */
 
 /**
  * @typedef {{
  *   nativeConnected: boolean,
  *   currentTab: SidePanelCurrentTab | null,
+ *   activeSession: SidePanelSession | null,
  *   setupStatus: SetupStatus | null,
  *   setupStatusPending: boolean,
  *   setupStatusError: string | null,
@@ -364,6 +379,7 @@ function renderState(state) {
   hideSetupContextMenu();
   renderNativeStatus(state.nativeConnected);
   renderCurrentTab(state.currentTab);
+  renderAgentStatus(state);
   renderPromptExamples(state.setupStatus);
   renderSetupStatus(
     state.setupStatus,
@@ -374,8 +390,8 @@ function renderState(state) {
   );
 
   actionLog.replaceChildren(
-    ...state.actionLog.map((entry) =>
-      renderActionLogEntry(entry, state.setupStatus),
+    ...state.actionLog.map((entry, index, entries) =>
+      renderActionLogEntry(entry, state.setupStatus, entries, index),
     ),
   );
 
@@ -407,6 +423,14 @@ function renderCurrentTab(currentTab) {
   toggleButton.textContent = currentTab.enabled ? 'Disable' : 'Enable';
   toggleButton.disabled = !currentTab.url;
   toggleButton.dataset.enabled = String(currentTab.enabled);
+}
+
+/**
+ * @param {UiSnapshot} state
+ * @returns {void}
+ */
+function renderAgentStatus(state) {
+  void state;
 }
 
 /**
@@ -1132,9 +1156,11 @@ function pulseAttention() {
 /**
  * @param {ActionLogEntry} entry
  * @param {SetupStatus | null} setupStatus
+ * @param {ActionLogEntry[]} entries
+ * @param {number} index
  * @returns {HTMLElement}
  */
-function renderActionLogEntry(entry, setupStatus) {
+function renderActionLogEntry(entry, setupStatus, entries, index) {
   const container = document.createElement('article');
   container.className = 'card activity-card';
 
@@ -1202,12 +1228,76 @@ function renderActionLogEntry(entry, setupStatus) {
     if (entry.hasScreenshot) {
       parts.push('img');
     }
+    if (entry.debuggerBacked) {
+      parts.push('cdp');
+    }
     tokenLine.textContent = parts.join(' \u00b7 ');
+    tokenLine.dataset.costClass = entry.costClass;
     badges.append(tokenLine);
+  }
+
+  if (entry.debuggerBacked) {
+    badges.append(createActivityBadge('Debugger', 'activity-badge-warn'));
+  }
+
+  if (entry.overBudget) {
+    badges.append(createActivityBadge('Truncated', 'activity-badge-warn'));
+  }
+
+  if (entry.hasScreenshot) {
+    badges.append(createActivityBadge('Image', 'activity-badge-neutral'));
+  }
+
+  if (countRecentExpensiveRepeats(entries, index) >= 2) {
+    badges.append(createActivityBadge('Repeat', 'activity-badge-warn'));
   }
 
   if (badges.childElementCount) footer.append(badges);
 
+  if (entry.continuationHint) {
+    const hint = document.createElement('p');
+    hint.className = 'muted activity-hint';
+    hint.textContent = entry.continuationHint;
+    container.append(header, footer, hint);
+    return container;
+  }
+
   container.append(header, footer);
   return container;
+}
+
+/**
+ * @param {string} label
+ * @param {string} className
+ * @returns {HTMLElement}
+ */
+function createActivityBadge(label, className) {
+  const badge = document.createElement('span');
+  badge.className = `activity-badge ${className}`;
+  badge.textContent = label;
+  return badge;
+}
+
+/**
+ * @param {ActionLogEntry[]} entries
+ * @param {number} index
+ * @returns {number}
+ */
+function countRecentExpensiveRepeats(entries, index) {
+  const current = entries[index];
+  if (!current || (!current.debuggerBacked && current.costClass !== 'heavy' && current.costClass !== 'extreme')) {
+    return 0;
+  }
+
+  let count = 0;
+  for (let cursor = index + 1; cursor < Math.min(entries.length, index + 4); cursor += 1) {
+    const candidate = entries[cursor];
+    if (!candidate || candidate.method !== current.method) {
+      break;
+    }
+    if (candidate.debuggerBacked || candidate.costClass === 'heavy' || candidate.costClass === 'extreme') {
+      count += 1;
+    }
+  }
+  return count;
 }

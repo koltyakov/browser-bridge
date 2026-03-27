@@ -43,11 +43,11 @@ Always set allowlists when you know what you need:
   "selector": ".card",
   "maxNodes": 10,
   "attributeAllowlist": ["class", "id", "href", "data-testid"],
-  "styleAllowlist": ["display", "flex-direction", "gap", "padding", "margin"]
+  "textBudget": 400
 }
 ```
 
-Omitting allowlists returns all attributes/styles - often 3–5× the tokens needed.
+Omitting allowlists or leaving the text budget wide open often returns 3–5× the tokens needed.
 
 ## Anti-Patterns (Token Waste)
 
@@ -109,7 +109,7 @@ Install early - the buffer auto-activates on first call. Captured levels: log, w
 When you need the page's visible text - for summarization, search, or content extraction - use `page.get_text` instead of `dom.query` on `body`:
 
 ```bash
-bbx page-text           # default 4000 char budget
+bbx page-text           # default 8000 char budget
 bbx page-text 8000      # larger budget for long pages
 ```
 

@@ -43,7 +43,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
   'dom.query': {
     group: 'inspect',
     session: true,
-    params: ['selector', 'withinRef', 'maxNodes', 'maxDepth', 'textBudget', 'includeHtml', 'includeScreenshot', 'attributeAllowlist', 'styleAllowlist', 'includeRoles']
+    params: ['selector', 'withinRef', 'maxNodes', 'maxDepth', 'textBudget', 'includeBbox', 'attributeAllowlist']
   },
   'dom.describe': { group: 'inspect', session: true, params: ['elementRef'] },
   'dom.get_text': { group: 'inspect', session: true, params: ['elementRef', 'textBudget'] },

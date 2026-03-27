@@ -25,11 +25,8 @@ test('content script helpers clamp, truncate, and normalize budgets', () => {
     maxNodes: 250,
     maxDepth: 1,
     textBudget: 32,
-    includeHtml: false,
-    includeScreenshot: false,
     includeBbox: true,
-    attributeAllowlist: ['id'],
-    styleAllowlist: []
+    attributeAllowlist: ['id']
   });
 });
 

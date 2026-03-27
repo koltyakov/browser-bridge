@@ -4,9 +4,11 @@
 /** @typedef {import('./types.js').BudgetOptions} BudgetOptions */
 /** @typedef {import('./types.js').TruncateResult} TruncateResult */
 
-const DEFAULT_TEXT_BUDGET = 600;
-const DEFAULT_MAX_NODES = 25;
-const DEFAULT_MAX_DEPTH = 4;
+import {
+  DEFAULT_MAX_DEPTH,
+  DEFAULT_MAX_NODES,
+  DEFAULT_TEXT_BUDGET,
+} from './defaults.js';
 
 /**
  * @param {BudgetOptions} [options={}]
@@ -17,11 +19,8 @@ export function applyBudget(options = {}) {
     maxNodes: clamp(options.maxNodes ?? DEFAULT_MAX_NODES, 1, 250),
     maxDepth: clamp(options.maxDepth ?? DEFAULT_MAX_DEPTH, 1, 20),
     textBudget: clamp(options.textBudget ?? DEFAULT_TEXT_BUDGET, 32, 10000),
-    includeHtml: Boolean(options.includeHtml),
-    includeScreenshot: Boolean(options.includeScreenshot),
     includeBbox: options.includeBbox !== false,
-    attributeAllowlist: normalizeList(options.attributeAllowlist),
-    styleAllowlist: normalizeList(options.styleAllowlist)
+    attributeAllowlist: normalizeList(options.attributeAllowlist)
   };
 }
 

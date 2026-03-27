@@ -12,11 +12,8 @@
    *   maxNodes: number,
    *   maxDepth: number,
    *   textBudget: number,
-   *   includeHtml: boolean,
-   *   includeScreenshot: boolean,
    *   includeBbox: boolean,
-   *   attributeAllowlist: string[],
-   *   styleAllowlist: string[]
+   *   attributeAllowlist: string[]
    * }} Budget
    */
 
@@ -68,11 +65,8 @@
       maxNodes: clamp(options.maxNodes ?? 25, 1, 250),
       maxDepth: clamp(options.maxDepth ?? 4, 1, 20),
       textBudget: clamp(options.textBudget ?? 600, 32, 10000),
-      includeHtml: Boolean(options.includeHtml),
-      includeScreenshot: Boolean(options.includeScreenshot),
       includeBbox: options.includeBbox !== false,
-      attributeAllowlist: normalizeList(options.attributeAllowlist),
-      styleAllowlist: normalizeList(options.styleAllowlist)
+      attributeAllowlist: normalizeList(options.attributeAllowlist)
     };
   }
 

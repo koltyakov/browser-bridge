@@ -5,6 +5,8 @@ import assert from 'node:assert/strict';
 
 import {
   estimateResponseTokens,
+  enforceTokenBudget,
+  getResponseDiagnostics,
   inferCapability,
   matchesConsoleLevel,
   normalizeCropRect,
@@ -137,4 +139,37 @@ test('estimateResponseTokens handles failure responses', () => {
   assert.equal(estimate.approxTokens, 0);
   assert.equal(estimate.hasScreenshot, false);
   assert.equal(estimate.nodeCount, null);
+});
+
+test('getResponseDiagnostics marks debugger-backed heavy responses', () => {
+  const diagnostics = getResponseDiagnostics('page.evaluate', /** @type {any} */ ({
+    ok: true,
+    result: { value: 'x'.repeat(5000) }
+  }));
+  assert.equal(diagnostics.debuggerBacked, true);
+  assert.equal(diagnostics.costClass, 'heavy');
+});
+
+test('enforceTokenBudget truncates oversized responses deterministically', () => {
+  const response = /** @type {any} */ ({
+    ok: true,
+    result: {
+      nodes: Array.from({ length: 12 }, (_, index) => ({
+        elementRef: `el_${index}`,
+        text: `Node ${index} ${'x'.repeat(120)}`
+      }))
+    },
+    error: null,
+    meta: { protocol_version: '1.0' }
+  });
+
+  const budgeted = enforceTokenBudget('dom.query', response, 120);
+  const budgetedResult = /** @type {{ nodes: unknown[], truncated?: boolean }} */ (budgeted.result);
+  assert.equal(budgeted.ok, true);
+  assert.equal(budgeted.meta.budget_applied, true);
+  assert.equal(budgeted.meta.budget_truncated, true);
+  assert.match(String(budgeted.meta.continuation_hint), /larger token budget|tighter params/);
+  assert.ok(Array.isArray(budgetedResult.nodes));
+  assert.ok(budgetedResult.nodes.length < response.result.nodes.length);
+  assert.equal(budgetedResult.truncated, true);
 });

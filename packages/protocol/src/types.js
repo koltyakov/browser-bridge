@@ -23,7 +23,14 @@ export {};
  *   protocol_version?: string,
  *   token_budget?: number | null,
  *   source?: BridgeRequestSource,
- *   [key: string]: unknown
+ *   response_bytes?: number,
+ *   approx_tokens?: number,
+ *   cost_class?: 'cheap' | 'moderate' | 'heavy' | 'extreme',
+ *   debugger_backed?: boolean,
+ *   budget_applied?: boolean,
+ *   budget_truncated?: boolean,
+ *   continuation_hint?: string | null,
+   *   [key: string]: unknown
  * }} BridgeMeta
  */
 
@@ -74,11 +81,8 @@ export {};
  *   maxNodes?: number,
  *   maxDepth?: number,
  *   textBudget?: number,
- *   includeHtml?: boolean,
- *   includeScreenshot?: boolean,
  *   includeBbox?: boolean,
- *   attributeAllowlist?: string[],
- *   styleAllowlist?: string[]
+ *   attributeAllowlist?: string[]
  * }} BudgetOptions
  */
 
@@ -87,11 +91,8 @@ export {};
  *   maxNodes: number,
  *   maxDepth: number,
  *   textBudget: number,
- *   includeHtml: boolean,
- *   includeScreenshot: boolean,
  *   includeBbox: boolean,
- *   attributeAllowlist: string[],
- *   styleAllowlist: string[]
+ *   attributeAllowlist: string[]
  * }} Budget
  */
 
@@ -130,11 +131,8 @@ export {};
  *   maxNodes?: number,
  *   maxDepth?: number,
  *   textBudget?: number,
- *   includeHtml?: boolean,
- *   includeScreenshot?: boolean,
- *   attributeAllowlist?: string[],
- *   styleAllowlist?: string[],
- *   includeRoles?: boolean
+ *   includeBbox?: boolean,
+ *   attributeAllowlist?: string[]
  * }} DomQueryParams
  */
 
@@ -142,8 +140,7 @@ export {};
  * @typedef {{
  *   selector: string,
  *   withinRef: string | null,
- *   budget: Budget,
- *   includeRoles: boolean
+ *   budget: Budget
  * }} NormalizedDomQuery
  */
 
