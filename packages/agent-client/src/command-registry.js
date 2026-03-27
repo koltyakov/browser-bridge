@@ -256,6 +256,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
     title: 'Generic RPC',
     lines: [
       'bbx call [--tab <tabId>] <method> [paramsJson|-]                   Call any bridge method (- reads JSON from stdin)',
+      'bbx <method> [--tab <tabId>] [paramsJson|-]                        Direct alias for exact bridge methods such as page.get_state',
       'bbx batch \'[{method,params,tabId?},...]\'                           Parallel method calls',
       'Advanced bridge params stay available through `bbx call`, even when shortcuts expose only the common case.'
     ]

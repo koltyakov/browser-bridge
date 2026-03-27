@@ -35,9 +35,10 @@ const ACTION_SUMMARIES = {
  */
 export function summarizeBridgeResponse(response, method) {
   if (!response.ok) {
+    const hint = summarizeErrorHint(response.error.code);
     return {
       ok: false,
-      summary: `${response.error.code}: ${response.error.message}`,
+      summary: `${response.error.code}: ${response.error.message}${hint ? ` ${hint}` : ''}`,
       evidence: response.error.details ?? null
     };
   }
@@ -249,6 +250,20 @@ export function summarizeBridgeResponse(response, method) {
     }
   }
   if (typeof result.tabId === 'number' && typeof result.url === 'string') {
+    const actionMethod =
+      typeof result.method === 'string' ? result.method : method;
+    if (actionMethod === 'navigation.navigate') {
+      return {
+        ok: true,
+        summary: `Navigated to ${result.url || 'page'}.`,
+        evidence: {
+          url: result.url,
+          title: result.title,
+          status: result.status,
+          tabId: result.tabId,
+        },
+      };
+    }
     return {
       ok: true,
       summary: `Tab ${result.tabId} created${result.url ? ` (${result.url})` : ''}.`,
@@ -376,6 +391,17 @@ function truncateUrl(url) {
   } catch {
     return url.length > 120 ? `${url.slice(0, 119)}\u2026` : url;
   }
+}
+
+/**
+ * @param {string} code
+ * @returns {string}
+ */
+function summarizeErrorHint(code) {
+  if (code === 'ELEMENT_STALE') {
+    return 'Re-query the current page after navigation or DOM updates.';
+  }
+  return '';
 }
 
 /**

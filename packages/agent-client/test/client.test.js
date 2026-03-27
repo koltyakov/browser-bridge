@@ -51,6 +51,27 @@ test('summarizeBridgeResponse condenses failures', () => {
   assert.match(summary.summary, /ACCESS_DENIED/);
 });
 
+test('summarizeBridgeResponse adds stale element recovery hint', () => {
+  const summary = summarizeBridgeResponse({
+    id: 'req_stale',
+    ok: false,
+    result: null,
+    error: {
+      code: 'ELEMENT_STALE',
+      message: 'Element reference is stale.',
+      details: null,
+    },
+    meta: { protocol_version: '1.0' },
+  });
+
+  assert.equal(summary.ok, false);
+  assert.match(summary.summary, /ELEMENT_STALE/);
+  assert.match(
+    summary.summary,
+    /Re-query the current page after navigation or DOM updates/,
+  );
+});
+
 /** Ensure generic successes return compact evidence. */
 test('summarizeBridgeResponse condenses success payloads', () => {
   const summary = summarizeBridgeResponse({
@@ -347,6 +368,19 @@ test('summarizer: resized viewport', () => {
 test('summarizer: tab created', () => {
   const s = summarizeBridgeResponse(ok({ tabId: 42, url: 'https://new.tab' }));
   assert.match(s.summary, /Tab 42 created/);
+});
+
+test('summarizer: navigation result does not look like tab creation', () => {
+  const s = summarizeBridgeResponse(
+    ok({
+      method: 'navigation.navigate',
+      tabId: 42,
+      url: 'https://example.com',
+      title: 'Example',
+      status: 'complete',
+    }),
+  );
+  assert.match(s.summary, /Navigated to https:\/\/example\.com/);
 });
 
 test('summarizer: element describe', () => {

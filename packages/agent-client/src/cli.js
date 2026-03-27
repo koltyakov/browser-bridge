@@ -491,6 +491,22 @@ async function main() {
       return;
     }
 
+    if (
+      command.includes('.')
+      && METHODS.includes(/** @type {BridgeMethod} */ (command))
+    ) {
+      const { tabId, method, params } = await parseCallCommand([
+        command,
+        ...rest,
+      ]);
+      const response = await requestBridge(client, method, params, {
+        tabId,
+        source: REQUEST_SOURCE,
+      });
+      printJson(response.ok ? response.result : response);
+      return;
+    }
+
     const shortcutCmd = SHORTCUT_COMMANDS[command];
     if (shortcutCmd) {
       let elementRef;

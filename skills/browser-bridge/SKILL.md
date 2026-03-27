@@ -23,6 +23,7 @@ Example prompt: `Use the browser-bridge skill to verify a component works and ma
 bbx status                  # daemon + extension health
 bbx doctor                  # install/access readiness
 bbx call <method> '{...}'   # any RPC method (raw output)
+bbx <method> '{...}'        # direct alias for an exact bridge method such as page.get_state
 bbx call --tab 123 <method> '{...}' # explicit tab override
 bbx batch '[{...},...]'     # parallel reads (concurrent)
 bbx tabs                    # list available tabs (prefer this)
@@ -185,6 +186,8 @@ dom.find_by_role('button', 'Login') → input.click
 - **[Interaction patterns](references/interaction.md)** - input methods, navigation, form controls, hover, drag, multi-tab workflows
 - **[Access and method coverage](references/capabilities.md)** - window-scoped access model and method group overview
 - **[Tailwind CSS guide](references/tailwind.md)** - selector escaping, semantic alternatives, patching strategy (load when `hints.tailwind: true`)
+
+`bbx a11y-tree` and `dom.get_accessibility_tree` are sensitive to `maxDepth` and `maxNodes`. Shallow runs can undercount interactive nodes on real pages, so widen those limits before treating a low interactive count as a bug.
 
 > **MCP mode:** If Browser Bridge is connected through an MCP server (tools named `browser_dom`, `browser_call`, etc.) rather than the CLI, use those MCP tools directly instead of shelling out to `bbx`. In prompts, `BB MCP` and `Browser Bridge MCP` are both acceptable references. Do not treat `bbx-mcp` as a skill alias in MCP-capable clients.
 

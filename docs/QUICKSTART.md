@@ -46,7 +46,7 @@ bbx install-skill copilot --local  # scope to current project instead of global
 
 The Browser Bridge skill is a CLI path. Use `bbx install-skill` for shell-driven agent flows and generic agent runtimes.
 
-Shortcut commands cover the common cases. Advanced protocol fields stay available through `bbx call <method> '{...}'` when you need the full bridge surface.
+Shortcut commands cover the common cases. Advanced protocol fields stay available through `bbx call <method> '{...}'` when you need the full bridge surface, and exact bridge methods can also be invoked directly for the raw path, for example `bbx page.get_state`.
 
 > The paths are independent. MCP clients use MCP tools; CLI skill clients use `bbx`. You do not need both, and most users should start with MCP if it is available.
 
