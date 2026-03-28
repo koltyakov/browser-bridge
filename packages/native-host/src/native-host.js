@@ -114,7 +114,9 @@ export async function runNativeHost({ socketPath = getSocketPath() } = {}) {
             error: message.error
           });
         }
-      })();
+      })().catch((err) => {
+        console.error('native-host: socket message handler failed:', err instanceof Error ? err.message : err);
+      });
     }
   });
 
@@ -138,7 +140,9 @@ export async function runNativeHost({ socketPath = getSocketPath() } = {}) {
         type: 'extension.response',
         response: message
       });
-    })();
+    })().catch((err) => {
+      console.error('native-host: stdin message handler failed:', err instanceof Error ? err.message : err);
+    });
   });
 }
 

@@ -35,7 +35,7 @@ import {
 } from '../../protocol/src/index.js';
 import {
   summarizeBridgeResponse,
-} from '../../agent-client/src/subagent.js';
+} from '../../protocol/src/index.js';
 import {
   enforceTokenBudget,
   getResponseDiagnostics,
@@ -166,6 +166,12 @@ const SETUP_STATUS_STALE_MS = 30_000;
 const SETUP_STATUS_TIMEOUT_MS = 5_000;
 const ACCESS_DENIED_WINDOW_OFF = 'Browser Bridge is off for this window.';
 const ACCESS_DENIED_TAB_CLOSE = 'tabs.close only works inside the enabled window.';
+const NATIVE_RECONNECT_BASE_MS = 2_000;
+const NATIVE_RECONNECT_MAX_MS = 30_000;
+
+/** @type {ReturnType<typeof setTimeout> | null} */
+let _nativeReconnectTimer = null;
+let nativeReconnectDelay = NATIVE_RECONNECT_BASE_MS;
 
 /** @type {ExtensionState} */
 const state = {
@@ -277,6 +283,7 @@ function connectNative() {
     const candidatePort = chrome.runtime.connectNative(NATIVE_APP_NAME);
     const stabilityTimer = setTimeout(() => {
       state.nativePort = candidatePort;
+      nativeReconnectDelay = NATIVE_RECONNECT_BASE_MS;
       broadcastUi({ type: 'native.status', connected: true });
       refreshSetupStatus(true);
       void emitUiState();
@@ -299,7 +306,11 @@ function connectNative() {
           error: disconnectError
         });
       }
-      setTimeout(connectNative, 2_000);
+      _nativeReconnectTimer = setTimeout(() => {
+        _nativeReconnectTimer = null;
+        connectNative();
+      }, nativeReconnectDelay);
+      nativeReconnectDelay = Math.min(nativeReconnectDelay * 2, NATIVE_RECONNECT_MAX_MS);
     });
   } catch (error) {
     broadcastUi({ type: 'native.status', connected: false, error: getErrorMessage(error) });
@@ -780,7 +791,12 @@ async function handleCloseTab(request) {
   if (!state.enabledWindow) {
     return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, ACCESS_DENIED_WINDOW_OFF, null, { method: request.method });
   }
-  const tab = await chrome.tabs.get(params.tabId);
+  let tab;
+  try {
+    tab = await chrome.tabs.get(params.tabId);
+  } catch {
+    return createFailure(request.id, ERROR_CODES.TAB_MISMATCH, `Tab ${params.tabId} not found.`, null, { method: request.method });
+  }
   if (tab.windowId !== state.enabledWindow.windowId) {
     return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, ACCESS_DENIED_TAB_CLOSE, null, { method: request.method });
   }
@@ -1326,12 +1342,15 @@ async function handleScreenshot(target, method, params) {
  * @returns {Promise<any>}
  */
 async function sendTabMessage(tabId, message, timeoutMs) {
-  return Promise.race([
-    chrome.tabs.sendMessage(tabId, message),
-    new Promise((_, reject) => {
-      setTimeout(() => reject(new Error(`Timed out waiting for content script response after ${timeoutMs}ms.`)), timeoutMs);
-    })
-  ]);
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(`Timed out waiting for content script response after ${timeoutMs}ms.`)), timeoutMs);
+  });
+  try {
+    return await Promise.race([chrome.tabs.sendMessage(tabId, message), timeout]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 /**
@@ -1376,11 +1395,19 @@ async function handleCdpRequest(request) {
       command = 'DOMSnapshot.captureSnapshot';
       params = { computedStyles: request.params?.computedStyles ?? [] };
     } else if (request.method === 'cdp.get_box_model') {
+      const nodeId = request.params?.nodeId;
+      if (typeof nodeId !== 'number' || !Number.isFinite(nodeId)) {
+        return createFailure(request.id, ERROR_CODES.INVALID_REQUEST, 'nodeId must be a finite number.', null, { method: request.method });
+      }
       command = 'DOM.getBoxModel';
-      params = { nodeId: request.params?.nodeId };
+      params = { nodeId };
     } else {
+      const nodeId = request.params?.nodeId;
+      if (typeof nodeId !== 'number' || !Number.isFinite(nodeId)) {
+        return createFailure(request.id, ERROR_CODES.INVALID_REQUEST, 'nodeId must be a finite number.', null, { method: request.method });
+      }
       command = 'CSS.getComputedStyleForNode';
-      params = { nodeId: request.params?.nodeId };
+      params = { nodeId };
     }
     const result = await chrome.debugger.sendCommand(
       debugTarget,

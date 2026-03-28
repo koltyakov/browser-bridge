@@ -297,8 +297,11 @@ export function enforceTokenBudget(method, response, tokenBudget) {
 
   const cloned = cloneJsonValue(response.result);
   let truncated = false;
-  while (estimateJsonPayloadCost(cloned).bytes > maxBytes && shrinkForBudget(cloned)) {
+  let iterations = 0;
+  const MAX_BUDGET_ITERATIONS = 100;
+  while (estimateJsonPayloadCost(cloned).bytes > maxBytes && shrinkForBudget(cloned) && iterations < MAX_BUDGET_ITERATIONS) {
     truncated = true;
+    iterations += 1;
   }
 
   let result = cloned;

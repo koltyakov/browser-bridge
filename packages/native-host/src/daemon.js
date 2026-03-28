@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { installAgentFiles, isSupportedTarget, removeAgentFiles } from '../../agent-client/src/install.js';
 import { installMcpConfig, isMcpClientName, removeMcpConfig } from '../../agent-client/src/mcp-config.js';
 import { collectSetupStatus } from '../../agent-client/src/setup-status.js';
-import { createFailure, createSuccess, ERROR_CODES, validateBridgeRequest } from '../../protocol/src/index.js';
+import { createFailure, createSuccess, ERROR_CODES, parseJsonLines, validateBridgeRequest } from '../../protocol/src/index.js';
 import { getSocketPath } from './config.js';
 import { writeJsonLine } from './framing.js';
 
@@ -32,33 +32,6 @@ import { writeJsonLine } from './framing.js';
   *   response?: import('../../protocol/src/types.js').BridgeResponse
  * }} DaemonMessage
  */
-
-/**
- * @param {ClientSocket} socket
- * @param {(message: DaemonMessage) => void} onMessage
- * @returns {void}
- */
-function parseJsonLines(socket, onMessage) {
-  let buffer = '';
-  socket.setEncoding('utf8');
-  /** @param {string} chunk */
-  socket.on('data', (chunk) => {
-    buffer += chunk;
-    while (buffer.includes('\n')) {
-      const index = buffer.indexOf('\n');
-      const line = buffer.slice(0, index).trim();
-      buffer = buffer.slice(index + 1);
-      if (!line) {
-        continue;
-      }
-      try {
-        onMessage(JSON.parse(line));
-      } catch {
-        // Malformed JSON line — skip it.
-      }
-    }
-  });
-}
 
 export class BridgeDaemon {
   /**
@@ -107,7 +80,8 @@ export class BridgeDaemon {
       typedSocket.on('error', (err) => {
         this.logger.error?.('[daemon] socket error:', err.message);
       });
-      parseJsonLines(typedSocket, (message) => {
+      parseJsonLines(typedSocket, (raw) => {
+        const message = /** @type {DaemonMessage} */ (raw);
         void this.handleClientMessage(typedSocket, message).catch((err) => {
           this.logger.error?.('[daemon] handler error:', err instanceof Error ? err.message : String(err));
         });

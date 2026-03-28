@@ -4,7 +4,7 @@ import { once } from 'node:events';
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
 
-import { createRequest } from '../../protocol/src/index.js';
+import { createRequest, parseJsonLines } from '../../protocol/src/index.js';
 import { getSocketPath } from '../../native-host/src/config.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
@@ -29,32 +29,6 @@ import { getSocketPath } from '../../native-host/src/config.js';
  *   timeoutId: NodeJS.Timeout
  * }} PendingRequest
  */
-
-/**
- * @param {net.Socket} socket
- * @param {(message: ClientMessage) => void} onMessage
- * @returns {void}
- */
-function parseJsonLines(socket, onMessage) {
-  let buffer = '';
-  socket.setEncoding('utf8');
-  socket.on('data', (chunk) => {
-    buffer += chunk;
-    while (buffer.includes('\n')) {
-      const index = buffer.indexOf('\n');
-      const line = buffer.slice(0, index).trim();
-      buffer = buffer.slice(index + 1);
-      if (!line) {
-        continue;
-      }
-      try {
-        onMessage(/** @type {ClientMessage} */ (JSON.parse(line)));
-      } catch {
-        // Malformed JSON line — skip it.
-      }
-    }
-  });
-}
 
 /**
  * @param {string} method
@@ -97,7 +71,8 @@ export class BridgeClient {
       this.socket.once('error', reject);
     });
 
-    parseJsonLines(this.socket, (message) => {
+    parseJsonLines(this.socket, (raw) => {
+      const message = /** @type {ClientMessage} */ (raw);
       if (message.type === 'registered') {
         const pending = this.waiting.get('registered');
         if (pending) {
