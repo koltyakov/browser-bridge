@@ -1230,6 +1230,7 @@ function renderActionLogEntry(entry, setupStatus, entries, index) {
   const methodLabel = document.createElement('span');
   methodLabel.className = 'activity-method';
   methodLabel.textContent = entry.method;
+  methodLabel.title = entry.method;
   title.append(methodLabel);
   const activitySourceTag = getActivitySourceTag(entry.source, setupStatus);
   if (activitySourceTag) {
