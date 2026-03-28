@@ -771,3 +771,13 @@ export async function handleRawCallTool(args) {
     });
   });
 }
+
+/**
+ * Explicitly request Browser Bridge access for the current browser window.
+ * Surfaces an Enable cue in the extension popup or side panel.
+ *
+ * @returns {Promise<ToolResult>}
+ */
+export async function handleAccessTool() {
+  return callBridgeTool('access.request');
+}

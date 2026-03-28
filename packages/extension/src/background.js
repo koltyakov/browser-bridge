@@ -364,6 +364,8 @@ async function dispatchBridgeRequest(request) {
         extension: 'ok',
         access: await getAccessStatus()
       }, { method: request.method });
+    case 'access.request':
+      return handleAccessRequest(request);
     case 'skill.get_runtime_context':
       return createSuccess(request.id, createRuntimeContext(), { method: request.method });
     case 'tabs.list':
@@ -1832,6 +1834,53 @@ async function requestEnableFromAgentSide(request) {
   }
 
   await openRequestedAccessUi(target);
+}
+
+/**
+ * Handle an explicit access.request call. Resolves the active tab in the
+ * last-focused window, surfaces the Enable cue in the extension UI, and
+ * returns the requested window/tab metadata.
+ *
+ * @param {BridgeRequest} request
+ * @returns {Promise<BridgeResponse>}
+ */
+async function handleAccessRequest(request) {
+  const target = await resolveRequestedAccessTarget(request);
+
+  if (state.enabledWindow) {
+    const access = await getAccessStatus();
+    return createSuccess(request.id, {
+      enabled: true,
+      access
+    }, { method: request.method });
+  }
+
+  if (!target) {
+    return createFailure(
+      request.id,
+      ERROR_CODES.ACCESS_DENIED,
+      'No scriptable tab found in the focused window.',
+      null,
+      { method: request.method }
+    );
+  }
+
+  if (state.requestedAccessWindowId !== target.windowId) {
+    state.requestedAccessWindowId = target.windowId;
+    await refreshActionIndicators();
+    await emitUiState();
+  }
+
+  await openRequestedAccessUi(target);
+
+  return createSuccess(request.id, {
+    enabled: false,
+    requested: true,
+    windowId: target.windowId,
+    tabId: target.tabId,
+    title: target.title,
+    url: target.url
+  }, { method: request.method });
 }
 
 /**

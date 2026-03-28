@@ -5,6 +5,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import * as z from 'zod/v4';
 
 import {
+  handleAccessTool,
   handleCaptureTool,
   handleBatchTool,
   handleDomTool,
@@ -263,6 +264,12 @@ export function createBridgeMcpServer() {
     description: 'Return live runtime context: budget presets, method groups, and active limits. Call this first to discover safe defaults before inspecting a page.',
     inputSchema: {}
   }, handleSkillTool);
+
+  server.registerTool('browser_access', {
+    title: 'Request Browser Bridge Access',
+    description: 'Explicitly request Browser Bridge access for the current browser window. Surfaces an Enable cue in the extension popup or side panel so the user can grant access. Use when you need to trigger the access prompt without making a tab-bound call first. Returns the requested window/tab metadata.',
+    inputSchema: {}
+  }, handleAccessTool);
 
   return server;
 }

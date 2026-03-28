@@ -142,7 +142,7 @@ body[data-windowed="true"] .panel-popup {
 
 .panel-header {
   display: flex;
-  align-items: flex-start;
+  align-items: baseline;
   justify-content: space-between;
   gap: 12px;
 }
@@ -215,9 +215,9 @@ body[data-windowed="true"] .panel-popup {
 }
 
 .popup-title {
-  margin: 2px 0 0;
+  margin: 0;
   max-width: 360px;
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 600;
   line-height: 1.15;
   letter-spacing: -0.01em;

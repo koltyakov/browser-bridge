@@ -80,12 +80,13 @@ bbx screenshot <ref> [outPath]       # capture partial element screenshot
 
 Browser Bridge access is window-scoped. The user turns it on once for the current browser window in the popup or side panel.
 
-There is no separate "request access" command anymore. Agents should just make the intended Browser Bridge call.
+To request access, call `access.request` (via `bbx access-request`, `browser_access` MCP tool, or `bbx call access.request`). This surfaces an Enable cue in the extension popup/side panel for the focused window.
 
-If the first tab-bound call fails with `ACCESS_DENIED` because Browser Bridge is off:
-1. That failed call already surfaces an enable cue in the extension popup/side panel for the relevant window.
-2. Ask the user to open the Browser Bridge popup or side panel and click `Enable`.
-3. After the user confirms, retry the same call once.
+If a tab-bound call fails with `ACCESS_DENIED` because Browser Bridge is off, that failed call also surfaces an enable cue automatically.
+
+After the Enable cue appears:
+1. Ask the user to open the Browser Bridge popup or side panel and click `Enable`.
+2. After the user confirms, retry the call.
 
 After access is enabled:
 1. Default routing follows the active tab in that enabled window.

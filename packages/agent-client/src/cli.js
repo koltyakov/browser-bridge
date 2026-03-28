@@ -391,6 +391,18 @@ async function main() {
       return;
     }
 
+    if (command === 'access-request') {
+      await printSummary(
+        await requestBridge(
+          client,
+          'access.request',
+          {},
+          { source: REQUEST_SOURCE },
+        ),
+      );
+      return;
+    }
+
     if (command === 'doctor') {
       const report = await getDoctorReport();
       printJson({

@@ -12,6 +12,7 @@
  * }>>}
  */
 export const BRIDGE_METHOD_REGISTRY = Object.freeze({
+  'access.request': { group: 'system', tab: false, params: [] },
   'tabs.list': { group: 'tabs', tab: false, params: [] },
   'tabs.create': { group: 'tabs', tab: false, params: ['url', 'active'] },
   'tabs.close': { group: 'tabs', tab: false, params: ['tabId'] },

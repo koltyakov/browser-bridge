@@ -103,6 +103,7 @@ function renderPopupState(currentTab) {
  * @returns {void}
  */
 function renderNativeStatus(connected) {
+  if (!nativeIndicator) return;
   const label = connected
     ? 'Native host connected'
     : 'Native host disconnected';
