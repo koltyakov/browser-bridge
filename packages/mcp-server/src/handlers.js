@@ -541,7 +541,17 @@ export async function handleInputTool(args) {
 /** @type {Record<string, ToolAction>} */
 export const PATCH_ACTIONS = {
   apply_styles:    { ref: true,  method: 'patch.apply_styles',            params: (a, r) => ({ target: { elementRef: r }, declarations: a.declarations, important: a.important }) },
-  apply_dom:       { ref: true,  method: 'patch.apply_dom',               params: (a, r) => ({ target: { elementRef: r }, operation: a.operation, value: a.value, name: a.name }) },
+  apply_dom:       { ref: true,  method: 'patch.apply_dom',               params: (a, r) => {
+    const opMap = {
+      setAttribute: 'set_attribute',
+      removeAttribute: 'remove_attribute',
+      addClass: 'toggle_class',
+      removeClass: 'toggle_class',
+      setTextContent: 'set_text',
+      setProperty: 'set_attribute',
+    };
+    return { target: { elementRef: r }, operation: opMap[a.operation] || a.operation, value: a.value, name: a.name };
+  }},
   list:            { ref: false, method: 'patch.list',                    params: () => ({}) },
   rollback:        { ref: false, method: 'patch.rollback',                params: a => ({ patchId: a.patchId }) },
   commit_baseline: { ref: false, method: 'patch.commit_session_baseline', params: () => ({}) },

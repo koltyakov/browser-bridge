@@ -63,6 +63,10 @@ export default [
       'packages/**/*.js',
       'scripts/**/*.mjs'
     ],
+    ignores: [
+      'packages/extension/src/**/*.js',
+      'packages/extension/ui/**/*.js'
+    ],
     languageOptions: {
       globals: nodeGlobals
     }

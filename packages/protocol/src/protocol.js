@@ -525,8 +525,23 @@ export function normalizeWaitForLoadStateParams(params = {}) {
  * @returns {NormalizedTabCreateParams}
  */
 export function normalizeTabCreateParams(params = {}) {
+  const url = typeof params.url === 'string' && params.url.trim() ? params.url.trim() : 'about:blank';
+  if (url !== 'about:blank') {
+    try {
+      const parsed = new URL(url);
+      if (!['http:', 'https:', 'about:'].includes(parsed.protocol)) {
+        throw new BridgeError(
+          ERROR_CODES.INVALID_REQUEST,
+          `Tab create blocked: unsupported protocol "${parsed.protocol}". Only http:, https:, and about: are allowed.`
+        );
+      }
+    } catch (error) {
+      if (error instanceof BridgeError) throw error;
+      throw new BridgeError(ERROR_CODES.INVALID_REQUEST, `Invalid tab create URL: ${url}`);
+    }
+  }
   return {
-    url: typeof params.url === 'string' && params.url.trim() ? params.url.trim() : 'about:blank',
+    url,
     active: params.active !== false
   };
 }

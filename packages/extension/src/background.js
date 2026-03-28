@@ -164,6 +164,8 @@ const ACCESS_REQUEST_BADGE_TEXT = '!';
 const DEBUGGER_PROTOCOL_VERSION = '1.3';
 const SETUP_STATUS_STALE_MS = 30_000;
 const SETUP_STATUS_TIMEOUT_MS = 5_000;
+const ACCESS_DENIED_WINDOW_OFF = 'Browser Bridge is off for this window.';
+const ACCESS_DENIED_TAB_CLOSE = 'tabs.close only works inside the enabled window.';
 
 /** @type {ExtensionState} */
 const state = {
@@ -287,7 +289,6 @@ function connectNative() {
     });
     candidatePort.onDisconnect.addListener(() => {
       clearTimeout(stabilityTimer);
-      // lastError must always be read in onDisconnect to suppress the unchecked warning
       const disconnectError = chrome.runtime.lastError?.message ?? 'Native host disconnected.';
       clearSetupStatus(disconnectError);
       if (state.nativePort === candidatePort) {
@@ -301,7 +302,7 @@ function connectNative() {
       setTimeout(connectNative, 2_000);
     });
   } catch (error) {
-    broadcastUi({ type: 'native.status', connected: false, error: error.message });
+    broadcastUi({ type: 'native.status', connected: false, error: getErrorMessage(error) });
   }
 }
 
@@ -328,7 +329,7 @@ async function handleBridgeRequest(request) {
   if (
     !response.ok &&
     response.error.code === ERROR_CODES.ACCESS_DENIED &&
-    response.error.message === 'Browser Bridge is off for this window.'
+    response.error.message === ACCESS_DENIED_WINDOW_OFF
   ) {
     await requestEnableFromAgentSide(request);
   }
@@ -562,7 +563,7 @@ async function getAccessStatus() {
  */
 async function handleListTabs(request) {
   if (!state.enabledWindow) {
-    return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, 'Browser Bridge is off for this window.', null, { method: request.method });
+    return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, ACCESS_DENIED_WINDOW_OFF, null, { method: request.method });
   }
 
   const tabs = await chrome.tabs.query({ windowId: state.enabledWindow.windowId });
@@ -580,13 +581,11 @@ async function handleListTabs(request) {
 }
 
 /**
- * Dispatch a tab-bound request to the content script after enforcing the
- * session scope and capability requirements.
+ * Normalizers for tab-bound request params.  Each entry maps a bridge method
+ * to a function that coerces and defaults the raw request params.
  *
- * @param {BridgeRequest} request
- * @returns {Promise<BridgeResponse>}
+ * @type {Record<string, ((params: Record<string, unknown>) => Record<string, unknown>) | undefined>}
  */
-/** @type {Record<string, ((params: Record<string, unknown>) => Record<string, unknown>) | undefined>} */
 const TAB_BOUND_NORMALIZERS = {
   'dom.query': normalizeDomQuery,
   'dom.wait_for': normalizeWaitForParams,
@@ -613,6 +612,13 @@ const TAB_BOUND_NORMALIZERS = {
   'page.get_text': normalizePageTextParams
 };
 
+/**
+ * Dispatch a tab-bound request to the content script after enforcing the
+ * session scope and capability requirements.
+ *
+ * @param {BridgeRequest} request
+ * @returns {Promise<BridgeResponse>}
+ */
 async function handleTabBoundRequest(request) {
   const target = await resolveRequestTarget(request);
   await ensureContentScript(target.tabId);
@@ -752,7 +758,7 @@ async function handlePageGetConsole(request) {
  */
 async function handleCreateTab(request) {
   if (!state.enabledWindow) {
-    return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, 'Browser Bridge is off for this window.', null, { method: request.method });
+    return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, ACCESS_DENIED_WINDOW_OFF, null, { method: request.method });
   }
   const params = normalizeTabCreateParams(request.params);
   const tab = await chrome.tabs.create({
@@ -772,11 +778,11 @@ async function handleCreateTab(request) {
 async function handleCloseTab(request) {
   const params = normalizeTabCloseParams(request.params);
   if (!state.enabledWindow) {
-    return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, 'Browser Bridge is off for this window.', null, { method: request.method });
+    return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, ACCESS_DENIED_WINDOW_OFF, null, { method: request.method });
   }
   const tab = await chrome.tabs.get(params.tabId);
   if (tab.windowId !== state.enabledWindow.windowId) {
-    return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, 'tabs.close only works inside the enabled window.', null, { method: request.method });
+    return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, ACCESS_DENIED_TAB_CLOSE, null, { method: request.method });
   }
   await chrome.tabs.remove(params.tabId);
   return createSuccess(request.id, { closed: true, tabId: params.tabId }, { method: request.method });
@@ -1673,7 +1679,10 @@ async function handleTabRemoved(tabId, removeInfo) {
  * @returns {Promise<void>}
  */
 async function refreshActionIndicators() {
-  const tabs = await chrome.tabs.query({});
+  const query = state.enabledWindow
+    ? { windowId: state.enabledWindow.windowId }
+    : {};
+  const tabs = await chrome.tabs.query(query);
   await Promise.all(tabs
     .filter((tab) => typeof tab.id === 'number')
     .map((tab) => updateActionIndicatorForTab(tab.id)));
@@ -2046,32 +2055,32 @@ async function logBridgeAction(request, response, actionContext) {
  * @returns {Promise<void>}
  */
 async function appendActionLogEntry(entry) {
-  state.actionLog = [
-    ...state.actionLog,
-    {
-      id: crypto.randomUUID(),
-      at: Date.now(),
-      method: entry.method,
-      source: normalizeActionLogSource(entry.source),
-      tabId: entry.tabId ?? null,
-      url: entry.url ?? '',
-      ok: entry.ok,
-      summary: entry.summary,
-      responseBytes: entry.responseBytes ?? 0,
-      approxTokens: entry.approxTokens ?? 0,
-      imageApproxTokens: entry.imageApproxTokens ?? 0,
-      costClass: entry.costClass ?? 'cheap',
-      imageBytes: entry.imageBytes ?? 0,
-      summaryBytes: entry.summaryBytes ?? 0,
-      summaryTokens: entry.summaryTokens ?? 0,
-      summaryCostClass: entry.summaryCostClass ?? 'cheap',
-      debuggerBacked: entry.debuggerBacked === true,
-      overBudget: entry.overBudget === true,
-      hasScreenshot: entry.hasScreenshot ?? false,
-      nodeCount: entry.nodeCount ?? null,
-      continuationHint: entry.continuationHint ?? null
-    }
-  ].slice(-MAX_ACTION_LOG_ENTRIES);
+  state.actionLog.push({
+    id: crypto.randomUUID(),
+    at: Date.now(),
+    method: entry.method,
+    source: normalizeActionLogSource(entry.source),
+    tabId: entry.tabId ?? null,
+    url: entry.url ?? '',
+    ok: entry.ok,
+    summary: entry.summary,
+    responseBytes: entry.responseBytes ?? 0,
+    approxTokens: entry.approxTokens ?? 0,
+    imageApproxTokens: entry.imageApproxTokens ?? 0,
+    costClass: entry.costClass ?? 'cheap',
+    imageBytes: entry.imageBytes ?? 0,
+    summaryBytes: entry.summaryBytes ?? 0,
+    summaryTokens: entry.summaryTokens ?? 0,
+    summaryCostClass: entry.summaryCostClass ?? 'cheap',
+    debuggerBacked: entry.debuggerBacked === true,
+    overBudget: entry.overBudget === true,
+    hasScreenshot: entry.hasScreenshot ?? false,
+    nodeCount: entry.nodeCount ?? null,
+    continuationHint: entry.continuationHint ?? null
+  });
+  while (state.actionLog.length > MAX_ACTION_LOG_ENTRIES) {
+    state.actionLog.shift();
+  }
 
   await chrome.storage.session.set({
     [ACTION_LOG_STORAGE_KEY]: state.actionLog

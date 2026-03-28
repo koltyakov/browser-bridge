@@ -40,6 +40,7 @@
   const reverseRegistry = new WeakMap();
   const patchRegistry = new Map();
   const MAX_REGISTRY_SIZE = 2000;
+  const MAX_PATCH_REGISTRY_SIZE = 2000;
   const contentHelpers = /** @type {typeof globalThis & { __BBX_CONTENT_HELPERS__?: {
     NON_TEXT_INPUT_TYPES: Set<string>,
     applyBudget: (options?: Record<string, any>) => Budget,
@@ -78,9 +79,11 @@
 
     try {
       const result = handleCommand(message.method, message.params);
-      Promise.resolve(result).then(sendResponse);
+      Promise.resolve(result).then(sendResponse).catch((err) => {
+        sendResponse({ error: err instanceof Error ? err.message : String(err) });
+      });
     } catch (error) {
-      sendResponse({ error: error.message });
+      sendResponse({ error: error instanceof Error ? error.message : String(error) });
     }
 
     return true;
@@ -811,6 +814,7 @@
         params.important ? 'important' : '',
       );
     }
+    pruneRegistry(patchRegistry, MAX_PATCH_REGISTRY_SIZE);
     patchRegistry.set(patchId, {
       kind: 'style',
       elementRef: rememberElement(element),
@@ -862,6 +866,7 @@
         throw new Error(`Unsupported DOM patch operation ${operation}`);
     }
 
+    pruneRegistry(patchRegistry, MAX_PATCH_REGISTRY_SIZE);
     patchRegistry.set(patchId, {
       kind: 'dom',
       elementRef: rememberElement(element),
@@ -1434,8 +1439,23 @@
     for (const [ref, element] of elementRegistry.entries()) {
       if (!document.contains(element)) {
         elementRegistry.delete(ref);
-        // WeakMap entry will be GC'd automatically
       }
+    }
+  }
+
+  /**
+   * @param {Map<any, any>} registry
+   * @param {number} maxSize
+   * @returns {void}
+   */
+  function pruneRegistry(registry, maxSize) {
+    if (registry.size < maxSize) return;
+    const excess = registry.size - maxSize;
+    let count = 0;
+    for (const key of registry.keys()) {
+      if (count >= excess) break;
+      registry.delete(key);
+      count++;
     }
   }
 

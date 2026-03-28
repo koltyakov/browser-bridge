@@ -47,7 +47,11 @@ function parseJsonLines(socket, onMessage) {
       if (!line) {
         continue;
       }
-      onMessage(/** @type {ClientMessage} */ (JSON.parse(line)));
+      try {
+        onMessage(/** @type {ClientMessage} */ (JSON.parse(line)));
+      } catch {
+        // Malformed JSON line — skip it.
+      }
     }
   });
 }
@@ -84,6 +88,9 @@ export class BridgeClient {
    * @returns {Promise<void>}
    */
   async connect() {
+    if (this.socket) {
+      throw new Error('BridgeClient is already connected.');
+    }
     this.socket = net.createConnection(this.socketPath);
     await new Promise((resolve, reject) => {
       this.socket.once('connect', resolve);
@@ -167,7 +174,10 @@ export class BridgeClient {
     });
 
     if (!this.socket.write(`${JSON.stringify({ type: 'agent.request', request })}\n`)) {
-      await once(this.socket, 'drain');
+      await Promise.race([
+        once(this.socket, 'drain'),
+        once(this.socket, 'close').then(() => { throw new Error('Bridge socket closed while writing.'); })
+      ]);
     }
     return responsePromise;
   }

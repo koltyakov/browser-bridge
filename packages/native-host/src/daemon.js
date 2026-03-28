@@ -51,7 +51,11 @@ function parseJsonLines(socket, onMessage) {
       if (!line) {
         continue;
       }
-      onMessage(JSON.parse(line));
+      try {
+        onMessage(JSON.parse(line));
+      } catch {
+        // Malformed JSON line — skip it.
+      }
     }
   });
 }
@@ -100,8 +104,13 @@ export class BridgeDaemon {
 
     this.server = net.createServer((socket) => {
       const typedSocket = /** @type {ClientSocket} */ (socket);
+      typedSocket.on('error', (err) => {
+        this.logger.error?.('[daemon] socket error:', err.message);
+      });
       parseJsonLines(typedSocket, (message) => {
-        void this.handleClientMessage(typedSocket, message);
+        void this.handleClientMessage(typedSocket, message).catch((err) => {
+          this.logger.error?.('[daemon] handler error:', err instanceof Error ? err.message : String(err));
+        });
       });
       typedSocket.on('close', () => this.handleSocketClose(typedSocket));
     });
@@ -161,19 +170,21 @@ export class BridgeDaemon {
     if (this.server) {
       const server = this.server;
       this.server = null;
-      await new Promise((resolve, reject) => {
-        server.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-          resolve();
+      try {
+        await new Promise((resolve, reject) => {
+          server.close((error) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve();
+          });
         });
-      });
-    }
-
-    if (!this.listenOptions) {
-      await fs.promises.rm(this.socketPath, { force: true });
+      } finally {
+        if (!this.listenOptions) {
+          await fs.promises.rm(this.socketPath, { force: true });
+        }
+      }
     }
   }
 
@@ -217,6 +228,9 @@ export class BridgeDaemon {
    */
   registerSocket(socket, message) {
     if (message.role === 'extension') {
+      if (this.extensionSocket && this.extensionSocket !== socket) {
+        this.extensionSocket.destroy();
+      }
       this.extensionSocket = socket;
       void writeJsonLine(socket, { type: 'registered', role: 'extension' });
       return;

@@ -77,7 +77,7 @@ export async function runNativeHost({ socketPath = getSocketPath() } = {}) {
   await writeJsonLine(socket, { type: 'register', role: 'extension' });
 
   let lineBuffer = '';
-  socket.on('data', async (chunk) => {
+  socket.on('data', (chunk) => {
     lineBuffer += chunk;
     while (lineBuffer.includes('\n')) {
       const index = lineBuffer.indexOf('\n');
@@ -86,50 +86,59 @@ export async function runNativeHost({ socketPath = getSocketPath() } = {}) {
       if (!line) {
         continue;
       }
-      const message = JSON.parse(line);
-      if (message.type === 'extension.request') {
-        await writeNativeMessage(process.stdout, message.request);
+      let message;
+      try {
+        message = JSON.parse(line);
+      } catch {
         continue;
       }
-      if (message.type === 'agent.response') {
-        await writeNativeMessage(process.stdout, {
-          type: 'host.bridge_response',
-          response: message.response
-        });
-        continue;
-      }
-      if (message.type === 'extension.setup_status.response' || message.type === 'extension.setup_status.error') {
-        await writeNativeMessage(process.stdout, {
-          type: message.type === 'extension.setup_status.response'
-            ? 'host.setup_status.response'
-            : 'host.setup_status.error',
-          requestId: message.requestId,
-          status: message.status,
-          error: message.error
-        });
-      }
+      void (async () => {
+        if (message.type === 'extension.request') {
+          await writeNativeMessage(process.stdout, message.request);
+          return;
+        }
+        if (message.type === 'agent.response') {
+          await writeNativeMessage(process.stdout, {
+            type: 'host.bridge_response',
+            response: message.response
+          });
+          return;
+        }
+        if (message.type === 'extension.setup_status.response' || message.type === 'extension.setup_status.error') {
+          await writeNativeMessage(process.stdout, {
+            type: message.type === 'extension.setup_status.response'
+              ? 'host.setup_status.response'
+              : 'host.setup_status.error',
+            requestId: message.requestId,
+            status: message.status,
+            error: message.error
+          });
+        }
+      })();
     }
   });
 
-  createNativeMessageReader(process.stdin, async (message) => {
-    if (isHostBridgeRequest(message)) {
+  createNativeMessageReader(process.stdin, (message) => {
+    void (async () => {
+      if (isHostBridgeRequest(message)) {
+        await writeJsonLine(socket, {
+          type: 'agent.request',
+          request: message.request
+        });
+        return;
+      }
+      if (isHostStatusRequest(message)) {
+        await writeJsonLine(socket, {
+          type: 'extension.setup_status.request',
+          requestId: message.requestId
+        });
+        return;
+      }
       await writeJsonLine(socket, {
-        type: 'agent.request',
-        request: message.request
+        type: 'extension.response',
+        response: message
       });
-      return;
-    }
-    if (isHostStatusRequest(message)) {
-      await writeJsonLine(socket, {
-        type: 'extension.setup_status.request',
-        requestId: message.requestId
-      });
-      return;
-    }
-    await writeJsonLine(socket, {
-      type: 'extension.response',
-      response: message
-    });
+    })();
   });
 }
 

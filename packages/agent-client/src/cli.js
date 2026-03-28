@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { SUPPORTED_BROWSERS } from '../../native-host/src/config.js';
 import { uninstallNativeManifest } from '../../native-host/src/install-manifest.js';
@@ -77,6 +78,13 @@ const [, , command, ...rest] = process.argv;
 
 if (!command || ['help', '--help', '-h'].includes(command)) {
   printUsage();
+  process.exit(0);
+}
+
+if (['--version', '-v'].includes(command)) {
+  const pkgPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../package.json');
+  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+  process.stdout.write(`${pkg.version}\n`);
   process.exit(0);
 }
 
@@ -354,7 +362,7 @@ if (command === 'mcp') {
   if (subcommand === 'config') {
     if (!clientName || !isMcpClientName(clientName)) {
       process.stderr.write(
-        'Usage: bbx mcp config <codex|claude|cursor|copilot|opencode|antigravity|windsurf>\n',
+        `Usage: bbx mcp config <${MCP_CLIENT_NAMES.join('|')}>\n`,
       );
       process.exit(1);
     }
@@ -561,6 +569,7 @@ async function main() {
 
     if (command === 'screenshot') {
       const [refOrSelector, outputPath] = rest;
+      if (!refOrSelector) throw new Error('Usage: screenshot <ref|selector> [path]');
       const elementRef = await resolveRef(
         client,
         refOrSelector,

@@ -28,8 +28,17 @@ async function shutdown() {
   }
 }
 
-for (const signal of ['SIGINT', 'SIGTERM']) {
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   process.once(signal, () => {
     void shutdown();
   });
 }
+
+process.on('unhandledRejection', (reason) => {
+  process.stderr.write(`Unhandled rejection: ${reason instanceof Error ? reason.stack : String(reason)}\n`);
+});
+
+process.on('uncaughtException', (error) => {
+  process.stderr.write(`Uncaught exception: ${error instanceof Error ? error.stack : String(error)}\n`);
+  void shutdown();
+});

@@ -3,3 +3,12 @@ node_modules
 .DS_Store
 tmp
 dist
+coverage/
+*.tgz
+*.zip
+.env
+.env.*
+*.pem
+.idea/
+*.swp
+*.swo

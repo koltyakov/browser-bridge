@@ -35,6 +35,7 @@
     "postinstall": "node packages/native-host/bin/postinstall.js",
     "package:extension": "node scripts/package-extension.mjs",
     "release:check": "npm run typecheck && npm test && npm run package:extension && npm pack --dry-run",
+    "prepublishOnly": "npm run lint && npm run typecheck && npm test",
     "status": "node packages/agent-client/src/cli.js status",
     "daemon": "node packages/native-host/bin/bridge-daemon.js",
     "install-manifest": "node packages/native-host/bin/install-manifest.js"
