@@ -136,11 +136,25 @@ body[data-windowed="true"] .panel-popup {
   margin-bottom: 12px;
 }
 
+.panel header.panel-header-compact {
+  margin-bottom: 4px;
+}
+
 .panel-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.panel-header-compact {
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel-header-compact .header-status-indicator[data-connected="true"] {
+  display: none;
 }
 
 .stack {
@@ -609,17 +623,6 @@ body[data-windowed="true"] .panel-popup {
 .status-dot[data-connected="true"] {
   background: #2d8a57;
   box-shadow: 0 0 0 3px rgba(45, 138, 87, 0.12);
-}
-
-.github-link {
-  color: var(--muted);
-  transition: color 0.15s;
-  line-height: 0;
-  vertical-align: middle;
-  margin-left: 6px;
-}
-.github-link:hover {
-  color: var(--fg);
 }
 
 .header-status-indicator {
