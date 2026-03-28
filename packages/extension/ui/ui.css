@@ -1,19 +1,19 @@
 :root {
   color-scheme: light dark;
-  --bg: #f7f8fa;
+  --bg: #faf7f5;
   --panel: #ffffff;
   --ink: #1a1d23;
   --fg: #1a1d23;
-  --muted: #6b7280;
-  --accent: #3b6cce;
-  --accent-strong: #2d56a8;
+  --muted: #7a7068;
+  --accent: #d34a1e;
+  --accent-strong: #b33e18;
   --update-bg: #4b8a6e;
   --update-bg-hover: #3d7259;
-  --stroke: #e2e5ea;
-  --cmd-bg: rgba(107, 114, 128, 0.07);
-  --cmd-bg-hover: rgba(107, 114, 128, 0.12);
+  --stroke: #e8e3de;
+  --cmd-bg: rgba(128, 112, 100, 0.07);
+  --cmd-bg-hover: rgba(128, 112, 100, 0.12);
   --card-shadow: rgba(0, 0, 0, 0.04);
-  --disabled-bg: #c4c8cf;
+  --disabled-bg: #c8c3be;
   --hist-surface-top: rgba(255, 255, 255, 0.38);
   --hist-surface-bottom: rgba(255, 255, 255, 0.12);
   --hist-border: rgba(226, 229, 234, 0.72);
@@ -44,20 +44,20 @@ html[data-windowed="true"] {
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #17191e;
-    --panel: #1e2028;
-    --ink: #e0e2e8;
-    --fg: #e0e2e8;
-    --muted: #8b90a0;
-    --accent: #6b9bef;
-    --accent-strong: #85aef5;
+    --bg: #1a1816;
+    --panel: #222018;
+    --ink: #e8e2da;
+    --fg: #e8e2da;
+    --muted: #9a9088;
+    --accent: #e8673f;
+    --accent-strong: #f08050;
     --update-bg: #5ea882;
     --update-bg-hover: #72bf96;
-    --stroke: #2d303a;
-    --cmd-bg: rgba(255, 255, 255, 0.06);
-    --cmd-bg-hover: rgba(255, 255, 255, 0.10);
+    --stroke: #352f2a;
+    --cmd-bg: rgba(255, 248, 240, 0.06);
+    --cmd-bg-hover: rgba(255, 248, 240, 0.10);
     --card-shadow: rgba(0, 0, 0, 0.3);
-    --disabled-bg: #3a3d47;
+    --disabled-bg: #3d3a34;
     --hist-surface-top: rgba(224, 226, 232, 0.08);
     --hist-surface-bottom: rgba(224, 226, 232, 0.02);
     --hist-border: rgba(139, 144, 160, 0.2);
@@ -267,10 +267,10 @@ body[data-windowed="true"] .panel-popup {
 }
 
 @keyframes attention-pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(59, 108, 206, 0.4); }
-  30%  { box-shadow: 0 0 0 3px rgba(59, 108, 206, 0.2); }
-  60%  { box-shadow: 0 0 0 0 rgba(59, 108, 206, 0.4); }
-  100% { box-shadow: 0 0 0 0 rgba(59, 108, 206, 0.4); }
+  0%   { box-shadow: 0 0 0 0 rgba(211, 74, 30, 0.4); }
+  30%  { box-shadow: 0 0 0 3px rgba(211, 74, 30, 0.2); }
+  60%  { box-shadow: 0 0 0 0 rgba(211, 74, 30, 0.4); }
+  100% { box-shadow: 0 0 0 0 rgba(211, 74, 30, 0.4); }
 }
 
 .control-card.attention {
