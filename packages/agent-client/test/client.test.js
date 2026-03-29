@@ -115,6 +115,28 @@ test('summarizeBridgeResponse adds stale element recovery hint', () => {
   );
 });
 
+test('summarizeBridgeResponse surfaces protocol warnings from response metadata', () => {
+  const summary = summarizeBridgeResponse({
+    id: 'req_warn',
+    ok: true,
+    result: {
+      url: 'https://example.com/',
+      title: 'Example',
+      origin: 'https://example.com',
+      hints: {},
+    },
+    error: null,
+    meta: {
+      protocol_version: '1.0',
+      protocol_warning: 'Update the Browser Bridge CLI to match the extension.',
+    },
+  });
+
+  assert.equal(summary.ok, true);
+  assert.match(summary.summary, /Protocol warning:/);
+  assert.match(summary.summary, /Update the Browser Bridge CLI/);
+});
+
 /** Ensure generic successes return compact evidence. */
 test('summarizeBridgeResponse condenses success payloads', () => {
   const summary = summarizeBridgeResponse({

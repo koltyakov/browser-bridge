@@ -235,9 +235,9 @@ dom.find_by_role('button', 'Login') → input.click
 - **[Inspection & token efficiency](references/token-efficiency.md)** - budget presets, decision tree, allowlist strategy, anti-patterns
 - **[Patching workflows](references/patch-workflow.md)** - style-first loop, DOM patches, verification, cleanup
 - **[UI development workflows](references/ui-workflows.md)** - localhost HMR, form triage, design QA, responsive checks, hover/drag, accessibility
-- **[Full protocol reference](references/protocol.md)** - all RPC methods, error codes
+- **[Full protocol reference](references/protocol.md)** - all RPC methods, error codes, and per-method capability mapping
 - **[Interaction patterns](references/interaction.md)** - input methods, navigation, form controls, hover, drag, multi-tab workflows
-- **[Access and method coverage](references/capabilities.md)** - window-scoped access model and method group overview
+- **[Access and routing summary](references/capabilities.md)** - window-scoped access model and explicit-tab routing rules
 - **[Tailwind CSS guide](references/tailwind.md)** - selector escaping, semantic alternatives, patching strategy (load when `hints.tailwind: true`)
 
 `bbx a11y-tree` and `dom.get_accessibility_tree` are sensitive to `maxDepth` and `maxNodes`. Shallow runs can undercount interactive nodes on real pages, so widen those limits before treating a low interactive count as a bug.

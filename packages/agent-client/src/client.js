@@ -54,6 +54,8 @@ export class BridgeClient {
     this.defaultTimeoutMs = defaultTimeoutMs;
     this.socket = null;
     this.connected = false;
+    this.protocolCompatibility = null;
+    this.protocolWarning = null;
     /** @type {Map<string, PendingRequest>} */
     this.waiting = new Map();
   }
@@ -114,6 +116,19 @@ export class BridgeClient {
         timeoutId
       });
     });
+
+    try {
+      const healthResponse = await this.request({
+        method: 'health.ping'
+      });
+      if (healthResponse.ok) {
+        this.protocolCompatibility = BridgeClient.checkProtocolVersion(healthResponse.result);
+        this.protocolWarning = this.protocolCompatibility.warning ?? null;
+      }
+    } catch {
+      this.protocolCompatibility = null;
+      this.protocolWarning = null;
+    }
   }
 
   /**
@@ -154,7 +169,8 @@ export class BridgeClient {
         once(this.socket, 'close').then(() => { throw new Error('Bridge socket closed while writing.'); })
       ]);
     }
-    return responsePromise;
+    const response = /** @type {BridgeResponse} */ (await responsePromise);
+    return this.attachProtocolWarning(response);
   }
 
   /**
@@ -208,5 +224,22 @@ export class BridgeClient {
       pending.reject(error);
       this.waiting.delete(key);
     }
+  }
+
+  /**
+   * @param {BridgeResponse} response
+   * @returns {BridgeResponse}
+   */
+  attachProtocolWarning(response) {
+    if (!this.protocolWarning) {
+      return response;
+    }
+    return {
+      ...response,
+      meta: {
+        ...response.meta,
+        protocol_warning: this.protocolWarning
+      }
+    };
   }
 }

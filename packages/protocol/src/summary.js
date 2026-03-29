@@ -6,6 +6,7 @@ import {
 } from './index.js';
 
 /** @typedef {import('./types.js').BridgeResponse} BridgeResponse */
+/** @typedef {import('./types.js').BridgeMethod} SummaryMethod */
 /**
  * @typedef {{
  *   tabId: number,
@@ -36,6 +37,18 @@ import {
  *   summaryTokens: number,
  *   summaryCostClass: 'cheap' | 'moderate' | 'heavy' | 'extreme'
  * }} AnnotatedBridgeSummary
+ */
+
+/**
+ * @typedef {AnnotatedBridgeSummary & {
+ *   method: SummaryMethod,
+ *   tabId: number | null,
+ *   durationMs: number,
+ *   approxTokens: number,
+ *   meta?: Record<string, unknown>,
+ *   error: unknown,
+ *   response: unknown
+ * }} BatchItemSummary
  */
 
 /** @type {Record<string, ActionSummary>} */
@@ -110,11 +123,15 @@ function getMetaCostClass(meta, field) {
  * @returns {BridgeSummary}
  */
 export function summarizeBridgeResponse(response, method) {
+  const protocolWarning = getProtocolWarning(response.meta);
   if (!response.ok) {
     const hint = summarizeErrorHint(response.error.code);
     return {
       ok: false,
-      summary: `${response.error.code}: ${response.error.message}${hint ? ` ${hint}` : ''}`,
+      summary: appendProtocolWarning(
+        `${response.error.code}: ${response.error.message}${hint ? ` ${hint}` : ''}`,
+        protocolWarning
+      ),
       evidence: response.error.details ?? null
     };
   }
@@ -131,7 +148,10 @@ export function summarizeBridgeResponse(response, method) {
         : ' Access: disabled.';
     return {
       ok: true,
-      summary: `Daemon: ${result.daemon}. Extension: ${result.extensionConnected ? 'connected' : 'disconnected'}.${accessSummary}`,
+      summary: appendProtocolWarning(
+        `Daemon: ${result.daemon}. Extension: ${result.extensionConnected ? 'connected' : 'disconnected'}.${accessSummary}`,
+        protocolWarning
+      ),
       evidence: result
     };
   }
@@ -140,7 +160,10 @@ export function summarizeBridgeResponse(response, method) {
     const installedSkills = result.skillTargets.filter((entry) => entry && typeof entry === 'object' && /** @type {Record<string, unknown>} */ (entry).installed).length;
     return {
       ok: true,
-      summary: `Setup: MCP configured for ${configuredMcp}/${result.mcpClients.length} clients; skill installed for ${installedSkills}/${result.skillTargets.length} targets.`,
+      summary: appendProtocolWarning(
+        `Setup: MCP configured for ${configuredMcp}/${result.mcpClients.length} clients; skill installed for ${installedSkills}/${result.skillTargets.length} targets.`,
+        protocolWarning
+      ),
       evidence: result
     };
   }
@@ -154,7 +177,10 @@ export function summarizeBridgeResponse(response, method) {
     }
     return {
       ok: true,
-      summary: `Page: ${result.title} (${result.origin})${hints.length ? ` [${hints.join(', ')}]` : ''}.`,
+      summary: appendProtocolWarning(
+        `Page: ${result.title} (${result.origin})${hints.length ? ` [${hints.join(', ')}]` : ''}.`,
+        protocolWarning
+      ),
       evidence: { url: result.url, origin: result.origin, title: result.title, hints: result.hints }
     };
   }
@@ -164,7 +190,10 @@ export function summarizeBridgeResponse(response, method) {
     const label = method === 'dom.get_text' ? 'Element text' : 'Page text';
     return {
       ok: true,
-      summary: `${label}: ${len} chars${result.truncated ? ' (truncated)' : ''}.`,
+      summary: appendProtocolWarning(
+        `${label}: ${len} chars${result.truncated ? ' (truncated)' : ''}.`,
+        protocolWarning
+      ),
       evidence: { text: text.slice(0, 500), length: len, truncated: result.truncated }
     };
   }
@@ -172,7 +201,7 @@ export function summarizeBridgeResponse(response, method) {
     const tabs = /** @type {TabResult[]} */ (result.tabs);
     return {
       ok: true,
-      summary: `Bridge listed ${tabs.length} tab(s).`,
+      summary: appendProtocolWarning(`Bridge listed ${tabs.length} tab(s).`, protocolWarning),
       evidence: tabs.slice(0, 10).map((tab) => ({
         tabId: tab.tabId,
         active: tab.active,
@@ -187,7 +216,10 @@ export function summarizeBridgeResponse(response, method) {
     const shown = interactive.length > 0 ? interactive : nodes.filter((/** @type {Record<string, unknown>} */ n) => n.role && n.role !== 'none' && n.role !== 'generic');
     return {
       ok: true,
-      summary: `Accessibility tree: ${result.count ?? nodes.length} nodes (${interactive.length} interactive)${result.truncated ? ', truncated' : ''}.`,
+      summary: appendProtocolWarning(
+        `Accessibility tree: ${result.count ?? nodes.length} nodes (${interactive.length} interactive)${result.truncated ? ', truncated' : ''}.`,
+        protocolWarning
+      ),
       evidence: shown.slice(0, 20).map((/** @type {Record<string, unknown>} */ n) => {
         /** @type {Record<string, unknown>} */
         const entry = { role: n.role, name: n.name };
@@ -230,30 +262,36 @@ export function summarizeBridgeResponse(response, method) {
     }
     return {
       ok: true,
-      summary: `${label} ${nodes.length} element(s)${nodes.length > 15 ? '; showing first 15' : ''}.`,
+      summary: appendProtocolWarning(
+        `${label} ${nodes.length} element(s)${nodes.length > 15 ? '; showing first 15' : ''}.`,
+        protocolWarning
+      ),
       evidence: compact
     };
   }
   if (typeof result.rolledBack === 'boolean' || typeof result.rolled_back === 'boolean') {
     return {
       ok: true,
-      summary: 'Patch rolled back.',
+      summary: appendProtocolWarning('Patch rolled back.', protocolWarning),
       evidence: result
     };
   }
   if (typeof result.patchId === 'string') {
     return {
       ok: true,
-      summary: `Patch ${result.patchId} applied.`,
+      summary: appendProtocolWarning(`Patch ${result.patchId} applied.`, protocolWarning),
       evidence: result
     };
   }
   if (typeof result.found === 'boolean') {
     return {
       ok: result.found,
-      summary: result.found
-        ? `Element found after ${result.duration ?? 0}ms.`
-        : `Element not found (timed out after ${result.duration ?? 0}ms).`,
+      summary: appendProtocolWarning(
+        result.found
+          ? `Element found after ${result.duration ?? 0}ms.`
+          : `Element not found (timed out after ${result.duration ?? 0}ms).`,
+        protocolWarning
+      ),
       evidence: { elementRef: result.elementRef ?? null, duration: result.duration }
     };
   }
@@ -274,7 +312,10 @@ export function summarizeBridgeResponse(response, method) {
     const typeLabel = isNull ? 'null' : result.type;
     return {
       ok: true,
-      summary: repr ? `Evaluated to ${typeLabel}: ${repr}` : `Evaluated to ${typeLabel}.`,
+      summary: appendProtocolWarning(
+        repr ? `Evaluated to ${typeLabel}: ${repr}` : `Evaluated to ${typeLabel}.`,
+        protocolWarning
+      ),
       evidence: result
     };
   }
@@ -282,7 +323,7 @@ export function summarizeBridgeResponse(response, method) {
     const entries = /** @type {Array<Record<string, unknown>>} */ (result.entries);
     return {
       ok: true,
-      summary: `Log: ${entries.length} entries.`,
+      summary: appendProtocolWarning(`Log: ${entries.length} entries.`, protocolWarning),
       evidence: entries.slice(-10).map((/** @type {Record<string, unknown>} */ e) => ({
         at: e.at, method: e.method, ok: e.ok, ...(typeof e.source === 'string' && e.source ? { source: e.source } : {})
       }))
@@ -292,7 +333,10 @@ export function summarizeBridgeResponse(response, method) {
     const entries = /** @type {Array<Record<string, unknown>>} */ (result.entries);
     return {
       ok: true,
-      summary: `Network: ${result.count ?? entries.length} requests (${result.total ?? '?'} total).`,
+      summary: appendProtocolWarning(
+        `Network: ${result.count ?? entries.length} requests (${result.total ?? '?'} total).`,
+        protocolWarning
+      ),
       evidence: entries.slice(0, 20).map((/** @type {Record<string, unknown>} */ e) => ({
         method: e.method, url: truncateUrl(/** @type {string} */ (e.url)), status: e.status, duration: e.duration
       }))
@@ -302,7 +346,10 @@ export function summarizeBridgeResponse(response, method) {
     const consoleEntries = /** @type {Array<Record<string, unknown>>} */ (result.entries);
     return {
       ok: true,
-      summary: `Console: ${result.count ?? consoleEntries.length} entries (${result.total ?? '?'} total).`,
+      summary: appendProtocolWarning(
+        `Console: ${result.count ?? consoleEntries.length} entries (${result.total ?? '?'} total).`,
+        protocolWarning
+      ),
       evidence: consoleEntries.slice(0, 20).map((/** @type {Record<string, unknown>} */ e) => {
         /** @type {Record<string, unknown>} */
         const entry = { level: e.level, args: e.args };
@@ -316,13 +363,20 @@ export function summarizeBridgeResponse(response, method) {
   if (typeof result.html === 'string') {
     return {
       ok: true,
-      summary: `HTML fragment: ${result.html.length} chars${result.truncated ? ' (truncated)' : ''}.`,
+      summary: appendProtocolWarning(
+        `HTML fragment: ${result.html.length} chars${result.truncated ? ' (truncated)' : ''}.`,
+        protocolWarning
+      ),
       evidence: { html: result.html.slice(0, 500), truncated: result.truncated }
     };
   }
   for (const [field, handler] of Object.entries(ACTION_SUMMARIES)) {
     if (typeof result[field] === 'boolean') {
-      return { ok: true, summary: handler.text(result), evidence: handler.evidence(result) };
+      return {
+        ok: true,
+        summary: appendProtocolWarning(handler.text(result), protocolWarning),
+        evidence: handler.evidence(result)
+      };
     }
   }
   if (typeof result.tabId === 'number' && typeof result.url === 'string') {
@@ -331,7 +385,7 @@ export function summarizeBridgeResponse(response, method) {
     if (actionMethod === 'navigation.navigate') {
       return {
         ok: true,
-        summary: `Navigated to ${result.url || 'page'}.`,
+        summary: appendProtocolWarning(`Navigated to ${result.url || 'page'}.`, protocolWarning),
         evidence: {
           url: result.url,
           title: result.title,
@@ -342,7 +396,7 @@ export function summarizeBridgeResponse(response, method) {
     }
     return {
       ok: true,
-      summary: `Tab ${result.tabId} created${result.url ? ` (${result.url})` : ''}.`,
+      summary: appendProtocolWarning(`Tab ${result.tabId} created${result.url ? ` (${result.url})` : ''}.`, protocolWarning),
       evidence: result
     };
   }
@@ -350,7 +404,7 @@ export function summarizeBridgeResponse(response, method) {
     const keys = Object.keys(result.metrics);
     return {
       ok: true,
-      summary: `Performance: ${keys.length} metrics collected.`,
+      summary: appendProtocolWarning(`Performance: ${keys.length} metrics collected.`, protocolWarning),
       evidence: result.metrics
     };
   }
@@ -364,7 +418,7 @@ export function summarizeBridgeResponse(response, method) {
     }
     return {
       ok: true,
-      summary: `Storage (${result.type}): ${result.count} entries.`,
+      summary: appendProtocolWarning(`Storage (${result.type}): ${result.count} entries.`, protocolWarning),
       evidence: safe
     };
   }
@@ -381,7 +435,7 @@ export function summarizeBridgeResponse(response, method) {
     }
     return {
       ok: true,
-      summary: `Element ${desc.join(', ')}.`,
+      summary: appendProtocolWarning(`Element ${desc.join(', ')}.`, protocolWarning),
       evidence: { elementRef: result.elementRef, tag: result.tag, id: result.id, role: result.role, text: textValue, bbox: result.bbox }
     };
   }
@@ -389,7 +443,7 @@ export function summarizeBridgeResponse(response, method) {
     const props = Object.keys(/** @type {object} */ (result.properties));
     return {
       ok: true,
-      summary: `Computed ${props.length} style(s) for ${result.elementRef}.`,
+      summary: appendProtocolWarning(`Computed ${props.length} style(s) for ${result.elementRef}.`, protocolWarning),
       evidence: result.properties
     };
   }
@@ -397,7 +451,7 @@ export function summarizeBridgeResponse(response, method) {
     const props = Object.keys(result);
     return {
       ok: true,
-      summary: `Computed ${props.length} style(s).`,
+      summary: appendProtocolWarning(`Computed ${props.length} style(s).`, protocolWarning),
       evidence: result
     };
   }
@@ -405,7 +459,7 @@ export function summarizeBridgeResponse(response, method) {
     const c = /** @type {Record<string, number>} */ (result.content);
     return {
       ok: true,
-      summary: `Box model: ${c.width ?? '?'}×${c.height ?? '?'} at (${c.x ?? 0}, ${c.y ?? 0}).`,
+      summary: appendProtocolWarning(`Box model: ${c.width ?? '?'}×${c.height ?? '?'} at (${c.x ?? 0}, ${c.y ?? 0}).`, protocolWarning),
       evidence: result
     };
   }
@@ -413,7 +467,7 @@ export function summarizeBridgeResponse(response, method) {
       !('clicked' in result || 'hovered' in result || 'focused' in result || 'resized' in result || 'tag' in result || 'elementRef' in result)) {
     return {
       ok: true,
-      summary: `Box model: ${result.width}×${result.height} at (${result.x}, ${result.y}).`,
+      summary: appendProtocolWarning(`Box model: ${result.width}×${result.height} at (${result.x}, ${result.y}).`, protocolWarning),
       evidence: result
     };
   }
@@ -421,22 +475,71 @@ export function summarizeBridgeResponse(response, method) {
     const patches = /** @type {Array<Record<string, unknown>>} */ (response.result);
     return {
       ok: true,
-      summary: `${patches.length} active patch(es).`,
+      summary: appendProtocolWarning(`${patches.length} active patch(es).`, protocolWarning),
       evidence: patches.slice(0, 10)
     };
   }
   if (Array.isArray(result.patches)) {
     return {
       ok: true,
-      summary: `${result.patches.length} active patch(es).`,
+      summary: appendProtocolWarning(`${result.patches.length} active patch(es).`, protocolWarning),
       evidence: result.patches.slice(0, 10)
     };
   }
   const keys = Object.keys(result);
   return {
     ok: true,
-    summary: `Bridge method succeeded with ${keys.length} top-level fields.`,
+    summary: appendProtocolWarning(`Bridge method succeeded with ${keys.length} top-level fields.`, protocolWarning),
     evidence: keys.slice(0, 10)
+  };
+}
+
+/**
+ * @param {{ method: SummaryMethod, tabId: number | null, response: BridgeResponse, durationMs: number }} input
+ * @returns {BatchItemSummary}
+ */
+export function summarizeBatchResponseItem({ method, tabId, response, durationMs }) {
+  const summary = annotateBridgeSummary(summarizeBridgeResponse(response, method), response);
+  const cost = estimateJsonPayloadCost(response.ok ? response.result : { error: response.error });
+  return {
+    method,
+    tabId,
+    ...summary,
+    durationMs,
+    approxTokens: cost.approxTokens,
+    meta: response.meta,
+    error: response.ok ? null : response.error,
+    response: response.ok ? response.result : null
+  };
+}
+
+/**
+ * @param {{ method: SummaryMethod, tabId: number | null, error: unknown, durationMs: number }} input
+ * @returns {BatchItemSummary}
+ */
+export function summarizeBatchErrorItem({ method, tabId, error, durationMs }) {
+  const message = error instanceof Error ? error.message : String(error);
+  const response = /** @type {BridgeResponse} */ ({
+    id: 'batch_error',
+    ok: false,
+    result: null,
+    error: {
+      code: 'INTERNAL_ERROR',
+      message,
+      details: null
+    },
+    meta: { protocol_version: '1.0' }
+  });
+  const summary = annotateBridgeSummary(summarizeBridgeResponse(response, method), response);
+  return {
+    method,
+    tabId,
+    ...summary,
+    durationMs,
+    approxTokens: 0,
+    meta: response.meta,
+    error: response.error,
+    response: null
   };
 }
 
@@ -448,6 +551,25 @@ function toRecord(value) {
   return value && typeof value === 'object'
     ? /** @type {Record<string, unknown>} */ (value)
     : {};
+}
+
+/**
+ * @param {Record<string, unknown> | null | undefined} meta
+ * @returns {string | null}
+ */
+function getProtocolWarning(meta) {
+  return typeof meta?.protocol_warning === 'string' && meta.protocol_warning.trim()
+    ? meta.protocol_warning
+    : null;
+}
+
+/**
+ * @param {string} summary
+ * @param {string | null} warning
+ * @returns {string}
+ */
+function appendProtocolWarning(summary, warning) {
+  return warning ? `${summary} Protocol warning: ${warning}` : summary;
 }
 
 /**

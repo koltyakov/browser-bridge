@@ -117,7 +117,7 @@ This document provides a comprehensive comparison of the two integration paths f
 | Capability | MCP Tool | CLI Command | Notes |
 |------------|----------|-------------|-------|
 | Raw protocol call | `browser_call` | `bbx call <method> '{...}'` | Equivalent |
-| Ordered batch calls | `browser_batch` | `bbx batch '[{...}]'` | Both preserve request order |
+| Ordered batch calls | `browser_batch` | `bbx batch '[{...}]'` | Both preserve request order and return per-call `durationMs` / `approxTokens` |
 | Batch parallel reads | N/A (multiple tool calls) | `bbx batch '[{...}]'` | CLI has explicit batch |
 | Request log | N/A | `bbx logs` | CLI-only feature |
 | Install manifest | N/A | `bbx install <ext-id>` | CLI-only (setup) |
@@ -143,7 +143,7 @@ This document provides a comprehensive comparison of the two integration paths f
 
 | Feature | Description |
 |---------|-------------|
-| **Batch execution** | `bbx batch` executes multiple calls concurrently via Promise.all |
+| **Batch execution** | `bbx batch` executes multiple calls concurrently via Promise.all and reports per-call duration/token estimates |
 | **Request logging** | `bbx logs` shows recent bridge request history |
 | **Setup commands** | Built-in install, uninstall, doctor commands |
 | **Shell scripting** | Can be used in scripts, pipes, and CI workflows |
@@ -177,6 +177,7 @@ bbx call dom.query '{"selector": ".sidebar", "maxNodes": 20}'
 | Parameter format | JSON object | CLI args or JSON string |
 | Output format | Tool result content | `{ok, summary, evidence}` JSON |
 | Error handling | Tool error response | JSON with `ok: false` |
+| Version drift warnings | Returned in health/status output and surfaced automatically after connect | Returned in summaries and raw response metadata after connect |
 | Access routing | Follows active tab in enabled window by default | Follows active tab in enabled window by default |
 | Explicit targeting | `tabId` on grouped tools | `bbx call --tab <tabId> ...` |
 | Concurrency | Multiple tool calls | `batch` command or parallel shells |

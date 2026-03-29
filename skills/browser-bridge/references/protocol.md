@@ -20,63 +20,70 @@ Browser Bridge currently supports two target styles:
 
 Legacy top-level `elementRef` still works for element-level reads. Prefer `target` for new integrations when you want one consistent shape across reads and interactions.
 
+## Capability Mapping
+
+The table below includes the legacy capability bucket for each method so agents do not need to cross-reference a separate coverage page.
+
+- `—` means the method is global/system-scoped and was never gated by a former capability bucket.
+- Capability names are descriptive coverage labels only. Browser Bridge access is window-scoped now; there are no capability-scoped sessions.
+
 ## All Methods (53)
 
-| # | Method | Tab? | CDP? | Group | Notes |
-|---|--------|------|------|-------|-------|
-| 1 | `tabs.list` | No | — | tabs | Discover available tabs |
-| 2 | `tabs.create` | No | — | tabs | Open a new tab; optional `url` and `active` |
-| 3 | `tabs.close` | No | — | tabs | Close a tab by `tabId` |
-| 4 | `skill.get_runtime_context` | No | — | system | Live budget presets + method groups |
-| 5 | `setup.get_status` | No | — | system | Global MCP config + CLI skill install status |
-| 6 | `health.ping` | No | — | system | Connectivity check + access routing state |
-| 7 | `log.tail` | No | — | system | Recent bridge logs |
-| 8 | `page.get_state` | Yes | — | page | URL, readiness, focus, scroll, viewport |
-| 9 | `page.evaluate` | Yes | CDP | page | JS expression in page context; last resort |
-| 10 | `page.get_console` | Yes | — | page | Buffered console messages; filter by `level`, `limit` |
-| 11 | `page.wait_for_load_state` | Yes | — | wait | Block until tab `complete`; `timeoutMs` capped 30 s |
-| 12 | `page.get_storage` | Yes | — | page | `localStorage`/`sessionStorage`; optional `keys` |
-| 13 | `page.get_text` | Yes | — | page | Full page text; `textBudget` limits size |
-| 14 | `page.get_network` | Yes | — | page | Intercepted fetch/XHR; `limit` entries |
-| 15 | `navigation.navigate` | Yes | — | navigate | Go to URL; `waitForLoad` default true |
-| 16 | `navigation.reload` | Yes | — | navigate | Reload; `waitForLoad` default true |
-| 17 | `navigation.go_back` | Yes | — | navigate | History back |
-| 18 | `navigation.go_forward` | Yes | — | navigate | History forward |
-| 19 | `dom.query` | Yes | — | inspect | Query subtree with budget constraints |
-| 20 | `dom.describe` | Yes | — | inspect | Single element details via `elementRef` |
-| 21 | `dom.get_text` | Yes | — | inspect | Text content with `textBudget` |
-| 22 | `dom.get_attributes` | Yes | — | inspect | Targeted attribute read |
-| 23 | `dom.wait_for` | Yes | — | wait | Wait for DOM condition; MutationObserver + polling |
-| 24 | `dom.find_by_text` | Yes | — | inspect | Find by visible text; returns `{nodes, count}` |
-| 25 | `dom.find_by_role` | Yes | — | inspect | Find by ARIA role; optional `name` filter |
-| 26 | `dom.get_html` | Yes | — | inspect | `innerHTML`/`outerHTML`; `maxLength` truncation |
-| 27 | `dom.get_accessibility_tree` | Yes | CDP | inspect | Full a11y tree; `maxNodes`/`maxDepth` limits |
-| 28 | `layout.get_box_model` | Yes | — | inspect | Element geometry (no budget needed) |
-| 29 | `layout.hit_test` | Yes | — | inspect | Element at viewport point |
-| 30 | `styles.get_computed` | Yes | — | inspect | Computed CSS; always set `properties` |
-| 31 | `styles.get_matched_rules` | Yes | — | inspect | Matching CSS rules |
-| 32 | `viewport.scroll` | Yes | — | navigate | Window or element scroll |
-| 33 | `viewport.resize` | Yes | CDP | navigate | Set viewport via device emulation; `reset: true` |
-| 34 | `input.click` | Yes | — | interact | DOM-level click |
-| 35 | `input.focus` | Yes | — | interact | Focus element |
-| 36 | `input.type` | Yes | — | interact | Type into input/textarea/contenteditable |
-| 37 | `input.press_key` | Yes | — | interact | Single key event |
-| 38 | `input.set_checked` | Yes | — | interact | Checkbox/radio toggle |
-| 39 | `input.select_option` | Yes | — | interact | Native select by value/label/index |
-| 40 | `input.hover` | Yes | — | interact | mouseenter/mouseover/mousemove; optional `duration` |
-| 41 | `input.drag` | Yes | — | interact | Full drag-and-drop event sequence |
-| 42 | `screenshot.capture_element` | Yes | CDP | capture | Cropped element screenshot |
-| 43 | `screenshot.capture_region` | Yes | CDP | capture | Cropped viewport region |
-| 44 | `patch.apply_styles` | Yes | — | patch | Reversible CSS patch; `verify` returns computed result |
-| 45 | `patch.apply_dom` | Yes | — | patch | Reversible DOM mutation; `verify` returns result |
-| 46 | `patch.list` | Yes | — | patch | Active patches |
-| 47 | `patch.rollback` | Yes | — | patch | Revert one patch |
-| 48 | `patch.commit_session_baseline` | Yes | — | patch | Accept current state as baseline |
-| 49 | `performance.get_metrics` | Yes | CDP | performance | Chrome performance counters |
-| 50 | `cdp.get_document` | Yes | CDP | cdp | DevTools document tree |
-| 51 | `cdp.get_dom_snapshot` | Yes | CDP | cdp | DevTools DOM snapshot |
-| 52 | `cdp.get_box_model` | Yes | CDP | cdp | DevTools-backed element geometry |
-| 53 | `cdp.get_computed_styles_for_node` | Yes | CDP | cdp | DevTools-backed computed styles |
+| # | Method | Tab? | CDP? | Group | Capability | Notes |
+|---|--------|------|------|-------|------------|-------|
+| 1 | `tabs.list` | No | — | tabs | `—` | Discover available tabs |
+| 2 | `tabs.create` | No | — | tabs | `tabs.manage` | Open a new tab; optional `url` and `active` |
+| 3 | `tabs.close` | No | — | tabs | `tabs.manage` | Close a tab by `tabId` |
+| 4 | `skill.get_runtime_context` | No | — | system | `—` | Live budget presets + method groups |
+| 5 | `setup.get_status` | No | — | system | `—` | Global MCP config + CLI skill install status |
+| 6 | `health.ping` | No | — | system | `—` | Connectivity check + access routing state |
+| 7 | `log.tail` | No | — | system | `—` | Recent bridge logs |
+| 8 | `page.get_state` | Yes | — | page | `page.read` | URL, readiness, focus, scroll, viewport |
+| 9 | `page.evaluate` | Yes | CDP | page | `page.evaluate` | JS expression in page context; last resort |
+| 10 | `page.get_console` | Yes | — | page | `page.read` | Buffered console messages; filter by `level`, `limit` |
+| 11 | `page.wait_for_load_state` | Yes | — | wait | `page.read` | Block until tab `complete`; `timeoutMs` capped 30 s |
+| 12 | `page.get_storage` | Yes | — | page | `page.read` | `localStorage`/`sessionStorage`; optional `keys` |
+| 13 | `page.get_text` | Yes | — | page | `page.read` | Full page text; `textBudget` limits size |
+| 14 | `page.get_network` | Yes | — | page | `network.read` | Intercepted fetch/XHR; `limit` entries |
+| 15 | `navigation.navigate` | Yes | — | navigate | `navigation.control` | Go to URL; `waitForLoad` default true |
+| 16 | `navigation.reload` | Yes | — | navigate | `navigation.control` | Reload; `waitForLoad` default true |
+| 17 | `navigation.go_back` | Yes | — | navigate | `navigation.control` | History back |
+| 18 | `navigation.go_forward` | Yes | — | navigate | `navigation.control` | History forward |
+| 19 | `dom.query` | Yes | — | inspect | `dom.read` | Query subtree with budget constraints |
+| 20 | `dom.describe` | Yes | — | inspect | `dom.read` | Single element details via `elementRef` |
+| 21 | `dom.get_text` | Yes | — | inspect | `dom.read` | Text content with `textBudget` |
+| 22 | `dom.get_attributes` | Yes | — | inspect | `dom.read` | Targeted attribute read |
+| 23 | `dom.wait_for` | Yes | — | wait | `dom.read` | Wait for DOM condition; MutationObserver + polling |
+| 24 | `dom.find_by_text` | Yes | — | inspect | `dom.read` | Find by visible text; returns `{nodes, count}` |
+| 25 | `dom.find_by_role` | Yes | — | inspect | `dom.read` | Find by ARIA role; optional `name` filter |
+| 26 | `dom.get_html` | Yes | — | inspect | `dom.read` | `innerHTML`/`outerHTML`; `maxLength` truncation |
+| 27 | `dom.get_accessibility_tree` | Yes | CDP | inspect | `dom.read` | Full a11y tree; `maxNodes`/`maxDepth` limits |
+| 28 | `layout.get_box_model` | Yes | — | inspect | `layout.read` | Element geometry (no budget needed) |
+| 29 | `layout.hit_test` | Yes | — | inspect | `layout.read` | Element at viewport point |
+| 30 | `styles.get_computed` | Yes | — | inspect | `styles.read` | Computed CSS; always set `properties` |
+| 31 | `styles.get_matched_rules` | Yes | — | inspect | `styles.read` | Matching CSS rules |
+| 32 | `viewport.scroll` | Yes | — | navigate | `viewport.control` | Window or element scroll |
+| 33 | `viewport.resize` | Yes | CDP | navigate | `viewport.control` | Set viewport via device emulation; `reset: true` |
+| 34 | `input.click` | Yes | — | interact | `automation.input` | DOM-level click |
+| 35 | `input.focus` | Yes | — | interact | `automation.input` | Focus element |
+| 36 | `input.type` | Yes | — | interact | `automation.input` | Type into input/textarea/contenteditable |
+| 37 | `input.press_key` | Yes | — | interact | `automation.input` | Single key event |
+| 38 | `input.set_checked` | Yes | — | interact | `automation.input` | Checkbox/radio toggle |
+| 39 | `input.select_option` | Yes | — | interact | `automation.input` | Native select by value/label/index |
+| 40 | `input.hover` | Yes | — | interact | `automation.input` | mouseenter/mouseover/mousemove; optional `duration` |
+| 41 | `input.drag` | Yes | — | interact | `automation.input` | Full drag-and-drop event sequence |
+| 42 | `screenshot.capture_element` | Yes | CDP | capture | `screenshot.partial` | Cropped element screenshot |
+| 43 | `screenshot.capture_region` | Yes | CDP | capture | `screenshot.partial` | Cropped viewport region |
+| 44 | `patch.apply_styles` | Yes | — | patch | `patch.styles` | Reversible CSS patch; `verify` returns computed result |
+| 45 | `patch.apply_dom` | Yes | — | patch | `patch.dom` | Reversible DOM mutation; `verify` returns result |
+| 46 | `patch.list` | Yes | — | patch | `patch.dom` | Active patches |
+| 47 | `patch.rollback` | Yes | — | patch | `patch.dom` | Revert one patch |
+| 48 | `patch.commit_session_baseline` | Yes | — | patch | `patch.dom` | Accept current state as baseline |
+| 49 | `performance.get_metrics` | Yes | CDP | performance | `performance.read` | Chrome performance counters |
+| 50 | `cdp.get_document` | Yes | CDP | cdp | `cdp.dom_snapshot` | DevTools document tree |
+| 51 | `cdp.get_dom_snapshot` | Yes | CDP | cdp | `cdp.dom_snapshot` | DevTools DOM snapshot |
+| 52 | `cdp.get_box_model` | Yes | CDP | cdp | `cdp.box_model` | DevTools-backed element geometry |
+| 53 | `cdp.get_computed_styles_for_node` | Yes | CDP | cdp | `cdp.styles` | DevTools-backed computed styles |
 
 ## CLI
 

@@ -8,7 +8,12 @@ import { fileURLToPath } from 'node:url';
 
 import { SUPPORTED_BROWSERS } from '../../native-host/src/config.js';
 import { uninstallNativeManifest } from '../../native-host/src/install-manifest.js';
-import { createRuntimeContext, METHODS } from '../../protocol/src/index.js';
+import {
+  createRuntimeContext,
+  METHODS,
+  summarizeBatchErrorItem,
+  summarizeBatchResponseItem,
+} from '../../protocol/src/index.js';
 import { startBridgeMcpServer } from '../../mcp-server/src/server.js';
 import { BridgeClient } from './client.js';
 import { CLI_HELP_SECTIONS, SHORTCUT_COMMANDS } from './command-registry.js';
@@ -387,12 +392,6 @@ async function main() {
         { source: REQUEST_SOURCE },
       );
       await printSummary(healthResponse);
-      if (healthResponse.ok && healthResponse.result) {
-        const versionCheck = BridgeClient.checkProtocolVersion(healthResponse.result);
-        if (versionCheck.warning) {
-          process.stderr.write(`\n⚠️  ${versionCheck.warning}\n`);
-        }
-      }
       return;
     }
 
@@ -495,26 +494,59 @@ async function main() {
       }
       const results = await Promise.all(
         calls.map(async (call) => {
+          if (!call || typeof call !== 'object' || typeof call.method !== 'string') {
+            return {
+              method: '',
+              tabId: null,
+              ok: false,
+              summary: 'INVALID_REQUEST: Each batch call needs a method.',
+              evidence: null,
+              durationMs: 0,
+              approxTokens: 0,
+              meta: { protocol_version: '1.0' },
+              error: { code: 'INVALID_REQUEST', message: 'Each batch call needs a method.' },
+              response: null,
+            };
+          }
+          if (!METHODS.includes(/** @type {BridgeMethod} */ (call.method))) {
+            return {
+              method: call.method,
+              tabId: null,
+              ok: false,
+              summary: `INVALID_REQUEST: Unknown bridge method "${call.method}".`,
+              evidence: null,
+              durationMs: 0,
+              approxTokens: 0,
+              meta: { protocol_version: '1.0' },
+              error: { code: 'INVALID_REQUEST', message: `Unknown bridge method "${call.method}".` },
+              response: null,
+            };
+          }
+          const method = /** @type {BridgeMethod} */ (call.method);
+          const tabId = methodNeedsTab(call.method) && typeof call.tabId === 'number'
+            ? call.tabId
+            : null;
+          const startTime = Date.now();
           try {
             const response = await client.request({
-              method: /** @type {BridgeMethod} */ (call.method),
-              tabId: methodNeedsTab(call.method) && typeof call.tabId === 'number'
-                ? call.tabId
-                : null,
+              method,
+              tabId,
               params: call.params || {},
               meta: { source: REQUEST_SOURCE },
             });
-            return annotateBridgeSummary(
-              summarizeBridgeResponse(response, call.method),
+            return summarizeBatchResponseItem({
+              method,
+              tabId,
               response,
-            );
+              durationMs: Date.now() - startTime,
+            });
           } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            return {
-              ok: false,
-              summary: `${call.method}: ${message}`,
-              evidence: null,
-            };
+            return summarizeBatchErrorItem({
+              method,
+              tabId,
+              error: err,
+              durationMs: Date.now() - startTime,
+            });
           }
         }),
       );

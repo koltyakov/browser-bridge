@@ -14,6 +14,7 @@ import {
   createBridgeMethodGroups,
   createRequest,
   createRuntimeContext,
+  getMethodCapability,
   normalizeCheckedAction,
   createSuccess,
   normalizeInputAction,
@@ -114,6 +115,14 @@ test('bridge method groups are derived from the registry', () => {
   assert.ok(groups.tabs.includes('tabs.create'));
   assert.ok(groups.inspect.includes('dom.find_by_role'));
   assert.ok(groups.wait.includes('page.wait_for_load_state'));
+});
+
+test('method capability lookup stays aligned with bridge semantics', () => {
+  assert.equal(getMethodCapability('page.evaluate'), 'page.evaluate');
+  assert.equal(getMethodCapability('page.get_network'), 'network.read');
+  assert.equal(getMethodCapability('tabs.create'), 'tabs.manage');
+  assert.equal(getMethodCapability('tabs.list'), null);
+  assert.equal(getMethodCapability('health.ping'), null);
 });
 
 /** Ensure DOM patch metadata is preserved by normalization. */

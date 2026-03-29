@@ -347,6 +347,9 @@ test('handleBatchTool preserves order and reports mixed results with tab routing
     assert.equal(batchResults[0].method, 'health.ping');
     assert.equal(batchResults[1].method, 'dom.query');
     assert.equal(batchResults[2].method, 'page.get_text');
+    assert.equal(typeof /** @type {any} */ (batchResults[0]).durationMs, 'number');
+    assert.equal(typeof /** @type {any} */ (batchResults[0]).approxTokens, 'number');
+    assert.ok('meta' in /** @type {any} */ (batchResults[0]));
 
     const domCall = calls.find((call) => call.method === 'dom.query');
     const pageTextCall = calls.find((call) => call.method === 'page.get_text');

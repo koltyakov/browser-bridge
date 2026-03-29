@@ -9,8 +9,9 @@ import {
   getBudgetPreset,
   isBudgetPresetName,
   METHODS,
+  summarizeBatchErrorItem,
+  summarizeBatchResponseItem,
 } from '../../protocol/src/index.js';
-import { BridgeClient } from '../../agent-client/src/client.js';
 import {
   getDoctorReport,
   requestBridge,
@@ -672,14 +673,7 @@ export async function handleLogTool(args) {
 export async function handleHealthTool() {
   return withToolClient(async (client) => {
     const response = await client.request({ method: 'health.ping', meta: { source: REQUEST_SOURCE } });
-    const result = summarizeToolResponse(response, 'health.ping');
-    if (response.ok && response.result) {
-      const versionCheck = BridgeClient.checkProtocolVersion(response.result);
-      if (versionCheck.warning) {
-        result.content[0].text += `\n⚠️ ${versionCheck.warning}`;
-      }
-    }
-    return result;
+    return summarizeToolResponse(response, 'health.ping');
   });
 }
 
@@ -738,33 +732,19 @@ export async function handleBatchTool(args) {
             ...(tokenBudget != null ? { token_budget: tokenBudget } : {}),
           },
         });
-        const durationMs = Date.now() - startTime;
-        const summary = annotateBridgeSummary(summarizeBridgeResponse(response, method), response);
-        const cost = estimateJsonPayloadCost(response.result);
-        return {
+        return summarizeBatchResponseItem({
           method,
           tabId,
-          ...summary,
-          durationMs,
-          approxTokens: cost.approxTokens,
-          meta: response.meta,
-          error: response.ok ? null : response.error,
-          response: response.ok ? response.result : null,
-        };
+          response,
+          durationMs: Date.now() - startTime,
+        });
       } catch (error) {
-        const durationMs = Date.now() - startTime;
-        const message = error instanceof Error ? error.message : String(error);
-        return {
+        return summarizeBatchErrorItem({
           method,
           tabId,
-          ok: false,
-          summary: `${method}: ${message}`,
-          evidence: null,
-          durationMs,
-          approxTokens: 0,
-          error: { code: 'INTERNAL_ERROR', message },
-          response: null,
-        };
+          error,
+          durationMs: Date.now() - startTime,
+        });
       }
     }));
 

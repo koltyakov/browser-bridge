@@ -1,9 +1,9 @@
 // @ts-check
 
 import {
-  CAPABILITIES,
   ERROR_CODES,
   estimateJsonPayloadCost,
+  getMethodCapability,
   getCostClass,
   getUtf8ByteLength,
   isDebuggerBackedMethod,
@@ -455,56 +455,5 @@ export function safeOrigin(url) {
  * @returns {Capability | null}
  */
 export function inferCapability(method) {
-  if (method === 'page.evaluate') {
-    return CAPABILITIES.PAGE_EVALUATE;
-  }
-  if (method === 'page.get_network') {
-    return CAPABILITIES.NETWORK_READ;
-  }
-  if (method.startsWith('page.')) {
-    return CAPABILITIES.PAGE_READ;
-  }
-  if (method.startsWith('dom.')) {
-    return CAPABILITIES.DOM_READ;
-  }
-  if (method.startsWith('styles.')) {
-    return CAPABILITIES.STYLES_READ;
-  }
-  if (method.startsWith('layout.')) {
-    return CAPABILITIES.LAYOUT_READ;
-  }
-  if (method.startsWith('viewport.')) {
-    return CAPABILITIES.VIEWPORT_CONTROL;
-  }
-  if (method.startsWith('navigation.')) {
-    return CAPABILITIES.NAVIGATION_CONTROL;
-  }
-  if (method.startsWith('input.')) {
-    return CAPABILITIES.AUTOMATION_INPUT;
-  }
-  if (method === 'patch.apply_styles') {
-    return CAPABILITIES.PATCH_STYLES;
-  }
-  if (method.startsWith('patch.')) {
-    return CAPABILITIES.PATCH_DOM;
-  }
-  if (method.startsWith('screenshot.')) {
-    return CAPABILITIES.SCREENSHOT_PARTIAL;
-  }
-  if (method === 'cdp.get_box_model') {
-    return CAPABILITIES.CDP_BOX_MODEL;
-  }
-  if (method === 'cdp.get_computed_styles_for_node') {
-    return CAPABILITIES.CDP_STYLES;
-  }
-  if (method.startsWith('cdp.')) {
-    return CAPABILITIES.CDP_DOM_SNAPSHOT;
-  }
-  if (method.startsWith('performance.')) {
-    return CAPABILITIES.PERFORMANCE_READ;
-  }
-  if (method.startsWith('tabs.') && method !== 'tabs.list') {
-    return CAPABILITIES.TABS_MANAGE;
-  }
-  return null;
+  return getMethodCapability(/** @type {import('../../protocol/src/types.js').BridgeMethod} */ (method));
 }
