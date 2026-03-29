@@ -8,7 +8,19 @@ import { randomUUID } from 'node:crypto';
 import { installAgentFiles, isSupportedTarget, removeAgentFiles } from '../../agent-client/src/install.js';
 import { installMcpConfig, isMcpClientName, removeMcpConfig } from '../../agent-client/src/mcp-config.js';
 import { collectSetupStatus } from '../../agent-client/src/setup-status.js';
-import { createFailure, createSuccess, ERROR_CODES, parseJsonLines, SUPPORTED_VERSIONS, validateBridgeRequest } from '../../protocol/src/index.js';
+import {
+  createFailure,
+  createSuccess,
+  DAEMON_EXISTING_SOCKET_PING_TIMEOUT_MS,
+  DAEMON_RECENT_LOG_LIMIT,
+  DEFAULT_DAEMON_PENDING_TIMEOUT_MS,
+  DEFAULT_LOG_TAIL_LIMIT,
+  ERROR_CODES,
+  parseJsonLines,
+  PROTOCOL_VERSION,
+  SUPPORTED_VERSIONS,
+  validateBridgeRequest
+} from '../../protocol/src/index.js';
 import { getSocketPath } from './config.js';
 import { writeJsonLine } from './framing.js';
 
@@ -87,14 +99,20 @@ export class BridgeDaemon {
     this.setupStatusLoader = setupStatusLoader;
     this.setupInstaller = setupInstaller;
     this.logger = logger;
+    /** @type {net.Server | null} */
     this.server = null;
+    /** @type {net.AddressInfo | string | null} */
     this.serverAddress = null;
+    /** @type {ClientSocket | null} */
     this.extensionSocket = null;
+    /** @type {Map<string, ClientSocket>} */
     this.agentSockets = new Map();
     /** @type {Map<string, PendingEntry>} */
     this.pendingRequests = new Map();
-    this.pendingTimeoutMs = 30_000;
+    this.pendingTimeoutMs = DEFAULT_DAEMON_PENDING_TIMEOUT_MS;
+    /** @type {Record<string, unknown>[]} */
     this.recentLog = [];
+    /** @type {Promise<void> | null} */
     this.stopPromise = null;
   }
 
@@ -110,8 +128,14 @@ export class BridgeDaemon {
       }
       try {
         await fs.promises.access(this.socketPath);
+        if (await pingExistingDaemon(this.socketPath)) {
+          throw new Error(`Another daemon is already running on ${this.socketPath}. Stop it before starting a new one.`);
+        }
         this.logger.log('[daemon] Removing stale socket from previous run:', this.socketPath);
-      } catch {
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith('Another daemon')) {
+          throw error;
+        }
         // Socket does not exist - normal startup.
       }
       await fs.promises.rm(this.socketPath, { force: true });
@@ -131,17 +155,18 @@ export class BridgeDaemon {
       typedSocket.on('close', () => this.handleSocketClose(typedSocket));
     });
 
+    const server = this.server;
     await new Promise((resolve, reject) => {
-      this.server.once('error', reject);
+      server.once('error', reject);
       const onListen = () => {
-        this.server.off('error', reject);
-        this.serverAddress = this.server.address();
-        resolve();
+        server.off('error', reject);
+        this.serverAddress = server.address();
+        resolve(undefined);
       };
       if (this.listenOptions) {
-        this.server.listen(this.listenOptions, onListen);
+        server.listen(this.listenOptions, onListen);
       } else {
-        this.server.listen(this.socketPath, onListen);
+        server.listen(this.socketPath, onListen);
       }
     });
 
@@ -197,7 +222,7 @@ export class BridgeDaemon {
               reject(error);
               return;
             }
-            resolve();
+            resolve(undefined);
           });
         });
       } finally {
@@ -219,7 +244,7 @@ export class BridgeDaemon {
     }
 
     if (message?.type === 'log') {
-      this.pushLog(message.entry);
+      this.pushLog(message.entry ?? {});
       return;
     }
 
@@ -287,7 +312,7 @@ export class BridgeDaemon {
 
     if (request.method === 'log.tail') {
       const response = createSuccess(request.id, {
-        entries: this.recentLog.slice(-20)
+        entries: this.recentLog.slice(-DEFAULT_LOG_TAIL_LIMIT)
       });
       await writeJsonLine(socket, { type: 'agent.response', response });
       return;
@@ -303,7 +328,7 @@ export class BridgeDaemon {
 
     if (request.method === 'setup.install') {
       try {
-        const response = createSuccess(request.id, await this.setupInstaller(request.params), {
+        const response = createSuccess(request.id, await this.setupInstaller(request.params ?? {}), {
           method: request.method
         });
         await writeJsonLine(socket, { type: 'agent.response', response });
@@ -376,31 +401,36 @@ export class BridgeDaemon {
    * @returns {Promise<void>}
    */
   async handleExtensionResponse(message) {
-    const pending = this.pendingRequests.get(message.response?.id);
+    const responseMessage = message.response;
+    if (!responseMessage) {
+      return;
+    }
+
+    const pending = this.pendingRequests.get(responseMessage.id);
     if (!pending) {
       return;
     }
 
     clearTimeout(pending.timeoutId);
-    this.pendingRequests.delete(message.response.id);
+    this.pendingRequests.delete(responseMessage.id);
     this.pushLog({
       at: new Date().toISOString(),
-      method: message.response.meta?.method ?? null,
-      ok: message.response.ok,
-      id: message.response.id,
+      method: responseMessage.meta?.method ?? null,
+      ok: responseMessage.ok,
+      id: responseMessage.id,
       source: pending.source || null
     });
-    const response = pending.method === 'health.ping' && message.response.ok
-      ? createSuccess(message.response.id, {
+    const response = pending.method === 'health.ping' && responseMessage.ok
+      ? createSuccess(responseMessage.id, {
         daemon: 'ok',
         extensionConnected: true,
         socketPath: this.socketPath,
-        .../** @type {Record<string, unknown>} */ (message.response.result)
+        .../** @type {Record<string, unknown>} */ (responseMessage.result)
       }, {
-        ...message.response.meta,
-        method: message.response.meta?.method ?? pending.method
+        ...responseMessage.meta,
+        method: responseMessage.meta?.method ?? pending.method
       })
-      : message.response;
+      : responseMessage;
 
     await writeJsonLine(pending.socket, {
       type: 'agent.response',
@@ -435,10 +465,61 @@ export class BridgeDaemon {
    */
   pushLog(entry) {
     this.recentLog.push(entry);
-    if (this.recentLog.length > 200) {
+    if (this.recentLog.length > DAEMON_RECENT_LOG_LIMIT) {
       this.recentLog.shift();
     }
   }
+}
+
+/**
+ * Check whether a daemon is already listening on the given socket path.
+ * Connects, sends a health.ping, and waits up to 500 ms for a response.
+ *
+ * @param {string} socketPath
+ * @returns {Promise<boolean>}
+ */
+async function pingExistingDaemon(socketPath) {
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      socket.destroy();
+      resolve(false);
+    }, DAEMON_EXISTING_SOCKET_PING_TIMEOUT_MS);
+
+    const socket = net.createConnection(socketPath);
+    socket.once('error', () => {
+      clearTimeout(timeout);
+      resolve(false);
+    });
+
+    let buf = '';
+    socket.setEncoding('utf8');
+    socket.on('data', (chunk) => {
+      buf += chunk;
+      if (buf.includes('\n')) {
+        clearTimeout(timeout);
+        socket.destroy();
+        try {
+          const msg = JSON.parse(buf.slice(0, buf.indexOf('\n')).trim());
+          resolve(msg?.response?.result?.daemon === 'ok');
+        } catch {
+          resolve(false);
+        }
+      }
+    });
+
+    socket.once('connect', () => {
+      socket.write(`${JSON.stringify({
+        type: 'agent.request',
+        request: {
+          id: 'ping_probe',
+          method: 'health.ping',
+          tab_id: null,
+          params: {},
+          meta: { protocol_version: PROTOCOL_VERSION, token_budget: null }
+        }
+      })}\n`);
+    });
+  });
 }
 
 /**

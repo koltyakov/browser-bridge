@@ -814,7 +814,10 @@ function buildSetupMatrixRows(setupStatus) {
         skillTarget: null,
       });
     } else {
-      rowsByKey.get(entry.key).mcpClient = entry;
+      const row = rowsByKey.get(entry.key);
+      if (row) {
+        row.mcpClient = entry;
+      }
     }
   }
 
@@ -830,7 +833,10 @@ function buildSetupMatrixRows(setupStatus) {
         skillTarget: entry,
       });
     } else {
-      rowsByKey.get(entry.key).skillTarget = entry;
+      const row = rowsByKey.get(entry.key);
+      if (row) {
+        row.skillTarget = entry;
+      }
     }
   }
 
@@ -1495,12 +1501,12 @@ function buildActivityHistogram(entries) {
 
   for (let index = 0; index < buckets.length; index += 1) {
     const familyTotals = /** @type {Map<string, number>} */ (bucketFamilies.get(index));
-    buckets[index].segments = HISTOGRAM_METHOD_FAMILIES
+    buckets[index].segments = /** @type {typeof buckets[number]['segments']} */ (HISTOGRAM_METHOD_FAMILIES
       .map((family) => ({
         family,
         tokens: familyTotals.get(family) ?? 0,
       }))
-      .filter((segment) => segment.tokens > 0);
+      .filter((segment) => segment.tokens > 0));
   }
 
   return {

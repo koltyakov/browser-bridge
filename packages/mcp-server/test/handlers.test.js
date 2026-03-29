@@ -59,7 +59,9 @@ async function withMockedBridge(responder, callback) {
     this.connected = true;
   };
   BridgeClient.prototype.close = async function close() {};
-  BridgeClient.prototype.request = async function request({ method, params = {}, tabId = null, meta = {} }) {
+  BridgeClient.prototype.request = async function request(
+    /** @type {{ method: import('../../protocol/src/types.js').BridgeMethod, params?: Record<string, unknown>, tabId?: number | null, meta?: Record<string, unknown> }} */ { method, params = {}, tabId = null, meta = {} }
+  ) {
     const record = { method, params, tabId, meta };
     calls.push(record);
     return responder(record, calls.length - 1);
@@ -123,7 +125,7 @@ test('handleTabsTool forwards active for tabs.create', async () => {
 
     assert.equal(calls.length, 1);
     assert.equal(calls[0].method, 'tabs.create');
-    assert.equal(calls[0].params.active, false);
+    assert.equal(calls[0].params?.active, false);
     assert.equal(result.isError, undefined);
   });
 });
@@ -152,6 +154,35 @@ test('handleTabsTool translates bridge failures into MCP tool errors', async () 
     const result = await handleTabsTool({ action: 'list' });
     assert.equal(result.isError, true);
     assert.match(result.content[0].text, /ACCESS_DENIED/);
+    assert.equal(result.structuredContent.ok, false);
+  });
+});
+
+test('handleTabsTool retries one transient bridge failure', async () => {
+  await withMockedBridge(async (_record, index) => {
+    if (index === 0) {
+      return fail('TIMEOUT', 'Slow page text');
+    }
+    return ok({
+      tabs: [{ tabId: 4, active: true, origin: 'https://example.com', title: 'Example' }]
+    });
+  }, async (calls) => {
+    const result = await handleTabsTool({ action: 'list' });
+
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].method, 'tabs.list');
+    assert.equal(calls[1].method, 'tabs.list');
+    assert.equal(result.isError, undefined);
+    assert.equal(result.structuredContent.ok, true);
+  });
+});
+
+test('handleTabsTool does not retry non-retriable bridge failures', async () => {
+  await withMockedBridge(async () => fail('ACCESS_DENIED', 'Denied'), async (calls) => {
+    const result = await handleTabsTool({ action: 'list' });
+
+    assert.equal(calls.length, 1);
+    assert.equal(result.isError, true);
     assert.equal(result.structuredContent.ok, false);
   });
 });
@@ -201,6 +232,7 @@ test('handlePageTool evaluate calls page.evaluate with given expression', async 
     const result = await handlePageTool({ action: 'evaluate', expression: '1+1' });
     const evalCall = calls.find((c) => c.method === 'page.evaluate');
     assert.ok(evalCall, 'page.evaluate should be called');
+    assert.ok(evalCall.params);
     assert.equal(evalCall.params.expression, '1+1');
     assert.equal(evalCall.meta?.source, 'mcp');
     assert.equal(result.isError, undefined);
@@ -212,6 +244,7 @@ test('handleNavigationTool navigate calls navigation.navigate', async () => {
     const result = await handleNavigationTool({ action: 'navigate', url: 'https://example.com' });
     const navCall = calls.find((c) => c.method === 'navigation.navigate');
     assert.ok(navCall, 'navigation.navigate should be called');
+    assert.ok(navCall.params);
     assert.equal(navCall.params.url, 'https://example.com');
     assert.equal(result.isError, undefined);
   });
@@ -222,6 +255,7 @@ test('handleNavigationTool scroll calls viewport.scroll', async () => {
     const result = await handleNavigationTool({ action: 'scroll', top: 500 });
     const scrollCall = calls.find((c) => c.method === 'viewport.scroll');
     assert.ok(scrollCall, 'viewport.scroll should be called');
+    assert.ok(scrollCall.params);
     assert.equal(scrollCall.params.top, 500);
     assert.equal(result.isError, undefined);
   });
@@ -301,6 +335,8 @@ test('grouped MCP tools accept explicit tabId and budget presets', async () => {
     const domCall = calls.find((call) => call.method === 'dom.query');
     const pageTextCall = calls.find((call) => call.method === 'page.get_text');
     assert.ok(domCall);
+    assert.ok(domCall.params);
+    assert.ok(domCall.meta);
     assert.equal(domCall.tabId, 88);
     assert.equal(domCall.params.maxNodes, 5);
     assert.equal(domCall.params.maxDepth, 2);
@@ -314,6 +350,8 @@ test('grouped MCP tools accept explicit tabId and budget presets', async () => {
     assert.ok(transportTokens > 0);
 
     assert.ok(pageTextCall);
+    assert.ok(pageTextCall.params);
+    assert.ok(pageTextCall.meta);
     assert.equal(pageTextCall.tabId, 88);
     assert.equal(pageTextCall.params.textBudget, 2000);
     assert.equal(pageTextCall.meta.token_budget, 4000);

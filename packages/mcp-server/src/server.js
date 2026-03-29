@@ -4,7 +4,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 // zod is required at runtime by @modelcontextprotocol/sdk for tool parameter schema
 // declarations (z.object, z.string, etc.). It is not used for request/response
-// validation — that is handled by the protocol package.
+// validation - that is handled by the protocol package.
 import * as z from 'zod/v4';
 
 import {
@@ -91,7 +91,7 @@ export function createBridgeMcpServer() {
 
   server.registerTool('browser_dom', {
     title: 'Browser DOM',
-    description: `Query, describe, read, wait for, or search DOM elements in the live tab. When to use: element-level inspection — selectors, structure, text, attributes. For full-page text extraction, prefer browser_page with action "text". Default routing follows the active tab in the enabled window. Use elementRef from prior results to avoid re-querying. \`accessibility_tree\` is debugger-backed and should be a last resort after query/find actions. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
+    description: `Query, describe, read, wait for, or search DOM elements in the live tab. When to use: element-level inspection - selectors, structure, text, attributes. For full-page text extraction, prefer browser_page with action "text". Default routing follows the active tab in the enabled window. Use elementRef from prior results to avoid re-querying. \`accessibility_tree\` is debugger-backed and should be a last resort after query/find actions. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
     inputSchema: {
       action: z.enum(['query', 'describe', 'text', 'attributes', 'wait', 'find_text', 'find_role', 'html', 'accessibility_tree']).describe('DOM operation to perform'),
       tabId: z.number().optional().describe(TAB_ID_DESCRIPTION),

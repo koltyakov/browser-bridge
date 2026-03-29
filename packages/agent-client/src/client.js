@@ -1,15 +1,22 @@
 // @ts-check
 
-import { once } from 'node:events';
+import { EventEmitter, once } from 'node:events';
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
 
-import { createRequest, PROTOCOL_VERSION, parseJsonLines } from '../../protocol/src/index.js';
+import { createRequest, DEFAULT_CLIENT_REQUEST_TIMEOUT_MS, PROTOCOL_VERSION, parseJsonLines } from '../../protocol/src/index.js';
 import { getSocketPath } from '../../native-host/src/config.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
 /** @typedef {import('../../protocol/src/types.js').BridgeMeta} BridgeMeta */
 /** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
+/**
+ * @typedef {{
+ *   supported_versions?: string[],
+ *   deprecated_since?: string,
+ *   migration_hint?: string
+ * }} ProtocolHealthResult
+ */
 
 /**
  * @typedef {{
@@ -43,21 +50,25 @@ function createTimeoutError(method, timeoutMs) {
   return error;
 }
 
-export class BridgeClient {
+export class BridgeClient extends EventEmitter {
   constructor({
     socketPath = getSocketPath(),
     clientId = `agent_${randomUUID()}`,
-    defaultTimeoutMs = 8_000
+    defaultTimeoutMs = DEFAULT_CLIENT_REQUEST_TIMEOUT_MS,
+    autoReconnect = false
   } = {}) {
+    super();
     this.socketPath = socketPath;
     this.clientId = clientId;
     this.defaultTimeoutMs = defaultTimeoutMs;
+    this.autoReconnect = autoReconnect;
     this.socket = null;
     this.connected = false;
     this.protocolCompatibility = null;
     this.protocolWarning = null;
     /** @type {Map<string, PendingRequest>} */
     this.waiting = new Map();
+    this._reconnecting = false;
   }
 
   /**
@@ -67,13 +78,20 @@ export class BridgeClient {
     if (this.socket) {
       throw new Error('BridgeClient is already connected.');
     }
-    this.socket = net.createConnection(this.socketPath);
-    await new Promise((resolve, reject) => {
-      this.socket.once('connect', resolve);
-      this.socket.once('error', reject);
-    });
+    const socket = net.createConnection(this.socketPath);
+    this.socket = socket;
+    try {
+      await new Promise((resolve, reject) => {
+        socket.once('connect', resolve);
+        socket.once('error', reject);
+      });
+    } catch (error) {
+      socket.destroy();
+      this.socket = null;
+      throw error;
+    }
 
-    parseJsonLines(this.socket, (raw) => {
+    parseJsonLines(socket, (raw) => {
       const message = /** @type {ClientMessage} */ (raw);
       if (message.type === 'registered') {
         const pending = this.waiting.get('registered');
@@ -96,12 +114,18 @@ export class BridgeClient {
       }
     });
 
-    this.socket.on('close', () => {
+    socket.on('close', () => {
+      this.connected = false;
+      this.socket = null;
       this.rejectAllPending(new Error('Bridge socket closed.'));
+      if (this.autoReconnect && !this._reconnecting) {
+        void this._scheduleReconnect();
+      }
     });
 
-    this.socket.on('error', (error) => {
+    socket.on('error', (error) => {
       this.rejectAllPending(error);
+      // 'close' fires after 'error'; reconnect is triggered there.
     });
 
     this.socket.write(`${JSON.stringify({ type: 'register', role: 'agent', clientId: this.clientId })}\n`);
@@ -122,7 +146,9 @@ export class BridgeClient {
         method: 'health.ping'
       });
       if (healthResponse.ok) {
-        this.protocolCompatibility = BridgeClient.checkProtocolVersion(healthResponse.result);
+        this.protocolCompatibility = BridgeClient.checkProtocolVersion(
+          /** @type {ProtocolHealthResult} */ (healthResponse.result)
+        );
         this.protocolWarning = this.protocolCompatibility.warning ?? null;
       }
     } catch {
@@ -180,9 +206,30 @@ export class BridgeClient {
   }
 
   /**
+   * Send multiple bridge requests without waiting for each response serially.
+   *
+   * @param {Array<{
+   *   method: BridgeMethod,
+   *   params?: Record<string, unknown>,
+   *   tabId?: number | null,
+   *   meta?: BridgeMeta,
+   *   timeoutMs?: number
+   * }>} calls
+   * @returns {Promise<BridgeResponse[]>}
+   */
+  async batch(calls) {
+    if (!Array.isArray(calls)) {
+      throw new TypeError('BridgeClient.batch expects an array of request objects.');
+    }
+
+    return Promise.all(calls.map((call) => this.request(call)));
+  }
+
+  /**
    * @returns {Promise<void>}
    */
   async close() {
+    this.autoReconnect = false; // prevent reconnect on intentional close
     if (!this.socket) {
       return;
     }
@@ -192,10 +239,35 @@ export class BridgeClient {
   }
 
   /**
+   * Attempt to reconnect with exponential backoff (1s → 2s → 4s … → 30s max).
+   * Stops if `autoReconnect` is set to false (e.g., by calling `close()`).
+   *
+   * @returns {Promise<void>}
+   */
+  async _scheduleReconnect() {
+    this._reconnecting = true;
+    const backoffs = [1000, 2000, 4000, 8000, 16000, 30000];
+    for (let attempt = 0; ; attempt++) {
+      const delay = backoffs[Math.min(attempt, backoffs.length - 1)];
+      await new Promise((r) => setTimeout(r, delay));
+      if (!this.autoReconnect) break;
+      try {
+        await this.connect();
+        this._reconnecting = false;
+        this.emit('reconnected');
+        return;
+      } catch {
+        // connection failed — try again after the next backoff interval
+      }
+    }
+    this._reconnecting = false;
+  }
+
+  /**
    * Check whether the remote side supports our protocol version.
    * Call after a successful health.ping to get early warnings about version drift.
    *
-   * @param {{ supported_versions?: string[], deprecated_since?: string, migration_hint?: string }} healthResult
+   * @param {ProtocolHealthResult} healthResult
    * @returns {{ compatible: boolean, localVersion: string, remoteVersions: string[], warning?: string }}
    */
   static checkProtocolVersion(healthResult) {

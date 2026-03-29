@@ -90,10 +90,12 @@ To request access, call `access.request` (via `bbx access-request`, `browser_acc
 If a tab-bound call fails with `ACCESS_DENIED` because Browser Bridge is off, that failed call also surfaces an enable cue automatically.
 
 After the Enable cue appears:
+
 1. Ask the user to open the Browser Bridge popup or side panel and click `Enable`.
 2. After the user confirms, retry the call.
 
 After access is enabled:
+
 1. Default routing follows the active tab in that enabled window.
 2. If the user switches tabs in that window, Browser Bridge follows automatically.
 3. Use `tabId` only when you intentionally need a non-active tab in the same enabled window.
@@ -101,19 +103,19 @@ After access is enabled:
 
 ## Error Recovery
 
-| Error | Retry? | Recovery |
-|---|---|---|
-| `ACCESS_DENIED` | No | Failed call already surfaced an `Enable` cue; ask user to click `Enable`, then retry once |
-| `ELEMENT_STALE` | No | Re-query with `dom.query` or `dom.find_by_text` to get a fresh ref |
-| `TAB_MISMATCH` | No | Tab closed or not found — use `tabs.list` to find an available tab |
-| `TIMEOUT` | Once | Retry once; if still failing, simplify (smaller `maxNodes`, narrower selector) |
-| `RATE_LIMITED` | After 2s | Back off 2 seconds, then retry |
-| `EXTENSION_DISCONNECTED` | After 3s | Check Chrome is running; `bbx status` to verify, then retry |
-| `NATIVE_HOST_UNAVAILABLE` | No | Run `bbx doctor` to diagnose the installation |
-| `INTERNAL_ERROR` | Once | Retry once; if persistent, check `page.get_console` for details |
-| `DAEMON_OFFLINE` | No | Daemon not running — start with `bbx-daemon` |
-| `CONNECTION_LOST` | Yes | Socket dropped mid-request — retry; if persistent, restart daemon |
-| `BRIDGE_TIMEOUT` | Once | Extension took too long — retry once with simpler call |
+| Error                     | Retry?   | Recovery                                                                                  |
+| ------------------------- | -------- | ----------------------------------------------------------------------------------------- |
+| `ACCESS_DENIED`           | No       | Failed call already surfaced an `Enable` cue; ask user to click `Enable`, then retry once |
+| `ELEMENT_STALE`           | No       | Re-query with `dom.query` or `dom.find_by_text` to get a fresh ref                        |
+| `TAB_MISMATCH`            | No       | Tab closed or not found - use `tabs.list` to find an available tab                        |
+| `TIMEOUT`                 | Once     | Retry once; if still failing, simplify (smaller `maxNodes`, narrower selector)            |
+| `RATE_LIMITED`            | After 2s | Back off 2 seconds, then retry                                                            |
+| `EXTENSION_DISCONNECTED`  | After 3s | Check Chrome is running; `bbx status` to verify, then retry                               |
+| `NATIVE_HOST_UNAVAILABLE` | No       | Run `bbx doctor` to diagnose the installation                                             |
+| `INTERNAL_ERROR`          | Once     | Retry once; if persistent, check `page.get_console` for details                           |
+| `DAEMON_OFFLINE`          | No       | Daemon not running - start with `bbx-daemon`                                              |
+| `CONNECTION_LOST`         | Yes      | Socket dropped mid-request - retry; if persistent, restart daemon                         |
+| `BRIDGE_TIMEOUT`          | Once     | Extension took too long - retry once with simpler call                                    |
 
 Error responses now include a machine-readable `error.recovery` field with `retry`, `retryAfterMs`, `alternativeMethod`, and `hint`.
 
@@ -181,19 +183,19 @@ bbx page-text 2000                                  # extract page content
 
 ## Method Quick Reference
 
-| Category   | Key Methods                                                                              |
-| ---------- | ---------------------------------------------------------------------------------------- |
-| Access     | `health.ping`, `tabs.list`, `page.get_state`                                             |
-| Inspect    | `dom.query`, `dom.describe`, `dom.get_html`, `styles.get_computed`, `layout.get_box_model`|
-| Find       | `dom.find_by_text`, `dom.find_by_role`, `dom.wait_for`, `dom.get_accessibility_tree`     |
-| Page State | `page.get_console`, `page.get_storage`, `page.get_text`, `page.wait_for_load_state`, `page.evaluate` (debugger-backed) |
-| Network    | `page.get_network`                                                                       |
-| Interact   | `input.click`, `input.type`, `input.focus`, `input.press_key`, `input.hover`, `input.drag`|
-| Tabs       | `tabs.list` (preferred), `tabs.create` (avoid unless necessary), `tabs.close`           |
-| Patch      | `patch.apply_styles`, `patch.apply_dom`, `patch.rollback`                                |
-| Navigate   | `navigation.navigate`, `viewport.scroll`, `viewport.resize`                              |
-| Performance| `performance.get_metrics` (debugger-backed)                                              |
-| Escalate   | `dom.get_accessibility_tree`, `screenshot.capture_element`, `screenshot.capture_region` (tight crops only), `viewport.resize`, `cdp.*` methods |
+| Category    | Key Methods                                                                                                                                    |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Access      | `health.ping`, `tabs.list`, `page.get_state`                                                                                                   |
+| Inspect     | `dom.query`, `dom.describe`, `dom.get_html`, `styles.get_computed`, `layout.get_box_model`                                                     |
+| Find        | `dom.find_by_text`, `dom.find_by_role`, `dom.wait_for`, `dom.get_accessibility_tree`                                                           |
+| Page State  | `page.get_console`, `page.get_storage`, `page.get_text`, `page.wait_for_load_state`, `page.evaluate` (debugger-backed)                         |
+| Network     | `page.get_network`                                                                                                                             |
+| Interact    | `input.click`, `input.type`, `input.focus`, `input.press_key`, `input.hover`, `input.drag`                                                     |
+| Tabs        | `tabs.list` (preferred), `tabs.create` (avoid unless necessary), `tabs.close`                                                                  |
+| Patch       | `patch.apply_styles`, `patch.apply_dom`, `patch.rollback`                                                                                      |
+| Navigate    | `navigation.navigate`, `viewport.scroll`, `viewport.resize`                                                                                    |
+| Performance | `performance.get_metrics` (debugger-backed)                                                                                                    |
+| Escalate    | `dom.get_accessibility_tree`, `screenshot.capture_element`, `screenshot.capture_region` (tight crops only), `viewport.resize`, `cdp.*` methods |
 
 ## Dev-Server Workflow (HMR-aware)
 
@@ -258,33 +260,33 @@ The summarizer auto-detects response types and produces concise summaries:
 
 Shortcut commands intentionally expose only the common case. Use `bbx call <method> '{...}'` when you need method-specific fields that are not surfaced by a shortcut, such as `tabs.create.active`.
 
-| Response Type | Detection | Summary Format |
-|---|---|---|
-| Health ping | `result.daemon` | `Daemon: ok. Extension: connected/disconnected. Access: ...` |
-| Tab list | `result.tabs` | `Bridge listed N tab(s).` |
-| Page state | `result.url + title + origin` | `Page: Title (origin) [hints].` |
-| Page/DOM text | `result.text/value + truncated` | `Page text: N chars.` |
-| DOM nodes | `result.nodes` | `DOM query returned N node(s).` |
-| A11y tree | `result.nodes + role` | `Accessibility tree: N nodes (M interactive).` |
-| Evaluate | `result.value + type` | `Evaluated to type: value` |
-| Element describe | `result.tag + elementRef + bbox` | `Element tag#id: text.` |
-| Computed styles | `result.properties + elementRef` | `Computed N style(s) for ref.` |
-| Box model | `result.content + border` | `Box model: W×H at (x, y).` |
-| Network | `entries[0].type=fetch/xhr` | `Network: N requests.` |
-| Console | `entries` (no type field) | `Console: N entries.` |
-| Logs | `entries[0].at + method` | `Log: N entries.` |
-| Patch apply | `result.patchId` | `Patch id applied.` |
-| Patch rollback | `result.rolled_back` | `Patch rolled back.` |
-| Patch list | `result.patches` | `N active patch(es).` |
-| HTML | `result.html` | `HTML fragment: N chars.` |
-| Performance | `result.metrics` | `Performance: N metrics collected.` |
-| Storage | `result.type + count + entries` | `Storage (type): N entries.` |
-| Click/Focus/Type | `result.clicked/focused/typed` | `Clicked/Focused/Typed ref.` |
-| Key press | `result.pressed` | `Key pressed (key).` |
-| Navigate | `result.navigated` | `Navigated to url.` |
-| Scroll | `result.scrolled` | `Scrolled to (x, y).` |
-| Resize | `result.resized` | `Viewport resized to W×H.` |
-| Hover | `result.hovered` | `Hover active/failed on ref.` |
-| Drag | `result.dragged` | `Drag completed/failed.` |
-| Tab close | `result.closed` | `Tab N closed.` |
-| Tab create | `result.tabId + url` | `Tab N created (url).` |
+| Response Type    | Detection                        | Summary Format                                               |
+| ---------------- | -------------------------------- | ------------------------------------------------------------ |
+| Health ping      | `result.daemon`                  | `Daemon: ok. Extension: connected/disconnected. Access: ...` |
+| Tab list         | `result.tabs`                    | `Bridge listed N tab(s).`                                    |
+| Page state       | `result.url + title + origin`    | `Page: Title (origin) [hints].`                              |
+| Page/DOM text    | `result.text/value + truncated`  | `Page text: N chars.`                                        |
+| DOM nodes        | `result.nodes`                   | `DOM query returned N node(s).`                              |
+| A11y tree        | `result.nodes + role`            | `Accessibility tree: N nodes (M interactive).`               |
+| Evaluate         | `result.value + type`            | `Evaluated to type: value`                                   |
+| Element describe | `result.tag + elementRef + bbox` | `Element tag#id: text.`                                      |
+| Computed styles  | `result.properties + elementRef` | `Computed N style(s) for ref.`                               |
+| Box model        | `result.content + border`        | `Box model: W×H at (x, y).`                                  |
+| Network          | `entries[0].type=fetch/xhr`      | `Network: N requests.`                                       |
+| Console          | `entries` (no type field)        | `Console: N entries.`                                        |
+| Logs             | `entries[0].at + method`         | `Log: N entries.`                                            |
+| Patch apply      | `result.patchId`                 | `Patch id applied.`                                          |
+| Patch rollback   | `result.rolled_back`             | `Patch rolled back.`                                         |
+| Patch list       | `result.patches`                 | `N active patch(es).`                                        |
+| HTML             | `result.html`                    | `HTML fragment: N chars.`                                    |
+| Performance      | `result.metrics`                 | `Performance: N metrics collected.`                          |
+| Storage          | `result.type + count + entries`  | `Storage (type): N entries.`                                 |
+| Click/Focus/Type | `result.clicked/focused/typed`   | `Clicked/Focused/Typed ref.`                                 |
+| Key press        | `result.pressed`                 | `Key pressed (key).`                                         |
+| Navigate         | `result.navigated`               | `Navigated to url.`                                          |
+| Scroll           | `result.scrolled`                | `Scrolled to (x, y).`                                        |
+| Resize           | `result.resized`                 | `Viewport resized to W×H.`                                   |
+| Hover            | `result.hovered`                 | `Hover active/failed on ref.`                                |
+| Drag             | `result.dragged`                 | `Drag completed/failed.`                                     |
+| Tab close        | `result.closed`                  | `Tab N closed.`                                              |
+| Tab create       | `result.tabId + url`             | `Tab N created (url).`                                       |

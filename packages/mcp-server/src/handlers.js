@@ -7,6 +7,7 @@ import {
   DEFAULT_NETWORK_LIMIT,
   estimateJsonPayloadCost,
   getBudgetPreset,
+  getErrorRecovery,
   isBudgetPresetName,
   METHODS,
   summarizeBatchErrorItem,
@@ -223,6 +224,30 @@ function applyHtmlBudgetPreset(args) {
 }
 
 /**
+ * Call requestBridge and, on a retriable error, wait and retry once.
+ * Logs retries to stderr so they are visible in MCP server output.
+ *
+ * @param {import('../../agent-client/src/client.js').BridgeClient} client
+ * @param {BridgeMethod} method
+ * @param {Record<string, unknown>} params
+ * @param {{ tabId?: number | null, source?: import('../../protocol/src/types.js').BridgeRequestSource, tokenBudget?: number | null }} options
+ * @returns {Promise<BridgeResponse>}
+ */
+async function requestBridgeWithRetry(client, method, params, options) {
+  const response = await requestBridge(client, method, params, options);
+  const recovery = !response.ok && response.error
+    ? getErrorRecovery(response.error.code)
+    : null;
+  if (!response.ok && recovery?.retry) {
+    const delay = recovery.retryAfterMs ?? 1000;
+    process.stderr.write(`[bbx-mcp] Retrying ${method} after ${delay}ms (${response.error.code})\n`);
+    await new Promise((r) => setTimeout(r, delay));
+    return requestBridge(client, method, params, options);
+  }
+  return response;
+}
+
+/**
  * @param {BridgeMethod} method
  * @param {Record<string, unknown>} [params={}]
  * @param {{ tabId?: number | null, summaryMethod?: string, tokenBudget?: number | null }} [options]
@@ -230,7 +255,7 @@ function applyHtmlBudgetPreset(args) {
  */
 async function callBridgeTool(method, params = {}, options = {}) {
   return withToolClient(async (client) => {
-    const response = await requestBridge(client, method, params, {
+    const response = await requestBridgeWithRetry(client, method, params, {
       tabId: options.tabId ?? null,
       source: REQUEST_SOURCE,
       tokenBudget: options.tokenBudget ?? null,
@@ -265,7 +290,7 @@ async function dispatchToolAction(actions, args, toolName) {
         requestedTabId,
       )
       : undefined;
-    const response = await requestBridge(client, entry.method, entry.params(args, ref), {
+    const response = await requestBridgeWithRetry(client, entry.method, entry.params(args, ref), {
       tabId: requestedTabId,
       source: REQUEST_SOURCE,
       tokenBudget: getToolTokenBudget(/** @type {{ budgetPreset?: unknown }} */ (args)),
@@ -567,6 +592,8 @@ export async function handleInputTool(args) {
 export const PATCH_ACTIONS = {
   apply_styles:    { ref: true,  method: 'patch.apply_styles',            params: (a, r) => ({ target: { elementRef: r }, declarations: a.declarations, important: a.important, verify: a.verify }) },
   apply_dom:       { ref: true,  method: 'patch.apply_dom',               params: (a, r) => {
+    const operation = typeof a.operation === 'string' ? a.operation : '';
+    /** @type {Record<string, string>} */
     const opMap = {
       setAttribute: 'set_attribute',
       removeAttribute: 'remove_attribute',
@@ -575,7 +602,7 @@ export const PATCH_ACTIONS = {
       setTextContent: 'set_text',
       setProperty: 'set_attribute',
     };
-    return { target: { elementRef: r }, operation: opMap[a.operation] || a.operation, value: a.value, name: a.name, verify: a.verify };
+    return { target: { elementRef: r }, operation: opMap[operation] || operation, value: a.value, name: a.name, verify: a.verify };
   }},
   list:            { ref: false, method: 'patch.list',                    params: () => ({}) },
   rollback:        { ref: false, method: 'patch.rollback',                params: a => ({ patchId: a.patchId }) },
@@ -686,8 +713,9 @@ export async function handleBatchTool(args) {
     return summarizeToolError('calls must be a non-empty array.');
   }
 
+  const calls = args.calls;
   return withToolClient(async (client) => {
-    const results = await Promise.all(args.calls.map(async (call) => {
+    const results = await Promise.all(calls.map(async (call) => {
       if (!call || typeof call !== 'object' || typeof call.method !== 'string') {
         return {
           method: '',

@@ -49,6 +49,12 @@ import {
   summarizeActionResult,
   summarizeTabResult
 } from './background-helpers.js';
+import {
+  isRestrictedAutomationUrl,
+  normalizeRequestedAccessTab,
+  resolveWindowScopedTab,
+  selectRequestTabCandidate
+} from './background-routing.js';
 import { TabDebuggerCoordinator } from './debugger-coordinator.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */
@@ -117,6 +123,14 @@ import { TabDebuggerCoordinator } from './debugger-coordinator.js';
  *   url?: string
  * }} TabChangeInfo
  */
+
+/**
+ * @param {unknown} value
+ * @returns {value is number}
+ */
+function isNumber(value) {
+  return typeof value === 'number' && Number.isFinite(value);
+}
 
 /**
  * @typedef {{
@@ -560,7 +574,7 @@ async function restoreActionLog() {
   if (Array.isArray(entries)) {
     state.actionLog = entries
       .map((entry) => normalizeActionLogEntry(entry))
-      .filter(Boolean);
+      .filter((entry) => entry !== null);
   }
 }
 
@@ -654,15 +668,20 @@ async function handleListTabs(request) {
 
   const tabs = await chrome.tabs.query({ windowId: state.enabledWindow.windowId });
   const summarized = tabs
-    .filter((tab) => typeof tab.id === 'number' && typeof tab.url === 'string')
-    .map((tab) => ({
-      tabId: tab.id,
-      windowId: tab.windowId,
-      active: Boolean(tab.active),
-      title: tab.title ?? '',
-      origin: safeOrigin(tab.url),
-      url: tab.url
-    }));
+    .map((tab) => {
+      if (!isNumber(tab.id) || typeof tab.url !== 'string') {
+        return null;
+      }
+      return {
+        tabId: tab.id,
+        windowId: tab.windowId,
+        active: Boolean(tab.active),
+        title: tab.title ?? '',
+        origin: safeOrigin(tab.url),
+        url: tab.url
+      };
+    })
+    .filter((tab) => tab !== null);
   return createSuccess(request.id, { tabs: summarized }, { method: request.method });
 }
 
@@ -920,8 +939,9 @@ async function handleGetNetwork(request) {
   const params = normalizeNetworkParams(request.params);
   await ensureNetworkInterceptor(target.tabId);
   const entries = await readNetworkBuffer(target.tabId, params.clear);
-  const filtered = params.urlPattern
-    ? entries.filter((/** @type {{ url: string }} */ e) => e.url.includes(params.urlPattern))
+  const urlPattern = typeof params.urlPattern === 'string' ? params.urlPattern : null;
+  const filtered = urlPattern
+    ? entries.filter((/** @type {{ url: string }} */ e) => e.url.includes(urlPattern))
     : entries;
   const limited = filtered.slice(-params.limit);
   return createSuccess(request.id, { entries: limited, count: limited.length, total: entries.length }, { method: request.method });
@@ -975,13 +995,25 @@ async function ensureNetworkInterceptor(tabId) {
 
       const origOpen = XMLHttpRequest.prototype.open;
       const origSend = XMLHttpRequest.prototype.send;
+      /**
+       * @this {XMLHttpRequest & { __bb_method?: string, __bb_url?: string }}
+       * @param {string} method
+       * @param {string | URL} url
+       * @param {...unknown} rest
+       * @returns {unknown}
+       */
       XMLHttpRequest.prototype.open = function (method, url, ...rest) {
         // @ts-ignore - stashing method/url for XHR interception
         this.__bb_method = method;
         // @ts-ignore
         this.__bb_url = String(url);
-        return origOpen.call(this, method, url, ...rest);
+        return /** @type {any} */ (origOpen).call(this, method, url, ...rest);
       };
+      /**
+       * @this {XMLHttpRequest & { __bb_method?: string, __bb_url?: string }}
+       * @param {...unknown} args
+       * @returns {unknown}
+       */
       XMLHttpRequest.prototype.send = function (...args) {
         // @ts-ignore
         const entry = { method: this.__bb_method || 'GET', url: this.__bb_url || '', status: 0, duration: 0, type: 'xhr', ts: Date.now(), size: 0 };
@@ -994,7 +1026,7 @@ async function ensureNetworkInterceptor(tabId) {
           buffer.push(entry);
           if (buffer.length > MAX) buffer.splice(0, buffer.length - MAX);
         });
-        return origSend.apply(this, args);
+        return /** @type {any} */ (origSend).apply(this, args);
       };
     }
   });
@@ -1114,9 +1146,10 @@ async function ensureConsoleInterceptor(tabId) {
       globalThis.__bb_console_buffer = buffer;
       const MAX = 200;
       const orig = /** @type {Record<string, Function>} */ ({});
+      const consoleMethods = /** @type {Record<string, (...args: unknown[]) => void>} */ (/** @type {unknown} */ (console));
       for (const level of ['log', 'warn', 'error', 'info', 'debug']) {
-        orig[level] = /** @type {any} */ (console)[level];
-        /** @type {any} */ (console)[level] = function (...args) {
+        orig[level] = consoleMethods[level];
+        consoleMethods[level] = (...args) => {
           buffer.push({
             level,
             args: args.map((a) => {
@@ -1219,9 +1252,8 @@ async function readConsoleBuffer(tabId, clear) {
  */
 async function primeWindowConsoleCapture(windowId, resetBuffer = false) {
   const tabs = await chrome.tabs.query({ windowId });
-  await Promise.all(tabs
-    .filter((tab) => typeof tab.id === 'number')
-    .map((tab) => primeTabConsoleCapture(tab.id, resetBuffer)));
+  const tabIds = tabs.map((tab) => (isNumber(tab.id) ? tab.id : null)).filter((tabId) => tabId !== null);
+  await Promise.all(tabIds.map((tabId) => primeTabConsoleCapture(tabId, resetBuffer)));
 }
 
 /**
@@ -1256,9 +1288,8 @@ async function clearTabBridgeState(tabId) {
  */
 async function clearWindowBridgeState(windowId) {
   const tabs = await chrome.tabs.query({ windowId });
-  await Promise.all(tabs
-    .filter((tab) => typeof tab.id === 'number')
-    .map((tab) => clearTabBridgeState(tab.id)));
+  const tabIds = tabs.map((tab) => (isNumber(tab.id) ? tab.id : null)).filter((tabId) => tabId !== null);
+  await Promise.all(tabIds.map((tabId) => clearTabBridgeState(tabId)));
 }
 
 /**
@@ -1316,14 +1347,6 @@ async function isTabEnabled(tabId) {
 }
 
 /**
- * @param {string} url
- * @returns {boolean}
- */
-function isRestrictedAutomationUrl(url) {
-  return /^(about:|chrome:|chrome-extension:|chrome-search:|devtools:|edge:|brave:|moz-extension:|view-source:)/i.test(url);
-}
-
-/**
  * Capture a targeted screenshot for the current target tab by asking the content
  * script for an element rect and then cropping the visible tab image.
  *
@@ -1353,7 +1376,7 @@ async function handleScreenshot(target, method, params) {
         throw err;
       }
     }
-    // Defensively coerce content-script values — NaN / undefined / negative
+    // Defensively coerce content-script values - NaN / undefined / negative
     // would slip past the < 1 guard and reach CDP as invalid values.
     clip = {
       x: Math.max(0, Number(clip.x) || 0),
@@ -1417,6 +1440,7 @@ async function handleScreenshot(target, method, params) {
  * @returns {Promise<any>}
  */
 async function sendTabMessage(tabId, message, timeoutMs) {
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
   let timeoutId;
   const timeout = new Promise((_, reject) => {
     timeoutId = setTimeout(() => reject(new Error(`Timed out waiting for content script response after ${timeoutMs}ms.`)), timeoutMs);
@@ -1440,8 +1464,9 @@ async function injectContentScriptsForWindow(windowId) {
   const tabs = await chrome.tabs.query({ windowId });
   await Promise.allSettled(
     tabs
-      .filter((tab) => typeof tab.id === 'number' && tab.url && !isRestrictedAutomationUrl(tab.url))
-      .map((tab) => ensureContentScript(tab.id))
+      .map((tab) => (isNumber(tab.id) && tab.url && !isRestrictedAutomationUrl(tab.url) ? tab.id : null))
+      .filter((tabId) => tabId !== null)
+      .map((tabId) => ensureContentScript(tabId))
   );
 }
 
@@ -1622,36 +1647,17 @@ async function resolveRequestTarget(request, options = {}) {
   }
 
   /** @type {chrome.tabs.Tab | null} */
-  let tab = null;
+  let explicitTab = null;
   if (typeof request.tab_id === 'number' && Number.isFinite(request.tab_id)) {
-    tab = await chrome.tabs.get(request.tab_id);
-  } else {
-    const [activeTab] = await chrome.tabs.query({
-      active: true,
-      windowId: state.enabledWindow.windowId,
-    });
-    tab = activeTab ?? null;
+    explicitTab = await chrome.tabs.get(request.tab_id);
   }
+  const [activeTab] = await chrome.tabs.query({
+    active: true,
+    windowId: state.enabledWindow.windowId,
+  });
+  const tab = selectRequestTabCandidate(request.tab_id, explicitTab, activeTab ?? null);
 
-  if (!tab?.id || typeof tab.windowId !== 'number') {
-    throw new Error(ERROR_CODES.TAB_MISMATCH);
-  }
-  if (tab.windowId !== state.enabledWindow.windowId) {
-    throw new Error(ERROR_CODES.ACCESS_DENIED);
-  }
-  if (typeof tab.url !== 'string' || !tab.url) {
-    throw new Error(ERROR_CODES.TAB_MISMATCH);
-  }
-  if (requireScriptable && isRestrictedAutomationUrl(tab.url)) {
-    throw new Error(ERROR_CODES.ACCESS_DENIED);
-  }
-
-  return {
-    tabId: tab.id,
-    windowId: tab.windowId,
-    title: tab.title ?? '',
-    url: tab.url,
-  };
+  return resolveWindowScopedTab(tab, state.enabledWindow.windowId, { requireScriptable });
 }
 
 /**
@@ -1829,9 +1835,8 @@ async function refreshActionIndicators() {
     ? { windowId: state.enabledWindow.windowId }
     : {};
   const tabs = await chrome.tabs.query(query);
-  await Promise.all(tabs
-    .filter((tab) => typeof tab.id === 'number')
-    .map((tab) => updateActionIndicatorForTab(tab.id)));
+  const tabIds = tabs.map((tab) => (isNumber(tab.id) ? tab.id : null)).filter((tabId) => tabId !== null);
+  await Promise.all(tabIds.map((tabId) => updateActionIndicatorForTab(tabId)));
 }
 
 /**
@@ -2019,25 +2024,6 @@ async function resolveRequestedAccessTarget(request) {
     lastFocusedWindow: true,
   });
   return normalizeRequestedAccessTab(tabs[0] ?? null);
-}
-
-/**
- * @param {chrome.tabs.Tab | null | undefined} tab
- * @returns {ResolvedTabTarget | null}
- */
-function normalizeRequestedAccessTab(tab) {
-  if (!tab?.id || typeof tab.windowId !== 'number' || typeof tab.url !== 'string' || !tab.url) {
-    return null;
-  }
-  if (isRestrictedAutomationUrl(tab.url)) {
-    return null;
-  }
-  return {
-    tabId: tab.id,
-    windowId: tab.windowId,
-    title: tab.title ?? '',
-    url: tab.url
-  };
 }
 
 /**

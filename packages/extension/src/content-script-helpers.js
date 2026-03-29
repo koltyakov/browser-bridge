@@ -109,6 +109,7 @@
   function getInputImplicitRole(el) {
     if (!(el instanceof HTMLInputElement)) return 'textbox';
     const type = el.type.toLowerCase();
+    /** @type {Record<string, string>} */
     const map = {
       button: 'button',
       checkbox: 'checkbox',
@@ -128,6 +129,7 @@
    */
   function getImplicitRole(el) {
     const tag = el.tagName.toLowerCase();
+    /** @type {Record<string, string>} */
     const roleMap = {
       a: el.hasAttribute('href') ? 'link' : '',
       article: 'article',
@@ -235,6 +237,7 @@
    * @returns {string}
    */
   function extractElementText(element) {
+    /** @type {string[]} */
     const parts = [];
 
     pushUnique(parts, element.getAttribute('aria-label'));

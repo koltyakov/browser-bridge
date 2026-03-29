@@ -1,10 +1,11 @@
 // @ts-check
 
 (() => {
-  if (globalThis.__chromeCodexBridgeContentScriptLoaded) {
+  const contentScriptGlobal = /** @type {typeof globalThis & { __chromeCodexBridgeContentScriptLoaded?: boolean }} */ (globalThis);
+  if (contentScriptGlobal.__chromeCodexBridgeContentScriptLoaded) {
     return;
   }
-  globalThis.__chromeCodexBridgeContentScriptLoaded = true;
+  contentScriptGlobal.__chromeCodexBridgeContentScriptLoaded = true;
 
   /**
    * @typedef {{
@@ -305,8 +306,10 @@
       return { nodes: [], revision: getDocumentRevision() };
     }
 
+    /** @type {NodeSummary[]} */
     const nodes = [];
     let remaining = query.budget.textBudget;
+    /** @type {Array<{ element: Element, depth: number }>} */
     const queue = [{ element: root, depth: 0 }];
 
     while (
@@ -314,7 +317,11 @@
       nodes.length < query.budget.maxNodes &&
       remaining > 0
     ) {
-      const { element, depth } = queue.shift();
+      const next = queue.shift();
+      if (!next) {
+        continue;
+      }
+      const { element, depth } = next;
       if (depth > query.budget.maxDepth) {
         continue;
       }
@@ -388,7 +395,7 @@
         accumulator[attribute] = element.getAttribute(attribute);
       }
       return accumulator;
-    }, {});
+    }, /** @type {Record<string, string | null>} */ ({}));
   }
 
   /**
@@ -436,7 +443,7 @@
         accumulator[attribute] = element.getAttribute(attribute);
       }
       return accumulator;
-    }, {});
+    }, /** @type {Record<string, string | null>} */ ({}));
   }
 
   /**
@@ -476,7 +483,7 @@
     return requested.reduce((accumulator, property) => {
       accumulator[property] = styles.getPropertyValue(property);
       return accumulator;
-    }, {});
+    }, /** @type {Record<string, string>} */ ({}));
   }
 
   /**
@@ -808,6 +815,7 @@
   function applyStylePatch(params) {
     const element = /** @type {HTMLElement} */ (resolveTarget(params.target));
     const patchId = params.patchId || `patch_${crypto.randomUUID()}`;
+    /** @type {Record<string, string>} */
     const previous = {};
     for (const [property, value] of Object.entries(params.declarations || {})) {
       previous[property] = element.style.getPropertyValue(property);
@@ -1056,9 +1064,12 @@
     }
 
     return new Promise((resolve) => {
-      let observer;
-      let timeoutHandle;
-      let pollHandle;
+      /** @type {MutationObserver | null} */
+      let observer = null;
+      /** @type {ReturnType<typeof setTimeout> | null} */
+      let timeoutHandle = null;
+      /** @type {ReturnType<typeof setInterval> | null} */
+      let pollHandle = null;
 
       function cleanup() {
         if (observer) observer.disconnect();

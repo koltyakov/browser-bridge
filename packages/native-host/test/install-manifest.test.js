@@ -43,7 +43,7 @@ test('installNativeManifest reports whether the extension id came from env or bu
       repoRoot: process.cwd(),
       installDir: path.join(tempDir, 'manifest'),
       bridgeDir: path.join(tempDir, 'bridge'),
-      stdout: { write: (value) => { output.push(value); return true; } },
+      stdout: { write: (value) => { output.push(String(value)); return true; } },
       env: { ...process.env, [DEFAULT_EXTENSION_ID_ENV]: 'abcdefghijklmnopabcdefghijklmnop' }
     });
 
@@ -55,7 +55,7 @@ test('installNativeManifest reports whether the extension id came from env or bu
       repoRoot: process.cwd(),
       installDir: path.join(tempDir, 'manifest-built-in'),
       bridgeDir: path.join(tempDir, 'bridge-built-in'),
-      stdout: { write: (value) => { output.push(value); return true; } },
+      stdout: { write: (value) => { output.push(String(value)); return true; } },
       env: { ...process.env, [DEFAULT_EXTENSION_ID_ENV]: undefined }
     });
 

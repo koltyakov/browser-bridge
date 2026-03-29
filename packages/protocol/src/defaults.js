@@ -21,6 +21,24 @@ export const DEFAULT_VIEWPORT_WIDTH = 1280;
 export const DEFAULT_VIEWPORT_HEIGHT = 720;
 export const DEFAULT_DEVICE_SCALE_FACTOR = 0;
 
+/** Maximum size of a Chrome native messaging message in bytes. */
+export const MAX_NATIVE_MESSAGE_BYTES = 1_048_576;
+
+/** Default timeout for a bridge request awaiting an extension response (ms). */
+export const DEFAULT_DAEMON_PENDING_TIMEOUT_MS = 30_000;
+
+/** Default timeout for a BridgeClient request (ms). */
+export const DEFAULT_CLIENT_REQUEST_TIMEOUT_MS = 8_000;
+
+/** Maximum number of recent log entries retained by the daemon. */
+export const DAEMON_RECENT_LOG_LIMIT = 200;
+
+/** Maximum time to wait when probing an existing daemon socket during startup. */
+export const DAEMON_EXISTING_SOCKET_PING_TIMEOUT_MS = 500;
+
+/** Number of recent daemon log entries returned by `log.tail`. */
+export const DEFAULT_LOG_TAIL_LIMIT = 20;
+
 /** @typedef {'quick' | 'normal' | 'deep'} BudgetPresetName */
 
 /** @type {Readonly<Record<BudgetPresetName, { maxNodes: number, maxDepth: number, textBudget: number, tokenBudget: number }>>} */

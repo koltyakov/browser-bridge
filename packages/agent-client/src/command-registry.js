@@ -1,5 +1,6 @@
 // @ts-check
 
+import { BRIDGE_METHOD_REGISTRY, BRIDGE_METHODS } from '../../protocol/src/index.js';
 import { parseCommaList, parseIntArg, parsePropertyAssignments } from './cli-helpers.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
@@ -15,247 +16,182 @@ import { parseCommaList, parseIntArg, parsePropertyAssignments } from './cli-hel
  * }} ShortcutCommand
  */
 
+/**
+ * @param {BridgeMethod} method
+ * @param {string} usage
+ * @param {(r: string[], ref?: string) => Record<string, unknown>} build
+ * @param {{ resolve?: boolean, printMethod?: string, description?: string }} [options]
+ * @returns {ShortcutCommand}
+ */
+function createShortcutCommand(method, usage, build, options = {}) {
+  return {
+    method,
+    usage,
+    description: options.description ?? BRIDGE_METHOD_REGISTRY[method].description.replace(/\.$/, ''),
+    build,
+    ...(options.resolve ? { resolve: true } : {}),
+    ...(options.printMethod ? { printMethod: options.printMethod } : {})
+  };
+}
+
 /** @type {Record<string, ShortcutCommand>} */
 export const SHORTCUT_COMMANDS = {
-  'access-request': {
-    method: 'access.request',
-    usage: 'bbx access-request',
-    description: 'Request Browser Bridge access for the focused window',
-    build: () => ({})
-  },
-  'dom-query': {
-    method: 'dom.query',
-    usage: 'bbx dom-query [selector]',
-    description: 'Query DOM subtree',
-    build: (r) => ({ selector: r[0] || 'body' })
-  },
-  describe: {
-    method: 'dom.describe',
-    resolve: true,
-    printMethod: 'dom.describe',
-    usage: 'bbx describe <ref|selector>',
-    description: 'Describe one element',
-    build: (_r, ref) => ({ elementRef: ref })
-  },
-  text: {
-    method: 'dom.get_text',
-    resolve: true,
-    printMethod: 'dom.get_text',
-    usage: 'bbx text <ref|selector> [budget]',
-    description: 'Get element text',
-    build: (r, ref) => ({ elementRef: ref, textBudget: r[1] ? parseIntArg(r[1], 'budget') : undefined })
-  },
-  styles: {
-    method: 'styles.get_computed',
-    resolve: true,
-    printMethod: 'styles.get_computed',
-    usage: 'bbx styles <ref|selector> [props]',
-    description: 'Get computed styles',
-    build: (r, ref) => ({ elementRef: ref, properties: parseCommaList(r[1]) })
-  },
-  box: {
-    method: 'layout.get_box_model',
-    resolve: true,
-    printMethod: 'layout.get_box_model',
-    usage: 'bbx box <ref|selector>',
-    description: 'Get box model',
-    build: (_r, ref) => ({ elementRef: ref })
-  },
-  click: {
-    method: 'input.click',
-    resolve: true,
-    usage: 'bbx click <ref|selector> [button]',
-    description: 'Click element',
-    build: (r, ref) => ({ target: { elementRef: ref }, button: r[1] })
-  },
-  focus: {
-    method: 'input.focus',
-    resolve: true,
-    usage: 'bbx focus <ref|selector>',
-    description: 'Focus element',
-    build: (_r, ref) => ({ target: { elementRef: ref } })
-  },
-  type: {
-    method: 'input.type',
-    resolve: true,
-    usage: 'bbx type <ref|selector> <text...>',
-    description: 'Type into element',
-    build: (r, ref) => ({ target: { elementRef: ref }, text: r.slice(1).join(' ') })
-  },
-  hover: {
-    method: 'input.hover',
-    resolve: true,
-    usage: 'bbx hover <ref|selector>',
-    description: 'Hover over element',
-    build: (_r, ref) => ({ target: { elementRef: ref } })
-  },
-  html: {
-    method: 'dom.get_html',
-    resolve: true,
-    usage: 'bbx html <ref|selector> [maxLen]',
-    description: 'Get element HTML',
-    build: (r, ref) => ({ elementRef: ref, maxLength: r[1] ? parseIntArg(r[1], 'maxLen') : undefined })
-  },
-  'patch-style': {
-    method: 'patch.apply_styles',
-    resolve: true,
-    usage: 'bbx patch-style <ref|sel> prop=val',
-    description: 'Apply style patch',
-    build: (r, ref) => ({ target: { elementRef: ref }, declarations: parsePropertyAssignments(r.slice(1)) })
-  },
-  'patch-text': {
-    method: 'patch.apply_dom',
-    resolve: true,
-    usage: 'bbx patch-text <ref|sel> <text...>',
-    description: 'Apply text patch',
-    build: (r, ref) => ({ target: { elementRef: ref }, operation: 'set_text', value: r.slice(1).join(' ') })
-  },
-  patches: {
-    method: 'patch.list',
-    printMethod: 'patch.list',
-    usage: 'bbx patches',
-    description: 'List active patches',
-    build: () => ({})
-  },
-  rollback: {
-    method: 'patch.rollback',
-    usage: 'bbx rollback <patchId>',
-    description: 'Rollback a patch',
-    build: (r) => {
-      if (!r[0]) throw new Error('Usage: rollback <patchId>');
-      return { patchId: r[0] };
-    }
-  },
-  console: {
-    method: 'page.get_console',
-    printMethod: 'page.get_console',
-    usage: 'bbx console [level]',
-    description: 'Get console output (log|warn|error|all)',
-    build: (r) => ({ level: r[0] || 'all', clear: false })
-  },
-  wait: {
-    method: 'dom.wait_for',
-    usage: 'bbx wait <selector> [timeoutMs]',
-    description: 'Wait for DOM element',
-    build: (r) => {
-      if (!r[0]) throw new Error('Usage: wait <selector> [timeoutMs]');
-      return { selector: r[0], timeoutMs: r[1] ? parseIntArg(r[1], 'timeoutMs') : 5000 };
-    }
-  },
-  find: {
-    method: 'dom.find_by_text',
-    printMethod: 'dom.find_by_text',
-    usage: 'bbx find <text>',
-    description: 'Find elements by text content',
-    build: (r) => {
+  'access-request': createShortcutCommand('access.request', 'bbx access-request', () => ({})),
+  'dom-query': createShortcutCommand(
+    'dom.query',
+    'bbx dom-query [selector]',
+    (r) => ({ selector: r[0] || 'body' })
+  ),
+  describe: createShortcutCommand(
+    'dom.describe',
+    'bbx describe <ref|selector>',
+    (_r, ref) => ({ elementRef: ref }),
+    { resolve: true, printMethod: 'dom.describe' }
+  ),
+  text: createShortcutCommand(
+    'dom.get_text',
+    'bbx text <ref|selector> [budget]',
+    (r, ref) => ({ elementRef: ref, textBudget: r[1] ? parseIntArg(r[1], 'budget') : undefined }),
+    { resolve: true, printMethod: 'dom.get_text' }
+  ),
+  styles: createShortcutCommand(
+    'styles.get_computed',
+    'bbx styles <ref|selector> [props]',
+    (r, ref) => ({ elementRef: ref, properties: parseCommaList(r[1]) }),
+    { resolve: true, printMethod: 'styles.get_computed' }
+  ),
+  box: createShortcutCommand(
+    'layout.get_box_model',
+    'bbx box <ref|selector>',
+    (_r, ref) => ({ elementRef: ref }),
+    { resolve: true, printMethod: 'layout.get_box_model' }
+  ),
+  click: createShortcutCommand(
+    'input.click',
+    'bbx click <ref|selector> [button]',
+    (r, ref) => ({ target: { elementRef: ref }, button: r[1] }),
+    { resolve: true }
+  ),
+  focus: createShortcutCommand(
+    'input.focus',
+    'bbx focus <ref|selector>',
+    (_r, ref) => ({ target: { elementRef: ref } }),
+    { resolve: true }
+  ),
+  type: createShortcutCommand(
+    'input.type',
+    'bbx type <ref|selector> <text...>',
+    (r, ref) => ({ target: { elementRef: ref }, text: r.slice(1).join(' ') }),
+    { resolve: true }
+  ),
+  hover: createShortcutCommand(
+    'input.hover',
+    'bbx hover <ref|selector>',
+    (_r, ref) => ({ target: { elementRef: ref } }),
+    { resolve: true }
+  ),
+  html: createShortcutCommand(
+    'dom.get_html',
+    'bbx html <ref|selector> [maxLen]',
+    (r, ref) => ({ elementRef: ref, maxLength: r[1] ? parseIntArg(r[1], 'maxLen') : undefined }),
+    { resolve: true }
+  ),
+  'patch-style': createShortcutCommand(
+    'patch.apply_styles',
+    'bbx patch-style <ref|sel> prop=val',
+    (r, ref) => ({ target: { elementRef: ref }, declarations: parsePropertyAssignments(r.slice(1)) }),
+    { resolve: true }
+  ),
+  'patch-text': createShortcutCommand(
+    'patch.apply_dom',
+    'bbx patch-text <ref|sel> <text...>',
+    (r, ref) => ({ target: { elementRef: ref }, operation: 'set_text', value: r.slice(1).join(' ') }),
+    { resolve: true, description: 'Apply a reversible DOM text patch' }
+  ),
+  patches: createShortcutCommand(
+    'patch.list',
+    'bbx patches',
+    () => ({}),
+    { printMethod: 'patch.list' }
+  ),
+  rollback: createShortcutCommand('patch.rollback', 'bbx rollback <patchId>', (r) => {
+    if (!r[0]) throw new Error('Usage: rollback <patchId>');
+    return { patchId: r[0] };
+  }),
+  console: createShortcutCommand(
+    'page.get_console',
+    'bbx console [level]',
+    (r) => ({ level: r[0] || 'all', clear: false }),
+    { printMethod: 'page.get_console', description: 'Read buffered console output (log|warn|error|all)' }
+  ),
+  wait: createShortcutCommand('dom.wait_for', 'bbx wait <selector> [timeoutMs]', (r) => {
+    if (!r[0]) throw new Error('Usage: wait <selector> [timeoutMs]');
+    return { selector: r[0], timeoutMs: r[1] ? parseIntArg(r[1], 'timeoutMs') : 5000 };
+  }),
+  find: createShortcutCommand(
+    'dom.find_by_text',
+    'bbx find <text>',
+    (r) => {
       const text = r.join(' ');
       if (!text) throw new Error('Usage: find <text>');
       return { text };
-    }
-  },
-  'find-role': {
-    method: 'dom.find_by_role',
-    printMethod: 'dom.find_by_role',
-    usage: 'bbx find-role <role> [name]',
-    description: 'Find elements by ARIA role',
-    build: (r) => {
-      if (!r[0]) throw new Error('Usage: find-role <role> [name]');
-      return { role: r[0], name: r.slice(1).join(' ') || undefined };
-    }
-  },
-  navigate: {
-    method: 'navigation.navigate',
-    usage: 'bbx navigate <url>',
-    description: 'Navigate to URL',
-    build: (r) => {
-      if (!r[0]) throw new Error('Usage: navigate <url>');
-      return { url: r[0] };
-    }
-  },
-  storage: {
-    method: 'page.get_storage',
-    usage: 'bbx storage [local|session] [keys]',
-    description: 'Read browser storage',
-    build: (r) => ({ type: r[0] === 'session' ? 'session' : 'local', keys: r.slice(1).length ? r.slice(1) : undefined })
-  },
-  'page-text': {
-    method: 'page.get_text',
-    printMethod: 'page.get_text',
-    usage: 'bbx page-text [textBudget]',
-    description: 'Get full page text content',
-    build: (r) => ({ textBudget: r[0] ? parseIntArg(r[0], 'textBudget') : undefined })
-  },
-  network: {
-    method: 'page.get_network',
-    printMethod: 'page.get_network',
-    usage: 'bbx network [limit]',
-    description: 'Get network requests (fetch/XHR)',
-    build: (r) => ({ limit: r[0] ? parseIntArg(r[0], 'limit') : undefined })
-  },
-  'a11y-tree': {
-    method: 'dom.get_accessibility_tree',
-    usage: 'bbx a11y-tree [maxNodes] [maxDepth]',
-    description: 'Get accessibility tree',
-    build: (r) => ({ maxNodes: r[0] ? parseIntArg(r[0], 'maxNodes') : undefined, maxDepth: r[1] ? parseIntArg(r[1], 'maxDepth') : undefined })
-  },
-  perf: {
-    method: 'performance.get_metrics',
-    usage: 'bbx perf',
-    description: 'Get performance metrics',
-    build: () => ({})
-  },
-  scroll: {
-    method: 'viewport.scroll',
-    usage: 'bbx scroll <top> [left]',
-    description: 'Scroll viewport',
-    build: (r) => {
-      if (!r[0] && !r[1]) throw new Error('Usage: scroll <top> [left]');
-      return { top: r[0] ? parseIntArg(r[0], 'top') : undefined, left: r[1] ? parseIntArg(r[1], 'left') : undefined };
-    }
-  },
-  resize: {
-    method: 'viewport.resize',
-    usage: 'bbx resize <width> <height>',
-    description: 'Resize viewport',
-    build: (r) => {
-      if (!r[0] || !r[1]) throw new Error('Usage: resize <width> <height>');
-      return { width: parseIntArg(r[0], 'width'), height: parseIntArg(r[1], 'height') };
-    }
-  },
-  reload: {
-    method: 'navigation.reload',
-    usage: 'bbx reload',
-    description: 'Reload the current page',
-    build: () => ({})
-  },
-  back: {
-    method: 'navigation.go_back',
-    usage: 'bbx back',
-    description: 'Navigate back',
-    build: () => ({})
-  },
-  forward: {
-    method: 'navigation.go_forward',
-    usage: 'bbx forward',
-    description: 'Navigate forward',
-    build: () => ({})
-  },
-  attrs: {
-    method: 'dom.get_attributes',
-    resolve: true,
-    printMethod: 'dom.get_attributes',
-    usage: 'bbx attrs <ref|selector> [attr1,...]',
-    description: 'Get element attributes',
-    build: (r, ref) => ({ elementRef: ref, attributes: parseCommaList(r[1]) })
-  },
-  'matched-rules': {
-    method: 'styles.get_matched_rules',
-    resolve: true,
-    printMethod: 'styles.get_matched_rules',
-    usage: 'bbx matched-rules <ref|selector>',
-    description: 'Get matched CSS rules',
-    build: (_r, ref) => ({ elementRef: ref })
-  }
+    },
+    { printMethod: 'dom.find_by_text' }
+  ),
+  'find-role': createShortcutCommand('dom.find_by_role', 'bbx find-role <role> [name]', (r) => {
+    if (!r[0]) throw new Error('Usage: find-role <role> [name]');
+    return { role: r[0], name: r.slice(1).join(' ') || undefined };
+  }, { printMethod: 'dom.find_by_role' }),
+  navigate: createShortcutCommand('navigation.navigate', 'bbx navigate <url>', (r) => {
+    if (!r[0]) throw new Error('Usage: navigate <url>');
+    return { url: r[0] };
+  }),
+  storage: createShortcutCommand(
+    'page.get_storage',
+    'bbx storage [local|session] [keys]',
+    (r) => ({ type: r[0] === 'session' ? 'session' : 'local', keys: r.slice(1).length ? r.slice(1) : undefined })
+  ),
+  'page-text': createShortcutCommand(
+    'page.get_text',
+    'bbx page-text [textBudget]',
+    (r) => ({ textBudget: r[0] ? parseIntArg(r[0], 'textBudget') : undefined }),
+    { printMethod: 'page.get_text' }
+  ),
+  network: createShortcutCommand(
+    'page.get_network',
+    'bbx network [limit]',
+    (r) => ({ limit: r[0] ? parseIntArg(r[0], 'limit') : undefined }),
+    { printMethod: 'page.get_network', description: 'Read buffered network requests (fetch/XHR)' }
+  ),
+  'a11y-tree': createShortcutCommand(
+    'dom.get_accessibility_tree',
+    'bbx a11y-tree [maxNodes] [maxDepth]',
+    (r) => ({ maxNodes: r[0] ? parseIntArg(r[0], 'maxNodes') : undefined, maxDepth: r[1] ? parseIntArg(r[1], 'maxDepth') : undefined })
+  ),
+  perf: createShortcutCommand('performance.get_metrics', 'bbx perf', () => ({})),
+  scroll: createShortcutCommand('viewport.scroll', 'bbx scroll <top> [left]', (r) => {
+    if (!r[0] && !r[1]) throw new Error('Usage: scroll <top> [left]');
+    return { top: r[0] ? parseIntArg(r[0], 'top') : undefined, left: r[1] ? parseIntArg(r[1], 'left') : undefined };
+  }),
+  resize: createShortcutCommand('viewport.resize', 'bbx resize <width> <height>', (r) => {
+    if (!r[0] || !r[1]) throw new Error('Usage: resize <width> <height>');
+    return { width: parseIntArg(r[0], 'width'), height: parseIntArg(r[1], 'height') };
+  }),
+  reload: createShortcutCommand('navigation.reload', 'bbx reload', () => ({})),
+  back: createShortcutCommand('navigation.go_back', 'bbx back', () => ({})),
+  forward: createShortcutCommand('navigation.go_forward', 'bbx forward', () => ({})),
+  attrs: createShortcutCommand(
+    'dom.get_attributes',
+    'bbx attrs <ref|selector> [attr1,...]',
+    (r, ref) => ({ elementRef: ref, attributes: parseCommaList(r[1]) }),
+    { resolve: true, printMethod: 'dom.get_attributes' }
+  ),
+  'matched-rules': createShortcutCommand(
+    'styles.get_matched_rules',
+    'bbx matched-rules <ref|selector>',
+    (_r, ref) => ({ elementRef: ref }),
+    { resolve: true, printMethod: 'styles.get_matched_rules' }
+  )
 };
 
 /** @type {Readonly<Record<string, BridgeMethod>>} */
@@ -268,6 +204,7 @@ export const CLI_METHOD_BINDINGS = Object.freeze({
   ...Object.fromEntries(
     Object.entries(SHORTCUT_COMMANDS).map(([command, definition]) => [command, definition.method])
   ),
+  ...Object.fromEntries(BRIDGE_METHODS.map((method) => [method, method])),
   'press-key': 'input.press_key',
   screenshot: 'screenshot.capture_element',
   eval: 'page.evaluate'

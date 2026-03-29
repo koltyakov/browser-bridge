@@ -5,11 +5,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import readline from 'node:readline';
 
 import {
+  interactiveCheckbox,
   interactiveConfirm,
   methodNeedsSession,
   parseCommaList,
+  parseIntArg,
   parseJsonObject,
   parsePropertyAssignments,
 } from '../src/cli-helpers.js';
@@ -811,6 +814,130 @@ test('interactiveConfirm returns null without a TTY', async () => {
       configurable: true,
     });
   }
+});
+
+test('interactiveCheckbox toggles selections and returns checked values', async () => {
+  const originalIn = process.stdin.isTTY;
+  const originalOut = process.stdout.isTTY;
+  const originalSetRawMode = /** @type {any} */ (process.stdin).setRawMode;
+  const originalResume = process.stdin.resume.bind(process.stdin);
+  const originalPause = process.stdin.pause.bind(process.stdin);
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  const originalEmitKeypressEvents = readline.emitKeypressEvents;
+  /** @type {string[]} */
+  const output = [];
+  /** @type {boolean[]} */
+  const rawModeCalls = [];
+  let resumed = false;
+  let paused = false;
+
+  Object.defineProperty(process.stdin, 'isTTY', {
+    value: true,
+    configurable: true,
+  });
+  Object.defineProperty(process.stdout, 'isTTY', {
+    value: true,
+    configurable: true,
+  });
+  /** @type {any} */ (process.stdin).setRawMode = (/** @type {boolean} */ value) => {
+    rawModeCalls.push(Boolean(value));
+  };
+  process.stdin.resume = () => {
+    resumed = true;
+    return process.stdin;
+  };
+  process.stdin.pause = () => {
+    paused = true;
+    return process.stdin;
+  };
+  process.stdout.write = /** @type {typeof process.stdout.write} */ ((chunk) => {
+    output.push(String(chunk));
+    return true;
+  });
+  readline.emitKeypressEvents = () => {};
+
+  try {
+    const resultPromise = interactiveCheckbox('Select targets', [
+      { value: 'codex', label: 'Codex' },
+      { value: 'claude', label: 'Claude', hint: 'installed' },
+    ]);
+
+    process.stdin.emit('keypress', '', { name: 'space' });
+    process.stdin.emit('keypress', '', { name: 'down' });
+    process.stdin.emit('keypress', '', { name: 'a' });
+    process.stdin.emit('keypress', '', { name: 'return' });
+
+    const result = await resultPromise;
+    assert.deepEqual(result?.sort(), ['claude', 'codex']);
+    assert.equal(resumed, true);
+    assert.equal(paused, true);
+    assert.deepEqual(rawModeCalls, [true, false]);
+    assert.ok(output.some((chunk) => chunk.includes('Select targets')));
+  } finally {
+    Object.defineProperty(process.stdin, 'isTTY', {
+      value: originalIn,
+      configurable: true,
+    });
+    Object.defineProperty(process.stdout, 'isTTY', {
+      value: originalOut,
+      configurable: true,
+    });
+    /** @type {any} */ (process.stdin).setRawMode = originalSetRawMode;
+    process.stdin.resume = originalResume;
+    process.stdin.pause = originalPause;
+    process.stdout.write = originalWrite;
+    readline.emitKeypressEvents = originalEmitKeypressEvents;
+  }
+});
+
+test('interactiveConfirm honors defaults and closes the readline interface', async () => {
+  const originalIn = process.stdin.isTTY;
+  const originalOut = process.stdout.isTTY;
+  const originalCreateInterface = readline.createInterface;
+  /** @type {string[]} */
+  const prompts = [];
+  let closeCount = 0;
+
+  Object.defineProperty(process.stdin, 'isTTY', {
+    value: true,
+    configurable: true,
+  });
+  Object.defineProperty(process.stdout, 'isTTY', {
+    value: true,
+    configurable: true,
+  });
+  readline.createInterface = /** @type {typeof readline.createInterface} */ (/** @type {unknown} */ (() => ({
+    question(/** @type {string} */ prompt, /** @type {unknown} */ callback) {
+      prompts.push(prompt);
+      /** @type {(answer: string) => void} */ (callback)('');
+    },
+    close() {
+      closeCount += 1;
+    }
+  })));
+
+  try {
+    const result = await interactiveConfirm('Remove skills?', { defaultValue: true });
+    assert.equal(result, true);
+    assert.equal(closeCount, 1);
+    assert.deepEqual(prompts, ['Remove skills? [Y/n] ']);
+  } finally {
+    Object.defineProperty(process.stdin, 'isTTY', {
+      value: originalIn,
+      configurable: true,
+    });
+    Object.defineProperty(process.stdout, 'isTTY', {
+      value: originalOut,
+      configurable: true,
+    });
+    readline.createInterface = originalCreateInterface;
+  }
+});
+
+test('parseIntArg returns numbers and rejects invalid input', () => {
+  assert.equal(parseIntArg('42', 'limit'), 42);
+  assert.throws(() => parseIntArg(undefined, 'limit'), /limit must be a number/);
+  assert.throws(() => parseIntArg('abc', 'limit'), /limit must be a number/);
 });
 
 test('installAgentFiles writes managed files for supported runtimes', async () => {
@@ -1677,7 +1804,11 @@ async function startMockDaemon(onRequest) {
  */
 function makeTcpClient(port) {
   const client = new BridgeClient({ defaultTimeoutMs: 5_000 });
-  client.connect = async function () {
+  /**
+   * @this {BridgeClient}
+   * @returns {Promise<void>}
+   */
+  async function connectOverTcp() {
     const socket = net.createConnection({ host: '127.0.0.1', port });
     await new Promise((res, rej) => { socket.once('connect', res); socket.once('error', rej); });
     this.socket = socket;
@@ -1701,7 +1832,8 @@ function makeTcpClient(port) {
       const tid = setTimeout(() => { this.waiting.delete('registered'); rej(new Error('register timeout')); }, this.defaultTimeoutMs);
       this.waiting.set('registered', { resolve: res, reject: rej, timeoutId: tid });
     });
-  };
+  }
+  client.connect = /** @type {typeof client.connect} */ (/** @type {unknown} */ (connectOverTcp.bind(client)));
   return client;
 }
 
@@ -1771,6 +1903,211 @@ test('BridgeClient cleans up all pending requests on socket error event', async 
   } finally {
     await client.close().catch(() => {});
     server.close();
+  }
+});
+
+test('BridgeClient.batch sends requests concurrently and preserves response order', async () => {
+  let requestCount = 0;
+  const { server, port } = await startMockDaemon((socket, message) => {
+    const typedMessage = /** @type {{ request?: { id: string, method: string } }} */ (message);
+    const request = typedMessage.request;
+    if (!request) {
+      return;
+    }
+
+    requestCount += 1;
+    const response = {
+      type: 'agent.response',
+      response: {
+        id: request.id,
+        ok: true,
+        result: { method: request.method, ordinal: requestCount },
+        error: null,
+        meta: { protocol_version: '1.0' }
+      }
+    };
+    const delay = request.method === 'tabs.list' ? 20 : 5;
+    setTimeout(() => {
+      if (!socket.destroyed) {
+        socket.write(`${JSON.stringify(response)}\n`);
+      }
+    }, delay);
+  });
+  const client = makeTcpClient(port);
+
+  try {
+    await client.connect();
+    const responses = await client.batch([
+      { method: 'tabs.list' },
+      { method: 'health.ping' }
+    ]);
+
+    assert.equal(requestCount, 2);
+    assert.equal(responses.length, 2);
+    assert.deepEqual(responses.map((response) => response.result), [
+      { method: 'tabs.list', ordinal: 1 },
+      { method: 'health.ping', ordinal: 2 }
+    ]);
+  } finally {
+    await client.close().catch(() => {});
+    server.close();
+  }
+});
+
+// --- autoReconnect (3.1) ---
+
+test('BridgeClient reconnects and emits reconnected event after server drops connection', async () => {
+  // Server that accepts connections, sends registered, then destroys them after 50ms.
+  let acceptCount = 0;
+  /** @type {Set<import('node:net').Socket>} */
+  const sockets = new Set();
+  const server = net.createServer((socket) => {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
+    acceptCount += 1;
+    socket.setEncoding('utf8');
+    socket.write(`${JSON.stringify({ type: 'registered', role: 'agent', clientId: 'mock_client' })}\n`);
+    if (acceptCount === 1) {
+      // First connection: destroy after a short delay to trigger reconnect.
+      setTimeout(() => socket.destroy(), 50);
+    }
+    // Second+ connections: stay open so the client reconnects successfully.
+  });
+  await new Promise((resolve) => server.listen({ host: '127.0.0.1', port: 0 }, () => resolve(undefined)));
+  const { port } = /** @type {import('node:net').AddressInfo} */ (server.address());
+
+  const client = new BridgeClient({ defaultTimeoutMs: 3_000, autoReconnect: true });
+  /**
+   * @this {BridgeClient}
+   * @returns {Promise<void>}
+   */
+  async function reconnectingTcpConnect() {
+    if (this.socket) throw new Error('BridgeClient is already connected.');
+    const socket = net.createConnection({ host: '127.0.0.1', port });
+    this.socket = socket;
+    try {
+      await new Promise((res, rej) => { socket.once('connect', res); socket.once('error', rej); });
+    } catch (error) {
+      socket.destroy();
+      this.socket = null;
+      throw error;
+    }
+    const { parseJsonLines } = await import('../../protocol/src/index.js');
+    parseJsonLines(socket, (raw) => {
+      const msg = /** @type {any} */ (raw);
+      if (msg.type === 'registered') {
+        const p = this.waiting.get('registered');
+        if (p) { this.waiting.delete('registered'); this.connected = true; clearTimeout(p.timeoutId); p.resolve(msg); }
+        return;
+      }
+      if (msg.type === 'agent.response') {
+        const p = this.waiting.get(msg.response.id);
+        if (p) { this.waiting.delete(msg.response.id); clearTimeout(p.timeoutId); p.resolve(msg.response); }
+      }
+    });
+    socket.on('close', () => {
+      this.connected = false;
+      this.socket = null;
+      this.rejectAllPending(new Error('Bridge socket closed.'));
+      if (this.autoReconnect && !this._reconnecting) {
+        void this._scheduleReconnect();
+      }
+    });
+    socket.on('error', (error) => { this.rejectAllPending(error); });
+    socket.write(`${JSON.stringify({ type: 'register', role: 'agent', clientId: this.clientId })}\n`);
+    await new Promise((res, rej) => {
+      const tid = setTimeout(() => { this.waiting.delete('registered'); rej(new Error('register timeout')); }, this.defaultTimeoutMs);
+      this.waiting.set('registered', { resolve: res, reject: rej, timeoutId: tid });
+    });
+  }
+  client.connect = /** @type {typeof client.connect} */ (/** @type {unknown} */ (reconnectingTcpConnect.bind(client)));
+
+  try {
+    await client.connect();
+    assert.equal(client.connected, true, 'initially connected');
+
+    // Wait for 'reconnected' event (with timeout guard).
+    await new Promise((resolve, reject) => {
+      const tid = setTimeout(() => reject(new Error('reconnected event not received within 5s')), 5000);
+      client.once('reconnected', () => { clearTimeout(tid); resolve(undefined); });
+    });
+
+    assert.equal(client.connected, true, 'connected again after reconnect');
+    assert.ok(acceptCount >= 2, 'server should have accepted at least two connections');
+  } finally {
+    client.autoReconnect = false;
+    await client.close().catch(() => {});
+    for (const socket of sockets) {
+      socket.destroy();
+    }
+    await new Promise((resolve) => server.close(() => resolve(undefined)));
+  }
+});
+
+test('BridgeClient.close() stops autoReconnect', async () => {
+  let connectAttempts = 0;
+  /** @type {Set<import('node:net').Socket>} */
+  const sockets = new Set();
+  const server = net.createServer((socket) => {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
+    connectAttempts += 1;
+    socket.setEncoding('utf8');
+    socket.write(`${JSON.stringify({ type: 'registered', role: 'agent', clientId: 'mock_client' })}\n`);
+    setTimeout(() => socket.destroy(), 20);
+  });
+  await new Promise((resolve) => server.listen({ host: '127.0.0.1', port: 0 }, () => resolve(undefined)));
+  const { port } = /** @type {import('node:net').AddressInfo} */ (server.address());
+
+  const client = new BridgeClient({ defaultTimeoutMs: 3_000, autoReconnect: true });
+  /**
+   * @this {BridgeClient}
+   * @returns {Promise<void>}
+   */
+  async function reconnectingTcpConnect() {
+    if (this.socket) throw new Error('BridgeClient is already connected.');
+    const socket = net.createConnection({ host: '127.0.0.1', port });
+    this.socket = socket;
+    try {
+      await new Promise((res, rej) => { socket.once('connect', res); socket.once('error', rej); });
+    } catch (err) { socket.destroy(); this.socket = null; throw err; }
+    const { parseJsonLines } = await import('../../protocol/src/index.js');
+    parseJsonLines(socket, (raw) => {
+      const msg = /** @type {any} */ (raw);
+      if (msg.type === 'registered') {
+        const p = this.waiting.get('registered');
+        if (p) { this.waiting.delete('registered'); this.connected = true; clearTimeout(p.timeoutId); p.resolve(msg); }
+      }
+    });
+    socket.on('close', () => {
+      this.connected = false;
+      this.socket = null;
+      this.rejectAllPending(new Error('Bridge socket closed.'));
+      if (this.autoReconnect && !this._reconnecting) void this._scheduleReconnect();
+    });
+    socket.on('error', (err) => this.rejectAllPending(err));
+    socket.write(`${JSON.stringify({ type: 'register', role: 'agent', clientId: this.clientId })}\n`);
+    await new Promise((res, rej) => {
+      const tid = setTimeout(() => { this.waiting.delete('registered'); rej(new Error('register timeout')); }, this.defaultTimeoutMs);
+      this.waiting.set('registered', { resolve: res, reject: rej, timeoutId: tid });
+    });
+  }
+  client.connect = /** @type {typeof client.connect} */ (/** @type {unknown} */ (reconnectingTcpConnect.bind(client)));
+
+  try {
+    await client.connect();
+    // Immediately close — should stop the reconnect loop even though the server
+    // would drop the connection shortly.
+    await client.close();
+    assert.equal(client.autoReconnect, false, 'autoReconnect disabled after close');
+    // Wait a bit to confirm no additional reconnect attempts happen.
+    await new Promise((r) => setTimeout(r, 200));
+    assert.equal(connectAttempts, 1, 'no reconnect attempts after close');
+  } finally {
+    for (const socket of sockets) {
+      socket.destroy();
+    }
+    await new Promise((resolve) => server.close(() => resolve(undefined)));
   }
 });
 

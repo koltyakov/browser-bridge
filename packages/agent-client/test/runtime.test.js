@@ -243,6 +243,9 @@ test('requestBridge forwards request source metadata', async () => {
   const client = {
     connected: true,
     async connect() {},
+    /**
+     * @param {{ method: string, params?: Record<string, unknown>, tabId?: number | null, meta?: Record<string, unknown> }} request
+     */
     async request({ method, params = {}, tabId = null, meta = {} }) {
       calls.push({ method, params, tabId, meta });
       return {
@@ -267,6 +270,9 @@ test('requestBridge forwards explicit tabId for tab-bound methods', async () => 
   const client = {
     connected: true,
     async connect() {},
+    /**
+     * @param {{ method: string, params?: Record<string, unknown>, tabId?: number | null, meta?: Record<string, unknown> }} request
+     */
     async request({ method, params = {}, tabId = null, meta = {} }) {
       calls.push({ method, params, tabId, meta });
       return {
@@ -329,5 +335,11 @@ test('getDoctorReport exposes extension id source and next steps without a live 
 test('CLI bridge method bindings stay aligned with the protocol registry', () => {
   for (const [command, method] of Object.entries(CLI_METHOD_BINDINGS)) {
     assert.ok(BRIDGE_METHOD_REGISTRY[method], `${command} should map to a registered bridge method`);
+  }
+});
+
+test('every bridge method keeps a direct CLI alias binding', () => {
+  for (const method of Object.keys(BRIDGE_METHOD_REGISTRY)) {
+    assert.equal(CLI_METHOD_BINDINGS[method], method, `${method} should keep a direct CLI alias`);
   }
 });

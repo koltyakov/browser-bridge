@@ -223,4 +223,4 @@ Both MCP and CLI paths provide full access to Browser Bridge capabilities. The c
 
 2. **CLI Skill** is ideal for shell-capable agents, scripting scenarios, and when you need batch operations or setup commands.
 
-The underlying protocol is identical—both paths communicate with the same native host and extension. Use `browser_call` (MCP) or `bbx call` (CLI) when you need method-specific fields not exposed by the grouped tools or shortcut commands.
+The underlying protocol is identical-both paths communicate with the same native host and extension. Use `browser_call` (MCP) or `bbx call` (CLI) when you need method-specific fields not exposed by the grouped tools or shortcut commands.

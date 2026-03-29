@@ -213,6 +213,10 @@ async function connectWithBootstrap(socketPath) {
 function connectSocket(socketPath) {
   return new Promise((resolve, reject) => {
     const socket = net.createConnection(socketPath);
+    /**
+     * @param {Error} error
+     * @returns {void}
+     */
     const handleError = (error) => {
       socket.destroy();
       reject(error);

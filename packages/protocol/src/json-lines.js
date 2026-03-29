@@ -23,7 +23,7 @@ export function parseJsonLines(socket, onMessage) {
       try {
         onMessage(JSON.parse(line));
       } catch {
-        // Malformed JSON line — skip it.
+        // Malformed JSON line - skip it.
       }
     }
   });

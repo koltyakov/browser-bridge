@@ -5,6 +5,7 @@
   "type": "module",
   "files": [
     "assets",
+    "CHANGELOG.md",
     "LICENSE",
     "README.md",
     "QUICKSTART.md",
@@ -30,10 +31,13 @@
   },
   "scripts": {
     "lint": "eslint .",
-    "test": "node --test packages/protocol/test/*.test.js packages/native-host/test/*.test.js packages/agent-client/test/*.test.js packages/mcp-server/test/*.test.js packages/extension/test/*.test.js",
+    "test": "c8 node --test packages/protocol/test/*.test.js packages/native-host/test/*.test.js packages/agent-client/test/*.test.js packages/mcp-server/test/*.test.js packages/extension/test/*.test.js",
+    "coverage": "c8 report --reporter=text --reporter=text-summary",
+    "coverage:check": "c8 check-coverage --lines 70",
     "typecheck": "tsc --noEmit",
     "postinstall": "node packages/native-host/bin/postinstall.js",
     "package:extension": "node scripts/package-extension.mjs",
+    "check:extension-zip": "node scripts/check-extension-zip.mjs",
     "release:check": "npm run typecheck && npm test && npm run package:extension && npm pack --dry-run",
     "prepublishOnly": "npm run lint && npm run typecheck && npm test",
     "status": "node packages/agent-client/src/cli.js status",
@@ -47,6 +51,7 @@
     "@eslint/js": "^10.0.1",
     "@types/chrome": "^0.1.38",
     "@types/node": "^25.4.0",
+    "c8": "^11.0.0",
     "eslint": "^10.1.0",
     "globals": "^17.4.0",
     "typescript": "^6.0.2"

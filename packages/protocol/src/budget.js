@@ -55,12 +55,13 @@ export function summarizeFields(source, fields = []) {
     return {};
   }
 
+  /** @type {Record<string, unknown>} */
   return fields.reduce((accumulator, field) => {
     if (field in source && source[field] != null) {
       accumulator[field] = source[field];
     }
     return accumulator;
-  }, {});
+  }, /** @type {Record<string, unknown>} */ ({}));
 }
 
 /**

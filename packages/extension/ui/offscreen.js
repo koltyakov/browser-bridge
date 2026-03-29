@@ -36,6 +36,9 @@ async function crop(imageUrl, rect) {
 
   const canvas = new OffscreenCanvas(w, h);
   const context = canvas.getContext('2d');
+  if (!context) {
+    throw new Error('Failed to create 2D offscreen canvas context.');
+  }
   context.drawImage(bitmap, x, y, w, h, 0, 0, w, h);
   bitmap.close();
   const croppedBlob = await canvas.convertToBlob({ type: 'image/png' });
@@ -51,7 +54,7 @@ async function blobToDataUrl(blob) {
   const bytes = new Uint8Array(arrayBuffer);
   const chunks = [];
   for (let i = 0; i < bytes.length; i += 8192) {
-    chunks.push(String.fromCharCode.apply(null, bytes.subarray(i, i + 8192)));
+    chunks.push(String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + 8192))));
   }
   const base64 = btoa(chunks.join(''));
   return `data:${blob.type};base64,${base64}`;

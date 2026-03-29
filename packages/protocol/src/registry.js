@@ -1,83 +1,158 @@
 // @ts-check
 
 /**
+ * @typedef {{
+ *   group: string,
+ *   tab: boolean,
+ *   params: readonly string[],
+ *   description: string,
+ *   since: string
+ * }} BridgeMethodRegistryEntry
+ */
+
+/**
  * Canonical bridge method registry. This is the shared source of truth for
  * method grouping, tab-routing requirements, and exposed params so the protocol,
  * CLI, MCP layer, and docs can stay aligned.
  *
- * @type {Readonly<Record<import('./types.js').BridgeMethod, {
- *   group: string,
- *   tab: boolean,
- *   params: readonly string[],
- *   since: string
- * }>>}
+ * @type {Readonly<Record<import('./types.js').BridgeMethod, string>>}
  */
+const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
+  'access.request': 'Request Browser Bridge access for the focused window.',
+  'tabs.list': 'List tabs in the enabled window.',
+  'tabs.create': 'Create a new tab in the enabled window.',
+  'tabs.close': 'Close a tab in the enabled window.',
+  'skill.get_runtime_context': 'Return runtime method groups, budgets, and limits.',
+  'setup.get_status': 'Return MCP and skill setup status.',
+  'setup.install': 'Install or uninstall MCP or skill integration targets.',
+  'page.get_state': 'Get URL, title, origin, and ready-state for the active page.',
+  'page.evaluate': 'Evaluate JavaScript in the page context.',
+  'page.get_console': 'Read buffered console output from the page.',
+  'page.wait_for_load_state': 'Wait for the page to finish loading.',
+  'page.get_storage': 'Read local or session storage values.',
+  'page.get_text': 'Read bounded visible text from the page.',
+  'page.get_network': 'Read buffered fetch and XHR network activity.',
+  'navigation.navigate': 'Navigate the current tab to a URL.',
+  'navigation.reload': 'Reload the current tab.',
+  'navigation.go_back': 'Navigate backward in tab history.',
+  'navigation.go_forward': 'Navigate forward in tab history.',
+  'dom.query': 'Query a DOM subtree and return compact node summaries.',
+  'dom.describe': 'Describe one element by elementRef.',
+  'dom.get_text': 'Read bounded text for one element.',
+  'dom.get_attributes': 'Read selected attributes for one element.',
+  'dom.wait_for': 'Wait for a selector or text condition in the DOM.',
+  'dom.find_by_text': 'Find elements by visible text.',
+  'dom.find_by_role': 'Find elements by ARIA role and optional name.',
+  'dom.get_html': 'Read inner or outer HTML for one element.',
+  'dom.get_accessibility_tree': 'Read a pruned accessibility tree for the tab.',
+  'layout.get_box_model': 'Read the box model for one element.',
+  'layout.hit_test': 'Resolve the topmost element at a viewport point.',
+  'styles.get_computed': 'Read computed style properties for one element.',
+  'styles.get_matched_rules': 'Read matched CSS rule context for one element.',
+  'viewport.scroll': 'Scroll the viewport or a scrollable element.',
+  'viewport.resize': 'Resize or reset the tab viewport.',
+  'input.click': 'Click an element.',
+  'input.focus': 'Focus an element.',
+  'input.type': 'Type text into an element.',
+  'input.press_key': 'Send a key press to the page or an element.',
+  'input.set_checked': 'Set checkbox or radio checked state.',
+  'input.select_option': 'Select options in a select element.',
+  'input.hover': 'Hover over an element.',
+  'input.drag': 'Drag from one element to another.',
+  'screenshot.capture_region': 'Capture a screenshot of a viewport region.',
+  'screenshot.capture_element': 'Capture a screenshot of one element.',
+  'patch.apply_styles': 'Apply a reversible inline style patch.',
+  'patch.apply_dom': 'Apply a reversible DOM patch.',
+  'patch.list': 'List active reversible patches.',
+  'patch.rollback': 'Rollback one reversible patch.',
+  'patch.commit_session_baseline': 'Commit the current patch session baseline.',
+  'cdp.get_document': 'Read the CDP DOM document tree.',
+  'cdp.get_dom_snapshot': 'Read a CDP DOM snapshot.',
+  'cdp.get_box_model': 'Read a CDP box model for a node.',
+  'cdp.get_computed_styles_for_node': 'Read CDP computed styles for a node.',
+  'performance.get_metrics': 'Read browser performance metrics.',
+  'log.tail': 'Tail recent bridge log entries.',
+  'health.ping': 'Check daemon, extension, and access-routing health.'
+});
+
+/**
+ * @param {import('./types.js').BridgeMethod} method
+ * @param {string} group
+ * @param {boolean} tab
+ * @param {readonly string[]} params
+ * @returns {BridgeMethodRegistryEntry}
+ */
+function createRegistryEntry(method, group, tab, params) {
+  return {
+    group,
+    tab,
+    params,
+    description: BRIDGE_METHOD_DESCRIPTIONS[method],
+    since: '1.0'
+  };
+}
+
+/** @type {Readonly<Record<import('./types.js').BridgeMethod, BridgeMethodRegistryEntry>>} */
 export const BRIDGE_METHOD_REGISTRY = Object.freeze({
-  'access.request': { group: 'system', tab: false, params: [], since: '1.0' },
-  'tabs.list': { group: 'tabs', tab: false, params: [], since: '1.0' },
-  'tabs.create': { group: 'tabs', tab: false, params: ['url', 'active'], since: '1.0' },
-  'tabs.close': { group: 'tabs', tab: false, params: ['tabId'], since: '1.0' },
-  'skill.get_runtime_context': { group: 'system', tab: false, params: [], since: '1.0' },
-  'setup.get_status': { group: 'system', tab: false, params: [], since: '1.0' },
-  'setup.install': { group: 'system', tab: false, params: ['kind', 'target'], since: '1.0' },
-  'page.get_state': { group: 'page', tab: true, params: [], since: '1.0' },
+  'access.request': createRegistryEntry('access.request', 'system', false, []),
+  'tabs.list': createRegistryEntry('tabs.list', 'tabs', false, []),
+  'tabs.create': createRegistryEntry('tabs.create', 'tabs', false, ['url', 'active']),
+  'tabs.close': createRegistryEntry('tabs.close', 'tabs', false, ['tabId']),
+  'skill.get_runtime_context': createRegistryEntry('skill.get_runtime_context', 'system', false, []),
+  'setup.get_status': createRegistryEntry('setup.get_status', 'system', false, []),
+  'setup.install': createRegistryEntry('setup.install', 'system', false, ['kind', 'target']),
+  'page.get_state': createRegistryEntry('page.get_state', 'page', true, []),
   'page.evaluate': {
-    group: 'page',
-    tab: true,
-    params: ['expression', 'awaitPromise', 'timeoutMs', 'returnByValue'],
-    since: '1.0'
+    ...createRegistryEntry('page.evaluate', 'page', true, ['expression', 'awaitPromise', 'timeoutMs', 'returnByValue'])
   },
-  'page.get_console': { group: 'page', tab: true, params: ['level', 'clear', 'limit'], since: '1.0' },
-  'page.wait_for_load_state': { group: 'wait', tab: true, params: ['timeoutMs'], since: '1.0' },
-  'page.get_storage': { group: 'page', tab: true, params: ['type', 'keys'], since: '1.0' },
-  'page.get_text': { group: 'page', tab: true, params: ['textBudget'], since: '1.0' },
-  'page.get_network': { group: 'page', tab: true, params: ['clear', 'limit', 'urlPattern'], since: '1.0' },
-  'navigation.navigate': { group: 'navigate', tab: true, params: ['url', 'waitForLoad', 'timeoutMs'], since: '1.0' },
-  'navigation.reload': { group: 'navigate', tab: true, params: ['waitForLoad', 'timeoutMs'], since: '1.0' },
-  'navigation.go_back': { group: 'navigate', tab: true, params: ['waitForLoad', 'timeoutMs'], since: '1.0' },
-  'navigation.go_forward': { group: 'navigate', tab: true, params: ['waitForLoad', 'timeoutMs'], since: '1.0' },
+  'page.get_console': createRegistryEntry('page.get_console', 'page', true, ['level', 'clear', 'limit']),
+  'page.wait_for_load_state': createRegistryEntry('page.wait_for_load_state', 'wait', true, ['timeoutMs']),
+  'page.get_storage': createRegistryEntry('page.get_storage', 'page', true, ['type', 'keys']),
+  'page.get_text': createRegistryEntry('page.get_text', 'page', true, ['textBudget']),
+  'page.get_network': createRegistryEntry('page.get_network', 'page', true, ['clear', 'limit', 'urlPattern']),
+  'navigation.navigate': createRegistryEntry('navigation.navigate', 'navigate', true, ['url', 'waitForLoad', 'timeoutMs']),
+  'navigation.reload': createRegistryEntry('navigation.reload', 'navigate', true, ['waitForLoad', 'timeoutMs']),
+  'navigation.go_back': createRegistryEntry('navigation.go_back', 'navigate', true, ['waitForLoad', 'timeoutMs']),
+  'navigation.go_forward': createRegistryEntry('navigation.go_forward', 'navigate', true, ['waitForLoad', 'timeoutMs']),
   'dom.query': {
-    group: 'inspect',
-    tab: true,
-    params: ['selector', 'withinRef', 'maxNodes', 'maxDepth', 'textBudget', 'includeBbox', 'attributeAllowlist'],
-    since: '1.0'
+    ...createRegistryEntry('dom.query', 'inspect', true, ['selector', 'withinRef', 'maxNodes', 'maxDepth', 'textBudget', 'includeBbox', 'attributeAllowlist'])
   },
-  'dom.describe': { group: 'inspect', tab: true, params: ['elementRef'], since: '1.0' },
-  'dom.get_text': { group: 'inspect', tab: true, params: ['elementRef', 'textBudget'], since: '1.0' },
-  'dom.get_attributes': { group: 'inspect', tab: true, params: ['elementRef', 'attributes'], since: '1.0' },
-  'dom.wait_for': { group: 'wait', tab: true, params: ['selector', 'text', 'state', 'timeoutMs'], since: '1.0' },
-  'dom.find_by_text': { group: 'inspect', tab: true, params: ['text', 'exact', 'selector', 'maxResults'], since: '1.0' },
-  'dom.find_by_role': { group: 'inspect', tab: true, params: ['role', 'name', 'selector', 'maxResults'], since: '1.0' },
-  'dom.get_html': { group: 'inspect', tab: true, params: ['elementRef', 'outer', 'maxLength'], since: '1.0' },
-  'dom.get_accessibility_tree': { group: 'inspect', tab: true, params: ['maxNodes', 'maxDepth'], since: '1.0' },
-  'layout.get_box_model': { group: 'inspect', tab: true, params: ['elementRef'], since: '1.0' },
-  'layout.hit_test': { group: 'inspect', tab: true, params: ['x', 'y'], since: '1.0' },
-  'styles.get_computed': { group: 'inspect', tab: true, params: ['elementRef', 'properties'], since: '1.0' },
-  'styles.get_matched_rules': { group: 'inspect', tab: true, params: ['elementRef'], since: '1.0' },
-  'viewport.scroll': { group: 'navigate', tab: true, params: ['target', 'top', 'left', 'behavior', 'relative'], since: '1.0' },
-  'viewport.resize': { group: 'navigate', tab: true, params: ['width', 'height', 'deviceScaleFactor', 'reset'], since: '1.0' },
-  'input.click': { group: 'interact', tab: true, params: ['target', 'button', 'clickCount', 'modifiers'], since: '1.0' },
-  'input.focus': { group: 'interact', tab: true, params: ['target'], since: '1.0' },
-  'input.type': { group: 'interact', tab: true, params: ['target', 'text', 'clear', 'submit', 'modifiers'], since: '1.0' },
-  'input.press_key': { group: 'interact', tab: true, params: ['target', 'key', 'modifiers'], since: '1.0' },
-  'input.set_checked': { group: 'interact', tab: true, params: ['target', 'checked'], since: '1.0' },
-  'input.select_option': { group: 'interact', tab: true, params: ['target', 'values', 'labels', 'indexes'], since: '1.0' },
-  'input.hover': { group: 'interact', tab: true, params: ['target', 'duration', 'modifiers'], since: '1.0' },
-  'input.drag': { group: 'interact', tab: true, params: ['source', 'destination', 'offsetX', 'offsetY'], since: '1.0' },
-  'screenshot.capture_region': { group: 'capture', tab: true, params: ['x', 'y', 'width', 'height'], since: '1.0' },
-  'screenshot.capture_element': { group: 'capture', tab: true, params: ['elementRef'], since: '1.0' },
-  'patch.apply_styles': { group: 'patch', tab: true, params: ['target', 'declarations', 'important', 'patchId', 'verify'], since: '1.0' },
-  'patch.apply_dom': { group: 'patch', tab: true, params: ['target', 'operation', 'name', 'value', 'patchId', 'verify'], since: '1.0' },
-  'patch.list': { group: 'patch', tab: true, params: [], since: '1.0' },
-  'patch.rollback': { group: 'patch', tab: true, params: ['patchId'], since: '1.0' },
-  'patch.commit_session_baseline': { group: 'patch', tab: true, params: [], since: '1.0' },
-  'cdp.get_document': { group: 'cdp', tab: true, params: [], since: '1.0' },
-  'cdp.get_dom_snapshot': { group: 'cdp', tab: true, params: [], since: '1.0' },
-  'cdp.get_box_model': { group: 'cdp', tab: true, params: ['elementRef'], since: '1.0' },
-  'cdp.get_computed_styles_for_node': { group: 'cdp', tab: true, params: ['elementRef'], since: '1.0' },
-  'performance.get_metrics': { group: 'performance', tab: true, params: [], since: '1.0' },
-  'log.tail': { group: 'system', tab: false, params: [], since: '1.0' },
-  'health.ping': { group: 'system', tab: false, params: [], since: '1.0' }
+  'dom.describe': createRegistryEntry('dom.describe', 'inspect', true, ['elementRef']),
+  'dom.get_text': createRegistryEntry('dom.get_text', 'inspect', true, ['elementRef', 'textBudget']),
+  'dom.get_attributes': createRegistryEntry('dom.get_attributes', 'inspect', true, ['elementRef', 'attributes']),
+  'dom.wait_for': createRegistryEntry('dom.wait_for', 'wait', true, ['selector', 'text', 'state', 'timeoutMs']),
+  'dom.find_by_text': createRegistryEntry('dom.find_by_text', 'inspect', true, ['text', 'exact', 'selector', 'maxResults']),
+  'dom.find_by_role': createRegistryEntry('dom.find_by_role', 'inspect', true, ['role', 'name', 'selector', 'maxResults']),
+  'dom.get_html': createRegistryEntry('dom.get_html', 'inspect', true, ['elementRef', 'outer', 'maxLength']),
+  'dom.get_accessibility_tree': createRegistryEntry('dom.get_accessibility_tree', 'inspect', true, ['maxNodes', 'maxDepth']),
+  'layout.get_box_model': createRegistryEntry('layout.get_box_model', 'inspect', true, ['elementRef']),
+  'layout.hit_test': createRegistryEntry('layout.hit_test', 'inspect', true, ['x', 'y']),
+  'styles.get_computed': createRegistryEntry('styles.get_computed', 'inspect', true, ['elementRef', 'properties']),
+  'styles.get_matched_rules': createRegistryEntry('styles.get_matched_rules', 'inspect', true, ['elementRef']),
+  'viewport.scroll': createRegistryEntry('viewport.scroll', 'navigate', true, ['target', 'top', 'left', 'behavior', 'relative']),
+  'viewport.resize': createRegistryEntry('viewport.resize', 'navigate', true, ['width', 'height', 'deviceScaleFactor', 'reset']),
+  'input.click': createRegistryEntry('input.click', 'interact', true, ['target', 'button', 'clickCount', 'modifiers']),
+  'input.focus': createRegistryEntry('input.focus', 'interact', true, ['target']),
+  'input.type': createRegistryEntry('input.type', 'interact', true, ['target', 'text', 'clear', 'submit', 'modifiers']),
+  'input.press_key': createRegistryEntry('input.press_key', 'interact', true, ['target', 'key', 'modifiers']),
+  'input.set_checked': createRegistryEntry('input.set_checked', 'interact', true, ['target', 'checked']),
+  'input.select_option': createRegistryEntry('input.select_option', 'interact', true, ['target', 'values', 'labels', 'indexes']),
+  'input.hover': createRegistryEntry('input.hover', 'interact', true, ['target', 'duration', 'modifiers']),
+  'input.drag': createRegistryEntry('input.drag', 'interact', true, ['source', 'destination', 'offsetX', 'offsetY']),
+  'screenshot.capture_region': createRegistryEntry('screenshot.capture_region', 'capture', true, ['x', 'y', 'width', 'height']),
+  'screenshot.capture_element': createRegistryEntry('screenshot.capture_element', 'capture', true, ['elementRef']),
+  'patch.apply_styles': createRegistryEntry('patch.apply_styles', 'patch', true, ['target', 'declarations', 'important', 'patchId', 'verify']),
+  'patch.apply_dom': createRegistryEntry('patch.apply_dom', 'patch', true, ['target', 'operation', 'name', 'value', 'patchId', 'verify']),
+  'patch.list': createRegistryEntry('patch.list', 'patch', true, []),
+  'patch.rollback': createRegistryEntry('patch.rollback', 'patch', true, ['patchId']),
+  'patch.commit_session_baseline': createRegistryEntry('patch.commit_session_baseline', 'patch', true, []),
+  'cdp.get_document': createRegistryEntry('cdp.get_document', 'cdp', true, []),
+  'cdp.get_dom_snapshot': createRegistryEntry('cdp.get_dom_snapshot', 'cdp', true, []),
+  'cdp.get_box_model': createRegistryEntry('cdp.get_box_model', 'cdp', true, ['elementRef']),
+  'cdp.get_computed_styles_for_node': createRegistryEntry('cdp.get_computed_styles_for_node', 'cdp', true, ['elementRef']),
+  'performance.get_metrics': createRegistryEntry('performance.get_metrics', 'performance', true, []),
+  'log.tail': createRegistryEntry('log.tail', 'system', false, []),
+  'health.ping': createRegistryEntry('health.ping', 'system', false, [])
 });
 
 /** @type {ReadonlyArray<import('./types.js').BridgeMethod>} */

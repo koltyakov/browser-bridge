@@ -2,6 +2,8 @@
 
 import { once } from 'node:events';
 
+import { MAX_NATIVE_MESSAGE_BYTES } from '../../protocol/src/index.js';
+
 /**
  * @param {NodeJS.WritableStream} stream
  * @param {unknown} message
@@ -19,9 +21,6 @@ export async function writeNativeMessage(stream, message) {
   }
 }
 
-/** @type {number} */
-const MAX_NATIVE_MESSAGE_SIZE = 1 * 1024 * 1024;
-
 /**
  * @param {NodeJS.ReadableStream} stream
  * @param {(message: unknown) => void} onMessage
@@ -36,7 +35,7 @@ export function createNativeMessageReader(stream, onMessage) {
 
     while (buffer.length >= 4) {
       const length = buffer.readUInt32LE(0);
-      if (length > MAX_NATIVE_MESSAGE_SIZE) {
+      if (length > MAX_NATIVE_MESSAGE_BYTES) {
         buffer = Buffer.alloc(0);
         return;
       }
@@ -49,7 +48,7 @@ export function createNativeMessageReader(stream, onMessage) {
       try {
         onMessage(JSON.parse(payload.toString('utf8')));
       } catch {
-        // Malformed JSON payload — skip it.
+        // Malformed JSON payload - skip it.
       }
     }
   });

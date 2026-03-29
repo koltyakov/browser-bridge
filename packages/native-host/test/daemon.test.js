@@ -37,6 +37,7 @@ async function startTestDaemon() {
  */
 function createFakeSocket() {
   const socket = {
+    /** @type {string[]} */
     writes: [],
     /**
      * @param {string} chunk
@@ -315,6 +316,28 @@ test('daemon socket has 0o600 mode and config dir has 0o700 mode (Unix only)', {
   }
 });
 
+test('daemon start fails when another daemon is already listening on the same socket', {
+  skip: process.platform === 'win32' ? 'Unix socket single-instance check is not applicable on Windows' : false
+}, async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-single-instance-'));
+  const socketPath = path.join(tempDir, 'bridge.sock');
+  const logger = { log() {}, error() {} };
+  const first = new BridgeDaemon({ socketPath, logger });
+  const second = new BridgeDaemon({ socketPath, logger });
+
+  try {
+    await first.start();
+    await assert.rejects(
+      () => second.start(),
+      /Another daemon is already running on/
+    );
+  } finally {
+    await second.stop().catch(() => {});
+    await first.stop();
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 // --- Resilience: malformed native messages (5.1) ---
 
 /**
@@ -401,6 +424,145 @@ test('daemon survives oversized message and still processes subsequent requests'
     assert.equal(/** @type {any} */ (response).type, 'agent.response');
   } finally {
     socket.destroy();
+    await daemon.stop();
+  }
+});
+
+// --- Concurrency: multiple agents (5.3) ---
+
+/**
+ * Wrap a TCP socket with NDJSON send/receive helpers.
+ * `next()` returns a Promise resolving with the next complete JSON message.
+ *
+ * @param {net.Socket} socket
+ * @returns {{ next: () => Promise<unknown>, send: (obj: unknown) => void }}
+ */
+function makeNdjsonClient(socket) {
+  /** @type {unknown[]} */
+  const pending = [];
+  /** @type {((msg: unknown) => void)[]} */
+  const waiters = [];
+  let buf = '';
+  socket.setEncoding('utf8');
+  socket.on('data', (chunk) => {
+    buf += chunk;
+    while (buf.includes('\n')) {
+      const idx = buf.indexOf('\n');
+      const line = buf.slice(0, idx).trim();
+      buf = buf.slice(idx + 1);
+      if (!line) continue;
+      try {
+        const msg = JSON.parse(line);
+        if (waiters.length > 0) {
+          const waiter = waiters.shift();
+          if (waiter) {
+            waiter(msg);
+          }
+        } else {
+          pending.push(msg);
+        }
+      } catch { /* skip malformed */ }
+    }
+  });
+  return {
+    next() {
+      if (pending.length > 0) return Promise.resolve(pending.shift());
+      return new Promise((resolve) => waiters.push(resolve));
+    },
+    send(obj) {
+      socket.write(`${JSON.stringify(obj)}\n`);
+    }
+  };
+}
+
+test('daemon routes interleaved requests from two agents to correct sockets', async () => {
+  const { daemon, connect } = await startTestDaemon();
+  const s1 = await connect();
+  const s2 = await connect();
+  const se = await connect();
+  const a1 = makeNdjsonClient(s1);
+  const a2 = makeNdjsonClient(s2);
+  const ext = makeNdjsonClient(se);
+
+  try {
+    a1.send({ type: 'register', role: 'agent', clientId: 'agent_a1' });
+    a2.send({ type: 'register', role: 'agent', clientId: 'agent_a2' });
+    ext.send({ type: 'register', role: 'extension' });
+    assert.equal(/** @type {any} */ (await a1.next()).type, 'registered');
+    assert.equal(/** @type {any} */ (await a2.next()).type, 'registered');
+    assert.equal(/** @type {any} */ (await ext.next()).type, 'registered');
+
+    // Both agents send requests concurrently.
+    a1.send({ type: 'agent.request', request: { id: 'req_a1', method: 'page.get_state', tab_id: null, params: {}, meta: { protocol_version: '1.0', token_budget: null } } });
+    a2.send({ type: 'agent.request', request: { id: 'req_a2', method: 'page.get_state', tab_id: null, params: {}, meta: { protocol_version: '1.0', token_budget: null } } });
+
+    // Extension receives both forwarded requests (order not guaranteed).
+    const fwd1 = /** @type {any} */ (await ext.next());
+    const fwd2 = /** @type {any} */ (await ext.next());
+    assert.equal(fwd1.type, 'extension.request');
+    assert.equal(fwd2.type, 'extension.request');
+    const forwardedIds = new Set([fwd1.request.id, fwd2.request.id]);
+    assert.ok(forwardedIds.has('req_a1'));
+    assert.ok(forwardedIds.has('req_a2'));
+
+    // Extension responds out of order: req_a2 first, then req_a1.
+    ext.send({ type: 'extension.response', response: { id: 'req_a2', ok: true, result: { url: 'https://a.test' }, error: null, meta: { protocol_version: '1.0', method: 'page.get_state' } } });
+    ext.send({ type: 'extension.response', response: { id: 'req_a1', ok: true, result: { url: 'https://b.test' }, error: null, meta: { protocol_version: '1.0', method: 'page.get_state' } } });
+
+    // Each agent gets its own response.
+    const resp1 = /** @type {any} */ (await a1.next());
+    const resp2 = /** @type {any} */ (await a2.next());
+    assert.equal(resp1.type, 'agent.response');
+    assert.equal(resp1.response.id, 'req_a1');
+    assert.equal(resp2.type, 'agent.response');
+    assert.equal(resp2.response.id, 'req_a2');
+  } finally {
+    s1.destroy(); s2.destroy(); se.destroy();
+    await daemon.stop();
+  }
+});
+
+test('daemon does not drop agent2 response when agent1 disconnects mid-flight', async () => {
+  const { daemon, connect } = await startTestDaemon();
+  const s1 = await connect();
+  const s2 = await connect();
+  const se = await connect();
+  const a1 = makeNdjsonClient(s1);
+  const a2 = makeNdjsonClient(s2);
+  const ext = makeNdjsonClient(se);
+
+  try {
+    a1.send({ type: 'register', role: 'agent', clientId: 'agent_c1' });
+    a2.send({ type: 'register', role: 'agent', clientId: 'agent_c2' });
+    ext.send({ type: 'register', role: 'extension' });
+    await a1.next();
+    await a2.next();
+    await ext.next();
+
+    // Both agents send requests concurrently.
+    a1.send({ type: 'agent.request', request: { id: 'req_c1', method: 'page.get_state', tab_id: null, params: {}, meta: { protocol_version: '1.0', token_budget: null } } });
+    a2.send({ type: 'agent.request', request: { id: 'req_c2', method: 'page.get_state', tab_id: null, params: {}, meta: { protocol_version: '1.0', token_budget: null } } });
+
+    // Extension receives both requests.
+    await ext.next();
+    await ext.next();
+
+    // Agent1 disconnects before responses are sent. Allow the daemon to
+    // process the close event so req_c1 is removed from pendingRequests.
+    s1.destroy();
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Extension responds to both. The req_c1 response is silently discarded
+    // (no pending entry). The req_c2 response should still reach agent2.
+    ext.send({ type: 'extension.response', response: { id: 'req_c1', ok: true, result: {}, error: null, meta: { protocol_version: '1.0', method: 'page.get_state' } } });
+    ext.send({ type: 'extension.response', response: { id: 'req_c2', ok: true, result: { url: 'https://c.test' }, error: null, meta: { protocol_version: '1.0', method: 'page.get_state' } } });
+
+    const resp2 = /** @type {any} */ (await a2.next());
+    assert.equal(resp2.type, 'agent.response');
+    assert.equal(resp2.response.id, 'req_c2');
+    assert.equal(resp2.response.ok, true);
+  } finally {
+    s1.destroy(); s2.destroy(); se.destroy();
     await daemon.stop();
   }
 });

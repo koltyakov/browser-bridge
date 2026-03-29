@@ -243,8 +243,8 @@ export async function getMcpConfigPaths(clientName, options) {
   try {
     const entries = await readdir(profilesDir, { withFileTypes: true });
     const profilePaths = entries
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => path.join(profilesDir, entry.name, 'mcp.json'));
+      .filter((/** @type {import('node:fs').Dirent} */ entry) => entry.isDirectory())
+      .map((/** @type {import('node:fs').Dirent} */ entry) => path.join(profilesDir, entry.name, 'mcp.json'));
     for (const profilePath of profilePaths) {
       if (!paths.includes(profilePath)) {
         paths.push(profilePath);
