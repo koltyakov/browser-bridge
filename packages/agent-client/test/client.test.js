@@ -35,6 +35,7 @@ import {
   annotateBridgeSummary,
   summarizeBridgeResponse,
 } from '../src/subagent.js';
+import { BridgeClient } from '../src/client.js';
 
 /** Ensure failures stay compact for parent-agent reporting. */
 test('summarizeBridgeResponse condenses failures', () => {
@@ -78,6 +79,19 @@ test('annotateBridgeSummary exposes transport and summary estimates', () => {
   assert.equal(summary.transportCostClass, 'moderate');
   assert.ok(summary.summaryBytes > 0);
   assert.ok(summary.summaryTokens > 0);
+});
+
+test('BridgeClient.checkProtocolVersion prefers remote migration hints', () => {
+  const result = BridgeClient.checkProtocolVersion({
+    supported_versions: ['1.1'],
+    migration_hint: 'Update the Browser Bridge CLI to match the extension.',
+  });
+
+  assert.equal(result.compatible, false);
+  assert.equal(
+    result.warning,
+    'Update the Browser Bridge CLI to match the extension.',
+  );
 });
 
 test('summarizeBridgeResponse adds stale element recovery hint', () => {

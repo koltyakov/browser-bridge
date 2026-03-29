@@ -41,6 +41,8 @@ bbx describe <ref>                   # describe one element
 bbx text <ref> [budget]              # element text content
 bbx html <ref> [maxLen]              # element HTML
 bbx styles <ref> [prop1,prop2,...]   # computed styles
+bbx attrs <ref> [attr1,attr2,...]    # element attributes
+bbx matched-rules <ref>              # matched CSS rules
 bbx box <ref>                        # box model dimensions
 bbx find <text>                      # find by text content
 bbx find-role <role> [name]          # find by ARIA role
@@ -58,6 +60,9 @@ bbx page-text [budget]               # full page text
 bbx storage [local|session] [keys]   # browser storage
 bbx perf                             # performance metrics
 bbx navigate <url>                   # navigate to URL
+bbx reload                           # reload current page
+bbx back                             # navigate back
+bbx forward                          # navigate forward
 bbx resize <width> <height>          # resize viewport
 ```
 
@@ -96,14 +101,21 @@ After access is enabled:
 
 ## Error Recovery
 
-| Error | Recovery |
-|---|---|
-| `ACCESS_DENIED` | The failed call already surfaced an `Enable` cue in the extension UI; ask the user to click `Enable` in the popup/side panel, then retry once |
-| `ELEMENT_STALE` | Re-query with `dom.query` or `dom.find_by_text` |
-| `TIMEOUT` | Extension overloaded or CDP stalled - retry once, then simplify the request |
-| `DAEMON_OFFLINE` | Daemon not running - start with `bbx-daemon` |
-| `CONNECTION_LOST` | Socket dropped mid-request - retry; if persistent, restart daemon |
-| `BRIDGE_TIMEOUT` | Extension took too long to respond - retry once with simpler call |
+| Error | Retry? | Recovery |
+|---|---|---|
+| `ACCESS_DENIED` | No | Failed call already surfaced an `Enable` cue; ask user to click `Enable`, then retry once |
+| `ELEMENT_STALE` | No | Re-query with `dom.query` or `dom.find_by_text` to get a fresh ref |
+| `TAB_MISMATCH` | No | Tab closed or not found — use `tabs.list` to find an available tab |
+| `TIMEOUT` | Once | Retry once; if still failing, simplify (smaller `maxNodes`, narrower selector) |
+| `RATE_LIMITED` | After 2s | Back off 2 seconds, then retry |
+| `EXTENSION_DISCONNECTED` | After 3s | Check Chrome is running; `bbx status` to verify, then retry |
+| `NATIVE_HOST_UNAVAILABLE` | No | Run `bbx doctor` to diagnose the installation |
+| `INTERNAL_ERROR` | Once | Retry once; if persistent, check `page.get_console` for details |
+| `DAEMON_OFFLINE` | No | Daemon not running — start with `bbx-daemon` |
+| `CONNECTION_LOST` | Yes | Socket dropped mid-request — retry; if persistent, restart daemon |
+| `BRIDGE_TIMEOUT` | Once | Extension took too long — retry once with simpler call |
+
+Error responses now include a machine-readable `error.recovery` field with `retry`, `retryAfterMs`, `alternativeMethod`, and `hint`.
 
 ## Core Rules
 
@@ -126,6 +138,46 @@ After access is enabled:
 17. **Network monitoring** - use `page.get_network` to inspect API calls; auto-installs interceptor.
 18. **Accessibility tree only when necessary** - `dom.get_accessibility_tree` is debugger-backed; use it when semantic structure cannot be inferred from DOM queries and role/text search.
 19. **Tailwind-aware** - when `page.get_state` returns `hints.tailwind: true`, load `references/tailwind.md`; avoid selecting by utility classes, prefer `find_by_text`/`find_by_role`; `dom.query` auto-escapes `[]` brackets.
+
+## Token Budget Quick Rules
+
+1. **Start with `quick` budget** - widen to `normal` or `deep` only if `budget_truncated: true`
+2. **Use `attributeAllowlist`** - filter irrelevant attributes (e.g. `['class', 'href', 'data-testid']`)
+3. **Batch independent reads** - combine into a single `bbx batch` / `browser_batch` call
+
+## Common Workflows
+
+### Debug a CSS layout issue
+
+```bash
+bbx status                                         # confirm connection
+bbx dom-query '.broken-component'                  # inspect the DOM subtree
+bbx styles ref_abc123 display,flex-direction,gap    # check computed styles
+bbx patch-style ref_abc123 display=flex gap=8px     # prototype a fix
+bbx box ref_abc123                                  # verify dimensions
+bbx rollback patch_1                                # clean up
+# → edit source file with the confirmed fix
+```
+
+### Find and fix broken text content
+
+```bash
+bbx find 'Error: something went wrong'             # locate the error text
+bbx describe ref_xyz789                             # understand the element
+bbx html ref_xyz789 500                             # check surrounding markup
+bbx patch-text ref_xyz789 'Updated message'         # test replacement
+bbx text ref_xyz789                                 # verify the change
+bbx rollback patch_2                                # clean up
+```
+
+### Verify an API call
+
+```bash
+bbx console error                                   # check for runtime errors
+bbx network 20                                      # inspect recent requests
+bbx eval 'document.querySelector("#app").__vue__.$store.state.user'  # read framework state
+bbx page-text 2000                                  # extract page content
+```
 
 ## Method Quick Reference
 

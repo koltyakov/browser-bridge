@@ -10,6 +10,7 @@ import {
   isBudgetPresetName,
   METHODS,
 } from '../../protocol/src/index.js';
+import { BridgeClient } from '../../agent-client/src/client.js';
 import {
   getDoctorReport,
   requestBridge,
@@ -114,6 +115,27 @@ async function resolveToolRef(client, input, tabId = null) {
  */
 function getBudgetPresetName(value) {
   return isBudgetPresetName(value) ? value : null;
+}
+
+/**
+ * Infer a budget preset from selector specificity when the caller hasn't
+ * provided an explicit budgetPreset.
+ *
+ * - ID selectors (#foo) or single element refs -> quick
+ * - Class / tag / attribute selectors -> normal
+ * - Universal (*), deeply nested, or missing selector -> deep
+ *
+ * @param {{ budgetPreset?: unknown, selector?: unknown, elementRef?: unknown }} args
+ * @returns {'quick' | 'normal' | 'deep' | null}
+ */
+function inferBudgetFromSelector(args) {
+  if (getBudgetPresetName(args.budgetPreset)) return null; // explicit preset wins
+  if (typeof args.elementRef === 'string' && args.elementRef) return 'quick';
+  const sel = typeof args.selector === 'string' ? args.selector.trim() : '';
+  if (!sel || sel === '*' || sel === 'body') return null; // keep default
+  if (/^#[\w-]+$/.test(sel)) return 'quick';
+  if ((sel.match(/\s/g) || []).length >= 3) return 'deep';
+  return 'normal';
 }
 
 /**
@@ -312,7 +334,9 @@ export const DOM_ACTIONS = {
  */
 export async function handleDomTool(args) {
   if (args.action === 'query' || args.action === 'accessibility_tree') {
-    return dispatchToolAction(DOM_ACTIONS, applyTreeBudgetPreset(args), 'DOM');
+    const inferred = inferBudgetFromSelector(args);
+    const withBudget = inferred ? { ...args, budgetPreset: args.budgetPreset ?? inferred } : args;
+    return dispatchToolAction(DOM_ACTIONS, applyTreeBudgetPreset(withBudget), 'DOM');
   }
   if (args.action === 'text') {
     return dispatchToolAction(DOM_ACTIONS, applyTextBudgetPreset(args), 'DOM');
@@ -540,7 +564,7 @@ export async function handleInputTool(args) {
 
 /** @type {Record<string, ToolAction>} */
 export const PATCH_ACTIONS = {
-  apply_styles:    { ref: true,  method: 'patch.apply_styles',            params: (a, r) => ({ target: { elementRef: r }, declarations: a.declarations, important: a.important }) },
+  apply_styles:    { ref: true,  method: 'patch.apply_styles',            params: (a, r) => ({ target: { elementRef: r }, declarations: a.declarations, important: a.important, verify: a.verify }) },
   apply_dom:       { ref: true,  method: 'patch.apply_dom',               params: (a, r) => {
     const opMap = {
       setAttribute: 'set_attribute',
@@ -550,7 +574,7 @@ export const PATCH_ACTIONS = {
       setTextContent: 'set_text',
       setProperty: 'set_attribute',
     };
-    return { target: { elementRef: r }, operation: opMap[a.operation] || a.operation, value: a.value, name: a.name };
+    return { target: { elementRef: r }, operation: opMap[a.operation] || a.operation, value: a.value, name: a.name, verify: a.verify };
   }},
   list:            { ref: false, method: 'patch.list',                    params: () => ({}) },
   rollback:        { ref: false, method: 'patch.rollback',                params: a => ({ patchId: a.patchId }) },
@@ -558,7 +582,7 @@ export const PATCH_ACTIONS = {
 };
 
 /**
- * @param {{ action: string, elementRef?: string, selector?: string, declarations?: Record<string, string>, important?: boolean, operation?: string, value?: unknown, name?: string, patchId?: string, tabId?: number, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @param {{ action: string, elementRef?: string, selector?: string, declarations?: Record<string, string>, important?: boolean, operation?: string, value?: unknown, name?: string, patchId?: string, verify?: boolean, tabId?: number, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handlePatchTool(args) {
@@ -646,7 +670,17 @@ export async function handleLogTool(args) {
  * @returns {Promise<ToolResult>}
  */
 export async function handleHealthTool() {
-  return callBridgeTool('health.ping');
+  return withToolClient(async (client) => {
+    const response = await client.request({ method: 'health.ping', meta: { source: REQUEST_SOURCE } });
+    const result = summarizeToolResponse(response, 'health.ping');
+    if (response.ok && response.result) {
+      const versionCheck = BridgeClient.checkProtocolVersion(response.result);
+      if (versionCheck.warning) {
+        result.content[0].text += `\n⚠️ ${versionCheck.warning}`;
+      }
+    }
+    return result;
+  });
 }
 
 /**
@@ -693,6 +727,7 @@ export async function handleBatchTool(args) {
         : null;
       const tokenBudget = getToolTokenBudget(call);
 
+      const startTime = Date.now();
       try {
         const response = await client.request({
           method,
@@ -703,16 +738,21 @@ export async function handleBatchTool(args) {
             ...(tokenBudget != null ? { token_budget: tokenBudget } : {}),
           },
         });
+        const durationMs = Date.now() - startTime;
         const summary = annotateBridgeSummary(summarizeBridgeResponse(response, method), response);
+        const cost = estimateJsonPayloadCost(response.result);
         return {
           method,
           tabId,
           ...summary,
+          durationMs,
+          approxTokens: cost.approxTokens,
           meta: response.meta,
           error: response.ok ? null : response.error,
           response: response.ok ? response.result : null,
         };
       } catch (error) {
+        const durationMs = Date.now() - startTime;
         const message = error instanceof Error ? error.message : String(error);
         return {
           method,
@@ -720,6 +760,8 @@ export async function handleBatchTool(args) {
           ok: false,
           summary: `${method}: ${message}`,
           evidence: null,
+          durationMs,
+          approxTokens: 0,
           error: { code: 'INTERNAL_ERROR', message },
           response: null,
         };

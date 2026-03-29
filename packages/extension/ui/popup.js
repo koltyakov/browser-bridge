@@ -34,6 +34,10 @@ const windowedPopup = isWindowedPopup();
 let currentTabState = null;
 /** @type {number | null} */
 let resizeFrameId = null;
+/** @type {ReturnType<typeof setTimeout> | null} */
+let nativeDiagnosticTimer = null;
+const NATIVE_DIAGNOSTIC_DELAY_MS = 10_000;
+const PUBLISHED_EXTENSION_ID = 'ahhmghheecmambjebhfjkngdggghbkno';
 
 if (windowedPopup) {
   document.documentElement.dataset.windowed = 'true';
@@ -110,6 +114,45 @@ function renderNativeStatus(connected) {
   nativeIndicator.dataset.connected = String(connected);
   nativeIndicator.title = label;
   nativeIndicator.setAttribute('aria-label', label);
+
+  if (connected) {
+    if (nativeDiagnosticTimer) {
+      clearTimeout(nativeDiagnosticTimer);
+      nativeDiagnosticTimer = null;
+    }
+    hideDiagnostic();
+  } else if (!nativeDiagnosticTimer) {
+    nativeDiagnosticTimer = setTimeout(() => {
+      nativeDiagnosticTimer = null;
+      showDiagnostic(`Native host unreachable. Run: npm install -g @browserbridge/bbx && ${getInstallCommand()}`);
+    }, NATIVE_DIAGNOSTIC_DELAY_MS);
+  }
+}
+
+/**
+ * @param {string} message
+ * @returns {void}
+ */
+function showDiagnostic(message) {
+  let el = document.getElementById('native-diagnostic');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'native-diagnostic';
+    el.style.cssText = 'padding:8px 12px;margin:8px 0;background:var(--status-badge-bg,#fef3cd);color:var(--text-primary,#856404);border-radius:6px;font-size:12px;line-height:1.4';
+    const container = document.querySelector('.popup-content') || document.body;
+    container.prepend(el);
+  }
+  el.textContent = message;
+  el.hidden = false;
+  queueWindowResize();
+}
+
+function hideDiagnostic() {
+  const el = document.getElementById('native-diagnostic');
+  if (el) {
+    el.hidden = true;
+    queueWindowResize();
+  }
 }
 
 /**
@@ -139,6 +182,15 @@ function readScopedTabId() {
  */
 function isWindowedPopup() {
   return new URLSearchParams(window.location.search).get('windowed') === '1';
+}
+
+/**
+ * @returns {string}
+ */
+function getInstallCommand() {
+  return chrome.runtime.id === PUBLISHED_EXTENSION_ID
+    ? 'bbx install'
+    : `bbx install ${chrome.runtime.id}`;
 }
 
 /**

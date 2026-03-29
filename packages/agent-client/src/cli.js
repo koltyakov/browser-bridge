@@ -380,14 +380,19 @@ await main();
 async function main() {
   try {
     if (command === 'status') {
-      await printSummary(
-        await requestBridge(
-          client,
-          'health.ping',
-          {},
-          { source: REQUEST_SOURCE },
-        ),
+      const healthResponse = await requestBridge(
+        client,
+        'health.ping',
+        {},
+        { source: REQUEST_SOURCE },
       );
+      await printSummary(healthResponse);
+      if (healthResponse.ok && healthResponse.result) {
+        const versionCheck = BridgeClient.checkProtocolVersion(healthResponse.result);
+        if (versionCheck.warning) {
+          process.stderr.write(`\n⚠️  ${versionCheck.warning}\n`);
+        }
+      }
       return;
     }
 

@@ -39,7 +39,7 @@ This document provides a comprehensive comparison of the two integration paths f
 | Describe element | `browser_dom` (describe) | `bbx describe <ref>` | Equivalent |
 | Get text content | `browser_dom` (text) | `bbx text <ref>` | Equivalent |
 | Get HTML | `browser_dom` (html) | `bbx html <ref>` | Equivalent |
-| Get attributes | `browser_dom` (attributes) | `bbx call dom.get_attributes` | CLI uses raw call |
+| Get attributes | `browser_dom` (attributes) | `bbx attrs <ref> [attr1,...]` | CLI shortcut |
 | Wait for element | `browser_dom` (wait) | `bbx wait <selector>` | Equivalent |
 | Find by text | `browser_dom` (find_text) | `bbx find <text>` | Equivalent |
 | Find by ARIA role | `browser_dom` (find_role) | `bbx find-role <role>` | Equivalent |
@@ -50,7 +50,7 @@ This document provides a comprehensive comparison of the two integration paths f
 | Capability | MCP Tool | CLI Command | Notes |
 |------------|----------|-------------|-------|
 | Computed styles | `browser_styles_layout` (computed) | `bbx styles <ref> [props]` | Equivalent |
-| Matched CSS rules | `browser_styles_layout` (matched_rules) | `bbx call styles.get_matched_rules` | CLI uses raw call |
+| Matched CSS rules | `browser_styles_layout` (matched_rules) | `bbx matched-rules <ref>` | CLI shortcut |
 | Box model | `browser_styles_layout` (box_model) | `bbx box <ref>` | Equivalent |
 | Hit test | `browser_styles_layout` (hit_test) | `bbx call layout.hit_test` | CLI uses raw call |
 
@@ -72,10 +72,10 @@ This document provides a comprehensive comparison of the two integration paths f
 | Capability | MCP Tool | CLI Command | Notes |
 |------------|----------|-------------|-------|
 | Navigate to URL | `browser_navigation` (navigate) | `bbx navigate <url>` | Equivalent |
-| Reload page | `browser_navigation` (reload) | `bbx call navigation.reload` | CLI uses raw call |
-| Go back | `browser_navigation` (go_back) | `bbx call navigation.go_back` | CLI uses raw call |
-| Go forward | `browser_navigation` (go_forward) | `bbx call navigation.go_forward` | CLI uses raw call |
-| Scroll viewport | `browser_navigation` (scroll) | `bbx call viewport.scroll` | CLI uses raw call |
+| Reload page | `browser_navigation` (reload) | `bbx reload` | CLI shortcut |
+| Go back | `browser_navigation` (go_back) | `bbx back` | CLI shortcut |
+| Go forward | `browser_navigation` (go_forward) | `bbx forward` | CLI shortcut |
+| Scroll viewport | `browser_navigation` (scroll) | `bbx scroll <top> [left]` | CLI shortcut |
 | Resize viewport | `browser_navigation` (resize) | `bbx resize <w> <h>` | Equivalent |
 
 ### Input & Interaction

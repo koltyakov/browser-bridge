@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { installAgentFiles, isSupportedTarget, removeAgentFiles } from '../../agent-client/src/install.js';
 import { installMcpConfig, isMcpClientName, removeMcpConfig } from '../../agent-client/src/mcp-config.js';
 import { collectSetupStatus } from '../../agent-client/src/setup-status.js';
-import { createFailure, createSuccess, ERROR_CODES, parseJsonLines, validateBridgeRequest } from '../../protocol/src/index.js';
+import { createFailure, createSuccess, ERROR_CODES, parseJsonLines, SUPPORTED_VERSIONS, validateBridgeRequest } from '../../protocol/src/index.js';
 import { getSocketPath } from './config.js';
 import { writeJsonLine } from './framing.js';
 
@@ -18,6 +18,44 @@ import { writeJsonLine } from './framing.js';
 /** @typedef {import('../../protocol/src/types.js').SetupStatus} SetupStatus */
 /** @typedef {import('node:net').Socket & { __clientId?: string }} ClientSocket */
 /** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string, method?: string }} PendingEntry */
+
+/**
+ * @param {string} left
+ * @param {string} right
+ * @returns {number}
+ */
+function compareProtocolVersions(left, right) {
+  const leftParts = left.split('.').map((part) => Number(part) || 0);
+  const rightParts = right.split('.').map((part) => Number(part) || 0);
+  const length = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index += 1) {
+    const delta = (leftParts[index] || 0) - (rightParts[index] || 0);
+    if (delta !== 0) {
+      return delta > 0 ? 1 : -1;
+    }
+  }
+  return 0;
+}
+
+/**
+ * @param {string | undefined} requestedVersion
+ * @returns {{ supported_versions: readonly string[], deprecated_since?: string, migration_hint?: string }}
+ */
+function getVersionNegotiationPayload(requestedVersion) {
+  const latestSupported = SUPPORTED_VERSIONS[0];
+  if (!requestedVersion || !latestSupported || SUPPORTED_VERSIONS.includes(requestedVersion)) {
+    return { supported_versions: SUPPORTED_VERSIONS };
+  }
+
+  const localIsNewer = compareProtocolVersions(latestSupported, requestedVersion) > 0;
+  return {
+    supported_versions: SUPPORTED_VERSIONS,
+    ...(localIsNewer ? { deprecated_since: latestSupported } : {}),
+    migration_hint: localIsNewer
+      ? `Browser Bridge daemon is newer than the client protocol ${requestedVersion}. Restart or update the Browser Bridge CLI/npm package to ${latestSupported} or later.`
+      : `Browser Bridge daemon is older than the client protocol ${requestedVersion}. Restart or update the Browser Bridge CLI so the daemon supports ${requestedVersion}.`
+  };
+}
 
 /**
  * @typedef {{
@@ -231,7 +269,8 @@ export class BridgeDaemon {
         const response = createSuccess(request.id, {
           daemon: 'ok',
           extensionConnected: false,
-          socketPath: this.socketPath
+          socketPath: this.socketPath,
+          ...getVersionNegotiationPayload(request.meta?.protocol_version)
         });
         await writeJsonLine(socket, { type: 'agent.response', response });
         return;

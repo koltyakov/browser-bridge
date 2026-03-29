@@ -221,6 +221,40 @@ export const SHORTCUT_COMMANDS = {
       if (!r[0] || !r[1]) throw new Error('Usage: resize <width> <height>');
       return { width: parseIntArg(r[0], 'width'), height: parseIntArg(r[1], 'height') };
     }
+  },
+  reload: {
+    method: 'navigation.reload',
+    usage: 'bbx reload',
+    description: 'Reload the current page',
+    build: () => ({})
+  },
+  back: {
+    method: 'navigation.go_back',
+    usage: 'bbx back',
+    description: 'Navigate back',
+    build: () => ({})
+  },
+  forward: {
+    method: 'navigation.go_forward',
+    usage: 'bbx forward',
+    description: 'Navigate forward',
+    build: () => ({})
+  },
+  attrs: {
+    method: 'dom.get_attributes',
+    resolve: true,
+    printMethod: 'dom.get_attributes',
+    usage: 'bbx attrs <ref|selector> [attr1,...]',
+    description: 'Get element attributes',
+    build: (r, ref) => ({ elementRef: ref, attributes: parseCommaList(r[1]) })
+  },
+  'matched-rules': {
+    method: 'styles.get_matched_rules',
+    resolve: true,
+    printMethod: 'styles.get_matched_rules',
+    usage: 'bbx matched-rules <ref|selector>',
+    description: 'Get matched CSS rules',
+    build: (_r, ref) => ({ elementRef: ref })
   }
 };
 
@@ -277,6 +311,8 @@ export const CLI_HELP_SECTIONS = Object.freeze([
         'text',
         'html',
         'styles',
+        'attrs',
+        'matched-rules',
         'box',
         'a11y-tree'
       ].map((command) => `${SHORTCUT_COMMANDS[command].usage.padEnd(64)} ${SHORTCUT_COMMANDS[command].description}`)
@@ -302,6 +338,9 @@ export const CLI_HELP_SECTIONS = Object.freeze([
         'page-text',
         'storage',
         'navigate',
+        'reload',
+        'back',
+        'forward',
         'perf',
         'scroll',
         'resize'

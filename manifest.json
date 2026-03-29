@@ -12,6 +12,7 @@
   },
   "permissions": [
     "activeTab",
+    "alarms",
     "debugger",
     "nativeMessaging",
     "scripting",
@@ -38,18 +39,6 @@
   "side_panel": {
     "default_path": "packages/extension/ui/sidepanel.html"
   },
-  "content_scripts": [
-    {
-      "matches": [
-        "<all_urls>"
-      ],
-      "js": [
-        "packages/extension/src/content-script-helpers.js",
-        "packages/extension/src/content-script.js"
-      ],
-      "run_at": "document_idle"
-    }
-  ],
   "web_accessible_resources": [
     {
       "resources": [

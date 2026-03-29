@@ -112,11 +112,11 @@
       case 'dom.query':
         return domQuery(params);
       case 'dom.describe':
-        return describeElement(params.elementRef);
+        return describeElement(resolveElementRefFromParams(params));
       case 'dom.get_text':
-        return getText(params.elementRef, params.textBudget);
+        return getText(resolveElementRefFromParams(params), params.textBudget);
       case 'dom.get_attributes':
-        return getAttributes(params.elementRef, params.attributes ?? []);
+        return getAttributes(resolveElementRefFromParams(params), params.attributes ?? []);
       case 'dom.wait_for':
         return waitForDom(params);
       case 'dom.find_by_text':
@@ -124,15 +124,18 @@
       case 'dom.find_by_role':
         return findByRole(params);
       case 'dom.get_html':
-        return getHtml(params);
+        return getHtml({
+          ...params,
+          elementRef: resolveElementRefFromParams(params)
+        });
       case 'layout.get_box_model':
-        return getBoxModel(params.elementRef);
+        return getBoxModel(resolveElementRefFromParams(params));
       case 'layout.hit_test':
         return hitTest(params.x, params.y);
       case 'styles.get_computed':
-        return getComputedStyles(params.elementRef, params.properties);
+        return getComputedStyles(resolveElementRefFromParams(params), params.properties);
       case 'styles.get_matched_rules':
-        return getMatchedRules(params.elementRef);
+        return getMatchedRules(resolveElementRefFromParams(params));
       case 'viewport.scroll':
         return scrollViewport(params);
       case 'input.click':
@@ -162,7 +165,7 @@
       case 'patch.commit_session_baseline':
         return { committed: true };
       case 'screenshot.capture_element':
-        return getElementRect(params.elementRef);
+        return getElementRect(resolveElementRefFromParams(params));
       default:
         throw new Error(`Unsupported method ${method}`);
     }
@@ -800,7 +803,7 @@
    * Apply a reversible inline style patch to an element or selector target.
    *
    * @param {Record<string, any>} params
-   * @returns {{ patchId: string, applied: boolean }}
+   * @returns {{ patchId: string, applied: boolean, verified?: Record<string, string>, elementRef?: string }}
    */
   function applyStylePatch(params) {
     const element = /** @type {HTMLElement} */ (resolveTarget(params.target));
@@ -815,19 +818,30 @@
       );
     }
     pruneRegistry(patchRegistry, MAX_PATCH_REGISTRY_SIZE);
+    const elementRef = rememberElement(element);
     patchRegistry.set(patchId, {
       kind: 'style',
-      elementRef: rememberElement(element),
+      elementRef,
       previous,
     });
-    return { patchId, applied: true };
+    const result = { patchId, applied: true };
+    if (params.verify) {
+      const computed = globalThis.getComputedStyle(element);
+      /** @type {Record<string, string>} */
+      const verified = {};
+      for (const property of Object.keys(params.declarations || {})) {
+        verified[property] = computed.getPropertyValue(property);
+      }
+      return { ...result, verified, elementRef };
+    }
+    return result;
   }
 
   /**
    * Apply a reversible DOM patch to a target element.
    *
    * @param {Record<string, any>} params
-   * @returns {{ patchId: string, applied: boolean }}
+   * @returns {{ patchId: string, applied: boolean, verified?: Record<string, unknown>, elementRef?: string }}
    */
   function applyDomPatch(params) {
     const element = resolveTarget(params.target);
@@ -867,13 +881,27 @@
     }
 
     pruneRegistry(patchRegistry, MAX_PATCH_REGISTRY_SIZE);
+    const elementRef = rememberElement(element);
     patchRegistry.set(patchId, {
       kind: 'dom',
-      elementRef: rememberElement(element),
+      elementRef,
       operation,
       previous,
     });
-    return { patchId, applied: true };
+    const result = { patchId, applied: true };
+    if (params.verify) {
+      /** @type {Record<string, unknown>} */
+      const verified = {};
+      if (operation === 'set_text') {
+        verified.textContent = element.textContent;
+      } else if (operation === 'set_attribute' || operation === 'remove_attribute') {
+        verified[params.name] = element.getAttribute(params.name);
+      } else if (operation === 'toggle_class') {
+        verified.classList = [...element.classList];
+      }
+      return { ...result, verified, elementRef };
+    }
+    return result;
   }
 
   /**
@@ -1325,6 +1353,23 @@
       }
     }
     throw new Error('Target not found.');
+  }
+
+  /**
+   * Resolve element-level read params from either a legacy top-level
+   * `elementRef` or the newer `target` alias.
+   *
+   * @param {{ elementRef?: string, target?: { elementRef?: string, selector?: string } }} [params={}]
+   * @returns {string}
+   */
+  function resolveElementRefFromParams(params = {}) {
+    if (typeof params.elementRef === 'string' && params.elementRef) {
+      return params.elementRef;
+    }
+    if (params.target && typeof params.target === 'object') {
+      return rememberElement(resolveTarget(params.target));
+    }
+    throw new Error('Element target not found.');
   }
 
   /**

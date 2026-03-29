@@ -31,7 +31,8 @@ import {
   normalizeViewportAction,
   normalizeViewportResizeParams,
   normalizeWaitForLoadStateParams,
-  normalizeWaitForParams
+  normalizeWaitForParams,
+  SUPPORTED_VERSIONS
 } from '../../protocol/src/index.js';
 import {
   summarizeBridgeResponse,
@@ -137,6 +138,7 @@ import { TabDebuggerCoordinator } from './debugger-coordinator.js';
  *   nativePort: chrome.runtime.Port | null,
  *   enabledWindow: EnabledWindowState | null,
  *   requestedAccessWindowId: number | null,
+ *   nativeReconnectAttempts: number,
  *   actionLog: ActionLogEntry[],
  *   uiPorts: Map<chrome.runtime.Port, UiPortState>,
  *   setupStatus: SetupStatus | null,
@@ -166,8 +168,47 @@ const SETUP_STATUS_STALE_MS = 30_000;
 const SETUP_STATUS_TIMEOUT_MS = 5_000;
 const ACCESS_DENIED_WINDOW_OFF = 'Browser Bridge is off for this window.';
 const ACCESS_DENIED_TAB_CLOSE = 'tabs.close only works inside the enabled window.';
+const KEEPALIVE_ALARM_NAME = 'bb-keepalive';
 const NATIVE_RECONNECT_BASE_MS = 2_000;
 const NATIVE_RECONNECT_MAX_MS = 30_000;
+
+/**
+ * @param {string} left
+ * @param {string} right
+ * @returns {number}
+ */
+function compareProtocolVersions(left, right) {
+  const leftParts = left.split('.').map((part) => Number(part) || 0);
+  const rightParts = right.split('.').map((part) => Number(part) || 0);
+  const length = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index += 1) {
+    const delta = (leftParts[index] || 0) - (rightParts[index] || 0);
+    if (delta !== 0) {
+      return delta > 0 ? 1 : -1;
+    }
+  }
+  return 0;
+}
+
+/**
+ * @param {string | undefined} requestedVersion
+ * @returns {{ supported_versions: readonly string[], deprecated_since?: string, migration_hint?: string }}
+ */
+function getVersionNegotiationPayload(requestedVersion) {
+  const latestSupported = SUPPORTED_VERSIONS[0];
+  if (!requestedVersion || !latestSupported || SUPPORTED_VERSIONS.includes(requestedVersion)) {
+    return { supported_versions: SUPPORTED_VERSIONS };
+  }
+
+  const localIsNewer = compareProtocolVersions(latestSupported, requestedVersion) > 0;
+  return {
+    supported_versions: SUPPORTED_VERSIONS,
+    ...(localIsNewer ? { deprecated_since: latestSupported } : {}),
+    migration_hint: localIsNewer
+      ? `Browser Bridge extension is newer than the client protocol ${requestedVersion}. Update the Browser Bridge CLI/npm package to ${latestSupported} or later.`
+      : `Browser Bridge extension is older than the client protocol ${requestedVersion}. Update the extension to a build that supports ${requestedVersion}.`
+  };
+}
 
 /** @type {ReturnType<typeof setTimeout> | null} */
 let _nativeReconnectTimer = null;
@@ -178,6 +219,7 @@ const state = {
   nativePort: null,
   enabledWindow: null,
   requestedAccessWindowId: null,
+  nativeReconnectAttempts: 0,
   actionLog: [],
   uiPorts: new Map(),
   setupStatus: null,
@@ -215,6 +257,16 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
   void handleTabRemoved(tabId, removeInfo).catch(reportAsyncError);
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === KEEPALIVE_ALARM_NAME) {
+    // No-op: the alarm firing is enough to wake the service worker.
+    // Verify we still need to stay alive.
+    if (!state.enabledWindow) {
+      void chrome.alarms.clear(KEEPALIVE_ALARM_NAME);
+    }
+  }
 });
 
 chrome.runtime.onConnect.addListener((port) => {
@@ -281,12 +333,23 @@ async function initializeState() {
 function connectNative() {
   try {
     const candidatePort = chrome.runtime.connectNative(NATIVE_APP_NAME);
+    const wasReconnect = nativeReconnectDelay > NATIVE_RECONNECT_BASE_MS;
+    const reconnectAttempts = state.nativeReconnectAttempts;
     const stabilityTimer = setTimeout(() => {
       state.nativePort = candidatePort;
       nativeReconnectDelay = NATIVE_RECONNECT_BASE_MS;
+      state.nativeReconnectAttempts = 0;
       broadcastUi({ type: 'native.status', connected: true });
       refreshSetupStatus(true);
       void emitUiState();
+      if (wasReconnect && reconnectAttempts > 0) {
+        void appendActionLogEntry({
+          method: 'native.reconnect',
+          source: 'extension',
+          ok: true,
+          summary: `Native host reconnected after ${reconnectAttempts} attempt${reconnectAttempts === 1 ? '' : 's'}.`
+        });
+      }
     }, 500);
     candidatePort.onMessage.addListener((request) => {
       if (handleHostStatusMessage(request)) {
@@ -297,6 +360,8 @@ function connectNative() {
     candidatePort.onDisconnect.addListener(() => {
       clearTimeout(stabilityTimer);
       const disconnectError = chrome.runtime.lastError?.message ?? 'Native host disconnected.';
+      state.nativeReconnectAttempts += 1;
+      const reconnectAttempt = state.nativeReconnectAttempts;
       clearSetupStatus(disconnectError);
       if (state.nativePort === candidatePort) {
         state.nativePort = null;
@@ -306,6 +371,12 @@ function connectNative() {
           error: disconnectError
         });
       }
+      void appendActionLogEntry({
+        method: 'native.disconnect',
+        source: 'extension',
+        ok: false,
+        summary: `Native host disconnected (attempt ${reconnectAttempt}): ${disconnectError}. Reconnecting in ${nativeReconnectDelay}ms.`
+      });
       _nativeReconnectTimer = setTimeout(() => {
         _nativeReconnectTimer = null;
         connectNative();
@@ -362,7 +433,8 @@ async function dispatchBridgeRequest(request) {
     case 'health.ping':
       return createSuccess(request.id, {
         extension: 'ok',
-        access: await getAccessStatus()
+        access: await getAccessStatus(),
+        ...getVersionNegotiationPayload(request.meta?.protocol_version)
       }, { method: request.method });
     case 'access.request':
       return handleAccessRequest(request);
@@ -473,6 +545,7 @@ async function primeEnabledWindowInstrumentation() {
   if (!state.enabledWindow) {
     return;
   }
+  await injectContentScriptsForWindow(state.enabledWindow.windowId);
   await primeWindowConsoleCapture(state.enabledWindow.windowId);
 }
 
@@ -1356,6 +1429,36 @@ async function sendTabMessage(tabId, message, timeoutMs) {
 }
 
 /**
+ * Proactively inject content scripts into all scriptable tabs in a window
+ * when Bridge access is enabled. Errors on restricted pages are silently
+ * ignored since ensureContentScript will handle them on demand.
+ *
+ * @param {number} windowId
+ * @returns {Promise<void>}
+ */
+async function injectContentScriptsForWindow(windowId) {
+  const tabs = await chrome.tabs.query({ windowId });
+  await Promise.allSettled(
+    tabs
+      .filter((tab) => typeof tab.id === 'number' && tab.url && !isRestrictedAutomationUrl(tab.url))
+      .map((tab) => ensureContentScript(tab.id))
+  );
+}
+
+/**
+ * Detect Chrome scripting errors that indicate a restricted or unscriptable page.
+ *
+ * @param {string} message
+ * @returns {boolean}
+ */
+function isRestrictedScriptingError(message) {
+  return /Cannot access contents of url/i.test(message)
+    || /The extensions gallery cannot be scripted/i.test(message)
+    || /Cannot access a chrome:\/\//i.test(message)
+    || /Cannot script/i.test(message);
+}
+
+/**
  * Ensure the content script is present on the target tab before issuing
  * content-script-backed requests. This makes page operations resilient after
  * extension reloads or on tabs that predate the current extension version.
@@ -1368,13 +1471,24 @@ async function ensureContentScript(tabId) {
     await sendTabMessage(tabId, { type: 'bridge.ping' }, CONTENT_SCRIPT_TIMEOUT_MS);
     return;
   } catch {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: [
-        'packages/extension/src/content-script-helpers.js',
-        'packages/extension/src/content-script.js'
-      ]
-    });
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: [
+          'packages/extension/src/content-script-helpers.js',
+          'packages/extension/src/content-script.js'
+        ]
+      });
+    } catch (injectError) {
+      const msg = injectError instanceof Error ? injectError.message : String(injectError);
+      if (isRestrictedScriptingError(msg)) {
+        throw new Error(
+          'CONTENT_SCRIPT_UNAVAILABLE: Content script not available on this page (restricted or extension page).',
+          { cause: injectError }
+        );
+      }
+      throw injectError;
+    }
   }
 }
 
@@ -1628,6 +1742,8 @@ async function setWindowEnabled(windowId, title, enabled) {
     await chrome.storage.session.set({
       [ENABLED_WINDOW_STORAGE_KEY]: access
     });
+    await chrome.alarms.create(KEEPALIVE_ALARM_NAME, { periodInMinutes: 0.4 });
+    await injectContentScriptsForWindow(access.windowId);
     await primeWindowConsoleCapture(access.windowId, true);
   } else {
     await disableWindow(windowId);
@@ -1650,6 +1766,7 @@ async function disableWindow(windowId) {
   }
   state.enabledWindow = null;
   await chrome.storage.session.remove(ENABLED_WINDOW_STORAGE_KEY);
+  await chrome.alarms.clear(KEEPALIVE_ALARM_NAME);
   await clearWindowBridgeState(windowId);
   await refreshActionIndicators();
 }

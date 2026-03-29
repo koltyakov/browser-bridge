@@ -25,7 +25,8 @@ test('TabDebuggerCoordinator serializes debugger work for the same tab', async (
     },
     detach: async (target) => {
       events.push(`detach:${target.tabId}`);
-    }
+    },
+    burstIdleMs: 0
   });
 
   const first = coordinator.run(7, async () => {
@@ -51,12 +52,11 @@ test('TabDebuggerCoordinator serializes debugger work for the same tab', async (
 
   assert.equal(await first, 'first');
   assert.equal(await second, 'second');
+  await nextTick();
   assert.deepEqual(events, [
     'attach:7',
     'task:first:start',
     'task:first:end',
-    'detach:7',
-    'attach:7',
     'task:second',
     'detach:7'
   ]);
@@ -102,7 +102,8 @@ test('TabDebuggerCoordinator releases the queue after task failures', async () =
     },
     detach: async () => {
       detachCount += 1;
-    }
+    },
+    burstIdleMs: 0
   });
 
   await assert.rejects(
@@ -111,9 +112,11 @@ test('TabDebuggerCoordinator releases the queue after task failures', async () =
     }),
     /boom/
   );
+  await nextTick();
 
   const result = await coordinator.run(7, async () => 'recovered');
   assert.equal(result, 'recovered');
+  await nextTick();
   assert.equal(attachCount, 2);
   assert.equal(detachCount, 2);
 });

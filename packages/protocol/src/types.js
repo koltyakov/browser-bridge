@@ -135,6 +135,10 @@ export {};
 /**
  * @typedef {{
  *   elementRef?: string,
+ *   target?: {
+ *     elementRef?: string,
+ *     selector?: string
+ *   },
  *   properties?: string[]
  * }} StyleQueryParams
  */
@@ -142,6 +146,10 @@ export {};
 /**
  * @typedef {{
  *   elementRef: string,
+ *   target: {
+ *     elementRef?: string,
+ *     selector?: string
+ *   },
  *   properties: string[]
  * }} NormalizedStyleQuery
  */
@@ -255,7 +263,8 @@ export {};
  *   name?: string | null,
  *   declarations?: Record<string, string>,
  *   value?: unknown,
- *   important?: boolean
+ *   important?: boolean,
+ *   verify?: boolean
  * }} PatchOperationParams
  */
 
@@ -267,7 +276,8 @@ export {};
  *   name: string | null,
  *   declarations: Record<string, string>,
  *   value: unknown,
- *   important: boolean
+ *   important: boolean,
+ *   verify: boolean
  * }} NormalizedPatchOperation
  */
 
@@ -423,6 +433,10 @@ export {};
 /**
  * @typedef {{
  *   elementRef?: string,
+ *   target?: {
+ *     elementRef?: string,
+ *     selector?: string
+ *   },
  *   outer?: boolean,
  *   maxLength?: number
  * }} GetHtmlParams
@@ -431,6 +445,10 @@ export {};
 /**
  * @typedef {{
  *   elementRef: string,
+ *   target: {
+ *     elementRef?: string,
+ *     selector?: string
+ *   },
  *   outer: boolean,
  *   maxLength: number
  * }} NormalizedGetHtmlParams

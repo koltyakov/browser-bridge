@@ -4,7 +4,7 @@ import { once } from 'node:events';
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
 
-import { createRequest, parseJsonLines } from '../../protocol/src/index.js';
+import { createRequest, PROTOCOL_VERSION, parseJsonLines } from '../../protocol/src/index.js';
 import { getSocketPath } from '../../native-host/src/config.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
@@ -167,6 +167,35 @@ export class BridgeClient {
     await new Promise((resolve) => {
       this.socket?.end(() => resolve(undefined));
     });
+  }
+
+  /**
+   * Check whether the remote side supports our protocol version.
+   * Call after a successful health.ping to get early warnings about version drift.
+   *
+   * @param {{ supported_versions?: string[], deprecated_since?: string, migration_hint?: string }} healthResult
+   * @returns {{ compatible: boolean, localVersion: string, remoteVersions: string[], warning?: string }}
+   */
+  static checkProtocolVersion(healthResult) {
+    const remoteVersions = Array.isArray(healthResult?.supported_versions)
+      ? healthResult.supported_versions
+      : [];
+    if (remoteVersions.length === 0) {
+      return { compatible: true, localVersion: PROTOCOL_VERSION, remoteVersions };
+    }
+    const compatible = remoteVersions.includes(PROTOCOL_VERSION);
+    return {
+      compatible,
+      localVersion: PROTOCOL_VERSION,
+      remoteVersions,
+      ...(!compatible && {
+        warning:
+          typeof healthResult?.migration_hint === 'string' &&
+          healthResult.migration_hint
+            ? healthResult.migration_hint
+            : `Protocol mismatch: client speaks ${PROTOCOL_VERSION} but remote supports [${remoteVersions.join(', ')}]. Update the ${remoteVersions[0] > PROTOCOL_VERSION ? 'client (npm)' : 'extension'} to match.`
+      })
+    };
   }
 
   /**

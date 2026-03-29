@@ -559,8 +559,30 @@ test('normalizeNavigationAction allows http/https/about', () => {
 
 /** Ensure style query requires elementRef. */
 test('normalizeStyleQuery requires elementRef', () => {
-  assert.throws(() => normalizeStyleQuery({}), /elementRef is required/);
-  assert.throws(() => normalizeStyleQuery({ elementRef: '' }), /elementRef is required/);
+  assert.throws(() => normalizeStyleQuery({}), /elementRef or target is required/);
+  assert.throws(() => normalizeStyleQuery({ elementRef: '' }), /elementRef or target is required/);
+});
+
+test('normalizeStyleQuery keeps target alias for element-level reads', () => {
+  const query = normalizeStyleQuery({
+    target: { selector: '.hero-title' },
+    properties: ['display', 'color']
+  });
+
+  assert.equal(query.elementRef, '');
+  assert.equal(query.target.selector, '.hero-title');
+  assert.deepEqual(query.properties, ['display', 'color']);
+});
+
+test('normalizeGetHtmlParams keeps target alias for element-level reads', () => {
+  const params = normalizeGetHtmlParams({
+    target: { elementRef: 'el_html' },
+    maxLength: 4000
+  });
+
+  assert.equal(params.elementRef, 'el_html');
+  assert.equal(params.target.elementRef, 'el_html');
+  assert.equal(params.maxLength, 4000);
 });
 
 /** Ensure evaluate params reject oversized expressions. */

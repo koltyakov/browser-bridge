@@ -225,6 +225,9 @@ let currentActionLog = [];
 /** @type {ReturnType<typeof setInterval> | null} */
 let setupStatusPollTimer = null;
 let hasAutoExpandedHostSetup = false;
+/** @type {ReturnType<typeof setTimeout> | null} */
+let nativeDiagnosticTimer = null;
+const NATIVE_DIAGNOSTIC_DELAY_MS = 10_000;
 const setupContextMenu = document.createElement('div');
 setupContextMenu.className = 'setup-context-menu';
 setupContextMenu.hidden = true;
@@ -532,6 +535,42 @@ function renderNativeStatus(connected, error) {
     hideSetupContextMenu();
   }
   syncConnectedSectionsVisibility();
+
+  if (connected) {
+    if (nativeDiagnosticTimer) {
+      clearTimeout(nativeDiagnosticTimer);
+      nativeDiagnosticTimer = null;
+    }
+    hideSidepanelDiagnostic();
+  } else if (!nativeDiagnosticTimer) {
+    nativeDiagnosticTimer = setTimeout(() => {
+      nativeDiagnosticTimer = null;
+      showSidepanelDiagnostic(`Native host unreachable for 10s. Run: npm install -g @browserbridge/bbx && ${setupInstallCmd.textContent || 'bbx install'}`);
+    }, NATIVE_DIAGNOSTIC_DELAY_MS);
+  }
+}
+
+/**
+ * @param {string} message
+ * @returns {void}
+ */
+function showSidepanelDiagnostic(message) {
+  let el = document.getElementById('native-diagnostic');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'native-diagnostic';
+    el.style.cssText = 'padding:8px 12px;margin:8px 0;background:var(--status-badge-bg,#fef3cd);color:var(--text-primary,#856404);border-radius:6px;font-size:12px;line-height:1.4';
+    setupSection.after(el);
+  }
+  el.textContent = message;
+  el.hidden = false;
+}
+
+function hideSidepanelDiagnostic() {
+  const el = document.getElementById('native-diagnostic');
+  if (el) {
+    el.hidden = true;
+  }
 }
 
 /**

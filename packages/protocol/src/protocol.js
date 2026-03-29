@@ -18,7 +18,7 @@ import {
   DEFAULT_VIEWPORT_WIDTH,
   DEFAULT_WAIT_TIMEOUT_MS,
 } from './defaults.js';
-import { BridgeError, ERROR_CODES } from './errors.js';
+import { BridgeError, ERROR_CODES, getErrorRecovery } from './errors.js';
 import { BRIDGE_METHODS, createBridgeMethodGroups } from './registry.js';
 
 /** @typedef {import('./types.js').AccessibilityTreeParams} AccessibilityTreeParams */
@@ -76,6 +76,9 @@ import { BRIDGE_METHODS, createBridgeMethodGroups } from './registry.js';
 /** @typedef {import('./types.js').WaitForParams} WaitForParams */
 
 export const PROTOCOL_VERSION = '1.0';
+
+/** Versions this build can speak. Newest first. */
+export const SUPPORTED_VERSIONS = Object.freeze(['1.0']);
 
 /**
  * Clamp a numeric value between min and max, falling back to a default.
@@ -144,6 +147,7 @@ export function createSuccess(id, result, meta = {}) {
  * @returns {BridgeFailureResponse}
  */
 export function createFailure(id, code, message, details = null, meta = {}) {
+  const recovery = getErrorRecovery(code);
   return {
     id,
     ok: false,
@@ -151,7 +155,8 @@ export function createFailure(id, code, message, details = null, meta = {}) {
     error: {
       code,
       message,
-      details
+      details,
+      ...(recovery && { recovery })
     },
     meta: {
       protocol_version: PROTOCOL_VERSION,
@@ -222,12 +227,18 @@ export function normalizeDomQuery(params = {}) {
  * @returns {NormalizedStyleQuery}
  */
 export function normalizeStyleQuery(params = {}) {
-  const elementRef = String(params.elementRef || '');
-  if (!elementRef) {
-    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'elementRef is required for style queries.');
+  const target = normalizeTarget(
+    params.target && typeof params.target === 'object'
+      ? /** @type {{ elementRef?: string, selector?: string }} */ (params.target)
+      : undefined
+  );
+  const elementRef = String(params.elementRef || target.elementRef || '');
+  if (!elementRef && !target.selector) {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'elementRef or target is required for style queries.');
   }
   return {
     elementRef,
+    target,
     properties: Array.isArray(params.properties) ? params.properties.filter(Boolean) : []
   };
 }
@@ -371,7 +382,8 @@ export function normalizePatchOperation(params = {}) {
       ? /** @type {Record<string, string>} */ (params.declarations)
       : {},
     value: params.value ?? null,
-    important: Boolean(params.important)
+    important: Boolean(params.important),
+    verify: Boolean(params.verify)
   };
 }
 
@@ -455,8 +467,14 @@ export function normalizeFindByRoleParams(params = {}) {
  * @returns {NormalizedGetHtmlParams}
  */
 export function normalizeGetHtmlParams(params = {}) {
+  const target = normalizeTarget(
+    params.target && typeof params.target === 'object'
+      ? /** @type {{ elementRef?: string, selector?: string }} */ (params.target)
+      : undefined
+  );
   return {
-    elementRef: String(params.elementRef || ''),
+    elementRef: String(params.elementRef || target.elementRef || ''),
+    target,
     outer: Boolean(params.outer),
     maxLength: clampInt(params.maxLength, 32, 50_000, 2000)
   };

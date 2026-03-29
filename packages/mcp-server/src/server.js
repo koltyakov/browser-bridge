@@ -88,7 +88,7 @@ export function createBridgeMcpServer() {
 
   server.registerTool('browser_dom', {
     title: 'Browser DOM',
-    description: `Query, describe, read, wait for, or search DOM elements in the live tab. Default routing follows the active tab in the enabled window. Use elementRef from prior results to avoid re-querying. \`accessibility_tree\` is debugger-backed and should be a last resort after query/find actions. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
+    description: `Query, describe, read, wait for, or search DOM elements in the live tab. When to use: element-level inspection — selectors, structure, text, attributes. For full-page text extraction, prefer browser_page with action "text". Default routing follows the active tab in the enabled window. Use elementRef from prior results to avoid re-querying. \`accessibility_tree\` is debugger-backed and should be a last resort after query/find actions. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
     inputSchema: {
       action: z.enum(['query', 'describe', 'text', 'attributes', 'wait', 'find_text', 'find_role', 'html', 'accessibility_tree']).describe('DOM operation to perform'),
       tabId: z.number().optional().describe(TAB_ID_DESCRIPTION),
@@ -116,7 +116,7 @@ export function createBridgeMcpServer() {
 
   server.registerTool('browser_styles_layout', {
     title: 'Browser Styles And Layout',
-    description: `Read computed styles, matched CSS rules, box models, and perform hit tests. Default routing follows the active tab in the enabled window. Use elementRef from prior queries. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
+    description: `Read computed styles, matched CSS rules, box models, and perform hit tests. When to use: CSS debugging, layout verification, and visual regression checks. For DOM structure, use browser_dom instead. Default routing follows the active tab in the enabled window. Use elementRef from prior queries. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
     inputSchema: {
       action: z.enum(['computed', 'matched_rules', 'box_model', 'hit_test']).describe('Style/layout operation to perform'),
       tabId: z.number().optional().describe(TAB_ID_DESCRIPTION),
@@ -131,7 +131,7 @@ export function createBridgeMcpServer() {
 
   server.registerTool('browser_page', {
     title: 'Browser Page State',
-    description: `Read page state, evaluate JavaScript, inspect console/network, fetch storage, or get performance metrics. Default routing follows the active tab in the enabled window. \`evaluate\` and \`performance\` are debugger-backed and should be used only after lighter reads fail. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
+    description: `Read page state, evaluate JavaScript, inspect console/network, fetch storage, or get performance metrics. When to use: page-level data (URL, title, console errors, network requests, full text, storage). For element-level reads, use browser_dom. Default routing follows the active tab in the enabled window. \`evaluate\` and \`performance\` are debugger-backed and should be used only after lighter reads fail. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
     inputSchema: {
       action: z.enum(['state', 'evaluate', 'console', 'wait_for_load', 'storage', 'text', 'network', 'performance']).describe('Page operation to perform'),
       tabId: z.number().optional().describe(TAB_ID_DESCRIPTION),
@@ -202,7 +202,7 @@ export function createBridgeMcpServer() {
 
   server.registerTool('browser_patch', {
     title: 'Browser Patch',
-    description: `Apply reversible style or DOM patches. All patches can be rolled back. Use to prototype UI changes without modifying source. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
+    description: `Apply reversible style or DOM patches. When to use: prototyping CSS or text changes live before editing source. All patches can be rolled back. Set verify=true to get computed results inline without a follow-up query. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
     inputSchema: {
       action: z.enum(['apply_styles', 'apply_dom', 'list', 'rollback', 'commit_baseline']).describe('Patch operation to perform'),
       tabId: z.number().optional().describe(TAB_ID_DESCRIPTION),
@@ -214,7 +214,8 @@ export function createBridgeMcpServer() {
       operation: z.enum(['setAttribute', 'removeAttribute', 'addClass', 'removeClass', 'setTextContent', 'setProperty']).optional().describe('DOM mutation type'),
       value: z.unknown().optional().describe('Value for the DOM operation'),
       name: z.string().optional().describe('Attribute/class/property name (for apply_dom)'),
-      patchId: z.string().optional().describe('Patch ID to rollback (omit for most recent)')
+      patchId: z.string().optional().describe('Patch ID to rollback (omit for most recent)'),
+      verify: z.boolean().optional().describe('Return computed result inline after applying, eliminating a verification round-trip')
     }
   }, handlePatchTool);
 
@@ -238,7 +239,7 @@ export function createBridgeMcpServer() {
 
   server.registerTool('browser_batch', {
     title: 'Browser Bridge Batch',
-    description: `Execute multiple existing Browser Bridge calls in parallel. Preserves call order in the response and reuses one resolved default routed tab when possible. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
+    description: `Execute multiple Browser Bridge calls in parallel. When to use: combining independent reads (e.g., styles + text + console) to reduce round-trips. Preserves call order in the response and reuses one resolved default routed tab when possible. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
     inputSchema: {
       calls: z.array(z.object({
         method: z.string().describe('Bridge method name (e.g. "dom.query", "page.get_text")'),
