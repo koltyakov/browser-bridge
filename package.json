@@ -40,6 +40,9 @@
     "daemon": "node packages/native-host/bin/bridge-daemon.js",
     "install-manifest": "node packages/native-host/bin/install-manifest.js"
   },
+  "engines": {
+    "node": ">=18"
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/chrome": "^0.1.38",

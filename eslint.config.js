@@ -15,6 +15,7 @@ export default [
   {
     ignores: [
       'assets/**',
+      'dist/**',
       'node_modules/**',
       'packages/extension/assets/**',
       'packages/extension/ui/**/*.css',

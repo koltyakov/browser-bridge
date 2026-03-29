@@ -142,6 +142,12 @@ export class BridgeClient {
    * @returns {Promise<BridgeResponse>}
    */
   async request({ method, params = {}, tabId = null, meta = {}, timeoutMs = this.defaultTimeoutMs }) {
+    if (!this.socket || this.socket.destroyed || !this.socket.writable) {
+      const err = /** @type {Error & { code: string }} */ (new Error('BridgeClient is not connected.'));
+      err.code = 'ENOTCONN';
+      throw err;
+    }
+
     const request = createRequest({
       id: `req_${randomUUID()}`,
       method,

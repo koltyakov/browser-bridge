@@ -2,6 +2,9 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+// zod is required at runtime by @modelcontextprotocol/sdk for tool parameter schema
+// declarations (z.object, z.string, etc.). It is not used for request/response
+// validation — that is handled by the protocol package.
 import * as z from 'zod/v4';
 
 import {

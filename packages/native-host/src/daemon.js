@@ -103,7 +103,11 @@ export class BridgeDaemon {
    */
   async start() {
     if (!this.listenOptions) {
-      await fs.promises.mkdir(path.dirname(this.socketPath), { recursive: true });
+      const socketDir = path.dirname(this.socketPath);
+      await fs.promises.mkdir(socketDir, { recursive: true });
+      if (process.platform !== 'win32') {
+        await fs.promises.chmod(socketDir, 0o700);
+      }
       try {
         await fs.promises.access(this.socketPath);
         this.logger.log('[daemon] Removing stale socket from previous run:', this.socketPath);
@@ -140,6 +144,10 @@ export class BridgeDaemon {
         this.server.listen(this.socketPath, onListen);
       }
     });
+
+    if (!this.listenOptions && process.platform !== 'win32') {
+      await fs.promises.chmod(this.socketPath, 0o600);
+    }
 
     return this;
   }

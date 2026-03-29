@@ -59,6 +59,36 @@ import {
 const REQUEST_SOURCE = 'cli';
 
 /**
+ * Strip ANSI escape sequences from a string to prevent terminal injection
+ * from malicious page content (e.g. DOM text, console output, eval results).
+ *
+ * @param {string} str
+ * @returns {string}
+ */
+function stripAnsi(str) {
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').replace(/\x1b[^[]/g, '');
+}
+
+/**
+ * Recursively sanitize all string values in a value tree by stripping ANSI
+ * escape sequences. Only strings are touched; structure is preserved.
+ *
+ * @param {unknown} value
+ * @returns {unknown}
+ */
+function sanitizeOutput(value) {
+  if (typeof value === 'string') return stripAnsi(value);
+  if (Array.isArray(value)) return value.map(sanitizeOutput);
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(/** @type {Record<string, unknown>} */ (value)).map(([k, v]) => [k, sanitizeOutput(v)])
+    );
+  }
+  return value;
+}
+
+/**
  * Read all of stdin as UTF-8 text. Resolves once stdin closes.
  *
  * @returns {Promise<string>}
@@ -748,7 +778,7 @@ async function printSummary(response, method) {
  */
 function printJson(value) {
   process.stdout.write(
-    `${JSON.stringify(value, null, process.stdout.isTTY ? 2 : undefined)}\n`,
+    `${JSON.stringify(sanitizeOutput(value), null, process.stdout.isTTY ? 2 : undefined)}\n`,
   );
 }
 

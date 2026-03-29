@@ -2,8 +2,35 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import net from 'node:net';
+import os from 'node:os';
+import path from 'node:path';
 
 import { BridgeDaemon } from '../src/daemon.js';
+
+/**
+ * Start a daemon on a random TCP port and return it alongside a helper to open
+ * a raw socket to it. Caller must call `daemon.stop()` after the test.
+ *
+ * @returns {Promise<{ daemon: BridgeDaemon, connect: () => Promise<net.Socket> }>}
+ */
+async function startTestDaemon() {
+  const daemon = new BridgeDaemon({
+    listenOptions: { host: '127.0.0.1', port: 0 },
+    logger: { log() {}, error() {} }
+  });
+  await daemon.start();
+  const address = /** @type {import('node:net').AddressInfo} */ (daemon.serverAddress);
+  return {
+    daemon,
+    connect: () => new Promise((resolve, reject) => {
+      const socket = net.createConnection({ host: '127.0.0.1', port: address.port });
+      socket.once('connect', () => resolve(socket));
+      socket.once('error', reject);
+    })
+  };
+}
 
 /**
  * @returns {import('node:net').Socket & { writes: string[] }}
@@ -260,4 +287,147 @@ test('daemon stop is idempotent when called concurrently', async () => {
   await Promise.all([daemon.stop(), daemon.stop(), daemon.stop()]);
 
   assert.equal(daemon.server, null);
+});
+
+// --- Security: socket and directory permissions (1.1 / 1.2) ---
+
+test('daemon socket has 0o600 mode and config dir has 0o700 mode (Unix only)', {
+  skip: process.platform === 'win32' ? 'chmod is a no-op on Windows' : false
+}, async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-perms-'));
+  const socketPath = path.join(tempDir, 'test.sock');
+  const daemon = new BridgeDaemon({ socketPath, logger: { log() {}, error() {} } });
+  try {
+    await daemon.start();
+    const sockStats = await fs.promises.stat(socketPath);
+    assert.equal(
+      sockStats.mode & 0o777, 0o600,
+      `socket mode should be 0o600, got 0o${(sockStats.mode & 0o777).toString(8)}`
+    );
+    const dirStats = await fs.promises.stat(tempDir);
+    assert.equal(
+      dirStats.mode & 0o777, 0o700,
+      `config dir mode should be 0o700, got 0o${(dirStats.mode & 0o777).toString(8)}`
+    );
+  } finally {
+    await daemon.stop();
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+// --- Resilience: malformed native messages (5.1) ---
+
+/**
+ * Helper: send raw bytes over a socket, then send a valid health.ping and
+ * collect the first response line. Returns the parsed response payload.
+ *
+ * @param {net.Socket} socket
+ * @param {Buffer | string} garbage  Data to emit before the valid request
+ * @returns {Promise<unknown>}
+ */
+function sendGarbageThenPing(socket, garbage) {
+  return new Promise((resolve, reject) => {
+    const validRequest = JSON.stringify({
+      type: 'agent.request',
+      request: {
+        id: 'req_probe',
+        method: 'health.ping',
+        tab_id: null,
+        params: {},
+        meta: { protocol_version: '1.0', token_budget: null }
+      }
+    });
+
+    let responseBuffer = '';
+    socket.setEncoding('utf8');
+    socket.on('data', (chunk) => {
+      responseBuffer += chunk;
+      const newlineIndex = responseBuffer.indexOf('\n');
+      if (newlineIndex !== -1) {
+        const line = responseBuffer.slice(0, newlineIndex).trim();
+        try {
+          resolve(JSON.parse(line));
+        } catch {
+          reject(new Error(`Could not parse response: ${line}`));
+        }
+      }
+    });
+    socket.on('error', reject);
+
+    // Send garbage, then a newline-terminated valid request.
+    socket.write(garbage);
+    socket.write(`${validRequest}\n`);
+  });
+}
+
+test('daemon survives truncated JSON and still processes subsequent requests', async () => {
+  const { daemon, connect } = await startTestDaemon();
+  const socket = await connect();
+  try {
+    // Truncated JSON terminated with \n is its own (malformed) line.
+    // parseJsonLines extracts it, JSON.parse fails, the line is skipped, and
+    // the daemon continues processing the next (valid) request.
+    const response = await sendGarbageThenPing(socket, '{"method": "he\n');
+    assert.equal(/** @type {any} */ (response).type, 'agent.response');
+  } finally {
+    socket.destroy();
+    await daemon.stop();
+  }
+});
+
+test('daemon survives binary garbage and still processes subsequent requests', async () => {
+  const { daemon, connect } = await startTestDaemon();
+  const socket = await connect();
+  try {
+    // Binary garbage followed by a newline: parseJsonLines will try to parse
+    // the garbage line, fail silently, and continue.
+    const response = await sendGarbageThenPing(socket, Buffer.from([0x00, 0x01, 0x02, 0xff, 0x0a]));
+    assert.equal(/** @type {any} */ (response).type, 'agent.response');
+  } finally {
+    socket.destroy();
+    await daemon.stop();
+  }
+});
+
+test('daemon survives oversized message and still processes subsequent requests', async () => {
+  const { daemon, connect } = await startTestDaemon();
+  const socket = await connect();
+  try {
+    // A very long line (well above the 1 MB native-messaging cap) followed by
+    // a newline: the JSON-lines socket layer has no size cap, so the daemon will
+    // try to JSON.parse it, fail, skip it, and continue processing normally.
+    const oversized = `${'x'.repeat(8_192)}\n`;
+    const response = await sendGarbageThenPing(socket, oversized);
+    assert.equal(/** @type {any} */ (response).type, 'agent.response');
+  } finally {
+    socket.destroy();
+    await daemon.stop();
+  }
+});
+
+test('daemon sends error response for valid JSON with missing type field', async () => {
+  const { daemon, connect } = await startTestDaemon();
+  const socket = await connect();
+  try {
+    const response = await new Promise((resolve, reject) => {
+      let buf = '';
+      socket.setEncoding('utf8');
+      socket.on('data', (chunk) => {
+        buf += chunk;
+        const idx = buf.indexOf('\n');
+        if (idx !== -1) {
+          try { resolve(JSON.parse(buf.slice(0, idx).trim())); } catch { reject(new Error('bad json')); }
+        }
+      });
+      socket.on('error', reject);
+      // Valid JSON but no `type` field — should fall through to the unknown
+      // message type handler and get an error response.
+      socket.write('{}\n');
+    });
+    assert.equal(/** @type {any} */ (response).type, 'error');
+    assert.equal(/** @type {any} */ (response).error.code, 'INVALID_REQUEST');
+  } finally {
+    socket.destroy();
+    await daemon.stop();
+  }
 });

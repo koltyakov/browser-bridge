@@ -1624,6 +1624,156 @@ test('installMcpConfig migrates Copilot legacy servers config to mcpServers', as
   }
 });
 
+// --- BridgeClient socket error/disconnect scenarios (5.2) ---
+
+import net from 'node:net';
+
+/**
+ * Create a minimal mock TCP "daemon" that:
+ * 1. Accepts one connection
+ * 2. Sends a `registered` message immediately
+ * 3. Invokes `onRequest(socket, message)` for each `agent.request` line received
+ *
+ * Returns the server and the port it's listening on.
+ *
+ * @param {(socket: net.Socket, msg: unknown) => void} [onRequest]
+ * @returns {Promise<{ server: net.Server, port: number }>}
+ */
+async function startMockDaemon(onRequest) {
+  return new Promise((resolve) => {
+    const server = net.createServer((socket) => {
+      socket.setEncoding('utf8');
+      socket.write(`${JSON.stringify({ type: 'registered', role: 'agent', clientId: 'mock_client' })}\n`);
+      let buf = '';
+      socket.on('data', (chunk) => {
+        buf += chunk;
+        while (buf.includes('\n')) {
+          const idx = buf.indexOf('\n');
+          const line = buf.slice(0, idx).trim();
+          buf = buf.slice(idx + 1);
+          if (!line) continue;
+          try {
+            const msg = JSON.parse(line);
+            if (msg.type === 'agent.request') {
+              onRequest?.(socket, msg);
+            }
+          } catch { /* ignore */ }
+        }
+      });
+    });
+    server.listen({ host: '127.0.0.1', port: 0 }, () => {
+      const address = /** @type {import('node:net').AddressInfo} */ (server.address());
+      resolve({ server, port: address.port });
+    });
+  });
+}
+
+/**
+ * Connect a BridgeClient to a TCP mock daemon at the given port.
+ * BridgeClient natively uses Unix sockets; this patches connect() to use TCP.
+ *
+ * @param {number} port
+ * @returns {import('../src/client.js').BridgeClient}
+ */
+function makeTcpClient(port) {
+  const client = new BridgeClient({ defaultTimeoutMs: 5_000 });
+  client.connect = async function () {
+    const socket = net.createConnection({ host: '127.0.0.1', port });
+    await new Promise((res, rej) => { socket.once('connect', res); socket.once('error', rej); });
+    this.socket = socket;
+    const { parseJsonLines } = await import('../../protocol/src/index.js');
+    parseJsonLines(socket, (raw) => {
+      const msg = /** @type {any} */ (raw);
+      if (msg.type === 'registered') {
+        const p = this.waiting.get('registered');
+        if (p) { this.waiting.delete('registered'); this.connected = true; clearTimeout(p.timeoutId); p.resolve(msg); }
+        return;
+      }
+      if (msg.type === 'agent.response') {
+        const p = this.waiting.get(msg.response.id);
+        if (p) { this.waiting.delete(msg.response.id); clearTimeout(p.timeoutId); p.resolve(msg.response); }
+      }
+    });
+    socket.on('close', () => this.rejectAllPending(new Error('Bridge socket closed.')));
+    socket.on('error', (err) => this.rejectAllPending(err));
+    socket.write(`${JSON.stringify({ type: 'register', role: 'agent', clientId: this.clientId })}\n`);
+    await new Promise((res, rej) => {
+      const tid = setTimeout(() => { this.waiting.delete('registered'); rej(new Error('register timeout')); }, this.defaultTimeoutMs);
+      this.waiting.set('registered', { resolve: res, reject: rej, timeoutId: tid });
+    });
+  };
+  return client;
+}
+
+test('BridgeClient pending request rejects when server destroys connection mid-request', async () => {
+  // Mock daemon that immediately closes the connection when it receives any request.
+  const { server, port } = await startMockDaemon((socket) => {
+    socket.destroy();
+  });
+  const client = makeTcpClient(port);
+  try {
+    await client.connect();
+    await assert.rejects(
+      client.request({ method: 'health.ping', timeoutMs: 5_000 }),
+      (err) => {
+        assert.ok(err instanceof Error);
+        return true;
+      }
+    );
+  } finally {
+    await client.close().catch(() => {});
+    server.close();
+  }
+});
+
+test('BridgeClient.request rejects immediately when socket is disconnected', async () => {
+  // Mock daemon that never responds to requests (hangs).
+  const { server, port } = await startMockDaemon(() => {});
+  const client = makeTcpClient(port);
+  try {
+    await client.connect();
+
+    // Destroy the underlying socket (simulates daemon crash / explicit close).
+    client.socket?.destroy();
+
+    // BridgeClient.request() checks socket state eagerly and should throw
+    // ENOTCONN without hanging.
+    await assert.rejects(
+      client.request({ method: 'health.ping', timeoutMs: 2_000 }),
+      (err) => {
+        assert.ok(err instanceof Error);
+        return true;
+      }
+    );
+  } finally {
+    server.close();
+  }
+});
+
+test('BridgeClient cleans up all pending requests on socket error event', async () => {
+  // Mock daemon that hangs on all requests.
+  const { server, port } = await startMockDaemon(() => {});
+  const client = makeTcpClient(port);
+  try {
+    await client.connect();
+
+    const p1 = client.request({ method: 'health.ping', timeoutMs: 5_000 });
+    const p2 = client.request({ method: 'health.ping', timeoutMs: 5_000 });
+    // Let the writes complete before destroying the socket.
+    await new Promise((r) => setTimeout(r, 10));
+
+    client.socket?.destroy(new Error('simulated network error'));
+
+    const [r1, r2] = await Promise.allSettled([p1, p2]);
+    assert.equal(r1.status, 'rejected', 'p1 should reject');
+    assert.equal(r2.status, 'rejected', 'p2 should reject');
+    assert.equal(client.waiting.size, 0, 'waiting map should be empty after error');
+  } finally {
+    await client.close().catch(() => {});
+    server.close();
+  }
+});
+
 test('removeMcpConfig keeps Copilot mcpServers object after removing browser-bridge', async () => {
   const tempHome = await fs.promises.mkdtemp(
     path.join(os.tmpdir(), 'bbx-copilot-mcp-remove-'),
