@@ -67,7 +67,7 @@ When adding or modifying agent/editor support (e.g., adding a new IDE or agent c
    - Code base: `packages/agent-client/src/install.js` (supportedTargets, skill paths)
    - Code base: `packages/agent-client/src/mcp-config.js` (MCP_CLIENT_NAMES, config shapes, paths)
    - Documentation: `README.md` (text descriptions, example commands)
-   - Documentation: `QUICKSTART.md` (supported clients list, example commands)
+   - Documentation: `docs/quickstart.md` (supported clients list, example commands)
    - Extension UI: Side panel settings and host setup UI
 
 2. **Order preservation**: Maintain the same agent order across all locations. Current order:
@@ -81,8 +81,8 @@ When adding or modifying agent/editor support (e.g., adding a new IDE or agent c
    - Add MCP config shape (key, includeType) to `MCP_CONFIG_SHAPES`
    - Add global and local config paths to `getMcpConfigPath`
    - Add global and local skill paths to `GLOBAL_SKILL_PATHS` and `LOCAL_SKILL_PATHS`
-   - Update text descriptions in README.md and QUICKSTART.md
-   - Update example commands in QUICKSTART.md
+   - Update text descriptions in README.md and `docs/quickstart.md`
+   - Update example commands in `docs/quickstart.md`
    - Do NOT modify the Supported Agents table in README.md
 
 ## CLI and Protocol Expectations

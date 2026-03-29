@@ -8,7 +8,7 @@ cd browser-bridge
 npm install
 ```
 
-No build step — the project runs directly from source (`type: "module"`).
+No build step - the project runs directly from source (`type: "module"`).
 
 ## Running tests
 
@@ -35,7 +35,7 @@ docs/            Internal planning and reference docs
 
 ## Making changes
 
-- **Protocol changes** belong in `packages/protocol/src/` — shared by all packages.
+- **Protocol changes** belong in `packages/protocol/src/` - shared by all packages.
 - **Daemon changes** live in `packages/native-host/src/daemon.js`.
 - **CLI commands** are registered in `packages/agent-client/src/command-registry.js`.
 - **MCP tools** are defined in `packages/mcp-server/src/server.js` (schema) and `handlers.js` (logic).
@@ -45,10 +45,10 @@ Run `npm run lint && npm run typecheck && npm test` before opening a PR.
 
 ## Pull requests
 
-- Keep PRs focused — one logical change per PR.
+- Keep PRs focused - one logical change per PR.
 - Add or update tests for any new behaviour (test files live in `packages/*/test/`).
 - Update `CHANGELOG.md` under `[Unreleased]`.
-- The CI matrix tests Node 18, 20, and 22 — make sure nothing uses APIs newer than Node 18.
+- The CI matrix tests Node 18, 20, and 22 - make sure nothing uses APIs newer than Node 18.
 
 ## Extension packaging
 

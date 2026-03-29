@@ -4,6 +4,9 @@
 communicate with the Browser Bridge daemon directly, without going through the
 CLI or MCP server.
 
+If you are setting up Browser Bridge for normal end-user agent usage, start with
+[quickstart](./quickstart.md) or [manual setup](./manual-setup.md) instead.
+
 ## Install
 
 ```bash
@@ -56,8 +59,8 @@ Send a bridge request and return the response.
 const response = await client.request({
   method: 'dom.query',
   params: { selector: 'h1', maxNodes: 5 },
-  tabId: 123,          // optional — required for tab-bound methods
-  timeoutMs: 10_000    // optional — overrides defaultTimeoutMs
+  tabId: 123,          // optional - required for tab-bound methods
+  timeoutMs: 10_000    // optional - overrides defaultTimeoutMs
 });
 
 if (response.ok) {
@@ -105,7 +108,7 @@ client.on('reconnected', () => {
 
 ## Available methods
 
-See [`packages/protocol/src/registry.js`](/Users/andrew/Projects/GitHub/browser-bridge/packages/protocol/src/registry.js) for the full list. Common ones:
+See [`packages/protocol/src/registry.js`](../packages/protocol/src/registry.js) for the full list. Common ones:
 
 | Method | Description |
 |--------|-------------|

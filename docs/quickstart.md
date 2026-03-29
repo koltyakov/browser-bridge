@@ -1,4 +1,4 @@
-# Browser Bridge Quick Start
+# Quickstart
 
 Browser Bridge lets your coding agent inspect and patch the real Chrome tab you already have open - DOM, styles, console, network, and more - without screenshots or raw HTML dumps.
 
@@ -18,6 +18,12 @@ npm install -g @browserbridge/bbx
 
 This also installs the native messaging host automatically.
 
+If the extension does not connect itself during setup, run:
+
+```bash
+bbx install
+```
+
 ## 3. Connect your agent
 
 There are two integration paths. Pick the one that matches how your agent works:
@@ -26,9 +32,9 @@ Supported clients: `codex` (OpenAI Codex), `claude` (Claude Code), `cursor` (Cur
 
 After installing the extension and CLI, finish the rest from the extension side panel's **Host Setup** section, or use the `bbx install-mcp` / `bbx install-skill` commands below if you prefer terminal setup.
 
-> **Recommendation:** MCP and the CLI skill are not meant to be installed together by default. Prefer MCP when your agent supports it. If CLI mode is unreliable because the agent runs in a sandboxed shell, such as GitHub Copilot, use MCP instead.
+> **Recommendation:** MCP and the CLI skill are not meant to be installed together by default. If your agent supports both, start with MCP. The bridge protocol and browser data are the same either way; the difference is integration style. MCP fits agent tool systems better because it is structured, validated, and does not depend on shell access. Choose the CLI skill when you specifically want direct `bbx` control for shell-driven workflows such as setup, debugging, scripting, or raw protocol calls. If CLI mode is unreliable because the agent runs in a sandboxed shell, such as GitHub Copilot, use MCP instead.
 
-**MCP** - recommended for agents with native MCP tool support, and the best fallback when CLI mode is blocked by sandboxing. Write the config directly into each client's settings file:
+**MCP** - the default path for agents with native MCP tool support. Prefer this when your agent can use either mode. It gives the agent structured tools without relying on shell execution, and it is the best fallback when CLI mode is blocked by sandboxing. Write the config directly into each client's settings file:
 
 ```bash
 bbx install-mcp                  # all supported clients
@@ -38,19 +44,19 @@ bbx install-mcp copilot --local  # scope to current project instead of global
 
 Configs are written globally by default. For GitHub Copilot, that means `~/.copilot/mcp-config.json`; project installs still use `.vscode/mcp.json`. Browser Bridge also writes the older VS Code `User/mcp.json` locations as compatibility fallbacks.
 
-**Skill + CLI** - for agents that can reliably run shell commands and where you want direct `bbx` control. Install the Browser Bridge skill so your agent knows how to drive `bbx`:
+**Skill + CLI** - for agents that can reliably run shell commands and where direct `bbx` control is the better fit than MCP tools. Use this path for shell-driven agent flows, setup and doctor flows, scripting, logs, or raw protocol access. Install the Browser Bridge skill so your agent knows how to drive `bbx`:
 
 ```bash
 bbx install-skill                  # all supported clients
 bbx install-skill codex            # or pick one: codex, claude, cursor, copilot, opencode, antigravity, windsurf, agents
-bbx install-skill copilot --local  # scope to current project instead of global
+bbx install-skill agents --project .
 ```
 
 The Browser Bridge skill is a CLI path. Use `bbx install-skill` for shell-driven agent flows and generic agent runtimes.
 
 Shortcut commands cover the common cases. Advanced protocol fields stay available through `bbx call <method> '{...}'` when you need the full bridge surface, and exact bridge methods can also be invoked directly for the raw path, for example `bbx page.get_state`.
 
-> The paths are independent. MCP clients use MCP tools; CLI skill clients use `bbx`. You do not need both, and most users should start with MCP if it is available.
+> The paths are independent. MCP clients use MCP tools; CLI skill clients use `bbx`. You do not need both. For normal agent use, start with MCP if it is available; choose the CLI skill when shell-native control is the point.
 
 ## 4. Enable a window
 
@@ -82,46 +88,13 @@ For GitHub Copilot, invoke the skill by name, for example `/browser-bridge`.
 
 In both cases the agent reads live DOM, styles, console, and network state from your real tab. Patches are reversible and session-scoped. When visual confirmation is still needed after structured reads, prefer a partial element screenshot or a tight region crop instead of a larger page capture before writing the fix back to source.
 
-## 6. Ad-Hoc installation
+## 6. Need more detail?
 
-### Installing MCP for custom agent
+Use the focused guides instead of stretching quickstart into a manual:
 
-For custom agents or clients not listed above, you can manually configure MCP if your agent supports the [Model Context Protocol](https://modelcontextprotocol.io/clients).
-
-Most MCP clients use a `mcpServers` (or `mcp_servers`) key in their configuration:
-
-```json
-{
-  "mcpServers": {
-    "browser-bridge": {
-      "type": "stdio",
-      "command": "bbx",
-      "args": ["mcp", "serve"],
-      "env": {}
-    }
-  }
-}
-```
-
-Some clients use different configuration keys or formats:
-- **OpenCode** uses `"mcp"` with `"type": "local"` and a command array
-- **Codex** uses TOML format with `[mcp_servers."browser-bridge"]`
-
-Check your agent's documentation for the exact configuration location and format. The key requirement is that your agent must be able to launch the Browser Bridge MCP server via `bbx mcp serve`.
-
-### Installing skills for a custom agent
-
-For custom agents that use CLI skills instead of MCP, you can install the Browser Bridge skill to a location your agent expects:
-
-```bash
-bbx install-skill --local
-```
-
-This installs the Browser Bridge skill to the `.agents/skills/` directory in your current project. Custom agents can then reference the skill from this location.
-
-Some agents may expect skills in different locations:
-- **Generic agents** typically look in `.agents/skills/`
-- **Project-specific setups** can use `--local` to install to the current project
-- **Global installations** can omit `--local` to install to `~/.agents/skills/`
-
-The skill includes a `SKILL.md` file that agents can read to understand how to use Browser Bridge commands. Your agent must be able to execute shell commands and read skill documentation to make use of this integration.
+- [Documentation index](./index.md)
+- [Manual setup](./manual-setup.md) for custom agents, exact config locations, and project-local installs
+- [Usage scenarios](./usage-scenarios.md) for concrete debugging and patching workflows
+- [CLI guide](./cli-guide.md) for command-oriented usage
+- [MCP vs CLI](./mcp-vs-cli.md) if you are deciding between integration paths
+- [Troubleshooting](./troubleshooting.md) when setup or access fails

@@ -8,7 +8,7 @@
     "CHANGELOG.md",
     "LICENSE",
     "README.md",
-    "QUICKSTART.md",
+    "docs",
     "manifest.json",
     "packages/agent-client/src",
     "packages/extension/assets",

@@ -582,7 +582,7 @@ test('daemon sends error response for valid JSON with missing type field', async
         }
       });
       socket.on('error', reject);
-      // Valid JSON but no `type` field — should fall through to the unknown
+      // Valid JSON but no `type` field - should fall through to the unknown
       // message type handler and get an error response.
       socket.write('{}\n');
     });

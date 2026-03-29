@@ -6,7 +6,7 @@
 
 A local bridge between your coding agent and a real Chrome tab. Browser Bridge gives the agent structured access to DOM, styles, layout, console, network, and reversible patches - starting from the actual tab you already have open, with all its real state intact.
 
-See [Quick Start](./docs/QUICKSTART.md) to get started in another repo.
+See [Quickstart](./docs/quickstart.md) to get started in another repo, or browse the rest of the guides in [docs/index.md](./docs/index.md).
 
 ## Supported Agents
 
@@ -121,6 +121,16 @@ Browser Bridge is optimized for the opposite starting point: **inspect the state
 - All patch operations are reversible and session-scoped
 - Structured DOM/style/layout reads are the primary transport; screenshots are a fallback
 - The native host daemon auto-starts on demand
+
+## Documentation
+
+- [Quickstart](./docs/quickstart.md)
+- [Usage scenarios](./docs/usage-scenarios.md)
+- [Manual setup](./docs/manual-setup.md)
+- [CLI guide](./docs/cli-guide.md)
+- [MCP vs CLI](./docs/mcp-vs-cli.md)
+- [Troubleshooting](./docs/troubleshooting.md)
+- [BridgeClient API](./docs/api-reference.md)
 
 ## Privacy
 

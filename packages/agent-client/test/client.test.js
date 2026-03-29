@@ -2096,7 +2096,7 @@ test('BridgeClient.close() stops autoReconnect', async () => {
 
   try {
     await client.connect();
-    // Immediately close — should stop the reconnect loop even though the server
+    // Immediately close - should stop the reconnect loop even though the server
     // would drop the connection shortly.
     await client.close();
     assert.equal(client.autoReconnect, false, 'autoReconnect disabled after close');

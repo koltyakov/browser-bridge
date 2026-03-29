@@ -3,42 +3,53 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+but this file is maintained as a cumulative feature log rather than a sequence
+of tagged releases.
 
-## [0.1.0] - 2025-07-13
+## [Unreleased]
 
 ### Added
-- browser extension support for Chrome, Chromium, Edge, and Brave, with side panel and popup UI for per-window access control
-- native host daemon via `bbx-daemon`, using a Unix socket bridge with newline-delimited JSON
-- MCP server via `bbx-mcp`, exposing bridge methods as tools for Codex, Claude, Cursor, and compatible clients
-- CLI support via `bbx`, including shortcuts, batch mode, and inline help
-- shared protocol types, error codes, recovery hints, budget presets, and parameter normalization
-- setup commands via `bbx install`, `bbx install-mcp`, and `bbx install-skill`
-- DOM inspection methods: `dom.query`, `dom.describe`, `dom.get_text`, `dom.get_html`, `dom.get_attributes`, `dom.find_by_text`, `dom.find_by_role`, `dom.wait_for`, and `dom.get_accessibility_tree`
-- page methods: `page.get_state`, `page.evaluate`, `page.get_console`, `page.wait_for_load_state`, `page.get_text`, `page.get_network`, and `page.get_storage`
-- style and layout methods: `styles.get_computed`, `styles.get_matched_rules`, `layout.get_box_model`, and `layout.hit_test`
-- input methods: `input.click`, `input.type`, `input.focus`, `input.hover`, `input.press_key`, `input.set_checked`, `input.select_option`, and `input.drag`
-- navigation methods: `navigation.navigate`, `navigation.reload`, `navigation.go_back`, and `navigation.go_forward`
-- viewport methods: `viewport.scroll` and `viewport.resize`
-- screenshot methods: `screenshot.capture_element` and `screenshot.capture_region`
-- patch methods: `patch.apply_styles`, `patch.apply_dom`, `patch.list`, `patch.rollback`, and `patch.commit_session_baseline`
-- performance metrics via `performance.get_metrics`
-- tab management via `tabs.list`, `tabs.create`, and `tabs.close`
-- access control via per-window enablement and `access.request`
-- health and diagnostics via `health.ping`, `log.tail`, and `bbx doctor`
-- CDP passthrough methods: `cdp.get_document`, `cdp.get_dom_snapshot`, `cdp.get_box_model`, and `cdp.get_computed_styles_for_node`
-- side panel window activity histogram
-- quick, normal, and deep token budget presets
-- socket and config-directory permission hardening, plus ANSI escape stripping in CLI output
-- malformed message handling, fail-fast disconnected-client behavior, protocol version negotiation, auto-reconnect, MCP retry handling, and single-instance daemon startup detection
-- concurrent request tests for multi-agent daemon routing
-- shared named constants for protocol and native-host limits and defaults
-- registry-driven CLI command descriptions and full direct-method alias coverage
-- strict TypeScript checking across the JavaScript codebase
-- extracted background routing/window-scope helpers with unit coverage for routing enforcement
-- `BridgeClient.batch(...)` for parallel client-side request dispatch
-- coverage reporting with `c8` and a CI coverage threshold check
-- extension packaging validation in CI, including ZIP content checks and build artifact upload
-- contributor documentation in `CONTRIBUTING.md` and SDK documentation in `docs/API.md`
 
-[0.1.0]: https://github.com/browserbridge/bbx/releases/tag/v0.1.0
+- **Core platform:** Browser Bridge as a local bridge between coding agents and
+  a real Chrome tab, preserving the existing browser state instead of starting
+  from a clean automation session. This includes the Chrome extension, native
+  messaging host, long-lived daemon, shared protocol package, agent client, and
+  MCP server.
+- **Browser inspection:** Structured DOM inspection for subtree queries,
+  element description, text, HTML, attributes, semantic search by text or ARIA
+  role, wait conditions, and accessibility-tree reads.
+- **Page and runtime reads:** Page state, storage, visible page text, console
+  output, network activity, performance metrics, and targeted JavaScript
+  evaluation when structured reads are insufficient.
+- **Layout and styling reads:** Computed styles, matched CSS rules, box model
+  data, hit testing, scrolling, and viewport resizing.
+- **Browser control:** Clicking, typing, focusing, hovering, keyboard input,
+  form controls, drag-and-drop, tab management, and page navigation.
+- **Capture and DevTools fallback:** Partial screenshots, DOM snapshots, and
+  CDP-backed geometry and style reads for cases where standard DOM inspection is
+  not enough.
+- **Live patching:** Reversible style and DOM patching, plus patch listing,
+  rollback, and session-baseline commit support so fixes can be proven in the
+  browser before being moved into source.
+- **CLI integration:** The `bbx` CLI with raw RPC access, shortcut commands,
+  batch execution, diagnostics, and runtime skill/context helpers.
+- **MCP integration:** The `bbx-mcp` server so MCP-capable agents can use
+  Browser Bridge through native tool calls.
+- **Agent setup flows:** Managed MCP and skill installation for Codex, Claude
+  Code, Cursor, GitHub Copilot, OpenCode, Antigravity, Windsurf, and generic
+  `.agents` setups.
+- **Documentation and skills:** Agent-facing skill packaging plus quick-start,
+  API, publishing, capability-matrix, contributor, and workflow documentation.
+- **Validation and release tooling:** Automated tests across the protocol,
+  native host, agent client, MCP server, and extension, plus linting, coverage
+  checks, extension packaging validation, and release verification steps.
+- **Access model and routing:** Explicit per-window enablement with active-tab
+  default routing instead of ambient browser-wide access.
+- **Protocol and efficiency model:** Structured, token-efficient browser reads
+  with shared protocol types, normalization, error codes, recovery hints, and
+  budget presets.
+- **Runtime hardening:** Setup readiness checks, health and diagnostic flows,
+  socket and config permission hardening, protocol negotiation, reconnect
+  behavior, and disconnected-client handling.
+- **Typing expectations:** Strict JSDoc-backed typing across the JavaScript
+  codebase with repository-wide `npm run typecheck` validation.

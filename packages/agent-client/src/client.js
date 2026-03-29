@@ -257,7 +257,7 @@ export class BridgeClient extends EventEmitter {
         this.emit('reconnected');
         return;
       } catch {
-        // connection failed — try again after the next backoff interval
+        // connection failed - try again after the next backoff interval
       }
     }
     this._reconnecting = false;

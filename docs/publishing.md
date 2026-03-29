@@ -1,4 +1,7 @@
-# Publishing Browser Bridge
+# Publishing
+
+This is a maintainer document, not an end-user setup guide. End users should
+start with [quickstart](./quickstart.md).
 
 This repo has two release artifacts:
 
@@ -10,7 +13,7 @@ The current installer does not embed a store extension ID in the package. Until 
 
 ## Release Checklist
 
-1. Bump the version in [package.json](./package.json) and [manifest.json](./manifest.json) together.
+1. Bump the version in [package.json](../package.json) and [manifest.json](../manifest.json) together.
 2. Run `npm install` if dependencies changed.
 3. Run `npm run release:check`.
 4. Publish the npm package.
@@ -105,5 +108,5 @@ Replace `<store-extension-id>` with the final Chrome Web Store extension ID befo
 
 ## Post-Publish Follow-Up
 
-- Update [README.md](./README.md) and [QUICKSTART.md](./QUICKSTART.md) with the real store listing URL and the explicit `bbx install <store-extension-id>` flow, unless the installer is updated to embed a default ID.
+- Update [README.md](../README.md) and [quickstart.md](./quickstart.md) with the real store listing URL and the explicit `bbx install <store-extension-id>` flow, unless the installer is updated to embed a default ID.
 - Re-run a live flow with `bbx install <store-extension-id>` after the first published build is available.
