@@ -40,8 +40,9 @@
   const elementRegistry = new Map();
   const reverseRegistry = new WeakMap();
   const patchRegistry = new Map();
-  const MAX_REGISTRY_SIZE = 2000;
+  const MAX_REGISTRY_SIZE = 5000;
   const MAX_PATCH_REGISTRY_SIZE = 2000;
+  let registryPruned = false;
   const contentHelpers = /** @type {typeof globalThis & { __BBX_CONTENT_HELPERS__?: {
     NON_TEXT_INPUT_TYPES: Set<string>,
     applyBudget: (options?: Record<string, any>) => Budget,
@@ -155,6 +156,8 @@
         return hoverTarget(params);
       case 'input.drag':
         return dragTarget(params);
+      case 'input.scroll_into_view':
+        return scrollIntoViewTarget(params);
       case 'patch.apply_styles':
         return applyStylePatch(params);
       case 'patch.apply_dom':
@@ -167,6 +170,8 @@
         return { committed: true };
       case 'screenshot.capture_element':
         return getElementRect(resolveElementRefFromParams(params));
+      case 'screenshot.capture_full_page':
+        return getFullPageDimensions();
       default:
         throw new Error(`Unsupported method ${method}`);
     }
@@ -295,7 +300,7 @@
    * element reference.
    *
    * @param {Record<string, any>} params
-   * @returns {{ nodes: NodeSummary[], revision: number, truncated?: boolean }}
+   * @returns {{ nodes: NodeSummary[], revision: number, truncated?: boolean, registrySize: number, _registryPruned?: boolean }}
    */
   function domQuery(params) {
     const query = normalizeDomQuery(params);
@@ -303,7 +308,7 @@
       ? getRequiredElement(query.withinRef)
       : document.querySelector(query.selector);
     if (!root) {
-      return { nodes: [], revision: getDocumentRevision() };
+      return { nodes: [], revision: getDocumentRevision(), registrySize: elementRegistry.size };
     }
 
     /** @type {NodeSummary[]} */
@@ -340,10 +345,14 @@
       }
     }
 
+    const pruned = registryPruned;
+    registryPruned = false;
     return {
       nodes,
       revision: getDocumentRevision(),
       truncated: nodes.length >= query.budget.maxNodes || remaining <= 0,
+      registrySize: elementRegistry.size,
+      ...(pruned ? { _registryPruned: true } : {}),
     };
   }
 
@@ -1004,6 +1013,21 @@
     return { x, y, width, height, scale: window.devicePixelRatio || 1 };
   }
 
+  /**
+   * Return the full document dimensions for a full-page screenshot.
+   * Chrome enforces a 16384px maximum on CDP captureScreenshot clip dimensions.
+   *
+   * @returns {{ scrollWidth: number, scrollHeight: number, devicePixelRatio: number }}
+   */
+  function getFullPageDimensions() {
+    const el = document.scrollingElement || document.documentElement;
+    return {
+      scrollWidth: Math.min(el.scrollWidth, 16384),
+      scrollHeight: Math.min(el.scrollHeight, 16384),
+      devicePixelRatio: window.devicePixelRatio || 1,
+    };
+  }
+
   // ── New methods: DOM wait, find, HTML, hover, drag, storage ────────
 
   /**
@@ -1290,6 +1314,18 @@
   }
 
   /**
+   * Scroll an element into the visible viewport.
+   *
+   * @param {Record<string, any>} params
+   * @returns {{ elementRef: string, scrolled: boolean }}
+   */
+  function scrollIntoViewTarget(params) {
+    const element = resolveTarget(params.target);
+    scrollTargetIntoView(element);
+    return { elementRef: rememberElement(element), scrolled: true };
+  }
+
+  /**
    * Read localStorage or sessionStorage entries.
    *
    * @param {Record<string, any>} params
@@ -1495,6 +1531,7 @@
     for (const [ref, element] of elementRegistry.entries()) {
       if (!document.contains(element)) {
         elementRegistry.delete(ref);
+        registryPruned = true;
       }
     }
   }

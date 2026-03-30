@@ -621,6 +621,7 @@ export async function handlePatchTool(args) {
 export const CAPTURE_ACTIONS = {
   element:             { ref: true,  method: 'screenshot.capture_element',       params: (_, r) => ({ elementRef: r }) },
   region:              { ref: false, method: 'screenshot.capture_region',        params: a => /** @type {Record<string, unknown>} */ (a.rect || {}) },
+  full_page:           { ref: false, method: 'screenshot.capture_full_page',     params: () => ({}) },
   cdp_document:        { ref: false, method: 'cdp.get_document',                params: () => ({}) },
   cdp_dom_snapshot:    { ref: false, method: 'cdp.get_dom_snapshot',             params: () => ({}) },
   cdp_box_model:       { ref: true,  method: 'cdp.get_box_model',               params: (_, r) => ({ elementRef: r }) },

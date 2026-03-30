@@ -503,6 +503,7 @@ async function dispatchBridgeRequest(request) {
     case 'input.select_option':
     case 'input.hover':
     case 'input.drag':
+    case 'input.scroll_into_view':
     case 'patch.apply_styles':
     case 'patch.apply_dom':
     case 'patch.list':
@@ -510,6 +511,7 @@ async function dispatchBridgeRequest(request) {
     case 'patch.commit_session_baseline':
     case 'screenshot.capture_region':
     case 'screenshot.capture_element':
+    case 'screenshot.capture_full_page':
       return handleTabBoundRequest(request);
     case 'cdp.get_document':
     case 'cdp.get_dom_snapshot':
@@ -846,13 +848,13 @@ async function handlePageGetConsole(request) {
   const params = normalizeConsoleParams(request.params);
 
   await primeTabConsoleCapture(target.tabId);
-  const entries = await readConsoleBuffer(target.tabId, params.clear);
+  const { entries, dropped } = await readConsoleBuffer(target.tabId, params.clear);
   const filtered = params.level === 'all'
     ? entries
     : entries.filter((/** @type {{ level: string }} */ e) => matchesConsoleLevel(params.level, e.level));
   const limited = filtered.slice(-params.limit);
 
-  return createSuccess(request.id, { entries: limited, count: limited.length, total: entries.length }, { method: request.method });
+  return createSuccess(request.id, { entries: limited, count: limited.length, total: entries.length, dropped }, { method: request.method });
 }
 
 /**
@@ -938,13 +940,13 @@ async function handleGetNetwork(request) {
   const target = await resolveRequestTarget(request);
   const params = normalizeNetworkParams(request.params);
   await ensureNetworkInterceptor(target.tabId);
-  const entries = await readNetworkBuffer(target.tabId, params.clear);
+  const { entries, dropped } = await readNetworkBuffer(target.tabId, params.clear);
   const urlPattern = typeof params.urlPattern === 'string' ? params.urlPattern : null;
   const filtered = urlPattern
     ? entries.filter((/** @type {{ url: string }} */ e) => e.url.includes(urlPattern))
     : entries;
   const limited = filtered.slice(-params.limit);
-  return createSuccess(request.id, { entries: limited, count: limited.length, total: entries.length }, { method: request.method });
+  return createSuccess(request.id, { entries: limited, count: limited.length, total: entries.length, dropped }, { method: request.method });
 }
 
 /**
@@ -967,6 +969,8 @@ async function ensureNetworkInterceptor(tabId) {
       const buffer = [];
       // @ts-ignore
       globalThis.__bb_network_buffer = buffer;
+      // @ts-ignore
+      globalThis.__bb_network_dropped = 0;
       const MAX = 200;
 
       const origFetch = globalThis.fetch;
@@ -989,7 +993,11 @@ async function ensureNetworkInterceptor(tabId) {
           throw err;
         } finally {
           buffer.push(entry);
-          if (buffer.length > MAX) buffer.splice(0, buffer.length - MAX);
+          if (buffer.length > MAX) {
+            // @ts-ignore
+            globalThis.__bb_network_dropped = (globalThis.__bb_network_dropped || 0) + (buffer.length - MAX);
+            buffer.splice(0, buffer.length - MAX);
+          }
         }
       };
 
@@ -1024,7 +1032,11 @@ async function ensureNetworkInterceptor(tabId) {
           const cl = this.getResponseHeader('content-length');
           if (cl) entry.size = Number(cl);
           buffer.push(entry);
-          if (buffer.length > MAX) buffer.splice(0, buffer.length - MAX);
+          if (buffer.length > MAX) {
+            // @ts-ignore
+            globalThis.__bb_network_dropped = (globalThis.__bb_network_dropped || 0) + (buffer.length - MAX);
+            buffer.splice(0, buffer.length - MAX);
+          }
         });
         return /** @type {any} */ (origSend).apply(this, args);
       };
@@ -1037,7 +1049,7 @@ async function ensureNetworkInterceptor(tabId) {
  *
  * @param {number} tabId
  * @param {boolean} clear
- * @returns {Promise<Array<{method: string, url: string, status: number, duration: number, type: string, ts: number, size: number}>>}
+ * @returns {Promise<{ entries: Array<{method: string, url: string, status: number, duration: number, type: string, ts: number, size: number}>, dropped: number }>}
  */
 async function readNetworkBuffer(tabId, clear) {
   const results = await chrome.scripting.executeScript({
@@ -1046,14 +1058,20 @@ async function readNetworkBuffer(tabId, clear) {
     func: (shouldClear) => {
       // @ts-ignore
       const buf = globalThis.__bb_network_buffer || [];
-      const copy = [...buf];
       // @ts-ignore
-      if (shouldClear) globalThis.__bb_network_buffer = [];
-      return copy;
+      const dropped = globalThis.__bb_network_dropped || 0;
+      const copy = [...buf];
+      if (shouldClear) {
+        // @ts-ignore
+        globalThis.__bb_network_buffer = [];
+        // @ts-ignore
+        globalThis.__bb_network_dropped = 0;
+      }
+      return { entries: copy, dropped };
     },
     args: [clear]
   });
-  return /** @type {any} */ (results?.[0]?.result) || [];
+  return /** @type {any} */ (results?.[0]?.result) || { entries: [], dropped: 0 };
 }
 
 /**
@@ -1144,6 +1162,8 @@ async function ensureConsoleInterceptor(tabId) {
       const buffer = [];
       // @ts-ignore
       globalThis.__bb_console_buffer = buffer;
+      // @ts-ignore
+      globalThis.__bb_console_dropped = 0;
       const MAX = 200;
       const orig = /** @type {Record<string, Function>} */ ({});
       const consoleMethods = /** @type {Record<string, (...args: unknown[]) => void>} */ (/** @type {unknown} */ (console));
@@ -1158,7 +1178,11 @@ async function ensureConsoleInterceptor(tabId) {
             }),
             ts: Date.now()
           });
-          if (buffer.length > MAX) buffer.splice(0, buffer.length - MAX);
+          if (buffer.length > MAX) {
+            // @ts-ignore
+            globalThis.__bb_console_dropped = (globalThis.__bb_console_dropped || 0) + (buffer.length - MAX);
+            buffer.splice(0, buffer.length - MAX);
+          }
           orig[level].apply(console, args);
         };
       }
@@ -1168,7 +1192,11 @@ async function ensureConsoleInterceptor(tabId) {
           args: [e.message || 'Unknown error', e.filename ? `${e.filename}:${e.lineno}:${e.colno}` : ''],
           ts: Date.now()
         });
-        if (buffer.length > MAX) buffer.splice(0, buffer.length - MAX);
+        if (buffer.length > MAX) {
+          // @ts-ignore
+          globalThis.__bb_console_dropped = (globalThis.__bb_console_dropped || 0) + (buffer.length - MAX);
+          buffer.splice(0, buffer.length - MAX);
+        }
       });
       globalThis.addEventListener('unhandledrejection', (e) => {
         buffer.push({
@@ -1176,7 +1204,11 @@ async function ensureConsoleInterceptor(tabId) {
           args: [String(e.reason).slice(0, 500)],
           ts: Date.now()
         });
-        if (buffer.length > MAX) buffer.splice(0, buffer.length - MAX);
+        if (buffer.length > MAX) {
+          // @ts-ignore
+          globalThis.__bb_console_dropped = (globalThis.__bb_console_dropped || 0) + (buffer.length - MAX);
+          buffer.splice(0, buffer.length - MAX);
+        }
       });
     }
   });
@@ -1224,7 +1256,7 @@ function isRecoverableInstrumentationError(error) {
  *
  * @param {number} tabId
  * @param {boolean} clear
- * @returns {Promise<Array<{level: string, args: string[], ts: number}>>}
+ * @returns {Promise<{ entries: Array<{level: string, args: string[], ts: number}>, dropped: number }>}
  */
 async function readConsoleBuffer(tabId, clear) {
   const results = await chrome.scripting.executeScript({
@@ -1233,14 +1265,20 @@ async function readConsoleBuffer(tabId, clear) {
     func: (shouldClear) => {
       // @ts-ignore
       const buf = globalThis.__bb_console_buffer || [];
-      const copy = [...buf];
       // @ts-ignore
-      if (shouldClear) globalThis.__bb_console_buffer = [];
-      return copy;
+      const dropped = globalThis.__bb_console_dropped || 0;
+      const copy = [...buf];
+      if (shouldClear) {
+        // @ts-ignore
+        globalThis.__bb_console_buffer = [];
+        // @ts-ignore
+        globalThis.__bb_console_dropped = 0;
+      }
+      return { entries: copy, dropped };
     },
     args: [clear]
   });
-  return /** @type {any} */ (results?.[0]?.result) || [];
+  return /** @type {any} */ (results?.[0]?.result) || { entries: [], dropped: 0 };
 }
 
 /**
@@ -1385,6 +1423,18 @@ async function handleScreenshot(target, method, params) {
       height: Math.max(0, Number(clip.height) || 0),
       scale: Number(clip.scale) || 1
     };
+  } else if (method === 'screenshot.capture_full_page') {
+    await ensureContentScript(target.tabId);
+    const dims = /** @type {{ scrollWidth: number, scrollHeight: number, devicePixelRatio: number }} */ (
+      await sendTabMessage(target.tabId, { type: 'bridge.execute', method, params }, CONTENT_SCRIPT_TIMEOUT_MS)
+    );
+    clip = {
+      x: 0,
+      y: 0,
+      width: Math.min(Math.max(1, Number(dims.scrollWidth) || 1), 16384),
+      height: Math.min(Math.max(1, Number(dims.scrollHeight) || 1), 16384),
+      scale: Number(dims.devicePixelRatio) || 1
+    };
   } else {
     // capture_region: params already carry viewport coordinates
     const scale = Number(params.scale) || 1;
@@ -1418,7 +1468,7 @@ async function handleScreenshot(target, method, params) {
           height: clip.height,
           scale: dpr
         },
-        captureBeyondViewport: false
+        captureBeyondViewport: method === 'screenshot.capture_full_page'
       })
     );
     if (!cdpResult?.data) {
