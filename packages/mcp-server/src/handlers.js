@@ -462,7 +462,8 @@ export const INPUT_ACTION_METHODS = {
   set_checked: 'input.set_checked',
   select_option: 'input.select_option',
   hover: 'input.hover',
-  drag: 'input.drag'
+  drag: 'input.drag',
+  scroll_into_view: 'input.scroll_into_view'
 };
 
 /**
@@ -581,6 +582,16 @@ export async function handleInputTool(args) {
           tokenBudget: getToolTokenBudget(args),
         });
         return summarizeToolResponse(response, 'input.drag');
+      }
+      case 'scroll_into_view': {
+        const response = await requestBridge(client, 'input.scroll_into_view', {
+          target: await elementTarget()
+        }, {
+          tabId: requestedTabId,
+          source: REQUEST_SOURCE,
+          tokenBudget: getToolTokenBudget(args),
+        });
+        return summarizeToolResponse(response, 'input.scroll_into_view');
       }
       default:
         return summarizeToolError(`Unsupported input action "${args.action}".`);

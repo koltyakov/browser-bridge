@@ -97,6 +97,7 @@ Short version:
 | Select option | `browser_input` (select_option) | `bbx call input.select_option` | CLI uses raw call |
 | Hover | `browser_input` (hover) | `bbx hover <ref>` | Equivalent |
 | Drag | `browser_input` (drag) | `bbx call input.drag` | CLI uses raw call |
+| Scroll target into view | `browser_input` (scroll_into_view) | `bbx call input.scroll_into_view` | CLI uses raw call |
 
 ### Patching
 
@@ -114,6 +115,7 @@ Short version:
 |------------|----------|-------------|-------|
 | Element screenshot | `browser_capture` (element) | `bbx screenshot <ref> [outPath]` | Equivalent |
 | Region screenshot | `browser_capture` (region) | `bbx call screenshot.capture_region` | CLI uses raw call |
+| Full-page screenshot | `browser_capture` (full_page) | `bbx call screenshot.capture_full_page` | CLI uses raw call |
 | CDP document | `browser_capture` (cdp_document) | `bbx call cdp.get_document` | CLI uses raw call |
 | CDP DOM snapshot | `browser_capture` (cdp_dom_snapshot) | `bbx call cdp.get_dom_snapshot` | CLI uses raw call |
 | CDP box model | `browser_capture` (cdp_box_model) | `bbx call cdp.get_box_model` | CLI uses raw call |

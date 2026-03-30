@@ -32,6 +32,10 @@ bbx a11y-tree 80 4
 These commands are usually enough to understand what rendered without dumping a
 large screenshot or the whole DOM.
 
+`dom.query` responses include `registrySize` and may include `_registryPruned:
+true` when older element refs were evicted. If you see that flag, re-query
+instead of reusing old refs.
+
 ## Inspect styles and layout
 
 ```bash
@@ -67,9 +71,13 @@ bbx click button[type="submit"]
 bbx type input[name="email"] person@example.com
 bbx press-key Enter
 bbx hover .menu-trigger
+bbx call input.scroll_into_view '{"target":{"selector":".menu-trigger"}}'
 bbx scroll 800
 bbx resize 1440 900
 ```
+
+Use `input.scroll_into_view` before a hover, click, or capture when the target
+is off-screen or inside a nested scroller.
 
 ## Patch the live page
 
@@ -90,9 +98,14 @@ Shortcuts cover the common cases. For exact methods or advanced parameters:
 ```bash
 bbx call dom.query '{"selector":".card","maxNodes":5}'
 bbx call --tab 123 page.get_state
+bbx call input.scroll_into_view '{"target":{"selector":"[data-testid=\"checkout-summary\"]"}}'
+bbx call screenshot.capture_full_page '{}'
 bbx page.get_state
 bbx batch '[{"method":"page.get_state"},{"method":"page.get_console","params":{"level":"warn"}}]'
 ```
 
 Use `bbx call` when you need the full protocol surface. Use `bbx batch` when
 you want parallel reads with one CLI round trip.
+
+`page.get_console` and `page.get_network` also return `dropped` when hot pages
+overflow their 200-entry buffers.

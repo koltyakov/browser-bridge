@@ -39,6 +39,7 @@ Useful direct commands:
 bbx call page.get_state
 bbx dom-query nav
 bbx styles nav gap,padding,align-items
+bbx call input.scroll_into_view '{"target":{"selector":"nav"}}'
 bbx screenshot nav ./tmp/navbar.png
 ```
 
@@ -55,6 +56,7 @@ Useful direct commands:
 ```bash
 bbx describe button[type="submit"]
 bbx box button[type="submit"]
+bbx call input.scroll_into_view '{"target":{"selector":"button[type=\"submit\"]"}}'
 bbx click button[type="submit"]
 bbx console error
 bbx network 20
@@ -96,7 +98,27 @@ bbx box .checkout-summary
 bbx text .checkout-summary medium
 ```
 
-## 6. Drop to the raw protocol when shortcuts are not enough
+If `page.get_console` or `page.get_network` returns `dropped`, the page was
+noisy enough to evict older buffered entries. Narrow the repro and re-run the
+read before assuming you saw the full history.
+
+## 6. Capture the whole document only when the page-level layout is the issue
+
+Use this when a bug spans multiple viewports and tight crops cannot express the
+problem.
+
+Typical prompt:
+
+> Capture the full page so we can verify how the header, hero, and footer line up across the whole document.
+
+Useful direct commands:
+
+```bash
+bbx call input.scroll_into_view '{"target":{"selector":"main"}}'
+bbx call screenshot.capture_full_page '{}'
+```
+
+## 7. Drop to the raw protocol when shortcuts are not enough
 
 Use this when you need a method or parameter that the higher-level commands do
 not expose.

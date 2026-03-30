@@ -27,7 +27,7 @@ The table below includes the legacy capability bucket for each method so agents 
 - `-` means the method is global/system-scoped and was never gated by a former capability bucket.
 - Capability names are descriptive coverage labels only. Browser Bridge access is window-scoped now; there are no capability-scoped sessions.
 
-## All Methods (53)
+## All Methods (55)
 
 | # | Method | Tab? | CDP? | Group | Capability | Notes |
 |---|--------|------|------|-------|------------|-------|
@@ -72,18 +72,20 @@ The table below includes the legacy capability bucket for each method so agents 
 | 39 | `input.select_option` | Yes | - | interact | `automation.input` | Native select by value/label/index |
 | 40 | `input.hover` | Yes | - | interact | `automation.input` | mouseenter/mouseover/mousemove; optional `duration` |
 | 41 | `input.drag` | Yes | - | interact | `automation.input` | Full drag-and-drop event sequence |
-| 42 | `screenshot.capture_element` | Yes | CDP | capture | `screenshot.partial` | Cropped element screenshot |
-| 43 | `screenshot.capture_region` | Yes | CDP | capture | `screenshot.partial` | Cropped viewport region |
-| 44 | `patch.apply_styles` | Yes | - | patch | `patch.styles` | Reversible CSS patch; `verify` returns computed result |
-| 45 | `patch.apply_dom` | Yes | - | patch | `patch.dom` | Reversible DOM mutation; `verify` returns result |
-| 46 | `patch.list` | Yes | - | patch | `patch.dom` | Active patches |
-| 47 | `patch.rollback` | Yes | - | patch | `patch.dom` | Revert one patch |
-| 48 | `patch.commit_session_baseline` | Yes | - | patch | `patch.dom` | Accept current state as baseline |
-| 49 | `performance.get_metrics` | Yes | CDP | performance | `performance.read` | Chrome performance counters |
-| 50 | `cdp.get_document` | Yes | CDP | cdp | `cdp.dom_snapshot` | DevTools document tree |
-| 51 | `cdp.get_dom_snapshot` | Yes | CDP | cdp | `cdp.dom_snapshot` | DevTools DOM snapshot |
-| 52 | `cdp.get_box_model` | Yes | CDP | cdp | `cdp.box_model` | DevTools-backed element geometry |
-| 53 | `cdp.get_computed_styles_for_node` | Yes | CDP | cdp | `cdp.styles` | DevTools-backed computed styles |
+| 42 | `input.scroll_into_view` | Yes | - | interact | `automation.input` | Explicitly scroll target into view before inspect/capture |
+| 43 | `screenshot.capture_element` | Yes | CDP | capture | `screenshot.partial` | Cropped element screenshot |
+| 44 | `screenshot.capture_region` | Yes | CDP | capture | `screenshot.partial` | Cropped viewport region |
+| 45 | `screenshot.capture_full_page` | Yes | CDP | capture | `screenshot.partial` | Full document screenshot; use only when page-level context is necessary |
+| 46 | `patch.apply_styles` | Yes | - | patch | `patch.styles` | Reversible CSS patch; `verify` returns computed result |
+| 47 | `patch.apply_dom` | Yes | - | patch | `patch.dom` | Reversible DOM mutation; `verify` returns result |
+| 48 | `patch.list` | Yes | - | patch | `patch.dom` | Active patches |
+| 49 | `patch.rollback` | Yes | - | patch | `patch.dom` | Revert one patch |
+| 50 | `patch.commit_session_baseline` | Yes | - | patch | `patch.dom` | Accept current state as baseline |
+| 51 | `performance.get_metrics` | Yes | CDP | performance | `performance.read` | Chrome performance counters |
+| 52 | `cdp.get_document` | Yes | CDP | cdp | `cdp.dom_snapshot` | DevTools document tree |
+| 53 | `cdp.get_dom_snapshot` | Yes | CDP | cdp | `cdp.dom_snapshot` | DevTools DOM snapshot |
+| 54 | `cdp.get_box_model` | Yes | CDP | cdp | `cdp.box_model` | DevTools-backed element geometry |
+| 55 | `cdp.get_computed_styles_for_node` | Yes | CDP | cdp | `cdp.styles` | DevTools-backed computed styles |
 
 ## CLI
 
@@ -95,6 +97,8 @@ bbx batch '[{"method":"...","params":{}}]'  # parallel calls
 ```
 
 **Convenience shortcuts:** `dom-query`, `describe`, `text`, `styles`, `box`, `click`, `focus`, `type`, `press-key`, `patch-style`, `patch-text`, `patches`, `rollback`, `screenshot`, `eval`, `console`, `wait`, `find`, `find-role`, `html`, `hover`, `navigate`, `storage`, `tab-create`, `tab-close`, `page-text`, `network`, `a11y-tree`, `perf`, `resize`, `reload`, `back`, `forward`, `attrs`, `matched-rules`
+
+Newer bridge methods such as `input.scroll_into_view` and `screenshot.capture_full_page` currently use the raw path: `bbx call <method> '{...}'`.
 
 ## Method Details
 
@@ -115,6 +119,7 @@ bbx console                    # all levels
 bbx console error              # errors only
 bbx call page.get_console '{"level":"error","limit":20,"clear":true}'
 ```
+Responses include `dropped` when older buffered entries were discarded on noisy pages.
 
 ### page.wait_for_load_state
 Block until the tab reaches `complete` status. Useful after `input.click` on a navigation link.
@@ -129,6 +134,14 @@ bbx storage                        # all localStorage
 bbx storage session token,user     # specific sessionStorage keys
 bbx call page.get_storage '{"type":"session","keys":["token"]}'
 ```
+
+### dom.query
+Run a bounded breadth-first DOM summary rooted at a selector or existing ref. Returns `{nodes, revision, truncated, registrySize}` and may also include `_registryPruned: true` when the element registry evicted older refs.
+```bash
+bbx dom-query main
+bbx call dom.query '{"selector":"main","maxNodes":10,"attributeAllowlist":["class","data-testid"]}'
+```
+If `_registryPruned` is true, refresh previously cached refs before reusing them.
 
 ### dom.wait_for
 Wait for a DOM condition using MutationObserver + 250 ms polling fallback. Returns `{found, elementRef, duration}`.
@@ -175,6 +188,13 @@ bbx call input.drag '{"source":{"elementRef":"el_src"},"destination":{"elementRe
 bbx call input.drag '{"source":{"elementRef":"el_src"},"destination":{"elementRef":"el_dst"},"sourceOffset":{"x":10,"y":10}}'
 ```
 
+### input.scroll_into_view
+Explicitly scroll an element into the visible viewport before inspecting, hovering, or capturing it.
+```bash
+bbx call input.scroll_into_view '{"target":{"elementRef":"el_abc123"}}'
+bbx call input.scroll_into_view '{"target":{"selector":"[data-testid=\\"checkout-summary\\"]"}}'
+```
+
 ### tabs.create
 Open a new browser tab. Optional `url` (defaults to `about:blank`) and `active` flag (defaults to `true`). Does not require a session.
 ```bash
@@ -212,7 +232,7 @@ bbx network
 bbx network 50
 bbx call page.get_network '{"limit":20,"clear":true}'
 ```
-Each entry: `{method, url, status, duration, initiator}`.
+Each entry: `{method, url, status, duration, initiator}`. Responses include `dropped` when older buffered entries were discarded.
 
 ### dom.get_accessibility_tree
 Retrieve the page's accessibility tree via CDP `Accessibility.getFullAXTree`. Each node is simplified to: `role`, `name`, `description`, `value`, `focused`, `required`, `checked`, `disabled`, `interactive`, `childIds`. Use `maxNodes` and `maxDepth` to control size.
@@ -241,6 +261,12 @@ Debugger-backed. Use after lighter reads fail to explain a performance symptom.
 ```bash
 bbx perf
 bbx call performance.get_metrics
+```
+
+### screenshot.capture_full_page
+Capture a full-document screenshot beyond the current viewport. Use only when element or tight region captures cannot express the issue. Chrome capture limits still apply on very large pages.
+```bash
+bbx call screenshot.capture_full_page '{}'
 ```
 
 ## Request Envelope

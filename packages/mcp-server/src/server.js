@@ -175,9 +175,9 @@ export function createBridgeMcpServer() {
 
   server.registerTool('browser_input', {
     title: 'Browser Input',
-    description: `Simulate user input: click, focus, type, press keys, set checked, select options, hover, or drag. Default routing follows the active tab in the enabled window. Use elementRef from prior queries. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
+    description: `Simulate user input: click, focus, type, press keys, set checked, select options, hover, drag, or scroll an element into view. Default routing follows the active tab in the enabled window. Use elementRef from prior queries. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
     inputSchema: {
-      action: z.enum(['click', 'focus', 'type', 'press_key', 'set_checked', 'select_option', 'hover', 'drag']).describe('Input operation to perform'),
+      action: z.enum(['click', 'focus', 'type', 'press_key', 'set_checked', 'select_option', 'hover', 'drag', 'scroll_into_view']).describe('Input operation to perform'),
       tabId: z.number().optional().describe(TAB_ID_DESCRIPTION),
       budgetPreset: z.enum(['quick', 'normal', 'deep']).optional().describe(BUDGET_PRESET_DESCRIPTION),
       elementRef: z.string().optional().describe('Target element reference (preferred over selector)'),
@@ -224,9 +224,9 @@ export function createBridgeMcpServer() {
 
   server.registerTool('browser_capture', {
     title: 'Browser Capture',
-    description: `Capture screenshots or CDP snapshots. Use only when structured reads are insufficient. Prefer element captures or tight region crops instead of larger screenshots. All capture actions are debugger-backed and token-expensive. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
+    description: `Capture screenshots or CDP snapshots. Use only when structured reads are insufficient. Prefer element captures first, then tight region crops; use full-page capture only when document-level context matters. All capture actions are debugger-backed and token-expensive. ${ACCESS_REQUEST_FLOW_DESCRIPTION}`,
     inputSchema: {
-      action: z.enum(['element', 'region', 'cdp_document', 'cdp_dom_snapshot', 'cdp_box_model', 'cdp_computed_styles']).describe('Capture operation: prefer element first, then tight region crops only when element capture cannot express the needed area; cdp_* for low-level data'),
+      action: z.enum(['element', 'region', 'full_page', 'cdp_document', 'cdp_dom_snapshot', 'cdp_box_model', 'cdp_computed_styles']).describe('Capture operation: prefer element first, then tight region crops; use full_page only when the whole document is the evidence you need; cdp_* for low-level data'),
       tabId: z.number().optional().describe(TAB_ID_DESCRIPTION),
       budgetPreset: z.enum(['quick', 'normal', 'deep']).optional().describe(BUDGET_PRESET_DESCRIPTION),
       elementRef: z.string().optional().describe('Element reference to screenshot (for element action; preferred for partial captures)'),

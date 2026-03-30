@@ -12,6 +12,7 @@
 | `input.select_option` | `call input.select_option '{...}'` | Select native `<select>` by value/label/index |
 | `input.hover` | `hover <ref>` | Trigger CSS `:hover` state (mouseenter/mouseover/mousemove) |
 | `input.drag` | `call input.drag '{...}'` | Full drag-and-drop event sequence |
+| `input.scroll_into_view` | `call input.scroll_into_view '{...}'` | Ensure a target is visible before inspect/capture |
 
 ## Navigation
 
@@ -122,6 +123,14 @@ bbx call viewport.scroll '{"elementRef":"el_123","top":200}'
 ```
 
 Scrolls the window by default. Pass an `elementRef` to scroll an inner scrollable container.
+
+### Scroll target into view
+
+Use this when the page has nested containers or when you want the target centered before a screenshot or hover:
+```bash
+bbx call input.scroll_into_view '{"target":{"elementRef":"el_123"}}'
+bbx call input.scroll_into_view '{"target":{"selector":"[data-testid=\"submit-button\"]"}}'
+```
 
 
 
@@ -235,6 +244,6 @@ Use after clicking navigation links.
 
 1. **Find target**: `dom.find_by_text`, `dom.find_by_role`, or `dom.query` → get `elementRef`
 2. **Focus** if needed: `input.focus` (for keyboard input)
-3. **Act**: `click`, `type`, `press_key`, `hover`, `drag`, etc.
+3. **Act**: `click`, `type`, `press_key`, `hover`, `drag`, `scroll_into_view`, etc.
 4. **Wait**: `dom.wait_for` if action triggers async updates
 5. **Verify**: `dom.describe`, `styles.get_computed`, or `page.get_console` for errors
