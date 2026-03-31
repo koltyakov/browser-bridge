@@ -25,8 +25,10 @@ Short version:
 
 | Capability | MCP Tool | CLI Command | Notes |
 |------------|----------|-------------|-------|
-| Health check | `browser_status` | `bbx status`, `bbx doctor` | CLI has separate status/doctor |
-| Access state | `browser_status`, `browser_health` | `bbx status`, `bbx doctor` | Reports window-scoped access and routed tab readiness |
+| Health check | `browser_status`, `browser_health` | `bbx status`, `bbx doctor` | CLI has separate status/doctor |
+| Request access | `browser_access` | `bbx access-request` | Surfaces Enable prompt in extension UI |
+| Setup status | `browser_setup` | `bbx doctor` | Check MCP/skill installation |
+| Request logs | `browser_logs` | `bbx logs` | Equivalent |
 | Runtime presets | `browser_skill` | `bbx skill` | Equivalent |
 
 ### Tab Management
@@ -128,7 +130,6 @@ Short version:
 | Raw protocol call | `browser_call` | `bbx call <method> '{...}'` | Equivalent |
 | Ordered batch calls | `browser_batch` | `bbx batch '[{...}]'` | Both preserve request order and return per-call `durationMs` / `approxTokens` |
 | Batch parallel reads | N/A (multiple tool calls) | `bbx batch '[{...}]'` | CLI has explicit batch |
-| Request log | N/A | `bbx logs` | CLI-only feature |
 | Install manifest | N/A | `bbx install <ext-id>` | CLI-only (setup) |
 | Install MCP config | N/A | `bbx install-mcp [client]` | CLI-only (setup) |
 | Install skill | N/A | `bbx install-skill [client]` | CLI-only (setup) |

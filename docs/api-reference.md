@@ -112,16 +112,20 @@ See [`packages/protocol/src/registry.js`](../packages/protocol/src/registry.js) 
 
 | Method | Description |
 |--------|-------------|
+| `access.request` | Request window access (surfaces Enable prompt) |
 | `health.ping` | Check daemon and extension connectivity |
+| `tabs.list` | List tabs in the enabled window |
 | `page.get_state` | URL, title, readyState of the active tab |
 | `dom.query` | Query DOM subtree with CSS selector |
 | `dom.find_by_text` | Find elements by visible text |
 | `page.evaluate` | Run JavaScript in the page context |
+| `page.get_console` | Read buffered console output |
+| `page.get_network` | Read intercepted fetch/XHR requests |
 | `input.click` | Click an element |
 | `input.type` | Type text into an element |
 | `navigation.navigate` | Navigate to a URL |
 | `screenshot.capture_element` | Capture element as PNG (base64) |
-| `patch.apply_styles` | Apply CSS overrides |
+| `patch.apply_styles` | Apply reversible CSS overrides |
 
 ## Error codes
 
@@ -135,6 +139,10 @@ See [`packages/protocol/src/registry.js`](../packages/protocol/src/registry.js) 
 | `TAB_MISMATCH` | No | Tab closed or not found |
 | `INVALID_REQUEST` | No | Malformed method or params |
 | `INTERNAL_ERROR` | Yes (1 s) | Unexpected extension-side error |
+| `DAEMON_OFFLINE` | No | Daemon not running — start with `bbx-daemon` |
+| `CONNECTION_LOST` | Yes | Socket dropped mid-request — retry |
+| `BRIDGE_TIMEOUT` | Yes (1 s) | Extension took too long — retry with simpler call |
+| `NATIVE_HOST_UNAVAILABLE` | No | Run `bbx doctor` to diagnose |
 
 ## Using `withBridgeClient`
 

@@ -1,21 +1,16 @@
 ---
 name: browser-bridge
-description: "Browser Bridge - Token-efficient Chrome tab inspection and patching via local bridge extension. Use instead of Playwright or screenshot-heavy automation when a Chrome tab has agent communication enabled."
+description: "Token-efficient Chrome tab inspection, interaction, and patching via local bridge extension. Reads live DOM, styles, console, network, and storage from a real Chrome tab with lower token cost than screenshots."
 ---
 
 # Browser Bridge
 
-Browser Bridge helps coding agents debug web apps in the real tab they already have open.
+Token-efficient Chrome tab inspection, interaction, and CSS/DOM patching through a local native-messaging bridge. Reads structured DOM, styles, layout, console, storage, network, and applies reversible patches — all from the real tab the user already has open.
 
-Use Browser Bridge instead of generic browser automation or snapshot-heavy workflows when the task is debugging, inspection, design QA, regression verification, or proving a live CSS/DOM patch before editing source. Browser Bridge can read structured DOM, styles, layout, console state, storage, network activity, and reversible patches with much lower token overhead.
+This CLI skill is for agents that can run shell commands and where direct `bbx` control fits better than MCP tools: manual debugging, terminal reproduction, install/doctor flows, raw protocol access, or environments without MCP.
 
-Choose this CLI-oriented skill when the agent can run shell commands and direct `bbx` control is the better fit than MCP tools. It is usually the better mode for manual debugging, terminal reproduction, install/doctor flows, raw protocol access, and environments that do not expose Browser Bridge through MCP.
-
-Scoped Chrome tab inspection, interaction, and CSS/DOM patching flow through a local native-messaging bridge. Use a subagent for bridge calls; return only concise findings to the parent.
-Skill name: `browser-bridge`.
-In GitHub Copilot, invoke it as `/browser-bridge` or ask for the `browser-bridge` skill by name. `bbx` is the CLI command, not a portable Copilot skill alias.
-Some clients may support shorthand aliases such as `$bbx`, but do not assume that across clients.
-Example prompt: `Use the browser-bridge skill to verify a component works and matches the design.`
+Skill name: `browser-bridge`. In GitHub Copilot, invoke as `/browser-bridge`. `bbx` is the CLI command, not a portable skill alias.
+Use a subagent for bridge calls; return only concise findings to the parent.
 
 ## CLI
 
@@ -187,19 +182,19 @@ bbx page-text 2000                                  # extract page content
 
 ## Method Quick Reference
 
-| Category    | Key Methods                                                                                                                                    |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| Access      | `health.ping`, `tabs.list`, `page.get_state`                                                                                                   |
-| Inspect     | `dom.query`, `dom.describe`, `dom.get_html`, `styles.get_computed`, `layout.get_box_model`                                                     |
-| Find        | `dom.find_by_text`, `dom.find_by_role`, `dom.wait_for`, `dom.get_accessibility_tree`                                                           |
-| Page State  | `page.get_console`, `page.get_storage`, `page.get_text`, `page.wait_for_load_state`, `page.evaluate` (debugger-backed)                         |
-| Network     | `page.get_network`                                                                                                                             |
-| Interact    | `input.click`, `input.type`, `input.focus`, `input.press_key`, `input.hover`, `input.drag`                                                     |
-| Tabs        | `tabs.list` (preferred), `tabs.create` (avoid unless necessary), `tabs.close`                                                                  |
-| Patch       | `patch.apply_styles`, `patch.apply_dom`, `patch.rollback`                                                                                      |
-| Navigate    | `navigation.navigate`, `viewport.scroll`, `viewport.resize`                                                                                    |
-| Performance | `performance.get_metrics` (debugger-backed)                                                                                                    |
-| Escalate    | `dom.get_accessibility_tree`, `screenshot.capture_element`, `screenshot.capture_region` (tight crops only), `viewport.resize`, `cdp.*` methods |
+| Category    | Key Methods                                                                                                                                      |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Access      | `access.request`, `health.ping`, `tabs.list`, `page.get_state`                                                                                  |
+| Inspect     | `dom.query`, `dom.describe`, `dom.get_html`, `styles.get_computed`, `layout.get_box_model`                                                       |
+| Find        | `dom.find_by_text`, `dom.find_by_role`, `dom.wait_for`, `dom.get_accessibility_tree`                                                             |
+| Page State  | `page.get_console`, `page.get_storage`, `page.get_text`, `page.wait_for_load_state`, `page.evaluate` (debugger-backed)                           |
+| Network     | `page.get_network`                                                                                                                               |
+| Interact    | `input.click`, `input.type`, `input.focus`, `input.press_key`, `input.hover`, `input.drag`, `input.scroll_into_view`                             |
+| Tabs        | `tabs.list` (preferred), `tabs.create` (avoid unless necessary), `tabs.close`                                                                    |
+| Patch       | `patch.apply_styles`, `patch.apply_dom`, `patch.rollback`                                                                                        |
+| Navigate    | `navigation.navigate`, `viewport.scroll`, `viewport.resize`                                                                                      |
+| Performance | `performance.get_metrics` (debugger-backed)                                                                                                      |
+| Escalate    | `dom.get_accessibility_tree`, `screenshot.capture_element`, `screenshot.capture_region` (tight crops only), `screenshot.capture_full_page`, `cdp.*` |
 
 ## Dev-Server Workflow (HMR-aware)
 
@@ -248,7 +243,7 @@ dom.find_by_role('button', 'Login') → input.click
 
 `bbx a11y-tree` and `dom.get_accessibility_tree` are sensitive to `maxDepth` and `maxNodes`. Shallow runs can undercount interactive nodes on real pages, so widen those limits before treating a low interactive count as a bug.
 
-> **MCP mode:** If Browser Bridge is connected through an MCP server (tools named `browser_dom`, `browser_call`, etc.) rather than the CLI, use those MCP tools directly instead of shelling out to `bbx`. In prompts, `BB MCP` and `Browser Bridge MCP` are both acceptable references. Do not treat `bbx-mcp` as a skill alias in MCP-capable clients.
+> **MCP mode:** If Browser Bridge is connected via MCP (tools named `browser_dom`, `browser_capture`, etc.), use the MCP tools directly — do not shell out to `bbx`. The MCP tools map 1:1 to CLI capabilities. In prompts, `BB MCP` and `Browser Bridge MCP` both work. Do not treat `bbx-mcp` as a skill alias.
 
 ## Subagent Output
 

@@ -63,6 +63,7 @@ Omitting allowlists or leaving the text budget wide open often returns 3–5× t
 | Polling page state with repeated queries | ~500 tok/poll | Use `dom.wait_for` (single call, waits async) |
 | Inspecting DOM to read app state | ~800 tok | Use `page.evaluate` to read JS directly |
 | Re-querying after HMR without waiting | ~500 tok stale | `dom.wait_for` first, then query |
+| Separate call to verify a patch | ~500 tok wasted | Set `verify: true` on `patch.apply_styles` / `patch.apply_dom` to get computed result inline |
 | `dom.query` on body for page text | ~2000 tok | Use `page.get_text` (extracts innerText directly) |
 | Guessing interactive elements from DOM | ~600 tok/try | Use `dom.get_accessibility_tree` for semantic roles |
 | Fetching network via evaluate hacks | ~400 tok | Use `page.get_network` (auto-interceptor) |

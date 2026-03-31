@@ -19,8 +19,9 @@ bbx logs
 
 ## The agent gets `ACCESS_DENIED`
 
-- Open the Browser Bridge popup or side panel in Chrome.
-- Enable Browser Bridge for the current browser window.
+- The first `ACCESS_DENIED` call automatically surfaces an Enable prompt in the extension UI.
+- Alternatively, call `bbx access-request` (CLI) or use the `browser_access` MCP tool to trigger the prompt proactively.
+- Open the Browser Bridge popup or side panel in Chrome and click Enable.
 - Make sure the page you care about is in that enabled window, not a different Chrome window.
 
 ## The agent keeps using the wrong tab

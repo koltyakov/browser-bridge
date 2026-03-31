@@ -132,7 +132,7 @@ bbx call input.scroll_into_view '{"target":{"elementRef":"el_123"}}'
 bbx call input.scroll_into_view '{"target":{"selector":"[data-testid=\"submit-button\"]"}}'
 ```
 
-
+## Network Monitoring
 
 ```bash
 bbx network                     # recent requests
