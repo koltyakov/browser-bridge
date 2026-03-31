@@ -23,7 +23,8 @@ import {
   handleSkillTool,
   handleStatusTool,
   handleStylesLayoutTool,
-  handleTabsTool
+  handleTabsTool,
+  handleInvestigateTool
 } from './handlers.js';
 import {
   BUDGET_PRESETS,
@@ -34,10 +35,43 @@ import {
   DEFAULT_PAGE_TEXT_BUDGET,
   DEFAULT_TEXT_BUDGET,
   DEFAULT_WAIT_TIMEOUT_MS,
+  getMethodsByMaxComplexity,
 } from '../../protocol/src/index.js';
 
 export const BUDGET_PRESET_DESCRIPTION = `Budget preset: "quick", "normal", or "deep" (defaults: query ${BUDGET_PRESETS.normal.maxNodes} nodes / depth ${BUDGET_PRESETS.normal.maxDepth} / text ${BUDGET_PRESETS.normal.textBudget}). Numeric fields override the preset when both are provided.`;
 export const TAB_ID_DESCRIPTION = 'Target a specific tab instead of the active tab in the enabled window.';
+
+/** @type {readonly import('../../protocol/src/types.js').BridgeMethod[]} */
+const INVESTIGATE_SUBAGENT_BRIDGE_METHODS = Object.freeze(
+  getMethodsByMaxComplexity('low').filter((method) =>
+    method.startsWith('page.') ||
+    method.startsWith('dom.') ||
+    method.startsWith('styles.') ||
+    method.startsWith('layout.')
+  )
+);
+
+const INVESTIGATE_DELEGATION_HINT = Object.freeze({
+  recommended: true,
+  costTier: 'low',
+  preferredAgentProfile: {
+    modelClass: 'small',
+    reasoningEffort: 'low',
+  },
+  preferredTools: [
+    'browser_dom',
+    'browser_page',
+    'browser_styles_layout',
+    'browser_batch',
+  ],
+  escalationTools: ['browser_capture'],
+  preferredBridgeMethods: INVESTIGATE_SUBAGENT_BRIDGE_METHODS,
+  escalationTriggers: [
+    'Structured DOM or page reads are insufficient.',
+    'Visual confirmation is required.',
+    'Debugger-backed evidence is required.',
+  ],
+});
 
 /**
  * @returns {McpServer}
@@ -273,6 +307,42 @@ export function createBridgeMcpServer() {
     description: 'Request window access for Browser Bridge. Surfaces an Enable prompt in the extension popup or side panel. Use to trigger the access prompt proactively, or let ACCESS_DENIED errors from tab-bound calls trigger it automatically.',
     inputSchema: {}
   }, handleAccessTool);
+
+  server.registerTool('browser_investigate', {
+    title: 'Browser Investigate',
+    description:
+      'Investigate a page to answer a question or verify a condition. ' +
+      'Pass a natural-language objective and an optional scope (quick/normal/deep). ' +
+      'DELEGATION HINT: Prefer delegating this to a smaller, low-cost subagent ' +
+      'that starts with structured reads via browser_dom, browser_page, ' +
+      'browser_styles_layout, and browser_batch. Escalate to browser_capture only ' +
+      'when structured reads are insufficient. ' +
+      'If subagent delegation is not available, a deterministic heuristic fallback ' +
+      'runs a scripted inspection sequence and returns a best-effort summary.',
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    _meta: {
+      delegationHint: INVESTIGATE_DELEGATION_HINT,
+    },
+    inputSchema: {
+      objective: z.string().describe(
+        'What to find, verify, or extract from the current page (natural language).'
+      ),
+      scope: z.enum(['quick', 'normal', 'deep']).optional().describe(
+        'Investigation depth: "quick" (page state + one DOM query), ' +
+        '"normal" (state + DOM + text, default), ' +
+        '"deep" (state + DOM + text + console + network).'
+      ),
+      tabId: z.number().optional().describe(TAB_ID_DESCRIPTION),
+      selector: z.string().optional().describe(
+        'Optional CSS selector to scope the investigation to a subtree.'
+      ),
+    },
+  }, handleInvestigateTool);
 
   return server;
 }

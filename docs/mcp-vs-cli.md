@@ -30,6 +30,7 @@ Short version:
 | Setup status | `browser_setup` | `bbx doctor` | Check MCP/skill installation |
 | Request logs | `browser_logs` | `bbx logs` | Equivalent |
 | Runtime presets | `browser_skill` | `bbx skill` | Equivalent |
+| Heuristic investigation | `browser_investigate` | `bbx batch` / `bbx call` sequence | MCP has a dedicated read-only tool; CLI uses scripted structured reads |
 
 ### Tab Management
 
@@ -148,6 +149,7 @@ Short version:
 | **Tool grouping** | Related actions grouped logically (e.g., `browser_dom` with multiple actions) |
 | **Type safety** | Strong typing via input schemas |
 | **Client-native** | Integrated into agent's tool system natively |
+| **Delegation hints** | `browser_investigate` can tell orchestrators to use a smaller, cheaper subagent first |
 
 ### CLI Advantages
 
@@ -162,6 +164,7 @@ Short version:
 | **Raw protocol access** | Direct `bbx call` for any method with full parameter control |
 | **Interactive flows** | `bbx doctor` for guided troubleshooting |
 | **Stdin support** | `bbx eval -` reads expression from stdin |
+| **Manual investigation loops** | `bbx batch` makes the same structured-first investigation pattern easy to script |
 
 ## Ergonomics Comparison
 
@@ -179,6 +182,22 @@ bbx dom-query .sidebar
 # or with full control:
 bbx call dom.query '{"selector": ".sidebar", "maxNodes": 20}'
 ```
+
+### Open-Ended Investigation
+
+MCP has a dedicated `browser_investigate` tool for "find out why this is broken" style requests. It is read-only and can carry delegation metadata for a smaller, cheaper subagent.
+
+CLI does not have a separate `bbx investigate` command. The equivalent is a structured-first sequence, usually via one `bbx batch` call:
+
+```bash
+bbx batch '[
+  {"method":"page.get_state"},
+  {"method":"dom.query","params":{"selector":"main","maxNodes":20,"maxDepth":4,"textBudget":600}},
+  {"method":"page.get_text","params":{"textBudget":4000}}
+]'
+```
+
+Escalate to `bbx screenshot`, `screenshot.capture_region`, or `screenshot.capture_full_page` only when those structured reads are insufficient.
 
 ### Key Differences
 

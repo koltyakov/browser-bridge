@@ -31,7 +31,8 @@ import {
   handleSkillTool,
   handleStatusTool,
   handleStylesLayoutTool,
-  handleTabsTool
+  handleTabsTool,
+  handleInvestigateTool
 } from '../src/handlers.js';
 
 /**
@@ -423,4 +424,78 @@ test('grouped MCP tool action maps stay aligned with the bridge method registry'
   for (const method of Object.values(INPUT_ACTION_METHODS)) {
     assert.ok(BRIDGE_METHOD_REGISTRY[method], `${method} should exist in the bridge registry`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// browser_investigate
+// ---------------------------------------------------------------------------
+
+test('handleInvestigateTool normal scope runs page.get_state, dom.query, page.get_text', async () => {
+  await withMockedBridge(async (record) => {
+    if (record.method === 'page.get_state') return ok({ url: 'https://example.com/', title: 'Example', origin: 'https://example.com', readyState: 'complete', hints: {} });
+    if (record.method === 'dom.query') return ok({ nodes: [{ elementRef: 'el_1', tag: 'div', attrs: {}, bbox: {}, textExcerpt: 'Hello' }] });
+    if (record.method === 'page.get_text') return ok({ text: 'Hello world', truncated: false, length: 11 });
+    return ok({});
+  }, async (calls) => {
+    const result = await handleInvestigateTool({ objective: 'Find the main heading' });
+    assert.equal(calls.length, 3);
+    assert.equal(calls[0].method, 'page.get_state');
+    assert.equal(calls[1].method, 'dom.query');
+    assert.equal(calls[2].method, 'page.get_text');
+    assert.equal(result.isError, undefined);
+    assert.equal(result.structuredContent.ok, true);
+    assert.equal(result.structuredContent.heuristicFallback, true);
+    assert.equal(/** @type {unknown[]} */ (result.structuredContent.steps).length, 3);
+    assert.match(result.content[0].text, /Investigation complete/);
+  });
+});
+
+test('handleInvestigateTool quick scope runs only page.get_state and dom.query', async () => {
+  await withMockedBridge(async (record) => {
+    if (record.method === 'page.get_state') return ok({ url: 'https://example.com/', title: 'Ex', origin: 'https://example.com', readyState: 'complete', hints: {} });
+    if (record.method === 'dom.query') return ok({ nodes: [{ elementRef: 'el_1', tag: 'body', attrs: {}, bbox: {}, textExcerpt: '' }] });
+    return ok({});
+  }, async (calls) => {
+    const result = await handleInvestigateTool({ objective: 'Check page', scope: 'quick' });
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].method, 'page.get_state');
+    assert.equal(calls[1].method, 'dom.query');
+    assert.equal(result.structuredContent.scope, 'quick');
+  });
+});
+
+test('handleInvestigateTool rejects missing objective', async () => {
+  const result = await handleInvestigateTool({ objective: '' });
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /objective is required/);
+});
+
+test('handleInvestigateTool continues after individual step failure', async () => {
+  let callCount = 0;
+  await withMockedBridge(async () => {
+    callCount++;
+    if (callCount === 2) return fail('ACCESS_DENIED', 'Denied');
+    return ok({ url: 'https://example.com/', title: 'Ex', origin: 'https://example.com', readyState: 'complete', hints: {} });
+  }, async (calls) => {
+    const result = await handleInvestigateTool({ objective: 'Test failure', scope: 'normal' });
+    assert.equal(calls.length, 3); // all 3 steps attempted (ACCESS_DENIED is not retriable)
+    assert.equal(result.isError, true);
+    assert.equal(result.structuredContent.ok, false);
+    assert.match(result.content[0].text, /partial/);
+  });
+});
+
+test('handleInvestigateTool forwards tabId to bridge calls', async () => {
+  await withMockedBridge(async () => ok({ url: 'https://example.com/', title: 'Ex', origin: 'https://example.com', readyState: 'complete', hints: {} }), async (calls) => {
+    await handleInvestigateTool({ objective: 'Check tab', scope: 'quick', tabId: 42 });
+    assert.equal(calls[0].tabId, 42);
+    assert.equal(calls[1].tabId, 42);
+  });
+});
+
+test('handleInvestigateTool passes selector to dom.query', async () => {
+  await withMockedBridge(async () => ok({ url: 'https://example.com/', title: 'Ex', origin: 'https://example.com', readyState: 'complete', hints: {} }), async (calls) => {
+    await handleInvestigateTool({ objective: 'Inspect nav', scope: 'quick', selector: 'nav.main' });
+    assert.equal(calls[1].params?.selector, 'nav.main');
+  });
 });

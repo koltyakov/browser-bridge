@@ -11,6 +11,8 @@ Use this when the bug only reproduces in your current logged-in or feature-flag 
 Ask an MCP-capable agent:
 
 > Use Browser Bridge MCP to inspect why the sidebar overlaps the main content.
+>
+> If your client supports subagents, delegate the investigation to a smaller low-cost worker first.
 
 Ask a CLI-skill agent:
 
@@ -19,6 +21,7 @@ Ask a CLI-skill agent:
 Useful direct commands:
 
 ```bash
+bbx batch '[{"method":"page.get_state"},{"method":"dom.query","params":{"selector":".sidebar","maxNodes":20,"maxDepth":4,"textBudget":600}}]'
 bbx dom-query .sidebar
 bbx box .sidebar
 bbx styles .sidebar display,position,width,left,right,gap

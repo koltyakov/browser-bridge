@@ -109,3 +109,20 @@ you want parallel reads with one CLI round trip.
 
 `page.get_console` and `page.get_network` also return `dropped` when hot pages
 overflow their 200-entry buffers.
+
+## Investigate efficiently
+
+When the task is open-ended, treat CLI inspection as a structured-first
+investigation loop:
+
+```bash
+bbx batch '[
+  {"method":"page.get_state"},
+  {"method":"dom.query","params":{"selector":"main","maxNodes":20,"maxDepth":4,"textBudget":600}},
+  {"method":"page.get_text","params":{"textBudget":4000}}
+]'
+```
+
+Add `styles.get_computed`, `layout.get_box_model`, `page.get_console`, or
+`page.get_network` only when they directly help answer the question. Escalate
+to screenshots after that, not before.

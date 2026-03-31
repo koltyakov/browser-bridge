@@ -36,9 +36,20 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
 
   try {
     const server = createBridgeMcpServer();
+    const investigateRegistration = registrations.find(
+      (entry) => entry.name === 'browser_investigate'
+    );
+    const investigateConfig = /** @type {Record<string, unknown>} */ (
+      investigateRegistration?.config ?? {}
+    );
+    const delegationHint = /** @type {Record<string, unknown>} */ (
+      investigateConfig._meta && typeof investigateConfig._meta === 'object'
+        ? /** @type {Record<string, unknown>} */ (investigateConfig._meta).delegationHint ?? {}
+        : {}
+    );
 
     assert.ok(server instanceof McpServer);
-    assert.equal(registrations.length, 16);
+    assert.equal(registrations.length, 17);
     assert.deepEqual(
       registrations.map((entry) => entry.name),
       [
@@ -57,12 +68,35 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
         'browser_batch',
         'browser_call',
         'browser_skill',
-        'browser_access'
+        'browser_access',
+        'browser_investigate'
       ]
     );
     assert.equal(registrations[4].config.title, 'Browser Tabs');
     assert.match(String(registrations[5].config.description), /accessibility_tree/);
     assert.equal(typeof registrations[12].handler, 'function');
+    assert.match(String(investigateConfig.description), /smaller, low-cost subagent/);
+    assert.doesNotMatch(String(investigateConfig.description), /Haiku|GPT-/);
+    assert.equal(delegationHint.costTier, 'low');
+    assert.deepEqual(delegationHint.preferredAgentProfile, {
+      modelClass: 'small',
+      reasoningEffort: 'low',
+    });
+    assert.deepEqual(delegationHint.preferredTools, [
+      'browser_dom',
+      'browser_page',
+      'browser_styles_layout',
+      'browser_batch',
+    ]);
+    assert.deepEqual(delegationHint.escalationTools, ['browser_capture']);
+    assert.ok(
+      Array.isArray(delegationHint.preferredBridgeMethods) &&
+      delegationHint.preferredBridgeMethods.includes('page.get_state')
+    );
+    assert.ok(
+      Array.isArray(delegationHint.preferredBridgeMethods) &&
+      !delegationHint.preferredBridgeMethods.includes('screenshot.capture_full_page')
+    );
   } finally {
     McpServer.prototype.registerTool = originalRegisterTool;
   }

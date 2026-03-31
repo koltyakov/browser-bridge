@@ -120,6 +120,7 @@ Browser Bridge is optimized for the opposite starting point: **inspect the state
 - Sessions are tab and origin scoped, auto-refreshed when possible
 - All patch operations are reversible and session-scoped
 - Structured DOM/style/layout reads are the primary transport; screenshots are a fallback
+- Open-ended investigation should start with structured reads on a smaller, lower-cost subagent when the client supports delegation
 - The native host daemon auto-starts on demand
 
 ## Documentation

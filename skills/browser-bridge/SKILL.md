@@ -11,6 +11,7 @@ This CLI skill is for agents that can run shell commands and where direct `bbx` 
 
 Skill name: `browser-bridge`. In GitHub Copilot, invoke as `/browser-bridge`. `bbx` is the CLI command, not a portable skill alias.
 Use a subagent for bridge calls; return only concise findings to the parent.
+For open-ended investigation, prefer a smaller, lower-cost subagent first. Start with structured reads (`page.get_state`, `dom.query`, `page.get_text`, `styles.get_computed`, `bbx batch`) and escalate to screenshots or debugger-backed methods only when structured evidence is insufficient.
 
 ## CLI
 
@@ -146,6 +147,16 @@ Error responses now include a machine-readable `error.recovery` field with `retr
 4. **Refresh refs after pruning** - if `dom.query` returns `_registryPruned: true`, old refs may have been evicted; re-query before reusing them
 5. **Watch overflow counters** - `page.get_console` and `page.get_network` return `dropped` when hot pages overflow the 200-entry buffers
 
+## Investigate Workflow
+
+For a natural-language inspection task:
+
+1. Use a small, cheap subagent if the parent runtime supports delegation.
+2. Start with `page.get_state` plus a narrow `dom.query` or one `bbx batch` combining independent reads.
+3. Add `page.get_text`, `styles.get_computed`, `layout.get_box_model`, `page.get_console`, or `page.get_network` only when they directly help answer the objective.
+4. Escalate to `screenshot.capture_element`, `screenshot.capture_region`, or other debugger-backed methods only when structured reads are ambiguous or visual confirmation is required.
+5. Return concise findings and evidence, not raw dumps.
+
 ## Common Workflows
 
 ### Debug a CSS layout issue
@@ -244,6 +255,8 @@ dom.find_by_role('button', 'Login') → input.click
 `bbx a11y-tree` and `dom.get_accessibility_tree` are sensitive to `maxDepth` and `maxNodes`. Shallow runs can undercount interactive nodes on real pages, so widen those limits before treating a low interactive count as a bug.
 
 > **MCP mode:** If Browser Bridge is connected via MCP (tools named `browser_dom`, `browser_capture`, etc.), use the MCP tools directly — do not shell out to `bbx`. The MCP tools map 1:1 to CLI capabilities. In prompts, `BB MCP` and `Browser Bridge MCP` both work. Do not treat `bbx-mcp` as a skill alias.
+>
+> For open-ended MCP inspection tasks, prefer `browser_investigate` first. It is read-only, designed for cheaper delegated investigation, and falls back to a deterministic sequence when the client cannot delegate. Escalate to `browser_capture` only when the structured investigation is not enough.
 
 ## Subagent Output
 

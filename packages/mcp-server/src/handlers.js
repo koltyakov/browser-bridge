@@ -843,3 +843,116 @@ export async function handleRawCallTool(args) {
 export async function handleAccessTool() {
   return callBridgeTool('access.request');
 }
+
+// ---------------------------------------------------------------------------
+// browser_investigate — heuristic fallback for subagent-delegatable inspection
+// ---------------------------------------------------------------------------
+
+/**
+ * @typedef {{ method: BridgeMethod, params: (args: Record<string, unknown>) => Record<string, unknown> }} InvestigateStep
+ */
+
+/** @type {Record<string, { label: string, steps: InvestigateStep[] }>} */
+const INVESTIGATE_SCOPES = {
+  quick: {
+    label: 'quick',
+    steps: [
+      { method: 'page.get_state', params: () => ({}) },
+      { method: 'dom.query', params: (a) => ({ selector: a.selector || 'body', maxNodes: 10, maxDepth: 2, textBudget: 300 }) },
+    ],
+  },
+  normal: {
+    label: 'normal',
+    steps: [
+      { method: 'page.get_state', params: () => ({}) },
+      { method: 'dom.query', params: (a) => ({ selector: a.selector || 'body', maxNodes: 25, maxDepth: 4, textBudget: 600 }) },
+      { method: 'page.get_text', params: () => ({ textBudget: 4000 }) },
+    ],
+  },
+  deep: {
+    label: 'deep',
+    steps: [
+      { method: 'page.get_state', params: () => ({}) },
+      { method: 'dom.query', params: (a) => ({ selector: a.selector || 'body', maxNodes: 50, maxDepth: 6, textBudget: 1000 }) },
+      { method: 'page.get_text', params: () => ({ textBudget: 8000 }) },
+      { method: 'page.get_console', params: () => ({ level: 'warn', limit: 20 }) },
+      { method: 'page.get_network', params: () => ({ limit: 20 }) },
+    ],
+  },
+};
+
+/**
+ * Investigate a page to answer a question or verify a condition.
+ * Runs a deterministic heuristic inspection sequence and returns a
+ * structured summary. Designed so smart orchestrators can delegate
+ * this to a cheaper subagent instead.
+ *
+ * @param {{ objective: string, scope?: 'quick' | 'normal' | 'deep', tabId?: number, selector?: string }} args
+ * @returns {Promise<ToolResult>}
+ */
+export async function handleInvestigateTool(args) {
+  const objective = typeof args.objective === 'string' ? args.objective.trim() : '';
+  if (!objective) {
+    return summarizeToolError('objective is required for browser_investigate.');
+  }
+
+  const scopeName = args.scope || 'normal';
+  const scope = INVESTIGATE_SCOPES[scopeName];
+  if (!scope) {
+    return summarizeToolError(`Unsupported investigation scope "${scopeName}".`);
+  }
+
+  return withToolClient(async (client) => {
+    const requestedTabId = typeof args.tabId === 'number' ? args.tabId : null;
+
+    /** @type {Array<{ method: string, ok: boolean, summary: string, evidence: unknown, durationMs: number }>} */
+    const stepResults = [];
+
+    for (const step of scope.steps) {
+      const startTime = Date.now();
+      try {
+        const response = await requestBridgeWithRetry(client, step.method, step.params(args), {
+          tabId: requestedTabId,
+          source: REQUEST_SOURCE,
+          tokenBudget: null,
+        });
+        const bridgeSummary = annotateBridgeSummary(
+          summarizeBridgeResponse(response, step.method),
+          response
+        );
+        stepResults.push({
+          method: step.method,
+          ok: bridgeSummary.ok,
+          summary: bridgeSummary.summary,
+          evidence: bridgeSummary.evidence,
+          durationMs: Date.now() - startTime,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        stepResults.push({
+          method: step.method,
+          ok: false,
+          summary: `ERROR: ${message}`,
+          evidence: null,
+          durationMs: Date.now() - startTime,
+        });
+      }
+    }
+
+    const failedSteps = stepResults.filter((s) => !s.ok);
+    const allOk = failedSteps.length === 0;
+    const totalDuration = stepResults.reduce((sum, s) => sum + s.durationMs, 0);
+
+    const summaryText = allOk
+      ? `Investigation complete (${scope.label}, ${stepResults.length} steps, ${totalDuration}ms). Objective: ${objective}`
+      : `Investigation partial (${scope.label}, ${stepResults.length} steps, ${failedSteps.length} failed, ${totalDuration}ms). Objective: ${objective}`;
+
+    return createToolResult(summaryText, {
+      ok: allOk,
+      objective,
+      scope: scopeName,
+      heuristicFallback: true,
+      steps: stepResults,
+    }, !allOk);
+  });
+}
