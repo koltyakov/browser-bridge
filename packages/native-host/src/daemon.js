@@ -30,6 +30,17 @@ import { writeJsonLine } from './framing.js';
 /** @typedef {import('../../protocol/src/types.js').SetupStatus} SetupStatus */
 /** @typedef {import('node:net').Socket & { __clientId?: string }} ClientSocket */
 /** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string, method?: string }} PendingEntry */
+/**
+ * @typedef {{
+ *   installAgentFiles: typeof import('../../agent-client/src/install.js').installAgentFiles,
+ *   isSupportedTarget: typeof import('../../agent-client/src/install.js').isSupportedTarget,
+ *   removeAgentFiles: typeof import('../../agent-client/src/install.js').removeAgentFiles,
+ *   installMcpConfig: typeof import('../../agent-client/src/mcp-config.js').installMcpConfig,
+ *   isMcpClientName: typeof import('../../agent-client/src/mcp-config.js').isMcpClientName,
+ *   removeMcpConfig: typeof import('../../agent-client/src/mcp-config.js').removeMcpConfig,
+ *   cwd: string
+ * }} SetupInstallDeps
+ */
 
 /**
  * @param {string} left
@@ -526,7 +537,7 @@ async function pingExistingDaemon(socketPath) {
  * @param {Record<string, unknown>} params
  * @returns {SetupInstallParams & { action: 'install' | 'uninstall', kind: 'mcp' | 'skill', target: string }}
  */
-function normalizeSetupInstallParams(params) {
+export function normalizeSetupInstallParams(params) {
   const action = params.action === 'uninstall' ? 'uninstall' : 'install';
   const kind = params.kind === 'mcp' || params.kind === 'skill' ? params.kind : null;
   const target = typeof params.target === 'string' ? params.target.trim().toLowerCase() : '';
@@ -541,17 +552,31 @@ function normalizeSetupInstallParams(params) {
 
 /**
  * @param {Record<string, unknown>} params
+ * @param {SetupInstallDeps} [deps]
  * @returns {Promise<SetupInstallResult>}
  */
-async function installSetupTarget(params) {
+export async function installSetupTarget(
+  params,
+  deps = {
+    installAgentFiles,
+    isSupportedTarget,
+    removeAgentFiles,
+    installMcpConfig,
+    isMcpClientName,
+    removeMcpConfig,
+    cwd: process.cwd()
+  }
+) {
+  /** @type {SetupInstallDeps} */
+  const resolvedDeps = deps;
   const normalized = normalizeSetupInstallParams(params);
   if (normalized.kind === 'mcp') {
-    if (!isMcpClientName(normalized.target)) {
+    if (!resolvedDeps.isMcpClientName(normalized.target)) {
       throw new Error(`Unsupported MCP client "${normalized.target}".`);
     }
     const paths = normalized.action === 'uninstall'
-      ? await removeMcpConfig(normalized.target, { global: true })
-      : [await installMcpConfig(normalized.target, { global: true })];
+      ? await resolvedDeps.removeMcpConfig(normalized.target, { global: true })
+      : [await resolvedDeps.installMcpConfig(normalized.target, { global: true })];
     return {
       action: normalized.action,
       kind: 'mcp',
@@ -560,19 +585,19 @@ async function installSetupTarget(params) {
     };
   }
 
-  if (!isSupportedTarget(normalized.target)) {
+  if (!resolvedDeps.isSupportedTarget(normalized.target)) {
     throw new Error(`Unsupported skill target "${normalized.target}".`);
   }
 
   const paths = normalized.action === 'uninstall'
-    ? await removeAgentFiles({
+    ? await resolvedDeps.removeAgentFiles({
       targets: [normalized.target],
-      projectPath: process.cwd(),
+      projectPath: resolvedDeps.cwd,
       global: true
     })
-    : await installAgentFiles({
+    : await resolvedDeps.installAgentFiles({
       targets: [normalized.target],
-      projectPath: process.cwd(),
+      projectPath: resolvedDeps.cwd,
       global: true
     });
   return {

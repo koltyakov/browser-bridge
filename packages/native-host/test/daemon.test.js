@@ -7,7 +7,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 
-import { BridgeDaemon } from '../src/daemon.js';
+import { BridgeDaemon, installSetupTarget, normalizeSetupInstallParams } from '../src/daemon.js';
 
 /**
  * Start a daemon on a random TCP port and return it alongside a helper to open
@@ -79,6 +79,50 @@ test('daemon responds to health checks without extension', async () => {
   assert.equal(payload.type, 'agent.response');
   assert.equal(payload.response.result.daemon, 'ok');
   assert.equal(payload.response.result.extensionConnected, false);
+});
+
+test('daemon health check reports upgrade guidance when the daemon is newer than the client', async () => {
+  const daemon = new BridgeDaemon({ logger: { log() {}, error() {} } });
+  const socket = createFakeSocket();
+
+  await daemon.handleAgentRequest(socket, {
+    request: {
+      id: 'req_health_old_client',
+      method: 'health.ping',
+      tab_id: null,
+      params: {},
+      meta: {
+        protocol_version: '0.0',
+        token_budget: null
+      }
+    }
+  });
+
+  const payload = JSON.parse(socket.writes[0].trim());
+  assert.equal(payload.response.result.deprecated_since, '1.0');
+  assert.match(payload.response.result.migration_hint, /daemon is newer than the client protocol 0.0/);
+});
+
+test('daemon health check reports upgrade guidance when the daemon is older than the client', async () => {
+  const daemon = new BridgeDaemon({ logger: { log() {}, error() {} } });
+  const socket = createFakeSocket();
+
+  await daemon.handleAgentRequest(socket, {
+    request: {
+      id: 'req_health_new_client',
+      method: 'health.ping',
+      tab_id: null,
+      params: {},
+      meta: {
+        protocol_version: '9.9',
+        token_budget: null
+      }
+    }
+  });
+
+  const payload = JSON.parse(socket.writes[0].trim());
+  assert.equal(payload.response.result.deprecated_since, undefined);
+  assert.match(payload.response.result.migration_hint, /daemon is older than the client protocol 9.9/);
 });
 
 test('daemon responds to setup status requests without extension', async () => {
@@ -192,6 +236,26 @@ test('daemon handles extension setup status requests', async () => {
   assert.equal(payload.type, 'extension.setup_status.response');
   assert.equal(payload.requestId, 'setup_1');
   assert.deepEqual(payload.status, expectedStatus);
+});
+
+test('daemon returns setup status errors to the extension caller', async () => {
+  const daemon = new BridgeDaemon({
+    logger: console,
+    setupStatusLoader: async () => {
+      throw new Error('status unavailable');
+    }
+  });
+  const socket = createFakeSocket();
+
+  await daemon.handleClientMessage(socket, {
+    type: 'extension.setup_status.request',
+    requestId: 'setup_fail'
+  });
+
+  const payload = JSON.parse(socket.writes[0].trim());
+  assert.equal(payload.type, 'extension.setup_status.error');
+  assert.equal(payload.requestId, 'setup_fail');
+  assert.equal(payload.error.message, 'status unavailable');
 });
 
 test('daemon log entries retain request source metadata', async () => {
@@ -336,6 +400,197 @@ test('daemon start fails when another daemon is already listening on the same so
     await first.stop();
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }
+});
+
+test('daemon start removes a stale socket when the probe returns invalid JSON', {
+  skip: process.platform === 'win32' ? 'Unix socket probing is not applicable on Windows' : false
+}, async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-stale-socket-'));
+  const socketPath = path.join(tempDir, 'bridge.sock');
+  /** @type {string[][]} */
+  const logs = [];
+  const staleServer = net.createServer((socket) => {
+    socket.once('data', () => {
+      socket.write('not-json\n');
+      socket.end();
+      staleServer.close();
+    });
+  });
+  await new Promise((resolve, reject) => {
+    staleServer.once('error', reject);
+    staleServer.listen(socketPath, () => resolve(undefined));
+  });
+
+  const daemon = new BridgeDaemon({
+    socketPath,
+    logger: {
+      log(...args) {
+        logs.push(args.map((value) => String(value)));
+      },
+      error() {}
+    }
+  });
+
+  try {
+    await daemon.start();
+    assert.ok(logs.some((entry) => entry.join(' ').includes('Removing stale socket from previous run')));
+  } finally {
+    await daemon.stop().catch(() => {});
+    if (staleServer.listening) {
+      await new Promise((resolve) => staleServer.close(() => resolve(undefined)));
+    }
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('normalizeSetupInstallParams trims targets and defaults to install', () => {
+  assert.deepEqual(normalizeSetupInstallParams({
+    kind: 'mcp',
+    target: '  Codex  '
+  }), {
+    action: 'install',
+    kind: 'mcp',
+    target: 'codex'
+  });
+});
+
+test('normalizeSetupInstallParams rejects invalid input', () => {
+  assert.throws(
+    () => normalizeSetupInstallParams({ target: 'codex' }),
+    /requires kind/
+  );
+  assert.throws(
+    () => normalizeSetupInstallParams({ kind: 'skill', target: '   ' }),
+    /requires a target/
+  );
+});
+
+test('installSetupTarget dispatches mcp installs and uninstalls', async () => {
+  /** @type {Array<{ kind: string, target: string, options?: Record<string, unknown> }>} */
+  const calls = [];
+  const deps = /** @type {any} */ ({
+    installAgentFiles: async () => {
+      throw new Error('unexpected skill install');
+    },
+    isSupportedTarget: () => false,
+    removeAgentFiles: async () => {
+      throw new Error('unexpected skill uninstall');
+    },
+    installMcpConfig: async (
+      /** @type {string} */ target,
+      /** @type {Record<string, unknown>} */ options
+    ) => {
+      calls.push({ kind: 'installMcpConfig', target, options });
+      return '/tmp/install-mcp';
+    },
+    isMcpClientName: (/** @type {string} */ target) => target === 'codex',
+    removeMcpConfig: async (
+      /** @type {string} */ target,
+      /** @type {Record<string, unknown>} */ options
+    ) => {
+      calls.push({ kind: 'removeMcpConfig', target, options });
+      return ['/tmp/remove-mcp'];
+    },
+    cwd: '/tmp/project'
+  });
+
+  assert.deepEqual(await installSetupTarget({
+    kind: 'mcp',
+    target: 'codex'
+  }, deps), {
+    action: 'install',
+    kind: 'mcp',
+    target: 'codex',
+    paths: ['/tmp/install-mcp']
+  });
+
+  assert.deepEqual(await installSetupTarget({
+    action: 'uninstall',
+    kind: 'mcp',
+    target: 'codex'
+  }, deps), {
+    action: 'uninstall',
+    kind: 'mcp',
+    target: 'codex',
+    paths: ['/tmp/remove-mcp']
+  });
+
+  await assert.rejects(
+    () => installSetupTarget({ kind: 'mcp', target: 'cursor' }, {
+      ...deps,
+      isMcpClientName: () => false
+    }),
+    /Unsupported MCP client/
+  );
+
+  assert.deepEqual(calls, [
+    { kind: 'installMcpConfig', target: 'codex', options: { global: true } },
+    { kind: 'removeMcpConfig', target: 'codex', options: { global: true } }
+  ]);
+});
+
+test('installSetupTarget dispatches skill installs and uninstalls', async () => {
+  /** @type {Array<{ kind: string, options: Record<string, unknown> }>} */
+  const calls = [];
+  const deps = /** @type {any} */ ({
+    installAgentFiles: async (/** @type {Record<string, unknown>} */ options) => {
+      calls.push({ kind: 'installAgentFiles', options });
+      return ['/tmp/install-skill'];
+    },
+    isSupportedTarget: (/** @type {string} */ target) => target === 'codex',
+    removeAgentFiles: async (/** @type {Record<string, unknown>} */ options) => {
+      calls.push({ kind: 'removeAgentFiles', options });
+      return ['/tmp/remove-skill'];
+    },
+    installMcpConfig: async () => {
+      throw new Error('unexpected mcp install');
+    },
+    isMcpClientName: () => false,
+    removeMcpConfig: async () => {
+      throw new Error('unexpected mcp uninstall');
+    },
+    cwd: '/tmp/project'
+  });
+
+  assert.deepEqual(await installSetupTarget({
+    kind: 'skill',
+    target: 'codex'
+  }, deps), {
+    action: 'install',
+    kind: 'skill',
+    target: 'codex',
+    paths: ['/tmp/install-skill']
+  });
+
+  assert.deepEqual(await installSetupTarget({
+    action: 'uninstall',
+    kind: 'skill',
+    target: 'codex'
+  }, deps), {
+    action: 'uninstall',
+    kind: 'skill',
+    target: 'codex',
+    paths: ['/tmp/remove-skill']
+  });
+
+  await assert.rejects(
+    () => installSetupTarget({ kind: 'skill', target: 'cursor' }, {
+      ...deps,
+      isSupportedTarget: () => false
+    }),
+    /Unsupported skill target/
+  );
+
+  assert.deepEqual(calls, [
+    {
+      kind: 'installAgentFiles',
+      options: { targets: ['codex'], projectPath: '/tmp/project', global: true }
+    },
+    {
+      kind: 'removeAgentFiles',
+      options: { targets: ['codex'], projectPath: '/tmp/project', global: true }
+    }
+  ]);
 });
 
 // --- Resilience: malformed native messages (5.1) ---
