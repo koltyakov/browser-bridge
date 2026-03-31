@@ -28,8 +28,8 @@ import { writeJsonLine } from './framing.js';
 /** @typedef {import('../../protocol/src/types.js').SetupInstallParams} SetupInstallParams */
 /** @typedef {import('../../protocol/src/types.js').SetupInstallResult} SetupInstallResult */
 /** @typedef {import('../../protocol/src/types.js').SetupStatus} SetupStatus */
-/** @typedef {import('node:net').Socket & { __clientId?: string }} ClientSocket */
-/** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string, method?: string }} PendingEntry */
+/** @typedef {import('node:net').Socket & { __clientId?: string, __extensionId?: string }} ClientSocket */
+/** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string, method?: string, remaining: number, lastErrorResponse?: import('../../protocol/src/types.js').BridgeResponse }} PendingEntry */
 /**
  * @typedef {{
  *   installAgentFiles: typeof import('../../agent-client/src/install.js').installAgentFiles,
@@ -114,8 +114,8 @@ export class BridgeDaemon {
     this.server = null;
     /** @type {net.AddressInfo | string | null} */
     this.serverAddress = null;
-    /** @type {ClientSocket | null} */
-    this.extensionSocket = null;
+    /** @type {Map<string, ClientSocket>} */
+    this.extensionSockets = new Map();
     /** @type {Map<string, ClientSocket>} */
     this.agentSockets = new Map();
     /** @type {Map<string, PendingEntry>} */
@@ -218,10 +218,10 @@ export class BridgeDaemon {
     }
     this.agentSockets.clear();
 
-    if (this.extensionSocket) {
-      this.extensionSocket.destroy();
-      this.extensionSocket = null;
+    for (const socket of this.extensionSockets.values()) {
+      socket.destroy();
     }
+    this.extensionSockets.clear();
 
     if (this.server) {
       const server = this.server;
@@ -284,10 +284,9 @@ export class BridgeDaemon {
    */
   registerSocket(socket, message) {
     if (message.role === 'extension') {
-      if (this.extensionSocket && this.extensionSocket !== socket) {
-        this.extensionSocket.destroy();
-      }
-      this.extensionSocket = socket;
+      const extensionId = randomUUID();
+      socket.__extensionId = extensionId;
+      this.extensionSockets.set(extensionId, socket);
       void writeJsonLine(socket, { type: 'registered', role: 'extension' });
       return;
     }
@@ -309,7 +308,7 @@ export class BridgeDaemon {
   async handleAgentRequest(socket, message) {
     const request = validateBridgeRequest(message.request);
     if (request.method === 'health.ping') {
-      if (!this.extensionSocket) {
+      if (this.extensionSockets.size === 0) {
         const response = createSuccess(request.id, {
           daemon: 'ok',
           extensionConnected: false,
@@ -356,7 +355,7 @@ export class BridgeDaemon {
       return;
     }
 
-    if (!this.extensionSocket) {
+    if (this.extensionSockets.size === 0) {
       const response = createFailure(
         request.id,
         ERROR_CODES.EXTENSION_DISCONNECTED,
@@ -366,10 +365,12 @@ export class BridgeDaemon {
       return;
     }
 
+    const extensionCount = this.extensionSockets.size;
     this.pendingRequests.set(request.id, {
       socket,
       method: request.method,
       source: typeof request.meta?.source === 'string' ? request.meta.source : '',
+      remaining: extensionCount,
       timeoutId: setTimeout(() => {
         const pending = this.pendingRequests.get(request.id);
         if (!pending) return;
@@ -378,10 +379,12 @@ export class BridgeDaemon {
         void writeJsonLine(pending.socket, { type: 'agent.response', response });
       }, this.pendingTimeoutMs)
     });
-    await writeJsonLine(this.extensionSocket, {
-      type: 'extension.request',
-      request
-    });
+    const broadcastPayload = { type: 'extension.request', request };
+    await Promise.all(
+      Array.from(this.extensionSockets.values()).map(
+        (extSocket) => writeJsonLine(extSocket, broadcastPayload)
+      )
+    );
   }
 
   /**
@@ -422,31 +425,54 @@ export class BridgeDaemon {
       return;
     }
 
-    clearTimeout(pending.timeoutId);
-    this.pendingRequests.delete(responseMessage.id);
-    this.pushLog({
-      at: new Date().toISOString(),
-      method: responseMessage.meta?.method ?? null,
-      ok: responseMessage.ok,
-      id: responseMessage.id,
-      source: pending.source || null
-    });
-    const response = pending.method === 'health.ping' && responseMessage.ok
-      ? createSuccess(responseMessage.id, {
-        daemon: 'ok',
-        extensionConnected: true,
-        socketPath: this.socketPath,
-        .../** @type {Record<string, unknown>} */ (responseMessage.result)
-      }, {
-        ...responseMessage.meta,
-        method: responseMessage.meta?.method ?? pending.method
-      })
-      : responseMessage;
+    if (responseMessage.ok) {
+      clearTimeout(pending.timeoutId);
+      this.pendingRequests.delete(responseMessage.id);
+      this.pushLog({
+        at: new Date().toISOString(),
+        method: responseMessage.meta?.method ?? null,
+        ok: true,
+        id: responseMessage.id,
+        source: pending.source || null
+      });
+      const response = pending.method === 'health.ping'
+        ? createSuccess(responseMessage.id, {
+          daemon: 'ok',
+          extensionConnected: true,
+          socketPath: this.socketPath,
+          .../** @type {Record<string, unknown>} */ (responseMessage.result)
+        }, {
+          ...responseMessage.meta,
+          method: responseMessage.meta?.method ?? pending.method
+        })
+        : responseMessage;
 
-    await writeJsonLine(pending.socket, {
-      type: 'agent.response',
-      response
-    });
+      await writeJsonLine(pending.socket, {
+        type: 'agent.response',
+        response
+      });
+      return;
+    }
+
+    // Error response — wait for other extensions before forwarding.
+    pending.remaining -= 1;
+    pending.lastErrorResponse = responseMessage;
+
+    if (pending.remaining <= 0) {
+      clearTimeout(pending.timeoutId);
+      this.pendingRequests.delete(responseMessage.id);
+      this.pushLog({
+        at: new Date().toISOString(),
+        method: responseMessage.meta?.method ?? null,
+        ok: false,
+        id: responseMessage.id,
+        source: pending.source || null
+      });
+      await writeJsonLine(pending.socket, {
+        type: 'agent.response',
+        response: pending.lastErrorResponse
+      });
+    }
   }
 
   /**
@@ -454,8 +480,8 @@ export class BridgeDaemon {
    * @returns {void}
    */
   handleSocketClose(socket) {
-    if (socket === this.extensionSocket) {
-      this.extensionSocket = null;
+    if (socket.__extensionId) {
+      this.extensionSockets.delete(socket.__extensionId);
     }
 
     if (socket.__clientId) {

@@ -264,7 +264,7 @@ test('daemon log entries retain request source metadata', async () => {
   });
   const agentSocket = createFakeSocket();
   const extensionSocket = createFakeSocket();
-  daemon.extensionSocket = extensionSocket;
+  daemon.extensionSockets.set('test-ext', extensionSocket);
 
   await daemon.handleAgentRequest(agentSocket, {
     request: {
@@ -298,7 +298,7 @@ test('daemon forwards health checks to the extension and merges access state', a
   const daemon = new BridgeDaemon({ logger: console });
   const agentSocket = createFakeSocket();
   const extensionSocket = createFakeSocket();
-  daemon.extensionSocket = extensionSocket;
+  daemon.extensionSockets.set('test-ext', extensionSocket);
 
   await daemon.handleAgentRequest(agentSocket, {
     request: {
@@ -818,6 +818,142 @@ test('daemon does not drop agent2 response when agent1 disconnects mid-flight', 
     assert.equal(resp2.response.ok, true);
   } finally {
     s1.destroy(); s2.destroy(); se.destroy();
+    await daemon.stop();
+  }
+});
+
+// --- Multi-extension: two Chrome profiles coexist (no kick-off) ---
+
+test('daemon allows two extensions to coexist and routes to the one with access', async () => {
+  const { daemon, connect } = await startTestDaemon();
+  const s1 = await connect();
+  const s2 = await connect();
+  const sa = await connect();
+  const ext1 = makeNdjsonClient(s1);
+  const ext2 = makeNdjsonClient(s2);
+  const agent = makeNdjsonClient(sa);
+
+  try {
+    // Both extensions register — neither should be destroyed.
+    ext1.send({ type: 'register', role: 'extension' });
+    ext2.send({ type: 'register', role: 'extension' });
+    agent.send({ type: 'register', role: 'agent', clientId: 'agent_multi' });
+    assert.equal(/** @type {any} */ (await ext1.next()).type, 'registered');
+    assert.equal(/** @type {any} */ (await ext2.next()).type, 'registered');
+    assert.equal(/** @type {any} */ (await agent.next()).type, 'registered');
+    assert.equal(daemon.extensionSockets.size, 2, 'both extensions should coexist');
+
+    // Agent sends a request — it should be broadcast to both extensions.
+    agent.send({
+      type: 'agent.request',
+      request: {
+        id: 'req_multi',
+        method: 'page.get_state',
+        tab_id: null,
+        params: {},
+        meta: { protocol_version: '1.0', token_budget: null }
+      }
+    });
+
+    const fwd1 = /** @type {any} */ (await ext1.next());
+    const fwd2 = /** @type {any} */ (await ext2.next());
+    assert.equal(fwd1.type, 'extension.request');
+    assert.equal(fwd2.type, 'extension.request');
+
+    // Extension 1 responds with ACCESS_DENIED (no window enabled).
+    ext1.send({
+      type: 'extension.response',
+      response: {
+        id: 'req_multi',
+        ok: false,
+        result: null,
+        error: { code: 'ACCESS_DENIED', message: 'No window enabled', details: null },
+        meta: { protocol_version: '1.0', method: 'page.get_state' }
+      }
+    });
+
+    // Extension 2 responds with success (window enabled).
+    ext2.send({
+      type: 'extension.response',
+      response: {
+        id: 'req_multi',
+        ok: true,
+        result: { url: 'https://example.com' },
+        error: null,
+        meta: { protocol_version: '1.0', method: 'page.get_state' }
+      }
+    });
+
+    // Agent should receive the success response, not the error.
+    const resp = /** @type {any} */ (await agent.next());
+    assert.equal(resp.type, 'agent.response');
+    assert.equal(resp.response.ok, true);
+    assert.equal(resp.response.result.url, 'https://example.com');
+  } finally {
+    s1.destroy(); s2.destroy(); sa.destroy();
+    await daemon.stop();
+  }
+});
+
+test('daemon forwards error when all extensions deny access', async () => {
+  const { daemon, connect } = await startTestDaemon();
+  const s1 = await connect();
+  const s2 = await connect();
+  const sa = await connect();
+  const ext1 = makeNdjsonClient(s1);
+  const ext2 = makeNdjsonClient(s2);
+  const agent = makeNdjsonClient(sa);
+
+  try {
+    ext1.send({ type: 'register', role: 'extension' });
+    ext2.send({ type: 'register', role: 'extension' });
+    agent.send({ type: 'register', role: 'agent', clientId: 'agent_deny' });
+    await ext1.next();
+    await ext2.next();
+    await agent.next();
+
+    agent.send({
+      type: 'agent.request',
+      request: {
+        id: 'req_deny',
+        method: 'page.get_state',
+        tab_id: null,
+        params: {},
+        meta: { protocol_version: '1.0', token_budget: null }
+      }
+    });
+
+    await ext1.next();
+    await ext2.next();
+
+    // Both extensions respond with errors.
+    ext1.send({
+      type: 'extension.response',
+      response: {
+        id: 'req_deny',
+        ok: false,
+        result: null,
+        error: { code: 'ACCESS_DENIED', message: 'No window enabled', details: null },
+        meta: { protocol_version: '1.0', method: 'page.get_state' }
+      }
+    });
+    ext2.send({
+      type: 'extension.response',
+      response: {
+        id: 'req_deny',
+        ok: false,
+        result: null,
+        error: { code: 'ACCESS_DENIED', message: 'No window enabled', details: null },
+        meta: { protocol_version: '1.0', method: 'page.get_state' }
+      }
+    });
+
+    const resp = /** @type {any} */ (await agent.next());
+    assert.equal(resp.type, 'agent.response');
+    assert.equal(resp.response.ok, false);
+    assert.equal(resp.response.error.code, 'ACCESS_DENIED');
+  } finally {
+    s1.destroy(); s2.destroy(); sa.destroy();
     await daemon.stop();
   }
 });

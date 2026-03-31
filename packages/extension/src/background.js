@@ -355,6 +355,7 @@ function connectNative() {
       state.nativeReconnectAttempts = 0;
       broadcastUi({ type: 'native.status', connected: true });
       refreshSetupStatus(true);
+      void refreshActionIndicators();
       void emitUiState();
       if (wasReconnect && reconnectAttempts > 0) {
         void appendActionLogEntry({
