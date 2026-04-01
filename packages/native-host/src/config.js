@@ -56,7 +56,7 @@ export function getLauncherFilename() {
 }
 
 /**
- * @typedef {'chrome' | 'edge' | 'brave' | 'chromium'} SupportedBrowser
+ * @typedef {'chrome' | 'edge' | 'brave' | 'chromium' | 'arc'} SupportedBrowser
  */
 
 /**
@@ -64,7 +64,7 @@ export function getLauncherFilename() {
  *
  * @type {SupportedBrowser[]}
  */
-export const SUPPORTED_BROWSERS = ['chrome', 'edge', 'brave', 'chromium'];
+export const SUPPORTED_BROWSERS = ['chrome', 'edge', 'brave', 'chromium', 'arc'];
 
 /**
  * Return the native messaging host manifest install directory for the given
@@ -83,7 +83,8 @@ export function getManifestInstallDir(browser = 'chrome') {
       chrome: path.join(macBase, 'Google', 'Chrome', 'NativeMessagingHosts'),
       edge: path.join(macBase, 'Microsoft Edge', 'NativeMessagingHosts'),
       brave: path.join(macBase, 'BraveSoftware', 'Brave-Browser', 'NativeMessagingHosts'),
-      chromium: path.join(macBase, 'Chromium', 'NativeMessagingHosts')
+      chromium: path.join(macBase, 'Chromium', 'NativeMessagingHosts'),
+      arc: path.join(macBase, 'Arc', 'User Data', 'NativeMessagingHosts')
     };
     return macPaths[browser] ?? macPaths.chrome;
   }
@@ -94,7 +95,8 @@ export function getManifestInstallDir(browser = 'chrome') {
       chrome: path.join(winBase, 'Google', 'Chrome', 'User Data', 'NativeMessagingHosts'),
       edge: path.join(winBase, 'Microsoft', 'Edge', 'User Data', 'NativeMessagingHosts'),
       brave: path.join(winBase, 'BraveSoftware', 'Brave-Browser', 'User Data', 'NativeMessagingHosts'),
-      chromium: path.join(winBase, 'Chromium', 'User Data', 'NativeMessagingHosts')
+      chromium: path.join(winBase, 'Chromium', 'User Data', 'NativeMessagingHosts'),
+      arc: path.join(winBase, 'Arc', 'User Data', 'NativeMessagingHosts')
     };
     return winPaths[browser] ?? winPaths.chrome;
   }
@@ -104,7 +106,8 @@ export function getManifestInstallDir(browser = 'chrome') {
     chrome: path.join(home, '.config', 'google-chrome', 'NativeMessagingHosts'),
     edge: path.join(home, '.config', 'microsoft-edge', 'NativeMessagingHosts'),
     brave: path.join(home, '.config', 'BraveSoftware', 'Brave-Browser', 'NativeMessagingHosts'),
-    chromium: path.join(home, '.config', 'chromium', 'NativeMessagingHosts')
+    chromium: path.join(home, '.config', 'chromium', 'NativeMessagingHosts'),
+    arc: path.join(home, '.config', 'Arc', 'User Data', 'NativeMessagingHosts')
   };
   return linuxPaths[browser] ?? linuxPaths.chrome;
 }

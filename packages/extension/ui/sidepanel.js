@@ -66,7 +66,8 @@ import {
  *   title: string,
  *   url: string,
  *   enabled: boolean,
- *   accessRequested: boolean
+ *   accessRequested: boolean,
+ *   restricted: boolean
  * }} SidePanelCurrentTab
  */
 
@@ -217,7 +218,6 @@ const examplesSection = /** @type {HTMLDetailsElement} */ (
 const examplesContent = /** @type {HTMLDivElement} */ (
   document.getElementById('examples-content')
 );
-const port = chrome.runtime.connect({ name: 'ui-sidepanel' });
 const requestedTabId = Number(
   new URLSearchParams(window.location.search).get('tabId'),
 );
@@ -320,7 +320,7 @@ function copySetupText(target, text) {
 }
 
 /** @param {SidePanelMessage} message */
-port.onMessage.addListener((message) => {
+function handlePortMessage(message) {
   if (message.type === 'native.status') {
     renderNativeStatus(message.connected, message.error);
   }
@@ -332,15 +332,28 @@ port.onMessage.addListener((message) => {
   if (message.type === 'toggle.error') {
     renderToggleError(message.error);
   }
-});
+}
 
-port.postMessage({
-  type: 'state.request',
-  scopeTabId:
-    Number.isFinite(requestedTabId) && requestedTabId > 0
-      ? requestedTabId
-      : undefined,
-});
+/** @type {chrome.runtime.Port} */
+let port;
+
+function connectSidepanelPort() {
+  const nextPort = chrome.runtime.connect({ name: 'ui-sidepanel' });
+  nextPort.onMessage.addListener(handlePortMessage);
+  nextPort.onDisconnect.addListener(() => {
+    setTimeout(connectSidepanelPort, 500);
+  });
+  nextPort.postMessage({
+    type: 'state.request',
+    scopeTabId:
+      Number.isFinite(requestedTabId) && requestedTabId > 0
+        ? requestedTabId
+        : undefined,
+  });
+  port = nextPort;
+}
+
+connectSidepanelPort();
 const activityHistogramTimer = setInterval(() => {
   updateActivityVisualizations();
 }, ACTIVITY_HISTOGRAM_TICK_MS);
@@ -517,6 +530,16 @@ function renderCurrentTab(currentTab) {
     return;
   }
 
+  if (currentTab.restricted && currentTab.enabled) {
+    toggleButton.textContent = 'Disable Window Access';
+    toggleButton.disabled = false;
+    toggleButton.dataset.enabled = String(currentTab.enabled);
+    toggleErrorEl.textContent = 'This page cannot be interacted with. Switch to a normal web page to inspect and interact.';
+    toggleErrorEl.hidden = false;
+    controlSection.classList.remove('attention');
+    return;
+  }
+
   toggleButton.textContent = currentTab.enabled
     ? 'Disable Window Access'
     : 'Enable Window Access';
@@ -571,6 +594,13 @@ function renderAgentStatus(state) {
   }
 
   agentDisclosure.hidden = currentTab.enabled;
+
+  if (currentTab.enabled && currentTab.restricted) {
+    agentStatus.textContent = 'Window access enabled';
+    agentStatusDetail.textContent = 'This page cannot be interacted with. Switch to a normal web page to use Browser Bridge.';
+    agentDisclosure.hidden = false;
+    return;
+  }
 
   if (currentTab.enabled) {
     agentStatus.textContent = 'Window access enabled';
@@ -647,7 +677,7 @@ function showSidepanelDiagnostic(message) {
 function hideSidepanelDiagnostic() {
   const el = document.getElementById('native-diagnostic');
   if (el) {
-    el.hidden = true;
+    el.remove();
   }
 }
 

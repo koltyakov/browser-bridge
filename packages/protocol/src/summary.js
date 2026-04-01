@@ -146,10 +146,19 @@ export function summarizeBridgeResponse(response, method) {
       : access.enabled
         ? ` Access: ${access.routeReady ? `ready on tab ${access.routeTabId}.` : `enabled${typeof access.reason === 'string' ? ` (${access.reason})` : '.'}`}`
         : ' Access: disabled.';
+    const connectedExtensions = Array.isArray(result.connectedExtensions)
+      ? /** @type {Array<Record<string, unknown>>} */ (result.connectedExtensions)
+      : [];
+    const extensionSummary = result.extensionConnected
+      ? `connected (${connectedExtensions.length}: ${connectedExtensions.map((ext) => {
+        const label = `${ext.browserName ?? 'unknown'}${ext.profileLabel ? '/' + ext.profileLabel : ''}`;
+        return ext.accessEnabled ? `${label}*` : label;
+      }).join(', ')})`
+      : 'disconnected';
     return {
       ok: true,
       summary: appendProtocolWarning(
-        `Daemon: ${result.daemon}. Extension: ${result.extensionConnected ? 'connected' : 'disconnected'}.${accessSummary}`,
+        `Daemon: ${result.daemon}. Extension: ${extensionSummary}.${accessSummary}`,
         protocolWarning
       ),
       evidence: result

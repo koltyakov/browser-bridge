@@ -27,6 +27,21 @@ const daemonEntryPath = path.resolve(__dirname, '../bin/bridge-daemon.js');
  */
 
 /**
+ * @typedef {{
+ *   type?: string,
+ *   browserName?: string,
+ *   profileLabel?: string
+ * }} HostIdentityMessage
+ */
+
+/**
+ * @typedef {{
+ *   type?: string,
+ *   accessEnabled: boolean
+ * }} HostAccessUpdateMessage
+ */
+
+/**
  * @param {unknown} message
  * @returns {message is HostBridgeRequestMessage}
  */
@@ -49,6 +64,31 @@ function isHostStatusRequest(message) {
     && typeof message === 'object'
     && /** @type {Record<string, unknown>} */ (message).type === 'host.setup_status.request'
     && typeof /** @type {Record<string, unknown>} */ (message).requestId === 'string'
+  );
+}
+
+/**
+ * @param {unknown} message
+ * @returns {message is HostIdentityMessage}
+ */
+function isHostIdentity(message) {
+  return Boolean(
+    message
+    && typeof message === 'object'
+    && /** @type {Record<string, unknown>} */ (message).type === 'host.identity'
+  );
+}
+
+/**
+ * @param {unknown} message
+ * @returns {message is HostAccessUpdateMessage}
+ */
+function isHostAccessUpdate(message) {
+  return Boolean(
+    message
+    && typeof message === 'object'
+    && /** @type {Record<string, unknown>} */ (message).type === 'host.access_update'
+    && typeof /** @type {Record<string, unknown>} */ (message).accessEnabled === 'boolean'
   );
 }
 
@@ -133,6 +173,21 @@ export async function runNativeHost({ socketPath = getSocketPath() } = {}) {
         await writeJsonLine(socket, {
           type: 'extension.setup_status.request',
           requestId: message.requestId
+        });
+        return;
+      }
+      if (isHostIdentity(message)) {
+        await writeJsonLine(socket, {
+          type: 'extension.identity',
+          browserName: message.browserName,
+          profileLabel: message.profileLabel
+        });
+        return;
+      }
+      if (isHostAccessUpdate(message)) {
+        await writeJsonLine(socket, {
+          type: 'extension.access_update',
+          accessEnabled: message.accessEnabled
         });
         return;
       }

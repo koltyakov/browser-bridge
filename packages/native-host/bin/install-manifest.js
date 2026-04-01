@@ -11,13 +11,15 @@ import { SUPPORTED_BROWSERS } from '../src/config.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 
-// Parse args: optional positional extension-id, optional --browser <name>
 const args = process.argv.slice(2);
 let extensionIdArg = /** @type {string | undefined} */ (undefined);
-let browser = /** @type {SupportedBrowser | undefined} */ (undefined);
+let installAll = false;
+const browsers = /** @type {SupportedBrowser[]} */ ([]);
 
 for (let i = 0; i < args.length; i++) {
-  if (args[i] === '--browser' && args[i + 1]) {
+  if (args[i] === '--all') {
+    installAll = true;
+  } else if (args[i] === '--browser' && args[i + 1]) {
     const candidate = args[i + 1];
     if (!SUPPORTED_BROWSERS.includes(/** @type {SupportedBrowser} */ (candidate))) {
       process.stderr.write(
@@ -25,8 +27,8 @@ for (let i = 0; i < args.length; i++) {
       );
       process.exit(1);
     }
-    browser = /** @type {SupportedBrowser} */ (candidate);
-    i++; // skip value arg
+    browsers.push(/** @type {SupportedBrowser} */ (candidate));
+    i++;
   } else if (!extensionIdArg) {
     extensionIdArg = args[i];
   }
@@ -40,8 +42,16 @@ if (extensionIdArg && !parseExtensionId(extensionIdArg)) {
   process.exit(1);
 }
 
-await installNativeManifest({
-  repoRoot,
-  extensionIdArg,
-  browser
-});
+const targets = installAll
+  ? [...SUPPORTED_BROWSERS]
+  : browsers.length > 0
+    ? browsers
+    : [/** @type {SupportedBrowser} */ ('chrome')];
+
+for (const target of targets) {
+  await installNativeManifest({
+    repoRoot,
+    extensionIdArg,
+    browser: target
+  });
+}

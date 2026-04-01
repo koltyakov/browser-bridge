@@ -112,7 +112,8 @@ import { TabDebuggerCoordinator } from './debugger-coordinator.js';
  *   title: string,
  *   url: string,
  *   enabled: boolean,
- *   accessRequested: boolean
+ *   accessRequested: boolean,
+ *   restricted: boolean
  * }} CurrentTabState
  */
 
@@ -168,6 +169,65 @@ function isNumber(value) {
  * }} ExtensionState
  */
 
+/**
+ * @returns {string}
+ */
+function detectBrowserName() {
+  const ua = navigator.userAgent;
+  if (ua.includes('Edg/')) return 'edge';
+  if (ua.includes('OPR/') || ua.includes('Opera')) return 'opera';
+  if (ua.includes('Brave')) return 'brave';
+  if (ua.includes('Arc/')) return 'arc';
+  if (ua.includes('Vivaldi/')) return 'vivaldi';
+  return 'chrome';
+}
+
+/**
+ * @returns {Promise<string>}
+ */
+async function getProfileLabel() {
+  const STORAGE_KEY = 'bb_profile_label';
+  try {
+    const result = await chrome.storage.session.get(STORAGE_KEY);
+    if (result[STORAGE_KEY]) {
+      return /** @type {string} */ (result[STORAGE_KEY]);
+    }
+    const label = `profile_${Math.random().toString(36).slice(2, 8)}`;
+    await chrome.storage.session.set({ [STORAGE_KEY]: label });
+    return label;
+  } catch {
+    return `profile_${Date.now().toString(36)}`;
+  }
+}
+
+/**
+ * Send browser/profile identity to the daemon via the native host.
+ *
+ * @param {chrome.runtime.Port} port
+ * @returns {void}
+ */
+function sendIdentity(port) {
+  const browserName = detectBrowserName();
+  void getProfileLabel().then((profileLabel) => {
+    try {
+      port.postMessage({ type: 'host.identity', browserName, profileLabel });
+    } catch { /* port may have disconnected */ }
+  });
+}
+
+/**
+ * Notify the daemon whether this extension currently has access enabled.
+ *
+ * @param {boolean} enabled
+ * @returns {void}
+ */
+function sendAccessUpdate(enabled) {
+  if (!state.nativePort) return;
+  try {
+    state.nativePort.postMessage({ type: 'host.access_update', accessEnabled: enabled });
+  } catch { /* port may have disconnected */ }
+}
+
 const NATIVE_APP_NAME = 'com.browserbridge.browser_bridge';
 const CONTENT_SCRIPT_TIMEOUT_MS = 5_000;
 const MAX_ACTION_LOG_ENTRIES = 50;
@@ -177,6 +237,7 @@ const SIDEPANEL_PATH = 'packages/extension/ui/sidepanel.html';
 const POPUP_PATH = 'packages/extension/ui/popup.html';
 const ENABLED_BADGE_TEXT = 'AI';
 const ACCESS_REQUEST_BADGE_TEXT = '!';
+const RESTRICTED_BADGE_TEXT = '!';
 const DEBUGGER_PROTOCOL_VERSION = '1.3';
 const SETUP_STATUS_STALE_MS = 30_000;
 const SETUP_STATUS_TIMEOUT_MS = 5_000;
@@ -261,7 +322,9 @@ chrome.runtime.onInstalled.addListener(async () => {
   await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 });
 
-chrome.tabs.onActivated.addListener(() => {
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  void updateActionIndicatorForTab(tabId).catch(reportAsyncError);
+  void syncGlobalBadgeToActiveTab().catch(reportAsyncError);
   void emitUiState().catch(reportAsyncError);
 });
 
@@ -357,6 +420,7 @@ function connectNative() {
       refreshSetupStatus(true);
       void refreshActionIndicators();
       void emitUiState();
+      sendIdentity(candidatePort);
       if (wasReconnect && reconnectAttempts > 0) {
         void appendActionLogEntry({
           method: 'native.reconnect',
@@ -549,6 +613,7 @@ async function restoreEnabledWindow() {
     title: typeof candidate.title === 'string' ? candidate.title : '',
     enabledAt: Number(candidate.enabledAt) || Date.now(),
   };
+  sendAccessUpdate(true);
 }
 
 /**
@@ -1740,7 +1805,8 @@ async function getCurrentTabState() {
     title: activeTab.title ?? '',
     url: activeTab.url,
     enabled: isWindowEnabled(activeTab.windowId),
-    accessRequested: isAccessRequestedWindow(activeTab.windowId)
+    accessRequested: isAccessRequestedWindow(activeTab.windowId),
+    restricted: isRestrictedAutomationUrl(activeTab.url)
   };
 }
 
@@ -1767,7 +1833,8 @@ async function getTabState(tabId) {
       title: tab.title ?? '',
       url: tab.url,
       enabled: isWindowEnabled(tab.windowId),
-      accessRequested: isAccessRequestedWindow(tab.windowId)
+      accessRequested: isAccessRequestedWindow(tab.windowId),
+      restricted: isRestrictedAutomationUrl(tab.url)
     };
   } catch {
     return null;
@@ -1810,37 +1877,34 @@ async function setWindowEnabled(windowId, title, enabled) {
     await chrome.storage.session.set({
       [ENABLED_WINDOW_STORAGE_KEY]: access
     });
-    await chrome.alarms.create(KEEPALIVE_ALARM_NAME, { periodInMinutes: 0.4 });
-    await injectContentScriptsForWindow(access.windowId);
-    await primeWindowConsoleCapture(access.windowId, true);
   } else {
+    if (state.enabledWindow && state.enabledWindow.windowId === windowId) {
+      state.enabledWindow = null;
+      await chrome.storage.session.remove(ENABLED_WINDOW_STORAGE_KEY);
+    }
+  }
+
+  try {
+    await refreshActionIndicators();
+  } catch { /* Badge updates can fail for closed or restricted tabs. */ }
+  await emitUiState();
+
+  if (enabled) {
+    sendAccessUpdate(true);
+    await chrome.alarms.create(KEEPALIVE_ALARM_NAME, { periodInMinutes: 0.4 });
+    await Promise.allSettled([
+      injectContentScriptsForWindow(access.windowId),
+      primeWindowConsoleCapture(access.windowId, true)
+    ]);
+  } else {
+    sendAccessUpdate(false);
     try {
-      await disableWindow(windowId);
+      await chrome.alarms.clear(KEEPALIVE_ALARM_NAME);
+      await clearWindowBridgeState(windowId);
     } catch (error) {
       reportAsyncError(error);
     }
   }
-
-  await refreshActionIndicators();
-  await emitUiState();
-}
-
-/**
- * Remove bridge communication for the enabled window and clear per-tab bridge
- * state across that window.
- *
- * @param {number} windowId
- * @returns {Promise<void>}
- */
-async function disableWindow(windowId) {
-  if (!state.enabledWindow || state.enabledWindow.windowId !== windowId) {
-    return;
-  }
-  state.enabledWindow = null;
-  await chrome.storage.session.remove(ENABLED_WINDOW_STORAGE_KEY);
-  await chrome.alarms.clear(KEEPALIVE_ALARM_NAME);
-  await clearWindowBridgeState(windowId);
-  await refreshActionIndicators();
 }
 
 /**
@@ -1883,6 +1947,7 @@ async function handleTabRemoved(tabId, removeInfo) {
   if (state.enabledWindow && removeInfo.isWindowClosing && removeInfo.windowId === state.enabledWindow.windowId) {
     state.enabledWindow = null;
     await chrome.storage.session.remove(ENABLED_WINDOW_STORAGE_KEY);
+    sendAccessUpdate(false);
   }
   if (removeInfo.isWindowClosing && removeInfo.windowId === state.requestedAccessWindowId) {
     clearRequestedAccessWindow(removeInfo.windowId);
@@ -1902,7 +1967,41 @@ async function refreshActionIndicators() {
     : {};
   const tabs = await chrome.tabs.query(query);
   const tabIds = tabs.map((tab) => (isNumber(tab.id) ? tab.id : null)).filter((tabId) => tabId !== null);
-  await Promise.all(tabIds.map((tabId) => updateActionIndicatorForTab(tabId)));
+  await Promise.allSettled(tabIds.map((tabId) => updateActionIndicatorForTab(tabId)));
+
+  // Some Chromium-based browsers (e.g. Edge) do not visually refresh the toolbar
+  // badge after per-tab updates until the tab navigates. Setting the global badge
+  // (without tabId) to match the active tab forces an immediate repaint.
+  await syncGlobalBadgeToActiveTab();
+}
+
+/**
+ * Set the global badge (no tabId) to match the active tab in the last-focused
+ * window. This forces browsers that batch per-tab badge updates (e.g. Edge) to
+ * immediately repaint the toolbar icon.
+ *
+ * @returns {Promise<void>}
+ */
+async function syncGlobalBadgeToActiveTab() {
+  try {
+    const [activeTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (!activeTab?.id) return;
+    const enabled = await isTabEnabled(activeTab.id);
+    const accessRequested = !enabled && await isAccessRequestedTab(activeTab.id);
+    const restricted = enabled && isRestrictedAutomationUrl(activeTab.url ?? '');
+    const text = enabled
+      ? (restricted ? RESTRICTED_BADGE_TEXT : ENABLED_BADGE_TEXT)
+      : accessRequested ? ACCESS_REQUEST_BADGE_TEXT : '';
+    const bgColor = enabled
+      ? (restricted ? '#e07020' : '#787878')
+      : accessRequested ? '#f2cf2f' : '#464646';
+    const textColor = enabled
+      ? '#ffffff'
+      : accessRequested ? '#000000' : '#ffffff';
+    await chrome.action.setBadgeText({ text });
+    try { await chrome.action.setBadgeBackgroundColor({ color: bgColor }); } catch { /* unsupported */ }
+    try { await chrome.action.setBadgeTextColor({ color: textColor }); } catch { /* unsupported */ }
+  } catch { /* non-critical */ }
 }
 
 /**
@@ -1914,44 +2013,42 @@ async function refreshActionIndicators() {
  */
 async function updateActionIndicatorForTab(tabId) {
   const enabled = await isTabEnabled(tabId);
-  const accessRequested = await isAccessRequestedTab(tabId);
+  const accessRequested = !enabled && await isAccessRequestedTab(tabId);
+  let restricted = false;
+  if (enabled) {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      restricted = isRestrictedAutomationUrl(tab.url ?? '');
+    } catch { /* ignore */ }
+  }
+  const badgeText = enabled
+    ? (restricted ? RESTRICTED_BADGE_TEXT : ENABLED_BADGE_TEXT)
+    : accessRequested ? ACCESS_REQUEST_BADGE_TEXT : '';
+  const bgColor = enabled
+    ? (restricted ? '#e07020' : '#787878')
+    : accessRequested ? '#f2cf2f' : '#464646';
+  const textColor = enabled
+    ? '#ffffff'
+    : accessRequested ? '#000000' : '#ffffff';
   try {
-    if (enabled) {
-      await chrome.action.setBadgeBackgroundColor({
-        tabId,
-        color: '#787878'
-      });
-      await chrome.action.setBadgeTextColor({
-        tabId,
-        color: '#ffffff'
-      });
-      await chrome.action.setTitle({
-        tabId,
-        title: 'Browser Bridge is enabled for this window.'
-      });
+    await chrome.action.setBadgeBackgroundColor({ tabId, color: bgColor });
+  } catch { /* color APIs may be unsupported */ }
+  try {
+    await chrome.action.setBadgeTextColor({ tabId, color: textColor });
+  } catch { /* setBadgeTextColor not supported everywhere */ }
+  try {
+    if (enabled && restricted) {
+      await chrome.action.setTitle({ tabId, title: 'Browser Bridge is enabled, but this page cannot be interacted with.' });
+    } else if (enabled) {
+      await chrome.action.setTitle({ tabId, title: 'Browser Bridge is enabled for this window.' });
     } else if (accessRequested) {
-      await chrome.action.setBadgeBackgroundColor({
-        tabId,
-        color: '#f2cf2f'
-      });
-      await chrome.action.setBadgeTextColor({
-        tabId,
-        color: '#000000'
-      });
-      await chrome.action.setTitle({
-        tabId,
-        title: 'Agent requested Browser Bridge access for this window. Click to open Browser Bridge, then click Enable.'
-      });
+      await chrome.action.setTitle({ tabId, title: 'Agent requested Browser Bridge access for this window. Click to open Browser Bridge, then click Enable.' });
     } else {
-      await chrome.action.setTitle({
-        tabId,
-        title: 'Browser Bridge'
-      });
+      await chrome.action.setTitle({ tabId, title: 'Browser Bridge' });
     }
-    await chrome.action.setBadgeText({
-      tabId,
-      text: enabled ? ENABLED_BADGE_TEXT : accessRequested ? ACCESS_REQUEST_BADGE_TEXT : ''
-    });
+  } catch { /* title can fail for closed tabs */ }
+  try {
+    await chrome.action.setBadgeText({ tabId, text: badgeText });
   } catch (error) {
     if (normalizeRuntimeErrorMessage(getErrorMessage(error)) === ERROR_CODES.TAB_MISMATCH) {
       return;

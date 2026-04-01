@@ -7,7 +7,8 @@
  *   title: string,
  *   url: string,
  *   enabled: boolean,
- *   accessRequested: boolean
+ *   accessRequested: boolean,
+ *   restricted: boolean
  * }} PopupCurrentTab
  */
 
@@ -27,9 +28,31 @@ const accessEyebrow = /** @type {HTMLDivElement} */ (document.getElementById('po
 const accessDetail = /** @type {HTMLParagraphElement} */ (document.getElementById('popup-access-detail'));
 const accessDisclosure = /** @type {HTMLParagraphElement} */ (document.getElementById('popup-disclosure'));
 const controlCard = /** @type {HTMLElement | null} */ (document.querySelector('.popup-control-card'));
-const port = chrome.runtime.connect({ name: 'ui-popup' });
 const initialScopeTabId = readScopedTabId();
 const windowedPopup = isWindowedPopup();
+
+/** @param {PopupStateMessage} message */
+function handlePopupMessage(message) {
+  if (message.type === 'state.sync') {
+    renderNativeStatus(message.state.nativeConnected);
+    renderPopupState(message.state.currentTab);
+  }
+}
+
+/** @type {chrome.runtime.Port} */
+let port;
+
+function connectPopupPort() {
+  const nextPort = chrome.runtime.connect({ name: 'ui-popup' });
+  nextPort.onMessage.addListener(handlePopupMessage);
+  nextPort.postMessage({
+    type: 'state.request',
+    ...(initialScopeTabId ? { scopeTabId: initialScopeTabId } : {})
+  });
+  port = nextPort;
+}
+
+connectPopupPort();
 /** @type {PopupCurrentTab | null} */
 let currentTabState = null;
 /** @type {number | null} */
@@ -44,19 +67,6 @@ if (windowedPopup) {
   document.body.dataset.windowed = 'true';
   window.addEventListener('load', queueWindowResize);
 }
-
-/** @param {PopupStateMessage} message */
-port.onMessage.addListener((message) => {
-  if (message.type === 'state.sync') {
-    renderNativeStatus(message.state.nativeConnected);
-    renderPopupState(message.state.currentTab);
-  }
-});
-
-port.postMessage({
-  type: 'state.request',
-  ...(initialScopeTabId ? { scopeTabId: initialScopeTabId } : {})
-});
 
 button.addEventListener('click', () => {
   if (!currentTabState || button.dataset.pending === 'true') {
@@ -87,7 +97,11 @@ function renderPopupState(currentTab) {
 
   accessDisclosure.hidden = currentTab.enabled;
 
-  if (currentTab.enabled) {
+  if (currentTab.enabled && currentTab.restricted) {
+    accessEyebrow.textContent = 'Window access enabled';
+    accessDetail.textContent = 'This page cannot be interacted with. Switch to a normal web page to use Browser Bridge.';
+    accessDisclosure.hidden = false;
+  } else if (currentTab.enabled) {
     accessEyebrow.textContent = 'Window access enabled';
     accessDetail.textContent = 'Your connected agent can inspect and interact with pages in this Chrome window.';
   } else if (currentTab.accessRequested) {

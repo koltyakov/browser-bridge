@@ -871,6 +871,7 @@ button:hover {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  margin-top: 12px;
 }
 
 .activity-histogram {

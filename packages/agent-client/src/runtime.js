@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { APP_NAME, getManifestInstallDir } from '../../native-host/src/config.js';
+import { APP_NAME, getManifestInstallDir, SUPPORTED_BROWSERS } from '../../native-host/src/config.js';
 import { resolveDefaultExtensionId } from '../../native-host/src/install-manifest.js';
 import { methodNeedsTab } from './cli-helpers.js';
 import { BridgeClient } from './client.js';
@@ -12,6 +12,15 @@ import { BridgeClient } from './client.js';
 /** @typedef {import('../../protocol/src/types.js').BridgeMeta} BridgeMeta */
 /** @typedef {import('../../protocol/src/types.js').BridgeRequestSource} BridgeRequestSource */
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
+/** @typedef {import('../../native-host/src/config.js').SupportedBrowser} SupportedBrowser */
+
+/**
+ * @typedef {{
+ *   browser: string,
+ *   manifestPath: string,
+ *   installed: boolean
+ * }} BrowserManifestStatus
+ */
 
 /**
  * @typedef {{
@@ -28,7 +37,8 @@ import { BridgeClient } from './client.js';
  *   routeReady: boolean,
  *   routeReason: string,
  *   issues: string[],
- *   nextSteps: string[]
+ *   nextSteps: string[],
+ *   browserManifests: BrowserManifestStatus[]
  * }} DoctorReport
  */
 
@@ -119,22 +129,44 @@ export async function withBridgeClient(callback) {
 }
 
 /**
+ * @param {SupportedBrowser} [browser='chrome']
  * @returns {string}
  */
-export function getManifestPath() {
-  return path.join(getManifestInstallDir(), `${APP_NAME}.json`);
+export function getManifestPath(browser) {
+  return path.join(getManifestInstallDir(browser), `${APP_NAME}.json`);
 }
 
 /**
+ * @param {SupportedBrowser} [browser='chrome']
  * @returns {Promise<{allowed_origins?: string[]} | null>}
  */
-export async function loadInstalledManifest() {
+export async function loadInstalledManifest(browser) {
   try {
-    const raw = await fs.promises.readFile(getManifestPath(), 'utf8');
+    const raw = await fs.promises.readFile(getManifestPath(browser), 'utf8');
     return JSON.parse(raw);
   } catch {
     return null;
   }
+}
+
+/**
+ * Check the native messaging manifest status for every supported browser on
+ * the current platform.
+ *
+ * @returns {Promise<BrowserManifestStatus[]>}
+ */
+export async function checkBrowserManifests() {
+  return Promise.all(
+    SUPPORTED_BROWSERS.map(async (browser) => {
+      const manifestPath = getManifestPath(browser);
+      try {
+        await fs.promises.access(manifestPath);
+        return { browser, manifestPath, installed: true };
+      } catch {
+        return { browser, manifestPath, installed: false };
+      }
+    })
+  );
 }
 
 /**
@@ -158,6 +190,8 @@ export async function getDoctorReport(options = {}) {
   const manifestInstalled = Boolean(manifest);
   const defaultExtensionId = options.defaultExtensionIdInfo || resolveDefaultExtensionId();
 
+  const browserManifests = await checkBrowserManifests();
+
   /** @type {DoctorReport} */
   const report = {
     manifestInstalled,
@@ -173,7 +207,8 @@ export async function getDoctorReport(options = {}) {
     routeReady: false,
     routeReason: 'access_disabled',
     issues: [],
-    nextSteps: []
+    nextSteps: [],
+    browserManifests
   };
 
   try {
@@ -202,11 +237,17 @@ export async function getDoctorReport(options = {}) {
     report.extensionConnected = false;
   }
 
+  const browsersWithoutManifest = browserManifests.filter((b) => !b.installed);
+
   if (!report.manifestInstalled) {
     report.issues.push('native_host_manifest_missing');
     report.nextSteps.push(defaultExtensionId.extensionId
-      ? 'Run `bbx install` to install the native host manifest for the official extension.'
-      : 'Run `bbx install <extension-id>` to install the native host manifest.');
+      ? 'Run `bbx install` (or `bbx install --all` for all browsers) to install the native host manifest.'
+      : 'Run `bbx install <extension-id>` (or `bbx install --all`) to install the native host manifest.');
+  } else if (browsersWithoutManifest.length > 0) {
+    report.issues.push('native_host_manifest_partial');
+    const missing = browsersWithoutManifest.map((b) => b.browser).join(', ');
+    report.nextSteps.push(`Manifests missing for: ${missing}. Run \`bbx install --all\` to install for all supported browsers.`);
   }
   if (!report.daemonReachable) {
     report.issues.push('daemon_offline');

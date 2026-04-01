@@ -28,7 +28,7 @@ import { writeJsonLine } from './framing.js';
 /** @typedef {import('../../protocol/src/types.js').SetupInstallParams} SetupInstallParams */
 /** @typedef {import('../../protocol/src/types.js').SetupInstallResult} SetupInstallResult */
 /** @typedef {import('../../protocol/src/types.js').SetupStatus} SetupStatus */
-/** @typedef {import('node:net').Socket & { __clientId?: string, __extensionId?: string }} ClientSocket */
+/** @typedef {import('node:net').Socket & { __clientId?: string, __extensionId?: string, __browserName?: string, __profileLabel?: string, __accessEnabled?: boolean }} ClientSocket */
 /** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string, method?: string, remaining: number, lastErrorResponse?: import('../../protocol/src/types.js').BridgeResponse }} PendingEntry */
 /**
  * @typedef {{
@@ -87,10 +87,13 @@ function getVersionNegotiationPayload(requestedVersion) {
  *   clientId?: string,
  *   requestId?: string,
  *   entry?: Record<string, unknown>,
-  *   request?: BridgeRequest,
+ *   request?: BridgeRequest,
  *   status?: SetupStatus,
  *   error?: { message?: string },
-  *   response?: import('../../protocol/src/types.js').BridgeResponse
+ *   response?: import('../../protocol/src/types.js').BridgeResponse,
+ *   browserName?: string,
+ *   profileLabel?: string,
+ *   accessEnabled?: boolean
  * }} DaemonMessage
  */
 
@@ -127,6 +130,30 @@ export class BridgeDaemon {
     this.stopPromise = null;
   }
 
+  /**
+   * @param {ClientSocket} socket
+   * @param {DaemonMessage} message
+   * @returns {void}
+   */
+  registerSocket(socket, message) {
+    if (message.role === 'extension') {
+      const extensionId = randomUUID();
+      socket.__extensionId = extensionId;
+      socket.__browserName = typeof message.browserName === 'string' ? message.browserName : undefined;
+      socket.__profileLabel = typeof message.profileLabel === 'string' ? message.profileLabel : undefined;
+      this.extensionSockets.set(extensionId, socket);
+      void writeJsonLine(socket, { type: 'registered', role: 'extension' });
+      return;
+    }
+
+    if (message.role === 'agent') {
+      const clientId = message.clientId || randomUUID();
+      this.agentSockets.set(clientId, socket);
+      socket.__clientId = clientId;
+      void writeJsonLine(socket, { type: 'registered', role: 'agent', clientId });
+      return;
+    }
+  }
   /**
    * @returns {Promise<BridgeDaemon>}
    */
@@ -263,6 +290,14 @@ export class BridgeDaemon {
       return this.handleExtensionResponse(message);
     }
 
+    if (message?.type === 'extension.identity') {
+      return this.handleExtensionIdentity(socket, message);
+    }
+
+    if (message?.type === 'extension.access_update') {
+      return this.handleExtensionAccessUpdate(socket, message);
+    }
+
     if (message?.type === 'extension.setup_status.request') {
       return this.handleExtensionSetupStatus(socket, message);
     }
@@ -280,29 +315,6 @@ export class BridgeDaemon {
   /**
    * @param {ClientSocket} socket
    * @param {DaemonMessage} message
-   * @returns {void}
-   */
-  registerSocket(socket, message) {
-    if (message.role === 'extension') {
-      const extensionId = randomUUID();
-      socket.__extensionId = extensionId;
-      this.extensionSockets.set(extensionId, socket);
-      void writeJsonLine(socket, { type: 'registered', role: 'extension' });
-      return;
-    }
-
-    if (message.role === 'agent') {
-      const clientId = message.clientId || randomUUID();
-      this.agentSockets.set(clientId, socket);
-      socket.__clientId = clientId;
-      void writeJsonLine(socket, { type: 'registered', role: 'agent', clientId });
-      return;
-    }
-  }
-
-  /**
-   * @param {ClientSocket} socket
-   * @param {DaemonMessage} message
    * @returns {Promise<void>}
    */
   async handleAgentRequest(socket, message) {
@@ -313,6 +325,7 @@ export class BridgeDaemon {
           daemon: 'ok',
           extensionConnected: false,
           socketPath: this.socketPath,
+          connectedExtensions: [],
           ...getVersionNegotiationPayload(request.meta?.protocol_version)
         });
         await writeJsonLine(socket, { type: 'agent.response', response });
@@ -355,17 +368,37 @@ export class BridgeDaemon {
       return;
     }
 
-    if (this.extensionSockets.size === 0) {
+    const targetBrowser = typeof request.meta?.target_browser === 'string' ? request.meta.target_browser : null;
+    const targetProfile = typeof request.meta?.target_profile === 'string' ? request.meta.target_profile : null;
+    const hasExplicitTarget = Boolean(targetBrowser || targetProfile);
+
+    let targets = Array.from(this.extensionSockets.values());
+    if (targetBrowser || targetProfile) {
+      targets = targets.filter((extSocket) => {
+        if (targetBrowser && extSocket.__browserName !== targetBrowser) return false;
+        if (targetProfile && extSocket.__profileLabel !== targetProfile) return false;
+        return true;
+      });
+    } else {
+      const enabled = targets.filter((extSocket) => extSocket.__accessEnabled);
+      if (enabled.length > 0) {
+        targets = enabled;
+      }
+    }
+
+    if (targets.length === 0) {
       const response = createFailure(
         request.id,
         ERROR_CODES.EXTENSION_DISCONNECTED,
-        'The Chrome extension is not connected to the local bridge daemon.'
+        hasExplicitTarget
+          ? `No connected extension matches target_browser="${targetBrowser ?? '*'}" target_profile="${targetProfile ?? '*'}".`
+          : 'The Chrome extension is not connected to the local bridge daemon.'
       );
       await writeJsonLine(socket, { type: 'agent.response', response });
       return;
     }
 
-    const extensionCount = this.extensionSockets.size;
+    const extensionCount = targets.length;
     this.pendingRequests.set(request.id, {
       socket,
       method: request.method,
@@ -381,7 +414,7 @@ export class BridgeDaemon {
     });
     const broadcastPayload = { type: 'extension.request', request };
     await Promise.all(
-      Array.from(this.extensionSockets.values()).map(
+      targets.map(
         (extSocket) => writeJsonLine(extSocket, broadcastPayload)
       )
     );
@@ -408,6 +441,29 @@ export class BridgeDaemon {
         }
       });
     }
+  }
+
+  /**
+   * @param {ClientSocket} socket
+   * @param {DaemonMessage} message
+   * @returns {void}
+   */
+  handleExtensionIdentity(socket, message) {
+    if (typeof message.browserName === 'string') {
+      socket.__browserName = message.browserName;
+    }
+    if (typeof message.profileLabel === 'string') {
+      socket.__profileLabel = message.profileLabel;
+    }
+  }
+
+  /**
+   * @param {ClientSocket} socket
+   * @param {DaemonMessage} message
+   * @returns {void}
+   */
+  handleExtensionAccessUpdate(socket, message) {
+    socket.__accessEnabled = Boolean(message.accessEnabled);
   }
 
   /**
@@ -440,6 +496,14 @@ export class BridgeDaemon {
           daemon: 'ok',
           extensionConnected: true,
           socketPath: this.socketPath,
+          connectedExtensions: Array.from(this.extensionSockets.entries()).map(
+            ([_id, extSocket]) => ({
+              extensionId: _id,
+              browserName: extSocket.__browserName ?? null,
+              profileLabel: extSocket.__profileLabel ?? null,
+              accessEnabled: extSocket.__accessEnabled ?? false
+            })
+          ),
           .../** @type {Record<string, unknown>} */ (responseMessage.result)
         }, {
           ...responseMessage.meta,
