@@ -1244,9 +1244,11 @@ async function primeTabConsoleCapture(tabId, resetBuffer = false) {
 function isRecoverableInstrumentationError(error) {
   const message = normalizeRuntimeErrorMessage(getErrorMessage(error));
   return message === ERROR_CODES.TAB_MISMATCH
-    || /Cannot access contents of url/i.test(message)
+    || /Cannot access contents of/i.test(message)
     || /The extensions gallery cannot be scripted/i.test(message)
     || /Cannot access a chrome:\/\//i.test(message)
+    || /Cannot script/i.test(message)
+    || /CONTENT_SCRIPT_UNAVAILABLE/i.test(message)
     || /No tab with id/i.test(message)
     || /Cannot attach to this target/i.test(message)
     || /Another debugger is already attached/i.test(message);
@@ -1292,7 +1294,7 @@ async function readConsoleBuffer(tabId, clear) {
 async function primeWindowConsoleCapture(windowId, resetBuffer = false) {
   const tabs = await chrome.tabs.query({ windowId });
   const tabIds = tabs.map((tab) => (isNumber(tab.id) ? tab.id : null)).filter((tabId) => tabId !== null);
-  await Promise.all(tabIds.map((tabId) => primeTabConsoleCapture(tabId, resetBuffer)));
+  await Promise.allSettled(tabIds.map((tabId) => primeTabConsoleCapture(tabId, resetBuffer)));
 }
 
 /**
@@ -1302,7 +1304,13 @@ async function primeWindowConsoleCapture(windowId, resetBuffer = false) {
  * @returns {Promise<void>}
  */
 async function clearTabBridgeState(tabId) {
-  await rollbackAllPatchesForTab(tabId);
+  try {
+    await rollbackAllPatchesForTab(tabId);
+  } catch (error) {
+    if (!isRecoverableInstrumentationError(error)) {
+      throw error;
+    }
+  }
   try {
     await readConsoleBuffer(tabId, true);
   } catch (error) {
@@ -1327,8 +1335,11 @@ async function clearTabBridgeState(tabId) {
  */
 async function clearWindowBridgeState(windowId) {
   const tabs = await chrome.tabs.query({ windowId });
-  const tabIds = tabs.map((tab) => (isNumber(tab.id) ? tab.id : null)).filter((tabId) => tabId !== null);
-  await Promise.all(tabIds.map((tabId) => clearTabBridgeState(tabId)));
+  const tabIds = tabs
+    .filter((tab) => tab.url && !isRestrictedAutomationUrl(tab.url))
+    .map((tab) => (isNumber(tab.id) ? tab.id : null))
+    .filter((tabId) => tabId !== null);
+  await Promise.allSettled(tabIds.map((tabId) => clearTabBridgeState(tabId)));
 }
 
 /**
@@ -1528,7 +1539,7 @@ async function injectContentScriptsForWindow(windowId) {
  * @returns {boolean}
  */
 function isRestrictedScriptingError(message) {
-  return /Cannot access contents of url/i.test(message)
+  return /Cannot access contents of/i.test(message)
     || /The extensions gallery cannot be scripted/i.test(message)
     || /Cannot access a chrome:\/\//i.test(message)
     || /Cannot script/i.test(message);
@@ -1803,7 +1814,11 @@ async function setWindowEnabled(windowId, title, enabled) {
     await injectContentScriptsForWindow(access.windowId);
     await primeWindowConsoleCapture(access.windowId, true);
   } else {
-    await disableWindow(windowId);
+    try {
+      await disableWindow(windowId);
+    } catch (error) {
+      reportAsyncError(error);
+    }
   }
 
   await refreshActionIndicators();
