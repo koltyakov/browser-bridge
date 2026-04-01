@@ -59,9 +59,11 @@ port.postMessage({
 });
 
 button.addEventListener('click', () => {
-  if (!currentTabState) {
+  if (!currentTabState || button.dataset.pending === 'true') {
     return;
   }
+  button.dataset.pending = 'true';
+  button.textContent = currentTabState.enabled ? 'Disabling\u2026' : 'Enabling\u2026';
   setCommunicationEnabled(!currentTabState.enabled);
   window.close();
 });

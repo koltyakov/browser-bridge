@@ -117,6 +117,9 @@ import {
  * } | {
  *   type: 'state.sync',
  *   state: UiSnapshot
+ * } | {
+ *   type: 'toggle.error',
+ *   error: string
  * }} SidePanelMessage
  */
 
@@ -227,7 +230,18 @@ let setupStatusPollTimer = null;
 let hasAutoExpandedHostSetup = false;
 /** @type {ReturnType<typeof setTimeout> | null} */
 let nativeDiagnosticTimer = null;
+/** @type {ReturnType<typeof setTimeout> | null} */
+let pendingToggleTimer = null;
+/** @type {ReturnType<typeof setTimeout> | null} */
+let toggleErrorTimer = null;
 const NATIVE_DIAGNOSTIC_DELAY_MS = 10_000;
+const TOGGLE_PENDING_TIMEOUT_MS = 10_000;
+const TOGGLE_ERROR_DISPLAY_MS = 6_000;
+
+const toggleErrorEl = document.createElement('p');
+toggleErrorEl.className = 'toggle-error';
+toggleErrorEl.hidden = true;
+toggleButton.insertAdjacentElement('afterend', toggleErrorEl);
 const setupContextMenu = document.createElement('div');
 setupContextMenu.className = 'setup-context-menu';
 setupContextMenu.hidden = true;
@@ -314,6 +328,10 @@ port.onMessage.addListener((message) => {
   if (message.type === 'state.sync') {
     renderState(message.state);
   }
+
+  if (message.type === 'toggle.error') {
+    renderToggleError(message.error);
+  }
 });
 
 port.postMessage({
@@ -328,9 +346,26 @@ const activityHistogramTimer = setInterval(() => {
 }, ACTIVITY_HISTOGRAM_TICK_MS);
 
 toggleButton.addEventListener('click', () => {
-  if (!currentTabState) {
+  if (!currentTabState || toggleButton.dataset.pending === 'true') {
     return;
   }
+
+  const pendingEnabled = !currentTabState.enabled;
+  toggleButton.dataset.pending = 'true';
+  toggleButton.textContent = pendingEnabled ? 'Enabling\u2026' : 'Disabling\u2026';
+
+  if (pendingToggleTimer) {
+    clearTimeout(pendingToggleTimer);
+  }
+  pendingToggleTimer = setTimeout(() => {
+    toggleButton.dataset.pending = 'false';
+    if (currentTabState) {
+      toggleButton.textContent = currentTabState.enabled
+        ? 'Disable Window Access'
+        : 'Enable Window Access';
+    }
+    pendingToggleTimer = null;
+  }, TOGGLE_PENDING_TIMEOUT_MS);
 
   port.postMessage({
     type: 'scope.set_enabled',
@@ -338,7 +373,7 @@ toggleButton.addEventListener('click', () => {
       Number.isFinite(requestedTabId) && requestedTabId > 0
         ? requestedTabId
         : undefined,
-    enabled: !currentTabState.enabled,
+    enabled: pendingEnabled,
   });
 });
 
@@ -461,6 +496,18 @@ function updateActivityVisualizations() {
  */
 function renderCurrentTab(currentTab) {
   currentTabState = currentTab;
+  toggleButton.dataset.pending = 'false';
+  toggleErrorEl.hidden = true;
+
+  if (pendingToggleTimer) {
+    clearTimeout(pendingToggleTimer);
+    pendingToggleTimer = null;
+  }
+
+  if (toggleErrorTimer) {
+    clearTimeout(toggleErrorTimer);
+    toggleErrorTimer = null;
+  }
 
   if (!currentTab) {
     toggleButton.textContent = 'Window Access Unavailable';
@@ -476,6 +523,37 @@ function renderCurrentTab(currentTab) {
   toggleButton.disabled = !currentTab.url;
   toggleButton.dataset.enabled = String(currentTab.enabled);
   controlSection.classList.toggle('attention', currentTab.accessRequested && !currentTab.enabled);
+}
+
+/**
+ * @param {string} errorMessage
+ * @returns {void}
+ */
+function renderToggleError(errorMessage) {
+  toggleButton.dataset.pending = 'false';
+
+  if (pendingToggleTimer) {
+    clearTimeout(pendingToggleTimer);
+    pendingToggleTimer = null;
+  }
+
+  if (currentTabState) {
+    toggleButton.textContent = currentTabState.enabled
+      ? 'Disable Window Access'
+      : 'Enable Window Access';
+  }
+
+  const friendly = errorMessage.replace(/^CONTENT_SCRIPT_UNAVAILABLE:\s*/i, '');
+  toggleErrorEl.textContent = friendly;
+  toggleErrorEl.hidden = false;
+
+  if (toggleErrorTimer) {
+    clearTimeout(toggleErrorTimer);
+  }
+  toggleErrorTimer = setTimeout(() => {
+    toggleErrorEl.hidden = true;
+    toggleErrorTimer = null;
+  }, TOGGLE_ERROR_DISPLAY_MS);
 }
 
 /**

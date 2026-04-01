@@ -673,6 +673,12 @@ button:hover {
   border-radius: 6px;
 }
 
+.popup-power-button[data-pending="true"] {
+  opacity: 0.7;
+  cursor: wait;
+  pointer-events: none;
+}
+
 .power-button {
   width: 100%;
   min-height: 40px;
@@ -686,6 +692,22 @@ button:hover {
 .power-button:disabled {
   background: var(--disabled-bg);
   cursor: not-allowed;
+}
+
+.power-button[data-pending="true"] {
+  opacity: 0.7;
+  cursor: wait;
+  pointer-events: none;
+}
+
+.toggle-error {
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  background: var(--status-badge-bg, #fef3cd);
+  color: var(--text-primary, #856404);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .setup-steps {

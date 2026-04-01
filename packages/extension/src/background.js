@@ -2767,14 +2767,30 @@ async function handleUiMessage(port, message) {
 
   if (message?.type === 'scope.set_enabled') {
     const requestedTabId = Number(message.tabId);
-    if (Number.isFinite(requestedTabId) && requestedTabId > 0) {
-      const tabState = await getTabState(requestedTabId);
-      if (!tabState) {
-        throw new Error(ERROR_CODES.TAB_MISMATCH);
+    try {
+      // ── DEBUG: simulate slow/error toggles. Set to "delay", "error", or "" ──
+      const _TOGGLE_SIM = /** @type {string} */ (''); // "delay" | "error" | ""
+      if (_TOGGLE_SIM === 'delay') {
+        await new Promise((r) => setTimeout(r, 6000));
+      } else if (_TOGGLE_SIM === 'error') {
+        if (Math.random() > 0.3) {
+          throw new Error('Something went wrong.');
+        }
       }
-      await setWindowEnabled(tabState.windowId, tabState.title, Boolean(message.enabled));
-    } else {
-      await setCurrentWindowEnabled(Boolean(message.enabled));
+      // ── END DEBUG ──
+      if (Number.isFinite(requestedTabId) && requestedTabId > 0) {
+        const tabState = await getTabState(requestedTabId);
+        if (!tabState) {
+          throw new Error(ERROR_CODES.TAB_MISMATCH);
+        }
+        await setWindowEnabled(tabState.windowId, tabState.title, Boolean(message.enabled));
+      } else {
+        await setCurrentWindowEnabled(Boolean(message.enabled));
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      try { port.postMessage({ type: 'toggle.error', error: errorMessage }); } catch { /* port may have disconnected */ }
+      throw error;
     }
     return;
   }
