@@ -29,7 +29,7 @@ import { writeJsonLine } from './framing.js';
 /** @typedef {import('../../protocol/src/types.js').SetupInstallResult} SetupInstallResult */
 /** @typedef {import('../../protocol/src/types.js').SetupStatus} SetupStatus */
 /** @typedef {import('node:net').Socket & { __clientId?: string, __extensionId?: string, __browserName?: string, __profileLabel?: string, __accessEnabled?: boolean }} ClientSocket */
-/** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string, method?: string, remaining: number, lastErrorResponse?: import('../../protocol/src/types.js').BridgeResponse }} PendingEntry */
+/** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string, method?: string, targets: Set<ClientSocket>, lastErrorResponse?: import('../../protocol/src/types.js').BridgeResponse }} PendingEntry */
 /**
  * @typedef {{
  *   installAgentFiles: typeof import('../../agent-client/src/install.js').installAgentFiles,
@@ -287,7 +287,7 @@ export class BridgeDaemon {
     }
 
     if (message?.type === 'extension.response') {
-      return this.handleExtensionResponse(message);
+      return this.handleExtensionResponse(socket, message);
     }
 
     if (message?.type === 'extension.identity') {
@@ -398,12 +398,11 @@ export class BridgeDaemon {
       return;
     }
 
-    const extensionCount = targets.length;
     this.pendingRequests.set(request.id, {
       socket,
       method: request.method,
       source: typeof request.meta?.source === 'string' ? request.meta.source : '',
-      remaining: extensionCount,
+      targets: new Set(targets),
       timeoutId: setTimeout(() => {
         const pending = this.pendingRequests.get(request.id);
         if (!pending) return;
@@ -467,10 +466,11 @@ export class BridgeDaemon {
   }
 
   /**
+   * @param {ClientSocket} socket
    * @param {DaemonMessage} message
    * @returns {Promise<void>}
    */
-  async handleExtensionResponse(message) {
+  async handleExtensionResponse(socket, message) {
     const responseMessage = message.response;
     if (!responseMessage) {
       return;
@@ -480,6 +480,8 @@ export class BridgeDaemon {
     if (!pending) {
       return;
     }
+
+    pending.targets.delete(socket);
 
     if (responseMessage.ok) {
       clearTimeout(pending.timeoutId);
@@ -519,24 +521,9 @@ export class BridgeDaemon {
     }
 
     // Error response — wait for other extensions before forwarding.
-    pending.remaining -= 1;
     pending.lastErrorResponse = responseMessage;
 
-    if (pending.remaining <= 0) {
-      clearTimeout(pending.timeoutId);
-      this.pendingRequests.delete(responseMessage.id);
-      this.pushLog({
-        at: new Date().toISOString(),
-        method: responseMessage.meta?.method ?? null,
-        ok: false,
-        id: responseMessage.id,
-        source: pending.source || null
-      });
-      await writeJsonLine(pending.socket, {
-        type: 'agent.response',
-        response: pending.lastErrorResponse
-      });
-    }
+    await this.finishPendingRequestIfExhausted(responseMessage.id, pending);
   }
 
   /**
@@ -556,8 +543,51 @@ export class BridgeDaemon {
       if (pending.socket === socket) {
         clearTimeout(pending.timeoutId);
         this.pendingRequests.delete(id);
+        continue;
+      }
+      if (pending.targets.has(socket)) {
+        pending.targets.delete(socket);
+        void this.finishPendingRequestIfExhausted(id, pending);
       }
     }
+  }
+
+  /**
+   * Complete a pending request once every targeted extension has either
+   * responded or disconnected.
+   *
+   * @param {string} requestId
+   * @param {PendingEntry} pending
+   * @returns {Promise<void>}
+   */
+  async finishPendingRequestIfExhausted(requestId, pending) {
+    if (pending.targets.size > 0 || !this.pendingRequests.has(requestId)) {
+      return;
+    }
+
+    clearTimeout(pending.timeoutId);
+    this.pendingRequests.delete(requestId);
+
+    const response = pending.lastErrorResponse ?? createFailure(
+      requestId,
+      ERROR_CODES.EXTENSION_DISCONNECTED,
+      'Target extension disconnected before responding.',
+      null,
+      { method: pending.method }
+    );
+
+    this.pushLog({
+      at: new Date().toISOString(),
+      method: response.meta?.method ?? pending.method ?? null,
+      ok: false,
+      id: requestId,
+      source: pending.source || null
+    });
+
+    await writeJsonLine(pending.socket, {
+      type: 'agent.response',
+      response
+    });
   }
 
   /**

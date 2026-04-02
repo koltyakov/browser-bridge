@@ -280,7 +280,7 @@ test('daemon log entries retain request source metadata', async () => {
     }
   });
 
-  await daemon.handleExtensionResponse({
+  await daemon.handleExtensionResponse(extensionSocket, {
     response: {
       id: 'req_eval',
       ok: false,
@@ -315,7 +315,7 @@ test('daemon forwards health checks to the extension and merges access state', a
 
   assert.equal(extensionSocket.writes.length, 1);
 
-  await daemon.handleExtensionResponse({
+  await daemon.handleExtensionResponse(extensionSocket, {
     response: {
       id: 'req_health_ext',
       ok: true,
@@ -818,6 +818,101 @@ test('daemon does not drop agent2 response when agent1 disconnects mid-flight', 
     assert.equal(resp2.response.ok, true);
   } finally {
     s1.destroy(); s2.destroy(); se.destroy();
+    await daemon.stop();
+  }
+});
+
+test('daemon fails pending requests immediately when the only target extension disconnects', async () => {
+  const { daemon, connect } = await startTestDaemon();
+  const se = await connect();
+  const sa = await connect();
+  const ext = makeNdjsonClient(se);
+  const agent = makeNdjsonClient(sa);
+
+  try {
+    ext.send({ type: 'register', role: 'extension' });
+    agent.send({ type: 'register', role: 'agent', clientId: 'agent_disconnect' });
+    await ext.next();
+    await agent.next();
+
+    agent.send({
+      type: 'agent.request',
+      request: {
+        id: 'req_disconnect',
+        method: 'page.get_state',
+        tab_id: null,
+        params: {},
+        meta: { protocol_version: '1.0', token_budget: null }
+      }
+    });
+
+    const forwarded = /** @type {any} */ (await ext.next());
+    assert.equal(forwarded.type, 'extension.request');
+    assert.equal(forwarded.request.id, 'req_disconnect');
+
+    se.destroy();
+
+    const resp = /** @type {any} */ (await agent.next());
+    assert.equal(resp.type, 'agent.response');
+    assert.equal(resp.response.id, 'req_disconnect');
+    assert.equal(resp.response.ok, false);
+    assert.equal(resp.response.error.code, 'EXTENSION_DISCONNECTED');
+  } finally {
+    se.destroy(); sa.destroy();
+    await daemon.stop();
+  }
+});
+
+test('daemon returns the last extension error once all other targets disconnect', async () => {
+  const { daemon, connect } = await startTestDaemon();
+  const s1 = await connect();
+  const s2 = await connect();
+  const sa = await connect();
+  const ext1 = makeNdjsonClient(s1);
+  const ext2 = makeNdjsonClient(s2);
+  const agent = makeNdjsonClient(sa);
+
+  try {
+    ext1.send({ type: 'register', role: 'extension' });
+    ext2.send({ type: 'register', role: 'extension' });
+    agent.send({ type: 'register', role: 'agent', clientId: 'agent_mixed_disconnect' });
+    await ext1.next();
+    await ext2.next();
+    await agent.next();
+
+    agent.send({
+      type: 'agent.request',
+      request: {
+        id: 'req_mixed_disconnect',
+        method: 'page.get_state',
+        tab_id: null,
+        params: {},
+        meta: { protocol_version: '1.0', token_budget: null }
+      }
+    });
+
+    await ext1.next();
+    await ext2.next();
+
+    ext1.send({
+      type: 'extension.response',
+      response: {
+        id: 'req_mixed_disconnect',
+        ok: false,
+        result: null,
+        error: { code: 'ACCESS_DENIED', message: 'No window enabled', details: null },
+        meta: { protocol_version: '1.0', method: 'page.get_state' }
+      }
+    });
+    s2.destroy();
+
+    const resp = /** @type {any} */ (await agent.next());
+    assert.equal(resp.type, 'agent.response');
+    assert.equal(resp.response.id, 'req_mixed_disconnect');
+    assert.equal(resp.response.ok, false);
+    assert.equal(resp.response.error.code, 'ACCESS_DENIED');
+  } finally {
+    s1.destroy(); s2.destroy(); sa.destroy();
     await daemon.stop();
   }
 });

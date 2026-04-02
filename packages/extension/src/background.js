@@ -402,12 +402,72 @@ async function initializeState() {
 }
 
 /**
+ * @returns {void}
+ */
+function clearNativeReconnectTimer() {
+  if (!_nativeReconnectTimer) {
+    return;
+  }
+  clearTimeout(_nativeReconnectTimer);
+  _nativeReconnectTimer = null;
+}
+
+/**
+ * Schedule the next native-host reconnect attempt using the shared backoff
+ * path used after runtime disconnects.
+ *
+ * @param {string} errorMessage
+ * @param {{
+ *   method?: string,
+ *   summaryPrefix?: string,
+ *   updateDisconnectedUi?: boolean
+ * }} [options]
+ * @returns {void}
+ */
+function scheduleNativeReconnect(errorMessage, options = {}) {
+  const method = typeof options.method === 'string' ? options.method : 'native.disconnect';
+  const summaryPrefix = typeof options.summaryPrefix === 'string'
+    ? options.summaryPrefix
+    : 'Native host disconnected';
+  const updateDisconnectedUi = options.updateDisconnectedUi === true;
+
+  state.nativeReconnectAttempts += 1;
+  const reconnectAttempt = state.nativeReconnectAttempts;
+  clearSetupStatus(errorMessage);
+
+  if (updateDisconnectedUi) {
+    state.nativePort = null;
+    broadcastUi({
+      type: 'native.status',
+      connected: false,
+      error: errorMessage
+    });
+  }
+  void emitUiState().catch(reportAsyncError);
+
+  void appendActionLogEntry({
+    method,
+    source: 'extension',
+    ok: false,
+    summary: `${summaryPrefix} (attempt ${reconnectAttempt}): ${errorMessage}. Reconnecting in ${nativeReconnectDelay}ms.`
+  });
+
+  clearNativeReconnectTimer();
+  _nativeReconnectTimer = setTimeout(() => {
+    _nativeReconnectTimer = null;
+    connectNative();
+  }, nativeReconnectDelay);
+  nativeReconnectDelay = Math.min(nativeReconnectDelay * 2, NATIVE_RECONNECT_MAX_MS);
+}
+
+/**
  * Connect the extension service worker to the local Native Messaging host and
  * fan connection state out to the popup and side panel UIs.
  *
  * @returns {void}
  */
 function connectNative() {
+  clearNativeReconnectTimer();
   try {
     const candidatePort = chrome.runtime.connectNative(NATIVE_APP_NAME);
     const wasReconnect = nativeReconnectDelay > NATIVE_RECONNECT_BASE_MS;
@@ -439,31 +499,18 @@ function connectNative() {
     candidatePort.onDisconnect.addListener(() => {
       clearTimeout(stabilityTimer);
       const disconnectError = chrome.runtime.lastError?.message ?? 'Native host disconnected.';
-      state.nativeReconnectAttempts += 1;
-      const reconnectAttempt = state.nativeReconnectAttempts;
-      clearSetupStatus(disconnectError);
-      if (state.nativePort === candidatePort) {
-        state.nativePort = null;
-        broadcastUi({
-          type: 'native.status',
-          connected: false,
-          error: disconnectError
-        });
-      }
-      void appendActionLogEntry({
+      scheduleNativeReconnect(disconnectError, {
         method: 'native.disconnect',
-        source: 'extension',
-        ok: false,
-        summary: `Native host disconnected (attempt ${reconnectAttempt}): ${disconnectError}. Reconnecting in ${nativeReconnectDelay}ms.`
+        summaryPrefix: 'Native host disconnected',
+        updateDisconnectedUi: state.nativePort === candidatePort
       });
-      _nativeReconnectTimer = setTimeout(() => {
-        _nativeReconnectTimer = null;
-        connectNative();
-      }, nativeReconnectDelay);
-      nativeReconnectDelay = Math.min(nativeReconnectDelay * 2, NATIVE_RECONNECT_MAX_MS);
     });
   } catch (error) {
-    broadcastUi({ type: 'native.status', connected: false, error: getErrorMessage(error) });
+    scheduleNativeReconnect(getErrorMessage(error), {
+      method: 'native.connect',
+      summaryPrefix: 'Native host connection failed',
+      updateDisconnectedUi: !state.nativePort
+    });
   }
 }
 
@@ -647,6 +694,41 @@ async function restoreActionLog() {
 }
 
 /**
+ * Clear the enabled window state if the window no longer exists.
+ * Retries once after a short delay to ride over transient API errors.
+ *
+ * @returns {Promise<boolean>} true if the window was verified gone and cleared
+ */
+async function clearEnabledWindowIfGone() {
+  if (!state.enabledWindow) {
+    return false;
+  }
+  let gone = false;
+  try {
+    await chrome.windows.get(state.enabledWindow.windowId);
+  } catch (e) {
+    const msg = getErrorMessage(e).toLowerCase();
+    if (msg.includes('no window') || msg.includes('not found') || msg.includes('window closed')) {
+      gone = true;
+    } else {
+      await new Promise((r) => { setTimeout(r, 300); });
+      try {
+        await chrome.windows.get(state.enabledWindow.windowId);
+      } catch (_e2) {
+        gone = true;
+      }
+    }
+  }
+  if (gone) {
+    state.enabledWindow = null;
+    await chrome.storage.session.remove(ENABLED_WINDOW_STORAGE_KEY);
+    sendAccessUpdate(false);
+    return true;
+  }
+  return false;
+}
+
+/**
  * Build a compact access-status payload for health and doctor flows.
  *
  * @returns {Promise<{
@@ -673,16 +755,17 @@ async function getAccessStatus() {
   try {
     await chrome.windows.get(state.enabledWindow.windowId);
   } catch {
-    state.enabledWindow = null;
-    await chrome.storage.session.remove(ENABLED_WINDOW_STORAGE_KEY);
-    return {
-      enabled: false,
-      windowId: null,
-      routeTabId: null,
-      routeReady: false,
-      routeUrl: '',
-      reason: 'enabled_window_missing',
-    };
+    const cleared = await clearEnabledWindowIfGone();
+    if (cleared) {
+      return {
+        enabled: false,
+        windowId: null,
+        routeTabId: null,
+        routeReady: false,
+        routeUrl: '',
+        reason: 'enabled_window_missing',
+      };
+    }
   }
 
   const tabs = await chrome.tabs.query({
@@ -1768,9 +1851,10 @@ async function resolveRequestTarget(request, options = {}) {
   try {
     await chrome.windows.get(state.enabledWindow.windowId);
   } catch {
-    state.enabledWindow = null;
-    await chrome.storage.session.remove(ENABLED_WINDOW_STORAGE_KEY);
-    throw new Error(ERROR_CODES.ACCESS_DENIED);
+    const cleared = await clearEnabledWindowIfGone();
+    if (cleared) {
+      throw new Error(ERROR_CODES.ACCESS_DENIED);
+    }
   }
 
   /** @type {chrome.tabs.Tab | null} */
