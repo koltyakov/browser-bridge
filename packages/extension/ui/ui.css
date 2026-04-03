@@ -498,6 +498,13 @@ body[data-windowed="true"] .panel-popup {
   overflow-x: auto;
 }
 
+.setup-status-guidance {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .setup-status-matrix {
   width: 100%;
   border-collapse: collapse;

@@ -153,6 +153,7 @@ function isNumber(value) {
  *   nativePort: chrome.runtime.Port | null,
  *   enabledWindow: EnabledWindowState | null,
  *   requestedAccessWindowId: number | null,
+ *   requestedAccessPopupWindowId: number | null,
  *   nativeReconnectAttempts: number,
  *   actionLog: ActionLogEntry[],
  *   uiPorts: Map<chrome.runtime.Port, UiPortState>,
@@ -294,6 +295,7 @@ const state = {
   nativePort: null,
   enabledWindow: null,
   requestedAccessWindowId: null,
+  requestedAccessPopupWindowId: null,
   nativeReconnectAttempts: 0,
   actionLog: [],
   uiPorts: new Map(),
@@ -334,6 +336,10 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
   void handleTabRemoved(tabId, removeInfo).catch(reportAsyncError);
+});
+
+chrome.windows.onRemoved.addListener((windowId) => {
+  clearRequestedAccessPopupWindow(windowId);
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
@@ -2184,6 +2190,16 @@ function clearRequestedAccessWindow(windowId = null) {
 }
 
 /**
+ * @param {number | null} [windowId=null]
+ * @returns {void}
+ */
+function clearRequestedAccessPopupWindow(windowId = null) {
+  if (windowId == null || state.requestedAccessPopupWindowId === windowId) {
+    state.requestedAccessPopupWindowId = null;
+  }
+}
+
+/**
  * Surface an enable cue in the extension UI when an agent-side request fails
  * because Browser Bridge is off for the target window.
  *
@@ -2311,8 +2327,8 @@ async function resolveRequestedAccessTarget(request) {
 /**
  * Open Browser Bridge UI for an agent-side access request. If the side panel
  * is already open for that window, leave it in place so its existing attention
- * state continues to guide the user. Otherwise prefer the action popup and
- * fall back to a scoped extension popup window when Chrome refuses to open it.
+ * state continues to guide the user. Otherwise open one controlled popup
+ * window so multiple browser windows cannot splash duplicate prompts.
  *
  * @param {ResolvedTabTarget} target
  * @returns {Promise<void>}
@@ -2323,23 +2339,16 @@ async function openRequestedAccessUi(target) {
   }
 
   try {
-    await chrome.action.openPopup({ windowId: target.windowId });
-    return;
-  } catch (error) {
-    console.warn('Could not open Browser Bridge popup for access request.', error);
-  }
-
-  try {
     await openRequestedAccessPopupWindow(target);
   } catch (error) {
-    console.warn('Could not open Browser Bridge fallback popup window for access request.', error);
+    console.warn('Could not open Browser Bridge popup window for access request.', error);
   }
 }
 
 /**
  * Open the popup UI in its own small extension window, scoped to the requested
- * tab, so agent-side access requests still surface an enable control even when
- * Chrome declines to open the toolbar popup directly.
+ * tab. Reuse the same popup window while access remains pending so only one
+ * visible prompt exists across browser windows.
  *
  * @param {ResolvedTabTarget} target
  * @returns {Promise<void>}
@@ -2350,6 +2359,27 @@ async function openRequestedAccessPopupWindow(target) {
   );
   const popupWidth = 420;
   const popupHeight = 320;
+  const popupPlacement = await getRequestedAccessPopupPlacement(target.windowId, popupWidth);
+
+  if (state.requestedAccessPopupWindowId != null) {
+    try {
+      const existingWindow = await chrome.windows.get(state.requestedAccessPopupWindowId, { populate: true });
+      const existingWindowId = typeof existingWindow.id === 'number' ? existingWindow.id : null;
+      const popupTabId = existingWindow.tabs?.find((tab) => typeof tab.id === 'number')?.id ?? null;
+      if (existingWindowId == null || popupTabId == null) {
+        throw new Error('Requested access popup window is missing its tab.');
+      }
+      await chrome.tabs.update(popupTabId, { url: popupUrl });
+      await chrome.windows.update(existingWindowId, {
+        focused: true,
+        ...(popupPlacement ?? {})
+      });
+      return;
+    } catch {
+      clearRequestedAccessPopupWindow();
+    }
+  }
+
   let createData = /** @type {chrome.windows.CreateData} */ ({
     url: popupUrl,
     type: 'popup',
@@ -2358,15 +2388,33 @@ async function openRequestedAccessPopupWindow(target) {
     height: popupHeight
   });
 
+  if (popupPlacement) {
+    createData = {
+      ...createData,
+      ...popupPlacement
+    };
+  }
+
+  const popupWindow = await chrome.windows.create(createData);
+  state.requestedAccessPopupWindowId = typeof popupWindow?.id === 'number'
+    ? popupWindow.id
+    : null;
+}
+
+/**
+ * @param {number} targetWindowId
+ * @param {number} popupWidth
+ * @returns {Promise<Pick<chrome.windows.UpdateInfo, 'left' | 'top'> | null>}
+ */
+async function getRequestedAccessPopupPlacement(targetWindowId, popupWidth) {
   try {
-    const browserWindow = await chrome.windows.get(target.windowId);
+    const browserWindow = await chrome.windows.get(targetWindowId);
     if (
       typeof browserWindow.left === 'number'
       && typeof browserWindow.top === 'number'
       && typeof browserWindow.width === 'number'
     ) {
-      createData = {
-        ...createData,
+      return {
         left: browserWindow.left + Math.max(24, browserWindow.width - popupWidth - 40),
         top: browserWindow.top + 72
       };
@@ -2375,7 +2423,7 @@ async function openRequestedAccessPopupWindow(target) {
     // Ignore window positioning failures and fall back to Chrome defaults.
   }
 
-  await chrome.windows.create(createData);
+  return null;
 }
 
 /**
