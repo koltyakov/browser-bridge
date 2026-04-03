@@ -1,14 +1,10 @@
 # Browser Bridge
 
-<!-- <p align="center">
-  <img src="./assets/logo.png" alt="Browser Bridge logo" width="220" />
-</p> -->
-
-![Browser Bridge: Connect AI Agent and Browsers](./assets/banner.jpg)
+![Browser Bridge: Connect AI Agent and Browsers](https://raw.githubusercontent.com/koltyakov/browser-bridge/main/assets/banner.jpg)
 
 A local bridge between your coding agent and a real Chrome tab. Browser Bridge gives the agent structured access to DOM, styles, layout, console, network, and reversible patches - starting from the actual tab you already have open, with all its real state intact.
 
-See [Quickstart](./docs/quickstart.md) to get started in another repo, or browse the rest of the guides in [docs/index.md](./docs/index.md).
+See [Quickstart](https://github.com/koltyakov/browser-bridge/blob/main/docs/quickstart.md) to get started in another repo, or browse the rest of the guides in [docs/index.md](https://github.com/koltyakov/browser-bridge/blob/main/docs/index.md).
 
 ## Supported Agents
 
@@ -125,20 +121,20 @@ Browser Bridge is optimized for the opposite starting point: **inspect the state
 
 ## Documentation
 
-- [Quickstart](./docs/quickstart.md)
-- [Usage scenarios](./docs/usage-scenarios.md)
-- [Manual setup](./docs/manual-setup.md)
-- [CLI guide](./docs/cli-guide.md)
-- [MCP vs CLI](./docs/mcp-vs-cli.md)
-- [Troubleshooting](./docs/troubleshooting.md)
-- [BridgeClient API](./docs/api-reference.md)
+- [Quickstart](https://github.com/koltyakov/browser-bridge/blob/main/docs/quickstart.md)
+- [Usage scenarios](https://github.com/koltyakov/browser-bridge/blob/main/docs/usage-scenarios.md)
+- [Manual setup](https://github.com/koltyakov/browser-bridge/blob/main/docs/manual-setup.md)
+- [CLI guide](https://github.com/koltyakov/browser-bridge/blob/main/docs/cli-guide.md)
+- [MCP vs CLI](https://github.com/koltyakov/browser-bridge/blob/main/docs/mcp-vs-cli.md)
+- [Troubleshooting](https://github.com/koltyakov/browser-bridge/blob/main/docs/troubleshooting.md)
+- [BridgeClient API](https://github.com/koltyakov/browser-bridge/blob/main/docs/api-reference.md)
 
 ## Privacy
 
 Browser Bridge itself routes extension data locally through the Chrome extension, native host, and the local client you choose to connect. Browser Bridge does not operate a Browser Bridge cloud service.
 
-Your connected agent or IDE may still forward tool calls or tool results to remote services under that product's own settings and privacy policy. See [PRIVACY.md](./PRIVACY.md) for the Browser Bridge policy.
+Your connected agent or IDE may still forward tool calls or tool results to remote services under that product's own settings and privacy policy. See [PRIVACY.md](https://github.com/koltyakov/browser-bridge/blob/main/PRIVACY.md) for the Browser Bridge policy.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](https://github.com/koltyakov/browser-bridge/blob/main/LICENSE).

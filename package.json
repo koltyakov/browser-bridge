@@ -29,6 +29,14 @@
   "publishConfig": {
     "access": "public"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/koltyakov/browser-bridge.git"
+  },
+  "homepage": "https://github.com/koltyakov/browser-bridge#readme",
+  "bugs": {
+    "url": "https://github.com/koltyakov/browser-bridge/issues"
+  },
   "scripts": {
     "lint": "eslint .",
     "test": "c8 node --test packages/protocol/test/*.test.js packages/native-host/test/*.test.js packages/agent-client/test/*.test.js packages/mcp-server/test/*.test.js packages/extension/test/*.test.js",
@@ -38,7 +46,7 @@
     "postinstall": "node packages/native-host/bin/postinstall.js",
     "package:extension": "node scripts/package-extension.mjs",
     "check:extension-zip": "node scripts/check-extension-zip.mjs",
-    "release:check": "npm run typecheck && npm test && npm run package:extension && npm pack --dry-run",
+    "release:check": "npm run lint && npm run typecheck && npm test && npm run coverage:check && npm run package:extension && npm pack --dry-run",
     "prepublishOnly": "npm run lint && npm run typecheck && npm test",
     "status": "node packages/agent-client/src/cli.js status",
     "daemon": "node packages/native-host/bin/bridge-daemon.js",
