@@ -9,17 +9,19 @@ This repo has two release artifacts:
 2. The npm package for the local CLI and native host
 
 The extension is not a standalone product. A store release only becomes usable once the npm package is also published, because the extension depends on the local native host installed by `bbx install <extension-id>`.
-The current installer does not embed a store extension ID in the package. Until the code changes, published setup docs should continue to show `bbx install <store-extension-id>` or set `BROWSER_BRIDGE_EXTENSION_ID=<store-extension-id>` before running `bbx install`.
+The published npm package now embeds the Browser Bridge store extension ID, so end-user docs for the published build should default to plain `bbx install`. Only unpacked or non-store builds should require `bbx install <extension-id>` or `BROWSER_BRIDGE_EXTENSION_ID=<extension-id>`.
 
 ## Release Checklist
 
 1. Bump the version in [package.json](../package.json) and [manifest.json](../manifest.json) together.
 2. Run `npm install` if dependencies changed.
 3. Run `npm run release:check`.
-4. Publish the npm package.
-5. Upload the extension ZIP from `dist/browser-bridge-extension-v<version>.zip`.
-6. Complete the Chrome Web Store listing, privacy fields, and reviewer instructions.
-7. Smoke-test the published extension against the published CLI using `bbx install <store-extension-id>`.
+4. In npm package settings, add a GitHub Actions trusted publisher for this repository and workflow file `release.yml`.
+5. Push the release tag `v<version>` so GitHub Actions publishes the npm package and uploads the extension ZIP artifact.
+6. After the first successful trusted publish, set npm package publishing access to require 2FA and disallow tokens, then revoke any old automation token.
+7. Upload the extension ZIP from `dist/browser-bridge-extension-v<version>.zip`.
+8. Complete the Chrome Web Store listing, privacy fields, and reviewer instructions.
+9. Smoke-test the published extension against the published CLI using `bbx install`.
 
 ## Build The Extension ZIP
 
@@ -41,10 +43,10 @@ The package is configured for public publish:
 
 ```bash
 npm pack --dry-run
-npm publish
+npm publish --provenance --access public
 ```
 
-The published package must stay aligned with the extension release because users still need the final store extension ID at install time unless the installer gains a baked-in default.
+The release workflow on tag push now performs this publish automatically through npm trusted publishing (OIDC). Manual publish remains a valid fallback when the GitHub workflow is unavailable.
 
 ## Chrome Web Store Submission
 
@@ -98,15 +100,13 @@ Google marks the Test Instructions tab as optional, but Browser Bridge should st
 1. Install the published extension from the draft listing.
 2. Install Node.js 18+ on the same machine.
 3. Run `npm install -g @browserbridge/bbx`.
-4. Run `bbx install <store-extension-id>`.
+4. Run `bbx install`.
 5. If needed, run `bbx-daemon`.
 6. Open any normal web page in Chrome.
 7. Open the Browser Bridge popup or side panel and enable Browser Bridge for the current browser window.
 8. In a terminal, run `bbx status`, `bbx tabs`, and `bbx page-text`.
 
-Replace `<store-extension-id>` with the final Chrome Web Store extension ID before submitting.
-
 ## Post-Publish Follow-Up
 
-- Update [README.md](../README.md) and [quickstart.md](./quickstart.md) with the real store listing URL and the explicit `bbx install <store-extension-id>` flow, unless the installer is updated to embed a default ID.
-- Re-run a live flow with `bbx install <store-extension-id>` after the first published build is available.
+- Update [README.md](../README.md) and [quickstart.md](./quickstart.md) with the real store listing URL.
+- Re-run a live flow with `bbx install` after the first published build is available.
