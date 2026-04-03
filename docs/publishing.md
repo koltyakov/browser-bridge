@@ -48,6 +48,8 @@ npm publish --provenance --access public
 
 The release workflow on tag push now performs this publish automatically through npm trusted publishing (OIDC). Manual publish remains a valid fallback when the GitHub workflow is unavailable.
 
+Trusted publishing requires npm CLI `11.5.1+`. The release workflow upgrades npm explicitly before running `npm publish`; if publish fails with `E404` or authentication issues, verify the workflow still prints an npm version at or above that threshold.
+
 ## Chrome Web Store Submission
 
 ### Store assets you still need to prepare manually
