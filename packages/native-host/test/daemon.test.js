@@ -142,8 +142,8 @@ test('daemon responds to setup status requests without extension', async () => {
       basePath: '/tmp/skills',
       installed: true,
       managed: true,
-      installedVersion: '0.1.0',
-      currentVersion: '0.1.0',
+      installedVersion: '1.0.0',
+      currentVersion: '1.0.0',
       updateAvailable: false,
       skills: []
     }]

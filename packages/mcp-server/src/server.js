@@ -79,7 +79,7 @@ const INVESTIGATE_DELEGATION_HINT = Object.freeze({
 export function createBridgeMcpServer() {
   const server = new McpServer({
     name: 'browser-bridge',
-    version: '0.1.0'
+    version: '1.0.0'
   });
 
   server.registerTool('browser_status', {
