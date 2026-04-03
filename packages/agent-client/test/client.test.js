@@ -1283,6 +1283,38 @@ test('installMcpClientSetup keeps Codex MCP setup separate from CLI skill instal
   }
 });
 
+test('installMcpClientSetup writes generic agents MCP config without installing the CLI skill', async () => {
+  const tempDir = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bb-install-agents-mcp-'),
+  );
+
+  try {
+    const result = await installMcpClientSetup(['agents'], {
+      global: false,
+      projectPath: tempDir,
+      stdout: {
+        write() {
+          return true;
+        },
+      },
+    });
+
+    assert.deepEqual(result.configPaths, [
+      path.join(tempDir, '.agents', 'mcp.json'),
+    ]);
+    await assert.doesNotReject(
+      fs.promises.access(path.join(tempDir, '.agents', 'mcp.json')),
+    );
+    await assert.rejects(
+      fs.promises.access(
+        path.join(tempDir, '.agents', 'skills', 'browser-bridge', 'SKILL.md'),
+      ),
+    );
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('findInstalledManagedTargets reports targets with managed skill installs', async () => {
   const tempDir = await fs.promises.mkdtemp(
     path.join(os.tmpdir(), 'bb-find-managed-targets-'),
@@ -1497,6 +1529,16 @@ test('buildMcpConfig produces client-specific config shapes', () => {
     },
   });
 
+  assert.deepEqual(buildMcpConfig('antigravity'), {
+    mcpServers: {
+      'browser-bridge': {
+        command: 'bbx',
+        args: ['mcp', 'serve'],
+        env: {},
+      },
+    },
+  });
+
   assert.deepEqual(buildMcpConfig('claude'), {
     mcpServers: {
       'browser-bridge': {
@@ -1617,11 +1659,23 @@ test('getMcpConfigPath supports Antigravity global and local locations', () => {
   const home = os.homedir();
   assert.equal(
     getMcpConfigPath('antigravity', { global: false, cwd: '/tmp/demo' }),
-    path.join('/tmp/demo', '.gemini', 'antigravity', 'mcp_config.json'),
+    path.join('/tmp/demo', '.agents', 'mcp_config.json'),
   );
   assert.equal(
     getMcpConfigPath('antigravity', { global: true }),
     path.join(home, '.gemini', 'antigravity', 'mcp_config.json'),
+  );
+});
+
+test('getMcpConfigPath supports generic agents global and local locations', () => {
+  const home = os.homedir();
+  assert.equal(
+    getMcpConfigPath('agents', { global: false, cwd: '/tmp/demo' }),
+    path.join('/tmp/demo', '.agents', 'mcp.json'),
+  );
+  assert.equal(
+    getMcpConfigPath('agents', { global: true }),
+    path.join(home, '.agents', 'mcp.json'),
   );
 });
 

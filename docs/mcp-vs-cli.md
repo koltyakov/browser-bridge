@@ -242,7 +242,7 @@ Escalate to `bbx screenshot`, `screenshot.capture_region`, or `screenshot.captur
 | OpenCode | Yes (local type) | Yes | MCP preferred |
 | Antigravity | Yes | Yes | MCP preferred |
 | Windsurf | Yes | Yes | MCP preferred |
-| Generic agents | Manual config | `.agents/skills/` | Depends on shell access |
+| Generic agents | Yes (`.agents/mcp.json`) | `.agents/skills/` | MCP preferred when available |
 
 ## Summary
 

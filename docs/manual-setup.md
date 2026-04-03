@@ -63,8 +63,9 @@ Managed MCP config paths:
 - `cursor`: `~/.cursor/mcp.json` or `./.cursor/mcp.json`
 - `copilot`: `~/.copilot/mcp-config.json` or `./.vscode/mcp.json`
 - `opencode`: `~/.config/opencode/opencode.json` or `./opencode.json`
-- `antigravity`: `~/.gemini/antigravity/mcp_config.json` or `./.gemini/antigravity/mcp_config.json`
+- `antigravity`: `~/.gemini/antigravity/mcp_config.json` or `./.agents/mcp_config.json`
 - `windsurf`: `~/.codeium/windsurf/mcp_config.json` or `./.windsurf/mcp_config.json`
+- `agents`: `~/.agents/mcp.json` or `./.agents/mcp.json`
 
 ### CLI skill setup
 

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 /**
- * @typedef {'codex' | 'claude' | 'cursor' | 'copilot' | 'opencode' | 'antigravity' | 'windsurf'} McpClientName
+ * @typedef {'codex' | 'claude' | 'cursor' | 'copilot' | 'opencode' | 'antigravity' | 'windsurf' | 'agents'} McpClientName
  */
 
 /** @type {McpClientName[]} */
@@ -17,6 +17,7 @@ export const MCP_CLIENT_NAMES = [
   'opencode',
   'antigravity',
   'windsurf',
+  'agents',
 ];
 
 /** @type {Readonly<Record<McpClientName, string>>} */
@@ -28,6 +29,7 @@ export const MCP_CLIENT_LABELS = Object.freeze({
   opencode: 'OpenCode',
   antigravity: 'Antigravity',
   windsurf: 'Windsurf',
+  agents: 'Generic agents',
 });
 
 /**
@@ -110,6 +112,7 @@ function createBaseServerConfig(clientName) {
 /** @type {Record<McpClientName, { key: string, includeType: boolean, legacyKeys?: string[], keepEmptyBlock?: boolean }>} */
 const MCP_CONFIG_SHAPES = {
   antigravity: { key: 'mcpServers', includeType: false },
+  agents: { key: 'mcpServers', includeType: true },
   claude: { key: 'mcpServers', includeType: true },
   copilot: {
     key: 'mcpServers',
@@ -181,7 +184,8 @@ export function getMcpConfigPath(
       windsurf: path.join(cwd, '.windsurf', 'mcp_config.json'),
       claude: path.join(cwd, '.mcp.json'),
       opencode: path.join(cwd, 'opencode.json'),
-      antigravity: path.join(cwd, '.gemini', 'antigravity', 'mcp_config.json'),
+      antigravity: path.join(cwd, '.agents', 'mcp_config.json'),
+      agents: path.join(cwd, '.agents', 'mcp.json'),
     };
     return localPaths[clientName];
   }
@@ -209,6 +213,10 @@ export function getMcpConfigPath(
 
   if (clientName === 'antigravity') {
     return path.join(home, '.gemini', 'antigravity', 'mcp_config.json');
+  }
+
+  if (clientName === 'agents') {
+    return path.join(home, '.agents', 'mcp.json');
   }
 
   // cursor

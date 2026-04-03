@@ -151,6 +151,11 @@ const SETUP_MATRIX_ORDER = /** @type {const} */ ([
 const SETUP_MATRIX_RANK = new Map(
   SETUP_MATRIX_ORDER.map((key, index) => [key, index]),
 );
+const SETUP_MATRIX_BETA_KEYS = new Set([
+  'antigravity',
+  'windsurf',
+  'agents',
+]);
 
 const nativeIndicator = /** @type {HTMLSpanElement} */ (
   document.getElementById('native-indicator')
@@ -1005,7 +1010,7 @@ function compareSetupMatrixKeys(leftKey, rightKey) {
  * @returns {boolean}
  */
 function shouldRenderMcpClientRow(entry) {
-  return entry.detected || entry.configured;
+  return entry.detected || entry.configured || entry.key === 'agents';
 }
 
 /**
@@ -1044,7 +1049,7 @@ function renderSetupMatrix(rows, installPendingKey) {
 
     const labelCell = document.createElement('td');
     labelCell.className = 'setup-matrix-client';
-    labelCell.textContent = row.label;
+    labelCell.append(createSetupMatrixClientLabel(row));
 
     const mcpCell = document.createElement('td');
     mcpCell.append(renderMcpMatrixCell(row, installPendingKey));
@@ -1062,12 +1067,42 @@ function renderSetupMatrix(rows, installPendingKey) {
 
 /**
  * @param {SetupMatrixRow} row
+ * @returns {DocumentFragment}
+ */
+function createSetupMatrixClientLabel(row) {
+  const fragment = document.createDocumentFragment();
+  fragment.append(row.label);
+
+  if (SETUP_MATRIX_BETA_KEYS.has(row.key)) {
+    const beta = document.createElement('span');
+    beta.className = 'setup-matrix-beta';
+    beta.textContent = ' (beta)';
+    fragment.append(beta);
+  }
+
+  return fragment;
+}
+
+/**
+ * @param {SetupMatrixRow} row
  * @param {string | null} installPendingKey
  * @returns {HTMLElement}
  */
 function renderMcpMatrixCell(row, installPendingKey) {
   const entry = row.mcpClient;
   if (!entry) {
+    if (row.key === 'agents') {
+      const button = createSetupActionButton(
+        'mcp',
+        row.key,
+        installPendingKey === getInstallKey('mcp', row.key),
+        'install',
+        'Install',
+        '...',
+      );
+      button.title = 'Install Browser Bridge MCP for generic agents';
+      return button;
+    }
     return createMatrixMutedValue('\u2014');
   }
   if (entry.configured) {

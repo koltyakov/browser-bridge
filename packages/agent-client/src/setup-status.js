@@ -37,6 +37,7 @@ const MCP_CLIENT_LABELS = {
   opencode: 'OpenCode',
   antigravity: 'Antigravity',
   windsurf: 'Windsurf',
+  agents: 'Generic agents',
 };
 
 /** @type {Record<SupportedTarget, string>} */

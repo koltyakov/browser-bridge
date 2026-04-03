@@ -548,6 +548,11 @@ body[data-windowed="true"] .panel-popup {
   font-weight: 600;
 }
 
+.setup-matrix-beta {
+  color: #9aa0a6;
+  font-weight: 500;
+}
+
 .setup-matrix-muted {
   color: var(--muted);
   font-size: 12px;

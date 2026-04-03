@@ -28,7 +28,7 @@ bbx install
 
 There are two integration paths. Pick the one that matches how your agent works:
 
-Supported clients: `codex` (OpenAI Codex), `claude` (Claude Code), `cursor` (Cursor), `copilot` (GitHub Copilot), `opencode` (OpenCode), `antigravity` (Antigravity), `windsurf` (Windsurf).
+Supported clients: `codex` (OpenAI Codex), `claude` (Claude Code), `cursor` (Cursor), `copilot` (GitHub Copilot), `opencode` (OpenCode), `antigravity` (Antigravity), `windsurf` (Windsurf), `agents` (generic `.agents` MCP/skill layout).
 
 After installing the extension and CLI, finish the rest from the extension side panel's **Host Setup** section, or use the `bbx install-mcp` / `bbx install-skill` commands below if you prefer terminal setup.
 
@@ -38,7 +38,7 @@ After installing the extension and CLI, finish the rest from the extension side 
 
 ```bash
 bbx install-mcp                  # all supported clients
-bbx install-mcp codex            # or pick one: codex, claude, cursor, copilot, opencode, antigravity, windsurf
+bbx install-mcp codex            # or pick one: codex, claude, cursor, copilot, opencode, antigravity, windsurf, agents
 bbx install-mcp copilot --local  # scope to current project instead of global
 ```
 

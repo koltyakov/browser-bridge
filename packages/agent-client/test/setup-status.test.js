@@ -296,6 +296,36 @@ test('collectSetupStatus reads Antigravity global MCP from the documented config
   }
 });
 
+test('collectSetupStatus reads generic agents local MCP from .agents/mcp.json', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-setup-status-agents-mcp-'));
+
+  try {
+    await installMcpConfig('agents', {
+      global: false,
+      cwd: tempDir,
+      stdout: { write() { return true; } }
+    });
+
+    const status = await collectSetupStatus({
+      global: false,
+      cwd: tempDir,
+      projectPath: tempDir,
+      mcpDetectors: createDetectors([]),
+      skillDetectors: createDetectors([])
+    });
+
+    const agentsMcp = status.mcpClients.find((entry) => entry.key === 'agents');
+    assert.ok(agentsMcp);
+    assert.equal(agentsMcp.label, 'Generic agents');
+    assert.equal(agentsMcp.detected, false);
+    assert.equal(agentsMcp.configExists, true);
+    assert.equal(agentsMcp.configured, true);
+    assert.equal(agentsMcp.configPath, path.join(tempDir, '.agents', 'mcp.json'));
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('collectSetupStatus marks legacy managed skills as updateable', async () => {
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-setup-status-legacy-skill-'));
   const sentinel = getManagedSkillSentinelFilename();

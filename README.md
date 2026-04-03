@@ -10,9 +10,7 @@ See [Quickstart](./docs/quickstart.md) to get started in another repo, or browse
 
 ## Supported Agents
 
-Managed CLI skill installs support OpenAI Codex, Claude Code, Cursor, GitHub Copilot, OpenCode, Antigravity, and Windsurf.
-
-Generic agents can connect via MCP or the CLI skill interface, but would need a manual setup.
+Managed installs support OpenAI Codex, Claude Code, Cursor, GitHub Copilot, OpenCode, Antigravity, Windsurf, and generic `.agents` layouts for both MCP and CLI skill setup.
 
 <table align="center">
   <tr>
