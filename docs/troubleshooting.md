@@ -39,7 +39,7 @@ bbx logs
 
 ## `bbx install-skill` or `bbx install-mcp` wrote files, but the client still does not see Browser Bridge
 
-- Restart the client after writing config.
+- Restart the agent or client after writing config so it reloads MCP config or skill definitions.
 - Check that you installed into the right scope: global vs project-local.
 - For project-local installs, confirm the client is opened in the same repository where the config was written.
 - For managed paths and examples, see [manual-setup.md](./manual-setup.md).
