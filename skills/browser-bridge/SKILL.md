@@ -85,6 +85,8 @@ Browser Bridge access is window-scoped. The user turns it on once for the curren
 
 To request access, call `access.request` (via `bbx access-request`, `browser_access` MCP tool, or `bbx call access.request`). This surfaces an Enable cue in the extension popup/side panel for the focused window.
 
+Do not call `access.request` repeatedly while the same window is still pending. If access is already requested, tell the user to enable that window and wait for them to confirm readiness.
+
 If a tab-bound call fails with `ACCESS_DENIED` because Browser Bridge is off, that failed call also surfaces an enable cue automatically.
 
 After the Enable cue appears:

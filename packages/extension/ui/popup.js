@@ -28,8 +28,9 @@ const accessEyebrow = /** @type {HTMLDivElement} */ (document.getElementById('po
 const accessDetail = /** @type {HTMLParagraphElement} */ (document.getElementById('popup-access-detail'));
 const accessDisclosure = /** @type {HTMLParagraphElement} */ (document.getElementById('popup-disclosure'));
 const controlCard = /** @type {HTMLElement | null} */ (document.querySelector('.popup-control-card'));
-const initialScopeTabId = readScopedTabId();
 const windowedPopup = isWindowedPopup();
+/** @type {number | null} */
+let popupScopeTabId = null;
 
 /** @param {PopupStateMessage} message */
 function handlePopupMessage(message) {
@@ -42,17 +43,38 @@ function handlePopupMessage(message) {
 /** @type {chrome.runtime.Port} */
 let port;
 
-function connectPopupPort() {
+/**
+ * @returns {Promise<number | null>}
+ */
+async function resolveInitialScopeTabId() {
+  const explicitScopeTabId = readScopedTabId();
+  if (explicitScopeTabId) {
+    return explicitScopeTabId;
+  }
+
+  try {
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    return typeof activeTab?.id === 'number' ? activeTab.id : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @returns {Promise<void>}
+ */
+async function connectPopupPort() {
+  popupScopeTabId = await resolveInitialScopeTabId();
   const nextPort = chrome.runtime.connect({ name: 'ui-popup' });
   nextPort.onMessage.addListener(handlePopupMessage);
   nextPort.postMessage({
     type: 'state.request',
-    ...(initialScopeTabId ? { scopeTabId: initialScopeTabId } : {})
+    ...(popupScopeTabId ? { scopeTabId: popupScopeTabId } : {})
   });
   port = nextPort;
 }
 
-connectPopupPort();
+void connectPopupPort();
 /** @type {PopupCurrentTab | null} */
 let currentTabState = null;
 /** @type {number | null} */
@@ -176,7 +198,7 @@ function hideDiagnostic() {
  * @returns {void}
  */
 function setCommunicationEnabled(enabled) {
-  const scopedTabId = currentTabState?.tabId ?? initialScopeTabId;
+  const scopedTabId = currentTabState?.tabId ?? popupScopeTabId;
   port.postMessage({
     type: 'scope.set_enabled',
     enabled,

@@ -259,7 +259,7 @@ export async function getDoctorReport(options = {}) {
   }
   if (report.daemonReachable && report.extensionConnected && !report.accessEnabled) {
     report.issues.push('access_disabled');
-    report.nextSteps.push('Make the intended Browser Bridge call. If it returns ACCESS_DENIED, the extension popup or side panel will surface an Enable cue for that window; ask the user to click Enable, then retry once.');
+    report.nextSteps.push('If a Browser Bridge call returns ACCESS_DENIED, stop requesting access. Ask the user to click Enable for the needed window, then tell you when that window is ready.');
   } else if (report.daemonReachable && report.extensionConnected && !report.routeReady) {
     report.issues.push(report.routeReason || 'no_routable_active_tab');
     report.nextSteps.push('Switch to a supported page in the enabled window, or use an explicit tabId override.');

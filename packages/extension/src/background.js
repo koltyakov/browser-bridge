@@ -2196,13 +2196,36 @@ async function requestEnableFromAgentSide(request) {
     return;
   }
 
-  if (state.requestedAccessWindowId !== target.windowId) {
-    state.requestedAccessWindowId = target.windowId;
-    await refreshActionIndicators();
-    await emitUiState();
+  if (state.requestedAccessWindowId != null) {
+    return;
   }
 
+  state.requestedAccessWindowId = target.windowId;
+  await refreshActionIndicators();
+  await emitUiState();
   await openRequestedAccessUi(target);
+}
+
+/**
+ * @param {ResolvedTabTarget} target
+ * @returns {{ allowed: true } | { allowed: false, message: string }}
+ */
+function checkAccessRequestAvailability(target) {
+  if (state.requestedAccessWindowId == null) {
+    return { allowed: true };
+  }
+
+  if (state.requestedAccessWindowId === target.windowId) {
+    return {
+      allowed: false,
+      message: 'Browser Bridge access is already pending for this window. Ask the user to click Enable before requesting access again.'
+    };
+  }
+
+  return {
+    allowed: false,
+    message: 'Browser Bridge access is already pending for another window. Ask the user to click Enable for that window before requesting access again.'
+  };
 }
 
 /**
@@ -2234,12 +2257,24 @@ async function handleAccessRequest(request) {
     );
   }
 
-  if (state.requestedAccessWindowId !== target.windowId) {
-    state.requestedAccessWindowId = target.windowId;
-    await refreshActionIndicators();
-    await emitUiState();
+  const availability = checkAccessRequestAvailability(target);
+  if (!availability.allowed) {
+    return createFailure(
+      request.id,
+      ERROR_CODES.ACCESS_DENIED,
+      availability.message,
+      {
+        requestedWindowId: state.requestedAccessWindowId,
+        requestedTargetWindowId: target.windowId,
+        requestedTargetTabId: target.tabId
+      },
+      { method: request.method }
+    );
   }
 
+  state.requestedAccessWindowId = target.windowId;
+  await refreshActionIndicators();
+  await emitUiState();
   await openRequestedAccessUi(target);
 
   return createSuccess(request.id, {

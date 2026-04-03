@@ -23,7 +23,7 @@
  * @type {Readonly<Record<import('./types.js').BridgeMethod, string>>}
  */
 const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
-  'access.request': 'Request Browser Bridge access for the focused window.',
+  'access.request': 'Request Browser Bridge access for the focused window. Do not repeat while access is already pending.',
   'tabs.list': 'List tabs in the enabled window.',
   'tabs.create': 'Create a new tab in the enabled window.',
   'tabs.close': 'Close a tab in the enabled window.',

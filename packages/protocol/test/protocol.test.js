@@ -39,7 +39,8 @@ import {
   normalizeNetworkParams,
   normalizePageTextParams,
   normalizeViewportResizeParams,
-  normalizeStyleQuery
+  normalizeStyleQuery,
+  getErrorRecovery
 } from '../src/index.js';
 
 /** Ensure budgeting normalizes user-provided limits safely. */
@@ -85,6 +86,14 @@ test('createSuccess and createFailure shape bridge responses', () => {
   assert.equal(success.ok, true);
   assert.equal(success.meta.revision, 'rev_1');
   assert.equal(failure.error.code, ERROR_CODES.ACCESS_DENIED);
+});
+
+test('access denied recovery guidance tells the agent to wait for the user', () => {
+  const recovery = getErrorRecovery(ERROR_CODES.ACCESS_DENIED);
+
+  assert.ok(recovery);
+  assert.equal(recovery.retry, false);
+  assert.match(recovery.hint, /Do not request access again/i);
 });
 
 /** Ensure truncation metadata stays consistent. */

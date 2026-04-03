@@ -332,6 +332,40 @@ test('getDoctorReport exposes extension id source and next steps without a live 
   assert.ok(report.nextSteps.some((step) => step.includes('bbx install')));
 });
 
+test('getDoctorReport tells the agent to wait for the user when access is disabled', async () => {
+  const report = await getDoctorReport({
+    loadManifest: async () => ({ allowed_origins: ['chrome-extension://example/*'] }),
+    bridgeClientRunner: async (callback) => callback(/** @type {any} */ ({
+      /** @param {{ method: string }} request */
+      request: async ({ method }) => {
+        if (method !== 'health.ping') {
+          throw new Error(`Unexpected method: ${method}`);
+        }
+        return {
+          id: 'req-health',
+          ok: true,
+          result: {
+            daemon: 'ok',
+            extensionConnected: true,
+            access: {
+              enabled: false,
+              windowId: 12,
+              routeReady: false,
+              reason: 'access_disabled'
+            }
+          },
+          error: null,
+          meta: { protocol_version: '1.0' }
+        };
+      }
+    }))
+  });
+
+  assert.ok(report.issues.includes('access_disabled'));
+  assert.ok(report.nextSteps.some((step) => step.includes('stop requesting access')));
+  assert.ok(report.nextSteps.some((step) => step.includes('click Enable for the needed window')));
+});
+
 test('CLI bridge method bindings stay aligned with the protocol registry', () => {
   for (const [command, method] of Object.entries(CLI_METHOD_BINDINGS)) {
     assert.ok(BRIDGE_METHOD_REGISTRY[method], `${command} should map to a registered bridge method`);

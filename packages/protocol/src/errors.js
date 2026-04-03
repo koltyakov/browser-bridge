@@ -23,7 +23,7 @@ export const ERROR_CODES = Object.freeze({
 export const ERROR_RECOVERY = Object.freeze({
   [ERROR_CODES.ACCESS_DENIED]: {
     retry: false,
-    hint: 'Access is off for this window. Ask the user to click Enable in the Browser Bridge popup or side panel, then retry once.'
+    hint: 'Access is off for this window. Ask the user to click Enable in the Browser Bridge popup or side panel. Do not request access again until that window is enabled.'
   },
   [ERROR_CODES.ELEMENT_STALE]: {
     retry: false,

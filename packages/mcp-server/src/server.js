@@ -304,7 +304,7 @@ export function createBridgeMcpServer() {
 
   server.registerTool('browser_access', {
     title: 'Request Browser Bridge Access',
-    description: 'Request window access for Browser Bridge. Surfaces an Enable prompt in the extension popup or side panel. Use to trigger the access prompt proactively, or let ACCESS_DENIED errors from tab-bound calls trigger it automatically.',
+    description: 'Request window access for Browser Bridge. Surfaces an Enable prompt in the extension popup or side panel. Use once per window; if access is already pending, ask the user to enable that window instead of requesting again.',
     inputSchema: {}
   }, handleAccessTool);
 

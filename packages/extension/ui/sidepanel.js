@@ -218,9 +218,6 @@ const examplesSection = /** @type {HTMLDetailsElement} */ (
 const examplesContent = /** @type {HTMLDivElement} */ (
   document.getElementById('examples-content')
 );
-const requestedTabId = Number(
-  new URLSearchParams(window.location.search).get('tabId'),
-);
 /** @type {SidePanelCurrentTab | null} */
 let currentTabState = null;
 /** @type {ActionLogEntry[]} */
@@ -276,7 +273,6 @@ const HISTOGRAM_METHOD_FAMILIES = /** @type {const} */ ([
   'capture',
   'other',
 ]);
-
 for (const cmd of /** @type {NodeListOf<HTMLElement>} */ (
   document.querySelectorAll('.setup-cmd')
 )) {
@@ -337,7 +333,39 @@ function handlePortMessage(message) {
 /** @type {chrome.runtime.Port} */
 let port;
 
-function connectSidepanelPort() {
+/**
+ * @returns {number | null}
+ */
+function readRequestedTabId() {
+  const value = new URLSearchParams(window.location.search).get('tabId');
+  const tabId = Number(value);
+  return Number.isFinite(tabId) && tabId > 0 ? tabId : null;
+}
+
+/** @type {number | null} */
+const requestedTabId = readRequestedTabId();
+
+/**
+ * @returns {Promise<number | null>}
+ */
+async function resolveInitialScopeTabId() {
+  if (requestedTabId != null) {
+    return requestedTabId;
+  }
+
+  try {
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    return typeof activeTab?.id === 'number' ? activeTab.id : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @returns {Promise<void>}
+ */
+async function connectSidepanelPort() {
+  const initialScopeTabId = await resolveInitialScopeTabId();
   const nextPort = chrome.runtime.connect({ name: 'ui-sidepanel' });
   nextPort.onMessage.addListener(handlePortMessage);
   nextPort.onDisconnect.addListener(() => {
@@ -345,15 +373,14 @@ function connectSidepanelPort() {
   });
   nextPort.postMessage({
     type: 'state.request',
-    scopeTabId:
-      Number.isFinite(requestedTabId) && requestedTabId > 0
-        ? requestedTabId
-        : undefined,
+    scopeTabId: initialScopeTabId != null && initialScopeTabId > 0
+      ? initialScopeTabId
+      : undefined,
   });
   port = nextPort;
 }
 
-connectSidepanelPort();
+void connectSidepanelPort();
 const activityHistogramTimer = setInterval(() => {
   updateActivityVisualizations();
 }, ACTIVITY_HISTOGRAM_TICK_MS);
@@ -382,10 +409,9 @@ toggleButton.addEventListener('click', () => {
 
   port.postMessage({
     type: 'scope.set_enabled',
-    tabId:
-      Number.isFinite(requestedTabId) && requestedTabId > 0
-        ? requestedTabId
-        : undefined,
+    tabId: requestedTabId != null && requestedTabId > 0
+      ? requestedTabId
+      : undefined,
     enabled: pendingEnabled,
   });
 });
@@ -1417,7 +1443,7 @@ function renderActionLogEntry(entry, setupStatus, entries, index) {
   badges.className = 'activity-badges';
 
   const showScope =
-    !(Number.isFinite(requestedTabId) && requestedTabId > 0) && entry.url;
+    !(requestedTabId != null && requestedTabId > 0) && entry.url;
   if (showScope) {
     const scopeLink = document.createElement('a');
     scopeLink.className = 'activity-scope-link';

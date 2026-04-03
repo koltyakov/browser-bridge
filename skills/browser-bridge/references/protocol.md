@@ -112,6 +112,8 @@ bbx call access.request
 ```
 If a tab-bound call returns `ACCESS_DENIED`, it also surfaces the Enable prompt automatically — so explicit `access.request` is optional but useful for proactive setup.
 
+If access is already pending for a window, do not call `access.request` again. Ask the user to click `Enable` for the requested window and wait for confirmation before continuing.
+
 ### page.evaluate
 Run a JS expression in the page context via CDP `Runtime.evaluate`. Expression is evaluated as a statement and the return value is serialized. Supports `awaitPromise` for async expressions.
 

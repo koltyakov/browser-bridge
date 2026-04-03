@@ -3,7 +3,7 @@
   "minimum_chrome_version": "114",
   "name": "Browser Bridge",
   "version": "0.1.0",
-  "description": "Scoped, token-efficient Codex access to an authenticated browser tab.",
+  "description": "Local bridge between your coding agent and browser. Structured access to DOM, styles, console, network, and reversible patches.",
   "icons": {
     "16": "packages/extension/assets/icon-16.png",
     "32": "packages/extension/assets/icon-32.png",
