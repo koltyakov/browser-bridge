@@ -125,7 +125,8 @@ body[data-windowed="true"] .panel-popup {
 
 .panel-wide {
   width: 100%;
-  max-width: 440px;
+  max-width: none;
+  flex: 1 1 auto;
 }
 
 .panel section + section {
