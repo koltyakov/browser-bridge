@@ -2,6 +2,8 @@
 
 ![Browser Bridge: Connect AI Agent and Browsers](https://raw.githubusercontent.com/koltyakov/browser-bridge/main/assets/banner.jpg)
 
+> **Chrome Web Store status:** The extension is currently under review. Until the listing is live, use the unpacked install flow in [docs/unpacked-extension.md](https://github.com/koltyakov/browser-bridge/blob/main/docs/unpacked-extension.md).
+
 A local bridge between your coding agent and a real Chrome tab. Browser Bridge gives the agent structured access to DOM, styles, layout, console, network, and reversible patches - starting from the actual tab you already have open, with all its real state intact.
 
 See [Quickstart](https://github.com/koltyakov/browser-bridge/blob/main/docs/quickstart.md) to get started in another repo, or browse the rest of the guides in [docs/index.md](https://github.com/koltyakov/browser-bridge/blob/main/docs/index.md).
@@ -105,7 +107,7 @@ Browser Bridge is optimized for the opposite starting point: **inspect the state
 
 1. Install [Browser Bridge from the Chrome Web Store](https://chrome.google.com/webstore/detail/jjjkmmcdkpcgamlopogicbnnhdgebhie) <!-- TODO: replace with final store link after publishing -->
 2. `npm install -g @browserbridge/bbx` - installs the CLI and native host
-3. In the extension side panel, install MCP or CLI (skill) for your agent of choice, or run the `bbx install-mcp` / `bbx install-skill` commands if you prefer terminal setup
+3. In the extension side panel, install MCP or CLI (skill) for your agent of choice
 4. Enable Browser Bridge for the Chrome window you want to inspect/control with the AI agent
 5. Ask your agent to use Browser Bridge via MCP (`BB MCP` or `Browser Bridge MCP`), or invoke the `browser-bridge` / `$bbx` skill in CLI mode
 
