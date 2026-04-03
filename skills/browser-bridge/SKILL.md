@@ -1,6 +1,6 @@
 ---
 name: browser-bridge
-description: "Token-efficient Chrome tab inspection, interaction, and patching via local bridge extension. Reads live DOM, styles, console, network, and storage from a real Chrome tab with lower token cost than screenshots."
+description: "Token-efficient Chrome tab inspection, interaction, and patching via local bridge extension (CLI: bbx). Reads live DOM, styles, console, network, and storage from a real Chrome tab with lower token cost than screenshots."
 ---
 
 # Browser Bridge
@@ -9,7 +9,7 @@ Token-efficient Chrome tab inspection, interaction, and CSS/DOM patching through
 
 This CLI skill is for agents that can run shell commands and where direct `bbx` control fits better than MCP tools: manual debugging, terminal reproduction, install/doctor flows, raw protocol access, or environments without MCP.
 
-Skill name: `browser-bridge`. In GitHub Copilot, invoke as `/browser-bridge`. `bbx` is the CLI command, not a portable skill alias.
+Skill name: `browser-bridge` (also known as `bbx`). In GitHub Copilot, invoke as `/browser-bridge`. `bbx` is the CLI command used throughout this skill.
 Use a subagent for bridge calls; return only concise findings to the parent.
 For open-ended investigation, prefer a smaller, lower-cost subagent first. Start with structured reads (`page.get_state`, `dom.query`, `page.get_text`, `styles.get_computed`, `bbx batch`) and escalate to screenshots or debugger-backed methods only when structured evidence is insufficient.
 
@@ -195,18 +195,18 @@ bbx page-text 2000                                  # extract page content
 
 ## Method Quick Reference
 
-| Category    | Key Methods                                                                                                                                      |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Access      | `access.request`, `health.ping`, `tabs.list`, `page.get_state`                                                                                  |
-| Inspect     | `dom.query`, `dom.describe`, `dom.get_html`, `styles.get_computed`, `layout.get_box_model`                                                       |
-| Find        | `dom.find_by_text`, `dom.find_by_role`, `dom.wait_for`, `dom.get_accessibility_tree`                                                             |
-| Page State  | `page.get_console`, `page.get_storage`, `page.get_text`, `page.wait_for_load_state`, `page.evaluate` (debugger-backed)                           |
-| Network     | `page.get_network`                                                                                                                               |
-| Interact    | `input.click`, `input.type`, `input.focus`, `input.press_key`, `input.hover`, `input.drag`, `input.scroll_into_view`                             |
-| Tabs        | `tabs.list` (preferred), `tabs.create` (avoid unless necessary), `tabs.close`                                                                    |
-| Patch       | `patch.apply_styles`, `patch.apply_dom`, `patch.rollback`                                                                                        |
-| Navigate    | `navigation.navigate`, `viewport.scroll`, `viewport.resize`                                                                                      |
-| Performance | `performance.get_metrics` (debugger-backed)                                                                                                      |
+| Category    | Key Methods                                                                                                                                         |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Access      | `access.request`, `health.ping`, `tabs.list`, `page.get_state`                                                                                      |
+| Inspect     | `dom.query`, `dom.describe`, `dom.get_html`, `styles.get_computed`, `layout.get_box_model`                                                          |
+| Find        | `dom.find_by_text`, `dom.find_by_role`, `dom.wait_for`, `dom.get_accessibility_tree`                                                                |
+| Page State  | `page.get_console`, `page.get_storage`, `page.get_text`, `page.wait_for_load_state`, `page.evaluate` (debugger-backed)                              |
+| Network     | `page.get_network`                                                                                                                                  |
+| Interact    | `input.click`, `input.type`, `input.focus`, `input.press_key`, `input.hover`, `input.drag`, `input.scroll_into_view`                                |
+| Tabs        | `tabs.list` (preferred), `tabs.create` (avoid unless necessary), `tabs.close`                                                                       |
+| Patch       | `patch.apply_styles`, `patch.apply_dom`, `patch.rollback`                                                                                           |
+| Navigate    | `navigation.navigate`, `viewport.scroll`, `viewport.resize`                                                                                         |
+| Performance | `performance.get_metrics` (debugger-backed)                                                                                                         |
 | Escalate    | `dom.get_accessibility_tree`, `screenshot.capture_element`, `screenshot.capture_region` (tight crops only), `screenshot.capture_full_page`, `cdp.*` |
 
 ## Dev-Server Workflow (HMR-aware)
