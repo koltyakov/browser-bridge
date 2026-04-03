@@ -217,6 +217,20 @@ function sendIdentity(port) {
 }
 
 /**
+ * Notify the daemon that this browser/profile was recently active so untargeted
+ * access prompts can be routed to one browser instead of broadcasting.
+ *
+ * @param {chrome.runtime.Port | null} [port=state.nativePort]
+ * @returns {void}
+ */
+function sendActivityUpdate(port = state.nativePort) {
+  if (!port) return;
+  try {
+    port.postMessage({ type: 'host.activity', at: Date.now() });
+  } catch { /* port may have disconnected */ }
+}
+
+/**
  * Notify the daemon whether this extension currently has access enabled.
  *
  * @param {boolean} enabled
@@ -325,9 +339,16 @@ chrome.runtime.onInstalled.addListener(async () => {
 });
 
 chrome.tabs.onActivated.addListener(({ tabId }) => {
+  sendActivityUpdate();
   void updateActionIndicatorForTab(tabId).catch(reportAsyncError);
   void syncGlobalBadgeToActiveTab().catch(reportAsyncError);
   void emitUiState().catch(reportAsyncError);
+});
+
+chrome.windows.onFocusChanged.addListener((windowId) => {
+  if (typeof windowId === 'number' && windowId >= 0) {
+    sendActivityUpdate();
+  }
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
@@ -487,6 +508,7 @@ function connectNative() {
       void refreshActionIndicators();
       void emitUiState();
       sendIdentity(candidatePort);
+      sendActivityUpdate(candidatePort);
       if (wasReconnect && reconnectAttempts > 0) {
         void appendActionLogEntry({
           method: 'native.reconnect',

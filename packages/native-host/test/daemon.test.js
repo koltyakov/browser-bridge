@@ -618,19 +618,73 @@ function sendGarbageThenPing(socket, garbage) {
 
     let responseBuffer = '';
     socket.setEncoding('utf8');
-    socket.on('data', (chunk) => {
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    let timeoutId = setTimeout(() => {
+      cleanup();
+      reject(new Error('Timed out waiting for daemon response.'));
+    }, 2_000);
+
+    /**
+     * @returns {void}
+     */
+    function cleanup() {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      socket.off('data', handleData);
+      socket.off('error', handleError);
+      socket.off('close', handleClose);
+      socket.off('end', handleEnd);
+    }
+
+    /**
+     * @param {string} chunk
+     * @returns {void}
+     */
+    function handleData(chunk) {
       responseBuffer += chunk;
       const newlineIndex = responseBuffer.indexOf('\n');
       if (newlineIndex !== -1) {
         const line = responseBuffer.slice(0, newlineIndex).trim();
+        cleanup();
         try {
           resolve(JSON.parse(line));
         } catch {
           reject(new Error(`Could not parse response: ${line}`));
         }
       }
-    });
-    socket.on('error', reject);
+    }
+
+    /**
+     * @param {Error} error
+     * @returns {void}
+     */
+    function handleError(error) {
+      cleanup();
+      reject(error);
+    }
+
+    /**
+     * @returns {void}
+     */
+    function handleClose() {
+      cleanup();
+      reject(new Error('Socket closed before daemon responded.'));
+    }
+
+    /**
+     * @returns {void}
+     */
+    function handleEnd() {
+      cleanup();
+      reject(new Error('Socket ended before daemon responded.'));
+    }
+
+    socket.on('data', handleData);
+    socket.on('error', handleError);
+    socket.on('close', handleClose);
+    socket.on('end', handleEnd);
 
     // Send garbage, then a newline-terminated valid request.
     socket.write(garbage);
@@ -690,14 +744,48 @@ test('daemon survives oversized message and still processes subsequent requests'
  * `next()` returns a Promise resolving with the next complete JSON message.
  *
  * @param {net.Socket} socket
- * @returns {{ next: () => Promise<unknown>, send: (obj: unknown) => void }}
+ * @returns {{ next: (timeoutMs?: number) => Promise<unknown>, nextWithin: (timeoutMs: number) => Promise<unknown | null>, send: (obj: unknown) => void }}
  */
 function makeNdjsonClient(socket) {
   /** @type {unknown[]} */
   const pending = [];
-  /** @type {((msg: unknown) => void)[]} */
+  /** @type {{ resolve: (msg: unknown) => void, reject?: (error: Error) => void, timeoutId?: ReturnType<typeof setTimeout> | null, nullable: boolean }[]} */
   const waiters = [];
   let buf = '';
+  /** @type {Error | null} */
+  let terminalError = null;
+
+  /**
+   * @param {{ resolve: (msg: unknown) => void, reject?: (error: Error) => void, timeoutId?: ReturnType<typeof setTimeout> | null }} waiter
+   * @returns {void}
+   */
+  function clearWaiterTimeout(waiter) {
+    if (waiter.timeoutId) {
+      clearTimeout(waiter.timeoutId);
+      waiter.timeoutId = null;
+    }
+  }
+
+  /**
+   * @param {Error} error
+   * @returns {void}
+   */
+  function settleAllWaiters(error) {
+    terminalError = error;
+    while (waiters.length > 0) {
+      const waiter = waiters.shift();
+      if (!waiter) {
+        continue;
+      }
+      clearWaiterTimeout(waiter);
+      if (waiter.nullable) {
+        waiter.resolve(null);
+        continue;
+      }
+      waiter.reject?.(error);
+    }
+  }
+
   socket.setEncoding('utf8');
   socket.on('data', (chunk) => {
     buf += chunk;
@@ -710,8 +798,9 @@ function makeNdjsonClient(socket) {
         const msg = JSON.parse(line);
         if (waiters.length > 0) {
           const waiter = waiters.shift();
-          if (waiter) {
-            waiter(msg);
+          if (waiter?.resolve) {
+            clearWaiterTimeout(waiter);
+            waiter.resolve(msg);
           }
         } else {
           pending.push(msg);
@@ -719,15 +808,81 @@ function makeNdjsonClient(socket) {
       } catch { /* skip malformed */ }
     }
   });
+  socket.on('close', () => {
+    settleAllWaiters(new Error('Socket closed before the expected NDJSON message arrived.'));
+  });
+  socket.on('end', () => {
+    settleAllWaiters(new Error('Socket ended before the expected NDJSON message arrived.'));
+  });
+  socket.on('error', (error) => {
+    settleAllWaiters(error instanceof Error ? error : new Error(String(error)));
+  });
   return {
-    next() {
+    next(timeoutMs = 2_000) {
       if (pending.length > 0) return Promise.resolve(pending.shift());
-      return new Promise((resolve) => waiters.push(resolve));
+      if (terminalError) return Promise.reject(terminalError);
+      return new Promise((resolve, reject) => {
+        const waiter = {
+          resolve,
+          reject,
+          nullable: false,
+          timeoutId: setTimeout(() => {
+            const index = waiters.indexOf(waiter);
+            if (index !== -1) {
+              waiters.splice(index, 1);
+            }
+            reject(new Error(`Timed out waiting ${timeoutMs}ms for an NDJSON message.`));
+          }, timeoutMs)
+        };
+        waiters.push(waiter);
+      });
+    },
+    nextWithin(timeoutMs) {
+      if (pending.length > 0) {
+        return Promise.resolve(pending.shift() ?? null);
+      }
+      if (terminalError) {
+        return Promise.resolve(null);
+      }
+      return new Promise((resolve) => {
+        /** @type {{ resolve: (msg: unknown) => void, timeoutId: ReturnType<typeof setTimeout> | null, nullable: boolean }} */
+        const waiter = {
+          nullable: true,
+          /**
+           * @param {unknown} msg
+           * @returns {void}
+           */
+          resolve(msg) {
+            clearWaiterTimeout(waiter);
+            resolve(msg);
+          },
+          timeoutId: null
+        };
+        waiter.timeoutId = setTimeout(() => {
+          const index = waiters.indexOf(waiter);
+          if (index !== -1) {
+            waiters.splice(index, 1);
+          }
+          resolve(null);
+        }, timeoutMs);
+        waiters.push(waiter);
+      });
     },
     send(obj) {
       socket.write(`${JSON.stringify(obj)}\n`);
     }
   };
+}
+
+/**
+ * Assert that no NDJSON message arrives within a short timeout.
+ *
+ * @param {{ nextWithin: (timeoutMs: number) => Promise<unknown | null> }} client
+ * @param {number} [timeoutMs=50]
+ * @returns {Promise<void>}
+ */
+async function expectNoMessage(client, timeoutMs = 50) {
+  assert.equal(await client.nextWithin(timeoutMs), null);
 }
 
 test('daemon routes interleaved requests from two agents to correct sockets', async () => {
@@ -880,6 +1035,11 @@ test('daemon returns the last extension error once all other targets disconnect'
     await ext2.next();
     await agent.next();
 
+    // Mark both extensions as access-enabled so untargeted requests are sent to
+    // both and the daemon must reconcile mixed error/disconnect outcomes.
+    ext1.send({ type: 'extension.access_update', accessEnabled: true });
+    ext2.send({ type: 'extension.access_update', accessEnabled: true });
+
     agent.send({
       type: 'agent.request',
       request: {
@@ -919,7 +1079,7 @@ test('daemon returns the last extension error once all other targets disconnect'
 
 // --- Multi-extension: two Chrome profiles coexist (no kick-off) ---
 
-test('daemon allows two extensions to coexist and routes to the one with access', async () => {
+test('daemon routes untargeted requests to the extension with access enabled', async () => {
   const { daemon, connect } = await startTestDaemon();
   const s1 = await connect();
   const s2 = await connect();
@@ -929,16 +1089,17 @@ test('daemon allows two extensions to coexist and routes to the one with access'
   const agent = makeNdjsonClient(sa);
 
   try {
-    // Both extensions register — neither should be destroyed.
     ext1.send({ type: 'register', role: 'extension' });
     ext2.send({ type: 'register', role: 'extension' });
     agent.send({ type: 'register', role: 'agent', clientId: 'agent_multi' });
     assert.equal(/** @type {any} */ (await ext1.next()).type, 'registered');
     assert.equal(/** @type {any} */ (await ext2.next()).type, 'registered');
     assert.equal(/** @type {any} */ (await agent.next()).type, 'registered');
-    assert.equal(daemon.extensionSockets.size, 2, 'both extensions should coexist');
+    assert.equal(daemon.extensionSockets.size, 2);
 
-    // Agent sends a request — it should be broadcast to both extensions.
+    ext1.send({ type: 'extension.access_update', accessEnabled: false });
+    ext2.send({ type: 'extension.access_update', accessEnabled: true });
+
     agent.send({
       type: 'agent.request',
       request: {
@@ -950,24 +1111,11 @@ test('daemon allows two extensions to coexist and routes to the one with access'
       }
     });
 
-    const fwd1 = /** @type {any} */ (await ext1.next());
-    const fwd2 = /** @type {any} */ (await ext2.next());
-    assert.equal(fwd1.type, 'extension.request');
-    assert.equal(fwd2.type, 'extension.request');
+    await expectNoMessage(ext1);
+    const forwarded = /** @type {any} */ (await ext2.next());
+    assert.equal(forwarded.type, 'extension.request');
+    assert.equal(forwarded.request.id, 'req_multi');
 
-    // Extension 1 responds with ACCESS_DENIED (no window enabled).
-    ext1.send({
-      type: 'extension.response',
-      response: {
-        id: 'req_multi',
-        ok: false,
-        result: null,
-        error: { code: 'ACCESS_DENIED', message: 'No window enabled', details: null },
-        meta: { protocol_version: '1.0', method: 'page.get_state' }
-      }
-    });
-
-    // Extension 2 responds with success (window enabled).
     ext2.send({
       type: 'extension.response',
       response: {
@@ -990,7 +1138,7 @@ test('daemon allows two extensions to coexist and routes to the one with access'
   }
 });
 
-test('daemon forwards error when all extensions deny access', async () => {
+test('daemon routes untargeted requests to the most recently active extension when no window is enabled', async () => {
   const { daemon, connect } = await startTestDaemon();
   const s1 = await connect();
   const s2 = await connect();
@@ -1007,6 +1155,9 @@ test('daemon forwards error when all extensions deny access', async () => {
     await ext2.next();
     await agent.next();
 
+    ext1.send({ type: 'extension.activity', at: 10 });
+    ext2.send({ type: 'extension.activity', at: 20 });
+
     agent.send({
       type: 'agent.request',
       request: {
@@ -1018,20 +1169,11 @@ test('daemon forwards error when all extensions deny access', async () => {
       }
     });
 
-    await ext1.next();
-    await ext2.next();
+    await expectNoMessage(ext1);
+    const forwarded = /** @type {any} */ (await ext2.next());
+    assert.equal(forwarded.type, 'extension.request');
+    assert.equal(forwarded.request.id, 'req_deny');
 
-    // Both extensions respond with errors.
-    ext1.send({
-      type: 'extension.response',
-      response: {
-        id: 'req_deny',
-        ok: false,
-        result: null,
-        error: { code: 'ACCESS_DENIED', message: 'No window enabled', details: null },
-        meta: { protocol_version: '1.0', method: 'page.get_state' }
-      }
-    });
     ext2.send({
       type: 'extension.response',
       response: {

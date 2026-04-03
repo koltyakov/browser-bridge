@@ -42,6 +42,13 @@ const daemonEntryPath = path.resolve(__dirname, '../bin/bridge-daemon.js');
  */
 
 /**
+ * @typedef {{
+ *   type?: string,
+ *   at?: number
+ * }} HostActivityMessage
+ */
+
+/**
  * @param {unknown} message
  * @returns {message is HostBridgeRequestMessage}
  */
@@ -89,6 +96,18 @@ function isHostAccessUpdate(message) {
     && typeof message === 'object'
     && /** @type {Record<string, unknown>} */ (message).type === 'host.access_update'
     && typeof /** @type {Record<string, unknown>} */ (message).accessEnabled === 'boolean'
+  );
+}
+
+/**
+ * @param {unknown} message
+ * @returns {message is HostActivityMessage}
+ */
+function isHostActivity(message) {
+  return Boolean(
+    message
+    && typeof message === 'object'
+    && /** @type {Record<string, unknown>} */ (message).type === 'host.activity'
   );
 }
 
@@ -188,6 +207,13 @@ export async function runNativeHost({ socketPath = getSocketPath() } = {}) {
         await writeJsonLine(socket, {
           type: 'extension.access_update',
           accessEnabled: message.accessEnabled
+        });
+        return;
+      }
+      if (isHostActivity(message)) {
+        await writeJsonLine(socket, {
+          type: 'extension.activity',
+          at: message.at
         });
         return;
       }

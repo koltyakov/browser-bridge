@@ -28,7 +28,7 @@ import { writeJsonLine } from './framing.js';
 /** @typedef {import('../../protocol/src/types.js').SetupInstallParams} SetupInstallParams */
 /** @typedef {import('../../protocol/src/types.js').SetupInstallResult} SetupInstallResult */
 /** @typedef {import('../../protocol/src/types.js').SetupStatus} SetupStatus */
-/** @typedef {import('node:net').Socket & { __clientId?: string, __extensionId?: string, __browserName?: string, __profileLabel?: string, __accessEnabled?: boolean }} ClientSocket */
+/** @typedef {import('node:net').Socket & { __clientId?: string, __extensionId?: string, __browserName?: string, __profileLabel?: string, __accessEnabled?: boolean, __lastActiveAt?: number }} ClientSocket */
 /** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string, method?: string, targets: Set<ClientSocket>, lastErrorResponse?: import('../../protocol/src/types.js').BridgeResponse }} PendingEntry */
 /**
  * @typedef {{
@@ -93,7 +93,8 @@ function getVersionNegotiationPayload(requestedVersion) {
  *   response?: import('../../protocol/src/types.js').BridgeResponse,
  *   browserName?: string,
  *   profileLabel?: string,
- *   accessEnabled?: boolean
+ *   accessEnabled?: boolean,
+ *   at?: number
  * }} DaemonMessage
  */
 
@@ -141,6 +142,7 @@ export class BridgeDaemon {
       socket.__extensionId = extensionId;
       socket.__browserName = typeof message.browserName === 'string' ? message.browserName : undefined;
       socket.__profileLabel = typeof message.profileLabel === 'string' ? message.profileLabel : undefined;
+      socket.__lastActiveAt = Date.now();
       this.extensionSockets.set(extensionId, socket);
       void writeJsonLine(socket, { type: 'registered', role: 'extension' });
       return;
@@ -298,6 +300,10 @@ export class BridgeDaemon {
       return this.handleExtensionAccessUpdate(socket, message);
     }
 
+    if (message?.type === 'extension.activity') {
+      return this.handleExtensionActivity(socket, message);
+    }
+
     if (message?.type === 'extension.setup_status.request') {
       return this.handleExtensionSetupStatus(socket, message);
     }
@@ -383,6 +389,11 @@ export class BridgeDaemon {
       const enabled = targets.filter((extSocket) => extSocket.__accessEnabled);
       if (enabled.length > 0) {
         targets = enabled;
+      } else {
+        const mostRecent = selectMostRecentlyActiveExtension(targets);
+        if (mostRecent) {
+          targets = [mostRecent];
+        }
       }
     }
 
@@ -463,6 +474,18 @@ export class BridgeDaemon {
    */
   handleExtensionAccessUpdate(socket, message) {
     socket.__accessEnabled = Boolean(message.accessEnabled);
+  }
+
+  /**
+   * @param {ClientSocket} socket
+   * @param {DaemonMessage} message
+   * @returns {void}
+   */
+  handleExtensionActivity(socket, message) {
+    socket.__lastActiveAt =
+      typeof message.at === 'number' && Number.isFinite(message.at)
+        ? message.at
+        : Date.now();
   }
 
   /**
@@ -600,6 +623,23 @@ export class BridgeDaemon {
       this.recentLog.shift();
     }
   }
+}
+
+/**
+ * @param {ClientSocket[]} sockets
+ * @returns {ClientSocket | null}
+ */
+function selectMostRecentlyActiveExtension(sockets) {
+  if (sockets.length === 0) {
+    return null;
+  }
+
+  return sockets.reduce((best, current) => {
+    const bestAt = typeof best.__lastActiveAt === 'number' ? best.__lastActiveAt : 0;
+    const currentAt =
+      typeof current.__lastActiveAt === 'number' ? current.__lastActiveAt : 0;
+    return currentAt > bestAt ? current : best;
+  });
 }
 
 /**
