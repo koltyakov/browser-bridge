@@ -1,8 +1,10 @@
 # Browser Bridge
 
-<p align="center">
+<!-- <p align="center">
   <img src="./assets/logo.png" alt="Browser Bridge logo" width="220" />
-</p>
+</p> -->
+
+![Browser Bridge: Connect AI Agent and Browsers](./assets/banner.jpg)
 
 A local bridge between your coding agent and a real Chrome tab. Browser Bridge gives the agent structured access to DOM, styles, layout, console, network, and reversible patches - starting from the actual tab you already have open, with all its real state intact.
 
