@@ -317,7 +317,7 @@ test('getDoctorReport exposes extension id source and next steps without a live 
   const report = await getDoctorReport({
     manifestPath: '/tmp/browser-bridge.json',
     defaultExtensionIdInfo: {
-      extensionId: 'ahhmghheecmambjebhfjkngdggghbkno',
+      extensionId: 'jjjkmmcdkpcgamlopogicbnnhdgebhie',
       source: 'built_in'
     },
     loadManifest: async () => null,

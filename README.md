@@ -107,7 +107,7 @@ Browser Bridge is optimized for the opposite starting point: **inspect the state
 
 ## Setup
 
-1. Install [Browser Bridge from the Chrome Web Store](https://chrome.google.com/webstore/detail/ahhmghheecmambjebhfjkngdggghbkno) <!-- TODO: replace with final store link after publishing -->
+1. Install [Browser Bridge from the Chrome Web Store](https://chrome.google.com/webstore/detail/jjjkmmcdkpcgamlopogicbnnhdgebhie) <!-- TODO: replace with final store link after publishing -->
 2. `npm install -g @browserbridge/bbx` - installs the CLI and native host
 3. In the extension side panel, install MCP or CLI (skill) for your agent of choice, or run the `bbx install-mcp` / `bbx install-skill` commands if you prefer terminal setup
 4. Enable Browser Bridge for the Chrome window you want to inspect/control with the AI agent

@@ -12,7 +12,7 @@ export const BRIDGE_HOME_ENV = 'BROWSER_BRIDGE_HOME';
  *
  * @type {string}
  */
-export const PUBLISHED_EXTENSION_ID = 'ahhmghheecmambjebhfjkngdggghbkno';
+export const PUBLISHED_EXTENSION_ID = 'jjjkmmcdkpcgamlopogicbnnhdgebhie';
 
 /**
  * @returns {string}

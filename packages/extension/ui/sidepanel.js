@@ -135,7 +135,7 @@ import {
  * }} SetupContextAction
  */
 
-const PUBLISHED_EXTENSION_ID = 'ahhmghheecmambjebhfjkngdggghbkno';
+const PUBLISHED_EXTENSION_ID = 'jjjkmmcdkpcgamlopogicbnnhdgebhie';
 const SETUP_STATUS_POLL_MS = 15_000;
 const SETUP_MATRIX_ORDER = /** @type {const} */ ([
   'codex',

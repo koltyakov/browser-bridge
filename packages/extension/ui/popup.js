@@ -82,7 +82,7 @@ let resizeFrameId = null;
 /** @type {ReturnType<typeof setTimeout> | null} */
 let nativeDiagnosticTimer = null;
 const NATIVE_DIAGNOSTIC_DELAY_MS = 10_000;
-const PUBLISHED_EXTENSION_ID = 'ahhmghheecmambjebhfjkngdggghbkno';
+const PUBLISHED_EXTENSION_ID = 'jjjkmmcdkpcgamlopogicbnnhdgebhie';
 
 if (windowedPopup) {
   document.documentElement.dataset.windowed = 'true';
