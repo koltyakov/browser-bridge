@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": false,
   "type": "module",
+  "license": "MIT",
   "files": [
     "assets",
     "CHANGELOG.md",
@@ -37,6 +38,20 @@
   "bugs": {
     "url": "https://github.com/koltyakov/browser-bridge/issues"
   },
+  "keywords": [
+    "browser-bridge",
+    "browser",
+    "chrome",
+    "chrome-extension",
+    "native-messaging",
+    "mcp",
+    "model-context-protocol",
+    "ai-agent",
+    "agent-tools",
+    "developer-tools",
+    "ui-debugging",
+    "browser-automation"
+  ],
   "scripts": {
     "lint": "eslint .",
     "test": "c8 node --test packages/protocol/test/*.test.js packages/native-host/test/*.test.js packages/agent-client/test/*.test.js packages/mcp-server/test/*.test.js packages/extension/test/*.test.js",

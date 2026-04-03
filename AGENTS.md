@@ -42,6 +42,7 @@ For agent debugging inside this repo, prefer `npx bbx ...` when a user asks to u
 - Keep the bridge token-efficient. Favor structured DOM/style data over screenshots or raw HTML dumps.
 - Treat extension content scripts as classic scripts. Do not add ESM `import` statements to manifest-declared content scripts.
 - Keep native-host startup robust for GUI launch contexts. Do not assume shell-specific `PATH` resolution.
+- Treat the top-level `README.md` as npm-facing documentation. When adding or editing links or image references there, prefer absolute GitHub URLs instead of relative paths so the npm package page renders them correctly.
 
 ## JavaScript Typing
 
