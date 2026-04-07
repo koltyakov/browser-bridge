@@ -8,9 +8,7 @@
     "packages/extension/ui/**/*.html",
     "tmp/**"
   ],
-  "plugins": [
-    "eslint"
-  ],
+  "plugins": ["eslint"],
   "options": {
     "reportUnusedDisableDirectives": "error"
   },
@@ -40,10 +38,7 @@
   },
   "overrides": [
     {
-      "files": [
-        "packages/extension/src/**/*.js",
-        "packages/extension/ui/**/*.js"
-      ],
+      "files": ["packages/extension/src/**/*.js", "packages/extension/ui/**/*.js"],
       "env": {
         "browser": true,
         "serviceworker": true
@@ -53,9 +48,7 @@
       }
     },
     {
-      "files": [
-        "packages/**/*.test.js"
-      ],
+      "files": ["packages/**/*.test.js"],
       "env": {
         "node": true
       }

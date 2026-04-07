@@ -21,9 +21,7 @@
     "tabs",
     "offscreen"
   ],
-  "host_permissions": [
-    "<all_urls>"
-  ],
+  "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "packages/extension/src/background.js",
     "type": "module"
@@ -41,12 +39,8 @@
   },
   "web_accessible_resources": [
     {
-      "resources": [
-        "packages/extension/ui/ui.css"
-      ],
-      "matches": [
-        "<all_urls>"
-      ]
+      "resources": ["packages/extension/ui/ui.css"],
+      "matches": ["<all_urls>"]
     }
   ]
 }
