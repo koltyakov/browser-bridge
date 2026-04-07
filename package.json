@@ -56,6 +56,7 @@
     "lint": "oxlint . && oxfmt --check .",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
+    "test:runtime": "node --test packages/protocol/test/*.test.js packages/native-host/test/*.test.js packages/agent-client/test/*.test.js packages/mcp-server/test/*.test.js packages/extension/test/*.test.js",
     "test": "c8 node --test packages/protocol/test/*.test.js packages/native-host/test/*.test.js packages/agent-client/test/*.test.js packages/mcp-server/test/*.test.js packages/extension/test/*.test.js",
     "coverage": "c8 report --reporter=text --reporter=text-summary",
     "coverage:check": "c8 check-coverage --lines 70",
