@@ -1,0 +1,76 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "ignorePatterns": [
+    "assets/**",
+    "dist/**",
+    "packages/extension/assets/**",
+    "packages/extension/ui/**/*.css",
+    "packages/extension/ui/**/*.html",
+    "tmp/**"
+  ],
+  "plugins": [
+    "eslint"
+  ],
+  "options": {
+    "reportUnusedDisableDirectives": "error"
+  },
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    "eslint/eqeqeq": [
+      "error",
+      "always",
+      {
+        "null": "ignore"
+      }
+    ],
+    "eslint/no-control-regex": "error",
+    "eslint/no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_",
+        "caughtErrors": "all",
+        "caughtErrorsIgnorePattern": "^_",
+        "ignoreRestSiblings": true,
+        "varsIgnorePattern": "^_"
+      }
+    ],
+    "eslint/no-useless-assignment": "off"
+  },
+  "overrides": [
+    {
+      "files": [
+        "packages/extension/src/**/*.js",
+        "packages/extension/ui/**/*.js"
+      ],
+      "env": {
+        "browser": true,
+        "serviceworker": true
+      },
+      "globals": {
+        "chrome": "readonly"
+      }
+    },
+    {
+      "files": [
+        "packages/**/*.test.js"
+      ],
+      "env": {
+        "node": true
+      }
+    },
+    {
+      "files": [
+        "packages/agent-client/**/*.js",
+        "packages/mcp-server/**/*.js",
+        "packages/native-host/**/*.js",
+        "packages/protocol/**/*.js",
+        "scripts/**/*.mjs"
+      ],
+      "env": {
+        "node": true
+      }
+    }
+  ]
+}

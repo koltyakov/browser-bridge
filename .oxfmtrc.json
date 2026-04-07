@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "ignorePatterns": [
+    "assets/**",
+    "dist/**",
+    "packages/extension/assets/**",
+    "packages/extension/ui/**/*.css",
+    "packages/extension/ui/**/*.html",
+    "tmp/**"
+  ],
+  "tabWidth": 2,
+  "semi": true,
+  "singleQuote": true,
+  "trailingComma": "es5"
+}
