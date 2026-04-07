@@ -40,7 +40,7 @@ import {
   normalizePageTextParams,
   normalizeViewportResizeParams,
   normalizeStyleQuery,
-  getErrorRecovery
+  getErrorRecovery,
 } from '../src/index.js';
 
 /** Ensure budgeting normalizes user-provided limits safely. */
@@ -49,7 +49,7 @@ test('applyBudget clamps and normalizes fields', () => {
     maxNodes: 999,
     maxDepth: -1,
     textBudget: 4,
-    attributeAllowlist: ['id', 'id', '', 'data-test']
+    attributeAllowlist: ['id', 'id', '', 'data-test'],
   });
 
   assert.equal(budget.maxNodes, 250);
@@ -62,7 +62,7 @@ test('applyBudget clamps and normalizes fields', () => {
 test('createRequest adds protocol metadata', () => {
   const request = createRequest({
     id: 'req_1',
-    method: 'health.ping'
+    method: 'health.ping',
   });
 
   assert.equal(request.meta.protocol_version, '1.0');
@@ -139,7 +139,7 @@ test('normalizePatchOperation preserves DOM patch metadata', () => {
   const patch = normalizePatchOperation({
     operation: 'set_attribute',
     name: 'aria-hidden',
-    value: 'true'
+    value: 'true',
   });
 
   assert.equal(patch.name, 'aria-hidden');
@@ -153,7 +153,7 @@ test('normalizeInputAction preserves interactive intent', () => {
     button: 'right',
     clickCount: 9,
     key: 'Enter',
-    modifiers: ['Shift', '']
+    modifiers: ['Shift', ''],
   });
 
   assert.equal(input.target.selector, 'button.primary');
@@ -166,7 +166,7 @@ test('normalizeInputAction preserves interactive intent', () => {
 /** Ensure checked actions default to an affirmative toggle with a normalized target. */
 test('normalizeCheckedAction defaults to checked=true', () => {
   const action = normalizeCheckedAction({
-    target: { selector: 'input[type=checkbox]' }
+    target: { selector: 'input[type=checkbox]' },
   });
 
   assert.equal(action.target.selector, 'input[type=checkbox]');
@@ -179,7 +179,7 @@ test('normalizeSelectAction preserves selection intent', () => {
     target: { elementRef: 'el_1' },
     values: ['us', ''],
     labels: ['United States'],
-    indexes: [0, -1, 2.5, 3]
+    indexes: [0, -1, 2.5, 3],
   });
 
   assert.equal(action.target.elementRef, 'el_1');
@@ -194,7 +194,7 @@ test('normalizeViewportAction preserves scroll behavior', () => {
     top: 120,
     left: -45,
     behavior: 'smooth',
-    relative: true
+    relative: true,
   });
 
   assert.equal(action.top, 120);
@@ -207,7 +207,7 @@ test('normalizeViewportAction preserves scroll behavior', () => {
 test('normalizeNavigationAction keeps navigation actions bounded', () => {
   const action = normalizeNavigationAction({
     url: ' https://example.com/path ',
-    timeoutMs: 999999
+    timeoutMs: 999999,
   });
 
   assert.equal(action.url, 'https://example.com/path');
@@ -221,7 +221,7 @@ test('normalizeNavigationAction keeps navigation actions bounded', () => {
 test('normalizeEvaluateParams clamps timeout and defaults', () => {
   const params = normalizeEvaluateParams({
     expression: 'document.title',
-    timeoutMs: 999999
+    timeoutMs: 999999,
   });
 
   assert.equal(params.expression, 'document.title');
@@ -241,7 +241,7 @@ test('normalizeConsoleParams validates level and clamps limit', () => {
   const params = normalizeConsoleParams({
     level: 'error',
     clear: true,
-    limit: 500
+    limit: 500,
   });
 
   assert.equal(params.level, 'error');
@@ -260,7 +260,7 @@ test('normalizeWaitForParams validates state and clamps timeout', () => {
     selector: '.modal',
     text: 'Welcome',
     state: 'visible',
-    timeoutMs: 50000
+    timeoutMs: 50000,
   });
 
   assert.equal(params.selector, '.modal');
@@ -270,7 +270,10 @@ test('normalizeWaitForParams validates state and clamps timeout', () => {
 });
 
 test('normalizeWaitForParams defaults state to attached', () => {
-  const params = normalizeWaitForParams({ selector: 'div', state: /** @type {*} */ ('bogus') });
+  const params = normalizeWaitForParams({
+    selector: 'div',
+    state: /** @type {*} */ ('bogus'),
+  });
   assert.equal(params.state, 'attached');
 });
 
@@ -278,7 +281,7 @@ test('normalizeWaitForParams defaults state to attached', () => {
 test('normalizeFindByTextParams defaults scope and clamps maxResults', () => {
   const params = normalizeFindByTextParams({
     text: 'Submit',
-    maxResults: 100
+    maxResults: 100,
   });
 
   assert.equal(params.text, 'Submit');
@@ -291,7 +294,7 @@ test('normalizeFindByTextParams defaults scope and clamps maxResults', () => {
 test('normalizeFindByRoleParams normalizes role and name', () => {
   const params = normalizeFindByRoleParams({
     role: 'button',
-    name: 'Save'
+    name: 'Save',
   });
 
   assert.equal(params.role, 'button');
@@ -305,7 +308,7 @@ test('normalizeGetHtmlParams clamps maxLength', () => {
   const params = normalizeGetHtmlParams({
     elementRef: 'el_abc',
     outer: true,
-    maxLength: 100000
+    maxLength: 100000,
   });
 
   assert.equal(params.elementRef, 'el_abc');
@@ -323,7 +326,7 @@ test('normalizeGetHtmlParams defaults sensibly', () => {
 test('normalizeHoverParams clamps duration', () => {
   const params = normalizeHoverParams({
     target: { elementRef: 'el_abc' },
-    duration: 99999
+    duration: 99999,
   });
 
   assert.equal(params.target.elementRef, 'el_abc');
@@ -342,7 +345,7 @@ test('normalizeDragParams normalizes source and destination targets', () => {
     source: { elementRef: 'el_src' },
     destination: { elementRef: 'el_dst' },
     offsetX: 10,
-    offsetY: 20
+    offsetY: 20,
   });
 
   assert.equal(params.source.elementRef, 'el_src');
@@ -361,7 +364,7 @@ test('normalizeDragParams defaults offsets to zero', () => {
 test('normalizeStorageParams validates type and filters keys', () => {
   const params = normalizeStorageParams({
     type: 'session',
-    keys: /** @type {*} */ (['token', 42, 'user'])
+    keys: /** @type {*} */ (['token', 42, 'user']),
   });
 
   assert.equal(params.type, 'session');
@@ -377,7 +380,7 @@ test('normalizeStorageParams defaults to local with null keys', () => {
 /** Ensure wait-for-load-state params clamp timeout. */
 test('normalizeWaitForLoadStateParams clamps timeout', () => {
   const params = normalizeWaitForLoadStateParams({
-    timeoutMs: 999999
+    timeoutMs: 999999,
   });
 
   assert.equal(params.waitForLoad, true);
@@ -405,7 +408,10 @@ test('normalizeTabCreateParams defaults to about:blank and active', () => {
 });
 
 test('normalizeTabCreateParams preserves URL', () => {
-  const params = normalizeTabCreateParams({ url: 'https://example.com', active: false });
+  const params = normalizeTabCreateParams({
+    url: 'https://example.com',
+    active: false,
+  });
   assert.equal(params.url, 'https://example.com');
   assert.equal(params.active, false);
 });
@@ -423,7 +429,10 @@ test('normalizeTabCloseParams accepts valid tabId', () => {
 
 /** Ensure accessibility tree params clamp depth and node count. */
 test('normalizeAccessibilityTreeParams clamps depth and nodes', () => {
-  const params = normalizeAccessibilityTreeParams({ maxDepth: 100, maxNodes: 99999 });
+  const params = normalizeAccessibilityTreeParams({
+    maxDepth: 100,
+    maxNodes: 99999,
+  });
   assert.equal(params.maxDepth, 20);
   assert.equal(params.maxNodes, 5000);
 });
@@ -436,7 +445,11 @@ test('normalizeAccessibilityTreeParams defaults sensibly', () => {
 
 /** Ensure network params validate and clamp. */
 test('normalizeNetworkParams clamps limit and handles urlPattern', () => {
-  const params = normalizeNetworkParams({ limit: 9999, urlPattern: '/api/', clear: true });
+  const params = normalizeNetworkParams({
+    limit: 9999,
+    urlPattern: '/api/',
+    clear: true,
+  });
   assert.equal(params.limit, 500);
   assert.equal(params.urlPattern, '/api/');
   assert.equal(params.clear, true);
@@ -462,7 +475,12 @@ test('normalizePageTextParams defaults to 8000', () => {
 
 /** Ensure viewport resize params clamp dimensions. */
 test('normalizeViewportResizeParams clamps dimensions', () => {
-  const params = normalizeViewportResizeParams({ width: 99999, height: 99999, deviceScaleFactor: 10, reset: true });
+  const params = normalizeViewportResizeParams({
+    width: 99999,
+    height: 99999,
+    deviceScaleFactor: 10,
+    reset: true,
+  });
   assert.equal(params.width, 7680);
   assert.equal(params.height, 4320);
   assert.equal(params.deviceScaleFactor, 4);
@@ -584,7 +602,7 @@ test('normalizeStyleQuery requires elementRef', () => {
 test('normalizeStyleQuery keeps target alias for element-level reads', () => {
   const query = normalizeStyleQuery({
     target: { selector: '.hero-title' },
-    properties: ['display', 'color']
+    properties: ['display', 'color'],
   });
 
   assert.equal(query.elementRef, '');
@@ -595,7 +613,7 @@ test('normalizeStyleQuery keeps target alias for element-level reads', () => {
 test('normalizeGetHtmlParams keeps target alias for element-level reads', () => {
   const params = normalizeGetHtmlParams({
     target: { elementRef: 'el_html' },
-    maxLength: 4000
+    maxLength: 4000,
   });
 
   assert.equal(params.elementRef, 'el_html');

@@ -7,19 +7,27 @@ import { TabDebuggerCoordinator } from '../src/debugger-coordinator.js';
 
 /** @returns {Promise<void>} */
 function nextTick() {
-  return new Promise((resolve) => { setTimeout(resolve, 0); });
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
 }
 
 test('acquire and release manage debugger hold lifecycle', async () => {
   /** @type {string[]} */
   const events = [];
   const coordinator = new TabDebuggerCoordinator({
-    attach: async () => { events.push('attach'); },
-    detach: async () => { events.push('detach'); },
+    attach: async () => {
+      events.push('attach');
+    },
+    detach: async () => {
+      events.push('detach');
+    },
     burstIdleMs: 0,
   });
 
-  await coordinator.acquire(10, async () => { events.push('initialize'); });
+  await coordinator.acquire(10, async () => {
+    events.push('initialize');
+  });
   assert.deepEqual(events, ['attach', 'initialize']);
 
   // While held, run should not re-attach
@@ -39,7 +47,9 @@ test('nested acquire/release is reference-counted', async () => {
   let detachCount = 0;
   const coordinator = new TabDebuggerCoordinator({
     attach: async () => {},
-    detach: async () => { detachCount += 1; },
+    detach: async () => {
+      detachCount += 1;
+    },
     burstIdleMs: 0,
   });
 
@@ -58,7 +68,9 @@ test('release with holdCount 0 is a no-op', async () => {
   let detachCount = 0;
   const coordinator = new TabDebuggerCoordinator({
     attach: async () => {},
-    detach: async () => { detachCount += 1; },
+    detach: async () => {
+      detachCount += 1;
+    },
     burstIdleMs: 0,
   });
 
@@ -72,12 +84,16 @@ test('acquire rolls back attach on initialize failure', async () => {
   let detachCount = 0;
   const coordinator = new TabDebuggerCoordinator({
     attach: async () => {},
-    detach: async () => { detachCount += 1; },
+    detach: async () => {
+      detachCount += 1;
+    },
     burstIdleMs: 0,
   });
 
   await assert.rejects(
-    coordinator.acquire(10, async () => { throw new Error('init failed'); }),
+    coordinator.acquire(10, async () => {
+      throw new Error('init failed');
+    }),
     /init failed/
   );
   await nextTick();
@@ -87,7 +103,9 @@ test('acquire rolls back attach on initialize failure', async () => {
 test('burst timer reuses session for rapid consecutive runs', async () => {
   let attachCount = 0;
   const coordinator = new TabDebuggerCoordinator({
-    attach: async () => { attachCount += 1; },
+    attach: async () => {
+      attachCount += 1;
+    },
     detach: async () => {},
     burstIdleMs: 500,
   });
@@ -104,7 +122,9 @@ test('_resetBurstTimer detach fires after burst idle expires', async () => {
   let detachCount = 0;
   const coordinator = new TabDebuggerCoordinator({
     attach: async () => {},
-    detach: async () => { detachCount += 1; },
+    detach: async () => {
+      detachCount += 1;
+    },
     burstIdleMs: 10,
   });
 
@@ -117,13 +137,19 @@ test('release runs cleanup callback before detach', async () => {
   /** @type {string[]} */
   const events = [];
   const coordinator = new TabDebuggerCoordinator({
-    attach: async () => { events.push('attach'); },
-    detach: async () => { events.push('detach'); },
+    attach: async () => {
+      events.push('attach');
+    },
+    detach: async () => {
+      events.push('detach');
+    },
     burstIdleMs: 0,
   });
 
   await coordinator.acquire(10);
-  await coordinator.release(10, async () => { events.push('cleanup'); });
+  await coordinator.release(10, async () => {
+    events.push('cleanup');
+  });
   assert.deepEqual(events, ['attach', 'cleanup', 'detach']);
 });
 
@@ -136,7 +162,9 @@ test('release propagates cleanup error after detaching', async () => {
 
   await coordinator.acquire(10);
   await assert.rejects(
-    coordinator.release(10, async () => { throw new Error('cleanup boom'); }),
+    coordinator.release(10, async () => {
+      throw new Error('cleanup boom');
+    }),
     /cleanup boom/
   );
 });
@@ -145,12 +173,16 @@ test('run re-throws task errors after scheduling burst detach', async () => {
   let detached = false;
   const coordinator = new TabDebuggerCoordinator({
     attach: async () => {},
-    detach: async () => { detached = true; },
+    detach: async () => {
+      detached = true;
+    },
     burstIdleMs: 0,
   });
 
   await assert.rejects(
-    coordinator.run(10, async () => { throw new Error('task boom'); }),
+    coordinator.run(10, async () => {
+      throw new Error('task boom');
+    }),
     /task boom/
   );
   await nextTick();

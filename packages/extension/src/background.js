@@ -32,11 +32,9 @@ import {
   normalizeViewportResizeParams,
   normalizeWaitForLoadStateParams,
   normalizeWaitForParams,
-  SUPPORTED_VERSIONS
+  SUPPORTED_VERSIONS,
 } from '../../protocol/src/index.js';
-import {
-  summarizeBridgeResponse,
-} from '../../protocol/src/index.js';
+import { summarizeBridgeResponse } from '../../protocol/src/index.js';
 import {
   enforceTokenBudget,
   getResponseDiagnostics,
@@ -47,13 +45,13 @@ import {
   shouldLogAction,
   simplifyAXNode,
   summarizeActionResult,
-  summarizeTabResult
+  summarizeTabResult,
 } from './background-helpers.js';
 import {
   isRestrictedAutomationUrl,
   normalizeRequestedAccessTab,
   resolveWindowScopedTab,
-  selectRequestTabCandidate
+  selectRequestTabCandidate,
 } from './background-routing.js';
 import { TabDebuggerCoordinator } from './debugger-coordinator.js';
 
@@ -212,7 +210,9 @@ function sendIdentity(port) {
   void getProfileLabel().then((profileLabel) => {
     try {
       port.postMessage({ type: 'host.identity', browserName, profileLabel });
-    } catch { /* port may have disconnected */ }
+    } catch {
+      /* port may have disconnected */
+    }
   });
 }
 
@@ -227,7 +227,9 @@ function sendActivityUpdate(port = state.nativePort) {
   if (!port) return;
   try {
     port.postMessage({ type: 'host.activity', at: Date.now() });
-  } catch { /* port may have disconnected */ }
+  } catch {
+    /* port may have disconnected */
+  }
 }
 
 /**
@@ -239,8 +241,13 @@ function sendActivityUpdate(port = state.nativePort) {
 function sendAccessUpdate(enabled) {
   if (!state.nativePort) return;
   try {
-    state.nativePort.postMessage({ type: 'host.access_update', accessEnabled: enabled });
-  } catch { /* port may have disconnected */ }
+    state.nativePort.postMessage({
+      type: 'host.access_update',
+      accessEnabled: enabled,
+    });
+  } catch {
+    /* port may have disconnected */
+  }
 }
 
 const NATIVE_APP_NAME = 'com.browserbridge.browser_bridge';
@@ -296,7 +303,7 @@ function getVersionNegotiationPayload(requestedVersion) {
     ...(localIsNewer ? { deprecated_since: latestSupported } : {}),
     migration_hint: localIsNewer
       ? `Browser Bridge extension is newer than the client protocol ${requestedVersion}. Update the Browser Bridge CLI/npm package to ${latestSupported} or later.`
-      : `Browser Bridge extension is older than the client protocol ${requestedVersion}. Update the extension to a build that supports ${requestedVersion}.`
+      : `Browser Bridge extension is older than the client protocol ${requestedVersion}. Update the extension to a build that supports ${requestedVersion}.`,
   };
 }
 
@@ -322,13 +329,13 @@ const state = {
   setupInstallPendingRequestId: null,
   setupInstallPendingAction: null,
   setupInstallPendingKey: null,
-  setupInstallError: null
+  setupInstallError: null,
 };
 
 const tabDebugger = new TabDebuggerCoordinator({
   attach: (target, protocolVersion) => chrome.debugger.attach(target, protocolVersion),
   detach: (target) => chrome.debugger.detach(target),
-  protocolVersion: DEBUGGER_PROTOCOL_VERSION
+  protocolVersion: DEBUGGER_PROTOCOL_VERSION,
 });
 
 void initializeState().catch(reportAsyncError);
@@ -388,27 +395,35 @@ chrome.runtime.onConnect.addListener((port) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type === 'bridge.open-sidepanel' && typeof message.tabId === 'number' && typeof message.windowId === 'number') {
-    void openSidePanelForTab(message.tabId, message.windowId).then(() => {
-      sendResponse({ ok: true });
-    }).catch((error) => {
-      sendResponse({
-        ok: false,
-        error: error instanceof Error ? error.message : String(error)
+  if (
+    message?.type === 'bridge.open-sidepanel' &&
+    typeof message.tabId === 'number' &&
+    typeof message.windowId === 'number'
+  ) {
+    void openSidePanelForTab(message.tabId, message.windowId)
+      .then(() => {
+        sendResponse({ ok: true });
+      })
+      .catch((error) => {
+        sendResponse({
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
       });
-    });
     return true;
   }
 
   if (message?.type === 'bridge.open-sidepanel' && sender.tab?.id && sender.tab.windowId) {
-    void openSidePanelForTab(sender.tab.id, sender.tab.windowId).then(() => {
-      sendResponse({ ok: true });
-    }).catch((error) => {
-      sendResponse({
-        ok: false,
-        error: error instanceof Error ? error.message : String(error)
+    void openSidePanelForTab(sender.tab.id, sender.tab.windowId)
+      .then(() => {
+        sendResponse({ ok: true });
+      })
+      .catch((error) => {
+        sendResponse({
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
       });
-    });
     return true;
   }
 
@@ -453,9 +468,8 @@ function clearNativeReconnectTimer() {
  */
 function scheduleNativeReconnect(errorMessage, options = {}) {
   const method = typeof options.method === 'string' ? options.method : 'native.disconnect';
-  const summaryPrefix = typeof options.summaryPrefix === 'string'
-    ? options.summaryPrefix
-    : 'Native host disconnected';
+  const summaryPrefix =
+    typeof options.summaryPrefix === 'string' ? options.summaryPrefix : 'Native host disconnected';
   const updateDisconnectedUi = options.updateDisconnectedUi === true;
 
   state.nativeReconnectAttempts += 1;
@@ -467,7 +481,7 @@ function scheduleNativeReconnect(errorMessage, options = {}) {
     broadcastUi({
       type: 'native.status',
       connected: false,
-      error: errorMessage
+      error: errorMessage,
     });
   }
   void emitUiState().catch(reportAsyncError);
@@ -476,7 +490,7 @@ function scheduleNativeReconnect(errorMessage, options = {}) {
     method,
     source: 'extension',
     ok: false,
-    summary: `${summaryPrefix} (attempt ${reconnectAttempt}): ${errorMessage}. Reconnecting in ${nativeReconnectDelay}ms.`
+    summary: `${summaryPrefix} (attempt ${reconnectAttempt}): ${errorMessage}. Reconnecting in ${nativeReconnectDelay}ms.`,
   });
 
   clearNativeReconnectTimer();
@@ -514,7 +528,7 @@ function connectNative() {
           method: 'native.reconnect',
           source: 'extension',
           ok: true,
-          summary: `Native host reconnected after ${reconnectAttempts} attempt${reconnectAttempts === 1 ? '' : 's'}.`
+          summary: `Native host reconnected after ${reconnectAttempts} attempt${reconnectAttempts === 1 ? '' : 's'}.`,
         });
       }
     }, 500);
@@ -530,14 +544,14 @@ function connectNative() {
       scheduleNativeReconnect(disconnectError, {
         method: 'native.disconnect',
         summaryPrefix: 'Native host disconnected',
-        updateDisconnectedUi: state.nativePort === candidatePort
+        updateDisconnectedUi: state.nativePort === candidatePort,
       });
     });
   } catch (error) {
     scheduleNativeReconnect(getErrorMessage(error), {
       method: 'native.connect',
       summaryPrefix: 'Native host connection failed',
-      updateDisconnectedUi: !state.nativePort
+      updateDisconnectedUi: !state.nativePort,
     });
   }
 }
@@ -550,9 +564,7 @@ function connectNative() {
  * @returns {Promise<void>}
  */
 async function handleBridgeRequest(request) {
-  const actionContext = shouldLogAction(request.method)
-    ? await getActionContext(request)
-    : null;
+  const actionContext = shouldLogAction(request.method) ? await getActionContext(request) : null;
   /** @type {BridgeResponse} */
   let response;
 
@@ -585,15 +597,21 @@ async function handleBridgeRequest(request) {
 async function dispatchBridgeRequest(request) {
   switch (request.method) {
     case 'health.ping':
-      return createSuccess(request.id, {
-        extension: 'ok',
-        access: await getAccessStatus(),
-        ...getVersionNegotiationPayload(request.meta?.protocol_version)
-      }, { method: request.method });
+      return createSuccess(
+        request.id,
+        {
+          extension: 'ok',
+          access: await getAccessStatus(),
+          ...getVersionNegotiationPayload(request.meta?.protocol_version),
+        },
+        { method: request.method }
+      );
     case 'access.request':
       return handleAccessRequest(request);
     case 'skill.get_runtime_context':
-      return createSuccess(request.id, createRuntimeContext(), { method: request.method });
+      return createSuccess(request.id, createRuntimeContext(), {
+        method: request.method,
+      });
     case 'tabs.list':
       return handleListTabs(request);
     case 'tabs.create':
@@ -659,7 +677,11 @@ async function dispatchBridgeRequest(request) {
     case 'cdp.get_computed_styles_for_node':
       return handleCdpRequest(request);
     default:
-      return createFailure(request.id, ERROR_CODES.INVALID_REQUEST, `Unhandled method ${request.method}`);
+      return createFailure(
+        request.id,
+        ERROR_CODES.INVALID_REQUEST,
+        `Unhandled method ${request.method}`
+      );
   }
 }
 
@@ -739,7 +761,9 @@ async function clearEnabledWindowIfGone() {
     if (msg.includes('no window') || msg.includes('not found') || msg.includes('window closed')) {
       gone = true;
     } else {
-      await new Promise((r) => { setTimeout(r, 300); });
+      await new Promise((r) => {
+        setTimeout(r, 300);
+      });
       try {
         await chrome.windows.get(state.enabledWindow.windowId);
       } catch (_e2) {
@@ -842,10 +866,14 @@ async function getAccessStatus() {
  */
 async function handleListTabs(request) {
   if (!state.enabledWindow) {
-    return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, ACCESS_DENIED_WINDOW_OFF, null, { method: request.method });
+    return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, ACCESS_DENIED_WINDOW_OFF, null, {
+      method: request.method,
+    });
   }
 
-  const tabs = await chrome.tabs.query({ windowId: state.enabledWindow.windowId });
+  const tabs = await chrome.tabs.query({
+    windowId: state.enabledWindow.windowId,
+  });
   const summarized = tabs
     .map((tab) => {
       if (!isNumber(tab.id) || typeof tab.url !== 'string') {
@@ -857,7 +885,7 @@ async function handleListTabs(request) {
         active: Boolean(tab.active),
         title: tab.title ?? '',
         origin: safeOrigin(tab.url),
-        url: tab.url
+        url: tab.url,
       };
     })
     .filter((tab) => tab !== null);
@@ -893,7 +921,7 @@ const TAB_BOUND_NORMALIZERS = {
   'patch.rollback': normalizePatchOperation,
   'patch.commit_session_baseline': normalizePatchOperation,
   'page.get_storage': normalizeStorageParams,
-  'page.get_text': normalizePageTextParams
+  'page.get_text': normalizePageTextParams,
 };
 
 /**
@@ -915,11 +943,15 @@ async function handleTabBoundRequest(request) {
   }
 
   const timeoutMs = getContentScriptTimeout(request.method, payload);
-  const response = await sendTabMessage(target.tabId, {
-    type: 'bridge.execute',
-    method: request.method,
-    params: payload
-  }, timeoutMs);
+  const response = await sendTabMessage(
+    target.tabId,
+    {
+      type: 'bridge.execute',
+      method: request.method,
+      params: payload,
+    },
+    timeoutMs
+  );
   if (response?.error) {
     return toFailureResponse(request, response.error);
   }
@@ -955,7 +987,9 @@ async function handleNavigationRequest(request) {
     : await chrome.tabs.get(target.tabId);
   await emitUiState();
 
-  return createSuccess(request.id, summarizeTabResult(tab, request.method), { method: request.method });
+  return createSuccess(request.id, summarizeTabResult(tab, request.method), {
+    method: request.method,
+  });
 }
 
 /**
@@ -987,7 +1021,9 @@ async function handlePageEvaluate(request) {
   const target = await resolveRequestTarget(request);
   const params = normalizeEvaluateParams(request.params);
   if (!params.expression) {
-    return createFailure(request.id, ERROR_CODES.INVALID_REQUEST, 'expression is required.', null, { method: request.method });
+    return createFailure(request.id, ERROR_CODES.INVALID_REQUEST, 'expression is required.', null, {
+      method: request.method,
+    });
   }
   return tabDebugger.run(target.tabId, async (debugTarget) => {
     const result = await chrome.debugger.sendCommand(debugTarget, 'Runtime.evaluate', {
@@ -997,19 +1033,29 @@ async function handlePageEvaluate(request) {
       timeout: params.timeoutMs,
       userGesture: true,
       generatePreview: false,
-      replMode: true
+      replMode: true,
     });
-    const cdpResult = /** @type {{ result?: { type?: string, value?: unknown, description?: string }, exceptionDetails?: { text?: string, exception?: { description?: string } } }} */ (result);
+    const cdpResult =
+      /** @type {{ result?: { type?: string, value?: unknown, description?: string }, exceptionDetails?: { text?: string, exception?: { description?: string } } }} */ (
+        result
+      );
     if (cdpResult.exceptionDetails) {
-      const errText = cdpResult.exceptionDetails.exception?.description
-        || cdpResult.exceptionDetails.text
-        || 'Evaluation failed.';
-      return createFailure(request.id, ERROR_CODES.INTERNAL_ERROR, errText, null, { method: request.method });
+      const errText =
+        cdpResult.exceptionDetails.exception?.description ||
+        cdpResult.exceptionDetails.text ||
+        'Evaluation failed.';
+      return createFailure(request.id, ERROR_CODES.INTERNAL_ERROR, errText, null, {
+        method: request.method,
+      });
     }
-    return createSuccess(request.id, {
-      value: cdpResult.result?.value ?? null,
-      type: cdpResult.result?.type ?? 'undefined'
-    }, { method: request.method });
+    return createSuccess(
+      request.id,
+      {
+        value: cdpResult.result?.value ?? null,
+        type: cdpResult.result?.type ?? 'undefined',
+      },
+      { method: request.method }
+    );
   });
 }
 
@@ -1026,12 +1072,19 @@ async function handlePageGetConsole(request) {
 
   await primeTabConsoleCapture(target.tabId);
   const { entries, dropped } = await readConsoleBuffer(target.tabId, params.clear);
-  const filtered = params.level === 'all'
-    ? entries
-    : entries.filter((/** @type {{ level: string }} */ e) => matchesConsoleLevel(params.level, e.level));
+  const filtered =
+    params.level === 'all'
+      ? entries
+      : entries.filter((/** @type {{ level: string }} */ e) =>
+          matchesConsoleLevel(params.level, e.level)
+        );
   const limited = filtered.slice(-params.limit);
 
-  return createSuccess(request.id, { entries: limited, count: limited.length, total: entries.length, dropped }, { method: request.method });
+  return createSuccess(
+    request.id,
+    { entries: limited, count: limited.length, total: entries.length, dropped },
+    { method: request.method }
+  );
 }
 
 /**
@@ -1042,15 +1095,19 @@ async function handlePageGetConsole(request) {
  */
 async function handleCreateTab(request) {
   if (!state.enabledWindow) {
-    return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, ACCESS_DENIED_WINDOW_OFF, null, { method: request.method });
+    return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, ACCESS_DENIED_WINDOW_OFF, null, {
+      method: request.method,
+    });
   }
   const params = normalizeTabCreateParams(request.params);
   const tab = await chrome.tabs.create({
     url: params.url,
     active: params.active,
-    windowId: state.enabledWindow.windowId
+    windowId: state.enabledWindow.windowId,
   });
-  return createSuccess(request.id, summarizeTabResult(tab, request.method), { method: request.method });
+  return createSuccess(request.id, summarizeTabResult(tab, request.method), {
+    method: request.method,
+  });
 }
 
 /**
@@ -1062,19 +1119,33 @@ async function handleCreateTab(request) {
 async function handleCloseTab(request) {
   const params = normalizeTabCloseParams(request.params);
   if (!state.enabledWindow) {
-    return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, ACCESS_DENIED_WINDOW_OFF, null, { method: request.method });
+    return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, ACCESS_DENIED_WINDOW_OFF, null, {
+      method: request.method,
+    });
   }
   let tab;
   try {
     tab = await chrome.tabs.get(params.tabId);
   } catch {
-    return createFailure(request.id, ERROR_CODES.TAB_MISMATCH, `Tab ${params.tabId} not found.`, null, { method: request.method });
+    return createFailure(
+      request.id,
+      ERROR_CODES.TAB_MISMATCH,
+      `Tab ${params.tabId} not found.`,
+      null,
+      { method: request.method }
+    );
   }
   if (tab.windowId !== state.enabledWindow.windowId) {
-    return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, ACCESS_DENIED_TAB_CLOSE, null, { method: request.method });
+    return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, ACCESS_DENIED_TAB_CLOSE, null, {
+      method: request.method,
+    });
   }
   await chrome.tabs.remove(params.tabId);
-  return createSuccess(request.id, { closed: true, tabId: params.tabId }, { method: request.method });
+  return createSuccess(
+    request.id,
+    { closed: true, tabId: params.tabId },
+    { method: request.method }
+  );
 }
 
 /**
@@ -1091,18 +1162,22 @@ async function handleAccessibilityTree(request) {
   return tabDebugger.run(target.tabId, async (debugTarget) => {
     await chrome.debugger.sendCommand(debugTarget, 'Accessibility.enable', {});
     const result = await chrome.debugger.sendCommand(debugTarget, 'Accessibility.getFullAXTree', {
-      depth: params.maxDepth
+      depth: params.maxDepth,
     });
     const cdpResult = /** @type {{ nodes?: Array<Record<string, unknown>> }} */ (result);
     const rawNodes = cdpResult.nodes || [];
     const pruned = rawNodes.slice(0, params.maxNodes).map(simplifyAXNode);
     await chrome.debugger.sendCommand(debugTarget, 'Accessibility.disable', {});
-    return createSuccess(request.id, {
-      nodes: pruned,
-      count: pruned.length,
-      total: rawNodes.length,
-      truncated: rawNodes.length > params.maxNodes
-    }, { method: request.method });
+    return createSuccess(
+      request.id,
+      {
+        nodes: pruned,
+        count: pruned.length,
+        total: rawNodes.length,
+        truncated: rawNodes.length > params.maxNodes,
+      },
+      { method: request.method }
+    );
   });
 }
 
@@ -1123,7 +1198,11 @@ async function handleGetNetwork(request) {
     ? entries.filter((/** @type {{ url: string }} */ e) => e.url.includes(urlPattern))
     : entries;
   const limited = filtered.slice(-params.limit);
-  return createSuccess(request.id, { entries: limited, count: limited.length, total: entries.length, dropped }, { method: request.method });
+  return createSuccess(
+    request.id,
+    { entries: limited, count: limited.length, total: entries.length, dropped },
+    { method: request.method }
+  );
 }
 
 /**
@@ -1155,7 +1234,15 @@ async function ensureNetworkInterceptor(tabId) {
       globalThis.fetch = async function (...args) {
         // @ts-ignore
         const req = new Request(...args);
-        const entry = { method: req.method, url: req.url, status: 0, duration: 0, type: 'fetch', ts: Date.now(), size: 0 };
+        const entry = {
+          method: req.method,
+          url: req.url,
+          status: 0,
+          duration: 0,
+          type: 'fetch',
+          ts: Date.now(),
+          size: 0,
+        };
         const startTime = performance.now();
         try {
           const resp = await origFetch.apply(globalThis, args);
@@ -1171,8 +1258,10 @@ async function ensureNetworkInterceptor(tabId) {
         } finally {
           buffer.push(entry);
           if (buffer.length > MAX) {
-            // @ts-ignore
-            globalThis.__bb_network_dropped = (globalThis.__bb_network_dropped || 0) + (buffer.length - MAX);
+            const dropped =
+              /** @type {Record<string, unknown>} */ (globalThis).__bb_network_dropped;
+            /** @type {Record<string, unknown>} */ (globalThis).__bb_network_dropped =
+              (typeof dropped === 'number' ? dropped : 0) + (buffer.length - MAX);
             buffer.splice(0, buffer.length - MAX);
           }
         }
@@ -1201,7 +1290,15 @@ async function ensureNetworkInterceptor(tabId) {
        */
       XMLHttpRequest.prototype.send = function (...args) {
         // @ts-ignore
-        const entry = { method: this.__bb_method || 'GET', url: this.__bb_url || '', status: 0, duration: 0, type: 'xhr', ts: Date.now(), size: 0 };
+        const entry = {
+          method: this.__bb_method || 'GET',
+          url: this.__bb_url || '',
+          status: 0,
+          duration: 0,
+          type: 'xhr',
+          ts: Date.now(),
+          size: 0,
+        };
         const startTime = performance.now();
         this.addEventListener('loadend', () => {
           entry.status = this.status;
@@ -1210,14 +1307,16 @@ async function ensureNetworkInterceptor(tabId) {
           if (cl) entry.size = Number(cl);
           buffer.push(entry);
           if (buffer.length > MAX) {
-            // @ts-ignore
-            globalThis.__bb_network_dropped = (globalThis.__bb_network_dropped || 0) + (buffer.length - MAX);
+            const dropped =
+              /** @type {Record<string, unknown>} */ (globalThis).__bb_network_dropped;
+            /** @type {Record<string, unknown>} */ (globalThis).__bb_network_dropped =
+              (typeof dropped === 'number' ? dropped : 0) + (buffer.length - MAX);
             buffer.splice(0, buffer.length - MAX);
           }
         });
         return /** @type {any} */ (origSend).apply(this, args);
       };
-    }
+    },
   });
 }
 
@@ -1246,7 +1345,7 @@ async function readNetworkBuffer(tabId, clear) {
       }
       return { entries: copy, dropped };
     },
-    args: [clear]
+    args: [clear],
   });
   return /** @type {any} */ (results?.[0]?.result) || { entries: [], dropped: 0 };
 }
@@ -1269,16 +1368,20 @@ async function handleViewportResize(request) {
         width: params.width,
         height: params.height,
         deviceScaleFactor: params.deviceScaleFactor,
-        mobile: params.width < 768
+        mobile: params.width < 768,
       });
     }
-    return createSuccess(request.id, {
-      resized: true,
-      width: params.width,
-      height: params.height,
-      deviceScaleFactor: params.deviceScaleFactor,
-      reset: params.reset
-    }, { method: request.method });
+    return createSuccess(
+      request.id,
+      {
+        resized: true,
+        width: params.width,
+        height: params.height,
+        deviceScaleFactor: params.deviceScaleFactor,
+        reset: params.reset,
+      },
+      { method: request.method }
+    );
   });
 }
 
@@ -1291,7 +1394,9 @@ async function handleViewportResize(request) {
 async function handlePerformanceMetrics(request) {
   const target = await resolveRequestTarget(request);
   return tabDebugger.run(target.tabId, async (debugTarget) => {
-    await chrome.debugger.sendCommand(debugTarget, 'Performance.enable', { timeDomain: 'timeTicks' });
+    await chrome.debugger.sendCommand(debugTarget, 'Performance.enable', {
+      timeDomain: 'timeTicks',
+    });
     const result = await chrome.debugger.sendCommand(debugTarget, 'Performance.getMetrics', {});
     await chrome.debugger.sendCommand(debugTarget, 'Performance.disable', {});
     const cdpResult = /** @type {{ metrics?: Array<{ name: string, value: number }> }} */ (result);
@@ -1315,7 +1420,9 @@ async function handleWaitForLoadState(request) {
   const tab = params.waitForLoad
     ? await waitForTabComplete(target.tabId, params.timeoutMs)
     : await chrome.tabs.get(target.tabId);
-  return createSuccess(request.id, summarizeTabResult(tab, request.method), { method: request.method });
+  return createSuccess(request.id, summarizeTabResult(tab, request.method), {
+    method: request.method,
+  });
 }
 
 /**
@@ -1343,21 +1450,31 @@ async function ensureConsoleInterceptor(tabId) {
       globalThis.__bb_console_dropped = 0;
       const MAX = 200;
       const orig = /** @type {Record<string, Function>} */ ({});
-      const consoleMethods = /** @type {Record<string, (...args: unknown[]) => void>} */ (/** @type {unknown} */ (console));
+      const consoleMethods =
+        /** @type {Record<string, (...args: unknown[]) => void>} */ (
+          /** @type {unknown} */ (console)
+        );
       for (const level of ['log', 'warn', 'error', 'info', 'debug']) {
         orig[level] = consoleMethods[level];
         consoleMethods[level] = (...args) => {
           buffer.push({
             level,
             args: args.map((a) => {
-              try { return typeof a === 'object' ? JSON.stringify(a).slice(0, 500) : String(a).slice(0, 500); }
-              catch { return String(a).slice(0, 500); }
+              try {
+                return typeof a === 'object'
+                  ? JSON.stringify(a).slice(0, 500)
+                  : String(a).slice(0, 500);
+              } catch {
+                return String(a).slice(0, 500);
+              }
             }),
-            ts: Date.now()
+            ts: Date.now(),
           });
           if (buffer.length > MAX) {
-            // @ts-ignore
-            globalThis.__bb_console_dropped = (globalThis.__bb_console_dropped || 0) + (buffer.length - MAX);
+            const dropped =
+              /** @type {Record<string, unknown>} */ (globalThis).__bb_console_dropped;
+            /** @type {Record<string, unknown>} */ (globalThis).__bb_console_dropped =
+              (typeof dropped === 'number' ? dropped : 0) + (buffer.length - MAX);
             buffer.splice(0, buffer.length - MAX);
           }
           orig[level].apply(console, args);
@@ -1366,12 +1483,16 @@ async function ensureConsoleInterceptor(tabId) {
       globalThis.addEventListener('error', (e) => {
         buffer.push({
           level: 'exception',
-          args: [e.message || 'Unknown error', e.filename ? `${e.filename}:${e.lineno}:${e.colno}` : ''],
-          ts: Date.now()
+          args: [
+            e.message || 'Unknown error',
+            e.filename ? `${e.filename}:${e.lineno}:${e.colno}` : '',
+          ],
+          ts: Date.now(),
         });
         if (buffer.length > MAX) {
-          // @ts-ignore
-          globalThis.__bb_console_dropped = (globalThis.__bb_console_dropped || 0) + (buffer.length - MAX);
+          const dropped = /** @type {Record<string, unknown>} */ (globalThis).__bb_console_dropped;
+          /** @type {Record<string, unknown>} */ (globalThis).__bb_console_dropped =
+            (typeof dropped === 'number' ? dropped : 0) + (buffer.length - MAX);
           buffer.splice(0, buffer.length - MAX);
         }
       });
@@ -1379,15 +1500,16 @@ async function ensureConsoleInterceptor(tabId) {
         buffer.push({
           level: 'rejection',
           args: [String(e.reason).slice(0, 500)],
-          ts: Date.now()
+          ts: Date.now(),
         });
         if (buffer.length > MAX) {
-          // @ts-ignore
-          globalThis.__bb_console_dropped = (globalThis.__bb_console_dropped || 0) + (buffer.length - MAX);
+          const dropped = /** @type {Record<string, unknown>} */ (globalThis).__bb_console_dropped;
+          /** @type {Record<string, unknown>} */ (globalThis).__bb_console_dropped =
+            (typeof dropped === 'number' ? dropped : 0) + (buffer.length - MAX);
           buffer.splice(0, buffer.length - MAX);
         }
       });
-    }
+    },
   });
 }
 
@@ -1419,15 +1541,17 @@ async function primeTabConsoleCapture(tabId, resetBuffer = false) {
  */
 function isRecoverableInstrumentationError(error) {
   const message = normalizeRuntimeErrorMessage(getErrorMessage(error));
-  return message === ERROR_CODES.TAB_MISMATCH
-    || /Cannot access contents of/i.test(message)
-    || /The extensions gallery cannot be scripted/i.test(message)
-    || /Cannot access a chrome:\/\//i.test(message)
-    || /Cannot script/i.test(message)
-    || /CONTENT_SCRIPT_UNAVAILABLE/i.test(message)
-    || /No tab with id/i.test(message)
-    || /Cannot attach to this target/i.test(message)
-    || /Another debugger is already attached/i.test(message);
+  return (
+    message === ERROR_CODES.TAB_MISMATCH ||
+    /Cannot access contents of/i.test(message) ||
+    /The extensions gallery cannot be scripted/i.test(message) ||
+    /Cannot access a chrome:\/\//i.test(message) ||
+    /Cannot script/i.test(message) ||
+    /CONTENT_SCRIPT_UNAVAILABLE/i.test(message) ||
+    /No tab with id/i.test(message) ||
+    /Cannot attach to this target/i.test(message) ||
+    /Another debugger is already attached/i.test(message)
+  );
 }
 
 /**
@@ -1455,7 +1579,7 @@ async function readConsoleBuffer(tabId, clear) {
       }
       return { entries: copy, dropped };
     },
-    args: [clear]
+    args: [clear],
   });
   return /** @type {any} */ (results?.[0]?.result) || { entries: [], dropped: 0 };
 }
@@ -1469,7 +1593,9 @@ async function readConsoleBuffer(tabId, clear) {
  */
 async function primeWindowConsoleCapture(windowId, resetBuffer = false) {
   const tabs = await chrome.tabs.query({ windowId });
-  const tabIds = tabs.map((tab) => (isNumber(tab.id) ? tab.id : null)).filter((tabId) => tabId !== null);
+  const tabIds = tabs
+    .map((tab) => (isNumber(tab.id) ? tab.id : null))
+    .filter((tabId) => tabId !== null);
   await Promise.allSettled(tabIds.map((tabId) => primeTabConsoleCapture(tabId, resetBuffer)));
 }
 
@@ -1527,27 +1653,36 @@ async function clearWindowBridgeState(windowId) {
 async function rollbackAllPatchesForTab(tabId) {
   try {
     await ensureContentScript(tabId);
-    const listed = await sendTabMessage(tabId, {
-      type: 'bridge.execute',
-      method: 'patch.list',
-      params: {}
-    }, CONTENT_SCRIPT_TIMEOUT_MS);
+    const listed = await sendTabMessage(
+      tabId,
+      {
+        type: 'bridge.execute',
+        method: 'patch.list',
+        params: {},
+      },
+      CONTENT_SCRIPT_TIMEOUT_MS
+    );
     const patches = Array.isArray(listed) ? listed : listed?.patches;
     if (!Array.isArray(patches)) {
       return;
     }
     for (const patch of patches) {
-      const patchId = patch && typeof patch === 'object'
-        ? /** @type {Record<string, unknown>} */ (patch).patchId
-        : null;
+      const patchId =
+        patch && typeof patch === 'object'
+          ? /** @type {Record<string, unknown>} */ (patch).patchId
+          : null;
       if (typeof patchId !== 'string' || !patchId) {
         continue;
       }
-      await sendTabMessage(tabId, {
-        type: 'bridge.execute',
-        method: 'patch.rollback',
-        params: { patchId }
-      }, CONTENT_SCRIPT_TIMEOUT_MS);
+      await sendTabMessage(
+        tabId,
+        {
+          type: 'bridge.execute',
+          method: 'patch.rollback',
+          params: { patchId },
+        },
+        CONTENT_SCRIPT_TIMEOUT_MS
+      );
     }
   } catch (error) {
     if (!isRecoverableInstrumentationError(error)) {
@@ -1588,16 +1723,28 @@ async function handleScreenshot(target, method, params) {
   if (method === 'screenshot.capture_element') {
     await ensureContentScript(target.tabId);
     try {
-      clip = await sendTabMessage(target.tabId, {
-        type: 'bridge.execute', method, params
-      }, CONTENT_SCRIPT_TIMEOUT_MS);
+      clip = await sendTabMessage(
+        target.tabId,
+        {
+          type: 'bridge.execute',
+          method,
+          params,
+        },
+        CONTENT_SCRIPT_TIMEOUT_MS
+      );
     } catch (err) {
       // Retry once after a brief pause - the page may have been mid-render
       if (err instanceof Error && /stale/i.test(err.message)) {
-        await new Promise(r => setTimeout(r, 250));
-        clip = await sendTabMessage(target.tabId, {
-          type: 'bridge.execute', method, params
-        }, CONTENT_SCRIPT_TIMEOUT_MS);
+        await new Promise((r) => setTimeout(r, 250));
+        clip = await sendTabMessage(
+          target.tabId,
+          {
+            type: 'bridge.execute',
+            method,
+            params,
+          },
+          CONTENT_SCRIPT_TIMEOUT_MS
+        );
       } else {
         throw err;
       }
@@ -1609,19 +1756,24 @@ async function handleScreenshot(target, method, params) {
       y: Math.max(0, Number(clip.y) || 0),
       width: Math.max(0, Number(clip.width) || 0),
       height: Math.max(0, Number(clip.height) || 0),
-      scale: Number(clip.scale) || 1
+      scale: Number(clip.scale) || 1,
     };
   } else if (method === 'screenshot.capture_full_page') {
     await ensureContentScript(target.tabId);
-    const dims = /** @type {{ scrollWidth: number, scrollHeight: number, devicePixelRatio: number }} */ (
-      await sendTabMessage(target.tabId, { type: 'bridge.execute', method, params }, CONTENT_SCRIPT_TIMEOUT_MS)
-    );
+    const dims =
+      /** @type {{ scrollWidth: number, scrollHeight: number, devicePixelRatio: number }} */ (
+        await sendTabMessage(
+          target.tabId,
+          { type: 'bridge.execute', method, params },
+          CONTENT_SCRIPT_TIMEOUT_MS
+        )
+      );
     clip = {
       x: 0,
       y: 0,
       width: Math.min(Math.max(1, Number(dims.scrollWidth) || 1), 16384),
       height: Math.min(Math.max(1, Number(dims.scrollHeight) || 1), 16384),
-      scale: Number(dims.devicePixelRatio) || 1
+      scale: Number(dims.devicePixelRatio) || 1,
     };
   } else {
     // capture_region: params already carry viewport coordinates
@@ -1631,14 +1783,14 @@ async function handleScreenshot(target, method, params) {
       y: Number(params.y) || 0,
       width: Math.max(1, Number(params.width) || 1),
       height: Math.max(1, Number(params.height) || 1),
-      scale
+      scale,
     };
   }
 
   if (clip.width < 1 || clip.height < 1) {
     throw new Error(
       `Capture target has no visible area (${clip.width}\u00d7${clip.height}px). ` +
-      'It may be hidden, collapsed, or not yet rendered.'
+        'It may be hidden, collapsed, or not yet rendered.'
     );
   }
 
@@ -1654,9 +1806,9 @@ async function handleScreenshot(target, method, params) {
           y: Math.max(0, clip.y),
           width: clip.width,
           height: clip.height,
-          scale: dpr
+          scale: dpr,
         },
-        captureBeyondViewport: method === 'screenshot.capture_full_page'
+        captureBeyondViewport: method === 'screenshot.capture_full_page',
       })
     );
     if (!cdpResult?.data) {
@@ -1664,7 +1816,7 @@ async function handleScreenshot(target, method, params) {
     }
     return {
       rect: clip,
-      image: `data:image/png;base64,${cdpResult.data}`
+      image: `data:image/png;base64,${cdpResult.data}`,
     };
   });
 }
@@ -1681,7 +1833,11 @@ async function sendTabMessage(tabId, message, timeoutMs) {
   /** @type {ReturnType<typeof setTimeout> | undefined} */
   let timeoutId;
   const timeout = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error(`Timed out waiting for content script response after ${timeoutMs}ms.`)), timeoutMs);
+    timeoutId = setTimeout(
+      () =>
+        reject(new Error(`Timed out waiting for content script response after ${timeoutMs}ms.`)),
+      timeoutMs
+    );
   });
   try {
     return await Promise.race([chrome.tabs.sendMessage(tabId, message), timeout]);
@@ -1702,7 +1858,9 @@ async function injectContentScriptsForWindow(windowId) {
   const tabs = await chrome.tabs.query({ windowId });
   await Promise.allSettled(
     tabs
-      .map((tab) => (isNumber(tab.id) && tab.url && !isRestrictedAutomationUrl(tab.url) ? tab.id : null))
+      .map((tab) =>
+        isNumber(tab.id) && tab.url && !isRestrictedAutomationUrl(tab.url) ? tab.id : null
+      )
       .filter((tabId) => tabId !== null)
       .map((tabId) => ensureContentScript(tabId))
   );
@@ -1715,10 +1873,12 @@ async function injectContentScriptsForWindow(windowId) {
  * @returns {boolean}
  */
 function isRestrictedScriptingError(message) {
-  return /Cannot access contents of/i.test(message)
-    || /The extensions gallery cannot be scripted/i.test(message)
-    || /Cannot access a chrome:\/\//i.test(message)
-    || /Cannot script/i.test(message);
+  return (
+    /Cannot access contents of/i.test(message) ||
+    /The extensions gallery cannot be scripted/i.test(message) ||
+    /Cannot access a chrome:\/\//i.test(message) ||
+    /Cannot script/i.test(message)
+  );
 }
 
 /**
@@ -1739,8 +1899,8 @@ async function ensureContentScript(tabId) {
         target: { tabId },
         files: [
           'packages/extension/src/content-script-helpers.js',
-          'packages/extension/src/content-script.js'
-        ]
+          'packages/extension/src/content-script.js',
+        ],
       });
     } catch (injectError) {
       const msg = injectError instanceof Error ? injectError.message : String(injectError);
@@ -1776,14 +1936,26 @@ async function handleCdpRequest(request) {
     } else if (request.method === 'cdp.get_box_model') {
       const nodeId = request.params?.nodeId;
       if (typeof nodeId !== 'number' || !Number.isFinite(nodeId)) {
-        return createFailure(request.id, ERROR_CODES.INVALID_REQUEST, 'nodeId must be a finite number.', null, { method: request.method });
+        return createFailure(
+          request.id,
+          ERROR_CODES.INVALID_REQUEST,
+          'nodeId must be a finite number.',
+          null,
+          { method: request.method }
+        );
       }
       command = 'DOM.getBoxModel';
       params = { nodeId };
     } else {
       const nodeId = request.params?.nodeId;
       if (typeof nodeId !== 'number' || !Number.isFinite(nodeId)) {
-        return createFailure(request.id, ERROR_CODES.INVALID_REQUEST, 'nodeId must be a finite number.', null, { method: request.method });
+        return createFailure(
+          request.id,
+          ERROR_CODES.INVALID_REQUEST,
+          'nodeId must be a finite number.',
+          null,
+          { method: request.method }
+        );
       }
       command = 'CSS.getComputedStyleForNode';
       params = { nodeId };
@@ -1814,7 +1986,9 @@ async function waitForTabComplete(tabId, timeoutMs) {
     let finished = false;
     const timeoutId = setTimeout(() => {
       cleanup();
-      reject(new Error(`Timed out waiting for tab ${tabId} to finish loading after ${timeoutMs}ms.`));
+      reject(
+        new Error(`Timed out waiting for tab ${tabId} to finish loading after ${timeoutMs}ms.`)
+      );
     }, timeoutMs);
 
     /**
@@ -1896,7 +2070,9 @@ async function resolveRequestTarget(request, options = {}) {
   });
   const tab = selectRequestTabCandidate(request.tab_id, explicitTab, activeTab ?? null);
 
-  return resolveWindowScopedTab(tab, state.enabledWindow.windowId, { requireScriptable });
+  return resolveWindowScopedTab(tab, state.enabledWindow.windowId, {
+    requireScriptable,
+  });
 }
 
 /**
@@ -1906,7 +2082,10 @@ async function resolveRequestTarget(request, options = {}) {
  * @returns {Promise<CurrentTabState | null>}
  */
 async function getCurrentTabState() {
-  const [activeTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  const [activeTab] = await chrome.tabs.query({
+    active: true,
+    lastFocusedWindow: true,
+  });
   if (!activeTab?.id || typeof activeTab.windowId !== 'number' || !activeTab.url) {
     return null;
   }
@@ -1918,7 +2097,7 @@ async function getCurrentTabState() {
     url: activeTab.url,
     enabled: isWindowEnabled(activeTab.windowId),
     accessRequested: isAccessRequestedWindow(activeTab.windowId),
-    restricted: isRestrictedAutomationUrl(activeTab.url)
+    restricted: isRestrictedAutomationUrl(activeTab.url),
   };
 }
 
@@ -1946,7 +2125,7 @@ async function getTabState(tabId) {
       url: tab.url,
       enabled: isWindowEnabled(tab.windowId),
       accessRequested: isAccessRequestedWindow(tab.windowId),
-      restricted: isRestrictedAutomationUrl(tab.url)
+      restricted: isRestrictedAutomationUrl(tab.url),
     };
   } catch {
     return null;
@@ -1981,13 +2160,13 @@ async function setWindowEnabled(windowId, title, enabled) {
   const access = {
     windowId,
     title,
-    enabledAt: Date.now()
+    enabledAt: Date.now(),
   };
 
   if (enabled) {
     state.enabledWindow = access;
     await chrome.storage.session.set({
-      [ENABLED_WINDOW_STORAGE_KEY]: access
+      [ENABLED_WINDOW_STORAGE_KEY]: access,
     });
   } else {
     if (state.enabledWindow && state.enabledWindow.windowId === windowId) {
@@ -1998,7 +2177,9 @@ async function setWindowEnabled(windowId, title, enabled) {
 
   try {
     await refreshActionIndicators();
-  } catch { /* Badge updates can fail for closed or restricted tabs. */ }
+  } catch {
+    /* Badge updates can fail for closed or restricted tabs. */
+  }
   await emitUiState();
 
   if (enabled) {
@@ -2006,7 +2187,7 @@ async function setWindowEnabled(windowId, title, enabled) {
     await chrome.alarms.create(KEEPALIVE_ALARM_NAME, { periodInMinutes: 0.4 });
     await Promise.allSettled([
       injectContentScriptsForWindow(access.windowId),
-      primeWindowConsoleCapture(access.windowId, true)
+      primeWindowConsoleCapture(access.windowId, true),
     ]);
   } else {
     sendAccessUpdate(false);
@@ -2029,18 +2210,30 @@ async function setWindowEnabled(windowId, title, enabled) {
  * @returns {Promise<void>}
  */
 async function handleTabUpdated(tabId, changeInfo, tab) {
-  if (typeof changeInfo.title === 'string' && state.enabledWindow && tab.windowId === state.enabledWindow.windowId) {
+  if (
+    typeof changeInfo.title === 'string' &&
+    state.enabledWindow &&
+    tab.windowId === state.enabledWindow.windowId
+  ) {
     state.enabledWindow = {
       ...state.enabledWindow,
-      title: changeInfo.title
+      title: changeInfo.title,
     };
     await chrome.storage.session.set({
-      [ENABLED_WINDOW_STORAGE_KEY]: state.enabledWindow
+      [ENABLED_WINDOW_STORAGE_KEY]: state.enabledWindow,
     });
   }
 
-  if (typeof changeInfo.url === 'string' || typeof changeInfo.title === 'string' || changeInfo.status === 'complete') {
-    if (changeInfo.status === 'complete' && state.enabledWindow && tab.windowId === state.enabledWindow.windowId) {
+  if (
+    typeof changeInfo.url === 'string' ||
+    typeof changeInfo.title === 'string' ||
+    changeInfo.status === 'complete'
+  ) {
+    if (
+      changeInfo.status === 'complete' &&
+      state.enabledWindow &&
+      tab.windowId === state.enabledWindow.windowId
+    ) {
       await primeTabConsoleCapture(tabId);
     }
     await updateActionIndicatorForTab(tabId);
@@ -2056,7 +2249,11 @@ async function handleTabUpdated(tabId, changeInfo, tab) {
  * @returns {Promise<void>}
  */
 async function handleTabRemoved(tabId, removeInfo) {
-  if (state.enabledWindow && removeInfo.isWindowClosing && removeInfo.windowId === state.enabledWindow.windowId) {
+  if (
+    state.enabledWindow &&
+    removeInfo.isWindowClosing &&
+    removeInfo.windowId === state.enabledWindow.windowId
+  ) {
     state.enabledWindow = null;
     await chrome.storage.session.remove(ENABLED_WINDOW_STORAGE_KEY);
     sendAccessUpdate(false);
@@ -2074,11 +2271,11 @@ async function handleTabRemoved(tabId, removeInfo) {
  * @returns {Promise<void>}
  */
 async function refreshActionIndicators() {
-  const query = state.enabledWindow
-    ? { windowId: state.enabledWindow.windowId }
-    : {};
+  const query = state.enabledWindow ? { windowId: state.enabledWindow.windowId } : {};
   const tabs = await chrome.tabs.query(query);
-  const tabIds = tabs.map((tab) => (isNumber(tab.id) ? tab.id : null)).filter((tabId) => tabId !== null);
+  const tabIds = tabs
+    .map((tab) => (isNumber(tab.id) ? tab.id : null))
+    .filter((tabId) => tabId !== null);
   await Promise.allSettled(tabIds.map((tabId) => updateActionIndicatorForTab(tabId)));
 
   // Some Chromium-based browsers (e.g. Edge) do not visually refresh the toolbar
@@ -2096,24 +2293,43 @@ async function refreshActionIndicators() {
  */
 async function syncGlobalBadgeToActiveTab() {
   try {
-    const [activeTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    const [activeTab] = await chrome.tabs.query({
+      active: true,
+      lastFocusedWindow: true,
+    });
     if (!activeTab?.id) return;
     const enabled = await isTabEnabled(activeTab.id);
-    const accessRequested = !enabled && await isAccessRequestedTab(activeTab.id);
+    const accessRequested = !enabled && (await isAccessRequestedTab(activeTab.id));
     const restricted = enabled && isRestrictedAutomationUrl(activeTab.url ?? '');
     const text = enabled
-      ? (restricted ? RESTRICTED_BADGE_TEXT : ENABLED_BADGE_TEXT)
-      : accessRequested ? ACCESS_REQUEST_BADGE_TEXT : '';
+      ? restricted
+        ? RESTRICTED_BADGE_TEXT
+        : ENABLED_BADGE_TEXT
+      : accessRequested
+        ? ACCESS_REQUEST_BADGE_TEXT
+        : '';
     const bgColor = enabled
-      ? (restricted ? '#e07020' : '#787878')
-      : accessRequested ? '#f2cf2f' : '#464646';
-    const textColor = enabled
-      ? '#ffffff'
-      : accessRequested ? '#000000' : '#ffffff';
+      ? restricted
+        ? '#e07020'
+        : '#787878'
+      : accessRequested
+        ? '#f2cf2f'
+        : '#464646';
+    const textColor = enabled ? '#ffffff' : accessRequested ? '#000000' : '#ffffff';
     await chrome.action.setBadgeText({ text });
-    try { await chrome.action.setBadgeBackgroundColor({ color: bgColor }); } catch { /* unsupported */ }
-    try { await chrome.action.setBadgeTextColor({ color: textColor }); } catch { /* unsupported */ }
-  } catch { /* non-critical */ }
+    try {
+      await chrome.action.setBadgeBackgroundColor({ color: bgColor });
+    } catch {
+      /* unsupported */
+    }
+    try {
+      await chrome.action.setBadgeTextColor({ color: textColor });
+    } catch {
+      /* unsupported */
+    }
+  } catch {
+    /* non-critical */
+  }
 }
 
 /**
@@ -2125,40 +2341,64 @@ async function syncGlobalBadgeToActiveTab() {
  */
 async function updateActionIndicatorForTab(tabId) {
   const enabled = await isTabEnabled(tabId);
-  const accessRequested = !enabled && await isAccessRequestedTab(tabId);
+  const accessRequested = !enabled && (await isAccessRequestedTab(tabId));
   let restricted = false;
   if (enabled) {
     try {
       const tab = await chrome.tabs.get(tabId);
       restricted = isRestrictedAutomationUrl(tab.url ?? '');
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
   const badgeText = enabled
-    ? (restricted ? RESTRICTED_BADGE_TEXT : ENABLED_BADGE_TEXT)
-    : accessRequested ? ACCESS_REQUEST_BADGE_TEXT : '';
+    ? restricted
+      ? RESTRICTED_BADGE_TEXT
+      : ENABLED_BADGE_TEXT
+    : accessRequested
+      ? ACCESS_REQUEST_BADGE_TEXT
+      : '';
   const bgColor = enabled
-    ? (restricted ? '#e07020' : '#787878')
-    : accessRequested ? '#f2cf2f' : '#464646';
-  const textColor = enabled
-    ? '#ffffff'
-    : accessRequested ? '#000000' : '#ffffff';
+    ? restricted
+      ? '#e07020'
+      : '#787878'
+    : accessRequested
+      ? '#f2cf2f'
+      : '#464646';
+  const textColor = enabled ? '#ffffff' : accessRequested ? '#000000' : '#ffffff';
   try {
     await chrome.action.setBadgeBackgroundColor({ tabId, color: bgColor });
-  } catch { /* color APIs may be unsupported */ }
+  } catch {
+    /* color APIs may be unsupported */
+  }
   try {
     await chrome.action.setBadgeTextColor({ tabId, color: textColor });
-  } catch { /* setBadgeTextColor not supported everywhere */ }
+  } catch {
+    /* setBadgeTextColor not supported everywhere */
+  }
   try {
     if (enabled && restricted) {
-      await chrome.action.setTitle({ tabId, title: 'Browser Bridge is enabled, but this page cannot be interacted with.' });
+      await chrome.action.setTitle({
+        tabId,
+        title: 'Browser Bridge is enabled, but this page cannot be interacted with.',
+      });
     } else if (enabled) {
-      await chrome.action.setTitle({ tabId, title: 'Browser Bridge is enabled for this window.' });
+      await chrome.action.setTitle({
+        tabId,
+        title: 'Browser Bridge is enabled for this window.',
+      });
     } else if (accessRequested) {
-      await chrome.action.setTitle({ tabId, title: 'Agent requested Browser Bridge access for this window. Click to open Browser Bridge, then click Enable.' });
+      await chrome.action.setTitle({
+        tabId,
+        title:
+          'Agent requested Browser Bridge access for this window. Click to open Browser Bridge, then click Enable.',
+      });
     } else {
       await chrome.action.setTitle({ tabId, title: 'Browser Bridge' });
     }
-  } catch { /* title can fail for closed tabs */ }
+  } catch {
+    /* title can fail for closed tabs */
+  }
   try {
     await chrome.action.setBadgeText({ tabId, text: badgeText });
   } catch (error) {
@@ -2256,13 +2496,15 @@ function checkAccessRequestAvailability(target) {
   if (state.requestedAccessWindowId === target.windowId) {
     return {
       allowed: false,
-      message: 'Browser Bridge access is already pending for this window. Ask the user to click Enable before requesting access again.'
+      message:
+        'Browser Bridge access is already pending for this window. Ask the user to click Enable before requesting access again.',
     };
   }
 
   return {
     allowed: false,
-    message: 'Browser Bridge access is already pending for another window. Ask the user to click Enable for that window before requesting access again.'
+    message:
+      'Browser Bridge access is already pending for another window. Ask the user to click Enable for that window before requesting access again.',
   };
 }
 
@@ -2279,10 +2521,14 @@ async function handleAccessRequest(request) {
 
   if (state.enabledWindow) {
     const access = await getAccessStatus();
-    return createSuccess(request.id, {
-      enabled: true,
-      access
-    }, { method: request.method });
+    return createSuccess(
+      request.id,
+      {
+        enabled: true,
+        access,
+      },
+      { method: request.method }
+    );
   }
 
   if (!target) {
@@ -2304,7 +2550,7 @@ async function handleAccessRequest(request) {
       {
         requestedWindowId: state.requestedAccessWindowId,
         requestedTargetWindowId: target.windowId,
-        requestedTargetTabId: target.tabId
+        requestedTargetTabId: target.tabId,
       },
       { method: request.method }
     );
@@ -2315,14 +2561,18 @@ async function handleAccessRequest(request) {
   await emitUiState();
   await openRequestedAccessUi(target);
 
-  return createSuccess(request.id, {
-    enabled: false,
-    requested: true,
-    windowId: target.windowId,
-    tabId: target.tabId,
-    title: target.title,
-    url: target.url
-  }, { method: request.method });
+  return createSuccess(
+    request.id,
+    {
+      enabled: false,
+      requested: true,
+      windowId: target.windowId,
+      tabId: target.tabId,
+      title: target.title,
+      url: target.url,
+    },
+    { method: request.method }
+  );
 }
 
 /**
@@ -2385,7 +2635,9 @@ async function openRequestedAccessPopupWindow(target) {
 
   if (state.requestedAccessPopupWindowId != null) {
     try {
-      const existingWindow = await chrome.windows.get(state.requestedAccessPopupWindowId, { populate: true });
+      const existingWindow = await chrome.windows.get(state.requestedAccessPopupWindowId, {
+        populate: true,
+      });
       const existingWindowId = typeof existingWindow.id === 'number' ? existingWindow.id : null;
       const popupTabId = existingWindow.tabs?.find((tab) => typeof tab.id === 'number')?.id ?? null;
       if (existingWindowId == null || popupTabId == null) {
@@ -2394,7 +2646,7 @@ async function openRequestedAccessPopupWindow(target) {
       await chrome.tabs.update(popupTabId, { url: popupUrl });
       await chrome.windows.update(existingWindowId, {
         focused: true,
-        ...(popupPlacement ?? {})
+        ...(popupPlacement ?? {}),
       });
       return;
     } catch {
@@ -2407,20 +2659,18 @@ async function openRequestedAccessPopupWindow(target) {
     type: 'popup',
     focused: true,
     width: popupWidth,
-    height: popupHeight
+    height: popupHeight,
   });
 
   if (popupPlacement) {
     createData = {
       ...createData,
-      ...popupPlacement
+      ...popupPlacement,
     };
   }
 
   const popupWindow = await chrome.windows.create(createData);
-  state.requestedAccessPopupWindowId = typeof popupWindow?.id === 'number'
-    ? popupWindow.id
-    : null;
+  state.requestedAccessPopupWindowId = typeof popupWindow?.id === 'number' ? popupWindow.id : null;
 }
 
 /**
@@ -2432,13 +2682,13 @@ async function getRequestedAccessPopupPlacement(targetWindowId, popupWidth) {
   try {
     const browserWindow = await chrome.windows.get(targetWindowId);
     if (
-      typeof browserWindow.left === 'number'
-      && typeof browserWindow.top === 'number'
-      && typeof browserWindow.width === 'number'
+      typeof browserWindow.left === 'number' &&
+      typeof browserWindow.top === 'number' &&
+      typeof browserWindow.width === 'number'
     ) {
       return {
         left: browserWindow.left + Math.max(24, browserWindow.width - popupWidth - 40),
-        top: browserWindow.top + 72
+        top: browserWindow.top + 72,
       };
     }
   } catch {
@@ -2498,18 +2748,18 @@ async function getActionContext(request) {
       const tab = await chrome.tabs.get(params.tabId);
       return {
         tabId: params.tabId,
-        url: tab.url ?? ''
+        url: tab.url ?? '',
       };
     }
     if (!bridgeMethodNeedsTab(request.method)) {
       return null;
     }
     const tab = await resolveRequestTarget(request, {
-      requireScriptable: request.method !== 'tabs.create'
+      requireScriptable: request.method !== 'tabs.create',
     });
     return {
       tabId: tab.tabId,
-      url: tab.url
+      url: tab.url,
     };
   } catch {
     return null;
@@ -2552,9 +2802,8 @@ async function logBridgeAction(request, response, actionContext) {
     overBudget: response.meta?.budget_truncated === true,
     hasScreenshot: diagnostics.hasScreenshot,
     nodeCount: diagnostics.nodeCount,
-    continuationHint: typeof response.meta?.continuation_hint === 'string'
-      ? response.meta.continuation_hint
-      : null,
+    continuationHint:
+      typeof response.meta?.continuation_hint === 'string' ? response.meta.continuation_hint : null,
   });
   await emitUiState();
 }
@@ -2607,14 +2856,14 @@ async function appendActionLogEntry(entry) {
     overBudget: entry.overBudget === true,
     hasScreenshot: entry.hasScreenshot ?? false,
     nodeCount: entry.nodeCount ?? null,
-    continuationHint: entry.continuationHint ?? null
+    continuationHint: entry.continuationHint ?? null,
   });
   while (state.actionLog.length > MAX_ACTION_LOG_ENTRIES) {
     state.actionLog.shift();
   }
 
   await chrome.storage.session.set({
-    [ACTION_LOG_STORAGE_KEY]: state.actionLog
+    [ACTION_LOG_STORAGE_KEY]: state.actionLog,
   });
 }
 
@@ -2652,20 +2901,27 @@ function normalizeActionLogEntry(entry) {
     responseBytes: Number(candidate.responseBytes) || 0,
     approxTokens: Number(candidate.approxTokens) || 0,
     imageApproxTokens: Number(candidate.imageApproxTokens) || 0,
-    costClass: candidate.costClass === 'moderate' || candidate.costClass === 'heavy' || candidate.costClass === 'extreme'
-      ? candidate.costClass
-      : 'cheap',
+    costClass:
+      candidate.costClass === 'moderate' ||
+      candidate.costClass === 'heavy' ||
+      candidate.costClass === 'extreme'
+        ? candidate.costClass
+        : 'cheap',
     imageBytes: Number(candidate.imageBytes) || 0,
     summaryBytes: Number(candidate.summaryBytes) || 0,
     summaryTokens: Number(candidate.summaryTokens) || 0,
-    summaryCostClass: candidate.summaryCostClass === 'moderate' || candidate.summaryCostClass === 'heavy' || candidate.summaryCostClass === 'extreme'
-      ? candidate.summaryCostClass
-      : 'cheap',
+    summaryCostClass:
+      candidate.summaryCostClass === 'moderate' ||
+      candidate.summaryCostClass === 'heavy' ||
+      candidate.summaryCostClass === 'extreme'
+        ? candidate.summaryCostClass
+        : 'cheap',
     debuggerBacked: candidate.debuggerBacked === true,
     overBudget: candidate.overBudget === true,
     hasScreenshot: candidate.hasScreenshot === true,
     nodeCount: typeof candidate.nodeCount === 'number' ? candidate.nodeCount : null,
-    continuationHint: typeof candidate.continuationHint === 'string' ? candidate.continuationHint : null
+    continuationHint:
+      typeof candidate.continuationHint === 'string' ? candidate.continuationHint : null,
   };
 }
 
@@ -2686,7 +2942,9 @@ function toFailureResponse(request, error) {
       ? ERROR_CODES.ELEMENT_STALE
       : ERROR_CODES.INTERNAL_ERROR;
 
-  return createFailure(request.id, code, message, null, { method: request.method });
+  return createFailure(request.id, code, message, null, {
+    method: request.method,
+  });
 }
 
 /**
@@ -2698,11 +2956,7 @@ function toFailureResponse(request, error) {
  * @returns {BridgeResponse}
  */
 function enrichBridgeResponse(request, response) {
-  const budgetedResponse = enforceTokenBudget(
-    request.method,
-    response,
-    request.meta?.token_budget,
-  );
+  const budgetedResponse = enforceTokenBudget(request.method, response, request.meta?.token_budget);
   const diagnostics = getResponseDiagnostics(request.method, budgetedResponse);
   return {
     ...budgetedResponse,
@@ -2804,8 +3058,8 @@ async function emitUiStateForPort(port) {
       setupInstallError: state.setupInstallError,
       actionLog: [...state.actionLog]
         .filter((entry) => scopedTabId == null || entry.tabId === scopedTabId)
-        .reverse()
-    }
+        .reverse(),
+    },
   });
 }
 
@@ -2820,9 +3074,10 @@ function handleHostStatusMessage(message) {
 
   const candidate = /** @type {Record<string, unknown>} */ (message);
   if (candidate.type === 'host.bridge_response') {
-    const response = candidate.response && typeof candidate.response === 'object'
-      ? /** @type {BridgeResponse} */ (candidate.response)
-      : null;
+    const response =
+      candidate.response && typeof candidate.response === 'object'
+        ? /** @type {BridgeResponse} */ (candidate.response)
+        : null;
     if (response?.id === state.setupInstallPendingRequestId) {
       const action = state.setupInstallPendingAction;
       state.setupInstallPendingRequestId = null;
@@ -2833,7 +3088,7 @@ function handleHostStatusMessage(message) {
           void appendActionLogEntry({
             method: getSetupActionMethodLabel(action),
             ok: true,
-            summary: getSetupActionSuccessSummary(action)
+            summary: getSetupActionSuccessSummary(action),
           }).catch(reportAsyncError);
         }
         refreshSetupStatus(true);
@@ -2843,7 +3098,7 @@ function handleHostStatusMessage(message) {
           void appendActionLogEntry({
             method: getSetupActionMethodLabel(action),
             ok: false,
-            summary: getSetupActionErrorSummary(action, response.error.message)
+            summary: getSetupActionErrorSummary(action, response.error.message),
           }).catch(reportAsyncError);
         }
         state.setupInstallPendingKey = null;
@@ -2874,16 +3129,17 @@ function handleHostStatusMessage(message) {
       state.setupInstallPendingRequestId = null;
       state.setupInstallPendingAction = null;
       state.setupInstallPendingKey = null;
-      state.setupInstallError = typeof candidate.error === 'object'
-        && candidate.error
-        && typeof /** @type {Record<string, unknown>} */ (candidate.error).message === 'string'
-        ? /** @type {Record<string, string>} */ (candidate.error).message
-        : 'Could not install host setup.';
+      state.setupInstallError =
+        typeof candidate.error === 'object' &&
+        candidate.error &&
+        typeof (/** @type {Record<string, unknown>} */ (candidate.error).message) === 'string'
+          ? /** @type {Record<string, string>} */ (candidate.error).message
+          : 'Could not install host setup.';
       if (action) {
         void appendActionLogEntry({
           method: getSetupActionMethodLabel(action),
           ok: false,
-          summary: getSetupActionErrorSummary(action, state.setupInstallError)
+          summary: getSetupActionErrorSummary(action, state.setupInstallError),
         }).catch(reportAsyncError);
       }
       void emitUiState().catch(reportAsyncError);
@@ -2895,11 +3151,12 @@ function handleHostStatusMessage(message) {
       state.setupStatusPendingRequestId = null;
       state.setupInstallPendingAction = null;
       state.setupInstallPendingKey = null;
-      state.setupStatusError = typeof candidate.error === 'object'
-        && candidate.error
-        && typeof /** @type {Record<string, unknown>} */ (candidate.error).message === 'string'
-        ? /** @type {Record<string, string>} */ (candidate.error).message
-        : 'Could not inspect host setup.';
+      state.setupStatusError =
+        typeof candidate.error === 'object' &&
+        candidate.error &&
+        typeof (/** @type {Record<string, unknown>} */ (candidate.error).message) === 'string'
+          ? /** @type {Record<string, string>} */ (candidate.error).message
+          : 'Could not inspect host setup.';
       void emitUiState().catch(reportAsyncError);
     }
     return true;
@@ -2927,11 +3184,12 @@ function handleHostStatusMessage(message) {
       state.setupStatusPendingRequestId = null;
       state.setupInstallPendingAction = null;
       state.setupInstallPendingKey = null;
-      state.setupStatusError = typeof candidate.error === 'object'
-        && candidate.error
-        && typeof /** @type {Record<string, unknown>} */ (candidate.error).message === 'string'
-        ? /** @type {Record<string, string>} */ (candidate.error).message
-        : 'Could not inspect host setup.';
+      state.setupStatusError =
+        typeof candidate.error === 'object' &&
+        candidate.error &&
+        typeof (/** @type {Record<string, unknown>} */ (candidate.error).message) === 'string'
+          ? /** @type {Record<string, string>} */ (candidate.error).message
+          : 'Could not inspect host setup.';
       void emitUiState().catch(reportAsyncError);
     }
     return true;
@@ -2950,8 +3208,9 @@ function refreshSetupStatus(force = false) {
     return;
   }
 
-  const isFresh = state.setupStatusUpdatedAt > 0
-    && (Date.now() - state.setupStatusUpdatedAt) < SETUP_STATUS_STALE_MS;
+  const isFresh =
+    state.setupStatusUpdatedAt > 0 &&
+    Date.now() - state.setupStatusUpdatedAt < SETUP_STATUS_STALE_MS;
   if (state.setupStatusPending || (!force && isFresh && !state.setupStatusError)) {
     return;
   }
@@ -2965,8 +3224,8 @@ function refreshSetupStatus(force = false) {
     type: 'host.bridge_request',
     request: createRequest({
       id: requestId,
-      method: 'setup.get_status'
-    })
+      method: 'setup.get_status',
+    }),
   });
   state.setupStatusTimeoutId = setTimeout(() => {
     if (state.setupStatusPendingRequestId !== requestId) {
@@ -3038,7 +3297,7 @@ async function handleUiMessage(port, message) {
     }
     state.uiPorts.set(port, {
       surface: currentPortState.surface,
-      scopeTabId: Number.isFinite(scopeTabId) && scopeTabId > 0 ? scopeTabId : null
+      scopeTabId: Number.isFinite(scopeTabId) && scopeTabId > 0 ? scopeTabId : null,
     });
     refreshSetupStatus();
     await emitUiStateForPort(port);
@@ -3055,7 +3314,7 @@ async function handleUiMessage(port, message) {
     const requestedTabId = Number(message.tabId);
     try {
       // ── DEBUG: simulate slow/error toggles. Set to "delay", "error", or "" ──
-      const _TOGGLE_SIM = /** @type {string} */ (''); // "delay" | "error" | ""
+      const _TOGGLE_SIM = /** @type {'delay' | 'error' | ''} */ ('');
       if (_TOGGLE_SIM === 'delay') {
         await new Promise((r) => setTimeout(r, 6000));
       } else if (_TOGGLE_SIM === 'error') {
@@ -3075,7 +3334,11 @@ async function handleUiMessage(port, message) {
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      try { port.postMessage({ type: 'toggle.error', error: errorMessage }); } catch { /* port may have disconnected */ }
+      try {
+        port.postMessage({ type: 'toggle.error', error: errorMessage });
+      } catch {
+        /* port may have disconnected */
+      }
       throw error;
     }
     return;
@@ -3096,7 +3359,7 @@ async function handleSetupInstallAction(message) {
     await appendActionLogEntry({
       method: 'Host setup',
       ok: false,
-      summary: 'Install failed: Native host is not connected.'
+      summary: 'Install failed: Native host is not connected.',
     });
     await emitUiState();
     return;
@@ -3113,15 +3376,15 @@ async function handleSetupInstallAction(message) {
   await appendActionLogEntry({
     method: getSetupActionMethodLabel(action),
     ok: true,
-    summary: getSetupActionStartSummary(action)
+    summary: getSetupActionStartSummary(action),
   });
   state.nativePort.postMessage({
     type: 'host.bridge_request',
     request: createRequest({
       id: requestId,
       method: 'setup.install',
-      params: action
-    })
+      params: action,
+    }),
   });
   await emitUiState();
 }
@@ -3204,11 +3467,11 @@ async function openSidePanelForTab(tabId, windowId) {
   await chrome.sidePanel.setOptions({
     tabId,
     path: `${SIDEPANEL_PATH}?tabId=${encodeURIComponent(String(tabId))}`,
-    enabled: true
+    enabled: true,
   });
   await chrome.sidePanel.open({
     tabId,
-    windowId
+    windowId,
   });
 }
 

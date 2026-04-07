@@ -48,8 +48,7 @@ const BROWSER_BRIDGE_SERVER_NAME = 'browser-bridge';
 function getVsCodeUserDataDir() {
   const home = os.homedir();
   if (process.platform === 'win32') {
-    const appData =
-      process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+    const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
     return path.join(appData, 'Code');
   }
   if (process.platform === 'linux') {
@@ -79,9 +78,7 @@ function getLegacyCopilotVsCodeConfigPath() {
  * @returns {{ key: string, includeType: boolean, legacyKeys?: string[], keepEmptyBlock?: boolean }}
  */
 export function getMcpConfigShape(clientName) {
-  return (
-    MCP_CONFIG_SHAPES[clientName] ?? { key: 'mcpServers', includeType: false }
-  );
+  return MCP_CONFIG_SHAPES[clientName] ?? { key: 'mcpServers', includeType: false };
 }
 
 /**
@@ -143,9 +140,7 @@ export function buildMcpConfig(clientName) {
   }
   const serverConfig = createBaseServerConfig(clientName);
   const shape = getMcpConfigShape(clientName);
-  const entry = shape.includeType
-    ? { type: 'stdio', ...serverConfig }
-    : serverConfig;
+  const entry = shape.includeType ? { type: 'stdio', ...serverConfig } : serverConfig;
   return { [shape.key]: { [BROWSER_BRIDGE_SERVER_NAME]: entry } };
 }
 
@@ -169,10 +164,7 @@ export function formatMcpConfig(clientName) {
  * @param {{ global: boolean, cwd?: string }} options
  * @returns {string}
  */
-export function getMcpConfigPath(
-  clientName,
-  { global: isGlobal, cwd = process.cwd() },
-) {
+export function getMcpConfigPath(clientName, { global: isGlobal, cwd = process.cwd() }) {
   const home = os.homedir();
 
   if (!isGlobal) {
@@ -252,7 +244,9 @@ export async function getMcpConfigPaths(clientName, options) {
     const entries = await readdir(profilesDir, { withFileTypes: true });
     const profilePaths = entries
       .filter((/** @type {import('node:fs').Dirent} */ entry) => entry.isDirectory())
-      .map((/** @type {import('node:fs').Dirent} */ entry) => path.join(profilesDir, entry.name, 'mcp.json'));
+      .map((/** @type {import('node:fs').Dirent} */ entry) =>
+        path.join(profilesDir, entry.name, 'mcp.json')
+      );
     for (const profilePath of profilePaths) {
       if (!paths.includes(profilePath)) {
         paths.push(profilePath);
@@ -533,11 +527,7 @@ async function installJsonMcpConfig(clientName, configPath, stdout) {
   }
 
   await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
-  await fs.promises.writeFile(
-    configPath,
-    `${JSON.stringify(merged, null, 2)}\n`,
-    'utf8',
-  );
+  await fs.promises.writeFile(configPath, `${JSON.stringify(merged, null, 2)}\n`, 'utf8');
   stdout.write(`Wrote ${configPath}\n`);
 }
 
@@ -600,11 +590,7 @@ async function removeJsonMcpConfig(clientName, configPath, stdout) {
   }
 
   await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
-  await fs.promises.writeFile(
-    configPath,
-    `${JSON.stringify(merged, null, 2)}\n`,
-    'utf8',
-  );
+  await fs.promises.writeFile(configPath, `${JSON.stringify(merged, null, 2)}\n`, 'utf8');
   stdout.write(`Removed ${configPath}\n`);
   return true;
 }
@@ -647,16 +633,11 @@ export function parseInstalledMcpConfig(clientName, raw) {
     const parsed = JSON.parse(raw);
     const block =
       parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-        ? getMergedJsonMcpBlock(
-          /** @type {Record<string, unknown>} */ (parsed),
-          clientName,
-        )
+        ? getMergedJsonMcpBlock(/** @type {Record<string, unknown>} */ (parsed), clientName)
         : {};
     return {
       configured: Boolean(
-        block &&
-        typeof block === 'object' &&
-        Object.hasOwn(block, BROWSER_BRIDGE_SERVER_NAME),
+        block && typeof block === 'object' && Object.hasOwn(block, BROWSER_BRIDGE_SERVER_NAME)
       ),
     };
   } catch {

@@ -27,21 +27,20 @@ function createShortcutCommand(method, usage, build, options = {}) {
   return {
     method,
     usage,
-    description: options.description ?? BRIDGE_METHOD_REGISTRY[method].description.replace(/\.$/, ''),
+    description:
+      options.description ?? BRIDGE_METHOD_REGISTRY[method].description.replace(/\.$/, ''),
     build,
     ...(options.resolve ? { resolve: true } : {}),
-    ...(options.printMethod ? { printMethod: options.printMethod } : {})
+    ...(options.printMethod ? { printMethod: options.printMethod } : {}),
   };
 }
 
 /** @type {Record<string, ShortcutCommand>} */
 export const SHORTCUT_COMMANDS = {
   'access-request': createShortcutCommand('access.request', 'bbx access-request', () => ({})),
-  'dom-query': createShortcutCommand(
-    'dom.query',
-    'bbx dom-query [selector]',
-    (r) => ({ selector: r[0] || 'body' })
-  ),
+  'dom-query': createShortcutCommand('dom.query', 'bbx dom-query [selector]', (r) => ({
+    selector: r[0] || 'body',
+  })),
   describe: createShortcutCommand(
     'dom.describe',
     'bbx describe <ref|selector>',
@@ -51,7 +50,10 @@ export const SHORTCUT_COMMANDS = {
   text: createShortcutCommand(
     'dom.get_text',
     'bbx text <ref|selector> [budget]',
-    (r, ref) => ({ elementRef: ref, textBudget: r[1] ? parseIntArg(r[1], 'budget') : undefined }),
+    (r, ref) => ({
+      elementRef: ref,
+      textBudget: r[1] ? parseIntArg(r[1], 'budget') : undefined,
+    }),
     { resolve: true, printMethod: 'dom.get_text' }
   ),
   styles: createShortcutCommand(
@@ -93,27 +95,34 @@ export const SHORTCUT_COMMANDS = {
   html: createShortcutCommand(
     'dom.get_html',
     'bbx html <ref|selector> [maxLen]',
-    (r, ref) => ({ elementRef: ref, maxLength: r[1] ? parseIntArg(r[1], 'maxLen') : undefined }),
+    (r, ref) => ({
+      elementRef: ref,
+      maxLength: r[1] ? parseIntArg(r[1], 'maxLen') : undefined,
+    }),
     { resolve: true }
   ),
   'patch-style': createShortcutCommand(
     'patch.apply_styles',
     'bbx patch-style <ref|sel> prop=val',
-    (r, ref) => ({ target: { elementRef: ref }, declarations: parsePropertyAssignments(r.slice(1)) }),
+    (r, ref) => ({
+      target: { elementRef: ref },
+      declarations: parsePropertyAssignments(r.slice(1)),
+    }),
     { resolve: true }
   ),
   'patch-text': createShortcutCommand(
     'patch.apply_dom',
     'bbx patch-text <ref|sel> <text...>',
-    (r, ref) => ({ target: { elementRef: ref }, operation: 'set_text', value: r.slice(1).join(' ') }),
+    (r, ref) => ({
+      target: { elementRef: ref },
+      operation: 'set_text',
+      value: r.slice(1).join(' '),
+    }),
     { resolve: true, description: 'Apply a reversible DOM text patch' }
   ),
-  patches: createShortcutCommand(
-    'patch.list',
-    'bbx patches',
-    () => ({}),
-    { printMethod: 'patch.list' }
-  ),
+  patches: createShortcutCommand('patch.list', 'bbx patches', () => ({}), {
+    printMethod: 'patch.list',
+  }),
   rollback: createShortcutCommand('patch.rollback', 'bbx rollback <patchId>', (r) => {
     if (!r[0]) throw new Error('Usage: rollback <patchId>');
     return { patchId: r[0] };
@@ -122,11 +131,17 @@ export const SHORTCUT_COMMANDS = {
     'page.get_console',
     'bbx console [level]',
     (r) => ({ level: r[0] || 'all', clear: false }),
-    { printMethod: 'page.get_console', description: 'Read buffered console output (log|warn|error|all)' }
+    {
+      printMethod: 'page.get_console',
+      description: 'Read buffered console output (log|warn|error|all)',
+    }
   ),
   wait: createShortcutCommand('dom.wait_for', 'bbx wait <selector> [timeoutMs]', (r) => {
     if (!r[0]) throw new Error('Usage: wait <selector> [timeoutMs]');
-    return { selector: r[0], timeoutMs: r[1] ? parseIntArg(r[1], 'timeoutMs') : 5000 };
+    return {
+      selector: r[0],
+      timeoutMs: r[1] ? parseIntArg(r[1], 'timeoutMs') : 5000,
+    };
   }),
   find: createShortcutCommand(
     'dom.find_by_text',
@@ -138,19 +153,23 @@ export const SHORTCUT_COMMANDS = {
     },
     { printMethod: 'dom.find_by_text' }
   ),
-  'find-role': createShortcutCommand('dom.find_by_role', 'bbx find-role <role> [name]', (r) => {
-    if (!r[0]) throw new Error('Usage: find-role <role> [name]');
-    return { role: r[0], name: r.slice(1).join(' ') || undefined };
-  }, { printMethod: 'dom.find_by_role' }),
+  'find-role': createShortcutCommand(
+    'dom.find_by_role',
+    'bbx find-role <role> [name]',
+    (r) => {
+      if (!r[0]) throw new Error('Usage: find-role <role> [name]');
+      return { role: r[0], name: r.slice(1).join(' ') || undefined };
+    },
+    { printMethod: 'dom.find_by_role' }
+  ),
   navigate: createShortcutCommand('navigation.navigate', 'bbx navigate <url>', (r) => {
     if (!r[0]) throw new Error('Usage: navigate <url>');
     return { url: r[0] };
   }),
-  storage: createShortcutCommand(
-    'page.get_storage',
-    'bbx storage [local|session] [keys]',
-    (r) => ({ type: r[0] === 'session' ? 'session' : 'local', keys: r.slice(1).length ? r.slice(1) : undefined })
-  ),
+  storage: createShortcutCommand('page.get_storage', 'bbx storage [local|session] [keys]', (r) => ({
+    type: r[0] === 'session' ? 'session' : 'local',
+    keys: r.slice(1).length ? r.slice(1) : undefined,
+  })),
   'page-text': createShortcutCommand(
     'page.get_text',
     'bbx page-text [textBudget]',
@@ -161,21 +180,33 @@ export const SHORTCUT_COMMANDS = {
     'page.get_network',
     'bbx network [limit]',
     (r) => ({ limit: r[0] ? parseIntArg(r[0], 'limit') : undefined }),
-    { printMethod: 'page.get_network', description: 'Read buffered network requests (fetch/XHR)' }
+    {
+      printMethod: 'page.get_network',
+      description: 'Read buffered network requests (fetch/XHR)',
+    }
   ),
   'a11y-tree': createShortcutCommand(
     'dom.get_accessibility_tree',
     'bbx a11y-tree [maxNodes] [maxDepth]',
-    (r) => ({ maxNodes: r[0] ? parseIntArg(r[0], 'maxNodes') : undefined, maxDepth: r[1] ? parseIntArg(r[1], 'maxDepth') : undefined })
+    (r) => ({
+      maxNodes: r[0] ? parseIntArg(r[0], 'maxNodes') : undefined,
+      maxDepth: r[1] ? parseIntArg(r[1], 'maxDepth') : undefined,
+    })
   ),
   perf: createShortcutCommand('performance.get_metrics', 'bbx perf', () => ({})),
   scroll: createShortcutCommand('viewport.scroll', 'bbx scroll <top> [left]', (r) => {
     if (!r[0] && !r[1]) throw new Error('Usage: scroll <top> [left]');
-    return { top: r[0] ? parseIntArg(r[0], 'top') : undefined, left: r[1] ? parseIntArg(r[1], 'left') : undefined };
+    return {
+      top: r[0] ? parseIntArg(r[0], 'top') : undefined,
+      left: r[1] ? parseIntArg(r[1], 'left') : undefined,
+    };
   }),
   resize: createShortcutCommand('viewport.resize', 'bbx resize <width> <height>', (r) => {
     if (!r[0] || !r[1]) throw new Error('Usage: resize <width> <height>');
-    return { width: parseIntArg(r[0], 'width'), height: parseIntArg(r[1], 'height') };
+    return {
+      width: parseIntArg(r[0], 'width'),
+      height: parseIntArg(r[1], 'height'),
+    };
   }),
   reload: createShortcutCommand('navigation.reload', 'bbx reload', () => ({})),
   back: createShortcutCommand('navigation.go_back', 'bbx back', () => ({})),
@@ -191,7 +222,7 @@ export const SHORTCUT_COMMANDS = {
     'bbx matched-rules <ref|selector>',
     (_r, ref) => ({ elementRef: ref }),
     { resolve: true, printMethod: 'styles.get_matched_rules' }
-  )
+  ),
 };
 
 /** @type {Readonly<Record<string, BridgeMethod>>} */
@@ -207,7 +238,7 @@ export const CLI_METHOD_BINDINGS = Object.freeze({
   ...Object.fromEntries(BRIDGE_METHODS.map((method) => [method, method])),
   'press-key': 'input.press_key',
   screenshot: 'screenshot.capture_element',
-  eval: 'page.evaluate'
+  eval: 'page.evaluate',
 });
 
 /** @type {ReadonlyArray<{ title: string, lines: readonly string[] }>} */
@@ -228,18 +259,18 @@ export const CLI_HELP_SECTIONS = Object.freeze([
       'bbx tab-create [url]                                               Create a new tab',
       'bbx tab-close <tabId>                                              Close a tab',
       'bbx skill                                                          Runtime budget presets and method groups',
-      'bbx mcp serve                                                      Start Browser Bridge as an MCP stdio server'
-    ]
+      'bbx mcp serve                                                      Start Browser Bridge as an MCP stdio server',
+    ],
   },
   {
     title: 'Generic RPC',
     lines: [
       'bbx call [--tab <tabId>] <method> [paramsJson|-]                   Call any bridge method (- reads JSON from stdin)',
       'bbx <method> [--tab <tabId>] [paramsJson|-]                        Direct alias for exact bridge methods such as page.get_state',
-      'bbx batch \'[{method,params,tabId?},...]\'                           Parallel method calls',
+      "bbx batch '[{method,params,tabId?},...]'                           Parallel method calls",
       'Advanced bridge params stay available through `bbx call`, even when shortcuts expose only the common case.',
-      'For open-ended investigation, start with `bbx batch` on `page.get_state`, `dom.query`, and `page.get_text` before any screenshot or CDP call.'
-    ]
+      'For open-ended investigation, start with `bbx batch` on `page.get_state`, `dom.query`, and `page.get_text` before any screenshot or CDP call.',
+    ],
   },
   {
     title: 'Inspect',
@@ -253,19 +284,21 @@ export const CLI_HELP_SECTIONS = Object.freeze([
         'attrs',
         'matched-rules',
         'box',
-        'a11y-tree'
-      ].map((command) => `${SHORTCUT_COMMANDS[command].usage.padEnd(64)} ${SHORTCUT_COMMANDS[command].description}`)
-    ]
+        'a11y-tree',
+      ].map(
+        (command) =>
+          `${SHORTCUT_COMMANDS[command].usage.padEnd(64)} ${SHORTCUT_COMMANDS[command].description}`
+      ),
+    ],
   },
   {
     title: 'Find',
     lines: [
-      ...[
-        'find',
-        'find-role',
-        'wait'
-      ].map((command) => `${SHORTCUT_COMMANDS[command].usage.padEnd(64)} ${SHORTCUT_COMMANDS[command].description}`)
-    ]
+      ...['find', 'find-role', 'wait'].map(
+        (command) =>
+          `${SHORTCUT_COMMANDS[command].usage.padEnd(64)} ${SHORTCUT_COMMANDS[command].description}`
+      ),
+    ],
   },
   {
     title: 'Page',
@@ -282,37 +315,36 @@ export const CLI_HELP_SECTIONS = Object.freeze([
         'forward',
         'perf',
         'scroll',
-        'resize'
-      ].map((command) => `${SHORTCUT_COMMANDS[command].usage.padEnd(64)} ${SHORTCUT_COMMANDS[command].description}`)
-    ]
+        'resize',
+      ].map(
+        (command) =>
+          `${SHORTCUT_COMMANDS[command].usage.padEnd(64)} ${SHORTCUT_COMMANDS[command].description}`
+      ),
+    ],
   },
   {
     title: 'Interact',
     lines: [
-      ...[
-        'click',
-        'focus',
-        'type',
-        'hover'
-      ].map((command) => `${SHORTCUT_COMMANDS[command].usage.padEnd(64)} ${SHORTCUT_COMMANDS[command].description}`),
-      'bbx press-key <key> [ref|selector]                                 Send key event'
-    ]
+      ...['click', 'focus', 'type', 'hover'].map(
+        (command) =>
+          `${SHORTCUT_COMMANDS[command].usage.padEnd(64)} ${SHORTCUT_COMMANDS[command].description}`
+      ),
+      'bbx press-key <key> [ref|selector]                                 Send key event',
+    ],
   },
   {
     title: 'Patch',
     lines: [
-      ...[
-        'patch-style',
-        'patch-text',
-        'patches',
-        'rollback'
-      ].map((command) => `${SHORTCUT_COMMANDS[command].usage.padEnd(64)} ${SHORTCUT_COMMANDS[command].description}`)
-    ]
+      ...['patch-style', 'patch-text', 'patches', 'rollback'].map(
+        (command) =>
+          `${SHORTCUT_COMMANDS[command].usage.padEnd(64)} ${SHORTCUT_COMMANDS[command].description}`
+      ),
+    ],
   },
   {
     title: 'Capture',
     lines: [
-      'bbx screenshot <ref|selector> [path]                               Capture partial element screenshot'
-    ]
-  }
+      'bbx screenshot <ref|selector> [path]                               Capture partial element screenshot',
+    ],
+  },
 ]);

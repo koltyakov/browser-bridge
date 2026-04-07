@@ -1,7 +1,10 @@
 // @ts-check
 
 (() => {
-  const contentScriptGlobal = /** @type {typeof globalThis & { __chromeCodexBridgeContentScriptLoaded?: boolean }} */ (globalThis);
+  const contentScriptGlobal =
+    /** @type {typeof globalThis & { __chromeCodexBridgeContentScriptLoaded?: boolean }} */ (
+      globalThis
+    );
   if (contentScriptGlobal.__chromeCodexBridgeContentScriptLoaded) {
     return;
   }
@@ -43,7 +46,8 @@
   const MAX_REGISTRY_SIZE = 5000;
   const MAX_PATCH_REGISTRY_SIZE = 2000;
   let registryPruned = false;
-  const contentHelpers = /** @type {typeof globalThis & { __BBX_CONTENT_HELPERS__?: {
+  const contentHelpers =
+    /** @type {typeof globalThis & { __BBX_CONTENT_HELPERS__?: {
     NON_TEXT_INPUT_TYPES: Set<string>,
     applyBudget: (options?: Record<string, any>) => Budget,
     clamp: (value: number | string | null | undefined, minimum: number, maximum: number) => number,
@@ -66,7 +70,7 @@
     getImplicitRole,
     getImplicitRoleSelector,
     toRect,
-    truncateText
+    truncateText,
   } = contentHelpers;
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -81,11 +85,17 @@
 
     try {
       const result = handleCommand(message.method, message.params);
-      Promise.resolve(result).then(sendResponse).catch((err) => {
-        sendResponse({ error: err instanceof Error ? err.message : String(err) });
-      });
+      Promise.resolve(result)
+        .then(sendResponse)
+        .catch((err) => {
+          sendResponse({
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
     } catch (error) {
-      sendResponse({ error: error instanceof Error ? error.message : String(error) });
+      sendResponse({
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
 
     return true;
@@ -128,7 +138,7 @@
       case 'dom.get_html':
         return getHtml({
           ...params,
-          elementRef: resolveElementRefFromParams(params)
+          elementRef: resolveElementRefFromParams(params),
         });
       case 'layout.get_box_model':
         return getBoxModel(resolveElementRefFromParams(params));
@@ -194,8 +204,7 @@
    * }}
    */
   function getPageState() {
-    const scrollingElement =
-      document.scrollingElement || document.documentElement || document.body;
+    const scrollingElement = document.scrollingElement || document.documentElement || document.body;
     const selection = document.getSelection?.()?.toString() || '';
 
     return {
@@ -215,22 +224,22 @@
         maxX: Math.max(
           0,
           (scrollingElement?.scrollWidth || document.documentElement.scrollWidth || 0) -
-            window.innerWidth,
+            window.innerWidth
         ),
         maxY: Math.max(
           0,
           (scrollingElement?.scrollHeight || document.documentElement.scrollHeight || 0) -
-            window.innerHeight,
+            window.innerHeight
         ),
       },
       activeElement:
         document.activeElement instanceof Element
           ? summarizeNode(
-            document.activeElement,
-            ['id', 'class', 'name', 'type', 'href', 'role'],
-            120,
-            true,
-          ).node
+              document.activeElement,
+              ['id', 'class', 'name', 'type', 'href', 'role'],
+              120,
+              true
+            ).node
           : null,
       selection: truncateText(selection.trim(), 200),
       hints: detectPageHints(),
@@ -258,7 +267,8 @@
       if (!tailwind) {
         // Check for Tailwind's characteristic class patterns on a sample of elements
         const sample = document.querySelectorAll('[class]');
-        const twPattern = /\b(?:flex|grid|bg-|text-|p[xytblr]?-|m[xytblr]?-|w-|h-|rounded|shadow|border)-/;
+        const twPattern =
+          /\b(?:flex|grid|bg-|text-|p[xytblr]?-|m[xytblr]?-|w-|h-|rounded|shadow|border)-/;
         for (let i = 0; i < Math.min(sample.length, 30); i++) {
           const cls = sample[i].className;
           if (typeof cls === 'string' && twPattern.test(cls)) {
@@ -291,7 +301,7 @@
       value: result.value,
       truncated: result.truncated,
       omitted: result.omitted,
-      length: raw.length
+      length: raw.length,
     };
   }
 
@@ -308,7 +318,11 @@
       ? getRequiredElement(query.withinRef)
       : document.querySelector(query.selector);
     if (!root) {
-      return { nodes: [], revision: getDocumentRevision(), registrySize: elementRegistry.size };
+      return {
+        nodes: [],
+        revision: getDocumentRevision(),
+        registrySize: elementRegistry.size,
+      };
     }
 
     /** @type {NodeSummary[]} */
@@ -317,11 +331,7 @@
     /** @type {Array<{ element: Element, depth: number }>} */
     const queue = [{ element: root, depth: 0 }];
 
-    while (
-      queue.length &&
-      nodes.length < query.budget.maxNodes &&
-      remaining > 0
-    ) {
+    while (queue.length && nodes.length < query.budget.maxNodes && remaining > 0) {
       const next = queue.shift();
       if (!next) {
         continue;
@@ -335,7 +345,7 @@
         element,
         query.budget.attributeAllowlist,
         remaining,
-        query.budget.includeBbox,
+        query.budget.includeBbox
       );
       remaining -= summary.textLength;
       nodes.push(summary.node);
@@ -369,7 +379,7 @@
     const elementRef = rememberElement(element);
     const text = truncateText(
       extractElementText(element),
-      Math.min(Math.max(0, remainingText), 160),
+      Math.min(Math.max(0, remainingText), 160)
     );
     return {
       textLength: text.value.length,
@@ -377,10 +387,7 @@
         elementRef,
         tag: element.tagName.toLowerCase(),
         role: element.getAttribute('role'),
-        name:
-          element.getAttribute('aria-label') ||
-          element.getAttribute('name') ||
-          null,
+        name: element.getAttribute('aria-label') || element.getAttribute('name') || null,
         textExcerpt: text.value,
         attrs: summarizeAttributes(element, attributeAllowlist),
         ...(includeBbox ? { bbox: toRect(element.getBoundingClientRect()) } : {}),
@@ -432,10 +439,7 @@
    */
   function getText(elementRef, budget = 600) {
     const element = /** @type {HTMLElement} */ (getRequiredElement(elementRef));
-    return truncateText(
-      (element.innerText || element.textContent || '').trim(),
-      budget,
-    );
+    return truncateText((element.innerText || element.textContent || '').trim(), budget);
   }
 
   /**
@@ -707,10 +711,7 @@
 
     const result = runKeyAction(target, key, params.modifiers);
     return {
-      elementRef:
-        result.target instanceof Element
-          ? rememberElement(result.target)
-          : null,
+      elementRef: result.target instanceof Element ? rememberElement(result.target) : null,
       key: result.key,
       handled: result.handled,
     };
@@ -765,8 +766,8 @@
       : [];
     const indexes = Array.isArray(params.indexes)
       ? params.indexes
-        .map((index) => Number(index))
-        .filter((index) => Number.isInteger(index) && index >= 0)
+          .map((index) => Number(index))
+          .filter((index) => Number.isInteger(index) && index >= 0)
       : [];
 
     if (!values.length && !labels.length && !indexes.length) {
@@ -828,11 +829,7 @@
     const previous = {};
     for (const [property, value] of Object.entries(params.declarations || {})) {
       previous[property] = element.style.getPropertyValue(property);
-      element.style.setProperty(
-        property,
-        value,
-        params.important ? 'important' : '',
-      );
+      element.style.setProperty(property, value, params.important ? 'important' : '');
     }
     pruneRegistry(patchRegistry, MAX_PATCH_REGISTRY_SIZE);
     const elementRef = rememberElement(element);
@@ -991,12 +988,16 @@
   function getElementRect(elementRef) {
     const el = getRequiredElement(elementRef);
     // Scroll into view so CDP can capture it in the visible viewport
-    el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+    el.scrollIntoView({
+      block: 'center',
+      inline: 'center',
+      behavior: 'instant',
+    });
     const rect = el.getBoundingClientRect();
     if (rect.width < 1 || rect.height < 1) {
       throw new Error(
         `Element has no visible area (${rect.width}\u00d7${rect.height}). ` +
-        'It may be hidden, collapsed, or not yet rendered.'
+          'It may be hidden, collapsed, or not yet rendered.'
       );
     }
     const x = Math.max(0, rect.x);
@@ -1006,8 +1007,8 @@
     if (width < 1 || height < 1) {
       throw new Error(
         'Element is outside the visible viewport after scroll ' +
-        `(${Math.round(rect.x)},${Math.round(rect.y)} ${Math.round(rect.width)}\u00d7${Math.round(rect.height)}). ` +
-        'It may be in a fixed/sticky container or an iframe.'
+          `(${Math.round(rect.x)},${Math.round(rect.y)} ${Math.round(rect.width)}\u00d7${Math.round(rect.height)}). ` +
+          'It may be in a fixed/sticky container or an iframe.'
       );
     }
     return { x, y, width, height, scale: window.devicePixelRatio || 1 };
@@ -1157,7 +1158,9 @@
         ? visibleText === searchText
         : visibleText.toLowerCase().includes(searchText.toLowerCase());
       if (matches) {
-        results.push(summarizeNode(el, ['id', 'class', 'role', 'href', 'data-testid'], 120, true).node);
+        results.push(
+          summarizeNode(el, ['id', 'class', 'role', 'href', 'data-testid'], 120, true).node
+        );
       }
     }
 
@@ -1181,9 +1184,12 @@
 
     const implicitSelector = getImplicitRoleSelector(role);
     const attrSelector = `[role="${CSS.escape(role)}"]`;
-    const combinedSelector = scope === '*'
-      ? (implicitSelector ? `${attrSelector}, ${implicitSelector}` : attrSelector)
-      : scope;
+    const combinedSelector =
+      scope === '*'
+        ? implicitSelector
+          ? `${attrSelector}, ${implicitSelector}`
+          : attrSelector
+        : scope;
     const candidates = document.querySelectorAll(combinedSelector);
     const results = [];
 
@@ -1201,7 +1207,9 @@
           continue;
         }
       }
-      results.push(summarizeNode(el, ['id', 'class', 'role', 'aria-label', 'href'], 120, true).node);
+      results.push(
+        summarizeNode(el, ['id', 'class', 'role', 'aria-label', 'href'], 120, true).node
+      );
     }
 
     return { nodes: results, count: results.length };
@@ -1264,47 +1272,100 @@
     const offsetX = Number(params.offsetX) || 0;
     const offsetY = Number(params.offsetY) || 0;
     const endPoint = { x: destPoint.x + offsetX, y: destPoint.y + offsetY };
-    const emptyMods = { altKey: false, ctrlKey: false, metaKey: false, shiftKey: false };
+    const emptyMods = {
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+    };
 
     scrollTargetIntoView(source);
 
     const dataTransfer = new DataTransfer();
 
-    source.dispatchEvent(new MouseEvent('mousedown', {
-      bubbles: true, cancelable: true, composed: true,
-      clientX: sourcePoint.x, clientY: sourcePoint.y, ...emptyMods,
-    }));
-    source.dispatchEvent(new DragEvent('dragstart', {
-      bubbles: true, cancelable: true, composed: true,
-      clientX: sourcePoint.x, clientY: sourcePoint.y, dataTransfer,
-    }));
-    source.dispatchEvent(new DragEvent('drag', {
-      bubbles: true, cancelable: true, composed: true,
-      clientX: sourcePoint.x, clientY: sourcePoint.y, dataTransfer,
-    }));
+    source.dispatchEvent(
+      new MouseEvent('mousedown', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        clientX: sourcePoint.x,
+        clientY: sourcePoint.y,
+        ...emptyMods,
+      })
+    );
+    source.dispatchEvent(
+      new DragEvent('dragstart', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        clientX: sourcePoint.x,
+        clientY: sourcePoint.y,
+        dataTransfer,
+      })
+    );
+    source.dispatchEvent(
+      new DragEvent('drag', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        clientX: sourcePoint.x,
+        clientY: sourcePoint.y,
+        dataTransfer,
+      })
+    );
 
     scrollTargetIntoView(destination);
 
-    destination.dispatchEvent(new DragEvent('dragenter', {
-      bubbles: true, cancelable: true, composed: true,
-      clientX: endPoint.x, clientY: endPoint.y, dataTransfer,
-    }));
-    destination.dispatchEvent(new DragEvent('dragover', {
-      bubbles: true, cancelable: true, composed: true,
-      clientX: endPoint.x, clientY: endPoint.y, dataTransfer,
-    }));
-    destination.dispatchEvent(new DragEvent('drop', {
-      bubbles: true, cancelable: true, composed: true,
-      clientX: endPoint.x, clientY: endPoint.y, dataTransfer,
-    }));
-    source.dispatchEvent(new DragEvent('dragend', {
-      bubbles: true, cancelable: true, composed: true,
-      clientX: endPoint.x, clientY: endPoint.y, dataTransfer,
-    }));
-    source.dispatchEvent(new MouseEvent('mouseup', {
-      bubbles: true, cancelable: true, composed: true,
-      clientX: endPoint.x, clientY: endPoint.y, ...emptyMods,
-    }));
+    destination.dispatchEvent(
+      new DragEvent('dragenter', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        clientX: endPoint.x,
+        clientY: endPoint.y,
+        dataTransfer,
+      })
+    );
+    destination.dispatchEvent(
+      new DragEvent('dragover', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        clientX: endPoint.x,
+        clientY: endPoint.y,
+        dataTransfer,
+      })
+    );
+    destination.dispatchEvent(
+      new DragEvent('drop', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        clientX: endPoint.x,
+        clientY: endPoint.y,
+        dataTransfer,
+      })
+    );
+    source.dispatchEvent(
+      new DragEvent('dragend', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        clientX: endPoint.x,
+        clientY: endPoint.y,
+        dataTransfer,
+      })
+    );
+    source.dispatchEvent(
+      new MouseEvent('mouseup', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        clientX: endPoint.x,
+        clientY: endPoint.y,
+        ...emptyMods,
+      })
+    );
 
     return {
       sourceRef: rememberElement(source),
@@ -1334,7 +1395,9 @@
   function getStorageData(params) {
     const type = params.type === 'session' ? 'session' : 'local';
     const storage = type === 'session' ? sessionStorage : localStorage;
-    const keys = Array.isArray(params.keys) ? params.keys.filter((k) => typeof k === 'string') : null;
+    const keys = Array.isArray(params.keys)
+      ? params.keys.filter((k) => typeof k === 'string')
+      : null;
     /** @type {Record<string, string | null>} */
     const result = {};
     if (keys) {
@@ -1452,7 +1515,10 @@
       return element;
     }
 
-    if (element instanceof HTMLOptionElement && element.parentElement instanceof HTMLSelectElement) {
+    if (
+      element instanceof HTMLOptionElement &&
+      element.parentElement instanceof HTMLSelectElement
+    ) {
       return element.parentElement;
     }
 
@@ -1578,9 +1644,7 @@
       });
     }
 
-    return document.activeElement instanceof Element
-      ? document.activeElement
-      : element;
+    return document.activeElement instanceof Element ? document.activeElement : element;
   }
 
   /**
@@ -1664,7 +1728,7 @@
         button: buttonState.button,
         buttons: buttonState.buttons,
         ...modifiers,
-      }),
+      })
     );
   }
 
@@ -1681,7 +1745,9 @@
       return null;
     }
 
-    const editable = element.querySelector("input, textarea, [contenteditable=''], [contenteditable='true']");
+    const editable = element.querySelector(
+      "input, textarea, [contenteditable=''], [contenteditable='true']"
+    );
     return editable && isEditableElement(editable)
       ? /** @type {HTMLInputElement | HTMLTextAreaElement | HTMLElement} */ (editable)
       : null;
@@ -1810,7 +1876,7 @@
         cancelable: true,
         composed: true,
         ...modifiers,
-      }),
+      })
     );
   }
 
@@ -1828,7 +1894,7 @@
         bubbles: true,
         cancelable: true,
         composed: true,
-      }),
+      })
     );
   }
 
@@ -1845,7 +1911,7 @@
         inputType,
         bubbles: true,
         composed: true,
-      }),
+      })
     );
   }
 
@@ -1877,8 +1943,7 @@
    * @returns {boolean}
    */
   function deleteTextFromEditable(element, direction) {
-    const inputType =
-      direction === 'backward' ? 'deleteContentBackward' : 'deleteContentForward';
+    const inputType = direction === 'backward' ? 'deleteContentBackward' : 'deleteContentForward';
     if (!dispatchBeforeInputEvent(element, '', inputType)) {
       return false;
     }
@@ -1896,9 +1961,7 @@
     } else {
       const text = element.textContent || '';
       element.textContent =
-        direction === 'backward'
-          ? text.slice(0, Math.max(0, text.length - 1))
-          : text.slice(1);
+        direction === 'backward' ? text.slice(0, Math.max(0, text.length - 1)) : text.slice(1);
     }
 
     dispatchInputEvent(element, '', inputType);
@@ -1911,7 +1974,10 @@
    */
   function handleEnterKey(element) {
     const editable = getEditableTarget(element);
-    if (editable instanceof HTMLTextAreaElement || (editable instanceof HTMLElement && editable.isContentEditable)) {
+    if (
+      editable instanceof HTMLTextAreaElement ||
+      (editable instanceof HTMLElement && editable.isContentEditable)
+    ) {
       return insertTextIntoEditable(editable, '\n');
     }
 
@@ -1920,7 +1986,10 @@
       return true;
     }
 
-    if (element instanceof HTMLButtonElement || (element instanceof HTMLInputElement && ['button', 'submit'].includes(element.type))) {
+    if (
+      element instanceof HTMLButtonElement ||
+      (element instanceof HTMLInputElement && ['button', 'submit'].includes(element.type))
+    ) {
       element.click();
       return true;
     }
@@ -1964,14 +2033,11 @@
    */
   function normalizeDomQuery(params = {}) {
     const rawSelector =
-      typeof params.selector === 'string' && params.selector.trim()
-        ? params.selector
-        : 'body';
+      typeof params.selector === 'string' && params.selector.trim() ? params.selector : 'body';
     return {
       selector: escapeTailwindSelector(rawSelector),
       withinRef: typeof params.withinRef === 'string' ? params.withinRef : null,
       budget: applyBudget(params),
     };
   }
-
 })();

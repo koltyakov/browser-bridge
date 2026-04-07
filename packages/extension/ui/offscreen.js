@@ -14,7 +14,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   const typedMessage = /** @type {CropMessage} */ (message);
-  crop(typedMessage.image || '', typedMessage.rect || { x: 0, y: 0, width: 1, height: 1 }).then(sendResponse);
+  crop(typedMessage.image || '', typedMessage.rect || { x: 0, y: 0, width: 1, height: 1 }).then(
+    sendResponse
+  );
   return true;
 });
 

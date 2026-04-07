@@ -113,30 +113,51 @@ test('runNativeHost bridges daemon socket messages and stdin frames', async () =
 
     assert.equal(socketWrites[0], '{"type":"register","role":"extension"}\n');
 
-    socket.emit('data', `${JSON.stringify({ type: 'extension.request', request: { id: 'ext-1', ok: true } })}\n`);
-    socket.emit('data', `${JSON.stringify({ type: 'agent.response', response: { ok: true, result: { pong: true } } })}\n`);
-    socket.emit('data', `${JSON.stringify({
-      type: 'extension.setup_status.response',
-      requestId: 'setup-1',
-      status: { configured: true }
-    })}\n`);
-    socket.emit('data', `${JSON.stringify({
-      type: 'extension.setup_status.error',
-      requestId: 'setup-2',
-      error: { code: 'BROKEN', message: 'No extension' }
-    })}\n`);
-    process.stdin.emit('data', frameNativeMessage({
-      type: 'host.bridge_request',
-      request: { id: 'agent-1', method: 'tabs.list' }
-    }));
-    process.stdin.emit('data', frameNativeMessage({
-      type: 'host.setup_status.request',
-      requestId: 'setup-3'
-    }));
-    process.stdin.emit('data', frameNativeMessage({
-      id: 'plain-1',
-      ok: true
-    }));
+    socket.emit(
+      'data',
+      `${JSON.stringify({ type: 'extension.request', request: { id: 'ext-1', ok: true } })}\n`
+    );
+    socket.emit(
+      'data',
+      `${JSON.stringify({ type: 'agent.response', response: { ok: true, result: { pong: true } } })}\n`
+    );
+    socket.emit(
+      'data',
+      `${JSON.stringify({
+        type: 'extension.setup_status.response',
+        requestId: 'setup-1',
+        status: { configured: true },
+      })}\n`
+    );
+    socket.emit(
+      'data',
+      `${JSON.stringify({
+        type: 'extension.setup_status.error',
+        requestId: 'setup-2',
+        error: { code: 'BROKEN', message: 'No extension' },
+      })}\n`
+    );
+    process.stdin.emit(
+      'data',
+      frameNativeMessage({
+        type: 'host.bridge_request',
+        request: { id: 'agent-1', method: 'tabs.list' },
+      })
+    );
+    process.stdin.emit(
+      'data',
+      frameNativeMessage({
+        type: 'host.setup_status.request',
+        requestId: 'setup-3',
+      })
+    );
+    process.stdin.emit(
+      'data',
+      frameNativeMessage({
+        id: 'plain-1',
+        ok: true,
+      })
+    );
 
     await flushAsyncWork();
 
@@ -144,23 +165,23 @@ test('runNativeHost bridges daemon socket messages and stdin frames', async () =
       { id: 'ext-1', ok: true },
       {
         type: 'host.bridge_response',
-        response: { ok: true, result: { pong: true } }
+        response: { ok: true, result: { pong: true } },
       },
       {
         type: 'host.setup_status.response',
         requestId: 'setup-1',
-        status: { configured: true }
+        status: { configured: true },
       },
       {
         type: 'host.setup_status.error',
         requestId: 'setup-2',
-        error: { code: 'BROKEN', message: 'No extension' }
-      }
+        error: { code: 'BROKEN', message: 'No extension' },
+      },
     ]);
     assert.deepEqual(socketWrites.slice(1), [
       '{"type":"agent.request","request":{"id":"agent-1","method":"tabs.list"}}\n',
       '{"type":"extension.setup_status.request","requestId":"setup-3"}\n',
-      '{"type":"extension.response","response":{"id":"plain-1","ok":true}}\n'
+      '{"type":"extension.response","response":{"id":"plain-1","ok":true}}\n',
     ]);
   } finally {
     net.createConnection = originalCreateConnection;
@@ -220,12 +241,12 @@ test('runNativeHost reports bootstrap failures as native error responses', async
             details: null,
             recovery: {
               retry: false,
-              hint: 'Native host not reachable. Run `bbx doctor` to diagnose the installation.'
-            }
+              hint: 'Native host not reachable. Run `bbx doctor` to diagnose the installation.',
+            },
           },
-          meta: { protocol_version: '1.0' }
-        }
-      }
+          meta: { protocol_version: '1.0' },
+        },
+      },
     ]);
   } finally {
     net.createConnection = originalCreateConnection;

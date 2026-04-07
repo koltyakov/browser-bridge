@@ -1,33 +1,23 @@
 {
   "editor.formatOnSave": true,
+  "editor.formatOnSaveMode": "file",
   "editor.defaultFormatter": null,
-  "editor.codeActionsOnSave": {
-    "source.fixAll.eslint": "explicit"
-  },
   "editor.tabSize": 2,
   "editor.insertSpaces": true,
   "editor.detectIndentation": false,
+  "oxc.fmt.configPath": ".oxfmtrc.json",
   "[javascript]": {
-    "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+    "editor.defaultFormatter": "oxc.oxc-vscode"
   },
   "[javascriptreact]": {
-    "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+    "editor.defaultFormatter": "oxc.oxc-vscode"
   },
   "[typescript]": {
-    "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+    "editor.defaultFormatter": "oxc.oxc-vscode"
   },
   "[typescriptreact]": {
-    "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+    "editor.defaultFormatter": "oxc.oxc-vscode"
   },
-  "eslint.validate": [
-    "javascript",
-    "javascriptreact",
-    "typescript",
-    "typescriptreact"
-  ],
-  "eslint.format.enable": true,
-  "eslint.lintTask.enable": true,
-  "eslint.useFlatConfig": true,
   "files.eol": "\n",
   "files.trimTrailingWhitespace": true,
   "files.insertFinalNewline": true

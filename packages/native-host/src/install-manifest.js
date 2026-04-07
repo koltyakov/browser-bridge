@@ -3,7 +3,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { APP_NAME, getBridgeDir, getLauncherFilename, getManifestInstallDir, PUBLISHED_EXTENSION_ID } from './config.js';
+import {
+  APP_NAME,
+  getBridgeDir,
+  getLauncherFilename,
+  getManifestInstallDir,
+  PUBLISHED_EXTENSION_ID,
+} from './config.js';
 
 export const DEFAULT_EXTENSION_ID_ENV = 'BROWSER_BRIDGE_EXTENSION_ID';
 export const BUILT_IN_EXTENSION_ID_SOURCE = 'built_in';
@@ -21,6 +27,7 @@ export const BUILT_IN_EXTENSION_ID_SOURCE = 'built_in';
  *   bridgeDir?: string | undefined,
  *   stdout?: Pick<NodeJS.WriteStream, 'write'>,
  *   stderr?: Pick<NodeJS.WriteStream, 'write'>,
+ *   preserveCustomExtensionId?: boolean | undefined,
  *   env?: NodeJS.ProcessEnv
  * }} InstallManifestOptions
  */
@@ -62,13 +69,13 @@ export function resolveDefaultExtensionId(env = process.env) {
     const parsed = parseExtensionId(candidate);
     return {
       extensionId: parsed,
-      source: parsed ? 'env' : 'invalid_env'
+      source: parsed ? 'env' : 'invalid_env',
     };
   }
 
   return {
     extensionId: PUBLISHED_EXTENSION_ID || null,
-    source: PUBLISHED_EXTENSION_ID ? 'built_in' : 'none'
+    source: PUBLISHED_EXTENSION_ID ? 'built_in' : 'none',
   };
 }
 
@@ -90,9 +97,10 @@ export function getDefaultExtensionId(env = process.env) {
  * @returns {string[]}
  */
 export function getAllowedOrigins(existingManifest, extensionId) {
-  const existing = (existingManifest && Array.isArray(existingManifest.allowed_origins))
-    ? existingManifest.allowed_origins
-    : [];
+  const existing =
+    existingManifest && Array.isArray(existingManifest.allowed_origins)
+      ? existingManifest.allowed_origins
+      : [];
 
   if (extensionId) {
     const origin = `chrome-extension://${extensionId}/`;
@@ -108,6 +116,25 @@ export function getAllowedOrigins(existingManifest, extensionId) {
 
   if (existing.length > 0) return existing;
   return ['chrome-extension://__REPLACE_WITH_EXTENSION_ID__/'];
+}
+
+/**
+ * @param {string[] | undefined} allowedOrigins
+ * @returns {string[]}
+ */
+function getExtensionIdsFromAllowedOrigins(allowedOrigins) {
+  if (!Array.isArray(allowedOrigins)) {
+    return [];
+  }
+
+  const ids = new Set();
+  for (const origin of allowedOrigins) {
+    const match = /^chrome-extension:\/\/([a-z]{32})\/?$/.exec(origin);
+    if (match?.[1]) {
+      ids.add(match[1]);
+    }
+  }
+  return [...ids];
 }
 
 /**
@@ -144,7 +171,9 @@ export async function installNativeManifest(options) {
     installDir = getManifestInstallDir(browser),
     bridgeDir = getBridgeDir(),
     stdout = process.stdout,
-    env = process.env
+    stderr = process.stderr,
+    preserveCustomExtensionId = false,
+    env = process.env,
   } = options;
 
   const parsedExtensionId = parseExtensionId(extensionIdArg);
@@ -160,19 +189,35 @@ export async function installNativeManifest(options) {
       `Invalid ${DEFAULT_EXTENSION_ID_ENV}: ${env[DEFAULT_EXTENSION_ID_ENV]}\nExpected 32 lowercase letters or chrome-extension://<id>/`
     );
   }
-  const extensionId = parsedExtensionId || defaultExtensionId.extensionId;
+  const requestedExtensionId = parsedExtensionId || defaultExtensionId.extensionId;
   const hostPath = path.join(repoRoot, 'packages', 'native-host', 'bin', 'native-host.js');
   const launcherPath = path.join(bridgeDir, getLauncherFilename());
   const manifestPath = path.join(installDir, `${APP_NAME}.json`);
 
-  const launcher = process.platform === 'win32'
-    ? `@echo off\r\n"${nodePath}" "${hostPath}" %*\r\n`
-    : `#!/bin/sh
+  const launcher =
+    process.platform === 'win32'
+      ? `@echo off\r\n"${nodePath}" "${hostPath}" %*\r\n`
+      : `#!/bin/sh
 exec '${escapeSingleQuotes(nodePath)}' '${escapeSingleQuotes(hostPath)}' "$@"
 `;
 
   const existingManifest = await readExistingManifest(manifestPath);
-  const allowedOrigins = getAllowedOrigins(existingManifest, extensionId);
+  const existingExtensionIds = getExtensionIdsFromAllowedOrigins(existingManifest?.allowed_origins);
+  const hasStoreOrigin = existingExtensionIds.includes(PUBLISHED_EXTENSION_ID);
+  const customExtensionIds = existingExtensionIds.filter((id) => id !== PUBLISHED_EXTENSION_ID);
+  const preservedCustomExtensionId =
+    preserveCustomExtensionId &&
+    !parsedExtensionId &&
+    extensionIdArg == null &&
+    defaultExtensionId.source === BUILT_IN_EXTENSION_ID_SOURCE &&
+    customExtensionIds.length > 0 &&
+    !hasStoreOrigin;
+  const allowedOrigins = preservedCustomExtensionId
+    ? getAllowedOrigins(existingManifest, null)
+    : getAllowedOrigins(existingManifest, requestedExtensionId);
+  const extensionId = preservedCustomExtensionId
+    ? customExtensionIds[0] || requestedExtensionId
+    : requestedExtensionId;
 
   /** @type {{name: string, description: string, path: string, type: 'stdio', allowed_origins: string[]}} */
   const manifest = {
@@ -180,7 +225,7 @@ exec '${escapeSingleQuotes(nodePath)}' '${escapeSingleQuotes(hostPath)}' "$@"
     description: 'Browser Bridge native host',
     path: launcherPath,
     type: 'stdio',
-    allowed_origins: allowedOrigins
+    allowed_origins: allowedOrigins,
   };
 
   await fs.promises.mkdir(installDir, { recursive: true });
@@ -194,7 +239,7 @@ exec '${escapeSingleQuotes(nodePath)}' '${escapeSingleQuotes(hostPath)}' "$@"
   stdout.write(`Wrote ${manifestPath}\n`);
   stdout.write(`Wrote ${launcherPath}\n`);
 
-  if (!parsedExtensionId && extensionIdArg == null && extensionId) {
+  if (!preservedCustomExtensionId && !parsedExtensionId && extensionIdArg == null && extensionId) {
     if (defaultExtensionId.source === 'env') {
       stdout.write(`Used extension ID from ${DEFAULT_EXTENSION_ID_ENV}.\n`);
     } else if (defaultExtensionId.source === BUILT_IN_EXTENSION_ID_SOURCE) {
@@ -202,11 +247,19 @@ exec '${escapeSingleQuotes(nodePath)}' '${escapeSingleQuotes(hostPath)}' "$@"
     }
   }
 
-  const hasPlaceholder = allowedOrigins.some((origin) => origin.includes('__REPLACE_WITH_EXTENSION_ID__'));
+  if (preservedCustomExtensionId) {
+    stderr.write(
+      `Warning: existing native host manifest keeps custom extension ID ${customExtensionIds.join(', ')} instead of the Browser Bridge store ID ${PUBLISHED_EXTENSION_ID}. Leaving allowed_origins unchanged.\n`
+    );
+  }
+
+  const hasPlaceholder = allowedOrigins.some((origin) =>
+    origin.includes('__REPLACE_WITH_EXTENSION_ID__')
+  );
   if (hasPlaceholder) {
     stdout.write(
       'Tip: pass the extension ID to set allowed_origins automatically:\n' +
-      '  bbx install <extension-id>\n'
+        '  bbx install <extension-id>\n'
     );
   }
 
@@ -214,7 +267,7 @@ exec '${escapeSingleQuotes(nodePath)}' '${escapeSingleQuotes(hostPath)}' "$@"
     manifestPath,
     launcherPath,
     allowedOrigins,
-    extensionId
+    extensionId,
   };
 }
 
@@ -228,7 +281,7 @@ export async function uninstallNativeManifest(options = {}) {
     installDir = getManifestInstallDir(browser),
     bridgeDir = getBridgeDir(),
     removeBridgeDir = false,
-    stdout = process.stdout
+    stdout = process.stdout,
   } = options;
 
   const manifestPath = path.join(installDir, `${APP_NAME}.json`);
@@ -237,9 +290,7 @@ export async function uninstallNativeManifest(options = {}) {
     stdout.write(`Removed ${manifestPath}\n`);
   }
 
-  const removedBridgeDir = removeBridgeDir
-    ? await removePathIfExists(bridgeDir)
-    : false;
+  const removedBridgeDir = removeBridgeDir ? await removePathIfExists(bridgeDir) : false;
   if (removedBridgeDir) {
     stdout.write(`Removed ${bridgeDir}\n`);
   }
@@ -248,7 +299,7 @@ export async function uninstallNativeManifest(options = {}) {
     manifestPath,
     bridgeDir,
     removedManifest,
-    removedBridgeDir
+    removedBridgeDir,
   };
 }
 

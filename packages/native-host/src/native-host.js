@@ -54,10 +54,10 @@ const daemonEntryPath = path.resolve(__dirname, '../bin/bridge-daemon.js');
  */
 function isHostBridgeRequest(message) {
   return Boolean(
-    message
-    && typeof message === 'object'
-    && /** @type {Record<string, unknown>} */ (message).type === 'host.bridge_request'
-    && typeof /** @type {Record<string, unknown>} */ (message).request === 'object'
+    message &&
+    typeof message === 'object' &&
+    /** @type {Record<string, unknown>} */ (message).type === 'host.bridge_request' &&
+    typeof (/** @type {Record<string, unknown>} */ (message).request) === 'object'
   );
 }
 
@@ -67,10 +67,10 @@ function isHostBridgeRequest(message) {
  */
 function isHostStatusRequest(message) {
   return Boolean(
-    message
-    && typeof message === 'object'
-    && /** @type {Record<string, unknown>} */ (message).type === 'host.setup_status.request'
-    && typeof /** @type {Record<string, unknown>} */ (message).requestId === 'string'
+    message &&
+    typeof message === 'object' &&
+    /** @type {Record<string, unknown>} */ (message).type === 'host.setup_status.request' &&
+    typeof (/** @type {Record<string, unknown>} */ (message).requestId) === 'string'
   );
 }
 
@@ -80,9 +80,9 @@ function isHostStatusRequest(message) {
  */
 function isHostIdentity(message) {
   return Boolean(
-    message
-    && typeof message === 'object'
-    && /** @type {Record<string, unknown>} */ (message).type === 'host.identity'
+    message &&
+    typeof message === 'object' &&
+    /** @type {Record<string, unknown>} */ (message).type === 'host.identity'
   );
 }
 
@@ -92,10 +92,10 @@ function isHostIdentity(message) {
  */
 function isHostAccessUpdate(message) {
   return Boolean(
-    message
-    && typeof message === 'object'
-    && /** @type {Record<string, unknown>} */ (message).type === 'host.access_update'
-    && typeof /** @type {Record<string, unknown>} */ (message).accessEnabled === 'boolean'
+    message &&
+    typeof message === 'object' &&
+    /** @type {Record<string, unknown>} */ (message).type === 'host.access_update' &&
+    typeof (/** @type {Record<string, unknown>} */ (message).accessEnabled) === 'boolean'
   );
 }
 
@@ -105,9 +105,9 @@ function isHostAccessUpdate(message) {
  */
 function isHostActivity(message) {
   return Boolean(
-    message
-    && typeof message === 'object'
-    && /** @type {Record<string, unknown>} */ (message).type === 'host.activity'
+    message &&
+    typeof message === 'object' &&
+    /** @type {Record<string, unknown>} */ (message).type === 'host.activity'
   );
 }
 
@@ -126,7 +126,7 @@ export async function runNativeHost({ socketPath = getSocketPath() } = {}) {
         'native_bootstrap',
         ERROR_CODES.NATIVE_HOST_UNAVAILABLE,
         error instanceof Error ? error.message : String(error)
-      )
+      ),
     });
     return;
   }
@@ -159,22 +159,29 @@ export async function runNativeHost({ socketPath = getSocketPath() } = {}) {
         if (message.type === 'agent.response') {
           await writeNativeMessage(process.stdout, {
             type: 'host.bridge_response',
-            response: message.response
+            response: message.response,
           });
           return;
         }
-        if (message.type === 'extension.setup_status.response' || message.type === 'extension.setup_status.error') {
+        if (
+          message.type === 'extension.setup_status.response' ||
+          message.type === 'extension.setup_status.error'
+        ) {
           await writeNativeMessage(process.stdout, {
-            type: message.type === 'extension.setup_status.response'
-              ? 'host.setup_status.response'
-              : 'host.setup_status.error',
+            type:
+              message.type === 'extension.setup_status.response'
+                ? 'host.setup_status.response'
+                : 'host.setup_status.error',
             requestId: message.requestId,
             status: message.status,
-            error: message.error
+            error: message.error,
           });
         }
       })().catch((err) => {
-        console.error('native-host: socket message handler failed:', err instanceof Error ? err.message : err);
+        console.error(
+          'native-host: socket message handler failed:',
+          err instanceof Error ? err.message : err
+        );
       });
     }
   });
@@ -184,14 +191,14 @@ export async function runNativeHost({ socketPath = getSocketPath() } = {}) {
       if (isHostBridgeRequest(message)) {
         await writeJsonLine(socket, {
           type: 'agent.request',
-          request: message.request
+          request: message.request,
         });
         return;
       }
       if (isHostStatusRequest(message)) {
         await writeJsonLine(socket, {
           type: 'extension.setup_status.request',
-          requestId: message.requestId
+          requestId: message.requestId,
         });
         return;
       }
@@ -199,30 +206,33 @@ export async function runNativeHost({ socketPath = getSocketPath() } = {}) {
         await writeJsonLine(socket, {
           type: 'extension.identity',
           browserName: message.browserName,
-          profileLabel: message.profileLabel
+          profileLabel: message.profileLabel,
         });
         return;
       }
       if (isHostAccessUpdate(message)) {
         await writeJsonLine(socket, {
           type: 'extension.access_update',
-          accessEnabled: message.accessEnabled
+          accessEnabled: message.accessEnabled,
         });
         return;
       }
       if (isHostActivity(message)) {
         await writeJsonLine(socket, {
           type: 'extension.activity',
-          at: message.at
+          at: message.at,
         });
         return;
       }
       await writeJsonLine(socket, {
         type: 'extension.response',
-        response: message
+        response: message,
       });
     })().catch((err) => {
-      console.error('native-host: stdin message handler failed:', err instanceof Error ? err.message : err);
+      console.error(
+        'native-host: stdin message handler failed:',
+        err instanceof Error ? err.message : err
+      );
     });
   });
 }
@@ -235,9 +245,12 @@ export async function runNativeHost({ socketPath = getSocketPath() } = {}) {
  * @param {() => void} [onTerminate]
  * @returns {void}
  */
-export function bindBridgeSocketLifecycle(socket, onTerminate = () => {
-  process.exit(0);
-}) {
+export function bindBridgeSocketLifecycle(
+  socket,
+  onTerminate = () => {
+    process.exit(0);
+  }
+) {
   let terminated = false;
 
   /**
@@ -317,7 +330,7 @@ function connectSocket(socketPath) {
 function spawnBridgeDaemon() {
   const child = spawn(process.execPath, [daemonEntryPath], {
     detached: true,
-    stdio: 'ignore'
+    stdio: 'ignore',
   });
   child.unref();
 }
@@ -327,9 +340,11 @@ function spawnBridgeDaemon() {
  * @returns {boolean}
  */
 function shouldBootstrap(error) {
-  return error instanceof Error
-    && 'code' in error
-    && (error.code === 'ENOENT' || error.code === 'ECONNREFUSED');
+  return (
+    error instanceof Error &&
+    'code' in error &&
+    (error.code === 'ENOENT' || error.code === 'ECONNREFUSED')
+  );
 }
 
 /**

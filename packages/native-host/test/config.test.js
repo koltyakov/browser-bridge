@@ -25,9 +25,7 @@ import {
 async function withMockedConfigEnvironment(options, callback) {
   const originalPlatform = os.platform;
   const originalHomedir = os.homedir;
-  const previousEnv = new Map(
-    Object.keys(options.env ?? {}).map((key) => [key, process.env[key]])
-  );
+  const previousEnv = new Map(Object.keys(options.env ?? {}).map((key) => [key, process.env[key]]));
 
   if (options.platform) {
     os.platform = /** @type {typeof os.platform} */ (() => options.platform);
@@ -59,57 +57,66 @@ async function withMockedConfigEnvironment(options, callback) {
 }
 
 test('getBridgeDir honors BROWSER_BRIDGE_HOME override and socket path uses it', async () => {
-  await withMockedConfigEnvironment({
-    env: { [BRIDGE_HOME_ENV]: '/tmp/browser-bridge-home' },
-  }, async () => {
-    assert.equal(getBridgeDir(), '/tmp/browser-bridge-home');
-    assert.equal(getSocketPath(), path.join('/tmp/browser-bridge-home', 'bridge.sock'));
-  });
+  await withMockedConfigEnvironment(
+    {
+      env: { [BRIDGE_HOME_ENV]: '/tmp/browser-bridge-home' },
+    },
+    async () => {
+      assert.equal(getBridgeDir(), '/tmp/browser-bridge-home');
+      assert.equal(getSocketPath(), path.join('/tmp/browser-bridge-home', 'bridge.sock'));
+    }
+  );
 });
 
 test('getBridgeDir resolves platform-specific defaults', async () => {
-  await withMockedConfigEnvironment({
-    platform: 'darwin',
-    home: '/Users/tester',
-    env: {
-      [BRIDGE_HOME_ENV]: undefined,
-      LOCALAPPDATA: undefined,
-      XDG_DATA_HOME: undefined,
+  await withMockedConfigEnvironment(
+    {
+      platform: 'darwin',
+      home: '/Users/tester',
+      env: {
+        [BRIDGE_HOME_ENV]: undefined,
+        LOCALAPPDATA: undefined,
+        XDG_DATA_HOME: undefined,
+      },
     },
-  }, async () => {
-    assert.equal(
-      getBridgeDir(),
-      '/Users/tester/Library/Application Support/Browser Bridge'
-    );
-    assert.equal(getLauncherFilename(), 'native-host-launcher.sh');
-    assert.match(getManifestInstallDir('edge'), /Microsoft Edge/);
-  });
+    async () => {
+      assert.equal(getBridgeDir(), '/Users/tester/Library/Application Support/Browser Bridge');
+      assert.equal(getLauncherFilename(), 'native-host-launcher.sh');
+      assert.match(getManifestInstallDir('edge'), /Microsoft Edge/);
+    }
+  );
 
-  await withMockedConfigEnvironment({
-    platform: 'linux',
-    home: '/home/tester',
-    env: {
-      [BRIDGE_HOME_ENV]: undefined,
-      XDG_DATA_HOME: '/tmp/xdg-data',
+  await withMockedConfigEnvironment(
+    {
+      platform: 'linux',
+      home: '/home/tester',
+      env: {
+        [BRIDGE_HOME_ENV]: undefined,
+        XDG_DATA_HOME: '/tmp/xdg-data',
+      },
     },
-  }, async () => {
-    assert.equal(getBridgeDir(), '/tmp/xdg-data/browser-bridge');
-    assert.match(getManifestInstallDir('chromium'), /chromium/);
-  });
+    async () => {
+      assert.equal(getBridgeDir(), '/tmp/xdg-data/browser-bridge');
+      assert.match(getManifestInstallDir('chromium'), /chromium/);
+    }
+  );
 
-  await withMockedConfigEnvironment({
-    platform: 'win32',
-    home: 'C:\\Users\\tester',
-    env: {
-      [BRIDGE_HOME_ENV]: undefined,
-      LOCALAPPDATA: 'C:\\Users\\tester\\AppData\\Local',
+  await withMockedConfigEnvironment(
+    {
+      platform: 'win32',
+      home: 'C:\\Users\\tester',
+      env: {
+        [BRIDGE_HOME_ENV]: undefined,
+        LOCALAPPDATA: 'C:\\Users\\tester\\AppData\\Local',
+      },
     },
-  }, async () => {
-    assert.equal(
-      getBridgeDir(),
-      path.join('C:\\Users\\tester\\AppData\\Local', 'Browser Bridge')
-    );
-    assert.equal(getLauncherFilename(), 'native-host-launcher.cmd');
-    assert.match(getManifestInstallDir('brave'), /BraveSoftware/);
-  });
+    async () => {
+      assert.equal(
+        getBridgeDir(),
+        path.join('C:\\Users\\tester\\AppData\\Local', 'Browser Bridge')
+      );
+      assert.equal(getLauncherFilename(), 'native-host-launcher.cmd');
+      assert.match(getManifestInstallDir('brave'), /BraveSoftware/);
+    }
+  );
 });

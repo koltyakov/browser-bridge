@@ -22,12 +22,20 @@
  * }} PopupStateMessage
  */
 
-const nativeIndicator = /** @type {HTMLSpanElement} */ (document.getElementById('native-indicator'));
+const nativeIndicator =
+  /** @type {HTMLSpanElement} */ (document.getElementById('native-indicator'));
 const button = /** @type {HTMLButtonElement} */ (document.getElementById('communication-action'));
-const accessEyebrow = /** @type {HTMLDivElement} */ (document.getElementById('popup-access-eyebrow'));
-const accessDetail = /** @type {HTMLParagraphElement} */ (document.getElementById('popup-access-detail'));
-const accessDisclosure = /** @type {HTMLParagraphElement} */ (document.getElementById('popup-disclosure'));
-const controlCard = /** @type {HTMLElement | null} */ (document.querySelector('.popup-control-card'));
+const accessEyebrow = /** @type {HTMLDivElement} */ (
+  document.getElementById('popup-access-eyebrow')
+);
+const accessDetail = /** @type {HTMLParagraphElement} */ (
+  document.getElementById('popup-access-detail')
+);
+const accessDisclosure =
+  /** @type {HTMLParagraphElement} */ (document.getElementById('popup-disclosure'));
+const controlCard = /** @type {HTMLElement | null} */ (
+  document.querySelector('.popup-control-card')
+);
 const windowedPopup = isWindowedPopup();
 /** @type {number | null} */
 let popupScopeTabId = null;
@@ -53,7 +61,10 @@ async function resolveInitialScopeTabId() {
   }
 
   try {
-    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const [activeTab] = await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
     return typeof activeTab?.id === 'number' ? activeTab.id : null;
   } catch {
     return null;
@@ -69,7 +80,7 @@ async function connectPopupPort() {
   nextPort.onMessage.addListener(handlePopupMessage);
   nextPort.postMessage({
     type: 'state.request',
-    ...(popupScopeTabId ? { scopeTabId: popupScopeTabId } : {})
+    ...(popupScopeTabId ? { scopeTabId: popupScopeTabId } : {}),
   });
   port = nextPort;
 }
@@ -109,7 +120,8 @@ function renderPopupState(currentTab) {
 
   if (!currentTab) {
     accessEyebrow.textContent = 'Window access unavailable';
-    accessDetail.textContent = 'Open a normal web page to manage Browser Bridge for this Chrome window.';
+    accessDetail.textContent =
+      'Open a normal web page to manage Browser Bridge for this Chrome window.';
     accessDisclosure.hidden = false;
     button.textContent = 'Enable Window Access';
     button.disabled = true;
@@ -121,17 +133,21 @@ function renderPopupState(currentTab) {
 
   if (currentTab.enabled && currentTab.restricted) {
     accessEyebrow.textContent = 'Window access enabled';
-    accessDetail.textContent = 'This page cannot be interacted with. Switch to a normal web page to use Browser Bridge.';
+    accessDetail.textContent =
+      'This page cannot be interacted with. Switch to a normal web page to use Browser Bridge.';
     accessDisclosure.hidden = false;
   } else if (currentTab.enabled) {
     accessEyebrow.textContent = 'Window access enabled';
-    accessDetail.textContent = 'Your connected agent can inspect and interact with pages in this Chrome window.';
+    accessDetail.textContent =
+      'Your connected agent can inspect and interact with pages in this Chrome window.';
   } else if (currentTab.accessRequested) {
     accessEyebrow.textContent = 'Window access requested';
-    accessDetail.textContent = 'An agent requested access for this Chrome window. Enable it to allow page inspection and interaction.';
+    accessDetail.textContent =
+      'An agent requested access for this Chrome window. Enable it to allow page inspection and interaction.';
   } else {
     accessEyebrow.textContent = 'Window access';
-    accessDetail.textContent = 'Enable Browser Bridge to let your connected agent inspect and interact with pages in this Chrome window.';
+    accessDetail.textContent =
+      'Enable Browser Bridge to let your connected agent inspect and interact with pages in this Chrome window.';
   }
 
   button.textContent = currentTab.enabled ? 'Disable Window Access' : 'Enable Window Access';
@@ -146,9 +162,7 @@ function renderPopupState(currentTab) {
  */
 function renderNativeStatus(connected) {
   if (!nativeIndicator) return;
-  const label = connected
-    ? 'Native host connected'
-    : 'Native host disconnected';
+  const label = connected ? 'Native host connected' : 'Native host disconnected';
   nativeIndicator.dataset.connected = String(connected);
   nativeIndicator.title = label;
   nativeIndicator.setAttribute('aria-label', label);
@@ -162,7 +176,9 @@ function renderNativeStatus(connected) {
   } else if (!nativeDiagnosticTimer) {
     nativeDiagnosticTimer = setTimeout(() => {
       nativeDiagnosticTimer = null;
-      showDiagnostic(`Native host unreachable. Run: npm install -g @browserbridge/bbx && ${getInstallCommand()}`);
+      showDiagnostic(
+        `Native host unreachable. Run: npm install -g @browserbridge/bbx && ${getInstallCommand()}`
+      );
     }, NATIVE_DIAGNOSTIC_DELAY_MS);
   }
 }
@@ -176,7 +192,8 @@ function showDiagnostic(message) {
   if (!el) {
     el = document.createElement('div');
     el.id = 'native-diagnostic';
-    el.style.cssText = 'padding:8px 12px;margin:8px 0;background:var(--status-badge-bg,#fef3cd);color:var(--text-primary,#856404);border-radius:6px;font-size:12px;line-height:1.4';
+    el.style.cssText =
+      'padding:8px 12px;margin:8px 0;background:var(--status-badge-bg,#fef3cd);color:var(--text-primary,#856404);border-radius:6px;font-size:12px;line-height:1.4';
     const container = document.querySelector('.popup-content') || document.body;
     container.prepend(el);
   }
@@ -202,7 +219,7 @@ function setCommunicationEnabled(enabled) {
   port.postMessage({
     type: 'scope.set_enabled',
     enabled,
-    ...(scopedTabId ? { tabId: scopedTabId } : {})
+    ...(scopedTabId ? { tabId: scopedTabId } : {}),
   });
 }
 
@@ -255,7 +272,9 @@ async function resizeWindowToContent() {
   const panel = /** @type {HTMLElement | null} */ (document.querySelector('.panel-popup'));
   const panelRect = panel?.getBoundingClientRect();
   const contentWidth = Math.ceil(panelRect?.width ?? document.body.getBoundingClientRect().width);
-  const contentHeight = Math.ceil(panelRect?.height ?? document.body.getBoundingClientRect().height);
+  const contentHeight = Math.ceil(
+    panelRect?.height ?? document.body.getBoundingClientRect().height
+  );
   const frameWidth = Math.max(window.outerWidth - window.innerWidth, 0);
   const frameHeight = Math.max(window.outerHeight - window.innerHeight, 0);
   const targetWidth = Math.min(Math.max(contentWidth + frameWidth + 2, 420), 560);
@@ -268,7 +287,7 @@ async function resizeWindowToContent() {
   /** @type {chrome.windows.UpdateInfo} */
   const updateInfo = {
     width: targetWidth,
-    height: targetHeight
+    height: targetHeight,
   };
 
   if (typeof currentWindow.left === 'number' && typeof currentWindow.width === 'number') {

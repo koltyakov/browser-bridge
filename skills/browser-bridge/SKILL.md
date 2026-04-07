@@ -1,6 +1,6 @@
 ---
 name: browser-bridge
-description: "Token-efficient Chrome tab inspection, interaction, and patching via local bridge extension (CLI: bbx). Reads live DOM, styles, console, network, and storage from a real Chrome tab with lower token cost than screenshots."
+description: 'Token-efficient Chrome tab inspection, interaction, and patching via local bridge extension (CLI: bbx). Reads live DOM, styles, console, network, and storage from a real Chrome tab with lower token cost than screenshots.'
 ---
 
 # Browser Bridge

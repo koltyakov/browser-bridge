@@ -4,7 +4,12 @@ import { EventEmitter, once } from 'node:events';
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
 
-import { createRequest, DEFAULT_CLIENT_REQUEST_TIMEOUT_MS, PROTOCOL_VERSION, parseJsonLines } from '../../protocol/src/index.js';
+import {
+  createRequest,
+  DEFAULT_CLIENT_REQUEST_TIMEOUT_MS,
+  PROTOCOL_VERSION,
+  parseJsonLines,
+} from '../../protocol/src/index.js';
 import { getSocketPath } from '../../native-host/src/config.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
@@ -55,7 +60,7 @@ export class BridgeClient extends EventEmitter {
     socketPath = getSocketPath(),
     clientId = `agent_${randomUUID()}`,
     defaultTimeoutMs = DEFAULT_CLIENT_REQUEST_TIMEOUT_MS,
-    autoReconnect = false
+    autoReconnect = false,
   } = {}) {
     super();
     this.socketPath = socketPath;
@@ -128,7 +133,9 @@ export class BridgeClient extends EventEmitter {
       // 'close' fires after 'error'; reconnect is triggered there.
     });
 
-    this.socket.write(`${JSON.stringify({ type: 'register', role: 'agent', clientId: this.clientId })}\n`);
+    this.socket.write(
+      `${JSON.stringify({ type: 'register', role: 'agent', clientId: this.clientId })}\n`
+    );
     await new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         this.waiting.delete('registered');
@@ -137,13 +144,13 @@ export class BridgeClient extends EventEmitter {
       this.waiting.set('registered', {
         resolve,
         reject,
-        timeoutId
+        timeoutId,
       });
     });
 
     try {
       const healthResponse = await this.request({
-        method: 'health.ping'
+        method: 'health.ping',
       });
       if (healthResponse.ok) {
         this.protocolCompatibility = BridgeClient.checkProtocolVersion(
@@ -167,9 +174,17 @@ export class BridgeClient extends EventEmitter {
    * }} options
    * @returns {Promise<BridgeResponse>}
    */
-  async request({ method, params = {}, tabId = null, meta = {}, timeoutMs = this.defaultTimeoutMs }) {
+  async request({
+    method,
+    params = {},
+    tabId = null,
+    meta = {},
+    timeoutMs = this.defaultTimeoutMs,
+  }) {
     if (!this.socket || this.socket.destroyed || !this.socket.writable) {
-      const err = /** @type {Error & { code: string }} */ (new Error('BridgeClient is not connected.'));
+      const err = /** @type {Error & { code: string }} */ (
+        new Error('BridgeClient is not connected.')
+      );
       err.code = 'ENOTCONN';
       throw err;
     }
@@ -179,7 +194,7 @@ export class BridgeClient extends EventEmitter {
       method,
       params,
       tabId,
-      meta
+      meta,
     });
 
     const responsePromise = new Promise((resolve, reject) => {
@@ -191,14 +206,16 @@ export class BridgeClient extends EventEmitter {
       this.waiting.set(request.id, {
         resolve,
         reject,
-        timeoutId
+        timeoutId,
       });
     });
 
     if (!this.socket.write(`${JSON.stringify({ type: 'agent.request', request })}\n`)) {
       await Promise.race([
         once(this.socket, 'drain'),
-        once(this.socket, 'close').then(() => { throw new Error('Bridge socket closed while writing.'); })
+        once(this.socket, 'close').then(() => {
+          throw new Error('Bridge socket closed while writing.');
+        }),
       ]);
     }
     const response = /** @type {BridgeResponse} */ (await responsePromise);
@@ -275,7 +292,11 @@ export class BridgeClient extends EventEmitter {
       ? healthResult.supported_versions
       : [];
     if (remoteVersions.length === 0) {
-      return { compatible: true, localVersion: PROTOCOL_VERSION, remoteVersions };
+      return {
+        compatible: true,
+        localVersion: PROTOCOL_VERSION,
+        remoteVersions,
+      };
     }
     const compatible = remoteVersions.includes(PROTOCOL_VERSION);
     return {
@@ -284,11 +305,10 @@ export class BridgeClient extends EventEmitter {
       remoteVersions,
       ...(!compatible && {
         warning:
-          typeof healthResult?.migration_hint === 'string' &&
-          healthResult.migration_hint
+          typeof healthResult?.migration_hint === 'string' && healthResult.migration_hint
             ? healthResult.migration_hint
-            : `Protocol mismatch: client speaks ${PROTOCOL_VERSION} but remote supports [${remoteVersions.join(', ')}]. Update the ${remoteVersions[0] > PROTOCOL_VERSION ? 'client (npm)' : 'extension'} to match.`
-      })
+            : `Protocol mismatch: client speaks ${PROTOCOL_VERSION} but remote supports [${remoteVersions.join(', ')}]. Update the ${remoteVersions[0] > PROTOCOL_VERSION ? 'client (npm)' : 'extension'} to match.`,
+      }),
     };
   }
 
@@ -316,8 +336,8 @@ export class BridgeClient extends EventEmitter {
       ...response,
       meta: {
         ...response.meta,
-        protocol_warning: this.protocolWarning
-      }
+        protocol_warning: this.protocolWarning,
+      },
     };
   }
 }

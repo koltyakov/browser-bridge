@@ -12,6 +12,7 @@ Use this order for layout or styling issues:
 6. `patch.rollback`
 
 Prefer style patches for:
+
 - overflow fixes
 - spacing adjustments
 - flex or grid tuning
@@ -21,6 +22,7 @@ Prefer style patches for:
 ## DOM patch loop
 
 Use DOM patches for:
+
 - text replacement
 - setting or removing an attribute
 - toggling a class
@@ -30,6 +32,7 @@ Keep DOM patches minimal and reversible.
 ## Verification
 
 After any patch:
+
 - compare box metrics when geometry matters
 - compare computed styles when appearance matters
 - capture a cropped screenshot only when the visual outcome is still unclear

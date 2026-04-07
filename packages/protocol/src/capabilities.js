@@ -20,7 +20,7 @@ export const CAPABILITIES = Object.freeze({
   AUTOMATION_INPUT: 'automation.input',
   TABS_MANAGE: 'tabs.manage',
   PERFORMANCE_READ: 'performance.read',
-  NETWORK_READ: 'network.read'
+  NETWORK_READ: 'network.read',
 });
 
 export const DEFAULT_CAPABILITIES = Object.freeze([
@@ -40,7 +40,7 @@ export const DEFAULT_CAPABILITIES = Object.freeze([
   CAPABILITIES.CDP_STYLES,
   CAPABILITIES.TABS_MANAGE,
   CAPABILITIES.PERFORMANCE_READ,
-  CAPABILITIES.NETWORK_READ
+  CAPABILITIES.NETWORK_READ,
 ]);
 
 /** @type {Readonly<Record<CapabilityMethod, Capability | null>>} */
@@ -101,7 +101,7 @@ export const METHOD_CAPABILITIES = Object.freeze({
   'cdp.get_computed_styles_for_node': CAPABILITIES.CDP_STYLES,
   'performance.get_metrics': CAPABILITIES.PERFORMANCE_READ,
   'log.tail': null,
-  'health.ping': null
+  'health.ping': null,
 });
 
 /**

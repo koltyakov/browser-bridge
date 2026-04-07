@@ -6,11 +6,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 
 import { MAX_NATIVE_MESSAGE_BYTES } from '../../protocol/src/index.js';
-import {
-  createNativeMessageReader,
-  writeJsonLine,
-  writeNativeMessage,
-} from '../src/framing.js';
+import { createNativeMessageReader, writeJsonLine, writeNativeMessage } from '../src/framing.js';
 
 /**
  * @param {Buffer} payload

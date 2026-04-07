@@ -8,7 +8,7 @@ import {
   isRestrictedAutomationUrl,
   normalizeRequestedAccessTab,
   resolveWindowScopedTab,
-  selectRequestTabCandidate
+  selectRequestTabCandidate,
 } from '../src/background-routing.js';
 
 test('background routing selects the explicit request tab when provided', () => {
@@ -16,13 +16,13 @@ test('background routing selects the explicit request tab when provided', () => 
     id: 7,
     windowId: 3,
     title: 'Explicit',
-    url: 'https://example.com/explicit'
+    url: 'https://example.com/explicit',
   });
   const activeTab = /** @type {chrome.tabs.Tab} */ ({
     id: 9,
     windowId: 3,
     title: 'Active',
-    url: 'https://example.com/active'
+    url: 'https://example.com/active',
   });
 
   const selected = selectRequestTabCandidate(7, explicitTab, activeTab);
@@ -32,7 +32,7 @@ test('background routing selects the explicit request tab when provided', () => 
     tabId: 7,
     windowId: 3,
     title: 'Explicit',
-    url: 'https://example.com/explicit'
+    url: 'https://example.com/explicit',
   });
 });
 
@@ -41,7 +41,7 @@ test('background routing rejects tabs outside the enabled window scope', () => {
     id: 12,
     windowId: 99,
     title: 'Other',
-    url: 'https://example.com/out-of-scope'
+    url: 'https://example.com/out-of-scope',
   });
 
   assert.throws(
@@ -56,7 +56,7 @@ test('background routing rejects restricted automation pages and access requests
     id: 4,
     windowId: 3,
     title: 'Extensions',
-    url: restrictedUrl
+    url: restrictedUrl,
   });
 
   assert.equal(isRestrictedAutomationUrl(restrictedUrl), true);

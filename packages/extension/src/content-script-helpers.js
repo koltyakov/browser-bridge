@@ -1,7 +1,10 @@
 // @ts-check
 
 (() => {
-  const globalState = /** @type {typeof globalThis & { __BBX_CONTENT_HELPERS__?: Record<string, unknown> }} */ (globalThis);
+  const globalState =
+    /** @type {typeof globalThis & { __BBX_CONTENT_HELPERS__?: Record<string, unknown> }} */ (
+      globalThis
+    );
 
   if (globalState.__BBX_CONTENT_HELPERS__) {
     return;
@@ -27,7 +30,7 @@
     'radio',
     'range',
     'reset',
-    'submit'
+    'submit',
   ]);
 
   /**
@@ -49,11 +52,7 @@
       return [];
     }
 
-    return [
-      ...new Set(
-        value.filter((item) => typeof item === 'string' && item.trim())
-      )
-    ];
+    return [...new Set(value.filter((item) => typeof item === 'string' && item.trim()))];
   }
 
   /**
@@ -66,7 +65,7 @@
       maxDepth: clamp(options.maxDepth ?? 4, 1, 20),
       textBudget: clamp(options.textBudget ?? 600, 32, 10000),
       includeBbox: options.includeBbox !== false,
-      attributeAllowlist: normalizeList(options.attributeAllowlist)
+      attributeAllowlist: normalizeList(options.attributeAllowlist),
     };
   }
 
@@ -87,7 +86,7 @@
     return {
       value: `${value.slice(0, Math.max(0, budget - 1))}\u2026`,
       truncated: true,
-      omitted: value.length - budget
+      omitted: value.length - budget,
     };
   }
 
@@ -118,7 +117,7 @@
       search: 'searchbox',
       submit: 'button',
       reset: 'button',
-      image: 'button'
+      image: 'button',
     };
     return map[type] || 'textbox';
   }
@@ -160,7 +159,7 @@
       textarea: 'textbox',
       th: 'columnheader',
       tr: 'row',
-      ul: 'list'
+      ul: 'list',
     };
     return roleMap[tag] || '';
   }
@@ -175,14 +174,16 @@
       link: 'a[href]',
       article: 'article',
       complementary: 'aside',
-      button: 'button, input[type=button], input[type=submit], input[type=reset], input[type=image]',
+      button:
+        'button, input[type=button], input[type=submit], input[type=reset], input[type=image]',
       dialog: 'dialog',
       contentinfo: 'footer',
       form: 'form',
       heading: 'h1, h2, h3, h4, h5, h6',
       banner: 'header',
       img: 'img',
-      textbox: 'input:not([type=button]):not([type=checkbox]):not([type=radio]):not([type=range]):not([type=submit]):not([type=reset]):not([type=image]):not([type=hidden]), textarea',
+      textbox:
+        'input:not([type=button]):not([type=checkbox]):not([type=radio]):not([type=range]):not([type=submit]):not([type=reset]):not([type=image]):not([type=hidden]), textarea',
       listitem: 'li',
       main: 'main',
       navigation: 'nav',
@@ -198,7 +199,7 @@
       checkbox: 'input[type=checkbox]',
       radio: 'input[type=radio]',
       slider: 'input[type=range]',
-      searchbox: 'input[type=search]'
+      searchbox: 'input[type=search]',
     };
     return map[role] || '';
   }
@@ -212,7 +213,7 @@
       x: rect.x + window.scrollX,
       y: rect.y + window.scrollY,
       width: rect.width,
-      height: rect.height
+      height: rect.height,
     };
   }
 
@@ -276,6 +277,6 @@
     getInputImplicitRole,
     normalizeList,
     toRect,
-    truncateText
+    truncateText,
   });
 })();

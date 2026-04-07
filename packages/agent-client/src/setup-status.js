@@ -77,13 +77,9 @@ export async function collectSetupStatus(options = {}) {
   const access = options.access || fs.promises.access.bind(fs.promises);
   const readFile = options.readFile || fs.promises.readFile.bind(fs.promises);
   const detectedMcpClients = new Set(detectMcpClients(options.mcpDetectors));
-  const detectedSkillTargets = new Set(
-    detectSkillTargets(options.skillDetectors),
-  );
+  const detectedSkillTargets = new Set(detectSkillTargets(options.skillDetectors));
   for (const clientName of detectedMcpClients) {
-    if (
-      SUPPORTED_TARGETS.includes(/** @type {SupportedTarget} */ (clientName))
-    ) {
+    if (SUPPORTED_TARGETS.includes(/** @type {SupportedTarget} */ (clientName))) {
       detectedSkillTargets.add(/** @type {SupportedTarget} */ (clientName));
     }
   }
@@ -96,7 +92,7 @@ export async function collectSetupStatus(options = {}) {
         detected: detectedMcpClients.has(clientName),
         readFile,
       });
-    }),
+    })
   );
   const skillTargets = await Promise.all(
     SUPPORTED_TARGETS.map(async (target) => {
@@ -107,7 +103,7 @@ export async function collectSetupStatus(options = {}) {
         access,
         readFile,
       });
-    }),
+    })
   );
 
   return {
@@ -138,12 +134,8 @@ async function collectMcpClientStatus(clientName, options) {
   });
   const entries = await Promise.all(
     configPaths.map(async (configPath) => {
-      return readBrowserBridgeMcpEntry(
-        clientName,
-        configPath,
-        options.readFile,
-      );
-    }),
+      return readBrowserBridgeMcpEntry(clientName, configPath, options.readFile);
+    })
   );
   const preferredEntry =
     entries.find((entry) => entry.configured) ||
@@ -188,20 +180,17 @@ async function collectSkillTargetStatus(target, options) {
         skillName,
         sentinelFilename,
         options.access,
-        options.readFile,
+        options.readFile
       );
-    }),
+    })
   );
   const skillByName = new Map(skills.map((skill) => [skill.name, skill]));
   const coreSkill = skillByName.get(coreSkillName) || null;
   const coreInstalled = Boolean(coreSkill?.exists);
   const coreManaged = Boolean(coreSkill?.exists && coreSkill.managed);
-  const installedVersion = getInstalledSkillBundleVersion(
-    coreSkill ? [coreSkill] : [],
-  );
+  const installedVersion = getInstalledSkillBundleVersion(coreSkill ? [coreSkill] : []);
   const updateAvailable =
-    coreManaged &&
-    isManagedVersionOutdated(coreSkill?.version || null, currentVersion);
+    coreManaged && isManagedVersionOutdated(coreSkill?.version || null, currentVersion);
 
   return {
     key: target,
@@ -230,15 +219,13 @@ async function collectInstalledSkillStatus(
   skillName,
   sentinelFilename,
   access,
-  readFile,
+  readFile
 ) {
   const skillPath = path.join(basePath, skillName);
   const exists = await pathExists(skillPath, access);
   const sentinelPath = path.join(skillPath, sentinelFilename);
   const managed = exists && (await pathExists(sentinelPath, access));
-  const version = managed
-    ? await readManagedSkillVersion(sentinelPath, readFile)
-    : null;
+  const version = managed ? await readManagedSkillVersion(sentinelPath, readFile) : null;
 
   return {
     name: skillName,
@@ -261,9 +248,7 @@ function getInstalledSkillBundleVersion(skills) {
   if (!first || typeof first.version !== 'string') {
     return null;
   }
-  return skills.every((skill) => skill.version === first.version)
-    ? first.version
-    : null;
+  return skills.every((skill) => skill.version === first.version) ? first.version : null;
 }
 
 /**

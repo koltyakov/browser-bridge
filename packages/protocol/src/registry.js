@@ -23,7 +23,8 @@
  * @type {Readonly<Record<import('./types.js').BridgeMethod, string>>}
  */
 const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
-  'access.request': 'Request Browser Bridge access for the focused window. Do not repeat while access is already pending.',
+  'access.request':
+    'Request Browser Bridge access for the focused window. Do not repeat while access is already pending.',
   'tabs.list': 'List tabs in the enabled window.',
   'tabs.create': 'Create a new tab in the enabled window.',
   'tabs.close': 'Close a tab in the enabled window.',
@@ -79,7 +80,7 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
   'cdp.get_computed_styles_for_node': 'Read CDP computed styles for a node.',
   'performance.get_metrics': 'Read browser performance metrics.',
   'log.tail': 'Tail recent bridge log entries.',
-  'health.ping': 'Check daemon, extension, and access-routing health.'
+  'health.ping': 'Check daemon, extension, and access-routing health.',
 });
 
 /**
@@ -105,9 +106,21 @@ function createRegistryEntry(method, group, tab, params, complexity = 'low') {
 export const BRIDGE_METHOD_REGISTRY = Object.freeze({
   // system — trivial
   'access.request': createRegistryEntry('access.request', 'system', false, [], 'trivial'),
-  'skill.get_runtime_context': createRegistryEntry('skill.get_runtime_context', 'system', false, [], 'trivial'),
+  'skill.get_runtime_context': createRegistryEntry(
+    'skill.get_runtime_context',
+    'system',
+    false,
+    [],
+    'trivial'
+  ),
   'setup.get_status': createRegistryEntry('setup.get_status', 'system', false, [], 'trivial'),
-  'setup.install': createRegistryEntry('setup.install', 'system', false, ['kind', 'target'], 'trivial'),
+  'setup.install': createRegistryEntry(
+    'setup.install',
+    'system',
+    false,
+    ['kind', 'target'],
+    'trivial'
+  ),
   'log.tail': createRegistryEntry('log.tail', 'system', false, [], 'trivial'),
   'health.ping': createRegistryEntry('health.ping', 'system', false, [], 'trivial'),
   // tabs — trivial
@@ -117,66 +130,308 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
   // page — low (basic reads), moderate (evaluate, debugger-backed)
   'page.get_state': createRegistryEntry('page.get_state', 'page', true, [], 'low'),
   'page.evaluate': {
-    ...createRegistryEntry('page.evaluate', 'page', true, ['expression', 'awaitPromise', 'timeoutMs', 'returnByValue'], 'moderate')
+    ...createRegistryEntry(
+      'page.evaluate',
+      'page',
+      true,
+      ['expression', 'awaitPromise', 'timeoutMs', 'returnByValue'],
+      'moderate'
+    ),
   },
-  'page.get_console': createRegistryEntry('page.get_console', 'page', true, ['level', 'clear', 'limit'], 'low'),
-  'page.wait_for_load_state': createRegistryEntry('page.wait_for_load_state', 'wait', true, ['timeoutMs'], 'low'),
-  'page.get_storage': createRegistryEntry('page.get_storage', 'page', true, ['type', 'keys'], 'low'),
+  'page.get_console': createRegistryEntry(
+    'page.get_console',
+    'page',
+    true,
+    ['level', 'clear', 'limit'],
+    'low'
+  ),
+  'page.wait_for_load_state': createRegistryEntry(
+    'page.wait_for_load_state',
+    'wait',
+    true,
+    ['timeoutMs'],
+    'low'
+  ),
+  'page.get_storage': createRegistryEntry(
+    'page.get_storage',
+    'page',
+    true,
+    ['type', 'keys'],
+    'low'
+  ),
   'page.get_text': createRegistryEntry('page.get_text', 'page', true, ['textBudget'], 'low'),
-  'page.get_network': createRegistryEntry('page.get_network', 'page', true, ['clear', 'limit', 'urlPattern'], 'low'),
+  'page.get_network': createRegistryEntry(
+    'page.get_network',
+    'page',
+    true,
+    ['clear', 'limit', 'urlPattern'],
+    'low'
+  ),
   // navigation — low
-  'navigation.navigate': createRegistryEntry('navigation.navigate', 'navigate', true, ['url', 'waitForLoad', 'timeoutMs'], 'low'),
-  'navigation.reload': createRegistryEntry('navigation.reload', 'navigate', true, ['waitForLoad', 'timeoutMs'], 'low'),
-  'navigation.go_back': createRegistryEntry('navigation.go_back', 'navigate', true, ['waitForLoad', 'timeoutMs'], 'low'),
-  'navigation.go_forward': createRegistryEntry('navigation.go_forward', 'navigate', true, ['waitForLoad', 'timeoutMs'], 'low'),
+  'navigation.navigate': createRegistryEntry(
+    'navigation.navigate',
+    'navigate',
+    true,
+    ['url', 'waitForLoad', 'timeoutMs'],
+    'low'
+  ),
+  'navigation.reload': createRegistryEntry(
+    'navigation.reload',
+    'navigate',
+    true,
+    ['waitForLoad', 'timeoutMs'],
+    'low'
+  ),
+  'navigation.go_back': createRegistryEntry(
+    'navigation.go_back',
+    'navigate',
+    true,
+    ['waitForLoad', 'timeoutMs'],
+    'low'
+  ),
+  'navigation.go_forward': createRegistryEntry(
+    'navigation.go_forward',
+    'navigate',
+    true,
+    ['waitForLoad', 'timeoutMs'],
+    'low'
+  ),
   // dom — low (reads), moderate (accessibility tree)
   'dom.query': {
-    ...createRegistryEntry('dom.query', 'inspect', true, ['selector', 'withinRef', 'maxNodes', 'maxDepth', 'textBudget', 'includeBbox', 'attributeAllowlist'], 'low')
+    ...createRegistryEntry(
+      'dom.query',
+      'inspect',
+      true,
+      [
+        'selector',
+        'withinRef',
+        'maxNodes',
+        'maxDepth',
+        'textBudget',
+        'includeBbox',
+        'attributeAllowlist',
+      ],
+      'low'
+    ),
   },
   'dom.describe': createRegistryEntry('dom.describe', 'inspect', true, ['elementRef'], 'low'),
-  'dom.get_text': createRegistryEntry('dom.get_text', 'inspect', true, ['elementRef', 'textBudget'], 'low'),
-  'dom.get_attributes': createRegistryEntry('dom.get_attributes', 'inspect', true, ['elementRef', 'attributes'], 'low'),
-  'dom.wait_for': createRegistryEntry('dom.wait_for', 'wait', true, ['selector', 'text', 'state', 'timeoutMs'], 'low'),
-  'dom.find_by_text': createRegistryEntry('dom.find_by_text', 'inspect', true, ['text', 'exact', 'selector', 'maxResults'], 'low'),
-  'dom.find_by_role': createRegistryEntry('dom.find_by_role', 'inspect', true, ['role', 'name', 'selector', 'maxResults'], 'low'),
-  'dom.get_html': createRegistryEntry('dom.get_html', 'inspect', true, ['elementRef', 'outer', 'maxLength'], 'low'),
-  'dom.get_accessibility_tree': createRegistryEntry('dom.get_accessibility_tree', 'inspect', true, ['maxNodes', 'maxDepth'], 'moderate'),
+  'dom.get_text': createRegistryEntry(
+    'dom.get_text',
+    'inspect',
+    true,
+    ['elementRef', 'textBudget'],
+    'low'
+  ),
+  'dom.get_attributes': createRegistryEntry(
+    'dom.get_attributes',
+    'inspect',
+    true,
+    ['elementRef', 'attributes'],
+    'low'
+  ),
+  'dom.wait_for': createRegistryEntry(
+    'dom.wait_for',
+    'wait',
+    true,
+    ['selector', 'text', 'state', 'timeoutMs'],
+    'low'
+  ),
+  'dom.find_by_text': createRegistryEntry(
+    'dom.find_by_text',
+    'inspect',
+    true,
+    ['text', 'exact', 'selector', 'maxResults'],
+    'low'
+  ),
+  'dom.find_by_role': createRegistryEntry(
+    'dom.find_by_role',
+    'inspect',
+    true,
+    ['role', 'name', 'selector', 'maxResults'],
+    'low'
+  ),
+  'dom.get_html': createRegistryEntry(
+    'dom.get_html',
+    'inspect',
+    true,
+    ['elementRef', 'outer', 'maxLength'],
+    'low'
+  ),
+  'dom.get_accessibility_tree': createRegistryEntry(
+    'dom.get_accessibility_tree',
+    'inspect',
+    true,
+    ['maxNodes', 'maxDepth'],
+    'moderate'
+  ),
   // layout — low
-  'layout.get_box_model': createRegistryEntry('layout.get_box_model', 'inspect', true, ['elementRef'], 'low'),
+  'layout.get_box_model': createRegistryEntry(
+    'layout.get_box_model',
+    'inspect',
+    true,
+    ['elementRef'],
+    'low'
+  ),
   'layout.hit_test': createRegistryEntry('layout.hit_test', 'inspect', true, ['x', 'y'], 'low'),
   // styles — low (computed), moderate (matched rules)
-  'styles.get_computed': createRegistryEntry('styles.get_computed', 'inspect', true, ['elementRef', 'properties'], 'low'),
-  'styles.get_matched_rules': createRegistryEntry('styles.get_matched_rules', 'inspect', true, ['elementRef'], 'moderate'),
+  'styles.get_computed': createRegistryEntry(
+    'styles.get_computed',
+    'inspect',
+    true,
+    ['elementRef', 'properties'],
+    'low'
+  ),
+  'styles.get_matched_rules': createRegistryEntry(
+    'styles.get_matched_rules',
+    'inspect',
+    true,
+    ['elementRef'],
+    'moderate'
+  ),
   // viewport — low (scroll), moderate (resize, debugger-backed)
-  'viewport.scroll': createRegistryEntry('viewport.scroll', 'navigate', true, ['target', 'top', 'left', 'behavior', 'relative'], 'low'),
-  'viewport.resize': createRegistryEntry('viewport.resize', 'navigate', true, ['width', 'height', 'deviceScaleFactor', 'reset'], 'moderate'),
+  'viewport.scroll': createRegistryEntry(
+    'viewport.scroll',
+    'navigate',
+    true,
+    ['target', 'top', 'left', 'behavior', 'relative'],
+    'low'
+  ),
+  'viewport.resize': createRegistryEntry(
+    'viewport.resize',
+    'navigate',
+    true,
+    ['width', 'height', 'deviceScaleFactor', 'reset'],
+    'moderate'
+  ),
   // input — low (simple), moderate (drag)
-  'input.click': createRegistryEntry('input.click', 'interact', true, ['target', 'button', 'clickCount', 'modifiers'], 'low'),
+  'input.click': createRegistryEntry(
+    'input.click',
+    'interact',
+    true,
+    ['target', 'button', 'clickCount', 'modifiers'],
+    'low'
+  ),
   'input.focus': createRegistryEntry('input.focus', 'interact', true, ['target'], 'low'),
-  'input.type': createRegistryEntry('input.type', 'interact', true, ['target', 'text', 'clear', 'submit', 'modifiers'], 'low'),
-  'input.press_key': createRegistryEntry('input.press_key', 'interact', true, ['target', 'key', 'modifiers'], 'low'),
-  'input.set_checked': createRegistryEntry('input.set_checked', 'interact', true, ['target', 'checked'], 'low'),
-  'input.select_option': createRegistryEntry('input.select_option', 'interact', true, ['target', 'values', 'labels', 'indexes'], 'low'),
-  'input.hover': createRegistryEntry('input.hover', 'interact', true, ['target', 'duration', 'modifiers'], 'low'),
-  'input.drag': createRegistryEntry('input.drag', 'interact', true, ['source', 'destination', 'offsetX', 'offsetY'], 'moderate'),
-  'input.scroll_into_view': createRegistryEntry('input.scroll_into_view', 'interact', true, ['target'], 'low'),
+  'input.type': createRegistryEntry(
+    'input.type',
+    'interact',
+    true,
+    ['target', 'text', 'clear', 'submit', 'modifiers'],
+    'low'
+  ),
+  'input.press_key': createRegistryEntry(
+    'input.press_key',
+    'interact',
+    true,
+    ['target', 'key', 'modifiers'],
+    'low'
+  ),
+  'input.set_checked': createRegistryEntry(
+    'input.set_checked',
+    'interact',
+    true,
+    ['target', 'checked'],
+    'low'
+  ),
+  'input.select_option': createRegistryEntry(
+    'input.select_option',
+    'interact',
+    true,
+    ['target', 'values', 'labels', 'indexes'],
+    'low'
+  ),
+  'input.hover': createRegistryEntry(
+    'input.hover',
+    'interact',
+    true,
+    ['target', 'duration', 'modifiers'],
+    'low'
+  ),
+  'input.drag': createRegistryEntry(
+    'input.drag',
+    'interact',
+    true,
+    ['source', 'destination', 'offsetX', 'offsetY'],
+    'moderate'
+  ),
+  'input.scroll_into_view': createRegistryEntry(
+    'input.scroll_into_view',
+    'interact',
+    true,
+    ['target'],
+    'low'
+  ),
   // capture — high (screenshots, CDP)
-  'screenshot.capture_region': createRegistryEntry('screenshot.capture_region', 'capture', true, ['x', 'y', 'width', 'height'], 'high'),
-  'screenshot.capture_element': createRegistryEntry('screenshot.capture_element', 'capture', true, ['elementRef'], 'high'),
-  'screenshot.capture_full_page': createRegistryEntry('screenshot.capture_full_page', 'capture', true, [], 'high'),
+  'screenshot.capture_region': createRegistryEntry(
+    'screenshot.capture_region',
+    'capture',
+    true,
+    ['x', 'y', 'width', 'height'],
+    'high'
+  ),
+  'screenshot.capture_element': createRegistryEntry(
+    'screenshot.capture_element',
+    'capture',
+    true,
+    ['elementRef'],
+    'high'
+  ),
+  'screenshot.capture_full_page': createRegistryEntry(
+    'screenshot.capture_full_page',
+    'capture',
+    true,
+    [],
+    'high'
+  ),
   // patch — moderate (side effects)
-  'patch.apply_styles': createRegistryEntry('patch.apply_styles', 'patch', true, ['target', 'declarations', 'important', 'patchId', 'verify'], 'moderate'),
-  'patch.apply_dom': createRegistryEntry('patch.apply_dom', 'patch', true, ['target', 'operation', 'name', 'value', 'patchId', 'verify'], 'moderate'),
+  'patch.apply_styles': createRegistryEntry(
+    'patch.apply_styles',
+    'patch',
+    true,
+    ['target', 'declarations', 'important', 'patchId', 'verify'],
+    'moderate'
+  ),
+  'patch.apply_dom': createRegistryEntry(
+    'patch.apply_dom',
+    'patch',
+    true,
+    ['target', 'operation', 'name', 'value', 'patchId', 'verify'],
+    'moderate'
+  ),
   'patch.list': createRegistryEntry('patch.list', 'patch', true, [], 'low'),
   'patch.rollback': createRegistryEntry('patch.rollback', 'patch', true, ['patchId'], 'low'),
-  'patch.commit_session_baseline': createRegistryEntry('patch.commit_session_baseline', 'patch', true, [], 'low'),
+  'patch.commit_session_baseline': createRegistryEntry(
+    'patch.commit_session_baseline',
+    'patch',
+    true,
+    [],
+    'low'
+  ),
   // cdp — high (raw protocol, large payloads)
   'cdp.get_document': createRegistryEntry('cdp.get_document', 'cdp', true, [], 'high'),
   'cdp.get_dom_snapshot': createRegistryEntry('cdp.get_dom_snapshot', 'cdp', true, [], 'high'),
-  'cdp.get_box_model': createRegistryEntry('cdp.get_box_model', 'cdp', true, ['elementRef'], 'high'),
-  'cdp.get_computed_styles_for_node': createRegistryEntry('cdp.get_computed_styles_for_node', 'cdp', true, ['elementRef'], 'high'),
+  'cdp.get_box_model': createRegistryEntry(
+    'cdp.get_box_model',
+    'cdp',
+    true,
+    ['elementRef'],
+    'high'
+  ),
+  'cdp.get_computed_styles_for_node': createRegistryEntry(
+    'cdp.get_computed_styles_for_node',
+    'cdp',
+    true,
+    ['elementRef'],
+    'high'
+  ),
   // performance — moderate (debugger-backed)
-  'performance.get_metrics': createRegistryEntry('performance.get_metrics', 'performance', true, [], 'moderate'),
+  'performance.get_metrics': createRegistryEntry(
+    'performance.get_metrics',
+    'performance',
+    true,
+    [],
+    'moderate'
+  ),
 });
 
 /** @type {ReadonlyArray<import('./types.js').BridgeMethod>} */
@@ -229,7 +484,7 @@ const COMPLEXITY_LEVELS = ['trivial', 'low', 'moderate', 'high'];
  */
 export function getMethodsByMaxComplexity(maxComplexity) {
   const maxIndex = COMPLEXITY_LEVELS.indexOf(maxComplexity);
-  return BRIDGE_METHODS.filter(m =>
-    COMPLEXITY_LEVELS.indexOf(BRIDGE_METHOD_REGISTRY[m].complexity) <= maxIndex
+  return BRIDGE_METHODS.filter(
+    (m) => COMPLEXITY_LEVELS.indexOf(BRIDGE_METHOD_REGISTRY[m].complexity) <= maxIndex
   );
 }

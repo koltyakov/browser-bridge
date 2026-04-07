@@ -12,15 +12,23 @@ import {
 
 /** @type {(result: unknown) => import('../src/types.js').BridgeResponse} */
 function ok(result) {
-  return { id: 'r', ok: true, result, error: null, meta: { protocol_version: '1.0' } };
+  return {
+    id: 'r',
+    ok: true,
+    result,
+    error: null,
+    meta: { protocol_version: '1.0' },
+  };
 }
 
 /** @type {(code: string, message: string) => import('../src/types.js').BridgeResponse} */
 function fail(code, message) {
   return {
-    id: 'r', ok: false, result: null,
+    id: 'r',
+    ok: false,
+    result: null,
     error: { code: /** @type {any} */ (code), message, details: null },
-    meta: { protocol_version: '1.0' }
+    meta: { protocol_version: '1.0' },
   };
 }
 
@@ -48,11 +56,13 @@ test('includes protocol warning when present', () => {
 // --- summarizeBridgeResponse: daemon/health result ---
 
 test('summarizes daemon health check result', () => {
-  const summary = summarizeBridgeResponse(ok({
-    daemon: 'ok',
-    extensionConnected: true,
-    access: { enabled: true, routeReady: true, routeTabId: 7 }
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      daemon: 'ok',
+      extensionConnected: true,
+      access: { enabled: true, routeReady: true, routeTabId: 7 },
+    })
+  );
   assert.equal(summary.ok, true);
   assert.match(summary.summary, /Daemon: ok/);
   assert.match(summary.summary, /Extension: connected/);
@@ -60,20 +70,24 @@ test('summarizes daemon health check result', () => {
 });
 
 test('summarizes daemon health check with access disabled', () => {
-  const summary = summarizeBridgeResponse(ok({
-    daemon: 'ok',
-    extensionConnected: true,
-    access: { enabled: false }
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      daemon: 'ok',
+      extensionConnected: true,
+      access: { enabled: false },
+    })
+  );
   assert.match(summary.summary, /Access: disabled/);
 });
 
 test('summarizes daemon health check with access enabled but not ready', () => {
-  const summary = summarizeBridgeResponse(ok({
-    daemon: 'ok',
-    extensionConnected: false,
-    access: { enabled: true, routeReady: false, reason: 'waiting' }
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      daemon: 'ok',
+      extensionConnected: false,
+      access: { enabled: true, routeReady: false, reason: 'waiting' },
+    })
+  );
   assert.match(summary.summary, /Extension: disconnected/);
   assert.match(summary.summary, /enabled/);
 });
@@ -81,10 +95,12 @@ test('summarizes daemon health check with access enabled but not ready', () => {
 // --- summarizeBridgeResponse: setup status ---
 
 test('summarizes setup status with mcpClients and skillTargets', () => {
-  const summary = summarizeBridgeResponse(ok({
-    mcpClients: [{ configured: true }, { configured: false }],
-    skillTargets: [{ installed: true }]
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      mcpClients: [{ configured: true }, { configured: false }],
+      skillTargets: [{ installed: true }],
+    })
+  );
   assert.match(summary.summary, /Setup:/);
   assert.match(summary.summary, /MCP configured for 1\/2/);
   assert.match(summary.summary, /skill installed for 1\/1/);
@@ -93,12 +109,14 @@ test('summarizes setup status with mcpClients and skillTargets', () => {
 // --- summarizeBridgeResponse: page state ---
 
 test('summarizes page state with url, title, and origin', () => {
-  const summary = summarizeBridgeResponse(ok({
-    url: 'https://example.com/page',
-    title: 'Example Page',
-    origin: 'https://example.com',
-    hints: { hasDialog: true, hasPassword: false }
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      url: 'https://example.com/page',
+      title: 'Example Page',
+      origin: 'https://example.com',
+      hints: { hasDialog: true, hasPassword: false },
+    })
+  );
   assert.match(summary.summary, /Page: Example Page/);
   assert.match(summary.summary, /hasDialog/);
   assert.ok(!summary.summary.includes('hasPassword'));
@@ -107,48 +125,57 @@ test('summarizes page state with url, title, and origin', () => {
 // --- summarizeBridgeResponse: text result ---
 
 test('summarizes page text result', () => {
-  const summary = summarizeBridgeResponse(ok({
-    text: 'Hello world content here',
-    truncated: true,
-    length: 5000
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      text: 'Hello world content here',
+      truncated: true,
+      length: 5000,
+    })
+  );
   assert.match(summary.summary, /Page text: 5000 chars/);
   assert.match(summary.summary, /truncated/);
 });
 
 test('summarizes element text result with dom.get_text method', () => {
-  const summary = summarizeBridgeResponse(ok({
-    value: 'element text',
-    truncated: false,
-    length: 12
-  }), 'dom.get_text');
+  const summary = summarizeBridgeResponse(
+    ok({
+      value: 'element text',
+      truncated: false,
+      length: 12,
+    }),
+    'dom.get_text'
+  );
   assert.match(summary.summary, /Element text:/);
 });
 
 // --- summarizeBridgeResponse: tabs list ---
 
 test('summarizes tabs list', () => {
-  const summary = summarizeBridgeResponse(ok({
-    tabs: [
-      { tabId: 1, active: true, origin: 'https://a.com', title: 'A' },
-      { tabId: 2, active: false, origin: 'https://b.com', title: 'B' }
-    ]
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      tabs: [
+        { tabId: 1, active: true, origin: 'https://a.com', title: 'A' },
+        { tabId: 2, active: false, origin: 'https://b.com', title: 'B' },
+      ],
+    })
+  );
   assert.match(summary.summary, /Bridge listed 2 tab/);
 });
 
 // --- summarizeBridgeResponse: accessibility tree ---
 
 test('summarizes accessibility tree with interactive nodes', () => {
-  const summary = summarizeBridgeResponse(ok({
-    nodes: [
-      { role: 'button', name: 'Submit', interactive: true },
-      { role: 'generic', name: '', interactive: false },
-      { role: 'link', name: 'Home', interactive: true }
-    ],
-    total: 3,
-    count: 3
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      nodes: [
+        { role: 'button', name: 'Submit', interactive: true },
+        { role: 'generic', name: '', interactive: false },
+        { role: 'link', name: 'Home', interactive: true },
+      ],
+      total: 3,
+      count: 3,
+    })
+  );
   assert.match(summary.summary, /Accessibility tree: 3 nodes/);
   assert.match(summary.summary, /2 interactive/);
 });
@@ -156,19 +183,39 @@ test('summarizes accessibility tree with interactive nodes', () => {
 // --- summarizeBridgeResponse: DOM query results ---
 
 test('summarizes DOM query result', () => {
-  const summary = summarizeBridgeResponse(ok({
-    nodes: [
-      { elementRef: 'el_1', tag: 'div', attrs: { id: 'main', class: 'container big wide extra' }, textExcerpt: 'content', children: [1, 2] },
-      { elementRef: 'el_2', tag: 'button', attrs: { role: 'button', 'aria-label': 'Click me', 'data-testid': 'btn' }, textExcerpt: '' }
-    ]
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      nodes: [
+        {
+          elementRef: 'el_1',
+          tag: 'div',
+          attrs: { id: 'main', class: 'container big wide extra' },
+          textExcerpt: 'content',
+          children: [1, 2],
+        },
+        {
+          elementRef: 'el_2',
+          tag: 'button',
+          attrs: {
+            role: 'button',
+            'aria-label': 'Click me',
+            'data-testid': 'btn',
+          },
+          textExcerpt: '',
+        },
+      ],
+    })
+  );
   assert.match(summary.summary, /DOM query returned 2 element/);
 });
 
 test('summarizes DOM find_by_text result', () => {
-  const summary = summarizeBridgeResponse(ok({
-    nodes: [{ elementRef: 'el_1', tag: 'span', attrs: {}, textExcerpt: 'found' }]
-  }), 'dom.find_by_text');
+  const summary = summarizeBridgeResponse(
+    ok({
+      nodes: [{ elementRef: 'el_1', tag: 'span', attrs: {}, textExcerpt: 'found' }],
+    }),
+    'dom.find_by_text'
+  );
   assert.match(summary.summary, /Found 1 element/);
 });
 
@@ -197,29 +244,35 @@ test('summarizes empty patch list array for patch.list method', () => {
 });
 
 test('summarizes patches field in result', () => {
-  const summary = summarizeBridgeResponse(ok({
-    patches: [{ patchId: 'p_1' }, { patchId: 'p_2' }]
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      patches: [{ patchId: 'p_1' }, { patchId: 'p_2' }],
+    })
+  );
   assert.match(summary.summary, /2 active patch/);
 });
 
 // --- summarizeBridgeResponse: wait_for result ---
 
 test('summarizes successful wait_for result', () => {
-  const summary = summarizeBridgeResponse(ok({
-    found: true,
-    elementRef: 'el_1',
-    duration: 250
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      found: true,
+      elementRef: 'el_1',
+      duration: 250,
+    })
+  );
   assert.equal(summary.ok, true);
   assert.match(summary.summary, /Element found after 250ms/);
 });
 
 test('summarizes timed out wait_for result', () => {
-  const summary = summarizeBridgeResponse(ok({
-    found: false,
-    duration: 5000
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      found: false,
+      duration: 5000,
+    })
+  );
   assert.equal(summary.ok, false);
   assert.match(summary.summary, /Element not found/);
 });
@@ -227,100 +280,130 @@ test('summarizes timed out wait_for result', () => {
 // --- summarizeBridgeResponse: evaluate result ---
 
 test('summarizes evaluate result with string value', () => {
-  const summary = summarizeBridgeResponse(ok({
-    value: 'hello world',
-    type: 'string'
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      value: 'hello world',
+      type: 'string',
+    })
+  );
   assert.match(summary.summary, /Evaluated to string: hello world/);
 });
 
 test('summarizes evaluate result with undefined type', () => {
-  const summary = summarizeBridgeResponse(ok({
-    value: null,
-    type: 'undefined'
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      value: null,
+      type: 'undefined',
+    })
+  );
   assert.match(summary.summary, /Evaluated to undefined/);
 });
 
 test('summarizes evaluate result with null value', () => {
-  const summary = summarizeBridgeResponse(ok({
-    value: null,
-    type: 'object'
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      value: null,
+      type: 'object',
+    })
+  );
   assert.match(summary.summary, /Evaluated to null/);
 });
 
 test('summarizes evaluate result with empty object', () => {
-  const summary = summarizeBridgeResponse(ok({
-    value: {},
-    type: 'object'
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      value: {},
+      type: 'object',
+    })
+  );
   assert.match(summary.summary, /non-serializable/);
 });
 
 test('summarizes evaluate result with long string (truncates)', () => {
   const long = 'x'.repeat(300);
-  const summary = summarizeBridgeResponse(ok({
-    value: long,
-    type: 'string'
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      value: long,
+      type: 'string',
+    })
+  );
   assert.ok(summary.summary.length < 300);
 });
 
 // --- summarizeBridgeResponse: log entries ---
 
 test('summarizes log.tail entries', () => {
-  const summary = summarizeBridgeResponse(ok({
-    entries: [
-      { at: '2024-01-01T00:00:00Z', method: 'dom.query', ok: true, source: 'mcp' },
-      { at: '2024-01-01T00:00:01Z', method: 'page.evaluate', ok: false }
-    ]
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      entries: [
+        {
+          at: '2024-01-01T00:00:00Z',
+          method: 'dom.query',
+          ok: true,
+          source: 'mcp',
+        },
+        { at: '2024-01-01T00:00:01Z', method: 'page.evaluate', ok: false },
+      ],
+    })
+  );
   assert.match(summary.summary, /Log: 2 entries/);
 });
 
 // --- summarizeBridgeResponse: network entries ---
 
 test('summarizes network entries', () => {
-  const summary = summarizeBridgeResponse(ok({
-    entries: [
-      { type: 'fetch', method: 'GET', url: 'https://example.com/api', status: 200, duration: 100 }
-    ],
-    count: 1,
-    total: 5
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      entries: [
+        {
+          type: 'fetch',
+          method: 'GET',
+          url: 'https://example.com/api',
+          status: 200,
+          duration: 100,
+        },
+      ],
+      count: 1,
+      total: 5,
+    })
+  );
   assert.match(summary.summary, /Network: 1 request/);
 });
 
 test('summarizes empty network entries with method hint', () => {
-  const summary = summarizeBridgeResponse(ok({
-    entries: [],
-    count: 0,
-    total: 0
-  }), 'page.get_network');
+  const summary = summarizeBridgeResponse(
+    ok({
+      entries: [],
+      count: 0,
+      total: 0,
+    }),
+    'page.get_network'
+  );
   assert.match(summary.summary, /Network: 0 request/);
 });
 
 // --- summarizeBridgeResponse: console entries ---
 
 test('summarizes console entries', () => {
-  const summary = summarizeBridgeResponse(ok({
-    entries: [
-      { level: 'error', args: ['something broke'], ts: Date.now() - 30_000 }
-    ],
-    count: 1,
-    total: 10
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      entries: [{ level: 'error', args: ['something broke'], ts: Date.now() - 30_000 }],
+      count: 1,
+      total: 10,
+    })
+  );
   assert.match(summary.summary, /Console: 1 entries/);
 });
 
 // --- summarizeBridgeResponse: HTML fragment ---
 
 test('summarizes HTML fragment result', () => {
-  const summary = summarizeBridgeResponse(ok({
-    html: '<div>hello</div>',
-    truncated: false
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      html: '<div>hello</div>',
+      truncated: false,
+    })
+  );
   assert.match(summary.summary, /HTML fragment: 16 chars/);
 });
 
@@ -337,7 +420,9 @@ test('summarizes hover action', () => {
 });
 
 test('summarizes drag action', () => {
-  const summary = summarizeBridgeResponse(ok({ dragged: true, sourceRef: 'el_1', destinationRef: 'el_2' }));
+  const summary = summarizeBridgeResponse(
+    ok({ dragged: true, sourceRef: 'el_1', destinationRef: 'el_2' })
+  );
   assert.match(summary.summary, /Drag completed: el_1 → el_2/);
 });
 
@@ -379,45 +464,54 @@ test('summarizes tab creation result', () => {
 });
 
 test('summarizes navigation.navigate result with tabId and url', () => {
-  const summary = summarizeBridgeResponse(ok({
-    tabId: 9,
-    url: 'https://example.com',
-    title: 'Example',
-    status: 'complete'
-  }), 'navigation.navigate');
+  const summary = summarizeBridgeResponse(
+    ok({
+      tabId: 9,
+      url: 'https://example.com',
+      title: 'Example',
+      status: 'complete',
+    }),
+    'navigation.navigate'
+  );
   assert.match(summary.summary, /Navigated to https:\/\/example\.com/);
 });
 
 // --- summarizeBridgeResponse: performance metrics ---
 
 test('summarizes performance metrics', () => {
-  const summary = summarizeBridgeResponse(ok({
-    metrics: { FCP: 1200, LCP: 2500 }
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      metrics: { FCP: 1200, LCP: 2500 },
+    })
+  );
   assert.match(summary.summary, /Performance: 2 metrics/);
 });
 
 // --- summarizeBridgeResponse: storage entries ---
 
 test('summarizes storage entries', () => {
-  const summary = summarizeBridgeResponse(ok({
-    count: 3,
-    type: 'localStorage',
-    entries: { key1: 'val1', key2: 'val2', key3: 'val3' }
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      count: 3,
+      type: 'localStorage',
+      entries: { key1: 'val1', key2: 'val2', key3: 'val3' },
+    })
+  );
   assert.match(summary.summary, /Storage.*localStorage.*3 entries/);
 });
 
 // --- summarizeBridgeResponse: element describe result ---
 
 test('summarizes element describe result', () => {
-  const summary = summarizeBridgeResponse(ok({
-    tag: 'button',
-    elementRef: 'el_1',
-    id: 'submit-btn',
-    bbox: { width: 100, height: 40 },
-    text: { value: 'Submit' }
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      tag: 'button',
+      elementRef: 'el_1',
+      id: 'submit-btn',
+      bbox: { width: 100, height: 40 },
+      text: { value: 'Submit' },
+    })
+  );
   assert.match(summary.summary, /Element button#submit-btn/);
   assert.match(summary.summary, /100×40/);
 });
@@ -425,28 +519,35 @@ test('summarizes element describe result', () => {
 // --- summarizeBridgeResponse: computed styles ---
 
 test('summarizes computed styles with elementRef', () => {
-  const summary = summarizeBridgeResponse(ok({
-    properties: { color: 'red', fontSize: '14px' },
-    elementRef: 'el_1'
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      properties: { color: 'red', fontSize: '14px' },
+      elementRef: 'el_1',
+    })
+  );
   assert.match(summary.summary, /Computed 2 style.*el_1/);
 });
 
 test('summarizes computed styles without elementRef via method hint', () => {
-  const summary = summarizeBridgeResponse(ok({
-    color: 'red',
-    fontSize: '14px'
-  }), 'styles.get_computed');
+  const summary = summarizeBridgeResponse(
+    ok({
+      color: 'red',
+      fontSize: '14px',
+    }),
+    'styles.get_computed'
+  );
   assert.match(summary.summary, /Computed 2 style/);
 });
 
 // --- summarizeBridgeResponse: box model ---
 
 test('summarizes box model result', () => {
-  const summary = summarizeBridgeResponse(ok({
-    content: { x: 10, y: 20, width: 100, height: 50 },
-    border: { x: 8, y: 18, width: 104, height: 54 }
-  }));
+  const summary = summarizeBridgeResponse(
+    ok({
+      content: { x: 10, y: 20, width: 100, height: 50 },
+      border: { x: 8, y: 18, width: 104, height: 54 },
+    })
+  );
   assert.match(summary.summary, /Box model: 100×50/);
 });
 
@@ -487,7 +588,7 @@ test('annotateBridgeSummary uses meta transport fields when available', () => {
     protocol_version: '1.0',
     transport_bytes: 42,
     transport_approx_tokens: 11,
-    transport_cost_class: 'cheap'
+    transport_cost_class: 'cheap',
   };
   const summary = { ok: true, summary: 'Test', evidence: null };
   const annotated = annotateBridgeSummary(summary, response);
@@ -502,7 +603,7 @@ test('annotateBridgeSummary falls back to legacy meta fields', () => {
     protocol_version: '1.0',
     response_bytes: 100,
     approx_tokens: 25,
-    cost_class: 'moderate'
+    cost_class: 'moderate',
   };
   const summary = { ok: true, summary: 'Test', evidence: null };
   const annotated = annotateBridgeSummary(summary, response);
@@ -519,7 +620,7 @@ test('summarizeBatchResponseItem produces complete batch item', () => {
     method: /** @type {any} */ ('input.click'),
     tabId: 5,
     response,
-    durationMs: 42
+    durationMs: 42,
   });
   assert.equal(item.method, 'input.click');
   assert.equal(item.tabId, 5);
@@ -537,7 +638,7 @@ test('summarizeBatchErrorItem wraps Error into batch item', () => {
     method: /** @type {any} */ ('dom.query'),
     tabId: null,
     error: new Error('connection failed'),
-    durationMs: 10
+    durationMs: 10,
   });
   assert.equal(item.ok, false);
   assert.equal(item.method, 'dom.query');
@@ -551,7 +652,7 @@ test('summarizeBatchErrorItem wraps string error', () => {
     method: /** @type {any} */ ('page.evaluate'),
     tabId: 3,
     error: 'something broke',
-    durationMs: 5
+    durationMs: 5,
   });
   assert.equal(item.ok, false);
   assert.match(item.summary, /something broke/);

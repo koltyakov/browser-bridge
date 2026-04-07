@@ -14,6 +14,7 @@ Use when a dev server is already running and you want to prove a fix rendered.
 8. `patch.rollback`
 
 Acceptance:
+
 - target element renders with expected layout or styles
 - no new console errors after HMR
 - temporary patch is rolled back
@@ -30,6 +31,7 @@ Use when a submission flow fails silently or the UI state is inconsistent.
 6. `dom.query` on the resulting panel or message
 
 Acceptance:
+
 - request status and failing endpoint are identified
 - visible error or success state matches the network result
 - console exceptions are ruled in or out
@@ -47,6 +49,7 @@ Use when comparing the live UI to an expected layout or visual spec.
 7. `patch.rollback`
 
 Acceptance:
+
 - the live patch proves the intended fix
 - source implementation matches the validated patch
 - no patch is left active
@@ -64,6 +67,7 @@ Use when a component only breaks at a specific breakpoint.
 7. `viewport.resize` with `reset: true`
 
 Acceptance:
+
 - the target breakpoint is reproduced
 - geometry and style regressions are confirmed without a full screenshot
 - viewport override is reset
@@ -73,18 +77,21 @@ Acceptance:
 Use when transient states matter.
 
 Hover:
+
 1. `dom.find_by_text` or `dom.find_by_role`
 2. `input.hover`
 3. `dom.query` for tooltip or menu
 4. `styles.get_computed`
 
 Drag:
+
 1. `dom.query` for source and destination
 2. `input.drag`
 3. `dom.wait_for`
 4. `dom.query` to verify order or placement
 
 Acceptance:
+
 - transient state appears while the interaction is active
 - DOM and layout confirm the intended state change
 
@@ -97,6 +104,7 @@ Use when semantic navigation matters more than CSS selectors.
 3. `dom.get_accessibility_tree` only if role discovery is insufficient
 
 Acceptance:
+
 - expected interactive roles are present
 - accessible names match the UI copy
 - the full accessibility tree is only used when lighter reads fail

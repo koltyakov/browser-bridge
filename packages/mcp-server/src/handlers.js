@@ -17,12 +17,9 @@ import {
   getDoctorReport,
   requestBridge,
   resolveRef,
-  withBridgeClient
+  withBridgeClient,
 } from '../../agent-client/src/runtime.js';
-import {
-  annotateBridgeSummary,
-  summarizeBridgeResponse,
-} from '../../agent-client/src/subagent.js';
+import { annotateBridgeSummary, summarizeBridgeResponse } from '../../agent-client/src/subagent.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
@@ -47,7 +44,7 @@ function createToolResult(summary, structuredContent = {}, isError = false) {
   const toolResult = {
     content: [{ type: /** @type {'text'} */ ('text'), text: summary }],
     structuredContent,
-    ...(isError ? { isError: true } : {})
+    ...(isError ? { isError: true } : {}),
   };
   const delivered = estimateJsonPayloadCost(toolResult);
   return {
@@ -77,10 +74,14 @@ function summarizeToolResponse(response, method) {
  */
 function summarizeToolError(error) {
   const message = error instanceof Error ? error.message : String(error);
-  return createToolResult(`ERROR: ${message}`, {
-    ok: false,
-    evidence: null
-  }, true);
+  return createToolResult(
+    `ERROR: ${message}`,
+    {
+      ok: false,
+      evidence: null,
+    },
+    true
+  );
 }
 
 /**
@@ -235,12 +236,12 @@ function applyHtmlBudgetPreset(args) {
  */
 async function requestBridgeWithRetry(client, method, params, options) {
   const response = await requestBridge(client, method, params, options);
-  const recovery = !response.ok && response.error
-    ? getErrorRecovery(response.error.code)
-    : null;
+  const recovery = !response.ok && response.error ? getErrorRecovery(response.error.code) : null;
   if (!response.ok && recovery?.retry) {
     const delay = recovery.retryAfterMs ?? 1000;
-    process.stderr.write(`[bbx-mcp] Retrying ${method} after ${delay}ms (${response.error.code})\n`);
+    process.stderr.write(
+      `[bbx-mcp] Retrying ${method} after ${delay}ms (${response.error.code})\n`
+    );
     await new Promise((r) => setTimeout(r, delay));
     return requestBridge(client, method, params, options);
   }
@@ -285,10 +286,10 @@ async function dispatchToolAction(actions, args, toolName) {
     const requestedTabId = typeof args.tabId === 'number' ? args.tabId : null;
     const ref = entry.ref
       ? await resolveToolRef(
-        client,
-        /** @type {{ elementRef?: string, selector?: string }} */ (args),
-        requestedTabId,
-      )
+          client,
+          /** @type {{ elementRef?: string, selector?: string }} */ (args),
+          requestedTabId
+        )
       : undefined;
     const response = await requestBridgeWithRetry(client, entry.method, entry.params(args, ref), {
       tabId: requestedTabId,
@@ -305,12 +306,13 @@ async function dispatchToolAction(actions, args, toolName) {
 export async function handleStatusTool() {
   try {
     const report = await getDoctorReport();
-    const summary = report.issues.length === 0
-      ? 'Browser Bridge is ready.'
-      : `Browser Bridge has ${report.issues.length} setup issue(s).`;
+    const summary =
+      report.issues.length === 0
+        ? 'Browser Bridge is ready.'
+        : `Browser Bridge has ${report.issues.length} setup issue(s).`;
     return createToolResult(summary, {
       ok: report.issues.length === 0,
-      evidence: report
+      evidence: report,
     });
   } catch (error) {
     return summarizeToolError(error);
@@ -328,7 +330,7 @@ export async function handleTabsTool(args) {
   if (args.action === 'create') {
     return callBridgeTool('tabs.create', {
       url: args.url,
-      active: args.active
+      active: args.active,
     });
   }
   if (args.action === 'close') {
@@ -343,15 +345,78 @@ export async function handleTabsTool(args) {
 /**
 /** @type {Record<string, ToolAction>} */
 export const DOM_ACTIONS = {
-  query:              { ref: false, method: 'dom.query',                  params: a => ({ selector: a.selector || 'body', withinRef: a.withinRef, maxNodes: a.maxNodes, maxDepth: a.maxDepth, textBudget: a.textBudget, includeBbox: a.includeBbox, attributeAllowlist: a.attributeAllowlist }) },
-  describe:           { ref: true,  method: 'dom.describe',               params: (_, r) => ({ elementRef: r }) },
-  text:               { ref: true,  method: 'dom.get_text',               params: (a, r) => ({ elementRef: r, textBudget: a.textBudget }) },
-  attributes:         { ref: true,  method: 'dom.get_attributes',         params: (a, r) => ({ elementRef: r, attributes: a.attributes || [] }) },
-  wait:               { ref: false, method: 'dom.wait_for',               params: a => ({ selector: a.selector, text: a.text, state: a.state, timeoutMs: a.timeoutMs }) },
-  find_text:          { ref: false, method: 'dom.find_by_text',           params: a => ({ text: a.text, exact: a.exact, selector: a.selector, maxResults: a.maxResults }) },
-  find_role:          { ref: false, method: 'dom.find_by_role',           params: a => ({ role: a.role, name: a.name, selector: a.selector, maxResults: a.maxResults }) },
-  html:               { ref: true,  method: 'dom.get_html',               params: (a, r) => ({ elementRef: r, outer: a.outer, maxLength: a.maxLength }) },
-  accessibility_tree: { ref: false, method: 'dom.get_accessibility_tree', params: a => ({ maxNodes: a.maxNodes, maxDepth: a.maxDepth }) },
+  query: {
+    ref: false,
+    method: 'dom.query',
+    params: (a) => ({
+      selector: a.selector || 'body',
+      withinRef: a.withinRef,
+      maxNodes: a.maxNodes,
+      maxDepth: a.maxDepth,
+      textBudget: a.textBudget,
+      includeBbox: a.includeBbox,
+      attributeAllowlist: a.attributeAllowlist,
+    }),
+  },
+  describe: {
+    ref: true,
+    method: 'dom.describe',
+    params: (_, r) => ({ elementRef: r }),
+  },
+  text: {
+    ref: true,
+    method: 'dom.get_text',
+    params: (a, r) => ({ elementRef: r, textBudget: a.textBudget }),
+  },
+  attributes: {
+    ref: true,
+    method: 'dom.get_attributes',
+    params: (a, r) => ({ elementRef: r, attributes: a.attributes || [] }),
+  },
+  wait: {
+    ref: false,
+    method: 'dom.wait_for',
+    params: (a) => ({
+      selector: a.selector,
+      text: a.text,
+      state: a.state,
+      timeoutMs: a.timeoutMs,
+    }),
+  },
+  find_text: {
+    ref: false,
+    method: 'dom.find_by_text',
+    params: (a) => ({
+      text: a.text,
+      exact: a.exact,
+      selector: a.selector,
+      maxResults: a.maxResults,
+    }),
+  },
+  find_role: {
+    ref: false,
+    method: 'dom.find_by_role',
+    params: (a) => ({
+      role: a.role,
+      name: a.name,
+      selector: a.selector,
+      maxResults: a.maxResults,
+    }),
+  },
+  html: {
+    ref: true,
+    method: 'dom.get_html',
+    params: (a, r) => ({
+      elementRef: r,
+      outer: a.outer,
+      maxLength: a.maxLength,
+    }),
+  },
+  accessibility_tree: {
+    ref: false,
+    method: 'dom.get_accessibility_tree',
+    params: (a) => ({ maxNodes: a.maxNodes, maxDepth: a.maxDepth }),
+  },
 };
 
 /**
@@ -375,10 +440,26 @@ export async function handleDomTool(args) {
 
 /** @type {Record<string, ToolAction>} */
 export const STYLES_LAYOUT_ACTIONS = {
-  computed:      { ref: true,  method: 'styles.get_computed',       params: (a, r) => ({ elementRef: r, properties: a.properties }) },
-  matched_rules: { ref: true,  method: 'styles.get_matched_rules', params: (_, r) => ({ elementRef: r }) },
-  box_model:     { ref: true,  method: 'layout.get_box_model',     params: (_, r) => ({ elementRef: r }) },
-  hit_test:      { ref: false, method: 'layout.hit_test',          params: a => ({ x: a.x, y: a.y }) },
+  computed: {
+    ref: true,
+    method: 'styles.get_computed',
+    params: (a, r) => ({ elementRef: r, properties: a.properties }),
+  },
+  matched_rules: {
+    ref: true,
+    method: 'styles.get_matched_rules',
+    params: (_, r) => ({ elementRef: r }),
+  },
+  box_model: {
+    ref: true,
+    method: 'layout.get_box_model',
+    params: (_, r) => ({ elementRef: r }),
+  },
+  hit_test: {
+    ref: false,
+    method: 'layout.hit_test',
+    params: (a) => ({ x: a.x, y: a.y }),
+  },
 };
 
 /**
@@ -391,14 +472,41 @@ export async function handleStylesLayoutTool(args) {
 
 /** @type {Record<string, { method: BridgeMethod, params: (a: Record<string, unknown>) => Record<string, unknown> }>} */
 export const PAGE_ACTIONS = {
-  state:         { method: 'page.get_state',           params: () => ({}) },
-  evaluate:      { method: 'page.evaluate',            params: a => ({ expression: a.expression, awaitPromise: a.awaitPromise, timeoutMs: a.timeoutMs, returnByValue: a.returnByValue }) },
-  console:       { method: 'page.get_console',         params: a => ({ level: a.level, clear: a.clear, limit: a.limit }) },
-  wait_for_load: { method: 'page.wait_for_load_state', params: a => ({ timeoutMs: a.timeoutMs }) },
-  storage:       { method: 'page.get_storage',         params: a => ({ type: a.type, keys: a.keys }) },
-  text:          { method: 'page.get_text',            params: a => ({ textBudget: a.textBudget }) },
-  network:       { method: 'page.get_network',         params: a => ({ clear: a.clear, limit: a.limit, urlPattern: a.urlPattern }) },
-  performance:   { method: 'performance.get_metrics',  params: () => ({}) },
+  state: { method: 'page.get_state', params: () => ({}) },
+  evaluate: {
+    method: 'page.evaluate',
+    params: (a) => ({
+      expression: a.expression,
+      awaitPromise: a.awaitPromise,
+      timeoutMs: a.timeoutMs,
+      returnByValue: a.returnByValue,
+    }),
+  },
+  console: {
+    method: 'page.get_console',
+    params: (a) => ({ level: a.level, clear: a.clear, limit: a.limit }),
+  },
+  wait_for_load: {
+    method: 'page.wait_for_load_state',
+    params: (a) => ({ timeoutMs: a.timeoutMs }),
+  },
+  storage: {
+    method: 'page.get_storage',
+    params: (a) => ({ type: a.type, keys: a.keys }),
+  },
+  text: {
+    method: 'page.get_text',
+    params: (a) => ({ textBudget: a.textBudget }),
+  },
+  network: {
+    method: 'page.get_network',
+    params: (a) => ({
+      clear: a.clear,
+      limit: a.limit,
+      urlPattern: a.urlPattern,
+    }),
+  },
+  performance: { method: 'performance.get_metrics', params: () => ({}) },
 };
 
 /**
@@ -432,12 +540,39 @@ export async function handlePageTool(args) {
 
 /** @type {Record<string, { method: BridgeMethod, params: (a: Record<string, unknown>) => Record<string, unknown> }>} */
 export const NAVIGATION_ACTIONS = {
-  navigate:   { method: 'navigation.navigate',   params: a => ({ url: a.url, waitForLoad: a.waitForLoad, timeoutMs: a.timeoutMs }) },
-  reload:     { method: 'navigation.reload',     params: a => ({ waitForLoad: a.waitForLoad, timeoutMs: a.timeoutMs }) },
-  go_back:    { method: 'navigation.go_back',    params: a => ({ waitForLoad: a.waitForLoad, timeoutMs: a.timeoutMs }) },
-  go_forward: { method: 'navigation.go_forward', params: a => ({ waitForLoad: a.waitForLoad, timeoutMs: a.timeoutMs }) },
-  scroll:     { method: 'viewport.scroll',       params: a => ({ top: a.top, left: a.left, behavior: a.behavior, relative: a.relative }) },
-  resize:     { method: 'viewport.resize',       params: a => ({ width: a.width, height: a.height, reset: a.reset }) },
+  navigate: {
+    method: 'navigation.navigate',
+    params: (a) => ({
+      url: a.url,
+      waitForLoad: a.waitForLoad,
+      timeoutMs: a.timeoutMs,
+    }),
+  },
+  reload: {
+    method: 'navigation.reload',
+    params: (a) => ({ waitForLoad: a.waitForLoad, timeoutMs: a.timeoutMs }),
+  },
+  go_back: {
+    method: 'navigation.go_back',
+    params: (a) => ({ waitForLoad: a.waitForLoad, timeoutMs: a.timeoutMs }),
+  },
+  go_forward: {
+    method: 'navigation.go_forward',
+    params: (a) => ({ waitForLoad: a.waitForLoad, timeoutMs: a.timeoutMs }),
+  },
+  scroll: {
+    method: 'viewport.scroll',
+    params: (a) => ({
+      top: a.top,
+      left: a.left,
+      behavior: a.behavior,
+      relative: a.relative,
+    }),
+  },
+  resize: {
+    method: 'viewport.resize',
+    params: (a) => ({ width: a.width, height: a.height, reset: a.reset }),
+  },
 };
 
 /**
@@ -463,7 +598,7 @@ export const INPUT_ACTION_METHODS = {
   select_option: 'input.select_option',
   hover: 'input.hover',
   drag: 'input.drag',
-  scroll_into_view: 'input.scroll_into_view'
+  scroll_into_view: 'input.scroll_into_view',
 };
 
 /**
@@ -479,118 +614,173 @@ export async function handleInputTool(args) {
 
     switch (args.action) {
       case 'click': {
-        const response = await requestBridge(client, 'input.click', {
-          target: await elementTarget(),
-          button: args.button,
-          clickCount: args.clickCount
-        }, {
-          tabId: requestedTabId,
-          source: REQUEST_SOURCE,
-          tokenBudget: getToolTokenBudget(args),
-        });
+        const response = await requestBridge(
+          client,
+          'input.click',
+          {
+            target: await elementTarget(),
+            button: args.button,
+            clickCount: args.clickCount,
+          },
+          {
+            tabId: requestedTabId,
+            source: REQUEST_SOURCE,
+            tokenBudget: getToolTokenBudget(args),
+          }
+        );
         return summarizeToolResponse(response, 'input.click');
       }
       case 'focus': {
-        const response = await requestBridge(client, 'input.focus', {
-          target: await elementTarget()
-        }, {
-          tabId: requestedTabId,
-          source: REQUEST_SOURCE,
-          tokenBudget: getToolTokenBudget(args),
-        });
+        const response = await requestBridge(
+          client,
+          'input.focus',
+          {
+            target: await elementTarget(),
+          },
+          {
+            tabId: requestedTabId,
+            source: REQUEST_SOURCE,
+            tokenBudget: getToolTokenBudget(args),
+          }
+        );
         return summarizeToolResponse(response, 'input.focus');
       }
       case 'type': {
-        const response = await requestBridge(client, 'input.type', {
-          target: await elementTarget(),
-          text: args.text,
-          clear: args.clear,
-          submit: args.submit
-        }, {
-          tabId: requestedTabId,
-          source: REQUEST_SOURCE,
-          tokenBudget: getToolTokenBudget(args),
-        });
+        const response = await requestBridge(
+          client,
+          'input.type',
+          {
+            target: await elementTarget(),
+            text: args.text,
+            clear: args.clear,
+            submit: args.submit,
+          },
+          {
+            tabId: requestedTabId,
+            source: REQUEST_SOURCE,
+            tokenBudget: getToolTokenBudget(args),
+          }
+        );
         return summarizeToolResponse(response, 'input.type');
       }
       case 'press_key': {
-        const target = (args.elementRef || args.selector) ? await elementTarget() : undefined;
-        const response = await requestBridge(client, 'input.press_key', {
-          target,
-          key: args.key,
-          modifiers: args.modifiers
-        }, {
-          tabId: requestedTabId,
-          source: REQUEST_SOURCE,
-          tokenBudget: getToolTokenBudget(args),
-        });
+        const target = args.elementRef || args.selector ? await elementTarget() : undefined;
+        const response = await requestBridge(
+          client,
+          'input.press_key',
+          {
+            target,
+            key: args.key,
+            modifiers: args.modifiers,
+          },
+          {
+            tabId: requestedTabId,
+            source: REQUEST_SOURCE,
+            tokenBudget: getToolTokenBudget(args),
+          }
+        );
         return summarizeToolResponse(response, 'input.press_key');
       }
       case 'set_checked': {
-        const response = await requestBridge(client, 'input.set_checked', {
-          target: await elementTarget(),
-          checked: args.checked
-        }, {
-          tabId: requestedTabId,
-          source: REQUEST_SOURCE,
-          tokenBudget: getToolTokenBudget(args),
-        });
+        const response = await requestBridge(
+          client,
+          'input.set_checked',
+          {
+            target: await elementTarget(),
+            checked: args.checked,
+          },
+          {
+            tabId: requestedTabId,
+            source: REQUEST_SOURCE,
+            tokenBudget: getToolTokenBudget(args),
+          }
+        );
         return summarizeToolResponse(response, 'input.set_checked');
       }
       case 'select_option': {
-        const response = await requestBridge(client, 'input.select_option', {
-          target: await elementTarget(),
-          values: args.values,
-          labels: args.labels,
-          indexes: args.indexes
-        }, {
-          tabId: requestedTabId,
-          source: REQUEST_SOURCE,
-          tokenBudget: getToolTokenBudget(args),
-        });
+        const response = await requestBridge(
+          client,
+          'input.select_option',
+          {
+            target: await elementTarget(),
+            values: args.values,
+            labels: args.labels,
+            indexes: args.indexes,
+          },
+          {
+            tabId: requestedTabId,
+            source: REQUEST_SOURCE,
+            tokenBudget: getToolTokenBudget(args),
+          }
+        );
         return summarizeToolResponse(response, 'input.select_option');
       }
       case 'hover': {
-        const response = await requestBridge(client, 'input.hover', {
-          target: await elementTarget(),
-          duration: args.duration
-        }, {
-          tabId: requestedTabId,
-          source: REQUEST_SOURCE,
-          tokenBudget: getToolTokenBudget(args),
-        });
+        const response = await requestBridge(
+          client,
+          'input.hover',
+          {
+            target: await elementTarget(),
+            duration: args.duration,
+          },
+          {
+            tabId: requestedTabId,
+            source: REQUEST_SOURCE,
+            tokenBudget: getToolTokenBudget(args),
+          }
+        );
         return summarizeToolResponse(response, 'input.hover');
       }
       case 'drag': {
         const source = {
-          elementRef: args.sourceElementRef || (args.sourceSelector ? await resolveRef(client, args.sourceSelector, requestedTabId, REQUEST_SOURCE) : '')
+          elementRef:
+            args.sourceElementRef ||
+            (args.sourceSelector
+              ? await resolveRef(client, args.sourceSelector, requestedTabId, REQUEST_SOURCE)
+              : ''),
         };
         const destination = {
-          elementRef: args.destinationElementRef || (args.destinationSelector ? await resolveRef(client, args.destinationSelector, requestedTabId, REQUEST_SOURCE) : '')
+          elementRef:
+            args.destinationElementRef ||
+            (args.destinationSelector
+              ? await resolveRef(client, args.destinationSelector, requestedTabId, REQUEST_SOURCE)
+              : ''),
         };
         if (!source.elementRef || !destination.elementRef) {
-          return summarizeToolError('sourceElementRef/sourceSelector and destinationElementRef/destinationSelector are required for drag.');
+          return summarizeToolError(
+            'sourceElementRef/sourceSelector and destinationElementRef/destinationSelector are required for drag.'
+          );
         }
-        const response = await requestBridge(client, 'input.drag', {
-          source,
-          destination,
-          offsetX: args.offsetX,
-          offsetY: args.offsetY
-        }, {
-          tabId: requestedTabId,
-          source: REQUEST_SOURCE,
-          tokenBudget: getToolTokenBudget(args),
-        });
+        const response = await requestBridge(
+          client,
+          'input.drag',
+          {
+            source,
+            destination,
+            offsetX: args.offsetX,
+            offsetY: args.offsetY,
+          },
+          {
+            tabId: requestedTabId,
+            source: REQUEST_SOURCE,
+            tokenBudget: getToolTokenBudget(args),
+          }
+        );
         return summarizeToolResponse(response, 'input.drag');
       }
       case 'scroll_into_view': {
-        const response = await requestBridge(client, 'input.scroll_into_view', {
-          target: await elementTarget()
-        }, {
-          tabId: requestedTabId,
-          source: REQUEST_SOURCE,
-          tokenBudget: getToolTokenBudget(args),
-        });
+        const response = await requestBridge(
+          client,
+          'input.scroll_into_view',
+          {
+            target: await elementTarget(),
+          },
+          {
+            tabId: requestedTabId,
+            source: REQUEST_SOURCE,
+            tokenBudget: getToolTokenBudget(args),
+          }
+        );
         return summarizeToolResponse(response, 'input.scroll_into_view');
       }
       default:
@@ -601,23 +791,50 @@ export async function handleInputTool(args) {
 
 /** @type {Record<string, ToolAction>} */
 export const PATCH_ACTIONS = {
-  apply_styles:    { ref: true,  method: 'patch.apply_styles',            params: (a, r) => ({ target: { elementRef: r }, declarations: a.declarations, important: a.important, verify: a.verify }) },
-  apply_dom:       { ref: true,  method: 'patch.apply_dom',               params: (a, r) => {
-    const operation = typeof a.operation === 'string' ? a.operation : '';
-    /** @type {Record<string, string>} */
-    const opMap = {
-      setAttribute: 'set_attribute',
-      removeAttribute: 'remove_attribute',
-      addClass: 'toggle_class',
-      removeClass: 'toggle_class',
-      setTextContent: 'set_text',
-      setProperty: 'set_attribute',
-    };
-    return { target: { elementRef: r }, operation: opMap[operation] || operation, value: a.value, name: a.name, verify: a.verify };
-  }},
-  list:            { ref: false, method: 'patch.list',                    params: () => ({}) },
-  rollback:        { ref: false, method: 'patch.rollback',                params: a => ({ patchId: a.patchId }) },
-  commit_baseline: { ref: false, method: 'patch.commit_session_baseline', params: () => ({}) },
+  apply_styles: {
+    ref: true,
+    method: 'patch.apply_styles',
+    params: (a, r) => ({
+      target: { elementRef: r },
+      declarations: a.declarations,
+      important: a.important,
+      verify: a.verify,
+    }),
+  },
+  apply_dom: {
+    ref: true,
+    method: 'patch.apply_dom',
+    params: (a, r) => {
+      const operation = typeof a.operation === 'string' ? a.operation : '';
+      /** @type {Record<string, string>} */
+      const opMap = {
+        setAttribute: 'set_attribute',
+        removeAttribute: 'remove_attribute',
+        addClass: 'toggle_class',
+        removeClass: 'toggle_class',
+        setTextContent: 'set_text',
+        setProperty: 'set_attribute',
+      };
+      return {
+        target: { elementRef: r },
+        operation: opMap[operation] || operation,
+        value: a.value,
+        name: a.name,
+        verify: a.verify,
+      };
+    },
+  },
+  list: { ref: false, method: 'patch.list', params: () => ({}) },
+  rollback: {
+    ref: false,
+    method: 'patch.rollback',
+    params: (a) => ({ patchId: a.patchId }),
+  },
+  commit_baseline: {
+    ref: false,
+    method: 'patch.commit_session_baseline',
+    params: () => ({}),
+  },
 };
 
 /**
@@ -630,13 +847,37 @@ export async function handlePatchTool(args) {
 
 /** @type {Record<string, ToolAction>} */
 export const CAPTURE_ACTIONS = {
-  element:             { ref: true,  method: 'screenshot.capture_element',       params: (_, r) => ({ elementRef: r }) },
-  region:              { ref: false, method: 'screenshot.capture_region',        params: a => /** @type {Record<string, unknown>} */ (a.rect || {}) },
-  full_page:           { ref: false, method: 'screenshot.capture_full_page',     params: () => ({}) },
-  cdp_document:        { ref: false, method: 'cdp.get_document',                params: () => ({}) },
-  cdp_dom_snapshot:    { ref: false, method: 'cdp.get_dom_snapshot',             params: () => ({}) },
-  cdp_box_model:       { ref: true,  method: 'cdp.get_box_model',               params: (_, r) => ({ elementRef: r }) },
-  cdp_computed_styles: { ref: true,  method: 'cdp.get_computed_styles_for_node', params: (_, r) => ({ elementRef: r }) },
+  element: {
+    ref: true,
+    method: 'screenshot.capture_element',
+    params: (_, r) => ({ elementRef: r }),
+  },
+  region: {
+    ref: false,
+    method: 'screenshot.capture_region',
+    params: (a) => /** @type {Record<string, unknown>} */ (a.rect || {}),
+  },
+  full_page: {
+    ref: false,
+    method: 'screenshot.capture_full_page',
+    params: () => ({}),
+  },
+  cdp_document: { ref: false, method: 'cdp.get_document', params: () => ({}) },
+  cdp_dom_snapshot: {
+    ref: false,
+    method: 'cdp.get_dom_snapshot',
+    params: () => ({}),
+  },
+  cdp_box_model: {
+    ref: true,
+    method: 'cdp.get_box_model',
+    params: (_, r) => ({ elementRef: r }),
+  },
+  cdp_computed_styles: {
+    ref: true,
+    method: 'cdp.get_computed_styles_for_node',
+    params: (_, r) => ({ elementRef: r }),
+  },
 };
 
 /**
@@ -657,7 +898,10 @@ export async function handleSkillTool() {
   try {
     const { createRuntimeContext } = await import('../../protocol/src/index.js');
     const ctx = createRuntimeContext();
-    return createToolResult('Runtime context retrieved.', { ok: true, runtimeContext: ctx });
+    return createToolResult('Runtime context retrieved.', {
+      ok: true,
+      runtimeContext: ctx,
+    });
   } catch (error) {
     return summarizeToolError(error);
   }
@@ -675,13 +919,14 @@ export async function handleSetupTool(args) {
   const status = await collectSetupStatus({
     global: args.global !== false,
     cwd: process.cwd(),
-    projectPath
+    projectPath,
   });
   const configuredMcp = status.mcpClients.filter((e) => e.configured).length;
   const installedSkills = status.skillTargets.filter((e) => e.installed).length;
-  const summary = configuredMcp === 0 && installedSkills === 0
-    ? 'No MCP or skill setup found. Run `bbx install-mcp` and `bbx install-skill`.'
-    : `Setup: ${configuredMcp}/${status.mcpClients.length} MCP clients configured, ${installedSkills}/${status.skillTargets.length} skills installed.`;
+  const summary =
+    configuredMcp === 0 && installedSkills === 0
+      ? 'No MCP or skill setup found. Run `bbx install-mcp` and `bbx install-skill`.'
+      : `Setup: ${configuredMcp}/${status.mcpClients.length} MCP clients configured, ${installedSkills}/${status.skillTargets.length} skills installed.`;
   return createToolResult(summary, { ok: true, status });
 }
 
@@ -697,11 +942,15 @@ export async function handleLogTool(args) {
     normal: DEFAULT_CONSOLE_LIMIT,
     deep: 100,
   });
-  return callBridgeTool('log.tail', {
-    limit: normalizedArgs.limit ?? DEFAULT_CONSOLE_LIMIT,
-  }, {
-    tokenBudget: getToolTokenBudget(normalizedArgs),
-  });
+  return callBridgeTool(
+    'log.tail',
+    {
+      limit: normalizedArgs.limit ?? DEFAULT_CONSOLE_LIMIT,
+    },
+    {
+      tokenBudget: getToolTokenBudget(normalizedArgs),
+    }
+  );
 }
 
 /**
@@ -711,7 +960,10 @@ export async function handleLogTool(args) {
  */
 export async function handleHealthTool() {
   return withToolClient(async (client) => {
-    const response = await client.request({ method: 'health.ping', meta: { source: REQUEST_SOURCE } });
+    const response = await client.request({
+      method: 'health.ping',
+      meta: { source: REQUEST_SOURCE },
+    });
     return summarizeToolResponse(response, 'health.ping');
   });
 }
@@ -727,75 +979,87 @@ export async function handleBatchTool(args) {
 
   const calls = args.calls;
   return withToolClient(async (client) => {
-    const results = await Promise.all(calls.map(async (call) => {
-      if (!call || typeof call !== 'object' || typeof call.method !== 'string') {
-        return {
-          method: '',
-          tabId: null,
-          ok: false,
-          summary: 'INVALID_REQUEST: Each batch call needs a method.',
-          evidence: null,
-          error: { code: 'INVALID_REQUEST', message: 'Each batch call needs a method.' },
-          response: null,
-        };
-      }
+    const results = await Promise.all(
+      calls.map(async (call) => {
+        if (!call || typeof call !== 'object' || typeof call.method !== 'string') {
+          return {
+            method: '',
+            tabId: null,
+            ok: false,
+            summary: 'INVALID_REQUEST: Each batch call needs a method.',
+            evidence: null,
+            error: {
+              code: 'INVALID_REQUEST',
+              message: 'Each batch call needs a method.',
+            },
+            response: null,
+          };
+        }
 
-      if (!METHODS.includes(/** @type {BridgeMethod} */ (call.method))) {
-        return {
-          method: call.method,
-          tabId: null,
-          ok: false,
-          summary: `INVALID_REQUEST: Unknown bridge method "${call.method}".`,
-          evidence: null,
-          error: {
-            code: 'INVALID_REQUEST',
-            message: `Unknown bridge method "${call.method}".`,
-          },
-          response: null,
-        };
-      }
+        if (!METHODS.includes(/** @type {BridgeMethod} */ (call.method))) {
+          return {
+            method: call.method,
+            tabId: null,
+            ok: false,
+            summary: `INVALID_REQUEST: Unknown bridge method "${call.method}".`,
+            evidence: null,
+            error: {
+              code: 'INVALID_REQUEST',
+              message: `Unknown bridge method "${call.method}".`,
+            },
+            response: null,
+          };
+        }
 
-      const method = /** @type {BridgeMethod} */ (call.method);
-      const tabId = bridgeMethodNeedsTab(method)
-        ? (typeof call.tabId === 'number' ? call.tabId : null)
-        : null;
-      const tokenBudget = getToolTokenBudget(call);
+        const method = /** @type {BridgeMethod} */ (call.method);
+        const tabId = bridgeMethodNeedsTab(method)
+          ? typeof call.tabId === 'number'
+            ? call.tabId
+            : null
+          : null;
+        const tokenBudget = getToolTokenBudget(call);
 
-      const startTime = Date.now();
-      try {
-        const response = await client.request({
-          method,
-          params: call.params || {},
-          tabId,
-          meta: {
-            source: REQUEST_SOURCE,
-            ...(tokenBudget != null ? { token_budget: tokenBudget } : {}),
-          },
-        });
-        return summarizeBatchResponseItem({
-          method,
-          tabId,
-          response,
-          durationMs: Date.now() - startTime,
-        });
-      } catch (error) {
-        return summarizeBatchErrorItem({
-          method,
-          tabId,
-          error,
-          durationMs: Date.now() - startTime,
-        });
-      }
-    }));
+        const startTime = Date.now();
+        try {
+          const response = await client.request({
+            method,
+            params: call.params || {},
+            tabId,
+            meta: {
+              source: REQUEST_SOURCE,
+              ...(tokenBudget != null ? { token_budget: tokenBudget } : {}),
+            },
+          });
+          return summarizeBatchResponseItem({
+            method,
+            tabId,
+            response,
+            durationMs: Date.now() - startTime,
+          });
+        } catch (error) {
+          return summarizeBatchErrorItem({
+            method,
+            tabId,
+            error,
+            durationMs: Date.now() - startTime,
+          });
+        }
+      })
+    );
 
     const failureCount = results.filter((result) => !result.ok).length;
-    const summary = failureCount === 0
-      ? `Batch executed ${results.length} call(s).`
-      : `Batch executed ${results.length} call(s) with ${failureCount} error(s).`;
-    return createToolResult(summary, {
-      ok: failureCount === 0,
-      results,
-    }, failureCount > 0);
+    const summary =
+      failureCount === 0
+        ? `Batch executed ${results.length} call(s).`
+        : `Batch executed ${results.length} call(s) with ${failureCount} error(s).`;
+    return createToolResult(
+      summary,
+      {
+        ok: failureCount === 0,
+        results,
+      },
+      failureCount > 0
+    );
   });
 }
 
@@ -815,21 +1079,25 @@ export async function handleRawCallTool(args) {
       args.params || {},
       {
         tabId: typeof args.tabId === 'number' ? args.tabId : null,
-        source: REQUEST_SOURCE
+        source: REQUEST_SOURCE,
       }
     );
 
     if (!response.ok) {
-      return createToolResult(response.error.message, {
-        ok: false,
-        error: response.error,
-        response
-      }, true);
+      return createToolResult(
+        response.error.message,
+        {
+          ok: false,
+          error: response.error,
+          response,
+        },
+        true
+      );
     }
 
     return createToolResult(`Called ${args.method}.`, {
       ok: true,
-      response: response.result
+      response: response.result,
     });
   });
 }
@@ -858,14 +1126,30 @@ const INVESTIGATE_SCOPES = {
     label: 'quick',
     steps: [
       { method: 'page.get_state', params: () => ({}) },
-      { method: 'dom.query', params: (a) => ({ selector: a.selector || 'body', maxNodes: 10, maxDepth: 2, textBudget: 300 }) },
+      {
+        method: 'dom.query',
+        params: (a) => ({
+          selector: a.selector || 'body',
+          maxNodes: 10,
+          maxDepth: 2,
+          textBudget: 300,
+        }),
+      },
     ],
   },
   normal: {
     label: 'normal',
     steps: [
       { method: 'page.get_state', params: () => ({}) },
-      { method: 'dom.query', params: (a) => ({ selector: a.selector || 'body', maxNodes: 25, maxDepth: 4, textBudget: 600 }) },
+      {
+        method: 'dom.query',
+        params: (a) => ({
+          selector: a.selector || 'body',
+          maxNodes: 25,
+          maxDepth: 4,
+          textBudget: 600,
+        }),
+      },
       { method: 'page.get_text', params: () => ({ textBudget: 4000 }) },
     ],
   },
@@ -873,9 +1157,20 @@ const INVESTIGATE_SCOPES = {
     label: 'deep',
     steps: [
       { method: 'page.get_state', params: () => ({}) },
-      { method: 'dom.query', params: (a) => ({ selector: a.selector || 'body', maxNodes: 50, maxDepth: 6, textBudget: 1000 }) },
+      {
+        method: 'dom.query',
+        params: (a) => ({
+          selector: a.selector || 'body',
+          maxNodes: 50,
+          maxDepth: 6,
+          textBudget: 1000,
+        }),
+      },
       { method: 'page.get_text', params: () => ({ textBudget: 8000 }) },
-      { method: 'page.get_console', params: () => ({ level: 'warn', limit: 20 }) },
+      {
+        method: 'page.get_console',
+        params: () => ({ level: 'warn', limit: 20 }),
+      },
       { method: 'page.get_network', params: () => ({ limit: 20 }) },
     ],
   },
@@ -947,12 +1242,16 @@ export async function handleInvestigateTool(args) {
       ? `Investigation complete (${scope.label}, ${stepResults.length} steps, ${totalDuration}ms). Objective: ${objective}`
       : `Investigation partial (${scope.label}, ${stepResults.length} steps, ${failedSteps.length} failed, ${totalDuration}ms). Objective: ${objective}`;
 
-    return createToolResult(summaryText, {
-      ok: allOk,
-      objective,
-      scope: scopeName,
-      heuristicFallback: true,
-      steps: stepResults,
-    }, !allOk);
+    return createToolResult(
+      summaryText,
+      {
+        ok: allOk,
+        objective,
+        scope: scopeName,
+        heuristicFallback: true,
+        steps: stepResults,
+      },
+      !allOk
+    );
   });
 }

@@ -2,11 +2,11 @@
 
 ## Budget Presets
 
-| Preset | maxNodes | maxDepth | textBudget | Use When |
-|--------|----------|----------|------------|----------|
-| quick | 5 | 2 | 300 | Checking one element or confirming state |
-| normal | 25 | 4 | 600 | General inspection (default) |
-| deep | 100 | 8 | 2000 | Complex nested components |
+| Preset | maxNodes | maxDepth | textBudget | Use When                                 |
+| ------ | -------- | -------- | ---------- | ---------------------------------------- |
+| quick  | 5        | 2        | 300        | Checking one element or confirming state |
+| normal | 25       | 4        | 600        | General inspection (default)             |
+| deep   | 100      | 8        | 2000       | Complex nested components                |
 
 Always start at **quick** or **normal**; widen only if the result indicates truncation.
 
@@ -51,23 +51,23 @@ Omitting allowlists or leaving the text budget wide open often returns 3–5× t
 
 ## Anti-Patterns (Token Waste)
 
-| Pattern | Cost | Fix |
-|---------|------|-----|
-| `dom.query` on `body` with no budget | ~2000 tok | Use specific selector + quick budget |
-| Screenshot before structured read | ~1500 tok wasted | Always `dom.query` or `styles.get_computed` first |
-| Re-querying DOM for same element | ~500 tok/call | Reuse `elementRef` from prior result |
-| Full-page screenshot | ~3000 tok | Use `screenshot.capture_element`, or `screenshot.capture_region` with a tight rect |
-| Requesting all computed styles | ~800 tok | Set `properties` list (usually 3–8 props) |
-| Multiple CLI calls for independent reads | overhead/call | Use `batch` command |
-| Guessing selectors for known labels | ~300 tok wasted/try | Use `dom.find_by_text` or `dom.find_by_role` |
-| Polling page state with repeated queries | ~500 tok/poll | Use `dom.wait_for` (single call, waits async) |
-| Inspecting DOM to read app state | ~800 tok | Use `page.evaluate` to read JS directly |
-| Re-querying after HMR without waiting | ~500 tok stale | `dom.wait_for` first, then query |
-| Separate call to verify a patch | ~500 tok wasted | Set `verify: true` on `patch.apply_styles` / `patch.apply_dom` to get computed result inline |
-| `dom.query` on body for page text | ~2000 tok | Use `page.get_text` (extracts innerText directly) |
-| Guessing interactive elements from DOM | ~600 tok/try | Use `dom.get_accessibility_tree` for semantic roles |
-| Fetching network via evaluate hacks | ~400 tok | Use `page.get_network` (auto-interceptor) |
-| Full a11y tree with no limits | ~3000 tok | Set `maxNodes` ≤ 50, `maxDepth` ≤ 4 |
+| Pattern                                  | Cost                | Fix                                                                                          |
+| ---------------------------------------- | ------------------- | -------------------------------------------------------------------------------------------- |
+| `dom.query` on `body` with no budget     | ~2000 tok           | Use specific selector + quick budget                                                         |
+| Screenshot before structured read        | ~1500 tok wasted    | Always `dom.query` or `styles.get_computed` first                                            |
+| Re-querying DOM for same element         | ~500 tok/call       | Reuse `elementRef` from prior result                                                         |
+| Full-page screenshot                     | ~3000 tok           | Use `screenshot.capture_element`, or `screenshot.capture_region` with a tight rect           |
+| Requesting all computed styles           | ~800 tok            | Set `properties` list (usually 3–8 props)                                                    |
+| Multiple CLI calls for independent reads | overhead/call       | Use `batch` command                                                                          |
+| Guessing selectors for known labels      | ~300 tok wasted/try | Use `dom.find_by_text` or `dom.find_by_role`                                                 |
+| Polling page state with repeated queries | ~500 tok/poll       | Use `dom.wait_for` (single call, waits async)                                                |
+| Inspecting DOM to read app state         | ~800 tok            | Use `page.evaluate` to read JS directly                                                      |
+| Re-querying after HMR without waiting    | ~500 tok stale      | `dom.wait_for` first, then query                                                             |
+| Separate call to verify a patch          | ~500 tok wasted     | Set `verify: true` on `patch.apply_styles` / `patch.apply_dom` to get computed result inline |
+| `dom.query` on body for page text        | ~2000 tok           | Use `page.get_text` (extracts innerText directly)                                            |
+| Guessing interactive elements from DOM   | ~600 tok/try        | Use `dom.get_accessibility_tree` for semantic roles                                          |
+| Fetching network via evaluate hacks      | ~400 tok            | Use `page.get_network` (auto-interceptor)                                                    |
+| Full a11y tree with no limits            | ~3000 tok           | Set `maxNodes` ≤ 50, `maxDepth` ≤ 4                                                          |
 
 ## Efficient Loop
 
@@ -162,6 +162,7 @@ bbx eval 'module.hot?.status?.()'            # check HMR status (webpack)
 ## Parent-Agent Response Policy
 
 The subagent should return:
+
 - What was inspected (selector or elementRef)
 - What changed (if patching)
 - Whether it answers the question

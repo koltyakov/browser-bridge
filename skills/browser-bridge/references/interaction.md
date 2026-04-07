@@ -2,17 +2,17 @@
 
 ## Input Methods
 
-| Method | CLI Shortcut | Purpose |
-|--------|-------------|---------|
-| `input.click` | `click <ref> [button]` | DOM-level click |
-| `input.focus` | `focus <ref>` | Focus an element |
-| `input.type` | `type <ref> <text>` | Type into input/textarea/contenteditable |
-| `input.press_key` | `press-key <key> [ref]` | Send keyboard key (Enter, Backspace, etc.) |
-| `input.set_checked` | `call input.set_checked '{...}'` | Toggle checkbox/radio |
-| `input.select_option` | `call input.select_option '{...}'` | Select native `<select>` by value/label/index |
-| `input.hover` | `hover <ref>` | Trigger CSS `:hover` state (mouseenter/mouseover/mousemove) |
-| `input.drag` | `call input.drag '{...}'` | Full drag-and-drop event sequence |
-| `input.scroll_into_view` | `call input.scroll_into_view '{...}'` | Ensure a target is visible before inspect/capture |
+| Method                   | CLI Shortcut                          | Purpose                                                     |
+| ------------------------ | ------------------------------------- | ----------------------------------------------------------- |
+| `input.click`            | `click <ref> [button]`                | DOM-level click                                             |
+| `input.focus`            | `focus <ref>`                         | Focus an element                                            |
+| `input.type`             | `type <ref> <text>`                   | Type into input/textarea/contenteditable                    |
+| `input.press_key`        | `press-key <key> [ref]`               | Send keyboard key (Enter, Backspace, etc.)                  |
+| `input.set_checked`      | `call input.set_checked '{...}'`      | Toggle checkbox/radio                                       |
+| `input.select_option`    | `call input.select_option '{...}'`    | Select native `<select>` by value/label/index               |
+| `input.hover`            | `hover <ref>`                         | Trigger CSS `:hover` state (mouseenter/mouseover/mousemove) |
+| `input.drag`             | `call input.drag '{...}'`             | Full drag-and-drop event sequence                           |
+| `input.scroll_into_view` | `call input.scroll_into_view '{...}'` | Ensure a target is visible before inspect/capture           |
 
 ## Navigation
 
@@ -39,6 +39,7 @@ Scrolls the window or a specific scrollable element.
 ### Resize Viewport
 
 Set device viewport dimensions (useful for responsive testing):
+
 ```bash
 bbx resize 375 812                           # iPhone-size
 bbx resize 1024 768                          # tablet
@@ -50,6 +51,7 @@ Uses CDP device emulation - the page re-renders at the new size immediately.
 ## Tab Management
 
 **IMPORTANT: Prefer existing tabs.** Never create new tabs unless:
+
 - The user explicitly requests opening a new page
 - The task requires a clean/fresh page state (e.g., testing initial load)
 - You need to compare multiple pages simultaneously
@@ -65,6 +67,7 @@ bbx call tabs.create '{"url":"https://example.com","active":false}'
 ```
 
 Typical workflow - compare two pages (only when comparison is required):
+
 1. `tabs.list` to see current tabs
 2. `tabs.create` with second URL
 3. Inspect both tabs (`--tab <id>` or MCP `tabId` only when you need the non-active tab)
@@ -83,6 +86,7 @@ bbx call dom.get_accessibility_tree '{"maxNodes":100,"maxDepth":5}'
 Each node: `role`, `name`, `description`, `value`, `focused`, `required`, `checked`, `disabled`, `interactive`, `childIds`.
 
 Typical workflow - find interactive controls:
+
 1. `dom.get_accessibility_tree` with small `maxNodes`
 2. Scan for nodes with `interactive: true`
 3. Use role/name to identify the right control
@@ -103,6 +107,7 @@ bbx call --tab 200 dom.query '{"selector":"main"}'
 ```
 
 Open a new tab programmatically:
+
 ```bash
 bbx tab-create https://example.com   # creates a new tab in the enabled window
 bbx call --tab <new-tabId> page.get_state
@@ -127,6 +132,7 @@ Scrolls the window by default. Pass an `elementRef` to scroll an inner scrollabl
 ### Scroll target into view
 
 Use this when the page has nested containers or when you want the target centered before a screenshot or hover:
+
 ```bash
 bbx call input.scroll_into_view '{"target":{"elementRef":"el_123"}}'
 bbx call input.scroll_into_view '{"target":{"selector":"[data-testid=\"submit-button\"]"}}'
@@ -143,6 +149,7 @@ bbx call page.get_network '{"limit":20,"clear":true}'
 Each entry: `method`, `url`, `status`, `duration`, `initiator`.
 
 Typical workflow - debug API calls:
+
 1. `page.get_network` to see recent requests
 2. Filter by URL pattern or status code
 3. Cross-reference with `page.get_console` for errors
@@ -151,11 +158,13 @@ Typical workflow - debug API calls:
 ## Form Controls
 
 **Checkbox/radio:**
+
 ```bash
 bbx call input.set_checked '{"target":{"elementRef":"el_123"},"checked":true}'
 ```
 
 **Select dropdown:**
+
 ```bash
 bbx call input.select_option '{"target":{"elementRef":"el_456"},"values":["us"]}'
 ```
@@ -172,11 +181,13 @@ bbx call input.hover '{"target":{"elementRef":"el_abc123"}}'
 ```
 
 **Hold hover for inspection:** set `duration` (ms) to keep hover active before auto-releasing with `mouseleave`:
+
 ```bash
 bbx call input.hover '{"target":{"elementRef":"el_abc123"},"duration":2000}'
 ```
 
 Typical workflow - inspect a tooltip:
+
 1. `dom.query` to find the trigger element → `elementRef`
 2. `input.hover` with `duration: 2000`
 3. While hover holds, `dom.query` for tooltip content (e.g. `[role="tooltip"]`)
@@ -191,6 +202,7 @@ bbx call input.drag '{"source":{"elementRef":"el_src"},"destination":{"elementRe
 ```
 
 With pixel offsets for precise positioning:
+
 ```bash
 bbx call input.drag '{"source":{"elementRef":"el_src"},"destination":{"elementRef":"el_dst"},"sourceOffset":{"x":10,"y":10},"destinationOffset":{"x":5,"y":5}}'
 ```
@@ -198,6 +210,7 @@ bbx call input.drag '{"source":{"elementRef":"el_src"},"destination":{"elementRe
 Event sequence: `mousedown → dragstart → drag → dragenter → dragover → drop → dragend → mouseup`.
 
 Typical workflow - reorder a list:
+
 1. `dom.query` to find draggable items → get source and destination `elementRef` values
 2. `input.drag` from source to destination
 3. `dom.wait_for` to confirm the DOM updated
@@ -206,16 +219,21 @@ Typical workflow - reorder a list:
 ## Finding Elements
 
 ### By text content
+
 Find elements matching visible text. Faster than `dom.query` when you know the label:
+
 ```bash
 bbx find 'Submit Order'
 bbx call dom.find_by_text '{"text":"Add to Cart","scope":"button","exact":false}'
 ```
+
 - `scope`: optional CSS selector to narrow search (e.g. `"button"`, `".sidebar"`)
 - `exact`: `true` for exact match, `false` (default) for substring/case-insensitive
 
 ### By ARIA role
+
 Find elements by explicit `role` attribute or implicit HTML role (e.g. `<nav>` → `navigation`):
+
 ```bash
 bbx find-role button 'Save'
 bbx call dom.find_by_role '{"role":"navigation"}'
@@ -225,19 +243,23 @@ bbx call dom.find_by_role '{"role":"heading","name":"Dashboard"}'
 ## Waiting
 
 ### Wait for DOM condition
+
 ```bash
 bbx wait '.success-message' 10000
 bbx call dom.wait_for '{"selector":".modal","state":"visible","timeoutMs":10000}'
 bbx call dom.wait_for '{"selector":".spinner","state":"detached","timeoutMs":5000}'
 ```
+
 - `state`: `attached` (exists in DOM), `detached` (removed), `visible` (non-zero size), `hidden`
 - Uses MutationObserver + 250 ms polling fallback
 - Returns `{found, elementRef, duration}` - NOT an error on timeout
 
 ### Wait for page load
+
 ```bash
 bbx call page.wait_for_load_state '{"timeoutMs":10000}'
 ```
+
 Use after clicking navigation links.
 
 ## Interaction Flow

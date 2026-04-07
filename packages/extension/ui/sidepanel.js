@@ -148,57 +148,32 @@ const SETUP_MATRIX_ORDER = /** @type {const} */ ([
   'agents',
 ]);
 /** @type {Map<string, number>} */
-const SETUP_MATRIX_RANK = new Map(
-  SETUP_MATRIX_ORDER.map((key, index) => [key, index]),
-);
-const SETUP_MATRIX_BETA_KEYS = new Set([
-  'antigravity',
-  'windsurf',
-  'agents',
-]);
+const SETUP_MATRIX_RANK = new Map(SETUP_MATRIX_ORDER.map((key, index) => [key, index]));
+const SETUP_MATRIX_BETA_KEYS = new Set(['antigravity', 'windsurf', 'agents']);
 
-const nativeIndicator = /** @type {HTMLSpanElement} */ (
-  document.getElementById('native-indicator')
-);
-const toggleButton = /** @type {HTMLButtonElement} */ (
-  document.getElementById('bridge-toggle')
-);
-const actionLog = /** @type {HTMLDivElement} */ (
-  document.getElementById('action-log')
-);
-const setupSection = /** @type {HTMLElement} */ (
-  document.getElementById('native-setup')
-);
-const setupInstallCmd = /** @type {HTMLElement} */ (
-  document.getElementById('setup-install-cmd')
-);
-const setupSkillCmd = /** @type {HTMLElement} */ (
-  document.getElementById('setup-skill-cmd')
-);
-const setupMcpCmd = /** @type {HTMLElement} */ (
-  document.getElementById('setup-mcp-cmd')
-);
-const controlSection = /** @type {HTMLElement} */ (
-  document.getElementById('control-section')
-);
+const nativeIndicator =
+  /** @type {HTMLSpanElement} */ (document.getElementById('native-indicator'));
+const toggleButton = /** @type {HTMLButtonElement} */ (document.getElementById('bridge-toggle'));
+const actionLog = /** @type {HTMLDivElement} */ (document.getElementById('action-log'));
+const setupSection = /** @type {HTMLElement} */ (document.getElementById('native-setup'));
+const setupInstallCmd = /** @type {HTMLElement} */ (document.getElementById('setup-install-cmd'));
+const setupSkillCmd = /** @type {HTMLElement} */ (document.getElementById('setup-skill-cmd'));
+const setupMcpCmd = /** @type {HTMLElement} */ (document.getElementById('setup-mcp-cmd'));
+const controlSection = /** @type {HTMLElement} */ (document.getElementById('control-section'));
 const installationSection = /** @type {HTMLDetailsElement} */ (
   document.getElementById('installation-section')
 );
-const setupStatusNote = /** @type {HTMLParagraphElement} */ (
-  document.getElementById('setup-status-note')
-);
+const setupStatusNote =
+  /** @type {HTMLParagraphElement} */ (document.getElementById('setup-status-note'));
 const setupStatusSummaryNote = /** @type {HTMLSpanElement} */ (
   document.getElementById('setup-status-summary-note')
 );
 const setupStatusMatrix = /** @type {HTMLDivElement} */ (
   document.getElementById('setup-status-matrix')
 );
-const activitySection = /** @type {HTMLElement} */ (
-  document.getElementById('activity-section')
-);
-const activityHistogram = /** @type {HTMLDivElement} */ (
-  document.getElementById('activity-histogram')
-);
+const activitySection = /** @type {HTMLElement} */ (document.getElementById('activity-section'));
+const activityHistogram =
+  /** @type {HTMLDivElement} */ (document.getElementById('activity-histogram'));
 const activityHistogramBars = /** @type {HTMLDivElement} */ (
   document.getElementById('activity-histogram-bars')
 );
@@ -208,21 +183,15 @@ const activityHistogramRange = /** @type {HTMLSpanElement} */ (
 const activitySummaryTokens = /** @type {HTMLSpanElement} */ (
   document.getElementById('activity-summary-tokens')
 );
-const agentStatus = /** @type {HTMLDivElement} */ (
-  document.getElementById('agent-status')
-);
+const agentStatus = /** @type {HTMLDivElement} */ (document.getElementById('agent-status'));
 const agentStatusDetail = /** @type {HTMLParagraphElement} */ (
   document.getElementById('agent-status-detail')
 );
-const agentDisclosure = /** @type {HTMLParagraphElement} */ (
-  document.getElementById('agent-disclosure')
-);
-const examplesSection = /** @type {HTMLDetailsElement} */ (
-  document.getElementById('examples-section')
-);
-const examplesContent = /** @type {HTMLDivElement} */ (
-  document.getElementById('examples-content')
-);
+const agentDisclosure =
+  /** @type {HTMLParagraphElement} */ (document.getElementById('agent-disclosure'));
+const examplesSection =
+  /** @type {HTMLDetailsElement} */ (document.getElementById('examples-section'));
+const examplesContent = /** @type {HTMLDivElement} */ (document.getElementById('examples-content'));
 /** @type {SidePanelCurrentTab | null} */
 let currentTabState = null;
 /** @type {ActionLogEntry[]} */
@@ -265,7 +234,7 @@ const MCP_PROMPT_EXAMPLES = Object.freeze([
 const ACTIVITY_HISTOGRAM_WINDOW_MS = 10 * 60 * 1000;
 const ACTIVITY_HISTOGRAM_BUCKET_MS = 30 * 1000;
 const ACTIVITY_HISTOGRAM_BARS = Math.floor(
-  ACTIVITY_HISTOGRAM_WINDOW_MS / ACTIVITY_HISTOGRAM_BUCKET_MS,
+  ACTIVITY_HISTOGRAM_WINDOW_MS / ACTIVITY_HISTOGRAM_BUCKET_MS
 );
 const ACTIVITY_HISTOGRAM_TICK_MS = 5 * 1000;
 const HISTOGRAM_METHOD_FAMILIES = /** @type {const} */ ([
@@ -303,8 +272,7 @@ function copySetupText(target, text) {
     .then(() => {
       target.classList.add('copied');
       const copyButton = target.querySelector('.example-copy-button');
-      const resetLabel =
-        copyButton instanceof HTMLButtonElement ? copyButton.textContent : null;
+      const resetLabel = copyButton instanceof HTMLButtonElement ? copyButton.textContent : null;
       if (copyButton instanceof HTMLButtonElement) {
         copyButton.textContent = '✓';
       }
@@ -359,7 +327,10 @@ async function resolveInitialScopeTabId() {
   }
 
   try {
-    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const [activeTab] = await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
     return typeof activeTab?.id === 'number' ? activeTab.id : null;
   } catch {
     return null;
@@ -378,9 +349,7 @@ async function connectSidepanelPort() {
   });
   nextPort.postMessage({
     type: 'state.request',
-    scopeTabId: initialScopeTabId != null && initialScopeTabId > 0
-      ? initialScopeTabId
-      : undefined,
+    scopeTabId: initialScopeTabId != null && initialScopeTabId > 0 ? initialScopeTabId : undefined,
   });
   port = nextPort;
 }
@@ -414,9 +383,7 @@ toggleButton.addEventListener('click', () => {
 
   port.postMessage({
     type: 'scope.set_enabled',
-    tabId: requestedTabId != null && requestedTabId > 0
-      ? requestedTabId
-      : undefined,
+    tabId: requestedTabId != null && requestedTabId > 0 ? requestedTabId : undefined,
     enabled: pendingEnabled,
   });
 });
@@ -438,9 +405,7 @@ setupStatusMatrix.addEventListener('contextmenu', (event) => {
   if (!(target instanceof HTMLElement)) {
     return;
   }
-  const actionTarget = target.closest(
-    '[data-context-kind][data-context-target]',
-  );
+  const actionTarget = target.closest('[data-context-kind][data-context-target]');
   if (!(actionTarget instanceof HTMLElement)) {
     hideSetupContextMenu();
     return;
@@ -452,12 +417,7 @@ setupStatusMatrix.addEventListener('contextmenu', (event) => {
   const copyText = actionTarget.dataset.contextCopyText;
   const reinstallLabel = actionTarget.dataset.contextReinstallLabel;
   const uninstallLabel = actionTarget.dataset.contextUninstallLabel;
-  if (
-    (kind !== 'mcp' && kind !== 'skill') ||
-    !targetKey ||
-    !copyLabel ||
-    !copyText
-  ) {
+  if ((kind !== 'mcp' && kind !== 'skill') || !targetKey || !copyLabel || !copyText) {
     hideSetupContextMenu();
     return;
   }
@@ -502,13 +462,13 @@ function renderState(state) {
     state.setupStatusPending,
     state.setupStatusError,
     state.setupInstallPendingKey,
-    state.setupInstallError,
+    state.setupInstallError
   );
 
   actionLog.replaceChildren(
     ...state.actionLog.map((entry, index, entries) =>
-      renderActionLogEntry(entry, state.setupStatus, entries, index),
-    ),
+      renderActionLogEntry(entry, state.setupStatus, entries, index)
+    )
   );
   currentActionLog = state.actionLog;
   updateActivityVisualizations();
@@ -565,15 +525,14 @@ function renderCurrentTab(currentTab) {
     toggleButton.textContent = 'Disable Window Access';
     toggleButton.disabled = false;
     toggleButton.dataset.enabled = String(currentTab.enabled);
-    toggleErrorEl.textContent = 'This page cannot be interacted with. Switch to a normal web page to inspect and interact.';
+    toggleErrorEl.textContent =
+      'This page cannot be interacted with. Switch to a normal web page to inspect and interact.';
     toggleErrorEl.hidden = false;
     controlSection.classList.remove('attention');
     return;
   }
 
-  toggleButton.textContent = currentTab.enabled
-    ? 'Disable Window Access'
-    : 'Enable Window Access';
+  toggleButton.textContent = currentTab.enabled ? 'Disable Window Access' : 'Enable Window Access';
   toggleButton.disabled = !currentTab.url;
   toggleButton.dataset.enabled = String(currentTab.enabled);
   controlSection.classList.toggle('attention', currentTab.accessRequested && !currentTab.enabled);
@@ -619,7 +578,8 @@ function renderAgentStatus(state) {
 
   if (!currentTab) {
     agentStatus.textContent = 'Window access unavailable';
-    agentStatusDetail.textContent = 'Open a normal web page in this Chrome window to enable Browser Bridge.';
+    agentStatusDetail.textContent =
+      'Open a normal web page in this Chrome window to enable Browser Bridge.';
     agentDisclosure.hidden = false;
     return;
   }
@@ -628,25 +588,29 @@ function renderAgentStatus(state) {
 
   if (currentTab.enabled && currentTab.restricted) {
     agentStatus.textContent = 'Window access enabled';
-    agentStatusDetail.textContent = 'This page cannot be interacted with. Switch to a normal web page to use Browser Bridge.';
+    agentStatusDetail.textContent =
+      'This page cannot be interacted with. Switch to a normal web page to use Browser Bridge.';
     agentDisclosure.hidden = false;
     return;
   }
 
   if (currentTab.enabled) {
     agentStatus.textContent = 'Window access enabled';
-    agentStatusDetail.textContent = 'Browser Bridge is enabled for this Chrome window. Requests default to the active tab, or can target another tab in this window explicitly.';
+    agentStatusDetail.textContent =
+      'Browser Bridge is enabled for this Chrome window. Requests default to the active tab, or can target another tab in this window explicitly.';
     return;
   }
 
   if (currentTab.accessRequested) {
     agentStatus.textContent = 'Window access requested';
-    agentStatusDetail.textContent = 'An agent requested access for this Chrome window. Enable it to allow page inspection and interaction.';
+    agentStatusDetail.textContent =
+      'An agent requested access for this Chrome window. Enable it to allow page inspection and interaction.';
     return;
   }
 
   agentStatus.textContent = 'Window access';
-  agentStatusDetail.textContent = 'Enable Browser Bridge to let your connected agent inspect and interact with pages in this Chrome window.';
+  agentStatusDetail.textContent =
+    'Enable Browser Bridge to let your connected agent inspect and interact with pages in this Chrome window.';
 }
 
 /**
@@ -655,9 +619,7 @@ function renderAgentStatus(state) {
  * @returns {void}
  */
 function renderNativeStatus(connected, error) {
-  const label = connected
-    ? 'Native host connected'
-    : error || 'Native host disconnected';
+  const label = connected ? 'Native host connected' : error || 'Native host disconnected';
   nativeIndicator.dataset.connected = String(connected);
   nativeIndicator.title = label;
   nativeIndicator.setAttribute('aria-label', label);
@@ -684,7 +646,9 @@ function renderNativeStatus(connected, error) {
   } else if (!nativeDiagnosticTimer) {
     nativeDiagnosticTimer = setTimeout(() => {
       nativeDiagnosticTimer = null;
-      showSidepanelDiagnostic(`Native host unreachable for 10s. Run: npm install -g @browserbridge/bbx && ${setupInstallCmd.textContent || 'bbx install'}`);
+      showSidepanelDiagnostic(
+        `Native host unreachable for 10s. Run: npm install -g @browserbridge/bbx && ${setupInstallCmd.textContent || 'bbx install'}`
+      );
     }, NATIVE_DIAGNOSTIC_DELAY_MS);
   }
 }
@@ -698,7 +662,8 @@ function showSidepanelDiagnostic(message) {
   if (!el) {
     el = document.createElement('div');
     el.id = 'native-diagnostic';
-    el.style.cssText = 'padding:8px 12px;margin:8px 0;background:var(--status-badge-bg,#fef3cd);color:var(--text-primary,#856404);border-radius:6px;font-size:12px;line-height:1.4';
+    el.style.cssText =
+      'padding:8px 12px;margin:8px 0;background:var(--status-badge-bg,#fef3cd);color:var(--text-primary,#856404);border-radius:6px;font-size:12px;line-height:1.4';
     setupSection.after(el);
   }
   el.textContent = message;
@@ -788,7 +753,7 @@ function renderPromptExamples(setupStatus) {
 
   examplesContent.replaceChildren(
     createExamplesGroup('CLI skill', CLI_PROMPT_EXAMPLES),
-    createExamplesGroup('MCP', MCP_PROMPT_EXAMPLES),
+    createExamplesGroup('MCP', MCP_PROMPT_EXAMPLES)
   );
 }
 
@@ -868,40 +833,27 @@ function syncExclusiveDetailsSections(source, other) {
  * @param {string | null} installError
  * @returns {void}
  */
-function renderSetupStatus(
-  setupStatus,
-  pending,
-  error,
-  installPendingKey,
-  installError,
-) {
+function renderSetupStatus(setupStatus, pending, error, installPendingKey, installError) {
   if (!setupStatus && pending) {
     setupStatusSummaryNote.hidden = true;
     setupStatusSummaryNote.textContent = '';
     setupStatusNote.textContent = 'Checking global host setup…';
     setupStatusNote.hidden = false;
-    setupStatusMatrix.replaceChildren(
-      createStatusPlaceholder('Checking detected clients…'),
-    );
+    setupStatusMatrix.replaceChildren(createStatusPlaceholder('Checking detected clients…'));
     return;
   }
 
   if (!setupStatus) {
     setupStatusSummaryNote.hidden = true;
     setupStatusSummaryNote.textContent = '';
-    setupStatusNote.textContent =
-      installError || error || 'Global host setup is unavailable.';
+    setupStatusNote.textContent = installError || error || 'Global host setup is unavailable.';
     setupStatusNote.hidden = false;
-    setupStatusMatrix.replaceChildren(
-      createStatusPlaceholder('No host setup status yet.'),
-    );
+    setupStatusMatrix.replaceChildren(createStatusPlaceholder('No host setup status yet.'));
     return;
   }
 
   const scopeNote =
-    setupStatus.scope === 'global'
-      ? 'Global installs only'
-      : 'Project installs only';
+    setupStatus.scope === 'global' ? 'Global installs only' : 'Project installs only';
   setupStatusSummaryNote.textContent = `* ${scopeNote}`;
   setupStatusSummaryNote.hidden = false;
 
@@ -926,7 +878,7 @@ function renderSetupStatus(
   const rows = buildSetupMatrixRows(setupStatus);
   if (!rows.length) {
     setupStatusMatrix.replaceChildren(
-      createStatusPlaceholder('No supported clients or agents were detected.'),
+      createStatusPlaceholder('No supported clients or agents were detected.')
     );
     return;
   }
@@ -1018,11 +970,7 @@ function shouldRenderMcpClientRow(entry) {
  * @returns {boolean}
  */
 function shouldRenderSkillTargetRow(entry) {
-  return (
-    entry.detected ||
-    entry.installed ||
-    entry.skills.some((skill) => skill.exists)
-  );
+  return entry.detected || entry.installed || entry.skills.some((skill) => skill.exists);
 }
 
 /**
@@ -1098,7 +1046,7 @@ function renderMcpMatrixCell(row, installPendingKey) {
         installPendingKey === getInstallKey('mcp', row.key),
         'install',
         'Install',
-        '...',
+        '...'
       );
       button.title = 'Install Browser Bridge MCP for generic agents';
       return button;
@@ -1121,7 +1069,7 @@ function renderMcpMatrixCell(row, installPendingKey) {
     installPendingKey === getInstallKey('mcp', row.key),
     'install',
     'Install',
-    '...',
+    '...'
   );
   button.title = entry.configPath;
   return button;
@@ -1140,9 +1088,7 @@ function renderSkillMatrixCell(row, installPendingKey) {
   const reinstallLabel = getSkillReinstallLabel(entry);
   const uninstallLabel = getSkillUninstallLabel(entry);
 
-  const installable = entry.skills.every(
-    (skill) => !skill.exists || skill.managed,
-  );
+  const installable = entry.skills.every((skill) => !skill.exists || skill.managed);
   if (!installable) {
     return createMatrixBadge('Custom', false, entry.basePath, {
       kind: 'skill',
@@ -1168,7 +1114,7 @@ function renderSkillMatrixCell(row, installPendingKey) {
       installPendingKey === getInstallKey('skill', row.key),
       'update',
       'Update',
-      'Updating…',
+      'Updating…'
     );
     button.title = createSkillCellTitle(entry);
     assignSetupContext(button, {
@@ -1188,7 +1134,7 @@ function renderSkillMatrixCell(row, installPendingKey) {
     installPendingKey === getInstallKey('skill', row.key),
     'install',
     'Install',
-    '...',
+    '...'
   );
   button.title = entry.basePath;
   return button;
@@ -1203,14 +1149,7 @@ function renderSkillMatrixCell(row, installPendingKey) {
  * @param {string} pendingLabel
  * @returns {HTMLButtonElement}
  */
-function createSetupActionButton(
-  kind,
-  target,
-  pending,
-  variant,
-  label,
-  pendingLabel,
-) {
+function createSetupActionButton(kind, target, pending, variant, label, pendingLabel) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'setup-install-button';
@@ -1349,7 +1288,7 @@ function showSetupContextMenu(clientX, clientY, contextAction) {
       });
       hideSetupContextMenu();
     },
-    { once: true },
+    { once: true }
   );
   setupContextMenu.append(copyButton);
 
@@ -1369,7 +1308,7 @@ function showSetupContextMenu(clientX, clientY, contextAction) {
         });
         hideSetupContextMenu();
       },
-      { once: true },
+      { once: true }
     );
     setupContextMenu.append(reinstallButton);
   }
@@ -1390,7 +1329,7 @@ function showSetupContextMenu(clientX, clientY, contextAction) {
         });
         hideSetupContextMenu();
       },
-      { once: true },
+      { once: true }
     );
     setupContextMenu.append(uninstallButton);
   }
@@ -1477,8 +1416,7 @@ function renderActionLogEntry(entry, setupStatus, entries, index) {
   const badges = document.createElement('span');
   badges.className = 'activity-badges';
 
-  const showScope =
-    !(requestedTabId != null && requestedTabId > 0) && entry.url;
+  const showScope = !(requestedTabId != null && requestedTabId > 0) && entry.url;
   if (showScope) {
     const scopeLink = document.createElement('a');
     scopeLink.className = 'activity-scope-link';
@@ -1632,7 +1570,7 @@ function alignHistogramEndAt(value) {
 function buildActivityHistogram(entries) {
   const latestAt = entries.reduce(
     (maxAt, entry) => Math.max(maxAt, Number.isFinite(entry.at) ? entry.at : 0),
-    0,
+    0
   );
   const endAt = alignHistogramEndAt(Math.max(Date.now(), latestAt));
   const startAt = endAt - ACTIVITY_HISTOGRAM_WINDOW_MS;
@@ -1643,9 +1581,7 @@ function buildActivityHistogram(entries) {
   }));
 
   /** @type {Map<number, Map<string, number>>} */
-  const bucketFamilies = new Map(
-    buckets.map((_, index) => [index, new Map()]),
-  );
+  const bucketFamilies = new Map(buckets.map((_, index) => [index, new Map()]));
   let totalTokens = 0;
 
   for (const entry of entries) {
@@ -1659,7 +1595,7 @@ function buildActivityHistogram(entries) {
 
     const offset = Math.min(
       ACTIVITY_HISTOGRAM_BARS - 1,
-      Math.max(0, Math.floor((entry.at - startAt) / ACTIVITY_HISTOGRAM_BUCKET_MS)),
+      Math.max(0, Math.floor((entry.at - startAt) / ACTIVITY_HISTOGRAM_BUCKET_MS))
     );
     const family = getHistogramMethodFamily(entry.method);
     const familyTotals = /** @type {Map<string, number>} */ (bucketFamilies.get(offset));
@@ -1670,12 +1606,13 @@ function buildActivityHistogram(entries) {
 
   for (let index = 0; index < buckets.length; index += 1) {
     const familyTotals = /** @type {Map<string, number>} */ (bucketFamilies.get(index));
-    buckets[index].segments = /** @type {typeof buckets[number]['segments']} */ (HISTOGRAM_METHOD_FAMILIES
-      .map((family) => ({
-        family,
-        tokens: familyTotals.get(family) ?? 0,
-      }))
-      .filter((segment) => segment.tokens > 0));
+    buckets[index].segments =
+      /** @type {typeof buckets[number]['segments']} */ (
+        HISTOGRAM_METHOD_FAMILIES.map((family) => ({
+          family,
+          tokens: familyTotals.get(family) ?? 0,
+        })).filter((segment) => segment.tokens > 0)
+      );
   }
 
   return {
@@ -1703,12 +1640,7 @@ function renderActivityHistogram(histogram) {
   activityHistogram.hidden = false;
   activityHistogramRange.textContent = '10m window · 30s bins';
   activityHistogramBars.replaceChildren(
-    ...histogram.buckets.map((bucket) =>
-      createHistogramBar(
-        bucket,
-        maxTokens,
-      )
-    ),
+    ...histogram.buckets.map((bucket) => createHistogramBar(bucket, maxTokens))
   );
 }
 
@@ -1718,9 +1650,7 @@ function renderActivityHistogram(histogram) {
  */
 function formatCompactCount(value) {
   if (value >= 1000) {
-    const compact = value >= 10000
-      ? Math.round(value / 1000)
-      : Math.round(value / 100) / 10;
+    const compact = value >= 10000 ? Math.round(value / 1000) : Math.round(value / 100) / 10;
     return `${compact}k`;
   }
   return String(value);
@@ -1751,9 +1681,7 @@ function getAggregateCostClass(approxTokens) {
 function createHistogramBar(bucket, maxTokens) {
   const bar = document.createElement('span');
   const ratio = Math.log1p(bucket.totalTokens) / Math.log1p(maxTokens);
-  const height = bucket.totalTokens > 0
-    ? Math.max(14, Math.round(ratio * 100))
-    : 6;
+  const height = bucket.totalTokens > 0 ? Math.max(14, Math.round(ratio * 100)) : 6;
   bar.className = 'activity-histogram-bar';
   bar.style.height = `${height}%`;
 
@@ -1762,21 +1690,21 @@ function createHistogramBar(bucket, maxTokens) {
     bar.title = `${new Date(bucket.bucketStart).toLocaleTimeString()} · no activity`;
     bar.setAttribute(
       'aria-label',
-      `${new Date(bucket.bucketStart).toLocaleTimeString()}, no token activity`,
+      `${new Date(bucket.bucketStart).toLocaleTimeString()}, no token activity`
     );
     return bar;
   }
 
   const tooltipParts = bucket.segments.map(
-    (segment) => `${segment.family}: ${segment.tokens.toLocaleString()} tok`,
+    (segment) => `${segment.family}: ${segment.tokens.toLocaleString()} tok`
   );
   bar.title = `${new Date(bucket.bucketStart).toLocaleTimeString()} · ${bucket.totalTokens.toLocaleString()} tok\n${tooltipParts.join('\n')}`;
   bar.setAttribute(
     'aria-label',
-    `${new Date(bucket.bucketStart).toLocaleTimeString()}, approximately ${bucket.totalTokens.toLocaleString()} tokens`,
+    `${new Date(bucket.bucketStart).toLocaleTimeString()}, approximately ${bucket.totalTokens.toLocaleString()} tokens`
   );
   bar.append(
-    ...bucket.segments.map((segment) => createHistogramSegment(segment, bucket.totalTokens)),
+    ...bucket.segments.map((segment) => createHistogramSegment(segment, bucket.totalTokens))
   );
   return bar;
 }
@@ -1811,13 +1739,21 @@ function getHistogramMethodFamily(method) {
   if (method.startsWith('styles.')) {
     return 'style';
   }
-  if (method.startsWith('input.') || method.startsWith('navigation.') || method.startsWith('viewport.')) {
+  if (
+    method.startsWith('input.') ||
+    method.startsWith('navigation.') ||
+    method.startsWith('viewport.')
+  ) {
     return 'input';
   }
   if (method.startsWith('patch.')) {
     return 'patch';
   }
-  if (method.startsWith('screenshot.') || method.startsWith('cdp.') || method.startsWith('performance.')) {
+  if (
+    method.startsWith('screenshot.') ||
+    method.startsWith('cdp.') ||
+    method.startsWith('performance.')
+  ) {
     return 'capture';
   }
   return 'other';
@@ -1830,10 +1766,12 @@ function getHistogramMethodFamily(method) {
  */
 function countRecentExpensiveRepeats(entries, index) {
   const current = entries[index];
-  const currentCostClass = current?.summaryTokens > 0
-    ? current.summaryCostClass
-    : current?.costClass;
-  if (!current || (!current.debuggerBacked && currentCostClass !== 'heavy' && currentCostClass !== 'extreme')) {
+  const currentCostClass =
+    current?.summaryTokens > 0 ? current.summaryCostClass : current?.costClass;
+  if (
+    !current ||
+    (!current.debuggerBacked && currentCostClass !== 'heavy' && currentCostClass !== 'extreme')
+  ) {
     return 0;
   }
 
@@ -1843,10 +1781,13 @@ function countRecentExpensiveRepeats(entries, index) {
     if (!candidate || candidate.method !== current.method) {
       break;
     }
-    const candidateCostClass = candidate.summaryTokens > 0
-      ? candidate.summaryCostClass
-      : candidate.costClass;
-    if (candidate.debuggerBacked || candidateCostClass === 'heavy' || candidateCostClass === 'extreme') {
+    const candidateCostClass =
+      candidate.summaryTokens > 0 ? candidate.summaryCostClass : candidate.costClass;
+    if (
+      candidate.debuggerBacked ||
+      candidateCostClass === 'heavy' ||
+      candidateCostClass === 'extreme'
+    ) {
       count += 1;
     }
   }

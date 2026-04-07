@@ -34,10 +34,7 @@ import {
   isMcpClientName,
   removeMcpConfig,
 } from '../src/mcp-config.js';
-import {
-  annotateBridgeSummary,
-  summarizeBridgeResponse,
-} from '../src/subagent.js';
+import { annotateBridgeSummary, summarizeBridgeResponse } from '../src/subagent.js';
 import { BridgeClient } from '../src/client.js';
 
 /** Ensure failures stay compact for parent-agent reporting. */
@@ -59,23 +56,21 @@ test('summarizeBridgeResponse condenses failures', () => {
 });
 
 test('annotateBridgeSummary exposes transport and summary estimates', () => {
-  const response = /** @type {import('../../protocol/src/types.js').BridgeResponse} */ ({
-    id: 'req_meta',
-    ok: true,
-    result: { nodes: [{ tag: 'div', textExcerpt: 'hello' }] },
-    error: null,
-    meta: {
-      protocol_version: '1.0',
-      transport_bytes: 640,
-      transport_approx_tokens: 160,
-      transport_cost_class: 'moderate',
-    },
-  });
+  const response =
+    /** @type {import('../../protocol/src/types.js').BridgeResponse} */ ({
+      id: 'req_meta',
+      ok: true,
+      result: { nodes: [{ tag: 'div', textExcerpt: 'hello' }] },
+      error: null,
+      meta: {
+        protocol_version: '1.0',
+        transport_bytes: 640,
+        transport_approx_tokens: 160,
+        transport_cost_class: 'moderate',
+      },
+    });
 
-  const summary = annotateBridgeSummary(
-    summarizeBridgeResponse(response),
-    response,
-  );
+  const summary = annotateBridgeSummary(summarizeBridgeResponse(response), response);
 
   assert.equal(summary.transportBytes, 640);
   assert.equal(summary.transportTokens, 160);
@@ -91,10 +86,7 @@ test('BridgeClient.checkProtocolVersion prefers remote migration hints', () => {
   });
 
   assert.equal(result.compatible, false);
-  assert.equal(
-    result.warning,
-    'Update the Browser Bridge CLI to match the extension.',
-  );
+  assert.equal(result.warning, 'Update the Browser Bridge CLI to match the extension.');
 });
 
 test('summarizeBridgeResponse adds stale element recovery hint', () => {
@@ -112,10 +104,7 @@ test('summarizeBridgeResponse adds stale element recovery hint', () => {
 
   assert.equal(summary.ok, false);
   assert.match(summary.summary, /ELEMENT_STALE/);
-  assert.match(
-    summary.summary,
-    /Re-query the current page after navigation or DOM updates/,
-  );
+  assert.match(summary.summary, /Re-query the current page after navigation or DOM updates/);
 });
 
 test('summarizeBridgeResponse surfaces protocol warnings from response metadata', () => {
@@ -159,19 +148,15 @@ test('summarizeBridgeResponse condenses success payloads', () => {
 
 /** Ensure CSS assignment parsing ignores malformed entries. */
 test('parsePropertyAssignments handles css style pairs', () => {
-  assert.deepEqual(
-    parsePropertyAssignments(['display=flex', 'gap=8px', 'broken']),
-    { display: 'flex', gap: '8px' },
-  );
+  assert.deepEqual(parsePropertyAssignments(['display=flex', 'gap=8px', 'broken']), {
+    display: 'flex',
+    gap: '8px',
+  });
 });
 
 /** Ensure property lists split cleanly for style queries. */
 test('parseCommaList splits and trims values', () => {
-  assert.deepEqual(parseCommaList('display, color, width'), [
-    'display',
-    'color',
-    'width',
-  ]);
+  assert.deepEqual(parseCommaList('display, color, width'), ['display', 'color', 'width']);
 });
 
 /** Ensure JSON object parsing rejects non-object shapes. */
@@ -179,10 +164,7 @@ test('parseJsonObject parses objects and rejects arrays', () => {
   assert.deepEqual(parseJsonObject('{"selector":"body"}'), {
     selector: 'body',
   });
-  assert.throws(
-    () => parseJsonObject('[1,2,3]'),
-    /Expected a JSON object but got array/,
-  );
+  assert.throws(() => parseJsonObject('[1,2,3]'), /Expected a JSON object but got array/);
   assert.throws(() => parseJsonObject('{bad json'), /Invalid JSON syntax/);
 });
 
@@ -391,16 +373,12 @@ function ok(result) {
 }
 
 test('summarizer: clicked action', () => {
-  const s = summarizeBridgeResponse(
-    ok({ clicked: true, elementRef: 'el_abc' }),
-  );
+  const s = summarizeBridgeResponse(ok({ clicked: true, elementRef: 'el_abc' }));
   assert.match(s.summary, /Clicked el_abc/);
 });
 
 test('summarizer: focused action', () => {
-  const s = summarizeBridgeResponse(
-    ok({ focused: true, elementRef: 'el_def' }),
-  );
+  const s = summarizeBridgeResponse(ok({ focused: true, elementRef: 'el_def' }));
   assert.match(s.summary, /Focused el_def/);
 });
 
@@ -415,9 +393,7 @@ test('summarizer: pressed key action', () => {
 });
 
 test('summarizer: navigated action', () => {
-  const s = summarizeBridgeResponse(
-    ok({ navigated: true, url: 'https://example.com' }),
-  );
+  const s = summarizeBridgeResponse(ok({ navigated: true, url: 'https://example.com' }));
   assert.match(s.summary, /Navigated to https:\/\/example\.com/);
 });
 
@@ -427,9 +403,7 @@ test('summarizer: scrolled action', () => {
 });
 
 test('summarizer: resized viewport', () => {
-  const s = summarizeBridgeResponse(
-    ok({ resized: true, width: 1024, height: 768 }),
-  );
+  const s = summarizeBridgeResponse(ok({ resized: true, width: 1024, height: 768 }));
   assert.match(s.summary, /Viewport resized to 1024\u00d7768/);
 });
 
@@ -446,7 +420,7 @@ test('summarizer: navigation result does not look like tab creation', () => {
       url: 'https://example.com',
       title: 'Example',
       status: 'complete',
-    }),
+    })
   );
   assert.match(s.summary, /Navigated to https:\/\/example\.com/);
 });
@@ -460,7 +434,7 @@ test('summarizer: element describe', () => {
       text: 'Save',
       bbox: { x: 10, y: 20, width: 80, height: 30 },
       role: 'button',
-    }),
+    })
   );
   assert.match(s.summary, /Element button#submit, Save, 80\u00d730/);
 });
@@ -472,7 +446,7 @@ test('summarizer: element describe with object text', () => {
       elementRef: 'el_h1',
       text: { value: 'Page Title', truncated: false, omitted: 0 },
       bbox: { x: 0, y: 0, width: 400, height: 30 },
-    }),
+    })
   );
   assert.match(s.summary, /Element h1, Page Title, 400\u00d730/);
   assert.equal(/** @type {any} */ (s.evidence).text, 'Page Title');
@@ -483,7 +457,7 @@ test('summarizer: computed styles', () => {
     ok({
       elementRef: 'el_css',
       properties: { display: 'flex', color: 'red', gap: '8px' },
-    }),
+    })
   );
   assert.match(s.summary, /Computed 3 style\(s\) for el_css/);
 });
@@ -495,7 +469,7 @@ test('summarizer: flat computed styles via method hint', () => {
       display: 'block',
       'font-size': '16px',
     }),
-    'styles.get_computed',
+    'styles.get_computed'
   );
   assert.match(s.summary, /Computed 3 style\(s\)/);
   assert.deepEqual(s.evidence, {
@@ -512,22 +486,18 @@ test('summarizer: box model', () => {
       padding: { top: 5 },
       border: { top: 1 },
       margin: { top: 0 },
-    }),
+    })
   );
   assert.match(s.summary, /Box model: 200\u00d7100 at \(10, 20\)/);
 });
 
 test('summarizer: flat box model', () => {
-  const s = summarizeBridgeResponse(
-    ok({ x: 104, y: 105, width: 1183, height: 30 }),
-  );
+  const s = summarizeBridgeResponse(ok({ x: 104, y: 105, width: 1183, height: 30 }));
   assert.match(s.summary, /Box model: 1183\u00d730 at \(104, 105\)/);
 });
 
 test('summarizer: patch list', () => {
-  const s = summarizeBridgeResponse(
-    ok({ patches: [{ id: 'p1' }, { id: 'p2' }] }),
-  );
+  const s = summarizeBridgeResponse(ok({ patches: [{ id: 'p1' }, { id: 'p2' }] }));
   assert.match(s.summary, /2 active patch\(es\)/);
 });
 
@@ -537,15 +507,17 @@ test('summarizer: patch rolled back', () => {
 });
 
 test('summarizer: health includes access routing state', () => {
-  const s = summarizeBridgeResponse(ok({
-    daemon: 'ok',
-    extensionConnected: true,
-    access: {
-      enabled: true,
-      routeReady: true,
-      routeTabId: 42,
-    },
-  }));
+  const s = summarizeBridgeResponse(
+    ok({
+      daemon: 'ok',
+      extensionConnected: true,
+      access: {
+        enabled: true,
+        routeReady: true,
+        routeTabId: 42,
+      },
+    })
+  );
   assert.match(s.summary, /Access: ready on tab 42/);
 });
 
@@ -556,7 +528,7 @@ test('summarizer: storage truncates long values', () => {
       type: 'local',
       count: 2,
       entries: { key1: 'short', key2: longValue },
-    }),
+    })
   );
   assert.match(s.summary, /Storage \(local\): 2 entries/);
   const evidence = /** @type {Record<string, string>} */ (s.evidence);
@@ -572,7 +544,7 @@ test('summarizer: empty network uses method hint', () => {
       count: 0,
       total: 0,
     }),
-    'page.get_network',
+    'page.get_network'
   );
   assert.match(s.summary, /Network: 0 requests/);
 });
@@ -583,7 +555,7 @@ test('summarizer: empty console without method hint', () => {
       entries: [],
       count: 0,
       total: 0,
-    }),
+    })
   );
   assert.match(s.summary, /Console: 0 entries/);
 });
@@ -601,7 +573,7 @@ test('summarizer: find by text uses specific label', () => {
         },
       ],
     }),
-    'dom.find_by_text',
+    'dom.find_by_text'
   );
   assert.match(s.summary, /Found 1 element/);
 });
@@ -612,7 +584,7 @@ test('summarizer: find by role uses specific label', () => {
       nodes: [],
       count: 0,
     }),
-    'dom.find_by_role',
+    'dom.find_by_role'
   );
   assert.match(s.summary, /Found 0 element/);
 });
@@ -629,7 +601,7 @@ test('summarizer: DOM query evidence includes textExcerpt and attrs', () => {
           bbox: {},
         },
       ],
-    }),
+    })
   );
   const evidence = /** @type {Array<Record<string, unknown>>} */ (s.evidence);
   assert.equal(evidence[0].ref, 'el_1');
@@ -656,24 +628,19 @@ test('summarizer: eval empty object hints non-serializable', () => {
 });
 
 test('summarizer: wait timeout returns ok false', () => {
-  const s = summarizeBridgeResponse(
-    ok({ found: false, elementRef: null, duration: 5000 }),
-  );
+  const s = summarizeBridgeResponse(ok({ found: false, elementRef: null, duration: 5000 }));
   assert.equal(s.ok, false);
   assert.match(s.summary, /not found/);
 });
 
 test('summarizer: wait success returns ok true', () => {
-  const s = summarizeBridgeResponse(
-    ok({ found: true, elementRef: 'el_abc', duration: 200 }),
-  );
+  const s = summarizeBridgeResponse(ok({ found: true, elementRef: 'el_abc', duration: 200 }));
   assert.equal(s.ok, true);
   assert.match(s.summary, /Element found/);
 });
 
 test('summarizer: network URLs are truncated', () => {
-  const longUrl =
-    'https://example.com/api/v2/endpoint?' + 'param=value&'.repeat(20);
+  const longUrl = 'https://example.com/api/v2/endpoint?' + 'param=value&'.repeat(20);
   const s = summarizeBridgeResponse(
     ok({
       entries: [
@@ -687,7 +654,7 @@ test('summarizer: network URLs are truncated', () => {
       ],
       count: 1,
       total: 1,
-    }),
+    })
   );
   const evidence = /** @type {Array<Record<string, unknown>>} */ (s.evidence);
   assert.ok(/** @type {string} */ (evidence[0].url).length <= 130);
@@ -703,7 +670,7 @@ test('summarizer: a11y tree shows non-interactive nodes when no interactive foun
       total: 2,
       count: 2,
       truncated: false,
-    }),
+    })
   );
   const evidence = /** @type {Array<Record<string, unknown>>} */ (s.evidence);
   assert.ok(evidence.length > 0, 'should show non-interactive nodes');
@@ -717,7 +684,7 @@ test('summarizer: dom.get_text uses Element text label', () => {
       truncated: false,
       length: 11,
     }),
-    'dom.get_text',
+    'dom.get_text'
   );
   assert.match(s.summary, /Element text/);
 });
@@ -729,7 +696,7 @@ test('summarizer: page.get_text still uses Page text label', () => {
       truncated: false,
       length: 11,
     }),
-    'page.get_text',
+    'page.get_text'
   );
   assert.match(s.summary, /Page text/);
 });
@@ -747,7 +714,7 @@ test('summarizer: DOM query evidence includes role and label', () => {
           bbox: {},
         },
       ],
-    }),
+    })
   );
   const evidence = /** @type {Array<Record<string, unknown>>} */ (s.evidence);
   assert.equal(evidence[0].role, 'button');
@@ -770,10 +737,7 @@ test('parseInstallAgentArgs defaults to all supported targets', () => {
 });
 
 test('parseInstallAgentArgs supports explicit selection and project path', () => {
-  const options = parseInstallAgentArgs(
-    ['copilot,codex', '--project', './demo'],
-    '/tmp/example',
-  );
+  const options = parseInstallAgentArgs(['copilot,codex', '--project', './demo'], '/tmp/example');
   assert.deepEqual(options.targets, ['copilot', 'codex']);
   assert.equal(options.projectPath, path.resolve('/tmp/example', './demo'));
 });
@@ -850,10 +814,12 @@ test('interactiveCheckbox toggles selections and returns checked values', async 
     paused = true;
     return process.stdin;
   };
-  process.stdout.write = /** @type {typeof process.stdout.write} */ ((chunk) => {
-    output.push(String(chunk));
-    return true;
-  });
+  process.stdout.write = /** @type {typeof process.stdout.write} */ (
+    (chunk) => {
+      output.push(String(chunk));
+      return true;
+    }
+  );
   readline.emitKeypressEvents = () => {};
 
   try {
@@ -906,18 +872,24 @@ test('interactiveConfirm honors defaults and closes the readline interface', asy
     value: true,
     configurable: true,
   });
-  readline.createInterface = /** @type {typeof readline.createInterface} */ (/** @type {unknown} */ (() => ({
-    question(/** @type {string} */ prompt, /** @type {unknown} */ callback) {
-      prompts.push(prompt);
-      /** @type {(answer: string) => void} */ (callback)('');
-    },
-    close() {
-      closeCount += 1;
-    }
-  })));
+  readline.createInterface = /** @type {typeof readline.createInterface} */ (
+    /** @type {unknown} */ (
+      () => ({
+        question(/** @type {string} */ prompt, /** @type {unknown} */ callback) {
+          prompts.push(prompt);
+          /** @type {(answer: string) => void} */ (callback)('');
+        },
+        close() {
+          closeCount += 1;
+        },
+      })
+    )
+  );
 
   try {
-    const result = await interactiveConfirm('Remove skills?', { defaultValue: true });
+    const result = await interactiveConfirm('Remove skills?', {
+      defaultValue: true,
+    });
     assert.equal(result, true);
     assert.equal(closeCount, 1);
     assert.deepEqual(prompts, ['Remove skills? [Y/n] ']);
@@ -941,9 +913,7 @@ test('parseIntArg returns numbers and rejects invalid input', () => {
 });
 
 test('installAgentFiles writes managed files for supported runtimes', async () => {
-  const tempDir = await fs.promises.mkdtemp(
-    path.join(os.tmpdir(), 'bb-install-agent-'),
-  );
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-agent-'));
   await installMcpConfig('copilot', {
     global: false,
     cwd: tempDir,
@@ -987,106 +957,62 @@ test('installAgentFiles writes managed files for supported runtimes', async () =
   });
 
   assert.ok(
-    installed.some((entry) =>
-      entry.endsWith(path.join('.github', 'skills', 'browser-bridge')),
-    ),
+    installed.some((entry) => entry.endsWith(path.join('.github', 'skills', 'browser-bridge')))
   );
   assert.ok(
-    installed.some((entry) =>
-      entry.endsWith(path.join('.claude', 'skills', 'browser-bridge')),
-    ),
+    installed.some((entry) => entry.endsWith(path.join('.claude', 'skills', 'browser-bridge')))
   );
   assert.ok(
-    installed.some((entry) =>
-      entry.endsWith(path.join('.cursor', 'skills', 'browser-bridge')),
-    ),
+    installed.some((entry) => entry.endsWith(path.join('.cursor', 'skills', 'browser-bridge')))
   );
   assert.ok(
-    installed.some((entry) =>
-      entry.endsWith(path.join('.windsurf', 'skills', 'browser-bridge')),
-    ),
+    installed.some((entry) => entry.endsWith(path.join('.windsurf', 'skills', 'browser-bridge')))
   );
   assert.ok(
-    installed.some((entry) =>
-      entry.endsWith(path.join('.opencode', 'skills', 'browser-bridge')),
-    ),
+    installed.some((entry) => entry.endsWith(path.join('.opencode', 'skills', 'browser-bridge')))
   );
   assert.ok(
-    installed.some((entry) =>
-      entry.endsWith(path.join('.agents', 'skills', 'browser-bridge')),
-    ),
+    installed.some((entry) => entry.endsWith(path.join('.agents', 'skills', 'browser-bridge')))
   );
   assert.ok(
-    installed.some((entry) =>
-      entry.endsWith(path.join('.codex', 'skills', 'browser-bridge')),
-    ),
+    installed.some((entry) => entry.endsWith(path.join('.codex', 'skills', 'browser-bridge')))
   );
 
   await assert.doesNotReject(
-    fs.promises.access(
-      path.join(tempDir, '.github', 'skills', 'browser-bridge', 'SKILL.md'),
-    ),
+    fs.promises.access(path.join(tempDir, '.github', 'skills', 'browser-bridge', 'SKILL.md'))
+  );
+  await assert.doesNotReject(
+    fs.promises.access(path.join(tempDir, '.claude', 'skills', 'browser-bridge', 'SKILL.md'))
+  );
+  await assert.doesNotReject(
+    fs.promises.access(path.join(tempDir, '.cursor', 'skills', 'browser-bridge', 'SKILL.md'))
+  );
+  await assert.doesNotReject(
+    fs.promises.access(path.join(tempDir, '.windsurf', 'skills', 'browser-bridge', 'SKILL.md'))
+  );
+  await assert.doesNotReject(
+    fs.promises.access(path.join(tempDir, '.opencode', 'skills', 'browser-bridge', 'SKILL.md'))
+  );
+  await assert.doesNotReject(
+    fs.promises.access(path.join(tempDir, '.agents', 'skills', 'browser-bridge', 'SKILL.md'))
+  );
+  await assert.doesNotReject(
+    fs.promises.access(path.join(tempDir, '.codex', 'skills', 'browser-bridge', 'SKILL.md'))
   );
   await assert.doesNotReject(
     fs.promises.access(
-      path.join(tempDir, '.claude', 'skills', 'browser-bridge', 'SKILL.md'),
-    ),
+      path.join(tempDir, '.codex', 'skills', 'browser-bridge', 'agents', 'openai.yaml')
+    )
   );
   await assert.doesNotReject(
     fs.promises.access(
-      path.join(tempDir, '.cursor', 'skills', 'browser-bridge', 'SKILL.md'),
-    ),
-  );
-  await assert.doesNotReject(
-    fs.promises.access(
-      path.join(tempDir, '.windsurf', 'skills', 'browser-bridge', 'SKILL.md'),
-    ),
-  );
-  await assert.doesNotReject(
-    fs.promises.access(
-      path.join(tempDir, '.opencode', 'skills', 'browser-bridge', 'SKILL.md'),
-    ),
-  );
-  await assert.doesNotReject(
-    fs.promises.access(
-      path.join(tempDir, '.agents', 'skills', 'browser-bridge', 'SKILL.md'),
-    ),
-  );
-  await assert.doesNotReject(
-    fs.promises.access(
-      path.join(tempDir, '.codex', 'skills', 'browser-bridge', 'SKILL.md'),
-    ),
-  );
-  await assert.doesNotReject(
-    fs.promises.access(
-      path.join(
-        tempDir,
-        '.codex',
-        'skills',
-        'browser-bridge',
-        'agents',
-        'openai.yaml',
-      ),
-    ),
-  );
-  await assert.doesNotReject(
-    fs.promises.access(
-      path.join(
-        tempDir,
-        '.agents',
-        'skills',
-        'browser-bridge',
-        'references',
-        'protocol.md',
-      ),
-    ),
+      path.join(tempDir, '.agents', 'skills', 'browser-bridge', 'references', 'protocol.md')
+    )
   );
 });
 
 test('installAgentFiles writes GitHub Copilot global skills to ~/.copilot/skills', async () => {
-  const tempHome = await fs.promises.mkdtemp(
-    path.join(os.tmpdir(), 'bb-install-agent-home-'),
-  );
+  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-agent-home-'));
   const originalHome = process.env.HOME;
 
   try {
@@ -1098,14 +1024,10 @@ test('installAgentFiles writes GitHub Copilot global skills to ~/.copilot/skills
     });
 
     assert.ok(
-      installed.some((entry) =>
-        entry.endsWith(path.join('.copilot', 'skills', 'browser-bridge')),
-      ),
+      installed.some((entry) => entry.endsWith(path.join('.copilot', 'skills', 'browser-bridge')))
     );
     await assert.doesNotReject(
-      fs.promises.access(
-        path.join(tempHome, '.copilot', 'skills', 'browser-bridge', 'SKILL.md'),
-      ),
+      fs.promises.access(path.join(tempHome, '.copilot', 'skills', 'browser-bridge', 'SKILL.md'))
     );
   } finally {
     if (originalHome === undefined) {
@@ -1119,7 +1041,7 @@ test('installAgentFiles writes GitHub Copilot global skills to ~/.copilot/skills
 
 test('installAgentFiles applies the GitHub Copilot-specific CLI skill note', async () => {
   const tempDir = await fs.promises.mkdtemp(
-    path.join(os.tmpdir(), 'bb-install-agent-copilot-note-'),
+    path.join(os.tmpdir(), 'bb-install-agent-copilot-note-')
   );
 
   try {
@@ -1131,18 +1053,15 @@ test('installAgentFiles applies the GitHub Copilot-specific CLI skill note', asy
 
     const copilotSkill = await fs.promises.readFile(
       path.join(tempDir, '.github', 'skills', 'browser-bridge', 'SKILL.md'),
-      'utf8',
+      'utf8'
     );
     const cursorSkill = await fs.promises.readFile(
       path.join(tempDir, '.cursor', 'skills', 'browser-bridge', 'SKILL.md'),
-      'utf8',
+      'utf8'
     );
 
     assert.match(copilotSkill, /## GitHub Copilot Note/);
-    assert.match(
-      copilotSkill,
-      /use the MCP tools directly instead of shelling out to `bbx`/,
-    );
+    assert.match(copilotSkill, /use the MCP tools directly instead of shelling out to `bbx`/);
     assert.doesNotMatch(cursorSkill, /## GitHub Copilot Note/);
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
@@ -1151,7 +1070,7 @@ test('installAgentFiles applies the GitHub Copilot-specific CLI skill note', asy
 
 test('installAgentFiles still installs only the CLI skill when global MCP is configured', async () => {
   const tempHome = await fs.promises.mkdtemp(
-    path.join(os.tmpdir(), 'bb-install-agent-copilot-mcp-home-'),
+    path.join(os.tmpdir(), 'bb-install-agent-copilot-mcp-home-')
   );
   const originalHome = process.env.HOME;
   const originalAppData = process.env.APPDATA;
@@ -1177,14 +1096,10 @@ test('installAgentFiles still installs only the CLI skill when global MCP is con
     });
 
     assert.ok(
-      installed.some((entry) =>
-        entry.endsWith(path.join('.copilot', 'skills', 'browser-bridge')),
-      ),
+      installed.some((entry) => entry.endsWith(path.join('.copilot', 'skills', 'browser-bridge')))
     );
     await assert.doesNotReject(
-      fs.promises.access(
-        path.join(tempHome, '.copilot', 'skills', 'browser-bridge', 'SKILL.md'),
-      ),
+      fs.promises.access(path.join(tempHome, '.copilot', 'skills', 'browser-bridge', 'SKILL.md'))
     );
   } finally {
     if (originalHome === undefined) {
@@ -1203,7 +1118,7 @@ test('installAgentFiles still installs only the CLI skill when global MCP is con
 
 test('installMcpClientSetup writes GitHub Copilot MCP config without installing the CLI skill', async () => {
   const tempHome = await fs.promises.mkdtemp(
-    path.join(os.tmpdir(), 'bb-install-copilot-setup-home-'),
+    path.join(os.tmpdir(), 'bb-install-copilot-setup-home-')
   );
   const originalHome = process.env.HOME;
   const originalAppData = process.env.APPDATA;
@@ -1225,17 +1140,13 @@ test('installMcpClientSetup writes GitHub Copilot MCP config without installing 
     });
 
     assert.ok(
-      result.configPaths.some((entry) =>
-        entry.endsWith(path.join('.copilot', 'mcp-config.json')),
-      ),
+      result.configPaths.some((entry) => entry.endsWith(path.join('.copilot', 'mcp-config.json')))
     );
     await assert.doesNotReject(
-      fs.promises.access(path.join(tempHome, '.copilot', 'mcp-config.json')),
+      fs.promises.access(path.join(tempHome, '.copilot', 'mcp-config.json'))
     );
     await assert.rejects(
-      fs.promises.access(
-        path.join(tempHome, '.copilot', 'skills', 'browser-bridge', 'SKILL.md'),
-      ),
+      fs.promises.access(path.join(tempHome, '.copilot', 'skills', 'browser-bridge', 'SKILL.md'))
     );
   } finally {
     if (originalHome === undefined) {
@@ -1253,9 +1164,7 @@ test('installMcpClientSetup writes GitHub Copilot MCP config without installing 
 });
 
 test('installMcpClientSetup keeps Codex MCP setup separate from CLI skill install', async () => {
-  const tempDir = await fs.promises.mkdtemp(
-    path.join(os.tmpdir(), 'bb-install-codex-mcp-'),
-  );
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-codex-mcp-'));
 
   try {
     const result = await installMcpClientSetup(['codex'], {
@@ -1269,14 +1178,10 @@ test('installMcpClientSetup keeps Codex MCP setup separate from CLI skill instal
     });
 
     assert.ok(
-      result.configPaths.some((entry) =>
-        entry.endsWith(path.join('.codex', 'config.toml')),
-      ),
+      result.configPaths.some((entry) => entry.endsWith(path.join('.codex', 'config.toml')))
     );
     await assert.rejects(
-      fs.promises.access(
-        path.join(tempDir, '.codex', 'skills', 'browser-bridge', 'SKILL.md'),
-      ),
+      fs.promises.access(path.join(tempDir, '.codex', 'skills', 'browser-bridge', 'SKILL.md'))
     );
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
@@ -1284,9 +1189,7 @@ test('installMcpClientSetup keeps Codex MCP setup separate from CLI skill instal
 });
 
 test('installMcpClientSetup writes generic agents MCP config without installing the CLI skill', async () => {
-  const tempDir = await fs.promises.mkdtemp(
-    path.join(os.tmpdir(), 'bb-install-agents-mcp-'),
-  );
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-agents-mcp-'));
 
   try {
     const result = await installMcpClientSetup(['agents'], {
@@ -1299,16 +1202,10 @@ test('installMcpClientSetup writes generic agents MCP config without installing 
       },
     });
 
-    assert.deepEqual(result.configPaths, [
-      path.join(tempDir, '.agents', 'mcp.json'),
-    ]);
-    await assert.doesNotReject(
-      fs.promises.access(path.join(tempDir, '.agents', 'mcp.json')),
-    );
+    assert.deepEqual(result.configPaths, [path.join(tempDir, '.agents', 'mcp.json')]);
+    await assert.doesNotReject(fs.promises.access(path.join(tempDir, '.agents', 'mcp.json')));
     await assert.rejects(
-      fs.promises.access(
-        path.join(tempDir, '.agents', 'skills', 'browser-bridge', 'SKILL.md'),
-      ),
+      fs.promises.access(path.join(tempDir, '.agents', 'skills', 'browser-bridge', 'SKILL.md'))
     );
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
@@ -1316,9 +1213,7 @@ test('installMcpClientSetup writes generic agents MCP config without installing 
 });
 
 test('findInstalledManagedTargets reports targets with managed skill installs', async () => {
-  const tempDir = await fs.promises.mkdtemp(
-    path.join(os.tmpdir(), 'bb-find-managed-targets-'),
-  );
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-find-managed-targets-'));
 
   try {
     await installMcpConfig('cursor', {
@@ -1349,9 +1244,7 @@ test('findInstalledManagedTargets reports targets with managed skill installs', 
 });
 
 test('removeAgentFiles removes only managed Browser Bridge skill directories', async () => {
-  const tempDir = await fs.promises.mkdtemp(
-    path.join(os.tmpdir(), 'bb-remove-agent-files-'),
-  );
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-remove-agent-files-'));
 
   try {
     await installMcpConfig('cursor', {
@@ -1376,23 +1269,19 @@ test('removeAgentFiles removes only managed Browser Bridge skill directories', a
     const unmanagedSkillPath = path.join(skillBasePath, 'custom-skill');
     const managedSentinel = getManagedSkillSentinelFilename();
     await fs.promises.mkdir(unmanagedSkillPath, { recursive: true });
-    await fs.promises.writeFile(
-      path.join(unmanagedSkillPath, 'SKILL.md'),
-      '# Custom\n',
-      'utf8',
-    );
+    await fs.promises.writeFile(path.join(unmanagedSkillPath, 'SKILL.md'), '# Custom\n', 'utf8');
     await fs.promises.mkdir(path.join(skillBasePath, 'browser-bridge-extra'), {
       recursive: true,
     });
     await fs.promises.writeFile(
       path.join(skillBasePath, 'browser-bridge-extra', 'SKILL.md'),
       '# Extra\n',
-      'utf8',
+      'utf8'
     );
     await fs.promises.writeFile(
       path.join(skillBasePath, 'browser-bridge-extra', managedSentinel),
       'managed\n',
-      'utf8',
+      'utf8'
     );
 
     const removed = await removeAgentFiles({
@@ -1402,25 +1291,21 @@ test('removeAgentFiles removes only managed Browser Bridge skill directories', a
     });
 
     assert.ok(
-      removed.some((entry) =>
-        entry.endsWith(path.join('.cursor', 'skills', 'browser-bridge')),
-      ),
+      removed.some((entry) => entry.endsWith(path.join('.cursor', 'skills', 'browser-bridge')))
     );
     assert.equal(
       await fs.promises.access(unmanagedSkillPath).then(
         () => true,
-        () => false,
+        () => false
       ),
-      true,
+      true
     );
     assert.equal(
-      await fs.promises
-        .access(path.join(skillBasePath, 'browser-bridge-extra'))
-        .then(
-          () => true,
-          () => false,
-        ),
-      true,
+      await fs.promises.access(path.join(skillBasePath, 'browser-bridge-extra')).then(
+        () => true,
+        () => false
+      ),
+      true
     );
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
@@ -1428,9 +1313,7 @@ test('removeAgentFiles removes only managed Browser Bridge skill directories', a
 });
 
 test('installAgentFiles writes Windsurf and Antigravity global skills to their documented locations', async () => {
-  const tempHome = await fs.promises.mkdtemp(
-    path.join(os.tmpdir(), 'bb-install-agent-home-'),
-  );
+  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-agent-home-'));
   const originalHome = process.env.HOME;
 
   try {
@@ -1451,41 +1334,23 @@ test('installAgentFiles writes Windsurf and Antigravity global skills to their d
 
     assert.ok(
       installed.some((entry) =>
-        entry.endsWith(
-          path.join('.codeium', 'windsurf', 'skills', 'browser-bridge'),
-        ),
-      ),
+        entry.endsWith(path.join('.codeium', 'windsurf', 'skills', 'browser-bridge'))
+      )
     );
     assert.ok(
       installed.some((entry) =>
-        entry.endsWith(
-          path.join('.gemini', 'antigravity', 'skills', 'browser-bridge'),
-        ),
-      ),
+        entry.endsWith(path.join('.gemini', 'antigravity', 'skills', 'browser-bridge'))
+      )
     );
     await assert.doesNotReject(
       fs.promises.access(
-        path.join(
-          tempHome,
-          '.codeium',
-          'windsurf',
-          'skills',
-          'browser-bridge',
-          'SKILL.md',
-        ),
-      ),
+        path.join(tempHome, '.codeium', 'windsurf', 'skills', 'browser-bridge', 'SKILL.md')
+      )
     );
     await assert.doesNotReject(
       fs.promises.access(
-        path.join(
-          tempHome,
-          '.gemini',
-          'antigravity',
-          'skills',
-          'browser-bridge',
-          'SKILL.md',
-        ),
-      ),
+        path.join(tempHome, '.gemini', 'antigravity', 'skills', 'browser-bridge', 'SKILL.md')
+      )
     );
   } finally {
     if (originalHome === undefined) {
@@ -1599,7 +1464,7 @@ test('getMcpConfigPath supports Copilot global and local locations', () => {
 
   assert.equal(
     getMcpConfigPath('copilot', { global: false, cwd: '/tmp/demo' }),
-    path.join('/tmp/demo', '.vscode', 'mcp.json'),
+    path.join('/tmp/demo', '.vscode', 'mcp.json')
   );
   assert.equal(getMcpConfigPath('copilot', { global: true }), expectedGlobal);
 });
@@ -1608,26 +1473,20 @@ test('getMcpConfigPath supports Claude Code global and local locations', () => {
   const home = os.homedir();
   assert.equal(
     getMcpConfigPath('claude', { global: false, cwd: '/tmp/demo' }),
-    path.join('/tmp/demo', '.mcp.json'),
+    path.join('/tmp/demo', '.mcp.json')
   );
-  assert.equal(
-    getMcpConfigPath('claude', { global: true }),
-    path.join(home, '.claude.json'),
-  );
+  assert.equal(getMcpConfigPath('claude', { global: true }), path.join(home, '.claude.json'));
 });
 
 test('getMcpConfigPath supports Codex global and local locations', () => {
   const home = os.homedir();
   assert.equal(
     getMcpConfigPath('codex', { global: false, cwd: '/tmp/demo' }),
-    path.join('/tmp/demo', '.codex', 'config.toml'),
+    path.join('/tmp/demo', '.codex', 'config.toml')
   );
   assert.equal(
     getMcpConfigPath('codex', { global: true }),
-    path.join(
-      process.env.CODEX_HOME || path.join(home, '.codex'),
-      'config.toml',
-    ),
+    path.join(process.env.CODEX_HOME || path.join(home, '.codex'), 'config.toml')
   );
 });
 
@@ -1635,11 +1494,11 @@ test('getMcpConfigPath supports OpenCode global and local locations', () => {
   const home = os.homedir();
   assert.equal(
     getMcpConfigPath('opencode', { global: false, cwd: '/tmp/demo' }),
-    path.join('/tmp/demo', 'opencode.json'),
+    path.join('/tmp/demo', 'opencode.json')
   );
   assert.equal(
     getMcpConfigPath('opencode', { global: true }),
-    path.join(home, '.config', 'opencode', 'opencode.json'),
+    path.join(home, '.config', 'opencode', 'opencode.json')
   );
 });
 
@@ -1647,11 +1506,11 @@ test('getMcpConfigPath supports Windsurf global and local locations', () => {
   const home = os.homedir();
   assert.equal(
     getMcpConfigPath('windsurf', { global: false, cwd: '/tmp/demo' }),
-    path.join('/tmp/demo', '.windsurf', 'mcp_config.json'),
+    path.join('/tmp/demo', '.windsurf', 'mcp_config.json')
   );
   assert.equal(
     getMcpConfigPath('windsurf', { global: true }),
-    path.join(home, '.codeium', 'windsurf', 'mcp_config.json'),
+    path.join(home, '.codeium', 'windsurf', 'mcp_config.json')
   );
 });
 
@@ -1659,11 +1518,11 @@ test('getMcpConfigPath supports Antigravity global and local locations', () => {
   const home = os.homedir();
   assert.equal(
     getMcpConfigPath('antigravity', { global: false, cwd: '/tmp/demo' }),
-    path.join('/tmp/demo', '.agents', 'mcp_config.json'),
+    path.join('/tmp/demo', '.agents', 'mcp_config.json')
   );
   assert.equal(
     getMcpConfigPath('antigravity', { global: true }),
-    path.join(home, '.gemini', 'antigravity', 'mcp_config.json'),
+    path.join(home, '.gemini', 'antigravity', 'mcp_config.json')
   );
 });
 
@@ -1671,18 +1530,16 @@ test('getMcpConfigPath supports generic agents global and local locations', () =
   const home = os.homedir();
   assert.equal(
     getMcpConfigPath('agents', { global: false, cwd: '/tmp/demo' }),
-    path.join('/tmp/demo', '.agents', 'mcp.json'),
+    path.join('/tmp/demo', '.agents', 'mcp.json')
   );
   assert.equal(
     getMcpConfigPath('agents', { global: true }),
-    path.join(home, '.agents', 'mcp.json'),
+    path.join(home, '.agents', 'mcp.json')
   );
 });
 
 test('getMcpConfigPaths includes existing Copilot profile configs for global installs', async () => {
-  const tempHome = await fs.promises.mkdtemp(
-    path.join(os.tmpdir(), 'bbx-copilot-mcp-paths-'),
-  );
+  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-copilot-mcp-paths-'));
   const originalHome = process.env.HOME;
   const originalAppData = process.env.APPDATA;
 
@@ -1694,30 +1551,23 @@ test('getMcpConfigPaths includes existing Copilot profile configs for global ins
     const profileDir =
       process.platform === 'win32'
         ? path.join(
-          process.env.APPDATA || path.join(tempHome, 'AppData', 'Roaming'),
-          'Code',
-          'User',
-          'profiles',
-          'profile-a',
-        )
-        : process.platform === 'linux'
-          ? path.join(
-            tempHome,
-            '.config',
+            process.env.APPDATA || path.join(tempHome, 'AppData', 'Roaming'),
             'Code',
             'User',
             'profiles',
-            'profile-a',
+            'profile-a'
           )
+        : process.platform === 'linux'
+          ? path.join(tempHome, '.config', 'Code', 'User', 'profiles', 'profile-a')
           : path.join(
-            tempHome,
-            'Library',
-            'Application Support',
-            'Code',
-            'User',
-            'profiles',
-            'profile-a',
-          );
+              tempHome,
+              'Library',
+              'Application Support',
+              'Code',
+              'User',
+              'profiles',
+              'profile-a'
+            );
     await fs.promises.mkdir(profileDir, { recursive: true });
 
     const paths = await getMcpConfigPaths('copilot', { global: true });
@@ -1741,9 +1591,7 @@ test('getMcpConfigPaths includes existing Copilot profile configs for global ins
 });
 
 test('installMcpConfig migrates Copilot legacy servers config to mcpServers', async () => {
-  const tempHome = await fs.promises.mkdtemp(
-    path.join(os.tmpdir(), 'bbx-copilot-mcp-migrate-'),
-  );
+  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-copilot-mcp-migrate-'));
   const originalHome = process.env.HOME;
 
   try {
@@ -1765,9 +1613,9 @@ test('installMcpConfig migrates Copilot legacy servers config to mcpServers', as
           unrelated: true,
         },
         null,
-        2,
+        2
       )}\n`,
-      'utf8',
+      'utf8'
     );
 
     await installMcpConfig('copilot', {
@@ -1824,7 +1672,9 @@ async function startMockDaemon(onRequest) {
   return new Promise((resolve) => {
     const server = net.createServer((socket) => {
       socket.setEncoding('utf8');
-      socket.write(`${JSON.stringify({ type: 'registered', role: 'agent', clientId: 'mock_client' })}\n`);
+      socket.write(
+        `${JSON.stringify({ type: 'registered', role: 'agent', clientId: 'mock_client' })}\n`
+      );
       let buf = '';
       socket.on('data', (chunk) => {
         buf += chunk;
@@ -1838,7 +1688,9 @@ async function startMockDaemon(onRequest) {
             if (msg.type === 'agent.request') {
               onRequest?.(socket, msg);
             }
-          } catch { /* ignore */ }
+          } catch {
+            /* ignore */
+          }
         }
       });
     });
@@ -1864,30 +1716,52 @@ function makeTcpClient(port) {
    */
   async function connectOverTcp() {
     const socket = net.createConnection({ host: '127.0.0.1', port });
-    await new Promise((res, rej) => { socket.once('connect', res); socket.once('error', rej); });
+    await new Promise((res, rej) => {
+      socket.once('connect', res);
+      socket.once('error', rej);
+    });
     this.socket = socket;
     const { parseJsonLines } = await import('../../protocol/src/index.js');
     parseJsonLines(socket, (raw) => {
       const msg = /** @type {any} */ (raw);
       if (msg.type === 'registered') {
         const p = this.waiting.get('registered');
-        if (p) { this.waiting.delete('registered'); this.connected = true; clearTimeout(p.timeoutId); p.resolve(msg); }
+        if (p) {
+          this.waiting.delete('registered');
+          this.connected = true;
+          clearTimeout(p.timeoutId);
+          p.resolve(msg);
+        }
         return;
       }
       if (msg.type === 'agent.response') {
         const p = this.waiting.get(msg.response.id);
-        if (p) { this.waiting.delete(msg.response.id); clearTimeout(p.timeoutId); p.resolve(msg.response); }
+        if (p) {
+          this.waiting.delete(msg.response.id);
+          clearTimeout(p.timeoutId);
+          p.resolve(msg.response);
+        }
       }
     });
     socket.on('close', () => this.rejectAllPending(new Error('Bridge socket closed.')));
     socket.on('error', (err) => this.rejectAllPending(err));
-    socket.write(`${JSON.stringify({ type: 'register', role: 'agent', clientId: this.clientId })}\n`);
+    socket.write(
+      `${JSON.stringify({ type: 'register', role: 'agent', clientId: this.clientId })}\n`
+    );
     await new Promise((res, rej) => {
-      const tid = setTimeout(() => { this.waiting.delete('registered'); rej(new Error('register timeout')); }, this.defaultTimeoutMs);
-      this.waiting.set('registered', { resolve: res, reject: rej, timeoutId: tid });
+      const tid = setTimeout(() => {
+        this.waiting.delete('registered');
+        rej(new Error('register timeout'));
+      }, this.defaultTimeoutMs);
+      this.waiting.set('registered', {
+        resolve: res,
+        reject: rej,
+        timeoutId: tid,
+      });
     });
   }
-  client.connect = /** @type {typeof client.connect} */ (/** @type {unknown} */ (connectOverTcp.bind(client)));
+  client.connect =
+    /** @type {typeof client.connect} */ (/** @type {unknown} */ (connectOverTcp.bind(client)));
   return client;
 }
 
@@ -1899,13 +1773,10 @@ test('BridgeClient pending request rejects when server destroys connection mid-r
   const client = makeTcpClient(port);
   try {
     await client.connect();
-    await assert.rejects(
-      client.request({ method: 'health.ping', timeoutMs: 5_000 }),
-      (err) => {
-        assert.ok(err instanceof Error);
-        return true;
-      }
-    );
+    await assert.rejects(client.request({ method: 'health.ping', timeoutMs: 5_000 }), (err) => {
+      assert.ok(err instanceof Error);
+      return true;
+    });
   } finally {
     await client.close().catch(() => {});
     server.close();
@@ -1924,13 +1795,10 @@ test('BridgeClient.request rejects immediately when socket is disconnected', asy
 
     // BridgeClient.request() checks socket state eagerly and should throw
     // ENOTCONN without hanging.
-    await assert.rejects(
-      client.request({ method: 'health.ping', timeoutMs: 2_000 }),
-      (err) => {
-        assert.ok(err instanceof Error);
-        return true;
-      }
-    );
+    await assert.rejects(client.request({ method: 'health.ping', timeoutMs: 2_000 }), (err) => {
+      assert.ok(err instanceof Error);
+      return true;
+    });
   } finally {
     server.close();
   }
@@ -1977,8 +1845,8 @@ test('BridgeClient.batch sends requests concurrently and preserves response orde
         ok: true,
         result: { method: request.method, ordinal: requestCount },
         error: null,
-        meta: { protocol_version: '1.0' }
-      }
+        meta: { protocol_version: '1.0' },
+      },
     };
     const delay = request.method === 'tabs.list' ? 20 : 5;
     setTimeout(() => {
@@ -1991,17 +1859,17 @@ test('BridgeClient.batch sends requests concurrently and preserves response orde
 
   try {
     await client.connect();
-    const responses = await client.batch([
-      { method: 'tabs.list' },
-      { method: 'health.ping' }
-    ]);
+    const responses = await client.batch([{ method: 'tabs.list' }, { method: 'health.ping' }]);
 
     assert.equal(requestCount, 2);
     assert.equal(responses.length, 2);
-    assert.deepEqual(responses.map((response) => response.result), [
-      { method: 'tabs.list', ordinal: 1 },
-      { method: 'health.ping', ordinal: 2 }
-    ]);
+    assert.deepEqual(
+      responses.map((response) => response.result),
+      [
+        { method: 'tabs.list', ordinal: 1 },
+        { method: 'health.ping', ordinal: 2 },
+      ]
+    );
   } finally {
     await client.close().catch(() => {});
     server.close();
@@ -2020,17 +1888,24 @@ test('BridgeClient reconnects and emits reconnected event after server drops con
     socket.once('close', () => sockets.delete(socket));
     acceptCount += 1;
     socket.setEncoding('utf8');
-    socket.write(`${JSON.stringify({ type: 'registered', role: 'agent', clientId: 'mock_client' })}\n`);
+    socket.write(
+      `${JSON.stringify({ type: 'registered', role: 'agent', clientId: 'mock_client' })}\n`
+    );
     if (acceptCount === 1) {
       // First connection: destroy after a short delay to trigger reconnect.
       setTimeout(() => socket.destroy(), 50);
     }
     // Second+ connections: stay open so the client reconnects successfully.
   });
-  await new Promise((resolve) => server.listen({ host: '127.0.0.1', port: 0 }, () => resolve(undefined)));
+  await new Promise((resolve) =>
+    server.listen({ host: '127.0.0.1', port: 0 }, () => resolve(undefined))
+  );
   const { port } = /** @type {import('node:net').AddressInfo} */ (server.address());
 
-  const client = new BridgeClient({ defaultTimeoutMs: 3_000, autoReconnect: true });
+  const client = new BridgeClient({
+    defaultTimeoutMs: 3_000,
+    autoReconnect: true,
+  });
   /**
    * @this {BridgeClient}
    * @returns {Promise<void>}
@@ -2040,7 +1915,10 @@ test('BridgeClient reconnects and emits reconnected event after server drops con
     const socket = net.createConnection({ host: '127.0.0.1', port });
     this.socket = socket;
     try {
-      await new Promise((res, rej) => { socket.once('connect', res); socket.once('error', rej); });
+      await new Promise((res, rej) => {
+        socket.once('connect', res);
+        socket.once('error', rej);
+      });
     } catch (error) {
       socket.destroy();
       this.socket = null;
@@ -2051,12 +1929,21 @@ test('BridgeClient reconnects and emits reconnected event after server drops con
       const msg = /** @type {any} */ (raw);
       if (msg.type === 'registered') {
         const p = this.waiting.get('registered');
-        if (p) { this.waiting.delete('registered'); this.connected = true; clearTimeout(p.timeoutId); p.resolve(msg); }
+        if (p) {
+          this.waiting.delete('registered');
+          this.connected = true;
+          clearTimeout(p.timeoutId);
+          p.resolve(msg);
+        }
         return;
       }
       if (msg.type === 'agent.response') {
         const p = this.waiting.get(msg.response.id);
-        if (p) { this.waiting.delete(msg.response.id); clearTimeout(p.timeoutId); p.resolve(msg.response); }
+        if (p) {
+          this.waiting.delete(msg.response.id);
+          clearTimeout(p.timeoutId);
+          p.resolve(msg.response);
+        }
       }
     });
     socket.on('close', () => {
@@ -2067,14 +1954,28 @@ test('BridgeClient reconnects and emits reconnected event after server drops con
         void this._scheduleReconnect();
       }
     });
-    socket.on('error', (error) => { this.rejectAllPending(error); });
-    socket.write(`${JSON.stringify({ type: 'register', role: 'agent', clientId: this.clientId })}\n`);
+    socket.on('error', (error) => {
+      this.rejectAllPending(error);
+    });
+    socket.write(
+      `${JSON.stringify({ type: 'register', role: 'agent', clientId: this.clientId })}\n`
+    );
     await new Promise((res, rej) => {
-      const tid = setTimeout(() => { this.waiting.delete('registered'); rej(new Error('register timeout')); }, this.defaultTimeoutMs);
-      this.waiting.set('registered', { resolve: res, reject: rej, timeoutId: tid });
+      const tid = setTimeout(() => {
+        this.waiting.delete('registered');
+        rej(new Error('register timeout'));
+      }, this.defaultTimeoutMs);
+      this.waiting.set('registered', {
+        resolve: res,
+        reject: rej,
+        timeoutId: tid,
+      });
     });
   }
-  client.connect = /** @type {typeof client.connect} */ (/** @type {unknown} */ (reconnectingTcpConnect.bind(client)));
+  client.connect =
+    /** @type {typeof client.connect} */ (
+      /** @type {unknown} */ (reconnectingTcpConnect.bind(client))
+    );
 
   try {
     await client.connect();
@@ -2082,8 +1983,14 @@ test('BridgeClient reconnects and emits reconnected event after server drops con
 
     // Wait for 'reconnected' event (with timeout guard).
     await new Promise((resolve, reject) => {
-      const tid = setTimeout(() => reject(new Error('reconnected event not received within 5s')), 5000);
-      client.once('reconnected', () => { clearTimeout(tid); resolve(undefined); });
+      const tid = setTimeout(
+        () => reject(new Error('reconnected event not received within 5s')),
+        5000
+      );
+      client.once('reconnected', () => {
+        clearTimeout(tid);
+        resolve(undefined);
+      });
     });
 
     assert.equal(client.connected, true, 'connected again after reconnect');
@@ -2107,13 +2014,20 @@ test('BridgeClient.close() stops autoReconnect', async () => {
     socket.once('close', () => sockets.delete(socket));
     connectAttempts += 1;
     socket.setEncoding('utf8');
-    socket.write(`${JSON.stringify({ type: 'registered', role: 'agent', clientId: 'mock_client' })}\n`);
+    socket.write(
+      `${JSON.stringify({ type: 'registered', role: 'agent', clientId: 'mock_client' })}\n`
+    );
     setTimeout(() => socket.destroy(), 20);
   });
-  await new Promise((resolve) => server.listen({ host: '127.0.0.1', port: 0 }, () => resolve(undefined)));
+  await new Promise((resolve) =>
+    server.listen({ host: '127.0.0.1', port: 0 }, () => resolve(undefined))
+  );
   const { port } = /** @type {import('node:net').AddressInfo} */ (server.address());
 
-  const client = new BridgeClient({ defaultTimeoutMs: 3_000, autoReconnect: true });
+  const client = new BridgeClient({
+    defaultTimeoutMs: 3_000,
+    autoReconnect: true,
+  });
   /**
    * @this {BridgeClient}
    * @returns {Promise<void>}
@@ -2123,14 +2037,26 @@ test('BridgeClient.close() stops autoReconnect', async () => {
     const socket = net.createConnection({ host: '127.0.0.1', port });
     this.socket = socket;
     try {
-      await new Promise((res, rej) => { socket.once('connect', res); socket.once('error', rej); });
-    } catch (err) { socket.destroy(); this.socket = null; throw err; }
+      await new Promise((res, rej) => {
+        socket.once('connect', res);
+        socket.once('error', rej);
+      });
+    } catch (err) {
+      socket.destroy();
+      this.socket = null;
+      throw err;
+    }
     const { parseJsonLines } = await import('../../protocol/src/index.js');
     parseJsonLines(socket, (raw) => {
       const msg = /** @type {any} */ (raw);
       if (msg.type === 'registered') {
         const p = this.waiting.get('registered');
-        if (p) { this.waiting.delete('registered'); this.connected = true; clearTimeout(p.timeoutId); p.resolve(msg); }
+        if (p) {
+          this.waiting.delete('registered');
+          this.connected = true;
+          clearTimeout(p.timeoutId);
+          p.resolve(msg);
+        }
       }
     });
     socket.on('close', () => {
@@ -2140,13 +2066,25 @@ test('BridgeClient.close() stops autoReconnect', async () => {
       if (this.autoReconnect && !this._reconnecting) void this._scheduleReconnect();
     });
     socket.on('error', (err) => this.rejectAllPending(err));
-    socket.write(`${JSON.stringify({ type: 'register', role: 'agent', clientId: this.clientId })}\n`);
+    socket.write(
+      `${JSON.stringify({ type: 'register', role: 'agent', clientId: this.clientId })}\n`
+    );
     await new Promise((res, rej) => {
-      const tid = setTimeout(() => { this.waiting.delete('registered'); rej(new Error('register timeout')); }, this.defaultTimeoutMs);
-      this.waiting.set('registered', { resolve: res, reject: rej, timeoutId: tid });
+      const tid = setTimeout(() => {
+        this.waiting.delete('registered');
+        rej(new Error('register timeout'));
+      }, this.defaultTimeoutMs);
+      this.waiting.set('registered', {
+        resolve: res,
+        reject: rej,
+        timeoutId: tid,
+      });
     });
   }
-  client.connect = /** @type {typeof client.connect} */ (/** @type {unknown} */ (reconnectingTcpConnect.bind(client)));
+  client.connect =
+    /** @type {typeof client.connect} */ (
+      /** @type {unknown} */ (reconnectingTcpConnect.bind(client))
+    );
 
   try {
     await client.connect();
@@ -2166,9 +2104,7 @@ test('BridgeClient.close() stops autoReconnect', async () => {
 });
 
 test('removeMcpConfig keeps Copilot mcpServers object after removing browser-bridge', async () => {
-  const tempHome = await fs.promises.mkdtemp(
-    path.join(os.tmpdir(), 'bbx-copilot-mcp-remove-'),
-  );
+  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-copilot-mcp-remove-'));
   const originalHome = process.env.HOME;
 
   try {

@@ -6,33 +6,33 @@ import assert from 'node:assert/strict';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
-import {
-  createBridgeMcpServer,
-  startBridgeMcpServer,
-} from '../src/server.js';
+import { createBridgeMcpServer, startBridgeMcpServer } from '../src/server.js';
 
 test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
   const originalRegisterTool = McpServer.prototype.registerTool;
   /** @type {{ name: string, config: Record<string, unknown>, handler: unknown }[]} */
   const registrations = [];
 
-  McpServer.prototype.registerTool = /** @type {typeof McpServer.prototype.registerTool} */ (
-    function registerTool(name, config, handler) {
-      registrations.push({
-        name,
-        config: /** @type {Record<string, unknown>} */ (config),
-        handler,
-      });
-      return /** @type {ReturnType<typeof originalRegisterTool>} */ (/** @type {unknown} */ ({
-        enabled: true,
-        disable() {},
-        enable() {},
-        handler,
-        name,
-        remove() {},
-      }));
-    }
-  );
+  McpServer.prototype.registerTool =
+    /** @type {typeof McpServer.prototype.registerTool} */ (
+      function registerTool(name, config, handler) {
+        registrations.push({
+          name,
+          config: /** @type {Record<string, unknown>} */ (config),
+          handler,
+        });
+        return /** @type {ReturnType<typeof originalRegisterTool>} */ (
+          /** @type {unknown} */ ({
+            enabled: true,
+            disable() {},
+            enable() {},
+            handler,
+            name,
+            remove() {},
+          })
+        );
+      }
+    );
 
   try {
     const server = createBridgeMcpServer();
@@ -42,10 +42,12 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
     const investigateConfig = /** @type {Record<string, unknown>} */ (
       investigateRegistration?.config ?? {}
     );
-    const delegationHint = /** @type {Record<string, unknown>} */ (
+    const investigateMeta =
       investigateConfig._meta && typeof investigateConfig._meta === 'object'
-        ? /** @type {Record<string, unknown>} */ (investigateConfig._meta).delegationHint ?? {}
-        : {}
+        ? /** @type {Record<string, unknown>} */ (investigateConfig._meta)
+        : {};
+    const delegationHint = /** @type {Record<string, unknown>} */ (
+      investigateMeta.delegationHint ?? {}
     );
 
     assert.ok(server instanceof McpServer);
@@ -69,7 +71,7 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
         'browser_call',
         'browser_skill',
         'browser_access',
-        'browser_investigate'
+        'browser_investigate',
       ]
     );
     assert.equal(registrations[4].config.title, 'Browser Tabs');
@@ -91,11 +93,11 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
     assert.deepEqual(delegationHint.escalationTools, ['browser_capture']);
     assert.ok(
       Array.isArray(delegationHint.preferredBridgeMethods) &&
-      delegationHint.preferredBridgeMethods.includes('page.get_state')
+        delegationHint.preferredBridgeMethods.includes('page.get_state')
     );
     assert.ok(
       Array.isArray(delegationHint.preferredBridgeMethods) &&
-      !delegationHint.preferredBridgeMethods.includes('screenshot.capture_full_page')
+        !delegationHint.preferredBridgeMethods.includes('screenshot.capture_full_page')
     );
   } finally {
     McpServer.prototype.registerTool = originalRegisterTool;
@@ -107,11 +109,12 @@ test('startBridgeMcpServer connects over stdio transport', async () => {
   /** @type {unknown[]} */
   const transports = [];
 
-  McpServer.prototype.connect = /** @type {typeof McpServer.prototype.connect} */ (
-    async function connect(transport) {
-      transports.push(transport);
-    }
-  );
+  McpServer.prototype.connect =
+    /** @type {typeof McpServer.prototype.connect} */ (
+      async function connect(transport) {
+        transports.push(transport);
+      }
+    );
 
   try {
     await startBridgeMcpServer();

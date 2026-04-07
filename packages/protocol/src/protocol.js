@@ -114,8 +114,8 @@ export function createRequest({ id, method, tabId = null, params = {}, meta = {}
     params,
     meta: {
       protocol_version: PROTOCOL_VERSION,
-      ...meta
-    }
+      ...meta,
+    },
   });
 }
 
@@ -133,8 +133,8 @@ export function createSuccess(id, result, meta = {}) {
     error: null,
     meta: {
       protocol_version: PROTOCOL_VERSION,
-      ...meta
-    }
+      ...meta,
+    },
   };
 }
 
@@ -156,12 +156,12 @@ export function createFailure(id, code, message, details = null, meta = {}) {
       code,
       message,
       details,
-      ...(recovery && { recovery })
+      ...(recovery && { recovery }),
     },
     meta: {
       protocol_version: PROTOCOL_VERSION,
-      ...meta
-    }
+      ...meta,
+    },
   };
 }
 
@@ -180,15 +180,25 @@ export function validateBridgeRequest(request) {
     throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'Request id must be a non-empty string.');
   }
 
-  if (typeof candidate.method !== 'string' || !METHODS.includes(/** @type {BridgeMethod} */ (candidate.method))) {
-    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, `Unsupported method: ${String(candidate.method)}`);
+  if (
+    typeof candidate.method !== 'string' ||
+    !METHODS.includes(/** @type {BridgeMethod} */ (candidate.method))
+  ) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      `Unsupported method: ${String(candidate.method)}`
+    );
   }
 
-  const meta = candidate.meta && typeof candidate.meta === 'object'
-    ? /** @type {Record<string, unknown>} */ (candidate.meta)
-    : {};
+  const meta =
+    candidate.meta && typeof candidate.meta === 'object'
+      ? /** @type {Record<string, unknown>} */ (candidate.meta)
+      : {};
   if (candidate.session_id != null) {
-    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'session_id is no longer supported. Use tab_id or window-scoped default routing.');
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'session_id is no longer supported. Use tab_id or window-scoped default routing.'
+    );
   }
   const parsedTabId = Number(candidate.tab_id);
 
@@ -196,17 +206,17 @@ export function validateBridgeRequest(request) {
     id: candidate.id,
     method: /** @type {BridgeMethod} */ (candidate.method),
     tab_id: Number.isFinite(parsedTabId) && parsedTabId > 0 ? parsedTabId : null,
-    params: candidate.params && typeof candidate.params === 'object'
-      ? /** @type {Record<string, unknown>} */ (candidate.params)
-      : {},
+    params:
+      candidate.params && typeof candidate.params === 'object'
+        ? /** @type {Record<string, unknown>} */ (candidate.params)
+        : {},
     meta: {
       ...meta,
-      protocol_version: typeof meta.protocol_version === 'string'
-        ? meta.protocol_version
-        : PROTOCOL_VERSION,
+      protocol_version:
+        typeof meta.protocol_version === 'string' ? meta.protocol_version : PROTOCOL_VERSION,
       token_budget: typeof meta.token_budget === 'number' ? meta.token_budget : null,
-      source: meta.source === 'cli' || meta.source === 'mcp' ? meta.source : undefined
-    }
+      source: meta.source === 'cli' || meta.source === 'mcp' ? meta.source : undefined,
+    },
   };
 }
 
@@ -216,9 +226,10 @@ export function validateBridgeRequest(request) {
  */
 export function normalizeDomQuery(params = {}) {
   return {
-    selector: typeof params.selector === 'string' && params.selector.trim() ? params.selector : 'body',
+    selector:
+      typeof params.selector === 'string' && params.selector.trim() ? params.selector : 'body',
     withinRef: typeof params.withinRef === 'string' ? params.withinRef : null,
-    budget: applyBudget(params)
+    budget: applyBudget(params),
   };
 }
 
@@ -234,12 +245,15 @@ export function normalizeStyleQuery(params = {}) {
   );
   const elementRef = String(params.elementRef || target.elementRef || '');
   if (!elementRef && !target.selector) {
-    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'elementRef or target is required for style queries.');
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'elementRef or target is required for style queries.'
+    );
   }
   return {
     elementRef,
     target,
-    properties: Array.isArray(params.properties) ? params.properties.filter(Boolean) : []
+    properties: Array.isArray(params.properties) ? params.properties.filter(Boolean) : [],
   };
 }
 
@@ -250,7 +264,7 @@ export function normalizeStyleQuery(params = {}) {
 function normalizeTarget(target) {
   return {
     elementRef: typeof target?.elementRef === 'string' ? target.elementRef : undefined,
-    selector: typeof target?.selector === 'string' ? target.selector : undefined
+    selector: typeof target?.selector === 'string' ? target.selector : undefined,
   };
 }
 
@@ -259,9 +273,7 @@ function normalizeTarget(target) {
  * @returns {NormalizedInputAction}
  */
 export function normalizeInputAction(params = {}) {
-  const button = params.button === 'middle' || params.button === 'right'
-    ? params.button
-    : 'left';
+  const button = params.button === 'middle' || params.button === 'right' ? params.button : 'left';
 
   return {
     target: normalizeTarget(
@@ -277,7 +289,7 @@ export function normalizeInputAction(params = {}) {
     key: typeof params.key === 'string' ? params.key : '',
     modifiers: Array.isArray(params.modifiers)
       ? params.modifiers.filter((modifier) => typeof modifier === 'string' && modifier.trim())
-      : []
+      : [],
   };
 }
 
@@ -292,7 +304,7 @@ export function normalizeCheckedAction(params = {}) {
         ? /** @type {{ elementRef?: string, selector?: string }} */ (params.target)
         : undefined
     ),
-    checked: params.checked !== false
+    checked: params.checked !== false,
   };
 }
 
@@ -315,9 +327,9 @@ export function normalizeSelectAction(params = {}) {
       : [],
     indexes: Array.isArray(params.indexes)
       ? params.indexes
-        .map((index) => Number(index))
-        .filter((index) => Number.isInteger(index) && index >= 0)
-      : []
+          .map((index) => Number(index))
+          .filter((index) => Number.isInteger(index) && index >= 0)
+      : [],
   };
 }
 
@@ -335,7 +347,7 @@ export function normalizeViewportAction(params = {}) {
     top: Number.isFinite(Number(params.top)) ? Number(params.top) : 0,
     left: Number.isFinite(Number(params.left)) ? Number(params.left) : 0,
     behavior: params.behavior === 'smooth' ? 'smooth' : 'auto',
-    relative: Boolean(params.relative)
+    relative: Boolean(params.relative),
   };
 }
 
@@ -362,7 +374,7 @@ export function normalizeNavigationAction(params = {}) {
   return {
     url,
     waitForLoad: params.waitForLoad !== false,
-    timeoutMs: clampInt(params.timeoutMs, 500, 120_000, 15_000)
+    timeoutMs: clampInt(params.timeoutMs, 500, 120_000, 15_000),
   };
 }
 
@@ -373,17 +385,19 @@ export function normalizeNavigationAction(params = {}) {
 export function normalizePatchOperation(params = {}) {
   return {
     patchId: typeof params.patchId === 'string' ? params.patchId : null,
-    target: params.target && typeof params.target === 'object'
-      ? /** @type {Record<string, unknown>} */ (params.target)
-      : {},
+    target:
+      params.target && typeof params.target === 'object'
+        ? /** @type {Record<string, unknown>} */ (params.target)
+        : {},
     operation: typeof params.operation === 'string' ? params.operation : null,
     name: typeof params.name === 'string' ? params.name : null,
-    declarations: params.declarations && typeof params.declarations === 'object'
-      ? /** @type {Record<string, string>} */ (params.declarations)
-      : {},
+    declarations:
+      params.declarations && typeof params.declarations === 'object'
+        ? /** @type {Record<string, string>} */ (params.declarations)
+        : {},
     value: params.value ?? null,
     important: Boolean(params.important),
-    verify: Boolean(params.verify)
+    verify: Boolean(params.verify),
   };
 }
 
@@ -403,7 +417,7 @@ export function normalizeEvaluateParams(params = {}) {
     expression,
     awaitPromise: Boolean(params.awaitPromise),
     timeoutMs: clampInt(params.timeoutMs, 100, 30_000, 5_000),
-    returnByValue: params.returnByValue !== false
+    returnByValue: params.returnByValue !== false,
   };
 }
 
@@ -416,7 +430,7 @@ export function normalizeConsoleParams(params = {}) {
   return {
     level: validLevels.includes(String(params.level ?? '')) ? String(params.level) : 'all',
     clear: Boolean(params.clear),
-    limit: clampInt(params.limit, 1, 200, 50)
+    limit: clampInt(params.limit, 1, 200, 50),
   };
 }
 
@@ -432,7 +446,7 @@ export function normalizeWaitForParams(params = {}) {
     state: validStates.includes(String(params.state ?? ''))
       ? /** @type {'attached' | 'detached' | 'visible' | 'hidden'} */ (String(params.state))
       : 'attached',
-    timeoutMs: clampInt(params.timeoutMs, 100, 30_000, 5_000)
+    timeoutMs: clampInt(params.timeoutMs, 100, 30_000, 5_000),
   };
 }
 
@@ -445,7 +459,7 @@ export function normalizeFindByTextParams(params = {}) {
     text: typeof params.text === 'string' ? params.text : '',
     exact: Boolean(params.exact),
     selector: typeof params.selector === 'string' && params.selector.trim() ? params.selector : '*',
-    maxResults: clampInt(params.maxResults, 1, 50, 10)
+    maxResults: clampInt(params.maxResults, 1, 50, 10),
   };
 }
 
@@ -458,7 +472,7 @@ export function normalizeFindByRoleParams(params = {}) {
     role: typeof params.role === 'string' ? params.role : '',
     name: typeof params.name === 'string' ? params.name : '',
     selector: typeof params.selector === 'string' && params.selector.trim() ? params.selector : '*',
-    maxResults: clampInt(params.maxResults, 1, 50, 10)
+    maxResults: clampInt(params.maxResults, 1, 50, 10),
   };
 }
 
@@ -476,7 +490,7 @@ export function normalizeGetHtmlParams(params = {}) {
     elementRef: String(params.elementRef || target.elementRef || ''),
     target,
     outer: Boolean(params.outer),
-    maxLength: clampInt(params.maxLength, 32, 50_000, 2000)
+    maxLength: clampInt(params.maxLength, 32, 50_000, 2000),
   };
 }
 
@@ -491,7 +505,7 @@ export function normalizeHoverParams(params = {}) {
         ? /** @type {{ elementRef?: string, selector?: string }} */ (params.target)
         : undefined
     ),
-    duration: clampInt(params.duration, 0, 5_000, 0)
+    duration: clampInt(params.duration, 0, 5_000, 0),
   };
 }
 
@@ -512,7 +526,7 @@ export function normalizeDragParams(params = {}) {
         : undefined
     ),
     offsetX: Number.isFinite(Number(params.offsetX)) ? Number(params.offsetX) : 0,
-    offsetY: Number.isFinite(Number(params.offsetY)) ? Number(params.offsetY) : 0
+    offsetY: Number.isFinite(Number(params.offsetY)) ? Number(params.offsetY) : 0,
   };
 }
 
@@ -523,7 +537,7 @@ export function normalizeDragParams(params = {}) {
 export function normalizeStorageParams(params = {}) {
   return {
     type: params.type === 'session' ? 'session' : 'local',
-    keys: Array.isArray(params.keys) ? params.keys.filter((k) => typeof k === 'string') : null
+    keys: Array.isArray(params.keys) ? params.keys.filter((k) => typeof k === 'string') : null,
   };
 }
 
@@ -534,7 +548,7 @@ export function normalizeStorageParams(params = {}) {
 export function normalizeWaitForLoadStateParams(params = {}) {
   return {
     waitForLoad: params.waitForLoad !== false,
-    timeoutMs: clampInt(params.timeoutMs, 500, 120_000, 15_000)
+    timeoutMs: clampInt(params.timeoutMs, 500, 120_000, 15_000),
   };
 }
 
@@ -543,7 +557,8 @@ export function normalizeWaitForLoadStateParams(params = {}) {
  * @returns {NormalizedTabCreateParams}
  */
 export function normalizeTabCreateParams(params = {}) {
-  const url = typeof params.url === 'string' && params.url.trim() ? params.url.trim() : 'about:blank';
+  const url =
+    typeof params.url === 'string' && params.url.trim() ? params.url.trim() : 'about:blank';
   if (url !== 'about:blank') {
     try {
       const parsed = new URL(url);
@@ -560,7 +575,7 @@ export function normalizeTabCreateParams(params = {}) {
   }
   return {
     url,
-    active: params.active !== false
+    active: params.active !== false,
   };
 }
 
@@ -583,7 +598,7 @@ export function normalizeTabCloseParams(params = {}) {
 export function normalizeAccessibilityTreeParams(params = {}) {
   return {
     maxDepth: clampInt(params.maxDepth, 1, 20, DEFAULT_A11Y_MAX_DEPTH),
-    maxNodes: clampInt(params.maxNodes, 10, 5000, DEFAULT_A11Y_MAX_NODES)
+    maxNodes: clampInt(params.maxNodes, 10, 5000, DEFAULT_A11Y_MAX_NODES),
   };
 }
 
@@ -595,9 +610,10 @@ export function normalizeNetworkParams(params = {}) {
   return {
     clear: Boolean(params.clear),
     limit: clampInt(params.limit, 1, 500, DEFAULT_NETWORK_LIMIT),
-    urlPattern: typeof params.urlPattern === 'string' && params.urlPattern.trim()
-      ? params.urlPattern.trim()
-      : null
+    urlPattern:
+      typeof params.urlPattern === 'string' && params.urlPattern.trim()
+        ? params.urlPattern.trim()
+        : null,
   };
 }
 
@@ -607,7 +623,7 @@ export function normalizeNetworkParams(params = {}) {
  */
 export function normalizePageTextParams(params = {}) {
   return {
-    textBudget: clampInt(params.textBudget, 100, 100_000, DEFAULT_PAGE_TEXT_BUDGET)
+    textBudget: clampInt(params.textBudget, 100, 100_000, DEFAULT_PAGE_TEXT_BUDGET),
   };
 }
 
@@ -620,7 +636,7 @@ export function normalizeViewportResizeParams(params = {}) {
     width: clampInt(params.width, 320, 7680, DEFAULT_VIEWPORT_WIDTH),
     height: clampInt(params.height, 200, 4320, DEFAULT_VIEWPORT_HEIGHT),
     deviceScaleFactor: clampInt(params.deviceScaleFactor, 0, 4, 0),
-    reset: Boolean(params.reset)
+    reset: Boolean(params.reset),
   };
 }
 
@@ -641,24 +657,37 @@ export function createRuntimeContext() {
   return {
     v: PROTOCOL_VERSION,
     budgets: {
-      quick: { n: BUDGET_PRESETS.quick.maxNodes, d: BUDGET_PRESETS.quick.maxDepth, t: BUDGET_PRESETS.quick.textBudget },
-      normal: { n: BUDGET_PRESETS.normal.maxNodes, d: BUDGET_PRESETS.normal.maxDepth, t: BUDGET_PRESETS.normal.textBudget },
-      deep: { n: BUDGET_PRESETS.deep.maxNodes, d: BUDGET_PRESETS.deep.maxDepth, t: BUDGET_PRESETS.deep.textBudget }
+      quick: {
+        n: BUDGET_PRESETS.quick.maxNodes,
+        d: BUDGET_PRESETS.quick.maxDepth,
+        t: BUDGET_PRESETS.quick.textBudget,
+      },
+      normal: {
+        n: BUDGET_PRESETS.normal.maxNodes,
+        d: BUDGET_PRESETS.normal.maxDepth,
+        t: BUDGET_PRESETS.normal.textBudget,
+      },
+      deep: {
+        n: BUDGET_PRESETS.deep.maxNodes,
+        d: BUDGET_PRESETS.deep.maxDepth,
+        t: BUDGET_PRESETS.deep.textBudget,
+      },
     },
     methods: methodGroups,
     errors: {
-      ACCESS_DENIED: 'Browser Bridge is off for this window or the page is restricted; if access is off, the first denied call surfaces an Enable cue in the extension UI',
+      ACCESS_DENIED:
+        'Browser Bridge is off for this window or the page is restricted; if access is off, the first denied call surfaces an Enable cue in the extension UI',
       TAB_MISMATCH: 'Tab closed or not found',
       ELEMENT_STALE: 'Element removed from DOM - re-query',
       INVALID_REQUEST: 'Malformed method or params',
       TIMEOUT: 'Operation exceeded time limit',
       RATE_LIMITED: 'Too many requests - back off',
       INTERNAL_ERROR: 'Unexpected extension error',
-      EXTENSION_DISCONNECTED: 'Extension not connected to daemon - check Chrome'
+      EXTENSION_DISCONNECTED: 'Extension not connected to daemon - check Chrome',
     },
     tips: [
       'dom.query quick budget first; widen only if truncated',
-      'Reuse elementRef; don\'t re-query',
+      "Reuse elementRef; don't re-query",
       'Set attributeAllowlist for focused DOM reads',
       'patch.apply_styles before patch.apply_dom',
       'Verify with get_box_model not screenshots',
@@ -676,7 +705,7 @@ export function createRuntimeContext() {
       'performance.get_metrics for Core Web Vitals and load timing',
       'viewport.resize to test responsive layouts',
       'Prefer screenshot.capture_element, or a tight screenshot.capture_region when element capture cannot express the needed area',
-      'page.get_storage reads localStorage/sessionStorage without evaluate'
+      'page.get_storage reads localStorage/sessionStorage without evaluate',
     ],
     flow: [
       'health.ping',
@@ -686,7 +715,7 @@ export function createRuntimeContext() {
       'patch.apply_styles',
       'layout.get_box_model',
       'page.get_console',
-      'patch.rollback'
+      'patch.rollback',
     ],
     limits: {
       maxNodes: { min: 1, max: 250, default: DEFAULT_MAX_NODES },
@@ -699,7 +728,11 @@ export function createRuntimeContext() {
       a11yMaxNodes: { min: 10, max: 5000, default: DEFAULT_A11Y_MAX_NODES },
       networkLimit: { min: 1, max: 500, default: DEFAULT_NETWORK_LIMIT },
       consoleLimit: { min: 1, max: 200, default: DEFAULT_CONSOLE_LIMIT },
-      pageTextBudget: { min: 100, max: 100000, default: DEFAULT_PAGE_TEXT_BUDGET }
-    }
+      pageTextBudget: {
+        min: 100,
+        max: 100000,
+        default: DEFAULT_PAGE_TEXT_BUDGET,
+      },
+    },
   };
 }

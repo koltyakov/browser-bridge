@@ -6,11 +6,11 @@
 
 Tailwind arbitrary-value classes use `[]` which are invalid in CSS selectors:
 
-| Class in HTML | ❌ Raw selector | ✅ Escaped selector |
-|---|---|---|
-| `top-[30px]` | `.top-[30px]` | `.top-\[30px\]` |
-| `bg-[#f00]` | `.bg-[#f00]` | `.bg-\[\#f00\]` |
-| `w-[calc(100%-2rem)]` | crashes | `.w-\[calc\(100\%-2rem\)\]` |
+| Class in HTML         | ❌ Raw selector | ✅ Escaped selector         |
+| --------------------- | --------------- | --------------------------- |
+| `top-[30px]`          | `.top-[30px]`   | `.top-\[30px\]`             |
+| `bg-[#f00]`           | `.bg-[#f00]`    | `.bg-\[\#f00\]`             |
+| `w-[calc(100%-2rem)]` | crashes         | `.w-\[calc\(100\%-2rem\)\]` |
 
 **Bridge auto-escapes** Tailwind brackets in `dom.query` selectors. But for `page.evaluate` or `dom.wait_for`, escape manually or avoid class-based selectors entirely.
 
@@ -37,6 +37,7 @@ bbx styles el_abc 'display,align-items,gap,padding,background-color,border-radiu
 ```
 
 Key patterns:
+
 - **Layout**: `styles.get_computed` with `display, flex-direction, gap, grid-template-columns`
 - **Spacing**: `layout.get_box_model` - gives padding/margin/border as numbers
 - **Colors**: `styles.get_computed` with `background-color, color, border-color`
@@ -75,9 +76,9 @@ Default Tailwind breakpoints: `sm: 640px`, `md: 768px`, `lg: 1024px`, `xl: 1280p
 
 ## Common Tailwind Anti-Patterns
 
-| Anti-pattern | Cost | Fix |
-|---|---|---|
-| Selecting by Tailwind class `.flex.items-center` | Fragile, breaks on refactor | `dom.find_by_role` or `dom.find_by_text` |
-| Parsing class string to infer styles | ~500 tok wasted | `styles.get_computed` with property list |
-| Patching by adding Tailwind classes | Won't work (classes need build) | `patch.apply_styles` with CSS properties |
-| Using `!important` in patches | Unnecessary | Inline styles already beat utilities |
+| Anti-pattern                                     | Cost                            | Fix                                      |
+| ------------------------------------------------ | ------------------------------- | ---------------------------------------- |
+| Selecting by Tailwind class `.flex.items-center` | Fragile, breaks on refactor     | `dom.find_by_role` or `dom.find_by_text` |
+| Parsing class string to infer styles             | ~500 tok wasted                 | `styles.get_computed` with property list |
+| Patching by adding Tailwind classes              | Won't work (classes need build) | `patch.apply_styles` with CSS properties |
+| Using `!important` in patches                    | Unnecessary                     | Inline styles already beat utilities     |

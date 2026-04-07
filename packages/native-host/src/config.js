@@ -50,9 +50,7 @@ export function getSocketPath() {
  * @returns {string}
  */
 export function getLauncherFilename() {
-  return os.platform() === 'win32'
-    ? 'native-host-launcher.cmd'
-    : 'native-host-launcher.sh';
+  return os.platform() === 'win32' ? 'native-host-launcher.cmd' : 'native-host-launcher.sh';
 }
 
 /**
@@ -84,7 +82,7 @@ export function getManifestInstallDir(browser = 'chrome') {
       edge: path.join(macBase, 'Microsoft Edge', 'NativeMessagingHosts'),
       brave: path.join(macBase, 'BraveSoftware', 'Brave-Browser', 'NativeMessagingHosts'),
       chromium: path.join(macBase, 'Chromium', 'NativeMessagingHosts'),
-      arc: path.join(macBase, 'Arc', 'User Data', 'NativeMessagingHosts')
+      arc: path.join(macBase, 'Arc', 'User Data', 'NativeMessagingHosts'),
     };
     return macPaths[browser] ?? macPaths.chrome;
   }
@@ -94,9 +92,15 @@ export function getManifestInstallDir(browser = 'chrome') {
     const winPaths = {
       chrome: path.join(winBase, 'Google', 'Chrome', 'User Data', 'NativeMessagingHosts'),
       edge: path.join(winBase, 'Microsoft', 'Edge', 'User Data', 'NativeMessagingHosts'),
-      brave: path.join(winBase, 'BraveSoftware', 'Brave-Browser', 'User Data', 'NativeMessagingHosts'),
+      brave: path.join(
+        winBase,
+        'BraveSoftware',
+        'Brave-Browser',
+        'User Data',
+        'NativeMessagingHosts'
+      ),
       chromium: path.join(winBase, 'Chromium', 'User Data', 'NativeMessagingHosts'),
-      arc: path.join(winBase, 'Arc', 'User Data', 'NativeMessagingHosts')
+      arc: path.join(winBase, 'Arc', 'User Data', 'NativeMessagingHosts'),
     };
     return winPaths[browser] ?? winPaths.chrome;
   }
@@ -107,7 +111,7 @@ export function getManifestInstallDir(browser = 'chrome') {
     edge: path.join(home, '.config', 'microsoft-edge', 'NativeMessagingHosts'),
     brave: path.join(home, '.config', 'BraveSoftware', 'Brave-Browser', 'NativeMessagingHosts'),
     chromium: path.join(home, '.config', 'chromium', 'NativeMessagingHosts'),
-    arc: path.join(home, '.config', 'Arc', 'User Data', 'NativeMessagingHosts')
+    arc: path.join(home, '.config', 'Arc', 'User Data', 'NativeMessagingHosts'),
   };
   return linuxPaths[browser] ?? linuxPaths.chrome;
 }

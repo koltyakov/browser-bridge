@@ -98,12 +98,14 @@ async function createZipArchive(sourceDir, targetZipPath) {
         '-NoProfile',
         '-Command',
         'Compress-Archive -Path * -DestinationPath $args[0] -Force',
-        targetZipPath
+        targetZipPath,
       ],
       { cwd: sourceDir }
     );
     return;
   }
 
-  await execFileAsync('zip', ['-q', '-r', targetZipPath, '.'], { cwd: sourceDir });
+  await execFileAsync('zip', ['-q', '-r', targetZipPath, '.'], {
+    cwd: sourceDir,
+  });
 }

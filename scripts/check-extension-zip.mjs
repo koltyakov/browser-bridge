@@ -43,7 +43,9 @@ async function findExtensionZip() {
     .sort();
 
   if (candidates.length === 0) {
-    throw new Error(`No Browser Bridge extension ZIP found in ${distDir}. Run npm run package:extension first.`);
+    throw new Error(
+      `No Browser Bridge extension ZIP found in ${distDir}. Run npm run package:extension first.`
+    );
   }
 
   return path.join(distDir, candidates[candidates.length - 1]);
@@ -55,7 +57,7 @@ async function findExtensionZip() {
  */
 async function listZipEntries(archivePath) {
   const { stdout } = await execFileAsync('zipinfo', ['-1', archivePath], {
-    cwd: repoRoot
+    cwd: repoRoot,
   });
   return stdout
     .split('\n')
@@ -69,9 +71,11 @@ async function listZipEntries(archivePath) {
  * @returns {boolean}
  */
 function isAllowedEntry(entry) {
-  return entry === 'manifest.json'
-    || entry === 'LICENSE'
-    || entry.startsWith('packages/extension/assets/')
-    || entry.startsWith('packages/extension/src/')
-    || entry.startsWith('packages/extension/ui/');
+  return (
+    entry === 'manifest.json' ||
+    entry === 'LICENSE' ||
+    entry.startsWith('packages/extension/assets/') ||
+    entry.startsWith('packages/extension/src/') ||
+    entry.startsWith('packages/extension/ui/')
+  );
 }

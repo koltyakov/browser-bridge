@@ -38,7 +38,7 @@ export {};
  *   budget_applied?: boolean,
  *   budget_truncated?: boolean,
  *   continuation_hint?: string | null,
-   *   [key: string]: unknown
+ *   [key: string]: unknown
  * }} BridgeMeta
  */
 

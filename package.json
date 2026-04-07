@@ -2,8 +2,35 @@
   "name": "@browserbridge/bbx",
   "version": "1.0.0",
   "private": false,
-  "type": "module",
+  "keywords": [
+    "agent-tools",
+    "ai-agent",
+    "browser",
+    "browser-automation",
+    "browser-bridge",
+    "chrome",
+    "chrome-extension",
+    "developer-tools",
+    "mcp",
+    "model-context-protocol",
+    "native-messaging",
+    "ui-debugging"
+  ],
+  "homepage": "https://github.com/koltyakov/browser-bridge#readme",
+  "bugs": {
+    "url": "https://github.com/koltyakov/browser-bridge/issues"
+  },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/koltyakov/browser-bridge.git"
+  },
+  "bin": {
+    "bbx": "packages/agent-client/src/cli.js",
+    "bbx-daemon": "packages/native-host/bin/bridge-daemon.js",
+    "bbx-install": "packages/native-host/bin/install-manifest.js",
+    "bbx-mcp": "packages/mcp-server/src/bin.js"
+  },
   "files": [
     "assets",
     "CHANGELOG.md",
@@ -21,37 +48,10 @@
     "packages/protocol/src",
     "skills/browser-bridge"
   ],
-  "bin": {
-    "bbx": "packages/agent-client/src/cli.js",
-    "bbx-mcp": "packages/mcp-server/src/bin.js",
-    "bbx-daemon": "packages/native-host/bin/bridge-daemon.js",
-    "bbx-install": "packages/native-host/bin/install-manifest.js"
-  },
+  "type": "module",
   "publishConfig": {
     "access": "public"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/koltyakov/browser-bridge.git"
-  },
-  "homepage": "https://github.com/koltyakov/browser-bridge#readme",
-  "bugs": {
-    "url": "https://github.com/koltyakov/browser-bridge/issues"
-  },
-  "keywords": [
-    "browser-bridge",
-    "browser",
-    "chrome",
-    "chrome-extension",
-    "native-messaging",
-    "mcp",
-    "model-context-protocol",
-    "ai-agent",
-    "agent-tools",
-    "developer-tools",
-    "ui-debugging",
-    "browser-automation"
-  ],
   "scripts": {
     "lint": "oxlint . && oxfmt --check .",
     "format": "oxfmt .",
@@ -69,8 +69,9 @@
     "daemon": "node packages/native-host/bin/bridge-daemon.js",
     "install-manifest": "node packages/native-host/bin/install-manifest.js"
   },
-  "engines": {
-    "node": ">=18"
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/chrome": "^0.1.39",
@@ -80,8 +81,7 @@
     "oxlint": "^1.59.0",
     "typescript": "^6.0.2"
   },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "zod": "^4.3.6"
+  "engines": {
+    "node": ">=18"
   }
 }

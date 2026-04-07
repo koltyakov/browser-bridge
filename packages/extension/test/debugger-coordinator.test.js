@@ -26,7 +26,7 @@ test('TabDebuggerCoordinator serializes debugger work for the same tab', async (
     detach: async (target) => {
       events.push(`detach:${target.tabId}`);
     },
-    burstIdleMs: 0
+    burstIdleMs: 0,
   });
 
   const first = coordinator.run(7, async () => {
@@ -58,7 +58,7 @@ test('TabDebuggerCoordinator serializes debugger work for the same tab', async (
     'task:first:start',
     'task:first:end',
     'task:second',
-    'detach:7'
+    'detach:7',
   ]);
 });
 
@@ -69,7 +69,7 @@ test('TabDebuggerCoordinator allows different tabs to proceed independently', as
   let releaseFirstTask = () => {};
   const coordinator = new TabDebuggerCoordinator({
     attach: async () => {},
-    detach: async () => {}
+    detach: async () => {},
   });
 
   const first = coordinator.run(7, async () => {
@@ -103,7 +103,7 @@ test('TabDebuggerCoordinator releases the queue after task failures', async () =
     detach: async () => {
       detachCount += 1;
     },
-    burstIdleMs: 0
+    burstIdleMs: 0,
   });
 
   await assert.rejects(

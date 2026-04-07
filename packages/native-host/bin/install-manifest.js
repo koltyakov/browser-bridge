@@ -37,7 +37,7 @@ for (let i = 0; i < args.length; i++) {
 if (extensionIdArg && !parseExtensionId(extensionIdArg)) {
   process.stderr.write(
     `Invalid extension ID: ${extensionIdArg}\n` +
-    'Expected 32 lowercase letters (e.g. abcdefghijklmnopabcdefghijklmnop)\n'
+      'Expected 32 lowercase letters (e.g. abcdefghijklmnopabcdefghijklmnop)\n'
   );
   process.exit(1);
 }
@@ -52,6 +52,6 @@ for (const target of targets) {
   await installNativeManifest({
     repoRoot,
     extensionIdArg,
-    browser: target
+    browser: target,
   });
 }

@@ -12,7 +12,7 @@ import {
   getDefaultExtensionId,
   installNativeManifest,
   uninstallNativeManifest,
-  parseExtensionId
+  parseExtensionId,
 } from '../src/install-manifest.js';
 import { getLauncherFilename, getManifestInstallDir } from '../src/config.js';
 
@@ -25,12 +25,18 @@ test('parseExtensionId accepts raw ids and extension origins', () => {
 
 test('getDefaultExtensionId reads a valid env override', () => {
   const id = 'abcdefghijklmnopabcdefghijklmnop';
-  assert.equal(getDefaultExtensionId({
-    [DEFAULT_EXTENSION_ID_ENV]: id
-  }), id);
-  assert.equal(getDefaultExtensionId({
-    [DEFAULT_EXTENSION_ID_ENV]: 'invalid'
-  }), null);
+  assert.equal(
+    getDefaultExtensionId({
+      [DEFAULT_EXTENSION_ID_ENV]: id,
+    }),
+    id
+  );
+  assert.equal(
+    getDefaultExtensionId({
+      [DEFAULT_EXTENSION_ID_ENV]: 'invalid',
+    }),
+    null
+  );
 });
 
 test('installNativeManifest reports whether the extension id came from env or built-in default', async () => {
@@ -43,11 +49,21 @@ test('installNativeManifest reports whether the extension id came from env or bu
       repoRoot: process.cwd(),
       installDir: path.join(tempDir, 'manifest'),
       bridgeDir: path.join(tempDir, 'bridge'),
-      stdout: { write: (value) => { output.push(String(value)); return true; } },
-      env: { ...process.env, [DEFAULT_EXTENSION_ID_ENV]: 'abcdefghijklmnopabcdefghijklmnop' }
+      stdout: {
+        write: (value) => {
+          output.push(String(value));
+          return true;
+        },
+      },
+      env: {
+        ...process.env,
+        [DEFAULT_EXTENSION_ID_ENV]: 'abcdefghijklmnopabcdefghijklmnop',
+      },
     });
 
-    assert.ok(output.some((line) => line.includes(`Used extension ID from ${DEFAULT_EXTENSION_ID_ENV}.`)));
+    assert.ok(
+      output.some((line) => line.includes(`Used extension ID from ${DEFAULT_EXTENSION_ID_ENV}.`))
+    );
 
     output.length = 0;
 
@@ -55,8 +71,13 @@ test('installNativeManifest reports whether the extension id came from env or bu
       repoRoot: process.cwd(),
       installDir: path.join(tempDir, 'manifest-built-in'),
       bridgeDir: path.join(tempDir, 'bridge-built-in'),
-      stdout: { write: (value) => { output.push(String(value)); return true; } },
-      env: { ...process.env, [DEFAULT_EXTENSION_ID_ENV]: undefined }
+      stdout: {
+        write: (value) => {
+          output.push(String(value));
+          return true;
+        },
+      },
+      env: { ...process.env, [DEFAULT_EXTENSION_ID_ENV]: undefined },
     });
 
     assert.ok(output.some((line) => line.includes('Used built-in Browser Bridge extension ID.')));
@@ -66,7 +87,9 @@ test('installNativeManifest reports whether the extension id came from env or bu
 });
 
 test('installNativeManifest rejects an invalid env extension id override', async () => {
-  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-install-manifest-invalid-'));
+  const tempDir = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bbx-install-manifest-invalid-')
+  );
 
   try {
     await assert.rejects(
@@ -74,7 +97,7 @@ test('installNativeManifest rejects an invalid env extension id override', async
         repoRoot: process.cwd(),
         installDir: path.join(tempDir, 'manifest'),
         bridgeDir: path.join(tempDir, 'bridge'),
-        env: { ...process.env, [DEFAULT_EXTENSION_ID_ENV]: 'invalid' }
+        env: { ...process.env, [DEFAULT_EXTENSION_ID_ENV]: 'invalid' },
       }),
       /Invalid BROWSER_BRIDGE_EXTENSION_ID/
     );
@@ -83,24 +106,95 @@ test('installNativeManifest rejects an invalid env extension id override', async
   }
 });
 
+test('postinstall path preserves an existing custom extension id and warns', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-install-manifest-custom-'));
+  const installDir = path.join(tempDir, 'manifest');
+  const bridgeDir = path.join(tempDir, 'bridge');
+  const manifestPath = path.join(installDir, 'com.browserbridge.browser_bridge.json');
+  const customId = 'abcdefghijklmnopabcdefghijklmnop';
+  /** @type {string[]} */
+  const stdout = [];
+  /** @type {string[]} */
+  const stderr = [];
+
+  try {
+    await fs.promises.mkdir(installDir, { recursive: true });
+    await fs.promises.writeFile(
+      manifestPath,
+      `${JSON.stringify(
+        {
+          name: 'com.browserbridge.browser_bridge',
+          description: 'Browser Bridge native host',
+          path: '/tmp/native-host-launcher.sh',
+          type: 'stdio',
+          allowed_origins: [`chrome-extension://${customId}/`],
+        },
+        null,
+        2
+      )}\n`,
+      'utf8'
+    );
+
+    const result = await installNativeManifest({
+      repoRoot: process.cwd(),
+      installDir,
+      bridgeDir,
+      preserveCustomExtensionId: true,
+      stdout: {
+        write: (value) => {
+          stdout.push(String(value));
+          return true;
+        },
+      },
+      stderr: {
+        write: (value) => {
+          stderr.push(String(value));
+          return true;
+        },
+      },
+      env: { ...process.env, [DEFAULT_EXTENSION_ID_ENV]: undefined },
+    });
+
+    const manifest = JSON.parse(await fs.promises.readFile(manifestPath, 'utf8'));
+    assert.deepEqual(manifest.allowed_origins, [`chrome-extension://${customId}/`]);
+    assert.equal(result.extensionId, customId);
+    assert.ok(
+      stderr.some((line) =>
+        line.includes(
+          `keeps custom extension ID ${customId} instead of the Browser Bridge store ID`
+        )
+      )
+    );
+    assert.ok(stdout.every((line) => !line.includes('Used built-in Browser Bridge extension ID.')));
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('getAllowedOrigins merges explicit ids and removes placeholders', () => {
   const id = 'abcdefghijklmnopabcdefghijklmnop';
-  const origins = getAllowedOrigins({
-    allowed_origins: [
-      'chrome-extension://__REPLACE_WITH_EXTENSION_ID__/',
-      'chrome-extension://qrstuvwxyzabcdefghijklmnopqrstuv/'
-    ]
-  }, id);
+  const origins = getAllowedOrigins(
+    {
+      allowed_origins: [
+        'chrome-extension://__REPLACE_WITH_EXTENSION_ID__/',
+        'chrome-extension://qrstuvwxyzabcdefghijklmnopqrstuv/',
+      ],
+    },
+    id
+  );
 
-  assert.deepEqual(origins.sort(), [
-    'chrome-extension://abcdefghijklmnopabcdefghijklmnop/',
-    'chrome-extension://qrstuvwxyzabcdefghijklmnopqrstuv/'
-  ].sort());
+  assert.deepEqual(
+    origins.sort(),
+    [
+      'chrome-extension://abcdefghijklmnopabcdefghijklmnop/',
+      'chrome-extension://qrstuvwxyzabcdefghijklmnopqrstuv/',
+    ].sort()
+  );
 });
 
 test('getAllowedOrigins falls back to placeholder when nothing is installed', () => {
   assert.deepEqual(getAllowedOrigins(null, null), [
-    'chrome-extension://__REPLACE_WITH_EXTENSION_ID__/'
+    'chrome-extension://__REPLACE_WITH_EXTENSION_ID__/',
   ]);
 });
 
@@ -150,7 +244,11 @@ test('uninstallNativeManifest removes the native host manifest and bridge dir', 
 
   await fs.promises.mkdir(installDir, { recursive: true });
   await fs.promises.mkdir(bridgeDir, { recursive: true });
-  await fs.promises.writeFile(path.join(installDir, 'com.browserbridge.browser_bridge.json'), '{}\n', 'utf8');
+  await fs.promises.writeFile(
+    path.join(installDir, 'com.browserbridge.browser_bridge.json'),
+    '{}\n',
+    'utf8'
+  );
   await fs.promises.writeFile(path.join(bridgeDir, getLauncherFilename()), 'launcher\n', 'utf8');
 
   try {
@@ -158,12 +256,18 @@ test('uninstallNativeManifest removes the native host manifest and bridge dir', 
       installDir,
       bridgeDir,
       removeBridgeDir: true,
-      stdout: { write() { return true; } }
+      stdout: {
+        write() {
+          return true;
+        },
+      },
     });
 
     assert.equal(result.removedManifest, true);
     assert.equal(result.removedBridgeDir, true);
-    await assert.rejects(fs.promises.access(path.join(installDir, 'com.browserbridge.browser_bridge.json')));
+    await assert.rejects(
+      fs.promises.access(path.join(installDir, 'com.browserbridge.browser_bridge.json'))
+    );
     await assert.rejects(fs.promises.access(bridgeDir));
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });

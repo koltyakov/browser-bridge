@@ -4,11 +4,7 @@
 /** @typedef {import('./types.js').BudgetOptions} BudgetOptions */
 /** @typedef {import('./types.js').TruncateResult} TruncateResult */
 
-import {
-  DEFAULT_MAX_DEPTH,
-  DEFAULT_MAX_NODES,
-  DEFAULT_TEXT_BUDGET,
-} from './defaults.js';
+import { DEFAULT_MAX_DEPTH, DEFAULT_MAX_NODES, DEFAULT_TEXT_BUDGET } from './defaults.js';
 
 /**
  * @param {BudgetOptions} [options={}]
@@ -20,7 +16,7 @@ export function applyBudget(options = {}) {
     maxDepth: clamp(options.maxDepth ?? DEFAULT_MAX_DEPTH, 1, 20),
     textBudget: clamp(options.textBudget ?? DEFAULT_TEXT_BUDGET, 32, 10000),
     includeBbox: options.includeBbox !== false,
-    attributeAllowlist: normalizeList(options.attributeAllowlist)
+    attributeAllowlist: normalizeList(options.attributeAllowlist),
   };
 }
 
@@ -41,7 +37,7 @@ export function truncateText(value, budget) {
   return {
     value: `${value.slice(0, Math.max(0, budget - 1))}\u2026`,
     truncated: true,
-    omitted: value.length - budget
+    omitted: value.length - budget,
   };
 }
 

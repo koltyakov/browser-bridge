@@ -11,7 +11,7 @@ import {
   getCoreManagedSkillName,
   getManagedSkillNames,
   getManagedSkillSentinelFilename,
-  getSkillBasePath
+  getSkillBasePath,
 } from '../src/install.js';
 import { installMcpConfig } from '../src/mcp-config.js';
 import { collectSetupStatus } from '../src/setup-status.js';
@@ -29,7 +29,7 @@ function createDetectors(detectedNames) {
     claude: () => detected.has('claude'),
     codex: () => detected.has('codex'),
     opencode: () => detected.has('opencode'),
-    antigravity: () => detected.has('antigravity')
+    antigravity: () => detected.has('antigravity'),
   };
 }
 
@@ -40,12 +40,18 @@ function createDetectors(detectedNames) {
  * @param {string} [sentinelBody]
  * @returns {Promise<void>}
  */
-async function writeManagedSkill(basePath, skillName, sentinel, sentinelBody = `${skillName} managed\n`) {
+async function writeManagedSkill(
+  basePath,
+  skillName,
+  sentinel,
+  sentinelBody = `${skillName} managed\n`
+) {
   const skillPath = path.join(basePath, skillName);
   await fs.promises.mkdir(skillPath, { recursive: true });
-  const content = sentinelBody === `${skillName} managed\n`
-    ? formatManagedSkillSentinel(skillName)
-    : sentinelBody;
+  const content =
+    sentinelBody === `${skillName} managed\n`
+      ? formatManagedSkillSentinel(skillName)
+      : sentinelBody;
   await fs.promises.writeFile(path.join(skillPath, sentinel), content, 'utf8');
 }
 
@@ -56,7 +62,11 @@ test('collectSetupStatus reports local MCP and skill installation state', async 
     await installMcpConfig('windsurf', {
       global: false,
       cwd: tempDir,
-      stdout: { write() { return true; } }
+      stdout: {
+        write() {
+          return true;
+        },
+      },
     });
 
     const codexBase = path.join(tempDir, '.codex', 'skills');
@@ -65,13 +75,13 @@ test('collectSetupStatus reports local MCP and skill installation state', async 
 
     const cursorBase = getSkillBasePath('cursor', {
       global: false,
-      projectPath: tempDir
+      projectPath: tempDir,
     });
     await writeManagedSkill(cursorBase, getCoreManagedSkillName(), sentinel, 'legacy managed\n');
 
     const windsurfBase = getSkillBasePath('windsurf', {
       global: false,
-      projectPath: tempDir
+      projectPath: tempDir,
     });
     for (const skillName of getManagedSkillNames()) {
       await writeManagedSkill(windsurfBase, skillName, sentinel);
@@ -85,7 +95,7 @@ test('collectSetupStatus reports local MCP and skill installation state', async 
       cwd: tempDir,
       projectPath: tempDir,
       mcpDetectors: createDetectors(['windsurf']),
-      skillDetectors: createDetectors(['codex', 'cursor', 'windsurf', 'opencode', 'antigravity'])
+      skillDetectors: createDetectors(['codex', 'cursor', 'windsurf', 'opencode', 'antigravity']),
     });
 
     assert.equal(status.scope, 'local');
@@ -97,7 +107,7 @@ test('collectSetupStatus reports local MCP and skill installation state', async 
       detected: true,
       configPath: path.join(tempDir, '.windsurf', 'mcp_config.json'),
       configExists: true,
-      configured: true
+      configured: true,
     });
 
     const cursorSkills = status.skillTargets.find((entry) => entry.key === 'cursor');
@@ -151,7 +161,7 @@ test('collectSetupStatus treats detected MCP runtimes as skill-install targets t
       cwd: tempDir,
       projectPath: tempDir,
       mcpDetectors: createDetectors(['cursor', 'windsurf']),
-      skillDetectors: createDetectors([])
+      skillDetectors: createDetectors([]),
     });
 
     const cursorSkills = status.skillTargets.find((entry) => entry.key === 'cursor');
@@ -171,7 +181,9 @@ test('collectSetupStatus treats detected MCP runtimes as skill-install targets t
 });
 
 test('collectSetupStatus uses ~/.copilot/skills for GitHub Copilot global skills', async () => {
-  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-setup-status-copilot-home-'));
+  const tempHome = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bbx-setup-status-copilot-home-')
+  );
   const originalHome = process.env.HOME;
   const sentinel = getManagedSkillSentinelFilename();
 
@@ -180,7 +192,7 @@ test('collectSetupStatus uses ~/.copilot/skills for GitHub Copilot global skills
 
     const copilotBase = getSkillBasePath('copilot', {
       global: true,
-      projectPath: '/tmp/unused'
+      projectPath: '/tmp/unused',
     });
     await writeManagedSkill(copilotBase, getCoreManagedSkillName(), sentinel);
 
@@ -189,7 +201,7 @@ test('collectSetupStatus uses ~/.copilot/skills for GitHub Copilot global skills
       cwd: tempHome,
       projectPath: tempHome,
       mcpDetectors: createDetectors([]),
-      skillDetectors: createDetectors(['copilot'])
+      skillDetectors: createDetectors(['copilot']),
     });
 
     const copilotSkills = status.skillTargets.find((entry) => entry.key === 'copilot');
@@ -210,7 +222,9 @@ test('collectSetupStatus uses ~/.copilot/skills for GitHub Copilot global skills
 });
 
 test('collectSetupStatus reads Copilot global MCP from the user config path', async () => {
-  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-setup-status-copilot-mcp-home-'));
+  const tempHome = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bbx-setup-status-copilot-mcp-home-')
+  );
   const originalHome = process.env.HOME;
   const originalAppData = process.env.APPDATA;
 
@@ -222,7 +236,11 @@ test('collectSetupStatus reads Copilot global MCP from the user config path', as
 
     await installMcpConfig('copilot', {
       global: true,
-      stdout: { write() { return true; } }
+      stdout: {
+        write() {
+          return true;
+        },
+      },
     });
 
     const status = await collectSetupStatus({
@@ -230,7 +248,7 @@ test('collectSetupStatus reads Copilot global MCP from the user config path', as
       cwd: tempHome,
       projectPath: tempHome,
       mcpDetectors: createDetectors(['copilot']),
-      skillDetectors: createDetectors([])
+      skillDetectors: createDetectors([]),
     });
 
     const copilot = status.mcpClients.find((entry) => entry.key === 'copilot');
@@ -255,7 +273,9 @@ test('collectSetupStatus reads Copilot global MCP from the user config path', as
 });
 
 test('collectSetupStatus reads Antigravity global MCP from the documented config path', async () => {
-  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-setup-status-antigravity-mcp-home-'));
+  const tempHome = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bbx-setup-status-antigravity-mcp-home-')
+  );
   const originalHome = process.env.HOME;
 
   try {
@@ -263,7 +283,11 @@ test('collectSetupStatus reads Antigravity global MCP from the documented config
 
     await installMcpConfig('antigravity', {
       global: true,
-      stdout: { write() { return true; } }
+      stdout: {
+        write() {
+          return true;
+        },
+      },
     });
 
     const status = await collectSetupStatus({
@@ -271,7 +295,7 @@ test('collectSetupStatus reads Antigravity global MCP from the documented config
       cwd: tempHome,
       projectPath: tempHome,
       mcpDetectors: createDetectors(['antigravity']),
-      skillDetectors: createDetectors(['antigravity'])
+      skillDetectors: createDetectors(['antigravity']),
     });
 
     const antigravityMcp = status.mcpClients.find((entry) => entry.key === 'antigravity');
@@ -280,12 +304,18 @@ test('collectSetupStatus reads Antigravity global MCP from the documented config
     assert.equal(antigravityMcp.detected, true);
     assert.equal(antigravityMcp.configExists, true);
     assert.equal(antigravityMcp.configured, true);
-    assert.equal(antigravityMcp.configPath, path.join(tempHome, '.gemini', 'antigravity', 'mcp_config.json'));
+    assert.equal(
+      antigravityMcp.configPath,
+      path.join(tempHome, '.gemini', 'antigravity', 'mcp_config.json')
+    );
 
     const antigravitySkills = status.skillTargets.find((entry) => entry.key === 'antigravity');
     assert.ok(antigravitySkills);
     assert.equal(antigravitySkills.detected, true);
-    assert.equal(antigravitySkills.basePath, path.join(tempHome, '.gemini', 'antigravity', 'skills'));
+    assert.equal(
+      antigravitySkills.basePath,
+      path.join(tempHome, '.gemini', 'antigravity', 'skills')
+    );
   } finally {
     if (originalHome === undefined) {
       delete process.env.HOME;
@@ -303,7 +333,11 @@ test('collectSetupStatus reads generic agents local MCP from .agents/mcp.json', 
     await installMcpConfig('agents', {
       global: false,
       cwd: tempDir,
-      stdout: { write() { return true; } }
+      stdout: {
+        write() {
+          return true;
+        },
+      },
     });
 
     const status = await collectSetupStatus({
@@ -311,7 +345,7 @@ test('collectSetupStatus reads generic agents local MCP from .agents/mcp.json', 
       cwd: tempDir,
       projectPath: tempDir,
       mcpDetectors: createDetectors([]),
-      skillDetectors: createDetectors([])
+      skillDetectors: createDetectors([]),
     });
 
     const agentsMcp = status.mcpClients.find((entry) => entry.key === 'agents');
@@ -327,13 +361,15 @@ test('collectSetupStatus reads generic agents local MCP from .agents/mcp.json', 
 });
 
 test('collectSetupStatus marks legacy managed skills as updateable', async () => {
-  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-setup-status-legacy-skill-'));
+  const tempDir = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bbx-setup-status-legacy-skill-')
+  );
   const sentinel = getManagedSkillSentinelFilename();
 
   try {
     const cursorBase = getSkillBasePath('cursor', {
       global: false,
-      projectPath: tempDir
+      projectPath: tempDir,
     });
     await writeManagedSkill(cursorBase, getCoreManagedSkillName(), sentinel, 'legacy managed\n');
 
@@ -342,7 +378,7 @@ test('collectSetupStatus marks legacy managed skills as updateable', async () =>
       cwd: tempDir,
       projectPath: tempDir,
       mcpDetectors: createDetectors([]),
-      skillDetectors: createDetectors(['cursor'])
+      skillDetectors: createDetectors(['cursor']),
     });
 
     const cursorSkills = status.skillTargets.find((entry) => entry.key === 'cursor');
@@ -358,19 +394,25 @@ test('collectSetupStatus marks legacy managed skills as updateable', async () =>
 });
 
 test('collectSetupStatus keeps managed core skill current when MCP is configured later', async () => {
-  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-setup-status-mcp-unchanged-'));
+  const tempDir = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bbx-setup-status-mcp-unchanged-')
+  );
   const sentinel = getManagedSkillSentinelFilename();
 
   try {
     const cursorBase = getSkillBasePath('cursor', {
       global: false,
-      projectPath: tempDir
+      projectPath: tempDir,
     });
     await writeManagedSkill(cursorBase, getCoreManagedSkillName(), sentinel);
     await installMcpConfig('cursor', {
       global: false,
       cwd: tempDir,
-      stdout: { write() { return true; } }
+      stdout: {
+        write() {
+          return true;
+        },
+      },
     });
 
     const status = await collectSetupStatus({
@@ -378,7 +420,7 @@ test('collectSetupStatus keeps managed core skill current when MCP is configured
       cwd: tempDir,
       projectPath: tempDir,
       mcpDetectors: createDetectors(['cursor']),
-      skillDetectors: createDetectors(['cursor'])
+      skillDetectors: createDetectors(['cursor']),
     });
 
     const cursorSkills = status.skillTargets.find((entry) => entry.key === 'cursor');

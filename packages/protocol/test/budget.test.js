@@ -3,11 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  applyBudget,
-  truncateText,
-  summarizeFields,
-} from '../src/index.js';
+import { applyBudget, truncateText, summarizeFields } from '../src/index.js';
 
 // --- applyBudget ---
 
@@ -73,38 +69,62 @@ test('applyBudget sets includeBbox to false when explicitly false', () => {
 });
 
 test('applyBudget normalizeList filters non-string and empty items', () => {
-  // @ts-expect-error - testing runtime behavior
-  const budget = applyBudget({ attributeAllowlist: ['class', 42, '', null, 'id'] });
+  const budget = applyBudget(
+    /** @type {any} */ ({
+      attributeAllowlist: ['class', 42, '', null, 'id'],
+    })
+  );
   assert.deepEqual(budget.attributeAllowlist, ['class', 'id']);
 });
 
 test('applyBudget normalizeList deduplicates items', () => {
-  const budget = applyBudget({ attributeAllowlist: ['id', 'class', 'id', 'class'] });
+  const budget = applyBudget({
+    attributeAllowlist: ['id', 'class', 'id', 'class'],
+  });
   assert.deepEqual(budget.attributeAllowlist, ['id', 'class']);
 });
 
 test('applyBudget normalizeList returns empty array for non-array', () => {
-  // @ts-expect-error - testing runtime behavior
-  const budget = applyBudget({ attributeAllowlist: 'not-an-array' });
+  const budget = applyBudget(/** @type {any} */ ({ attributeAllowlist: 'not-an-array' }));
   assert.deepEqual(budget.attributeAllowlist, []);
 });
 
 // --- truncateText ---
 
 test('truncateText returns empty string for falsy input', () => {
-  assert.deepEqual(truncateText('', 100), { value: '', truncated: false, omitted: 0 });
+  assert.deepEqual(truncateText('', 100), {
+    value: '',
+    truncated: false,
+    omitted: 0,
+  });
   // @ts-expect-error - testing runtime behavior
-  assert.deepEqual(truncateText(null, 100), { value: '', truncated: false, omitted: 0 });
+  assert.deepEqual(truncateText(null, 100), {
+    value: '',
+    truncated: false,
+    omitted: 0,
+  });
   // @ts-expect-error - testing runtime behavior
-  assert.deepEqual(truncateText(undefined, 100), { value: '', truncated: false, omitted: 0 });
+  assert.deepEqual(truncateText(undefined, 100), {
+    value: '',
+    truncated: false,
+    omitted: 0,
+  });
 });
 
 test('truncateText returns original when within budget', () => {
-  assert.deepEqual(truncateText('hello', 10), { value: 'hello', truncated: false, omitted: 0 });
+  assert.deepEqual(truncateText('hello', 10), {
+    value: 'hello',
+    truncated: false,
+    omitted: 0,
+  });
 });
 
 test('truncateText returns original when exactly at budget', () => {
-  assert.deepEqual(truncateText('abcd', 4), { value: 'abcd', truncated: false, omitted: 0 });
+  assert.deepEqual(truncateText('abcd', 4), {
+    value: 'abcd',
+    truncated: false,
+    omitted: 0,
+  });
 });
 
 test('truncateText truncates and appends ellipsis when over budget', () => {

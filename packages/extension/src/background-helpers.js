@@ -14,9 +14,22 @@ import {
 /** @typedef {import('../../protocol/src/types.js').ErrorCode} ErrorCode */
 
 const INTERACTIVE_AX_ROLES = new Set([
-  'button', 'link', 'textbox', 'checkbox', 'radio', 'combobox',
-  'listbox', 'menuitem', 'tab', 'switch', 'slider', 'spinbutton',
-  'searchbox', 'menuitemcheckbox', 'menuitemradio', 'option'
+  'button',
+  'link',
+  'textbox',
+  'checkbox',
+  'radio',
+  'combobox',
+  'listbox',
+  'menuitem',
+  'tab',
+  'switch',
+  'slider',
+  'spinbutton',
+  'searchbox',
+  'menuitemcheckbox',
+  'menuitemradio',
+  'option',
 ]);
 
 /**
@@ -31,7 +44,7 @@ export function summarizeTabResult(tab, method) {
     windowId: typeof tab.windowId === 'number' ? tab.windowId : null,
     url: tab.url ?? '',
     title: tab.title ?? '',
-    status: tab.status ?? 'unknown'
+    status: tab.status ?? 'unknown',
   };
 }
 
@@ -84,7 +97,7 @@ export function simplifyAXNode(node) {
     checked: axTristateValue(node.checked),
     disabled: axBool(node.disabled),
     interactive: INTERACTIVE_AX_ROLES.has(role) || axBool(node.focusable),
-    childIds: Array.isArray(node.childIds) ? node.childIds.map(String) : []
+    childIds: Array.isArray(node.childIds) ? node.childIds.map(String) : [],
   };
 }
 
@@ -99,7 +112,7 @@ export function shouldLogAction(method) {
     'skill.get_runtime_context',
     'setup.get_status',
     'setup.install',
-    'tabs.list'
+    'tabs.list',
   ].includes(method);
 }
 
@@ -130,9 +143,10 @@ export function summarizeActionResult(response) {
     return response.error.message;
   }
 
-  const result = response.result && typeof response.result === 'object'
-    ? /** @type {Record<string, unknown>} */ (response.result)
-    : {};
+  const result =
+    response.result && typeof response.result === 'object'
+      ? /** @type {Record<string, unknown>} */ (response.result)
+      : {};
 
   if (typeof result.patchId === 'string') {
     return `Patch ${result.patchId} applied.`;
@@ -165,24 +179,19 @@ export function summarizeActionResult(response) {
  * }}
  */
 export function estimateResponseTokens(response) {
-  const payload = response.ok
-    ? response.result
-    : { error: response.error };
+  const payload = response.ok ? response.result : { error: response.error };
   const estimate = estimateJsonPayloadCost(payload);
   const responseBytes = estimate.bytes;
-  const result = response.ok && response.result && typeof response.result === 'object'
-    ? /** @type {Record<string, unknown>} */ (response.result)
-    : null;
+  const result =
+    response.ok && response.result && typeof response.result === 'object'
+      ? /** @type {Record<string, unknown>} */ (response.result)
+      : null;
   const hasScreenshot = result != null && typeof result.image === 'string';
   const nodeCount = result != null && Array.isArray(result.nodes) ? result.nodes.length : null;
-  const textPayload = hasScreenshot && result != null
-    ? omitScreenshotImage(result)
-    : payload;
+  const textPayload = hasScreenshot && result != null ? omitScreenshotImage(result) : payload;
   const textEstimate = estimateJsonPayloadCost(textPayload);
   const imageTransportBytes = Math.max(0, responseBytes - textEstimate.bytes);
-  const imageBytes = hasScreenshot && result != null
-    ? estimateInlineImageBytes(result.image)
-    : 0;
+  const imageBytes = hasScreenshot && result != null ? estimateInlineImageBytes(result.image) : 0;
 
   return {
     responseBytes,
@@ -258,11 +267,7 @@ function estimateInlineImageBytes(image) {
     return 0;
   }
 
-  const padding = base64.endsWith('==')
-    ? 2
-    : base64.endsWith('=')
-      ? 1
-      : 0;
+  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
   return Math.max(0, Math.floor((base64.length * 3) / 4) - padding);
 }
 
@@ -277,7 +282,12 @@ function estimateInlineImageBytes(image) {
  * @returns {BridgeResponse}
  */
 export function enforceTokenBudget(method, response, tokenBudget) {
-  if (!response.ok || typeof tokenBudget !== 'number' || !Number.isFinite(tokenBudget) || tokenBudget <= 0) {
+  if (
+    !response.ok ||
+    typeof tokenBudget !== 'number' ||
+    !Number.isFinite(tokenBudget) ||
+    tokenBudget <= 0
+  ) {
     return response;
   }
 
@@ -299,7 +309,11 @@ export function enforceTokenBudget(method, response, tokenBudget) {
   let truncated = false;
   let iterations = 0;
   const MAX_BUDGET_ITERATIONS = 100;
-  while (estimateJsonPayloadCost(cloned).bytes > maxBytes && shrinkForBudget(cloned) && iterations < MAX_BUDGET_ITERATIONS) {
+  while (
+    estimateJsonPayloadCost(cloned).bytes > maxBytes &&
+    shrinkForBudget(cloned) &&
+    iterations < MAX_BUDGET_ITERATIONS
+  ) {
     truncated = true;
     iterations += 1;
   }
@@ -355,9 +369,10 @@ function shrinkForBudget(value) {
 
   for (const key of ['image', 'html', 'text', 'value']) {
     if (typeof value[key] === 'string' && value[key].length > 64) {
-      value[key] = key === 'image'
-        ? '[omitted image over token budget]'
-        : `${value[key].slice(0, Math.max(32, Math.floor(value[key].length * 0.75) - 1))}\u2026`;
+      value[key] =
+        key === 'image'
+          ? '[omitted image over token budget]'
+          : `${value[key].slice(0, Math.max(32, Math.floor(value[key].length * 0.75) - 1))}\u2026`;
       if (typeof value.truncated !== 'boolean') {
         value.truncated = true;
       }
@@ -419,9 +434,7 @@ export function getErrorMessage(error) {
  * @returns {string}
  */
 export function normalizeRuntimeErrorMessage(message) {
-  return /^No tab with id[: ]/i.test(message)
-    ? ERROR_CODES.TAB_MISMATCH
-    : message;
+  return /^No tab with id[: ]/i.test(message) ? ERROR_CODES.TAB_MISMATCH : message;
 }
 
 /**
@@ -434,7 +447,7 @@ export function normalizeCropRect(rect = {}) {
     x: Math.max(0, Math.round((rect.x || 0) * scale)),
     y: Math.max(0, Math.round((rect.y || 0) * scale)),
     width: Math.max(1, Math.round((rect.width || 1) * scale)),
-    height: Math.max(1, Math.round((rect.height || 1) * scale))
+    height: Math.max(1, Math.round((rect.height || 1) * scale)),
   };
 }
 
@@ -455,5 +468,7 @@ export function safeOrigin(url) {
  * @returns {Capability | null}
  */
 export function inferCapability(method) {
-  return getMethodCapability(/** @type {import('../../protocol/src/types.js').BridgeMethod} */ (method));
+  return getMethodCapability(
+    /** @type {import('../../protocol/src/types.js').BridgeMethod} */ (method)
+  );
 }

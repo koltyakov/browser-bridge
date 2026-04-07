@@ -42,16 +42,9 @@ import {
   MCP_CLIENT_NAMES,
   removeMcpConfig,
 } from './mcp-config.js';
-import {
-  getDoctorReport,
-  requestBridge,
-  resolveRef,
-} from './runtime.js';
+import { getDoctorReport, requestBridge, resolveRef } from './runtime.js';
 import { collectSetupStatus } from './setup-status.js';
-import {
-  annotateBridgeSummary,
-  summarizeBridgeResponse,
-} from './subagent.js';
+import { annotateBridgeSummary, summarizeBridgeResponse } from './subagent.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
 /** @typedef {{ image: string, rect: Record<string, unknown> }} ScreenshotResult */
@@ -66,7 +59,7 @@ const REQUEST_SOURCE = 'cli';
  * @returns {string}
  */
 function stripAnsi(str) {
-  // eslint-disable-next-line no-control-regex
+  // oxlint-disable-next-line no-control-regex
   return str.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').replace(/\x1b[^[]/g, '');
 }
 
@@ -82,7 +75,10 @@ function sanitizeOutput(value) {
   if (Array.isArray(value)) return value.map(sanitizeOutput);
   if (value !== null && typeof value === 'object') {
     return Object.fromEntries(
-      Object.entries(/** @type {Record<string, unknown>} */ (value)).map(([k, v]) => [k, sanitizeOutput(v)])
+      Object.entries(/** @type {Record<string, unknown>} */ (value)).map(([k, v]) => [
+        k,
+        sanitizeOutput(v),
+      ])
     );
   }
   return value;
@@ -98,9 +94,7 @@ function readStdin() {
     const chunks = /** @type {Buffer[]} */ ([]);
     process.stdin.setEncoding('utf8');
     process.stdin.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
-    process.stdin.on('end', () =>
-      resolve(Buffer.concat(chunks).toString('utf8').trim()),
-    );
+    process.stdin.on('end', () => resolve(Buffer.concat(chunks).toString('utf8').trim()));
     process.stdin.on('error', reject);
     // If stdin is a TTY and nothing is piped, read nothing
     if (process.stdin.isTTY) {
@@ -117,7 +111,10 @@ if (!command || ['help', '--help', '-h'].includes(command)) {
 }
 
 if (['--version', '-v'].includes(command)) {
-  const pkgPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../package.json');
+  const pkgPath = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    '../../../package.json'
+  );
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
   process.stdout.write(`${pkg.version}\n`);
   process.exit(0);
@@ -125,7 +122,7 @@ if (['--version', '-v'].includes(command)) {
 
 if (command === 'skill') {
   process.stdout.write(
-    `${JSON.stringify(createRuntimeContext(), null, process.stdout.isTTY ? 2 : undefined)}\n`,
+    `${JSON.stringify(createRuntimeContext(), null, process.stdout.isTTY ? 2 : undefined)}\n`
   );
   process.exit(0);
 }
@@ -135,7 +132,7 @@ if (command === 'install') {
   const { fileURLToPath } = await import('node:url');
   const installScript = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    '../../native-host/bin/install-manifest.js',
+    '../../native-host/bin/install-manifest.js'
   );
   execFileSync(process.execPath, [installScript, ...rest], {
     stdio: 'inherit',
@@ -173,12 +170,10 @@ if (command === 'install-skill') {
     const installedManagedTargets = new Set(
       setupStatus.skillTargets
         .filter((entry) => entry.installed && entry.managed)
-        .map((entry) => entry.key),
+        .map((entry) => entry.key)
     );
     const installedManagedTargetList =
-      /** @type {import('./install.js').SupportedTarget[]} */ ([
-        ...installedManagedTargets,
-      ]);
+      /** @type {import('./install.js').SupportedTarget[]} */ ([...installedManagedTargets]);
 
     // Aliases like 'openai' and 'google' map to canonical targets and stay omitted.
     const items = SUPPORTED_TARGETS.map((t) => ({
@@ -193,30 +188,23 @@ if (command === 'install-skill') {
 
     const selected = await interactiveCheckbox(
       'Select agents to install skill for  (↑↓ move · space toggle · a all · enter confirm)',
-      items,
+      items
     );
 
     /** @type {import('./install.js').SupportedTarget[]} */
     let targets;
     if (selected === null) {
       // Non-TTY: prefer managed installs, then detected targets (always includes 'agents').
-      targets =
-        installedManagedTargets.size > 0
-          ? installedManagedTargetList
-          : detected;
+      targets = installedManagedTargets.size > 0 ? installedManagedTargetList : detected;
     } else {
-      targets = /** @type {import('./install.js').SupportedTarget[]} */ (
-        selected
-      );
+      targets = /** @type {import('./install.js').SupportedTarget[]} */ (selected);
     }
 
     const projectPath = isGlobal ? os.homedir() : process.cwd();
     if (selected !== null) {
       const deselectedTargets =
         /** @type {import('./install.js').SupportedTarget[]} */ (
-          installedManagedTargetList.filter(
-            (target) => !targets.includes(target),
-          )
+          installedManagedTargetList.filter((target) => !targets.includes(target))
         );
       const removableTargets = await findInstalledManagedTargets({
         targets: deselectedTargets,
@@ -225,7 +213,7 @@ if (command === 'install-skill') {
       });
       if (removableTargets.length > 0) {
         const confirmed = await interactiveConfirm(
-          `Remove Browser Bridge skill from deselected targets: ${removableTargets.join(', ')}?`,
+          `Remove Browser Bridge skill from deselected targets: ${removableTargets.join(', ')}?`
         );
         if (confirmed) {
           const removedPaths = await removeAgentFiles({
@@ -289,14 +277,10 @@ if (command === 'install-mcp') {
     });
     const detected = detectMcpClients();
     const configuredClients = new Set(
-      setupStatus.mcpClients
-        .filter((entry) => entry.configured)
-        .map((entry) => entry.key),
+      setupStatus.mcpClients.filter((entry) => entry.configured).map((entry) => entry.key)
     );
     const configuredClientList =
-      /** @type {import('./mcp-config.js').McpClientName[]} */ ([
-        ...configuredClients,
-      ]);
+      /** @type {import('./mcp-config.js').McpClientName[]} */ ([...configuredClients]);
     const items = MCP_CLIENT_NAMES.map((c) => ({
       value: c,
       label: `${c.padEnd(10)}  ${MCP_CLIENT_LABELS[c]}`,
@@ -309,7 +293,7 @@ if (command === 'install-mcp') {
 
     const selected = await interactiveCheckbox(
       'Select clients to configure  (↑↓ move · space toggle · a all · enter confirm)',
-      items,
+      items
     );
 
     if (selected === null) {
@@ -321,17 +305,13 @@ if (command === 'install-mcp') {
             ? detected
             : [...MCP_CLIENT_NAMES];
     } else {
-      clients = /** @type {import('./mcp-config.js').McpClientName[]} */ (
-        selected
-      );
+      clients = /** @type {import('./mcp-config.js').McpClientName[]} */ (selected);
     }
 
     if (selected !== null) {
       const deselectedClients =
         /** @type {import('./mcp-config.js').McpClientName[]} */ (
-          configuredClientList.filter(
-            (clientName) => !clients.includes(clientName),
-          )
+          configuredClientList.filter((clientName) => !clients.includes(clientName))
         );
       const removableClients = await findConfiguredMcpClients({
         clients: deselectedClients,
@@ -340,7 +320,7 @@ if (command === 'install-mcp') {
       });
       if (removableClients.length > 0) {
         const confirmed = await interactiveConfirm(
-          `Remove Browser Bridge MCP config from deselected clients: ${removableClients.join(', ')}?`,
+          `Remove Browser Bridge MCP config from deselected clients: ${removableClients.join(', ')}?`
         );
         if (confirmed) {
           for (const clientName of removableClients) {
@@ -371,7 +351,7 @@ if (command === 'install-mcp') {
       for (const part of parts) {
         if (!isMcpClientName(part)) {
           process.stderr.write(
-            `Unknown client "${part}". Supported: ${MCP_CLIENT_NAMES.join(', ')}, all\n`,
+            `Unknown client "${part}". Supported: ${MCP_CLIENT_NAMES.join(', ')}, all\n`
           );
           process.exit(1);
         }
@@ -396,9 +376,7 @@ if (command === 'mcp') {
   }
   if (subcommand === 'config') {
     if (!clientName || !isMcpClientName(clientName)) {
-      process.stderr.write(
-        `Usage: bbx mcp config <${MCP_CLIENT_NAMES.join('|')}>\n`,
-      );
+      process.stderr.write(`Usage: bbx mcp config <${MCP_CLIENT_NAMES.join('|')}>\n`);
       process.exit(1);
     }
     process.stdout.write(formatMcpConfig(clientName));
@@ -419,7 +397,7 @@ async function main() {
         client,
         'health.ping',
         {},
-        { source: REQUEST_SOURCE },
+        { source: REQUEST_SOURCE }
       );
       await printSummary(healthResponse);
       return;
@@ -427,12 +405,7 @@ async function main() {
 
     if (command === 'access-request') {
       await printSummary(
-        await requestBridge(
-          client,
-          'access.request',
-          {},
-          { source: REQUEST_SOURCE },
-        ),
+        await requestBridge(client, 'access.request', {}, { source: REQUEST_SOURCE })
       );
       return;
     }
@@ -451,21 +424,12 @@ async function main() {
     }
 
     if (command === 'logs') {
-      await printSummary(
-        await requestBridge(client, 'log.tail', {}, { source: REQUEST_SOURCE }),
-      );
+      await printSummary(await requestBridge(client, 'log.tail', {}, { source: REQUEST_SOURCE }));
       return;
     }
 
     if (command === 'tabs') {
-      await printSummary(
-        await requestBridge(
-          client,
-          'tabs.list',
-          {},
-          { source: REQUEST_SOURCE },
-        ),
-      );
+      await printSummary(await requestBridge(client, 'tabs.list', {}, { source: REQUEST_SOURCE }));
       return;
     }
 
@@ -477,7 +441,7 @@ async function main() {
         {
           url: url || undefined,
         },
-        { source: REQUEST_SOURCE },
+        { source: REQUEST_SOURCE }
       );
       await printSummary(response);
       return;
@@ -494,7 +458,7 @@ async function main() {
         {
           tabId: parseIntArg(tabId, 'tabId'),
         },
-        { source: REQUEST_SOURCE },
+        { source: REQUEST_SOURCE }
       );
       await printSummary(response);
       return;
@@ -514,9 +478,7 @@ async function main() {
       await ensureClientConnection();
       const input = rest[0];
       if (!input) {
-        throw new Error(
-          'Usage: batch \'[{"method":"...","params":{...}}, ...]\'',
-        );
+        throw new Error('Usage: batch \'[{"method":"...","params":{...}}, ...]\'');
       }
       const calls = JSON.parse(input);
       if (!Array.isArray(calls)) {
@@ -534,7 +496,10 @@ async function main() {
               durationMs: 0,
               approxTokens: 0,
               meta: { protocol_version: '1.0' },
-              error: { code: 'INVALID_REQUEST', message: 'Each batch call needs a method.' },
+              error: {
+                code: 'INVALID_REQUEST',
+                message: 'Each batch call needs a method.',
+              },
               response: null,
             };
           }
@@ -548,14 +513,16 @@ async function main() {
               durationMs: 0,
               approxTokens: 0,
               meta: { protocol_version: '1.0' },
-              error: { code: 'INVALID_REQUEST', message: `Unknown bridge method "${call.method}".` },
+              error: {
+                code: 'INVALID_REQUEST',
+                message: `Unknown bridge method "${call.method}".`,
+              },
               response: null,
             };
           }
           const method = /** @type {BridgeMethod} */ (call.method);
-          const tabId = methodNeedsTab(call.method) && typeof call.tabId === 'number'
-            ? call.tabId
-            : null;
+          const tabId =
+            methodNeedsTab(call.method) && typeof call.tabId === 'number' ? call.tabId : null;
           const startTime = Date.now();
           try {
             const response = await client.request({
@@ -578,20 +545,14 @@ async function main() {
               durationMs: Date.now() - startTime,
             });
           }
-        }),
+        })
       );
       printJson(results);
       return;
     }
 
-    if (
-      command.includes('.')
-      && METHODS.includes(/** @type {BridgeMethod} */ (command))
-    ) {
-      const { tabId, method, params } = await parseCallCommand([
-        command,
-        ...rest,
-      ]);
+    if (command.includes('.') && METHODS.includes(/** @type {BridgeMethod} */ (command))) {
+      const { tabId, method, params } = await parseCallCommand([command, ...rest]);
       const response = await requestBridge(client, method, params, {
         tabId,
         source: REQUEST_SOURCE,
@@ -605,18 +566,13 @@ async function main() {
       let elementRef;
       if (shortcutCmd.resolve) {
         if (!rest[0]) throw new Error(`Usage: ${command} <ref|selector>`);
-        elementRef = await resolveRef(
-          client,
-          rest[0],
-          null,
-          REQUEST_SOURCE,
-        );
+        elementRef = await resolveRef(client, rest[0], null, REQUEST_SOURCE);
       }
       const response = await requestBridge(
         client,
         shortcutCmd.method,
         shortcutCmd.build(rest, elementRef),
-        { source: REQUEST_SOURCE },
+        { source: REQUEST_SOURCE }
       );
       await printSummary(response, shortcutCmd.printMethod);
       return;
@@ -626,12 +582,7 @@ async function main() {
       const [key, refOrSelector] = rest;
       if (!key) throw new Error('Usage: press-key <key> [ref|selector]');
       const elementRef = refOrSelector
-        ? await resolveRef(
-          client,
-          refOrSelector,
-          null,
-          REQUEST_SOURCE,
-        )
+        ? await resolveRef(client, refOrSelector, null, REQUEST_SOURCE)
         : undefined;
       const response = await requestBridge(
         client,
@@ -640,7 +591,7 @@ async function main() {
           key,
           target: elementRef ? { elementRef } : undefined,
         },
-        { source: REQUEST_SOURCE },
+        { source: REQUEST_SOURCE }
       );
       await printSummary(response);
       return;
@@ -649,33 +600,22 @@ async function main() {
     if (command === 'screenshot') {
       const [refOrSelector, outputPath] = rest;
       if (!refOrSelector) throw new Error('Usage: screenshot <ref|selector> [path]');
-      const elementRef = await resolveRef(
-        client,
-        refOrSelector,
-        null,
-        REQUEST_SOURCE,
-      );
+      const elementRef = await resolveRef(client, refOrSelector, null, REQUEST_SOURCE);
       const response = await requestBridge(
         client,
         'screenshot.capture_element',
         {
           elementRef,
         },
-        { source: REQUEST_SOURCE },
+        { source: REQUEST_SOURCE }
       );
       if (!response.ok) {
         await printSummary(response);
         return;
       }
-      const screenshotResult = /** @type {ScreenshotResult} */ (
-        response.result
-      );
-      const filePath =
-        outputPath || path.join(os.tmpdir(), `bbx-${Date.now()}.png`);
-      const data = screenshotResult.image.replace(
-        /^data:image\/png;base64,/,
-        '',
-      );
+      const screenshotResult = /** @type {ScreenshotResult} */ (response.result);
+      const filePath = outputPath || path.join(os.tmpdir(), `bbx-${Date.now()}.png`);
+      const data = screenshotResult.image.replace(/^data:image\/png;base64,/, '');
       await fs.promises.writeFile(filePath, Buffer.from(data, 'base64'));
       printJson({
         ok: true,
@@ -689,9 +629,7 @@ async function main() {
       let expression = rest.join(' ');
       if (!expression || expression === '-') expression = await readStdin();
       if (!expression)
-        throw new Error(
-          'Usage: eval <expression>  (or pipe via stdin: echo "expr" | bbx eval -)',
-        );
+        throw new Error('Usage: eval <expression>  (or pipe via stdin: echo "expr" | bbx eval -)');
       const response = await requestBridge(
         client,
         'page.evaluate',
@@ -699,7 +637,7 @@ async function main() {
           expression,
           returnByValue: true,
         },
-        { source: REQUEST_SOURCE },
+        { source: REQUEST_SOURCE }
       );
       await printSummary(response);
       return;
@@ -710,10 +648,7 @@ async function main() {
     process.exitCode = 1;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const raw =
-      error instanceof Error && 'code' in error
-        ? /** @type {any} */ (error).code
-        : '';
+    const raw = error instanceof Error && 'code' in error ? /** @type {any} */ (error).code : '';
     let code = 'ERROR';
     if (raw === 'ENOENT' || raw === 'ECONNREFUSED') {
       code = 'DAEMON_OFFLINE';
@@ -766,10 +701,7 @@ async function ensureClientConnection() {
  * @returns {Promise<void>}
  */
 async function printSummary(response, method) {
-  printJson(annotateBridgeSummary(
-    summarizeBridgeResponse(response, method),
-    response,
-  ));
+  printJson(annotateBridgeSummary(summarizeBridgeResponse(response, method), response));
 }
 
 /**
@@ -778,7 +710,7 @@ async function printSummary(response, method) {
  */
 function printJson(value) {
   process.stdout.write(
-    `${JSON.stringify(sanitizeOutput(value), null, process.stdout.isTTY ? 2 : undefined)}\n`,
+    `${JSON.stringify(sanitizeOutput(value), null, process.stdout.isTTY ? 2 : undefined)}\n`
   );
 }
 
@@ -846,9 +778,7 @@ async function parseCallCommand(args) {
   if (first.includes('.')) {
     const method = /** @type {BridgeMethod} */ (first);
     if (!METHODS.includes(method)) {
-      throw new Error(
-        `Unknown method "${first}". Run bbx skill to see available methods.`,
-      );
+      throw new Error(`Unknown method "${first}". Run bbx skill to see available methods.`);
     }
     let rawParams = second;
     // Support piped stdin: `echo '{"key":"val"}' | bbx call method -`

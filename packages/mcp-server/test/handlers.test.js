@@ -9,9 +9,7 @@ import {
   DEFAULT_PAGE_TEXT_BUDGET,
 } from '../../protocol/src/index.js';
 import { BridgeClient } from '../../agent-client/src/client.js';
-import {
-  BUDGET_PRESET_DESCRIPTION,
-} from '../src/server.js';
+import { BUDGET_PRESET_DESCRIPTION } from '../src/server.js';
 import {
   CAPTURE_ACTIONS,
   DOM_ACTIONS,
@@ -32,7 +30,7 @@ import {
   handleStatusTool,
   handleStylesLayoutTool,
   handleTabsTool,
-  handleInvestigateTool
+  handleInvestigateTool,
 } from '../src/handlers.js';
 
 /**
@@ -61,7 +59,12 @@ async function withMockedBridge(responder, callback) {
   };
   BridgeClient.prototype.close = async function close() {};
   BridgeClient.prototype.request = async function request(
-    /** @type {{ method: import('../../protocol/src/types.js').BridgeMethod, params?: Record<string, unknown>, tabId?: number | null, meta?: Record<string, unknown> }} */ { method, params = {}, tabId = null, meta = {} }
+    /** @type {{ method: import('../../protocol/src/types.js').BridgeMethod, params?: Record<string, unknown>, tabId?: number | null, meta?: Record<string, unknown> }} */ {
+      method,
+      params = {},
+      tabId = null,
+      meta = {},
+    }
   ) {
     const record = { method, params, tabId, meta };
     calls.push(record);
@@ -87,7 +90,7 @@ function ok(result) {
     ok: true,
     result,
     error: null,
-    meta: { protocol_version: '1.0' }
+    meta: { protocol_version: '1.0' },
   };
 }
 
@@ -102,99 +105,148 @@ function fail(code, message) {
     ok: false,
     result: null,
     error: { code: /** @type {any} */ (code), message, details: null },
-    meta: { protocol_version: '1.0' }
+    meta: { protocol_version: '1.0' },
   };
 }
 
 test('handleTabsTool maps list to tabs.list and returns summarized output', async () => {
-  await withMockedBridge(async () => ok({
-    tabs: [{ tabId: 4, active: true, origin: 'https://example.com', title: 'Example' }]
-  }), async (calls) => {
-    const result = await handleTabsTool({ action: 'list' });
+  await withMockedBridge(
+    async () =>
+      ok({
+        tabs: [
+          {
+            tabId: 4,
+            active: true,
+            origin: 'https://example.com',
+            title: 'Example',
+          },
+        ],
+      }),
+    async (calls) => {
+      const result = await handleTabsTool({ action: 'list' });
 
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].method, 'tabs.list');
-    assert.equal(result.isError, undefined);
-    assert.match(result.content[0].text, /Bridge listed 1 tab/);
-    assert.equal(result.structuredContent.ok, true);
-  });
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].method, 'tabs.list');
+      assert.equal(result.isError, undefined);
+      assert.match(result.content[0].text, /Bridge listed 1 tab/);
+      assert.equal(result.structuredContent.ok, true);
+    }
+  );
 });
 
 test('handleTabsTool forwards active for tabs.create', async () => {
-  await withMockedBridge(async () => ok({ tabId: 4, url: 'https://example.com', active: false }), async (calls) => {
-    const result = await handleTabsTool({ action: 'create', url: 'https://example.com', active: false });
+  await withMockedBridge(
+    async () => ok({ tabId: 4, url: 'https://example.com', active: false }),
+    async (calls) => {
+      const result = await handleTabsTool({
+        action: 'create',
+        url: 'https://example.com',
+        active: false,
+      });
 
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].method, 'tabs.create');
-    assert.equal(calls[0].params?.active, false);
-    assert.equal(result.isError, undefined);
-  });
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].method, 'tabs.create');
+      assert.equal(calls[0].params?.active, false);
+      assert.equal(result.isError, undefined);
+    }
+  );
 });
 
 test('handleDomTool uses default active-tab routing when no tabId is provided', async () => {
-  await withMockedBridge(async (record) => {
-    assert.equal(record.method, 'dom.query');
-    assert.equal(record.tabId, null);
-    return ok({
-      nodes: [
-        { elementRef: 'el_main', tag: 'main', attrs: {}, bbox: {}, textExcerpt: 'Hello' }
-      ]
-    });
-  }, async (calls) => {
-    const result = await handleDomTool({ action: 'query', selector: 'main' });
+  await withMockedBridge(
+    async (record) => {
+      assert.equal(record.method, 'dom.query');
+      assert.equal(record.tabId, null);
+      return ok({
+        nodes: [
+          {
+            elementRef: 'el_main',
+            tag: 'main',
+            attrs: {},
+            bbox: {},
+            textExcerpt: 'Hello',
+          },
+        ],
+      });
+    },
+    async (calls) => {
+      const result = await handleDomTool({ action: 'query', selector: 'main' });
 
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].tabId, null);
-    assert.match(result.content[0].text, /DOM query returned 1 element/);
-    assert.equal(result.structuredContent.ok, true);
-  });
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].tabId, null);
+      assert.match(result.content[0].text, /DOM query returned 1 element/);
+      assert.equal(result.structuredContent.ok, true);
+    }
+  );
 });
 
 test('handleTabsTool translates bridge failures into MCP tool errors', async () => {
-  await withMockedBridge(async () => fail('ACCESS_DENIED', 'Denied'), async () => {
-    const result = await handleTabsTool({ action: 'list' });
-    assert.equal(result.isError, true);
-    assert.match(result.content[0].text, /ACCESS_DENIED/);
-    assert.equal(result.structuredContent.ok, false);
-  });
+  await withMockedBridge(
+    async () => fail('ACCESS_DENIED', 'Denied'),
+    async () => {
+      const result = await handleTabsTool({ action: 'list' });
+      assert.equal(result.isError, true);
+      assert.match(result.content[0].text, /ACCESS_DENIED/);
+      assert.equal(result.structuredContent.ok, false);
+    }
+  );
 });
 
 test('handleTabsTool retries one transient bridge failure', async () => {
-  await withMockedBridge(async (_record, index) => {
-    if (index === 0) {
-      return fail('TIMEOUT', 'Slow page text');
-    }
-    return ok({
-      tabs: [{ tabId: 4, active: true, origin: 'https://example.com', title: 'Example' }]
-    });
-  }, async (calls) => {
-    const result = await handleTabsTool({ action: 'list' });
+  await withMockedBridge(
+    async (_record, index) => {
+      if (index === 0) {
+        return fail('TIMEOUT', 'Slow page text');
+      }
+      return ok({
+        tabs: [
+          {
+            tabId: 4,
+            active: true,
+            origin: 'https://example.com',
+            title: 'Example',
+          },
+        ],
+      });
+    },
+    async (calls) => {
+      const result = await handleTabsTool({ action: 'list' });
 
-    assert.equal(calls.length, 2);
-    assert.equal(calls[0].method, 'tabs.list');
-    assert.equal(calls[1].method, 'tabs.list');
-    assert.equal(result.isError, undefined);
-    assert.equal(result.structuredContent.ok, true);
-  });
+      assert.equal(calls.length, 2);
+      assert.equal(calls[0].method, 'tabs.list');
+      assert.equal(calls[1].method, 'tabs.list');
+      assert.equal(result.isError, undefined);
+      assert.equal(result.structuredContent.ok, true);
+    }
+  );
 });
 
 test('handleTabsTool does not retry non-retriable bridge failures', async () => {
-  await withMockedBridge(async () => fail('ACCESS_DENIED', 'Denied'), async (calls) => {
-    const result = await handleTabsTool({ action: 'list' });
+  await withMockedBridge(
+    async () => fail('ACCESS_DENIED', 'Denied'),
+    async (calls) => {
+      const result = await handleTabsTool({ action: 'list' });
 
-    assert.equal(calls.length, 1);
-    assert.equal(result.isError, true);
-    assert.equal(result.structuredContent.ok, false);
-  });
+      assert.equal(calls.length, 1);
+      assert.equal(result.isError, true);
+      assert.equal(result.structuredContent.ok, false);
+    }
+  );
 });
 
 test('handleRawCallTool rejects unsupported methods without calling the bridge', async () => {
-  await withMockedBridge(async () => ok({}), async (calls) => {
-    const result = await handleRawCallTool({ method: 'not.real', params: {} });
-    assert.equal(calls.length, 0);
-    assert.equal(result.isError, true);
-    assert.match(result.content[0].text, /Unknown bridge method/);
-  });
+  await withMockedBridge(
+    async () => ok({}),
+    async (calls) => {
+      const result = await handleRawCallTool({
+        method: 'not.real',
+        params: {},
+      });
+      assert.equal(calls.length, 0);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0].text, /Unknown bridge method/);
+    }
+  );
 });
 
 test('handleStatusTool returns doctor report without bridge calls', async () => {
@@ -215,186 +267,287 @@ test('handleSkillTool returns runtime context without a bridge connection', asyn
 });
 
 test('handlePageTool state calls page.get_state', async () => {
-  await withMockedBridge(async () => ok({
-    url: 'https://example.com/',
-    title: 'Example',
-    origin: 'https://example.com',
-    hints: {}
-  }), async (calls) => {
-    const result = await handlePageTool({ action: 'state' });
-    const pageCall = calls.find((c) => c.method === 'page.get_state');
-    assert.ok(pageCall, 'page.get_state should be called');
-    assert.equal(result.isError, undefined);
-  });
+  await withMockedBridge(
+    async () =>
+      ok({
+        url: 'https://example.com/',
+        title: 'Example',
+        origin: 'https://example.com',
+        hints: {},
+      }),
+    async (calls) => {
+      const result = await handlePageTool({ action: 'state' });
+      const pageCall = calls.find((c) => c.method === 'page.get_state');
+      assert.ok(pageCall, 'page.get_state should be called');
+      assert.equal(result.isError, undefined);
+    }
+  );
 });
 
 test('handlePageTool evaluate calls page.evaluate with given expression', async () => {
-  await withMockedBridge(async () => ok({ value: 42, type: 'number' }), async (calls) => {
-    const result = await handlePageTool({ action: 'evaluate', expression: '1+1' });
-    const evalCall = calls.find((c) => c.method === 'page.evaluate');
-    assert.ok(evalCall, 'page.evaluate should be called');
-    assert.ok(evalCall.params);
-    assert.equal(evalCall.params.expression, '1+1');
-    assert.equal(evalCall.meta?.source, 'mcp');
-    assert.equal(result.isError, undefined);
-  });
+  await withMockedBridge(
+    async () => ok({ value: 42, type: 'number' }),
+    async (calls) => {
+      const result = await handlePageTool({
+        action: 'evaluate',
+        expression: '1+1',
+      });
+      const evalCall = calls.find((c) => c.method === 'page.evaluate');
+      assert.ok(evalCall, 'page.evaluate should be called');
+      assert.ok(evalCall.params);
+      assert.equal(evalCall.params.expression, '1+1');
+      assert.equal(evalCall.meta?.source, 'mcp');
+      assert.equal(result.isError, undefined);
+    }
+  );
 });
 
 test('handleNavigationTool navigate calls navigation.navigate', async () => {
-  await withMockedBridge(async () => ok({ navigated: true }), async (calls) => {
-    const result = await handleNavigationTool({ action: 'navigate', url: 'https://example.com' });
-    const navCall = calls.find((c) => c.method === 'navigation.navigate');
-    assert.ok(navCall, 'navigation.navigate should be called');
-    assert.ok(navCall.params);
-    assert.equal(navCall.params.url, 'https://example.com');
-    assert.equal(result.isError, undefined);
-  });
+  await withMockedBridge(
+    async () => ok({ navigated: true }),
+    async (calls) => {
+      const result = await handleNavigationTool({
+        action: 'navigate',
+        url: 'https://example.com',
+      });
+      const navCall = calls.find((c) => c.method === 'navigation.navigate');
+      assert.ok(navCall, 'navigation.navigate should be called');
+      assert.ok(navCall.params);
+      assert.equal(navCall.params.url, 'https://example.com');
+      assert.equal(result.isError, undefined);
+    }
+  );
 });
 
 test('handleNavigationTool scroll calls viewport.scroll', async () => {
-  await withMockedBridge(async () => ok({}), async (calls) => {
-    const result = await handleNavigationTool({ action: 'scroll', top: 500 });
-    const scrollCall = calls.find((c) => c.method === 'viewport.scroll');
-    assert.ok(scrollCall, 'viewport.scroll should be called');
-    assert.ok(scrollCall.params);
-    assert.equal(scrollCall.params.top, 500);
-    assert.equal(result.isError, undefined);
-  });
+  await withMockedBridge(
+    async () => ok({}),
+    async (calls) => {
+      const result = await handleNavigationTool({ action: 'scroll', top: 500 });
+      const scrollCall = calls.find((c) => c.method === 'viewport.scroll');
+      assert.ok(scrollCall, 'viewport.scroll should be called');
+      assert.ok(scrollCall.params);
+      assert.equal(scrollCall.params.top, 500);
+      assert.equal(result.isError, undefined);
+    }
+  );
 });
 
 test('handleInputTool click resolves elementRef and calls input.click', async () => {
-  await withMockedBridge(async (record) => {
-    if (record.method === 'dom.query') {
-      return ok({ nodes: [{ elementRef: 'el_btn', tag: 'button', attrs: {}, bbox: {}, textExcerpt: 'OK' }] });
+  await withMockedBridge(
+    async (record) => {
+      if (record.method === 'dom.query') {
+        return ok({
+          nodes: [
+            {
+              elementRef: 'el_btn',
+              tag: 'button',
+              attrs: {},
+              bbox: {},
+              textExcerpt: 'OK',
+            },
+          ],
+        });
+      }
+      return ok({});
+    },
+    async (calls) => {
+      const result = await handleInputTool({
+        action: 'click',
+        selector: 'button',
+      });
+      const clickCall = calls.find((c) => c.method === 'input.click');
+      assert.ok(clickCall, 'input.click should be called');
+      assert.equal(result.isError, undefined);
     }
-    return ok({});
-  }, async (calls) => {
-    const result = await handleInputTool({ action: 'click', selector: 'button' });
-    const clickCall = calls.find((c) => c.method === 'input.click');
-    assert.ok(clickCall, 'input.click should be called');
-    assert.equal(result.isError, undefined);
-  });
+  );
 });
 
 test('handleStylesLayoutTool computed resolves ref and calls styles.get_computed', async () => {
-  await withMockedBridge(async (record) => {
-    if (record.method === 'dom.query') {
-      return ok({ nodes: [{ elementRef: 'el_div', tag: 'div', attrs: {}, bbox: {}, textExcerpt: '' }] });
+  await withMockedBridge(
+    async (record) => {
+      if (record.method === 'dom.query') {
+        return ok({
+          nodes: [
+            {
+              elementRef: 'el_div',
+              tag: 'div',
+              attrs: {},
+              bbox: {},
+              textExcerpt: '',
+            },
+          ],
+        });
+      }
+      return ok({ properties: { color: 'red' }, elementRef: 'el_div' });
+    },
+    async (calls) => {
+      const result = await handleStylesLayoutTool({
+        action: 'computed',
+        selector: 'div',
+        properties: ['color'],
+      });
+      const styleCall = calls.find((c) => c.method === 'styles.get_computed');
+      assert.ok(styleCall, 'styles.get_computed should be called');
+      assert.equal(result.isError, undefined);
     }
-    return ok({ properties: { color: 'red' }, elementRef: 'el_div' });
-  }, async (calls) => {
-    const result = await handleStylesLayoutTool({ action: 'computed', selector: 'div', properties: ['color'] });
-    const styleCall = calls.find((c) => c.method === 'styles.get_computed');
-    assert.ok(styleCall, 'styles.get_computed should be called');
-    assert.equal(result.isError, undefined);
-  });
+  );
 });
 
 test('handlePatchTool list calls patch.list', async () => {
-  await withMockedBridge(async () => ok({ patches: [] }), async (calls) => {
-    const result = await handlePatchTool({ action: 'list' });
-    const patchCall = calls.find((c) => c.method === 'patch.list');
-    assert.ok(patchCall, 'patch.list should be called');
-    assert.equal(result.isError, undefined);
-  });
+  await withMockedBridge(
+    async () => ok({ patches: [] }),
+    async (calls) => {
+      const result = await handlePatchTool({ action: 'list' });
+      const patchCall = calls.find((c) => c.method === 'patch.list');
+      assert.ok(patchCall, 'patch.list should be called');
+      assert.equal(result.isError, undefined);
+    }
+  );
 });
 
 test('handleCaptureTool element resolves ref and calls screenshot.capture_element', async () => {
-  await withMockedBridge(async (record) => {
-    if (record.method === 'dom.query') {
-      return ok({ nodes: [{ elementRef: 'el_hero', tag: 'div', attrs: {}, bbox: {}, textExcerpt: '' }] });
+  await withMockedBridge(
+    async (record) => {
+      if (record.method === 'dom.query') {
+        return ok({
+          nodes: [
+            {
+              elementRef: 'el_hero',
+              tag: 'div',
+              attrs: {},
+              bbox: {},
+              textExcerpt: '',
+            },
+          ],
+        });
+      }
+      return ok({ image: 'data:image/png;base64,abc', rect: {} });
+    },
+    async (calls) => {
+      const result = await handleCaptureTool({
+        action: 'element',
+        selector: '.hero',
+      });
+      const captureCall = calls.find((c) => c.method === 'screenshot.capture_element');
+      assert.ok(captureCall, 'screenshot.capture_element should be called');
+      assert.equal(result.isError, undefined);
     }
-    return ok({ image: 'data:image/png;base64,abc', rect: {} });
-  }, async (calls) => {
-    const result = await handleCaptureTool({ action: 'element', selector: '.hero' });
-    const captureCall = calls.find((c) => c.method === 'screenshot.capture_element');
-    assert.ok(captureCall, 'screenshot.capture_element should be called');
-    assert.equal(result.isError, undefined);
-  });
+  );
 });
 
 test('grouped MCP tools accept explicit tabId and budget presets', async () => {
-  await withMockedBridge(async (record) => {
-    if (record.method === 'dom.query') {
-      return ok({ nodes: [{ elementRef: 'el_main', tag: 'main', attrs: {}, bbox: {}, textExcerpt: 'Hello' }] });
+  await withMockedBridge(
+    async (record) => {
+      if (record.method === 'dom.query') {
+        return ok({
+          nodes: [
+            {
+              elementRef: 'el_main',
+              tag: 'main',
+              attrs: {},
+              bbox: {},
+              textExcerpt: 'Hello',
+            },
+          ],
+        });
+      }
+      return ok({ value: 'Ready', truncated: false, length: 5 });
+    },
+    async (calls) => {
+      const domResult = await handleDomTool({
+        action: 'query',
+        selector: 'main',
+        tabId: 88,
+        budgetPreset: 'quick',
+      });
+
+      await handlePageTool({
+        action: 'text',
+        tabId: 88,
+        budgetPreset: 'deep',
+      });
+
+      const domCall = calls.find((call) => call.method === 'dom.query');
+      const pageTextCall = calls.find((call) => call.method === 'page.get_text');
+      assert.ok(domCall);
+      assert.ok(domCall.params);
+      assert.ok(domCall.meta);
+      assert.equal(domCall.tabId, 88);
+      assert.equal(domCall.params.maxNodes, 5);
+      assert.equal(domCall.params.maxDepth, 2);
+      assert.equal(domCall.params.textBudget, 300);
+      assert.equal(domCall.meta.token_budget, 500);
+      const deliveredTokens = Number(domResult.structuredContent.deliveredTokens);
+      const summaryTokens = Number(domResult.structuredContent.summaryTokens);
+      const transportTokens = Number(domResult.structuredContent.transportTokens);
+      assert.ok(deliveredTokens > 0);
+      assert.ok(summaryTokens > 0);
+      assert.ok(transportTokens > 0);
+
+      assert.ok(pageTextCall);
+      assert.ok(pageTextCall.params);
+      assert.ok(pageTextCall.meta);
+      assert.equal(pageTextCall.tabId, 88);
+      assert.equal(pageTextCall.params.textBudget, 2000);
+      assert.equal(pageTextCall.meta.token_budget, 4000);
     }
-    return ok({ value: 'Ready', truncated: false, length: 5 });
-  }, async (calls) => {
-    const domResult = await handleDomTool({
-      action: 'query',
-      selector: 'main',
-      tabId: 88,
-      budgetPreset: 'quick',
-    });
-
-    await handlePageTool({
-      action: 'text',
-      tabId: 88,
-      budgetPreset: 'deep',
-    });
-
-    const domCall = calls.find((call) => call.method === 'dom.query');
-    const pageTextCall = calls.find((call) => call.method === 'page.get_text');
-    assert.ok(domCall);
-    assert.ok(domCall.params);
-    assert.ok(domCall.meta);
-    assert.equal(domCall.tabId, 88);
-    assert.equal(domCall.params.maxNodes, 5);
-    assert.equal(domCall.params.maxDepth, 2);
-    assert.equal(domCall.params.textBudget, 300);
-    assert.equal(domCall.meta.token_budget, 500);
-    const deliveredTokens = Number(domResult.structuredContent.deliveredTokens);
-    const summaryTokens = Number(domResult.structuredContent.summaryTokens);
-    const transportTokens = Number(domResult.structuredContent.transportTokens);
-    assert.ok(deliveredTokens > 0);
-    assert.ok(summaryTokens > 0);
-    assert.ok(transportTokens > 0);
-
-    assert.ok(pageTextCall);
-    assert.ok(pageTextCall.params);
-    assert.ok(pageTextCall.meta);
-    assert.equal(pageTextCall.tabId, 88);
-    assert.equal(pageTextCall.params.textBudget, 2000);
-    assert.equal(pageTextCall.meta.token_budget, 4000);
-  });
+  );
 });
 
 test('handleBatchTool preserves order and reports mixed results with tab routing', async () => {
-  await withMockedBridge(async (record) => {
-    if (record.method === 'dom.query') {
-      return ok({ nodes: [{ elementRef: 'el_main', tag: 'main', attrs: {}, bbox: {}, textExcerpt: 'Hello' }] });
-    }
-    if (record.method === 'page.get_text') {
-      return fail('TIMEOUT', 'Slow page text');
-    }
-    return ok({ daemon: 'ok', extensionConnected: true });
-  }, async (calls) => {
-    const result = await handleBatchTool({
-      calls: [
-        { method: 'health.ping' },
-        { method: 'dom.query', params: { selector: 'main' }, budgetPreset: 'quick', tabId: 91 },
-        { method: 'page.get_text', budgetPreset: 'normal' },
-      ],
-    });
+  await withMockedBridge(
+    async (record) => {
+      if (record.method === 'dom.query') {
+        return ok({
+          nodes: [
+            {
+              elementRef: 'el_main',
+              tag: 'main',
+              attrs: {},
+              bbox: {},
+              textExcerpt: 'Hello',
+            },
+          ],
+        });
+      }
+      if (record.method === 'page.get_text') {
+        return fail('TIMEOUT', 'Slow page text');
+      }
+      return ok({ daemon: 'ok', extensionConnected: true });
+    },
+    async (calls) => {
+      const result = await handleBatchTool({
+        calls: [
+          { method: 'health.ping' },
+          {
+            method: 'dom.query',
+            params: { selector: 'main' },
+            budgetPreset: 'quick',
+            tabId: 91,
+          },
+          { method: 'page.get_text', budgetPreset: 'normal' },
+        ],
+      });
 
-    const batchResults = /** @type {Array<{ method: string }>} */ (
-      result.structuredContent.results
-    );
-    assert.equal(result.isError, true);
-    assert.equal(result.structuredContent.ok, false);
-    assert.equal(batchResults.length, 3);
-    assert.equal(batchResults[0].method, 'health.ping');
-    assert.equal(batchResults[1].method, 'dom.query');
-    assert.equal(batchResults[2].method, 'page.get_text');
-    assert.equal(typeof /** @type {any} */ (batchResults[0]).durationMs, 'number');
-    assert.equal(typeof /** @type {any} */ (batchResults[0]).approxTokens, 'number');
-    assert.ok('meta' in /** @type {any} */ (batchResults[0]));
+      const batchResults =
+        /** @type {Array<{ method: string }>} */ (result.structuredContent.results);
+      assert.equal(result.isError, true);
+      assert.equal(result.structuredContent.ok, false);
+      assert.equal(batchResults.length, 3);
+      assert.equal(batchResults[0].method, 'health.ping');
+      assert.equal(batchResults[1].method, 'dom.query');
+      assert.equal(batchResults[2].method, 'page.get_text');
+      assert.equal(typeof (/** @type {any} */ (batchResults[0]).durationMs), 'number');
+      assert.equal(typeof (/** @type {any} */ (batchResults[0]).approxTokens), 'number');
+      assert.ok('meta' in /** @type {any} */ (batchResults[0]));
 
-    const domCall = calls.find((call) => call.method === 'dom.query');
-    const pageTextCall = calls.find((call) => call.method === 'page.get_text');
-    assert.equal(domCall?.tabId, 91);
-    assert.equal(pageTextCall?.tabId, null);
-  });
+      const domCall = calls.find((call) => call.method === 'dom.query');
+      const pageTextCall = calls.find((call) => call.method === 'page.get_text');
+      assert.equal(domCall?.tabId, 91);
+      assert.equal(pageTextCall?.tabId, null);
+    }
+  );
 });
 
 test('MCP descriptions stay aligned with protocol defaults', () => {
@@ -412,12 +565,15 @@ test('grouped MCP tool action maps stay aligned with the bridge method registry'
     PAGE_ACTIONS,
     NAVIGATION_ACTIONS,
     PATCH_ACTIONS,
-    CAPTURE_ACTIONS
+    CAPTURE_ACTIONS,
   ];
 
   for (const collection of actionCollections) {
     for (const entry of Object.values(collection)) {
-      assert.ok(BRIDGE_METHOD_REGISTRY[entry.method], `${entry.method} should exist in the bridge registry`);
+      assert.ok(
+        BRIDGE_METHOD_REGISTRY[entry.method],
+        `${entry.method} should exist in the bridge registry`
+      );
     }
   }
 
@@ -431,37 +587,85 @@ test('grouped MCP tool action maps stay aligned with the bridge method registry'
 // ---------------------------------------------------------------------------
 
 test('handleInvestigateTool normal scope runs page.get_state, dom.query, page.get_text', async () => {
-  await withMockedBridge(async (record) => {
-    if (record.method === 'page.get_state') return ok({ url: 'https://example.com/', title: 'Example', origin: 'https://example.com', readyState: 'complete', hints: {} });
-    if (record.method === 'dom.query') return ok({ nodes: [{ elementRef: 'el_1', tag: 'div', attrs: {}, bbox: {}, textExcerpt: 'Hello' }] });
-    if (record.method === 'page.get_text') return ok({ text: 'Hello world', truncated: false, length: 11 });
-    return ok({});
-  }, async (calls) => {
-    const result = await handleInvestigateTool({ objective: 'Find the main heading' });
-    assert.equal(calls.length, 3);
-    assert.equal(calls[0].method, 'page.get_state');
-    assert.equal(calls[1].method, 'dom.query');
-    assert.equal(calls[2].method, 'page.get_text');
-    assert.equal(result.isError, undefined);
-    assert.equal(result.structuredContent.ok, true);
-    assert.equal(result.structuredContent.heuristicFallback, true);
-    assert.equal(/** @type {unknown[]} */ (result.structuredContent.steps).length, 3);
-    assert.match(result.content[0].text, /Investigation complete/);
-  });
+  await withMockedBridge(
+    async (record) => {
+      if (record.method === 'page.get_state')
+        return ok({
+          url: 'https://example.com/',
+          title: 'Example',
+          origin: 'https://example.com',
+          readyState: 'complete',
+          hints: {},
+        });
+      if (record.method === 'dom.query')
+        return ok({
+          nodes: [
+            {
+              elementRef: 'el_1',
+              tag: 'div',
+              attrs: {},
+              bbox: {},
+              textExcerpt: 'Hello',
+            },
+          ],
+        });
+      if (record.method === 'page.get_text')
+        return ok({ text: 'Hello world', truncated: false, length: 11 });
+      return ok({});
+    },
+    async (calls) => {
+      const result = await handleInvestigateTool({
+        objective: 'Find the main heading',
+      });
+      assert.equal(calls.length, 3);
+      assert.equal(calls[0].method, 'page.get_state');
+      assert.equal(calls[1].method, 'dom.query');
+      assert.equal(calls[2].method, 'page.get_text');
+      assert.equal(result.isError, undefined);
+      assert.equal(result.structuredContent.ok, true);
+      assert.equal(result.structuredContent.heuristicFallback, true);
+      assert.equal(/** @type {unknown[]} */ (result.structuredContent.steps).length, 3);
+      assert.match(result.content[0].text, /Investigation complete/);
+    }
+  );
 });
 
 test('handleInvestigateTool quick scope runs only page.get_state and dom.query', async () => {
-  await withMockedBridge(async (record) => {
-    if (record.method === 'page.get_state') return ok({ url: 'https://example.com/', title: 'Ex', origin: 'https://example.com', readyState: 'complete', hints: {} });
-    if (record.method === 'dom.query') return ok({ nodes: [{ elementRef: 'el_1', tag: 'body', attrs: {}, bbox: {}, textExcerpt: '' }] });
-    return ok({});
-  }, async (calls) => {
-    const result = await handleInvestigateTool({ objective: 'Check page', scope: 'quick' });
-    assert.equal(calls.length, 2);
-    assert.equal(calls[0].method, 'page.get_state');
-    assert.equal(calls[1].method, 'dom.query');
-    assert.equal(result.structuredContent.scope, 'quick');
-  });
+  await withMockedBridge(
+    async (record) => {
+      if (record.method === 'page.get_state')
+        return ok({
+          url: 'https://example.com/',
+          title: 'Ex',
+          origin: 'https://example.com',
+          readyState: 'complete',
+          hints: {},
+        });
+      if (record.method === 'dom.query')
+        return ok({
+          nodes: [
+            {
+              elementRef: 'el_1',
+              tag: 'body',
+              attrs: {},
+              bbox: {},
+              textExcerpt: '',
+            },
+          ],
+        });
+      return ok({});
+    },
+    async (calls) => {
+      const result = await handleInvestigateTool({
+        objective: 'Check page',
+        scope: 'quick',
+      });
+      assert.equal(calls.length, 2);
+      assert.equal(calls[0].method, 'page.get_state');
+      assert.equal(calls[1].method, 'dom.query');
+      assert.equal(result.structuredContent.scope, 'quick');
+    }
+  );
 });
 
 test('handleInvestigateTool rejects missing objective', async () => {
@@ -472,30 +676,70 @@ test('handleInvestigateTool rejects missing objective', async () => {
 
 test('handleInvestigateTool continues after individual step failure', async () => {
   let callCount = 0;
-  await withMockedBridge(async () => {
-    callCount++;
-    if (callCount === 2) return fail('ACCESS_DENIED', 'Denied');
-    return ok({ url: 'https://example.com/', title: 'Ex', origin: 'https://example.com', readyState: 'complete', hints: {} });
-  }, async (calls) => {
-    const result = await handleInvestigateTool({ objective: 'Test failure', scope: 'normal' });
-    assert.equal(calls.length, 3); // all 3 steps attempted (ACCESS_DENIED is not retriable)
-    assert.equal(result.isError, true);
-    assert.equal(result.structuredContent.ok, false);
-    assert.match(result.content[0].text, /partial/);
-  });
+  await withMockedBridge(
+    async () => {
+      callCount++;
+      if (callCount === 2) return fail('ACCESS_DENIED', 'Denied');
+      return ok({
+        url: 'https://example.com/',
+        title: 'Ex',
+        origin: 'https://example.com',
+        readyState: 'complete',
+        hints: {},
+      });
+    },
+    async (calls) => {
+      const result = await handleInvestigateTool({
+        objective: 'Test failure',
+        scope: 'normal',
+      });
+      assert.equal(calls.length, 3); // all 3 steps attempted (ACCESS_DENIED is not retriable)
+      assert.equal(result.isError, true);
+      assert.equal(result.structuredContent.ok, false);
+      assert.match(result.content[0].text, /partial/);
+    }
+  );
 });
 
 test('handleInvestigateTool forwards tabId to bridge calls', async () => {
-  await withMockedBridge(async () => ok({ url: 'https://example.com/', title: 'Ex', origin: 'https://example.com', readyState: 'complete', hints: {} }), async (calls) => {
-    await handleInvestigateTool({ objective: 'Check tab', scope: 'quick', tabId: 42 });
-    assert.equal(calls[0].tabId, 42);
-    assert.equal(calls[1].tabId, 42);
-  });
+  await withMockedBridge(
+    async () =>
+      ok({
+        url: 'https://example.com/',
+        title: 'Ex',
+        origin: 'https://example.com',
+        readyState: 'complete',
+        hints: {},
+      }),
+    async (calls) => {
+      await handleInvestigateTool({
+        objective: 'Check tab',
+        scope: 'quick',
+        tabId: 42,
+      });
+      assert.equal(calls[0].tabId, 42);
+      assert.equal(calls[1].tabId, 42);
+    }
+  );
 });
 
 test('handleInvestigateTool passes selector to dom.query', async () => {
-  await withMockedBridge(async () => ok({ url: 'https://example.com/', title: 'Ex', origin: 'https://example.com', readyState: 'complete', hints: {} }), async (calls) => {
-    await handleInvestigateTool({ objective: 'Inspect nav', scope: 'quick', selector: 'nav.main' });
-    assert.equal(calls[1].params?.selector, 'nav.main');
-  });
+  await withMockedBridge(
+    async () =>
+      ok({
+        url: 'https://example.com/',
+        title: 'Ex',
+        origin: 'https://example.com',
+        readyState: 'complete',
+        hints: {},
+      }),
+    async (calls) => {
+      await handleInvestigateTool({
+        objective: 'Inspect nav',
+        scope: 'quick',
+        selector: 'nav.main',
+      });
+      assert.equal(calls[1].params?.selector, 'nav.main');
+    }
+  );
 });

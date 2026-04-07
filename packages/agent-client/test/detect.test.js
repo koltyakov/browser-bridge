@@ -44,17 +44,18 @@ async function loadDetectModule(t, { homeDir, existingPaths = [], availableComma
     error.code = 'ENOENT';
     throw error;
   });
-  t.mock.method(childProcess, 'execFileSync', (
-    /** @type {string} */ _which,
-    /** @type {readonly string[] | undefined} */ args
-  ) => {
-    const cmd = Array.isArray(args) ? String(args[0] ?? '') : '';
-    commandChecks.push(cmd);
-    if (commands.has(cmd)) {
-      return Buffer.from('');
+  t.mock.method(
+    childProcess,
+    'execFileSync',
+    (/** @type {string} */ _which, /** @type {readonly string[] | undefined} */ args) => {
+      const cmd = Array.isArray(args) ? String(args[0] ?? '') : '';
+      commandChecks.push(cmd);
+      if (commands.has(cmd)) {
+        return Buffer.from('');
+      }
+      throw new Error(`command not found: ${cmd}`);
     }
-    throw new Error(`command not found: ${cmd}`);
-  });
+  );
   syncBuiltinESMExports();
   t.after(() => {
     syncBuiltinESMExports();
@@ -66,7 +67,7 @@ async function loadDetectModule(t, { homeDir, existingPaths = [], availableComma
   return {
     detectMcpClients: detectModule.detectMcpClients,
     detectSkillTargets: detectModule.detectSkillTargets,
-    commandChecks
+    commandChecks,
   };
 }
 
@@ -79,7 +80,7 @@ test('default detectors honor filesystem markers before command lookup', async (
     path.join(getVsCodeUserDataDir(homeDir), 'User'),
     path.join(homeDir, '.config', 'opencode'),
     path.join(homeDir, '.gemini', 'antigravity'),
-    path.join(homeDir, '.codeium', 'windsurf')
+    path.join(homeDir, '.codeium', 'windsurf'),
   ];
   const detect = await loadDetectModule(t, { homeDir, existingPaths });
 
@@ -90,7 +91,7 @@ test('default detectors honor filesystem markers before command lookup', async (
     'copilot',
     'opencode',
     'antigravity',
-    'windsurf'
+    'windsurf',
   ]);
   assert.deepEqual(detect.detectSkillTargets(), [
     'codex',
@@ -100,7 +101,7 @@ test('default detectors honor filesystem markers before command lookup', async (
     'opencode',
     'antigravity',
     'windsurf',
-    'agents'
+    'agents',
   ]);
   assert.deepEqual(detect.commandChecks, []);
 });
@@ -110,21 +111,12 @@ test('default detectors honor alternate filesystem markers', async (t) => {
   const existingPaths = [
     path.join(homeDir, '.vscode'),
     path.join(homeDir, '.claude.json'),
-    path.join(homeDir, '.opencode')
+    path.join(homeDir, '.opencode'),
   ];
   const detect = await loadDetectModule(t, { homeDir, existingPaths });
 
-  assert.deepEqual(detect.detectMcpClients(), [
-    'claude',
-    'copilot',
-    'opencode'
-  ]);
-  assert.deepEqual(detect.detectSkillTargets(), [
-    'claude',
-    'copilot',
-    'opencode',
-    'agents'
-  ]);
+  assert.deepEqual(detect.detectMcpClients(), ['claude', 'copilot', 'opencode']);
+  assert.deepEqual(detect.detectSkillTargets(), ['claude', 'copilot', 'opencode', 'agents']);
   assert.deepEqual(
     detect.commandChecks,
     process.platform === 'darwin'
@@ -137,14 +129,12 @@ test('default detectors fall back to command lookup when markers are absent', as
   const homeDir = path.join('/tmp', 'bbx-detect-home-cmd');
   const detect = await loadDetectModule(t, {
     homeDir,
-    availableCommands: ['codex', 'code', 'agy']
+    availableCommands: ['codex', 'code', 'agy'],
   });
 
   assert.deepEqual(
     detect.detectMcpClients(),
-    process.platform === 'linux'
-      ? ['codex', 'copilot', 'antigravity']
-      : ['codex', 'antigravity']
+    process.platform === 'linux' ? ['codex', 'copilot', 'antigravity'] : ['codex', 'antigravity']
   );
   assert.deepEqual(
     detect.detectSkillTargets(),
@@ -158,34 +148,34 @@ test('default detectors fall back to command lookup when markers are absent', as
       ? ['codex', 'claude', 'opencode', 'agy', 'codex', 'claude', 'opencode', 'agy']
       : process.platform === 'linux'
         ? [
-          'codex',
-          'claude',
-          'cursor',
-          'code',
-          'opencode',
-          'agy',
-          'windsurf',
-          'codex',
-          'claude',
-          'cursor',
-          'code',
-          'opencode',
-          'agy',
-          'windsurf'
-        ]
+            'codex',
+            'claude',
+            'cursor',
+            'code',
+            'opencode',
+            'agy',
+            'windsurf',
+            'codex',
+            'claude',
+            'cursor',
+            'code',
+            'opencode',
+            'agy',
+            'windsurf',
+          ]
         : [
-          'codex',
-          'claude',
-          'cursor',
-          'opencode',
-          'agy',
-          'windsurf',
-          'codex',
-          'claude',
-          'cursor',
-          'opencode',
-          'agy',
-          'windsurf'
-        ]
+            'codex',
+            'claude',
+            'cursor',
+            'opencode',
+            'agy',
+            'windsurf',
+            'codex',
+            'claude',
+            'cursor',
+            'opencode',
+            'agy',
+            'windsurf',
+          ]
   );
 });

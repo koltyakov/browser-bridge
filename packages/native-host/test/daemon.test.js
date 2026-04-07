@@ -18,17 +18,21 @@ import { BridgeDaemon, installSetupTarget, normalizeSetupInstallParams } from '.
 async function startTestDaemon() {
   const daemon = new BridgeDaemon({
     listenOptions: { host: '127.0.0.1', port: 0 },
-    logger: { log() {}, error() {} }
+    logger: { log() {}, error() {} },
   });
   await daemon.start();
   const address = /** @type {import('node:net').AddressInfo} */ (daemon.serverAddress);
   return {
     daemon,
-    connect: () => new Promise((resolve, reject) => {
-      const socket = net.createConnection({ host: '127.0.0.1', port: address.port });
-      socket.once('connect', () => resolve(socket));
-      socket.once('error', reject);
-    })
+    connect: () =>
+      new Promise((resolve, reject) => {
+        const socket = net.createConnection({
+          host: '127.0.0.1',
+          port: address.port,
+        });
+        socket.once('connect', () => resolve(socket));
+        socket.once('error', reject);
+      }),
   };
 }
 
@@ -46,9 +50,11 @@ function createFakeSocket() {
     write(chunk) {
       socket.writes.push(chunk);
       return true;
-    }
+    },
   };
-  return /** @type {import('node:net').Socket & { writes: string[] }} */ (/** @type {unknown} */ (socket));
+  return /** @type {import('node:net').Socket & { writes: string[] }} */ (
+    /** @type {unknown} */ (socket)
+  );
 }
 
 /** Ensure health checks succeed even before the extension connects. */
@@ -56,7 +62,7 @@ test('daemon responds to health checks without extension', async () => {
   const silentConsole = /** @type {Console} */ ({
     ...console,
     log() {},
-    error() {}
+    error() {},
   });
   const daemon = new BridgeDaemon({ logger: silentConsole });
   const socket = createFakeSocket();
@@ -69,9 +75,9 @@ test('daemon responds to health checks without extension', async () => {
       params: {},
       meta: {
         protocol_version: '1.0',
-        token_budget: null
-      }
-    }
+        token_budget: null,
+      },
+    },
   });
 
   assert.equal(socket.writes.length, 1);
@@ -93,14 +99,17 @@ test('daemon health check reports upgrade guidance when the daemon is newer than
       params: {},
       meta: {
         protocol_version: '0.0',
-        token_budget: null
-      }
-    }
+        token_budget: null,
+      },
+    },
   });
 
   const payload = JSON.parse(socket.writes[0].trim());
   assert.equal(payload.response.result.deprecated_since, '1.0');
-  assert.match(payload.response.result.migration_hint, /daemon is newer than the client protocol 0.0/);
+  assert.match(
+    payload.response.result.migration_hint,
+    /daemon is newer than the client protocol 0.0/
+  );
 });
 
 test('daemon health check reports upgrade guidance when the daemon is older than the client', async () => {
@@ -115,42 +124,56 @@ test('daemon health check reports upgrade guidance when the daemon is older than
       params: {},
       meta: {
         protocol_version: '9.9',
-        token_budget: null
-      }
-    }
+        token_budget: null,
+      },
+    },
   });
 
   const payload = JSON.parse(socket.writes[0].trim());
   assert.equal(payload.response.result.deprecated_since, undefined);
-  assert.match(payload.response.result.migration_hint, /daemon is older than the client protocol 9.9/);
+  assert.match(
+    payload.response.result.migration_hint,
+    /daemon is older than the client protocol 9.9/
+  );
 });
 
 test('daemon responds to setup status requests without extension', async () => {
   const silentConsole = /** @type {Console} */ ({
     ...console,
     log() {},
-    error() {}
+    error() {},
   });
   /** @type {import('../../protocol/src/types.js').SetupStatus} */
   const expectedStatus = {
     scope: 'global',
-    mcpClients: [{ key: 'codex', label: 'OpenAI Codex', detected: true, configPath: '/tmp/mcp.json', configExists: true, configured: true }],
-    skillTargets: [{
-      key: 'codex',
-      label: 'OpenAI Codex',
-      detected: true,
-      basePath: '/tmp/skills',
-      installed: true,
-      managed: true,
-      installedVersion: '1.0.0',
-      currentVersion: '1.0.0',
-      updateAvailable: false,
-      skills: []
-    }]
+    mcpClients: [
+      {
+        key: 'codex',
+        label: 'OpenAI Codex',
+        detected: true,
+        configPath: '/tmp/mcp.json',
+        configExists: true,
+        configured: true,
+      },
+    ],
+    skillTargets: [
+      {
+        key: 'codex',
+        label: 'OpenAI Codex',
+        detected: true,
+        basePath: '/tmp/skills',
+        installed: true,
+        managed: true,
+        installedVersion: '1.0.0',
+        currentVersion: '1.0.0',
+        updateAvailable: false,
+        skills: [],
+      },
+    ],
   };
   const daemon = new BridgeDaemon({
     logger: silentConsole,
-    setupStatusLoader: async () => expectedStatus
+    setupStatusLoader: async () => expectedStatus,
   });
   const socket = createFakeSocket();
 
@@ -162,9 +185,9 @@ test('daemon responds to setup status requests without extension', async () => {
       params: {},
       meta: {
         protocol_version: '1.0',
-        token_budget: null
-      }
-    }
+        token_budget: null,
+      },
+    },
   });
 
   assert.equal(socket.writes.length, 1);
@@ -180,8 +203,8 @@ test('daemon installs setup targets without extension', async () => {
       action: params.action === 'uninstall' ? 'uninstall' : 'install',
       kind: params.kind === 'skill' ? 'skill' : 'mcp',
       target: typeof params.target === 'string' ? params.target : 'codex',
-      paths: ['/tmp/mock-install']
-    })
+      paths: ['/tmp/mock-install'],
+    }),
   });
   const socket = createFakeSocket();
 
@@ -192,13 +215,13 @@ test('daemon installs setup targets without extension', async () => {
       tab_id: null,
       params: {
         kind: 'mcp',
-        target: 'codex'
+        target: 'codex',
       },
       meta: {
         protocol_version: '1.0',
-        token_budget: null
-      }
-    }
+        token_budget: null,
+      },
+    },
   });
 
   assert.equal(socket.writes.length, 1);
@@ -209,7 +232,7 @@ test('daemon installs setup targets without extension', async () => {
     action: 'install',
     kind: 'mcp',
     target: 'codex',
-    paths: ['/tmp/mock-install']
+    paths: ['/tmp/mock-install'],
   });
 });
 
@@ -218,17 +241,17 @@ test('daemon handles extension setup status requests', async () => {
   const expectedStatus = {
     scope: 'global',
     mcpClients: [],
-    skillTargets: []
+    skillTargets: [],
   };
   const daemon = new BridgeDaemon({
     logger: console,
-    setupStatusLoader: async () => expectedStatus
+    setupStatusLoader: async () => expectedStatus,
   });
   const socket = createFakeSocket();
 
   await daemon.handleClientMessage(socket, {
     type: 'extension.setup_status.request',
-    requestId: 'setup_1'
+    requestId: 'setup_1',
   });
 
   assert.equal(socket.writes.length, 1);
@@ -243,13 +266,13 @@ test('daemon returns setup status errors to the extension caller', async () => {
     logger: console,
     setupStatusLoader: async () => {
       throw new Error('status unavailable');
-    }
+    },
   });
   const socket = createFakeSocket();
 
   await daemon.handleClientMessage(socket, {
     type: 'extension.setup_status.request',
-    requestId: 'setup_fail'
+    requestId: 'setup_fail',
   });
 
   const payload = JSON.parse(socket.writes[0].trim());
@@ -260,7 +283,7 @@ test('daemon returns setup status errors to the extension caller', async () => {
 
 test('daemon log entries retain request source metadata', async () => {
   const daemon = new BridgeDaemon({
-    logger: console
+    logger: console,
   });
   const agentSocket = createFakeSocket();
   const extensionSocket = createFakeSocket();
@@ -275,9 +298,9 @@ test('daemon log entries retain request source metadata', async () => {
       meta: {
         protocol_version: '1.0',
         token_budget: null,
-        source: 'mcp'
-      }
-    }
+        source: 'mcp',
+      },
+    },
   });
 
   await daemon.handleExtensionResponse(extensionSocket, {
@@ -286,8 +309,8 @@ test('daemon log entries retain request source metadata', async () => {
       ok: false,
       result: null,
       error: { code: 'ACCESS_DENIED', message: 'Access denied', details: null },
-      meta: { protocol_version: '1.0', method: 'page.evaluate' }
-    }
+      meta: { protocol_version: '1.0', method: 'page.evaluate' },
+    },
   });
 
   assert.equal(daemon.recentLog.length, 1);
@@ -308,9 +331,9 @@ test('daemon forwards health checks to the extension and merges access state', a
       params: {},
       meta: {
         protocol_version: '1.0',
-        token_budget: null
-      }
-    }
+        token_budget: null,
+      },
+    },
   });
 
   assert.equal(extensionSocket.writes.length, 1);
@@ -326,12 +349,12 @@ test('daemon forwards health checks to the extension and merges access state', a
           windowId: 9,
           routeTabId: 42,
           routeReady: true,
-          reason: 'enabled'
-        }
+          reason: 'enabled',
+        },
       },
       error: null,
-      meta: { protocol_version: '1.0', method: 'health.ping' }
-    }
+      meta: { protocol_version: '1.0', method: 'health.ping' },
+    },
   });
 
   assert.equal(agentSocket.writes.length, 1);
@@ -345,7 +368,7 @@ test('daemon forwards health checks to the extension and merges access state', a
 test('daemon stop is idempotent when called concurrently', async () => {
   const daemon = new BridgeDaemon({
     listenOptions: { host: '127.0.0.1', port: 0 },
-    logger: console
+    logger: console,
   });
 
   await daemon.start();
@@ -356,109 +379,128 @@ test('daemon stop is idempotent when called concurrently', async () => {
 
 // --- Security: socket and directory permissions (1.1 / 1.2) ---
 
-test('daemon socket has 0o600 mode and config dir has 0o700 mode (Unix only)', {
-  skip: process.platform === 'win32' ? 'chmod is a no-op on Windows' : false
-}, async () => {
-  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-perms-'));
-  const socketPath = path.join(tempDir, 'test.sock');
-  const daemon = new BridgeDaemon({ socketPath, logger: { log() {}, error() {} } });
-  try {
-    await daemon.start();
-    const sockStats = await fs.promises.stat(socketPath);
-    assert.equal(
-      sockStats.mode & 0o777, 0o600,
-      `socket mode should be 0o600, got 0o${(sockStats.mode & 0o777).toString(8)}`
-    );
-    const dirStats = await fs.promises.stat(tempDir);
-    assert.equal(
-      dirStats.mode & 0o777, 0o700,
-      `config dir mode should be 0o700, got 0o${(dirStats.mode & 0o777).toString(8)}`
-    );
-  } finally {
-    await daemon.stop();
-    await fs.promises.rm(tempDir, { recursive: true, force: true });
-  }
-});
-
-test('daemon start fails when another daemon is already listening on the same socket', {
-  skip: process.platform === 'win32' ? 'Unix socket single-instance check is not applicable on Windows' : false
-}, async () => {
-  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-single-instance-'));
-  const socketPath = path.join(tempDir, 'bridge.sock');
-  const logger = { log() {}, error() {} };
-  const first = new BridgeDaemon({ socketPath, logger });
-  const second = new BridgeDaemon({ socketPath, logger });
-
-  try {
-    await first.start();
-    await assert.rejects(
-      () => second.start(),
-      /Another daemon is already running on/
-    );
-  } finally {
-    await second.stop().catch(() => {});
-    await first.stop();
-    await fs.promises.rm(tempDir, { recursive: true, force: true });
-  }
-});
-
-test('daemon start removes a stale socket when the probe returns invalid JSON', {
-  skip: process.platform === 'win32' ? 'Unix socket probing is not applicable on Windows' : false
-}, async () => {
-  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-stale-socket-'));
-  const socketPath = path.join(tempDir, 'bridge.sock');
-  /** @type {string[][]} */
-  const logs = [];
-  const staleServer = net.createServer((socket) => {
-    socket.once('data', () => {
-      socket.write('not-json\n');
-      socket.end();
-      staleServer.close();
+test(
+  'daemon socket has 0o600 mode and config dir has 0o700 mode (Unix only)',
+  {
+    skip: process.platform === 'win32' ? 'chmod is a no-op on Windows' : false,
+  },
+  async () => {
+    const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-perms-'));
+    const socketPath = path.join(tempDir, 'test.sock');
+    const daemon = new BridgeDaemon({
+      socketPath,
+      logger: { log() {}, error() {} },
     });
-  });
-  await new Promise((resolve, reject) => {
-    staleServer.once('error', reject);
-    staleServer.listen(socketPath, () => resolve(undefined));
-  });
-
-  const daemon = new BridgeDaemon({
-    socketPath,
-    logger: {
-      log(...args) {
-        logs.push(args.map((value) => String(value)));
-      },
-      error() {}
+    try {
+      await daemon.start();
+      const sockStats = await fs.promises.stat(socketPath);
+      assert.equal(
+        sockStats.mode & 0o777,
+        0o600,
+        `socket mode should be 0o600, got 0o${(sockStats.mode & 0o777).toString(8)}`
+      );
+      const dirStats = await fs.promises.stat(tempDir);
+      assert.equal(
+        dirStats.mode & 0o777,
+        0o700,
+        `config dir mode should be 0o700, got 0o${(dirStats.mode & 0o777).toString(8)}`
+      );
+    } finally {
+      await daemon.stop();
+      await fs.promises.rm(tempDir, { recursive: true, force: true });
     }
-  });
-
-  try {
-    await daemon.start();
-    assert.ok(logs.some((entry) => entry.join(' ').includes('Removing stale socket from previous run')));
-  } finally {
-    await daemon.stop().catch(() => {});
-    if (staleServer.listening) {
-      await new Promise((resolve) => staleServer.close(() => resolve(undefined)));
-    }
-    await fs.promises.rm(tempDir, { recursive: true, force: true });
   }
-});
+);
+
+test(
+  'daemon start fails when another daemon is already listening on the same socket',
+  {
+    skip:
+      process.platform === 'win32'
+        ? 'Unix socket single-instance check is not applicable on Windows'
+        : false,
+  },
+  async () => {
+    const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-single-instance-'));
+    const socketPath = path.join(tempDir, 'bridge.sock');
+    const logger = { log() {}, error() {} };
+    const first = new BridgeDaemon({ socketPath, logger });
+    const second = new BridgeDaemon({ socketPath, logger });
+
+    try {
+      await first.start();
+      await assert.rejects(() => second.start(), /Another daemon is already running on/);
+    } finally {
+      await second.stop().catch(() => {});
+      await first.stop();
+      await fs.promises.rm(tempDir, { recursive: true, force: true });
+    }
+  }
+);
+
+test(
+  'daemon start removes a stale socket when the probe returns invalid JSON',
+  {
+    skip: process.platform === 'win32' ? 'Unix socket probing is not applicable on Windows' : false,
+  },
+  async () => {
+    const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-stale-socket-'));
+    const socketPath = path.join(tempDir, 'bridge.sock');
+    /** @type {string[][]} */
+    const logs = [];
+    const staleServer = net.createServer((socket) => {
+      socket.once('data', () => {
+        socket.write('not-json\n');
+        socket.end();
+        staleServer.close();
+      });
+    });
+    await new Promise((resolve, reject) => {
+      staleServer.once('error', reject);
+      staleServer.listen(socketPath, () => resolve(undefined));
+    });
+
+    const daemon = new BridgeDaemon({
+      socketPath,
+      logger: {
+        log(...args) {
+          logs.push(args.map((value) => String(value)));
+        },
+        error() {},
+      },
+    });
+
+    try {
+      await daemon.start();
+      assert.ok(
+        logs.some((entry) => entry.join(' ').includes('Removing stale socket from previous run'))
+      );
+    } finally {
+      await daemon.stop().catch(() => {});
+      if (staleServer.listening) {
+        await new Promise((resolve) => staleServer.close(() => resolve(undefined)));
+      }
+      await fs.promises.rm(tempDir, { recursive: true, force: true });
+    }
+  }
+);
 
 test('normalizeSetupInstallParams trims targets and defaults to install', () => {
-  assert.deepEqual(normalizeSetupInstallParams({
-    kind: 'mcp',
-    target: '  Codex  '
-  }), {
-    action: 'install',
-    kind: 'mcp',
-    target: 'codex'
-  });
+  assert.deepEqual(
+    normalizeSetupInstallParams({
+      kind: 'mcp',
+      target: '  Codex  ',
+    }),
+    {
+      action: 'install',
+      kind: 'mcp',
+      target: 'codex',
+    }
+  );
 });
 
 test('normalizeSetupInstallParams rejects invalid input', () => {
-  assert.throws(
-    () => normalizeSetupInstallParams({ target: 'codex' }),
-    /requires kind/
-  );
+  assert.throws(() => normalizeSetupInstallParams({ target: 'codex' }), /requires kind/);
   assert.throws(
     () => normalizeSetupInstallParams({ kind: 'skill', target: '   ' }),
     /requires a target/
@@ -491,41 +533,57 @@ test('installSetupTarget dispatches mcp installs and uninstalls', async () => {
       calls.push({ kind: 'removeMcpConfig', target, options });
       return ['/tmp/remove-mcp'];
     },
-    cwd: '/tmp/project'
+    cwd: '/tmp/project',
   });
 
-  assert.deepEqual(await installSetupTarget({
-    kind: 'mcp',
-    target: 'codex'
-  }, deps), {
-    action: 'install',
-    kind: 'mcp',
-    target: 'codex',
-    paths: ['/tmp/install-mcp']
-  });
+  assert.deepEqual(
+    await installSetupTarget(
+      {
+        kind: 'mcp',
+        target: 'codex',
+      },
+      deps
+    ),
+    {
+      action: 'install',
+      kind: 'mcp',
+      target: 'codex',
+      paths: ['/tmp/install-mcp'],
+    }
+  );
 
-  assert.deepEqual(await installSetupTarget({
-    action: 'uninstall',
-    kind: 'mcp',
-    target: 'codex'
-  }, deps), {
-    action: 'uninstall',
-    kind: 'mcp',
-    target: 'codex',
-    paths: ['/tmp/remove-mcp']
-  });
+  assert.deepEqual(
+    await installSetupTarget(
+      {
+        action: 'uninstall',
+        kind: 'mcp',
+        target: 'codex',
+      },
+      deps
+    ),
+    {
+      action: 'uninstall',
+      kind: 'mcp',
+      target: 'codex',
+      paths: ['/tmp/remove-mcp'],
+    }
+  );
 
   await assert.rejects(
-    () => installSetupTarget({ kind: 'mcp', target: 'cursor' }, {
-      ...deps,
-      isMcpClientName: () => false
-    }),
+    () =>
+      installSetupTarget(
+        { kind: 'mcp', target: 'cursor' },
+        {
+          ...deps,
+          isMcpClientName: () => false,
+        }
+      ),
     /Unsupported MCP client/
   );
 
   assert.deepEqual(calls, [
     { kind: 'installMcpConfig', target: 'codex', options: { global: true } },
-    { kind: 'removeMcpConfig', target: 'codex', options: { global: true } }
+    { kind: 'removeMcpConfig', target: 'codex', options: { global: true } },
   ]);
 });
 
@@ -549,47 +607,71 @@ test('installSetupTarget dispatches skill installs and uninstalls', async () => 
     removeMcpConfig: async () => {
       throw new Error('unexpected mcp uninstall');
     },
-    cwd: '/tmp/project'
+    cwd: '/tmp/project',
   });
 
-  assert.deepEqual(await installSetupTarget({
-    kind: 'skill',
-    target: 'codex'
-  }, deps), {
-    action: 'install',
-    kind: 'skill',
-    target: 'codex',
-    paths: ['/tmp/install-skill']
-  });
+  assert.deepEqual(
+    await installSetupTarget(
+      {
+        kind: 'skill',
+        target: 'codex',
+      },
+      deps
+    ),
+    {
+      action: 'install',
+      kind: 'skill',
+      target: 'codex',
+      paths: ['/tmp/install-skill'],
+    }
+  );
 
-  assert.deepEqual(await installSetupTarget({
-    action: 'uninstall',
-    kind: 'skill',
-    target: 'codex'
-  }, deps), {
-    action: 'uninstall',
-    kind: 'skill',
-    target: 'codex',
-    paths: ['/tmp/remove-skill']
-  });
+  assert.deepEqual(
+    await installSetupTarget(
+      {
+        action: 'uninstall',
+        kind: 'skill',
+        target: 'codex',
+      },
+      deps
+    ),
+    {
+      action: 'uninstall',
+      kind: 'skill',
+      target: 'codex',
+      paths: ['/tmp/remove-skill'],
+    }
+  );
 
   await assert.rejects(
-    () => installSetupTarget({ kind: 'skill', target: 'cursor' }, {
-      ...deps,
-      isSupportedTarget: () => false
-    }),
+    () =>
+      installSetupTarget(
+        { kind: 'skill', target: 'cursor' },
+        {
+          ...deps,
+          isSupportedTarget: () => false,
+        }
+      ),
     /Unsupported skill target/
   );
 
   assert.deepEqual(calls, [
     {
       kind: 'installAgentFiles',
-      options: { targets: ['codex'], projectPath: '/tmp/project', global: true }
+      options: {
+        targets: ['codex'],
+        projectPath: '/tmp/project',
+        global: true,
+      },
     },
     {
       kind: 'removeAgentFiles',
-      options: { targets: ['codex'], projectPath: '/tmp/project', global: true }
-    }
+      options: {
+        targets: ['codex'],
+        projectPath: '/tmp/project',
+        global: true,
+      },
+    },
   ]);
 });
 
@@ -612,8 +694,8 @@ function sendGarbageThenPing(socket, garbage) {
         method: 'health.ping',
         tab_id: null,
         params: {},
-        meta: { protocol_version: '1.0', token_budget: null }
-      }
+        meta: { protocol_version: '1.0', token_budget: null },
+      },
     });
 
     let responseBuffer = '';
@@ -805,7 +887,9 @@ function makeNdjsonClient(socket) {
         } else {
           pending.push(msg);
         }
-      } catch { /* skip malformed */ }
+      } catch {
+        /* skip malformed */
+      }
     }
   });
   socket.on('close', () => {
@@ -832,7 +916,7 @@ function makeNdjsonClient(socket) {
               waiters.splice(index, 1);
             }
             reject(new Error(`Timed out waiting ${timeoutMs}ms for an NDJSON message.`));
-          }, timeoutMs)
+          }, timeoutMs),
         };
         waiters.push(waiter);
       });
@@ -856,7 +940,7 @@ function makeNdjsonClient(socket) {
             clearWaiterTimeout(waiter);
             resolve(msg);
           },
-          timeoutId: null
+          timeoutId: null,
         };
         waiter.timeoutId = setTimeout(() => {
           const index = waiters.indexOf(waiter);
@@ -870,7 +954,7 @@ function makeNdjsonClient(socket) {
     },
     send(obj) {
       socket.write(`${JSON.stringify(obj)}\n`);
-    }
+    },
   };
 }
 
@@ -903,8 +987,26 @@ test('daemon routes interleaved requests from two agents to correct sockets', as
     assert.equal(/** @type {any} */ (await ext.next()).type, 'registered');
 
     // Both agents send requests concurrently.
-    a1.send({ type: 'agent.request', request: { id: 'req_a1', method: 'page.get_state', tab_id: null, params: {}, meta: { protocol_version: '1.0', token_budget: null } } });
-    a2.send({ type: 'agent.request', request: { id: 'req_a2', method: 'page.get_state', tab_id: null, params: {}, meta: { protocol_version: '1.0', token_budget: null } } });
+    a1.send({
+      type: 'agent.request',
+      request: {
+        id: 'req_a1',
+        method: 'page.get_state',
+        tab_id: null,
+        params: {},
+        meta: { protocol_version: '1.0', token_budget: null },
+      },
+    });
+    a2.send({
+      type: 'agent.request',
+      request: {
+        id: 'req_a2',
+        method: 'page.get_state',
+        tab_id: null,
+        params: {},
+        meta: { protocol_version: '1.0', token_budget: null },
+      },
+    });
 
     // Extension receives both forwarded requests (order not guaranteed).
     const fwd1 = /** @type {any} */ (await ext.next());
@@ -916,8 +1018,26 @@ test('daemon routes interleaved requests from two agents to correct sockets', as
     assert.ok(forwardedIds.has('req_a2'));
 
     // Extension responds out of order: req_a2 first, then req_a1.
-    ext.send({ type: 'extension.response', response: { id: 'req_a2', ok: true, result: { url: 'https://a.test' }, error: null, meta: { protocol_version: '1.0', method: 'page.get_state' } } });
-    ext.send({ type: 'extension.response', response: { id: 'req_a1', ok: true, result: { url: 'https://b.test' }, error: null, meta: { protocol_version: '1.0', method: 'page.get_state' } } });
+    ext.send({
+      type: 'extension.response',
+      response: {
+        id: 'req_a2',
+        ok: true,
+        result: { url: 'https://a.test' },
+        error: null,
+        meta: { protocol_version: '1.0', method: 'page.get_state' },
+      },
+    });
+    ext.send({
+      type: 'extension.response',
+      response: {
+        id: 'req_a1',
+        ok: true,
+        result: { url: 'https://b.test' },
+        error: null,
+        meta: { protocol_version: '1.0', method: 'page.get_state' },
+      },
+    });
 
     // Each agent gets its own response.
     const resp1 = /** @type {any} */ (await a1.next());
@@ -927,7 +1047,9 @@ test('daemon routes interleaved requests from two agents to correct sockets', as
     assert.equal(resp2.type, 'agent.response');
     assert.equal(resp2.response.id, 'req_a2');
   } finally {
-    s1.destroy(); s2.destroy(); se.destroy();
+    s1.destroy();
+    s2.destroy();
+    se.destroy();
     await daemon.stop();
   }
 });
@@ -950,8 +1072,26 @@ test('daemon does not drop agent2 response when agent1 disconnects mid-flight', 
     await ext.next();
 
     // Both agents send requests concurrently.
-    a1.send({ type: 'agent.request', request: { id: 'req_c1', method: 'page.get_state', tab_id: null, params: {}, meta: { protocol_version: '1.0', token_budget: null } } });
-    a2.send({ type: 'agent.request', request: { id: 'req_c2', method: 'page.get_state', tab_id: null, params: {}, meta: { protocol_version: '1.0', token_budget: null } } });
+    a1.send({
+      type: 'agent.request',
+      request: {
+        id: 'req_c1',
+        method: 'page.get_state',
+        tab_id: null,
+        params: {},
+        meta: { protocol_version: '1.0', token_budget: null },
+      },
+    });
+    a2.send({
+      type: 'agent.request',
+      request: {
+        id: 'req_c2',
+        method: 'page.get_state',
+        tab_id: null,
+        params: {},
+        meta: { protocol_version: '1.0', token_budget: null },
+      },
+    });
 
     // Extension receives both requests.
     await ext.next();
@@ -964,15 +1104,35 @@ test('daemon does not drop agent2 response when agent1 disconnects mid-flight', 
 
     // Extension responds to both. The req_c1 response is silently discarded
     // (no pending entry). The req_c2 response should still reach agent2.
-    ext.send({ type: 'extension.response', response: { id: 'req_c1', ok: true, result: {}, error: null, meta: { protocol_version: '1.0', method: 'page.get_state' } } });
-    ext.send({ type: 'extension.response', response: { id: 'req_c2', ok: true, result: { url: 'https://c.test' }, error: null, meta: { protocol_version: '1.0', method: 'page.get_state' } } });
+    ext.send({
+      type: 'extension.response',
+      response: {
+        id: 'req_c1',
+        ok: true,
+        result: {},
+        error: null,
+        meta: { protocol_version: '1.0', method: 'page.get_state' },
+      },
+    });
+    ext.send({
+      type: 'extension.response',
+      response: {
+        id: 'req_c2',
+        ok: true,
+        result: { url: 'https://c.test' },
+        error: null,
+        meta: { protocol_version: '1.0', method: 'page.get_state' },
+      },
+    });
 
     const resp2 = /** @type {any} */ (await a2.next());
     assert.equal(resp2.type, 'agent.response');
     assert.equal(resp2.response.id, 'req_c2');
     assert.equal(resp2.response.ok, true);
   } finally {
-    s1.destroy(); s2.destroy(); se.destroy();
+    s1.destroy();
+    s2.destroy();
+    se.destroy();
     await daemon.stop();
   }
 });
@@ -986,7 +1146,11 @@ test('daemon fails pending requests immediately when the only target extension d
 
   try {
     ext.send({ type: 'register', role: 'extension' });
-    agent.send({ type: 'register', role: 'agent', clientId: 'agent_disconnect' });
+    agent.send({
+      type: 'register',
+      role: 'agent',
+      clientId: 'agent_disconnect',
+    });
     await ext.next();
     await agent.next();
 
@@ -997,8 +1161,8 @@ test('daemon fails pending requests immediately when the only target extension d
         method: 'page.get_state',
         tab_id: null,
         params: {},
-        meta: { protocol_version: '1.0', token_budget: null }
-      }
+        meta: { protocol_version: '1.0', token_budget: null },
+      },
     });
 
     const forwarded = /** @type {any} */ (await ext.next());
@@ -1013,7 +1177,8 @@ test('daemon fails pending requests immediately when the only target extension d
     assert.equal(resp.response.ok, false);
     assert.equal(resp.response.error.code, 'EXTENSION_DISCONNECTED');
   } finally {
-    se.destroy(); sa.destroy();
+    se.destroy();
+    sa.destroy();
     await daemon.stop();
   }
 });
@@ -1030,7 +1195,11 @@ test('daemon returns the last extension error once all other targets disconnect'
   try {
     ext1.send({ type: 'register', role: 'extension' });
     ext2.send({ type: 'register', role: 'extension' });
-    agent.send({ type: 'register', role: 'agent', clientId: 'agent_mixed_disconnect' });
+    agent.send({
+      type: 'register',
+      role: 'agent',
+      clientId: 'agent_mixed_disconnect',
+    });
     await ext1.next();
     await ext2.next();
     await agent.next();
@@ -1047,8 +1216,8 @@ test('daemon returns the last extension error once all other targets disconnect'
         method: 'page.get_state',
         tab_id: null,
         params: {},
-        meta: { protocol_version: '1.0', token_budget: null }
-      }
+        meta: { protocol_version: '1.0', token_budget: null },
+      },
     });
 
     await ext1.next();
@@ -1060,9 +1229,13 @@ test('daemon returns the last extension error once all other targets disconnect'
         id: 'req_mixed_disconnect',
         ok: false,
         result: null,
-        error: { code: 'ACCESS_DENIED', message: 'No window enabled', details: null },
-        meta: { protocol_version: '1.0', method: 'page.get_state' }
-      }
+        error: {
+          code: 'ACCESS_DENIED',
+          message: 'No window enabled',
+          details: null,
+        },
+        meta: { protocol_version: '1.0', method: 'page.get_state' },
+      },
     });
     s2.destroy();
 
@@ -1072,7 +1245,9 @@ test('daemon returns the last extension error once all other targets disconnect'
     assert.equal(resp.response.ok, false);
     assert.equal(resp.response.error.code, 'ACCESS_DENIED');
   } finally {
-    s1.destroy(); s2.destroy(); sa.destroy();
+    s1.destroy();
+    s2.destroy();
+    sa.destroy();
     await daemon.stop();
   }
 });
@@ -1107,8 +1282,8 @@ test('daemon routes untargeted requests to the extension with access enabled', a
         method: 'page.get_state',
         tab_id: null,
         params: {},
-        meta: { protocol_version: '1.0', token_budget: null }
-      }
+        meta: { protocol_version: '1.0', token_budget: null },
+      },
     });
 
     await expectNoMessage(ext1);
@@ -1123,8 +1298,8 @@ test('daemon routes untargeted requests to the extension with access enabled', a
         ok: true,
         result: { url: 'https://example.com' },
         error: null,
-        meta: { protocol_version: '1.0', method: 'page.get_state' }
-      }
+        meta: { protocol_version: '1.0', method: 'page.get_state' },
+      },
     });
 
     // Agent should receive the success response, not the error.
@@ -1133,7 +1308,9 @@ test('daemon routes untargeted requests to the extension with access enabled', a
     assert.equal(resp.response.ok, true);
     assert.equal(resp.response.result.url, 'https://example.com');
   } finally {
-    s1.destroy(); s2.destroy(); sa.destroy();
+    s1.destroy();
+    s2.destroy();
+    sa.destroy();
     await daemon.stop();
   }
 });
@@ -1165,8 +1342,8 @@ test('daemon routes untargeted requests to the most recently active extension wh
         method: 'page.get_state',
         tab_id: null,
         params: {},
-        meta: { protocol_version: '1.0', token_budget: null }
-      }
+        meta: { protocol_version: '1.0', token_budget: null },
+      },
     });
 
     await expectNoMessage(ext1);
@@ -1180,9 +1357,13 @@ test('daemon routes untargeted requests to the most recently active extension wh
         id: 'req_deny',
         ok: false,
         result: null,
-        error: { code: 'ACCESS_DENIED', message: 'No window enabled', details: null },
-        meta: { protocol_version: '1.0', method: 'page.get_state' }
-      }
+        error: {
+          code: 'ACCESS_DENIED',
+          message: 'No window enabled',
+          details: null,
+        },
+        meta: { protocol_version: '1.0', method: 'page.get_state' },
+      },
     });
 
     const resp = /** @type {any} */ (await agent.next());
@@ -1190,7 +1371,9 @@ test('daemon routes untargeted requests to the most recently active extension wh
     assert.equal(resp.response.ok, false);
     assert.equal(resp.response.error.code, 'ACCESS_DENIED');
   } finally {
-    s1.destroy(); s2.destroy(); sa.destroy();
+    s1.destroy();
+    s2.destroy();
+    sa.destroy();
     await daemon.stop();
   }
 });
@@ -1206,7 +1389,11 @@ test('daemon sends error response for valid JSON with missing type field', async
         buf += chunk;
         const idx = buf.indexOf('\n');
         if (idx !== -1) {
-          try { resolve(JSON.parse(buf.slice(0, idx).trim())); } catch { reject(new Error('bad json')); }
+          try {
+            resolve(JSON.parse(buf.slice(0, idx).trim()));
+          } catch {
+            reject(new Error('bad json'));
+          }
         }
       });
       socket.on('error', reject);

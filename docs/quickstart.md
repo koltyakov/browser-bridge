@@ -75,15 +75,15 @@ Your agent can now inspect and patch the active tab in that enabled window, or o
 
 You can refer to it as `BB MCP` or `Browser Bridge MCP`; both should work.
 
-> *"Why is the sidebar layout broken on this page?"*
-> *"Use BB MCP to inspect why the sidebar layout is broken."*
-> *"Check the CSS on the hero section and fix the spacing."*
-> *"Does my latest change actually render correctly in the browser?"*
+> _"Why is the sidebar layout broken on this page?"_
+> _"Use BB MCP to inspect why the sidebar layout is broken."_
+> _"Check the CSS on the hero section and fix the spacing."_
+> _"Does my latest change actually render correctly in the browser?"_
 
 **Skill + CLI mode** - reference the skill explicitly so the agent knows to use `bbx`:
 
-> *"Use the browser-bridge skill to check why the sidebar layout is broken."*
-> *"Using browser-bridge skill, verify the hero section spacing and fix it."*
+> _"Use the browser-bridge skill to check why the sidebar layout is broken."_
+> _"Using browser-bridge skill, verify the hero section spacing and fix it."_
 
 For GitHub Copilot, invoke the skill by name, for example `/browser-bridge`.
 `bbx` is the Browser Bridge CLI command, not a guaranteed Copilot skill alias.

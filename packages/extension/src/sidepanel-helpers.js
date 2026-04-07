@@ -31,7 +31,9 @@
  */
 function getSetupInstallState(setupStatus) {
   const hasConfiguredMcp = setupStatus.mcpClients.some((client) => client.configured);
-  const hasInstalledCliSkill = setupStatus.skillTargets.some((target) => target.skills.some((skill) => skill.exists));
+  const hasInstalledCliSkill = setupStatus.skillTargets.some((target) =>
+    target.skills.some((skill) => skill.exists)
+  );
   return { hasConfiguredMcp, hasInstalledCliSkill };
 }
 

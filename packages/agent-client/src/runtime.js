@@ -3,7 +3,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { APP_NAME, getManifestInstallDir, SUPPORTED_BROWSERS } from '../../native-host/src/config.js';
+import {
+  APP_NAME,
+  getManifestInstallDir,
+  SUPPORTED_BROWSERS,
+} from '../../native-host/src/config.js';
 import { resolveDefaultExtensionId } from '../../native-host/src/install-manifest.js';
 import { methodNeedsTab } from './cli-helpers.js';
 import { BridgeClient } from './client.js';
@@ -65,7 +69,7 @@ export async function requestBridge(client, method, params = {}, options = {}) {
     method,
     params,
     tabId: methodNeedsTab(method) ? (options.tabId ?? null) : null,
-    meta: withRequestMeta(options.source, options.tokenBudget)
+    meta: withRequestMeta(options.source, options.tokenBudget),
   });
 }
 
@@ -81,9 +85,14 @@ export async function resolveRef(client, refOrSelector, tabId = null, source) {
     return refOrSelector;
   }
 
-  const response = await requestBridge(client, 'dom.query', {
-    selector: refOrSelector
-  }, { tabId, source });
+  const response = await requestBridge(
+    client,
+    'dom.query',
+    {
+      selector: refOrSelector,
+    },
+    { tabId, source }
+  );
 
   if (!response.ok) {
     throw new Error(response.error.message);
@@ -184,9 +193,7 @@ export async function checkBrowserManifests() {
  */
 export async function getDoctorReport(options = {}) {
   const manifest = await (options.loadManifest || loadInstalledManifest)();
-  const allowedOrigins = Array.isArray(manifest?.allowed_origins)
-    ? manifest.allowed_origins
-    : [];
+  const allowedOrigins = Array.isArray(manifest?.allowed_origins) ? manifest.allowed_origins : [];
   const manifestInstalled = Boolean(manifest);
   const defaultExtensionId = options.defaultExtensionIdInfo || resolveDefaultExtensionId();
 
@@ -208,7 +215,7 @@ export async function getDoctorReport(options = {}) {
     routeReason: 'access_disabled',
     issues: [],
     nextSteps: [],
-    browserManifests
+    browserManifests,
   };
 
   try {
@@ -217,7 +224,8 @@ export async function getDoctorReport(options = {}) {
       if (!response.ok) {
         throw new Error(response.error.message);
       }
-      const result = /** @type {{ daemon?: string, extensionConnected?: boolean, access?: {
+      const result =
+        /** @type {{ daemon?: string, extensionConnected?: boolean, access?: {
         enabled?: boolean,
         windowId?: number | null,
         routeTabId?: number | null,
@@ -227,10 +235,13 @@ export async function getDoctorReport(options = {}) {
       report.daemonReachable = result.daemon === 'ok';
       report.extensionConnected = result.extensionConnected === true;
       report.accessEnabled = result.access?.enabled === true;
-      report.enabledWindowId = typeof result.access?.windowId === 'number' ? result.access.windowId : null;
-      report.routeTabId = typeof result.access?.routeTabId === 'number' ? result.access.routeTabId : null;
+      report.enabledWindowId =
+        typeof result.access?.windowId === 'number' ? result.access.windowId : null;
+      report.routeTabId =
+        typeof result.access?.routeTabId === 'number' ? result.access.routeTabId : null;
       report.routeReady = result.access?.routeReady === true;
-      report.routeReason = typeof result.access?.reason === 'string' ? result.access.reason : 'access_disabled';
+      report.routeReason =
+        typeof result.access?.reason === 'string' ? result.access.reason : 'access_disabled';
     });
   } catch {
     report.daemonReachable = false;
@@ -241,13 +252,17 @@ export async function getDoctorReport(options = {}) {
 
   if (!report.manifestInstalled) {
     report.issues.push('native_host_manifest_missing');
-    report.nextSteps.push(defaultExtensionId.extensionId
-      ? 'Run `bbx install` (or `bbx install --all` for all browsers) to install the native host manifest.'
-      : 'Run `bbx install <extension-id>` (or `bbx install --all`) to install the native host manifest.');
+    report.nextSteps.push(
+      defaultExtensionId.extensionId
+        ? 'Run `bbx install` (or `bbx install --all` for all browsers) to install the native host manifest.'
+        : 'Run `bbx install <extension-id>` (or `bbx install --all`) to install the native host manifest.'
+    );
   } else if (browsersWithoutManifest.length > 0) {
     report.issues.push('native_host_manifest_partial');
     const missing = browsersWithoutManifest.map((b) => b.browser).join(', ');
-    report.nextSteps.push(`Manifests missing for: ${missing}. Run \`bbx install --all\` to install for all supported browsers.`);
+    report.nextSteps.push(
+      `Manifests missing for: ${missing}. Run \`bbx install --all\` to install for all supported browsers.`
+    );
   }
   if (!report.daemonReachable) {
     report.issues.push('daemon_offline');
@@ -255,14 +270,20 @@ export async function getDoctorReport(options = {}) {
   }
   if (report.daemonReachable && !report.extensionConnected) {
     report.issues.push('extension_disconnected');
-    report.nextSteps.push('Open Chrome and make sure the Browser Bridge extension is installed and active.');
+    report.nextSteps.push(
+      'Open Chrome and make sure the Browser Bridge extension is installed and active.'
+    );
   }
   if (report.daemonReachable && report.extensionConnected && !report.accessEnabled) {
     report.issues.push('access_disabled');
-    report.nextSteps.push('If a Browser Bridge call returns ACCESS_DENIED, stop requesting access. Ask the user to click Enable for the needed window, then tell you when that window is ready.');
+    report.nextSteps.push(
+      'If a Browser Bridge call returns ACCESS_DENIED, stop requesting access. Ask the user to click Enable for the needed window, then tell you when that window is ready.'
+    );
   } else if (report.daemonReachable && report.extensionConnected && !report.routeReady) {
     report.issues.push(report.routeReason || 'no_routable_active_tab');
-    report.nextSteps.push('Switch to a supported page in the enabled window, or use an explicit tabId override.');
+    report.nextSteps.push(
+      'Switch to a supported page in the enabled window, or use an explicit tabId override.'
+    );
   }
 
   return report;

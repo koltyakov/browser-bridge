@@ -30,7 +30,10 @@ export function parseCommaList(value) {
   if (!value) {
     return [];
   }
-  return value.split(',').map((item) => item.trim()).filter(Boolean);
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 /**
@@ -50,7 +53,9 @@ export function parseJsonObject(value) {
   }
 
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`Expected a JSON object but got ${Array.isArray(parsed) ? 'array' : typeof parsed}. Wrap your input in {}.`);
+    throw new Error(
+      `Expected a JSON object but got ${Array.isArray(parsed) ? 'array' : typeof parsed}. Wrap your input in {}.`
+    );
   }
 
   return /** @type {Record<string, unknown>} */ (parsed);
@@ -131,7 +136,7 @@ export async function interactiveCheckbox(title, items) {
   }
 
   process.stdout.write('\x1b[?25l'); // hide cursor
-  if (typeof /** @type {any} */ (process.stdin).setRawMode === 'function') {
+  if (typeof (/** @type {any} */ (process.stdin).setRawMode) === 'function') {
     /** @type {any} */ (process.stdin).setRawMode(true);
   }
   process.stdin.resume();
@@ -143,7 +148,7 @@ export async function interactiveCheckbox(title, items) {
      */
     function cleanup(result) {
       process.stdin.removeListener('keypress', onKeypress);
-      if (typeof /** @type {any} */ (process.stdin).setRawMode === 'function') {
+      if (typeof (/** @type {any} */ (process.stdin).setRawMode) === 'function') {
         /** @type {any} */ (process.stdin).setRawMode(false);
       }
       process.stdin.pause();
@@ -204,7 +209,7 @@ export async function interactiveConfirm(prompt, options = {}) {
   const suffix = defaultValue ? ' [Y/n] ' : ' [y/N] ';
   const rl = readline.createInterface({
     input: process.stdin,
-    output: process.stdout
+    output: process.stdout,
   });
 
   try {

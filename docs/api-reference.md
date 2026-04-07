@@ -59,8 +59,8 @@ Send a bridge request and return the response.
 const response = await client.request({
   method: 'dom.query',
   params: { selector: 'h1', maxNodes: 5 },
-  tabId: 123,          // optional - required for tab-bound methods
-  timeoutMs: 10_000    // optional - overrides defaultTimeoutMs
+  tabId: 123, // optional - required for tab-bound methods
+  timeoutMs: 10_000, // optional - overrides defaultTimeoutMs
 });
 
 if (response.ok) {
@@ -82,7 +82,7 @@ retry guidance:
 
 ```js
 if (!response.ok && response.error.recovery?.retry) {
-  await new Promise(r => setTimeout(r, response.error.recovery.retryAfterMs ?? 1000));
+  await new Promise((r) => setTimeout(r, response.error.recovery.retryAfterMs ?? 1000));
   // retry once
 }
 ```
@@ -110,39 +110,39 @@ client.on('reconnected', () => {
 
 See [`packages/protocol/src/registry.js`](../packages/protocol/src/registry.js) for the full list. Common ones:
 
-| Method | Description |
-|--------|-------------|
-| `access.request` | Request window access (surfaces Enable prompt) |
-| `health.ping` | Check daemon and extension connectivity |
-| `tabs.list` | List tabs in the enabled window |
-| `page.get_state` | URL, title, readyState of the active tab |
-| `dom.query` | Query DOM subtree with CSS selector |
-| `dom.find_by_text` | Find elements by visible text |
-| `page.evaluate` | Run JavaScript in the page context |
-| `page.get_console` | Read buffered console output |
-| `page.get_network` | Read intercepted fetch/XHR requests |
-| `input.click` | Click an element |
-| `input.type` | Type text into an element |
-| `navigation.navigate` | Navigate to a URL |
-| `screenshot.capture_element` | Capture element as PNG (base64) |
-| `patch.apply_styles` | Apply reversible CSS overrides |
+| Method                       | Description                                    |
+| ---------------------------- | ---------------------------------------------- |
+| `access.request`             | Request window access (surfaces Enable prompt) |
+| `health.ping`                | Check daemon and extension connectivity        |
+| `tabs.list`                  | List tabs in the enabled window                |
+| `page.get_state`             | URL, title, readyState of the active tab       |
+| `dom.query`                  | Query DOM subtree with CSS selector            |
+| `dom.find_by_text`           | Find elements by visible text                  |
+| `page.evaluate`              | Run JavaScript in the page context             |
+| `page.get_console`           | Read buffered console output                   |
+| `page.get_network`           | Read intercepted fetch/XHR requests            |
+| `input.click`                | Click an element                               |
+| `input.type`                 | Type text into an element                      |
+| `navigation.navigate`        | Navigate to a URL                              |
+| `screenshot.capture_element` | Capture element as PNG (base64)                |
+| `patch.apply_styles`         | Apply reversible CSS overrides                 |
 
 ## Error codes
 
-| Code | Retryable | Meaning |
-|------|-----------|---------|
-| `ACCESS_DENIED` | No | Browser Bridge is disabled for this window |
-| `EXTENSION_DISCONNECTED` | Yes (3 s) | Extension not connected to daemon |
-| `TIMEOUT` | Yes (1 s) | Extension did not respond in time |
-| `RATE_LIMITED` | Yes (2 s) | Too many concurrent requests |
-| `ELEMENT_STALE` | No | Element was removed from the DOM |
-| `TAB_MISMATCH` | No | Tab closed or not found |
-| `INVALID_REQUEST` | No | Malformed method or params |
-| `INTERNAL_ERROR` | Yes (1 s) | Unexpected extension-side error |
-| `DAEMON_OFFLINE` | No | Daemon not running — start with `bbx-daemon` |
-| `CONNECTION_LOST` | Yes | Socket dropped mid-request — retry |
-| `BRIDGE_TIMEOUT` | Yes (1 s) | Extension took too long — retry with simpler call |
-| `NATIVE_HOST_UNAVAILABLE` | No | Run `bbx doctor` to diagnose |
+| Code                      | Retryable | Meaning                                           |
+| ------------------------- | --------- | ------------------------------------------------- |
+| `ACCESS_DENIED`           | No        | Browser Bridge is disabled for this window        |
+| `EXTENSION_DISCONNECTED`  | Yes (3 s) | Extension not connected to daemon                 |
+| `TIMEOUT`                 | Yes (1 s) | Extension did not respond in time                 |
+| `RATE_LIMITED`            | Yes (2 s) | Too many concurrent requests                      |
+| `ELEMENT_STALE`           | No        | Element was removed from the DOM                  |
+| `TAB_MISMATCH`            | No        | Tab closed or not found                           |
+| `INVALID_REQUEST`         | No        | Malformed method or params                        |
+| `INTERNAL_ERROR`          | Yes (1 s) | Unexpected extension-side error                   |
+| `DAEMON_OFFLINE`          | No        | Daemon not running — start with `bbx-daemon`      |
+| `CONNECTION_LOST`         | Yes       | Socket dropped mid-request — retry                |
+| `BRIDGE_TIMEOUT`          | Yes (1 s) | Extension took too long — retry with simpler call |
+| `NATIVE_HOST_UNAVAILABLE` | No        | Run `bbx doctor` to diagnose                      |
 
 ## Using `withBridgeClient`
 

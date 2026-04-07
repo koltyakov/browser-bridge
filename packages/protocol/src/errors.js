@@ -12,7 +12,7 @@ export const ERROR_CODES = Object.freeze({
   INVALID_REQUEST: 'INVALID_REQUEST',
   NATIVE_HOST_UNAVAILABLE: 'NATIVE_HOST_UNAVAILABLE',
   EXTENSION_DISCONNECTED: 'EXTENSION_DISCONNECTED',
-  TIMEOUT: 'TIMEOUT'
+  TIMEOUT: 'TIMEOUT',
 });
 
 /**
@@ -23,47 +23,47 @@ export const ERROR_CODES = Object.freeze({
 export const ERROR_RECOVERY = Object.freeze({
   [ERROR_CODES.ACCESS_DENIED]: {
     retry: false,
-    hint: 'Access is off for this window. Ask the user to click Enable in the Browser Bridge popup or side panel. Do not request access again until that window is enabled.'
+    hint: 'Access is off for this window. Ask the user to click Enable in the Browser Bridge popup or side panel. Do not request access again until that window is enabled.',
   },
   [ERROR_CODES.ELEMENT_STALE]: {
     retry: false,
     alternativeMethod: 'dom.query',
-    hint: 'Element was removed from the DOM. Re-query with the same selector to get a fresh elementRef.'
+    hint: 'Element was removed from the DOM. Re-query with the same selector to get a fresh elementRef.',
   },
   [ERROR_CODES.TAB_MISMATCH]: {
     retry: false,
     alternativeMethod: 'tabs.list',
-    hint: 'Tab was closed or not found. Use tabs.list to find an available tab.'
+    hint: 'Tab was closed or not found. Use tabs.list to find an available tab.',
   },
   [ERROR_CODES.TIMEOUT]: {
     retry: true,
     retryAfterMs: 1000,
-    hint: 'Operation exceeded the time limit. Retry once, or simplify the request (smaller maxNodes, narrower selector).'
+    hint: 'Operation exceeded the time limit. Retry once, or simplify the request (smaller maxNodes, narrower selector).',
   },
   [ERROR_CODES.RATE_LIMITED]: {
     retry: true,
     retryAfterMs: 2000,
-    hint: 'Too many requests. Back off and retry after a short delay.'
+    hint: 'Too many requests. Back off and retry after a short delay.',
   },
   [ERROR_CODES.EXTENSION_DISCONNECTED]: {
     retry: true,
     retryAfterMs: 3000,
     alternativeMethod: 'health.ping',
-    hint: 'Extension not connected. Check Chrome is running, then retry. Use health.ping to verify connectivity.'
+    hint: 'Extension not connected. Check Chrome is running, then retry. Use health.ping to verify connectivity.',
   },
   [ERROR_CODES.NATIVE_HOST_UNAVAILABLE]: {
     retry: false,
-    hint: 'Native host not reachable. Run `bbx doctor` to diagnose the installation.'
+    hint: 'Native host not reachable. Run `bbx doctor` to diagnose the installation.',
   },
   [ERROR_CODES.INVALID_REQUEST]: {
     retry: false,
-    hint: 'Malformed method or params. Check the method name and parameter types.'
+    hint: 'Malformed method or params. Check the method name and parameter types.',
   },
   [ERROR_CODES.INTERNAL_ERROR]: {
     retry: true,
     retryAfterMs: 1000,
-    hint: 'Unexpected extension error. Retry once; if persistent, check page.get_console for details.'
-  }
+    hint: 'Unexpected extension error. Retry once; if persistent, check page.get_console for details.',
+  },
 });
 
 /**

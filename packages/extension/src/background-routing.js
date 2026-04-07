@@ -16,7 +16,9 @@ import { ERROR_CODES } from '../../protocol/src/index.js';
  * @returns {boolean}
  */
 export function isRestrictedAutomationUrl(url) {
-  return /^(about:|chrome:|chrome-extension:|chrome-search:|devtools:|edge:|brave:|moz-extension:|view-source:)/i.test(url);
+  return /^(about:|chrome:|chrome-extension:|chrome-search:|devtools:|edge:|brave:|moz-extension:|view-source:)/i.test(
+    url
+  );
 }
 
 /**
@@ -40,11 +42,7 @@ export function selectRequestTabCandidate(requestTabId, explicitTab, activeTab) 
  */
 export function resolveWindowScopedTab(tab, enabledWindowId, options = {}) {
   const requireScriptable = options.requireScriptable !== false;
-  if (
-    typeof tab?.id !== 'number'
-    || !Number.isFinite(tab.id)
-    || typeof tab.windowId !== 'number'
-  ) {
+  if (typeof tab?.id !== 'number' || !Number.isFinite(tab.id) || typeof tab.windowId !== 'number') {
     throw new Error(ERROR_CODES.TAB_MISMATCH);
   }
   if (tab.windowId !== enabledWindowId) {
@@ -61,7 +59,7 @@ export function resolveWindowScopedTab(tab, enabledWindowId, options = {}) {
     tabId: tab.id,
     windowId: tab.windowId,
     title: tab.title ?? '',
-    url: tab.url
+    url: tab.url,
   };
 }
 
@@ -71,11 +69,11 @@ export function resolveWindowScopedTab(tab, enabledWindowId, options = {}) {
  */
 export function normalizeRequestedAccessTab(tab) {
   if (
-    typeof tab?.id !== 'number'
-    || !Number.isFinite(tab.id)
-    || typeof tab.windowId !== 'number'
-    || typeof tab.url !== 'string'
-    || !tab.url
+    typeof tab?.id !== 'number' ||
+    !Number.isFinite(tab.id) ||
+    typeof tab.windowId !== 'number' ||
+    typeof tab.url !== 'string' ||
+    !tab.url
   ) {
     return null;
   }
@@ -86,6 +84,6 @@ export function normalizeRequestedAccessTab(tab) {
     tabId: tab.id,
     windowId: tab.windowId,
     title: tab.title ?? '',
-    url: tab.url
+    url: tab.url,
   };
 }

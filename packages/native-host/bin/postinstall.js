@@ -16,10 +16,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 
 try {
-  await installNativeManifest({ repoRoot });
+  await installNativeManifest({ repoRoot, preserveCustomExtensionId: true });
   process.stdout.write('Browser Bridge: native host installed. Run `bbx doctor` to verify.\n');
 } catch (err) {
   // Non-fatal - user can run `bbx install` manually.
   const message = err instanceof Error ? err.message : String(err);
-  process.stderr.write(`Browser Bridge: native host auto-install skipped (${message}).\nRun \`bbx install\` manually if needed.\n`);
+  process.stderr.write(
+    `Browser Bridge: native host auto-install skipped (${message}).\nRun \`bbx install\` manually if needed.\n`
+  );
 }

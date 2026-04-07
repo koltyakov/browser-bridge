@@ -5,8 +5,16 @@ import net from 'node:net';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-import { installAgentFiles, isSupportedTarget, removeAgentFiles } from '../../agent-client/src/install.js';
-import { installMcpConfig, isMcpClientName, removeMcpConfig } from '../../agent-client/src/mcp-config.js';
+import {
+  installAgentFiles,
+  isSupportedTarget,
+  removeAgentFiles,
+} from '../../agent-client/src/install.js';
+import {
+  installMcpConfig,
+  isMcpClientName,
+  removeMcpConfig,
+} from '../../agent-client/src/mcp-config.js';
 import { collectSetupStatus } from '../../agent-client/src/setup-status.js';
 import {
   createFailure,
@@ -19,7 +27,7 @@ import {
   parseJsonLines,
   PROTOCOL_VERSION,
   SUPPORTED_VERSIONS,
-  validateBridgeRequest
+  validateBridgeRequest,
 } from '../../protocol/src/index.js';
 import { getSocketPath } from './config.js';
 import { writeJsonLine } from './framing.js';
@@ -76,7 +84,7 @@ function getVersionNegotiationPayload(requestedVersion) {
     ...(localIsNewer ? { deprecated_since: latestSupported } : {}),
     migration_hint: localIsNewer
       ? `Browser Bridge daemon is newer than the client protocol ${requestedVersion}. Restart or update the Browser Bridge CLI/npm package to ${latestSupported} or later.`
-      : `Browser Bridge daemon is older than the client protocol ${requestedVersion}. Restart or update the Browser Bridge CLI so the daemon supports ${requestedVersion}.`
+      : `Browser Bridge daemon is older than the client protocol ${requestedVersion}. Restart or update the Browser Bridge CLI so the daemon supports ${requestedVersion}.`,
   };
 }
 
@@ -108,7 +116,13 @@ export class BridgeDaemon {
    *   logger?: Pick<Console, 'log' | 'error'>
    * }} [options={}]
    */
-  constructor({ socketPath = getSocketPath(), listenOptions = null, setupStatusLoader = collectSetupStatus, setupInstaller = installSetupTarget, logger = console } = {}) {
+  constructor({
+    socketPath = getSocketPath(),
+    listenOptions = null,
+    setupStatusLoader = collectSetupStatus,
+    setupInstaller = installSetupTarget,
+    logger = console,
+  } = {}) {
     this.socketPath = socketPath;
     this.listenOptions = listenOptions;
     this.setupStatusLoader = setupStatusLoader;
@@ -140,8 +154,10 @@ export class BridgeDaemon {
     if (message.role === 'extension') {
       const extensionId = randomUUID();
       socket.__extensionId = extensionId;
-      socket.__browserName = typeof message.browserName === 'string' ? message.browserName : undefined;
-      socket.__profileLabel = typeof message.profileLabel === 'string' ? message.profileLabel : undefined;
+      socket.__browserName =
+        typeof message.browserName === 'string' ? message.browserName : undefined;
+      socket.__profileLabel =
+        typeof message.profileLabel === 'string' ? message.profileLabel : undefined;
       socket.__lastActiveAt = Date.now();
       this.extensionSockets.set(extensionId, socket);
       void writeJsonLine(socket, { type: 'registered', role: 'extension' });
@@ -152,7 +168,11 @@ export class BridgeDaemon {
       const clientId = message.clientId || randomUUID();
       this.agentSockets.set(clientId, socket);
       socket.__clientId = clientId;
-      void writeJsonLine(socket, { type: 'registered', role: 'agent', clientId });
+      void writeJsonLine(socket, {
+        type: 'registered',
+        role: 'agent',
+        clientId,
+      });
       return;
     }
   }
@@ -169,7 +189,9 @@ export class BridgeDaemon {
       try {
         await fs.promises.access(this.socketPath);
         if (await pingExistingDaemon(this.socketPath)) {
-          throw new Error(`Another daemon is already running on ${this.socketPath}. Stop it before starting a new one.`);
+          throw new Error(
+            `Another daemon is already running on ${this.socketPath}. Stop it before starting a new one.`
+          );
         }
         this.logger.log('[daemon] Removing stale socket from previous run:', this.socketPath);
       } catch (error) {
@@ -189,7 +211,10 @@ export class BridgeDaemon {
       parseJsonLines(typedSocket, (raw) => {
         const message = /** @type {DaemonMessage} */ (raw);
         void this.handleClientMessage(typedSocket, message).catch((err) => {
-          this.logger.error?.('[daemon] handler error:', err instanceof Error ? err.message : String(err));
+          this.logger.error?.(
+            '[daemon] handler error:',
+            err instanceof Error ? err.message : String(err)
+          );
         });
       });
       typedSocket.on('close', () => this.handleSocketClose(typedSocket));
@@ -314,7 +339,10 @@ export class BridgeDaemon {
 
     await writeJsonLine(socket, {
       type: 'error',
-      error: { code: ERROR_CODES.INVALID_REQUEST, message: 'Unknown message type.' }
+      error: {
+        code: ERROR_CODES.INVALID_REQUEST,
+        message: 'Unknown message type.',
+      },
     });
   }
 
@@ -332,7 +360,7 @@ export class BridgeDaemon {
           extensionConnected: false,
           socketPath: this.socketPath,
           connectedExtensions: [],
-          ...getVersionNegotiationPayload(request.meta?.protocol_version)
+          ...getVersionNegotiationPayload(request.meta?.protocol_version),
         });
         await writeJsonLine(socket, { type: 'agent.response', response });
         return;
@@ -341,7 +369,7 @@ export class BridgeDaemon {
 
     if (request.method === 'log.tail') {
       const response = createSuccess(request.id, {
-        entries: this.recentLog.slice(-DEFAULT_LOG_TAIL_LIMIT)
+        entries: this.recentLog.slice(-DEFAULT_LOG_TAIL_LIMIT),
       });
       await writeJsonLine(socket, { type: 'agent.response', response });
       return;
@@ -349,7 +377,7 @@ export class BridgeDaemon {
 
     if (request.method === 'setup.get_status') {
       const response = createSuccess(request.id, await this.setupStatusLoader(), {
-        method: request.method
+        method: request.method,
       });
       await writeJsonLine(socket, { type: 'agent.response', response });
       return;
@@ -357,9 +385,13 @@ export class BridgeDaemon {
 
     if (request.method === 'setup.install') {
       try {
-        const response = createSuccess(request.id, await this.setupInstaller(request.params ?? {}), {
-          method: request.method
-        });
+        const response = createSuccess(
+          request.id,
+          await this.setupInstaller(request.params ?? {}),
+          {
+            method: request.method,
+          }
+        );
         await writeJsonLine(socket, { type: 'agent.response', response });
       } catch (error) {
         const response = createFailure(
@@ -374,8 +406,10 @@ export class BridgeDaemon {
       return;
     }
 
-    const targetBrowser = typeof request.meta?.target_browser === 'string' ? request.meta.target_browser : null;
-    const targetProfile = typeof request.meta?.target_profile === 'string' ? request.meta.target_profile : null;
+    const targetBrowser =
+      typeof request.meta?.target_browser === 'string' ? request.meta.target_browser : null;
+    const targetProfile =
+      typeof request.meta?.target_profile === 'string' ? request.meta.target_profile : null;
     const hasExplicitTarget = Boolean(targetBrowser || targetProfile);
 
     let targets = Array.from(this.extensionSockets.values());
@@ -418,16 +452,19 @@ export class BridgeDaemon {
         const pending = this.pendingRequests.get(request.id);
         if (!pending) return;
         this.pendingRequests.delete(request.id);
-        const response = createFailure(request.id, ERROR_CODES.TIMEOUT, 'Extension did not respond in time.');
-        void writeJsonLine(pending.socket, { type: 'agent.response', response });
-      }, this.pendingTimeoutMs)
+        const response = createFailure(
+          request.id,
+          ERROR_CODES.TIMEOUT,
+          'Extension did not respond in time.'
+        );
+        void writeJsonLine(pending.socket, {
+          type: 'agent.response',
+          response,
+        });
+      }, this.pendingTimeoutMs),
     });
     const broadcastPayload = { type: 'extension.request', request };
-    await Promise.all(
-      targets.map(
-        (extSocket) => writeJsonLine(extSocket, broadcastPayload)
-      )
-    );
+    await Promise.all(targets.map((extSocket) => writeJsonLine(extSocket, broadcastPayload)));
   }
 
   /**
@@ -440,15 +477,15 @@ export class BridgeDaemon {
       await writeJsonLine(socket, {
         type: 'extension.setup_status.response',
         requestId: message.requestId,
-        status: await this.setupStatusLoader()
+        status: await this.setupStatusLoader(),
       });
     } catch (error) {
       await writeJsonLine(socket, {
         type: 'extension.setup_status.error',
         requestId: message.requestId,
         error: {
-          message: error instanceof Error ? error.message : String(error)
-        }
+          message: error instanceof Error ? error.message : String(error),
+        },
       });
     }
   }
@@ -483,9 +520,7 @@ export class BridgeDaemon {
    */
   handleExtensionActivity(socket, message) {
     socket.__lastActiveAt =
-      typeof message.at === 'number' && Number.isFinite(message.at)
-        ? message.at
-        : Date.now();
+      typeof message.at === 'number' && Number.isFinite(message.at) ? message.at : Date.now();
   }
 
   /**
@@ -514,31 +549,36 @@ export class BridgeDaemon {
         method: responseMessage.meta?.method ?? null,
         ok: true,
         id: responseMessage.id,
-        source: pending.source || null
+        source: pending.source || null,
       });
-      const response = pending.method === 'health.ping'
-        ? createSuccess(responseMessage.id, {
-          daemon: 'ok',
-          extensionConnected: true,
-          socketPath: this.socketPath,
-          connectedExtensions: Array.from(this.extensionSockets.entries()).map(
-            ([_id, extSocket]) => ({
-              extensionId: _id,
-              browserName: extSocket.__browserName ?? null,
-              profileLabel: extSocket.__profileLabel ?? null,
-              accessEnabled: extSocket.__accessEnabled ?? false
-            })
-          ),
-          .../** @type {Record<string, unknown>} */ (responseMessage.result)
-        }, {
-          ...responseMessage.meta,
-          method: responseMessage.meta?.method ?? pending.method
-        })
-        : responseMessage;
+      const response =
+        pending.method === 'health.ping'
+          ? createSuccess(
+              responseMessage.id,
+              {
+                daemon: 'ok',
+                extensionConnected: true,
+                socketPath: this.socketPath,
+                connectedExtensions: Array.from(this.extensionSockets.entries()).map(
+                  ([_id, extSocket]) => ({
+                    extensionId: _id,
+                    browserName: extSocket.__browserName ?? null,
+                    profileLabel: extSocket.__profileLabel ?? null,
+                    accessEnabled: extSocket.__accessEnabled ?? false,
+                  })
+                ),
+                .../** @type {Record<string, unknown>} */ (responseMessage.result),
+              },
+              {
+                ...responseMessage.meta,
+                method: responseMessage.meta?.method ?? pending.method,
+              }
+            )
+          : responseMessage;
 
       await writeJsonLine(pending.socket, {
         type: 'agent.response',
-        response
+        response,
       });
       return;
     }
@@ -591,25 +631,27 @@ export class BridgeDaemon {
     clearTimeout(pending.timeoutId);
     this.pendingRequests.delete(requestId);
 
-    const response = pending.lastErrorResponse ?? createFailure(
-      requestId,
-      ERROR_CODES.EXTENSION_DISCONNECTED,
-      'Target extension disconnected before responding.',
-      null,
-      { method: pending.method }
-    );
+    const response =
+      pending.lastErrorResponse ??
+      createFailure(
+        requestId,
+        ERROR_CODES.EXTENSION_DISCONNECTED,
+        'Target extension disconnected before responding.',
+        null,
+        { method: pending.method }
+      );
 
     this.pushLog({
       at: new Date().toISOString(),
       method: response.meta?.method ?? pending.method ?? null,
       ok: false,
       id: requestId,
-      source: pending.source || null
+      source: pending.source || null,
     });
 
     await writeJsonLine(pending.socket, {
       type: 'agent.response',
-      response
+      response,
     });
   }
 
@@ -636,8 +678,7 @@ function selectMostRecentlyActiveExtension(sockets) {
 
   return sockets.reduce((best, current) => {
     const bestAt = typeof best.__lastActiveAt === 'number' ? best.__lastActiveAt : 0;
-    const currentAt =
-      typeof current.__lastActiveAt === 'number' ? current.__lastActiveAt : 0;
+    const currentAt = typeof current.__lastActiveAt === 'number' ? current.__lastActiveAt : 0;
     return currentAt > bestAt ? current : best;
   });
 }
@@ -679,16 +720,18 @@ async function pingExistingDaemon(socketPath) {
     });
 
     socket.once('connect', () => {
-      socket.write(`${JSON.stringify({
-        type: 'agent.request',
-        request: {
-          id: 'ping_probe',
-          method: 'health.ping',
-          tab_id: null,
-          params: {},
-          meta: { protocol_version: PROTOCOL_VERSION, token_budget: null }
-        }
-      })}\n`);
+      socket.write(
+        `${JSON.stringify({
+          type: 'agent.request',
+          request: {
+            id: 'ping_probe',
+            method: 'health.ping',
+            tab_id: null,
+            params: {},
+            meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+          },
+        })}\n`
+      );
     });
   });
 }
@@ -724,7 +767,7 @@ export async function installSetupTarget(
     installMcpConfig,
     isMcpClientName,
     removeMcpConfig,
-    cwd: process.cwd()
+    cwd: process.cwd(),
   }
 ) {
   /** @type {SetupInstallDeps} */
@@ -734,14 +777,21 @@ export async function installSetupTarget(
     if (!resolvedDeps.isMcpClientName(normalized.target)) {
       throw new Error(`Unsupported MCP client "${normalized.target}".`);
     }
-    const paths = normalized.action === 'uninstall'
-      ? await resolvedDeps.removeMcpConfig(normalized.target, { global: true })
-      : [await resolvedDeps.installMcpConfig(normalized.target, { global: true })];
+    const paths =
+      normalized.action === 'uninstall'
+        ? await resolvedDeps.removeMcpConfig(normalized.target, {
+            global: true,
+          })
+        : [
+            await resolvedDeps.installMcpConfig(normalized.target, {
+              global: true,
+            }),
+          ];
     return {
       action: normalized.action,
       kind: 'mcp',
       target: normalized.target,
-      paths
+      paths,
     };
   }
 
@@ -749,21 +799,22 @@ export async function installSetupTarget(
     throw new Error(`Unsupported skill target "${normalized.target}".`);
   }
 
-  const paths = normalized.action === 'uninstall'
-    ? await resolvedDeps.removeAgentFiles({
-      targets: [normalized.target],
-      projectPath: resolvedDeps.cwd,
-      global: true
-    })
-    : await resolvedDeps.installAgentFiles({
-      targets: [normalized.target],
-      projectPath: resolvedDeps.cwd,
-      global: true
-    });
+  const paths =
+    normalized.action === 'uninstall'
+      ? await resolvedDeps.removeAgentFiles({
+          targets: [normalized.target],
+          projectPath: resolvedDeps.cwd,
+          global: true,
+        })
+      : await resolvedDeps.installAgentFiles({
+          targets: [normalized.target],
+          projectPath: resolvedDeps.cwd,
+          global: true,
+        });
   return {
     action: normalized.action,
     kind: 'skill',
     target: normalized.target,
-    paths
+    paths,
   };
 }
