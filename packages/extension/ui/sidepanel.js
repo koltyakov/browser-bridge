@@ -319,38 +319,15 @@ function readRequestedTabId() {
 const requestedTabId = readRequestedTabId();
 
 /**
- * @returns {Promise<number | null>}
- */
-async function resolveInitialScopeTabId() {
-  if (requestedTabId != null) {
-    return requestedTabId;
-  }
-
-  try {
-    const [activeTab] = await chrome.tabs.query({
-      active: true,
-      currentWindow: true,
-    });
-    return typeof activeTab?.id === 'number' ? activeTab.id : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * @returns {Promise<void>}
  */
 async function connectSidepanelPort() {
-  const initialScopeTabId = await resolveInitialScopeTabId();
   const nextPort = chrome.runtime.connect({ name: 'ui-sidepanel' });
   nextPort.onMessage.addListener(handlePortMessage);
   nextPort.onDisconnect.addListener(() => {
     setTimeout(connectSidepanelPort, 500);
   });
-  nextPort.postMessage({
-    type: 'state.request',
-    scopeTabId: initialScopeTabId != null && initialScopeTabId > 0 ? initialScopeTabId : undefined,
-  });
+  nextPort.postMessage({ type: 'state.request' });
   port = nextPort;
 }
 
@@ -383,7 +360,6 @@ toggleButton.addEventListener('click', () => {
 
   port.postMessage({
     type: 'scope.set_enabled',
-    tabId: requestedTabId != null && requestedTabId > 0 ? requestedTabId : undefined,
     enabled: pendingEnabled,
   });
 });

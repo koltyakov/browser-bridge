@@ -53,7 +53,7 @@ Run `npm run lint && npm run typecheck && npm test` before opening a PR.
 ## Extension packaging
 
 ```bash
-npm run package:extension   # produces dist/browser-bridge-extension-<version>.zip
+npm run package:extension   # produces dist/browser-bridge-extension-v<manifest-version>.zip
 ```
 
 The ZIP can be submitted to the Chrome Web Store. Do not commit `dist/`.

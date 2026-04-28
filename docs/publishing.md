@@ -13,7 +13,7 @@ The published npm package now embeds the Browser Bridge store extension ID, so e
 
 ## Release Checklist
 
-1. Bump the version in [package.json](../package.json) and [manifest.json](../manifest.json) together.
+1. Bump [package.json](../package.json) when releasing the CLI/npm package and [manifest.json](../manifest.json) when releasing the extension ZIP. They can advance independently.
 2. Run `npm install` if dependencies changed.
 3. Run `npm run release:check`.
 4. In npm package settings, add a GitHub Actions trusted publisher for this repository and workflow file `release.yml`.
@@ -71,7 +71,6 @@ Use one narrow sentence. Suggested draft:
 
 Use reviewer-facing explanations tied to the product purpose:
 
-- `activeTab`: used to bootstrap inspection against the tab the user explicitly enables
 - `debugger`: used for Chrome DevTools Protocol reads and page-context evaluation, such as DOM snapshots, computed styles, screenshots, accessibility data, and page inspection helpers
 - `nativeMessaging`: required to communicate with the local Browser Bridge daemon
 - `scripting`: used to inject and coordinate the scoped page instrumentation flow

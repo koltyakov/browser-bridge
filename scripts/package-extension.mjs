@@ -13,19 +13,10 @@ const repoRoot = path.resolve(__dirname, '..');
 const distDir = path.join(repoRoot, 'dist');
 const stagingDir = path.join(distDir, 'browser-bridge-extension');
 const manifestPath = path.join(repoRoot, 'manifest.json');
-const packagePath = path.join(repoRoot, 'package.json');
 
 /** @typedef {{ version: string, icons?: Record<string, string> }} ExtensionManifest */
-/** @typedef {{ version: string }} PackageManifest */
 
 const manifest = /** @type {ExtensionManifest} */ (await readJson(manifestPath));
-const packageManifest = /** @type {PackageManifest} */ (await readJson(packagePath));
-
-if (manifest.version !== packageManifest.version) {
-  throw new Error(
-    `Version mismatch: manifest.json has ${manifest.version} but package.json has ${packageManifest.version}.`
-  );
-}
 
 await verifyManifestAssets(manifest);
 await stageExtension();

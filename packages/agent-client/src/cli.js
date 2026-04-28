@@ -417,7 +417,7 @@ async function main() {
         summary:
           report.issues.length === 0
             ? 'Browser Bridge is ready.'
-            : `Browser Bridge has ${report.issues.length} setup issue(s).`,
+            : `Browser Bridge has ${report.issues.length} readiness issue(s).`,
         evidence: report,
       });
       return;

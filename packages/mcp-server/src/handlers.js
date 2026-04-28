@@ -309,7 +309,7 @@ export async function handleStatusTool() {
     const summary =
       report.issues.length === 0
         ? 'Browser Bridge is ready.'
-        : `Browser Bridge has ${report.issues.length} setup issue(s).`;
+        : `Browser Bridge has ${report.issues.length} readiness issue(s).`;
     return createToolResult(summary, {
       ok: report.issues.length === 0,
       evidence: report,
@@ -923,10 +923,7 @@ export async function handleSetupTool(args) {
   });
   const configuredMcp = status.mcpClients.filter((e) => e.configured).length;
   const installedSkills = status.skillTargets.filter((e) => e.installed).length;
-  const summary =
-    configuredMcp === 0 && installedSkills === 0
-      ? 'No MCP or skill setup found. Run `bbx install-mcp` and `bbx install-skill`.'
-      : `Setup: ${configuredMcp}/${status.mcpClients.length} MCP clients configured, ${installedSkills}/${status.skillTargets.length} skills installed.`;
+  const summary = `Optional agent integration status: ${configuredMcp}/${status.mcpClients.length} MCP clients configured, ${installedSkills}/${status.skillTargets.length} skills installed.`;
   return createToolResult(summary, { ok: true, status });
 }
 

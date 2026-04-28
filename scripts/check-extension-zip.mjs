@@ -11,8 +11,12 @@ const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const distDir = path.join(repoRoot, 'dist');
+const manifestPath = path.join(repoRoot, 'manifest.json');
 
-const zipPath = await findExtensionZip();
+/** @typedef {{ version: string }} ExtensionManifest */
+
+const manifest = /** @type {ExtensionManifest} */ (await readJson(manifestPath));
+const zipPath = path.join(distDir, `browser-bridge-extension-v${manifest.version}.zip`);
 const entries = await listZipEntries(zipPath);
 
 const unexpectedEntries = entries.filter((entry) => !isAllowedEntry(entry));
@@ -34,21 +38,11 @@ for (const entry of entries) {
 }
 
 /**
- * @returns {Promise<string>}
+ * @param {string} filePath
+ * @returns {Promise<unknown>}
  */
-async function findExtensionZip() {
-  const names = await fs.promises.readdir(distDir);
-  const candidates = names
-    .filter((name) => /^browser-bridge-extension-v.+\.zip$/.test(name))
-    .sort();
-
-  if (candidates.length === 0) {
-    throw new Error(
-      `No Browser Bridge extension ZIP found in ${distDir}. Run npm run package:extension first.`
-    );
-  }
-
-  return path.join(distDir, candidates[candidates.length - 1]);
+async function readJson(filePath) {
+  return JSON.parse(await fs.promises.readFile(filePath, 'utf8'));
 }
 
 /**
@@ -56,14 +50,43 @@ async function findExtensionZip() {
  * @returns {Promise<string[]>}
  */
 async function listZipEntries(archivePath) {
-  const { stdout } = await execFileAsync('zipinfo', ['-1', archivePath], {
-    cwd: repoRoot,
-  });
-  return stdout
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line && !line.endsWith('/'))
-    .sort();
+  try {
+    const { stdout } = await execFileAsync('zipinfo', ['-1', archivePath], {
+      cwd: repoRoot,
+    });
+    return stdout
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line && !line.endsWith('/'))
+      .sort();
+  } catch (error) {
+    if (isMissingArchiveError(error)) {
+      const expectedName = path.basename(archivePath);
+      throw new Error(
+        `No Browser Bridge extension ZIP found at ${archivePath}. Run npm run package:extension first to create ${expectedName}.`
+      );
+    }
+
+    throw error;
+  }
+}
+
+/**
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+function isMissingArchiveError(error) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = typeof error.message === 'string' ? error.message : '';
+  if (message.includes('No such file') || message.includes('cannot find or open')) {
+    return true;
+  }
+
+  const code = Reflect.get(error, 'code');
+  return code === 'ENOENT';
 }
 
 /**

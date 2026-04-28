@@ -257,6 +257,16 @@ test('handleStatusTool returns doctor report without bridge calls', async () => 
   assert.ok(typeof result.structuredContent === 'object');
   assert.ok(Array.isArray(result.content));
   assert.equal(result.content[0].type, 'text');
+  assert.match(result.content[0].text, /readiness issue|Browser Bridge is ready/);
+  assert.doesNotMatch(result.content[0].text, /setup issue/);
+});
+
+test('handleSetupTool reports optional agent integration status', async () => {
+  const { handleSetupTool } = await import('../src/handlers.js');
+  const result = await handleSetupTool({ global: false });
+
+  assert.match(result.content[0].text, /Optional agent integration status:/);
+  assert.doesNotMatch(result.content[0].text, /No MCP or skill setup found/);
 });
 
 test('handleSkillTool returns runtime context without a bridge connection', async () => {
