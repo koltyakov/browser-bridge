@@ -18,8 +18,7 @@
     "scripting",
     "sidePanel",
     "storage",
-    "tabs",
-    "offscreen"
+    "tabs"
   ],
   "host_permissions": ["<all_urls>"],
   "background": {

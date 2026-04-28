@@ -4,7 +4,7 @@
 
 - `Browser Bridge` is a Chrome extension plus local Native Messaging bridge for token-efficient, scoped browser inspection and patching.
 - Main areas:
-  - `packages/extension`: MV3 extension runtime, content script, popup, side panel, offscreen cropper
+  - `packages/extension`: MV3 extension runtime, content script, popup, side panel
   - `packages/native-host`: local daemon, native host bootstrap, manifest installer
   - `packages/protocol`: shared protocol shapes, normalization, error codes, budgeting
   - `packages/agent-client`: CLI (`bbx`) and subagent-facing bridge client

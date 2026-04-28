@@ -78,7 +78,6 @@ Use reviewer-facing explanations tied to the product purpose:
 - `sidePanel`: provides the side panel control surface
 - `storage`: persists window approvals, session state, and recent UI state for the current browser session
 - `tabs`: enumerates tabs and validates that a request stays inside the enabled window
-- `offscreen`: used for screenshot cropping in the offscreen document
 - `host_permissions` on `<all_urls>`: needed because the tool is designed to inspect whichever site the user explicitly approves, not a fixed site list
 
 Reviewers will likely scrutinize `debugger`, `nativeMessaging`, and `<all_urls>`. Keep the listing language narrow and explicit about user approval and local-only operation.
