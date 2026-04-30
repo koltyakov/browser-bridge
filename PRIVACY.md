@@ -1,4 +1,4 @@
-# Browser Bridge Privacy Policy
+# Browser Bridge (BBX) Privacy Policy
 
 Last updated: 2026-03-27
 

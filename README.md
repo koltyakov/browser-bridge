@@ -1,8 +1,8 @@
-# Browser Bridge
+# Browser Bridge (BBX)
 
-![Browser Bridge: Connect AI Agent and Browsers](https://raw.githubusercontent.com/koltyakov/browser-bridge/main/assets/banner.jpg)
+![Browser Bridge (BBX): Connect AI Agent and Browsers](https://raw.githubusercontent.com/koltyakov/browser-bridge/main/assets/banner.jpg)
 
-> **Chrome Web Store:** Install Browser Bridge from the [Chrome Web Store](https://chromewebstore.google.com/detail/browser-bridge/jjjkmmcdkpcgamlopogicbnnhdgebhie). For local or custom builds, use the unpacked install flow in [docs/unpacked-extension.md](https://github.com/koltyakov/browser-bridge/blob/main/docs/unpacked-extension.md).
+> **Chrome Web Store:** Install `Browser Bridge (BBX)` from the [Chrome Web Store](https://chromewebstore.google.com/detail/browser-bridge/jjjkmmcdkpcgamlopogicbnnhdgebhie). For local or custom builds, use the unpacked install flow in [docs/unpacked-extension.md](https://github.com/koltyakov/browser-bridge/blob/main/docs/unpacked-extension.md).
 
 A local bridge between your coding agent and a real Chrome tab. Browser Bridge gives the agent structured access to DOM, styles, layout, console, network, and reversible patches - starting from the actual tab you already have open, with all its real state intact.
 

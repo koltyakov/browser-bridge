@@ -1,4 +1,4 @@
-# Contributing to Browser Bridge
+# Contributing to Browser Bridge (BBX)
 
 ## Dev setup
 
