@@ -1,7 +1,7 @@
 # Unpacked Extension Install
 
-Use this path while the Chrome Web Store listing is still pending, or anytime
-you want to run Browser Bridge without installing it from a marketplace.
+Use this path when you want to run Browser Bridge without installing the
+published [Chrome Web Store build](https://chromewebstore.google.com/detail/browser-bridge/jjjkmmcdkpcgamlopogicbnnhdgebhie), or anytime you need a local custom build.
 
 ## 1. Install the CLI
 

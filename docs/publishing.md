@@ -97,7 +97,7 @@ If product behavior changes, update the privacy answers before submission.
 
 Google marks the Test Instructions tab as optional, but Browser Bridge should still provide it because the product depends on local CLI/native-host setup. Suggested draft:
 
-1. Install the published extension from the draft listing.
+1. Install the published extension from the Chrome Web Store listing.
 2. Install Node.js 18+ on the same machine.
 3. Run `npm install -g @browserbridge/bbx`.
 4. Run `bbx install`.
@@ -108,5 +108,5 @@ Google marks the Test Instructions tab as optional, but Browser Bridge should st
 
 ## Post-Publish Follow-Up
 
-- Update [README.md](../README.md) and [quickstart.md](./quickstart.md) with the real store listing URL.
+- Update [README.md](../README.md) and [quickstart.md](./quickstart.md) if the Chrome Web Store URL changes.
 - Re-run a live flow with `bbx install` after the first published build is available.

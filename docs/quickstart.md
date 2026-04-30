@@ -8,7 +8,7 @@ Browser Bridge lets your coding agent inspect and patch the real Chrome tab you 
 
 ## 1. Install the extension
 
-Install [Browser Bridge from the Chrome Web Store](https://chrome.google.com/webstore/detail/jjjkmmcdkpcgamlopogicbnnhdgebhie). <!-- TODO: replace with final store link after publishing -->
+Install [Browser Bridge from the Chrome Web Store](https://chromewebstore.google.com/detail/browser-bridge/jjjkmmcdkpcgamlopogicbnnhdgebhie).
 
 ## 2. Install the CLI
 
