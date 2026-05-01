@@ -97,6 +97,7 @@ function isAllowedEntry(entry) {
   return (
     entry === 'manifest.json' ||
     entry === 'LICENSE' ||
+    entry.startsWith('packages/protocol/src/') ||
     entry.startsWith('packages/extension/assets/') ||
     entry.startsWith('packages/extension/src/') ||
     entry.startsWith('packages/extension/ui/')

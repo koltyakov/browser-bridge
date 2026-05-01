@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "minimum_chrome_version": "114",
   "name": "Browser Bridge (BBX)",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Local bridge between your coding agent and browser. Structured access to DOM, styles, console, network, and reversible patches.",
   "icons": {
     "16": "packages/extension/assets/icon-16.png",
@@ -26,7 +26,6 @@
   },
   "action": {
     "default_title": "Browser Bridge",
-    "default_popup": "packages/extension/ui/popup.html",
     "default_icon": {
       "16": "packages/extension/assets/icon-16.png",
       "32": "packages/extension/assets/icon-32.png"

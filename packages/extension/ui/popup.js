@@ -19,7 +19,10 @@
  *     nativeConnected: boolean,
  *     currentTab: PopupCurrentTab | null
  *   }
- * }} PopupStateMessage
+ * } | {
+ *   type: 'toggle.error',
+ *   error: string
+ * }} PopupMessage
  */
 
 const nativeIndicator =
@@ -37,14 +40,40 @@ const controlCard = /** @type {HTMLElement | null} */ (
   document.querySelector('.popup-control-card')
 );
 const windowedPopup = isWindowedPopup();
+const toggleErrorEl = document.createElement('p');
+toggleErrorEl.className = 'toggle-error';
+toggleErrorEl.hidden = true;
+button.insertAdjacentElement('afterend', toggleErrorEl);
 /** @type {number | null} */
 let popupScopeTabId = null;
+/** @type {boolean | null} */
+let pendingEnabledState = null;
+/** @type {ReturnType<typeof setTimeout> | null} */
+let pendingToggleTimer = null;
+/** @type {ReturnType<typeof setTimeout> | null} */
+let toggleErrorTimer = null;
+const TOGGLE_PENDING_TIMEOUT_MS = 10_000;
+const TOGGLE_ERROR_DISPLAY_MS = 6_000;
 
-/** @param {PopupStateMessage} message */
+/** @param {PopupMessage} message */
 function handlePopupMessage(message) {
   if (message.type === 'state.sync') {
     renderNativeStatus(message.state.nativeConnected);
     renderPopupState(message.state.currentTab);
+    if (
+      pendingEnabledState != null &&
+      message.state.currentTab &&
+      message.state.currentTab.enabled === pendingEnabledState
+    ) {
+      resetPendingToggle();
+      if (windowedPopup) {
+        window.close();
+      }
+    }
+  }
+
+  if (message.type === 'toggle.error') {
+    renderToggleError(message.error);
   }
 }
 
@@ -105,10 +134,21 @@ button.addEventListener('click', () => {
   if (!currentTabState || button.dataset.pending === 'true') {
     return;
   }
+  const pendingEnabled = !currentTabState.enabled;
+  pendingEnabledState = pendingEnabled;
   button.dataset.pending = 'true';
-  button.textContent = currentTabState.enabled ? 'Disabling\u2026' : 'Enabling\u2026';
-  setCommunicationEnabled(!currentTabState.enabled);
-  window.close();
+  button.textContent = pendingEnabled ? 'Enabling\u2026' : 'Disabling\u2026';
+  toggleErrorEl.hidden = true;
+
+  if (pendingToggleTimer) {
+    clearTimeout(pendingToggleTimer);
+  }
+  pendingToggleTimer = setTimeout(() => {
+    resetPendingToggle();
+    renderButtonState(currentTabState);
+  }, TOGGLE_PENDING_TIMEOUT_MS);
+
+  setCommunicationEnabled(pendingEnabled);
 });
 
 /**
@@ -117,14 +157,19 @@ button.addEventListener('click', () => {
  */
 function renderPopupState(currentTab) {
   currentTabState = currentTab;
+  renderButtonState(currentTab);
+
+  if (toggleErrorTimer) {
+    clearTimeout(toggleErrorTimer);
+    toggleErrorTimer = null;
+  }
+  toggleErrorEl.hidden = true;
 
   if (!currentTab) {
     accessEyebrow.textContent = 'Window access unavailable';
     accessDetail.textContent =
       'Open a normal web page to manage Browser Bridge for this Chrome window.';
     accessDisclosure.hidden = false;
-    button.textContent = 'Enable Window Access';
-    button.disabled = true;
     controlCard?.classList.remove('attention');
     return;
   }
@@ -150,10 +195,57 @@ function renderPopupState(currentTab) {
       'Enable Browser Bridge to let your connected agent inspect and interact with pages in this Chrome window.';
   }
 
-  button.textContent = currentTab.enabled ? 'Disable Window Access' : 'Enable Window Access';
-  button.disabled = !currentTab.url;
   controlCard?.classList.toggle('attention', currentTab.accessRequested && !currentTab.enabled);
   queueWindowResize();
+}
+
+/**
+ * @param {PopupCurrentTab | null} currentTab
+ * @returns {void}
+ */
+function renderButtonState(currentTab) {
+  button.dataset.pending = 'false';
+
+  if (!currentTab) {
+    button.textContent = 'Enable Window Access';
+    button.disabled = true;
+    return;
+  }
+
+  button.textContent = currentTab.enabled ? 'Disable Window Access' : 'Enable Window Access';
+  button.disabled = !currentTab.url;
+}
+
+/**
+ * @returns {void}
+ */
+function resetPendingToggle() {
+  pendingEnabledState = null;
+  button.dataset.pending = 'false';
+  if (pendingToggleTimer) {
+    clearTimeout(pendingToggleTimer);
+    pendingToggleTimer = null;
+  }
+}
+
+/**
+ * @param {string} errorMessage
+ * @returns {void}
+ */
+function renderToggleError(errorMessage) {
+  resetPendingToggle();
+  renderButtonState(currentTabState);
+  const friendly = errorMessage.replace(/^CONTENT_SCRIPT_UNAVAILABLE:\s*/i, '');
+  toggleErrorEl.textContent = friendly;
+  toggleErrorEl.hidden = false;
+
+  if (toggleErrorTimer) {
+    clearTimeout(toggleErrorTimer);
+  }
+  toggleErrorTimer = setTimeout(() => {
+    toggleErrorEl.hidden = true;
+    toggleErrorTimer = null;
+  }, TOGGLE_ERROR_DISPLAY_MS);
 }
 
 /**

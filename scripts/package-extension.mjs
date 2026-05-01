@@ -55,6 +55,7 @@ async function stageExtension() {
   await fs.promises.mkdir(stagingDir, { recursive: true });
 
   await copyIntoStage('manifest.json');
+  await copyIntoStage(path.join('packages', 'protocol', 'src'));
   await copyIntoStage(path.join('packages', 'extension', 'src'));
   await copyIntoStage(path.join('packages', 'extension', 'ui'));
   await copyIntoStage(path.join('packages', 'extension', 'assets'));
