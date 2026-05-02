@@ -88,6 +88,7 @@ The table below includes the legacy capability bucket for each method so agents 
 | 55  | `cdp.get_dom_snapshot`             | Yes  | CDP  | cdp         | `cdp.dom_snapshot`   | DevTools DOM snapshot                                                   |
 | 56  | `cdp.get_box_model`                | Yes  | CDP  | cdp         | `cdp.box_model`      | DevTools-backed element geometry                                        |
 | 57  | `cdp.get_computed_styles_for_node` | Yes  | CDP  | cdp         | `cdp.styles`         | DevTools-backed computed styles                                         |
+| 58  | `cdp.dispatch_key_event`           | Yes  | CDP  | cdp         | `cdp.input`          | DevTools keyDown/keyUp without foreground focus                         |
 
 ## CLI
 
@@ -98,7 +99,7 @@ bbx call --tab 123 <method> '{...}'         # explicit tab target inside enabled
 bbx batch '[{"method":"...","params":{}}]'  # parallel calls
 ```
 
-**Convenience shortcuts:** `access-request`, `dom-query`, `describe`, `text`, `styles`, `box`, `click`, `focus`, `type`, `press-key`, `patch-style`, `patch-text`, `patches`, `rollback`, `screenshot`, `eval`, `console`, `wait`, `find`, `find-role`, `html`, `hover`, `navigate`, `storage`, `tab-create`, `tab-close`, `page-text`, `network`, `a11y-tree`, `perf`, `resize`, `reload`, `back`, `forward`, `attrs`, `matched-rules`
+**Convenience shortcuts:** `access-request`, `dom-query`, `describe`, `text`, `styles`, `box`, `click`, `focus`, `type`, `press-key`, `cdp-press-key`, `patch-style`, `patch-text`, `patches`, `rollback`, `screenshot`, `eval`, `console`, `wait`, `find`, `find-role`, `html`, `hover`, `navigate`, `storage`, `tab-create`, `tab-close`, `page-text`, `network`, `a11y-tree`, `perf`, `resize`, `reload`, `back`, `forward`, `attrs`, `matched-rules`
 
 Newer bridge methods such as `input.scroll_into_view` and `screenshot.capture_full_page` currently use the raw path: `bbx call <method> '{...}'`.
 

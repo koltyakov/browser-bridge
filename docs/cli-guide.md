@@ -70,6 +70,7 @@ bbx forward
 bbx click button[type="submit"]
 bbx type input[name="email"] person@example.com
 bbx press-key Enter
+bbx cdp-press-key --tab 123 Escape
 bbx hover .menu-trigger
 bbx call input.scroll_into_view '{"target":{"selector":".menu-trigger"}}'
 bbx scroll 800
@@ -100,6 +101,7 @@ bbx call dom.query '{"selector":".card","maxNodes":5}'
 bbx call --tab 123 page.get_state
 bbx call input.scroll_into_view '{"target":{"selector":"[data-testid=\"checkout-summary\"]"}}'
 bbx call screenshot.capture_full_page '{}'
+bbx call --tab 123 cdp.dispatch_key_event '{"key":"Escape"}'
 bbx page.get_state
 bbx batch '[{"method":"page.get_state"},{"method":"page.get_console","params":{"level":"warn"}}]'
 ```

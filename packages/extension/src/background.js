@@ -37,6 +37,7 @@ import {
 import { summarizeBridgeResponse } from '../../protocol/src/index.js';
 import {
   enforceTokenBudget,
+  createCdpKeyDispatchSequence,
   getResponseDiagnostics,
   getErrorMessage,
   matchesConsoleLevel,
@@ -675,6 +676,7 @@ async function dispatchBridgeRequest(request) {
     case 'cdp.get_dom_snapshot':
     case 'cdp.get_box_model':
     case 'cdp.get_computed_styles_for_node':
+    case 'cdp.dispatch_key_event':
       return handleCdpRequest(request);
     default:
       return createFailure(
@@ -1925,6 +1927,24 @@ async function ensureContentScript(tabId) {
 async function handleCdpRequest(request) {
   const target = await resolveRequestTarget(request);
   return tabDebugger.run(target.tabId, async (debugTarget) => {
+    if (request.method === 'cdp.dispatch_key_event') {
+      const events = createCdpKeyDispatchSequence(request.params ?? {});
+      for (const event of events) {
+        await chrome.debugger.sendCommand(debugTarget, 'Input.dispatchKeyEvent', event);
+      }
+      return createSuccess(
+        request.id,
+        {
+          method: 'Input.dispatchKeyEvent',
+          pressed: true,
+          key: events[0]?.key ?? '',
+          code: events[0]?.code ?? '',
+          dispatched: events.map((event) => event.type),
+        },
+        { method: request.method }
+      );
+    }
+
     let command;
     let params = {};
     if (request.method === 'cdp.get_document') {

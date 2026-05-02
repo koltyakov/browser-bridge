@@ -65,6 +65,7 @@ export const DEBUGGER_BACKED_METHODS = new Set([
   'cdp.get_dom_snapshot',
   'cdp.get_box_model',
   'cdp.get_computed_styles_for_node',
+  'cdp.dispatch_key_event',
 ]);
 
 /**

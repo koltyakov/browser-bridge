@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 
 import {
   estimateResponseTokens,
+  createCdpKeyDispatchSequence,
   enforceTokenBudget,
   getResponseDiagnostics,
   inferCapability,
@@ -24,6 +25,50 @@ test('background helpers infer capabilities and normalize runtime errors', () =>
   assert.equal(inferCapability('tabs.list'), null);
   assert.equal(normalizeRuntimeErrorMessage('No tab with id: 7.'), 'TAB_MISMATCH');
   assert.equal(normalizeRuntimeErrorMessage('boom'), 'boom');
+});
+
+test('background helpers build CDP keyDown/keyUp events for Escape', () => {
+  assert.deepEqual(createCdpKeyDispatchSequence({ key: 'Escape' }), [
+    {
+      type: 'keyDown',
+      key: 'Escape',
+      code: 'Escape',
+      windowsVirtualKeyCode: 27,
+      nativeVirtualKeyCode: 27,
+      modifiers: 0,
+    },
+    {
+      type: 'keyUp',
+      key: 'Escape',
+      code: 'Escape',
+      windowsVirtualKeyCode: 27,
+      nativeVirtualKeyCode: 27,
+      modifiers: 0,
+    },
+  ]);
+});
+
+test('background helpers support CDP printable keys and modifiers', () => {
+  assert.deepEqual(createCdpKeyDispatchSequence({ key: 'a', code: 'KeyA', modifiers: ['Shift'] }), [
+    {
+      type: 'keyDown',
+      key: 'a',
+      code: 'KeyA',
+      windowsVirtualKeyCode: 65,
+      nativeVirtualKeyCode: 65,
+      modifiers: 8,
+      text: 'a',
+      unmodifiedText: 'a',
+    },
+    {
+      type: 'keyUp',
+      key: 'a',
+      code: 'KeyA',
+      windowsVirtualKeyCode: 65,
+      nativeVirtualKeyCode: 65,
+      modifiers: 8,
+    },
+  ]);
 });
 
 test('background helpers summarize responses and tabs', () => {

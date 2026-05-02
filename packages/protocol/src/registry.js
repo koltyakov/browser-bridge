@@ -78,6 +78,7 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
   'cdp.get_dom_snapshot': 'Read a CDP DOM snapshot.',
   'cdp.get_box_model': 'Read a CDP box model for a node.',
   'cdp.get_computed_styles_for_node': 'Read CDP computed styles for a node.',
+  'cdp.dispatch_key_event': 'Dispatch a key press through Chrome DevTools Protocol input.',
   'performance.get_metrics': 'Read browser performance metrics.',
   'log.tail': 'Tail recent bridge log entries.',
   'health.ping': 'Check daemon, extension, and access-routing health.',
@@ -423,6 +424,13 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['elementRef'],
     'high'
+  ),
+  'cdp.dispatch_key_event': createRegistryEntry(
+    'cdp.dispatch_key_event',
+    'cdp',
+    true,
+    ['key', 'code', 'modifiers'],
+    'moderate'
   ),
   // performance — moderate (debugger-backed)
   'performance.get_metrics': createRegistryEntry(

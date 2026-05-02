@@ -123,6 +123,7 @@ See [`packages/protocol/src/registry.js`](../packages/protocol/src/registry.js) 
 | `page.get_network`           | Read intercepted fetch/XHR requests            |
 | `input.click`                | Click an element                               |
 | `input.type`                 | Type text into an element                      |
+| `cdp.dispatch_key_event`     | Dispatch keyDown/keyUp through CDP input       |
 | `navigation.navigate`        | Navigate to a URL                              |
 | `screenshot.capture_element` | Capture element as PNG (base64)                |
 | `patch.apply_styles`         | Apply reversible CSS overrides                 |

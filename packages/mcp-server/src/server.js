@@ -369,7 +369,7 @@ export function createBridgeMcpServer() {
     {
       title: 'Browser Input',
       description:
-        'Simulate user input: click, focus, type, press keys, set checked, select options, hover, drag, or scroll into view. Reuse elementRef from prior queries.',
+        'Simulate user input: click, focus, type, press keys, CDP key events, set checked, select options, hover, drag, or scroll into view. Reuse elementRef from prior queries.',
       inputSchema: {
         action: z
           .enum([
@@ -377,6 +377,7 @@ export function createBridgeMcpServer() {
             'focus',
             'type',
             'press_key',
+            'cdp_press_key',
             'set_checked',
             'select_option',
             'hover',
@@ -402,7 +403,14 @@ export function createBridgeMcpServer() {
         text: z.string().optional().describe('Text to type (for type action)'),
         clear: z.boolean().optional().describe('Clear field before typing (default: false)'),
         submit: z.boolean().optional().describe('Press Enter after typing (default: false)'),
-        key: z.string().optional().describe('Key to press (e.g., "Enter", "Tab", "ArrowDown")'),
+        key: z
+          .string()
+          .optional()
+          .describe('Key to press (e.g., "Escape", "Enter", "Tab", "ArrowDown")'),
+        code: z
+          .string()
+          .optional()
+          .describe('Optional physical key code for cdp_press_key (e.g., "Escape", "KeyA")'),
         modifiers: z
           .array(z.enum(['Alt', 'Control', 'Meta', 'Shift']))
           .optional()

@@ -69,6 +69,7 @@ bbx click <ref> [button]             # click element
 bbx focus <ref>                      # focus element
 bbx type <ref> <text...>             # type into element
 bbx press-key <key> [ref]            # send key event
+bbx cdp-press-key --tab <id> Escape  # CDP key event without foreground focus
 bbx hover <ref>                      # hover over element
 bbx call input.scroll_into_view '{"target":{"elementRef":"el_123"}}' # ensure target is visible
 bbx patch-style <ref> prop=val...    # apply style patch
@@ -202,7 +203,7 @@ bbx page-text 2000                                  # extract page content
 | Find        | `dom.find_by_text`, `dom.find_by_role`, `dom.wait_for`, `dom.get_accessibility_tree`                                                                |
 | Page State  | `page.get_console`, `page.get_storage`, `page.get_text`, `page.wait_for_load_state`, `page.evaluate` (debugger-backed)                              |
 | Network     | `page.get_network`                                                                                                                                  |
-| Interact    | `input.click`, `input.type`, `input.focus`, `input.press_key`, `input.hover`, `input.drag`, `input.scroll_into_view`                                |
+| Interact    | `input.click`, `input.type`, `input.focus`, `input.press_key`, `cdp.dispatch_key_event`, `input.hover`, `input.drag`, `input.scroll_into_view`       |
 | Tabs        | `tabs.list` (preferred), `tabs.create` (avoid unless necessary), `tabs.close`                                                                       |
 | Patch       | `patch.apply_styles`, `patch.apply_dom`, `patch.rollback`                                                                                           |
 | Navigate    | `navigation.navigate`, `viewport.scroll`, `viewport.resize`                                                                                         |

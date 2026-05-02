@@ -123,6 +123,7 @@ Short version:
 | CDP DOM snapshot     | `browser_capture` (cdp_dom_snapshot)    | `bbx call cdp.get_dom_snapshot`             | CLI uses raw call |
 | CDP box model        | `browser_capture` (cdp_box_model)       | `bbx call cdp.get_box_model`                | CLI uses raw call |
 | CDP computed styles  | `browser_capture` (cdp_computed_styles) | `bbx call cdp.get_computed_styles_for_node` | CLI uses raw call |
+| CDP key event        | `browser_input` (cdp_press_key)         | `bbx cdp-press-key --tab 123 Escape`        | Targeted tab, no foreground focus |
 
 ### Advanced & Raw Protocol
 

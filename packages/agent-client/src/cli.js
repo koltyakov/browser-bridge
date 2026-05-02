@@ -597,6 +597,26 @@ async function main() {
       return;
     }
 
+    if (command === 'cdp-press-key') {
+      const parsed = extractTabFlag(rest);
+      const [key, code] = parsed.rest;
+      if (!key) throw new Error('Usage: cdp-press-key [--tab <tabId>] <key> [code]');
+      const response = await requestBridge(
+        client,
+        'cdp.dispatch_key_event',
+        {
+          key,
+          code,
+        },
+        {
+          tabId: parsed.tabId,
+          source: REQUEST_SOURCE,
+        }
+      );
+      await printSummary(response, 'cdp.dispatch_key_event');
+      return;
+    }
+
     if (command === 'screenshot') {
       const [refOrSelector, outputPath] = rest;
       if (!refOrSelector) throw new Error('Usage: screenshot <ref|selector> [path]');
