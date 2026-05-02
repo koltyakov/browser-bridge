@@ -5,6 +5,10 @@ import path from 'node:path';
 
 export const APP_NAME = 'com.browserbridge.browser_bridge';
 export const BRIDGE_HOME_ENV = 'BROWSER_BRIDGE_HOME';
+export const BRIDGE_TCP_PORT_ENV = 'BBX_TCP_PORT';
+export const DEFAULT_WINDOWS_TCP_PORT = 9223;
+
+/** @typedef {{ type: 'socket', socketPath: string, label: string } | { type: 'tcp', host: string, port: number, label: string }} BridgeTransport */
 
 /**
  * The official Chrome Web Store extension ID used when callers do not provide
@@ -44,6 +48,84 @@ export function getBridgeDir() {
  */
 export function getSocketPath() {
   return path.join(getBridgeDir(), 'bridge.sock');
+}
+
+/**
+ * @param {string} socketPath
+ * @returns {BridgeTransport}
+ */
+export function createSocketBridgeTransport(socketPath) {
+  return {
+    type: 'socket',
+    socketPath,
+    label: socketPath,
+  };
+}
+
+/**
+ * @param {number} port
+ * @param {string} [host='127.0.0.1']
+ * @returns {BridgeTransport}
+ */
+export function createTcpBridgeTransport(port, host = '127.0.0.1') {
+  return {
+    type: 'tcp',
+    host,
+    port,
+    label: `${host}:${port}`,
+  };
+}
+
+/**
+ * @param {NodeJS.ProcessEnv} [env=process.env]
+ * @returns {number | null}
+ */
+export function getBridgeTcpPort(env = process.env) {
+  const raw = env[BRIDGE_TCP_PORT_ENV];
+  if (raw == null || raw === '') {
+    return null;
+  }
+
+  const port = Number.parseInt(raw, 10);
+  if (!Number.isInteger(port) || String(port) !== String(raw).trim() || port < 1 || port > 65535) {
+    throw new Error(
+      `${BRIDGE_TCP_PORT_ENV} must be an integer between 1 and 65535 (got ${JSON.stringify(raw)}).`
+    );
+  }
+
+  return port;
+}
+
+/**
+ * @param {NodeJS.ProcessEnv} [env=process.env]
+ * @returns {BridgeTransport}
+ */
+export function getBridgeTransport(env = process.env) {
+  const tcpPort = getBridgeTcpPort(env);
+  if (tcpPort !== null) {
+    return createTcpBridgeTransport(tcpPort);
+  }
+
+  return createSocketBridgeTransport(getSocketPath());
+}
+
+/**
+ * @param {BridgeTransport} [transport=getBridgeTransport()]
+ * @returns {import('node:net').ListenOptions | string}
+ */
+export function getBridgeListenTarget(transport = getBridgeTransport()) {
+  if (transport.type === 'tcp') {
+    return { host: transport.host, port: transport.port };
+  }
+  return transport.socketPath;
+}
+
+/**
+ * @param {BridgeTransport} [transport=getBridgeTransport()]
+ * @returns {string}
+ */
+export function formatBridgeTransport(transport = getBridgeTransport()) {
+  return transport.label;
 }
 
 /**

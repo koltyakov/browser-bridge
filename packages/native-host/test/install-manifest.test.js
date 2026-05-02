@@ -264,6 +264,40 @@ test('installNativeManifest creates missing nested install and bridge directorie
   }
 });
 
+test('installNativeManifest writes BBX_TCP_PORT into the Windows launcher template', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-install-manifest-win-'));
+  const installDir = path.join(tempDir, 'manifest');
+  const bridgeDir = path.join(tempDir, 'bridge');
+  const originalPlatform = process.platform;
+
+  Object.defineProperty(process, 'platform', {
+    configurable: true,
+    value: 'win32',
+  });
+
+  try {
+    const result = await installNativeManifest({
+      repoRoot: process.cwd(),
+      installDir,
+      bridgeDir,
+      stdout: {
+        write() {
+          return true;
+        },
+      },
+    });
+
+    const launcher = await fs.promises.readFile(result.launcherPath, 'utf8');
+    assert.match(launcher, /@echo off\r\nset BBX_TCP_PORT=9223\r\n/u);
+  } finally {
+    Object.defineProperty(process, 'platform', {
+      configurable: true,
+      value: originalPlatform,
+    });
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('installNativeManifest wraps target directory write failures in a typed error', async (t) => {
   const tempDir = await fs.promises.mkdtemp(
     path.join(os.tmpdir(), 'bbx-install-manifest-permission-')

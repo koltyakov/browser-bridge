@@ -8,6 +8,7 @@ import path from 'node:path';
 
 import {
   clearDaemonPidFile,
+  findDaemonPidByTransport,
   readDaemonPidFile,
   restartBridgeDaemon,
   stopBridgeDaemon,
@@ -84,7 +85,7 @@ test('restartBridgeDaemon starts a fresh daemon when none was running', async ()
       pidPath,
       pingDaemonFn: async () => reachable,
       readPidFn: async () => pid,
-      findPidBySocketFn: async () => null,
+      findPidByTransportFn: async () => null,
       spawnDaemonFn: () => {
         spawnCount += 1;
         reachable = true;
@@ -102,4 +103,58 @@ test('restartBridgeDaemon starts a fresh daemon when none was running', async ()
   } finally {
     await fs.promises.rm(bridgeHome, { recursive: true, force: true });
   }
+});
+
+test('restartBridgeDaemon supports tcp transport without stale socket cleanup', async () => {
+  const bridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-restart-daemon-tcp-'));
+  const pidPath = path.join(bridgeHome, 'daemon.pid');
+  const transport = /** @type {import('../src/config.js').BridgeTransport} */ ({
+    type: 'tcp',
+    host: '127.0.0.1',
+    port: 9223,
+    label: '127.0.0.1:9223',
+  });
+  let spawnCount = 0;
+  let reachable = false;
+  /** @type {number | null} */
+  let pid = null;
+
+  try {
+    const result = await restartBridgeDaemon({
+      transport,
+      pidPath,
+      pingDaemonFn: async () => reachable,
+      readPidFn: async () => pid,
+      findPidByTransportFn: async () => null,
+      spawnDaemonFn: () => {
+        spawnCount += 1;
+        reachable = true;
+        pid = 31338;
+        return /** @type {import('node:child_process').ChildProcess} */ ({ pid });
+      },
+      sleepFn: async () => {},
+    });
+
+    assert.equal(spawnCount, 1);
+    assert.equal(result.transport, '127.0.0.1:9223');
+    assert.equal(result.socketPath, '');
+    assert.equal(result.previouslyRunning, false);
+    assert.equal(result.previousPid, null);
+    assert.equal(result.pid, 31338);
+    assert.equal(result.removedStaleSocket, false);
+  } finally {
+    await fs.promises.rm(bridgeHome, { recursive: true, force: true });
+  }
+});
+
+test('findDaemonPidByTransport returns null for tcp transport', async () => {
+  assert.equal(
+    await findDaemonPidByTransport({
+      type: 'tcp',
+      host: '127.0.0.1',
+      port: 9223,
+      label: '127.0.0.1:9223',
+    }),
+    null
+  );
 });

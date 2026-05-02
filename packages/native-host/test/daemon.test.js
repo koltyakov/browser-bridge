@@ -30,6 +30,12 @@ import {
  */
 async function startTestDaemon() {
   const daemon = new BridgeDaemon({
+    transport: /** @type {import('../src/config.js').BridgeTransport} */ ({
+      type: 'tcp',
+      host: '127.0.0.1',
+      port: 0,
+      label: '127.0.0.1:0',
+    }),
     listenOptions: { host: '127.0.0.1', port: 0 },
     logger: { log() {}, error() {} },
   });
@@ -185,6 +191,33 @@ test('pingExistingDaemon resolves false on connect error', async () => {
     },
     { prefix: 'bbx-missing-socket-' }
   );
+});
+
+test('pingExistingDaemon resolves true for tcp transport when daemon responds', async () => {
+  const daemon = new BridgeDaemon({
+    transport: /** @type {import('../src/config.js').BridgeTransport} */ ({
+      type: 'tcp',
+      host: '127.0.0.1',
+      port: 0,
+      label: '127.0.0.1:0',
+    }),
+    listenOptions: { host: '127.0.0.1', port: 0 },
+    logger: { log() {}, error() {} },
+  });
+
+  try {
+    await daemon.start();
+    const address = /** @type {import('node:net').AddressInfo} */ (daemon.serverAddress);
+    const result = await pingExistingDaemon({
+      type: 'tcp',
+      host: '127.0.0.1',
+      port: address.port,
+      label: `127.0.0.1:${address.port}`,
+    });
+    assert.equal(result, true);
+  } finally {
+    await daemon.stop();
+  }
 });
 
 test(
@@ -986,6 +1019,12 @@ test('daemon socket close removes only the disconnected extension from pending t
 /** Ensure repeated shutdown calls share one cleanup path safely. */
 test('daemon stop is idempotent when called concurrently', async () => {
   const daemon = new BridgeDaemon({
+    transport: /** @type {import('../src/config.js').BridgeTransport} */ ({
+      type: 'tcp',
+      host: '127.0.0.1',
+      port: 0,
+      label: '127.0.0.1:0',
+    }),
     listenOptions: { host: '127.0.0.1', port: 0 },
     logger: console,
   });

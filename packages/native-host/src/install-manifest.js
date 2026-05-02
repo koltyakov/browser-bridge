@@ -5,6 +5,8 @@ import path from 'node:path';
 
 import {
   APP_NAME,
+  BRIDGE_TCP_PORT_ENV,
+  DEFAULT_WINDOWS_TCP_PORT,
   getBridgeDir,
   getLauncherFilename,
   getManifestInstallDir,
@@ -214,7 +216,7 @@ export async function installNativeManifest(options) {
 
   const launcher =
     process.platform === 'win32'
-      ? `@echo off\r\n"${nodePath}" "${hostPath}" %*\r\n`
+      ? `@echo off\r\nset ${BRIDGE_TCP_PORT_ENV}=${DEFAULT_WINDOWS_TCP_PORT}\r\n"${nodePath}" "${hostPath}" %*\r\n`
       : `#!/bin/sh
 exec '${escapeSingleQuotes(nodePath)}' '${escapeSingleQuotes(hostPath)}' "$@"
 `;

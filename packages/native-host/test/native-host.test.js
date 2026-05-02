@@ -91,8 +91,8 @@ test('connectWithBootstrap spawns daemon when initial connect returns ENOENT', a
 
   await assert.doesNotReject(async () => {
     const connectedSocket = await connectWithBootstrap('/tmp/bootstrap.sock', {
-      connectSocketFn: async (socketPath) => {
-        connectCalls.push(socketPath);
+      connectSocketFn: async (transport) => {
+        connectCalls.push(transport.type === 'socket' ? transport.socketPath : transport.label);
         if (connectCalls.length === 1) {
           const error = /** @type {NodeJS.ErrnoException} */ (new Error('missing socket'));
           error.code = 'ENOENT';
@@ -146,6 +146,29 @@ test('connectWithBootstrap exhausts retries and rethrows the last bootstrap erro
 
   assert.equal(connectCalls, 11);
   assert.deepEqual(delayCalls, new Array(10).fill(200));
+});
+
+test('connectWithBootstrap passes tcp transport through to the connector', async () => {
+  /** @type {import('node:net').Socket} */
+  const socket = /** @type {any} */ ({ connected: true });
+  /** @type {import('../../native-host/src/config.js').BridgeTransport[]} */
+  const connectCalls = [];
+
+  const transport = /** @type {import('../src/config.js').BridgeTransport} */ ({
+    type: 'tcp',
+    host: '127.0.0.1',
+    port: 9223,
+    label: '127.0.0.1:9223',
+  });
+  const connectedSocket = await connectWithBootstrap(transport, {
+    connectSocketFn: async (receivedTransport) => {
+      connectCalls.push(receivedTransport);
+      return socket;
+    },
+  });
+
+  assert.equal(connectedSocket, socket);
+  assert.deepEqual(connectCalls, [transport]);
 });
 
 test('runNativeHost bridges daemon socket messages and stdin frames', async () => {
