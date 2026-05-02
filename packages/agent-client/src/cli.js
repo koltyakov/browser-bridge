@@ -50,6 +50,8 @@ import { annotateBridgeSummary, summarizeBridgeResponse } from './subagent.js';
 /** @typedef {{ image: string, rect: Record<string, unknown> }} ScreenshotResult */
 
 const REQUEST_SOURCE = 'cli';
+const TEST_TIMEOUT_ENV = 'BBX_CLIENT_REQUEST_TIMEOUT_MS';
+const TEST_DETECTED_MCP_CLIENTS_ENV = 'BBX_TEST_DETECTED_MCP_CLIENTS';
 
 /**
  * Read all of stdin as UTF-8 text. Resolves once stdin closes.
@@ -131,6 +133,7 @@ if (command === 'install-skill') {
       global: isGlobal,
       cwd: process.cwd(),
       projectPath: isGlobal ? os.homedir() : process.cwd(),
+      ...getSetupStatusTestOverrides(),
     });
     /** @type {import('./install.js').SupportedTarget[]} */
     const detected = /** @type {import('./install.js').SupportedTarget[]} */ (
@@ -243,6 +246,7 @@ if (command === 'install-mcp') {
       global: isGlobal,
       cwd: process.cwd(),
       projectPath: process.cwd(),
+      ...getSetupStatusTestOverrides(),
     });
     const detected = /** @type {import('./mcp-config.js').McpClientName[]} */ (
       setupStatus.mcpClients.filter((entry) => entry.detected).map((entry) => entry.key)
@@ -357,7 +361,10 @@ if (command === 'mcp') {
   process.exit(1);
 }
 
-const client = new BridgeClient();
+const clientTimeoutMs = getClientTimeoutOverride();
+const client = new BridgeClient(
+  clientTimeoutMs ? { defaultTimeoutMs: clientTimeoutMs } : undefined
+);
 
 await main();
 
@@ -641,7 +648,7 @@ async function main() {
     const message = error instanceof Error ? error.message : String(error);
     const raw = error instanceof Error && 'code' in error ? /** @type {any} */ (error).code : '';
     let code = 'ERROR';
-    if (raw === 'ENOENT' || raw === 'ECONNREFUSED') {
+    if (raw === 'ENOENT' || raw === 'ECONNREFUSED' || raw === 'EINVAL') {
       code = 'DAEMON_OFFLINE';
     } else if (raw === 'BRIDGE_TIMEOUT') {
       code = 'BRIDGE_TIMEOUT';
@@ -659,6 +666,48 @@ async function main() {
   } finally {
     await client.close();
   }
+}
+
+/**
+ * Allow tests to shrink request timeouts without changing the shared default.
+ *
+ * @returns {number | undefined}
+ */
+function getClientTimeoutOverride() {
+  const raw = process.env[TEST_TIMEOUT_ENV];
+  if (!raw) {
+    return undefined;
+  }
+
+  const value = Number.parseInt(raw, 10);
+  return Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+/**
+ * Allow CLI tests to provide deterministic MCP client detection without relying
+ * on whatever tools happen to be installed on the host machine.
+ *
+ * @returns {{
+ *   mcpDetectors?: Record<string, () => boolean>,
+ * }}
+ */
+function getSetupStatusTestOverrides() {
+  if (!(TEST_DETECTED_MCP_CLIENTS_ENV in process.env)) {
+    return {};
+  }
+
+  const detectedClients = new Set(
+    (process.env[TEST_DETECTED_MCP_CLIENTS_ENV] || '')
+      .split(',')
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean)
+  );
+
+  return {
+    mcpDetectors: Object.fromEntries(
+      MCP_CLIENT_NAMES.map((clientName) => [clientName, () => detectedClients.has(clientName)])
+    ),
+  };
 }
 
 /**

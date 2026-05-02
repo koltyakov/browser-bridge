@@ -10,6 +10,9 @@ const BACKGROUND_MODULE_URL = new URL(
 
 /** @typedef {{ postMessage: (message: unknown) => void, disconnect?: () => void, onMessage: ReturnType<typeof createChromeEvent>, onDisconnect: ReturnType<typeof createChromeEvent>, name?: string }} FakeRuntimePort */
 
+/** @typedef {import('../../packages/protocol/src/types.js').BridgeRequest} BridgeRequest */
+/** @typedef {import('../../packages/protocol/src/types.js').BridgeResponse} BridgeResponse */
+
 /**
  * @param {unknown} savedChrome
  * @returns {void}
@@ -122,9 +125,66 @@ function createNativePortStub() {
 /**
  * @typedef {{
  *   chrome: Record<string, any>,
- *   module: Record<string, any>
+ *   module: Record<string, any>,
+ *   dispatch: (request: BridgeRequest) => Promise<BridgeResponse>
  * }} LoadedBackground
  */
+
+/**
+ * @param {FakeRuntimePort | null | undefined} port
+ * @param {BridgeRequest} request
+ * @returns {Promise<BridgeResponse>}
+ */
+function dispatchBridgeRequestForTest(port, request) {
+  return new Promise((resolve, reject) => {
+    if (!port) {
+      reject(new Error('Background native port was not initialized for this test.'));
+      return;
+    }
+    const originalPostMessage = port.postMessage.bind(port);
+    let settled = false;
+    const timeoutId = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      port.postMessage = originalPostMessage;
+      reject(new Error(`No bridge response was posted for request ${request.id}.`));
+    }, 1000);
+
+    port.postMessage = (message) => {
+      if (
+        !settled &&
+        message &&
+        typeof message === 'object' &&
+        'id' in message &&
+        'ok' in message
+      ) {
+        const candidate = /** @type {BridgeResponse} */ (message);
+        if (candidate.id === request.id) {
+          settled = true;
+          clearTimeout(timeoutId);
+          port.postMessage = originalPostMessage;
+          resolve(candidate);
+          return;
+        }
+      }
+      originalPostMessage(message);
+    };
+
+    try {
+      port.onMessage.dispatch(request);
+    } catch (error) {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeoutId);
+      port.postMessage = originalPostMessage;
+      reject(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
+}
 
 /**
  * Assign a fake `chrome` to `globalThis`, then import a fresh copy of the
@@ -140,12 +200,13 @@ export async function loadBackground(options = {}) {
   const savedSetTimeout = globalThis.setTimeout;
   const savedClearTimeout = globalThis.clearTimeout;
 
+  const defaultNativePort = createNativePortStub();
   const chrome =
     options.chrome ??
     createChromeFake({
       runtime: {
         connectNative() {
-          return /** @type {any} */ (createNativePortStub());
+          return /** @type {any} */ (defaultNativePort);
         },
       },
       tabs: {
@@ -158,6 +219,28 @@ export async function loadBackground(options = {}) {
         },
       },
     });
+
+  if (chrome.runtime && typeof chrome.runtime.connectNative === 'function') {
+    const originalConnectNative = chrome.runtime.connectNative.bind(chrome.runtime);
+    chrome.runtime.connectNative = /** @type {typeof chrome.runtime.connectNative} */ (
+      /**
+       * @param {...unknown} args
+       */
+      function (...args) {
+        try {
+          return originalConnectNative(...args);
+        } catch (error) {
+          if (
+            error instanceof Error &&
+            error.message === 'chrome.runtime.connectNative was not stubbed for this test'
+          ) {
+            return /** @type {any} */ (defaultNativePort);
+          }
+          throw error;
+        }
+      }
+    );
+  }
 
   Reflect.set(globalThis, 'chrome', chrome);
   installTestTimers();
@@ -176,6 +259,9 @@ export async function loadBackground(options = {}) {
     return {
       chrome,
       module,
+      dispatch(request) {
+        return dispatchBridgeRequestForTest(module.getStateForTest().nativePort, request);
+      },
     };
   } finally {
     restoreTimers(savedSetTimeout, savedClearTimeout);

@@ -8,6 +8,7 @@ import path from 'node:path';
 import { parseJsonLines } from '../../packages/protocol/src/index.js';
 
 /** @typedef {import('../../packages/protocol/src/types.js').BridgeRequest} BridgeRequest */
+/** @typedef {import('../../packages/protocol/src/types.js').BridgeResponse} BridgeResponse */
 
 /**
  * @typedef {{
@@ -27,6 +28,11 @@ import { parseJsonLines } from '../../packages/protocol/src/index.js';
  *   errors: Error[],
  *   close: () => Promise<void>,
  * }} BridgeSocketServer
+ */
+
+/**
+ * @typedef {(request: BridgeRequest, context: BridgeSocketMessageContext & { message: unknown }) =>
+ *   Promise<BridgeResponse | void> | BridgeResponse | void} BridgeRequestHandler
  */
 
 /**
@@ -167,4 +173,44 @@ export async function startBridgeSocketServer(onMessage, options) {
       fs.rmSync(bridgeHome, { recursive: true, force: true });
     },
   };
+}
+
+/**
+ * Start a bridge socket server backed by per-method request handlers.
+ * Returning a response auto-writes the matching `agent.response` frame.
+ *
+ * @param {Record<string, BridgeRequestHandler>} handlers
+ * @param {{ prefix?: string, socketName?: string }} [options]
+ * @returns {Promise<BridgeSocketServer>}
+ */
+export async function bridgeServerWith(handlers, options) {
+  return startBridgeSocketServer(async (message, context) => {
+    const record =
+      message && typeof message === 'object'
+        ? /** @type {Record<string, unknown>} */ (message)
+        : null;
+
+    if (record?.type !== 'agent.request' || !record.request || typeof record.request !== 'object') {
+      return;
+    }
+
+    const request = /** @type {BridgeRequest} */ (record.request);
+    const handler = handlers[request.method];
+
+    if (!handler) {
+      return;
+    }
+
+    const response = await handler(request, { ...context, message });
+    if (response === undefined) {
+      return;
+    }
+
+    context.socket.write(
+      `${JSON.stringify({
+        type: 'agent.response',
+        response,
+      })}\n`
+    );
+  }, options);
 }

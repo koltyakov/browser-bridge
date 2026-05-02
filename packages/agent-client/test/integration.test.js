@@ -2,10 +2,6 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import path from 'node:path';
-import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-
 import { handleHealthTool } from '../../mcp-server/src/handlers.js';
 import { runNativeHost } from '../../native-host/src/native-host.js';
 import { createFailure, createRequest, createSuccess } from '../../protocol/src/index.js';
@@ -13,23 +9,13 @@ import {
   decodeNativeMessages,
   frameNativeMessage,
 } from '../../../tests/_helpers/nativeMessaging.js';
-import { startBridgeSocketServer } from '../../../tests/_helpers/socketHarness.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const repoRoot = path.resolve(__dirname, '../../..');
-const cliPath = path.join(repoRoot, 'packages', 'agent-client', 'src', 'cli.js');
+import { runCli } from '../../../tests/_helpers/runCli.js';
+import {
+  bridgeServerWith,
+  startBridgeSocketServer,
+} from '../../../tests/_helpers/socketHarness.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */
-
-/**
- * @typedef {{
- *   code: number | null,
- *   signal: NodeJS.Signals | null,
- *   stdout: string,
- *   stderr: string,
- * }} CliRunResult
- */
 
 /**
  * @returns {Promise<void>}
@@ -68,76 +54,40 @@ async function waitFor(predicate) {
   }
 }
 
-/**
- * @param {string[]} args
- * @param {NodeJS.ProcessEnv} env
- * @returns {Promise<CliRunResult>}
- */
-function runCli(args, env) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [cliPath, ...args], {
-      cwd: repoRoot,
-      env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk;
-    });
-    child.once('error', reject);
-    child.once('close', (code, signal) => {
-      resolve({ code, signal, stdout, stderr });
-    });
-  });
-}
-
 test('bbx status performs a real bridge health roundtrip over the socket protocol', async () => {
-  const bridgeServer = await startBridgeSocketServer(async (message, context) => {
-    const record = /** @type {Record<string, unknown>} */ (message);
-    if (record.type !== 'agent.request') {
-      return;
-    }
-    const request = /** @type {BridgeRequest} */ (record.request);
-    context.socket.write(
-      `${JSON.stringify({
-        type: 'agent.response',
-        response: createSuccess(request.id, {
-          daemon: 'ok',
-          supported_versions: ['1.0'],
-          extensionConnected: true,
-          connectedExtensions: [
-            {
-              browserName: 'chrome',
-              profileLabel: 'Default',
-              accessEnabled: true,
-            },
-          ],
-          access: {
-            enabled: true,
-            routeReady: true,
-            routeTabId: 42,
-            windowId: 7,
+  const bridgeServer = await bridgeServerWith({
+    'health.ping': (request) =>
+      createSuccess(request.id, {
+        daemon: 'ok',
+        supported_versions: ['1.0'],
+        extensionConnected: true,
+        connectedExtensions: [
+          {
+            browserName: 'chrome',
+            profileLabel: 'Default',
+            accessEnabled: true,
           },
-        }),
-      })}\n`
-    );
+        ],
+        access: {
+          enabled: true,
+          routeReady: true,
+          routeTabId: 42,
+          windowId: 7,
+        },
+      }),
   });
 
   try {
-    const result = await runCli(['status'], {
-      ...process.env,
-      BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome,
+    const result = await runCli({
+      args: ['status'],
+      env: {
+        ...process.env,
+        BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome,
+      },
     });
-    const payload = JSON.parse(result.stdout.trim());
+    const payload = result.json;
 
-    assert.equal(result.code, 0);
+    assert.equal(result.status, 0);
     assert.equal(result.signal, null);
     assert.equal(result.stderr, '');
     assert.equal(payload.ok, true);
@@ -157,54 +107,40 @@ test('bbx status performs a real bridge health roundtrip over the socket protoco
 });
 
 test('bbx call writes a bridge request, prints the result JSON, and exits successfully', async () => {
-  const bridgeServer = await startBridgeSocketServer(async (message, context) => {
-    const record = /** @type {Record<string, unknown>} */ (message);
-    if (record.type !== 'agent.request') {
-      return;
-    }
-    const request = /** @type {BridgeRequest} */ (record.request);
-    if (request.method === 'health.ping') {
-      context.socket.write(
-        `${JSON.stringify({
-          type: 'agent.response',
-          response: createSuccess(request.id, {
-            daemon: 'ok',
-            supported_versions: ['1.0'],
-            extensionConnected: false,
-            connectedExtensions: [],
-            access: {
-              enabled: false,
-              routeReady: false,
-              routeTabId: null,
-              windowId: null,
-              reason: 'access_disabled',
-            },
-          }),
-        })}\n`
-      );
-      return;
-    }
-
-    context.socket.write(
-      `${JSON.stringify({
-        type: 'agent.response',
-        response: createSuccess(request.id, {
-          text: 'Bridge text payload',
-          truncated: false,
-          length: 19,
-        }),
-      })}\n`
-    );
+  const bridgeServer = await bridgeServerWith({
+    'health.ping': (request) =>
+      createSuccess(request.id, {
+        daemon: 'ok',
+        supported_versions: ['1.0'],
+        extensionConnected: false,
+        connectedExtensions: [],
+        access: {
+          enabled: false,
+          routeReady: false,
+          routeTabId: null,
+          windowId: null,
+          reason: 'access_disabled',
+        },
+      }),
+    'page.get_text': (request) =>
+      createSuccess(request.id, {
+        text: 'Bridge text payload',
+        truncated: false,
+        length: 19,
+      }),
   });
 
   try {
-    const result = await runCli(['call', '--tab', '42', 'page.get_text', '{"textBudget":19}'], {
-      ...process.env,
-      BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome,
+    const result = await runCli({
+      args: ['call', '--tab', '42', 'page.get_text', '{"textBudget":19}'],
+      env: {
+        ...process.env,
+        BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome,
+      },
     });
-    const payload = JSON.parse(result.stdout.trim());
+    const payload = result.json;
 
-    assert.equal(result.code, 0);
+    assert.equal(result.status, 0);
     assert.equal(result.signal, null);
     assert.equal(result.stderr, '');
     assert.deepEqual(payload, {
@@ -225,52 +161,38 @@ test('bbx call writes a bridge request, prints the result JSON, and exits succes
 });
 
 test('bbx call exits 1 and reports bridge failures with the error code on stderr', async () => {
-  const bridgeServer = await startBridgeSocketServer(async (message, context) => {
-    const record = /** @type {Record<string, unknown>} */ (message);
-    if (record.type !== 'agent.request') {
-      return;
-    }
-    const request = /** @type {BridgeRequest} */ (record.request);
-    if (request.method === 'health.ping') {
-      context.socket.write(
-        `${JSON.stringify({
-          type: 'agent.response',
-          response: createSuccess(request.id, {
-            daemon: 'ok',
-            supported_versions: ['1.0'],
-            extensionConnected: false,
-            connectedExtensions: [],
-            access: {
-              enabled: false,
-              routeReady: false,
-              routeTabId: null,
-              windowId: null,
-              reason: 'access_disabled',
-            },
-          }),
-        })}\n`
-      );
-      return;
-    }
-
-    context.socket.write(
-      `${JSON.stringify({
-        type: 'agent.response',
-        response: createFailure(request.id, 'INVALID_REQUEST', 'Bad \u001b[31mselector\u001b[0m', {
-          selector: '#bad',
-        }),
-      })}\n`
-    );
+  const bridgeServer = await bridgeServerWith({
+    'health.ping': (request) =>
+      createSuccess(request.id, {
+        daemon: 'ok',
+        supported_versions: ['1.0'],
+        extensionConnected: false,
+        connectedExtensions: [],
+        access: {
+          enabled: false,
+          routeReady: false,
+          routeTabId: null,
+          windowId: null,
+          reason: 'access_disabled',
+        },
+      }),
+    'dom.query': (request) =>
+      createFailure(request.id, 'INVALID_REQUEST', 'Bad \u001b[31mselector\u001b[0m', {
+        selector: '#bad',
+      }),
   });
 
   try {
-    const result = await runCli(['call', 'dom.query', '{"selector":"#bad"}'], {
-      ...process.env,
-      BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome,
+    const result = await runCli({
+      args: ['call', 'dom.query', '{"selector":"#bad"}'],
+      env: {
+        ...process.env,
+        BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome,
+      },
     });
-    const payload = JSON.parse(result.stdout.trim());
+    const payload = result.json;
 
-    assert.equal(result.code, 1);
+    assert.equal(result.status, 1);
     assert.equal(result.signal, null);
     assert.match(result.stderr, /INVALID_REQUEST: Bad selector/);
     assert.equal(result.stderr.includes('\u001b['), false);
@@ -299,30 +221,21 @@ test('bbx call exits 1 and reports bridge failures with the error code on stderr
 });
 
 test('handleHealthTool uses the live bridge client path and preserves MCP request metadata', async () => {
-  const bridgeServer = await startBridgeSocketServer(async (message, context) => {
-    const record = /** @type {Record<string, unknown>} */ (message);
-    if (record.type !== 'agent.request') {
-      return;
-    }
-    const request = /** @type {BridgeRequest} */ (record.request);
-    context.socket.write(
-      `${JSON.stringify({
-        type: 'agent.response',
-        response: createSuccess(request.id, {
-          daemon: 'ok',
-          supported_versions: ['1.0'],
-          extensionConnected: false,
-          connectedExtensions: [],
-          access: {
-            enabled: false,
-            routeReady: false,
-            routeTabId: null,
-            windowId: null,
-            reason: 'access_disabled',
-          },
-        }),
-      })}\n`
-    );
+  const bridgeServer = await bridgeServerWith({
+    'health.ping': (request) =>
+      createSuccess(request.id, {
+        daemon: 'ok',
+        supported_versions: ['1.0'],
+        extensionConnected: false,
+        connectedExtensions: [],
+        access: {
+          enabled: false,
+          routeReady: false,
+          routeTabId: null,
+          windowId: null,
+          reason: 'access_disabled',
+        },
+      }),
   });
   const originalBridgeHome = process.env.BROWSER_BRIDGE_HOME;
   process.env.BROWSER_BRIDGE_HOME = bridgeServer.bridgeHome;

@@ -3,42 +3,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { createRuntimeContext } from '../../protocol/src/index.js';
-import { BRIDGE_HOME_ENV, getLauncherFilename } from '../../native-host/src/config.js';
 import { sanitizeOutput, stripAnsi } from '../src/cli-helpers.js';
 import { SHORTCUT_COMMANDS } from '../src/command-registry.js';
+import { createInstallFs } from '../../../tests/_helpers/installFs.js';
+import { runCli } from '../../../tests/_helpers/runCli.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '../../..');
-const cliPath = path.join(repoRoot, 'packages', 'agent-client', 'src', 'cli.js');
 const packageJsonPath = path.join(repoRoot, 'package.json');
-
-/**
- * @param {string[]} args
- * @param {import('node:child_process').SpawnSyncOptionsWithStringEncoding} [options]
- * @returns {import('node:child_process').SpawnSyncReturns<string>}
- */
-function runCli(args, options = undefined) {
-  return spawnSync(process.execPath, [cliPath, ...args], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-    ...options,
-  });
-}
-
-/**
- * @param {import('node:child_process').SpawnSyncReturns<string>} result
- * @returns {any}
- */
-function parseJsonStdout(result) {
-  return JSON.parse(result.stdout.trim());
-}
 
 test('stripAnsi removes CSI and single-byte escape sequences', () => {
   assert.equal(stripAnsi('\u001b[31mred\u001b[0m'), 'red');
@@ -67,8 +44,8 @@ test('sanitizeOutput strips ANSI recursively without changing non-strings', () =
   });
 });
 
-test('cli prints usage and exits successfully when no command is provided', () => {
-  const result = runCli([]);
+test('cli prints usage and exits successfully when no command is provided', async () => {
+  const result = await runCli({ args: [] });
 
   assert.equal(result.status, 0);
   assert.equal(result.signal, null);
@@ -78,8 +55,8 @@ test('cli prints usage and exits successfully when no command is provided', () =
   assert.match(result.stdout, /Generic RPC:/);
 });
 
-test('cli --help enumerates shortcut commands', () => {
-  const result = runCli(['--help']);
+test('cli --help enumerates shortcut commands', async () => {
+  const result = await runCli({ args: ['--help'] });
 
   assert.equal(result.status, 0);
   assert.equal(result.stderr, '');
@@ -91,8 +68,8 @@ test('cli --help enumerates shortcut commands', () => {
   }
 });
 
-test('cli prints the package version', () => {
-  const result = runCli(['--version']);
+test('cli prints the package version', async () => {
+  const result = await runCli({ args: ['--version'] });
   const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
 
   assert.equal(result.status, 0);
@@ -100,52 +77,22 @@ test('cli prints the package version', () => {
   assert.equal(result.stdout.trim(), pkg.version);
 });
 
-test('cli skill command prints the runtime context JSON', () => {
-  const result = runCli(['skill']);
+test('cli skill command prints the runtime context JSON', async () => {
+  const result = await runCli({ args: ['skill'] });
 
   assert.equal(result.status, 0);
   assert.equal(result.stderr, '');
-  assert.deepEqual(parseJsonStdout(result), createRuntimeContext());
+  assert.deepEqual(result.json, createRuntimeContext());
 });
 
 test('cli install forwards browser and extension id args to the native host installer', async () => {
-  const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-cli-install-home-'));
-  const bridgeHome = path.join(tempHome, 'bridge-home');
+  const installFs = await createInstallFs({ prefix: 'bbx-cli-install-home-' });
   const extensionId = 'abcdefghijklmnopabcdefghijklmnop';
-  const env = {
-    ...process.env,
-    HOME: tempHome,
-    USERPROFILE: tempHome,
-    LOCALAPPDATA: path.join(tempHome, 'AppData', 'Local'),
-    [BRIDGE_HOME_ENV]: bridgeHome,
-  };
-  const manifestDir =
-    process.platform === 'darwin'
-      ? path.join(
-          tempHome,
-          'Library',
-          'Application Support',
-          'Microsoft Edge',
-          'NativeMessagingHosts'
-        )
-      : process.platform === 'win32'
-        ? path.join(
-            tempHome,
-            'AppData',
-            'Local',
-            'Microsoft',
-            'Edge',
-            'User Data',
-            'NativeMessagingHosts'
-          )
-        : path.join(tempHome, '.config', 'microsoft-edge', 'NativeMessagingHosts');
-  const manifestPath = path.join(manifestDir, 'com.browserbridge.browser_bridge.json');
-  const launcherPath = path.join(bridgeHome, getLauncherFilename());
 
   try {
-    const result = runCli(['install', '--browser', 'edge', extensionId], {
-      encoding: 'utf8',
-      env,
+    const result = await runCli({
+      args: ['install', '--browser', 'edge', extensionId],
+      env: installFs.env,
     });
 
     assert.equal(result.status, 0);
@@ -153,34 +100,38 @@ test('cli install forwards browser and extension id args to the native host inst
     assert.equal(result.stderr, '');
     assert.match(
       result.stdout,
-      new RegExp(`Wrote ${manifestPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
+      new RegExp(
+        `Wrote ${installFs.browserManifests.edge.manifestPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`
+      )
     );
     assert.match(
       result.stdout,
-      new RegExp(`Wrote ${launcherPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
+      new RegExp(`Wrote ${installFs.launcherPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
     );
     assert.equal(result.stdout.includes('Used built-in Browser Bridge extension ID.'), false);
 
-    const manifest = JSON.parse(await fs.promises.readFile(manifestPath, 'utf8'));
-    assert.equal(manifest.path, launcherPath);
+    const manifest = JSON.parse(
+      await fs.promises.readFile(installFs.browserManifests.edge.manifestPath, 'utf8')
+    );
+    assert.equal(manifest.path, installFs.launcherPath);
     assert.deepEqual(manifest.allowed_origins, [`chrome-extension://${extensionId}/`]);
-    await fs.promises.access(launcherPath);
+    await fs.promises.access(installFs.launcherPath);
   } finally {
-    await fs.promises.rm(tempHome, { recursive: true, force: true });
+    await installFs.cleanup();
   }
 });
 
-test('cli reports unknown commands with usage and a failing exit code', () => {
-  const result = runCli(['not-a-command']);
+test('cli reports unknown commands with usage and a failing exit code', async () => {
+  const result = await runCli({ args: ['not-a-command'] });
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Unknown command: not-a-command/);
   assert.match(result.stdout, /Usage: bbx <command> \[args\]/);
 });
 
-test('cli returns a JSON usage error for missing required command arguments', () => {
-  const result = runCli(['tab-close']);
-  const payload = parseJsonStdout(result);
+test('cli returns a JSON usage error for missing required command arguments', async () => {
+  const result = await runCli({ args: ['tab-close'] });
+  const payload = result.json;
 
   assert.equal(result.status, 1);
   assert.equal(result.stderr, '');
@@ -189,9 +140,9 @@ test('cli returns a JSON usage error for missing required command arguments', ()
   assert.equal(payload.evidence, null);
 });
 
-test('cli strips ANSI escapes from JSON error output', () => {
-  const result = runCli(['call', 'bad.\u001b[31mname\u001b[0m']);
-  const payload = parseJsonStdout(result);
+test('cli strips ANSI escapes from JSON error output', async () => {
+  const result = await runCli({ args: ['call', 'bad.\u001b[31mname\u001b[0m'] });
+  const payload = result.json;
 
   assert.equal(result.status, 1);
   assert.equal(result.stderr, '');

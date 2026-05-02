@@ -29,6 +29,7 @@
  *   storage?: Record<string, any>,
  *   debugger?: Record<string, any>,
  *   scripting?: Record<string, any>,
+ *   alarms?: Record<string, any>,
  *   sidePanel?: Record<string, any>
  * }} ChromeFakeOverrides
  */

@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 
 import { createChromeEvent, createChromeFake } from '../../../tests/_helpers/chromeFake.js';
 import { loadBackground } from '../../../tests/_helpers/loadBackground.js';
+import { createRequest } from '../../protocol/src/index.js';
 
 /**
  * @returns {any}
@@ -57,6 +58,8 @@ test('loadBackground exposes direct test seams for background helper functions',
     query: `test-background-exports-${Date.now()}`,
   });
 
+  assert.equal(loaded.module.isNumber(4), true);
+  assert.equal(loaded.module.getStateForTest(), loaded.module.getStateForTest());
   assert.equal(loaded.module.getUiSurfaceFromPortName('ui-sidepanel'), 'sidepanel');
   assert.equal(loaded.module.getUiSurfaceFromPortName('unknown-surface'), null);
   assert.equal(loaded.module.normalizeActionLogSource('mcp'), 'mcp');
@@ -115,4 +118,14 @@ test('loadBackground exposes direct test seams for background helper functions',
       continuationHint: 'continue',
     }
   );
+
+  const response = await loaded.dispatch(
+    createRequest({
+      id: 'health-ping',
+      method: 'health.ping',
+    })
+  );
+  assert.equal(response.id, 'health-ping');
+  assert.equal(response.ok, true);
+  assert.equal(response.meta?.method, 'health.ping');
 });

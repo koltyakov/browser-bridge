@@ -69,6 +69,9 @@ import { TabDebuggerCoordinator } from './debugger-coordinator.js';
 /** @typedef {import('../../protocol/src/types.js').ErrorCode} ErrorCode */
 /** @typedef {import('../../protocol/src/types.js').SetupStatus} SetupStatus */
 
+/** @type {typeof globalThis.chrome} */
+const chrome = globalThis.chrome;
+
 /**
  * @typedef {{
  *   windowId: number,
@@ -3296,15 +3299,48 @@ function reportAsyncError(error) {
   console.error(error);
 }
 
+/**
+ * Expose the live module state to tests that need to seed or inspect routing,
+ * access-request, or instrumentation state directly.
+ *
+ * @returns {ExtensionState}
+ */
+function getStateForTest() {
+  return state;
+}
+
 export {
+  clearEnabledWindowIfGone,
+  clearTabBridgeState,
+  clearWindowBridgeState,
+  enrichBridgeResponse,
+  getContentScriptTimeout,
+  getCurrentTabState,
+  getRequestedAccessPopupPlacement,
+  getTabState,
   getUiSurfaceFromPortName,
+  getStateForTest,
+  isAccessRequestedTab,
+  isAccessRequestedWindow,
+  isTabEnabled,
+  isWindowEnabled,
   normalizeActionLogEntry,
   normalizeActionLogSource,
   normalizeSetupInstallAction,
+  isNumber,
+  isRecoverableInstrumentationError,
+  isRestrictedScriptingError,
+  clearRequestedAccessPopupWindow,
+  clearRequestedAccessWindow,
   getSetupInstallKey,
   getSetupActionMethodLabel,
   getSetupActionTargetLabel,
   getSetupActionStartSummary,
   getSetupActionSuccessSummary,
   getSetupActionErrorSummary,
+  reportAsyncError,
+  rollbackAllPatchesForTab,
+  scheduleNativeReconnect,
+  toFailureResponse,
+  updateActionIndicatorForTab,
 };
