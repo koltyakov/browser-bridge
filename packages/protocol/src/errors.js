@@ -25,6 +25,10 @@ export const ERROR_RECOVERY = Object.freeze({
     retry: false,
     hint: 'Access is off for this window. Ask the user to click Enable in the Browser Bridge popup or side panel. Do not request access again until that window is enabled.',
   },
+  [ERROR_CODES.RESULT_TRUNCATED]: {
+    retry: false,
+    hint: 'Result was truncated to fit the response budget. Narrow the query or raise the relevant budget if more detail is required.',
+  },
   [ERROR_CODES.ELEMENT_STALE]: {
     retry: false,
     alternativeMethod: 'dom.query',

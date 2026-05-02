@@ -23,8 +23,8 @@ import {
   methodNeedsTab,
   parseIntArg,
   parseJsonObject,
+  sanitizeOutput,
 } from './cli-helpers.js';
-import { detectMcpClients, detectSkillTargets } from './detect.js';
 import {
   findInstalledManagedTargets,
   installAgentFiles,
@@ -50,39 +50,6 @@ import { annotateBridgeSummary, summarizeBridgeResponse } from './subagent.js';
 /** @typedef {{ image: string, rect: Record<string, unknown> }} ScreenshotResult */
 
 const REQUEST_SOURCE = 'cli';
-
-/**
- * Strip ANSI escape sequences from a string to prevent terminal injection
- * from malicious page content (e.g. DOM text, console output, eval results).
- *
- * @param {string} str
- * @returns {string}
- */
-function stripAnsi(str) {
-  // oxlint-disable-next-line no-control-regex
-  return str.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').replace(/\x1b[^[]/g, '');
-}
-
-/**
- * Recursively sanitize all string values in a value tree by stripping ANSI
- * escape sequences. Only strings are touched; structure is preserved.
- *
- * @param {unknown} value
- * @returns {unknown}
- */
-function sanitizeOutput(value) {
-  if (typeof value === 'string') return stripAnsi(value);
-  if (Array.isArray(value)) return value.map(sanitizeOutput);
-  if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(/** @type {Record<string, unknown>} */ (value)).map(([k, v]) => [
-        k,
-        sanitizeOutput(v),
-      ])
-    );
-  }
-  return value;
-}
 
 /**
  * Read all of stdin as UTF-8 text. Resolves once stdin closes.
@@ -166,7 +133,9 @@ if (command === 'install-skill') {
       projectPath: isGlobal ? os.homedir() : process.cwd(),
     });
     /** @type {import('./install.js').SupportedTarget[]} */
-    const detected = detectSkillTargets();
+    const detected = /** @type {import('./install.js').SupportedTarget[]} */ (
+      setupStatus.skillTargets.filter((entry) => entry.detected).map((entry) => entry.key)
+    );
     const installedManagedTargets = new Set(
       setupStatus.skillTargets
         .filter((entry) => entry.installed && entry.managed)
@@ -275,7 +244,9 @@ if (command === 'install-mcp') {
       cwd: process.cwd(),
       projectPath: process.cwd(),
     });
-    const detected = detectMcpClients();
+    const detected = /** @type {import('./mcp-config.js').McpClientName[]} */ (
+      setupStatus.mcpClients.filter((entry) => entry.detected).map((entry) => entry.key)
+    );
     const configuredClients = new Set(
       setupStatus.mcpClients.filter((entry) => entry.configured).map((entry) => entry.key)
     );
@@ -470,7 +441,7 @@ async function main() {
         tabId,
         source: REQUEST_SOURCE,
       });
-      printJson(response.ok ? response.result : response);
+      printCallResponse(response);
       return;
     }
 
@@ -557,7 +528,7 @@ async function main() {
         tabId,
         source: REQUEST_SOURCE,
       });
-      printJson(response.ok ? response.result : response);
+      printCallResponse(response);
       return;
     }
 
@@ -732,6 +703,24 @@ function printJson(value) {
   process.stdout.write(
     `${JSON.stringify(sanitizeOutput(value), null, process.stdout.isTTY ? 2 : undefined)}\n`
   );
+}
+
+/**
+ * @param {import('../../protocol/src/types.js').BridgeResponse} response
+ * @returns {void}
+ */
+function printCallResponse(response) {
+  if (response.ok) {
+    printJson(response.result);
+    return;
+  }
+
+  process.exitCode = 1;
+  const errorText = `${response.error.code}: ${response.error.message}`;
+  process.stderr.write(
+    `${process.stderr.isTTY ? `\u001b[31m${sanitizeOutput(errorText)}\u001b[0m` : sanitizeOutput(errorText)}\n`
+  );
+  printJson(response);
 }
 
 function printUsage() {

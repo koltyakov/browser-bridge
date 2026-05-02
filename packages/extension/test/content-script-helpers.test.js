@@ -188,3 +188,107 @@ test('content script helpers convert rects and extract element text', () => {
     }
   }
 });
+
+test('content script helpers prune only detached element registry entries', () => {
+  /** @typedef {{}} RegistryElement */
+  const liveOne = {};
+  const liveTwo = {};
+  const detachedOne = {};
+  const detachedTwo = {};
+  const registry = new Map([
+    ['el_live_1', liveOne],
+    ['el_detached_1', detachedOne],
+    ['el_live_2', liveTwo],
+    ['el_detached_2', detachedTwo],
+  ]);
+  const reverseRegistry = new WeakMap([
+    [liveOne, 'el_live_1'],
+    [detachedOne, 'el_detached_1'],
+    [liveTwo, 'el_live_2'],
+    [detachedTwo, 'el_detached_2'],
+  ]);
+  const attachedElements = new Set([liveOne, liveTwo]);
+
+  const result = helpers.pruneElementRegistryEntries({
+    registry,
+    reverseRegistry,
+    iterator: null,
+    containsElement: (/** @type {RegistryElement} */ element) => attachedElements.has(element),
+    batchSize: 10,
+  });
+
+  assert.equal(result.pruned, true);
+  assert.equal(result.iterator, null);
+  assert.deepEqual([...registry.keys()], ['el_live_1', 'el_live_2']);
+  assert.equal(reverseRegistry.get(liveOne), 'el_live_1');
+  assert.equal(reverseRegistry.get(liveTwo), 'el_live_2');
+  assert.equal(reverseRegistry.get(detachedOne), undefined);
+  assert.equal(reverseRegistry.get(detachedTwo), undefined);
+});
+
+test('content script helpers visibility matching avoids duplicate layout reads', () => {
+  /** @typedef {{ id: string, rect: { width: number, height: number }, visibility: string }} WaitElement */
+  const visibleElements = [
+    { id: 'zero-area', rect: { width: 0, height: 10 }, visibility: 'visible' },
+    { id: 'hidden', rect: { width: 20, height: 20 }, visibility: 'hidden' },
+    { id: 'visible', rect: { width: 30, height: 30 }, visibility: 'visible' },
+  ];
+  const hiddenElements = [
+    { id: 'shown', rect: { width: 20, height: 20 }, visibility: 'visible' },
+    { id: 'hidden', rect: { width: 25, height: 25 }, visibility: 'hidden' },
+    { id: 'after-match', rect: { width: 40, height: 40 }, visibility: 'visible' },
+  ];
+
+  /**
+   * @param {WaitElement[]} elements
+   * @param {'visible' | 'hidden'} waitState
+   */
+  function runCase(elements, waitState) {
+    /** @type {Map<string, number>} */
+    const rectCalls = new Map();
+    /** @type {Map<string, number>} */
+    const styleCalls = new Map();
+    const match = helpers.findElementForWaitState({
+      elements,
+      waitState,
+      getRect(/** @type {WaitElement} */ element) {
+        rectCalls.set(element.id, (rectCalls.get(element.id) ?? 0) + 1);
+        return element.rect;
+      },
+      getVisibility(/** @type {WaitElement} */ element) {
+        styleCalls.set(element.id, (styleCalls.get(element.id) ?? 0) + 1);
+        return element.visibility;
+      },
+    });
+
+    for (const element of elements) {
+      assert.ok((rectCalls.get(element.id) ?? 0) <= 1, `${element.id} rect read once`);
+      assert.ok((styleCalls.get(element.id) ?? 0) <= 1, `${element.id} style read once`);
+    }
+
+    return { match, rectCalls, styleCalls };
+  }
+
+  const visibleResult = runCase(visibleElements, 'visible');
+  assert.equal(visibleResult.match, visibleElements[2]);
+  assert.deepEqual(Object.fromEntries(visibleResult.rectCalls), {
+    'zero-area': 1,
+    hidden: 1,
+    visible: 1,
+  });
+  assert.deepEqual(Object.fromEntries(visibleResult.styleCalls), {
+    hidden: 1,
+    visible: 1,
+  });
+
+  const hiddenResult = runCase(hiddenElements, 'hidden');
+  assert.equal(hiddenResult.match, hiddenElements[1]);
+  assert.deepEqual(Object.fromEntries(hiddenResult.rectCalls), {
+    shown: 1,
+    hidden: 1,
+  });
+  assert.deepEqual(Object.fromEntries(hiddenResult.styleCalls), {
+    shown: 1,
+    hidden: 1,
+  });
+});

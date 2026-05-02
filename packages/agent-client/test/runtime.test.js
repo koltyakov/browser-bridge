@@ -11,9 +11,35 @@ import { findConfiguredMcpClients, installMcpConfig, removeMcpConfig } from '../
 import os from 'node:os';
 import path from 'node:path';
 
-import { getDoctorReport, requestBridge, resolveRef } from '../src/runtime.js';
+import { BridgeClient } from '../src/client.js';
+import { getDoctorReport, requestBridge, resolveRef, withBridgeClient } from '../src/runtime.js';
 
-test('detectMcpClients and detectSkillTargets use injected detectors', () => {
+/**
+ * @param {Record<string, unknown>} result
+ * @returns {<T>(callback: (client: import('../src/client.js').BridgeClient) => Promise<T>) => Promise<T>}
+ */
+function createHealthPingRunner(result) {
+  return async (callback) =>
+    callback(
+      /** @type {any} */ ({
+        /** @param {{ method: string }} request */
+        request: async ({ method }) => {
+          if (method !== 'health.ping') {
+            throw new Error(`Unexpected method: ${method}`);
+          }
+          return {
+            id: 'req-health',
+            ok: true,
+            result,
+            error: null,
+            meta: { protocol_version: '1.0' },
+          };
+        },
+      })
+    );
+}
+
+test('detectMcpClients and detectSkillTargets use injected detectors', async () => {
   /** @type {Record<string, () => boolean>} */
   const detectors = {
     copilot: () => true,
@@ -25,14 +51,14 @@ test('detectMcpClients and detectSkillTargets use injected detectors', () => {
     antigravity: () => true,
   };
 
-  assert.deepEqual(detectMcpClients(detectors), [
+  assert.deepEqual(await detectMcpClients(detectors), [
     'codex',
     'claude',
     'copilot',
     'antigravity',
     'windsurf',
   ]);
-  assert.deepEqual(detectSkillTargets(detectors), [
+  assert.deepEqual(await detectSkillTargets(detectors), [
     'codex',
     'claude',
     'copilot',
@@ -42,7 +68,7 @@ test('detectMcpClients and detectSkillTargets use injected detectors', () => {
   ]);
 });
 
-test('detectSkillTargets includes cursor when detected', () => {
+test('detectSkillTargets includes cursor when detected', async () => {
   /** @type {Record<string, () => boolean>} */
   const detectors = {
     copilot: () => false,
@@ -54,7 +80,7 @@ test('detectSkillTargets includes cursor when detected', () => {
     antigravity: () => false,
   };
 
-  assert.deepEqual(detectSkillTargets(detectors), ['cursor', 'agents']);
+  assert.deepEqual(await detectSkillTargets(detectors), ['cursor', 'agents']);
 });
 
 test('installMcpConfig preserves unrelated config entries when merging', async () => {
@@ -378,6 +404,120 @@ test('resolveRef returns the first matching elementRef', async () => {
   assert.equal(ref, 'el_main');
 });
 
+test('resolveRef propagates upstream bridge error messages', async () => {
+  const client = {
+    connected: true,
+    async connect() {},
+    async request() {
+      return {
+        id: 'req_err',
+        ok: false,
+        result: null,
+        error: {
+          code: 'ACCESS_DENIED',
+          message: 'Denied by page policy.',
+          details: null,
+        },
+        meta: { protocol_version: '1.0' },
+      };
+    },
+  };
+
+  await assert.rejects(
+    resolveRef(/** @type {any} */ (client), 'main', 42),
+    /Denied by page policy\./
+  );
+});
+
+test('resolveRef throws when selector returns no matching nodes', async () => {
+  const client = {
+    connected: true,
+    async connect() {},
+    async request() {
+      return {
+        id: 'req_empty',
+        ok: true,
+        result: {
+          nodes: [],
+        },
+        error: null,
+        meta: { protocol_version: '1.0' },
+      };
+    },
+  };
+
+  await assert.rejects(
+    resolveRef(/** @type {any} */ (client), '.missing', 42),
+    /No element found for selector "\.missing"\./
+  );
+});
+
+test('requestBridge strips non-finite token budgets from request metadata', async () => {
+  /** @type {Array<Record<string, unknown>>} */
+  const metas = [];
+  const client = {
+    connected: true,
+    async connect() {},
+    /**
+     * @param {{ meta?: Record<string, unknown> }} request
+     */
+    async request({ meta = {} }) {
+      metas.push(meta);
+      return {
+        id: 'req_meta',
+        ok: true,
+        result: { daemon: 'ok', extensionConnected: true },
+        error: null,
+        meta: { protocol_version: '1.0' },
+      };
+    },
+  };
+
+  for (const tokenBudget of [Infinity, NaN]) {
+    await requestBridge(
+      /** @type {any} */ (client),
+      'health.ping',
+      {},
+      { source: 'cli', tokenBudget }
+    );
+  }
+
+  assert.deepEqual(metas, [{ source: 'cli' }, { source: 'cli' }]);
+});
+
+test('withBridgeClient always closes the client when the callback throws', async () => {
+  const originalConnect = BridgeClient.prototype.connect;
+  const originalClose = BridgeClient.prototype.close;
+  /** @type {string[]} */
+  const lifecycle = [];
+
+  BridgeClient.prototype.connect = async function () {
+    lifecycle.push('connect');
+    this.connected = true;
+  };
+  BridgeClient.prototype.close = async function () {
+    lifecycle.push('close');
+    this.connected = false;
+  };
+
+  try {
+    await assert.rejects(
+      withBridgeClient(async (client) => {
+        lifecycle.push('callback');
+        assert.equal(client instanceof BridgeClient, true);
+        assert.equal(client.connected, true);
+        throw new Error('callback failed');
+      }),
+      /callback failed/
+    );
+
+    assert.deepEqual(lifecycle, ['connect', 'callback', 'close']);
+  } finally {
+    BridgeClient.prototype.connect = originalConnect;
+    BridgeClient.prototype.close = originalClose;
+  }
+});
+
 test('getDoctorReport exposes extension id source and next steps without a live daemon', async () => {
   const report = await getDoctorReport({
     manifestPath: '/tmp/browser-bridge.json',
@@ -393,7 +533,9 @@ test('getDoctorReport exposes extension id source and next steps without a live 
 
   assert.equal(report.defaultExtensionIdSource, 'built_in');
   assert.equal(report.manifestInstalled, false);
+  assert.ok(report.issues.includes('daemon_offline'));
   assert.ok(report.issues.includes('native_host_manifest_missing'));
+  assert.ok(report.nextSteps.some((step) => step.includes('bbx-daemon')));
   assert.ok(report.nextSteps.some((step) => step.includes('bbx install')));
 });
 
@@ -402,38 +544,108 @@ test('getDoctorReport tells the agent to wait for the user when access is disabl
     loadManifest: async () => ({
       allowed_origins: ['chrome-extension://example/*'],
     }),
-    bridgeClientRunner: async (callback) =>
-      callback(
-        /** @type {any} */ ({
-          /** @param {{ method: string }} request */
-          request: async ({ method }) => {
-            if (method !== 'health.ping') {
-              throw new Error(`Unexpected method: ${method}`);
-            }
-            return {
-              id: 'req-health',
-              ok: true,
-              result: {
-                daemon: 'ok',
-                extensionConnected: true,
-                access: {
-                  enabled: false,
-                  windowId: 12,
-                  routeReady: false,
-                  reason: 'access_disabled',
-                },
-              },
-              error: null,
-              meta: { protocol_version: '1.0' },
-            };
-          },
-        })
-      ),
+    bridgeClientRunner: createHealthPingRunner({
+      daemon: 'ok',
+      extensionConnected: true,
+      access: {
+        enabled: false,
+        windowId: 12,
+        routeReady: false,
+        reason: 'access_disabled',
+      },
+    }),
   });
 
   assert.ok(report.issues.includes('access_disabled'));
   assert.ok(report.nextSteps.some((step) => step.includes('stop requesting access')));
   assert.ok(report.nextSteps.some((step) => step.includes('click Enable for the needed window')));
+});
+
+test('getDoctorReport flags an installed but disconnected extension separately from daemon issues', async () => {
+  const report = await getDoctorReport({
+    loadManifest: async () => ({
+      allowed_origins: ['chrome-extension://example/*'],
+    }),
+    bridgeClientRunner: createHealthPingRunner({
+      daemon: 'ok',
+      extensionConnected: false,
+    }),
+  });
+
+  assert.equal(report.daemonReachable, true);
+  assert.equal(report.extensionConnected, false);
+  assert.ok(report.issues.includes('extension_disconnected'));
+  assert.ok(!report.issues.includes('daemon_offline'));
+  assert.ok(report.nextSteps.some((step) => step.includes('Browser Bridge extension')));
+});
+
+test('getDoctorReport clears readiness issues after the bridge recovers on a later retry', async () => {
+  let offline = true;
+
+  /**
+   * @template T
+   * @param {(client: import('../src/client.js').BridgeClient) => Promise<T>} callback
+   * @returns {Promise<T>}
+   */
+  const bridgeClientRunner = async (callback) => {
+    if (offline) {
+      offline = false;
+      throw new Error('offline');
+    }
+    return callback(
+      /** @type {any} */ ({
+        /** @param {{ method: string }} request */
+        request: async ({ method }) => {
+          if (method !== 'health.ping') {
+            throw new Error(`Unexpected method: ${method}`);
+          }
+          return {
+            id: 'req-health-recovered',
+            ok: true,
+            result: {
+              daemon: 'ok',
+              extensionConnected: true,
+              access: {
+                enabled: true,
+                windowId: 22,
+                routeTabId: 81,
+                routeReady: true,
+                reason: 'reconnected',
+              },
+            },
+            error: null,
+            meta: { protocol_version: '1.0' },
+          };
+        },
+      })
+    );
+  };
+
+  const offlineReport = await getDoctorReport({
+    loadManifest: async () => ({
+      allowed_origins: ['chrome-extension://example/*'],
+    }),
+    bridgeClientRunner,
+  });
+  const recoveredReport = await getDoctorReport({
+    loadManifest: async () => ({
+      allowed_origins: ['chrome-extension://example/*'],
+    }),
+    bridgeClientRunner,
+  });
+
+  assert.ok(offlineReport.issues.includes('daemon_offline'));
+  assert.equal(recoveredReport.daemonReachable, true);
+  assert.equal(recoveredReport.extensionConnected, true);
+  assert.equal(recoveredReport.accessEnabled, true);
+  assert.equal(recoveredReport.enabledWindowId, 22);
+  assert.equal(recoveredReport.routeTabId, 81);
+  assert.equal(recoveredReport.routeReady, true);
+  assert.equal(recoveredReport.routeReason, 'reconnected');
+  assert.ok(!recoveredReport.issues.includes('daemon_offline'));
+  assert.ok(!recoveredReport.issues.includes('extension_disconnected'));
+  assert.ok(!recoveredReport.issues.includes('access_disabled'));
+  assert.ok(!recoveredReport.issues.includes('no_routable_active_tab'));
 });
 
 test('CLI bridge method bindings stay aligned with the protocol registry', () => {

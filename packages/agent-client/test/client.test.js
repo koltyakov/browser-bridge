@@ -36,6 +36,7 @@ import {
 } from '../src/mcp-config.js';
 import { annotateBridgeSummary, summarizeBridgeResponse } from '../src/subagent.js';
 import { BridgeClient } from '../src/client.js';
+import { clockController } from '../../../tests/_helpers/faultInjection.js';
 
 /** Ensure failures stay compact for parent-agent reporting. */
 test('summarizeBridgeResponse condenses failures', () => {
@@ -87,6 +88,97 @@ test('BridgeClient.checkProtocolVersion prefers remote migration hints', () => {
 
   assert.equal(result.compatible, false);
   assert.equal(result.warning, 'Update the Browser Bridge CLI to match the extension.');
+});
+
+test('BridgeClient.checkProtocolVersion falls back to a generated mismatch warning', () => {
+  const result = BridgeClient.checkProtocolVersion({
+    supported_versions: ['0.0'],
+  });
+
+  assert.equal(result.compatible, false);
+  assert.match(result.warning || '', /Protocol mismatch: client speaks/);
+  assert.match(result.warning || '', /remote supports \[0\.0\]/);
+});
+
+test('BridgeClient.rejectAllPending rejects every pending request and clears the map', () => {
+  const client = new BridgeClient();
+  const error = new Error('Bridge socket closed.');
+  /** @type {Error[]} */
+  const rejected = [];
+
+  for (const key of ['req_1', 'req_2']) {
+    client.waiting.set(key, {
+      resolve() {},
+      reject(rejectionError) {
+        rejected.push(rejectionError);
+      },
+      timeoutId: setTimeout(() => {}, 10_000),
+    });
+  }
+
+  client.rejectAllPending(error);
+
+  assert.equal(client.waiting.size, 0);
+  assert.deepEqual(rejected, [error, error]);
+});
+
+test('BridgeClient.attachProtocolWarning returns the original response when empty and injects warnings when set', () => {
+  const client = new BridgeClient();
+  const response = /** @type {import('../../protocol/src/types.js').BridgeResponse} */ ({
+    id: 'req_warn',
+    ok: true,
+    result: { value: 1 },
+    error: null,
+    meta: { protocol_version: '1.0' },
+  });
+
+  assert.strictEqual(client.attachProtocolWarning(response), response);
+
+  client.protocolWarning = 'Update the extension to match the client.';
+  assert.deepEqual(client.attachProtocolWarning(response), {
+    ...response,
+    meta: {
+      ...response.meta,
+      protocol_warning: 'Update the extension to match the client.',
+    },
+  });
+});
+
+test('BridgeClient.request rejects on timeout and removes the waiting entry', async (t) => {
+  const client = new BridgeClient();
+
+  t.mock.method(
+    globalThis,
+    'setTimeout',
+    /** @type {typeof setTimeout} */ (
+      /** @param {TimerHandler} callback */
+      (callback) => {
+        queueMicrotask(() => {
+          if (typeof callback === 'function') {
+            callback();
+          }
+        });
+        return /** @type {any} */ ({ mocked: true });
+      }
+    )
+  );
+
+  client.socket = /** @type {any} */ ({
+    destroyed: false,
+    writable: true,
+    write() {
+      return true;
+    },
+  });
+
+  await assert.rejects(client.request({ method: 'health.ping', timeoutMs: 25 }), (error) => {
+    assert.ok(error instanceof Error);
+    assert.equal(/** @type {Error & { code?: string }} */ (error).code, 'BRIDGE_TIMEOUT');
+    assert.match(error.message, /Timed out waiting for bridge response to health\.ping/);
+    return true;
+  });
+
+  assert.equal(client.waiting.size, 0);
 });
 
 test('summarizeBridgeResponse adds stale element recovery hint', () => {
@@ -1068,6 +1160,49 @@ test('installAgentFiles applies the GitHub Copilot-specific CLI skill note', asy
   }
 });
 
+test('installAgentFiles rolls back new skill directories when a later write fails', async (t) => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-agent-rollback-'));
+  const originalWriteFile = fs.promises.writeFile;
+
+  t.mock.method(
+    fs.promises,
+    'writeFile',
+    /** @type {typeof fs.promises.writeFile} */ (
+      async (filePath, data, options) => {
+        const targetPath = String(filePath);
+        if (
+          targetPath.endsWith(
+            path.join('.cursor', 'skills', 'browser-bridge', getManagedSkillSentinelFilename())
+          )
+        ) {
+          throw new Error('simulated sentinel write failure');
+        }
+        return originalWriteFile.call(fs.promises, filePath, data, options);
+      }
+    )
+  );
+
+  try {
+    await assert.rejects(
+      installAgentFiles({
+        targets: ['copilot', 'cursor'],
+        projectPath: tempDir,
+        global: false,
+      }),
+      /simulated sentinel write failure/
+    );
+
+    await assert.rejects(
+      fs.promises.access(path.join(tempDir, '.github', 'skills', 'browser-bridge'))
+    );
+    await assert.rejects(
+      fs.promises.access(path.join(tempDir, '.cursor', 'skills', 'browser-bridge'))
+    );
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('installAgentFiles still installs only the CLI skill when global MCP is configured', async () => {
   const tempHome = await fs.promises.mkdtemp(
     path.join(os.tmpdir(), 'bb-install-agent-copilot-mcp-home-')
@@ -1207,6 +1342,40 @@ test('installMcpClientSetup writes generic agents MCP config without installing 
     await assert.rejects(
       fs.promises.access(path.join(tempDir, '.agents', 'skills', 'browser-bridge', 'SKILL.md'))
     );
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('installMcpClientSetup is idempotent for repeated client installs', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-idempotent-mcp-'));
+
+  try {
+    const stdout = {
+      write() {
+        return true;
+      },
+    };
+
+    const first = await installMcpClientSetup(['cursor', 'cursor'], {
+      global: false,
+      projectPath: tempDir,
+      stdout,
+    });
+    const configPath = path.join(tempDir, '.cursor', 'mcp.json');
+    const firstContents = await fs.promises.readFile(configPath, 'utf8');
+
+    const second = await installMcpClientSetup(['cursor'], {
+      global: false,
+      projectPath: tempDir,
+      stdout,
+    });
+    const secondContents = await fs.promises.readFile(configPath, 'utf8');
+
+    assert.deepEqual(first.configPaths, [configPath]);
+    assert.deepEqual(second.configPaths, [configPath]);
+    assert.equal(secondContents, firstContents);
+    assert.deepEqual(JSON.parse(secondContents), buildMcpConfig('cursor'));
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }
@@ -2003,6 +2172,76 @@ test('BridgeClient reconnects and emits reconnected event after server drops con
     }
     await new Promise((resolve) => server.close(() => resolve(undefined)));
   }
+});
+
+test('BridgeClient _scheduleReconnect does not retry when autoReconnect is disabled', async (t) => {
+  const client = new BridgeClient({ autoReconnect: false });
+  let connectAttempts = 0;
+  let reconnectedEvents = 0;
+
+  t.mock.method(
+    globalThis,
+    'setTimeout',
+    /** @type {typeof setTimeout} */ (
+      /** @param {TimerHandler} callback */
+      (callback) => {
+        queueMicrotask(() => {
+          if (typeof callback === 'function') {
+            callback();
+          }
+        });
+        return /** @type {any} */ (0);
+      }
+    )
+  );
+
+  client.connect = /** @type {typeof client.connect} */ (
+    async () => {
+      connectAttempts += 1;
+      throw new Error('connect should not be called');
+    }
+  );
+  client.on('reconnected', () => {
+    reconnectedEvents += 1;
+  });
+
+  await client._scheduleReconnect();
+
+  assert.equal(connectAttempts, 0);
+  assert.equal(reconnectedEvents, 0);
+  assert.equal(client._reconnecting, false);
+});
+
+test('BridgeClient _scheduleReconnect retries until connect succeeds and emits reconnected', async (t) => {
+  const client = new BridgeClient({ autoReconnect: true });
+  let connectAttempts = 0;
+  let reconnectedEvents = 0;
+  const clock = clockController();
+
+  t.mock.method(globalThis, 'setTimeout', clock.setTimeout);
+
+  client.connect = /** @type {typeof client.connect} */ (
+    async () => {
+      connectAttempts += 1;
+      if (connectAttempts < 3) {
+        throw new Error(`connect failed ${connectAttempts}`);
+      }
+      client.connected = true;
+    }
+  );
+  client.on('reconnected', () => {
+    reconnectedEvents += 1;
+  });
+
+  const reconnectPromise = client._scheduleReconnect();
+  await clock.runAll();
+  await reconnectPromise;
+
+  assert.equal(connectAttempts, 3);
+  assert.deepEqual(clock.delays, [1000, 2000, 4000]);
+  assert.equal(reconnectedEvents, 1);
+  assert.equal(client.connected, true);
+  assert.equal(client._reconnecting, false);
 });
 
 test('BridgeClient.close() stops autoReconnect', async () => {

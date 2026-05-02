@@ -3,10 +3,16 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { installNativeManifest, parseExtensionId } from '../src/install-manifest.js';
+import {
+  installNativeManifest,
+  parseExtensionId,
+  uninstallNativeManifest,
+} from '../src/install-manifest.js';
 import { SUPPORTED_BROWSERS } from '../src/config.js';
 
 /** @typedef {import('../src/config.js').SupportedBrowser} SupportedBrowser */
+
+const USAGE = 'Usage: bbx-install [<extension-id>] [--browser <browser>] [--all] [--uninstall]\n';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -14,11 +20,14 @@ const repoRoot = path.resolve(__dirname, '../../..');
 const args = process.argv.slice(2);
 let extensionIdArg = /** @type {string | undefined} */ (undefined);
 let installAll = false;
+let uninstall = false;
 const browsers = /** @type {SupportedBrowser[]} */ ([]);
 
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--all') {
     installAll = true;
+  } else if (args[i] === '--uninstall') {
+    uninstall = true;
   } else if (args[i] === '--browser' && args[i + 1]) {
     const candidate = args[i + 1];
     if (!SUPPORTED_BROWSERS.includes(/** @type {SupportedBrowser} */ (candidate))) {
@@ -32,6 +41,11 @@ for (let i = 0; i < args.length; i++) {
   } else if (!extensionIdArg) {
     extensionIdArg = args[i];
   }
+}
+
+if (uninstall && extensionIdArg) {
+  process.stderr.write(USAGE);
+  process.exit(1);
 }
 
 if (extensionIdArg && !parseExtensionId(extensionIdArg)) {
@@ -48,7 +62,15 @@ const targets = installAll
     ? browsers
     : [/** @type {SupportedBrowser} */ ('chrome')];
 
-for (const target of targets) {
+for (const [index, target] of targets.entries()) {
+  if (uninstall) {
+    await uninstallNativeManifest({
+      browser: target,
+      removeBridgeDir: index === targets.length - 1,
+    });
+    continue;
+  }
+
   await installNativeManifest({
     repoRoot,
     extensionIdArg,

@@ -13,9 +13,27 @@ import {
 
 export const DEFAULT_EXTENSION_ID_ENV = 'BROWSER_BRIDGE_EXTENSION_ID';
 export const BUILT_IN_EXTENSION_ID_SOURCE = 'built_in';
+export const INSTALL_NATIVE_MANIFEST_ERROR = 'INSTALL_NATIVE_MANIFEST_FAILED';
 
 /** @typedef {import('./config.js').SupportedBrowser} SupportedBrowser */
 /** @typedef {'env' | 'built_in' | 'none' | 'invalid_env'} ExtensionIdSource */
+/** @typedef {NodeJS.ErrnoException & { cause?: unknown }} MaybeErrnoError */
+
+export class NativeManifestInstallError extends Error {
+  /**
+   * @param {string} targetPath
+   * @param {unknown} cause
+   */
+  constructor(targetPath, cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    super(`Failed to install native host files at ${targetPath}: ${detail}`, { cause });
+    this.name = 'NativeManifestInstallError';
+    this.code = INSTALL_NATIVE_MANIFEST_ERROR;
+    this.targetPath = targetPath;
+    this.cause = cause;
+    this.errnoCode = /** @type {MaybeErrnoError | undefined} */ (cause)?.code;
+  }
+}
 
 /**
  * @typedef {{
@@ -228,13 +246,21 @@ exec '${escapeSingleQuotes(nodePath)}' '${escapeSingleQuotes(hostPath)}' "$@"
     allowed_origins: allowedOrigins,
   };
 
-  await fs.promises.mkdir(installDir, { recursive: true });
-  await fs.promises.mkdir(bridgeDir, { recursive: true });
-  await fs.promises.writeFile(launcherPath, launcher, 'utf8');
-  if (process.platform !== 'win32') {
-    await fs.promises.chmod(launcherPath, 0o755);
+  let failingPath = installDir;
+  try {
+    await fs.promises.mkdir(installDir, { recursive: true });
+    failingPath = bridgeDir;
+    await fs.promises.mkdir(bridgeDir, { recursive: true });
+    failingPath = launcherPath;
+    await fs.promises.writeFile(launcherPath, launcher, 'utf8');
+    if (process.platform !== 'win32') {
+      await fs.promises.chmod(launcherPath, 0o755);
+    }
+    failingPath = manifestPath;
+    await fs.promises.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  } catch (error) {
+    throw new NativeManifestInstallError(failingPath, error);
   }
-  await fs.promises.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
 
   stdout.write(`Wrote ${manifestPath}\n`);
   stdout.write(`Wrote ${launcherPath}\n`);

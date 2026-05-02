@@ -4,6 +4,39 @@ import readline from 'node:readline';
 import { bridgeMethodNeedsTab } from '../../protocol/src/index.js';
 
 /**
+ * Strip ANSI escape sequences from a string to prevent terminal injection
+ * from malicious page content (e.g. DOM text, console output, eval results).
+ *
+ * @param {string} str
+ * @returns {string}
+ */
+export function stripAnsi(str) {
+  // oxlint-disable-next-line no-control-regex
+  return str.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').replace(/\x1b[^[]/g, '');
+}
+
+/**
+ * Recursively sanitize all string values in a value tree by stripping ANSI
+ * escape sequences. Only strings are touched; structure is preserved.
+ *
+ * @param {unknown} value
+ * @returns {unknown}
+ */
+export function sanitizeOutput(value) {
+  if (typeof value === 'string') return stripAnsi(value);
+  if (Array.isArray(value)) return value.map(sanitizeOutput);
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(/** @type {Record<string, unknown>} */ (value)).map(([k, v]) => [
+        k,
+        sanitizeOutput(v),
+      ])
+    );
+  }
+  return value;
+}
+
+/**
  * @param {string[]} values
  * @returns {Record<string, string>}
  */

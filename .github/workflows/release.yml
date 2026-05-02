@@ -49,6 +49,9 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Review lowest coverage files
+        run: npm run coverage:review
+
       - name: Check coverage threshold
         run: npm run coverage:check
 

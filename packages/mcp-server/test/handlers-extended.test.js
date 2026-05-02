@@ -17,6 +17,10 @@ import {
   handleLogTool,
   handleAccessTool,
 } from '../src/handlers.js';
+import {
+  makeFailure as fail,
+  makeSuccess as ok,
+} from '../../../tests/_helpers/protocolFactories.js';
 
 /**
  * @typedef {{
@@ -63,28 +67,6 @@ async function withMockedBridge(responder, callback) {
     BridgeClient.prototype.close = originalClose;
     BridgeClient.prototype.request = originalRequest;
   }
-}
-
-/** @param {unknown} result */
-function ok(result) {
-  return /** @type {import('../../protocol/src/types.js').BridgeResponse} */ ({
-    id: 'req_test',
-    ok: true,
-    result,
-    error: null,
-    meta: { protocol_version: '1.0' },
-  });
-}
-
-/** @param {string} code @param {string} message */
-function fail(code, message) {
-  return /** @type {import('../../protocol/src/types.js').BridgeResponse} */ ({
-    id: 'req_test',
-    ok: false,
-    result: null,
-    error: { code: /** @type {any} */ (code), message, details: null },
-    meta: { protocol_version: '1.0' },
-  });
 }
 
 // --- handleTabsTool: close action ---
@@ -1047,6 +1029,58 @@ test('handleBatchTool handles invalid call entries', async () => {
       assert.match(results[0].summary, /needs a method/);
       assert.equal(results[1].ok, false);
       assert.match(results[1].summary, /Unknown bridge method/);
+    }
+  );
+});
+
+test('handleBatchTool surfaces per-call errors without short-circuiting', async () => {
+  await withMockedBridge(
+    async (record) => {
+      if (record.method === 'page.get_text') {
+        throw new Error('Page text exploded');
+      }
+      if (record.method === 'health.ping') {
+        return ok({ daemon: 'ok', extensionConnected: true });
+      }
+      return ok({});
+    },
+    async (calls) => {
+      const result = await handleBatchTool({
+        calls: [
+          { method: 'not.real.method', params: {} },
+          { method: 'page.get_text', params: {} },
+          { method: 'health.ping', params: {} },
+        ],
+      });
+
+      const results = /** @type {any[]} */ (result.structuredContent.results);
+      assert.equal(result.isError, true);
+      assert.equal(result.structuredContent.ok, false);
+      assert.equal(results.length, 3);
+      assert.deepEqual(
+        calls.map((call) => call.method),
+        ['page.get_text', 'health.ping']
+      );
+
+      assert.equal(results[0].method, 'not.real.method');
+      assert.equal(results[0].ok, false);
+      assert.equal(results[0].error.code, 'INVALID_REQUEST');
+      assert.match(results[0].summary, /Unknown bridge method/u);
+
+      assert.equal(results[1].method, 'page.get_text');
+      assert.equal(results[1].ok, false);
+      assert.equal(results[1].error.code, 'INTERNAL_ERROR');
+      assert.match(results[1].summary, /Page text exploded/u);
+
+      assert.equal(results[2].method, 'health.ping');
+      assert.equal(results[2].ok, true);
+      assert.equal(results[2].error, null);
+      assert.equal(typeof results[2].summary, 'string');
+      assert.notEqual(results[2].summary.length, 0);
+      assert.deepEqual(results[2].response, {
+        daemon: 'ok',
+        extensionConnected: true,
+      });
     }
   );
 });

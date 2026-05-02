@@ -19,7 +19,7 @@ import {
   DEFAULT_WAIT_TIMEOUT_MS,
 } from './defaults.js';
 import { BridgeError, ERROR_CODES, getErrorRecovery } from './errors.js';
-import { BRIDGE_METHODS, createBridgeMethodGroups } from './registry.js';
+import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry.js';
 
 /** @typedef {import('./types.js').AccessibilityTreeParams} AccessibilityTreeParams */
 /** @typedef {import('./types.js').BridgeFailureResponse} BridgeFailureResponse */
@@ -182,12 +182,19 @@ export function validateBridgeRequest(request) {
 
   if (
     typeof candidate.method !== 'string' ||
-    !METHODS.includes(/** @type {BridgeMethod} */ (candidate.method))
+    !METHOD_SET.has(/** @type {BridgeMethod} */ (candidate.method))
   ) {
     throw new BridgeError(
       ERROR_CODES.INVALID_REQUEST,
       `Unsupported method: ${String(candidate.method)}`
     );
+  }
+
+  if (
+    candidate.meta != null &&
+    (typeof candidate.meta !== 'object' || Array.isArray(candidate.meta))
+  ) {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'Request meta must be an object.');
   }
 
   const meta =
@@ -202,14 +209,17 @@ export function validateBridgeRequest(request) {
   }
   const parsedTabId = Number(candidate.tab_id);
 
+  const method = /** @type {BridgeMethod} */ (candidate.method);
+  const params =
+    candidate.params && typeof candidate.params === 'object'
+      ? /** @type {Record<string, unknown>} */ (candidate.params)
+      : {};
+
   return {
     id: candidate.id,
-    method: /** @type {BridgeMethod} */ (candidate.method),
+    method,
     tab_id: Number.isFinite(parsedTabId) && parsedTabId > 0 ? parsedTabId : null,
-    params:
-      candidate.params && typeof candidate.params === 'object'
-        ? /** @type {Record<string, unknown>} */ (candidate.params)
-        : {},
+    params: normalizeRequestParams(method, params),
     meta: {
       ...meta,
       protocol_version:
@@ -218,6 +228,80 @@ export function validateBridgeRequest(request) {
       source: meta.source === 'cli' || meta.source === 'mcp' ? meta.source : undefined,
     },
   };
+}
+
+/**
+ * Normalize request params early so malformed payloads fail at the shared
+ * protocol boundary before daemon or extension dispatch.
+ *
+ * @param {BridgeMethod} method
+ * @param {Record<string, unknown>} params
+ * @returns {Record<string, unknown>}
+ */
+function normalizeRequestParams(method, params) {
+  switch (method) {
+    case 'dom.query':
+      return normalizeDomQuery(params);
+    case 'page.evaluate':
+      return normalizeEvaluateParams(params);
+    case 'page.get_console':
+      return normalizeConsoleParams(params);
+    case 'page.wait_for_load_state':
+      return normalizeWaitForLoadStateParams(params);
+    case 'page.get_storage':
+      return normalizeStorageParams(params);
+    case 'page.get_text':
+      return normalizePageTextParams(params);
+    case 'page.get_network':
+      return normalizeNetworkParams(params);
+    case 'navigation.navigate':
+    case 'navigation.reload':
+    case 'navigation.go_back':
+    case 'navigation.go_forward':
+      return normalizeNavigationAction(params);
+    case 'dom.wait_for':
+      return normalizeWaitForParams(params);
+    case 'dom.find_by_text':
+      return normalizeFindByTextParams(params);
+    case 'dom.find_by_role':
+      return normalizeFindByRoleParams(params);
+    case 'dom.get_html':
+      return normalizeGetHtmlParams(params);
+    case 'dom.get_accessibility_tree':
+      return normalizeAccessibilityTreeParams(params);
+    case 'styles.get_computed':
+    case 'styles.get_matched_rules':
+      return normalizeStyleQuery(params);
+    case 'viewport.scroll':
+      return normalizeViewportAction(params);
+    case 'viewport.resize':
+      return normalizeViewportResizeParams(params);
+    case 'input.click':
+    case 'input.focus':
+    case 'input.type':
+    case 'input.press_key':
+      return normalizeInputAction(params);
+    case 'input.set_checked':
+      return normalizeCheckedAction(params);
+    case 'input.select_option':
+      return normalizeSelectAction(params);
+    case 'input.hover':
+      return normalizeHoverParams(params);
+    case 'input.drag':
+      return normalizeDragParams(params);
+    case 'patch.apply_styles':
+    case 'patch.apply_dom':
+    case 'patch.list':
+    case 'patch.rollback':
+    case 'patch.commit_session_baseline':
+      return normalizePatchOperation(params);
+    case 'tabs.create':
+      return normalizeTabCreateParams(params);
+    case 'tabs.close':
+      return normalizeTabCloseParams(params);
+    default:
+      return params;
+  }
 }
 
 /**

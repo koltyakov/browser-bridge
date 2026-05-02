@@ -54,9 +54,18 @@ export {};
 
 /**
  * @typedef {{
+ *   hint: string,
+ *   retry?: boolean,
+ *   retryAfterMs?: number
+ * }} BridgeRecovery
+ */
+
+/**
+ * @typedef {{
  *   code: ErrorCode,
  *   message: string,
- *   details: unknown
+ *   details: unknown,
+ *   recovery?: BridgeRecovery
  * }} BridgeFailure
  */
 

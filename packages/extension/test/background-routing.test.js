@@ -50,6 +50,53 @@ test('background routing rejects tabs outside the enabled window scope', () => {
   );
 });
 
+test('background routing falls back to the active tab when no explicit request id is provided', () => {
+  const activeTab = /** @type {chrome.tabs.Tab} */ ({
+    id: 9,
+    windowId: 3,
+    title: 'Active',
+    url: 'https://example.com/active',
+  });
+
+  assert.equal(selectRequestTabCandidate(undefined, null, activeTab), activeTab);
+  assert.equal(selectRequestTabCandidate(Number.NaN, null, activeTab), activeTab);
+});
+
+test('background routing treats malformed or incomplete tabs as mismatches', () => {
+  assert.throws(
+    () => resolveWindowScopedTab(/** @type {chrome.tabs.Tab} */ ({ windowId: 3 }), 3),
+    new Error(ERROR_CODES.TAB_MISMATCH)
+  );
+  assert.throws(
+    () =>
+      resolveWindowScopedTab(
+        /** @type {chrome.tabs.Tab} */ ({ id: 1, windowId: 3, title: 'Broken' }),
+        3
+      ),
+    new Error(ERROR_CODES.TAB_MISMATCH)
+  );
+  assert.equal(
+    normalizeRequestedAccessTab(/** @type {chrome.tabs.Tab} */ ({ id: 1, windowId: 3 })),
+    null
+  );
+});
+
+test('background routing can allow restricted pages when scriptability is not required', () => {
+  const restrictedTab = /** @type {chrome.tabs.Tab} */ ({
+    id: 4,
+    windowId: 3,
+    title: 'Extensions',
+    url: 'chrome://extensions',
+  });
+
+  assert.deepEqual(resolveWindowScopedTab(restrictedTab, 3, { requireScriptable: false }), {
+    tabId: 4,
+    windowId: 3,
+    title: 'Extensions',
+    url: 'chrome://extensions',
+  });
+});
+
 test('background routing rejects restricted automation pages and access requests ignore them', () => {
   const restrictedUrl = 'chrome://extensions';
   const restrictedTab = /** @type {chrome.tabs.Tab} */ ({

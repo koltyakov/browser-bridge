@@ -4,7 +4,27 @@ import { BridgeDaemon } from '../src/daemon.js';
 import { getSocketPath } from '../src/config.js';
 
 const daemon = new BridgeDaemon({ socketPath: getSocketPath() });
-await daemon.start();
+
+/**
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+function isExistingDaemonError(error) {
+  return (
+    error instanceof Error && error.message.startsWith('Another daemon is already running on ')
+  );
+}
+
+try {
+  await daemon.start();
+} catch (error) {
+  if (isExistingDaemonError(error)) {
+    process.stdout.write(`${error.message}\n`);
+    process.exit(0);
+  }
+  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  process.exit(1);
+}
 
 process.stdout.write(`Browser Bridge daemon listening on ${getSocketPath()}\n`);
 

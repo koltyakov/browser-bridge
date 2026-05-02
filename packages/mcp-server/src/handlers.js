@@ -1,7 +1,9 @@
 // @ts-check
 
+import os from 'node:os';
 import {
   bridgeMethodNeedsTab,
+  createRuntimeContext,
   DEFAULT_CONSOLE_LIMIT,
   DEFAULT_MAX_HTML_LENGTH,
   DEFAULT_NETWORK_LIMIT,
@@ -9,7 +11,7 @@ import {
   getBudgetPreset,
   getErrorRecovery,
   isBudgetPresetName,
-  METHODS,
+  METHOD_SET,
   summarizeBatchErrorItem,
   summarizeBatchResponseItem,
 } from '../../protocol/src/index.js';
@@ -20,11 +22,13 @@ import {
   withBridgeClient,
 } from '../../agent-client/src/runtime.js';
 import { annotateBridgeSummary, summarizeBridgeResponse } from '../../agent-client/src/subagent.js';
+import { collectSetupStatus } from '../../agent-client/src/setup-status.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
 
 const REQUEST_SOURCE = 'mcp';
+const HOME_DIR = os.homedir();
 
 /**
  * @typedef {{
@@ -914,7 +918,6 @@ export async function handleCaptureTool(args) {
  */
 export async function handleSkillTool() {
   try {
-    const { createRuntimeContext } = await import('../../protocol/src/index.js');
     const ctx = createRuntimeContext();
     return createToolResult('Runtime context retrieved.', {
       ok: true,
@@ -932,8 +935,7 @@ export async function handleSkillTool() {
  * @returns {Promise<ToolResult>}
  */
 export async function handleSetupTool(args) {
-  const { collectSetupStatus } = await import('../../agent-client/src/setup-status.js');
-  const projectPath = args.global !== false ? (await import('node:os')).homedir() : process.cwd();
+  const projectPath = args.global !== false ? HOME_DIR : process.cwd();
   const status = await collectSetupStatus({
     global: args.global !== false,
     cwd: process.cwd(),
@@ -1011,7 +1013,7 @@ export async function handleBatchTool(args) {
           };
         }
 
-        if (!METHODS.includes(/** @type {BridgeMethod} */ (call.method))) {
+        if (!METHOD_SET.has(/** @type {BridgeMethod} */ (call.method))) {
           return {
             method: call.method,
             tabId: null,
@@ -1083,7 +1085,7 @@ export async function handleBatchTool(args) {
  * @returns {Promise<ToolResult>}
  */
 export async function handleRawCallTool(args) {
-  if (!METHODS.includes(/** @type {BridgeMethod} */ (args.method))) {
+  if (!METHOD_SET.has(/** @type {BridgeMethod} */ (args.method))) {
     return summarizeToolError(`Unknown bridge method "${args.method}".`);
   }
 
@@ -1265,6 +1267,7 @@ export async function handleInvestigateTool(args) {
         scope: scopeName,
         heuristicFallback: true,
         steps: stepResults,
+        failedSteps,
       },
       !allOk
     );

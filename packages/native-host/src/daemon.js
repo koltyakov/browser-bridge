@@ -138,11 +138,118 @@ export class BridgeDaemon {
     this.agentSockets = new Map();
     /** @type {Map<string, PendingEntry>} */
     this.pendingRequests = new Map();
+    /** @type {Map<ClientSocket, Set<string>>} */
+    this.pendingRequestsByOwnerSocket = new Map();
+    /** @type {Map<ClientSocket, Set<string>>} */
+    this.pendingRequestsByTargetSocket = new Map();
     this.pendingTimeoutMs = DEFAULT_DAEMON_PENDING_TIMEOUT_MS;
     /** @type {Record<string, unknown>[]} */
     this.recentLog = [];
+    /** @type {Array<{ extensionId: string, browserName: string | null, profileLabel: string | null, accessEnabled: boolean }> | null} */
+    this.connectedExtensionsCache = null;
     /** @type {Promise<void> | null} */
     this.stopPromise = null;
+  }
+
+  /**
+   * @returns {void}
+   */
+  invalidateConnectedExtensionsCache() {
+    this.connectedExtensionsCache = null;
+  }
+
+  /**
+   * @param {Map<ClientSocket, Set<string>>} index
+   * @param {ClientSocket} socket
+   * @param {string} requestId
+   * @returns {void}
+   */
+  addPendingRequestIndex(index, socket, requestId) {
+    const requestIds = index.get(socket);
+    if (requestIds) {
+      requestIds.add(requestId);
+      return;
+    }
+    index.set(socket, new Set([requestId]));
+  }
+
+  /**
+   * @param {Map<ClientSocket, Set<string>>} index
+   * @param {ClientSocket} socket
+   * @param {string} requestId
+   * @returns {void}
+   */
+  removePendingRequestIndex(index, socket, requestId) {
+    const requestIds = index.get(socket);
+    if (!requestIds) {
+      return;
+    }
+    requestIds.delete(requestId);
+    if (requestIds.size === 0) {
+      index.delete(socket);
+    }
+  }
+
+  /**
+   * @param {string} requestId
+   * @param {PendingEntry} pending
+   * @returns {void}
+   */
+  trackPendingRequest(requestId, pending) {
+    this.pendingRequests.set(requestId, pending);
+    this.addPendingRequestIndex(this.pendingRequestsByOwnerSocket, pending.socket, requestId);
+    for (const targetSocket of pending.targets) {
+      this.addPendingRequestIndex(this.pendingRequestsByTargetSocket, targetSocket, requestId);
+    }
+  }
+
+  /**
+   * @param {string} requestId
+   * @param {PendingEntry | undefined} [pending]
+   * @returns {PendingEntry | undefined}
+   */
+  clearPendingRequest(requestId, pending = this.pendingRequests.get(requestId)) {
+    if (!pending) {
+      return undefined;
+    }
+    this.pendingRequests.delete(requestId);
+    this.removePendingRequestIndex(this.pendingRequestsByOwnerSocket, pending.socket, requestId);
+    for (const targetSocket of pending.targets) {
+      this.removePendingRequestIndex(this.pendingRequestsByTargetSocket, targetSocket, requestId);
+    }
+    return pending;
+  }
+
+  /**
+   * @param {string} requestId
+   * @param {PendingEntry} pending
+   * @param {ClientSocket} targetSocket
+   * @returns {void}
+   */
+  removePendingTarget(requestId, pending, targetSocket) {
+    if (!pending.targets.delete(targetSocket)) {
+      return;
+    }
+    this.removePendingRequestIndex(this.pendingRequestsByTargetSocket, targetSocket, requestId);
+  }
+
+  /**
+   * @returns {Array<{ extensionId: string, browserName: string | null, profileLabel: string | null, accessEnabled: boolean }>}
+   */
+  getConnectedExtensionsSnapshot() {
+    if (this.connectedExtensionsCache) {
+      return this.connectedExtensionsCache;
+    }
+
+    this.connectedExtensionsCache = Array.from(this.extensionSockets.entries()).map(
+      ([extensionId, extSocket]) => ({
+        extensionId,
+        browserName: extSocket.__browserName ?? null,
+        profileLabel: extSocket.__profileLabel ?? null,
+        accessEnabled: extSocket.__accessEnabled ?? false,
+      })
+    );
+    return this.connectedExtensionsCache;
   }
 
   /**
@@ -160,6 +267,7 @@ export class BridgeDaemon {
         typeof message.profileLabel === 'string' ? message.profileLabel : undefined;
       socket.__lastActiveAt = Date.now();
       this.extensionSockets.set(extensionId, socket);
+      this.invalidateConnectedExtensionsCache();
       void writeJsonLine(socket, { type: 'registered', role: 'extension' });
       return;
     }
@@ -266,6 +374,8 @@ export class BridgeDaemon {
       clearTimeout(pending.timeoutId);
     }
     this.pendingRequests.clear();
+    this.pendingRequestsByOwnerSocket.clear();
+    this.pendingRequestsByTargetSocket.clear();
 
     for (const socket of this.agentSockets.values()) {
       socket.destroy();
@@ -276,6 +386,7 @@ export class BridgeDaemon {
       socket.destroy();
     }
     this.extensionSockets.clear();
+    this.invalidateConnectedExtensionsCache();
 
     if (this.server) {
       const server = this.server;
@@ -412,23 +523,37 @@ export class BridgeDaemon {
       typeof request.meta?.target_profile === 'string' ? request.meta.target_profile : null;
     const hasExplicitTarget = Boolean(targetBrowser || targetProfile);
 
-    let targets = Array.from(this.extensionSockets.values());
-    if (targetBrowser || targetProfile) {
-      targets = targets.filter((extSocket) => {
-        if (targetBrowser && extSocket.__browserName !== targetBrowser) return false;
-        if (targetProfile && extSocket.__profileLabel !== targetProfile) return false;
-        return true;
-      });
-    } else {
-      const enabled = targets.filter((extSocket) => extSocket.__accessEnabled);
-      if (enabled.length > 0) {
-        targets = enabled;
-      } else {
-        const mostRecent = selectMostRecentlyActiveExtension(targets);
-        if (mostRecent) {
-          targets = [mostRecent];
+    /** @type {ClientSocket[]} */
+    const targets = [];
+    /** @type {ClientSocket | null} */
+    let mostRecent = null;
+    for (const extSocket of this.extensionSockets.values()) {
+      if (targetBrowser || targetProfile) {
+        if (targetBrowser && extSocket.__browserName !== targetBrowser) {
+          continue;
         }
+        if (targetProfile && extSocket.__profileLabel !== targetProfile) {
+          continue;
+        }
+        targets.push(extSocket);
+        continue;
       }
+
+      if (extSocket.__accessEnabled) {
+        targets.push(extSocket);
+        continue;
+      }
+
+      if (
+        !mostRecent ||
+        (typeof extSocket.__lastActiveAt === 'number' ? extSocket.__lastActiveAt : 0) >
+          (typeof mostRecent.__lastActiveAt === 'number' ? mostRecent.__lastActiveAt : 0)
+      ) {
+        mostRecent = extSocket;
+      }
+    }
+    if (!hasExplicitTarget && targets.length === 0 && mostRecent) {
+      targets.push(mostRecent);
     }
 
     if (targets.length === 0) {
@@ -443,7 +568,7 @@ export class BridgeDaemon {
       return;
     }
 
-    this.pendingRequests.set(request.id, {
+    this.trackPendingRequest(request.id, {
       socket,
       method: request.method,
       source: typeof request.meta?.source === 'string' ? request.meta.source : '',
@@ -451,7 +576,7 @@ export class BridgeDaemon {
       timeoutId: setTimeout(() => {
         const pending = this.pendingRequests.get(request.id);
         if (!pending) return;
-        this.pendingRequests.delete(request.id);
+        this.clearPendingRequest(request.id, pending);
         const response = createFailure(
           request.id,
           ERROR_CODES.TIMEOUT,
@@ -496,11 +621,17 @@ export class BridgeDaemon {
    * @returns {void}
    */
   handleExtensionIdentity(socket, message) {
+    let changed = false;
     if (typeof message.browserName === 'string') {
+      changed = changed || socket.__browserName !== message.browserName;
       socket.__browserName = message.browserName;
     }
     if (typeof message.profileLabel === 'string') {
+      changed = changed || socket.__profileLabel !== message.profileLabel;
       socket.__profileLabel = message.profileLabel;
+    }
+    if (changed) {
+      this.invalidateConnectedExtensionsCache();
     }
   }
 
@@ -510,7 +641,13 @@ export class BridgeDaemon {
    * @returns {void}
    */
   handleExtensionAccessUpdate(socket, message) {
-    socket.__accessEnabled = Boolean(message.accessEnabled);
+    const accessEnabled = Boolean(message.accessEnabled);
+    if (socket.__accessEnabled !== accessEnabled) {
+      socket.__accessEnabled = accessEnabled;
+      this.invalidateConnectedExtensionsCache();
+      return;
+    }
+    socket.__accessEnabled = accessEnabled;
   }
 
   /**
@@ -539,11 +676,11 @@ export class BridgeDaemon {
       return;
     }
 
-    pending.targets.delete(socket);
+    this.removePendingTarget(responseMessage.id, pending, socket);
 
     if (responseMessage.ok) {
       clearTimeout(pending.timeoutId);
-      this.pendingRequests.delete(responseMessage.id);
+      this.clearPendingRequest(responseMessage.id, pending);
       this.pushLog({
         at: new Date().toISOString(),
         method: responseMessage.meta?.method ?? null,
@@ -559,14 +696,7 @@ export class BridgeDaemon {
                 daemon: 'ok',
                 extensionConnected: true,
                 socketPath: this.socketPath,
-                connectedExtensions: Array.from(this.extensionSockets.entries()).map(
-                  ([_id, extSocket]) => ({
-                    extensionId: _id,
-                    browserName: extSocket.__browserName ?? null,
-                    profileLabel: extSocket.__profileLabel ?? null,
-                    accessEnabled: extSocket.__accessEnabled ?? false,
-                  })
-                ),
+                connectedExtensions: this.getConnectedExtensionsSnapshot(),
                 .../** @type {Record<string, unknown>} */ (responseMessage.result),
               },
               {
@@ -596,20 +726,33 @@ export class BridgeDaemon {
   handleSocketClose(socket) {
     if (socket.__extensionId) {
       this.extensionSockets.delete(socket.__extensionId);
+      this.invalidateConnectedExtensionsCache();
     }
 
     if (socket.__clientId) {
       this.agentSockets.delete(socket.__clientId);
     }
 
-    for (const [id, pending] of this.pendingRequests.entries()) {
-      if (pending.socket === socket) {
+    const ownedRequestIds = this.pendingRequestsByOwnerSocket.get(socket);
+    if (ownedRequestIds) {
+      for (const id of ownedRequestIds) {
+        const pending = this.pendingRequests.get(id);
+        if (!pending) {
+          continue;
+        }
         clearTimeout(pending.timeoutId);
-        this.pendingRequests.delete(id);
-        continue;
+        this.clearPendingRequest(id, pending);
       }
-      if (pending.targets.has(socket)) {
-        pending.targets.delete(socket);
+    }
+
+    const targetRequestIds = this.pendingRequestsByTargetSocket.get(socket);
+    if (targetRequestIds) {
+      for (const id of targetRequestIds) {
+        const pending = this.pendingRequests.get(id);
+        if (!pending) {
+          continue;
+        }
+        this.removePendingTarget(id, pending, socket);
         void this.finishPendingRequestIfExhausted(id, pending);
       }
     }
@@ -629,7 +772,7 @@ export class BridgeDaemon {
     }
 
     clearTimeout(pending.timeoutId);
-    this.pendingRequests.delete(requestId);
+    this.clearPendingRequest(requestId, pending);
 
     const response =
       pending.lastErrorResponse ??
@@ -668,29 +811,13 @@ export class BridgeDaemon {
 }
 
 /**
- * @param {ClientSocket[]} sockets
- * @returns {ClientSocket | null}
- */
-function selectMostRecentlyActiveExtension(sockets) {
-  if (sockets.length === 0) {
-    return null;
-  }
-
-  return sockets.reduce((best, current) => {
-    const bestAt = typeof best.__lastActiveAt === 'number' ? best.__lastActiveAt : 0;
-    const currentAt = typeof current.__lastActiveAt === 'number' ? current.__lastActiveAt : 0;
-    return currentAt > bestAt ? current : best;
-  });
-}
-
-/**
  * Check whether a daemon is already listening on the given socket path.
  * Connects, sends a health.ping, and waits up to 500 ms for a response.
  *
  * @param {string} socketPath
  * @returns {Promise<boolean>}
  */
-async function pingExistingDaemon(socketPath) {
+export async function pingExistingDaemon(socketPath) {
   return new Promise((resolve) => {
     const timeout = setTimeout(() => {
       socket.destroy();

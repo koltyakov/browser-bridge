@@ -1,6 +1,6 @@
 {
   "name": "@browserbridge/bbx",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "private": false,
   "keywords": [
     "agent-tools",
@@ -32,21 +32,17 @@
     "bbx-mcp": "packages/mcp-server/src/bin.js"
   },
   "files": [
-    "assets",
-    "CHANGELOG.md",
     "LICENSE",
     "README.md",
-    "docs",
-    "manifest.json",
     "packages/agent-client/src",
-    "packages/extension/assets",
-    "packages/extension/src",
-    "packages/extension/ui",
     "packages/mcp-server/src",
     "packages/native-host/bin",
     "packages/native-host/src",
     "packages/protocol/src",
-    "skills/browser-bridge"
+    "skills/browser-bridge",
+    "!**/test/**",
+    "!**/*.test.*",
+    "!**/*.spec.*"
   ],
   "type": "module",
   "publishConfig": {
@@ -56,16 +52,17 @@
     "lint": "oxlint . && oxfmt --check .",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
-    "test:runtime": "node --test packages/protocol/test/*.test.js packages/native-host/test/*.test.js packages/agent-client/test/*.test.js packages/mcp-server/test/*.test.js packages/extension/test/*.test.js",
-    "test": "c8 node --test packages/protocol/test/*.test.js packages/native-host/test/*.test.js packages/agent-client/test/*.test.js packages/mcp-server/test/*.test.js packages/extension/test/*.test.js",
+    "test:runtime": "node --test \"packages/**/*.test.js\"",
+    "test": "c8 node --test \"packages/**/*.test.js\"",
     "coverage": "c8 report --reporter=text --reporter=text-summary",
-    "coverage:check": "c8 check-coverage --lines 70",
+    "coverage:review": "c8 report --reporter=json-summary && node scripts/review-coverage.mjs",
+    "coverage:check": "c8 check-coverage --lines 80 --branches 75",
     "typecheck": "tsc --noEmit",
     "postinstall": "node packages/native-host/bin/postinstall.js",
     "package:extension": "node scripts/package-extension.mjs",
     "check:extension-zip": "node scripts/check-extension-zip.mjs",
     "release:check": "npm run lint && npm run typecheck && npm test && npm run coverage:check && npm run package:extension && npm pack --dry-run",
-    "prepublishOnly": "npm run lint && npm run typecheck && npm test",
+    "prepublishOnly": "npm run lint && npm run typecheck && npm test && npm run coverage:check",
     "status": "node packages/agent-client/src/cli.js status",
     "daemon": "node packages/native-host/bin/bridge-daemon.js",
     "install-manifest": "node packages/native-host/bin/install-manifest.js"
@@ -78,6 +75,7 @@
     "@types/chrome": "^0.1.40",
     "@types/node": "^25.5.2",
     "c8": "^11.0.0",
+    "linkedom": "^0.18.12",
     "oxfmt": "^0.47.0",
     "oxlint": "^1.62.0",
     "typescript": "^6.0.3"

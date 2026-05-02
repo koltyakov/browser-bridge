@@ -57,8 +57,8 @@ const SKILL_TARGET_LABELS = {
  *   global?: boolean,
  *   cwd?: string,
  *   projectPath?: string,
- *   mcpDetectors?: Record<string, () => boolean>,
- *   skillDetectors?: Record<string, () => boolean>,
+ *   mcpDetectors?: Record<string, () => boolean | Promise<boolean>>,
+ *   skillDetectors?: Record<string, () => boolean | Promise<boolean>>,
  *   access?: (targetPath: string) => Promise<void>,
  *   readFile?: (targetPath: string, encoding: BufferEncoding) => Promise<string>
  * }} SetupStatusOptions
@@ -76,8 +76,16 @@ export async function collectSetupStatus(options = {}) {
   const projectPath = options.projectPath || cwd;
   const access = options.access || fs.promises.access.bind(fs.promises);
   const readFile = options.readFile || fs.promises.readFile.bind(fs.promises);
-  const detectedMcpClients = new Set(detectMcpClients(options.mcpDetectors));
-  const detectedSkillTargets = new Set(detectSkillTargets(options.skillDetectors));
+  const [detectedMcpClientResult, detectedSkillTargetResult] = await Promise.allSettled([
+    detectMcpClients(options.mcpDetectors),
+    detectSkillTargets(options.skillDetectors),
+  ]);
+  const detectedMcpClientNames =
+    detectedMcpClientResult.status === 'fulfilled' ? detectedMcpClientResult.value : [];
+  const detectedSkillTargetNames =
+    detectedSkillTargetResult.status === 'fulfilled' ? detectedSkillTargetResult.value : [];
+  const detectedMcpClients = new Set(detectedMcpClientNames);
+  const detectedSkillTargets = new Set(detectedSkillTargetNames);
   for (const clientName of detectedMcpClients) {
     if (SUPPORTED_TARGETS.includes(/** @type {SupportedTarget} */ (clientName))) {
       detectedSkillTargets.add(/** @type {SupportedTarget} */ (clientName));

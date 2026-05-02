@@ -11,6 +11,7 @@ import {
   getLauncherFilename,
   getManifestInstallDir,
   getSocketPath,
+  SUPPORTED_BROWSERS,
 } from '../src/config.js';
 
 /**
@@ -119,4 +120,141 @@ test('getBridgeDir resolves platform-specific defaults', async () => {
       assert.match(getManifestInstallDir('brave'), /BraveSoftware/);
     }
   );
+});
+
+test('getManifestInstallDir resolves every supported browser path on each platform', async () => {
+  /** @type {Array<{
+   *   platform: NodeJS.Platform,
+   *   home: string,
+   *   env: Record<string, string | undefined>,
+   *   expected: Record<string, string>
+   * }>} */
+  const cases = [
+    {
+      platform: 'darwin',
+      home: '/Users/tester',
+      env: {
+        [BRIDGE_HOME_ENV]: undefined,
+        LOCALAPPDATA: undefined,
+        XDG_DATA_HOME: undefined,
+      },
+      expected: {
+        chrome: path.join(
+          '/Users/tester',
+          'Library',
+          'Application Support',
+          'Google',
+          'Chrome',
+          'NativeMessagingHosts'
+        ),
+        edge: path.join(
+          '/Users/tester',
+          'Library',
+          'Application Support',
+          'Microsoft Edge',
+          'NativeMessagingHosts'
+        ),
+        brave: path.join(
+          '/Users/tester',
+          'Library',
+          'Application Support',
+          'BraveSoftware',
+          'Brave-Browser',
+          'NativeMessagingHosts'
+        ),
+        chromium: path.join(
+          '/Users/tester',
+          'Library',
+          'Application Support',
+          'Chromium',
+          'NativeMessagingHosts'
+        ),
+        arc: path.join(
+          '/Users/tester',
+          'Library',
+          'Application Support',
+          'Arc',
+          'User Data',
+          'NativeMessagingHosts'
+        ),
+      },
+    },
+    {
+      platform: 'win32',
+      home: 'C:\\Users\\tester',
+      env: {
+        [BRIDGE_HOME_ENV]: undefined,
+        LOCALAPPDATA: 'C:\\Users\\tester\\AppData\\Local',
+        XDG_DATA_HOME: undefined,
+      },
+      expected: {
+        chrome: path.join(
+          'C:\\Users\\tester\\AppData\\Local',
+          'Google',
+          'Chrome',
+          'User Data',
+          'NativeMessagingHosts'
+        ),
+        edge: path.join(
+          'C:\\Users\\tester\\AppData\\Local',
+          'Microsoft',
+          'Edge',
+          'User Data',
+          'NativeMessagingHosts'
+        ),
+        brave: path.join(
+          'C:\\Users\\tester\\AppData\\Local',
+          'BraveSoftware',
+          'Brave-Browser',
+          'User Data',
+          'NativeMessagingHosts'
+        ),
+        chromium: path.join(
+          'C:\\Users\\tester\\AppData\\Local',
+          'Chromium',
+          'User Data',
+          'NativeMessagingHosts'
+        ),
+        arc: path.join(
+          'C:\\Users\\tester\\AppData\\Local',
+          'Arc',
+          'User Data',
+          'NativeMessagingHosts'
+        ),
+      },
+    },
+    {
+      platform: 'linux',
+      home: '/home/tester',
+      env: {
+        [BRIDGE_HOME_ENV]: undefined,
+        LOCALAPPDATA: undefined,
+        XDG_DATA_HOME: undefined,
+      },
+      expected: {
+        chrome: path.join('/home/tester', '.config', 'google-chrome', 'NativeMessagingHosts'),
+        edge: path.join('/home/tester', '.config', 'microsoft-edge', 'NativeMessagingHosts'),
+        brave: path.join(
+          '/home/tester',
+          '.config',
+          'BraveSoftware',
+          'Brave-Browser',
+          'NativeMessagingHosts'
+        ),
+        chromium: path.join('/home/tester', '.config', 'chromium', 'NativeMessagingHosts'),
+        arc: path.join('/home/tester', '.config', 'Arc', 'User Data', 'NativeMessagingHosts'),
+      },
+    },
+  ];
+
+  for (const testCase of cases) {
+    await withMockedConfigEnvironment(testCase, async () => {
+      assert.deepEqual(
+        Object.fromEntries(
+          SUPPORTED_BROWSERS.map((browser) => [browser, getManifestInstallDir(browser)])
+        ),
+        testCase.expected
+      );
+    });
+  }
 });

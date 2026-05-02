@@ -26,12 +26,17 @@ import {
   handlePageTool,
   handlePatchTool,
   handleRawCallTool,
+  handleSetupTool,
   handleSkillTool,
   handleStatusTool,
   handleStylesLayoutTool,
   handleTabsTool,
   handleInvestigateTool,
 } from '../src/handlers.js';
+import {
+  makeFailure as fail,
+  makeSuccess as ok,
+} from '../../../tests/_helpers/protocolFactories.js';
 
 /**
  * @typedef {{
@@ -78,35 +83,6 @@ async function withMockedBridge(responder, callback) {
     BridgeClient.prototype.close = originalClose;
     BridgeClient.prototype.request = originalRequest;
   }
-}
-
-/**
- * @param {unknown} result
- * @returns {import('../../protocol/src/types.js').BridgeResponse}
- */
-function ok(result) {
-  return {
-    id: 'req_test',
-    ok: true,
-    result,
-    error: null,
-    meta: { protocol_version: '1.0' },
-  };
-}
-
-/**
- * @param {string} code
- * @param {string} message
- * @returns {import('../../protocol/src/types.js').BridgeResponse}
- */
-function fail(code, message) {
-  return {
-    id: 'req_test',
-    ok: false,
-    result: null,
-    error: { code: /** @type {any} */ (code), message, details: null },
-    meta: { protocol_version: '1.0' },
-  };
 }
 
 test('handleTabsTool maps list to tabs.list and returns summarized output', async () => {
@@ -262,7 +238,6 @@ test('handleStatusTool returns doctor report without bridge calls', async () => 
 });
 
 test('handleSetupTool reports optional agent integration status', async () => {
-  const { handleSetupTool } = await import('../src/handlers.js');
   const result = await handleSetupTool({ global: false });
 
   assert.match(result.content[0].text, /Optional agent integration status:/);
@@ -274,6 +249,31 @@ test('handleSkillTool returns runtime context without a bridge connection', asyn
   assert.equal(result.isError, undefined);
   assert.match(result.content[0].text, /Runtime context retrieved/);
   assert.ok(result.structuredContent.runtimeContext);
+});
+
+test('handleSkillTool and handleSetupTool stay stable across repeated calls', async () => {
+  const iterations = 20;
+  const results = await Promise.all(
+    Array.from({ length: iterations }, async () => {
+      const [skillResult, setupResult] = await Promise.all([
+        handleSkillTool(),
+        handleSetupTool({ global: true }),
+      ]);
+      return { skillResult, setupResult };
+    })
+  );
+
+  assert.equal(results.length, iterations);
+  for (const { skillResult, setupResult } of results) {
+    assert.equal(skillResult.isError, undefined);
+    assert.match(skillResult.content[0].text, /Runtime context retrieved/);
+    assert.ok(skillResult.structuredContent.runtimeContext);
+
+    assert.equal(setupResult.isError, undefined);
+    assert.match(setupResult.content[0].text, /Optional agent integration status:/);
+    assert.equal(setupResult.structuredContent.ok, true);
+    assert.ok(setupResult.structuredContent.status);
+  }
 });
 
 test('handlePageTool state calls page.get_state', async () => {
@@ -596,7 +596,7 @@ test('grouped MCP tool action maps stay aligned with the bridge method registry'
 // browser_investigate
 // ---------------------------------------------------------------------------
 
-test('handleInvestigateTool normal scope runs page.get_state, dom.query, page.get_text', async () => {
+test('handleInvestigateTool normal scope runs page.get_state, dom.query, page.get_text and reports allOk when every step succeeds', async () => {
   await withMockedBridge(
     async (record) => {
       if (record.method === 'page.get_state')
@@ -635,6 +635,16 @@ test('handleInvestigateTool normal scope runs page.get_state, dom.query, page.ge
       assert.equal(result.structuredContent.ok, true);
       assert.equal(result.structuredContent.heuristicFallback, true);
       assert.equal(/** @type {unknown[]} */ (result.structuredContent.steps).length, 3);
+      assert.deepEqual(
+        /** @type {Array<{ method: string, ok: boolean }>} */ (result.structuredContent.steps).map(
+          (step) => ({ method: step.method, ok: step.ok })
+        ),
+        [
+          { method: 'page.get_state', ok: true },
+          { method: 'dom.query', ok: true },
+          { method: 'page.get_text', ok: true },
+        ]
+      );
       assert.match(result.content[0].text, /Investigation complete/);
     }
   );
@@ -678,10 +688,90 @@ test('handleInvestigateTool quick scope runs only page.get_state and dom.query',
   );
 });
 
+test('handleInvestigateTool deep scope runs the documented five-step sequence', async () => {
+  await withMockedBridge(
+    async (record) => {
+      if (record.method === 'page.get_state') {
+        return ok({
+          url: 'https://example.com/',
+          title: 'Example',
+          origin: 'https://example.com',
+          readyState: 'complete',
+          hints: {},
+        });
+      }
+      if (record.method === 'dom.query') {
+        return ok({
+          nodes: [
+            {
+              elementRef: 'el_1',
+              tag: 'main',
+              attrs: {},
+              bbox: {},
+              textExcerpt: 'Main content',
+            },
+          ],
+        });
+      }
+      if (record.method === 'page.get_text') {
+        return ok({ text: 'Full page text', truncated: false, length: 14 });
+      }
+      if (record.method === 'page.get_console') {
+        return ok({
+          entries: [{ level: 'warn', args: ['Heads up'], ts: Date.now() }],
+          count: 1,
+          total: 1,
+        });
+      }
+      if (record.method === 'page.get_network') {
+        return ok({
+          entries: [
+            {
+              type: 'fetch',
+              method: 'GET',
+              url: 'https://example.com/api/items',
+              status: 200,
+              duration: 42,
+            },
+          ],
+          count: 1,
+          total: 1,
+        });
+      }
+      return ok({});
+    },
+    async (calls) => {
+      const result = await handleInvestigateTool({
+        objective: 'Inspect page deeply',
+        scope: 'deep',
+      });
+
+      assert.equal(calls.length, 5);
+      assert.deepEqual(
+        calls.map((call) => call.method),
+        ['page.get_state', 'dom.query', 'page.get_text', 'page.get_console', 'page.get_network']
+      );
+      assert.equal(result.isError, undefined);
+      assert.equal(result.structuredContent.ok, true);
+      assert.equal(result.structuredContent.scope, 'deep');
+      assert.equal(/** @type {unknown[]} */ (result.structuredContent.steps).length, 5);
+    }
+  );
+});
+
 test('handleInvestigateTool rejects missing objective', async () => {
   const result = await handleInvestigateTool({ objective: '' });
   assert.equal(result.isError, true);
   assert.match(result.content[0].text, /objective is required/);
+});
+
+test('handleInvestigateTool rejects unknown scope', async () => {
+  const result = await handleInvestigateTool({
+    objective: 'Inspect page',
+    scope: /** @type {any} */ ('bogus'),
+  });
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /Unsupported investigation scope "bogus"/);
 });
 
 test('handleInvestigateTool continues after individual step failure', async () => {
@@ -707,6 +797,55 @@ test('handleInvestigateTool continues after individual step failure', async () =
       assert.equal(result.isError, true);
       assert.equal(result.structuredContent.ok, false);
       assert.match(result.content[0].text, /partial/);
+    }
+  );
+});
+
+test('handleInvestigateTool aggregates thrown step failures into failedSteps', async () => {
+  await withMockedBridge(
+    async (record) => {
+      if (record.method === 'page.get_state') {
+        return ok({
+          url: 'https://example.com/',
+          title: 'Example',
+          origin: 'https://example.com',
+          readyState: 'complete',
+          hints: {},
+        });
+      }
+      if (record.method === 'dom.query') {
+        throw new Error('DOM query exploded');
+      }
+      if (record.method === 'page.get_text') {
+        return ok({ text: 'Hello world', truncated: false, length: 11 });
+      }
+      return ok({});
+    },
+    async (calls) => {
+      const result = await handleInvestigateTool({
+        objective: 'Check the page body',
+        scope: 'normal',
+      });
+
+      assert.deepEqual(
+        calls.map((call) => call.method),
+        ['page.get_state', 'dom.query', 'page.get_text']
+      );
+      assert.equal(result.isError, true);
+      assert.equal(result.structuredContent.ok, false);
+      assert.equal(result.structuredContent.scope, 'normal');
+      assert.equal(/** @type {unknown[]} */ (result.structuredContent.steps).length, 3);
+      const failedSteps =
+        /** @type {Array<{ method: string, ok: boolean, summary: string, evidence: unknown, durationMs: number }>} */ (
+          result.structuredContent.failedSteps
+        );
+      assert.equal(failedSteps.length, 1);
+      assert.equal(failedSteps[0].method, 'dom.query');
+      assert.equal(failedSteps[0].ok, false);
+      assert.equal(failedSteps[0].summary, 'ERROR: DOM query exploded');
+      assert.equal(failedSteps[0].evidence, null);
+      assert.equal(typeof failedSteps[0].durationMs, 'number');
+      assert.match(result.content[0].text, /1 failed/);
     }
   );
 });
