@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {
   cloneJsonValue,
   estimateResponseTokens,
-  createCdpKeyDispatchSequence,
+  createCdpKeyPressEventPair,
   enforceTokenBudget,
   getErrorMessage,
   getResponseDiagnostics,
@@ -32,7 +32,7 @@ test('background helpers infer capabilities and normalize runtime errors', () =>
 });
 
 test('background helpers build CDP keyDown/keyUp events for Escape', () => {
-  assert.deepEqual(createCdpKeyDispatchSequence({ key: 'Escape' }), [
+  assert.deepEqual(createCdpKeyPressEventPair({ key: 'Escape' }), [
     {
       type: 'keyDown',
       key: 'Escape',
@@ -53,7 +53,7 @@ test('background helpers build CDP keyDown/keyUp events for Escape', () => {
 });
 
 test('background helpers support CDP printable keys and modifiers', () => {
-  assert.deepEqual(createCdpKeyDispatchSequence({ key: 'a', code: 'KeyA', modifiers: ['Shift'] }), [
+  assert.deepEqual(createCdpKeyPressEventPair({ key: 'a', code: 'KeyA', modifiers: ['Shift'] }), [
     {
       type: 'keyDown',
       key: 'a',
@@ -73,6 +73,18 @@ test('background helpers support CDP printable keys and modifiers', () => {
       modifiers: 8,
     },
   ]);
+});
+
+test('background helpers reject invalid CDP key input', () => {
+  assert.throws(() => createCdpKeyPressEventPair({ key: '' }), /key must be a non-empty string\./);
+  assert.throws(
+    () => createCdpKeyPressEventPair({ key: 'Escape', modifiers: ['Shift', 'Ctrl'] }),
+    /modifiers must contain only Alt, Control, Meta, or Shift\./
+  );
+  assert.throws(
+    () => createCdpKeyPressEventPair({ key: 'Escape', modifiers: 16 }),
+    /modifiers must be an array of Alt, Control, Meta, Shift or a bitmask 0-15\./
+  );
 });
 
 test('getErrorMessage returns string, Error message, and sentinel fallback', () => {

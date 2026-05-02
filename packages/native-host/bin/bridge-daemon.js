@@ -2,6 +2,7 @@
 // @ts-check
 import { BridgeDaemon } from '../src/daemon.js';
 import { getSocketPath } from '../src/config.js';
+import { clearDaemonPidFile, writeDaemonPidFile } from '../src/daemon-process.js';
 
 const daemon = new BridgeDaemon({ socketPath: getSocketPath() });
 
@@ -17,6 +18,7 @@ function isExistingDaemonError(error) {
 
 try {
   await daemon.start();
+  await writeDaemonPidFile(process.pid);
 } catch (error) {
   if (isExistingDaemonError(error)) {
     process.stdout.write(`${error.message}\n`);
@@ -41,6 +43,7 @@ async function shutdown() {
   shuttingDown = true;
   try {
     await daemon.stop();
+    await clearDaemonPidFile({ pid: process.pid });
     process.exit(0);
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);

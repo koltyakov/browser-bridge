@@ -34,7 +34,7 @@ import {
 import { summarizeBridgeResponse } from '../../protocol/src/index.js';
 import {
   enforceTokenBudget,
-  createCdpKeyDispatchSequence,
+  createCdpKeyPressEventPair,
   getResponseDiagnostics,
   getErrorMessage,
   matchesConsoleLevel,
@@ -457,6 +457,9 @@ function connectNative() {
       void emitUiState();
       sendIdentity(candidatePort);
       sendActivityUpdate(candidatePort);
+      if (state.enabledWindow) {
+        sendAccessUpdate(true);
+      }
       if (wasReconnect && reconnectAttempts > 0) {
         void appendActionLogEntry({
           method: 'native.reconnect',
@@ -1706,7 +1709,7 @@ async function handleCdpRequest(request) {
   const target = await resolveRequestTarget(request);
   return tabDebugger.run(target.tabId, async (debugTarget) => {
     if (request.method === 'cdp.dispatch_key_event') {
-      const events = createCdpKeyDispatchSequence(request.params ?? {});
+      const events = createCdpKeyPressEventPair(request.params ?? {});
       for (const event of events) {
         await chrome.debugger.sendCommand(debugTarget, 'Input.dispatchKeyEvent', event);
       }

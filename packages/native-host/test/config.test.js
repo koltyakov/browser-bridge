@@ -7,6 +7,7 @@ import path from 'node:path';
 
 import {
   BRIDGE_HOME_ENV,
+  getDaemonPidPath,
   getBridgeDir,
   getLauncherFilename,
   getManifestInstallDir,
@@ -65,6 +66,7 @@ test('getBridgeDir honors BROWSER_BRIDGE_HOME override and socket path uses it',
     async () => {
       assert.equal(getBridgeDir(), '/tmp/browser-bridge-home');
       assert.equal(getSocketPath(), path.join('/tmp/browser-bridge-home', 'bridge.sock'));
+      assert.equal(getDaemonPidPath(), path.join('/tmp/browser-bridge-home', 'daemon.pid'));
     }
   );
 });

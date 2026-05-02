@@ -134,12 +134,13 @@ function inferCdpKeyDefinition(key) {
 }
 
 /**
- * Build the keyDown/keyUp payloads accepted by CDP Input.dispatchKeyEvent.
+ * Build the fixed keyDown/keyUp press pair accepted by CDP
+ * Input.dispatchKeyEvent.
  *
  * @param {Record<string, unknown>} params
  * @returns {Array<Record<string, unknown>>}
  */
-export function createCdpKeyDispatchSequence(params) {
+export function createCdpKeyPressEventPair(params) {
   const rawKey = params.key;
   if (typeof rawKey !== 'string' || rawKey.trim() === '') {
     throw new Error('key must be a non-empty string.');

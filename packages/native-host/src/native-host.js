@@ -1,16 +1,11 @@
 // @ts-check
 
-import { spawn } from 'node:child_process';
 import net from 'node:net';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { createFailure, ERROR_CODES } from '../../protocol/src/index.js';
 import { getSocketPath } from './config.js';
+import { spawnBridgeDaemonProcess } from './daemon-process.js';
 import { createNativeMessageReader, writeJsonLine, writeNativeMessage } from './framing.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const daemonEntryPath = path.resolve(__dirname, '../bin/bridge-daemon.js');
 
 /**
  * @typedef {{
@@ -363,11 +358,7 @@ function connectSocket(socketPath) {
  * @returns {void}
  */
 function spawnBridgeDaemon() {
-  const child = spawn(process.execPath, [daemonEntryPath], {
-    detached: true,
-    stdio: 'ignore',
-  });
-  child.unref();
+  spawnBridgeDaemonProcess();
 }
 
 /**

@@ -18,6 +18,7 @@ import {
   getMethodCapability,
   normalizeCheckedAction,
   createSuccess,
+  normalizeCdpDispatchKeyEventParams,
   normalizeInputAction,
   normalizeNavigationAction,
   normalizePatchOperation,
@@ -169,6 +170,18 @@ test('normalizeInputAction preserves interactive intent', () => {
   assert.equal(input.button, 'right');
   assert.equal(input.clickCount, 2);
   assert.equal(input.key, 'Enter');
+  assert.deepEqual(input.modifiers, ['Shift']);
+});
+
+test('normalizeCdpDispatchKeyEventParams preserves valid CDP key event input', () => {
+  const input = normalizeCdpDispatchKeyEventParams({
+    key: 'Escape',
+    code: ' Escape ',
+    modifiers: ['Shift'],
+  });
+
+  assert.equal(input.key, 'Escape');
+  assert.equal(input.code, 'Escape');
   assert.deepEqual(input.modifiers, ['Shift']);
 });
 
@@ -750,4 +763,46 @@ test('validateBridgeRequest bubbles method param normalization errors unchanged'
       return true;
     }
   );
+});
+
+test('validateBridgeRequest rejects invalid cdp.dispatch_key_event params', () => {
+  const testCases = [
+    {
+      request: {
+        id: 'req_cdp_1',
+        method: 'cdp.dispatch_key_event',
+        params: { key: '' },
+      },
+      message: 'key must be a non-empty string.',
+    },
+    {
+      request: {
+        id: 'req_cdp_2',
+        method: 'cdp.dispatch_key_event',
+        params: { key: 'Escape', modifiers: ['Shift', 'Ctrl'] },
+      },
+      message: 'modifiers must contain only Alt, Control, Meta, or Shift.',
+    },
+    {
+      request: {
+        id: 'req_cdp_3',
+        method: 'cdp.dispatch_key_event',
+        params: { key: 'Escape', modifiers: 99 },
+      },
+      message: 'modifiers must be an array of Alt, Control, Meta, Shift or a bitmask 0-15.',
+    },
+  ];
+
+  for (const testCase of testCases) {
+    assert.throws(
+      () => validateBridgeRequest(testCase.request),
+      (error) => {
+        assert.equal(error instanceof Error, true);
+        const bridgeError = /** @type {Error & { code?: string }} */ (error);
+        assert.equal(bridgeError.code, ERROR_CODES.INVALID_REQUEST);
+        assert.equal(bridgeError.message, testCase.message);
+        return true;
+      }
+    );
+  }
 });

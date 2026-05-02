@@ -582,6 +582,8 @@ test('handleInputTool cdp_press_key calls cdp.dispatch_key_event with explicit t
       const result = await handleInputTool({
         action: 'cdp_press_key',
         key: 'Escape',
+        code: 'Escape',
+        modifiers: ['Shift'],
         tabId: 17,
       });
       const pressCall = calls.find((c) => c.method === 'cdp.dispatch_key_event');
@@ -589,8 +591,8 @@ test('handleInputTool cdp_press_key calls cdp.dispatch_key_event with explicit t
       assert.equal(pressCall.tabId, 17);
       assert.deepEqual(pressCall.params, {
         key: 'Escape',
-        code: undefined,
-        modifiers: undefined,
+        code: 'Escape',
+        modifiers: ['Shift'],
       });
       assert.equal(result.isError, undefined);
     }

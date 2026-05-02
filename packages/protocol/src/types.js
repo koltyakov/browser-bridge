@@ -198,6 +198,22 @@ export {};
 
 /**
  * @typedef {{
+ *   key?: string,
+ *   code?: string,
+ *   modifiers?: string[] | number
+ * }} CdpDispatchKeyEventParams
+ */
+
+/**
+ * @typedef {{
+ *   key: string,
+ *   code: string,
+ *   modifiers: string[] | number
+ * }} NormalizedCdpDispatchKeyEventParams
+ */
+
+/**
+ * @typedef {{
  *   target?: InputTarget,
  *   checked?: boolean
  * }} CheckedActionParams

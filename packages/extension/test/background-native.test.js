@@ -3,7 +3,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createChromeEvent, createChromeFake } from '../../../tests/_helpers/chromeFake.js';
+import {
+  createChromeEvent,
+  createChromeFake,
+  createStorageArea,
+} from '../../../tests/_helpers/chromeFake.js';
 import { loadBackground } from '../../../tests/_helpers/loadBackground.js';
 import { createMessagePortPair } from '../../../tests/_helpers/messagePort.js';
 import { createRequest } from '../../protocol/src/index.js';
@@ -295,6 +299,44 @@ test('background native enable flow primes console capture and swallows recovera
     { tabId: 32, args: null },
     { tabId: 31, args: [true] },
   ]);
+  assert.deepEqual(findMessage(nativeMessages, 'host.access_update'), {
+    type: 'host.access_update',
+    accessEnabled: true,
+  });
+});
+
+test('background native connect syncs restored enabled access after startup', async () => {
+  /** @type {unknown[]} */
+  const nativeMessages = [];
+  const nativePort = createNativePort(nativeMessages);
+  const loaded = await loadBackground({
+    chrome: createChromeFake({
+      runtime: {
+        connectNative() {
+          return nativePort;
+        },
+      },
+      storage: {
+        session: createStorageArea({
+          enabledWindow: {
+            windowId: 8,
+            title: 'Restored Window',
+            enabledAt: 123,
+          },
+        }),
+      },
+    }),
+    query: `test-background-native-restored-access-${Date.now()}-${Math.random()}`,
+  });
+
+  await flushAsyncWork();
+  await waitForCondition(() => Boolean(findMessage(nativeMessages, 'host.access_update')));
+
+  assert.deepEqual(loaded.module.getStateForTest().enabledWindow, {
+    windowId: 8,
+    title: 'Restored Window',
+    enabledAt: 123,
+  });
   assert.deepEqual(findMessage(nativeMessages, 'host.access_update'), {
     type: 'host.access_update',
     accessEnabled: true,

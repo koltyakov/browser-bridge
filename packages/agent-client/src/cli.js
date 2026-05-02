@@ -7,6 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { SUPPORTED_BROWSERS } from '../../native-host/src/config.js';
+import { restartBridgeDaemon } from '../../native-host/src/daemon-process.js';
 import { uninstallNativeManifest } from '../../native-host/src/install-manifest.js';
 import {
   createRuntimeContext,
@@ -397,6 +398,18 @@ async function main() {
             ? 'Browser Bridge is ready.'
             : `Browser Bridge has ${report.issues.length} readiness issue(s).`,
         evidence: report,
+      });
+      return;
+    }
+
+    if (command === 'restart') {
+      const result = await restartBridgeDaemon();
+      printJson({
+        ok: true,
+        summary: result.previouslyRunning
+          ? 'Browser Bridge daemon restarted.'
+          : 'Browser Bridge daemon started.',
+        evidence: result,
       });
       return;
     }

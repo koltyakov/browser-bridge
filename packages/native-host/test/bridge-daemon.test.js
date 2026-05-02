@@ -163,6 +163,7 @@ test(
   async () => {
     const bridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-daemon-home-'));
     const expectedSocketPath = path.join(bridgeHome, 'bridge.sock');
+    const expectedPidPath = path.join(bridgeHome, 'daemon.pid');
     const child = spawn(process.execPath, [bridgeDaemonPath], {
       cwd: repoRoot,
       env: {
@@ -176,10 +177,13 @@ test(
       await waitForDaemonReady(child, expectedSocketPath);
       assert.equal(await pingExistingDaemon(expectedSocketPath), true);
       await assert.doesNotReject(() => fs.promises.access(expectedSocketPath));
+      const pid = Number.parseInt((await fs.promises.readFile(expectedPidPath, 'utf8')).trim(), 10);
+      assert.equal(Number.isInteger(pid) && pid > 0, true);
     } finally {
       const { code, signal } = await stopDaemon(child);
       assert.equal(signal, null);
       assert.equal(code, 0);
+      await assert.rejects(fs.promises.access(expectedPidPath));
       await fs.promises.rm(bridgeHome, { recursive: true, force: true });
     }
   }

@@ -49,6 +49,13 @@ export function getSocketPath() {
 /**
  * @returns {string}
  */
+export function getDaemonPidPath() {
+  return path.join(getBridgeDir(), 'daemon.pid');
+}
+
+/**
+ * @returns {string}
+ */
 export function getLauncherFilename() {
   return os.platform() === 'win32' ? 'native-host-launcher.cmd' : 'native-host-launcher.sh';
 }

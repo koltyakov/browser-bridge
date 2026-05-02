@@ -1,11 +1,14 @@
 // @ts-check
 
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createSuccess } from '../../protocol/src/index.js';
 import { PUBLISHED_EXTENSION_ID } from '../../native-host/src/config.js';
+import { stopBridgeDaemon } from '../../native-host/src/daemon-process.js';
 import { runCli } from '../../../tests/_helpers/runCli.js';
 import { createInstallFs } from '../../../tests/_helpers/installFs.js';
 import { bridgeServerWith } from '../../../tests/_helpers/socketHarness.js';
@@ -154,6 +157,50 @@ test('bbx access-request forwards to the bridge and prints a summarized success 
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();
+  }
+});
+
+test('bbx restart starts the daemon when it is offline', async () => {
+  const bridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-cli-restart-'));
+
+  try {
+    const result = await runCli({
+      args: ['restart'],
+      env: {
+        ...process.env,
+        BROWSER_BRIDGE_HOME: bridgeHome,
+      },
+    });
+    const payload = result.json;
+
+    assert.equal(result.status, 0);
+    assert.equal(result.signal, null);
+    assert.equal(result.stderr, '');
+    assert.equal(payload.ok, true);
+    assert.equal(payload.summary, 'Browser Bridge daemon started.');
+    assert.equal(typeof payload.evidence.socketPath, 'string');
+    assert.equal(typeof payload.evidence.pidPath, 'string');
+    assert.equal(payload.evidence.previouslyRunning, false);
+    assert.equal(typeof payload.evidence.pid, 'number');
+
+    const stopResult = await runCli({
+      args: ['restart'],
+      env: {
+        ...process.env,
+        BROWSER_BRIDGE_HOME: bridgeHome,
+      },
+    });
+    const stopPayload = stopResult.json;
+    assert.equal(stopResult.status, 0);
+    assert.equal(stopPayload.ok, true);
+    assert.equal(stopPayload.summary, 'Browser Bridge daemon restarted.');
+    assert.equal(stopPayload.evidence.previouslyRunning, true);
+  } finally {
+    await stopBridgeDaemon({
+      socketPath: path.join(bridgeHome, 'bridge.sock'),
+      pidPath: path.join(bridgeHome, 'daemon.pid'),
+    });
+    await fs.promises.rm(bridgeHome, { recursive: true, force: true });
   }
 });
 
@@ -672,6 +719,70 @@ test('bbx press-key without a key reports the usage error', async () => {
   assert.equal(payload.ok, false);
   assert.equal(payload.evidence, null);
   assert.equal(payload.summary, 'ERROR: Usage: press-key <key> [ref|selector]');
+});
+
+test('bbx cdp-press-key forwards key and code to cdp.dispatch_key_event', async () => {
+  const bridgeServer = await bridgeServerWith({
+    'cdp.dispatch_key_event': (request) =>
+      createSuccess(request.id, {
+        method: 'Input.dispatchKeyEvent',
+        pressed: true,
+        key: 'Escape',
+        code: 'Escape',
+        dispatched: ['keyDown', 'keyUp'],
+      }),
+  });
+
+  try {
+    const result = await runCli({
+      args: ['cdp-press-key', '--tab', '17', 'Escape', 'Escape'],
+      env: {
+        ...process.env,
+        BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome,
+      },
+    });
+    const payload = result.json;
+
+    assert.equal(result.status, 0);
+    assert.equal(result.signal, null);
+    assert.equal(result.stderr, '');
+    assert.equal(payload.ok, true);
+    assert.equal(payload.summary, 'Key pressed (Escape).');
+    assert.deepEqual(payload.evidence, {
+      method: 'Input.dispatchKeyEvent',
+      pressed: true,
+      key: 'Escape',
+      code: 'Escape',
+      dispatched: ['keyDown', 'keyUp'],
+    });
+    assert.equal(bridgeServer.requests.length, 2);
+    assert.equal(bridgeServer.requests[1].method, 'cdp.dispatch_key_event');
+    assert.equal(bridgeServer.requests[1].tab_id, 17);
+    assert.deepEqual(bridgeServer.requests[1].params, {
+      key: 'Escape',
+      code: 'Escape',
+      modifiers: [],
+    });
+    assert.equal(bridgeServer.requests[1].meta.source, 'cli');
+    assert.deepEqual(bridgeServer.errors, []);
+  } finally {
+    await bridgeServer.close();
+  }
+});
+
+test('bbx cdp-press-key without a key reports the usage error', async () => {
+  const result = await runCli({
+    args: ['cdp-press-key'],
+    env: process.env,
+  });
+  const payload = result.json;
+
+  assert.equal(result.status, 1);
+  assert.equal(result.signal, null);
+  assert.equal(result.stderr, '');
+  assert.equal(payload.ok, false);
+  assert.equal(payload.evidence, null);
+  assert.equal(payload.summary, 'ERROR: Usage: cdp-press-key [--tab <tabId>] <key> [code]');
 });
 
 test('bbx call reads params JSON from stdin when passed - and forwards the normalized request', async () => {

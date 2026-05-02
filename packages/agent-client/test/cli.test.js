@@ -66,6 +66,7 @@ test('cli --help enumerates shortcut commands', async () => {
       new RegExp(definition.usage.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     );
   }
+  assert.match(result.stdout, /bbx restart\s+Restart the local Browser Bridge daemon/);
 });
 
 test('cli prints the package version', async () => {

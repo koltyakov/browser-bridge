@@ -28,6 +28,7 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').BridgeRequest} BridgeRequest */
 /** @typedef {import('./types.js').BridgeSuccessResponse} BridgeSuccessResponse */
 /** @typedef {import('./types.js').CheckedActionParams} CheckedActionParams */
+/** @typedef {import('./types.js').CdpDispatchKeyEventParams} CdpDispatchKeyEventParams */
 /** @typedef {import('./types.js').ConsoleParams} ConsoleParams */
 /** @typedef {import('./types.js').DomQueryParams} DomQueryParams */
 /** @typedef {import('./types.js').DragParams} DragParams */
@@ -41,6 +42,7 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').NetworkParams} NetworkParams */
 /** @typedef {import('./types.js').NormalizedAccessibilityTreeParams} NormalizedAccessibilityTreeParams */
 /** @typedef {import('./types.js').NormalizedCheckedAction} NormalizedCheckedAction */
+/** @typedef {import('./types.js').NormalizedCdpDispatchKeyEventParams} NormalizedCdpDispatchKeyEventParams */
 /** @typedef {import('./types.js').NormalizedConsoleParams} NormalizedConsoleParams */
 /** @typedef {import('./types.js').NormalizedDomQuery} NormalizedDomQuery */
 /** @typedef {import('./types.js').NormalizedDragParams} NormalizedDragParams */
@@ -281,6 +283,8 @@ function normalizeRequestParams(method, params) {
     case 'input.type':
     case 'input.press_key':
       return normalizeInputAction(params);
+    case 'cdp.dispatch_key_event':
+      return normalizeCdpDispatchKeyEventParams(params);
     case 'input.set_checked':
       return normalizeCheckedAction(params);
     case 'input.select_option':
@@ -374,6 +378,54 @@ export function normalizeInputAction(params = {}) {
     modifiers: Array.isArray(params.modifiers)
       ? params.modifiers.filter((modifier) => typeof modifier === 'string' && modifier.trim())
       : [],
+  };
+}
+
+/**
+ * @param {CdpDispatchKeyEventParams} [params={}]
+ * @returns {NormalizedCdpDispatchKeyEventParams}
+ */
+export function normalizeCdpDispatchKeyEventParams(params = {}) {
+  if (typeof params.key !== 'string' || !params.key.trim()) {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'key must be a non-empty string.');
+  }
+
+  if (
+    params.modifiers != null &&
+    typeof params.modifiers !== 'number' &&
+    !Array.isArray(params.modifiers)
+  ) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'modifiers must be an array of Alt, Control, Meta, Shift or a bitmask 0-15.'
+    );
+  }
+
+  if (
+    typeof params.modifiers === 'number' &&
+    (!Number.isInteger(params.modifiers) || params.modifiers < 0 || params.modifiers > 15)
+  ) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'modifiers must be an array of Alt, Control, Meta, Shift or a bitmask 0-15.'
+    );
+  }
+
+  if (Array.isArray(params.modifiers)) {
+    for (const modifier of params.modifiers) {
+      if (typeof modifier !== 'string' || !['Alt', 'Control', 'Meta', 'Shift'].includes(modifier)) {
+        throw new BridgeError(
+          ERROR_CODES.INVALID_REQUEST,
+          'modifiers must contain only Alt, Control, Meta, or Shift.'
+        );
+      }
+    }
+  }
+
+  return {
+    key: params.key,
+    code: typeof params.code === 'string' ? params.code.trim() : '',
+    modifiers: params.modifiers ?? [],
   };
 }
 
