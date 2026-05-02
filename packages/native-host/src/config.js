@@ -40,9 +40,18 @@ export function getBridgeDir() {
 }
 
 /**
+ * Resolve the IPC endpoint the daemon listens on and the CLI / native host
+ * connect to. On Windows we use a Named Pipe instead of a filesystem path
+ * because Node's AF_UNIX support fails with EACCES on listen() under recent
+ * Node + Windows 11 combinations, while Named Pipes are the historical and
+ * reliable Windows IPC mechanism.
+ *
  * @returns {string}
  */
 export function getSocketPath() {
+  if (os.platform() === 'win32') {
+    return `\\\\.\\pipe\\${APP_NAME}`;
+  }
   return path.join(getBridgeDir(), 'bridge.sock');
 }
 

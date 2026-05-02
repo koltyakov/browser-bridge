@@ -180,7 +180,9 @@ export class BridgeDaemon {
    * @returns {Promise<BridgeDaemon>}
    */
   async start() {
-    if (!this.listenOptions) {
+    const isNamedPipe =
+      typeof this.socketPath === 'string' && this.socketPath.startsWith('\\\\.\\pipe\\');
+    if (!this.listenOptions && !isNamedPipe) {
       const socketDir = path.dirname(this.socketPath);
       await fs.promises.mkdir(socketDir, { recursive: true });
       if (process.platform !== 'win32') {
@@ -201,6 +203,16 @@ export class BridgeDaemon {
         // Socket does not exist - normal startup.
       }
       await fs.promises.rm(this.socketPath, { force: true });
+    } else if (!this.listenOptions && isNamedPipe) {
+      // Named Pipe paths (\\.\pipe\name) are not filesystem entries, so
+      // mkdir / access / rm are not applicable. Probe for an existing
+      // daemon by trying to connect; listen() will also surface
+      // EADDRINUSE if a server is already bound.
+      if (await pingExistingDaemon(this.socketPath)) {
+        throw new Error(
+          `Another daemon is already running on ${this.socketPath}. Stop it before starting a new one.`
+        );
+      }
     }
 
     this.server = net.createServer((socket) => {

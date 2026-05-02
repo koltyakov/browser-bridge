@@ -57,8 +57,14 @@ async function withMockedConfigEnvironment(options, callback) {
 }
 
 test('getBridgeDir honors BROWSER_BRIDGE_HOME override and socket path uses it', async () => {
+  // Pin to a non-win32 platform: on Windows the daemon listens on a Named
+  // Pipe whose name is fixed (see "getSocketPath returns a Named Pipe path on
+  // win32"), so BROWSER_BRIDGE_HOME does not influence the IPC endpoint
+  // there. This test continues to assert the historical Unix-socket
+  // behaviour on POSIX platforms.
   await withMockedConfigEnvironment(
     {
+      platform: 'linux',
       env: { [BRIDGE_HOME_ENV]: '/tmp/browser-bridge-home' },
     },
     async () => {
@@ -119,4 +125,38 @@ test('getBridgeDir resolves platform-specific defaults', async () => {
       assert.match(getManifestInstallDir('brave'), /BraveSoftware/);
     }
   );
+});
+
+test('getSocketPath returns a Named Pipe path on win32', async () => {
+  await withMockedConfigEnvironment(
+    {
+      platform: 'win32',
+      home: 'C:\\Users\\tester',
+      env: {
+        [BRIDGE_HOME_ENV]: undefined,
+        LOCALAPPDATA: 'C:\\Users\\tester\\AppData\\Local',
+      },
+    },
+    async () => {
+      // On Windows the daemon listens on a Named Pipe rather than a Unix
+      // domain socket file because Node's AF_UNIX bind is unreliable on
+      // recent Node + Windows 11 combinations (EACCES on listen). The pipe
+      // name reuses APP_NAME so it stays stable and discoverable.
+      assert.equal(getSocketPath(), '\\\\.\\pipe\\com.browserbridge.browser_bridge');
+    }
+  );
+});
+
+test('getSocketPath uses Unix-socket file path on non-Windows platforms', async () => {
+  for (const platform of /** @type {const} */ (['darwin', 'linux'])) {
+    await withMockedConfigEnvironment(
+      {
+        platform,
+        env: { [BRIDGE_HOME_ENV]: '/tmp/browser-bridge-home' },
+      },
+      async () => {
+        assert.equal(getSocketPath(), path.join('/tmp/browser-bridge-home', 'bridge.sock'));
+      }
+    );
+  }
 });
