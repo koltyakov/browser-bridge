@@ -237,6 +237,7 @@ export const CLI_METHOD_BINDINGS = Object.freeze({
   ),
   ...Object.fromEntries(BRIDGE_METHODS.map((method) => [method, method])),
   'press-key': 'input.press_key',
+  'cdp-press-key': 'cdp.dispatch_key_event',
   screenshot: 'screenshot.capture_element',
   eval: 'page.evaluate',
 });
@@ -330,6 +331,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
           `${SHORTCUT_COMMANDS[command].usage.padEnd(64)} ${SHORTCUT_COMMANDS[command].description}`
       ),
       'bbx press-key <key> [ref|selector]                                 Send key event',
+      'bbx cdp-press-key [--tab <tabId>] <key> [code]                      Dispatch CDP keyDown/keyUp without focusing the tab',
     ],
   },
   {

@@ -594,6 +594,7 @@ export const INPUT_ACTION_METHODS = {
   focus: 'input.focus',
   type: 'input.type',
   press_key: 'input.press_key',
+  cdp_press_key: 'cdp.dispatch_key_event',
   set_checked: 'input.set_checked',
   select_option: 'input.select_option',
   hover: 'input.hover',
@@ -602,7 +603,7 @@ export const INPUT_ACTION_METHODS = {
 };
 
 /**
- * @param {{ action: string, elementRef?: string, selector?: string, button?: string, clickCount?: number, text?: string, clear?: boolean, submit?: boolean, key?: string, modifiers?: string[], checked?: boolean, values?: string[], labels?: string[], indexes?: number[], duration?: number, sourceElementRef?: string, sourceSelector?: string, destinationElementRef?: string, destinationSelector?: string, offsetX?: number, offsetY?: number, tabId?: number, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @param {{ action: string, elementRef?: string, selector?: string, button?: string, clickCount?: number, text?: string, clear?: boolean, submit?: boolean, key?: string, code?: string, modifiers?: string[], checked?: boolean, values?: string[], labels?: string[], indexes?: number[], duration?: number, sourceElementRef?: string, sourceSelector?: string, destinationElementRef?: string, destinationSelector?: string, offsetX?: number, offsetY?: number, tabId?: number, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleInputTool(args) {
@@ -680,6 +681,23 @@ export async function handleInputTool(args) {
           }
         );
         return summarizeToolResponse(response, 'input.press_key');
+      }
+      case 'cdp_press_key': {
+        const response = await requestBridge(
+          client,
+          'cdp.dispatch_key_event',
+          {
+            key: args.key,
+            code: args.code,
+            modifiers: args.modifiers,
+          },
+          {
+            tabId: requestedTabId,
+            source: REQUEST_SOURCE,
+            tokenBudget: getToolTokenBudget(args),
+          }
+        );
+        return summarizeToolResponse(response, 'cdp.dispatch_key_event');
       }
       case 'set_checked': {
         const response = await requestBridge(

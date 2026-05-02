@@ -593,6 +593,28 @@ test('handleInputTool press_key calls input.press_key without ref when no select
   );
 });
 
+test('handleInputTool cdp_press_key calls cdp.dispatch_key_event with explicit tab', async () => {
+  await withMockedBridge(
+    async () => ok({ dispatched: ['keyDown', 'keyUp'], key: 'Escape' }),
+    async (calls) => {
+      const result = await handleInputTool({
+        action: 'cdp_press_key',
+        key: 'Escape',
+        tabId: 17,
+      });
+      const pressCall = calls.find((c) => c.method === 'cdp.dispatch_key_event');
+      assert.ok(pressCall, 'cdp.dispatch_key_event should be called');
+      assert.equal(pressCall.tabId, 17);
+      assert.deepEqual(pressCall.params, {
+        key: 'Escape',
+        code: undefined,
+        modifiers: undefined,
+      });
+      assert.equal(result.isError, undefined);
+    }
+  );
+});
+
 test('handleInputTool hover calls input.hover', async () => {
   await withMockedBridge(
     async (record) => {

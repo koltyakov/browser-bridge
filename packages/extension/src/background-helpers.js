@@ -32,6 +32,31 @@ const INTERACTIVE_AX_ROLES = new Set([
   'option',
 ]);
 
+const CDP_MODIFIER_BITS = Object.freeze({
+  Alt: 1,
+  Control: 2,
+  Meta: 4,
+  Shift: 8,
+});
+
+const SPECIAL_KEY_DEFINITIONS = Object.freeze({
+  Escape: { key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 },
+  Esc: { key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 },
+  Enter: { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' },
+  Tab: { key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 },
+  Backspace: { key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 },
+  Delete: { key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 },
+  ArrowUp: { key: 'ArrowUp', code: 'ArrowUp', windowsVirtualKeyCode: 38 },
+  ArrowDown: { key: 'ArrowDown', code: 'ArrowDown', windowsVirtualKeyCode: 40 },
+  ArrowLeft: { key: 'ArrowLeft', code: 'ArrowLeft', windowsVirtualKeyCode: 37 },
+  ArrowRight: { key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 },
+  Home: { key: 'Home', code: 'Home', windowsVirtualKeyCode: 36 },
+  End: { key: 'End', code: 'End', windowsVirtualKeyCode: 35 },
+  PageUp: { key: 'PageUp', code: 'PageUp', windowsVirtualKeyCode: 33 },
+  PageDown: { key: 'PageDown', code: 'PageDown', windowsVirtualKeyCode: 34 },
+  Space: { key: ' ', code: 'Space', windowsVirtualKeyCode: 32, text: ' ' },
+});
+
 /**
  * @param {chrome.tabs.Tab} tab
  * @param {string} method
@@ -46,6 +71,94 @@ export function summarizeTabResult(tab, method) {
     title: tab.title ?? '',
     status: tab.status ?? 'unknown',
   };
+}
+
+/**
+ * @param {unknown} value
+ * @returns {number}
+ */
+function normalizeCdpModifiers(value) {
+  if (value == null) return 0;
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 15) {
+    return value;
+  }
+  if (!Array.isArray(value)) {
+    throw new Error('modifiers must be an array of Alt, Control, Meta, Shift or a bitmask 0-15.');
+  }
+  return value.reduce((mask, item) => {
+    if (typeof item !== 'string' || !Object.hasOwn(CDP_MODIFIER_BITS, item)) {
+      throw new Error('modifiers must contain only Alt, Control, Meta, or Shift.');
+    }
+    return mask | CDP_MODIFIER_BITS[/** @type {keyof typeof CDP_MODIFIER_BITS} */ (item)];
+  }, 0);
+}
+
+/**
+ * @param {string} key
+ * @returns {{ key: string, code: string, windowsVirtualKeyCode: number, text?: string }}
+ */
+function inferCdpKeyDefinition(key) {
+  if (Object.hasOwn(SPECIAL_KEY_DEFINITIONS, key)) {
+    return SPECIAL_KEY_DEFINITIONS[/** @type {keyof typeof SPECIAL_KEY_DEFINITIONS} */ (key)];
+  }
+  if (/^[a-zA-Z]$/.test(key)) {
+    const upper = key.toUpperCase();
+    return {
+      key,
+      code: `Key${upper}`,
+      windowsVirtualKeyCode: upper.charCodeAt(0),
+      text: key,
+    };
+  }
+  if (/^[0-9]$/.test(key)) {
+    return {
+      key,
+      code: `Digit${key}`,
+      windowsVirtualKeyCode: key.charCodeAt(0),
+      text: key,
+    };
+  }
+  if (key.length === 1) {
+    return {
+      key,
+      code: '',
+      windowsVirtualKeyCode: key.toUpperCase().charCodeAt(0),
+      text: key,
+    };
+  }
+  throw new Error(
+    'Unsupported key. Use Escape, Enter, Tab, Backspace, arrow keys, or a single character.'
+  );
+}
+
+/**
+ * Build the keyDown/keyUp payloads accepted by CDP Input.dispatchKeyEvent.
+ *
+ * @param {Record<string, unknown>} params
+ * @returns {Array<Record<string, unknown>>}
+ */
+export function createCdpKeyDispatchSequence(params) {
+  const rawKey = params.key;
+  if (typeof rawKey !== 'string' || rawKey.trim() === '') {
+    throw new Error('key must be a non-empty string.');
+  }
+  const keyDefinition = inferCdpKeyDefinition(rawKey);
+  const code =
+    typeof params.code === 'string' && params.code.trim() ? params.code : keyDefinition.code;
+  const modifiers = normalizeCdpModifiers(params.modifiers);
+  const base = {
+    key: keyDefinition.key,
+    code,
+    windowsVirtualKeyCode: keyDefinition.windowsVirtualKeyCode,
+    nativeVirtualKeyCode: keyDefinition.windowsVirtualKeyCode,
+    modifiers,
+  };
+  const keyDown = {
+    type: 'keyDown',
+    ...base,
+    ...(keyDefinition.text ? { text: keyDefinition.text, unmodifiedText: keyDefinition.text } : {}),
+  };
+  return [keyDown, { type: 'keyUp', ...base }];
 }
 
 /**

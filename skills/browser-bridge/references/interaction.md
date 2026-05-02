@@ -8,6 +8,7 @@
 | `input.focus`            | `focus <ref>`                         | Focus an element                                            |
 | `input.type`             | `type <ref> <text>`                   | Type into input/textarea/contenteditable                    |
 | `input.press_key`        | `press-key <key> [ref]`               | Send keyboard key (Enter, Backspace, etc.)                  |
+| `cdp.dispatch_key_event` | `cdp-press-key --tab <id> <key>`      | CDP keyDown/keyUp without focusing the target tab           |
 | `input.set_checked`      | `call input.set_checked '{...}'`      | Toggle checkbox/radio                                       |
 | `input.select_option`    | `call input.select_option '{...}'`    | Select native `<select>` by value/label/index               |
 | `input.hover`            | `hover <ref>`                         | Trigger CSS `:hover` state (mouseenter/mouseover/mousemove) |
