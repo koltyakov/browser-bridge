@@ -14,6 +14,8 @@ import path from 'node:path';
 import { BridgeClient } from '../src/client.js';
 import { getDoctorReport, requestBridge, resolveRef, withBridgeClient } from '../src/runtime.js';
 
+const expectedMcpCommand = process.platform === 'win32' ? process.execPath : 'bbx';
+
 /**
  * @param {Record<string, unknown>} result
  * @returns {<T>(callback: (client: import('../src/client.js').BridgeClient) => Promise<T>) => Promise<T>}
@@ -118,7 +120,7 @@ test('installMcpConfig preserves unrelated config entries when merging', async (
     const merged = JSON.parse(await fs.promises.readFile(configPath, 'utf8'));
     assert.equal(merged.theme, 'dark');
     assert.equal(merged.mcpServers.existing.command, 'other-server');
-    assert.equal(merged.mcpServers['browser-bridge'].command, 'bbx');
+    assert.equal(merged.mcpServers['browser-bridge'].command, expectedMcpCommand);
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }
@@ -149,7 +151,7 @@ test('installMcpConfig upserts Codex TOML config without dropping other sections
     assert.match(merged, /model = "gpt-5"/);
     assert.match(merged, /\[sandbox_workspace_write\]/);
     assert.match(merged, /\[mcp_servers\."browser-bridge"\]/);
-    assert.match(merged, /command = "bbx"/);
+    assert.match(merged, new RegExp(`command = ${JSON.stringify(expectedMcpCommand).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }
@@ -271,10 +273,12 @@ test('removeMcpConfig removes Browser Bridge from Codex TOML without dropping ot
 test('installMcpConfig writes Copilot global config to default and existing profile files', async () => {
   const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-copilot-mcp-config-'));
   const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
   const originalAppData = process.env.APPDATA;
 
   try {
     process.env.HOME = tempHome;
+    process.env.USERPROFILE = tempHome;
     if (process.platform === 'win32') {
       process.env.APPDATA = path.join(tempHome, 'AppData', 'Roaming');
     }
@@ -315,6 +319,11 @@ test('installMcpConfig writes Copilot global config to default and existing prof
       delete process.env.HOME;
     } else {
       process.env.HOME = originalHome;
+    }
+    if (originalUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = originalUserProfile;
     }
     if (originalAppData === undefined) {
       delete process.env.APPDATA;

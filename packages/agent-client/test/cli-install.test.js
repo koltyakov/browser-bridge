@@ -10,6 +10,12 @@ import { formatManagedSkillSentinel } from '../src/install.js';
 import { createInstallFs } from '../../../tests/_helpers/installFs.js';
 import { runCli } from '../../../tests/_helpers/runCli.js';
 
+const expectedMcpCommand = process.platform === 'win32' ? process.execPath : 'bbx';
+const expectedMcpArgs =
+  process.platform === 'win32'
+    ? [path.join(process.cwd(), 'packages', 'mcp-server', 'src', 'bin.js')]
+    : ['mcp', 'serve'];
+
 /**
  * @param {string} value
  * @returns {string}
@@ -257,13 +263,13 @@ test('cli install-mcp <client-list> writes only the requested client configs', a
 
     assert.deepEqual(claudeConfig.mcpServers['browser-bridge'], {
       type: 'stdio',
-      command: 'bbx',
-      args: ['mcp', 'serve'],
+      command: expectedMcpCommand,
+      args: expectedMcpArgs,
       env: {},
     });
     assert.deepEqual(cursorConfig.mcpServers['browser-bridge'], {
-      command: 'bbx',
-      args: ['mcp', 'serve'],
+      command: expectedMcpCommand,
+      args: expectedMcpArgs,
       env: {},
     });
 
@@ -352,8 +358,8 @@ test('cli install-mcp without a client prefers already configured clients over d
           mcpServers: {
             'browser-bridge': {
               type: 'stdio',
-              command: 'bbx',
-              args: ['mcp', 'serve'],
+              command: expectedMcpCommand,
+              args: expectedMcpArgs,
               env: {},
             },
           },

@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * @typedef {'codex' | 'claude' | 'cursor' | 'copilot' | 'opencode' | 'antigravity' | 'windsurf' | 'agents'} McpClientName
@@ -41,6 +42,8 @@ export function isMcpClientName(value) {
 }
 
 const BROWSER_BRIDGE_SERVER_NAME = 'browser-bridge';
+const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+const mcpServerBinPath = path.join(packageRoot, 'packages', 'mcp-server', 'src', 'bin.js');
 
 /**
  * @returns {string}
@@ -93,17 +96,27 @@ export function getMcpConfigShape(clientName) {
  * }}
  */
 function createBaseServerConfig(clientName) {
+  const windowsCommand =
+    process.platform === 'win32'
+      ? {
+          command: process.execPath,
+          args: [mcpServerBinPath],
+          env: {},
+        }
+      : {
+          command: 'bbx',
+          args: ['mcp', 'serve'],
+          env: {},
+        };
+
   if (clientName === 'opencode') {
     return {
       type: 'local',
-      command: ['bbx', 'mcp', 'serve'],
+      command:
+        process.platform === 'win32' ? [process.execPath, mcpServerBinPath] : ['bbx', 'mcp', 'serve'],
     };
   }
-  return {
-    command: 'bbx',
-    args: ['mcp', 'serve'],
-    env: {},
-  };
+  return windowsCommand;
 }
 
 /** @type {Record<McpClientName, { key: string, includeType: boolean, legacyKeys?: string[], keepEmptyBlock?: boolean }>} */
@@ -129,11 +142,13 @@ const MCP_CONFIG_SHAPES = {
  */
 export function buildMcpConfig(clientName) {
   if (clientName === 'codex') {
+    const command = process.platform === 'win32' ? process.execPath : 'bbx';
+    const args = process.platform === 'win32' ? [mcpServerBinPath] : ['mcp', 'serve'];
     return {
       mcp_servers: {
         [BROWSER_BRIDGE_SERVER_NAME]: {
-          command: 'bbx',
-          args: ['mcp', 'serve'],
+          command,
+          args,
         },
       },
     };
@@ -262,10 +277,12 @@ export async function getMcpConfigPaths(clientName, options) {
  * @returns {string}
  */
 function formatCodexServerBlock() {
+  const command = process.platform === 'win32' ? process.execPath : 'bbx';
+  const args = process.platform === 'win32' ? [mcpServerBinPath] : ['mcp', 'serve'];
   return [
     `[mcp_servers."${BROWSER_BRIDGE_SERVER_NAME}"]`,
-    'command = "bbx"',
-    'args = ["mcp", "serve"]',
+    `command = ${JSON.stringify(command)}`,
+    `args = ${JSON.stringify(args)}`,
     '',
   ].join('\n');
 }

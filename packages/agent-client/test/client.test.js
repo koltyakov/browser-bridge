@@ -38,6 +38,24 @@ import { annotateBridgeSummary, summarizeBridgeResponse } from '../src/subagent.
 import { BridgeClient } from '../src/client.js';
 import { clockController } from '../../../tests/_helpers/faultInjection.js';
 
+const expectedMcpCommand = process.platform === 'win32' ? process.execPath : 'bbx';
+const expectedMcpArgs =
+  process.platform === 'win32'
+    ? [path.join(process.cwd(), 'packages', 'mcp-server', 'src', 'bin.js')]
+    : ['mcp', 'serve'];
+const expectedOpencodeCommand =
+  process.platform === 'win32'
+    ? [process.execPath, path.join(process.cwd(), 'packages', 'mcp-server', 'src', 'bin.js')]
+    : ['bbx', 'mcp', 'serve'];
+
+/**
+ * @param {string} value
+ * @returns {string}
+ */
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /** Ensure failures stay compact for parent-agent reporting. */
 test('summarizeBridgeResponse condenses failures', () => {
   const summary = summarizeBridgeResponse({
@@ -1106,9 +1124,11 @@ test('installAgentFiles writes managed files for supported runtimes', async () =
 test('installAgentFiles writes GitHub Copilot global skills to ~/.copilot/skills', async () => {
   const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-agent-home-'));
   const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
 
   try {
     process.env.HOME = tempHome;
+    process.env.USERPROFILE = tempHome;
     const installed = await installAgentFiles({
       targets: ['copilot'],
       projectPath: '/tmp/unused',
@@ -1126,6 +1146,11 @@ test('installAgentFiles writes GitHub Copilot global skills to ~/.copilot/skills
       delete process.env.HOME;
     } else {
       process.env.HOME = originalHome;
+    }
+    if (originalUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = originalUserProfile;
     }
     await fs.promises.rm(tempHome, { recursive: true, force: true });
   }
@@ -1208,10 +1233,12 @@ test('installAgentFiles still installs only the CLI skill when global MCP is con
     path.join(os.tmpdir(), 'bb-install-agent-copilot-mcp-home-')
   );
   const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
   const originalAppData = process.env.APPDATA;
 
   try {
     process.env.HOME = tempHome;
+    process.env.USERPROFILE = tempHome;
     if (process.platform === 'win32') {
       process.env.APPDATA = path.join(tempHome, 'AppData', 'Roaming');
     }
@@ -1242,6 +1269,11 @@ test('installAgentFiles still installs only the CLI skill when global MCP is con
     } else {
       process.env.HOME = originalHome;
     }
+    if (originalUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = originalUserProfile;
+    }
     if (originalAppData === undefined) {
       delete process.env.APPDATA;
     } else {
@@ -1256,10 +1288,12 @@ test('installMcpClientSetup writes GitHub Copilot MCP config without installing 
     path.join(os.tmpdir(), 'bb-install-copilot-setup-home-')
   );
   const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
   const originalAppData = process.env.APPDATA;
 
   try {
     process.env.HOME = tempHome;
+    process.env.USERPROFILE = tempHome;
     if (process.platform === 'win32') {
       process.env.APPDATA = path.join(tempHome, 'AppData', 'Roaming');
     }
@@ -1288,6 +1322,11 @@ test('installMcpClientSetup writes GitHub Copilot MCP config without installing 
       delete process.env.HOME;
     } else {
       process.env.HOME = originalHome;
+    }
+    if (originalUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = originalUserProfile;
     }
     if (originalAppData === undefined) {
       delete process.env.APPDATA;
@@ -1484,9 +1523,11 @@ test('removeAgentFiles removes only managed Browser Bridge skill directories', a
 test('installAgentFiles writes Windsurf and Antigravity global skills to their documented locations', async () => {
   const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-agent-home-'));
   const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
 
   try {
     process.env.HOME = tempHome;
+    process.env.USERPROFILE = tempHome;
     await installMcpConfig('windsurf', {
       global: true,
       stdout: {
@@ -1527,6 +1568,11 @@ test('installAgentFiles writes Windsurf and Antigravity global skills to their d
     } else {
       process.env.HOME = originalHome;
     }
+    if (originalUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = originalUserProfile;
+    }
     await fs.promises.rm(tempHome, { recursive: true, force: true });
   }
 });
@@ -1546,8 +1592,8 @@ test('buildMcpConfig produces client-specific config shapes', () => {
   assert.deepEqual(buildMcpConfig('cursor'), {
     mcpServers: {
       'browser-bridge': {
-        command: 'bbx',
-        args: ['mcp', 'serve'],
+        command: expectedMcpCommand,
+        args: expectedMcpArgs,
         env: {},
       },
     },
@@ -1556,8 +1602,8 @@ test('buildMcpConfig produces client-specific config shapes', () => {
   assert.deepEqual(buildMcpConfig('windsurf'), {
     mcpServers: {
       'browser-bridge': {
-        command: 'bbx',
-        args: ['mcp', 'serve'],
+        command: expectedMcpCommand,
+        args: expectedMcpArgs,
         env: {},
       },
     },
@@ -1566,8 +1612,8 @@ test('buildMcpConfig produces client-specific config shapes', () => {
   assert.deepEqual(buildMcpConfig('antigravity'), {
     mcpServers: {
       'browser-bridge': {
-        command: 'bbx',
-        args: ['mcp', 'serve'],
+        command: expectedMcpCommand,
+        args: expectedMcpArgs,
         env: {},
       },
     },
@@ -1577,8 +1623,8 @@ test('buildMcpConfig produces client-specific config shapes', () => {
     mcpServers: {
       'browser-bridge': {
         type: 'stdio',
-        command: 'bbx',
-        args: ['mcp', 'serve'],
+        command: expectedMcpCommand,
+        args: expectedMcpArgs,
         env: {},
       },
     },
@@ -1588,8 +1634,8 @@ test('buildMcpConfig produces client-specific config shapes', () => {
     mcpServers: {
       'browser-bridge': {
         type: 'stdio',
-        command: 'bbx',
-        args: ['mcp', 'serve'],
+        command: expectedMcpCommand,
+        args: expectedMcpArgs,
         env: {},
       },
     },
@@ -1599,7 +1645,7 @@ test('buildMcpConfig produces client-specific config shapes', () => {
     mcp: {
       'browser-bridge': {
         type: 'local',
-        command: ['bbx', 'mcp', 'serve'],
+        command: expectedOpencodeCommand,
       },
     },
   });
@@ -1607,8 +1653,8 @@ test('buildMcpConfig produces client-specific config shapes', () => {
   assert.deepEqual(buildMcpConfig('codex'), {
     mcp_servers: {
       'browser-bridge': {
-        command: 'bbx',
-        args: ['mcp', 'serve'],
+        command: expectedMcpCommand,
+        args: expectedMcpArgs,
       },
     },
   });
@@ -1623,35 +1669,38 @@ test('formatMcpConfig returns pretty JSON with newline', () => {
 test('formatMcpConfig returns Codex TOML with newline', () => {
   const formatted = formatMcpConfig('codex');
   assert.match(formatted, /\[mcp_servers\."browser-bridge"\]/);
-  assert.match(formatted, /command = "bbx"/);
+  assert.match(formatted, new RegExp(`command = ${escapeRegExp(JSON.stringify(expectedMcpCommand))}`));
   assert.ok(formatted.endsWith('\n'));
 });
 
 test('getMcpConfigPath supports Copilot global and local locations', () => {
   const home = os.homedir();
   const expectedGlobal = path.join(home, '.copilot', 'mcp-config.json');
+  const cwd = path.join(path.sep, 'tmp', 'demo');
 
   assert.equal(
-    getMcpConfigPath('copilot', { global: false, cwd: '/tmp/demo' }),
-    path.join('/tmp/demo', '.vscode', 'mcp.json')
+    getMcpConfigPath('copilot', { global: false, cwd }),
+    path.join(cwd, '.vscode', 'mcp.json')
   );
   assert.equal(getMcpConfigPath('copilot', { global: true }), expectedGlobal);
 });
 
 test('getMcpConfigPath supports Claude Code global and local locations', () => {
   const home = os.homedir();
+  const cwd = path.join(path.sep, 'tmp', 'demo');
   assert.equal(
-    getMcpConfigPath('claude', { global: false, cwd: '/tmp/demo' }),
-    path.join('/tmp/demo', '.mcp.json')
+    getMcpConfigPath('claude', { global: false, cwd }),
+    path.join(cwd, '.mcp.json')
   );
   assert.equal(getMcpConfigPath('claude', { global: true }), path.join(home, '.claude.json'));
 });
 
 test('getMcpConfigPath supports Codex global and local locations', () => {
   const home = os.homedir();
+  const cwd = path.join(path.sep, 'tmp', 'demo');
   assert.equal(
-    getMcpConfigPath('codex', { global: false, cwd: '/tmp/demo' }),
-    path.join('/tmp/demo', '.codex', 'config.toml')
+    getMcpConfigPath('codex', { global: false, cwd }),
+    path.join(cwd, '.codex', 'config.toml')
   );
   assert.equal(
     getMcpConfigPath('codex', { global: true }),
@@ -1661,9 +1710,10 @@ test('getMcpConfigPath supports Codex global and local locations', () => {
 
 test('getMcpConfigPath supports OpenCode global and local locations', () => {
   const home = os.homedir();
+  const cwd = path.join(path.sep, 'tmp', 'demo');
   assert.equal(
-    getMcpConfigPath('opencode', { global: false, cwd: '/tmp/demo' }),
-    path.join('/tmp/demo', 'opencode.json')
+    getMcpConfigPath('opencode', { global: false, cwd }),
+    path.join(cwd, 'opencode.json')
   );
   assert.equal(
     getMcpConfigPath('opencode', { global: true }),
@@ -1673,9 +1723,10 @@ test('getMcpConfigPath supports OpenCode global and local locations', () => {
 
 test('getMcpConfigPath supports Windsurf global and local locations', () => {
   const home = os.homedir();
+  const cwd = path.join(path.sep, 'tmp', 'demo');
   assert.equal(
-    getMcpConfigPath('windsurf', { global: false, cwd: '/tmp/demo' }),
-    path.join('/tmp/demo', '.windsurf', 'mcp_config.json')
+    getMcpConfigPath('windsurf', { global: false, cwd }),
+    path.join(cwd, '.windsurf', 'mcp_config.json')
   );
   assert.equal(
     getMcpConfigPath('windsurf', { global: true }),
@@ -1685,9 +1736,10 @@ test('getMcpConfigPath supports Windsurf global and local locations', () => {
 
 test('getMcpConfigPath supports Antigravity global and local locations', () => {
   const home = os.homedir();
+  const cwd = path.join(path.sep, 'tmp', 'demo');
   assert.equal(
-    getMcpConfigPath('antigravity', { global: false, cwd: '/tmp/demo' }),
-    path.join('/tmp/demo', '.agents', 'mcp_config.json')
+    getMcpConfigPath('antigravity', { global: false, cwd }),
+    path.join(cwd, '.agents', 'mcp_config.json')
   );
   assert.equal(
     getMcpConfigPath('antigravity', { global: true }),
@@ -1697,9 +1749,10 @@ test('getMcpConfigPath supports Antigravity global and local locations', () => {
 
 test('getMcpConfigPath supports generic agents global and local locations', () => {
   const home = os.homedir();
+  const cwd = path.join(path.sep, 'tmp', 'demo');
   assert.equal(
-    getMcpConfigPath('agents', { global: false, cwd: '/tmp/demo' }),
-    path.join('/tmp/demo', '.agents', 'mcp.json')
+    getMcpConfigPath('agents', { global: false, cwd }),
+    path.join(cwd, '.agents', 'mcp.json')
   );
   assert.equal(
     getMcpConfigPath('agents', { global: true }),
@@ -1710,10 +1763,12 @@ test('getMcpConfigPath supports generic agents global and local locations', () =
 test('getMcpConfigPaths includes existing Copilot profile configs for global installs', async () => {
   const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-copilot-mcp-paths-'));
   const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
   const originalAppData = process.env.APPDATA;
 
   try {
     process.env.HOME = tempHome;
+    process.env.USERPROFILE = tempHome;
     if (process.platform === 'win32') {
       process.env.APPDATA = path.join(tempHome, 'AppData', 'Roaming');
     }
@@ -1749,6 +1804,11 @@ test('getMcpConfigPaths includes existing Copilot profile configs for global ins
       delete process.env.HOME;
     } else {
       process.env.HOME = originalHome;
+    }
+    if (originalUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = originalUserProfile;
     }
     if (originalAppData === undefined) {
       delete process.env.APPDATA;
@@ -1808,8 +1868,8 @@ test('installMcpConfig migrates Copilot legacy servers config to mcpServers', as
     assert.equal(updated.unrelated, true);
     assert.deepEqual(updated.mcpServers['browser-bridge'], {
       type: 'stdio',
-      command: 'bbx',
-      args: ['mcp', 'serve'],
+      command: expectedMcpCommand,
+      args: expectedMcpArgs,
       env: {},
     });
   } finally {
@@ -2368,9 +2428,11 @@ test('BridgeClient uses BBX_TCP_PORT transport when configured', async () => {
 test('removeMcpConfig keeps Copilot mcpServers object after removing browser-bridge', async () => {
   const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-copilot-mcp-remove-'));
   const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
 
   try {
     process.env.HOME = tempHome;
+    process.env.USERPROFILE = tempHome;
 
     await installMcpConfig('copilot', {
       global: true,
@@ -2397,6 +2459,11 @@ test('removeMcpConfig keeps Copilot mcpServers object after removing browser-bri
       delete process.env.HOME;
     } else {
       process.env.HOME = originalHome;
+    }
+    if (originalUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = originalUserProfile;
     }
     await fs.promises.rm(tempHome, { recursive: true, force: true });
   }

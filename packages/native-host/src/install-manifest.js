@@ -25,6 +25,18 @@ export const INSTALL_NATIVE_MANIFEST_ERROR = 'INSTALL_NATIVE_MANIFEST_FAILED';
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * @returns {string}
+ */
+function getWindowsRegistryExe() {
+  if (process.platform !== 'win32') {
+    return 'reg.exe';
+  }
+
+  const systemRoot = process.env.SystemRoot || process.env.WINDIR;
+  return systemRoot ? path.join(systemRoot, 'System32', 'reg.exe') : 'reg.exe';
+}
+
 export class NativeManifestInstallError extends Error {
   /**
    * @param {string} targetPath
@@ -92,7 +104,16 @@ export function getWindowsRegistryKey(browser = 'chrome') {
  * @returns {Promise<void>}
  */
 async function writeRegistryValue(keyPath, value) {
-  await execFileAsync('reg.exe', ['add', keyPath, '/ve', '/t', 'REG_SZ', '/d', value, '/f']);
+  await execFileAsync(getWindowsRegistryExe(), [
+    'add',
+    keyPath,
+    '/ve',
+    '/t',
+    'REG_SZ',
+    '/d',
+    value,
+    '/f',
+  ]);
 }
 
 /**
@@ -101,7 +122,7 @@ async function writeRegistryValue(keyPath, value) {
  */
 async function deleteRegistryKey(keyPath) {
   try {
-    await execFileAsync('reg.exe', ['delete', keyPath, '/f']);
+    await execFileAsync(getWindowsRegistryExe(), ['delete', keyPath, '/f']);
     return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

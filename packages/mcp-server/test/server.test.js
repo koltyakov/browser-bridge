@@ -2,11 +2,17 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import os from 'node:os';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 import { createBridgeMcpServer, startBridgeMcpServer } from '../src/server.js';
+import {
+  BRIDGE_HOME_ENV,
+  BRIDGE_TCP_PORT_ENV,
+  DEFAULT_WINDOWS_TCP_PORT,
+} from '../../native-host/src/config.js';
 
 test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
   const originalRegisterTool = McpServer.prototype.registerTool;
@@ -123,5 +129,38 @@ test('startBridgeMcpServer connects over stdio transport', async () => {
     assert.ok(transports[0] instanceof StdioServerTransport);
   } finally {
     McpServer.prototype.connect = originalConnect;
+  }
+});
+
+test('startBridgeMcpServer seeds the Windows TCP default before connecting', async () => {
+  const originalPlatform = os.platform;
+  const originalTcpPort = process.env[BRIDGE_TCP_PORT_ENV];
+  const originalBridgeHome = process.env[BRIDGE_HOME_ENV];
+  const originalConnect = McpServer.prototype.connect;
+
+  os.platform = /** @type {typeof os.platform} */ (() => 'win32');
+  delete process.env[BRIDGE_TCP_PORT_ENV];
+  delete process.env[BRIDGE_HOME_ENV];
+
+  McpServer.prototype.connect =
+    /** @type {typeof McpServer.prototype.connect} */ (async function connect() {});
+
+  try {
+    await startBridgeMcpServer();
+
+    assert.equal(process.env[BRIDGE_TCP_PORT_ENV], String(DEFAULT_WINDOWS_TCP_PORT));
+  } finally {
+    McpServer.prototype.connect = originalConnect;
+    os.platform = originalPlatform;
+    if (originalTcpPort === undefined) {
+      delete process.env[BRIDGE_TCP_PORT_ENV];
+    } else {
+      process.env[BRIDGE_TCP_PORT_ENV] = originalTcpPort;
+    }
+    if (originalBridgeHome === undefined) {
+      delete process.env[BRIDGE_HOME_ENV];
+    } else {
+      process.env[BRIDGE_HOME_ENV] = originalBridgeHome;
+    }
   }
 });

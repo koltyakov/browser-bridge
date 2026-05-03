@@ -18,6 +18,16 @@ import {
   removeMcpConfig,
 } from '../src/mcp-config.js';
 
+const expectedMcpCommand = process.platform === 'win32' ? process.execPath : 'bbx';
+const expectedMcpArgs =
+  process.platform === 'win32'
+    ? [path.join(process.cwd(), 'packages', 'mcp-server', 'src', 'bin.js')]
+    : ['mcp', 'serve'];
+const expectedOpencodeCommand =
+  process.platform === 'win32'
+    ? [process.execPath, path.join(process.cwd(), 'packages', 'mcp-server', 'src', 'bin.js')]
+    : ['bbx', 'mcp', 'serve'];
+
 test('isMcpClientName accepts supported clients only', () => {
   for (const clientName of MCP_CLIENT_NAMES) {
     assert.equal(isMcpClientName(clientName), true);
@@ -56,8 +66,8 @@ test('buildMcpConfig emits each client family in its expected shape', () => {
   assert.deepEqual(buildMcpConfig('codex'), {
     mcp_servers: {
       'browser-bridge': {
-        command: 'bbx',
-        args: ['mcp', 'serve'],
+        command: expectedMcpCommand,
+        args: expectedMcpArgs,
       },
     },
   });
@@ -65,8 +75,8 @@ test('buildMcpConfig emits each client family in its expected shape', () => {
   assert.deepEqual(buildMcpConfig('cursor'), {
     mcpServers: {
       'browser-bridge': {
-        command: 'bbx',
-        args: ['mcp', 'serve'],
+        command: expectedMcpCommand,
+        args: expectedMcpArgs,
         env: {},
       },
     },
@@ -76,8 +86,8 @@ test('buildMcpConfig emits each client family in its expected shape', () => {
     mcpServers: {
       'browser-bridge': {
         type: 'stdio',
-        command: 'bbx',
-        args: ['mcp', 'serve'],
+        command: expectedMcpCommand,
+        args: expectedMcpArgs,
         env: {},
       },
     },
@@ -87,7 +97,7 @@ test('buildMcpConfig emits each client family in its expected shape', () => {
     mcp: {
       'browser-bridge': {
         type: 'local',
-        command: ['bbx', 'mcp', 'serve'],
+        command: expectedOpencodeCommand,
       },
     },
   });
@@ -96,62 +106,68 @@ test('buildMcpConfig emits each client family in its expected shape', () => {
 test('formatMcpConfig returns TOML for Codex and JSON for JSON-backed clients', () => {
   assert.equal(
     formatMcpConfig('codex'),
-    ['[mcp_servers."browser-bridge"]', 'command = "bbx"', 'args = ["mcp", "serve"]', ''].join('\n')
+    [
+      '[mcp_servers."browser-bridge"]',
+      `command = ${JSON.stringify(expectedMcpCommand)}`,
+      `args = ${JSON.stringify(expectedMcpArgs)}`,
+      '',
+    ].join('\n')
   );
 
   assert.equal(formatMcpConfig('cursor'), `${JSON.stringify(buildMcpConfig('cursor'), null, 2)}\n`);
 });
 
 test('getMcpConfigPath resolves documented local config locations', () => {
-  const cwd = '/tmp/browser-bridge-project';
+  const cwd = path.join(path.sep, 'tmp', 'browser-bridge-project');
 
   assert.equal(
     getMcpConfigPath('copilot', { global: false, cwd }),
-    '/tmp/browser-bridge-project/.vscode/mcp.json'
+    path.join(cwd, '.vscode', 'mcp.json')
   );
   assert.equal(
     getMcpConfigPath('codex', { global: false, cwd }),
-    '/tmp/browser-bridge-project/.codex/config.toml'
+    path.join(cwd, '.codex', 'config.toml')
   );
   assert.equal(
     getMcpConfigPath('cursor', { global: false, cwd }),
-    '/tmp/browser-bridge-project/.cursor/mcp.json'
+    path.join(cwd, '.cursor', 'mcp.json')
   );
   assert.equal(
     getMcpConfigPath('windsurf', { global: false, cwd }),
-    '/tmp/browser-bridge-project/.windsurf/mcp_config.json'
+    path.join(cwd, '.windsurf', 'mcp_config.json')
   );
   assert.equal(
     getMcpConfigPath('claude', { global: false, cwd }),
-    '/tmp/browser-bridge-project/.mcp.json'
+    path.join(cwd, '.mcp.json')
   );
   assert.equal(
     getMcpConfigPath('opencode', { global: false, cwd }),
-    '/tmp/browser-bridge-project/opencode.json'
+    path.join(cwd, 'opencode.json')
   );
   assert.equal(
     getMcpConfigPath('antigravity', { global: false, cwd }),
-    '/tmp/browser-bridge-project/.agents/mcp_config.json'
+    path.join(cwd, '.agents', 'mcp_config.json')
   );
   assert.equal(
     getMcpConfigPath('agents', { global: false, cwd }),
-    '/tmp/browser-bridge-project/.agents/mcp.json'
+    path.join(cwd, '.agents', 'mcp.json')
   );
 });
 
 test('getMcpConfigPath resolves global config locations and honors CODEX_HOME', () => {
   const home = os.homedir();
   const originalCodexHome = process.env.CODEX_HOME;
+  const testCodexHome = path.join(path.sep, 'tmp', 'codex-home');
 
   try {
-    process.env.CODEX_HOME = '/tmp/codex-home';
+    process.env.CODEX_HOME = testCodexHome;
 
     assert.equal(getMcpConfigPath('claude', { global: true }), path.join(home, '.claude.json'));
     assert.equal(
       getMcpConfigPath('copilot', { global: true }),
       path.join(home, '.copilot', 'mcp-config.json')
     );
-    assert.equal(getMcpConfigPath('codex', { global: true }), '/tmp/codex-home/config.toml');
+    assert.equal(getMcpConfigPath('codex', { global: true }), path.join(testCodexHome, 'config.toml'));
     assert.equal(
       getMcpConfigPath('opencode', { global: true }),
       path.join(home, '.config', 'opencode', 'opencode.json')
