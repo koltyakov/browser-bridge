@@ -19,10 +19,11 @@ export const DEFAULT_WINDOWS_TCP_PORT = 9223;
 export const PUBLISHED_EXTENSION_ID = 'jjjkmmcdkpcgamlopogicbnnhdgebhie';
 
 /**
+ * @param {NodeJS.ProcessEnv} [env=process.env]
  * @returns {string}
  */
-export function getBridgeDir() {
-  const override = process.env[BRIDGE_HOME_ENV];
+export function getBridgeDir(env = process.env) {
+  const override = env[BRIDGE_HOME_ENV];
   if (override) {
     return override;
   }
@@ -35,28 +36,30 @@ export function getBridgeDir() {
   }
 
   if (platform === 'win32') {
-    const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+    const localAppData = env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
     return path.join(localAppData, 'Browser Bridge');
   }
 
-  const xdgDataHome = process.env.XDG_DATA_HOME || path.join(home, '.local', 'share');
+  const xdgDataHome = env.XDG_DATA_HOME || path.join(home, '.local', 'share');
   return path.join(xdgDataHome, 'browser-bridge');
 }
 
 /**
  * Resolve the IPC endpoint the daemon listens on and the CLI / native host
- * connect to. On Windows we use a Named Pipe instead of a filesystem path
- * because Node's AF_UNIX support fails with EACCES on listen() under recent
- * Node + Windows 11 combinations, while Named Pipes are the historical and
- * reliable Windows IPC mechanism.
+ * connect to. On Windows we use a Named Pipe by default because Node's AF_UNIX
+ * support fails with EACCES on listen() under recent Node + Windows 11
+ * combinations, while Named Pipes are the historical and reliable Windows IPC
+ * mechanism. An explicit bridge-home override keeps the legacy socket path so
+ * callers can opt into custom test or compatibility setups.
  *
+ * @param {NodeJS.ProcessEnv} [env=process.env]
  * @returns {string}
  */
-export function getSocketPath() {
-  if (os.platform() === 'win32') {
+export function getSocketPath(env = process.env) {
+  if (os.platform() === 'win32' && !env[BRIDGE_HOME_ENV]) {
     return `\\\\.\\pipe\\${APP_NAME}`;
   }
-  return path.join(getBridgeDir(), 'bridge.sock');
+  return path.join(getBridgeDir(env), 'bridge.sock');
 }
 
 /**
@@ -138,7 +141,7 @@ export function getBridgeTransport(env = process.env) {
     return createTcpBridgeTransport(tcpPort);
   }
 
-  return createSocketBridgeTransport(getSocketPath());
+  return createSocketBridgeTransport(getSocketPath(env));
 }
 
 /**
@@ -161,10 +164,11 @@ export function formatBridgeTransport(transport = getBridgeTransport()) {
 }
 
 /**
+ * @param {NodeJS.ProcessEnv} [env=process.env]
  * @returns {string}
  */
-export function getDaemonPidPath() {
-  return path.join(getBridgeDir(), 'daemon.pid');
+export function getDaemonPidPath(env = process.env) {
+  return path.join(getBridgeDir(env), 'daemon.pid');
 }
 
 /**

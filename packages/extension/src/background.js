@@ -365,6 +365,9 @@ chrome.runtime.onMessage.addListener(createRuntimeMessageListener({ openSidePane
  */
 async function initializeState() {
   await restoreEnabledWindow();
+  if (state.enabledWindow && state.nativePort) {
+    sendAccessUpdate(true);
+  }
   await restoreActionLog();
   await primeEnabledWindowInstrumentation();
   await refreshActionIndicators();

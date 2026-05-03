@@ -1,12 +1,17 @@
 // @ts-check
 
 import { createChromeEvent, createChromeFake } from './chromeFake.js';
+import { webcrypto } from 'node:crypto';
 
 const MISSING = Symbol('missing');
 const BACKGROUND_MODULE_URL = new URL(
   '../../packages/extension/src/background.js',
   import.meta.url
 );
+
+if (!globalThis.crypto) {
+  Reflect.set(globalThis, 'crypto', webcrypto);
+}
 
 /** @typedef {{ postMessage: (message: unknown) => void, disconnect?: () => void, onMessage: ReturnType<typeof createChromeEvent>, onDisconnect: ReturnType<typeof createChromeEvent>, name?: string }} FakeRuntimePort */
 
