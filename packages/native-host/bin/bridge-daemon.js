@@ -1,9 +1,14 @@
 #!/usr/bin/env node
 // @ts-check
 import { BridgeDaemon } from '../src/daemon.js';
-import { formatBridgeTransport, getBridgeTransport } from '../src/config.js';
+import {
+  applyWindowsTcpTransportDefaults,
+  formatBridgeTransport,
+  getBridgeTransport,
+} from '../src/config.js';
 import { clearDaemonPidFile, writeDaemonPidFile } from '../src/daemon-process.js';
 
+applyWindowsTcpTransportDefaults();
 const transport = getBridgeTransport();
 const daemon = new BridgeDaemon({ transport });
 

@@ -97,6 +97,29 @@ export function getBridgeTcpPort(env = process.env) {
 }
 
 /**
+ * Align Windows CLI/daemon entrypoints with the installed native-host launcher,
+ * which uses TCP by default. Preserve explicit overrides and custom bridge-home
+ * test setups that rely on the socket transport.
+ *
+ * @param {NodeJS.ProcessEnv} [env=process.env]
+ * @returns {boolean}
+ */
+export function applyWindowsTcpTransportDefaults(env = process.env) {
+  if (os.platform() !== 'win32') {
+    return false;
+  }
+  if (env[BRIDGE_TCP_PORT_ENV] != null && env[BRIDGE_TCP_PORT_ENV] !== '') {
+    return false;
+  }
+  if (env[BRIDGE_HOME_ENV]) {
+    return false;
+  }
+
+  env[BRIDGE_TCP_PORT_ENV] = String(DEFAULT_WINDOWS_TCP_PORT);
+  return true;
+}
+
+/**
  * @param {NodeJS.ProcessEnv} [env=process.env]
  * @returns {BridgeTransport}
  */

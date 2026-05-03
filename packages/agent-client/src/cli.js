@@ -6,7 +6,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { SUPPORTED_BROWSERS } from '../../native-host/src/config.js';
+import {
+  applyWindowsTcpTransportDefaults,
+  SUPPORTED_BROWSERS,
+} from '../../native-host/src/config.js';
 import { restartBridgeDaemon } from '../../native-host/src/daemon-process.js';
 import { uninstallNativeManifest } from '../../native-host/src/install-manifest.js';
 import {
@@ -363,6 +366,7 @@ if (command === 'mcp') {
 }
 
 const clientTimeoutMs = getClientTimeoutOverride();
+applyWindowsTcpTransportDefaults();
 const client = new BridgeClient(
   clientTimeoutMs ? { defaultTimeoutMs: clientTimeoutMs } : undefined
 );

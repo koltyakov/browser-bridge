@@ -646,6 +646,7 @@ test('getSidepanelNativeStatusView derives install commands and disconnected lab
       mcpCommand: 'bbx install-mcp',
       label: 'bridge down',
       diagnosticCommand: 'bbx install dev-extension-id',
+      diagnosticMessage: 'Native host unreachable for 10s. Last error: bridge down Run: bbx doctor',
     }
   );
 
@@ -662,7 +663,21 @@ test('getSidepanelNativeStatusView derives install commands and disconnected lab
       mcpCommand: 'bbx install-mcp',
       label: 'Native host connected',
       diagnosticCommand: 'bbx install',
+      diagnosticMessage:
+        'Native host unreachable for 10s. Run: npm install -g @browserbridge/bbx && bbx install',
     }
+  );
+});
+
+test('getSidepanelNativeStatusView points daemon failures at bbx-daemon', () => {
+  assert.equal(
+    getSidepanelNativeStatusView({
+      connected: false,
+      error: 'connect ENOENT C:\\Users\\andrew\\AppData\\Local\\Browser Bridge\\bridge.sock',
+      runtimeId: 'dev-extension-id',
+      publishedExtensionId: 'jjjkmmcdkpcgamlopogicbnnhdgebhie',
+    }).diagnosticMessage,
+    'Native host unreachable for 10s. Last error: connect ENOENT C:\\Users\\andrew\\AppData\\Local\\Browser Bridge\\bridge.sock Run: bbx-daemon or bbx doctor'
   );
 });
 

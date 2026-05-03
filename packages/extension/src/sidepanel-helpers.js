@@ -509,9 +509,45 @@ export function shouldPollSetupStatus(connected, installationHidden, installatio
  *   skillCommand: string,
  *   mcpCommand: string,
  *   label: string,
- *   diagnosticCommand: string
+ *   diagnosticCommand: string,
+ *   diagnosticMessage: string
  * }} SidepanelNativeStatusView
  */
+
+/**
+ * @param {string | undefined} error
+ * @param {string} installCommand
+ * @returns {string}
+ */
+function getNativeDiagnosticMessage(error, installCommand) {
+  const normalizedError = typeof error === 'string' ? error.trim() : '';
+  if (!normalizedError) {
+    return (
+      'Native host unreachable for 10s. Run: npm install -g @browserbridge/bbx && ' + installCommand
+    );
+  }
+
+  if (
+    /native messaging host not found|specified native messaging host not found|forbidden/i.test(
+      normalizedError
+    )
+  ) {
+    return (
+      `Native host unreachable for 10s. Last error: ${normalizedError} ` +
+      `Run: npm install -g @browserbridge/bbx && ${installCommand}`
+    );
+  }
+
+  if (
+    /bridge\.sock|ENOENT|ECONNREFUSED|daemon|native host has exited|host exited/i.test(
+      normalizedError
+    )
+  ) {
+    return `Native host unreachable for 10s. Last error: ${normalizedError} Run: bbx-daemon or bbx doctor`;
+  }
+
+  return `Native host unreachable for 10s. Last error: ${normalizedError} Run: bbx doctor`;
+}
 
 /**
  * @param {string} errorMessage
@@ -675,6 +711,10 @@ export function getSidepanelNativeStatusView({
     mcpCommand: 'bbx install-mcp',
     label: connected ? 'Native host connected' : error || 'Native host disconnected',
     diagnosticCommand: connected ? installCommand : installCommand || fallbackInstallCommand,
+    diagnosticMessage: getNativeDiagnosticMessage(
+      connected ? undefined : error,
+      connected ? installCommand : installCommand || fallbackInstallCommand
+    ),
   };
 }
 
