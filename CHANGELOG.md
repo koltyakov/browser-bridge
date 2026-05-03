@@ -2,11 +2,42 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-but this file is maintained as a cumulative feature log rather than a sequence
-of tagged releases.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+
+## [1.1.0] - 2026-05-02
+
+### Added
+
+- **Windows platform support:** Browser Bridge now supports Windows end to end,
+  including registry-based native-host installation, Windows-safe MCP launch
+  commands, and default TCP transport wiring across the CLI, daemon, and MCP
+  server.
+- **CDP send key support:** Added `cdp.dispatch_key_event`, the
+  `browser_input` `cdp_press_key` action, and `bbx cdp-press-key` so agents can
+  send targeted CDP key presses without focusing the tab first.
+- **Daemon restart command:** Added `bbx restart` to restart or start the local
+  bridge daemon after upgrades or when recovering from a stuck bridge process.
+
+### Fixed
+
+- **Windows IPC reliability:** The daemon now listens on a Named Pipe on
+  Windows instead of a Unix-domain-socket file path. Recent Node + Windows 11
+  combinations fail with `EACCES` when calling `server.listen()` on any file
+  path, preventing the daemon from starting; Named Pipes are the historical
+  Windows IPC mechanism and bind reliably. Daemon startup also skips the
+  `mkdir` / `access` / `rm` filesystem prep when the socket path is a Named
+  Pipe, since pipes are not filesystem entries.
+- **Windows install and launch reliability:** Native-host install/uninstall now
+  resolves `reg.exe` from `SystemRoot` on Windows, and managed MCP configs use
+  the local Node executable directly instead of relying on shell resolution of
+  `bbx`.
+- **CDP key handling:** CDP key dispatch now validates and normalizes `key`,
+  `code`, and `modifiers` input and consistently sends the expected key press
+  pair through `Input.dispatchKeyEvent`.
+
+## [1.0.0] - 2026-04-03
 
 ### Added
 
@@ -53,13 +84,3 @@ of tagged releases.
   behavior, and disconnected-client handling.
 - **Typing expectations:** Strict JSDoc-backed typing across the JavaScript
   codebase with repository-wide `npm run typecheck` validation.
-
-### Fixed
-
-- **Windows IPC reliability:** The daemon now listens on a Named Pipe on
-  Windows instead of a Unix-domain-socket file path. Recent Node + Windows 11
-  combinations fail with `EACCES` when calling `server.listen()` on any file
-  path, preventing the daemon from starting; Named Pipes are the historical
-  Windows IPC mechanism and bind reliably. Daemon startup also skips the
-  `mkdir` / `access` / `rm` filesystem prep when the socket path is a Named
-  Pipe, since pipes are not filesystem entries.
