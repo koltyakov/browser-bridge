@@ -615,7 +615,8 @@ async function main() {
     if (command === 'screenshot') {
       const parsed = extractTabFlag(rest);
       const [refOrSelector, outputPath] = parsed.rest;
-      if (!refOrSelector) throw new Error('Usage: screenshot [--tab <tabId>] <ref|selector> [path]');
+      if (!refOrSelector)
+        throw new Error('Usage: screenshot [--tab <tabId>] <ref|selector> [path]');
       const elementRef = await resolveRef(client, refOrSelector, parsed.tabId, REQUEST_SOURCE);
       const response = await requestBridge(
         client,
