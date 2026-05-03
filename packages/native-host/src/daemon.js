@@ -96,6 +96,14 @@ function getVersionNegotiationPayload(requestedVersion) {
 }
 
 /**
+ * @param {string} socketPath
+ * @returns {boolean}
+ */
+function isWindowsNamedPipePath(socketPath) {
+  return socketPath.startsWith('\\\\.\\pipe\\');
+}
+
+/**
  * @typedef {{
  *   type?: string,
  *   role?: string,
@@ -299,7 +307,7 @@ export class BridgeDaemon {
    * @returns {Promise<BridgeDaemon>}
    */
   async start() {
-    if (this.transport.type === 'socket') {
+    if (this.transport.type === 'socket' && !isWindowsNamedPipePath(this.socketPath)) {
       const socketDir = path.dirname(this.socketPath);
       await fs.promises.mkdir(socketDir, { recursive: true });
       if (process.platform !== 'win32') {
@@ -409,7 +417,7 @@ export class BridgeDaemon {
           });
         });
       } finally {
-        if (this.transport.type === 'socket') {
+        if (this.transport.type === 'socket' && !isWindowsNamedPipePath(this.socketPath)) {
           await fs.promises.rm(this.socketPath, { force: true });
         }
       }

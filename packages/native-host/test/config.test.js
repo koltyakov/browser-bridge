@@ -65,8 +65,10 @@ async function withMockedConfigEnvironment(options, callback) {
 }
 
 test('getBridgeDir honors BROWSER_BRIDGE_HOME override and socket path uses it', async () => {
+  // Pin to Linux so the assertions stay on a stable POSIX path shape.
   await withMockedConfigEnvironment(
     {
+      platform: 'linux',
       env: { [BRIDGE_HOME_ENV]: '/tmp/browser-bridge-home' },
     },
     async () => {

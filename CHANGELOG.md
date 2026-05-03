@@ -53,3 +53,13 @@ of tagged releases.
   behavior, and disconnected-client handling.
 - **Typing expectations:** Strict JSDoc-backed typing across the JavaScript
   codebase with repository-wide `npm run typecheck` validation.
+
+### Fixed
+
+- **Windows IPC reliability:** The daemon now listens on a Named Pipe on
+  Windows instead of a Unix-domain-socket file path. Recent Node + Windows 11
+  combinations fail with `EACCES` when calling `server.listen()` on any file
+  path, preventing the daemon from starting; Named Pipes are the historical
+  Windows IPC mechanism and bind reliably. Daemon startup also skips the
+  `mkdir` / `access` / `rm` filesystem prep when the socket path is a Named
+  Pipe, since pipes are not filesystem entries.
