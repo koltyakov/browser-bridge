@@ -1,12 +1,14 @@
 // @ts-check
 
 import {
+  createFailure,
   ERROR_CODES,
   estimateJsonPayloadCost,
   getMethodCapability,
   getCostClass,
   getUtf8ByteLength,
   isDebuggerBackedMethod,
+  serializeJsonPayload,
 } from '../../protocol/src/index.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
@@ -132,12 +134,13 @@ function inferCdpKeyDefinition(key) {
 }
 
 /**
- * Build the keyDown/keyUp payloads accepted by CDP Input.dispatchKeyEvent.
+ * Build the fixed keyDown/keyUp press pair accepted by CDP
+ * Input.dispatchKeyEvent.
  *
  * @param {Record<string, unknown>} params
  * @returns {Array<Record<string, unknown>>}
  */
-export function createCdpKeyDispatchSequence(params) {
+export function createCdpKeyPressEventPair(params) {
   const rawKey = params.key;
   if (typeof rawKey !== 'string' || rawKey.trim() === '') {
     throw new Error('key must be a non-empty string.');
@@ -280,6 +283,7 @@ export function summarizeActionResult(response) {
  * Estimate approximate token cost from a bridge response.
  *
  * @param {BridgeResponse} response
+ * @param {string} [serializedPayload]
  * @returns {{
  *   responseBytes: number,
  *   approxTokens: number,
@@ -291,9 +295,11 @@ export function summarizeActionResult(response) {
  *   nodeCount: number | null
  * }}
  */
-export function estimateResponseTokens(response) {
+export function estimateResponseTokens(response, serializedPayload) {
   const payload = response.ok ? response.result : { error: response.error };
-  const estimate = estimateJsonPayloadCost(payload);
+  const payloadJson =
+    typeof serializedPayload === 'string' ? serializedPayload : serializeJsonPayload(payload);
+  const estimate = estimateJsonPayloadCost(payload, payloadJson);
   const responseBytes = estimate.bytes;
   const result =
     response.ok && response.result && typeof response.result === 'object'
@@ -302,7 +308,10 @@ export function estimateResponseTokens(response) {
   const hasScreenshot = result != null && typeof result.image === 'string';
   const nodeCount = result != null && Array.isArray(result.nodes) ? result.nodes.length : null;
   const textPayload = hasScreenshot && result != null ? omitScreenshotImage(result) : payload;
-  const textEstimate = estimateJsonPayloadCost(textPayload);
+  const textEstimate = estimateJsonPayloadCost(
+    textPayload,
+    textPayload === payload ? payloadJson : serializeJsonPayload(textPayload)
+  );
   const imageTransportBytes = Math.max(0, responseBytes - textEstimate.bytes);
   const imageBytes = hasScreenshot && result != null ? estimateInlineImageBytes(result.image) : 0;
 
@@ -321,6 +330,7 @@ export function estimateResponseTokens(response) {
 /**
  * @param {string} method
  * @param {BridgeResponse} response
+ * @param {string} [serializedPayload]
  * @returns {{
  *   responseBytes: number,
  *   approxTokens: number,
@@ -335,8 +345,8 @@ export function estimateResponseTokens(response) {
  *   debuggerBacked: boolean
  * }}
  */
-export function getResponseDiagnostics(method, response) {
-  const estimate = estimateResponseTokens(response);
+export function getResponseDiagnostics(method, response, serializedPayload) {
+  const estimate = estimateResponseTokens(response, serializedPayload);
   return {
     ...estimate,
     costClass: getCostClass(estimate.approxTokens),
@@ -432,11 +442,30 @@ export function enforceTokenBudget(method, response, tokenBudget) {
   }
 
   let result = cloned;
+  const continuationHint = `Retry ${method} with a larger token budget or tighter params.`;
   if (estimateJsonPayloadCost(result).bytes > maxBytes) {
-    result = {
+    const compactFallback = {
       truncated: true,
-      continuationHint: `Retry ${method} with a larger token budget or tighter params.`,
+      continuationHint,
     };
+    if (estimateJsonPayloadCost(compactFallback).bytes > maxBytes) {
+      return createFailure(
+        response.id,
+        ERROR_CODES.RESULT_TRUNCATED,
+        'Result was truncated to fit the response budget.',
+        {
+          method,
+          tokenBudget,
+        },
+        {
+          ...response.meta,
+          budget_applied: true,
+          budget_truncated: true,
+          continuation_hint: continuationHint,
+        }
+      );
+    }
+    result = compactFallback;
     truncated = true;
   }
 
@@ -447,9 +476,7 @@ export function enforceTokenBudget(method, response, tokenBudget) {
       ...response.meta,
       budget_applied: true,
       budget_truncated: truncated,
-      continuation_hint: truncated
-        ? `Retry ${method} with a larger token budget or tighter params.`
-        : null,
+      continuation_hint: truncated ? continuationHint : null,
     },
   };
 }
@@ -458,8 +485,8 @@ export function enforceTokenBudget(method, response, tokenBudget) {
  * @param {unknown} value
  * @returns {any}
  */
-function cloneJsonValue(value) {
-  return value == null ? value : JSON.parse(JSON.stringify(value));
+export function cloneJsonValue(value) {
+  return value == null ? value : structuredClone(value);
 }
 
 /**
@@ -547,7 +574,10 @@ export function getErrorMessage(error) {
  * @returns {string}
  */
 export function normalizeRuntimeErrorMessage(message) {
-  return /^No tab with id[: ]/i.test(message) ? ERROR_CODES.TAB_MISMATCH : message;
+  const normalizedMessage = message.replace(/^Error:\s*/i, '');
+  return /^No tab with id[: ]/i.test(normalizedMessage)
+    ? ERROR_CODES.TAB_MISMATCH
+    : normalizedMessage;
 }
 
 /**

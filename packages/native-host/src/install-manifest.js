@@ -1,10 +1,14 @@
 // @ts-check
 
+import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { promisify } from 'node:util';
 
 import {
   APP_NAME,
+  BRIDGE_TCP_PORT_ENV,
+  DEFAULT_WINDOWS_TCP_PORT,
   getBridgeDir,
   getLauncherFilename,
   getManifestInstallDir,
@@ -13,9 +17,29 @@ import {
 
 export const DEFAULT_EXTENSION_ID_ENV = 'BROWSER_BRIDGE_EXTENSION_ID';
 export const BUILT_IN_EXTENSION_ID_SOURCE = 'built_in';
+export const INSTALL_NATIVE_MANIFEST_ERROR = 'INSTALL_NATIVE_MANIFEST_FAILED';
 
 /** @typedef {import('./config.js').SupportedBrowser} SupportedBrowser */
 /** @typedef {'env' | 'built_in' | 'none' | 'invalid_env'} ExtensionIdSource */
+/** @typedef {NodeJS.ErrnoException & { cause?: unknown }} MaybeErrnoError */
+
+const execFileAsync = promisify(execFile);
+
+export class NativeManifestInstallError extends Error {
+  /**
+   * @param {string} targetPath
+   * @param {unknown} cause
+   */
+  constructor(targetPath, cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    super(`Failed to install native host files at ${targetPath}: ${detail}`, { cause });
+    this.name = 'NativeManifestInstallError';
+    this.code = INSTALL_NATIVE_MANIFEST_ERROR;
+    this.targetPath = targetPath;
+    this.cause = cause;
+    this.errnoCode = /** @type {MaybeErrnoError | undefined} */ (cause)?.code;
+  }
+}
 
 /**
  * @typedef {{
@@ -28,6 +52,7 @@ export const BUILT_IN_EXTENSION_ID_SOURCE = 'built_in';
  *   stdout?: Pick<NodeJS.WriteStream, 'write'>,
  *   stderr?: Pick<NodeJS.WriteStream, 'write'>,
  *   preserveCustomExtensionId?: boolean | undefined,
+ *   writeRegistryValue?: ((keyPath: string, value: string) => Promise<void> | void) | undefined,
  *   env?: NodeJS.ProcessEnv
  * }} InstallManifestOptions
  */
@@ -38,9 +63,54 @@ export const BUILT_IN_EXTENSION_ID_SOURCE = 'built_in';
  *   installDir?: string | undefined,
  *   bridgeDir?: string | undefined,
  *   removeBridgeDir?: boolean | undefined,
+ *   deleteRegistryKey?: ((keyPath: string) => Promise<boolean> | boolean) | undefined,
  *   stdout?: Pick<NodeJS.WriteStream, 'write'>
  * }} UninstallManifestOptions
  */
+
+/**
+ * @param {SupportedBrowser} [browser='chrome']
+ * @returns {string}
+ */
+export function getWindowsRegistryKey(browser = 'chrome') {
+  const roots = {
+    chrome: 'HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts',
+    edge: 'HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts',
+    brave: 'HKCU\\Software\\BraveSoftware\\Brave-Browser\\NativeMessagingHosts',
+    chromium: 'HKCU\\Software\\Chromium\\NativeMessagingHosts',
+    // Arc is Chromium-based, and no verified Browser Company-specific native
+    // messaging registry path is documented in this repo yet.
+    arc: 'HKCU\\Software\\Chromium\\NativeMessagingHosts',
+  };
+
+  return `${roots[browser] || roots.chrome}\\${APP_NAME}`;
+}
+
+/**
+ * @param {string} keyPath
+ * @param {string} value
+ * @returns {Promise<void>}
+ */
+async function writeRegistryValue(keyPath, value) {
+  await execFileAsync('reg.exe', ['add', keyPath, '/ve', '/t', 'REG_SZ', '/d', value, '/f']);
+}
+
+/**
+ * @param {string} keyPath
+ * @returns {Promise<boolean>}
+ */
+async function deleteRegistryKey(keyPath) {
+  try {
+    await execFileAsync('reg.exe', ['delete', keyPath, '/f']);
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/unable to find|cannot find|was unable to find/i.test(message)) {
+      return false;
+    }
+    throw error;
+  }
+}
 
 /**
  * Parse and validate a Chrome extension ID from a CLI argument.
@@ -173,6 +243,7 @@ export async function installNativeManifest(options) {
     stdout = process.stdout,
     stderr = process.stderr,
     preserveCustomExtensionId = false,
+    writeRegistryValue: writeRegistryValueFn = writeRegistryValue,
     env = process.env,
   } = options;
 
@@ -196,7 +267,7 @@ export async function installNativeManifest(options) {
 
   const launcher =
     process.platform === 'win32'
-      ? `@echo off\r\n"${nodePath}" "${hostPath}" %*\r\n`
+      ? `@echo off\r\nset ${BRIDGE_TCP_PORT_ENV}=${DEFAULT_WINDOWS_TCP_PORT}\r\n"${nodePath}" "${hostPath}" %*\r\n`
       : `#!/bin/sh
 exec '${escapeSingleQuotes(nodePath)}' '${escapeSingleQuotes(hostPath)}' "$@"
 `;
@@ -228,16 +299,31 @@ exec '${escapeSingleQuotes(nodePath)}' '${escapeSingleQuotes(hostPath)}' "$@"
     allowed_origins: allowedOrigins,
   };
 
-  await fs.promises.mkdir(installDir, { recursive: true });
-  await fs.promises.mkdir(bridgeDir, { recursive: true });
-  await fs.promises.writeFile(launcherPath, launcher, 'utf8');
-  if (process.platform !== 'win32') {
-    await fs.promises.chmod(launcherPath, 0o755);
+  let failingPath = installDir;
+  try {
+    await fs.promises.mkdir(installDir, { recursive: true });
+    failingPath = bridgeDir;
+    await fs.promises.mkdir(bridgeDir, { recursive: true });
+    failingPath = launcherPath;
+    await fs.promises.writeFile(launcherPath, launcher, 'utf8');
+    if (process.platform !== 'win32') {
+      await fs.promises.chmod(launcherPath, 0o755);
+    }
+    failingPath = manifestPath;
+    await fs.promises.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+    if (process.platform === 'win32') {
+      failingPath = getWindowsRegistryKey(browser);
+      await writeRegistryValueFn(getWindowsRegistryKey(browser), manifestPath);
+    }
+  } catch (error) {
+    throw new NativeManifestInstallError(failingPath, error);
   }
-  await fs.promises.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
 
   stdout.write(`Wrote ${manifestPath}\n`);
   stdout.write(`Wrote ${launcherPath}\n`);
+  if (process.platform === 'win32') {
+    stdout.write(`Registered ${getWindowsRegistryKey(browser)}\n`);
+  }
 
   if (!preservedCustomExtensionId && !parsedExtensionId && extensionIdArg == null && extensionId) {
     if (defaultExtensionId.source === 'env') {
@@ -281,13 +367,20 @@ export async function uninstallNativeManifest(options = {}) {
     installDir = getManifestInstallDir(browser),
     bridgeDir = getBridgeDir(),
     removeBridgeDir = false,
+    deleteRegistryKey: deleteRegistryKeyFn = deleteRegistryKey,
     stdout = process.stdout,
   } = options;
 
   const manifestPath = path.join(installDir, `${APP_NAME}.json`);
+  const registryKeyPath = process.platform === 'win32' ? getWindowsRegistryKey(browser) : null;
   const removedManifest = await removePathIfExists(manifestPath);
   if (removedManifest) {
     stdout.write(`Removed ${manifestPath}\n`);
+  }
+
+  const removedRegistryKey = registryKeyPath ? await deleteRegistryKeyFn(registryKeyPath) : false;
+  if (removedRegistryKey && registryKeyPath) {
+    stdout.write(`Removed ${registryKeyPath}\n`);
   }
 
   const removedBridgeDir = removeBridgeDir ? await removePathIfExists(bridgeDir) : false;

@@ -6,7 +6,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { SUPPORTED_BROWSERS } from '../../native-host/src/config.js';
+import {
+  applyWindowsTcpTransportDefaults,
+  SUPPORTED_BROWSERS,
+} from '../../native-host/src/config.js';
+import { restartBridgeDaemon } from '../../native-host/src/daemon-process.js';
 import { uninstallNativeManifest } from '../../native-host/src/install-manifest.js';
 import {
   createRuntimeContext,
@@ -23,8 +27,8 @@ import {
   methodNeedsTab,
   parseIntArg,
   parseJsonObject,
+  sanitizeOutput,
 } from './cli-helpers.js';
-import { detectMcpClients, detectSkillTargets } from './detect.js';
 import {
   findInstalledManagedTargets,
   installAgentFiles,
@@ -50,39 +54,8 @@ import { annotateBridgeSummary, summarizeBridgeResponse } from './subagent.js';
 /** @typedef {{ image: string, rect: Record<string, unknown> }} ScreenshotResult */
 
 const REQUEST_SOURCE = 'cli';
-
-/**
- * Strip ANSI escape sequences from a string to prevent terminal injection
- * from malicious page content (e.g. DOM text, console output, eval results).
- *
- * @param {string} str
- * @returns {string}
- */
-function stripAnsi(str) {
-  // oxlint-disable-next-line no-control-regex
-  return str.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').replace(/\x1b[^[]/g, '');
-}
-
-/**
- * Recursively sanitize all string values in a value tree by stripping ANSI
- * escape sequences. Only strings are touched; structure is preserved.
- *
- * @param {unknown} value
- * @returns {unknown}
- */
-function sanitizeOutput(value) {
-  if (typeof value === 'string') return stripAnsi(value);
-  if (Array.isArray(value)) return value.map(sanitizeOutput);
-  if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(/** @type {Record<string, unknown>} */ (value)).map(([k, v]) => [
-        k,
-        sanitizeOutput(v),
-      ])
-    );
-  }
-  return value;
-}
+const TEST_TIMEOUT_ENV = 'BBX_CLIENT_REQUEST_TIMEOUT_MS';
+const TEST_DETECTED_MCP_CLIENTS_ENV = 'BBX_TEST_DETECTED_MCP_CLIENTS';
 
 /**
  * Read all of stdin as UTF-8 text. Resolves once stdin closes.
@@ -164,9 +137,12 @@ if (command === 'install-skill') {
       global: isGlobal,
       cwd: process.cwd(),
       projectPath: isGlobal ? os.homedir() : process.cwd(),
+      ...getSetupStatusTestOverrides(),
     });
     /** @type {import('./install.js').SupportedTarget[]} */
-    const detected = detectSkillTargets();
+    const detected = /** @type {import('./install.js').SupportedTarget[]} */ (
+      setupStatus.skillTargets.filter((entry) => entry.detected).map((entry) => entry.key)
+    );
     const installedManagedTargets = new Set(
       setupStatus.skillTargets
         .filter((entry) => entry.installed && entry.managed)
@@ -274,8 +250,11 @@ if (command === 'install-mcp') {
       global: isGlobal,
       cwd: process.cwd(),
       projectPath: process.cwd(),
+      ...getSetupStatusTestOverrides(),
     });
-    const detected = detectMcpClients();
+    const detected = /** @type {import('./mcp-config.js').McpClientName[]} */ (
+      setupStatus.mcpClients.filter((entry) => entry.detected).map((entry) => entry.key)
+    );
     const configuredClients = new Set(
       setupStatus.mcpClients.filter((entry) => entry.configured).map((entry) => entry.key)
     );
@@ -386,7 +365,11 @@ if (command === 'mcp') {
   process.exit(1);
 }
 
-const client = new BridgeClient();
+const clientTimeoutMs = getClientTimeoutOverride();
+applyWindowsTcpTransportDefaults();
+const client = new BridgeClient(
+  clientTimeoutMs ? { defaultTimeoutMs: clientTimeoutMs } : undefined
+);
 
 await main();
 
@@ -419,6 +402,18 @@ async function main() {
             ? 'Browser Bridge is ready.'
             : `Browser Bridge has ${report.issues.length} readiness issue(s).`,
         evidence: report,
+      });
+      return;
+    }
+
+    if (command === 'restart') {
+      const result = await restartBridgeDaemon();
+      printJson({
+        ok: true,
+        summary: result.previouslyRunning
+          ? 'Browser Bridge daemon restarted.'
+          : 'Browser Bridge daemon started.',
+        evidence: result,
       });
       return;
     }
@@ -470,7 +465,7 @@ async function main() {
         tabId,
         source: REQUEST_SOURCE,
       });
-      printJson(response.ok ? response.result : response);
+      printCallResponse(response);
       return;
     }
 
@@ -557,7 +552,7 @@ async function main() {
         tabId,
         source: REQUEST_SOURCE,
       });
-      printJson(response.ok ? response.result : response);
+      printCallResponse(response);
       return;
     }
 
@@ -670,7 +665,7 @@ async function main() {
     const message = error instanceof Error ? error.message : String(error);
     const raw = error instanceof Error && 'code' in error ? /** @type {any} */ (error).code : '';
     let code = 'ERROR';
-    if (raw === 'ENOENT' || raw === 'ECONNREFUSED') {
+    if (raw === 'ENOENT' || raw === 'ECONNREFUSED' || raw === 'EINVAL') {
       code = 'DAEMON_OFFLINE';
     } else if (raw === 'BRIDGE_TIMEOUT') {
       code = 'BRIDGE_TIMEOUT';
@@ -688,6 +683,48 @@ async function main() {
   } finally {
     await client.close();
   }
+}
+
+/**
+ * Allow tests to shrink request timeouts without changing the shared default.
+ *
+ * @returns {number | undefined}
+ */
+function getClientTimeoutOverride() {
+  const raw = process.env[TEST_TIMEOUT_ENV];
+  if (!raw) {
+    return undefined;
+  }
+
+  const value = Number.parseInt(raw, 10);
+  return Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+/**
+ * Allow CLI tests to provide deterministic MCP client detection without relying
+ * on whatever tools happen to be installed on the host machine.
+ *
+ * @returns {{
+ *   mcpDetectors?: Record<string, () => boolean>,
+ * }}
+ */
+function getSetupStatusTestOverrides() {
+  if (!(TEST_DETECTED_MCP_CLIENTS_ENV in process.env)) {
+    return {};
+  }
+
+  const detectedClients = new Set(
+    (process.env[TEST_DETECTED_MCP_CLIENTS_ENV] || '')
+      .split(',')
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean)
+  );
+
+  return {
+    mcpDetectors: Object.fromEntries(
+      MCP_CLIENT_NAMES.map((clientName) => [clientName, () => detectedClients.has(clientName)])
+    ),
+  };
 }
 
 /**
@@ -732,6 +769,24 @@ function printJson(value) {
   process.stdout.write(
     `${JSON.stringify(sanitizeOutput(value), null, process.stdout.isTTY ? 2 : undefined)}\n`
   );
+}
+
+/**
+ * @param {import('../../protocol/src/types.js').BridgeResponse} response
+ * @returns {void}
+ */
+function printCallResponse(response) {
+  if (response.ok) {
+    printJson(response.result);
+    return;
+  }
+
+  process.exitCode = 1;
+  const errorText = `${response.error.code}: ${response.error.message}`;
+  process.stderr.write(
+    `${process.stderr.isTTY ? `\u001b[31m${sanitizeOutput(errorText)}\u001b[0m` : sanitizeOutput(errorText)}\n`
+  );
+  printJson(response);
 }
 
 function printUsage() {

@@ -8,6 +8,7 @@ import {
   BRIDGE_METHODS,
   BRIDGE_METHOD_REGISTRY,
   ERROR_CODES,
+  METHOD_SET,
   applyBudget,
   bridgeMethodNeedsTab,
   createFailure,
@@ -17,6 +18,7 @@ import {
   getMethodCapability,
   normalizeCheckedAction,
   createSuccess,
+  normalizeCdpDispatchKeyEventParams,
   normalizeInputAction,
   normalizeNavigationAction,
   normalizePatchOperation,
@@ -41,6 +43,7 @@ import {
   normalizeViewportResizeParams,
   normalizeStyleQuery,
   getErrorRecovery,
+  validateBridgeRequest,
 } from '../src/index.js';
 
 /** Ensure budgeting normalizes user-provided limits safely. */
@@ -119,6 +122,13 @@ test('bridge method registry is the source of truth for method ordering and tab-
   assert.equal(bridgeMethodNeedsTab('dom.query'), true);
 });
 
+test('METHOD_SET stays aligned with BRIDGE_METHODS', () => {
+  assert.equal(METHOD_SET.size, BRIDGE_METHODS.length);
+  for (const method of BRIDGE_METHODS) {
+    assert.equal(METHOD_SET.has(method), true, `Missing method in METHOD_SET: ${method}`);
+  }
+});
+
 test('bridge method groups are derived from the registry', () => {
   const groups = createBridgeMethodGroups();
   assert.ok(groups.tabs.includes('tabs.create'));
@@ -160,6 +170,18 @@ test('normalizeInputAction preserves interactive intent', () => {
   assert.equal(input.button, 'right');
   assert.equal(input.clickCount, 2);
   assert.equal(input.key, 'Enter');
+  assert.deepEqual(input.modifiers, ['Shift']);
+});
+
+test('normalizeCdpDispatchKeyEventParams preserves valid CDP key event input', () => {
+  const input = normalizeCdpDispatchKeyEventParams({
+    key: 'Escape',
+    code: ' Escape ',
+    modifiers: ['Shift'],
+  });
+
+  assert.equal(input.key, 'Escape');
+  assert.equal(input.code, 'Escape');
   assert.deepEqual(input.modifiers, ['Shift']);
 });
 
@@ -416,10 +438,47 @@ test('normalizeTabCreateParams preserves URL', () => {
   assert.equal(params.active, false);
 });
 
+test('normalizeTabCreateParams rejects javascript URLs', () => {
+  assert.throws(
+    () => normalizeTabCreateParams({ url: 'javascript:alert(1)' }),
+    (error) => {
+      assert.equal(error instanceof Error, true);
+      const bridgeError = /** @type {Error & { code?: string }} */ (error);
+      assert.equal(bridgeError.code, ERROR_CODES.INVALID_REQUEST);
+      assert.match(bridgeError.message, /unsupported protocol "javascript:"/);
+      return true;
+    }
+  );
+});
+
+test('normalizeTabCreateParams rejects invalid URLs that do not parse', () => {
+  assert.throws(
+    () => normalizeTabCreateParams({ url: 'not a url' }),
+    (error) => {
+      assert.equal(error instanceof Error, true);
+      const bridgeError = /** @type {Error & { code?: string }} */ (error);
+      assert.equal(bridgeError.code, ERROR_CODES.INVALID_REQUEST);
+      assert.match(bridgeError.message, /Invalid tab create URL: not a url/);
+      return true;
+    }
+  );
+});
+
 /** Ensure tab close params require a valid tabId. */
 test('normalizeTabCloseParams requires valid tabId', () => {
   assert.throws(() => normalizeTabCloseParams({}), /tabId is required/);
-  assert.throws(() => normalizeTabCloseParams({ tabId: -1 }), /tabId is required/);
+  for (const tabId of /** @type {Array<number | string | null>} */ ([
+    -1,
+    0,
+    'abc',
+    Number.NaN,
+    null,
+  ])) {
+    assert.throws(
+      () => normalizeTabCloseParams(/** @type {any} */ ({ tabId })),
+      /tabId is required/
+    );
+  }
 });
 
 test('normalizeTabCloseParams accepts valid tabId', () => {
@@ -579,6 +638,10 @@ test('normalizeNavigationAction rejects unsafe protocols', () => {
     () => normalizeNavigationAction({ url: 'data:text/html,<h1>XSS</h1>' }),
     /unsupported protocol/
   );
+  assert.throws(
+    () => normalizeNavigationAction({ url: 'chrome://settings' }),
+    /unsupported protocol/
+  );
 });
 
 /** Ensure navigation URL validation allows safe protocols. */
@@ -621,10 +684,125 @@ test('normalizeGetHtmlParams keeps target alias for element-level reads', () => 
   assert.equal(params.maxLength, 4000);
 });
 
-/** Ensure evaluate params reject oversized expressions. */
-test('normalizeEvaluateParams rejects oversized expression', () => {
+/** Ensure evaluate params enforce expression length limits exactly. */
+test('normalizeEvaluateParams enforces expression length boundary', () => {
+  const withinLimit = normalizeEvaluateParams({ expression: 'x'.repeat(100_000) });
+  assert.equal(withinLimit.expression.length, 100_000);
+
   assert.throws(
     () => normalizeEvaluateParams({ expression: 'x'.repeat(100_001) }),
     /Expression too large/
   );
+});
+
+test('validateBridgeRequest rejects malformed request input', () => {
+  const cases = [
+    {
+      name: 'missing id',
+      request: { method: 'health.ping' },
+      message: /Request id must be a non-empty string\./,
+    },
+    {
+      name: 'blank id',
+      request: { id: '   ', method: 'health.ping' },
+      message: /Request id must be a non-empty string\./,
+    },
+    {
+      name: 'non-string method',
+      request: { id: 'req_1', method: 42 },
+      message: /Unsupported method: 42/,
+    },
+    {
+      name: 'non-object meta',
+      request: { id: 'req_3', method: 'health.ping', meta: 'cli' },
+      message: /Request meta must be an object\./,
+    },
+  ];
+
+  for (const testCase of cases) {
+    assert.throws(
+      () => validateBridgeRequest(testCase.request),
+      (error) => {
+        assert.equal(error instanceof Error, true);
+        const bridgeError = /** @type {Error & { code?: string }} */ (error);
+        assert.equal(bridgeError.code, ERROR_CODES.INVALID_REQUEST);
+        assert.match(bridgeError.message, testCase.message);
+        return true;
+      },
+      testCase.name
+    );
+  }
+});
+
+test('validateBridgeRequest rejects unknown method and names it in the error', () => {
+  assert.throws(
+    () => validateBridgeRequest({ id: 'req_2', method: 'unknown.method' }),
+    (error) => {
+      assert.equal(error instanceof Error, true);
+      const bridgeError = /** @type {Error & { code?: string }} */ (error);
+      assert.equal(bridgeError.code, ERROR_CODES.INVALID_REQUEST);
+      assert.equal(bridgeError.message, 'Unsupported method: unknown.method');
+      return true;
+    }
+  );
+});
+
+test('validateBridgeRequest bubbles method param normalization errors unchanged', () => {
+  assert.throws(
+    () =>
+      validateBridgeRequest({
+        id: 'req_4',
+        method: 'tabs.close',
+        params: { tabId: 0 },
+      }),
+    (error) => {
+      assert.equal(error instanceof Error, true);
+      const bridgeError = /** @type {Error & { code?: string }} */ (error);
+      assert.equal(bridgeError.code, ERROR_CODES.INVALID_REQUEST);
+      assert.equal(bridgeError.message, 'tabId is required for tabs.close.');
+      return true;
+    }
+  );
+});
+
+test('validateBridgeRequest rejects invalid cdp.dispatch_key_event params', () => {
+  const testCases = [
+    {
+      request: {
+        id: 'req_cdp_1',
+        method: 'cdp.dispatch_key_event',
+        params: { key: '' },
+      },
+      message: 'key must be a non-empty string.',
+    },
+    {
+      request: {
+        id: 'req_cdp_2',
+        method: 'cdp.dispatch_key_event',
+        params: { key: 'Escape', modifiers: ['Shift', 'Ctrl'] },
+      },
+      message: 'modifiers must contain only Alt, Control, Meta, or Shift.',
+    },
+    {
+      request: {
+        id: 'req_cdp_3',
+        method: 'cdp.dispatch_key_event',
+        params: { key: 'Escape', modifiers: 99 },
+      },
+      message: 'modifiers must be an array of Alt, Control, Meta, Shift or a bitmask 0-15.',
+    },
+  ];
+
+  for (const testCase of testCases) {
+    assert.throws(
+      () => validateBridgeRequest(testCase.request),
+      (error) => {
+        assert.equal(error instanceof Error, true);
+        const bridgeError = /** @type {Error & { code?: string }} */ (error);
+        assert.equal(bridgeError.code, ERROR_CODES.INVALID_REQUEST);
+        assert.equal(bridgeError.message, testCase.message);
+        return true;
+      }
+    );
+  }
 });

@@ -1,12 +1,40 @@
 #!/usr/bin/env node
 // @ts-check
 import { BridgeDaemon } from '../src/daemon.js';
-import { getSocketPath } from '../src/config.js';
+import {
+  applyWindowsTcpTransportDefaults,
+  formatBridgeTransport,
+  getBridgeTransport,
+} from '../src/config.js';
+import { clearDaemonPidFile, writeDaemonPidFile } from '../src/daemon-process.js';
 
-const daemon = new BridgeDaemon({ socketPath: getSocketPath() });
-await daemon.start();
+applyWindowsTcpTransportDefaults();
+const transport = getBridgeTransport();
+const daemon = new BridgeDaemon({ transport });
 
-process.stdout.write(`Browser Bridge daemon listening on ${getSocketPath()}\n`);
+/**
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+function isExistingDaemonError(error) {
+  return (
+    error instanceof Error && error.message.startsWith('Another daemon is already running on ')
+  );
+}
+
+try {
+  await daemon.start();
+  await writeDaemonPidFile(process.pid);
+} catch (error) {
+  if (isExistingDaemonError(error)) {
+    process.stdout.write(`${error.message}\n`);
+    process.exit(0);
+  }
+  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  process.exit(1);
+}
+
+process.stdout.write(`Browser Bridge daemon listening on ${formatBridgeTransport(transport)}\n`);
 
 let shuttingDown = false;
 
@@ -21,6 +49,7 @@ async function shutdown() {
   shuttingDown = true;
   try {
     await daemon.stop();
+    await clearDaemonPidFile({ pid: process.pid });
     process.exit(0);
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);

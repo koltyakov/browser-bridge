@@ -1,16 +1,13 @@
 // @ts-check
 
-import { spawn } from 'node:child_process';
 import net from 'node:net';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { createFailure, ERROR_CODES } from '../../protocol/src/index.js';
-import { getSocketPath } from './config.js';
+import { createSocketBridgeTransport, getBridgeTransport } from './config.js';
+import { spawnBridgeDaemonProcess } from './daemon-process.js';
 import { createNativeMessageReader, writeJsonLine, writeNativeMessage } from './framing.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const daemonEntryPath = path.resolve(__dirname, '../bin/bridge-daemon.js');
+/** @typedef {import('./config.js').BridgeTransport} BridgeTransport */
 
 /**
  * @typedef {{
@@ -112,13 +109,17 @@ function isHostActivity(message) {
 }
 
 /**
- * @param {{ socketPath?: string }} [options={}]
+ * @param {{ transport?: BridgeTransport, socketPath?: string }} [options={}]
  * @returns {Promise<void>}
  */
-export async function runNativeHost({ socketPath = getSocketPath() } = {}) {
+export async function runNativeHost({
+  transport = getBridgeTransport(),
+  socketPath = undefined,
+} = {}) {
+  const resolvedTransport = socketPath ? createSocketBridgeTransport(socketPath) : transport;
   let socket;
   try {
-    socket = await connectWithBootstrap(socketPath);
+    socket = await connectWithBootstrap(resolvedTransport);
   } catch (error) {
     await writeNativeMessage(process.stdout, {
       type: 'agent.response',
@@ -133,6 +134,16 @@ export async function runNativeHost({ socketPath = getSocketPath() } = {}) {
 
   socket.setEncoding('utf8');
   bindBridgeSocketLifecycle(socket);
+  const handleStdinEnd = () => {
+    socket.destroy();
+  };
+  process.stdin.once('end', handleStdinEnd);
+  const cleanupStdinEndListener = () => {
+    process.stdin.removeListener('end', handleStdinEnd);
+  };
+  socket.once('close', cleanupStdinEndListener);
+  socket.once('end', cleanupStdinEndListener);
+  socket.once('error', cleanupStdinEndListener);
   await writeJsonLine(socket, { type: 'register', role: 'extension' });
 
   let lineBuffer = '';
@@ -186,55 +197,61 @@ export async function runNativeHost({ socketPath = getSocketPath() } = {}) {
     }
   });
 
-  createNativeMessageReader(process.stdin, (message) => {
-    void (async () => {
-      if (isHostBridgeRequest(message)) {
+  createNativeMessageReader(
+    process.stdin,
+    (message) => {
+      void (async () => {
+        if (isHostBridgeRequest(message)) {
+          await writeJsonLine(socket, {
+            type: 'agent.request',
+            request: message.request,
+          });
+          return;
+        }
+        if (isHostStatusRequest(message)) {
+          await writeJsonLine(socket, {
+            type: 'extension.setup_status.request',
+            requestId: message.requestId,
+          });
+          return;
+        }
+        if (isHostIdentity(message)) {
+          await writeJsonLine(socket, {
+            type: 'extension.identity',
+            browserName: message.browserName,
+            profileLabel: message.profileLabel,
+          });
+          return;
+        }
+        if (isHostAccessUpdate(message)) {
+          await writeJsonLine(socket, {
+            type: 'extension.access_update',
+            accessEnabled: message.accessEnabled,
+          });
+          return;
+        }
+        if (isHostActivity(message)) {
+          await writeJsonLine(socket, {
+            type: 'extension.activity',
+            at: message.at,
+          });
+          return;
+        }
         await writeJsonLine(socket, {
-          type: 'agent.request',
-          request: message.request,
+          type: 'extension.response',
+          response: message,
         });
-        return;
-      }
-      if (isHostStatusRequest(message)) {
-        await writeJsonLine(socket, {
-          type: 'extension.setup_status.request',
-          requestId: message.requestId,
-        });
-        return;
-      }
-      if (isHostIdentity(message)) {
-        await writeJsonLine(socket, {
-          type: 'extension.identity',
-          browserName: message.browserName,
-          profileLabel: message.profileLabel,
-        });
-        return;
-      }
-      if (isHostAccessUpdate(message)) {
-        await writeJsonLine(socket, {
-          type: 'extension.access_update',
-          accessEnabled: message.accessEnabled,
-        });
-        return;
-      }
-      if (isHostActivity(message)) {
-        await writeJsonLine(socket, {
-          type: 'extension.activity',
-          at: message.at,
-        });
-        return;
-      }
-      await writeJsonLine(socket, {
-        type: 'extension.response',
-        response: message,
+      })().catch((err) => {
+        console.error(
+          'native-host: stdin message handler failed:',
+          err instanceof Error ? err.message : err
+        );
       });
-    })().catch((err) => {
-      console.error(
-        'native-host: stdin message handler failed:',
-        err instanceof Error ? err.message : err
-      );
-    });
-  });
+    },
+    () => {
+      socket.destroy();
+    }
+  );
 }
 
 /**
@@ -270,28 +287,49 @@ export function bindBridgeSocketLifecycle(
 }
 
 /**
- * @param {string} socketPath
+ * @typedef {{
+ *   connectSocketFn?: (transport: BridgeTransport) => Promise<net.Socket>,
+ *   shouldBootstrapFn?: (error: unknown) => boolean,
+ *   spawnBridgeDaemonFn?: () => void,
+ *   delayFn?: (ms: number) => Promise<void>,
+ *   maxAttempts?: number,
+ * }} ConnectWithBootstrapOptions
+ */
+
+/**
+ * @param {BridgeTransport | string} transport
+ * @param {ConnectWithBootstrapOptions} [options]
  * @returns {Promise<net.Socket>}
  */
-async function connectWithBootstrap(socketPath) {
+export async function connectWithBootstrap(transport, options = {}) {
+  const {
+    connectSocketFn = connectSocket,
+    shouldBootstrapFn = shouldBootstrap,
+    spawnBridgeDaemonFn = spawnBridgeDaemon,
+    delayFn = delay,
+    maxAttempts = 10,
+  } = options;
+  const resolvedTransport =
+    typeof transport === 'string' ? createSocketBridgeTransport(transport) : transport;
+
   try {
-    return await connectSocket(socketPath);
+    return await connectSocketFn(resolvedTransport);
   } catch (error) {
-    if (!shouldBootstrap(error)) {
+    if (!shouldBootstrapFn(error)) {
       throw error;
     }
   }
 
-  spawnBridgeDaemon();
+  spawnBridgeDaemonFn();
 
   let lastError = null;
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    await delay(200);
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    await delayFn(200);
     try {
-      return await connectSocket(socketPath);
+      return await connectSocketFn(resolvedTransport);
     } catch (error) {
       lastError = error;
-      if (!shouldBootstrap(error)) {
+      if (!shouldBootstrapFn(error)) {
         throw error;
       }
     }
@@ -301,12 +339,15 @@ async function connectWithBootstrap(socketPath) {
 }
 
 /**
- * @param {string} socketPath
+ * @param {BridgeTransport} transport
  * @returns {Promise<net.Socket>}
  */
-function connectSocket(socketPath) {
+function connectSocket(transport) {
   return new Promise((resolve, reject) => {
-    const socket = net.createConnection(socketPath);
+    const socket =
+      transport.type === 'tcp'
+        ? net.createConnection({ host: transport.host, port: transport.port })
+        : net.createConnection(transport.socketPath);
     /**
      * @param {Error} error
      * @returns {void}
@@ -328,18 +369,14 @@ function connectSocket(socketPath) {
  * @returns {void}
  */
 function spawnBridgeDaemon() {
-  const child = spawn(process.execPath, [daemonEntryPath], {
-    detached: true,
-    stdio: 'ignore',
-  });
-  child.unref();
+  spawnBridgeDaemonProcess();
 }
 
 /**
  * @param {unknown} error
  * @returns {boolean}
  */
-function shouldBootstrap(error) {
+export function shouldBootstrap(error) {
   return (
     error instanceof Error &&
     'code' in error &&

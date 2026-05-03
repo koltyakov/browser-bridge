@@ -1,63 +1,33 @@
 // @ts-check
 
 import {
+  createSetupInstallMessage,
   getActivitySourceTag,
-  getPromptExamplesMode,
-  shouldAutoExpandHostSetup,
+  getPromptExamplesRenderGroups,
+  getSidepanelAgentStatusView,
+  getSidepanelCurrentTabView,
+  getSidepanelNativeStatusView,
+  getMcpSetupCellState,
+  getSetupStatusView,
+  getSkillSetupCellState,
+  isSetupMatrixBetaKey,
+  normalizeSidepanelToggleError,
+  syncSetupStatusPolling as syncSetupStatusPollingState,
 } from '../src/sidepanel-helpers.js';
+import {
+  connectSidepanelPort as connectSidepanelRuntimePort,
+  createSidepanelMessageHandler,
+  readRequestedTabId,
+  renderSidepanelState,
+} from '../src/sidepanel-runtime.js';
 
-/**
- * @typedef {{
- *   key: string,
- *   label: string,
- *   detected: boolean,
- *   configPath: string,
- *   configExists: boolean,
- *   configured: boolean
- * }} McpClientStatus
- */
-
-/**
- * @typedef {{
- *   name: string,
- *   path: string,
- *   exists: boolean,
- *   managed: boolean,
- *   version: string | null
- * }} SkillInstallationStatus
- */
-
-/**
- * @typedef {{
- *   key: string,
- *   label: string,
- *   detected: boolean,
- *   basePath: string,
- *   installed: boolean,
- *   managed: boolean,
- *   installedVersion: string | null,
- *   currentVersion: string | null,
- *   updateAvailable: boolean,
- *   skills: SkillInstallationStatus[]
- * }} SkillTargetStatus
- */
-
-/**
- * @typedef {{
- *   scope: 'global' | 'local',
- *   mcpClients: McpClientStatus[],
- *   skillTargets: SkillTargetStatus[]
- * }} SetupStatus
- */
-
-/**
- * @typedef {{
- *   key: string,
- *   label: string,
- *   mcpClient: McpClientStatus | null,
- *   skillTarget: SkillTargetStatus | null
- * }} SetupMatrixRow
- */
+/** @typedef {import('../../protocol/src/types.js').McpClientStatus} McpClientStatus */
+/** @typedef {import('../../protocol/src/types.js').SkillInstallationStatus} SkillInstallationStatus */
+/** @typedef {import('../../protocol/src/types.js').SkillTargetStatus} SkillTargetStatus */
+/** @typedef {import('../../protocol/src/types.js').SetupStatus} SetupStatus */
+/** @typedef {import('../src/sidepanel-helpers.js').SetupContextAction} SetupContextAction */
+/** @typedef {import('../src/sidepanel-helpers.js').SetupMatrixCellState} SetupMatrixCellState */
+/** @typedef {import('../src/sidepanel-helpers.js').SetupMatrixRow} SetupMatrixRow */
 
 /**
  * @typedef {{
@@ -124,33 +94,8 @@ import {
  * }} SidePanelMessage
  */
 
-/**
- * @typedef {{
- *   kind: 'mcp' | 'skill',
- *   target: string,
- *   copyLabel: string,
- *   copyText: string,
- *   reinstallLabel?: string,
- *   uninstallLabel?: string
- * }} SetupContextAction
- */
-
 const PUBLISHED_EXTENSION_ID = 'jjjkmmcdkpcgamlopogicbnnhdgebhie';
 const SETUP_STATUS_POLL_MS = 15_000;
-const SETUP_MATRIX_ORDER = /** @type {const} */ ([
-  'codex',
-  'claude',
-  'cursor',
-  'copilot',
-  'opencode',
-  'antigravity',
-  'windsurf',
-  'agents',
-]);
-/** @type {Map<string, number>} */
-const SETUP_MATRIX_RANK = new Map(SETUP_MATRIX_ORDER.map((key, index) => [key, index]));
-const SETUP_MATRIX_BETA_KEYS = new Set(['antigravity', 'windsurf', 'agents']);
-
 const nativeIndicator =
   /** @type {HTMLSpanElement} */ (document.getElementById('native-indicator'));
 const toggleButton = /** @type {HTMLButtonElement} */ (document.getElementById('bridge-toggle'));
@@ -288,47 +233,34 @@ function copySetupText(target, text) {
     });
 }
 
-/** @param {SidePanelMessage} message */
-function handlePortMessage(message) {
-  if (message.type === 'native.status') {
-    renderNativeStatus(message.connected, message.error);
-  }
-
-  if (message.type === 'state.sync') {
-    renderState(message.state);
-  }
-
-  if (message.type === 'toggle.error') {
-    renderToggleError(message.error);
-  }
-}
-
 /** @type {chrome.runtime.Port} */
 let port;
 
-/**
- * @returns {number | null}
- */
-function readRequestedTabId() {
-  const value = new URLSearchParams(window.location.search).get('tabId');
-  const tabId = Number(value);
-  return Number.isFinite(tabId) && tabId > 0 ? tabId : null;
-}
+const handleSidepanelMessage = createSidepanelMessageHandler({
+  renderNativeStatus,
+  renderState,
+  renderToggleError,
+});
 
 /** @type {number | null} */
-const requestedTabId = readRequestedTabId();
+const requestedTabId = readRequestedTabId(window.location.search);
 
 /**
  * @returns {Promise<void>}
  */
 async function connectSidepanelPort() {
-  const nextPort = chrome.runtime.connect({ name: 'ui-sidepanel' });
-  nextPort.onMessage.addListener(handlePortMessage);
-  nextPort.onDisconnect.addListener(() => {
-    setTimeout(connectSidepanelPort, 500);
-  });
-  nextPort.postMessage({ type: 'state.request' });
-  port = nextPort;
+  port = /** @type {chrome.runtime.Port} */ (
+    connectSidepanelRuntimePort({
+      connect: (connectInfo) => chrome.runtime.connect(connectInfo),
+      onMessage: handleSidepanelMessage,
+      scheduleReconnect: (callback, delayMs) => {
+        setTimeout(callback, delayMs);
+      },
+      onReconnect: () => {
+        void connectSidepanelPort();
+      },
+    })
+  );
 }
 
 void connectSidepanelPort();
@@ -428,37 +360,30 @@ window.addEventListener('beforeunload', () => {
  * @returns {void}
  */
 function renderState(state) {
-  hideSetupContextMenu();
-  renderNativeStatus(state.nativeConnected);
-  renderCurrentTab(state.currentTab);
-  renderAgentStatus(state);
-  renderPromptExamples(state.setupStatus);
-  renderSetupStatus(
-    state.setupStatus,
-    state.setupStatusPending,
-    state.setupStatusError,
-    state.setupInstallPendingKey,
-    state.setupInstallError
-  );
-
-  actionLog.replaceChildren(
-    ...state.actionLog.map((entry, index, entries) =>
-      renderActionLogEntry(entry, state.setupStatus, entries, index)
-    )
-  );
-  currentActionLog = state.actionLog;
-  updateActivityVisualizations();
-
-  if (!state.actionLog.length) {
-    actionLog.textContent = 'No recent agent actions.';
-  }
-
-  // Auto-collapse examples when there is activity
-  if (state.actionLog.length) {
-    examplesSection.removeAttribute('open');
-  }
-  syncConnectedSectionsVisibility();
-  syncSetupStatusPolling();
+  renderSidepanelState(state, {
+    hideSetupContextMenu,
+    renderNativeStatus,
+    renderCurrentTab,
+    renderAgentStatus,
+    renderPromptExamples,
+    renderSetupStatus,
+    renderActionLogEntry,
+    replaceActionLogChildren(children) {
+      actionLog.replaceChildren(...children);
+    },
+    setCurrentActionLog(entries) {
+      currentActionLog = entries;
+    },
+    updateActivityVisualizations,
+    showEmptyActionLog() {
+      actionLog.textContent = 'No recent agent actions.';
+    },
+    collapseExamples() {
+      examplesSection.removeAttribute('open');
+    },
+    syncConnectedSectionsVisibility,
+    syncSetupStatusPolling,
+  });
 }
 
 /**
@@ -489,29 +414,13 @@ function renderCurrentTab(currentTab) {
     toggleErrorTimer = null;
   }
 
-  if (!currentTab) {
-    toggleButton.textContent = 'Window Access Unavailable';
-    toggleButton.disabled = true;
-    toggleButton.dataset.enabled = 'false';
-    controlSection.classList.remove('attention');
-    return;
-  }
-
-  if (currentTab.restricted && currentTab.enabled) {
-    toggleButton.textContent = 'Disable Window Access';
-    toggleButton.disabled = false;
-    toggleButton.dataset.enabled = String(currentTab.enabled);
-    toggleErrorEl.textContent =
-      'This page cannot be interacted with. Switch to a normal web page to inspect and interact.';
-    toggleErrorEl.hidden = false;
-    controlSection.classList.remove('attention');
-    return;
-  }
-
-  toggleButton.textContent = currentTab.enabled ? 'Disable Window Access' : 'Enable Window Access';
-  toggleButton.disabled = !currentTab.url;
-  toggleButton.dataset.enabled = String(currentTab.enabled);
-  controlSection.classList.toggle('attention', currentTab.accessRequested && !currentTab.enabled);
+  const view = getSidepanelCurrentTabView(currentTab);
+  toggleButton.textContent = view.buttonLabel;
+  toggleButton.disabled = view.buttonDisabled;
+  toggleButton.dataset.enabled = String(view.buttonEnabled);
+  toggleErrorEl.textContent = view.errorMessage ?? '';
+  toggleErrorEl.hidden = view.errorMessage == null;
+  controlSection.classList.toggle('attention', view.attention);
 }
 
 /**
@@ -532,7 +441,7 @@ function renderToggleError(errorMessage) {
       : 'Enable Window Access';
   }
 
-  const friendly = errorMessage.replace(/^CONTENT_SCRIPT_UNAVAILABLE:\s*/i, '');
+  const friendly = normalizeSidepanelToggleError(errorMessage);
   toggleErrorEl.textContent = friendly;
   toggleErrorEl.hidden = false;
 
@@ -550,43 +459,10 @@ function renderToggleError(errorMessage) {
  * @returns {void}
  */
 function renderAgentStatus(state) {
-  const currentTab = state.currentTab;
-
-  if (!currentTab) {
-    agentStatus.textContent = 'Window access unavailable';
-    agentStatusDetail.textContent =
-      'Open a normal web page in this Chrome window to enable Browser Bridge.';
-    agentDisclosure.hidden = false;
-    return;
-  }
-
-  agentDisclosure.hidden = currentTab.enabled;
-
-  if (currentTab.enabled && currentTab.restricted) {
-    agentStatus.textContent = 'Window access enabled';
-    agentStatusDetail.textContent =
-      'This page cannot be interacted with. Switch to a normal web page to use Browser Bridge.';
-    agentDisclosure.hidden = false;
-    return;
-  }
-
-  if (currentTab.enabled) {
-    agentStatus.textContent = 'Window access enabled';
-    agentStatusDetail.textContent =
-      'Browser Bridge is enabled for this Chrome window. Requests default to the active tab, or can target another tab in this window explicitly.';
-    return;
-  }
-
-  if (currentTab.accessRequested) {
-    agentStatus.textContent = 'Window access requested';
-    agentStatusDetail.textContent =
-      'An agent requested access for this Chrome window. Enable it to allow page inspection and interaction.';
-    return;
-  }
-
-  agentStatus.textContent = 'Window access';
-  agentStatusDetail.textContent =
-    'Enable Browser Bridge to let your connected agent inspect and interact with pages in this Chrome window.';
+  const view = getSidepanelAgentStatusView(state.currentTab);
+  agentStatus.textContent = view.title;
+  agentStatusDetail.textContent = view.detail;
+  agentDisclosure.hidden = view.disclosureHidden;
 }
 
 /**
@@ -595,20 +471,24 @@ function renderAgentStatus(state) {
  * @returns {void}
  */
 function renderNativeStatus(connected, error) {
-  const label = connected ? 'Native host connected' : error || 'Native host disconnected';
+  const view = getSidepanelNativeStatusView({
+    connected,
+    error,
+    runtimeId: chrome.runtime.id,
+    publishedExtensionId: PUBLISHED_EXTENSION_ID,
+    fallbackInstallCommand: setupInstallCmd.textContent || 'bbx install',
+  });
   nativeIndicator.dataset.connected = String(connected);
-  nativeIndicator.title = label;
-  nativeIndicator.setAttribute('aria-label', label);
+  nativeIndicator.title = view.label;
+  nativeIndicator.setAttribute('aria-label', view.label);
 
-  setupSection.hidden = connected;
+  setupSection.hidden = view.hidden;
   controlSection.hidden = !connected;
   installationSection.hidden = !connected;
   if (!connected) {
-    const extId = chrome.runtime.id;
-    setupInstallCmd.textContent =
-      extId === PUBLISHED_EXTENSION_ID ? 'bbx install' : `bbx install ${extId}`;
-    setupSkillCmd.textContent = 'bbx install-skill';
-    setupMcpCmd.textContent = 'bbx install-mcp';
+    setupInstallCmd.textContent = view.installCommand;
+    setupSkillCmd.textContent = view.skillCommand;
+    setupMcpCmd.textContent = view.mcpCommand;
     hideSetupContextMenu();
   }
   syncConnectedSectionsVisibility();
@@ -622,9 +502,7 @@ function renderNativeStatus(connected, error) {
   } else if (!nativeDiagnosticTimer) {
     nativeDiagnosticTimer = setTimeout(() => {
       nativeDiagnosticTimer = null;
-      showSidepanelDiagnostic(
-        `Native host unreachable for 10s. Run: npm install -g @browserbridge/bbx && ${setupInstallCmd.textContent || 'bbx install'}`
-      );
+      showSidepanelDiagnostic(view.diagnosticMessage);
     }, NATIVE_DIAGNOSTIC_DELAY_MS);
   }
 }
@@ -671,27 +549,14 @@ function syncConnectedSectionsVisibility() {
  * @returns {void}
  */
 function syncSetupStatusPolling() {
-  const shouldPoll =
-    nativeIndicator.dataset.connected === 'true' &&
-    !installationSection.hidden &&
-    installationSection.open;
-
-  if (!shouldPoll) {
-    stopSetupStatusPolling();
-    return;
-  }
-
-  if (setupStatusPollTimer) {
-    return;
-  }
-
-  // Only kick off an immediate refresh when polling starts. Doing this on every
-  // render causes a state.sync -> refresh -> state.sync loop that can peg the
-  // extension renderer while Host Setup is open.
-  requestSetupStatusRefresh();
-  setupStatusPollTimer = setInterval(() => {
-    requestSetupStatusRefresh();
-  }, SETUP_STATUS_POLL_MS);
+  setupStatusPollTimer = syncSetupStatusPollingState({
+    connected: nativeIndicator.dataset.connected === 'true',
+    installationHidden: Boolean(installationSection.hidden),
+    installationOpen: installationSection.open,
+    currentTimer: setupStatusPollTimer,
+    pollMs: SETUP_STATUS_POLL_MS,
+    refresh: requestSetupStatusRefresh,
+  });
 }
 
 /**
@@ -717,25 +582,23 @@ function requestSetupStatusRefresh() {
  * @returns {void}
  */
 function renderPromptExamples(setupStatus) {
-  const mode = getPromptExamplesMode(setupStatus);
-  if (mode === 'cli') {
-    examplesContent.replaceChildren(createExamplesList(CLI_PROMPT_EXAMPLES));
-    return;
-  }
-  if (mode === 'mcp') {
-    examplesContent.replaceChildren(createExamplesList(MCP_PROMPT_EXAMPLES));
-    return;
-  }
-
+  const groups = getPromptExamplesRenderGroups(
+    setupStatus,
+    CLI_PROMPT_EXAMPLES,
+    MCP_PROMPT_EXAMPLES
+  );
   examplesContent.replaceChildren(
-    createExamplesGroup('CLI skill', CLI_PROMPT_EXAMPLES),
-    createExamplesGroup('MCP', MCP_PROMPT_EXAMPLES)
+    ...groups.map((group) =>
+      group.title
+        ? createExamplesGroup(group.title, group.prompts)
+        : createExamplesList(group.prompts)
+    )
   );
 }
 
 /**
  * @param {string} title
- * @param {readonly string[]} prompts
+ * @param {import('../src/sidepanel-helpers.js').PromptExampleItem[]} prompts
  * @returns {HTMLElement}
  */
 function createExamplesGroup(title, prompts) {
@@ -751,7 +614,7 @@ function createExamplesGroup(title, prompts) {
 }
 
 /**
- * @param {readonly string[]} prompts
+ * @param {import('../src/sidepanel-helpers.js').PromptExampleItem[]} prompts
  * @returns {HTMLElement}
  */
 function createExamplesList(prompts) {
@@ -764,17 +627,17 @@ function createExamplesList(prompts) {
 
     const text = document.createElement('code');
     text.className = 'example-cmd-text';
-    text.textContent = prompt;
+    text.textContent = prompt.copyPrompt;
 
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'example-copy-button';
-    button.setAttribute('aria-label', `Copy prompt: ${prompt}`);
+    button.setAttribute('aria-label', prompt.copyLabel);
     button.title = 'Copy prompt';
     button.textContent = '⧉';
     button.addEventListener('click', (event) => {
       event.stopPropagation();
-      copySetupText(row, prompt);
+      copySetupText(row, prompt.copyPrompt);
     });
 
     row.append(text, button);
@@ -810,143 +673,26 @@ function syncExclusiveDetailsSections(source, other) {
  * @returns {void}
  */
 function renderSetupStatus(setupStatus, pending, error, installPendingKey, installError) {
-  if (!setupStatus && pending) {
-    setupStatusSummaryNote.hidden = true;
-    setupStatusSummaryNote.textContent = '';
-    setupStatusNote.textContent = 'Checking global host setup…';
-    setupStatusNote.hidden = false;
-    setupStatusMatrix.replaceChildren(createStatusPlaceholder('Checking detected clients…'));
-    return;
-  }
+  const view = getSetupStatusView(setupStatus, pending, error, installError);
+  setupStatusSummaryNote.textContent = view.summaryNote;
+  setupStatusSummaryNote.hidden = view.summaryHidden;
+  setupStatusNote.textContent = view.note;
+  setupStatusNote.hidden = view.noteHidden;
 
-  if (!setupStatus) {
-    setupStatusSummaryNote.hidden = true;
-    setupStatusSummaryNote.textContent = '';
-    setupStatusNote.textContent = installError || error || 'Global host setup is unavailable.';
-    setupStatusNote.hidden = false;
-    setupStatusMatrix.replaceChildren(createStatusPlaceholder('No host setup status yet.'));
-    return;
-  }
-
-  const scopeNote =
-    setupStatus.scope === 'global' ? 'Global installs only' : 'Project installs only';
-  setupStatusSummaryNote.textContent = `* ${scopeNote}`;
-  setupStatusSummaryNote.hidden = false;
-
-  if (!hasAutoExpandedHostSetup) {
+  if (!hasAutoExpandedHostSetup && setupStatus) {
     hasAutoExpandedHostSetup = true;
-    const autoExpandHostSetup = shouldAutoExpandHostSetup(setupStatus);
-    installationSection.open = autoExpandHostSetup;
-    if (autoExpandHostSetup) {
+    installationSection.open = view.autoExpandHostSetup;
+    if (view.autoExpandHostSetup) {
       examplesSection.open = false;
     }
   }
 
-  const noteParts = [];
-  if (installError) {
-    noteParts.push(`Last install failed: ${installError}`);
-  } else if (error) {
-    noteParts.push(error);
-  }
-  setupStatusNote.textContent = noteParts.join(' ');
-  setupStatusNote.hidden = noteParts.length === 0;
-
-  const rows = buildSetupMatrixRows(setupStatus);
-  if (!rows.length) {
-    setupStatusMatrix.replaceChildren(
-      createStatusPlaceholder('No supported clients or agents were detected.')
-    );
+  if (view.placeholder) {
+    setupStatusMatrix.replaceChildren(createStatusPlaceholder(view.placeholder));
     return;
   }
-  setupStatusMatrix.replaceChildren(renderSetupMatrix(rows, installPendingKey));
-}
 
-/**
- * @param {SetupStatus} setupStatus
- * @returns {SetupMatrixRow[]}
- */
-function buildSetupMatrixRows(setupStatus) {
-  /** @type {Map<string, SetupMatrixRow>} */
-  const rowsByKey = new Map();
-
-  for (const entry of setupStatus.mcpClients) {
-    if (!shouldRenderMcpClientRow(entry)) {
-      continue;
-    }
-    if (!rowsByKey.has(entry.key)) {
-      rowsByKey.set(entry.key, {
-        key: entry.key,
-        label: entry.label,
-        mcpClient: entry,
-        skillTarget: null,
-      });
-    } else {
-      const row = rowsByKey.get(entry.key);
-      if (row) {
-        row.mcpClient = entry;
-      }
-    }
-  }
-
-  for (const entry of setupStatus.skillTargets) {
-    if (!shouldRenderSkillTargetRow(entry)) {
-      continue;
-    }
-    if (!rowsByKey.has(entry.key)) {
-      rowsByKey.set(entry.key, {
-        key: entry.key,
-        label: entry.label,
-        mcpClient: null,
-        skillTarget: entry,
-      });
-    } else {
-      const row = rowsByKey.get(entry.key);
-      if (row) {
-        row.skillTarget = entry;
-      }
-    }
-  }
-
-  return [...rowsByKey.entries()]
-    .sort(([leftKey], [rightKey]) => compareSetupMatrixKeys(leftKey, rightKey))
-    .map(([, row]) => row);
-}
-
-/**
- * @param {string} leftKey
- * @param {string} rightKey
- * @returns {number}
- */
-function compareSetupMatrixKeys(leftKey, rightKey) {
-  const leftRank = SETUP_MATRIX_RANK.get(leftKey);
-  const rightRank = SETUP_MATRIX_RANK.get(rightKey);
-
-  if (leftRank !== undefined && rightRank !== undefined) {
-    return leftRank - rightRank;
-  }
-  if (leftRank !== undefined) {
-    return -1;
-  }
-  if (rightRank !== undefined) {
-    return 1;
-  }
-  return leftKey.localeCompare(rightKey);
-}
-
-/**
- * @param {McpClientStatus} entry
- * @returns {boolean}
- */
-function shouldRenderMcpClientRow(entry) {
-  return entry.detected || entry.configured || entry.key === 'agents';
-}
-
-/**
- * @param {SkillTargetStatus} entry
- * @returns {boolean}
- */
-function shouldRenderSkillTargetRow(entry) {
-  return entry.detected || entry.installed || entry.skills.some((skill) => skill.exists);
+  setupStatusMatrix.replaceChildren(renderSetupMatrix(view.rows, installPendingKey));
 }
 
 /**
@@ -997,7 +743,7 @@ function createSetupMatrixClientLabel(row) {
   const fragment = document.createDocumentFragment();
   fragment.append(row.label);
 
-  if (SETUP_MATRIX_BETA_KEYS.has(row.key)) {
+  if (isSetupMatrixBetaKey(row.key)) {
     const beta = document.createElement('span');
     beta.className = 'setup-matrix-beta';
     beta.textContent = ' (beta)';
@@ -1013,42 +759,7 @@ function createSetupMatrixClientLabel(row) {
  * @returns {HTMLElement}
  */
 function renderMcpMatrixCell(row, installPendingKey) {
-  const entry = row.mcpClient;
-  if (!entry) {
-    if (row.key === 'agents') {
-      const button = createSetupActionButton(
-        'mcp',
-        row.key,
-        installPendingKey === getInstallKey('mcp', row.key),
-        'install',
-        'Install',
-        '...'
-      );
-      button.title = 'Install Browser Bridge MCP for generic agents';
-      return button;
-    }
-    return createMatrixMutedValue('\u2014');
-  }
-  if (entry.configured) {
-    return createMatrixBadge('Installed', true, entry.configPath, {
-      kind: 'mcp',
-      target: row.key,
-      copyLabel: 'Copy MCP config path',
-      copyText: entry.configPath,
-      reinstallLabel: 'Re-install MCP',
-      uninstallLabel: 'Uninstall MCP',
-    });
-  }
-  const button = createSetupActionButton(
-    'mcp',
-    row.key,
-    installPendingKey === getInstallKey('mcp', row.key),
-    'install',
-    'Install',
-    '...'
-  );
-  button.title = entry.configPath;
-  return button;
+  return renderSetupMatrixCell(getMcpSetupCellState(row, installPendingKey));
 }
 
 /**
@@ -1057,62 +768,41 @@ function renderMcpMatrixCell(row, installPendingKey) {
  * @returns {HTMLElement}
  */
 function renderSkillMatrixCell(row, installPendingKey) {
-  const entry = row.skillTarget;
-  if (!entry) {
-    return createMatrixMutedValue('\u2014');
-  }
-  const reinstallLabel = getSkillReinstallLabel(entry);
-  const uninstallLabel = getSkillUninstallLabel(entry);
+  return renderSetupMatrixCell(getSkillSetupCellState(row, installPendingKey));
+}
 
-  const installable = entry.skills.every((skill) => !skill.exists || skill.managed);
-  if (!installable) {
-    return createMatrixBadge('Custom', false, entry.basePath, {
-      kind: 'skill',
-      target: row.key,
-      copyLabel: 'Copy CLI skill folder path',
-      copyText: entry.basePath,
-    });
+/**
+ * @param {SetupMatrixCellState} cellState
+ * @returns {HTMLElement}
+ */
+function renderSetupMatrixCell(cellState) {
+  if (cellState.kind === 'muted') {
+    return createMatrixMutedValue(cellState.text);
   }
-  if (entry.installed && entry.managed && !entry.updateAvailable) {
-    return createMatrixBadge('Installed', true, createSkillCellTitle(entry), {
-      kind: 'skill',
-      target: row.key,
-      copyLabel: 'Copy CLI skill folder path',
-      copyText: entry.basePath,
-      reinstallLabel,
-      uninstallLabel,
-    });
-  }
-  if (entry.installed && entry.managed && entry.updateAvailable) {
-    const button = createSetupActionButton(
-      'skill',
-      row.key,
-      installPendingKey === getInstallKey('skill', row.key),
-      'update',
-      'Update',
-      'Updating…'
+
+  if (cellState.kind === 'badge') {
+    return createMatrixBadge(
+      cellState.label,
+      cellState.ok,
+      cellState.title,
+      cellState.contextAction ?? null
     );
-    button.title = createSkillCellTitle(entry);
-    assignSetupContext(button, {
-      kind: 'skill',
-      target: row.key,
-      copyLabel: 'Copy CLI skill folder path',
-      copyText: entry.basePath,
-      reinstallLabel,
-      uninstallLabel,
-    });
-    return button;
   }
 
   const button = createSetupActionButton(
-    'skill',
-    row.key,
-    installPendingKey === getInstallKey('skill', row.key),
-    'install',
-    'Install',
-    '...'
+    cellState.setupKind,
+    cellState.target,
+    cellState.pending,
+    cellState.variant,
+    cellState.label,
+    cellState.pendingLabel
   );
-  button.title = entry.basePath;
+  if (cellState.title) {
+    button.title = cellState.title;
+  }
+  if (cellState.contextAction) {
+    assignSetupContext(button, cellState.contextAction);
+  }
   return button;
 }
 
@@ -1142,44 +832,9 @@ function createSetupActionButton(kind, target, pending, variant, label, pendingL
     hideSetupContextMenu();
     button.disabled = true;
     button.textContent = pendingLabel;
-    port.postMessage({
-      type: 'setup.install',
-      action: 'install',
-      kind,
-      target,
-    });
+    port.postMessage(createSetupInstallMessage(kind, target));
   });
   return button;
-}
-
-/**
- * @param {SkillTargetStatus} entry
- * @returns {string}
- */
-function createSkillCellTitle(entry) {
-  if (entry.installedVersion && entry.currentVersion) {
-    return `${entry.basePath}\nInstalled with bbx ${entry.installedVersion}\nCurrent bbx ${entry.currentVersion}`;
-  }
-  if (entry.currentVersion) {
-    return `${entry.basePath}\nCurrent bbx ${entry.currentVersion}`;
-  }
-  return entry.basePath;
-}
-
-/**
- * @param {SkillTargetStatus} _entry
- * @returns {string}
- */
-function getSkillUninstallLabel(_entry) {
-  return 'Uninstall CLI skill';
-}
-
-/**
- * @param {SkillTargetStatus} _entry
- * @returns {string}
- */
-function getSkillReinstallLabel(_entry) {
-  return 'Re-install CLI skill';
 }
 
 /**
@@ -1210,15 +865,6 @@ function createMatrixMutedValue(text) {
   value.className = 'setup-matrix-muted';
   value.textContent = text;
   return value;
-}
-
-/**
- * @param {'mcp' | 'skill'} kind
- * @param {string} target
- * @returns {string}
- */
-function getInstallKey(kind, target) {
-  return `${kind}:${target}`;
 }
 
 /**
@@ -1276,12 +922,7 @@ function showSetupContextMenu(clientX, clientY, contextAction) {
     reinstallButton.addEventListener(
       'click',
       () => {
-        port.postMessage({
-          type: 'setup.install',
-          action: 'install',
-          kind: contextAction.kind,
-          target: contextAction.target,
-        });
+        port.postMessage(createSetupInstallMessage(contextAction.kind, contextAction.target));
         hideSetupContextMenu();
       },
       { once: true }
@@ -1297,12 +938,9 @@ function showSetupContextMenu(clientX, clientY, contextAction) {
     uninstallButton.addEventListener(
       'click',
       () => {
-        port.postMessage({
-          type: 'setup.install',
-          action: 'uninstall',
-          kind: contextAction.kind,
-          target: contextAction.target,
-        });
+        port.postMessage(
+          createSetupInstallMessage(contextAction.kind, contextAction.target, 'uninstall')
+        );
         hideSetupContextMenu();
       },
       { once: true }

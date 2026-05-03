@@ -447,6 +447,9 @@ export const BRIDGE_METHODS = Object.freeze(
   /** @type {import('./types.js').BridgeMethod[]} */ (Object.keys(BRIDGE_METHOD_REGISTRY))
 );
 
+/** @type {ReadonlySet<import('./types.js').BridgeMethod>} */
+export const METHOD_SET = new Set(BRIDGE_METHODS);
+
 /**
  * @returns {Record<string, import('./types.js').BridgeMethod[]>}
  */

@@ -433,3 +433,93 @@ test('collectSetupStatus keeps managed core skill current when MCP is configured
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }
 });
+
+test('collectSetupStatus output shape stays stable across supported clients', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-setup-status-shape-'));
+
+  try {
+    const status = await collectSetupStatus({
+      global: false,
+      cwd: tempDir,
+      projectPath: tempDir,
+      mcpDetectors: createDetectors([]),
+      skillDetectors: createDetectors([]),
+    });
+
+    assert.deepEqual(Object.keys(status), ['scope', 'mcpClients', 'skillTargets']);
+    assert.equal(status.scope, 'local');
+    assert.deepEqual(
+      status.mcpClients.map((entry) => entry.key),
+      ['codex', 'claude', 'cursor', 'copilot', 'opencode', 'antigravity', 'windsurf', 'agents']
+    );
+    assert.deepEqual(
+      status.skillTargets.map((entry) => entry.key),
+      ['codex', 'claude', 'cursor', 'copilot', 'opencode', 'antigravity', 'windsurf', 'agents']
+    );
+
+    for (const entry of status.mcpClients) {
+      assert.deepEqual(Object.keys(entry), [
+        'key',
+        'label',
+        'detected',
+        'configPath',
+        'configExists',
+        'configured',
+      ]);
+    }
+
+    for (const entry of status.skillTargets) {
+      assert.deepEqual(Object.keys(entry), [
+        'key',
+        'label',
+        'detected',
+        'basePath',
+        'installed',
+        'managed',
+        'installedVersion',
+        'currentVersion',
+        'updateAvailable',
+        'skills',
+      ]);
+      for (const skill of entry.skills) {
+        assert.deepEqual(Object.keys(skill), ['name', 'path', 'exists', 'managed', 'version']);
+      }
+    }
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('collectSetupStatus aggregates a partial result when one detector group rejects', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-setup-status-partial-'));
+
+  try {
+    const status = await collectSetupStatus({
+      global: false,
+      cwd: tempDir,
+      projectPath: tempDir,
+      mcpDetectors: {
+        codex: async () => {
+          throw new Error('codex probe failed');
+        },
+      },
+      skillDetectors: {
+        cursor: () => true,
+      },
+    });
+
+    const codexMcp = status.mcpClients.find((entry) => entry.key === 'codex');
+    assert.ok(codexMcp);
+    assert.equal(codexMcp.detected, false);
+
+    const cursorSkills = status.skillTargets.find((entry) => entry.key === 'cursor');
+    assert.ok(cursorSkills);
+    assert.equal(cursorSkills.detected, true);
+
+    const agentsSkills = status.skillTargets.find((entry) => entry.key === 'agents');
+    assert.ok(agentsSkills);
+    assert.equal(agentsSkills.detected, true);
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});

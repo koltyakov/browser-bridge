@@ -10,7 +10,13 @@ import {
   PROTOCOL_VERSION,
   parseJsonLines,
 } from '../../protocol/src/index.js';
-import { getSocketPath } from '../../native-host/src/config.js';
+import {
+  createSocketBridgeTransport,
+  getBridgeTransport,
+  getSocketPath,
+} from '../../native-host/src/config.js';
+
+/** @typedef {import('../../native-host/src/config.js').BridgeTransport} BridgeTransport */
 
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
 /** @typedef {import('../../protocol/src/types.js').BridgeMeta} BridgeMeta */
@@ -43,6 +49,16 @@ import { getSocketPath } from '../../native-host/src/config.js';
  */
 
 /**
+ * @typedef {{
+ *   transport?: BridgeTransport,
+ *   socketPath?: string,
+ *   clientId?: string,
+ *   defaultTimeoutMs?: number,
+ *   autoReconnect?: boolean,
+ * }} BridgeClientOptions
+ */
+
+/**
  * @param {string} method
  * @param {number} timeoutMs
  * @returns {Error & { code: string }}
@@ -56,14 +72,20 @@ function createTimeoutError(method, timeoutMs) {
 }
 
 export class BridgeClient extends EventEmitter {
+  /**
+   * @param {BridgeClientOptions} [options={}]
+   */
   constructor({
-    socketPath = getSocketPath(),
+    transport = getBridgeTransport(),
+    socketPath = undefined,
     clientId = `agent_${randomUUID()}`,
     defaultTimeoutMs = DEFAULT_CLIENT_REQUEST_TIMEOUT_MS,
     autoReconnect = false,
   } = {}) {
     super();
-    this.socketPath = socketPath;
+    this.transport = socketPath ? createSocketBridgeTransport(socketPath) : transport;
+    this.socketPath =
+      this.transport.type === 'socket' ? this.transport.socketPath : getSocketPath();
     this.clientId = clientId;
     this.defaultTimeoutMs = defaultTimeoutMs;
     this.autoReconnect = autoReconnect;
@@ -83,7 +105,10 @@ export class BridgeClient extends EventEmitter {
     if (this.socket) {
       throw new Error('BridgeClient is already connected.');
     }
-    const socket = net.createConnection(this.socketPath);
+    const socket =
+      this.transport.type === 'tcp'
+        ? net.createConnection({ host: this.transport.host, port: this.transport.port })
+        : net.createConnection(this.transport.socketPath);
     this.socket = socket;
     try {
       await new Promise((resolve, reject) => {

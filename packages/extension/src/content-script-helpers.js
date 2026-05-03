@@ -266,16 +266,104 @@
     return parts.join(' | ');
   }
 
+  /**
+   * @template {object} TElement
+   * @param {{
+   *   elements: Iterable<TElement>,
+   *   waitState: 'visible' | 'hidden',
+   *   getRect: (element: TElement) => { width: number, height: number },
+   *   getVisibility: (element: TElement) => string
+   * }} options
+   * @returns {TElement | null}
+   */
+  function findElementForWaitState({ elements, waitState, getRect, getVisibility }) {
+    for (const element of elements) {
+      const rect = getRect(element);
+      const hasVisibleArea = rect.width > 0 && rect.height > 0;
+      if (waitState === 'visible') {
+        if (!hasVisibleArea) {
+          continue;
+        }
+
+        if (getVisibility(element) !== 'hidden') {
+          return element;
+        }
+        continue;
+      }
+
+      if (!hasVisibleArea) {
+        return element;
+      }
+
+      if (getVisibility(element) === 'hidden') {
+        return element;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * @template {object} TElement
+   * @template {string} TRef
+   * @param {{
+   *   registry: Map<TRef, TElement>,
+   *   reverseRegistry: WeakMap<TElement, TRef>,
+   *   iterator: IterableIterator<[TRef, TElement]> | null,
+   *   containsElement: (element: TElement) => boolean,
+   *   batchSize: number
+   * }} options
+   * @returns {{ iterator: IterableIterator<[TRef, TElement]> | null, pruned: boolean }}
+   */
+  function pruneElementRegistryEntries({
+    registry,
+    reverseRegistry,
+    iterator,
+    containsElement,
+    batchSize,
+  }) {
+    if (registry.size === 0) {
+      return { iterator: null, pruned: false };
+    }
+
+    let nextIterator = iterator;
+    if (!nextIterator) {
+      nextIterator = registry.entries();
+    }
+
+    let scanned = 0;
+    let pruned = false;
+    while (scanned < batchSize) {
+      const nextEntry = nextIterator.next();
+      if (nextEntry.done) {
+        nextIterator = null;
+        break;
+      }
+
+      const [ref, element] = nextEntry.value;
+      if (!containsElement(element)) {
+        registry.delete(ref);
+        reverseRegistry.delete(element);
+        pruned = true;
+      }
+      scanned += 1;
+    }
+
+    return { iterator: nextIterator, pruned };
+  }
+
   globalState.__BBX_CONTENT_HELPERS__ = Object.freeze({
     NON_TEXT_INPUT_TYPES,
     applyBudget,
     clamp,
     escapeTailwindSelector,
     extractElementText,
+    findElementForWaitState,
     getImplicitRole,
     getImplicitRoleSelector,
     getInputImplicitRole,
     normalizeList,
+    pruneElementRegistryEntries,
     toRect,
     truncateText,
   });

@@ -6,6 +6,7 @@ the agent integration:
 ```bash
 bbx status
 bbx doctor
+bbx restart
 bbx tabs
 bbx logs
 ```
@@ -13,6 +14,7 @@ bbx logs
 ## The extension is installed, but `bbx status` says it is disconnected
 
 - Run `bbx install` again.
+- Run `bbx restart` to force the local daemon to reload after updates.
 - Confirm the extension is enabled in Chrome.
 - If you are using a published store build that still needs an explicit ID, run `bbx install <extension-id>`.
 - Restart Chrome after reinstalling the native messaging manifest if the host was missing when Chrome launched.

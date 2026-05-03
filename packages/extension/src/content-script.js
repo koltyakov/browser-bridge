@@ -8,7 +8,16 @@
   if (contentScriptGlobal.__chromeCodexBridgeContentScriptLoaded) {
     return;
   }
-  contentScriptGlobal.__chromeCodexBridgeContentScriptLoaded = true;
+
+  const runtimeOnMessage =
+    typeof chrome !== 'undefined' &&
+    chrome?.runtime?.onMessage &&
+    typeof chrome.runtime.onMessage.addListener === 'function'
+      ? chrome.runtime.onMessage
+      : null;
+  if (!runtimeOnMessage) {
+    return;
+  }
 
   /**
    * @typedef {{
@@ -44,36 +53,55 @@
   const reverseRegistry = new WeakMap();
   const patchRegistry = new Map();
   const MAX_REGISTRY_SIZE = 5000;
+  const ELEMENT_REGISTRY_PRUNE_BATCH_SIZE = 100;
   const MAX_PATCH_REGISTRY_SIZE = 2000;
   let registryPruned = false;
+  /** @type {IterableIterator<[string, Element]> | null} */
+  let elementRegistryPruneIterator = null;
   const contentHelpers =
     /** @type {typeof globalThis & { __BBX_CONTENT_HELPERS__?: {
     NON_TEXT_INPUT_TYPES: Set<string>,
     applyBudget: (options?: Record<string, any>) => Budget,
     clamp: (value: number | string | null | undefined, minimum: number, maximum: number) => number,
-    escapeTailwindSelector: (selector: string) => string,
-    extractElementText: (element: Element) => string,
-    getImplicitRole: (element: Element) => string,
-    getImplicitRoleSelector: (role: string) => string,
-    toRect: (rect: DOMRect | DOMRectReadOnly) => { x: number, y: number, width: number, height: number },
-    truncateText: (value: string, budget: number) => { value: string, truncated: boolean, omitted: number }
-  } }} */ (globalThis).__BBX_CONTENT_HELPERS__;
+     escapeTailwindSelector: (selector: string) => string,
+     extractElementText: (element: Element) => string,
+     findElementForWaitState: (options: {
+       elements: Iterable<Element>,
+       waitState: 'visible' | 'hidden',
+       getRect: (element: Element) => { width: number, height: number },
+       getVisibility: (element: Element) => string
+     }) => Element | null,
+      getImplicitRole: (element: Element) => string,
+      getImplicitRoleSelector: (role: string) => string,
+      pruneElementRegistryEntries: (options: {
+       registry: Map<string, Element>,
+       reverseRegistry: WeakMap<Element, string>,
+       iterator: IterableIterator<[string, Element]> | null,
+       containsElement: (element: Element) => boolean,
+       batchSize: number
+     }) => { iterator: IterableIterator<[string, Element]> | null, pruned: boolean },
+     toRect: (rect: DOMRect | DOMRectReadOnly) => { x: number, y: number, width: number, height: number },
+     truncateText: (value: string, budget: number) => { value: string, truncated: boolean, omitted: number }
+   } }} */ (globalThis).__BBX_CONTENT_HELPERS__;
   if (!contentHelpers) {
     throw new Error('Browser Bridge content-script helpers must load before content-script.js.');
   }
+  contentScriptGlobal.__chromeCodexBridgeContentScriptLoaded = true;
   const {
     NON_TEXT_INPUT_TYPES,
     applyBudget,
     clamp,
     escapeTailwindSelector,
     extractElementText,
+    findElementForWaitState,
     getImplicitRole,
     getImplicitRoleSelector,
+    pruneElementRegistryEntries,
     toRect,
     truncateText,
   } = contentHelpers;
 
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  runtimeOnMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === 'bridge.ping') {
       sendResponse({ ok: true });
       return false;
@@ -1058,25 +1086,25 @@
         return { found: !exists, element: null };
       }
       const candidates = document.querySelectorAll(selector);
+      /** @type {Element[]} */
+      const matched = [];
       for (const el of candidates) {
         if (text !== null && !elementMatchesText(el, text)) {
           continue;
         }
-        if (waitState === 'visible') {
-          const r = el.getBoundingClientRect();
-          if (r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden') {
-            return { found: true, element: el };
-          }
-        } else if (waitState === 'hidden') {
-          const r = el.getBoundingClientRect();
-          if (r.width === 0 || r.height === 0 || getComputedStyle(el).visibility === 'hidden') {
-            return { found: true, element: el };
-          }
-        } else {
+        if (waitState !== 'visible' && waitState !== 'hidden') {
           return { found: true, element: el };
         }
+        matched.push(el);
       }
-      return { found: false, element: null };
+
+      const matchedElement = findElementForWaitState({
+        elements: matched,
+        waitState,
+        getRect: (element) => element.getBoundingClientRect(),
+        getVisibility: (element) => getComputedStyle(element).visibility,
+      });
+      return { found: matchedElement !== null, element: matchedElement };
     }
 
     const immediate = check();
@@ -1577,7 +1605,7 @@
     if (existing && elementRegistry.has(existing)) {
       return existing;
     }
-    // Prune stale entries when registry grows too large
+    // Prune a small batch of stale entries when the registry grows too large.
     if (elementRegistry.size >= MAX_REGISTRY_SIZE) {
       pruneElementRegistry();
     }
@@ -1588,17 +1616,23 @@
   }
 
   /**
-   * Remove entries for elements no longer in the document, keeping the
-   * registry bounded.
+   * Remove a small batch of entries for elements no longer in the document so
+   * pruning work is amortized across calls instead of scanning the full
+   * registry at once.
    *
    * @returns {void}
    */
   function pruneElementRegistry() {
-    for (const [ref, element] of elementRegistry.entries()) {
-      if (!document.contains(element)) {
-        elementRegistry.delete(ref);
-        registryPruned = true;
-      }
+    const result = pruneElementRegistryEntries({
+      registry: elementRegistry,
+      reverseRegistry,
+      iterator: elementRegistryPruneIterator,
+      containsElement: (element) => document.contains(element),
+      batchSize: ELEMENT_REGISTRY_PRUNE_BATCH_SIZE,
+    });
+    elementRegistryPruneIterator = result.iterator;
+    if (result.pruned) {
+      registryPruned = true;
     }
   }
 
@@ -1609,7 +1643,7 @@
    */
   function pruneRegistry(registry, maxSize) {
     if (registry.size < maxSize) return;
-    const excess = registry.size - maxSize;
+    const excess = registry.size - maxSize + 1;
     let count = 0;
     for (const key of registry.keys()) {
       if (count >= excess) break;

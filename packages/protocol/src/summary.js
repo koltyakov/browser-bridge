@@ -1,6 +1,6 @@
 // @ts-check
 
-import { estimateJsonPayloadCost, getCostClass } from './index.js';
+import { estimateSerializedPayloadCost, getCostClass, serializeJsonPayload } from './index.js';
 
 /** @typedef {import('./types.js').BridgeResponse} BridgeResponse */
 /** @typedef {import('./types.js').BridgeMethod} SummaryMethod */
@@ -99,15 +99,21 @@ const ACTION_SUMMARIES = {
  * @returns {AnnotatedBridgeSummary}
  */
 export function annotateBridgeSummary(summary, response) {
-  const transportBytes =
+  const metaTransportBytes =
     getNumericMetaField(response.meta, 'transport_bytes') ??
-    getNumericMetaField(response.meta, 'response_bytes') ??
-    estimateJsonPayloadCost(response.ok ? response.result : { error: response.error }).bytes;
-  const transportTokens =
+    getNumericMetaField(response.meta, 'response_bytes');
+  const metaTransportTokens =
     getNumericMetaField(response.meta, 'transport_approx_tokens') ??
-    getNumericMetaField(response.meta, 'approx_tokens') ??
-    estimateJsonPayloadCost(response.ok ? response.result : { error: response.error }).approxTokens;
-  const summaryCost = estimateJsonPayloadCost(summary);
+    getNumericMetaField(response.meta, 'approx_tokens');
+  const transportCost =
+    metaTransportBytes == null || metaTransportTokens == null
+      ? estimateSerializedPayloadCost(
+          serializeJsonPayload(response.ok ? response.result : { error: response.error })
+        )
+      : null;
+  const transportBytes = metaTransportBytes ?? transportCost?.bytes ?? 0;
+  const transportTokens = metaTransportTokens ?? transportCost?.approxTokens ?? 0;
+  const summaryCost = estimateSerializedPayloadCost(serializeJsonPayload(summary));
 
   return {
     ...summary,
@@ -659,13 +665,12 @@ export function summarizeBridgeResponse(response, method) {
  */
 export function summarizeBatchResponseItem({ method, tabId, response, durationMs }) {
   const summary = annotateBridgeSummary(summarizeBridgeResponse(response, method), response);
-  const cost = estimateJsonPayloadCost(response.ok ? response.result : { error: response.error });
   return {
     method,
     tabId,
     ...summary,
     durationMs,
-    approxTokens: cost.approxTokens,
+    approxTokens: summary.transportTokens,
     meta: response.meta,
     error: response.ok ? null : response.error,
     response: response.ok ? response.result : null,
@@ -755,6 +760,9 @@ function truncateUrl(url) {
 function summarizeErrorHint(code) {
   if (code === 'ELEMENT_STALE') {
     return 'Re-query the current page after navigation or DOM updates.';
+  }
+  if (code === 'RESULT_TRUNCATED') {
+    return 'Narrow the query or raise the relevant budget if more detail is required.';
   }
   return '';
 }

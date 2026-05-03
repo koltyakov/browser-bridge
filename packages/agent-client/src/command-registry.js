@@ -254,6 +254,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
       'bbx install-mcp [client|all] [--local]                             Write MCP config for codex|claude|cursor|copilot|opencode|antigravity|windsurf',
       'bbx status                                                         Check bridge connection',
       'bbx doctor                                                         Diagnose install, daemon, extension, and access readiness',
+      'bbx restart                                                        Restart the local Browser Bridge daemon',
       'bbx access-request                                                 Request Browser Bridge access for the focused window',
       'bbx logs                                                           Recent bridge logs',
       'bbx tabs                                                           List available tabs',

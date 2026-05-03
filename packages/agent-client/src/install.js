@@ -157,6 +157,8 @@ export function parseInstallAgentArgs(args, cwd = process.cwd()) {
 export async function installAgentFiles(options) {
   /** @type {string[]} */
   const created = [];
+  /** @type {Array<{ path: string, existedBefore: boolean }>} */
+  const attempted = [];
   /** @type {Set<string>} */
   const seenTargets = new Set();
 
@@ -168,12 +170,33 @@ export async function installAgentFiles(options) {
         continue;
       }
       seenTargets.add(skillTargetDir);
-      await installManagedSkill(skillName, target, skillTargetDir);
+      const existedBefore = await pathExists(skillTargetDir);
+      attempted.push({ path: skillTargetDir, existedBefore });
+      try {
+        await installManagedSkill(skillName, target, skillTargetDir);
+      } catch (error) {
+        await rollbackInstalledSkillDirs(attempted);
+        throw error;
+      }
       created.push(skillTargetDir);
     }
   }
 
   return created;
+}
+
+/**
+ * Remove any newly created managed skill directories after a failed install so a
+ * later retry starts cleanly. Pre-existing directories are left untouched.
+ *
+ * @param {Array<{ path: string, existedBefore: boolean }>} attempted
+ * @returns {Promise<void>}
+ */
+async function rollbackInstalledSkillDirs(attempted) {
+  const rollbackPaths = attempted
+    .filter((entry) => !entry.existedBefore)
+    .map((entry) => fs.promises.rm(entry.path, { recursive: true, force: true }));
+  await Promise.allSettled(rollbackPaths);
 }
 
 /**

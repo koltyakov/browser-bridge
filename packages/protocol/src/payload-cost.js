@@ -22,7 +22,9 @@ export function getUtf8ByteLength(value) {
   if (!value) {
     return 0;
   }
-  return textEncoder.encode(value).length;
+  return typeof Buffer !== 'undefined'
+    ? Buffer.byteLength(value, 'utf8')
+    : textEncoder.encode(value).length;
 }
 
 /**
@@ -45,14 +47,25 @@ export function estimateSerializedPayloadCost(serialized) {
 }
 
 /**
+ * Serialize a JSON payload for transport-oriented cost estimation.
+ *
+ * @param {unknown} value
+ * @returns {string}
+ */
+export function serializeJsonPayload(value) {
+  if (typeof value === 'undefined') {
+    return '';
+  }
+  return JSON.stringify(value) ?? '';
+}
+
+/**
  * Estimate cost for a JSON-serializable payload.
  *
  * @param {unknown} value
+ * @param {string} [serialized]
  * @returns {PayloadCost}
  */
-export function estimateJsonPayloadCost(value) {
-  if (typeof value === 'undefined') {
-    return estimateSerializedPayloadCost('');
-  }
-  return estimateSerializedPayloadCost(JSON.stringify(value) ?? '');
+export function estimateJsonPayloadCost(value, serialized = serializeJsonPayload(value)) {
+  return estimateSerializedPayloadCost(serialized);
 }

@@ -1,5 +1,20 @@
 // @ts-check
 
+import {
+  createPopupToggleMessage,
+  getPopupInstallCommand,
+  normalizePopupToggleError,
+  renderPopupButtonState,
+  renderPopupNativeIndicator,
+  renderPopupViewState,
+  shouldResetPendingToggleOnSync,
+} from '../src/popup-helpers.js';
+import {
+  connectPopupPort as connectPopupRuntimePort,
+  createPopupMessageHandler,
+  isWindowedPopup,
+} from '../src/popup-runtime.js';
+
 /**
  * @typedef {{
  *   tabId: number,
@@ -39,7 +54,7 @@ const accessDisclosure =
 const controlCard = /** @type {HTMLElement | null} */ (
   document.querySelector('.popup-control-card')
 );
-const windowedPopup = isWindowedPopup();
+const windowedPopup = isWindowedPopup(window.location.search);
 const toggleErrorEl = document.createElement('p');
 toggleErrorEl.className = 'toggle-error';
 toggleErrorEl.hidden = true;
@@ -55,63 +70,32 @@ let toggleErrorTimer = null;
 const TOGGLE_PENDING_TIMEOUT_MS = 10_000;
 const TOGGLE_ERROR_DISPLAY_MS = 6_000;
 
-/** @param {PopupMessage} message */
-function handlePopupMessage(message) {
-  if (message.type === 'state.sync') {
-    renderNativeStatus(message.state.nativeConnected);
-    renderPopupState(message.state.currentTab);
-    if (
-      pendingEnabledState != null &&
-      message.state.currentTab &&
-      message.state.currentTab.enabled === pendingEnabledState
-    ) {
-      resetPendingToggle();
-      if (windowedPopup) {
-        window.close();
-      }
-    }
-  }
-
-  if (message.type === 'toggle.error') {
-    renderToggleError(message.error);
-  }
-}
-
 /** @type {chrome.runtime.Port} */
 let port;
 
-/**
- * @returns {Promise<number | null>}
- */
-async function resolveInitialScopeTabId() {
-  const explicitScopeTabId = readScopedTabId();
-  if (explicitScopeTabId) {
-    return explicitScopeTabId;
-  }
-
-  try {
-    const [activeTab] = await chrome.tabs.query({
-      active: true,
-      currentWindow: true,
-    });
-    return typeof activeTab?.id === 'number' ? activeTab.id : null;
-  } catch {
-    return null;
-  }
-}
+const handlePopupMessage = createPopupMessageHandler({
+  renderNativeStatus,
+  renderPopupState,
+  shouldResetPendingToggleOnSync,
+  getPendingEnabledState: () => pendingEnabledState,
+  resetPendingToggle,
+  renderToggleError,
+  windowedPopup,
+  closeWindow: () => window.close(),
+});
 
 /**
  * @returns {Promise<void>}
  */
 async function connectPopupPort() {
-  popupScopeTabId = await resolveInitialScopeTabId();
-  const nextPort = chrome.runtime.connect({ name: 'ui-popup' });
-  nextPort.onMessage.addListener(handlePopupMessage);
-  nextPort.postMessage({
-    type: 'state.request',
-    ...(popupScopeTabId ? { scopeTabId: popupScopeTabId } : {}),
+  const connection = await connectPopupRuntimePort({
+    search: window.location.search,
+    queryTabs: (queryInfo) => chrome.tabs.query(queryInfo),
+    connect: (connectInfo) => chrome.runtime.connect(connectInfo),
+    onMessage: handlePopupMessage,
   });
-  port = nextPort;
+  popupScopeTabId = connection.popupScopeTabId;
+  port = /** @type {chrome.runtime.Port} */ (connection.port);
 }
 
 void connectPopupPort();
@@ -157,7 +141,13 @@ button.addEventListener('click', () => {
  */
 function renderPopupState(currentTab) {
   currentTabState = currentTab;
-  renderButtonState(currentTab);
+  renderPopupViewState(currentTab, {
+    accessEyebrow,
+    accessDetail,
+    accessDisclosure,
+    controlCard,
+    button,
+  });
 
   if (toggleErrorTimer) {
     clearTimeout(toggleErrorTimer);
@@ -166,36 +156,8 @@ function renderPopupState(currentTab) {
   toggleErrorEl.hidden = true;
 
   if (!currentTab) {
-    accessEyebrow.textContent = 'Window access unavailable';
-    accessDetail.textContent =
-      'Open a normal web page to manage Browser Bridge for this Chrome window.';
-    accessDisclosure.hidden = false;
-    controlCard?.classList.remove('attention');
     return;
   }
-
-  accessDisclosure.hidden = currentTab.enabled;
-
-  if (currentTab.enabled && currentTab.restricted) {
-    accessEyebrow.textContent = 'Window access enabled';
-    accessDetail.textContent =
-      'This page cannot be interacted with. Switch to a normal web page to use Browser Bridge.';
-    accessDisclosure.hidden = false;
-  } else if (currentTab.enabled) {
-    accessEyebrow.textContent = 'Window access enabled';
-    accessDetail.textContent =
-      'Your connected agent can inspect and interact with pages in this Chrome window.';
-  } else if (currentTab.accessRequested) {
-    accessEyebrow.textContent = 'Window access requested';
-    accessDetail.textContent =
-      'An agent requested access for this Chrome window. Enable it to allow page inspection and interaction.';
-  } else {
-    accessEyebrow.textContent = 'Window access';
-    accessDetail.textContent =
-      'Enable Browser Bridge to let your connected agent inspect and interact with pages in this Chrome window.';
-  }
-
-  controlCard?.classList.toggle('attention', currentTab.accessRequested && !currentTab.enabled);
   queueWindowResize();
 }
 
@@ -204,16 +166,7 @@ function renderPopupState(currentTab) {
  * @returns {void}
  */
 function renderButtonState(currentTab) {
-  button.dataset.pending = 'false';
-
-  if (!currentTab) {
-    button.textContent = 'Enable Window Access';
-    button.disabled = true;
-    return;
-  }
-
-  button.textContent = currentTab.enabled ? 'Disable Window Access' : 'Enable Window Access';
-  button.disabled = !currentTab.url;
+  renderPopupButtonState(currentTab, button);
 }
 
 /**
@@ -235,7 +188,7 @@ function resetPendingToggle() {
 function renderToggleError(errorMessage) {
   resetPendingToggle();
   renderButtonState(currentTabState);
-  const friendly = errorMessage.replace(/^CONTENT_SCRIPT_UNAVAILABLE:\s*/i, '');
+  const friendly = normalizePopupToggleError(errorMessage);
   toggleErrorEl.textContent = friendly;
   toggleErrorEl.hidden = false;
 
@@ -253,11 +206,7 @@ function renderToggleError(errorMessage) {
  * @returns {void}
  */
 function renderNativeStatus(connected) {
-  if (!nativeIndicator) return;
-  const label = connected ? 'Native host connected' : 'Native host disconnected';
-  nativeIndicator.dataset.connected = String(connected);
-  nativeIndicator.title = label;
-  nativeIndicator.setAttribute('aria-label', label);
+  renderPopupNativeIndicator(nativeIndicator, connected);
 
   if (connected) {
     if (nativeDiagnosticTimer) {
@@ -307,37 +256,14 @@ function hideDiagnostic() {
  * @returns {void}
  */
 function setCommunicationEnabled(enabled) {
-  const scopedTabId = currentTabState?.tabId ?? popupScopeTabId;
-  port.postMessage({
-    type: 'scope.set_enabled',
-    enabled,
-    ...(scopedTabId ? { tabId: scopedTabId } : {}),
-  });
-}
-
-/**
- * @returns {number | null}
- */
-function readScopedTabId() {
-  const value = new URLSearchParams(window.location.search).get('tabId');
-  const tabId = Number(value);
-  return Number.isFinite(tabId) && tabId > 0 ? tabId : null;
-}
-
-/**
- * @returns {boolean}
- */
-function isWindowedPopup() {
-  return new URLSearchParams(window.location.search).get('windowed') === '1';
+  port.postMessage(createPopupToggleMessage(enabled, currentTabState, popupScopeTabId));
 }
 
 /**
  * @returns {string}
  */
 function getInstallCommand() {
-  return chrome.runtime.id === PUBLISHED_EXTENSION_ID
-    ? 'bbx install'
-    : `bbx install ${chrome.runtime.id}`;
+  return getPopupInstallCommand(chrome.runtime.id, PUBLISHED_EXTENSION_ID);
 }
 
 /**

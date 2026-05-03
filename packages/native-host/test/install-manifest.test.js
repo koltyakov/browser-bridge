@@ -5,16 +5,32 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import {
   DEFAULT_EXTENSION_ID_ENV,
+  getWindowsRegistryKey,
   getAllowedOrigins,
   getDefaultExtensionId,
+  INSTALL_NATIVE_MANIFEST_ERROR,
   installNativeManifest,
+  NativeManifestInstallError,
   uninstallNativeManifest,
   parseExtensionId,
 } from '../src/install-manifest.js';
 import { getLauncherFilename, getManifestInstallDir } from '../src/config.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const repoRoot = path.resolve(__dirname, '../../..');
+const installManifestCliPath = path.join(
+  repoRoot,
+  'packages',
+  'native-host',
+  'bin',
+  'install-manifest.js'
+);
 
 test('parseExtensionId accepts raw ids and extension origins', () => {
   const id = 'abcdefghijklmnopabcdefghijklmnop';
@@ -171,6 +187,180 @@ test('postinstall path preserves an existing custom extension id and warns', asy
   }
 });
 
+test('installNativeManifest overwrites an existing manifest with updated contents', async () => {
+  const tempDir = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bbx-install-manifest-overwrite-')
+  );
+  const installDir = path.join(tempDir, 'manifest');
+  const bridgeDir = path.join(tempDir, 'bridge');
+  const manifestPath = path.join(installDir, 'com.browserbridge.browser_bridge.json');
+  const extensionId = 'abcdefghijklmnopabcdefghijklmnop';
+
+  try {
+    await fs.promises.mkdir(installDir, { recursive: true });
+    await fs.promises.writeFile(
+      manifestPath,
+      `${JSON.stringify(
+        {
+          name: 'com.browserbridge.browser_bridge',
+          description: 'Old description',
+          path: '/tmp/old-launcher.sh',
+          type: 'stdio',
+          allowed_origins: ['chrome-extension://__REPLACE_WITH_EXTENSION_ID__/'],
+        },
+        null,
+        2
+      )}\n`,
+      'utf8'
+    );
+
+    const result = await installNativeManifest({
+      repoRoot: process.cwd(),
+      extensionIdArg: extensionId,
+      installDir,
+      bridgeDir,
+      stdout: {
+        write() {
+          return true;
+        },
+      },
+    });
+
+    const manifest = JSON.parse(await fs.promises.readFile(manifestPath, 'utf8'));
+    assert.equal(result.manifestPath, manifestPath);
+    assert.equal(manifest.description, 'Browser Bridge native host');
+    assert.equal(manifest.path, path.join(bridgeDir, getLauncherFilename()));
+    assert.deepEqual(manifest.allowed_origins, [`chrome-extension://${extensionId}/`]);
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('installNativeManifest creates missing nested install and bridge directories', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-install-manifest-nested-'));
+  const installDir = path.join(tempDir, 'deep', 'manifest', 'dir');
+  const bridgeDir = path.join(tempDir, 'deep', 'bridge', 'dir');
+  const extensionId = 'qrstuvwxyzabcdefghijklmnopqrstuv';
+
+  try {
+    const result = await installNativeManifest({
+      repoRoot: process.cwd(),
+      extensionIdArg: extensionId,
+      installDir,
+      bridgeDir,
+      stdout: {
+        write() {
+          return true;
+        },
+      },
+    });
+
+    const manifest = JSON.parse(await fs.promises.readFile(result.manifestPath, 'utf8'));
+    await fs.promises.access(result.manifestPath);
+    await fs.promises.access(result.launcherPath);
+    assert.equal(manifest.path, result.launcherPath);
+    assert.deepEqual(manifest.allowed_origins, [`chrome-extension://${extensionId}/`]);
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('installNativeManifest writes BBX_TCP_PORT into the Windows launcher template', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-install-manifest-win-'));
+  const installDir = path.join(tempDir, 'manifest');
+  const bridgeDir = path.join(tempDir, 'bridge');
+  const originalPlatform = process.platform;
+  /** @type {Array<{ keyPath: string, value: string }>} */
+  const registryWrites = [];
+
+  Object.defineProperty(process, 'platform', {
+    configurable: true,
+    value: 'win32',
+  });
+
+  try {
+    const result = await installNativeManifest({
+      repoRoot: process.cwd(),
+      installDir,
+      bridgeDir,
+      writeRegistryValue(keyPath, value) {
+        registryWrites.push({ keyPath, value });
+      },
+      stdout: {
+        write() {
+          return true;
+        },
+      },
+    });
+
+    const launcher = await fs.promises.readFile(result.launcherPath, 'utf8');
+    assert.match(launcher, /@echo off\r\nset BBX_TCP_PORT=9223\r\n/u);
+    assert.deepEqual(registryWrites, [
+      {
+        keyPath: getWindowsRegistryKey('chrome'),
+        value: result.manifestPath,
+      },
+    ]);
+  } finally {
+    Object.defineProperty(process, 'platform', {
+      configurable: true,
+      value: originalPlatform,
+    });
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('installNativeManifest wraps target directory write failures in a typed error', async (t) => {
+  const tempDir = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bbx-install-manifest-permission-')
+  );
+  const installDir = path.join(tempDir, 'manifest');
+  const bridgeDir = path.join(tempDir, 'bridge');
+  const permissionError = /** @type {NodeJS.ErrnoException} */ (
+    Object.assign(new Error(`EACCES: permission denied, mkdir '${installDir}'`), { code: 'EACCES' })
+  );
+  const originalMkdir = fs.promises.mkdir;
+
+  t.mock.method(
+    fs.promises,
+    'mkdir',
+    /** @type {typeof fs.promises.mkdir} */ (
+      async (targetPath, options) => {
+        if (String(targetPath) === installDir) {
+          throw permissionError;
+        }
+        return originalMkdir.call(fs.promises, targetPath, options);
+      }
+    )
+  );
+
+  try {
+    await assert.rejects(
+      installNativeManifest({
+        repoRoot: process.cwd(),
+        installDir,
+        bridgeDir,
+        stdout: {
+          write() {
+            return true;
+          },
+        },
+      }),
+      (error) => {
+        assert.ok(error instanceof NativeManifestInstallError);
+        assert.equal(error.code, INSTALL_NATIVE_MANIFEST_ERROR);
+        assert.equal(error.targetPath, installDir);
+        assert.equal(error.errnoCode, 'EACCES');
+        assert.equal(error.cause, permissionError);
+        assert.match(error.message, /Failed to install native host files at .*manifest/);
+        return true;
+      }
+    );
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('getAllowedOrigins merges explicit ids and removes placeholders', () => {
   const id = 'abcdefghijklmnopabcdefghijklmnop';
   const origins = getAllowedOrigins(
@@ -241,6 +431,14 @@ test('uninstallNativeManifest removes the native host manifest and bridge dir', 
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-uninstall-manifest-'));
   const installDir = path.join(tempDir, 'manifest');
   const bridgeDir = path.join(tempDir, 'bridge');
+  const originalPlatform = process.platform;
+  /** @type {string[]} */
+  const deletedRegistryKeys = [];
+
+  Object.defineProperty(process, 'platform', {
+    configurable: true,
+    value: 'win32',
+  });
 
   await fs.promises.mkdir(installDir, { recursive: true });
   await fs.promises.mkdir(bridgeDir, { recursive: true });
@@ -256,6 +454,10 @@ test('uninstallNativeManifest removes the native host manifest and bridge dir', 
       installDir,
       bridgeDir,
       removeBridgeDir: true,
+      deleteRegistryKey(keyPath) {
+        deletedRegistryKeys.push(keyPath);
+        return true;
+      },
       stdout: {
         write() {
           return true;
@@ -265,11 +467,134 @@ test('uninstallNativeManifest removes the native host manifest and bridge dir', 
 
     assert.equal(result.removedManifest, true);
     assert.equal(result.removedBridgeDir, true);
+    assert.deepEqual(deletedRegistryKeys, [getWindowsRegistryKey('chrome')]);
     await assert.rejects(
       fs.promises.access(path.join(installDir, 'com.browserbridge.browser_bridge.json'))
     );
     await assert.rejects(fs.promises.access(bridgeDir));
   } finally {
+    Object.defineProperty(process, 'platform', {
+      configurable: true,
+      value: originalPlatform,
+    });
     await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('uninstallNativeManifest is a no-op when the native host manifest is absent', async () => {
+  const tempDir = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bbx-uninstall-manifest-absent-')
+  );
+  const installDir = path.join(tempDir, 'manifest');
+  const bridgeDir = path.join(tempDir, 'bridge');
+  const originalPlatform = process.platform;
+  /** @type {string[]} */
+  const output = [];
+  /** @type {string[]} */
+  const deletedRegistryKeys = [];
+
+  Object.defineProperty(process, 'platform', {
+    configurable: true,
+    value: 'win32',
+  });
+
+  try {
+    await fs.promises.mkdir(installDir, { recursive: true });
+
+    const result = await uninstallNativeManifest({
+      installDir,
+      bridgeDir,
+      deleteRegistryKey(keyPath) {
+        deletedRegistryKeys.push(keyPath);
+        return false;
+      },
+      stdout: {
+        write(value) {
+          output.push(String(value));
+          return true;
+        },
+      },
+    });
+
+    assert.equal(
+      result.manifestPath,
+      path.join(installDir, 'com.browserbridge.browser_bridge.json')
+    );
+    assert.equal(result.bridgeDir, bridgeDir);
+    assert.equal(result.removedManifest, false);
+    assert.equal(result.removedBridgeDir, false);
+    assert.deepEqual(output, []);
+    assert.deepEqual(deletedRegistryKeys, [getWindowsRegistryKey('chrome')]);
+    await fs.promises.access(installDir);
+  } finally {
+    Object.defineProperty(process, 'platform', {
+      configurable: true,
+      value: originalPlatform,
+    });
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('install-manifest CLI --uninstall removes installed native host files from a temp home', async () => {
+  const tempHome = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bbx-install-manifest-cli-home-')
+  );
+  const extensionId = 'abcdefghijklmnopabcdefghijklmnop';
+  const env = {
+    ...process.env,
+    HOME: tempHome,
+    USERPROFILE: tempHome,
+    LOCALAPPDATA: path.join(tempHome, 'AppData', 'Local'),
+  };
+
+  try {
+    const installResult = spawnSync(process.execPath, [installManifestCliPath, extensionId], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      env,
+    });
+
+    assert.equal(installResult.status, 0);
+    assert.equal(installResult.signal, null);
+    assert.equal(installResult.stderr, '');
+
+    const manifestMatch = installResult.stdout.match(
+      /^Wrote (.+com\.browserbridge\.browser_bridge\.json)$/m
+    );
+    const launcherMatch = installResult.stdout.match(
+      new RegExp(`^Wrote (.+${getLauncherFilename().replace('.', '\\.')})$`, 'm')
+    );
+
+    assert.ok(manifestMatch, 'install CLI should print the manifest path');
+    assert.ok(launcherMatch, 'install CLI should print the launcher path');
+
+    const manifestPath = manifestMatch[1];
+    const launcherPath = launcherMatch[1];
+
+    await fs.promises.access(manifestPath);
+    await fs.promises.access(launcherPath);
+
+    const uninstallResult = spawnSync(process.execPath, [installManifestCliPath, '--uninstall'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      env,
+    });
+
+    assert.equal(uninstallResult.status, 0);
+    assert.equal(uninstallResult.signal, null);
+    assert.equal(uninstallResult.stderr, '');
+    assert.match(
+      uninstallResult.stdout,
+      new RegExp(`Removed ${manifestPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
+    );
+    assert.match(
+      uninstallResult.stdout,
+      new RegExp(`Removed ${path.dirname(launcherPath).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
+    );
+
+    await assert.rejects(fs.promises.access(manifestPath));
+    await assert.rejects(fs.promises.access(launcherPath));
+  } finally {
+    await fs.promises.rm(tempHome, { recursive: true, force: true });
   }
 });

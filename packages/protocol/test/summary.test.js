@@ -9,28 +9,12 @@ import {
   summarizeBatchResponseItem,
   summarizeBatchErrorItem,
 } from '../src/index.js';
-
-/** @type {(result: unknown) => import('../src/types.js').BridgeResponse} */
-function ok(result) {
-  return {
-    id: 'r',
-    ok: true,
-    result,
-    error: null,
-    meta: { protocol_version: '1.0' },
-  };
-}
-
-/** @type {(code: string, message: string) => import('../src/types.js').BridgeResponse} */
-function fail(code, message) {
-  return {
-    id: 'r',
-    ok: false,
-    result: null,
-    error: { code: /** @type {any} */ (code), message, details: null },
-    meta: { protocol_version: '1.0' },
-  };
-}
+import { assertSummary } from './test-helpers.js';
+import {
+  makeFailure as fail,
+  makeMeta,
+  makeSuccess as ok,
+} from '../../../tests/_helpers/protocolFactories.js';
 
 // --- summarizeBridgeResponse: error path ---
 
@@ -46,9 +30,15 @@ test('summarizes ELEMENT_STALE errors with recovery hint', () => {
   assert.match(summary.summary, /Re-query/);
 });
 
+test('summarizes RESULT_TRUNCATED errors with budget recovery hint', () => {
+  const summary = summarizeBridgeResponse(fail('RESULT_TRUNCATED', 'trimmed'));
+  assert.match(summary.summary, /RESULT_TRUNCATED/);
+  assert.match(summary.summary, /raise the relevant budget|Narrow the query/);
+});
+
 test('includes protocol warning when present', () => {
   const resp = fail('TIMEOUT', 'slow');
-  resp.meta = { protocol_version: '1.0', protocol_warning: 'version mismatch' };
+  resp.meta = makeMeta({ protocol_warning: 'version mismatch' });
   const summary = summarizeBridgeResponse(resp);
   assert.match(summary.summary, /Protocol warning: version mismatch/);
 });
@@ -568,6 +558,18 @@ test('summarizes non-object result gracefully', () => {
   assert.match(summary.summary, /0 top-level fields/);
 });
 
+test('summarizeBridgeResponse falls back to generic shape for unknown methods', () => {
+  const summary = summarizeBridgeResponse(
+    ok({ foo: 1, bar: 2 }),
+    /** @type {any} */ ('browser.unknown')
+  );
+
+  assertSummary(summary, {
+    summary: 'Bridge method succeeded with 2 top-level fields.',
+    evidence: ['foo', 'bar'],
+  });
+});
+
 // --- annotateBridgeSummary ---
 
 test('annotateBridgeSummary adds transport and summary cost estimates', () => {
@@ -610,6 +612,25 @@ test('annotateBridgeSummary falls back to legacy meta fields', () => {
   assert.equal(annotated.transportBytes, 100);
   assert.equal(annotated.transportTokens, 25);
   assert.equal(annotated.transportCostClass, 'moderate');
+});
+
+test('annotateBridgeSummary tolerates responses with missing meta', () => {
+  const response = /** @type {import('../src/types.js').BridgeResponse} */ (
+    /** @type {any} */ ({
+      id: 'r',
+      ok: true,
+      result: { ok: true },
+      error: null,
+    })
+  );
+
+  const annotated = annotateBridgeSummary(
+    { ok: true, summary: 'Small summary', evidence: null },
+    response
+  );
+
+  assert.equal(annotated.transportCostClass, 'cheap');
+  assert.equal(annotated.summaryCostClass, 'cheap');
 });
 
 // --- summarizeBatchResponseItem ---
