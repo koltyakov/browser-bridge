@@ -1,8 +1,13 @@
 // @ts-check
 
 import { parseHTML } from 'linkedom';
+import { webcrypto } from 'node:crypto';
 
 const MISSING = Symbol('missing');
+
+if (!globalThis.crypto) {
+  Reflect.set(globalThis, 'crypto', webcrypto);
+}
 
 const DOM_GLOBAL_KEYS = [
   'window',
