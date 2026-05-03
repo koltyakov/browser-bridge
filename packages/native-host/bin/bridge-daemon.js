@@ -1,10 +1,16 @@
 #!/usr/bin/env node
 // @ts-check
 import { BridgeDaemon } from '../src/daemon.js';
-import { getSocketPath } from '../src/config.js';
+import {
+  applyWindowsTcpTransportDefaults,
+  formatBridgeTransport,
+  getBridgeTransport,
+} from '../src/config.js';
 import { clearDaemonPidFile, writeDaemonPidFile } from '../src/daemon-process.js';
 
-const daemon = new BridgeDaemon({ socketPath: getSocketPath() });
+applyWindowsTcpTransportDefaults();
+const transport = getBridgeTransport();
+const daemon = new BridgeDaemon({ transport });
 
 /**
  * @param {unknown} error
@@ -28,7 +34,7 @@ try {
   process.exit(1);
 }
 
-process.stdout.write(`Browser Bridge daemon listening on ${getSocketPath()}\n`);
+process.stdout.write(`Browser Bridge daemon listening on ${formatBridgeTransport(transport)}\n`);
 
 let shuttingDown = false;
 

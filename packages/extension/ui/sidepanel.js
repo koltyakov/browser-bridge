@@ -502,9 +502,7 @@ function renderNativeStatus(connected, error) {
   } else if (!nativeDiagnosticTimer) {
     nativeDiagnosticTimer = setTimeout(() => {
       nativeDiagnosticTimer = null;
-      showSidepanelDiagnostic(
-        `Native host unreachable for 10s. Run: npm install -g @browserbridge/bbx && ${view.diagnosticCommand}`
-      );
+      showSidepanelDiagnostic(view.diagnosticMessage);
     }, NATIVE_DIAGNOSTIC_DELAY_MS);
   }
 }

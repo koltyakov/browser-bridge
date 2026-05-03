@@ -3,9 +3,11 @@
 import net from 'node:net';
 
 import { createFailure, ERROR_CODES } from '../../protocol/src/index.js';
-import { getSocketPath } from './config.js';
+import { createSocketBridgeTransport, getBridgeTransport } from './config.js';
 import { spawnBridgeDaemonProcess } from './daemon-process.js';
 import { createNativeMessageReader, writeJsonLine, writeNativeMessage } from './framing.js';
+
+/** @typedef {import('./config.js').BridgeTransport} BridgeTransport */
 
 /**
  * @typedef {{
@@ -107,13 +109,17 @@ function isHostActivity(message) {
 }
 
 /**
- * @param {{ socketPath?: string }} [options={}]
+ * @param {{ transport?: BridgeTransport, socketPath?: string }} [options={}]
  * @returns {Promise<void>}
  */
-export async function runNativeHost({ socketPath = getSocketPath() } = {}) {
+export async function runNativeHost({
+  transport = getBridgeTransport(),
+  socketPath = undefined,
+} = {}) {
+  const resolvedTransport = socketPath ? createSocketBridgeTransport(socketPath) : transport;
   let socket;
   try {
-    socket = await connectWithBootstrap(socketPath);
+    socket = await connectWithBootstrap(resolvedTransport);
   } catch (error) {
     await writeNativeMessage(process.stdout, {
       type: 'agent.response',
@@ -282,7 +288,7 @@ export function bindBridgeSocketLifecycle(
 
 /**
  * @typedef {{
- *   connectSocketFn?: (socketPath: string) => Promise<net.Socket>,
+ *   connectSocketFn?: (transport: BridgeTransport) => Promise<net.Socket>,
  *   shouldBootstrapFn?: (error: unknown) => boolean,
  *   spawnBridgeDaemonFn?: () => void,
  *   delayFn?: (ms: number) => Promise<void>,
@@ -291,11 +297,11 @@ export function bindBridgeSocketLifecycle(
  */
 
 /**
- * @param {string} socketPath
+ * @param {BridgeTransport | string} transport
  * @param {ConnectWithBootstrapOptions} [options]
  * @returns {Promise<net.Socket>}
  */
-export async function connectWithBootstrap(socketPath, options = {}) {
+export async function connectWithBootstrap(transport, options = {}) {
   const {
     connectSocketFn = connectSocket,
     shouldBootstrapFn = shouldBootstrap,
@@ -303,9 +309,11 @@ export async function connectWithBootstrap(socketPath, options = {}) {
     delayFn = delay,
     maxAttempts = 10,
   } = options;
+  const resolvedTransport =
+    typeof transport === 'string' ? createSocketBridgeTransport(transport) : transport;
 
   try {
-    return await connectSocketFn(socketPath);
+    return await connectSocketFn(resolvedTransport);
   } catch (error) {
     if (!shouldBootstrapFn(error)) {
       throw error;
@@ -318,7 +326,7 @@ export async function connectWithBootstrap(socketPath, options = {}) {
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     await delayFn(200);
     try {
-      return await connectSocketFn(socketPath);
+      return await connectSocketFn(resolvedTransport);
     } catch (error) {
       lastError = error;
       if (!shouldBootstrapFn(error)) {
@@ -331,12 +339,15 @@ export async function connectWithBootstrap(socketPath, options = {}) {
 }
 
 /**
- * @param {string} socketPath
+ * @param {BridgeTransport} transport
  * @returns {Promise<net.Socket>}
  */
-function connectSocket(socketPath) {
+function connectSocket(transport) {
   return new Promise((resolve, reject) => {
-    const socket = net.createConnection(socketPath);
+    const socket =
+      transport.type === 'tcp'
+        ? net.createConnection({ host: transport.host, port: transport.port })
+        : net.createConnection(transport.socketPath);
     /**
      * @param {Error} error
      * @returns {void}

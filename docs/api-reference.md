@@ -35,10 +35,12 @@ new BridgeClient(options?)
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `socketPath` | `string` | `~/.config/browser-bridge/bridge.sock` | Path to the daemon Unix socket |
+| `socketPath` | `string` | `~/.config/browser-bridge/bridge.sock` | Optional bridge socket path override when not using `BBX_TCP_PORT` |
 | `clientId` | `string` | `agent_<uuid>` | Identifies this client to the daemon |
 | `defaultTimeoutMs` | `number` | `8000` | Per-request timeout in ms |
 | `autoReconnect` | `boolean` | `false` | Reconnect automatically after daemon restarts and emit `reconnected` when the session is restored |
+
+When `BBX_TCP_PORT` is set, `BridgeClient` connects to `127.0.0.1:<port>` instead of the Unix socket path.
 
 ## Methods
 

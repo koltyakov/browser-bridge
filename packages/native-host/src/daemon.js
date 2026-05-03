@@ -29,13 +29,20 @@ import {
   SUPPORTED_VERSIONS,
   validateBridgeRequest,
 } from '../../protocol/src/index.js';
-import { getSocketPath } from './config.js';
+import {
+  createSocketBridgeTransport,
+  formatBridgeTransport,
+  getBridgeListenTarget,
+  getBridgeTransport,
+  getSocketPath,
+} from './config.js';
 import { writeJsonLine } from './framing.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */
 /** @typedef {import('../../protocol/src/types.js').SetupInstallParams} SetupInstallParams */
 /** @typedef {import('../../protocol/src/types.js').SetupInstallResult} SetupInstallResult */
 /** @typedef {import('../../protocol/src/types.js').SetupStatus} SetupStatus */
+/** @typedef {import('./config.js').BridgeTransport} BridgeTransport */
 /** @typedef {import('node:net').Socket & { __clientId?: string, __extensionId?: string, __browserName?: string, __profileLabel?: string, __accessEnabled?: boolean, __lastActiveAt?: number }} ClientSocket */
 /** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string, method?: string, targets: Set<ClientSocket>, lastErrorResponse?: import('../../protocol/src/types.js').BridgeResponse }} PendingEntry */
 /**
@@ -109,6 +116,7 @@ function getVersionNegotiationPayload(requestedVersion) {
 export class BridgeDaemon {
   /**
    * @param {{
+   *   transport?: BridgeTransport,
    *   socketPath?: string,
    *   listenOptions?: import('node:net').ListenOptions | null,
    *   setupStatusLoader?: () => Promise<SetupStatus>,
@@ -117,14 +125,17 @@ export class BridgeDaemon {
    * }} [options={}]
    */
   constructor({
-    socketPath = getSocketPath(),
+    transport = getBridgeTransport(),
+    socketPath = undefined,
     listenOptions = null,
     setupStatusLoader = collectSetupStatus,
     setupInstaller = installSetupTarget,
     logger = console,
   } = {}) {
-    this.socketPath = socketPath;
-    this.listenOptions = listenOptions;
+    this.transport = socketPath ? createSocketBridgeTransport(socketPath) : transport;
+    this.socketPath =
+      this.transport.type === 'socket' ? this.transport.socketPath : getSocketPath();
+    this.listenOptions = listenOptions ?? getBridgeListenTarget(this.transport);
     this.setupStatusLoader = setupStatusLoader;
     this.setupInstaller = setupInstaller;
     this.logger = logger;
@@ -288,7 +299,7 @@ export class BridgeDaemon {
    * @returns {Promise<BridgeDaemon>}
    */
   async start() {
-    if (!this.listenOptions) {
+    if (this.transport.type === 'socket') {
       const socketDir = path.dirname(this.socketPath);
       await fs.promises.mkdir(socketDir, { recursive: true });
       if (process.platform !== 'win32') {
@@ -296,7 +307,7 @@ export class BridgeDaemon {
       }
       try {
         await fs.promises.access(this.socketPath);
-        if (await pingExistingDaemon(this.socketPath)) {
+        if (await pingExistingDaemon(this.transport)) {
           throw new Error(
             `Another daemon is already running on ${this.socketPath}. Stop it before starting a new one.`
           );
@@ -336,14 +347,10 @@ export class BridgeDaemon {
         this.serverAddress = server.address();
         resolve(undefined);
       };
-      if (this.listenOptions) {
-        server.listen(this.listenOptions, onListen);
-      } else {
-        server.listen(this.socketPath, onListen);
-      }
+      server.listen(this.listenOptions, onListen);
     });
 
-    if (!this.listenOptions && process.platform !== 'win32') {
+    if (this.transport.type === 'socket' && process.platform !== 'win32') {
       await fs.promises.chmod(this.socketPath, 0o600);
     }
 
@@ -402,7 +409,7 @@ export class BridgeDaemon {
           });
         });
       } finally {
-        if (!this.listenOptions) {
+        if (this.transport.type === 'socket') {
           await fs.promises.rm(this.socketPath, { force: true });
         }
       }
@@ -470,6 +477,7 @@ export class BridgeDaemon {
           daemon: 'ok',
           extensionConnected: false,
           socketPath: this.socketPath,
+          transport: formatBridgeTransport(this.transport),
           connectedExtensions: [],
           ...getVersionNegotiationPayload(request.meta?.protocol_version),
         });
@@ -696,6 +704,7 @@ export class BridgeDaemon {
                 daemon: 'ok',
                 extensionConnected: true,
                 socketPath: this.socketPath,
+                transport: formatBridgeTransport(this.transport),
                 connectedExtensions: this.getConnectedExtensionsSnapshot(),
                 .../** @type {Record<string, unknown>} */ (responseMessage.result),
               },
@@ -811,20 +820,25 @@ export class BridgeDaemon {
 }
 
 /**
- * Check whether a daemon is already listening on the given socket path.
+ * Check whether a daemon is already listening on the given transport.
  * Connects, sends a health.ping, and waits up to 500 ms for a response.
  *
- * @param {string} socketPath
+ * @param {BridgeTransport | string} transport
  * @returns {Promise<boolean>}
  */
-export async function pingExistingDaemon(socketPath) {
+export async function pingExistingDaemon(transport) {
+  const resolvedTransport =
+    typeof transport === 'string' ? createSocketBridgeTransport(transport) : transport;
   return new Promise((resolve) => {
     const timeout = setTimeout(() => {
       socket.destroy();
       resolve(false);
     }, DAEMON_EXISTING_SOCKET_PING_TIMEOUT_MS);
 
-    const socket = net.createConnection(socketPath);
+    const socket =
+      resolvedTransport.type === 'tcp'
+        ? net.createConnection({ host: resolvedTransport.host, port: resolvedTransport.port })
+        : net.createConnection(resolvedTransport.socketPath);
     socket.once('error', () => {
       clearTimeout(timeout);
       resolve(false);

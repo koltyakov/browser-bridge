@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   DEFAULT_EXTENSION_ID_ENV,
+  getWindowsRegistryKey,
   getAllowedOrigins,
   getDefaultExtensionId,
   INSTALL_NATIVE_MANIFEST_ERROR,
@@ -264,6 +265,51 @@ test('installNativeManifest creates missing nested install and bridge directorie
   }
 });
 
+test('installNativeManifest writes BBX_TCP_PORT into the Windows launcher template', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-install-manifest-win-'));
+  const installDir = path.join(tempDir, 'manifest');
+  const bridgeDir = path.join(tempDir, 'bridge');
+  const originalPlatform = process.platform;
+  /** @type {Array<{ keyPath: string, value: string }>} */
+  const registryWrites = [];
+
+  Object.defineProperty(process, 'platform', {
+    configurable: true,
+    value: 'win32',
+  });
+
+  try {
+    const result = await installNativeManifest({
+      repoRoot: process.cwd(),
+      installDir,
+      bridgeDir,
+      writeRegistryValue(keyPath, value) {
+        registryWrites.push({ keyPath, value });
+      },
+      stdout: {
+        write() {
+          return true;
+        },
+      },
+    });
+
+    const launcher = await fs.promises.readFile(result.launcherPath, 'utf8');
+    assert.match(launcher, /@echo off\r\nset BBX_TCP_PORT=9223\r\n/u);
+    assert.deepEqual(registryWrites, [
+      {
+        keyPath: getWindowsRegistryKey('chrome'),
+        value: result.manifestPath,
+      },
+    ]);
+  } finally {
+    Object.defineProperty(process, 'platform', {
+      configurable: true,
+      value: originalPlatform,
+    });
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('installNativeManifest wraps target directory write failures in a typed error', async (t) => {
   const tempDir = await fs.promises.mkdtemp(
     path.join(os.tmpdir(), 'bbx-install-manifest-permission-')
@@ -385,6 +431,14 @@ test('uninstallNativeManifest removes the native host manifest and bridge dir', 
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-uninstall-manifest-'));
   const installDir = path.join(tempDir, 'manifest');
   const bridgeDir = path.join(tempDir, 'bridge');
+  const originalPlatform = process.platform;
+  /** @type {string[]} */
+  const deletedRegistryKeys = [];
+
+  Object.defineProperty(process, 'platform', {
+    configurable: true,
+    value: 'win32',
+  });
 
   await fs.promises.mkdir(installDir, { recursive: true });
   await fs.promises.mkdir(bridgeDir, { recursive: true });
@@ -400,6 +454,10 @@ test('uninstallNativeManifest removes the native host manifest and bridge dir', 
       installDir,
       bridgeDir,
       removeBridgeDir: true,
+      deleteRegistryKey(keyPath) {
+        deletedRegistryKeys.push(keyPath);
+        return true;
+      },
       stdout: {
         write() {
           return true;
@@ -409,11 +467,16 @@ test('uninstallNativeManifest removes the native host manifest and bridge dir', 
 
     assert.equal(result.removedManifest, true);
     assert.equal(result.removedBridgeDir, true);
+    assert.deepEqual(deletedRegistryKeys, [getWindowsRegistryKey('chrome')]);
     await assert.rejects(
       fs.promises.access(path.join(installDir, 'com.browserbridge.browser_bridge.json'))
     );
     await assert.rejects(fs.promises.access(bridgeDir));
   } finally {
+    Object.defineProperty(process, 'platform', {
+      configurable: true,
+      value: originalPlatform,
+    });
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }
 });
@@ -424,8 +487,16 @@ test('uninstallNativeManifest is a no-op when the native host manifest is absent
   );
   const installDir = path.join(tempDir, 'manifest');
   const bridgeDir = path.join(tempDir, 'bridge');
+  const originalPlatform = process.platform;
   /** @type {string[]} */
   const output = [];
+  /** @type {string[]} */
+  const deletedRegistryKeys = [];
+
+  Object.defineProperty(process, 'platform', {
+    configurable: true,
+    value: 'win32',
+  });
 
   try {
     await fs.promises.mkdir(installDir, { recursive: true });
@@ -433,6 +504,10 @@ test('uninstallNativeManifest is a no-op when the native host manifest is absent
     const result = await uninstallNativeManifest({
       installDir,
       bridgeDir,
+      deleteRegistryKey(keyPath) {
+        deletedRegistryKeys.push(keyPath);
+        return false;
+      },
       stdout: {
         write(value) {
           output.push(String(value));
@@ -449,8 +524,13 @@ test('uninstallNativeManifest is a no-op when the native host manifest is absent
     assert.equal(result.removedManifest, false);
     assert.equal(result.removedBridgeDir, false);
     assert.deepEqual(output, []);
+    assert.deepEqual(deletedRegistryKeys, [getWindowsRegistryKey('chrome')]);
     await fs.promises.access(installDir);
   } finally {
+    Object.defineProperty(process, 'platform', {
+      configurable: true,
+      value: originalPlatform,
+    });
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }
 });

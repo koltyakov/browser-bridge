@@ -25,7 +25,7 @@ All tests use Node's built-in test runner (`node --test`). No Jest or Mocha.
 ```
 packages/
   protocol/      Shared request/response types, error codes, defaults, normalization
-  native-host/   Unix socket daemon (bbx-daemon) + install scripts
+  native-host/   Local bridge daemon (socket/TCP) + install scripts
   agent-client/  BridgeClient, CLI (bbx), setup helpers
   mcp-server/    MCP stdio server (bbx-mcp) + tool handlers
   extension/     Chrome extension (background, content scripts, UI)

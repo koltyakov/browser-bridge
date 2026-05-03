@@ -2342,6 +2342,29 @@ test('BridgeClient.close() stops autoReconnect', async () => {
   }
 });
 
+test('BridgeClient uses BBX_TCP_PORT transport when configured', async () => {
+  const { server, port } = await startMockDaemon(() => {});
+  const previousPort = process.env.BBX_TCP_PORT;
+
+  try {
+    process.env.BBX_TCP_PORT = String(port);
+    const client = new BridgeClient({ defaultTimeoutMs: 5_000 });
+    await client.connect();
+    assert.equal(client.transport.type, 'tcp');
+    if (client.transport.type === 'tcp') {
+      assert.equal(client.transport.port, port);
+    }
+    await client.close();
+  } finally {
+    if (previousPort === undefined) {
+      delete process.env.BBX_TCP_PORT;
+    } else {
+      process.env.BBX_TCP_PORT = previousPort;
+    }
+    server.close();
+  }
+});
+
 test('removeMcpConfig keeps Copilot mcpServers object after removing browser-bridge', async () => {
   const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-copilot-mcp-remove-'));
   const originalHome = process.env.HOME;

@@ -6,7 +6,13 @@ import os from 'node:os';
 import path from 'node:path';
 
 import {
+  applyWindowsTcpTransportDefaults,
+  BRIDGE_TCP_PORT_ENV,
   BRIDGE_HOME_ENV,
+  DEFAULT_WINDOWS_TCP_PORT,
+  formatBridgeTransport,
+  getBridgeTcpPort,
+  getBridgeTransport,
   getDaemonPidPath,
   getBridgeDir,
   getLauncherFilename,
@@ -71,6 +77,99 @@ test('getBridgeDir honors BROWSER_BRIDGE_HOME override and socket path uses it',
   );
 });
 
+test('getBridgeTransport falls back to socket mode when BBX_TCP_PORT is unset', async () => {
+  await withMockedConfigEnvironment(
+    {
+      env: {
+        [BRIDGE_HOME_ENV]: '/tmp/browser-bridge-home',
+        [BRIDGE_TCP_PORT_ENV]: undefined,
+      },
+    },
+    async () => {
+      assert.equal(getBridgeTcpPort(), null);
+      assert.deepEqual(getBridgeTransport(), {
+        type: 'socket',
+        socketPath: path.join('/tmp/browser-bridge-home', 'bridge.sock'),
+        label: path.join('/tmp/browser-bridge-home', 'bridge.sock'),
+      });
+    }
+  );
+});
+
+test('applyWindowsTcpTransportDefaults seeds the default Windows tcp port', async () => {
+  await withMockedConfigEnvironment(
+    {
+      platform: 'win32',
+      env: {
+        [BRIDGE_HOME_ENV]: undefined,
+        [BRIDGE_TCP_PORT_ENV]: undefined,
+      },
+    },
+    async () => {
+      assert.equal(applyWindowsTcpTransportDefaults(), true);
+      assert.equal(process.env[BRIDGE_TCP_PORT_ENV], String(DEFAULT_WINDOWS_TCP_PORT));
+      assert.deepEqual(getBridgeTransport(), {
+        type: 'tcp',
+        host: '127.0.0.1',
+        port: DEFAULT_WINDOWS_TCP_PORT,
+        label: `127.0.0.1:${DEFAULT_WINDOWS_TCP_PORT}`,
+      });
+    }
+  );
+});
+
+test('applyWindowsTcpTransportDefaults preserves custom bridge-home socket setups', async () => {
+  await withMockedConfigEnvironment(
+    {
+      platform: 'win32',
+      env: {
+        [BRIDGE_HOME_ENV]: 'C:\\tmp\\bbx-home',
+        [BRIDGE_TCP_PORT_ENV]: undefined,
+      },
+    },
+    async () => {
+      assert.equal(applyWindowsTcpTransportDefaults(), false);
+      assert.deepEqual(getBridgeTransport(), {
+        type: 'socket',
+        socketPath: path.join('C:\\tmp\\bbx-home', 'bridge.sock'),
+        label: path.join('C:\\tmp\\bbx-home', 'bridge.sock'),
+      });
+    }
+  );
+});
+
+test('getBridgeTransport returns tcp mode when BBX_TCP_PORT is set', async () => {
+  await withMockedConfigEnvironment(
+    {
+      env: { [BRIDGE_TCP_PORT_ENV]: String(DEFAULT_WINDOWS_TCP_PORT) },
+    },
+    async () => {
+      assert.equal(getBridgeTcpPort(), DEFAULT_WINDOWS_TCP_PORT);
+      assert.deepEqual(getBridgeTransport(), {
+        type: 'tcp',
+        host: '127.0.0.1',
+        port: DEFAULT_WINDOWS_TCP_PORT,
+        label: `127.0.0.1:${DEFAULT_WINDOWS_TCP_PORT}`,
+      });
+      assert.equal(
+        formatBridgeTransport(getBridgeTransport()),
+        `127.0.0.1:${DEFAULT_WINDOWS_TCP_PORT}`
+      );
+    }
+  );
+});
+
+test('getBridgeTcpPort rejects invalid values', async () => {
+  await withMockedConfigEnvironment(
+    {
+      env: { [BRIDGE_TCP_PORT_ENV]: 'not-a-port' },
+    },
+    async () => {
+      assert.throws(() => getBridgeTcpPort(), /BBX_TCP_PORT must be an integer/);
+    }
+  );
+});
+
 test('getBridgeDir resolves platform-specific defaults', async () => {
   await withMockedConfigEnvironment(
     {
@@ -83,7 +182,10 @@ test('getBridgeDir resolves platform-specific defaults', async () => {
       },
     },
     async () => {
-      assert.equal(getBridgeDir(), '/Users/tester/Library/Application Support/Browser Bridge');
+      assert.equal(
+        getBridgeDir(),
+        path.join('/Users/tester', 'Library', 'Application Support', 'Browser Bridge')
+      );
       assert.equal(getLauncherFilename(), 'native-host-launcher.sh');
       assert.match(getManifestInstallDir('edge'), /Microsoft Edge/);
     }
@@ -99,7 +201,7 @@ test('getBridgeDir resolves platform-specific defaults', async () => {
       },
     },
     async () => {
-      assert.equal(getBridgeDir(), '/tmp/xdg-data/browser-bridge');
+      assert.equal(getBridgeDir(), path.join('/tmp/xdg-data', 'browser-bridge'));
       assert.match(getManifestInstallDir('chromium'), /chromium/);
     }
   );

@@ -7,7 +7,15 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
 import { pingExistingDaemon } from './daemon.js';
-import { getBridgeDir, getDaemonPidPath, getSocketPath } from './config.js';
+import {
+  createSocketBridgeTransport,
+  formatBridgeTransport,
+  getBridgeDir,
+  getBridgeTransport,
+  getDaemonPidPath,
+} from './config.js';
+
+/** @typedef {import('./config.js').BridgeTransport} BridgeTransport */
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -17,13 +25,14 @@ const DEFAULT_DAEMON_POLL_INTERVAL_MS = 100;
 
 /**
  * @typedef {{
+ *   transport?: BridgeTransport,
  *   socketPath?: string,
  *   pidPath?: string,
  *   timeoutMs?: number,
  *   pollIntervalMs?: number,
- *   pingDaemonFn?: (socketPath: string) => Promise<boolean>,
+ *   pingDaemonFn?: (transport: BridgeTransport) => Promise<boolean>,
  *   readPidFn?: (pidPath?: string) => Promise<number | null>,
- *   findPidBySocketFn?: (socketPath: string) => Promise<number | null>,
+ *   findPidByTransportFn?: (transport: BridgeTransport) => Promise<number | null>,
  *   killFn?: typeof process.kill,
  *   rmFn?: typeof fs.promises.rm,
  *   sleepFn?: (ms: number) => Promise<void>,
@@ -32,13 +41,14 @@ const DEFAULT_DAEMON_POLL_INTERVAL_MS = 100;
 
 /**
  * @typedef {{
+ *   transport?: BridgeTransport,
  *   socketPath?: string,
  *   pidPath?: string,
  *   timeoutMs?: number,
  *   pollIntervalMs?: number,
- *   pingDaemonFn?: (socketPath: string) => Promise<boolean>,
+ *   pingDaemonFn?: (transport: BridgeTransport) => Promise<boolean>,
  *   readPidFn?: (pidPath?: string) => Promise<number | null>,
- *   findPidBySocketFn?: (socketPath: string) => Promise<number | null>,
+ *   findPidByTransportFn?: (transport: BridgeTransport) => Promise<number | null>,
  *   killFn?: typeof process.kill,
  *   rmFn?: typeof fs.promises.rm,
  *   sleepFn?: (ms: number) => Promise<void>,
@@ -111,27 +121,31 @@ export async function clearDaemonPidFile(options = {}) {
 
 /**
  * @param {StopBridgeDaemonOptions} [options={}]
- * @returns {Promise<{ previouslyRunning: boolean, previousPid: number | null, removedStaleSocket: boolean }>}
+ * @returns {Promise<{ transport: string, socketPath: string, previouslyRunning: boolean, previousPid: number | null, removedStaleSocket: boolean }>}
  */
 export async function stopBridgeDaemon(options = {}) {
   const {
-    socketPath = getSocketPath(),
+    transport = getBridgeTransport(),
+    socketPath = undefined,
     pidPath = getDaemonPidPath(),
     timeoutMs = DEFAULT_DAEMON_RESTART_TIMEOUT_MS,
     pollIntervalMs = DEFAULT_DAEMON_POLL_INTERVAL_MS,
     pingDaemonFn = pingExistingDaemon,
     readPidFn = readDaemonPidFile,
-    findPidBySocketFn = findDaemonPidBySocket,
+    findPidByTransportFn = findDaemonPidByTransport,
     killFn = process.kill.bind(process),
     rmFn = fs.promises.rm,
     sleepFn = sleep,
   } = options;
+  const resolvedTransport = socketPath ? createSocketBridgeTransport(socketPath) : transport;
+  const resolvedSocketPath =
+    resolvedTransport.type === 'socket' ? resolvedTransport.socketPath : '';
 
   let previousPid = await readPidFn(pidPath);
   let previouslyRunning = previousPid !== null;
 
-  if (previousPid === null && (await safePingDaemon(socketPath, pingDaemonFn))) {
-    previousPid = await findPidBySocketFn(socketPath);
+  if (previousPid === null && (await safePingDaemon(resolvedTransport, pingDaemonFn))) {
+    previousPid = await findPidByTransportFn(resolvedTransport);
     previouslyRunning = true;
   }
 
@@ -145,7 +159,7 @@ export async function stopBridgeDaemon(options = {}) {
     }
 
     const stopped = await waitForDaemonReachability({
-      socketPath,
+      transport: resolvedTransport,
       reachable: false,
       timeoutMs,
       pollIntervalMs,
@@ -159,8 +173,10 @@ export async function stopBridgeDaemon(options = {}) {
 
   await clearDaemonPidFile({ pid: previousPid, pidPath, rmFn });
 
-  const removedStaleSocket = await removeStaleSocket(socketPath, rmFn, pingDaemonFn);
+  const removedStaleSocket = await removeStaleSocket(resolvedTransport, rmFn, pingDaemonFn);
   return {
+    transport: formatBridgeTransport(resolvedTransport),
+    socketPath: resolvedSocketPath,
     previouslyRunning,
     previousPid,
     removedStaleSocket,
@@ -170,6 +186,7 @@ export async function stopBridgeDaemon(options = {}) {
 /**
  * @param {RestartBridgeDaemonOptions} [options={}]
  * @returns {Promise<{
+ *   transport: string,
  *   socketPath: string,
  *   pidPath: string,
  *   pid: number | null,
@@ -180,27 +197,29 @@ export async function stopBridgeDaemon(options = {}) {
  */
 export async function restartBridgeDaemon(options = {}) {
   const {
-    socketPath = getSocketPath(),
+    transport = getBridgeTransport(),
+    socketPath = undefined,
     pidPath = getDaemonPidPath(),
     timeoutMs = DEFAULT_DAEMON_RESTART_TIMEOUT_MS,
     pollIntervalMs = DEFAULT_DAEMON_POLL_INTERVAL_MS,
     pingDaemonFn = pingExistingDaemon,
     readPidFn = readDaemonPidFile,
-    findPidBySocketFn = findDaemonPidBySocket,
+    findPidByTransportFn = findDaemonPidByTransport,
     killFn = process.kill.bind(process),
     rmFn = fs.promises.rm,
     sleepFn = sleep,
     spawnDaemonFn = spawnBridgeDaemonProcess,
   } = options;
+  const resolvedTransport = socketPath ? createSocketBridgeTransport(socketPath) : transport;
 
   const stopResult = await stopBridgeDaemon({
-    socketPath,
+    transport: resolvedTransport,
     pidPath,
     timeoutMs,
     pollIntervalMs,
     pingDaemonFn,
     readPidFn,
-    findPidBySocketFn,
+    findPidByTransportFn,
     killFn,
     rmFn,
     sleepFn,
@@ -209,7 +228,7 @@ export async function restartBridgeDaemon(options = {}) {
   spawnDaemonFn();
 
   const started = await waitForDaemonReachability({
-    socketPath,
+    transport: resolvedTransport,
     reachable: true,
     timeoutMs,
     pollIntervalMs,
@@ -221,11 +240,21 @@ export async function restartBridgeDaemon(options = {}) {
   }
 
   return {
-    socketPath,
+    ...stopResult,
     pidPath,
     pid: await readPidFn(pidPath),
-    ...stopResult,
   };
+}
+
+/**
+ * @param {BridgeTransport} transport
+ * @returns {Promise<number | null>}
+ */
+export async function findDaemonPidByTransport(transport) {
+  if (transport.type !== 'socket') {
+    return null;
+  }
+  return findDaemonPidBySocket(transport.socketPath);
 }
 
 /**
@@ -257,20 +286,20 @@ export async function findDaemonPidBySocket(socketPath) {
 
 /**
  * @param {{
- *   socketPath: string,
+ *   transport: BridgeTransport,
  *   reachable: boolean,
  *   timeoutMs: number,
  *   pollIntervalMs: number,
- *   pingDaemonFn: (socketPath: string) => Promise<boolean>,
+ *   pingDaemonFn: (transport: BridgeTransport) => Promise<boolean>,
  *   sleepFn: (ms: number) => Promise<void>,
  * }} options
  * @returns {Promise<boolean>}
  */
 async function waitForDaemonReachability(options) {
-  const { socketPath, reachable, timeoutMs, pollIntervalMs, pingDaemonFn, sleepFn } = options;
+  const { transport, reachable, timeoutMs, pollIntervalMs, pingDaemonFn, sleepFn } = options;
   const deadline = Date.now() + timeoutMs;
   while (Date.now() <= deadline) {
-    if ((await safePingDaemon(socketPath, pingDaemonFn)) === reachable) {
+    if ((await safePingDaemon(transport, pingDaemonFn)) === reachable) {
       return true;
     }
     await sleepFn(pollIntervalMs);
@@ -279,18 +308,22 @@ async function waitForDaemonReachability(options) {
 }
 
 /**
- * @param {string} socketPath
+ * @param {BridgeTransport} transport
  * @param {typeof fs.promises.rm} rmFn
- * @param {(socketPath: string) => Promise<boolean>} pingDaemonFn
+ * @param {(transport: BridgeTransport) => Promise<boolean>} pingDaemonFn
  * @returns {Promise<boolean>}
  */
-async function removeStaleSocket(socketPath, rmFn, pingDaemonFn) {
-  if (await safePingDaemon(socketPath, pingDaemonFn)) {
+async function removeStaleSocket(transport, rmFn, pingDaemonFn) {
+  if (transport.type !== 'socket') {
+    return false;
+  }
+
+  if (await safePingDaemon(transport, pingDaemonFn)) {
     return false;
   }
 
   try {
-    await fs.promises.access(socketPath);
+    await fs.promises.access(transport.socketPath);
   } catch (error) {
     if (isMissingFileError(error)) {
       return false;
@@ -299,7 +332,7 @@ async function removeStaleSocket(socketPath, rmFn, pingDaemonFn) {
   }
 
   try {
-    await rmFn(socketPath, { force: true });
+    await rmFn(transport.socketPath, { force: true });
     return true;
   } catch (error) {
     if (isMissingFileError(error)) {
@@ -310,13 +343,13 @@ async function removeStaleSocket(socketPath, rmFn, pingDaemonFn) {
 }
 
 /**
- * @param {string} socketPath
- * @param {(socketPath: string) => Promise<boolean>} pingDaemonFn
+ * @param {BridgeTransport} transport
+ * @param {(transport: BridgeTransport) => Promise<boolean>} pingDaemonFn
  * @returns {Promise<boolean>}
  */
-async function safePingDaemon(socketPath, pingDaemonFn) {
+async function safePingDaemon(transport, pingDaemonFn) {
   try {
-    return await pingDaemonFn(socketPath);
+    return await pingDaemonFn(transport);
   } catch {
     return false;
   }
