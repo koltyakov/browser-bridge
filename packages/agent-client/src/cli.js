@@ -613,16 +613,17 @@ async function main() {
     }
 
     if (command === 'screenshot') {
-      const [refOrSelector, outputPath] = rest;
-      if (!refOrSelector) throw new Error('Usage: screenshot <ref|selector> [path]');
-      const elementRef = await resolveRef(client, refOrSelector, null, REQUEST_SOURCE);
+      const parsed = extractTabFlag(rest);
+      const [refOrSelector, outputPath] = parsed.rest;
+      if (!refOrSelector) throw new Error('Usage: screenshot [--tab <tabId>] <ref|selector> [path]');
+      const elementRef = await resolveRef(client, refOrSelector, parsed.tabId, REQUEST_SOURCE);
       const response = await requestBridge(
         client,
         'screenshot.capture_element',
         {
           elementRef,
         },
-        { source: REQUEST_SOURCE }
+        { tabId: parsed.tabId, source: REQUEST_SOURCE }
       );
       if (!response.ok) {
         await printSummary(response);
