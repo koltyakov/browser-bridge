@@ -48,7 +48,7 @@ function uniquePaths(paths) {
 async function seedUninstallFixtures(installFs) {
   const installCommands = [
     ['install-skill', 'all'],
-    ['install-skill', '--local', 'all'],
+    ['install-skill', 'all', '--local'],
     ['install-mcp', 'all'],
     ['install-mcp', '--local', 'all'],
   ];
