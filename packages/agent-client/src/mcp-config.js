@@ -113,7 +113,9 @@ function createBaseServerConfig(clientName) {
     return {
       type: 'local',
       command:
-        process.platform === 'win32' ? [process.execPath, mcpServerBinPath] : ['bbx', 'mcp', 'serve'],
+        process.platform === 'win32'
+          ? [process.execPath, mcpServerBinPath]
+          : ['bbx', 'mcp', 'serve'],
     };
   }
   return windowsCommand;

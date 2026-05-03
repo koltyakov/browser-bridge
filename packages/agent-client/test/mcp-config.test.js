@@ -136,10 +136,7 @@ test('getMcpConfigPath resolves documented local config locations', () => {
     getMcpConfigPath('windsurf', { global: false, cwd }),
     path.join(cwd, '.windsurf', 'mcp_config.json')
   );
-  assert.equal(
-    getMcpConfigPath('claude', { global: false, cwd }),
-    path.join(cwd, '.mcp.json')
-  );
+  assert.equal(getMcpConfigPath('claude', { global: false, cwd }), path.join(cwd, '.mcp.json'));
   assert.equal(
     getMcpConfigPath('opencode', { global: false, cwd }),
     path.join(cwd, 'opencode.json')
@@ -167,7 +164,10 @@ test('getMcpConfigPath resolves global config locations and honors CODEX_HOME', 
       getMcpConfigPath('copilot', { global: true }),
       path.join(home, '.copilot', 'mcp-config.json')
     );
-    assert.equal(getMcpConfigPath('codex', { global: true }), path.join(testCodexHome, 'config.toml'));
+    assert.equal(
+      getMcpConfigPath('codex', { global: true }),
+      path.join(testCodexHome, 'config.toml')
+    );
     assert.equal(
       getMcpConfigPath('opencode', { global: true }),
       path.join(home, '.config', 'opencode', 'opencode.json')

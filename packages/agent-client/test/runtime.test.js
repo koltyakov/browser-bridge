@@ -151,7 +151,12 @@ test('installMcpConfig upserts Codex TOML config without dropping other sections
     assert.match(merged, /model = "gpt-5"/);
     assert.match(merged, /\[sandbox_workspace_write\]/);
     assert.match(merged, /\[mcp_servers\."browser-bridge"\]/);
-    assert.match(merged, new RegExp(`command = ${JSON.stringify(expectedMcpCommand).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.match(
+      merged,
+      new RegExp(
+        `command = ${JSON.stringify(expectedMcpCommand).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`
+      )
+    );
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }

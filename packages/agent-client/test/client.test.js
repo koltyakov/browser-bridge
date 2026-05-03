@@ -1669,7 +1669,10 @@ test('formatMcpConfig returns pretty JSON with newline', () => {
 test('formatMcpConfig returns Codex TOML with newline', () => {
   const formatted = formatMcpConfig('codex');
   assert.match(formatted, /\[mcp_servers\."browser-bridge"\]/);
-  assert.match(formatted, new RegExp(`command = ${escapeRegExp(JSON.stringify(expectedMcpCommand))}`));
+  assert.match(
+    formatted,
+    new RegExp(`command = ${escapeRegExp(JSON.stringify(expectedMcpCommand))}`)
+  );
   assert.ok(formatted.endsWith('\n'));
 });
 
@@ -1688,10 +1691,7 @@ test('getMcpConfigPath supports Copilot global and local locations', () => {
 test('getMcpConfigPath supports Claude Code global and local locations', () => {
   const home = os.homedir();
   const cwd = path.join(path.sep, 'tmp', 'demo');
-  assert.equal(
-    getMcpConfigPath('claude', { global: false, cwd }),
-    path.join(cwd, '.mcp.json')
-  );
+  assert.equal(getMcpConfigPath('claude', { global: false, cwd }), path.join(cwd, '.mcp.json'));
   assert.equal(getMcpConfigPath('claude', { global: true }), path.join(home, '.claude.json'));
 });
 
