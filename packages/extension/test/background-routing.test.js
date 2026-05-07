@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ERROR_CODES } from '../../protocol/src/index.js';
+import { BridgeError, ERROR_CODES } from '../../protocol/src/index.js';
 import {
   isRestrictedAutomationUrl,
   normalizeRequestedAccessTab,
@@ -46,7 +46,7 @@ test('background routing rejects tabs outside the enabled window scope', () => {
 
   assert.throws(
     () => resolveWindowScopedTab(otherWindowTab, 3),
-    new Error(ERROR_CODES.ACCESS_DENIED)
+    (err) => err instanceof BridgeError && err.code === ERROR_CODES.ACCESS_DENIED
   );
 });
 
@@ -65,7 +65,7 @@ test('background routing falls back to the active tab when no explicit request i
 test('background routing treats malformed or incomplete tabs as mismatches', () => {
   assert.throws(
     () => resolveWindowScopedTab(/** @type {chrome.tabs.Tab} */ ({ windowId: 3 }), 3),
-    new Error(ERROR_CODES.TAB_MISMATCH)
+    (err) => err instanceof BridgeError && err.code === ERROR_CODES.TAB_MISMATCH
   );
   assert.throws(
     () =>
@@ -73,7 +73,7 @@ test('background routing treats malformed or incomplete tabs as mismatches', () 
         /** @type {chrome.tabs.Tab} */ ({ id: 1, windowId: 3, title: 'Broken' }),
         3
       ),
-    new Error(ERROR_CODES.TAB_MISMATCH)
+    (err) => err instanceof BridgeError && err.code === ERROR_CODES.TAB_MISMATCH
   );
   assert.equal(
     normalizeRequestedAccessTab(/** @type {chrome.tabs.Tab} */ ({ id: 1, windowId: 3 })),
@@ -109,7 +109,7 @@ test('background routing rejects restricted automation pages and access requests
   assert.equal(isRestrictedAutomationUrl(restrictedUrl), true);
   assert.throws(
     () => resolveWindowScopedTab(restrictedTab, 3),
-    new Error(ERROR_CODES.ACCESS_DENIED)
+    (err) => err instanceof BridgeError && err.code === ERROR_CODES.ACCESS_DENIED
   );
   assert.equal(normalizeRequestedAccessTab(restrictedTab), null);
 });

@@ -196,6 +196,48 @@ export async function stopBridgeDaemon(options = {}) {
  * }>}
  */
 export async function restartBridgeDaemon(options = {}) {
+  const stopResult = await stopBridgeDaemon(options);
+  return restartBridgeDaemonAfterStop(stopResult, options);
+}
+
+/**
+ * Restart the daemon only when one is already running. This is useful during
+ * package upgrades where the launcher changed and the in-memory daemon should
+ * pick up the new install, without eagerly starting a fresh background process.
+ *
+ * @param {RestartBridgeDaemonOptions} [options={}]
+ * @returns {Promise<{
+ *   transport: string,
+ *   socketPath: string,
+ *   pidPath: string,
+ *   pid: number | null,
+ *   previouslyRunning: boolean,
+ *   previousPid: number | null,
+ *   removedStaleSocket: boolean,
+ * } | null>}
+ */
+export async function restartBridgeDaemonIfRunning(options = {}) {
+  const stopResult = await stopBridgeDaemon(options);
+  if (!stopResult.previouslyRunning) {
+    return null;
+  }
+  return restartBridgeDaemonAfterStop(stopResult, options);
+}
+
+/**
+ * @param {Awaited<ReturnType<typeof stopBridgeDaemon>>} stopResult
+ * @param {RestartBridgeDaemonOptions} [options={}]
+ * @returns {Promise<{
+ *   transport: string,
+ *   socketPath: string,
+ *   pidPath: string,
+ *   pid: number | null,
+ *   previouslyRunning: boolean,
+ *   previousPid: number | null,
+ *   removedStaleSocket: boolean,
+ * }>}
+ */
+async function restartBridgeDaemonAfterStop(stopResult, options = {}) {
   const {
     transport = getBridgeTransport(),
     socketPath = undefined,
@@ -204,26 +246,10 @@ export async function restartBridgeDaemon(options = {}) {
     pollIntervalMs = DEFAULT_DAEMON_POLL_INTERVAL_MS,
     pingDaemonFn = pingExistingDaemon,
     readPidFn = readDaemonPidFile,
-    findPidByTransportFn = findDaemonPidByTransport,
-    killFn = process.kill.bind(process),
-    rmFn = fs.promises.rm,
     sleepFn = sleep,
     spawnDaemonFn = spawnBridgeDaemonProcess,
   } = options;
   const resolvedTransport = socketPath ? createSocketBridgeTransport(socketPath) : transport;
-
-  const stopResult = await stopBridgeDaemon({
-    transport: resolvedTransport,
-    pidPath,
-    timeoutMs,
-    pollIntervalMs,
-    pingDaemonFn,
-    readPidFn,
-    findPidByTransportFn,
-    killFn,
-    rmFn,
-    sleepFn,
-  });
 
   spawnDaemonFn();
 

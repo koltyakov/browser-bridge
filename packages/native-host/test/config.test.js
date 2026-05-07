@@ -64,6 +64,41 @@ async function withMockedConfigEnvironment(options, callback) {
   }
 }
 
+test('getSocketPath returns Windows named pipe path on win32 without BRIDGE_HOME', async () => {
+  await withMockedConfigEnvironment(
+    {
+      platform: 'win32',
+      home: 'C:\\Users\\tester',
+      env: {
+        [BRIDGE_HOME_ENV]: undefined,
+        LOCALAPPDATA: 'C:\\Users\\tester\\AppData\\Local',
+      },
+    },
+    async () => {
+      const result = getSocketPath();
+      assert.equal(result, `\\\\.\\pipe\\com.browserbridge.browser_bridge`);
+    }
+  );
+});
+
+test('getSocketPath returns file socket on win32 when BRIDGE_HOME is set', async () => {
+  await withMockedConfigEnvironment(
+    {
+      platform: 'win32',
+      home: 'C:\\Users\\tester',
+      env: {
+        [BRIDGE_HOME_ENV]: 'C:\\tmp\\bbx-custom',
+        LOCALAPPDATA: 'C:\\Users\\tester\\AppData\\Local',
+      },
+    },
+    async () => {
+      const result = getSocketPath();
+      assert.ok(result.includes('bridge.sock'));
+      assert.equal(result.startsWith('\\\\.\\pipe\\'), false);
+    }
+  );
+});
+
 test('getBridgeDir honors BROWSER_BRIDGE_HOME override and socket path uses it', async () => {
   // Pin to Linux so the assertions stay on a stable POSIX path shape.
   await withMockedConfigEnvironment(

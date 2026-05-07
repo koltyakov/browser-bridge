@@ -70,6 +70,7 @@ import {
 /**
  * @typedef {{
  *   nativeConnected: boolean,
+ *   nativeHostVersion: string | null,
  *   currentTab: SidePanelCurrentTab | null,
  *   setupStatus: SetupStatus | null,
  *   setupStatusPending: boolean,
@@ -110,6 +111,9 @@ const installationSection = /** @type {HTMLDetailsElement} */ (
 );
 const setupStatusNote =
   /** @type {HTMLParagraphElement} */ (document.getElementById('setup-status-note'));
+const setupHostVersion = /** @type {HTMLParagraphElement} */ (
+  document.getElementById('setup-host-version')
+);
 const setupStatusSummaryNote = /** @type {HTMLSpanElement} */ (
   document.getElementById('setup-status-summary-note')
 );
@@ -360,6 +364,7 @@ window.addEventListener('beforeunload', () => {
  * @returns {void}
  */
 function renderState(state) {
+  renderHostVersion(state.nativeHostVersion);
   renderSidepanelState(state, {
     hideSetupContextMenu,
     renderNativeStatus,
@@ -486,6 +491,7 @@ function renderNativeStatus(connected, error) {
   controlSection.hidden = !connected;
   installationSection.hidden = !connected;
   if (!connected) {
+    renderHostVersion(null);
     setupInstallCmd.textContent = view.installCommand;
     setupSkillCmd.textContent = view.skillCommand;
     setupMcpCmd.textContent = view.mcpCommand;
@@ -505,6 +511,21 @@ function renderNativeStatus(connected, error) {
       showSidepanelDiagnostic(view.diagnosticMessage);
     }, NATIVE_DIAGNOSTIC_DELAY_MS);
   }
+}
+
+/**
+ * @param {string | null} hostVersion
+ * @returns {void}
+ */
+function renderHostVersion(hostVersion) {
+  if (!hostVersion) {
+    setupHostVersion.hidden = true;
+    setupHostVersion.textContent = '';
+    return;
+  }
+
+  setupHostVersion.hidden = false;
+  setupHostVersion.textContent = `Daemon version: v${hostVersion}`;
 }
 
 /**

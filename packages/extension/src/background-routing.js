@@ -1,6 +1,6 @@
 // @ts-check
 
-import { ERROR_CODES } from '../../protocol/src/index.js';
+import { BridgeError, ERROR_CODES } from '../../protocol/src/index.js';
 
 /**
  * @typedef {{
@@ -43,16 +43,19 @@ export function selectRequestTabCandidate(requestTabId, explicitTab, activeTab) 
 export function resolveWindowScopedTab(tab, enabledWindowId, options = {}) {
   const requireScriptable = options.requireScriptable !== false;
   if (typeof tab?.id !== 'number' || !Number.isFinite(tab.id) || typeof tab.windowId !== 'number') {
-    throw new Error(ERROR_CODES.TAB_MISMATCH);
+    throw new BridgeError(
+      ERROR_CODES.TAB_MISMATCH,
+      'Tab object is invalid or missing required properties'
+    );
   }
   if (tab.windowId !== enabledWindowId) {
-    throw new Error(ERROR_CODES.ACCESS_DENIED);
+    throw new BridgeError(ERROR_CODES.ACCESS_DENIED, 'Tab does not belong to the enabled window');
   }
   if (typeof tab.url !== 'string' || !tab.url) {
-    throw new Error(ERROR_CODES.TAB_MISMATCH);
+    throw new BridgeError(ERROR_CODES.TAB_MISMATCH, 'Tab has no URL available');
   }
   if (requireScriptable && isRestrictedAutomationUrl(tab.url)) {
-    throw new Error(ERROR_CODES.ACCESS_DENIED);
+    throw new BridgeError(ERROR_CODES.ACCESS_DENIED, 'Tab URL is restricted for automation');
   }
 
   return {

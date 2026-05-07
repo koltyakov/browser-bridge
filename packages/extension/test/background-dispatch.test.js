@@ -701,6 +701,10 @@ test('background dispatch routes page.get_state through the tab-bound content sc
       target: { tabId: 41 },
       files: [
         'packages/extension/src/content-script-helpers.js',
+        'packages/extension/src/content-element-registry.js',
+        'packages/extension/src/content-dom-query.js',
+        'packages/extension/src/content-input.js',
+        'packages/extension/src/content-patch.js',
         'packages/extension/src/content-script.js',
       ],
     },
@@ -806,7 +810,7 @@ test('background dispatch rejects tab-bound requests for tabs outside the enable
   assert.equal(executeScriptCalled, false);
   assert.equal(response.ok, false);
   assert.equal(response.error.code, ERROR_CODES.ACCESS_DENIED);
-  assert.equal(response.error.message, ERROR_CODES.ACCESS_DENIED);
+  assert.equal(response.error.message, 'Tab does not belong to the enabled window');
   assert.equal(response.meta?.method, 'page.get_state');
 });
 
@@ -2071,7 +2075,7 @@ test('background dispatch reports TAB_MISMATCH when a waited-on tab closes', asy
   assert.equal(loaded.chrome.tabs.onRemoved.listeners.length, 1);
   assert.equal(response.ok, false);
   assert.equal(response.error.code, ERROR_CODES.TAB_MISMATCH);
-  assert.equal(response.error.message, ERROR_CODES.TAB_MISMATCH);
+  assert.equal(response.error.message, 'Tab was closed while waiting for load');
   assert.equal(response.meta?.method, 'page.wait_for_load_state');
 });
 

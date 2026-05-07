@@ -43,10 +43,13 @@ function restoreGlobal(key, savedValue) {
 
 /**
  * @param {boolean} enabled
+ * @param {import('../../protocol/src/types.js').SetupStatus | null} [setupStatus=null]
+ * @param {string | null} [nativeHostVersion=null]
  * @returns {{
  *   type: 'state.sync',
  *   state: {
  *     nativeConnected: true,
+ *     nativeHostVersion: string | null,
  *     currentTab: {
  *       tabId: number,
  *       windowId: number,
@@ -56,7 +59,7 @@ function restoreGlobal(key, savedValue) {
  *       accessRequested: false,
  *       restricted: false
  *     },
- *     setupStatus: null,
+ *     setupStatus: import('../../protocol/src/types.js').SetupStatus | null,
  *     setupStatusPending: false,
  *     setupStatusError: null,
  *     setupInstallPendingKey: null,
@@ -65,11 +68,12 @@ function restoreGlobal(key, savedValue) {
  *   }
  * }}
  */
-function createSidepanelStateSync(enabled) {
+function createSidepanelStateSync(enabled, setupStatus = null, nativeHostVersion = null) {
   return {
     type: 'state.sync',
     state: {
       nativeConnected: true,
+      nativeHostVersion,
       currentTab: {
         tabId: 41,
         windowId: 7,
@@ -79,7 +83,7 @@ function createSidepanelStateSync(enabled) {
         accessRequested: false,
         restricted: false,
       },
-      setupStatus: null,
+      setupStatus,
       setupStatusPending: false,
       setupStatusError: null,
       setupInstallPendingKey: null,
@@ -162,5 +166,70 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
     portPair.left.dispatchMessage(createSidepanelStateSync(true));
     assert.equal(button.textContent, 'Disable Window Access');
     assert.equal(button.disabled, false);
+  });
+});
+
+test('sidepanel UI shows the global host CLI and daemon version', async (t) => {
+  const sidepanelHtml = await readFile(SIDEPANEL_HTML_URL, 'utf8');
+  const savedChrome = Object.prototype.hasOwnProperty.call(globalThis, 'chrome')
+    ? globalThis.chrome
+    : MISSING;
+  const savedSetInterval = globalThis.setInterval;
+  const savedClearInterval = globalThis.clearInterval;
+  t.after(() => {
+    restoreGlobal('chrome', savedChrome);
+    restoreGlobal('setInterval', savedSetInterval);
+    restoreGlobal('clearInterval', savedClearInterval);
+  });
+
+  const portPair = createMessagePortPair();
+
+  Reflect.set(
+    globalThis,
+    'setInterval',
+    /** @type {typeof setInterval} */ (
+      /** @type {unknown} */ (
+        () => {
+          return /** @type {ReturnType<typeof setInterval>} */ (
+            /** @type {unknown} */ ({
+              id: 'sidepanel-version-interval',
+            })
+          );
+        }
+      )
+    )
+  );
+  Reflect.set(
+    globalThis,
+    'clearInterval',
+    /** @type {typeof clearInterval} */ (/** @type {unknown} */ (() => {}))
+  );
+  Reflect.set(
+    globalThis,
+    'chrome',
+    /** @type {any} */ (
+      createChromeFake({
+        runtime: {
+          /** @param {chrome.runtime.ConnectInfo} connectInfo */
+          connect(connectInfo) {
+            assert.deepEqual(connectInfo, { name: 'ui-sidepanel' });
+            return /** @type {any} */ (portPair.left.port);
+          },
+        },
+      })
+    )
+  );
+
+  await withDocument(sidepanelHtml, async ({ window }) => {
+    Reflect.set(window, 'location', new URL('https://example.com/sidepanel.html'));
+    await importFreshSidepanelScript();
+    await flushMicrotasks();
+
+    portPair.left.dispatchMessage(createSidepanelStateSync(true, null, '1.2.0'));
+
+    const hostVersion = document.getElementById('setup-host-version');
+    assert.ok(hostVersion instanceof HTMLElement);
+    assert.equal(hostVersion.textContent, 'Daemon version: v1.2.0');
+    assert.equal(hostVersion.hidden, false);
   });
 });

@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 
+import { createSuccess, PROTOCOL_VERSION } from '../../protocol/src/index.js';
 import {
   interactiveCheckbox,
   interactiveConfirm,
@@ -37,6 +38,7 @@ import {
 import { annotateBridgeSummary, summarizeBridgeResponse } from '../src/subagent.js';
 import { BridgeClient } from '../src/client.js';
 import { clockController } from '../../../tests/_helpers/faultInjection.js';
+import { bridgeServerWith } from '../../../tests/_helpers/socketHarness.js';
 
 const expectedMcpCommand = process.platform === 'win32' ? process.execPath : 'bbx';
 const expectedMcpArgs =
@@ -116,6 +118,97 @@ test('BridgeClient.checkProtocolVersion falls back to a generated mismatch warni
   assert.equal(result.compatible, false);
   assert.match(result.warning || '', /Protocol mismatch: client speaks/);
   assert.match(result.warning || '', /remote supports \[0\.0\]/);
+});
+
+test('BridgeClient auto-restarts an older daemon once during connect', async () => {
+  let supportedVersion = '0.9';
+  let restartCount = 0;
+  const bridgeServer = await bridgeServerWith({
+    'health.ping': (request) =>
+      createSuccess(request.id, {
+        daemon: 'ok',
+        supported_versions: [supportedVersion],
+      }),
+  });
+
+  const client = new BridgeClient({
+    socketPath: bridgeServer.socketPath,
+    restartDaemonFn: async () => {
+      restartCount += 1;
+      supportedVersion = PROTOCOL_VERSION;
+      return {
+        transport: bridgeServer.socketPath,
+        socketPath: bridgeServer.socketPath,
+        pidPath: path.join(bridgeServer.bridgeHome, 'daemon.pid'),
+        pid: 31337,
+        previouslyRunning: true,
+        previousPid: 31336,
+        removedStaleSocket: false,
+      };
+    },
+  });
+
+  try {
+    await client.connect();
+
+    assert.equal(restartCount, 1);
+    assert.equal(client.connected, true);
+    assert.equal(client.protocolCompatibility?.compatible, true);
+    assert.equal(client.protocolWarning, null);
+    assert.equal(
+      bridgeServer.requests.filter((request) => request.method === 'health.ping').length,
+      2
+    );
+  } finally {
+    await client.close().catch(() => {});
+    await bridgeServer.close();
+  }
+});
+
+test('BridgeClient does not restart when the daemon is newer than the client', async () => {
+  let restartCount = 0;
+  const bridgeServer = await bridgeServerWith({
+    'health.ping': (request) =>
+      createSuccess(request.id, {
+        daemon: 'ok',
+        supported_versions: ['9.0'],
+        migration_hint: 'Browser Bridge daemon is newer than the client protocol 1.0.',
+      }),
+  });
+
+  const client = new BridgeClient({
+    socketPath: bridgeServer.socketPath,
+    restartDaemonFn: async () => {
+      restartCount += 1;
+      return {
+        transport: bridgeServer.socketPath,
+        socketPath: bridgeServer.socketPath,
+        pidPath: path.join(bridgeServer.bridgeHome, 'daemon.pid'),
+        pid: 31337,
+        previouslyRunning: true,
+        previousPid: 31336,
+        removedStaleSocket: false,
+      };
+    },
+  });
+
+  try {
+    await client.connect();
+
+    assert.equal(restartCount, 0);
+    assert.equal(client.protocolCompatibility?.compatible, false);
+    assert.equal(
+      client.protocolWarning,
+      'Browser Bridge daemon is newer than the client protocol 1.0.'
+    );
+    assert.equal(
+      bridgeServer.requests.filter((request) => request.method === 'health.ping').length,
+      1
+    );
+  } finally {
+    await client.close().catch(() => {});
+    await bridgeServer.close();
+  }
 });
 
 test('BridgeClient.rejectAllPending rejects every pending request and clears the map', () => {

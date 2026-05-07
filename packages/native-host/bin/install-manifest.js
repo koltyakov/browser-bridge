@@ -3,6 +3,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { restartBridgeDaemonIfRunning } from '../src/daemon-process.js';
 import {
   installNativeManifest,
   parseExtensionId,
@@ -76,4 +77,11 @@ for (const [index, target] of targets.entries()) {
     extensionIdArg,
     browser: target,
   });
+}
+
+if (!uninstall) {
+  const restartResult = await restartBridgeDaemonIfRunning();
+  if (restartResult) {
+    process.stdout.write('Restarted Browser Bridge daemon to use the updated install.\n');
+  }
 }

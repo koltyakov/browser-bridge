@@ -1,6 +1,11 @@
 // @ts-check
 
-import { ERROR_CODES, createSuccess, normalizeNavigationAction } from '../../protocol/src/index.js';
+import {
+  BridgeError,
+  ERROR_CODES,
+  createSuccess,
+  normalizeNavigationAction,
+} from '../../protocol/src/index.js';
 import { summarizeTabResult } from './background-helpers.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */
@@ -42,7 +47,7 @@ export async function handleNavigationRequest(request, dependencies) {
 
   if (request.method === 'navigation.navigate') {
     if (!action.url) {
-      throw new Error(ERROR_CODES.INVALID_REQUEST);
+      throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'Missing required url for navigation');
     }
     await dependencies.updateTab(target.tabId, { url: action.url });
   } else if (request.method === 'navigation.reload') {

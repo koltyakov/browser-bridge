@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-05-07
+
+### Added
+
+- **Daemon diagnostics and metrics:** Added structured daemon logging and the
+  `daemon.metrics` bridge method so agents and local tooling can inspect daemon
+  uptime, active connections, pending requests, failure counts, and average
+  response time.
+- **Protocol version negotiation:** Health checks now advertise supported
+  protocol versions and include migration hints when the CLI/MCP client and
+  daemon are out of sync. The agent client also detects those mismatches and
+  can restart a stale daemon automatically after upgrades.
+
+### Fixed
+
+- **Screenshot tab targeting:** `bbx screenshot --tab <id> <ref|selector>
+  [path]` now forwards the selected tab consistently when resolving the target
+  element and capturing the screenshot, instead of misparsing `--tab` as a
+  positional argument.
+
 ## [1.1.0] - 2026-05-02
 
 ### Added

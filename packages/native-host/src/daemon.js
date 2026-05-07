@@ -36,13 +36,17 @@ import {
   getBridgeTransport,
   getSocketPath,
 } from './config.js';
+import { normalizeDaemonLogger } from './daemon-logger.js';
 import { writeJsonLine } from './framing.js';
+
+const DAEMON_VERSION = loadDaemonVersion();
 
 /** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */
 /** @typedef {import('../../protocol/src/types.js').SetupInstallParams} SetupInstallParams */
 /** @typedef {import('../../protocol/src/types.js').SetupInstallResult} SetupInstallResult */
 /** @typedef {import('../../protocol/src/types.js').SetupStatus} SetupStatus */
 /** @typedef {import('./config.js').BridgeTransport} BridgeTransport */
+/** @typedef {import('./daemon-logger.js').DaemonLoggerLike} DaemonLoggerLike */
 /** @typedef {import('node:net').Socket & { __clientId?: string, __extensionId?: string, __browserName?: string, __profileLabel?: string, __accessEnabled?: boolean, __lastActiveAt?: number }} ClientSocket */
 /** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string, method?: string, targets: Set<ClientSocket>, lastErrorResponse?: import('../../protocol/src/types.js').BridgeResponse }} PendingEntry */
 /**
@@ -96,10 +100,23 @@ function getVersionNegotiationPayload(requestedVersion) {
 }
 
 /**
+ * @returns {string | null}
+ */
+function loadDaemonVersion() {
+  try {
+    const raw = fs.readFileSync(new URL('../../../package.json', import.meta.url), 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed.version === 'string' ? parsed.version : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * @param {string} socketPath
  * @returns {boolean}
  */
-function isWindowsNamedPipePath(socketPath) {
+export function isWindowsNamedPipePath(socketPath) {
   return socketPath.startsWith('\\\\.\\pipe\\');
 }
 
@@ -129,7 +146,7 @@ export class BridgeDaemon {
    *   listenOptions?: import('node:net').ListenOptions | null,
    *   setupStatusLoader?: () => Promise<SetupStatus>,
    *   setupInstaller?: (params: Record<string, unknown>) => Promise<SetupInstallResult>,
-   *   logger?: Pick<Console, 'log' | 'error'>
+   *   logger?: DaemonLoggerLike | Pick<Console, 'log' | 'error'>
    * }} [options={}]
    */
   constructor({
@@ -138,7 +155,7 @@ export class BridgeDaemon {
     listenOptions = null,
     setupStatusLoader = collectSetupStatus,
     setupInstaller = installSetupTarget,
-    logger = console,
+    logger = undefined,
   } = {}) {
     this.transport = socketPath ? createSocketBridgeTransport(socketPath) : transport;
     this.socketPath =
@@ -146,7 +163,8 @@ export class BridgeDaemon {
     this.listenOptions = listenOptions ?? getBridgeListenTarget(this.transport);
     this.setupStatusLoader = setupStatusLoader;
     this.setupInstaller = setupInstaller;
-    this.logger = logger;
+    /** @type {DaemonLoggerLike} */
+    this.logger = normalizeDaemonLogger(logger);
     /** @type {net.Server | null} */
     this.server = null;
     /** @type {net.AddressInfo | string | null} */
@@ -168,6 +186,16 @@ export class BridgeDaemon {
     this.connectedExtensionsCache = null;
     /** @type {Promise<void> | null} */
     this.stopPromise = null;
+    /** @type {number} */
+    this.startedAt = 0;
+    /** @type {number} */
+    this.requestsProcessed = 0;
+    /** @type {number} */
+    this.requestsFailed = 0;
+    /** @type {number} */
+    this.totalResponseTimeMs = 0;
+    /** @type {Map<string, number>} */
+    this.requestStartTimes = new Map();
   }
 
   /**
@@ -216,6 +244,7 @@ export class BridgeDaemon {
    */
   trackPendingRequest(requestId, pending) {
     this.pendingRequests.set(requestId, pending);
+    this.requestStartTimes.set(requestId, Date.now());
     this.addPendingRequestIndex(this.pendingRequestsByOwnerSocket, pending.socket, requestId);
     for (const targetSocket of pending.targets) {
       this.addPendingRequestIndex(this.pendingRequestsByTargetSocket, targetSocket, requestId);
@@ -232,6 +261,7 @@ export class BridgeDaemon {
       return undefined;
     }
     this.pendingRequests.delete(requestId);
+    this.requestStartTimes.delete(requestId);
     this.removePendingRequestIndex(this.pendingRequestsByOwnerSocket, pending.socket, requestId);
     for (const targetSocket of pending.targets) {
       this.removePendingRequestIndex(this.pendingRequestsByTargetSocket, targetSocket, requestId);
@@ -287,6 +317,11 @@ export class BridgeDaemon {
       socket.__lastActiveAt = Date.now();
       this.extensionSockets.set(extensionId, socket);
       this.invalidateConnectedExtensionsCache();
+      this.logger.info('extension registered', {
+        extensionId,
+        browserName: socket.__browserName ?? null,
+        profileLabel: socket.__profileLabel ?? null,
+      });
       void writeJsonLine(socket, { type: 'registered', role: 'extension' });
       return;
     }
@@ -295,6 +330,7 @@ export class BridgeDaemon {
       const clientId = message.clientId || randomUUID();
       this.agentSockets.set(clientId, socket);
       socket.__clientId = clientId;
+      this.logger.info('agent registered', { clientId });
       void writeJsonLine(socket, {
         type: 'registered',
         role: 'agent',
@@ -320,7 +356,9 @@ export class BridgeDaemon {
             `Another daemon is already running on ${this.socketPath}. Stop it before starting a new one.`
           );
         }
-        this.logger.log('[daemon] Removing stale socket from previous run:', this.socketPath);
+        this.logger.info('Removing stale socket from previous run', {
+          socketPath: this.socketPath,
+        });
       } catch (error) {
         if (error instanceof Error && error.message.startsWith('Another daemon')) {
           throw error;
@@ -333,15 +371,14 @@ export class BridgeDaemon {
     this.server = net.createServer((socket) => {
       const typedSocket = /** @type {ClientSocket} */ (socket);
       typedSocket.on('error', (err) => {
-        this.logger.error?.('[daemon] socket error:', err.message);
+        this.logger.error('socket error', { message: err.message });
       });
       parseJsonLines(typedSocket, (raw) => {
         const message = /** @type {DaemonMessage} */ (raw);
         void this.handleClientMessage(typedSocket, message).catch((err) => {
-          this.logger.error?.(
-            '[daemon] handler error:',
-            err instanceof Error ? err.message : String(err)
-          );
+          this.logger.error('handler error', {
+            message: err instanceof Error ? err.message : String(err),
+          });
         });
       });
       typedSocket.on('close', () => this.handleSocketClose(typedSocket));
@@ -361,6 +398,13 @@ export class BridgeDaemon {
     if (this.transport.type === 'socket' && process.platform !== 'win32') {
       await fs.promises.chmod(this.socketPath, 0o600);
     }
+
+    this.logger.info('Daemon listening', {
+      transport: formatBridgeTransport(this.transport),
+      socketPath: this.socketPath ?? null,
+    });
+
+    this.startedAt = Date.now();
 
     return this;
   }
@@ -483,10 +527,12 @@ export class BridgeDaemon {
       if (this.extensionSockets.size === 0) {
         const response = createSuccess(request.id, {
           daemon: 'ok',
+          daemonVersion: DAEMON_VERSION,
           extensionConnected: false,
           socketPath: this.socketPath,
           transport: formatBridgeTransport(this.transport),
           connectedExtensions: [],
+          daemon_supported_versions: SUPPORTED_VERSIONS,
           ...getVersionNegotiationPayload(request.meta?.protocol_version),
         });
         await writeJsonLine(socket, { type: 'agent.response', response });
@@ -497,6 +543,26 @@ export class BridgeDaemon {
     if (request.method === 'log.tail') {
       const response = createSuccess(request.id, {
         entries: this.recentLog.slice(-DEFAULT_LOG_TAIL_LIMIT),
+      });
+      await writeJsonLine(socket, { type: 'agent.response', response });
+      return;
+    }
+
+    if (request.method === 'daemon.metrics') {
+      const now = Date.now();
+      const uptimeMs = this.startedAt > 0 ? now - this.startedAt : 0;
+      const avgResponseTimeMs =
+        this.requestsProcessed > 0
+          ? Math.round(this.totalResponseTimeMs / this.requestsProcessed)
+          : 0;
+      const response = createSuccess(request.id, {
+        uptimeMs,
+        activeAgents: this.agentSockets.size,
+        activeExtensions: this.extensionSockets.size,
+        pendingRequests: this.pendingRequests.size,
+        requestsProcessed: this.requestsProcessed,
+        requestsFailed: this.requestsFailed,
+        avgResponseTimeMs,
       });
       await writeJsonLine(socket, { type: 'agent.response', response });
       return;
@@ -593,6 +659,7 @@ export class BridgeDaemon {
         const pending = this.pendingRequests.get(request.id);
         if (!pending) return;
         this.clearPendingRequest(request.id, pending);
+        this.recordRequestCompletion(request.id, false);
         const response = createFailure(
           request.id,
           ERROR_CODES.TIMEOUT,
@@ -603,6 +670,12 @@ export class BridgeDaemon {
           response,
         });
       }, this.pendingTimeoutMs),
+    });
+    this.logger.info('request routed', {
+      requestId: request.id,
+      method: request.method,
+      clientId: socket.__clientId ?? null,
+      targetCount: targets.length,
     });
     const broadcastPayload = { type: 'extension.request', request };
     await Promise.all(targets.map((extSocket) => writeJsonLine(extSocket, broadcastPayload)));
@@ -697,6 +770,7 @@ export class BridgeDaemon {
     if (responseMessage.ok) {
       clearTimeout(pending.timeoutId);
       this.clearPendingRequest(responseMessage.id, pending);
+      this.recordRequestCompletion(responseMessage.id, true);
       this.pushLog({
         at: new Date().toISOString(),
         method: responseMessage.meta?.method ?? null,
@@ -715,6 +789,8 @@ export class BridgeDaemon {
                 transport: formatBridgeTransport(this.transport),
                 connectedExtensions: this.getConnectedExtensionsSnapshot(),
                 .../** @type {Record<string, unknown>} */ (responseMessage.result),
+                daemonVersion: DAEMON_VERSION,
+                daemon_supported_versions: SUPPORTED_VERSIONS,
               },
               {
                 ...responseMessage.meta,
@@ -742,11 +818,13 @@ export class BridgeDaemon {
    */
   handleSocketClose(socket) {
     if (socket.__extensionId) {
+      this.logger.info('extension disconnected', { extensionId: socket.__extensionId });
       this.extensionSockets.delete(socket.__extensionId);
       this.invalidateConnectedExtensionsCache();
     }
 
     if (socket.__clientId) {
+      this.logger.info('agent disconnected', { clientId: socket.__clientId });
       this.agentSockets.delete(socket.__clientId);
     }
 
@@ -759,6 +837,7 @@ export class BridgeDaemon {
         }
         clearTimeout(pending.timeoutId);
         this.clearPendingRequest(id, pending);
+        this.recordRequestCompletion(id, false);
       }
     }
 
@@ -790,6 +869,7 @@ export class BridgeDaemon {
 
     clearTimeout(pending.timeoutId);
     this.clearPendingRequest(requestId, pending);
+    this.recordRequestCompletion(requestId, false);
 
     const response =
       pending.lastErrorResponse ??
@@ -813,6 +893,22 @@ export class BridgeDaemon {
       type: 'agent.response',
       response,
     });
+  }
+
+  /**
+   * @param {string} requestId
+   * @param {boolean} ok
+   * @returns {void}
+   */
+  recordRequestCompletion(requestId, ok) {
+    const startedAt = this.requestStartTimes.get(requestId);
+    this.requestsProcessed += 1;
+    if (!ok) {
+      this.requestsFailed += 1;
+    }
+    if (typeof startedAt === 'number') {
+      this.totalResponseTimeMs += Date.now() - startedAt;
+    }
   }
 
   /**

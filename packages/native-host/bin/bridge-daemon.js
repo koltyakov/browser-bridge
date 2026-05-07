@@ -6,11 +6,12 @@ import {
   formatBridgeTransport,
   getBridgeTransport,
 } from '../src/config.js';
+import { DaemonLogger } from '../src/daemon-logger.js';
 import { clearDaemonPidFile, writeDaemonPidFile } from '../src/daemon-process.js';
 
 applyWindowsTcpTransportDefaults();
 const transport = getBridgeTransport();
-const daemon = new BridgeDaemon({ transport });
+const daemon = new BridgeDaemon({ transport, logger: new DaemonLogger() });
 
 /**
  * @param {unknown} error

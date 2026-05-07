@@ -401,7 +401,7 @@ export function createBridgeMcpServer() {
           .optional()
           .describe('Mouse button for click (default: left)'),
         clickCount: z.number().optional().describe('Click count (1=single, 2=double)'),
-        text: z.string().optional().describe('Text to type (for type action)'),
+        text: z.string().max(100000).optional().describe('Text to type (for type action)'),
         clear: z.boolean().optional().describe('Clear field before typing (default: false)'),
         submit: z.boolean().optional().describe('Press Enter after typing (default: false)'),
         key: z

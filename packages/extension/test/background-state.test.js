@@ -307,7 +307,7 @@ test('background state scope.set_enabled surfaces tab mismatch and ignores disab
 
   assert.deepEqual(portPair.left.postedMessages.at(-1), {
     type: 'toggle.error',
-    error: 'TAB_MISMATCH',
+    error: 'No active tab available',
   });
   assert.deepEqual(state.enabledWindow, {
     windowId: 9,

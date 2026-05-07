@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ERROR_CODES } from '../../protocol/src/index.js';
+import { BridgeError, ERROR_CODES } from '../../protocol/src/index.js';
 import { handleNavigationRequest } from '../src/background-navigation.js';
 import { makeRequest } from '../../../tests/_helpers/protocolFactories.js';
 
@@ -102,7 +102,7 @@ function createDependencies(overrides = {}) {
 test('handleNavigationRequest enforces scriptable target resolution before navigation', async () => {
   const dependencies = createDependencies({
     async resolveRequestTarget() {
-      throw new Error(ERROR_CODES.ACCESS_DENIED);
+      throw new BridgeError(ERROR_CODES.ACCESS_DENIED, 'No window enabled');
     },
   });
 
@@ -115,7 +115,7 @@ test('handleNavigationRequest enforces scriptable target resolution before navig
         }),
         dependencies
       ),
-    new Error(ERROR_CODES.ACCESS_DENIED)
+    (err) => err instanceof BridgeError && err.code === ERROR_CODES.ACCESS_DENIED
   );
 
   assert.deepEqual(dependencies.calls.reload, []);

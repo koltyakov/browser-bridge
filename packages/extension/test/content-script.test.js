@@ -96,6 +96,10 @@ async function loadContentScript(t, options = {}) {
   const globalsToCapture = [
     'chrome',
     '__BBX_CONTENT_HELPERS__',
+    '__BBX_CONTENT_REGISTRY__',
+    '__BBX_CONTENT_DOM_QUERY__',
+    '__BBX_CONTENT_INPUT__',
+    '__BBX_CONTENT_PATCH__',
     '__chromeCodexBridgeContentScriptLoaded',
   ];
   if (!options.preserveDomGlobals) {
@@ -132,6 +136,13 @@ async function loadContentScript(t, options = {}) {
     }
   }
 
+  if (options.withHelpers) {
+    await importFresh('../src/content-element-registry.js');
+    await importFresh('../src/content-dom-query.js');
+    await importFresh('../src/content-input.js');
+    await importFresh('../src/content-patch.js');
+  }
+
   await importFresh('../src/content-script.js');
 }
 
@@ -143,6 +154,7 @@ async function loadContentScript(t, options = {}) {
  *   outerHTML?: string,
  *   attributes?: Record<string, string>,
  *   children?: Array<any>,
+ *   rect?: { x?: number, y?: number, left?: number, top?: number, width?: number, height?: number },
  * }} [options]
  * @returns {any}
  */
@@ -152,6 +164,43 @@ function createFakeElement(options = {}) {
   const innerHTML = options.innerHTML ?? textContent;
   const children = options.children ?? [];
   const attributes = new Map(Object.entries(options.attributes ?? {}));
+  const rect = {
+    x: options.rect?.x ?? options.rect?.left ?? 0,
+    y: options.rect?.y ?? options.rect?.top ?? 0,
+    left: options.rect?.left ?? options.rect?.x ?? 0,
+    top: options.rect?.top ?? options.rect?.y ?? 0,
+    width: options.rect?.width ?? 10,
+    height: options.rect?.height ?? 10,
+  };
+  const classNames = new Set(
+    String(options.attributes?.class ?? '')
+      .split(/\s+/)
+      .filter(Boolean)
+  );
+
+  const classList = {
+    /** @param {string} value */
+    contains(value) {
+      return classNames.has(value);
+    },
+    /** @param {string} value */
+    toggle(value) {
+      if (classNames.has(value)) {
+        classNames.delete(value);
+      } else {
+        classNames.add(value);
+      }
+      if (classNames.size) {
+        attributes.set('class', [...classNames].join(' '));
+      } else {
+        attributes.delete('class');
+      }
+      return classNames.has(value);
+    },
+    [Symbol.iterator]() {
+      return classNames.values();
+    },
+  };
 
   return {
     tagName,
@@ -162,6 +211,7 @@ function createFakeElement(options = {}) {
     children,
     childNodes: textContent ? [{ nodeType: 3, textContent }] : [],
     childElementCount: children.length,
+    classList,
     /** @param {string} name */
     getAttribute(name) {
       return attributes.get(name) ?? null;
@@ -170,8 +220,25 @@ function createFakeElement(options = {}) {
     hasAttribute(name) {
       return attributes.has(name);
     },
+    /** @param {string} name @param {string} value */
+    setAttribute(name, value) {
+      attributes.set(name, String(value));
+      if (name === 'class') {
+        classNames.clear();
+        for (const token of String(value).split(/\s+/).filter(Boolean)) {
+          classNames.add(token);
+        }
+      }
+    },
+    /** @param {string} name */
+    removeAttribute(name) {
+      attributes.delete(name);
+      if (name === 'class') {
+        classNames.clear();
+      }
+    },
     getBoundingClientRect() {
-      return { x: 0, y: 0, width: 10, height: 10 };
+      return rect;
     },
   };
 }
@@ -179,15 +246,20 @@ function createFakeElement(options = {}) {
 /**
  * @param {any} body
  * @param {Record<string, any>} [selectors]
+ * @param {Record<string, any>} [overrides]
  * @returns {{
  *   body: any,
+ *   documentElement: any,
  *   activeElement: any,
  *   contains: (element: any) => boolean,
+ *   elementFromPoint: (x: number, y: number) => any,
+ *   hasFocus: () => boolean,
+ *   getSelection: () => { toString: () => string },
  *   querySelector: (selector: string) => any,
  *   querySelectorAll: (selector: string) => any[]
  * }}
  */
-function createDocumentHarness(body, selectors = {}) {
+function createDocumentHarness(body, selectors = {}, overrides = {}) {
   const elements = new Set();
   /** @type {any[]} */
   const orderedElements = [];
@@ -208,16 +280,34 @@ function createDocumentHarness(body, selectors = {}) {
 
   /** @type {{
    *   body: any,
+   *   documentElement: any,
    *   activeElement: any,
    *   contains: (element: any) => boolean,
+   *   elementFromPoint: (x: number, y: number) => any,
+   *   hasFocus: () => boolean,
+   *   getSelection: () => { toString: () => string },
    *   querySelector: (selector: string) => any,
    *   querySelectorAll: (selector: string) => any[]
    * }} */
   const documentHarness = {
     body,
+    documentElement: body,
     activeElement: null,
     contains(element) {
       return elements.has(element);
+    },
+    elementFromPoint() {
+      return null;
+    },
+    hasFocus() {
+      return true;
+    },
+    getSelection() {
+      return {
+        toString() {
+          return '';
+        },
+      };
     },
     querySelector(selector) {
       if (selector === 'body') {
@@ -239,9 +329,33 @@ function createDocumentHarness(body, selectors = {}) {
       }
       return match ? [match] : [];
     },
+    ...overrides,
   };
 
   return documentHarness;
+}
+
+/**
+ * @param {(message: unknown, sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => boolean} listener
+ * @param {string} method
+ * @param {Record<string, any>} params
+ * @returns {Promise<any>}
+ */
+function executeBridgeMethod(listener, method, params) {
+  return new Promise((resolve) => {
+    assert.equal(
+      listener(
+        {
+          type: 'bridge.execute',
+          method,
+          params,
+        },
+        /** @type {chrome.runtime.MessageSender} */ ({}),
+        resolve
+      ),
+      true
+    );
+  });
 }
 
 /**
@@ -249,8 +363,12 @@ function createDocumentHarness(body, selectors = {}) {
  * @returns {{
  *   createBody: (children?: any[]) => any,
  *   createCheckbox: (options?: { checked?: boolean }) => any,
+ *   createRadio: (options?: { checked?: boolean }) => any,
  *   createTextInput: (options?: { value?: string }) => any,
+ *   createTextArea: (options?: { value?: string }) => any,
  *   createContentEditable: (options?: { textContent?: string }) => any,
+ *   createButton: (options?: { type?: string, textContent?: string }) => any,
+ *   createForm: (children?: any[]) => any,
  *   createOption: (options: { value: string, label?: string, text?: string, selected?: boolean }) => any,
  *   createSelect: (options: any[], config?: { multiple?: boolean }) => any,
  * }}
@@ -263,12 +381,60 @@ function installInputDomGlobals(t) {
     'HTMLTextAreaElement',
     'HTMLSelectElement',
     'HTMLOptionElement',
+    'HTMLButtonElement',
+    'HTMLFormElement',
     'Event',
     'InputEvent',
     'KeyboardEvent',
     'MouseEvent',
+    'DragEvent',
+    'DataTransfer',
   ]);
   t.after(() => restoreGlobals(saved));
+
+  /** @param {any} element @param {string} selector */
+  function matchesSelector(element, selector) {
+    if (selector === 'select') {
+      return element instanceof FakeHTMLSelectElement;
+    }
+    if (selector === 'form') {
+      return element instanceof FakeHTMLFormElement;
+    }
+    if (selector === 'textarea') {
+      return element instanceof FakeHTMLTextAreaElement;
+    }
+    if (selector === "[contenteditable='']" || selector === "[contenteditable='true']") {
+      return element instanceof FakeHTMLElement && element.isContentEditable;
+    }
+    if (selector === 'input') {
+      return element instanceof FakeHTMLInputElement;
+    }
+    if (selector === 'button') {
+      return element instanceof FakeHTMLButtonElement;
+    }
+    if (selector === 'input[type="checkbox"]') {
+      return element instanceof FakeHTMLInputElement && element.type === 'checkbox';
+    }
+    if (selector === 'input[type="radio"]') {
+      return element instanceof FakeHTMLInputElement && element.type === 'radio';
+    }
+    return false;
+  }
+
+  /** @param {any} root @param {string} selectorText @returns {any | null} */
+  function findFirstMatchingDescendant(root, selectorText) {
+    const selectors = selectorText.split(',').map((selector) => selector.trim());
+    for (const child of root.children ?? []) {
+      if (selectors.some((selector) => matchesSelector(child, selector))) {
+        return child;
+      }
+      const nested = findFirstMatchingDescendant(child, selectorText);
+      if (nested) {
+        return nested;
+      }
+    }
+    return null;
+  }
 
   class FakeEvent {
     /**
@@ -293,6 +459,24 @@ function installInputDomGlobals(t) {
 
   class FakeMouseEvent extends FakeEvent {}
 
+  class FakeDragEvent extends FakeMouseEvent {}
+
+  class FakeDataTransfer {
+    constructor() {
+      this.data = new Map();
+    }
+
+    /** @param {string} type @param {string} value */
+    setData(type, value) {
+      this.data.set(type, value);
+    }
+
+    /** @param {string} type */
+    getData(type) {
+      return this.data.get(type) ?? '';
+    }
+  }
+
   class FakeElement {
     /**
      * @param {string} tagName
@@ -316,6 +500,8 @@ function installInputDomGlobals(t) {
       this.outerHTML = `<${tagName}>${this._innerHTML}</${tagName}>`;
       /** @type {string[]} */
       this.eventLog = [];
+      this.scrollTop = 0;
+      this.scrollLeft = 0;
 
       for (const child of this.children) {
         child.parentElement = this;
@@ -375,8 +561,20 @@ function installInputDomGlobals(t) {
       );
     }
 
-    /** @returns {null} */
-    querySelector() {
+    /** @param {string} selector */
+    querySelector(selector) {
+      return findFirstMatchingDescendant(this, selector);
+    }
+
+    /** @param {string} selector */
+    closest(selector) {
+      let current = this.parentElement;
+      while (current) {
+        if (matchesSelector(current, selector)) {
+          return current;
+        }
+        current = current.parentElement;
+      }
       return null;
     }
 
@@ -387,6 +585,18 @@ function installInputDomGlobals(t) {
 
     /** @returns {void} */
     scrollIntoView() {}
+
+    /** @param {{ top?: number, left?: number }} options */
+    scrollTo(options) {
+      this.scrollTop = options.top ?? this.scrollTop;
+      this.scrollLeft = options.left ?? this.scrollLeft;
+    }
+
+    /** @param {{ top?: number, left?: number }} options */
+    scrollBy(options) {
+      this.scrollTop += options.top ?? 0;
+      this.scrollLeft += options.left ?? 0;
+    }
 
     /** @returns {void} */
     focus() {
@@ -406,6 +616,32 @@ function installInputDomGlobals(t) {
 
   /** @type {boolean} */
   FakeHTMLElement.prototype.isContentEditable = false;
+
+  class FakeHTMLButtonElement extends FakeHTMLElement {
+    /** @param {string} [type='button'] */
+    constructor(type = 'button') {
+      super('button');
+      this.type = type;
+    }
+
+    /** @returns {void} */
+    click() {
+      this.dispatchEvent(new FakeMouseEvent('click', { bubbles: true, composed: true }));
+    }
+  }
+
+  class FakeHTMLFormElement extends FakeHTMLElement {
+    constructor() {
+      super('form');
+      this.submitCount = 0;
+    }
+
+    /** @returns {void} */
+    requestSubmit() {
+      this.submitCount += 1;
+      this.dispatchEvent(new FakeEvent('submit', { bubbles: true, composed: true }));
+    }
+  }
 
   class FakeHTMLInputElement extends FakeHTMLElement {
     /** @param {string} type */
@@ -520,6 +756,12 @@ function installInputDomGlobals(t) {
   globalThis.HTMLOptionElement = /** @type {typeof HTMLOptionElement} */ (
     /** @type {unknown} */ (FakeHTMLOptionElement)
   );
+  globalThis.HTMLButtonElement = /** @type {typeof HTMLButtonElement} */ (
+    /** @type {unknown} */ (FakeHTMLButtonElement)
+  );
+  globalThis.HTMLFormElement = /** @type {typeof HTMLFormElement} */ (
+    /** @type {unknown} */ (FakeHTMLFormElement)
+  );
   globalThis.Event = /** @type {typeof Event} */ (/** @type {unknown} */ (FakeEvent));
   globalThis.InputEvent = /** @type {typeof InputEvent} */ (
     /** @type {unknown} */ (FakeInputEvent)
@@ -529,6 +771,10 @@ function installInputDomGlobals(t) {
   );
   globalThis.MouseEvent = /** @type {typeof MouseEvent} */ (
     /** @type {unknown} */ (FakeMouseEvent)
+  );
+  globalThis.DragEvent = /** @type {typeof DragEvent} */ (/** @type {unknown} */ (FakeDragEvent));
+  globalThis.DataTransfer = /** @type {typeof DataTransfer} */ (
+    /** @type {unknown} */ (FakeDataTransfer)
   );
 
   return {
@@ -542,6 +788,12 @@ function installInputDomGlobals(t) {
       checkbox.checked = options.checked === true;
       return checkbox;
     },
+    /** @param {{ checked?: boolean }} [options] */
+    createRadio(options = {}) {
+      const radio = new FakeHTMLInputElement('radio');
+      radio.checked = options.checked === true;
+      return radio;
+    },
     /** @param {{ value?: string }} [options] */
     createTextInput(options = {}) {
       const input = new FakeHTMLInputElement('text');
@@ -550,13 +802,37 @@ function installInputDomGlobals(t) {
       input.selectionEnd = input.value.length;
       return input;
     },
+    /** @param {{ value?: string }} [options] */
+    createTextArea(options = {}) {
+      const textarea = new FakeHTMLTextAreaElement();
+      textarea.value = options.value ?? '';
+      textarea.selectionStart = textarea.value.length;
+      textarea.selectionEnd = textarea.value.length;
+      return textarea;
+    },
     /** @param {{ textContent?: string }} [options] */
     createContentEditable(options = {}) {
       const editable = new FakeHTMLElement('div', {
+        attributes: { contenteditable: 'true' },
         textContent: options.textContent ?? '',
       });
       editable.isContentEditable = true;
       return editable;
+    },
+    /** @param {{ type?: string, textContent?: string }} [options] */
+    createButton(options = {}) {
+      const button = new FakeHTMLButtonElement(options.type ?? 'button');
+      button.textContent = options.textContent ?? '';
+      return button;
+    },
+    /** @param {any[]} [children] */
+    createForm(children = []) {
+      const form = new FakeHTMLFormElement();
+      form.children = children;
+      for (const child of children) {
+        child.parentElement = form;
+      }
+      return form;
     },
     /** @param {{ value: string, label?: string, text?: string, selected?: boolean }} options */
     createOption(options) {
@@ -1584,6 +1860,756 @@ test('content script input.set_checked and input.select_option update state and 
   assert.deepEqual(select.eventLog, ['input', 'change']);
   assert.equal(optionAlpha.selected, false);
   assert.equal(optionBeta.selected, true);
+});
+
+test('content script dispatches dom describe, style, and layout reads', async (t) => {
+  const saved = captureGlobals(['Node']);
+  t.after(() => restoreGlobals(saved));
+  globalThis.Node = /** @type {typeof Node} */ (/** @type {unknown} */ ({ TEXT_NODE: 3 }));
+
+  const harness = createChromeHarness();
+  const target = createFakeElement({
+    tagName: 'button',
+    textContent: 'Click me',
+    innerHTML: '<span>Click me</span>',
+    attributes: {
+      id: 'target',
+      class: 'primary active',
+      style: 'color:red',
+      'aria-label': 'Press me',
+    },
+    rect: { x: 10, y: 20, width: 30, height: 40 },
+  });
+  const body = createFakeElement({
+    tagName: 'body',
+    children: [target],
+  });
+  const document = createDocumentHarness(
+    body,
+    {
+      '#target': target,
+    },
+    {
+      elementFromPoint() {
+        return target;
+      },
+    }
+  );
+  const window = /** @type {Window & typeof globalThis} */ (
+    /** @type {unknown} */ ({
+      scrollX: 3,
+      scrollY: 4,
+      getComputedStyle() {
+        return {
+          /** @param {string} property */
+          getPropertyValue(property) {
+            return property === 'color' ? 'rgb(255, 0, 0)' : 'block';
+          },
+        };
+      },
+    })
+  );
+
+  await loadContentScript(t, {
+    withHelpers: true,
+    chrome: harness.chrome,
+    document,
+    window,
+  });
+
+  const listener = harness.getListener();
+  const described = await executeBridgeMethod(listener, 'dom.describe', {
+    target: { selector: '#target' },
+  });
+  const text = await executeBridgeMethod(listener, 'dom.get_text', {
+    target: { selector: '#target' },
+    textBudget: 20,
+  });
+  const attrs = await executeBridgeMethod(listener, 'dom.get_attributes', {
+    target: { selector: '#target' },
+    attributes: ['id', 'class', 'style'],
+  });
+  const box = await executeBridgeMethod(listener, 'layout.get_box_model', {
+    target: { selector: '#target' },
+  });
+  const hit = await executeBridgeMethod(listener, 'layout.hit_test', { x: 15, y: 25 });
+  const computed = await executeBridgeMethod(listener, 'styles.get_computed', {
+    target: { selector: '#target' },
+    properties: ['display', 'color'],
+  });
+  const matched = await executeBridgeMethod(listener, 'styles.get_matched_rules', {
+    target: { selector: '#target' },
+  });
+  const missingText = await executeBridgeMethod(listener, 'dom.find_by_text', {});
+  const missingRole = await executeBridgeMethod(listener, 'dom.find_by_role', {});
+
+  assert.deepEqual(described, {
+    elementRef: described.elementRef,
+    tag: 'button',
+    text: {
+      value: 'Press me | Click me',
+      truncated: false,
+      omitted: 0,
+    },
+    bbox: { x: 13, y: 24, width: 30, height: 40 },
+  });
+  assert.equal(typeof described.elementRef, 'string');
+  assert.deepEqual(text, {
+    value: 'Click me',
+    truncated: false,
+    omitted: 0,
+  });
+  assert.deepEqual(attrs, {
+    id: 'target',
+    class: 'primary active',
+    style: 'color:red',
+  });
+  assert.deepEqual(box, { x: 13, y: 24, width: 30, height: 40 });
+  assert.deepEqual(hit, {
+    elementRef: hit.elementRef,
+    tag: 'button',
+    role: null,
+    name: 'Press me',
+    textExcerpt: 'Press me | Click me',
+    attrs: { id: 'target', class: 'primary active' },
+    bbox: { x: 13, y: 24, width: 30, height: 40 },
+  });
+  assert.equal(typeof hit.elementRef, 'string');
+  assert.deepEqual(computed, {
+    display: 'block',
+    color: 'rgb(255, 0, 0)',
+  });
+  assert.deepEqual(matched, {
+    elementRef: matched.elementRef,
+    classes: ['primary', 'active'],
+    inlineStyle: 'color:red',
+  });
+  assert.equal(typeof matched.elementRef, 'string');
+  assert.deepEqual(missingText, { error: 'text is required for dom.find_by_text' });
+  assert.deepEqual(missingRole, { error: 'role is required for dom.find_by_role' });
+});
+
+test('content script dom.wait_for handles immediate matches, timeouts, and validation', async (t) => {
+  const harness = createChromeHarness();
+
+  await withDocument(
+    `<!doctype html>
+    <html>
+      <body>
+        <div id="ready">Ready now</div>
+      </body>
+    </html>`,
+    async () => {
+      await loadContentScript(t, {
+        withHelpers: true,
+        preserveDomGlobals: true,
+        chrome: harness.chrome,
+      });
+
+      const listener = harness.getListener();
+      const found = await executeBridgeMethod(listener, 'dom.wait_for', {
+        selector: '#ready',
+        text: 'ready',
+        timeoutMs: 100,
+      });
+      const detached = await executeBridgeMethod(listener, 'dom.wait_for', {
+        selector: '#missing',
+        state: 'detached',
+        text: 'missing',
+        timeoutMs: 100,
+      });
+      const timeout = await executeBridgeMethod(listener, 'dom.wait_for', {
+        selector: '#later',
+        timeoutMs: 100,
+      });
+      const missingSelector = await executeBridgeMethod(listener, 'dom.wait_for', {
+        text: 'missing',
+      });
+
+      assert.equal(found.found, true);
+      assert.equal(typeof found.elementRef, 'string');
+      assert.equal(found.duration, 0);
+      assert.deepEqual(detached, {
+        found: true,
+        elementRef: null,
+        duration: 0,
+      });
+      assert.equal(timeout.found, false);
+      assert.equal(timeout.elementRef, null);
+      assert.ok(timeout.duration >= 100);
+      assert.deepEqual(missingSelector, { error: 'selector is required for dom.wait_for' });
+    }
+  );
+});
+
+test('content script patch operations verify and roll back DOM and style changes', async (t) => {
+  const saved = captureGlobals(['getComputedStyle']);
+  t.after(() => restoreGlobals(saved));
+
+  const harness = createChromeHarness();
+  const styleValues = new Map([['color', 'blue']]);
+  const target = {
+    ...createFakeElement({
+      tagName: 'div',
+      textContent: 'before',
+      attributes: {
+        id: 'target',
+        class: 'initial',
+        'data-state': 'old',
+        'data-remove': 'present',
+      },
+    }),
+    style: {
+      /** @param {string} name */
+      getPropertyValue(name) {
+        return styleValues.get(name) ?? '';
+      },
+      /** @param {string} name @param {string} value */
+      setProperty(name, value) {
+        styleValues.set(name, value);
+      },
+      /** @param {string} name */
+      removeProperty(name) {
+        styleValues.delete(name);
+      },
+    },
+  };
+  globalThis.getComputedStyle = /** @type {typeof getComputedStyle} */ (
+    /** @type {unknown} */ (
+      (/** @type {any} */ element) => ({
+        /** @param {string} property */
+        getPropertyValue(property) {
+          return property === 'color' && element === target
+            ? (styleValues.get(property) ?? '')
+            : '';
+        },
+      })
+    )
+  );
+
+  const body = createFakeElement({
+    tagName: 'body',
+    children: [target],
+  });
+  const document = createDocumentHarness(body, { '#target': target });
+
+  await loadContentScript(t, {
+    withHelpers: true,
+    chrome: harness.chrome,
+    document,
+  });
+
+  const listener = harness.getListener();
+  const stylePatch = await executeBridgeMethod(listener, 'patch.apply_styles', {
+    patchId: 'style-1',
+    target: { selector: '#target' },
+    declarations: { color: 'red' },
+    verify: true,
+  });
+  const textPatch = await executeBridgeMethod(listener, 'patch.apply_dom', {
+    patchId: 'text-1',
+    target: { selector: '#target' },
+    operation: 'set_text',
+    value: 'after',
+    verify: true,
+  });
+  const setAttributePatch = await executeBridgeMethod(listener, 'patch.apply_dom', {
+    patchId: 'attribute-1',
+    target: { selector: '#target' },
+    operation: 'set_attribute',
+    name: 'data-added',
+    value: 'fresh',
+    verify: true,
+  });
+  const removeAttributePatch = await executeBridgeMethod(listener, 'patch.apply_dom', {
+    patchId: 'attribute-2',
+    target: { selector: '#target' },
+    operation: 'remove_attribute',
+    name: 'data-remove',
+    verify: true,
+  });
+  const toggleClassPatch = await executeBridgeMethod(listener, 'patch.apply_dom', {
+    patchId: 'class-1',
+    target: { selector: '#target' },
+    operation: 'toggle_class',
+    value: 'active',
+    verify: true,
+  });
+
+  assert.deepEqual(stylePatch, {
+    patchId: 'style-1',
+    applied: true,
+    verified: { color: 'red' },
+    elementRef: stylePatch.elementRef,
+  });
+  assert.equal(typeof stylePatch.elementRef, 'string');
+  assert.deepEqual(textPatch, {
+    patchId: 'text-1',
+    applied: true,
+    verified: { textContent: 'after' },
+    elementRef: textPatch.elementRef,
+  });
+  assert.deepEqual(setAttributePatch, {
+    patchId: 'attribute-1',
+    applied: true,
+    verified: { 'data-added': 'fresh' },
+    elementRef: setAttributePatch.elementRef,
+  });
+  assert.deepEqual(removeAttributePatch, {
+    patchId: 'attribute-2',
+    applied: true,
+    verified: { 'data-remove': null },
+    elementRef: removeAttributePatch.elementRef,
+  });
+  assert.deepEqual(toggleClassPatch, {
+    patchId: 'class-1',
+    applied: true,
+    verified: { classList: ['initial', 'active'] },
+    elementRef: toggleClassPatch.elementRef,
+  });
+  assert.deepEqual(await executeBridgeMethod(listener, 'patch.rollback', { patchId: 'text-1' }), {
+    patchId: 'text-1',
+    rolledBack: true,
+  });
+  assert.equal(target.textContent, 'before');
+  assert.deepEqual(
+    await executeBridgeMethod(listener, 'patch.rollback', { patchId: 'attribute-1' }),
+    {
+      patchId: 'attribute-1',
+      rolledBack: true,
+    }
+  );
+  assert.equal(target.getAttribute('data-added'), null);
+  assert.deepEqual(
+    await executeBridgeMethod(listener, 'patch.rollback', { patchId: 'attribute-2' }),
+    {
+      patchId: 'attribute-2',
+      rolledBack: true,
+    }
+  );
+  assert.equal(target.getAttribute('data-remove'), 'present');
+  assert.deepEqual(await executeBridgeMethod(listener, 'patch.rollback', { patchId: 'class-1' }), {
+    patchId: 'class-1',
+    rolledBack: true,
+  });
+  assert.deepEqual([...target.classList], ['initial']);
+  assert.deepEqual(await executeBridgeMethod(listener, 'patch.rollback', { patchId: 'style-1' }), {
+    patchId: 'style-1',
+    rolledBack: true,
+  });
+  assert.equal(styleValues.get('color'), 'blue');
+  assert.deepEqual(await executeBridgeMethod(listener, 'patch.list', {}), []);
+  assert.deepEqual(await executeBridgeMethod(listener, 'patch.commit_session_baseline', {}), {
+    committed: true,
+  });
+});
+
+test('content script page state, storage, and screenshot helpers report page context', async (t) => {
+  const saved = captureGlobals(['localStorage', 'sessionStorage']);
+  t.after(() => restoreGlobals(saved));
+
+  const harness = createChromeHarness();
+
+  /**
+   * @param {Record<string, string>} entries
+   * @returns {{ length: number, key: (index: number) => string | null, getItem: (key: string) => string | null }}
+   */
+  function createStorage(entries) {
+    const keys = Object.keys(entries);
+    return {
+      get length() {
+        return keys.length;
+      },
+      /** @param {number} index */
+      key(index) {
+        return keys[index] ?? null;
+      },
+      /** @param {string} key */
+      getItem(key) {
+        return Object.prototype.hasOwnProperty.call(entries, key) ? entries[key] : null;
+      },
+    };
+  }
+
+  globalThis.localStorage = /** @type {Storage} */ (
+    /** @type {unknown} */ (createStorage({ short: 'ok', long: 'x'.repeat(510) }))
+  );
+  globalThis.sessionStorage = /** @type {Storage} */ (
+    /** @type {unknown} */ (createStorage({ token: 'abc123' }))
+  );
+
+  await withDocument(
+    `<!doctype html>
+    <html>
+      <head>
+        <title>Bridge Title</title>
+        <style id="tailwind-theme"></style>
+      </head>
+      <body>
+        <button id="shot" class="flex bg-blue-500">Capture target</button>
+      </body>
+    </html>`,
+    async ({ window, document }) => {
+      const target = document.getElementById('shot');
+      assert.ok(target);
+
+      Reflect.set(document, 'title', 'Bridge Title');
+      Reflect.set(window, 'location', {
+        href: 'https://example.com/path',
+        origin: 'https://example.com',
+      });
+      Reflect.set(window, 'innerWidth', 400);
+      Reflect.set(window, 'innerHeight', 300);
+      Reflect.set(window, 'devicePixelRatio', 2);
+      Reflect.set(window, 'scrollX', 12);
+      Reflect.set(window, 'scrollY', 34);
+      Reflect.set(document, 'activeElement', target);
+      Reflect.set(document, 'hasFocus', () => false);
+      Reflect.set(document, 'getSelection', () => ({ toString: () => '  Selected text  ' }));
+      Reflect.set(document, 'scrollingElement', document.documentElement);
+      Reflect.set(document.documentElement, 'scrollWidth', 18000);
+      Reflect.set(document.documentElement, 'scrollHeight', 17000);
+      Reflect.set(target, 'scrollIntoView', () => {});
+      Reflect.set(target, 'getBoundingClientRect', () => ({
+        x: 50,
+        y: 60,
+        width: 200,
+        height: 150,
+      }));
+
+      await loadContentScript(t, {
+        withHelpers: true,
+        preserveDomGlobals: true,
+        chrome: harness.chrome,
+      });
+
+      const listener = harness.getListener();
+      const state = await executeBridgeMethod(listener, 'page.get_state', {});
+      const local = await executeBridgeMethod(listener, 'page.get_storage', {});
+      const session = await executeBridgeMethod(listener, 'page.get_storage', {
+        type: 'session',
+        keys: ['token'],
+      });
+      const elementRect = await executeBridgeMethod(listener, 'screenshot.capture_element', {
+        target: { selector: '#shot' },
+      });
+      const fullPage = await executeBridgeMethod(listener, 'screenshot.capture_full_page', {});
+
+      assert.equal(state.error, undefined);
+      assert.equal(state.title, 'Bridge Title');
+      assert.equal(state.focused, false);
+      assert.equal(state.viewport.width, 400);
+      assert.equal(state.viewport.height, 300);
+      assert.equal(state.viewport.devicePixelRatio, 2);
+      assert.equal(state.scroll.x, 12);
+      assert.equal(state.scroll.y, 34);
+      assert.equal(state.scroll.maxX, 17600);
+      assert.equal(state.scroll.maxY, 16700);
+      assert.equal(state.activeElement.tag, 'button');
+      assert.equal(state.selection.value, 'Selected text');
+      assert.equal(state.hints.tailwind, true);
+      assert.equal(local.type, 'local');
+      assert.equal(local.count, 2);
+      assert.equal(local.entries.short, 'ok');
+      assert.equal(local.entries.long.length, 501);
+      assert.equal(local.entries.long.endsWith('…'), true);
+      assert.deepEqual(session, {
+        type: 'session',
+        entries: { token: 'abc123' },
+        count: 1,
+      });
+      assert.deepEqual(elementRect, { x: 50, y: 60, width: 200, height: 150, scale: 2 });
+      assert.deepEqual(fullPage, {
+        scrollWidth: 16384,
+        scrollHeight: 16384,
+        devicePixelRatio: 2,
+      });
+    }
+  );
+});
+
+test('content script input focus, key handling, and scrolling cover form and viewport branches', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t);
+  const textInput = inputs.createTextInput({ value: 'abc' });
+  const textarea = inputs.createTextArea({ value: 'wxyz' });
+  textarea.selectionStart = 1;
+  textarea.selectionEnd = 2;
+  const button = inputs.createButton({ textContent: 'Submit now' });
+  const form = inputs.createForm([textInput, button]);
+  const scrollable = inputs.createBody([]);
+  const body = inputs.createBody([form, textarea, scrollable]);
+  const document = createDocumentHarness(body, {
+    '#text-input': textInput,
+    '#textarea': textarea,
+    '#button': button,
+    '#scrollable': scrollable,
+  });
+  document.activeElement = null;
+
+  const windowState = {
+    scrollX: 0,
+    scrollY: 0,
+  };
+  const window = /** @type {Window & typeof globalThis} */ (
+    /** @type {unknown} */ ({
+      get scrollX() {
+        return windowState.scrollX;
+      },
+      get scrollY() {
+        return windowState.scrollY;
+      },
+      /** @param {{ top?: number, left?: number }} options */
+      scrollTo(options) {
+        windowState.scrollY = options.top ?? windowState.scrollY;
+        windowState.scrollX = options.left ?? windowState.scrollX;
+      },
+      /** @param {{ top?: number, left?: number }} options */
+      scrollBy(options) {
+        windowState.scrollY += options.top ?? 0;
+        windowState.scrollX += options.left ?? 0;
+      },
+    })
+  );
+
+  await loadContentScript(t, {
+    withHelpers: true,
+    chrome: harness.chrome,
+    document,
+    window,
+  });
+
+  const listener = harness.getListener();
+  const focusResult = await executeBridgeMethod(listener, 'input.focus', {
+    target: { selector: '#button' },
+  });
+  const backspaceResult = await executeBridgeMethod(listener, 'input.press_key', {
+    target: { selector: '#text-input' },
+    key: 'Backspace',
+  });
+  const enterResult = await executeBridgeMethod(listener, 'input.press_key', {
+    target: { selector: '#text-input' },
+    key: 'Enter',
+  });
+  const deleteResult = await executeBridgeMethod(listener, 'input.press_key', {
+    target: { selector: '#textarea' },
+    key: 'Delete',
+  });
+  const buttonEnterResult = await executeBridgeMethod(listener, 'input.press_key', {
+    target: { selector: '#button' },
+    key: 'Enter',
+  });
+  const scrollIntoViewResult = await executeBridgeMethod(listener, 'input.scroll_into_view', {
+    target: { selector: '#button' },
+  });
+  const targetScroll = await executeBridgeMethod(listener, 'viewport.scroll', {
+    target: { selector: '#scrollable' },
+    top: 10,
+    left: 5,
+  });
+  const targetScrollRelative = await executeBridgeMethod(listener, 'viewport.scroll', {
+    target: { selector: '#scrollable' },
+    top: 2,
+    left: 3,
+    relative: true,
+    behavior: 'smooth',
+  });
+  const windowScroll = await executeBridgeMethod(listener, 'viewport.scroll', {
+    top: 20,
+    left: 15,
+  });
+  const windowScrollRelative = await executeBridgeMethod(listener, 'viewport.scroll', {
+    top: 4,
+    left: 6,
+    relative: true,
+  });
+
+  assert.deepEqual(focusResult, {
+    elementRef: focusResult.elementRef,
+    focused: true,
+    tag: 'button',
+  });
+  assert.equal(document.activeElement, button);
+  assert.deepEqual(backspaceResult, {
+    elementRef: backspaceResult.elementRef,
+    key: 'Backspace',
+    handled: true,
+  });
+  assert.equal(textInput.value, 'ab');
+  assert.deepEqual(enterResult, {
+    elementRef: enterResult.elementRef,
+    key: 'Enter',
+    handled: true,
+  });
+  assert.equal(form.submitCount, 1);
+  assert.equal(textInput.eventLog.includes('change'), true);
+  assert.deepEqual(deleteResult, {
+    elementRef: deleteResult.elementRef,
+    key: 'Delete',
+    handled: true,
+  });
+  assert.equal(textarea.value, 'wyz');
+  assert.deepEqual(buttonEnterResult, {
+    elementRef: buttonEnterResult.elementRef,
+    key: 'Enter',
+    handled: true,
+  });
+  assert.equal(button.eventLog.includes('click'), true);
+  assert.deepEqual(scrollIntoViewResult, {
+    elementRef: scrollIntoViewResult.elementRef,
+    scrolled: true,
+  });
+  assert.deepEqual(targetScroll, {
+    scrolled: true,
+    target: targetScroll.target,
+    x: 5,
+    y: 10,
+    top: 10,
+    left: 5,
+    behavior: 'auto',
+    relative: false,
+  });
+  assert.deepEqual(targetScrollRelative, {
+    scrolled: true,
+    target: targetScrollRelative.target,
+    x: 8,
+    y: 12,
+    top: 12,
+    left: 8,
+    behavior: 'smooth',
+    relative: true,
+  });
+  assert.deepEqual(windowScroll, {
+    scrolled: true,
+    target: 'window',
+    x: 15,
+    y: 20,
+    top: 20,
+    left: 15,
+    behavior: 'auto',
+    relative: false,
+  });
+  assert.deepEqual(windowScrollRelative, {
+    scrolled: true,
+    target: 'window',
+    x: 21,
+    y: 24,
+    top: 24,
+    left: 21,
+    behavior: 'auto',
+    relative: true,
+  });
+});
+
+test('content script input hover, drag, alternative clicks, and multi-select cover extra interaction branches', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t);
+  const multiSelect = inputs.createSelect(
+    [
+      inputs.createOption({ value: 'alpha', selected: true }),
+      inputs.createOption({ value: 'beta' }),
+      inputs.createOption({ value: 'gamma' }),
+    ],
+    { multiple: true }
+  );
+  const radio = inputs.createRadio({ checked: true });
+  const hoverTarget = inputs.createButton({ textContent: 'Hover me' });
+  const clickTarget = inputs.createButton({ textContent: 'Context menu' });
+  const source = inputs.createButton({ textContent: 'Drag source' });
+  const destination = inputs.createButton({ textContent: 'Drop target' });
+  const body = inputs.createBody([
+    multiSelect,
+    radio,
+    hoverTarget,
+    clickTarget,
+    source,
+    destination,
+  ]);
+  const document = createDocumentHarness(body, {
+    '#select': multiSelect,
+    '#radio': radio,
+    '#hover': hoverTarget,
+    '#click': clickTarget,
+    '#source': source,
+    '#destination': destination,
+  });
+
+  await loadContentScript(t, {
+    withHelpers: true,
+    chrome: harness.chrome,
+    document,
+  });
+
+  const listener = harness.getListener();
+  const hoverResult = await executeBridgeMethod(listener, 'input.hover', {
+    target: { selector: '#hover' },
+    duration: 1,
+    modifiers: ['Shift'],
+  });
+  const dragResult = await executeBridgeMethod(listener, 'input.drag', {
+    source: { selector: '#source' },
+    destination: { selector: '#destination' },
+    offsetX: 4,
+    offsetY: 6,
+  });
+  const rightClickResult = await executeBridgeMethod(listener, 'input.click', {
+    target: { selector: '#click' },
+    button: 'right',
+  });
+  const middleClickResult = await executeBridgeMethod(listener, 'input.click', {
+    target: { selector: '#click' },
+    button: 'middle',
+  });
+  const selectedResult = await executeBridgeMethod(listener, 'input.select_option', {
+    target: { selector: '#select' },
+    values: ['beta', 'gamma'],
+  });
+  const missingOption = await executeBridgeMethod(listener, 'input.select_option', {
+    target: { selector: '#select' },
+    values: ['missing'],
+  });
+  const radioError = await executeBridgeMethod(listener, 'input.set_checked', {
+    target: { selector: '#radio' },
+    checked: false,
+  });
+
+  assert.deepEqual(hoverResult, {
+    elementRef: hoverResult.elementRef,
+    hovered: true,
+  });
+  assert.equal(typeof hoverResult.elementRef, 'string');
+  assert.deepEqual(hoverTarget.eventLog, ['mouseenter', 'mouseover', 'mousemove']);
+  assert.deepEqual(dragResult, {
+    sourceRef: dragResult.sourceRef,
+    destinationRef: dragResult.destinationRef,
+    dragged: true,
+  });
+  assert.equal(source.eventLog.includes('dragstart'), true);
+  assert.equal(source.eventLog.includes('dragend'), true);
+  assert.equal(destination.eventLog.includes('drop'), true);
+  assert.deepEqual(rightClickResult, {
+    elementRef: rightClickResult.elementRef,
+    clicked: true,
+    button: 'right',
+    clickCount: 1,
+  });
+  assert.deepEqual(middleClickResult, {
+    elementRef: middleClickResult.elementRef,
+    clicked: true,
+    button: 'middle',
+    clickCount: 1,
+  });
+  assert.equal(clickTarget.eventLog.includes('contextmenu'), true);
+  assert.equal(clickTarget.eventLog.includes('auxclick'), true);
+  assert.deepEqual(selectedResult, {
+    elementRef: selectedResult.elementRef,
+    changed: true,
+    multiple: true,
+    selectedValues: ['beta', 'gamma'],
+  });
+  assert.deepEqual(multiSelect.eventLog, ['input', 'change']);
+  assert.deepEqual(missingOption, { error: 'No matching option found.' });
+  assert.deepEqual(radioError, { error: 'Radio inputs cannot be unchecked directly.' });
 });
 
 test('content script reports unsupported execute methods as errors', async (t) => {

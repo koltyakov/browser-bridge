@@ -24,6 +24,35 @@ const cliPath = path.resolve(__dirname, '../agent-client/src/cli.js');
 /** @typedef {import('../../packages/protocol/src/types.js').BridgeRequest} BridgeRequest */
 
 /**
+ * Assert that the daemon's stderr contains only structured log lines (or is
+ * empty). The daemon writes NDJSON log entries to stderr; each line must be
+ * valid JSON with a recognized `level` field.
+ *
+ * @param {string} stderr
+ * @returns {void}
+ */
+function assertDaemonStderrClean(stderr) {
+  if (stderr === '') {
+    return;
+  }
+  for (const line of stderr.split('\n').filter(Boolean)) {
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      assert.fail(`non-JSON line in daemon stderr: ${line}`);
+    }
+    assert.ok(
+      entry.level === 'info' ||
+        entry.level === 'warn' ||
+        entry.level === 'error' ||
+        entry.level === 'debug',
+      `unexpected log level in daemon stderr: ${line}`
+    );
+  }
+}
+
+/**
  * @param {unknown} message
  * @returns {BridgeRequest | null}
  */
@@ -455,7 +484,7 @@ test(
           );
           assert.deepEqual(nativeHost.protocolErrors, []);
           assert.equal(nativeHost.getStderr(), '');
-          assert.equal(daemon.getStderr(), '');
+          assertDaemonStderrClean(daemon.getStderr());
         } finally {
           nativeHost.child.stdin.end();
           const nativeHostExit = await waitForProcessExit(
@@ -542,7 +571,7 @@ test(
           );
           assert.deepEqual(nativeHost.protocolErrors, []);
           assert.equal(nativeHost.getStderr(), '');
-          assert.equal(daemon.getStderr(), '');
+          assertDaemonStderrClean(daemon.getStderr());
         } finally {
           nativeHost.child.stdin.end();
           const nativeHostExit = await waitForProcessExit(
@@ -614,7 +643,7 @@ test(
 
           assert.deepEqual(nativeHost.protocolErrors, []);
           assert.equal(nativeHost.getStderr(), '');
-          assert.equal(daemon.getStderr(), '');
+          assertDaemonStderrClean(daemon.getStderr());
         } finally {
           nativeHost.child.stdin.end();
           const nativeHostExit = await waitForProcessExit(
@@ -700,7 +729,7 @@ test(
           });
           assert.deepEqual(recoveredNativeHost.protocolErrors, []);
           assert.equal(recoveredNativeHost.getStderr(), '');
-          assert.equal(daemon.getStderr(), '');
+          assertDaemonStderrClean(daemon.getStderr());
         } finally {
           if (!initialNativeHostExited) {
             nativeHost.child.stdin.end();

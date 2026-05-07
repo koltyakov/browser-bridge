@@ -4,7 +4,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { loadBackground } from '../../../tests/_helpers/loadBackground.js';
-import { createRequest, createSuccess, ERROR_CODES } from '../../protocol/src/index.js';
+import {
+  BridgeError,
+  createRequest,
+  createSuccess,
+  ERROR_CODES,
+} from '../../protocol/src/index.js';
 
 /** @type {Awaited<ReturnType<typeof loadBackground>>} */
 let loaded;
@@ -125,6 +130,23 @@ test('background pure helpers map thrown values to structured failures', () => {
   assert.equal(codeResponse.ok, false);
   assert.equal(codeResponse.error.code, ERROR_CODES.ACCESS_DENIED);
   assert.equal(codeResponse.error.message, ERROR_CODES.ACCESS_DENIED);
+});
+
+test('background pure helpers extract code and details from BridgeError in toFailureResponse', () => {
+  const request = createRequest({
+    id: 'req-bridge-error',
+    method: 'dom.query',
+  });
+
+  const bridgeErr = new BridgeError(ERROR_CODES.ACCESS_DENIED, 'No window enabled', {
+    retry: true,
+  });
+  const response = loaded.module.toFailureResponse(request, bridgeErr);
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, ERROR_CODES.ACCESS_DENIED);
+  assert.equal(response.error.message, 'No window enabled');
+  assert.deepEqual(response.error.details, { retry: true });
+  assert.equal(response.meta.method, 'dom.query');
 });
 
 test('background pure helpers preserve response metadata while enriching diagnostics', () => {

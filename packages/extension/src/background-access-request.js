@@ -1,0 +1,176 @@
+// @ts-check
+
+import { createFailure, createSuccess, ERROR_CODES } from '../../protocol/src/index.js';
+import { normalizeRequestedAccessTab } from './background-routing.js';
+
+/** @typedef {import('./background-state.js').ExtensionState} ExtensionState */
+/** @typedef {import('./background-state.js').ResolvedTabTarget} ResolvedTabTarget */
+/** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */
+/** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
+
+/**
+ * @typedef {{
+ *   getTab: (tabId: number) => Promise<chrome.tabs.Tab>,
+ *   queryTabs: (queryInfo: { active?: boolean, lastFocusedWindow?: boolean }) => Promise<chrome.tabs.Tab[]>,
+ *   getAccessStatus: () => Promise<Record<string, unknown>>,
+ *   refreshActionIndicators: () => Promise<void>,
+ *   emitUiState: () => Promise<void>,
+ *   openRequestedAccessUi: (target: ResolvedTabTarget) => Promise<void>,
+ * }} AccessRequestControllerDeps
+ */
+
+/**
+ * Keep the bridge access-request workflow isolated from the background worker's
+ * wider routing logic so the worker can stay focused on orchestration.
+ *
+ * @param {ExtensionState} state
+ * @param {AccessRequestControllerDeps} deps
+ * @returns {{
+ *   handleAccessRequest: (request: BridgeRequest) => Promise<BridgeResponse>,
+ *   requestEnableFromAgentSide: (request: BridgeRequest) => Promise<void>,
+ *   resolveRequestedAccessTarget: (request: BridgeRequest) => Promise<ResolvedTabTarget | null>,
+ * }}
+ */
+export function createAccessRequestController(state, deps) {
+  /**
+   * @param {BridgeRequest} request
+   * @returns {Promise<ResolvedTabTarget | null>}
+   */
+  async function resolveRequestedAccessTarget(request) {
+    if (typeof request.tab_id === 'number' && request.tab_id > 0) {
+      try {
+        const tab = await deps.getTab(request.tab_id);
+        return normalizeRequestedAccessTab(tab);
+      } catch {
+        return null;
+      }
+    }
+
+    const tabs = await deps.queryTabs({
+      active: true,
+      lastFocusedWindow: true,
+    });
+    return normalizeRequestedAccessTab(tabs[0] ?? null);
+  }
+
+  /**
+   * @param {ResolvedTabTarget} target
+   * @returns {{ allowed: true } | { allowed: false, message: string }}
+   */
+  function checkAccessRequestAvailability(target) {
+    if (state.requestedAccessWindowId == null) {
+      return { allowed: true };
+    }
+
+    if (state.requestedAccessWindowId === target.windowId) {
+      return {
+        allowed: false,
+        message:
+          'Browser Bridge access is already pending for this window. Ask the user to click Enable before requesting access again.',
+      };
+    }
+
+    return {
+      allowed: false,
+      message:
+        'Browser Bridge access is already pending for another window. Ask the user to click Enable for that window before requesting access again.',
+    };
+  }
+
+  /**
+   * @param {ResolvedTabTarget} target
+   * @returns {Promise<void>}
+   */
+  async function queueAccessRequest(target) {
+    state.requestedAccessWindowId = target.windowId;
+    await deps.refreshActionIndicators();
+    await deps.emitUiState();
+    await deps.openRequestedAccessUi(target);
+  }
+
+  /**
+   * Surface an enable cue in the extension UI when an agent-side request fails
+   * because Browser Bridge is off for the target window.
+   *
+   * @param {BridgeRequest} request
+   * @returns {Promise<void>}
+   */
+  async function requestEnableFromAgentSide(request) {
+    const target = await resolveRequestedAccessTarget(request);
+    if (!target || state.requestedAccessWindowId != null) {
+      return;
+    }
+
+    await queueAccessRequest(target);
+  }
+
+  /**
+   * Handle an explicit access.request call. Resolves the active tab in the
+   * last-focused window, surfaces the Enable cue in the extension UI, and
+   * returns the requested window/tab metadata.
+   *
+   * @param {BridgeRequest} request
+   * @returns {Promise<BridgeResponse>}
+   */
+  async function handleAccessRequest(request) {
+    const target = await resolveRequestedAccessTarget(request);
+
+    if (state.enabledWindow) {
+      const access = await deps.getAccessStatus();
+      return createSuccess(
+        request.id,
+        {
+          enabled: true,
+          access,
+        },
+        { method: request.method }
+      );
+    }
+
+    if (!target) {
+      return createFailure(
+        request.id,
+        ERROR_CODES.ACCESS_DENIED,
+        'No scriptable tab found in the focused window.',
+        null,
+        { method: request.method }
+      );
+    }
+
+    const availability = checkAccessRequestAvailability(target);
+    if (!availability.allowed) {
+      return createFailure(
+        request.id,
+        ERROR_CODES.ACCESS_DENIED,
+        availability.message,
+        {
+          requestedWindowId: state.requestedAccessWindowId,
+          requestedTargetWindowId: target.windowId,
+          requestedTargetTabId: target.tabId,
+        },
+        { method: request.method }
+      );
+    }
+
+    await queueAccessRequest(target);
+
+    return createSuccess(
+      request.id,
+      {
+        enabled: false,
+        requested: true,
+        windowId: target.windowId,
+        tabId: target.tabId,
+        title: target.title,
+        url: target.url,
+      },
+      { method: request.method }
+    );
+  }
+
+  return {
+    handleAccessRequest,
+    requestEnableFromAgentSide,
+    resolveRequestedAccessTarget,
+  };
+}

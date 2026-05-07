@@ -10,6 +10,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { restartBridgeDaemonIfRunning } from '../src/daemon-process.js';
 import { installNativeManifest } from '../src/install-manifest.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -23,5 +24,20 @@ try {
   const message = err instanceof Error ? err.message : String(err);
   process.stderr.write(
     `Browser Bridge: native host auto-install skipped (${message}).\nRun \`bbx install\` manually if needed.\n`
+  );
+  process.exit(0);
+}
+
+try {
+  const restartResult = await restartBridgeDaemonIfRunning();
+  if (restartResult) {
+    process.stdout.write(
+      'Browser Bridge: restarted the local daemon to use the updated install.\n'
+    );
+  }
+} catch (err) {
+  const message = err instanceof Error ? err.message : String(err);
+  process.stderr.write(
+    `Browser Bridge: native host installed, but daemon restart failed (${message}).\nRun \`bbx restart\` if needed.\n`
   );
 }

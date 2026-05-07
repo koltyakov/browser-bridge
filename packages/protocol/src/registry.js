@@ -82,6 +82,7 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
   'performance.get_metrics': 'Read browser performance metrics.',
   'log.tail': 'Tail recent bridge log entries.',
   'health.ping': 'Check daemon, extension, and access-routing health.',
+  'daemon.metrics': 'Daemon health and performance metrics.',
 });
 
 /**
@@ -124,6 +125,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
   ),
   'log.tail': createRegistryEntry('log.tail', 'system', false, [], 'trivial'),
   'health.ping': createRegistryEntry('health.ping', 'system', false, [], 'trivial'),
+  'daemon.metrics': createRegistryEntry('daemon.metrics', 'system', false, [], 'trivial'),
   // tabs — trivial
   'tabs.list': createRegistryEntry('tabs.list', 'tabs', false, [], 'trivial'),
   'tabs.create': createRegistryEntry('tabs.create', 'tabs', false, ['url', 'active'], 'trivial'),

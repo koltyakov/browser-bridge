@@ -166,6 +166,7 @@ test('daemon responds to health checks without extension', async () => {
   const payload = JSON.parse(socket.writes[0].trim());
   assert.equal(payload.type, 'agent.response');
   assert.equal(payload.response.result.daemon, 'ok');
+  assert.equal(typeof payload.response.result.daemonVersion, 'string');
   assert.equal(payload.response.result.extensionConnected, false);
 });
 
@@ -549,6 +550,7 @@ test('daemon forwards health checks to the extension and merges access state', a
   assert.equal(agentSocket.writes.length, 1);
   const payload = JSON.parse(agentSocket.writes[0].trim());
   assert.equal(payload.response.result.daemon, 'ok');
+  assert.equal(typeof payload.response.result.daemonVersion, 'string');
   assert.equal(payload.response.result.extensionConnected, true);
   assert.equal(payload.response.result.access.routeTabId, 42);
 });

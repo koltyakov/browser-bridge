@@ -10,7 +10,7 @@ import {
 } from '../../../tests/_helpers/chromeFake.js';
 import { loadBackground } from '../../../tests/_helpers/loadBackground.js';
 import { createMessagePortPair } from '../../../tests/_helpers/messagePort.js';
-import { createRequest } from '../../protocol/src/index.js';
+import { createRequest, createSuccess } from '../../protocol/src/index.js';
 
 /**
  * @typedef {{ handle: ReturnType<typeof setTimeout>, callback: () => void, delay: number }} ScheduledTimer
@@ -34,14 +34,38 @@ function createNativePort(messages) {
         request?.method === 'setup.get_status' &&
         typeof request.id === 'string'
       ) {
+        const requestId = request.id;
         queueMicrotask(() => {
           onMessage.dispatch({
             type: 'host.setup_status.response',
-            requestId: request.id,
+            requestId,
             status: {
               mcpClients: [],
               skillTargets: [],
             },
+          });
+        });
+      }
+      if (
+        candidate.type === 'host.bridge_request' &&
+        request?.method === 'health.ping' &&
+        typeof request.id === 'string'
+      ) {
+        const requestId = request.id;
+        queueMicrotask(() => {
+          onMessage.dispatch({
+            type: 'host.bridge_response',
+            response: createSuccess(
+              requestId,
+              {
+                daemon: 'ok',
+                daemonVersion: '1.2.0',
+                extensionConnected: true,
+              },
+              {
+                method: 'health.ping',
+              }
+            ),
           });
         });
       }
@@ -521,6 +545,7 @@ test('background native scheduleNativeReconnect broadcasts disconnect state and 
       type: 'state.sync',
       state: {
         nativeConnected: false,
+        nativeHostVersion: null,
         currentTab: null,
         setupStatus: null,
         setupStatusPending: false,
@@ -664,6 +689,7 @@ test('background native enable flow broadcasts synced UI state and posts an acce
     type: 'state.sync',
     state: {
       nativeConnected: true,
+      nativeHostVersion: '1.2.0',
       currentTab: {
         tabId: 31,
         windowId: 8,
@@ -969,6 +995,10 @@ test('background native enable flow injects content scripts after ping timeouts 
           kind: 'inject',
           files: [
             'packages/extension/src/content-script-helpers.js',
+            'packages/extension/src/content-element-registry.js',
+            'packages/extension/src/content-dom-query.js',
+            'packages/extension/src/content-input.js',
+            'packages/extension/src/content-patch.js',
             'packages/extension/src/content-script.js',
           ],
         },

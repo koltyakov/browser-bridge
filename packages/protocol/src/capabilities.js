@@ -105,6 +105,7 @@ export const METHOD_CAPABILITIES = Object.freeze({
   'performance.get_metrics': CAPABILITIES.PERFORMANCE_READ,
   'log.tail': null,
   'health.ping': null,
+  'daemon.metrics': null,
 });
 
 /**

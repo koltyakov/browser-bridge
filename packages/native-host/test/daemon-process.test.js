@@ -11,6 +11,7 @@ import {
   findDaemonPidByTransport,
   readDaemonPidFile,
   restartBridgeDaemon,
+  restartBridgeDaemonIfRunning,
   stopBridgeDaemon,
   writeDaemonPidFile,
 } from '../src/daemon-process.js';
@@ -142,6 +143,35 @@ test('restartBridgeDaemon supports tcp transport without stale socket cleanup', 
     assert.equal(result.previousPid, null);
     assert.equal(result.pid, 31338);
     assert.equal(result.removedStaleSocket, false);
+  } finally {
+    await fs.promises.rm(bridgeHome, { recursive: true, force: true });
+  }
+});
+
+test('restartBridgeDaemonIfRunning skips startup when the daemon is offline', async () => {
+  const bridgeHome = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bbx-restart-daemon-if-running-')
+  );
+  const socketPath = path.join(bridgeHome, 'bridge.sock');
+  const pidPath = path.join(bridgeHome, 'daemon.pid');
+  let spawnCount = 0;
+
+  try {
+    const result = await restartBridgeDaemonIfRunning({
+      socketPath,
+      pidPath,
+      pingDaemonFn: async () => false,
+      readPidFn: async () => null,
+      findPidByTransportFn: async () => null,
+      spawnDaemonFn: () => {
+        spawnCount += 1;
+        return /** @type {import('node:child_process').ChildProcess} */ ({ pid: 31339 });
+      },
+      sleepFn: async () => {},
+    });
+
+    assert.equal(result, null);
+    assert.equal(spawnCount, 0);
   } finally {
     await fs.promises.rm(bridgeHome, { recursive: true, force: true });
   }

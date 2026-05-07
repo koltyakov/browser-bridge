@@ -152,6 +152,7 @@ const SETUP_MATRIX_ORDER = /** @type {const} */ ([
 const SETUP_MATRIX_RANK = new Map(SETUP_MATRIX_ORDER.map((key, index) => [key, index]));
 
 const SETUP_MATRIX_BETA_KEYS = new Set(['antigravity', 'windsurf', 'agents']);
+const MANAGED_CLIENT_PACKAGE = '@browserbridge/bbx';
 
 /**
  * @param {SetupStatusInstallState} setupStatus
@@ -848,10 +849,10 @@ function shouldRenderSkillTargetRow(entry) {
  */
 function createSkillCellTitle(entry) {
   if (entry.installedVersion && entry.currentVersion) {
-    return `${entry.basePath}\nInstalled with bbx ${entry.installedVersion}\nCurrent bbx ${entry.currentVersion}`;
+    return `${entry.basePath}\nInstalled with ${MANAGED_CLIENT_PACKAGE} ${entry.installedVersion}\nCurrent ${MANAGED_CLIENT_PACKAGE} ${entry.currentVersion}`;
   }
   if (entry.currentVersion) {
-    return `${entry.basePath}\nCurrent bbx ${entry.currentVersion}`;
+    return `${entry.basePath}\nCurrent ${MANAGED_CLIENT_PACKAGE} ${entry.currentVersion}`;
   }
   return entry.basePath;
 }

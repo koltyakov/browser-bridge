@@ -14,7 +14,8 @@ No build step - the project runs directly from source (`type: "module"`).
 
 ```bash
 npm test          # run all tests (with c8 coverage)
-npm run lint      # ESLint
+npm run format    # oxfmt
+npm run lint      # oxlint
 npm run typecheck # TypeScript type-check (JSDoc annotations)
 ```
 

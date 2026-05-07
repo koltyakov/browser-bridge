@@ -268,7 +268,8 @@ test('getSkillSetupCellState covers custom, installed, update, and install varia
       kind: 'badge',
       label: 'Installed',
       ok: true,
-      title: '/skills/cursor\nInstalled with bbx 1.0.0\nCurrent bbx 1.0.0',
+      title:
+        '/skills/cursor\nInstalled with @browserbridge/bbx 1.0.0\nCurrent @browserbridge/bbx 1.0.0',
       contextAction: {
         kind: 'skill',
         target: 'cursor',
@@ -307,7 +308,8 @@ test('getSkillSetupCellState covers custom, installed, update, and install varia
       variant: 'update',
       label: 'Update',
       pendingLabel: 'Updating…',
-      title: '/skills/cursor\nInstalled with bbx 1.0.0\nCurrent bbx 1.2.0',
+      title:
+        '/skills/cursor\nInstalled with @browserbridge/bbx 1.0.0\nCurrent @browserbridge/bbx 1.2.0',
       contextAction: {
         kind: 'skill',
         target: 'cursor',

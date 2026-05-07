@@ -559,6 +559,13 @@ body[data-windowed="true"] .panel-popup {
   font-size: 12px;
 }
 
+.setup-host-version {
+  margin: -2px 0 6px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .setup-install-button {
   display: inline-flex;
   align-items: center;

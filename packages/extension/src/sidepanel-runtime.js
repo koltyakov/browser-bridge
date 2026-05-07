@@ -43,6 +43,7 @@
 /**
  * @typedef {{
  *   nativeConnected: boolean,
+ *   nativeHostVersion: string | null,
  *   currentTab: SidePanelCurrentTab | null,
  *   setupStatus: SetupStatus | null,
  *   setupStatusPending: boolean,

@@ -15,6 +15,7 @@ import {
   getBridgeTransport,
   getSocketPath,
 } from '../../native-host/src/config.js';
+import { restartBridgeDaemon } from '../../native-host/src/daemon-process.js';
 
 /** @typedef {import('../../native-host/src/config.js').BridgeTransport} BridgeTransport */
 
@@ -23,7 +24,9 @@ import {
 /** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
 /**
  * @typedef {{
+ *   extensionConnected?: boolean,
  *   supported_versions?: string[],
+ *   daemon_supported_versions?: string[],
  *   deprecated_since?: string,
  *   migration_hint?: string
  * }} ProtocolHealthResult
@@ -55,8 +58,28 @@ import {
  *   clientId?: string,
  *   defaultTimeoutMs?: number,
  *   autoReconnect?: boolean,
+ *   restartDaemonOnVersionMismatch?: boolean,
+ *   restartDaemonFn?: typeof restartBridgeDaemon,
  * }} BridgeClientOptions
  */
+
+/**
+ * @param {string} left
+ * @param {string} right
+ * @returns {number}
+ */
+function compareProtocolVersions(left, right) {
+  const leftParts = left.split('.').map((part) => Number(part) || 0);
+  const rightParts = right.split('.').map((part) => Number(part) || 0);
+  const length = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index += 1) {
+    const delta = (leftParts[index] || 0) - (rightParts[index] || 0);
+    if (delta !== 0) {
+      return delta > 0 ? 1 : -1;
+    }
+  }
+  return 0;
+}
 
 /**
  * @param {string} method
@@ -81,6 +104,8 @@ export class BridgeClient extends EventEmitter {
     clientId = `agent_${randomUUID()}`,
     defaultTimeoutMs = DEFAULT_CLIENT_REQUEST_TIMEOUT_MS,
     autoReconnect = false,
+    restartDaemonOnVersionMismatch = true,
+    restartDaemonFn = restartBridgeDaemon,
   } = {}) {
     super();
     this.transport = socketPath ? createSocketBridgeTransport(socketPath) : transport;
@@ -89,6 +114,8 @@ export class BridgeClient extends EventEmitter {
     this.clientId = clientId;
     this.defaultTimeoutMs = defaultTimeoutMs;
     this.autoReconnect = autoReconnect;
+    this.restartDaemonOnVersionMismatch = restartDaemonOnVersionMismatch;
+    this.restartDaemonFn = restartDaemonFn;
     this.socket = null;
     this.connected = false;
     this.protocolCompatibility = null;
@@ -96,6 +123,7 @@ export class BridgeClient extends EventEmitter {
     /** @type {Map<string, PendingRequest>} */
     this.waiting = new Map();
     this._reconnecting = false;
+    this._attemptedVersionMismatchRestart = false;
   }
 
   /**
@@ -173,19 +201,38 @@ export class BridgeClient extends EventEmitter {
       });
     });
 
+    this.protocolCompatibility = null;
+    this.protocolWarning = null;
+
+    /** @type {ProtocolHealthResult | null} */
+    let healthResult = null;
     try {
       const healthResponse = await this.request({
         method: 'health.ping',
       });
       if (healthResponse.ok) {
-        this.protocolCompatibility = BridgeClient.checkProtocolVersion(
-          /** @type {ProtocolHealthResult} */ (healthResponse.result)
-        );
-        this.protocolWarning = this.protocolCompatibility.warning ?? null;
+        healthResult = /** @type {ProtocolHealthResult} */ (healthResponse.result);
       }
     } catch {
       this.protocolCompatibility = null;
       this.protocolWarning = null;
+      return;
+    }
+
+    if (!healthResult) {
+      return;
+    }
+
+    this.protocolCompatibility = BridgeClient.checkProtocolVersion(healthResult);
+    this.protocolWarning = this.protocolCompatibility.warning ?? null;
+    if (this.protocolCompatibility.compatible) {
+      this._attemptedVersionMismatchRestart = false;
+    }
+    if (this.shouldRestartDaemonForProtocolMismatch(healthResult)) {
+      this._attemptedVersionMismatchRestart = true;
+      await this.disconnectForDaemonRestart();
+      await this.restartDaemonFn({ transport: this.transport });
+      await this.connect();
     }
   }
 
@@ -303,6 +350,60 @@ export class BridgeClient extends EventEmitter {
       }
     }
     this._reconnecting = false;
+  }
+
+  /**
+   * @param {ProtocolHealthResult} healthResult
+   * @returns {boolean}
+   */
+  shouldRestartDaemonForProtocolMismatch(healthResult) {
+    if (
+      !this.restartDaemonOnVersionMismatch ||
+      this._attemptedVersionMismatchRestart ||
+      !this.protocolCompatibility ||
+      this.protocolCompatibility.compatible
+    ) {
+      return false;
+    }
+
+    const remoteVersions = Array.isArray(healthResult?.daemon_supported_versions)
+      ? healthResult.daemon_supported_versions
+      : healthResult?.extensionConnected === true
+        ? []
+        : Array.isArray(healthResult?.supported_versions)
+          ? healthResult.supported_versions
+          : [];
+    const latestRemote = remoteVersions[0];
+    return (
+      typeof latestRemote === 'string' &&
+      compareProtocolVersions(latestRemote, PROTOCOL_VERSION) < 0
+    );
+  }
+
+  /**
+   * Drop the current socket before forcing a daemon restart so the next
+   * connect() call observes a fresh local process rather than the existing one.
+   *
+   * @returns {Promise<void>}
+   */
+  async disconnectForDaemonRestart() {
+    const socket = this.socket;
+    if (!socket) {
+      return;
+    }
+
+    const previousAutoReconnect = this.autoReconnect;
+    this.autoReconnect = false;
+    this.connected = false;
+    this.socket = null;
+
+    if (!socket.destroyed) {
+      const closed = once(socket, 'close').catch(() => {});
+      socket.destroy();
+      await closed;
+    }
+
+    this.autoReconnect = previousAutoReconnect;
   }
 
   /**

@@ -35,14 +35,38 @@ function createNativePort(messages, setupStatus = {}) {
         request?.method === 'setup.get_status' &&
         typeof request.id === 'string'
       ) {
+        const requestId = request.id;
         queueMicrotask(() => {
           onMessage.dispatch({
             type: 'host.setup_status.response',
-            requestId: request.id,
+            requestId,
             status: {
               mcpClients: setupStatus.mcpClients ?? [],
               skillTargets: setupStatus.skillTargets ?? [],
             },
+          });
+        });
+      }
+      if (
+        candidate.type === 'host.bridge_request' &&
+        request?.method === 'health.ping' &&
+        typeof request.id === 'string'
+      ) {
+        const requestId = request.id;
+        queueMicrotask(() => {
+          onMessage.dispatch({
+            type: 'host.bridge_response',
+            response: createSuccess(
+              requestId,
+              {
+                daemon: 'ok',
+                daemonVersion: '1.2.0',
+                extensionConnected: true,
+              },
+              {
+                method: 'health.ping',
+              }
+            ),
           });
         });
       }
@@ -223,6 +247,7 @@ test('background UI port syncs current state and updates scoped tab state on req
     type: 'state.sync',
     state: {
       nativeConnected: true,
+      nativeHostVersion: '1.2.0',
       currentTab: {
         tabId: 31,
         windowId: 8,
@@ -253,6 +278,7 @@ test('background UI port syncs current state and updates scoped tab state on req
     type: 'state.sync',
     state: {
       nativeConnected: true,
+      nativeHostVersion: '1.2.0',
       currentTab: {
         tabId: 41,
         windowId: 8,
@@ -350,6 +376,7 @@ test('background UI port refresh clears setup status when the native host is una
     type: 'state.sync',
     state: {
       nativeConnected: false,
+      nativeHostVersion: null,
       currentTab: null,
       setupStatus: null,
       setupStatusPending: false,
