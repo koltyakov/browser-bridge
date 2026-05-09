@@ -5,9 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/**
- * @typedef {'codex' | 'claude' | 'cursor' | 'copilot' | 'opencode' | 'antigravity' | 'windsurf' | 'agents'} McpClientName
- */
+/** @typedef {import('./types.js').McpClientName} McpClientName */
 
 /** @type {McpClientName[]} */
 export const MCP_CLIENT_NAMES = [

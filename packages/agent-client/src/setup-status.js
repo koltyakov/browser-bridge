@@ -21,8 +21,8 @@ import {
   SUPPORTED_TARGETS,
 } from './install.js';
 
-/** @typedef {import('./mcp-config.js').McpClientName} McpClientName */
-/** @typedef {import('./install.js').SupportedTarget} SupportedTarget */
+/** @typedef {import('./types.js').McpClientName} McpClientName */
+/** @typedef {import('./types.js').SupportedTarget} SupportedTarget */
 /** @typedef {import('../../protocol/src/types.js').SetupStatus} SetupStatus */
 /** @typedef {import('../../protocol/src/types.js').McpClientStatus} McpClientStatus */
 /** @typedef {import('../../protocol/src/types.js').SkillTargetStatus} SkillTargetStatus */
@@ -52,17 +52,7 @@ const SKILL_TARGET_LABELS = {
   agents: 'Generic agents',
 };
 
-/**
- * @typedef {{
- *   global?: boolean,
- *   cwd?: string,
- *   projectPath?: string,
- *   mcpDetectors?: Record<string, () => boolean | Promise<boolean>>,
- *   skillDetectors?: Record<string, () => boolean | Promise<boolean>>,
- *   access?: (targetPath: string) => Promise<void>,
- *   readFile?: (targetPath: string, encoding: BufferEncoding) => Promise<string>
- * }} SetupStatusOptions
- */
+/** @typedef {import('./types.js').SetupStatusOptions} SetupStatusOptions */
 
 /**
  * Return Browser Bridge MCP and skill installation status for supported clients.

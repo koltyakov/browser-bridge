@@ -3,18 +3,8 @@
 import { BRIDGE_METHOD_REGISTRY, BRIDGE_METHODS } from '../../protocol/src/index.js';
 import { parseCommaList, parseIntArg, parsePropertyAssignments } from './cli-helpers.js';
 
-/** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
-
-/**
- * @typedef {{
- *   method: BridgeMethod,
- *   resolve?: boolean,
- *   printMethod?: string,
- *   usage: string,
- *   description: string,
- *   build: (r: string[], ref?: string) => Record<string, unknown>
- * }} ShortcutCommand
- */
+/** @typedef {import('./types.js').BridgeMethod} BridgeMethod */
+/** @typedef {import('./types.js').ShortcutCommand} ShortcutCommand */
 
 /**
  * @param {BridgeMethod} method

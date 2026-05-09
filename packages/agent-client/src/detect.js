@@ -4,9 +4,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-/** @typedef {import('./mcp-config.js').McpClientName} McpClientName */
-/** @typedef {import('./install.js').SupportedTarget} SupportedTarget */
-/** @typedef {() => boolean | Promise<boolean>} Detector */
+/** @typedef {import('./types.js').McpClientName} McpClientName */
+/** @typedef {import('./types.js').SupportedTarget} SupportedTarget */
+/** @typedef {import('./types.js').Detector} Detector */
 
 const home = os.homedir();
 const platform = process.platform;

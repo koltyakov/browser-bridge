@@ -17,51 +17,13 @@ import {
 } from '../../native-host/src/config.js';
 import { restartBridgeDaemon } from '../../native-host/src/daemon-process.js';
 
-/** @typedef {import('../../native-host/src/config.js').BridgeTransport} BridgeTransport */
-
-/** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
-/** @typedef {import('../../protocol/src/types.js').BridgeMeta} BridgeMeta */
-/** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
-/**
- * @typedef {{
- *   extensionConnected?: boolean,
- *   supported_versions?: string[],
- *   daemon_supported_versions?: string[],
- *   deprecated_since?: string,
- *   migration_hint?: string
- * }} ProtocolHealthResult
- */
-
-/**
- * @typedef {{
- *   type: 'registered',
- *   role: 'agent' | 'extension',
- *   clientId?: string
- * } | {
- *   type: 'agent.response',
- *   response: BridgeResponse
- * }} ClientMessage
- */
-
-/**
- * @typedef {{
- *   resolve: (value: any) => void,
- *   reject: (error: Error) => void,
- *   timeoutId: NodeJS.Timeout
- * }} PendingRequest
- */
-
-/**
- * @typedef {{
- *   transport?: BridgeTransport,
- *   socketPath?: string,
- *   clientId?: string,
- *   defaultTimeoutMs?: number,
- *   autoReconnect?: boolean,
- *   restartDaemonOnVersionMismatch?: boolean,
- *   restartDaemonFn?: typeof restartBridgeDaemon,
- * }} BridgeClientOptions
- */
+/** @typedef {import('./types.js').BridgeMeta} BridgeMeta */
+/** @typedef {import('./types.js').BridgeMethod} BridgeMethod */
+/** @typedef {import('./types.js').BridgeResponse} BridgeResponse */
+/** @typedef {import('./types.js').BridgeClientOptions} BridgeClientOptions */
+/** @typedef {import('./types.js').ClientMessage} ClientMessage */
+/** @typedef {import('./types.js').PendingRequest} PendingRequest */
+/** @typedef {import('./types.js').ProtocolHealthResult} ProtocolHealthResult */
 
 /**
  * @param {string} left

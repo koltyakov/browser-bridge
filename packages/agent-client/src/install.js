@@ -41,9 +41,7 @@ const copilotBrowserBridgeNote = [
   '',
 ].join('\n');
 
-/**
- * @typedef {'codex' | 'claude' | 'cursor' | 'copilot' | 'opencode' | 'antigravity' | 'windsurf' | 'agents'} SupportedTarget
- */
+/** @typedef {import('./types.js').SupportedTarget} SupportedTarget */
 
 /** @type {SupportedTarget[]} */
 export const SUPPORTED_TARGETS = [...supportedTargets];
@@ -68,9 +66,7 @@ export function isSupportedTarget(value) {
   return supportedTargets.includes(/** @type {SupportedTarget} */ (value));
 }
 
-/**
- * @typedef {{targets: SupportedTarget[], projectPath: string, global: boolean}} InstallAgentOptions
- */
+/** @typedef {import('./types.js').InstallAgentOptions} InstallAgentOptions */
 
 /**
  * @param {string[]} args
@@ -202,7 +198,7 @@ async function rollbackInstalledSkillDirs(attempted) {
 /**
  * Write MCP config for the given clients.
  *
- * @param {import('./mcp-config.js').McpClientName[]} clients
+ * @param {import('./types.js').McpClientName[]} clients
  * @param {{
  *   global: boolean,
  *   projectPath: string,

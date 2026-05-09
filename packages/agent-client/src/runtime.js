@@ -12,39 +12,14 @@ import { resolveDefaultExtensionId } from '../../native-host/src/install-manifes
 import { methodNeedsTab } from './cli-helpers.js';
 import { BridgeClient } from './client.js';
 
-/** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
-/** @typedef {import('../../protocol/src/types.js').BridgeMeta} BridgeMeta */
-/** @typedef {import('../../protocol/src/types.js').BridgeRequestSource} BridgeRequestSource */
-/** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
+/** @typedef {import('./types.js').BridgeMethod} BridgeMethod */
+/** @typedef {import('./types.js').BridgeMeta} BridgeMeta */
+/** @typedef {import('./types.js').BridgeRequestSource} BridgeRequestSource */
+/** @typedef {import('./types.js').BridgeResponse} BridgeResponse */
 /** @typedef {import('../../native-host/src/config.js').SupportedBrowser} SupportedBrowser */
-
-/**
- * @typedef {{
- *   browser: string,
- *   manifestPath: string,
- *   installed: boolean
- * }} BrowserManifestStatus
- */
-
-/**
- * @typedef {{
- *   manifestInstalled: boolean,
- *   manifestPath: string,
- *   allowedOrigins: string[],
- *   defaultExtensionId: string | null,
- *   defaultExtensionIdSource: string,
- *   daemonReachable: boolean,
- *   extensionConnected: boolean,
- *   accessEnabled: boolean,
- *   enabledWindowId: number | null,
- *   routeTabId: number | null,
- *   routeReady: boolean,
- *   routeReason: string,
- *   issues: string[],
- *   nextSteps: string[],
- *   browserManifests: BrowserManifestStatus[]
- * }} DoctorReport
- */
+/** @typedef {import('./types.js').BrowserManifestStatus} BrowserManifestStatus */
+/** @typedef {import('./types.js').DoctorReport} DoctorReport */
+/** @typedef {import('./types.js').DoctorReportOptions} DoctorReportOptions */
 
 /**
  * @param {BridgeClient} client
@@ -177,15 +152,6 @@ export async function checkBrowserManifests() {
     })
   );
 }
-
-/**
- * @typedef {{
- *   loadManifest?: () => Promise<{allowed_origins?: string[]} | null>,
- *   manifestPath?: string,
- *   defaultExtensionIdInfo?: { extensionId: string | null, source: string },
- *   bridgeClientRunner?: <T>(callback: (client: BridgeClient) => Promise<T>) => Promise<T>
- * }} DoctorReportOptions
- */
 
 /**
  * @param {DoctorReportOptions} [options={}]

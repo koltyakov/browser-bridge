@@ -50,8 +50,8 @@ import { getDoctorReport, requestBridge, resolveRef } from './runtime.js';
 import { collectSetupStatus } from './setup-status.js';
 import { annotateBridgeSummary, summarizeBridgeResponse } from './subagent.js';
 
-/** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
-/** @typedef {{ image: string, rect: Record<string, unknown> }} ScreenshotResult */
+/** @typedef {import('./types.js').BridgeMethod} BridgeMethod */
+/** @typedef {import('./types.js').ScreenshotResult} ScreenshotResult */
 
 const REQUEST_SOURCE = 'cli';
 const TEST_TIMEOUT_ENV = 'BBX_CLIENT_REQUEST_TIMEOUT_MS';
@@ -139,8 +139,8 @@ if (command === 'install-skill') {
       projectPath: isGlobal ? os.homedir() : process.cwd(),
       ...getSetupStatusTestOverrides(),
     });
-    /** @type {import('./install.js').SupportedTarget[]} */
-    const detected = /** @type {import('./install.js').SupportedTarget[]} */ (
+    /** @type {import('./types.js').SupportedTarget[]} */
+    const detected = /** @type {import('./types.js').SupportedTarget[]} */ (
       setupStatus.skillTargets.filter((entry) => entry.detected).map((entry) => entry.key)
     );
     const installedManagedTargets = new Set(
@@ -149,7 +149,7 @@ if (command === 'install-skill') {
         .map((entry) => entry.key)
     );
     const installedManagedTargetList =
-      /** @type {import('./install.js').SupportedTarget[]} */ ([...installedManagedTargets]);
+      /** @type {import('./types.js').SupportedTarget[]} */ ([...installedManagedTargets]);
 
     // Aliases like 'openai' and 'google' map to canonical targets and stay omitted.
     const items = SUPPORTED_TARGETS.map((t) => ({
@@ -167,19 +167,19 @@ if (command === 'install-skill') {
       items
     );
 
-    /** @type {import('./install.js').SupportedTarget[]} */
+    /** @type {import('./types.js').SupportedTarget[]} */
     let targets;
     if (selected === null) {
       // Non-TTY: prefer managed installs, then detected targets (always includes 'agents').
       targets = installedManagedTargets.size > 0 ? installedManagedTargetList : detected;
     } else {
-      targets = /** @type {import('./install.js').SupportedTarget[]} */ (selected);
+      targets = /** @type {import('./types.js').SupportedTarget[]} */ (selected);
     }
 
     const projectPath = isGlobal ? os.homedir() : process.cwd();
     if (selected !== null) {
       const deselectedTargets =
-        /** @type {import('./install.js').SupportedTarget[]} */ (
+        /** @type {import('./types.js').SupportedTarget[]} */ (
           installedManagedTargetList.filter((target) => !targets.includes(target))
         );
       const removableTargets = await findInstalledManagedTargets({
@@ -241,7 +241,7 @@ if (command === 'install-mcp') {
 
   const clientArg = argsLeft[0];
 
-  /** @type {import('./mcp-config.js').McpClientName[]} */
+  /** @type {import('./types.js').McpClientName[]} */
   let clients;
 
   if (!clientArg) {
@@ -252,14 +252,14 @@ if (command === 'install-mcp') {
       projectPath: process.cwd(),
       ...getSetupStatusTestOverrides(),
     });
-    const detected = /** @type {import('./mcp-config.js').McpClientName[]} */ (
+    const detected = /** @type {import('./types.js').McpClientName[]} */ (
       setupStatus.mcpClients.filter((entry) => entry.detected).map((entry) => entry.key)
     );
     const configuredClients = new Set(
       setupStatus.mcpClients.filter((entry) => entry.configured).map((entry) => entry.key)
     );
     const configuredClientList =
-      /** @type {import('./mcp-config.js').McpClientName[]} */ ([...configuredClients]);
+      /** @type {import('./types.js').McpClientName[]} */ ([...configuredClients]);
     const items = MCP_CLIENT_NAMES.map((c) => ({
       value: c,
       label: `${c.padEnd(10)}  ${MCP_CLIENT_LABELS[c]}`,
@@ -284,12 +284,12 @@ if (command === 'install-mcp') {
             ? detected
             : [...MCP_CLIENT_NAMES];
     } else {
-      clients = /** @type {import('./mcp-config.js').McpClientName[]} */ (selected);
+      clients = /** @type {import('./types.js').McpClientName[]} */ (selected);
     }
 
     if (selected !== null) {
       const deselectedClients =
-        /** @type {import('./mcp-config.js').McpClientName[]} */ (
+        /** @type {import('./types.js').McpClientName[]} */ (
           configuredClientList.filter((clientName) => !clients.includes(clientName))
         );
       const removableClients = await findConfiguredMcpClients({
