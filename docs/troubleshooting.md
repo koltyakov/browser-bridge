@@ -13,7 +13,7 @@ bbx logs
 
 ## The extension is installed, but `bbx status` says it is disconnected
 
-- Run `bbx install` again.
+- Run `bbx install` again. For Edge, Brave, Chromium, or Arc, include `--browser <name>`.
 - Run `bbx restart` to force the local daemon to reload after updates.
 - Confirm the extension is enabled in Chrome.
 - If you are using a published store build that still needs an explicit ID, run `bbx install <extension-id>`.

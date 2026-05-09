@@ -6,9 +6,9 @@ Bridge into a custom agent.
 
 ## Prerequisites
 
-- Google Chrome on the same machine as the agent
+- Google Chrome or a supported Chromium-based browser on the same machine as the agent
 - Node.js 18 or newer
-- The Browser Bridge extension installed in Chrome
+- The Browser Bridge extension installed in Chrome or the target Chromium-based browser
 
 ## 1. Install the CLI and native host
 
@@ -20,6 +20,16 @@ bbx install
 `bbx install` writes the native messaging manifest so the extension can talk to
 the local host. If you are connecting a packaged store build before the
 installer embeds a default extension ID, use `bbx install <extension-id>`.
+
+By default, `bbx install` targets Chrome. For another supported browser, pass
+`--browser`:
+
+```bash
+bbx install --browser edge      # Microsoft Edge
+bbx install --browser brave     # Brave
+bbx install --browser chromium  # Chromium
+bbx install --browser arc       # Arc
+```
 
 ## 2. Verify the local bridge first
 

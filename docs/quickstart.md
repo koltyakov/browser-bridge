@@ -1,8 +1,8 @@
 # Quickstart
 
-Browser Bridge lets your coding agent inspect and patch the real Chrome tab you already have open - DOM, styles, console, network, and more - without screenshots or raw HTML dumps.
+Browser Bridge lets your coding agent inspect and patch the real Chrome or Chromium-based browser tab you already have open - DOM, styles, console, network, and more - without screenshots or raw HTML dumps.
 
-> **Requires:** Google Chrome and Node.js on the same machine as your agent. Remote-only agents (e.g. GitHub.com Copilot) cannot reach a local Chrome instance.
+> **Requires:** Google Chrome or a supported Chromium-based browser, plus Node.js on the same machine as your agent. Remote-only agents (e.g. GitHub.com Copilot) cannot reach a local browser instance.
 >
 > **Privacy:** Browser Bridge itself sends extension data locally to the companion host and connected local client. Your chosen agent or IDE may still forward tool results onward under its own policy. See [`PRIVACY.md`](../PRIVACY.md).
 
@@ -22,6 +22,15 @@ If the extension does not connect itself during setup, run:
 
 ```bash
 bbx install
+```
+
+For Chromium-based browsers other than Chrome, install the native messaging manifest for that browser:
+
+```bash
+bbx install --browser edge      # Microsoft Edge
+bbx install --browser brave     # Brave
+bbx install --browser chromium  # Chromium
+bbx install --browser arc       # Arc
 ```
 
 ## 3. Connect your agent

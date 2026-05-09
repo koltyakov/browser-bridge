@@ -7,6 +7,10 @@ agent wiring, see [manual-setup.md](./manual-setup.md).
 
 ```bash
 bbx install
+bbx install --browser edge
+bbx install --browser brave
+bbx install --browser chromium
+bbx install --browser arc
 bbx status
 bbx doctor
 bbx restart
@@ -16,7 +20,8 @@ bbx skill
 ```
 
 Use these first when Browser Bridge is not connected, the wrong tab is routed,
-or you want to see the available runtime presets.
+or you want to see the available runtime presets. `bbx install` targets Chrome
+by default; use `--browser` for Edge, Brave, Chromium, or Arc.
 
 Use `bbx restart` when you want to force the local daemon to reload after a CLI
 update or recover from a stuck local bridge process.
