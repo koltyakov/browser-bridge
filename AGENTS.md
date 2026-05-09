@@ -7,13 +7,13 @@
 ### Data Flow
 
 ```
-Agent/IDE ──stdio──▶ MCP Server ──▶ BridgeClient ──TCP/socket──▶ Daemon
-                                                              │
-                                                   Native Host (relay)
-                                                              │
-Extension Background ──chrome.tabs.sendMessage──▶ Content Script ──▶ Browser DOM
-(Service Worker)       chrome.debugger (CDP)              │
-                        chrome.scripting (MAIN world)      └── Element/patch registries
+Agent/IDE ──stdio──▶ MCP Server ──▶ BridgeClient ── JSON-lines over TCP/socket ──▶ Daemon
+bbx CLI ─────────────────────────▶ BridgeClient ── JSON-lines over TCP/socket ────┘
+
+Extension Background ── Chrome Native Messaging ──▶ Native Host (relay) ── TCP/socket ──▶ Daemon
+(Service Worker) ───── chrome.tabs.sendMessage ───▶ Content Script ───────▶ Browser DOM
+                 ├──── chrome.debugger (CDP)
+                 └──── chrome.scripting (MAIN world) ─────────────────────▶ Element/patch registries
 ```
 
 **Outbound:** Agent calls MCP tool → `BridgeClient` sends `{ type: 'agent.request', request }` as JSON-lines over TCP/socket → Daemon routes to extension socket → Native host relays to Chrome native messaging → Background service worker dispatches to content script or handles directly.
@@ -150,7 +150,8 @@ npm run daemon                 # start daemon locally
 - Run `npm run typecheck`.
 - Run `npm test`.
 - Run `npm run lint` to check code style and formatting.
-- **After any AI edits**: Always run `npm run lint`, `npm run typecheck`, and `npm test` to ensure changes don't break existing functionality.
+- **After AI edits to code or tests**: Always run `npm run lint`, `npm run typecheck`, and `npm test` to ensure changes don't break existing functionality.
+- **After AI edits that do not touch code or tests**: Run `npm run lint`; `npm run typecheck` and `npm test` are not required unless the change could affect runtime behavior.
 - When touching the extension/browser protocol path, verify at least one live CLI flow against Chrome if possible.
 
 ## Agent Support Maintenance

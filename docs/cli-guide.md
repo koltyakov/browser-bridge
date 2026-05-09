@@ -27,7 +27,7 @@ update or recover from a stuck local bridge process.
 bbx call page.get_state
 bbx dom-query main
 bbx describe .hero
-bbx text .hero-title medium
+bbx text .hero-title 1000
 bbx html .hero
 bbx attrs .hero id,class,data-state
 bbx a11y-tree 80 4
@@ -56,8 +56,8 @@ Use `styles`, `matched-rules`, and `box` together when a layout bug is unclear.
 ```bash
 bbx console error
 bbx network 20
-bbx page-text medium
-bbx storage local authToken,featureFlag
+bbx page-text 4000
+bbx storage local authToken featureFlag
 bbx perf
 bbx eval 'window.location.href'
 ```

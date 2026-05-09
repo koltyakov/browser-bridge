@@ -30,14 +30,15 @@ There are two integration paths. Pick the one that matches how your agent works:
 
 Supported clients: `codex` (OpenAI Codex), `claude` (Claude Code), `cursor` (Cursor), `copilot` (GitHub Copilot), `opencode` (OpenCode), `antigravity` (Antigravity), `windsurf` (Windsurf), `agents` (generic `.agents` MCP/skill layout).
 
-After installing the extension and CLI, finish the rest from the extension side panel's **Host Setup** section, or use the `bbx install-mcp` / `bbx install-skill` commands below if you prefer terminal setup.
+After installing the extension and CLI, finish the rest from the extension side panel's **Host Setup** section, or use the `bbx install-mcp` / `bbx install-skill` commands below if you prefer terminal setup. With no target argument, the CLI prompts in interactive shells; in non-interactive shells it prefers already configured or detected clients before falling back to all supported clients.
 
 > **Recommendation:** MCP and the CLI skill are not meant to be installed together by default. If your agent supports both, start with MCP. The bridge protocol and browser data are the same either way; the difference is integration style. MCP fits agent tool systems better because it is structured, validated, and does not depend on shell access. Choose the CLI skill when you specifically want direct `bbx` control for shell-driven workflows such as setup, debugging, scripting, or raw protocol calls. If CLI mode is unreliable because the agent runs in a sandboxed shell, such as GitHub Copilot, use MCP instead.
 
 **MCP** - the default path for agents with native MCP tool support. Prefer this when your agent can use either mode. It gives the agent structured tools without relying on shell execution, and it is the best fallback when CLI mode is blocked by sandboxing. Write the config directly into each client's settings file:
 
 ```bash
-bbx install-mcp                  # all supported clients
+bbx install-mcp                  # prompt/select detected clients
+bbx install-mcp all              # all supported clients
 bbx install-mcp codex            # or pick one: codex, claude, cursor, copilot, opencode, antigravity, windsurf, agents
 bbx install-mcp copilot --local  # scope to current project instead of global
 ```
@@ -47,7 +48,8 @@ Configs are written globally by default. For GitHub Copilot, that means `~/.copi
 **Skill + CLI** - for agents that can reliably run shell commands and where direct `bbx` control is the better fit than MCP tools. Use this path for shell-driven agent flows, setup and doctor flows, scripting, logs, or raw protocol access. Install the Browser Bridge skill so your agent knows how to drive `bbx`:
 
 ```bash
-bbx install-skill                  # all supported clients
+bbx install-skill                  # prompt/select detected clients
+bbx install-skill all              # all supported clients
 bbx install-skill codex            # or pick one: codex, claude, cursor, copilot, opencode, antigravity, windsurf, agents
 bbx install-skill agents --project .
 ```
