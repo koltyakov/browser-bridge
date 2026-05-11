@@ -111,6 +111,22 @@ test('writeNativeMessage rejects payloads above the native message size cap befo
   assert.deepEqual(writes, []);
 });
 
+test('writeNativeMessage rejects unserializable payloads before writing', async () => {
+  const stream = new EventEmitter();
+  const writes: Buffer[] = [];
+  const circular: Record<string, unknown> = {};
+  circular.self = circular;
+
+  const writable = stream as unknown as WritableEmitter;
+  writable.write = (chunk: string | Uint8Array): boolean => {
+    writes.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    return true;
+  };
+
+  await assert.rejects(() => writeNativeMessage(writable, circular), /circular/u);
+  assert.deepEqual(writes, []);
+});
+
 test('createNativeMessageReader parses a max-size frame from many small chunks without concat churn', async (t) => {
   const input = new PassThrough();
   const message = createSizedMessage(MAX_NATIVE_MESSAGE_BYTES);
@@ -230,6 +246,33 @@ test('createNativeMessageReader parses a frame split across three ticks', async 
 
   assert.deepEqual(protocolErrors, []);
   assert.deepEqual(messages, [message]);
+});
+
+test('createNativeMessageReader parses complete frame plus partial next frame', async () => {
+  const input = new PassThrough();
+  const firstMessage = { id: 4, type: 'first' };
+  const secondMessage = { id: 5, type: 'second' };
+  const firstFrame = frameMessage(firstMessage);
+  const secondFrame = frameMessage(secondMessage);
+  const messages: unknown[] = [];
+  const protocolErrors: Error[] = [];
+
+  createNativeMessageReader(
+    input,
+    (parsedMessage) => {
+      messages.push(parsedMessage);
+    },
+    (error) => {
+      protocolErrors.push(error);
+    }
+  );
+
+  input.write(Buffer.concat([firstFrame, secondFrame.subarray(0, 7)]));
+  input.end(secondFrame.subarray(7));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(protocolErrors, []);
+  assert.deepEqual(messages, [firstMessage, secondMessage]);
 });
 
 test('createNativeMessageReader fuzzes deterministic random chunk splits for valid and malformed frames', async () => {

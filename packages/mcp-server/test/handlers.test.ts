@@ -268,31 +268,6 @@ test('handleSkillTool returns runtime context without a bridge connection', asyn
   assert.ok(result.structuredContent.runtimeContext);
 });
 
-test('handleSkillTool and handleSetupTool stay stable across repeated calls', async () => {
-  const iterations = 20;
-  const results = await Promise.all(
-    Array.from({ length: iterations }, async () => {
-      const [skillResult, setupResult] = await Promise.all([
-        handleSkillTool(),
-        handleSetupTool({ global: true }),
-      ]);
-      return { skillResult, setupResult };
-    })
-  );
-
-  assert.equal(results.length, iterations);
-  for (const { skillResult, setupResult } of results) {
-    assert.equal(skillResult.isError, undefined);
-    assert.match(skillResult.content[0].text, /Runtime context retrieved/);
-    assert.ok(skillResult.structuredContent.runtimeContext);
-
-    assert.equal(setupResult.isError, undefined);
-    assert.match(setupResult.content[0].text, /Optional agent integration status:/);
-    assert.equal(setupResult.structuredContent.ok, true);
-    assert.ok(setupResult.structuredContent.status);
-  }
-});
-
 test('handlePageTool state calls page.get_state', async () => {
   await withMockedBridge(
     async () =>

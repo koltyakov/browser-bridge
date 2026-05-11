@@ -470,15 +470,20 @@ async function main() {
     }
 
     if (command === 'batch') {
-      await ensureClientConnection();
       const input = rest[0];
       if (!input) {
         throw new Error('Usage: batch \'[{"method":"...","params":{...}}, ...]\'');
       }
-      const calls = JSON.parse(input);
+      let calls;
+      try {
+        calls = JSON.parse(input);
+      } catch {
+        throw new Error('Invalid JSON syntax. Expected a JSON array of bridge calls.');
+      }
       if (!Array.isArray(calls)) {
         throw new Error('Batch input must be a JSON array.');
       }
+      await ensureClientConnection();
       const results = await Promise.all(
         calls.map(async (call) => {
           if (!call || typeof call !== 'object' || typeof call.method !== 'string') {
@@ -847,8 +852,11 @@ async function uninstallBrowserBridge() {
  */
 async function parseCallCommand(args) {
   const parsed = extractTabFlag(args);
-  const [first, second] = parsed.rest;
+  const [first, second, ...extra] = parsed.rest;
   if (!first) {
+    throw new Error('Usage: call [--tab <tabId>] <method> [paramsJson]');
+  }
+  if (extra.length > 0) {
     throw new Error('Usage: call [--tab <tabId>] <method> [paramsJson]');
   }
 

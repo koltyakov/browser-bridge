@@ -16,28 +16,49 @@ import { installNativeManifest } from '../src/install-manifest.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 
-try {
-  await installNativeManifest({ repoRoot, preserveCustomExtensionId: true });
-  process.stdout.write('Browser Bridge: native host installed. Run `bbx doctor` to verify.\n');
-} catch (err) {
-  // Non-fatal - user can run `bbx install` manually.
-  const message = err instanceof Error ? err.message : String(err);
-  process.stderr.write(
-    `Browser Bridge: native host auto-install skipped (${message}).\nRun \`bbx install\` manually if needed.\n`
-  );
-  process.exit(0);
-}
+/**
+ * @param {{
+ *   installNativeManifestFn?: typeof installNativeManifest,
+ *   restartBridgeDaemonIfRunningFn?: typeof restartBridgeDaemonIfRunning,
+ *   stdout?: Pick<NodeJS.WriteStream, 'write'>,
+ *   stderr?: Pick<NodeJS.WriteStream, 'write'>,
+ *   exit?: (code?: number) => void,
+ * }} [deps]
+ * @returns {Promise<void>}
+ */
+export async function runPostinstall({
+  installNativeManifestFn = installNativeManifest,
+  restartBridgeDaemonIfRunningFn = restartBridgeDaemonIfRunning,
+  stdout = process.stdout,
+  stderr = process.stderr,
+  exit = (code) => process.exit(code),
+} = {}) {
+  try {
+    await installNativeManifestFn({ repoRoot, preserveCustomExtensionId: true });
+    stdout.write('Browser Bridge: native host installed. Run `bbx doctor` to verify.\n');
+  } catch (err) {
+    // Non-fatal - user can run `bbx install` manually.
+    const message = err instanceof Error ? err.message : String(err);
+    stderr.write(
+      `Browser Bridge: native host auto-install skipped (${message}).\nRun \`bbx install\` manually if needed.\n`
+    );
+    exit(0);
+    return;
+  }
 
-try {
-  const restartResult = await restartBridgeDaemonIfRunning();
-  if (restartResult) {
-    process.stdout.write(
-      'Browser Bridge: restarted the local daemon to use the updated install.\n'
+  try {
+    const restartResult = await restartBridgeDaemonIfRunningFn();
+    if (restartResult) {
+      stdout.write('Browser Bridge: restarted the local daemon to use the updated install.\n');
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    stderr.write(
+      `Browser Bridge: native host installed, but daemon restart failed (${message}).\nRun \`bbx restart\` if needed.\n`
     );
   }
-} catch (err) {
-  const message = err instanceof Error ? err.message : String(err);
-  process.stderr.write(
-    `Browser Bridge: native host installed, but daemon restart failed (${message}).\nRun \`bbx restart\` if needed.\n`
-  );
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await runPostinstall();
 }

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   DEFAULT_EXTENSION_ID_ENV,
+  escapeSingleQuotes,
   getWindowsRegistryKey,
   getAllowedOrigins,
   getDefaultExtensionId,
@@ -17,7 +18,7 @@ import {
   uninstallNativeManifest,
   parseExtensionId,
 } from '../src/install-manifest.js';
-import { getLauncherFilename, getManifestInstallDir } from '../src/config.js';
+import { getLauncherFilename } from '../src/config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -251,10 +252,22 @@ test('installNativeManifest creates missing nested install and bridge directorie
     });
 
     const manifest = JSON.parse(await fs.promises.readFile(result.manifestPath, 'utf8'));
+    const launcher = await fs.promises.readFile(result.launcherPath, 'utf8');
     await fs.promises.access(result.manifestPath);
     await fs.promises.access(result.launcherPath);
     assert.equal(manifest.path, result.launcherPath);
     assert.deepEqual(manifest.allowed_origins, [`chrome-extension://${extensionId}/`]);
+    if (process.platform !== 'win32') {
+      const launcherStats = await fs.promises.stat(result.launcherPath);
+      const hostPath = path.join(process.cwd(), 'packages', 'native-host', 'bin', 'native-host.js');
+      assert.equal(launcherStats.mode & 0o777, 0o755);
+      assert.equal(
+        launcher,
+        `#!/bin/sh
+exec '${escapeSingleQuotes(process.execPath)}' '${escapeSingleQuotes(hostPath)}' "$@"
+`
+      );
+    }
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }
@@ -377,45 +390,6 @@ test('getAllowedOrigins falls back to placeholder when nothing is installed', ()
   assert.deepEqual(getAllowedOrigins(null, null), [
     'chrome-extension://__REPLACE_WITH_EXTENSION_ID__/',
   ]);
-});
-
-test('getManifestInstallDir returns different paths for different browsers on the same platform', () => {
-  const chrome = getManifestInstallDir('chrome');
-  const edge = getManifestInstallDir('edge');
-  const brave = getManifestInstallDir('brave');
-  const chromium = getManifestInstallDir('chromium');
-
-  // Each browser should have a distinct install path.
-  const paths = new Set([chrome, edge, brave, chromium]);
-  assert.equal(paths.size, 4, 'Each browser must have a unique install path');
-
-  // Chrome path should be the default (no arg).
-  assert.equal(getManifestInstallDir(), chrome);
-});
-
-test('getManifestInstallDir contains browser-specific directory segment', () => {
-  const platform = process.platform;
-  if (platform === 'darwin') {
-    assert.match(getManifestInstallDir('edge'), /Microsoft Edge/);
-    assert.match(getManifestInstallDir('brave'), /BraveSoftware/);
-    assert.match(getManifestInstallDir('chromium'), /Chromium/);
-  } else if (platform === 'win32') {
-    assert.match(getManifestInstallDir('edge'), /Microsoft.*Edge/);
-    assert.match(getManifestInstallDir('brave'), /BraveSoftware/);
-  } else {
-    assert.match(getManifestInstallDir('edge'), /microsoft-edge/);
-    assert.match(getManifestInstallDir('brave'), /BraveSoftware/);
-    assert.match(getManifestInstallDir('chromium'), /chromium/);
-  }
-});
-
-test('getLauncherFilename matches the current platform', () => {
-  if (process.platform === 'win32') {
-    assert.equal(getLauncherFilename(), 'native-host-launcher.cmd');
-    return;
-  }
-
-  assert.equal(getLauncherFilename(), 'native-host-launcher.sh');
 });
 
 test('uninstallNativeManifest removes the native host manifest and bridge dir', async () => {

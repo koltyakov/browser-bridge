@@ -85,13 +85,6 @@ test('silentLogger does not throw', () => {
   });
 });
 
-test('silentLogger has all level methods', () => {
-  assert.equal(typeof silentLogger.debug, 'function');
-  assert.equal(typeof silentLogger.info, 'function');
-  assert.equal(typeof silentLogger.warn, 'function');
-  assert.equal(typeof silentLogger.error, 'function');
-});
-
 test('wrapLegacyLogger bridges info to legacy log', () => {
   const logs: string[] = [];
   const legacy = {

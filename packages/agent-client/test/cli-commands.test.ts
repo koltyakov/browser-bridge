@@ -888,6 +888,134 @@ test('bbx call rejects an invalid --tab flag before dispatching the bridge reque
   assert.equal(payload.summary, 'ERROR: tabId must be a number (got "abc").');
 });
 
+test('bbx call rejects extra positional arguments before connecting', async () => {
+  const bridgeServer = await bridgeServerWith({});
+
+  try {
+    const result = await runCli({
+      args: ['call', 'page.evaluate', '{}', 'extra'],
+      env: {
+        ...process.env,
+        BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome,
+      },
+    });
+    const payload = expectCliPayload(result.json);
+
+    assert.equal(result.status, 1);
+    assert.equal(result.signal, null);
+    assert.equal(result.stderr, '');
+    assert.equal(payload.ok, false);
+    assert.equal(payload.evidence, null);
+    assert.equal(payload.summary, 'ERROR: Usage: call [--tab <tabId>] <method> [paramsJson]');
+    assert.equal(bridgeServer.messages.length, 0);
+    assert.equal(bridgeServer.requests.length, 0);
+  } finally {
+    await bridgeServer.close();
+  }
+});
+
+test('bbx batch rejects invalid JSON before connecting', async () => {
+  const bridgeServer = await bridgeServerWith({});
+
+  try {
+    const result = await runCli({
+      args: ['batch', '{broken'],
+      env: {
+        ...process.env,
+        BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome,
+      },
+    });
+    const payload = expectCliPayload(result.json);
+
+    assert.equal(result.status, 1);
+    assert.equal(result.signal, null);
+    assert.equal(result.stderr, '');
+    assert.equal(payload.ok, false);
+    assert.equal(payload.evidence, null);
+    assert.equal(
+      payload.summary,
+      'ERROR: Invalid JSON syntax. Expected a JSON array of bridge calls.'
+    );
+    assert.equal(bridgeServer.messages.length, 0);
+    assert.equal(bridgeServer.requests.length, 0);
+  } finally {
+    await bridgeServer.close();
+  }
+});
+
+test('bbx batch rejects non-array JSON before connecting', async () => {
+  const bridgeServer = await bridgeServerWith({});
+
+  try {
+    const result = await runCli({
+      args: ['batch', '{"method":"health.ping"}'],
+      env: {
+        ...process.env,
+        BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome,
+      },
+    });
+    const payload = expectCliPayload(result.json);
+
+    assert.equal(result.status, 1);
+    assert.equal(result.signal, null);
+    assert.equal(result.stderr, '');
+    assert.equal(payload.ok, false);
+    assert.equal(payload.evidence, null);
+    assert.equal(payload.summary, 'ERROR: Batch input must be a JSON array.');
+    assert.equal(bridgeServer.messages.length, 0);
+    assert.equal(bridgeServer.requests.length, 0);
+  } finally {
+    await bridgeServer.close();
+  }
+});
+
+test('bbx batch reports unknown methods without dispatching them', async () => {
+  const bridgeServer = await bridgeServerWith({});
+
+  try {
+    const result = await runCli({
+      args: ['batch', '[{"method":"not.real.method","params":{}}]'],
+      env: {
+        ...process.env,
+        BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome,
+      },
+    });
+    const payload = result.json as Array<{
+      method: string;
+      ok: boolean;
+      summary: string;
+      error: { code: string; message: string };
+    }>;
+
+    assert.equal(result.status, 0);
+    assert.equal(result.signal, null);
+    assert.equal(result.stderr, '');
+    assert.deepEqual(payload, [
+      {
+        method: 'not.real.method',
+        tabId: null,
+        ok: false,
+        summary: 'INVALID_REQUEST: Unknown bridge method "not.real.method".',
+        evidence: null,
+        durationMs: 0,
+        approxTokens: 0,
+        meta: { protocol_version: '1.0' },
+        error: {
+          code: 'INVALID_REQUEST',
+          message: 'Unknown bridge method "not.real.method".',
+        },
+        response: null,
+      },
+    ]);
+    assert.deepEqual(
+      bridgeServer.requests.map((request) => request.method),
+      ['health.ping']
+    );
+  } finally {
+    await bridgeServer.close();
+  }
+});
+
 test('bbx eval joins the inline expression arguments and summarizes page.evaluate output', async () => {
   const bridgeServer = await bridgeServerWith({
     'page.evaluate': (request) =>

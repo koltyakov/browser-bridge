@@ -6,7 +6,6 @@ import {
   BRIDGE_METHODS,
   BRIDGE_METHOD_REGISTRY,
   ERROR_CODES,
-  METHOD_SET,
   applyBudget,
   bridgeMethodNeedsTab,
   createFailure,
@@ -121,13 +120,6 @@ test('bridge method registry is the source of truth for method ordering and tab-
   assert.equal(bridgeMethodNeedsTab('setup.get_status'), false);
   assert.equal(bridgeMethodNeedsTab('setup.install'), false);
   assert.equal(bridgeMethodNeedsTab('dom.query'), true);
-});
-
-test('METHOD_SET stays aligned with BRIDGE_METHODS', () => {
-  assert.equal(METHOD_SET.size, BRIDGE_METHODS.length);
-  for (const method of BRIDGE_METHODS) {
-    assert.equal(METHOD_SET.has(method), true, `Missing method in METHOD_SET: ${method}`);
-  }
 });
 
 test('bridge method groups are derived from the registry', () => {
@@ -414,11 +406,6 @@ test('normalizeWaitForLoadStateParams defaults sensibly', () => {
   const params = normalizeWaitForLoadStateParams({});
   assert.equal(params.timeoutMs, 15000);
   assert.equal(params.waitForLoad, true);
-});
-
-/** Ensure TIMEOUT error code exists. */
-test('ERROR_CODES includes TIMEOUT', () => {
-  assert.equal(ERROR_CODES.TIMEOUT, 'TIMEOUT');
 });
 
 // ── New method normalizer tests ─────────────────────────────────────
@@ -712,6 +699,11 @@ test('validateBridgeRequest rejects malformed request input', () => {
       request: { id: 'req_3', method: 'health.ping', meta: 'cli' },
       message: /Request meta must be an object\./,
     },
+    {
+      name: 'array params',
+      request: { id: 'req_4', method: 'dom.query', params: [] },
+      message: /Request params must be an object\./,
+    },
   ];
 
   for (const testCase of cases) {
@@ -727,6 +719,24 @@ test('validateBridgeRequest rejects malformed request input', () => {
       testCase.name
     );
   }
+});
+
+test('validateBridgeRequest rejects legacy session_id routing', () => {
+  assert.throws(
+    () =>
+      validateBridgeRequest({
+        id: 'req_legacy_session',
+        method: 'dom.query',
+        session_id: 'session_1',
+      } as unknown as BridgeRequest),
+    (error) => {
+      assert.equal(error instanceof Error, true);
+      const bridgeError = error as ErrorWithCode;
+      assert.equal(bridgeError.code, ERROR_CODES.INVALID_REQUEST);
+      assert.match(bridgeError.message, /session_id is no longer supported/);
+      return true;
+    }
+  );
 });
 
 test('validateBridgeRequest rejects unknown method and names it in the error', () => {

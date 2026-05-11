@@ -3,7 +3,11 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 
-import { parseJsonLines } from '../../packages/protocol/src/index.js';
+import {
+  createSuccess,
+  parseJsonLines,
+  PROTOCOL_VERSION,
+} from '../../packages/protocol/src/index.js';
 import type { BridgeRequest, BridgeResponse } from '../../packages/protocol/src/types.js';
 
 export type BridgeSocketMessageContext = {
@@ -175,12 +179,28 @@ export async function bridgeServerWith(
 
     const request = record.request as BridgeRequest;
     const handler = handlers[request.method];
+    let response: BridgeResponse | void;
 
-    if (!handler) {
+    if (handler) {
+      response = await handler(request, { ...context, message });
+    } else if (request.method === 'health.ping') {
+      response = createSuccess(request.id, {
+        daemon: 'ok',
+        supported_versions: [PROTOCOL_VERSION],
+        extensionConnected: false,
+        connectedExtensions: [],
+        access: {
+          enabled: false,
+          routeReady: false,
+          routeTabId: null,
+          windowId: null,
+          reason: 'access_disabled',
+        },
+      });
+    } else {
       return;
     }
 
-    const response = await handler(request, { ...context, message });
     if (response === undefined) {
       return;
     }

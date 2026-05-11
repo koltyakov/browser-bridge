@@ -58,7 +58,7 @@ type TestBridgeResponse = Omit<BridgeResponse, 'result' | 'error'> & {
 };
 type TestPayload = {
   type?: string;
-  request?: { id?: string };
+  request?: { id?: string; method?: string; meta?: Record<string, unknown> };
   requestId?: string;
   status?: unknown;
   response?: TestBridgeResponse;
@@ -677,6 +677,88 @@ test('daemon routes untargeted requests to the most recently active extension wh
   assert.equal(olderExtension.writes.length, 0);
   assert.equal(mostRecentExtension.writes.length, 1);
   assert.equal(middleExtension.writes.length, 0);
+});
+
+test('daemon routes explicit browser and profile targets only to matching extensions', async () => {
+  const daemon = new BridgeDaemon({ logger: console });
+  const agentSocket = createFakeSocket();
+  const chromeWork = createFakeSocket();
+  chromeWork.__browserName = 'Chrome';
+  chromeWork.__profileLabel = 'Work';
+  const chromePersonal = createFakeSocket();
+  chromePersonal.__browserName = 'Chrome';
+  chromePersonal.__profileLabel = 'Personal';
+  const edgeWork = createFakeSocket();
+  edgeWork.__browserName = 'Edge';
+  edgeWork.__profileLabel = 'Work';
+  daemon.extensionSockets.set('chrome-work', chromeWork);
+  daemon.extensionSockets.set('chrome-personal', chromePersonal);
+  daemon.extensionSockets.set('edge-work', edgeWork);
+
+  await daemon.handleAgentRequest(agentSocket, {
+    request: {
+      id: 'req_targeted_profile',
+      method: 'page.get_state',
+      tab_id: null,
+      params: {},
+      meta: {
+        protocol_version: '1.0',
+        token_budget: null,
+        target_browser: 'Chrome',
+        target_profile: 'Work',
+      },
+    },
+  });
+
+  assert.equal(chromeWork.writes.length, 1);
+  assert.equal(chromePersonal.writes.length, 0);
+  assert.equal(edgeWork.writes.length, 0);
+  const routedPayload = parsePayload(chromeWork.writes[0].trim());
+  assert.equal(routedPayload.request?.id, 'req_targeted_profile');
+  assert.equal(routedPayload.request?.method, 'page.get_state');
+  assert.equal(routedPayload.request?.meta?.target_browser, 'Chrome');
+  assert.equal(routedPayload.request?.meta?.target_profile, 'Work');
+
+  await daemon.handleExtensionResponse(chromeWork, {
+    response: {
+      id: 'req_targeted_profile',
+      ok: true,
+      result: { url: 'https://work.example/' },
+      error: null,
+      meta: { protocol_version: '1.0', method: 'page.get_state' },
+    },
+  });
+
+  assert.equal(agentSocket.writes.length, 1);
+  const responsePayload = expectBridgeResponse(parsePayload(agentSocket.writes[0].trim()));
+  assert.equal(responsePayload.response.result?.url, 'https://work.example/');
+
+  await daemon.handleAgentRequest(agentSocket, {
+    request: {
+      id: 'req_missing_profile',
+      method: 'page.get_state',
+      tab_id: null,
+      params: {},
+      meta: {
+        protocol_version: '1.0',
+        token_budget: null,
+        target_browser: 'Chrome',
+        target_profile: 'Missing',
+      },
+    },
+  });
+
+  assert.equal(chromeWork.writes.length, 1);
+  assert.equal(chromePersonal.writes.length, 0);
+  assert.equal(edgeWork.writes.length, 0);
+  assert.equal(agentSocket.writes.length, 2);
+  const failurePayload = expectBridgeResponse(parsePayload(agentSocket.writes[1].trim()));
+  assert.equal(failurePayload.response.ok, false);
+  assert.equal(failurePayload.response.error?.code, 'EXTENSION_DISCONNECTED');
+  assert.match(
+    failurePayload.response.error?.message ?? '',
+    /target_browser="Chrome" target_profile="Missing"/
+  );
 });
 
 test('daemon health.ping refreshes connectedExtensions after connect, metadata changes, and disconnect', async () => {

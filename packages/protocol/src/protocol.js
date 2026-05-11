@@ -209,6 +209,12 @@ export function validateBridgeRequest(request) {
       'session_id is no longer supported. Use tab_id or window-scoped default routing.'
     );
   }
+  if (
+    candidate.params != null &&
+    (typeof candidate.params !== 'object' || Array.isArray(candidate.params))
+  ) {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'Request params must be an object.');
+  }
   const parsedTabId = Number(candidate.tab_id);
 
   const method = /** @type {BridgeMethod} */ (candidate.method);

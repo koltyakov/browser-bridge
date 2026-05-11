@@ -7,7 +7,7 @@ import {
   summarizeBatchResponseItem,
   summarizeBatchErrorItem,
 } from '../src/index.js';
-import { assertSummary } from './test-helpers.ts';
+import { assertSummary } from '../../../tests/_helpers/protocolSummary.ts';
 import {
   makeFailure as fail,
   makeMeta,

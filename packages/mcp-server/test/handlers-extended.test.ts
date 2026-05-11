@@ -223,10 +223,18 @@ test('handleDomTool wait calls dom.wait_for', async () => {
       const result = await handleDomTool({
         action: 'wait',
         selector: '.loading',
+        text: 'Ready',
         state: 'visible',
+        timeoutMs: 1234,
       });
       const waitCall = calls.find((c) => c.method === 'dom.wait_for');
       assert.ok(waitCall, 'dom.wait_for should be called');
+      assert.deepEqual(waitCall.params, {
+        selector: '.loading',
+        text: 'Ready',
+        state: 'visible',
+        timeoutMs: 1234,
+      });
       assert.equal(result.isError, undefined);
     }
   );
@@ -250,9 +258,18 @@ test('handleDomTool find_text calls dom.find_by_text', async () => {
       const result = await handleDomTool({
         action: 'find_text',
         text: 'target',
+        exact: true,
+        selector: 'main',
+        maxResults: 7,
       });
       const findCall = calls.find((c) => c.method === 'dom.find_by_text');
       assert.ok(findCall, 'dom.find_by_text should be called');
+      assert.deepEqual(findCall.params, {
+        text: 'target',
+        exact: true,
+        selector: 'main',
+        maxResults: 7,
+      });
       assert.equal(result.isError, undefined);
     }
   );
@@ -276,9 +293,18 @@ test('handleDomTool find_role calls dom.find_by_role', async () => {
       const result = await handleDomTool({
         action: 'find_role',
         role: 'button',
+        name: 'Save',
+        selector: 'form',
+        maxResults: 3,
       });
       const findCall = calls.find((c) => c.method === 'dom.find_by_role');
       assert.ok(findCall, 'dom.find_by_role should be called');
+      assert.deepEqual(findCall.params, {
+        role: 'button',
+        name: 'Save',
+        selector: 'form',
+        maxResults: 3,
+      });
       assert.equal(result.isError, undefined);
     }
   );
@@ -486,8 +512,10 @@ test('handleNavigationTool resize calls viewport.resize', async () => {
         action: 'resize',
         width: 800,
         height: 600,
+        reset: true,
       });
       assert.equal(calls[0].method, 'viewport.resize');
+      assert.deepEqual(calls[0].params, { width: 800, height: 600, reset: true });
       assert.equal(result.isError, undefined);
     }
   );
@@ -530,9 +558,16 @@ test('handleInputTool type calls input.type', async () => {
         selector: 'input',
         text: 'hello',
         clear: true,
+        submit: true,
       });
       const typeCall = calls.find((c) => c.method === 'input.type');
       assert.ok(typeCall, 'input.type should be called');
+      assert.deepEqual(typeCall.params, {
+        target: { elementRef: 'el_input' },
+        text: 'hello',
+        clear: true,
+        submit: true,
+      });
       assert.equal(result.isError, undefined);
     }
   );
@@ -970,6 +1005,7 @@ test('handleCaptureTool region calls screenshot.capture_region', async () => {
         rect: { x: 0, y: 0, width: 100, height: 100 },
       });
       assert.equal(calls[0].method, 'screenshot.capture_region');
+      assert.deepEqual(calls[0].params, { x: 0, y: 0, width: 100, height: 100 });
       assert.equal(result.isError, undefined);
     }
   );
@@ -992,6 +1028,45 @@ test('handleCaptureTool cdp_document calls cdp.get_document', async () => {
     async (calls) => {
       const result = await handleCaptureTool({ action: 'cdp_document' });
       assert.equal(calls[0].method, 'cdp.get_document');
+      assert.equal(result.isError, undefined);
+    }
+  );
+});
+
+test('handleCaptureTool cdp_dom_snapshot calls cdp.get_dom_snapshot', async () => {
+  await withMockedBridge(
+    async () => ok({ documents: [] }),
+    async (calls) => {
+      const result = await handleCaptureTool({ action: 'cdp_dom_snapshot' });
+      assert.equal(calls[0].method, 'cdp.get_dom_snapshot');
+      assert.deepEqual(calls[0].params, {});
+      assert.equal(result.isError, undefined);
+    }
+  );
+});
+
+test('handleCaptureTool cdp_box_model forwards the element ref', async () => {
+  await withMockedBridge(
+    async () => ok({ model: {} }),
+    async (calls) => {
+      const result = await handleCaptureTool({ action: 'cdp_box_model', elementRef: 'el_box' });
+      assert.equal(calls[0].method, 'cdp.get_box_model');
+      assert.deepEqual(calls[0].params, { elementRef: 'el_box' });
+      assert.equal(result.isError, undefined);
+    }
+  );
+});
+
+test('handleCaptureTool cdp_computed_styles forwards the element ref', async () => {
+  await withMockedBridge(
+    async () => ok({ computedStyle: [] }),
+    async (calls) => {
+      const result = await handleCaptureTool({
+        action: 'cdp_computed_styles',
+        elementRef: 'el_style',
+      });
+      assert.equal(calls[0].method, 'cdp.get_computed_styles_for_node');
+      assert.deepEqual(calls[0].params, { elementRef: 'el_style' });
       assert.equal(result.isError, undefined);
     }
   );

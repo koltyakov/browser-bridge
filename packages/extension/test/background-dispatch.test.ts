@@ -1686,6 +1686,65 @@ test('background dispatch captures screenshot regions through a CDP clip', async
   });
 });
 
+test('background dispatch defaults invalid screenshot region coordinates', async () => {
+  const sendCommandCalls: DebuggerSendCommandCall[] = [];
+  const { loaded } = await loadEnabledDispatchBackground({
+    queryLabel: 'test-background-dispatch-screenshot-region-defaults',
+    chromeOverrides: {
+      tabs: {
+        async sendMessage() {
+          return { ok: true };
+        },
+      },
+      debugger: {
+        async sendCommand(target: chrome.debugger.Debuggee, method: string, params?: object) {
+          sendCommandCalls.push({ target, method, params });
+          return { data: 'region-default-image-data' };
+        },
+      },
+    },
+  });
+
+  const response = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-screenshot-region-defaults',
+      method: 'screenshot.capture_region',
+      params: {
+        x: 'nope',
+        y: null,
+        width: '7',
+        height: Number.NaN,
+        scale: 0,
+      },
+    })
+  );
+
+  if (!response.ok) {
+    assert.fail(response.error.message);
+  }
+  assert.deepEqual(sendCommandCalls[0]?.params, {
+    format: 'png',
+    clip: {
+      x: 0,
+      y: 0,
+      width: 7,
+      height: 1,
+      scale: 1,
+    },
+    captureBeyondViewport: false,
+  });
+  assert.deepEqual(response.result, {
+    rect: {
+      x: 0,
+      y: 0,
+      width: 7,
+      height: 1,
+      scale: 1,
+    },
+    image: 'data:image/png;base64,region-default-image-data',
+  });
+});
+
 test('background dispatch captures full-page screenshots after reading page dimensions', async () => {
   const sendMessageCalls: TabMessageCall[] = [];
   const sendCommandCalls: DebuggerSendCommandCall[] = [];
@@ -1770,6 +1829,65 @@ test('background dispatch captures full-page screenshots after reading page dime
       scale: 1.5,
     },
     image: 'data:image/png;base64,full-page-image-data',
+  });
+});
+
+test('background dispatch defaults invalid full-page screenshot dimensions', async () => {
+  const sendCommandCalls: DebuggerSendCommandCall[] = [];
+  const { loaded } = await loadEnabledDispatchBackground({
+    queryLabel: 'test-background-dispatch-screenshot-full-page-defaults',
+    chromeOverrides: {
+      tabs: {
+        async sendMessage(_tabId: number, message: Record<string, unknown>) {
+          if (message.type === 'bridge.execute') {
+            return {
+              scrollWidth: 'wide',
+              scrollHeight: 0,
+              devicePixelRatio: null,
+            };
+          }
+          return { ok: true };
+        },
+      },
+      debugger: {
+        async sendCommand(target: chrome.debugger.Debuggee, method: string, params?: object) {
+          sendCommandCalls.push({ target, method, params });
+          return { data: 'full-page-default-image-data' };
+        },
+      },
+    },
+  });
+
+  const response = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-screenshot-full-page-defaults',
+      method: 'screenshot.capture_full_page',
+    })
+  );
+
+  if (!response.ok) {
+    assert.fail(response.error.message);
+  }
+  assert.deepEqual(sendCommandCalls[0]?.params, {
+    format: 'png',
+    clip: {
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+      scale: 1,
+    },
+    captureBeyondViewport: true,
+  });
+  assert.deepEqual(response.result, {
+    rect: {
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+      scale: 1,
+    },
+    image: 'data:image/png;base64,full-page-default-image-data',
   });
 });
 
@@ -1880,6 +1998,85 @@ test('background dispatch retries stale element screenshots before capturing', a
     },
     image: 'data:image/png;base64,element-image-data',
   });
+});
+
+test('background dispatch surfaces non-stale element screenshot errors without retrying', async () => {
+  let elementAttemptCount = 0;
+  const { loaded } = await loadEnabledDispatchBackground({
+    queryLabel: 'test-background-dispatch-screenshot-element-non-stale-error',
+    chromeOverrides: {
+      tabs: {
+        async sendMessage(_tabId: number, message: Record<string, unknown>) {
+          if (message.type === 'bridge.execute') {
+            elementAttemptCount += 1;
+            throw new Error('element lookup failed');
+          }
+          return { ok: true };
+        },
+      },
+    },
+  });
+
+  const response = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-screenshot-element-non-stale-error',
+      method: 'screenshot.capture_element',
+      params: {
+        selector: '#missing',
+      },
+    })
+  );
+
+  assert.equal(elementAttemptCount, 1);
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, ERROR_CODES.INTERNAL_ERROR);
+  assert.equal(response.error.message, 'element lookup failed');
+  assert.equal(response.meta?.method, 'screenshot.capture_element');
+});
+
+test('background dispatch rejects zero-area element screenshots', async () => {
+  const { loaded } = await loadEnabledDispatchBackground({
+    queryLabel: 'test-background-dispatch-screenshot-zero-area-element',
+    chromeOverrides: {
+      tabs: {
+        async sendMessage(_tabId: number, message: Record<string, unknown>) {
+          if (message.type === 'bridge.execute') {
+            return {
+              x: 1,
+              y: 2,
+              width: 0,
+              height: 4,
+              scale: 1,
+            };
+          }
+          return { ok: true };
+        },
+      },
+      debugger: {
+        async sendCommand() {
+          assert.fail('zero-area screenshots should not reach CDP');
+        },
+      },
+    },
+  });
+
+  const response = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-screenshot-zero-area-element',
+      method: 'screenshot.capture_element',
+      params: {
+        selector: '#collapsed',
+      },
+    })
+  );
+
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, ERROR_CODES.INTERNAL_ERROR);
+  assert.equal(
+    response.error.message,
+    'Capture target has no visible area (0×4px). It may be hidden, collapsed, or not yet rendered.'
+  );
+  assert.equal(response.meta?.method, 'screenshot.capture_element');
 });
 
 test('background dispatch surfaces empty CDP screenshot payloads', async () => {
