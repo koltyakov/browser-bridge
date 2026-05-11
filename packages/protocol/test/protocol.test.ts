@@ -81,6 +81,26 @@ test('createRequest includes explicit tab_id when provided', () => {
   assert.equal(request.tab_id, 5);
 });
 
+test('validateBridgeRequest normalizes routing and metadata fallbacks', () => {
+  const request = validateBridgeRequest({
+    id: 'req_meta',
+    method: 'health.ping',
+    tab_id: 'not-a-tab',
+    meta: {
+      protocol_version: 42,
+      token_budget: '100',
+      source: 'unknown',
+      keep: 'value',
+    },
+  });
+
+  assert.equal(request.tab_id, null);
+  assert.equal(request.meta.protocol_version, '1.0');
+  assert.equal(request.meta.token_budget, null);
+  assert.equal(request.meta.source, undefined);
+  assert.equal(request.meta.keep, 'value');
+});
+
 /** Ensure success and failure responses keep the shared envelope shape. */
 test('createSuccess and createFailure shape bridge responses', () => {
   const success = createSuccess('req_2', { ok: true }, { revision: 'rev_1' });
@@ -149,6 +169,23 @@ test('normalizePatchOperation preserves DOM patch metadata', () => {
   assert.equal(patch.value, 'true');
 });
 
+test('normalizePatchOperation defaults malformed patch metadata', () => {
+  const patch = normalizePatchOperation({
+    patchId: 123,
+    target: 'button',
+    operation: 42,
+    name: false,
+    declarations: 'color:red',
+  } as unknown as Parameters<typeof normalizePatchOperation>[0]);
+
+  assert.equal(patch.patchId, null);
+  assert.deepEqual(patch.target, {});
+  assert.equal(patch.operation, null);
+  assert.equal(patch.name, null);
+  assert.deepEqual(patch.declarations, {});
+  assert.equal(patch.value, null);
+});
+
 /** Ensure input actions normalize button and modifier defaults safely. */
 test('normalizeInputAction preserves interactive intent', () => {
   const input = normalizeInputAction({
@@ -164,6 +201,22 @@ test('normalizeInputAction preserves interactive intent', () => {
   assert.equal(input.clickCount, 2);
   assert.equal(input.key, 'Enter');
   assert.deepEqual(input.modifiers, ['Shift']);
+});
+
+test('normalizeInputAction defaults invalid input details', () => {
+  const input = normalizeInputAction({
+    target: null,
+    button: 'invalid',
+    clickCount: 0,
+    text: 42,
+    modifiers: 'Shift',
+  } as unknown as Parameters<typeof normalizeInputAction>[0]);
+
+  assert.deepEqual(input.target, { elementRef: undefined, selector: undefined });
+  assert.equal(input.button, 'left');
+  assert.equal(input.clickCount, 1);
+  assert.equal(input.text, '');
+  assert.deepEqual(input.modifiers, []);
 });
 
 test('normalizeCdpDispatchKeyEventParams preserves valid CDP key event input', () => {
@@ -201,6 +254,18 @@ test('normalizeSelectAction preserves selection intent', () => {
   assert.deepEqual(action.values, ['us']);
   assert.deepEqual(action.labels, ['United States']);
   assert.deepEqual(action.indexes, [0, 3]);
+});
+
+test('normalizeSelectAction defaults non-array selectors', () => {
+  const action = normalizeSelectAction({
+    values: 'us',
+    labels: 'United States',
+    indexes: '0',
+  } as unknown as Parameters<typeof normalizeSelectAction>[0]);
+
+  assert.deepEqual(action.values, []);
+  assert.deepEqual(action.labels, []);
+  assert.deepEqual(action.indexes, []);
 });
 
 /** Ensure viewport actions clamp to the supported behavior set. */
@@ -698,6 +763,16 @@ test('validateBridgeRequest rejects malformed request input', () => {
       name: 'non-object meta',
       request: { id: 'req_3', method: 'health.ping', meta: 'cli' },
       message: /Request meta must be an object\./,
+    },
+    {
+      name: 'array meta',
+      request: { id: 'req_3b', method: 'health.ping', meta: [] },
+      message: /Request meta must be an object\./,
+    },
+    {
+      name: 'primitive params',
+      request: { id: 'req_3c', method: 'health.ping', params: 'bad' },
+      message: /Request params must be an object\./,
     },
     {
       name: 'array params',

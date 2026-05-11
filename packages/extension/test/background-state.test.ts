@@ -14,6 +14,14 @@ import {
   type LoadBackgroundOptions,
 } from '../../../tests/_helpers/loadBackground.ts';
 import { createMessagePortPair } from '../../../tests/_helpers/messagePort.ts';
+import { BridgeError, createRequest, ERROR_CODES } from '../../protocol/src/index.js';
+import {
+  createExtensionState,
+  normalizeActionLogEntry,
+  reportAsyncError,
+  setExtensionState,
+  toFailureResponse,
+} from '../src/background-state.js';
 
 type EnabledWindow = {
   windowId: number;
@@ -112,6 +120,109 @@ function createNativePort(messages: unknown[]): FakeRuntimePort {
     name: 'native',
   };
 }
+
+test('background state normalizes action log entries and rejects malformed values', () => {
+  assert.equal(normalizeActionLogEntry(null), null);
+  assert.equal(normalizeActionLogEntry({ id: 'missing-method' }), null);
+
+  assert.deepEqual(
+    normalizeActionLogEntry({
+      id: 'entry-1',
+      at: '12',
+      method: 'dom.query',
+      source: 'unknown',
+      tabId: '7',
+      url: 42,
+      ok: false,
+      summary: 123,
+      responseBytes: '64',
+      approxTokens: '16',
+      imageApproxTokens: '4',
+      costClass: 'extreme',
+      imageBytes: '12',
+      summaryBytes: '8',
+      summaryTokens: '2',
+      summaryCostClass: 'heavy',
+      debuggerBacked: true,
+      overBudget: true,
+      hasScreenshot: true,
+      nodeCount: '3',
+      continuationHint: 99,
+    }),
+    {
+      id: 'entry-1',
+      at: 12,
+      method: 'dom.query',
+      source: '',
+      tabId: null,
+      url: '',
+      ok: false,
+      summary: '',
+      responseBytes: 64,
+      approxTokens: 16,
+      imageApproxTokens: 4,
+      costClass: 'extreme',
+      imageBytes: 12,
+      summaryBytes: 8,
+      summaryTokens: 2,
+      summaryCostClass: 'heavy',
+      debuggerBacked: true,
+      overBudget: true,
+      hasScreenshot: true,
+      nodeCount: null,
+      continuationHint: null,
+    }
+  );
+});
+
+test('background state maps thrown errors to bridge failures', () => {
+  const request = createRequest({ id: 'req-state-failure', method: 'dom.query' });
+  const bridgeFailure = toFailureResponse(
+    request,
+    new BridgeError(ERROR_CODES.ACCESS_DENIED, 'Denied by test', { reason: 'test' })
+  );
+  const staleFailure = toFailureResponse(request, new Error('Element reference is stale.'));
+  const tabMismatchFailure = toFailureResponse(request, new Error('No tab with id: 7.'));
+
+  assert.equal(bridgeFailure.ok, false);
+  assert.equal(bridgeFailure.error.code, ERROR_CODES.ACCESS_DENIED);
+  assert.deepEqual(bridgeFailure.error.details, { reason: 'test' });
+  assert.equal(staleFailure.ok, false);
+  assert.equal(staleFailure.error.code, ERROR_CODES.ELEMENT_STALE);
+  assert.equal(tabMismatchFailure.ok, false);
+  assert.equal(tabMismatchFailure.error.code, ERROR_CODES.TAB_MISMATCH);
+});
+
+test('background state reportAsyncError suppresses tab mismatch and logs other errors', () => {
+  const originalError = console.error;
+  const logged: unknown[] = [];
+  console.error = (error?: unknown) => {
+    logged.push(error);
+  };
+
+  try {
+    reportAsyncError(new Error('No tab with id: 9.'));
+    reportAsyncError(new Error('unexpected failure'));
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.equal(logged.length, 1);
+  assert.match(logged[0] instanceof Error ? logged[0].message : String(logged[0]), /unexpected/);
+});
+
+test('background state singleton initializes lazily for direct state helpers', () => {
+  const state = createExtensionState();
+  state.requestedAccessWindowId = 10;
+  state.requestedAccessPopupWindowId = 11;
+  setExtensionState(state);
+
+  const moduleState = createExtensionState();
+  moduleState.requestedAccessWindowId = 20;
+  setExtensionState(moduleState);
+
+  assert.equal(moduleState.requestedAccessWindowId, 20);
+});
 
 async function flushAsyncWork(count = 6): Promise<void> {
   for (let index = 0; index < count; index += 1) {

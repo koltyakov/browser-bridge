@@ -560,3 +560,40 @@ test('install-manifest CLI --uninstall removes installed native host files from 
     await fs.promises.rm(tempHome, { recursive: true, force: true });
   }
 });
+
+test('install-manifest CLI rejects invalid arguments before installing', () => {
+  const invalidExtension = spawnSync(process.execPath, [installManifestCliPath, 'NOT_VALID'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  });
+
+  assert.equal(invalidExtension.status, 1);
+  assert.match(invalidExtension.stderr, /Invalid extension ID: NOT_VALID/);
+
+  const uninstallWithExtension = spawnSync(
+    process.execPath,
+    [installManifestCliPath, '--uninstall', 'abcdefghijklmnopabcdefghijklmnop'],
+    {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    }
+  );
+
+  assert.equal(uninstallWithExtension.status, 1);
+  assert.equal(
+    uninstallWithExtension.stderr,
+    'Usage: bbx-install [<extension-id>] [--browser <browser>] [--all] [--uninstall]\n'
+  );
+
+  const unsupportedBrowser = spawnSync(
+    process.execPath,
+    [installManifestCliPath, '--browser', 'netscape'],
+    {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    }
+  );
+
+  assert.equal(unsupportedBrowser.status, 1);
+  assert.match(unsupportedBrowser.stderr, /Unsupported browser: netscape/);
+});

@@ -14,6 +14,7 @@ import {
   handleRawCallTool,
   handleLogTool,
   handleAccessTool,
+  handleSetupTool,
 } from '../src/handlers.js';
 import {
   makeFailure as fail,
@@ -1188,6 +1189,29 @@ test('handleLogTool calls log.tail with budget preset', async () => {
       assert.equal(result.isError, undefined);
     }
   );
+});
+
+test('handleLogTool defaults log.tail limit when no budget is provided', async () => {
+  await withMockedBridge(
+    async () =>
+      ok({
+        entries: [],
+      }),
+    async (calls) => {
+      const result = await handleLogTool({});
+      assert.equal(calls[0].method, 'log.tail');
+      assert.equal(calls[0].params?.limit, 50);
+      assert.equal(result.isError, undefined);
+    }
+  );
+});
+
+test('handleSetupTool supports local project scope', async () => {
+  const result = await handleSetupTool({ global: false });
+
+  assert.equal(result.isError, undefined);
+  assert.equal(result.structuredContent.ok, true);
+  assert.match(result.content[0].text, /Optional agent integration status:/);
 });
 
 // --- handleRawCallTool: success case ---

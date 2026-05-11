@@ -42,6 +42,27 @@ test('daemon pid helpers read, write, and clear the pid file', async () => {
   }
 });
 
+test('daemon pid helpers ignore invalid pid files and missing cleanup targets', async () => {
+  const bridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-daemon-pid-invalid-'));
+  const pidPath = path.join(bridgeHome, 'daemon.pid');
+
+  try {
+    await fs.promises.writeFile(pidPath, 'not-a-pid\n', 'utf8');
+    assert.equal(await readDaemonPidFile(pidPath), null);
+
+    await clearDaemonPidFile({
+      pidPath,
+      rmFn: (async () => {
+        const error = new Error('missing') as NodeJS.ErrnoException;
+        error.code = 'ENOENT';
+        throw error;
+      }) as typeof fs.promises.rm,
+    });
+  } finally {
+    await fs.promises.rm(bridgeHome, { recursive: true, force: true });
+  }
+});
+
 test('stopBridgeDaemon stops the recorded daemon pid and removes stale socket files', async () => {
   const bridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-stop-daemon-'));
   const socketPath = path.join(bridgeHome, 'bridge.sock');
@@ -173,6 +194,97 @@ test('restartBridgeDaemonIfRunning skips startup when the daemon is offline', as
 
     assert.equal(result, null);
     assert.equal(spawnCount, 0);
+  } finally {
+    await fs.promises.rm(bridgeHome, { recursive: true, force: true });
+  }
+});
+
+test('restartBridgeDaemonIfRunning restarts when the daemon is reachable without a pid file', async () => {
+  const bridgeHome = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bbx-restart-daemon-running-')
+  );
+  const socketPath = path.join(bridgeHome, 'bridge.sock');
+  const pidPath = path.join(bridgeHome, 'daemon.pid');
+  let spawnCount = 0;
+  let pingCount = 0;
+  let pid: number | null = null;
+
+  try {
+    const result = await restartBridgeDaemonIfRunning({
+      socketPath,
+      pidPath,
+      pingDaemonFn: async () => {
+        pingCount += 1;
+        return pingCount === 1 ? true : pid !== null;
+      },
+      readPidFn: async () => pid,
+      findPidByTransportFn: async () => 4243,
+      killFn: (() => true) as typeof process.kill,
+      spawnDaemonFn: () => {
+        spawnCount += 1;
+        pid = 4244;
+        return childWithPid(pid);
+      },
+      sleepFn: async () => {},
+    });
+
+    assert.equal(spawnCount, 1);
+    assert.equal(result?.previouslyRunning, true);
+    assert.equal(result?.previousPid, 4243);
+    assert.equal(result?.pid, 4244);
+  } finally {
+    await fs.promises.rm(bridgeHome, { recursive: true, force: true });
+  }
+});
+
+test('stopBridgeDaemon ignores missing process errors and times out when daemon stays reachable', async () => {
+  const bridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-stop-daemon-timeout-'));
+  const socketPath = path.join(bridgeHome, 'bridge.sock');
+  const pidPath = path.join(bridgeHome, 'daemon.pid');
+
+  try {
+    await assert.rejects(
+      stopBridgeDaemon({
+        socketPath,
+        pidPath,
+        timeoutMs: 0,
+        pollIntervalMs: 0,
+        pingDaemonFn: async () => true,
+        readPidFn: async () => 4245,
+        killFn: (() => {
+          const error = new Error('missing process') as NodeJS.ErrnoException;
+          error.code = 'ESRCH';
+          throw error;
+        }) as typeof process.kill,
+        sleepFn: async () => {},
+      }),
+      /Timed out waiting for Browser Bridge daemon/
+    );
+  } finally {
+    await fs.promises.rm(bridgeHome, { recursive: true, force: true });
+  }
+});
+
+test('restartBridgeDaemon rejects when the daemon never becomes reachable', async () => {
+  const bridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-restart-timeout-'));
+  const socketPath = path.join(bridgeHome, 'bridge.sock');
+  const pidPath = path.join(bridgeHome, 'daemon.pid');
+
+  try {
+    await assert.rejects(
+      restartBridgeDaemon({
+        socketPath,
+        pidPath,
+        timeoutMs: 0,
+        pollIntervalMs: 0,
+        pingDaemonFn: async () => false,
+        readPidFn: async () => null,
+        findPidByTransportFn: async () => null,
+        spawnDaemonFn: () => childWithPid(4246),
+        sleepFn: async () => {},
+      }),
+      /Timed out waiting for Browser Bridge daemon to start/
+    );
   } finally {
     await fs.promises.rm(bridgeHome, { recursive: true, force: true });
   }

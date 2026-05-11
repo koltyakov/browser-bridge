@@ -178,3 +178,65 @@ test('handlePageEvaluate maps CDP exception details into an INTERNAL_ERROR respo
   assert.equal(response.error.message, 'ReferenceError: missingValue is not defined');
   assert.equal(commands.length, 1);
 });
+
+test('handlePageEvaluate falls back through CDP exception text and default error copy', async () => {
+  const textDependencies = createDependencies({
+    async sendCommand() {
+      return {
+        exceptionDetails: {
+          text: 'SyntaxError',
+        },
+      };
+    },
+  });
+  const textResponse = await handlePageEvaluate(
+    makeRequest('page.evaluate', {
+      id: 'req-eval-text-error',
+      params: { expression: 'bad(' },
+    }),
+    textDependencies
+  );
+
+  assert.equal(textResponse.ok, false);
+  assert.equal(textResponse.error.message, 'SyntaxError');
+
+  const defaultDependencies = createDependencies({
+    async sendCommand() {
+      return {
+        exceptionDetails: {},
+      };
+    },
+  });
+  const defaultResponse = await handlePageEvaluate(
+    makeRequest('page.evaluate', {
+      id: 'req-eval-default-error',
+      params: { expression: 'bad(' },
+    }),
+    defaultDependencies
+  );
+
+  assert.equal(defaultResponse.ok, false);
+  assert.equal(defaultResponse.error.message, 'Evaluation failed.');
+});
+
+test('handlePageEvaluate defaults missing CDP result fields', async () => {
+  const dependencies = createDependencies({
+    async sendCommand() {
+      return {};
+    },
+  });
+
+  const response = await handlePageEvaluate(
+    makeRequest('page.evaluate', {
+      id: 'req-eval-missing-result',
+      params: { expression: 'undefined' },
+    }),
+    dependencies
+  );
+
+  assert.equal(response.ok, true);
+  assert.deepEqual(response.result, {
+    value: null,
+    type: 'undefined',
+  });
+});

@@ -134,6 +134,30 @@ test('runPostinstall keeps install success non-fatal when daemon restart fails',
   );
 });
 
+test('runPostinstall stringifies non-Error restart failures', async () => {
+  const stdout = createWriteSink();
+  const stderr = createWriteSink();
+
+  const installNativeManifestFn: InstallNativeManifestFn = async () => ({
+    manifestPath: '/tmp/manifest.json',
+    launcherPath: '/tmp/launcher',
+    allowedOrigins: [],
+    extensionId: null,
+  });
+  const restartBridgeDaemonIfRunningFn: RestartBridgeDaemonIfRunningFn = async () => {
+    throw 'restart unavailable';
+  };
+
+  await runPostinstall({
+    installNativeManifestFn,
+    restartBridgeDaemonIfRunningFn,
+    stdout: stdout.stream,
+    stderr: stderr.stream,
+  });
+
+  assert.match(stderr.chunks.join(''), /restart unavailable/);
+});
+
 test('runPostinstall exits zero and skips restart when native host install fails', async () => {
   const stdout = createWriteSink();
   const stderr = createWriteSink();
@@ -166,6 +190,30 @@ test('runPostinstall exits zero and skips restart when native host install fails
     'Browser Bridge: native host auto-install skipped (invalid extension id).\n' +
       'Run `bbx install` manually if needed.\n'
   );
+});
+
+test('runPostinstall stringifies non-Error install failures', async () => {
+  const stdout = createWriteSink();
+  const stderr = createWriteSink();
+  let exitCode: number | undefined;
+
+  const installNativeManifestFn: InstallNativeManifestFn = async () => {
+    throw 'install unavailable';
+  };
+
+  await runPostinstall({
+    installNativeManifestFn,
+    restartBridgeDaemonIfRunningFn: async () => null,
+    stdout: stdout.stream,
+    stderr: stderr.stream,
+    exit: (code) => {
+      exitCode = code;
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(stdout.chunks.join(''), '');
+  assert.match(stderr.chunks.join(''), /install unavailable/);
 });
 
 test('postinstall exits successfully when native host auto-install fails', () => {

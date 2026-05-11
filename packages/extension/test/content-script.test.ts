@@ -1682,6 +1682,27 @@ test('content script patch.apply_styles rollbacks restore prior inline style val
   assert.deepEqual(await execute('patch.list', {}), []);
 });
 
+test('content patch module guards duplicate and missing dependency loads', async (t) => {
+  const saved = captureGlobals([
+    '__BBX_CONTENT_PATCH__',
+    '__BBX_CONTENT_HELPERS__',
+    '__BBX_CONTENT_REGISTRY__',
+  ]);
+  t.after(() => restoreGlobals(saved));
+
+  Reflect.set(globalThis, '__BBX_CONTENT_PATCH__', { existing: true });
+  await importFresh('../src/content-patch.js');
+  assert.deepEqual(Reflect.get(globalThis, '__BBX_CONTENT_PATCH__'), { existing: true });
+
+  Reflect.deleteProperty(globalThis, '__BBX_CONTENT_PATCH__');
+  Reflect.deleteProperty(globalThis, '__BBX_CONTENT_HELPERS__');
+  Reflect.deleteProperty(globalThis, '__BBX_CONTENT_REGISTRY__');
+  await assert.rejects(
+    importFresh('../src/content-patch.js'),
+    /Browser Bridge helpers and registry must load before content-patch\.js/
+  );
+});
+
 test('content script input.click returns click metadata and stale element refs fail after detachment', async (t) => {
   const harness = createChromeHarness();
   const inputs = installInputDomGlobals(t);
@@ -2125,6 +2146,18 @@ test('content script patch operations verify and roll back DOM and style changes
     declarations: { color: 'red' },
     verify: true,
   });
+  const unverifiedStylePatch = await executeBridgeMethod(listener, 'patch.apply_styles', {
+    patchId: 'style-2',
+    target: { selector: '#target' },
+    declarations: { background: 'white' },
+  });
+  const unverifiedDomPatch = await executeBridgeMethod(listener, 'patch.apply_dom', {
+    patchId: 'attribute-3',
+    target: { selector: '#target' },
+    operation: 'set_attribute',
+    name: 'data-unverified',
+    value: 'yes',
+  });
   const textPatch = await executeBridgeMethod(listener, 'patch.apply_dom', {
     patchId: 'text-1',
     target: { selector: '#target' },
@@ -2162,6 +2195,14 @@ test('content script patch operations verify and roll back DOM and style changes
     elementRef: stylePatch.elementRef,
   });
   assert.equal(typeof stylePatch.elementRef, 'string');
+  assert.deepEqual(unverifiedStylePatch, {
+    patchId: 'style-2',
+    applied: true,
+  });
+  assert.deepEqual(unverifiedDomPatch, {
+    patchId: 'attribute-3',
+    applied: true,
+  });
   assert.deepEqual(textPatch, {
     patchId: 'text-1',
     applied: true,
@@ -2217,6 +2258,26 @@ test('content script patch operations verify and roll back DOM and style changes
     rolledBack: true,
   });
   assert.equal(styleValues.get('color'), 'blue');
+  assert.deepEqual(await executeBridgeMethod(listener, 'patch.rollback', { patchId: 'style-2' }), {
+    patchId: 'style-2',
+    rolledBack: true,
+  });
+  assert.deepEqual(
+    await executeBridgeMethod(listener, 'patch.rollback', { patchId: 'attribute-3' }),
+    {
+      patchId: 'attribute-3',
+      rolledBack: true,
+    }
+  );
+  assert.deepEqual(await executeBridgeMethod(listener, 'patch.rollback', { patchId: 'missing' }), {
+    patchId: 'missing',
+    rolledBack: false,
+  });
+  const unsupportedPatch = await executeBridgeMethod(listener, 'patch.apply_dom', {
+    target: { selector: '#target' },
+    operation: 'unsupported',
+  });
+  assert.deepEqual(unsupportedPatch, { error: 'Unsupported DOM patch operation unsupported' });
   assert.deepEqual(await executeBridgeMethod(listener, 'patch.list', {}), []);
   assert.deepEqual(await executeBridgeMethod(listener, 'patch.commit_session_baseline', {}), {
     committed: true,

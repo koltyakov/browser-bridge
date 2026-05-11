@@ -302,6 +302,146 @@ test('background access request rejects duplicate requests for the same pending 
   assert.equal(state.requestedAccessPopupWindowId, 93);
 });
 
+test('background access request reports enabled access without queuing a prompt', async () => {
+  const popupCreates: chrome.windows.CreateData[] = [];
+  const chrome = createChromeFake({
+    tabs: {
+      async query(queryInfo: chrome.tabs.QueryInfo = {}) {
+        if (queryInfo.active && queryInfo.lastFocusedWindow) {
+          return [
+            {
+              id: 43,
+              windowId: 9,
+              title: 'Enabled tab',
+              url: 'https://example.com/enabled',
+              status: 'complete',
+            },
+          ];
+        }
+        return [];
+      },
+      async get(tabId: number) {
+        assert.equal(tabId, 43);
+        return {
+          id: 43,
+          windowId: 9,
+          title: 'Enabled tab',
+          url: 'https://example.com/enabled',
+          status: 'complete',
+        };
+      },
+    },
+    windows: {
+      async create(createData: chrome.windows.CreateData = {}) {
+        popupCreates.push(createData);
+        return { id: 95, ...createData };
+      },
+    },
+  });
+  const loaded = await loadBackground({
+    chrome,
+    query: `test-background-access-request-enabled-${Date.now()}`,
+  });
+  const state = getAccessRequestState(loaded.module) as AccessRequestState & {
+    enabledWindow?: { windowId: number; title: string; enabledAt: number };
+  };
+  state.enabledWindow = { windowId: 9, title: 'Enabled Window', enabledAt: 123 };
+
+  const response = await loaded.dispatch(
+    createRequest({
+      id: 'background-access-request-enabled',
+      method: 'access.request',
+      tabId: 43,
+    })
+  );
+
+  if (!response.ok) {
+    assert.fail(response.error.message);
+  }
+  assert.equal(response.meta?.method, 'access.request');
+  assert.deepEqual(response.result, {
+    enabled: true,
+    access: {
+      enabled: true,
+      windowId: 9,
+      routeTabId: null,
+      routeReady: false,
+      routeUrl: '',
+      reason: 'no_routable_active_tab',
+    },
+  });
+  assert.deepEqual(popupCreates, []);
+});
+
+test('background access request rejects when no scriptable target exists', async () => {
+  const chrome = createChromeFake({
+    tabs: {
+      async query() {
+        return [];
+      },
+    },
+  });
+  const loaded = await loadBackground({
+    chrome,
+    query: `test-background-access-request-no-target-${Date.now()}`,
+  });
+
+  const response = await loaded.dispatch(
+    createRequest({
+      id: 'background-access-request-no-target',
+      method: 'access.request',
+    })
+  );
+
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, ERROR_CODES.ACCESS_DENIED);
+  assert.equal(response.error.message, 'No scriptable tab found in the focused window.');
+  assert.equal(response.meta?.method, 'access.request');
+});
+
+test('background access request rejects duplicate requests for another pending window', async () => {
+  const chrome = createChromeFake({
+    tabs: {
+      async query(queryInfo: chrome.tabs.QueryInfo = {}) {
+        if (queryInfo.active && queryInfo.lastFocusedWindow) {
+          return [
+            {
+              id: 44,
+              windowId: 10,
+              title: 'Other pending tab',
+              url: 'https://example.com/other-pending',
+              status: 'complete',
+            },
+          ];
+        }
+        return [];
+      },
+    },
+  });
+  const loaded = await loadBackground({
+    chrome,
+    query: `test-background-access-request-other-pending-${Date.now()}`,
+  });
+  const state = getAccessRequestState(loaded.module);
+  state.requestedAccessWindowId = 9;
+
+  const response = await loaded.dispatch(
+    createRequest({
+      id: 'background-access-request-other-pending',
+      method: 'access.request',
+    })
+  );
+
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, ERROR_CODES.ACCESS_DENIED);
+  assert.match(response.error.message, /already pending for another window/i);
+  assert.deepEqual(response.error.details, {
+    requestedWindowId: 9,
+    requestedTargetWindowId: 10,
+    requestedTargetTabId: 44,
+  });
+});
+
 test('background access request clears popup state when the access popup window is dismissed', async () => {
   const chrome = createChromeFake({
     runtime: {
