@@ -36,15 +36,22 @@
     resolveTarget,
   } = registry;
 
+  /** @typedef {{ elementRef?: string, selector?: string }} PatchTarget */
+  /** @typedef {{ target?: PatchTarget, patchId?: string, declarations?: Record<string, string>, important?: boolean, verify?: boolean }} StylePatchParams */
+  /** @typedef {{ target?: PatchTarget, patchId?: string, operation?: string, name?: string | null, value?: unknown, verify?: boolean }} DomPatchParams */
+
   /**
    * Apply a reversible inline style patch to an element or selector target.
    *
-   * @param {Record<string, any>} params
+   * @param {StylePatchParams} params
    * @returns {{ patchId: string, applied: boolean, verified?: Record<string, string>, elementRef?: string }}
    */
   function applyStylePatch(params) {
     const element = /** @type {HTMLElement} */ (resolveTarget(params.target));
-    const patchId = params.patchId || `patch_${crypto.randomUUID()}`;
+    const patchId =
+      typeof params.patchId === 'string' && params.patchId
+        ? params.patchId
+        : `patch_${crypto.randomUUID()}`;
     /** @type {Record<string, string>} */
     const previous = {};
     for (const [property, value] of Object.entries(params.declarations || {})) {
@@ -72,22 +79,39 @@
   }
 
   /**
+   * @param {DomPatchParams} params
+   * @returns {string}
+   */
+  function getClassPatchValue(params) {
+    const className = String(params.value ?? params.name ?? '');
+    if (!className) {
+      throw new Error('class name is required for class patch operations');
+    }
+    return className;
+  }
+
+  /**
    * Apply a reversible DOM patch to a target element.
    *
-   * @param {Record<string, any>} params
+   * @param {DomPatchParams} params
    * @returns {{ patchId: string, applied: boolean, verified?: Record<string, unknown>, elementRef?: string }}
    */
   function applyDomPatch(params) {
     const element = resolveTarget(params.target);
-    const patchId = params.patchId || `patch_${crypto.randomUUID()}`;
-    const operation = params.operation;
+    const patchId =
+      typeof params.patchId === 'string' && params.patchId
+        ? params.patchId
+        : `patch_${crypto.randomUUID()}`;
+    const operation = typeof params.operation === 'string' ? params.operation : '';
+    const name = typeof params.name === 'string' ? params.name : '';
 
-    /** @type {{ text: string | null, attributes: Record<string, string | null>, toggledClass: string | null, hadClass: boolean | null }} */
+    /** @type {{ text: string | null, attributes: Record<string, string | null>, toggledClass: string | null, hadClass: boolean | null, changed: boolean | null }} */
     const previous = {
       text: null,
       attributes: {},
       toggledClass: null,
       hadClass: null,
+      changed: null,
     };
 
     switch (operation) {
@@ -96,18 +120,32 @@
         element.textContent = String(params.value ?? '');
         break;
       case 'set_attribute':
-        previous.attributes[params.name] = element.getAttribute(params.name);
-        element.setAttribute(params.name, String(params.value ?? ''));
+        previous.attributes[name] = element.getAttribute(name);
+        element.setAttribute(name, String(params.value ?? ''));
         break;
       case 'remove_attribute':
-        previous.attributes[params.name] = element.getAttribute(params.name);
-        element.removeAttribute(params.name);
+        previous.attributes[name] = element.getAttribute(name);
+        element.removeAttribute(name);
         break;
       case 'toggle_class': {
         const className = String(params.value);
         previous.toggledClass = className;
         previous.hadClass = element.classList.contains(className);
+        previous.changed = true;
         element.classList.toggle(className);
+        break;
+      }
+      case 'add_class':
+      case 'remove_class': {
+        const className = getClassPatchValue(params);
+        previous.toggledClass = className;
+        previous.hadClass = element.classList.contains(className);
+        const shouldHaveClass = operation === 'add_class';
+        const changed = previous.hadClass !== shouldHaveClass;
+        previous.changed = changed;
+        if (changed) {
+          element.classList.toggle(className);
+        }
         break;
       }
       default:
@@ -129,8 +167,12 @@
       if (operation === 'set_text') {
         verified.textContent = element.textContent;
       } else if (operation === 'set_attribute' || operation === 'remove_attribute') {
-        verified[params.name] = element.getAttribute(params.name);
-      } else if (operation === 'toggle_class') {
+        verified[name] = element.getAttribute(name);
+      } else if (
+        operation === 'toggle_class' ||
+        operation === 'add_class' ||
+        operation === 'remove_class'
+      ) {
         verified.classList = [...element.classList];
       }
       return { ...result, verified, elementRef };
@@ -177,10 +219,19 @@
     } else if (patch.kind === 'dom') {
       if (patch.operation === 'set_text' && patch.previous.text !== null) {
         element.textContent = patch.previous.text;
-      } else if (patch.operation === 'toggle_class' && patch.previous.toggledClass) {
-        const hasNow = element.classList.contains(patch.previous.toggledClass);
-        if (hasNow !== patch.previous.hadClass) {
-          element.classList.toggle(patch.previous.toggledClass);
+      } else if (
+        (patch.operation === 'toggle_class' ||
+          patch.operation === 'add_class' ||
+          patch.operation === 'remove_class') &&
+        patch.previous.toggledClass
+      ) {
+        const shouldRollbackClassPatch =
+          patch.operation === 'toggle_class' || patch.previous.changed !== false;
+        if (shouldRollbackClassPatch) {
+          const hasNow = element.classList.contains(patch.previous.toggledClass);
+          if (hasNow !== patch.previous.hadClass) {
+            element.classList.toggle(patch.previous.toggledClass);
+          }
         }
       } else {
         if (patch.previous.text !== null && patch.operation === 'set_text') {

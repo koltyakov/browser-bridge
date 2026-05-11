@@ -336,6 +336,22 @@ export function createPageRequestController(state, chromeObj, dependencies) {
    * @returns {Promise<BridgeResponse>}
    */
   async function handleCdpRequest(request) {
+    if (
+      request.method === 'cdp.get_box_model' ||
+      request.method === 'cdp.get_computed_styles_for_node'
+    ) {
+      const nodeId = request.params?.nodeId;
+      if (typeof nodeId !== 'number' || !Number.isFinite(nodeId)) {
+        return createFailure(
+          request.id,
+          ERROR_CODES.INVALID_REQUEST,
+          'nodeId must be a finite number.',
+          null,
+          { method: request.method }
+        );
+      }
+    }
+
     const target = await resolveRequestTarget(request);
     return dependencies.runWithDebugger(target.tabId, async (debugTarget) => {
       if (request.method === 'cdp.dispatch_key_event') {

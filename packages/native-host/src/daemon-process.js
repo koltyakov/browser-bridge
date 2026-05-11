@@ -10,7 +10,6 @@ import { pingExistingDaemon } from './daemon.js';
 import {
   createSocketBridgeTransport,
   formatBridgeTransport,
-  getBridgeDir,
   getBridgeTransport,
   getDaemonPidPath,
 } from './config.js';
@@ -74,7 +73,7 @@ export function spawnBridgeDaemonProcess() {
  * @returns {Promise<void>}
  */
 export async function writeDaemonPidFile(pid = process.pid, pidPath = getDaemonPidPath()) {
-  await fs.promises.mkdir(getBridgeDir(), { recursive: true });
+  await fs.promises.mkdir(path.dirname(pidPath), { recursive: true });
   await fs.promises.writeFile(pidPath, `${pid}\n`, 'utf8');
 }
 

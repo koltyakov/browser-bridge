@@ -148,6 +148,7 @@ export const PATCH_ACTIONS = {
       target: { elementRef: r },
       declarations: a.declarations,
       important: a.important,
+      patchId: a.patchId,
       verify: a.verify,
     }),
   },
@@ -160,16 +161,22 @@ export const PATCH_ACTIONS = {
       const opMap = {
         setAttribute: 'set_attribute',
         removeAttribute: 'remove_attribute',
-        addClass: 'toggle_class',
-        removeClass: 'toggle_class',
+        addClass: 'add_class',
+        removeClass: 'remove_class',
         setTextContent: 'set_text',
         setProperty: 'set_attribute',
       };
+      const normalizedOperation = opMap[operation] || operation;
+      const value =
+        normalizedOperation === 'add_class' || normalizedOperation === 'remove_class'
+          ? (a.value ?? a.name)
+          : a.value;
       return {
         target: { elementRef: r },
-        operation: opMap[operation] || operation,
-        value: a.value,
+        operation: normalizedOperation,
+        value,
         name: a.name,
+        patchId: a.patchId,
         verify: a.verify,
       };
     },

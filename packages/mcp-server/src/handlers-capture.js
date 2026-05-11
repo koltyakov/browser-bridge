@@ -40,22 +40,34 @@ export const CAPTURE_ACTIONS = {
     params: () => ({}),
   },
   cdp_box_model: {
-    ref: true,
+    ref: false,
     method: 'cdp.get_box_model',
-    params: (_, r) => ({ elementRef: r }),
+    params: (a) => ({ nodeId: a.nodeId }),
   },
   cdp_computed_styles: {
-    ref: true,
+    ref: false,
     method: 'cdp.get_computed_styles_for_node',
-    params: (_, r) => ({ elementRef: r }),
+    params: (a) => ({ nodeId: a.nodeId }),
   },
 };
 
+/** @param {Record<string, unknown>} args */
+function isCdpNodeCapture(args) {
+  return args.action === 'cdp_box_model' || args.action === 'cdp_computed_styles';
+}
+
 /**
- * @param {{ action: string, elementRef?: string, selector?: string, rect?: Record<string, unknown>, tabId?: number, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @param {{ action: string, elementRef?: string, selector?: string, rect?: Record<string, unknown>, nodeId?: number, tabId?: number, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleCaptureTool(args) {
+  if (
+    isCdpNodeCapture(args) &&
+    (typeof args.nodeId !== 'number' || !Number.isFinite(args.nodeId))
+  ) {
+    return summarizeToolError('nodeId must be a finite number.');
+  }
+
   return dispatchToolAction(CAPTURE_ACTIONS, args, 'capture');
 }
 

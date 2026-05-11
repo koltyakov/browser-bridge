@@ -413,18 +413,12 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
   // cdp — high (raw protocol, large payloads)
   'cdp.get_document': createRegistryEntry('cdp.get_document', 'cdp', true, [], 'high'),
   'cdp.get_dom_snapshot': createRegistryEntry('cdp.get_dom_snapshot', 'cdp', true, [], 'high'),
-  'cdp.get_box_model': createRegistryEntry(
-    'cdp.get_box_model',
-    'cdp',
-    true,
-    ['elementRef'],
-    'high'
-  ),
+  'cdp.get_box_model': createRegistryEntry('cdp.get_box_model', 'cdp', true, ['nodeId'], 'high'),
   'cdp.get_computed_styles_for_node': createRegistryEntry(
     'cdp.get_computed_styles_for_node',
     'cdp',
     true,
-    ['elementRef'],
+    ['nodeId'],
     'high'
   ),
   'cdp.dispatch_key_event': createRegistryEntry(

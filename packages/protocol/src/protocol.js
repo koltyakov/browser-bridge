@@ -29,6 +29,7 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').BridgeSuccessResponse} BridgeSuccessResponse */
 /** @typedef {import('./types.js').CheckedActionParams} CheckedActionParams */
 /** @typedef {import('./types.js').CdpDispatchKeyEventParams} CdpDispatchKeyEventParams */
+/** @typedef {import('./types.js').CdpNodeIdParams} CdpNodeIdParams */
 /** @typedef {import('./types.js').ConsoleParams} ConsoleParams */
 /** @typedef {import('./types.js').DomQueryParams} DomQueryParams */
 /** @typedef {import('./types.js').DragParams} DragParams */
@@ -43,6 +44,7 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').NormalizedAccessibilityTreeParams} NormalizedAccessibilityTreeParams */
 /** @typedef {import('./types.js').NormalizedCheckedAction} NormalizedCheckedAction */
 /** @typedef {import('./types.js').NormalizedCdpDispatchKeyEventParams} NormalizedCdpDispatchKeyEventParams */
+/** @typedef {import('./types.js').NormalizedCdpNodeIdParams} NormalizedCdpNodeIdParams */
 /** @typedef {import('./types.js').NormalizedConsoleParams} NormalizedConsoleParams */
 /** @typedef {import('./types.js').NormalizedDomQuery} NormalizedDomQuery */
 /** @typedef {import('./types.js').NormalizedDragParams} NormalizedDragParams */
@@ -291,6 +293,9 @@ function normalizeRequestParams(method, params) {
       return normalizeInputAction(params);
     case 'cdp.dispatch_key_event':
       return normalizeCdpDispatchKeyEventParams(params);
+    case 'cdp.get_box_model':
+    case 'cdp.get_computed_styles_for_node':
+      return normalizeCdpNodeIdParams(params);
     case 'input.set_checked':
       return normalizeCheckedAction(params);
     case 'input.select_option':
@@ -432,6 +437,20 @@ export function normalizeCdpDispatchKeyEventParams(params = {}) {
     key: params.key,
     code: typeof params.code === 'string' ? params.code.trim() : '',
     modifiers: params.modifiers ?? [],
+  };
+}
+
+/**
+ * @param {CdpNodeIdParams} [params={}]
+ * @returns {NormalizedCdpNodeIdParams}
+ */
+export function normalizeCdpNodeIdParams(params = {}) {
+  if (typeof params.nodeId !== 'number' || !Number.isFinite(params.nodeId)) {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'nodeId must be a finite number.');
+  }
+
+  return {
+    nodeId: params.nodeId,
   };
 }
 

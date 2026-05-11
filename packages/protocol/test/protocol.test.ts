@@ -16,6 +16,7 @@ import {
   normalizeCheckedAction,
   createSuccess,
   normalizeCdpDispatchKeyEventParams,
+  normalizeCdpNodeIdParams,
   normalizeInputAction,
   normalizeNavigationAction,
   normalizePatchOperation,
@@ -229,6 +230,15 @@ test('normalizeCdpDispatchKeyEventParams preserves valid CDP key event input', (
   assert.equal(input.key, 'Escape');
   assert.equal(input.code, 'Escape');
   assert.deepEqual(input.modifiers, ['Shift']);
+});
+
+test('normalizeCdpNodeIdParams requires a finite node id', () => {
+  assert.deepEqual(normalizeCdpNodeIdParams({ nodeId: 42 }), { nodeId: 42 });
+
+  assert.throws(
+    () => normalizeCdpNodeIdParams({ nodeId: Number.NaN }),
+    /nodeId must be a finite number\./
+  );
 });
 
 /** Ensure checked actions default to an affirmative toggle with a normalized target. */
@@ -881,6 +891,26 @@ test('validateBridgeRequest rejects invalid cdp.dispatch_key_event params', () =
         const bridgeError = error as ErrorWithCode;
         assert.equal(bridgeError.code, ERROR_CODES.INVALID_REQUEST);
         assert.equal(bridgeError.message, testCase.message);
+        return true;
+      }
+    );
+  }
+});
+
+test('validateBridgeRequest rejects invalid CDP node id params', () => {
+  for (const method of ['cdp.get_box_model', 'cdp.get_computed_styles_for_node'] as const) {
+    assert.throws(
+      () =>
+        validateBridgeRequest({
+          id: `req_${method}`,
+          method,
+          params: {},
+        }),
+      (error) => {
+        assert.equal(error instanceof Error, true);
+        const bridgeError = error as ErrorWithCode;
+        assert.equal(bridgeError.code, ERROR_CODES.INVALID_REQUEST);
+        assert.equal(bridgeError.message, 'nodeId must be a finite number.');
         return true;
       }
     );

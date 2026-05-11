@@ -32,6 +32,10 @@ test('daemon pid helpers read, write, and clear the pid file', async () => {
     await writeDaemonPidFile(12345, pidPath);
     assert.equal(await readDaemonPidFile(pidPath), 12345);
 
+    const nestedPidPath = path.join(bridgeHome, 'nested', 'state', 'daemon.pid');
+    await writeDaemonPidFile(54321, nestedPidPath);
+    assert.equal(await readDaemonPidFile(nestedPidPath), 54321);
+
     await clearDaemonPidFile({ pid: 99999, pidPath });
     assert.equal(await readDaemonPidFile(pidPath), 12345);
 

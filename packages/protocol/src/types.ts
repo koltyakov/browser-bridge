@@ -238,10 +238,18 @@ export interface CdpDispatchKeyEventParams {
   modifiers?: string[] | number;
 }
 
+export interface CdpNodeIdParams {
+  nodeId?: number;
+}
+
 export interface NormalizedCdpDispatchKeyEventParams extends BridgeParams {
   key: string;
   code: string;
   modifiers: string[] | number;
+}
+
+export interface NormalizedCdpNodeIdParams extends BridgeParams {
+  nodeId: number;
 }
 
 export interface CheckedActionParams {

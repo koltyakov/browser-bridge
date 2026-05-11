@@ -2187,6 +2187,34 @@ test('content script patch operations verify and roll back DOM and style changes
     value: 'active',
     verify: true,
   });
+  const addExistingClassPatch = await executeBridgeMethod(listener, 'patch.apply_dom', {
+    patchId: 'class-2',
+    target: { selector: '#target' },
+    operation: 'add_class',
+    name: 'initial',
+    verify: true,
+  });
+  const removeMissingClassPatch = await executeBridgeMethod(listener, 'patch.apply_dom', {
+    patchId: 'class-3',
+    target: { selector: '#target' },
+    operation: 'remove_class',
+    name: 'fresh',
+    verify: true,
+  });
+  const addMissingClassPatch = await executeBridgeMethod(listener, 'patch.apply_dom', {
+    patchId: 'class-4',
+    target: { selector: '#target' },
+    operation: 'add_class',
+    name: 'fresh',
+    verify: true,
+  });
+  const removeExistingClassPatch = await executeBridgeMethod(listener, 'patch.apply_dom', {
+    patchId: 'class-5',
+    target: { selector: '#target' },
+    operation: 'remove_class',
+    name: 'initial',
+    verify: true,
+  });
 
   assert.deepEqual(stylePatch, {
     patchId: 'style-1',
@@ -2227,6 +2255,30 @@ test('content script patch operations verify and roll back DOM and style changes
     verified: { classList: ['initial', 'active'] },
     elementRef: toggleClassPatch.elementRef,
   });
+  assert.deepEqual(addExistingClassPatch, {
+    patchId: 'class-2',
+    applied: true,
+    verified: { classList: ['initial', 'active'] },
+    elementRef: addExistingClassPatch.elementRef,
+  });
+  assert.deepEqual(removeMissingClassPatch, {
+    patchId: 'class-3',
+    applied: true,
+    verified: { classList: ['initial', 'active'] },
+    elementRef: removeMissingClassPatch.elementRef,
+  });
+  assert.deepEqual(addMissingClassPatch, {
+    patchId: 'class-4',
+    applied: true,
+    verified: { classList: ['initial', 'active', 'fresh'] },
+    elementRef: addMissingClassPatch.elementRef,
+  });
+  assert.deepEqual(removeExistingClassPatch, {
+    patchId: 'class-5',
+    applied: true,
+    verified: { classList: ['active', 'fresh'] },
+    elementRef: removeExistingClassPatch.elementRef,
+  });
   assert.deepEqual(await executeBridgeMethod(listener, 'patch.rollback', { patchId: 'text-1' }), {
     patchId: 'text-1',
     rolledBack: true,
@@ -2248,6 +2300,26 @@ test('content script patch operations verify and roll back DOM and style changes
     }
   );
   assert.equal(target.getAttribute('data-remove'), 'present');
+  assert.deepEqual(await executeBridgeMethod(listener, 'patch.rollback', { patchId: 'class-2' }), {
+    patchId: 'class-2',
+    rolledBack: true,
+  });
+  assert.deepEqual(target.classList ? [...target.classList] : [], ['active', 'fresh']);
+  assert.deepEqual(await executeBridgeMethod(listener, 'patch.rollback', { patchId: 'class-3' }), {
+    patchId: 'class-3',
+    rolledBack: true,
+  });
+  assert.deepEqual(target.classList ? [...target.classList] : [], ['active', 'fresh']);
+  assert.deepEqual(await executeBridgeMethod(listener, 'patch.rollback', { patchId: 'class-5' }), {
+    patchId: 'class-5',
+    rolledBack: true,
+  });
+  assert.deepEqual(target.classList ? [...target.classList] : [], ['active', 'fresh', 'initial']);
+  assert.deepEqual(await executeBridgeMethod(listener, 'patch.rollback', { patchId: 'class-4' }), {
+    patchId: 'class-4',
+    rolledBack: true,
+  });
+  assert.deepEqual(target.classList ? [...target.classList] : [], ['active', 'initial']);
   assert.deepEqual(await executeBridgeMethod(listener, 'patch.rollback', { patchId: 'class-1' }), {
     patchId: 'class-1',
     rolledBack: true,

@@ -847,9 +847,11 @@ test('handlePatchTool apply_styles calls patch.apply_styles', async () => {
         action: 'apply_styles',
         selector: 'div',
         declarations: { color: 'red' },
+        patchId: 'custom-style',
       });
       const patchCall = calls.find((c) => c.method === 'patch.apply_styles');
       assert.ok(patchCall, 'patch.apply_styles should be called');
+      assert.equal(patchCall.params?.patchId, 'custom-style');
       assert.equal(result.isError, undefined);
     }
   );
@@ -894,12 +896,45 @@ test('handlePatchTool apply_dom calls patch.apply_dom', async () => {
         operation: 'setAttribute',
         name: 'class',
         value: 'new-class',
+        patchId: 'custom-dom',
       });
       const patchCall = calls.find((c) => c.method === 'patch.apply_dom');
       assert.ok(patchCall, 'patch.apply_dom should be called');
       assert.ok(patchCall.params);
       assert.equal(patchCall.params.operation, 'set_attribute');
+      assert.equal(patchCall.params.patchId, 'custom-dom');
       assert.equal(result.isError, undefined);
+
+      const addClassResult = await handlePatchTool({
+        action: 'apply_dom',
+        elementRef: 'el_1',
+        operation: 'addClass',
+        name: 'active',
+      });
+      const removeClassResult = await handlePatchTool({
+        action: 'apply_dom',
+        elementRef: 'el_1',
+        operation: 'removeClass',
+        name: 'active',
+      });
+      const classPatchCalls = calls.filter(
+        (call) =>
+          call.method === 'patch.apply_dom' &&
+          (call.params?.operation === 'add_class' || call.params?.operation === 'remove_class')
+      );
+
+      assert.equal(addClassResult.isError, undefined);
+      assert.equal(removeClassResult.isError, undefined);
+      assert.deepEqual(
+        classPatchCalls.map((call) => ({
+          operation: call.params?.operation,
+          value: call.params?.value,
+        })),
+        [
+          { operation: 'add_class', value: 'active' },
+          { operation: 'remove_class', value: 'active' },
+        ]
+      );
     }
   );
 });
@@ -1046,29 +1081,42 @@ test('handleCaptureTool cdp_dom_snapshot calls cdp.get_dom_snapshot', async () =
   );
 });
 
-test('handleCaptureTool cdp_box_model forwards the element ref', async () => {
+test('handleCaptureTool cdp_box_model forwards the CDP node id', async () => {
   await withMockedBridge(
     async () => ok({ model: {} }),
     async (calls) => {
-      const result = await handleCaptureTool({ action: 'cdp_box_model', elementRef: 'el_box' });
+      const result = await handleCaptureTool({ action: 'cdp_box_model', nodeId: 42 });
       assert.equal(calls[0].method, 'cdp.get_box_model');
-      assert.deepEqual(calls[0].params, { elementRef: 'el_box' });
+      assert.deepEqual(calls[0].params, { nodeId: 42 });
       assert.equal(result.isError, undefined);
     }
   );
 });
 
-test('handleCaptureTool cdp_computed_styles forwards the element ref', async () => {
+test('handleCaptureTool cdp_computed_styles forwards the CDP node id', async () => {
   await withMockedBridge(
     async () => ok({ computedStyle: [] }),
     async (calls) => {
       const result = await handleCaptureTool({
         action: 'cdp_computed_styles',
-        elementRef: 'el_style',
+        nodeId: 43,
       });
       assert.equal(calls[0].method, 'cdp.get_computed_styles_for_node');
-      assert.deepEqual(calls[0].params, { elementRef: 'el_style' });
+      assert.deepEqual(calls[0].params, { nodeId: 43 });
       assert.equal(result.isError, undefined);
+    }
+  );
+});
+
+test('handleCaptureTool validates CDP node id before bridge calls', async () => {
+  await withMockedBridge(
+    async () => ok({}),
+    async (calls) => {
+      const result = await handleCaptureTool({ action: 'cdp_box_model' });
+
+      assert.equal(calls.length, 0);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0].text, /nodeId must be a finite number/);
     }
   );
 });

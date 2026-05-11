@@ -527,6 +527,7 @@ export function createBridgeMcpServer() {
           .optional()
           .describe('Element reference (for element action, preferred)'),
         selector: z.string().optional().describe('CSS selector (used if no elementRef)'),
+        nodeId: z.number().optional().describe('CDP node id for cdp_box_model/cdp_computed_styles'),
         rect: z
           .object({
             x: z.number().describe('Region left edge (viewport pixels)'),

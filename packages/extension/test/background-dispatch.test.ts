@@ -2382,11 +2382,15 @@ for (const method of [
   'cdp.get_computed_styles_for_node',
 ] satisfies BridgeMethod[]) {
   test(`background dispatch rejects ${method} without a finite nodeId`, async () => {
+    let attachCalled = false;
     let sendCommandCalled = false;
     const { loaded } = await loadEnabledDispatchBackground({
       queryLabel: `test-background-dispatch-${method}-invalid-node`,
       chromeOverrides: {
         debugger: {
+          async attach() {
+            attachCalled = true;
+          },
           async sendCommand() {
             sendCommandCalled = true;
             return {};
@@ -2395,16 +2399,17 @@ for (const method of [
       },
     });
 
-    const response = await loaded.dispatch(
-      createRequest({
-        id: `dispatch-${method}-invalid-node`,
-        method,
-        params: {
-          nodeId: 'not-a-number',
-        },
-      })
-    );
+    const response = await loaded.dispatch({
+      id: `dispatch-${method}-invalid-node`,
+      method,
+      tab_id: null,
+      params: {
+        nodeId: 'not-a-number',
+      },
+      meta: { protocol_version: '1.0', token_budget: null },
+    } as unknown as BridgeRequest);
 
+    assert.equal(attachCalled, false);
     assert.equal(sendCommandCalled, false);
     assert.equal(response.ok, false);
     assert.equal(response.error.code, ERROR_CODES.INVALID_REQUEST);
