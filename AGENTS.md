@@ -127,9 +127,10 @@ npm run daemon                 # start daemon locally
 
 - **ESM only** — `"type": "module"` in root package.json. All source uses `import`/`export`.
 - **No build step** — runs directly from source. TypeScript is used only for type checking (`tsc --noEmit`).
-- **Tests use Node built-in runner** — `node --test`, not Jest/Mocha. Test files in `packages/*/test/*.test.js`. Integration tests in `packages/integration-tests/`.
+- **Tests use Node built-in runner** — `node --test`, not Jest/Mocha. Tests must be TypeScript (`*.test.ts`). Integration tests live in `packages/integration-tests/`.
 - **Linting** — `oxlint` (Rust-based), formatting with `oxfmt`. 2-space indent, single quotes, semicolons, trailing commas.
 - **Node >= 18** — no Node 20+ only APIs.
+- Do not use the `any` type in source or tests. Use `unknown`, explicit narrowing, discriminated unions, or protocol/domain types instead.
 - Preserve the generic protocol shape. Do not add task-specific bridge commands for one-off actions when an existing RPC method can express the action.
 - Prefer improving the shared protocol, client ergonomics, or skill/docs over introducing special-case commands.
 - Keep the bridge token-efficient. Favor structured DOM/style data over screenshots or raw HTML dumps.
@@ -137,12 +138,15 @@ npm run daemon                 # start daemon locally
 - Keep native-host startup robust for GUI launch contexts. Do not assume shell-specific `PATH` resolution.
 - Treat the top-level `README.md` as npm-facing documentation. When adding or editing links or image references there, prefer absolute GitHub URLs instead of relative paths so the npm package page renders them correctly.
 
-## JavaScript Typing
+## Typing Standards
 
+- Complex reusable types should live in TypeScript (`.ts`) modules, especially protocol, method, client, and server shapes.
+- Runtime and extension source remain JavaScript where they are today, but must be strongly typed with `// @ts-check` and complete JSDoc.
 - Raw `.js` source files must always include JSDoc typings.
 - Start raw JS modules with `// @ts-check`.
 - Add JSDoc typedefs and annotations for exported functions, key internal helpers, parameters, return values, and non-obvious structured data.
-- Do not leave newly added raw JS logic untyped.
+- Do not omit types for new or changed logic. Newly added raw JS logic must not be left untyped.
+- Do not introduce `any` in TypeScript or JSDoc annotations.
 - Run `npm run typecheck` after changing JS sources.
 
 ## Validation
