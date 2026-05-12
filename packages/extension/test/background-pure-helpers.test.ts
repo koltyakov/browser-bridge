@@ -9,6 +9,7 @@ import {
   createRequest,
   createSuccess,
   ERROR_CODES,
+  MAX_NATIVE_MESSAGE_BYTES,
 } from '../../protocol/src/index.js';
 
 type AccessPopupPlacement = { left: number; top: number } | null;
@@ -199,6 +200,22 @@ test('background pure helpers preserve response metadata while enriching diagnos
   assert.equal(typeof enriched.meta.text_bytes, 'number');
   assert.equal(typeof enriched.meta.image_bytes, 'number');
   assert.equal(typeof enriched.meta.debugger_backed, 'boolean');
+});
+
+test('background pure helpers reject responses above the native messaging size limit', () => {
+  const request = createRequest({
+    id: 'req-huge',
+    method: 'page.evaluate',
+  });
+  const response = createSuccess(request.id, {
+    value: 'x'.repeat(MAX_NATIVE_MESSAGE_BYTES),
+  });
+
+  const enriched = module().enrichBridgeResponse(request, response);
+
+  assert.equal(enriched.ok, false);
+  assert.equal(enriched.error.code, ERROR_CODES.RESULT_TRUNCATED);
+  assert.equal(enriched.meta.budget_truncated, true);
 });
 
 test('background pure helpers summarize setup actions for install and uninstall flows', () => {

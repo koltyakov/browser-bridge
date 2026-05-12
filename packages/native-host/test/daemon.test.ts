@@ -96,7 +96,7 @@ function expectBridgeResponse(value: unknown): TestPayload & { response: TestBri
 }
 
 // Start a daemon on a random TCP port. Caller must call `daemon.stop()`.
-async function startTestDaemon(): Promise<{
+async function startTestDaemon(authToken: string | null = null): Promise<{
   daemon: BridgeDaemon;
   connect: () => Promise<net.Socket>;
 }> {
@@ -109,6 +109,7 @@ async function startTestDaemon(): Promise<{
     } satisfies BridgeTransport,
     listenOptions: { host: '127.0.0.1', port: 0 },
     logger: { log() {}, error() {} },
+    authToken,
   });
   await daemon.start();
   const address = daemon.serverAddress as AddressInfo;
@@ -398,6 +399,7 @@ test('pingExistingDaemon resolves true for tcp transport when daemon responds', 
     } satisfies BridgeTransport,
     listenOptions: { host: '127.0.0.1', port: 0 },
     logger: { log() {}, error() {} },
+    authToken: null,
   });
 
   try {
@@ -1299,6 +1301,7 @@ test('daemon stop is idempotent when called concurrently', async () => {
     } satisfies BridgeTransport,
     listenOptions: { host: '127.0.0.1', port: 0 },
     logger: console,
+    authToken: null,
   });
 
   await daemon.start();
@@ -1838,6 +1841,91 @@ async function expectNoMessage(
 ): Promise<void> {
   assert.equal(await client.nextWithin(timeoutMs), null);
 }
+
+test('daemon requires auth token before handling TCP bridge requests when configured', async () => {
+  const authToken = 'a'.repeat(32);
+  const { daemon, connect } = await startTestDaemon(authToken);
+  const unauthenticatedSocket = await connect();
+  const authenticatedSocket = await connect();
+  const unauthenticated = makeNdjsonClient(unauthenticatedSocket);
+  const authenticated = makeNdjsonClient(authenticatedSocket);
+
+  try {
+    unauthenticated.send({
+      type: 'agent.request',
+      request: {
+        id: 'req_unauth',
+        method: 'page.get_state',
+        tab_id: null,
+        params: {},
+        meta: { protocol_version: '1.0', token_budget: null },
+      },
+    });
+    const denied = expectBridgeResponse(await unauthenticated.next());
+    assert.equal(denied.response.id, 'req_unauth');
+    assert.equal(denied.response.error?.code, ERROR_CODES.ACCESS_DENIED);
+
+    authenticated.send({
+      type: 'register',
+      role: 'agent',
+      clientId: 'agent_auth',
+      authToken,
+    });
+    assert.equal(expectPayload(await authenticated.next()).type, 'registered');
+    authenticated.send({
+      type: 'agent.request',
+      request: {
+        id: 'req_auth_health',
+        method: 'health.ping',
+        tab_id: null,
+        params: {},
+        meta: { protocol_version: '1.0', token_budget: null },
+      },
+    });
+    const health = expectBridgeResponse(await authenticated.next());
+    assert.equal(health.response.ok, true);
+    assert.equal(health.response.result?.daemon, 'ok');
+  } finally {
+    unauthenticatedSocket.destroy();
+    authenticatedSocket.destroy();
+    await daemon.stop();
+  }
+});
+
+test('daemon rejects duplicate in-flight request ids', async () => {
+  const { daemon, connect } = await startTestDaemon();
+  const agentSocket = await connect();
+  const extensionSocket = await connect();
+  const agent = makeNdjsonClient(agentSocket);
+  const extension = makeNdjsonClient(extensionSocket);
+
+  try {
+    agent.send({ type: 'register', role: 'agent', clientId: 'agent_duplicate' });
+    extension.send({ type: 'register', role: 'extension' });
+    await agent.next();
+    await extension.next();
+
+    const request = {
+      id: 'req_duplicate',
+      method: 'page.get_state',
+      tab_id: null,
+      params: {},
+      meta: { protocol_version: '1.0', token_budget: null },
+    };
+    agent.send({ type: 'agent.request', request });
+    assert.equal(expectPayload(await extension.next()).request?.id, 'req_duplicate');
+
+    agent.send({ type: 'agent.request', request });
+    const duplicate = expectBridgeResponse(await agent.next());
+    assert.equal(duplicate.response.id, 'req_duplicate');
+    assert.equal(duplicate.response.error?.code, ERROR_CODES.INVALID_REQUEST);
+    assert.match(duplicate.response.error?.message || '', /already in flight/);
+  } finally {
+    agentSocket.destroy();
+    extensionSocket.destroy();
+    await daemon.stop();
+  }
+});
 
 test('daemon routes interleaved requests from two agents to correct sockets', async () => {
   const { daemon, connect } = await startTestDaemon();

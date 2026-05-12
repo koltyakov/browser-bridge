@@ -4,7 +4,7 @@ import {
   dispatchToolAction,
   getToolTokenBudget,
   REQUEST_SOURCE,
-  requestBridge,
+  requestBridgeWithRetry,
   resolveToolRef,
   resolveRef,
   summarizeToolError,
@@ -119,6 +119,21 @@ export const INPUT_ACTION_METHODS = {
  * @returns {Promise<ToolResult>}
  */
 export async function handleInputTool(args) {
+  if (args.action === 'type' && !hasText(args.text)) {
+    return summarizeToolError('text is required for input.type.');
+  }
+  if ((args.action === 'press_key' || args.action === 'cdp_press_key') && !hasText(args.key)) {
+    return summarizeToolError('key is required for key input actions.');
+  }
+  if (
+    args.action === 'select_option' &&
+    !hasNonEmptyArray(args.values) &&
+    !hasNonEmptyArray(args.labels) &&
+    !hasNonEmptyArray(args.indexes)
+  ) {
+    return summarizeToolError('values, labels, or indexes are required for input.select_option.');
+  }
+
   return withToolClient(async (client) => {
     const requestedTabId = typeof args.tabId === 'number' ? args.tabId : null;
     const elementTarget = async () => ({
@@ -127,7 +142,7 @@ export async function handleInputTool(args) {
 
     switch (args.action) {
       case 'click': {
-        const response = await requestBridge(
+        const response = await requestBridgeWithRetry(
           client,
           'input.click',
           {
@@ -145,7 +160,7 @@ export async function handleInputTool(args) {
         return summarizeToolResponse(response, 'input.click');
       }
       case 'focus': {
-        const response = await requestBridge(
+        const response = await requestBridgeWithRetry(
           client,
           'input.focus',
           {
@@ -160,7 +175,7 @@ export async function handleInputTool(args) {
         return summarizeToolResponse(response, 'input.focus');
       }
       case 'type': {
-        const response = await requestBridge(
+        const response = await requestBridgeWithRetry(
           client,
           'input.type',
           {
@@ -180,7 +195,7 @@ export async function handleInputTool(args) {
       }
       case 'press_key': {
         const target = args.elementRef || args.selector ? await elementTarget() : undefined;
-        const response = await requestBridge(
+        const response = await requestBridgeWithRetry(
           client,
           'input.press_key',
           {
@@ -197,7 +212,7 @@ export async function handleInputTool(args) {
         return summarizeToolResponse(response, 'input.press_key');
       }
       case 'cdp_press_key': {
-        const response = await requestBridge(
+        const response = await requestBridgeWithRetry(
           client,
           'cdp.dispatch_key_event',
           {
@@ -214,7 +229,7 @@ export async function handleInputTool(args) {
         return summarizeToolResponse(response, 'cdp.dispatch_key_event');
       }
       case 'set_checked': {
-        const response = await requestBridge(
+        const response = await requestBridgeWithRetry(
           client,
           'input.set_checked',
           {
@@ -230,7 +245,7 @@ export async function handleInputTool(args) {
         return summarizeToolResponse(response, 'input.set_checked');
       }
       case 'select_option': {
-        const response = await requestBridge(
+        const response = await requestBridgeWithRetry(
           client,
           'input.select_option',
           {
@@ -248,7 +263,7 @@ export async function handleInputTool(args) {
         return summarizeToolResponse(response, 'input.select_option');
       }
       case 'hover': {
-        const response = await requestBridge(
+        const response = await requestBridgeWithRetry(
           client,
           'input.hover',
           {
@@ -284,7 +299,7 @@ export async function handleInputTool(args) {
             'sourceElementRef/sourceSelector and destinationElementRef/destinationSelector are required for drag.'
           );
         }
-        const response = await requestBridge(
+        const response = await requestBridgeWithRetry(
           client,
           'input.drag',
           {
@@ -302,7 +317,7 @@ export async function handleInputTool(args) {
         return summarizeToolResponse(response, 'input.drag');
       }
       case 'scroll_into_view': {
-        const response = await requestBridge(
+        const response = await requestBridgeWithRetry(
           client,
           'input.scroll_into_view',
           {
@@ -320,4 +335,20 @@ export async function handleInputTool(args) {
         return summarizeToolError(`Unsupported input action "${args.action}".`);
     }
   });
+}
+
+/**
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+function hasText(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+function hasNonEmptyArray(value) {
+  return Array.isArray(value) && value.length > 0;
 }

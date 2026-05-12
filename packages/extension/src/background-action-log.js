@@ -2,7 +2,10 @@
 
 import {
   bridgeMethodNeedsTab,
+  createFailure,
+  ERROR_CODES,
   estimateJsonPayloadCost,
+  MAX_NATIVE_MESSAGE_BYTES,
   normalizeTabCloseParams,
   serializeJsonPayload,
   summarizeBridgeResponse,
@@ -24,6 +27,9 @@ import {
 /** @typedef {import('./background-state.js').ResolvedTabTarget} ResolvedTabTarget */
 /** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
+
+const RESPONSE_SIZE_HEADROOM_BYTES = 4096;
+const MAX_BRIDGE_RESPONSE_BYTES = MAX_NATIVE_MESSAGE_BYTES - RESPONSE_SIZE_HEADROOM_BYTES;
 
 /**
  * @typedef {{ tabId: number | null, url: string }} ActionContext
@@ -230,18 +236,19 @@ export function createActionLogController(state, chromeObj, deps) {
  */
 export function enrichBridgeResponse(request, response) {
   const budgetedResponse = enforceTokenBudget(request.method, response, request.meta?.token_budget);
-  const responsePayload = budgetedResponse.ok
-    ? budgetedResponse.result
-    : { error: budgetedResponse.error };
+  const transportSafeResponse = enforceTransportPayloadLimit(request, budgetedResponse);
+  const responsePayload = transportSafeResponse.ok
+    ? transportSafeResponse.result
+    : { error: transportSafeResponse.error };
   const diagnostics = getResponseDiagnostics(
     request.method,
-    budgetedResponse,
+    transportSafeResponse,
     serializeJsonPayload(responsePayload)
   );
   return {
-    ...budgetedResponse,
+    ...transportSafeResponse,
     meta: {
-      ...budgetedResponse.meta,
+      ...transportSafeResponse.meta,
       transport_bytes: diagnostics.responseBytes,
       transport_approx_tokens: diagnostics.approxTokens,
       transport_cost_class: diagnostics.costClass,
@@ -256,4 +263,41 @@ export function enrichBridgeResponse(request, response) {
       debugger_backed: diagnostics.debuggerBacked,
     },
   };
+}
+
+/**
+ * Keep responses below Chrome native-messaging's outbound frame limit. Token
+ * budgets are optional, but transport safety is not.
+ *
+ * @param {BridgeRequest} request
+ * @param {BridgeResponse} response
+ * @returns {BridgeResponse}
+ */
+export function enforceTransportPayloadLimit(request, response) {
+  if (!response.ok) {
+    return response;
+  }
+  const responsePayload = response.result;
+  const payloadBytes = estimateJsonPayloadCost(responsePayload).bytes;
+  if (payloadBytes <= MAX_BRIDGE_RESPONSE_BYTES) {
+    return response;
+  }
+
+  return createFailure(
+    request.id,
+    ERROR_CODES.RESULT_TRUNCATED,
+    `Result is too large to return safely (${payloadBytes} bytes).`,
+    {
+      method: request.method,
+      responseBytes: payloadBytes,
+      maxResponseBytes: MAX_BRIDGE_RESPONSE_BYTES,
+    },
+    {
+      ...response.meta,
+      method: request.method,
+      budget_applied: true,
+      budget_truncated: true,
+      continuation_hint: `Retry ${request.method} with a tighter scope or smaller capture region.`,
+    }
+  );
 }

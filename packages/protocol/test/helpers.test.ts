@@ -27,14 +27,20 @@ import type { BridgeMethod } from '../src/types.js';
 
 class FakeSocket extends EventEmitter {
   encoding: BufferEncoding | null;
+  destroyed: boolean;
 
   constructor() {
     super();
     this.encoding = null;
+    this.destroyed = false;
   }
 
   setEncoding(encoding: BufferEncoding): void {
     this.encoding = encoding;
+  }
+
+  destroy(): void {
+    this.destroyed = true;
   }
 }
 
@@ -124,6 +130,22 @@ test('parseJsonLines buffers partial chunks and skips blank or malformed lines',
 
   socket.emit('data', '{"value":2}}\n');
   assert.deepEqual(messages, [{ id: 1 }, { ok: true }, { nested: { value: 2 } }]);
+});
+
+test('parseJsonLines closes sockets that exceed the line limit', () => {
+  const socket = new FakeSocket();
+  const errors: Error[] = [];
+
+  parseJsonLines(socket as unknown as Socket, () => {}, {
+    maxLineBytes: 8,
+    onProtocolError: (error) => errors.push(error),
+  });
+
+  socket.emit('data', '{"oversized":true');
+
+  assert.equal(socket.destroyed, true);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0].message, /JSON line exceeds 8 bytes/);
 });
 
 test('registry helpers keep metadata aligned across methods, groups, and complexity filtering', () => {

@@ -207,6 +207,31 @@ test('cli install-skill --local writes managed skills under the current project 
   }
 });
 
+test('cli install-skill --project without targets writes under the requested project path', async () => {
+  const installFs = await createInstallFs({ prefix: 'bbx-cli-install-skill-project-default-' });
+  const projectPath = path.join(installFs.root, 'custom-project');
+
+  try {
+    await fs.promises.rm(installFs.codexHome, { recursive: true, force: true });
+
+    const result = await runCli({
+      args: ['install-skill', '--project', projectPath],
+      env: installFs.env,
+      cwd: installFs.cwd,
+    });
+
+    const skillFile = path.join(projectPath, '.agents', 'skills', 'browser-bridge', 'SKILL.md');
+    assert.equal(result.status, 0);
+    assert.equal(result.signal, null);
+    assert.equal(result.stderr, '');
+    assert.match(result.stdout, new RegExp(`Installed ${escapeRegExp(path.dirname(skillFile))}`));
+    await fs.promises.access(skillFile);
+    await assertPathMissing(installFs.globalSkillTargets.agents.skillFile);
+  } finally {
+    await installFs.cleanup();
+  }
+});
+
 test('cli install-mcp <client-list> writes only the requested client configs', async () => {
   const installFs = await createInstallFs({ prefix: 'bbx-cli-install-mcp-list-' });
 
@@ -411,6 +436,20 @@ test('cli install-mcp rejects unknown explicit clients', async () => {
     result.stderr,
     /Supported: codex, claude, cursor, copilot, opencode, antigravity, windsurf, agents, all/
   );
+});
+
+test('cli install-mcp rejects unknown options and extra positional args', async () => {
+  const unknownOption = await runCli({ args: ['install-mcp', '--bogus'] });
+  assert.equal(unknownOption.status, 1);
+  assert.equal(unknownOption.signal, null);
+  assert.equal(unknownOption.stdout, '');
+  assert.match(unknownOption.stderr, /Unknown install-mcp option "--bogus"/);
+
+  const extraArg = await runCli({ args: ['install-mcp', 'claude', 'cursor'] });
+  assert.equal(extraArg.status, 1);
+  assert.equal(extraArg.signal, null);
+  assert.equal(extraArg.stdout, '');
+  assert.match(extraArg.stderr, /Unexpected extra argument "cursor"/);
 });
 
 test('cli install-mcp --local writes config under the current project path', async () => {

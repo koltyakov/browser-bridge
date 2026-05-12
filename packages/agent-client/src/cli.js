@@ -128,15 +128,21 @@ if (command === 'install-skill') {
   const positional = rest.filter((a) => !a.startsWith('--'));
 
   if (positional.length === 0) {
-    // Parse scope flags without going through parseInstallAgentArgs.
-    let isGlobal = true;
-    if (rest.includes('--local')) isGlobal = false;
-    if (rest.includes('--global')) isGlobal = true;
+    let scopeOptions;
+    try {
+      scopeOptions = parseInstallAgentArgs(rest);
+    } catch (error) {
+      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      process.exit(1);
+    }
+
+    const isGlobal = scopeOptions.global !== false;
+    const projectPath = isGlobal ? os.homedir() : scopeOptions.projectPath;
 
     const setupStatus = await collectSetupStatus({
       global: isGlobal,
       cwd: process.cwd(),
-      projectPath: isGlobal ? os.homedir() : process.cwd(),
+      projectPath,
       ...getSetupStatusTestOverrides(),
     });
     /** @type {import('./types.js').SupportedTarget[]} */
@@ -176,7 +182,6 @@ if (command === 'install-skill') {
       targets = /** @type {import('./types.js').SupportedTarget[]} */ (selected);
     }
 
-    const projectPath = isGlobal ? os.homedir() : process.cwd();
     if (selected !== null) {
       const deselectedTargets =
         /** @type {import('./types.js').SupportedTarget[]} */ (
@@ -226,20 +231,32 @@ if (command === 'install-skill') {
 }
 
 if (command === 'install-mcp') {
-  const argsLeft = [...rest];
   let isGlobal = true;
+  /** @type {string[]} */
+  const positionals = [];
 
-  const localIdx = argsLeft.indexOf('--local');
-  if (localIdx !== -1) {
-    isGlobal = false;
-    argsLeft.splice(localIdx, 1);
-  }
-  const globalIdx = argsLeft.indexOf('--global');
-  if (globalIdx !== -1) {
-    argsLeft.splice(globalIdx, 1);
+  for (const arg of rest) {
+    if (arg === '--local') {
+      isGlobal = false;
+      continue;
+    }
+    if (arg === '--global') {
+      isGlobal = true;
+      continue;
+    }
+    if (arg.startsWith('--')) {
+      process.stderr.write(`Unknown install-mcp option "${arg}".\n`);
+      process.exit(1);
+    }
+    positionals.push(arg);
   }
 
-  const clientArg = argsLeft[0];
+  if (positionals.length > 1) {
+    process.stderr.write(`Unexpected extra argument "${positionals[1]}".\n`);
+    process.exit(1);
+  }
+
+  const clientArg = positionals[0];
 
   /** @type {import('./types.js').McpClientName[]} */
   let clients;

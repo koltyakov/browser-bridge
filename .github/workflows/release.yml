@@ -55,14 +55,14 @@ jobs:
       - name: Check coverage threshold
         run: npm run coverage:check
 
-      - name: Pack dry-run
-        run: npm pack --dry-run
-
       - name: Package extension
         run: npm run package:extension
 
       - name: Validate extension ZIP contents
         run: npm run check:extension-zip
+
+      - name: Pack dry-run
+        run: npm pack --dry-run
 
       - name: Create npm tarball
         run: npm pack

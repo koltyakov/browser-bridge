@@ -2,7 +2,8 @@
 
 import net from 'node:net';
 
-import { createFailure, ERROR_CODES } from '../../protocol/src/index.js';
+import { createFailure, ERROR_CODES, MAX_JSON_LINE_BYTES } from '../../protocol/src/index.js';
+import { readBridgeAuthToken } from './auth-token.js';
 import { createSocketBridgeTransport, getBridgeTransport } from './config.js';
 import { spawnBridgeDaemonProcess } from './daemon-process.js';
 import { createNativeMessageReader, createNativeMessageWriter, writeJsonLine } from './framing.js';
@@ -146,17 +147,32 @@ export async function runNativeHost({
   socket.once('close', cleanupStdinEndListener);
   socket.once('end', cleanupStdinEndListener);
   socket.once('error', cleanupStdinEndListener);
-  await writeJsonLine(socket, { type: 'register', role: 'extension' });
+  const authToken = resolvedTransport.type === 'tcp' ? await readBridgeAuthToken() : null;
+  await writeJsonLine(socket, {
+    type: 'register',
+    role: 'extension',
+    ...(authToken ? { authToken } : {}),
+  });
 
   let lineBuffer = '';
   socket.on('data', (chunk) => {
     lineBuffer += chunk;
+    if (!lineBuffer.includes('\n') && Buffer.byteLength(lineBuffer, 'utf8') > MAX_JSON_LINE_BYTES) {
+      console.error(`native-host: daemon JSON line exceeded ${MAX_JSON_LINE_BYTES} bytes`);
+      socket.destroy();
+      return;
+    }
     while (lineBuffer.includes('\n')) {
       const index = lineBuffer.indexOf('\n');
       const line = lineBuffer.slice(0, index).trim();
       lineBuffer = lineBuffer.slice(index + 1);
       if (!line) {
         continue;
+      }
+      if (Buffer.byteLength(line, 'utf8') > MAX_JSON_LINE_BYTES) {
+        console.error(`native-host: daemon JSON line exceeded ${MAX_JSON_LINE_BYTES} bytes`);
+        socket.destroy();
+        return;
       }
       let message;
       try {

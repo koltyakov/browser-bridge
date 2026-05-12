@@ -13,7 +13,6 @@ import {
   callBridgeTool,
   createToolResult,
   getToolTokenBudget,
-  requestBridge,
   requestBridgeWithRetry,
   summarizeBatchErrorItem,
   summarizeBatchResponseItem,
@@ -147,14 +146,10 @@ export async function handleBatchTool(args) {
 
         const startTime = Date.now();
         try {
-          const response = await client.request({
-            method,
-            params: call.params || {},
+          const response = await requestBridgeWithRetry(client, method, call.params || {}, {
             tabId,
-            meta: {
-              source: REQUEST_SOURCE,
-              ...(tokenBudget != null ? { token_budget: tokenBudget } : {}),
-            },
+            source: REQUEST_SOURCE,
+            tokenBudget,
           });
           return summarizeBatchResponseItem({
             method,
@@ -199,7 +194,7 @@ export async function handleRawCallTool(args) {
   }
 
   return withToolClient(async (client) => {
-    const response = await requestBridge(
+    const response = await requestBridgeWithRetry(
       client,
       /** @type {BridgeMethod} */ (args.method),
       args.params || {},

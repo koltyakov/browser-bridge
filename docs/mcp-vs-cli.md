@@ -110,7 +110,7 @@ Short version:
 | Apply DOM patch   | `browser_patch` (apply_dom)       | `bbx patch-text <ref> <text>`       | CLI has text-specific shortcut |
 | List patches      | `browser_patch` (list)            | `bbx patches`                       | Equivalent                     |
 | Rollback patch    | `browser_patch` (rollback)        | `bbx rollback <patchId>`            | Equivalent                     |
-| Commit baseline   | `browser_patch` (commit_baseline) | `bbx call patch.commit_baseline`    | CLI uses raw call              |
+| Commit baseline   | `browser_patch` (commit_baseline) | `bbx call patch.commit_session_baseline` | CLI uses raw call              |
 
 ### Capture & Screenshots
 
@@ -131,7 +131,7 @@ Short version:
 |------------|----------|-------------|-------|
 | Raw protocol call | `browser_call` | `bbx call <method> '{...}'` | Equivalent |
 | Ordered batch calls | `browser_batch` | `bbx batch '[{...}]'` | Both preserve request order and return per-call `durationMs` / `approxTokens` |
-| Batch parallel reads | N/A (multiple tool calls) | `bbx batch '[{...}]'` | CLI has explicit batch |
+| Batch parallel reads | `browser_batch` | `bbx batch '[{...}]'` | Equivalent |
 | Install manifest | N/A | `bbx install` | CLI-only (setup) |
 | Install MCP config | N/A | `bbx install-mcp [client]` | CLI-only (setup) |
 | Install skill | N/A | `bbx install-skill [client]` | CLI-only (setup) |
@@ -225,7 +225,7 @@ Escalate to `bbx screenshot`, `screenshot.capture_region`, or `screenshot.captur
 ### Prefer CLI When:
 
 - Your agent runs shell commands reliably
-- You need batch execution of multiple reads
+- You need shell-native batch execution of multiple reads
 - You want access to setup/install commands
 - You're debugging the bridge itself (`bbx logs`, `bbx doctor`)
 - You're writing scripts or CI workflows
@@ -251,7 +251,7 @@ Both MCP and CLI paths provide full access to Browser Bridge capabilities. The c
 
 1. **MCP** is the recommended path for agents with native MCP support, offering better integration, validation, and sandbox compatibility.
 
-2. **CLI Skill** is ideal for shell-capable agents, scripting scenarios, and when you need batch operations or setup commands.
+2. **CLI Skill** is ideal for shell-capable agents, scripting scenarios, and when you need shell-native batch operations or setup commands.
 
 The underlying protocol is identical: both paths communicate with the same
 native host and extension. Use `browser_call` (MCP) or `bbx call` (CLI) when

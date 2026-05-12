@@ -523,8 +523,13 @@ async function installJsonMcpConfig(clientName, configPath, stdout) {
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       existing = parsed;
     }
-  } catch {
-    // File missing or unparseable - start fresh.
+  } catch (error) {
+    if (!isMissingFileError(error)) {
+      throw new Error(
+        `Cannot update ${configPath}: existing MCP config is not valid JSON. Fix or remove it first.`
+      );
+    }
+    // File missing - start fresh.
   }
 
   const shape = getMcpConfigShape(clientName);
@@ -660,4 +665,16 @@ export function parseInstalledMcpConfig(clientName, raw) {
   } catch {
     return { configured: false };
   }
+}
+
+/**
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+function isMissingFileError(error) {
+  return Boolean(
+    error &&
+    typeof error === 'object' &&
+    /** @type {{ code?: unknown }} */ (error).code === 'ENOENT'
+  );
 }
