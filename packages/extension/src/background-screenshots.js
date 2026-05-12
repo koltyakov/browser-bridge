@@ -1,6 +1,11 @@
 // @ts-check
 
+import { BridgeError, ERROR_CODES } from '../../protocol/src/index.js';
+
 /** @typedef {import('./background-state.js').ResolvedTabTarget} ResolvedTabTarget */
+
+const MAX_SCREENSHOT_DIMENSION = 16_384;
+const MAX_SCREENSHOT_SCALED_PIXELS = 250_000_000;
 
 /**
  * @typedef {{
@@ -107,6 +112,8 @@ export async function handleScreenshot(target, method, params, deps) {
     );
   }
 
+  assertScreenshotClipWithinLimits(method, clip);
+
   // Use CDP Page.captureScreenshot - works regardless of tab focus,
   // captures renderer output directly with built-in clip support.
   return deps.tabDebugger.run(target.tabId, async (debugTarget) => {
@@ -132,4 +139,35 @@ export async function handleScreenshot(target, method, params, deps) {
       image: `data:image/png;base64,${cdpResult.data}`,
     };
   });
+}
+
+/**
+ * @param {string} method
+ * @param {{ x: number, y: number, width: number, height: number, scale: number }} clip
+ * @returns {void}
+ */
+function assertScreenshotClipWithinLimits(method, clip) {
+  const scale = Math.max(1, clip.scale || 1);
+  const scaledPixels = Math.ceil(clip.width * clip.height * scale * scale);
+  if (
+    clip.width <= MAX_SCREENSHOT_DIMENSION &&
+    clip.height <= MAX_SCREENSHOT_DIMENSION &&
+    scaledPixels <= MAX_SCREENSHOT_SCALED_PIXELS
+  ) {
+    return;
+  }
+
+  throw new BridgeError(
+    ERROR_CODES.RESULT_TRUNCATED,
+    `Screenshot capture is too large (${clip.width}\u00d7${clip.height} at ${scale}x).`,
+    {
+      method,
+      width: clip.width,
+      height: clip.height,
+      scale,
+      scaledPixels,
+      maxDimension: MAX_SCREENSHOT_DIMENSION,
+      maxScaledPixels: MAX_SCREENSHOT_SCALED_PIXELS,
+    }
+  );
 }

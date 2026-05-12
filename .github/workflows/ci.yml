@@ -78,6 +78,12 @@ jobs:
       - name: Check coverage threshold
         run: npm run coverage:check
 
+      - name: Package extension
+        run: npm run package:extension
+
+      - name: Validate extension ZIP contents
+        run: npm run check:extension-zip
+
   validate-runtime:
     runs-on: ubuntu-latest
     strategy:

@@ -111,10 +111,25 @@
     if (elementRegistry.size >= MAX_REGISTRY_SIZE) {
       pruneElementRegistry();
     }
+    while (elementRegistry.size >= MAX_REGISTRY_SIZE) {
+      evictOldestElementRegistryEntry();
+    }
     const elementRef = `el_${crypto.randomUUID()}`;
     elementRegistry.set(elementRef, element);
     reverseRegistry.set(element, elementRef);
     return elementRef;
+  }
+
+  /**
+   * @returns {void}
+   */
+  function evictOldestElementRegistryEntry() {
+    const first = elementRegistry.entries().next();
+    if (first.done) return;
+    const [elementRef, element] = first.value;
+    elementRegistry.delete(elementRef);
+    reverseRegistry.delete(element);
+    registryPruned = true;
   }
 
   /**

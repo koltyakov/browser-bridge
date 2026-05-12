@@ -68,7 +68,7 @@ jobs:
         run: npm pack
 
       - name: Publish npm package
-        run: npm publish --access public
+        run: npm publish ./*.tgz --access public
 
       - name: Upload npm tarball
         uses: actions/upload-artifact@v7

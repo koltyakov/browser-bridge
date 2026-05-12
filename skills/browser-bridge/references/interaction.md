@@ -32,7 +32,7 @@ bbx call navigation.go_forward
 
 ```bash
 bbx call viewport.scroll '{"top":640,"behavior":"smooth"}'
-bbx call viewport.scroll '{"elementRef":"el_123","top":200}'
+bbx call viewport.scroll '{"target":{"elementRef":"el_123"},"top":200}'
 ```
 
 Scrolls the window or a specific scrollable element.
@@ -125,10 +125,10 @@ bbx scroll 640              # scroll down 640px
 bbx scroll 0 200            # scroll right 200px
 bbx scroll 0                # scroll to top (top=0)
 bbx call viewport.scroll '{"top":640,"behavior":"smooth"}'
-bbx call viewport.scroll '{"elementRef":"el_123","top":200}'
+bbx call viewport.scroll '{"target":{"elementRef":"el_123"},"top":200}'
 ```
 
-Scrolls the window by default. Pass an `elementRef` to scroll an inner scrollable container.
+Scrolls the window by default. Pass `target: { elementRef }` to scroll an inner scrollable container.
 
 ### Scroll target into view
 
@@ -205,7 +205,7 @@ bbx call input.drag '{"source":{"elementRef":"el_src"},"destination":{"elementRe
 With pixel offsets for precise positioning:
 
 ```bash
-bbx call input.drag '{"source":{"elementRef":"el_src"},"destination":{"elementRef":"el_dst"},"sourceOffset":{"x":10,"y":10},"destinationOffset":{"x":5,"y":5}}'
+bbx call input.drag '{"source":{"elementRef":"el_src"},"destination":{"elementRef":"el_dst"},"offsetX":5,"offsetY":5}'
 ```
 
 Event sequence: `mousedown → dragstart → drag → dragenter → dragover → drop → dragend → mouseup`.
@@ -225,10 +225,10 @@ Find elements matching visible text. Faster than `dom.query` when you know the l
 
 ```bash
 bbx find 'Submit Order'
-bbx call dom.find_by_text '{"text":"Add to Cart","scope":"button","exact":false}'
+bbx call dom.find_by_text '{"text":"Add to Cart","selector":"button","exact":false}'
 ```
 
-- `scope`: optional CSS selector to narrow search (e.g. `"button"`, `".sidebar"`)
+- `selector`: optional CSS selector to narrow search (e.g. `"button"`, `".sidebar"`)
 - `exact`: `true` for exact match, `false` (default) for substring/case-insensitive
 
 ### By ARIA role

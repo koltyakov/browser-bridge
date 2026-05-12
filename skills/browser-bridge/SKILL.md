@@ -10,14 +10,16 @@ Token-efficient Chrome tab inspection, interaction, and CSS/DOM patching through
 This CLI skill is for agents that can run shell commands and where direct `bbx` control fits better than MCP tools: manual debugging, terminal reproduction, install/doctor flows, raw protocol access, or environments without MCP.
 
 Skill name: `browser-bridge` (also known as `bbx`). In GitHub Copilot, invoke as `/browser-bridge`. `bbx` is the CLI command used throughout this skill.
-Use a subagent for bridge calls; return only concise findings to the parent.
-For open-ended investigation, prefer a smaller, lower-cost subagent first. Start with structured reads (`page.get_state`, `dom.query`, `page.get_text`, `styles.get_computed`, `bbx batch`) and escalate to screenshots or debugger-backed methods only when structured evidence is insufficient.
+When the runtime supports subagents, delegate bridge inspection to a smaller, lower-cost worker and return only concise findings to the parent.
+For open-ended investigation, start with structured reads (`page.get_state`, `dom.query`, `page.get_text`, `styles.get_computed`, `bbx batch`) and escalate to screenshots or debugger-backed methods only when structured evidence is insufficient.
 
 ## CLI
 
 ```bash
 bbx status                  # daemon + extension health
 bbx doctor                  # install/access readiness
+bbx access-request          # ask user to enable access for the focused window
+bbx restart                 # start/restart the local daemon non-interactively
 bbx call <method> '{...}'   # any RPC method (raw output)
 bbx <method> '{...}'        # direct alias for an exact bridge method such as page.get_state
 bbx call --tab 123 <method> '{...}' # explicit tab override
@@ -59,6 +61,7 @@ bbx navigate <url>                   # navigate to URL
 bbx reload                           # reload current page
 bbx back                             # navigate back
 bbx forward                          # navigate forward
+bbx scroll <top> [left]              # scroll viewport
 bbx resize <width> <height>          # resize viewport
 ```
 
@@ -77,7 +80,7 @@ bbx patch-text <ref> <text...>       # apply text patch
 bbx patches                          # list active patches
 bbx rollback <patchId>               # rollback a patch
 bbx screenshot <ref> [outPath]       # capture partial element screenshot
-bbx call screenshot.capture_full_page '{}' # full-page screenshot when document context matters
+bbx call screenshot.capture_full_page '{}' # raw base64; avoid unless document context matters
 ```
 
 ## Access Flow
@@ -114,8 +117,8 @@ After access is enabled:
 | `EXTENSION_DISCONNECTED`  | After 3s | Check Chrome is running; `bbx status` to verify, then retry                               |
 | `NATIVE_HOST_UNAVAILABLE` | No       | Run `bbx doctor` to diagnose the installation                                             |
 | `INTERNAL_ERROR`          | Once     | Retry once; if persistent, check `page.get_console` for details                           |
-| `DAEMON_OFFLINE`          | No       | Daemon not running - start with `bbx-daemon`                                              |
-| `CONNECTION_LOST`         | Yes      | Socket dropped mid-request - retry; if persistent, restart daemon                         |
+| `DAEMON_OFFLINE`          | No       | Daemon not running - start with `bbx restart`                                             |
+| `CONNECTION_LOST`         | Yes      | Socket dropped mid-request - retry; if persistent, run `bbx restart`                      |
 | `BRIDGE_TIMEOUT`          | Once     | Extension took too long - retry once with simpler call                                    |
 
 Error responses now include a machine-readable `error.recovery` field with `retry`, `retryAfterMs`, `alternativeMethod`, and `hint`.
@@ -159,6 +162,12 @@ For a natural-language inspection task:
 3. Add `page.get_text`, `styles.get_computed`, `layout.get_box_model`, `page.get_console`, or `page.get_network` only when they directly help answer the objective.
 4. Escalate to `screenshot.capture_element`, `screenshot.capture_region`, or other debugger-backed methods only when structured reads are ambiguous or visual confirmation is required.
 5. Return concise findings and evidence, not raw dumps.
+
+CLI-first starter:
+
+```bash
+bbx batch '[{"method":"page.get_state"},{"method":"dom.query","params":{"selector":"main","maxNodes":10,"maxDepth":3,"textBudget":400,"attributeAllowlist":["id","class","data-testid"]}},{"method":"page.get_text","params":{"textBudget":2000}}]'
+```
 
 ## Common Workflows
 
@@ -268,6 +277,13 @@ Return: verdict, tab id + origin, minimal evidence set. No raw HTML or base64 im
 ## Output Format
 
 Every CLI shortcut command produces consistent `{ok, summary, evidence}` JSON. Use `bbx call <method>` for raw protocol output when needed.
+
+## CLI Raw Params Gotchas
+
+- Use `selector`, not `scope`, to narrow `dom.find_by_text` and `dom.find_by_role`.
+- Wrap interaction targets as `target: { elementRef }` or `target: { selector }`; `viewport.scroll` also uses the `target` wrapper for element scrolling.
+- `input.drag` uses `source`, `destination`, and optional destination offsets `offsetX` / `offsetY`.
+- Raw `screenshot.capture_region` and `screenshot.capture_full_page` return base64 JSON; prefer `bbx screenshot <ref> [outPath]` when one element is enough.
 
 ## Response Shapes
 

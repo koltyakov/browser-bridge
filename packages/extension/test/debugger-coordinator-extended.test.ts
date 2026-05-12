@@ -114,6 +114,63 @@ test('burst timer reuses session for rapid consecutive runs', async () => {
   assert.equal(attachCount, 1);
 });
 
+test('burst timer does not detach while a new run is active', async () => {
+  let detachCount = 0;
+  let releaseSecondTask: (value?: void | PromiseLike<void>) => void = () => {};
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {},
+    detach: async () => {
+      detachCount += 1;
+    },
+    burstIdleMs: 10,
+  });
+
+  await coordinator.run(10, async () => 'first');
+  const second = coordinator.run(10, async () => {
+    await new Promise<void>((resolve) => {
+      releaseSecondTask = resolve;
+    });
+    return 'second';
+  });
+
+  await nextTick();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(detachCount, 0, 'stale burst timer must not detach during active work');
+
+  releaseSecondTask();
+  assert.equal(await second, 'second');
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(detachCount, 1);
+});
+
+test('acquire consumes a burst session instead of reattaching', async () => {
+  let attachCount = 0;
+  let detachCount = 0;
+  let initializeCount = 0;
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {
+      attachCount += 1;
+    },
+    detach: async () => {
+      detachCount += 1;
+    },
+    burstIdleMs: 20,
+  });
+
+  await coordinator.run(10, async () => 'task');
+  await coordinator.acquire(10, async () => {
+    initializeCount += 1;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 40));
+
+  assert.equal(attachCount, 1);
+  assert.equal(initializeCount, 1);
+  assert.equal(detachCount, 0);
+
+  await coordinator.release(10);
+  assert.equal(detachCount, 1);
+});
+
 test('_resetBurstTimer detach fires after burst idle expires', async () => {
   let detachCount = 0;
   const coordinator = new TabDebuggerCoordinator({

@@ -113,12 +113,12 @@
     let remaining = query.budget.textBudget;
     /** @type {Array<{ element: Element, depth: number }>} */
     const queue = [{ element: root, depth: 0 }];
+    let queueIndex = 0;
+    let truncatedByQueueCap = false;
 
-    while (queue.length && nodes.length < query.budget.maxNodes && remaining > 0) {
-      const next = queue.shift();
-      if (!next) {
-        continue;
-      }
+    while (queueIndex < queue.length && nodes.length < query.budget.maxNodes && remaining > 0) {
+      const next = queue[queueIndex];
+      queueIndex += 1;
       const { element, depth } = next;
       if (depth > query.budget.maxDepth) {
         continue;
@@ -133,7 +133,18 @@
       remaining -= summary.textLength;
       nodes.push(summary.node);
 
+      if (depth >= query.budget.maxDepth) {
+        if (element.children.length > 0) {
+          truncatedByQueueCap = true;
+        }
+        continue;
+      }
+
       for (const child of element.children) {
+        if (nodes.length + (queue.length - queueIndex) >= query.budget.maxNodes) {
+          truncatedByQueueCap = true;
+          break;
+        }
         queue.push({ element: child, depth: depth + 1 });
       }
     }
@@ -142,7 +153,11 @@
     return {
       nodes,
       revision: getDocumentRevision(),
-      truncated: nodes.length >= query.budget.maxNodes || remaining <= 0,
+      truncated:
+        truncatedByQueueCap ||
+        queueIndex < queue.length ||
+        nodes.length >= query.budget.maxNodes ||
+        remaining <= 0,
       registrySize: getRegistrySize(),
       ...(pruned ? { _registryPruned: true } : {}),
     };
@@ -375,11 +390,14 @@
       let timeoutHandle = null;
       /** @type {ReturnType<typeof setInterval> | null} */
       let pollHandle = null;
+      /** @type {ReturnType<typeof setTimeout> | null} */
+      let observerDebounceHandle = null;
 
       function cleanup() {
         if (observer) observer.disconnect();
         if (timeoutHandle) clearTimeout(timeoutHandle);
         if (pollHandle) clearInterval(pollHandle);
+        if (observerDebounceHandle) clearTimeout(observerDebounceHandle);
       }
 
       function tryResolve() {
@@ -394,7 +412,15 @@
         }
       }
 
-      observer = new MutationObserver(tryResolve);
+      function scheduleObserverCheck() {
+        if (observerDebounceHandle) return;
+        observerDebounceHandle = setTimeout(() => {
+          observerDebounceHandle = null;
+          tryResolve();
+        }, 50);
+      }
+
+      observer = new MutationObserver(scheduleObserverCheck);
       observer.observe(document.documentElement, {
         childList: true,
         subtree: true,
@@ -417,7 +443,7 @@
    * Find elements matching visible text content.
    *
    * @param {Record<string, any>} params
-   * @returns {{ nodes: NodeSummary[], count: number }}
+   * @returns {{ nodes: NodeSummary[], count: number, scanned: number, truncated: boolean }}
    */
   function findByText(params) {
     const searchText = String(params.text || '');
@@ -427,11 +453,19 @@
     const exact = Boolean(params.exact);
     const scope = String(params.selector || '*');
     const maxResults = clamp(params.maxResults ?? 10, 1, 50);
-    const candidates = document.querySelectorAll(scope);
+    const scanLimit = clamp(params.scanLimit ?? 1000, 1, 5000);
+    const candidates = getElementCandidates(scope);
     const results = [];
+    let scanned = 0;
+    let truncated = false;
 
     for (const el of candidates) {
       if (results.length >= maxResults) break;
+      if (scanned >= scanLimit) {
+        truncated = true;
+        break;
+      }
+      scanned += 1;
       const visibleText = extractElementText(el);
       if (!visibleText) continue;
       const matches = exact
@@ -444,7 +478,30 @@
       }
     }
 
-    return { nodes: results, count: results.length };
+    return { nodes: results, count: results.length, scanned, truncated };
+  }
+
+  /**
+   * @param {string} scope
+   * @returns {Iterable<Element>}
+   */
+  function getElementCandidates(scope) {
+    if (scope === '*' && typeof document.createTreeWalker === 'function') {
+      const root = document.body || document.documentElement;
+      if (!root) return [];
+      return {
+        *[Symbol.iterator]() {
+          const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+          /** @type {Node | null} */
+          let node = root;
+          while (node) {
+            if (node instanceof Element) yield node;
+            node = walker.nextNode();
+          }
+        },
+      };
+    }
+    return document.querySelectorAll(scope);
   }
 
   /**
