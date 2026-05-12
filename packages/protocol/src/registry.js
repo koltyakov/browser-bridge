@@ -123,7 +123,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     ['kind', 'target'],
     'trivial'
   ),
-  'log.tail': createRegistryEntry('log.tail', 'system', false, [], 'trivial'),
+  'log.tail': createRegistryEntry('log.tail', 'system', false, ['limit'], 'trivial'),
   'health.ping': createRegistryEntry('health.ping', 'system', false, [], 'trivial'),
   'daemon.metrics': createRegistryEntry('daemon.metrics', 'system', false, [], 'trivial'),
   // tabs — trivial

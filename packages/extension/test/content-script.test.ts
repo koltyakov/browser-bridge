@@ -2762,6 +2762,120 @@ test('content script input hover, drag, alternative clicks, and multi-select cov
   assert.deepEqual(radioError, { error: 'Radio inputs cannot be unchecked directly.' });
 });
 
+test('content script computes pointer coordinates after scrolling elements into view', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t);
+  const clickTarget = inputs.createButton({ textContent: 'Click me' });
+  const hoverTarget = inputs.createButton({ textContent: 'Hover me' });
+  const source = inputs.createButton({ textContent: 'Drag source' });
+  const destination = inputs.createButton({ textContent: 'Drop target' });
+  const body = inputs.createBody([clickTarget, hoverTarget, source, destination]);
+  const document = createDocumentHarness(body, {
+    '#click': clickTarget,
+    '#hover': hoverTarget,
+    '#source': source,
+    '#destination': destination,
+  });
+  type PointerEventRecord = { type: string; x: number; y: number };
+
+  function capturePointerEvents(
+    element: FakeElementLike,
+    afterScrollRect: { left: number; top: number; width: number; height: number }
+  ): PointerEventRecord[] {
+    const events: PointerEventRecord[] = [];
+    const originalDispatch = element.dispatchEvent?.bind(element);
+    let scrolled = false;
+    Reflect.set(element, 'scrollIntoView', () => {
+      scrolled = true;
+    });
+    Reflect.set(element, 'getBoundingClientRect', () =>
+      scrolled ? afterScrollRect : { left: -500, top: -500, width: 10, height: 10 }
+    );
+    Reflect.set(element, 'dispatchEvent', (event: FakeEventLike) => {
+      const pointerEvent = event as FakeEventLike & { clientX?: number; clientY?: number };
+      if (typeof pointerEvent.clientX === 'number' && typeof pointerEvent.clientY === 'number') {
+        events.push({ type: event.type, x: pointerEvent.clientX, y: pointerEvent.clientY });
+      }
+      return originalDispatch ? originalDispatch(event) : true;
+    });
+    return events;
+  }
+
+  const clickEvents = capturePointerEvents(clickTarget, {
+    left: 100,
+    top: 200,
+    width: 20,
+    height: 10,
+  });
+  const hoverEvents = capturePointerEvents(hoverTarget, {
+    left: 300,
+    top: 400,
+    width: 20,
+    height: 10,
+  });
+  const sourceEvents = capturePointerEvents(source, {
+    left: 10,
+    top: 20,
+    width: 10,
+    height: 10,
+  });
+  const destinationEvents = capturePointerEvents(destination, {
+    left: 1000,
+    top: 1200,
+    width: 10,
+    height: 10,
+  });
+
+  await loadContentScript(t, {
+    withHelpers: true,
+    chrome: harness.chrome,
+    document,
+  });
+
+  const listener = harness.getListener();
+  await executeBridgeMethod(listener, 'input.click', { target: { selector: '#click' } });
+  await executeBridgeMethod(listener, 'input.hover', { target: { selector: '#hover' } });
+  await executeBridgeMethod(listener, 'input.drag', {
+    source: { selector: '#source' },
+    destination: { selector: '#destination' },
+    offsetX: 4,
+    offsetY: 6,
+  });
+
+  assert.deepEqual(
+    clickEvents.find((event) => event.type === 'mousedown'),
+    {
+      type: 'mousedown',
+      x: 110,
+      y: 205,
+    }
+  );
+  assert.deepEqual(
+    hoverEvents.find((event) => event.type === 'mousemove'),
+    {
+      type: 'mousemove',
+      x: 310,
+      y: 405,
+    }
+  );
+  assert.deepEqual(
+    sourceEvents.find((event) => event.type === 'dragstart'),
+    {
+      type: 'dragstart',
+      x: 15,
+      y: 25,
+    }
+  );
+  assert.deepEqual(
+    destinationEvents.find((event) => event.type === 'drop'),
+    {
+      type: 'drop',
+      x: 1009,
+      y: 1211,
+    }
+  );
+});
+
 test('content script reports unsupported execute methods as errors', async (t) => {
   const harness = createChromeHarness();
   await loadContentScript(t, {

@@ -12,7 +12,11 @@ type DebuggerCommand = {
   params: Record<string, unknown>;
 };
 
-function createController() {
+function createController(
+  options: {
+    getTab?: (tabId: number, updatedListenerCount: number) => Promise<Record<string, unknown>>;
+  } = {}
+) {
   const onUpdated = createChromeEvent();
   const onRemoved = createChromeEvent();
   const commands: DebuggerCommand[] = [];
@@ -33,6 +37,9 @@ function createController() {
       onUpdated,
       onRemoved,
       async get(tabId: number) {
+        if (options.getTab) {
+          return options.getTab(tabId, onUpdated.listeners.length);
+        }
         return {
           id: tabId,
           windowId: 5,
@@ -89,6 +96,22 @@ test('page request controller waits for matching load completion and ignores unr
   onUpdated.dispatch(21, { status: 'complete' }, { id: 21, status: 'complete' });
 
   assert.deepEqual(await pending, { id: 21, status: 'complete' });
+});
+
+test('page request controller rechecks load status after listeners are registered', async () => {
+  const { controller } = createController({
+    async getTab(tabId, updatedListenerCount) {
+      return {
+        id: tabId,
+        windowId: 5,
+        status: updatedListenerCount > 0 ? 'complete' : 'loading',
+      };
+    },
+  });
+
+  const tab = await controller.waitForTabComplete(21, 1_000);
+
+  assert.equal(tab.status, 'complete');
 });
 
 test('page request controller rejects when a loading tab is removed', async () => {

@@ -500,9 +500,9 @@
     const button = normalizeMouseButton(params.button);
     const clickCount = clamp(params.clickCount ?? 1, 1, 2);
     const modifiers = normalizeModifierState(params.modifiers);
-    const point = getViewportPoint(element);
 
     scrollTargetIntoView(element);
+    const point = getViewportPoint(element);
     focusElement(element);
     dispatchMouseEvent(element, 'mousemove', point, button, 0, modifiers);
     dispatchMouseEvent(element, 'mousedown', point, button, clickCount, modifiers);
@@ -723,11 +723,11 @@
    */
   function hoverTarget(params) {
     const element = resolveTarget(params.target);
-    const point = getViewportPoint(element);
     const modifiers = normalizeModifierState(params.modifiers);
     const duration = clamp(params.duration ?? 0, 0, 5000);
 
     scrollTargetIntoView(element);
+    const point = getViewportPoint(element);
     dispatchMouseEvent(element, 'mouseenter', point, 'left', 0, modifiers);
     dispatchMouseEvent(element, 'mouseover', point, 'left', 0, modifiers);
     dispatchMouseEvent(element, 'mousemove', point, 'left', 0, modifiers);
@@ -752,11 +752,8 @@
   function dragTarget(params) {
     const source = resolveTarget(params.source);
     const destination = resolveTarget(params.destination);
-    const sourcePoint = getViewportPoint(source);
-    const destPoint = getViewportPoint(destination);
     const offsetX = Number(params.offsetX) || 0;
     const offsetY = Number(params.offsetY) || 0;
-    const endPoint = { x: destPoint.x + offsetX, y: destPoint.y + offsetY };
     const emptyMods = {
       altKey: false,
       ctrlKey: false,
@@ -765,6 +762,7 @@
     };
 
     scrollTargetIntoView(source);
+    const sourcePoint = getViewportPoint(source);
 
     const dataTransfer = new DataTransfer();
 
@@ -800,6 +798,8 @@
     );
 
     scrollTargetIntoView(destination);
+    const destPoint = getViewportPoint(destination);
+    const endPoint = { x: destPoint.x + offsetX, y: destPoint.y + offsetY };
 
     destination.dispatchEvent(
       new DragEvent('dragenter', {

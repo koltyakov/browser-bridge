@@ -8,7 +8,7 @@ import {
 import {
   annotateBridgeSummary,
   applyLimitBudgetPreset,
-  applyTextBudgetPreset,
+  applyPageTextBudgetPreset,
   bridgeMethodNeedsTab,
   callBridgeTool,
   createToolResult,
@@ -72,7 +72,7 @@ export const PAGE_ACTIONS = {
 export async function handlePageTool(args) {
   let normalizedArgs = args;
   if (args.action === 'text') {
-    normalizedArgs = applyTextBudgetPreset(args);
+    normalizedArgs = applyPageTextBudgetPreset(args);
   } else if (args.action === 'console') {
     normalizedArgs = applyLimitBudgetPreset(args, {
       quick: 10,

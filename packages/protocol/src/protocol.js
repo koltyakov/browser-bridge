@@ -7,6 +7,7 @@ import {
   DEFAULT_A11Y_MAX_NODES,
   DEFAULT_CONSOLE_LIMIT,
   DEFAULT_EVAL_TIMEOUT_MS,
+  DEFAULT_LOG_TAIL_LIMIT,
   DEFAULT_MAX_DEPTH,
   DEFAULT_MAX_HTML_LENGTH,
   DEFAULT_MAX_NODES,
@@ -39,6 +40,7 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').GetHtmlParams} GetHtmlParams */
 /** @typedef {import('./types.js').HoverParams} HoverParams */
 /** @typedef {import('./types.js').InputActionParams} InputActionParams */
+/** @typedef {import('./types.js').LogTailParams} LogTailParams */
 /** @typedef {import('./types.js').NavigationActionParams} NavigationActionParams */
 /** @typedef {import('./types.js').NetworkParams} NetworkParams */
 /** @typedef {import('./types.js').NormalizedAccessibilityTreeParams} NormalizedAccessibilityTreeParams */
@@ -54,6 +56,7 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').NormalizedGetHtmlParams} NormalizedGetHtmlParams */
 /** @typedef {import('./types.js').NormalizedHoverParams} NormalizedHoverParams */
 /** @typedef {import('./types.js').NormalizedInputAction} NormalizedInputAction */
+/** @typedef {import('./types.js').NormalizedLogTailParams} NormalizedLogTailParams */
 /** @typedef {import('./types.js').NormalizedNavigationAction} NormalizedNavigationAction */
 /** @typedef {import('./types.js').NormalizedNetworkParams} NormalizedNetworkParams */
 /** @typedef {import('./types.js').NormalizedPageTextParams} NormalizedPageTextParams */
@@ -250,6 +253,8 @@ export function validateBridgeRequest(request) {
  */
 function normalizeRequestParams(method, params) {
   switch (method) {
+    case 'log.tail':
+      return normalizeLogTailParams(params);
     case 'dom.query':
       return normalizeDomQuery(params);
     case 'page.evaluate':
@@ -785,6 +790,16 @@ export function normalizeNetworkParams(params = {}) {
 export function normalizePageTextParams(params = {}) {
   return {
     textBudget: clampInt(params.textBudget, 100, 100_000, DEFAULT_PAGE_TEXT_BUDGET),
+  };
+}
+
+/**
+ * @param {LogTailParams} [params={}]
+ * @returns {NormalizedLogTailParams}
+ */
+export function normalizeLogTailParams(params = {}) {
+  return {
+    limit: clampInt(params.limit, 1, 200, DEFAULT_LOG_TAIL_LIMIT),
   };
 }
 

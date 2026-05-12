@@ -230,6 +230,116 @@ test('pushLog evicts oldest entries past the recent-log limit', () => {
   assert.equal(daemon.recentLog[daemon.recentLog.length - 1].index, DAEMON_RECENT_LOG_LIMIT + 4);
 });
 
+test('log.tail honors the requested limit', async () => {
+  const daemon = new BridgeDaemon({ logger: { log() {}, error() {} } });
+  const socket = createFakeSocket();
+
+  for (let index = 0; index < 10; index += 1) {
+    daemon.pushLog({ index });
+  }
+
+  await daemon.handleAgentRequest(socket, {
+    request: {
+      id: 'req_logs',
+      method: 'log.tail',
+      tab_id: null,
+      params: { limit: 3 },
+      meta: {
+        protocol_version: '1.0',
+        token_budget: null,
+      },
+    },
+  });
+
+  const payload = expectBridgeResponse(JSON.parse(socket.writes[0].trim()));
+  assert.deepEqual(payload.response.result?.entries, [{ index: 7 }, { index: 8 }, { index: 9 }]);
+});
+
+test('daemon metrics include completed request response time', async () => {
+  const daemon = new BridgeDaemon({ logger: { log() {}, error() {} } });
+  const agentSocket = createFakeSocket();
+  const extensionSocket = createFakeSocket();
+  daemon.extensionSockets.set('test-ext', extensionSocket);
+
+  await daemon.handleAgentRequest(agentSocket, {
+    request: {
+      id: 'req_metric',
+      method: 'page.get_text',
+      tab_id: 1,
+      params: {},
+      meta: {
+        protocol_version: '1.0',
+        token_budget: null,
+      },
+    },
+  });
+
+  daemon.requestStartTimes.set('req_metric', Date.now() - 50);
+
+  await daemon.handleExtensionResponse(extensionSocket, {
+    response: {
+      id: 'req_metric',
+      ok: true,
+      result: { text: 'Ready' },
+      error: null,
+      meta: { protocol_version: '1.0', method: 'page.get_text' },
+    },
+  });
+
+  await daemon.handleAgentRequest(agentSocket, {
+    request: {
+      id: 'req_metrics',
+      method: 'daemon.metrics',
+      tab_id: null,
+      params: {},
+      meta: {
+        protocol_version: '1.0',
+        token_budget: null,
+      },
+    },
+  });
+
+  const payload = expectBridgeResponse(JSON.parse(agentSocket.writes[1].trim()));
+  assert.equal(payload.response.result?.requestsProcessed, 1);
+  assert.ok(Number(payload.response.result?.avgResponseTimeMs) > 0);
+});
+
+test('daemon completes a request immediately when every target write fails', async () => {
+  const daemon = new BridgeDaemon({ logger: { log() {}, error() {} } });
+  const agentSocket = createFakeSocket();
+  const extensionSocket = createFakeSocket();
+  let destroyed = false;
+  extensionSocket.__extensionId = 'failed-ext';
+  extensionSocket.write = () => {
+    throw new Error('socket closed');
+  };
+  extensionSocket.destroy = (() => {
+    destroyed = true;
+    return extensionSocket;
+  }) as typeof extensionSocket.destroy;
+  daemon.extensionSockets.set('failed-ext', extensionSocket);
+
+  await daemon.handleAgentRequest(agentSocket, {
+    request: {
+      id: 'req_write_fail',
+      method: 'dom.query',
+      tab_id: 1,
+      params: {},
+      meta: {
+        protocol_version: '1.0',
+        token_budget: null,
+      },
+    },
+  });
+
+  const payload = expectBridgeResponse(JSON.parse(agentSocket.writes[0].trim()));
+  assert.equal(destroyed, true);
+  assert.equal(daemon.pendingRequests.has('req_write_fail'), false);
+  assert.equal(daemon.extensionSockets.has('failed-ext'), false);
+  assert.equal(payload.response.ok, false);
+  assert.equal(payload.response.error?.code, 'EXTENSION_DISCONNECTED');
+});
+
 test('pingExistingDaemon resolves false on connect error', async () => {
   await withTempSocketPath(
     async ({ socketPath }) => {

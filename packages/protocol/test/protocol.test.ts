@@ -38,6 +38,7 @@ import {
   normalizeAccessibilityTreeParams,
   normalizeNetworkParams,
   normalizePageTextParams,
+  normalizeLogTailParams,
   normalizeViewportResizeParams,
   normalizeStyleQuery,
   getErrorRecovery,
@@ -587,6 +588,20 @@ test('normalizePageTextParams clamps budget', () => {
 test('normalizePageTextParams defaults to 8000', () => {
   const params = normalizePageTextParams({});
   assert.equal(params.textBudget, 8000);
+});
+
+test('normalizeLogTailParams clamps limit', () => {
+  const params = normalizeLogTailParams({ limit: 9999 });
+  assert.equal(params.limit, 200);
+});
+
+test('validateBridgeRequest normalizes log.tail params', () => {
+  const request = validateBridgeRequest({
+    id: 'req_logs',
+    method: 'log.tail',
+    params: { limit: 5 },
+  });
+  assert.equal(request.params.limit, 5);
 });
 
 /** Ensure viewport resize params clamp dimensions. */

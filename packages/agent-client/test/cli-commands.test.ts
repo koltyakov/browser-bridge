@@ -261,7 +261,7 @@ test('bbx logs forwards to log.tail and summarizes returned entries', async () =
     ]);
     assert.equal(bridgeServer.requests.length, 2);
     assert.equal(bridgeServer.requests[1].method, 'log.tail');
-    assert.deepEqual(bridgeServer.requests[1].params, {});
+    assert.deepEqual(bridgeServer.requests[1].params, { limit: 20 });
     assert.equal(bridgeServer.requests[1].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {

@@ -6,7 +6,12 @@ import type net from 'node:net';
 
 import { MAX_NATIVE_MESSAGE_BYTES } from '../../protocol/src/index.js';
 import { fakeSocketThatStalls } from '../../../tests/_helpers/faultInjection.ts';
-import { createNativeMessageReader, writeJsonLine, writeNativeMessage } from '../src/framing.js';
+import {
+  createNativeMessageReader,
+  createNativeMessageWriter,
+  writeJsonLine,
+  writeNativeMessage,
+} from '../src/framing.js';
 
 type WritableEmitter = NodeJS.WritableStream & EventEmitter;
 type ReadableEmitter = NodeJS.ReadableStream & EventEmitter & { destroy: () => void };
@@ -80,6 +85,37 @@ test('writeNativeMessage writes framed JSON and respects drain backpressure', as
     ok: true,
     nested: { value: 1 },
   });
+});
+
+test('createNativeMessageWriter serializes frames while a write is backpressured', async () => {
+  const stream = new EventEmitter();
+  const writes: Buffer[] = [];
+  let callCount = 0;
+
+  const writable = stream as unknown as WritableEmitter;
+  writable.write = (chunk: string | Uint8Array): boolean => {
+    writes.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    callCount += 1;
+    return callCount !== 1;
+  };
+
+  const writeQueued = createNativeMessageWriter(writable);
+  const first = writeQueued({ seq: 1 });
+  const second = writeQueued({ seq: 2 });
+
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.equal(writes.length, 1);
+
+  stream.emit('drain');
+  await Promise.all([first, second]);
+
+  assert.equal(writes.length, 4);
+  assert.equal(writes[0].readUInt32LE(0), writes[1].length);
+  assert.deepEqual(JSON.parse(writes[1].toString('utf8')), { seq: 1 });
+  assert.equal(writes[2].readUInt32LE(0), writes[3].length);
+  assert.deepEqual(JSON.parse(writes[3].toString('utf8')), { seq: 2 });
 });
 
 test('writeNativeMessage round-trips a payload at the native message size cap', async () => {

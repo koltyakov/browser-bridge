@@ -491,7 +491,8 @@ test('grouped MCP tools accept explicit tabId and budget presets', async () => {
       assert.ok(pageTextCall.params);
       assert.ok(pageTextCall.meta);
       assert.equal(pageTextCall.tabId, 88);
-      assert.equal(pageTextCall.params.textBudget, 2000);
+      assert.equal(pageTextCall.params.textBudget, DEFAULT_PAGE_TEXT_BUDGET * 2);
+      assert.ok(Number(pageTextCall.params.textBudget) > DEFAULT_PAGE_TEXT_BUDGET);
       assert.equal(pageTextCall.meta.token_budget, 4000);
     }
   );

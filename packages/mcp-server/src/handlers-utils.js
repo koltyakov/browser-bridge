@@ -3,6 +3,7 @@
 import {
   bridgeMethodNeedsTab,
   DEFAULT_MAX_HTML_LENGTH,
+  DEFAULT_PAGE_TEXT_BUDGET,
   estimateJsonPayloadCost,
   getBudgetPreset,
   getErrorRecovery,
@@ -173,6 +174,27 @@ export function applyTextBudgetPreset(args) {
   return /** @type {T} */ ({
     ...args,
     textBudget: args.textBudget ?? preset.textBudget,
+  });
+}
+
+/**
+ * @template {{ budgetPreset?: unknown, textBudget?: unknown }} T
+ * @param {T} args
+ * @returns {T}
+ */
+export function applyPageTextBudgetPreset(args) {
+  const presetName = getBudgetPresetName(args.budgetPreset);
+  if (!presetName) {
+    return args;
+  }
+  const textBudgetByPreset = {
+    quick: 2000,
+    normal: DEFAULT_PAGE_TEXT_BUDGET,
+    deep: DEFAULT_PAGE_TEXT_BUDGET * 2,
+  };
+  return /** @type {T} */ ({
+    ...args,
+    textBudget: args.textBudget ?? textBudgetByPreset[presetName],
   });
 }
 

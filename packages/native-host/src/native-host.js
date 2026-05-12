@@ -5,7 +5,7 @@ import net from 'node:net';
 import { createFailure, ERROR_CODES } from '../../protocol/src/index.js';
 import { createSocketBridgeTransport, getBridgeTransport } from './config.js';
 import { spawnBridgeDaemonProcess } from './daemon-process.js';
-import { createNativeMessageReader, writeJsonLine, writeNativeMessage } from './framing.js';
+import { createNativeMessageReader, createNativeMessageWriter, writeJsonLine } from './framing.js';
 
 /** @typedef {import('./config.js').BridgeTransport} BridgeTransport */
 
@@ -117,11 +117,13 @@ export async function runNativeHost({
   socketPath = undefined,
 } = {}) {
   const resolvedTransport = socketPath ? createSocketBridgeTransport(socketPath) : transport;
+  const writeNativeMessageQueued = createNativeMessageWriter(process.stdout);
+
   let socket;
   try {
     socket = await connectWithBootstrap(resolvedTransport);
   } catch (error) {
-    await writeNativeMessage(process.stdout, {
+    await writeNativeMessageQueued({
       type: 'agent.response',
       response: createFailure(
         'native_bootstrap',
@@ -164,11 +166,11 @@ export async function runNativeHost({
       }
       void (async () => {
         if (message.type === 'extension.request') {
-          await writeNativeMessage(process.stdout, message.request);
+          await writeNativeMessageQueued(message.request);
           return;
         }
         if (message.type === 'agent.response') {
-          await writeNativeMessage(process.stdout, {
+          await writeNativeMessageQueued({
             type: 'host.bridge_response',
             response: message.response,
           });
@@ -178,7 +180,7 @@ export async function runNativeHost({
           message.type === 'extension.setup_status.response' ||
           message.type === 'extension.setup_status.error'
         ) {
-          await writeNativeMessage(process.stdout, {
+          await writeNativeMessageQueued({
             type:
               message.type === 'extension.setup_status.response'
                 ? 'host.setup_status.response'

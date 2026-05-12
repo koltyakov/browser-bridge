@@ -549,6 +549,14 @@ export interface NormalizedPageTextParams extends BridgeParams {
   textBudget: number;
 }
 
+export interface LogTailParams {
+  limit?: number;
+}
+
+export interface NormalizedLogTailParams extends BridgeParams {
+  limit: number;
+}
+
 export interface ViewportResizeParams {
   width?: number;
   height?: number;

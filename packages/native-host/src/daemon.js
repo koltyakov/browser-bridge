@@ -261,7 +261,6 @@ export class BridgeDaemon {
       return undefined;
     }
     this.pendingRequests.delete(requestId);
-    this.requestStartTimes.delete(requestId);
     this.removePendingRequestIndex(this.pendingRequestsByOwnerSocket, pending.socket, requestId);
     for (const targetSocket of pending.targets) {
       this.removePendingRequestIndex(this.pendingRequestsByTargetSocket, targetSocket, requestId);
@@ -541,8 +540,10 @@ export class BridgeDaemon {
     }
 
     if (request.method === 'log.tail') {
+      const limit =
+        typeof request.params.limit === 'number' ? request.params.limit : DEFAULT_LOG_TAIL_LIMIT;
       const response = createSuccess(request.id, {
-        entries: this.recentLog.slice(-DEFAULT_LOG_TAIL_LIMIT),
+        entries: this.recentLog.slice(-limit),
       });
       await writeJsonLine(socket, { type: 'agent.response', response });
       return;
@@ -678,7 +679,30 @@ export class BridgeDaemon {
       targetCount: targets.length,
     });
     const broadcastPayload = { type: 'extension.request', request };
-    await Promise.all(targets.map((extSocket) => writeJsonLine(extSocket, broadcastPayload)));
+    await Promise.all(
+      targets.map(async (extSocket) => {
+        try {
+          await writeJsonLine(extSocket, broadcastPayload);
+        } catch (error) {
+          this.logger.error('request route failed', {
+            requestId: request.id,
+            method: request.method,
+            message: error instanceof Error ? error.message : String(error),
+          });
+          const pending = this.pendingRequests.get(request.id);
+          if (!pending) {
+            return;
+          }
+          this.removePendingTarget(request.id, pending, extSocket);
+          if (extSocket.__extensionId) {
+            this.extensionSockets.delete(extSocket.__extensionId);
+            this.invalidateConnectedExtensionsCache();
+          }
+          extSocket.destroy(error instanceof Error ? error : undefined);
+          await this.finishPendingRequestIfExhausted(request.id, pending);
+        }
+      })
+    );
   }
 
   /**
@@ -902,6 +926,7 @@ export class BridgeDaemon {
    */
   recordRequestCompletion(requestId, ok) {
     const startedAt = this.requestStartTimes.get(requestId);
+    this.requestStartTimes.delete(requestId);
     this.requestsProcessed += 1;
     if (!ok) {
       this.requestsFailed += 1;

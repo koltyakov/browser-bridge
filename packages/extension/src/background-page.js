@@ -108,11 +108,6 @@ export function createPageRequestController(state, chromeObj, dependencies) {
    * @returns {Promise<chrome.tabs.Tab>}
    */
   async function waitForTabComplete(tabId, timeoutMs) {
-    const initialTab = await chromeObj.tabs.get(tabId);
-    if (initialTab.status === 'complete') {
-      return initialTab;
-    }
-
     return new Promise((resolve, reject) => {
       let finished = false;
       const timeoutId = setTimeout(() => {
@@ -163,6 +158,23 @@ export function createPageRequestController(state, chromeObj, dependencies) {
 
       chromeObj.tabs.onUpdated.addListener(onUpdated);
       chromeObj.tabs.onRemoved.addListener(onRemoved);
+
+      void chromeObj.tabs.get(tabId).then(
+        (tab) => {
+          if (finished || tab.status !== 'complete') {
+            return;
+          }
+          cleanup();
+          resolve(tab);
+        },
+        (error) => {
+          if (finished) {
+            return;
+          }
+          cleanup();
+          reject(error instanceof Error ? error : new Error(String(error)));
+        }
+      );
     });
   }
 

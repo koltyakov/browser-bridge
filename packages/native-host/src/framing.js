@@ -25,6 +25,19 @@ export async function writeNativeMessage(stream, message) {
 }
 
 /**
+ * @param {NodeJS.WritableStream} stream
+ * @returns {(message: unknown) => Promise<void>}
+ */
+export function createNativeMessageWriter(stream) {
+  let queue = Promise.resolve();
+  return (message) => {
+    const writePromise = queue.then(() => writeNativeMessage(stream, message));
+    queue = writePromise.catch(() => {});
+    return writePromise;
+  };
+}
+
+/**
  * @param {NodeJS.ReadableStream} stream
  * @param {(message: unknown) => void} onMessage
  * @param {(error: Error) => void} [onProtocolError]
