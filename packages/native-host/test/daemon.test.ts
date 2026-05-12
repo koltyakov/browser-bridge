@@ -6,8 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 
-import { DAEMON_RECENT_LOG_LIMIT } from '../../protocol/src/index.js';
-import type { BridgeResponse, SetupStatus } from '../../protocol/src/types.js';
+import { DAEMON_RECENT_LOG_LIMIT, ERROR_CODES } from '../../protocol/src/index.js';
+import type { BridgeRequest, BridgeResponse, SetupStatus } from '../../protocol/src/types.js';
 import type { McpClientName } from '../../agent-client/src/mcp-config.js';
 import type { SupportedTarget } from '../../agent-client/src/install.js';
 import {
@@ -216,6 +216,42 @@ test('daemon responds to health checks without extension', async () => {
   assert.equal(payload.response.result.daemon, 'ok');
   assert.equal(typeof payload.response.result.daemonVersion, 'string');
   assert.equal(payload.response.result.extensionConnected, false);
+});
+
+test('daemon responds to invalid agent requests instead of timing out', async () => {
+  const daemon = new BridgeDaemon({ logger: { log() {}, error() {} } });
+  const socket = createFakeSocket();
+
+  await daemon.handleAgentRequest(socket, {
+    request: {
+      id: 'req_invalid_method',
+      method: 'missing.method',
+      params: {},
+    } as unknown as BridgeRequest,
+  });
+
+  assert.equal(socket.writes.length, 1);
+  const payload = expectBridgeResponse(parsePayload(socket.writes[0].trim()));
+  assert.equal(payload.type, 'agent.response');
+  assert.equal(payload.response.id, 'req_invalid_method');
+  assert.equal(payload.response.ok, false);
+  assert.equal(payload.response.error?.code, ERROR_CODES.INVALID_REQUEST);
+  assert.match(payload.response.error?.message ?? '', /Unsupported method/);
+});
+
+test('daemon keeps newer duplicate agent socket when stale socket closes', () => {
+  const daemon = new BridgeDaemon({ logger: { log() {}, error() {} } });
+  const staleSocket = createFakeSocket();
+  const activeSocket = createFakeSocket();
+
+  daemon.registerSocket(staleSocket, { type: 'register', role: 'agent', clientId: 'agent-1' });
+  daemon.registerSocket(activeSocket, { type: 'register', role: 'agent', clientId: 'agent-1' });
+
+  assert.equal(daemon.agentSockets.get('agent-1'), activeSocket);
+  daemon.handleSocketClose(staleSocket);
+  assert.equal(daemon.agentSockets.get('agent-1'), activeSocket);
+  daemon.handleSocketClose(activeSocket);
+  assert.equal(daemon.agentSockets.has('agent-1'), false);
 });
 
 test('pushLog evicts oldest entries past the recent-log limit', () => {
@@ -1390,6 +1426,10 @@ test('normalizeSetupInstallParams trims targets and defaults to install', () => 
 
 test('normalizeSetupInstallParams rejects invalid input', () => {
   assert.throws(() => normalizeSetupInstallParams({ target: 'codex' }), /requires kind/);
+  assert.throws(
+    () => normalizeSetupInstallParams({ action: 'unistall', kind: 'skill', target: 'codex' }),
+    /action must be "install" or "uninstall"/
+  );
   assert.throws(
     () => normalizeSetupInstallParams({ kind: 'skill', target: '   ' }),
     /requires a target/

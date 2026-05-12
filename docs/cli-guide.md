@@ -11,6 +11,7 @@ bbx install --browser edge
 bbx install --browser brave
 bbx install --browser chromium
 bbx install --browser arc
+bbx install --all
 bbx status
 bbx doctor
 bbx restart
@@ -21,7 +22,8 @@ bbx skill
 
 Use these first when Browser Bridge is not connected, the wrong tab is routed,
 or you want to see the available runtime presets. `bbx install` targets Chrome
-by default; use `--browser` for Edge, Brave, Chromium, or Arc.
+by default; use `--browser` for Edge, Brave, Chromium, or Arc, or `--all` for
+all supported browsers.
 
 Use `bbx restart` when you want to force the local daemon to reload after a CLI
 update or recover from a stuck local bridge process.

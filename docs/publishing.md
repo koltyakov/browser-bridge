@@ -8,7 +8,7 @@ This repo has two release artifacts:
 1. The Chrome extension ZIP for the Chrome Web Store
 2. The npm package for the local CLI and native host
 
-The extension is not a standalone product. A store release only becomes usable once the npm package is also published, because the extension depends on the local native host installed by `bbx install <extension-id>`.
+The extension is not a standalone product. A store release only becomes usable once the npm package is also published, because the extension depends on the local native host installed by `bbx install`.
 The published npm package now embeds the Browser Bridge store extension ID, so end-user docs for the published build should default to plain `bbx install`. Only unpacked or non-store builds should require `bbx install <extension-id>` or `BROWSER_BRIDGE_EXTENSION_ID=<extension-id>`.
 
 ## Release Checklist
@@ -29,6 +29,7 @@ The repo now includes a reproducible packaging step:
 
 ```bash
 npm run package:extension
+npm run check:extension-zip
 ```
 
 That stages only the runtime extension files into `dist/browser-bridge-extension/` and writes the upload artifact to:

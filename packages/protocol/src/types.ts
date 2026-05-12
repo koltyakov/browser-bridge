@@ -460,11 +460,13 @@ export interface NormalizedGetHtmlParams extends BridgeParams {
 export interface HoverParams {
   target?: InputTarget;
   duration?: number;
+  modifiers?: string[];
 }
 
 export interface NormalizedHoverParams extends BridgeParams {
   target: InputTarget;
   duration: number;
+  modifiers: string[];
 }
 
 export interface DragParams {

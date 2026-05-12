@@ -359,6 +359,10 @@ export function createBridgeMcpServer() {
           .describe('Scroll relative to current position (default: false)'),
         width: z.number().optional().describe('Viewport width in pixels'),
         height: z.number().optional().describe('Viewport height in pixels'),
+        deviceScaleFactor: z
+          .number()
+          .optional()
+          .describe('Viewport device scale factor (for resize)'),
         reset: z.boolean().optional().describe('Reset viewport to original size (for resize)'),
       },
     },

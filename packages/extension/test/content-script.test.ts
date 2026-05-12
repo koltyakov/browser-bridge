@@ -107,7 +107,8 @@ type FakeEventLike = { type: string; defaultPrevented: boolean; preventDefault: 
 type ScrollOptionsLike = { top?: number; left?: number; behavior?: string };
 type StyleMock = {
   getPropertyValue: (name: string) => string;
-  setProperty: (name: string, value: string) => void;
+  getPropertyPriority: (name: string) => string;
+  setProperty: (name: string, value: string, priority?: string) => void;
   removeProperty: (name: string) => void;
 };
 type DocumentHarness = {
@@ -1528,6 +1529,9 @@ test('content script evicts the oldest patches past MAX_PATCH_REGISTRY_SIZE', as
       getPropertyValue(name: string) {
         return styleValues.get(name) ?? '';
       },
+      getPropertyPriority() {
+        return '';
+      },
       setProperty(name: string, value: string) {
         styleValues.set(name, value);
       },
@@ -1601,17 +1605,27 @@ test('content script evicts the oldest patches past MAX_PATCH_REGISTRY_SIZE', as
 test('content script patch.apply_styles rollbacks restore prior inline style values', async (t) => {
   const harness = createChromeHarness();
   const styleValues = new Map<string, string>([['color', 'blue']]);
+  const stylePriorities = new Map<string, string>([['color', 'important']]);
   const target = {
     ...createFakeElement(),
     style: {
       getPropertyValue(name: string) {
         return styleValues.get(name) ?? '';
       },
-      setProperty(name: string, value: string) {
+      getPropertyPriority(name: string) {
+        return stylePriorities.get(name) ?? '';
+      },
+      setProperty(name: string, value: string, priority = '') {
         styleValues.set(name, value);
+        if (priority) {
+          stylePriorities.set(name, priority);
+        } else {
+          stylePriorities.delete(name);
+        }
       },
       removeProperty(name: string) {
         styleValues.delete(name);
+        stylePriorities.delete(name);
       },
     },
   };
@@ -1667,6 +1681,7 @@ test('content script patch.apply_styles rollbacks restore prior inline style val
     applied: true,
   });
   assert.equal(styleValues.get('color'), 'red');
+  assert.equal(stylePriorities.has('color'), false);
   assert.equal(styleValues.get('border'), '1px solid black');
 
   const rollbackResult = await execute('patch.rollback', {
@@ -1678,7 +1693,9 @@ test('content script patch.apply_styles rollbacks restore prior inline style val
     rolledBack: true,
   });
   assert.equal(styleValues.get('color'), 'blue');
+  assert.equal(stylePriorities.get('color'), 'important');
   assert.equal(styleValues.has('border'), false);
+  assert.equal(stylePriorities.has('border'), false);
   assert.deepEqual(await execute('patch.list', {}), []);
 });
 
@@ -2113,6 +2130,9 @@ test('content script patch operations verify and roll back DOM and style changes
       getPropertyValue(name: string) {
         return styleValues.get(name) ?? '';
       },
+      getPropertyPriority() {
+        return '';
+      },
       setProperty(name: string, value: string) {
         styleValues.set(name, value);
       },
@@ -2350,6 +2370,13 @@ test('content script patch operations verify and roll back DOM and style changes
     operation: 'unsupported',
   });
   assert.deepEqual(unsupportedPatch, { error: 'Unsupported DOM patch operation unsupported' });
+  const missingToggleClassPatch = await executeBridgeMethod(listener, 'patch.apply_dom', {
+    target: { selector: '#target' },
+    operation: 'toggle_class',
+  });
+  assert.deepEqual(missingToggleClassPatch, {
+    error: 'class name is required for class patch operations',
+  });
   assert.deepEqual(await executeBridgeMethod(listener, 'patch.list', {}), []);
   assert.deepEqual(await executeBridgeMethod(listener, 'patch.commit_session_baseline', {}), {
     committed: true,

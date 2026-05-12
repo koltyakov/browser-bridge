@@ -1429,7 +1429,11 @@ test('background dispatch surfaces accessibility tree failures', async () => {
     })
   );
 
-  assert.deepEqual(methods, ['Accessibility.enable', 'Accessibility.getFullAXTree']);
+  assert.deepEqual(methods, [
+    'Accessibility.enable',
+    'Accessibility.getFullAXTree',
+    'Accessibility.disable',
+  ]);
   assert.equal(response.ok, false);
   assert.equal(response.error.code, ERROR_CODES.INTERNAL_ERROR);
   assert.equal(response.error.message, 'AX tree unavailable');
@@ -1600,7 +1604,11 @@ test('background dispatch surfaces performance metric failures', async () => {
     })
   );
 
-  assert.deepEqual(methods, ['Performance.enable', 'Performance.getMetrics']);
+  assert.deepEqual(methods, [
+    'Performance.enable',
+    'Performance.getMetrics',
+    'Performance.disable',
+  ]);
   assert.equal(response.ok, false);
   assert.equal(response.error.code, ERROR_CODES.INTERNAL_ERROR);
   assert.equal(response.error.message, 'metrics unavailable');

@@ -109,11 +109,14 @@ export async function readConsoleBuffer(tabId, clear, chromeObj) {
     target: { tabId },
     world: 'MAIN',
     func: (/** @type {boolean} */ shouldClear) => {
-      const buf = globalThis.__bb_console_buffer || [];
+      const buf = Array.isArray(globalThis.__bb_console_buffer)
+        ? globalThis.__bb_console_buffer
+        : [];
       const dropped = globalThis.__bb_console_dropped || 0;
       const copy = [...buf];
       if (shouldClear) {
-        globalThis.__bb_console_buffer = [];
+        buf.length = 0;
+        globalThis.__bb_console_buffer = buf;
         globalThis.__bb_console_dropped = 0;
       }
       return { entries: copy, dropped };

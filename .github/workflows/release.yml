@@ -58,17 +58,17 @@ jobs:
       - name: Pack dry-run
         run: npm pack --dry-run
 
-      - name: Create npm tarball
-        run: npm pack
-
-      - name: Publish npm package
-        run: npm publish --access public
-
       - name: Package extension
         run: npm run package:extension
 
       - name: Validate extension ZIP contents
         run: npm run check:extension-zip
+
+      - name: Create npm tarball
+        run: npm pack
+
+      - name: Publish npm package
+        run: npm publish --access public
 
       - name: Upload npm tarball
         uses: actions/upload-artifact@v7

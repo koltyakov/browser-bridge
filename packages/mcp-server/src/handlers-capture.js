@@ -57,10 +57,39 @@ function isCdpNodeCapture(args) {
 }
 
 /**
+ * @param {unknown} value
+ * @returns {value is number}
+ */
+function isFiniteNumber(value) {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+/** @param {unknown} rect */
+function isValidCaptureRegion(rect) {
+  if (!rect || typeof rect !== 'object' || Array.isArray(rect)) {
+    return false;
+  }
+  const candidate = /** @type {Record<string, unknown>} */ (rect);
+  return (
+    isFiniteNumber(candidate.x) &&
+    isFiniteNumber(candidate.y) &&
+    isFiniteNumber(candidate.width) &&
+    candidate.width > 0 &&
+    isFiniteNumber(candidate.height) &&
+    candidate.height > 0
+  );
+}
+
+/**
  * @param {{ action: string, elementRef?: string, selector?: string, rect?: Record<string, unknown>, nodeId?: number, tabId?: number, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleCaptureTool(args) {
+  if (args.action === 'region' && !isValidCaptureRegion(args.rect)) {
+    return summarizeToolError(
+      'rect with finite x, y, width, and height is required for region capture.'
+    );
+  }
   if (
     isCdpNodeCapture(args) &&
     (typeof args.nodeId !== 'number' || !Number.isFinite(args.nodeId))
@@ -105,6 +134,7 @@ export async function handleInputTool(args) {
             target: await elementTarget(),
             button: args.button,
             clickCount: args.clickCount,
+            modifiers: args.modifiers,
           },
           {
             tabId: requestedTabId,
@@ -138,6 +168,7 @@ export async function handleInputTool(args) {
             text: args.text,
             clear: args.clear,
             submit: args.submit,
+            modifiers: args.modifiers,
           },
           {
             tabId: requestedTabId,
@@ -223,6 +254,7 @@ export async function handleInputTool(args) {
           {
             target: await elementTarget(),
             duration: args.duration,
+            modifiers: args.modifiers,
           },
           {
             tabId: requestedTabId,

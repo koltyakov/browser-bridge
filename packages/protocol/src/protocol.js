@@ -672,6 +672,9 @@ export function normalizeHoverParams(params = {}) {
         : undefined
     ),
     duration: clampInt(params.duration, 0, 5_000, 0),
+    modifiers: Array.isArray(params.modifiers)
+      ? params.modifiers.filter((modifier) => typeof modifier === 'string' && modifier.trim())
+      : [],
   };
 }
 

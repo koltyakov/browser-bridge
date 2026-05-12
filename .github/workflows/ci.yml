@@ -6,17 +6,29 @@ on:
       - main
     paths:
       - '**/*.js'
+      - '**/*.mjs'
       - '**/*.ts'
+      - 'manifest.json'
       - 'package.json'
       - 'package-lock.json'
-      - '.github/workflows/ci.yml'
+      - 'docs/**'
+      - 'skills/**'
+      - 'packages/extension/ui/**'
+      - 'packages/extension/assets/**'
+      - '.github/workflows/*.yml'
   pull_request:
     paths:
       - '**/*.js'
+      - '**/*.mjs'
       - '**/*.ts'
+      - 'manifest.json'
       - 'package.json'
       - 'package-lock.json'
-      - '.github/workflows/ci.yml'
+      - 'docs/**'
+      - 'skills/**'
+      - 'packages/extension/ui/**'
+      - 'packages/extension/assets/**'
+      - '.github/workflows/*.yml'
 
 permissions:
   contents: read

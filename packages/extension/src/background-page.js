@@ -217,23 +217,26 @@ export function createPageRequestController(state, chromeObj, dependencies) {
     const params = normalizeAccessibilityTreeParams(request.params);
     return dependencies.runWithDebugger(target.tabId, async (debugTarget) => {
       await dependencies.sendCommand(debugTarget, 'Accessibility.enable', {});
-      const result = await dependencies.sendCommand(debugTarget, 'Accessibility.getFullAXTree', {
-        depth: params.maxDepth,
-      });
-      const cdpResult = /** @type {{ nodes?: Array<Record<string, unknown>> }} */ (result);
-      const rawNodes = cdpResult.nodes || [];
-      const pruned = rawNodes.slice(0, params.maxNodes).map(simplifyAXNode);
-      await dependencies.sendCommand(debugTarget, 'Accessibility.disable', {});
-      return createSuccess(
-        request.id,
-        {
-          nodes: pruned,
-          count: pruned.length,
-          total: rawNodes.length,
-          truncated: rawNodes.length > params.maxNodes,
-        },
-        { method: request.method }
-      );
+      try {
+        const result = await dependencies.sendCommand(debugTarget, 'Accessibility.getFullAXTree', {
+          depth: params.maxDepth,
+        });
+        const cdpResult = /** @type {{ nodes?: Array<Record<string, unknown>> }} */ (result);
+        const rawNodes = cdpResult.nodes || [];
+        const pruned = rawNodes.slice(0, params.maxNodes).map(simplifyAXNode);
+        return createSuccess(
+          request.id,
+          {
+            nodes: pruned,
+            count: pruned.length,
+            total: rawNodes.length,
+            truncated: rawNodes.length > params.maxNodes,
+          },
+          { method: request.method }
+        );
+      } finally {
+        await dependencies.sendCommand(debugTarget, 'Accessibility.disable', {}).catch(() => {});
+      }
     });
   }
 
@@ -310,16 +313,19 @@ export function createPageRequestController(state, chromeObj, dependencies) {
       await dependencies.sendCommand(debugTarget, 'Performance.enable', {
         timeDomain: 'timeTicks',
       });
-      const result = await dependencies.sendCommand(debugTarget, 'Performance.getMetrics', {});
-      await dependencies.sendCommand(debugTarget, 'Performance.disable', {});
-      const cdpResult = /** @type {{ metrics?: Array<{ name: string, value: number }> }} */ (
-        result
-      );
-      const metrics = (cdpResult.metrics || []).reduce((acc, metric) => {
-        acc[metric.name] = metric.value;
-        return acc;
-      }, /** @type {Record<string, number>} */ ({}));
-      return createSuccess(request.id, { metrics }, { method: request.method });
+      try {
+        const result = await dependencies.sendCommand(debugTarget, 'Performance.getMetrics', {});
+        const cdpResult = /** @type {{ metrics?: Array<{ name: string, value: number }> }} */ (
+          result
+        );
+        const metrics = (cdpResult.metrics || []).reduce((acc, metric) => {
+          acc[metric.name] = metric.value;
+          return acc;
+        }, /** @type {Record<string, number>} */ ({}));
+        return createSuccess(request.id, { metrics }, { method: request.method });
+      } finally {
+        await dependencies.sendCommand(debugTarget, 'Performance.disable', {}).catch(() => {});
+      }
     });
   }
 

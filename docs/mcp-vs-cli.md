@@ -132,7 +132,7 @@ Short version:
 | Raw protocol call | `browser_call` | `bbx call <method> '{...}'` | Equivalent |
 | Ordered batch calls | `browser_batch` | `bbx batch '[{...}]'` | Both preserve request order and return per-call `durationMs` / `approxTokens` |
 | Batch parallel reads | N/A (multiple tool calls) | `bbx batch '[{...}]'` | CLI has explicit batch |
-| Install manifest | N/A | `bbx install <ext-id>` | CLI-only (setup) |
+| Install manifest | N/A | `bbx install` | CLI-only (setup) |
 | Install MCP config | N/A | `bbx install-mcp [client]` | CLI-only (setup) |
 | Install skill | N/A | `bbx install-skill [client]` | CLI-only (setup) |
 | Uninstall | N/A | `bbx uninstall` | CLI-only (setup) |

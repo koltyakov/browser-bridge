@@ -126,11 +126,14 @@ export async function readNetworkBuffer(tabId, clear, chromeObj) {
     target: { tabId },
     world: 'MAIN',
     func: (/** @type {boolean} */ shouldClear) => {
-      const buf = globalThis.__bb_network_buffer || [];
+      const buf = Array.isArray(globalThis.__bb_network_buffer)
+        ? globalThis.__bb_network_buffer
+        : [];
       const dropped = globalThis.__bb_network_dropped || 0;
       const copy = [...buf];
       if (shouldClear) {
-        globalThis.__bb_network_buffer = [];
+        buf.length = 0;
+        globalThis.__bb_network_buffer = buf;
         globalThis.__bb_network_dropped = 0;
       }
       return { entries: copy, dropped };

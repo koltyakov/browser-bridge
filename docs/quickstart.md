@@ -31,6 +31,7 @@ bbx install --browser edge      # Microsoft Edge
 bbx install --browser brave     # Brave
 bbx install --browser chromium  # Chromium
 bbx install --browser arc       # Arc
+bbx install --all               # All supported browsers
 ```
 
 ## 3. Connect your agent
