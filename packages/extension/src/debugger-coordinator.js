@@ -73,7 +73,7 @@ export class TabDebuggerCoordinator {
     return this.runExclusive(tabId, async () => {
       const target = { tabId };
       const held = (this.holdsByTab.get(tabId) ?? 0) > 0;
-      const hasBurst = this.burstTimers.has(tabId);
+      const hasBurst = this._consumeBurstTimer(tabId);
       /** @type {T | undefined} */
       let result;
       /** @type {unknown} */
@@ -112,16 +112,33 @@ export class TabDebuggerCoordinator {
     const existing = this.burstTimers.get(tabId);
     if (existing) clearTimeout(existing);
     const timer = setTimeout(async () => {
-      this.burstTimers.delete(tabId);
-      if ((this.holdsByTab.get(tabId) ?? 0) > 0) return;
-      try {
-        await this.detach(target);
-      } catch {
-        // Already detached or tab closed.
-      }
+      await this.runExclusive(tabId, async () => {
+        if (this.burstTimers.get(tabId) !== timer) return;
+        this.burstTimers.delete(tabId);
+        if ((this.holdsByTab.get(tabId) ?? 0) > 0) return;
+        try {
+          await this.detach(target);
+        } catch {
+          // Already detached or tab closed.
+        }
+      });
     }, this.burstIdleMs);
     timer.unref?.();
     this.burstTimers.set(tabId, timer);
+  }
+
+  /**
+   * Clear a pending burst-idle detach before starting new debugger work.
+   *
+   * @param {number} tabId
+   * @returns {boolean}
+   */
+  _consumeBurstTimer(tabId) {
+    const existing = this.burstTimers.get(tabId);
+    if (!existing) return false;
+    clearTimeout(existing);
+    this.burstTimers.delete(tabId);
+    return true;
   }
 
   /**
@@ -137,14 +154,19 @@ export class TabDebuggerCoordinator {
       const target = { tabId };
       const holdCount = this.holdsByTab.get(tabId) ?? 0;
       if (holdCount === 0) {
+        const hasBurst = this._consumeBurstTimer(tabId);
         let attached = false;
         try {
-          await this.attach(target, this.protocolVersion);
-          attached = true;
+          if (!hasBurst) {
+            await this.attach(target, this.protocolVersion);
+            attached = true;
+          }
           await initialize(target);
         } catch (error) {
           if (attached) {
             await this.detach(target).catch(() => {});
+          } else if (hasBurst) {
+            this._resetBurstTimer(tabId, target);
           }
           throw error;
         }

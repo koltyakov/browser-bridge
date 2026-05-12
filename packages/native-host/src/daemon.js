@@ -277,6 +277,7 @@ export class BridgeDaemon {
     if (!pending) {
       return undefined;
     }
+    clearTimeout(pending.timeoutId);
     this.pendingRequests.delete(requestId);
     this.removePendingRequestIndex(this.pendingRequestsByOwnerSocket, pending.socket, requestId);
     for (const targetSocket of pending.targets) {
@@ -776,6 +777,12 @@ export class BridgeDaemon {
         void writeJsonLine(pending.socket, {
           type: 'agent.response',
           response,
+        }).catch((error) => {
+          this.logger.error('timeout response write failed', {
+            requestId: request.id,
+            method: pending.method,
+            message: error instanceof Error ? error.message : String(error),
+          });
         });
       }, this.pendingTimeoutMs),
     });
@@ -899,7 +906,6 @@ export class BridgeDaemon {
     this.removePendingTarget(responseMessage.id, pending, socket);
 
     if (responseMessage.ok) {
-      clearTimeout(pending.timeoutId);
       this.clearPendingRequest(responseMessage.id, pending);
       this.recordRequestCompletion(responseMessage.id, true);
       this.pushLog({
@@ -968,7 +974,6 @@ export class BridgeDaemon {
         if (!pending) {
           continue;
         }
-        clearTimeout(pending.timeoutId);
         this.clearPendingRequest(id, pending);
         this.recordRequestCompletion(id, false);
       }
@@ -982,7 +987,13 @@ export class BridgeDaemon {
           continue;
         }
         this.removePendingTarget(id, pending, socket);
-        void this.finishPendingRequestIfExhausted(id, pending);
+        void this.finishPendingRequestIfExhausted(id, pending).catch((error) => {
+          this.logger.error('pending exhaustion response failed', {
+            requestId: id,
+            method: pending.method,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        });
       }
     }
   }
@@ -1000,7 +1011,6 @@ export class BridgeDaemon {
       return;
     }
 
-    clearTimeout(pending.timeoutId);
     this.clearPendingRequest(requestId, pending);
     this.recordRequestCompletion(requestId, false);
 

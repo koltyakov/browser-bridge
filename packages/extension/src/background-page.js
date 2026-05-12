@@ -18,6 +18,10 @@ import {
   summarizeTabResult,
 } from './background-helpers.js';
 import { resolveWindowScopedTab, selectRequestTabCandidate } from './background-routing.js';
+import {
+  ACCESS_DENIED_REASON_WINDOW_GONE,
+  ACCESS_DENIED_REASON_WINDOW_OFF,
+} from './background-state.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
@@ -71,7 +75,8 @@ export function createPageRequestController(state, chromeObj, dependencies) {
     if (!state.enabledWindow) {
       throw new BridgeError(
         ERROR_CODES.ACCESS_DENIED,
-        'No window is currently enabled for bridge access'
+        'No window is currently enabled for bridge access',
+        { reason: ACCESS_DENIED_REASON_WINDOW_OFF }
       );
     }
 
@@ -80,7 +85,9 @@ export function createPageRequestController(state, chromeObj, dependencies) {
     } catch {
       const cleared = await dependencies.clearEnabledWindowIfGone();
       if (cleared) {
-        throw new BridgeError(ERROR_CODES.ACCESS_DENIED, 'Enabled window no longer exists');
+        throw new BridgeError(ERROR_CODES.ACCESS_DENIED, 'Enabled window no longer exists', {
+          reason: ACCESS_DENIED_REASON_WINDOW_GONE,
+        });
       }
     }
 

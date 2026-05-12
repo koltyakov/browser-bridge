@@ -11,13 +11,13 @@ Short version:
 
 ## Overview
 
-| Aspect                    | MCP                           | CLI Skill                        |
-| ------------------------- | ----------------------------- | -------------------------------- |
-| **Integration Type**      | Native tool protocol          | Shell command execution          |
-| **Primary Use Case**      | Agents with MCP support       | Shell-capable agents             |
-| **Discovery**             | Auto-discovered tools         | Skill documentation              |
-| **Invocation**            | Tool calls                    | `bbx` commands                   |
-| **Sandbox Compatibility** | Excellent (no shell required) | Variable (requires shell access) |
+| Aspect                    | MCP                                                | CLI Skill                        |
+| ------------------------- | -------------------------------------------------- | -------------------------------- |
+| **Integration Type**      | Native tool protocol                               | Shell command execution          |
+| **Primary Use Case**      | Agents with MCP support                            | Shell-capable agents             |
+| **Discovery**             | Auto-discovered tools, prompts, and instructions   | Skill documentation              |
+| **Invocation**            | Tool calls                                         | `bbx` commands                   |
+| **Sandbox Compatibility** | Excellent (no shell required)                      | Variable (requires shell access) |
 
 ## Capability Matrix
 
@@ -141,16 +141,17 @@ Short version:
 
 ### MCP Advantages
 
-| Feature                  | Description                                                                           |
-| ------------------------ | ------------------------------------------------------------------------------------- |
-| **Auto-discovery**       | Tools are automatically registered and discovered by MCP clients                      |
-| **Schema validation**    | Input parameters validated via Zod schemas before execution                           |
-| **Structured responses** | Consistent tool result format with content blocks                                     |
-| **No shell dependency**  | Works in sandboxed environments without shell access                                  |
-| **Tool grouping**        | Related actions grouped logically (e.g., `browser_dom` with multiple actions)         |
-| **Type safety**          | Strong typing via input schemas                                                       |
-| **Client-native**        | Integrated into agent's tool system natively                                          |
-| **Delegation hints**     | `browser_investigate` can tell orchestrators to use a smaller, cheaper subagent first |
+| Feature                       | Description                                                                           |
+| ----------------------------- | ------------------------------------------------------------------------------------- |
+| **Auto-discovery**            | Tools are automatically registered and discovered by MCP clients                      |
+| **Schema validation**         | Input parameters validated via Zod schemas before execution                           |
+| **Structured responses**      | Consistent tool result format with content blocks                                     |
+| **No shell dependency**       | Works in sandboxed environments without shell access                                  |
+| **Tool grouping**             | Related actions grouped logically (e.g., `browser_dom` with multiple actions)         |
+| **Type safety**               | Strong typing via input schemas                                                       |
+| **Client-native**             | Integrated into agent's tool system natively                                          |
+| **Self-contained guidance**   | Server instructions and prompt templates provide MCP-native workflow guidance         |
+| **Delegation hints**          | `browser_investigate` can tell orchestrators to use a smaller, cheaper subagent first |
 
 ### CLI Advantages
 

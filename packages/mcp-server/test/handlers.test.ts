@@ -214,6 +214,20 @@ test('handleTabsTool retries one transient bridge failure', async () => {
   );
 });
 
+test('handleInputTool does not retry non-idempotent actions', async () => {
+  await withMockedBridge(
+    async () => fail('TIMEOUT', 'Click may still have reached the page'),
+    async (calls) => {
+      const result = await handleInputTool({ action: 'click', elementRef: 'el_1' });
+
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].method, 'input.click');
+      assert.equal(result.isError, true);
+      assert.equal(result.structuredContent.ok, false);
+    }
+  );
+});
+
 test('handleTabsTool does not retry non-retriable bridge failures', async () => {
   await withMockedBridge(
     async () => fail('ACCESS_DENIED', 'Denied'),

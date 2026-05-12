@@ -5,7 +5,7 @@
 Use when a dev server is already running and you want to prove a fix rendered.
 
 1. `page.get_state`
-2. `dom.query` on the target area with `budgetPreset: "quick"`
+2. `dom.query` on the target area with explicit tight limits such as `maxNodes: 5`, `maxDepth: 2`, and `textBudget: 300`
 3. `styles.get_computed` or `layout.get_box_model`
 4. `patch.apply_styles` to prove the visual fix
 5. Edit source files

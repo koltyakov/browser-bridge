@@ -40,6 +40,7 @@ import {
   getMethodsByMaxComplexity,
 } from '../../protocol/src/index.js';
 import { applyWindowsTcpTransportDefaults } from '../../native-host/src/config.js';
+import { MCP_SERVER_INSTRUCTIONS, registerBridgeMcpGuidance } from './guidance.js';
 
 export const BUDGET_PRESET_DESCRIPTION = `Budget preset: "quick", "normal", or "deep" (defaults: query ${BUDGET_PRESETS.normal.maxNodes} nodes / depth ${BUDGET_PRESETS.normal.maxDepth} / text ${BUDGET_PRESETS.normal.textBudget}). Numeric fields override the preset when both are provided.`;
 export const TAB_ID_DESCRIPTION =
@@ -92,10 +93,15 @@ const INVESTIGATE_DELEGATION_HINT = Object.freeze({
  * @returns {McpServer}
  */
 export function createBridgeMcpServer() {
-  const server = new McpServer({
-    name: 'browser-bridge',
-    version: MCP_SERVER_VERSION,
-  });
+  const server = new McpServer(
+    {
+      name: 'browser-bridge',
+      version: MCP_SERVER_VERSION,
+    },
+    {
+      instructions: MCP_SERVER_INSTRUCTIONS,
+    }
+  );
 
   server.registerTool(
     'browser_status',
@@ -728,6 +734,8 @@ export function createBridgeMcpServer() {
     },
     handleInvestigateTool
   );
+
+  registerBridgeMcpGuidance(server);
 
   return server;
 }

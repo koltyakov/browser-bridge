@@ -1430,17 +1430,25 @@ test('content script prunes detached registry entries in 100-entry batches once 
     attachedElements.add(root);
   }
 
-  const overflow = createFakeElement({
+  const overflowAttached = createFakeElement({
     tagName: 'section',
-    textContent: 'overflow-node',
-    attributes: { id: 'overflow' },
+    textContent: 'overflow-attached-node',
+    attributes: { id: 'overflow-attached' },
   });
-  selectors['#overflow'] = overflow;
-  attachedElements.add(overflow);
+  selectors['#overflow-attached'] = overflowAttached;
+  attachedElements.add(overflowAttached);
+
+  const overflowAfterDetach = createFakeElement({
+    tagName: 'section',
+    textContent: 'overflow-after-detach-node',
+    attributes: { id: 'overflow-after-detach' },
+  });
+  selectors['#overflow-after-detach'] = overflowAfterDetach;
+  attachedElements.add(overflowAfterDetach);
 
   const body = createFakeElement({
     tagName: 'body',
-    children: [...sections.map((section) => section.root), overflow],
+    children: [...sections.map((section) => section.root), overflowAttached, overflowAfterDetach],
   });
   attachedElements.add(body);
 
@@ -1503,13 +1511,24 @@ test('content script prunes detached registry entries in 100-entry batches once 
 
   assert.equal(lastQuery.registrySize, 5000);
 
+  const cappedQuery = await query({
+    selector: '#overflow-attached',
+    includeBbox: false,
+    maxNodes: 10,
+    textBudget: 1000,
+  });
+
+  assert.equal(cappedQuery.nodes.length, 1);
+  assert.equal(cappedQuery._registryPruned, true);
+  assert.equal(cappedQuery.registrySize, 5000);
+
   attachedElements.delete(sections[0].root);
-  for (const detachedChild of sections[0].children.slice(0, 100)) {
+  for (const detachedChild of sections[0].children) {
     attachedElements.delete(detachedChild);
   }
 
   const overflowQuery = await query({
-    selector: '#overflow',
+    selector: '#overflow-after-detach',
     includeBbox: false,
     maxNodes: 10,
     textBudget: 1000,

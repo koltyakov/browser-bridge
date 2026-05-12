@@ -112,6 +112,8 @@ Browser Bridge is optimized for the opposite starting point: **inspect the state
 5. Enable Browser Bridge for the browser window you want to inspect/control with the AI agent
 6. Ask your agent to use Browser Bridge via MCP (`BB MCP` or `Browser Bridge MCP`), or invoke the installed Browser Bridge skill in CLI mode (`/browser-bridge`, `browser-bridge`, or the client-specific skill trigger)
 
+MCP mode is self-contained: the server exposes tools, startup instructions, and prompt templates, so a separate CLI skill is not required for MCP guidance.
+
 ## How it works
 
 - The extension is scoped to one explicitly enabled Chrome window at a time - no ambient browser access

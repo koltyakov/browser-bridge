@@ -44,7 +44,7 @@ After installing the extension and CLI, finish the rest from the extension side 
 
 > **Recommendation:** MCP and the CLI skill are not meant to be installed together by default. If your agent supports both, start with MCP. The bridge protocol and browser data are the same either way; the difference is integration style. MCP fits agent tool systems better because it is structured, validated, and does not depend on shell access. Choose the CLI skill when you specifically want direct `bbx` control for shell-driven workflows such as setup, debugging, scripting, or raw protocol calls. If CLI mode is unreliable because the agent runs in a sandboxed shell, such as GitHub Copilot, use MCP instead.
 
-**MCP** - the default path for agents with native MCP tool support. Prefer this when your agent can use either mode. It gives the agent structured tools without relying on shell execution, and it is the best fallback when CLI mode is blocked by sandboxing. Write the config directly into each client's settings file:
+**MCP** - the default path for agents with native MCP tool support. Prefer this when your agent can use either mode. It gives the agent structured tools, server instructions, and MCP prompt templates without relying on shell execution, and it is the best fallback when CLI mode is blocked by sandboxing. Write the config directly into each client's settings file:
 
 ```bash
 bbx install-mcp                  # prompt/select detected clients
@@ -54,6 +54,8 @@ bbx install-mcp copilot --local  # scope to current project instead of global
 ```
 
 Configs are written globally by default. For GitHub Copilot, that means `~/.copilot/mcp-config.json`; project installs still use `.vscode/mcp.json`. Browser Bridge also writes the older VS Code `User/mcp.json` locations as compatibility fallbacks.
+
+The MCP server is self-contained: clients can discover Browser Bridge tools, startup instructions, and prompts such as `browser_bridge_guide`, `browser_bridge_investigate`, `browser_bridge_debug_layout`, and `browser_bridge_verify_flow`. You do not need the CLI skill for MCP guidance.
 
 **Skill + CLI** - for agents that can reliably run shell commands and where direct `bbx` control is the better fit than MCP tools. Use this path for shell-driven agent flows, setup and doctor flows, scripting, logs, or raw protocol access. Install the Browser Bridge skill so your agent knows how to drive `bbx`:
 

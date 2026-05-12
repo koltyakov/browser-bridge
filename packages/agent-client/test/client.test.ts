@@ -314,6 +314,21 @@ test('BridgeClient.request rejects on timeout and removes the waiting entry', as
   assert.equal(client.waiting.size, 0);
 });
 
+test('BridgeClient.request removes the waiting entry when socket write fails', async () => {
+  const client = new BridgeClient();
+  client.socket = {
+    destroyed: false,
+    writable: true,
+    write() {
+      throw new Error('write failed');
+    },
+  } as unknown as typeof client.socket;
+
+  await assert.rejects(client.request({ method: 'health.ping', timeoutMs: 25 }), /write failed/);
+
+  assert.equal(client.waiting.size, 0);
+});
+
 test('summarizeBridgeResponse adds stale element recovery hint', () => {
   const summary = summarizeBridgeResponse({
     id: 'req_stale',

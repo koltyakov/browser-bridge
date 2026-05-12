@@ -14,5 +14,11 @@
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["packages/**/*.js", "packages/**/*.ts", "packages/**/*.d.ts", "tests/**/*.ts"]
+  "include": [
+    "packages/**/*.js",
+    "packages/**/*.ts",
+    "packages/**/*.d.ts",
+    "scripts/**/*.mjs",
+    "tests/**/*.ts"
+  ]
 }

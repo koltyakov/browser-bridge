@@ -6,6 +6,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 import { createBridgeMcpServer, startBridgeMcpServer } from '../src/server.js';
+import { MCP_GUIDANCE_PROMPT_NAMES, MCP_SERVER_INSTRUCTIONS } from '../src/guidance.js';
 import {
   BRIDGE_HOME_ENV,
   BRIDGE_TCP_PORT_ENV,
@@ -20,7 +21,9 @@ type ToolRegistration = {
 
 test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
   const originalRegisterTool = McpServer.prototype.registerTool;
+  const originalRegisterPrompt = McpServer.prototype.registerPrompt;
   const registrations: ToolRegistration[] = [];
+  const promptRegistrations: ToolRegistration[] = [];
 
   McpServer.prototype.registerTool = function registerTool(
     name: string,
@@ -42,6 +45,27 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
       update() {},
     } as unknown as ReturnType<typeof originalRegisterTool>;
   } as unknown as typeof McpServer.prototype.registerTool;
+
+  McpServer.prototype.registerPrompt = function registerPrompt(
+    name: string,
+    config: Record<string, unknown>,
+    callback: unknown
+  ) {
+    promptRegistrations.push({
+      name,
+      config,
+      handler: callback,
+    });
+    return {
+      enabled: true,
+      disable() {},
+      enable() {},
+      callback,
+      name,
+      remove() {},
+      update() {},
+    } as unknown as ReturnType<typeof originalRegisterPrompt>;
+  } as unknown as typeof McpServer.prototype.registerPrompt;
 
   try {
     const server = createBridgeMcpServer();
@@ -104,8 +128,16 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
       Array.isArray(delegationHint.preferredBridgeMethods) &&
         !delegationHint.preferredBridgeMethods.includes('screenshot.capture_full_page')
     );
+    assert.match(MCP_SERVER_INSTRUCTIONS, /Prefer Browser Bridge MCP tools/);
+    assert.deepEqual(
+      promptRegistrations.map((entry) => entry.name),
+      MCP_GUIDANCE_PROMPT_NAMES
+    );
+    assert.equal(promptRegistrations[0].config.title, 'Use Browser Bridge MCP');
+    assert.match(String(promptRegistrations[1].config.description), /structured reads/);
   } finally {
     McpServer.prototype.registerTool = originalRegisterTool;
+    McpServer.prototype.registerPrompt = originalRegisterPrompt;
   }
 });
 

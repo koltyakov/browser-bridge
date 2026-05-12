@@ -24,6 +24,52 @@ import { annotateBridgeSummary, summarizeBridgeResponse } from '../../agent-clie
 
 export const REQUEST_SOURCE = 'mcp';
 
+/** @type {ReadonlySet<BridgeMethod>} */
+const RETRY_SAFE_METHODS = new Set([
+  'skill.get_runtime_context',
+  'setup.get_status',
+  'log.tail',
+  'health.ping',
+  'daemon.metrics',
+  'tabs.list',
+  'page.get_state',
+  'page.get_storage',
+  'page.get_text',
+  'dom.query',
+  'dom.describe',
+  'dom.get_text',
+  'dom.get_attributes',
+  'dom.wait_for',
+  'dom.find_by_text',
+  'dom.find_by_role',
+  'dom.get_html',
+  'dom.get_accessibility_tree',
+  'layout.get_box_model',
+  'layout.hit_test',
+  'styles.get_computed',
+  'styles.get_matched_rules',
+  'screenshot.capture_region',
+  'screenshot.capture_element',
+  'screenshot.capture_full_page',
+  'performance.get_metrics',
+  'cdp.get_document',
+  'cdp.get_dom_snapshot',
+  'cdp.get_box_model',
+  'cdp.get_computed_styles_for_node',
+]);
+
+/**
+ * @param {BridgeMethod} method
+ * @param {Record<string, unknown>} params
+ * @returns {boolean}
+ */
+export function isRetrySafeBridgeMethod(method, params) {
+  if (method === 'page.get_console' || method === 'page.get_network') {
+    return params.clear !== true;
+  }
+  return RETRY_SAFE_METHODS.has(method);
+}
+
 /**
  * @typedef {{
  *   content: Array<{ type: 'text', text: string }>,
@@ -246,7 +292,7 @@ export function applyHtmlBudgetPreset(args) {
 export async function requestBridgeWithRetry(client, method, params, options) {
   const response = await requestBridge(client, method, params, options);
   const recovery = !response.ok && response.error ? getErrorRecovery(response.error.code) : null;
-  if (!response.ok && recovery?.retry) {
+  if (!response.ok && recovery?.retry && isRetrySafeBridgeMethod(method, params)) {
     const delay = recovery.retryAfterMs ?? 1000;
     process.stderr.write(
       `[bbx-mcp] Retrying ${method} after ${delay}ms (${response.error.code})\n`

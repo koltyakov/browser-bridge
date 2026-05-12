@@ -133,6 +133,8 @@ export const DEBUGGER_PROTOCOL_VERSION = '1.3';
 export const SETUP_STATUS_STALE_MS = 30_000;
 export const SETUP_STATUS_TIMEOUT_MS = 5_000;
 export const ACCESS_DENIED_WINDOW_OFF = 'Browser Bridge is off for this window.';
+export const ACCESS_DENIED_REASON_WINDOW_OFF = 'window_access_off';
+export const ACCESS_DENIED_REASON_WINDOW_GONE = 'window_access_gone';
 export const ACCESS_DENIED_TAB_CLOSE = 'tabs.close only works inside the enabled window.';
 export const KEEPALIVE_ALARM_NAME = 'bb-keepalive';
 export const NATIVE_RECONNECT_BASE_MS = 2_000;
@@ -321,6 +323,25 @@ export function toFailureResponse(request, error) {
   return createFailure(request.id, code, message, null, {
     method: request.method,
   });
+}
+
+/**
+ * @param {BridgeResponse} response
+ * @returns {boolean}
+ */
+export function isWindowAccessDeniedResponse(response) {
+  if (response.ok || response.error.code !== ERROR_CODES.ACCESS_DENIED) {
+    return false;
+  }
+  if (response.error.message === ACCESS_DENIED_WINDOW_OFF) {
+    return true;
+  }
+  const details = response.error.details;
+  if (!details || typeof details !== 'object') {
+    return false;
+  }
+  const reason = Reflect.get(details, 'reason');
+  return reason === ACCESS_DENIED_REASON_WINDOW_OFF || reason === ACCESS_DENIED_REASON_WINDOW_GONE;
 }
 
 /**

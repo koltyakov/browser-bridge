@@ -72,6 +72,7 @@ import {
   clearRequestedAccessWindow,
   clearRequestedAccessPopupWindow,
   toFailureResponse,
+  isWindowAccessDeniedResponse,
   reportAsyncError,
   getStateForTest,
 } from './background-state.js';
@@ -348,11 +349,7 @@ async function handleBridgeRequest(request) {
     response = toFailureResponse(request, error);
   }
 
-  if (
-    !response.ok &&
-    response.error.code === ERROR_CODES.ACCESS_DENIED &&
-    response.error.message === ACCESS_DENIED_WINDOW_OFF
-  ) {
+  if (isWindowAccessDeniedResponse(response)) {
     await requestEnableFromAgentSide(request);
   }
 

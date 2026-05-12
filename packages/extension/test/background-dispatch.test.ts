@@ -2123,6 +2123,46 @@ test('background dispatch surfaces empty CDP screenshot payloads', async () => {
   assert.equal(response.meta?.method, 'screenshot.capture_region');
 });
 
+test('background dispatch rejects oversized screenshot regions before CDP capture', async () => {
+  let sendCommandCalled = false;
+  const { loaded } = await loadEnabledDispatchBackground({
+    queryLabel: 'test-background-dispatch-screenshot-oversized-region',
+    chromeOverrides: {
+      tabs: {
+        async sendMessage() {
+          return { ok: true };
+        },
+      },
+      debugger: {
+        async sendCommand() {
+          sendCommandCalled = true;
+          return { data: 'should-not-capture' };
+        },
+      },
+    },
+  });
+
+  const response = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-screenshot-oversized-region',
+      method: 'screenshot.capture_region',
+      params: {
+        x: 0,
+        y: 0,
+        width: 20_000,
+        height: 20_000,
+        scale: 1,
+      },
+    })
+  );
+
+  assert.equal(sendCommandCalled, false);
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, ERROR_CODES.RESULT_TRUNCATED);
+  assert.match(response.error.message, /Screenshot capture is too large/);
+  assert.equal(response.meta?.method, 'screenshot.capture_region');
+});
+
 test('background dispatch waits for the active tab to finish loading', async () => {
   const getCalls: number[] = [];
   const activeTab = createDispatchActiveTab({
@@ -2588,6 +2628,70 @@ test('background dispatch triggers the access-request UI after a window-off deni
       top: 122,
     },
   ]);
+});
+
+test('background dispatch triggers the access-request UI after tab-bound access denial', async () => {
+  const popupCreateCalls: chrome.windows.CreateData[] = [];
+  const chrome = createChromeFake({
+    runtime: {
+      getURL(path: string) {
+        return `chrome-extension://test-extension-id/${path}`;
+      },
+    },
+    tabs: {
+      async query(queryInfo: chrome.tabs.QueryInfo = {}) {
+        if (queryInfo.active && queryInfo.lastFocusedWindow) {
+          return [
+            {
+              id: 62,
+              windowId: 10,
+              active: true,
+              title: 'Needs tab access',
+              url: 'https://example.com/needs-tab-access',
+            } as chrome.tabs.Tab,
+          ];
+        }
+        return [];
+      },
+    },
+    windows: {
+      async get(windowId: number) {
+        return {
+          id: windowId,
+          left: 100,
+          top: 50,
+          width: 1200,
+        };
+      },
+      async create(createData: chrome.windows.CreateData = {}) {
+        popupCreateCalls.push(createData);
+        return {
+          id: 92,
+          ...createData,
+        };
+      },
+    },
+  });
+  const loaded = await loadBackground({
+    chrome,
+    query: `test-background-dispatch-tab-bound-access-retry-${Date.now()}`,
+  });
+
+  const response = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-page-state-access-retry',
+      method: 'page.get_state',
+    })
+  );
+
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, ERROR_CODES.ACCESS_DENIED);
+  assert.equal(response.error.message, 'No window is currently enabled for bridge access');
+
+  const state = loaded.module.getStateForTest() as AccessRequestState;
+  assert.equal(state.requestedAccessWindowId, 10);
+  assert.equal(state.requestedAccessPopupWindowId, 92);
+  assert.equal(popupCreateCalls.length, 1);
 });
 
 test('background dispatch rejects invalid native requests before method dispatch', async () => {

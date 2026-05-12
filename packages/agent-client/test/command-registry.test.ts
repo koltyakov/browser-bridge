@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { SHORTCUT_COMMANDS } from '../src/command-registry.js';
+import { CLI_HELP_SECTIONS, SHORTCUT_COMMANDS } from '../src/command-registry.js';
 
 test('shortcut commands build expected params for common inputs', () => {
   assert.deepEqual(SHORTCUT_COMMANDS['access-request'].build([]), {});
@@ -119,4 +119,9 @@ test('shortcut commands reject missing required arguments with usage errors', ()
   assert.throws(() => SHORTCUT_COMMANDS.navigate.build([]), /Usage: navigate <url>/);
   assert.throws(() => SHORTCUT_COMMANDS.scroll.build([]), /Usage: scroll <top> \[left\]/);
   assert.throws(() => SHORTCUT_COMMANDS.resize.build(['800']), /Usage: resize <width> <height>/);
+});
+
+test('CLI help lists every install-mcp target', () => {
+  const helpText = CLI_HELP_SECTIONS.flatMap((section) => section.lines).join('\n');
+  assert.match(helpText, /codex\|claude\|cursor\|copilot\|opencode\|antigravity\|windsurf\|agents/);
 });

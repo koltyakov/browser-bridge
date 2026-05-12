@@ -57,6 +57,22 @@ function createTimeoutError(method, timeoutMs) {
   return error;
 }
 
+/**
+ * @param {net.Socket} socket
+ * @param {string} line
+ * @returns {Promise<void>}
+ */
+async function writeSocketLine(socket, line) {
+  if (!socket.write(line)) {
+    await Promise.race([
+      once(socket, 'drain'),
+      once(socket, 'close').then(() => {
+        throw new Error('Bridge socket closed while writing.');
+      }),
+    ]);
+  }
+}
+
 export class BridgeClient extends EventEmitter {
   /**
    * @param {BridgeClientOptions} [options={}]
@@ -114,6 +130,18 @@ export class BridgeClient extends EventEmitter {
       throw error;
     }
 
+    const registrationPromise = new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        this.waiting.delete('registered');
+        reject(createTimeoutError('register', this.defaultTimeoutMs));
+      }, this.defaultTimeoutMs);
+      this.waiting.set('registered', {
+        resolve,
+        reject,
+        timeoutId,
+      });
+    });
+
     parseJsonLines(socket, (raw) => {
       const message = /** @type {ClientMessage} */ (raw);
       if (message.type === 'registered') {
@@ -167,25 +195,25 @@ export class BridgeClient extends EventEmitter {
           ? await readBridgeAuthToken()
           : null
         : normalizeBridgeAuthToken(this.authToken);
-    this.socket.write(
-      `${JSON.stringify({
-        type: 'register',
-        role: 'agent',
-        clientId: this.clientId,
-        ...(authToken ? { authToken } : {}),
-      })}\n`
-    );
-    await new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
+    try {
+      await writeSocketLine(
+        socket,
+        `${JSON.stringify({
+          type: 'register',
+          role: 'agent',
+          clientId: this.clientId,
+          ...(authToken ? { authToken } : {}),
+        })}\n`
+      );
+    } catch (error) {
+      const pending = this.waiting.get('registered');
+      if (pending) {
+        clearTimeout(pending.timeoutId);
         this.waiting.delete('registered');
-        reject(createTimeoutError('register', this.defaultTimeoutMs));
-      }, this.defaultTimeoutMs);
-      this.waiting.set('registered', {
-        resolve,
-        reject,
-        timeoutId,
-      });
-    });
+      }
+      throw error;
+    }
+    await registrationPromise;
 
     this.protocolCompatibility = null;
     this.protocolWarning = null;
@@ -268,13 +296,15 @@ export class BridgeClient extends EventEmitter {
       });
     });
 
-    if (!this.socket.write(`${JSON.stringify({ type: 'agent.request', request })}\n`)) {
-      await Promise.race([
-        once(this.socket, 'drain'),
-        once(this.socket, 'close').then(() => {
-          throw new Error('Bridge socket closed while writing.');
-        }),
-      ]);
+    try {
+      await writeSocketLine(this.socket, `${JSON.stringify({ type: 'agent.request', request })}\n`);
+    } catch (error) {
+      const pending = this.waiting.get(request.id);
+      if (pending) {
+        clearTimeout(pending.timeoutId);
+        this.waiting.delete(request.id);
+      }
+      throw error;
     }
     const response = /** @type {BridgeResponse} */ (await responsePromise);
     return this.attachProtocolWarning(response);
