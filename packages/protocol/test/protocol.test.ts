@@ -418,16 +418,19 @@ test('normalizeHoverParams clamps duration', () => {
   const params = normalizeHoverParams({
     target: { elementRef: 'el_abc' },
     duration: 99999,
+    modifiers: ['Shift', '', 'Alt'],
   });
 
   assert.equal(params.target.elementRef, 'el_abc');
   assert.equal(params.duration, 5000);
+  assert.deepEqual(params.modifiers, ['Shift', 'Alt']);
 });
 
 test('normalizeHoverParams defaults duration to 0', () => {
   const params = normalizeHoverParams({ target: { selector: '.btn' } });
   assert.equal(params.duration, 0);
   assert.equal(params.target.selector, '.btn');
+  assert.deepEqual(params.modifiers, []);
 });
 
 /** Ensure drag params normalize source, destination, and offsets. */

@@ -52,10 +52,13 @@
       typeof params.patchId === 'string' && params.patchId
         ? params.patchId
         : `patch_${crypto.randomUUID()}`;
-    /** @type {Record<string, string>} */
+    /** @type {Record<string, { value: string, priority: string }>} */
     const previous = {};
     for (const [property, value] of Object.entries(params.declarations || {})) {
-      previous[property] = element.style.getPropertyValue(property);
+      previous[property] = {
+        value: element.style.getPropertyValue(property),
+        priority: element.style.getPropertyPriority(property),
+      };
       element.style.setProperty(property, value, params.important ? 'important' : '');
     }
     pruneRegistry(getPatchRegistry(), getMaxPatchRegistrySize());
@@ -128,7 +131,7 @@
         element.removeAttribute(name);
         break;
       case 'toggle_class': {
-        const className = String(params.value);
+        const className = getClassPatchValue(params);
         previous.toggledClass = className;
         previous.hadClass = element.classList.contains(className);
         previous.changed = true;
@@ -209,9 +212,9 @@
     const element = getRequiredElement(patch.elementRef);
     if (patch.kind === 'style') {
       const htmlElement = /** @type {HTMLElement} */ (element);
-      for (const [property, value] of Object.entries(patch.previous)) {
-        if (value) {
-          htmlElement.style.setProperty(property, value);
+      for (const [property, previous] of Object.entries(patch.previous)) {
+        if (previous.value) {
+          htmlElement.style.setProperty(property, previous.value, previous.priority);
         } else {
           htmlElement.style.removeProperty(property);
         }

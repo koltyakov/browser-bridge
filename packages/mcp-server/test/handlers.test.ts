@@ -357,9 +357,16 @@ test('handleInputTool click resolves elementRef and calls input.click', async ()
       const result = await handleInputTool({
         action: 'click',
         selector: 'button',
+        modifiers: ['Meta'],
       });
       const clickCall = calls.find((c) => c.method === 'input.click');
       assert.ok(clickCall, 'input.click should be called');
+      assert.deepEqual(clickCall.params, {
+        target: { elementRef: 'el_btn' },
+        button: undefined,
+        clickCount: undefined,
+        modifiers: ['Meta'],
+      });
       assert.equal(result.isError, undefined);
     }
   );

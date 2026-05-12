@@ -513,10 +513,16 @@ test('handleNavigationTool resize calls viewport.resize', async () => {
         action: 'resize',
         width: 800,
         height: 600,
+        deviceScaleFactor: 2,
         reset: true,
       });
       assert.equal(calls[0].method, 'viewport.resize');
-      assert.deepEqual(calls[0].params, { width: 800, height: 600, reset: true });
+      assert.deepEqual(calls[0].params, {
+        width: 800,
+        height: 600,
+        deviceScaleFactor: 2,
+        reset: true,
+      });
       assert.equal(result.isError, undefined);
     }
   );
@@ -560,6 +566,7 @@ test('handleInputTool type calls input.type', async () => {
         text: 'hello',
         clear: true,
         submit: true,
+        modifiers: ['Shift'],
       });
       const typeCall = calls.find((c) => c.method === 'input.type');
       assert.ok(typeCall, 'input.type should be called');
@@ -568,6 +575,7 @@ test('handleInputTool type calls input.type', async () => {
         text: 'hello',
         clear: true,
         submit: true,
+        modifiers: ['Shift'],
       });
       assert.equal(result.isError, undefined);
     }
@@ -665,9 +673,15 @@ test('handleInputTool hover calls input.hover', async () => {
       const result = await handleInputTool({
         action: 'hover',
         selector: 'div',
+        modifiers: ['Alt'],
       });
       const hoverCall = calls.find((c) => c.method === 'input.hover');
       assert.ok(hoverCall, 'input.hover should be called');
+      assert.deepEqual(hoverCall.params, {
+        target: { elementRef: 'el_1' },
+        duration: undefined,
+        modifiers: ['Alt'],
+      });
       assert.equal(result.isError, undefined);
     }
   );
@@ -1043,6 +1057,18 @@ test('handleCaptureTool region calls screenshot.capture_region', async () => {
       assert.equal(calls[0].method, 'screenshot.capture_region');
       assert.deepEqual(calls[0].params, { x: 0, y: 0, width: 100, height: 100 });
       assert.equal(result.isError, undefined);
+    }
+  );
+});
+
+test('handleCaptureTool region requires a complete finite rect', async () => {
+  await withMockedBridge(
+    async () => ok({ image: 'data:image/png;base64,abc', rect: {} }),
+    async (calls) => {
+      const result = await handleCaptureTool({ action: 'region' });
+      assert.equal(calls.length, 0);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0].text, /rect with finite x, y, width, and height/);
     }
   );
 });

@@ -521,7 +521,25 @@ export class BridgeDaemon {
    * @returns {Promise<void>}
    */
   async handleAgentRequest(socket, message) {
-    const request = validateBridgeRequest(message.request);
+    /** @type {BridgeRequest} */
+    let request;
+    try {
+      request = validateBridgeRequest(message.request);
+    } catch (error) {
+      const candidate =
+        message.request && typeof message.request === 'object'
+          ? /** @type {Record<string, unknown>} */ (/** @type {unknown} */ (message.request))
+          : {};
+      const response = createFailure(
+        typeof candidate.id === 'string' && candidate.id.trim() ? candidate.id : 'invalid_request',
+        ERROR_CODES.INVALID_REQUEST,
+        error instanceof Error ? error.message : String(error),
+        null,
+        typeof candidate.method === 'string' ? { method: candidate.method } : {}
+      );
+      await writeJsonLine(socket, { type: 'agent.response', response });
+      return;
+    }
     if (request.method === 'health.ping') {
       if (this.extensionSockets.size === 0) {
         const response = createSuccess(request.id, {
@@ -849,7 +867,9 @@ export class BridgeDaemon {
 
     if (socket.__clientId) {
       this.logger.info('agent disconnected', { clientId: socket.__clientId });
-      this.agentSockets.delete(socket.__clientId);
+      if (this.agentSockets.get(socket.__clientId) === socket) {
+        this.agentSockets.delete(socket.__clientId);
+      }
     }
 
     const ownedRequestIds = this.pendingRequestsByOwnerSocket.get(socket);
@@ -1011,7 +1031,10 @@ export async function pingExistingDaemon(transport) {
  * @returns {SetupInstallParams & { action: 'install' | 'uninstall', kind: 'mcp' | 'skill', target: string }}
  */
 export function normalizeSetupInstallParams(params) {
-  const action = params.action === 'uninstall' ? 'uninstall' : 'install';
+  const action = params.action == null ? 'install' : params.action;
+  if (action !== 'install' && action !== 'uninstall') {
+    throw new Error('setup.install action must be "install" or "uninstall".');
+  }
   const kind = params.kind === 'mcp' || params.kind === 'skill' ? params.kind : null;
   const target = typeof params.target === 'string' ? params.target.trim().toLowerCase() : '';
   if (!kind) {
@@ -1020,7 +1043,7 @@ export function normalizeSetupInstallParams(params) {
   if (!target) {
     throw new Error('setup.install requires a target.');
   }
-  return { action, kind, target };
+  return { action: /** @type {'install' | 'uninstall'} */ (action), kind, target };
 }
 
 /**

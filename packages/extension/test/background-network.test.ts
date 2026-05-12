@@ -364,10 +364,11 @@ test('readNetworkBuffer returns copied entries and clears the page state on requ
     size: 456,
   };
 
+  const pageBuffer = [entry];
   Object.defineProperty(globalThis, '__bb_network_buffer', {
     configurable: true,
     writable: true,
-    value: [entry],
+    value: pageBuffer,
   });
   Object.defineProperty(globalThis, '__bb_network_dropped', {
     configurable: true,
@@ -400,6 +401,10 @@ test('readNetworkBuffer returns copied entries and clears the page state on requ
       firstRead.entries,
       (globalThis as unknown as InstalledNetworkGlobal).__bb_network_buffer
     );
+    assert.strictEqual(
+      (globalThis as unknown as InstalledNetworkGlobal).__bb_network_buffer,
+      pageBuffer
+    );
     firstRead.entries.push({
       method: 'POST',
       url: 'https://example.com/mutated',
@@ -419,7 +424,11 @@ test('readNetworkBuffer returns copied entries and clears the page state on requ
       entries: [entry],
       dropped: 3,
     });
-    assert.deepEqual((globalThis as unknown as InstalledNetworkGlobal).__bb_network_buffer, []);
+    assert.strictEqual(
+      (globalThis as unknown as InstalledNetworkGlobal).__bb_network_buffer,
+      pageBuffer
+    );
+    assert.deepEqual(pageBuffer, []);
     assert.equal((globalThis as unknown as InstalledNetworkGlobal).__bb_network_dropped, 0);
     assert.deepEqual(executeScriptCalls, [
       {

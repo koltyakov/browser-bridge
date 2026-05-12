@@ -61,12 +61,17 @@ export const NAVIGATION_ACTIONS = {
   },
   resize: {
     method: 'viewport.resize',
-    params: (a) => ({ width: a.width, height: a.height, reset: a.reset }),
+    params: (a) => ({
+      width: a.width,
+      height: a.height,
+      deviceScaleFactor: a.deviceScaleFactor,
+      reset: a.reset,
+    }),
   },
 };
 
 /**
- * @param {{ action: string, url?: string, waitForLoad?: boolean, timeoutMs?: number, top?: number, left?: number, behavior?: string, relative?: boolean, width?: number, height?: number, reset?: boolean, tabId?: number, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @param {{ action: string, url?: string, waitForLoad?: boolean, timeoutMs?: number, top?: number, left?: number, behavior?: string, relative?: boolean, width?: number, height?: number, deviceScaleFactor?: number, reset?: boolean, tabId?: number, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleNavigationTool(args) {

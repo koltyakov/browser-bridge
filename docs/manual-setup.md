@@ -18,8 +18,8 @@ bbx install
 ```
 
 `bbx install` writes the native messaging manifest so the extension can talk to
-the local host. If you are connecting a packaged store build before the
-installer embeds a default extension ID, use `bbx install <extension-id>`.
+the local host. Use `bbx install <extension-id>` only for unpacked or custom
+extension builds.
 
 By default, `bbx install` targets Chrome. For another supported browser, pass
 `--browser`:
@@ -29,6 +29,7 @@ bbx install --browser edge      # Microsoft Edge
 bbx install --browser brave     # Brave
 bbx install --browser chromium  # Chromium
 bbx install --browser arc       # Arc
+bbx install --all               # All supported browsers
 ```
 
 ## 2. Verify the local bridge first

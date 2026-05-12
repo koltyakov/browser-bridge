@@ -161,15 +161,29 @@ test('ensureConsoleInterceptor installs, records, bounds, and avoids duplicate h
   assert.equal(buffer[0].args[0], 'rejection-1');
   assert.equal(pageGlobal().__bb_console_dropped, 1);
 
+  const installedBuffer = getBuffer();
+  await readConsoleBuffer(42, true, chromeObj);
+  assert.strictEqual(pageGlobal().__bb_console_buffer, installedBuffer);
+  assert.equal(installedBuffer.length, 0);
+  assert.equal(pageGlobal().__bb_console_dropped, 0);
+  console.info('after-clear');
+  assert.strictEqual(getBuffer(), installedBuffer);
+  assert.deepEqual(
+    installedBuffer.map((entry) => entry.args),
+    [['after-clear']]
+  );
+
   await ensureConsoleInterceptor(42, chromeObj);
-  assert.equal(executeScriptCalls.length, 2);
+  assert.equal(executeScriptCalls.length, 3);
   assert.equal(listenerInstallCount, 2);
 });
 
 test('readConsoleBuffer reads, clears, and falls back when no result is returned', async (t) => {
   clearInjectedConsoleState();
   t.after(clearInjectedConsoleState);
-  pageGlobal().__bb_console_buffer = [{ level: 'log', args: ['hello'], ts: 1 }];
+  const entry = { level: 'log', args: ['hello'], ts: 1 };
+  const pageBuffer = [entry];
+  pageGlobal().__bb_console_buffer = pageBuffer;
   pageGlobal().__bb_console_dropped = 2;
 
   const executeScriptCalls: ExecuteScriptConfig[] = [];
@@ -179,16 +193,18 @@ test('readConsoleBuffer reads, clears, and falls back when no result is returned
   });
 
   assert.deepEqual(await readConsoleBuffer(8, false, chromeObj), {
-    entries: [{ level: 'log', args: ['hello'], ts: 1 }],
+    entries: [entry],
     dropped: 2,
   });
-  assert.deepEqual(pageGlobal().__bb_console_buffer, [{ level: 'log', args: ['hello'], ts: 1 }]);
+  assert.strictEqual(pageGlobal().__bb_console_buffer, pageBuffer);
+  assert.deepEqual(pageGlobal().__bb_console_buffer, [entry]);
 
   assert.deepEqual(await readConsoleBuffer(8, true, chromeObj), {
-    entries: [{ level: 'log', args: ['hello'], ts: 1 }],
+    entries: [entry],
     dropped: 2,
   });
-  assert.deepEqual(pageGlobal().__bb_console_buffer, []);
+  assert.strictEqual(pageGlobal().__bb_console_buffer, pageBuffer);
+  assert.deepEqual(pageBuffer, []);
   assert.equal(pageGlobal().__bb_console_dropped, 0);
   assert.deepEqual(
     executeScriptCalls.map((call) => ({ target: call.target, world: call.world, args: call.args })),
