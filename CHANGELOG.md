@@ -6,6 +6,47 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-05-12
+
+### Added
+
+- **TCP daemon authentication:** TCP daemon connections now use a local bridge
+  auth token during agent and extension registration, rejecting unauthenticated
+  sockets before they can send bridge messages.
+- **MCP workflow guidance:** The MCP server now advertises Browser Bridge usage
+  instructions and prompt templates for investigation, layout debugging, and
+  flow verification so MCP clients can discover token-efficient workflows
+  without shelling out to `bbx`.
+- **Safer MCP retry handling:** MCP bridge calls now retry only methods that are
+  safe to repeat, including read-only browser inspection calls and non-clearing
+  console/network reads.
+
+### Changed
+
+- **Tool input validation:** MCP schemas and handlers now reject missing or
+  invalid required fields earlier for DOM waits, text and role searches, hit
+  tests, patch operations, captures, navigation, input, tab ids, limits, and
+  timeouts.
+- **Browser inspection reliability:** DOM queries now report truncation more
+  accurately, text search uses a bounded scan path, wait observers debounce DOM
+  mutation checks, and CDP cleanup for accessibility and performance reads is
+  more robust.
+- **Release automation:** CI and release workflows now watch the broader set of
+  package, documentation, skill, and workflow files touched by Browser Bridge
+  changes.
+
+### Fixed
+
+- **Large screenshot handling:** Screenshot capture now rejects oversized clips
+  with structured `RESULT_TRUNCATED` details instead of attempting captures that
+  can exceed browser limits.
+- **Debugger burst reuse:** CDP debugger sessions now reuse pending burst-idle
+  attachments more safely and avoid stale detach timers during repeated browser
+  operations.
+- **Daemon request robustness:** The daemon now returns structured failures for
+  invalid requests, duplicate in-flight request ids, unauthenticated messages,
+  and response-write failures without leaving pending request timers behind.
+
 ## [1.3.0] - 2026-05-11
 
 ### Added
