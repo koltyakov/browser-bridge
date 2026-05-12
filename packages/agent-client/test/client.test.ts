@@ -1522,6 +1522,33 @@ test('installMcpClientSetup is idempotent for repeated client installs', async (
   }
 });
 
+test('installMcpConfig refuses to overwrite malformed JSON configs', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-mcp-invalid-json-'));
+  const configPath = path.join(tempDir, '.cursor', 'mcp.json');
+
+  try {
+    await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
+    await fs.promises.writeFile(configPath, '{not json\n', 'utf8');
+
+    await assert.rejects(
+      () =>
+        installMcpConfig('cursor', {
+          global: false,
+          cwd: tempDir,
+          stdout: {
+            write() {
+              return true;
+            },
+          },
+        }),
+      /existing MCP config is not valid JSON/
+    );
+    assert.equal(await fs.promises.readFile(configPath, 'utf8'), '{not json\n');
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('findInstalledManagedTargets reports targets with managed skill installs', async () => {
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-find-managed-targets-'));
 

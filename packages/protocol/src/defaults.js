@@ -24,6 +24,9 @@ export const DEFAULT_DEVICE_SCALE_FACTOR = 0;
 /** Maximum size of a Chrome native messaging message in bytes. */
 export const MAX_NATIVE_MESSAGE_BYTES = 1_048_576;
 
+/** Maximum size of one newline-delimited daemon socket message in bytes. */
+export const MAX_JSON_LINE_BYTES = MAX_NATIVE_MESSAGE_BYTES;
+
 /** Default timeout for a bridge request awaiting an extension response (ms). */
 export const DEFAULT_DAEMON_PENDING_TIMEOUT_MS = 30_000;
 

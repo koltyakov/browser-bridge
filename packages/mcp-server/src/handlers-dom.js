@@ -6,6 +6,7 @@ import {
   applyTreeBudgetPreset,
   dispatchToolAction,
   inferBudgetFromSelector,
+  summarizeToolError,
 } from './handlers-utils.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
@@ -93,6 +94,15 @@ export const DOM_ACTIONS = {
  * @returns {Promise<ToolResult>}
  */
 export async function handleDomTool(args) {
+  if (args.action === 'wait' && !hasText(args.selector) && !hasText(args.text)) {
+    return summarizeToolError('selector or text is required for dom.wait_for.');
+  }
+  if (args.action === 'find_text' && !hasText(args.text)) {
+    return summarizeToolError('text is required for dom.find_by_text.');
+  }
+  if (args.action === 'find_role' && !hasText(args.role)) {
+    return summarizeToolError('role is required for dom.find_by_role.');
+  }
   if (args.action === 'query' || args.action === 'accessibility_tree') {
     const inferred = inferBudgetFromSelector(args);
     const withBudget = inferred ? { ...args, budgetPreset: args.budgetPreset ?? inferred } : args;
@@ -136,6 +146,15 @@ export const STYLES_LAYOUT_ACTIONS = {
  * @returns {Promise<ToolResult>}
  */
 export async function handleStylesLayoutTool(args) {
+  if (
+    args.action === 'hit_test' &&
+    (typeof args.x !== 'number' ||
+      !Number.isFinite(args.x) ||
+      typeof args.y !== 'number' ||
+      !Number.isFinite(args.y))
+  ) {
+    return summarizeToolError('x and y are required for layout.hit_test.');
+  }
   return dispatchToolAction(STYLES_LAYOUT_ACTIONS, args, 'styles/layout');
 }
 
@@ -199,5 +218,34 @@ export const PATCH_ACTIONS = {
  * @returns {Promise<ToolResult>}
  */
 export async function handlePatchTool(args) {
+  if (args.action === 'apply_styles' && !hasStringRecord(args.declarations)) {
+    return summarizeToolError('declarations are required for patch.apply_styles.');
+  }
+  if (args.action === 'apply_dom' && !hasText(args.operation)) {
+    return summarizeToolError('operation is required for patch.apply_dom.');
+  }
+  if (args.action === 'rollback' && !hasText(args.patchId)) {
+    return summarizeToolError('patchId is required for patch.rollback.');
+  }
   return dispatchToolAction(PATCH_ACTIONS, args, 'patch');
+}
+
+/**
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+function hasText(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is Record<string, string>}
+ */
+function hasStringRecord(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const entries = Object.entries(/** @type {Record<string, unknown>} */ (value));
+  return entries.length > 0 && entries.every(([key, val]) => key.trim() && typeof val === 'string');
 }

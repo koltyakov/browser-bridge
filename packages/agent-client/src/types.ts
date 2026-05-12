@@ -55,6 +55,13 @@ export type ClientMessage =
       clientId?: string;
     }
   | {
+      type: 'registration_failed';
+      error?: {
+        code?: string;
+        message?: string;
+      };
+    }
+  | {
       type: 'agent.response';
       response: BridgeResponse;
     };
@@ -73,6 +80,7 @@ export interface BridgeClientOptions {
   autoReconnect?: boolean;
   restartDaemonOnVersionMismatch?: boolean;
   restartDaemonFn?: typeof restartBridgeDaemon;
+  authToken?: string | null;
 }
 
 export interface ShortcutCommand {

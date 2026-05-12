@@ -152,6 +152,32 @@ test('handleDomTool text calls dom.get_text with textBudget', async () => {
   );
 });
 
+test('grouped handlers validate action-specific required fields before bridge calls', async () => {
+  const missingText = await handleDomTool({ action: 'find_text' });
+  assert.equal(missingText.isError, true);
+  assert.match(missingText.content[0].text, /text is required/);
+
+  const missingUrl = await handleNavigationTool({ action: 'navigate' });
+  assert.equal(missingUrl.isError, true);
+  assert.match(missingUrl.content[0].text, /url is required/);
+
+  const missingSize = await handleNavigationTool({ action: 'resize' });
+  assert.equal(missingSize.isError, true);
+  assert.match(missingSize.content[0].text, /width and height are required/);
+
+  const missingHitTestY = await handleStylesLayoutTool({ action: 'hit_test', x: 10 });
+  assert.equal(missingHitTestY.isError, true);
+  assert.match(missingHitTestY.content[0].text, /x and y are required/);
+
+  const missingDeclarations = await handlePatchTool({ action: 'apply_styles', elementRef: 'el_1' });
+  assert.equal(missingDeclarations.isError, true);
+  assert.match(missingDeclarations.content[0].text, /declarations are required/);
+
+  const missingInputText = await handleInputTool({ action: 'type', elementRef: 'el_1' });
+  assert.equal(missingInputText.isError, true);
+  assert.match(missingInputText.content[0].text, /text is required/);
+});
+
 test('handleDomTool html calls dom.get_html', async () => {
   await withMockedBridge(
     async (record) => {

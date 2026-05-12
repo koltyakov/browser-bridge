@@ -25,6 +25,7 @@ async function startTestDaemon(): Promise<TestDaemon> {
     } satisfies BridgeTransport,
     listenOptions: { host: '127.0.0.1', port: 0 },
     logger: { log() {}, error() {} },
+    authToken: null,
   });
   await daemon.start();
   const address = daemon.serverAddress as AddressInfo;

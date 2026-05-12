@@ -77,6 +77,21 @@ export const NAVIGATION_ACTIONS = {
 export async function handleNavigationTool(args) {
   const entry = NAVIGATION_ACTIONS[args.action];
   if (!entry) return summarizeToolError(`Unsupported navigation action "${args.action}".`);
+  if (args.action === 'navigate' && (typeof args.url !== 'string' || !args.url.trim())) {
+    return summarizeToolError('url is required for navigation.navigate.');
+  }
+  if (
+    args.action === 'resize' &&
+    args.reset !== true &&
+    (typeof args.width !== 'number' ||
+      !Number.isFinite(args.width) ||
+      typeof args.height !== 'number' ||
+      !Number.isFinite(args.height))
+  ) {
+    return summarizeToolError(
+      'width and height are required for viewport.resize unless reset=true.'
+    );
+  }
   return callBridgeTool(entry.method, entry.params(args), {
     tabId: typeof args.tabId === 'number' ? args.tabId : null,
     tokenBudget: getToolTokenBudget(args),

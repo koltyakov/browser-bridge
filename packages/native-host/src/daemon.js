@@ -36,6 +36,11 @@ import {
   getBridgeTransport,
   getSocketPath,
 } from './config.js';
+import {
+  ensureBridgeAuthToken,
+  normalizeBridgeAuthToken,
+  readBridgeAuthToken,
+} from './auth-token.js';
 import { normalizeDaemonLogger } from './daemon-logger.js';
 import { writeJsonLine } from './framing.js';
 
@@ -47,7 +52,7 @@ const DAEMON_VERSION = loadDaemonVersion();
 /** @typedef {import('../../protocol/src/types.js').SetupStatus} SetupStatus */
 /** @typedef {import('./config.js').BridgeTransport} BridgeTransport */
 /** @typedef {import('./daemon-logger.js').DaemonLoggerLike} DaemonLoggerLike */
-/** @typedef {import('node:net').Socket & { __clientId?: string, __extensionId?: string, __browserName?: string, __profileLabel?: string, __accessEnabled?: boolean, __lastActiveAt?: number }} ClientSocket */
+/** @typedef {import('node:net').Socket & { __clientId?: string, __extensionId?: string, __browserName?: string, __profileLabel?: string, __accessEnabled?: boolean, __lastActiveAt?: number, __authenticated?: boolean }} ClientSocket */
 /** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string, method?: string, targets: Set<ClientSocket>, lastErrorResponse?: import('../../protocol/src/types.js').BridgeResponse }} PendingEntry */
 /**
  * @typedef {{
@@ -134,6 +139,7 @@ export function isWindowsNamedPipePath(socketPath) {
  *   browserName?: string,
  *   profileLabel?: string,
  *   accessEnabled?: boolean,
+ *   authToken?: string,
  *   at?: number
  * }} DaemonMessage
  */
@@ -146,7 +152,8 @@ export class BridgeDaemon {
    *   listenOptions?: import('node:net').ListenOptions | null,
    *   setupStatusLoader?: () => Promise<SetupStatus>,
    *   setupInstaller?: (params: Record<string, unknown>) => Promise<SetupInstallResult>,
-   *   logger?: DaemonLoggerLike | Pick<Console, 'log' | 'error'>
+   *   logger?: DaemonLoggerLike | Pick<Console, 'log' | 'error'>,
+   *   authToken?: string | null
    * }} [options={}]
    */
   constructor({
@@ -156,6 +163,7 @@ export class BridgeDaemon {
     setupStatusLoader = collectSetupStatus,
     setupInstaller = installSetupTarget,
     logger = undefined,
+    authToken = undefined,
   } = {}) {
     this.transport = socketPath ? createSocketBridgeTransport(socketPath) : transport;
     this.socketPath =
@@ -196,6 +204,15 @@ export class BridgeDaemon {
     this.totalResponseTimeMs = 0;
     /** @type {Map<string, number>} */
     this.requestStartTimes = new Map();
+    /** @type {string | null | undefined} */
+    this.authToken = authToken;
+  }
+
+  /**
+   * @returns {boolean}
+   */
+  isAuthRequired() {
+    return Boolean(this.authToken);
   }
 
   /**
@@ -306,7 +323,20 @@ export class BridgeDaemon {
    * @returns {void}
    */
   registerSocket(socket, message) {
+    if (this.isAuthRequired() && normalizeBridgeAuthToken(message.authToken) !== this.authToken) {
+      this.logger.error('socket registration rejected', { role: message.role ?? null });
+      void writeJsonLine(socket, {
+        type: 'registration_failed',
+        error: {
+          code: ERROR_CODES.ACCESS_DENIED,
+          message: 'Bridge daemon authentication failed.',
+        },
+      }).finally(() => socket.destroy());
+      return;
+    }
+
     if (message.role === 'extension') {
+      socket.__authenticated = true;
       const extensionId = randomUUID();
       socket.__extensionId = extensionId;
       socket.__browserName =
@@ -326,6 +356,7 @@ export class BridgeDaemon {
     }
 
     if (message.role === 'agent') {
+      socket.__authenticated = true;
       const clientId = message.clientId || randomUUID();
       this.agentSockets.set(clientId, socket);
       socket.__clientId = clientId;
@@ -342,6 +373,10 @@ export class BridgeDaemon {
    * @returns {Promise<BridgeDaemon>}
    */
   async start() {
+    if (this.authToken === undefined) {
+      this.authToken = this.transport.type === 'tcp' ? await ensureBridgeAuthToken() : null;
+    }
+
     if (this.transport.type === 'socket' && !isWindowsNamedPipePath(this.socketPath)) {
       const socketDir = path.dirname(this.socketPath);
       await fs.promises.mkdir(socketDir, { recursive: true });
@@ -372,14 +407,22 @@ export class BridgeDaemon {
       typedSocket.on('error', (err) => {
         this.logger.error('socket error', { message: err.message });
       });
-      parseJsonLines(typedSocket, (raw) => {
-        const message = /** @type {DaemonMessage} */ (raw);
-        void this.handleClientMessage(typedSocket, message).catch((err) => {
-          this.logger.error('handler error', {
-            message: err instanceof Error ? err.message : String(err),
+      parseJsonLines(
+        typedSocket,
+        (raw) => {
+          const message = /** @type {DaemonMessage} */ (raw);
+          void this.handleClientMessage(typedSocket, message).catch((err) => {
+            this.logger.error('handler error', {
+              message: err instanceof Error ? err.message : String(err),
+            });
           });
-        });
-      });
+        },
+        {
+          onProtocolError: (error) => {
+            this.logger.error('socket protocol error', { message: error.message });
+          },
+        }
+      );
       typedSocket.on('close', () => this.handleSocketClose(typedSocket));
     });
 
@@ -477,6 +520,10 @@ export class BridgeDaemon {
       return this.registerSocket(socket, message);
     }
 
+    if (this.isAuthRequired() && !socket.__authenticated) {
+      return this.rejectUnauthenticatedMessage(socket, message);
+    }
+
     if (message?.type === 'log') {
       this.pushLog(message.entry ?? {});
       return;
@@ -520,6 +567,37 @@ export class BridgeDaemon {
    * @param {DaemonMessage} message
    * @returns {Promise<void>}
    */
+  async rejectUnauthenticatedMessage(socket, message) {
+    if (message?.type === 'agent.request') {
+      const candidate =
+        message.request && typeof message.request === 'object'
+          ? /** @type {Record<string, unknown>} */ (/** @type {unknown} */ (message.request))
+          : {};
+      const response = createFailure(
+        typeof candidate.id === 'string' && candidate.id.trim() ? candidate.id : 'unauthenticated',
+        ERROR_CODES.ACCESS_DENIED,
+        'Register with the daemon auth token before sending bridge requests.',
+        null,
+        typeof candidate.method === 'string' ? { method: candidate.method } : {}
+      );
+      await writeJsonLine(socket, { type: 'agent.response', response });
+      return;
+    }
+
+    await writeJsonLine(socket, {
+      type: 'error',
+      error: {
+        code: ERROR_CODES.ACCESS_DENIED,
+        message: 'Register with the daemon auth token before sending bridge messages.',
+      },
+    });
+  }
+
+  /**
+   * @param {ClientSocket} socket
+   * @param {DaemonMessage} message
+   * @returns {Promise<void>}
+   */
   async handleAgentRequest(socket, message) {
     /** @type {BridgeRequest} */
     let request;
@@ -540,6 +618,17 @@ export class BridgeDaemon {
       await writeJsonLine(socket, { type: 'agent.response', response });
       return;
     }
+
+    if (this.pendingRequests.has(request.id)) {
+      const response = createFailure(
+        request.id,
+        ERROR_CODES.INVALID_REQUEST,
+        `Request id ${JSON.stringify(request.id)} is already in flight.`
+      );
+      await writeJsonLine(socket, { type: 'agent.response', response });
+      return;
+    }
+
     if (request.method === 'health.ping') {
       if (this.extensionSockets.size === 0) {
         const response = createSuccess(request.id, {
@@ -978,10 +1067,22 @@ export class BridgeDaemon {
 export async function pingExistingDaemon(transport) {
   const resolvedTransport =
     typeof transport === 'string' ? createSocketBridgeTransport(transport) : transport;
+  const authToken = resolvedTransport.type === 'tcp' ? await readBridgeAuthToken() : null;
   return new Promise((resolve) => {
-    const timeout = setTimeout(() => {
+    let settled = false;
+    /** @param {boolean} value */
+    function finish(value) {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
       socket.destroy();
-      resolve(false);
+      resolve(value);
+    }
+
+    const timeout = setTimeout(() => {
+      finish(false);
     }, DAEMON_EXISTING_SOCKET_PING_TIMEOUT_MS);
 
     const socket =
@@ -989,27 +1090,37 @@ export async function pingExistingDaemon(transport) {
         ? net.createConnection({ host: resolvedTransport.host, port: resolvedTransport.port })
         : net.createConnection(resolvedTransport.socketPath);
     socket.once('error', () => {
-      clearTimeout(timeout);
-      resolve(false);
+      finish(false);
     });
 
     let buf = '';
     socket.setEncoding('utf8');
     socket.on('data', (chunk) => {
       buf += chunk;
-      if (buf.includes('\n')) {
-        clearTimeout(timeout);
-        socket.destroy();
+      while (buf.includes('\n')) {
+        const index = buf.indexOf('\n');
+        const line = buf.slice(0, index).trim();
+        buf = buf.slice(index + 1);
+        if (!line) {
+          continue;
+        }
         try {
-          const msg = JSON.parse(buf.slice(0, buf.indexOf('\n')).trim());
-          resolve(msg?.response?.result?.daemon === 'ok');
+          const msg = JSON.parse(line);
+          if (msg?.type === 'agent.response') {
+            finish(msg?.response?.result?.daemon === 'ok');
+          }
         } catch {
-          resolve(false);
+          finish(false);
         }
       }
     });
 
     socket.once('connect', () => {
+      if (authToken) {
+        socket.write(
+          `${JSON.stringify({ type: 'register', role: 'agent', clientId: 'ping_probe', authToken })}\n`
+        );
+      }
       socket.write(
         `${JSON.stringify({
           type: 'agent.request',

@@ -15,6 +15,7 @@ import {
   getBridgeTransport,
   getSocketPath,
 } from '../../native-host/src/config.js';
+import { normalizeBridgeAuthToken, readBridgeAuthToken } from '../../native-host/src/auth-token.js';
 import { restartBridgeDaemon } from '../../native-host/src/daemon-process.js';
 
 /** @typedef {import('./types.js').BridgeMeta} BridgeMeta */
@@ -68,6 +69,7 @@ export class BridgeClient extends EventEmitter {
     autoReconnect = false,
     restartDaemonOnVersionMismatch = true,
     restartDaemonFn = restartBridgeDaemon,
+    authToken = undefined,
   } = {}) {
     super();
     this.transport = socketPath ? createSocketBridgeTransport(socketPath) : transport;
@@ -78,6 +80,7 @@ export class BridgeClient extends EventEmitter {
     this.autoReconnect = autoReconnect;
     this.restartDaemonOnVersionMismatch = restartDaemonOnVersionMismatch;
     this.restartDaemonFn = restartDaemonFn;
+    this.authToken = authToken;
     this.socket = null;
     this.connected = false;
     this.protocolCompatibility = null;
@@ -124,6 +127,16 @@ export class BridgeClient extends EventEmitter {
         return;
       }
 
+      if (message.type === 'registration_failed') {
+        const pending = this.waiting.get('registered');
+        if (pending) {
+          this.waiting.delete('registered');
+          clearTimeout(pending.timeoutId);
+          pending.reject(new Error(message.error?.message || 'Bridge daemon registration failed.'));
+        }
+        return;
+      }
+
       if (message.type === 'agent.response') {
         const pending = this.waiting.get(message.response.id);
         if (pending) {
@@ -148,8 +161,19 @@ export class BridgeClient extends EventEmitter {
       // 'close' fires after 'error'; reconnect is triggered there.
     });
 
+    const authToken =
+      this.authToken === undefined
+        ? this.transport.type === 'tcp'
+          ? await readBridgeAuthToken()
+          : null
+        : normalizeBridgeAuthToken(this.authToken);
     this.socket.write(
-      `${JSON.stringify({ type: 'register', role: 'agent', clientId: this.clientId })}\n`
+      `${JSON.stringify({
+        type: 'register',
+        role: 'agent',
+        clientId: this.clientId,
+        ...(authToken ? { authToken } : {}),
+      })}\n`
     );
     await new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
