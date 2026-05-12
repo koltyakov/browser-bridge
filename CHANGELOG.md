@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-05-11
+
+### Added
+
+- **Configurable daemon log tailing:** `log.tail` now accepts a bounded `limit`
+  parameter so agents and diagnostics can request just the amount of recent
+  bridge log history they need.
+- **Class DOM patch operations:** Reversible DOM patching now supports explicit
+  class add and remove operations, with rollback preserving the element's prior
+  class state.
+- **Chromium browser setup guidance:** Installation docs now call out supported
+  Chromium-based browsers and show `bbx install --browser` examples for Edge,
+  Brave, Chromium, and Arc.
+
+### Changed
+
+- **Regression coverage:** Expanded CLI, MCP handler, protocol, daemon,
+  extension background, page evaluation, access request, and content-script test
+  coverage around the bridge paths updated in this release.
+
 ## [1.2.0] - 2026-05-07
 
 ### Added
