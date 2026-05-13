@@ -51,6 +51,12 @@ async function readJson(filePath) {
  */
 async function listZipEntries(archivePath) {
   try {
+    await fs.promises.access(archivePath);
+
+    if (process.platform === 'win32') {
+      return await listZipEntriesWithPowerShell(archivePath);
+    }
+
     const { stdout } = await execFileAsync('zipinfo', ['-1', archivePath], {
       cwd: repoRoot,
     });
@@ -69,6 +75,33 @@ async function listZipEntries(archivePath) {
 
     throw error;
   }
+}
+
+/**
+ * @param {string} archivePath
+ * @returns {Promise<string[]>}
+ */
+async function listZipEntriesWithPowerShell(archivePath) {
+  const escapedArchivePath = archivePath.replace(/'/g, "''");
+  const command = [
+    'Add-Type -AssemblyName System.IO.Compression.FileSystem',
+    `$zip = [System.IO.Compression.ZipFile]::OpenRead('${escapedArchivePath}')`,
+    'try { $zip.Entries | ForEach-Object { $_.FullName } } finally { $zip.Dispose() }',
+  ].join('; ');
+
+  const { stdout } = await execFileAsync(
+    'powershell.exe',
+    ['-NoLogo', '-NoProfile', '-Command', command],
+    {
+      cwd: repoRoot,
+    }
+  );
+
+  return stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim().replace(/\\/g, '/'))
+    .filter((line) => line && !line.endsWith('/'))
+    .sort();
 }
 
 /**

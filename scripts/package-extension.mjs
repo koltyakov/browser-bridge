@@ -83,14 +83,14 @@ async function createZipArchive(sourceDir, targetZipPath) {
   await fs.promises.rm(targetZipPath, { force: true });
 
   if (process.platform === 'win32') {
+    const escapedTargetZipPath = targetZipPath.replace(/'/g, "''");
     await execFileAsync(
       'powershell.exe',
       [
         '-NoLogo',
         '-NoProfile',
         '-Command',
-        'Compress-Archive -Path * -DestinationPath $args[0] -Force',
-        targetZipPath,
+        `Compress-Archive -Path * -DestinationPath '${escapedTargetZipPath}' -Force`,
       ],
       { cwd: sourceDir }
     );
