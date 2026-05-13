@@ -67,7 +67,7 @@ export type ClientMessage =
     };
 
 export interface PendingRequest {
-  resolve: (value: any) => void;
+  resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timeoutId: NodeJS.Timeout;
 }
@@ -118,6 +118,7 @@ export interface DoctorReport {
 
 export interface DoctorReportOptions {
   loadManifest?: () => Promise<{ allowed_origins?: string[] } | null>;
+  checkBrowserManifests?: () => Promise<BrowserManifestStatus[]>;
   manifestPath?: string;
   defaultExtensionIdInfo?: { extensionId: string | null; source: string };
   bridgeClientRunner?: <T>(

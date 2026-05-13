@@ -12,6 +12,7 @@ import { createInstallFs } from '../../../tests/_helpers/installFs.ts';
 import { bridgeServerWith } from '../../../tests/_helpers/socketHarness.ts';
 
 type InstallFs = Awaited<ReturnType<typeof createInstallFs>>;
+type BrowserManifestKey = keyof InstallFs['browserManifests'];
 type CliPayload = {
   ok: boolean;
   summary: string;
@@ -32,6 +33,17 @@ function expectCliPayload(value: unknown): CliPayload {
 }
 
 async function seedInstalledBrowserManifests(installFs: InstallFs): Promise<void> {
+  await Promise.all(
+    (Object.keys(installFs.browserManifests) as BrowserManifestKey[]).map((browser) =>
+      seedInstalledBrowserManifest(installFs, browser)
+    )
+  );
+}
+
+async function seedInstalledBrowserManifest(
+  installFs: InstallFs,
+  browser: BrowserManifestKey
+): Promise<void> {
   const manifest = `${JSON.stringify(
     {
       name: 'com.browserbridge.browser_bridge',
@@ -41,16 +53,9 @@ async function seedInstalledBrowserManifests(installFs: InstallFs): Promise<void
     2
   )}\n`;
 
-  await Promise.all(
-    Object.values(installFs.browserManifests).map(async (manifestInfo) => {
-      const { installDir, manifestPath } = manifestInfo as {
-        installDir: string;
-        manifestPath: string;
-      };
-      await fs.promises.mkdir(installDir, { recursive: true });
-      await fs.promises.writeFile(manifestPath, manifest, 'utf8');
-    })
-  );
+  const { installDir, manifestPath } = installFs.browserManifests[browser];
+  await fs.promises.mkdir(installDir, { recursive: true });
+  await fs.promises.writeFile(manifestPath, manifest, 'utf8');
 }
 
 test('bbx doctor reports ready when manifests exist and the bridge is fully connected', async () => {
@@ -103,6 +108,47 @@ test('bbx doctor reports ready when manifests exist and the bridge is fully conn
       true
     );
     assert.deepEqual(bridgeServer.errors, []);
+  } finally {
+    await bridgeServer.close();
+    await installFs.cleanup();
+  }
+});
+
+test('bbx doctor reports ready when only one browser manifest exists', async () => {
+  const installFs = await createInstallFs({ prefix: 'bbx-doctor-one-browser-' });
+  const bridgeServer = await bridgeServerWith({
+    'health.ping': (request) =>
+      createSuccess(request.id, {
+        daemon: 'ok',
+        extensionConnected: true,
+        access: {
+          enabled: true,
+          windowId: 5,
+          routeTabId: 12,
+          routeReady: true,
+          reason: 'ok',
+        },
+      }),
+  });
+
+  try {
+    await seedInstalledBrowserManifest(installFs, 'edge');
+
+    const result = await runCli({
+      args: ['doctor'],
+      env: {
+        ...installFs.env,
+        BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome,
+      },
+    });
+    const payload = expectCliPayload(result.json);
+
+    assert.equal(result.status, 0);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.summary, 'Browser Bridge is ready.');
+    assert.equal(payload.evidence.manifestInstalled, true);
+    assert.deepEqual(payload.evidence.issues, []);
+    assert.equal(payload.evidence.browserManifests.filter((entry) => entry.installed).length, 1);
   } finally {
     await bridgeServer.close();
     await installFs.cleanup();

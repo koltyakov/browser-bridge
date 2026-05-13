@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-05-13
+
+### Changed
+
+- **MCP launch reliability:** Managed MCP configs now launch the bundled server
+  with the current Node executable on every platform instead of relying on
+  shell `bbx` resolution.
+- **Browser install diagnostics:** `bbx doctor` now treats any installed browser
+  native-host manifest as a valid setup and no longer reports partial manifest
+  installs as issues.
+- **Role search accessibility:** DOM role searches now resolve
+  `aria-labelledby` references to label element text before falling back to
+  `aria-label`, `title`, or visible text.
+
+### Fixed
+
+- **Access request scoping:** Access requests now reject attempts to enable a
+  different browser window while Browser Bridge is already enabled elsewhere,
+  returning structured details about the active and requested targets.
+- **Debugger session recovery:** CDP operations now detect externally detached
+  debugger sessions, clear stale coordinator state, and retry the operation
+  after reattaching.
+- **Protocol validation robustness:** Page evaluation now requires a non-empty
+  expression, JSON-line socket writes reject oversized messages before sending,
+  and numeric protocol values are normalized to bounded integers.
+- **CLI error typing:** CLI daemon connection errors now extract error codes
+  without untyped casts.
+
 ## [1.4.0] - 2026-05-12
 
 ### Added

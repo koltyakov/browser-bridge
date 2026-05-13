@@ -114,6 +114,47 @@ test('burst timer reuses session for rapid consecutive runs', async () => {
   assert.equal(attachCount, 1);
 });
 
+test('markDetached clears burst reuse so the next run reattaches', async () => {
+  let attachCount = 0;
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {
+      attachCount += 1;
+    },
+    detach: async () => {},
+    burstIdleMs: 500,
+  });
+
+  await coordinator.run(10, async () => 'first');
+  coordinator.markDetached(10);
+  await coordinator.run(10, async () => 'second');
+
+  assert.equal(attachCount, 2);
+});
+
+test('run retries once after a debugger not-attached failure', async () => {
+  let attachCount = 0;
+  let taskCount = 0;
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {
+      attachCount += 1;
+    },
+    detach: async () => {},
+    burstIdleMs: 0,
+  });
+
+  const result = await coordinator.run(10, async () => {
+    taskCount += 1;
+    if (taskCount === 1) {
+      throw new Error('Debugger is not attached to the tab');
+    }
+    return 'recovered';
+  });
+
+  assert.equal(result, 'recovered');
+  assert.equal(taskCount, 2);
+  assert.equal(attachCount, 2);
+});
+
 test('burst timer does not detach while a new run is active', async () => {
   let detachCount = 0;
   let releaseSecondTask: (value?: void | PromiseLike<void>) => void = () => {};

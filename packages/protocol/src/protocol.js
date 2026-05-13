@@ -97,7 +97,9 @@ export const SUPPORTED_VERSIONS = Object.freeze(['1.0']);
  * @returns {number}
  */
 function clampInt(value, min, max, fallback) {
-  return Math.min(Math.max(Number(value) || fallback, min), max);
+  const numeric = Number(value);
+  const integer = Number.isFinite(numeric) && numeric !== 0 ? Math.trunc(numeric) : fallback;
+  return Math.min(Math.max(integer, min), max);
 }
 
 /** @type {ReadonlyArray<BridgeMethod>} */

@@ -1269,6 +1269,21 @@ test('content script dom.find_by_role matches explicit and implicit roles by acc
     textContent: 'Bridge search',
     attributes: { id: 'implicit' },
   });
+  const labelledMatch = createFakeElement({
+    tagName: 'button',
+    textContent: 'Use it',
+    attributes: { id: 'labelled', 'aria-labelledby': 'label-one label-two' },
+  });
+  const labelOne = createFakeElement({
+    tagName: 'span',
+    textContent: 'Bridge',
+    attributes: { id: 'label-one' },
+  });
+  const labelTwo = createFakeElement({
+    tagName: 'span',
+    textContent: 'external label',
+    attributes: { id: 'label-two' },
+  });
   const nameMiss = createFakeElement({
     tagName: 'button',
     textContent: 'Settings',
@@ -1276,12 +1291,14 @@ test('content script dom.find_by_role matches explicit and implicit roles by acc
   });
   const body = createFakeElement({
     tagName: 'body',
-    children: [explicitMatch, implicitMatch, nameMiss],
+    children: [explicitMatch, implicitMatch, labelledMatch, labelOne, labelTwo, nameMiss],
   });
   const document = createDocumentHarness(body, {
     '[role="button"], button, input[type=button], input[type=submit], input[type=reset], input[type=image]':
-      [explicitMatch, implicitMatch, nameMiss],
-    '*': [explicitMatch, implicitMatch, nameMiss],
+      [explicitMatch, implicitMatch, labelledMatch, nameMiss],
+    '#label-one': labelOne,
+    '#label-two': labelTwo,
+    '*': [explicitMatch, implicitMatch, labelledMatch, labelOne, labelTwo, nameMiss],
   });
 
   await loadContentScript(t, {
@@ -1314,7 +1331,7 @@ test('content script dom.find_by_role matches explicit and implicit roles by acc
 
   assert.equal(matches.error, undefined);
 
-  assert.equal(matches.count, 2);
+  assert.equal(matches.count, 3);
   assert.deepEqual(
     matches.nodes.map((node) => ({
       tag: node.tag,
@@ -1337,6 +1354,13 @@ test('content script dom.find_by_role matches explicit and implicit roles by acc
         role: null,
         name: null,
         textExcerpt: 'Bridge search',
+      },
+      {
+        tag: 'button',
+        id: 'labelled',
+        role: null,
+        name: null,
+        textExcerpt: 'Use it',
       },
     ]
   );

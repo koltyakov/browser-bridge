@@ -12,8 +12,9 @@ import path from 'node:path';
 import { BridgeClient } from '../src/client.js';
 import { getDoctorReport, requestBridge, resolveRef, withBridgeClient } from '../src/runtime.js';
 import type { BridgeResponse } from '../../protocol/src/types.js';
+import type { BrowserManifestStatus } from '../src/types.js';
 
-const expectedMcpCommand = process.platform === 'win32' ? process.execPath : 'bbx';
+const expectedMcpCommand = process.execPath;
 
 type DetectorMap = Record<string, () => boolean>;
 type RequestCall = {
@@ -45,6 +46,14 @@ function createHealthPingRunner(result: Record<string, unknown>): BridgeClientRu
         return successResponse('req-health', result);
       },
     } as BridgeClient);
+}
+
+function browserManifestStatuses(installedBrowsers: string[]): BrowserManifestStatus[] {
+  return ['chrome', 'edge', 'brave'].map((browser) => ({
+    browser,
+    manifestPath: `/tmp/${browser}/com.browserbridge.browser_bridge.json`,
+    installed: installedBrowsers.includes(browser),
+  }));
 }
 
 test('detectMcpClients and detectSkillTargets use injected detectors', async () => {
@@ -489,6 +498,7 @@ test('getDoctorReport exposes extension id source and next steps without a live 
       source: 'built_in',
     },
     loadManifest: async () => null,
+    checkBrowserManifests: async () => browserManifestStatuses([]),
     bridgeClientRunner: async () => {
       throw new Error('offline');
     },
@@ -500,6 +510,28 @@ test('getDoctorReport exposes extension id source and next steps without a live 
   assert.ok(report.issues.includes('native_host_manifest_missing'));
   assert.ok(report.nextSteps.some((step) => step.includes('bbx-daemon')));
   assert.ok(report.nextSteps.some((step) => step.includes('bbx install')));
+});
+
+test('getDoctorReport treats one installed browser manifest as native host ready', async () => {
+  const report = await getDoctorReport({
+    loadManifest: async () => null,
+    checkBrowserManifests: async () => browserManifestStatuses(['edge']),
+    bridgeClientRunner: createHealthPingRunner({
+      daemon: 'ok',
+      extensionConnected: true,
+      access: {
+        enabled: true,
+        windowId: 12,
+        routeTabId: 34,
+        routeReady: true,
+        reason: 'enabled',
+      },
+    }),
+  });
+
+  assert.equal(report.manifestInstalled, true);
+  assert.deepEqual(report.issues, []);
+  assert.deepEqual(report.nextSteps, []);
 });
 
 test('getDoctorReport tells the agent to wait for the user when access is disabled', async () => {

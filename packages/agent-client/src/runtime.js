@@ -160,10 +160,10 @@ export async function checkBrowserManifests() {
 export async function getDoctorReport(options = {}) {
   const manifest = await (options.loadManifest || loadInstalledManifest)();
   const allowedOrigins = Array.isArray(manifest?.allowed_origins) ? manifest.allowed_origins : [];
-  const manifestInstalled = Boolean(manifest);
   const defaultExtensionId = options.defaultExtensionIdInfo || resolveDefaultExtensionId();
 
-  const browserManifests = await checkBrowserManifests();
+  const browserManifests = await (options.checkBrowserManifests || checkBrowserManifests)();
+  const manifestInstalled = Boolean(manifest) || browserManifests.some((b) => b.installed);
 
   /** @type {DoctorReport} */
   const report = {
@@ -214,20 +214,12 @@ export async function getDoctorReport(options = {}) {
     report.extensionConnected = false;
   }
 
-  const browsersWithoutManifest = browserManifests.filter((b) => !b.installed);
-
   if (!report.manifestInstalled) {
     report.issues.push('native_host_manifest_missing');
     report.nextSteps.push(
       defaultExtensionId.extensionId
         ? 'Run `bbx install` (or `bbx install --all` for all browsers) to install the native host manifest.'
         : 'Run `bbx install <extension-id>` (or `bbx install --all`) to install the native host manifest.'
-    );
-  } else if (browsersWithoutManifest.length > 0) {
-    report.issues.push('native_host_manifest_partial');
-    const missing = browsersWithoutManifest.map((b) => b.browser).join(', ');
-    report.nextSteps.push(
-      `Manifests missing for: ${missing}. Run \`bbx install --all\` to install for all supported browsers.`
     );
   }
   if (!report.daemonReachable) {

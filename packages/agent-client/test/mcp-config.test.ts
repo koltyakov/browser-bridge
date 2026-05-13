@@ -18,15 +18,10 @@ import {
 } from '../src/mcp-config.js';
 import type { McpClientName } from '../src/mcp-config.js';
 
-const expectedMcpCommand = process.platform === 'win32' ? process.execPath : 'bbx';
-const expectedMcpArgs =
-  process.platform === 'win32'
-    ? [path.join(process.cwd(), 'packages', 'mcp-server', 'src', 'bin.js')]
-    : ['mcp', 'serve'];
-const expectedOpencodeCommand =
-  process.platform === 'win32'
-    ? [process.execPath, path.join(process.cwd(), 'packages', 'mcp-server', 'src', 'bin.js')]
-    : ['bbx', 'mcp', 'serve'];
+const expectedMcpBinPath = path.join(process.cwd(), 'packages', 'mcp-server', 'src', 'bin.js');
+const expectedMcpCommand = process.execPath;
+const expectedMcpArgs = [expectedMcpBinPath];
+const expectedOpencodeCommand = [process.execPath, expectedMcpBinPath];
 
 test('isMcpClientName accepts supported clients only', () => {
   for (const clientName of MCP_CLIENT_NAMES) {

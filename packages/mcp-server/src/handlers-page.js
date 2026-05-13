@@ -87,6 +87,12 @@ export async function handlePageTool(args) {
   }
   const entry = PAGE_ACTIONS[normalizedArgs.action];
   if (!entry) return summarizeToolError(`Unsupported page action "${args.action}".`);
+  if (
+    normalizedArgs.action === 'evaluate' &&
+    (typeof normalizedArgs.expression !== 'string' || !normalizedArgs.expression.trim())
+  ) {
+    return summarizeToolError('expression is required for page evaluate.');
+  }
   return callBridgeTool(entry.method, entry.params(normalizedArgs), {
     tabId: typeof normalizedArgs.tabId === 'number' ? normalizedArgs.tabId : null,
     tokenBudget: getToolTokenBudget(normalizedArgs),
