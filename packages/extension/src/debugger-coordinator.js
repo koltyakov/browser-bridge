@@ -85,7 +85,17 @@ export class TabDebuggerCoordinator {
         }
         result = await task(target);
       } catch (error) {
-        taskError = error;
+        if (isDebuggerDetachedError(error)) {
+          this.markDetached(tabId);
+          try {
+            await this.attach(target, this.protocolVersion);
+            result = await task(target);
+          } catch (retryError) {
+            taskError = retryError;
+          }
+        } else {
+          taskError = error;
+        }
       }
 
       // Schedule a burst-idle detach instead of detaching immediately.
@@ -98,6 +108,19 @@ export class TabDebuggerCoordinator {
       }
       return /** @type {T} */ (result);
     });
+  }
+
+  /**
+   * Forget a debugger session that Chrome detached outside this coordinator.
+   *
+   * @param {number} tabId
+   * @returns {void}
+   */
+  markDetached(tabId) {
+    const existing = this.burstTimers.get(tabId);
+    if (existing) clearTimeout(existing);
+    this.burstTimers.delete(tabId);
+    this.holdsByTab.delete(tabId);
   }
 
   /**
@@ -207,4 +230,13 @@ export class TabDebuggerCoordinator {
       }
     });
   }
+}
+
+/**
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+function isDebuggerDetachedError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /not attached|no target with given id/i.test(message);
 }

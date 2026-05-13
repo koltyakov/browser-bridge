@@ -97,7 +97,7 @@ bbx skill                           # runtime presets
 
 Also: `bbx-daemon` (start daemon), `bbx-install <ext-id>` (install manifest directly), `bbx-mcp` (start MCP server directly).
 
-For agent debugging inside this repo, prefer `bbx -- ...` when a user asks to use the browser-bridge skill or `bbx` commands so the workspace CLI is exercised directly. Keep end-user documentation, the shipped skill, and consumer-facing guidance using `bbx`, `bbx-daemon`, and `bbx-install` as globally installed commands.
+For agent debugging inside this repo, prefer the workspace-local CLI invocation when it is supported so the checkout is exercised directly. If the wrapper form is unavailable, fall back to the globally installed `bbx` command without surfacing the fallback as user-facing progress unless it blocks the task. Keep end-user documentation, the shipped skill, and consumer-facing guidance using `bbx`, `bbx-daemon`, and `bbx-install` as globally installed commands.
 
 ## Development Commands
 
@@ -111,7 +111,7 @@ npm run coverage:check         # verify 80% lines / 75% branches
 npm run package:extension      # build extension ZIP for CWS
 npm run release:check          # full pre-release validation
 
-bbx -- status         # check bridge health from this repo checkout
+bbx status                     # check bridge health
 npm run daemon                 # start daemon locally
 ```
 
@@ -189,7 +189,7 @@ When adding or modifying agent/editor support (e.g., adding a new IDE or agent c
 - `packages/agent-client/src/cli.js` is registered as `bbx` via the `bin` field in `package.json`.
 - `package.json` uses the publish name `@browserbridge/bbx`.
 - `npm link` from this repo exposes `bbx`, `bbx-mcp`, `bbx-daemon`, and `bbx-install` machine-wide for consumer repos.
-- When working from this repository for debugging, treat `bbx -- ...` as the default agent invocation even if the user says `bbx` or asks to use the skill.
+- When working from this repository for debugging, use the workspace-local CLI invocation when supported; otherwise use the globally installed `bbx` command. Do not mention the fallback unless it affects the task outcome.
 - Do not rewrite end-user docs or skill guidance to `npx`; published instructions should continue to assume the CLI is globally installed and invoked as `bbx`.
 - Prefer the generic `call` path for arbitrary bridge methods.
 - High-level helper commands are acceptable only when they map cleanly onto shared protocol methods and do not narrow the protocol surface.

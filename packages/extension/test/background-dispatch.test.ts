@@ -2491,8 +2491,19 @@ test('background dispatch surfaces CDP debugger-not-attached failures', async ()
     })
   );
 
-  assert.deepEqual(attachCalls, [{ target: { tabId: 81 }, version: '1.3' }]);
+  assert.deepEqual(attachCalls, [
+    { target: { tabId: 81 }, version: '1.3' },
+    { target: { tabId: 81 }, version: '1.3' },
+  ]);
   assert.deepEqual(sendCommandCalls, [
+    {
+      target: { tabId: 81 },
+      method: 'DOM.getDocument',
+      params: {
+        depth: 2,
+        pierce: false,
+      },
+    },
     {
       target: { tabId: 81 },
       method: 'DOM.getDocument',

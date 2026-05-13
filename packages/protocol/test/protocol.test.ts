@@ -598,6 +598,12 @@ test('normalizeLogTailParams clamps limit', () => {
   assert.equal(params.limit, 200);
 });
 
+test('integer normalizers truncate fractional values', () => {
+  assert.equal(normalizeLogTailParams({ limit: 5.9 }).limit, 5);
+  assert.equal(normalizeViewportResizeParams({ width: 1000.8, height: 700.2 }).width, 1000);
+  assert.equal(normalizeViewportResizeParams({ width: 1000.8, height: 700.2 }).height, 700);
+});
+
 test('validateBridgeRequest normalizes log.tail params', () => {
   const request = validateBridgeRequest({
     id: 'req_logs',

@@ -14,12 +14,35 @@ import {
   stopBridgeDaemon,
   writeDaemonPidFile,
 } from '../src/daemon-process.js';
+import { BRIDGE_HOME_ENV, BRIDGE_TCP_PORT_ENV, DEFAULT_WINDOWS_TCP_PORT } from '../src/config.js';
 import type { BridgeTransport } from '../src/config.js';
 
 type KillCall = { pid: number; signal: string | number | undefined };
 
 function childWithPid(pid: number): ChildProcess {
   return { pid } as unknown as ChildProcess;
+}
+
+async function withDefaultWindowsDaemonEnv(callback: () => Promise<void>): Promise<void> {
+  const previousTcpPort = process.env[BRIDGE_TCP_PORT_ENV];
+  const previousBridgeHome = process.env[BRIDGE_HOME_ENV];
+  delete process.env[BRIDGE_TCP_PORT_ENV];
+  delete process.env[BRIDGE_HOME_ENV];
+
+  try {
+    await callback();
+  } finally {
+    if (previousTcpPort === undefined) {
+      delete process.env[BRIDGE_TCP_PORT_ENV];
+    } else {
+      process.env[BRIDGE_TCP_PORT_ENV] = previousTcpPort;
+    }
+    if (previousBridgeHome === undefined) {
+      delete process.env[BRIDGE_HOME_ENV];
+    } else {
+      process.env[BRIDGE_HOME_ENV] = previousBridgeHome;
+    }
+  }
 }
 
 test('daemon pid helpers read, write, and clear the pid file', async () => {
@@ -172,6 +195,54 @@ test('restartBridgeDaemon supports tcp transport without stale socket cleanup', 
   } finally {
     await fs.promises.rm(bridgeHome, { recursive: true, force: true });
   }
+});
+
+test('restartBridgeDaemonIfRunning uses Windows tcp defaults when no transport override is provided', async () => {
+  if (process.platform !== 'win32') {
+    return;
+  }
+
+  await withDefaultWindowsDaemonEnv(async () => {
+    const bridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-restart-daemon-win-'));
+    const pidPath = path.join(bridgeHome, 'daemon.pid');
+    const pingedTransports: BridgeTransport[] = [];
+    let spawnCount = 0;
+    let pid: number | null = null;
+
+    try {
+      const result = await restartBridgeDaemonIfRunning({
+        pidPath,
+        pingDaemonFn: async (transport) => {
+          pingedTransports.push(transport);
+          return pingedTransports.length === 1 ? true : pid !== null;
+        },
+        readPidFn: async () => pid,
+        findPidByTransportFn: async () => 4247,
+        killFn: (() => true) as typeof process.kill,
+        spawnDaemonFn: () => {
+          spawnCount += 1;
+          pid = 4248;
+          return childWithPid(pid);
+        },
+        sleepFn: async () => {},
+      });
+
+      assert.equal(spawnCount, 1);
+      assert.equal(result?.transport, `127.0.0.1:${DEFAULT_WINDOWS_TCP_PORT}`);
+      assert.equal(result?.socketPath, '');
+      assert.equal(result?.previousPid, 4247);
+      assert.equal(result?.pid, 4248);
+      assert.equal(pingedTransports.length >= 2, true);
+      assert.deepEqual(pingedTransports[0], {
+        type: 'tcp',
+        host: '127.0.0.1',
+        port: DEFAULT_WINDOWS_TCP_PORT,
+        label: `127.0.0.1:${DEFAULT_WINDOWS_TCP_PORT}`,
+      });
+    } finally {
+      await fs.promises.rm(bridgeHome, { recursive: true, force: true });
+    }
+  });
 });
 
 test('restartBridgeDaemonIfRunning skips startup when the daemon is offline', async () => {

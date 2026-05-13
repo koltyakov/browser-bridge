@@ -373,6 +373,51 @@ test('background access request reports enabled access without queuing a prompt'
   assert.deepEqual(popupCreates, []);
 });
 
+test('background access request rejects a different requested window while access is enabled', async () => {
+  const chrome = createChromeFake({
+    tabs: {
+      async get(tabId: number) {
+        assert.equal(tabId, 44);
+        return {
+          id: 44,
+          windowId: 10,
+          title: 'Other window tab',
+          url: 'https://example.com/other-window',
+          status: 'complete',
+        };
+      },
+    },
+  });
+  const loaded = await loadBackground({
+    chrome,
+    query: `test-background-access-request-enabled-mismatch-${Date.now()}`,
+  });
+  const state = getAccessRequestState(loaded.module) as AccessRequestState & {
+    enabledWindow?: { windowId: number; title: string; enabledAt: number };
+  };
+  state.enabledWindow = { windowId: 9, title: 'Enabled Window', enabledAt: 123 };
+
+  const response = await loaded.dispatch(
+    createRequest({
+      id: 'background-access-request-enabled-mismatch',
+      method: 'access.request',
+      tabId: 44,
+    })
+  );
+
+  assert.equal(response.ok, false);
+  if (response.ok) {
+    assert.fail('Expected enabled window mismatch to fail.');
+  }
+  assert.equal(response.error.code, ERROR_CODES.ACCESS_DENIED);
+  assert.match(response.error.message, /enabled for another window/i);
+  assert.deepEqual(response.error.details, {
+    enabledWindowId: 9,
+    requestedTargetWindowId: 10,
+    requestedTargetTabId: 44,
+  });
+});
+
 test('background access request rejects when no scriptable target exists', async () => {
   const chrome = createChromeFake({
     tabs: {

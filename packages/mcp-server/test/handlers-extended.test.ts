@@ -176,6 +176,10 @@ test('grouped handlers validate action-specific required fields before bridge ca
   const missingInputText = await handleInputTool({ action: 'type', elementRef: 'el_1' });
   assert.equal(missingInputText.isError, true);
   assert.match(missingInputText.content[0].text, /text is required/);
+
+  const missingExpression = await handlePageTool({ action: 'evaluate' });
+  assert.equal(missingExpression.isError, true);
+  assert.match(missingExpression.content[0].text, /expression is required/);
 });
 
 test('handleDomTool html calls dom.get_html', async () => {

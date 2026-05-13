@@ -2,7 +2,7 @@
 
 import { once } from 'node:events';
 
-import { MAX_NATIVE_MESSAGE_BYTES } from '../../protocol/src/index.js';
+import { MAX_JSON_LINE_BYTES, MAX_NATIVE_MESSAGE_BYTES } from '../../protocol/src/index.js';
 
 /**
  * @param {NodeJS.WritableStream} stream
@@ -193,7 +193,12 @@ export function createNativeMessageReader(stream, onMessage, onProtocolError) {
  * @returns {Promise<void>}
  */
 export async function writeJsonLine(socket, message) {
-  if (!socket.write(`${JSON.stringify(message)}\n`)) {
+  const line = `${JSON.stringify(message)}\n`;
+  const byteLength = Buffer.byteLength(line.slice(0, -1), 'utf8');
+  if (byteLength > MAX_JSON_LINE_BYTES) {
+    throw new Error(`JSON line exceeds ${MAX_JSON_LINE_BYTES} bytes: ${byteLength}`);
+  }
+  if (!socket.write(line)) {
     await once(socket, 'drain');
   }
 }

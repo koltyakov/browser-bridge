@@ -123,6 +123,12 @@ const tabDebugger = new TabDebuggerCoordinator({
   protocolVersion: DEBUGGER_PROTOCOL_VERSION,
 });
 
+chrome.debugger.onDetach.addListener((source) => {
+  if (typeof source.tabId === 'number') {
+    tabDebugger.markDetached(source.tabId);
+  }
+});
+
 const { sendTabMessage, injectContentScriptsForWindow, ensureContentScript } =
   createContentScriptBridge(chrome, {
     contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,

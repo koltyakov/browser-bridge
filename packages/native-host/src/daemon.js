@@ -53,7 +53,7 @@ const DAEMON_VERSION = loadDaemonVersion();
 /** @typedef {import('./config.js').BridgeTransport} BridgeTransport */
 /** @typedef {import('./daemon-logger.js').DaemonLoggerLike} DaemonLoggerLike */
 /** @typedef {import('node:net').Socket & { __clientId?: string, __extensionId?: string, __browserName?: string, __profileLabel?: string, __accessEnabled?: boolean, __lastActiveAt?: number, __authenticated?: boolean }} ClientSocket */
-/** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string, method?: string, targets: Set<ClientSocket>, lastErrorResponse?: import('../../protocol/src/types.js').BridgeResponse }} PendingEntry */
+/** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string, method?: string, protocolVersion?: string, targets: Set<ClientSocket>, lastErrorResponse?: import('../../protocol/src/types.js').BridgeResponse }} PendingEntry */
 /**
  * @typedef {{
  *   installAgentFiles: typeof import('../../agent-client/src/install.js').installAgentFiles,
@@ -762,6 +762,7 @@ export class BridgeDaemon {
     this.trackPendingRequest(request.id, {
       socket,
       method: request.method,
+      protocolVersion: request.meta?.protocol_version,
       source: typeof request.meta?.source === 'string' ? request.meta.source : '',
       targets: new Set(targets),
       timeoutId: setTimeout(() => {
@@ -925,6 +926,7 @@ export class BridgeDaemon {
                 socketPath: this.socketPath,
                 transport: formatBridgeTransport(this.transport),
                 connectedExtensions: this.getConnectedExtensionsSnapshot(),
+                ...getVersionNegotiationPayload(pending.protocolVersion),
                 .../** @type {Record<string, unknown>} */ (responseMessage.result),
                 daemonVersion: DAEMON_VERSION,
                 daemon_supported_versions: SUPPORTED_VERSIONS,

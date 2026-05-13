@@ -535,11 +535,7 @@
       const elRole = el.getAttribute('role') || getImplicitRole(el);
       if (elRole !== role) continue;
       if (name !== null) {
-        const accName =
-          el.getAttribute('aria-label') ||
-          el.getAttribute('aria-labelledby') ||
-          el.getAttribute('title') ||
-          extractElementText(el);
+        const accName = getAccessibleName(el);
         if (!accName || !accName.toLowerCase().includes(name.toLowerCase())) {
           continue;
         }
@@ -550,6 +546,42 @@
     }
 
     return { nodes: results, count: results.length };
+  }
+
+  /**
+   * Resolve the accessible-name sources used by role search.
+   *
+   * @param {Element} element
+   * @returns {string}
+   */
+  function getAccessibleName(element) {
+    const labelledBy = element.getAttribute('aria-labelledby');
+    if (labelledBy) {
+      const text = labelledBy
+        .split(/\s+/u)
+        .map((id) => id.trim())
+        .filter(Boolean)
+        .map((id) => getLabelElementText(id))
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+      if (text) return text;
+    }
+
+    return (
+      element.getAttribute('aria-label') ||
+      element.getAttribute('title') ||
+      extractElementText(element)
+    );
+  }
+
+  /**
+   * @param {string} id
+   * @returns {string}
+   */
+  function getLabelElementText(id) {
+    const label = document.getElementById?.(id) || document.querySelector(`#${CSS.escape(id)}`);
+    return label ? extractElementText(label) : '';
   }
 
   /**

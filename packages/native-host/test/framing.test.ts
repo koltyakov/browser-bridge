@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import type net from 'node:net';
 
-import { MAX_NATIVE_MESSAGE_BYTES } from '../../protocol/src/index.js';
+import { MAX_JSON_LINE_BYTES, MAX_NATIVE_MESSAGE_BYTES } from '../../protocol/src/index.js';
 import { fakeSocketThatStalls } from '../../../tests/_helpers/faultInjection.ts';
 import {
   createNativeMessageReader,
@@ -497,4 +497,19 @@ test('writeJsonLine preserves write order under sustained backpressure', async (
   ]);
 
   assert.deepEqual(writes, ['{"seq":1}\n', '{"seq":2}\n', '{"seq":3}\n']);
+});
+
+test('writeJsonLine rejects oversized payloads before writing', async () => {
+  const socket = new EventEmitter() as SocketEmitter;
+  const writes: string[] = [];
+  socket.write = (chunk: string | Uint8Array): boolean => {
+    writes.push(String(chunk));
+    return true;
+  };
+
+  await assert.rejects(
+    writeJsonLine(socket, createSizedMessage(MAX_JSON_LINE_BYTES + 1)),
+    /JSON line exceeds/u
+  );
+  assert.deepEqual(writes, []);
 });

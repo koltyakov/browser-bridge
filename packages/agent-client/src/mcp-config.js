@@ -94,29 +94,19 @@ export function getMcpConfigShape(clientName) {
  * }}
  */
 function createBaseServerConfig(clientName) {
-  const windowsCommand =
-    process.platform === 'win32'
-      ? {
-          command: process.execPath,
-          args: [mcpServerBinPath],
-          env: {},
-        }
-      : {
-          command: 'bbx',
-          args: ['mcp', 'serve'],
-          env: {},
-        };
+  const serverConfig = {
+    command: process.execPath,
+    args: [mcpServerBinPath],
+    env: {},
+  };
 
   if (clientName === 'opencode') {
     return {
       type: 'local',
-      command:
-        process.platform === 'win32'
-          ? [process.execPath, mcpServerBinPath]
-          : ['bbx', 'mcp', 'serve'],
+      command: [process.execPath, mcpServerBinPath],
     };
   }
-  return windowsCommand;
+  return serverConfig;
 }
 
 /** @type {Record<McpClientName, { key: string, includeType: boolean, legacyKeys?: string[], keepEmptyBlock?: boolean }>} */
@@ -142,13 +132,11 @@ const MCP_CONFIG_SHAPES = {
  */
 export function buildMcpConfig(clientName) {
   if (clientName === 'codex') {
-    const command = process.platform === 'win32' ? process.execPath : 'bbx';
-    const args = process.platform === 'win32' ? [mcpServerBinPath] : ['mcp', 'serve'];
     return {
       mcp_servers: {
         [BROWSER_BRIDGE_SERVER_NAME]: {
-          command,
-          args,
+          command: process.execPath,
+          args: [mcpServerBinPath],
         },
       },
     };
@@ -277,12 +265,10 @@ export async function getMcpConfigPaths(clientName, options) {
  * @returns {string}
  */
 function formatCodexServerBlock() {
-  const command = process.platform === 'win32' ? process.execPath : 'bbx';
-  const args = process.platform === 'win32' ? [mcpServerBinPath] : ['mcp', 'serve'];
   return [
     `[mcp_servers."${BROWSER_BRIDGE_SERVER_NAME}"]`,
-    `command = ${JSON.stringify(command)}`,
-    `args = ${JSON.stringify(args)}`,
+    `command = ${JSON.stringify(process.execPath)}`,
+    `args = ${JSON.stringify([mcpServerBinPath])}`,
     '',
   ].join('\n');
 }

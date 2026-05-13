@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 import { pingExistingDaemon } from './daemon.js';
 import {
+  applyWindowsTcpTransportDefaults,
   createSocketBridgeTransport,
   formatBridgeTransport,
   getBridgeTransport,
@@ -124,7 +125,7 @@ export async function clearDaemonPidFile(options = {}) {
  */
 export async function stopBridgeDaemon(options = {}) {
   const {
-    transport = getBridgeTransport(),
+    transport = undefined,
     socketPath = undefined,
     pidPath = getDaemonPidPath(),
     timeoutMs = DEFAULT_DAEMON_RESTART_TIMEOUT_MS,
@@ -136,7 +137,7 @@ export async function stopBridgeDaemon(options = {}) {
     rmFn = fs.promises.rm,
     sleepFn = sleep,
   } = options;
-  const resolvedTransport = socketPath ? createSocketBridgeTransport(socketPath) : transport;
+  const resolvedTransport = resolveDaemonTransport({ transport, socketPath });
   const resolvedSocketPath =
     resolvedTransport.type === 'socket' ? resolvedTransport.socketPath : '';
 
@@ -238,7 +239,7 @@ export async function restartBridgeDaemonIfRunning(options = {}) {
  */
 async function restartBridgeDaemonAfterStop(stopResult, options = {}) {
   const {
-    transport = getBridgeTransport(),
+    transport = undefined,
     socketPath = undefined,
     pidPath = getDaemonPidPath(),
     timeoutMs = DEFAULT_DAEMON_RESTART_TIMEOUT_MS,
@@ -248,7 +249,7 @@ async function restartBridgeDaemonAfterStop(stopResult, options = {}) {
     sleepFn = sleep,
     spawnDaemonFn = spawnBridgeDaemonProcess,
   } = options;
-  const resolvedTransport = socketPath ? createSocketBridgeTransport(socketPath) : transport;
+  const resolvedTransport = resolveDaemonTransport({ transport, socketPath });
 
   spawnDaemonFn();
 
@@ -269,6 +270,27 @@ async function restartBridgeDaemonAfterStop(stopResult, options = {}) {
     pidPath,
     pid: await readPidFn(pidPath),
   };
+}
+
+/**
+ * Mirror the daemon entrypoint transport defaults so restart polling targets the
+ * same endpoint the spawned process listens on.
+ *
+ * @param {{ transport?: BridgeTransport, socketPath?: string }} options
+ * @returns {BridgeTransport}
+ */
+function resolveDaemonTransport(options) {
+  const { transport, socketPath } = options;
+  if (socketPath) {
+    return createSocketBridgeTransport(socketPath);
+  }
+  if (transport) {
+    return transport;
+  }
+
+  const env = { ...process.env };
+  applyWindowsTcpTransportDefaults(env);
+  return getBridgeTransport(env);
 }
 
 /**

@@ -116,6 +116,19 @@ export function createAccessRequestController(state, deps) {
     const target = await resolveRequestedAccessTarget(request);
 
     if (state.enabledWindow) {
+      if (target && target.windowId !== state.enabledWindow.windowId) {
+        return createFailure(
+          request.id,
+          ERROR_CODES.ACCESS_DENIED,
+          'Browser Bridge access is already enabled for another window. Disable that window before requesting access for this tab.',
+          {
+            enabledWindowId: state.enabledWindow.windowId,
+            requestedTargetWindowId: target.windowId,
+            requestedTargetTabId: target.tabId,
+          },
+          { method: request.method }
+        );
+      }
       const access = await deps.getAccessStatus();
       return createSuccess(
         request.id,

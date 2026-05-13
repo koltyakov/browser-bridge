@@ -154,7 +154,7 @@ async function requestHealthPing(
       tab_id: null,
       params: {},
       meta: {
-        protocol_version: '1.0',
+        protocol_version: '0.0',
         token_budget: null,
       },
     },
@@ -205,7 +205,7 @@ test('daemon responds to health checks without extension', async () => {
       tab_id: null,
       params: {},
       meta: {
-        protocol_version: '1.0',
+        protocol_version: '0.0',
         token_budget: null,
       },
     },
@@ -712,7 +712,7 @@ test('daemon forwards health checks to the extension and merges access state', a
       tab_id: null,
       params: {},
       meta: {
-        protocol_version: '1.0',
+        protocol_version: '0.0',
         token_budget: null,
       },
     },
@@ -745,6 +745,8 @@ test('daemon forwards health checks to the extension and merges access state', a
   assert.equal(typeof payload.response.result.daemonVersion, 'string');
   assert.equal(payload.response.result.extensionConnected, true);
   assert.equal(payload.response.result.access.routeTabId, 42);
+  assert.equal(payload.response.result.deprecated_since, '1.0');
+  assert.match(payload.response.result.migration_hint, /client protocol 0.0/);
 });
 
 test('daemon prefers enabled extensions and otherwise falls back to the most recent one', async () => {

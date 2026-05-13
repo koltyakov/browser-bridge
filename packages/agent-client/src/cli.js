@@ -687,7 +687,7 @@ async function main() {
     process.exitCode = 1;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const raw = error instanceof Error && 'code' in error ? /** @type {any} */ (error).code : '';
+    const raw = getErrorCode(error);
     let code = 'ERROR';
     if (raw === 'ENOENT' || raw === 'ECONNREFUSED' || raw === 'EINVAL') {
       code = 'DAEMON_OFFLINE';
@@ -707,6 +707,18 @@ async function main() {
   } finally {
     await client.close();
   }
+}
+
+/**
+ * @param {unknown} error
+ * @returns {string}
+ */
+function getErrorCode(error) {
+  if (!(error instanceof Error) || !('code' in error)) {
+    return '';
+  }
+  const code = /** @type {{ code?: unknown }} */ (error).code;
+  return typeof code === 'string' ? code : '';
 }
 
 /**
