@@ -507,6 +507,7 @@ export function shouldPollSetupStatus(connected, installationHidden, installatio
  * @typedef {{
  *   hidden: boolean,
  *   installCommand: string,
+ *   installCommandHidden: boolean,
  *   skillCommand: string,
  *   mcpCommand: string,
  *   label: string,
@@ -703,11 +704,12 @@ export function getSidepanelNativeStatusView({
   publishedExtensionId,
   fallbackInstallCommand = 'bbx install',
 }) {
-  const installCommand =
-    runtimeId === publishedExtensionId ? 'bbx install' : `bbx install ${runtimeId}`;
+  const installCommandHidden = runtimeId === publishedExtensionId;
+  const installCommand = installCommandHidden ? 'bbx install' : `bbx install ${runtimeId}`;
   return {
     hidden: connected,
     installCommand,
+    installCommandHidden,
     skillCommand: 'bbx install-skill',
     mcpCommand: 'bbx install-mcp',
     label: connected ? 'Native host connected' : error || 'Native host disconnected',

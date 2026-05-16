@@ -26,8 +26,8 @@
         <div class="control-links">
           <a class="setup-link" href="https://github.com/koltyakov/browser-bridge" target="_blank"
             rel="noopener noreferrer">GitHub ↗</a>
-          <a class="setup-link" href="https://github.com/koltyakov/browser-bridge/blob/main/PRIVACY.md"
-            target="_blank" rel="noopener noreferrer">Privacy policy ↗</a>
+          <a class="setup-link" href="https://github.com/koltyakov/browser-bridge/blob/main/PRIVACY.md" target="_blank"
+            rel="noopener noreferrer">Privacy policy ↗</a>
         </div>
       </div>
       <button id="bridge-toggle" class="power-button" type="button">Enable Window Access</button>
@@ -62,18 +62,12 @@
         Browser Bridge works with a local companion host on this machine. After the host connects, you can enable window
         access for the current Chrome window.
       </p>
+      <br />
       <div class="setup-steps">
-        <span class="setup-step-hint">1. Install CLI (skip if done):</span>
+        <span class="setup-step-hint">Install CLI (skip if done):</span>
         <code class="setup-cmd">npm install -g @browserbridge/bbx</code>
-        <span class="setup-step-hint">2. Connect this extension (if didn't run automatically):</span>
+        <span id="setup-install-hint" class="setup-step-hint">Connect this extension (if didn't run automatically):</span>
         <code id="setup-install-cmd" class="setup-cmd">bbx install</code>
-        <span class="setup-step-hint">3. Install CLI skill for shell-driven agents (optional):</span>
-        <code id="setup-skill-cmd" class="setup-cmd">bbx install-skill</code>
-        <span class="setup-step-hint">Or configure MCP for MCP-capable agents (optional):</span>
-        <code id="setup-mcp-cmd" class="setup-cmd">bbx install-mcp</code>
-        <p class="setup-status-guidance">
-          After adding MCP or the CLI skill, restart the agent if Browser Bridge does not appear immediately.
-        </p>
       </div>
       <div class="control-links">
         <a class="setup-link" href="https://github.com/koltyakov/browser-bridge/blob/main/docs/quickstart.md"

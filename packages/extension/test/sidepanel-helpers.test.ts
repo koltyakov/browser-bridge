@@ -644,6 +644,7 @@ test('getSidepanelNativeStatusView derives install commands and disconnected lab
     {
       hidden: false,
       installCommand: 'bbx install dev-extension-id',
+      installCommandHidden: false,
       skillCommand: 'bbx install-skill',
       mcpCommand: 'bbx install-mcp',
       label: 'bridge down',
@@ -661,6 +662,7 @@ test('getSidepanelNativeStatusView derives install commands and disconnected lab
     {
       hidden: true,
       installCommand: 'bbx install',
+      installCommandHidden: true,
       skillCommand: 'bbx install-skill',
       mcpCommand: 'bbx install-mcp',
       label: 'Native host connected',

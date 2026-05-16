@@ -102,9 +102,8 @@ const nativeIndicator =
 const toggleButton = /** @type {HTMLButtonElement} */ (document.getElementById('bridge-toggle'));
 const actionLog = /** @type {HTMLDivElement} */ (document.getElementById('action-log'));
 const setupSection = /** @type {HTMLElement} */ (document.getElementById('native-setup'));
+const setupInstallHint = /** @type {HTMLElement} */ (document.getElementById('setup-install-hint'));
 const setupInstallCmd = /** @type {HTMLElement} */ (document.getElementById('setup-install-cmd'));
-const setupSkillCmd = /** @type {HTMLElement} */ (document.getElementById('setup-skill-cmd'));
-const setupMcpCmd = /** @type {HTMLElement} */ (document.getElementById('setup-mcp-cmd'));
 const controlSection = /** @type {HTMLElement} */ (document.getElementById('control-section'));
 const installationSection = /** @type {HTMLDetailsElement} */ (
   document.getElementById('installation-section')
@@ -493,8 +492,8 @@ function renderNativeStatus(connected, error) {
   if (!connected) {
     renderHostVersion(null);
     setupInstallCmd.textContent = view.installCommand;
-    setupSkillCmd.textContent = view.skillCommand;
-    setupMcpCmd.textContent = view.mcpCommand;
+    setupInstallHint.hidden = view.installCommandHidden;
+    setupInstallCmd.hidden = view.installCommandHidden;
     hideSetupContextMenu();
   }
   syncConnectedSectionsVisibility();
