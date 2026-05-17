@@ -288,6 +288,7 @@ export async function createInstallFs(options: CreateInstallFsOptions = {}): Pro
   const cwd = path.join(root, 'project');
   const binDir = path.join(root, 'bin');
   const bridgeHome = path.join(root, 'bridge-home');
+  const xdgConfigHome = path.join(home, '.config');
   const appData = path.join(home, 'AppData', 'Roaming');
   const localAppData = path.join(home, 'AppData', 'Local');
   const codexHome = path.join(home, '.codex');
@@ -297,6 +298,7 @@ export async function createInstallFs(options: CreateInstallFsOptions = {}): Pro
     fs.promises.mkdir(cwd, { recursive: true }),
     fs.promises.mkdir(binDir, { recursive: true }),
     fs.promises.mkdir(bridgeHome, { recursive: true }),
+    fs.promises.mkdir(xdgConfigHome, { recursive: true }),
     fs.promises.mkdir(appData, { recursive: true }),
     fs.promises.mkdir(localAppData, { recursive: true }),
     fs.promises.mkdir(codexHome, { recursive: true }),
@@ -317,6 +319,7 @@ export async function createInstallFs(options: CreateInstallFsOptions = {}): Pro
       USERPROFILE: home,
       APPDATA: appData,
       LOCALAPPDATA: localAppData,
+      XDG_CONFIG_HOME: xdgConfigHome,
       CODEX_HOME: codexHome,
       PATH: binDir,
       [BRIDGE_HOME_ENV]: bridgeHome,

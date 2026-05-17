@@ -574,6 +574,52 @@ test('getDoctorReport flags an installed but disconnected extension separately f
   assert.ok(report.nextSteps.some((step) => step.includes('Browser Bridge extension')));
 });
 
+test('getDoctorReport calls out Chromium snap native host limitations', async () => {
+  const report = await getDoctorReport({
+    loadManifest: async () => null,
+    checkBrowserManifests: async () => [
+      {
+        browser: 'chromium',
+        manifestPath:
+          '/home/tester/snap/chromium/common/chromium/NativeMessagingHosts/com.browserbridge.browser_bridge.json',
+        installed: true,
+      },
+    ],
+    bridgeClientRunner: createHealthPingRunner({
+      daemon: 'ok',
+      extensionConnected: false,
+    }),
+  });
+
+  assert.equal(report.manifestInstalled, true);
+  assert.ok(report.issues.includes('extension_disconnected'));
+  assert.ok(report.issues.includes('chromium_sandboxed_native_host_limited'));
+  assert.ok(report.nextSteps.some((step) => step.includes('snap or Flatpak')));
+});
+
+test('getDoctorReport calls out Chromium Flatpak native host limitations', async () => {
+  const report = await getDoctorReport({
+    loadManifest: async () => null,
+    checkBrowserManifests: async () => [
+      {
+        browser: 'chromium',
+        manifestPath:
+          '/home/tester/.var/app/org.chromium.Chromium/config/chromium/NativeMessagingHosts/com.browserbridge.browser_bridge.json',
+        installed: true,
+      },
+    ],
+    bridgeClientRunner: createHealthPingRunner({
+      daemon: 'ok',
+      extensionConnected: false,
+    }),
+  });
+
+  assert.equal(report.manifestInstalled, true);
+  assert.ok(report.issues.includes('extension_disconnected'));
+  assert.ok(report.issues.includes('chromium_sandboxed_native_host_limited'));
+  assert.ok(report.nextSteps.some((step) => step.includes('non-sandboxed package')));
+});
+
 test('getDoctorReport clears readiness issues after the bridge recovers on a later retry', async () => {
   let offline = true;
 

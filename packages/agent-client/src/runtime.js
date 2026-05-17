@@ -21,6 +21,9 @@ import { BridgeClient } from './client.js';
 /** @typedef {import('./types.js').DoctorReport} DoctorReport */
 /** @typedef {import('./types.js').DoctorReportOptions} DoctorReportOptions */
 
+const CHROMIUM_SANDBOXED_MANIFEST_RE =
+  /(?:^|[/\\])(?:snap[/\\]chromium|\.var[/\\]app[/\\]org\.chromium\.Chromium)[/\\]/;
+
 /**
  * @param {BridgeClient} client
  * @returns {Promise<void>}
@@ -113,7 +116,7 @@ export async function withBridgeClient(callback) {
 }
 
 /**
- * @param {SupportedBrowser} [browser='chrome']
+ * @param {SupportedBrowser} [browser]
  * @returns {string}
  */
 export function getManifestPath(browser) {
@@ -121,7 +124,7 @@ export function getManifestPath(browser) {
 }
 
 /**
- * @param {SupportedBrowser} [browser='chrome']
+ * @param {SupportedBrowser} [browser]
  * @returns {Promise<{allowed_origins?: string[]} | null>}
  */
 export async function loadInstalledManifest(browser) {
@@ -164,6 +167,12 @@ export async function getDoctorReport(options = {}) {
 
   const browserManifests = await (options.checkBrowserManifests || checkBrowserManifests)();
   const manifestInstalled = Boolean(manifest) || browserManifests.some((b) => b.installed);
+  const chromiumSandboxedManifestInstalled = browserManifests.some(
+    (entry) =>
+      entry.installed &&
+      entry.browser === 'chromium' &&
+      CHROMIUM_SANDBOXED_MANIFEST_RE.test(entry.manifestPath)
+  );
 
   /** @type {DoctorReport} */
   const report = {
@@ -228,6 +237,12 @@ export async function getDoctorReport(options = {}) {
   }
   if (report.daemonReachable && !report.extensionConnected) {
     report.issues.push('extension_disconnected');
+    if (chromiumSandboxedManifestInstalled) {
+      report.issues.push('chromium_sandboxed_native_host_limited');
+      report.nextSteps.push(
+        "Detected a sandboxed Chromium native host manifest for snap or Flatpak. Sandboxed Chromium may not be able to launch Browser Bridge's Node-based native host; use Google Chrome, Brave, or Edge from a non-sandboxed package and run `bbx install --browser <browser>`."
+      );
+    }
     report.nextSteps.push(
       'Open Chrome and make sure the Browser Bridge extension is installed and active.'
     );

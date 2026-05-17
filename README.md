@@ -107,10 +107,12 @@ Browser Bridge is optimized for the opposite starting point: **inspect the state
 
 1. Install [Browser Bridge from the Chrome Web Store](https://chromewebstore.google.com/detail/browser-bridge/jjjkmmcdkpcgamlopogicbnnhdgebhie) in Chrome or another Chromium-based browser
 2. `npm install -g @browserbridge/bbx` - installs the CLI and native host
-3. Run `bbx install`, or target a specific browser with `bbx install --browser edge`, `bbx install --browser brave`, `bbx install --browser chromium`, or `bbx install --browser arc`
+3. Run `bbx install` (Chromium on Linux, Chrome elsewhere), or target a specific browser with `bbx install --browser chrome`, `bbx install --browser edge`, `bbx install --browser brave`, `bbx install --browser chromium`, or `bbx install --browser arc`
 4. In the extension side panel, install MCP or CLI (skill) for your agent of choice
 5. Enable Browser Bridge for the browser window you want to inspect/control with the AI agent
 6. Ask your agent to use Browser Bridge via MCP (`BB MCP` or `Browser Bridge MCP`), or invoke the installed Browser Bridge skill in CLI mode (`/browser-bridge`, `browser-bridge`, or the client-specific skill trigger)
+
+On Ubuntu, Chromium is commonly installed as a strict snap, and Flatpak Chromium is similarly sandboxed. If native messaging stays disconnected there, use a non-sandboxed Chromium-based browser such as Google Chrome, Brave, or Edge.
 
 MCP mode is self-contained: the server exposes tools, startup instructions, and prompt templates, so a separate CLI skill is not required for MCP guidance.
 

@@ -13,11 +13,12 @@ bbx logs
 
 ## The extension is installed, but `bbx status` says it is disconnected
 
-- Run `bbx install` again. For Edge, Brave, Chromium, or Arc, include `--browser <name>`.
+- Run `bbx install` again. It targets Chromium on Linux and Chrome on macOS/Windows; for another browser, include `--browser <name>`.
 - Run `bbx restart` to force the local daemon to reload after updates.
 - Confirm the extension is enabled in Chrome.
 - Use `bbx install <extension-id>` only for unpacked or custom extension builds.
 - Restart Chrome after reinstalling the native messaging manifest if the host was missing when Chrome launched.
+- On Ubuntu, the default Chromium package is usually a strict snap, and Flatpak Chromium is similarly sandboxed. If `bbx doctor` shows a sandboxed Chromium manifest and the extension still disconnects, use Google Chrome, Brave, or Edge from a non-sandboxed package and run `bbx install --browser <browser>`.
 
 ## The agent gets `ACCESS_DENIED`
 

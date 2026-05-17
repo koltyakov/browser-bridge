@@ -21,16 +21,32 @@ bbx install
 the local host. Use `bbx install <extension-id>` only for unpacked or custom
 extension builds.
 
-By default, `bbx install` targets Chrome. For another supported browser, pass
-`--browser`:
+By default, `bbx install` targets Chromium on Linux and Chrome on macOS/Windows.
+For another supported browser, pass `--browser`:
 
 ```bash
+bbx install --browser chrome    # Google Chrome
 bbx install --browser edge      # Microsoft Edge
 bbx install --browser brave     # Brave
 bbx install --browser chromium  # Chromium
 bbx install --browser arc       # Arc
 bbx install --all               # All supported browsers
 ```
+
+On Linux, Browser Bridge writes a user-specific native messaging manifest under
+the selected browser's profile config directory, such as
+`~/.config/chromium/NativeMessagingHosts` for Chromium or
+`~/.config/google-chrome/NativeMessagingHosts` for Google Chrome. It also honors
+`CHROME_CONFIG_HOME` and `XDG_CONFIG_HOME`, and uses the snap Chromium profile
+path when that profile exists.
+
+Ubuntu's default Chromium package is usually a strict snap, and Flatpak Chromium
+is similarly sandboxed. Those builds can use different native messaging manifest
+paths and may still be unable to launch Browser Bridge's Node-based native host
+because the host lives outside the browser sandbox. If `bbx status` shows
+`Daemon: ok. Extension: disconnected` after installing for Chromium, use Google
+Chrome, Brave, or Edge from a non-sandboxed package and run the matching
+`bbx install --browser <browser>` command.
 
 ## 2. Verify the local bridge first
 

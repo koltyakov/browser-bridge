@@ -19,6 +19,10 @@ export const DEFAULT_EXTENSION_ID_ENV = 'BROWSER_BRIDGE_EXTENSION_ID';
 export const BUILT_IN_EXTENSION_ID_SOURCE = 'built_in';
 export const INSTALL_NATIVE_MANIFEST_ERROR = 'INSTALL_NATIVE_MANIFEST_FAILED';
 
+const CHROMIUM_SNAP_NATIVE_MESSAGING_RE = /(?:^|[/\\])snap[/\\]chromium[/\\]/;
+const CHROMIUM_FLATPAK_NATIVE_MESSAGING_RE =
+  /(?:^|[/\\])\.var[/\\]app[/\\]org\.chromium\.Chromium[/\\]/;
+
 /** @typedef {import('./config.js').SupportedBrowser} SupportedBrowser */
 /** @typedef {'env' | 'built_in' | 'none' | 'invalid_env'} ExtensionIdSource */
 /** @typedef {NodeJS.ErrnoException & { cause?: unknown }} MaybeErrnoError */
@@ -259,13 +263,13 @@ export async function installNativeManifest(options) {
     extensionIdArg,
     browser,
     nodePath = process.execPath,
-    installDir = getManifestInstallDir(browser),
-    bridgeDir = getBridgeDir(),
+    env = process.env,
+    installDir = getManifestInstallDir(browser, env),
+    bridgeDir = getBridgeDir(env),
     stdout = process.stdout,
     stderr = process.stderr,
     preserveCustomExtensionId = false,
     writeRegistryValue: writeRegistryValueFn = writeRegistryValue,
-    env = process.env,
   } = options;
 
   const parsedExtensionId = parseExtensionId(extensionIdArg);
@@ -360,6 +364,18 @@ exec '${escapeSingleQuotes(nodePath)}' '${escapeSingleQuotes(hostPath)}' "$@"
     );
   }
 
+  if (isChromiumSnapManifestInstall(browser, installDir)) {
+    stderr.write(
+      'Compatibility warning: detected a Linux Chromium snap native messaging path. Strict snap Chromium commonly blocks launching Browser Bridge\'s Node-based native host with AppArmor, which leaves `bbx status` at "Extension: disconnected". Use a non-snap Chromium-based browser such as Google Chrome, Brave, or Edge and run `bbx install --browser <browser>`.\n'
+    );
+  }
+
+  if (isChromiumFlatpakManifestInstall(browser, installDir)) {
+    stderr.write(
+      'Compatibility warning: detected a Linux Chromium Flatpak native messaging path. Sandboxed Flatpak Chromium commonly blocks launching Browser Bridge\'s Node-based native host, which leaves `bbx status` at "Extension: disconnected". Use a non-sandboxed Chromium-based browser such as Google Chrome, Brave, or Edge and run `bbx install --browser <browser>`.\n'
+    );
+  }
+
   const hasPlaceholder = allowedOrigins.some((origin) =>
     origin.includes('__REPLACE_WITH_EXTENSION_ID__')
   );
@@ -376,6 +392,24 @@ exec '${escapeSingleQuotes(nodePath)}' '${escapeSingleQuotes(hostPath)}' "$@"
     allowedOrigins,
     extensionId,
   };
+}
+
+/**
+ * @param {SupportedBrowser | undefined} browser
+ * @param {string} installDir
+ * @returns {boolean}
+ */
+function isChromiumSnapManifestInstall(browser, installDir) {
+  return browser === 'chromium' && CHROMIUM_SNAP_NATIVE_MESSAGING_RE.test(installDir);
+}
+
+/**
+ * @param {SupportedBrowser | undefined} browser
+ * @param {string} installDir
+ * @returns {boolean}
+ */
+function isChromiumFlatpakManifestInstall(browser, installDir) {
+  return browser === 'chromium' && CHROMIUM_FLATPAK_NATIVE_MESSAGING_RE.test(installDir);
 }
 
 /**

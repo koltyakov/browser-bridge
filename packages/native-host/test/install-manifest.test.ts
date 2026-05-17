@@ -232,6 +232,95 @@ test('installNativeManifest overwrites an existing manifest with updated content
   }
 });
 
+test('installNativeManifest warns when installing for Chromium snap paths', async () => {
+  const tempDir = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bbx-install-manifest-chromium-snap-')
+  );
+  const installDir = path.join(
+    tempDir,
+    'home',
+    'tester',
+    'snap',
+    'chromium',
+    'common',
+    'chromium',
+    'NativeMessagingHosts'
+  );
+  const stderr: string[] = [];
+
+  try {
+    await installNativeManifest({
+      repoRoot: process.cwd(),
+      browser: 'chromium',
+      installDir,
+      bridgeDir: path.join(tempDir, 'bridge'),
+      stderr: {
+        write(value) {
+          stderr.push(String(value));
+          return true;
+        },
+      },
+      stdout: {
+        write() {
+          return true;
+        },
+      },
+    });
+
+    assert.ok(
+      stderr.some((line) => line.includes('Compatibility warning: detected a Linux Chromium snap'))
+    );
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('installNativeManifest warns when installing for Chromium Flatpak paths', async () => {
+  const tempDir = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'bbx-install-manifest-chromium-flatpak-')
+  );
+  const installDir = path.join(
+    tempDir,
+    'home',
+    'tester',
+    '.var',
+    'app',
+    'org.chromium.Chromium',
+    'config',
+    'chromium',
+    'NativeMessagingHosts'
+  );
+  const stderr: string[] = [];
+
+  try {
+    await installNativeManifest({
+      repoRoot: process.cwd(),
+      browser: 'chromium',
+      installDir,
+      bridgeDir: path.join(tempDir, 'bridge'),
+      stderr: {
+        write(value) {
+          stderr.push(String(value));
+          return true;
+        },
+      },
+      stdout: {
+        write() {
+          return true;
+        },
+      },
+    });
+
+    assert.ok(
+      stderr.some((line) =>
+        line.includes('Compatibility warning: detected a Linux Chromium Flatpak')
+      )
+    );
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('installNativeManifest creates missing nested install and bridge directories', async () => {
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-install-manifest-nested-'));
   const installDir = path.join(tempDir, 'deep', 'manifest', 'dir');

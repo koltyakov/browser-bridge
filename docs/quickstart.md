@@ -24,15 +24,21 @@ If the extension does not connect itself during setup, run:
 bbx install
 ```
 
-For Chromium-based browsers other than Chrome, install the native messaging manifest for that browser:
+`bbx install` targets Chromium on Linux and Chrome on macOS/Windows. To install the native messaging manifest for a different browser, pass `--browser`:
 
 ```bash
+bbx install --browser chrome    # Google Chrome
 bbx install --browser edge      # Microsoft Edge
 bbx install --browser brave     # Brave
 bbx install --browser chromium  # Chromium
 bbx install --browser arc       # Arc
 bbx install --all               # All supported browsers
 ```
+
+On Ubuntu, the default Chromium package is usually a strict snap, and Flatpak
+Chromium is similarly sandboxed. If Chromium still reports the extension as
+disconnected after install, use a non-sandboxed Chromium-based browser such as
+Google Chrome, Brave, or Edge and install the manifest for that browser.
 
 ## 3. Connect your agent
 

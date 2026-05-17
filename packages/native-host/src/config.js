@@ -1,5 +1,6 @@
 // @ts-check
 
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -190,13 +191,36 @@ export function getLauncherFilename() {
 export const SUPPORTED_BROWSERS = ['chrome', 'edge', 'brave', 'chromium', 'arc'];
 
 /**
+ * @returns {SupportedBrowser}
+ */
+export function getDefaultBrowser() {
+  return os.platform() === 'linux' ? 'chromium' : 'chrome';
+}
+
+/**
+ * @param {NodeJS.ProcessEnv} env
+ * @param {string} home
+ * @returns {string}
+ */
+function getLinuxConfigHome(env, home) {
+  if (env.CHROME_CONFIG_HOME) {
+    return env.CHROME_CONFIG_HOME;
+  }
+  if (env.XDG_CONFIG_HOME) {
+    return env.XDG_CONFIG_HOME;
+  }
+  return path.join(home, '.config');
+}
+
+/**
  * Return the native messaging host manifest install directory for the given
  * browser on the current platform.
  *
- * @param {SupportedBrowser} [browser='chrome']
+ * @param {SupportedBrowser} [browser=getDefaultBrowser()]
+ * @param {NodeJS.ProcessEnv} [env=process.env]
  * @returns {string}
  */
-export function getManifestInstallDir(browser = 'chrome') {
+export function getManifestInstallDir(browser = getDefaultBrowser(), env = process.env) {
   const platform = os.platform();
   const home = os.homedir();
 
@@ -213,7 +237,7 @@ export function getManifestInstallDir(browser = 'chrome') {
   }
 
   if (platform === 'win32') {
-    const winBase = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+    const winBase = env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
     const winPaths = {
       chrome: path.join(winBase, 'Google', 'Chrome', 'User Data', 'NativeMessagingHosts'),
       edge: path.join(winBase, 'Microsoft', 'Edge', 'User Data', 'NativeMessagingHosts'),
@@ -231,12 +255,18 @@ export function getManifestInstallDir(browser = 'chrome') {
   }
 
   // Linux / others
+  const linuxConfigHome = getLinuxConfigHome(env, home);
+  const chromiumSnapProfile = path.join(home, 'snap', 'chromium', 'common', 'chromium');
+  const useChromiumSnapProfile =
+    !env.CHROME_CONFIG_HOME && !env.XDG_CONFIG_HOME && fs.existsSync(chromiumSnapProfile);
   const linuxPaths = {
-    chrome: path.join(home, '.config', 'google-chrome', 'NativeMessagingHosts'),
-    edge: path.join(home, '.config', 'microsoft-edge', 'NativeMessagingHosts'),
-    brave: path.join(home, '.config', 'BraveSoftware', 'Brave-Browser', 'NativeMessagingHosts'),
-    chromium: path.join(home, '.config', 'chromium', 'NativeMessagingHosts'),
-    arc: path.join(home, '.config', 'Arc', 'User Data', 'NativeMessagingHosts'),
+    chrome: path.join(linuxConfigHome, 'google-chrome', 'NativeMessagingHosts'),
+    edge: path.join(linuxConfigHome, 'microsoft-edge', 'NativeMessagingHosts'),
+    brave: path.join(linuxConfigHome, 'BraveSoftware', 'Brave-Browser', 'NativeMessagingHosts'),
+    chromium: useChromiumSnapProfile
+      ? path.join(chromiumSnapProfile, 'NativeMessagingHosts')
+      : path.join(linuxConfigHome, 'chromium', 'NativeMessagingHosts'),
+    arc: path.join(linuxConfigHome, 'Arc', 'User Data', 'NativeMessagingHosts'),
   };
   return linuxPaths[browser] ?? linuxPaths.chrome;
 }

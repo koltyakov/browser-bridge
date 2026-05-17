@@ -9,7 +9,7 @@ import {
   parseExtensionId,
   uninstallNativeManifest,
 } from '../src/install-manifest.js';
-import { SUPPORTED_BROWSERS } from '../src/config.js';
+import { getDefaultBrowser, SUPPORTED_BROWSERS } from '../src/config.js';
 
 /** @typedef {import('../src/config.js').SupportedBrowser} SupportedBrowser */
 
@@ -61,7 +61,7 @@ const targets = installAll
   ? [...SUPPORTED_BROWSERS]
   : browsers.length > 0
     ? browsers
-    : [/** @type {SupportedBrowser} */ ('chrome')];
+    : [getDefaultBrowser()];
 
 for (const [index, target] of targets.entries()) {
   if (uninstall) {
