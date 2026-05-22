@@ -33,6 +33,21 @@ export function isRestrictedScriptingError(message) {
 }
 
 /**
+ * Chrome returns this when a tab is scriptable, but the current document does
+ * not have our content-script listener anymore, commonly during reloads or SPA
+ * document swaps between the preflight ping and the actual command.
+ *
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+export function isMissingContentScriptReceiverError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    /Could not establish connection/i.test(message) && /Receiving end does not exist/i.test(message)
+  );
+}
+
+/**
  * @param {typeof globalThis.chrome} chromeObj
  * @param {ContentScriptBridgeDeps} deps
  * @returns {{
@@ -43,6 +58,28 @@ export function isRestrictedScriptingError(message) {
  */
 export function createContentScriptBridge(chromeObj, deps) {
   /**
+   * @param {number} tabId
+   * @returns {Promise<void>}
+   */
+  async function injectContentScript(tabId) {
+    try {
+      await chromeObj.scripting.executeScript({
+        target: { tabId },
+        files: CONTENT_SCRIPT_FILES,
+      });
+    } catch (injectError) {
+      const msg = injectError instanceof Error ? injectError.message : String(injectError);
+      if (isRestrictedScriptingError(msg)) {
+        throw new Error(
+          'CONTENT_SCRIPT_UNAVAILABLE: Content script not available on this page (restricted or extension page).',
+          { cause: injectError }
+        );
+      }
+      throw injectError;
+    }
+  }
+
+  /**
    * Send a message to the content script and fail fast if it does not respond.
    *
    * @param {number} tabId
@@ -51,6 +88,24 @@ export function createContentScriptBridge(chromeObj, deps) {
    * @returns {Promise<any>}
    */
   async function sendTabMessage(tabId, message, timeoutMs) {
+    try {
+      return await sendTabMessageWithTimeout(tabId, message, timeoutMs);
+    } catch (error) {
+      if (!isMissingContentScriptReceiverError(error)) {
+        throw error;
+      }
+      await injectContentScript(tabId);
+      return await sendTabMessageWithTimeout(tabId, message, timeoutMs);
+    }
+  }
+
+  /**
+   * @param {number} tabId
+   * @param {Record<string, unknown>} message
+   * @param {number} timeoutMs
+   * @returns {Promise<unknown>}
+   */
+  async function sendTabMessageWithTimeout(tabId, message, timeoutMs) {
     /** @type {ReturnType<typeof setTimeout> | undefined} */
     let timeoutId;
     const timeout = new Promise((_, reject) => {
@@ -80,21 +135,7 @@ export function createContentScriptBridge(chromeObj, deps) {
       await sendTabMessage(tabId, { type: 'bridge.ping' }, deps.contentScriptTimeoutMs);
       return;
     } catch {
-      try {
-        await chromeObj.scripting.executeScript({
-          target: { tabId },
-          files: CONTENT_SCRIPT_FILES,
-        });
-      } catch (injectError) {
-        const msg = injectError instanceof Error ? injectError.message : String(injectError);
-        if (isRestrictedScriptingError(msg)) {
-          throw new Error(
-            'CONTENT_SCRIPT_UNAVAILABLE: Content script not available on this page (restricted or extension page).',
-            { cause: injectError }
-          );
-        }
-        throw injectError;
-      }
+      await injectContentScript(tabId);
     }
   }
 

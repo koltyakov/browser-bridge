@@ -659,6 +659,7 @@ test('background dispatch routes page.get_state through the tab-bound content sc
     title: 'Stateful page',
     url: 'https://example.com/app',
   } as chrome.tabs.Tab;
+  let pingAttempts = 0;
   const chrome = createChromeFake({
     tabs: {
       async query(queryInfo: chrome.tabs.QueryInfo = {}) {
@@ -673,7 +674,11 @@ test('background dispatch routes page.get_state through the tab-bound content sc
       async sendMessage(tabId: number, message: Record<string, unknown>) {
         sendMessageCalls.push({ tabId, message });
         if (message.type === 'bridge.ping') {
-          throw new Error('Receiving end does not exist.');
+          pingAttempts += 1;
+          if (pingAttempts === 1) {
+            throw new Error('Could not establish connection. Receiving end does not exist.');
+          }
+          return { ok: true };
         }
         return {
           url: activeTab.url,
@@ -737,6 +742,107 @@ test('background dispatch routes page.get_state through the tab-bound content sc
     },
     {
       tabId: 41,
+      message: { type: 'bridge.ping' },
+    },
+    {
+      tabId: 41,
+      message: {
+        type: 'bridge.execute',
+        method: 'page.get_state',
+        params: {},
+      },
+    },
+  ]);
+});
+
+test('background dispatch reinjects and retries when content script receiver disappears', async () => {
+  const sendMessageCalls: TabMessageCall[] = [];
+  const executeScriptCalls: ExecuteScriptCall[] = [];
+  const activeTab = {
+    id: 42,
+    windowId: 7,
+    active: true,
+    title: 'Reloading page',
+    url: 'https://example.com/reloading',
+  } as chrome.tabs.Tab;
+  let executeAttempts = 0;
+  const chrome = createChromeFake({
+    tabs: {
+      async query(queryInfo: chrome.tabs.QueryInfo = {}) {
+        if (queryInfo.active && queryInfo.windowId === 7) {
+          return [activeTab];
+        }
+        if (queryInfo.active && queryInfo.lastFocusedWindow) {
+          return [];
+        }
+        return [];
+      },
+      async sendMessage(tabId: number, message: Record<string, unknown>) {
+        sendMessageCalls.push({ tabId, message });
+        if (message.type === 'bridge.ping') {
+          return { ok: true };
+        }
+        executeAttempts += 1;
+        if (executeAttempts === 1) {
+          throw new Error('Could not establish connection. Receiving end does not exist.');
+        }
+        return {
+          url: activeTab.url,
+          title: activeTab.title,
+          ready: true,
+        };
+      },
+    },
+    windows: {
+      async get(windowId: number) {
+        return { id: windowId };
+      },
+    },
+    scripting: {
+      async executeScript(injection: ExecuteScriptCall) {
+        executeScriptCalls.push(injection);
+        return [];
+      },
+    },
+  });
+  const loaded = await loadBackground({
+    chrome,
+    query: `test-background-dispatch-content-script-retry-${Date.now()}`,
+  });
+
+  setEnabledWindow(loaded);
+
+  const response = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-page-state-retry',
+      method: 'page.get_state',
+    })
+  );
+
+  if (!response.ok) {
+    assert.fail(response.error.message);
+  }
+  assert.deepEqual(response.result, {
+    url: 'https://example.com/reloading',
+    title: 'Reloading page',
+    ready: true,
+  });
+  assert.equal(executeScriptCalls.length, 1);
+  assert.deepEqual(sendMessageCalls, [
+    {
+      tabId: 42,
+      message: { type: 'bridge.ping' },
+    },
+    {
+      tabId: 42,
+      message: {
+        type: 'bridge.execute',
+        method: 'page.get_state',
+        params: {},
+      },
+    },
+    {
+      tabId: 42,
       message: {
         type: 'bridge.execute',
         method: 'page.get_state',

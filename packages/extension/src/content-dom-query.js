@@ -433,7 +433,7 @@
         resolve({
           found: false,
           elementRef: null,
-          duration: Date.now() - start,
+          duration: Math.max(timeout, Date.now() - start),
         });
       }, timeout);
     });
