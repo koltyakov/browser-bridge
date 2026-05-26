@@ -63,6 +63,8 @@ Configs are written globally by default. For GitHub Copilot, that means `~/.copi
 
 The MCP server is self-contained: clients can discover Browser Bridge tools, startup instructions, and prompts such as `browser_bridge_guide`, `browser_bridge_investigate`, `browser_bridge_debug_layout`, and `browser_bridge_verify_flow`. You do not need the CLI skill for MCP guidance.
 
+Permission prompts are client-owned and MCP instructions cannot grant permissions by themselves. In permission-ask hosts, Browser Bridge tells the agent to use the generic `browser_call` MCP tool by default so the user can approve one BBX tool instead of separate `browser_status`, `browser_page`, `browser_dom`, `browser_input`, and patch tools. See [Agent permissions](./agent-permissions.md) for wildcard/server-wide allow rules by client.
+
 **Skill + CLI** - for agents that can reliably run shell commands and where direct `bbx` control is the better fit than MCP tools. Use this path for shell-driven agent flows, setup and doctor flows, scripting, logs, or raw protocol access. Install the Browser Bridge skill so your agent knows how to drive `bbx`:
 
 ```bash

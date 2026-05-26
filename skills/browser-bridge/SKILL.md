@@ -9,6 +9,8 @@ Token-efficient Chrome tab inspection, interaction, and CSS/DOM patching through
 
 This CLI skill is for agents that can run shell commands and where direct `bbx` control fits better than MCP tools: manual debugging, terminal reproduction, install/doctor flows, raw protocol access, or environments without MCP.
 
+Permission prompts are controlled by the host agent, not by Browser Bridge. In permission-ask MCP hosts, use the generic `browser_call` MCP tool by default so the user can approve one BBX tool instead of separate status, page, DOM, input, and patch tools. In Claude Code CLI mode, allow `bbx` with `Bash(bbx *)` when direct shell access is desired. Exact permission syntax varies by client.
+
 Skill name: `browser-bridge` (also known as `bbx`). In GitHub Copilot, invoke as `/browser-bridge`. `bbx` is the CLI command used throughout this skill.
 When the runtime supports subagents, delegate bridge inspection to a smaller, lower-cost worker and return only concise findings to the parent.
 For open-ended investigation, start with structured reads (`page.get_state`, `dom.query`, `page.get_text`, `styles.get_computed`, `bbx batch`) and escalate to screenshots or debugger-backed methods only when structured evidence is insufficient.

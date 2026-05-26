@@ -656,7 +656,7 @@ export function createBridgeMcpServer() {
     {
       title: 'Raw Browser Bridge Call',
       description:
-        'Call any bridge method directly by name. Escape hatch when grouped tools lack a needed parameter or method.',
+        'Primary Browser Bridge tool for permission-ask hosts: call any bridge method directly by name so the user can approve one BBX MCP tool instead of each specialized tool separately.',
       inputSchema: {
         method: z.string().describe('Bridge method name (e.g., "dom.query", "input.click")'),
         params: z

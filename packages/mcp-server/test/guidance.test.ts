@@ -40,7 +40,7 @@ test('guide prompt returns the general Browser Bridge MCP workflow', () => {
 
   assert.ok(guide);
   assert.equal(guide.config.title, 'Use Browser Bridge MCP');
-  assert.match(promptText(guide.handler()), /browser_status/);
+  assert.match(promptText(guide.handler()), /browser_call/);
   assert.match(promptText(guide.handler()), /rollback before finishing/);
 });
 

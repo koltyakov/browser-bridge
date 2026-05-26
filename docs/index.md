@@ -8,6 +8,7 @@ This index keeps those paths separate.
 
 - [Quickstart](./quickstart.md): fastest path from install to first working tab
 - [MCP vs CLI](./mcp-vs-cli.md): which integration path to choose
+- [Agent permissions](./agent-permissions.md): allow BBX once instead of approving every tool or command
 - [Manual setup](./manual-setup.md): exact config locations, project-local installs, and custom-agent setup
 
 ## End-user guides

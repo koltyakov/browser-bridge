@@ -7,12 +7,14 @@ import * as z from 'zod/v4';
 
 export const MCP_SERVER_INSTRUCTIONS = [
   "Browser Bridge MCP inspects and interacts with the user's real Chrome tab through typed MCP tools.",
+  'In permission-ask hosts, use browser_call as the default Browser Bridge MCP tool so the user can approve one BBX tool instead of separate browser_status, browser_page, browser_dom, browser_input, and other tools.',
   'Prefer Browser Bridge MCP tools over shelling out to bbx. Use bbx only for explicit CLI setup, doctor, logs, or raw debugging requests.',
-  'Call browser_status first. If window access is disabled, call browser_access once, ask the user to click Enable in the Browser Bridge popup or side panel, then retry once.',
-  'Use structured reads first: browser_page, browser_dom, browser_styles_layout, and browser_batch. Keep budgetPreset quick or normal before widening.',
+  'Start with browser_call method health.ping. If window access is disabled, call browser_call method access.request once, ask the user to click Enable in the Browser Bridge popup or side panel, then retry once.',
+  'Use structured reads first through browser_call: page.get_state, dom.query, page.get_text, styles.get_computed, layout.get_box_model, or batch. Keep budgets quick or normal before widening.',
   'Reuse elementRef values returned by DOM tools. Use attribute allowlists for focused DOM reads.',
-  'Escalate to browser_capture, accessibility_tree, page evaluate, viewport resize, or CDP only when structured reads cannot answer the question.',
-  'Use browser_patch for temporary style or DOM experiments, and rollback patches before finishing unless the user asks to keep them.',
+  'Escalate to screenshot.capture_element, screenshot.capture_region, accessibility_tree, page.evaluate, viewport.resize, or CDP only when structured reads cannot answer the question.',
+  'Use patch.apply_styles or patch.apply_dom for temporary experiments, and rollback patches before finishing unless the user asks to keep them.',
+  'Only use the specialized Browser Bridge MCP tools directly when the host has already allowed them or the user explicitly wants typed tool calls.',
 ].join('\n');
 
 export const MCP_GUIDANCE_PROMPT_NAMES = Object.freeze([
@@ -97,13 +99,15 @@ function createGuidePrompt() {
       'Use Browser Bridge MCP for this browser task.',
       '',
       'Rules:',
-      '1. Prefer MCP tools over `bbx`; do not shell out unless setup, doctor, logs, or raw CLI debugging is explicitly needed.',
-      '2. Call `browser_status` first. If access is disabled, call `browser_access` once, ask the user to click Enable, then retry once.',
-      '3. Start with structured reads: `browser_page` action `state`, `browser_dom` action `query`/`find_text`/`find_role`, `browser_styles_layout`, and `browser_batch`.',
-      '4. Keep budgets tight with `budgetPreset: "quick"` or `"normal"`; widen only when results are truncated.',
-      '5. Reuse `elementRef` values returned by DOM tools instead of rescanning.',
-      '6. Escalate to `browser_capture`, accessibility tree, `browser_page` evaluate, viewport resize, or CDP only when structured reads cannot answer.',
-      '7. Use `browser_patch` for temporary style/DOM experiments and rollback before finishing unless the user asks to keep patches.',
+      '1. Prefer MCP over `bbx`; do not shell out unless setup, doctor, logs, or raw CLI debugging is explicitly needed.',
+      '2. In permission-ask hosts, use `browser_call` as the default tool so the user can approve one BBX MCP tool instead of separate tools for status, page, DOM, input, and patches.',
+      '3. Start with `browser_call` method `health.ping`. If access is disabled, call `browser_call` method `access.request` once, ask the user to click Enable, then retry once.',
+      '4. Start with structured reads via `browser_call`: `page.get_state`, `dom.query`, `dom.find_by_text`, `dom.find_by_role`, `styles.get_computed`, and `batch`.',
+      '5. Keep budgets tight with `budgetPreset: "quick"` or `"normal"`; widen only when results are truncated.',
+      '6. Reuse `elementRef` values returned by DOM tools instead of rescanning.',
+      '7. Escalate to screenshots, accessibility tree, `page.evaluate`, viewport resize, or CDP only when structured reads cannot answer.',
+      '8. Use `patch.apply_styles` or `patch.apply_dom` for temporary experiments and rollback before finishing unless the user asks to keep patches.',
+      '9. Only use specialized Browser Bridge MCP tools directly when the host has already allowed them or the user explicitly wants typed tool calls.',
       '',
       'Return concise findings with evidence. Edit source code only after the live page behavior is understood.',
     ].join('\n')

@@ -131,6 +131,7 @@ MCP mode is self-contained: the server exposes tools, startup instructions, and 
 - [Quickstart](https://github.com/koltyakov/browser-bridge/blob/main/docs/quickstart.md)
 - [Usage scenarios](https://github.com/koltyakov/browser-bridge/blob/main/docs/usage-scenarios.md)
 - [Manual setup](https://github.com/koltyakov/browser-bridge/blob/main/docs/manual-setup.md)
+- [Agent permissions](https://github.com/koltyakov/browser-bridge/blob/main/docs/agent-permissions.md)
 - [CLI guide](https://github.com/koltyakov/browser-bridge/blob/main/docs/cli-guide.md)
 - [MCP vs CLI](https://github.com/koltyakov/browser-bridge/blob/main/docs/mcp-vs-cli.md)
 - [Troubleshooting](https://github.com/koltyakov/browser-bridge/blob/main/docs/troubleshooting.md)
