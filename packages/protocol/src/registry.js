@@ -38,6 +38,10 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
   'page.get_storage': 'Read local or session storage values.',
   'page.get_text': 'Read bounded visible text from the page.',
   'page.get_network': 'Read buffered fetch and XHR network activity.',
+  'network.intercept.add': 'Add a request interception rule (CDP Fetch domain).',
+  'network.intercept.remove': 'Remove a request interception rule by ID.',
+  'network.intercept.list': 'List active interception rules.',
+  'network.intercept.clear': 'Remove all interception rules and disable interception.',
   'navigation.navigate': 'Navigate the current tab to a URL.',
   'navigation.reload': 'Reload the current tab.',
   'navigation.go_back': 'Navigate backward in tab history.',
@@ -168,6 +172,35 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'page',
     true,
     ['clear', 'limit', 'urlPattern'],
+    'low'
+  ),
+  // network intercept — moderate (holds debugger session)
+  'network.intercept.add': createRegistryEntry(
+    'network.intercept.add',
+    'page',
+    true,
+    ['urlPattern', 'action', 'statusCode', 'body', 'headers'],
+    'moderate'
+  ),
+  'network.intercept.remove': createRegistryEntry(
+    'network.intercept.remove',
+    'page',
+    true,
+    ['ruleId'],
+    'trivial'
+  ),
+  'network.intercept.list': createRegistryEntry(
+    'network.intercept.list',
+    'page',
+    true,
+    [],
+    'trivial'
+  ),
+  'network.intercept.clear': createRegistryEntry(
+    'network.intercept.clear',
+    'page',
+    true,
+    [],
     'low'
   ),
   // navigation — low

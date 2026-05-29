@@ -664,6 +664,70 @@ async function main() {
       return;
     }
 
+    if (command === 'intercept') {
+      const { tabId, rest: iArgs } = extractTabFlag(rest);
+      const sub = iArgs[0];
+      if (sub === 'add') {
+        const pattern = iArgs[1];
+        if (!pattern)
+          throw new Error(
+            'Usage: intercept add <urlPattern> [--respond <body>] [--status <code>] [--block]'
+          );
+        const isBlock = iArgs.includes('--block');
+        const statusIdx = iArgs.indexOf('--status');
+        const statusCode = statusIdx !== -1 ? parseIntArg(iArgs[statusIdx + 1], 'status') : 200;
+        const respondIdx = iArgs.indexOf('--respond');
+        const body =
+          respondIdx !== -1
+            ? iArgs
+                .slice(respondIdx + 1)
+                .filter((a) => !a.startsWith('--'))
+                .join(' ')
+            : undefined;
+        const response = await requestBridge(
+          client,
+          'network.intercept.add',
+          {
+            urlPattern: pattern,
+            action: isBlock ? 'block' : body != null ? 'fulfill' : 'continue',
+            statusCode,
+            body,
+          },
+          { source: REQUEST_SOURCE, tabId }
+        );
+        await printSummary(response);
+      } else if (sub === 'remove') {
+        const ruleId = iArgs[1];
+        if (!ruleId) throw new Error('Usage: intercept remove <ruleId>');
+        const response = await requestBridge(
+          client,
+          'network.intercept.remove',
+          { ruleId },
+          { source: REQUEST_SOURCE, tabId }
+        );
+        await printSummary(response);
+      } else if (sub === 'list') {
+        const response = await requestBridge(
+          client,
+          'network.intercept.list',
+          {},
+          { source: REQUEST_SOURCE, tabId }
+        );
+        await printSummary(response);
+      } else if (sub === 'clear') {
+        const response = await requestBridge(
+          client,
+          'network.intercept.clear',
+          {},
+          { source: REQUEST_SOURCE, tabId }
+        );
+        await printSummary(response);
+      } else {
+        throw new Error('Usage: intercept <add|remove|list|clear> [args]');
+      }
+      return;
+    }
+
     if (command === 'eval') {
       let expression = rest.join(' ');
       if (!expression || expression === '-') expression = await readStdin();
