@@ -61,6 +61,7 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
   'input.click': 'Click an element.',
   'input.focus': 'Focus an element.',
   'input.type': 'Type text into an element.',
+  'input.fill': 'Set value of an input/textarea element (React/Vue/Angular-safe).',
   'input.press_key': 'Send a key press to the page or an element.',
   'input.set_checked': 'Set checkbox or radio checked state.',
   'input.select_option': 'Select options in a select element.',
@@ -322,6 +323,13 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'interact',
     true,
     ['target', 'text', 'clear', 'submit', 'modifiers'],
+    'low'
+  ),
+  'input.fill': createRegistryEntry(
+    'input.fill',
+    'interact',
+    true,
+    ['target', 'value', 'mode'],
     'low'
   ),
   'input.press_key': createRegistryEntry(

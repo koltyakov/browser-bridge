@@ -57,6 +57,7 @@
    * @typedef {{
    *   clickTarget: (params: Record<string, any>) => any,
    *   dragTarget: (params: Record<string, any>) => any,
+   *   fillTarget: (params: Record<string, any>) => any,
    *   focusTarget: (params: Record<string, any>) => any,
    *   hoverTarget: (params: Record<string, any>) => any,
    *   pressKeyTarget: (params: Record<string, any>) => any,
@@ -205,6 +206,8 @@
         return inputModule.focusTarget(params);
       case 'input.type':
         return inputModule.typeIntoTarget(params);
+      case 'input.fill':
+        return inputModule.fillTarget(params);
       case 'input.press_key':
         return inputModule.pressKeyTarget(params);
       case 'input.set_checked':
