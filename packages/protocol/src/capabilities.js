@@ -51,6 +51,7 @@ export const METHOD_CAPABILITIES = Object.freeze({
   'tabs.list': null,
   'tabs.create': CAPABILITIES.TABS_MANAGE,
   'tabs.close': CAPABILITIES.TABS_MANAGE,
+  'tabs.activate': CAPABILITIES.TABS_MANAGE,
   'skill.get_runtime_context': null,
   'setup.get_status': null,
   'setup.install': null,

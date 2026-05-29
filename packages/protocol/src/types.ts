@@ -37,6 +37,7 @@ export type BridgeMethod =
   | 'tabs.list'
   | 'tabs.create'
   | 'tabs.close'
+  | 'tabs.activate'
   | 'skill.get_runtime_context'
   | 'setup.get_status'
   | 'setup.install'

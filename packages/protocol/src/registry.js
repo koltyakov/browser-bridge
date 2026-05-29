@@ -28,6 +28,7 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
   'tabs.list': 'List tabs in the enabled window.',
   'tabs.create': 'Create a new tab in the enabled window.',
   'tabs.close': 'Close a tab in the enabled window.',
+  'tabs.activate': 'Bring a tab to the foreground in the enabled window.',
   'skill.get_runtime_context': 'Return runtime method groups, budgets, and limits.',
   'setup.get_status': 'Return MCP and skill setup status.',
   'setup.install': 'Install or uninstall MCP or skill integration targets.',
@@ -130,6 +131,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
   'tabs.list': createRegistryEntry('tabs.list', 'tabs', false, [], 'trivial'),
   'tabs.create': createRegistryEntry('tabs.create', 'tabs', false, ['url', 'active'], 'trivial'),
   'tabs.close': createRegistryEntry('tabs.close', 'tabs', false, ['tabId'], 'trivial'),
+  'tabs.activate': createRegistryEntry('tabs.activate', 'tabs', false, ['tabId'], 'trivial'),
   // page — low (basic reads), moderate (evaluate, debugger-backed)
   'page.get_state': createRegistryEntry('page.get_state', 'page', true, [], 'low'),
   'page.evaluate': {

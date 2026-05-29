@@ -249,6 +249,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
       'bbx tabs                                                           List available tabs',
       'bbx tab-create [url]                                               Create a new tab',
       'bbx tab-close <tabId>                                              Close a tab',
+      'bbx tab-activate <tabId>                                           Bring a tab to the foreground',
       'bbx skill                                                          Runtime budget presets and method groups',
       'bbx mcp serve                                                      Start Browser Bridge as an MCP stdio server',
     ],
