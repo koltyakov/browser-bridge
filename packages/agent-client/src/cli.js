@@ -682,18 +682,27 @@ async function main() {
     }
 
     if (command === 'eval') {
-      let expression = rest.join(' ');
+      const { tabId, rest: evalArgs } = extractTabFlag(rest);
+      // --await: wait for the result if the expression returns a Promise
+      const awaitIndex = evalArgs.indexOf('--await');
+      const awaitPromise = awaitIndex !== -1;
+      if (awaitIndex !== -1) evalArgs.splice(awaitIndex, 1);
+
+      let expression = evalArgs.join(' ');
       if (!expression || expression === '-') expression = await readStdin();
       if (!expression)
-        throw new Error('Usage: eval <expression>  (or pipe via stdin: echo "expr" | bbx eval -)');
+        throw new Error(
+          'Usage: eval [--tab <id>] [--await] <expression>  (or pipe via stdin: echo "expr" | bbx eval -)'
+        );
       const response = await requestBridge(
         client,
         'page.evaluate',
         {
           expression,
           returnByValue: true,
+          ...(awaitPromise ? { awaitPromise: true } : {}),
         },
-        { source: REQUEST_SOURCE }
+        { source: REQUEST_SOURCE, tabId }
       );
       await printSummary(response);
       return;
