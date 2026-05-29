@@ -400,6 +400,8 @@ async function dispatchBridgeRequest(request) {
       return handleCreateTab(request);
     case 'tabs.close':
       return handleCloseTab(request);
+    case 'tabs.activate':
+      return handleActivateTab(request);
     case 'page.evaluate':
       return handlePageEvaluate(request);
     case 'page.get_console':
@@ -541,6 +543,50 @@ async function handleCloseTab(request) {
   return createSuccess(
     request.id,
     { closed: true, tabId: params.tabId },
+    { method: request.method }
+  );
+}
+
+/**
+ * Bring a tab to the foreground (make it the active tab in its window).
+ * Useful for agents that need to focus a specific tab before performing
+ * debugger-backed operations or ensuring the tab is visible.
+ */
+/** @param {BridgeRequest} request */
+async function handleActivateTab(request) {
+  const tabId = request.params?.tabId;
+  if (typeof tabId !== 'number' || !Number.isFinite(tabId)) {
+    return createFailure(request.id, ERROR_CODES.INVALID_REQUEST, 'tabId is required.', null, {
+      method: request.method,
+    });
+  }
+  if (!state.enabledWindow) {
+    return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, ACCESS_DENIED_WINDOW_OFF, null, {
+      method: request.method,
+    });
+  }
+  let tab;
+  try {
+    tab = await chrome.tabs.get(tabId);
+  } catch {
+    return createFailure(request.id, ERROR_CODES.TAB_MISMATCH, `Tab ${tabId} not found.`, null, {
+      method: request.method,
+    });
+  }
+  if (tab.windowId !== state.enabledWindow.windowId) {
+    return createFailure(
+      request.id,
+      ERROR_CODES.ACCESS_DENIED,
+      'Tab does not belong to the enabled window.',
+      null,
+      { method: request.method }
+    );
+  }
+  await chrome.tabs.update(tabId, { active: true });
+  await emitUiState();
+  return createSuccess(
+    request.id,
+    { activated: true, tabId, title: tab.title ?? '', url: tab.url ?? '' },
     { method: request.method }
   );
 }

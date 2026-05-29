@@ -476,6 +476,23 @@ async function main() {
       return;
     }
 
+    if (command === 'tab-activate') {
+      const [tabId] = rest;
+      if (!tabId) {
+        throw new Error('Usage: tab-activate <tabId>');
+      }
+      const response = await requestBridge(
+        client,
+        'tabs.activate',
+        {
+          tabId: parseIntArg(tabId, 'tabId'),
+        },
+        { source: REQUEST_SOURCE }
+      );
+      await printSummary(response);
+      return;
+    }
+
     if (command === 'call') {
       const { tabId, method, params } = await parseCallCommand(rest);
       const response = await requestBridge(client, method, params, {
