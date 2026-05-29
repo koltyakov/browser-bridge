@@ -587,18 +587,41 @@ async function main() {
       // the ref must be resolved against the SAME tab the action targets,
       // so we pass tabId to both resolveRef and the subsequent request.
       const { tabId, rest: shortcutArgs } = extractTabFlag(rest);
-      let elementRef;
-      if (shortcutCmd.resolve) {
-        if (!shortcutArgs[0]) throw new Error(`Usage: ${command} <ref|selector>`);
-        elementRef = await resolveRef(client, shortcutArgs[0], tabId, REQUEST_SOURCE);
+      const selectorInput = shortcutCmd.resolve ? shortcutArgs[0] : null;
+      if (shortcutCmd.resolve && !selectorInput) {
+        throw new Error(`Usage: ${command} <ref|selector>`);
       }
-      const response = await requestBridge(
-        client,
-        shortcutCmd.method,
-        shortcutCmd.build(shortcutArgs, elementRef),
-        { source: REQUEST_SOURCE, tabId }
-      );
-      await printSummary(response, shortcutCmd.printMethod);
+
+      // Retry-on-stale: if the action fails with ELEMENT_STALE and the
+      // original input was a selector (not an el_xxx ref), re-resolve the
+      // selector and retry once. This handles the common case where the
+      // agent resolved an element, then the page re-rendered (React
+      // reconciliation, SPA navigation) before the action was dispatched.
+      const canRetry = typeof selectorInput === 'string' && !selectorInput.startsWith('el_');
+      const maxAttempts = canRetry ? 2 : 1;
+      /** @type {import('./runtime.js').BridgeResponse | undefined} */
+      let response;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        let elementRef;
+        if (shortcutCmd.resolve && selectorInput) {
+          elementRef = await resolveRef(client, selectorInput, tabId, REQUEST_SOURCE);
+        }
+        response = await requestBridge(
+          client,
+          shortcutCmd.method,
+          shortcutCmd.build(shortcutArgs, elementRef),
+          { source: REQUEST_SOURCE, tabId }
+        );
+        const errorText = !response.ok ? String(response.error?.message ?? '') : '';
+        const isStale = /stale/i.test(errorText);
+        if (isStale && attempt < maxAttempts) {
+          process.stderr.write(
+            `bbx: ELEMENT_STALE on "${selectorInput}", re-resolving and retrying...\n`
+          );
+        }
+        if (!isStale || attempt >= maxAttempts) break;
+      }
+      if (response) await printSummary(response, shortcutCmd.printMethod);
       return;
     }
 
