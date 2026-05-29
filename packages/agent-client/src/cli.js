@@ -580,16 +580,23 @@ async function main() {
 
     const shortcutCmd = SHORTCUT_COMMANDS[command];
     if (shortcutCmd) {
+      // Allow `bbx <shortcut> --tab <id> ...` to target a specific tab.
+      // Without this, --tab gets eaten as a positional argument and the
+      // request hits whatever tab the bridge route happens to be pointing
+      // at (typically the active tab). For element-resolving shortcuts
+      // the ref must be resolved against the SAME tab the action targets,
+      // so we pass tabId to both resolveRef and the subsequent request.
+      const { tabId, rest: shortcutArgs } = extractTabFlag(rest);
       let elementRef;
       if (shortcutCmd.resolve) {
-        if (!rest[0]) throw new Error(`Usage: ${command} <ref|selector>`);
-        elementRef = await resolveRef(client, rest[0], null, REQUEST_SOURCE);
+        if (!shortcutArgs[0]) throw new Error(`Usage: ${command} <ref|selector>`);
+        elementRef = await resolveRef(client, shortcutArgs[0], tabId, REQUEST_SOURCE);
       }
       const response = await requestBridge(
         client,
         shortcutCmd.method,
-        shortcutCmd.build(rest, elementRef),
-        { source: REQUEST_SOURCE }
+        shortcutCmd.build(shortcutArgs, elementRef),
+        { source: REQUEST_SOURCE, tabId }
       );
       await printSummary(response, shortcutCmd.printMethod);
       return;
