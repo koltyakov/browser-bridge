@@ -76,6 +76,19 @@ export const SHORTCUT_COMMANDS = {
     (r, ref) => ({ target: { elementRef: ref }, text: r.slice(1).join(' ') }),
     { resolve: true }
   ),
+  fill: createShortcutCommand(
+    'input.fill',
+    'bbx fill <ref|selector> <value>',
+    (r, ref) => ({
+      target: { elementRef: ref },
+      value: r.slice(1).join(' '),
+      mode: 'auto',
+    }),
+    {
+      resolve: true,
+      description: 'Set input/textarea value (React/Vue/Angular-safe, auto fallback to keystrokes)',
+    }
+  ),
   hover: createShortcutCommand(
     'input.hover',
     'bbx hover <ref|selector>',
@@ -316,7 +329,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
   {
     title: 'Interact',
     lines: [
-      ...['click', 'focus', 'type', 'hover'].map(
+      ...['click', 'focus', 'type', 'fill', 'hover'].map(
         (command) =>
           `${SHORTCUT_COMMANDS[command].usage.padEnd(64)} ${SHORTCUT_COMMANDS[command].description}`
       ),
