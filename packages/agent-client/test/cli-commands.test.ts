@@ -1166,6 +1166,6 @@ test('bbx eval with empty stdin reports the usage error', async () => {
   assert.equal(payload.evidence, null);
   assert.equal(
     payload.summary,
-    'ERROR: Usage: eval <expression>  (or pipe via stdin: echo "expr" | bbx eval -)'
+    'ERROR: Usage: eval [--tab <id>] [--await] <expression>  (or pipe via stdin: echo "expr" | bbx eval -)'
   );
 });

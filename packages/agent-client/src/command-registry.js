@@ -294,7 +294,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
   {
     title: 'Page',
     lines: [
-      'bbx eval <expression>                                              Evaluate JS in page context (use - for stdin)',
+      'bbx eval [--await] <expression>                                     Evaluate JS in page context (--await for async, - for stdin)',
       ...[
         'console',
         'network',
