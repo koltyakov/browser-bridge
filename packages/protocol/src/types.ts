@@ -69,6 +69,7 @@ export type BridgeMethod =
   | 'input.click'
   | 'input.focus'
   | 'input.type'
+  | 'input.fill'
   | 'input.press_key'
   | 'input.set_checked'
   | 'input.select_option'

@@ -83,6 +83,7 @@ export const METHOD_CAPABILITIES = Object.freeze({
   'input.click': CAPABILITIES.AUTOMATION_INPUT,
   'input.focus': CAPABILITIES.AUTOMATION_INPUT,
   'input.type': CAPABILITIES.AUTOMATION_INPUT,
+  'input.fill': CAPABILITIES.AUTOMATION_INPUT,
   'input.press_key': CAPABILITIES.AUTOMATION_INPUT,
   'input.set_checked': CAPABILITIES.AUTOMATION_INPUT,
   'input.select_option': CAPABILITIES.AUTOMATION_INPUT,
