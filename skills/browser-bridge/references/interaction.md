@@ -263,6 +263,24 @@ bbx call page.wait_for_load_state '{"timeoutMs":10000}'
 
 Use after clicking navigation links.
 
+## Raw `bbx call` for Interaction Methods
+
+All interaction methods (`input.click`, `input.type`, `input.focus`, `input.hover`, etc.) require the target wrapped in a `target` object -- do not pass `ref` or `elementRef` at the top level:
+
+```bash
+# CORRECT
+bbx call input.click '{"target":{"elementRef":"el_xxx"}}'
+bbx call input.click '{"target":{"elementRef":"el_xxx"},"button":"right"}'
+bbx call input.type  '{"target":{"elementRef":"el_xxx"},"text":"hello"}'
+bbx call input.focus '{"target":{"selector":"#search-input"}}'
+
+# WRONG -- "Target not found"
+bbx call input.click '{"ref":"el_xxx"}'
+bbx call input.click '{"elementRef":"el_xxx"}'
+```
+
+The CLI shortcuts (`bbx click el_xxx`) handle this wrapping automatically, but `bbx call` passes params as-is.
+
 ## Interaction Flow
 
 1. **Find target**: `dom.find_by_text`, `dom.find_by_role`, or `dom.query` → get `elementRef`
