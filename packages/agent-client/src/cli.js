@@ -476,6 +476,23 @@ async function main() {
       return;
     }
 
+    if (command === 'tab-activate') {
+      const [tabId] = rest;
+      if (!tabId) {
+        throw new Error('Usage: tab-activate <tabId>');
+      }
+      const response = await requestBridge(
+        client,
+        'tabs.activate',
+        {
+          tabId: parseIntArg(tabId, 'tabId'),
+        },
+        { source: REQUEST_SOURCE }
+      );
+      await printSummary(response);
+      return;
+    }
+
     if (command === 'call') {
       const { tabId, method, params } = await parseCallCommand(rest);
       const response = await requestBridge(client, method, params, {
@@ -580,18 +597,48 @@ async function main() {
 
     const shortcutCmd = SHORTCUT_COMMANDS[command];
     if (shortcutCmd) {
-      let elementRef;
-      if (shortcutCmd.resolve) {
-        if (!rest[0]) throw new Error(`Usage: ${command} <ref|selector>`);
-        elementRef = await resolveRef(client, rest[0], null, REQUEST_SOURCE);
+      // Allow `bbx <shortcut> --tab <id> ...` to target a specific tab.
+      // Without this, --tab gets eaten as a positional argument and the
+      // request hits whatever tab the bridge route happens to be pointing
+      // at (typically the active tab). For element-resolving shortcuts
+      // the ref must be resolved against the SAME tab the action targets,
+      // so we pass tabId to both resolveRef and the subsequent request.
+      const { tabId, rest: shortcutArgs } = extractTabFlag(rest);
+      const selectorInput = shortcutCmd.resolve ? shortcutArgs[0] : null;
+      if (shortcutCmd.resolve && !selectorInput) {
+        throw new Error(`Usage: ${command} <ref|selector>`);
       }
-      const response = await requestBridge(
-        client,
-        shortcutCmd.method,
-        shortcutCmd.build(rest, elementRef),
-        { source: REQUEST_SOURCE }
-      );
-      await printSummary(response, shortcutCmd.printMethod);
+
+      // Retry-on-stale: if the action fails with ELEMENT_STALE and the
+      // original input was a selector (not an el_xxx ref), re-resolve the
+      // selector and retry once. This handles the common case where the
+      // agent resolved an element, then the page re-rendered (React
+      // reconciliation, SPA navigation) before the action was dispatched.
+      const canRetry = typeof selectorInput === 'string' && !selectorInput.startsWith('el_');
+      const maxAttempts = canRetry ? 2 : 1;
+      /** @type {import('./runtime.js').BridgeResponse | undefined} */
+      let response;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        let elementRef;
+        if (shortcutCmd.resolve && selectorInput) {
+          elementRef = await resolveRef(client, selectorInput, tabId, REQUEST_SOURCE);
+        }
+        response = await requestBridge(
+          client,
+          shortcutCmd.method,
+          shortcutCmd.build(shortcutArgs, elementRef),
+          { source: REQUEST_SOURCE, tabId }
+        );
+        const errorText = !response.ok ? String(response.error?.message ?? '') : '';
+        const isStale = /stale/i.test(errorText);
+        if (isStale && attempt < maxAttempts) {
+          process.stderr.write(
+            `bbx: ELEMENT_STALE on "${selectorInput}", re-resolving and retrying...\n`
+          );
+        }
+        if (!isStale || attempt >= maxAttempts) break;
+      }
+      if (response) await printSummary(response, shortcutCmd.printMethod);
       return;
     }
 
@@ -729,18 +776,27 @@ async function main() {
     }
 
     if (command === 'eval') {
-      let expression = rest.join(' ');
+      const { tabId, rest: evalArgs } = extractTabFlag(rest);
+      // --await: wait for the result if the expression returns a Promise
+      const awaitIndex = evalArgs.indexOf('--await');
+      const awaitPromise = awaitIndex !== -1;
+      if (awaitIndex !== -1) evalArgs.splice(awaitIndex, 1);
+
+      let expression = evalArgs.join(' ');
       if (!expression || expression === '-') expression = await readStdin();
       if (!expression)
-        throw new Error('Usage: eval <expression>  (or pipe via stdin: echo "expr" | bbx eval -)');
+        throw new Error(
+          'Usage: eval [--tab <id>] [--await] <expression>  (or pipe via stdin: echo "expr" | bbx eval -)'
+        );
       const response = await requestBridge(
         client,
         'page.evaluate',
         {
           expression,
           returnByValue: true,
+          ...(awaitPromise ? { awaitPromise: true } : {}),
         },
-        { source: REQUEST_SOURCE }
+        { source: REQUEST_SOURCE, tabId }
       );
       await printSummary(response);
       return;

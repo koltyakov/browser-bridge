@@ -76,6 +76,19 @@ export const SHORTCUT_COMMANDS = {
     (r, ref) => ({ target: { elementRef: ref }, text: r.slice(1).join(' ') }),
     { resolve: true }
   ),
+  fill: createShortcutCommand(
+    'input.fill',
+    'bbx fill <ref|selector> <value>',
+    (r, ref) => ({
+      target: { elementRef: ref },
+      value: r.slice(1).join(' '),
+      mode: 'auto',
+    }),
+    {
+      resolve: true,
+      description: 'Set input/textarea value (React/Vue/Angular-safe, auto fallback to keystrokes)',
+    }
+  ),
   hover: createShortcutCommand(
     'input.hover',
     'bbx hover <ref|selector>',
@@ -249,6 +262,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
       'bbx tabs                                                           List available tabs',
       'bbx tab-create [url]                                               Create a new tab',
       'bbx tab-close <tabId>                                              Close a tab',
+      'bbx tab-activate <tabId>                                           Bring a tab to the foreground',
       'bbx skill                                                          Runtime budget presets and method groups',
       'bbx mcp serve                                                      Start Browser Bridge as an MCP stdio server',
     ],
@@ -261,6 +275,10 @@ export const CLI_HELP_SECTIONS = Object.freeze([
       "bbx batch '[{method,params,tabId?},...]'                           Parallel method calls",
       'Advanced bridge params stay available through `bbx call`, even when shortcuts expose only the common case.',
       'For open-ended investigation, start with `bbx batch` on `page.get_state`, `dom.query`, and `page.get_text` before any screenshot or CDP call.',
+      '',
+      'Interaction methods need a target wrapper (not a bare ref):',
+      '  bbx call input.click \'{"target":{"elementRef":"el_xxx"}}\'',
+      '  bbx call input.type  \'{"target":{"elementRef":"el_xxx"},"text":"hello"}\'',
     ],
   },
   {
@@ -298,7 +316,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
       'bbx intercept list                                                  List active interception rules',
       'bbx intercept remove <ruleId>                                       Remove a rule',
       'bbx intercept clear                                                 Remove all rules',
-      'bbx eval <expression>                                              Evaluate JS in page context (use - for stdin)',
+      'bbx eval [--await] <expression>                                     Evaluate JS in page context (--await for async, - for stdin)',
       ...[
         'console',
         'network',
@@ -320,7 +338,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
   {
     title: 'Interact',
     lines: [
-      ...['click', 'focus', 'type', 'hover'].map(
+      ...['click', 'focus', 'type', 'fill', 'hover'].map(
         (command) =>
           `${SHORTCUT_COMMANDS[command].usage.padEnd(64)} ${SHORTCUT_COMMANDS[command].description}`
       ),

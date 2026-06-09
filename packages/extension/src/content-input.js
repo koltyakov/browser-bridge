@@ -589,6 +589,79 @@
   }
 
   /**
+   * Set the value of an input/textarea/select element using the native value
+   * setter, then dispatch input + change events. This works with React, Vue,
+   * Angular, and vanilla forms — frameworks intercept these events at the
+   * document level and sync their internal state.
+   *
+   * mode:
+   *   "setter" (default) — use Object.getOwnPropertyDescriptor prototype setter
+   *   "keystrokes" — clear field + type each character (slower but handles
+   *     custom components that don't respond to setter)
+   *   "auto" — try setter first, verify value stuck, fallback to keystrokes
+   *
+   * @param {Record<string, any>} params
+   * @returns {{ elementRef: string, value: string, mode: string }}
+   */
+  function fillTarget(params) {
+    const element = resolveTarget(params.target);
+    const editable = getEditableTarget(element);
+    if (!editable) {
+      throw new Error('Target is not an editable control.');
+    }
+
+    scrollTargetIntoView(editable);
+    focusElement(editable);
+
+    const value = String(params.value ?? '');
+    const requestedMode = params.mode || 'auto';
+    let usedMode = 'setter';
+
+    if (requestedMode === 'keystrokes') {
+      usedMode = 'keystrokes';
+      clearEditableValue(editable);
+      for (const ch of value) {
+        runKeyAction(editable, ch, undefined);
+      }
+    } else {
+      // setter mode: use the native prototype setter to bypass React's synthetic wrapper
+      const tag = editable.tagName;
+      const proto =
+        tag === 'TEXTAREA'
+          ? HTMLTextAreaElement.prototype
+          : tag === 'SELECT'
+            ? HTMLSelectElement.prototype
+            : HTMLInputElement.prototype;
+      const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+      if (descriptor && descriptor.set) {
+        descriptor.set.call(editable, value);
+      } else {
+        /** @type {HTMLInputElement} */ (editable).value = value;
+      }
+      editable.dispatchEvent(new Event('input', { bubbles: true }));
+      editable.dispatchEvent(new Event('change', { bubbles: true }));
+
+      // auto mode: verify value stuck, fallback to keystrokes if not
+      if (requestedMode === 'auto' && getEditableValue(editable) !== value) {
+        usedMode = 'keystrokes-fallback';
+        clearEditableValue(editable);
+        for (const ch of value) {
+          runKeyAction(editable, ch, undefined);
+        }
+      }
+    }
+
+    // Dispatch blur to trigger field-level validation
+    editable.dispatchEvent(new Event('blur', { bubbles: true }));
+
+    return {
+      elementRef: rememberElement(editable),
+      value: getEditableValue(editable),
+      mode: usedMode,
+    };
+  }
+
+  /**
    * Send one keyboard interaction to the currently focused or targeted element.
    *
    * @param {Record<string, any>} params
@@ -950,6 +1023,7 @@
   globalState.__BBX_CONTENT_INPUT__ = Object.freeze({
     clickTarget,
     dragTarget,
+    fillTarget,
     focusTarget,
     hoverTarget,
     pressKeyTarget,

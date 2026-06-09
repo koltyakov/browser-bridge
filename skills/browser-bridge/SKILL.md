@@ -283,7 +283,15 @@ Every CLI shortcut command produces consistent `{ok, summary, evidence}` JSON. U
 ## CLI Raw Params Gotchas
 
 - Use `selector`, not `scope`, to narrow `dom.find_by_text` and `dom.find_by_role`.
-- Wrap interaction targets as `target: { elementRef }` or `target: { selector }`; `viewport.scroll` also uses the `target` wrapper for element scrolling.
+- Wrap interaction targets as `target: { elementRef }` or `target: { selector }`; `viewport.scroll` also uses the `target` wrapper for element scrolling. **Do not pass `ref` or `elementRef` at the top level** -- interaction methods require the nested `target` wrapper:
+  ```bash
+  # CORRECT
+  bbx call input.click '{"target":{"elementRef":"el_xxx"}}'
+  bbx call input.type  '{"target":{"elementRef":"el_xxx"},"text":"hello"}'
+  # WRONG -- will fail with "Target not found"
+  bbx call input.click '{"ref":"el_xxx"}'
+  bbx call input.click '{"elementRef":"el_xxx"}'
+  ```
 - `input.drag` uses `source`, `destination`, and optional destination offsets `offsetX` / `offsetY`.
 - Raw `screenshot.capture_region` and `screenshot.capture_full_page` return base64 JSON; prefer `bbx screenshot <ref> [outPath]` when one element is enough.
 
