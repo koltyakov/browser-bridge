@@ -312,6 +312,10 @@ export const CLI_HELP_SECTIONS = Object.freeze([
   {
     title: 'Page',
     lines: [
+      'bbx intercept add <pattern> [--respond <body>] [--block]           Add a request interception rule',
+      'bbx intercept list                                                  List active interception rules',
+      'bbx intercept remove <ruleId>                                       Remove a rule',
+      'bbx intercept clear                                                 Remove all rules',
       'bbx eval [--await] <expression>                                     Evaluate JS in page context (--await for async, - for stdin)',
       ...[
         'console',

@@ -77,6 +77,7 @@ import {
   getStateForTest,
 } from './background-state.js';
 import { ensureNetworkInterceptor, readNetworkBuffer } from './background-network.js';
+import { createFetchInterceptor } from './background-fetch-intercept.js';
 import {
   createContentScriptBridge,
   isRestrictedScriptingError,
@@ -127,6 +128,29 @@ chrome.debugger.onDetach.addListener((source) => {
   if (typeof source.tabId === 'number') {
     tabDebugger.markDetached(source.tabId);
   }
+});
+
+// CDP Fetch-domain request interception (declarative rule engine)
+/** @type {Map<number, (method: string, params: unknown) => void>} */
+const fetchEventFilters = new Map();
+chrome.debugger.onEvent.addListener((source, method, params) => {
+  if (typeof source.tabId === 'number' && fetchEventFilters.has(source.tabId)) {
+    fetchEventFilters.get(source.tabId)?.(method, params);
+  }
+});
+const fetchInterceptor = createFetchInterceptor({
+  acquireDebugger: (tabId, init) => tabDebugger.acquire(tabId, init),
+  releaseDebugger: (tabId) => tabDebugger.release(tabId),
+  sendCommand: (target, method, params) =>
+    /** @type {Promise<unknown>} */ (
+      chrome.debugger.sendCommand(
+        target,
+        method,
+        /** @type {{ [key: string]: unknown }} */ (params)
+      )
+    ),
+  addEventFilter: (tabId, handler) => fetchEventFilters.set(tabId, handler),
+  removeEventFilter: (tabId) => fetchEventFilters.delete(tabId),
 });
 
 const { sendTabMessage, injectContentScriptsForWindow, ensureContentScript } =
@@ -184,7 +208,14 @@ const {
   ensureNetworkInterceptor: (tabId) => ensureNetworkInterceptor(tabId, chrome),
   readNetworkBuffer: (tabId, clear) => readNetworkBuffer(tabId, clear, chrome),
   runWithDebugger: (tabId, operation) => tabDebugger.run(tabId, operation),
-  sendCommand: (target, method, params) => chrome.debugger.sendCommand(target, method, params),
+  sendCommand: (target, method, params) =>
+    /** @type {Promise<unknown>} */ (
+      chrome.debugger.sendCommand(
+        target,
+        method,
+        /** @type {{ [key: string]: unknown }} */ (params)
+      )
+    ),
 });
 
 const { appendActionLogEntry, getActionContext, logBridgeAction, restoreActionLog } =
@@ -412,6 +443,11 @@ async function dispatchBridgeRequest(request) {
       return handleAccessibilityTree(request);
     case 'page.get_network':
       return handleGetNetwork(request);
+    case 'network.intercept.add':
+    case 'network.intercept.remove':
+    case 'network.intercept.list':
+    case 'network.intercept.clear':
+      return handleFetchInterceptRequest(request);
     case 'viewport.resize':
       return handleViewportResize(request);
     case 'performance.get_metrics':
@@ -488,7 +524,8 @@ async function handlePageEvaluate(request) {
   return executePageEvaluate(request, {
     resolveRequestTarget,
     runWithDebugger: (tabId, operation) => tabDebugger.run(tabId, operation),
-    sendCommand: (target, method, params) => chrome.debugger.sendCommand(target, method, params),
+    sendCommand: (target, method, params) =>
+      /** @type {Promise<unknown>} */ (chrome.debugger.sendCommand(target, method, params)),
   });
 }
 
@@ -545,6 +582,55 @@ async function handleCloseTab(request) {
     { closed: true, tabId: params.tabId },
     { method: request.method }
   );
+}
+
+/**
+ * Dispatch network.intercept.* methods to the fetch interceptor.
+ * Resolves the target tab from the request, then delegates to the rule engine.
+ */
+/** @param {BridgeRequest} request */
+async function handleFetchInterceptRequest(request) {
+  const target = await resolveRequestTarget(request);
+  const params = request.params ?? {};
+  const method = request.method;
+
+  if (method === 'network.intercept.add') {
+    if (!params.urlPattern) {
+      return createFailure(request.id, 'INVALID_REQUEST', 'urlPattern is required.', null, {
+        method,
+      });
+    }
+    const rule = await fetchInterceptor.addRule(target.tabId, {
+      urlPattern: String(params.urlPattern),
+      action: /** @type {"fulfill"|"continue"|"block"} */ (params.action) || 'fulfill',
+      statusCode: /** @type {number|undefined} */ (params.statusCode),
+      body: /** @type {string|undefined} */ (params.body),
+      headers: /** @type {Record<string,string>|undefined} */ (params.headers),
+    });
+    return createSuccess(request.id, rule, { method });
+  }
+
+  if (method === 'network.intercept.remove') {
+    const removed = await fetchInterceptor.removeRule(target.tabId, String(params.ruleId ?? ''));
+    return createSuccess(request.id, { removed }, { method });
+  }
+
+  if (method === 'network.intercept.list') {
+    return createSuccess(
+      request.id,
+      { rules: fetchInterceptor.listRules(target.tabId) },
+      { method }
+    );
+  }
+
+  if (method === 'network.intercept.clear') {
+    const count = await fetchInterceptor.clearAllRules(target.tabId);
+    return createSuccess(request.id, { cleared: count }, { method });
+  }
+
+  return createFailure(request.id, 'INVALID_REQUEST', `Unknown intercept method: ${method}`, null, {
+    method,
+  });
 }
 
 /**
