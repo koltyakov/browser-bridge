@@ -22,6 +22,7 @@ export const CAPABILITIES = Object.freeze({
   TABS_MANAGE: 'tabs.manage',
   PERFORMANCE_READ: 'performance.read',
   NETWORK_READ: 'network.read',
+  NETWORK_INTERCEPT: 'network.intercept',
 });
 
 export const DEFAULT_CAPABILITIES = Object.freeze([
@@ -43,6 +44,7 @@ export const DEFAULT_CAPABILITIES = Object.freeze([
   CAPABILITIES.TABS_MANAGE,
   CAPABILITIES.PERFORMANCE_READ,
   CAPABILITIES.NETWORK_READ,
+  CAPABILITIES.NETWORK_INTERCEPT,
 ]);
 
 /** @type {Readonly<Record<CapabilityMethod, Capability | null>>} */
@@ -62,10 +64,12 @@ export const METHOD_CAPABILITIES = Object.freeze({
   'page.get_storage': CAPABILITIES.PAGE_READ,
   'page.get_text': CAPABILITIES.PAGE_READ,
   'page.get_network': CAPABILITIES.NETWORK_READ,
-  'network.intercept.add': CAPABILITIES.NETWORK_READ,
-  'network.intercept.remove': CAPABILITIES.NETWORK_READ,
-  'network.intercept.list': CAPABILITIES.NETWORK_READ,
-  'network.intercept.clear': CAPABILITIES.NETWORK_READ,
+  // Interception mutates traffic (block/forge responses) — distinct from
+  // passive network reads so hosts can gate it independently.
+  'network.intercept.add': CAPABILITIES.NETWORK_INTERCEPT,
+  'network.intercept.remove': CAPABILITIES.NETWORK_INTERCEPT,
+  'network.intercept.list': CAPABILITIES.NETWORK_INTERCEPT,
+  'network.intercept.clear': CAPABILITIES.NETWORK_INTERCEPT,
   'navigation.navigate': CAPABILITIES.NAVIGATION_CONTROL,
   'navigation.reload': CAPABILITIES.NAVIGATION_CONTROL,
   'navigation.go_back': CAPABILITIES.NAVIGATION_CONTROL,

@@ -18,7 +18,8 @@ export type Capability =
   | 'automation.input'
   | 'tabs.manage'
   | 'performance.read'
-  | 'network.read';
+  | 'network.read'
+  | 'network.intercept';
 
 export type ErrorCode =
   | 'ACCESS_DENIED'
@@ -221,6 +222,8 @@ export interface InputActionParams {
   button?: 'left' | 'middle' | 'right';
   clickCount?: number;
   text?: string;
+  value?: string;
+  mode?: 'auto' | 'setter' | 'keystrokes';
   clear?: boolean;
   submit?: boolean;
   key?: string;
@@ -232,6 +235,8 @@ export interface NormalizedInputAction extends BridgeParams {
   button: 'left' | 'middle' | 'right';
   clickCount: number;
   text: string;
+  value: string;
+  mode: 'auto' | 'setter' | 'keystrokes';
   clear: boolean;
   submit: boolean;
   key: string;

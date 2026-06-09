@@ -629,8 +629,7 @@ async function main() {
           shortcutCmd.build(shortcutArgs, elementRef),
           { source: REQUEST_SOURCE, tabId }
         );
-        const errorText = !response.ok ? String(response.error?.message ?? '') : '';
-        const isStale = /stale/i.test(errorText);
+        const isStale = !response.ok && response.error?.code === 'ELEMENT_STALE';
         if (isStale && attempt < maxAttempts) {
           process.stderr.write(
             `bbx: ELEMENT_STALE on "${selectorInput}", re-resolving and retrying...\n`

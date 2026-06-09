@@ -194,6 +194,8 @@ test('normalizeInputAction preserves interactive intent', () => {
     target: { selector: 'button.primary' },
     button: 'right',
     clickCount: 9,
+    value: 'filled value',
+    mode: 'keystrokes',
     key: 'Enter',
     modifiers: ['Shift', ''],
   });
@@ -201,6 +203,8 @@ test('normalizeInputAction preserves interactive intent', () => {
   assert.equal(input.target.selector, 'button.primary');
   assert.equal(input.button, 'right');
   assert.equal(input.clickCount, 2);
+  assert.equal(input.value, 'filled value');
+  assert.equal(input.mode, 'keystrokes');
   assert.equal(input.key, 'Enter');
   assert.deepEqual(input.modifiers, ['Shift']);
 });
@@ -211,6 +215,8 @@ test('normalizeInputAction defaults invalid input details', () => {
     button: 'invalid',
     clickCount: 0,
     text: 42,
+    value: 42,
+    mode: 'invalid',
     modifiers: 'Shift',
   } as unknown as Parameters<typeof normalizeInputAction>[0]);
 
@@ -218,6 +224,8 @@ test('normalizeInputAction defaults invalid input details', () => {
   assert.equal(input.button, 'left');
   assert.equal(input.clickCount, 1);
   assert.equal(input.text, '');
+  assert.equal(input.value, '');
+  assert.equal(input.mode, 'auto');
   assert.deepEqual(input.modifiers, []);
 });
 

@@ -380,6 +380,10 @@ function normalizeTarget(target) {
  */
 export function normalizeInputAction(params = {}) {
   const button = params.button === 'middle' || params.button === 'right' ? params.button : 'left';
+  const mode =
+    params.mode === 'setter' || params.mode === 'keystrokes' || params.mode === 'auto'
+      ? params.mode
+      : 'auto';
 
   return {
     target: normalizeTarget(
@@ -390,6 +394,8 @@ export function normalizeInputAction(params = {}) {
     button,
     clickCount: clampInt(params.clickCount, 1, 2, 1),
     text: typeof params.text === 'string' ? params.text : '',
+    value: typeof params.value === 'string' ? params.value : '',
+    mode,
     clear: Boolean(params.clear),
     submit: Boolean(params.submit),
     key: typeof params.key === 'string' ? params.key : '',

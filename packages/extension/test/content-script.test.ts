@@ -2946,6 +2946,188 @@ test('content script computes pointer coordinates after scrolling elements into 
   );
 });
 
+test('content script input.fill sets values and dispatches input, change, and blur', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t);
+  const textInput = inputs.createTextInput({ value: 'old value' });
+  const textarea = inputs.createTextArea();
+  const body = inputs.createBody([textInput, textarea]);
+  const document = createDocumentHarness(body, {
+    '#text-input': textInput,
+    '#textarea': textarea,
+  });
+  document.activeElement = null;
+
+  await loadContentScript(t, {
+    withHelpers: true,
+    chrome: harness.chrome,
+    document,
+  });
+
+  const listener = harness.getListener();
+
+  function execute(method: string, params: Record<string, unknown>): Promise<BridgeResult> {
+    return new Promise((resolve) => {
+      assert.equal(
+        listener({ type: 'bridge.execute', method, params }, EMPTY_SENDER, (response) =>
+          resolve(expectRecord(response))
+        ),
+        true
+      );
+    });
+  }
+
+  const fillResult = await execute('input.fill', {
+    target: { selector: '#text-input' },
+    value: 'Bridge',
+    mode: 'auto',
+  });
+
+  assert.equal(typeof fillResult.elementRef, 'string');
+  assert.equal(fillResult.value, 'Bridge');
+  assert.equal(fillResult.mode, 'setter');
+  assert.equal(textInput.value, 'Bridge');
+  // Frameworks listen for input/change at the document level; blur triggers
+  // field-level validation. All three must fire.
+  assert.deepEqual(
+    textInput.eventLog.filter((type) => ['input', 'change', 'blur'].includes(type)),
+    ['input', 'change', 'blur']
+  );
+
+  const setterResult = await execute('input.fill', {
+    target: { selector: '#textarea' },
+    value: 'multi\nline',
+    mode: 'setter',
+  });
+  assert.equal(setterResult.mode, 'setter');
+  assert.equal(setterResult.value, 'multi\nline');
+  assert.equal(textarea.value, 'multi\nline');
+});
+
+test('content script input.fill keystrokes mode types character by character', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t);
+  const textInput = inputs.createTextInput({ value: 'clear me' });
+  const body = inputs.createBody([textInput]);
+  const document = createDocumentHarness(body, { '#text-input': textInput });
+  document.activeElement = null;
+
+  await loadContentScript(t, {
+    withHelpers: true,
+    chrome: harness.chrome,
+    document,
+  });
+
+  const listener = harness.getListener();
+
+  function execute(method: string, params: Record<string, unknown>): Promise<BridgeResult> {
+    return new Promise((resolve) => {
+      assert.equal(
+        listener({ type: 'bridge.execute', method, params }, EMPTY_SENDER, (response) =>
+          resolve(expectRecord(response))
+        ),
+        true
+      );
+    });
+  }
+
+  const fillResult = await execute('input.fill', {
+    target: { selector: '#text-input' },
+    value: 'Hi',
+    mode: 'keystrokes',
+  });
+
+  assert.equal(fillResult.mode, 'keystrokes');
+  assert.equal(fillResult.value, 'Hi');
+  assert.equal(textInput.value, 'Hi');
+  // Existing value is cleared first, then each character arrives as a key press.
+  assert.equal(textInput.eventLog.filter((type) => type === 'keydown').length >= 3, true);
+});
+
+test('content script input.fill falls back to keystrokes when the setter does not stick', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t);
+  const textInput = inputs.createTextInput();
+  // Simulate a custom component that swallows direct value assignment but
+  // accepts per-character insertion via setRangeText.
+  let internalValue = '';
+  let allowWrites = false;
+  Object.defineProperty(textInput, 'value', {
+    configurable: true,
+    get: () => internalValue,
+    set: (next: string) => {
+      if (allowWrites) internalValue = next;
+    },
+  });
+  textInput.setRangeText = (replacement: string) => {
+    allowWrites = true;
+    internalValue += replacement;
+  };
+  const body = inputs.createBody([textInput]);
+  const document = createDocumentHarness(body, { '#text-input': textInput });
+  document.activeElement = null;
+
+  await loadContentScript(t, {
+    withHelpers: true,
+    chrome: harness.chrome,
+    document,
+  });
+
+  const listener = harness.getListener();
+
+  function execute(method: string, params: Record<string, unknown>): Promise<BridgeResult> {
+    return new Promise((resolve) => {
+      assert.equal(
+        listener({ type: 'bridge.execute', method, params }, EMPTY_SENDER, (response) =>
+          resolve(expectRecord(response))
+        ),
+        true
+      );
+    });
+  }
+
+  const fillResult = await execute('input.fill', {
+    target: { selector: '#text-input' },
+    value: 'AB',
+    mode: 'auto',
+  });
+
+  assert.equal(fillResult.mode, 'keystrokes-fallback');
+});
+
+test('content script input.fill rejects non-editable targets', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t);
+  const button = inputs.createButton({ textContent: 'Save' });
+  const body = inputs.createBody([button]);
+  const document = createDocumentHarness(body, { '#button': button });
+  document.activeElement = null;
+
+  await loadContentScript(t, {
+    withHelpers: true,
+    chrome: harness.chrome,
+    document,
+  });
+
+  const responses: unknown[] = [];
+
+  assert.equal(
+    harness.getListener()(
+      {
+        type: 'bridge.execute',
+        method: 'input.fill',
+        params: { target: { selector: '#button' }, value: 'nope' },
+      },
+      EMPTY_SENDER,
+      (response) => responses.push(response)
+    ),
+    true
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(responses, [{ error: 'Target is not an editable control.' }]);
+});
+
 test('content script reports unsupported execute methods as errors', async (t) => {
   const harness = createChromeHarness();
   await loadContentScript(t, {

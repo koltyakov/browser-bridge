@@ -30,6 +30,7 @@ bbx tabs                    # list available tabs (prefer this)
 bbx logs                    # recent bridge request log
 bbx tab-create [url]        # open a new tab (avoid unless necessary)
 bbx tab-close <tabId>       # close a tab
+bbx tab-activate <tabId>    # bring a tab to the foreground
 bbx skill                   # live runtime presets + limits
 ```
 
@@ -53,9 +54,11 @@ bbx a11y-tree [maxNodes] [maxDepth]  # accessibility tree
 ### Page & Evaluate
 
 ```bash
-bbx eval <expression>                # JS eval (- for stdin)
+bbx eval [--await] <expression>      # JS eval (--await for promises, - for stdin)
 bbx console [level]                  # console output
 bbx network [limit]                  # network requests
+bbx intercept add <pattern> [--respond <body>] [--status <code>] [--block]  # intercept matching requests
+bbx intercept list|remove <id>|clear # manage interception rules
 bbx page-text [budget]               # full page text
 bbx storage [local|session] [keys]   # browser storage
 bbx perf                             # performance metrics
@@ -73,6 +76,7 @@ bbx resize <width> <height>          # resize viewport
 bbx click <ref> [button]             # click element
 bbx focus <ref>                      # focus element
 bbx type <ref> <text...>             # type into element
+bbx fill <ref|selector> <value...>   # set input value (React/Vue/Angular-safe)
 bbx press-key <key> [ref]            # send key event
 bbx cdp-press-key --tab <id> Escape  # CDP key event without foreground focus
 bbx hover <ref>                      # hover over element
@@ -213,9 +217,9 @@ bbx page-text 2000                                  # extract page content
 | Inspect     | `dom.query`, `dom.describe`, `dom.get_html`, `styles.get_computed`, `layout.get_box_model`                                                          |
 | Find        | `dom.find_by_text`, `dom.find_by_role`, `dom.wait_for`, `dom.get_accessibility_tree`                                                                |
 | Page State  | `page.get_console`, `page.get_storage`, `page.get_text`, `page.wait_for_load_state`, `page.evaluate` (debugger-backed)                              |
-| Network     | `page.get_network`                                                                                                                                  |
-| Interact    | `input.click`, `input.type`, `input.focus`, `input.press_key`, `cdp.dispatch_key_event`, `input.hover`, `input.drag`, `input.scroll_into_view`       |
-| Tabs        | `tabs.list` (preferred), `tabs.create` (avoid unless necessary), `tabs.close`                                                                       |
+| Network     | `page.get_network`, `network.intercept.add/remove/list/clear` (debugger-backed; rules are in-memory and drop if the debugger detaches — verify with `list`) |
+| Interact    | `input.click`, `input.type`, `input.fill`, `input.focus`, `input.press_key`, `cdp.dispatch_key_event`, `input.hover`, `input.drag`, `input.scroll_into_view` |
+| Tabs        | `tabs.list` (preferred), `tabs.create` (avoid unless necessary), `tabs.close`, `tabs.activate`                                                      |
 | Patch       | `patch.apply_styles`, `patch.apply_dom`, `patch.rollback`                                                                                           |
 | Navigate    | `navigation.navigate`, `viewport.scroll`, `viewport.resize`                                                                                         |
 | Performance | `performance.get_metrics` (debugger-backed)                                                                                                         |

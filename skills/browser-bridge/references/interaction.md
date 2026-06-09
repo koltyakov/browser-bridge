@@ -7,6 +7,7 @@
 | `input.click`            | `click <ref> [button]`                | DOM-level click                                             |
 | `input.focus`            | `focus <ref>`                         | Focus an element                                            |
 | `input.type`             | `type <ref> <text>`                   | Type into input/textarea/contenteditable                    |
+| `input.fill`             | `fill <ref> <value>`                  | Set field value via native setter (React/Vue/Angular-safe)  |
 | `input.press_key`        | `press-key <key> [ref]`               | Send keyboard key (Enter, Backspace, etc.)                  |
 | `cdp.dispatch_key_event` | `cdp-press-key --tab <id> <key>`      | CDP keyDown/keyUp without focusing the target tab           |
 | `input.set_checked`      | `call input.set_checked '{...}'`      | Toggle checkbox/radio                                       |
@@ -64,6 +65,7 @@ bbx tabs                                 # list available tabs (start here)
 bbx tab-create https://example.com       # open new tab (avoid unless necessary)
 bbx tab-create                           # open blank tab (avoid unless necessary)
 bbx tab-close 12345                      # close tab by ID
+bbx tab-activate 12345                   # bring a tab to the foreground
 bbx call tabs.create '{"url":"https://example.com","active":false}'
 ```
 
@@ -156,6 +158,24 @@ Typical workflow - debug API calls:
 3. Cross-reference with `page.get_console` for errors
 4. Use `page.evaluate` to replay or inspect response data
 
+## Network Interception
+
+Block, stub, or modify matching requests via CDP (debugger-backed). Patterns are globs: `*` matches any characters, `?` matches one character.
+
+```bash
+bbx intercept add 'https://api.example.com/users*' --respond '{"users":[]}' --status 200
+bbx intercept add '*analytics*' --block      # fail matching requests
+bbx intercept list                           # active rules
+bbx intercept remove intercept_1
+bbx intercept clear                          # remove all rules, detach debugger
+```
+
+Caveats:
+
+- Rules are **in-memory and per-tab**. They drop silently if the debugger detaches (user dismisses the infobar, tab closes, extension service worker restarts). Verify with `bbx intercept list` before relying on them.
+- Sessions auto-expire after 10 minutes as a safety net.
+- Always `bbx intercept clear` when finished so the page returns to normal traffic.
+
 ## Form Controls
 
 **Checkbox/radio:**
@@ -171,6 +191,15 @@ bbx call input.select_option '{"target":{"elementRef":"el_456"},"values":["us"]}
 ```
 
 Select by value, label, or index. Multiple values for multi-select.
+
+**Text fields — `fill` vs `type`:**
+
+```bash
+bbx fill el_123 hello@example.com        # set value instantly (preferred for forms)
+bbx type el_123 hello                    # simulate per-character keystrokes
+```
+
+Prefer `fill` for setting form values: it uses the native prototype setter plus `input`/`change`/`blur` events, which React, Vue, and Angular pick up reliably. `mode` defaults to `auto` (setter first, keystroke fallback if the value did not stick); pass `"mode":"keystrokes"` via `bbx call input.fill` for components that only react to per-key events. Use `type` when page logic depends on individual key events (autocomplete, masked inputs).
 
 ## Hover
 

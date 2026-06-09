@@ -12,7 +12,15 @@
  *   - Last rule removed / clear → release debugger
  *   - 10-minute TTL auto-expires the session (safety net)
  *
- * State is per-tab. Each tab has its own rule set and debugger hold.
+ * Fetch.enable patterns are scoped to the active rule set (re-sent on every
+ * add/remove), so only requests that could match a rule ever pause at the
+ * debugger.
+ *
+ * State is per-tab and in-memory only: if the MV3 service worker is suspended
+ * or the debugger detaches (user cancels the infobar, tab closes), rules are
+ * gone and interception stops. Callers should treat rules as best-effort and
+ * verify with network.intercept.list. handleDetach() reconciles local state
+ * when the background script observes a detach event.
  */
 
 /** @typedef {{ ruleId: string, urlPattern: string, action: 'fulfill' | 'continue' | 'block', statusCode?: number, body?: string, headers?: Record<string, string> }} InterceptRule */
@@ -21,10 +29,6 @@
 const TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 /** @typedef {Omit<InterceptRule, 'ruleId'>} InterceptRuleInput */
-/** @type {Map<number, TabInterceptState>} */
-const tabStates = new Map();
-
-let ruleCounter = 0;
 
 /**
  * @param {{
@@ -36,6 +40,11 @@ let ruleCounter = 0;
  * }} deps
  */
 export function createFetchInterceptor(deps) {
+  /** @type {Map<number, TabInterceptState>} */
+  const tabStates = new Map();
+
+  let ruleCounter = 0;
+
   /**
    * @param {number} tabId
    * @returns {TabInterceptState}
@@ -55,6 +64,29 @@ export function createFetchInterceptor(deps) {
     if (!s) return;
     if (s.ttlTimer) clearTimeout(s.ttlTimer);
     s.ttlTimer = setTimeout(() => clearAllRules(tabId), TTL_MS);
+    if (
+      typeof s.ttlTimer === 'object' &&
+      s.ttlTimer &&
+      'unref' in s.ttlTimer &&
+      typeof s.ttlTimer.unref === 'function'
+    ) {
+      s.ttlTimer.unref();
+    }
+  }
+
+  /**
+   * Re-send Fetch.enable with patterns derived from the current rule set.
+   * Fetch.enable replaces previously registered patterns, so this both
+   * narrows and widens interception as rules change.
+   * @param {number} tabId
+   */
+  async function syncPatterns(tabId) {
+    const s = tabStates.get(tabId);
+    if (!s || s.rules.size === 0) return;
+    const patterns = [...new Set([...s.rules.values()].map((rule) => rule.urlPattern))].map(
+      (urlPattern) => ({ urlPattern, requestStage: 'Request' })
+    );
+    await deps.sendCommand({ tabId }, 'Fetch.enable', { patterns });
   }
 
   /**
@@ -69,14 +101,17 @@ export function createFetchInterceptor(deps) {
     const wasEmpty = s.rules.size === 0;
     s.rules.set(ruleId, fullRule);
 
-    if (wasEmpty) {
-      // First rule: acquire debugger + enable Fetch
-      deps.addEventFilter(tabId, (method, params) => handleFetchEvent(tabId, method, params));
-      await deps.acquireDebugger(tabId, async (target) => {
-        await deps.sendCommand(target, 'Fetch.enable', {
-          patterns: [{ urlPattern: '*', requestStage: 'Request' }],
-        });
-      });
+    try {
+      if (wasEmpty) {
+        deps.addEventFilter(tabId, (method, params) => handleFetchEvent(tabId, method, params));
+        await deps.acquireDebugger(tabId, async () => {});
+      }
+      await syncPatterns(tabId);
+    } catch (error) {
+      // Roll back so a failed acquire/enable does not leave a phantom rule.
+      s.rules.delete(ruleId);
+      if (s.rules.size === 0) await releaseTab(tabId);
+      throw error;
     }
 
     resetTtl(tabId);
@@ -94,6 +129,8 @@ export function createFetchInterceptor(deps) {
     const removed = s.rules.delete(ruleId);
     if (removed && s.rules.size === 0) {
       await releaseTab(tabId);
+    } else if (removed) {
+      await syncPatterns(tabId);
     }
     return removed;
   }
@@ -118,6 +155,21 @@ export function createFetchInterceptor(deps) {
     s.rules.clear();
     await releaseTab(tabId);
     return count;
+  }
+
+  /**
+   * Reconcile local state after the debugger detached out from under us
+   * (user dismissed the infobar, tab closed, or another tool took over).
+   * Drops rules and filters without trying to release an already-dead
+   * session, so network.intercept.list reflects reality.
+   * @param {number} tabId
+   */
+  function handleDetach(tabId) {
+    const s = tabStates.get(tabId);
+    if (!s) return;
+    if (s.ttlTimer) clearTimeout(s.ttlTimer);
+    tabStates.delete(tabId);
+    deps.removeEventFilter(tabId);
   }
 
   /**
@@ -202,18 +254,26 @@ export function createFetchInterceptor(deps) {
     }
   }
 
-  return { addRule, removeRule, listRules, clearAllRules, releaseTab };
+  return { addRule, removeRule, listRules, clearAllRules, releaseTab, handleDetach };
 }
 
 /**
- * Simple glob-style URL pattern matching (* = any chars).
+ * Glob-style URL pattern matching mirroring CDP Fetch.enable semantics:
+ * `*` matches any characters, `?` matches exactly one character.
+ * `?` must not stay a regex quantifier, or query-string patterns like
+ * `/v1?x=1*` silently stop matching.
  * @param {string} url
  * @param {string} pattern
  * @returns {boolean}
  */
 function urlMatchesPattern(url, pattern) {
   const regex = new RegExp(
-    '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$',
+    '^' +
+      pattern
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+        .replace(/\*/g, '.*')
+        .replace(/\?/g, '.') +
+      '$',
     'i'
   );
   return regex.test(url);

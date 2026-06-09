@@ -127,6 +127,9 @@ const tabDebugger = new TabDebuggerCoordinator({
 chrome.debugger.onDetach.addListener((source) => {
   if (typeof source.tabId === 'number') {
     tabDebugger.markDetached(source.tabId);
+    // Drop interception rules for the dead session so list reflects reality
+    // (covers infobar cancel, tab close, and external debugger takeover).
+    fetchInterceptor.handleDetach(source.tabId);
   }
 });
 

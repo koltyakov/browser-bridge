@@ -90,6 +90,12 @@ The table below includes the legacy capability bucket for each method so agents 
 | 57  | `cdp.get_box_model`                | Yes  | CDP  | cdp         | `cdp.box_model`      | DevTools-backed element geometry                                        |
 | 58  | `cdp.get_computed_styles_for_node` | Yes  | CDP  | cdp         | `cdp.styles`         | DevTools-backed computed styles                                         |
 | 59  | `cdp.dispatch_key_event`           | Yes  | CDP  | cdp         | `cdp.input`          | DevTools keyDown/keyUp without foreground focus                         |
+| 60  | `tabs.activate`                    | No   | -    | tabs        | `tabs.manage`        | Bring a tab to the foreground in the enabled window                     |
+| 61  | `input.fill`                       | Yes  | -    | interact    | `automation.input`   | Set field value via native setter; `mode`: auto/setter/keystrokes       |
+| 62  | `network.intercept.add`            | Yes  | CDP  | page        | `network.intercept`  | Add interception rule; action fulfill/continue/block                    |
+| 63  | `network.intercept.remove`         | Yes  | CDP  | page        | `network.intercept`  | Remove rule by `ruleId`                                                 |
+| 64  | `network.intercept.list`           | Yes  | CDP  | page        | `network.intercept`  | List active rules (rules drop on debugger detach)                       |
+| 65  | `network.intercept.clear`          | Yes  | CDP  | page        | `network.intercept`  | Remove all rules, detach debugger                                       |
 
 ## CLI
 
