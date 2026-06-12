@@ -40,7 +40,7 @@ import {
   getMethodsByMaxComplexity,
 } from '../../protocol/src/index.js';
 import { applyWindowsTcpTransportDefaults } from '../../native-host/src/config.js';
-import { MCP_SERVER_INSTRUCTIONS, registerBridgeMcpGuidance } from './guidance.js';
+import { MCP_SERVER_INSTRUCTIONS } from './guidance.js';
 
 export const BUDGET_PRESET_DESCRIPTION = `Budget preset: "quick", "normal", or "deep" (defaults: query ${BUDGET_PRESETS.normal.maxNodes} nodes / depth ${BUDGET_PRESETS.normal.maxDepth} / text ${BUDGET_PRESETS.normal.textBudget}). Numeric fields override the preset when both are provided.`;
 export const TAB_ID_DESCRIPTION =
@@ -734,8 +734,6 @@ export function createBridgeMcpServer() {
     },
     handleInvestigateTool
   );
-
-  registerBridgeMcpGuidance(server);
 
   return server;
 }

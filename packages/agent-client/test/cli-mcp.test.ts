@@ -105,29 +105,7 @@ test('bbx mcp serve starts the MCP server over stdio', { timeout: 10000 }, async
 
     assert.match(String(client.getInstructions()), /Prefer Browser Bridge MCP tools/i);
 
-    const promptsResult = await client.listPrompts();
-    const investigatePrompt = promptsResult.prompts.find(
-      (prompt) => prompt.name === 'browser_bridge_investigate'
-    );
-
-    assert.ok(investigatePrompt, `expected guidance prompts in prompts/list\nstderr:\n${stderr}`);
-    assert.ok(investigatePrompt.arguments?.some((arg) => arg.name === 'objective'));
-
-    const promptResult = await client.getPrompt({
-      name: 'browser_bridge_investigate',
-      arguments: {
-        objective: 'find console errors',
-        scope: 'quick',
-      },
-    });
-    const firstMessage = promptResult.messages[0];
-
-    assert.equal(firstMessage.role, 'user');
-    assert.equal(firstMessage.content.type, 'text');
-    if (firstMessage.content.type === 'text') {
-      assert.match(firstMessage.content.text, /browser_status/);
-      assert.match(firstMessage.content.text, /find console errors/);
-    }
+    await assert.rejects(() => client.listPrompts(), /Method not found/);
   } finally {
     await transport?.close();
   }
