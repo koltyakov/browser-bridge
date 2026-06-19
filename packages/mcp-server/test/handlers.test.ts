@@ -401,6 +401,54 @@ test('handlePageTool state calls page.get_state', async () => {
   );
 });
 
+test('default MCP routing falls back to configured remotes when local access is unavailable', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    await writeRemoteConfig(bridgeHome);
+    await withMockedBridge(
+      async (_record, index) => {
+        if (index === 0) {
+          return fail('ACCESS_DENIED', 'Browser Bridge is off for this window.');
+        }
+        return ok({
+          url: 'https://private.example/current',
+          title: 'Private',
+          origin: 'https://private.example',
+          hints: {},
+        });
+      },
+      async (calls) => {
+        const result = await handlePageTool({ action: 'state' });
+
+        assert.equal(calls.length, 2);
+        assert.equal(calls[0].method, 'page.get_state');
+        assert.equal(calls[1].method, 'page.get_state');
+        assert.equal(result.isError, undefined);
+        assert.equal(result.structuredContent.ok, true);
+        assert.equal(result.structuredContent.autoSelectedDestinationId, 'vm-private');
+      },
+      { isolateBridgeHome: false }
+    );
+  });
+});
+
+test('explicit MCP destinations do not fall back to other remotes', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    await writeRemoteConfig(bridgeHome);
+    await withMockedBridge(
+      async () => fail('ACCESS_DENIED', 'Browser Bridge is off for this window.'),
+      async (calls) => {
+        const result = await handlePageTool({ action: 'state', destinationId: 'vm-private' });
+
+        assert.equal(calls.length, 1);
+        assert.equal(calls[0].method, 'page.get_state');
+        assert.equal(result.isError, true);
+        assert.equal(result.structuredContent.ok, false);
+      },
+      { isolateBridgeHome: false }
+    );
+  });
+});
+
 test('handlePageTool evaluate calls page.evaluate with given expression', async () => {
   await withMockedBridge(
     async () => ok({ value: 42, type: 'number' }),

@@ -67,10 +67,31 @@ export {
 const HOME_DIR = os.homedir();
 
 /**
+ * @param {{ destinationId?: string }} [args]
  * @returns {Promise<ToolResult>}
  */
-export async function handleStatusTool() {
+export async function handleStatusTool(args = {}) {
   try {
+    const requestedDestinationId =
+      typeof args.destinationId === 'string' ? args.destinationId : null;
+    if (requestedDestinationId && requestedDestinationId !== 'local') {
+      const destination = (await getBridgeDestinations()).find(
+        (entry) => entry.id === requestedDestinationId
+      );
+      const result = await callRemoteHealth(requestedDestinationId);
+      return createToolResult(
+        result.reachable
+          ? `Browser Bridge destination "${requestedDestinationId}" is reachable.`
+          : `Browser Bridge destination "${requestedDestinationId}" is not reachable.`,
+        {
+          ok: result.reachable === true,
+          destination: destination ?? { id: requestedDestinationId, local: false },
+          ...result,
+        },
+        result.reachable !== true
+      );
+    }
+
     const report = await getDoctorReport();
     const destinations = await Promise.all(
       (await getBridgeDestinations()).map(async (destination) => {
