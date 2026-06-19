@@ -8,6 +8,7 @@ import {
   createToolResult,
   getDoctorReport,
   getToolTokenBudget,
+  getBridgeDestinations,
   applyLimitBudgetPreset,
   summarizeToolError,
   summarizeToolResponse,
@@ -71,6 +72,22 @@ const HOME_DIR = os.homedir();
 export async function handleStatusTool() {
   try {
     const report = await getDoctorReport();
+    const destinations = await Promise.all(
+      (await getBridgeDestinations()).map(async (destination) => {
+        if (destination.local) {
+          return {
+            ...destination,
+            reachable: report.daemonReachable,
+            extensionConnected: report.extensionConnected,
+            accessEnabled: report.accessEnabled,
+            routeReady: report.routeReady,
+            routeTabId: report.routeTabId,
+          };
+        }
+        const result = await callRemoteHealth(destination.id);
+        return { ...destination, ...result };
+      })
+    );
     const summary =
       report.issues.length === 0
         ? 'Browser Bridge is ready.'
@@ -78,10 +95,23 @@ export async function handleStatusTool() {
     return createToolResult(summary, {
       ok: report.issues.length === 0,
       evidence: report,
+      destinations,
     });
   } catch (error) {
     return summarizeToolError(error);
   }
+}
+
+/**
+ * @param {string} destinationId
+ * @returns {Promise<Record<string, unknown>>}
+ */
+async function callRemoteHealth(destinationId) {
+  const result = await callBridgeTool('health.ping', {}, { destinationId });
+  return {
+    reachable: result.structuredContent.ok === true,
+    health: result.structuredContent,
+  };
 }
 
 /**
@@ -138,21 +168,33 @@ export async function handleLogTool(args) {
 }
 
 /**
+ * @param {{ destinationId?: string }} [args]
  * @returns {Promise<ToolResult>}
  */
-export async function handleHealthTool() {
-  return withToolClient(async (client) => {
-    const response = await client.request({
-      method: 'health.ping',
-      meta: { source: REQUEST_SOURCE },
-    });
-    return summarizeToolResponse(response, 'health.ping');
-  });
+export async function handleHealthTool(args = {}) {
+  const destinationId = typeof args.destinationId === 'string' ? args.destinationId : null;
+  return withToolClient(
+    async (client) => {
+      const response = await client.request({
+        method: 'health.ping',
+        meta: { source: REQUEST_SOURCE },
+      });
+      return summarizeToolResponse(response, 'health.ping');
+    },
+    { destinationId }
+  );
 }
 
 /**
+ * @param {{ destinationId?: string }} [args]
  * @returns {Promise<ToolResult>}
  */
-export async function handleAccessTool() {
-  return callBridgeTool('access.request');
+export async function handleAccessTool(args = {}) {
+  return callBridgeTool(
+    'access.request',
+    {},
+    {
+      destinationId: typeof args.destinationId === 'string' ? args.destinationId : null,
+    }
+  );
 }

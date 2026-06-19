@@ -118,6 +118,24 @@ For open-ended inspection in MCP mode, start with `browser_investigate`. It is r
 
 Use the focused guides instead of stretching quickstart into a manual:
 
+## Remote VM / private network
+
+Remote browser access is opt-in. Enable proxy mode on the machine that has Chrome and the Browser Bridge extension connected to the private network:
+
+```bash
+bbx proxy enable --port 9223
+```
+
+The command prints a token and a matching `bbx remote add` command. On your dev machine, add that remote destination using the VM's IP address or hostname plus the proxy port:
+
+```bash
+bbx remote add remote-bbx 192.168.56.20:9223 --token <token>
+```
+
+Port `9223` is used by default when omitted, but including it makes the remote endpoint explicit.
+
+Your local MCP server still talks to the local browser by default. Discovery tools such as `browser_status` and `browser_tabs` list local and remote destinations; pass `destinationId`, for example `vm-private`, to route a specific MCP call to the remote browser.
+
 - [Documentation index](./index.md)
 - [Manual setup](./manual-setup.md) for custom agents, exact config locations, and project-local installs
 - [Usage scenarios](./usage-scenarios.md) for concrete debugging and patching workflows

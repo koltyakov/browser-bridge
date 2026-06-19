@@ -17,6 +17,10 @@ import {
   resolveRef,
   withBridgeClient,
 } from '../../agent-client/src/runtime.js';
+import {
+  createBridgeClientForDestination,
+  listBridgeDestinations,
+} from '../../agent-client/src/remotes.js';
 import { annotateBridgeSummary, summarizeBridgeResponse } from '../../agent-client/src/subagent.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
@@ -130,11 +134,21 @@ export function summarizeToolError(error) {
 
 /**
  * @param {(client: import('../../agent-client/src/client.js').BridgeClient) => Promise<ToolResult>} callback
+ * @param {{ destinationId?: string | null }} [options]
  * @returns {Promise<ToolResult>}
  */
-export async function withToolClient(callback) {
+export async function withToolClient(callback, options = {}) {
   try {
-    return await withBridgeClient(callback);
+    if (!options.destinationId) {
+      return await withBridgeClient(callback);
+    }
+    const client = await createBridgeClientForDestination(options.destinationId);
+    await client.connect();
+    try {
+      return await callback(client);
+    } finally {
+      await client.close();
+    }
   } catch (error) {
     return summarizeToolError(error);
   }
@@ -306,18 +320,28 @@ export async function requestBridgeWithRetry(client, method, params, options) {
 /**
  * @param {BridgeMethod} method
  * @param {Record<string, unknown>} [params={}]
- * @param {{ tabId?: number | null, summaryMethod?: string, tokenBudget?: number | null }} [options]
+ * @param {{ tabId?: number | null, summaryMethod?: string, tokenBudget?: number | null, destinationId?: string | null }} [options]
  * @returns {Promise<ToolResult>}
  */
 export async function callBridgeTool(method, params = {}, options = {}) {
-  return withToolClient(async (client) => {
-    const response = await requestBridgeWithRetry(client, method, params, {
-      tabId: options.tabId ?? null,
-      source: REQUEST_SOURCE,
-      tokenBudget: options.tokenBudget ?? null,
-    });
-    return summarizeToolResponse(response, options.summaryMethod || method);
-  });
+  return withToolClient(
+    async (client) => {
+      const response = await requestBridgeWithRetry(client, method, params, {
+        tabId: options.tabId ?? null,
+        source: REQUEST_SOURCE,
+        tokenBudget: options.tokenBudget ?? null,
+      });
+      return summarizeToolResponse(response, options.summaryMethod || method);
+    },
+    { destinationId: options.destinationId ?? null }
+  );
+}
+
+/**
+ * @returns {Promise<Array<{ id: string, local: boolean, host: string | null, port: number | null }>>}
+ */
+export async function getBridgeDestinations() {
+  return listBridgeDestinations();
 }
 
 /**
@@ -333,22 +357,25 @@ export async function callBridgeTool(method, params = {}, options = {}) {
 export async function dispatchToolAction(actions, args, toolName) {
   const entry = actions[args.action];
   if (!entry) return summarizeToolError(`Unsupported ${toolName} action "${args.action}".`);
-  return withToolClient(async (client) => {
-    const requestedTabId = typeof args.tabId === 'number' ? args.tabId : null;
-    const ref = entry.ref
-      ? await resolveToolRef(
-          client,
-          /** @type {{ elementRef?: string, selector?: string }} */ (args),
-          requestedTabId
-        )
-      : undefined;
-    const response = await requestBridgeWithRetry(client, entry.method, entry.params(args, ref), {
-      tabId: requestedTabId,
-      source: REQUEST_SOURCE,
-      tokenBudget: getToolTokenBudget(/** @type {{ budgetPreset?: unknown }} */ (args)),
-    });
-    return summarizeToolResponse(response, entry.method);
-  });
+  return withToolClient(
+    async (client) => {
+      const requestedTabId = typeof args.tabId === 'number' ? args.tabId : null;
+      const ref = entry.ref
+        ? await resolveToolRef(
+            client,
+            /** @type {{ elementRef?: string, selector?: string }} */ (args),
+            requestedTabId
+          )
+        : undefined;
+      const response = await requestBridgeWithRetry(client, entry.method, entry.params(args, ref), {
+        tabId: requestedTabId,
+        source: REQUEST_SOURCE,
+        tokenBudget: getToolTokenBudget(/** @type {{ budgetPreset?: unknown }} */ (args)),
+      });
+      return summarizeToolResponse(response, entry.method);
+    },
+    { destinationId: typeof args.destinationId === 'string' ? args.destinationId : null }
+  );
 }
 
 export {
@@ -357,6 +384,7 @@ export {
   requestBridge,
   resolveRef,
   withBridgeClient,
+  listBridgeDestinations,
   annotateBridgeSummary,
   summarizeBridgeResponse,
   summarizeBatchErrorItem,

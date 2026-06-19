@@ -5,9 +5,13 @@ import path from 'node:path';
 
 import {
   ensureBridgeAuthToken,
+  BRIDGE_AUTH_TOKEN_ENV,
+  BRIDGE_AUTH_TOKEN_FILE_ENV,
   getBridgeAuthTokenPath,
   normalizeBridgeAuthToken,
   readBridgeAuthToken,
+  readBridgeAuthTokenOverride,
+  writeBridgeAuthToken,
 } from '../src/auth-token.js';
 
 const GENERATED_TOKEN = Buffer.from('abcdefghijklmnopqrstuvwxyz123456').toString('base64url');
@@ -33,6 +37,38 @@ test('normalizeBridgeAuthToken trims and accepts valid URL-safe tokens', () => {
   assert.equal(
     normalizeBridgeAuthToken('  abcdefghijklmnopqrstuvwxyzABCDEF_-  '),
     'abcdefghijklmnopqrstuvwxyzABCDEF_-'
+  );
+});
+
+test('normalizeBridgeAuthToken accepts UUID proxy tokens', () => {
+  assert.equal(
+    normalizeBridgeAuthToken('  6f7b4e4a-7b9e-4c0d-9e62-4b1fb9f8d237  '),
+    '6f7b4e4a-7b9e-4c0d-9e62-4b1fb9f8d237'
+  );
+});
+
+test('readBridgeAuthTokenOverride prefers env token before token file', async () => {
+  assert.equal(
+    await readBridgeAuthTokenOverride({
+      env: {
+        [BRIDGE_AUTH_TOKEN_ENV]: '6f7b4e4a-7b9e-4c0d-9e62-4b1fb9f8d237',
+        [BRIDGE_AUTH_TOKEN_FILE_ENV]: '/tmp/token',
+      },
+      readFile: mockReadFile(async () => {
+        throw new Error('should not read file');
+      }),
+    }),
+    '6f7b4e4a-7b9e-4c0d-9e62-4b1fb9f8d237'
+  );
+});
+
+test('readBridgeAuthTokenOverride reads token file fallback', async () => {
+  assert.equal(
+    await readBridgeAuthTokenOverride({
+      env: { [BRIDGE_AUTH_TOKEN_FILE_ENV]: '/tmp/token' },
+      readFile: mockReadFile(async () => '6f7b4e4a-7b9e-4c0d-9e62-4b1fb9f8d237\n'),
+    }),
+    '6f7b4e4a-7b9e-4c0d-9e62-4b1fb9f8d237'
   );
 });
 
@@ -131,4 +167,29 @@ test('ensureBridgeAuthToken ignores chmod failures after writing the token', asy
   });
 
   assert.equal(token, GENERATED_TOKEN);
+});
+
+test('writeBridgeAuthToken persists explicit UUID token with private mode', async () => {
+  const calls: string[] = [];
+  const tokenPath = path.join('/tmp/browser-bridge-test', 'daemon.auth');
+
+  const token = await writeBridgeAuthToken('6f7b4e4a-7b9e-4c0d-9e62-4b1fb9f8d237', {
+    tokenPath,
+    mkdir: async (dir, options) => {
+      calls.push(`mkdir:${String(dir)}:${JSON.stringify(options)}`);
+    },
+    writeFile: async (file, data, options) => {
+      calls.push(`write:${String(file)}:${String(data)}:${JSON.stringify(options)}`);
+    },
+    chmod: async (file, mode) => {
+      calls.push(`chmod:${String(file)}:${String(mode)}`);
+    },
+  });
+
+  assert.equal(token, '6f7b4e4a-7b9e-4c0d-9e62-4b1fb9f8d237');
+  assert.deepEqual(calls, [
+    `mkdir:${path.dirname(tokenPath)}:{"recursive":true}`,
+    `write:${tokenPath}:6f7b4e4a-7b9e-4c0d-9e62-4b1fb9f8d237\n:{"encoding":"utf8","mode":384}`,
+    `chmod:${tokenPath}:384`,
+  ]);
 });

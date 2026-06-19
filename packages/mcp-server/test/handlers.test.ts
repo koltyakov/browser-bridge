@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 import {
   BUDGET_PRESETS,
@@ -69,6 +72,38 @@ type BridgeRequestOptions = {
   timeoutMs?: number;
 };
 
+const REMOTE_TOKEN = '6f7b4e4a-7b9e-4c0d-9e62-4b1fb9f8d237';
+
+async function withBridgeHome(callback: (bridgeHome: string) => Promise<void>): Promise<void> {
+  const bridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-mcp-remotes-test-'));
+  const originalBridgeHome = process.env.BROWSER_BRIDGE_HOME;
+  process.env.BROWSER_BRIDGE_HOME = bridgeHome;
+  try {
+    await callback(bridgeHome);
+  } finally {
+    if (originalBridgeHome === undefined) {
+      delete process.env.BROWSER_BRIDGE_HOME;
+    } else {
+      process.env.BROWSER_BRIDGE_HOME = originalBridgeHome;
+    }
+    await fs.promises.rm(bridgeHome, { recursive: true, force: true });
+  }
+}
+
+async function writeRemoteConfig(bridgeHome: string): Promise<void> {
+  await fs.promises.writeFile(
+    path.join(bridgeHome, 'remotes.json'),
+    `${JSON.stringify(
+      {
+        remotes: [{ id: 'vm-private', host: '10.0.0.5', port: 9223, token: REMOTE_TOKEN }],
+      },
+      null,
+      2
+    )}\n`,
+    'utf8'
+  );
+}
+
 async function withMockedBridge(
   responder: (record: RequestRecord, index: number) => Promise<BridgeResponse>,
   callback: (calls: RequestRecord[]) => Promise<void>
@@ -125,6 +160,53 @@ test('handleTabsTool maps list to tabs.list and returns summarized output', asyn
       assert.equal(result.structuredContent.ok, true);
     }
   );
+});
+
+test('handleTabsTool aggregates local and remote tabs when remotes are configured', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    await writeRemoteConfig(bridgeHome);
+    await withMockedBridge(
+      async (_record, index) =>
+        ok({
+          tabs: [
+            {
+              tabId: index === 0 ? 4 : 8,
+              active: true,
+              origin: index === 0 ? 'https://local.example' : 'https://private.example',
+              title: index === 0 ? 'Local' : 'Remote',
+            },
+          ],
+        }),
+      async (calls) => {
+        const result = await handleTabsTool({ action: 'list' });
+
+        assert.equal(calls.length, 2);
+        assert.deepEqual(
+          calls.map((call) => call.method),
+          ['tabs.list', 'tabs.list']
+        );
+        assert.equal(result.isError, undefined);
+        assert.match(result.content[0].text, /Listed 2 tab\(s\) across 2 destination/);
+        assert.equal(result.structuredContent.ok, true);
+        assert.deepEqual(result.structuredContent.tabs, [
+          {
+            destinationId: 'local',
+            tabId: 4,
+            active: true,
+            origin: 'https://local.example',
+            title: 'Local',
+          },
+          {
+            destinationId: 'vm-private',
+            tabId: 8,
+            active: true,
+            origin: 'https://private.example',
+            title: 'Remote',
+          },
+        ]);
+      }
+    );
+  });
 });
 
 test('handleTabsTool forwards active for tabs.create', async () => {

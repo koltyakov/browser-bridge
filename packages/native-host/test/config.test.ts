@@ -7,11 +7,15 @@ import path from 'node:path';
 import {
   applyWindowsTcpTransportDefaults,
   BRIDGE_TCP_PORT_ENV,
+  BRIDGE_TCP_HOST_ENV,
+  BRIDGE_TCP_BIND_HOST_ENV,
   BRIDGE_HOME_ENV,
   DEFAULT_WINDOWS_TCP_PORT,
   formatBridgeTransport,
+  getBridgeListenTarget,
   getBridgeTcpPort,
   getBridgeTransport,
+  getProxyConfigPath,
   getDaemonPidPath,
   getDefaultBrowser,
   getBridgeDir,
@@ -202,6 +206,65 @@ test('getBridgeTransport returns tcp mode when BBX_TCP_PORT is set', async () =>
       );
     }
   );
+});
+
+test('getBridgeTransport honors tcp host and bind host overrides', async () => {
+  await withMockedConfigEnvironment(
+    {
+      env: {
+        [BRIDGE_TCP_PORT_ENV]: '9443',
+        [BRIDGE_TCP_HOST_ENV]: '10.0.0.5',
+        [BRIDGE_TCP_BIND_HOST_ENV]: '0.0.0.0',
+      },
+    },
+    async () => {
+      const transport = getBridgeTransport();
+      assert.deepEqual(transport, {
+        type: 'tcp',
+        host: '10.0.0.5',
+        bindHost: '0.0.0.0',
+        port: 9443,
+        label: '10.0.0.5:9443 (bind 0.0.0.0)',
+      });
+      assert.deepEqual(getBridgeListenTarget(transport), {
+        host: '0.0.0.0',
+        port: 9443,
+      });
+    }
+  );
+});
+
+test('getBridgeTransport reads enabled proxy config when tcp env is unset', async () => {
+  const bridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-proxy-config-test-'));
+  try {
+    await fs.promises.writeFile(
+      path.join(bridgeHome, 'proxy.json'),
+      JSON.stringify({ enabled: true, port: 9223, bindHost: '0.0.0.0' }),
+      'utf8'
+    );
+
+    await withMockedConfigEnvironment(
+      {
+        env: {
+          [BRIDGE_HOME_ENV]: bridgeHome,
+          [BRIDGE_TCP_PORT_ENV]: undefined,
+        },
+      },
+      async () => {
+        assert.equal(getProxyConfigPath(), path.join(bridgeHome, 'proxy.json'));
+        const transport = getBridgeTransport();
+        assert.deepEqual(transport, {
+          type: 'tcp',
+          host: '127.0.0.1',
+          bindHost: '0.0.0.0',
+          port: 9223,
+          label: '127.0.0.1:9223 (bind 0.0.0.0)',
+        });
+      }
+    );
+  } finally {
+    await fs.promises.rm(bridgeHome, { recursive: true, force: true });
+  }
 });
 
 test('getBridgeTcpPort rejects invalid values', async () => {

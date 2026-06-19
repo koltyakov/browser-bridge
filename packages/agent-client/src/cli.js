@@ -4,12 +4,16 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import {
   applyWindowsTcpTransportDefaults,
+  getProxyConfigPath,
+  readProxyConfig,
   SUPPORTED_BROWSERS,
 } from '../../native-host/src/config.js';
+import { writeBridgeAuthToken } from '../../native-host/src/auth-token.js';
 import { restartBridgeDaemon } from '../../native-host/src/daemon-process.js';
 import { uninstallNativeManifest } from '../../native-host/src/install-manifest.js';
 import {
@@ -47,6 +51,15 @@ import {
   removeMcpConfig,
 } from './mcp-config.js';
 import { getDoctorReport, requestBridge, resolveRef } from './runtime.js';
+import {
+  addRemoteDestination,
+  createBridgeClientForDestination,
+  listBridgeDestinations,
+  normalizeDestinationId,
+  parseRemoteEndpoint,
+  readRemoteConfig,
+  removeRemoteDestination,
+} from './remotes.js';
 import { collectSetupStatus } from './setup-status.js';
 import { annotateBridgeSummary, summarizeBridgeResponse } from './subagent.js';
 
@@ -380,6 +393,16 @@ if (command === 'mcp') {
   }
   process.stderr.write('Usage: bbx mcp <serve|config>\n');
   process.exit(1);
+}
+
+if (command === 'proxy') {
+  await handleProxyCommand(rest);
+  process.exit(0);
+}
+
+if (command === 'remote') {
+  await handleRemoteCommand(rest);
+  process.exit(0);
 }
 
 const clientTimeoutMs = getClientTimeoutOverride();
@@ -826,6 +849,247 @@ async function main() {
   } finally {
     await client.close();
   }
+}
+
+/**
+ * @param {string[]} args
+ * @returns {Promise<void>}
+ */
+async function handleProxyCommand(args) {
+  const [subcommand, ...restArgs] = args;
+  if (subcommand === 'enable') {
+    const options = parseProxyEnableArgs(restArgs);
+    const token = options.token ?? randomUUID();
+    await writeBridgeAuthToken(token);
+    const configPath = getProxyConfigPath();
+    await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
+    await fs.promises.writeFile(
+      configPath,
+      `${JSON.stringify(
+        {
+          enabled: true,
+          port: options.port,
+          bindHost: options.bindHost,
+          token,
+        },
+        null,
+        2
+      )}\n`,
+      { encoding: 'utf8', mode: 0o600 }
+    );
+    const result = await restartBridgeDaemon();
+    const exampleHost = getProxyExampleHost(options.bindHost);
+    process.stdout.write(
+      [
+        `Browser Bridge proxy enabled on ${options.bindHost}:${options.port}.`,
+        '',
+        `Token: ${token}`,
+        `Config: ${configPath}`,
+        `Daemon: ${result.previouslyRunning ? 'restarted' : 'started'} (pid ${result.pid})`,
+        '',
+        'On your dev machine, add this remote:',
+        '',
+        `bbx remote add <name> <host:port> --token ${token}`,
+        '',
+        'Example:',
+        '',
+        `bbx remote add remote-bbx ${exampleHost}:${options.port} --token ${token}`,
+        '',
+      ].join('\n')
+    );
+    return;
+  }
+
+  if (subcommand === 'disable') {
+    const configPath = getProxyConfigPath();
+    await fs.promises.rm(configPath, { force: true });
+    const result = await restartBridgeDaemon();
+    process.stdout.write(
+      `Browser Bridge proxy disabled. Daemon ${result.previouslyRunning ? 'restarted' : 'started'}.\n`
+    );
+    return;
+  }
+
+  if (subcommand === 'status') {
+    const config = readProxyConfig();
+    if (!config) {
+      process.stdout.write('Browser Bridge proxy is disabled.\n');
+      return;
+    }
+    process.stdout.write(
+      [
+        `Browser Bridge proxy is enabled on ${config.bindHost}:${config.port}.`,
+        `Config: ${getProxyConfigPath()}`,
+        '',
+      ].join('\n')
+    );
+    return;
+  }
+
+  throw new Error('Usage: bbx proxy <enable|disable|status>');
+}
+
+/**
+ * @param {string[]} args
+ * @returns {{ port: number, bindHost: string, token?: string }}
+ */
+function parseProxyEnableArgs(args) {
+  /** @type {{ port: number, bindHost: string, token?: string }} */
+  const options = { port: 9223, bindHost: '0.0.0.0' };
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--port') {
+      options.port = parseIntArg(args[++index] || '', 'port');
+      continue;
+    }
+    if (arg === '--bind-host') {
+      options.bindHost = args[++index] || '';
+      if (!options.bindHost.trim()) {
+        throw new Error('--bind-host requires a value.');
+      }
+      continue;
+    }
+    if (arg === '--token') {
+      options.token = args[++index] || '';
+      if (!options.token.trim()) {
+        throw new Error('--token requires a value.');
+      }
+      continue;
+    }
+    throw new Error(`Unknown proxy enable option "${arg}".`);
+  }
+  if (options.port < 1 || options.port > 65535) {
+    throw new Error('port must be an integer between 1 and 65535.');
+  }
+  return options;
+}
+
+/**
+ * @param {string} bindHost
+ * @returns {string}
+ */
+function getProxyExampleHost(bindHost) {
+  if (bindHost !== '0.0.0.0' && bindHost !== '::') {
+    return bindHost;
+  }
+
+  for (const entries of Object.values(os.networkInterfaces())) {
+    for (const entry of entries ?? []) {
+      if (!entry.internal && entry.family === 'IPv4') {
+        return entry.address;
+      }
+    }
+  }
+
+  return '<host>';
+}
+
+/**
+ * @param {string[]} args
+ * @returns {Promise<void>}
+ */
+async function handleRemoteCommand(args) {
+  const [subcommand, ...restArgs] = args;
+  if (subcommand === 'add') {
+    const [name, endpoint, ...optionArgs] = restArgs;
+    if (!name || !endpoint) {
+      throw new Error('Usage: bbx remote add <name> <host:port> --token <token>');
+    }
+    const token = parseRemoteTokenOption(optionArgs);
+    const { host, port } = parseRemoteEndpoint(endpoint);
+    const remote = await addRemoteDestination({
+      id: normalizeDestinationId(name),
+      host,
+      port,
+      token,
+    });
+    process.stdout.write(
+      `Remote destination "${remote.id}" saved (${remote.host}:${remote.port}).\n`
+    );
+    return;
+  }
+
+  if (subcommand === 'remove') {
+    const [name] = restArgs;
+    if (!name) {
+      throw new Error('Usage: bbx remote remove <name>');
+    }
+    const removed = await removeRemoteDestination(name);
+    process.stdout.write(
+      removed
+        ? `Remote destination "${name}" removed.\n`
+        : `Remote destination "${name}" was not configured.\n`
+    );
+    return;
+  }
+
+  if (subcommand === 'list') {
+    const config = await readRemoteConfig();
+    if (config.remotes.length === 0) {
+      process.stdout.write('No remote destinations configured.\n');
+      return;
+    }
+    process.stdout.write(
+      `${config.remotes.map((remote) => `${remote.id}\t${remote.host}:${remote.port}`).join('\n')}\n`
+    );
+    return;
+  }
+
+  if (subcommand === 'test') {
+    const [name] = restArgs;
+    if (!name) {
+      throw new Error('Usage: bbx remote test <name>');
+    }
+    const remoteClient = await createBridgeClientForDestination(name);
+    try {
+      await remoteClient.connect();
+      const response = await remoteClient.request({ method: 'health.ping' });
+      process.stdout.write(
+        response.ok
+          ? `Remote destination "${name}" is reachable.\n`
+          : `Remote destination "${name}" failed: ${response.error.message}\n`
+      );
+    } finally {
+      await remoteClient.close();
+    }
+    return;
+  }
+
+  if (subcommand === 'destinations') {
+    const destinations = await listBridgeDestinations();
+    process.stdout.write(
+      `${destinations
+        .map((destination) =>
+          destination.local
+            ? `${destination.id}\tlocal`
+            : `${destination.id}\t${destination.host}:${destination.port}`
+        )
+        .join('\n')}\n`
+    );
+    return;
+  }
+
+  throw new Error('Usage: bbx remote <add|remove|list|test|destinations>');
+}
+
+/**
+ * @param {string[]} args
+ * @returns {string}
+ */
+function parseRemoteTokenOption(args) {
+  let token = '';
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--token') {
+      token = args[++index] || '';
+      continue;
+    }
+    throw new Error(`Unknown remote add option "${arg}".`);
+  }
+  if (!token.trim()) {
+    throw new Error('Usage: bbx remote add <name> <host:port> --token <token>');
+  }
+  return token.trim();
 }
 
 /**

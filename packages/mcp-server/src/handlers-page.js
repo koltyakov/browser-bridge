@@ -5,6 +5,7 @@ import {
   DEFAULT_NETWORK_LIMIT,
   METHOD_SET,
 } from '../../protocol/src/index.js';
+import { createBridgeClientForDestination } from '../../agent-client/src/remotes.js';
 import {
   annotateBridgeSummary,
   applyLimitBudgetPreset,
@@ -65,7 +66,7 @@ export const PAGE_ACTIONS = {
 };
 
 /**
- * @param {{ action: string, expression?: string, awaitPromise?: boolean, timeoutMs?: number, returnByValue?: boolean, level?: string, clear?: boolean, limit?: number, type?: string, keys?: string[], textBudget?: number, urlPattern?: string, tabId?: number, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @param {{ action: string, expression?: string, awaitPromise?: boolean, timeoutMs?: number, returnByValue?: boolean, level?: string, clear?: boolean, limit?: number, type?: string, keys?: string[], textBudget?: number, urlPattern?: string, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handlePageTool(args) {
@@ -96,11 +97,12 @@ export async function handlePageTool(args) {
   return callBridgeTool(entry.method, entry.params(normalizedArgs), {
     tabId: typeof normalizedArgs.tabId === 'number' ? normalizedArgs.tabId : null,
     tokenBudget: getToolTokenBudget(normalizedArgs),
+    destinationId: normalizedArgs.destinationId ?? null,
   });
 }
 
 /**
- * @param {{ calls?: Array<{ method?: string, params?: Record<string, unknown>, tabId?: number, budgetPreset?: 'quick' | 'normal' | 'deep' }> }} args
+ * @param {{ calls?: Array<{ method?: string, params?: Record<string, unknown>, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }> }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleBatchTool(args) {
@@ -149,20 +151,30 @@ export async function handleBatchTool(args) {
             : null
           : null;
         const tokenBudget = getToolTokenBudget(call);
+        const destinationId = typeof call.destinationId === 'string' ? call.destinationId : null;
 
         const startTime = Date.now();
+        const callClient = destinationId
+          ? await createBridgeClientForDestination(destinationId)
+          : client;
         try {
-          const response = await requestBridgeWithRetry(client, method, call.params || {}, {
+          if (destinationId) {
+            await callClient.connect();
+          }
+          const response = await requestBridgeWithRetry(callClient, method, call.params || {}, {
             tabId,
             source: REQUEST_SOURCE,
             tokenBudget,
           });
-          return summarizeBatchResponseItem({
-            method,
-            tabId,
-            response,
-            durationMs: Date.now() - startTime,
-          });
+          return {
+            destinationId,
+            ...summarizeBatchResponseItem({
+              method,
+              tabId,
+              response,
+              durationMs: Date.now() - startTime,
+            }),
+          };
         } catch (error) {
           return summarizeBatchErrorItem({
             method,
@@ -170,6 +182,10 @@ export async function handleBatchTool(args) {
             error,
             durationMs: Date.now() - startTime,
           });
+        } finally {
+          if (destinationId) {
+            await callClient.close();
+          }
         }
       })
     );
@@ -191,7 +207,7 @@ export async function handleBatchTool(args) {
 }
 
 /**
- * @param {{ method: string, params?: Record<string, unknown>, tabId?: number }} args
+ * @param {{ method: string, params?: Record<string, unknown>, tabId?: number, destinationId?: string }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleRawCallTool(args) {
@@ -199,34 +215,37 @@ export async function handleRawCallTool(args) {
     return summarizeToolError(`Unknown bridge method "${args.method}".`);
   }
 
-  return withToolClient(async (client) => {
-    const response = await requestBridgeWithRetry(
-      client,
-      /** @type {BridgeMethod} */ (args.method),
-      args.params || {},
-      {
-        tabId: typeof args.tabId === 'number' ? args.tabId : null,
-        source: REQUEST_SOURCE,
-      }
-    );
-
-    if (!response.ok) {
-      return createToolResult(
-        response.error.message,
+  return withToolClient(
+    async (client) => {
+      const response = await requestBridgeWithRetry(
+        client,
+        /** @type {BridgeMethod} */ (args.method),
+        args.params || {},
         {
-          ok: false,
-          error: response.error,
-          response,
-        },
-        true
+          tabId: typeof args.tabId === 'number' ? args.tabId : null,
+          source: REQUEST_SOURCE,
+        }
       );
-    }
 
-    return createToolResult(`Called ${args.method}.`, {
-      ok: true,
-      response: response.result,
-    });
-  });
+      if (!response.ok) {
+        return createToolResult(
+          response.error.message,
+          {
+            ok: false,
+            error: response.error,
+            response,
+          },
+          true
+        );
+      }
+
+      return createToolResult(`Called ${args.method}.`, {
+        ok: true,
+        response: response.result,
+      });
+    },
+    { destinationId: args.destinationId ?? null }
+  );
 }
 
 /**
@@ -290,7 +309,7 @@ const INVESTIGATE_SCOPES = {
 };
 
 /**
- * @param {{ objective: string, scope?: 'quick' | 'normal' | 'deep', tabId?: number, selector?: string }} args
+ * @param {{ objective: string, scope?: 'quick' | 'normal' | 'deep', tabId?: number, destinationId?: string, selector?: string }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleInvestigateTool(args) {
@@ -305,62 +324,65 @@ export async function handleInvestigateTool(args) {
     return summarizeToolError(`Unsupported investigation scope "${scopeName}".`);
   }
 
-  return withToolClient(async (client) => {
-    const requestedTabId = typeof args.tabId === 'number' ? args.tabId : null;
+  return withToolClient(
+    async (client) => {
+      const requestedTabId = typeof args.tabId === 'number' ? args.tabId : null;
 
-    /** @type {Array<{ method: string, ok: boolean, summary: string, evidence: unknown, durationMs: number }>} */
-    const stepResults = [];
+      /** @type {Array<{ method: string, ok: boolean, summary: string, evidence: unknown, durationMs: number }>} */
+      const stepResults = [];
 
-    for (const step of scope.steps) {
-      const startTime = Date.now();
-      try {
-        const response = await requestBridgeWithRetry(client, step.method, step.params(args), {
-          tabId: requestedTabId,
-          source: REQUEST_SOURCE,
-          tokenBudget: null,
-        });
-        const bridgeSummary = annotateBridgeSummary(
-          summarizeBridgeResponse(response, step.method),
-          response
-        );
-        stepResults.push({
-          method: step.method,
-          ok: bridgeSummary.ok,
-          summary: bridgeSummary.summary,
-          evidence: bridgeSummary.evidence,
-          durationMs: Date.now() - startTime,
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        stepResults.push({
-          method: step.method,
-          ok: false,
-          summary: `ERROR: ${message}`,
-          evidence: null,
-          durationMs: Date.now() - startTime,
-        });
+      for (const step of scope.steps) {
+        const startTime = Date.now();
+        try {
+          const response = await requestBridgeWithRetry(client, step.method, step.params(args), {
+            tabId: requestedTabId,
+            source: REQUEST_SOURCE,
+            tokenBudget: null,
+          });
+          const bridgeSummary = annotateBridgeSummary(
+            summarizeBridgeResponse(response, step.method),
+            response
+          );
+          stepResults.push({
+            method: step.method,
+            ok: bridgeSummary.ok,
+            summary: bridgeSummary.summary,
+            evidence: bridgeSummary.evidence,
+            durationMs: Date.now() - startTime,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          stepResults.push({
+            method: step.method,
+            ok: false,
+            summary: `ERROR: ${message}`,
+            evidence: null,
+            durationMs: Date.now() - startTime,
+          });
+        }
       }
-    }
 
-    const failedSteps = stepResults.filter((s) => !s.ok);
-    const allOk = failedSteps.length === 0;
-    const totalDuration = stepResults.reduce((sum, s) => sum + s.durationMs, 0);
+      const failedSteps = stepResults.filter((s) => !s.ok);
+      const allOk = failedSteps.length === 0;
+      const totalDuration = stepResults.reduce((sum, s) => sum + s.durationMs, 0);
 
-    const summaryText = allOk
-      ? `Investigation complete (${scope.label}, ${stepResults.length} steps, ${totalDuration}ms). Objective: ${objective}`
-      : `Investigation partial (${scope.label}, ${stepResults.length} steps, ${failedSteps.length} failed, ${totalDuration}ms). Objective: ${objective}`;
+      const summaryText = allOk
+        ? `Investigation complete (${scope.label}, ${stepResults.length} steps, ${totalDuration}ms). Objective: ${objective}`
+        : `Investigation partial (${scope.label}, ${stepResults.length} steps, ${failedSteps.length} failed, ${totalDuration}ms). Objective: ${objective}`;
 
-    return createToolResult(
-      summaryText,
-      {
-        ok: allOk,
-        objective,
-        scope: scopeName,
-        heuristicFallback: true,
-        steps: stepResults,
-        failedSteps,
-      },
-      !allOk
-    );
-  });
+      return createToolResult(
+        summaryText,
+        {
+          ok: allOk,
+          objective,
+          scope: scopeName,
+          heuristicFallback: true,
+          steps: stepResults,
+          failedSteps,
+        },
+        !allOk
+      );
+    },
+    { destinationId: args.destinationId ?? null }
+  );
 }

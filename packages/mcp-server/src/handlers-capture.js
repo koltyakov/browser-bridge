@@ -81,7 +81,7 @@ function isValidCaptureRegion(rect) {
 }
 
 /**
- * @param {{ action: string, elementRef?: string, selector?: string, rect?: Record<string, unknown>, nodeId?: number, tabId?: number, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @param {{ action: string, elementRef?: string, selector?: string, rect?: Record<string, unknown>, nodeId?: number, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleCaptureTool(args) {
@@ -115,7 +115,7 @@ export const INPUT_ACTION_METHODS = {
 };
 
 /**
- * @param {{ action: string, elementRef?: string, selector?: string, button?: string, clickCount?: number, text?: string, clear?: boolean, submit?: boolean, key?: string, code?: string, modifiers?: string[], checked?: boolean, values?: string[], labels?: string[], indexes?: number[], duration?: number, sourceElementRef?: string, sourceSelector?: string, destinationElementRef?: string, destinationSelector?: string, offsetX?: number, offsetY?: number, tabId?: number, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @param {{ action: string, elementRef?: string, selector?: string, button?: string, clickCount?: number, text?: string, clear?: boolean, submit?: boolean, key?: string, code?: string, modifiers?: string[], checked?: boolean, values?: string[], labels?: string[], indexes?: number[], duration?: number, sourceElementRef?: string, sourceSelector?: string, destinationElementRef?: string, destinationSelector?: string, offsetX?: number, offsetY?: number, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleInputTool(args) {
@@ -134,207 +134,210 @@ export async function handleInputTool(args) {
     return summarizeToolError('values, labels, or indexes are required for input.select_option.');
   }
 
-  return withToolClient(async (client) => {
-    const requestedTabId = typeof args.tabId === 'number' ? args.tabId : null;
-    const elementTarget = async () => ({
-      elementRef: await resolveToolRef(client, args, requestedTabId),
-    });
+  return withToolClient(
+    async (client) => {
+      const requestedTabId = typeof args.tabId === 'number' ? args.tabId : null;
+      const elementTarget = async () => ({
+        elementRef: await resolveToolRef(client, args, requestedTabId),
+      });
 
-    switch (args.action) {
-      case 'click': {
-        const response = await requestBridgeWithRetry(
-          client,
-          'input.click',
-          {
-            target: await elementTarget(),
-            button: args.button,
-            clickCount: args.clickCount,
-            modifiers: args.modifiers,
-          },
-          {
-            tabId: requestedTabId,
-            source: REQUEST_SOURCE,
-            tokenBudget: getToolTokenBudget(args),
-          }
-        );
-        return summarizeToolResponse(response, 'input.click');
-      }
-      case 'focus': {
-        const response = await requestBridgeWithRetry(
-          client,
-          'input.focus',
-          {
-            target: await elementTarget(),
-          },
-          {
-            tabId: requestedTabId,
-            source: REQUEST_SOURCE,
-            tokenBudget: getToolTokenBudget(args),
-          }
-        );
-        return summarizeToolResponse(response, 'input.focus');
-      }
-      case 'type': {
-        const response = await requestBridgeWithRetry(
-          client,
-          'input.type',
-          {
-            target: await elementTarget(),
-            text: args.text,
-            clear: args.clear,
-            submit: args.submit,
-            modifiers: args.modifiers,
-          },
-          {
-            tabId: requestedTabId,
-            source: REQUEST_SOURCE,
-            tokenBudget: getToolTokenBudget(args),
-          }
-        );
-        return summarizeToolResponse(response, 'input.type');
-      }
-      case 'press_key': {
-        const target = args.elementRef || args.selector ? await elementTarget() : undefined;
-        const response = await requestBridgeWithRetry(
-          client,
-          'input.press_key',
-          {
-            target,
-            key: args.key,
-            modifiers: args.modifiers,
-          },
-          {
-            tabId: requestedTabId,
-            source: REQUEST_SOURCE,
-            tokenBudget: getToolTokenBudget(args),
-          }
-        );
-        return summarizeToolResponse(response, 'input.press_key');
-      }
-      case 'cdp_press_key': {
-        const response = await requestBridgeWithRetry(
-          client,
-          'cdp.dispatch_key_event',
-          {
-            key: args.key,
-            code: args.code,
-            modifiers: args.modifiers,
-          },
-          {
-            tabId: requestedTabId,
-            source: REQUEST_SOURCE,
-            tokenBudget: getToolTokenBudget(args),
-          }
-        );
-        return summarizeToolResponse(response, 'cdp.dispatch_key_event');
-      }
-      case 'set_checked': {
-        const response = await requestBridgeWithRetry(
-          client,
-          'input.set_checked',
-          {
-            target: await elementTarget(),
-            checked: args.checked,
-          },
-          {
-            tabId: requestedTabId,
-            source: REQUEST_SOURCE,
-            tokenBudget: getToolTokenBudget(args),
-          }
-        );
-        return summarizeToolResponse(response, 'input.set_checked');
-      }
-      case 'select_option': {
-        const response = await requestBridgeWithRetry(
-          client,
-          'input.select_option',
-          {
-            target: await elementTarget(),
-            values: args.values,
-            labels: args.labels,
-            indexes: args.indexes,
-          },
-          {
-            tabId: requestedTabId,
-            source: REQUEST_SOURCE,
-            tokenBudget: getToolTokenBudget(args),
-          }
-        );
-        return summarizeToolResponse(response, 'input.select_option');
-      }
-      case 'hover': {
-        const response = await requestBridgeWithRetry(
-          client,
-          'input.hover',
-          {
-            target: await elementTarget(),
-            duration: args.duration,
-            modifiers: args.modifiers,
-          },
-          {
-            tabId: requestedTabId,
-            source: REQUEST_SOURCE,
-            tokenBudget: getToolTokenBudget(args),
-          }
-        );
-        return summarizeToolResponse(response, 'input.hover');
-      }
-      case 'drag': {
-        const source = {
-          elementRef:
-            args.sourceElementRef ||
-            (args.sourceSelector
-              ? await resolveRef(client, args.sourceSelector, requestedTabId, REQUEST_SOURCE)
-              : ''),
-        };
-        const destination = {
-          elementRef:
-            args.destinationElementRef ||
-            (args.destinationSelector
-              ? await resolveRef(client, args.destinationSelector, requestedTabId, REQUEST_SOURCE)
-              : ''),
-        };
-        if (!source.elementRef || !destination.elementRef) {
-          return summarizeToolError(
-            'sourceElementRef/sourceSelector and destinationElementRef/destinationSelector are required for drag.'
+      switch (args.action) {
+        case 'click': {
+          const response = await requestBridgeWithRetry(
+            client,
+            'input.click',
+            {
+              target: await elementTarget(),
+              button: args.button,
+              clickCount: args.clickCount,
+              modifiers: args.modifiers,
+            },
+            {
+              tabId: requestedTabId,
+              source: REQUEST_SOURCE,
+              tokenBudget: getToolTokenBudget(args),
+            }
           );
+          return summarizeToolResponse(response, 'input.click');
         }
-        const response = await requestBridgeWithRetry(
-          client,
-          'input.drag',
-          {
-            source,
-            destination,
-            offsetX: args.offsetX,
-            offsetY: args.offsetY,
-          },
-          {
-            tabId: requestedTabId,
-            source: REQUEST_SOURCE,
-            tokenBudget: getToolTokenBudget(args),
+        case 'focus': {
+          const response = await requestBridgeWithRetry(
+            client,
+            'input.focus',
+            {
+              target: await elementTarget(),
+            },
+            {
+              tabId: requestedTabId,
+              source: REQUEST_SOURCE,
+              tokenBudget: getToolTokenBudget(args),
+            }
+          );
+          return summarizeToolResponse(response, 'input.focus');
+        }
+        case 'type': {
+          const response = await requestBridgeWithRetry(
+            client,
+            'input.type',
+            {
+              target: await elementTarget(),
+              text: args.text,
+              clear: args.clear,
+              submit: args.submit,
+              modifiers: args.modifiers,
+            },
+            {
+              tabId: requestedTabId,
+              source: REQUEST_SOURCE,
+              tokenBudget: getToolTokenBudget(args),
+            }
+          );
+          return summarizeToolResponse(response, 'input.type');
+        }
+        case 'press_key': {
+          const target = args.elementRef || args.selector ? await elementTarget() : undefined;
+          const response = await requestBridgeWithRetry(
+            client,
+            'input.press_key',
+            {
+              target,
+              key: args.key,
+              modifiers: args.modifiers,
+            },
+            {
+              tabId: requestedTabId,
+              source: REQUEST_SOURCE,
+              tokenBudget: getToolTokenBudget(args),
+            }
+          );
+          return summarizeToolResponse(response, 'input.press_key');
+        }
+        case 'cdp_press_key': {
+          const response = await requestBridgeWithRetry(
+            client,
+            'cdp.dispatch_key_event',
+            {
+              key: args.key,
+              code: args.code,
+              modifiers: args.modifiers,
+            },
+            {
+              tabId: requestedTabId,
+              source: REQUEST_SOURCE,
+              tokenBudget: getToolTokenBudget(args),
+            }
+          );
+          return summarizeToolResponse(response, 'cdp.dispatch_key_event');
+        }
+        case 'set_checked': {
+          const response = await requestBridgeWithRetry(
+            client,
+            'input.set_checked',
+            {
+              target: await elementTarget(),
+              checked: args.checked,
+            },
+            {
+              tabId: requestedTabId,
+              source: REQUEST_SOURCE,
+              tokenBudget: getToolTokenBudget(args),
+            }
+          );
+          return summarizeToolResponse(response, 'input.set_checked');
+        }
+        case 'select_option': {
+          const response = await requestBridgeWithRetry(
+            client,
+            'input.select_option',
+            {
+              target: await elementTarget(),
+              values: args.values,
+              labels: args.labels,
+              indexes: args.indexes,
+            },
+            {
+              tabId: requestedTabId,
+              source: REQUEST_SOURCE,
+              tokenBudget: getToolTokenBudget(args),
+            }
+          );
+          return summarizeToolResponse(response, 'input.select_option');
+        }
+        case 'hover': {
+          const response = await requestBridgeWithRetry(
+            client,
+            'input.hover',
+            {
+              target: await elementTarget(),
+              duration: args.duration,
+              modifiers: args.modifiers,
+            },
+            {
+              tabId: requestedTabId,
+              source: REQUEST_SOURCE,
+              tokenBudget: getToolTokenBudget(args),
+            }
+          );
+          return summarizeToolResponse(response, 'input.hover');
+        }
+        case 'drag': {
+          const source = {
+            elementRef:
+              args.sourceElementRef ||
+              (args.sourceSelector
+                ? await resolveRef(client, args.sourceSelector, requestedTabId, REQUEST_SOURCE)
+                : ''),
+          };
+          const destination = {
+            elementRef:
+              args.destinationElementRef ||
+              (args.destinationSelector
+                ? await resolveRef(client, args.destinationSelector, requestedTabId, REQUEST_SOURCE)
+                : ''),
+          };
+          if (!source.elementRef || !destination.elementRef) {
+            return summarizeToolError(
+              'sourceElementRef/sourceSelector and destinationElementRef/destinationSelector are required for drag.'
+            );
           }
-        );
-        return summarizeToolResponse(response, 'input.drag');
+          const response = await requestBridgeWithRetry(
+            client,
+            'input.drag',
+            {
+              source,
+              destination,
+              offsetX: args.offsetX,
+              offsetY: args.offsetY,
+            },
+            {
+              tabId: requestedTabId,
+              source: REQUEST_SOURCE,
+              tokenBudget: getToolTokenBudget(args),
+            }
+          );
+          return summarizeToolResponse(response, 'input.drag');
+        }
+        case 'scroll_into_view': {
+          const response = await requestBridgeWithRetry(
+            client,
+            'input.scroll_into_view',
+            {
+              target: await elementTarget(),
+            },
+            {
+              tabId: requestedTabId,
+              source: REQUEST_SOURCE,
+              tokenBudget: getToolTokenBudget(args),
+            }
+          );
+          return summarizeToolResponse(response, 'input.scroll_into_view');
+        }
+        default:
+          return summarizeToolError(`Unsupported input action "${args.action}".`);
       }
-      case 'scroll_into_view': {
-        const response = await requestBridgeWithRetry(
-          client,
-          'input.scroll_into_view',
-          {
-            target: await elementTarget(),
-          },
-          {
-            tabId: requestedTabId,
-            source: REQUEST_SOURCE,
-            tokenBudget: getToolTokenBudget(args),
-          }
-        );
-        return summarizeToolResponse(response, 'input.scroll_into_view');
-      }
-      default:
-        return summarizeToolError(`Unsupported input action "${args.action}".`);
-    }
-  });
+    },
+    { destinationId: args.destinationId ?? null }
+  );
 }
 
 /**

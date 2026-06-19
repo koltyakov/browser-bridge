@@ -7,9 +7,21 @@ import path from 'node:path';
 export const APP_NAME = 'com.browserbridge.browser_bridge';
 export const BRIDGE_HOME_ENV = 'BROWSER_BRIDGE_HOME';
 export const BRIDGE_TCP_PORT_ENV = 'BBX_TCP_PORT';
+export const BRIDGE_TCP_HOST_ENV = 'BBX_TCP_HOST';
+export const BRIDGE_TCP_BIND_HOST_ENV = 'BBX_TCP_BIND_HOST';
 export const DEFAULT_WINDOWS_TCP_PORT = 9223;
+export const PROXY_CONFIG_FILENAME = 'proxy.json';
 
-/** @typedef {{ type: 'socket', socketPath: string, label: string } | { type: 'tcp', host: string, port: number, label: string }} BridgeTransport */
+/** @typedef {{ type: 'socket', socketPath: string, label: string } | { type: 'tcp', host: string, port: number, bindHost?: string, label: string }} BridgeTransport */
+
+/**
+ * @typedef {{
+ *   enabled: boolean,
+ *   port: number,
+ *   bindHost: string,
+ *   token?: string,
+ * }} BridgeProxyConfig
+ */
 
 /**
  * The official Chrome Web Store extension ID used when callers do not provide
@@ -64,6 +76,72 @@ export function getSocketPath(env = process.env) {
 }
 
 /**
+ * @param {NodeJS.ProcessEnv} [env=process.env]
+ * @returns {string}
+ */
+export function getProxyConfigPath(env = process.env) {
+  return path.join(getBridgeDir(env), PROXY_CONFIG_FILENAME);
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string | null}
+ */
+function normalizeHost(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const host = value.trim();
+  if (!host || /[\s/]/u.test(host)) {
+    return null;
+  }
+  return host;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {number | null}
+ */
+function normalizePort(value) {
+  if (typeof value !== 'number' && typeof value !== 'string') {
+    return null;
+  }
+  const raw = String(value).trim();
+  const port = Number.parseInt(raw, 10);
+  if (!Number.isInteger(port) || String(port) !== raw || port < 1 || port > 65535) {
+    return null;
+  }
+  return port;
+}
+
+/**
+ * @param {NodeJS.ProcessEnv} [env=process.env]
+ * @returns {BridgeProxyConfig | null}
+ */
+export function readProxyConfig(env = process.env) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(getProxyConfigPath(env), 'utf8'));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return null;
+    }
+    const record = /** @type {Record<string, unknown>} */ (parsed);
+    const port = normalizePort(record.port);
+    const bindHost = normalizeHost(record.bindHost) ?? '0.0.0.0';
+    if (record.enabled !== true || port === null) {
+      return null;
+    }
+    return {
+      enabled: true,
+      port,
+      bindHost,
+      ...(typeof record.token === 'string' ? { token: record.token } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * @param {string} socketPath
  * @returns {BridgeTransport}
  */
@@ -80,12 +158,13 @@ export function createSocketBridgeTransport(socketPath) {
  * @param {string} [host='127.0.0.1']
  * @returns {BridgeTransport}
  */
-export function createTcpBridgeTransport(port, host = '127.0.0.1') {
+export function createTcpBridgeTransport(port, host = '127.0.0.1', bindHost = host) {
   return {
     type: 'tcp',
     host,
     port,
-    label: `${host}:${port}`,
+    ...(bindHost !== host ? { bindHost } : {}),
+    label: bindHost !== host ? `${host}:${port} (bind ${bindHost})` : `${host}:${port}`,
   };
 }
 
@@ -107,6 +186,38 @@ export function getBridgeTcpPort(env = process.env) {
   }
 
   return port;
+}
+
+/**
+ * @param {NodeJS.ProcessEnv} [env=process.env]
+ * @returns {string}
+ */
+export function getBridgeTcpHost(env = process.env) {
+  const raw = env[BRIDGE_TCP_HOST_ENV];
+  if (raw == null || raw === '') {
+    return '127.0.0.1';
+  }
+  const host = normalizeHost(raw);
+  if (!host) {
+    throw new Error(`${BRIDGE_TCP_HOST_ENV} must be a hostname or IP address.`);
+  }
+  return host;
+}
+
+/**
+ * @param {NodeJS.ProcessEnv} [env=process.env]
+ * @returns {string | null}
+ */
+export function getBridgeTcpBindHost(env = process.env) {
+  const raw = env[BRIDGE_TCP_BIND_HOST_ENV];
+  if (raw == null || raw === '') {
+    return null;
+  }
+  const host = normalizeHost(raw);
+  if (!host) {
+    throw new Error(`${BRIDGE_TCP_BIND_HOST_ENV} must be a hostname or IP address.`);
+  }
+  return host;
 }
 
 /**
@@ -139,7 +250,13 @@ export function applyWindowsTcpTransportDefaults(env = process.env) {
 export function getBridgeTransport(env = process.env) {
   const tcpPort = getBridgeTcpPort(env);
   if (tcpPort !== null) {
-    return createTcpBridgeTransport(tcpPort);
+    const host = getBridgeTcpHost(env);
+    return createTcpBridgeTransport(tcpPort, host, getBridgeTcpBindHost(env) ?? host);
+  }
+
+  const proxyConfig = readProxyConfig(env);
+  if (proxyConfig) {
+    return createTcpBridgeTransport(proxyConfig.port, '127.0.0.1', proxyConfig.bindHost);
   }
 
   return createSocketBridgeTransport(getSocketPath(env));
@@ -151,7 +268,7 @@ export function getBridgeTransport(env = process.env) {
  */
 export function getBridgeListenTarget(transport = getBridgeTransport()) {
   if (transport.type === 'tcp') {
-    return { host: transport.host, port: transport.port };
+    return { host: transport.bindHost ?? transport.host, port: transport.port };
   }
   return transport.socketPath;
 }

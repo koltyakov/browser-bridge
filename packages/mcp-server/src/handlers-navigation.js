@@ -1,29 +1,100 @@
 // @ts-check
 
-import { callBridgeTool, getToolTokenBudget, summarizeToolError } from './handlers-utils.js';
+import { createBridgeClientForDestination } from '../../agent-client/src/remotes.js';
+import {
+  callBridgeTool,
+  createToolResult,
+  getBridgeDestinations,
+  getToolTokenBudget,
+  summarizeToolError,
+} from './handlers-utils.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
 /** @typedef {import('./handlers-utils.js').ToolResult} ToolResult */
 
 /**
- * @param {{ action: string, url?: string, active?: boolean, tabId?: number }} args
+ * @param {{ action: string, url?: string, active?: boolean, tabId?: number, destinationId?: string }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleTabsTool(args) {
   if (args.action === 'list') {
-    return callBridgeTool('tabs.list');
+    if (typeof args.destinationId === 'string') {
+      return callBridgeTool('tabs.list', {}, { destinationId: args.destinationId });
+    }
+    const destinations = await getBridgeDestinations();
+    if (destinations.length === 1) {
+      return callBridgeTool('tabs.list');
+    }
+    const results = await Promise.all(
+      destinations.map(async (destination) => {
+        const client = await createBridgeClientForDestination(
+          destination.local ? null : destination.id
+        );
+        try {
+          await client.connect();
+          const response = await client.request({
+            method: 'tabs.list',
+            meta: { source: 'mcp' },
+          });
+          if (!response.ok) {
+            return {
+              destinationId: destination.id,
+              ok: false,
+              error: response.error,
+              tabs: [],
+            };
+          }
+          const result = /** @type {{ tabs?: Array<Record<string, unknown>> }} */ (response.result);
+          return {
+            destinationId: destination.id,
+            ok: true,
+            tabs: (result.tabs ?? []).map((tab) => ({ destinationId: destination.id, ...tab })),
+          };
+        } catch (error) {
+          return {
+            destinationId: destination.id,
+            ok: false,
+            error: { message: error instanceof Error ? error.message : String(error) },
+            tabs: [],
+          };
+        } finally {
+          await client.close();
+        }
+      })
+    );
+    const tabs = results.flatMap((result) => result.tabs);
+    const failures = results.filter((result) => !result.ok);
+    return createToolResult(
+      failures.length === 0
+        ? `Listed ${tabs.length} tab(s) across ${results.length} destination(s).`
+        : `Listed ${tabs.length} tab(s) with ${failures.length} destination error(s).`,
+      {
+        ok: failures.length === 0,
+        tabs,
+        destinations: results,
+      },
+      false
+    );
   }
   if (args.action === 'create') {
-    return callBridgeTool('tabs.create', {
-      url: args.url,
-      active: args.active,
-    });
+    return callBridgeTool(
+      'tabs.create',
+      {
+        url: args.url,
+        active: args.active,
+      },
+      { destinationId: args.destinationId ?? null }
+    );
   }
   if (args.action === 'close') {
     if (typeof args.tabId !== 'number') {
       return summarizeToolError('tabId is required for tabs.close.');
     }
-    return callBridgeTool('tabs.close', { tabId: args.tabId });
+    return callBridgeTool(
+      'tabs.close',
+      { tabId: args.tabId },
+      { destinationId: args.destinationId ?? null }
+    );
   }
   return summarizeToolError(`Unsupported tabs action "${args.action}".`);
 }
@@ -71,7 +142,7 @@ export const NAVIGATION_ACTIONS = {
 };
 
 /**
- * @param {{ action: string, url?: string, waitForLoad?: boolean, timeoutMs?: number, top?: number, left?: number, behavior?: string, relative?: boolean, width?: number, height?: number, deviceScaleFactor?: number, reset?: boolean, tabId?: number, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @param {{ action: string, url?: string, waitForLoad?: boolean, timeoutMs?: number, top?: number, left?: number, behavior?: string, relative?: boolean, width?: number, height?: number, deviceScaleFactor?: number, reset?: boolean, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleNavigationTool(args) {
@@ -95,5 +166,6 @@ export async function handleNavigationTool(args) {
   return callBridgeTool(entry.method, entry.params(args), {
     tabId: typeof args.tabId === 'number' ? args.tabId : null,
     tokenBudget: getToolTokenBudget(args),
+    destinationId: args.destinationId ?? null,
   });
 }

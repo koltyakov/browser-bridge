@@ -45,6 +45,8 @@ import { MCP_SERVER_INSTRUCTIONS } from './guidance.js';
 export const BUDGET_PRESET_DESCRIPTION = `Budget preset: "quick", "normal", or "deep" (defaults: query ${BUDGET_PRESETS.normal.maxNodes} nodes / depth ${BUDGET_PRESETS.normal.maxDepth} / text ${BUDGET_PRESETS.normal.textBudget}). Numeric fields override the preset when both are provided.`;
 export const TAB_ID_DESCRIPTION =
   'Target a specific tab instead of the active tab in the enabled window.';
+export const DESTINATION_ID_DESCRIPTION =
+  'Optional Browser Bridge destination ID from browser_status/browser_tabs; omit for local.';
 
 const MCP_SERVER_VERSION = loadPackageVersion();
 
@@ -109,7 +111,9 @@ export function createBridgeMcpServer() {
       title: 'Browser Bridge Status',
       description:
         'Check bridge readiness: daemon connectivity, extension state, and window access. Call first to confirm the bridge is usable. If access is not enabled, ask the user to click Enable in the extension popup or side panel, then retry.',
-      inputSchema: {},
+      inputSchema: {
+        destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+      },
     },
     handleStatusTool
   );
@@ -155,7 +159,9 @@ export function createBridgeMcpServer() {
     {
       title: 'Browser Bridge Health',
       description: 'Ping the bridge to verify daemon and extension connectivity.',
-      inputSchema: {},
+      inputSchema: {
+        destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+      },
     },
     handleHealthTool
   );
@@ -173,6 +179,7 @@ export function createBridgeMcpServer() {
         url: z.string().optional().describe('URL for create action'),
         active: z.boolean().optional().describe('Focus the new tab (default: true)'),
         tabId: z.number().int().positive().optional().describe('Tab ID (required for close)'),
+        destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
       },
     },
     handleTabsTool
@@ -199,6 +206,7 @@ export function createBridgeMcpServer() {
           ])
           .describe('DOM operation to perform'),
         tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
+        destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
         budgetPreset: z
           .enum(['quick', 'normal', 'deep'])
           .optional()
@@ -291,6 +299,7 @@ export function createBridgeMcpServer() {
           .enum(['computed', 'matched_rules', 'box_model', 'hit_test'])
           .describe('Style/layout operation to perform'),
         tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
+        destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
         budgetPreset: z
           .enum(['quick', 'normal', 'deep'])
           .optional()
@@ -336,6 +345,7 @@ export function createBridgeMcpServer() {
           ])
           .describe('Page operation to perform'),
         tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
+        destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
         budgetPreset: z
           .enum(['quick', 'normal', 'deep'])
           .optional()
@@ -397,6 +407,7 @@ export function createBridgeMcpServer() {
           .enum(['navigate', 'reload', 'go_back', 'go_forward', 'scroll', 'resize'])
           .describe('Navigation operation to perform'),
         tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
+        destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
         budgetPreset: z
           .enum(['quick', 'normal', 'deep'])
           .optional()
@@ -451,6 +462,7 @@ export function createBridgeMcpServer() {
           ])
           .describe('Input operation to perform'),
         tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
+        destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
         budgetPreset: z
           .enum(['quick', 'normal', 'deep'])
           .optional()
@@ -533,6 +545,7 @@ export function createBridgeMcpServer() {
           .enum(['apply_styles', 'apply_dom', 'list', 'rollback', 'commit_baseline'])
           .describe('Patch operation to perform'),
         tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
+        destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
         budgetPreset: z
           .enum(['quick', 'normal', 'deep'])
           .optional()
@@ -593,6 +606,7 @@ export function createBridgeMcpServer() {
             'element (preferred), region (tight crop), full_page (document-level only), or cdp_* for low-level data'
           ),
         tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
+        destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
         budgetPreset: z
           .enum(['quick', 'normal', 'deep'])
           .optional()
@@ -638,6 +652,7 @@ export function createBridgeMcpServer() {
                 .optional()
                 .describe('Method params for this call'),
               tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
+              destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
               budgetPreset: z
                 .enum(['quick', 'normal', 'deep'])
                 .optional()
@@ -664,6 +679,7 @@ export function createBridgeMcpServer() {
           .optional()
           .describe('Method parameters as object'),
         tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
+        destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
       },
     },
     handleRawCallTool
@@ -675,7 +691,9 @@ export function createBridgeMcpServer() {
       title: 'Browser Bridge Runtime Context',
       description:
         'Return runtime context: budget presets, method groups, and active limits. Call to discover defaults before inspecting a page.',
-      inputSchema: {},
+      inputSchema: {
+        destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+      },
     },
     handleSkillTool
   );
@@ -726,6 +744,7 @@ export function createBridgeMcpServer() {
               '"deep" (state + DOM + text + console + network).'
           ),
         tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
+        destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
         selector: z
           .string()
           .optional()
