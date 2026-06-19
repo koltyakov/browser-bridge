@@ -187,6 +187,49 @@ test('applyWindowsTcpTransportDefaults preserves custom bridge-home socket setup
   );
 });
 
+test('applyWindowsTcpTransportDefaults preserves enabled proxy bind host', async () => {
+  const localAppData = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-proxy-localappdata-'));
+  try {
+    const bridgeHome = path.join(localAppData, 'Browser Bridge');
+    await fs.promises.mkdir(bridgeHome, { recursive: true });
+    await fs.promises.writeFile(
+      path.join(bridgeHome, 'proxy.json'),
+      JSON.stringify({ enabled: true, port: 9223, bindHost: '0.0.0.0' }),
+      'utf8'
+    );
+
+    await withMockedConfigEnvironment(
+      {
+        platform: 'win32',
+        home: 'C:\\Users\\tester',
+        env: {
+          [BRIDGE_HOME_ENV]: undefined,
+          [BRIDGE_TCP_PORT_ENV]: undefined,
+          LOCALAPPDATA: localAppData,
+        },
+      },
+      async () => {
+        assert.equal(applyWindowsTcpTransportDefaults(), false);
+        assert.equal(process.env[BRIDGE_TCP_PORT_ENV], undefined);
+        const transport = getBridgeTransport();
+        assert.deepEqual(transport, {
+          type: 'tcp',
+          host: '127.0.0.1',
+          bindHost: '0.0.0.0',
+          port: 9223,
+          label: '127.0.0.1:9223 (bind 0.0.0.0)',
+        });
+        assert.deepEqual(getBridgeListenTarget(transport), {
+          host: '0.0.0.0',
+          port: 9223,
+        });
+      }
+    );
+  } finally {
+    await fs.promises.rm(localAppData, { recursive: true, force: true });
+  }
+});
+
 test('getBridgeTransport returns tcp mode when BBX_TCP_PORT is set', async () => {
   await withMockedConfigEnvironment(
     {

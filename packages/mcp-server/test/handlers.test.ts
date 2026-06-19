@@ -106,12 +106,22 @@ async function writeRemoteConfig(bridgeHome: string): Promise<void> {
 
 async function withMockedBridge(
   responder: (record: RequestRecord, index: number) => Promise<BridgeResponse>,
-  callback: (calls: RequestRecord[]) => Promise<void>
+  callback: (calls: RequestRecord[]) => Promise<void>,
+  options: { isolateBridgeHome?: boolean } = {}
 ): Promise<void> {
   const originalConnect = BridgeClient.prototype.connect;
   const originalClose = BridgeClient.prototype.close;
   const originalRequest = BridgeClient.prototype.request;
+  const originalBridgeHome = process.env.BROWSER_BRIDGE_HOME;
+  const isolateBridgeHome = options.isolateBridgeHome ?? true;
+  const bridgeHome = isolateBridgeHome
+    ? await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-mcp-bridge-test-'))
+    : null;
   const calls: RequestRecord[] = [];
+
+  if (bridgeHome) {
+    process.env.BROWSER_BRIDGE_HOME = bridgeHome;
+  }
 
   BridgeClient.prototype.connect = async function connect() {
     this.connected = true;
@@ -134,6 +144,14 @@ async function withMockedBridge(
     BridgeClient.prototype.connect = originalConnect;
     BridgeClient.prototype.close = originalClose;
     BridgeClient.prototype.request = originalRequest;
+    if (bridgeHome) {
+      if (originalBridgeHome === undefined) {
+        delete process.env.BROWSER_BRIDGE_HOME;
+      } else {
+        process.env.BROWSER_BRIDGE_HOME = originalBridgeHome;
+      }
+      await fs.promises.rm(bridgeHome, { recursive: true, force: true });
+    }
   }
 }
 
@@ -204,7 +222,8 @@ test('handleTabsTool aggregates local and remote tabs when remotes are configure
             title: 'Remote',
           },
         ]);
-      }
+      },
+      { isolateBridgeHome: false }
     );
   });
 });

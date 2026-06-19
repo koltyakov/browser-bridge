@@ -973,15 +973,20 @@ function getProxyExampleHost(bindHost) {
     return bindHost;
   }
 
-  for (const entries of Object.values(os.networkInterfaces())) {
+  /** @type {string | null} */
+  let firstIpv4 = null;
+  for (const [name, entries] of Object.entries(os.networkInterfaces())) {
     for (const entry of entries ?? []) {
       if (!entry.internal && entry.family === 'IPv4') {
-        return entry.address;
+        if (name.toLowerCase() === 'ethernet 0') {
+          return entry.address;
+        }
+        firstIpv4 ??= entry.address;
       }
     }
   }
 
-  return '<host>';
+  return firstIpv4 ?? '<host>';
 }
 
 /**

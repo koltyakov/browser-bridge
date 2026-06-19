@@ -235,6 +235,9 @@ export function applyWindowsTcpTransportDefaults(env = process.env) {
   if (env[BRIDGE_TCP_PORT_ENV] != null && env[BRIDGE_TCP_PORT_ENV] !== '') {
     return false;
   }
+  if (readProxyConfig(env)) {
+    return false;
+  }
   if (env[BRIDGE_HOME_ENV]) {
     return false;
   }
