@@ -16,9 +16,10 @@
     ).__BBX_CONTENT_HELPERS__;
   const registry =
     /** @type {typeof globalThis & { __BBX_CONTENT_REGISTRY__?: {
-     getRequiredElement: (ref: string) => Element,
-     rememberElement: (element: Element) => string,
-     getPatchRegistry: () => Map<string, any>,
+      getRequiredElement: (ref: string) => Element,
+      rememberElement: (element: Element) => string,
+      createContentId: (prefix: string) => string,
+      getPatchRegistry: () => Map<string, any>,
      getMaxPatchRegistrySize: () => number,
      pruneRegistry: (registry: Map<any, any>, maxSize: number) => void,
      resolveTarget: (target?: { elementRef?: string, selector?: string }) => Element
@@ -30,6 +31,7 @@
   const {
     getRequiredElement,
     rememberElement,
+    createContentId,
     getPatchRegistry,
     getMaxPatchRegistrySize,
     pruneRegistry,
@@ -51,7 +53,7 @@
     const patchId =
       typeof params.patchId === 'string' && params.patchId
         ? params.patchId
-        : `patch_${crypto.randomUUID()}`;
+        : createContentId('patch');
     /** @type {Record<string, { value: string, priority: string }>} */
     const previous = {};
     for (const [property, value] of Object.entries(params.declarations || {})) {
@@ -104,7 +106,7 @@
     const patchId =
       typeof params.patchId === 'string' && params.patchId
         ? params.patchId
-        : `patch_${crypto.randomUUID()}`;
+        : createContentId('patch');
     const operation = typeof params.operation === 'string' ? params.operation : '';
     const name = typeof params.name === 'string' ? params.name : '';
 

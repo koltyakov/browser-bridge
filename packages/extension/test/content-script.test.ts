@@ -1366,6 +1366,45 @@ test('content script dom.find_by_role matches explicit and implicit roles by acc
   );
 });
 
+test('content script dom.query works when randomUUID is unavailable', async (t) => {
+  const saved = captureGlobals(['crypto']);
+  t.after(() => restoreGlobals(saved));
+
+  Reflect.set(globalThis, 'crypto', {
+    getRandomValues(array: Uint8Array) {
+      for (let index = 0; index < array.length; index += 1) {
+        array[index] = index;
+      }
+      return array;
+    },
+  });
+
+  const harness = createChromeHarness();
+  await withDocument(
+    '<!doctype html><html><body><main>HTTP page</main></body></html>',
+    async () => {
+      await loadContentScript(t, {
+        withHelpers: true,
+        preserveDomGlobals: true,
+        chrome: harness.chrome,
+      });
+
+      const result = expectQueryResult(
+        await executeBridgeMethod(harness.getListener(), 'dom.query', {
+          selector: 'body',
+          includeBbox: false,
+          maxNodes: 1,
+        })
+      );
+
+      assert.match(
+        result.nodes[0].elementRef,
+        /^el_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+      );
+    }
+  );
+});
+
 test('content script reuses the same elementRef for repeated dom.query calls', async (t) => {
   const saved = captureGlobals(['Node']);
   t.after(() => restoreGlobals(saved));

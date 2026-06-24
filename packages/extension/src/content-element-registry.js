@@ -60,6 +60,28 @@
   let elementRegistryPruneIterator = null;
 
   /**
+   * Generate an ID in content scripts, including insecure HTTP pages where
+   * crypto.randomUUID() is unavailable.
+   *
+   * @param {string} prefix
+   * @returns {string}
+   */
+  function createContentId(prefix) {
+    const webCrypto = globalThis.crypto;
+    if (typeof webCrypto?.randomUUID === 'function') {
+      return `${prefix}_${webCrypto.randomUUID()}`;
+    }
+    const bytes = new Uint8Array(16);
+    webCrypto.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0'));
+    return `${prefix}_${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex
+      .slice(6, 8)
+      .join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10, 16).join('')}`;
+  }
+
+  /**
    * @returns {number}
    */
   function getRegistrySize() {
@@ -114,7 +136,7 @@
     while (elementRegistry.size >= MAX_REGISTRY_SIZE) {
       evictOldestElementRegistryEntry();
     }
-    const elementRef = `el_${crypto.randomUUID()}`;
+    const elementRef = createContentId('el');
     elementRegistry.set(elementRef, element);
     reverseRegistry.set(element, elementRef);
     return elementRef;
@@ -233,6 +255,7 @@
   globalState.__BBX_CONTENT_REGISTRY__ = Object.freeze({
     consumePruned,
     getDocumentRevision,
+    createContentId,
     getPatchRegistry: () => patchRegistry,
     getMaxPatchRegistrySize: () => MAX_PATCH_REGISTRY_SIZE,
     getRegistrySize,
