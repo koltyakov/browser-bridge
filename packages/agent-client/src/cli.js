@@ -9,11 +9,13 @@ import { fileURLToPath } from 'node:url';
 
 import {
   applyWindowsTcpTransportDefaults,
+  createTcpBridgeTransport,
   getProxyConfigPath,
   readProxyConfig,
   SUPPORTED_BROWSERS,
 } from '../../native-host/src/config.js';
 import { writeBridgeAuthToken } from '../../native-host/src/auth-token.js';
+import { pingExistingDaemon } from '../../native-host/src/daemon.js';
 import { restartBridgeDaemon } from '../../native-host/src/daemon-process.js';
 import { uninstallNativeManifest } from '../../native-host/src/install-manifest.js';
 import {
@@ -916,10 +918,12 @@ async function handleProxyCommand(args) {
       process.stdout.write('Browser Bridge proxy is disabled.\n');
       return;
     }
+    const reachable = await pingExistingDaemon(createTcpBridgeTransport(config.port, '127.0.0.1'));
     process.stdout.write(
       [
         `Browser Bridge proxy is enabled on ${config.bindHost}:${config.port}.`,
         `Config: ${getProxyConfigPath()}`,
+        `Daemon: ${reachable ? 'reachable' : 'not reachable'} on 127.0.0.1:${config.port}`,
         '',
       ].join('\n')
     );
