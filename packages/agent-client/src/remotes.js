@@ -180,6 +180,34 @@ export async function listBridgeDestinations() {
 }
 
 /**
+ * @typedef {{ port?: number, bindHost?: string, token?: string, rotateToken?: boolean }} ProxyEnableOptions
+ */
+
+/**
+ * Merge `bbx proxy enable` options with an existing proxy config so re-running
+ * the command is idempotent: the port, bind host, and shared secret are
+ * preserved unless explicitly overridden. The token only changes when passed
+ * via --token or regenerated via --rotate-token, so already-configured remote
+ * clients keep working across repeated enables.
+ *
+ * @param {{ port: number, bindHost: string, token?: string } | null} existing
+ * @param {ProxyEnableOptions} options
+ * @param {() => string} generateToken
+ * @returns {{ port: number, bindHost: string, token: string, tokenSource: 'explicit' | 'existing' | 'generated' }}
+ */
+export function resolveProxyEnableSettings(existing, options, generateToken) {
+  const port = options.port ?? existing?.port ?? DEFAULT_REMOTE_PORT;
+  const bindHost = options.bindHost ?? existing?.bindHost ?? '0.0.0.0';
+  if (options.token) {
+    return { port, bindHost, token: options.token, tokenSource: 'explicit' };
+  }
+  if (!options.rotateToken && existing?.token) {
+    return { port, bindHost, token: existing.token, tokenSource: 'existing' };
+  }
+  return { port, bindHost, token: generateToken(), tokenSource: 'generated' };
+}
+
+/**
  * @param {string | null | undefined} destinationId
  * @param {{ defaultTimeoutMs?: number }} [options={}]
  * @returns {Promise<BridgeClient>}

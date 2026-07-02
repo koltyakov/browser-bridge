@@ -23,6 +23,7 @@ import {
   handleCaptureTool,
   handleDomTool,
   handleInputTool,
+  handleLogTool,
   handleNavigationTool,
   handlePageTool,
   handlePatchTool,
@@ -443,6 +444,40 @@ test('explicit MCP destinations do not fall back to other remotes', async () => 
         assert.equal(calls[0].method, 'page.get_state');
         assert.equal(result.isError, true);
         assert.equal(result.structuredContent.ok, false);
+      },
+      { isolateBridgeHome: false }
+    );
+  });
+});
+
+test('handleLogTool targets a configured remote destination', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    await writeRemoteConfig(bridgeHome);
+    await withMockedBridge(
+      async () => ok({ entries: [] }),
+      async (calls) => {
+        const result = await handleLogTool({ destinationId: 'vm-private' });
+
+        assert.equal(calls.length, 1);
+        assert.equal(calls[0].method, 'log.tail');
+        assert.equal(result.isError, undefined);
+        assert.equal(result.structuredContent.ok, true);
+      },
+      { isolateBridgeHome: false }
+    );
+  });
+});
+
+test('handleLogTool reports unknown destinations without calling the bridge', async () => {
+  await withBridgeHome(async () => {
+    await withMockedBridge(
+      async () => ok({ entries: [] }),
+      async (calls) => {
+        const result = await handleLogTool({ destinationId: 'missing' });
+
+        assert.equal(calls.length, 0);
+        assert.equal(result.isError, true);
+        assert.match(result.content[0].text, /Unknown Browser Bridge destination/u);
       },
       { isolateBridgeHome: false }
     );

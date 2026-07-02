@@ -566,6 +566,17 @@ body[data-windowed="true"] .panel-popup {
   line-height: 1.35;
 }
 
+.proxy-status {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #b45309;
+  background: rgba(180, 83, 9, 0.12);
+  border: 1px solid rgba(180, 83, 9, 0.35);
+  border-radius: 6px;
+}
+
 .setup-install-button {
   display: inline-flex;
   align-items: center;

@@ -69,8 +69,16 @@ import {
 
 /**
  * @typedef {{
+ *   enabled: boolean,
+ *   endpoint: string | null
+ * }} DaemonProxyStatus
+ */
+
+/**
+ * @typedef {{
  *   nativeConnected: boolean,
  *   nativeHostVersion: string | null,
+ *   daemonProxy: DaemonProxyStatus | null,
  *   currentTab: SidePanelCurrentTab | null,
  *   setupStatus: SetupStatus | null,
  *   setupStatusPending: boolean,
@@ -113,6 +121,7 @@ const setupStatusNote =
 const setupHostVersion = /** @type {HTMLParagraphElement} */ (
   document.getElementById('setup-host-version')
 );
+const proxyStatusEl = /** @type {HTMLParagraphElement} */ (document.getElementById('proxy-status'));
 const setupStatusSummaryNote = /** @type {HTMLSpanElement} */ (
   document.getElementById('setup-status-summary-note')
 );
@@ -364,6 +373,7 @@ window.addEventListener('beforeunload', () => {
  */
 function renderState(state) {
   renderHostVersion(state.nativeHostVersion);
+  renderProxyStatus(state.daemonProxy);
   renderSidepanelState(state, {
     hideSetupContextMenu,
     renderNativeStatus,
@@ -491,6 +501,7 @@ function renderNativeStatus(connected, error) {
   installationSection.hidden = !connected;
   if (!connected) {
     renderHostVersion(null);
+    renderProxyStatus(null);
     setupInstallCmd.textContent = view.installCommand;
     setupInstallHint.hidden = view.installCommandHidden;
     setupInstallCmd.hidden = view.installCommandHidden;
@@ -525,6 +536,26 @@ function renderHostVersion(hostVersion) {
 
   setupHostVersion.hidden = false;
   setupHostVersion.textContent = `Daemon version: v${hostVersion}`;
+}
+
+/**
+ * Show a warning banner while the daemon accepts remote agent connections
+ * (bbx proxy mode), so remote exposure is never silent on this machine.
+ *
+ * @param {DaemonProxyStatus | null} proxy
+ * @returns {void}
+ */
+function renderProxyStatus(proxy) {
+  if (!proxy || !proxy.enabled) {
+    proxyStatusEl.hidden = true;
+    proxyStatusEl.textContent = '';
+    return;
+  }
+
+  proxyStatusEl.hidden = false;
+  proxyStatusEl.textContent = `Remote proxy is on${
+    proxy.endpoint ? ` (${proxy.endpoint})` : ''
+  } — agents on other machines can reach this browser. Run \`bbx proxy disable\` to turn it off.`;
 }
 
 /**

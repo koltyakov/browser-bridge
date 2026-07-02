@@ -638,6 +638,7 @@ export class BridgeDaemon {
           extensionConnected: false,
           socketPath: this.socketPath,
           transport: formatBridgeTransport(this.transport),
+          proxy: this.getProxyStatusPayload(),
           connectedExtensions: [],
           daemon_supported_versions: SUPPORTED_VERSIONS,
           ...getVersionNegotiationPayload(request.meta?.protocol_version),
@@ -879,6 +880,24 @@ export class BridgeDaemon {
   }
 
   /**
+   * Structured remote-exposure status for health payloads. The proxy counts
+   * as enabled only when the daemon listens on a TCP address other than
+   * loopback, i.e. agents on other machines can reach it.
+   *
+   * @returns {{ enabled: boolean, endpoint: string | null }}
+   */
+  getProxyStatusPayload() {
+    if (this.transport.type !== 'tcp') {
+      return { enabled: false, endpoint: null };
+    }
+    const bindHost = this.transport.bindHost ?? this.transport.host;
+    const isLoopback = bindHost === '127.0.0.1' || bindHost === '::1' || bindHost === 'localhost';
+    return isLoopback
+      ? { enabled: false, endpoint: null }
+      : { enabled: true, endpoint: `${bindHost}:${this.transport.port}` };
+  }
+
+  /**
    * @param {ClientSocket} socket
    * @param {DaemonMessage} message
    * @returns {void}
@@ -930,6 +949,7 @@ export class BridgeDaemon {
                 .../** @type {Record<string, unknown>} */ (responseMessage.result),
                 daemonVersion: DAEMON_VERSION,
                 daemon_supported_versions: SUPPORTED_VERSIONS,
+                proxy: this.getProxyStatusPayload(),
               },
               {
                 ...responseMessage.meta,

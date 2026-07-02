@@ -89,6 +89,19 @@ bbx screenshot <ref> [outPath]       # capture partial element screenshot
 bbx call screenshot.capture_full_page '{}' # raw base64; avoid unless document context matters
 ```
 
+### Remote Destinations
+
+Every bridge command accepts `--remote <name>` (or `BBX_REMOTE=<name>` env) to target a browser on another machine registered with `bbx remote add`:
+
+```bash
+bbx remote list                      # configured remote destinations
+bbx remote test <name>               # ping a remote through the proxy
+bbx tabs --remote <name>             # any bridge command works with --remote
+bbx dom-query "#app" --remote <name>
+```
+
+In MCP mode, pass `destinationId` on any browser tool call instead; `browser_status` lists all destinations with reachability. Only use remotes the user has configured; local remains the default.
+
 ## Access Flow
 
 Browser Bridge access is window-scoped. The user turns it on once for the current browser window in the popup or side panel.

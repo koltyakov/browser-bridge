@@ -87,9 +87,17 @@ import { getErrorMessage, normalizeRuntimeErrorMessage } from './background-help
 
 /**
  * @typedef {{
+ *   enabled: boolean,
+ *   endpoint: string | null
+ * }} DaemonProxyStatus
+ */
+
+/**
+ * @typedef {{
  *   nativePort: chrome.runtime.Port | null,
  *   nativeHostVersion: string | null,
  *   nativeHostVersionRequestId: string | null,
+ *   daemonProxy: DaemonProxyStatus | null,
  *   enabledWindow: EnabledWindowState | null,
  *   requestedAccessWindowId: number | null,
  *   requestedAccessPopupWindowId: number | null,
@@ -151,6 +159,7 @@ export function createExtensionState() {
     nativePort: null,
     nativeHostVersion: null,
     nativeHostVersionRequestId: null,
+    daemonProxy: null,
     enabledWindow: null,
     requestedAccessWindowId: null,
     requestedAccessPopupWindowId: null,

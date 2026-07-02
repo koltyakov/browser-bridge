@@ -62,6 +62,7 @@ test('sidepanel runtime message handler routes native status, sync, and toggle e
   const state = {
     nativeConnected: true,
     nativeHostVersion: null,
+    daemonProxy: null,
     currentTab: null,
     setupStatus: null,
     setupStatusPending: false,
@@ -116,6 +117,7 @@ test('sidepanel runtime orchestrates full state rendering and collapses examples
   const state: SidepanelState = {
     nativeConnected: true,
     nativeHostVersion: null,
+    daemonProxy: null,
     currentTab: {
       tabId: 4,
       windowId: 2,
@@ -176,6 +178,7 @@ test('sidepanel runtime shows the empty state when there is no activity', () => 
   const state: SidepanelState = {
     nativeConnected: false,
     nativeHostVersion: null,
+    daemonProxy: null,
     currentTab: null,
     setupStatus: null,
     setupStatusPending: false,

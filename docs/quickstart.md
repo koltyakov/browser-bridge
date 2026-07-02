@@ -134,7 +134,9 @@ bbx remote add remote-bbx 192.168.56.20:9223 --token <token>
 
 Port `9223` is used by default when omitted, but including it makes the remote endpoint explicit.
 
-Your local MCP server still talks to the local browser by default. Discovery tools such as `browser_status` and `browser_tabs` list local and remote destinations; pass `destinationId`, for example `vm-private`, to route a specific MCP call to the remote browser.
+Your local MCP server still talks to the local browser by default. Discovery tools such as `browser_status` and `browser_tabs` list local and remote destinations; pass `destinationId`, for example `vm-private`, to route a specific MCP call to the remote browser. On the CLI, add `--remote <name>` to any bridge command (or set `BBX_REMOTE=<name>` for the whole session).
+
+See the [Remote proxy guide](./remote-proxy.md) for the full flow, security notes, and troubleshooting.
 
 - [Documentation index](./index.md)
 - [Manual setup](./manual-setup.md) for custom agents, exact config locations, and project-local installs

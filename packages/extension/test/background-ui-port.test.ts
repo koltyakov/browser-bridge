@@ -105,7 +105,11 @@ function getRuntimeOnConnect(loaded: LoadedBackground): FakeChromeEvent {
   return loaded.chrome.runtime.onConnect as unknown as FakeChromeEvent;
 }
 
-function createNativePort(messages: unknown[], setupStatus: SetupStatus = {}): NativePort {
+function createNativePort(
+  messages: unknown[],
+  setupStatus: SetupStatus = {},
+  healthResultExtras: Record<string, unknown> = {}
+): NativePort {
   const onMessage = createChromeEvent();
   return {
     postMessage(message: unknown) {
@@ -144,6 +148,7 @@ function createNativePort(messages: unknown[], setupStatus: SetupStatus = {}): N
                 daemon: 'ok',
                 daemonVersion: '1.2.0',
                 extensionConnected: true,
+                ...healthResultExtras,
               },
               {
                 method: 'health.ping',
@@ -289,6 +294,7 @@ test('background UI port syncs current state and updates scoped tab state on req
     state: {
       nativeConnected: true,
       nativeHostVersion: '1.2.0',
+      daemonProxy: null,
       currentTab: {
         tabId: 31,
         windowId: 8,
@@ -320,6 +326,7 @@ test('background UI port syncs current state and updates scoped tab state on req
     state: {
       nativeConnected: true,
       nativeHostVersion: '1.2.0',
+      daemonProxy: null,
       currentTab: {
         tabId: 41,
         windowId: 8,
@@ -340,6 +347,36 @@ test('background UI port syncs current state and updates scoped tab state on req
       actionLog: [state.actionLog[1]],
     },
   });
+});
+
+test('background UI port carries daemon proxy status only when the local daemon reports it', async () => {
+  const nativeMessages: unknown[] = [];
+  const nativePort = createNativePort(
+    nativeMessages,
+    {},
+    { proxy: { enabled: true, endpoint: '0.0.0.0:9223' } }
+  );
+  const portPair = createMessagePortPair<unknown, unknown>({
+    leftName: 'ui-sidepanel',
+    rightName: 'agent',
+  });
+  const chrome = createChromeFake({
+    runtime: {
+      connectNative() {
+        return nativePort;
+      },
+    },
+  });
+  const loaded = await loadBackground({
+    chrome,
+    query: `test-background-ui-port-proxy-${Date.now()}-${Math.random()}`,
+  });
+
+  getRuntimeOnConnect(loaded).dispatch(portPair.left.port);
+  await flushAsyncWork();
+
+  const sync = getStateSyncMessages(portPair.left.postedMessages).at(-1);
+  assert.deepEqual(sync?.state.daemonProxy, { enabled: true, endpoint: '0.0.0.0:9223' });
 });
 
 test('background UI port prunes disconnected UI ports when sync posting throws', async () => {
@@ -420,6 +457,7 @@ test('background UI port refresh clears setup status when the native host is una
     state: {
       nativeConnected: false,
       nativeHostVersion: null,
+      daemonProxy: null,
       currentTab: null,
       setupStatus: null,
       setupStatusPending: false,

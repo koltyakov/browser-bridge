@@ -60,7 +60,7 @@ test('cli prints usage and exits successfully when no command is provided', asyn
   assert.equal(result.status, 0);
   assert.equal(result.signal, null);
   assert.equal(result.stderr, '');
-  assert.match(result.stdout, /Usage: bbx <command> \[args\]/);
+  assert.match(result.stdout, /Usage: bbx \[--remote <name>\] <command> \[args\]/);
   assert.match(result.stdout, /Setup:/);
   assert.match(result.stdout, /Generic RPC:/);
 });
@@ -137,7 +137,7 @@ test('cli reports unknown commands with usage and a failing exit code', async ()
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Unknown command: not-a-command/);
-  assert.match(result.stdout, /Usage: bbx <command> \[args\]/);
+  assert.match(result.stdout, /Usage: bbx \[--remote <name>\] <command> \[args\]/);
 });
 
 test('cli returns a JSON usage error for missing required command arguments', async () => {

@@ -4,7 +4,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import { BridgeDaemon } from '../../native-host/src/daemon.js';
 import { runCli } from '../../../tests/_helpers/runCli.ts';
+import type { AddressInfo } from 'node:net';
+import type { BridgeTransport } from '../../native-host/src/config.js';
 
 const TOKEN = '6f7b4e4a-7b9e-4c0d-9e62-4b1fb9f8d237';
 
@@ -65,6 +68,116 @@ test('bbx proxy status reports disabled config without starting a daemon', async
     assert.equal(result.status, 0);
     assert.equal(result.stderr, '');
     assert.equal(result.stdout, 'Browser Bridge proxy is disabled.\n');
+  });
+});
+
+test('bbx --remote rejects unknown destinations with a friendly error', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    const result = await runCli({
+      args: ['tabs', '--remote', 'nope'],
+      env: { ...process.env, BROWSER_BRIDGE_HOME: bridgeHome },
+    });
+
+    assert.equal(result.status, 1);
+    const parsed = result.json as { ok: boolean; summary: string };
+    assert.equal(parsed.ok, false);
+    assert.match(parsed.summary, /Unknown Browser Bridge destination "nope"/u);
+  });
+});
+
+test('bbx --remote requires a destination name', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    const result = await runCli({
+      args: ['tabs', '--remote'],
+      env: { ...process.env, BROWSER_BRIDGE_HOME: bridgeHome },
+    });
+
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--remote requires a destination name/u);
+  });
+});
+
+test('bbx --remote is rejected for local-only commands', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    const result = await runCli({
+      args: ['proxy', 'status', '--remote', 'vm-private'],
+      env: { ...process.env, BROWSER_BRIDGE_HOME: bridgeHome },
+    });
+
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--remote flag is not supported with "proxy"/u);
+  });
+});
+
+test('BBX_REMOTE env is ignored for local-only commands', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    const result = await runCli({
+      args: ['proxy', 'status'],
+      env: { ...process.env, BROWSER_BRIDGE_HOME: bridgeHome, BBX_REMOTE: 'vm-private' },
+    });
+
+    assert.equal(result.status, 0);
+    assert.equal(result.stdout, 'Browser Bridge proxy is disabled.\n');
+  });
+});
+
+test('bbx remote add without --token prints a usage error instead of a stack trace', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    const result = await runCli({
+      args: ['remote', 'add', 'vm-private', '10.0.0.5'],
+      env: { ...process.env, BROWSER_BRIDGE_HOME: bridgeHome },
+    });
+
+    assert.equal(result.status, 1);
+    assert.equal(result.stderr, 'Usage: bbx remote add <name> <host:port> --token <token>\n');
+  });
+});
+
+test('bbx status --remote and BBX_REMOTE reach a token-authenticated TCP daemon', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    const daemon = new BridgeDaemon({
+      transport: {
+        type: 'tcp',
+        host: '127.0.0.1',
+        port: 0,
+        label: '127.0.0.1:0',
+      } satisfies BridgeTransport,
+      listenOptions: { host: '127.0.0.1', port: 0 },
+      logger: { log() {}, error() {} },
+      authToken: TOKEN,
+    });
+    await daemon.start();
+    try {
+      const { port } = daemon.serverAddress as AddressInfo;
+      await fs.promises.writeFile(
+        path.join(bridgeHome, 'remotes.json'),
+        JSON.stringify({ remotes: [{ id: 'vm', host: '127.0.0.1', port, token: TOKEN }] }),
+        'utf8'
+      );
+      const env = { ...process.env, BROWSER_BRIDGE_HOME: bridgeHome };
+
+      const flagResult = await runCli({ args: ['status', '--remote', 'vm'], env });
+      assert.equal(flagResult.status, 0, flagResult.stderr);
+      assert.equal((flagResult.json as { ok: boolean }).ok, true);
+
+      const envResult = await runCli({ args: ['status'], env: { ...env, BBX_REMOTE: 'vm' } });
+      assert.equal(envResult.status, 0, envResult.stderr);
+      assert.equal((envResult.json as { ok: boolean }).ok, true);
+    } finally {
+      await daemon.stop();
+    }
+  });
+});
+
+test('bbx proxy enable rejects combining --token with --rotate-token', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    const result = await runCli({
+      args: ['proxy', 'enable', '--token', TOKEN, '--rotate-token'],
+      env: { ...process.env, BROWSER_BRIDGE_HOME: bridgeHome },
+    });
+
+    assert.equal(result.status, 1);
+    assert.equal(result.stderr, 'Use either --token or --rotate-token, not both.\n');
   });
 });
 

@@ -93,6 +93,8 @@ bbx call <method> '{"key":"val"}'   # any RPC method
 bbx batch '[{...}]'                 # parallel reads
 bbx install-mcp [client]            # write MCP config (all clients if omitted)
 bbx skill                           # runtime presets
+bbx proxy <enable|disable|status>   # opt-in TCP proxy mode on the browser machine
+bbx remote <add|list|test|remove>   # manage remote destinations; any bridge command accepts --remote <name> (or BBX_REMOTE env)
 ```
 
 Also: `bbx-daemon` (start daemon), `bbx-install <ext-id>` (install manifest directly), `bbx-mcp` (start MCP server directly).

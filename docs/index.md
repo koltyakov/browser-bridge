@@ -15,6 +15,7 @@ This index keeps those paths separate.
 
 - [Usage scenarios](./usage-scenarios.md): concrete workflows for debugging, verification, and live patching
 - [CLI guide](./cli-guide.md): day-to-day `bbx` commands with practical examples
+- [Remote proxy](./remote-proxy.md): drive a browser on another machine (VM, private network) over an authenticated TCP proxy
 - [Troubleshooting](./troubleshooting.md): what to check when install, access, or routing fails
 
 ## Reference

@@ -42,8 +42,16 @@
 
 /**
  * @typedef {{
+ *   enabled: boolean,
+ *   endpoint: string | null
+ * }} DaemonProxyStatus
+ */
+
+/**
+ * @typedef {{
  *   nativeConnected: boolean,
  *   nativeHostVersion: string | null,
+ *   daemonProxy: DaemonProxyStatus | null,
  *   currentTab: SidePanelCurrentTab | null,
  *   setupStatus: SetupStatus | null,
  *   setupStatusPending: boolean,

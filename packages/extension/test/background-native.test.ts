@@ -564,6 +564,7 @@ test('background native scheduleNativeReconnect broadcasts disconnect state and 
       state: {
         nativeConnected: false,
         nativeHostVersion: null,
+        daemonProxy: null,
         currentTab: null,
         setupStatus: null,
         setupStatusPending: false,
@@ -705,6 +706,7 @@ test('background native enable flow broadcasts synced UI state and posts an acce
     state: {
       nativeConnected: true,
       nativeHostVersion: '1.2.0',
+      daemonProxy: null,
       currentTab: {
         tabId: 31,
         windowId: 8,

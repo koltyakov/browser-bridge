@@ -13,6 +13,7 @@ import {
   parseRemoteEndpoint,
   readRemoteConfig,
   removeRemoteDestination,
+  resolveProxyEnableSettings,
   writeRemoteConfig,
 } from '../src/remotes.js';
 
@@ -86,6 +87,55 @@ test('remote config add, replace, list, and remove use Browser Bridge home', asy
     assert.equal(await removeRemoteDestination('vm'), false);
     assert.deepEqual(await readRemoteConfig(), { remotes: [] });
   });
+});
+
+test('resolveProxyEnableSettings generates a token and defaults on first enable', () => {
+  const settings = resolveProxyEnableSettings(null, {}, () => 'fresh-token');
+  assert.deepEqual(settings, {
+    port: DEFAULT_REMOTE_PORT,
+    bindHost: '0.0.0.0',
+    token: 'fresh-token',
+    tokenSource: 'generated',
+  });
+});
+
+test('resolveProxyEnableSettings reuses existing settings and secret on re-enable', () => {
+  const existing = { port: 9443, bindHost: '192.168.0.10', token: TOKEN };
+  const settings = resolveProxyEnableSettings(existing, {}, () => {
+    throw new Error('must not generate a new token');
+  });
+  assert.deepEqual(settings, {
+    port: 9443,
+    bindHost: '192.168.0.10',
+    token: TOKEN,
+    tokenSource: 'existing',
+  });
+});
+
+test('resolveProxyEnableSettings keeps the secret when only port or bind host change', () => {
+  const existing = { port: 9223, bindHost: '0.0.0.0', token: TOKEN };
+  const settings = resolveProxyEnableSettings(existing, { port: 9444 }, () => {
+    throw new Error('must not generate a new token');
+  });
+  assert.deepEqual(settings, {
+    port: 9444,
+    bindHost: '0.0.0.0',
+    token: TOKEN,
+    tokenSource: 'existing',
+  });
+});
+
+test('resolveProxyEnableSettings rotates the secret only when asked', () => {
+  const existing = { port: 9223, bindHost: '0.0.0.0', token: TOKEN };
+  const rotated = resolveProxyEnableSettings(existing, { rotateToken: true }, () => 'new-token');
+  assert.equal(rotated.token, 'new-token');
+  assert.equal(rotated.tokenSource, 'generated');
+
+  const explicit = resolveProxyEnableSettings(existing, { token: 'explicit-token' }, () => {
+    throw new Error('must not generate a new token');
+  });
+  assert.equal(explicit.token, 'explicit-token');
+  assert.equal(explicit.tokenSource, 'explicit');
 });
 
 test('readRemoteConfig filters malformed remote entries', async () => {

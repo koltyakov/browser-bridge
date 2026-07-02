@@ -73,6 +73,7 @@ export function clearSetupStatus(state, errorMessage = null) {
   clearSetupStatusTimer(state);
   state.nativeHostVersion = null;
   state.nativeHostVersionRequestId = null;
+  state.daemonProxy = null;
   state.setupStatus = null;
   state.setupStatusPending = false;
   state.setupStatusPendingRequestId = null;
@@ -200,6 +201,30 @@ function getNativeHostVersion(result) {
   }
   const candidate = /** @type {Record<string, unknown>} */ (result);
   return typeof candidate.daemonVersion === 'string' ? candidate.daemonVersion : null;
+}
+
+/**
+ * Parse the daemon's structured remote-proxy status from a health.ping result.
+ *
+ * @param {unknown} result
+ * @returns {import('./background-state.js').DaemonProxyStatus | null}
+ */
+function getDaemonProxyStatus(result) {
+  if (!result || typeof result !== 'object') {
+    return null;
+  }
+  const proxy = /** @type {Record<string, unknown>} */ (result).proxy;
+  if (!proxy || typeof proxy !== 'object') {
+    return null;
+  }
+  const candidate = /** @type {Record<string, unknown>} */ (proxy);
+  if (typeof candidate.enabled !== 'boolean') {
+    return null;
+  }
+  return {
+    enabled: candidate.enabled,
+    endpoint: typeof candidate.endpoint === 'string' ? candidate.endpoint : null,
+  };
 }
 
 /**
@@ -368,8 +393,13 @@ export function handleHostStatusMessage(message, state, deps) {
     if (response?.id === state.nativeHostVersionRequestId) {
       state.nativeHostVersionRequestId = null;
       const nextVersion = response.ok ? getNativeHostVersion(response.result) : null;
-      if (state.nativeHostVersion !== nextVersion) {
+      const nextProxy = response.ok ? getDaemonProxyStatus(response.result) : null;
+      const proxyChanged =
+        state.daemonProxy?.enabled !== nextProxy?.enabled ||
+        state.daemonProxy?.endpoint !== nextProxy?.endpoint;
+      if (state.nativeHostVersion !== nextVersion || proxyChanged) {
         state.nativeHostVersion = nextVersion;
+        state.daemonProxy = nextProxy;
         void deps.emitUiState().catch(reportAsyncError);
       }
       return true;

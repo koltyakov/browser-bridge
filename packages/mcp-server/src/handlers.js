@@ -168,7 +168,7 @@ export async function handleSetupTool(args) {
 }
 
 /**
- * @param {{ limit?: number, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @param {{ limit?: number, budgetPreset?: 'quick' | 'normal' | 'deep', destinationId?: string }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleLogTool(args) {
@@ -184,6 +184,7 @@ export async function handleLogTool(args) {
     },
     {
       tokenBudget: getToolTokenBudget(normalizedArgs),
+      destinationId: typeof args.destinationId === 'string' ? args.destinationId : null,
     }
   );
 }

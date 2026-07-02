@@ -149,6 +149,7 @@ export function createBridgeMcpServer() {
           .enum(['quick', 'normal', 'deep'])
           .optional()
           .describe(BUDGET_PRESET_DESCRIPTION),
+        destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
       },
     },
     handleLogTool
@@ -704,7 +705,9 @@ export function createBridgeMcpServer() {
       title: 'Request Browser Bridge Access',
       description:
         'Request window access for Browser Bridge. Surfaces an Enable prompt in the extension popup or side panel. Use once per window; if access is already pending, ask the user to enable that window instead of requesting again.',
-      inputSchema: {},
+      inputSchema: {
+        destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+      },
     },
     handleAccessTool
   );

@@ -25,7 +25,6 @@ import {
   summarizeBatchResponseItem,
 } from '../../protocol/src/index.js';
 import { startBridgeMcpServer } from '../../mcp-server/src/server.js';
-import { BridgeClient } from './client.js';
 import { CLI_HELP_SECTIONS, SHORTCUT_COMMANDS } from './command-registry.js';
 import {
   interactiveCheckbox,
@@ -61,6 +60,7 @@ import {
   parseRemoteEndpoint,
   readRemoteConfig,
   removeRemoteDestination,
+  resolveProxyEnableSettings,
 } from './remotes.js';
 import { collectSetupStatus } from './setup-status.js';
 import { annotateBridgeSummary, summarizeBridgeResponse } from './subagent.js';
@@ -71,6 +71,32 @@ import { annotateBridgeSummary, summarizeBridgeResponse } from './subagent.js';
 const REQUEST_SOURCE = 'cli';
 const TEST_TIMEOUT_ENV = 'BBX_CLIENT_REQUEST_TIMEOUT_MS';
 const TEST_DETECTED_MCP_CLIENTS_ENV = 'BBX_TEST_DETECTED_MCP_CLIENTS';
+const REMOTE_ENV = 'BBX_REMOTE';
+
+/**
+ * Commands that only make sense against the local machine (setup, daemon
+ * lifecycle, and config management). The explicit --remote flag is rejected
+ * for these; the ambient BBX_REMOTE env var is ignored.
+ *
+ * @type {ReadonlySet<string>}
+ */
+const LOCAL_ONLY_COMMANDS = new Set([
+  'help',
+  '--help',
+  '-h',
+  '--version',
+  '-v',
+  'skill',
+  'install',
+  'uninstall',
+  'install-skill',
+  'install-mcp',
+  'mcp',
+  'proxy',
+  'remote',
+  'doctor',
+  'restart',
+]);
 
 /**
  * Read all of stdin as UTF-8 text. Resolves once stdin closes.
@@ -91,7 +117,18 @@ function readStdin() {
   });
 }
 
-const [, , command, ...rest] = process.argv;
+const remoteFlag = extractRemoteFlag(process.argv.slice(2));
+const [command, ...rest] = remoteFlag.rest;
+
+if (remoteFlag.explicit && command && LOCAL_ONLY_COMMANDS.has(command)) {
+  process.stderr.write(`The --remote flag is not supported with "${command}".\n`);
+  process.exit(1);
+}
+
+const remoteDestinationId =
+  command && LOCAL_ONLY_COMMANDS.has(command)
+    ? null
+    : (remoteFlag.remoteId ?? process.env[REMOTE_ENV] ?? null);
 
 if (!command || ['help', '--help', '-h'].includes(command)) {
   printUsage();
@@ -398,22 +435,59 @@ if (command === 'mcp') {
 }
 
 if (command === 'proxy') {
-  await handleProxyCommand(rest);
-  process.exit(0);
+  await runLocalCommand(() => handleProxyCommand(rest));
+  process.exit();
 }
 
 if (command === 'remote') {
-  await handleRemoteCommand(rest);
-  process.exit(0);
+  await runLocalCommand(() => handleRemoteCommand(rest));
+  process.exit();
 }
 
 const clientTimeoutMs = getClientTimeoutOverride();
 applyWindowsTcpTransportDefaults();
-const client = new BridgeClient(
-  clientTimeoutMs ? { defaultTimeoutMs: clientTimeoutMs } : undefined
-);
+const client = await createCliClient();
 
 await main();
+
+/**
+ * Run a local (pre-main) command, converting thrown errors into a friendly
+ * one-line message instead of an unhandled stack trace.
+ *
+ * @param {() => Promise<void>} run
+ * @returns {Promise<void>}
+ */
+async function runLocalCommand(run) {
+  try {
+    await run();
+  } catch (error) {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exit(1);
+  }
+}
+
+/**
+ * Create the bridge client for this invocation, honoring the --remote flag
+ * and BBX_REMOTE env var. Exits with a friendly error when the destination
+ * is not configured.
+ *
+ * @returns {Promise<import('./client.js').BridgeClient>}
+ */
+async function createCliClient() {
+  try {
+    return await createBridgeClientForDestination(
+      remoteDestinationId,
+      clientTimeoutMs ? { defaultTimeoutMs: clientTimeoutMs } : {}
+    );
+  } catch (error) {
+    printJson({
+      ok: false,
+      summary: `ERROR: ${error instanceof Error ? error.message : String(error)}`,
+      evidence: null,
+    });
+    process.exit(1);
+  }
+}
 
 async function main() {
   try {
@@ -861,7 +935,12 @@ async function handleProxyCommand(args) {
   const [subcommand, ...restArgs] = args;
   if (subcommand === 'enable') {
     const options = parseProxyEnableArgs(restArgs);
-    const token = options.token ?? randomUUID();
+    const existing = readProxyConfig();
+    const { port, bindHost, token, tokenSource } = resolveProxyEnableSettings(
+      existing,
+      options,
+      randomUUID
+    );
     await writeBridgeAuthToken(token);
     const configPath = getProxyConfigPath();
     await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
@@ -870,8 +949,8 @@ async function handleProxyCommand(args) {
       `${JSON.stringify(
         {
           enabled: true,
-          port: options.port,
-          bindHost: options.bindHost,
+          port,
+          bindHost,
           token,
         },
         null,
@@ -880,14 +959,22 @@ async function handleProxyCommand(args) {
       { encoding: 'utf8', mode: 0o600 }
     );
     const result = await restartBridgeDaemon();
-    const exampleHost = getProxyExampleHost(options.bindHost);
-    process.stdout.write(
-      [
-        `Browser Bridge proxy enabled on ${options.bindHost}:${options.port}.`,
-        '',
-        `Token: ${token}`,
-        `Config: ${configPath}`,
-        `Daemon: ${result.previouslyRunning ? 'restarted' : 'started'} (pid ${result.pid})`,
+    const exampleHost = getProxyExampleHost(bindHost);
+    const tokenNote =
+      tokenSource === 'existing'
+        ? ' (unchanged — already-configured clients keep working; pass --rotate-token to generate a new secret)'
+        : tokenSource === 'generated' && existing
+          ? ' (rotated — update every configured client with `bbx remote add`)'
+          : '';
+    const lines = [
+      `Browser Bridge proxy enabled on ${bindHost}:${port}.`,
+      '',
+      `Token: ${token}${tokenNote}`,
+      `Config: ${configPath}`,
+      `Daemon: ${result.previouslyRunning ? 'restarted' : 'started'} (pid ${result.pid})`,
+    ];
+    if (tokenSource !== 'existing') {
+      lines.push(
         '',
         'On your dev machine, add this remote:',
         '',
@@ -895,10 +982,11 @@ async function handleProxyCommand(args) {
         '',
         'Example:',
         '',
-        `bbx remote add remote-bbx ${exampleHost}:${options.port} --token ${token}`,
-        '',
-      ].join('\n')
-    );
+        `bbx remote add remote-bbx ${exampleHost}:${port} --token ${token}`
+      );
+    }
+    lines.push('');
+    process.stdout.write(lines.join('\n'));
     return;
   }
 
@@ -934,12 +1022,15 @@ async function handleProxyCommand(args) {
 }
 
 /**
+ * Parse `bbx proxy enable` flags. Values stay undefined when not passed so an
+ * existing proxy config can be reused instead of silently reset to defaults.
+ *
  * @param {string[]} args
- * @returns {{ port: number, bindHost: string, token?: string }}
+ * @returns {import('./remotes.js').ProxyEnableOptions}
  */
 function parseProxyEnableArgs(args) {
-  /** @type {{ port: number, bindHost: string, token?: string }} */
-  const options = { port: 9223, bindHost: '0.0.0.0' };
+  /** @type {import('./remotes.js').ProxyEnableOptions} */
+  const options = {};
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === '--port') {
@@ -960,9 +1051,16 @@ function parseProxyEnableArgs(args) {
       }
       continue;
     }
+    if (arg === '--rotate-token') {
+      options.rotateToken = true;
+      continue;
+    }
     throw new Error(`Unknown proxy enable option "${arg}".`);
   }
-  if (options.port < 1 || options.port > 65535) {
+  if (options.token && options.rotateToken) {
+    throw new Error('Use either --token or --rotate-token, not both.');
+  }
+  if (options.port !== undefined && (options.port < 1 || options.port > 65535)) {
     throw new Error('port must be an integer between 1 and 65535.');
   }
   return options;
@@ -1053,10 +1151,23 @@ async function handleRemoteCommand(args) {
     try {
       await remoteClient.connect();
       const response = await remoteClient.request({ method: 'health.ping' });
+      if (response.ok) {
+        const health = /** @type {{ extensionConnected?: boolean }} */ (response.result);
+        process.stdout.write(
+          `Remote destination "${name}" is reachable (extension ${
+            health.extensionConnected === true ? 'connected' : 'not connected'
+          }).\n`
+        );
+      } else {
+        process.exitCode = 1;
+        process.stdout.write(`Remote destination "${name}" failed: ${response.error.message}\n`);
+      }
+    } catch (error) {
+      process.exitCode = 1;
       process.stdout.write(
-        response.ok
-          ? `Remote destination "${name}" is reachable.\n`
-          : `Remote destination "${name}" failed: ${response.error.message}\n`
+        `Remote destination "${name}" is not reachable: ${
+          error instanceof Error ? error.message : String(error)
+        }\n`
       );
     } finally {
       await remoteClient.close();
@@ -1218,7 +1329,7 @@ function printCallResponse(response) {
 }
 
 function printUsage() {
-  const blocks = ['Usage: bbx <command> [args]'];
+  const blocks = ['Usage: bbx [--remote <name>] <command> [args]'];
   for (const section of CLI_HELP_SECTIONS) {
     blocks.push('', `${section.title}:`);
     blocks.push(...section.lines.map((line) => `  ${line}`));
@@ -1299,6 +1410,28 @@ async function parseCallCommand(args) {
   }
 
   throw new Error('Usage: call [--tab <tabId>] <method> [paramsJson]');
+}
+
+/**
+ * Extract the global --remote flag from anywhere in the argument list.
+ * Exits with a usage error when the flag is present without a value.
+ *
+ * @param {string[]} args
+ * @returns {{ remoteId: string | null, explicit: boolean, rest: string[] }}
+ */
+function extractRemoteFlag(args) {
+  const rest = [...args];
+  const index = rest.indexOf('--remote');
+  if (index === -1) {
+    return { remoteId: null, explicit: false, rest };
+  }
+  const remoteId = rest[index + 1];
+  if (!remoteId || remoteId.startsWith('--')) {
+    process.stderr.write('--remote requires a destination name (see `bbx remote list`).\n');
+    process.exit(1);
+  }
+  rest.splice(index, 2);
+  return { remoteId, explicit: true, rest };
 }
 
 /**

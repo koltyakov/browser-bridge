@@ -219,6 +219,46 @@ test('daemon responds to health checks without extension', async () => {
   assert.equal(payload.response.result.extensionConnected, false);
 });
 
+test('daemon reports remote proxy exposure only for non-loopback TCP binds', () => {
+  const logger = { log() {}, error() {} };
+
+  const socketDaemon = new BridgeDaemon({
+    logger,
+    transport: {
+      type: 'socket',
+      socketPath: '/tmp/bbx-test.sock',
+      label: '/tmp/bbx-test.sock',
+    } satisfies BridgeTransport,
+  });
+  assert.deepEqual(socketDaemon.getProxyStatusPayload(), { enabled: false, endpoint: null });
+
+  const loopbackDaemon = new BridgeDaemon({
+    logger,
+    transport: {
+      type: 'tcp',
+      host: '127.0.0.1',
+      port: 9223,
+      label: '127.0.0.1:9223',
+    } satisfies BridgeTransport,
+  });
+  assert.deepEqual(loopbackDaemon.getProxyStatusPayload(), { enabled: false, endpoint: null });
+
+  const proxyDaemon = new BridgeDaemon({
+    logger,
+    transport: {
+      type: 'tcp',
+      host: '127.0.0.1',
+      port: 9223,
+      bindHost: '0.0.0.0',
+      label: '127.0.0.1:9223 (bind 0.0.0.0)',
+    } satisfies BridgeTransport,
+  });
+  assert.deepEqual(proxyDaemon.getProxyStatusPayload(), {
+    enabled: true,
+    endpoint: '0.0.0.0:9223',
+  });
+});
+
 test('daemon responds to invalid agent requests instead of timing out', async () => {
   const daemon = new BridgeDaemon({ logger: { log() {}, error() {} } });
   const socket = createFakeSocket();
