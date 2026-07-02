@@ -281,8 +281,8 @@ const tabBoundRequestDependencies = {
 void initializeState().catch(reportAsyncError);
 connectNative();
 
-chrome.runtime.onInstalled.addListener(async () => {
-  await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+chrome.runtime.onInstalled.addListener(() => {
+  void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(reportAsyncError);
 });
 
 chrome.tabs.onActivated.addListener(({ tabId }) => {
@@ -599,9 +599,15 @@ async function handleFetchInterceptRequest(request) {
 
   if (method === 'network.intercept.add') {
     if (!params.urlPattern) {
-      return createFailure(request.id, 'INVALID_REQUEST', 'urlPattern is required.', null, {
-        method,
-      });
+      return createFailure(
+        request.id,
+        ERROR_CODES.INVALID_REQUEST,
+        'urlPattern is required.',
+        null,
+        {
+          method,
+        }
+      );
     }
     const rule = await fetchInterceptor.addRule(target.tabId, {
       urlPattern: String(params.urlPattern),
@@ -631,9 +637,13 @@ async function handleFetchInterceptRequest(request) {
     return createSuccess(request.id, { cleared: count }, { method });
   }
 
-  return createFailure(request.id, 'INVALID_REQUEST', `Unknown intercept method: ${method}`, null, {
-    method,
-  });
+  return createFailure(
+    request.id,
+    ERROR_CODES.INVALID_REQUEST,
+    `Unknown intercept method: ${method}`,
+    null,
+    { method }
+  );
 }
 
 /**
@@ -762,13 +772,23 @@ function getUiSurfaceFromPortName(portName) {
 }
 
 /**
- * Forward a response to the connected native host if it is present.
+ * Forward a response to the connected native host if it is present. Falls back
+ * to the still-stabilizing port so requests that arrive right after a
+ * (re)connect are answered instead of silently dropped.
  *
  * @param {BridgeResponse} response
  * @returns {void}
  */
 function reply(response) {
-  state.nativePort?.postMessage(response);
+  const port = state.nativePort ?? state.pendingNativePort;
+  if (!port) {
+    return;
+  }
+  try {
+    port.postMessage(response);
+  } catch (error) {
+    reportAsyncError(error);
+  }
 }
 
 /**

@@ -95,6 +95,7 @@ import { getErrorMessage, normalizeRuntimeErrorMessage } from './background-help
 /**
  * @typedef {{
  *   nativePort: chrome.runtime.Port | null,
+ *   pendingNativePort: chrome.runtime.Port | null,
  *   nativeHostVersion: string | null,
  *   nativeHostVersionRequestId: string | null,
  *   daemonProxy: DaemonProxyStatus | null,
@@ -157,6 +158,7 @@ export const NATIVE_RECONNECT_MAX_MS = 30_000;
 export function createExtensionState() {
   return {
     nativePort: null,
+    pendingNativePort: null,
     nativeHostVersion: null,
     nativeHostVersionRequestId: null,
     daemonProxy: null,

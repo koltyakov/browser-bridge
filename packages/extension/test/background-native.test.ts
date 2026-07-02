@@ -618,6 +618,72 @@ test('background native scheduleNativeReconnect broadcasts disconnect state and 
   }
 });
 
+test('background native replies to bridge requests that arrive before the stability window closes', async () => {
+  const firstPortMessages: unknown[] = [];
+  const secondPortMessages: unknown[] = [];
+  const firstNativePort = createNativePort(firstPortMessages);
+  const secondNativePort = createNativePort(secondPortMessages);
+  const connectedPorts = [firstNativePort, secondNativePort];
+  let connectCalls = 0;
+  const loaded = await loadBackground({
+    chrome: createChromeFake({
+      runtime: {
+        connectNative() {
+          const port = connectedPorts[connectCalls];
+          connectCalls += 1;
+          if (!port) {
+            throw new Error('Unexpected connectNative call');
+          }
+          return port;
+        },
+      },
+    }),
+    query: `test-background-native-early-reply-${Date.now()}-${Math.random()}`,
+  });
+
+  const timers = installManualTimers();
+  try {
+    const nativeModule = getNativeModule(loaded);
+    const state = nativeModule.getStateForTest();
+
+    nativeModule.scheduleNativeReconnect('native host exited', {
+      method: 'native.disconnect',
+      summaryPrefix: 'Native host disconnected',
+      updateDisconnectedUi: true,
+    });
+    await flushAsyncWork();
+
+    timers.scheduled[0].callback();
+    assert.equal(connectCalls, 2);
+    assert.equal(state.nativePort, null);
+    assert.equal(state.pendingNativePort, secondNativePort);
+
+    secondNativePort.onMessage.dispatch(
+      createRequest({ id: 'early-request', method: 'skill.get_runtime_context' })
+    );
+    await flushAsyncWork();
+
+    const earlyResponse = secondPortMessages.find(
+      (message): message is Record<string, unknown> =>
+        typeof message === 'object' &&
+        message !== null &&
+        'id' in message &&
+        (message as { id?: unknown }).id === 'early-request'
+    );
+    assert.equal(earlyResponse?.ok, true);
+
+    const stabilityTimer = timers.scheduled.find((entry) => entry.delay === 500);
+    assert.notEqual(stabilityTimer, undefined);
+    stabilityTimer?.callback();
+    await flushAsyncWork();
+
+    assert.equal(state.nativePort, secondNativePort);
+    assert.equal(state.pendingNativePort, null);
+  } finally {
+    timers.restore();
+  }
+});
+
 test('background native enable flow broadcasts synced UI state and posts an access update', async () => {
   const nativeMessages: unknown[] = [];
   const nativePort = createNativePort(nativeMessages);

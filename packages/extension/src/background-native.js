@@ -315,10 +315,16 @@ export function createNativeConnectionController(state, chromeObj, deps) {
     clearNativeReconnectTimer();
     try {
       const candidatePort = chromeObj.runtime.connectNative(NATIVE_APP_NAME);
+      // Track the connecting port immediately so replies to bridge requests
+      // that arrive before the stability window closes are not dropped.
+      state.pendingNativePort = candidatePort;
       const wasReconnect = nativeReconnectDelay > NATIVE_RECONNECT_BASE_MS;
       const reconnectAttempts = state.nativeReconnectAttempts;
       const stabilityTimer = setTimeout(() => {
         state.nativePort = candidatePort;
+        if (state.pendingNativePort === candidatePort) {
+          state.pendingNativePort = null;
+        }
         nativeReconnectDelay = NATIVE_RECONNECT_BASE_MS;
         state.nativeReconnectAttempts = 0;
         deps.broadcastUi({ type: 'native.status', connected: true });
@@ -350,6 +356,9 @@ export function createNativeConnectionController(state, chromeObj, deps) {
       );
       candidatePort.onDisconnect.addListener(() => {
         clearTimeout(stabilityTimer);
+        if (state.pendingNativePort === candidatePort) {
+          state.pendingNativePort = null;
+        }
         const disconnectError = chromeObj.runtime.lastError?.message ?? 'Native host disconnected.';
         scheduleNativeReconnect(disconnectError, {
           method: 'native.disconnect',
