@@ -259,6 +259,69 @@ test('ensureNetworkInterceptor wraps fetch once and trims buffered entries', asy
   }
 });
 
+test('ensureNetworkInterceptor passes Request inputs through without cloning them', async () => {
+  const snapshot = snapshotGlobalDescriptors();
+  let requestConstructions = 0;
+
+  Object.defineProperty(globalThis, 'Request', {
+    configurable: true,
+    writable: true,
+    value: class CountingRequest {
+      constructor() {
+        requestConstructions += 1;
+      }
+    },
+  });
+  Object.defineProperty(globalThis, 'performance', {
+    configurable: true,
+    writable: true,
+    value: { now: () => 0 },
+  });
+  const seenInputs: unknown[] = [];
+  Object.defineProperty(globalThis, 'fetch', {
+    configurable: true,
+    writable: true,
+    value: async (...args: unknown[]) => {
+      seenInputs.push(args[0]);
+      return { status: 200, headers: createHeaders('7') };
+    },
+  });
+  Object.defineProperty(globalThis, 'XMLHttpRequest', {
+    configurable: true,
+    writable: true,
+    value: class LocalXMLHttpRequest {
+      open() {}
+      send() {}
+    },
+  });
+
+  try {
+    const injection = await captureInstallInjection();
+    const install = injection.func as () => void;
+    install();
+
+    const mutableGlobal = globalThis as unknown as InstalledNetworkGlobal;
+    const requestInput = {
+      url: 'https://example.com/submit',
+      method: 'post',
+      body: 'payload',
+    };
+    await (mutableGlobal.fetch as unknown as (input: unknown) => Promise<unknown>)(requestInput);
+
+    assert.equal(requestConstructions, 0);
+    assert.equal(seenInputs[0], requestInput);
+
+    const buffer = mutableGlobal.__bb_network_buffer as NetworkEntry[];
+    assert.equal(buffer.length, 1);
+    assert.equal(buffer[0].method, 'POST');
+    assert.equal(buffer[0].url, 'https://example.com/submit');
+    assert.equal(buffer[0].status, 200);
+    assert.equal(buffer[0].size, 7);
+  } finally {
+    restoreGlobalDescriptors(snapshot);
+  }
+});
+
 test('ensureNetworkInterceptor records xhr entries with captured and default metadata', async () => {
   const snapshot = snapshotGlobalDescriptors();
   const originalDateNow = Date.now;

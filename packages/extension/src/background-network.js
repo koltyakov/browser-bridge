@@ -29,10 +29,25 @@ export async function ensureNetworkInterceptor(tabId, chromeObj) {
 
       const origFetch = globalThis.fetch;
       globalThis.fetch = async function (...args) {
-        const req = new Request(...args);
+        // Read metadata without constructing a Request: building a Request
+        // from a Request input disturbs its body and would make the page's
+        // own fetch call fail with "body already used".
+        const input = /** @type {unknown} */ (args[0]);
+        const init = /** @type {{ method?: unknown } | undefined} */ (args[1]);
+        const requestLike =
+          input && typeof input === 'object' && 'url' in input && 'method' in input
+            ? /** @type {{ url: unknown, method: unknown }} */ (input)
+            : null;
+        let url = requestLike ? String(requestLike.url) : String(input);
+        try {
+          url = new URL(url, globalThis.location?.href).href;
+        } catch {
+          /* keep the raw value when it cannot be resolved */
+        }
+        const method = String(init?.method || requestLike?.method || 'GET').toUpperCase();
         const entry = {
-          method: req.method,
-          url: req.url,
+          method,
+          url,
           status: 0,
           duration: 0,
           type: 'fetch',
