@@ -112,6 +112,7 @@ test('ensureConsoleInterceptor installs, records, bounds, and avoids duplicate h
   const circular: Record<string, unknown> = {};
   circular.self = circular;
   console.error(circular);
+  console.error(new Error('boom'), { cause: new TypeError('bad input') });
   listeners.get('error')?.({
     message: 'Kaboom',
     filename: 'https://example.test/app.js',
@@ -124,7 +125,11 @@ test('ensureConsoleInterceptor installs, records, bounds, and avoids duplicate h
     getBuffer().map((entry) => ({ level: entry.level, args: entry.args })),
     [
       { level: 'log', args: ['ready', '{"ok":true}'] },
-      { level: 'error', args: ['[object Object]'] },
+      { level: 'error', args: ['{"self":"[Circular]"}'] },
+      {
+        level: 'error',
+        args: ['Error: boom', '{"cause":"TypeError: bad input"}'],
+      },
       {
         level: 'exception',
         args: ['Kaboom', 'https://example.test/app.js:7:11'],
@@ -132,6 +137,19 @@ test('ensureConsoleInterceptor installs, records, bounds, and avoids duplicate h
       { level: 'rejection', args: ['Promise exploded'] },
     ]
   );
+
+  const hugeState = {
+    items: Array.from({ length: 5_000 }, (_, index) => ({
+      id: index,
+      label: `item-${index}`,
+    })),
+  };
+  console.log(hugeState);
+  const hugeEntry = getBuffer().at(-1);
+  assert.ok(hugeEntry);
+  assert.equal(hugeEntry.args.length, 1);
+  assert.ok(hugeEntry.args[0].length <= 500);
+  assert.ok(hugeEntry.args[0].startsWith('{"items":'));
 
   const buffer = getBuffer();
   buffer.length = 0;

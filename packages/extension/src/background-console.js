@@ -32,6 +32,76 @@ export async function ensureConsoleInterceptor(tabId, chromeObj) {
       globalThis.__bb_console_buffer = buffer;
       globalThis.__bb_console_dropped = 0;
       const MAX = 200;
+      const MAX_ARG_CHARS = 500;
+
+      /**
+       * Serialize one console argument into a bounded string. Uses a budgeted
+       * JSON walk that prunes subtrees once the budget is spent, so logging a
+       * huge state tree stays cheap for the page. Errors keep their message
+       * (their fields are non-enumerable, so plain stringify yields "{}").
+       *
+       * @param {unknown} value
+       * @returns {string}
+       */
+      const serializeArg = (value) => {
+        try {
+          if (value instanceof Error) {
+            return String(value).slice(0, MAX_ARG_CHARS);
+          }
+          if (typeof value !== 'object' || value === null) {
+            return String(value).slice(0, MAX_ARG_CHARS);
+          }
+          let budget = MAX_ARG_CHARS;
+          const seen = new WeakSet();
+          const json = JSON.stringify(value, (_key, val) => {
+            if (budget <= 0) {
+              return undefined;
+            }
+            if (val instanceof Error) {
+              const text = String(val).slice(0, MAX_ARG_CHARS);
+              budget -= text.length + 2;
+              return text;
+            }
+            if (typeof val === 'object' && val !== null) {
+              if (seen.has(val)) {
+                return '[Circular]';
+              }
+              seen.add(val);
+              return val;
+            }
+            if (typeof val === 'string') {
+              const text = val.length > MAX_ARG_CHARS ? val.slice(0, MAX_ARG_CHARS) : val;
+              budget -= text.length + 2;
+              return text;
+            }
+            budget -= 8;
+            return val;
+          });
+          return String(json).slice(0, MAX_ARG_CHARS);
+        } catch {
+          try {
+            return String(value).slice(0, MAX_ARG_CHARS);
+          } catch {
+            return '[unserializable]';
+          }
+        }
+      };
+
+      /**
+       * @param {string} level
+       * @param {string[]} args
+       * @returns {void}
+       */
+      const pushEntry = (level, args) => {
+        buffer.push({ level, args, ts: Date.now() });
+        if (buffer.length > MAX) {
+          const dropped = /** @type {Record<string, unknown>} */ (globalThis).__bb_console_dropped;
+          /** @type {Record<string, unknown>} */ (globalThis).__bb_console_dropped =
+            (typeof dropped === 'number' ? dropped : 0) + (buffer.length - MAX);
+          buffer.splice(0, buffer.length - MAX);
+        }
+      };
+
       const orig = /** @type {Record<string, Function>} */ ({});
       const consoleMethods =
         /** @type {Record<string, (...args: unknown[]) => void>} */ (
@@ -40,57 +110,21 @@ export async function ensureConsoleInterceptor(tabId, chromeObj) {
       for (const level of ['log', 'warn', 'error', 'info', 'debug']) {
         orig[level] = consoleMethods[level];
         consoleMethods[level] = (...args) => {
-          buffer.push({
+          pushEntry(
             level,
-            args: args.map((a) => {
-              try {
-                return typeof a === 'object'
-                  ? JSON.stringify(a).slice(0, 500)
-                  : String(a).slice(0, 500);
-              } catch {
-                return String(a).slice(0, 500);
-              }
-            }),
-            ts: Date.now(),
-          });
-          if (buffer.length > MAX) {
-            const dropped =
-              /** @type {Record<string, unknown>} */ (globalThis).__bb_console_dropped;
-            /** @type {Record<string, unknown>} */ (globalThis).__bb_console_dropped =
-              (typeof dropped === 'number' ? dropped : 0) + (buffer.length - MAX);
-            buffer.splice(0, buffer.length - MAX);
-          }
+            args.map((a) => serializeArg(a))
+          );
           orig[level].apply(console, args);
         };
       }
       globalThis.addEventListener('error', (e) => {
-        buffer.push({
-          level: 'exception',
-          args: [
-            e.message || 'Unknown error',
-            e.filename ? `${e.filename}:${e.lineno}:${e.colno}` : '',
-          ],
-          ts: Date.now(),
-        });
-        if (buffer.length > MAX) {
-          const dropped = /** @type {Record<string, unknown>} */ (globalThis).__bb_console_dropped;
-          /** @type {Record<string, unknown>} */ (globalThis).__bb_console_dropped =
-            (typeof dropped === 'number' ? dropped : 0) + (buffer.length - MAX);
-          buffer.splice(0, buffer.length - MAX);
-        }
+        pushEntry('exception', [
+          e.message || 'Unknown error',
+          e.filename ? `${e.filename}:${e.lineno}:${e.colno}` : '',
+        ]);
       });
       globalThis.addEventListener('unhandledrejection', (e) => {
-        buffer.push({
-          level: 'rejection',
-          args: [String(e.reason).slice(0, 500)],
-          ts: Date.now(),
-        });
-        if (buffer.length > MAX) {
-          const dropped = /** @type {Record<string, unknown>} */ (globalThis).__bb_console_dropped;
-          /** @type {Record<string, unknown>} */ (globalThis).__bb_console_dropped =
-            (typeof dropped === 'number' ? dropped : 0) + (buffer.length - MAX);
-          buffer.splice(0, buffer.length - MAX);
-        }
+        pushEntry('rejection', [String(e.reason).slice(0, MAX_ARG_CHARS)]);
       });
     },
   });
