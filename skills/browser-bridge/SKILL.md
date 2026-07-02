@@ -34,6 +34,8 @@ bbx tab-activate <tabId>    # bring a tab to the foreground
 bbx skill                   # live runtime presets + limits
 ```
 
+Use the globally installed `bbx` command or `node packages/agent-client/src/cli.js ...` for live readiness checks from this repository. Avoid `rtk npm exec -- bbx status` as a health signal: that path can restart/replace the daemon and report `Extension: disconnected` before Chrome reconnects. If it happens, wait a few seconds and verify with `bbx status`.
+
 ### Inspect & Find
 
 ```bash
