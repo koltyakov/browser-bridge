@@ -5,15 +5,16 @@ mismatched versions between the agent client (CLI/MCP) and the daemon.
 
 ## Current version
 
-The protocol version is defined in `packages/protocol/src/protocol.js`:
+The protocol compatibility version is derived from the package/extension version
+in `packages/protocol/src/protocol.js`:
 
 ```js
-export const PROTOCOL_VERSION = '1.0';
-export const SUPPORTED_VERSIONS = Object.freeze(['1.0']);
+getProtocolVersion(); // major.minor from package.json or manifest.json
+getSupportedProtocolVersions(); // [getProtocolVersion()]
 ```
 
-Both the client and daemon import `PROTOCOL_VERSION` from the same shared
-`@browserbridge/protocol` package, so matched installations always agree.
+Patch versions may differ between the daemon and extension. Major-minor must
+match for protocol compatibility.
 
 ## When negotiation happens
 
@@ -30,7 +31,7 @@ sends a `health.ping` request with its protocol version embedded in
     "method": "health.ping",
     "params": {},
     "meta": {
-      "protocol_version": "1.0",
+      "protocol_version": "<package major.minor>",
       "token_budget": null
     }
   }
@@ -39,14 +40,14 @@ sends a `health.ping` request with its protocol version embedded in
 
 ## How the daemon responds
 
-The daemon compares the client's `protocol_version` against `SUPPORTED_VERSIONS`
-using `getVersionNegotiationPayload()` in
-`packages/native-host/src/daemon.js:84`.
+The daemon compares the client's `protocol_version` against
+`getSupportedProtocolVersions()` using `getVersionNegotiationPayload()` in
+`packages/native-host/src/daemon.js`.
 
 ### Version matches
 
-When the client version is in `SUPPORTED_VERSIONS`, the response includes only
-the supported versions list:
+When the client version is in `getSupportedProtocolVersions()`, the response
+includes only the supported versions list:
 
 ```json
 {
@@ -54,7 +55,7 @@ the supported versions list:
   "result": {
     "daemon": "ok",
     "extensionConnected": true,
-    "supported_versions": ["1.0"]
+    "supported_versions": ["<package major.minor>"]
   }
 }
 ```
@@ -64,14 +65,14 @@ No `migration_hint` or `deprecated_since` fields are present.
 ### Client is newer (daemon outdated)
 
 When the client version is newer than any version the daemon supports
-(e.g., client sends `99.0` but daemon only knows `1.0`):
+(e.g., client sends `99.0` but daemon only knows the current package major-minor):
 
 ```json
 {
   "ok": true,
   "result": {
     "daemon": "ok",
-    "supported_versions": ["1.0"],
+    "supported_versions": ["<package major.minor>"],
     "migration_hint": "Browser Bridge daemon is older than the client protocol 99.0. Restart or update the Browser Bridge CLI so the daemon supports 99.0."
   }
 }
@@ -83,16 +84,16 @@ the daemon (or updating the npm package and restarting) resolves it.
 ### Client is older (daemon newer)
 
 When the client version is older than the daemon's latest supported version
-(e.g., client sends `0.5` but daemon supports `1.0`):
+(e.g., client sends `0.5` but daemon supports the current package major-minor):
 
 ```json
 {
   "ok": true,
   "result": {
     "daemon": "ok",
-    "supported_versions": ["1.0"],
-    "deprecated_since": "1.0",
-    "migration_hint": "Browser Bridge daemon is newer than the client protocol 0.5. Restart or update the Browser Bridge CLI/npm package to 1.0 or later."
+    "supported_versions": ["<package major.minor>"],
+    "deprecated_since": "<package major.minor>",
+    "migration_hint": "Browser Bridge daemon is newer than the client protocol 0.5. Restart or update the Browser Bridge CLI/npm package to <package major.minor> or later."
   }
 }
 ```
@@ -128,9 +129,9 @@ if (client.protocolWarning) {
 
 | Scenario | `supported_versions` | `deprecated_since` | `migration_hint` |
 |---|---|---|---|
-| Versions match | `["1.0"]` | absent | absent |
-| Client newer | `["1.0"]` | absent | "daemon is older..." |
-| Client older | `["1.0"]` | `"1.0"` | "daemon is newer..." |
+| Versions match | current package major-minor | absent | absent |
+| Client newer | current package major-minor | absent | "daemon is older..." |
+| Client older | current package major-minor | current package major-minor | "daemon is newer..." |
 
 ## Version comparison
 
@@ -140,9 +141,8 @@ Versions are compared as dot-separated numeric sequences
 
 ## Adding a new protocol version
 
-1. Update `PROTOCOL_VERSION` and prepend the new version to
-   `SUPPORTED_VERSIONS` in `packages/protocol/src/protocol.js`.
+1. Update the root `package.json` and extension `manifest.json` version.
 2. Publish the updated `@browserbridge/protocol` package.
-3. The daemon automatically advertises the new version. Clients that still send
+3. The daemon automatically advertises the new major-minor version. Clients that still send
    the old version will receive a `deprecated_since` hint pointing them to
    upgrade.

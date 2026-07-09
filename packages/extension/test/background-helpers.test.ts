@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { PROTOCOL_VERSION } from '../../protocol/src/index.js';
 import type { BridgeResponse } from '../../protocol/src/types.js';
 
 import {
@@ -48,7 +49,7 @@ function successResponse(id: string, result: unknown): BridgeResponse {
     ok: true,
     result,
     error: null,
-    meta: { protocol_version: '1.0' },
+    meta: { protocol_version: PROTOCOL_VERSION },
   };
 }
 
@@ -62,7 +63,7 @@ function failureResponse(id: string, code: string, message: string): BridgeRespo
         ? Failure
         : never
       : never,
-    meta: { protocol_version: '1.0' },
+    meta: { protocol_version: PROTOCOL_VERSION },
   };
 }
 
@@ -429,7 +430,7 @@ test('enforceTokenBudget returns RESULT_TRUNCATED when even the compact fallback
     method,
     tokenBudget: 0.25,
   });
-  assert.equal(budgeted.meta.protocol_version, '1.0');
+  assert.equal(budgeted.meta.protocol_version, PROTOCOL_VERSION);
   assert.equal(budgeted.meta.budget_applied, true);
   assert.equal(budgeted.meta.budget_truncated, true);
   assert.equal(

@@ -4,7 +4,11 @@ import { EventEmitter } from 'node:events';
 import net from 'node:net';
 import type { BridgeTransport } from '../src/config.js';
 
-import { ERROR_CODES, MAX_NATIVE_MESSAGE_BYTES } from '../../protocol/src/index.js';
+import {
+  ERROR_CODES,
+  MAX_NATIVE_MESSAGE_BYTES,
+  PROTOCOL_VERSION,
+} from '../../protocol/src/index.js';
 import {
   bindBridgeSocketLifecycle,
   connectWithBootstrap,
@@ -331,7 +335,7 @@ test('runNativeHost reports bootstrap failures as native error responses', async
               hint: 'Native host not reachable. Run `bbx doctor` to diagnose the installation.',
             },
           },
-          meta: { protocol_version: '1.0' },
+          meta: { protocol_version: PROTOCOL_VERSION },
         },
       },
     ]);

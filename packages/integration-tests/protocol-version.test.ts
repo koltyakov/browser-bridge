@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import type { ChildProcess } from 'node:child_process';
 
-import { parseJsonLines } from '../protocol/src/index.js';
+import { PROTOCOL_VERSION, parseJsonLines } from '../protocol/src/index.js';
 import { withTempSocketPath } from '../../tests/_helpers/socketHarness.ts';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -288,7 +288,7 @@ test(
         try {
           await delay(300);
 
-          const response = await sendHealthPingWithVersion(socketPath, '1.0');
+          const response = await sendHealthPingWithVersion(socketPath, PROTOCOL_VERSION);
 
           assert.equal(response.ok, true);
           const result =

@@ -2,7 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { handleHealthTool } from '../../mcp-server/src/handlers.js';
 import { runNativeHost } from '../../native-host/src/native-host.js';
-import { createFailure, createRequest, createSuccess } from '../../protocol/src/index.js';
+import {
+  createFailure,
+  createRequest,
+  createSuccess,
+  PROTOCOL_VERSION,
+} from '../../protocol/src/index.js';
 import {
   decodeNativeMessages,
   frameNativeMessage,
@@ -61,7 +66,7 @@ test('bbx status performs a real bridge health roundtrip over the socket protoco
     'health.ping': (request) =>
       createSuccess(request.id, {
         daemon: 'ok',
-        supported_versions: ['1.0'],
+        supported_versions: [PROTOCOL_VERSION],
         extensionConnected: true,
         connectedExtensions: [
           {
@@ -98,9 +103,9 @@ test('bbx status performs a real bridge health roundtrip over the socket protoco
     assert.match(payload.summary, /tab 42/);
     assert.equal(bridgeServer.requests.length, 2);
     assert.equal(bridgeServer.requests[0].method, 'health.ping');
-    assert.equal(bridgeServer.requests[0].meta.protocol_version, '1.0');
+    assert.equal(bridgeServer.requests[0].meta.protocol_version, PROTOCOL_VERSION);
     assert.equal(bridgeServer.requests[1].method, 'health.ping');
-    assert.equal(bridgeServer.requests[1].meta.protocol_version, '1.0');
+    assert.equal(bridgeServer.requests[1].meta.protocol_version, PROTOCOL_VERSION);
     assert.equal(bridgeServer.requests[1].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
@@ -113,7 +118,7 @@ test('bbx call writes a bridge request, prints the result JSON, and exits succes
     'health.ping': (request) =>
       createSuccess(request.id, {
         daemon: 'ok',
-        supported_versions: ['1.0'],
+        supported_versions: [PROTOCOL_VERSION],
         extensionConnected: false,
         connectedExtensions: [],
         access: {
@@ -155,7 +160,7 @@ test('bbx call writes a bridge request, prints the result JSON, and exits succes
     assert.equal(bridgeServer.requests[1].tab_id, 42);
     assert.equal(bridgeServer.requests[1].params.textBudget, 100);
     assert.equal(bridgeServer.requests[1].meta.source, 'cli');
-    assert.equal(bridgeServer.requests[1].meta.protocol_version, '1.0');
+    assert.equal(bridgeServer.requests[1].meta.protocol_version, PROTOCOL_VERSION);
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();
@@ -167,7 +172,7 @@ test('bbx call exits 1 and reports bridge failures with the error code on stderr
     'health.ping': (request) =>
       createSuccess(request.id, {
         daemon: 'ok',
-        supported_versions: ['1.0'],
+        supported_versions: [PROTOCOL_VERSION],
         extensionConnected: false,
         connectedExtensions: [],
         access: {
@@ -227,7 +232,7 @@ test('handleHealthTool uses the live bridge client path and preserves MCP reques
     'health.ping': (request) =>
       createSuccess(request.id, {
         daemon: 'ok',
-        supported_versions: ['1.0'],
+        supported_versions: [PROTOCOL_VERSION],
         extensionConnected: false,
         connectedExtensions: [],
         access: {
@@ -251,7 +256,7 @@ test('handleHealthTool uses the live bridge client path and preserves MCP reques
     assert.equal(bridgeServer.requests.length, 2);
     assert.equal(bridgeServer.requests[1].method, 'health.ping');
     assert.equal(bridgeServer.requests[1].meta.source, 'mcp');
-    assert.equal(bridgeServer.requests[1].meta.protocol_version, '1.0');
+    assert.equal(bridgeServer.requests[1].meta.protocol_version, PROTOCOL_VERSION);
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     if (originalBridgeHome === undefined) {
@@ -347,7 +352,7 @@ test('runNativeHost bridges a framed host request through the daemon socket and 
     assert.equal(bridgeServer.messages.length >= 2, true);
     assert.equal(bridgeServer.requests.length, 1);
     assert.equal(bridgeServer.requests[0].method, 'tabs.list');
-    assert.equal(bridgeServer.requests[0].meta.protocol_version, '1.0');
+    assert.equal(bridgeServer.requests[0].meta.protocol_version, PROTOCOL_VERSION);
     assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
     await bridgeServer.close();

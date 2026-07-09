@@ -95,7 +95,7 @@ test('summarizeBridgeResponse condenses failures', () => {
       message: 'Denied',
       details: { scope: 'tab' },
     },
-    meta: { protocol_version: '1.0' },
+    meta: { protocol_version: PROTOCOL_VERSION },
   });
 
   assert.equal(summary.ok, false);
@@ -109,7 +109,7 @@ test('annotateBridgeSummary exposes transport and summary estimates', () => {
     result: { nodes: [{ tag: 'div', textExcerpt: 'hello' }] },
     error: null,
     meta: {
-      protocol_version: '1.0',
+      protocol_version: PROTOCOL_VERSION,
       transport_bytes: 640,
       transport_approx_tokens: 160,
       transport_cost_class: 'moderate',
@@ -158,6 +158,7 @@ test('BridgeClient auto-restarts an older daemon once during connect', async () 
 
   const client = new BridgeClient({
     socketPath: bridgeServer.socketPath,
+    restartDaemonOnVersionMismatch: true,
     restartDaemonFn: async () => {
       restartCount += 1;
       supportedVersion = PROTOCOL_VERSION;
@@ -190,6 +191,57 @@ test('BridgeClient auto-restarts an older daemon once during connect', async () 
   }
 });
 
+test('BridgeClient does not auto-restart an older daemon when launched by npm exec', async () => {
+  const previousNpmCommand = process.env.npm_command;
+  process.env.npm_command = 'exec';
+
+  let restartCount = 0;
+  const bridgeServer = await bridgeServerWith({
+    'health.ping': (request) =>
+      createSuccess(request.id, {
+        daemon: 'ok',
+        supported_versions: ['0.9'],
+      }),
+  });
+
+  const client = new BridgeClient({
+    socketPath: bridgeServer.socketPath,
+    restartDaemonFn: async () => {
+      restartCount += 1;
+      return {
+        transport: bridgeServer.socketPath,
+        socketPath: bridgeServer.socketPath,
+        pidPath: path.join(bridgeServer.bridgeHome, 'daemon.pid'),
+        pid: 31337,
+        previouslyRunning: true,
+        previousPid: 31336,
+        removedStaleSocket: false,
+      };
+    },
+  });
+
+  try {
+    await client.connect();
+
+    assert.equal(restartCount, 0);
+    assert.equal(client.connected, true);
+    assert.equal(client.protocolCompatibility?.compatible, false);
+    assert.match(client.protocolWarning || '', /Protocol mismatch: client speaks/);
+    assert.equal(
+      bridgeServer.requests.filter((request) => request.method === 'health.ping').length,
+      1
+    );
+  } finally {
+    await client.close().catch(() => {});
+    await bridgeServer.close();
+    if (previousNpmCommand === undefined) {
+      delete process.env.npm_command;
+    } else {
+      process.env.npm_command = previousNpmCommand;
+    }
+  }
+});
+
 test('BridgeClient does not restart when the daemon is newer than the client', async () => {
   let restartCount = 0;
   const bridgeServer = await bridgeServerWith({
@@ -197,7 +249,7 @@ test('BridgeClient does not restart when the daemon is newer than the client', a
       createSuccess(request.id, {
         daemon: 'ok',
         supported_versions: ['9.0'],
-        migration_hint: 'Browser Bridge daemon is newer than the client protocol 1.0.',
+        migration_hint: `Browser Bridge daemon is newer than the client protocol ${PROTOCOL_VERSION}.`,
       }),
   });
 
@@ -224,8 +276,52 @@ test('BridgeClient does not restart when the daemon is newer than the client', a
     assert.equal(client.protocolCompatibility?.compatible, false);
     assert.equal(
       client.protocolWarning,
-      'Browser Bridge daemon is newer than the client protocol 1.0.'
+      `Browser Bridge daemon is newer than the client protocol ${PROTOCOL_VERSION}.`
     );
+    assert.equal(
+      bridgeServer.requests.filter((request) => request.method === 'health.ping').length,
+      1
+    );
+  } finally {
+    await client.close().catch(() => {});
+    await bridgeServer.close();
+  }
+});
+
+test('BridgeClient does not restart to a daemon version newer than the connected extension supports', async () => {
+  let restartCount = 0;
+  const bridgeServer = await bridgeServerWith({
+    'health.ping': (request) =>
+      createSuccess(request.id, {
+        daemon: 'ok',
+        extensionConnected: true,
+        supported_versions: ['1.6'],
+        daemon_supported_versions: ['1.6'],
+        migration_hint: `Browser Bridge extension is older than the client protocol ${PROTOCOL_VERSION}.`,
+      }),
+  });
+
+  const client = new BridgeClient({
+    socketPath: bridgeServer.socketPath,
+    restartDaemonFn: async () => {
+      restartCount += 1;
+      return {
+        transport: bridgeServer.socketPath,
+        socketPath: bridgeServer.socketPath,
+        pidPath: path.join(bridgeServer.bridgeHome, 'daemon.pid'),
+        pid: 31337,
+        previouslyRunning: true,
+        previousPid: 31336,
+        removedStaleSocket: false,
+      };
+    },
+  });
+
+  try {
+    await client.connect();
+
+    assert.equal(restartCount, 0);
+    assert.equal(client.protocolCompatibility?.compatible, false);
     assert.equal(
       bridgeServer.requests.filter((request) => request.method === 'health.ping').length,
       1
@@ -264,7 +360,7 @@ test('BridgeClient.attachProtocolWarning returns the original response when empt
     ok: true,
     result: { value: 1 },
     error: null,
-    meta: { protocol_version: '1.0' },
+    meta: { protocol_version: PROTOCOL_VERSION },
   };
 
   assert.strictEqual(client.attachProtocolWarning(response), response);
@@ -334,7 +430,7 @@ test('summarizeBridgeResponse adds stale element recovery hint', () => {
       message: 'Element reference is stale.',
       details: null,
     },
-    meta: { protocol_version: '1.0' },
+    meta: { protocol_version: PROTOCOL_VERSION },
   });
 
   assert.equal(summary.ok, false);
@@ -354,7 +450,7 @@ test('summarizeBridgeResponse surfaces protocol warnings from response metadata'
     },
     error: null,
     meta: {
-      protocol_version: '1.0',
+      protocol_version: PROTOCOL_VERSION,
       protocol_warning: 'Update the Browser Bridge CLI to match the extension.',
     },
   });
@@ -374,7 +470,7 @@ test('summarizeBridgeResponse condenses success payloads', () => {
       b: 2,
     },
     error: null,
-    meta: { protocol_version: '1.0' },
+    meta: { protocol_version: PROTOCOL_VERSION },
   });
 
   assert.equal(summary.ok, true);
@@ -438,7 +534,7 @@ test('summarizeBridgeResponse summarizes network entries', () => {
       total: 2,
     },
     error: null,
-    meta: { protocol_version: '1.0' },
+    meta: { protocol_version: PROTOCOL_VERSION },
   });
 
   assert.equal(summary.ok, true);
@@ -456,7 +552,7 @@ test('summarizeBridgeResponse does not misidentify non-network entries', () => {
       total: 1,
     },
     error: null,
-    meta: { protocol_version: '1.0' },
+    meta: { protocol_version: PROTOCOL_VERSION },
   });
 
   assert.equal(summary.ok, true);
@@ -474,7 +570,7 @@ test('summarizeBridgeResponse formats health ping correctly', () => {
       socketPath: '/tmp/test.sock',
     },
     error: null,
-    meta: { protocol_version: '1.0' },
+    meta: { protocol_version: PROTOCOL_VERSION },
   });
   assert.equal(connected.ok, true);
   assert.match(connected.summary, /Daemon: ok/);
@@ -489,7 +585,7 @@ test('summarizeBridgeResponse formats health ping correctly', () => {
       socketPath: '/tmp/test.sock',
     },
     error: null,
-    meta: { protocol_version: '1.0' },
+    meta: { protocol_version: PROTOCOL_VERSION },
   });
   assert.match(disconnected.summary, /Extension: disconnected/);
 });
@@ -506,7 +602,7 @@ test('summarizeBridgeResponse formats page state correctly', () => {
       hints: { tailwind: true, react: false },
     },
     error: null,
-    meta: { protocol_version: '1.0' },
+    meta: { protocol_version: PROTOCOL_VERSION },
   });
   assert.equal(summary.ok, true);
   assert.match(summary.summary, /Page: Example Page/);
@@ -521,7 +617,7 @@ test('summarizeBridgeResponse formats page text correctly', () => {
     ok: true,
     result: { text: 'Hello world content...', length: 22, truncated: false },
     error: null,
-    meta: { protocol_version: '1.0' },
+    meta: { protocol_version: PROTOCOL_VERSION },
   });
   assert.equal(summary.ok, true);
   assert.match(summary.summary, /Page text: 22 chars/);
@@ -539,7 +635,7 @@ test('summarizeBridgeResponse formats page.get_text value field', () => {
       omitted: 3000,
     },
     error: null,
-    meta: { protocol_version: '1.0' },
+    meta: { protocol_version: PROTOCOL_VERSION },
   });
   assert.equal(summary.ok, true);
   assert.match(summary.summary, /Page text: 5000 chars \(truncated\)/);
@@ -567,7 +663,7 @@ test('summarizeBridgeResponse formats daemon log entries correctly', () => {
       ],
     },
     error: null,
-    meta: { protocol_version: '1.0' },
+    meta: { protocol_version: PROTOCOL_VERSION },
   });
   assert.equal(summary.ok, true);
   assert.match(summary.summary, /Log: 2 entries/);
@@ -589,7 +685,7 @@ test('summarizeBridgeResponse formats accessibility tree correctly', () => {
       truncated: false,
     },
     error: null,
-    meta: { protocol_version: '1.0' },
+    meta: { protocol_version: PROTOCOL_VERSION },
   });
   assert.equal(summary.ok, true);
   assert.match(summary.summary, /Accessibility tree/);
@@ -602,7 +698,7 @@ function ok(result: unknown): BridgeResponse {
     ok: true,
     result,
     error: null,
-    meta: { protocol_version: '1.0' },
+    meta: { protocol_version: PROTOCOL_VERSION },
   };
 }
 
@@ -2202,7 +2298,7 @@ test('BridgeClient.batch sends requests concurrently and preserves response orde
         ok: true,
         result: { method: request.method, ordinal: requestCount },
         error: null,
-        meta: { protocol_version: '1.0' },
+        meta: { protocol_version: PROTOCOL_VERSION },
       },
     };
     const delay = request.method === 'tabs.list' ? 20 : 5;

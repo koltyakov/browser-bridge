@@ -24,9 +24,10 @@ import {
   DEFAULT_DAEMON_PENDING_TIMEOUT_MS,
   DEFAULT_LOG_TAIL_LIMIT,
   ERROR_CODES,
+  getProtocolVersion,
+  getSupportedProtocolVersions,
   parseJsonLines,
-  PROTOCOL_VERSION,
-  SUPPORTED_VERSIONS,
+  setProtocolPackageVersion,
   validateBridgeRequest,
 } from '../../protocol/src/index.js';
 import {
@@ -45,6 +46,7 @@ import { normalizeDaemonLogger } from './daemon-logger.js';
 import { writeJsonLine } from './framing.js';
 
 const DAEMON_VERSION = loadDaemonVersion();
+setProtocolPackageVersion(DAEMON_VERSION);
 
 /** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */
 /** @typedef {import('../../protocol/src/types.js').SetupInstallParams} SetupInstallParams */
@@ -89,14 +91,15 @@ function compareProtocolVersions(left, right) {
  * @returns {{ supported_versions: readonly string[], deprecated_since?: string, migration_hint?: string }}
  */
 function getVersionNegotiationPayload(requestedVersion) {
-  const latestSupported = SUPPORTED_VERSIONS[0];
-  if (!requestedVersion || !latestSupported || SUPPORTED_VERSIONS.includes(requestedVersion)) {
-    return { supported_versions: SUPPORTED_VERSIONS };
+  const supportedVersions = getSupportedProtocolVersions();
+  const latestSupported = supportedVersions[0];
+  if (!requestedVersion || !latestSupported || supportedVersions.includes(requestedVersion)) {
+    return { supported_versions: supportedVersions };
   }
 
   const localIsNewer = compareProtocolVersions(latestSupported, requestedVersion) > 0;
   return {
-    supported_versions: SUPPORTED_VERSIONS,
+    supported_versions: supportedVersions,
     ...(localIsNewer ? { deprecated_since: latestSupported } : {}),
     migration_hint: localIsNewer
       ? `Browser Bridge daemon is newer than the client protocol ${requestedVersion}. Restart or update the Browser Bridge CLI/npm package to ${latestSupported} or later.`
@@ -640,7 +643,7 @@ export class BridgeDaemon {
           transport: formatBridgeTransport(this.transport),
           proxy: this.getProxyStatusPayload(),
           connectedExtensions: [],
-          daemon_supported_versions: SUPPORTED_VERSIONS,
+          daemon_supported_versions: getSupportedProtocolVersions(),
           ...getVersionNegotiationPayload(request.meta?.protocol_version),
         });
         await writeJsonLine(socket, { type: 'agent.response', response });
@@ -948,7 +951,7 @@ export class BridgeDaemon {
                 ...getVersionNegotiationPayload(pending.protocolVersion),
                 .../** @type {Record<string, unknown>} */ (responseMessage.result),
                 daemonVersion: DAEMON_VERSION,
-                daemon_supported_versions: SUPPORTED_VERSIONS,
+                daemon_supported_versions: getSupportedProtocolVersions(),
                 proxy: this.getProxyStatusPayload(),
               },
               {
@@ -1161,7 +1164,7 @@ export async function pingExistingDaemon(transport) {
             method: 'health.ping',
             tab_id: null,
             params: {},
-            meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+            meta: { protocol_version: getProtocolVersion(), token_budget: null },
           },
         })}\n`
       );

@@ -6,7 +6,7 @@ import type { BridgeRequest } from '../protocol/src/types.js';
 
 import { BridgeDaemon, isWindowsNamedPipePath } from '../native-host/src/daemon.js';
 import { BridgeClient } from '../agent-client/src/client.js';
-import { parseJsonLines } from '../protocol/src/index.js';
+import { parseJsonLines, PROTOCOL_VERSION } from '../protocol/src/index.js';
 
 // --- Unit: named pipe path detection (all platforms) ---
 
@@ -150,7 +150,7 @@ test(
               ok: true,
               result: { url: 'https://pipe-test.example/' },
               error: null,
-              meta: { protocol_version: '1.0', method: 'page.get_state' },
+              meta: { protocol_version: PROTOCOL_VERSION, method: 'page.get_state' },
             },
           })}\n`
         );

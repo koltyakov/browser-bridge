@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-import { BRIDGE_METHOD_REGISTRY } from '../../protocol/src/index.js';
+import { BRIDGE_METHOD_REGISTRY, PROTOCOL_VERSION } from '../../protocol/src/index.js';
 import { CLI_METHOD_BINDINGS } from '../src/command-registry.js';
 import { detectMcpClients, detectSkillTargets } from '../src/detect.js';
 import { findConfiguredMcpClients, installMcpConfig, removeMcpConfig } from '../src/mcp-config.js';
@@ -32,7 +32,7 @@ function successResponse(id: string, result: unknown): BridgeResponse {
     ok: true,
     result,
     error: null,
-    meta: { protocol_version: '1.0' },
+    meta: { protocol_version: PROTOCOL_VERSION },
   };
 }
 
@@ -417,7 +417,7 @@ test('resolveRef propagates upstream bridge error messages', async () => {
           message: 'Denied by page policy.',
           details: null,
         },
-        meta: { protocol_version: '1.0' },
+        meta: { protocol_version: PROTOCOL_VERSION },
       };
     },
   };
@@ -738,7 +738,7 @@ test('getDoctorReport clears readiness issues after the bridge recovers on a lat
             },
           },
           error: null,
-          meta: { protocol_version: '1.0' },
+          meta: { protocol_version: PROTOCOL_VERSION },
         } as BridgeResponse;
       },
     } as BridgeClient);

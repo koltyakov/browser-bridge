@@ -1,6 +1,6 @@
 // @ts-check
 
-import { SUPPORTED_VERSIONS } from '../../protocol/src/index.js';
+import { getSupportedProtocolVersions } from '../../protocol/src/index.js';
 
 /**
  * @param {string} left
@@ -25,14 +25,15 @@ export function compareProtocolVersions(left, right) {
  * @returns {{ supported_versions: readonly string[], deprecated_since?: string, migration_hint?: string }}
  */
 export function getVersionNegotiationPayload(requestedVersion) {
-  const latestSupported = SUPPORTED_VERSIONS[0];
-  if (!requestedVersion || !latestSupported || SUPPORTED_VERSIONS.includes(requestedVersion)) {
-    return { supported_versions: SUPPORTED_VERSIONS };
+  const supportedVersions = getSupportedProtocolVersions();
+  const latestSupported = supportedVersions[0];
+  if (!requestedVersion || !latestSupported || supportedVersions.includes(requestedVersion)) {
+    return { supported_versions: supportedVersions };
   }
 
   const localIsNewer = compareProtocolVersions(latestSupported, requestedVersion) > 0;
   return {
-    supported_versions: SUPPORTED_VERSIONS,
+    supported_versions: supportedVersions,
     ...(localIsNewer ? { deprecated_since: latestSupported } : {}),
     migration_hint: localIsNewer
       ? `Browser Bridge extension is newer than the client protocol ${requestedVersion}. Update the Browser Bridge CLI/npm package to ${latestSupported} or later.`

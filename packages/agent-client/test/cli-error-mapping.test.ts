@@ -6,7 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createSuccess } from '../../protocol/src/index.js';
+import { createSuccess, PROTOCOL_VERSION } from '../../protocol/src/index.js';
 import { runCli } from '../../../tests/_helpers/runCli.ts';
 import { createInstallFs } from '../../../tests/_helpers/installFs.ts';
 import { bridgeServerWith } from '../../../tests/_helpers/socketHarness.ts';
@@ -26,7 +26,7 @@ function expectCliPayload(value: unknown): CliPayload {
 function createBridgeHealthResult() {
   return {
     daemon: 'ok',
-    supported_versions: ['1.0'],
+    supported_versions: [PROTOCOL_VERSION],
     extensionConnected: false,
     connectedExtensions: [],
     access: {

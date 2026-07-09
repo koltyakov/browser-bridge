@@ -102,6 +102,48 @@ test('runPostinstall reports daemon restart after successful install', async () 
   assert.equal(stderr.chunks.join(''), '');
 });
 
+test('runPostinstall skips install and daemon restart during npm exec', async () => {
+  const stdout = createWriteSink();
+  const stderr = createWriteSink();
+  let installCalls = 0;
+  let restartCalls = 0;
+
+  const installNativeManifestFn: InstallNativeManifestFn = async () => {
+    installCalls += 1;
+    return {
+      manifestPath: '/tmp/manifest.json',
+      launcherPath: '/tmp/launcher',
+      allowedOrigins: [],
+      extensionId: null,
+    };
+  };
+  const restartBridgeDaemonIfRunningFn: RestartBridgeDaemonIfRunningFn = async () => {
+    restartCalls += 1;
+    return {
+      transport: 'tcp:127.0.0.1:9223',
+      socketPath: '',
+      pidPath: '/tmp/browser-bridge.pid',
+      pid: 123,
+      previouslyRunning: true,
+      previousPid: 122,
+      removedStaleSocket: false,
+    };
+  };
+
+  await runPostinstall({
+    installNativeManifestFn,
+    restartBridgeDaemonIfRunningFn,
+    stdout: stdout.stream,
+    stderr: stderr.stream,
+    env: { npm_command: 'exec' },
+  });
+
+  assert.equal(installCalls, 0);
+  assert.equal(restartCalls, 0);
+  assert.equal(stdout.chunks.join(''), '');
+  assert.equal(stderr.chunks.join(''), '');
+});
+
 test('runPostinstall keeps install success non-fatal when daemon restart fails', async () => {
   const stdout = createWriteSink();
   const stderr = createWriteSink();

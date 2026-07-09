@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   summarizeBridgeResponse,
   annotateBridgeSummary,
+  PROTOCOL_VERSION,
   summarizeBatchResponseItem,
   summarizeBatchErrorItem,
 } from '../src/index.js';
@@ -586,7 +587,7 @@ test('annotateBridgeSummary adds transport and summary cost estimates', () => {
 test('annotateBridgeSummary uses meta transport fields when available', () => {
   const response = ok({ nodes: [] });
   response.meta = {
-    protocol_version: '1.0',
+    protocol_version: PROTOCOL_VERSION,
     transport_bytes: 42,
     transport_approx_tokens: 11,
     transport_cost_class: 'cheap',
@@ -601,7 +602,7 @@ test('annotateBridgeSummary uses meta transport fields when available', () => {
 test('annotateBridgeSummary falls back to legacy meta fields', () => {
   const response = ok({ nodes: [] });
   response.meta = {
-    protocol_version: '1.0',
+    protocol_version: PROTOCOL_VERSION,
     response_bytes: 100,
     approx_tokens: 25,
     cost_class: 'moderate',

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ERROR_CODES, createRequest } from '../../protocol/src/index.js';
+import { ERROR_CODES, createRequest, PROTOCOL_VERSION } from '../../protocol/src/index.js';
 import type { BridgeRequest, BridgeResponse } from '../../protocol/src/types.js';
 import { createNativePortMessageListener } from '../src/background-bridge.js';
 
@@ -61,7 +61,7 @@ test('background bridge handles malformed native-port messages without method me
   assert.equal(replies[0].id, 'invalid_request');
   assert.equal(replies[0].ok, false);
   assert.equal(replies[0].error.code, ERROR_CODES.INVALID_REQUEST);
-  assert.deepEqual(replies[0].meta, { protocol_version: '1.0' });
+  assert.deepEqual(replies[0].meta, { protocol_version: PROTOCOL_VERSION });
 });
 
 test('background bridge lets host status messages bypass request validation', () => {

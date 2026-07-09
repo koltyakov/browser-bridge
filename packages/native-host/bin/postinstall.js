@@ -17,12 +17,25 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 
 /**
+ * npm exec may run package lifecycle hooks while resolving the local bin. Keep
+ * transient `npm exec -- bbx ...` invocations from rewriting host setup or
+ * replacing a working daemon.
+ *
+ * @param {NodeJS.ProcessEnv} [env=process.env]
+ * @returns {boolean}
+ */
+function shouldSkipPostinstall(env = process.env) {
+  return env.npm_command === 'exec';
+}
+
+/**
  * @param {{
  *   installNativeManifestFn?: typeof installNativeManifest,
  *   restartBridgeDaemonIfRunningFn?: typeof restartBridgeDaemonIfRunning,
  *   stdout?: Pick<NodeJS.WriteStream, 'write'>,
  *   stderr?: Pick<NodeJS.WriteStream, 'write'>,
  *   exit?: (code?: number) => void,
+ *   env?: NodeJS.ProcessEnv,
  * }} [deps]
  * @returns {Promise<void>}
  */
@@ -32,7 +45,12 @@ export async function runPostinstall({
   stdout = process.stdout,
   stderr = process.stderr,
   exit = (code) => process.exit(code),
+  env = process.env,
 } = {}) {
+  if (shouldSkipPostinstall(env)) {
+    return;
+  }
+
   try {
     await installNativeManifestFn({ repoRoot, preserveCustomExtensionId: true });
     stdout.write('Browser Bridge: native host installed. Run `bbx doctor` to verify.\n');

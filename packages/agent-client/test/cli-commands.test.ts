@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createFailure, createSuccess } from '../../protocol/src/index.js';
+import { createFailure, createSuccess, PROTOCOL_VERSION } from '../../protocol/src/index.js';
 import { PUBLISHED_EXTENSION_ID } from '../../native-host/src/config.js';
 import { stopBridgeDaemon } from '../../native-host/src/daemon-process.js';
 import { runCli } from '../../../tests/_helpers/runCli.ts';
@@ -1151,7 +1151,7 @@ test('bbx batch reports unknown methods without dispatching them', async () => {
         evidence: null,
         durationMs: 0,
         approxTokens: 0,
-        meta: { protocol_version: '1.0' },
+        meta: { protocol_version: PROTOCOL_VERSION },
         error: {
           code: 'INVALID_REQUEST',
           message: 'Unknown bridge method "not.real.method".',

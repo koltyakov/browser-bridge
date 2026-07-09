@@ -1,14 +1,16 @@
 // @ts-check
 
 import { EventEmitter, once } from 'node:events';
+import fs from 'node:fs';
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
 
 import {
   createRequest,
   DEFAULT_CLIENT_REQUEST_TIMEOUT_MS,
-  PROTOCOL_VERSION,
+  getProtocolVersion,
   parseJsonLines,
+  setProtocolPackageVersion,
 } from '../../protocol/src/index.js';
 import {
   createSocketBridgeTransport,
@@ -25,6 +27,21 @@ import { restartBridgeDaemon } from '../../native-host/src/daemon-process.js';
 /** @typedef {import('./types.js').ClientMessage} ClientMessage */
 /** @typedef {import('./types.js').PendingRequest} PendingRequest */
 /** @typedef {import('./types.js').ProtocolHealthResult} ProtocolHealthResult */
+
+setProtocolPackageVersion(loadPackageVersion());
+
+/**
+ * @returns {string | null}
+ */
+function loadPackageVersion() {
+  try {
+    const raw = fs.readFileSync(new URL('../../../package.json', import.meta.url), 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed.version === 'string' ? parsed.version : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * @param {string} left
@@ -58,6 +75,18 @@ function createTimeoutError(method, timeoutMs) {
 }
 
 /**
+ * npm exec often runs a checkout-local CLI against an already-connected global
+ * daemon. In that mode, protocol drift should warn instead of replacing the
+ * user's working daemon and temporarily disconnecting the extension.
+ *
+ * @param {NodeJS.ProcessEnv} [env=process.env]
+ * @returns {boolean}
+ */
+function shouldAutoRestartDaemonOnVersionMismatch(env = process.env) {
+  return env.npm_command !== 'exec';
+}
+
+/**
  * @param {net.Socket} socket
  * @param {string} line
  * @returns {Promise<void>}
@@ -83,7 +112,7 @@ export class BridgeClient extends EventEmitter {
     clientId = `agent_${randomUUID()}`,
     defaultTimeoutMs = DEFAULT_CLIENT_REQUEST_TIMEOUT_MS,
     autoReconnect = false,
-    restartDaemonOnVersionMismatch = true,
+    restartDaemonOnVersionMismatch = shouldAutoRestartDaemonOnVersionMismatch(),
     restartDaemonFn = restartBridgeDaemon,
     authToken = undefined,
   } = {}) {
@@ -390,9 +419,16 @@ export class BridgeClient extends EventEmitter {
           ? healthResult.supported_versions
           : [];
     const latestRemote = remoteVersions[0];
+    if (
+      healthResult?.extensionConnected === true &&
+      Array.isArray(healthResult.supported_versions) &&
+      !healthResult.supported_versions.includes(getProtocolVersion())
+    ) {
+      return false;
+    }
     return (
       typeof latestRemote === 'string' &&
-      compareProtocolVersions(latestRemote, PROTOCOL_VERSION) < 0
+      compareProtocolVersions(latestRemote, getProtocolVersion()) < 0
     );
   }
 
@@ -436,20 +472,21 @@ export class BridgeClient extends EventEmitter {
     if (remoteVersions.length === 0) {
       return {
         compatible: true,
-        localVersion: PROTOCOL_VERSION,
+        localVersion: getProtocolVersion(),
         remoteVersions,
       };
     }
-    const compatible = remoteVersions.includes(PROTOCOL_VERSION);
+    const localVersion = getProtocolVersion();
+    const compatible = remoteVersions.includes(localVersion);
     return {
       compatible,
-      localVersion: PROTOCOL_VERSION,
+      localVersion,
       remoteVersions,
       ...(!compatible && {
         warning:
           typeof healthResult?.migration_hint === 'string' && healthResult.migration_hint
             ? healthResult.migration_hint
-            : `Protocol mismatch: client speaks ${PROTOCOL_VERSION} but remote supports [${remoteVersions.join(', ')}]. Update the ${remoteVersions[0] > PROTOCOL_VERSION ? 'client (npm)' : 'extension'} to match.`,
+            : `Protocol mismatch: client speaks ${localVersion} but remote supports [${remoteVersions.join(', ')}]. Update the ${remoteVersions[0] > localVersion ? 'client (npm)' : 'extension'} to match.`,
       }),
     };
   }

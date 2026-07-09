@@ -348,7 +348,7 @@ bbx call screenshot.capture_full_page '{}'
   "tab_id": 123,
   "method": "dom.query",
   "params": {},
-  "meta": { "protocol_version": "1.0", "token_budget": 1200 }
+  "meta": { "protocol_version": "<package major.minor>", "token_budget": 1200 }
 }
 ```
 

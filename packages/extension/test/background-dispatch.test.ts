@@ -7,7 +7,7 @@ import {
   type FakeChromeEvent,
 } from '../../../tests/_helpers/chromeFake.ts';
 import { loadBackground } from '../../../tests/_helpers/loadBackground.ts';
-import { createRequest, ERROR_CODES } from '../../protocol/src/index.js';
+import { createRequest, ERROR_CODES, PROTOCOL_VERSION } from '../../protocol/src/index.js';
 import type { BridgeMethod, BridgeRequest, BridgeResponse } from '../../protocol/src/types.js';
 
 type DebuggerAttachCall = {
@@ -2560,7 +2560,7 @@ for (const method of [
       params: {
         nodeId: 'not-a-number',
       },
-      meta: { protocol_version: '1.0', token_budget: null },
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
     } as unknown as BridgeRequest);
 
     assert.equal(attachCalled, false);

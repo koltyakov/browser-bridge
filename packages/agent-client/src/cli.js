@@ -20,6 +20,7 @@ import { restartBridgeDaemon } from '../../native-host/src/daemon-process.js';
 import { uninstallNativeManifest } from '../../native-host/src/install-manifest.js';
 import {
   createRuntimeContext,
+  getProtocolVersion,
   METHODS,
   summarizeBatchErrorItem,
   summarizeBatchResponseItem,
@@ -628,7 +629,7 @@ async function main() {
               evidence: null,
               durationMs: 0,
               approxTokens: 0,
-              meta: { protocol_version: '1.0' },
+              meta: { protocol_version: getProtocolVersion() },
               error: {
                 code: 'INVALID_REQUEST',
                 message: 'Each batch call needs a method.',
@@ -645,7 +646,7 @@ async function main() {
               evidence: null,
               durationMs: 0,
               approxTokens: 0,
-              meta: { protocol_version: '1.0' },
+              meta: { protocol_version: getProtocolVersion() },
               error: {
                 code: 'INVALID_REQUEST',
                 message: `Unknown bridge method "${call.method}".`,

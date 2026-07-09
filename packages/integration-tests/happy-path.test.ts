@@ -10,7 +10,11 @@ import type { Readable, Writable } from 'node:stream';
 import { BridgeClient } from '../agent-client/src/client.js';
 import { pingExistingDaemon } from '../native-host/src/daemon.js';
 import { createNativeMessageReader } from '../native-host/src/framing.js';
-import { createSuccess, MAX_NATIVE_MESSAGE_BYTES } from '../protocol/src/index.js';
+import {
+  createSuccess,
+  MAX_NATIVE_MESSAGE_BYTES,
+  PROTOCOL_VERSION,
+} from '../protocol/src/index.js';
 import { frameNativeMessage } from '../../tests/_helpers/nativeMessaging.ts';
 import { withTempSocketPath } from '../../tests/_helpers/socketHarness.ts';
 import type { BridgeRequest } from '../../packages/protocol/src/types.js';
@@ -423,7 +427,7 @@ test(
             ],
           });
           assert.ok(cliRequest, 'expected native-host to forward a tabs.list request from the CLI');
-          assert.equal(cliRequest.meta?.protocol_version, '1.0');
+          assert.equal(cliRequest.meta?.protocol_version, PROTOCOL_VERSION);
           assert.equal(cliRequest.meta?.source, 'cli');
           assert.equal(cliRequest.tab_id, null);
           assert.equal(
@@ -504,7 +508,9 @@ test(
             });
             assert.match(
               String(response.meta?.protocol_warning ?? ''),
-              /Protocol mismatch: client speaks 1\.0 but remote supports \[0\.9\]/
+              new RegExp(
+                `Protocol mismatch: client speaks ${PROTOCOL_VERSION.replace('.', '\\.')} but remote supports \\[0\\.9\\]`
+              )
             );
           } finally {
             await client.close().catch(() => {});

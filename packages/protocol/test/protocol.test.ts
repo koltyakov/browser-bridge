@@ -42,6 +42,7 @@ import {
   normalizeViewportResizeParams,
   normalizeStyleQuery,
   getErrorRecovery,
+  PROTOCOL_VERSION,
   validateBridgeRequest,
 } from '../src/index.js';
 import type { BridgeRequest, TabCloseParams, WaitForParams } from '../src/types.js';
@@ -70,7 +71,7 @@ test('createRequest adds protocol metadata', () => {
     method: 'health.ping',
   });
 
-  assert.equal(request.meta.protocol_version, '1.0');
+  assert.equal(request.meta.protocol_version, PROTOCOL_VERSION);
 });
 
 test('createRequest includes explicit tab_id when provided', () => {
@@ -97,7 +98,7 @@ test('validateBridgeRequest normalizes routing and metadata fallbacks', () => {
   });
 
   assert.equal(request.tab_id, null);
-  assert.equal(request.meta.protocol_version, '1.0');
+  assert.equal(request.meta.protocol_version, PROTOCOL_VERSION);
   assert.equal(request.meta.token_budget, null);
   assert.equal(request.meta.source, undefined);
   assert.equal(request.meta.keep, 'value');
@@ -131,7 +132,7 @@ test('truncateText reports truncation metadata', () => {
 /** Ensure runtime guidance remains compact and opinionated. */
 test('runtime context stays compact and opinionated', () => {
   const context = createRuntimeContext();
-  assert.equal(context.v, '1.0');
+  assert.equal(context.v, PROTOCOL_VERSION);
   assert.ok(context.tips.length >= 3);
   assert.equal(context.flow.includes('page.get_state'), true);
 });

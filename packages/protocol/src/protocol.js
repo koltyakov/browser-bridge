@@ -82,10 +82,59 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').WaitForLoadStateParams} WaitForLoadStateParams */
 /** @typedef {import('./types.js').WaitForParams} WaitForParams */
 
-export const PROTOCOL_VERSION = '1.0';
+/** @type {string | null} */
+let protocolPackageVersion = null;
+
+/**
+ * @param {string | null | undefined} packageVersion
+ * @returns {string}
+ */
+export function deriveProtocolVersion(packageVersion) {
+  const match = typeof packageVersion === 'string' ? /^(\d+)\.(\d+)/.exec(packageVersion) : null;
+  return match ? `${match[1]}.${match[2]}` : '0.0';
+}
+
+/**
+ * @returns {string | null}
+ */
+function getRuntimePackageVersion() {
+  const chromeRuntime = /** @type {{ runtime?: { getManifest?: () => { version?: unknown } } }} */ (
+    globalThis.chrome ?? {}
+  ).runtime;
+  const manifestVersion = chromeRuntime?.getManifest?.().version;
+  if (typeof manifestVersion === 'string') {
+    return manifestVersion;
+  }
+
+  const npmPackageVersion = globalThis.process?.env?.npm_package_version;
+  return typeof npmPackageVersion === 'string' ? npmPackageVersion : null;
+}
+
+/**
+ * @param {string | null | undefined} packageVersion
+ * @returns {void}
+ */
+export function setProtocolPackageVersion(packageVersion) {
+  protocolPackageVersion = typeof packageVersion === 'string' ? packageVersion : null;
+}
+
+/**
+ * @returns {string}
+ */
+export function getProtocolVersion() {
+  return deriveProtocolVersion(protocolPackageVersion ?? getRuntimePackageVersion());
+}
+
+/** Snapshot retained for older callers; new code should call getProtocolVersion(). */
+export const PROTOCOL_VERSION = getProtocolVersion();
 
 /** Versions this build can speak. Newest first. */
-export const SUPPORTED_VERSIONS = Object.freeze(['1.0']);
+export function getSupportedProtocolVersions() {
+  return Object.freeze([getProtocolVersion()]);
+}
+
+/** Snapshot retained for older callers; new code should call getSupportedProtocolVersions(). */
+export const SUPPORTED_VERSIONS = getSupportedProtocolVersions();
 
 /**
  * Clamp a numeric value between min and max, falling back to a default.
@@ -122,7 +171,7 @@ export function createRequest({ id, method, tabId = null, params = {}, meta = {}
     tab_id: tabId,
     params,
     meta: {
-      protocol_version: PROTOCOL_VERSION,
+      protocol_version: getProtocolVersion(),
       ...meta,
     },
   });
@@ -141,7 +190,7 @@ export function createSuccess(id, result, meta = {}) {
     result,
     error: null,
     meta: {
-      protocol_version: PROTOCOL_VERSION,
+      protocol_version: getProtocolVersion(),
       ...meta,
     },
   };
@@ -168,7 +217,7 @@ export function createFailure(id, code, message, details = null, meta = {}) {
       ...(recovery && { recovery }),
     },
     meta: {
-      protocol_version: PROTOCOL_VERSION,
+      protocol_version: getProtocolVersion(),
       ...meta,
     },
   };
@@ -238,7 +287,7 @@ export function validateBridgeRequest(request) {
     meta: {
       ...meta,
       protocol_version:
-        typeof meta.protocol_version === 'string' ? meta.protocol_version : PROTOCOL_VERSION,
+        typeof meta.protocol_version === 'string' ? meta.protocol_version : getProtocolVersion(),
       token_budget: typeof meta.token_budget === 'number' ? meta.token_budget : null,
       source: meta.source === 'cli' || meta.source === 'mcp' ? meta.source : undefined,
     },
@@ -842,7 +891,7 @@ export function createRuntimeContext() {
   const methodGroups = createBridgeMethodGroups();
 
   return {
-    v: PROTOCOL_VERSION,
+    v: getProtocolVersion(),
     budgets: {
       quick: {
         n: BUDGET_PRESETS.quick.maxNodes,

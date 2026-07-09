@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createChromeEvent } from '../../../tests/_helpers/chromeFake.ts';
-import { createRequest, ERROR_CODES } from '../../protocol/src/index.js';
+import { createRequest, ERROR_CODES, PROTOCOL_VERSION } from '../../protocol/src/index.js';
 import type { BridgeRequest, BridgeResponse } from '../../protocol/src/types.js';
 import type { ExtensionState } from '../src/background-state.js';
 import { createPageRequestController } from '../src/background-page.js';
@@ -134,7 +134,7 @@ test('page request controller handles CDP computed-style validation and dispatch
     method: 'cdp.get_computed_styles_for_node',
     tab_id: null,
     params: {},
-    meta: { protocol_version: '1.0', token_budget: null },
+    meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
   } as BridgeRequest);
 
   assert.equal(invalid.ok, false);

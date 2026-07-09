@@ -1,6 +1,11 @@
 // @ts-check
 
-import { estimateSerializedPayloadCost, getCostClass, serializeJsonPayload } from './index.js';
+import {
+  estimateSerializedPayloadCost,
+  getCostClass,
+  getProtocolVersion,
+  serializeJsonPayload,
+} from './index.js';
 
 /** @typedef {import('./types.js').BridgeResponse} BridgeResponse */
 /** @typedef {import('./types.js').BridgeMethod} SummaryMethod */
@@ -692,7 +697,7 @@ export function summarizeBatchErrorItem({ method, tabId, error, durationMs }) {
       message,
       details: null,
     },
-    meta: { protocol_version: '1.0' },
+    meta: { protocol_version: getProtocolVersion() },
   });
   const summary = annotateBridgeSummary(summarizeBridgeResponse(response, method), response);
   return {

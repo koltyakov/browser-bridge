@@ -4,7 +4,7 @@ import net from 'node:net';
 
 import { BridgeDaemon } from '../native-host/src/daemon.js';
 import { BridgeClient } from '../agent-client/src/client.js';
-import { parseJsonLines } from '../protocol/src/index.js';
+import { parseJsonLines, PROTOCOL_VERSION } from '../protocol/src/index.js';
 import type { AddressInfo, Socket } from 'node:net';
 import type { BridgeTransport } from '../native-host/src/config.js';
 import type { BridgeRequest, BridgeResponse } from '../protocol/src/types.js';
@@ -79,7 +79,7 @@ async function connectFakeExtension(
                   access: { enabled: true, routeReady: true, routeTabId: 1, windowId: 1 },
                 },
                 error: null,
-                meta: { protocol_version: '1.0', method: 'health.ping' },
+                meta: { protocol_version: PROTOCOL_VERSION, method: 'health.ping' },
               },
             })}\n`
           );
@@ -158,7 +158,7 @@ test('round-trip: client request reaches extension and response returns to clien
         ],
       },
       error: null,
-      meta: { protocol_version: '1.0', method: 'tabs.list' },
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'tabs.list' },
     });
 
     const response = await responsePromise;
@@ -206,7 +206,7 @@ test('round-trip: extension error response propagates to client', async () => {
         message: 'No element found matching selector.',
         details: null,
       },
-      meta: { protocol_version: '1.0', method: 'dom.query' },
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'dom.query' },
     });
 
     const response = await responsePromise;
@@ -285,7 +285,7 @@ test('round-trip: health.ping merges extension data when extension connected', a
         access: { enabled: true, routeReady: true, routeTabId: 1, windowId: 1 },
       },
       error: null,
-      meta: { protocol_version: '1.0', method: 'health.ping' },
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'health.ping' },
     });
 
     const response = await responsePromise;

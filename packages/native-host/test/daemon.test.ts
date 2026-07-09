@@ -6,7 +6,11 @@ import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 
-import { DAEMON_RECENT_LOG_LIMIT, ERROR_CODES } from '../../protocol/src/index.js';
+import {
+  DAEMON_RECENT_LOG_LIMIT,
+  ERROR_CODES,
+  PROTOCOL_VERSION,
+} from '../../protocol/src/index.js';
 import type { BridgeRequest, BridgeResponse, SetupStatus } from '../../protocol/src/types.js';
 import type { McpClientName } from '../../agent-client/src/mcp-config.js';
 import type { SupportedTarget } from '../../agent-client/src/install.js';
@@ -173,7 +177,7 @@ async function requestHealthPing(
         },
       },
       error: null,
-      meta: { protocol_version: '1.0', method: 'health.ping' },
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'health.ping' },
     },
   });
 
@@ -322,7 +326,7 @@ test('log.tail honors the requested limit', async () => {
       tab_id: null,
       params: { limit: 3 },
       meta: {
-        protocol_version: '1.0',
+        protocol_version: PROTOCOL_VERSION,
         token_budget: null,
       },
     },
@@ -345,7 +349,7 @@ test('daemon metrics include completed request response time', async () => {
       tab_id: 1,
       params: {},
       meta: {
-        protocol_version: '1.0',
+        protocol_version: PROTOCOL_VERSION,
         token_budget: null,
       },
     },
@@ -359,7 +363,7 @@ test('daemon metrics include completed request response time', async () => {
       ok: true,
       result: { text: 'Ready' },
       error: null,
-      meta: { protocol_version: '1.0', method: 'page.get_text' },
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'page.get_text' },
     },
   });
 
@@ -370,7 +374,7 @@ test('daemon metrics include completed request response time', async () => {
       tab_id: null,
       params: {},
       meta: {
-        protocol_version: '1.0',
+        protocol_version: PROTOCOL_VERSION,
         token_budget: null,
       },
     },
@@ -403,7 +407,7 @@ test('daemon completes a request immediately when every target write fails', asy
       tab_id: 1,
       params: {},
       meta: {
-        protocol_version: '1.0',
+        protocol_version: PROTOCOL_VERSION,
         token_budget: null,
       },
     },
@@ -529,7 +533,7 @@ test('daemon health check reports upgrade guidance when the daemon is newer than
   });
 
   const payload = JSON.parse(socket.writes[0].trim());
-  assert.equal(payload.response.result.deprecated_since, '1.0');
+  assert.equal(payload.response.result.deprecated_since, PROTOCOL_VERSION);
   assert.match(
     payload.response.result.migration_hint,
     /daemon is newer than the client protocol 0.0/
@@ -607,7 +611,7 @@ test('daemon responds to setup status requests without extension', async () => {
       tab_id: null,
       params: {},
       meta: {
-        protocol_version: '1.0',
+        protocol_version: PROTOCOL_VERSION,
         token_budget: null,
       },
     },
@@ -641,7 +645,7 @@ test('daemon installs setup targets without extension', async () => {
         target: 'codex',
       },
       meta: {
-        protocol_version: '1.0',
+        protocol_version: PROTOCOL_VERSION,
         token_budget: null,
       },
     },
@@ -718,7 +722,7 @@ test('daemon log entries retain request source metadata', async () => {
       tab_id: 42,
       params: { expression: '1+1' },
       meta: {
-        protocol_version: '1.0',
+        protocol_version: PROTOCOL_VERSION,
         token_budget: null,
         source: 'mcp',
       },
@@ -731,7 +735,7 @@ test('daemon log entries retain request source metadata', async () => {
       ok: false,
       result: null,
       error: { code: 'ACCESS_DENIED', message: 'Access denied', details: null },
-      meta: { protocol_version: '1.0', method: 'page.evaluate' },
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'page.evaluate' },
     },
   });
 
@@ -775,7 +779,7 @@ test('daemon forwards health checks to the extension and merges access state', a
         },
       },
       error: null,
-      meta: { protocol_version: '1.0', method: 'health.ping' },
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'health.ping' },
     },
   });
 
@@ -785,7 +789,7 @@ test('daemon forwards health checks to the extension and merges access state', a
   assert.equal(typeof payload.response.result.daemonVersion, 'string');
   assert.equal(payload.response.result.extensionConnected, true);
   assert.equal(payload.response.result.access.routeTabId, 42);
-  assert.equal(payload.response.result.deprecated_since, '1.0');
+  assert.equal(payload.response.result.deprecated_since, PROTOCOL_VERSION);
   assert.match(payload.response.result.migration_hint, /client protocol 0.0/);
 });
 
@@ -808,7 +812,7 @@ test('daemon prefers enabled extensions and otherwise falls back to the most rec
       tab_id: null,
       params: {},
       meta: {
-        protocol_version: '1.0',
+        protocol_version: PROTOCOL_VERSION,
         token_budget: null,
       },
     },
@@ -828,7 +832,7 @@ test('daemon prefers enabled extensions and otherwise falls back to the most rec
       tab_id: null,
       params: {},
       meta: {
-        protocol_version: '1.0',
+        protocol_version: PROTOCOL_VERSION,
         token_budget: null,
       },
     },
@@ -858,7 +862,7 @@ test('daemon routes untargeted requests to the most recently active extension wh
       tab_id: null,
       params: {},
       meta: {
-        protocol_version: '1.0',
+        protocol_version: PROTOCOL_VERSION,
         token_budget: null,
       },
     },
@@ -892,7 +896,7 @@ test('daemon routes explicit browser and profile targets only to matching extens
       tab_id: null,
       params: {},
       meta: {
-        protocol_version: '1.0',
+        protocol_version: PROTOCOL_VERSION,
         token_budget: null,
         target_browser: 'Chrome',
         target_profile: 'Work',
@@ -915,7 +919,7 @@ test('daemon routes explicit browser and profile targets only to matching extens
       ok: true,
       result: { url: 'https://work.example/' },
       error: null,
-      meta: { protocol_version: '1.0', method: 'page.get_state' },
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'page.get_state' },
     },
   });
 
@@ -930,7 +934,7 @@ test('daemon routes explicit browser and profile targets only to matching extens
       tab_id: null,
       params: {},
       meta: {
-        protocol_version: '1.0',
+        protocol_version: PROTOCOL_VERSION,
         token_budget: null,
         target_browser: 'Chrome',
         target_profile: 'Missing',
@@ -1096,7 +1100,7 @@ test('daemon times out pending requests and removes them once the deadline expir
       tab_id: null,
       params: {},
       meta: {
-        protocol_version: '1.0',
+        protocol_version: PROTOCOL_VERSION,
         token_budget: null,
       },
     },
@@ -1123,7 +1127,7 @@ test('daemon times out pending requests and removes them once the deadline expir
       ok: true,
       result: { url: 'https://example.test' },
       error: null,
-      meta: { protocol_version: '1.0', method: 'page.get_state' },
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'page.get_state' },
     },
   });
 
@@ -1156,7 +1160,7 @@ test('daemon socket close clears only the disconnected agent socket pending requ
       tab_id: null,
       params: {},
       meta: {
-        protocol_version: '1.0',
+        protocol_version: PROTOCOL_VERSION,
         token_budget: null,
       },
     },
@@ -1168,7 +1172,7 @@ test('daemon socket close clears only the disconnected agent socket pending requ
       tab_id: null,
       params: {},
       meta: {
-        protocol_version: '1.0',
+        protocol_version: PROTOCOL_VERSION,
         token_budget: null,
       },
     },
@@ -1222,7 +1226,7 @@ test('daemon socket close clears only the disconnected agent socket pending requ
       ok: true,
       result: { url: 'https://ignored.example/closed' },
       error: null,
-      meta: { protocol_version: '1.0', method: 'page.get_state' },
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'page.get_state' },
     },
   });
   await daemon.handleExtensionResponse(extensionOne, {
@@ -1231,7 +1235,7 @@ test('daemon socket close clears only the disconnected agent socket pending requ
       ok: true,
       result: { url: 'https://still-alive.example/' },
       error: null,
-      meta: { protocol_version: '1.0', method: 'page.get_state' },
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'page.get_state' },
     },
   });
 
@@ -1262,7 +1266,7 @@ test('daemon socket close removes only the disconnected extension from pending t
       tab_id: null,
       params: {},
       meta: {
-        protocol_version: '1.0',
+        protocol_version: PROTOCOL_VERSION,
         token_budget: null,
       },
     },
@@ -1274,7 +1278,7 @@ test('daemon socket close removes only the disconnected extension from pending t
       tab_id: null,
       params: {},
       meta: {
-        protocol_version: '1.0',
+        protocol_version: PROTOCOL_VERSION,
         token_budget: null,
       },
     },
@@ -1309,7 +1313,7 @@ test('daemon socket close removes only the disconnected extension from pending t
       ok: true,
       result: { url: 'https://survivor-one.example/' },
       error: null,
-      meta: { protocol_version: '1.0', method: 'page.get_state' },
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'page.get_state' },
     },
   });
   await daemon.handleExtensionResponse(extensionTwo, {
@@ -1318,7 +1322,7 @@ test('daemon socket close removes only the disconnected extension from pending t
       ok: true,
       result: { url: 'https://survivor-two.example/' },
       error: null,
-      meta: { protocol_version: '1.0', method: 'page.get_state' },
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'page.get_state' },
     },
   });
 
@@ -1653,7 +1657,7 @@ function sendGarbageThenPing(socket: net.Socket, garbage: Buffer | string): Prom
         method: 'health.ping',
         tab_id: null,
         params: {},
-        meta: { protocol_version: '1.0', token_budget: null },
+        meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
       },
     });
 
@@ -1900,7 +1904,7 @@ test('daemon requires auth token before handling TCP bridge requests when config
         method: 'page.get_state',
         tab_id: null,
         params: {},
-        meta: { protocol_version: '1.0', token_budget: null },
+        meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
       },
     });
     const denied = expectBridgeResponse(await unauthenticated.next());
@@ -1921,7 +1925,7 @@ test('daemon requires auth token before handling TCP bridge requests when config
         method: 'health.ping',
         tab_id: null,
         params: {},
-        meta: { protocol_version: '1.0', token_budget: null },
+        meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
       },
     });
     const health = expectBridgeResponse(await authenticated.next());
@@ -1952,7 +1956,7 @@ test('daemon rejects duplicate in-flight request ids', async () => {
       method: 'page.get_state',
       tab_id: null,
       params: {},
-      meta: { protocol_version: '1.0', token_budget: null },
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
     };
     agent.send({ type: 'agent.request', request });
     assert.equal(expectPayload(await extension.next()).request?.id, 'req_duplicate');
@@ -1994,7 +1998,7 @@ test('daemon routes interleaved requests from two agents to correct sockets', as
         method: 'page.get_state',
         tab_id: null,
         params: {},
-        meta: { protocol_version: '1.0', token_budget: null },
+        meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
       },
     });
     a2.send({
@@ -2004,7 +2008,7 @@ test('daemon routes interleaved requests from two agents to correct sockets', as
         method: 'page.get_state',
         tab_id: null,
         params: {},
-        meta: { protocol_version: '1.0', token_budget: null },
+        meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
       },
     });
 
@@ -2027,7 +2031,7 @@ test('daemon routes interleaved requests from two agents to correct sockets', as
         ok: true,
         result: { url: 'https://a.test' },
         error: null,
-        meta: { protocol_version: '1.0', method: 'page.get_state' },
+        meta: { protocol_version: PROTOCOL_VERSION, method: 'page.get_state' },
       },
     });
     ext.send({
@@ -2037,7 +2041,7 @@ test('daemon routes interleaved requests from two agents to correct sockets', as
         ok: true,
         result: { url: 'https://b.test' },
         error: null,
-        meta: { protocol_version: '1.0', method: 'page.get_state' },
+        meta: { protocol_version: PROTOCOL_VERSION, method: 'page.get_state' },
       },
     });
 
@@ -2081,7 +2085,7 @@ test('daemon does not drop agent2 response when agent1 disconnects mid-flight', 
         method: 'page.get_state',
         tab_id: null,
         params: {},
-        meta: { protocol_version: '1.0', token_budget: null },
+        meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
       },
     });
     a2.send({
@@ -2091,7 +2095,7 @@ test('daemon does not drop agent2 response when agent1 disconnects mid-flight', 
         method: 'page.get_state',
         tab_id: null,
         params: {},
-        meta: { protocol_version: '1.0', token_budget: null },
+        meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
       },
     });
 
@@ -2113,7 +2117,7 @@ test('daemon does not drop agent2 response when agent1 disconnects mid-flight', 
         ok: true,
         result: {},
         error: null,
-        meta: { protocol_version: '1.0', method: 'page.get_state' },
+        meta: { protocol_version: PROTOCOL_VERSION, method: 'page.get_state' },
       },
     });
     ext.send({
@@ -2123,7 +2127,7 @@ test('daemon does not drop agent2 response when agent1 disconnects mid-flight', 
         ok: true,
         result: { url: 'https://c.test' },
         error: null,
-        meta: { protocol_version: '1.0', method: 'page.get_state' },
+        meta: { protocol_version: PROTOCOL_VERSION, method: 'page.get_state' },
       },
     });
 
@@ -2163,7 +2167,7 @@ test('daemon fails pending requests immediately when the only target extension d
         method: 'page.get_state',
         tab_id: null,
         params: {},
-        meta: { protocol_version: '1.0', token_budget: null, source: 'mcp' },
+        meta: { protocol_version: PROTOCOL_VERSION, token_budget: null, source: 'mcp' },
       },
     });
 
@@ -2228,7 +2232,7 @@ test('daemon returns the last extension error once all other targets disconnect'
         method: 'page.get_state',
         tab_id: null,
         params: {},
-        meta: { protocol_version: '1.0', token_budget: null },
+        meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
       },
     });
 
@@ -2246,7 +2250,7 @@ test('daemon returns the last extension error once all other targets disconnect'
           message: 'No window enabled',
           details: null,
         },
-        meta: { protocol_version: '1.0', method: 'page.get_state' },
+        meta: { protocol_version: PROTOCOL_VERSION, method: 'page.get_state' },
       },
     });
     s2.destroy();
@@ -2295,7 +2299,7 @@ test('daemon routes untargeted requests to the extension with access enabled', a
         method: 'page.get_state',
         tab_id: null,
         params: {},
-        meta: { protocol_version: '1.0', token_budget: null },
+        meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
       },
     });
 
@@ -2312,7 +2316,7 @@ test('daemon routes untargeted requests to the extension with access enabled', a
         ok: true,
         result: { url: 'https://example.com' },
         error: null,
-        meta: { protocol_version: '1.0', method: 'page.get_state' },
+        meta: { protocol_version: PROTOCOL_VERSION, method: 'page.get_state' },
       },
     });
 
@@ -2357,7 +2361,7 @@ test('daemon routes untargeted requests to the most recently active extension wh
         method: 'page.get_state',
         tab_id: null,
         params: {},
-        meta: { protocol_version: '1.0', token_budget: null },
+        meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
       },
     });
 
@@ -2378,7 +2382,7 @@ test('daemon routes untargeted requests to the most recently active extension wh
           message: 'No window enabled',
           details: null,
         },
-        meta: { protocol_version: '1.0', method: 'page.get_state' },
+        meta: { protocol_version: PROTOCOL_VERSION, method: 'page.get_state' },
       },
     });
 
