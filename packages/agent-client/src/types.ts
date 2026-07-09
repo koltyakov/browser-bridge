@@ -104,6 +104,12 @@ export interface DaemonRestartSummary {
   restartLoop: boolean;
 }
 
+export interface NativeHostManifestIssue {
+  browser: string;
+  manifestPath: string;
+  message: string;
+}
+
 export interface DoctorReport {
   manifestInstalled: boolean;
   manifestPath: string;
@@ -120,6 +126,7 @@ export interface DoctorReport {
   daemonRestarts: DaemonRestartSummary;
   daemonLogPath: string;
   unwritableBridgePaths: string[];
+  nativeHostManifestIssues: NativeHostManifestIssue[];
   issues: string[];
   nextSteps: string[];
   browserManifests: BrowserManifestStatus[];
@@ -135,6 +142,9 @@ export interface DoctorReportOptions {
   ) => Promise<T>;
   readDaemonStartHistory?: () => Promise<number[]>;
   checkUnwritableBridgePaths?: () => Promise<string[]>;
+  checkNativeHostManifestHealth?: (
+    browserManifests: BrowserManifestStatus[]
+  ) => Promise<NativeHostManifestIssue[]>;
 }
 
 export type BridgeClientRequest = (options: {

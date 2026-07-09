@@ -32,6 +32,24 @@ function expectCliPayload(value: unknown): CliPayload {
   return value as CliPayload;
 }
 
+function escapeSingleQuotedShellValue(value: string): string {
+  return value.replaceAll("'", "'\\''");
+}
+
+async function seedNativeHostLauncher(installFs: InstallFs): Promise<void> {
+  const hostPath = path.join(installFs.root, 'native-host.js');
+  await fs.promises.writeFile(hostPath, '#!/usr/bin/env node\n', 'utf8');
+  const launcher =
+    process.platform === 'win32'
+      ? `@echo off\r\n"${process.execPath}" "${hostPath}" %*\r\n`
+      : `#!/bin/sh\nexec '${escapeSingleQuotedShellValue(process.execPath)}' '${escapeSingleQuotedShellValue(hostPath)}' "$@"\n`;
+  await fs.promises.mkdir(path.dirname(installFs.launcherPath), { recursive: true });
+  await fs.promises.writeFile(installFs.launcherPath, launcher, 'utf8');
+  if (process.platform !== 'win32') {
+    await fs.promises.chmod(installFs.launcherPath, 0o755);
+  }
+}
+
 async function seedInstalledBrowserManifests(installFs: InstallFs): Promise<void> {
   await Promise.all(
     (Object.keys(installFs.browserManifests) as BrowserManifestKey[]).map((browser) =>
@@ -44,9 +62,12 @@ async function seedInstalledBrowserManifest(
   installFs: InstallFs,
   browser: BrowserManifestKey
 ): Promise<void> {
+  await seedNativeHostLauncher(installFs);
   const manifest = `${JSON.stringify(
     {
       name: 'com.browserbridge.browser_bridge',
+      path: installFs.launcherPath,
+      type: 'stdio',
       allowed_origins: [`chrome-extension://${PUBLISHED_EXTENSION_ID}/`],
     },
     null,

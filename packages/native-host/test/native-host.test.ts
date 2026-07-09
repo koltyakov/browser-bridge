@@ -317,7 +317,7 @@ test('runNativeHost reports bootstrap failures as native error responses', async
 
     assert.deepEqual(decodeNativeMessages(stdoutChunks), [
       {
-        type: 'agent.response',
+        type: 'host.bridge_response',
         response: {
           id: 'native_bootstrap',
           ok: false,

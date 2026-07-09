@@ -14,7 +14,12 @@ import {
   type LoadedBackground,
 } from '../../../tests/_helpers/loadBackground.ts';
 import { createMessagePortPair } from '../../../tests/_helpers/messagePort.ts';
-import { createRequest, createSuccess } from '../../protocol/src/index.js';
+import {
+  ERROR_CODES,
+  createFailure,
+  createRequest,
+  createSuccess,
+} from '../../protocol/src/index.js';
 import type { SetupStatus } from '../../protocol/src/types.js';
 import type { ExtensionState } from '../src/background-state.js';
 
@@ -580,6 +585,86 @@ test('background native marks the connection unstable after repeated disconnects
       )
       .at(-1);
     assert.equal(connectedStatus?.unstable, true);
+
+    const unstableRecheckTimer = timers.scheduled.find((entry) => entry.delay > 50_000);
+    assert.equal(
+      typeof unstableRecheckTimer?.delay === 'number' && unstableRecheckTimer.delay > 500,
+      true
+    );
+    const now = Date.now();
+    state.nativeDisconnectTimes = [now - 70_000, now - 65_000, now - 61_000];
+    unstableRecheckTimer?.callback();
+    await flushAsyncWork();
+
+    assert.equal(state.nativeUnstable, false);
+    assert.equal(state.nativeReconnectAttempts, 0);
+    const recoveredStatus = portPair.left.postedMessages
+      .filter(
+        (message): message is { type: string; connected: boolean; unstable: boolean } =>
+          typeof message === 'object' &&
+          message !== null &&
+          'type' in message &&
+          message.type === 'native.status' &&
+          'unstable' in message &&
+          message.unstable === false
+      )
+      .at(-1);
+    assert.equal(recoveredStatus?.connected, true);
+  } finally {
+    timers.restore();
+  }
+});
+
+test('background native surfaces bootstrap failures before the native port disconnects', async () => {
+  const nativeMessages: unknown[] = [];
+  const nativePort = createNativePort(nativeMessages);
+  const portPair = createMessagePortPair({ leftName: 'ui-sidepanel', rightName: 'agent' });
+  const timers = installManualTimers();
+
+  try {
+    const loaded = await loadBackground({
+      chrome: createChromeFake({
+        runtime: {
+          connectNative() {
+            return nativePort;
+          },
+        },
+      }),
+      query: `test-background-native-bootstrap-failure-${Date.now()}-${Math.random()}`,
+    });
+
+    getRuntimeOnConnect(loaded.chrome).dispatch(portPair.left.port);
+    await flushAsyncWork();
+    portPair.left.postedMessages.length = 0;
+
+    const nativeModule = getNativeModule(loaded);
+    const state = nativeModule.getStateForTest();
+    nativePort.onMessage.dispatch({
+      type: 'host.bridge_response',
+      response: createFailure(
+        'native_bootstrap',
+        ERROR_CODES.NATIVE_HOST_UNAVAILABLE,
+        'Permission denied'
+      ),
+    });
+    await flushAsyncWork();
+
+    assert.equal(state.pendingNativePort, null);
+    assert.equal(state.nativeReconnectAttempts, 1);
+    assert.equal(
+      state.actionLog.at(-1)?.summary,
+      'Native host startup failed (attempt 1): Permission denied. Reconnecting in 2000ms.'
+    );
+    assert.deepEqual(findMessage(portPair.left.postedMessages, 'native.status'), {
+      type: 'native.status',
+      connected: false,
+      unstable: false,
+      error: 'Permission denied',
+    });
+
+    nativePort.onDisconnect.dispatch();
+    await flushAsyncWork();
+    assert.equal(state.nativeReconnectAttempts, 1);
   } finally {
     timers.restore();
   }

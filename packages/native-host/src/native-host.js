@@ -125,7 +125,7 @@ export async function runNativeHost({
     socket = await connectWithBootstrap(resolvedTransport);
   } catch (error) {
     await writeNativeMessageQueued({
-      type: 'agent.response',
+      type: 'host.bridge_response',
       response: createFailure(
         'native_bootstrap',
         ERROR_CODES.NATIVE_HOST_UNAVAILABLE,

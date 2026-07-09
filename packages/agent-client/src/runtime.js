@@ -27,6 +27,7 @@ import { BridgeClient } from './client.js';
 /** @typedef {import('./types.js').BridgeResponse} BridgeResponse */
 /** @typedef {import('../../native-host/src/config.js').SupportedBrowser} SupportedBrowser */
 /** @typedef {import('./types.js').BrowserManifestStatus} BrowserManifestStatus */
+/** @typedef {import('./types.js').NativeHostManifestIssue} NativeHostManifestIssue */
 /** @typedef {import('./types.js').DoctorReport} DoctorReport */
 /** @typedef {import('./types.js').DoctorReportOptions} DoctorReportOptions */
 
@@ -166,6 +167,162 @@ export async function checkBrowserManifests() {
 }
 
 /**
+ * @param {string} line
+ * @param {number} startIndex
+ * @returns {{ value: string, nextIndex: number } | null}
+ */
+function readShellSingleQuotedToken(line, startIndex) {
+  let index = startIndex;
+  while (line[index] === ' ') {
+    index += 1;
+  }
+  if (line[index] !== "'") {
+    return null;
+  }
+  index += 1;
+
+  let value = '';
+  while (index < line.length) {
+    const endIndex = line.indexOf("'", index);
+    if (endIndex === -1) {
+      return null;
+    }
+    value += line.slice(index, endIndex);
+    index = endIndex + 1;
+    if (line.startsWith("\\''", index)) {
+      value += "'";
+      index += 3;
+      continue;
+    }
+    return { value, nextIndex: index };
+  }
+
+  return null;
+}
+
+/**
+ * @param {string} launcher
+ * @returns {{ nodePath: string, hostPath: string } | null}
+ */
+function parseNativeHostLauncherTargets(launcher) {
+  const windowsMatch = /"([^"\r\n]+)"\s+"([^"\r\n]+)"\s+%\*/u.exec(launcher);
+  if (windowsMatch?.[1] && windowsMatch[2]) {
+    return {
+      nodePath: windowsMatch[1],
+      hostPath: windowsMatch[2],
+    };
+  }
+
+  const execLine = launcher
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith('exec '));
+  if (!execLine) {
+    return null;
+  }
+  const nodeToken = readShellSingleQuotedToken(execLine, 'exec '.length);
+  if (!nodeToken) {
+    return null;
+  }
+  const hostToken = readShellSingleQuotedToken(execLine, nodeToken.nextIndex);
+  if (!hostToken) {
+    return null;
+  }
+  return {
+    nodePath: nodeToken.value,
+    hostPath: hostToken.value,
+  };
+}
+
+/**
+ * Validate installed native messaging manifests and the launcher they point to.
+ * This catches stale sudo/global Node installs where the manifest exists but
+ * Chrome launches a missing or non-executable script/Node binary.
+ *
+ * @param {BrowserManifestStatus[]} browserManifests
+ * @returns {Promise<NativeHostManifestIssue[]>}
+ */
+export async function checkNativeHostManifestHealth(browserManifests) {
+  /** @type {NativeHostManifestIssue[]} */
+  const issues = [];
+  const executableAccessMode = os.platform() === 'win32' ? fs.constants.F_OK : fs.constants.X_OK;
+  for (const entry of browserManifests) {
+    if (!entry.installed) {
+      continue;
+    }
+
+    /** @type {Record<string, unknown>} */
+    let manifest;
+    try {
+      const rawManifest = await fs.promises.readFile(entry.manifestPath, 'utf8');
+      const parsed = JSON.parse(rawManifest);
+      manifest = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch (error) {
+      issues.push({
+        browser: entry.browser,
+        manifestPath: entry.manifestPath,
+        message: `Native host manifest is not readable JSON: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      continue;
+    }
+
+    const launcherPath = typeof manifest.path === 'string' ? manifest.path : '';
+    if (!launcherPath) {
+      issues.push({
+        browser: entry.browser,
+        manifestPath: entry.manifestPath,
+        message: 'Native host manifest does not specify a launcher path.',
+      });
+      continue;
+    }
+
+    let launcherRaw = '';
+    try {
+      await fs.promises.access(launcherPath, executableAccessMode);
+      launcherRaw = await fs.promises.readFile(launcherPath, 'utf8');
+    } catch (error) {
+      issues.push({
+        browser: entry.browser,
+        manifestPath: entry.manifestPath,
+        message: `Native host launcher is not executable or readable at ${launcherPath}: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      continue;
+    }
+
+    const launcherTargets = parseNativeHostLauncherTargets(launcherRaw);
+    if (!launcherTargets) {
+      issues.push({
+        browser: entry.browser,
+        manifestPath: entry.manifestPath,
+        message: `Native host launcher has an unrecognized format at ${launcherPath}. Run \`bbx install --browser ${entry.browser}\` to regenerate it.`,
+      });
+      continue;
+    }
+
+    try {
+      await fs.promises.access(launcherTargets.nodePath, executableAccessMode);
+    } catch (error) {
+      issues.push({
+        browser: entry.browser,
+        manifestPath: entry.manifestPath,
+        message: `Node executable referenced by the native host launcher is not usable at ${launcherTargets.nodePath}: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+
+    try {
+      await fs.promises.access(launcherTargets.hostPath, fs.constants.F_OK);
+    } catch (error) {
+      issues.push({
+        browser: entry.browser,
+        manifestPath: entry.manifestPath,
+        message: `Native host script referenced by the launcher is missing at ${launcherTargets.hostPath}: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+  }
+  return issues;
+}
+
+/**
  * Check the bridge home dir and the daemon files inside it for writability.
  * Root-owned files (typically left behind by a sudo install or a sudo `bbx`
  * run) make the daemon crash-loop, so doctor must call them out explicitly.
@@ -208,6 +365,9 @@ export async function getDoctorReport(options = {}) {
   const defaultExtensionId = options.defaultExtensionIdInfo || resolveDefaultExtensionId();
 
   const browserManifests = await (options.checkBrowserManifests || checkBrowserManifests)();
+  const nativeHostManifestIssues = await (
+    options.checkNativeHostManifestHealth || checkNativeHostManifestHealth
+  )(browserManifests);
   const daemonRestarts = summarizeDaemonRestarts(
     await (options.readDaemonStartHistory || readDaemonStartHistory)()
   );
@@ -239,6 +399,7 @@ export async function getDoctorReport(options = {}) {
     daemonRestarts,
     daemonLogPath: getDaemonLogPath(),
     unwritableBridgePaths,
+    nativeHostManifestIssues,
     issues: [],
     nextSteps: [],
     browserManifests,
@@ -278,6 +439,12 @@ export async function getDoctorReport(options = {}) {
     report.issues.push('bridge_files_not_writable');
     report.nextSteps.push(
       `These Browser Bridge files are not writable by the current user (usually caused by installing or running bbx with sudo): ${unwritableBridgePaths.join(', ')}. Fix ownership with: sudo chown -R "$USER" "${getBridgeDir()}"`
+    );
+  }
+  if (nativeHostManifestIssues.length > 0) {
+    report.issues.push('native_host_manifest_invalid');
+    report.nextSteps.push(
+      `The native host manifest or launcher is broken: ${nativeHostManifestIssues.map((issue) => issue.message).join(' ')} Reinstall the native host with \`bbx install --browser <browser>\` or \`bbx install --all\`.`
     );
   }
   if (daemonRestarts.restartLoop) {

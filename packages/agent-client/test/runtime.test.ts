@@ -499,6 +499,7 @@ test('getDoctorReport exposes extension id source and next steps without a live 
     },
     loadManifest: async () => null,
     checkBrowserManifests: async () => browserManifestStatuses([]),
+    checkNativeHostManifestHealth: async () => [],
     bridgeClientRunner: async () => {
       throw new Error('offline');
     },
@@ -516,6 +517,7 @@ test('getDoctorReport treats one installed browser manifest as native host ready
   const report = await getDoctorReport({
     loadManifest: async () => null,
     checkBrowserManifests: async () => browserManifestStatuses(['edge']),
+    checkNativeHostManifestHealth: async () => [],
     readDaemonStartHistory: async () => [],
     checkUnwritableBridgePaths: async () => [],
     bridgeClientRunner: createHealthPingRunner({
@@ -544,6 +546,7 @@ test('getDoctorReport flags a crash-looping daemon and points at the daemon log'
     }),
     readDaemonStartHistory: async () => [now - 40_000, now - 25_000, now - 5_000],
     checkUnwritableBridgePaths: async () => [],
+    checkNativeHostManifestHealth: async () => [],
     bridgeClientRunner: async () => {
       throw new Error('offline');
     },
@@ -562,6 +565,7 @@ test('getDoctorReport flags unwritable bridge files with an ownership fix', asyn
     }),
     readDaemonStartHistory: async () => [],
     checkUnwritableBridgePaths: async () => ['/home/user/.local/share/browser-bridge/daemon.pid'],
+    checkNativeHostManifestHealth: async () => [],
     bridgeClientRunner: async () => {
       throw new Error('offline');
     },
@@ -580,6 +584,7 @@ test('getDoctorReport tells the agent to wait for the user when access is disabl
     loadManifest: async () => ({
       allowed_origins: ['chrome-extension://example/*'],
     }),
+    checkNativeHostManifestHealth: async () => [],
     bridgeClientRunner: createHealthPingRunner({
       daemon: 'ok',
       extensionConnected: true,
@@ -602,6 +607,7 @@ test('getDoctorReport flags an installed but disconnected extension separately f
     loadManifest: async () => ({
       allowed_origins: ['chrome-extension://example/*'],
     }),
+    checkNativeHostManifestHealth: async () => [],
     bridgeClientRunner: createHealthPingRunner({
       daemon: 'ok',
       extensionConnected: false,
@@ -626,6 +632,7 @@ test('getDoctorReport calls out Chromium snap native host limitations', async ()
         installed: true,
       },
     ],
+    checkNativeHostManifestHealth: async () => [],
     bridgeClientRunner: createHealthPingRunner({
       daemon: 'ok',
       extensionConnected: false,
@@ -649,6 +656,7 @@ test('getDoctorReport calls out Chromium Flatpak native host limitations', async
         installed: true,
       },
     ],
+    checkNativeHostManifestHealth: async () => [],
     bridgeClientRunner: createHealthPingRunner({
       daemon: 'ok',
       extensionConnected: false,
@@ -659,6 +667,47 @@ test('getDoctorReport calls out Chromium Flatpak native host limitations', async
   assert.ok(report.issues.includes('extension_disconnected'));
   assert.ok(report.issues.includes('chromium_sandboxed_native_host_limited'));
   assert.ok(report.nextSteps.some((step) => step.includes('non-sandboxed package')));
+});
+
+test('getDoctorReport flags a broken native host launcher path', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-broken-launcher-'));
+  const manifestPath = path.join(tempDir, 'com.browserbridge.browser_bridge.json');
+  const launcherPath = path.join(tempDir, 'missing-native-host-launcher.sh');
+  await fs.promises.writeFile(
+    manifestPath,
+    `${JSON.stringify({
+      name: 'com.browserbridge.browser_bridge',
+      type: 'stdio',
+      path: launcherPath,
+      allowed_origins: ['chrome-extension://example/'],
+    })}\n`,
+    'utf8'
+  );
+
+  try {
+    const report = await getDoctorReport({
+      loadManifest: async () => null,
+      checkBrowserManifests: async () => [
+        {
+          browser: 'chrome',
+          manifestPath,
+          installed: true,
+        },
+      ],
+      readDaemonStartHistory: async () => [],
+      checkUnwritableBridgePaths: async () => [],
+      bridgeClientRunner: async () => {
+        throw new Error('offline');
+      },
+    });
+
+    assert.ok(report.issues.includes('native_host_manifest_invalid'));
+    assert.equal(report.nativeHostManifestIssues.length, 1);
+    assert.match(report.nativeHostManifestIssues[0]?.message ?? '', /launcher/);
+    assert.ok(report.nextSteps.some((step) => step.includes('bbx install --browser')));
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
 });
 
 test('getDoctorReport clears readiness issues after the bridge recovers on a later retry', async () => {
@@ -699,12 +748,14 @@ test('getDoctorReport clears readiness issues after the bridge recovers on a lat
     loadManifest: async () => ({
       allowed_origins: ['chrome-extension://example/*'],
     }),
+    checkNativeHostManifestHealth: async () => [],
     bridgeClientRunner,
   });
   const recoveredReport = await getDoctorReport({
     loadManifest: async () => ({
       allowed_origins: ['chrome-extension://example/*'],
     }),
+    checkNativeHostManifestHealth: async () => [],
     bridgeClientRunner,
   });
 

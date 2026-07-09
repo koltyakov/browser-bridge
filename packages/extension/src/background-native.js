@@ -234,6 +234,42 @@ function getDaemonProxyStatus(result) {
 }
 
 /**
+ * Extract a native-host bootstrap failure sent before the daemon socket is
+ * available. New hosts send `host.bridge_response`; older hosts sent the raw
+ * `agent.response`, so accept both while users upgrade CLI/npm separately from
+ * the extension.
+ *
+ * @param {unknown} message
+ * @returns {string | null}
+ */
+function getNativeBootstrapErrorMessage(message) {
+  if (!message || typeof message !== 'object') {
+    return null;
+  }
+  const candidate = /** @type {Record<string, unknown>} */ (message);
+  const responseContainer =
+    candidate.type === 'host.bridge_response' || candidate.type === 'agent.response'
+      ? candidate.response
+      : null;
+  if (!responseContainer || typeof responseContainer !== 'object') {
+    return null;
+  }
+
+  const response = /** @type {Record<string, unknown>} */ (responseContainer);
+  if (response.id !== 'native_bootstrap' || response.ok !== false) {
+    return null;
+  }
+  const error = response.error;
+  if (!error || typeof error !== 'object') {
+    return 'Native host could not start the bridge daemon.';
+  }
+  const messageValue = /** @type {Record<string, unknown>} */ (error).message;
+  return typeof messageValue === 'string' && messageValue.trim()
+    ? messageValue
+    : 'Native host could not start the bridge daemon.';
+}
+
+/**
  * @param {ExtensionState} state
  * @param {{ runtime: { connectNative: (application: string) => chrome.runtime.Port, lastError?: { message?: string } }, storage: { session: { get: (key: string) => Promise<Record<string, unknown>>, set: (items: Record<string, unknown>) => Promise<void> } } }} chromeObj
  * @param {NativeConnectionDeps} deps
@@ -246,6 +282,8 @@ function getDaemonProxyStatus(result) {
 export function createNativeConnectionController(state, chromeObj, deps) {
   /** @type {ReturnType<typeof setTimeout> | null} */
   let nativeReconnectTimer = null;
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let nativeUnstableTimer = null;
   let nativeReconnectDelay = NATIVE_RECONNECT_BASE_MS;
 
   /**
@@ -257,6 +295,79 @@ export function createNativeConnectionController(state, chromeObj, deps) {
     }
     clearTimeout(nativeReconnectTimer);
     nativeReconnectTimer = null;
+  }
+
+  /**
+   * @returns {void}
+   */
+  function clearNativeUnstableTimer() {
+    if (!nativeUnstableTimer) {
+      return;
+    }
+    clearTimeout(nativeUnstableTimer);
+    nativeUnstableTimer = null;
+  }
+
+  /**
+   * Schedule a future recheck for the exact point where the oldest disconnect
+   * falls out of the flap window. Without this, a recovered connection would
+   * keep the warning visible until another disconnect happened.
+   *
+   * @param {number} [now=Date.now()]
+   * @returns {void}
+   */
+  function scheduleNativeUnstableRecheck(now = Date.now()) {
+    clearNativeUnstableTimer();
+    const recentDisconnects = state.nativeDisconnectTimes.filter(
+      (at) => at <= now && now - at <= NATIVE_FLAP_WINDOW_MS
+    );
+    const oldest = recentDisconnects[0];
+    if (oldest === undefined) {
+      return;
+    }
+    const delay = Math.max(1, oldest + NATIVE_FLAP_WINDOW_MS - now + 1);
+    nativeUnstableTimer = setTimeout(() => {
+      nativeUnstableTimer = null;
+      syncNativeUnstableState();
+    }, delay);
+  }
+
+  /**
+   * Recompute whether the native connection is still flapping and notify the UI
+   * when it has recovered without requiring another connect/disconnect event.
+   *
+   * @returns {void}
+   */
+  function syncNativeUnstableState() {
+    const now = Date.now();
+    state.nativeDisconnectTimes = state.nativeDisconnectTimes.filter(
+      (at) => at <= now && now - at <= NATIVE_FLAP_WINDOW_MS
+    );
+    const stillUnstable = isNativeConnectionUnstable(
+      state.nativeDisconnectTimes,
+      now,
+      NATIVE_FLAP_WINDOW_MS,
+      NATIVE_FLAP_THRESHOLD
+    );
+    if (stillUnstable) {
+      state.nativeUnstable = true;
+      scheduleNativeUnstableRecheck(now);
+      return;
+    }
+
+    clearNativeUnstableTimer();
+    if (!state.nativeUnstable) {
+      return;
+    }
+    state.nativeUnstable = false;
+    nativeReconnectDelay = NATIVE_RECONNECT_BASE_MS;
+    state.nativeReconnectAttempts = 0;
+    deps.broadcastUi({
+      type: 'native.status',
+      connected: Boolean(state.nativePort),
+      unstable: false,
+    });
+    void deps.emitUiState().catch(reportAsyncError);
   }
 
   /**
@@ -290,6 +401,11 @@ export function createNativeConnectionController(state, chromeObj, deps) {
       NATIVE_FLAP_WINDOW_MS,
       NATIVE_FLAP_THRESHOLD
     );
+    if (state.nativeUnstable) {
+      scheduleNativeUnstableRecheck(now);
+    } else {
+      clearNativeUnstableTimer();
+    }
     deps.clearSetupStatus(errorMessage);
     state.nativeHostVersion = null;
     state.nativeHostVersionRequestId = null;
@@ -355,8 +471,11 @@ export function createNativeConnectionController(state, chromeObj, deps) {
           NATIVE_FLAP_THRESHOLD
         );
         if (!state.nativeUnstable) {
+          clearNativeUnstableTimer();
           nativeReconnectDelay = NATIVE_RECONNECT_BASE_MS;
           state.nativeReconnectAttempts = 0;
+        } else {
+          scheduleNativeUnstableRecheck();
         }
         deps.broadcastUi({
           type: 'native.status',
@@ -381,9 +500,26 @@ export function createNativeConnectionController(state, chromeObj, deps) {
           });
         }
       }, 500);
+      let bootstrapFailed = false;
       candidatePort.onMessage.addListener(
         createNativePortMessageListener({
-          handleHostStatusMessage: deps.handleHostStatusMessage,
+          handleHostStatusMessage: (message) => {
+            const bootstrapError = getNativeBootstrapErrorMessage(message);
+            if (bootstrapError) {
+              bootstrapFailed = true;
+              clearTimeout(stabilityTimer);
+              if (state.pendingNativePort === candidatePort) {
+                state.pendingNativePort = null;
+              }
+              scheduleNativeReconnect(bootstrapError, {
+                method: 'native.bootstrap',
+                summaryPrefix: 'Native host startup failed',
+                updateDisconnectedUi: state.nativePort === candidatePort || !state.nativePort,
+              });
+              return true;
+            }
+            return deps.handleHostStatusMessage(message);
+          },
           handleBridgeRequest: deps.handleBridgeRequest,
           reply: deps.reply,
           reportAsyncError,
@@ -393,6 +529,9 @@ export function createNativeConnectionController(state, chromeObj, deps) {
         clearTimeout(stabilityTimer);
         if (state.pendingNativePort === candidatePort) {
           state.pendingNativePort = null;
+        }
+        if (bootstrapFailed) {
+          return;
         }
         const disconnectError = chromeObj.runtime.lastError?.message ?? 'Native host disconnected.';
         scheduleNativeReconnect(disconnectError, {
