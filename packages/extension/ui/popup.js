@@ -3,6 +3,7 @@
 import {
   createPopupToggleMessage,
   getPopupInstallCommand,
+  getUnstableConnectionDiagnostic,
   normalizePopupToggleError,
   renderPopupButtonState,
   renderPopupNativeIndicator,
@@ -32,6 +33,7 @@ import {
  *   type: 'state.sync',
  *   state: {
  *     nativeConnected: boolean,
+ *     nativeUnstable?: boolean,
  *     currentTab: PopupCurrentTab | null
  *   }
  * } | {
@@ -203,10 +205,23 @@ function renderToggleError(errorMessage) {
 
 /**
  * @param {boolean} connected
+ * @param {boolean} [unstable=false]
  * @returns {void}
  */
-function renderNativeStatus(connected) {
+function renderNativeStatus(connected, unstable = false) {
   renderPopupNativeIndicator(nativeIndicator, connected);
+
+  if (unstable) {
+    // A flapping connection reconnects before the offline diagnostic delay
+    // elapses, so surface the crash-loop hint immediately and keep it visible
+    // across the connected/disconnected flips.
+    if (nativeDiagnosticTimer) {
+      clearTimeout(nativeDiagnosticTimer);
+      nativeDiagnosticTimer = null;
+    }
+    showDiagnostic(getUnstableConnectionDiagnostic());
+    return;
+  }
 
   if (connected) {
     if (nativeDiagnosticTimer) {

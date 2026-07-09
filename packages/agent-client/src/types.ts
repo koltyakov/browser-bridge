@@ -98,6 +98,12 @@ export interface BrowserManifestStatus {
   installed: boolean;
 }
 
+export interface DaemonRestartSummary {
+  startsInWindow: number;
+  windowMs: number;
+  restartLoop: boolean;
+}
+
 export interface DoctorReport {
   manifestInstalled: boolean;
   manifestPath: string;
@@ -111,6 +117,9 @@ export interface DoctorReport {
   routeTabId: number | null;
   routeReady: boolean;
   routeReason: string;
+  daemonRestarts: DaemonRestartSummary;
+  daemonLogPath: string;
+  unwritableBridgePaths: string[];
   issues: string[];
   nextSteps: string[];
   browserManifests: BrowserManifestStatus[];
@@ -124,6 +133,8 @@ export interface DoctorReportOptions {
   bridgeClientRunner?: <T>(
     callback: (client: { request: BridgeClientRequest }) => Promise<T>
   ) => Promise<T>;
+  readDaemonStartHistory?: () => Promise<number[]>;
+  checkUnwritableBridgePaths?: () => Promise<string[]>;
 }
 
 export type BridgeClientRequest = (options: {

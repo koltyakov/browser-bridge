@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { scheduleReconnectAttempt } from '../src/background-reconnect.js';
+import {
+  isNativeConnectionUnstable,
+  recordNativeDisconnect,
+  scheduleReconnectAttempt,
+} from '../src/background-reconnect.js';
 
 type TimerStub = { id: string };
 type ScheduledReconnect = { callback: () => void; delay: number };
@@ -57,4 +61,31 @@ test('scheduleReconnectAttempt caps the reconnect delay at the configured maximu
 
   assert.deepEqual(cleared, []);
   assert.equal(result.nextDelay, 30_000);
+});
+
+test('recordNativeDisconnect appends the disconnect and prunes entries outside the window', () => {
+  const now = 100_000;
+  const windowMs = 60_000;
+
+  assert.deepEqual(recordNativeDisconnect([], now, windowMs), [now]);
+  assert.deepEqual(
+    recordNativeDisconnect([now - 70_000, now - 50_000, now + 5_000], now, windowMs),
+    [now - 50_000, now]
+  );
+});
+
+test('isNativeConnectionUnstable requires the threshold inside the window', () => {
+  const now = 100_000;
+  const windowMs = 60_000;
+
+  assert.equal(isNativeConnectionUnstable([], now, windowMs, 3), false);
+  assert.equal(isNativeConnectionUnstable([now - 40_000, now - 20_000], now, windowMs, 3), false);
+  assert.equal(
+    isNativeConnectionUnstable([now - 40_000, now - 20_000, now - 1_000], now, windowMs, 3),
+    true
+  );
+  assert.equal(
+    isNativeConnectionUnstable([now - 90_000, now - 80_000, now - 70_000], now, windowMs, 3),
+    false
+  );
 });

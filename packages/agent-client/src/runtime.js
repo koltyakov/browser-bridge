@@ -1,13 +1,22 @@
 // @ts-check
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import {
   APP_NAME,
+  getBridgeDir,
+  getDaemonLogPath,
+  getDaemonPidPath,
   getManifestInstallDir,
+  getSocketPath,
   SUPPORTED_BROWSERS,
 } from '../../native-host/src/config.js';
+import {
+  readDaemonStartHistory,
+  summarizeDaemonRestarts,
+} from '../../native-host/src/daemon-process.js';
 import { resolveDefaultExtensionId } from '../../native-host/src/install-manifest.js';
 import { methodNeedsTab } from './cli-helpers.js';
 import { BridgeClient } from './client.js';
@@ -157,6 +166,39 @@ export async function checkBrowserManifests() {
 }
 
 /**
+ * Check the bridge home dir and the daemon files inside it for writability.
+ * Root-owned files (typically left behind by a sudo install or a sudo `bbx`
+ * run) make the daemon crash-loop, so doctor must call them out explicitly.
+ *
+ * @returns {Promise<string[]>} paths that exist but are not writable
+ */
+export async function checkUnwritableBridgePaths() {
+  // The root-owned-files scenario comes from sudo installs, which do not exist
+  // on Windows — and fs.access(W_OK) there only reflects the read-only file
+  // attribute, so it would produce false positives.
+  if (os.platform() === 'win32') {
+    return [];
+  }
+
+  const candidates = [getBridgeDir(), getDaemonPidPath(), getDaemonLogPath()];
+  candidates.push(getSocketPath());
+
+  /** @type {string[]} */
+  const unwritable = [];
+  for (const candidate of candidates) {
+    try {
+      await fs.promises.access(candidate, fs.constants.W_OK);
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+      if (code !== 'ENOENT') {
+        unwritable.push(candidate);
+      }
+    }
+  }
+  return unwritable;
+}
+
+/**
  * @param {DoctorReportOptions} [options={}]
  * @returns {Promise<DoctorReport>}
  */
@@ -166,6 +208,12 @@ export async function getDoctorReport(options = {}) {
   const defaultExtensionId = options.defaultExtensionIdInfo || resolveDefaultExtensionId();
 
   const browserManifests = await (options.checkBrowserManifests || checkBrowserManifests)();
+  const daemonRestarts = summarizeDaemonRestarts(
+    await (options.readDaemonStartHistory || readDaemonStartHistory)()
+  );
+  const unwritableBridgePaths = await (
+    options.checkUnwritableBridgePaths || checkUnwritableBridgePaths
+  )();
   const manifestInstalled = Boolean(manifest) || browserManifests.some((b) => b.installed);
   const chromiumSandboxedManifestInstalled = browserManifests.some(
     (entry) =>
@@ -188,6 +236,9 @@ export async function getDoctorReport(options = {}) {
     routeTabId: null,
     routeReady: false,
     routeReason: 'access_disabled',
+    daemonRestarts,
+    daemonLogPath: getDaemonLogPath(),
+    unwritableBridgePaths,
     issues: [],
     nextSteps: [],
     browserManifests,
@@ -223,6 +274,18 @@ export async function getDoctorReport(options = {}) {
     report.extensionConnected = false;
   }
 
+  if (unwritableBridgePaths.length > 0) {
+    report.issues.push('bridge_files_not_writable');
+    report.nextSteps.push(
+      `These Browser Bridge files are not writable by the current user (usually caused by installing or running bbx with sudo): ${unwritableBridgePaths.join(', ')}. Fix ownership with: sudo chown -R "$USER" "${getBridgeDir()}"`
+    );
+  }
+  if (daemonRestarts.restartLoop) {
+    report.issues.push('daemon_restart_loop');
+    report.nextSteps.push(
+      `The bridge daemon started ${daemonRestarts.startsInWindow} times in the last ${Math.round(daemonRestarts.windowMs / 1000)}s, which means it keeps crashing shortly after startup. Check the daemon log for the underlying error: ${report.daemonLogPath}`
+    );
+  }
   if (!report.manifestInstalled) {
     report.issues.push('native_host_manifest_missing');
     report.nextSteps.push(

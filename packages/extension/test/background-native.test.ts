@@ -511,6 +511,80 @@ test('background native scheduleNativeReconnect backs off and clears the prior r
   }
 });
 
+test('background native marks the connection unstable after repeated disconnects and keeps the backoff', async () => {
+  const nativeMessages: unknown[] = [];
+  const nativePort = createNativePort(nativeMessages);
+  const portPair = createMessagePortPair({ leftName: 'ui-popup', rightName: 'agent' });
+  const loaded = await loadBackground({
+    chrome: createChromeFake({
+      runtime: {
+        connectNative() {
+          return nativePort;
+        },
+      },
+    }),
+    query: `test-background-native-unstable-${Date.now()}-${Math.random()}`,
+  });
+
+  getRuntimeOnConnect(loaded.chrome).dispatch(portPair.left.port);
+  await flushAsyncWork();
+  portPair.left.postedMessages.length = 0;
+
+  const timers = installManualTimers();
+  try {
+    const nativeModule = getNativeModule(loaded);
+    const state = nativeModule.getStateForTest();
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      nativeModule.scheduleNativeReconnect('daemon exited', {
+        method: 'native.disconnect',
+        summaryPrefix: 'Native host disconnected',
+        updateDisconnectedUi: true,
+      });
+    }
+    await flushAsyncWork();
+
+    assert.equal(state.nativeUnstable, true);
+    assert.equal(state.nativeDisconnectTimes.length, 3);
+    const lastStatus = portPair.left.postedMessages
+      .filter(
+        (message): message is { type: string; connected: boolean; unstable: boolean } =>
+          typeof message === 'object' &&
+          message !== null &&
+          'type' in message &&
+          message.type === 'native.status'
+      )
+      .at(-1);
+    assert.equal(lastStatus?.unstable, true);
+
+    // Reconnect and let the stability window close: the connection stays
+    // flagged unstable and the reconnect backoff is not reset.
+    const reconnectTimer = timers.scheduled.at(-1);
+    reconnectTimer?.callback();
+    const stabilityTimer = timers.scheduled.at(-1);
+    assert.equal(stabilityTimer?.delay, 500);
+    stabilityTimer?.callback();
+    await flushAsyncWork();
+
+    assert.equal(state.nativeUnstable, true);
+    assert.notEqual(state.nativeReconnectAttempts, 0);
+    const connectedStatus = portPair.left.postedMessages
+      .filter(
+        (message): message is { type: string; connected: boolean; unstable: boolean } =>
+          typeof message === 'object' &&
+          message !== null &&
+          'type' in message &&
+          message.type === 'native.status' &&
+          'connected' in message &&
+          message.connected === true
+      )
+      .at(-1);
+    assert.equal(connectedStatus?.unstable, true);
+  } finally {
+    timers.restore();
+  }
+});
+
 test('background native scheduleNativeReconnect broadcasts disconnect state and logs reconnect recovery', async () => {
   const firstPortMessages: unknown[] = [];
   const secondPortMessages: unknown[] = [];
@@ -557,12 +631,14 @@ test('background native scheduleNativeReconnect broadcasts disconnect state and 
     assert.deepEqual(findMessage(portPair.left.postedMessages, 'native.status'), {
       type: 'native.status',
       connected: false,
+      unstable: false,
       error: 'native host exited',
     });
     assert.deepEqual(portPair.left.postedMessages.at(-1), {
       type: 'state.sync',
       state: {
         nativeConnected: false,
+        nativeUnstable: false,
         nativeHostVersion: null,
         daemonProxy: null,
         currentTab: null,
@@ -588,6 +664,7 @@ test('background native scheduleNativeReconnect broadcasts disconnect state and 
     assert.deepEqual(findMessage(portPair.left.postedMessages, 'native.status'), {
       type: 'native.status',
       connected: false,
+      unstable: false,
       error: 'native host exited',
     });
     assert.equal(
@@ -771,6 +848,7 @@ test('background native enable flow broadcasts synced UI state and posts an acce
     type: 'state.sync',
     state: {
       nativeConnected: true,
+      nativeUnstable: false,
       nativeHostVersion: '1.2.0',
       daemonProxy: null,
       currentTab: {

@@ -160,3 +160,32 @@ test('popup runtime message handler leaves non-windowed popups open when no pend
   ]);
   assert.equal(closed, false);
 });
+
+test('popup runtime message handler forwards the unstable connection flag', () => {
+  const nativeCalls: Array<[boolean, boolean | undefined]> = [];
+
+  const handler = createPopupMessageHandler({
+    renderNativeStatus: (connected, unstable) => nativeCalls.push([connected, unstable]),
+    renderPopupState: () => {},
+    shouldResetPendingToggleOnSync: () => false,
+    getPendingEnabledState: () => null,
+    resetPendingToggle: () => {},
+    renderToggleError: () => {},
+    windowedPopup: false,
+    closeWindow: () => {},
+  });
+
+  handler({
+    type: 'state.sync',
+    state: { nativeConnected: true, nativeUnstable: true, currentTab: null },
+  });
+  handler({
+    type: 'state.sync',
+    state: { nativeConnected: true, currentTab: null },
+  });
+
+  assert.deepEqual(nativeCalls, [
+    [true, true],
+    [true, false],
+  ]);
+});

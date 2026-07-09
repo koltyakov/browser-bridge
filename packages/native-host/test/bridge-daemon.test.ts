@@ -210,3 +210,53 @@ test(
     }
   }
 );
+
+test(
+  'bridge-daemon keeps running when the pid file is not writable and records start history',
+  {
+    skip:
+      process.platform === 'win32'
+        ? 'Unix socket daemon test is not applicable on Windows'
+        : typeof process.getuid === 'function' && process.getuid() === 0
+          ? 'File permissions are not enforced for root'
+          : false,
+  },
+  async () => {
+    const bridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-daemon-ropid-'));
+    const expectedSocketPath = path.join(bridgeHome, 'bridge.sock');
+    const pidPath = path.join(bridgeHome, 'daemon.pid');
+    const startHistoryPath = path.join(bridgeHome, 'daemon-starts.json');
+    // Simulate the sudo-install leftover: a pid file the daemon cannot overwrite.
+    await fs.promises.writeFile(pidPath, '99999\n', { encoding: 'utf8', mode: 0o444 });
+    const child = spawn(process.execPath, [bridgeDaemonPath], {
+      cwd: repoRoot,
+      env: {
+        ...process.env,
+        BROWSER_BRIDGE_HOME: bridgeHome,
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stderr = '';
+    child.stderr.on('data', (chunk: Buffer | string) => {
+      stderr += chunk.toString();
+    });
+
+    try {
+      await waitForDaemonReady(child, expectedSocketPath);
+      assert.equal(await pingExistingDaemon(expectedSocketPath), true);
+      assert.match(stderr, /Could not write daemon pid file/);
+      assert.equal((await fs.promises.readFile(pidPath, 'utf8')).trim(), '99999');
+
+      const history = JSON.parse(await fs.promises.readFile(startHistoryPath, 'utf8')) as number[];
+      assert.equal(history.length, 1);
+      assert.equal(typeof history[0], 'number');
+    } finally {
+      const { code, signal } = await stopDaemon(child);
+      assert.equal(signal, null);
+      assert.equal(code, 0);
+      await fs.promises.chmod(pidPath, 0o644).catch(() => {});
+      await fs.promises.rm(bridgeHome, { recursive: true, force: true });
+    }
+  }
+);

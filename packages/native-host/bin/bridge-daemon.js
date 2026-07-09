@@ -7,7 +7,11 @@ import {
   getBridgeTransport,
 } from '../src/config.js';
 import { DaemonLogger } from '../src/daemon-logger.js';
-import { clearDaemonPidFile, writeDaemonPidFile } from '../src/daemon-process.js';
+import {
+  clearDaemonPidFile,
+  recordDaemonStart,
+  writeDaemonPidFile,
+} from '../src/daemon-process.js';
 
 applyWindowsTcpTransportDefaults();
 const transport = getBridgeTransport();
@@ -25,7 +29,6 @@ function isExistingDaemonError(error) {
 
 try {
   await daemon.start();
-  await writeDaemonPidFile(process.pid);
 } catch (error) {
   if (isExistingDaemonError(error)) {
     process.stdout.write(`${error.message}\n`);
@@ -33,6 +36,18 @@ try {
   }
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
   process.exit(1);
+}
+
+await recordDaemonStart();
+
+try {
+  await writeDaemonPidFile(process.pid);
+} catch (error) {
+  // A stale root-owned pid file (e.g. after a sudo install) must not take down
+  // a daemon that is already listening; `bbx` falls back to lsof for the pid.
+  process.stderr.write(
+    `Could not write daemon pid file: ${error instanceof Error ? error.message : String(error)}\n`
+  );
 }
 
 process.stdout.write(`Browser Bridge daemon listening on ${formatBridgeTransport(transport)}\n`);

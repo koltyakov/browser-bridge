@@ -12,7 +12,9 @@ import {
   createSocketBridgeTransport,
   formatBridgeTransport,
   getBridgeTransport,
+  getDaemonLogPath,
   getDaemonPidPath,
+  getDaemonStartHistoryPath,
 } from './config.js';
 
 /** @typedef {import('./config.js').BridgeTransport} BridgeTransport */
@@ -22,6 +24,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const daemonEntryPath = path.resolve(__dirname, '../bin/bridge-daemon.js');
 const DEFAULT_DAEMON_RESTART_TIMEOUT_MS = 5_000;
 const DEFAULT_DAEMON_POLL_INTERVAL_MS = 100;
+const DAEMON_LOG_MAX_BYTES = 1024 * 1024;
+const DAEMON_START_HISTORY_MAX_ENTRIES = 20;
+
+/**
+ * A daemon that starts this many times within the window is considered to be
+ * crash-looping rather than restarting normally.
+ */
+export const DAEMON_RESTART_LOOP_THRESHOLD = 3;
+export const DAEMON_RESTART_LOOP_WINDOW_MS = 60_000;
 
 /**
  * @typedef {{
@@ -57,15 +68,111 @@ const DEFAULT_DAEMON_POLL_INTERVAL_MS = 100;
  */
 
 /**
+ * Open the persistent daemon log for appending, rotating it once when it grows
+ * past the size cap. Returns null when the log cannot be opened (for example a
+ * root-owned bridge dir after a sudo install) so callers can fall back to
+ * discarding output instead of failing the spawn.
+ *
+ * @param {string} [logPath=getDaemonLogPath()]
+ * @returns {number | null}
+ */
+export function openDaemonLogFd(logPath = getDaemonLogPath()) {
+  try {
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    try {
+      if (fs.statSync(logPath).size > DAEMON_LOG_MAX_BYTES) {
+        fs.rmSync(`${logPath}.1`, { force: true });
+        fs.renameSync(logPath, `${logPath}.1`);
+      }
+    } catch {
+      // Rotation is best-effort: on Windows the rename fails while another
+      // daemon holds the log open. Keep appending to the current file.
+    }
+    return fs.openSync(logPath, 'a');
+  } catch {
+    return null;
+  }
+}
+
+/**
  * @returns {import('node:child_process').ChildProcess}
  */
 export function spawnBridgeDaemonProcess() {
+  const logFd = openDaemonLogFd();
   const child = spawn(process.execPath, [daemonEntryPath], {
     detached: true,
-    stdio: 'ignore',
+    stdio: logFd === null ? 'ignore' : ['ignore', logFd, logFd],
   });
   child.unref();
+  if (logFd !== null) {
+    fs.closeSync(logFd);
+  }
   return child;
+}
+
+/**
+ * Read the rolling daemon start history (epoch ms timestamps, oldest first).
+ * Missing or malformed files read as an empty history.
+ *
+ * @param {string} [historyPath=getDaemonStartHistoryPath()]
+ * @returns {Promise<number[]>}
+ */
+export async function readDaemonStartHistory(historyPath = getDaemonStartHistoryPath()) {
+  try {
+    const parsed = JSON.parse(await fs.promises.readFile(historyPath, 'utf8'));
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.filter(
+      (value) => typeof value === 'number' && Number.isFinite(value) && value > 0
+    );
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Append a daemon start timestamp to the rolling history. Best-effort: any
+ * filesystem failure is swallowed so an unwritable bridge dir never prevents
+ * the daemon from starting.
+ *
+ * @param {{ at?: number, historyPath?: string }} [options={}]
+ * @returns {Promise<number[]>} the updated history (empty when persisting failed)
+ */
+export async function recordDaemonStart(options = {}) {
+  const { at = Date.now(), historyPath = getDaemonStartHistoryPath() } = options;
+  try {
+    const history = [...(await readDaemonStartHistory(historyPath)), at].slice(
+      -DAEMON_START_HISTORY_MAX_ENTRIES
+    );
+    await fs.promises.mkdir(path.dirname(historyPath), { recursive: true });
+    await fs.promises.writeFile(historyPath, `${JSON.stringify(history)}\n`, 'utf8');
+    return history;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Summarize the daemon start history over the recent window so callers can
+ * tell a crash-looping daemon apart from a normal restart.
+ *
+ * @param {number[]} history
+ * @param {{ now?: number, windowMs?: number, threshold?: number }} [options={}]
+ * @returns {{ startsInWindow: number, windowMs: number, restartLoop: boolean }}
+ */
+export function summarizeDaemonRestarts(history, options = {}) {
+  const {
+    now = Date.now(),
+    windowMs = DAEMON_RESTART_LOOP_WINDOW_MS,
+    threshold = DAEMON_RESTART_LOOP_THRESHOLD,
+  } = options;
+  const startsInWindow = history.filter((at) => at <= now && now - at <= windowMs).length;
+  return {
+    startsInWindow,
+    windowMs,
+    restartLoop: startsInWindow >= threshold,
+  };
 }
 
 /**
@@ -141,7 +248,8 @@ export async function stopBridgeDaemon(options = {}) {
   const resolvedSocketPath =
     resolvedTransport.type === 'socket' ? resolvedTransport.socketPath : '';
 
-  let previousPid = await readPidFn(pidPath);
+  const pidFromFile = await readPidFn(pidPath);
+  let previousPid = pidFromFile;
   let previouslyRunning = previousPid !== null;
 
   if (previousPid === null && (await safePingDaemon(resolvedTransport, pingDaemonFn))) {
@@ -158,7 +266,7 @@ export async function stopBridgeDaemon(options = {}) {
       }
     }
 
-    const stopped = await waitForDaemonReachability({
+    let stopped = await waitForDaemonReachability({
       transport: resolvedTransport,
       reachable: false,
       timeoutMs,
@@ -167,11 +275,37 @@ export async function stopBridgeDaemon(options = {}) {
       sleepFn,
     });
     if (!stopped) {
+      // The pid file can be stale (e.g. a root-owned leftover from a sudo
+      // install that the daemon could not overwrite) while a daemon with a
+      // different pid owns the socket. Target the socket owner before giving up.
+      const socketOwnerPid = await findPidByTransportFn(resolvedTransport);
+      if (socketOwnerPid !== null && socketOwnerPid !== previousPid) {
+        try {
+          killFn(socketOwnerPid, 'SIGTERM');
+        } catch (error) {
+          if (!isMissingProcessError(error)) {
+            throw error;
+          }
+        }
+        stopped = await waitForDaemonReachability({
+          transport: resolvedTransport,
+          reachable: false,
+          timeoutMs,
+          pollIntervalMs,
+          pingDaemonFn,
+          sleepFn,
+        });
+        if (stopped) {
+          previousPid = socketOwnerPid;
+        }
+      }
+    }
+    if (!stopped) {
       throw new Error(`Timed out waiting for Browser Bridge daemon (pid ${previousPid}) to stop.`);
     }
   }
 
-  await clearDaemonPidFile({ pid: previousPid, pidPath, rmFn });
+  await clearDaemonPidFile({ pid: pidFromFile ?? previousPid, pidPath, rmFn });
 
   const removedStaleSocket = await removeStaleSocket(resolvedTransport, rmFn, pingDaemonFn);
   return {

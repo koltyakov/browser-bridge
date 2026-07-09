@@ -293,6 +293,7 @@ test('background UI port syncs current state and updates scoped tab state on req
     type: 'state.sync',
     state: {
       nativeConnected: true,
+      nativeUnstable: false,
       nativeHostVersion: '1.2.0',
       daemonProxy: null,
       currentTab: {
@@ -325,6 +326,7 @@ test('background UI port syncs current state and updates scoped tab state on req
     type: 'state.sync',
     state: {
       nativeConnected: true,
+      nativeUnstable: false,
       nativeHostVersion: '1.2.0',
       daemonProxy: null,
       currentTab: {
@@ -456,6 +458,7 @@ test('background UI port refresh clears setup status when the native host is una
     type: 'state.sync',
     state: {
       nativeConnected: false,
+      nativeUnstable: false,
       nativeHostVersion: null,
       daemonProxy: null,
       currentTab: null,

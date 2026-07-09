@@ -7,6 +7,7 @@ import {
   getSidepanelAgentStatusView,
   getSidepanelCurrentTabView,
   getSidepanelNativeStatusView,
+  getUnstableConnectionDiagnostic,
   getMcpSetupCellState,
   getSetupStatusView,
   getSkillSetupCellState,
@@ -77,6 +78,7 @@ import {
 /**
  * @typedef {{
  *   nativeConnected: boolean,
+ *   nativeUnstable?: boolean,
  *   nativeHostVersion: string | null,
  *   daemonProxy: DaemonProxyStatus | null,
  *   currentTab: SidePanelCurrentTab | null,
@@ -93,6 +95,7 @@ import {
  * @typedef {{
  *   type: 'native.status',
  *   connected: boolean,
+ *   unstable?: boolean,
  *   error?: string
  * } | {
  *   type: 'state.sync',
@@ -482,9 +485,10 @@ function renderAgentStatus(state) {
 /**
  * @param {boolean} connected
  * @param {string | undefined} [error]
+ * @param {boolean} [unstable=false]
  * @returns {void}
  */
-function renderNativeStatus(connected, error) {
+function renderNativeStatus(connected, error, unstable = false) {
   const view = getSidepanelNativeStatusView({
     connected,
     error,
@@ -508,6 +512,18 @@ function renderNativeStatus(connected, error) {
     hideSetupContextMenu();
   }
   syncConnectedSectionsVisibility();
+
+  if (unstable) {
+    // A flapping connection reconnects before the offline diagnostic delay
+    // elapses, so surface the crash-loop hint immediately and keep it visible
+    // across the connected/disconnected flips.
+    if (nativeDiagnosticTimer) {
+      clearTimeout(nativeDiagnosticTimer);
+      nativeDiagnosticTimer = null;
+    }
+    showSidepanelDiagnostic(getUnstableConnectionDiagnostic());
+    return;
+  }
 
   if (connected) {
     if (nativeDiagnosticTimer) {

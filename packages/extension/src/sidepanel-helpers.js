@@ -688,6 +688,16 @@ export function getPromptExamplesRenderGroups(setupStatus, cliPromptExamples, mc
 }
 
 /**
+ * Diagnostic shown when the native host connection keeps dropping and
+ * reconnecting (crash-looping daemon) instead of being merely offline.
+ *
+ * @returns {string}
+ */
+export function getUnstableConnectionDiagnostic() {
+  return 'Connection to the local host keeps dropping — the bridge daemon appears to be restarting repeatedly. Run `bbx doctor` in a terminal for the cause and fix steps.';
+}
+
+/**
  * @param {{
  *   connected: boolean,
  *   error?: string,

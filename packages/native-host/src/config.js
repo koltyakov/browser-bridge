@@ -293,6 +293,29 @@ export function getDaemonPidPath(env = process.env) {
 }
 
 /**
+ * Persistent daemon log. The daemon is normally spawned detached with its
+ * stdio redirected here so startup failures stay diagnosable after the
+ * process is gone.
+ *
+ * @param {NodeJS.ProcessEnv} [env=process.env]
+ * @returns {string}
+ */
+export function getDaemonLogPath(env = process.env) {
+  return path.join(getBridgeDir(env), 'daemon.log');
+}
+
+/**
+ * Rolling history of daemon start timestamps, used to detect a daemon that
+ * keeps restarting within a short window (crash loop).
+ *
+ * @param {NodeJS.ProcessEnv} [env=process.env]
+ * @returns {string}
+ */
+export function getDaemonStartHistoryPath(env = process.env) {
+  return path.join(getBridgeDir(env), 'daemon-starts.json');
+}
+
+/**
  * @returns {string}
  */
 export function getLauncherFilename() {

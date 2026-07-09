@@ -516,6 +516,8 @@ test('getDoctorReport treats one installed browser manifest as native host ready
   const report = await getDoctorReport({
     loadManifest: async () => null,
     checkBrowserManifests: async () => browserManifestStatuses(['edge']),
+    readDaemonStartHistory: async () => [],
+    checkUnwritableBridgePaths: async () => [],
     bridgeClientRunner: createHealthPingRunner({
       daemon: 'ok',
       extensionConnected: true,
@@ -532,6 +534,45 @@ test('getDoctorReport treats one installed browser manifest as native host ready
   assert.equal(report.manifestInstalled, true);
   assert.deepEqual(report.issues, []);
   assert.deepEqual(report.nextSteps, []);
+});
+
+test('getDoctorReport flags a crash-looping daemon and points at the daemon log', async () => {
+  const now = Date.now();
+  const report = await getDoctorReport({
+    loadManifest: async () => ({
+      allowed_origins: ['chrome-extension://example/*'],
+    }),
+    readDaemonStartHistory: async () => [now - 40_000, now - 25_000, now - 5_000],
+    checkUnwritableBridgePaths: async () => [],
+    bridgeClientRunner: async () => {
+      throw new Error('offline');
+    },
+  });
+
+  assert.equal(report.daemonRestarts.restartLoop, true);
+  assert.equal(report.daemonRestarts.startsInWindow, 3);
+  assert.ok(report.issues.includes('daemon_restart_loop'));
+  assert.ok(report.nextSteps.some((step) => step.includes(report.daemonLogPath)));
+});
+
+test('getDoctorReport flags unwritable bridge files with an ownership fix', async () => {
+  const report = await getDoctorReport({
+    loadManifest: async () => ({
+      allowed_origins: ['chrome-extension://example/*'],
+    }),
+    readDaemonStartHistory: async () => [],
+    checkUnwritableBridgePaths: async () => ['/home/user/.local/share/browser-bridge/daemon.pid'],
+    bridgeClientRunner: async () => {
+      throw new Error('offline');
+    },
+  });
+
+  assert.deepEqual(report.unwritableBridgePaths, [
+    '/home/user/.local/share/browser-bridge/daemon.pid',
+  ]);
+  assert.ok(report.issues.includes('bridge_files_not_writable'));
+  assert.ok(report.nextSteps.some((step) => step.includes('sudo chown')));
+  assert.ok(report.nextSteps.some((step) => step.includes('daemon.pid')));
 });
 
 test('getDoctorReport tells the agent to wait for the user when access is disabled', async () => {

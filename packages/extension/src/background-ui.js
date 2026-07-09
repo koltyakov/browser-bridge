@@ -101,6 +101,7 @@ export async function emitUiStateForPort(state, port, deps) {
     type: 'state.sync',
     state: {
       nativeConnected: Boolean(state.nativePort),
+      nativeUnstable: state.nativeUnstable === true,
       nativeHostVersion: state.nativeHostVersion,
       daemonProxy: state.daemonProxy,
       currentTab,

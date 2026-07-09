@@ -37,3 +37,32 @@ export function scheduleReconnectAttempt({
     nextDelay: Math.min(currentDelay * 2, maxDelay),
   };
 }
+
+/**
+ * Record a native host disconnect and drop entries older than the window.
+ * The returned array is a new pruned list including `now`, oldest first.
+ *
+ * @param {number[]} disconnectTimes
+ * @param {number} now
+ * @param {number} windowMs
+ * @returns {number[]}
+ */
+export function recordNativeDisconnect(disconnectTimes, now, windowMs) {
+  return [...disconnectTimes.filter((at) => at <= now && now - at <= windowMs), now];
+}
+
+/**
+ * A connection is unstable when the native host disconnected at least
+ * `threshold` times inside the recent window — the daemon (or host) is
+ * starting and dying repeatedly rather than being merely offline.
+ *
+ * @param {number[]} disconnectTimes
+ * @param {number} now
+ * @param {number} windowMs
+ * @param {number} threshold
+ * @returns {boolean}
+ */
+export function isNativeConnectionUnstable(disconnectTimes, now, windowMs, threshold) {
+  const recent = disconnectTimes.filter((at) => at <= now && now - at <= windowMs);
+  return recent.length >= threshold;
+}

@@ -50,6 +50,7 @@
 /**
  * @typedef {{
  *   nativeConnected: boolean,
+ *   nativeUnstable?: boolean,
  *   nativeHostVersion: string | null,
  *   daemonProxy: DaemonProxyStatus | null,
  *   currentTab: SidePanelCurrentTab | null,
@@ -66,6 +67,7 @@
  * @typedef {{
  *   type: 'native.status',
  *   connected: boolean,
+ *   unstable?: boolean,
  *   error?: string
  * } | {
  *   type: 'state.sync',
@@ -78,7 +80,7 @@
 
 /**
  * @typedef {{
- *   renderNativeStatus: (connected: boolean, error?: string) => void,
+ *   renderNativeStatus: (connected: boolean, error?: string, unstable?: boolean) => void,
  *   renderState: (state: UiSnapshot) => void,
  *   renderToggleError: (errorMessage: string) => void
  * }} SidePanelMessageHandlerOptions
@@ -105,7 +107,7 @@
 /**
  * @typedef {{
  *   hideSetupContextMenu: () => void,
- *   renderNativeStatus: (connected: boolean) => void,
+ *   renderNativeStatus: (connected: boolean, error?: string, unstable?: boolean) => void,
  *   renderCurrentTab: (currentTab: SidePanelCurrentTab | null) => void,
  *   renderAgentStatus: (state: UiSnapshot) => void,
  *   renderPromptExamples: (setupStatus: SetupStatus | null) => void,
@@ -139,7 +141,7 @@
 export function createSidepanelMessageHandler(options) {
   return (message) => {
     if (message.type === 'native.status') {
-      options.renderNativeStatus(message.connected, message.error);
+      options.renderNativeStatus(message.connected, message.error, message.unstable === true);
       return;
     }
 
@@ -199,7 +201,7 @@ export function connectSidepanelPort({
  */
 export function renderSidepanelState(state, options) {
   options.hideSetupContextMenu();
-  options.renderNativeStatus(state.nativeConnected);
+  options.renderNativeStatus(state.nativeConnected, undefined, state.nativeUnstable === true);
   options.renderCurrentTab(state.currentTab);
   options.renderAgentStatus(state);
   options.renderPromptExamples(state.setupStatus);

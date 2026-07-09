@@ -4,9 +4,15 @@ import { BridgeError, ERROR_CODES, createRequest } from '../../protocol/src/inde
 import { createNativePortMessageListener } from './background-bridge.js';
 import { detectBrowserName } from './background-browser.js';
 import { getErrorMessage } from './background-helpers.js';
-import { scheduleReconnectAttempt } from './background-reconnect.js';
+import {
+  isNativeConnectionUnstable,
+  recordNativeDisconnect,
+  scheduleReconnectAttempt,
+} from './background-reconnect.js';
 import {
   NATIVE_APP_NAME,
+  NATIVE_FLAP_THRESHOLD,
+  NATIVE_FLAP_WINDOW_MS,
   NATIVE_RECONNECT_BASE_MS,
   NATIVE_RECONNECT_MAX_MS,
   reportAsyncError,
@@ -272,6 +278,18 @@ export function createNativeConnectionController(state, chromeObj, deps) {
 
     state.nativeReconnectAttempts += 1;
     const reconnectAttempt = state.nativeReconnectAttempts;
+    const now = Date.now();
+    state.nativeDisconnectTimes = recordNativeDisconnect(
+      state.nativeDisconnectTimes,
+      now,
+      NATIVE_FLAP_WINDOW_MS
+    );
+    state.nativeUnstable = isNativeConnectionUnstable(
+      state.nativeDisconnectTimes,
+      now,
+      NATIVE_FLAP_WINDOW_MS,
+      NATIVE_FLAP_THRESHOLD
+    );
     deps.clearSetupStatus(errorMessage);
     state.nativeHostVersion = null;
     state.nativeHostVersionRequestId = null;
@@ -281,6 +299,7 @@ export function createNativeConnectionController(state, chromeObj, deps) {
       deps.broadcastUi({
         type: 'native.status',
         connected: false,
+        unstable: state.nativeUnstable,
         error: errorMessage,
       });
     }
@@ -325,9 +344,25 @@ export function createNativeConnectionController(state, chromeObj, deps) {
         if (state.pendingNativePort === candidatePort) {
           state.pendingNativePort = null;
         }
-        nativeReconnectDelay = NATIVE_RECONNECT_BASE_MS;
-        state.nativeReconnectAttempts = 0;
-        deps.broadcastUi({ type: 'native.status', connected: true });
+        // A connection that survives the stability window can still be part of
+        // a crash loop (daemon dying seconds after startup). Keep the grown
+        // backoff while the recent disconnect history says we are flapping so
+        // the UI stops flickering and reconnect churn slows down.
+        state.nativeUnstable = isNativeConnectionUnstable(
+          state.nativeDisconnectTimes,
+          Date.now(),
+          NATIVE_FLAP_WINDOW_MS,
+          NATIVE_FLAP_THRESHOLD
+        );
+        if (!state.nativeUnstable) {
+          nativeReconnectDelay = NATIVE_RECONNECT_BASE_MS;
+          state.nativeReconnectAttempts = 0;
+        }
+        deps.broadcastUi({
+          type: 'native.status',
+          connected: true,
+          unstable: state.nativeUnstable,
+        });
         deps.refreshSetupStatus(true);
         requestNativeHostVersion(candidatePort, state);
         void deps.refreshActionIndicators();

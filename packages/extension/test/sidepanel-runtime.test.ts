@@ -216,3 +216,22 @@ test('sidepanel runtime shows the empty state when there is no activity', () => 
     ['sync-polling'],
   ]);
 });
+
+test('sidepanel runtime message handler forwards the unstable connection flag', () => {
+  const nativeCalls: Array<[boolean, string | undefined, boolean | undefined]> = [];
+
+  const handler = createSidepanelMessageHandler({
+    renderNativeStatus: (connected, error, unstable) =>
+      nativeCalls.push([connected, error, unstable]),
+    renderState: () => {},
+    renderToggleError: () => {},
+  });
+
+  handler({ type: 'native.status', connected: false, unstable: true, error: 'gone' });
+  handler({ type: 'native.status', connected: true });
+
+  assert.deepEqual(nativeCalls, [
+    [false, 'gone', true],
+    [true, undefined, false],
+  ]);
+});

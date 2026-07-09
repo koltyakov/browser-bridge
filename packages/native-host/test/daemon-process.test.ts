@@ -7,11 +7,17 @@ import type { ChildProcess } from 'node:child_process';
 
 import {
   clearDaemonPidFile,
+  DAEMON_RESTART_LOOP_THRESHOLD,
+  DAEMON_RESTART_LOOP_WINDOW_MS,
   findDaemonPidByTransport,
+  openDaemonLogFd,
   readDaemonPidFile,
+  readDaemonStartHistory,
+  recordDaemonStart,
   restartBridgeDaemon,
   restartBridgeDaemonIfRunning,
   stopBridgeDaemon,
+  summarizeDaemonRestarts,
   writeDaemonPidFile,
 } from '../src/daemon-process.js';
 import { BRIDGE_HOME_ENV, BRIDGE_TCP_PORT_ENV, DEFAULT_WINDOWS_TCP_PORT } from '../src/config.js';
@@ -375,4 +381,122 @@ test('findDaemonPidByTransport returns null for tcp transport', async () => {
     }),
     null
   );
+});
+
+test('daemon start history records, prunes, and reads timestamps', async () => {
+  const bridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-daemon-starts-'));
+  const historyPath = path.join(bridgeHome, 'daemon-starts.json');
+
+  try {
+    assert.deepEqual(await readDaemonStartHistory(historyPath), []);
+
+    await recordDaemonStart({ at: 1_000, historyPath });
+    const history = await recordDaemonStart({ at: 2_000, historyPath });
+    assert.deepEqual(history, [1_000, 2_000]);
+    assert.deepEqual(await readDaemonStartHistory(historyPath), [1_000, 2_000]);
+
+    for (let index = 0; index < 25; index += 1) {
+      await recordDaemonStart({ at: 10_000 + index, historyPath });
+    }
+    const pruned = await readDaemonStartHistory(historyPath);
+    assert.equal(pruned.length, 20);
+    assert.equal(pruned.at(-1), 10_024);
+
+    await fs.promises.writeFile(historyPath, 'not-json', 'utf8');
+    assert.deepEqual(await readDaemonStartHistory(historyPath), []);
+
+    await fs.promises.writeFile(historyPath, '{"nope":true}', 'utf8');
+    assert.deepEqual(await readDaemonStartHistory(historyPath), []);
+  } finally {
+    await fs.promises.rm(bridgeHome, { recursive: true, force: true });
+  }
+});
+
+test('recordDaemonStart swallows filesystem failures', async () => {
+  const history = await recordDaemonStart({
+    at: 1_000,
+    historyPath: path.join(os.tmpdir(), `bbx-missing-${Date.now()}`, 'x', '\0invalid'),
+  });
+  assert.deepEqual(history, []);
+});
+
+test('summarizeDaemonRestarts detects a crash loop inside the window', () => {
+  const now = 100_000_000;
+  const calm = summarizeDaemonRestarts([now - DAEMON_RESTART_LOOP_WINDOW_MS - 1, now - 1_000], {
+    now,
+  });
+  assert.equal(calm.restartLoop, false);
+  assert.equal(calm.startsInWindow, 1);
+
+  const looping = summarizeDaemonRestarts([now - 40_000, now - 20_000, now - 1_000], { now });
+  assert.equal(looping.restartLoop, true);
+  assert.equal(looping.startsInWindow, DAEMON_RESTART_LOOP_THRESHOLD);
+  assert.equal(looping.windowMs, DAEMON_RESTART_LOOP_WINDOW_MS);
+
+  const future = summarizeDaemonRestarts([now + 5_000, now - 1_000], { now });
+  assert.equal(future.startsInWindow, 1);
+});
+
+test('openDaemonLogFd appends and rotates oversized logs', async () => {
+  const bridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-daemon-log-'));
+  const logPath = path.join(bridgeHome, 'nested', 'daemon.log');
+
+  try {
+    const fd = openDaemonLogFd(logPath);
+    assert.notEqual(fd, null);
+    fs.writeSync(fd as number, 'first\n');
+    fs.closeSync(fd as number);
+    assert.equal(await fs.promises.readFile(logPath, 'utf8'), 'first\n');
+
+    await fs.promises.writeFile(logPath, 'x'.repeat(1024 * 1024 + 1), 'utf8');
+    const rotatedFd = openDaemonLogFd(logPath);
+    assert.notEqual(rotatedFd, null);
+    fs.closeSync(rotatedFd as number);
+    assert.equal((await fs.promises.stat(logPath)).size, 0);
+    assert.equal((await fs.promises.stat(`${logPath}.1`)).size, 1024 * 1024 + 1);
+  } finally {
+    await fs.promises.rm(bridgeHome, { recursive: true, force: true });
+  }
+});
+
+test('stopBridgeDaemon falls back to the socket owner when the pid file is stale', async () => {
+  const bridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-stop-daemon-stale-'));
+  const socketPath = path.join(bridgeHome, 'bridge.sock');
+  const pidPath = path.join(bridgeHome, 'daemon.pid');
+  const kills: KillCall[] = [];
+  let reachable = true;
+
+  try {
+    await fs.promises.writeFile(pidPath, '99999\n', 'utf8');
+
+    const result = await stopBridgeDaemon({
+      socketPath,
+      pidPath,
+      timeoutMs: 0,
+      pollIntervalMs: 0,
+      pingDaemonFn: async () => reachable,
+      findPidByTransportFn: async () => 4321,
+      killFn: ((pid, signal) => {
+        kills.push({ pid, signal });
+        if (pid === 99999) {
+          const error = new Error('missing process') as NodeJS.ErrnoException;
+          error.code = 'ESRCH';
+          throw error;
+        }
+        reachable = false;
+        return true;
+      }) as typeof process.kill,
+      sleepFn: async () => {},
+    });
+
+    assert.deepEqual(kills, [
+      { pid: 99999, signal: 'SIGTERM' },
+      { pid: 4321, signal: 'SIGTERM' },
+    ]);
+    assert.equal(result.previouslyRunning, true);
+    assert.equal(result.previousPid, 4321);
+    await assert.rejects(fs.promises.access(pidPath));
+  } finally {
+    await fs.promises.rm(bridgeHome, { recursive: true, force: true });
+  }
 });
