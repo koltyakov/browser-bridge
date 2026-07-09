@@ -18,10 +18,9 @@ import {
 } from '../src/mcp-config.js';
 import type { McpClientName } from '../src/mcp-config.js';
 
-const expectedMcpBinPath = path.join(process.cwd(), 'packages', 'mcp-server', 'src', 'bin.js');
-const expectedMcpCommand = process.execPath;
-const expectedMcpArgs = [expectedMcpBinPath];
-const expectedOpencodeCommand = [process.execPath, expectedMcpBinPath];
+const expectedMcpCommand = 'bbx';
+const expectedMcpArgs = ['mcp', 'serve'];
+const expectedOpencodeCommand = ['bbx', 'mcp', 'serve'];
 
 test('isMcpClientName accepts supported clients only', () => {
   for (const clientName of MCP_CLIENT_NAMES) {

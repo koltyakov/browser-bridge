@@ -3,7 +3,6 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 /** @typedef {import('./types.js').McpClientName} McpClientName */
 
@@ -40,8 +39,8 @@ export function isMcpClientName(value) {
 }
 
 const BROWSER_BRIDGE_SERVER_NAME = 'browser-bridge';
-const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
-const mcpServerBinPath = path.join(packageRoot, 'packages', 'mcp-server', 'src', 'bin.js');
+const MCP_COMMAND = 'bbx';
+const MCP_ARGS = Object.freeze(['mcp', 'serve']);
 
 /**
  * @returns {string}
@@ -95,15 +94,15 @@ export function getMcpConfigShape(clientName) {
  */
 function createBaseServerConfig(clientName) {
   const serverConfig = {
-    command: process.execPath,
-    args: [mcpServerBinPath],
+    command: MCP_COMMAND,
+    args: [...MCP_ARGS],
     env: {},
   };
 
   if (clientName === 'opencode') {
     return {
       type: 'local',
-      command: [process.execPath, mcpServerBinPath],
+      command: [MCP_COMMAND, ...MCP_ARGS],
     };
   }
   return serverConfig;
@@ -135,8 +134,8 @@ export function buildMcpConfig(clientName) {
     return {
       mcp_servers: {
         [BROWSER_BRIDGE_SERVER_NAME]: {
-          command: process.execPath,
-          args: [mcpServerBinPath],
+          command: MCP_COMMAND,
+          args: [...MCP_ARGS],
         },
       },
     };
@@ -267,8 +266,8 @@ export async function getMcpConfigPaths(clientName, options) {
 function formatCodexServerBlock() {
   return [
     `[mcp_servers."${BROWSER_BRIDGE_SERVER_NAME}"]`,
-    `command = ${JSON.stringify(process.execPath)}`,
-    `args = ${JSON.stringify([mcpServerBinPath])}`,
+    `command = ${JSON.stringify(MCP_COMMAND)}`,
+    `args = ${JSON.stringify(MCP_ARGS)}`,
     '',
   ].join('\n');
 }

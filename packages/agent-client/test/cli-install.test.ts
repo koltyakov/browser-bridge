@@ -12,8 +12,8 @@ type InstallFs = Awaited<ReturnType<typeof createInstallFs>>;
 type SkillTargetMap = Record<string, { skillDir: string }>;
 type McpClientMap = Record<string, { configPaths: string[] }>;
 
-const expectedMcpCommand = process.execPath;
-const expectedMcpArgs = [path.join(process.cwd(), 'packages', 'mcp-server', 'src', 'bin.js')];
+const expectedMcpCommand = 'bbx';
+const expectedMcpArgs = ['mcp', 'serve'];
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

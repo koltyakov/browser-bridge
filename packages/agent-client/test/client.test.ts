@@ -40,10 +40,9 @@ import { BridgeClient } from '../src/client.js';
 import { clockController } from '../../../tests/_helpers/faultInjection.ts';
 import { bridgeServerWith } from '../../../tests/_helpers/socketHarness.ts';
 
-const expectedMcpBinPath = path.join(process.cwd(), 'packages', 'mcp-server', 'src', 'bin.js');
-const expectedMcpCommand = process.execPath;
-const expectedMcpArgs = [expectedMcpBinPath];
-const expectedOpencodeCommand = [process.execPath, expectedMcpBinPath];
+const expectedMcpCommand = 'bbx';
+const expectedMcpArgs = ['mcp', 'serve'];
+const expectedOpencodeCommand = ['bbx', 'mcp', 'serve'];
 
 type ErrorWithCode = Error & { code?: string };
 type EvidenceRecord = Record<string, unknown>;

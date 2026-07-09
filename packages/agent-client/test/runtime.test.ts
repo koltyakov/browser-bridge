@@ -14,7 +14,7 @@ import { getDoctorReport, requestBridge, resolveRef, withBridgeClient } from '..
 import type { BridgeResponse } from '../../protocol/src/types.js';
 import type { BrowserManifestStatus } from '../src/types.js';
 
-const expectedMcpCommand = process.execPath;
+const expectedMcpCommand = 'bbx';
 
 type DetectorMap = Record<string, () => boolean>;
 type RequestCall = {
