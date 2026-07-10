@@ -626,17 +626,21 @@
     } else {
       // setter mode: use the native prototype setter to bypass React's synthetic wrapper
       const tag = editable.tagName;
-      const proto =
-        tag === 'TEXTAREA'
-          ? HTMLTextAreaElement.prototype
-          : tag === 'SELECT'
-            ? HTMLSelectElement.prototype
-            : HTMLInputElement.prototype;
-      const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
-      if (descriptor && descriptor.set) {
-        descriptor.set.call(editable, value);
+      if (editable instanceof HTMLElement && editable.isContentEditable) {
+        editable.textContent = value;
       } else {
-        /** @type {HTMLInputElement} */ (editable).value = value;
+        const proto =
+          tag === 'TEXTAREA'
+            ? HTMLTextAreaElement.prototype
+            : tag === 'SELECT'
+              ? HTMLSelectElement.prototype
+              : HTMLInputElement.prototype;
+        const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+        if (descriptor && descriptor.set) {
+          descriptor.set.call(editable, value);
+        } else {
+          /** @type {HTMLInputElement} */ (editable).value = value;
+        }
       }
       editable.dispatchEvent(new Event('input', { bubbles: true }));
       editable.dispatchEvent(new Event('change', { bubbles: true }));

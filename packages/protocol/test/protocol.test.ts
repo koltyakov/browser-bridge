@@ -13,6 +13,7 @@ import {
   createRequest,
   createRuntimeContext,
   getMethodCapability,
+  getBridgeOperationTimeoutMs,
   normalizeCheckedAction,
   createSuccess,
   normalizeCdpDispatchKeyEventParams,
@@ -84,11 +85,17 @@ test('createRequest includes explicit tab_id when provided', () => {
   assert.equal(request.tab_id, 5);
 });
 
+test('getBridgeOperationTimeoutMs returns normalized defaults and requested waits', () => {
+  assert.equal(getBridgeOperationTimeoutMs('navigation.navigate'), 15_000);
+  assert.equal(getBridgeOperationTimeoutMs('page.evaluate', { timeoutMs: 20_000 }), 20_000);
+  assert.equal(getBridgeOperationTimeoutMs('dom.wait_for', { timeoutMs: 60_000 }), 30_000);
+  assert.equal(getBridgeOperationTimeoutMs('page.get_state'), null);
+});
+
 test('validateBridgeRequest normalizes routing and metadata fallbacks', () => {
   const request = validateBridgeRequest({
     id: 'req_meta',
     method: 'health.ping',
-    tab_id: 'not-a-tab',
     meta: {
       protocol_version: 42,
       token_budget: '100',
@@ -102,6 +109,55 @@ test('validateBridgeRequest normalizes routing and metadata fallbacks', () => {
   assert.equal(request.meta.token_budget, null);
   assert.equal(request.meta.source, undefined);
   assert.equal(request.meta.keep, 'value');
+});
+
+test('validateBridgeRequest accepts omitted, null, and positive safe integer tab_id routing', () => {
+  const baseRequest = { id: 'req_tab', method: 'health.ping' } as const;
+
+  assert.equal(validateBridgeRequest(baseRequest).tab_id, null);
+  assert.equal(validateBridgeRequest({ ...baseRequest, tab_id: null }).tab_id, null);
+  assert.equal(validateBridgeRequest({ ...baseRequest, tab_id: 1 }).tab_id, 1);
+  assert.equal(
+    validateBridgeRequest({ ...baseRequest, tab_id: Number.MAX_SAFE_INTEGER }).tab_id,
+    Number.MAX_SAFE_INTEGER
+  );
+});
+
+test('validateBridgeRequest rejects invalid explicitly supplied tab_id routing', () => {
+  const invalidTabIds = [
+    undefined,
+    '12',
+    true,
+    false,
+    0,
+    -1,
+    1.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.MAX_SAFE_INTEGER + 1,
+  ];
+
+  for (const tabId of invalidTabIds) {
+    assert.throws(
+      () =>
+        validateBridgeRequest({
+          id: 'req_invalid_tab',
+          method: 'health.ping',
+          tab_id: tabId,
+        } as unknown as BridgeRequest),
+      (error) => {
+        assert.equal(error instanceof Error, true);
+        const bridgeError = error as ErrorWithCode;
+        assert.equal(bridgeError.code, ERROR_CODES.INVALID_REQUEST);
+        assert.equal(
+          bridgeError.message,
+          'Request tab_id must be null or a positive safe integer.'
+        );
+        return true;
+      },
+      `tab_id=${String(tabId)}`
+    );
+  }
 });
 
 /** Ensure success and failure responses keep the shared envelope shape. */

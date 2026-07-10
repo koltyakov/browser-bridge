@@ -1602,7 +1602,7 @@ test('content script prunes detached registry entries in 100-entry batches once 
   assert.equal(overflowQuery.registrySize, 4901);
 });
 
-test('content script evicts the oldest patches past MAX_PATCH_REGISTRY_SIZE', async (t) => {
+test('content script rejects patches past MAX_PATCH_REGISTRY_SIZE without orphaning history', async (t) => {
   const harness = createChromeHarness();
   const styleValues = new Map<string, string>();
   const target = {
@@ -1660,7 +1660,7 @@ test('content script evicts the oldest patches past MAX_PATCH_REGISTRY_SIZE', as
     });
   }
 
-  for (let index = 0; index <= 2000; index++) {
+  for (let index = 0; index < 2000; index++) {
     const response = await execute('patch.apply_styles', {
       patchId: `patch-${index}`,
       target: { selector: '#target' },
@@ -1671,17 +1671,26 @@ test('content script evicts the oldest patches past MAX_PATCH_REGISTRY_SIZE', as
     assert.equal(patchResponse.applied, true);
   }
 
+  const overflow = await executeBridgeMethod(listener, 'patch.apply_styles', {
+    patchId: 'patch-2000',
+    target: { selector: '#target' },
+    declarations: { color: '2000' },
+  });
+  assert.deepEqual(overflow, {
+    error: 'Patch registry is full. Roll back or commit active patches before applying more.',
+  });
+
   const patches = await execute('patch.list', {});
   assert.ok(Array.isArray(patches));
   assert.equal(patches.length, 2000);
-  assert.equal(patches[0]?.patchId, 'patch-1');
-  assert.equal(patches.at(-1)?.patchId, 'patch-2000');
+  assert.equal(patches[0]?.patchId, 'patch-0');
+  assert.equal(patches.at(-1)?.patchId, 'patch-1999');
 
-  const evicted = await execute('patch.rollback', { patchId: 'patch-0' });
-  const retained = await execute('patch.rollback', { patchId: 'patch-2000' });
+  const oldest = await execute('patch.rollback', { patchId: 'patch-0' });
+  const newest = await execute('patch.rollback', { patchId: 'patch-1999' });
 
-  assert.deepEqual(evicted, { patchId: 'patch-0', rolledBack: false });
-  assert.deepEqual(retained, { patchId: 'patch-2000', rolledBack: true });
+  assert.deepEqual(oldest, { patchId: 'patch-0', rolledBack: true });
+  assert.deepEqual(newest, { patchId: 'patch-1999', rolledBack: true });
 });
 
 test('content script patch.apply_styles rollbacks restore prior inline style values', async (t) => {
@@ -1766,6 +1775,16 @@ test('content script patch.apply_styles rollbacks restore prior inline style val
   assert.equal(stylePriorities.has('color'), false);
   assert.equal(styleValues.get('border'), '1px solid black');
 
+  const duplicateResult = await executeBridgeMethod(listener, 'patch.apply_styles', {
+    patchId: 'patch-style-roundtrip',
+    target: { selector: '#target' },
+    declarations: { color: 'green' },
+  });
+  assert.deepEqual(duplicateResult, {
+    error: 'Patch ID patch-style-roundtrip is already active.',
+  });
+  assert.equal(styleValues.get('color'), 'red');
+
   const rollbackResult = await execute('patch.rollback', {
     patchId: 'patch-style-roundtrip',
   });
@@ -1779,6 +1798,24 @@ test('content script patch.apply_styles rollbacks restore prior inline style val
   assert.equal(styleValues.has('border'), false);
   assert.equal(stylePriorities.has('border'), false);
   assert.deepEqual(await execute('patch.list', {}), []);
+
+  await execute('patch.apply_styles', {
+    patchId: 'patch-committed-baseline',
+    target: { selector: '#target' },
+    declarations: { color: 'green' },
+  });
+  assert.deepEqual(await executeBridgeMethod(listener, 'patch.commit_session_baseline', {}), {
+    committed: true,
+  });
+  assert.equal(styleValues.get('color'), 'green');
+  assert.deepEqual(await execute('patch.list', {}), []);
+  assert.deepEqual(
+    await executeBridgeMethod(listener, 'patch.rollback', {
+      patchId: 'patch-committed-baseline',
+    }),
+    { patchId: 'patch-committed-baseline', rolledBack: false }
+  );
+  assert.equal(styleValues.get('color'), 'green');
 });
 
 test('content patch module guards duplicate and missing dependency loads', async (t) => {
@@ -2990,10 +3027,12 @@ test('content script input.fill sets values and dispatches input, change, and bl
   const inputs = installInputDomGlobals(t);
   const textInput = inputs.createTextInput({ value: 'old value' });
   const textarea = inputs.createTextArea();
-  const body = inputs.createBody([textInput, textarea]);
+  const editable = inputs.createContentEditable({ textContent: 'old content' });
+  const body = inputs.createBody([textInput, textarea, editable]);
   const document = createDocumentHarness(body, {
     '#text-input': textInput,
     '#textarea': textarea,
+    '#editable': editable,
   });
   document.activeElement = null;
 
@@ -3041,6 +3080,19 @@ test('content script input.fill sets values and dispatches input, change, and bl
   assert.equal(setterResult.mode, 'setter');
   assert.equal(setterResult.value, 'multi\nline');
   assert.equal(textarea.value, 'multi\nline');
+
+  const contentEditableResult = await execute('input.fill', {
+    target: { selector: '#editable' },
+    value: 'editable value',
+    mode: 'setter',
+  });
+  assert.equal(contentEditableResult.mode, 'setter');
+  assert.equal(contentEditableResult.value, 'editable value');
+  assert.equal(editable.textContent, 'editable value');
+  assert.deepEqual(
+    editable.eventLog.filter((type) => ['input', 'change', 'blur'].includes(type)),
+    ['input', 'change', 'blur']
+  );
 });
 
 test('content script input.fill keystrokes mode types character by character', async (t) => {

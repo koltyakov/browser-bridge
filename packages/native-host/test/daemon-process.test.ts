@@ -101,6 +101,7 @@ test('stopBridgeDaemon stops the recorded daemon pid and removes stale socket fi
   const socketPath = path.join(bridgeHome, 'bridge.sock');
   const pidPath = path.join(bridgeHome, 'daemon.pid');
   const kills: KillCall[] = [];
+  let reachable = true;
 
   try {
     await fs.promises.writeFile(socketPath, '', 'utf8');
@@ -109,9 +110,11 @@ test('stopBridgeDaemon stops the recorded daemon pid and removes stale socket fi
     const result = await stopBridgeDaemon({
       socketPath,
       pidPath,
-      pingDaemonFn: async () => false,
+      pingDaemonFn: async () => reachable,
+      findPidByTransportFn: async () => 4242,
       killFn: ((pid, signal) => {
         kills.push({ pid, signal });
+        reachable = false;
         return true;
       }) as typeof process.kill,
       sleepFn: async () => {},
@@ -459,7 +462,7 @@ test('openDaemonLogFd appends and rotates oversized logs', async () => {
   }
 });
 
-test('stopBridgeDaemon falls back to the socket owner when the pid file is stale', async () => {
+test('stopBridgeDaemon signals the verified socket owner instead of a stale pid', async () => {
   const bridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-stop-daemon-stale-'));
   const socketPath = path.join(bridgeHome, 'bridge.sock');
   const pidPath = path.join(bridgeHome, 'daemon.pid');
@@ -478,23 +481,47 @@ test('stopBridgeDaemon falls back to the socket owner when the pid file is stale
       findPidByTransportFn: async () => 4321,
       killFn: ((pid, signal) => {
         kills.push({ pid, signal });
-        if (pid === 99999) {
-          const error = new Error('missing process') as NodeJS.ErrnoException;
-          error.code = 'ESRCH';
-          throw error;
-        }
         reachable = false;
         return true;
       }) as typeof process.kill,
       sleepFn: async () => {},
     });
 
-    assert.deepEqual(kills, [
-      { pid: 99999, signal: 'SIGTERM' },
-      { pid: 4321, signal: 'SIGTERM' },
-    ]);
+    assert.deepEqual(kills, [{ pid: 4321, signal: 'SIGTERM' }]);
     assert.equal(result.previouslyRunning, true);
     assert.equal(result.previousPid, 4321);
+    await assert.rejects(fs.promises.access(pidPath));
+  } finally {
+    await fs.promises.rm(bridgeHome, { recursive: true, force: true });
+  }
+});
+
+test('stopBridgeDaemon does not signal a stale pid reused by an unrelated process', async () => {
+  const bridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-stop-reused-pid-'));
+  const socketPath = path.join(bridgeHome, 'bridge.sock');
+  const pidPath = path.join(bridgeHome, 'daemon.pid');
+  const kills: KillCall[] = [];
+
+  try {
+    await fs.promises.writeFile(socketPath, '', 'utf8');
+    await fs.promises.writeFile(pidPath, '7777\n', 'utf8');
+
+    const result = await stopBridgeDaemon({
+      socketPath,
+      pidPath,
+      pingDaemonFn: async () => false,
+      findPidByTransportFn: async () => null,
+      killFn: ((pid, signal) => {
+        kills.push({ pid, signal });
+        return true;
+      }) as typeof process.kill,
+      sleepFn: async () => {},
+    });
+
+    assert.deepEqual(kills, []);
+    assert.equal(result.previouslyRunning, false);
+    assert.equal(result.previousPid, null);
+    assert.equal(result.removedStaleSocket, true);
     await assert.rejects(fs.promises.access(pidPath));
   } finally {
     await fs.promises.rm(bridgeHome, { recursive: true, force: true });

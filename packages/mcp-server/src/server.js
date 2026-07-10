@@ -27,6 +27,7 @@ import {
   handleStylesLayoutTool,
   handleTabsTool,
   handleInvestigateTool,
+  MAX_BATCH_CALLS,
 } from './handlers.js';
 import {
   BUDGET_PRESETS,
@@ -40,7 +41,7 @@ import {
   getMethodsByMaxComplexity,
 } from '../../protocol/src/index.js';
 import { applyWindowsTcpTransportDefaults } from '../../native-host/src/config.js';
-import { MCP_SERVER_INSTRUCTIONS } from './guidance.js';
+import { MCP_SERVER_INSTRUCTIONS, registerBridgeMcpGuidance } from './guidance.js';
 
 export const BUDGET_PRESET_DESCRIPTION = `Budget preset: "quick", "normal", or "deep" (defaults: query ${BUDGET_PRESETS.normal.maxNodes} nodes / depth ${BUDGET_PRESETS.normal.maxDepth} / text ${BUDGET_PRESETS.normal.textBudget}). Numeric fields override the preset when both are provided.`;
 export const TAB_ID_DESCRIPTION =
@@ -104,6 +105,8 @@ export function createBridgeMcpServer() {
       instructions: MCP_SERVER_INSTRUCTIONS,
     }
   );
+
+  registerBridgeMcpGuidance(server);
 
   server.registerTool(
     'browser_status',
@@ -661,6 +664,7 @@ export function createBridgeMcpServer() {
             })
           )
           .min(1)
+          .max(MAX_BATCH_CALLS)
           .describe('Calls to execute in parallel'),
       },
     },

@@ -75,7 +75,7 @@ function getLegacyCopilotVsCodeConfigPath() {
 
 /**
  * @param {McpClientName} clientName
- * @returns {{ key: string, includeType: boolean, legacyKeys?: string[], keepEmptyBlock?: boolean }}
+ * @returns {{ key: string, includeType: boolean, keepEmptyBlock?: boolean }}
  */
 export function getMcpConfigShape(clientName) {
   return MCP_CONFIG_SHAPES[clientName] ?? { key: 'mcpServers', includeType: false };
@@ -108,7 +108,7 @@ function createBaseServerConfig(clientName) {
   return serverConfig;
 }
 
-/** @type {Record<McpClientName, { key: string, includeType: boolean, legacyKeys?: string[], keepEmptyBlock?: boolean }>} */
+/** @type {Record<McpClientName, { key: string, includeType: boolean, keepEmptyBlock?: boolean }>} */
 const MCP_CONFIG_SHAPES = {
   antigravity: { key: 'mcpServers', includeType: false },
   agents: { key: 'mcpServers', includeType: true },
@@ -116,7 +116,6 @@ const MCP_CONFIG_SHAPES = {
   copilot: {
     key: 'mcpServers',
     includeType: true,
-    legacyKeys: ['servers'],
     keepEmptyBlock: true,
   },
   cursor: { key: 'mcpServers', includeType: false },
@@ -124,6 +123,24 @@ const MCP_CONFIG_SHAPES = {
   codex: { key: 'mcp_servers', includeType: false },
   opencode: { key: 'mcp', includeType: false },
 };
+
+/**
+ * Copilot CLI and VS Code use different top-level keys. Select the schema from
+ * the destination file instead of migrating one valid schema into the other.
+ *
+ * @param {McpClientName} clientName
+ * @param {string} configPath
+ * @returns {{ key: string, includeType: boolean, keepEmptyBlock?: boolean }}
+ */
+export function getMcpConfigShapeForPath(clientName, configPath) {
+  if (
+    clientName === 'copilot' &&
+    path.resolve(configPath) !== path.resolve(getCopilotUserConfigPath())
+  ) {
+    return { key: 'servers', includeType: true, keepEmptyBlock: true };
+  }
+  return getMcpConfigShape(clientName);
+}
 
 /**
  * @param {McpClientName} clientName
@@ -377,37 +394,6 @@ function removeCodexServerBlock(raw) {
 }
 
 /**
- * @param {McpClientName} clientName
- * @returns {string[]}
- */
-function getJsonMcpBlockKeys(clientName) {
-  const shape = getMcpConfigShape(clientName);
-  return [...(shape.legacyKeys ?? []), shape.key];
-}
-
-/**
- * Merge MCP entries from the current config key plus any legacy aliases.
- *
- * @param {Record<string, unknown>} config
- * @param {McpClientName} clientName
- * @returns {Record<string, unknown>}
- */
-function getMergedJsonMcpBlock(config, clientName) {
-  /** @type {Record<string, unknown>} */
-  const merged = {};
-
-  for (const key of getJsonMcpBlockKeys(clientName)) {
-    const block = config[key];
-    if (!block || typeof block !== 'object' || Array.isArray(block)) {
-      continue;
-    }
-    Object.assign(merged, /** @type {Record<string, unknown>} */ (block));
-  }
-
-  return merged;
-}
-
-/**
  * Merge the browser-bridge entry into an existing client config file, or
  * create it if it does not exist. Existing unrelated entries are preserved.
  *
@@ -445,7 +431,7 @@ export async function findConfiguredMcpClients(options) {
     for (const configPath of configPaths) {
       try {
         const raw = await fs.promises.readFile(configPath, 'utf8');
-        if (parseInstalledMcpConfig(clientName, raw).configured) {
+        if (parseInstalledMcpConfig(clientName, raw, configPath).configured) {
           configured = true;
           break;
         }
@@ -498,8 +484,6 @@ export async function removeMcpConfig(clientName, options) {
  * @returns {Promise<void>}
  */
 async function installJsonMcpConfig(clientName, configPath, stdout) {
-  const newEntry = buildMcpConfig(clientName);
-
   /** @type {Record<string, unknown>} */
   let existing = {};
   try {
@@ -517,21 +501,23 @@ async function installJsonMcpConfig(clientName, configPath, stdout) {
     // File missing - start fresh.
   }
 
-  const shape = getMcpConfigShape(clientName);
+  const shape = getMcpConfigShapeForPath(clientName, configPath);
   const topKey = shape.key;
-  const entryBlock = /** @type {Record<string, unknown>} */ (newEntry[topKey]);
-  const existingBlock = getMergedJsonMcpBlock(existing, clientName);
+  const serverConfig = createBaseServerConfig(clientName);
+  const entry = shape.includeType ? { type: 'stdio', ...serverConfig } : serverConfig;
+  const currentBlock = existing[topKey];
+  const existingBlock =
+    currentBlock && typeof currentBlock === 'object' && !Array.isArray(currentBlock)
+      ? /** @type {Record<string, unknown>} */ (currentBlock)
+      : {};
 
   const merged = {
     ...existing,
     [topKey]: {
       ...existingBlock,
-      ...entryBlock,
+      [BROWSER_BRIDGE_SERVER_NAME]: entry,
     },
   };
-  for (const key of shape.legacyKeys ?? []) {
-    delete merged[key];
-  }
 
   await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
   await fs.promises.writeFile(configPath, `${JSON.stringify(merged, null, 2)}\n`, 'utf8');
@@ -578,9 +564,13 @@ async function removeJsonMcpConfig(clientName, configPath, stdout) {
     return false;
   }
 
-  const shape = getMcpConfigShape(clientName);
+  const shape = getMcpConfigShapeForPath(clientName, configPath);
   const topKey = shape.key;
-  const block = getMergedJsonMcpBlock(existing, clientName);
+  const currentBlock = existing[topKey];
+  const block =
+    currentBlock && typeof currentBlock === 'object' && !Array.isArray(currentBlock)
+      ? /** @type {Record<string, unknown>} */ (currentBlock)
+      : {};
   if (!Object.hasOwn(block, BROWSER_BRIDGE_SERVER_NAME)) {
     return false;
   }
@@ -589,9 +579,7 @@ async function removeJsonMcpConfig(clientName, configPath, stdout) {
   delete updatedBlock[BROWSER_BRIDGE_SERVER_NAME];
 
   const merged = { ...existing };
-  for (const key of getJsonMcpBlockKeys(clientName)) {
-    delete merged[key];
-  }
+  delete merged[topKey];
   if (Object.keys(updatedBlock).length > 0 || shape.keepEmptyBlock) {
     merged[topKey] = updatedBlock;
   }
@@ -629,23 +617,35 @@ async function removeCodexMcpConfig(configPath, stdout) {
 /**
  * @param {McpClientName} clientName
  * @param {string} raw
+ * @param {string} [configPath]
  * @returns {{ configured: boolean }}
  */
-export function parseInstalledMcpConfig(clientName, raw) {
+export function parseInstalledMcpConfig(clientName, raw, configPath) {
   if (clientName === 'codex') {
     return { configured: hasCodexServerBlock(raw) };
   }
 
   try {
     const parsed = JSON.parse(raw);
-    const block =
+    const config =
       parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-        ? getMergedJsonMcpBlock(/** @type {Record<string, unknown>} */ (parsed), clientName)
+        ? /** @type {Record<string, unknown>} */ (parsed)
         : {};
+    const keys = configPath
+      ? [getMcpConfigShapeForPath(clientName, configPath).key]
+      : clientName === 'copilot'
+        ? ['mcpServers', 'servers']
+        : [getMcpConfigShape(clientName).key];
     return {
-      configured: Boolean(
-        block && typeof block === 'object' && Object.hasOwn(block, BROWSER_BRIDGE_SERVER_NAME)
-      ),
+      configured: keys.some((key) => {
+        const block = config[key];
+        return Boolean(
+          block &&
+          typeof block === 'object' &&
+          !Array.isArray(block) &&
+          Object.hasOwn(block, BROWSER_BRIDGE_SERVER_NAME)
+        );
+      }),
     };
   } catch {
     return { configured: false };

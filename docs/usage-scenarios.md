@@ -60,6 +60,8 @@ Useful direct commands:
 bbx describe button[type="submit"]
 bbx box button[type="submit"]
 bbx call input.scroll_into_view '{"target":{"selector":"button[type=\"submit\"]"}}'
+bbx call page.get_console '{"clear":true}'
+bbx call page.get_network '{"clear":true}'
 bbx click button[type="submit"]
 bbx console error
 bbx network 20
@@ -104,6 +106,8 @@ bbx text .checkout-summary medium
 If `page.get_console` or `page.get_network` returns `dropped`, the page was
 noisy enough to evict older buffered entries. Narrow the repro and re-run the
 read before assuming you saw the full history.
+
+For event-driven bugs, prime both buffers with `clear: true` before reproducing the action, then read them without `clear`. The first call installs capture; clearing after reproduction would discard the evidence.
 
 ## 6. Capture the whole document only when the page-level layout is the issue
 

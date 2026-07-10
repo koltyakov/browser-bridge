@@ -71,10 +71,11 @@
 
   /**
    * @typedef {{
-   *   applyStylePatch: (params: Record<string, any>) => any,
-   *   applyDomPatch: (params: Record<string, any>) => any,
-   *   listPatches: () => any,
-   *   rollbackPatch: (patchId: string) => any
+   *   applyStylePatch: (params: Record<string, unknown>) => unknown,
+   *   applyDomPatch: (params: Record<string, unknown>) => unknown,
+   *   commitSessionBaseline: () => { committed: true },
+   *   listPatches: () => unknown,
+   *   rollbackPatch: (patchId: string) => unknown
    * }} PatchModule
    */
 
@@ -229,7 +230,7 @@
       case 'patch.rollback':
         return patchModule.rollbackPatch(params.patchId);
       case 'patch.commit_session_baseline':
-        return { committed: true };
+        return patchModule.commitSessionBaseline();
       case 'screenshot.capture_element':
         return getElementRect(resolveElementRefFromParams(params));
       case 'screenshot.capture_full_page':

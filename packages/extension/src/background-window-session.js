@@ -55,6 +55,9 @@ import {
  * }}
  */
 export function createWindowSessionController(state, chrome, deps) {
+  /** @type {Promise<void>} */
+  let windowTransitionTail = Promise.resolve();
+
   /**
    * @param {chrome.tabs.Tab | null | undefined} tab
    * @returns {CurrentTabState | null}
@@ -187,21 +190,43 @@ export function createWindowSessionController(state, chrome, deps) {
    * @returns {Promise<void>}
    */
   async function setWindowEnabled(windowId, title, enabled) {
+    const operation = windowTransitionTail.then(
+      () => applyWindowEnabledState(windowId, title, enabled),
+      () => applyWindowEnabledState(windowId, title, enabled)
+    );
+    windowTransitionTail = operation.catch(() => {});
+    return operation;
+  }
+
+  /**
+   * @param {number} windowId
+   * @param {string} title
+   * @param {boolean} enabled
+   * @returns {Promise<void>}
+   */
+  async function applyWindowEnabledState(windowId, title, enabled) {
     clearRequestedAccessWindow();
     const access = {
       windowId,
       title,
       enabledAt: Date.now(),
     };
+    const previousWindowId = state.enabledWindow?.windowId ?? null;
+    const isSwitch = enabled && previousWindowId !== null && previousWindowId !== windowId;
+    const isActiveDisable = !enabled && previousWindowId === windowId;
+
+    if (isSwitch || isActiveDisable) {
+      state.enabledWindow = null;
+      await chrome.storage.session.remove(ENABLED_WINDOW_STORAGE_KEY);
+      deps.sendAccessUpdate(false);
+      await deps.clearWindowBridgeState(/** @type {number} */ (previousWindowId));
+    }
 
     if (enabled) {
       state.enabledWindow = access;
       await chrome.storage.session.set({
         [ENABLED_WINDOW_STORAGE_KEY]: access,
       });
-    } else if (state.enabledWindow && state.enabledWindow.windowId === windowId) {
-      state.enabledWindow = null;
-      await chrome.storage.session.remove(ENABLED_WINDOW_STORAGE_KEY);
     }
 
     try {
@@ -222,10 +247,14 @@ export function createWindowSessionController(state, chrome, deps) {
       return;
     }
 
-    deps.sendAccessUpdate(false);
+    if (!isActiveDisable) {
+      deps.sendAccessUpdate(false);
+    }
     try {
       await chrome.alarms.clear(KEEPALIVE_ALARM_NAME);
-      await deps.clearWindowBridgeState(windowId);
+      if (!isActiveDisable) {
+        await deps.clearWindowBridgeState(windowId);
+      }
     } catch (error) {
       reportAsyncError(error);
     }

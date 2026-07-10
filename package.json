@@ -1,6 +1,6 @@
 {
   "name": "@browserbridge/bbx",
-  "version": "1.7.2",
+  "version": "1.7.3",
   "private": false,
   "keywords": [
     "agent-tools",
@@ -61,8 +61,9 @@
     "postinstall": "node packages/native-host/bin/postinstall.js",
     "package:extension": "node scripts/package-extension.mjs",
     "check:extension-zip": "node scripts/check-extension-zip.mjs",
-    "release:check": "npm run lint && npm run typecheck && npm test && npm run coverage:check && npm run package:extension && npm run check:extension-zip && npm pack --dry-run",
-    "prepublishOnly": "npm run lint && npm run typecheck && npm test && npm run coverage:check",
+    "check:release-version": "node scripts/check-release-version.mjs",
+    "release:check": "npm run check:release-version && npm run lint && npm run typecheck && npm test && npm run coverage:check && npm run package:extension && npm run check:extension-zip && npm pack --dry-run",
+    "prepublishOnly": "npm run check:release-version && npm run lint && npm run typecheck && npm test && npm run coverage:check",
     "status": "node packages/agent-client/src/cli.js status",
     "daemon": "node packages/native-host/bin/bridge-daemon.js",
     "install-manifest": "node packages/native-host/bin/install-manifest.js"

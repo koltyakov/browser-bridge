@@ -13,7 +13,7 @@ Permission prompts are controlled by the host agent, not by Browser Bridge. In p
 
 Skill name: `browser-bridge` (also known as `bbx`). In GitHub Copilot, invoke as `/browser-bridge`. `bbx` is the CLI command used throughout this skill.
 When the runtime supports subagents, delegate bridge inspection to a smaller, lower-cost worker and return only concise findings to the parent.
-For open-ended investigation, start with structured reads (`page.get_state`, `dom.query`, `page.get_text`, `styles.get_computed`, `bbx batch`) and escalate to screenshots or debugger-backed methods only when structured evidence is insufficient.
+For open-ended investigation, start with structured reads (`page.get_state`, `dom.query`, `page.get_text`, `styles.get_computed`, and `bbx batch` for CLI or `browser_batch` for MCP) and escalate to screenshots or debugger-backed methods only when structured evidence is insufficient. `browser_call` accepts one protocol method at a time; `batch` is not a valid `browser_call` method.
 
 ## CLI
 
@@ -154,12 +154,12 @@ Error responses now include a machine-readable `error.recovery` field with `retr
 6. **Rollback** - revert every patch before finishing unless user wants mutations kept.
 7. **Confirm scope** - `status` first; stop if no extension connection.
 8. **Screenshots last** - only when structured evidence is ambiguous; prefer `screenshot.capture_element`, then a tight `screenshot.capture_region`; use `screenshot.capture_full_page` only when document-level context matters.
-9. **Batch reads** - combine independent reads in one `batch` call (executes concurrently via Promise.all).
+9. **Batch reads** - combine independent reads with `bbx batch` in CLI mode or `browser_batch` in MCP mode; do not pass `batch` as a `browser_call` method.
 10. **Avoid debugger first** - prefer DOM/content-script methods (`dom.*`, `styles.*`, `layout.get_box_model`, `page.get_console`, `page.get_text`, `page.get_storage`, `page.get_network`) before any debugger-backed method. Escalate to CDP only when those cannot answer the question.
 11. **Evaluate only when needed** - `page.evaluate` is powerful but debugger-backed; use it only when DOM, storage, console, network, or text reads cannot expose the needed state.
 12. **Debugger-backed methods are last resort** - treat `page.evaluate`, `dom.get_accessibility_tree`, `viewport.resize`, `performance.get_metrics`, `screenshot.capture_*`, and all `cdp.*` methods as escalation steps because they attach `chrome.debugger`.
-13. **Wait after change** - after editing source files or triggering navigation, use `dom.wait_for` or `page.wait_for_load_state` before inspecting.
-14. **Console after interaction** - call `page.get_console` after mutations to catch runtime errors early.
+13. **Wait after change** - after editing source, wait for expected new text, a selector matching the changed attribute, or a detach/attach remount; waiting for `attached` on a selector that already exists does not prove HMR ran. Use `page.wait_for_load_state` for navigation, not HMR.
+14. **Prime event buffers** - before reproducing a console or network issue, call `page.get_console` and `page.get_network` once with `clear: true`; then reproduce the event and read each buffer without clearing it.
 15. **Semantic finding** - use `dom.find_by_text` / `dom.find_by_role` when you know the label but not the selector.
 16. **Text extraction** - use `page.get_text` for full page text instead of `dom.query` on body.
 17. **Network monitoring** - use `page.get_network` to inspect API calls; auto-installs interceptor.
@@ -218,8 +218,11 @@ bbx rollback patch_2                                # clean up
 ### Verify an API call
 
 ```bash
-bbx console error                                   # check for runtime errors
-bbx network 20                                      # inspect recent requests
+bbx call page.get_console '{"clear":true}'          # install + clear console capture
+bbx call page.get_network '{"clear":true}'          # install + clear network capture
+# reproduce the API action here
+bbx console error                                   # read newly captured runtime errors
+bbx network 20                                      # read newly captured requests
 bbx eval 'document.querySelector("#app").__vue__.$store.state.user'  # read framework state
 bbx page-text 2000                                  # extract page content
 ```
@@ -249,7 +252,7 @@ When the user has a localhost dev server with watch/HMR:
 3. **Identify the problem** - use `styles.get_computed`, `dom.get_html`, or `page.get_console` for errors.
 4. **Prototype with patches** - `patch.apply_styles` / `patch.apply_dom` to verify the fix visually.
 5. **Edit source files** - modify the actual code in the agent's workspace.
-6. **Wait for HMR** - `dom.wait_for` with the selector that should change, or `page.wait_for_load_state`.
+6. **Wait for HMR** - use `dom.wait_for` for expected new text, a selector matching the changed attribute, or a detach/attach remount. Do not wait for `attached` on an unchanged selector that already exists.
 7. **Verify the change** - re-inspect the same area; compare with patch expectations.
 8. **Check for regressions** - `page.get_console` for new errors; scroll and inspect adjacent areas.
 9. **Rollback patches** - `patch.rollback` all temporary patches.
@@ -257,7 +260,8 @@ When the user has a localhost dev server with watch/HMR:
 ## Investigate-a-Bug Workflow
 
 ```
-page.get_state → page.get_console (check for errors)
+page.get_state → page.get_console(clear: true) + page.get_network(clear: true)
+  → reproduce the bug → page.get_console + page.get_network
   → dom.find_by_text('<error text>') or dom.query('<selector>')
   → styles.get_computed (check layout/visibility)
   → page.evaluate('document.querySelector(...).dataset') (read data attrs)

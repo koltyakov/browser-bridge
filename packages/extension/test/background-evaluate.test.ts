@@ -113,7 +113,6 @@ test('handlePageEvaluate forwards normalized timeoutMs to Runtime.evaluate', asy
         timeout: 12_345,
         userGesture: true,
         generatePreview: false,
-        replMode: true,
       },
     },
   ]);

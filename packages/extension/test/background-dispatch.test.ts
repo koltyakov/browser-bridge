@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   createChromeFake,
+  createStorageArea,
   type ChromeFakeOverrides,
   type FakeChromeEvent,
 } from '../../../tests/_helpers/chromeFake.ts';
@@ -1314,6 +1315,92 @@ test('background dispatch surfaces network buffer read failures', async () => {
   );
 });
 
+test('window bridge teardown clears interception rules and their debugger hold', async () => {
+  const detachCalls: chrome.debugger.Debuggee[] = [];
+  const activeTab = createDispatchActiveTab();
+  const { loaded } = await loadEnabledDispatchBackground({
+    queryLabel: 'test-background-dispatch-intercept-window-cleanup',
+    activeTab,
+    chromeOverrides: {
+      tabs: {
+        async query(queryInfo: chrome.tabs.QueryInfo = {}) {
+          if (queryInfo.active) return [{ ...activeTab }];
+          if (queryInfo.windowId === activeTab.windowId) {
+            return [{ ...activeTab, url: 'chrome://settings' }];
+          }
+          return [];
+        },
+      },
+      debugger: {
+        async detach(target: chrome.debugger.Debuggee) {
+          detachCalls.push(target);
+        },
+      },
+    },
+  });
+
+  const invalid = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-intercept-invalid',
+      method: 'network.intercept.add',
+      params: { urlPattern: '*', action: 'redirect' },
+    })
+  );
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.error.code, ERROR_CODES.INVALID_REQUEST);
+
+  const added = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-intercept-add',
+      method: 'network.intercept.add',
+      params: { urlPattern: '*api*', action: 'block' },
+    })
+  );
+  assert.equal(added.ok, true);
+
+  const clearWindowBridgeState = loaded.module.clearWindowBridgeState;
+  assert.equal(typeof clearWindowBridgeState, 'function');
+  await (clearWindowBridgeState as (windowId: number) => Promise<void>)(activeTab.windowId);
+
+  const listed = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-intercept-list-after-cleanup',
+      method: 'network.intercept.list',
+    })
+  );
+  assert.equal(listed.ok, true);
+  if (listed.ok) {
+    assert.deepEqual(listed.result, { rules: [] });
+  }
+  assert.deepEqual(detachCalls, [{ tabId: activeTab.id }]);
+});
+
+test('background replies successfully when action-log persistence fails', async () => {
+  const session = createStorageArea();
+  const originalSet = session.set.bind(session);
+  session.set = async (items) => {
+    if ('actionLog' in items) throw new Error('action log storage unavailable');
+    await originalSet(items);
+  };
+  const { loaded, activeTab } = await loadEnabledDispatchBackground({
+    queryLabel: 'test-background-dispatch-action-log-storage-failure',
+    chromeOverrides: {
+      storage: { session },
+    },
+  });
+
+  const response = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-activate-with-log-failure',
+      method: 'tabs.activate',
+      params: { tabId: activeTab.id },
+    })
+  );
+
+  assert.equal(response.ok, true);
+  assert.equal(response.id, 'dispatch-activate-with-log-failure');
+});
+
 test('background dispatch evaluates page expressions through the debugger', async () => {
   const attachCalls: DebuggerAttachCall[] = [];
   const sendCommandCalls: DebuggerSendCommandCall[] = [];
@@ -1364,7 +1451,6 @@ test('background dispatch evaluates page expressions through the debugger', asyn
         timeout: 1234,
         userGesture: true,
         generatePreview: false,
-        replMode: true,
       },
     },
   ]);

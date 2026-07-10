@@ -1,5 +1,7 @@
 // @ts-check
 
+import { BridgeError, ERROR_CODES } from '../../protocol/src/index.js';
+
 /**
  * CDP Fetch-domain request interception — declarative rule engine.
  *
@@ -29,6 +31,77 @@
 const TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 /** @typedef {Omit<InterceptRule, 'ruleId'>} InterceptRuleInput */
+
+const VALID_ACTIONS = new Set(['fulfill', 'continue', 'block']);
+const HEADER_NAME_PATTERN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+
+/**
+ * Validate untrusted bridge parameters before they become an active rule.
+ *
+ * @param {Record<string, unknown>} input
+ * @returns {InterceptRuleInput}
+ */
+export function validateInterceptRule(input) {
+  if (typeof input.urlPattern !== 'string' || !input.urlPattern) {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'urlPattern is required.');
+  }
+  if (typeof input.action !== 'string' || !VALID_ACTIONS.has(input.action)) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'action must be one of fulfill, continue, or block.'
+    );
+  }
+  if (
+    input.statusCode !== undefined &&
+    (typeof input.statusCode !== 'number' ||
+      !Number.isInteger(input.statusCode) ||
+      input.statusCode < 100 ||
+      input.statusCode > 599)
+  ) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'statusCode must be an integer between 100 and 599.'
+    );
+  }
+  if (input.body !== undefined && typeof input.body !== 'string') {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'body must be a string.');
+  }
+
+  /** @type {Record<string, string> | undefined} */
+  let headers;
+  if (input.headers !== undefined) {
+    if (!isPlainRecord(input.headers)) {
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        'headers must be an object containing string values.'
+      );
+    }
+    headers = {};
+    for (const [name, value] of Object.entries(input.headers)) {
+      if (!HEADER_NAME_PATTERN.test(name)) {
+        throw new BridgeError(
+          ERROR_CODES.INVALID_REQUEST,
+          `Invalid header name: ${name || '(empty)'}.`
+        );
+      }
+      if (typeof value !== 'string' || /[\r\n]/.test(value)) {
+        throw new BridgeError(
+          ERROR_CODES.INVALID_REQUEST,
+          `Header ${name} must have a string value without newlines.`
+        );
+      }
+      headers[name] = value;
+    }
+  }
+
+  return {
+    urlPattern: input.urlPattern,
+    action: /** @type {'fulfill' | 'continue' | 'block'} */ (input.action),
+    ...(input.statusCode === undefined ? {} : { statusCode: input.statusCode }),
+    ...(input.body === undefined ? {} : { body: input.body }),
+    ...(headers === undefined ? {} : { headers }),
+  };
+}
 
 /**
  * @param {{
@@ -91,13 +164,14 @@ export function createFetchInterceptor(deps) {
 
   /**
    * @param {number} tabId
-   * @param {InterceptRuleInput} rule
+   * @param {Record<string, unknown>} rule
    * @returns {Promise<InterceptRule>}
    */
   async function addRule(tabId, rule) {
+    const validatedRule = validateInterceptRule(rule);
     const s = getOrCreateState(tabId);
     const ruleId = `intercept_${++ruleCounter}`;
-    const fullRule = { ...rule, ruleId };
+    const fullRule = { ...validatedRule, ruleId };
     const wasEmpty = s.rules.size === 0;
     s.rules.set(ruleId, fullRule);
 
@@ -196,41 +270,28 @@ export function createFetchInterceptor(deps) {
   async function handleFetchEvent(tabId, method, params) {
     if (method !== 'Fetch.requestPaused') return;
 
-    const p =
-      /** @type {{ requestId: string, request: { url: string, method: string, headers: Array<{name: string, value: string}>, postData?: string } }} */ (
-        params
-      );
-    const s = tabStates.get(tabId);
-    if (!s || s.rules.size === 0) {
-      // No rules, continue the request
-      try {
-        await deps.sendCommand({ tabId }, 'Fetch.continueRequest', { requestId: p.requestId });
-      } catch {
-        /* debugger detached */
-      }
-      return;
-    }
-
-    // Find first matching rule
-    const url = p.request.url;
-    let matchedRule = null;
-    for (const rule of s.rules.values()) {
-      if (urlMatchesPattern(url, rule.urlPattern)) {
-        matchedRule = rule;
-        break;
-      }
-    }
-
+    const requestId = getPausedRequestId(params);
     try {
+      const p = getPausedRequest(params);
+      const s = tabStates.get(tabId);
+      if (!s || s.rules.size === 0) {
+        await deps.sendCommand({ tabId }, 'Fetch.continueRequest', { requestId: p.requestId });
+        return;
+      }
+
+      let matchedRule = null;
+      for (const rule of s.rules.values()) {
+        if (urlMatchesPattern(p.request.url, rule.urlPattern)) {
+          matchedRule = rule;
+          break;
+        }
+      }
+
       if (!matchedRule || matchedRule.action === 'continue') {
-        // Continue with optional header modifications
         /** @type {Record<string, unknown>} */
         const continueParams = { requestId: p.requestId };
         if (matchedRule?.headers) {
-          continueParams.headers = Object.entries(matchedRule.headers).map(([name, value]) => ({
-            name,
-            value,
-          }));
+          continueParams.headers = mergeRequestHeaders(p.request.headers, matchedRule.headers);
         }
         await deps.sendCommand({ tabId }, 'Fetch.continueRequest', continueParams);
       } else if (matchedRule.action === 'block') {
@@ -250,11 +311,98 @@ export function createFetchInterceptor(deps) {
         });
       }
     } catch {
-      // Best-effort: if the debugger detached mid-flight, silently drop
+      if (!requestId) return;
+      try {
+        await deps.sendCommand({ tabId }, 'Fetch.continueRequest', { requestId });
+      } catch {
+        // The debugger may have detached while the request was paused.
+      }
     }
   }
 
   return { addRule, removeRule, listRules, clearAllRules, releaseTab, handleDetach };
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is Record<string, unknown>}
+ */
+function isPlainRecord(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+/**
+ * @param {unknown} params
+ * @returns {string | null}
+ */
+function getPausedRequestId(params) {
+  if (!isPlainRecord(params) || typeof params.requestId !== 'string' || !params.requestId) {
+    return null;
+  }
+  return params.requestId;
+}
+
+/**
+ * @param {unknown} params
+ * @returns {{ requestId: string, request: { url: string, headers: Record<string, string> | Array<{ name: string, value: string }> } }}
+ */
+function getPausedRequest(params) {
+  const requestId = getPausedRequestId(params);
+  if (!requestId || !isPlainRecord(params) || !isPlainRecord(params.request)) {
+    throw new Error('Malformed Fetch.requestPaused event.');
+  }
+  const request = params.request;
+  if (typeof request.url !== 'string') {
+    throw new Error('Malformed Fetch.requestPaused request URL.');
+  }
+  const headers = request.headers;
+  if (!isPlainRecord(headers) && !Array.isArray(headers)) {
+    throw new Error('Malformed Fetch.requestPaused request headers.');
+  }
+  return {
+    requestId,
+    request: {
+      url: request.url,
+      headers: /** @type {Record<string, string> | Array<{ name: string, value: string }>} */ (
+        headers
+      ),
+    },
+  };
+}
+
+/**
+ * @param {Record<string, string> | Array<{ name: string, value: string }>} original
+ * @param {Record<string, string>} overrides
+ * @returns {Array<{ name: string, value: string }>}
+ */
+function mergeRequestHeaders(original, overrides) {
+  const originalEntries = Array.isArray(original)
+    ? original
+    : Object.entries(original).map(([name, value]) => ({ name, value }));
+  /** @type {Array<{ name: string, value: string }>} */
+  const merged = [];
+  const indexes = new Map();
+
+  for (const header of originalEntries) {
+    if (typeof header?.name !== 'string' || typeof header.value !== 'string') continue;
+    const key = header.name.toLowerCase();
+    if (indexes.has(key)) continue;
+    indexes.set(key, merged.length);
+    merged.push({ name: header.name, value: header.value });
+  }
+  for (const [name, value] of Object.entries(overrides)) {
+    const key = name.toLowerCase();
+    const index = indexes.get(key);
+    if (index === undefined) {
+      indexes.set(key, merged.length);
+      merged.push({ name, value });
+    } else {
+      merged[index] = { name: merged[index].name, value };
+    }
+  }
+  return merged;
 }
 
 /**

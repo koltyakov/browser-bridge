@@ -109,6 +109,11 @@ test('defaults helpers normalize invalid preset names, classify cost boundaries,
   assert.equal(getCostClass(3001), 'extreme');
 
   assert.equal(isDebuggerBackedMethod('page.evaluate'), true);
+  assert.equal(isDebuggerBackedMethod('screenshot.capture_full_page'), true);
+  assert.equal(isDebuggerBackedMethod('network.intercept.add'), true);
+  assert.equal(isDebuggerBackedMethod('network.intercept.remove'), true);
+  assert.equal(isDebuggerBackedMethod('network.intercept.list'), true);
+  assert.equal(isDebuggerBackedMethod('network.intercept.clear'), true);
   assert.equal(isDebuggerBackedMethod('dom.query'), false);
 });
 

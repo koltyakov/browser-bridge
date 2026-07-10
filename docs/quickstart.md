@@ -112,7 +112,7 @@ For GitHub Copilot, invoke the skill by name, for example `/browser-bridge`.
 
 In both cases the agent reads live DOM, styles, console, and network state from your real tab. Patches are reversible and session-scoped. When visual confirmation is still needed after structured reads, prefer a partial element screenshot or a tight region crop instead of a larger page capture before writing the fix back to source.
 
-For open-ended inspection in MCP mode, start with `browser_investigate`. It is read-only and intended to be delegated to a smaller, lower-cost subagent when the client supports delegation. The CLI-skill equivalent is to start with `bbx batch` or `bbx call` using `page.get_state`, `dom.query`, and `page.get_text` before escalating to screenshots.
+For open-ended inspection in MCP mode, start with `browser_investigate`. It is read-only and intended to be delegated to a smaller, lower-cost subagent when the client supports delegation. For explicit parallel MCP reads use `browser_batch`; `batch` is not a valid method for `browser_call`. The CLI-skill equivalent is to start with `bbx batch` or `bbx call` using `page.get_state`, `dom.query`, and `page.get_text` before escalating to screenshots.
 
 ## 6. Need more detail?
 

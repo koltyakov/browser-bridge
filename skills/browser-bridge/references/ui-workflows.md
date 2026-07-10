@@ -9,7 +9,7 @@ Use when a dev server is already running and you want to prove a fix rendered.
 3. `styles.get_computed` or `layout.get_box_model`
 4. `patch.apply_styles` to prove the visual fix
 5. Edit source files
-6. `dom.wait_for` on the component selector
+6. `dom.wait_for` for expected new text, a selector matching a changed attribute, or a detach/attach remount; do not wait for `attached` on an unchanged selector
 7. `page.get_console`
 8. `patch.rollback`
 
@@ -23,12 +23,14 @@ Acceptance:
 
 Use when a submission flow fails silently or the UI state is inconsistent.
 
-1. `dom.find_by_role` for the form control
-2. `input.type` / `input.click`
-3. `page.get_network`
-4. `page.get_console`
-5. `dom.wait_for` for success or error state
-6. `dom.query` on the resulting panel or message
+1. `page.get_console` with `clear: true` to install and clear console capture
+2. `page.get_network` with `clear: true` to install and clear network capture
+3. `dom.find_by_role` for the form control
+4. `input.type` / `input.click` to reproduce the issue
+5. `page.get_network` without `clear`
+6. `page.get_console` without `clear`
+7. `dom.wait_for` for success or error state
+8. `dom.query` on the resulting panel or message
 
 Acceptance:
 
@@ -60,7 +62,7 @@ Use when a component only breaks at a specific breakpoint.
 
 1. `page.get_state`
 2. `viewport.resize`
-3. `dom.wait_for`
+3. `dom.wait_for` for the expected responsive text, attribute selector, visibility change, or remount
 4. `layout.get_box_model`
 5. `styles.get_computed`
 6. `page.get_console`
@@ -87,7 +89,7 @@ Drag:
 
 1. `dom.query` for source and destination
 2. `input.drag`
-3. `dom.wait_for`
+3. `dom.wait_for` for expected changed text, attribute selector, or a detach/attach remount
 4. `dom.query` to verify order or placement
 
 Acceptance:

@@ -186,7 +186,7 @@ test('bbx doctor reports readiness issues when the manifest and daemon are missi
     });
     const payload = expectCliPayload(result.json);
 
-    assert.equal(result.status, 0);
+    assert.equal(result.status, 1);
     assert.equal(result.signal, null);
     assert.equal(result.stderr, '');
     assert.equal(payload.ok, false);
@@ -238,6 +238,34 @@ test('bbx access-request forwards to the bridge and prints a summarized success 
     assert.equal(bridgeServer.requests[1].method, 'access.request');
     assert.deepEqual(bridgeServer.requests[1].params, {});
     assert.equal(bridgeServer.requests[1].meta.source, 'cli');
+    assert.deepEqual(bridgeServer.errors, []);
+  } finally {
+    await bridgeServer.close();
+  }
+});
+
+test('bbx summarized bridge failures set a failing exit code', async () => {
+  const bridgeServer = await bridgeServerWith({
+    'access.request': (request) =>
+      createFailure(request.id, 'ACCESS_DENIED', 'Window access was denied.'),
+  });
+
+  try {
+    const result = await runCli({
+      args: ['access-request'],
+      env: {
+        ...process.env,
+        BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome,
+      },
+    });
+    const payload = expectCliPayload(result.json);
+
+    assert.equal(result.status, 1);
+    assert.equal(result.signal, null);
+    assert.equal(result.stderr, '');
+    assert.equal(payload.ok, false);
+    assert.match(payload.summary, /ACCESS_DENIED: Window access was denied\./);
+    assert.equal(bridgeServer.requests[1].method, 'access.request');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();

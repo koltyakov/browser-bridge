@@ -271,7 +271,23 @@ export function validateBridgeRequest(request) {
   ) {
     throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'Request params must be an object.');
   }
-  const parsedTabId = Number(candidate.tab_id);
+  const hasTabId = Object.hasOwn(candidate, 'tab_id');
+  const candidateTabId = candidate.tab_id;
+  /** @type {number | null} */
+  let tabId = null;
+  if (hasTabId && candidateTabId !== null) {
+    if (
+      typeof candidateTabId !== 'number' ||
+      !Number.isSafeInteger(candidateTabId) ||
+      candidateTabId <= 0
+    ) {
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        'Request tab_id must be null or a positive safe integer.'
+      );
+    }
+    tabId = candidateTabId;
+  }
 
   const method = /** @type {BridgeMethod} */ (candidate.method);
   const params =
@@ -282,7 +298,7 @@ export function validateBridgeRequest(request) {
   return {
     id: candidate.id,
     method,
-    tab_id: Number.isFinite(parsedTabId) && parsedTabId > 0 ? parsedTabId : null,
+    tab_id: tabId,
     params: normalizeRequestParams(method, params),
     meta: {
       ...meta,
@@ -372,6 +388,33 @@ function normalizeRequestParams(method, params) {
       return normalizeTabCloseParams(params);
     default:
       return params;
+  }
+}
+
+/**
+ * Return the browser-operation timeout for methods that wait asynchronously.
+ * This lets clients and the daemon keep transport deadlines outside the
+ * normalized operation deadline, including when callers omit timeoutMs.
+ *
+ * @param {BridgeMethod} method
+ * @param {Record<string, unknown>} [params={}]
+ * @returns {number | null}
+ */
+export function getBridgeOperationTimeoutMs(method, params = {}) {
+  switch (method) {
+    case 'navigation.navigate':
+    case 'navigation.reload':
+    case 'navigation.go_back':
+    case 'navigation.go_forward':
+      return normalizeNavigationAction(params).timeoutMs;
+    case 'page.wait_for_load_state':
+      return normalizeWaitForLoadStateParams(params).timeoutMs;
+    case 'page.evaluate':
+      return normalizeEvaluateParams(params).timeoutMs;
+    case 'dom.wait_for':
+      return normalizeWaitForParams(params).timeoutMs;
+    default:
+      return null;
   }
 }
 

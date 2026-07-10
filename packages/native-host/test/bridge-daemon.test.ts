@@ -9,6 +9,7 @@ import type { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 
 import { pingExistingDaemon } from '../src/daemon.js';
+import { stopBridgeDaemon } from '../src/daemon-process.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -88,6 +89,14 @@ async function stopDaemon(child: DaemonChild): Promise<ExitResult> {
 }
 
 async function waitForExitWithOutput(child: DaemonChild): Promise<ExitWithOutput> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return {
+      code: child.exitCode,
+      signal: child.signalCode,
+      stdout: '',
+      stderr: '',
+    };
+  }
   return await new Promise<ExitWithOutput>((resolve, reject) => {
     let stdout = '';
     let stderr = '';
@@ -158,6 +167,15 @@ test(
       await assert.doesNotReject(() => fs.promises.access(expectedSocketPath));
       const pid = Number.parseInt((await fs.promises.readFile(expectedPidPath, 'utf8')).trim(), 10);
       assert.equal(Number.isInteger(pid) && pid > 0, true);
+      const stopResult = await stopBridgeDaemon({
+        socketPath: expectedSocketPath,
+        pidPath: expectedPidPath,
+      });
+      assert.equal(stopResult.previouslyRunning, true);
+      assert.equal(stopResult.previousPid, pid);
+      const stopped = await waitForExitWithOutput(child);
+      assert.equal(stopped.signal, null);
+      assert.equal(stopped.code, 0);
     } finally {
       const { code, signal } = await stopDaemon(child);
       assert.equal(signal, null);

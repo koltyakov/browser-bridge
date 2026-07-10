@@ -54,6 +54,8 @@ export {
 } from './handlers-capture.js';
 
 export {
+  MAX_BATCH_CALLS,
+  MAX_BATCH_CONCURRENCY,
   PAGE_ACTIONS,
   handlePageTool,
   handleBatchTool,

@@ -803,7 +803,7 @@ test('background state rollbackAllPatchesForTab only rolls back tracked patch id
 
   await loaded.module.rollbackAllPatchesForTab(61);
 
-  assert.deepEqual(rollbackPatchIds, ['patch-1', 'patch-2']);
+  assert.deepEqual(rollbackPatchIds, ['patch-2', 'patch-1']);
   assert.deepEqual(
     sentMessages.map(({ tabId, message }) => ({
       tabId,

@@ -2053,7 +2053,7 @@ test('getMcpConfigPaths includes existing Copilot profile configs for global ins
   }
 });
 
-test('installMcpConfig migrates Copilot legacy servers config to mcpServers', async () => {
+test('installMcpConfig preserves Copilot servers config alongside mcpServers', async () => {
   const tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-copilot-mcp-migrate-'));
   const originalHome = process.env.HOME;
 
@@ -2092,13 +2092,13 @@ test('installMcpConfig migrates Copilot legacy servers config to mcpServers', as
 
     const updated = JSON.parse(await fs.promises.readFile(configPath, 'utf8'));
     assert.equal(typeof updated.mcpServers, 'object');
-    assert.equal(updated.servers, undefined);
-    assert.deepEqual(updated.mcpServers.existing, {
+    assert.deepEqual(updated.servers.existing, {
       type: 'stdio',
       command: 'node',
       args: ['existing.js'],
       env: {},
     });
+    assert.equal(updated.mcpServers.existing, undefined);
     assert.equal(updated.unrelated, true);
     assert.deepEqual(updated.mcpServers['browser-bridge'], {
       type: 'stdio',

@@ -126,7 +126,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'setup.install',
     'system',
     false,
-    ['kind', 'target'],
+    ['action', 'kind', 'target'],
     'trivial'
   ),
   'log.tail': createRegistryEntry('log.tail', 'system', false, ['limit'], 'trivial'),

@@ -30,8 +30,20 @@ export const MAX_JSON_LINE_BYTES = MAX_NATIVE_MESSAGE_BYTES;
 /** Default timeout for a bridge request awaiting an extension response (ms). */
 export const DEFAULT_DAEMON_PENDING_TIMEOUT_MS = 30_000;
 
+/** Transport allowance added after an operation's own normalized timeout. */
+export const DAEMON_PENDING_TIMEOUT_MARGIN_MS = 2_000;
+
+/** Upper bound for a daemon request awaiting an extension response. */
+export const MAX_DAEMON_PENDING_TIMEOUT_MS = 122_000;
+
 /** Default timeout for a BridgeClient request (ms). */
 export const DEFAULT_CLIENT_REQUEST_TIMEOUT_MS = 8_000;
+
+/** Transport allowance added after an operation timeout on the client side. */
+export const CLIENT_REQUEST_TIMEOUT_MARGIN_MS = 4_000;
+
+/** Upper bound for a client request, kept beyond the daemon's maximum deadline. */
+export const MAX_CLIENT_REQUEST_TIMEOUT_MS = 124_000;
 
 /** Maximum number of recent log entries retained by the daemon. */
 export const DAEMON_RECENT_LOG_LIMIT = 200;
@@ -64,6 +76,11 @@ export const DEBUGGER_BACKED_METHODS = new Set([
   'performance.get_metrics',
   'screenshot.capture_element',
   'screenshot.capture_region',
+  'screenshot.capture_full_page',
+  'network.intercept.add',
+  'network.intercept.remove',
+  'network.intercept.list',
+  'network.intercept.clear',
   'cdp.get_document',
   'cdp.get_dom_snapshot',
   'cdp.get_box_model',

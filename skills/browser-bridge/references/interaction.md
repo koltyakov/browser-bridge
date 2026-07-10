@@ -144,19 +144,22 @@ bbx call input.scroll_into_view '{"target":{"selector":"[data-testid=\"submit-bu
 ## Network Monitoring
 
 ```bash
-bbx network                     # recent requests
-bbx network 50                  # last 50
-bbx call page.get_network '{"limit":20,"clear":true}'
+bbx call page.get_console '{"clear":true}' # install capture and clear old console entries
+bbx call page.get_network '{"clear":true}' # install capture and clear old network entries
+# reproduce the interaction here
+bbx network 50                           # newly captured requests
+bbx console error                        # newly captured errors
 ```
 
 Each entry: `method`, `url`, `status`, `duration`, `initiator`.
 
 Typical workflow - debug API calls:
 
-1. `page.get_network` to see recent requests
-2. Filter by URL pattern or status code
-3. Cross-reference with `page.get_console` for errors
-4. Use `page.evaluate` to replay or inspect response data
+1. Prime and clear `page.get_console` and `page.get_network`
+2. Reproduce the interaction
+3. Read and filter `page.get_network` by URL pattern or status code
+4. Cross-reference with `page.get_console` for errors
+5. Use `page.evaluate` only if lighter evidence cannot expose the needed response state
 
 ## Network Interception
 

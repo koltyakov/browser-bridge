@@ -179,10 +179,10 @@ setupContextMenu.hidden = true;
 document.body.append(setupContextMenu);
 
 const CLI_PROMPT_EXAMPLES = Object.freeze([
-  '$bbx check why the button looks broken',
-  '$bbx inspect the layout and fix spacing issues',
-  '$bbx verify the form validation works correctly',
-  '$bbx check console errors on this page',
+  'Check why the button looks broken using Browser Bridge.',
+  'Inspect the live layout and fix the spacing issues.',
+  'Verify that the form validation flow works correctly.',
+  'Inspect console errors on this page using Browser Bridge.',
 ]);
 
 const MCP_PROMPT_EXAMPLES = Object.freeze([

@@ -18,6 +18,12 @@ import {
   summarizeDaemonRestarts,
 } from '../../native-host/src/daemon-process.js';
 import { resolveDefaultExtensionId } from '../../native-host/src/install-manifest.js';
+import {
+  CLIENT_REQUEST_TIMEOUT_MARGIN_MS,
+  DEFAULT_CLIENT_REQUEST_TIMEOUT_MS,
+  getBridgeOperationTimeoutMs,
+  MAX_CLIENT_REQUEST_TIMEOUT_MS,
+} from '../../protocol/src/index.js';
 import { methodNeedsTab } from './cli-helpers.js';
 import { BridgeClient } from './client.js';
 
@@ -53,11 +59,24 @@ export async function ensureClientConnected(client) {
  */
 export async function requestBridge(client, method, params = {}, options = {}) {
   await ensureClientConnected(client);
+  const operationTimeoutMs = getBridgeOperationTimeoutMs(method, params);
+  const clientDefaultTimeoutMs =
+    typeof client.defaultTimeoutMs === 'number'
+      ? client.defaultTimeoutMs
+      : DEFAULT_CLIENT_REQUEST_TIMEOUT_MS;
+  const timeoutMs =
+    operationTimeoutMs === null
+      ? undefined
+      : Math.min(
+          MAX_CLIENT_REQUEST_TIMEOUT_MS,
+          Math.max(clientDefaultTimeoutMs, operationTimeoutMs + CLIENT_REQUEST_TIMEOUT_MARGIN_MS)
+        );
   return client.request({
     method,
     params,
     tabId: methodNeedsTab(method) ? (options.tabId ?? null) : null,
     meta: withRequestMeta(options.source, options.tokenBudget),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
   });
 }
 

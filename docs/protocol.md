@@ -13,8 +13,9 @@ getProtocolVersion(); // major.minor from package.json or manifest.json
 getSupportedProtocolVersions(); // [getProtocolVersion()]
 ```
 
-Patch versions may differ between the daemon and extension. Major-minor must
-match for protocol compatibility.
+Major-minor must match for protocol compatibility. Published package and
+extension artifacts must also use the same full release version; `npm run
+check:release-version` enforces that invariant.
 
 ## When negotiation happens
 

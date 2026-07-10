@@ -168,6 +168,7 @@ const { clearTabBridgeState, clearWindowBridgeState, rollbackAllPatchesForTab } 
     sendTabMessage,
     readConsoleBuffer,
     readNetworkBuffer,
+    clearFetchInterception: (tabId) => fetchInterceptor.clearAllRules(tabId),
     isRecoverableInstrumentationError,
     isRestrictedAutomationUrl,
   });
@@ -379,7 +380,14 @@ async function initializeState() {
  * @returns {Promise<void>}
  */
 async function handleBridgeRequest(request) {
-  const actionContext = shouldLogAction(request.method) ? await getActionContext(request) : null;
+  let actionContext = null;
+  if (shouldLogAction(request.method)) {
+    try {
+      actionContext = await getActionContext(request);
+    } catch (error) {
+      reportAsyncError(error);
+    }
+  }
   /** @type {BridgeResponse} */
   let response;
 
@@ -389,14 +397,20 @@ async function handleBridgeRequest(request) {
     response = toFailureResponse(request, error);
   }
 
-  if (isWindowAccessDeniedResponse(response)) {
-    await requestEnableFromAgentSide(request);
-  }
-
   response = enrichBridgeResponse(request, response);
-
-  await logBridgeAction(request, response, actionContext);
+  if (isWindowAccessDeniedResponse(response)) {
+    try {
+      await requestEnableFromAgentSide(request);
+    } catch (error) {
+      reportAsyncError(error);
+    }
+  }
   reply(response);
+  try {
+    await logBridgeAction(request, response, actionContext);
+  } catch (error) {
+    reportAsyncError(error);
+  }
 }
 
 /**
@@ -598,6 +612,15 @@ async function handleFetchInterceptRequest(request) {
   const method = request.method;
 
   if (method === 'network.intercept.add') {
+    if (state.enabledWindow?.windowId !== target.windowId) {
+      return createFailure(
+        request.id,
+        ERROR_CODES.ACCESS_DENIED,
+        'Enabled window changed before the interception rule could be added.',
+        null,
+        { method }
+      );
+    }
     if (!params.urlPattern) {
       return createFailure(
         request.id,
@@ -610,11 +633,11 @@ async function handleFetchInterceptRequest(request) {
       );
     }
     const rule = await fetchInterceptor.addRule(target.tabId, {
-      urlPattern: String(params.urlPattern),
-      action: /** @type {"fulfill"|"continue"|"block"} */ (params.action) || 'fulfill',
-      statusCode: /** @type {number|undefined} */ (params.statusCode),
-      body: /** @type {string|undefined} */ (params.body),
-      headers: /** @type {Record<string,string>|undefined} */ (params.headers),
+      urlPattern: params.urlPattern,
+      action: params.action ?? 'fulfill',
+      statusCode: params.statusCode,
+      body: params.body,
+      headers: params.headers,
     });
     return createSuccess(request.id, rule, { method });
   }

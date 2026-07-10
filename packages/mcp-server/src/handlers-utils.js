@@ -76,7 +76,10 @@ export function isRetrySafeBridgeMethod(method, params) {
 
 /**
  * @typedef {{
- *   content: Array<{ type: 'text', text: string }>,
+ *   content: [
+ *     { type: 'text', text: string },
+ *     ...Array<{ type: 'image', data: string, mimeType: string }>
+ *   ],
  *   structuredContent: Record<string, unknown>,
  *   isError?: boolean
  * }} ToolResult
@@ -86,11 +89,20 @@ export function isRetrySafeBridgeMethod(method, params) {
  * @param {string} summary
  * @param {Record<string, unknown>} [structuredContent={}]
  * @param {boolean} [isError=false]
+ * @param {Array<{ type: 'image', data: string, mimeType: string }>} [additionalContent=[]]
  * @returns {ToolResult}
  */
-export function createToolResult(summary, structuredContent = {}, isError = false) {
+export function createToolResult(
+  summary,
+  structuredContent = {},
+  isError = false,
+  additionalContent = []
+) {
   const toolResult = {
-    content: [{ type: /** @type {'text'} */ ('text'), text: summary }],
+    content: /** @type {ToolResult['content']} */ ([
+      { type: 'text', text: summary },
+      ...additionalContent,
+    ]),
     structuredContent,
     ...(isError ? { isError: true } : {}),
   };
@@ -133,67 +145,6 @@ export function summarizeToolError(error) {
 }
 
 /**
- * @param {ToolResult} result
- * @returns {boolean}
- */
-function shouldTryRemoteFallback(result) {
-  if (!result.isError && result.structuredContent.ok !== false) {
-    return false;
-  }
-  const text = result.content[0]?.text ?? '';
-  return /\b(ACCESS_DENIED|DAEMON_OFFLINE|EXTENSION_DISCONNECTED|NATIVE_HOST_UNAVAILABLE|CONNECTION_LOST)\b|\b(ENOENT|ECONNREFUSED|ETIMEDOUT)\b|ERROR: connect\b/u.test(
-    text
-  );
-}
-
-/**
- * @param {ToolResult} result
- * @param {string} destinationId
- * @returns {ToolResult}
- */
-function annotateAutoDestination(result, destinationId) {
-  return {
-    ...result,
-    structuredContent: {
-      ...result.structuredContent,
-      destinationId,
-      autoSelectedDestinationId: destinationId,
-    },
-  };
-}
-
-/**
- * @param {(client: import('../../agent-client/src/client.js').BridgeClient) => Promise<ToolResult>} callback
- * @param {ToolResult} localResult
- * @returns {Promise<ToolResult>}
- */
-async function tryRemoteFallback(callback, localResult) {
-  const remotes = (await listBridgeDestinations()).filter((destination) => !destination.local);
-  if (remotes.length === 0) {
-    return localResult;
-  }
-
-  let lastFallbackResult = localResult;
-  for (const remote of remotes) {
-    const client = await createBridgeClientForDestination(remote.id);
-    try {
-      await client.connect();
-      const result = annotateAutoDestination(await callback(client), remote.id);
-      lastFallbackResult = result;
-      if (!shouldTryRemoteFallback(result)) {
-        return result;
-      }
-    } catch (error) {
-      lastFallbackResult = annotateAutoDestination(summarizeToolError(error), remote.id);
-    } finally {
-      await client.close();
-    }
-  }
-
-  return lastFallbackResult;
-}
-
-/**
  * @param {(client: import('../../agent-client/src/client.js').BridgeClient) => Promise<ToolResult>} callback
  * @param {{ destinationId?: string | null }} [options]
  * @returns {Promise<ToolResult>}
@@ -201,8 +152,7 @@ async function tryRemoteFallback(callback, localResult) {
 export async function withToolClient(callback, options = {}) {
   try {
     if (!options.destinationId) {
-      const result = await withBridgeClient(callback);
-      return shouldTryRemoteFallback(result) ? await tryRemoteFallback(callback, result) : result;
+      return await withBridgeClient(callback);
     }
     const client = await createBridgeClientForDestination(options.destinationId);
     await client.connect();

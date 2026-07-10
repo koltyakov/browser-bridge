@@ -29,6 +29,7 @@ import type { BridgeTransport } from '../src/config.js';
 
 type FakeSocket = net.Socket & {
   writes: string[];
+  readonly __role?: 'agent' | 'extension';
   __clientId?: string;
   __extensionId?: string;
   __browserName?: string;
@@ -299,6 +300,118 @@ test('daemon keeps newer duplicate agent socket when stale socket closes', () =>
   assert.equal(daemon.agentSockets.has('agent-1'), false);
 });
 
+test('daemon registration is one-shot and keeps the socket role immutable', () => {
+  const daemon = new BridgeDaemon({ logger: { log() {}, error() {} } });
+  const socket = createFakeSocket();
+
+  daemon.registerSocket(socket, { type: 'register', role: 'agent', clientId: 'agent-1' });
+  daemon.registerSocket(socket, { type: 'register', role: 'extension' });
+
+  assert.equal(socket.__role, 'agent');
+  assert.equal(Object.getOwnPropertyDescriptor(socket, '__role')?.writable, false);
+  assert.equal(daemon.extensionSockets.size, 0);
+  assert.equal(daemon.agentSockets.get('agent-1'), socket);
+  const failure = parsePayload(socket.writes[1].trim());
+  assert.equal(failure.type, 'registration_failed');
+  assert.equal(failure.error?.code, ERROR_CODES.INVALID_REQUEST);
+  assert.match(failure.error?.message ?? '', /already registered as agent/);
+});
+
+test('daemon rejects extension messages from agent-role sockets', async () => {
+  const daemon = new BridgeDaemon({ logger: { log() {}, error() {} } });
+  const socket = createFakeSocket();
+  daemon.registerSocket(socket, { type: 'register', role: 'agent', clientId: 'agent-1' });
+  socket.writes.length = 0;
+
+  await daemon.handleClientMessage(socket, {
+    type: 'extension.access_update',
+    accessEnabled: true,
+  });
+
+  assert.equal(socket.__accessEnabled, undefined);
+  const failure = parsePayload(socket.writes[0].trim());
+  assert.equal(failure.type, 'error');
+  assert.equal(failure.error?.code, ERROR_CODES.INVALID_REQUEST);
+  assert.match(failure.error?.message ?? '', /not allowed for agent sockets/);
+});
+
+test('daemon limits extension-role agent requests to setup.install', async () => {
+  const installs: Record<string, unknown>[] = [];
+  const daemon = new BridgeDaemon({
+    logger: { log() {}, error() {} },
+    setupInstaller: async (params) => {
+      installs.push(params);
+      return {
+        action: 'install',
+        kind: 'mcp',
+        target: 'codex',
+        paths: ['/tmp/mcp.json'],
+      };
+    },
+  });
+  const socket = createFakeSocket();
+  daemon.registerSocket(socket, { type: 'register', role: 'extension' });
+  socket.writes.length = 0;
+
+  await daemon.handleClientMessage(socket, {
+    type: 'agent.request',
+    request: {
+      id: 'req_extension_page',
+      method: 'page.get_state',
+      tab_id: null,
+      params: {},
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  });
+  await daemon.handleClientMessage(socket, {
+    type: 'agent.request',
+    request: {
+      id: 'req_extension_setup',
+      method: 'setup.install',
+      tab_id: null,
+      params: { kind: 'mcp', target: 'codex' },
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  });
+
+  const rejected = parsePayload(socket.writes[0].trim());
+  const installed = expectBridgeResponse(parsePayload(socket.writes[1].trim()));
+  assert.equal(rejected.type, 'error');
+  assert.match(rejected.error?.message ?? '', /not allowed for extension sockets/);
+  assert.equal(installed.response.ok, true);
+  assert.deepEqual(installs, [{ kind: 'mcp', target: 'codex' }]);
+});
+
+test('daemon rejects setup.install from non-local TCP agents', async () => {
+  const daemon = new BridgeDaemon({
+    transport: {
+      type: 'tcp',
+      host: '127.0.0.1',
+      port: 9223,
+      label: '127.0.0.1:9223',
+    },
+    logger: { log() {}, error() {} },
+  });
+  const socket = createFakeSocket();
+  Reflect.set(socket, 'remoteAddress', '192.0.2.10');
+  daemon.registerSocket(socket, { type: 'register', role: 'agent', clientId: 'remote-agent' });
+  socket.writes.length = 0;
+
+  await daemon.handleAgentRequest(socket, {
+    request: {
+      id: 'req_remote_setup',
+      method: 'setup.install',
+      tab_id: null,
+      params: { kind: 'mcp', target: 'codex' },
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  });
+
+  const response = expectBridgeResponse(parsePayload(socket.writes[0].trim()));
+  assert.equal(response.response.ok, false);
+  assert.equal(response.response.error?.code, ERROR_CODES.ACCESS_DENIED);
+});
+
 test('pushLog evicts oldest entries past the recent-log limit', () => {
   const daemon = new BridgeDaemon({ logger: { log() {}, error() {} } });
 
@@ -419,6 +532,35 @@ test('daemon completes a request immediately when every target write fails', asy
   assert.equal(daemon.extensionSockets.has('failed-ext'), false);
   assert.equal(payload.response.ok, false);
   assert.equal(payload.response.error?.code, 'EXTENSION_DISCONNECTED');
+});
+
+test('daemon route failure does not delete a socket that replaced the selected target', async () => {
+  const daemon = new BridgeDaemon({ logger: { log() {}, error() {} } });
+  const agentSocket = createFakeSocket();
+  const selectedSocket = createFakeSocket();
+  const replacementSocket = createFakeSocket();
+  selectedSocket.__extensionId = 'replaced-ext';
+  selectedSocket.write = () => {
+    daemon.extensionSockets.set('replaced-ext', replacementSocket);
+    throw new Error('selected socket closed');
+  };
+  selectedSocket.destroy = (() => selectedSocket) as typeof selectedSocket.destroy;
+  daemon.extensionSockets.set('replaced-ext', selectedSocket);
+
+  await daemon.handleAgentRequest(agentSocket, {
+    request: {
+      id: 'req_route_mutation',
+      method: 'dom.query',
+      tab_id: 1,
+      params: {},
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  });
+
+  assert.equal(daemon.extensionSockets.get('replaced-ext'), replacementSocket);
+  assert.equal(daemon.pendingRequests.has('req_route_mutation'), false);
+  const payload = expectBridgeResponse(parsePayload(agentSocket.writes[0].trim()));
+  assert.equal(payload.response.error?.code, ERROR_CODES.EXTENSION_DISCONNECTED);
 });
 
 test('pingExistingDaemon resolves false on connect error', async () => {
@@ -674,6 +816,8 @@ test('daemon handles extension setup status requests', async () => {
     setupStatusLoader: async () => expectedStatus,
   });
   const socket = createFakeSocket();
+  daemon.registerSocket(socket, { type: 'register', role: 'extension' });
+  socket.writes.length = 0;
 
   await daemon.handleClientMessage(socket, {
     type: 'extension.setup_status.request',
@@ -695,6 +839,8 @@ test('daemon returns setup status errors to the extension caller', async () => {
     },
   });
   const socket = createFakeSocket();
+  daemon.registerSocket(socket, { type: 'register', role: 'extension' });
+  socket.writes.length = 0;
 
   await daemon.handleClientMessage(socket, {
     type: 'extension.setup_status.request',
@@ -873,12 +1019,95 @@ test('daemon routes untargeted requests to the most recently active extension wh
   assert.equal(middleExtension.writes.length, 0);
 });
 
+test('daemon deterministically selects one extension without mutating socket order', async () => {
+  const daemon = new BridgeDaemon({ logger: console });
+  const agentSocket = createFakeSocket();
+  const extensionB = createFakeSocket();
+  const extensionA = createFakeSocket();
+  extensionB.__accessEnabled = true;
+  extensionA.__accessEnabled = true;
+  extensionB.__lastActiveAt = 20;
+  extensionA.__lastActiveAt = 20;
+  daemon.extensionSockets.set('extension-b', extensionB);
+  daemon.extensionSockets.set('extension-a', extensionA);
+  const orderBeforeRouting = [...daemon.extensionSockets.keys()];
+
+  await daemon.handleAgentRequest(agentSocket, {
+    request: {
+      id: 'req_deterministic_unit',
+      method: 'page.get_state',
+      tab_id: null,
+      params: {},
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  });
+
+  assert.deepEqual([...daemon.extensionSockets.keys()], orderBeforeRouting);
+  assert.equal(extensionA.writes.length, 1);
+  assert.equal(extensionB.writes.length, 0);
+  assert.deepEqual(
+    daemon.pendingRequests.get('req_deterministic_unit')?.targets,
+    new Set([extensionA])
+  );
+});
+
+test('daemon ignores responses forged by a non-target extension socket', async () => {
+  const daemon = new BridgeDaemon({ logger: console });
+  const agentSocket = createFakeSocket();
+  const targetExtension = createFakeSocket();
+  const otherExtension = createFakeSocket();
+  targetExtension.__lastActiveAt = 20;
+  otherExtension.__lastActiveAt = 10;
+  daemon.extensionSockets.set('target', targetExtension);
+  daemon.extensionSockets.set('other', otherExtension);
+
+  await daemon.handleAgentRequest(agentSocket, {
+    request: {
+      id: 'req_forged_response',
+      method: 'page.get_state',
+      tab_id: null,
+      params: {},
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  });
+
+  const forgedResponse = {
+    id: 'req_forged_response',
+    ok: true as const,
+    result: { url: 'https://forged.example/' },
+    error: null,
+    meta: { protocol_version: PROTOCOL_VERSION, method: 'page.get_state' },
+  };
+  await daemon.handleExtensionResponse(otherExtension, { response: forgedResponse });
+  assert.equal(agentSocket.writes.length, 0);
+  assert.deepEqual(
+    daemon.pendingRequests.get('req_forged_response')?.targets,
+    new Set([targetExtension])
+  );
+
+  await daemon.handleExtensionResponse(targetExtension, {
+    response: {
+      ...forgedResponse,
+      result: { url: 'https://target.example/' },
+    },
+  });
+  const payload = expectBridgeResponse(parsePayload(agentSocket.writes[0].trim()));
+  assert.equal(payload.response.result?.url, 'https://target.example/');
+});
+
 test('daemon routes explicit browser and profile targets only to matching extensions', async () => {
   const daemon = new BridgeDaemon({ logger: console });
   const agentSocket = createFakeSocket();
   const chromeWork = createFakeSocket();
   chromeWork.__browserName = 'Chrome';
   chromeWork.__profileLabel = 'Work';
+  chromeWork.__accessEnabled = true;
+  chromeWork.__lastActiveAt = 10;
+  const chromeWorkRecent = createFakeSocket();
+  chromeWorkRecent.__browserName = 'Chrome';
+  chromeWorkRecent.__profileLabel = 'Work';
+  chromeWorkRecent.__accessEnabled = true;
+  chromeWorkRecent.__lastActiveAt = 20;
   const chromePersonal = createFakeSocket();
   chromePersonal.__browserName = 'Chrome';
   chromePersonal.__profileLabel = 'Personal';
@@ -886,6 +1115,7 @@ test('daemon routes explicit browser and profile targets only to matching extens
   edgeWork.__browserName = 'Edge';
   edgeWork.__profileLabel = 'Work';
   daemon.extensionSockets.set('chrome-work', chromeWork);
+  daemon.extensionSockets.set('chrome-work-recent', chromeWorkRecent);
   daemon.extensionSockets.set('chrome-personal', chromePersonal);
   daemon.extensionSockets.set('edge-work', edgeWork);
 
@@ -904,16 +1134,17 @@ test('daemon routes explicit browser and profile targets only to matching extens
     },
   });
 
-  assert.equal(chromeWork.writes.length, 1);
+  assert.equal(chromeWork.writes.length, 0);
+  assert.equal(chromeWorkRecent.writes.length, 1);
   assert.equal(chromePersonal.writes.length, 0);
   assert.equal(edgeWork.writes.length, 0);
-  const routedPayload = parsePayload(chromeWork.writes[0].trim());
+  const routedPayload = parsePayload(chromeWorkRecent.writes[0].trim());
   assert.equal(routedPayload.request?.id, 'req_targeted_profile');
   assert.equal(routedPayload.request?.method, 'page.get_state');
   assert.equal(routedPayload.request?.meta?.target_browser, 'Chrome');
   assert.equal(routedPayload.request?.meta?.target_profile, 'Work');
 
-  await daemon.handleExtensionResponse(chromeWork, {
+  await daemon.handleExtensionResponse(chromeWorkRecent, {
     response: {
       id: 'req_targeted_profile',
       ok: true,
@@ -942,7 +1173,8 @@ test('daemon routes explicit browser and profile targets only to matching extens
     },
   });
 
-  assert.equal(chromeWork.writes.length, 1);
+  assert.equal(chromeWork.writes.length, 0);
+  assert.equal(chromeWorkRecent.writes.length, 1);
   assert.equal(chromePersonal.writes.length, 0);
   assert.equal(edgeWork.writes.length, 0);
   assert.equal(agentSocket.writes.length, 2);
@@ -1134,6 +1366,51 @@ test('daemon times out pending requests and removes them once the deadline expir
   assert.equal(agentSocket.writes.length, 1);
 });
 
+test('daemon pending deadlines include normalized long operation timeouts without sleeping', async (t) => {
+  const daemon = new BridgeDaemon({ logger: console });
+  const agentSocket = createFakeSocket();
+  const extensionSocket = createFakeSocket();
+  daemon.extensionSockets.set('timeout-ext', extensionSocket);
+  const clock = clockController();
+  t.mock.method(globalThis, 'setTimeout', clock.setTimeout);
+  t.mock.method(globalThis, 'clearTimeout', clock.clearTimeout);
+
+  const requests: BridgeRequest[] = [
+    {
+      id: 'req_long_navigation',
+      method: 'navigation.navigate',
+      tab_id: null,
+      params: { url: 'https://example.test/', timeoutMs: 60_000 },
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+    {
+      id: 'req_long_wait',
+      method: 'page.wait_for_load_state',
+      tab_id: null,
+      params: { timeoutMs: 45_000 },
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+    {
+      id: 'req_bounded_timeout',
+      method: 'page.get_state',
+      tab_id: null,
+      params: { timeoutMs: 999_999 },
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  ];
+
+  for (const request of requests) {
+    await daemon.handleAgentRequest(agentSocket, { request });
+  }
+
+  assert.deepEqual(clock.delays, [62_000, 47_000, 122_000]);
+  for (const request of requests) {
+    const pending = daemon.pendingRequests.get(request.id);
+    assert.ok(pending);
+    daemon.clearPendingRequest(request.id, pending);
+  }
+});
+
 test('daemon socket close clears only the disconnected agent socket pending requests', async (t) => {
   const daemon = new BridgeDaemon({ logger: console });
   const agentOne = createFakeSocket();
@@ -1182,8 +1459,8 @@ test('daemon socket close clears only the disconnected agent socket pending requ
   const survivingPending = daemon.pendingRequests.get('req_owner_survives');
   assert.ok(removedPending);
   assert.ok(survivingPending);
-  assert.equal(removedPending.targets.size, 2);
-  assert.equal(survivingPending.targets.size, 2);
+  assert.deepEqual(removedPending.targets, new Set([extensionOne]));
+  assert.deepEqual(survivingPending.targets, new Set([extensionOne]));
   assert.deepEqual(
     daemon.pendingRequestsByOwnerSocket.get(agentOne),
     new Set(['req_owner_closed'])
@@ -1196,10 +1473,7 @@ test('daemon socket close clears only the disconnected agent socket pending requ
     daemon.pendingRequestsByTargetSocket.get(extensionOne),
     new Set(['req_owner_closed', 'req_owner_survives'])
   );
-  assert.deepEqual(
-    daemon.pendingRequestsByTargetSocket.get(extensionTwo),
-    new Set(['req_owner_closed', 'req_owner_survives'])
-  );
+  assert.equal(daemon.pendingRequestsByTargetSocket.has(extensionTwo), false);
 
   daemon.handleSocketClose(agentOne);
 
@@ -1214,10 +1488,7 @@ test('daemon socket close clears only the disconnected agent socket pending requ
     daemon.pendingRequestsByTargetSocket.get(extensionOne),
     new Set(['req_owner_survives'])
   );
-  assert.deepEqual(
-    daemon.pendingRequestsByTargetSocket.get(extensionTwo),
-    new Set(['req_owner_survives'])
-  );
+  assert.equal(daemon.pendingRequestsByTargetSocket.has(extensionTwo), false);
   assert.deepEqual(clearedTimeouts, [removedPending.timeoutId]);
 
   await daemon.handleExtensionResponse(extensionOne, {
@@ -1248,14 +1519,14 @@ test('daemon socket close clears only the disconnected agent socket pending requ
   assert.equal(payload.response.result.url, 'https://still-alive.example/');
 });
 
-test('daemon socket close removes only the disconnected extension from pending target sets', async () => {
+test('daemon socket close fails only requests routed to the disconnected extension', async () => {
   const daemon = new BridgeDaemon({ logger: console });
   const agentOne = createFakeSocket();
   const agentTwo = createFakeSocket();
   const extensionOne = createFakeSocket();
   const extensionTwo = createFakeSocket();
   extensionOne.__accessEnabled = true;
-  extensionTwo.__accessEnabled = true;
+  extensionTwo.__accessEnabled = false;
   daemon.extensionSockets.set('ext-one', extensionOne);
   daemon.extensionSockets.set('ext-two', extensionTwo);
 
@@ -1271,6 +1542,8 @@ test('daemon socket close removes only the disconnected extension from pending t
       },
     },
   });
+  extensionOne.__accessEnabled = false;
+  extensionTwo.__accessEnabled = true;
   await daemon.handleAgentRequest(agentTwo, {
     request: {
       id: 'req_extension_close_two',
@@ -1288,34 +1561,26 @@ test('daemon socket close removes only the disconnected extension from pending t
   const secondPending = daemon.pendingRequests.get('req_extension_close_two');
   assert.ok(firstPending);
   assert.ok(secondPending);
-  assert.deepEqual(new Set(firstPending.targets), new Set([extensionOne, extensionTwo]));
-  assert.deepEqual(new Set(secondPending.targets), new Set([extensionOne, extensionTwo]));
+  assert.deepEqual(firstPending.targets, new Set([extensionOne]));
+  assert.deepEqual(secondPending.targets, new Set([extensionTwo]));
 
   extensionOne.__extensionId = 'ext-one';
   daemon.handleSocketClose(extensionOne);
 
   assert.equal(daemon.extensionSockets.has('ext-one'), false);
-  assert.equal(daemon.pendingRequests.has('req_extension_close_one'), true);
+  assert.equal(daemon.pendingRequests.has('req_extension_close_one'), false);
   assert.equal(daemon.pendingRequests.has('req_extension_close_two'), true);
-  assert.deepEqual(new Set(firstPending.targets), new Set([extensionTwo]));
-  assert.deepEqual(new Set(secondPending.targets), new Set([extensionTwo]));
+  assert.deepEqual(firstPending.targets, new Set());
+  assert.deepEqual(secondPending.targets, new Set([extensionTwo]));
   assert.equal(daemon.pendingRequestsByTargetSocket.has(extensionOne), false);
   assert.deepEqual(
     daemon.pendingRequestsByTargetSocket.get(extensionTwo),
-    new Set(['req_extension_close_one', 'req_extension_close_two'])
+    new Set(['req_extension_close_two'])
   );
-  assert.equal(agentOne.writes.length, 0);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(agentOne.writes.length, 1);
   assert.equal(agentTwo.writes.length, 0);
 
-  await daemon.handleExtensionResponse(extensionTwo, {
-    response: {
-      id: 'req_extension_close_one',
-      ok: true,
-      result: { url: 'https://survivor-one.example/' },
-      error: null,
-      meta: { protocol_version: PROTOCOL_VERSION, method: 'page.get_state' },
-    },
-  });
   await daemon.handleExtensionResponse(extensionTwo, {
     response: {
       id: 'req_extension_close_two',
@@ -1326,12 +1591,11 @@ test('daemon socket close removes only the disconnected extension from pending t
     },
   });
 
-  assert.equal(agentOne.writes.length, 1);
   assert.equal(agentTwo.writes.length, 1);
   const payloadOne = JSON.parse(agentOne.writes[0].trim());
   const payloadTwo = JSON.parse(agentTwo.writes[0].trim());
   assert.equal(payloadOne.response.id, 'req_extension_close_one');
-  assert.equal(payloadOne.response.result.url, 'https://survivor-one.example/');
+  assert.equal(payloadOne.response.error.code, ERROR_CODES.EXTENSION_DISCONNECTED);
   assert.equal(payloadTwo.response.id, 'req_extension_close_two');
   assert.equal(payloadTwo.response.result.url, 'https://survivor-two.example/');
 });
@@ -1681,14 +1945,18 @@ function sendGarbageThenPing(socket: net.Socket, garbage: Buffer | string): Prom
 
     function handleData(chunk: string): void {
       responseBuffer += chunk;
-      const newlineIndex = responseBuffer.indexOf('\n');
-      if (newlineIndex !== -1) {
+      while (responseBuffer.includes('\n')) {
+        const newlineIndex = responseBuffer.indexOf('\n');
         const line = responseBuffer.slice(0, newlineIndex).trim();
-        cleanup();
+        responseBuffer = responseBuffer.slice(newlineIndex + 1);
         try {
-          resolve(parsePayload(line));
+          const payload = parsePayload(line);
+          if (payload.type === 'agent.response') {
+            cleanup();
+            resolve(payload);
+          }
         } catch {
-          reject(new Error(`Could not parse response: ${line}`));
+          // Ignore malformed daemon output and keep waiting for the response.
         }
       }
     }
@@ -1713,6 +1981,7 @@ function sendGarbageThenPing(socket: net.Socket, garbage: Buffer | string): Prom
     socket.on('close', handleClose);
     socket.on('end', handleEnd);
 
+    socket.write(`${JSON.stringify({ type: 'register', role: 'agent' })}\n`);
     // Send garbage, then a newline-terminated valid request.
     socket.write(garbage);
     socket.write(`${validRequest}\n`);
@@ -2199,7 +2468,7 @@ test('daemon fails pending requests immediately when the only target extension d
   }
 });
 
-test('daemon returns the last extension error once all other targets disconnect', async () => {
+test('daemon routes to only the most recently active enabled extension and returns its error', async () => {
   const { daemon, connect } = await startTestDaemon();
   const s1 = await connect();
   const s2 = await connect();
@@ -2220,10 +2489,11 @@ test('daemon returns the last extension error once all other targets disconnect'
     await ext2.next();
     await agent.next();
 
-    // Mark both extensions as access-enabled so untargeted requests are sent to
-    // both and the daemon must reconcile mixed error/disconnect outcomes.
     ext1.send({ type: 'extension.access_update', accessEnabled: true });
     ext2.send({ type: 'extension.access_update', accessEnabled: true });
+    ext1.send({ type: 'extension.activity', at: 20 });
+    ext2.send({ type: 'extension.activity', at: 10 });
+    await new Promise((resolve) => setImmediate(resolve));
 
     agent.send({
       type: 'agent.request',
@@ -2237,7 +2507,7 @@ test('daemon returns the last extension error once all other targets disconnect'
     });
 
     await ext1.next();
-    await ext2.next();
+    await expectNoMessage(ext2);
 
     ext1.send({
       type: 'extension.response',
@@ -2253,7 +2523,6 @@ test('daemon returns the last extension error once all other targets disconnect'
         meta: { protocol_version: PROTOCOL_VERSION, method: 'page.get_state' },
       },
     });
-    s2.destroy();
 
     const resp = expectBridgeResponse(await agent.next());
     assert.equal(resp.type, 'agent.response');
@@ -2402,26 +2671,12 @@ test('daemon routes untargeted requests to the most recently active extension wh
 test('daemon sends error response for valid JSON with missing type field', async () => {
   const { daemon, connect } = await startTestDaemon();
   const socket = await connect();
+  const client = makeNdjsonClient(socket);
   try {
-    const response = await new Promise((resolve, reject) => {
-      let buf = '';
-      socket.setEncoding('utf8');
-      socket.on('data', (chunk: string) => {
-        buf += chunk;
-        const idx = buf.indexOf('\n');
-        if (idx !== -1) {
-          try {
-            resolve(JSON.parse(buf.slice(0, idx).trim()));
-          } catch {
-            reject(new Error('bad json'));
-          }
-        }
-      });
-      socket.on('error', reject);
-      // Valid JSON but no `type` field - should fall through to the unknown
-      // message type handler and get an error response.
-      socket.write('{}\n');
-    });
+    client.send({ type: 'register', role: 'agent' });
+    assert.equal(expectPayload(await client.next()).type, 'registered');
+    client.send({});
+    const response = await client.next();
     const payload = expectPayload(response);
     assert.equal(payload.type, 'error');
     assert.equal(payload.error?.code, 'INVALID_REQUEST');

@@ -1,7 +1,7 @@
 // @ts-check
 
 import {
-  dispatchToolAction,
+  createToolResult,
   getToolTokenBudget,
   REQUEST_SOURCE,
   requestBridgeWithRetry,
@@ -13,6 +13,7 @@ import {
 } from './handlers-utils.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
+/** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
 /** @typedef {import('./handlers-utils.js').ToolAction} ToolAction */
 /** @typedef {import('./handlers-utils.js').ToolResult} ToolResult */
 
@@ -97,7 +98,170 @@ export async function handleCaptureTool(args) {
     return summarizeToolError('nodeId must be a finite number.');
   }
 
-  return dispatchToolAction(CAPTURE_ACTIONS, args, 'capture');
+  const entry = CAPTURE_ACTIONS[args.action];
+  if (!entry) {
+    return summarizeToolError(`Unsupported capture action "${args.action}".`);
+  }
+
+  return withToolClient(
+    async (client) => {
+      const requestedTabId = typeof args.tabId === 'number' ? args.tabId : null;
+      const ref = entry.ref ? await resolveToolRef(client, args, requestedTabId) : undefined;
+      const response = await requestBridgeWithRetry(client, entry.method, entry.params(args, ref), {
+        tabId: requestedTabId,
+        source: REQUEST_SOURCE,
+        tokenBudget: getToolTokenBudget(args),
+      });
+      if (!response.ok) {
+        return summarizeToolResponse(response, entry.method);
+      }
+      return entry.method.startsWith('screenshot.')
+        ? createScreenshotResult(response, entry.method)
+        : createCdpCaptureResult(response, entry.method);
+    },
+    { destinationId: args.destinationId ?? null }
+  );
+}
+
+/**
+ * @param {BridgeResponse & { ok: true }} response
+ * @param {BridgeMethod} method
+ * @returns {ToolResult}
+ */
+function createScreenshotResult(response, method) {
+  const result = toRecord(response.result);
+  if (typeof result.image !== 'string') {
+    return summarizeToolError(`${method} returned no image data.`);
+  }
+
+  const image = normalizeBase64Image(result.image);
+  if (!image) {
+    return summarizeToolError(`${method} returned invalid base64 image data.`);
+  }
+
+  const rect = boundedRect(result.rect);
+  return createToolResult(
+    `Captured ${image.mimeType} screenshot (${image.byteLength} bytes).`,
+    {
+      ok: true,
+      method,
+      mimeType: image.mimeType,
+      byteLength: image.byteLength,
+      ...(rect ? { rect } : {}),
+    },
+    false,
+    [{ type: 'image', data: image.data, mimeType: image.mimeType }]
+  );
+}
+
+/**
+ * @param {BridgeResponse & { ok: true }} response
+ * @param {BridgeMethod} method
+ * @returns {ToolResult}
+ */
+function createCdpCaptureResult(response, method) {
+  const bounded = boundStructuredValue(response.result);
+  return createToolResult(`Captured bounded structured data from ${method}.`, {
+    ok: true,
+    method,
+    data: bounded.value,
+    truncated: bounded.truncated,
+  });
+}
+
+/**
+ * @param {string} value
+ * @returns {{ data: string, mimeType: string, byteLength: number } | null}
+ */
+function normalizeBase64Image(value) {
+  const dataUrl = /^data:([^;,]+);base64,(.*)$/su.exec(value);
+  const mimeType = dataUrl?.[1] ?? 'image/png';
+  if (!mimeType.startsWith('image/')) return null;
+  const data = (dataUrl?.[2] ?? value).replace(/\s+/gu, '');
+  if (!data || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(data)) {
+    return null;
+  }
+  const bytes = Buffer.from(data, 'base64');
+  if (bytes.toString('base64') !== data) return null;
+  return { data, mimeType, byteLength: bytes.length };
+}
+
+/**
+ * @param {unknown} value
+ * @returns {Record<string, number> | null}
+ */
+function boundedRect(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const source = /** @type {Record<string, unknown>} */ (value);
+  /** @type {Record<string, number>} */
+  const rect = {};
+  for (const key of ['x', 'y', 'width', 'height', 'scale']) {
+    if (isFiniteNumber(source[key])) rect[key] = source[key];
+  }
+  return Object.keys(rect).length > 0 ? rect : null;
+}
+
+/**
+ * Bound debugger payloads by depth, entries, and string length while retaining
+ * their actual values rather than reducing them to field names.
+ *
+ * @param {unknown} input
+ * @returns {{ value: unknown, truncated: boolean }}
+ */
+function boundStructuredValue(input) {
+  const state = { entries: 0, characters: 0, truncated: false };
+  const maxEntries = 500;
+  const maxCharacters = 50_000;
+  /** @type {(value: unknown, depth: number) => unknown} */
+  const visit = (value, depth) => {
+    if (state.entries >= maxEntries || state.characters >= maxCharacters || depth > 8) {
+      state.truncated = true;
+      return '[truncated]';
+    }
+    state.entries += 1;
+    if (typeof value === 'string') {
+      const remaining = maxCharacters - state.characters;
+      const limit = Math.min(value.length, remaining, 4000);
+      state.characters += limit;
+      if (limit === value.length) return value;
+      state.truncated = true;
+      return `${value.slice(0, limit)}[truncated]`;
+    }
+    if (Array.isArray(value)) {
+      const remaining = maxEntries - state.entries;
+      const limit = Math.min(value.length, remaining, 100);
+      if (limit < value.length) state.truncated = true;
+      return value.slice(0, limit).map((entry) => visit(entry, depth + 1));
+    }
+    if (value && typeof value === 'object') {
+      /** @type {Record<string, unknown>} */
+      const output = {};
+      const entries = Object.entries(/** @type {Record<string, unknown>} */ (value));
+      const limit = Math.min(entries.length, 100);
+      if (limit < entries.length) state.truncated = true;
+      for (const [key, entry] of entries.slice(0, limit)) {
+        if (state.entries >= maxEntries || state.characters >= maxCharacters) {
+          state.truncated = true;
+          break;
+        }
+        state.characters += key.length;
+        output[key] = visit(entry, depth + 1);
+      }
+      return output;
+    }
+    return value;
+  };
+  return { value: visit(input, 0), truncated: state.truncated };
+}
+
+/**
+ * @param {unknown} value
+ * @returns {Record<string, unknown>}
+ */
+function toRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? /** @type {Record<string, unknown>} */ (value)
+    : {};
 }
 
 /** @type {Record<string, BridgeMethod>} */

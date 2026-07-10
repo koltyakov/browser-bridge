@@ -125,7 +125,7 @@ bbx network              # recent fetch/XHR entries
 bbx network 50           # last 50 entries
 ```
 
-The interceptor auto-installs on first call. Each entry shows `method`, `url`, `status`, `duration`. Use `clear: true` to reset the buffer.
+The interceptor auto-installs on first call. Before reproducing an event, call `page.get_network` once with `clear: true` to install capture and remove old entries. Trigger the action, then read again without `clear`. Each entry shows `method`, `url`, `status`, `duration`.
 
 ## Accessibility Tree for Semantic Discovery
 
@@ -151,12 +151,13 @@ bbx find-role navigation  # semantic, works regardless of classes
 
 ## HMR-Aware Waiting
 
-After modifying source code, the dev server hot-reloads. Always wait before inspecting:
+After modifying source code, the dev server hot-reloads. Wait for evidence of the change, not `attached` on a selector that already exists:
 
 ```bash
-bbx wait '[data-component="Header"]' 5000   # wait for component re-mount
+bbx call dom.wait_for '{"selector":"[data-component=\"Header\"][data-version=\"new\"]","state":"attached","timeoutMs":5000}'
+bbx call dom.wait_for '{"selector":"[data-component=\"Header\"]","text":"Expected new heading","timeoutMs":5000}'
+# For a known remount, wait for detached and then attached states.
 bbx console error                            # check for HMR errors
-bbx eval 'module.hot?.status?.()'            # check HMR status (webpack)
 ```
 
 ## Parent-Agent Response Policy

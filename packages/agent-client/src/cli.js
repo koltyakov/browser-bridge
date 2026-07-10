@@ -512,6 +512,9 @@ async function main() {
 
     if (command === 'doctor') {
       const report = await getDoctorReport();
+      if (report.issues.length > 0) {
+        process.exitCode = 1;
+      }
       printJson({
         ok: report.issues.length === 0,
         summary:
@@ -1298,6 +1301,9 @@ async function ensureClientConnection() {
  * @returns {Promise<void>}
  */
 async function printSummary(response, method) {
+  if (!response.ok) {
+    process.exitCode = 1;
+  }
   printJson(annotateBridgeSummary(summarizeBridgeResponse(response, method), response));
 }
 

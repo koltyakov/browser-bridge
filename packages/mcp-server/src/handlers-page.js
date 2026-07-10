@@ -24,7 +24,11 @@ import {
 } from './handlers-utils.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
+/** @typedef {import('../../agent-client/src/client.js').BridgeClient} BridgeClient */
 /** @typedef {import('./handlers-utils.js').ToolResult} ToolResult */
+
+export const MAX_BATCH_CALLS = 20;
+export const MAX_BATCH_CONCURRENCY = 5;
 
 /** @type {Record<string, { method: BridgeMethod, params: (a: Record<string, unknown>) => Record<string, unknown> }>} */
 export const PAGE_ACTIONS = {
@@ -109,86 +113,111 @@ export async function handleBatchTool(args) {
   if (!Array.isArray(args.calls) || args.calls.length === 0) {
     return summarizeToolError('calls must be a non-empty array.');
   }
+  if (args.calls.length > MAX_BATCH_CALLS) {
+    return summarizeToolError(`calls must contain at most ${MAX_BATCH_CALLS} entries.`);
+  }
 
   const calls = args.calls;
-  return withToolClient(async (client) => {
-    const results = await Promise.all(
-      calls.map(async (call) => {
-        if (!call || typeof call !== 'object' || typeof call.method !== 'string') {
-          return {
-            method: '',
-            tabId: null,
-            ok: false,
-            summary: 'INVALID_REQUEST: Each batch call needs a method.',
-            evidence: null,
-            error: {
-              code: 'INVALID_REQUEST',
-              message: 'Each batch call needs a method.',
-            },
-            response: null,
-          };
+  /** @param {BridgeClient | null} client */
+  const executeBatch = async (client) => {
+    const results = await mapWithConcurrency(calls, MAX_BATCH_CONCURRENCY, async (call) => {
+      if (!call || typeof call !== 'object' || typeof call.method !== 'string') {
+        return {
+          method: '',
+          tabId: null,
+          ok: false,
+          summary: 'INVALID_REQUEST: Each batch call needs a method.',
+          evidence: null,
+          error: {
+            code: 'INVALID_REQUEST',
+            message: 'Each batch call needs a method.',
+          },
+          response: null,
+        };
+      }
+
+      if (!METHOD_SET.has(/** @type {BridgeMethod} */ (call.method))) {
+        return {
+          method: call.method,
+          tabId: null,
+          ok: false,
+          summary: `INVALID_REQUEST: Unknown bridge method "${call.method}".`,
+          evidence: null,
+          error: {
+            code: 'INVALID_REQUEST',
+            message: `Unknown bridge method "${call.method}".`,
+          },
+          response: null,
+        };
+      }
+
+      if (call.method === 'setup.install') {
+        return {
+          method: call.method,
+          tabId: null,
+          ok: false,
+          summary: 'INVALID_REQUEST: Use browser_setup for setup changes.',
+          evidence: null,
+          error: {
+            code: 'INVALID_REQUEST',
+            message: 'Use browser_setup for setup changes.',
+          },
+          response: null,
+        };
+      }
+
+      const method = /** @type {BridgeMethod} */ (call.method);
+      const tabId = bridgeMethodNeedsTab(method)
+        ? typeof call.tabId === 'number'
+          ? call.tabId
+          : null
+        : null;
+      const tokenBudget = getToolTokenBudget(call);
+      const destinationId = typeof call.destinationId === 'string' ? call.destinationId : null;
+
+      const startTime = Date.now();
+      const callClient = destinationId
+        ? await createBridgeClientForDestination(destinationId)
+        : client;
+      if (!callClient) {
+        return summarizeBatchErrorItem({
+          method,
+          tabId,
+          error: new Error('A local bridge client is required for calls without destinationId.'),
+          durationMs: Date.now() - startTime,
+        });
+      }
+      try {
+        if (destinationId) {
+          await callClient.connect();
         }
-
-        if (!METHOD_SET.has(/** @type {BridgeMethod} */ (call.method))) {
-          return {
-            method: call.method,
-            tabId: null,
-            ok: false,
-            summary: `INVALID_REQUEST: Unknown bridge method "${call.method}".`,
-            evidence: null,
-            error: {
-              code: 'INVALID_REQUEST',
-              message: `Unknown bridge method "${call.method}".`,
-            },
-            response: null,
-          };
-        }
-
-        const method = /** @type {BridgeMethod} */ (call.method);
-        const tabId = bridgeMethodNeedsTab(method)
-          ? typeof call.tabId === 'number'
-            ? call.tabId
-            : null
-          : null;
-        const tokenBudget = getToolTokenBudget(call);
-        const destinationId = typeof call.destinationId === 'string' ? call.destinationId : null;
-
-        const startTime = Date.now();
-        const callClient = destinationId
-          ? await createBridgeClientForDestination(destinationId)
-          : client;
-        try {
-          if (destinationId) {
-            await callClient.connect();
-          }
-          const response = await requestBridgeWithRetry(callClient, method, call.params || {}, {
-            tabId,
-            source: REQUEST_SOURCE,
-            tokenBudget,
-          });
-          return {
-            destinationId,
-            ...summarizeBatchResponseItem({
-              method,
-              tabId,
-              response,
-              durationMs: Date.now() - startTime,
-            }),
-          };
-        } catch (error) {
-          return summarizeBatchErrorItem({
+        const response = await requestBridgeWithRetry(callClient, method, call.params || {}, {
+          tabId,
+          source: REQUEST_SOURCE,
+          tokenBudget,
+        });
+        return {
+          destinationId,
+          ...summarizeBatchResponseItem({
             method,
             tabId,
-            error,
+            response,
             durationMs: Date.now() - startTime,
-          });
-        } finally {
-          if (destinationId) {
-            await callClient.close();
-          }
+          }),
+        };
+      } catch (error) {
+        return summarizeBatchErrorItem({
+          method,
+          tabId,
+          error,
+          durationMs: Date.now() - startTime,
+        });
+      } finally {
+        if (destinationId) {
+          await callClient.close();
         }
-      })
-    );
+      }
+    });
 
     const failureCount = results.filter((result) => !result.ok).length;
     const summary =
@@ -203,7 +232,35 @@ export async function handleBatchTool(args) {
       },
       failureCount > 0
     );
-  });
+  };
+
+  return calls.every((call) => typeof call?.destinationId === 'string')
+    ? executeBatch(null)
+    : withToolClient(executeBatch);
+}
+
+/**
+ * @template T, R
+ * @param {T[]} values
+ * @param {number} concurrency
+ * @param {(value: T, index: number) => Promise<R>} callback
+ * @returns {Promise<R[]>}
+ */
+async function mapWithConcurrency(values, concurrency, callback) {
+  /** @type {R[]} */
+  const results = new Array(values.length);
+  let nextIndex = 0;
+  const worker = async () => {
+    while (nextIndex < values.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await callback(values[index], index);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, values.length) }, async () => worker())
+  );
+  return results;
 }
 
 /**
@@ -213,6 +270,9 @@ export async function handleBatchTool(args) {
 export async function handleRawCallTool(args) {
   if (!METHOD_SET.has(/** @type {BridgeMethod} */ (args.method))) {
     return summarizeToolError(`Unknown bridge method "${args.method}".`);
+  }
+  if (args.method === 'setup.install') {
+    return summarizeToolError('Use browser_setup for setup changes.');
   }
 
   return withToolClient(

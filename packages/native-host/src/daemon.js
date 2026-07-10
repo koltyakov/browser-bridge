@@ -20,12 +20,14 @@ import {
   createFailure,
   createSuccess,
   DAEMON_EXISTING_SOCKET_PING_TIMEOUT_MS,
+  DAEMON_PENDING_TIMEOUT_MARGIN_MS,
   DAEMON_RECENT_LOG_LIMIT,
   DEFAULT_DAEMON_PENDING_TIMEOUT_MS,
   DEFAULT_LOG_TAIL_LIMIT,
   ERROR_CODES,
   getProtocolVersion,
   getSupportedProtocolVersions,
+  MAX_DAEMON_PENDING_TIMEOUT_MS,
   parseJsonLines,
   setProtocolPackageVersion,
   validateBridgeRequest,
@@ -54,7 +56,8 @@ setProtocolPackageVersion(DAEMON_VERSION);
 /** @typedef {import('../../protocol/src/types.js').SetupStatus} SetupStatus */
 /** @typedef {import('./config.js').BridgeTransport} BridgeTransport */
 /** @typedef {import('./daemon-logger.js').DaemonLoggerLike} DaemonLoggerLike */
-/** @typedef {import('node:net').Socket & { __clientId?: string, __extensionId?: string, __browserName?: string, __profileLabel?: string, __accessEnabled?: boolean, __lastActiveAt?: number, __authenticated?: boolean }} ClientSocket */
+/** @typedef {'agent' | 'extension'} SocketRole */
+/** @typedef {import('node:net').Socket & { readonly __role?: SocketRole, __clientId?: string, __extensionId?: string, __browserName?: string, __profileLabel?: string, __accessEnabled?: boolean, __lastActiveAt?: number }} ClientSocket */
 /** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string, method?: string, protocolVersion?: string, targets: Set<ClientSocket>, lastErrorResponse?: import('../../protocol/src/types.js').BridgeResponse }} PendingEntry */
 /**
  * @typedef {{
@@ -327,6 +330,17 @@ export class BridgeDaemon {
    * @returns {void}
    */
   registerSocket(socket, message) {
+    if (socket.__role) {
+      void writeJsonLine(socket, {
+        type: 'registration_failed',
+        error: {
+          code: ERROR_CODES.INVALID_REQUEST,
+          message: `Socket is already registered as ${socket.__role}.`,
+        },
+      });
+      return;
+    }
+
     if (this.isAuthRequired() && normalizeBridgeAuthToken(message.authToken) !== this.authToken) {
       this.logger.error('socket registration rejected', { role: message.role ?? null });
       void writeJsonLine(socket, {
@@ -339,8 +353,24 @@ export class BridgeDaemon {
       return;
     }
 
+    if (message.role !== 'extension' && message.role !== 'agent') {
+      void writeJsonLine(socket, {
+        type: 'registration_failed',
+        error: {
+          code: ERROR_CODES.INVALID_REQUEST,
+          message: 'Socket role must be "agent" or "extension".',
+        },
+      });
+      return;
+    }
+
+    Object.defineProperty(socket, '__role', {
+      value: message.role,
+      enumerable: false,
+      configurable: false,
+      writable: false,
+    });
     if (message.role === 'extension') {
-      socket.__authenticated = true;
       const extensionId = randomUUID();
       socket.__extensionId = extensionId;
       socket.__browserName =
@@ -360,7 +390,6 @@ export class BridgeDaemon {
     }
 
     if (message.role === 'agent') {
-      socket.__authenticated = true;
       const clientId = message.clientId || randomUUID();
       this.agentSockets.set(clientId, socket);
       socket.__clientId = clientId;
@@ -524,36 +553,59 @@ export class BridgeDaemon {
       return this.registerSocket(socket, message);
     }
 
-    if (this.isAuthRequired() && !socket.__authenticated) {
-      return this.rejectUnauthenticatedMessage(socket, message);
+    if (!socket.__role) {
+      return this.rejectUnregisteredMessage(socket, message);
     }
 
     if (message?.type === 'log') {
+      if (socket.__role !== 'extension') {
+        return this.rejectMessageForRole(socket, message);
+      }
       this.pushLog(message.entry ?? {});
       return;
     }
 
     if (message?.type === 'extension.response') {
+      if (socket.__role !== 'extension') {
+        return this.rejectMessageForRole(socket, message);
+      }
       return this.handleExtensionResponse(socket, message);
     }
 
     if (message?.type === 'extension.identity') {
+      if (socket.__role !== 'extension') {
+        return this.rejectMessageForRole(socket, message);
+      }
       return this.handleExtensionIdentity(socket, message);
     }
 
     if (message?.type === 'extension.access_update') {
+      if (socket.__role !== 'extension') {
+        return this.rejectMessageForRole(socket, message);
+      }
       return this.handleExtensionAccessUpdate(socket, message);
     }
 
     if (message?.type === 'extension.activity') {
+      if (socket.__role !== 'extension') {
+        return this.rejectMessageForRole(socket, message);
+      }
       return this.handleExtensionActivity(socket, message);
     }
 
     if (message?.type === 'extension.setup_status.request') {
+      if (socket.__role !== 'extension') {
+        return this.rejectMessageForRole(socket, message);
+      }
       return this.handleExtensionSetupStatus(socket, message);
     }
 
     if (message?.type === 'agent.request') {
+      const isExtensionSetupRequest =
+        socket.__role === 'extension' && message.request?.method === 'setup.install';
+      if (socket.__role !== 'agent' && !isExtensionSetupRequest) {
+        return this.rejectMessageForRole(socket, message);
+      }
       return this.handleAgentRequest(socket, message);
     }
 
@@ -571,7 +623,8 @@ export class BridgeDaemon {
    * @param {DaemonMessage} message
    * @returns {Promise<void>}
    */
-  async rejectUnauthenticatedMessage(socket, message) {
+  async rejectUnregisteredMessage(socket, message) {
+    const authRequired = this.isAuthRequired();
     if (message?.type === 'agent.request') {
       const candidate =
         message.request && typeof message.request === 'object'
@@ -579,8 +632,10 @@ export class BridgeDaemon {
           : {};
       const response = createFailure(
         typeof candidate.id === 'string' && candidate.id.trim() ? candidate.id : 'unauthenticated',
-        ERROR_CODES.ACCESS_DENIED,
-        'Register with the daemon auth token before sending bridge requests.',
+        authRequired ? ERROR_CODES.ACCESS_DENIED : ERROR_CODES.INVALID_REQUEST,
+        authRequired
+          ? 'Register with the daemon auth token before sending bridge requests.'
+          : 'Register the socket before sending bridge requests.',
         null,
         typeof candidate.method === 'string' ? { method: candidate.method } : {}
       );
@@ -591,8 +646,25 @@ export class BridgeDaemon {
     await writeJsonLine(socket, {
       type: 'error',
       error: {
-        code: ERROR_CODES.ACCESS_DENIED,
-        message: 'Register with the daemon auth token before sending bridge messages.',
+        code: authRequired ? ERROR_CODES.ACCESS_DENIED : ERROR_CODES.INVALID_REQUEST,
+        message: authRequired
+          ? 'Register with the daemon auth token before sending bridge messages.'
+          : 'Register the socket before sending bridge messages.',
+      },
+    });
+  }
+
+  /**
+   * @param {ClientSocket} socket
+   * @param {DaemonMessage} message
+   * @returns {Promise<void>}
+   */
+  async rejectMessageForRole(socket, message) {
+    await writeJsonLine(socket, {
+      type: 'error',
+      error: {
+        code: ERROR_CODES.INVALID_REQUEST,
+        message: `Message type ${JSON.stringify(message.type ?? null)} is not allowed for ${socket.__role} sockets.`,
       },
     });
   }
@@ -690,6 +762,17 @@ export class BridgeDaemon {
     }
 
     if (request.method === 'setup.install') {
+      if (socket.__role === 'agent' && !this.isLocalSocket(socket)) {
+        const response = createFailure(
+          request.id,
+          ERROR_CODES.ACCESS_DENIED,
+          'setup.install is restricted to local Browser Bridge clients.',
+          null,
+          { method: request.method }
+        );
+        await writeJsonLine(socket, { type: 'agent.response', response });
+        return;
+      }
       try {
         const response = createSuccess(
           request.id,
@@ -718,40 +801,9 @@ export class BridgeDaemon {
       typeof request.meta?.target_profile === 'string' ? request.meta.target_profile : null;
     const hasExplicitTarget = Boolean(targetBrowser || targetProfile);
 
-    /** @type {ClientSocket[]} */
-    const targets = [];
-    /** @type {ClientSocket | null} */
-    let mostRecent = null;
-    for (const extSocket of this.extensionSockets.values()) {
-      if (targetBrowser || targetProfile) {
-        if (targetBrowser && extSocket.__browserName !== targetBrowser) {
-          continue;
-        }
-        if (targetProfile && extSocket.__profileLabel !== targetProfile) {
-          continue;
-        }
-        targets.push(extSocket);
-        continue;
-      }
+    const target = this.selectExtensionTarget(targetBrowser, targetProfile);
 
-      if (extSocket.__accessEnabled) {
-        targets.push(extSocket);
-        continue;
-      }
-
-      if (
-        !mostRecent ||
-        (typeof extSocket.__lastActiveAt === 'number' ? extSocket.__lastActiveAt : 0) >
-          (typeof mostRecent.__lastActiveAt === 'number' ? mostRecent.__lastActiveAt : 0)
-      ) {
-        mostRecent = extSocket;
-      }
-    }
-    if (!hasExplicitTarget && targets.length === 0 && mostRecent) {
-      targets.push(mostRecent);
-    }
-
-    if (targets.length === 0) {
+    if (!target) {
       const response = createFailure(
         request.id,
         ERROR_CODES.EXTENSION_DISCONNECTED,
@@ -768,7 +820,7 @@ export class BridgeDaemon {
       method: request.method,
       protocolVersion: request.meta?.protocol_version,
       source: typeof request.meta?.source === 'string' ? request.meta.source : '',
-      targets: new Set(targets),
+      targets: new Set([target]),
       timeoutId: setTimeout(() => {
         const pending = this.pendingRequests.get(request.id);
         if (!pending) return;
@@ -789,38 +841,101 @@ export class BridgeDaemon {
             message: error instanceof Error ? error.message : String(error),
           });
         });
-      }, this.pendingTimeoutMs),
+      }, this.getPendingTimeoutMs(request)),
     });
     this.logger.info('request routed', {
       requestId: request.id,
       method: request.method,
       clientId: socket.__clientId ?? null,
-      targetCount: targets.length,
+      targetCount: 1,
     });
-    const broadcastPayload = { type: 'extension.request', request };
-    await Promise.all(
-      targets.map(async (extSocket) => {
-        try {
-          await writeJsonLine(extSocket, broadcastPayload);
-        } catch (error) {
-          this.logger.error('request route failed', {
-            requestId: request.id,
-            method: request.method,
-            message: error instanceof Error ? error.message : String(error),
-          });
-          const pending = this.pendingRequests.get(request.id);
-          if (!pending) {
-            return;
-          }
-          this.removePendingTarget(request.id, pending, extSocket);
-          if (extSocket.__extensionId) {
-            this.extensionSockets.delete(extSocket.__extensionId);
-            this.invalidateConnectedExtensionsCache();
-          }
-          extSocket.destroy(error instanceof Error ? error : undefined);
-          await this.finishPendingRequestIfExhausted(request.id, pending);
-        }
-      })
+    try {
+      await writeJsonLine(target, { type: 'extension.request', request });
+    } catch (error) {
+      this.logger.error('request route failed', {
+        requestId: request.id,
+        method: request.method,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      const pending = this.pendingRequests.get(request.id);
+      if (!pending) {
+        return;
+      }
+      this.removePendingTarget(request.id, pending, target);
+      if (target.__extensionId && this.extensionSockets.get(target.__extensionId) === target) {
+        this.extensionSockets.delete(target.__extensionId);
+        this.invalidateConnectedExtensionsCache();
+      }
+      target.destroy(error instanceof Error ? error : undefined);
+      await this.finishPendingRequestIfExhausted(request.id, pending);
+    }
+  }
+
+  /**
+   * @param {ClientSocket} socket
+   * @returns {boolean}
+   */
+  isLocalSocket(socket) {
+    if (this.transport.type === 'socket') {
+      return true;
+    }
+    const address = socket.remoteAddress ?? '';
+    return (
+      address === '127.0.0.1' ||
+      address === '::1' ||
+      address === 'localhost' ||
+      address === '::ffff:127.0.0.1'
+    );
+  }
+
+  /**
+   * Select from a snapshot so routing neither mutates nor observes mutations to
+   * the live extension map while candidates are ordered.
+   *
+   * @param {string | null} targetBrowser
+   * @param {string | null} targetProfile
+   * @returns {ClientSocket | null}
+   */
+  selectExtensionTarget(targetBrowser, targetProfile) {
+    const candidates = Array.from(this.extensionSockets.entries()).filter(([, extSocket]) => {
+      return (
+        (!targetBrowser || extSocket.__browserName === targetBrowser) &&
+        (!targetProfile || extSocket.__profileLabel === targetProfile)
+      );
+    });
+    candidates.sort(([leftId, left], [rightId, right]) => {
+      const accessDelta =
+        Number(Boolean(right.__accessEnabled)) - Number(Boolean(left.__accessEnabled));
+      if (accessDelta !== 0) {
+        return accessDelta;
+      }
+      const activityDelta =
+        (typeof right.__lastActiveAt === 'number' ? right.__lastActiveAt : 0) -
+        (typeof left.__lastActiveAt === 'number' ? left.__lastActiveAt : 0);
+      if (activityDelta !== 0) {
+        return activityDelta;
+      }
+      return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
+    });
+    return candidates[0]?.[1] ?? null;
+  }
+
+  /**
+   * @param {BridgeRequest} request
+   * @returns {number}
+   */
+  getPendingTimeoutMs(request) {
+    const configuredBase = Math.min(
+      MAX_DAEMON_PENDING_TIMEOUT_MS,
+      Math.max(1, this.pendingTimeoutMs)
+    );
+    const operationTimeout = request.params.timeoutMs;
+    if (typeof operationTimeout !== 'number' || !Number.isFinite(operationTimeout)) {
+      return configuredBase;
+    }
+    return Math.min(
+      MAX_DAEMON_PENDING_TIMEOUT_MS,
+      Math.max(configuredBase, operationTimeout + DAEMON_PENDING_TIMEOUT_MARGIN_MS)
     );
   }
 
@@ -922,7 +1037,7 @@ export class BridgeDaemon {
     }
 
     const pending = this.pendingRequests.get(responseMessage.id);
-    if (!pending) {
+    if (!pending || !pending.targets.has(socket)) {
       return;
     }
 
@@ -968,7 +1083,7 @@ export class BridgeDaemon {
       return;
     }
 
-    // Error response — wait for other extensions before forwarding.
+    // A routed request has one target, so its error is final.
     pending.lastErrorResponse = responseMessage;
 
     await this.finishPendingRequestIfExhausted(responseMessage.id, pending);
@@ -981,8 +1096,10 @@ export class BridgeDaemon {
   handleSocketClose(socket) {
     if (socket.__extensionId) {
       this.logger.info('extension disconnected', { extensionId: socket.__extensionId });
-      this.extensionSockets.delete(socket.__extensionId);
-      this.invalidateConnectedExtensionsCache();
+      if (this.extensionSockets.get(socket.__extensionId) === socket) {
+        this.extensionSockets.delete(socket.__extensionId);
+        this.invalidateConnectedExtensionsCache();
+      }
     }
 
     if (socket.__clientId) {
@@ -1151,11 +1268,14 @@ export async function pingExistingDaemon(transport) {
     });
 
     socket.once('connect', () => {
-      if (authToken) {
-        socket.write(
-          `${JSON.stringify({ type: 'register', role: 'agent', clientId: 'ping_probe', authToken })}\n`
-        );
-      }
+      socket.write(
+        `${JSON.stringify({
+          type: 'register',
+          role: 'agent',
+          clientId: 'ping_probe',
+          ...(authToken ? { authToken } : {}),
+        })}\n`
+      );
       socket.write(
         `${JSON.stringify({
           type: 'agent.request',

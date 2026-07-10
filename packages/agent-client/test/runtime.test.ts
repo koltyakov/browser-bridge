@@ -22,6 +22,7 @@ type RequestCall = {
   tabId?: number | null;
   params?: Record<string, unknown>;
   meta?: Record<string, unknown>;
+  timeoutMs?: number;
 };
 type FakeBridgeClient = Pick<BridgeClient, 'connected' | 'connect' | 'request'>;
 type BridgeClientRunner = <T>(callback: (client: BridgeClient) => Promise<T>) => Promise<T>;
@@ -329,9 +330,9 @@ test('installMcpConfig writes Copilot global config to default and existing prof
     const userConfig = await fs.promises.readFile(userConfigPath, 'utf8');
     const defaultConfig = await fs.promises.readFile(path.join(userDir, 'mcp.json'), 'utf8');
     const profileConfig = await fs.promises.readFile(profileConfigPath, 'utf8');
-    assert.match(userConfig, /"browser-bridge"/);
-    assert.match(defaultConfig, /"browser-bridge"/);
-    assert.match(profileConfig, /"browser-bridge"/);
+    assert.ok(JSON.parse(userConfig).mcpServers['browser-bridge']);
+    assert.ok(JSON.parse(defaultConfig).servers['browser-bridge']);
+    assert.ok(JSON.parse(profileConfig).servers['browser-bridge']);
   } finally {
     if (originalHome === undefined) {
       delete process.env.HOME;
@@ -388,6 +389,29 @@ test('requestBridge forwards explicit tabId for tab-bound methods', async () => 
   );
   assert.equal(calls.length, 1);
   assert.equal(calls[0].tabId, 77);
+});
+
+test('requestBridge keeps transport timeout beyond normalized operation timeout', async () => {
+  const calls: RequestCall[] = [];
+  const client: FakeBridgeClient = {
+    connected: true,
+    async connect() {},
+    async request(options: RequestCall) {
+      calls.push(options);
+      return successResponse('req_wait', { loaded: true });
+    },
+  };
+
+  await requestBridge(client as BridgeClient, 'navigation.navigate', {
+    url: 'https://example.com',
+  });
+  await requestBridge(client as BridgeClient, 'page.evaluate', {
+    expression: 'Promise.resolve(true)',
+    timeoutMs: 20_000,
+  });
+
+  assert.equal(calls[0].timeoutMs, 19_000);
+  assert.equal(calls[1].timeoutMs, 24_000);
 });
 
 test('resolveRef returns the first matching elementRef', async () => {

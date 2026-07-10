@@ -74,6 +74,8 @@ type BridgeRequestOptions = {
 };
 
 const REMOTE_TOKEN = '6f7b4e4a-7b9e-4c0d-9e62-4b1fb9f8d237';
+const ONE_PIXEL_PNG =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
 async function withBridgeHome(callback: (bridgeHome: string) => Promise<void>): Promise<void> {
   const bridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-mcp-remotes-test-'));
@@ -402,7 +404,7 @@ test('handlePageTool state calls page.get_state', async () => {
   );
 });
 
-test('default MCP routing falls back to configured remotes when local access is unavailable', async () => {
+test('default MCP routing does not fall back to configured remotes', async () => {
   await withBridgeHome(async (bridgeHome) => {
     await writeRemoteConfig(bridgeHome);
     await withMockedBridge(
@@ -420,12 +422,47 @@ test('default MCP routing falls back to configured remotes when local access is 
       async (calls) => {
         const result = await handlePageTool({ action: 'state' });
 
-        assert.equal(calls.length, 2);
+        assert.equal(calls.length, 1);
         assert.equal(calls[0].method, 'page.get_state');
-        assert.equal(calls[1].method, 'page.get_state');
-        assert.equal(result.isError, undefined);
-        assert.equal(result.structuredContent.ok, true);
-        assert.equal(result.structuredContent.autoSelectedDestinationId, 'vm-private');
+        assert.equal(result.isError, true);
+        assert.equal(result.structuredContent.ok, false);
+      },
+      { isolateBridgeHome: false }
+    );
+  });
+});
+
+test('mutating input does not fall back to a configured remote', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    await writeRemoteConfig(bridgeHome);
+    await withMockedBridge(
+      async () => fail('ACCESS_DENIED', 'Browser Bridge is off for this window.'),
+      async (calls) => {
+        const result = await handleInputTool({ action: 'click', elementRef: 'el_1' });
+
+        assert.equal(calls.length, 1);
+        assert.equal(calls[0].method, 'input.click');
+        assert.equal(result.isError, true);
+      },
+      { isolateBridgeHome: false }
+    );
+  });
+});
+
+test('mutating raw calls do not fall back to a configured remote', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    await writeRemoteConfig(bridgeHome);
+    await withMockedBridge(
+      async () => fail('ACCESS_DENIED', 'Browser Bridge is off for this window.'),
+      async (calls) => {
+        const result = await handleRawCallTool({
+          method: 'navigation.navigate',
+          params: { url: 'https://example.com' },
+        });
+
+        assert.equal(calls.length, 1);
+        assert.equal(calls[0].method, 'navigation.navigate');
+        assert.equal(result.isError, true);
       },
       { isolateBridgeHome: false }
     );
@@ -444,6 +481,27 @@ test('explicit MCP destinations do not fall back to other remotes', async () => 
         assert.equal(calls[0].method, 'page.get_state');
         assert.equal(result.isError, true);
         assert.equal(result.structuredContent.ok, false);
+      },
+      { isolateBridgeHome: false }
+    );
+  });
+});
+
+test('mutating input supports an explicit remote destination', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    await writeRemoteConfig(bridgeHome);
+    await withMockedBridge(
+      async () => ok({ clicked: true, elementRef: 'el_1' }),
+      async (calls) => {
+        const result = await handleInputTool({
+          action: 'click',
+          elementRef: 'el_1',
+          destinationId: 'vm-private',
+        });
+
+        assert.equal(calls.length, 1);
+        assert.equal(calls[0].method, 'input.click');
+        assert.equal(result.isError, undefined);
       },
       { isolateBridgeHome: false }
     );
@@ -629,7 +687,10 @@ test('handleCaptureTool element resolves ref and calls screenshot.capture_elemen
           ],
         });
       }
-      return ok({ image: 'data:image/png;base64,abc', rect: {} });
+      return ok({
+        image: `data:image/png;base64,${ONE_PIXEL_PNG}`,
+        rect: { x: 0, y: 0, width: 1, height: 1 },
+      });
     },
     async (calls) => {
       const result = await handleCaptureTool({
@@ -639,6 +700,16 @@ test('handleCaptureTool element resolves ref and calls screenshot.capture_elemen
       const captureCall = calls.find((c) => c.method === 'screenshot.capture_element');
       assert.ok(captureCall, 'screenshot.capture_element should be called');
       assert.equal(result.isError, undefined);
+      const image = result.content.find((block) => block.type === 'image');
+      assert.ok(image && image.type === 'image');
+      assert.equal(image.mimeType, 'image/png');
+      assert.equal(image.data, ONE_PIXEL_PNG);
+      assert.deepEqual(Buffer.from(image.data, 'base64').subarray(1, 4).toString('ascii'), 'PNG');
+      assert.equal(
+        result.structuredContent.byteLength,
+        Buffer.from(ONE_PIXEL_PNG, 'base64').length
+      );
+      assert.equal(Object.hasOwn(result.structuredContent, 'image'), false);
     }
   );
 });

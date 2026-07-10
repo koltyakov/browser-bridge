@@ -27,7 +27,7 @@ The table below includes the legacy capability bucket for each method so agents 
 - `-` means the method is global/system-scoped and was never gated by a former capability bucket.
 - Capability names are descriptive coverage labels only. Browser Bridge access is window-scoped now; there are no capability-scoped sessions.
 
-## All Methods (59)
+## All Methods (65)
 
 | #   | Method                             | Tab? | CDP? | Group       | Capability           | Notes                                                                   |
 | --- | ---------------------------------- | ---- | ---- | ----------- | -------------------- | ----------------------------------------------------------------------- |
@@ -44,7 +44,7 @@ The table below includes the legacy capability bucket for each method so agents 
 | 11  | `page.get_state`                   | Yes  | -    | page        | `page.read`          | URL, readiness, focus, scroll, viewport                                 |
 | 12  | `page.evaluate`                    | Yes  | CDP  | page        | `page.evaluate`      | JS expression in page context; last resort                              |
 | 13  | `page.get_console`                 | Yes  | -    | page        | `page.read`          | Buffered console messages; filter by `level`, `limit`                   |
-| 14  | `page.wait_for_load_state`         | Yes  | -    | wait        | `page.read`          | Block until tab `complete`; `timeoutMs` capped 30 s                     |
+| 14  | `page.wait_for_load_state`         | Yes  | -    | wait        | `page.read`          | Block until tab `complete`; `timeoutMs` range 0.5-120 s                 |
 | 15  | `page.get_storage`                 | Yes  | -    | page        | `page.read`          | `localStorage`/`sessionStorage`; optional `keys`                        |
 | 16  | `page.get_text`                    | Yes  | -    | page        | `page.read`          | Full page text; `textBudget` limits size                                |
 | 17  | `page.get_network`                 | Yes  | -    | page        | `network.read`       | Intercepted fetch/XHR; `limit` entries                                  |
@@ -140,6 +140,8 @@ bbx call page.evaluate '{"expression":"await fetch(\"/api/health\").then(r=>r.js
 ### page.get_console
 
 Read buffered console output. The console interceptor is auto-installed on first call. Captures `log`, `warn`, `error`, `info`, `debug` plus uncaught exceptions and unhandled rejections.
+
+To capture a reproduction reliably, call it once with `clear: true` before triggering the event. This installs the interceptor and removes older entries. Reproduce the issue, then read again without `clear`.
 
 ```bash
 bbx console                    # all levels
@@ -284,6 +286,8 @@ bbx call page.get_text '{"textBudget":2000}'
 ```
 
 ### page.get_network
+
+The fetch/XHR interceptor is installed on the first call. Before reproducing a network issue, call `page.get_network` with `clear: true`, trigger the action, then read the buffer again without `clear` so the relevant request is not missed or erased.
 
 Read intercepted fetch/XHR requests. The interceptor is auto-installed on first call (via MAIN world script). Returns `{entries, count}` sorted newest-first.
 

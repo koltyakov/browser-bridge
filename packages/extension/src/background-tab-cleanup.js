@@ -8,6 +8,7 @@ import { CONTENT_SCRIPT_TIMEOUT_MS, isNumber } from './background-state.js';
  *   sendTabMessage: (tabId: number, message: Record<string, unknown>, timeoutMs: number) => Promise<any>,
  *   readConsoleBuffer: (tabId: number, clear: boolean, chrome: typeof globalThis.chrome) => Promise<unknown>,
  *   readNetworkBuffer: (tabId: number, clear: boolean, chrome: typeof globalThis.chrome) => Promise<unknown>,
+ *   clearFetchInterception: (tabId: number) => Promise<number>,
  *   isRecoverableInstrumentationError: (error: unknown) => boolean,
  *   isRestrictedAutomationUrl: (url: string) => boolean,
  * }} TabCleanupControllerDeps
@@ -48,7 +49,7 @@ export function createTabCleanupController(chrome, deps) {
       if (!Array.isArray(patches)) {
         return;
       }
-      for (const patch of patches) {
+      for (const patch of [...patches].reverse()) {
         const patchId =
           patch && typeof patch === 'object'
             ? /** @type {Record<string, unknown>} */ (patch).patchId
@@ -80,6 +81,7 @@ export function createTabCleanupController(chrome, deps) {
    * @returns {Promise<void>}
    */
   async function clearTabBridgeState(tabId) {
+    await deps.clearFetchInterception(tabId);
     try {
       await rollbackAllPatchesForTab(tabId);
     } catch (error) {
@@ -111,11 +113,14 @@ export function createTabCleanupController(chrome, deps) {
    */
   async function clearWindowBridgeState(windowId) {
     const tabs = await chrome.tabs.query({ windowId });
-    const tabIds = tabs
-      .filter((tab) => tab.url && !deps.isRestrictedAutomationUrl(tab.url))
-      .map((tab) => (isNumber(tab.id) ? tab.id : null))
-      .filter((tabId) => tabId !== null);
-    await Promise.allSettled(tabIds.map((tabId) => clearTabBridgeState(tabId)));
+    await Promise.allSettled(
+      tabs.map((tab) => {
+        if (!isNumber(tab.id)) return Promise.resolve();
+        return tab.url && !deps.isRestrictedAutomationUrl(tab.url)
+          ? clearTabBridgeState(tab.id)
+          : deps.clearFetchInterception(tab.id).then(() => {});
+      })
+    );
   }
 
   return {

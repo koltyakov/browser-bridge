@@ -30,7 +30,6 @@ import {
  *     timeout: number,
  *     userGesture: boolean,
  *     generatePreview: boolean,
- *     replMode: boolean,
  *   }) => Promise<unknown>,
  * }} PageEvaluateDependencies
  */
@@ -59,7 +58,6 @@ export async function handlePageEvaluate(request, dependencies) {
       timeout: params.timeoutMs,
       userGesture: true,
       generatePreview: false,
-      replMode: true,
     });
     const cdpResult =
       /** @type {{ result?: { type?: string, value?: unknown }, exceptionDetails?: { text?: string, exception?: { description?: string } } }} */ (

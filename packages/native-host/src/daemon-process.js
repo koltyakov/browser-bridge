@@ -249,11 +249,20 @@ export async function stopBridgeDaemon(options = {}) {
     resolvedTransport.type === 'socket' ? resolvedTransport.socketPath : '';
 
   const pidFromFile = await readPidFn(pidPath);
-  let previousPid = pidFromFile;
-  let previouslyRunning = previousPid !== null;
+  const reachable = await safePingDaemon(resolvedTransport, pingDaemonFn);
+  const endpointOwnerPid =
+    pidFromFile !== null || reachable ? await findPidByTransportFn(resolvedTransport) : null;
+  /** @type {number | null} */
+  let previousPid = null;
+  let previouslyRunning = false;
 
-  if (previousPid === null && (await safePingDaemon(resolvedTransport, pingDaemonFn))) {
-    previousPid = await findPidByTransportFn(resolvedTransport);
+  if (endpointOwnerPid !== null) {
+    previousPid = endpointOwnerPid;
+    previouslyRunning = true;
+  } else if (reachable) {
+    // TCP endpoints do not expose an owner pid. In that case daemon
+    // reachability is the evidence supporting the recorded pid.
+    previousPid = pidFromFile;
     previouslyRunning = true;
   }
 
@@ -275,9 +284,8 @@ export async function stopBridgeDaemon(options = {}) {
       sleepFn,
     });
     if (!stopped) {
-      // The pid file can be stale (e.g. a root-owned leftover from a sudo
-      // install that the daemon could not overwrite) while a daemon with a
-      // different pid owns the socket. Target the socket owner before giving up.
+      // Endpoint ownership may become discoverable after a recorded daemon pid
+      // fails to stop. Only target the verified owner before giving up.
       const socketOwnerPid = await findPidByTransportFn(resolvedTransport);
       if (socketOwnerPid !== null && socketOwnerPid !== previousPid) {
         try {

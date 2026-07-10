@@ -45,6 +45,9 @@ type BridgeRequestOptions = {
   timeoutMs?: number;
 };
 
+const ONE_PIXEL_PNG =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+
 async function withMockedBridge(
   responder: (record: RequestRecord, index: number) => Promise<BridgeResponse>,
   callback: (calls: RequestRecord[]) => Promise<void>
@@ -1078,7 +1081,7 @@ test('handleStylesLayoutTool hit_test calls layout.hit_test', async () => {
 
 test('handleCaptureTool region calls screenshot.capture_region', async () => {
   await withMockedBridge(
-    async () => ok({ image: 'data:image/png;base64,abc', rect: {} }),
+    async () => ok({ image: `data:image/png;base64,${ONE_PIXEL_PNG}`, rect: {} }),
     async (calls) => {
       const result = await handleCaptureTool({
         action: 'region',
@@ -1087,13 +1090,15 @@ test('handleCaptureTool region calls screenshot.capture_region', async () => {
       assert.equal(calls[0].method, 'screenshot.capture_region');
       assert.deepEqual(calls[0].params, { x: 0, y: 0, width: 100, height: 100 });
       assert.equal(result.isError, undefined);
+      assert.equal(result.content[1].type, 'image');
+      assert.equal(result.content[1].type === 'image' ? result.content[1].data : '', ONE_PIXEL_PNG);
     }
   );
 });
 
 test('handleCaptureTool region requires a complete finite rect', async () => {
   await withMockedBridge(
-    async () => ok({ image: 'data:image/png;base64,abc', rect: {} }),
+    async () => ok({ image: `data:image/png;base64,${ONE_PIXEL_PNG}`, rect: {} }),
     async (calls) => {
       const result = await handleCaptureTool({ action: 'region' });
       assert.equal(calls.length, 0);
@@ -1105,22 +1110,26 @@ test('handleCaptureTool region requires a complete finite rect', async () => {
 
 test('handleCaptureTool full_page calls screenshot.capture_full_page', async () => {
   await withMockedBridge(
-    async () => ok({ image: 'data:image/png;base64,abc' }),
+    async () => ok({ image: ONE_PIXEL_PNG }),
     async (calls) => {
       const result = await handleCaptureTool({ action: 'full_page' });
       assert.equal(calls[0].method, 'screenshot.capture_full_page');
       assert.equal(result.isError, undefined);
+      assert.equal(result.content[1].type, 'image');
     }
   );
 });
 
-test('handleCaptureTool cdp_document calls cdp.get_document', async () => {
+test('handleCaptureTool cdp_document returns bounded structured data', async () => {
   await withMockedBridge(
-    async () => ok({}),
+    async () => ok({ root: { nodeId: 1, nodeName: '#document', children: [{ nodeId: 2 }] } }),
     async (calls) => {
       const result = await handleCaptureTool({ action: 'cdp_document' });
       assert.equal(calls[0].method, 'cdp.get_document');
       assert.equal(result.isError, undefined);
+      assert.deepEqual(result.structuredContent.data, {
+        root: { nodeId: 1, nodeName: '#document', children: [{ nodeId: 2 }] },
+      });
     }
   );
 });
@@ -1133,6 +1142,7 @@ test('handleCaptureTool cdp_dom_snapshot calls cdp.get_dom_snapshot', async () =
       assert.equal(calls[0].method, 'cdp.get_dom_snapshot');
       assert.deepEqual(calls[0].params, {});
       assert.equal(result.isError, undefined);
+      assert.deepEqual(result.structuredContent.data, { documents: [] });
     }
   );
 });
@@ -1145,6 +1155,7 @@ test('handleCaptureTool cdp_box_model forwards the CDP node id', async () => {
       assert.equal(calls[0].method, 'cdp.get_box_model');
       assert.deepEqual(calls[0].params, { nodeId: 42 });
       assert.equal(result.isError, undefined);
+      assert.deepEqual(result.structuredContent.data, { model: {} });
     }
   );
 });
@@ -1160,6 +1171,7 @@ test('handleCaptureTool cdp_computed_styles forwards the CDP node id', async () 
       assert.equal(calls[0].method, 'cdp.get_computed_styles_for_node');
       assert.deepEqual(calls[0].params, { nodeId: 43 });
       assert.equal(result.isError, undefined);
+      assert.deepEqual(result.structuredContent.data, { computedStyle: [] });
     }
   );
 });
@@ -1196,6 +1208,41 @@ test('handleBatchTool returns error for missing calls', async () => {
     async () => {
       const result = await handleBatchTool({});
       assert.equal(result.isError, true);
+    }
+  );
+});
+
+test('handleBatchTool rejects oversized batches', async () => {
+  await withMockedBridge(
+    async () => ok({}),
+    async (calls) => {
+      const result = await handleBatchTool({
+        calls: Array.from({ length: 21 }, () => ({ method: 'health.ping' })),
+      });
+      assert.equal(calls.length, 0);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0].type === 'text' ? result.content[0].text : '', /at most 20/);
+    }
+  );
+});
+
+test('handleBatchTool limits concurrent bridge requests', async () => {
+  let active = 0;
+  let maxActive = 0;
+  await withMockedBridge(
+    async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      return ok({ daemon: 'ok', extensionConnected: true });
+    },
+    async () => {
+      const result = await handleBatchTool({
+        calls: Array.from({ length: 12 }, () => ({ method: 'health.ping' })),
+      });
+      assert.equal(result.isError, undefined);
+      assert.equal(maxActive, 5);
     }
   );
 });
@@ -1344,6 +1391,21 @@ test('handleRawCallTool returns error for bridge failure', async () => {
         params: {},
       });
       assert.equal(result.isError, true);
+    }
+  );
+});
+
+test('handleRawCallTool requires the dedicated setup tool for setup changes', async () => {
+  await withMockedBridge(
+    async () => ok({ installed: true }),
+    async (calls) => {
+      const result = await handleRawCallTool({
+        method: 'setup.install',
+        params: { kind: 'mcp', target: 'codex' },
+      });
+      assert.equal(calls.length, 0);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0].text, /browser_setup/);
     }
   );
 });

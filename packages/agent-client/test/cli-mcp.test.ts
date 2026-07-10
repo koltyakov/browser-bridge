@@ -8,6 +8,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
 import { formatMcpConfig, MCP_CLIENT_NAMES } from '../src/mcp-config.js';
+import { MCP_GUIDANCE_PROMPT_NAMES } from '../../mcp-server/src/guidance.js';
 import { runCli } from '../../../tests/_helpers/runCli.ts';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -105,7 +106,11 @@ test('bbx mcp serve starts the MCP server over stdio', { timeout: 10000 }, async
 
     assert.match(String(client.getInstructions()), /Prefer Browser Bridge MCP tools/i);
 
-    await assert.rejects(() => client.listPrompts(), /Method not found/);
+    const promptsResult = await client.listPrompts();
+    assert.deepEqual(
+      promptsResult.prompts.map((prompt) => prompt.name),
+      MCP_GUIDANCE_PROMPT_NAMES
+    );
   } finally {
     await transport?.close();
   }

@@ -8,10 +8,13 @@ import path from 'node:path';
 import {
   MCP_CLIENT_NAMES,
   buildMcpConfig,
+  findConfiguredMcpClients,
   formatMcpConfig,
   getMcpConfigPath,
   getMcpConfigPaths,
   getMcpConfigShape,
+  getMcpConfigShapeForPath,
+  installMcpConfig,
   isMcpClientName,
   parseInstalledMcpConfig,
   removeMcpConfig,
@@ -47,13 +50,24 @@ test('getMcpConfigShape returns client-specific config metadata', () => {
   assert.deepEqual(getMcpConfigShape('copilot'), {
     key: 'mcpServers',
     includeType: true,
-    legacyKeys: ['servers'],
     keepEmptyBlock: true,
   });
   assert.deepEqual(getMcpConfigShape('unsupported' as McpClientName), {
     key: 'mcpServers',
     includeType: false,
   });
+});
+
+test('getMcpConfigShapeForPath selects Copilot schema by destination', () => {
+  const home = os.homedir();
+  assert.equal(
+    getMcpConfigShapeForPath('copilot', path.join(home, '.copilot', 'mcp-config.json')).key,
+    'mcpServers'
+  );
+  assert.equal(
+    getMcpConfigShapeForPath('copilot', path.join(home, '.vscode', 'mcp.json')).key,
+    'servers'
+  );
 });
 
 test('buildMcpConfig emits each client family in its expected shape', () => {
@@ -249,7 +263,49 @@ test('parseInstalledMcpConfig accepts legacy Copilot keys and Codex table varian
   assert.deepEqual(parseInstalledMcpConfig('cursor', '{not valid json'), { configured: false });
 });
 
-test('removeMcpConfig migrates legacy Copilot server keys into an empty managed block', async () => {
+test('parseInstalledMcpConfig detects only the Copilot key valid for the destination', () => {
+  const standalonePath = path.join(os.homedir(), '.copilot', 'mcp-config.json');
+  const workspacePath = path.join(os.homedir(), 'project', '.vscode', 'mcp.json');
+  const raw = JSON.stringify({
+    mcpServers: { 'browser-bridge': { command: 'bbx' } },
+    servers: {},
+  });
+
+  assert.equal(parseInstalledMcpConfig('copilot', raw, standalonePath).configured, true);
+  assert.equal(parseInstalledMcpConfig('copilot', raw, workspacePath).configured, false);
+});
+
+test('findConfiguredMcpClients uses the path-specific Copilot key', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-detect-copilot-mcp-'));
+  const configPath = path.join(tempDir, '.vscode', 'mcp.json');
+  await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
+
+  try {
+    await fs.promises.writeFile(
+      configPath,
+      JSON.stringify({ mcpServers: { 'browser-bridge': { command: 'bbx' } } }),
+      'utf8'
+    );
+    assert.deepEqual(
+      await findConfiguredMcpClients({ clients: ['copilot'], global: false, cwd: tempDir }),
+      []
+    );
+
+    await fs.promises.writeFile(
+      configPath,
+      JSON.stringify({ servers: { 'browser-bridge': { command: 'bbx' } } }),
+      'utf8'
+    );
+    assert.deepEqual(
+      await findConfiguredMcpClients({ clients: ['copilot'], global: false, cwd: tempDir }),
+      ['copilot']
+    );
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('removeMcpConfig removes Copilot from the path-specific block without migrating keys', async () => {
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-remove-copilot-mcp-'));
   const configPath = path.join(tempDir, '.vscode', 'mcp.json');
   await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
@@ -263,6 +319,9 @@ test('removeMcpConfig migrates legacy Copilot server keys into an empty managed 
             command: 'bbx',
             args: ['mcp', 'serve'],
           },
+        },
+        mcpServers: {
+          unrelated: { command: 'other' },
         },
         theme: 'dark',
       },
@@ -286,8 +345,34 @@ test('removeMcpConfig migrates legacy Copilot server keys into an empty managed 
     const updated = JSON.parse(await fs.promises.readFile(configPath, 'utf8'));
     assert.deepEqual(removed, [configPath]);
     assert.equal(updated.theme, 'dark');
-    assert.deepEqual(updated.mcpServers, {});
-    assert.equal(Object.hasOwn(updated, 'servers'), false);
+    assert.deepEqual(updated.servers, {});
+    assert.deepEqual(updated.mcpServers, { unrelated: { command: 'other' } });
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('installMcpConfig preserves unrelated Copilot blocks instead of migrating them', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-install-copilot-mcp-'));
+  const configPath = path.join(tempDir, '.vscode', 'mcp.json');
+  await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
+  await fs.promises.writeFile(
+    configPath,
+    `${JSON.stringify({ mcpServers: { existing: { command: 'other' } }, theme: 'dark' }, null, 2)}\n`,
+    'utf8'
+  );
+
+  try {
+    await installMcpConfig('copilot', {
+      global: false,
+      cwd: tempDir,
+      stdout: { write: () => true },
+    });
+
+    const updated = JSON.parse(await fs.promises.readFile(configPath, 'utf8'));
+    assert.deepEqual(updated.mcpServers, { existing: { command: 'other' } });
+    assert.equal(updated.servers['browser-bridge'].command, expectedMcpCommand);
+    assert.equal(updated.theme, 'dark');
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }

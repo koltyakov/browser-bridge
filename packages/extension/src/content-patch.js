@@ -19,10 +19,9 @@
       getRequiredElement: (ref: string) => Element,
       rememberElement: (element: Element) => string,
       createContentId: (prefix: string) => string,
-      getPatchRegistry: () => Map<string, any>,
-     getMaxPatchRegistrySize: () => number,
-     pruneRegistry: (registry: Map<any, any>, maxSize: number) => void,
-     resolveTarget: (target?: { elementRef?: string, selector?: string }) => Element
+      getPatchRegistry: () => Map<string, StoredPatch>,
+      getMaxPatchRegistrySize: () => number,
+      resolveTarget: (target?: { elementRef?: string, selector?: string }) => Element
     } }} */ (globalThis).__BBX_CONTENT_REGISTRY__;
   if (!contentHelpers || !registry) {
     throw new Error('Browser Bridge helpers and registry must load before content-patch.js.');
@@ -34,13 +33,34 @@
     createContentId,
     getPatchRegistry,
     getMaxPatchRegistrySize,
-    pruneRegistry,
     resolveTarget,
   } = registry;
 
   /** @typedef {{ elementRef?: string, selector?: string }} PatchTarget */
   /** @typedef {{ target?: PatchTarget, patchId?: string, declarations?: Record<string, string>, important?: boolean, verify?: boolean }} StylePatchParams */
   /** @typedef {{ target?: PatchTarget, patchId?: string, operation?: string, name?: string | null, value?: unknown, verify?: boolean }} DomPatchParams */
+  /** @typedef {{ kind: 'style', elementRef: string, previous: Record<string, { value: string, priority: string }> }} StoredStylePatch */
+  /** @typedef {{ kind: 'dom', elementRef: string, operation: string, previous: { text: string | null, attributes: Record<string, string | null>, toggledClass: string | null, hadClass: boolean | null, changed: boolean | null } }} StoredDomPatch */
+  /** @typedef {StoredStylePatch | StoredDomPatch} StoredPatch */
+
+  /**
+   * @param {string} patchId
+   * @returns {void}
+   */
+  function rejectDuplicatePatchId(patchId) {
+    if (getPatchRegistry().has(patchId)) {
+      throw new Error(`Patch ID ${patchId} is already active.`);
+    }
+  }
+
+  /** @returns {void} */
+  function assertPatchRegistryCapacity() {
+    if (getPatchRegistry().size >= getMaxPatchRegistrySize()) {
+      throw new Error(
+        'Patch registry is full. Roll back or commit active patches before applying more.'
+      );
+    }
+  }
 
   /**
    * Apply a reversible inline style patch to an element or selector target.
@@ -54,6 +74,8 @@
       typeof params.patchId === 'string' && params.patchId
         ? params.patchId
         : createContentId('patch');
+    rejectDuplicatePatchId(patchId);
+    assertPatchRegistryCapacity();
     /** @type {Record<string, { value: string, priority: string }>} */
     const previous = {};
     for (const [property, value] of Object.entries(params.declarations || {})) {
@@ -63,7 +85,6 @@
       };
       element.style.setProperty(property, value, params.important ? 'important' : '');
     }
-    pruneRegistry(getPatchRegistry(), getMaxPatchRegistrySize());
     const elementRef = rememberElement(element);
     getPatchRegistry().set(patchId, {
       kind: 'style',
@@ -107,6 +128,8 @@
       typeof params.patchId === 'string' && params.patchId
         ? params.patchId
         : createContentId('patch');
+    rejectDuplicatePatchId(patchId);
+    assertPatchRegistryCapacity();
     const operation = typeof params.operation === 'string' ? params.operation : '';
     const name = typeof params.name === 'string' ? params.name : '';
 
@@ -157,7 +180,6 @@
         throw new Error(`Unsupported DOM patch operation ${operation}`);
     }
 
-    pruneRegistry(getPatchRegistry(), getMaxPatchRegistrySize());
     const elementRef = rememberElement(element);
     getPatchRegistry().set(patchId, {
       kind: 'dom',
@@ -256,9 +278,20 @@
     return { patchId, rolledBack: true };
   }
 
+  /**
+   * Keep current DOM changes while discarding their rollback history.
+   *
+   * @returns {{ committed: true }}
+   */
+  function commitSessionBaseline() {
+    getPatchRegistry().clear();
+    return { committed: true };
+  }
+
   globalState.__BBX_CONTENT_PATCH__ = Object.freeze({
     applyDomPatch,
     applyStylePatch,
+    commitSessionBaseline,
     listPatches,
     rollbackPatch,
   });

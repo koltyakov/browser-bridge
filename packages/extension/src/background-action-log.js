@@ -191,31 +191,39 @@ export function createActionLogController(state, chromeObj, deps) {
     const summaryPayload = summarizeBridgeResponse(response, request.method);
     const summaryCost = estimateJsonPayloadCost(summaryPayload);
 
-    await appendActionLogEntry({
-      method: request.method,
-      source: normalizeActionLogSource(request.meta?.source),
-      tabId: actionContext?.tabId ?? null,
-      url: actionContext?.url ?? '',
-      ok: response.ok,
-      summary: summarizeActionResult(response),
-      responseBytes: diagnostics.responseBytes,
-      approxTokens: diagnostics.textApproxTokens,
-      imageApproxTokens: diagnostics.imageApproxTokens,
-      costClass: diagnostics.costClass,
-      imageBytes: diagnostics.imageBytes,
-      summaryBytes: summaryCost.bytes,
-      summaryTokens: summaryCost.approxTokens,
-      summaryCostClass: summaryCost.costClass,
-      debuggerBacked: diagnostics.debuggerBacked,
-      overBudget: response.meta?.budget_truncated === true,
-      hasScreenshot: diagnostics.hasScreenshot,
-      nodeCount: diagnostics.nodeCount,
-      continuationHint:
-        typeof response.meta?.continuation_hint === 'string'
-          ? response.meta.continuation_hint
-          : null,
-    });
-    await deps.emitUiState();
+    try {
+      await appendActionLogEntry({
+        method: request.method,
+        source: normalizeActionLogSource(request.meta?.source),
+        tabId: actionContext?.tabId ?? null,
+        url: actionContext?.url ?? '',
+        ok: response.ok,
+        summary: summarizeActionResult(response),
+        responseBytes: diagnostics.responseBytes,
+        approxTokens: diagnostics.textApproxTokens,
+        imageApproxTokens: diagnostics.imageApproxTokens,
+        costClass: diagnostics.costClass,
+        imageBytes: diagnostics.imageBytes,
+        summaryBytes: summaryCost.bytes,
+        summaryTokens: summaryCost.approxTokens,
+        summaryCostClass: summaryCost.costClass,
+        debuggerBacked: diagnostics.debuggerBacked,
+        overBudget: response.meta?.budget_truncated === true,
+        hasScreenshot: diagnostics.hasScreenshot,
+        nodeCount: diagnostics.nodeCount,
+        continuationHint:
+          typeof response.meta?.continuation_hint === 'string'
+            ? response.meta.continuation_hint
+            : null,
+      });
+    } catch {
+      // Action persistence must never affect bridge response delivery.
+    }
+    try {
+      await deps.emitUiState();
+    } catch {
+      // UI surfaces are best-effort and may disappear between request and reply.
+    }
   }
 
   return {
