@@ -617,8 +617,9 @@ test('handleInputTool type calls input.type', async () => {
       });
       const typeCall = calls.find((c) => c.method === 'input.type');
       assert.ok(typeCall, 'input.type should be called');
+      assert.equal(calls.length, 1);
       assert.deepEqual(typeCall.params, {
-        target: { elementRef: 'el_input' },
+        target: { selector: 'input' },
         text: 'hello',
         clear: true,
         submit: true,
@@ -747,7 +748,7 @@ test('handleInputTool hover calls input.hover', async () => {
       const hoverCall = calls.find((c) => c.method === 'input.hover');
       assert.ok(hoverCall, 'input.hover should be called');
       assert.deepEqual(hoverCall.params, {
-        target: { elementRef: 'el_1' },
+        target: { selector: 'div' },
         duration: undefined,
         modifiers: ['Alt'],
       });
@@ -848,6 +849,28 @@ test('handleInputTool drag calls input.drag with source and destination', async 
       });
       const dragCall = calls.find((c) => c.method === 'input.drag');
       assert.ok(dragCall, 'input.drag should be called');
+      assert.equal(result.isError, undefined);
+    }
+  );
+});
+
+test('handleInputTool drag passes source and destination selectors atomically', async () => {
+  await withMockedBridge(
+    async () => ok({ dragged: true }),
+    async (calls) => {
+      const result = await handleInputTool({
+        action: 'drag',
+        sourceSelector: '#source',
+        destinationSelector: '#destination',
+      });
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].method, 'input.drag');
+      assert.deepEqual(calls[0].params, {
+        source: { selector: '#source' },
+        destination: { selector: '#destination' },
+        offsetX: undefined,
+        offsetY: undefined,
+      });
       assert.equal(result.isError, undefined);
     }
   );

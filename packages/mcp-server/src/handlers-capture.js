@@ -6,7 +6,6 @@ import {
   REQUEST_SOURCE,
   requestBridgeWithRetry,
   resolveToolRef,
-  resolveRef,
   summarizeToolError,
   summarizeToolResponse,
   withToolClient,
@@ -280,6 +279,20 @@ export const INPUT_ACTION_METHODS = {
 };
 
 /**
+ * Keep selector-based actions atomic instead of resolving a ref in a separate
+ * bridge request that can race with a page rerender.
+ *
+ * @param {unknown} elementRef
+ * @param {unknown} selector
+ * @returns {import('../../protocol/src/types.js').InputTarget | null}
+ */
+function createInputTarget(elementRef, selector) {
+  if (typeof elementRef === 'string' && elementRef) return { elementRef };
+  if (typeof selector === 'string' && selector) return { selector };
+  return null;
+}
+
+/**
  * @param {{ action: string, elementRef?: string, selector?: string, button?: string, clickCount?: number, text?: string, value?: string, mode?: 'auto' | 'setter' | 'keystrokes', clear?: boolean, submit?: boolean, key?: string, code?: string, modifiers?: string[], checked?: boolean, values?: string[], labels?: string[], indexes?: number[], duration?: number, sourceElementRef?: string, sourceSelector?: string, destinationElementRef?: string, destinationSelector?: string, offsetX?: number, offsetY?: number, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
@@ -305,9 +318,11 @@ export async function handleInputTool(args) {
   return withToolClient(
     async (client) => {
       const requestedTabId = typeof args.tabId === 'number' ? args.tabId : null;
-      const elementTarget = async () => ({
-        elementRef: await resolveToolRef(client, args, requestedTabId),
-      });
+      const elementTarget = () => {
+        const target = createInputTarget(args.elementRef, args.selector);
+        if (!target) throw new Error('Provide either elementRef or selector.');
+        return target;
+      };
 
       switch (args.action) {
         case 'click': {
@@ -315,7 +330,7 @@ export async function handleInputTool(args) {
             client,
             'input.click',
             {
-              target: await elementTarget(),
+              target: elementTarget(),
               button: args.button,
               clickCount: args.clickCount,
               modifiers: args.modifiers,
@@ -333,7 +348,7 @@ export async function handleInputTool(args) {
             client,
             'input.focus',
             {
-              target: await elementTarget(),
+              target: elementTarget(),
             },
             {
               tabId: requestedTabId,
@@ -348,7 +363,7 @@ export async function handleInputTool(args) {
             client,
             'input.type',
             {
-              target: await elementTarget(),
+              target: elementTarget(),
               text: args.text,
               clear: args.clear,
               submit: args.submit,
@@ -367,7 +382,7 @@ export async function handleInputTool(args) {
             client,
             'input.fill',
             {
-              target: await elementTarget(),
+              target: elementTarget(),
               value: args.value,
               mode: args.mode,
             },
@@ -380,7 +395,7 @@ export async function handleInputTool(args) {
           return summarizeToolResponse(response, 'input.fill');
         }
         case 'press_key': {
-          const target = args.elementRef || args.selector ? await elementTarget() : undefined;
+          const target = args.elementRef || args.selector ? elementTarget() : undefined;
           const response = await requestBridgeWithRetry(
             client,
             'input.press_key',
@@ -419,7 +434,7 @@ export async function handleInputTool(args) {
             client,
             'input.set_checked',
             {
-              target: await elementTarget(),
+              target: elementTarget(),
               checked: args.checked,
             },
             {
@@ -435,7 +450,7 @@ export async function handleInputTool(args) {
             client,
             'input.select_option',
             {
-              target: await elementTarget(),
+              target: elementTarget(),
               values: args.values,
               labels: args.labels,
               indexes: args.indexes,
@@ -453,7 +468,7 @@ export async function handleInputTool(args) {
             client,
             'input.hover',
             {
-              target: await elementTarget(),
+              target: elementTarget(),
               duration: args.duration,
               modifiers: args.modifiers,
             },
@@ -466,21 +481,12 @@ export async function handleInputTool(args) {
           return summarizeToolResponse(response, 'input.hover');
         }
         case 'drag': {
-          const source = {
-            elementRef:
-              args.sourceElementRef ||
-              (args.sourceSelector
-                ? await resolveRef(client, args.sourceSelector, requestedTabId, REQUEST_SOURCE)
-                : ''),
-          };
-          const destination = {
-            elementRef:
-              args.destinationElementRef ||
-              (args.destinationSelector
-                ? await resolveRef(client, args.destinationSelector, requestedTabId, REQUEST_SOURCE)
-                : ''),
-          };
-          if (!source.elementRef || !destination.elementRef) {
+          const source = createInputTarget(args.sourceElementRef, args.sourceSelector);
+          const destination = createInputTarget(
+            args.destinationElementRef,
+            args.destinationSelector
+          );
+          if (!source || !destination) {
             return summarizeToolError(
               'sourceElementRef/sourceSelector and destinationElementRef/destinationSelector are required for drag.'
             );
@@ -507,7 +513,7 @@ export async function handleInputTool(args) {
             client,
             'input.scroll_into_view',
             {
-              target: await elementTarget(),
+              target: elementTarget(),
             },
             {
               tabId: requestedTabId,

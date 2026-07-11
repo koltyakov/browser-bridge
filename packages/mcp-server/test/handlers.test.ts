@@ -591,7 +591,7 @@ test('handleNavigationTool scroll calls viewport.scroll', async () => {
   );
 });
 
-test('handleInputTool click resolves elementRef and calls input.click', async () => {
+test('handleInputTool click passes selectors atomically to input.click', async () => {
   await withMockedBridge(
     async (record) => {
       if (record.method === 'dom.query') {
@@ -617,8 +617,9 @@ test('handleInputTool click resolves elementRef and calls input.click', async ()
       });
       const clickCall = calls.find((c) => c.method === 'input.click');
       assert.ok(clickCall, 'input.click should be called');
+      assert.equal(calls.length, 1);
       assert.deepEqual(clickCall.params, {
-        target: { elementRef: 'el_btn' },
+        target: { selector: 'button' },
         button: undefined,
         clickCount: undefined,
         modifiers: ['Meta'],
