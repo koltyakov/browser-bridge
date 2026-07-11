@@ -933,7 +933,7 @@ test('background dispatch rejects tab-bound requests for tabs outside the enable
   assert.equal(response.meta?.method, 'page.get_state');
 });
 
-test('background dispatch returns filtered console buffer entries', async () => {
+test('background dispatch treats console levels as minimum severity', async () => {
   const executeScriptCalls: ExecuteScriptCall[] = [];
   const activeTab = {
     id: 71,
@@ -993,8 +993,8 @@ test('background dispatch returns filtered console buffer entries', async () => 
       id: 'dispatch-page-console',
       method: 'page.get_console',
       params: {
-        level: 'error',
-        limit: 2,
+        level: 'warn',
+        limit: 10,
         clear: true,
       },
     })
@@ -1006,10 +1006,11 @@ test('background dispatch returns filtered console buffer entries', async () => 
   assert.equal(response.meta?.method, 'page.get_console');
   assert.deepEqual(response.result, {
     entries: [
+      { level: 'error', args: ['boom'], ts: 2 },
       { level: 'exception', args: ['TypeError'], ts: 3 },
       { level: 'rejection', args: ['Promise rejected'], ts: 4 },
     ],
-    count: 2,
+    count: 3,
     total: 4,
     dropped: 3,
   });

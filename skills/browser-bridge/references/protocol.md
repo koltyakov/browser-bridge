@@ -139,7 +139,7 @@ bbx call page.evaluate '{"expression":"await fetch(\"/api/health\").then(r=>r.js
 
 ### page.get_console
 
-Read buffered console output. The console interceptor is auto-installed on first call. Captures `log`, `warn`, `error`, `info`, `debug` plus uncaught exceptions and unhandled rejections.
+Read buffered console output. The console interceptor is auto-installed on first call. Captures `log`, `warn`, `error`, `info`, `debug` plus uncaught exceptions and unhandled rejections. `level` is a minimum severity, so `warn` includes errors, exceptions, and rejections; `exception` and `rejection` select only that exact stream.
 
 To capture a reproduction reliably, call it once with `clear: true` before triggering the event. This installs the interceptor and removes older entries. Reproduce the issue, then read again without `clear`.
 

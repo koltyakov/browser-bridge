@@ -241,13 +241,26 @@ export function shouldLogAction(method) {
  * @returns {boolean}
  */
 export function matchesConsoleLevel(requestedLevel, entryLevel) {
-  if (requestedLevel === entryLevel) {
-    return true;
+  if (requestedLevel === 'all') return true;
+  if (requestedLevel === 'exception' || requestedLevel === 'rejection') {
+    return entryLevel === requestedLevel;
   }
-  if (requestedLevel === 'error') {
-    return entryLevel === 'exception' || entryLevel === 'rejection';
-  }
-  return false;
+
+  /** @type {Record<string, number>} */
+  const severity = {
+    debug: 10,
+    log: 20,
+    info: 20,
+    warn: 30,
+    error: 40,
+    exception: 40,
+    rejection: 40,
+  };
+  const requestedSeverity = severity[requestedLevel];
+  const entrySeverity = severity[entryLevel];
+  return requestedSeverity !== undefined && entrySeverity !== undefined
+    ? entrySeverity >= requestedSeverity
+    : false;
 }
 
 /**

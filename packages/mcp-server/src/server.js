@@ -377,9 +377,11 @@ export function createBridgeMcpServer() {
           .optional()
           .describe('Return actual value vs JSON (default: true)'),
         level: z
-          .string()
+          .enum(['all', 'debug', 'log', 'info', 'warn', 'error', 'exception', 'rejection'])
           .optional()
-          .describe('Minimum console level: log, warn, error (default: all)'),
+          .describe(
+            'Minimum console severity (default: all); exception/rejection select that exact stream'
+          ),
         clear: z.boolean().optional().describe('Clear buffer after reading (default: false)'),
         limit: z
           .number()
