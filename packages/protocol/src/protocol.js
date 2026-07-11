@@ -413,7 +413,7 @@ export function getBridgeOperationTimeoutMs(method, params = {}) {
     case 'page.evaluate':
       return normalizeEvaluateParams(params).timeoutMs;
     case 'dom.wait_for':
-      return normalizeWaitForParams(params).timeoutMs;
+      return clampInt(params.timeoutMs, 100, 30_000, 5_000);
     default:
       return null;
   }
@@ -709,9 +709,18 @@ export function normalizeConsoleParams(params = {}) {
  */
 export function normalizeWaitForParams(params = {}) {
   const validStates = ['attached', 'detached', 'visible', 'hidden'];
+  const selector =
+    typeof params.selector === 'string' && params.selector.trim() ? params.selector : '';
+  const text = typeof params.text === 'string' && params.text.trim() ? params.text : null;
+  if (!selector && text === null) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'selector or text is required for dom.wait_for.'
+    );
+  }
   return {
-    selector: typeof params.selector === 'string' && params.selector.trim() ? params.selector : '',
-    text: params.text != null ? String(params.text) : null,
+    selector: selector || '*',
+    text,
     state: validStates.includes(String(params.state ?? ''))
       ? /** @type {'attached' | 'detached' | 'visible' | 'hidden'} */ (String(params.state))
       : 'attached',

@@ -182,7 +182,7 @@ If `_registryPruned` is true, refresh previously cached refs before reusing them
 
 ### dom.wait_for
 
-Wait for a DOM condition using MutationObserver + 250 ms polling fallback. Returns `{found, elementRef, duration}`.
+Wait for a DOM condition using MutationObserver + 250 ms polling fallback. A text-only wait searches all elements. `hidden` succeeds when no matching visible element remains, including when it is absent. Returns `{found, elementRef, duration}`.
 
 - `state`: `attached` (default), `detached`, `visible`, `hidden`
 - `text`: optional text content filter

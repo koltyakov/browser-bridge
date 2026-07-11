@@ -277,6 +277,8 @@
    * @returns {TElement | null}
    */
   function findElementForWaitState({ elements, waitState, getRect, getVisibility }) {
+    /** @type {TElement | null} */
+    let hiddenMatch = null;
     for (const element of elements) {
       const rect = getRect(element);
       const hasVisibleArea = rect.width > 0 && rect.height > 0;
@@ -292,15 +294,19 @@
       }
 
       if (!hasVisibleArea) {
-        return element;
+        hiddenMatch ??= element;
+        continue;
       }
 
       if (getVisibility(element) === 'hidden') {
-        return element;
+        hiddenMatch ??= element;
+        continue;
       }
+
+      return null;
     }
 
-    return null;
+    return hiddenMatch;
   }
 
   /**

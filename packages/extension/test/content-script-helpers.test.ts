@@ -259,10 +259,13 @@ test('content script helpers visibility matching avoids duplicate layout reads',
     { id: 'hidden', rect: { width: 20, height: 20 }, visibility: 'hidden' },
     { id: 'visible', rect: { width: 30, height: 30 }, visibility: 'visible' },
   ];
-  const hiddenElements: WaitElement[] = [
-    { id: 'shown', rect: { width: 20, height: 20 }, visibility: 'visible' },
+  const mixedElements: WaitElement[] = [
     { id: 'hidden', rect: { width: 25, height: 25 }, visibility: 'hidden' },
-    { id: 'after-match', rect: { width: 40, height: 40 }, visibility: 'visible' },
+    { id: 'shown', rect: { width: 20, height: 20 }, visibility: 'visible' },
+  ];
+  const hiddenElements: WaitElement[] = [
+    { id: 'zero-area', rect: { width: 0, height: 20 }, visibility: 'visible' },
+    { id: 'hidden', rect: { width: 25, height: 25 }, visibility: 'hidden' },
   ];
 
   function runCase(elements: WaitElement[], waitState: 'visible' | 'hidden') {
@@ -302,13 +305,15 @@ test('content script helpers visibility matching avoids duplicate layout reads',
   });
 
   const hiddenResult = runCase(hiddenElements, 'hidden');
-  assert.equal(hiddenResult.match, hiddenElements[1]);
+  assert.equal(hiddenResult.match, hiddenElements[0]);
   assert.deepEqual(Object.fromEntries(hiddenResult.rectCalls), {
-    shown: 1,
+    'zero-area': 1,
     hidden: 1,
   });
   assert.deepEqual(Object.fromEntries(hiddenResult.styleCalls), {
-    shown: 1,
     hidden: 1,
   });
+
+  const mixedResult = runCase(mixedElements, 'hidden');
+  assert.equal(mixedResult.match, null);
 });

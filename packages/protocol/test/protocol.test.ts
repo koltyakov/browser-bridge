@@ -504,6 +504,20 @@ test('normalizeWaitForParams defaults state to attached', () => {
   assert.equal(params.state, 'attached');
 });
 
+test('normalizeWaitForParams supports text-only waits and rejects empty conditions', () => {
+  assert.deepEqual(normalizeWaitForParams({ text: 'Saved' }), {
+    selector: '*',
+    text: 'Saved',
+    state: 'attached',
+    timeoutMs: 5000,
+  });
+  assert.throws(
+    () => normalizeWaitForParams({}),
+    (error: ErrorWithCode) =>
+      error.code === ERROR_CODES.INVALID_REQUEST && /selector or text/.test(error.message)
+  );
+});
+
 /** Ensure find-by-text params default scope and clamp maxResults. */
 test('normalizeFindByTextParams defaults scope and clamps maxResults', () => {
   const params = normalizeFindByTextParams({

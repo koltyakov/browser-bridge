@@ -275,7 +275,9 @@ export function createBridgeMcpServer() {
         state: z
           .enum(['attached', 'detached', 'visible', 'hidden'])
           .optional()
-          .describe('Expected element state (for wait action)'),
+          .describe(
+            'Expected element state (for wait action); hidden also matches complete absence'
+          ),
         timeoutMs: z
           .number()
           .int()

@@ -333,11 +333,11 @@
    * @returns {Promise<{ found: boolean, elementRef: string | null, duration: number }>}
    */
   function waitForDom(params) {
-    const selector = String(params.selector || '');
-    if (!selector) {
-      throw new Error('selector is required for dom.wait_for');
+    const text = typeof params.text === 'string' && params.text.trim() ? String(params.text) : null;
+    const selector = String(params.selector || (text !== null ? '*' : ''));
+    if (!selector && text === null) {
+      throw new Error('selector or text is required for dom.wait_for');
     }
-    const text = params.text != null ? String(params.text) : null;
     const waitState = params.state || 'attached';
     const timeout = clamp(params.timeoutMs ?? 5000, 100, 30000);
     const start = Date.now();
@@ -371,6 +371,9 @@
         getRect: (element) => element.getBoundingClientRect(),
         getVisibility: (element) => getComputedStyle(element).visibility,
       });
+      if (waitState === 'hidden' && matched.length === 0) {
+        return { found: true, element: null };
+      }
       return { found: matchedElement !== null, element: matchedElement };
     }
 

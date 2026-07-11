@@ -2209,7 +2209,14 @@ test('content script dom.wait_for handles immediate matches, timeouts, and valid
         timeoutMs: 100,
       })) as WaitResult;
       const missingSelector = await executeBridgeMethod(listener, 'dom.wait_for', {
-        text: 'missing',
+        text: 'ready now',
+      });
+      const hiddenMissing = await executeBridgeMethod(listener, 'dom.wait_for', {
+        selector: '#missing',
+        state: 'hidden',
+      });
+      const missingCondition = await executeBridgeMethod(listener, 'dom.wait_for', {
+        timeoutMs: 100,
       });
 
       assert.equal(found.found, true);
@@ -2223,7 +2230,16 @@ test('content script dom.wait_for handles immediate matches, timeouts, and valid
       assert.equal(timeout.found, false);
       assert.equal(timeout.elementRef, null);
       assert.ok(timeout.duration >= 100);
-      assert.deepEqual(missingSelector, { error: 'selector is required for dom.wait_for' });
+      assert.equal(missingSelector.found, true);
+      assert.equal(typeof missingSelector.elementRef, 'string');
+      assert.deepEqual(hiddenMissing, {
+        found: true,
+        elementRef: null,
+        duration: 0,
+      });
+      assert.deepEqual(missingCondition, {
+        error: 'selector or text is required for dom.wait_for',
+      });
     }
   );
 });
