@@ -104,6 +104,16 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
       ]
     );
     assert.equal(registrations[4].config.title, 'Browser Tabs');
+    const tabsSchema = registrations[4].config.inputSchema as Record<string, unknown>;
+    const inputSchema = registrations[9].config.inputSchema as Record<string, unknown>;
+    const tabsAction = tabsSchema.action as { safeParse: (value: unknown) => { success: boolean } };
+    const inputAction = inputSchema.action as {
+      safeParse: (value: unknown) => { success: boolean };
+    };
+    assert.equal(tabsAction.safeParse('activate').success, true);
+    assert.equal(inputAction.safeParse('fill').success, true);
+    assert.ok(inputSchema.value);
+    assert.ok(inputSchema.mode);
     assert.match(String(registrations[5].config.description), /accessibility_tree/);
     assert.equal(typeof registrations[12].handler, 'function');
     assert.match(String(investigateConfig.description), /smaller, low-cost subagent/);

@@ -109,6 +109,20 @@ test('handleTabsTool close calls tabs.close with tabId', async () => {
   );
 });
 
+test('handleTabsTool activate calls tabs.activate with tabId', async () => {
+  const { handleTabsTool } = await import('../src/handlers.js');
+  await withMockedBridge(
+    async () => ok({ activated: true, tabId: 5 }),
+    async (calls) => {
+      const result = await handleTabsTool({ action: 'activate', tabId: 5 });
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].method, 'tabs.activate');
+      assert.deepEqual(calls[0].params, { tabId: 5 });
+      assert.equal(result.isError, undefined);
+    }
+  );
+});
+
 test('handleTabsTool returns error for unsupported action', async () => {
   const { handleTabsTool } = await import('../src/handlers.js');
   await withMockedBridge(
@@ -609,6 +623,28 @@ test('handleInputTool type calls input.type', async () => {
         clear: true,
         submit: true,
         modifiers: ['Shift'],
+      });
+      assert.equal(result.isError, undefined);
+    }
+  );
+});
+
+test('handleInputTool fill accepts an empty value and forwards the fill mode', async () => {
+  await withMockedBridge(
+    async () => ok({ elementRef: 'el_input', value: '', mode: 'setter' }),
+    async (calls) => {
+      const result = await handleInputTool({
+        action: 'fill',
+        elementRef: 'el_input',
+        value: '',
+        mode: 'setter',
+      });
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].method, 'input.fill');
+      assert.deepEqual(calls[0].params, {
+        target: { elementRef: 'el_input' },
+        value: '',
+        mode: 'setter',
       });
       assert.equal(result.isError, undefined);
     }

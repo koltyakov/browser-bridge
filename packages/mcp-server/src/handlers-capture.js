@@ -269,6 +269,7 @@ export const INPUT_ACTION_METHODS = {
   click: 'input.click',
   focus: 'input.focus',
   type: 'input.type',
+  fill: 'input.fill',
   press_key: 'input.press_key',
   cdp_press_key: 'cdp.dispatch_key_event',
   set_checked: 'input.set_checked',
@@ -279,12 +280,15 @@ export const INPUT_ACTION_METHODS = {
 };
 
 /**
- * @param {{ action: string, elementRef?: string, selector?: string, button?: string, clickCount?: number, text?: string, clear?: boolean, submit?: boolean, key?: string, code?: string, modifiers?: string[], checked?: boolean, values?: string[], labels?: string[], indexes?: number[], duration?: number, sourceElementRef?: string, sourceSelector?: string, destinationElementRef?: string, destinationSelector?: string, offsetX?: number, offsetY?: number, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @param {{ action: string, elementRef?: string, selector?: string, button?: string, clickCount?: number, text?: string, value?: string, mode?: 'auto' | 'setter' | 'keystrokes', clear?: boolean, submit?: boolean, key?: string, code?: string, modifiers?: string[], checked?: boolean, values?: string[], labels?: string[], indexes?: number[], duration?: number, sourceElementRef?: string, sourceSelector?: string, destinationElementRef?: string, destinationSelector?: string, offsetX?: number, offsetY?: number, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleInputTool(args) {
   if (args.action === 'type' && !hasText(args.text)) {
     return summarizeToolError('text is required for input.type.');
+  }
+  if (args.action === 'fill' && typeof args.value !== 'string') {
+    return summarizeToolError('value is required for input.fill.');
   }
   if ((args.action === 'press_key' || args.action === 'cdp_press_key') && !hasText(args.key)) {
     return summarizeToolError('key is required for key input actions.');
@@ -357,6 +361,23 @@ export async function handleInputTool(args) {
             }
           );
           return summarizeToolResponse(response, 'input.type');
+        }
+        case 'fill': {
+          const response = await requestBridgeWithRetry(
+            client,
+            'input.fill',
+            {
+              target: await elementTarget(),
+              value: args.value,
+              mode: args.mode,
+            },
+            {
+              tabId: requestedTabId,
+              source: REQUEST_SOURCE,
+              tokenBudget: getToolTokenBudget(args),
+            }
+          );
+          return summarizeToolResponse(response, 'input.fill');
         }
         case 'press_key': {
           const target = args.elementRef || args.selector ? await elementTarget() : undefined;

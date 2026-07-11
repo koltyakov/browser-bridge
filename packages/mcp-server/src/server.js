@@ -175,14 +175,19 @@ export function createBridgeMcpServer() {
     {
       title: 'Browser Tabs',
       description:
-        'List, create, or close browser tabs. Prefer "list" to work in existing tabs; only use "create" when the user explicitly requests a new page.',
+        'List, create, close, or activate browser tabs. Prefer "list" to work in existing tabs; only use "create" when the user explicitly requests a new page.',
       inputSchema: {
         action: z
-          .enum(['list', 'create', 'close'])
-          .describe('"list" (preferred), "create" (only when needed), or "close"'),
+          .enum(['list', 'create', 'close', 'activate'])
+          .describe('"list" (preferred), "create" (only when needed), "close", or "activate"'),
         url: z.string().optional().describe('URL for create action'),
         active: z.boolean().optional().describe('Focus the new tab (default: true)'),
-        tabId: z.number().int().positive().optional().describe('Tab ID (required for close)'),
+        tabId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('Tab ID (required for close/activate)'),
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
       },
     },
@@ -456,6 +461,7 @@ export function createBridgeMcpServer() {
             'click',
             'focus',
             'type',
+            'fill',
             'press_key',
             'cdp_press_key',
             'set_checked',
@@ -488,6 +494,11 @@ export function createBridgeMcpServer() {
           .optional()
           .describe('Click count (1=single, 2=double)'),
         text: z.string().max(100000).optional().describe('Text to type (for type action)'),
+        value: z.string().max(100000).optional().describe('Value to set (for fill action)'),
+        mode: z
+          .enum(['auto', 'setter', 'keystrokes'])
+          .optional()
+          .describe('Fill strategy (default: auto)'),
         clear: z.boolean().optional().describe('Clear field before typing (default: false)'),
         submit: z.boolean().optional().describe('Press Enter after typing (default: false)'),
         key: z

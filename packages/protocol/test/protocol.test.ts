@@ -312,6 +312,31 @@ test('normalizeInputAction preserves interactive intent', () => {
   assert.deepEqual(input.modifiers, ['Shift']);
 });
 
+test('validateBridgeRequest normalizes input.fill parameters', () => {
+  const request = validateBridgeRequest({
+    id: 'req_fill',
+    method: 'input.fill',
+    params: {
+      target: { selector: '#name' },
+      value: 'Ada',
+      mode: 'setter',
+    },
+  });
+
+  assert.deepEqual(request.params, {
+    target: { elementRef: undefined, selector: '#name' },
+    button: 'left',
+    clickCount: 1,
+    text: '',
+    value: 'Ada',
+    mode: 'setter',
+    clear: false,
+    submit: false,
+    key: '',
+    modifiers: [],
+  });
+});
+
 test('normalizeInputAction defaults invalid input details', () => {
   const input = normalizeInputAction({
     target: null,

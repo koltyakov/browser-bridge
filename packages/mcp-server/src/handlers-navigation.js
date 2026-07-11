@@ -96,6 +96,16 @@ export async function handleTabsTool(args) {
       { destinationId: args.destinationId ?? null }
     );
   }
+  if (args.action === 'activate') {
+    if (typeof args.tabId !== 'number') {
+      return summarizeToolError('tabId is required for tabs.activate.');
+    }
+    return callBridgeTool(
+      'tabs.activate',
+      { tabId: args.tabId },
+      { destinationId: args.destinationId ?? null }
+    );
+  }
   return summarizeToolError(`Unsupported tabs action "${args.action}".`);
 }
 

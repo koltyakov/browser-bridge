@@ -361,6 +361,7 @@ function normalizeRequestParams(method, params) {
     case 'input.click':
     case 'input.focus':
     case 'input.type':
+    case 'input.fill':
     case 'input.press_key':
       return normalizeInputAction(params);
     case 'cdp.dispatch_key_event':
