@@ -192,6 +192,7 @@ export interface TruncateResult {
 export interface DomQueryParams extends BudgetOptions {
   selector?: string;
   withinRef?: string | null;
+  budget?: BudgetOptions;
 }
 
 export interface NormalizedDomQuery extends BridgeParams {

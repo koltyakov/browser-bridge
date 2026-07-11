@@ -245,10 +245,12 @@
   function normalizeDomQuery(params = {}) {
     const rawSelector =
       typeof params.selector === 'string' && params.selector.trim() ? params.selector : 'body';
+    const nestedBudget =
+      params.budget && typeof params.budget === 'object' ? params.budget : undefined;
     return {
       selector: escapeTailwindSelector(rawSelector),
       withinRef: typeof params.withinRef === 'string' ? params.withinRef : null,
-      budget: applyBudget(params),
+      budget: applyBudget({ ...nestedBudget, ...params }),
     };
   }
 

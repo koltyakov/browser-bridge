@@ -221,6 +221,53 @@ test('round-trip: extension error response propagates to client', async () => {
   }
 });
 
+test('round-trip: custom DOM query budgets reach the extension unchanged', async () => {
+  const ctx = await startTestDaemon();
+  const extension = await connectFakeExtension(ctx);
+
+  try {
+    const client = await connectTestClient(ctx);
+    const responsePromise = client.request({
+      method: 'dom.query',
+      params: {
+        selector: 'main',
+        maxNodes: 5,
+        maxDepth: 2,
+        textBudget: 300,
+        includeBbox: false,
+        attributeAllowlist: ['id', 'data-testid'],
+      },
+      meta: { source: 'cli' },
+    });
+
+    const forwarded = await waitForExtensionRequest(extension);
+    assert.deepEqual(forwarded.params, {
+      selector: 'main',
+      withinRef: null,
+      budget: {
+        maxNodes: 5,
+        maxDepth: 2,
+        textBudget: 300,
+        includeBbox: false,
+        attributeAllowlist: ['id', 'data-testid'],
+      },
+    });
+
+    sendExtensionResponse(extension, {
+      id: forwarded.id,
+      ok: true,
+      result: { nodes: [] },
+      error: null,
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'dom.query' },
+    });
+    await responsePromise;
+    await client.close();
+  } finally {
+    extension.destroy();
+    await ctx.daemon.stop();
+  }
+});
+
 test('round-trip: extension disconnect mid-flight returns EXTENSION_DISCONNECTED', async () => {
   const ctx = await startTestDaemon();
   const extension = await connectFakeExtension(ctx);

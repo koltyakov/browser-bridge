@@ -423,11 +423,13 @@ export function getBridgeOperationTimeoutMs(method, params = {}) {
  * @returns {NormalizedDomQuery}
  */
 export function normalizeDomQuery(params = {}) {
+  const nestedBudget =
+    params.budget && typeof params.budget === 'object' ? params.budget : undefined;
   return {
     selector:
       typeof params.selector === 'string' && params.selector.trim() ? params.selector : 'body',
     withinRef: typeof params.withinRef === 'string' ? params.withinRef : null,
-    budget: applyBudget(params),
+    budget: applyBudget({ ...nestedBudget, ...params }),
   };
 }
 

@@ -19,6 +19,7 @@ import {
   normalizeCdpDispatchKeyEventParams,
   normalizeCdpNodeIdParams,
   normalizeInputAction,
+  normalizeDomQuery,
   normalizeNavigationAction,
   normalizePatchOperation,
   normalizeSelectAction,
@@ -63,6 +64,51 @@ test('applyBudget clamps and normalizes fields', () => {
   assert.equal(budget.maxDepth, 1);
   assert.equal(budget.textBudget, 32);
   assert.deepEqual(budget.attributeAllowlist, ['id', 'data-test']);
+});
+
+test('normalizeDomQuery preserves canonical budgets across repeated validation', () => {
+  const normalized = normalizeDomQuery({
+    selector: 'main',
+    withinRef: 'el_root',
+    maxNodes: 5,
+    maxDepth: 2,
+    textBudget: 300,
+    includeBbox: false,
+    attributeAllowlist: ['id', 'data-testid'],
+  });
+
+  assert.deepEqual(normalizeDomQuery(normalized), normalized);
+
+  const request = createRequest({
+    id: 'req_dom_budget',
+    method: 'dom.query',
+    params: normalized,
+  });
+  const revalidated = validateBridgeRequest(request);
+  assert.deepEqual(revalidated.params, normalized);
+});
+
+test('normalizeDomQuery gives top-level fields precedence over a nested budget', () => {
+  const normalized = normalizeDomQuery({
+    budget: {
+      maxNodes: 5,
+      maxDepth: 2,
+      textBudget: 300,
+      includeBbox: true,
+      attributeAllowlist: ['class'],
+    },
+    maxNodes: 8,
+    includeBbox: false,
+    attributeAllowlist: ['id'],
+  });
+
+  assert.deepEqual(normalized.budget, {
+    maxNodes: 8,
+    maxDepth: 2,
+    textBudget: 300,
+    includeBbox: false,
+    attributeAllowlist: ['id'],
+  });
 });
 
 /** Ensure protocol metadata is always attached to outgoing requests. */
