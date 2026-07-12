@@ -201,6 +201,15 @@ export interface NormalizedDomQuery extends BridgeParams {
   budget: Budget;
 }
 
+export interface DomFindResult {
+  found: boolean;
+  nodes: Record<string, unknown>[];
+  count: number;
+  scanned: number;
+  truncated: boolean;
+  truncationReason: 'maxResults' | 'scanLimit' | null;
+}
+
 export interface StyleQueryParams {
   elementRef?: string;
   target?: InputTarget;

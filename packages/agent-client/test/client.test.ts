@@ -904,7 +904,7 @@ test('summarizer: find by text uses specific label', () => {
     }),
     'dom.find_by_text'
   );
-  assert.match(s.summary, /Found 1 element/);
+  assert.match(s.summary, /Found 1 matching element/);
 });
 
 test('summarizer: find by role uses specific label', () => {
@@ -915,7 +915,7 @@ test('summarizer: find by role uses specific label', () => {
     }),
     'dom.find_by_role'
   );
-  assert.match(s.summary, /Found 0 element/);
+  assert.match(s.summary, /No matching elements found/);
 });
 
 test('summarizer: DOM query evidence includes textExcerpt and attrs', () => {

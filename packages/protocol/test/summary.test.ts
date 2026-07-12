@@ -203,10 +203,40 @@ test('summarizes DOM find_by_text result', () => {
   const summary = summarizeBridgeResponse(
     ok({
       nodes: [{ elementRef: 'el_1', tag: 'span', attrs: {}, textExcerpt: 'found' }],
+      count: 1,
+      scanned: 8,
+      truncated: true,
+      truncationReason: 'maxResults',
     }),
     'dom.find_by_text'
   );
-  assert.match(summary.summary, /Found 1 element/);
+  assert.match(summary.summary, /Found 1 matching element/);
+  assert.match(summary.summary, /additional matches/);
+  assert.deepEqual(summary.evidence, {
+    found: true,
+    count: 1,
+    scanned: 8,
+    truncated: true,
+    truncationReason: 'maxResults',
+    nodes: [{ ref: 'el_1', tag: 'span', text: 'found' }],
+  });
+});
+
+test('summarizes exhaustive empty DOM find results as no match', () => {
+  const summary = summarizeBridgeResponse(
+    ok({ nodes: [], count: 0, scanned: 12, truncated: false, truncationReason: null }),
+    'dom.find_by_role'
+  );
+  assert.equal(summary.ok, true);
+  assert.match(summary.summary, /No matching elements found/);
+  assert.deepEqual(summary.evidence, {
+    found: false,
+    count: 0,
+    scanned: 12,
+    truncated: false,
+    truncationReason: null,
+    nodes: [],
+  });
 });
 
 // --- summarizeBridgeResponse: patches ---

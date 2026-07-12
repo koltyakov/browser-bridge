@@ -446,7 +446,7 @@
    * Find elements matching visible text content.
    *
    * @param {Record<string, any>} params
-   * @returns {{ nodes: NodeSummary[], count: number, scanned: number, truncated: boolean }}
+   * @returns {{ found: boolean, nodes: NodeSummary[], count: number, scanned: number, truncated: boolean, truncationReason: 'maxResults' | 'scanLimit' | null }}
    */
   function findByText(params) {
     const searchText = String(params.text || '');
@@ -460,12 +460,12 @@
     const candidates = getElementCandidates(scope);
     const results = [];
     let scanned = 0;
-    let truncated = false;
+    /** @type {'maxResults' | 'scanLimit' | null} */
+    let truncationReason = null;
 
     for (const el of candidates) {
-      if (results.length >= maxResults) break;
       if (scanned >= scanLimit) {
-        truncated = true;
+        truncationReason = 'scanLimit';
         break;
       }
       scanned += 1;
@@ -475,13 +475,24 @@
         ? visibleText === searchText
         : visibleText.toLowerCase().includes(searchText.toLowerCase());
       if (matches) {
+        if (results.length >= maxResults) {
+          truncationReason = 'maxResults';
+          break;
+        }
         results.push(
           summarizeNode(el, ['id', 'class', 'role', 'href', 'data-testid'], 120, true).node
         );
       }
     }
 
-    return { nodes: results, count: results.length, scanned, truncated };
+    return {
+      found: results.length > 0,
+      nodes: results,
+      count: results.length,
+      scanned,
+      truncated: truncationReason !== null,
+      truncationReason,
+    };
   }
 
   /**
@@ -511,7 +522,7 @@
    * Find elements matching ARIA role and optional accessible name.
    *
    * @param {Record<string, any>} params
-   * @returns {{ nodes: NodeSummary[], count: number }}
+   * @returns {{ found: boolean, nodes: NodeSummary[], count: number, scanned: number, truncated: boolean, truncationReason: 'maxResults' | null }}
    */
   function findByRole(params) {
     const role = String(params.role || '');
@@ -532,9 +543,12 @@
         : scope;
     const candidates = document.querySelectorAll(combinedSelector);
     const results = [];
+    let scanned = 0;
+    /** @type {'maxResults' | null} */
+    let truncationReason = null;
 
     for (const el of candidates) {
-      if (results.length >= maxResults) break;
+      scanned += 1;
       const elRole = el.getAttribute('role') || getImplicitRole(el);
       if (elRole !== role) continue;
       if (name !== null) {
@@ -543,12 +557,23 @@
           continue;
         }
       }
+      if (results.length >= maxResults) {
+        truncationReason = 'maxResults';
+        break;
+      }
       results.push(
         summarizeNode(el, ['id', 'class', 'role', 'aria-label', 'href'], 120, true).node
       );
     }
 
-    return { nodes: results, count: results.length };
+    return {
+      found: results.length > 0,
+      nodes: results,
+      count: results.length,
+      scanned,
+      truncated: truncationReason !== null,
+      truncationReason,
+    };
   }
 
   /**

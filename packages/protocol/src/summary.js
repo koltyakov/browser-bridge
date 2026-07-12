@@ -348,16 +348,38 @@ export function summarizeBridgeResponse(response, method) {
       }
       return entry;
     });
-    let label;
-    if (method === 'dom.find_by_text' || method === 'dom.find_by_role') {
-      label = 'Found';
-    } else {
-      label = 'DOM query returned';
+    const isFind = method === 'dom.find_by_text' || method === 'dom.find_by_role';
+    if (isFind) {
+      const count = typeof result.count === 'number' ? result.count : nodes.length;
+      const scanned = typeof result.scanned === 'number' ? result.scanned : null;
+      const truncated = result.truncated === true;
+      let summary;
+      if (count === 0) {
+        summary = truncated
+          ? `No matching elements returned; search stopped${scanned === null ? '' : ` after scanning ${scanned}`}.`
+          : 'No matching elements found.';
+      } else if (truncated) {
+        summary = `Found ${count} matching element(s); additional matches were omitted.`;
+      } else {
+        summary = `Found ${count} matching element(s)${scanned === null ? '' : ` after scanning ${scanned}`}.`;
+      }
+      return {
+        ok: true,
+        summary: appendProtocolWarning(summary, protocolWarning),
+        evidence: {
+          found: count > 0,
+          count,
+          scanned,
+          truncated,
+          truncationReason: result.truncationReason ?? null,
+          nodes: compact,
+        },
+      };
     }
     return {
       ok: true,
       summary: appendProtocolWarning(
-        `${label} ${nodes.length} element(s)${nodes.length > 15 ? '; showing first 15' : ''}.`,
+        `DOM query returned ${nodes.length} element(s)${nodes.length > 15 ? '; showing first 15' : ''}.`,
         protocolWarning
       ),
       evidence: compact,

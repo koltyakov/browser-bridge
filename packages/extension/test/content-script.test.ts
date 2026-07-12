@@ -155,7 +155,15 @@ type QueryResult = {
   registrySize?: number;
   _registryPruned?: boolean;
 };
-type FindResult = { count: number; nodes: QueryNode[]; error?: string };
+type FindResult = {
+  found: boolean;
+  count: number;
+  nodes: QueryNode[];
+  scanned: number;
+  truncated: boolean;
+  truncationReason: 'maxResults' | 'scanLimit' | null;
+  error?: string;
+};
 type PatchResult = {
   patchId: string;
   applied?: boolean;
@@ -1231,6 +1239,11 @@ test('content script dom.find_by_text is case-insensitive and respects selector 
     text: 'hello bridge',
     maxResults: 10,
   });
+  const cappedMatches = await execute({
+    selector: 'button',
+    text: 'hello bridge',
+    maxResults: 1,
+  });
 
   assert.equal(allMatches.count, 2);
   assert.deepEqual(
@@ -1245,6 +1258,12 @@ test('content script dom.find_by_text is case-insensitive and respects selector 
     scopedMatches.nodes.map((node) => ({ id: node.attrs.id, textExcerpt: node.textExcerpt })),
     [{ id: 'inside', textExcerpt: 'Hello Bridge' }]
   );
+  assert.equal(allMatches.found, true);
+  assert.equal(allMatches.scanned, 3);
+  assert.equal(allMatches.truncated, false);
+  assert.equal(cappedMatches.count, 1);
+  assert.equal(cappedMatches.truncated, true);
+  assert.equal(cappedMatches.truncationReason, 'maxResults');
 });
 
 test('content script dom.find_by_role matches explicit and implicit roles by accessible name', async (t) => {
@@ -1328,10 +1347,27 @@ test('content script dom.find_by_role matches explicit and implicit roles by acc
       true
     );
   });
+  const cappedMatches = await new Promise<FindResult>((resolve) => {
+    listener(
+      {
+        type: 'bridge.execute',
+        method: 'dom.find_by_role',
+        params: { role: 'button', name: 'bridge', maxResults: 1 },
+      },
+      EMPTY_SENDER,
+      (response) => resolve(expectFindResult(response))
+    );
+  });
 
   assert.equal(matches.error, undefined);
 
   assert.equal(matches.count, 3);
+  assert.equal(matches.found, true);
+  assert.equal(matches.scanned, 4);
+  assert.equal(matches.truncated, false);
+  assert.equal(cappedMatches.count, 1);
+  assert.equal(cappedMatches.truncated, true);
+  assert.equal(cappedMatches.truncationReason, 'maxResults');
   assert.deepEqual(
     matches.nodes.map((node) => ({
       tag: node.tag,
