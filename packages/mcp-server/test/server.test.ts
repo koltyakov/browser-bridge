@@ -116,6 +116,12 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
     assert.ok(inputSchema.mode);
     assert.match(String(registrations[5].config.description), /accessibility_tree/);
     assert.equal(typeof registrations[12].handler, 'function');
+    assert.deepEqual(registrations[12].config.annotations, {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    });
     assert.match(String(investigateConfig.description), /smaller, low-cost subagent/);
     assert.doesNotMatch(String(investigateConfig.description), /Haiku|GPT-/);
     assert.equal(delegationHint.costTier, 'low');

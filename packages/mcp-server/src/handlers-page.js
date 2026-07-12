@@ -30,6 +30,51 @@ import {
 export const MAX_BATCH_CALLS = 20;
 export const MAX_BATCH_CONCURRENCY = 5;
 
+/** @type {ReadonlySet<BridgeMethod>} */
+const BATCH_SAFE_METHODS = new Set([
+  'health.ping',
+  'daemon.metrics',
+  'tabs.list',
+  'skill.get_runtime_context',
+  'setup.get_status',
+  'log.tail',
+  'page.get_state',
+  'page.get_console',
+  'page.wait_for_load_state',
+  'page.get_storage',
+  'page.get_text',
+  'page.get_network',
+  'dom.query',
+  'dom.describe',
+  'dom.get_text',
+  'dom.get_attributes',
+  'dom.wait_for',
+  'dom.find_by_text',
+  'dom.find_by_role',
+  'dom.get_html',
+  'dom.get_accessibility_tree',
+  'layout.get_box_model',
+  'layout.hit_test',
+  'styles.get_computed',
+  'styles.get_matched_rules',
+  'network.intercept.list',
+  'patch.list',
+  'performance.get_metrics',
+]);
+
+/**
+ * @param {BridgeMethod} method
+ * @param {Record<string, unknown>} params
+ * @returns {boolean}
+ */
+export function isBatchSafeBridgeCall(method, params) {
+  if (!BATCH_SAFE_METHODS.has(method)) return false;
+  if ((method === 'page.get_console' || method === 'page.get_network') && params.clear === true) {
+    return false;
+  }
+  return true;
+}
+
 /** @type {Record<string, { method: BridgeMethod, params: (a: Record<string, unknown>) => Record<string, unknown> }>} */
 export const PAGE_ACTIONS = {
   state: { method: 'page.get_state', params: () => ({}) },
@@ -118,54 +163,24 @@ export async function handleBatchTool(args) {
   }
 
   const calls = args.calls;
+  for (const [index, call] of calls.entries()) {
+    if (!call || typeof call !== 'object' || typeof call.method !== 'string') {
+      return summarizeToolError(`calls[${index}] needs a method.`);
+    }
+    if (!METHOD_SET.has(/** @type {BridgeMethod} */ (call.method))) {
+      return summarizeToolError(`Unknown bridge method "${call.method}" at calls[${index}].`);
+    }
+    const method = /** @type {BridgeMethod} */ (call.method);
+    if (!isBatchSafeBridgeCall(method, call.params || {})) {
+      return summarizeToolError(
+        `${method} is not safe for parallel batch execution. Use its specialized tool or browser_call sequentially.`
+      );
+    }
+  }
+
   /** @param {BridgeClient | null} client */
   const executeBatch = async (client) => {
     const results = await mapWithConcurrency(calls, MAX_BATCH_CONCURRENCY, async (call) => {
-      if (!call || typeof call !== 'object' || typeof call.method !== 'string') {
-        return {
-          method: '',
-          tabId: null,
-          ok: false,
-          summary: 'INVALID_REQUEST: Each batch call needs a method.',
-          evidence: null,
-          error: {
-            code: 'INVALID_REQUEST',
-            message: 'Each batch call needs a method.',
-          },
-          response: null,
-        };
-      }
-
-      if (!METHOD_SET.has(/** @type {BridgeMethod} */ (call.method))) {
-        return {
-          method: call.method,
-          tabId: null,
-          ok: false,
-          summary: `INVALID_REQUEST: Unknown bridge method "${call.method}".`,
-          evidence: null,
-          error: {
-            code: 'INVALID_REQUEST',
-            message: `Unknown bridge method "${call.method}".`,
-          },
-          response: null,
-        };
-      }
-
-      if (call.method === 'setup.install') {
-        return {
-          method: call.method,
-          tabId: null,
-          ok: false,
-          summary: 'INVALID_REQUEST: Use browser_setup for setup changes.',
-          evidence: null,
-          error: {
-            code: 'INVALID_REQUEST',
-            message: 'Use browser_setup for setup changes.',
-          },
-          response: null,
-        };
-      }
-
       const method = /** @type {BridgeMethod} */ (call.method);
       const tabId = bridgeMethodNeedsTab(method)
         ? typeof call.tabId === 'number'

@@ -199,7 +199,7 @@ export function createBridgeMcpServer() {
     {
       title: 'Browser DOM',
       description:
-        'Query, describe, read, search, or wait for DOM elements. Reuse elementRef from prior results. For full-page text, use browser_page action "text". accessibility_tree is debugger-backed — use query/find first.',
+        'Query, describe, read, search, or wait for DOM elements. Reuse elementRef from prior results. For full-page text, use browser_page action "text". accessibility_tree is debugger-backed - use query/find first.',
       inputSchema: {
         action: z
           .enum([
@@ -341,7 +341,7 @@ export function createBridgeMcpServer() {
     {
       title: 'Browser Page State',
       description:
-        'Read page-level data: state (URL/title), evaluate (JS), console, storage, text, network, or performance. For element-level reads, use browser_dom. evaluate and performance are debugger-backed — prefer lighter reads first.',
+        'Read page-level data: state (URL/title), evaluate (JS), console, storage, text, network, or performance. For element-level reads, use browser_dom. evaluate and performance are debugger-backed - prefer lighter reads first.',
       inputSchema: {
         action: z
           .enum([
@@ -414,7 +414,7 @@ export function createBridgeMcpServer() {
     {
       title: 'Browser Navigation',
       description:
-        'Navigate to a URL, reload, go back/forward, scroll, or resize the viewport. resize is debugger-backed — use only for exact viewport overrides.',
+        'Navigate to a URL, reload, go back/forward, scroll, or resize the viewport. resize is debugger-backed - use only for exact viewport overrides.',
       inputSchema: {
         action: z
           .enum(['navigate', 'reload', 'go_back', 'go_forward', 'scroll', 'resize'])
@@ -609,7 +609,7 @@ export function createBridgeMcpServer() {
     {
       title: 'Browser Capture',
       description:
-        'Capture screenshots or CDP snapshots. Debugger-backed and token-expensive — use only when structured reads (browser_dom, browser_styles_layout) are insufficient. Prefer element, then tight region; full_page only for document-level context.',
+        'Capture screenshots or CDP snapshots. Debugger-backed and token-expensive - use only when structured reads (browser_dom, browser_styles_layout) are insufficient. Prefer element, then tight region; full_page only for document-level context.',
       inputSchema: {
         action: z
           .enum([
@@ -660,7 +660,13 @@ export function createBridgeMcpServer() {
     {
       title: 'Browser Bridge Batch',
       description:
-        'Execute multiple bridge calls in parallel to reduce round-trips. Combine independent reads (e.g., styles + text + console) in one call. Preserves call order in the response.',
+        'Execute independent read-only bridge calls in parallel to reduce round-trips. Mutations and destructive reads are rejected; run them sequentially with specialized tools or browser_call. Preserves call order in the response.',
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
       inputSchema: {
         calls: z
           .array(

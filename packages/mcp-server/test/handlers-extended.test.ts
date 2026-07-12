@@ -1309,7 +1309,7 @@ test('handleBatchTool limits concurrent bridge requests', async () => {
 test('handleBatchTool handles invalid call entries', async () => {
   await withMockedBridge(
     async () => ok({}),
-    async () => {
+    async (calls) => {
       const result = await handleBatchTool({
         calls: [
           {
@@ -1319,12 +1319,9 @@ test('handleBatchTool handles invalid call entries', async () => {
           { method: 'health.ping', params: {} },
         ],
       });
-      const results = result.structuredContent.results as BatchResult[];
-      assert.equal(results.length, 3);
-      assert.equal(results[0].ok, false);
-      assert.match(results[0].summary, /needs a method/);
-      assert.equal(results[1].ok, false);
-      assert.match(results[1].summary, /Unknown bridge method/);
+      assert.equal(calls.length, 0);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0].text, /needs a method/);
     }
   );
 });
@@ -1343,7 +1340,6 @@ test('handleBatchTool surfaces per-call errors without short-circuiting', async 
     async (calls) => {
       const result = await handleBatchTool({
         calls: [
-          { method: 'not.real.method', params: {} },
           { method: 'page.get_text', params: {} },
           { method: 'health.ping', params: {} },
         ],
@@ -1352,33 +1348,58 @@ test('handleBatchTool surfaces per-call errors without short-circuiting', async 
       const results = result.structuredContent.results as BatchResult[];
       assert.equal(result.isError, true);
       assert.equal(result.structuredContent.ok, false);
-      assert.equal(results.length, 3);
+      assert.equal(results.length, 2);
       assert.deepEqual(
         calls.map((call) => call.method),
         ['page.get_text', 'health.ping']
       );
 
-      assert.equal(results[0].method, 'not.real.method');
+      assert.equal(results[0].method, 'page.get_text');
       assert.equal(results[0].ok, false);
       assert.ok(results[0].error);
-      assert.equal(results[0].error.code, 'INVALID_REQUEST');
-      assert.match(results[0].summary, /Unknown bridge method/u);
+      assert.equal(results[0].error.code, 'INTERNAL_ERROR');
+      assert.match(results[0].summary, /Page text exploded/u);
 
-      assert.equal(results[1].method, 'page.get_text');
-      assert.equal(results[1].ok, false);
-      assert.ok(results[1].error);
-      assert.equal(results[1].error.code, 'INTERNAL_ERROR');
-      assert.match(results[1].summary, /Page text exploded/u);
-
-      assert.equal(results[2].method, 'health.ping');
-      assert.equal(results[2].ok, true);
-      assert.equal(results[2].error, null);
-      assert.equal(typeof results[2].summary, 'string');
-      assert.notEqual(results[2].summary.length, 0);
-      assert.deepEqual(results[2].response, {
+      assert.equal(results[1].method, 'health.ping');
+      assert.equal(results[1].ok, true);
+      assert.equal(results[1].error, null);
+      assert.equal(typeof results[1].summary, 'string');
+      assert.notEqual(results[1].summary.length, 0);
+      assert.deepEqual(results[1].response, {
         daemon: 'ok',
         extensionConnected: true,
       });
+    }
+  );
+});
+
+test('handleBatchTool rejects unsafe calls before dispatching any request', async () => {
+  await withMockedBridge(
+    async () => ok({}),
+    async (calls) => {
+      const result = await handleBatchTool({
+        calls: [
+          { method: 'page.get_state' },
+          { method: 'input.click', params: { target: { selector: 'button' } } },
+        ],
+      });
+      assert.equal(calls.length, 0);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0].text, /not safe for parallel batch execution/);
+    }
+  );
+});
+
+test('handleBatchTool rejects destructive console and network reads', async () => {
+  await withMockedBridge(
+    async () => ok({}),
+    async (calls) => {
+      const result = await handleBatchTool({
+        calls: [{ method: 'page.get_console', params: { clear: true } }],
+      });
+      assert.equal(calls.length, 0);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0].text, /not safe/);
     }
   );
 });
