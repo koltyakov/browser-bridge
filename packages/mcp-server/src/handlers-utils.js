@@ -134,11 +134,17 @@ export function summarizeToolResponse(response, method) {
  */
 export function summarizeToolError(error) {
   const message = error instanceof Error ? error.message : String(error);
+  const record =
+    error && typeof error === 'object' ? /** @type {Record<string, unknown>} */ (error) : {};
+  const code = typeof record.code === 'string' ? record.code : 'INTERNAL_ERROR';
+  const recovery = getErrorRecovery(code);
   return createToolResult(
-    `ERROR: ${message}`,
+    `${code}: ${message}${recovery?.hint ? ` ${recovery.hint}` : ''}`,
     {
       ok: false,
       evidence: null,
+      error: { code, message },
+      recovery,
     },
     true
   );
@@ -317,7 +323,10 @@ export function applyHtmlBudgetPreset(args) {
  */
 export async function requestBridgeWithRetry(client, method, params, options) {
   const response = await requestBridge(client, method, params, options);
-  const recovery = !response.ok && response.error ? getErrorRecovery(response.error.code) : null;
+  const recovery =
+    !response.ok && response.error
+      ? (response.error.recovery ?? getErrorRecovery(response.error.code))
+      : null;
   if (!response.ok && recovery?.retry && isRetrySafeBridgeMethod(method, params)) {
     const delay = recovery.retryAfterMs ?? 1000;
     process.stderr.write(

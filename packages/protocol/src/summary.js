@@ -2,6 +2,7 @@
 
 import {
   estimateSerializedPayloadCost,
+  getErrorRecovery,
   getCostClass,
   getProtocolVersion,
   serializeJsonPayload,
@@ -26,7 +27,8 @@ import {
  * @typedef {{
  *   ok: boolean,
  *   summary: string,
- *   evidence: unknown
+ *   evidence: unknown,
+ *   recovery?: import('./types.js').BridgeRecovery | null
  * }} BridgeSummary
  */
 
@@ -164,14 +166,15 @@ function getMetaCostClass(meta, field) {
 export function summarizeBridgeResponse(response, method) {
   const protocolWarning = getProtocolWarning(response.meta);
   if (!response.ok) {
-    const hint = summarizeErrorHint(response.error.code);
+    const recovery = response.error.recovery ?? getErrorRecovery(response.error.code);
     return {
       ok: false,
       summary: appendProtocolWarning(
-        `${response.error.code}: ${response.error.message}${hint ? ` ${hint}` : ''}`,
+        `${response.error.code}: ${response.error.message}${recovery?.hint ? ` ${recovery.hint}` : ''}`,
         protocolWarning
       ),
       evidence: response.error.details ?? null,
+      recovery,
     };
   }
 
@@ -798,20 +801,6 @@ function truncateUrl(url) {
   } catch {
     return url.length > 120 ? `${url.slice(0, 119)}\u2026` : url;
   }
-}
-
-/**
- * @param {string} code
- * @returns {string}
- */
-function summarizeErrorHint(code) {
-  if (code === 'ELEMENT_STALE') {
-    return 'Re-query the current page after navigation or DOM updates.';
-  }
-  if (code === 'RESULT_TRUNCATED') {
-    return 'Narrow the query or raise the relevant budget if more detail is required.';
-  }
-  return '';
 }
 
 /**

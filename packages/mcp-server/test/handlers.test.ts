@@ -345,6 +345,47 @@ test('handleTabsTool does not retry non-retriable bridge failures', async () => 
   );
 });
 
+test('handleTabsTool honors a non-retryable wire recovery contract', async () => {
+  await withMockedBridge(
+    async () => {
+      const response = fail('TIMEOUT', 'Remote timeout');
+      if (!response.ok) {
+        response.error.recovery = {
+          retry: false,
+          hint: 'Do not retry this remote timeout.',
+        };
+      }
+      return response;
+    },
+    async (calls) => {
+      const result = await handleTabsTool({ action: 'list' });
+      assert.equal(calls.length, 1);
+      assert.equal(result.isError, true);
+      assert.deepEqual(result.structuredContent.recovery, {
+        retry: false,
+        hint: 'Do not retry this remote timeout.',
+      });
+      assert.match(result.content[0].text, /Do not retry this remote timeout/);
+    }
+  );
+});
+
+test('specialized tools preserve thrown transport error codes', async () => {
+  await withMockedBridge(
+    async () => {
+      const error = new Error('Bridge transport timed out') as Error & { code: string };
+      error.code = 'TIMEOUT';
+      throw error;
+    },
+    async () => {
+      const result = await handleTabsTool({ action: 'list' });
+      assert.equal(result.isError, true);
+      assert.equal((result.structuredContent.error as { code: string }).code, 'TIMEOUT');
+      assert.ok(result.structuredContent.recovery);
+    }
+  );
+});
+
 test('handleRawCallTool rejects unsupported methods without calling the bridge', async () => {
   await withMockedBridge(
     async () => ok({}),

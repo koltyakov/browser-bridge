@@ -140,6 +140,7 @@ export interface BridgeRecovery {
   hint: string;
   retry?: boolean;
   retryAfterMs?: number;
+  alternativeMethod?: string;
 }
 
 export interface BridgeFailure {

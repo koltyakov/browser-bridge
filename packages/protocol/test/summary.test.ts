@@ -30,6 +30,23 @@ test('summarizes ELEMENT_STALE errors with recovery hint', () => {
   assert.match(summary.summary, /Re-query/);
 });
 
+test('preserves wire recovery metadata in error summaries', () => {
+  const response = fail('TIMEOUT', 'Remote timeout', {
+    details: { phase: 'extension' },
+  });
+  if (response.ok) assert.fail('Expected failure response');
+  response.error.recovery = {
+    retry: false,
+    retryAfterMs: 4321,
+    alternativeMethod: 'page.get_state',
+    hint: 'Use the remote recovery contract.',
+  };
+  const summary = summarizeBridgeResponse(response);
+  assert.match(summary.summary, /Use the remote recovery contract/);
+  assert.deepEqual(summary.recovery, response.error.recovery);
+  assert.deepEqual(summary.evidence, { phase: 'extension' });
+});
+
 test('summarizes RESULT_TRUNCATED errors with budget recovery hint', () => {
   const summary = summarizeBridgeResponse(fail('RESULT_TRUNCATED', 'trimmed'));
   assert.match(summary.summary, /RESULT_TRUNCATED/);
