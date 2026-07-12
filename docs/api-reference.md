@@ -142,9 +142,9 @@ See [`packages/protocol/src/registry.js`](../packages/protocol/src/registry.js) 
 | `TAB_MISMATCH`            | No        | Tab closed or not found                           |
 | `INVALID_REQUEST`         | No        | Malformed method or params                        |
 | `INTERNAL_ERROR`          | Yes (1 s) | Unexpected extension-side error                   |
-| `DAEMON_OFFLINE`          | No        | Daemon not running — start with `bbx-daemon`      |
-| `CONNECTION_LOST`         | Yes       | Socket dropped mid-request — retry                |
-| `BRIDGE_TIMEOUT`          | Yes (1 s) | Extension took too long — retry with simpler call |
+| `DAEMON_OFFLINE`          | No        | Daemon not running - start with `bbx-daemon`      |
+| `CONNECTION_LOST`         | Yes       | Socket dropped mid-request - retry                |
+| `BRIDGE_TIMEOUT`          | Yes (1 s) | Extension took too long - retry with simpler call |
 | `NATIVE_HOST_UNAVAILABLE` | No        | Run `bbx doctor` to diagnose                      |
 
 ## Using `withBridgeClient`

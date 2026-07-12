@@ -1,7 +1,7 @@
 # Remote proxy: drive a browser on another machine
 
 Browser Bridge normally connects your agent to Chrome on the same machine. The remote proxy
-flow lets an agent on a dev machine drive a browser that runs somewhere else — a Windows VM,
+flow lets an agent on a dev machine drive a browser that runs somewhere else - a Windows VM,
 a machine on a private test network, or a teammate's box during pairing.
 
 ```
@@ -30,7 +30,7 @@ token, so already-configured clients keep working. Flags you pass explicitly ove
 values; the secret only changes when you ask for it:
 
 ```bash
-bbx proxy enable                  # safe to re-run — settings and token unchanged
+bbx proxy enable                  # safe to re-run - settings and token unchanged
 bbx proxy enable --port 9444      # change the port, keep the token
 bbx proxy enable --rotate-token   # generate a new secret (re-add on every client)
 bbx proxy status                  # config, bind address, and daemon reachability
@@ -94,7 +94,7 @@ MCP tools take an optional `destinationId` parameter:
 | Symptom | Check |
 |---|---|
 | `bbx remote test` not reachable | Firewall allows the port; `bbx proxy status` on the browser machine says the daemon is reachable |
-| `Bridge daemon authentication failed` | Token mismatch — re-run `bbx proxy enable` and re-add the remote with the printed token |
+| `Bridge daemon authentication failed` | Token mismatch - re-run `bbx proxy enable` and re-add the remote with the printed token |
 | Reachable but `extension not connected` | Chrome with the Browser Bridge extension isn't running on the remote machine, or `bbx install` wasn't run there |
 | Access denied on remote calls | Window access must be enabled in the remote browser's extension popup/side panel |
 

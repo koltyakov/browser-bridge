@@ -571,7 +571,7 @@ function renderProxyStatus(proxy) {
   proxyStatusEl.hidden = false;
   proxyStatusEl.textContent = `Remote proxy is on${
     proxy.endpoint ? ` (${proxy.endpoint})` : ''
-  } — agents on other machines can reach this browser. Run \`bbx proxy disable\` to turn it off.`;
+  } - agents on other machines can reach this browser. Run \`bbx proxy disable\` to turn it off.`;
 }
 
 /**

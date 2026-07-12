@@ -64,7 +64,7 @@ export const METHOD_CAPABILITIES = Object.freeze({
   'page.get_storage': CAPABILITIES.PAGE_READ,
   'page.get_text': CAPABILITIES.PAGE_READ,
   'page.get_network': CAPABILITIES.NETWORK_READ,
-  // Interception mutates traffic (block/forge responses) — distinct from
+  // Interception mutates traffic (block/forge responses) - distinct from
   // passive network reads so hosts can gate it independently.
   'network.intercept.add': CAPABILITIES.NETWORK_INTERCEPT,
   'network.intercept.remove': CAPABILITIES.NETWORK_INTERCEPT,

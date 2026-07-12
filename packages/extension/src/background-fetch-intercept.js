@@ -3,7 +3,7 @@
 import { BridgeError, ERROR_CODES } from '../../protocol/src/index.js';
 
 /**
- * CDP Fetch-domain request interception — declarative rule engine.
+ * CDP Fetch-domain request interception - declarative rule engine.
  *
  * Agents add rules (URL pattern → action) upfront. When a matching request
  * fires, the extension auto-handles it via Fetch.fulfillRequest or
@@ -262,7 +262,7 @@ export function createFetchInterceptor(deps) {
   }
 
   /**
-   * Handle CDP Fetch.requestPaused events — match against rules, auto-respond.
+   * Handle CDP Fetch.requestPaused events - match against rules, auto-respond.
    * @param {number} tabId
    * @param {string} method
    * @param {unknown} params

@@ -53,7 +53,7 @@ export function recordNativeDisconnect(disconnectTimes, now, windowMs) {
 
 /**
  * A connection is unstable when the native host disconnected at least
- * `threshold` times inside the recent window — the daemon (or host) is
+ * `threshold` times inside the recent window - the daemon (or host) is
  * starting and dying repeatedly rather than being merely offline.
  *
  * @param {number[]} disconnectTimes

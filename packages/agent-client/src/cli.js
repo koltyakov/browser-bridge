@@ -966,9 +966,9 @@ async function handleProxyCommand(args) {
     const exampleHost = getProxyExampleHost(bindHost);
     const tokenNote =
       tokenSource === 'existing'
-        ? ' (unchanged — already-configured clients keep working; pass --rotate-token to generate a new secret)'
+        ? ' (unchanged - already-configured clients keep working; pass --rotate-token to generate a new secret)'
         : tokenSource === 'generated' && existing
-          ? ' (rotated — update every configured client with `bbx remote add`)'
+          ? ' (rotated - update every configured client with `bbx remote add`)'
           : '';
     const lines = [
       `Browser Bridge proxy enabled on ${bindHost}:${port}.`,

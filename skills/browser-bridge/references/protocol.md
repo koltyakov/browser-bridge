@@ -121,7 +121,7 @@ bbx access-request
 bbx call access.request
 ```
 
-If a tab-bound call returns `ACCESS_DENIED`, it also surfaces the Enable prompt automatically — so explicit `access.request` is optional but useful for proactive setup.
+If a tab-bound call returns `ACCESS_DENIED`, it also surfaces the Enable prompt automatically - so explicit `access.request` is optional but useful for proactive setup.
 
 If access is already pending for a window, do not call `access.request` again. Ask the user to click `Enable` for the requested window and wait for confirmation before continuing.
 

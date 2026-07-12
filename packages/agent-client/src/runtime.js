@@ -350,7 +350,7 @@ export async function checkNativeHostManifestHealth(browserManifests) {
  */
 export async function checkUnwritableBridgePaths() {
   // The root-owned-files scenario comes from sudo installs, which do not exist
-  // on Windows — and fs.access(W_OK) there only reflects the read-only file
+  // on Windows - and fs.access(W_OK) there only reflects the read-only file
   // attribute, so it would produce false positives.
   if (os.platform() === 'win32') {
     return [];

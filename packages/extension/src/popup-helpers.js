@@ -186,5 +186,5 @@ export function getPopupInstallCommand(runtimeId, publishedExtensionId) {
  * @returns {string}
  */
 export function getUnstableConnectionDiagnostic() {
-  return 'Connection to the local host keeps dropping — the bridge daemon appears to be restarting repeatedly. Run `bbx doctor` in a terminal for the cause and fix steps.';
+  return 'Connection to the local host keeps dropping - the bridge daemon appears to be restarting repeatedly. Run `bbx doctor` in a terminal for the cause and fix steps.';
 }

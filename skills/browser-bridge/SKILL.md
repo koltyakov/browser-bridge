@@ -5,7 +5,7 @@ description: 'Token-efficient Chrome tab inspection, interaction, and patching v
 
 # Browser Bridge
 
-Token-efficient Chrome tab inspection, interaction, and CSS/DOM patching through a local native-messaging bridge. Reads structured DOM, styles, layout, console, storage, network, and applies reversible patches — all from the real tab the user already has open.
+Token-efficient Chrome tab inspection, interaction, and CSS/DOM patching through a local native-messaging bridge. Reads structured DOM, styles, layout, console, storage, network, and applies reversible patches - all from the real tab the user already has open.
 
 This CLI skill is for agents that can run shell commands and where direct `bbx` control fits better than MCP tools: manual debugging, terminal reproduction, install/doctor flows, raw protocol access, or environments without MCP.
 
@@ -235,7 +235,7 @@ bbx page-text 2000                                  # extract page content
 | Inspect     | `dom.query`, `dom.describe`, `dom.get_html`, `styles.get_computed`, `layout.get_box_model`                                                          |
 | Find        | `dom.find_by_text`, `dom.find_by_role`, `dom.wait_for`, `dom.get_accessibility_tree`                                                                |
 | Page State  | `page.get_console`, `page.get_storage`, `page.get_text`, `page.wait_for_load_state`, `page.evaluate` (debugger-backed)                              |
-| Network     | `page.get_network`, `network.intercept.add/remove/list/clear` (debugger-backed; rules are in-memory and drop if the debugger detaches — verify with `list`) |
+| Network     | `page.get_network`, `network.intercept.add/remove/list/clear` (debugger-backed; rules are in-memory and drop if the debugger detaches - verify with `list`) |
 | Interact    | `input.click`, `input.type`, `input.fill`, `input.focus`, `input.press_key`, `cdp.dispatch_key_event`, `input.hover`, `input.drag`, `input.scroll_into_view` |
 | Tabs        | `tabs.list` (preferred), `tabs.create` (avoid unless necessary), `tabs.close`, `tabs.activate`                                                      |
 | Patch       | `patch.apply_styles`, `patch.apply_dom`, `patch.rollback`                                                                                           |
@@ -291,7 +291,7 @@ dom.find_by_role('button', 'Login') → input.click
 
 `bbx a11y-tree` and `dom.get_accessibility_tree` are sensitive to `maxDepth` and `maxNodes`. Shallow runs can undercount interactive nodes on real pages, so widen those limits before treating a low interactive count as a bug.
 
-> **MCP mode:** If Browser Bridge is connected via MCP (tools named `browser_dom`, `browser_capture`, etc.), use the MCP tools directly — do not shell out to `bbx`. The MCP tools map 1:1 to CLI capabilities. In prompts, `BB MCP` and `Browser Bridge MCP` both work. Do not treat `bbx-mcp` as a skill alias.
+> **MCP mode:** If Browser Bridge is connected via MCP (tools named `browser_dom`, `browser_capture`, etc.), use the MCP tools directly - do not shell out to `bbx`. The MCP tools map 1:1 to CLI capabilities. In prompts, `BB MCP` and `Browser Bridge MCP` both work. Do not treat `bbx-mcp` as a skill alias.
 >
 > For open-ended MCP inspection tasks, prefer `browser_investigate` first. It is read-only, designed for cheaper delegated investigation, and falls back to a deterministic sequence when the client cannot delegate. Escalate to `browser_capture` only when the structured investigation is not enough.
 

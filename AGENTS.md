@@ -29,10 +29,10 @@ Two transport segments:
 | Package | Entry | Responsibility |
 |---|---|---|
 | `packages/protocol/` | `src/index.js` | Shared types, error codes, method registry, defaults, budget presets. All other packages import from here. |
-| `packages/native-host/` | `src/daemon.js` | `BridgeDaemon` — TCP/socket server, request routing, pending request tracking with timeouts. `src/native-host.js` relays between Chrome native messaging and daemon socket. |
-| `packages/agent-client/` | `src/client.js` | `BridgeClient` — connects to daemon, sends requests, tracks responses. `src/cli.js` is the `bbx` CLI. |
+| `packages/native-host/` | `src/daemon.js` | `BridgeDaemon` - TCP/socket server, request routing, pending request tracking with timeouts. `src/native-host.js` relays between Chrome native messaging and daemon socket. |
+| `packages/agent-client/` | `src/client.js` | `BridgeClient` - connects to daemon, sends requests, tracks responses. `src/cli.js` is the `bbx` CLI. |
 | `packages/mcp-server/` | `src/server.js` | MCP stdio server (tool schemas). `src/handlers-*.js` map tool calls to bridge requests. |
-| `packages/extension/` | `src/background.js` | MV3 service worker — native port, request dispatch, state management. `src/content-script.js` handles all DOM operations. |
+| `packages/extension/` | `src/background.js` | MV3 service worker - native port, request dispatch, state management. `src/content-script.js` handles all DOM operations. |
 
 ### Where to Find Things
 
@@ -127,11 +127,11 @@ npm run daemon                 # start daemon locally
 
 ## Working Rules
 
-- **ESM only** — `"type": "module"` in root package.json. All source uses `import`/`export`.
-- **No build step** — runs directly from source. TypeScript is used only for type checking (`tsc --noEmit`).
-- **Tests use Node built-in runner** — `node --test`, not Jest/Mocha. Tests must be TypeScript (`*.test.ts`). Integration tests live in `packages/integration-tests/`.
-- **Linting** — `oxlint` (Rust-based), formatting with `oxfmt`. 2-space indent, single quotes, semicolons, trailing commas.
-- **Node >= 18** — no Node 20+ only APIs.
+- **ESM only** - `"type": "module"` in root package.json. All source uses `import`/`export`.
+- **No build step** - runs directly from source. TypeScript is used only for type checking (`tsc --noEmit`).
+- **Tests use Node built-in runner** - `node --test`, not Jest/Mocha. Tests must be TypeScript (`*.test.ts`). Integration tests live in `packages/integration-tests/`.
+- **Linting** - `oxlint` (Rust-based), formatting with `oxfmt`. 2-space indent, single quotes, semicolons, trailing commas.
+- **Node >= 18** - no Node 20+ only APIs.
 - Do not use the `any` type in source or tests. Use `unknown`, explicit narrowing, discriminated unions, or protocol/domain types instead.
 - Preserve the generic protocol shape. Do not add task-specific bridge commands for one-off actions when an existing RPC method can express the action.
 - Prefer improving the shared protocol, client ergonomics, or skill/docs over introducing special-case commands.

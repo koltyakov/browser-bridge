@@ -195,7 +195,7 @@ bbx call input.select_option '{"target":{"elementRef":"el_456"},"values":["us"]}
 
 Select by value, label, or index. Multiple values for multi-select.
 
-**Text fields — `fill` vs `type`:**
+**Text fields - `fill` vs `type`:**
 
 ```bash
 bbx fill el_123 hello@example.com        # set value instantly (preferred for forms)

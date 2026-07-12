@@ -602,7 +602,9 @@ export class BridgeDaemon {
 
     if (message?.type === 'agent.request') {
       const isExtensionSetupRequest =
-        socket.__role === 'extension' && message.request?.method === 'setup.install';
+        socket.__role === 'extension' &&
+        (message.request?.method === 'setup.get_status' ||
+          message.request?.method === 'setup.install');
       if (socket.__role !== 'agent' && !isExtensionSetupRequest) {
         return this.rejectMessageForRole(socket, message);
       }

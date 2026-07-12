@@ -113,7 +113,7 @@ was superseded. Update the client npm package to resolve this.
   warning string.
 - All subsequent responses via `client.request()` have
   `meta.protocol_warning` attached when a version mismatch exists.
-- The `connect()` call itself does **not** throw on version mismatch — the
+- The `connect()` call itself does **not** throw on version mismatch - the
   client remains usable, but callers should check `client.protocolWarning` or
   `client.protocolCompatibility` after connecting.
 

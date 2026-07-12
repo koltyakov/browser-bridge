@@ -112,7 +112,7 @@ function createRegistryEntry(method, group, tab, params, complexity = 'low') {
 
 /** @type {Readonly<Record<import('./types.js').BridgeMethod, BridgeMethodRegistryEntry>>} */
 export const BRIDGE_METHOD_REGISTRY = Object.freeze({
-  // system — trivial
+  // system - trivial
   'access.request': createRegistryEntry('access.request', 'system', false, [], 'trivial'),
   'skill.get_runtime_context': createRegistryEntry(
     'skill.get_runtime_context',
@@ -132,12 +132,12 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
   'log.tail': createRegistryEntry('log.tail', 'system', false, ['limit'], 'trivial'),
   'health.ping': createRegistryEntry('health.ping', 'system', false, [], 'trivial'),
   'daemon.metrics': createRegistryEntry('daemon.metrics', 'system', false, [], 'trivial'),
-  // tabs — trivial
+  // tabs - trivial
   'tabs.list': createRegistryEntry('tabs.list', 'tabs', false, [], 'trivial'),
   'tabs.create': createRegistryEntry('tabs.create', 'tabs', false, ['url', 'active'], 'trivial'),
   'tabs.close': createRegistryEntry('tabs.close', 'tabs', false, ['tabId'], 'trivial'),
   'tabs.activate': createRegistryEntry('tabs.activate', 'tabs', false, ['tabId'], 'trivial'),
-  // page — low (basic reads), moderate (evaluate, debugger-backed)
+  // page - low (basic reads), moderate (evaluate, debugger-backed)
   'page.get_state': createRegistryEntry('page.get_state', 'page', true, [], 'low'),
   'page.evaluate': {
     ...createRegistryEntry(
@@ -177,7 +177,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     ['clear', 'limit', 'urlPattern'],
     'low'
   ),
-  // network intercept — moderate (holds debugger session)
+  // network intercept - moderate (holds debugger session)
   'network.intercept.add': createRegistryEntry(
     'network.intercept.add',
     'page',
@@ -206,7 +206,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     [],
     'low'
   ),
-  // navigation — low
+  // navigation - low
   'navigation.navigate': createRegistryEntry(
     'navigation.navigate',
     'navigate',
@@ -235,7 +235,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     ['waitForLoad', 'timeoutMs'],
     'low'
   ),
-  // dom — low (reads), moderate (accessibility tree)
+  // dom - low (reads), moderate (accessibility tree)
   'dom.query': {
     ...createRegistryEntry(
       'dom.query',
@@ -303,7 +303,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     ['maxNodes', 'maxDepth'],
     'moderate'
   ),
-  // layout — low
+  // layout - low
   'layout.get_box_model': createRegistryEntry(
     'layout.get_box_model',
     'inspect',
@@ -312,7 +312,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'low'
   ),
   'layout.hit_test': createRegistryEntry('layout.hit_test', 'inspect', true, ['x', 'y'], 'low'),
-  // styles — low (computed), moderate (matched rules)
+  // styles - low (computed), moderate (matched rules)
   'styles.get_computed': createRegistryEntry(
     'styles.get_computed',
     'inspect',
@@ -327,7 +327,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     ['elementRef'],
     'moderate'
   ),
-  // viewport — low (scroll), moderate (resize, debugger-backed)
+  // viewport - low (scroll), moderate (resize, debugger-backed)
   'viewport.scroll': createRegistryEntry(
     'viewport.scroll',
     'navigate',
@@ -342,7 +342,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     ['width', 'height', 'deviceScaleFactor', 'reset'],
     'moderate'
   ),
-  // input — low (simple), moderate (drag)
+  // input - low (simple), moderate (drag)
   'input.click': createRegistryEntry(
     'input.click',
     'interact',
@@ -407,7 +407,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     ['target'],
     'low'
   ),
-  // capture — high (screenshots, CDP)
+  // capture - high (screenshots, CDP)
   'screenshot.capture_region': createRegistryEntry(
     'screenshot.capture_region',
     'capture',
@@ -429,7 +429,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     [],
     'high'
   ),
-  // patch — moderate (side effects)
+  // patch - moderate (side effects)
   'patch.apply_styles': createRegistryEntry(
     'patch.apply_styles',
     'patch',
@@ -453,7 +453,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     [],
     'low'
   ),
-  // cdp — high (raw protocol, large payloads)
+  // cdp - high (raw protocol, large payloads)
   'cdp.get_document': createRegistryEntry('cdp.get_document', 'cdp', true, [], 'high'),
   'cdp.get_dom_snapshot': createRegistryEntry('cdp.get_dom_snapshot', 'cdp', true, [], 'high'),
   'cdp.get_box_model': createRegistryEntry('cdp.get_box_model', 'cdp', true, ['nodeId'], 'high'),
@@ -471,7 +471,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     ['key', 'code', 'modifiers'],
     'moderate'
   ),
-  // performance — moderate (debugger-backed)
+  // performance - moderate (debugger-backed)
   'performance.get_metrics': createRegistryEntry(
     'performance.get_metrics',
     'performance',

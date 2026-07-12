@@ -591,14 +591,14 @@
   /**
    * Set the value of an input/textarea/select element using the native value
    * setter, then dispatch input + change events. This works with React, Vue,
-   * Angular, and vanilla forms — frameworks intercept these events at the
+   * Angular, and vanilla forms - frameworks intercept these events at the
    * document level and sync their internal state.
    *
    * mode:
-   *   "setter" (default) — use Object.getOwnPropertyDescriptor prototype setter
-   *   "keystrokes" — clear field + type each character (slower but handles
+   *   "setter" (default) - use Object.getOwnPropertyDescriptor prototype setter
+   *   "keystrokes" - clear field + type each character (slower but handles
    *     custom components that don't respond to setter)
-   *   "auto" — try setter first, verify value stuck, fallback to keystrokes
+   *   "auto" - try setter first, verify value stuck, fallback to keystrokes
    *
    * @param {Record<string, any>} params
    * @returns {{ elementRef: string, value: string, mode: string }}

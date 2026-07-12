@@ -364,7 +364,7 @@ export function getMcpSetupCellState(row, installPendingKey) {
         title: 'Install Browser Bridge MCP for generic agents',
       };
     }
-    return { kind: 'muted', text: '—' };
+    return { kind: 'muted', text: '-' };
   }
 
   if (entry.configured) {
@@ -404,7 +404,7 @@ export function getMcpSetupCellState(row, installPendingKey) {
 export function getSkillSetupCellState(row, installPendingKey) {
   const entry = row.skillTarget;
   if (!entry) {
-    return { kind: 'muted', text: '—' };
+    return { kind: 'muted', text: '-' };
   }
 
   const reinstallLabel = getSkillReinstallLabel(entry);
@@ -694,7 +694,7 @@ export function getPromptExamplesRenderGroups(setupStatus, cliPromptExamples, mc
  * @returns {string}
  */
 export function getUnstableConnectionDiagnostic() {
-  return 'Connection to the local host keeps dropping — the bridge daemon appears to be restarting repeatedly. Run `bbx doctor` in a terminal for the cause and fix steps.';
+  return 'Connection to the local host keeps dropping - the bridge daemon appears to be restarting repeatedly. Run `bbx doctor` in a terminal for the cause and fix steps.';
 }
 
 /**
