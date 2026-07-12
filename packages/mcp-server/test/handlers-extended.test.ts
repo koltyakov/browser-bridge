@@ -1365,10 +1365,25 @@ test('handleBatchTool surfaces per-call errors without short-circuiting', async 
       assert.equal(results[1].error, null);
       assert.equal(typeof results[1].summary, 'string');
       assert.notEqual(results[1].summary.length, 0);
-      assert.deepEqual(results[1].response, {
-        daemon: 'ok',
-        extensionConnected: true,
-      });
+      assert.equal(Object.hasOwn(results[1], 'response'), false);
+      assert.equal(result.structuredContent.successCount, 1);
+      assert.equal(result.structuredContent.failureCount, 1);
+      assert.equal(result.structuredContent.compactOutput, true);
+    }
+  );
+});
+
+test('handleBatchTool does not duplicate large raw responses', async () => {
+  const largeText = `start-${'x'.repeat(100_000)}-end-sentinel`;
+  await withMockedBridge(
+    async () => ok({ text: largeText, length: largeText.length, truncated: false }),
+    async () => {
+      const result = await handleBatchTool({ calls: [{ method: 'page.get_text' }] });
+      const serialized = JSON.stringify(result.structuredContent);
+      const results = result.structuredContent.results as BatchResult[];
+      assert.equal(Object.hasOwn(results[0], 'response'), false);
+      assert.equal(serialized.includes('end-sentinel'), false);
+      assert.ok(serialized.length < 5_000);
     }
   );
 });

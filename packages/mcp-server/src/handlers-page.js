@@ -195,12 +195,15 @@ export async function handleBatchTool(args) {
         ? await createBridgeClientForDestination(destinationId)
         : client;
       if (!callClient) {
-        return summarizeBatchErrorItem({
-          method,
-          tabId,
-          error: new Error('A local bridge client is required for calls without destinationId.'),
-          durationMs: Date.now() - startTime,
-        });
+        return summarizeBatchErrorItem(
+          {
+            method,
+            tabId,
+            error: new Error('A local bridge client is required for calls without destinationId.'),
+            durationMs: Date.now() - startTime,
+          },
+          { compact: true }
+        );
       }
       try {
         if (destinationId) {
@@ -213,20 +216,26 @@ export async function handleBatchTool(args) {
         });
         return {
           destinationId,
-          ...summarizeBatchResponseItem({
-            method,
-            tabId,
-            response,
-            durationMs: Date.now() - startTime,
-          }),
+          ...summarizeBatchResponseItem(
+            {
+              method,
+              tabId,
+              response,
+              durationMs: Date.now() - startTime,
+            },
+            { compact: true }
+          ),
         };
       } catch (error) {
-        return summarizeBatchErrorItem({
-          method,
-          tabId,
-          error,
-          durationMs: Date.now() - startTime,
-        });
+        return summarizeBatchErrorItem(
+          {
+            method,
+            tabId,
+            error,
+            durationMs: Date.now() - startTime,
+          },
+          { compact: true }
+        );
       } finally {
         if (destinationId) {
           await callClient.close();
@@ -243,6 +252,9 @@ export async function handleBatchTool(args) {
       summary,
       {
         ok: failureCount === 0,
+        successCount: results.length - failureCount,
+        failureCount,
+        compactOutput: true,
         results,
       },
       failureCount > 0

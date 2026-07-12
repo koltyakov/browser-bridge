@@ -49,7 +49,7 @@ import {
  *   approxTokens: number,
  *   meta?: Record<string, unknown>,
  *   error: unknown,
- *   response: unknown
+ *   response?: unknown
  * }} BatchItemSummary
  */
 
@@ -688,9 +688,10 @@ export function summarizeBridgeResponse(response, method) {
 
 /**
  * @param {{ method: SummaryMethod, tabId: number | null, response: BridgeResponse, durationMs: number }} input
+ * @param {{ compact?: boolean }} [options]
  * @returns {BatchItemSummary}
  */
-export function summarizeBatchResponseItem({ method, tabId, response, durationMs }) {
+export function summarizeBatchResponseItem({ method, tabId, response, durationMs }, options = {}) {
   const summary = annotateBridgeSummary(summarizeBridgeResponse(response, method), response);
   return {
     method,
@@ -698,17 +699,18 @@ export function summarizeBatchResponseItem({ method, tabId, response, durationMs
     ...summary,
     durationMs,
     approxTokens: summary.transportTokens,
-    meta: response.meta,
+    meta: options.compact ? compactBatchMeta(response.meta) : response.meta,
     error: response.ok ? null : response.error,
-    response: response.ok ? response.result : null,
+    ...(options.compact ? {} : { response: response.ok ? response.result : null }),
   };
 }
 
 /**
  * @param {{ method: SummaryMethod, tabId: number | null, error: unknown, durationMs: number }} input
+ * @param {{ compact?: boolean }} [options]
  * @returns {BatchItemSummary}
  */
-export function summarizeBatchErrorItem({ method, tabId, error, durationMs }) {
+export function summarizeBatchErrorItem({ method, tabId, error, durationMs }, options = {}) {
   const message = error instanceof Error ? error.message : String(error);
   const response = /** @type {BridgeResponse} */ ({
     id: 'batch_error',
@@ -728,10 +730,28 @@ export function summarizeBatchErrorItem({ method, tabId, error, durationMs }) {
     ...summary,
     durationMs,
     approxTokens: 0,
-    meta: response.meta,
+    meta: options.compact ? compactBatchMeta(response.meta) : response.meta,
     error: response.error,
-    response: null,
+    ...(options.compact ? {} : { response: null }),
   };
+}
+
+/**
+ * @param {Record<string, unknown>} meta
+ * @returns {Record<string, unknown>}
+ */
+function compactBatchMeta(meta) {
+  /** @type {Record<string, unknown>} */
+  const compact = {};
+  for (const key of [
+    'protocol_version',
+    'protocol_warning',
+    'budget_truncated',
+    'continuation_hint',
+  ]) {
+    if (meta[key] !== undefined && meta[key] !== null) compact[key] = meta[key];
+  }
+  return compact;
 }
 
 /**

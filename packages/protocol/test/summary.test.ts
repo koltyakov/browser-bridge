@@ -677,7 +677,33 @@ test('summarizeBatchResponseItem produces complete batch item', () => {
   assert.equal(item.durationMs, 42);
   assert.ok(item.approxTokens >= 0);
   assert.equal(item.error, null);
-  assert.ok(item.response !== null);
+  assert.deepEqual(item.response, { clicked: true, elementRef: 'el_1' });
+});
+
+test('summarizeBatchResponseItem compact mode omits raw responses and trims metadata', () => {
+  const response = ok({ value: 'x'.repeat(100_000) });
+  response.meta = {
+    protocol_version: PROTOCOL_VERSION,
+    budget_truncated: true,
+    continuation_hint: 'Retry with a larger budget.',
+    private_debug_field: 'omit me',
+  };
+  const item = summarizeBatchResponseItem(
+    {
+      method: 'page.get_text',
+      tabId: 5,
+      response,
+      durationMs: 42,
+    },
+    { compact: true }
+  );
+  assert.equal(Object.hasOwn(item, 'response'), false);
+  assert.deepEqual(item.meta, {
+    protocol_version: PROTOCOL_VERSION,
+    budget_truncated: true,
+    continuation_hint: 'Retry with a larger budget.',
+  });
+  assert.ok(JSON.stringify(item).length < 5_000);
 });
 
 // --- summarizeBatchErrorItem ---
