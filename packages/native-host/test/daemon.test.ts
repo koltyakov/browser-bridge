@@ -2176,6 +2176,16 @@ async function expectNoMessage(
   assert.equal(await client.nextWithin(timeoutMs), null);
 }
 
+async function waitForCondition(condition: () => boolean, timeoutMs = 2_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() >= deadline) {
+      throw new Error(`Timed out waiting ${timeoutMs}ms for test condition.`);
+    }
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
+
 test('daemon requires auth token before handling TCP bridge requests when configured', async () => {
   const authToken = 'a'.repeat(32);
   const { daemon, connect } = await startTestDaemon(authToken);
@@ -2512,7 +2522,14 @@ test('daemon routes to only the most recently active enabled extension and retur
     ext2.send({ type: 'extension.access_update', accessEnabled: true });
     ext1.send({ type: 'extension.activity', at: 20 });
     ext2.send({ type: 'extension.activity', at: 10 });
-    await new Promise((resolve) => setImmediate(resolve));
+    await waitForCondition(() => {
+      const sockets = [...daemon.extensionSockets.values()];
+      return (
+        sockets.every((socket) => socket.__accessEnabled === true) &&
+        sockets.some((socket) => socket.__lastActiveAt === 20) &&
+        sockets.some((socket) => socket.__lastActiveAt === 10)
+      );
+    });
 
     agent.send({
       type: 'agent.request',
@@ -2579,6 +2596,13 @@ test('daemon routes untargeted requests to the extension with access enabled', a
 
     ext1.send({ type: 'extension.access_update', accessEnabled: false });
     ext2.send({ type: 'extension.access_update', accessEnabled: true });
+    await waitForCondition(() => {
+      const sockets = [...daemon.extensionSockets.values()];
+      return (
+        sockets.some((socket) => socket.__accessEnabled === false) &&
+        sockets.some((socket) => socket.__accessEnabled === true)
+      );
+    });
 
     agent.send({
       type: 'agent.request',
@@ -2641,6 +2665,13 @@ test('daemon routes untargeted requests to the most recently active extension wh
 
     ext1.send({ type: 'extension.activity', at: 10 });
     ext2.send({ type: 'extension.activity', at: 20 });
+    await waitForCondition(() => {
+      const sockets = [...daemon.extensionSockets.values()];
+      return (
+        sockets.some((socket) => socket.__lastActiveAt === 10) &&
+        sockets.some((socket) => socket.__lastActiveAt === 20)
+      );
+    });
 
     agent.send({
       type: 'agent.request',
