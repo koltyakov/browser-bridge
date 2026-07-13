@@ -21,7 +21,7 @@ For open-ended investigation, start with structured reads (`page.get_state`, `do
 bbx status                  # daemon + extension health
 bbx doctor                  # install/access readiness
 bbx access-request          # ask user to enable access for the focused window
-bbx restart                 # start/restart the local daemon non-interactively
+bbx restart                 # start/restart the daemon and running MCP servers
 bbx call <method> '{...}'   # any RPC method (raw output)
 bbx <method> '{...}'        # direct alias for an exact bridge method such as page.get_state
 bbx call --tab 123 <method> '{...}' # explicit tab override

@@ -15,6 +15,7 @@ import {
   parseCommaList,
   parseIntArg,
   parseJsonObject,
+  parseNumberArg,
   parsePropertyAssignments,
 } from '../src/cli-helpers.js';
 import {
@@ -1230,10 +1231,14 @@ test('interactiveConfirm honors defaults and closes the readline interface', asy
   }
 });
 
-test('parseIntArg returns numbers and rejects invalid input', () => {
+test('parseIntArg accepts only positive integers and parseNumberArg permits coordinates', () => {
   assert.equal(parseIntArg('42', 'limit'), 42);
-  assert.throws(() => parseIntArg(undefined, 'limit'), /limit must be a number/);
-  assert.throws(() => parseIntArg('abc', 'limit'), /limit must be a number/);
+  for (const value of [undefined, 'abc', '0', '-1', '1.5']) {
+    assert.throws(() => parseIntArg(value, 'limit'), /limit must be a positive integer/);
+  }
+  assert.equal(parseNumberArg('-12.5', 'top'), -12.5);
+  assert.equal(parseNumberArg('0', 'left'), 0);
+  assert.throws(() => parseNumberArg('Infinity', 'top'), /top must be a number/);
 });
 
 test('installAgentFiles writes managed files for supported runtimes', async () => {
@@ -1406,9 +1411,8 @@ test('installAgentFiles rolls back new skill directories when a later write fail
   t.mock.method(fs.promises, 'writeFile', (async (filePath, data, options) => {
     const targetPath = String(filePath);
     if (
-      targetPath.endsWith(
-        path.join('.cursor', 'skills', 'browser-bridge', getManagedSkillSentinelFilename())
-      )
+      targetPath.includes(path.join('.cursor', 'skills', 'browser-bridge.tmp-')) &&
+      targetPath.endsWith(getManagedSkillSentinelFilename())
     ) {
       throw new Error('simulated sentinel write failure');
     }
@@ -1431,6 +1435,41 @@ test('installAgentFiles rolls back new skill directories when a later write fail
     await assert.rejects(
       fs.promises.access(path.join(tempDir, '.cursor', 'skills', 'browser-bridge'))
     );
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('installAgentFiles restores an existing managed skill when replacement swap fails', async (t) => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bb-install-agent-restore-'));
+  const skillDir = path.join(tempDir, '.cursor', 'skills', 'browser-bridge');
+  const sentinelPath = path.join(skillDir, getManagedSkillSentinelFilename());
+  await fs.promises.mkdir(skillDir, { recursive: true });
+  await fs.promises.writeFile(
+    path.join(skillDir, 'SKILL.md'),
+    '# Existing managed skill\n',
+    'utf8'
+  );
+  await fs.promises.writeFile(sentinelPath, 'managed\n', 'utf8');
+
+  const originalRename = fs.promises.rename;
+  t.mock.method(fs.promises, 'rename', (async (oldPath, newPath) => {
+    if (String(oldPath).includes('browser-bridge.tmp-') && String(newPath) === skillDir) {
+      throw new Error('simulated replacement rename failure');
+    }
+    return originalRename.call(fs.promises, oldPath, newPath);
+  }) as typeof fs.promises.rename);
+
+  try {
+    await assert.rejects(
+      installAgentFiles({ targets: ['cursor'], projectPath: tempDir, global: false }),
+      /simulated replacement rename failure/u
+    );
+    assert.equal(
+      await fs.promises.readFile(path.join(skillDir, 'SKILL.md'), 'utf8'),
+      '# Existing managed skill\n'
+    );
+    assert.equal(await fs.promises.readFile(sentinelPath, 'utf8'), 'managed\n');
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }

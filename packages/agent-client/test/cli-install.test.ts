@@ -213,7 +213,11 @@ test('cli install-skill --project without targets writes under the requested pro
 
     const result = await runCli({
       args: ['install-skill', '--project', projectPath],
-      env: installFs.env,
+      env: {
+        ...installFs.env,
+        BBX_TEST_DETECTED_MCP_CLIENTS: '',
+        BBX_TEST_DETECTED_SKILL_TARGETS: '',
+      },
       cwd: installFs.cwd,
     });
 
@@ -224,6 +228,23 @@ test('cli install-skill --project without targets writes under the requested pro
     assert.match(result.stdout, new RegExp(`Installed ${escapeRegExp(path.dirname(skillFile))}`));
     await fs.promises.access(skillFile);
     await assertPathMissing(installFs.globalSkillTargets.agents.skillFile);
+    for (const relativeDir of [
+      '.claude',
+      '.cursor',
+      '.github',
+      '.codex',
+      '.opencode',
+      '.windsurf',
+    ]) {
+      const unrelatedSkillFile = path.join(
+        projectPath,
+        relativeDir,
+        'skills',
+        'browser-bridge',
+        'SKILL.md'
+      );
+      await assertPathMissing(unrelatedSkillFile);
+    }
   } finally {
     await installFs.cleanup();
   }

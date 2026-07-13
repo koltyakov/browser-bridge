@@ -5,6 +5,10 @@ import {
   BUDGET_PRESETS,
   BRIDGE_METHODS,
   BRIDGE_METHOD_REGISTRY,
+  DEFAULT_DEVICE_SCALE_FACTOR,
+  DEFAULT_EVAL_TIMEOUT_MS,
+  DEFAULT_NAV_TIMEOUT_MS,
+  DEFAULT_NETWORK_INTERCEPT_ACTION,
   ERROR_CODES,
   applyBudget,
   bridgeMethodNeedsTab,
@@ -39,6 +43,7 @@ import {
   normalizeTabCloseParams,
   normalizeAccessibilityTreeParams,
   normalizeNetworkParams,
+  normalizeNetworkInterceptAddParams,
   normalizePageTextParams,
   normalizeLogTailParams,
   normalizeViewportResizeParams,
@@ -463,6 +468,14 @@ test('normalizeEvaluateParams handles empty input', () => {
   assert.equal(params.timeoutMs, 5000);
 });
 
+test('normalizeEvaluateParams rejects unsupported remote-object results', () => {
+  assert.throws(
+    () => normalizeEvaluateParams({ expression: 'window', returnByValue: false }),
+    (error: ErrorWithCode) =>
+      error.code === ERROR_CODES.INVALID_REQUEST && /returnByValue=false/.test(error.message)
+  );
+});
+
 /** Ensure console params validate level and clamp limit. */
 test('normalizeConsoleParams validates level and clamps limit', () => {
   const params = normalizeConsoleParams({
@@ -732,6 +745,35 @@ test('normalizeNetworkParams defaults sensibly', () => {
   assert.equal(params.clear, false);
 });
 
+test('normalizeNetworkInterceptAddParams safely defaults omitted action to continue', () => {
+  const params = normalizeNetworkInterceptAddParams({ urlPattern: '*api*' });
+
+  assert.deepEqual(params, {
+    urlPattern: '*api*',
+    action: 'continue',
+  });
+  assert.equal(
+    createRequest({
+      id: 'req-intercept-default',
+      method: 'network.intercept.add',
+      params: { urlPattern: '*api*' },
+    }).params.action,
+    'continue'
+  );
+});
+
+test('normalizeNetworkInterceptAddParams rejects invalid actions', () => {
+  assert.throws(
+    () =>
+      normalizeNetworkInterceptAddParams({
+        urlPattern: '*',
+        action: 'redirect',
+      } as unknown as Parameters<typeof normalizeNetworkInterceptAddParams>[0]),
+    (error: ErrorWithCode) =>
+      error.code === ERROR_CODES.INVALID_REQUEST && /action must be one of/.test(error.message)
+  );
+});
+
 /** Ensure page text params clamp budget. */
 test('normalizePageTextParams clamps budget', () => {
   const params = normalizePageTextParams({ textBudget: 999999 });
@@ -775,6 +817,19 @@ test('normalizeViewportResizeParams clamps dimensions', () => {
   assert.equal(params.height, 4320);
   assert.equal(params.deviceScaleFactor, 4);
   assert.equal(params.reset, true);
+});
+
+test('normalizeViewportResizeParams preserves finite fractional device scale factors', () => {
+  assert.equal(
+    normalizeViewportResizeParams({ deviceScaleFactor: 2.625 }).deviceScaleFactor,
+    2.625
+  );
+  assert.equal(normalizeViewportResizeParams({ deviceScaleFactor: -0.5 }).deviceScaleFactor, 0);
+  assert.equal(normalizeViewportResizeParams({ deviceScaleFactor: 4.5 }).deviceScaleFactor, 4);
+  assert.equal(
+    normalizeViewportResizeParams({ deviceScaleFactor: Number.NaN }).deviceScaleFactor,
+    DEFAULT_DEVICE_SCALE_FACTOR
+  );
 });
 
 test('normalizeViewportResizeParams defaults to 1280x720', () => {
@@ -847,6 +902,21 @@ test('dom.query registry excludes removed no-op params', () => {
     'includeBbox',
     'attributeAllowlist',
   ]);
+});
+
+test('registry parameters and shared defaults align for reviewed protocol fields', () => {
+  assert.equal(DEFAULT_NETWORK_INTERCEPT_ACTION, 'continue');
+  assert.equal(normalizeNetworkInterceptAddParams({ urlPattern: '*' }).action, 'continue');
+  assert.ok(BRIDGE_METHOD_REGISTRY['network.intercept.add'].params.includes('action'));
+
+  assert.equal(normalizeEvaluateParams({}).timeoutMs, DEFAULT_EVAL_TIMEOUT_MS);
+  assert.ok(BRIDGE_METHOD_REGISTRY['page.evaluate'].params.includes('returnByValue'));
+
+  assert.equal(normalizeWaitForLoadStateParams({}).timeoutMs, DEFAULT_NAV_TIMEOUT_MS);
+  assert.ok(BRIDGE_METHOD_REGISTRY['page.wait_for_load_state'].params.includes('timeoutMs'));
+
+  assert.equal(normalizeViewportResizeParams({}).deviceScaleFactor, DEFAULT_DEVICE_SCALE_FACTOR);
+  assert.ok(BRIDGE_METHOD_REGISTRY['viewport.resize'].params.includes('deviceScaleFactor'));
 });
 
 /** Ensure runtime context flow includes page.get_console. */

@@ -120,7 +120,10 @@ export function createPageRequestController(state, chromeObj, dependencies) {
       const timeoutId = setTimeout(() => {
         cleanup();
         reject(
-          new Error(`Timed out waiting for tab ${tabId} to finish loading after ${timeoutMs}ms.`)
+          new BridgeError(
+            ERROR_CODES.TIMEOUT,
+            `Timed out waiting for tab ${tabId} to finish loading after ${timeoutMs}ms.`
+          )
         );
       }, timeoutMs);
 

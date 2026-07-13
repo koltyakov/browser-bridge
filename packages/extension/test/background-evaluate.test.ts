@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ERROR_CODES } from '../../protocol/src/index.js';
+import { BridgeError, ERROR_CODES } from '../../protocol/src/index.js';
 import type { BridgeRequest, BridgeResponse } from '../../protocol/src/types.js';
 import { handlePageEvaluate } from '../src/background-evaluate.js';
 import { makeRequest } from '../../../tests/_helpers/protocolFactories.ts';
@@ -90,7 +90,7 @@ test('handlePageEvaluate forwards normalized timeoutMs to Runtime.evaluate', asy
         expression: '2 + 2',
         timeoutMs: 12_345,
         awaitPromise: true,
-        returnByValue: false,
+        returnByValue: true,
       },
     }),
     dependencies
@@ -108,7 +108,7 @@ test('handlePageEvaluate forwards normalized timeoutMs to Runtime.evaluate', asy
       method: 'Runtime.evaluate',
       params: {
         expression: '2 + 2',
-        returnByValue: false,
+        returnByValue: true,
         awaitPromise: true,
         timeout: 12_345,
         userGesture: true,
@@ -121,6 +121,34 @@ test('handlePageEvaluate forwards normalized timeoutMs to Runtime.evaluate', asy
     value: 42,
     type: 'number',
   });
+});
+
+test('handlePageEvaluate rejects returnByValue=false before resolving a tab', async () => {
+  const dependencies = createDependencies();
+
+  await assert.rejects(
+    () =>
+      handlePageEvaluate(
+        {
+          id: 'req-eval-remote-object',
+          method: 'page.evaluate',
+          tab_id: null,
+          params: {
+            expression: 'window',
+            returnByValue: false,
+          },
+          meta: { protocol_version: 'test', token_budget: null },
+        } as BridgeRequest,
+        dependencies
+      ),
+    (error) =>
+      error instanceof BridgeError &&
+      error.code === ERROR_CODES.INVALID_REQUEST &&
+      /returnByValue=false/.test(error.message)
+  );
+
+  assert.deepEqual(dependencies.runs, []);
+  assert.deepEqual(dependencies.commands, []);
 });
 
 test('handlePageEvaluate returns INVALID_REQUEST when expression is blank', async () => {

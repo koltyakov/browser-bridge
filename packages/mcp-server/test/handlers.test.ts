@@ -231,6 +231,24 @@ test('handleTabsTool aggregates local and remote tabs when remotes are configure
   });
 });
 
+test('handleTabsTool marks aggregate discovery as failed when every destination fails', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    await writeRemoteConfig(bridgeHome);
+    await withMockedBridge(
+      async () => fail('ACCESS_DENIED', 'No browser route.'),
+      async () => {
+        const result = await handleTabsTool({ action: 'list' });
+
+        assert.equal(result.isError, true);
+        assert.equal(result.structuredContent.ok, false);
+        assert.equal(result.structuredContent.tabs instanceof Array, true);
+        assert.equal((result.structuredContent.tabs as unknown[]).length, 0);
+      },
+      { isolateBridgeHome: false }
+    );
+  });
+});
+
 test('handleTabsTool forwards active for tabs.create', async () => {
   await withMockedBridge(
     async () => ok({ tabId: 4, url: 'https://example.com', active: false }),
@@ -865,7 +883,171 @@ test('handleBatchTool preserves order and reports mixed results with tab routing
       const domCall = calls.find((call) => call.method === 'dom.query');
       const pageTextCall = calls.find((call) => call.method === 'page.get_text');
       assert.equal(domCall?.tabId, 91);
+      assert.equal(domCall?.params?.maxNodes, 5);
+      assert.equal(domCall?.params?.maxDepth, 2);
+      assert.equal(domCall?.params?.textBudget, 300);
       assert.equal(pageTextCall?.tabId, null);
+      assert.equal(pageTextCall?.params?.textBudget, DEFAULT_PAGE_TEXT_BUDGET);
+    }
+  );
+});
+
+test('handleBatchTool applies method presets while preserving explicit params', async () => {
+  await withMockedBridge(
+    async () => ok({ entries: [], nodes: [], text: '', truncated: false, length: 0 }),
+    async (calls) => {
+      await handleBatchTool({
+        calls: [
+          {
+            method: 'dom.query',
+            params: { selector: 'body', maxNodes: 7 },
+            budgetPreset: 'deep',
+          },
+          { method: 'dom.get_text', params: { elementRef: 'el_1' }, budgetPreset: 'quick' },
+          { method: 'dom.get_html', params: { elementRef: 'el_1' }, budgetPreset: 'deep' },
+          { method: 'page.get_console', budgetPreset: 'quick' },
+          { method: 'page.get_network', params: { limit: 3 }, budgetPreset: 'deep' },
+          { method: 'log.tail', budgetPreset: 'normal' },
+        ],
+      });
+
+      const byMethod = new Map(calls.map((call) => [call.method, call]));
+      assert.deepEqual(byMethod.get('dom.query')?.params, {
+        selector: 'body',
+        maxNodes: 7,
+        maxDepth: 8,
+        textBudget: 2000,
+      });
+      assert.equal(byMethod.get('dom.get_text')?.params?.textBudget, 300);
+      assert.equal(byMethod.get('dom.get_html')?.params?.maxLength, 6000);
+      assert.equal(byMethod.get('page.get_console')?.params?.limit, 10);
+      assert.equal(byMethod.get('page.get_network')?.params?.limit, 3);
+      assert.equal(byMethod.get('log.tail')?.params?.limit, 20);
+    }
+  );
+});
+
+test('handleBatchTool isolates destination creation failures and preserves destination IDs', async () => {
+  await withMockedBridge(
+    async () => ok({ daemon: 'ok', extensionConnected: true }),
+    async (calls) => {
+      const result = await handleBatchTool({
+        calls: [
+          { method: 'health.ping', destinationId: 'missing-remote' },
+          { method: 'health.ping' },
+        ],
+      });
+      const results = result.structuredContent.results as Array<
+        BatchResult & {
+          destinationId: string | null;
+        }
+      >;
+
+      assert.equal(calls.length, 1);
+      assert.equal(results[0].destinationId, 'missing-remote');
+      assert.equal(results[0].ok, false);
+      assert.equal(results[1].destinationId, null);
+      assert.equal(results[1].ok, true);
+    }
+  );
+});
+
+test('handleBatchTool runs remote calls when the local daemon connection fails', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    await writeRemoteConfig(bridgeHome);
+    const originalConnect = BridgeClient.prototype.connect;
+    const originalClose = BridgeClient.prototype.close;
+    const originalRequest = BridgeClient.prototype.request;
+    const requests: BridgeMethod[] = [];
+    BridgeClient.prototype.connect = async function connect() {
+      if (this.transport.type !== 'tcp' || this.transport.host !== '10.0.0.5') {
+        const error = new Error('Local daemon unavailable') as Error & { code: string };
+        error.code = 'NATIVE_HOST_UNAVAILABLE';
+        throw error;
+      }
+      this.connected = true;
+    };
+    BridgeClient.prototype.close = async function close() {};
+    BridgeClient.prototype.request = async function request({ method }): Promise<BridgeResponse> {
+      requests.push(method);
+      return ok({ daemon: 'ok', extensionConnected: true });
+    };
+    try {
+      const result = await handleBatchTool({
+        calls: [{ method: 'health.ping' }, { method: 'health.ping', destinationId: 'vm-private' }],
+      });
+      const results = result.structuredContent.results as Array<
+        BatchResult & {
+          destinationId: string | null;
+          error?: { code: string };
+        }
+      >;
+      assert.deepEqual(requests, ['health.ping']);
+      assert.equal(results[0].destinationId, null);
+      assert.equal(results[0].error?.code, 'NATIVE_HOST_UNAVAILABLE');
+      assert.equal(results[1].destinationId, 'vm-private');
+      assert.equal(results[1].ok, true);
+    } finally {
+      BridgeClient.prototype.connect = originalConnect;
+      BridgeClient.prototype.close = originalClose;
+      BridgeClient.prototype.request = originalRequest;
+    }
+  });
+});
+
+test('handleStatusTool reports remote reachability separately from route readiness', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    await writeRemoteConfig(bridgeHome);
+    await withMockedBridge(
+      async () =>
+        ok({
+          daemon: 'ok',
+          extensionConnected: true,
+          access: { enabled: true, routeReady: false, reason: 'no_routable_active_tab' },
+        }),
+      async () => {
+        const result = await handleStatusTool({ destinationId: 'vm-private' });
+        assert.equal(result.isError, true);
+        assert.equal(result.structuredContent.ok, false);
+        assert.equal(result.structuredContent.reachable, true);
+        assert.equal(result.structuredContent.daemonReachable, true);
+        assert.equal(result.structuredContent.extensionConnected, true);
+        assert.equal(result.structuredContent.routeReady, false);
+        assert.match(result.content[0].text, /reachable, but its browser route is not ready/);
+      },
+      { isolateBridgeHome: false }
+    );
+  });
+});
+
+test('handleSkillTool routes runtime context to an explicit destination', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    await writeRemoteConfig(bridgeHome);
+    await withMockedBridge(
+      async () => ok({ budgetPresets: {}, methodGroups: {}, limits: {} }),
+      async (calls) => {
+        const result = await handleSkillTool({ destinationId: 'vm-private' });
+        assert.equal(calls.length, 1);
+        assert.equal(calls[0].method, 'skill.get_runtime_context');
+        assert.equal(result.structuredContent.ok, true);
+      },
+      { isolateBridgeHome: false }
+    );
+  });
+});
+
+test('selector resolution preserves bridge error code and details', async () => {
+  await withMockedBridge(
+    async () => fail('ELEMENT_STALE', 'Selector registry is stale', { details: { ref: 'el_old' } }),
+    async () => {
+      const result = await handleStylesLayoutTool({ action: 'computed', selector: '.target' });
+      assert.equal(result.isError, true);
+      assert.deepEqual(result.structuredContent.error, {
+        code: 'ELEMENT_STALE',
+        message: 'Selector registry is stale',
+        details: { ref: 'el_old' },
+      });
+      assert.deepEqual(result.structuredContent.evidence, { ref: 'el_old' });
     }
   );
 });

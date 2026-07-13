@@ -137,6 +137,63 @@ test('background access request opens a popup window when no side panel is open'
   ]);
 });
 
+test('background access request requires manual enablement when the browser is not focused', async () => {
+  const popupCreates: chrome.windows.CreateData[] = [];
+  const chrome = createChromeFake({
+    tabs: {
+      async query(queryInfo: chrome.tabs.QueryInfo = {}) {
+        if (queryInfo.active && queryInfo.lastFocusedWindow) {
+          return [
+            {
+              id: 28,
+              windowId: 8,
+              title: 'Background target',
+              url: 'https://example.com/background',
+              status: 'complete',
+            },
+          ];
+        }
+        return [];
+      },
+    },
+    windows: {
+      async getLastFocused() {
+        return { id: 8, focused: false };
+      },
+      async create(createData: chrome.windows.CreateData = {}) {
+        popupCreates.push(createData);
+        return { id: 92, ...createData };
+      },
+    },
+  });
+  const loaded = await loadBackground({
+    chrome,
+    query: `test-background-access-request-unfocused-${Date.now()}`,
+  });
+
+  const response = await loaded.dispatch(
+    createRequest({
+      id: 'background-access-request-unfocused',
+      method: 'access.request',
+    })
+  );
+
+  assert.equal(response.ok, false);
+  if (response.ok) {
+    assert.fail('Expected background access request to fail.');
+  }
+  assert.equal(response.error.code, ERROR_CODES.ACCESS_DENIED);
+  assert.match(response.error.message, /enable access manually/i);
+  assert.match(response.error.message, /do not retry/i);
+  assert.deepEqual(response.error.details, {
+    reason: 'browser_background',
+    requestedTargetWindowId: 8,
+    requestedTargetTabId: 28,
+  });
+  assert.equal(getAccessRequestState(loaded.module).requestedAccessWindowId, null);
+  assert.deepEqual(popupCreates, []);
+});
+
 test('background access request reuses an open side panel instead of opening a popup', async () => {
   const nativeMessages: unknown[] = [];
   const popupCreates: chrome.windows.CreateData[] = [];
@@ -332,6 +389,9 @@ test('background access request reports enabled access without queuing a prompt'
       },
     },
     windows: {
+      async getLastFocused() {
+        return { id: 9, focused: false };
+      },
       async create(createData: chrome.windows.CreateData = {}) {
         popupCreates.push(createData);
         return { id: 95, ...createData };

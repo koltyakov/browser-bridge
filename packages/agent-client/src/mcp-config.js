@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import { atomicWriteFile } from './atomic-write.js';
+
 /** @typedef {import('./types.js').McpClientName} McpClientName */
 
 /** @type {McpClientName[]} */
@@ -491,6 +493,8 @@ async function installJsonMcpConfig(clientName, configPath, stdout) {
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       existing = parsed;
+    } else {
+      throw new Error('MCP config root must be a JSON object.');
     }
   } catch (error) {
     if (!isMissingFileError(error)) {
@@ -519,8 +523,9 @@ async function installJsonMcpConfig(clientName, configPath, stdout) {
     },
   };
 
-  await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
-  await fs.promises.writeFile(configPath, `${JSON.stringify(merged, null, 2)}\n`, 'utf8');
+  await atomicWriteFile(configPath, `${JSON.stringify(merged, null, 2)}\n`, {
+    encoding: 'utf8',
+  });
   stdout.write(`Wrote ${configPath}\n`);
 }
 
@@ -533,13 +538,14 @@ async function installCodexMcpConfig(configPath, stdout) {
   let raw = '';
   try {
     raw = await fs.promises.readFile(configPath, 'utf8');
-  } catch {
-    raw = '';
+  } catch (error) {
+    if (!isMissingFileError(error)) {
+      throw error;
+    }
   }
 
   const updated = upsertCodexServerBlock(raw);
-  await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
-  await fs.promises.writeFile(configPath, updated, 'utf8');
+  await atomicWriteFile(configPath, updated, { encoding: 'utf8' });
   stdout.write(`Wrote ${configPath}\n`);
 }
 
@@ -558,10 +564,15 @@ async function removeJsonMcpConfig(clientName, configPath, stdout) {
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       existing = parsed;
     } else {
+      throw new Error('MCP config root must be a JSON object.');
+    }
+  } catch (error) {
+    if (isMissingFileError(error)) {
       return false;
     }
-  } catch {
-    return false;
+    throw new Error(
+      `Cannot remove Browser Bridge from ${configPath}: existing MCP config is not readable valid JSON.`
+    );
   }
 
   const shape = getMcpConfigShapeForPath(clientName, configPath);
@@ -584,8 +595,9 @@ async function removeJsonMcpConfig(clientName, configPath, stdout) {
     merged[topKey] = updatedBlock;
   }
 
-  await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
-  await fs.promises.writeFile(configPath, `${JSON.stringify(merged, null, 2)}\n`, 'utf8');
+  await atomicWriteFile(configPath, `${JSON.stringify(merged, null, 2)}\n`, {
+    encoding: 'utf8',
+  });
   stdout.write(`Removed ${configPath}\n`);
   return true;
 }
@@ -599,8 +611,11 @@ async function removeCodexMcpConfig(configPath, stdout) {
   let raw = '';
   try {
     raw = await fs.promises.readFile(configPath, 'utf8');
-  } catch {
-    return false;
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      return false;
+    }
+    throw error;
   }
 
   if (!hasCodexServerBlock(raw)) {
@@ -608,8 +623,7 @@ async function removeCodexMcpConfig(configPath, stdout) {
   }
 
   const updated = removeCodexServerBlock(raw);
-  await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
-  await fs.promises.writeFile(configPath, updated, 'utf8');
+  await atomicWriteFile(configPath, updated, { encoding: 'utf8' });
   stdout.write(`Removed ${configPath}\n`);
   return true;
 }

@@ -6,6 +6,7 @@ import {
   createToolResult,
   getBridgeDestinations,
   getToolTokenBudget,
+  requestBridgeWithRetry,
   summarizeToolError,
 } from './handlers-utils.js';
 
@@ -27,15 +28,23 @@ export async function handleTabsTool(args) {
     }
     const results = await Promise.all(
       destinations.map(async (destination) => {
-        const client = await createBridgeClientForDestination(
-          destination.local ? null : destination.id
-        );
+        /** @type {import('../../agent-client/src/client.js').BridgeClient | null} */
+        let client = null;
         try {
+          client = await createBridgeClientForDestination(
+            destination.local ? null : destination.id
+          );
           await client.connect();
-          const response = await client.request({
-            method: 'tabs.list',
-            meta: { source: 'mcp' },
-          });
+          const response = await requestBridgeWithRetry(
+            client,
+            'tabs.list',
+            {},
+            {
+              tabId: null,
+              source: 'mcp',
+              tokenBudget: null,
+            }
+          );
           if (!response.ok) {
             return {
               destinationId: destination.id,
@@ -58,7 +67,9 @@ export async function handleTabsTool(args) {
             tabs: [],
           };
         } finally {
-          await client.close();
+          if (client) {
+            await client.close().catch(() => {});
+          }
         }
       })
     );
@@ -73,7 +84,7 @@ export async function handleTabsTool(args) {
         tabs,
         destinations: results,
       },
-      false
+      failures.length === results.length
     );
   }
   if (args.action === 'create') {

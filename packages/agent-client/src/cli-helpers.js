@@ -96,7 +96,7 @@ export function parseJsonObject(value) {
 
 /**
  * Parse a CLI argument as a positive integer, throwing a user-friendly error
- * if the value is missing or not a finite number.
+ * if the value is missing or not a positive integer.
  *
  * @param {string | undefined} value
  * @param {string} argName - The argument name shown in the error message
@@ -104,10 +104,27 @@ export function parseJsonObject(value) {
  */
 export function parseIntArg(value, argName) {
   const n = Number(value);
-  if (!value || !Number.isFinite(n)) {
-    throw new Error(`${argName} must be a number (got ${JSON.stringify(value)}).`);
+  if (!value || !Number.isInteger(n) || n <= 0) {
+    throw new Error(`${argName} must be a positive integer (got ${JSON.stringify(value)}).`);
   }
   return n;
+}
+
+/**
+ * Parse a CLI argument as a finite number. This is intentionally separate from
+ * positive integer parsing because viewport coordinates may be fractional or
+ * negative.
+ *
+ * @param {string | undefined} value
+ * @param {string} argName
+ * @returns {number}
+ */
+export function parseNumberArg(value, argName) {
+  const number = Number(value);
+  if (value === undefined || value === '' || !Number.isFinite(number)) {
+    throw new Error(`${argName} must be a number (got ${JSON.stringify(value)}).`);
+  }
+  return number;
 }
 
 /**

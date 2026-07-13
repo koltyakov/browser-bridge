@@ -6,6 +6,73 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Coordinated restart:** `bbx restart` now reloads the daemon and asks all
+  running Browser Bridge MCP servers to exit cleanly so their owning agents can
+  relaunch the current installed version.
+
+## [1.7.0] - 2026-07-02
+
+### Added
+
+- **Remote browser destinations:** Added named remote destinations across the
+  CLI and MCP tools, including `bbx remote add`, `list`, `test`, and `remove`,
+  explicit `destinationId` routing, and separate local and remote readiness
+  reporting.
+- **Remote proxy mode:** Added `bbx proxy enable`, `disable`, and `status` for
+  exposing the daemon to a tunneled development machine, with authentication
+  token management, side-panel status, and a dedicated remote-proxy guide.
+
+### Changed
+
+- **MCP destination routing:** Read-only MCP operations can use configured
+  remote destinations when the local bridge is unavailable, while mutating
+  operations remain pinned to an explicitly selected destination.
+- **Remote-aware diagnostics:** Health and status flows now distinguish daemon
+  reachability, extension readiness, and destination-specific failures instead
+  of treating every connection as local.
+
+### Fixed
+
+- **Native connection stability:** Extension native-port startup now tracks
+  pending connections and waits for a stable connection before reporting the
+  bridge as ready.
+- **Runtime serialization:** Console argument capture now handles large and
+  circular objects safely, and fetch interception avoids unnecessary request
+  cloning while preserving request bodies.
+
+## [1.6.0] - 2026-06-09
+
+### Added
+
+- **Network request interception:** Added CDP Fetch-backed
+  `network.intercept.add`, `remove`, `list`, and `clear` methods plus `bbx
+  intercept` commands for continuing, blocking, or fulfilling matching browser
+  requests.
+- **Framework-safe form filling:** Added `input.fill` and the `bbx fill`
+  shortcut to update native controls while triggering the events expected by
+  React, Vue, Angular, and standard DOM listeners.
+- **Tab activation:** Added `tabs.activate` and `bbx tab-activate` to bring a
+  selected tab to the foreground.
+
+### Changed
+
+- **CLI tab targeting:** Shortcut commands now honor `--tab`, evaluation
+  supports `--tab` and `--await`, and selector-based shortcuts retry once after
+  stale element references.
+- **Setup guidance:** Expanded Chromium sandbox compatibility notes, agent
+  permission examples, and side-panel setup visibility for incomplete native
+  host installations.
+
+### Fixed
+
+- **Content script recovery:** Content-script injection failures now return
+  clearer restricted-page and extension-reload guidance instead of collapsing
+  into generic internal errors.
+- **Input and interception validation:** Hardened `input.fill` and network
+  interception parameter handling, cleanup, and protocol capability metadata.
+
 ## [1.5.0] - 2026-05-13
 
 ### Changed

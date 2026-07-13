@@ -411,3 +411,100 @@ test('removeMcpConfig leaves unrelated client entries intact when browser-bridge
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }
 });
+
+test('MCP config writes preserve existing modes and leave no sibling temp files', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-atomic-mcp-'));
+  const configPath = path.join(tempDir, '.cursor', 'mcp.json');
+  await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
+  await fs.promises.writeFile(configPath, '{}\n', { mode: 0o640 });
+
+  try {
+    await installMcpConfig('cursor', {
+      global: false,
+      cwd: tempDir,
+      stdout: { write: () => true },
+    });
+    if (process.platform !== 'win32') {
+      assert.equal((await fs.promises.stat(configPath)).mode & 0o777, 0o640);
+    }
+    assert.deepEqual(await fs.promises.readdir(path.dirname(configPath)), ['mcp.json']);
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('atomic MCP replacement failure preserves existing JSON and Codex configs', async (t) => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-atomic-mcp-fail-'));
+  const jsonPath = path.join(tempDir, '.cursor', 'mcp.json');
+  const codexPath = path.join(tempDir, '.codex', 'config.toml');
+  const originalJson = '{"theme":"dark"}\n';
+  const originalCodex = 'model = "gpt-5"\n';
+  await fs.promises.mkdir(path.dirname(jsonPath), { recursive: true });
+  await fs.promises.mkdir(path.dirname(codexPath), { recursive: true });
+  await fs.promises.writeFile(jsonPath, originalJson, 'utf8');
+  await fs.promises.writeFile(codexPath, originalCodex, 'utf8');
+
+  const originalRename = fs.promises.rename;
+  t.mock.method(fs.promises, 'rename', (async (oldPath, newPath) => {
+    if (String(oldPath).endsWith('.tmp')) {
+      throw new Error(`simulated atomic rename failure for ${String(newPath)}`);
+    }
+    return originalRename.call(fs.promises, oldPath, newPath);
+  }) as typeof fs.promises.rename);
+
+  try {
+    await assert.rejects(
+      installMcpConfig('cursor', {
+        global: false,
+        cwd: tempDir,
+        stdout: { write: () => true },
+      }),
+      /simulated atomic rename failure/u
+    );
+    await assert.rejects(
+      installMcpConfig('codex', {
+        global: false,
+        cwd: tempDir,
+        stdout: { write: () => true },
+      }),
+      /simulated atomic rename failure/u
+    );
+    assert.equal(await fs.promises.readFile(jsonPath, 'utf8'), originalJson);
+    assert.equal(await fs.promises.readFile(codexPath, 'utf8'), originalCodex);
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('removeMcpConfig surfaces malformed and unreadable existing configs', async (t) => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-remove-invalid-mcp-'));
+  const jsonPath = path.join(tempDir, '.cursor', 'mcp.json');
+  const codexPath = path.join(tempDir, '.codex', 'config.toml');
+  await fs.promises.mkdir(path.dirname(jsonPath), { recursive: true });
+  await fs.promises.mkdir(path.dirname(codexPath), { recursive: true });
+  await fs.promises.writeFile(jsonPath, '{not json\n', 'utf8');
+  await fs.promises.writeFile(codexPath, 'model = "gpt-5"\n', 'utf8');
+
+  try {
+    await assert.rejects(
+      removeMcpConfig('cursor', { global: false, cwd: tempDir, stdout: { write: () => true } }),
+      /not readable valid JSON/u
+    );
+
+    const originalReadFile = fs.promises.readFile;
+    t.mock.method(fs.promises, 'readFile', (async (filePath, options) => {
+      if (String(filePath) === codexPath) {
+        const error = new Error('permission denied') as NodeJS.ErrnoException;
+        error.code = 'EACCES';
+        throw error;
+      }
+      return originalReadFile.call(fs.promises, filePath, options);
+    }) as typeof fs.promises.readFile);
+    await assert.rejects(
+      removeMcpConfig('codex', { global: false, cwd: tempDir, stdout: { write: () => true } }),
+      /permission denied/u
+    );
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});

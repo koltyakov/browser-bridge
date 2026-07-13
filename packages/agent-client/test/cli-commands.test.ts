@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { createFailure, createSuccess, PROTOCOL_VERSION } from '../../protocol/src/index.js';
 import { PUBLISHED_EXTENSION_ID } from '../../native-host/src/config.js';
 import { stopBridgeDaemon } from '../../native-host/src/daemon-process.js';
+import { startMcpProcessControl } from '../../mcp-server/src/lifecycle.js';
 import { runCli } from '../../../tests/_helpers/runCli.ts';
 import { createInstallFs } from '../../../tests/_helpers/installFs.ts';
 import { bridgeServerWith } from '../../../tests/_helpers/socketHarness.ts';
@@ -274,6 +275,7 @@ test('bbx summarized bridge failures set a failing exit code', async () => {
 
 test('bbx restart starts the daemon when it is offline', async () => {
   const bridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-cli-restart-'));
+  let mcpControl: Awaited<ReturnType<typeof startMcpProcessControl>> | null = null;
 
   try {
     const result = await runCli({
@@ -295,6 +297,11 @@ test('bbx restart starts the daemon when it is offline', async () => {
     assert.equal(payload.evidence.previouslyRunning, false);
     assert.equal(typeof payload.evidence.pid, 'number');
 
+    mcpControl = await startMcpProcessControl({
+      registryDir: path.join(bridgeHome, 'mcp-processes'),
+      onRestart: () => {},
+    });
+
     const stopResult = await runCli({
       args: ['restart'],
       env: {
@@ -305,9 +312,42 @@ test('bbx restart starts the daemon when it is offline', async () => {
     const stopPayload = expectCliPayload(stopResult.json);
     assert.equal(stopResult.status, 0);
     assert.equal(stopPayload.ok, true);
-    assert.equal(stopPayload.summary, 'Browser Bridge daemon restarted.');
+    assert.equal(
+      stopPayload.summary,
+      'Browser Bridge daemon restarted. Restart requested for 1 MCP server(s).'
+    );
     assert.equal(stopPayload.evidence.previouslyRunning, true);
+    assert.deepEqual(stopPayload.evidence.mcpProcesses, {
+      registered: 1,
+      restartRequested: 1,
+      restartFailed: 0,
+      staleRegistrationsRemoved: 0,
+    });
+
+    await fs.promises.writeFile(
+      path.join(bridgeHome, 'mcp-processes', 'unreachable.json'),
+      `${JSON.stringify({
+        protocolVersion: 1,
+        instanceId: 'unreachable',
+        pid: process.pid,
+        port: 1,
+        token: 'not-listening',
+      })}\n`,
+      'utf8'
+    );
+    const failedResult = await runCli({
+      args: ['restart'],
+      env: {
+        ...process.env,
+        BROWSER_BRIDGE_HOME: bridgeHome,
+      },
+    });
+    const failedPayload = expectCliPayload(failedResult.json);
+    assert.equal(failedResult.status, 1);
+    assert.equal(failedPayload.ok, false);
+    assert.match(failedPayload.summary, /Could not contact 1 MCP server/);
   } finally {
+    await mcpControl?.dispose();
     await stopBridgeDaemon({
       socketPath: path.join(bridgeHome, 'bridge.sock'),
       pidPath: path.join(bridgeHome, 'daemon.pid'),
@@ -1065,7 +1105,7 @@ test('bbx call rejects an invalid --tab flag before dispatching the bridge reque
   assert.equal(result.stderr, '');
   assert.equal(payload.ok, false);
   assert.equal(payload.evidence, null);
-  assert.equal(payload.summary, 'ERROR: tabId must be a number (got "abc").');
+  assert.equal(payload.summary, 'ERROR: tabId must be a positive integer (got "abc").');
 });
 
 test('bbx call rejects extra positional arguments before connecting', async () => {
@@ -1167,7 +1207,7 @@ test('bbx batch reports unknown methods without dispatching them', async () => {
       error: { code: string; message: string };
     }>;
 
-    assert.equal(result.status, 0);
+    assert.equal(result.status, 1);
     assert.equal(result.signal, null);
     assert.equal(result.stderr, '');
     assert.deepEqual(payload, [
@@ -1193,6 +1233,105 @@ test('bbx batch reports unknown methods without dispatching them', async () => {
     );
   } finally {
     await bridgeServer.close();
+  }
+});
+
+test('bbx batch rejects non-object params and exits unsuccessfully', async () => {
+  const bridgeServer = await bridgeServerWith({});
+  try {
+    const result = await runCli({
+      args: ['batch', '[{"method":"tabs.list","params":[]}]'],
+      env: { ...process.env, BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome },
+    });
+    const payload = result.json as Array<{ ok: boolean; error: { message: string } }>;
+    assert.equal(result.status, 1);
+    assert.equal(payload[0].ok, false);
+    assert.equal(payload[0].error.message, 'Batch call params must be a JSON object.');
+    assert.deepEqual(
+      bridgeServer.requests.map((request) => request.method),
+      ['health.ping']
+    );
+  } finally {
+    await bridgeServer.close();
+  }
+});
+
+test('bbx batch uses operation-aware timeout and preserves tab routing and metadata', async () => {
+  const bridgeServer = await bridgeServerWith({
+    'page.evaluate': async (request) => {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      return createSuccess(request.id, { value: 4 });
+    },
+  });
+  try {
+    const result = await runCli({
+      args: [
+        'batch',
+        '[{"method":"page.evaluate","tabId":17,"params":{"expression":"2 + 2","timeoutMs":100}}]',
+      ],
+      env: {
+        ...process.env,
+        BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome,
+        BBX_CLIENT_REQUEST_TIMEOUT_MS: '10',
+      },
+    });
+    const payload = result.json as Array<{ ok: boolean }>;
+    assert.equal(result.status, 0, result.stdout);
+    assert.equal(payload[0].ok, true);
+    assert.equal(bridgeServer.requests[1].tab_id, 17);
+    assert.equal(bridgeServer.requests[1].meta.source, 'cli');
+    assert.equal(bridgeServer.requests[1].params.timeoutMs, 100);
+  } finally {
+    await bridgeServer.close();
+  }
+});
+
+test('bbx intercept add parses status separately from response body', async () => {
+  const bridgeServer = await bridgeServerWith({
+    'network.intercept.add': (request) => createSuccess(request.id, { ruleId: 'rule-1' }),
+  });
+  try {
+    const result = await runCli({
+      args: ['intercept', 'add', '*example*', '--respond', 'hello world', '--status', '201'],
+      env: { ...process.env, BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome },
+    });
+    assert.equal(result.status, 0, result.stdout);
+    assert.deepEqual(bridgeServer.requests[1].params, {
+      urlPattern: '*example*',
+      action: 'fulfill',
+      statusCode: 201,
+      body: 'hello world',
+    });
+  } finally {
+    await bridgeServer.close();
+  }
+});
+
+test('bbx intercept rejects conflicting, unknown, extra, and invalid status options', async () => {
+  const cases = [
+    {
+      args: ['intercept', 'add', '*', '--block', '--respond', 'body'],
+      message: /either --block or --respond/u,
+    },
+    { args: ['intercept', 'add', '*', '--unknown'], message: /Unknown or extra/u },
+    {
+      args: ['intercept', 'add', '*', '--respond', 'body', 'extra'],
+      message: /Unknown or extra/u,
+    },
+    {
+      args: ['intercept', 'add', '*', '--status', '99'],
+      message: /between 100 and 599/u,
+    },
+    {
+      args: ['intercept', 'add', '*', '--status', '200.5'],
+      message: /positive integer/u,
+    },
+  ];
+  for (const entry of cases) {
+    const result = await runCli({ args: entry.args, env: process.env });
+    const payload = expectCliPayload(result.json);
+    assert.equal(result.status, 1);
+    assert.match(payload.summary, entry.message);
   }
 });
 

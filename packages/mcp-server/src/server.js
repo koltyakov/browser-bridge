@@ -32,11 +32,14 @@ import {
 import {
   BUDGET_PRESETS,
   DEFAULT_CONSOLE_LIMIT,
+  DEFAULT_EVAL_TIMEOUT_MS,
+  DEFAULT_LOG_TAIL_LIMIT,
   DEFAULT_MAX_DEPTH,
   DEFAULT_MAX_HTML_LENGTH,
   DEFAULT_MAX_NODES,
   DEFAULT_PAGE_TEXT_BUDGET,
   DEFAULT_TEXT_BUDGET,
+  DEFAULT_NAV_TIMEOUT_MS,
   DEFAULT_WAIT_TIMEOUT_MS,
   getMethodsByMaxComplexity,
 } from '../../protocol/src/index.js';
@@ -113,9 +116,12 @@ export function createBridgeMcpServer() {
     {
       title: 'Browser Bridge Status',
       description:
-        'Check bridge readiness: daemon connectivity, extension state, and window access. Call first to confirm the bridge is usable. If access is not enabled, ask the user to click Enable in the extension popup or side panel, then retry.',
+        'Check bridge readiness: daemon connectivity, extension state, and window access. Omit destinationId to inspect local and configured remote destinations. If access is not enabled, ask the user to click Enable in the extension popup or side panel, then retry.',
       inputSchema: {
-        destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+        destinationId: z
+          .string()
+          .optional()
+          .describe('Inspect one destination instead of aggregating all configured destinations.'),
       },
     },
     handleStatusTool
@@ -147,7 +153,7 @@ export function createBridgeMcpServer() {
           .int()
           .positive()
           .optional()
-          .describe(`Maximum log entries to return (default: ${DEFAULT_CONSOLE_LIMIT})`),
+          .describe(`Maximum log entries to return (default: ${DEFAULT_LOG_TAIL_LIMIT})`),
         budgetPreset: z
           .enum(['quick', 'normal', 'deep'])
           .optional()
@@ -175,7 +181,7 @@ export function createBridgeMcpServer() {
     {
       title: 'Browser Tabs',
       description:
-        'List, create, close, or activate browser tabs. Prefer "list" to work in existing tabs; only use "create" when the user explicitly requests a new page.',
+        'List, create, close, or activate browser tabs. List without destinationId aggregates configured destinations; other actions default to local. Only create a page when the user explicitly requests it.',
       inputSchema: {
         action: z
           .enum(['list', 'create', 'close', 'activate'])
@@ -188,7 +194,10 @@ export function createBridgeMcpServer() {
           .positive()
           .optional()
           .describe('Tab ID (required for close/activate)'),
-        destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+        destinationId: z
+          .string()
+          .optional()
+          .describe('Target one destination; list without it aggregates configured destinations.'),
       },
     },
     handleTabsTool
@@ -371,11 +380,13 @@ export function createBridgeMcpServer() {
           .int()
           .positive()
           .optional()
-          .describe(`Timeout for evaluate/wait operations (default: ${DEFAULT_WAIT_TIMEOUT_MS})`),
+          .describe(
+            `Timeout (default: ${DEFAULT_EVAL_TIMEOUT_MS} for evaluate, ${DEFAULT_NAV_TIMEOUT_MS} for wait_for_load)`
+          ),
         returnByValue: z
-          .boolean()
+          .literal(true)
           .optional()
-          .describe('Return actual value vs JSON (default: true)'),
+          .describe('Return serializable values (only true is supported; default: true)'),
         level: z
           .enum(['all', 'debug', 'log', 'info', 'warn', 'error', 'exception', 'rejection'])
           .optional()
@@ -432,7 +443,7 @@ export function createBridgeMcpServer() {
           .int()
           .positive()
           .optional()
-          .describe('Timeout for navigation (default: 30000)'),
+          .describe(`Timeout for navigation (default: ${DEFAULT_NAV_TIMEOUT_MS})`),
         top: z.number().optional().describe('Scroll target Y position (pixels)'),
         left: z.number().optional().describe('Scroll target X position (pixels)'),
         behavior: z.enum(['auto', 'smooth']).optional().describe('Scroll behavior (default: auto)'),
@@ -532,7 +543,7 @@ export function createBridgeMcpServer() {
           .int()
           .nonnegative()
           .optional()
-          .describe('Hover duration in ms (default: 100)'),
+          .describe('Hover duration in ms (default: 0)'),
         sourceElementRef: z.string().optional().describe('Drag source element (for drag action)'),
         sourceSelector: z
           .string()
@@ -580,19 +591,12 @@ export function createBridgeMcpServer() {
           .describe('CSS property: value pairs (for apply_styles)'),
         important: z.boolean().optional().describe('Add !important flag (default: false)'),
         operation: z
-          .enum([
-            'setAttribute',
-            'removeAttribute',
-            'addClass',
-            'removeClass',
-            'setTextContent',
-            'setProperty',
-          ])
+          .enum(['setAttribute', 'removeAttribute', 'addClass', 'removeClass', 'setTextContent'])
           .optional()
           .describe('DOM mutation type'),
         value: z.unknown().optional().describe('Value for the DOM operation'),
         name: z.string().optional().describe('Attribute/class/property name (for apply_dom)'),
-        patchId: z.string().optional().describe('Patch ID to rollback (omit for most recent)'),
+        patchId: z.string().optional().describe('Patch ID (required for rollback)'),
         verify: z
           .boolean()
           .optional()
@@ -706,6 +710,10 @@ export function createBridgeMcpServer() {
           .describe('Method parameters as object'),
         tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+        budgetPreset: z
+          .enum(['quick', 'normal', 'deep'])
+          .optional()
+          .describe(BUDGET_PRESET_DESCRIPTION),
       },
     },
     handleRawCallTool

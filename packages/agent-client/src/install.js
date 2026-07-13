@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { installMcpConfig } from './mcp-config.js';
@@ -452,10 +453,44 @@ async function installManagedSkill(skillName, target, targetDir) {
     throw new Error(`Refusing to overwrite unmanaged skill directory: ${targetDir}`);
   }
 
-  await fs.promises.rm(targetDir, { recursive: true, force: true });
-  await copyDir(sourceDir, targetDir);
-  await applyManagedSkillPatches(skillName, target, targetDir);
-  await fs.promises.writeFile(sentinelPath, formatManagedSkillSentinel(skillName), 'utf8');
+  await fs.promises.mkdir(path.dirname(targetDir), { recursive: true });
+  const suffix = `${process.pid}-${randomUUID()}`;
+  const temporaryDir = `${targetDir}.tmp-${suffix}`;
+  const backupDir = `${targetDir}.backup-${suffix}`;
+  let backupCreated = false;
+
+  try {
+    await copyDir(sourceDir, temporaryDir);
+    await applyManagedSkillPatches(skillName, target, temporaryDir);
+    await fs.promises.writeFile(
+      path.join(temporaryDir, managedSentinelFilename),
+      formatManagedSkillSentinel(skillName),
+      'utf8'
+    );
+
+    if (targetExists) {
+      await fs.promises.rename(targetDir, backupDir);
+      backupCreated = true;
+    }
+    try {
+      await fs.promises.rename(temporaryDir, targetDir);
+    } catch (error) {
+      if (backupCreated) {
+        await fs.promises.rename(backupDir, targetDir);
+        backupCreated = false;
+      }
+      throw error;
+    }
+    if (backupCreated) {
+      await fs.promises.rm(backupDir, { recursive: true, force: true }).catch(() => {});
+      backupCreated = false;
+    }
+  } finally {
+    await fs.promises.rm(temporaryDir, { recursive: true, force: true }).catch(() => {});
+    if (backupCreated && !(await pathExists(targetDir))) {
+      await fs.promises.rename(backupDir, targetDir).catch(() => {});
+    }
+  }
 }
 
 /**

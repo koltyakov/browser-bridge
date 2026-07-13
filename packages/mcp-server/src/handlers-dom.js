@@ -104,7 +104,8 @@ export async function handleDomTool(args) {
     return summarizeToolError('role is required for dom.find_by_role.');
   }
   if (args.action === 'query' || args.action === 'accessibility_tree') {
-    const inferred = inferBudgetFromSelector(args);
+    const inferred =
+      args.action === 'accessibility_tree' ? 'normal' : inferBudgetFromSelector(args);
     const withBudget = inferred ? { ...args, budgetPreset: args.budgetPreset ?? inferred } : args;
     return dispatchToolAction(DOM_ACTIONS, applyTreeBudgetPreset(withBudget), 'DOM');
   }
@@ -183,7 +184,6 @@ export const PATCH_ACTIONS = {
         addClass: 'add_class',
         removeClass: 'remove_class',
         setTextContent: 'set_text',
-        setProperty: 'set_attribute',
       };
       const normalizedOperation = opMap[operation] || operation;
       const value =

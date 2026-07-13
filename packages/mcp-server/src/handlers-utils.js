@@ -1,9 +1,15 @@
 // @ts-check
 
 import {
+  BridgeError,
   bridgeMethodNeedsTab,
+  DEFAULT_CONSOLE_LIMIT,
+  DEFAULT_LOG_TAIL_LIMIT,
   DEFAULT_MAX_HTML_LENGTH,
+  DEFAULT_MAX_NODES,
+  DEFAULT_NETWORK_LIMIT,
   DEFAULT_PAGE_TEXT_BUDGET,
+  DEFAULT_TEXT_BUDGET,
   estimateJsonPayloadCost,
   getBudgetPreset,
   getErrorRecovery,
@@ -121,10 +127,28 @@ export function createToolResult(
 /**
  * @param {BridgeResponse} response
  * @param {string} [method]
+ * @param {Record<string, unknown>} [params]
  * @returns {ToolResult}
  */
-export function summarizeToolResponse(response, method) {
+export function summarizeToolResponse(response, method, params = {}) {
   const summary = annotateBridgeSummary(summarizeBridgeResponse(response, method), response);
+  const summaryRecord = /** @type {Record<string, unknown>} */ (summary);
+  if (response.ok) {
+    const evidence = getRequestAwareEvidence(response.result, method, params, summary.evidence);
+    summary.evidence = evidence.value;
+    if (evidence.truncated) {
+      summaryRecord.outputTruncated = true;
+      summaryRecord.outputLimit = evidence.limit;
+    }
+  } else {
+    const bounded = boundToolValue(summary.evidence);
+    summary.evidence = bounded.value;
+    summaryRecord.error = {
+      ...response.error,
+      details: boundToolValue(response.error.details).value,
+    };
+    if (bounded.truncated) summaryRecord.outputTruncated = true;
+  }
   return createToolResult(summary.summary, summary, !summary.ok);
 }
 
@@ -136,15 +160,23 @@ export function summarizeToolError(error) {
   const message = error instanceof Error ? error.message : String(error);
   const record =
     error && typeof error === 'object' ? /** @type {Record<string, unknown>} */ (error) : {};
-  const code = typeof record.code === 'string' ? record.code : 'INTERNAL_ERROR';
+  const code =
+    typeof record.code === 'string'
+      ? record.code
+      : typeof error === 'string'
+        ? 'INVALID_REQUEST'
+        : 'INTERNAL_ERROR';
+  const details = Object.hasOwn(record, 'details') ? record.details : null;
+  const boundedDetails = boundToolValue(details);
   const recovery = getErrorRecovery(code);
   return createToolResult(
     `${code}: ${message}${recovery?.hint ? ` ${recovery.hint}` : ''}`,
     {
       ok: false,
-      evidence: null,
-      error: { code, message },
+      evidence: boundedDetails.value,
+      error: { code, message, details: boundedDetails.value },
       recovery,
+      ...(boundedDetails.truncated ? { outputTruncated: true } : {}),
     },
     true
   );
@@ -185,7 +217,7 @@ export async function resolveToolRef(client, input, tabId = null) {
   if (typeof input.selector === 'string' && input.selector) {
     return resolveRef(client, input.selector, tabId, REQUEST_SOURCE);
   }
-  throw new Error('Provide either elementRef or selector.');
+  throw new BridgeError('INVALID_REQUEST', 'Provide either elementRef or selector.');
 }
 
 /**
@@ -315,6 +347,233 @@ export function applyHtmlBudgetPreset(args) {
 }
 
 /**
+ * Apply a preset to method parameters before dispatch. Explicit method params
+ * always win over preset defaults.
+ *
+ * @param {BridgeMethod} method
+ * @param {Record<string, unknown>} params
+ * @param {unknown} budgetPreset
+ * @returns {Record<string, unknown>}
+ */
+export function applyMethodBudgetPreset(method, params, budgetPreset) {
+  const args = { ...params, budgetPreset };
+  let normalized = args;
+  if (method === 'dom.query' || method === 'dom.get_accessibility_tree') {
+    normalized = applyTreeBudgetPreset(args);
+  } else if (method === 'dom.get_text') {
+    normalized = applyTextBudgetPreset(args);
+  } else if (method === 'dom.get_html') {
+    normalized = applyHtmlBudgetPreset(args);
+  } else if (method === 'page.get_text') {
+    normalized = applyPageTextBudgetPreset(args);
+  } else if (method === 'page.get_console') {
+    normalized = applyLimitBudgetPreset(args, {
+      quick: 10,
+      normal: DEFAULT_CONSOLE_LIMIT,
+      deep: 100,
+    });
+  } else if (method === 'page.get_network') {
+    normalized = applyLimitBudgetPreset(args, {
+      quick: 10,
+      normal: DEFAULT_NETWORK_LIMIT,
+      deep: 100,
+    });
+  } else if (method === 'log.tail') {
+    normalized = applyLimitBudgetPreset(args, {
+      quick: 10,
+      normal: DEFAULT_LOG_TAIL_LIMIT,
+      deep: 100,
+    });
+  }
+  const { budgetPreset: _budgetPreset, ...methodParams } = normalized;
+  return methodParams;
+}
+
+/**
+ * @param {unknown} input
+ * @param {{ maxEntries?: number, maxCharacters?: number, maxStringLength?: number }} [options]
+ * @returns {{ value: unknown, truncated: boolean, limit: Record<string, number> }}
+ */
+export function boundToolValue(input, options = {}) {
+  const maxEntries = options.maxEntries ?? 500;
+  const maxCharacters = options.maxCharacters ?? 20_000;
+  const maxStringLength = options.maxStringLength ?? 4_000;
+  const state = { entries: 0, characters: 0, truncated: false };
+  /** @type {(value: unknown, depth: number) => unknown} */
+  const visit = (value, depth) => {
+    if (state.entries >= maxEntries || state.characters >= maxCharacters || depth > 8) {
+      state.truncated = true;
+      return '[truncated]';
+    }
+    state.entries += 1;
+    if (typeof value === 'string') {
+      const limit = Math.min(value.length, maxStringLength, maxCharacters - state.characters);
+      state.characters += limit;
+      if (limit === value.length) return value;
+      state.truncated = true;
+      return value.slice(0, Math.max(0, limit));
+    }
+    if (Array.isArray(value)) {
+      const limit = Math.min(value.length, 100, maxEntries - state.entries);
+      if (limit < value.length) state.truncated = true;
+      return value.slice(0, limit).map((entry) => visit(entry, depth + 1));
+    }
+    if (value && typeof value === 'object') {
+      /** @type {Record<string, unknown>} */
+      const output = {};
+      const entries = Object.entries(/** @type {Record<string, unknown>} */ (value));
+      const limit = Math.min(entries.length, 100);
+      if (limit < entries.length) state.truncated = true;
+      for (const [key, entry] of entries.slice(0, limit)) {
+        if (state.entries >= maxEntries || state.characters >= maxCharacters) {
+          state.truncated = true;
+          break;
+        }
+        state.characters += key.length;
+        output[key] = visit(entry, depth + 1);
+      }
+      return output;
+    }
+    return value;
+  };
+  return {
+    value: visit(input, 0),
+    truncated: state.truncated,
+    limit: { maxEntries, maxCharacters, maxStringLength },
+  };
+}
+
+/**
+ * Preserve useful evidence up to the caller's requested limits instead of
+ * fetching normal/deep results and silently returning only a fixed preview.
+ *
+ * @param {unknown} rawResult
+ * @param {string | undefined} method
+ * @param {Record<string, unknown>} params
+ * @param {unknown} fallback
+ * @returns {{ value: unknown, truncated: boolean, limit: Record<string, number> }}
+ */
+function getRequestAwareEvidence(rawResult, method, params, fallback) {
+  const result =
+    rawResult && typeof rawResult === 'object' && !Array.isArray(rawResult)
+      ? /** @type {Record<string, unknown>} */ (rawResult)
+      : {};
+  if (method === 'page.get_text' || method === 'dom.get_text') {
+    const text = typeof result.text === 'string' ? result.text : result.value;
+    if (typeof text === 'string') {
+      const defaultLimit =
+        method === 'page.get_text' ? DEFAULT_PAGE_TEXT_BUDGET : DEFAULT_TEXT_BUDGET;
+      const requested = positiveInteger(params.textBudget) ?? defaultLimit;
+      const maxCharacters = Math.min(requested, 16_000);
+      const outputTruncated = text.length > maxCharacters;
+      return {
+        value: {
+          text: text.slice(0, maxCharacters),
+          length: typeof result.length === 'number' ? result.length : text.length,
+          truncated: result.truncated === true,
+          returnedChars: Math.min(text.length, maxCharacters),
+        },
+        truncated: outputTruncated,
+        limit: { maxCharacters },
+      };
+    }
+  }
+  if (method === 'dom.get_html' && typeof result.html === 'string') {
+    const requested = positiveInteger(params.maxLength) ?? DEFAULT_MAX_HTML_LENGTH;
+    const maxCharacters = Math.min(requested, 10_000);
+    return {
+      value: {
+        html: result.html.slice(0, maxCharacters),
+        truncated: result.truncated === true,
+        returnedChars: Math.min(result.html.length, maxCharacters),
+      },
+      truncated: result.html.length > maxCharacters,
+      limit: { maxCharacters },
+    };
+  }
+  if (method === 'dom.query' && Array.isArray(result.nodes)) {
+    const maxEntries = Math.min(positiveInteger(params.maxNodes) ?? DEFAULT_MAX_NODES, 100);
+    const nodes = result.nodes.slice(0, maxEntries).map(compactDomNode);
+    return {
+      value: nodes,
+      truncated: result.truncated === true || result.nodes.length > maxEntries,
+      limit: { maxEntries },
+    };
+  }
+  if (method === 'dom.get_accessibility_tree' && Array.isArray(result.nodes)) {
+    const maxEntries = Math.min(positiveInteger(params.maxNodes) ?? DEFAULT_MAX_NODES, 100);
+    const nodes = result.nodes.slice(0, maxEntries).map((value) => {
+      const node =
+        value && typeof value === 'object' ? /** @type {Record<string, unknown>} */ (value) : {};
+      return {
+        role: node.role,
+        name: node.name,
+        ...(node.interactive === true ? { interactive: true } : {}),
+        ...(node.value !== undefined ? { value: node.value } : {}),
+      };
+    });
+    return {
+      value: nodes,
+      truncated: result.truncated === true || result.nodes.length > maxEntries,
+      limit: { maxEntries },
+    };
+  }
+  if (
+    (method === 'page.get_console' || method === 'page.get_network' || method === 'log.tail') &&
+    Array.isArray(result.entries)
+  ) {
+    const defaultLimit =
+      method === 'page.get_console'
+        ? DEFAULT_CONSOLE_LIMIT
+        : method === 'page.get_network'
+          ? DEFAULT_NETWORK_LIMIT
+          : DEFAULT_LOG_TAIL_LIMIT;
+    const maxEntries = Math.min(positiveInteger(params.limit) ?? defaultLimit, 100);
+    const selected =
+      method === 'log.tail'
+        ? result.entries.slice(-maxEntries)
+        : result.entries.slice(0, maxEntries);
+    const bounded = boundToolValue(selected, { maxEntries: 500, maxCharacters: 20_000 });
+    return {
+      value: bounded.value,
+      truncated: result.entries.length > maxEntries || bounded.truncated,
+      limit: { maxEntries, maxCharacters: 20_000 },
+    };
+  }
+  return boundToolValue(fallback);
+}
+
+/** @param {unknown} value */
+function positiveInteger(value) {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {Record<string, unknown>}
+ */
+function compactDomNode(value) {
+  const node =
+    value && typeof value === 'object' ? /** @type {Record<string, unknown>} */ (value) : {};
+  const attrs =
+    node.attrs && typeof node.attrs === 'object'
+      ? /** @type {Record<string, unknown>} */ (node.attrs)
+      : {};
+  /** @type {Record<string, unknown>} */
+  const compact = { ref: node.elementRef, tag: node.tag };
+  if (node.id ?? attrs.id) compact.id = node.id ?? attrs.id;
+  if (typeof attrs.class === 'string') compact.cls = attrs.class.split(' ').slice(0, 3).join(' ');
+  if (node.role ?? attrs.role) compact.role = node.role ?? attrs.role;
+  if (node.name ?? attrs['aria-label']) compact.label = node.name ?? attrs['aria-label'];
+  if (attrs['data-testid']) compact.testId = attrs['data-testid'];
+  const text = typeof node.textExcerpt === 'string' ? node.textExcerpt : node.text;
+  if (typeof text === 'string' && text) compact.text = text.slice(0, 120);
+  if (Array.isArray(node.children) && node.children.length)
+    compact.childCount = node.children.length;
+  return compact;
+}
+
+/**
  * @param {import('../../agent-client/src/client.js').BridgeClient} client
  * @param {BridgeMethod} method
  * @param {Record<string, unknown>} params
@@ -352,7 +611,7 @@ export async function callBridgeTool(method, params = {}, options = {}) {
         source: REQUEST_SOURCE,
         tokenBudget: options.tokenBudget ?? null,
       });
-      return summarizeToolResponse(response, options.summaryMethod || method);
+      return summarizeToolResponse(response, options.summaryMethod || method, params);
     },
     { destinationId: options.destinationId ?? null }
   );
@@ -388,12 +647,13 @@ export async function dispatchToolAction(actions, args, toolName) {
             requestedTabId
           )
         : undefined;
-      const response = await requestBridgeWithRetry(client, entry.method, entry.params(args, ref), {
+      const params = entry.params(args, ref);
+      const response = await requestBridgeWithRetry(client, entry.method, params, {
         tabId: requestedTabId,
         source: REQUEST_SOURCE,
         tokenBudget: getToolTokenBudget(/** @type {{ budgetPreset?: unknown }} */ (args)),
       });
-      return summarizeToolResponse(response, entry.method);
+      return summarizeToolResponse(response, entry.method, params);
     },
     { destinationId: typeof args.destinationId === 'string' ? args.destinationId : null }
   );

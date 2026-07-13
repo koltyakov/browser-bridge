@@ -1,7 +1,7 @@
 // @ts-check
 
 import os from 'node:os';
-import { DEFAULT_CONSOLE_LIMIT, createRuntimeContext } from '../../protocol/src/index.js';
+import { DEFAULT_LOG_TAIL_LIMIT, createRuntimeContext } from '../../protocol/src/index.js';
 import { collectSetupStatus } from '../../agent-client/src/setup-status.js';
 import {
   callBridgeTool,
@@ -82,15 +82,17 @@ export async function handleStatusTool(args = {}) {
       );
       const result = await callRemoteHealth(requestedDestinationId);
       return createToolResult(
-        result.reachable
-          ? `Browser Bridge destination "${requestedDestinationId}" is reachable.`
-          : `Browser Bridge destination "${requestedDestinationId}" is not reachable.`,
+        result.routeReady
+          ? `Browser Bridge destination "${requestedDestinationId}" is ready.`
+          : result.reachable
+            ? `Browser Bridge destination "${requestedDestinationId}" is reachable, but its browser route is not ready.`
+            : `Browser Bridge destination "${requestedDestinationId}" is not reachable.`,
         {
-          ok: result.reachable === true,
+          ok: result.routeReady === true,
           destination: destination ?? { id: requestedDestinationId, local: false },
           ...result,
         },
-        result.reachable !== true
+        result.routeReady !== true
       );
     }
 
@@ -131,17 +133,36 @@ export async function handleStatusTool(args = {}) {
  */
 async function callRemoteHealth(destinationId) {
   const result = await callBridgeTool('health.ping', {}, { destinationId });
+  const evidence =
+    result.structuredContent.evidence && typeof result.structuredContent.evidence === 'object'
+      ? /** @type {Record<string, unknown>} */ (result.structuredContent.evidence)
+      : {};
+  const access =
+    evidence.access && typeof evidence.access === 'object'
+      ? /** @type {Record<string, unknown>} */ (evidence.access)
+      : {};
+  const reachable = result.structuredContent.ok === true && evidence.daemon === 'ok';
   return {
-    reachable: result.structuredContent.ok === true,
+    reachable,
+    daemonReachable: reachable,
+    extensionConnected: evidence.extensionConnected === true,
+    accessEnabled: access.enabled === true,
+    routeReady: reachable && access.routeReady === true,
+    routeTabId: typeof access.routeTabId === 'number' ? access.routeTabId : null,
+    routeReason: typeof access.reason === 'string' ? access.reason : null,
     health: result.structuredContent,
   };
 }
 
 /**
+ * @param {{ destinationId?: string }} [args]
  * @returns {Promise<ToolResult>}
  */
-export async function handleSkillTool() {
+export async function handleSkillTool(args = {}) {
   try {
+    if (typeof args.destinationId === 'string') {
+      return callBridgeTool('skill.get_runtime_context', {}, { destinationId: args.destinationId });
+    }
     const ctx = createRuntimeContext();
     return createToolResult('Runtime context retrieved.', {
       ok: true,
@@ -176,13 +197,13 @@ export async function handleSetupTool(args) {
 export async function handleLogTool(args) {
   const normalizedArgs = applyLimitBudgetPreset(args, {
     quick: 10,
-    normal: DEFAULT_CONSOLE_LIMIT,
+    normal: DEFAULT_LOG_TAIL_LIMIT,
     deep: 100,
   });
   return callBridgeTool(
     'log.tail',
     {
-      limit: normalizedArgs.limit ?? DEFAULT_CONSOLE_LIMIT,
+      limit: normalizedArgs.limit ?? DEFAULT_LOG_TAIL_LIMIT,
     },
     {
       tokenBudget: getToolTokenBudget(normalizedArgs),

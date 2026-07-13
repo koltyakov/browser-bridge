@@ -174,6 +174,9 @@ export function createChromeFake(overrides: ChromeFakeOverrides = {}): ChromeFak
       async getCurrent() {
         return { id: 1, focused: true };
       },
+      async getLastFocused() {
+        return { id: 1, focused: true };
+      },
       async create(createData: Record<string, unknown> = {}) {
         return { id: 1, ...createData };
       },

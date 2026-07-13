@@ -14,7 +14,7 @@ import {
   readProxyConfig,
   SUPPORTED_BROWSERS,
 } from '../../native-host/src/config.js';
-import { writeBridgeAuthToken } from '../../native-host/src/auth-token.js';
+import { getBridgeAuthTokenPath } from '../../native-host/src/auth-token.js';
 import { pingExistingDaemon } from '../../native-host/src/daemon.js';
 import { restartBridgeDaemon } from '../../native-host/src/daemon-process.js';
 import { uninstallNativeManifest } from '../../native-host/src/install-manifest.js';
@@ -25,8 +25,13 @@ import {
   summarizeBatchErrorItem,
   summarizeBatchResponseItem,
 } from '../../protocol/src/index.js';
+import {
+  restartRegisteredMcpProcesses,
+  tryStartMcpProcessControl,
+} from '../../mcp-server/src/lifecycle.js';
 import { startBridgeMcpServer } from '../../mcp-server/src/server.js';
 import { CLI_HELP_SECTIONS, SHORTCUT_COMMANDS } from './command-registry.js';
+import { atomicWriteFile } from './atomic-write.js';
 import {
   interactiveCheckbox,
   interactiveConfirm,
@@ -55,6 +60,7 @@ import {
 import { getDoctorReport, requestBridge, resolveRef } from './runtime.js';
 import {
   addRemoteDestination,
+  assertProxyBindSafety,
   createBridgeClientForDestination,
   listBridgeDestinations,
   normalizeDestinationId,
@@ -62,6 +68,7 @@ import {
   readRemoteConfig,
   removeRemoteDestination,
   resolveProxyEnableSettings,
+  isLoopbackHost,
 } from './remotes.js';
 import { collectSetupStatus } from './setup-status.js';
 import { annotateBridgeSummary, summarizeBridgeResponse } from './subagent.js';
@@ -72,6 +79,7 @@ import { annotateBridgeSummary, summarizeBridgeResponse } from './subagent.js';
 const REQUEST_SOURCE = 'cli';
 const TEST_TIMEOUT_ENV = 'BBX_CLIENT_REQUEST_TIMEOUT_MS';
 const TEST_DETECTED_MCP_CLIENTS_ENV = 'BBX_TEST_DETECTED_MCP_CLIENTS';
+const TEST_DETECTED_SKILL_TARGETS_ENV = 'BBX_TEST_DETECTED_SKILL_TARGETS';
 const REMOTE_ENV = 'BBX_REMOTE';
 
 /**
@@ -178,9 +186,7 @@ if (command === 'uninstall') {
 
 if (command === 'install-skill') {
   // When no positional target is given, detect installed agents and prompt.
-  const positional = rest.filter((a) => !a.startsWith('--'));
-
-  if (positional.length === 0) {
+  if (!hasExplicitInstallSkillTarget(rest)) {
     let scopeOptions;
     try {
       scopeOptions = parseInstallAgentArgs(rest);
@@ -420,7 +426,13 @@ if (command === 'install-mcp') {
 if (command === 'mcp') {
   const [subcommand, clientName] = rest;
   if (subcommand === 'serve') {
-    await startBridgeMcpServer();
+    const control = await tryStartMcpProcessControl();
+    try {
+      await startBridgeMcpServer();
+    } catch (error) {
+      await control?.dispose();
+      throw error;
+    }
     await new Promise(() => {});
   }
   if (subcommand === 'config') {
@@ -528,12 +540,26 @@ async function main() {
 
     if (command === 'restart') {
       const result = await restartBridgeDaemon();
+      const mcpProcesses = await restartRegisteredMcpProcesses();
+      if (mcpProcesses.restartFailed > 0) {
+        process.exitCode = 1;
+      }
       printJson({
-        ok: true,
-        summary: result.previouslyRunning
-          ? 'Browser Bridge daemon restarted.'
-          : 'Browser Bridge daemon started.',
-        evidence: result,
+        ok: mcpProcesses.restartFailed === 0,
+        summary: `${
+          result.previouslyRunning
+            ? 'Browser Bridge daemon restarted.'
+            : 'Browser Bridge daemon started.'
+        }${
+          mcpProcesses.restartRequested > 0
+            ? ` Restart requested for ${mcpProcesses.restartRequested} MCP server(s).`
+            : ''
+        }${
+          mcpProcesses.restartFailed > 0
+            ? ` Could not contact ${mcpProcesses.restartFailed} MCP server(s).`
+            : ''
+        }`,
+        evidence: { ...result, mcpProcesses },
       });
       return;
     }
@@ -623,7 +649,7 @@ async function main() {
       await ensureClientConnection();
       const results = await Promise.all(
         calls.map(async (call) => {
-          if (!call || typeof call !== 'object' || typeof call.method !== 'string') {
+          if (!call || typeof call !== 'object' || Array.isArray(call)) {
             return {
               method: '',
               tabId: null,
@@ -640,33 +666,80 @@ async function main() {
               response: null,
             };
           }
-          if (!METHODS.includes(/** @type {BridgeMethod} */ (call.method))) {
+          const batchCall = /** @type {Record<string, unknown>} */ (call);
+          if (typeof batchCall.method !== 'string') {
             return {
-              method: call.method,
+              method: '',
               tabId: null,
               ok: false,
-              summary: `INVALID_REQUEST: Unknown bridge method "${call.method}".`,
+              summary: 'INVALID_REQUEST: Each batch call needs a method.',
               evidence: null,
               durationMs: 0,
               approxTokens: 0,
               meta: { protocol_version: getProtocolVersion() },
               error: {
                 code: 'INVALID_REQUEST',
-                message: `Unknown bridge method "${call.method}".`,
+                message: 'Each batch call needs a method.',
               },
               response: null,
             };
           }
-          const method = /** @type {BridgeMethod} */ (call.method);
+          if (!METHODS.includes(/** @type {BridgeMethod} */ (batchCall.method))) {
+            return {
+              method: batchCall.method,
+              tabId: null,
+              ok: false,
+              summary: `INVALID_REQUEST: Unknown bridge method "${batchCall.method}".`,
+              evidence: null,
+              durationMs: 0,
+              approxTokens: 0,
+              meta: { protocol_version: getProtocolVersion() },
+              error: {
+                code: 'INVALID_REQUEST',
+                message: `Unknown bridge method "${batchCall.method}".`,
+              },
+              response: null,
+            };
+          }
+          const method = /** @type {BridgeMethod} */ (batchCall.method);
+          if (
+            batchCall.params !== undefined &&
+            (!batchCall.params ||
+              typeof batchCall.params !== 'object' ||
+              Array.isArray(batchCall.params))
+          ) {
+            return {
+              method,
+              tabId: null,
+              ok: false,
+              summary: 'INVALID_REQUEST: Batch call params must be a JSON object.',
+              evidence: null,
+              durationMs: 0,
+              approxTokens: 0,
+              meta: { protocol_version: getProtocolVersion() },
+              error: {
+                code: 'INVALID_REQUEST',
+                message: 'Batch call params must be a JSON object.',
+              },
+              response: null,
+            };
+          }
+          const params =
+            batchCall.params === undefined
+              ? {}
+              : /** @type {Record<string, unknown>} */ (batchCall.params);
           const tabId =
-            methodNeedsTab(call.method) && typeof call.tabId === 'number' ? call.tabId : null;
+            methodNeedsTab(method) &&
+            typeof batchCall.tabId === 'number' &&
+            Number.isInteger(batchCall.tabId) &&
+            batchCall.tabId > 0
+              ? batchCall.tabId
+              : null;
           const startTime = Date.now();
           try {
-            const response = await client.request({
-              method,
+            const response = await requestBridge(client, method, params, {
               tabId,
-              params: call.params || {},
-              meta: { source: REQUEST_SOURCE },
+              source: REQUEST_SOURCE,
             });
             return summarizeBatchResponseItem({
               method,
@@ -684,6 +757,9 @@ async function main() {
           }
         })
       );
+      if (results.some((result) => !result.ok)) {
+        process.exitCode = 1;
+      }
       printJson(results);
       return;
     }
@@ -817,22 +893,7 @@ async function main() {
       const { tabId, rest: iArgs } = extractTabFlag(rest);
       const sub = iArgs[0];
       if (sub === 'add') {
-        const pattern = iArgs[1];
-        if (!pattern)
-          throw new Error(
-            'Usage: intercept add <urlPattern> [--respond <body>] [--status <code>] [--block]'
-          );
-        const isBlock = iArgs.includes('--block');
-        const statusIdx = iArgs.indexOf('--status');
-        const statusCode = statusIdx !== -1 ? parseIntArg(iArgs[statusIdx + 1], 'status') : 200;
-        const respondIdx = iArgs.indexOf('--respond');
-        const body =
-          respondIdx !== -1
-            ? iArgs
-                .slice(respondIdx + 1)
-                .filter((a) => !a.startsWith('--'))
-                .join(' ')
-            : undefined;
+        const { pattern, isBlock, statusCode, body } = parseInterceptAddArgs(iArgs.slice(1));
         const response = await requestBridge(
           client,
           'network.intercept.add',
@@ -847,7 +908,9 @@ async function main() {
         await printSummary(response);
       } else if (sub === 'remove') {
         const ruleId = iArgs[1];
-        if (!ruleId) throw new Error('Usage: intercept remove <ruleId>');
+        if (!ruleId || iArgs.length !== 2) {
+          throw new Error('Usage: intercept remove <ruleId>');
+        }
         const response = await requestBridge(
           client,
           'network.intercept.remove',
@@ -856,6 +919,9 @@ async function main() {
         );
         await printSummary(response);
       } else if (sub === 'list') {
+        if (iArgs.length !== 1) {
+          throw new Error('Usage: intercept list');
+        }
         const response = await requestBridge(
           client,
           'network.intercept.list',
@@ -864,6 +930,9 @@ async function main() {
         );
         await printSummary(response);
       } else if (sub === 'clear') {
+        if (iArgs.length !== 1) {
+          throw new Error('Usage: intercept clear');
+        }
         const response = await requestBridge(
           client,
           'network.intercept.clear',
@@ -945,10 +1014,13 @@ async function handleProxyCommand(args) {
       options,
       randomUUID
     );
-    await writeBridgeAuthToken(token);
+    assertProxyBindSafety(existing, options, bindHost);
+    await atomicWriteFile(getBridgeAuthTokenPath(), `${token}\n`, {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
     const configPath = getProxyConfigPath();
-    await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
-    await fs.promises.writeFile(
+    await atomicWriteFile(
       configPath,
       `${JSON.stringify(
         {
@@ -963,7 +1035,6 @@ async function handleProxyCommand(args) {
       { encoding: 'utf8', mode: 0o600 }
     );
     const result = await restartBridgeDaemon();
-    const exampleHost = getProxyExampleHost(bindHost);
     const tokenNote =
       tokenSource === 'existing'
         ? ' (unchanged - already-configured clients keep working; pass --rotate-token to generate a new secret)'
@@ -978,16 +1049,26 @@ async function handleProxyCommand(args) {
       `Daemon: ${result.previouslyRunning ? 'restarted' : 'started'} (pid ${result.pid})`,
     ];
     if (tokenSource !== 'existing') {
-      lines.push(
-        '',
-        'On your dev machine, add this remote:',
-        '',
-        `bbx remote add <name> <host:port> --token ${token}`,
-        '',
-        'Example:',
-        '',
-        `bbx remote add remote-bbx ${exampleHost}:${port} --token ${token}`
-      );
+      if (isLoopbackHost(bindHost)) {
+        lines.push(
+          '',
+          'On your dev machine, open an SSH local-forward:',
+          '',
+          `ssh -N -L ${port}:127.0.0.1:${port} <user>@<browser-host>`,
+          '',
+          'Save the token to a private file, then add the tunneled remote:',
+          '',
+          `bbx remote add remote-bbx 127.0.0.1:${port} --token-file <token-file>`
+        );
+      } else {
+        lines.push(
+          '',
+          'WARNING: raw TCP is exposed without transport encryption.',
+          'On your dev machine, add this direct remote:',
+          '',
+          `bbx remote add remote-bbx ${getProxyExampleHost(bindHost)}:${port} --token-file <token-file>`
+        );
+      }
     }
     lines.push('');
     process.stdout.write(lines.join('\n'));
@@ -1059,6 +1140,10 @@ function parseProxyEnableArgs(args) {
       options.rotateToken = true;
       continue;
     }
+    if (arg === '--unsafe-plaintext') {
+      options.unsafePlaintext = true;
+      continue;
+    }
     throw new Error(`Unknown proxy enable option "${arg}".`);
   }
   if (options.token && options.rotateToken) {
@@ -1104,9 +1189,11 @@ async function handleRemoteCommand(args) {
   if (subcommand === 'add') {
     const [name, endpoint, ...optionArgs] = restArgs;
     if (!name || !endpoint) {
-      throw new Error('Usage: bbx remote add <name> <host:port> --token <token>');
+      throw new Error(
+        'Usage: bbx remote add <name> <host:port> (--token <token>|--token-file <path>)'
+      );
     }
-    const token = parseRemoteTokenOption(optionArgs);
+    const token = await parseRemoteTokenOption(optionArgs);
     const { host, port } = parseRemoteEndpoint(endpoint);
     const remote = await addRemoteDestination({
       id: normalizeDestinationId(name),
@@ -1198,22 +1285,121 @@ async function handleRemoteCommand(args) {
 
 /**
  * @param {string[]} args
- * @returns {string}
+ * @returns {Promise<string>}
  */
-function parseRemoteTokenOption(args) {
+async function parseRemoteTokenOption(args) {
   let token = '';
+  let tokenFile = '';
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === '--token') {
-      token = args[++index] || '';
+      const value = args[++index];
+      if (!value || value.startsWith('--')) {
+        throw new Error('--token requires a value.');
+      }
+      token = value;
+      continue;
+    }
+    if (arg === '--token-file') {
+      const value = args[++index];
+      if (!value || value.startsWith('--')) {
+        throw new Error('--token-file requires a path.');
+      }
+      tokenFile = value;
       continue;
     }
     throw new Error(`Unknown remote add option "${arg}".`);
   }
-  if (!token.trim()) {
-    throw new Error('Usage: bbx remote add <name> <host:port> --token <token>');
+  if ((token && tokenFile) || (!token.trim() && !tokenFile.trim())) {
+    throw new Error(
+      'Usage: bbx remote add <name> <host:port> (--token <token>|--token-file <path>)'
+    );
   }
-  return token.trim();
+  return tokenFile ? (await fs.promises.readFile(tokenFile, 'utf8')).trim() : token.trim();
+}
+
+/**
+ * Determine whether install-skill includes an explicit target without treating
+ * option values such as `--project <path>` as positional targets.
+ *
+ * @param {string[]} args
+ * @returns {boolean}
+ */
+function hasExplicitInstallSkillTarget(args) {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--project') {
+      index += 1;
+      continue;
+    }
+    if (arg === '--agents' || arg === '--agent') {
+      return true;
+    }
+    if (arg.startsWith('--agents=') || arg.startsWith('--agent=')) {
+      return true;
+    }
+    if (!arg.startsWith('--')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * @param {string[]} args
+ * @returns {{ pattern: string, isBlock: boolean, statusCode: number, body: string | undefined }}
+ */
+function parseInterceptAddArgs(args) {
+  const [pattern, ...optionArgs] = args;
+  if (!pattern || pattern.startsWith('--')) {
+    throw new Error(
+      'Usage: intercept add <urlPattern> [--respond <body>] [--status <code>] [--block]'
+    );
+  }
+
+  let isBlock = false;
+  let statusCode = 200;
+  let hasStatus = false;
+  let body;
+  for (let index = 0; index < optionArgs.length; index += 1) {
+    const option = optionArgs[index];
+    if (option === '--block') {
+      if (isBlock) {
+        throw new Error('The --block option may only be specified once.');
+      }
+      isBlock = true;
+      continue;
+    }
+    if (option === '--respond') {
+      const value = optionArgs[++index];
+      if (body !== undefined) {
+        throw new Error('The --respond option may only be specified once.');
+      }
+      if (value === undefined || value.startsWith('--')) {
+        throw new Error('--respond requires a body value.');
+      }
+      body = value;
+      continue;
+    }
+    if (option === '--status') {
+      if (hasStatus) {
+        throw new Error('The --status option may only be specified once.');
+      }
+      const value = optionArgs[++index];
+      statusCode = parseIntArg(value, 'status');
+      if (statusCode < 100 || statusCode > 599) {
+        throw new Error('status must be an integer between 100 and 599.');
+      }
+      hasStatus = true;
+      continue;
+    }
+    throw new Error(`Unknown or extra intercept add option "${option}".`);
+  }
+
+  if (isBlock && body !== undefined) {
+    throw new Error('Use either --block or --respond, not both.');
+  }
+  return { pattern, isBlock, statusCode, body };
 }
 
 /**
@@ -1249,25 +1435,36 @@ function getClientTimeoutOverride() {
  *
  * @returns {{
  *   mcpDetectors?: Record<string, () => boolean>,
+ *   skillDetectors?: Record<string, () => boolean>,
  * }}
  */
 function getSetupStatusTestOverrides() {
-  if (!(TEST_DETECTED_MCP_CLIENTS_ENV in process.env)) {
-    return {};
+  /** @type {{ mcpDetectors?: Record<string, () => boolean>, skillDetectors?: Record<string, () => boolean> }} */
+  const overrides = {};
+  if (TEST_DETECTED_MCP_CLIENTS_ENV in process.env) {
+    const detectedClients = new Set(
+      (process.env[TEST_DETECTED_MCP_CLIENTS_ENV] || '')
+        .split(',')
+        .map((value) => value.trim().toLowerCase())
+        .filter(Boolean)
+    );
+    overrides.mcpDetectors = Object.fromEntries(
+      MCP_CLIENT_NAMES.map((clientName) => [clientName, () => detectedClients.has(clientName)])
+    );
   }
 
-  const detectedClients = new Set(
-    (process.env[TEST_DETECTED_MCP_CLIENTS_ENV] || '')
-      .split(',')
-      .map((value) => value.trim().toLowerCase())
-      .filter(Boolean)
-  );
-
-  return {
-    mcpDetectors: Object.fromEntries(
-      MCP_CLIENT_NAMES.map((clientName) => [clientName, () => detectedClients.has(clientName)])
-    ),
-  };
+  if (TEST_DETECTED_SKILL_TARGETS_ENV in process.env) {
+    const detectedTargets = new Set(
+      (process.env[TEST_DETECTED_SKILL_TARGETS_ENV] || '')
+        .split(',')
+        .map((value) => value.trim().toLowerCase())
+        .filter(Boolean)
+    );
+    overrides.skillDetectors = Object.fromEntries(
+      SUPPORTED_TARGETS.map((target) => [target, () => detectedTargets.has(target)])
+    );
+  }
+  return overrides;
 }
 
 /**

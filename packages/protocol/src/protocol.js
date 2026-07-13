@@ -6,12 +6,14 @@ import {
   DEFAULT_A11Y_MAX_DEPTH,
   DEFAULT_A11Y_MAX_NODES,
   DEFAULT_CONSOLE_LIMIT,
+  DEFAULT_DEVICE_SCALE_FACTOR,
   DEFAULT_EVAL_TIMEOUT_MS,
   DEFAULT_LOG_TAIL_LIMIT,
   DEFAULT_MAX_DEPTH,
   DEFAULT_MAX_HTML_LENGTH,
   DEFAULT_MAX_NODES,
   DEFAULT_NAV_TIMEOUT_MS,
+  DEFAULT_NETWORK_INTERCEPT_ACTION,
   DEFAULT_NETWORK_LIMIT,
   DEFAULT_PAGE_TEXT_BUDGET,
   DEFAULT_TEXT_BUDGET,
@@ -42,6 +44,7 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').InputActionParams} InputActionParams */
 /** @typedef {import('./types.js').LogTailParams} LogTailParams */
 /** @typedef {import('./types.js').NavigationActionParams} NavigationActionParams */
+/** @typedef {import('./types.js').NetworkInterceptAddParams} NetworkInterceptAddParams */
 /** @typedef {import('./types.js').NetworkParams} NetworkParams */
 /** @typedef {import('./types.js').NormalizedAccessibilityTreeParams} NormalizedAccessibilityTreeParams */
 /** @typedef {import('./types.js').NormalizedCheckedAction} NormalizedCheckedAction */
@@ -58,6 +61,7 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').NormalizedInputAction} NormalizedInputAction */
 /** @typedef {import('./types.js').NormalizedLogTailParams} NormalizedLogTailParams */
 /** @typedef {import('./types.js').NormalizedNavigationAction} NormalizedNavigationAction */
+/** @typedef {import('./types.js').NormalizedNetworkInterceptAddParams} NormalizedNetworkInterceptAddParams */
 /** @typedef {import('./types.js').NormalizedNetworkParams} NormalizedNetworkParams */
 /** @typedef {import('./types.js').NormalizedPageTextParams} NormalizedPageTextParams */
 /** @typedef {import('./types.js').NormalizedPatchOperation} NormalizedPatchOperation */
@@ -149,6 +153,30 @@ function clampInt(value, min, max, fallback) {
   const numeric = Number(value);
   const integer = Number.isFinite(numeric) && numeric !== 0 ? Math.trunc(numeric) : fallback;
   return Math.min(Math.max(integer, min), max);
+}
+
+/**
+ * Clamp a finite number without discarding its fractional component.
+ *
+ * @param {unknown} value
+ * @param {number} min
+ * @param {number} max
+ * @param {number} fallback
+ * @returns {number}
+ */
+function clampNumber(value, min, max, fallback) {
+  const numeric = typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+  return Math.min(Math.max(numeric, min), max);
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is Record<string, unknown>}
+ */
+function isPlainRecord(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 /** @type {ReadonlyArray<BridgeMethod>} */
@@ -336,6 +364,8 @@ function normalizeRequestParams(method, params) {
       return normalizePageTextParams(params);
     case 'page.get_network':
       return normalizeNetworkParams(params);
+    case 'network.intercept.add':
+      return normalizeNetworkInterceptAddParams(params);
     case 'navigation.navigate':
     case 'navigation.reload':
     case 'navigation.go_back':
@@ -643,7 +673,7 @@ export function normalizeNavigationAction(params = {}) {
   return {
     url,
     waitForLoad: params.waitForLoad !== false,
-    timeoutMs: clampInt(params.timeoutMs, 500, 120_000, 15_000),
+    timeoutMs: clampInt(params.timeoutMs, 500, 120_000, DEFAULT_NAV_TIMEOUT_MS),
   };
 }
 
@@ -682,11 +712,17 @@ export function normalizeEvaluateParams(params = {}) {
       `Expression too large (${expression.length} chars). Maximum is 100,000.`
     );
   }
+  if (params.returnByValue === false) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'returnByValue=false is not supported because remote CDP objects cannot be consumed.'
+    );
+  }
   return {
     expression,
     awaitPromise: Boolean(params.awaitPromise),
-    timeoutMs: clampInt(params.timeoutMs, 100, 30_000, 5_000),
-    returnByValue: params.returnByValue !== false,
+    timeoutMs: clampInt(params.timeoutMs, 100, 30_000, DEFAULT_EVAL_TIMEOUT_MS),
+    returnByValue: true,
   };
 }
 
@@ -829,7 +865,7 @@ export function normalizeStorageParams(params = {}) {
 export function normalizeWaitForLoadStateParams(params = {}) {
   return {
     waitForLoad: params.waitForLoad !== false,
-    timeoutMs: clampInt(params.timeoutMs, 500, 120_000, 15_000),
+    timeoutMs: clampInt(params.timeoutMs, 500, 120_000, DEFAULT_NAV_TIMEOUT_MS),
   };
 }
 
@@ -899,6 +935,71 @@ export function normalizeNetworkParams(params = {}) {
 }
 
 /**
+ * @param {NetworkInterceptAddParams} [params={}]
+ * @returns {NormalizedNetworkInterceptAddParams}
+ */
+export function normalizeNetworkInterceptAddParams(params = {}) {
+  if (typeof params.urlPattern !== 'string' || !params.urlPattern) {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'urlPattern is required.');
+  }
+
+  const action = params.action ?? DEFAULT_NETWORK_INTERCEPT_ACTION;
+  if (action !== 'fulfill' && action !== 'continue' && action !== 'block') {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'action must be one of fulfill, continue, or block.'
+    );
+  }
+  if (
+    params.statusCode !== undefined &&
+    (!Number.isInteger(params.statusCode) || params.statusCode < 100 || params.statusCode > 599)
+  ) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'statusCode must be an integer between 100 and 599.'
+    );
+  }
+  if (params.body !== undefined && typeof params.body !== 'string') {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'body must be a string.');
+  }
+
+  /** @type {Record<string, string> | undefined} */
+  let headers;
+  if (params.headers !== undefined) {
+    if (!isPlainRecord(params.headers)) {
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        'headers must be an object containing string values.'
+      );
+    }
+    headers = {};
+    for (const [name, value] of Object.entries(params.headers)) {
+      if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name)) {
+        throw new BridgeError(
+          ERROR_CODES.INVALID_REQUEST,
+          `Invalid header name: ${name || '(empty)'}.`
+        );
+      }
+      if (typeof value !== 'string' || /[\r\n]/.test(value)) {
+        throw new BridgeError(
+          ERROR_CODES.INVALID_REQUEST,
+          `Header ${name} must have a string value without newlines.`
+        );
+      }
+      headers[name] = value;
+    }
+  }
+
+  return {
+    urlPattern: params.urlPattern,
+    action,
+    ...(params.statusCode === undefined ? {} : { statusCode: params.statusCode }),
+    ...(params.body === undefined ? {} : { body: params.body }),
+    ...(headers === undefined ? {} : { headers }),
+  };
+}
+
+/**
  * @param {PageTextParams} [params={}]
  * @returns {NormalizedPageTextParams}
  */
@@ -926,7 +1027,7 @@ export function normalizeViewportResizeParams(params = {}) {
   return {
     width: clampInt(params.width, 320, 7680, DEFAULT_VIEWPORT_WIDTH),
     height: clampInt(params.height, 200, 4320, DEFAULT_VIEWPORT_HEIGHT),
-    deviceScaleFactor: clampInt(params.deviceScaleFactor, 0, 4, 0),
+    deviceScaleFactor: clampNumber(params.deviceScaleFactor, 0, 4, DEFAULT_DEVICE_SCALE_FACTOR),
     reset: Boolean(params.reset),
   };
 }

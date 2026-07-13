@@ -253,5 +253,5 @@ test('bbx tab-close falls back to ERROR for plain validation errors without a co
   assert.equal(result.stderr, '');
   assert.equal(payload.ok, false);
   assert.equal(payload.evidence, null);
-  assert.equal(payload.summary, 'ERROR: tabId must be a number (got "abc").');
+  assert.equal(payload.summary, 'ERROR: tabId must be a positive integer (got "abc").');
 });

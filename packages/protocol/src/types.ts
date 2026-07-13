@@ -408,7 +408,7 @@ export interface NormalizedEvaluateParams extends BridgeParams {
   expression: string;
   awaitPromise: boolean;
   timeoutMs: number;
-  returnByValue: boolean;
+  returnByValue: true;
 }
 
 export interface ConsoleParams {
@@ -563,6 +563,24 @@ export interface NormalizedNetworkParams extends BridgeParams {
   clear: boolean;
   limit: number;
   urlPattern: string | null;
+}
+
+export type NetworkInterceptAction = 'fulfill' | 'continue' | 'block';
+
+export interface NetworkInterceptAddParams {
+  urlPattern?: string;
+  action?: NetworkInterceptAction;
+  statusCode?: number;
+  body?: string;
+  headers?: Record<string, string>;
+}
+
+export interface NormalizedNetworkInterceptAddParams extends BridgeParams {
+  urlPattern: string;
+  action: NetworkInterceptAction;
+  statusCode?: number;
+  body?: string;
+  headers?: Record<string, string>;
 }
 
 export interface PageTextParams {

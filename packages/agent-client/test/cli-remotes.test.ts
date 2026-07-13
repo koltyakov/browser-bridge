@@ -58,6 +58,33 @@ test('bbx remote add accepts explicit port and remove deletes the destination', 
   });
 });
 
+test('bbx remote add reads and validates --token-file without exposing the token in argv', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    const tokenFile = path.join(bridgeHome, 'input.token');
+    await fs.promises.writeFile(tokenFile, `${TOKEN}\n`, 'utf8');
+    const env = { ...process.env, BROWSER_BRIDGE_HOME: bridgeHome };
+    const result = await runCli({
+      args: ['remote', 'add', 'vm-private', '127.0.0.1:9223', '--token-file', tokenFile],
+      env,
+    });
+
+    assert.equal(result.status, 0);
+    assert.equal(result.stderr, '');
+    const config = JSON.parse(
+      await fs.promises.readFile(path.join(bridgeHome, 'remotes.json'), 'utf8')
+    );
+    assert.equal(config.remotes[0].token, TOKEN);
+
+    await fs.promises.writeFile(tokenFile, 'invalid\n', 'utf8');
+    const invalid = await runCli({
+      args: ['remote', 'add', 'bad', '127.0.0.1:9223', '--token-file', tokenFile],
+      env,
+    });
+    assert.equal(invalid.status, 1);
+    assert.match(invalid.stderr, /Bridge auth token/u);
+  });
+});
+
 test('bbx proxy status reports disabled config without starting a daemon', async () => {
   await withBridgeHome(async (bridgeHome) => {
     const result = await runCli({
@@ -129,7 +156,10 @@ test('bbx remote add without --token prints a usage error instead of a stack tra
     });
 
     assert.equal(result.status, 1);
-    assert.equal(result.stderr, 'Usage: bbx remote add <name> <host:port> --token <token>\n');
+    assert.equal(
+      result.stderr,
+      'Usage: bbx remote add <name> <host:port> (--token <token>|--token-file <path>)\n'
+    );
   });
 });
 
@@ -178,6 +208,22 @@ test('bbx proxy enable rejects combining --token with --rotate-token', async () 
 
     assert.equal(result.status, 1);
     assert.equal(result.stderr, 'Use either --token or --rotate-token, not both.\n');
+  });
+});
+
+test('bbx proxy enable rejects non-loopback binds without unsafe plaintext acknowledgement', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    const result = await runCli({
+      args: ['proxy', 'enable', '--bind-host', '0.0.0.0'],
+      env: { ...process.env, BROWSER_BRIDGE_HOME: bridgeHome },
+    });
+
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--unsafe-plaintext/u);
+    assert.match(result.stderr, /unencrypted.*SSH tunnel/u);
+    await assert.rejects(fs.promises.access(path.join(bridgeHome, 'proxy.json')), {
+      code: 'ENOENT',
+    });
   });
 });
 

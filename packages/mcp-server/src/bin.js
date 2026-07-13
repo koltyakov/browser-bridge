@@ -4,11 +4,13 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { tryStartMcpProcessControl } from './lifecycle.js';
 import { startBridgeMcpServer } from './server.js';
 
 /**
  * @typedef {{
  *   start?: () => Promise<void>,
+ *   startControl?: typeof tryStartMcpProcessControl,
  *   argv?: string[],
  *   stdout?: { write: (chunk: string) => unknown },
  *   stderr?: { write: (chunk: string) => unknown },
@@ -33,6 +35,7 @@ const MCP_USAGE = [
 export async function runBridgeMcpCli(options = {}) {
   const {
     start = startBridgeMcpServer,
+    startControl = tryStartMcpProcessControl,
     argv = process.argv.slice(2),
     stdout = process.stdout,
     stderr = process.stderr,
@@ -45,7 +48,13 @@ export async function runBridgeMcpCli(options = {}) {
   }
 
   try {
-    await start();
+    const control = await startControl();
+    try {
+      await start();
+    } catch (error) {
+      await control?.dispose();
+      throw error;
+    }
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.stack || error.message : String(error);

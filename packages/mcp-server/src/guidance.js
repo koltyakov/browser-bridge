@@ -103,7 +103,7 @@ function createGuidePrompt() {
       '2. In permission-ask hosts, use `browser_call` as the default tool so the user can approve one BBX MCP tool instead of separate tools for status, page, DOM, input, and patches.',
       '3. Start with `browser_call` method `health.ping`. If access is disabled, call `browser_call` method `access.request` once, ask the user to click Enable, then retry once.',
       '4. Start with structured reads via `browser_call`: `page.get_state`, `dom.query`, `dom.find_by_text`, `dom.find_by_role`, and `styles.get_computed`. Use `browser_batch` for parallel reads.',
-      '5. `browser_call` accepts explicit method limits, not `budgetPreset`; keep limits tight and widen only when results are truncated.',
+      '5. `browser_call` accepts `budgetPreset`; explicit method limits override preset values. Keep limits tight and widen only when results are truncated.',
       '6. Reuse `elementRef` values returned by DOM tools instead of rescanning.',
       '7. Escalate to screenshots, accessibility tree, `page.evaluate`, viewport resize, or CDP only when structured reads cannot answer.',
       '8. Use `patch.apply_styles` or `patch.apply_dom` for temporary experiments and rollback before finishing unless the user asks to keep patches.',

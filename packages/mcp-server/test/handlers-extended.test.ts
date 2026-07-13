@@ -172,6 +172,7 @@ test('handleDomTool text calls dom.get_text with textBudget', async () => {
 test('grouped handlers validate action-specific required fields before bridge calls', async () => {
   const missingText = await handleDomTool({ action: 'find_text' });
   assert.equal(missingText.isError, true);
+  assert.equal((missingText.structuredContent.error as { code: string }).code, 'INVALID_REQUEST');
   assert.match(missingText.content[0].text, /text is required/);
 
   const missingUrl = await handleNavigationTool({ action: 'navigate' });
@@ -409,6 +410,17 @@ test('handleDomTool query infers deep budget for nested selectors', async () => 
       await handleDomTool({ action: 'query', selector: 'div ul li a span' });
       assert.ok(calls[0].params);
       assert.equal(calls[0].params.textBudget, 2000);
+    }
+  );
+});
+
+test('handleDomTool caps default accessibility requests to useful MCP evidence', async () => {
+  await withMockedBridge(
+    async () => ok({ nodes: [], count: 0, total: 0, truncated: false }),
+    async (calls) => {
+      await handleDomTool({ action: 'accessibility_tree' });
+      assert.equal(calls[0].params?.maxNodes, 25);
+      assert.equal(calls[0].params?.maxDepth, 4);
     }
   );
 });
@@ -1145,12 +1157,14 @@ test('handleCaptureTool region calls screenshot.capture_region', async () => {
       const result = await handleCaptureTool({
         action: 'region',
         rect: { x: 0, y: 0, width: 100, height: 100 },
+        budgetPreset: 'quick',
       });
       assert.equal(calls[0].method, 'screenshot.capture_region');
       assert.deepEqual(calls[0].params, { x: 0, y: 0, width: 100, height: 100 });
       assert.equal(result.isError, undefined);
       assert.equal(result.content[1].type, 'image');
       assert.equal(result.content[1].type === 'image' ? result.content[1].data : '', ONE_PIXEL_PNG);
+      assert.equal(calls[0].meta?.token_budget, undefined);
     }
   );
 });
@@ -1373,6 +1387,24 @@ test('handleBatchTool surfaces per-call errors without short-circuiting', async 
   );
 });
 
+test('handleBatchTool converts client close failures into per-call results', async () => {
+  await withMockedBridge(
+    async () => ok({ daemon: 'ok', extensionConnected: true }),
+    async () => {
+      BridgeClient.prototype.close = async function close() {
+        const error = new Error('Close timed out') as Error & { code: string };
+        error.code = 'TIMEOUT';
+        throw error;
+      };
+      const result = await handleBatchTool({ calls: [{ method: 'health.ping' }] });
+      const results = result.structuredContent.results as BatchResult[];
+      assert.equal(result.isError, true);
+      assert.equal(results[0].ok, false);
+      assert.equal(results[0].error?.code, 'TIMEOUT');
+    }
+  );
+});
+
 test('handleBatchTool does not duplicate large raw responses', async () => {
   const largeText = `start-${'x'.repeat(100_000)}-end-sentinel`;
   await withMockedBridge(
@@ -1446,7 +1478,7 @@ test('handleLogTool defaults log.tail limit when no budget is provided', async (
     async (calls) => {
       const result = await handleLogTool({});
       assert.equal(calls[0].method, 'log.tail');
-      assert.equal(calls[0].params?.limit, 50);
+      assert.equal(calls[0].params?.limit, 20);
       assert.equal(result.isError, undefined);
     }
   );
@@ -1472,7 +1504,7 @@ test('handleRawCallTool calls bridge method and returns result on success', asyn
       });
       assert.equal(calls[0].method, 'dom.query');
       assert.equal(result.isError, undefined);
-      assert.match(result.content[0].text, /Called dom.query/);
+      assert.match(result.content[0].text, /DOM query returned/);
     }
   );
 });
@@ -1486,11 +1518,12 @@ test('handleRawCallTool returns error for bridge failure', async () => {
         params: {},
       });
       assert.equal(result.isError, true);
+      assert.equal((result.structuredContent.error as { code: string }).code, 'ACCESS_DENIED');
     }
   );
 });
 
-test('handleRawCallTool requires the dedicated setup tool for setup changes', async () => {
+test('handleRawCallTool allows daemon-local setup installation', async () => {
   await withMockedBridge(
     async () => ok({ installed: true }),
     async (calls) => {
@@ -1498,9 +1531,100 @@ test('handleRawCallTool requires the dedicated setup tool for setup changes', as
         method: 'setup.install',
         params: { kind: 'mcp', target: 'codex' },
       });
-      assert.equal(calls.length, 0);
-      assert.equal(result.isError, true);
-      assert.match(result.content[0].text, /browser_setup/);
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].method, 'setup.install');
+      assert.equal(result.isError, undefined);
+    }
+  );
+});
+
+test('handleRawCallTool returns budgeted screenshots as valid MCP image content', async () => {
+  await withMockedBridge(
+    async () => ok({ image: `data:image/png;base64,${ONE_PIXEL_PNG}` }),
+    async (calls) => {
+      const result = await handleRawCallTool({
+        method: 'screenshot.capture_full_page',
+        budgetPreset: 'quick',
+      });
+      const image = result.content.find((entry) => entry.type === 'image');
+      assert.ok(image && image.type === 'image');
+      assert.equal(image.data, ONE_PIXEL_PNG);
+      assert.equal(image.mimeType, 'image/png');
+      assert.equal(calls[0].meta?.token_budget, undefined);
+      assert.equal(Object.hasOwn(result.structuredContent, 'image'), false);
+    }
+  );
+});
+
+test('specialized page text preserves useful requested evidence within a bounded result', async () => {
+  const text = 'x'.repeat(2_000);
+  await withMockedBridge(
+    async () => ok({ text, length: text.length, truncated: false }),
+    async () => {
+      const result = await handlePageTool({ action: 'text', textBudget: 2_000 });
+      const evidence = result.structuredContent.evidence as {
+        text: string;
+        returnedChars: number;
+      };
+      assert.equal(evidence.text.length, 2_000);
+      assert.equal(evidence.returnedChars, 2_000);
+      assert.ok(JSON.stringify(result).length < 10_000);
+    }
+  );
+});
+
+test('specialized DOM summaries retain all normal requested compact nodes', async () => {
+  const nodes = Array.from({ length: 25 }, (_, index) => ({
+    elementRef: `el_${index}`,
+    tag: 'div',
+    attrs: {},
+    textExcerpt: `Node ${index}`,
+  }));
+  await withMockedBridge(
+    async () => ok({ nodes }),
+    async () => {
+      const result = await handleDomTool({
+        action: 'query',
+        selector: 'body',
+        budgetPreset: 'normal',
+      });
+      assert.equal((result.structuredContent.evidence as unknown[]).length, 25);
+      assert.equal(result.structuredContent.outputTruncated, undefined);
+    }
+  );
+});
+
+test('specialized DOM summaries mark evidence capped beyond the deep preset', async () => {
+  const nodes = Array.from({ length: 120 }, (_, index) => ({
+    elementRef: `el_${index}`,
+    tag: 'div',
+    attrs: {},
+  }));
+  await withMockedBridge(
+    async () => ok({ nodes }),
+    async () => {
+      const result = await handleDomTool({
+        action: 'query',
+        selector: 'body',
+        budgetPreset: 'deep',
+      });
+      assert.equal((result.structuredContent.evidence as unknown[]).length, 100);
+      assert.equal(result.structuredContent.outputTruncated, true);
+      assert.deepEqual(result.structuredContent.outputLimit, { maxEntries: 100 });
+    }
+  );
+});
+
+test('browser_call bounds otherwise unbounded generic response evidence', async () => {
+  await withMockedBridge(
+    async () => ok({ value: 'x'.repeat(100_000), type: 'string' }),
+    async () => {
+      const result = await handleRawCallTool({
+        method: 'page.evaluate',
+        params: { expression: 'largeValue' },
+      });
+      assert.equal(result.structuredContent.outputTruncated, true);
+      assert.ok(JSON.stringify(result).length < 30_000);
     }
   );
 });

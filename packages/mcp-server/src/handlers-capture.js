@@ -1,5 +1,6 @@
 // @ts-check
 
+import { BridgeError } from '../../protocol/src/index.js';
 import {
   createToolResult,
   getToolTokenBudget,
@@ -109,7 +110,7 @@ export async function handleCaptureTool(args) {
       const response = await requestBridgeWithRetry(client, entry.method, entry.params(args, ref), {
         tabId: requestedTabId,
         source: REQUEST_SOURCE,
-        tokenBudget: getToolTokenBudget(args),
+        tokenBudget: entry.method.startsWith('screenshot.') ? null : getToolTokenBudget(args),
       });
       if (!response.ok) {
         return summarizeToolResponse(response, entry.method);
@@ -127,15 +128,15 @@ export async function handleCaptureTool(args) {
  * @param {BridgeMethod} method
  * @returns {ToolResult}
  */
-function createScreenshotResult(response, method) {
+export function createScreenshotResult(response, method) {
   const result = toRecord(response.result);
   if (typeof result.image !== 'string') {
-    return summarizeToolError(`${method} returned no image data.`);
+    return summarizeToolError(new Error(`${method} returned no image data.`));
   }
 
   const image = normalizeBase64Image(result.image);
   if (!image) {
-    return summarizeToolError(`${method} returned invalid base64 image data.`);
+    return summarizeToolError(new Error(`${method} returned invalid base64 image data.`));
   }
 
   const rect = boundedRect(result.rect);
@@ -320,7 +321,9 @@ export async function handleInputTool(args) {
       const requestedTabId = typeof args.tabId === 'number' ? args.tabId : null;
       const elementTarget = () => {
         const target = createInputTarget(args.elementRef, args.selector);
-        if (!target) throw new Error('Provide either elementRef or selector.');
+        if (!target) {
+          throw new BridgeError('INVALID_REQUEST', 'Provide either elementRef or selector.');
+        }
         return target;
       };
 

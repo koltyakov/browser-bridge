@@ -14,7 +14,8 @@ bbx logs
 ## The extension is installed, but `bbx status` says it is disconnected
 
 - Run `bbx install` again. It targets Chromium on Linux and Chrome on macOS/Windows; for another browser, include `--browser <name>`.
-- Run `bbx restart` to force the local daemon to reload after updates.
+- Run `bbx restart` to reload the local daemon and ask running Browser Bridge MCP servers to restart after updates.
+- After upgrading from a version without coordinated MCP restart support, restart the agent once so its new MCP process can register for later `bbx restart` requests.
 - Confirm the extension is enabled in Chrome.
 - Use `bbx install <extension-id>` only for unpacked or custom extension builds.
 - Restart Chrome after reinstalling the native messaging manifest if the host was missing when Chrome launched.

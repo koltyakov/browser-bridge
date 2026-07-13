@@ -43,13 +43,13 @@ import {
  * @returns {Promise<BridgeResponse>}
  */
 export async function handlePageEvaluate(request, dependencies) {
-  const target = await dependencies.resolveRequestTarget(request);
   const params = normalizeEvaluateParams(request.params);
   if (!params.expression) {
     return createFailure(request.id, ERROR_CODES.INVALID_REQUEST, 'expression is required.', null, {
       method: request.method,
     });
   }
+  const target = await dependencies.resolveRequestTarget(request);
   return dependencies.runWithDebugger(target.tabId, async (debugTarget) => {
     const result = await dependencies.sendCommand(debugTarget, 'Runtime.evaluate', {
       expression: params.expression,

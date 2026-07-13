@@ -650,6 +650,42 @@ for (const scenario of navigationScenarios) {
   });
 }
 
+test('background dispatch reports TIMEOUT when navigation does not finish loading', async () => {
+  const reloadCalls: number[] = [];
+  const activeTab = createDispatchActiveTab({
+    id: 32,
+    status: 'loading',
+  });
+  const { loaded } = await loadEnabledDispatchBackground({
+    queryLabel: 'test-background-dispatch-navigation-timeout',
+    activeTab,
+    chromeOverrides: {
+      tabs: {
+        async reload(tabId: number) {
+          reloadCalls.push(tabId);
+        },
+      },
+    },
+  });
+
+  const response = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-navigation-timeout',
+      method: 'navigation.reload',
+      params: { timeoutMs: 50 },
+    })
+  );
+
+  assert.deepEqual(reloadCalls, [32]);
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, ERROR_CODES.TIMEOUT);
+  assert.equal(
+    response.error.message,
+    'Timed out waiting for tab 32 to finish loading after 500ms.'
+  );
+  assert.equal(response.meta?.method, 'navigation.reload');
+});
+
 test('background dispatch routes page.get_state through the tab-bound content script path', async () => {
   const sendMessageCalls: TabMessageCall[] = [];
   const executeScriptCalls: ExecuteScriptCall[] = [];
@@ -1340,13 +1376,11 @@ test('window bridge teardown clears interception rules and their debugger hold',
     },
   });
 
-  const invalid = await loaded.dispatch(
-    createRequest({
-      id: 'dispatch-intercept-invalid',
-      method: 'network.intercept.add',
-      params: { urlPattern: '*', action: 'redirect' },
-    })
-  );
+  const invalid = await loaded.dispatch({
+    id: 'dispatch-intercept-invalid',
+    method: 'network.intercept.add',
+    params: { urlPattern: '*', action: 'redirect' },
+  } as unknown as BridgeRequest);
   assert.equal(invalid.ok, false);
   assert.equal(invalid.error.code, ERROR_CODES.INVALID_REQUEST);
 
@@ -1354,10 +1388,13 @@ test('window bridge teardown clears interception rules and their debugger hold',
     createRequest({
       id: 'dispatch-intercept-add',
       method: 'network.intercept.add',
-      params: { urlPattern: '*api*', action: 'block' },
+      params: { urlPattern: '*api*' },
     })
   );
   assert.equal(added.ok, true);
+  if (added.ok) {
+    assert.equal((added.result as { action: string }).action, 'continue');
+  }
 
   const clearWindowBridgeState = loaded.module.clearWindowBridgeState;
   assert.equal(typeof clearWindowBridgeState, 'function');
@@ -1654,7 +1691,7 @@ test('background dispatch resizes the viewport through CDP metrics override', as
       params: {
         width: 375,
         height: 667,
-        deviceScaleFactor: 2,
+        deviceScaleFactor: 2.5,
       },
     })
   );
@@ -1669,7 +1706,7 @@ test('background dispatch resizes the viewport through CDP metrics override', as
       params: {
         width: 375,
         height: 667,
-        deviceScaleFactor: 2,
+        deviceScaleFactor: 2.5,
         mobile: true,
       },
     },
@@ -1679,7 +1716,7 @@ test('background dispatch resizes the viewport through CDP metrics override', as
     resized: true,
     width: 375,
     height: 667,
-    deviceScaleFactor: 2,
+    deviceScaleFactor: 2.5,
     reset: false,
   });
 });
@@ -2466,7 +2503,7 @@ test('background dispatch reports TAB_MISMATCH when a waited-on tab closes', asy
   assert.equal(response.meta?.method, 'page.wait_for_load_state');
 });
 
-test('background dispatch reports INTERNAL_ERROR when waiting for a load state times out', async () => {
+test('background dispatch reports TIMEOUT when waiting for a load state times out', async () => {
   const activeTab = createDispatchActiveTab({
     id: 93,
     title: 'Slow page',
@@ -2500,7 +2537,7 @@ test('background dispatch reports INTERNAL_ERROR when waiting for a load state t
   assert.equal(tabEvents.onUpdated.listeners.length, 1);
   assert.equal(tabEvents.onRemoved.listeners.length, 1);
   assert.equal(response.ok, false);
-  assert.equal(response.error.code, ERROR_CODES.INTERNAL_ERROR);
+  assert.equal(response.error.code, ERROR_CODES.TIMEOUT);
   assert.equal(
     response.error.message,
     'Timed out waiting for tab 93 to finish loading after 500ms.'
@@ -2896,6 +2933,66 @@ test('background dispatch triggers the access-request UI after tab-bound access 
   assert.equal(state.requestedAccessWindowId, 10);
   assert.equal(state.requestedAccessPopupWindowId, 92);
   assert.equal(popupCreateCalls.length, 1);
+});
+
+test('background dispatch does not prompt for access while the browser is not focused', async () => {
+  const popupCreateCalls: chrome.windows.CreateData[] = [];
+  const chrome = createChromeFake({
+    tabs: {
+      async query(queryInfo: chrome.tabs.QueryInfo = {}) {
+        if (queryInfo.active && queryInfo.lastFocusedWindow) {
+          return [
+            {
+              id: 63,
+              windowId: 11,
+              active: true,
+              title: 'Background tab',
+              url: 'https://example.com/background-tab',
+            } as chrome.tabs.Tab,
+          ];
+        }
+        return [];
+      },
+    },
+    windows: {
+      async getLastFocused() {
+        return { id: 11, focused: false };
+      },
+      async create(createData: chrome.windows.CreateData = {}) {
+        popupCreateCalls.push(createData);
+        return { id: 93, ...createData };
+      },
+    },
+  });
+  const loaded = await loadBackground({
+    chrome,
+    query: `test-background-dispatch-unfocused-access-${Date.now()}`,
+  });
+
+  const response = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-page-state-unfocused-access',
+      method: 'page.get_state',
+    })
+  );
+
+  assert.equal(response.ok, false);
+  if (response.ok) {
+    assert.fail('Expected background access request to fail.');
+  }
+  assert.equal(response.error.code, ERROR_CODES.ACCESS_DENIED);
+  assert.match(response.error.message, /enable access manually/i);
+  assert.match(response.error.message, /do not retry/i);
+  assert.deepEqual(response.error.details, {
+    reason: 'browser_background',
+    requestedTargetWindowId: 11,
+    requestedTargetTabId: 63,
+  });
+
+  const state = loaded.module.getStateForTest() as AccessRequestState;
+  assert.equal(state.requestedAccessWindowId, null);
+  assert.equal(state.requestedAccessPopupWindowId, null);
+  assert.deepEqual(popupCreateCalls, []);
 });
 
 test('background dispatch rejects invalid native requests before method dispatch', async () => {

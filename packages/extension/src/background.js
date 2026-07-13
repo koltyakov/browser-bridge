@@ -5,6 +5,7 @@ import {
   createFailure,
   createRuntimeContext,
   createSuccess,
+  normalizeNetworkInterceptAddParams,
   normalizeTabCloseParams,
 } from '../../protocol/src/index.js';
 import {
@@ -237,6 +238,7 @@ const { clearSetupStatus, handleHostStatusMessage, handleSetupInstallAction, ref
 const { handleAccessRequest, requestEnableFromAgentSide } = createAccessRequestController(state, {
   getTab: (tabId) => chrome.tabs.get(tabId),
   queryTabs: (queryInfo) => chrome.tabs.query(queryInfo),
+  getLastFocusedWindow: () => chrome.windows.getLastFocused(),
   getAccessStatus: () =>
     getAccessStatus({
       chrome,
@@ -397,14 +399,14 @@ async function handleBridgeRequest(request) {
     response = toFailureResponse(request, error);
   }
 
-  response = enrichBridgeResponse(request, response);
   if (isWindowAccessDeniedResponse(response)) {
     try {
-      await requestEnableFromAgentSide(request);
+      response = (await requestEnableFromAgentSide(request)) ?? response;
     } catch (error) {
       reportAsyncError(error);
     }
   }
+  response = enrichBridgeResponse(request, response);
   reply(response);
   try {
     await logBridgeAction(request, response, actionContext);
@@ -612,6 +614,7 @@ async function handleFetchInterceptRequest(request) {
   const method = request.method;
 
   if (method === 'network.intercept.add') {
+    const ruleParams = normalizeNetworkInterceptAddParams(params);
     if (state.enabledWindow?.windowId !== target.windowId) {
       return createFailure(
         request.id,
@@ -621,24 +624,7 @@ async function handleFetchInterceptRequest(request) {
         { method }
       );
     }
-    if (!params.urlPattern) {
-      return createFailure(
-        request.id,
-        ERROR_CODES.INVALID_REQUEST,
-        'urlPattern is required.',
-        null,
-        {
-          method,
-        }
-      );
-    }
-    const rule = await fetchInterceptor.addRule(target.tabId, {
-      urlPattern: params.urlPattern,
-      action: params.action ?? 'fulfill',
-      statusCode: params.statusCode,
-      body: params.body,
-      headers: params.headers,
-    });
+    const rule = await fetchInterceptor.addRule(target.tabId, ruleParams);
     return createSuccess(request.id, rule, { method });
   }
 

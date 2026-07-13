@@ -73,6 +73,7 @@ test('shortcut commands build expected params for common inputs', () => {
   });
   assert.deepEqual(SHORTCUT_COMMANDS.perf.build([]), {});
   assert.deepEqual(SHORTCUT_COMMANDS.scroll.build(['120', '40']), { top: 120, left: 40 });
+  assert.deepEqual(SHORTCUT_COMMANDS.scroll.build(['-12.5', '0']), { top: -12.5, left: 0 });
   assert.deepEqual(SHORTCUT_COMMANDS.resize.build(['800', '600']), {
     width: 800,
     height: 600,
@@ -124,4 +125,11 @@ test('shortcut commands reject missing required arguments with usage errors', ()
 test('CLI help lists every install-mcp target', () => {
   const helpText = CLI_HELP_SECTIONS.flatMap((section) => section.lines).join('\n');
   assert.match(helpText, /codex\|claude\|cursor\|copilot\|opencode\|antigravity\|windsurf\|agents/);
+});
+
+test('CLI help documents loopback proxy safety and token files', () => {
+  const helpText = CLI_HELP_SECTIONS.flatMap((section) => section.lines).join('\n');
+  assert.match(helpText, /--bind-host 127\.0\.0\.1/u);
+  assert.match(helpText, /--unsafe-plaintext/u);
+  assert.match(helpText, /--token-file <path>/u);
 });

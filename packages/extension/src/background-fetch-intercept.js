@@ -1,6 +1,6 @@
 // @ts-check
 
-import { BridgeError, ERROR_CODES } from '../../protocol/src/index.js';
+import { normalizeNetworkInterceptAddParams } from '../../protocol/src/index.js';
 
 /**
  * CDP Fetch-domain request interception - declarative rule engine.
@@ -32,9 +32,6 @@ const TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 /** @typedef {Omit<InterceptRule, 'ruleId'>} InterceptRuleInput */
 
-const VALID_ACTIONS = new Set(['fulfill', 'continue', 'block']);
-const HEADER_NAME_PATTERN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
-
 /**
  * Validate untrusted bridge parameters before they become an active rule.
  *
@@ -42,65 +39,7 @@ const HEADER_NAME_PATTERN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
  * @returns {InterceptRuleInput}
  */
 export function validateInterceptRule(input) {
-  if (typeof input.urlPattern !== 'string' || !input.urlPattern) {
-    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'urlPattern is required.');
-  }
-  if (typeof input.action !== 'string' || !VALID_ACTIONS.has(input.action)) {
-    throw new BridgeError(
-      ERROR_CODES.INVALID_REQUEST,
-      'action must be one of fulfill, continue, or block.'
-    );
-  }
-  if (
-    input.statusCode !== undefined &&
-    (typeof input.statusCode !== 'number' ||
-      !Number.isInteger(input.statusCode) ||
-      input.statusCode < 100 ||
-      input.statusCode > 599)
-  ) {
-    throw new BridgeError(
-      ERROR_CODES.INVALID_REQUEST,
-      'statusCode must be an integer between 100 and 599.'
-    );
-  }
-  if (input.body !== undefined && typeof input.body !== 'string') {
-    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'body must be a string.');
-  }
-
-  /** @type {Record<string, string> | undefined} */
-  let headers;
-  if (input.headers !== undefined) {
-    if (!isPlainRecord(input.headers)) {
-      throw new BridgeError(
-        ERROR_CODES.INVALID_REQUEST,
-        'headers must be an object containing string values.'
-      );
-    }
-    headers = {};
-    for (const [name, value] of Object.entries(input.headers)) {
-      if (!HEADER_NAME_PATTERN.test(name)) {
-        throw new BridgeError(
-          ERROR_CODES.INVALID_REQUEST,
-          `Invalid header name: ${name || '(empty)'}.`
-        );
-      }
-      if (typeof value !== 'string' || /[\r\n]/.test(value)) {
-        throw new BridgeError(
-          ERROR_CODES.INVALID_REQUEST,
-          `Header ${name} must have a string value without newlines.`
-        );
-      }
-      headers[name] = value;
-    }
-  }
-
-  return {
-    urlPattern: input.urlPattern,
-    action: /** @type {'fulfill' | 'continue' | 'block'} */ (input.action),
-    ...(input.statusCode === undefined ? {} : { statusCode: input.statusCode }),
-    ...(input.body === undefined ? {} : { body: input.body }),
-    ...(headers === undefined ? {} : { headers }),
-  };
+  return normalizeNetworkInterceptAddParams(input);
 }
 
 /**

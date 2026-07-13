@@ -66,6 +66,16 @@ test('addRule acquires the debugger and enables Fetch scoped to the rule pattern
   assert.deepEqual(enablePatterns(lastEnable(sent)), ['https://api.example.com/*']);
 });
 
+test('addRule defaults an omitted action to continue', async () => {
+  const { interceptor } = createHarness();
+
+  const rule = await interceptor.addRule(1, {
+    urlPattern: 'https://api.example.com/*',
+  });
+
+  assert.equal(rule.action, 'continue');
+});
+
 test('adding and removing rules re-sends Fetch.enable with the current pattern set', async () => {
   const { interceptor, sent } = createHarness();
 

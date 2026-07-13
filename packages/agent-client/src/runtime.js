@@ -19,6 +19,7 @@ import {
 } from '../../native-host/src/daemon-process.js';
 import { resolveDefaultExtensionId } from '../../native-host/src/install-manifest.js';
 import {
+  BridgeError,
   CLIENT_REQUEST_TIMEOUT_MARGIN_MS,
   DEFAULT_CLIENT_REQUEST_TIMEOUT_MS,
   getBridgeOperationTimeoutMs,
@@ -102,12 +103,14 @@ export async function resolveRef(client, refOrSelector, tabId = null, source) {
   );
 
   if (!response.ok) {
-    throw new Error(response.error.message);
+    throw new BridgeError(response.error.code, response.error.message, response.error.details);
   }
 
   const result = /** @type {{ nodes: Array<{ elementRef: string }> }} */ (response.result);
   if (!result.nodes || result.nodes.length === 0) {
-    throw new Error(`No element found for selector "${refOrSelector}".`);
+    throw new BridgeError('INVALID_REQUEST', `No element found for selector "${refOrSelector}".`, {
+      selector: refOrSelector,
+    });
   }
   return result.nodes[0].elementRef;
 }

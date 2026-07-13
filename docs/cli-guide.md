@@ -26,8 +26,14 @@ or you want to see the available runtime presets. `bbx install` targets Chromium
 on Linux and Chrome on macOS/Windows; use `--browser` for Chrome, Edge, Brave,
 Chromium, or Arc, or `--all` for all supported browsers.
 
-Use `bbx restart` when you want to force the local daemon to reload after a CLI
-update or recover from a stuck local bridge process.
+Use `bbx restart` when you want to force the local daemon and running Browser
+Bridge MCP servers to reload after a CLI update, or recover from a stuck local
+bridge process. MCP servers exit cleanly so their owning agents can relaunch the
+current installed version.
+
+When upgrading from a Browser Bridge version that predates coordinated MCP
+restart, restart the agent once. MCP processes launched afterward register for
+future `bbx restart` requests automatically.
 
 ## Inspect the page
 

@@ -12,6 +12,7 @@ import { normalizeRequestedAccessTab } from './background-routing.js';
  * @typedef {{
  *   getTab: (tabId: number) => Promise<chrome.tabs.Tab>,
  *   queryTabs: (queryInfo: { active?: boolean, lastFocusedWindow?: boolean }) => Promise<chrome.tabs.Tab[]>,
+ *   getLastFocusedWindow: () => Promise<chrome.windows.Window>,
  *   getAccessStatus: () => Promise<Record<string, unknown>>,
  *   refreshActionIndicators: () => Promise<void>,
  *   emitUiState: () => Promise<void>,
@@ -27,7 +28,7 @@ import { normalizeRequestedAccessTab } from './background-routing.js';
  * @param {AccessRequestControllerDeps} deps
  * @returns {{
  *   handleAccessRequest: (request: BridgeRequest) => Promise<BridgeResponse>,
- *   requestEnableFromAgentSide: (request: BridgeRequest) => Promise<void>,
+ *   requestEnableFromAgentSide: (request: BridgeRequest) => Promise<BridgeResponse | null>,
  *   resolveRequestedAccessTarget: (request: BridgeRequest) => Promise<ResolvedTabTarget | null>,
  * }}
  */
@@ -51,6 +52,37 @@ export function createAccessRequestController(state, deps) {
       lastFocusedWindow: true,
     });
     return normalizeRequestedAccessTab(tabs[0] ?? null);
+  }
+
+  /**
+   * @returns {Promise<boolean>}
+   */
+  async function isBrowserForeground() {
+    try {
+      const browserWindow = await deps.getLastFocusedWindow();
+      return browserWindow.focused === true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * @param {BridgeRequest} request
+   * @param {ResolvedTabTarget} target
+   * @returns {BridgeResponse}
+   */
+  function createBackgroundAccessFailure(request, target) {
+    return createFailure(
+      request.id,
+      ERROR_CODES.ACCESS_DENIED,
+      'Browser Bridge cannot request access while this browser is in the background. Bring the browser to the foreground and enable access manually in the Browser Bridge popup or side panel. Do not retry until the user confirms access is enabled.',
+      {
+        reason: 'browser_background',
+        requestedTargetWindowId: target.windowId,
+        requestedTargetTabId: target.tabId,
+      },
+      { method: request.method }
+    );
   }
 
   /**
@@ -93,15 +125,20 @@ export function createAccessRequestController(state, deps) {
    * because Browser Bridge is off for the target window.
    *
    * @param {BridgeRequest} request
-   * @returns {Promise<void>}
+   * @returns {Promise<BridgeResponse | null>}
    */
   async function requestEnableFromAgentSide(request) {
     const target = await resolveRequestedAccessTarget(request);
     if (!target || state.requestedAccessWindowId != null) {
-      return;
+      return null;
+    }
+
+    if (!(await isBrowserForeground())) {
+      return createBackgroundAccessFailure(request, target);
     }
 
     await queueAccessRequest(target);
+    return null;
   }
 
   /**
@@ -163,6 +200,10 @@ export function createAccessRequestController(state, deps) {
         },
         { method: request.method }
       );
+    }
+
+    if (!(await isBrowserForeground())) {
+      return createBackgroundAccessFailure(request, target);
     }
 
     await queueAccessRequest(target);

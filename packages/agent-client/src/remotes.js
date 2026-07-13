@@ -5,6 +5,7 @@ import path from 'node:path';
 
 import { createTcpBridgeTransport, getBridgeDir } from '../../native-host/src/config.js';
 import { normalizeBridgeAuthToken } from '../../native-host/src/auth-token.js';
+import { atomicWriteFile } from './atomic-write.js';
 import { BridgeClient } from './client.js';
 
 const REMOTES_FILENAME = 'remotes.json';
@@ -121,15 +122,13 @@ export async function readRemoteConfig(options = {}) {
 
 /**
  * @param {RemoteConfig} config
- * @param {{ configPath?: string, writeFile?: typeof fs.promises.writeFile, mkdir?: typeof fs.promises.mkdir }} [options={}]
+ * @param {{ configPath?: string }} [options={}]
  * @returns {Promise<void>}
  */
 export async function writeRemoteConfig(config, options = {}) {
   const configPath = options.configPath ?? getRemoteConfigPath();
-  const writeFile = options.writeFile ?? fs.promises.writeFile.bind(fs.promises);
-  const mkdir = options.mkdir ?? fs.promises.mkdir.bind(fs.promises);
-  await mkdir(path.dirname(configPath), { recursive: true });
-  await writeFile(configPath, `${JSON.stringify({ remotes: config.remotes }, null, 2)}\n`, {
+  const remotes = config.remotes.map(validateRemoteDestination);
+  await atomicWriteFile(configPath, `${JSON.stringify({ remotes }, null, 2)}\n`, {
     encoding: 'utf8',
     mode: 0o600,
   });
@@ -140,15 +139,16 @@ export async function writeRemoteConfig(config, options = {}) {
  * @returns {Promise<RemoteDestination>}
  */
 export async function addRemoteDestination(remote) {
+  const validated = validateRemoteDestination(remote);
   const config = await readRemoteConfig();
-  const existing = config.remotes.findIndex((entry) => entry.id === remote.id);
+  const existing = config.remotes.findIndex((entry) => entry.id === validated.id);
   if (existing === -1) {
-    config.remotes.push(remote);
+    config.remotes.push(validated);
   } else {
-    config.remotes[existing] = remote;
+    config.remotes[existing] = validated;
   }
   await writeRemoteConfig(config);
-  return remote;
+  return validated;
 }
 
 /**
@@ -180,7 +180,7 @@ export async function listBridgeDestinations() {
 }
 
 /**
- * @typedef {{ port?: number, bindHost?: string, token?: string, rotateToken?: boolean }} ProxyEnableOptions
+ * @typedef {{ port?: number, bindHost?: string, token?: string, rotateToken?: boolean, unsafePlaintext?: boolean }} ProxyEnableOptions
  */
 
 /**
@@ -197,14 +197,92 @@ export async function listBridgeDestinations() {
  */
 export function resolveProxyEnableSettings(existing, options, generateToken) {
   const port = options.port ?? existing?.port ?? DEFAULT_REMOTE_PORT;
-  const bindHost = options.bindHost ?? existing?.bindHost ?? '0.0.0.0';
+  const bindHost = options.bindHost ?? existing?.bindHost ?? '127.0.0.1';
   if (options.token) {
-    return { port, bindHost, token: options.token, tokenSource: 'explicit' };
+    return {
+      port,
+      bindHost,
+      token: validateAuthToken(options.token),
+      tokenSource: 'explicit',
+    };
   }
-  if (!options.rotateToken && existing?.token) {
-    return { port, bindHost, token: existing.token, tokenSource: 'existing' };
+  const existingToken = normalizeBridgeAuthToken(existing?.token);
+  if (!options.rotateToken && existingToken) {
+    return { port, bindHost, token: existingToken, tokenSource: 'existing' };
   }
-  return { port, bindHost, token: generateToken(), tokenSource: 'generated' };
+  return {
+    port,
+    bindHost,
+    token: validateAuthToken(generateToken()),
+    tokenSource: 'generated',
+  };
+}
+
+/**
+ * Require an explicit acknowledgement before creating or changing a raw TCP
+ * listener that is reachable beyond the local machine. A stored non-loopback
+ * host may be reused without breaking an existing installation.
+ *
+ * @param {{ bindHost: string } | null} existing
+ * @param {ProxyEnableOptions} options
+ * @param {string} bindHost
+ * @returns {void}
+ */
+export function assertProxyBindSafety(existing, options, bindHost) {
+  if (
+    isLoopbackHost(bindHost) ||
+    options.unsafePlaintext === true ||
+    (options.bindHost === undefined && existing?.bindHost === bindHost)
+  ) {
+    return;
+  }
+  throw new Error(
+    'Refusing to bind Browser Bridge raw TCP to a non-loopback host without --unsafe-plaintext. This transport is unencrypted; keep the default 127.0.0.1 bind and use an SSH tunnel instead.'
+  );
+}
+
+/**
+ * @param {string} host
+ * @returns {boolean}
+ */
+export function isLoopbackHost(host) {
+  const normalized = host
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/gu, '');
+  const ipv4Parts = normalized.split('.').map(Number);
+  const isIpv4Loopback =
+    ipv4Parts.length === 4 &&
+    ipv4Parts[0] === 127 &&
+    ipv4Parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255);
+  return (
+    normalized === 'localhost' ||
+    normalized === '::1' ||
+    normalized === '0:0:0:0:0:0:0:1' ||
+    isIpv4Loopback
+  );
+}
+
+/**
+ * @param {RemoteDestination} remote
+ * @returns {RemoteDestination}
+ */
+function validateRemoteDestination(remote) {
+  const id = normalizeDestinationId(remote.id);
+  const { host, port } = parseRemoteEndpoint(`${remote.host}:${remote.port}`);
+  return { id, host, port, token: validateAuthToken(remote.token) };
+}
+
+/**
+ * @param {unknown} token
+ * @returns {string}
+ */
+function validateAuthToken(token) {
+  const normalized = normalizeBridgeAuthToken(token);
+  if (!normalized) {
+    throw new Error('Bridge auth token must be a UUID or 32-256 URL-safe characters.');
+  }
+  return normalized;
 }
 
 /**

@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
@@ -76,13 +78,14 @@ test('bbx mcp rejects unknown subcommands', async () => {
 test('bbx mcp serve starts the MCP server over stdio', { timeout: 10000 }, async () => {
   let transport: StdioClientTransport | null = null;
   let stderr = '';
+  const bridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-cli-mcp-'));
 
   try {
     transport = new StdioClientTransport({
       command: process.execPath,
       args: [cliPath, 'mcp', 'serve'],
       cwd: repoRoot,
-      env: toSpawnEnv(process.env),
+      env: toSpawnEnv({ ...process.env, BROWSER_BRIDGE_HOME: bridgeHome }),
       stderr: 'pipe',
     });
 
@@ -113,5 +116,6 @@ test('bbx mcp serve starts the MCP server over stdio', { timeout: 10000 }, async
     );
   } finally {
     await transport?.close();
+    await fs.promises.rm(bridgeHome, { recursive: true, force: true });
   }
 });

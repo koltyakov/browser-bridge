@@ -1,7 +1,12 @@
 // @ts-check
 
 import { BRIDGE_METHOD_REGISTRY, BRIDGE_METHODS } from '../../protocol/src/index.js';
-import { parseCommaList, parseIntArg, parsePropertyAssignments } from './cli-helpers.js';
+import {
+  parseCommaList,
+  parseIntArg,
+  parseNumberArg,
+  parsePropertyAssignments,
+} from './cli-helpers.js';
 
 /** @typedef {import('./types.js').BridgeMethod} BridgeMethod */
 /** @typedef {import('./types.js').ShortcutCommand} ShortcutCommand */
@@ -200,8 +205,8 @@ export const SHORTCUT_COMMANDS = {
   scroll: createShortcutCommand('viewport.scroll', 'bbx scroll <top> [left]', (r) => {
     if (!r[0] && !r[1]) throw new Error('Usage: scroll <top> [left]');
     return {
-      top: r[0] ? parseIntArg(r[0], 'top') : undefined,
-      left: r[1] ? parseIntArg(r[1], 'left') : undefined,
+      top: r[0] ? parseNumberArg(r[0], 'top') : undefined,
+      left: r[1] ? parseNumberArg(r[1], 'left') : undefined,
     };
   }),
   resize: createShortcutCommand('viewport.resize', 'bbx resize <width> <height>', (r) => {
@@ -256,11 +261,12 @@ export const CLI_HELP_SECTIONS = Object.freeze([
       'bbx install-mcp [client|all] [--local]                             Write MCP config for codex|claude|cursor|copilot|opencode|antigravity|windsurf|agents',
       'bbx status                                                         Check bridge connection',
       'bbx doctor                                                         Diagnose install, daemon, extension, and access readiness',
-      'bbx restart                                                        Restart the local Browser Bridge daemon',
-      'bbx proxy enable [--port 9223] [--bind-host 0.0.0.0] [--rotate-token]  Enable opt-in TCP proxy mode (idempotent: re-running keeps settings and token)',
+      'bbx restart                                                        Restart the local daemon and running MCP servers',
+      'bbx proxy enable [--port 9223] [--bind-host 127.0.0.1] [--rotate-token]  Enable loopback TCP proxy mode for SSH tunneling',
+      '  Non-loopback binds require --unsafe-plaintext because raw TCP is unencrypted.',
       'bbx proxy disable                                                  Disable proxy mode and restart the daemon',
       'bbx proxy status                                                   Show proxy config and daemon reachability',
-      'bbx remote add <name> <host:port> --token <token>                  Add a remote Browser Bridge destination (example: remote-bbx 192.168.56.20:9223)',
+      'bbx remote add <name> <host:port> (--token <token>|--token-file <path>)  Add a remote Browser Bridge destination',
       'bbx remote list                                                    List remote destinations',
       'bbx remote test <name>                                             Ping a remote destination',
       'bbx remote remove <name>                                           Remove a remote destination',

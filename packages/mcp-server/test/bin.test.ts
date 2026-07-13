@@ -3,6 +3,11 @@ import assert from 'node:assert/strict';
 
 import { runBridgeMcpCli } from '../src/bin.js';
 
+const startControl = async () => ({
+  registrationPath: '',
+  dispose: async () => {},
+});
+
 test('runBridgeMcpCli prints usage and exits successfully for --help', async () => {
   let startCalls = 0;
   let stdoutOutput = '';
@@ -39,6 +44,7 @@ test('runBridgeMcpCli starts the MCP server without writing errors', async () =>
     start: async () => {
       startCalls += 1;
     },
+    startControl,
     stderr: {
       write(chunk: string) {
         stderrOutput += chunk;
@@ -65,6 +71,7 @@ test('runBridgeMcpCli writes stack traces and exits 1 on startup failure', async
     start: async () => {
       throw error;
     },
+    startControl,
     stderr: {
       write(chunk: string) {
         stderrOutput += chunk;
@@ -90,6 +97,7 @@ test('runBridgeMcpCli stringifies non-Error startup failures', async () => {
     start: async () => {
       throw 'bridge unavailable';
     },
+    startControl,
     stderr: {
       write(chunk: string) {
         stderrOutput += chunk;

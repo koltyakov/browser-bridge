@@ -3,13 +3,17 @@
 import {
   DEFAULT_CONSOLE_LIMIT,
   DEFAULT_NETWORK_LIMIT,
+  ERROR_CODES,
+  getErrorRecovery,
   METHOD_SET,
 } from '../../protocol/src/index.js';
 import { createBridgeClientForDestination } from '../../agent-client/src/remotes.js';
 import {
   annotateBridgeSummary,
   applyLimitBudgetPreset,
+  applyMethodBudgetPreset,
   applyPageTextBudgetPreset,
+  boundToolValue,
   bridgeMethodNeedsTab,
   callBridgeTool,
   createToolResult,
@@ -19,9 +23,11 @@ import {
   summarizeBatchResponseItem,
   summarizeBridgeResponse,
   summarizeToolError,
+  summarizeToolResponse,
   withToolClient,
   REQUEST_SOURCE,
 } from './handlers-utils.js';
+import { createScreenshotResult } from './handlers-capture.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
 /** @typedef {import('../../agent-client/src/client.js').BridgeClient} BridgeClient */
@@ -178,92 +184,105 @@ export async function handleBatchTool(args) {
     }
   }
 
-  /** @param {BridgeClient | null} client */
-  const executeBatch = async (client) => {
-    const results = await mapWithConcurrency(calls, MAX_BATCH_CONCURRENCY, async (call) => {
-      const method = /** @type {BridgeMethod} */ (call.method);
-      const tabId = bridgeMethodNeedsTab(method)
-        ? typeof call.tabId === 'number'
-          ? call.tabId
-          : null
-        : null;
-      const tokenBudget = getToolTokenBudget(call);
-      const destinationId = typeof call.destinationId === 'string' ? call.destinationId : null;
-
-      const startTime = Date.now();
-      const callClient = destinationId
-        ? await createBridgeClientForDestination(destinationId)
-        : client;
-      if (!callClient) {
-        return summarizeBatchErrorItem(
-          {
-            method,
-            tabId,
-            error: new Error('A local bridge client is required for calls without destinationId.'),
-            durationMs: Date.now() - startTime,
-          },
-          { compact: true }
-        );
-      }
-      try {
-        if (destinationId) {
-          await callClient.connect();
-        }
-        const response = await requestBridgeWithRetry(callClient, method, call.params || {}, {
-          tabId,
-          source: REQUEST_SOURCE,
-          tokenBudget,
-        });
-        return {
-          destinationId,
-          ...summarizeBatchResponseItem(
-            {
-              method,
-              tabId,
-              response,
-              durationMs: Date.now() - startTime,
-            },
-            { compact: true }
-          ),
-        };
-      } catch (error) {
-        return summarizeBatchErrorItem(
-          {
-            method,
-            tabId,
-            error,
-            durationMs: Date.now() - startTime,
-          },
-          { compact: true }
-        );
-      } finally {
-        if (destinationId) {
+  const results = await mapWithConcurrency(calls, MAX_BATCH_CONCURRENCY, async (call) => {
+    const method = /** @type {BridgeMethod} */ (call.method);
+    const tabId = bridgeMethodNeedsTab(method)
+      ? typeof call.tabId === 'number'
+        ? call.tabId
+        : null
+      : null;
+    const tokenBudget = getToolTokenBudget(call);
+    const destinationId = typeof call.destinationId === 'string' ? call.destinationId : null;
+    const startTime = Date.now();
+    /** @type {BridgeClient | null} */
+    let callClient = null;
+    /** @type {import('../../protocol/src/types.js').BridgeResponse | null} */
+    let response = null;
+    /** @type {unknown} */
+    let callError = null;
+    try {
+      callClient = await createBridgeClientForDestination(destinationId);
+      await callClient.connect();
+      const params = applyMethodBudgetPreset(method, call.params || {}, call.budgetPreset);
+      response = await requestBridgeWithRetry(callClient, method, params, {
+        tabId,
+        source: REQUEST_SOURCE,
+        tokenBudget,
+      });
+    } catch (error) {
+      callError = error;
+    } finally {
+      if (callClient) {
+        try {
           await callClient.close();
+        } catch (error) {
+          callError ??= error;
         }
       }
-    });
+    }
+    if (callError || !response) {
+      return {
+        destinationId,
+        ...summarizeThrownBatchError(method, tabId, callError, Date.now() - startTime),
+      };
+    }
+    return {
+      destinationId,
+      ...summarizeBatchResponseItem(
+        { method, tabId, response, durationMs: Date.now() - startTime },
+        { compact: true }
+      ),
+    };
+  });
 
-    const failureCount = results.filter((result) => !result.ok).length;
-    const summary =
-      failureCount === 0
-        ? `Batch executed ${results.length} call(s).`
-        : `Batch executed ${results.length} call(s) with ${failureCount} error(s).`;
-    return createToolResult(
-      summary,
-      {
-        ok: failureCount === 0,
-        successCount: results.length - failureCount,
-        failureCount,
-        compactOutput: true,
-        results,
-      },
-      failureCount > 0
-    );
+  const failureCount = results.filter((result) => !result.ok).length;
+  const summary =
+    failureCount === 0
+      ? `Batch executed ${results.length} call(s).`
+      : `Batch executed ${results.length} call(s) with ${failureCount} error(s).`;
+  return createToolResult(
+    summary,
+    {
+      ok: failureCount === 0,
+      successCount: results.length - failureCount,
+      failureCount,
+      compactOutput: true,
+      results,
+    },
+    failureCount > 0
+  );
+}
+
+/** @type {ReadonlySet<string>} */
+const RECOGNIZED_ERROR_CODES = new Set(Object.values(ERROR_CODES));
+
+/**
+ * @param {BridgeMethod} method
+ * @param {number | null} tabId
+ * @param {unknown} error
+ * @param {number} durationMs
+ */
+function summarizeThrownBatchError(method, tabId, error, durationMs) {
+  const item = summarizeBatchErrorItem({ method, tabId, error, durationMs }, { compact: true });
+  const record =
+    error && typeof error === 'object' ? /** @type {Record<string, unknown>} */ (error) : {};
+  const code = /** @type {import('../../protocol/src/types.js').ErrorCode} */ (
+    typeof record.code === 'string' && RECOGNIZED_ERROR_CODES.has(record.code)
+      ? record.code
+      : 'INTERNAL_ERROR'
+  );
+  const message = error instanceof Error ? error.message : String(error ?? 'Bridge call failed.');
+  const details = Object.hasOwn(record, 'details') ? record.details : null;
+  const boundedDetails = boundToolValue(details);
+  const recovery = getErrorRecovery(code);
+  return {
+    ...item,
+    summary: `${code}: ${message}${recovery?.hint ? ` ${recovery.hint}` : ''}`,
+    evidence: boundedDetails.value,
+    recovery,
+    error: { code, message, details: boundedDetails.value },
+    ...(boundedDetails.truncated ? { outputTruncated: true } : {}),
   };
-
-  return calls.every((call) => typeof call?.destinationId === 'string')
-    ? executeBatch(null)
-    : withToolClient(executeBatch);
 }
 
 /**
@@ -291,45 +310,26 @@ async function mapWithConcurrency(values, concurrency, callback) {
 }
 
 /**
- * @param {{ method: string, params?: Record<string, unknown>, tabId?: number, destinationId?: string }} args
+ * @param {{ method: string, params?: Record<string, unknown>, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleRawCallTool(args) {
   if (!METHOD_SET.has(/** @type {BridgeMethod} */ (args.method))) {
     return summarizeToolError(`Unknown bridge method "${args.method}".`);
   }
-  if (args.method === 'setup.install') {
-    return summarizeToolError('Use browser_setup for setup changes.');
-  }
-
   return withToolClient(
     async (client) => {
-      const response = await requestBridgeWithRetry(
-        client,
-        /** @type {BridgeMethod} */ (args.method),
-        args.params || {},
-        {
-          tabId: typeof args.tabId === 'number' ? args.tabId : null,
-          source: REQUEST_SOURCE,
-        }
-      );
-
-      if (!response.ok) {
-        return createToolResult(
-          response.error.message,
-          {
-            ok: false,
-            error: response.error,
-            response,
-          },
-          true
-        );
-      }
-
-      return createToolResult(`Called ${args.method}.`, {
-        ok: true,
-        response: response.result,
+      const method = /** @type {BridgeMethod} */ (args.method);
+      const params = applyMethodBudgetPreset(method, args.params || {}, args.budgetPreset);
+      const response = await requestBridgeWithRetry(client, method, params, {
+        tabId: typeof args.tabId === 'number' ? args.tabId : null,
+        source: REQUEST_SOURCE,
+        tokenBudget: method.startsWith('screenshot.') ? null : getToolTokenBudget(args),
       });
+      if (response.ok && method.startsWith('screenshot.')) {
+        return createScreenshotResult(response, method);
+      }
+      return summarizeToolResponse(response, method, params);
     },
     { destinationId: args.destinationId ?? null }
   );

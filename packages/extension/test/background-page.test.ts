@@ -127,6 +127,15 @@ test('page request controller rejects when a loading tab is removed', async () =
   });
 });
 
+test('page request controller reports load timeouts with the TIMEOUT code', async () => {
+  const { controller } = createController();
+
+  await assert.rejects(controller.waitForTabComplete(21, 1), {
+    code: ERROR_CODES.TIMEOUT,
+    message: 'Timed out waiting for tab 21 to finish loading after 1ms.',
+  });
+});
+
 test('page request controller handles CDP computed-style validation and dispatches valid requests', async () => {
   const { controller, commands } = createController();
   const invalid = await controller.handleCdpRequest({

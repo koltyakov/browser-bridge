@@ -20,6 +20,8 @@ export const DEFAULT_CONSOLE_LIMIT = 50;
 export const DEFAULT_VIEWPORT_WIDTH = 1280;
 export const DEFAULT_VIEWPORT_HEIGHT = 720;
 export const DEFAULT_DEVICE_SCALE_FACTOR = 0;
+/** @type {'continue'} */
+export const DEFAULT_NETWORK_INTERCEPT_ACTION = 'continue';
 
 /** Maximum size of a Chrome native messaging message in bytes. */
 export const MAX_NATIVE_MESSAGE_BYTES = 1_048_576;

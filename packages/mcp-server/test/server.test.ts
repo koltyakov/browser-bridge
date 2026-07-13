@@ -105,13 +105,27 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
     );
     assert.equal(registrations[4].config.title, 'Browser Tabs');
     const tabsSchema = registrations[4].config.inputSchema as Record<string, unknown>;
+    const pageSchema = registrations[7].config.inputSchema as Record<string, unknown>;
     const inputSchema = registrations[9].config.inputSchema as Record<string, unknown>;
+    const patchSchema = registrations[10].config.inputSchema as Record<string, unknown>;
+    const rawCallSchema = registrations[13].config.inputSchema as Record<string, unknown>;
     const tabsAction = tabsSchema.action as { safeParse: (value: unknown) => { success: boolean } };
     const inputAction = inputSchema.action as {
       safeParse: (value: unknown) => { success: boolean };
     };
+    const patchOperation = patchSchema.operation as {
+      safeParse: (value: unknown) => { success: boolean };
+    };
+    const returnByValue = pageSchema.returnByValue as {
+      safeParse: (value: unknown) => { success: boolean };
+    };
     assert.equal(tabsAction.safeParse('activate').success, true);
     assert.equal(inputAction.safeParse('fill').success, true);
+    assert.equal(patchOperation.safeParse('setProperty').success, false);
+    assert.equal(returnByValue.safeParse(true).success, true);
+    assert.equal(returnByValue.safeParse(false).success, false);
+    assert.ok(rawCallSchema.budgetPreset);
+    assert.match(String((patchSchema.patchId as { description?: string }).description), /required/);
     assert.ok(inputSchema.value);
     assert.ok(inputSchema.mode);
     assert.match(String(registrations[5].config.description), /accessibility_tree/);

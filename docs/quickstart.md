@@ -120,19 +120,23 @@ Use the focused guides instead of stretching quickstart into a manual:
 
 ## Remote VM / private network
 
-Remote browser access is opt-in. Enable proxy mode on the machine that has Chrome and the Browser Bridge extension connected to the private network:
+Remote browser access is opt-in. Enable loopback proxy mode on the machine that has Chrome and the Browser Bridge extension:
 
 ```bash
 bbx proxy enable --port 9223
 ```
 
-The command prints a token and a matching `bbx remote add` command. On your dev machine, add that remote destination using the VM's IP address or hostname plus the proxy port:
+The command prints a token and an SSH local-forward command. On your dev machine, open the tunnel, save the token in a private file, and register the tunnel endpoint:
 
 ```bash
-bbx remote add remote-bbx 192.168.56.20:9223 --token <token>
+ssh -N -L 9223:127.0.0.1:9223 user@browser-machine
+# In another shell:
+bbx remote add remote-bbx 127.0.0.1:9223 --token-file <token-file>
 ```
 
-Port `9223` is used by default when omitted, but including it makes the remote endpoint explicit.
+Port `9223` is used by default when omitted. The SSH tunnel is recommended because Browser Bridge
+raw TCP is unencrypted. Direct non-loopback binding is available only with an explicit
+`--unsafe-plaintext` acknowledgement; see the remote proxy guide.
 
 Your local MCP server still talks to the local browser by default. Discovery tools such as `browser_status` and `browser_tabs` list local and remote destinations; pass `destinationId`, for example `vm-private`, to route a specific MCP call to the remote browser. On the CLI, add `--remote <name>` to any bridge command (or set `BBX_REMOTE=<name>` for the whole session).
 

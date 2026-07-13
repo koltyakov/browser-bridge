@@ -7,6 +7,7 @@ import path from 'node:path';
 import {
   DEFAULT_REMOTE_PORT,
   addRemoteDestination,
+  assertProxyBindSafety,
   getRemoteConfigPath,
   listBridgeDestinations,
   normalizeDestinationId,
@@ -14,7 +15,6 @@ import {
   readRemoteConfig,
   removeRemoteDestination,
   resolveProxyEnableSettings,
-  writeRemoteConfig,
 } from '../src/remotes.js';
 
 const TOKEN = '6f7b4e4a-7b9e-4c0d-9e62-4b1fb9f8d237';
@@ -90,13 +90,34 @@ test('remote config add, replace, list, and remove use Browser Bridge home', asy
 });
 
 test('resolveProxyEnableSettings generates a token and defaults on first enable', () => {
-  const settings = resolveProxyEnableSettings(null, {}, () => 'fresh-token');
+  const generatedToken = 'a'.repeat(32);
+  const settings = resolveProxyEnableSettings(null, {}, () => generatedToken);
   assert.deepEqual(settings, {
     port: DEFAULT_REMOTE_PORT,
-    bindHost: '0.0.0.0',
-    token: 'fresh-token',
+    bindHost: '127.0.0.1',
+    token: generatedToken,
     tokenSource: 'generated',
   });
+});
+
+test('proxy bind safety requires explicit acknowledgement for new non-loopback exposure', () => {
+  assert.doesNotThrow(() => assertProxyBindSafety(null, {}, '127.0.0.1'));
+  assert.throws(
+    () => assertProxyBindSafety(null, { bindHost: '0.0.0.0' }, '0.0.0.0'),
+    /--unsafe-plaintext.*unencrypted.*SSH tunnel/u
+  );
+  assert.doesNotThrow(() =>
+    assertProxyBindSafety(null, { bindHost: '0.0.0.0', unsafePlaintext: true }, '0.0.0.0')
+  );
+});
+
+test('proxy bind safety preserves an existing non-loopback config on re-enable', () => {
+  const existing = { bindHost: '192.168.0.10' };
+  assert.doesNotThrow(() => assertProxyBindSafety(existing, {}, existing.bindHost));
+  assert.throws(
+    () => assertProxyBindSafety(existing, { bindHost: '192.168.0.11' }, '192.168.0.11'),
+    /--unsafe-plaintext/u
+  );
 });
 
 test('resolveProxyEnableSettings reuses existing settings and secret on re-enable', () => {
@@ -127,29 +148,51 @@ test('resolveProxyEnableSettings keeps the secret when only port or bind host ch
 
 test('resolveProxyEnableSettings rotates the secret only when asked', () => {
   const existing = { port: 9223, bindHost: '0.0.0.0', token: TOKEN };
-  const rotated = resolveProxyEnableSettings(existing, { rotateToken: true }, () => 'new-token');
-  assert.equal(rotated.token, 'new-token');
+  const newToken = 'b'.repeat(32);
+  const explicitToken = 'c'.repeat(32);
+  const rotated = resolveProxyEnableSettings(existing, { rotateToken: true }, () => newToken);
+  assert.equal(rotated.token, newToken);
   assert.equal(rotated.tokenSource, 'generated');
 
-  const explicit = resolveProxyEnableSettings(existing, { token: 'explicit-token' }, () => {
+  const explicit = resolveProxyEnableSettings(existing, { token: explicitToken }, () => {
     throw new Error('must not generate a new token');
   });
-  assert.equal(explicit.token, 'explicit-token');
+  assert.equal(explicit.token, explicitToken);
   assert.equal(explicit.tokenSource, 'explicit');
 });
 
 test('readRemoteConfig filters malformed remote entries', async () => {
   await withBridgeHome(async () => {
-    await writeRemoteConfig({
-      remotes: [
-        { id: 'valid', host: '10.0.0.5', port: 9223, token: TOKEN },
-        { id: '../bad', host: '10.0.0.6', port: 9223, token: TOKEN },
-        { id: 'bad-token', host: '10.0.0.7', port: 9223, token: 'nope' },
-      ],
-    });
+    await fs.promises.writeFile(
+      getRemoteConfigPath(),
+      JSON.stringify({
+        remotes: [
+          { id: 'valid', host: '10.0.0.5', port: 9223, token: TOKEN },
+          { id: '../bad', host: '10.0.0.6', port: 9223, token: TOKEN },
+          { id: 'bad-token', host: '10.0.0.7', port: 9223, token: 'nope' },
+        ],
+      }),
+      'utf8'
+    );
 
     assert.deepEqual(await readRemoteConfig(), {
       remotes: [{ id: 'valid', host: '10.0.0.5', port: 9223, token: TOKEN }],
     });
+  });
+});
+
+test('remote config validates tokens before saving and enforces private permissions', async () => {
+  await withBridgeHome(async () => {
+    await assert.rejects(
+      addRemoteDestination({ id: 'vm', host: '10.0.0.5', port: 9223, token: 'short' }),
+      /Bridge auth token/u
+    );
+    await assert.rejects(fs.promises.access(getRemoteConfigPath()), { code: 'ENOENT' });
+
+    await fs.promises.writeFile(getRemoteConfigPath(), '{"remotes":[]}\n', { mode: 0o644 });
+    await addRemoteDestination({ id: 'vm', host: '10.0.0.5', port: 9223, token: TOKEN });
+    if (process.platform !== 'win32') {
+      assert.equal((await fs.promises.stat(getRemoteConfigPath())).mode & 0o777, 0o600);
+    }
   });
 });
