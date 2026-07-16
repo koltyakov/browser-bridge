@@ -1,5 +1,7 @@
 // @ts-check
 
+import { BRIDGE_METHODS, BRIDGE_METHOD_REGISTRY } from './registry.js';
+
 /**
  * Shared Browser Bridge defaults used by the protocol, MCP layer, and runtime
  * guidance. Keep this as the source of truth for default limits and presets.
@@ -70,8 +72,8 @@ export const BUDGET_PRESETS = Object.freeze({
   deep: { maxNodes: 100, maxDepth: 8, textBudget: 2000, tokenBudget: 4000 },
 });
 
-/** @type {ReadonlySet<string>} */
-export const DEBUGGER_BACKED_METHODS = new Set([
+/** @type {readonly import('./types.js').BridgeMethod[]} */
+const LEGACY_DEBUGGER_BACKED_METHOD_ORDER = [
   'page.evaluate',
   'dom.get_accessibility_tree',
   'viewport.resize',
@@ -88,6 +90,19 @@ export const DEBUGGER_BACKED_METHODS = new Set([
   'cdp.get_box_model',
   'cdp.get_computed_styles_for_node',
   'cdp.dispatch_key_event',
+];
+
+const LEGACY_DEBUGGER_BACKED_METHODS = new Set(LEGACY_DEBUGGER_BACKED_METHOD_ORDER);
+
+/** @type {ReadonlySet<string>} */
+export const DEBUGGER_BACKED_METHODS = new Set([
+  ...LEGACY_DEBUGGER_BACKED_METHOD_ORDER.filter(
+    (method) => BRIDGE_METHOD_REGISTRY[method].debuggerBacked
+  ),
+  ...BRIDGE_METHODS.filter(
+    (method) =>
+      BRIDGE_METHOD_REGISTRY[method].debuggerBacked && !LEGACY_DEBUGGER_BACKED_METHODS.has(method)
+  ),
 ]);
 
 /**

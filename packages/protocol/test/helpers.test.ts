@@ -9,7 +9,9 @@ import {
   BridgeError,
   CAPABILITIES,
   DEFAULT_CAPABILITIES,
+  DEBUGGER_BACKED_METHODS,
   ERROR_CODES,
+  METHOD_CAPABILITIES,
   createBridgeMethodGroups,
   bridgeMethodNeedsTab,
   getBudgetPreset,
@@ -23,7 +25,75 @@ import {
   isDebuggerBackedMethod,
   parseJsonLines,
 } from '../src/index.js';
-import type { BridgeMethod } from '../src/types.js';
+import type { BridgeMethod, Capability } from '../src/types.js';
+
+const EXPECTED_BRIDGE_METHOD_ORDER: readonly BridgeMethod[] = [
+  'access.request',
+  'skill.get_runtime_context',
+  'setup.get_status',
+  'setup.install',
+  'log.tail',
+  'health.ping',
+  'daemon.metrics',
+  'tabs.list',
+  'tabs.create',
+  'tabs.close',
+  'tabs.activate',
+  'page.get_state',
+  'page.evaluate',
+  'page.get_console',
+  'page.wait_for_load_state',
+  'page.get_storage',
+  'page.get_text',
+  'page.get_network',
+  'network.intercept.add',
+  'network.intercept.remove',
+  'network.intercept.list',
+  'network.intercept.clear',
+  'navigation.navigate',
+  'navigation.reload',
+  'navigation.go_back',
+  'navigation.go_forward',
+  'dom.query',
+  'dom.describe',
+  'dom.get_text',
+  'dom.get_attributes',
+  'dom.wait_for',
+  'dom.find_by_text',
+  'dom.find_by_role',
+  'dom.get_html',
+  'dom.get_accessibility_tree',
+  'layout.get_box_model',
+  'layout.hit_test',
+  'styles.get_computed',
+  'styles.get_matched_rules',
+  'viewport.scroll',
+  'viewport.resize',
+  'input.click',
+  'input.focus',
+  'input.type',
+  'input.fill',
+  'input.press_key',
+  'input.set_checked',
+  'input.select_option',
+  'input.hover',
+  'input.drag',
+  'input.scroll_into_view',
+  'screenshot.capture_region',
+  'screenshot.capture_element',
+  'screenshot.capture_full_page',
+  'patch.apply_styles',
+  'patch.apply_dom',
+  'patch.list',
+  'patch.rollback',
+  'patch.commit_session_baseline',
+  'cdp.get_document',
+  'cdp.get_dom_snapshot',
+  'cdp.get_box_model',
+  'cdp.get_computed_styles_for_node',
+  'cdp.dispatch_key_event',
+  'performance.get_metrics',
+];
 
 class FakeSocket extends EventEmitter {
   encoding: BufferEncoding | null;
@@ -45,6 +115,48 @@ class FakeSocket extends EventEmitter {
 }
 
 test('capabilities helpers accept only declared capabilities and default unknown methods to null', () => {
+  assert.deepEqual(CAPABILITIES, {
+    PAGE_READ: 'page.read',
+    PAGE_EVALUATE: 'page.evaluate',
+    DOM_READ: 'dom.read',
+    STYLES_READ: 'styles.read',
+    LAYOUT_READ: 'layout.read',
+    VIEWPORT_CONTROL: 'viewport.control',
+    NAVIGATION_CONTROL: 'navigation.control',
+    SCREENSHOT_PARTIAL: 'screenshot.partial',
+    PATCH_DOM: 'patch.dom',
+    PATCH_STYLES: 'patch.styles',
+    CDP_DOM_SNAPSHOT: 'cdp.dom_snapshot',
+    CDP_BOX_MODEL: 'cdp.box_model',
+    CDP_STYLES: 'cdp.styles',
+    CDP_INPUT: 'cdp.input',
+    AUTOMATION_INPUT: 'automation.input',
+    TABS_MANAGE: 'tabs.manage',
+    PERFORMANCE_READ: 'performance.read',
+    NETWORK_READ: 'network.read',
+    NETWORK_INTERCEPT: 'network.intercept',
+  });
+  assert.deepEqual(DEFAULT_CAPABILITIES, [
+    'page.read',
+    'page.evaluate',
+    'dom.read',
+    'styles.read',
+    'layout.read',
+    'viewport.control',
+    'navigation.control',
+    'screenshot.partial',
+    'patch.dom',
+    'patch.styles',
+    'automation.input',
+    'cdp.dom_snapshot',
+    'cdp.box_model',
+    'cdp.styles',
+    'cdp.input',
+    'tabs.manage',
+    'performance.read',
+    'network.read',
+    'network.intercept',
+  ]);
   assert.equal(isCapability(CAPABILITIES.PAGE_READ), true);
   assert.equal(isCapability('page.read '), false);
   assert.equal(isCapability('not-a-capability'), false);
@@ -154,11 +266,27 @@ test('parseJsonLines closes sockets that exceed the line limit', () => {
 });
 
 test('registry helpers keep metadata aligned across methods, groups, and complexity filtering', () => {
+  assert.deepEqual(BRIDGE_METHODS, EXPECTED_BRIDGE_METHOD_ORDER);
+
   for (const method of BRIDGE_METHODS) {
     const entry = BRIDGE_METHOD_REGISTRY[method];
     assert.ok(entry.description.length > 0, `missing description for ${method}`);
     assert.equal(entry.since, '1.0');
     assert.equal(Array.isArray(entry.params), true, `params must be an array for ${method}`);
+    assert.deepEqual(Object.keys(entry), [
+      'group',
+      'tab',
+      'params',
+      'description',
+      'since',
+      'complexity',
+    ]);
+    assert.equal(
+      entry.capability === null || isCapability(entry.capability),
+      true,
+      `invalid capability for ${method}`
+    );
+    assert.equal(typeof entry.debuggerBacked, 'boolean');
   }
 
   assert.equal(isBridgeMethod('dom.query'), true);
@@ -186,4 +314,169 @@ test('registry helpers keep metadata aligned across methods, groups, and complex
     ),
     []
   );
+});
+
+test('registry policies preserve every method capability classification', () => {
+  const expectedGroups: ReadonlyArray<readonly [Capability | null, readonly BridgeMethod[]]> = [
+    [
+      null,
+      [
+        'access.request',
+        'tabs.list',
+        'skill.get_runtime_context',
+        'setup.get_status',
+        'setup.install',
+        'log.tail',
+        'health.ping',
+        'daemon.metrics',
+      ],
+    ],
+    [CAPABILITIES.TABS_MANAGE, ['tabs.create', 'tabs.close', 'tabs.activate']],
+    [
+      CAPABILITIES.PAGE_READ,
+      [
+        'page.get_state',
+        'page.get_console',
+        'page.wait_for_load_state',
+        'page.get_storage',
+        'page.get_text',
+      ],
+    ],
+    [CAPABILITIES.PAGE_EVALUATE, ['page.evaluate']],
+    [CAPABILITIES.NETWORK_READ, ['page.get_network']],
+    [
+      CAPABILITIES.NETWORK_INTERCEPT,
+      [
+        'network.intercept.add',
+        'network.intercept.remove',
+        'network.intercept.list',
+        'network.intercept.clear',
+      ],
+    ],
+    [
+      CAPABILITIES.NAVIGATION_CONTROL,
+      ['navigation.navigate', 'navigation.reload', 'navigation.go_back', 'navigation.go_forward'],
+    ],
+    [
+      CAPABILITIES.DOM_READ,
+      [
+        'dom.query',
+        'dom.describe',
+        'dom.get_text',
+        'dom.get_attributes',
+        'dom.wait_for',
+        'dom.find_by_text',
+        'dom.find_by_role',
+        'dom.get_html',
+        'dom.get_accessibility_tree',
+      ],
+    ],
+    [CAPABILITIES.LAYOUT_READ, ['layout.get_box_model', 'layout.hit_test']],
+    [CAPABILITIES.STYLES_READ, ['styles.get_computed', 'styles.get_matched_rules']],
+    [CAPABILITIES.VIEWPORT_CONTROL, ['viewport.scroll', 'viewport.resize']],
+    [
+      CAPABILITIES.AUTOMATION_INPUT,
+      [
+        'input.click',
+        'input.focus',
+        'input.type',
+        'input.fill',
+        'input.press_key',
+        'input.set_checked',
+        'input.select_option',
+        'input.hover',
+        'input.drag',
+        'input.scroll_into_view',
+      ],
+    ],
+    [
+      CAPABILITIES.SCREENSHOT_PARTIAL,
+      ['screenshot.capture_region', 'screenshot.capture_element', 'screenshot.capture_full_page'],
+    ],
+    [CAPABILITIES.PATCH_STYLES, ['patch.apply_styles']],
+    [
+      CAPABILITIES.PATCH_DOM,
+      ['patch.apply_dom', 'patch.list', 'patch.rollback', 'patch.commit_session_baseline'],
+    ],
+    [CAPABILITIES.CDP_DOM_SNAPSHOT, ['cdp.get_document', 'cdp.get_dom_snapshot']],
+    [CAPABILITIES.CDP_BOX_MODEL, ['cdp.get_box_model']],
+    [CAPABILITIES.CDP_STYLES, ['cdp.get_computed_styles_for_node']],
+    [CAPABILITIES.CDP_INPUT, ['cdp.dispatch_key_event']],
+    [CAPABILITIES.PERFORMANCE_READ, ['performance.get_metrics']],
+  ];
+  const expected = new Map<BridgeMethod, Capability | null>();
+
+  for (const [capability, methods] of expectedGroups) {
+    for (const method of methods) {
+      assert.equal(expected.has(method), false, `duplicate capability fixture for ${method}`);
+      expected.set(method, capability);
+    }
+  }
+
+  assert.equal(expected.size, BRIDGE_METHODS.length);
+  assert.deepEqual(new Set(expected.keys()), new Set(BRIDGE_METHODS));
+  const positionedMethods = new Set<BridgeMethod>([
+    'access.request',
+    'tabs.list',
+    'tabs.create',
+    'tabs.close',
+    'tabs.activate',
+    'skill.get_runtime_context',
+    'setup.get_status',
+    'setup.install',
+    'log.tail',
+    'health.ping',
+    'daemon.metrics',
+  ]);
+  assert.deepEqual(Object.keys(METHOD_CAPABILITIES), [
+    'access.request',
+    'tabs.list',
+    'tabs.create',
+    'tabs.close',
+    'tabs.activate',
+    'skill.get_runtime_context',
+    'setup.get_status',
+    'setup.install',
+    ...EXPECTED_BRIDGE_METHOD_ORDER.filter((method) => !positionedMethods.has(method)),
+    'log.tail',
+    'health.ping',
+    'daemon.metrics',
+  ]);
+
+  for (const method of BRIDGE_METHODS) {
+    assert.equal(BRIDGE_METHOD_REGISTRY[method].capability, expected.get(method), method);
+    assert.equal(METHOD_CAPABILITIES[method], expected.get(method), method);
+    assert.equal(getMethodCapability(method), expected.get(method), method);
+  }
+});
+
+test('registry policies preserve debugger-backed method membership and order', () => {
+  const expected: BridgeMethod[] = [
+    'page.evaluate',
+    'dom.get_accessibility_tree',
+    'viewport.resize',
+    'performance.get_metrics',
+    'screenshot.capture_element',
+    'screenshot.capture_region',
+    'screenshot.capture_full_page',
+    'network.intercept.add',
+    'network.intercept.remove',
+    'network.intercept.list',
+    'network.intercept.clear',
+    'cdp.get_document',
+    'cdp.get_dom_snapshot',
+    'cdp.get_box_model',
+    'cdp.get_computed_styles_for_node',
+    'cdp.dispatch_key_event',
+  ];
+
+  assert.deepEqual([...DEBUGGER_BACKED_METHODS], expected);
+  assert.deepEqual(
+    new Set(BRIDGE_METHODS.filter((method) => BRIDGE_METHOD_REGISTRY[method].debuggerBacked)),
+    new Set(expected)
+  );
+
+  for (const method of BRIDGE_METHODS) {
+    assert.equal(isDebuggerBackedMethod(method), expected.includes(method), method);
+  }
 });

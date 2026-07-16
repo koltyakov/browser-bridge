@@ -419,17 +419,21 @@ test('handleRawCallTool rejects unsupported methods without calling the bridge',
   );
 });
 
-test('handleStatusTool returns doctor report without bridge calls', async () => {
-  // handleStatusTool calls getDoctorReport, which tries to connect. Since there is no
-  // daemon running in tests it should catch the error and still return a tool result.
-  const result = await handleStatusTool();
-  // Either success or error - the key is it must return a ToolResult, never throw.
-  assert.ok(typeof result.structuredContent === 'object');
-  assert.ok(Array.isArray(result.content));
-  assert.equal(result.content[0].type, 'text');
-  assert.match(result.content[0].text, /readiness issue|Browser Bridge is ready/);
-  assert.doesNotMatch(result.content[0].text, /setup issue/);
-});
+test(
+  'handleStatusTool returns doctor report without bridge calls',
+  { timeout: 5_000 },
+  async () => {
+    await withBridgeHome(async () => {
+      const result = await handleStatusTool();
+      // Either success or error - the key is it must return a ToolResult, never throw.
+      assert.ok(typeof result.structuredContent === 'object');
+      assert.ok(Array.isArray(result.content));
+      assert.equal(result.content[0].type, 'text');
+      assert.match(result.content[0].text, /readiness issue|Browser Bridge is ready/);
+      assert.doesNotMatch(result.content[0].text, /setup issue/);
+    });
+  }
+);
 
 test('handleSetupTool reports optional agent integration status', async () => {
   const result = await handleSetupTool({ global: false });
@@ -1014,6 +1018,52 @@ test('handleStatusTool reports remote reachability separately from route readine
         assert.equal(result.structuredContent.extensionConnected, true);
         assert.equal(result.structuredContent.routeReady, false);
         assert.match(result.content[0].text, /reachable, but its browser route is not ready/);
+      },
+      { isolateBridgeHome: false }
+    );
+  });
+});
+
+test('handleStatusTool reports a ready explicit remote destination', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    await writeRemoteConfig(bridgeHome);
+    await withMockedBridge(
+      async () =>
+        ok({
+          daemon: 'ok',
+          extensionConnected: true,
+          access: { enabled: true, routeReady: true, routeTabId: 44 },
+        }),
+      async () => {
+        const result = await handleStatusTool({ destinationId: 'vm-private' });
+        assert.equal(result.isError, undefined);
+        assert.equal(result.structuredContent.ok, true);
+        assert.equal(result.structuredContent.reachable, true);
+        assert.equal(result.structuredContent.accessEnabled, true);
+        assert.equal(result.structuredContent.routeReady, true);
+        assert.equal(result.structuredContent.routeTabId, 44);
+        assert.match(result.content[0].text, /destination "vm-private" is ready/);
+      },
+      { isolateBridgeHome: false }
+    );
+  });
+});
+
+test('handleStatusTool reports an unreachable explicit remote destination', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    await writeRemoteConfig(bridgeHome);
+    await withMockedBridge(
+      async () => fail('NATIVE_HOST_UNAVAILABLE', 'Remote daemon unavailable'),
+      async () => {
+        const result = await handleStatusTool({ destinationId: 'vm-private' });
+        assert.equal(result.isError, true);
+        assert.equal(result.structuredContent.ok, false);
+        assert.equal(result.structuredContent.reachable, false);
+        assert.equal(result.structuredContent.extensionConnected, false);
+        assert.equal(result.structuredContent.accessEnabled, false);
+        assert.equal(result.structuredContent.routeReady, false);
+        assert.equal(result.structuredContent.routeTabId, null);
+        assert.match(result.content[0].text, /destination "vm-private" is not reachable/);
       },
       { isolateBridgeHome: false }
     );

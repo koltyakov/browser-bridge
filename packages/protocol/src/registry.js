@@ -1,5 +1,7 @@
 // @ts-check
 
+import { CAPABILITIES } from './capability-values.js';
+
 /**
  * @typedef {'trivial' | 'low' | 'moderate' | 'high'} BridgeMethodComplexity
  */
@@ -11,14 +13,79 @@
  *   params: readonly string[],
  *   description: string,
  *   since: string,
- *   complexity: BridgeMethodComplexity
+ *   complexity: BridgeMethodComplexity,
+ *   capability: import('./types.js').Capability | null,
+ *   debuggerBacked: boolean
  * }} BridgeMethodRegistryEntry
  */
 
 /**
+ * @typedef {{
+ *   capability: import('./types.js').Capability | null,
+ *   debuggerBacked?: boolean
+ * }} BridgeMethodPolicy
+ */
+
+/** @type {Readonly<Record<string, Readonly<BridgeMethodPolicy>>>} */
+const METHOD_POLICIES = Object.freeze({
+  none: Object.freeze({ capability: null }),
+  tabsManage: Object.freeze({ capability: CAPABILITIES.TABS_MANAGE }),
+  pageRead: Object.freeze({ capability: CAPABILITIES.PAGE_READ }),
+  pageEvaluateDebugger: Object.freeze({
+    capability: CAPABILITIES.PAGE_EVALUATE,
+    debuggerBacked: true,
+  }),
+  networkRead: Object.freeze({ capability: CAPABILITIES.NETWORK_READ }),
+  networkInterceptDebugger: Object.freeze({
+    capability: CAPABILITIES.NETWORK_INTERCEPT,
+    debuggerBacked: true,
+  }),
+  navigationControl: Object.freeze({ capability: CAPABILITIES.NAVIGATION_CONTROL }),
+  domRead: Object.freeze({ capability: CAPABILITIES.DOM_READ }),
+  domReadDebugger: Object.freeze({
+    capability: CAPABILITIES.DOM_READ,
+    debuggerBacked: true,
+  }),
+  layoutRead: Object.freeze({ capability: CAPABILITIES.LAYOUT_READ }),
+  stylesRead: Object.freeze({ capability: CAPABILITIES.STYLES_READ }),
+  viewportControl: Object.freeze({ capability: CAPABILITIES.VIEWPORT_CONTROL }),
+  viewportControlDebugger: Object.freeze({
+    capability: CAPABILITIES.VIEWPORT_CONTROL,
+    debuggerBacked: true,
+  }),
+  automationInput: Object.freeze({ capability: CAPABILITIES.AUTOMATION_INPUT }),
+  screenshotPartialDebugger: Object.freeze({
+    capability: CAPABILITIES.SCREENSHOT_PARTIAL,
+    debuggerBacked: true,
+  }),
+  patchDom: Object.freeze({ capability: CAPABILITIES.PATCH_DOM }),
+  patchStyles: Object.freeze({ capability: CAPABILITIES.PATCH_STYLES }),
+  cdpDomSnapshotDebugger: Object.freeze({
+    capability: CAPABILITIES.CDP_DOM_SNAPSHOT,
+    debuggerBacked: true,
+  }),
+  cdpBoxModelDebugger: Object.freeze({
+    capability: CAPABILITIES.CDP_BOX_MODEL,
+    debuggerBacked: true,
+  }),
+  cdpStylesDebugger: Object.freeze({
+    capability: CAPABILITIES.CDP_STYLES,
+    debuggerBacked: true,
+  }),
+  cdpInputDebugger: Object.freeze({
+    capability: CAPABILITIES.CDP_INPUT,
+    debuggerBacked: true,
+  }),
+  performanceReadDebugger: Object.freeze({
+    capability: CAPABILITIES.PERFORMANCE_READ,
+    debuggerBacked: true,
+  }),
+});
+
+/**
  * Canonical bridge method registry. This is the shared source of truth for
- * method grouping, tab-routing requirements, and exposed params so the protocol,
- * CLI, MCP layer, and docs can stay aligned.
+ * method grouping, tab-routing requirements, exposed params, capability mapping,
+ * and debugger policy so the protocol, CLI, MCP layer, and docs can stay aligned.
  *
  * @type {Readonly<Record<import('./types.js').BridgeMethod, string>>}
  */
@@ -97,10 +164,18 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
  * @param {boolean} tab
  * @param {readonly string[]} params
  * @param {BridgeMethodComplexity} [complexity='low']
+ * @param {Readonly<BridgeMethodPolicy>} [policy=METHOD_POLICIES.none]
  * @returns {BridgeMethodRegistryEntry}
  */
-function createRegistryEntry(method, group, tab, params, complexity = 'low') {
-  return {
+function createRegistryEntry(
+  method,
+  group,
+  tab,
+  params,
+  complexity = 'low',
+  policy = METHOD_POLICIES.none
+) {
+  const entry = {
     group,
     tab,
     params,
@@ -108,6 +183,13 @@ function createRegistryEntry(method, group, tab, params, complexity = 'low') {
     since: '1.0',
     complexity,
   };
+
+  return /** @type {BridgeMethodRegistryEntry} */ (
+    Object.defineProperties(entry, {
+      capability: { value: policy.capability },
+      debuggerBacked: { value: policy.debuggerBacked ?? false },
+    })
+  );
 }
 
 /** @type {Readonly<Record<import('./types.js').BridgeMethod, BridgeMethodRegistryEntry>>} */
@@ -134,48 +216,86 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
   'daemon.metrics': createRegistryEntry('daemon.metrics', 'system', false, [], 'trivial'),
   // tabs - trivial
   'tabs.list': createRegistryEntry('tabs.list', 'tabs', false, [], 'trivial'),
-  'tabs.create': createRegistryEntry('tabs.create', 'tabs', false, ['url', 'active'], 'trivial'),
-  'tabs.close': createRegistryEntry('tabs.close', 'tabs', false, ['tabId'], 'trivial'),
-  'tabs.activate': createRegistryEntry('tabs.activate', 'tabs', false, ['tabId'], 'trivial'),
+  'tabs.create': createRegistryEntry(
+    'tabs.create',
+    'tabs',
+    false,
+    ['url', 'active'],
+    'trivial',
+    METHOD_POLICIES.tabsManage
+  ),
+  'tabs.close': createRegistryEntry(
+    'tabs.close',
+    'tabs',
+    false,
+    ['tabId'],
+    'trivial',
+    METHOD_POLICIES.tabsManage
+  ),
+  'tabs.activate': createRegistryEntry(
+    'tabs.activate',
+    'tabs',
+    false,
+    ['tabId'],
+    'trivial',
+    METHOD_POLICIES.tabsManage
+  ),
   // page - low (basic reads), moderate (evaluate, debugger-backed)
-  'page.get_state': createRegistryEntry('page.get_state', 'page', true, [], 'low'),
-  'page.evaluate': {
-    ...createRegistryEntry(
-      'page.evaluate',
-      'page',
-      true,
-      ['expression', 'awaitPromise', 'timeoutMs', 'returnByValue'],
-      'moderate'
-    ),
-  },
+  'page.get_state': createRegistryEntry(
+    'page.get_state',
+    'page',
+    true,
+    [],
+    'low',
+    METHOD_POLICIES.pageRead
+  ),
+  'page.evaluate': createRegistryEntry(
+    'page.evaluate',
+    'page',
+    true,
+    ['expression', 'awaitPromise', 'timeoutMs', 'returnByValue'],
+    'moderate',
+    METHOD_POLICIES.pageEvaluateDebugger
+  ),
   'page.get_console': createRegistryEntry(
     'page.get_console',
     'page',
     true,
     ['level', 'clear', 'limit'],
-    'low'
+    'low',
+    METHOD_POLICIES.pageRead
   ),
   'page.wait_for_load_state': createRegistryEntry(
     'page.wait_for_load_state',
     'wait',
     true,
     ['timeoutMs'],
-    'low'
+    'low',
+    METHOD_POLICIES.pageRead
   ),
   'page.get_storage': createRegistryEntry(
     'page.get_storage',
     'page',
     true,
     ['type', 'keys'],
-    'low'
+    'low',
+    METHOD_POLICIES.pageRead
   ),
-  'page.get_text': createRegistryEntry('page.get_text', 'page', true, ['textBudget'], 'low'),
+  'page.get_text': createRegistryEntry(
+    'page.get_text',
+    'page',
+    true,
+    ['textBudget'],
+    'low',
+    METHOD_POLICIES.pageRead
+  ),
   'page.get_network': createRegistryEntry(
     'page.get_network',
     'page',
     true,
     ['clear', 'limit', 'urlPattern'],
-    'low'
+    'low',
+    METHOD_POLICIES.networkRead
   ),
   // network intercept - moderate (holds debugger session)
   'network.intercept.add': createRegistryEntry(
@@ -183,28 +303,32 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'page',
     true,
     ['urlPattern', 'action', 'statusCode', 'body', 'headers'],
-    'moderate'
+    'moderate',
+    METHOD_POLICIES.networkInterceptDebugger
   ),
   'network.intercept.remove': createRegistryEntry(
     'network.intercept.remove',
     'page',
     true,
     ['ruleId'],
-    'trivial'
+    'trivial',
+    METHOD_POLICIES.networkInterceptDebugger
   ),
   'network.intercept.list': createRegistryEntry(
     'network.intercept.list',
     'page',
     true,
     [],
-    'trivial'
+    'trivial',
+    METHOD_POLICIES.networkInterceptDebugger
   ),
   'network.intercept.clear': createRegistryEntry(
     'network.intercept.clear',
     'page',
     true,
     [],
-    'low'
+    'low',
+    METHOD_POLICIES.networkInterceptDebugger
   ),
   // navigation - low
   'navigation.navigate': createRegistryEntry(
@@ -212,96 +336,113 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'navigate',
     true,
     ['url', 'waitForLoad', 'timeoutMs'],
-    'low'
+    'low',
+    METHOD_POLICIES.navigationControl
   ),
   'navigation.reload': createRegistryEntry(
     'navigation.reload',
     'navigate',
     true,
     ['waitForLoad', 'timeoutMs'],
-    'low'
+    'low',
+    METHOD_POLICIES.navigationControl
   ),
   'navigation.go_back': createRegistryEntry(
     'navigation.go_back',
     'navigate',
     true,
     ['waitForLoad', 'timeoutMs'],
-    'low'
+    'low',
+    METHOD_POLICIES.navigationControl
   ),
   'navigation.go_forward': createRegistryEntry(
     'navigation.go_forward',
     'navigate',
     true,
     ['waitForLoad', 'timeoutMs'],
-    'low'
+    'low',
+    METHOD_POLICIES.navigationControl
   ),
   // dom - low (reads), moderate (accessibility tree)
-  'dom.query': {
-    ...createRegistryEntry(
-      'dom.query',
-      'inspect',
-      true,
-      [
-        'selector',
-        'withinRef',
-        'maxNodes',
-        'maxDepth',
-        'textBudget',
-        'includeBbox',
-        'attributeAllowlist',
-      ],
-      'low'
-    ),
-  },
-  'dom.describe': createRegistryEntry('dom.describe', 'inspect', true, ['elementRef'], 'low'),
+  'dom.query': createRegistryEntry(
+    'dom.query',
+    'inspect',
+    true,
+    [
+      'selector',
+      'withinRef',
+      'maxNodes',
+      'maxDepth',
+      'textBudget',
+      'includeBbox',
+      'attributeAllowlist',
+    ],
+    'low',
+    METHOD_POLICIES.domRead
+  ),
+  'dom.describe': createRegistryEntry(
+    'dom.describe',
+    'inspect',
+    true,
+    ['elementRef'],
+    'low',
+    METHOD_POLICIES.domRead
+  ),
   'dom.get_text': createRegistryEntry(
     'dom.get_text',
     'inspect',
     true,
     ['elementRef', 'textBudget'],
-    'low'
+    'low',
+    METHOD_POLICIES.domRead
   ),
   'dom.get_attributes': createRegistryEntry(
     'dom.get_attributes',
     'inspect',
     true,
     ['elementRef', 'attributes'],
-    'low'
+    'low',
+    METHOD_POLICIES.domRead
   ),
   'dom.wait_for': createRegistryEntry(
     'dom.wait_for',
     'wait',
     true,
     ['selector', 'text', 'state', 'timeoutMs'],
-    'low'
+    'low',
+    METHOD_POLICIES.domRead
   ),
   'dom.find_by_text': createRegistryEntry(
     'dom.find_by_text',
     'inspect',
     true,
     ['text', 'exact', 'selector', 'maxResults'],
-    'low'
+    'low',
+    METHOD_POLICIES.domRead
   ),
   'dom.find_by_role': createRegistryEntry(
     'dom.find_by_role',
     'inspect',
     true,
     ['role', 'name', 'selector', 'maxResults'],
-    'low'
+    'low',
+    METHOD_POLICIES.domRead
   ),
   'dom.get_html': createRegistryEntry(
     'dom.get_html',
     'inspect',
     true,
     ['elementRef', 'outer', 'maxLength'],
-    'low'
+    'low',
+    METHOD_POLICIES.domRead
   ),
   'dom.get_accessibility_tree': createRegistryEntry(
     'dom.get_accessibility_tree',
     'inspect',
     true,
     ['maxNodes', 'maxDepth'],
-    'moderate'
+    'moderate',
+    METHOD_POLICIES.domReadDebugger
   ),
   // layout - low
   'layout.get_box_model': createRegistryEntry(
@@ -309,23 +450,33 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'inspect',
     true,
     ['elementRef'],
-    'low'
+    'low',
+    METHOD_POLICIES.layoutRead
   ),
-  'layout.hit_test': createRegistryEntry('layout.hit_test', 'inspect', true, ['x', 'y'], 'low'),
+  'layout.hit_test': createRegistryEntry(
+    'layout.hit_test',
+    'inspect',
+    true,
+    ['x', 'y'],
+    'low',
+    METHOD_POLICIES.layoutRead
+  ),
   // styles - low (computed), moderate (matched rules)
   'styles.get_computed': createRegistryEntry(
     'styles.get_computed',
     'inspect',
     true,
     ['elementRef', 'properties'],
-    'low'
+    'low',
+    METHOD_POLICIES.stylesRead
   ),
   'styles.get_matched_rules': createRegistryEntry(
     'styles.get_matched_rules',
     'inspect',
     true,
     ['elementRef'],
-    'moderate'
+    'moderate',
+    METHOD_POLICIES.stylesRead
   ),
   // viewport - low (scroll), moderate (resize, debugger-backed)
   'viewport.scroll': createRegistryEntry(
@@ -333,14 +484,16 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'navigate',
     true,
     ['target', 'top', 'left', 'behavior', 'relative'],
-    'low'
+    'low',
+    METHOD_POLICIES.viewportControl
   ),
   'viewport.resize': createRegistryEntry(
     'viewport.resize',
     'navigate',
     true,
     ['width', 'height', 'deviceScaleFactor', 'reset'],
-    'moderate'
+    'moderate',
+    METHOD_POLICIES.viewportControlDebugger
   ),
   // input - low (simple), moderate (drag)
   'input.click': createRegistryEntry(
@@ -348,64 +501,80 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'interact',
     true,
     ['target', 'button', 'clickCount', 'modifiers'],
-    'low'
+    'low',
+    METHOD_POLICIES.automationInput
   ),
-  'input.focus': createRegistryEntry('input.focus', 'interact', true, ['target'], 'low'),
+  'input.focus': createRegistryEntry(
+    'input.focus',
+    'interact',
+    true,
+    ['target'],
+    'low',
+    METHOD_POLICIES.automationInput
+  ),
   'input.type': createRegistryEntry(
     'input.type',
     'interact',
     true,
     ['target', 'text', 'clear', 'submit', 'modifiers'],
-    'low'
+    'low',
+    METHOD_POLICIES.automationInput
   ),
   'input.fill': createRegistryEntry(
     'input.fill',
     'interact',
     true,
     ['target', 'value', 'mode'],
-    'low'
+    'low',
+    METHOD_POLICIES.automationInput
   ),
   'input.press_key': createRegistryEntry(
     'input.press_key',
     'interact',
     true,
     ['target', 'key', 'modifiers'],
-    'low'
+    'low',
+    METHOD_POLICIES.automationInput
   ),
   'input.set_checked': createRegistryEntry(
     'input.set_checked',
     'interact',
     true,
     ['target', 'checked'],
-    'low'
+    'low',
+    METHOD_POLICIES.automationInput
   ),
   'input.select_option': createRegistryEntry(
     'input.select_option',
     'interact',
     true,
     ['target', 'values', 'labels', 'indexes'],
-    'low'
+    'low',
+    METHOD_POLICIES.automationInput
   ),
   'input.hover': createRegistryEntry(
     'input.hover',
     'interact',
     true,
     ['target', 'duration', 'modifiers'],
-    'low'
+    'low',
+    METHOD_POLICIES.automationInput
   ),
   'input.drag': createRegistryEntry(
     'input.drag',
     'interact',
     true,
     ['source', 'destination', 'offsetX', 'offsetY'],
-    'moderate'
+    'moderate',
+    METHOD_POLICIES.automationInput
   ),
   'input.scroll_into_view': createRegistryEntry(
     'input.scroll_into_view',
     'interact',
     true,
     ['target'],
-    'low'
+    'low',
+    METHOD_POLICIES.automationInput
   ),
   // capture - high (screenshots, CDP)
   'screenshot.capture_region': createRegistryEntry(
@@ -413,21 +582,24 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'capture',
     true,
     ['x', 'y', 'width', 'height'],
-    'high'
+    'high',
+    METHOD_POLICIES.screenshotPartialDebugger
   ),
   'screenshot.capture_element': createRegistryEntry(
     'screenshot.capture_element',
     'capture',
     true,
     ['elementRef'],
-    'high'
+    'high',
+    METHOD_POLICIES.screenshotPartialDebugger
   ),
   'screenshot.capture_full_page': createRegistryEntry(
     'screenshot.capture_full_page',
     'capture',
     true,
     [],
-    'high'
+    'high',
+    METHOD_POLICIES.screenshotPartialDebugger
   ),
   // patch - moderate (side effects)
   'patch.apply_styles': createRegistryEntry(
@@ -435,41 +607,81 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'patch',
     true,
     ['target', 'declarations', 'important', 'patchId', 'verify'],
-    'moderate'
+    'moderate',
+    METHOD_POLICIES.patchStyles
   ),
   'patch.apply_dom': createRegistryEntry(
     'patch.apply_dom',
     'patch',
     true,
     ['target', 'operation', 'name', 'value', 'patchId', 'verify'],
-    'moderate'
+    'moderate',
+    METHOD_POLICIES.patchDom
   ),
-  'patch.list': createRegistryEntry('patch.list', 'patch', true, [], 'low'),
-  'patch.rollback': createRegistryEntry('patch.rollback', 'patch', true, ['patchId'], 'low'),
+  'patch.list': createRegistryEntry(
+    'patch.list',
+    'patch',
+    true,
+    [],
+    'low',
+    METHOD_POLICIES.patchDom
+  ),
+  'patch.rollback': createRegistryEntry(
+    'patch.rollback',
+    'patch',
+    true,
+    ['patchId'],
+    'low',
+    METHOD_POLICIES.patchDom
+  ),
   'patch.commit_session_baseline': createRegistryEntry(
     'patch.commit_session_baseline',
     'patch',
     true,
     [],
-    'low'
+    'low',
+    METHOD_POLICIES.patchDom
   ),
   // cdp - high (raw protocol, large payloads)
-  'cdp.get_document': createRegistryEntry('cdp.get_document', 'cdp', true, [], 'high'),
-  'cdp.get_dom_snapshot': createRegistryEntry('cdp.get_dom_snapshot', 'cdp', true, [], 'high'),
-  'cdp.get_box_model': createRegistryEntry('cdp.get_box_model', 'cdp', true, ['nodeId'], 'high'),
+  'cdp.get_document': createRegistryEntry(
+    'cdp.get_document',
+    'cdp',
+    true,
+    [],
+    'high',
+    METHOD_POLICIES.cdpDomSnapshotDebugger
+  ),
+  'cdp.get_dom_snapshot': createRegistryEntry(
+    'cdp.get_dom_snapshot',
+    'cdp',
+    true,
+    [],
+    'high',
+    METHOD_POLICIES.cdpDomSnapshotDebugger
+  ),
+  'cdp.get_box_model': createRegistryEntry(
+    'cdp.get_box_model',
+    'cdp',
+    true,
+    ['nodeId'],
+    'high',
+    METHOD_POLICIES.cdpBoxModelDebugger
+  ),
   'cdp.get_computed_styles_for_node': createRegistryEntry(
     'cdp.get_computed_styles_for_node',
     'cdp',
     true,
     ['nodeId'],
-    'high'
+    'high',
+    METHOD_POLICIES.cdpStylesDebugger
   ),
   'cdp.dispatch_key_event': createRegistryEntry(
     'cdp.dispatch_key_event',
     'cdp',
     true,
     ['key', 'code', 'modifiers'],
-    'moderate'
+    'moderate',
+    METHOD_POLICIES.cdpInputDebugger
   ),
   // performance - moderate (debugger-backed)
   'performance.get_metrics': createRegistryEntry(
@@ -477,7 +689,8 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'performance',
     true,
     [],
-    'moderate'
+    'moderate',
+    METHOD_POLICIES.performanceReadDebugger
   ),
 });
 

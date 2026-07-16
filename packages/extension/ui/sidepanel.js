@@ -108,8 +108,9 @@ import {
 
 const PUBLISHED_EXTENSION_ID = 'jjjkmmcdkpcgamlopogicbnnhdgebhie';
 const SETUP_STATUS_POLL_MS = 15_000;
-const nativeIndicator =
-  /** @type {HTMLSpanElement} */ (document.getElementById('native-indicator'));
+const nativeIndicator = /** @type {HTMLSpanElement} */ (
+  document.getElementById('native-indicator')
+);
 const toggleButton = /** @type {HTMLButtonElement} */ (document.getElementById('bridge-toggle'));
 const actionLog = /** @type {HTMLDivElement} */ (document.getElementById('action-log'));
 const setupSection = /** @type {HTMLElement} */ (document.getElementById('native-setup'));
@@ -119,8 +120,9 @@ const controlSection = /** @type {HTMLElement} */ (document.getElementById('cont
 const installationSection = /** @type {HTMLDetailsElement} */ (
   document.getElementById('installation-section')
 );
-const setupStatusNote =
-  /** @type {HTMLParagraphElement} */ (document.getElementById('setup-status-note'));
+const setupStatusNote = /** @type {HTMLParagraphElement} */ (
+  document.getElementById('setup-status-note')
+);
 const setupHostVersion = /** @type {HTMLParagraphElement} */ (
   document.getElementById('setup-host-version')
 );
@@ -132,8 +134,9 @@ const setupStatusMatrix = /** @type {HTMLDivElement} */ (
   document.getElementById('setup-status-matrix')
 );
 const activitySection = /** @type {HTMLElement} */ (document.getElementById('activity-section'));
-const activityHistogram =
-  /** @type {HTMLDivElement} */ (document.getElementById('activity-histogram'));
+const activityHistogram = /** @type {HTMLDivElement} */ (
+  document.getElementById('activity-histogram')
+);
 const activityHistogramBars = /** @type {HTMLDivElement} */ (
   document.getElementById('activity-histogram-bars')
 );
@@ -147,10 +150,12 @@ const agentStatus = /** @type {HTMLDivElement} */ (document.getElementById('agen
 const agentStatusDetail = /** @type {HTMLParagraphElement} */ (
   document.getElementById('agent-status-detail')
 );
-const agentDisclosure =
-  /** @type {HTMLParagraphElement} */ (document.getElementById('agent-disclosure'));
-const examplesSection =
-  /** @type {HTMLDetailsElement} */ (document.getElementById('examples-section'));
+const agentDisclosure = /** @type {HTMLParagraphElement} */ (
+  document.getElementById('agent-disclosure')
+);
+const examplesSection = /** @type {HTMLDetailsElement} */ (
+  document.getElementById('examples-section')
+);
 const examplesContent = /** @type {HTMLDivElement} */ (document.getElementById('examples-content'));
 /** @type {SidePanelCurrentTab | null} */
 let currentTabState = null;
@@ -1287,13 +1292,12 @@ function buildActivityHistogram(entries) {
 
   for (let index = 0; index < buckets.length; index += 1) {
     const familyTotals = /** @type {Map<string, number>} */ (bucketFamilies.get(index));
-    buckets[index].segments =
-      /** @type {typeof buckets[number]['segments']} */ (
-        HISTOGRAM_METHOD_FAMILIES.map((family) => ({
-          family,
-          tokens: familyTotals.get(family) ?? 0,
-        })).filter((segment) => segment.tokens > 0)
-      );
+    buckets[index].segments = /** @type {typeof buckets[number]['segments']} */ (
+      HISTOGRAM_METHOD_FAMILIES.map((family) => ({
+        family,
+        tokens: familyTotals.get(family) ?? 0,
+      })).filter((segment) => segment.tokens > 0)
+    );
   }
 
   return {

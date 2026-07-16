@@ -5,8 +5,8 @@ import path from 'node:path';
 
 import {
   createSuccess,
+  deriveProtocolVersion,
   parseJsonLines,
-  PROTOCOL_VERSION,
 } from '../../packages/protocol/src/index.js';
 import type { BridgeRequest, BridgeResponse } from '../../packages/protocol/src/types.js';
 
@@ -40,6 +40,17 @@ export type SocketPathSet = {
   bridgeHome: string;
   socketPath: string;
 };
+
+function loadRepositoryProtocolVersion(): string {
+  const parsed: unknown = JSON.parse(
+    fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8')
+  );
+  const packageVersion =
+    parsed && typeof parsed === 'object' && 'version' in parsed ? parsed.version : null;
+  return deriveProtocolVersion(typeof packageVersion === 'string' ? packageVersion : null);
+}
+
+const TEST_PROTOCOL_VERSION = loadRepositoryProtocolVersion();
 
 function getTempSocketRoot(): string {
   return process.platform === 'win32' ? os.tmpdir() : fs.existsSync('/tmp') ? '/tmp' : os.tmpdir();
@@ -186,7 +197,7 @@ export async function bridgeServerWith(
     } else if (request.method === 'health.ping') {
       response = createSuccess(request.id, {
         daemon: 'ok',
-        supported_versions: [PROTOCOL_VERSION],
+        supported_versions: [TEST_PROTOCOL_VERSION],
         extensionConnected: false,
         connectedExtensions: [],
         access: {

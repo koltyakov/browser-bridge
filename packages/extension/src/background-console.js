@@ -103,10 +103,9 @@ export async function ensureConsoleInterceptor(tabId, chromeObj) {
       };
 
       const orig = /** @type {Record<string, Function>} */ ({});
-      const consoleMethods =
-        /** @type {Record<string, (...args: unknown[]) => void>} */ (
-          /** @type {unknown} */ (console)
-        );
+      const consoleMethods = /** @type {Record<string, (...args: unknown[]) => void>} */ (
+        /** @type {unknown} */ (console)
+      );
       for (const level of ['log', 'warn', 'error', 'info', 'debug']) {
         orig[level] = consoleMethods[level];
         consoleMethods[level] = (...args) => {

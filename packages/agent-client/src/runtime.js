@@ -433,8 +433,7 @@ export async function getDoctorReport(options = {}) {
       if (!response.ok) {
         throw new Error(response.error.message);
       }
-      const result =
-        /** @type {{ daemon?: string, extensionConnected?: boolean, access?: {
+      const result = /** @type {{ daemon?: string, extensionConnected?: boolean, access?: {
         enabled?: boolean,
         windowId?: number | null,
         routeTabId?: number | null,

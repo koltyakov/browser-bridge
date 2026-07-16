@@ -21,6 +21,8 @@ import {
   createSuccess,
 } from '../../protocol/src/index.js';
 import type { SetupStatus } from '../../protocol/src/types.js';
+import { refreshSetupStatus } from '../src/background-native.js';
+import { createExtensionState } from '../src/background-state.js';
 import type { ExtensionState } from '../src/background-state.js';
 
 type ScheduledTimer = {
@@ -183,6 +185,70 @@ function installManualTimers(): {
     },
   };
 }
+
+test('refreshSetupStatus ignores a stale timer and expires the current request', async () => {
+  const state = createExtensionState();
+  const messages: unknown[] = [];
+  let emittedStates = 0;
+  state.nativePort = {
+    postMessage(message: unknown) {
+      messages.push(message);
+    },
+  } as unknown as chrome.runtime.Port;
+
+  const timers = installManualTimers();
+  try {
+    refreshSetupStatus(state, {
+      async emitUiState() {
+        emittedStates += 1;
+      },
+    });
+    const firstRequestId = state.setupStatusPendingRequestId;
+    const firstTimer = timers.scheduled[0];
+
+    state.setupStatusPending = false;
+    state.setupStatusPendingRequestId = null;
+    refreshSetupStatus(
+      state,
+      {
+        async emitUiState() {
+          emittedStates += 1;
+        },
+      },
+      true
+    );
+    const secondRequestId = state.setupStatusPendingRequestId;
+    const secondTimer = timers.scheduled[1];
+
+    assert.equal(messages.length, 2);
+    assert.equal(timers.scheduled.length, 2);
+    assert.deepEqual(
+      timers.scheduled.map((timer) => timer.delay),
+      [5000, 5000]
+    );
+    assert.ok(firstRequestId);
+    assert.ok(secondRequestId);
+    assert.notEqual(firstRequestId, secondRequestId);
+    assert.deepEqual(timers.cleared, [firstTimer.handle]);
+
+    firstTimer.callback();
+    await flushAsyncWork();
+    assert.equal(state.setupStatusPending, true);
+    assert.equal(state.setupStatusPendingRequestId, secondRequestId);
+    assert.equal(state.setupStatusError, null);
+    assert.equal(emittedStates, 0);
+
+    secondTimer.callback();
+    await flushAsyncWork();
+    assert.equal(state.setupStatusPending, false);
+    assert.equal(state.setupStatusPendingRequestId, null);
+    assert.equal(state.setupStatusError, 'Host setup request timed out.');
+    assert.equal(state.setupStatusTimeoutId, null);
+    assert.equal(emittedStates, 1);
+  } finally {
+    timers.restore();
+  }
+});
 
 function classifyExecuteScript(
   details: ExecuteScriptDetails

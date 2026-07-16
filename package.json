@@ -1,6 +1,6 @@
 {
   "name": "@browserbridge/bbx",
-  "version": "1.7.5",
+  "version": "1.7.6",
   "private": false,
   "keywords": [
     "agent-tools",
@@ -77,8 +77,8 @@
     "@types/node": "^26.1.1",
     "c8": "^11.0.0",
     "linkedom": "^0.18.13",
-    "oxfmt": "^0.58.0",
-    "oxlint": "^1.73.0",
+    "oxfmt": "^0.59.0",
+    "oxlint": "^1.74.0",
     "typescript": "^7.0.2"
   },
   "engines": {

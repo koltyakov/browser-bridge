@@ -1193,6 +1193,33 @@ test('handleCaptureTool full_page calls screenshot.capture_full_page', async () 
   );
 });
 
+test('handleCaptureTool rejects malformed successful screenshot payloads', async () => {
+  const cases = [
+    { result: {}, message: /returned no image data/ },
+    {
+      result: { image: 'data:text/plain;base64,SGVsbG8=' },
+      message: /returned invalid base64 image data/,
+    },
+    { result: { image: 'not-base64!' }, message: /returned invalid base64 image data/ },
+  ];
+
+  for (const fixture of cases) {
+    await withMockedBridge(
+      async () => ok(fixture.result),
+      async () => {
+        const result = await handleCaptureTool({ action: 'full_page' });
+        assert.equal(result.isError, true);
+        assert.equal((result.structuredContent.error as { code: string }).code, 'INTERNAL_ERROR');
+        assert.match(result.content[0].text, fixture.message);
+        assert.equal(
+          result.content.some((entry) => entry.type === 'image'),
+          false
+        );
+      }
+    );
+  }
+});
+
 test('handleCaptureTool cdp_document returns bounded structured data', async () => {
   await withMockedBridge(
     async () => ok({ root: { nodeId: 1, nodeName: '#document', children: [{ nodeId: 2 }] } }),
@@ -1326,9 +1353,7 @@ test('handleBatchTool handles invalid call entries', async () => {
     async (calls) => {
       const result = await handleBatchTool({
         calls: [
-          {
-            /* missing method */
-          } as unknown as { method: BridgeMethod },
+          {/* missing method */} as unknown as { method: BridgeMethod },
           { method: 'not.real.method', params: {} },
           { method: 'health.ping', params: {} },
         ],

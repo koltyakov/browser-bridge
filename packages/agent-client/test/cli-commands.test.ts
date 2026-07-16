@@ -1309,9 +1309,27 @@ test('bbx intercept add parses status separately from response body', async () =
 
 test('bbx intercept rejects conflicting, unknown, extra, and invalid status options', async () => {
   const cases = [
+    { args: ['intercept', 'add'], message: /Usage: intercept add/u },
+    { args: ['intercept', 'add', '--block'], message: /Usage: intercept add/u },
     {
       args: ['intercept', 'add', '*', '--block', '--respond', 'body'],
       message: /either --block or --respond/u,
+    },
+    {
+      args: ['intercept', 'add', '*', '--block', '--block'],
+      message: /--block option may only be specified once/u,
+    },
+    {
+      args: ['intercept', 'add', '*', '--respond', 'one', '--respond', 'two'],
+      message: /--respond option may only be specified once/u,
+    },
+    {
+      args: ['intercept', 'add', '*', '--respond'],
+      message: /--respond requires a body value/u,
+    },
+    {
+      args: ['intercept', 'add', '*', '--status', '200', '--status', '201'],
+      message: /--status option may only be specified once/u,
     },
     { args: ['intercept', 'add', '*', '--unknown'], message: /Unknown or extra/u },
     {
@@ -1326,6 +1344,11 @@ test('bbx intercept rejects conflicting, unknown, extra, and invalid status opti
       args: ['intercept', 'add', '*', '--status', '200.5'],
       message: /positive integer/u,
     },
+    { args: ['intercept', 'remove'], message: /Usage: intercept remove/u },
+    { args: ['intercept', 'remove', 'rule-1', 'extra'], message: /Usage: intercept remove/u },
+    { args: ['intercept', 'list', 'extra'], message: /Usage: intercept list/u },
+    { args: ['intercept', 'clear', 'extra'], message: /Usage: intercept clear/u },
+    { args: ['intercept', 'unknown'], message: /Usage: intercept/u },
   ];
   for (const entry of cases) {
     const result = await runCli({ args: entry.args, env: process.env });

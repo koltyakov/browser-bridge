@@ -213,8 +213,9 @@ if (command === 'install-skill') {
         .filter((entry) => entry.installed && entry.managed)
         .map((entry) => entry.key)
     );
-    const installedManagedTargetList =
-      /** @type {import('./types.js').SupportedTarget[]} */ ([...installedManagedTargets]);
+    const installedManagedTargetList = /** @type {import('./types.js').SupportedTarget[]} */ ([
+      ...installedManagedTargets,
+    ]);
 
     // Aliases like 'openai' and 'google' map to canonical targets and stay omitted.
     const items = SUPPORTED_TARGETS.map((t) => ({
@@ -242,10 +243,9 @@ if (command === 'install-skill') {
     }
 
     if (selected !== null) {
-      const deselectedTargets =
-        /** @type {import('./types.js').SupportedTarget[]} */ (
-          installedManagedTargetList.filter((target) => !targets.includes(target))
-        );
+      const deselectedTargets = /** @type {import('./types.js').SupportedTarget[]} */ (
+        installedManagedTargetList.filter((target) => !targets.includes(target))
+      );
       const removableTargets = await findInstalledManagedTargets({
         targets: deselectedTargets,
         projectPath,
@@ -334,8 +334,9 @@ if (command === 'install-mcp') {
     const configuredClients = new Set(
       setupStatus.mcpClients.filter((entry) => entry.configured).map((entry) => entry.key)
     );
-    const configuredClientList =
-      /** @type {import('./types.js').McpClientName[]} */ ([...configuredClients]);
+    const configuredClientList = /** @type {import('./types.js').McpClientName[]} */ ([
+      ...configuredClients,
+    ]);
     const items = MCP_CLIENT_NAMES.map((c) => ({
       value: c,
       label: `${c.padEnd(10)}  ${MCP_CLIENT_LABELS[c]}`,
@@ -364,10 +365,9 @@ if (command === 'install-mcp') {
     }
 
     if (selected !== null) {
-      const deselectedClients =
-        /** @type {import('./types.js').McpClientName[]} */ (
-          configuredClientList.filter((clientName) => !clients.includes(clientName))
-        );
+      const deselectedClients = /** @type {import('./types.js').McpClientName[]} */ (
+        configuredClientList.filter((clientName) => !clients.includes(clientName))
+      );
       const removableClients = await findConfiguredMcpClients({
         clients: deselectedClients,
         global: isGlobal,

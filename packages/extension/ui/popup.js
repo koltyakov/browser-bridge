@@ -42,8 +42,9 @@ import {
  * }} PopupMessage
  */
 
-const nativeIndicator =
-  /** @type {HTMLSpanElement} */ (document.getElementById('native-indicator'));
+const nativeIndicator = /** @type {HTMLSpanElement} */ (
+  document.getElementById('native-indicator')
+);
 const button = /** @type {HTMLButtonElement} */ (document.getElementById('communication-action'));
 const accessEyebrow = /** @type {HTMLDivElement} */ (
   document.getElementById('popup-access-eyebrow')
@@ -51,8 +52,9 @@ const accessEyebrow = /** @type {HTMLDivElement} */ (
 const accessDetail = /** @type {HTMLParagraphElement} */ (
   document.getElementById('popup-access-detail')
 );
-const accessDisclosure =
-  /** @type {HTMLParagraphElement} */ (document.getElementById('popup-disclosure'));
+const accessDisclosure = /** @type {HTMLParagraphElement} */ (
+  document.getElementById('popup-disclosure')
+);
 const controlCard = /** @type {HTMLElement | null} */ (
   document.querySelector('.popup-control-card')
 );
