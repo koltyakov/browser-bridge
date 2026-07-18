@@ -72,6 +72,47 @@ test('readBridgeAuthTokenOverride reads token file fallback', async () => {
   );
 });
 
+test('readBridgeAuthTokenOverride returns null for a missing token file', async () => {
+  assert.equal(
+    await readBridgeAuthTokenOverride({
+      env: { [BRIDGE_AUTH_TOKEN_FILE_ENV]: '/tmp/missing' },
+      readFile: mockReadFile(async () => {
+        const error = new Error('missing') as NodeJS.ErrnoException;
+        error.code = 'ENOENT';
+        throw error;
+      }),
+    }),
+    null
+  );
+});
+
+test('readBridgeAuthTokenOverride rethrows non-missing token file errors', async () => {
+  const readError = new Error('permission denied');
+
+  await assert.rejects(
+    readBridgeAuthTokenOverride({
+      env: { [BRIDGE_AUTH_TOKEN_FILE_ENV]: '/tmp/token' },
+      readFile: mockReadFile(async () => {
+        throw readError;
+      }),
+    }),
+    readError
+  );
+});
+
+test('readBridgeAuthToken returns the override token without reading the token path', async () => {
+  assert.equal(
+    await readBridgeAuthToken({
+      env: { [BRIDGE_AUTH_TOKEN_ENV]: '6f7b4e4a-7b9e-4c0d-9e62-4b1fb9f8d237' },
+      tokenPath: '/tmp/token',
+      readFile: mockReadFile(async () => {
+        throw new Error('should not read token path');
+      }),
+    }),
+    '6f7b4e4a-7b9e-4c0d-9e62-4b1fb9f8d237'
+  );
+});
+
 test('readBridgeAuthToken returns null for missing token file', async () => {
   const readFile = async (): Promise<string> => {
     const error = new Error('missing') as NodeJS.ErrnoException;
@@ -167,6 +208,18 @@ test('ensureBridgeAuthToken ignores chmod failures after writing the token', asy
   });
 
   assert.equal(token, GENERATED_TOKEN);
+});
+
+test('writeBridgeAuthToken rejects tokens that fail normalization', async () => {
+  await assert.rejects(
+    writeBridgeAuthToken('not a valid token', {
+      tokenPath: '/tmp/token',
+      writeFile: async () => {
+        throw new Error('should not write invalid token');
+      },
+    }),
+    /Bridge auth token must be a UUID or 32-256 URL-safe characters/
+  );
 });
 
 test('writeBridgeAuthToken persists explicit UUID token with private mode', async () => {

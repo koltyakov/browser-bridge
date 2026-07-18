@@ -49,7 +49,7 @@ Run `npm run lint && npm run typecheck && npm test` before opening a PR.
 - Keep PRs focused - one logical change per PR.
 - Add or update tests for any new behaviour (test files live in `packages/*/test/`).
 - Update `CHANGELOG.md` under `[Unreleased]`.
-- The CI matrix tests Node 18, 20, and 22 - make sure nothing uses APIs newer than Node 18.
+- The CI matrix tests Node 20, 22, and 24 on Linux (plus macOS and Windows legs) - make sure nothing uses APIs newer than Node 20.
 
 ## Extension packaging
 

@@ -20,23 +20,9 @@ on:
       - 'packages/extension/ui/**'
       - 'packages/extension/assets/**'
       - '.github/workflows/*.yml'
+  # No paths filter on pull_request: required status checks would stay
+  # pending forever on PRs that only touch unmatched files.
   pull_request:
-    paths:
-      - '**/*.js'
-      - '**/*.mjs'
-      - '**/*.ts'
-      - 'manifest.json'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'tsconfig.json'
-      - '.oxlintrc.json'
-      - '.oxfmtrc.json'
-      - 'docs/**'
-      - 'skills/**'
-      - 'scripts/**'
-      - 'packages/extension/ui/**'
-      - 'packages/extension/assets/**'
-      - '.github/workflows/*.yml'
 
 permissions:
   contents: read
@@ -85,10 +71,21 @@ jobs:
         run: npm run check:extension-zip
 
   validate-runtime:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        node-version: [18, 20, 22]
+        os: [ubuntu-latest]
+        node-version: [20, 22, 24]
+        include:
+          - os: macos-latest
+            node-version: 22
+          # The Windows leg activates the Named Pipe transport tests that
+          # skip on other platforms. Non-blocking until proven green.
+          - os: windows-latest
+            node-version: 22
+            experimental: true
+    continue-on-error: ${{ matrix.experimental == true }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6

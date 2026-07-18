@@ -131,7 +131,7 @@ npm run daemon                 # start daemon locally
 - **No build step** - runs directly from source. TypeScript is used only for type checking (`tsc --noEmit`).
 - **Tests use Node built-in runner** - `node --test`, not Jest/Mocha. Tests must be TypeScript (`*.test.ts`). Integration tests live in `packages/integration-tests/`.
 - **Linting** - `oxlint` (Rust-based), formatting with `oxfmt`. 2-space indent, single quotes, semicolons, trailing commas.
-- **Node >= 18** - no Node 20+ only APIs.
+- **Node >= 20** - no Node 22+ only APIs.
 - Do not use the `any` type in source or tests. Use `unknown`, explicit narrowing, discriminated unions, or protocol/domain types instead.
 - Preserve the generic protocol shape. Do not add task-specific bridge commands for one-off actions when an existing RPC method can express the action.
 - Prefer improving the shared protocol, client ergonomics, or skill/docs over introducing special-case commands.

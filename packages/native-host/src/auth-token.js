@@ -60,7 +60,7 @@ export async function readBridgeAuthTokenOverride(options = {}) {
 }
 
 /**
- * @param {{ tokenPath?: string, readFile?: typeof fs.promises.readFile }} [options={}]
+ * @param {{ env?: NodeJS.ProcessEnv, tokenPath?: string, readFile?: typeof fs.promises.readFile }} [options={}]
  * @returns {Promise<string | null>}
  */
 export async function readBridgeAuthToken(options = {}) {

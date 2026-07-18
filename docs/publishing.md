@@ -99,7 +99,7 @@ If product behavior changes, update the privacy answers before submission.
 Google marks the Test Instructions tab as optional, but Browser Bridge should still provide it because the product depends on local CLI/native-host setup. Suggested draft:
 
 1. Install the published extension from the Chrome Web Store listing.
-2. Install Node.js 18+ on the same machine.
+2. Install Node.js 20+ on the same machine.
 3. Run `npm install -g @browserbridge/bbx`.
 4. Run `bbx install`.
 5. If needed, run `bbx-daemon`.

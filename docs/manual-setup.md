@@ -7,7 +7,7 @@ Bridge into a custom agent.
 ## Prerequisites
 
 - Google Chrome or a supported Chromium-based browser on the same machine as the agent
-- Node.js 18 or newer
+- Node.js 20 or newer
 - The Browser Bridge extension installed in Chrome or the target Chromium-based browser
 
 ## 1. Install the CLI and native host

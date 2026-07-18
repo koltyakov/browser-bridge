@@ -6,11 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.7.6] - 2026-07-18
+
 ### Changed
 
 - **Coordinated restart:** `bbx restart` now reloads the daemon and asks all
   running Browser Bridge MCP servers to exit cleanly so their owning agents can
   relaunch the current installed version.
+- **Node.js 20 minimum:** The supported Node.js runtime is now 20 or newer
+  (Node 18 reached end-of-life). CI tests Node 20, 22, and 24, plus macOS and
+  Windows runtime legs so the Named Pipe transport tests execute on Windows.
+- **CLI internals reorganized:** `bbx` command implementations moved from the
+  single `cli.js` into focused modules (`cli-args`, `cli-batch`, `cli-output`,
+  `cli-proxy-remote`, `cli-setup-commands`) with no behavior change.
 
 ## [1.7.0] - 2026-07-02
 

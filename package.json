@@ -56,7 +56,7 @@
     "test": "c8 node --test",
     "coverage": "c8 report --reporter=text --reporter=text-summary",
     "coverage:review": "c8 report --reporter=json-summary && node scripts/review-coverage.mjs",
-    "coverage:check": "c8 check-coverage --lines 80 --branches 75",
+    "coverage:check": "c8 check-coverage --lines 92 --branches 83",
     "typecheck": "tsc --noEmit",
     "postinstall": "node packages/native-host/bin/postinstall.js",
     "package:extension": "node scripts/package-extension.mjs",
@@ -82,6 +82,6 @@
     "typescript": "^7.0.2"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   }
 }
