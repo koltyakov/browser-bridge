@@ -131,6 +131,7 @@ test('getBridgeDir honors BROWSER_BRIDGE_HOME override and socket path uses it',
 test('getBridgeTransport falls back to socket mode when BBX_TCP_PORT is unset', async () => {
   await withMockedConfigEnvironment(
     {
+      platform: 'linux',
       env: {
         [BRIDGE_HOME_ENV]: '/tmp/browser-bridge-home',
         [BRIDGE_TCP_PORT_ENV]: undefined,

@@ -117,7 +117,11 @@ test('bbx status maps a missing daemon socket to DAEMON_OFFLINE', async () => {
   }
 });
 
-test('bbx status maps ECONNREFUSED to DAEMON_OFFLINE when a stale socket path is left behind', async () => {
+test('bbx status maps ECONNREFUSED to DAEMON_OFFLINE when a stale socket path is left behind', async (t) => {
+  if (process.platform === 'win32') {
+    t.skip('Windows named pipes do not leave a stale filesystem socket.');
+    return;
+  }
   const refusedBridge = await createRefusedBridgeHome();
 
   try {
