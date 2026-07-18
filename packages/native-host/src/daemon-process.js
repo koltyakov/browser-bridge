@@ -407,10 +407,17 @@ async function restartBridgeDaemonAfterStop(stopResult, options = {}) {
     throw new Error('Timed out waiting for Browser Bridge daemon to start.');
   }
 
+  let pid = await readPidFn(pidPath);
+  if (pid === null) {
+    // The daemon starts listening immediately before it persists its PID.
+    await sleepFn(pollIntervalMs);
+    pid = await readPidFn(pidPath);
+  }
+
   return {
     ...stopResult,
     pidPath,
-    pid: await readPidFn(pidPath),
+    pid,
   };
 }
 

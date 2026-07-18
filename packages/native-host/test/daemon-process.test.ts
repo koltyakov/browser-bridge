@@ -206,6 +206,30 @@ test('restartBridgeDaemon supports tcp transport without stale socket cleanup', 
   }
 });
 
+test('restartBridgeDaemon retries the pid file after the daemon becomes reachable', async () => {
+  let pidReadCount = 0;
+  let sleepCount = 0;
+
+  const result = await restartBridgeDaemon({
+    socketPath: '/tmp/browser-bridge-restart-pid-retry.sock',
+    pidPath: '/tmp/browser-bridge-restart-pid-retry.pid',
+    pingDaemonFn: async () => true,
+    readPidFn: async () => {
+      pidReadCount += 1;
+      return pidReadCount === 3 ? 31339 : null;
+    },
+    findPidByTransportFn: async () => null,
+    spawnDaemonFn: () => childWithPid(31339),
+    sleepFn: async () => {
+      sleepCount += 1;
+    },
+  });
+
+  assert.equal(result.pid, 31339);
+  assert.equal(pidReadCount, 3);
+  assert.equal(sleepCount, 1);
+});
+
 test('restartBridgeDaemonIfRunning uses Windows tcp defaults when no transport override is provided', async () => {
   if (process.platform !== 'win32') {
     return;
