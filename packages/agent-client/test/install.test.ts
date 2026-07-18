@@ -77,7 +77,7 @@ test('parseInstallAgentArgs deduplicates aliases and honors local/global flags',
     '/tmp/example'
   );
   assert.deepEqual(localOptions.targets, ['codex', 'antigravity']);
-  assert.equal(localOptions.projectPath, '/tmp/example/demo');
+  assert.equal(localOptions.projectPath, path.resolve('/tmp/example', 'demo'));
   assert.equal(localOptions.global, false);
 
   const globalOptions = parseInstallAgentArgs(

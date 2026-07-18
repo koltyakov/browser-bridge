@@ -390,7 +390,10 @@ test('command detection respects POSIX and Windows PATH delimiters', async (t) =
       const detect = await loadDetectModuleForPlatform(innerT, testCase);
 
       assert.deepEqual(await detect.detectMcpClients(), testCase.expectedClients);
-      assert.deepEqual([...detect.readdirStarts.keys()], testCase.expectedDirectories);
+      assert.deepEqual(
+        [...detect.readdirStarts.keys()],
+        testCase.expectedDirectories.map((directory) => path.normalize(directory).toLowerCase())
+      );
     });
   }
 });
@@ -428,7 +431,7 @@ test('command detection stops scanning PATH once every command is resolved', asy
     'antigravity',
     'windsurf',
   ]);
-  assert.deepEqual([...detect.readdirStarts.keys()], ['/mock/bin']);
+  assert.deepEqual([...detect.readdirStarts.keys()], [path.normalize('/mock/bin').toLowerCase()]);
 });
 
 test('command detection skips unreadable PATH entries', async (t) => {
@@ -442,7 +445,10 @@ test('command detection skips unreadable PATH entries', async (t) => {
   });
 
   assert.deepEqual(await detect.detectMcpClients(), ['codex']);
-  assert.deepEqual([...detect.readdirStarts.keys()], ['/mock/denied', '/mock/bin']);
+  assert.deepEqual(
+    [...detect.readdirStarts.keys()],
+    ['/mock/denied', '/mock/bin'].map((directory) => path.normalize(directory).toLowerCase())
+  );
   assert.deepEqual(detect.commandChecks, ['codex']);
 });
 

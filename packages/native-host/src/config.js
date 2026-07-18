@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 
 export const APP_NAME = 'com.browserbridge.browser_bridge';
 export const BRIDGE_HOME_ENV = 'BROWSER_BRIDGE_HOME';
@@ -62,15 +63,19 @@ export function getBridgeDir(env = process.env) {
  * connect to. On Windows we use a Named Pipe by default because Node's AF_UNIX
  * support fails with EACCES on listen() under recent Node + Windows 11
  * combinations, while Named Pipes are the historical and reliable Windows IPC
- * mechanism. An explicit bridge-home override keeps the legacy socket path so
- * callers can opt into custom test or compatibility setups.
+ * mechanism. Custom bridge homes use a stable suffix so isolated daemon and
+ * test setups do not contend for the default pipe.
  *
  * @param {NodeJS.ProcessEnv} [env=process.env]
  * @returns {string}
  */
 export function getSocketPath(env = process.env) {
-  if (os.platform() === 'win32' && !env[BRIDGE_HOME_ENV]) {
-    return `\\\\.\\pipe\\${APP_NAME}`;
+  if (os.platform() === 'win32') {
+    const bridgeHome = env[BRIDGE_HOME_ENV];
+    const suffix = bridgeHome
+      ? `-${createHash('sha256').update(bridgeHome.toLowerCase()).digest('hex').slice(0, 16)}`
+      : '';
+    return `\\\\.\\pipe\\${APP_NAME}${suffix}`;
   }
   return path.join(getBridgeDir(env), 'bridge.sock');
 }

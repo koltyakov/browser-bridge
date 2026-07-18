@@ -93,7 +93,7 @@ test('getSocketPath returns Windows named pipe path on win32 without BRIDGE_HOME
   );
 });
 
-test('getSocketPath returns file socket on win32 when BRIDGE_HOME is set', async () => {
+test('getSocketPath returns an isolated named pipe on win32 when BRIDGE_HOME is set', async () => {
   await withMockedConfigEnvironment(
     {
       platform: 'win32',
@@ -105,8 +105,10 @@ test('getSocketPath returns file socket on win32 when BRIDGE_HOME is set', async
     },
     async () => {
       const result = getSocketPath();
-      assert.ok(result.includes('bridge.sock'));
-      assert.equal(result.startsWith('\\\\.\\pipe\\'), false);
+      const pipePrefix = `\\\\.\\pipe\\com.browserbridge.browser_bridge-`;
+      assert.equal(result.startsWith(pipePrefix), true);
+      assert.match(result.slice(pipePrefix.length), /^[a-f0-9]{16}$/u);
+      assert.notEqual(result, `\\\\.\\pipe\\com.browserbridge.browser_bridge`);
     }
   );
 });
@@ -178,10 +180,11 @@ test('applyWindowsTcpTransportDefaults preserves custom bridge-home socket setup
     },
     async () => {
       assert.equal(applyWindowsTcpTransportDefaults(), false);
+      const socketPath = getSocketPath();
       assert.deepEqual(getBridgeTransport(), {
         type: 'socket',
-        socketPath: path.join('C:\\tmp\\bbx-home', 'bridge.sock'),
-        label: path.join('C:\\tmp\\bbx-home', 'bridge.sock'),
+        socketPath,
+        label: socketPath,
       });
     }
   );

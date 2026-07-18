@@ -1259,7 +1259,7 @@ test('bbx batch rejects non-object params and exits unsuccessfully', async () =>
 test('bbx batch uses operation-aware timeout and preserves tab routing and metadata', async () => {
   const bridgeServer = await bridgeServerWith({
     'page.evaluate': async (request) => {
-      await new Promise((resolve) => setTimeout(resolve, 40));
+      await new Promise((resolve) => setTimeout(resolve, 150));
       return createSuccess(request.id, { value: 4 });
     },
   });
@@ -1267,12 +1267,12 @@ test('bbx batch uses operation-aware timeout and preserves tab routing and metad
     const result = await runCli({
       args: [
         'batch',
-        '[{"method":"page.evaluate","tabId":17,"params":{"expression":"2 + 2","timeoutMs":100}}]',
+        '[{"method":"page.evaluate","tabId":17,"params":{"expression":"2 + 2","timeoutMs":300}}]',
       ],
       env: {
         ...process.env,
         BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome,
-        BBX_CLIENT_REQUEST_TIMEOUT_MS: '10',
+        BBX_CLIENT_REQUEST_TIMEOUT_MS: '100',
       },
     });
     const payload = result.json as Array<{ ok: boolean }>;
@@ -1280,7 +1280,7 @@ test('bbx batch uses operation-aware timeout and preserves tab routing and metad
     assert.equal(payload[0].ok, true);
     assert.equal(bridgeServer.requests[1].tab_id, 17);
     assert.equal(bridgeServer.requests[1].meta.source, 'cli');
-    assert.equal(bridgeServer.requests[1].params.timeoutMs, 100);
+    assert.equal(bridgeServer.requests[1].params.timeoutMs, 300);
   } finally {
     await bridgeServer.close();
   }

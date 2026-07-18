@@ -8,6 +8,7 @@ import {
   deriveProtocolVersion,
   parseJsonLines,
 } from '../../packages/protocol/src/index.js';
+import { getSocketPath } from '../../packages/native-host/src/config.js';
 import type { BridgeRequest, BridgeResponse } from '../../packages/protocol/src/types.js';
 
 export type BridgeSocketMessageContext = {
@@ -63,7 +64,10 @@ function createTempSocketPath({
   const bridgeHome = fs.mkdtempSync(path.join(getTempSocketRoot(), prefix));
   return {
     bridgeHome,
-    socketPath: path.join(bridgeHome, socketName),
+    socketPath:
+      process.platform === 'win32'
+        ? getSocketPath({ ...process.env, BROWSER_BRIDGE_HOME: bridgeHome })
+        : path.join(bridgeHome, socketName),
   };
 }
 

@@ -187,7 +187,7 @@ test('ensureBridgeAuthToken creates a token file when none exists', async () => 
   assert.deepEqual(calls, [
     `mkdir:${path.dirname(tokenPath)}:{"recursive":true}`,
     `write:${tokenPath}:${GENERATED_TOKEN}\n:{"encoding":"utf8","mode":384}`,
-    `chmod:${tokenPath}:384`,
+    ...(process.platform === 'win32' ? [] : [`chmod:${tokenPath}:384`]),
   ]);
 });
 
@@ -243,6 +243,6 @@ test('writeBridgeAuthToken persists explicit UUID token with private mode', asyn
   assert.deepEqual(calls, [
     `mkdir:${path.dirname(tokenPath)}:{"recursive":true}`,
     `write:${tokenPath}:6f7b4e4a-7b9e-4c0d-9e62-4b1fb9f8d237\n:{"encoding":"utf8","mode":384}`,
-    `chmod:${tokenPath}:384`,
+    ...(process.platform === 'win32' ? [] : [`chmod:${tokenPath}:384`]),
   ]);
 });

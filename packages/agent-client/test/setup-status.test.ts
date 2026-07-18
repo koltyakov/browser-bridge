@@ -169,7 +169,7 @@ test('collectSetupStatus treats detected MCP runtimes as skill-install targets t
   }
 });
 
-test('collectSetupStatus uses ~/.copilot/skills for GitHub Copilot global skills', async () => {
+test('collectSetupStatus uses ~/.copilot/skills for GitHub Copilot global skills', async (t) => {
   const tempHome = await fs.promises.mkdtemp(
     path.join(os.tmpdir(), 'bbx-setup-status-copilot-home-')
   );
@@ -178,6 +178,7 @@ test('collectSetupStatus uses ~/.copilot/skills for GitHub Copilot global skills
 
   try {
     process.env.HOME = tempHome;
+    t.mock.method(os, 'homedir', () => tempHome);
 
     const copilotBase = getSkillBasePath('copilot', {
       global: true,
@@ -210,7 +211,7 @@ test('collectSetupStatus uses ~/.copilot/skills for GitHub Copilot global skills
   }
 });
 
-test('collectSetupStatus reads Copilot global MCP from the user config path', async () => {
+test('collectSetupStatus reads Copilot global MCP from the user config path', async (t) => {
   const tempHome = await fs.promises.mkdtemp(
     path.join(os.tmpdir(), 'bbx-setup-status-copilot-mcp-home-')
   );
@@ -219,6 +220,7 @@ test('collectSetupStatus reads Copilot global MCP from the user config path', as
 
   try {
     process.env.HOME = tempHome;
+    t.mock.method(os, 'homedir', () => tempHome);
     if (process.platform === 'win32') {
       process.env.APPDATA = path.join(tempHome, 'AppData', 'Roaming');
     }
@@ -261,7 +263,7 @@ test('collectSetupStatus reads Copilot global MCP from the user config path', as
   }
 });
 
-test('collectSetupStatus reads Antigravity global MCP from the documented config path', async () => {
+test('collectSetupStatus reads Antigravity global MCP from the documented config path', async (t) => {
   const tempHome = await fs.promises.mkdtemp(
     path.join(os.tmpdir(), 'bbx-setup-status-antigravity-mcp-home-')
   );
@@ -269,6 +271,7 @@ test('collectSetupStatus reads Antigravity global MCP from the documented config
 
   try {
     process.env.HOME = tempHome;
+    t.mock.method(os, 'homedir', () => tempHome);
 
     await installMcpConfig('antigravity', {
       global: true,
