@@ -39,11 +39,7 @@ import {
   getBridgeTransport,
   getSocketPath,
 } from './config.js';
-import {
-  ensureBridgeAuthToken,
-  normalizeBridgeAuthToken,
-  readBridgeAuthToken,
-} from './auth-token.js';
+import { bridgeAuthTokensEqual, ensureBridgeAuthToken, readBridgeAuthToken } from './auth-token.js';
 import { normalizeDaemonLogger } from './daemon-logger.js';
 import { writeJsonLine } from './framing.js';
 
@@ -341,7 +337,7 @@ export class BridgeDaemon {
       return;
     }
 
-    if (this.isAuthRequired() && normalizeBridgeAuthToken(message.authToken) !== this.authToken) {
+    if (this.isAuthRequired() && !bridgeAuthTokensEqual(message.authToken, this.authToken)) {
       this.logger.error('socket registration rejected', { role: message.role ?? null });
       void writeJsonLine(socket, {
         type: 'registration_failed',

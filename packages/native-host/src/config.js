@@ -120,30 +120,65 @@ function normalizePort(value) {
 }
 
 /**
+ * @param {string} configPath
+ * @param {string} reason
+ * @returns {void}
+ */
+function warnProxyConfigIgnored(configPath, reason) {
+  console.error(`browser-bridge: ignoring proxy config at ${configPath}: ${reason}`);
+}
+
+/**
+ * Read the opt-in TCP proxy config. A missing file and `enabled: false` are
+ * the normal quiet cases; anything else that prevents using the config gets a
+ * stderr warning so a corrupt file does not silently fall back to the socket
+ * transport. An invalid `bindHost` rejects the whole config rather than
+ * defaulting to `0.0.0.0`, so a typo in a value meant to restrict binding
+ * cannot widen exposure to all interfaces.
+ *
  * @param {NodeJS.ProcessEnv} [env=process.env]
  * @returns {BridgeProxyConfig | null}
  */
 export function readProxyConfig(env = process.env) {
+  const configPath = getProxyConfigPath(env);
+  /** @type {unknown} */
+  let parsed;
   try {
-    const parsed = JSON.parse(fs.readFileSync(getProxyConfigPath(env), 'utf8'));
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return null;
+    parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  } catch (error) {
+    if (/** @type {{ code?: unknown }} */ (error)?.code !== 'ENOENT') {
+      warnProxyConfigIgnored(configPath, error instanceof Error ? error.message : String(error));
     }
-    const record = /** @type {Record<string, unknown>} */ (parsed);
-    const port = normalizePort(record.port);
-    const bindHost = normalizeHost(record.bindHost) ?? '0.0.0.0';
-    if (record.enabled !== true || port === null) {
-      return null;
-    }
-    return {
-      enabled: true,
-      port,
-      bindHost,
-      ...(typeof record.token === 'string' ? { token: record.token } : {}),
-    };
-  } catch {
     return null;
   }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    warnProxyConfigIgnored(configPath, 'expected a JSON object');
+    return null;
+  }
+  const record = /** @type {Record<string, unknown>} */ (parsed);
+  if (record.enabled !== true) {
+    return null;
+  }
+  const port = normalizePort(record.port);
+  if (port === null) {
+    warnProxyConfigIgnored(configPath, 'invalid "port" value');
+    return null;
+  }
+  let bindHost = '0.0.0.0';
+  if (record.bindHost != null) {
+    const normalized = normalizeHost(record.bindHost);
+    if (!normalized) {
+      warnProxyConfigIgnored(configPath, 'invalid "bindHost" value');
+      return null;
+    }
+    bindHost = normalized;
+  }
+  return {
+    enabled: true,
+    port,
+    bindHost,
+    ...(typeof record.token === 'string' ? { token: record.token } : {}),
+  };
 }
 
 /**

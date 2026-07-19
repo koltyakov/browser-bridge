@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import {
+  bridgeAuthTokensEqual,
   ensureBridgeAuthToken,
   BRIDGE_AUTH_TOKEN_ENV,
   BRIDGE_AUTH_TOKEN_FILE_ENV,
@@ -45,6 +46,29 @@ test('normalizeBridgeAuthToken accepts UUID proxy tokens', () => {
     normalizeBridgeAuthToken('  6f7b4e4a-7b9e-4c0d-9e62-4b1fb9f8d237  '),
     '6f7b4e4a-7b9e-4c0d-9e62-4b1fb9f8d237'
   );
+});
+
+test('bridgeAuthTokensEqual accepts a matching token after trimming', () => {
+  const token = 'abcdefghijklmnopqrstuvwxyzABCDEF_-';
+  assert.equal(bridgeAuthTokensEqual(token, token), true);
+  assert.equal(bridgeAuthTokensEqual(`  ${token}  `, token), true);
+});
+
+test('bridgeAuthTokensEqual rejects mismatched tokens of any length', () => {
+  const token = 'abcdefghijklmnopqrstuvwxyzABCDEF_-';
+  assert.equal(bridgeAuthTokensEqual('abcdefghijklmnopqrstuvwxyzABCDEF_X', token), false);
+  assert.equal(bridgeAuthTokensEqual(`${token}extra-suffix-characters`, token), false);
+  assert.equal(bridgeAuthTokensEqual('6f7b4e4a-7b9e-4c0d-9e62-4b1fb9f8d237', token), false);
+});
+
+test('bridgeAuthTokensEqual rejects invalid candidates and missing expected tokens', () => {
+  const token = 'abcdefghijklmnopqrstuvwxyzABCDEF_-';
+  assert.equal(bridgeAuthTokensEqual(undefined, token), false);
+  assert.equal(bridgeAuthTokensEqual(42, token), false);
+  assert.equal(bridgeAuthTokensEqual('short', token), false);
+  assert.equal(bridgeAuthTokensEqual(token, null), false);
+  assert.equal(bridgeAuthTokensEqual(token, undefined), false);
+  assert.equal(bridgeAuthTokensEqual(token, ''), false);
 });
 
 test('readBridgeAuthTokenOverride prefers env token before token file', async () => {

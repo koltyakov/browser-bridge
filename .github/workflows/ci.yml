@@ -81,11 +81,10 @@ jobs:
           - os: macos-latest
             node-version: 22
           # The Windows leg activates the Named Pipe transport tests that
-          # skip on other platforms. Non-blocking until proven green.
+          # skip on other platforms. Blocking since the daemon pid startup
+          # fix (348f655) stabilized the restart test.
           - os: windows-latest
             node-version: 22
-            experimental: true
-    continue-on-error: ${{ matrix.experimental == true }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7

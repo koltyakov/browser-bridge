@@ -109,7 +109,7 @@ npm run lint                   # oxlint + oxfmt check
 npm run format                 # oxfmt fix
 npm run typecheck              # tsc --noEmit
 npm test                       # run all tests with c8 coverage
-npm run coverage:check         # verify 80% lines / 75% branches
+npm run coverage:check         # verify 92% lines / 83% branches
 npm run package:extension      # build extension ZIP for CWS
 npm run release:check          # full pre-release validation
 

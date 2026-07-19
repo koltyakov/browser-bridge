@@ -22,6 +22,7 @@ import {
   getLauncherFilename,
   getManifestInstallDir,
   getSocketPath,
+  readProxyConfig,
   SUPPORTED_BROWSERS,
 } from '../src/config.js';
 
@@ -312,6 +313,102 @@ test('getBridgeTransport reads enabled proxy config when tcp env is unset', asyn
   } finally {
     await fs.promises.rm(bridgeHome, { recursive: true, force: true });
   }
+});
+
+function withCapturedStderr(callback: () => void): string[] {
+  const original = console.error;
+  const lines: string[] = [];
+  console.error = (...args: unknown[]) => {
+    lines.push(args.map(String).join(' '));
+  };
+  try {
+    callback();
+  } finally {
+    console.error = original;
+  }
+  return lines;
+}
+
+async function withProxyConfigFile(
+  contents: string | null,
+  callback: (env: Record<string, string>) => void | Promise<void>
+): Promise<void> {
+  const bridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-proxy-read-test-'));
+  try {
+    if (contents !== null) {
+      await fs.promises.writeFile(path.join(bridgeHome, 'proxy.json'), contents, 'utf8');
+    }
+    await callback({ [BRIDGE_HOME_ENV]: bridgeHome });
+  } finally {
+    await fs.promises.rm(bridgeHome, { recursive: true, force: true });
+  }
+}
+
+test('readProxyConfig stays silent for a missing file and a disabled config', async () => {
+  await withProxyConfigFile(null, (env) => {
+    const warnings = withCapturedStderr(() => {
+      assert.equal(readProxyConfig(env), null);
+    });
+    assert.deepEqual(warnings, []);
+  });
+
+  await withProxyConfigFile(JSON.stringify({ enabled: false, port: 9223 }), (env) => {
+    const warnings = withCapturedStderr(() => {
+      assert.equal(readProxyConfig(env), null);
+    });
+    assert.deepEqual(warnings, []);
+  });
+});
+
+test('readProxyConfig defaults bindHost to 0.0.0.0 when omitted', async () => {
+  await withProxyConfigFile(JSON.stringify({ enabled: true, port: 9223 }), (env) => {
+    assert.deepEqual(readProxyConfig(env), {
+      enabled: true,
+      port: 9223,
+      bindHost: '0.0.0.0',
+    });
+  });
+});
+
+test('readProxyConfig warns and ignores a malformed proxy config file', async () => {
+  await withProxyConfigFile('{not json', (env) => {
+    const warnings = withCapturedStderr(() => {
+      assert.equal(readProxyConfig(env), null);
+    });
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /ignoring proxy config/);
+  });
+
+  await withProxyConfigFile(JSON.stringify(['enabled']), (env) => {
+    const warnings = withCapturedStderr(() => {
+      assert.equal(readProxyConfig(env), null);
+    });
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /expected a JSON object/);
+  });
+});
+
+test('readProxyConfig rejects an invalid bindHost instead of widening to 0.0.0.0', async () => {
+  await withProxyConfigFile(
+    JSON.stringify({ enabled: true, port: 9223, bindHost: 'not a host' }),
+    (env) => {
+      const warnings = withCapturedStderr(() => {
+        assert.equal(readProxyConfig(env), null);
+      });
+      assert.equal(warnings.length, 1);
+      assert.match(warnings[0], /invalid "bindHost" value/);
+    }
+  );
+});
+
+test('readProxyConfig warns on an enabled config with an invalid port', async () => {
+  await withProxyConfigFile(JSON.stringify({ enabled: true, port: 'noport' }), (env) => {
+    const warnings = withCapturedStderr(() => {
+      assert.equal(readProxyConfig(env), null);
+    });
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /invalid "port" value/);
+  });
 });
 
 test('getBridgeTcpPort rejects invalid values', async () => {

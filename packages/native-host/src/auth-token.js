@@ -1,6 +1,6 @@
 // @ts-check
 
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -32,6 +32,27 @@ export function normalizeBridgeAuthToken(value) {
   }
   const token = value.trim();
   return TOKEN_PATTERN.test(token) || UUID_TOKEN_PATTERN.test(token) ? token : null;
+}
+
+/**
+ * Compare a candidate auth token against the expected token in constant time.
+ * Both sides are hashed before comparison so neither token length nor a
+ * matching prefix is observable through timing, which matters when the daemon
+ * listens on TCP (proxy mode exposes it beyond localhost).
+ *
+ * @param {unknown} candidate
+ * @param {string | null | undefined} expected
+ * @returns {boolean}
+ */
+export function bridgeAuthTokensEqual(candidate, expected) {
+  const normalizedCandidate = normalizeBridgeAuthToken(candidate);
+  if (!normalizedCandidate || typeof expected !== 'string' || !expected) {
+    return false;
+  }
+  return timingSafeEqual(
+    createHash('sha256').update(normalizedCandidate).digest(),
+    createHash('sha256').update(expected).digest()
+  );
 }
 
 /**
