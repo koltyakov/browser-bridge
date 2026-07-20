@@ -9,6 +9,8 @@ import {
   clearDaemonPidFile,
   DAEMON_RESTART_LOOP_THRESHOLD,
   DAEMON_RESTART_LOOP_WINDOW_MS,
+  findDaemonPidBySocket,
+  findDaemonPidByTcpPort,
   findDaemonPidByTransport,
   openDaemonLogFd,
   readDaemonPidFile,
@@ -398,13 +400,175 @@ test('restartBridgeDaemon rejects when the daemon never becomes reachable', asyn
   }
 });
 
-test('findDaemonPidByTransport returns null for tcp transport', async () => {
-  assert.equal(
-    await findDaemonPidByTransport({
+type ExecFileFn = NonNullable<Parameters<typeof findDaemonPidBySocket>[1]>['execFileFn'];
+type ReadFileFn = NonNullable<Parameters<typeof findDaemonPidByTcpPort>[1]>['readFileFn'];
+
+function fakeExecFile(
+  handler: (file: string, args: readonly string[]) => Promise<{ stdout: string; stderr: string }>
+): ExecFileFn {
+  return handler as unknown as ExecFileFn;
+}
+
+function commandNotFound(command: string): never {
+  const error = new Error(`spawn ${command} ENOENT`) as NodeJS.ErrnoException;
+  error.code = 'ENOENT';
+  throw error;
+}
+
+test('findDaemonPidByTransport verifies the tcp listener before returning its pid', async () => {
+  const pid = await findDaemonPidByTransport(
+    {
       type: 'tcp',
       host: '127.0.0.1',
       port: 9223,
       label: '127.0.0.1:9223',
+    },
+    {
+      platform: 'darwin',
+      execFileFn: fakeExecFile(async (file, args) => {
+        if (file === 'lsof') {
+          assert.deepEqual(args, ['-nP', '-t', '-iTCP:9223', '-sTCP:LISTEN']);
+          return { stdout: '4242\n', stderr: '' };
+        }
+        assert.equal(file, 'ps');
+        assert.deepEqual(args, ['-ww', '-p', '4242', '-o', 'command=']);
+        return { stdout: '/usr/local/bin/node /opt/bbx/bin/bridge-daemon.js\n', stderr: '' };
+      }),
+    }
+  );
+
+  assert.equal(pid, 4242);
+});
+
+test('findDaemonPidByTcpPort ignores listeners that are not the bridge daemon', async () => {
+  const pid = await findDaemonPidByTcpPort(9223, {
+    platform: 'darwin',
+    execFileFn: fakeExecFile(async (file) => {
+      if (file === 'lsof') {
+        return { stdout: '999\n', stderr: '' };
+      }
+      return { stdout: 'python3 -m http.server 9223\n', stderr: '' };
+    }),
+  });
+
+  assert.equal(pid, null);
+});
+
+test('findDaemonPidByTcpPort returns null when discovery tooling is unavailable', async () => {
+  for (const platform of ['darwin', 'linux'] as const) {
+    assert.equal(
+      await findDaemonPidByTcpPort(9223, {
+        platform,
+        execFileFn: fakeExecFile(async (file) => commandNotFound(file)),
+      }),
+      null
+    );
+  }
+});
+
+test('findDaemonPidByTcpPort discovers and verifies the daemon through PowerShell on Windows', async () => {
+  const calls: Array<{ file: string; args: readonly string[] }> = [];
+  const pid = await findDaemonPidByTcpPort(9223, {
+    platform: 'win32',
+    execFileFn: fakeExecFile(async (file, args) => {
+      calls.push({ file, args });
+      return { stdout: '4243\r\n', stderr: '' };
+    }),
+  });
+
+  assert.equal(pid, 4243);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].file, /powershell\.exe$/iu);
+  assert.equal(calls[0].args.includes('-NonInteractive'), true);
+  const script = calls[0].args.at(-1) ?? '';
+  assert.match(script, /Get-NetTCPConnection -State Listen -LocalPort 9223/u);
+  assert.match(script, /bridge-daemon/u);
+});
+
+test('findDaemonPidByTcpPort returns null when PowerShell finds no verified listener', async () => {
+  assert.equal(
+    await findDaemonPidByTcpPort(9223, {
+      platform: 'win32',
+      execFileFn: fakeExecFile(async () => ({ stdout: '', stderr: '' })),
+    }),
+    null
+  );
+  assert.equal(
+    await findDaemonPidByTcpPort(9223, {
+      platform: 'win32',
+      execFileFn: fakeExecFile(async (file) => commandNotFound(file)),
+    }),
+    null
+  );
+});
+
+test('findDaemonPidByTcpPort falls back to ss and /proc verification on Linux', async () => {
+  const pid = await findDaemonPidByTcpPort(9223, {
+    platform: 'linux',
+    execFileFn: fakeExecFile(async (file, args) => {
+      if (file === 'lsof') {
+        commandNotFound(file);
+      }
+      assert.equal(file, 'ss');
+      assert.deepEqual(args, ['-t', '-l', '-n', '-p', 'sport', '=', ':9223']);
+      return {
+        stdout: 'LISTEN 0 511 127.0.0.1:9223 0.0.0.0:* users:(("node",pid=888,fd=19))\n',
+        stderr: '',
+      };
+    }),
+    readFileFn: (async (cmdlinePath: string) => {
+      assert.equal(cmdlinePath, '/proc/888/cmdline');
+      return 'node\0/opt/bbx/bin/bridge-daemon.js\0';
+    }) as unknown as ReadFileFn,
+  });
+
+  assert.equal(pid, 888);
+});
+
+test('findDaemonPidBySocket falls back to ss when lsof is missing on Linux', async () => {
+  const socketPath = '/tmp/bbx-parity/bridge.sock';
+  const pid = await findDaemonPidBySocket(socketPath, {
+    platform: 'linux',
+    execFileFn: fakeExecFile(async (file, args) => {
+      if (file === 'lsof') {
+        commandNotFound(file);
+      }
+      assert.equal(file, 'ss');
+      assert.deepEqual(args, ['-x', '-l', '-p', 'src', socketPath]);
+      return {
+        stdout: `u_str LISTEN 0 511 ${socketPath} 123456 * 0 users:(("node",pid=777,fd=19))\n`,
+        stderr: '',
+      };
+    }),
+  });
+
+  assert.equal(pid, 777);
+});
+
+test('findDaemonPidBySocket returns null when lsof and ss are both unavailable', async () => {
+  assert.equal(
+    await findDaemonPidBySocket('/tmp/bbx-parity/bridge.sock', {
+      platform: 'linux',
+      execFileFn: fakeExecFile(async (file) => commandNotFound(file)),
+    }),
+    null
+  );
+  assert.equal(
+    await findDaemonPidBySocket('/tmp/bbx-parity/bridge.sock', {
+      platform: 'darwin',
+      execFileFn: fakeExecFile(async (file) => commandNotFound(file)),
+    }),
+    null
+  );
+});
+
+test('findDaemonPidBySocket skips discovery for Windows named pipes', async () => {
+  assert.equal(
+    await findDaemonPidBySocket('\\\\.\\pipe\\com.browserbridge.browser_bridge', {
+      platform: 'win32',
+      execFileFn: fakeExecFile(async () => {
+        throw new Error('should not execute external tools for named pipes');
+      }),
     }),
     null
   );

@@ -44,7 +44,8 @@ try {
   await writeDaemonPidFile(process.pid);
 } catch (error) {
   // A stale root-owned pid file (e.g. after a sudo install) must not take down
-  // a daemon that is already listening; `bbx` falls back to lsof for the pid.
+  // a daemon that is already listening; `bbx` falls back to endpoint-owner
+  // discovery (lsof/ss on the socket, verified TCP listener lookup) for the pid.
   process.stderr.write(
     `Could not write daemon pid file: ${error instanceof Error ? error.message : String(error)}\n`
   );

@@ -260,8 +260,9 @@ export async function stopBridgeDaemon(options = {}) {
     previousPid = endpointOwnerPid;
     previouslyRunning = true;
   } else if (reachable) {
-    // TCP endpoints do not expose an owner pid. In that case daemon
-    // reachability is the evidence supporting the recorded pid.
+    // When the endpoint owner is not discoverable (no verified TCP listener,
+    // lsof and ss both unavailable), daemon reachability is the evidence
+    // supporting the recorded pid.
     previousPid = pidFromFile;
     previouslyRunning = true;
   }
@@ -443,27 +444,39 @@ function resolveDaemonTransport(options) {
 }
 
 /**
+ * @typedef {{
+ *   execFileFn?: typeof execFileAsync,
+ *   platform?: NodeJS.Platform,
+ *   readFileFn?: typeof fs.promises.readFile,
+ * }} FindDaemonPidOptions
+ */
+
+/**
  * @param {BridgeTransport} transport
+ * @param {FindDaemonPidOptions} [options={}]
  * @returns {Promise<number | null>}
  */
-export async function findDaemonPidByTransport(transport) {
-  if (transport.type !== 'socket') {
-    return null;
+export async function findDaemonPidByTransport(transport, options = {}) {
+  if (transport.type === 'socket') {
+    return findDaemonPidBySocket(transport.socketPath, options);
   }
-  return findDaemonPidBySocket(transport.socketPath);
+  return findDaemonPidByTcpPort(transport.port, options);
 }
 
 /**
  * @param {string} socketPath
+ * @param {FindDaemonPidOptions} [options={}]
  * @returns {Promise<number | null>}
  */
-export async function findDaemonPidBySocket(socketPath) {
-  if (process.platform === 'win32') {
+export async function findDaemonPidBySocket(socketPath, options = {}) {
+  const { execFileFn = execFileAsync, platform = process.platform } = options;
+  if (platform === 'win32') {
+    // Named pipes do not expose an owner pid through a filesystem path.
     return null;
   }
 
   try {
-    const { stdout } = await execFileAsync('lsof', ['-t', '--', socketPath]);
+    const { stdout } = await execFileFn('lsof', ['-t', '--', socketPath]);
     const pid = Number.parseInt(
       stdout
         .split(/\r?\n/u)
@@ -473,11 +486,206 @@ export async function findDaemonPidBySocket(socketPath) {
     );
     return Number.isInteger(pid) && pid > 0 ? pid : null;
   } catch (error) {
-    if (isCommandNotFoundError(error) || isLsofNoResultsError(error)) {
+    if (isCommandNotFoundError(error)) {
+      // macOS always ships lsof; minimal Linux installs often do not, so fall
+      // back to iproute2's ss which is effectively universal there.
+      return platform === 'linux' ? findLinuxSocketOwnerPidWithSs(socketPath, execFileFn) : null;
+    }
+    if (isLsofNoResultsError(error)) {
       return null;
     }
     throw error;
   }
+}
+
+/**
+ * @param {string} socketPath
+ * @param {typeof execFileAsync} execFileFn
+ * @returns {Promise<number | null>}
+ */
+async function findLinuxSocketOwnerPidWithSs(socketPath, execFileFn) {
+  try {
+    const { stdout } = await execFileFn('ss', ['-x', '-l', '-p', 'src', socketPath]);
+    for (const line of stdout.split(/\r?\n/u)) {
+      if (!line.includes(socketPath)) {
+        continue;
+      }
+      const match = /pid=(\d+)/u.exec(line);
+      const pid = match ? Number.parseInt(match[1], 10) : Number.NaN;
+      if (Number.isInteger(pid) && pid > 0) {
+        return pid;
+      }
+    }
+    return null;
+  } catch {
+    // ss is a best-effort fallback; the caller degrades to the pid file.
+    return null;
+  }
+}
+
+/**
+ * Find the pid of the bridge daemon listening on a local TCP port (the default
+ * transport on Windows and the opt-in proxy transport elsewhere). Unlike a
+ * bridge-owned socket path, a TCP port could be held by an unrelated process,
+ * so a candidate pid is only returned after its command line is confirmed to
+ * reference the bridge daemon entrypoint. Discovery is opportunistic: any
+ * tooling failure yields null and the caller degrades to the pid file.
+ *
+ * @param {number} port
+ * @param {FindDaemonPidOptions} [options={}]
+ * @returns {Promise<number | null>}
+ */
+export async function findDaemonPidByTcpPort(port, options = {}) {
+  const {
+    execFileFn = execFileAsync,
+    platform = process.platform,
+    readFileFn = fs.promises.readFile,
+  } = options;
+
+  if (platform === 'win32') {
+    return findWindowsTcpDaemonPid(port, execFileFn);
+  }
+
+  const candidatePids = await findPosixTcpListenerPids(port, execFileFn, platform);
+  for (const pid of candidatePids) {
+    const command = await getPosixProcessCommand(pid, execFileFn, platform, readFileFn);
+    if (command.includes(DAEMON_ENTRY_BASENAME)) {
+      return pid;
+    }
+  }
+  return null;
+}
+
+const DAEMON_ENTRY_BASENAME = 'bridge-daemon';
+
+/**
+ * @returns {string}
+ */
+function getWindowsPowerShellExe() {
+  const systemRoot = process.env.SystemRoot || process.env.WINDIR;
+  return systemRoot
+    ? path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+    : 'powershell.exe';
+}
+
+/**
+ * Resolve and verify the listening daemon pid in a single PowerShell call.
+ * Get-NetTCPConnection is locale-independent, unlike netstat's state column.
+ * `$listenerPid` deliberately avoids PowerShell's reserved `$PID` variable.
+ *
+ * @param {number} port
+ * @param {typeof execFileAsync} execFileFn
+ * @returns {Promise<number | null>}
+ */
+async function findWindowsTcpDaemonPid(port, execFileFn) {
+  const script = [
+    `$listenerPids = @(Get-NetTCPConnection -State Listen -LocalPort ${port} -ErrorAction SilentlyContinue | ForEach-Object { $_.OwningProcess } | Sort-Object -Unique)`,
+    'foreach ($listenerPid in $listenerPids) {',
+    `  $commandLine = (Get-CimInstance Win32_Process -Filter "ProcessId=$listenerPid" -ErrorAction SilentlyContinue).CommandLine`,
+    `  if ($commandLine -like '*${DAEMON_ENTRY_BASENAME}*') { Write-Output $listenerPid; break }`,
+    '}',
+  ].join(' ');
+
+  try {
+    const { stdout } = await execFileFn(getWindowsPowerShellExe(), [
+      '-NoLogo',
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      script,
+    ]);
+    const pid = Number.parseInt(
+      stdout
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .find(Boolean) ?? '',
+      10
+    );
+    return Number.isInteger(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {number} port
+ * @param {typeof execFileAsync} execFileFn
+ * @param {NodeJS.Platform} platform
+ * @returns {Promise<number[]>}
+ */
+async function findPosixTcpListenerPids(port, execFileFn, platform) {
+  try {
+    const { stdout } = await execFileFn('lsof', ['-nP', '-t', `-iTCP:${port}`, '-sTCP:LISTEN']);
+    return parsePidLines(stdout);
+  } catch (error) {
+    if (isCommandNotFoundError(error) && platform === 'linux') {
+      return findLinuxTcpListenerPidsWithSs(port, execFileFn);
+    }
+    return [];
+  }
+}
+
+/**
+ * @param {number} port
+ * @param {typeof execFileAsync} execFileFn
+ * @returns {Promise<number[]>}
+ */
+async function findLinuxTcpListenerPidsWithSs(port, execFileFn) {
+  try {
+    const { stdout } = await execFileFn('ss', ['-t', '-l', '-n', '-p', 'sport', '=', `:${port}`]);
+    /** @type {number[]} */
+    const pids = [];
+    for (const match of stdout.matchAll(/pid=(\d+)/gu)) {
+      const pid = Number.parseInt(match[1], 10);
+      if (Number.isInteger(pid) && pid > 0 && !pids.includes(pid)) {
+        pids.push(pid);
+      }
+    }
+    return pids;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * @param {number} pid
+ * @param {typeof execFileAsync} execFileFn
+ * @param {NodeJS.Platform} platform
+ * @param {typeof fs.promises.readFile} readFileFn
+ * @returns {Promise<string>}
+ */
+async function getPosixProcessCommand(pid, execFileFn, platform, readFileFn) {
+  if (platform === 'linux') {
+    // /proc avoids depending on a full procps ps (busybox lacks -ww/command=).
+    try {
+      const cmdline = await readFileFn(`/proc/${pid}/cmdline`, 'utf8');
+      return String(cmdline).replaceAll('\0', ' ');
+    } catch {
+      return '';
+    }
+  }
+  try {
+    const { stdout } = await execFileFn('ps', ['-ww', '-p', String(pid), '-o', 'command=']);
+    return stdout;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * @param {string} stdout
+ * @returns {number[]}
+ */
+function parsePidLines(stdout) {
+  /** @type {number[]} */
+  const pids = [];
+  for (const line of stdout.split(/\r?\n/u)) {
+    const pid = Number.parseInt(line.trim(), 10);
+    if (Number.isInteger(pid) && pid > 0 && !pids.includes(pid)) {
+      pids.push(pid);
+    }
+  }
+  return pids;
 }
 
 /**

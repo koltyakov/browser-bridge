@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Windows/Linux daemon discovery parity:** `bbx stop`/`bbx restart` can now
+  find the running daemon even when the pid file is stale or missing on every
+  platform, not just macOS. On Windows the default TCP transport's listener is
+  discovered through `Get-NetTCPConnection` and only signalled after its
+  command line is verified to be the bridge daemon; on Linux, socket-owner
+  lookup falls back to `ss` (iproute2) when `lsof` is not installed, and TCP
+  proxy listeners are verified through `/proc/<pid>/cmdline`.
+
 ## [1.7.6] - 2026-07-18
 
 ### Changed
