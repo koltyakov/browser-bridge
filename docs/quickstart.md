@@ -50,7 +50,7 @@ After installing the extension and CLI, finish the rest from the extension side 
 
 > **Recommendation:** MCP and the CLI skill are not meant to be installed together by default. If your agent supports both, start with MCP. The bridge protocol and browser data are the same either way; the difference is integration style. MCP fits agent tool systems better because it is structured, validated, and does not depend on shell access. Choose the CLI skill when you specifically want direct `bbx` control for shell-driven workflows such as setup, debugging, scripting, or raw protocol calls. If CLI mode is unreliable because the agent runs in a sandboxed shell, such as GitHub Copilot, use MCP instead.
 
-**MCP** - the default path for agents with native MCP tool support. Prefer this when your agent can use either mode. It gives the agent structured tools, server instructions, and MCP prompt templates without relying on shell execution, and it is the best fallback when CLI mode is blocked by sandboxing. Write the config directly into each client's settings file:
+**MCP** - the default path for agents with native MCP tool support. Prefer this when your agent can use either mode. It gives the agent structured tools and server instructions without relying on shell execution, and it is the best fallback when CLI mode is blocked by sandboxing. Write the config directly into each client's settings file:
 
 ```bash
 bbx install-mcp                  # prompt/select detected clients
@@ -61,7 +61,7 @@ bbx install-mcp copilot --local  # scope to current project instead of global
 
 Configs are written globally by default. For GitHub Copilot, that means `~/.copilot/mcp-config.json`; project installs still use `.vscode/mcp.json`. Browser Bridge also writes the older VS Code `User/mcp.json` locations as compatibility fallbacks.
 
-The MCP server is self-contained: clients can discover Browser Bridge tools, startup instructions, and prompts such as `browser_bridge_guide`, `browser_bridge_investigate`, `browser_bridge_debug_layout`, and `browser_bridge_verify_flow`. You do not need the CLI skill for MCP guidance.
+The MCP server is self-contained: clients can discover Browser Bridge tools and startup instructions. Workflow guidance is delivered to agents through the server instructions rather than MCP prompt templates, so clients do not expose it as user-facing slash commands. You do not need the CLI skill for MCP guidance.
 
 Permission prompts are client-owned and MCP instructions cannot grant permissions by themselves. In permission-ask hosts, Browser Bridge tells the agent to use the generic `browser_call` MCP tool by default so the user can approve one BBX tool instead of separate `browser_status`, `browser_page`, `browser_dom`, `browser_input`, and patch tools. See [Agent permissions](./agent-permissions.md) for wildcard/server-wide allow rules by client.
 

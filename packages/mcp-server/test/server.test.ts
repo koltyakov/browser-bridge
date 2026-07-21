@@ -6,7 +6,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 import { createBridgeMcpServer, startBridgeMcpServer } from '../src/server.js';
-import { MCP_GUIDANCE_PROMPT_NAMES, MCP_SERVER_INSTRUCTIONS } from '../src/guidance.js';
+import { MCP_SERVER_INSTRUCTIONS } from '../src/guidance.js';
 import {
   BRIDGE_HOME_ENV,
   BRIDGE_TCP_PORT_ENV,
@@ -159,11 +159,10 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
         !delegationHint.preferredBridgeMethods.includes('screenshot.capture_full_page')
     );
     assert.match(MCP_SERVER_INSTRUCTIONS, /Prefer Browser Bridge MCP tools/);
-    assert.deepEqual(
-      promptRegistrations.map((entry) => entry.name),
-      MCP_GUIDANCE_PROMPT_NAMES
-    );
-    assert.ok(promptRegistrations.every((entry) => typeof entry.handler === 'function'));
+    assert.match(MCP_SERVER_INSTRUCTIONS, /Page investigation:/);
+    assert.match(MCP_SERVER_INSTRUCTIONS, /Layout debugging:/);
+    assert.match(MCP_SERVER_INSTRUCTIONS, /Flow verification:/);
+    assert.deepEqual(promptRegistrations, []);
   } finally {
     McpServer.prototype.registerTool = originalRegisterTool;
     McpServer.prototype.registerPrompt = originalRegisterPrompt;

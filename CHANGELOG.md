@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **MCP command discovery:** Removed MCP prompt templates so clients such as
+  OpenCode no longer expose Browser Bridge workflow prompts as slash commands;
+  MCP server instructions continue to provide agent guidance.
 - **Windows/Linux daemon discovery parity:** `bbx stop`/`bbx restart` can now
   find the running daemon even when the pid file is stale or missing on every
   platform, not just macOS. On Windows the default TCP transport's listener is
