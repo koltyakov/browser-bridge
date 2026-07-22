@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [1.8.0] - 2026-07-22
 
 ### Added
 
@@ -26,6 +26,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   extension/profile, enabled-window routing, protocol compatibility, debugger,
   capture, daemon metrics, setup, recent redacted events, and configured-but-
   unverified remote destination state.
+- **Responsible-use and security policies:** Added a Responsible Use Agreement
+  and vulnerability-reporting policy, with links from npm-facing documentation
+  and the extension UI.
 
 ### Changed
 
@@ -37,6 +40,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   selected, whether scrolling or stale recovery occurred, the hit-test outcome,
   and the actual DOM or debugger-backed dispatch path. Input dispatch remains a
   browser event result, not a guarantee of application state change.
+- **Atomic selector shortcuts:** Selector-based CLI input shortcuts now pass the
+  selector to the final operation instead of resolving it in a separate request.
+  Automatic stale mutation replay was replaced by explicit, opt-in recovery.
 - **MCP command discovery:** Removed MCP prompt templates so clients such as
   OpenCode no longer expose Browser Bridge workflow prompts as slash commands;
   MCP server instructions continue to provide agent guidance.
@@ -54,10 +60,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   target identity before each mutation boundary, drag paths guarantee release
   cleanup, and stale or rerendered post-mutation targets are reported without
   silently replaying an input.
+- **Bounded stale recovery:** Recovery now returns `ELEMENT_AMBIGUOUS` when its
+  bounded candidate scan cannot prove uniqueness instead of accepting a
+  potentially incorrect replacement.
 - **Dialog, capture, and teardown races:** Dialog actions detect replacement
-  around their non-atomic CDP command, network capture serializes ownership and
-  detach/stop transitions, and window disable or switch attempts best-effort
-  rollback of active patches while clearing capture state.
+  around their non-atomic CDP command and can unblock a CDP operation waiting on
+  the modal itself. Network capture serializes ownership and detach/stop
+  transitions, while access disable, window switch, and tab movement prevent
+  stale debugger work from crossing into a fresh session and attempt
+  best-effort rollback of active patches while clearing capture state.
+
+### Security
+
+- **Hardened TCP and proxy authentication:** Authentication tokens now use
+  hashed constant-time comparison. Invalid proxy `bindHost` values fail closed
+  instead of widening to `0.0.0.0`, and malformed enabled proxy configurations
+  produce explicit warnings.
+- **Privacy-preserving CDP network capture:** Returned all-resource metadata
+  strips URL credentials and fragments, redacts query values, summarizes
+  `data:` and `blob:` URLs, and excludes bodies, cookies, authorization values,
+  and complete headers.
 
 ## [1.7.6] - 2026-07-18
 
