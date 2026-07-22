@@ -143,6 +143,10 @@ Browser Bridge itself routes extension data locally through the Chrome extension
 
 Your connected agent or IDE may still forward tool calls or tool results to remote services under that product's own settings and privacy policy. See [PRIVACY.md](https://github.com/koltyakov/browser-bridge/blob/main/PRIVACY.md) for the Browser Bridge policy.
 
+## Responsible Use
+
+Browser Bridge is intended for local development, debugging, and testing of web resources you own, control, or are explicitly authorized to test. Do not use it for web scraping, unauthorized data collection, or impersonating or acting as another user. You are responsible for the agents you connect, the actions they perform, and compliance with applicable laws, permissions, website terms, and third-party rights. See the [Responsible Use Agreement](https://github.com/koltyakov/browser-bridge/blob/main/RESPONSIBLE_USE.md).
+
 ## License
 
 MIT. See [LICENSE](https://github.com/koltyakov/browser-bridge/blob/main/LICENSE).

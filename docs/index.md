@@ -13,6 +13,7 @@ This index keeps those paths separate.
 
 ## End-user guides
 
+- [Responsible use](../RESPONSIBLE_USE.md): authorized uses, prohibited uses, and user responsibilities
 - [Usage scenarios](./usage-scenarios.md): concrete workflows for debugging, verification, and live patching
 - [CLI guide](./cli-guide.md): day-to-day `bbx` commands with practical examples
 - [Remote proxy](./remote-proxy.md): drive a browser on another machine (VM, private network) over an authenticated TCP proxy

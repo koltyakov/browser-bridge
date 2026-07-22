@@ -1,6 +1,6 @@
 {
   "name": "@browserbridge/bbx",
-  "version": "1.7.7",
+  "version": "1.7.8",
   "private": false,
   "keywords": [
     "agent-tools",
@@ -33,7 +33,10 @@
   },
   "files": [
     "LICENSE",
+    "PRIVACY.md",
+    "RESPONSIBLE_USE.md",
     "README.md",
+    "SECURITY.md",
     "packages/agent-client/src",
     "packages/mcp-server/src",
     "packages/native-host/bin",
