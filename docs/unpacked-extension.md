@@ -53,9 +53,14 @@ BROWSER_BRIDGE_EXTENSION_ID=<extension-id> bbx install
 ## 6. Verify the local connection
 
 ```bash
-bbx status
 bbx doctor
+bbx status
 ```
+
+Run `bbx doctor` first so extension-ID/manifest mismatches, launcher problems,
+protocol drift, and local routing state are reported together. Use `bbx status`
+as the narrower follow-up health check. Doctor does not probe configured remote
+destinations.
 
 Then open the Browser Bridge side panel in Chrome, enable access for the target
 window, and verify the bridge is responding:

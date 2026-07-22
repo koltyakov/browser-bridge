@@ -53,8 +53,8 @@ Chrome, Brave, or Edge from a non-sandboxed package and run the matching
 Run these before involving an agent:
 
 ```bash
-bbx status
 bbx doctor
+bbx status
 ```
 
 Then open Chrome, enable Browser Bridge for the current window, and verify tab
@@ -66,6 +66,13 @@ bbx call page.get_state
 ```
 
 If these commands do not work locally, the agent setup will not work either.
+
+Run `bbx doctor` first because it consolidates local manifest/launcher,
+transport/authentication, daemon, extension/profile, enabled-window routing,
+protocol, debugger/capture, setup, and redacted recent-event diagnostics.
+`bbx status` is the smaller follow-up health view. Doctor intentionally does not
+probe configured remotes and reports their credentials as unverified; use
+`bbx remote test <name>` separately when needed.
 
 ## 3. Managed setup for supported clients
 

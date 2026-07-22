@@ -9,6 +9,7 @@ import { sanitizeOutput, stripAnsi } from '../src/cli-helpers.js';
 import { SHORTCUT_COMMANDS } from '../src/command-registry.js';
 import { createInstallFs } from '../../../tests/_helpers/installFs.ts';
 import { runCli } from '../../../tests/_helpers/runCli.ts';
+import { TEST_PROTOCOL_VERSION } from '../../../tests/_helpers/socketHarness.ts';
 
 type CliPayload = {
   ok: boolean;
@@ -93,7 +94,10 @@ test('cli skill command prints the runtime context JSON', async () => {
 
   assert.equal(result.status, 0);
   assert.equal(result.stderr, '');
-  assert.deepEqual(result.json, createRuntimeContext());
+  assert.deepEqual(result.json, {
+    ...createRuntimeContext(),
+    v: TEST_PROTOCOL_VERSION,
+  });
 });
 
 test('cli install forwards browser and extension id args to the native host installer', async () => {

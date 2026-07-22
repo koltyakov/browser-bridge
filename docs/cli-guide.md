@@ -13,8 +13,8 @@ bbx install --browser brave
 bbx install --browser chromium
 bbx install --browser arc
 bbx install --all
-bbx status
 bbx doctor
+bbx status
 bbx restart
 bbx logs
 bbx tabs
@@ -25,6 +25,15 @@ Use these first when Browser Bridge is not connected, the wrong tab is routed,
 or you want to see the available runtime presets. `bbx install` targets Chromium
 on Linux and Chrome on macOS/Windows; use `--browser` for Chrome, Edge, Brave,
 Chromium, or Arc, or `--all` for all supported browsers.
+
+`bbx doctor` is consolidated but intentionally local-only: it checks local
+transport/authentication, native host manifests, extension/profile connections,
+enabled-window active-tab routing, protocol versions, debugger/capture state,
+daemon metrics, setup status, and recent redacted event metadata. Configured
+remotes are counted but reported as `not_probed_local_only` with credentials
+`unverified`; use `bbx remote test <name>` for an explicit remote probe. Doctor
+does not include page content, expressions, storage/form values, network
+secrets, authentication tokens, or full request payloads.
 
 Use `bbx restart` when you want to force the local daemon and running Browser
 Bridge MCP servers to reload after a CLI update, or recover from a stuck local
@@ -63,7 +72,9 @@ bbx box .hero
 bbx call layout.hit_test '{"x":640,"y":280}'
 ```
 
-Use `styles`, `matched-rules`, and `box` together when a layout bug is unclear.
+Use `styles` and `box` together when a layout bug is unclear. `matched-rules`
+currently returns only the element ref, class list, and inline style; despite the
+legacy name, it does not inspect stylesheet rules, specificity, or cascade order.
 
 ## Read runtime state
 
@@ -91,12 +102,42 @@ bbx press-key Enter
 bbx cdp-press-key --tab 123 Escape
 bbx hover .menu-trigger
 bbx call input.scroll_into_view '{"target":{"selector":".menu-trigger"}}'
+bbx call input.click '{"target":{"selector":"button[type=submit]"},"executionMode":"cdp"}'
+bbx call page.wait_for_load_state '{"url":"/complete","urlMatch":"contains","waitForLoad":false}'
 bbx scroll 800
 bbx resize 1440 900
 ```
 
 Use `input.scroll_into_view` before a hover, click, or capture when the target
 is off-screen or inside a nested scroller.
+
+Targeted click, focus, type, fill, press-key, checked-state, option-selection,
+hover, and drag calls reject missing, hidden, disabled, inert, ambiguous, or
+obscured targets with structured errors, and return target-resolution plus
+DOM/CDP execution metadata. `cdp_press_key` and `scroll_into_view` use separate
+contracts. `executionMode` accepts `dom` or `cdp` and defaults to `dom`; CDP
+supports click, hover, drag, type, and fill. This is separate from
+`input.fill.mode` (`auto`, `setter`, `keystrokes`), which chooses the DOM fill
+strategy. Stale recovery remains off by default; advanced callers can opt into
+one strict same-document recovery with `recoverStale: true`. Recovery fails with
+`ELEMENT_AMBIGUOUS` and `reason: "scan_incomplete"` rather than accepting a
+match when more than 100 same-tag candidates prevent proof of uniqueness.
+
+Always verify after input. Browser Bridge can report that an event was
+dispatched, but it cannot generically guarantee the application accepted the
+intended state change.
+
+Explicit dialog handling also uses the raw path:
+
+```bash
+dialog_json=$(bbx call page.handle_dialog '{"action":"inspect"}')
+dialog_id=$(printf '%s' "$dialog_json" | jq -r '.result.dialogId')
+bbx call page.handle_dialog "$(jq -cn --arg id "$dialog_id" '{action:"dismiss",expectedDialogId:$id}')"
+```
+
+Never auto-accept or auto-dismiss. `expectedDialogId` is checked just before
+dispatch, but Chrome cannot atomically bind the command to it; inspect again on
+`DIALOG_ACTION_CONFLICT` instead of replaying the action.
 
 ## Patch the live page
 
@@ -107,8 +148,12 @@ bbx patches
 bbx rollback <patchId>
 ```
 
-Patches are session-scoped and reversible. Use them to prove a fix visually
-before you edit source.
+Patches keep rollback records in the current document. Use them to prove a fix
+visually before editing source, then roll them back. Disabling access or
+switching the enabled window triggers best-effort rollback; navigation/document
+replacement invalidates page-side patch IDs. `patch.commit_session_baseline`
+keeps current live changes while discarding their rollback history; it does not
+write source or create a persistent browser session.
 
 ## Use the raw RPC path
 
@@ -129,6 +174,22 @@ you want parallel reads with one CLI round trip.
 
 `page.get_console` and `page.get_network` also return `dropped` when hot pages
 overflow their 200-entry buffers.
+
+The `bbx network` shortcut reads low-cost fetch/XHR instrumentation. Entries are
+in capture order and contain `method`, `url`, `status`, `duration`, `type`, `ts`,
+and `size`. For all-resource metadata, explicitly arm CDP before reproduction:
+
+```bash
+bbx call page.get_network '{"source":"cdp","capture":"start"}'
+# reproduce the issue
+bbx call page.get_network '{"source":"cdp","capture":"read","limit":50}'
+bbx call page.get_network '{"source":"cdp","capture":"stop"}'
+```
+
+This holds debugger ownership and is more expensive. CDP results expose capture
+state and bounded resource/redirect/failure metadata, redact credentials,
+fragments, and query values from URLs, and exclude bodies, cookies,
+authorization values, and complete headers.
 
 ## Investigate efficiently
 

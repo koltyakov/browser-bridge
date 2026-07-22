@@ -41,3 +41,5 @@ After any patch:
 
 - Roll back every patch before finishing.
 - If multiple patches are active, list them before rolling back so the subagent can explain what was tested.
+- Rollback records live in the current document. Browser Bridge attempts to roll them back when access is disabled or switched to another window; navigation or document replacement removes the page-side registry and may make old patch IDs unusable.
+- `patch.commit_session_baseline` keeps the current DOM/style changes but clears their rollback records. Use it only when the user intentionally wants those live changes to become the new patch baseline; it does not write source files or grant a longer-lived browser session.

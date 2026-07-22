@@ -6,16 +6,13 @@ import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 
-import {
-  DAEMON_RECENT_LOG_LIMIT,
-  ERROR_CODES,
-  PROTOCOL_VERSION,
-} from '../../protocol/src/index.js';
+import { DAEMON_RECENT_LOG_LIMIT, ERROR_CODES } from '../../protocol/src/index.js';
 import type { BridgeRequest, BridgeResponse, SetupStatus } from '../../protocol/src/types.js';
 import type { McpClientName } from '../../agent-client/src/mcp-config.js';
 import type { SupportedTarget } from '../../agent-client/src/install.js';
 import {
   startBridgeSocketServer,
+  TEST_PROTOCOL_VERSION as PROTOCOL_VERSION,
   withTempSocketPath,
 } from '../../../tests/_helpers/socketHarness.ts';
 import { clockController } from '../../../tests/_helpers/faultInjection.ts';

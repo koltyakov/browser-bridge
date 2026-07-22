@@ -27,75 +27,76 @@ The table below includes the legacy capability bucket for each method so agents 
 - `-` means the method is global/system-scoped and was never gated by a former capability bucket.
 - Capability names are descriptive coverage labels only. Browser Bridge access is window-scoped now; there are no capability-scoped sessions.
 
-## All Methods (65)
+## All Methods (66)
 
-| #   | Method                             | Tab? | CDP? | Group       | Capability           | Notes                                                                   |
-| --- | ---------------------------------- | ---- | ---- | ----------- | -------------------- | ----------------------------------------------------------------------- |
-| 1   | `access.request`                   | No   | -    | system      | `-`                  | Request window access; surfaces Enable prompt in extension UI           |
-| 2   | `tabs.list`                        | No   | -    | tabs        | `-`                  | Discover available tabs                                                 |
-| 3   | `tabs.create`                      | No   | -    | tabs        | `tabs.manage`        | Open a new tab; optional `url` and `active`                             |
-| 4   | `tabs.close`                       | No   | -    | tabs        | `tabs.manage`        | Close a tab by `tabId`                                                  |
-| 5   | `skill.get_runtime_context`        | No   | -    | system      | `-`                  | Live budget presets + method groups                                     |
-| 6   | `setup.get_status`                 | No   | -    | system      | `-`                  | Global MCP config + CLI skill install status                            |
-| 7   | `setup.install`                    | No   | -    | system      | `-`                  | Install or uninstall MCP/skill integration targets                      |
-| 8   | `health.ping`                      | No   | -    | system      | `-`                  | Connectivity check + access routing state                               |
-| 9   | `log.tail`                         | No   | -    | system      | `-`                  | Recent bridge logs                                                      |
-| 10  | `daemon.metrics`                   | No   | -    | system      | `-`                  | Daemon health and performance metrics                                   |
-| 11  | `page.get_state`                   | Yes  | -    | page        | `page.read`          | URL, readiness, focus, scroll, viewport                                 |
-| 12  | `page.evaluate`                    | Yes  | CDP  | page        | `page.evaluate`      | JS expression in page context; last resort                              |
-| 13  | `page.get_console`                 | Yes  | -    | page        | `page.read`          | Buffered console messages; filter by `level`, `limit`                   |
-| 14  | `page.wait_for_load_state`         | Yes  | -    | wait        | `page.read`          | Block until tab `complete`; `timeoutMs` range 0.5-120 s                 |
-| 15  | `page.get_storage`                 | Yes  | -    | page        | `page.read`          | `localStorage`/`sessionStorage`; optional `keys`                        |
-| 16  | `page.get_text`                    | Yes  | -    | page        | `page.read`          | Full page text; `textBudget` limits size                                |
-| 17  | `page.get_network`                 | Yes  | -    | page        | `network.read`       | Intercepted fetch/XHR; `limit` entries                                  |
-| 18  | `navigation.navigate`              | Yes  | -    | navigate    | `navigation.control` | Go to URL; `waitForLoad` default true                                   |
-| 19  | `navigation.reload`                | Yes  | -    | navigate    | `navigation.control` | Reload; `waitForLoad` default true                                      |
-| 20  | `navigation.go_back`               | Yes  | -    | navigate    | `navigation.control` | History back                                                            |
-| 21  | `navigation.go_forward`            | Yes  | -    | navigate    | `navigation.control` | History forward                                                         |
-| 22  | `dom.query`                        | Yes  | -    | inspect     | `dom.read`           | Query subtree with budget constraints                                   |
-| 23  | `dom.describe`                     | Yes  | -    | inspect     | `dom.read`           | Single element details via `elementRef`                                 |
-| 24  | `dom.get_text`                     | Yes  | -    | inspect     | `dom.read`           | Text content with `textBudget`                                          |
-| 25  | `dom.get_attributes`               | Yes  | -    | inspect     | `dom.read`           | Targeted attribute read                                                 |
-| 26  | `dom.wait_for`                     | Yes  | -    | wait        | `dom.read`           | Wait for DOM condition; MutationObserver + polling                      |
-| 27  | `dom.find_by_text`                 | Yes  | -    | inspect     | `dom.read`           | Find by visible text; returns `{nodes, count}`                          |
-| 28  | `dom.find_by_role`                 | Yes  | -    | inspect     | `dom.read`           | Find by ARIA role; optional `name` filter                               |
-| 29  | `dom.get_html`                     | Yes  | -    | inspect     | `dom.read`           | `innerHTML`/`outerHTML`; `maxLength` truncation                         |
-| 30  | `dom.get_accessibility_tree`       | Yes  | CDP  | inspect     | `dom.read`           | Full a11y tree; `maxNodes`/`maxDepth` limits                            |
-| 31  | `layout.get_box_model`             | Yes  | -    | inspect     | `layout.read`        | Element geometry (no budget needed)                                     |
-| 32  | `layout.hit_test`                  | Yes  | -    | inspect     | `layout.read`        | Element at viewport point                                               |
-| 33  | `styles.get_computed`              | Yes  | -    | inspect     | `styles.read`        | Computed CSS; always set `properties`                                   |
-| 34  | `styles.get_matched_rules`         | Yes  | -    | inspect     | `styles.read`        | Matching CSS rules                                                      |
-| 35  | `viewport.scroll`                  | Yes  | -    | navigate    | `viewport.control`   | Window or element scroll                                                |
-| 36  | `viewport.resize`                  | Yes  | CDP  | navigate    | `viewport.control`   | Set viewport via device emulation; `reset: true`                        |
-| 37  | `input.click`                      | Yes  | -    | interact    | `automation.input`   | DOM-level click                                                         |
-| 38  | `input.focus`                      | Yes  | -    | interact    | `automation.input`   | Focus element                                                           |
-| 39  | `input.type`                       | Yes  | -    | interact    | `automation.input`   | Type into input/textarea/contenteditable                                |
-| 40  | `input.press_key`                  | Yes  | -    | interact    | `automation.input`   | Single key event                                                        |
-| 41  | `input.set_checked`                | Yes  | -    | interact    | `automation.input`   | Checkbox/radio toggle                                                   |
-| 42  | `input.select_option`              | Yes  | -    | interact    | `automation.input`   | Native select by value/label/index                                      |
-| 43  | `input.hover`                      | Yes  | -    | interact    | `automation.input`   | mouseenter/mouseover/mousemove; optional `duration`                     |
-| 44  | `input.drag`                       | Yes  | -    | interact    | `automation.input`   | Full drag-and-drop event sequence                                       |
-| 45  | `input.scroll_into_view`           | Yes  | -    | interact    | `automation.input`   | Explicitly scroll target into view before inspect/capture               |
-| 46  | `screenshot.capture_element`       | Yes  | CDP  | capture     | `screenshot.partial` | Cropped element screenshot                                              |
-| 47  | `screenshot.capture_region`        | Yes  | CDP  | capture     | `screenshot.partial` | Cropped viewport region                                                 |
-| 48  | `screenshot.capture_full_page`     | Yes  | CDP  | capture     | `screenshot.partial` | Full document screenshot; use only when page-level context is necessary |
-| 49  | `patch.apply_styles`               | Yes  | -    | patch       | `patch.styles`       | Reversible CSS patch; `verify` returns computed result                  |
-| 50  | `patch.apply_dom`                  | Yes  | -    | patch       | `patch.dom`          | Reversible DOM mutation; `verify` returns result                        |
-| 51  | `patch.list`                       | Yes  | -    | patch       | `patch.dom`          | Active patches                                                          |
-| 52  | `patch.rollback`                   | Yes  | -    | patch       | `patch.dom`          | Revert one patch                                                        |
-| 53  | `patch.commit_session_baseline`    | Yes  | -    | patch       | `patch.dom`          | Accept current state as baseline                                        |
-| 54  | `performance.get_metrics`          | Yes  | CDP  | performance | `performance.read`   | Chrome performance counters                                             |
-| 55  | `cdp.get_document`                 | Yes  | CDP  | cdp         | `cdp.dom_snapshot`   | DevTools document tree                                                  |
-| 56  | `cdp.get_dom_snapshot`             | Yes  | CDP  | cdp         | `cdp.dom_snapshot`   | DevTools DOM snapshot                                                   |
-| 57  | `cdp.get_box_model`                | Yes  | CDP  | cdp         | `cdp.box_model`      | DevTools-backed element geometry                                        |
-| 58  | `cdp.get_computed_styles_for_node` | Yes  | CDP  | cdp         | `cdp.styles`         | DevTools-backed computed styles                                         |
-| 59  | `cdp.dispatch_key_event`           | Yes  | CDP  | cdp         | `cdp.input`          | DevTools keyDown/keyUp without foreground focus                         |
-| 60  | `tabs.activate`                    | No   | -    | tabs        | `tabs.manage`        | Bring a tab to the foreground in the enabled window                     |
-| 61  | `input.fill`                       | Yes  | -    | interact    | `automation.input`   | Set field value via native setter; `mode`: auto/setter/keystrokes       |
-| 62  | `network.intercept.add`            | Yes  | CDP  | page        | `network.intercept`  | Add interception rule; action fulfill/continue/block                    |
-| 63  | `network.intercept.remove`         | Yes  | CDP  | page        | `network.intercept`  | Remove rule by `ruleId`                                                 |
-| 64  | `network.intercept.list`           | Yes  | CDP  | page        | `network.intercept`  | List active rules (rules drop on debugger detach)                       |
-| 65  | `network.intercept.clear`          | Yes  | CDP  | page        | `network.intercept`  | Remove all rules, detach debugger                                       |
+| Method                             | Tab? | CDP?       | Group       | Capability           | Notes                                                                                      |
+| ---------------------------------- | ---- | ---------- | ----------- | -------------------- | ------------------------------------------------------------------------------------------ |
+| `access.request`                   | No   | -          | system      | `-`                  | Request window access; surfaces Enable prompt in extension UI                              |
+| `tabs.list`                        | No   | -          | tabs        | `-`                  | Discover tabs in the enabled window                                                        |
+| `tabs.create`                      | No   | -          | tabs        | `tabs.manage`        | Open a new tab; optional `url` and `active`                                                |
+| `tabs.close`                       | No   | -          | tabs        | `tabs.manage`        | Close a tab by `tabId`                                                                     |
+| `tabs.activate`                    | No   | -          | tabs        | `tabs.manage`        | Bring a tab to the foreground in the enabled window                                        |
+| `skill.get_runtime_context`        | No   | -          | system      | `-`                  | Live budget presets and method groups                                                      |
+| `setup.get_status`                 | No   | -          | system      | `-`                  | Global MCP config and CLI skill install status                                             |
+| `setup.install`                    | No   | -          | system      | `-`                  | Install or uninstall MCP/skill integration targets                                         |
+| `health.ping`                      | No   | -          | system      | `-`                  | Connectivity, enabled-window routing, debugger, and capture state                          |
+| `log.tail`                         | No   | -          | system      | `-`                  | Recent redacted bridge logs                                                                |
+| `daemon.metrics`                   | No   | -          | system      | `-`                  | Daemon health and performance metrics                                                      |
+| `page.get_state`                   | Yes  | -          | page        | `page.read`          | URL, readiness, focus, viewport, and observable dialog status                              |
+| `page.evaluate`                    | Yes  | CDP        | page        | `page.evaluate`      | JS expression in page context; last resort                                                 |
+| `page.get_console`                 | Yes  | -          | page        | `page.read`          | Buffered console messages; filter by `level`, `limit`                                      |
+| `page.handle_dialog`               | Yes  | CDP        | page        | `navigation.control` | Inspect or explicitly accept/dismiss the currently observable dialog                       |
+| `page.wait_for_load_state`         | Yes  | -          | wait        | `page.read`          | Wait for truthful tab `complete` state and/or a URL condition                              |
+| `page.get_storage`                 | Yes  | -          | page        | `page.read`          | `localStorage`/`sessionStorage`; optional `keys`                                           |
+| `page.get_text`                    | Yes  | -          | page        | `page.read`          | Full page text; `textBudget` limits size                                                   |
+| `page.get_network`                 | Yes  | Conditional | page        | `network.read`       | Fetch/XHR by default; explicit CDP all-resource capture lifecycle                          |
+| `network.intercept.add`            | Yes  | CDP        | page        | `network.intercept`  | Add interception rule; action fulfill/continue/block                                       |
+| `network.intercept.remove`         | Yes  | CDP        | page        | `network.intercept`  | Remove rule by `ruleId`                                                                    |
+| `network.intercept.list`           | Yes  | CDP        | page        | `network.intercept`  | List active rules (rules drop on debugger detach)                                          |
+| `network.intercept.clear`          | Yes  | CDP        | page        | `network.intercept`  | Remove all rules and release interception                                                  |
+| `navigation.navigate`              | Yes  | -          | navigate    | `navigation.control` | Go to URL; `waitForLoad` default true                                                      |
+| `navigation.reload`                | Yes  | -          | navigate    | `navigation.control` | Reload; `waitForLoad` default true                                                         |
+| `navigation.go_back`               | Yes  | -          | navigate    | `navigation.control` | History back                                                                               |
+| `navigation.go_forward`            | Yes  | -          | navigate    | `navigation.control` | History forward                                                                            |
+| `dom.query`                        | Yes  | -          | inspect     | `dom.read`           | Query subtree with budget constraints                                                      |
+| `dom.describe`                     | Yes  | -          | inspect     | `dom.read`           | Single element details via `elementRef`                                                    |
+| `dom.get_text`                     | Yes  | -          | inspect     | `dom.read`           | Text content with `textBudget`                                                             |
+| `dom.get_attributes`               | Yes  | -          | inspect     | `dom.read`           | Targeted attribute read                                                                    |
+| `dom.wait_for`                     | Yes  | -          | wait        | `dom.read`           | Wait for DOM condition; MutationObserver and polling                                       |
+| `dom.find_by_text`                 | Yes  | -          | inspect     | `dom.read`           | Find by visible text; returns `{nodes, count}`                                             |
+| `dom.find_by_role`                 | Yes  | -          | inspect     | `dom.read`           | Find by ARIA role; optional `name` filter                                                  |
+| `dom.get_html`                     | Yes  | -          | inspect     | `dom.read`           | `innerHTML`/`outerHTML`; `maxLength` truncation                                            |
+| `dom.get_accessibility_tree`       | Yes  | CDP        | inspect     | `dom.read`           | Depth-limited AX tree with compact/interactive filters and partial-topology metadata        |
+| `layout.get_box_model`             | Yes  | -          | inspect     | `layout.read`        | Element geometry                                                                           |
+| `layout.hit_test`                  | Yes  | -          | inspect     | `layout.read`        | Topmost element at viewport point                                                          |
+| `styles.get_computed`              | Yes  | -          | inspect     | `styles.read`        | Requested properties; omission returns display/position/width/height/color                 |
+| `styles.get_matched_rules`         | Yes  | -          | inspect     | `styles.read`        | Element ref, class list, and inline style only; not stylesheet cascade data                |
+| `viewport.scroll`                  | Yes  | -          | navigate    | `viewport.control`   | Window or element scroll                                                                   |
+| `viewport.resize`                  | Yes  | CDP        | navigate    | `viewport.control`   | Set viewport via device emulation; `reset: true`                                           |
+| `input.click`                      | Yes  | Optional   | interact    | `automation.input`   | Actionability-aware DOM or CDP click                                                       |
+| `input.focus`                      | Yes  | -          | interact    | `automation.input`   | Actionability-aware DOM focus                                                              |
+| `input.type`                       | Yes  | Optional   | interact    | `automation.input`   | DOM key sequence or CDP text insertion                                                     |
+| `input.fill`                       | Yes  | Optional   | interact    | `automation.input`   | DOM fill strategy or CDP clear/insert; see `mode` versus `executionMode`                   |
+| `input.press_key`                  | Yes  | -          | interact    | `automation.input`   | DOM key event                                                                              |
+| `input.set_checked`                | Yes  | -          | interact    | `automation.input`   | Checkbox/radio toggle                                                                      |
+| `input.select_option`              | Yes  | -          | interact    | `automation.input`   | Native select by value/label/index                                                         |
+| `input.hover`                      | Yes  | Optional   | interact    | `automation.input`   | DOM hover events or native CDP pointer move                                                |
+| `input.drag`                       | Yes  | Optional   | interact    | `automation.input`   | DOM drag events or native interpolated pointer drag                                        |
+| `input.scroll_into_view`           | Yes  | -          | interact    | `automation.input`   | Explicitly scroll target into view before inspect/capture                                  |
+| `screenshot.capture_element`       | Yes  | CDP        | capture     | `screenshot.partial` | Cropped element screenshot                                                                 |
+| `screenshot.capture_region`        | Yes  | CDP        | capture     | `screenshot.partial` | Cropped viewport region                                                                    |
+| `screenshot.capture_full_page`     | Yes  | CDP        | capture     | `screenshot.partial` | Full document screenshot; only when page-level context is necessary                        |
+| `patch.apply_styles`               | Yes  | -          | patch       | `patch.styles`       | Reversible CSS patch; `verify` returns computed result                                     |
+| `patch.apply_dom`                  | Yes  | -          | patch       | `patch.dom`          | Reversible DOM mutation; `verify` returns result                                           |
+| `patch.list`                       | Yes  | -          | patch       | `patch.dom`          | Active rollback records in the current document                                            |
+| `patch.rollback`                   | Yes  | -          | patch       | `patch.dom`          | Revert one active patch                                                                    |
+| `patch.commit_session_baseline`    | Yes  | -          | patch       | `patch.dom`          | Keep current mutations and discard their rollback history                                  |
+| `performance.get_metrics`          | Yes  | CDP        | performance | `performance.read`   | Chrome performance counters                                                                |
+| `cdp.get_document`                 | Yes  | CDP        | cdp         | `cdp.dom_snapshot`   | DevTools document tree                                                                     |
+| `cdp.get_dom_snapshot`             | Yes  | CDP        | cdp         | `cdp.dom_snapshot`   | DevTools DOM snapshot                                                                      |
+| `cdp.get_box_model`                | Yes  | CDP        | cdp         | `cdp.box_model`      | DevTools-backed element geometry                                                           |
+| `cdp.get_computed_styles_for_node` | Yes  | CDP        | cdp         | `cdp.styles`         | DevTools-backed computed styles                                                            |
+| `cdp.dispatch_key_event`           | Yes  | CDP        | cdp         | `cdp.input`          | DevTools keyDown/keyUp without foreground focus                                            |
 
 ## CLI
 
@@ -151,13 +152,28 @@ bbx call page.get_console '{"level":"error","limit":20,"clear":true}'
 
 Responses include `dropped` when older buffered entries were discarded on noisy pages.
 
+### page.handle_dialog
+
+Inspecting is read-only; accepting or dismissing must be explicit. `promptText` is valid only with `action: "accept"`. An optional `expectedDialogId` checks that the current observation still matches immediately before dispatch, but Chrome's `Page.handleJavaScriptDialog` command cannot atomically bind to that identifier. A successful mutation therefore reports `commandDispatched: true` and `atomicDialogBinding: false`; it does not prove which application follow-up occurred.
+
+```bash
+bbx call page.handle_dialog '{"action":"inspect"}'
+bbx call page.handle_dialog '{"action":"accept","expectedDialogId":"00000000-0000-4000-8000-000000000000:1","promptText":"value"}' # replace with inspected dialogId
+bbx call page.handle_dialog '{"action":"dismiss","expectedDialogId":"00000000-0000-4000-8000-000000000000:1"}' # replace with inspected dialogId
+```
+
+`DIALOG_NOT_OPEN` means no current dialog was observable. `DIALOG_ACTION_CONFLICT` means the observation changed before or around dispatch; inspect again and never automatically repeat the mutating action. Dialog messages and prompt defaults are bounded and excluded from persisted action logs.
+
 ### page.wait_for_load_state
 
-Block until the tab reaches `complete` status. Useful after `input.click` on a navigation link.
+Wait for truthful Chrome tab `complete` status, a URL condition, or both. URL waits check the current URL first, then observe tab updates plus `pushState`, `replaceState`, `popstate`, and hash changes. Results include `finalUrl`, `urlMatch`, `elapsedMs`, and `observedNavigationKind`; this method does not call DOMContentLoaded behavior `networkidle`.
 
 ```bash
 bbx call page.wait_for_load_state '{"timeoutMs":10000}'
+bbx call page.wait_for_load_state '{"url":"/dashboard","urlMatch":"contains","waitForLoad":false}'
 ```
+
+`urlMatch: "regex"` accepts at most 256 characters and only a bounded linear subset: literals, escapes, anchors, dots, and character classes. Grouping, alternation, quantifiers, and backreferences are rejected.
 
 ### page.get_storage
 
@@ -220,9 +236,25 @@ bbx html el_abc123
 bbx call dom.get_html '{"elementRef":"el_abc123","outer":true,"maxLength":2000}'
 ```
 
+### styles.get_computed and styles.get_matched_rules
+
+When `properties` is omitted, `styles.get_computed` returns exactly `display`, `position`, `width`, `height`, and `color`. Pass an explicit list for any other properties. `styles.get_matched_rules` currently returns only `{elementRef, classes, inlineStyle}`; it does not inspect stylesheet rules, specificity, or cascade order.
+
+### Actionable input targets
+
+Input calls preserve an explicit `elementRef`. For selectors, the first actionable match wins; if it is not actionable, Browser Bridge evaluates at most 25 matches and chooses only a uniquely better candidate. It scrolls the selected target if needed and rechecks visibility, disabled/inert state, rendered bounds, and pointer hit testing before dispatch. Failures use `ELEMENT_NOT_FOUND`, `ELEMENT_NOT_ACTIONABLE`, `ELEMENT_OBSCURED`, or `ELEMENT_AMBIGUOUS` with bounded details.
+
+Successful targeted click, focus, type, fill, press-key, checked-state, option-selection, hover, and drag results include `resolution` (`strategy`, candidate/evaluated counts, scrolling, hit test, and recovery fields) and `execution` (`requestedMode`, `actualMode`, `fallbackReason`, `debuggerUsed`, and coordinates). `cdp.dispatch_key_event`/MCP `cdp_press_key` and `input.scroll_into_view` use separate response contracts. `executionMode` is the dispatch path and accepts only `dom` or `cdp`, defaulting to `dom` for compatibility. CDP is supported only by click, hover, drag, type, and fill; unsupported combinations return `INPUT_UNSUPPORTED` instead of falling back silently.
+
+`input.fill.mode` is separate: `auto`, `setter`, and `keystrokes` choose the DOM fill strategy. `mode: "auto"` may fall back from the setter to keystrokes and reports the used `mode`; it does not select CDP. With `executionMode: "cdp"`, fill uses native clear/text dispatch and reports `mode: "cdp"`.
+
+Stale refs still fail by default. `recoverStale: true` permits one strict recovery attempt only within the current document and unchanged URL, based on a strong unique descriptor such as test ID, ID, role/name, label, or href plus semantic context. Recovery evaluates at most 100 same-tag candidates. If more exist, it returns `ELEMENT_AMBIGUOUS` with `reason: "scan_incomplete"` because uniqueness is not provable, even when the evaluated prefix contains one match. Ambiguous, weak, or changed-URL recovery also fails. Recovered results identify old/new refs and matched fields.
+
+Browser input dispatch is not a generic application-state assertion. Follow each action with the cheapest relevant `dom.wait_for`, `page.wait_for_load_state`, `dom.describe`, or other structured read.
+
 ### input.hover
 
-Trigger CSS `:hover` state by dispatching `mouseenter`, `mouseover`, `mousemove`. Optional `duration` to hold hover before auto-releasing.
+Trigger hover with DOM events by default, or a native pointer move with `executionMode: "cdp"`. Optional `duration` waits before returning; it does not promise a persistent hover after the call.
 
 ```bash
 bbx hover el_abc123
@@ -231,7 +263,7 @@ bbx call input.hover '{"target":{"elementRef":"el_abc123"},"duration":1000}'
 
 ### input.drag
 
-Full drag-and-drop sequence: `mousedown → dragstart → drag → dragenter → dragover → drop → dragend → mouseup`. Accepts source target, destination target, and optional pixel offsets.
+The DOM path dispatches `mousedown → dragstart → drag → dragenter → dragover → drop → dragend → mouseup`. The CDP path performs a bounded interpolated native pointer drag and guarantees a release attempt after failure. Both accept source, destination, and optional destination offsets.
 
 ```bash
 bbx call input.drag '{"source":{"elementRef":"el_src"},"destination":{"elementRef":"el_dst"}}'
@@ -289,7 +321,7 @@ bbx call page.get_text '{"textBudget":2000}'
 
 The fetch/XHR interceptor is installed on the first call. Before reproducing a network issue, call `page.get_network` with `clear: true`, trigger the action, then read the buffer again without `clear` so the relevant request is not missed or erased.
 
-Read intercepted fetch/XHR requests. The interceptor is auto-installed on first call (via MAIN world script). Returns `{entries, count}` sorted newest-first.
+The default `source: "fetch-xhr"` path auto-installs MAIN-world instrumentation on first call and returns completed entries in capture order (oldest to newest among the retained/limited entries). Prime with `clear: true`, reproduce, then read without clearing.
 
 ```bash
 bbx network
@@ -297,19 +329,35 @@ bbx network 50
 bbx call page.get_network '{"limit":20,"clear":true}'
 ```
 
-Each entry: `{method, url, status, duration, initiator}`. Responses include `dropped` when older buffered entries were discarded.
+Each fetch/XHR entry is `{method, url, status, duration, type, ts, size}`. Responses also include `count`, `total`, `filteredTotal`, `source`, `captureState: "instrumented"`, `dropped`, and limit truncation metadata.
+
+For optional all-resource metadata, use the explicit debugger-backed CDP lifecycle. Start clears prior state and holds debugger ownership until stop (or the 10-minute safety expiry); read does not retroactively capture events:
+
+```bash
+bbx call page.get_network '{"source":"cdp","capture":"start"}'
+# reproduce the activity
+bbx call page.get_network '{"source":"cdp","capture":"read","limit":50}'
+bbx call page.get_network '{"source":"cdp","capture":"stop"}'
+```
+
+`capture: "clear"` clears completed/in-flight entries while leaving an armed capture running. CDP entries contain `requestId`, redacted `url`, `method`, `resourceType`, `status`, `mimeType`, `protocol`, cache flags, bounded redirect summary, `failureReason`, `duration`, and `timestamp`. Result lifecycle fields include `armed`, `armedDuringCapture`, `captureState`, `ownershipHeld`, `startedAt`, `inflight`, `dropped`, and `abandoned`.
+
+CDP URL output removes credentials and fragments, replaces every query value with `[redacted]`, and summarizes data/blob URLs. Request/response bodies, cookies, authorization values, and complete headers are not returned. This mode captures all observed resource classes and is materially more expensive and intrusive than fetch/XHR instrumentation; always stop it when finished.
 
 ### dom.get_accessibility_tree
 
-Retrieve the page's accessibility tree via CDP `Accessibility.getFullAXTree`. Each node is simplified to: `role`, `name`, `description`, `value`, `focused`, `required`, `checked`, `disabled`, `interactive`, `childIds`. Use `maxNodes` and `maxDepth` to control size.
+Retrieve a depth-limited accessibility tree via CDP `Accessibility.getFullAXTree`. Nodes include `role`, `name`, `description`, `value`, state fields, `interactive`, `semanticInteractive`, `focusable`, `focusableAndEnabled`, `ignored`, and `childIds`. `interactive` is semantic/focusability metadata, not current pointer actionability.
 
 This is debugger-backed. Prefer `dom.find_by_role`, `dom.find_by_text`, and targeted `dom.query`/`dom.describe` first.
 
 ```bash
 bbx a11y-tree
 bbx a11y-tree 50 3
-bbx call dom.get_accessibility_tree '{"maxNodes":100,"maxDepth":5}'
+bbx call dom.get_accessibility_tree '{"maxNodes":100,"maxDepth":5,"compact":true}'
+bbx call dom.get_accessibility_tree '{"maxNodes":100,"maxDepth":6,"interactiveOnly":true}'
 ```
+
+Filtering occurs before `maxNodes`. Compact mode drops ignored, decorative, and empty nodes while reconnecting retained descendants; interactive-only keeps non-ignored semantic interactive roles. Because CDP applies `maxDepth` before Browser Bridge receives the tree, every result truthfully reports `truncated: true`, `partialTopology: true`, depth metadata, missing-child counts, and a continuation hint. No AX node is written into the page DOM or converted directly into an actionable element ref; use role/name with `dom.find_by_role` before input.
 
 ### viewport.resize
 
@@ -363,6 +411,15 @@ bbx call screenshot.capture_full_page '{}'
 | `ACCESS_DENIED`              | Turn on Browser Bridge for the target window                   | `retry: false`                               |
 | `TAB_MISMATCH`               | Explicit `tabId` is missing, closed, or outside enabled window | `retry: false`, use `tabs.list`              |
 | `ELEMENT_STALE`              | Re-query DOM for fresh `elementRef`                            | `retry: false`, use `dom.query`              |
+| `ELEMENT_AMBIGUOUS`          | Narrow selector or use an explicit ref                         | `retry: false`, use `dom.query`              |
+| `ELEMENT_NOT_ACTIONABLE`     | Inspect hidden/disabled/inert/zero-size target                 | `retry: false`, use `dom.describe`           |
+| `ELEMENT_OBSCURED`           | Inspect the element blocking the target point                  | `retry: false`, use `layout.hit_test`        |
+| `ELEMENT_NOT_FOUND`          | Correct or narrow the selector                                 | `retry: false`, use `dom.query`              |
+| `INPUT_UNSUPPORTED`          | Use DOM execution or a CDP-supported input method              | `retry: false`                               |
+| `INPUT_INVALID_TARGET`       | Choose a control compatible with the input                     | `retry: false`, use `dom.describe`           |
+| `INPUT_FOCUS_CHANGED`        | Inspect focus handlers; do not replay native text blindly      | `retry: false`, use `dom.describe`           |
+| `DIALOG_NOT_OPEN`            | Trigger or inspect the current dialog                          | `retry: false`                               |
+| `DIALOG_ACTION_CONFLICT`     | Inspect again; never auto-repeat a dialog mutation              | `retry: false`                               |
 | `CONTENT_SCRIPT_UNAVAILABLE` | Page is restricted (chrome://, extensions, etc.)               | `retry: false`                               |
 | `NATIVE_HOST_UNAVAILABLE`    | Check daemon: `bbx status`                                     | `retry: false`                               |
 | `EXTENSION_DISCONNECTED`     | Extension not connected to daemon                              | `retry: true` after 3 s, check `health.ping` |

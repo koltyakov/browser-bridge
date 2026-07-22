@@ -206,7 +206,7 @@ export function createBridgeMcpServer() {
     {
       title: 'Browser DOM',
       description:
-        'Query, describe, read, search, or wait for DOM elements. Reuse elementRef from prior results. For full-page text, use browser_page action "text". accessibility_tree is debugger-backed - use query/find first.',
+        'Query, describe, read, search, or wait for DOM elements. Reuse elementRef from prior results. For full-page text, use browser_page action "text". accessibility_tree is debugger-backed and depth-limited - use query/find first.',
       inputSchema: {
         action: z
           .enum([
@@ -337,7 +337,9 @@ export function createBridgeMcpServer() {
         properties: z
           .array(z.string())
           .optional()
-          .describe('Style properties to fetch (omitting returns all - expensive)'),
+          .describe(
+            'Style properties to fetch (omitting returns display, position, width, height, and color)'
+          ),
         x: z
           .number()
           .nonnegative()
@@ -512,7 +514,7 @@ export function createBridgeMcpServer() {
     {
       title: 'Browser Input',
       description:
-        'Simulate user input: click, focus, type, press keys, CDP key events, set checked, select options, hover, drag, or scroll into view. Reuse elementRef from prior queries.',
+        'Dispatch browser input. Targeted click, focus, type, fill, press_key, set_checked, select_option, hover, and drag actions perform actionability checks and report resolution/execution metadata. cdp_press_key and scroll_into_view use separate contracts. Reuse elementRef values and verify application state after mutations.',
       inputSchema: {
         action: z
           .enum([
@@ -566,7 +568,9 @@ export function createBridgeMcpServer() {
         recoverStale: z
           .boolean()
           .optional()
-          .describe('Strict same-document stale elementRef recovery (default: false)'),
+          .describe(
+            'Strict bounded same-document stale elementRef recovery for targeted input actions (default: false; not used by cdp_press_key or scroll_into_view)'
+          ),
         clear: z.boolean().optional().describe('Clear field before typing (default: false)'),
         submit: z.boolean().optional().describe('Press Enter after typing (default: false)'),
         key: z
@@ -622,7 +626,7 @@ export function createBridgeMcpServer() {
     {
       title: 'Browser Patch',
       description:
-        'Apply or rollback reversible style and DOM patches for live prototyping before editing source. Set verify=true to get computed results inline without a follow-up query.',
+        'Apply or rollback document-local style and DOM patches for live prototyping before editing source. commit_baseline keeps current changes but discards rollback history. Set verify=true to get computed results inline.',
       inputSchema: {
         action: z
           .enum(['apply_styles', 'apply_dom', 'list', 'rollback', 'commit_baseline'])

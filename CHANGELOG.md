@@ -6,8 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Reliable input targeting and optional native execution:** Targeted input operations now
+  rank bounded selector candidates by actionability, reject ambiguous or
+  obscured targets with structured errors, report resolution/execution
+  metadata, support explicit CDP execution for click, hover, drag, type, and
+  fill, and offer strict opt-in same-document stale-reference recovery.
+- **Dialogs and event-aware URL waits:** Added explicit inspect, accept, and
+  dismiss operations for observable JavaScript dialogs, plus exact, contains,
+  and restricted-regex URL waits that observe full navigation and SPA history
+  changes without adding a manifest permission.
+- **Compact accessibility and all-resource network inspection:** Accessibility
+  reads can filter compact or semantically interactive nodes, while optional
+  CDP network capture adds an explicit start/read/clear/stop lifecycle for
+  bounded document, script, stylesheet, image, fetch/XHR, WebSocket, and
+  WebTransport metadata.
+- **Consolidated local diagnostics:** `bbx doctor` now combines local transport,
+  extension/profile, enabled-window routing, protocol compatibility, debugger,
+  capture, daemon metrics, setup, recent redacted events, and configured-but-
+  unverified remote destination state.
+
 ### Changed
 
+- **Protocol 1.8 and documentation alignment:** Additive interaction, dialog,
+  navigation-wait, accessibility, network, and diagnostic contracts now ship as
+  protocol 1.8, with npm, lockfile, extension, MCP schema, skill, privacy, and
+  reviewer documentation aligned to implemented behavior.
+- **Input safety and observability:** Input results identify how the target was
+  selected, whether scrolling or stale recovery occurred, the hit-test outcome,
+  and the actual DOM or debugger-backed dispatch path. Input dispatch remains a
+  browser event result, not a guarantee of application state change.
 - **MCP command discovery:** Removed MCP prompt templates so clients such as
   OpenCode no longer expose Browser Bridge workflow prompts as slash commands;
   MCP server instructions continue to provide agent guidance.
@@ -18,6 +47,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   command line is verified to be the bridge daemon; on Linux, socket-owner
   lookup falls back to `ss` (iproute2) when `lsof` is not installed, and TCP
   proxy listeners are verified through `/proc/<pid>/cmdline`.
+
+### Fixed
+
+- **Target and mutation race handling:** Native text input revalidates focus and
+  target identity before each mutation boundary, drag paths guarantee release
+  cleanup, and stale or rerendered post-mutation targets are reported without
+  silently replaying an input.
+- **Dialog, capture, and teardown races:** Dialog actions detect replacement
+  around their non-atomic CDP command, network capture serializes ownership and
+  detach/stop transitions, and window disable or switch attempts best-effort
+  rollback of active patches while clearing capture state.
 
 ## [1.7.6] - 2026-07-18
 

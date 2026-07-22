@@ -4,11 +4,7 @@ import { EventEmitter } from 'node:events';
 import net from 'node:net';
 import type { BridgeTransport } from '../src/config.js';
 
-import {
-  ERROR_CODES,
-  MAX_NATIVE_MESSAGE_BYTES,
-  PROTOCOL_VERSION,
-} from '../../protocol/src/index.js';
+import { ERROR_CODES, MAX_NATIVE_MESSAGE_BYTES } from '../../protocol/src/index.js';
 import {
   bindBridgeSocketLifecycle,
   connectWithBootstrap,
@@ -20,6 +16,7 @@ import {
   frameNativeMessage,
 } from '../../../tests/_helpers/nativeMessaging.ts';
 import { fakeStreamThatErrorsAfterNBytes } from '../../../tests/_helpers/faultInjection.ts';
+import { TEST_PROTOCOL_VERSION as PROTOCOL_VERSION } from '../../../tests/_helpers/socketHarness.ts';
 
 type StdinListeners = {
   data: ReturnType<typeof process.stdin.listeners>;

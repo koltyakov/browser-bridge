@@ -4,13 +4,16 @@ import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createFailure, createSuccess, PROTOCOL_VERSION } from '../../protocol/src/index.js';
+import { createFailure, createSuccess } from '../../protocol/src/index.js';
 import { PUBLISHED_EXTENSION_ID } from '../../native-host/src/config.js';
 import { stopBridgeDaemon } from '../../native-host/src/daemon-process.js';
 import { startMcpProcessControl } from '../../mcp-server/src/lifecycle.js';
 import { runCli } from '../../../tests/_helpers/runCli.ts';
 import { createInstallFs } from '../../../tests/_helpers/installFs.ts';
-import { bridgeServerWith } from '../../../tests/_helpers/socketHarness.ts';
+import {
+  bridgeServerWith,
+  TEST_PROTOCOL_VERSION as PROTOCOL_VERSION,
+} from '../../../tests/_helpers/socketHarness.ts';
 
 type InstallFs = Awaited<ReturnType<typeof createInstallFs>>;
 type BrowserManifestKey = keyof InstallFs['browserManifests'];

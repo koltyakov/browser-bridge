@@ -4,16 +4,16 @@
 
 | Method                   | CLI Shortcut                          | Purpose                                                     |
 | ------------------------ | ------------------------------------- | ----------------------------------------------------------- |
-| `input.click`            | `click <ref> [button]`                | DOM-level click                                             |
+| `input.click`            | `click <ref> [button]`                | Actionability-aware DOM click; optional CDP native click    |
 | `input.focus`            | `focus <ref>`                         | Focus an element                                            |
-| `input.type`             | `type <ref> <text>`                   | Type into input/textarea/contenteditable                    |
-| `input.fill`             | `fill <ref> <value>`                  | Set field value via native setter (React/Vue/Angular-safe)  |
+| `input.type`             | `type <ref> <text>`                   | DOM key sequence; optional CDP native text insertion        |
+| `input.fill`             | `fill <ref> <value>`                  | DOM fill strategy; optional CDP clear and text insertion    |
 | `input.press_key`        | `press-key <key> [ref]`               | Send keyboard key (Enter, Backspace, etc.)                  |
 | `cdp.dispatch_key_event` | `cdp-press-key --tab <id> <key>`      | CDP keyDown/keyUp without focusing the target tab           |
 | `input.set_checked`      | `call input.set_checked '{...}'`      | Toggle checkbox/radio                                       |
 | `input.select_option`    | `call input.select_option '{...}'`    | Select native `<select>` by value/label/index               |
-| `input.hover`            | `hover <ref>`                         | Trigger CSS `:hover` state (mouseenter/mouseover/mousemove) |
-| `input.drag`             | `call input.drag '{...}'`             | Full drag-and-drop event sequence                           |
+| `input.hover`            | `hover <ref>`                         | DOM hover events or optional CDP pointer move               |
+| `input.drag`             | `call input.drag '{...}'`             | DOM drag events or optional CDP pointer drag                |
 | `input.scroll_into_view` | `call input.scroll_into_view '{...}'` | Ensure a target is visible before inspect/capture           |
 
 ## Navigation
@@ -28,6 +28,14 @@ bbx call navigation.go_forward
 
 - `waitForLoad` defaults `true`; set `false` for long-lived pages.
 - If navigation times out, retry with larger `timeoutMs` or check with `page.get_state`.
+
+For a navigation or SPA route caused by input, use event-aware URL conditions instead of polling:
+
+```bash
+bbx call page.wait_for_load_state '{"url":"/dashboard","urlMatch":"contains","waitForLoad":false,"timeoutMs":10000}'
+```
+
+The current URL is checked first. The wait then observes full navigation, tab URL/status updates, `pushState`, `replaceState`, `popstate`, and hash changes. It returns the final URL, elapsed time, and observed navigation kind. `waitForLoad: true` means Chrome tab status `complete`, not `networkidle`. Regex mode is deliberately restricted to a bounded linear subset without grouping, alternation, quantifiers, or backreferences.
 
 ## Viewport
 
@@ -78,15 +86,17 @@ Typical workflow - compare two pages (only when comparison is required):
 
 ## Accessibility Tree
 
-Retrieve the full accessibility tree for the page. Useful for understanding semantic structure, finding interactive elements, and accessibility audits.
+Retrieve a depth-limited accessibility tree for the page. Useful for understanding semantic structure, finding interactive elements, and accessibility audits.
 
 ```bash
 bbx a11y-tree                   # default limits
 bbx a11y-tree 50 3              # max 50 nodes, depth 3
 bbx call dom.get_accessibility_tree '{"maxNodes":100,"maxDepth":5}'
+bbx call dom.get_accessibility_tree '{"maxNodes":100,"maxDepth":6,"compact":true}'
+bbx call dom.get_accessibility_tree '{"maxNodes":100,"maxDepth":6,"interactiveOnly":true}'
 ```
 
-Each node: `role`, `name`, `description`, `value`, `focused`, `required`, `checked`, `disabled`, `interactive`, `childIds`.
+Each node includes semantic state plus `interactive`, `semanticInteractive`, `focusable`, `focusableAndEnabled`, `ignored`, and `childIds`. `interactive` is not a current actionability guarantee. Compact and interactive-only filters run before `maxNodes`; results report partial depth topology, missing children, and continuation guidance. AX nodes do not become page refs, so use `dom.find_by_role` before input.
 
 Typical workflow - find interactive controls:
 
@@ -151,7 +161,7 @@ bbx network 50                           # newly captured requests
 bbx console error                        # newly captured errors
 ```
 
-Each entry: `method`, `url`, `status`, `duration`, `initiator`.
+Default fetch/XHR entries are retained in capture order and contain `method`, `url`, `status`, `duration`, `type`, `ts`, and `size`.
 
 Typical workflow - debug API calls:
 
@@ -160,6 +170,17 @@ Typical workflow - debug API calls:
 3. Read and filter `page.get_network` by URL pattern or status code
 4. Cross-reference with `page.get_console` for errors
 5. Use `page.evaluate` only if lighter evidence cannot expose the needed response state
+
+For document, script, stylesheet, image, WebSocket, WebTransport, and other resource metadata, explicitly arm CDP before reproducing:
+
+```bash
+bbx call page.get_network '{"source":"cdp","capture":"start"}'
+# reproduce activity
+bbx call page.get_network '{"source":"cdp","capture":"read","limit":50}'
+bbx call page.get_network '{"source":"cdp","capture":"stop"}'
+```
+
+This holds debugger ownership and is more expensive than default instrumentation. A plain read cannot recover events from before `start`. CDP results report armed/ownership/inflight/drop state and redact URL credentials, fragments, and query values; bodies, cookies, authorization values, and complete headers are excluded.
 
 ## Network Interception
 
@@ -203,6 +224,28 @@ bbx type el_123 hello                    # simulate per-character keystrokes
 ```
 
 Prefer `fill` for setting form values: it uses the native prototype setter plus `input`/`change`/`blur` events, which React, Vue, and Angular pick up reliably. `mode` defaults to `auto` (setter first, keystroke fallback if the value did not stick); pass `"mode":"keystrokes"` via `bbx call input.fill` for components that only react to per-key events. Use `type` when page logic depends on individual key events (autocomplete, masked inputs).
+
+`mode` is not `executionMode`. The latter accepts only `dom` or `cdp`, defaults to `dom` for compatibility, and selects the dispatch path. CDP execution is available only for click, hover, drag, type, and fill; unsupported combinations fail with `INPUT_UNSUPPORTED` instead of silently changing paths.
+
+## Actionability And Stale Refs
+
+Input selectors preserve the first match when it is actionable. Otherwise Browser Bridge evaluates at most 25 candidates and proceeds only when one is uniquely preferable. It scrolls the selected target as needed, then rechecks rendered bounds, hidden/disabled/inert state, and pointer hit testing. Expect structured `ELEMENT_NOT_FOUND`, `ELEMENT_NOT_ACTIONABLE`, `ELEMENT_OBSCURED`, or `ELEMENT_AMBIGUOUS` errors rather than best-effort retargeting.
+
+Successful targeted click, focus, type, fill, press-key, checked-state, option-selection, hover, and drag results report `resolution` and `execution` metadata. `cdp_press_key` and `scroll_into_view` use separate contracts. Explicit refs preserve exact identity. Stale refs fail by default; `recoverStale: true` allows a single same-document, unchanged-URL recovery only from a strong unique semantic descriptor, and reports old/new refs and matched fields. The recovery scan evaluates at most 100 same-tag candidates and returns `ELEMENT_AMBIGUOUS` with `reason: "scan_incomplete"` whenever additional candidates make uniqueness unprovable. Prefer a fresh query unless this strict recovery contract clearly applies.
+
+After any DOM or CDP input, verify the intended application outcome with a targeted wait or structured read. Event dispatch alone is not proof that application state changed.
+
+## JavaScript Dialogs
+
+Dialogs are never accepted or dismissed automatically:
+
+```bash
+bbx call page.handle_dialog '{"action":"inspect"}'
+bbx call page.handle_dialog '{"action":"accept","expectedDialogId":"00000000-0000-4000-8000-000000000000:1"}' # replace with inspected dialogId
+bbx call page.handle_dialog '{"action":"dismiss","expectedDialogId":"00000000-0000-4000-8000-000000000000:1"}' # replace with inspected dialogId
+```
+
+`expectedDialogId` is checked immediately before the CDP command, but Chrome cannot atomically bind that command to the observation. A successful mutation reports `commandDispatched: true` and `atomicDialogBinding: false`. On `DIALOG_ACTION_CONFLICT`, inspect again and do not automatically repeat the mutation. Dialog text is returned only to the caller and is excluded from persisted action logs.
 
 ## Hover
 
@@ -297,7 +340,7 @@ Use after clicking navigation links.
 
 ## Raw `bbx call` for Interaction Methods
 
-All interaction methods (`input.click`, `input.type`, `input.focus`, `input.hover`, etc.) require the target wrapped in a `target` object -- do not pass `ref` or `elementRef` at the top level:
+Targeted DOM input methods require the target wrapped in a `target` object; `input.press_key` may omit it to use the active element. Do not pass `ref` or `elementRef` at the top level. `cdp.dispatch_key_event` targets the tab, while `input.scroll_into_view` accepts `target` but does not return actionability/execution metadata:
 
 ```bash
 # CORRECT
@@ -318,5 +361,6 @@ The CLI shortcuts (`bbx click el_xxx`) handle this wrapping automatically, but `
 1. **Find target**: `dom.find_by_text`, `dom.find_by_role`, or `dom.query` → get `elementRef`
 2. **Focus** if needed: `input.focus` (for keyboard input)
 3. **Act**: `click`, `type`, `press_key`, `hover`, `drag`, `scroll_into_view`, etc.
-4. **Wait**: `dom.wait_for` if action triggers async updates
-5. **Verify**: `dom.describe`, `styles.get_computed`, or `page.get_console` for errors
+4. **Inspect metadata**: confirm resolution strategy, hit test, stale recovery, and actual execution path
+5. **Wait**: use `dom.wait_for` or an event-aware URL wait if the action triggers async updates
+6. **Verify**: `dom.describe`, `styles.get_computed`, `page.get_state`, or `page.get_console`; never infer app success from dispatch alone

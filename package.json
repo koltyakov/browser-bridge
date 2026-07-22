@@ -1,6 +1,6 @@
 {
   "name": "@browserbridge/bbx",
-  "version": "1.7.8",
+  "version": "1.8.0",
   "private": false,
   "keywords": [
     "agent-tools",
@@ -55,8 +55,9 @@
     "lint": "oxlint . && oxfmt --check .",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
-    "test:runtime": "node --test",
-    "test": "c8 node --test",
+    "fixture:browser": "node tests/fixtures/browser-reliability/server.mjs",
+    "test:runtime": "node --test packages/*/test/*.test.ts packages/integration-tests/*.test.ts tests/fixtures/*/*.test.ts",
+    "test": "c8 node --test packages/*/test/*.test.ts packages/integration-tests/*.test.ts tests/fixtures/*/*.test.ts",
     "coverage": "c8 report --reporter=text --reporter=text-summary",
     "coverage:review": "c8 report --reporter=json-summary && node scripts/review-coverage.mjs",
     "coverage:check": "c8 check-coverage --lines 92 --branches 83",

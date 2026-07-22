@@ -4,12 +4,17 @@ When Browser Bridge is not working, start with local validation before blaming
 the agent integration:
 
 ```bash
-bbx status
 bbx doctor
+bbx status
 bbx restart
 bbx tabs
 bbx logs
 ```
+
+`bbx doctor` diagnoses only the local bridge. Its report redacts page values,
+expressions, secrets, tokens, and full payloads. Configured remotes are listed as
+unverified and are not contacted; run `bbx remote test <name>` separately when a
+remote destination is the problem.
 
 ## The extension is installed, but `bbx status` says it is disconnected
 
@@ -50,9 +55,36 @@ bbx logs
 
 ## Patches disappear
 
-- Patches are session-scoped, not permanent source changes.
-- Navigation, reloads, or session resets can invalidate them.
+- Patch rollback history belongs to the current document, not a durable browser session.
+- Navigation or reload replaces the document and invalidates old patch IDs.
+- Disabling Browser Bridge or switching the enabled window triggers best-effort rollback of active patches.
+- `patch.commit_session_baseline` intentionally keeps live changes while discarding rollback history; it does not write source.
 - Use patches to prove the fix, then move the result into the codebase.
+
+## Input fails or acts on no element
+
+- `ELEMENT_NOT_FOUND` means no selector candidate matched.
+- `ELEMENT_NOT_ACTIONABLE` reports hidden, disabled, inert, transparent, pointer-disabled, detached, or zero-size reasons.
+- `ELEMENT_OBSCURED` includes a bounded blocker description; inspect it or use `layout.hit_test`.
+- `ELEMENT_AMBIGUOUS` means candidates tied or exceeded the bounded 25-candidate resolver; narrow the selector or use a fresh explicit ref.
+- `INPUT_FOCUS_CHANGED` means native text focus moved before dispatch. Inspect focus handlers; do not blindly replay text.
+- Stale refs remain strict by default. Prefer re-querying; use `recoverStale: true` only for one same-document, unchanged-URL attempt with a strong unique descriptor. Recovery evaluates at most 100 same-tag candidates and returns `ELEMENT_AMBIGUOUS` with `reason: "scan_incomplete"` if additional candidates prevent proof of uniqueness.
+- A successful dispatch does not prove app state changed. Verify with a wait or structured read.
+
+## Dialog handling reports a conflict or no dialog
+
+- Dialog actions are explicit and debugger-backed; Browser Bridge never auto-accepts or auto-dismisses.
+- `DIALOG_NOT_OPEN` means no current dialog was observable, including when attachment missed an earlier dialog lifecycle.
+- `DIALOG_ACTION_CONFLICT` means the observed dialog changed around the command. Inspect again and do not automatically repeat accept/dismiss.
+- `expectedDialogId` is checked immediately before dispatch, but Chrome cannot atomically bind its dialog command to that ID.
+
+## CDP network capture is empty or still armed
+
+- Default `page.get_network` captures only fetch/XHR. Use `source: "cdp"` for broader resource metadata.
+- Run `capture: "start"` before reproducing; a later read is not retrospective.
+- Read lifecycle fields such as `armed`, `captureState`, `ownershipHeld`, `inflight`, `dropped`, and `abandoned` before assuming capture was complete.
+- Always run `capture: "stop"` when finished. If debugger detaches or conflicts with DevTools, close the competing debugger and retry the start/reproduce/read/stop sequence.
+- CDP URLs redact credentials, fragments, and query values. Bodies, cookies, authorization values, and complete headers are intentionally unavailable.
 
 ## What to include in a bug report
 

@@ -61,7 +61,7 @@ Send a bridge request and return the response.
 const response = await client.request({
   method: 'dom.query',
   params: { selector: 'h1', maxNodes: 5 },
-  tabId: 123, // optional - required for tab-bound methods
+  tabId: 123, // optional - omit to route to the active tab in the enabled window
   timeoutMs: 10_000, // optional - overrides defaultTimeoutMs
 });
 
@@ -122,9 +122,12 @@ See [`packages/protocol/src/registry.js`](../packages/protocol/src/registry.js) 
 | `dom.find_by_text`           | Find elements by visible text                  |
 | `page.evaluate`              | Run JavaScript in the page context             |
 | `page.get_console`           | Read buffered console output                   |
-| `page.get_network`           | Read intercepted fetch/XHR requests            |
-| `input.click`                | Click an element                               |
-| `input.type`                 | Type text into an element                      |
+| `page.handle_dialog`         | Inspect or explicitly handle current JS dialog |
+| `page.wait_for_load_state`   | Wait for tab complete and/or URL condition      |
+| `page.get_network`           | Fetch/XHR or explicit CDP resource capture      |
+| `dom.get_accessibility_tree` | Depth-limited compact/interactive AX data       |
+| `input.click`                | Actionability-aware DOM or CDP click            |
+| `input.type`                 | Actionability-aware DOM or CDP text input       |
 | `cdp.dispatch_key_event`     | Dispatch keyDown/keyUp through CDP input       |
 | `navigation.navigate`        | Navigate to a URL                              |
 | `screenshot.capture_element` | Capture element as PNG (base64)                |
@@ -139,6 +142,15 @@ See [`packages/protocol/src/registry.js`](../packages/protocol/src/registry.js) 
 | `TIMEOUT`                 | Yes (1 s) | Extension did not respond in time                 |
 | `RATE_LIMITED`            | Yes (2 s) | Too many concurrent requests                      |
 | `ELEMENT_STALE`           | No        | Element was removed from the DOM                  |
+| `ELEMENT_AMBIGUOUS`       | No        | Multiple equally actionable targets matched       |
+| `ELEMENT_NOT_ACTIONABLE`  | No        | Target is hidden, disabled, inert, or zero-sized   |
+| `ELEMENT_OBSCURED`        | No        | Another element blocks the pointer target          |
+| `ELEMENT_NOT_FOUND`       | No        | No element matched the target selector             |
+| `INPUT_UNSUPPORTED`       | No        | Execution path does not support the input method   |
+| `INPUT_INVALID_TARGET`    | No        | Target/control is incompatible with the input      |
+| `INPUT_FOCUS_CHANGED`     | No        | Native text target lost focus before dispatch      |
+| `DIALOG_NOT_OPEN`         | No        | No current dialog is observable                    |
+| `DIALOG_ACTION_CONFLICT`  | No        | Dialog observation changed around dispatch         |
 | `TAB_MISMATCH`            | No        | Tab closed or not found                           |
 | `INVALID_REQUEST`         | No        | Malformed method or params                        |
 | `INTERNAL_ERROR`          | Yes (1 s) | Unexpected extension-side error                   |
@@ -146,6 +158,46 @@ See [`packages/protocol/src/registry.js`](../packages/protocol/src/registry.js) 
 | `CONNECTION_LOST`         | Yes       | Socket dropped mid-request - retry                |
 | `BRIDGE_TIMEOUT`          | Yes (1 s) | Extension took too long - retry with simpler call |
 | `NATIVE_HOST_UNAVAILABLE` | No        | Run `bbx doctor` to diagnose                      |
+
+## Interaction contracts
+
+Targeted `input.click`, `focus`, `type`, `fill`, `press_key`, `set_checked`,
+`select_option`, `hover`, and `drag` calls return bounded `resolution` metadata
+(strategy, candidate counts, scroll/hit-test state, and optional stale recovery)
+plus `execution` metadata (requested/actual `dom` or `cdp` path, debugger use,
+and coordinates). `cdp.dispatch_key_event`/MCP `cdp_press_key` and
+`input.scroll_into_view` have separate response contracts. Explicit refs retain
+identity; selectors are ranked only when the first match is not actionable, and
+ambiguous or obscured targets fail safely.
+
+`executionMode` accepts `dom` or `cdp` and defaults to `dom`. CDP supports click,
+hover, drag, type, and fill. This is distinct from `input.fill.mode`, where
+`auto`, `setter`, and `keystrokes` choose the DOM fill strategy. Stale recovery
+is off by default; `recoverStale: true` is same-document, unchanged-URL, and
+requires one strong unique semantic descriptor. Recovery evaluates at most 100
+same-tag candidates and returns `ELEMENT_AMBIGUOUS` with
+`details.reason: "scan_incomplete"` whenever more candidates exist and
+uniqueness cannot be proven.
+
+Input dispatch does not prove an application accepted the intended change.
+Verify with a targeted wait or structured read.
+
+## Dialog, URL, AX, and network contracts
+
+- `page.handle_dialog` never auto-accepts or auto-dismisses. `expectedDialogId`
+  is a pre-dispatch stale-decision check, not an atomic Chrome binding; inspect
+  again after `DIALOG_ACTION_CONFLICT` rather than replaying the mutation.
+- `page.wait_for_load_state` supports exact, contains, and restricted-regex URL
+  conditions across full and SPA navigation. `waitForLoad` means Chrome tab
+  status `complete`, not `networkidle`.
+- AX results may filter `compact` or `interactiveOnly` before `maxNodes` and
+  always report depth-limited partial-topology metadata. Semantic interactivity
+  is not current actionability.
+- `page.get_network` defaults to fetch/XHR entries
+  `{method,url,status,duration,type,ts,size}` in capture order. `source: "cdp"`
+  requires explicit start/read/clear/stop lifecycle, captures broader resource
+  metadata, holds debugger ownership while armed, redacts URL secrets, and
+  excludes bodies, cookies, authorization values, and complete headers.
 
 ## Using `withBridgeClient`
 

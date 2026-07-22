@@ -105,6 +105,7 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
     );
     assert.equal(registrations[4].config.title, 'Browser Tabs');
     const tabsSchema = registrations[4].config.inputSchema as Record<string, unknown>;
+    const stylesSchema = registrations[6].config.inputSchema as Record<string, unknown>;
     const pageSchema = registrations[7].config.inputSchema as Record<string, unknown>;
     const inputSchema = registrations[9].config.inputSchema as Record<string, unknown>;
     const patchSchema = registrations[10].config.inputSchema as Record<string, unknown>;
@@ -127,6 +128,16 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
     assert.equal(executionMode.safeParse('cdp').success, true);
     assert.equal(executionMode.safeParse('auto').success, false);
     assert.ok(inputSchema.recoverStale);
+    assert.match(String(registrations[9].config.description), /Targeted click/);
+    assert.match(String(registrations[9].config.description), /separate contracts/);
+    assert.match(
+      String((inputSchema.recoverStale as { description?: string }).description),
+      /not used by cdp_press_key or scroll_into_view/
+    );
+    assert.match(
+      String((stylesSchema.properties as { description?: string }).description),
+      /display, position, width, height, and color/
+    );
     assert.equal(patchOperation.safeParse('setProperty').success, false);
     assert.equal(returnByValue.safeParse(true).success, true);
     assert.equal(returnByValue.safeParse(false).success, false);

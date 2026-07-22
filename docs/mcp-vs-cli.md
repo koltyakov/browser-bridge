@@ -25,7 +25,7 @@ Short version:
 
 | Capability | MCP Tool | CLI Command | Notes |
 |------------|----------|-------------|-------|
-| Health check | `browser_status`, `browser_health` | `bbx status`, `bbx doctor` | CLI has separate status/doctor |
+| Health check | `browser_status`, `browser_health` | `bbx status`, `bbx doctor` | Doctor consolidates local diagnostics; it does not probe remotes |
 | Request access | `browser_access` | `bbx access-request` | Surfaces Enable prompt in extension UI |
 | Setup status | `browser_setup` | `bbx doctor` | Check MCP/skill installation |
 | Request logs | `browser_logs` | `bbx logs` | Equivalent |
@@ -60,7 +60,7 @@ Short version:
 | Capability        | MCP Tool                                | CLI Command                | Notes             |
 | ----------------- | --------------------------------------- | -------------------------- | ----------------- |
 | Computed styles   | `browser_styles_layout` (computed)      | `bbx styles <ref> [props]` | Equivalent        |
-| Matched CSS rules | `browser_styles_layout` (matched_rules) | `bbx matched-rules <ref>`  | CLI shortcut      |
+| Class/inline context | `browser_styles_layout` (matched_rules) | `bbx matched-rules <ref>`  | Legacy name; no stylesheet cascade data |
 | Box model         | `browser_styles_layout` (box_model)     | `bbx box <ref>`            | Equivalent        |
 | Hit test          | `browser_styles_layout` (hit_test)      | `bbx call layout.hit_test` | CLI uses raw call |
 
@@ -71,10 +71,11 @@ Short version:
 | Page state          | `browser_page` (state)         | `bbx call page.get_state`           | CLI uses raw call |
 | JavaScript evaluate | `browser_page` (evaluate)      | `bbx eval <expression>`             | Equivalent        |
 | Console output      | `browser_page` (console)       | `bbx console [level]`               | Equivalent        |
-| Wait for load       | `browser_page` (wait_for_load) | `bbx call page.wait_for_load_state` | CLI uses raw call |
+| Handle JS dialog    | `browser_page` (handle_dialog) | `bbx call page.handle_dialog`       | Explicit inspect/accept/dismiss; debugger-backed |
+| Wait for load/URL   | `browser_page` (wait_for_load) | `bbx call page.wait_for_load_state` | Full and SPA navigation; truthful tab complete state |
 | Browser storage     | `browser_page` (storage)       | `bbx storage [type] [keys]`         | Equivalent        |
 | Page text           | `browser_page` (text)          | `bbx page-text [budget]`            | Equivalent        |
-| Network requests    | `browser_page` (network)       | `bbx network [limit]`               | Equivalent        |
+| Network requests    | `browser_page` (network)       | `bbx network [limit]`               | Fetch/XHR shortcut; raw calls expose CDP lifecycle |
 | Performance metrics | `browser_page` (performance)   | `bbx perf`                          | Equivalent        |
 
 ### Navigation
@@ -92,14 +93,14 @@ Short version:
 
 | Capability              | MCP Tool                           | CLI Command                       | Notes             |
 | ----------------------- | ---------------------------------- | --------------------------------- | ----------------- |
-| Click element           | `browser_input` (click)            | `bbx click <ref> [button]`        | Equivalent        |
+| Click element           | `browser_input` (click)            | `bbx click <ref> [button]`        | DOM default; raw call can request CDP |
 | Focus element           | `browser_input` (focus)            | `bbx focus <ref>`                 | Equivalent        |
-| Type text               | `browser_input` (type)             | `bbx type <ref> <text>`           | Equivalent        |
+| Type text               | `browser_input` (type)             | `bbx type <ref> <text>`           | DOM default; raw call can request CDP |
 | Press key               | `browser_input` (press_key)        | `bbx press-key <key> [ref]`       | Equivalent        |
 | Set checked             | `browser_input` (set_checked)      | `bbx call input.set_checked`      | CLI uses raw call |
 | Select option           | `browser_input` (select_option)    | `bbx call input.select_option`    | CLI uses raw call |
-| Hover                   | `browser_input` (hover)            | `bbx hover <ref>`                 | Equivalent        |
-| Drag                    | `browser_input` (drag)             | `bbx call input.drag`             | CLI uses raw call |
+| Hover                   | `browser_input` (hover)            | `bbx hover <ref>`                 | DOM default; optional native pointer path |
+| Drag                    | `browser_input` (drag)             | `bbx call input.drag`             | DOM events or optional native pointer path |
 | Scroll target into view | `browser_input` (scroll_into_view) | `bbx call input.scroll_into_view` | CLI uses raw call |
 
 ### Patching
@@ -110,7 +111,7 @@ Short version:
 | Apply DOM patch   | `browser_patch` (apply_dom)       | `bbx patch-text <ref> <text>`       | CLI has text-specific shortcut |
 | List patches      | `browser_patch` (list)            | `bbx patches`                       | Equivalent                     |
 | Rollback patch    | `browser_patch` (rollback)        | `bbx rollback <patchId>`            | Equivalent                     |
-| Commit baseline   | `browser_patch` (commit_baseline) | `bbx call patch.commit_session_baseline` | CLI uses raw call              |
+| Commit baseline   | `browser_patch` (commit_baseline) | `bbx call patch.commit_session_baseline` | Keeps live changes, discards rollback records |
 
 ### Capture & Screenshots
 
@@ -212,6 +213,22 @@ Escalate to `bbx screenshot`, `screenshot.capture_region`, or `screenshot.captur
 | Access routing | Follows active tab in enabled window by default | Follows active tab in enabled window by default |
 | Explicit targeting | `tabId` on grouped tools | `bbx call --tab <tabId> ...` |
 | Concurrency | Multiple tool calls | `batch` command or parallel shells |
+
+The underlying targeted-input safety contract is identical in both paths for
+click, focus, type, fill, press-key, checked-state, option-selection, hover, and
+drag: explicit refs retain identity; selector candidates are actionability-
+checked; ambiguous, obscured, disabled, or stale targets fail with structured
+details; and results report resolution/execution metadata. `cdp_press_key` and
+`scroll_into_view` use separate contracts. `executionMode` (`dom` or `cdp`) is
+separate from `input.fill.mode` (`auto`, `setter`, `keystrokes`). Stale recovery
+is strict, same-document, opt-in, and bounded to 100 same-tag candidates; an
+incomplete scan fails rather than claiming uniqueness. Both paths should verify
+application state after dispatch.
+
+For CDP network capture, both paths require `start` before reproduction, then
+`read` and `stop`; no read is retrospective. For dialog mutations, both paths
+treat `expectedDialogId` as a pre-dispatch check rather than an atomic Chrome
+binding and must not auto-repeat conflicts.
 
 ## Use Case Recommendations
 

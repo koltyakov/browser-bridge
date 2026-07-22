@@ -51,7 +51,7 @@ function loadRepositoryProtocolVersion(): string {
   return deriveProtocolVersion(typeof packageVersion === 'string' ? packageVersion : null);
 }
 
-const TEST_PROTOCOL_VERSION = loadRepositoryProtocolVersion();
+export const TEST_PROTOCOL_VERSION = loadRepositoryProtocolVersion();
 
 function getTempSocketRoot(): string {
   return process.platform === 'win32' ? os.tmpdir() : fs.existsSync('/tmp') ? '/tmp' : os.tmpdir();

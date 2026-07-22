@@ -6,7 +6,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import type { AddressInfo, Server, Socket } from 'node:net';
 
-import { createSuccess, PROTOCOL_VERSION } from '../../protocol/src/index.js';
+import { createSuccess } from '../../protocol/src/index.js';
 import type { BridgeResponse } from '../../protocol/src/types.js';
 import {
   interactiveCheckbox,
@@ -39,7 +39,10 @@ import {
 import { annotateBridgeSummary, summarizeBridgeResponse } from '../src/subagent.js';
 import { BridgeClient } from '../src/client.js';
 import { clockController } from '../../../tests/_helpers/faultInjection.ts';
-import { bridgeServerWith } from '../../../tests/_helpers/socketHarness.ts';
+import {
+  bridgeServerWith,
+  TEST_PROTOCOL_VERSION as PROTOCOL_VERSION,
+} from '../../../tests/_helpers/socketHarness.ts';
 
 const expectedMcpCommand = 'bbx';
 const expectedMcpArgs = ['mcp', 'serve'];

@@ -2,12 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { handleHealthTool } from '../../mcp-server/src/handlers.js';
 import { runNativeHost } from '../../native-host/src/native-host.js';
-import {
-  createFailure,
-  createRequest,
-  createSuccess,
-  PROTOCOL_VERSION,
-} from '../../protocol/src/index.js';
+import { createFailure, createRequest, createSuccess } from '../../protocol/src/index.js';
 import {
   decodeNativeMessages,
   frameNativeMessage,
@@ -16,6 +11,7 @@ import { runCli } from '../../../tests/_helpers/runCli.ts';
 import {
   bridgeServerWith,
   startBridgeSocketServer,
+  TEST_PROTOCOL_VERSION as PROTOCOL_VERSION,
 } from '../../../tests/_helpers/socketHarness.ts';
 import type { BridgeRequest } from '../../protocol/src/types.js';
 

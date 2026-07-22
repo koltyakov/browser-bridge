@@ -4,7 +4,7 @@
 
 > **Chrome Web Store:** Install `Browser Bridge (BBX)` from the [Chrome Web Store](https://chromewebstore.google.com/detail/browser-bridge/jjjkmmcdkpcgamlopogicbnnhdgebhie). For local or custom builds, use the unpacked install flow in [docs/unpacked-extension.md](https://github.com/koltyakov/browser-bridge/blob/main/docs/unpacked-extension.md).
 
-A local bridge between your coding agent and a real Chrome tab. Browser Bridge gives the agent structured access to DOM, styles, layout, console, network, and reversible patches - starting from the actual tab you already have open, with all its real state intact.
+A local bridge between your coding agent and a real Chrome tab. Browser Bridge gives the agent structured access to DOM, styles, layout, console, network, accessibility data, reliable browser input, explicit JavaScript dialog handling, and reversible patches - starting from the actual tab you already have open, with all its real state intact.
 
 See [Quickstart](https://github.com/koltyakov/browser-bridge/blob/main/docs/quickstart.md) to get started in another repo, or browse the rest of the guides in [docs/index.md](https://github.com/koltyakov/browser-bridge/blob/main/docs/index.md).
 
@@ -101,7 +101,7 @@ Managed installs support OpenAI Codex, Claude Code, Cursor, GitHub Copilot, Open
 
 Most adjacent tools optimize for different goals. [Playwright](https://playwright.dev/) and headless automation stacks are excellent for deterministic tests and CI - but they start from a clean browser context by design. [Claude in Chrome](https://support.claude.com/en/articles/12012173-get-started-with-claude-in-chrome) is great for integrated Claude workflows, and the [Codex extension](https://chromewebstore.google.com/detail/codex/hehggadaopoacecdllhhajmbjkdcmajg) is a great option if you use Codex, but both are vendor-specific. Generic MCP browser servers offer broad control without the developer-focused depth.
 
-Browser Bridge is optimized for the opposite starting point: **inspect the state that already exists** in a real tab - logged-in sessions, feature flags, seeded storage, SPA state - use structured reads to understand it, test a patch in place, then fix the source. It's open-source, agent-agnostic, and scoped to explicit tab sessions rather than ambient browser control.
+Browser Bridge is optimized for the opposite starting point: **inspect the state that already exists** in a real tab - logged-in sessions, feature flags, seeded storage, SPA state - use structured reads to understand it, test a patch in place, then fix the source. It's open-source, agent-agnostic, and scoped to one explicitly enabled browser window rather than ambient browser control.
 
 ## Setup
 
@@ -120,9 +120,13 @@ MCP mode is self-contained: the server exposes tools and startup instructions, s
 
 - The extension is scoped to one explicitly enabled Chrome window at a time - no ambient browser access
 - Requests default to the active tab in that window unless a tab is targeted explicitly
-- Sessions are tab and origin scoped, auto-refreshed when possible
-- All patch operations are reversible and session-scoped
+- Targeted input actions reject hidden, disabled, ambiguous, stale, or obscured targets instead of silently guessing; their responses report the resolution and DOM/CDP execution path (`cdp_press_key` and `scroll_into_view` use separate contracts)
+- Native pointer/text input, dialog handling, all-resource network capture, accessibility trees, screenshots, and raw CDP reads use the existing debugger permission only when requested
+- Element references are document-local and strict by default; stale input recovery is opt-in, same-document, requires one strong unique semantic match, and fails safely when its bounded scan cannot prove uniqueness
+- Patches keep per-document rollback history and Browser Bridge attempts best-effort rollback when window access is disabled or switched; committing the patch baseline keeps current changes but discards their rollback history
+- URL waits observe full navigation and same-document SPA changes, and report the final URL and observed navigation kind
 - Structured DOM/style/layout reads are the primary transport; screenshots are a fallback
+- Browser input dispatch does not prove the application accepted the intended change, so agents should verify with a wait or structured read
 - Open-ended investigation should start with structured reads on a smaller, lower-cost subagent when the client supports delegation
 - The native host daemon auto-starts on demand
 
@@ -139,7 +143,7 @@ MCP mode is self-contained: the server exposes tools and startup instructions, s
 
 ## Privacy
 
-Browser Bridge itself routes extension data locally through the Chrome extension, native host, and the local client you choose to connect. Browser Bridge does not operate a Browser Bridge cloud service.
+The extension and native host communicate on the browser machine, and local clients connect to that daemon by default. If you explicitly configure an authenticated remote destination, bridge results can travel over your user-provided SSH tunnel or network route to the selected client. Browser Bridge does not operate a Browser Bridge cloud service, and raw remote TCP is not presented as encrypted.
 
 Your connected agent or IDE may still forward tool calls or tool results to remote services under that product's own settings and privacy policy. See [PRIVACY.md](https://github.com/koltyakov/browser-bridge/blob/main/PRIVACY.md) for the Browser Bridge policy.
 

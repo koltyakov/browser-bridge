@@ -1,11 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
-import { SUPPORTED_VERSIONS } from '../../protocol/src/index.js';
+import {
+  getSupportedProtocolVersions,
+  setProtocolPackageVersion,
+} from '../../protocol/src/index.js';
 import {
   compareProtocolVersions,
   getVersionNegotiationPayload,
 } from '../src/background-versioning.js';
+
+const packageJson: unknown = JSON.parse(
+  fs.readFileSync(new URL('../../../package.json', import.meta.url), 'utf8')
+);
+const packageVersion =
+  packageJson && typeof packageJson === 'object' && 'version' in packageJson
+    ? packageJson.version
+    : null;
+if (typeof packageVersion !== 'string') {
+  throw new TypeError('Expected package.json to contain a string version');
+}
+setProtocolPackageVersion(packageVersion);
+const SUPPORTED_VERSIONS = getSupportedProtocolVersions();
 
 test('compareProtocolVersions correctly orders semver-ish strings', () => {
   assert.equal(compareProtocolVersions('1.0', '1.0'), 0);

@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Browser Bridge reliability fixture</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+    <script type="module" src="/assets/app.js"></script>
+  </head>
+  <body>
+    <header>
+      <p class="eyebrow">Maintainer fixture</p>
+      <h1>Real-browser reliability</h1>
+      <p>
+        Every successful interaction writes a stable key to the observable state and appends a
+        bounded log entry.
+      </p>
+    </header>
+
+    <main>
+      <section id="target-resolution" aria-labelledby="target-resolution-title">
+        <h2 id="target-resolution-title">Target resolution</h2>
+        <div class="fixture-grid">
+          <article>
+            <h3>Hidden duplicate</h3>
+            <button class="duplicate-action" data-fixture="hidden-duplicate" hidden>
+              Duplicate action
+            </button>
+            <button
+              class="duplicate-action"
+              data-fixture="visible-duplicate"
+              data-action="visible-duplicate"
+            >
+              Duplicate action
+            </button>
+          </article>
+
+          <article>
+            <h3>Duplicate labels</h3>
+            <label for="duplicate-label-a">Shared label</label>
+            <input id="duplicate-label-a" data-fixture="duplicate-label-a" />
+            <label for="duplicate-label-b">Shared label</label>
+            <input id="duplicate-label-b" data-fixture="duplicate-label-b" />
+          </article>
+
+          <article>
+            <h3>Obscured target</h3>
+            <div class="overlay-stage">
+              <button id="overlay-target" data-action="overlay-target">Covered action</button>
+              <div id="blocking-overlay" aria-label="Blocking overlay">Blocking overlay</div>
+            </div>
+            <button id="overlay-toggle" data-action="overlay-toggle">Toggle overlay</button>
+          </article>
+
+          <article>
+            <h3>Unavailable targets</h3>
+            <button id="disabled-target" disabled data-fixture="disabled-control">Disabled</button>
+            <div inert data-fixture="inert-region">
+              <button id="inert-target">Inert action</button>
+              <input id="inert-input" value="inert" />
+            </div>
+          </article>
+
+          <article>
+            <h3>Unrendered targets</h3>
+            <button id="zero-size-target" class="zero-size" data-action="zero-size">
+              Zero-size action
+            </button>
+            <button
+              id="pointer-events-target"
+              class="pointer-events-none"
+              data-action="pointer-events-none"
+            >
+              No pointer events
+            </button>
+          </article>
+        </div>
+      </section>
+
+      <section id="native-input" aria-labelledby="native-input-title">
+        <h2 id="native-input-title">DOM and native input</h2>
+        <div class="fixture-grid">
+          <article>
+            <h3>Custom widgets</h3>
+            <div
+              id="custom-button"
+              role="button"
+              tabindex="0"
+              data-action="custom-button"
+              aria-label="Custom action"
+            >
+              Custom action
+            </div>
+            <button id="menu-button" aria-haspopup="menu" aria-expanded="false">Menu</button>
+            <ul id="custom-menu" role="menu" hidden>
+              <li role="menuitem" tabindex="-1" data-action="menu-alpha">Alpha</li>
+              <li role="menuitem" tabindex="-1" data-action="menu-beta">Beta</li>
+            </ul>
+          </article>
+
+          <article>
+            <h3>CSS hover tooltip</h3>
+            <div id="hover-trigger" class="hover-trigger" tabindex="0">
+              Hover target
+              <span id="hover-tooltip" role="tooltip">CSS tooltip visible</span>
+            </div>
+          </article>
+
+          <article>
+            <h3>Drag and drop</h3>
+            <div id="drag-source" draggable="true">Drag source</div>
+            <div id="drop-target">Drop target</div>
+          </article>
+
+          <article>
+            <h3>Canvas coordinates</h3>
+            <canvas id="coordinate-canvas" width="240" height="120">
+              Canvas coordinate target
+            </canvas>
+            <output id="canvas-output">No canvas click</output>
+          </article>
+
+          <article>
+            <h3>Controlled and replacing inputs</h3>
+            <div id="controlled-input-host"></div>
+            <div id="focus-replacement-host"></div>
+            <div id="input-replacement-host"></div>
+          </article>
+
+          <article>
+            <h3>Keyboard shortcut</h3>
+            <p>Press <kbd>Control</kbd>/<kbd>Command</kbd> + <kbd>Shift</kbd> + <kbd>K</kbd>.</p>
+            <output id="shortcut-output">Shortcut idle</output>
+          </article>
+        </div>
+      </section>
+
+      <section id="dialogs" aria-labelledby="dialogs-title">
+        <h2 id="dialogs-title">JavaScript dialogs</h2>
+        <p>These buttons intentionally block the tab. No dialog opens automatically.</p>
+        <div class="button-row">
+          <button id="alert-button">Open alert</button>
+          <button id="confirm-button">Open confirm</button>
+          <button id="prompt-button">Open prompt</button>
+          <button id="consecutive-dialog-button">Open consecutive alerts</button>
+          <label class="toggle-label">
+            <input id="beforeunload-toggle" type="checkbox" /> Arm beforeunload confirmation
+          </label>
+        </div>
+      </section>
+
+      <section id="navigation" aria-labelledby="navigation-title">
+        <h2 id="navigation-title">Navigation and URL events</h2>
+        <div class="button-row">
+          <button id="push-state-button">pushState</button>
+          <button id="replace-state-button">replaceState</button>
+          <button id="history-back-button">history.back</button>
+          <button id="hash-button">Change hash</button>
+          <a id="redirect-link" href="/redirect">Redirect route</a>
+        </div>
+        <output id="url-output"></output>
+      </section>
+
+      <section id="network" aria-labelledby="network-title">
+        <h2 id="network-title">Network resources</h2>
+        <p>
+          The document, stylesheet, module script, and image load with the page. Reproduce adds
+          fetch, XHR, script, image, WebSocket, cache, slow, HTTP failure, and aborted resources.
+        </p>
+        <img id="initial-image" src="/assets/fixture.svg" alt="Fixture network resource" />
+        <div class="button-row">
+          <button id="network-reproduce-button">Reproduce network set</button>
+          <button id="network-cache-button">Request cache resource</button>
+        </div>
+        <output id="network-output">Network set idle</output>
+        <div id="dynamic-resource-host" aria-hidden="true"></div>
+      </section>
+
+      <div class="offscreen-spacer" aria-hidden="true">Offscreen boundary</div>
+      <section id="offscreen" aria-labelledby="offscreen-title">
+        <h2 id="offscreen-title">Offscreen target</h2>
+        <button id="offscreen-target" data-action="offscreen-target">Scroll-required action</button>
+      </section>
+    </main>
+
+    <aside id="observability" aria-labelledby="observability-title">
+      <h2 id="observability-title">Observable state</h2>
+      <pre id="fixture-state" data-fixture-ready="false">{"ready":false}</pre>
+      <h3>Bounded event log</h3>
+      <ol id="fixture-log" aria-live="polite"></ol>
+      <button id="reset-button">Reset observable state</button>
+    </aside>
+  </body>
+</html>

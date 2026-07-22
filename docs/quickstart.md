@@ -4,7 +4,7 @@ Browser Bridge lets your coding agent inspect and patch the real Chrome or Chrom
 
 > **Requires:** Google Chrome or a supported Chromium-based browser, plus Node.js on the same machine as your agent. Remote-only agents (e.g. GitHub.com Copilot) cannot reach a local browser instance.
 >
-> **Privacy:** Browser Bridge itself sends extension data locally to the companion host and connected local client. Your chosen agent or IDE may still forward tool results onward under its own policy. See [`PRIVACY.md`](../PRIVACY.md).
+> **Privacy:** The extension and native host communicate on the browser machine, and local clients are the default. Explicitly configured authenticated remote destinations can carry results over your own tunnel or network route. Your chosen agent or IDE may also forward tool results under its own policy. See [`PRIVACY.md`](../PRIVACY.md).
 
 ## 1. Install the extension
 
@@ -110,7 +110,7 @@ You can refer to it as `BB MCP` or `Browser Bridge MCP`; both should work.
 For GitHub Copilot, invoke the skill by name, for example `/browser-bridge`.
 `bbx` is the Browser Bridge CLI command, not a guaranteed Copilot skill alias.
 
-In both cases the agent reads live DOM, styles, console, and network state from your real tab. Patches are reversible and session-scoped. When visual confirmation is still needed after structured reads, prefer a partial element screenshot or a tight region crop instead of a larger page capture before writing the fix back to source.
+In both cases the agent reads live DOM, styles, console, and network state from your real tab. Targeted input actions report how the target was resolved and whether DOM or optional native CDP dispatch was used; `cdp_press_key` and `scroll_into_view` use separate response contracts. The agent should still verify the application outcome with a wait or structured read. Patches keep rollback history in the current document, and Browser Bridge attempts best-effort rollback when access is disabled or switched while the document remains available. When visual confirmation is still needed after structured reads, prefer a partial element screenshot or a tight region crop instead of a larger page capture before writing the fix back to source.
 
 For open-ended inspection in MCP mode, start with `browser_investigate`. It is read-only and intended to be delegated to a smaller, lower-cost subagent when the client supports delegation. For explicit parallel MCP reads use `browser_batch`; `batch` is not a valid method for `browser_call`. The CLI-skill equivalent is to start with `bbx batch` or `bbx call` using `page.get_state`, `dom.query`, and `page.get_text` before escalating to screenshots.
 

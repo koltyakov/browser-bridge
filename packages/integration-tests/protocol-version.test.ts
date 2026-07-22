@@ -6,8 +6,11 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import type { ChildProcess } from 'node:child_process';
 
-import { PROTOCOL_VERSION, parseJsonLines } from '../protocol/src/index.js';
-import { withTempSocketPath } from '../../tests/_helpers/socketHarness.ts';
+import { parseJsonLines } from '../protocol/src/index.js';
+import {
+  TEST_PROTOCOL_VERSION as PROTOCOL_VERSION,
+  withTempSocketPath,
+} from '../../tests/_helpers/socketHarness.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

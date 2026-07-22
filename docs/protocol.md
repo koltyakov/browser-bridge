@@ -13,9 +13,14 @@ getProtocolVersion(); // major.minor from package.json or manifest.json
 getSupportedProtocolVersions(); // [getProtocolVersion()]
 ```
 
-Major-minor must match for protocol compatibility. Published package and
-extension artifacts must also use the same full release version; `npm run
-check:release-version` enforces that invariant.
+The current release is package/extension `1.8.0` and protocol `1.8`.
+
+Major-minor must match for protocol compatibility. The protocol 1.8 additions
+are additive, but this build advertises only `1.8`; a 1.7 client, daemon, or
+extension is therefore reported as incompatible until all installed components
+are updated/restarted. Published package, lockfile, and extension artifacts use
+the same full release version; `npm run check:release-version` enforces the
+package/extension invariant and tests enforce lockfile alignment.
 
 ## When negotiation happens
 
@@ -32,7 +37,7 @@ sends a `health.ping` request with its protocol version embedded in
     "method": "health.ping",
     "params": {},
     "meta": {
-      "protocol_version": "<package major.minor>",
+        "protocol_version": "1.8",
       "token_budget": null
     }
   }
@@ -56,7 +61,7 @@ includes only the supported versions list:
   "result": {
     "daemon": "ok",
     "extensionConnected": true,
-    "supported_versions": ["<package major.minor>"]
+    "supported_versions": ["1.8"]
   }
 }
 ```
@@ -143,7 +148,7 @@ Versions are compared as dot-separated numeric sequences
 ## Adding a new protocol version
 
 1. Update the root `package.json` and extension `manifest.json` version.
-2. Publish the updated `@browserbridge/protocol` package.
+2. Publish the updated `@browserbridge/bbx` npm package and matching extension artifact.
 3. The daemon automatically advertises the new major-minor version. Clients that still send
    the old version will receive a `deprecated_since` hint pointing them to
    upgrade.

@@ -184,17 +184,17 @@ setupContextMenu.hidden = true;
 document.body.append(setupContextMenu);
 
 const CLI_PROMPT_EXAMPLES = Object.freeze([
-  'Check why the button looks broken using Browser Bridge.',
-  'Inspect the live layout and fix the spacing issues.',
-  'Verify that the form validation flow works correctly.',
-  'Inspect console errors on this page using Browser Bridge.',
+  'Use Browser Bridge to explain why this button is not actionable.',
+  'Inspect the live layout, test a reversible spacing patch, then verify it.',
+  'Run the form flow and verify the page state after each input action.',
+  'Prime network capture, reproduce this failure, and inspect the resulting errors.',
 ]);
 
 const MCP_PROMPT_EXAMPLES = Object.freeze([
-  'Use BB MCP to inspect why the button looks broken.',
-  'Use BB MCP to compare the live layout to the design and fix spacing issues.',
-  'Use BB MCP to verify the form validation flow works correctly.',
-  'Use BB MCP to inspect console and network errors on this page.',
+  'Use BB MCP to explain why this button is not actionable.',
+  'Use BB MCP to test a reversible layout patch and verify the result.',
+  'Use BB MCP to run the form flow and verify state after each input action.',
+  'Use BB MCP to prime network capture, reproduce the failure, and inspect errors.',
 ]);
 const ACTIVITY_HISTOGRAM_WINDOW_MS = 10 * 60 * 1000;
 const ACTIVITY_HISTOGRAM_BUCKET_MS = 30 * 1000;

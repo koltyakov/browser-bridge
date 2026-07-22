@@ -10,13 +10,12 @@ import type { Readable, Writable } from 'node:stream';
 import { BridgeClient } from '../agent-client/src/client.js';
 import { pingExistingDaemon } from '../native-host/src/daemon.js';
 import { createNativeMessageReader } from '../native-host/src/framing.js';
-import {
-  createSuccess,
-  MAX_NATIVE_MESSAGE_BYTES,
-  PROTOCOL_VERSION,
-} from '../protocol/src/index.js';
+import { createSuccess, MAX_NATIVE_MESSAGE_BYTES } from '../protocol/src/index.js';
 import { frameNativeMessage } from '../../tests/_helpers/nativeMessaging.ts';
-import { withTempSocketPath } from '../../tests/_helpers/socketHarness.ts';
+import {
+  TEST_PROTOCOL_VERSION as PROTOCOL_VERSION,
+  withTempSocketPath,
+} from '../../tests/_helpers/socketHarness.ts';
 import type { BridgeRequest } from '../../packages/protocol/src/types.js';
 
 type ProcessResult = {

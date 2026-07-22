@@ -13,7 +13,7 @@ The published npm package now embeds the Browser Bridge store extension ID, so e
 
 ## Release Checklist
 
-1. Bump [package.json](../package.json) when releasing the CLI/npm package and [manifest.json](../manifest.json) when releasing the extension ZIP. They can advance independently.
+1. Bump [package.json](../package.json), [package-lock.json](../package-lock.json), and [manifest.json](../manifest.json) to the same full release version. Protocol compatibility derives from package/extension major-minor.
 2. Run `npm install` if dependencies changed.
 3. Run `npm run release:check`.
 4. In npm package settings, add a GitHub Actions trusted publisher for this repository and workflow file `release.yml`.
@@ -66,30 +66,35 @@ The manifest now includes packaged extension icons, but the promo image and scre
 
 Use one narrow sentence. Suggested draft:
 
-`Browser Bridge lets a local developer agent inspect and patch web pages in an explicitly enabled Chrome window through a local native messaging bridge.`
+`Browser Bridge lets a connected developer agent inspect and patch web pages in an explicitly enabled Chrome window through a native messaging bridge on the browser machine.`
+
+The text in this document is guidance only; it is not uploaded automatically. Before every submission, manually compare the Chrome Web Store dashboard listing, privacy answers, and reviewer instructions with this document and the current source behavior, then update both sides together.
 
 ### Permission justifications
 
 Use reviewer-facing explanations tied to the product purpose:
 
-- `debugger`: used for Chrome DevTools Protocol reads and page-context evaluation, such as DOM snapshots, computed styles, screenshots, accessibility data, and page inspection helpers
+- `debugger`: used on demand for Chrome DevTools Protocol reads and page-context evaluation, screenshots, depth-limited accessibility data, native pointer/text dispatch, explicit JavaScript dialog inspection/accept/dismiss, optional bounded all-resource network metadata, and related debugger-backed inspection helpers; Browser Bridge coordinates short operations or explicit capture/interception ownership rather than attaching permanently
+- `alarms`: periodically wakes the Manifest V3 service worker while a browser window is explicitly enabled so native messaging and bridge routing remain responsive; the alarm is cleared when access is disabled
 - `nativeMessaging`: required to communicate with the local Browser Bridge daemon
 - `scripting`: used to inject and coordinate the scoped page instrumentation flow
 - `sidePanel`: provides the side panel control surface
-- `storage`: persists window approvals, session state, and recent UI state for the current browser session
+- `storage`: persists enabled-window approval, bounded recent action summaries, and setup/UI state for the current browser session
 - `tabs`: enumerates tabs and validates that a request stays inside the enabled window
 - `host_permissions` on `<all_urls>`: needed because the tool is designed to inspect whichever site the user explicitly approves, not a fixed site list
 
-Reviewers will likely scrutinize `debugger`, `nativeMessaging`, and `<all_urls>`. Keep the listing language narrow and explicit about user approval and local-only operation.
+Reviewers will likely scrutinize `debugger`, `nativeMessaging`, and `<all_urls>`. Keep the listing language narrow and explicit about user approval, the local extension/native-host path, and the separately configured authenticated remote option. Do not describe raw remote TCP as encrypted.
 
 ### Privacy fields
 
 Current expected answers with the code as it exists today:
 
 - Remote code: do not default this to `No`. Browser Bridge can execute user-requested expressions in page context through the Chrome Debugger API. Answer this honestly in the dashboard and explain that the extension does not load remote-hosted extension scripts.
-- Data collection: disclose the page data the product can access for the enabled window, including browsing/page content, DOM/style/layout data, console output, network metadata, storage values when requested, and screenshots when requested
+- Data collection: disclose the page data the product can access for the enabled window, including browsing/page content, DOM/style/layout and semantic accessibility data, console output, fetch/XHR and optional all-resource network metadata, dialog messages/default prompt text, storage values when requested, screenshots when requested, and native pointer/text actions
+- Network exclusions: explain that CDP URLs redact credentials, fragments, and query values, and that Browser Bridge does not return request/response bodies, cookies, authorization values, or complete headers from all-resource capture
+- Diagnostics and stale recovery: explain that persisted diagnostic summaries exclude dialog text and sensitive payload values, while optional same-document stale recovery keeps bounded in-memory hashed semantic descriptors rather than writing ref attributes into the page
 - Data sale: `No`
-- Data handling: Browser Bridge itself routes data locally to the native host and connected local client; a connected agent or IDE may still forward data onward under its own policy
+- Data handling: the extension and native host communicate on the browser machine, and local clients are the default; an explicitly configured authenticated remote destination can receive results over the user's own SSH tunnel or network route, and a connected agent or IDE may still forward data onward under its own policy
 - Privacy policy: must clearly state what data the extension can access, that approval is window-scoped, and that Browser Bridge itself does not operate a Browser Bridge cloud service
 
 If product behavior changes, update the privacy answers before submission.
@@ -102,10 +107,18 @@ Google marks the Test Instructions tab as optional, but Browser Bridge should st
 2. Install Node.js 20+ on the same machine.
 3. Run `npm install -g @browserbridge/bbx`.
 4. Run `bbx install`.
-5. If needed, run `bbx-daemon`.
+5. Run `bbx doctor`, then `bbx status`. If the daemon is still unavailable, run `bbx-daemon` and repeat those checks.
 6. Open any normal web page in Chrome.
 7. Open the Browser Bridge popup or side panel and enable Browser Bridge for the current browser window.
-8. In a terminal, run `bbx status`, `bbx tabs`, and `bbx page-text`.
+8. Run `bbx tabs`, `bbx page-text`, `bbx call dom.query '{"selector":"body","maxNodes":5}'`, `bbx call styles.get_computed '{"selector":"body"}'`, and `bbx call dom.get_accessibility_tree '{"maxNodes":20,"maxDepth":3,"interactiveOnly":true}'`. Confirm each returns bounded structured data from the enabled window.
+9. On a test page with a button and text field, query each element to obtain its ref. Run DOM click/type calls and verify the page state with DOM reads. Repeat with raw `input.click` or `input.type` using `executionMode: "cdp"`, and verify again. Confirm targeted calls include resolution/execution metadata; `cdp_press_key` and `scroll_into_view` use separate contracts. This demonstrates native input without claiming dispatch guarantees application state.
+10. Apply a temporary style or text patch, list it, and explicitly roll it back. Apply another temporary patch, disable or switch the enabled window, and confirm Browser Bridge attempts best-effort cleanup while the original document remains available. Do not treat automatic cleanup as guaranteed after navigation or document replacement.
+11. On a test page that opens an alert/confirm/prompt, run `bbx call page.handle_dialog '{"action":"inspect"}'`, copy the returned `dialogId` (`<uuid>:<generation>`), then pass that exact value as `expectedDialogId` to an explicit accept or dismiss call. Confirm no dialog is changed by inspection alone and do not automatically repeat a conflict.
+12. Run `bbx call page.wait_for_load_state` with a URL condition on a normal or SPA route and confirm `finalUrl` and `observedNavigationKind` are returned.
+13. Trigger one fetch/XHR and confirm `bbx network` returns bounded metadata. Then run the CDP network lifecycle in order: `start`, reproduce one page/resource load, `read`, then `stop`. Confirm lifecycle/drop metadata is present and URL query values are redacted. Do not expect events from before `start` or any bodies/cookies/authorization values.
+14. Request a tight element or region screenshot and confirm image data is returned only for the enabled window. Check `bbx console` after generating a test console message and confirm bounded console output is returned.
+15. Disable access in the popup or side panel and confirm a subsequent tab-bound request returns `ACCESS_DENIED` until access is enabled again.
+16. Confirm the packaged `manifest.json` permissions remain exactly `alarms`, `debugger`, `nativeMessaging`, `scripting`, `sidePanel`, `storage`, and `tabs`, with `<all_urls>` host access and no new permission.
 
 ## Post-Publish Follow-Up
 

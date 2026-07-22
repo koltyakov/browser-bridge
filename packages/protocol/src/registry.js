@@ -108,7 +108,8 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
   'page.get_console': 'Read buffered console output from the page.',
   'page.handle_dialog':
     'Inspect or explicitly act on the current JavaScript dialog. expectedDialogId is only a stale-decision check immediately before dispatch; Chrome cannot bind the CDP command atomically to that identifier.',
-  'page.wait_for_load_state': 'Wait for page load and optional URL conditions.',
+  'page.wait_for_load_state':
+    'Wait for truthful tab-complete state and/or an event-aware URL condition.',
   'page.get_storage': 'Read local or session storage values.',
   'page.get_text': 'Read bounded visible text from the page.',
   'page.get_network':
@@ -129,22 +130,26 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
   'dom.find_by_text': 'Find elements by visible text.',
   'dom.find_by_role': 'Find elements by ARIA role and optional name.',
   'dom.get_html': 'Read inner or outer HTML for one element.',
-  'dom.get_accessibility_tree': 'Read a pruned accessibility tree for the tab.',
+  'dom.get_accessibility_tree':
+    'Read a depth-limited accessibility tree with optional compact or interactive filtering.',
   'layout.get_box_model': 'Read the box model for one element.',
   'layout.hit_test': 'Resolve the topmost element at a viewport point.',
-  'styles.get_computed': 'Read computed style properties for one element.',
-  'styles.get_matched_rules': 'Read matched CSS rule context for one element.',
+  'styles.get_computed':
+    'Read requested computed styles; omission returns display, position, width, height, and color.',
+  'styles.get_matched_rules':
+    'Read element classes and inline style context (not stylesheet cascade data).',
   'viewport.scroll': 'Scroll the viewport or a scrollable element.',
   'viewport.resize': 'Resize or reset the tab viewport.',
-  'input.click': 'Click an element.',
-  'input.focus': 'Focus an element.',
-  'input.type': 'Type text into an element.',
-  'input.fill': 'Set value of an input/textarea element (React/Vue/Angular-safe).',
+  'input.click': 'Actionability-check and click an element through DOM or optional CDP input.',
+  'input.focus': 'Actionability-check and focus an element through DOM input.',
+  'input.type': 'Actionability-check and type through DOM or optional CDP text input.',
+  'input.fill':
+    'Fill an editable target using a DOM strategy or optional CDP text input; verify afterward.',
   'input.press_key': 'Send a key press to the page or an element.',
   'input.set_checked': 'Set checkbox or radio checked state.',
   'input.select_option': 'Select options in a select element.',
-  'input.hover': 'Hover over an element.',
-  'input.drag': 'Drag from one element to another.',
+  'input.hover': 'Actionability-check and hover through DOM or optional CDP pointer input.',
+  'input.drag': 'Actionability-check and drag through DOM or optional CDP pointer input.',
   'input.scroll_into_view': 'Scroll an element into the visible viewport.',
   'screenshot.capture_region': 'Capture a screenshot of a viewport region.',
   'screenshot.capture_element': 'Capture a screenshot of one element.',
@@ -153,7 +158,8 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
   'patch.apply_dom': 'Apply a reversible DOM patch.',
   'patch.list': 'List active reversible patches.',
   'patch.rollback': 'Rollback one reversible patch.',
-  'patch.commit_session_baseline': 'Commit the current patch session baseline.',
+  'patch.commit_session_baseline':
+    'Keep current document mutations and discard their rollback history.',
   'cdp.get_document': 'Read the CDP DOM document tree.',
   'cdp.get_dom_snapshot': 'Read a CDP DOM snapshot.',
   'cdp.get_box_model': 'Read a CDP box model for a node.',

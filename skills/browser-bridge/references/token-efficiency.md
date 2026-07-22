@@ -14,7 +14,7 @@ These presets are also available at runtime via `bbx skill`.
 
 ## Debugger Policy
 
-Avoid debugger-backed methods until they are clearly necessary. In Browser Bridge, `page.evaluate`, `dom.get_accessibility_tree`, `viewport.resize`, `performance.get_metrics`, `screenshot.capture_*`, and `cdp.*` attach `chrome.debugger`, which can make Chrome show its native debugging banner across the running browser instance.
+Avoid debugger-backed methods until they are clearly necessary. In Browser Bridge, `page.evaluate`, `page.handle_dialog`, `dom.get_accessibility_tree`, CDP network capture, CDP input execution, `viewport.resize`, `performance.get_metrics`, `screenshot.capture_*`, and `cdp.*` attach `chrome.debugger`, which can make Chrome show its native debugging banner across the running browser instance.
 
 ## Decision Tree
 
@@ -26,9 +26,9 @@ Avoid debugger-backed methods until they are clearly necessary. In Browser Bridg
 6. **Need styles?** → `styles.get_computed` with explicit `properties` list
 7. **Need runtime errors?** → `page.get_console` with `level: 'error'`
 8. **Need full page text?** → `page.get_text` (cheaper than `dom.query` on body)
-9. **Need API call history?** → `page.get_network` (intercepted fetch/XHR log)
+9. **Need API call history?** → default `page.get_network` (intercepted fetch/XHR log)
 10. **Need framework/app state and no lighter read can expose it?** → `page.evaluate` (debugger-backed)
-11. **Need semantic structure and role/text queries are insufficient?** → `dom.get_accessibility_tree` (debugger-backed)
+11. **Need semantic structure and role/text queries are insufficient?** → compact or interactive-only `dom.get_accessibility_tree` (debugger-backed)
 12. **Need performance data?** → `performance.get_metrics` (debugger-backed)
 13. **Testing responsive with an exact forced viewport?** → `viewport.resize` (debugger-backed)
 14. **Visual ambiguity after structured reads?** → `screenshot.capture_element` first, or `screenshot.capture_region` with a tight crop when one element is not enough (debugger-backed)
@@ -57,7 +57,7 @@ Omitting allowlists or leaving the text budget wide open often returns 3–5× t
 | Screenshot before structured read        | ~1500 tok wasted    | Always `dom.query` or `styles.get_computed` first                                            |
 | Re-querying DOM for same element         | ~500 tok/call       | Reuse `elementRef` from prior result                                                         |
 | Full-page screenshot                     | ~3000 tok           | Use `screenshot.capture_element`, or `screenshot.capture_region` with a tight rect           |
-| Requesting all computed styles           | ~800 tok            | Set `properties` list (usually 3–8 props)                                                    |
+| Requesting broad computed styles via CDP | ~800 tok            | Use `styles.get_computed`; omission returns five core props, or pass 3-8 explicit props      |
 | Multiple CLI calls for independent reads | overhead/call       | Use `batch` command                                                                          |
 | Guessing selectors for known labels      | ~300 tok wasted/try | Use `dom.find_by_text` or `dom.find_by_role`                                                 |
 | Polling page state with repeated queries | ~500 tok/poll       | Use `dom.wait_for` (single call, waits async)                                                |
@@ -68,6 +68,8 @@ Omitting allowlists or leaving the text budget wide open often returns 3–5× t
 | Guessing interactive elements from DOM   | ~600 tok/try        | Use `dom.get_accessibility_tree` for semantic roles                                          |
 | Fetching network via evaluate hacks      | ~400 tok            | Use `page.get_network` (auto-interceptor)                                                    |
 | Full a11y tree with no limits            | ~3000 tok           | Set `maxNodes` ≤ 50, `maxDepth` ≤ 4                                                          |
+| CDP network capture for API-only traffic | debugger lifecycle  | Use default fetch/XHR capture; reserve CDP for all-resource failures                         |
+| Repeated page-state polling for a route  | ~500 tok/poll       | Use one event-aware `page.wait_for_load_state` URL condition                                 |
 
 ## Efficient Loop
 
@@ -127,15 +129,17 @@ bbx network 50           # last 50 entries
 
 The interceptor auto-installs on first call. Before reproducing an event, call `page.get_network` once with `clear: true` to install capture and remove old entries. Trigger the action, then read again without `clear`. Each entry shows `method`, `url`, `status`, `duration`.
 
+Only escalate to `source: "cdp"` when fetch/XHR misses the relevant document, asset, socket, cache, redirect, or failed-resource metadata. CDP must be started before reproduction and explicitly stopped afterward; it holds debugger ownership, tracks in-flight state, and returns a larger entry shape. Its URLs redact credentials, fragments, and query values, and it never returns bodies, cookies, authorization values, or complete headers.
+
 ## Accessibility Tree for Semantic Discovery
 
 When you need to understand the page's interactive structure without guessing selectors:
 
 ```bash
-bbx a11y-tree 30 3       # 30 nodes, depth 3
+bbx call dom.get_accessibility_tree '{"maxNodes":30,"maxDepth":4,"interactiveOnly":true}'
 ```
 
-Returns role/name/interactive flag per node. Much cheaper than screenshot + OCR, and more accurate than `dom.query` on generic selectors.
+Filtering before `maxNodes` makes compact/interactive-only output much cheaper than screenshot + OCR. AX depth is always partial and `interactive` is semantic metadata, not current actionability; use role/name to find a DOM ref before input.
 
 ## Semantic finding Saves Selector Guessing
 
