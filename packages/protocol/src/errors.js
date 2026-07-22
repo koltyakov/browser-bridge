@@ -46,7 +46,7 @@ export const ERROR_RECOVERY = Object.freeze({
   [ERROR_CODES.ELEMENT_AMBIGUOUS]: {
     retry: false,
     alternativeMethod: 'dom.query',
-    hint: 'Multiple equally actionable elements matched. Use a more specific selector or an elementRef.',
+    hint: 'Multiple candidates matched, candidates tied, or a bounded stale-recovery scan could not prove uniqueness. Re-query and use a more specific selector or fresh elementRef.',
   },
   [ERROR_CODES.ELEMENT_NOT_ACTIONABLE]: {
     retry: false,

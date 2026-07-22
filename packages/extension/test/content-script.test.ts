@@ -3489,6 +3489,61 @@ test('stale ref recovery is opt-in, same-URL, descriptor-strong, and ambiguity-s
   assert.equal((ambiguous.error as { code?: unknown }).code, 'ELEMENT_AMBIGUOUS');
 });
 
+test('stale ref recovery rejects an unevaluated duplicate after 100 candidates', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t);
+  const original = inputs.createButton({ textContent: 'Save' });
+  original.attributes?.set('data-testid', 'save-button');
+  const firstMatch = inputs.createButton({ textContent: 'Save' });
+  firstMatch.attributes?.set('data-testid', 'save-button');
+  const decoys = Array.from({ length: 99 }, (_, index) => {
+    const decoy = inputs.createButton({ textContent: `Decoy ${index}` });
+    decoy.attributes?.set('data-testid', `decoy-${index}`);
+    return decoy;
+  });
+  const duplicateAfterLimit = inputs.createButton({ textContent: 'Save duplicate' });
+  duplicateAfterLimit.attributes?.set('data-testid', 'save-button');
+  const candidates = [firstMatch, ...decoys, duplicateAfterLimit];
+  const body = inputs.createBody([original, ...candidates]);
+  const attached = new Set<FakeElementLike>([body, original]);
+  const base = createDocumentHarness(body, { '#original': original });
+  const document = {
+    ...base,
+    URL: 'https://example.test/bounded-recovery',
+    contains: (element: unknown) => attached.has(element as FakeElementLike),
+    querySelectorAll(selector: string) {
+      return selector === 'button' ? candidates : base.querySelectorAll(selector);
+    },
+  };
+
+  await loadContentScript(t, { withHelpers: true, chrome: harness.chrome, document });
+  const listener = harness.getListener();
+  const remembered = await executeBridgeMethod(listener, 'input.focus', {
+    target: { selector: '#original' },
+  });
+  attached.delete(original);
+  for (const candidate of candidates) attached.add(candidate);
+
+  const result = await executeBridgeMethod(listener, 'input.focus', {
+    target: { elementRef: String(remembered.elementRef) },
+    recoverStale: true,
+  });
+  const error = result.error as {
+    code?: unknown;
+    details?: {
+      reason?: unknown;
+      candidateCount?: unknown;
+      evaluatedCount?: unknown;
+      matchCount?: unknown;
+    };
+  };
+  assert.equal(error.code, 'ELEMENT_AMBIGUOUS');
+  assert.equal(error.details?.reason, 'scan_incomplete');
+  assert.equal(error.details?.candidateCount, 101);
+  assert.equal(error.details?.evaluatedCount, 100);
+  assert.equal(error.details?.matchCount, 1);
+});
+
 test('pointer resolution clips hit coordinates and rejects a null viewport hit', async (t) => {
   const harness = createChromeHarness();
   const inputs = installInputDomGlobals(t);

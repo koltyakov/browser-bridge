@@ -56,6 +56,7 @@
   const patchRegistry = new Map();
   const MAX_REGISTRY_SIZE = 5000;
   const ELEMENT_REGISTRY_PRUNE_BATCH_SIZE = 100;
+  const MAX_STALE_RECOVERY_CANDIDATES = 100;
   const MAX_PATCH_REGISTRY_SIZE = 2000;
   let registryPruned = false;
   /** @type {IterableIterator<[string, Element]> | null} */
@@ -341,8 +342,28 @@
         }
       );
     }
-    const candidates = [...document.querySelectorAll(descriptor.tag)].slice(0, 100);
+    const candidateNodes = document.querySelectorAll(descriptor.tag);
+    const evaluatedCount = Math.min(candidateNodes.length, MAX_STALE_RECOVERY_CANDIDATES);
+    const candidates = [];
+    for (let index = 0; index < evaluatedCount; index += 1) {
+      candidates.push(candidateNodes[index]);
+    }
     const matches = candidates.filter((candidate) => descriptorMatches(candidate, descriptor));
+    if (candidateNodes.length > evaluatedCount) {
+      throw createRegistryError(
+        'ELEMENT_AMBIGUOUS',
+        'Stale reference recovery scan was incomplete; uniqueness could not be proven.',
+        {
+          elementRef,
+          recovered: false,
+          reason: 'scan_incomplete',
+          candidateCount: candidateNodes.length,
+          evaluatedCount,
+          matchCount: matches.length,
+          matchedFields: strongFields,
+        }
+      );
+    }
     if (matches.length !== 1) {
       const code = matches.length > 1 ? 'ELEMENT_AMBIGUOUS' : 'ELEMENT_STALE';
       throw createRegistryError(
@@ -354,7 +375,7 @@
           elementRef,
           recovered: false,
           candidateCount: matches.length,
-          evaluatedCount: candidates.length,
+          evaluatedCount,
           matchedFields: strongFields,
         }
       );
