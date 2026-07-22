@@ -42,6 +42,7 @@ import {
  *   readCdpNetworkCapture: (tabId: number, clear: boolean) => Promise<Record<string, unknown>>,
  *   stopCdpNetworkCapture: (tabId: number) => Promise<Record<string, unknown>>,
  *   runWithDebugger: (tabId: number, operation: (debugTarget: chrome.debugger.Debuggee) => Promise<BridgeResponse>, options?: { retryDetached?: boolean }) => Promise<BridgeResponse>,
+ *   runForDialog: (tabId: number, operation: (debugTarget: chrome.debugger.Debuggee) => Promise<BridgeResponse>, options?: { retryDetached?: boolean }) => Promise<BridgeResponse>,
  *   sendCommand: (target: chrome.debugger.Debuggee, method: string, params: Record<string, unknown>) => Promise<unknown>,
  *   ensureContentScript: (tabId: number) => Promise<void>,
  *   sendTabMessage: (tabId: number, message: Record<string, unknown>, timeoutMs: number) => Promise<unknown>,
@@ -280,7 +281,7 @@ export function createPageRequestController(state, chromeObj, dependencies) {
   async function handlePageDialog(request) {
     const target = await resolveRequestTarget(request, { requireScriptable: false });
     const params = normalizeHandleDialogParams(request.params);
-    return dependencies.runWithDebugger(
+    return dependencies.runForDialog(
       target.tabId,
       async (debugTarget) => {
         const dialog = await dependencies.waitForDialog(target.tabId);

@@ -138,6 +138,7 @@ const tabDebugger = new TabDebuggerCoordinator({
 const cdpNetworkCapture = createCdpNetworkCapture({
   acquireDebugger: (tabId) => tabDebugger.acquire(tabId),
   releaseDebugger: (tabId) => tabDebugger.release(tabId),
+  assertDebuggerAvailable: (tabId) => tabDebugger.assertCanStart(tabId),
   sendCommand: (target, method, params) =>
     /** @type {Promise<unknown>} */ (chrome.debugger.sendCommand(target, method, params)),
 });
@@ -165,6 +166,7 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
 const fetchInterceptor = createFetchInterceptor({
   acquireDebugger: (tabId, init) => tabDebugger.acquire(tabId, init),
   releaseDebugger: (tabId) => tabDebugger.release(tabId),
+  assertDebuggerAvailable: (tabId) => tabDebugger.assertCanStart(tabId),
   sendCommand: (target, method, params) =>
     /** @type {Promise<unknown>} */ (
       chrome.debugger.sendCommand(
@@ -201,10 +203,12 @@ const { clearTabBridgeState, clearWindowBridgeState, rollbackAllPatchesForTab } 
     sendTabMessage,
     readConsoleBuffer,
     readNetworkBuffer,
+    beginDebuggerCleanup: (tabId) => tabDebugger.beginCleanup(tabId),
+    commitDebuggerCleanup: (tabId) => tabDebugger.commitCleanup(tabId),
     clearFetchInterception: (tabId) => fetchInterceptor.clearAllRules(tabId),
+    discardFetchInterception: (tabId) => fetchInterceptor.handleDetach(tabId),
     stopCdpNetworkCapture: (tabId) => cdpNetworkCapture.stop(tabId),
     discardCdpNetworkCapture: (tabId) => cdpNetworkCapture.handleDetach(tabId),
-    clearDebuggerState: (tabId) => tabDebugger.discard(tabId),
     cancelNavigationWaitsForWindow: (windowId) => navigationWaits.cancelWindow(windowId),
     isRecoverableInstrumentationError,
     isRestrictedAutomationUrl,
@@ -233,12 +237,17 @@ const tabMoveCleanup = createTabMoveCleanupController({
   clearDialogState: (tabId) => tabDebugger.clearDialogState(tabId),
   clearTabBridgeState,
   clearRemovedTabState: async (tabId) => {
-    await fetchInterceptor.clearAllRules(tabId);
-    await cdpNetworkCapture.stop(tabId).catch(() => {});
+    const endCleanup = await tabDebugger.beginCleanup(tabId);
     try {
-      await tabDebugger.discard(tabId);
+      await tabDebugger.commitCleanup(tabId);
+      try {
+        await fetchInterceptor.clearAllRules(tabId);
+        await cdpNetworkCapture.stop(tabId).catch(() => {});
+      } finally {
+        await cdpNetworkCapture.handleDetach(tabId);
+      }
     } finally {
-      await cdpNetworkCapture.handleDetach(tabId);
+      endCleanup();
     }
   },
 });
@@ -289,6 +298,7 @@ const {
   readCdpNetworkCapture: (tabId, clear) => cdpNetworkCapture.read(tabId, clear),
   stopCdpNetworkCapture: (tabId) => cdpNetworkCapture.stop(tabId),
   runWithDebugger: (tabId, operation, options) => tabDebugger.run(tabId, operation, options),
+  runForDialog: (tabId, operation, options) => tabDebugger.runForDialog(tabId, operation, options),
   sendCommand: (target, method, params) =>
     /** @type {Promise<unknown>} */ (
       chrome.debugger.sendCommand(

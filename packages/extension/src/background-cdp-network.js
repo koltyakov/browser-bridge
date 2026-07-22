@@ -47,6 +47,7 @@ const MAX_DIAGNOSTIC_COUNT = 10_000;
  * @param {{
  *   acquireDebugger: (tabId: number) => Promise<void>,
  *   releaseDebugger: (tabId: number) => Promise<void>,
+ *   assertDebuggerAvailable?: (tabId: number) => void,
  *   sendCommand: (target: { tabId: number }, method: string, params: Record<string, unknown>) => Promise<unknown>,
  *   maxEntries?: number,
  *   maxInflight?: number,
@@ -114,6 +115,7 @@ export function createCdpNetworkCapture(deps) {
 
   /** @param {number} tabId */
   function start(tabId) {
+    deps.assertDebuggerAvailable?.(tabId);
     const stopEpoch = stopEpochs.get(tabId) ?? 0;
     return runLifecycle(tabId, async () => {
       const epoch = getDetachEpoch(tabId);

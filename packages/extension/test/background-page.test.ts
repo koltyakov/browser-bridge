@@ -113,6 +113,10 @@ function createController(
       debuggerOptions.push(runOptions);
       return operation({ tabId });
     },
+    async runForDialog(tabId, operation, runOptions) {
+      debuggerOptions.push(runOptions);
+      return operation({ tabId });
+    },
     async sendCommand(_target, method, params) {
       commands.push({ method, params });
       options.onSendCommand?.(method, setDialog);

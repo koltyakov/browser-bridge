@@ -47,6 +47,7 @@ export function validateInterceptRule(input) {
  * @param {{
  *   acquireDebugger: (tabId: number, init?: (target: {tabId: number}) => Promise<void>) => Promise<void>,
  *   releaseDebugger: (tabId: number) => Promise<void>,
+ *   assertDebuggerAvailable?: (tabId: number) => void,
  *   sendCommand: (target: {tabId: number}, method: string, params: object) => Promise<unknown>,
  *   addEventFilter: (tabId: number, handler: (method: string, params: unknown) => void) => void,
  *   removeEventFilter: (tabId: number) => void,
@@ -109,6 +110,7 @@ export function createFetchInterceptor(deps) {
    */
   async function addRule(tabId, rule) {
     const validatedRule = validateInterceptRule(rule);
+    deps.assertDebuggerAvailable?.(tabId);
     const s = getOrCreateState(tabId);
     const ruleId = `intercept_${++ruleCounter}`;
     const fullRule = { ...validatedRule, ruleId };
@@ -124,7 +126,7 @@ export function createFetchInterceptor(deps) {
     } catch (error) {
       // Roll back so a failed acquire/enable does not leave a phantom rule.
       s.rules.delete(ruleId);
-      if (s.rules.size === 0) await releaseTab(tabId);
+      if (s.rules.size === 0) await releaseTab(tabId, s);
       throw error;
     }
 
@@ -142,7 +144,7 @@ export function createFetchInterceptor(deps) {
     if (!s) return false;
     const removed = s.rules.delete(ruleId);
     if (removed && s.rules.size === 0) {
-      await releaseTab(tabId);
+      await releaseTab(tabId, s);
     } else if (removed) {
       await syncPatterns(tabId);
     }
@@ -167,7 +169,7 @@ export function createFetchInterceptor(deps) {
     if (!s) return 0;
     const count = s.rules.size;
     s.rules.clear();
-    await releaseTab(tabId);
+    await releaseTab(tabId, s);
     return count;
   }
 
@@ -205,11 +207,13 @@ export function createFetchInterceptor(deps) {
 
   /**
    * @param {number} tabId
+   * @param {TabInterceptState} expectedState
    */
-  async function releaseTab(tabId) {
+  async function releaseTab(tabId, expectedState) {
     const s = tabStates.get(tabId);
+    if (s !== expectedState) return;
     if (s?.ttlTimer) clearTimeout(s.ttlTimer);
-    tabStates.delete(tabId);
+    if (tabStates.get(tabId) === s) tabStates.delete(tabId);
     deps.removeEventFilter(tabId);
     try {
       await deps.sendCommand({ tabId }, 'Fetch.disable', {});

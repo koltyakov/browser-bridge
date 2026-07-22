@@ -59,6 +59,73 @@ function emitRequest(
   });
 }
 
+test('cleanup barrier rejects fresh Fetch and Network owners until stale teardown ends', async () => {
+  let attachCount = 0;
+  let detachCount = 0;
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {
+      attachCount += 1;
+    },
+    detach: async () => {
+      detachCount += 1;
+    },
+    burstIdleMs: 10_000,
+  });
+  const filters = new Map<number, (method: string, params: unknown) => void>();
+  const interceptor = createFetchInterceptor({
+    acquireDebugger: (tabId, initialize) => coordinator.acquire(tabId, initialize),
+    releaseDebugger: (tabId) => coordinator.release(tabId),
+    assertDebuggerAvailable: (tabId) => coordinator.assertCanStart(tabId),
+    sendCommand: async () => ({}),
+    addEventFilter: (tabId, handler) => filters.set(tabId, handler),
+    removeEventFilter: (tabId) => filters.delete(tabId),
+  });
+  const capture = createCdpNetworkCapture({
+    acquireDebugger: (tabId) => coordinator.acquire(tabId),
+    releaseDebugger: (tabId) => coordinator.release(tabId),
+    assertDebuggerAvailable: (tabId) => coordinator.assertCanStart(tabId),
+    sendCommand: async () => ({}),
+  });
+
+  await interceptor.addRule(1, { urlPattern: '*old*', action: 'continue' });
+  await capture.start(1);
+  assert.equal(coordinator.holdsByTab.get(1), 2);
+
+  const endCleanup = await coordinator.beginCleanup(1);
+  await coordinator.commitCleanup(1);
+  await assert.rejects(
+    Promise.resolve().then(() =>
+      interceptor.addRule(1, { urlPattern: '*fresh*', action: 'continue' })
+    ),
+    /access was cleared/
+  );
+  await assert.rejects(
+    Promise.resolve().then(() => capture.start(1)),
+    /access was cleared/
+  );
+  assert.equal(interceptor.listRules(1).length, 1);
+  assert.equal((await capture.read(1)).armed, true);
+
+  await interceptor.clearAllRules(1);
+  await capture.stop(1);
+  await capture.handleDetach(1);
+  endCleanup();
+
+  await interceptor.addRule(1, { urlPattern: '*fresh*', action: 'continue' });
+  await capture.start(1);
+  assert.deepEqual(
+    interceptor.listRules(1).map((rule) => rule.urlPattern),
+    ['*fresh*']
+  );
+  assert.equal((await capture.read(1)).armed, true);
+  assert.equal(coordinator.holdsByTab.get(1), 2);
+  assert.equal(attachCount, 2);
+  assert.equal(detachCount, 1);
+
+  await interceptor.clearAllRules(1);
+  await capture.stop(1);
+});
+
 test('CDP network capture has explicit start, clear, read, and stop lifecycle', async () => {
   const { capture, commands, acquired, released } = createHarness();
   const before = await capture.read(1);

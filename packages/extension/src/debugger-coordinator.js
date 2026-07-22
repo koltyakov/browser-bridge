@@ -38,6 +38,8 @@ const MAX_DIAGNOSTIC_COUNT = 10_000;
  * }} DialogEventState
  */
 
+/** @typedef {{ count: number, discardPromise: Promise<void> | null }} CleanupBarrier */
+
 /**
  * Serialize Chrome debugger sessions per tab so concurrent bridge requests do
  * not race on `chrome.debugger.attach`.
@@ -66,6 +68,18 @@ export class TabDebuggerCoordinator {
     this.burstIdleMs = burstIdleMs;
     /** @type {Map<number, Promise<void>>} */
     this.pendingByTab = new Map();
+    /** @type {Map<number, Promise<void>>} */
+    this.pendingDialogsByTab = new Map();
+    /** @type {Map<number, number>} */
+    this.dialogOwnersByTab = new Map();
+    /** @type {Map<number, number>} */
+    this.cancellationGenerationsByTab = new Map();
+    /** @type {Map<number, Map<number, number>>} */
+    this.inFlightTasksByTab = new Map();
+    /** @type {Map<number, CleanupBarrier>} */
+    this.cleanupBarriersByTab = new Map();
+    /** @type {Map<number, Promise<void>>} */
+    this.attachingByTab = new Map();
     /** @type {Map<number, number>} */
     this.holdsByTab = new Map();
     /** @type {Map<number, ReturnType<typeof setTimeout>>} */
@@ -125,10 +139,15 @@ export class TabDebuggerCoordinator {
    * @returns {Promise<T>}
    */
   async run(tabId, task, options = {}) {
+    const generation = this._getCancellationGeneration(tabId);
+    this._assertCanStartWork(tabId, generation);
     return this.runExclusive(tabId, async () => {
+      await this._waitForDialogLane(tabId);
+      this._assertCancellationGeneration(tabId, generation);
       const target = { tabId };
       const held = (this.holdsByTab.get(tabId) ?? 0) > 0;
       const hasBurst = this._consumeBurstTimer(tabId);
+      const alreadyAttached = this.attachedTabs.has(tabId);
       /** @type {T | undefined} */
       let result;
       /** @type {unknown} */
@@ -136,23 +155,32 @@ export class TabDebuggerCoordinator {
       let detached = false;
 
       try {
-        if (!held && !hasBurst) {
-          await this._attach(target);
+        if (!held && !hasBurst && !alreadyAttached) {
+          await this._attach(target, generation);
         }
-        result = await task(target);
+        result = await this._runTrackedTask(tabId, generation, () => task(target));
+        await this._waitForDialogLane(tabId);
+        this._assertCancellationGeneration(tabId, generation);
       } catch (error) {
-        if (isDebuggerDetachedError(error)) {
+        if (!this._isCancellationGenerationCurrent(tabId, generation)) {
+          taskError = createDebuggerCanceledError();
+          detached = true;
+        } else if (isDebuggerDetachedError(error)) {
           this.markDetached(tabId, 'debugger_detached');
           detached = true;
           if (options.retryDetached === false) {
             taskError = error;
           } else {
             try {
-              await this._attach(target);
+              await this._attach(target, generation);
               detached = false;
-              result = await task(target);
+              result = await this._runTrackedTask(tabId, generation, () => task(target));
+              await this._waitForDialogLane(tabId);
+              this._assertCancellationGeneration(tabId, generation);
             } catch (retryError) {
-              taskError = retryError;
+              taskError = this._isCancellationGenerationCurrent(tabId, generation)
+                ? retryError
+                : createDebuggerCanceledError();
             }
           }
         } else {
@@ -161,7 +189,12 @@ export class TabDebuggerCoordinator {
       }
 
       // Schedule a burst-idle detach instead of detaching immediately.
-      if (!held && !detached && this.attachedTabs.has(tabId)) {
+      if (
+        (this.holdsByTab.get(tabId) ?? 0) === 0 &&
+        !detached &&
+        this._isCancellationGenerationCurrent(tabId, generation) &&
+        this.attachedTabs.has(tabId)
+      ) {
         this._resetBurstTimer(tabId, target);
       }
 
@@ -170,6 +203,79 @@ export class TabDebuggerCoordinator {
       }
       return /** @type {T} */ (result);
     });
+  }
+
+  /**
+   * Handle an already observed dialog without waiting behind the debugger task
+   * that may be blocked by that dialog. An attached tab with pending normal
+   * work also takes this lane so a just-arriving opening event can be observed.
+   * Otherwise attachment and Page initialization stay on the normal path.
+   *
+   * @template T
+   * @param {number} tabId
+   * @param {(target: DebuggerTarget) => Promise<T>} task
+   * @param {{ retryDetached?: boolean }} [options]
+   * @returns {Promise<T>}
+   */
+  async runForDialog(tabId, task, options = {}) {
+    const generation = this._getCancellationGeneration(tabId);
+    this._assertCanStartWork(tabId, generation);
+    if (
+      !this.attachedTabs.has(tabId) ||
+      (!this.dialogsByTab.has(tabId) && !this.pendingByTab.has(tabId))
+    ) {
+      return this.run(tabId, task, options);
+    }
+
+    const previous = this.pendingDialogsByTab.get(tabId) ?? Promise.resolve();
+    /** @type {(value?: void | PromiseLike<void>) => void} */
+    let releaseTurn = () => {};
+    const turn = new Promise((resolve) => {
+      releaseTurn = resolve;
+    });
+    const queuedTurn = previous.catch(() => {}).then(() => turn);
+    this.pendingDialogsByTab.set(tabId, queuedTurn);
+
+    await previous.catch(() => {});
+    const target = { tabId };
+    let hadBurst = false;
+    let ownsSession = false;
+    try {
+      this._assertCancellationGeneration(tabId, generation);
+      if (!this.attachedTabs.has(tabId)) throw createDebuggerCanceledError();
+      hadBurst = this._consumeBurstTimer(tabId);
+      this.dialogOwnersByTab.set(tabId, generation);
+      ownsSession = true;
+      const result = await this._runTrackedTask(tabId, generation, () => task(target));
+      this._assertCancellationGeneration(tabId, generation);
+      return result;
+    } catch (error) {
+      if (!this._isCancellationGenerationCurrent(tabId, generation)) {
+        throw createDebuggerCanceledError();
+      }
+      if (isDebuggerDetachedError(error)) {
+        this.markDetached(tabId, 'debugger_detached');
+      }
+      // An out-of-band dialog mutation must never be replayed.
+      throw error;
+    } finally {
+      if (ownsSession && this.dialogOwnersByTab.get(tabId) === generation) {
+        this.dialogOwnersByTab.delete(tabId);
+      }
+      if (
+        hadBurst &&
+        this._isCancellationGenerationCurrent(tabId, generation) &&
+        this.attachedTabs.has(tabId) &&
+        (this.holdsByTab.get(tabId) ?? 0) === 0 &&
+        !this.pendingByTab.has(tabId)
+      ) {
+        this._resetBurstTimer(tabId, target);
+      }
+      releaseTurn();
+      if (this.pendingDialogsByTab.get(tabId) === queuedTurn) {
+        this.pendingDialogsByTab.delete(tabId);
+      }
+    }
   }
 
   /**
@@ -184,6 +290,7 @@ export class TabDebuggerCoordinator {
     if (existing) clearTimeout(existing);
     this.burstTimers.delete(tabId);
     this.holdsByTab.delete(tabId);
+    this.dialogOwnersByTab.delete(tabId);
     this.attachedTabs.delete(tabId);
     this.clearDialogState(tabId);
     if (reason) {
@@ -369,42 +476,109 @@ export class TabDebuggerCoordinator {
 
   /**
    * Drop all coordinator state and detach one tab during tab/window/access
-   * cleanup. Fetch holds should be released first, but this is intentionally
-   * safe if Chrome already detached the target.
+   * cleanup without waiting behind a debugger command blocked by a dialog.
+   * This is intentionally safe if Chrome already detached the target.
    *
    * @param {number} tabId
    * @returns {Promise<void>}
    */
   async discard(tabId) {
-    await this.runExclusive(tabId, async () => {
-      const timer = this.burstTimers.get(tabId);
-      if (timer) clearTimeout(timer);
-      this.burstTimers.delete(tabId);
-      this.holdsByTab.delete(tabId);
-      this.clearDialogState(tabId);
-      if (!this.attachedTabs.delete(tabId)) return;
+    this.cancellationGenerationsByTab.set(tabId, this._getCancellationGeneration(tabId) + 1);
+    const timer = this.burstTimers.get(tabId);
+    if (timer) clearTimeout(timer);
+    this.burstTimers.delete(tabId);
+    this.holdsByTab.delete(tabId);
+    this.dialogOwnersByTab.delete(tabId);
+    this.clearDialogState(tabId);
+
+    const wasAttached = this.attachedTabs.delete(tabId);
+    const attaching = this.attachingByTab.get(tabId);
+    if (wasAttached) {
       await this.detach({ tabId }).catch(() => {});
-    });
+    } else if (attaching) {
+      const attached = await attaching.then(
+        () => true,
+        () => false
+      );
+      if (attached) await this.detach({ tabId }).catch(() => {});
+    }
+  }
+
+  /**
+   * Keep new debugger ownership out until a complete tab cleanup sequence has
+   * discarded the session and reconciled its domain-specific owners.
+   *
+   * @param {number} tabId
+   * @returns {Promise<() => void>}
+   */
+  async beginCleanup(tabId) {
+    let barrier = this.cleanupBarriersByTab.get(tabId);
+    if (!barrier) {
+      barrier = { count: 0, discardPromise: null };
+      this.cleanupBarriersByTab.set(tabId, barrier);
+    }
+    barrier.count += 1;
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      barrier.count -= 1;
+      if (barrier.count === 0 && this.cleanupBarriersByTab.get(tabId) === barrier) {
+        this.cleanupBarriersByTab.delete(tabId);
+      }
+    };
+    return release;
+  }
+
+  /** @param {number} tabId @returns {Promise<void>} */
+  async commitCleanup(tabId) {
+    const barrier = this.cleanupBarriersByTab.get(tabId);
+    if (!barrier) {
+      await this.discard(tabId);
+      return;
+    }
+    barrier.discardPromise ??= this.discard(tabId);
+    await barrier.discardPromise;
+  }
+
+  /** @param {number} tabId @returns {void} */
+  assertCanStart(tabId) {
+    this._assertCanStartWork(tabId, this._getCancellationGeneration(tabId));
   }
 
   /**
    * @param {DebuggerTarget} target
    * @returns {Promise<void>}
    */
-  async _attach(target) {
+  async _attach(target, generation = this._getCancellationGeneration(target.tabId)) {
+    const attaching = this.attach(target, this.protocolVersion);
+    this.attachingByTab.set(target.tabId, attaching);
     try {
-      await this.attach(target, this.protocolVersion);
+      await attaching;
     } catch (error) {
       const reason = classifyDebuggerFailure(error);
       if (reason) {
         this.recentReason = { reason, at: Date.now() };
       }
       throw error;
+    } finally {
+      if (this.attachingByTab.get(target.tabId) === attaching) {
+        this.attachingByTab.delete(target.tabId);
+      }
+    }
+    if (!this._isCancellationGenerationCurrent(target.tabId, generation)) {
+      throw createDebuggerCanceledError();
     }
     this.attachedTabs.add(target.tabId);
     try {
-      await this.initialize(target);
+      await this._runTrackedTask(target.tabId, generation, () => this.initialize(target));
+      await this._waitForDialogLane(target.tabId);
+      this._assertCancellationGeneration(target.tabId, generation);
     } catch (error) {
+      if (!this._isCancellationGenerationCurrent(target.tabId, generation)) {
+        this.attachedTabs.delete(target.tabId);
+        throw createDebuggerCanceledError();
+      }
       this.markDetached(target.tabId, classifyDebuggerFailure(error));
       await this.detach(target).catch(() => {});
       throw error;
@@ -462,10 +636,13 @@ export class TabDebuggerCoordinator {
   _resetBurstTimer(tabId, target) {
     const existing = this.burstTimers.get(tabId);
     if (existing) clearTimeout(existing);
+    const generation = this._getCancellationGeneration(tabId);
     const timer = setTimeout(async () => {
       await this.runExclusive(tabId, async () => {
+        await this._waitForDialogLane(tabId);
         if (this.burstTimers.get(tabId) !== timer) return;
         this.burstTimers.delete(tabId);
+        if (!this._isCancellationGenerationCurrent(tabId, generation)) return;
         if ((this.holdsByTab.get(tabId) ?? 0) > 0) return;
         try {
           await this.detach(target);
@@ -495,6 +672,76 @@ export class TabDebuggerCoordinator {
   }
 
   /**
+   * Wait for all dialog turns that were authorized ahead of this normal turn.
+   * Dialog turns never wait on the normal queue, so this cannot form a cycle.
+   *
+   * @param {number} tabId
+   * @returns {Promise<void>}
+   */
+  async _waitForDialogLane(tabId) {
+    let pending = this.pendingDialogsByTab.get(tabId);
+    while (pending) {
+      await pending.catch(() => {});
+      const next = this.pendingDialogsByTab.get(tabId);
+      if (!next || next === pending) return;
+      pending = next;
+    }
+  }
+
+  /** @param {number} tabId @returns {number} */
+  _getCancellationGeneration(tabId) {
+    return this.cancellationGenerationsByTab.get(tabId) ?? 0;
+  }
+
+  /** @param {number} tabId @param {number} generation @returns {boolean} */
+  _isCancellationGenerationCurrent(tabId, generation) {
+    return this._getCancellationGeneration(tabId) === generation;
+  }
+
+  /** @param {number} tabId @param {number} generation @returns {void} */
+  _assertCancellationGeneration(tabId, generation) {
+    if (!this._isCancellationGenerationCurrent(tabId, generation)) {
+      throw createDebuggerCanceledError();
+    }
+  }
+
+  /** @param {number} tabId @param {number} generation @returns {void} */
+  _assertCanStartWork(tabId, generation) {
+    if (this.cleanupBarriersByTab.has(tabId)) throw createDebuggerCanceledError();
+    const generations = this.inFlightTasksByTab.get(tabId);
+    for (const [taskGeneration, count] of generations ?? []) {
+      if (taskGeneration !== generation && count > 0) throw createDebuggerCanceledError();
+    }
+  }
+
+  /**
+   * Keep the underlying multi-command task tied to its physical debugger
+   * generation until it really settles. Cleanup may detach it, but a fresh
+   * session cannot start while stale code could still issue another command.
+   *
+   * @template T
+   * @param {number} tabId
+   * @param {number} generation
+   * @param {() => Promise<T>} task
+   * @returns {Promise<T>}
+   */
+  async _runTrackedTask(tabId, generation, task) {
+    const generations = this.inFlightTasksByTab.get(tabId) ?? new Map();
+    generations.set(generation, (generations.get(generation) ?? 0) + 1);
+    this.inFlightTasksByTab.set(tabId, generations);
+    try {
+      return await task();
+    } finally {
+      const remaining = (generations.get(generation) ?? 1) - 1;
+      if (remaining > 0) generations.set(generation, remaining);
+      else generations.delete(generation);
+      if (generations.size === 0 && this.inFlightTasksByTab.get(tabId) === generations) {
+        this.inFlightTasksByTab.delete(tabId);
+      }
+    }
+  }
+
+  /**
    * Attach and keep a debugger session alive across multiple runs for the same
    * tab. Nested holds are reference-counted.
    *
@@ -503,28 +750,42 @@ export class TabDebuggerCoordinator {
    * @returns {Promise<void>}
    */
   async acquire(tabId, initialize = async () => {}) {
+    const generation = this._getCancellationGeneration(tabId);
+    this._assertCanStartWork(tabId, generation);
     await this.runExclusive(tabId, async () => {
+      await this._waitForDialogLane(tabId);
+      this._assertCancellationGeneration(tabId, generation);
       const target = { tabId };
       const holdCount = this.holdsByTab.get(tabId) ?? 0;
       if (holdCount === 0) {
         const hasBurst = this._consumeBurstTimer(tabId);
+        const alreadyAttached = this.attachedTabs.has(tabId);
         let attached = false;
         try {
-          if (!hasBurst) {
-            await this._attach(target);
+          if (!hasBurst && !alreadyAttached) {
+            await this._attach(target, generation);
             attached = true;
           }
-          await initialize(target);
+          await this._runTrackedTask(tabId, generation, () => initialize(target));
+          await this._waitForDialogLane(tabId);
+          this._assertCancellationGeneration(tabId, generation);
         } catch (error) {
-          if (attached) {
+          if (!this._isCancellationGenerationCurrent(tabId, generation)) {
+            throw createDebuggerCanceledError();
+          }
+          if (attached && this._isCancellationGenerationCurrent(tabId, generation)) {
             await this.detach(target).catch(() => {});
             this.markDetached(tabId);
-          } else if (hasBurst) {
+          } else if (
+            this.attachedTabs.has(tabId) &&
+            this._isCancellationGenerationCurrent(tabId, generation)
+          ) {
             this._resetBurstTimer(tabId, target);
           }
           throw error;
         }
       }
+      this._assertCancellationGeneration(tabId, generation);
       this.holdsByTab.set(tabId, holdCount + 1);
     });
   }
@@ -537,7 +798,11 @@ export class TabDebuggerCoordinator {
    * @returns {Promise<void>}
    */
   async release(tabId, cleanup = async () => {}) {
+    if ((this.holdsByTab.get(tabId) ?? 0) === 0 && !this.attachedTabs.has(tabId)) return;
+    const generation = this._getCancellationGeneration(tabId);
     await this.runExclusive(tabId, async () => {
+      await this._waitForDialogLane(tabId);
+      this._assertCancellationGeneration(tabId, generation);
       const target = { tabId };
       const holdCount = this.holdsByTab.get(tabId) ?? 0;
       if (holdCount === 0) {
@@ -551,10 +816,12 @@ export class TabDebuggerCoordinator {
       this.holdsByTab.delete(tabId);
       let cleanupError = null;
       try {
-        await cleanup(target);
+        await this._runTrackedTask(tabId, generation, () => cleanup(target));
       } catch (error) {
         cleanupError = error;
       }
+      await this._waitForDialogLane(tabId);
+      this._assertCancellationGeneration(tabId, generation);
       try {
         await this.detach(target);
       } finally {
@@ -593,6 +860,11 @@ function boundDialogText(value) {
 function isDebuggerDetachedError(error) {
   const message = error instanceof Error ? error.message : String(error);
   return /not attached|no target with given id/i.test(message);
+}
+
+/** @returns {Error} */
+function createDebuggerCanceledError() {
+  return new Error('Debugger operation canceled because tab access was cleared.');
 }
 
 /**

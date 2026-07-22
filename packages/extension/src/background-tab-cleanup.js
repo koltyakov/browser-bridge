@@ -8,10 +8,12 @@ import { CONTENT_SCRIPT_TIMEOUT_MS, isNumber } from './background-state.js';
  *   sendTabMessage: (tabId: number, message: Record<string, unknown>, timeoutMs: number) => Promise<any>,
  *   readConsoleBuffer: (tabId: number, clear: boolean, chrome: typeof globalThis.chrome) => Promise<unknown>,
  *   readNetworkBuffer: (tabId: number, clear: boolean, chrome: typeof globalThis.chrome) => Promise<unknown>,
+ *   beginDebuggerCleanup: (tabId: number) => Promise<() => void>,
+ *   commitDebuggerCleanup: (tabId: number) => Promise<void>,
  *   clearFetchInterception: (tabId: number) => Promise<number>,
+ *   discardFetchInterception: (tabId: number) => void,
  *   stopCdpNetworkCapture: (tabId: number) => Promise<unknown>,
  *   discardCdpNetworkCapture: (tabId: number) => Promise<unknown>,
- *   clearDebuggerState: (tabId: number) => Promise<void>,
  *   cancelNavigationWaitsForWindow: (windowId: number) => void,
  *   isRecoverableInstrumentationError: (error: unknown) => boolean,
  *   isRestrictedAutomationUrl: (url: string) => boolean,
@@ -89,42 +91,48 @@ export function createTabCleanupController(chrome, deps) {
    */
   async function clearTabBridgeState(tabId, shouldContinue = async () => true) {
     if (!(await shouldContinue())) return;
-    await deps.clearFetchInterception(tabId);
-    if (!(await shouldContinue())) return;
+    const endCleanup = await deps.beginDebuggerCleanup(tabId);
     try {
-      await deps.stopCdpNetworkCapture(tabId);
-    } catch {
-      // A hard coordinator discard below recovers failed Network disable/release.
-    }
-    if (!(await shouldContinue())) return;
-    try {
-      await deps.clearDebuggerState(tabId);
+      if (!(await shouldContinue())) return;
+      await deps.commitDebuggerCleanup(tabId);
+      try {
+        if (await shouldContinue()) {
+          await deps.clearFetchInterception(tabId);
+        } else {
+          deps.discardFetchInterception(tabId);
+        }
+        if (await shouldContinue()) {
+          await deps.stopCdpNetworkCapture(tabId).catch(() => {});
+        }
+      } finally {
+        await deps.discardCdpNetworkCapture(tabId);
+      }
+      if (!(await shouldContinue())) return;
+      try {
+        await rollbackAllPatchesForTab(tabId, shouldContinue);
+      } catch (error) {
+        if (!deps.isRecoverableInstrumentationError(error)) {
+          throw error;
+        }
+      }
+      if (!(await shouldContinue())) return;
+      try {
+        await deps.readConsoleBuffer(tabId, true, chrome);
+      } catch (error) {
+        if (!deps.isRecoverableInstrumentationError(error)) {
+          throw error;
+        }
+      }
+      if (!(await shouldContinue())) return;
+      try {
+        await deps.readNetworkBuffer(tabId, true, chrome);
+      } catch (error) {
+        if (!deps.isRecoverableInstrumentationError(error)) {
+          throw error;
+        }
+      }
     } finally {
-      await deps.discardCdpNetworkCapture(tabId);
-    }
-    if (!(await shouldContinue())) return;
-    try {
-      await rollbackAllPatchesForTab(tabId, shouldContinue);
-    } catch (error) {
-      if (!deps.isRecoverableInstrumentationError(error)) {
-        throw error;
-      }
-    }
-    if (!(await shouldContinue())) return;
-    try {
-      await deps.readConsoleBuffer(tabId, true, chrome);
-    } catch (error) {
-      if (!deps.isRecoverableInstrumentationError(error)) {
-        throw error;
-      }
-    }
-    if (!(await shouldContinue())) return;
-    try {
-      await deps.readNetworkBuffer(tabId, true, chrome);
-    } catch (error) {
-      if (!deps.isRecoverableInstrumentationError(error)) {
-        throw error;
-      }
+      endCleanup();
     }
   }
 
@@ -150,12 +158,17 @@ export function createTabCleanupController(chrome, deps) {
 
   /** @param {number} tabId */
   async function clearRestrictedTabDebuggerState(tabId) {
-    await deps.clearFetchInterception(tabId);
-    await deps.stopCdpNetworkCapture(tabId).catch(() => {});
+    const endCleanup = await deps.beginDebuggerCleanup(tabId);
     try {
-      await deps.clearDebuggerState(tabId);
+      await deps.commitDebuggerCleanup(tabId);
+      try {
+        await deps.clearFetchInterception(tabId);
+        await deps.stopCdpNetworkCapture(tabId).catch(() => {});
+      } finally {
+        await deps.discardCdpNetworkCapture(tabId);
+      }
     } finally {
-      await deps.discardCdpNetworkCapture(tabId);
+      endCleanup();
     }
   }
 
@@ -204,7 +217,6 @@ export function createTabMoveCleanupController(deps) {
     if (!(await deps.isTabOutsideEnabledWindow(tabId))) return;
     if (attachInfo.newWindowId === deps.getEnabledWindowId()) return;
 
-    deps.clearDialogState(tabId);
     await deps.clearTabBridgeState(tabId, () => deps.isTabOutsideEnabledWindow(tabId));
   }
 
