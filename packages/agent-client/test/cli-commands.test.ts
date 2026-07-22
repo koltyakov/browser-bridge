@@ -623,7 +623,7 @@ test('bbx tabs.list uses the dotted-method shortcut and prints the raw bridge re
   }
 });
 
-test('bbx click resolves a selector before dispatching the shortcut bridge method', async () => {
+test('bbx click dispatches a selector atomically', async () => {
   const bridgeServer = await bridgeServerWith({
     'dom.query': (request) =>
       createSuccess(request.id, {
@@ -655,24 +655,12 @@ test('bbx click resolves a selector before dispatching the shortcut bridge metho
     assert.deepEqual(payload.evidence, {
       elementRef: 'el_button_2',
     });
-    assert.equal(bridgeServer.requests.length, 3);
-    assert.equal(bridgeServer.requests[1].method, 'dom.query');
+    assert.equal(bridgeServer.requests.length, 2);
+    assert.equal(bridgeServer.requests[1].method, 'input.click');
+    assert.equal(bridgeServer.requests[1].tab_id, null);
     assert.deepEqual(bridgeServer.requests[1].params, {
-      selector: '#save',
-      withinRef: null,
-      budget: {
-        maxNodes: 25,
-        maxDepth: 4,
-        textBudget: 600,
-        includeBbox: true,
-        attributeAllowlist: [],
-      },
-    });
-    assert.equal(bridgeServer.requests[2].method, 'input.click');
-    assert.equal(bridgeServer.requests[2].tab_id, null);
-    assert.deepEqual(bridgeServer.requests[2].params, {
       target: {
-        elementRef: 'el_button_2',
+        selector: '#save',
       },
       button: 'right',
       clickCount: 1,
@@ -683,35 +671,23 @@ test('bbx click resolves a selector before dispatching the shortcut bridge metho
       submit: false,
       key: '',
       modifiers: [],
+      executionMode: 'dom',
+      recoverStale: false,
     });
-    assert.equal(bridgeServer.requests[2].meta.source, 'cli');
+    assert.equal(bridgeServer.requests[1].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();
   }
 });
 
-test('bbx click re-resolves the selector and retries once on ELEMENT_STALE', async () => {
-  let queryCount = 0;
+test('bbx click does not query or retry selector actions after a stale failure', async () => {
   let clickCount = 0;
   const bridgeServer = await bridgeServerWith({
-    'dom.query': (request) => {
-      queryCount += 1;
-      return createSuccess(request.id, {
-        nodes: [{ elementRef: `el_button_${queryCount}`, tag: 'button' }],
-        total: 1,
-      });
-    },
     'input.click': (request) => {
       clickCount += 1;
-      if (clickCount === 1) {
-        return createFailure(request.id, 'ELEMENT_STALE', 'Element reference is stale.', null, {
-          method: 'input.click',
-        });
-      }
-      return createSuccess(request.id, {
-        clicked: true,
-        elementRef: 'el_button_2',
+      return createFailure(request.id, 'ELEMENT_STALE', 'Element reference is stale.', null, {
+        method: 'input.click',
       });
     },
   });
@@ -726,17 +702,13 @@ test('bbx click re-resolves the selector and retries once on ELEMENT_STALE', asy
     });
     const payload = expectCliPayload(result.json);
 
-    assert.equal(result.status, 0);
-    assert.equal(payload.ok, true);
-    assert.match(result.stderr, /ELEMENT_STALE on "#save", re-resolving and retrying/);
-    assert.equal(queryCount, 2);
-    assert.equal(clickCount, 2);
-    // Second click must target the freshly resolved ref, not the stale one.
+    assert.equal(result.status, 1);
+    assert.equal(payload.ok, false);
+    assert.equal(result.stderr, '');
+    assert.equal(clickCount, 1);
     const clickRequests = bridgeServer.requests.filter((r) => r.method === 'input.click');
-    assert.deepEqual(
-      clickRequests.map((r) => (r.params.target as { elementRef: string }).elementRef),
-      ['el_button_1', 'el_button_2']
-    );
+    assert.equal(clickRequests.length, 1);
+    assert.deepEqual(clickRequests[0].params.target, { selector: '#save' });
   } finally {
     await bridgeServer.close();
   }
@@ -863,6 +835,8 @@ test('bbx press-key without a selector sends a page-level input.press_key reques
       target: {},
       text: '',
       value: '',
+      executionMode: 'dom',
+      recoverStale: false,
     });
     assert.equal(bridgeServer.requests[1].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
@@ -871,7 +845,7 @@ test('bbx press-key without a selector sends a page-level input.press_key reques
   }
 });
 
-test('bbx press-key resolves a selector before forwarding input.press_key', async () => {
+test('bbx press-key forwards a selector atomically', async () => {
   const bridgeServer = await bridgeServerWith({
     'dom.query': (request) =>
       createSuccess(request.id, {
@@ -906,23 +880,10 @@ test('bbx press-key resolves a selector before forwarding input.press_key', asyn
       key: 'Escape',
       elementRef: 'el_button_1',
     });
-    assert.equal(bridgeServer.requests.length, 3);
-    assert.equal(bridgeServer.requests[1].method, 'dom.query');
+    assert.equal(bridgeServer.requests.length, 2);
+    assert.equal(bridgeServer.requests[1].method, 'input.press_key');
+    assert.equal(bridgeServer.requests[1].tab_id, null);
     assert.deepEqual(bridgeServer.requests[1].params, {
-      selector: '#dismiss',
-      withinRef: null,
-      budget: {
-        maxNodes: 25,
-        maxDepth: 4,
-        textBudget: 600,
-        includeBbox: true,
-        attributeAllowlist: [],
-      },
-    });
-    assert.equal(bridgeServer.requests[1].meta.source, 'cli');
-    assert.equal(bridgeServer.requests[2].method, 'input.press_key');
-    assert.equal(bridgeServer.requests[2].tab_id, null);
-    assert.deepEqual(bridgeServer.requests[2].params, {
       button: 'left',
       clickCount: 1,
       clear: false,
@@ -931,12 +892,14 @@ test('bbx press-key resolves a selector before forwarding input.press_key', asyn
       modifiers: [],
       submit: false,
       target: {
-        elementRef: 'el_button_1',
+        selector: '#dismiss',
       },
       text: '',
       value: '',
+      executionMode: 'dom',
+      recoverStale: false,
     });
-    assert.equal(bridgeServer.requests[2].meta.source, 'cli');
+    assert.equal(bridgeServer.requests[1].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();

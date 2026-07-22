@@ -677,6 +677,8 @@ test('handleInputTool click passes selectors atomically to input.click', async (
         action: 'click',
         selector: 'button',
         modifiers: ['Meta'],
+        executionMode: 'cdp',
+        recoverStale: true,
       });
       const clickCall = calls.find((c) => c.method === 'input.click');
       assert.ok(clickCall, 'input.click should be called');
@@ -686,6 +688,8 @@ test('handleInputTool click passes selectors atomically to input.click', async (
         button: undefined,
         clickCount: undefined,
         modifiers: ['Meta'],
+        executionMode: 'cdp',
+        recoverStale: true,
       });
       assert.equal(result.isError, undefined);
     }

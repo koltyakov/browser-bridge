@@ -68,16 +68,31 @@ const ACTION_SUMMARIES = {
   },
   closed: { text: (r) => `Tab ${r.tabId} closed.`, evidence: (r) => r },
   clicked: {
-    text: (r) => `Clicked ${r.elementRef ?? 'element'}.`,
-    evidence: (r) => ({ elementRef: r.elementRef }),
+    text: (r) => {
+      const mode = toRecord(r.execution).actualMode;
+      return `Clicked ${r.elementRef ?? 'element'}${typeof mode === 'string' ? ` via ${mode}` : ''}.`;
+    },
+    evidence: (r) => ({
+      elementRef: r.elementRef,
+      resolution: r.resolution,
+      execution: r.execution,
+    }),
   },
   focused: {
     text: (r) => `Focused ${r.elementRef ?? 'element'}.`,
-    evidence: (r) => ({ elementRef: r.elementRef }),
+    evidence: (r) => ({
+      elementRef: r.elementRef,
+      resolution: r.resolution,
+      execution: r.execution,
+    }),
   },
   typed: {
     text: (r) => `Typed into ${r.elementRef ?? 'element'}.`,
-    evidence: (r) => ({ elementRef: r.elementRef }),
+    evidence: (r) => ({
+      elementRef: r.elementRef,
+      resolution: r.resolution,
+      execution: r.execution,
+    }),
   },
   pressed: {
     text: (r) => `Key pressed${r.key ? ` (${r.key})` : ''}.`,
@@ -523,6 +538,27 @@ export function summarizeBridgeResponse(response, method) {
         evidence: handler.evidence(result),
       };
     }
+  }
+  if (method?.startsWith('input.') && result.execution && typeof result.execution === 'object') {
+    const execution = toRecord(result.execution);
+    return {
+      ok: true,
+      summary: appendProtocolWarning(
+        `${method} completed via ${execution.actualMode ?? 'dom'}${result.elementRef ? ` on ${result.elementRef}` : ''}.`,
+        protocolWarning
+      ),
+      evidence: {
+        elementRef: result.elementRef ?? null,
+        sourceRef: result.sourceRef ?? null,
+        destinationRef: result.destinationRef ?? null,
+        typed: result.typed,
+        checked: result.checked,
+        selectedValues: result.selectedValues,
+        mode: result.mode,
+        resolution: result.resolution,
+        execution: result.execution,
+      },
+    };
   }
   if (typeof result.tabId === 'number' && typeof result.url === 'string') {
     const actionMethod = typeof result.method === 'string' ? result.method : method;

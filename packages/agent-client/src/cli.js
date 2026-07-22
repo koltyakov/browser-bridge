@@ -362,62 +362,31 @@ async function main() {
 
     const shortcutCmd = SHORTCUT_COMMANDS[command];
     if (shortcutCmd) {
-      // Allow `bbx <shortcut> --tab <id> ...` to target a specific tab.
-      // Without this, --tab gets eaten as a positional argument and the
-      // request hits whatever tab the bridge route happens to be pointing
-      // at (typically the active tab). For element-resolving shortcuts
-      // the ref must be resolved against the SAME tab the action targets,
-      // so we pass tabId to both resolveRef and the subsequent request.
       const { tabId, rest: shortcutArgs } = extractTabFlag(rest);
-      const selectorInput = shortcutCmd.resolve ? shortcutArgs[0] : null;
-      if (shortcutCmd.resolve && !selectorInput) {
-        throw new Error(`Usage: ${command} <ref|selector>`);
-      }
-
-      // Retry-on-stale: if the action fails with ELEMENT_STALE and the
-      // original input was a selector (not an el_xxx ref), re-resolve the
-      // selector and retry once. This handles the common case where the
-      // agent resolved an element, then the page re-rendered (React
-      // reconciliation, SPA navigation) before the action was dispatched.
-      const canRetry = typeof selectorInput === 'string' && !selectorInput.startsWith('el_');
-      const maxAttempts = canRetry ? 2 : 1;
-      /** @type {import('./runtime.js').BridgeResponse | undefined} */
-      let response;
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        let elementRef;
-        if (shortcutCmd.resolve && selectorInput) {
-          elementRef = await resolveRef(client, selectorInput, tabId, REQUEST_SOURCE);
-        }
-        response = await requestBridge(
-          client,
-          shortcutCmd.method,
-          shortcutCmd.build(shortcutArgs, elementRef),
-          { source: REQUEST_SOURCE, tabId }
-        );
-        const isStale = !response.ok && response.error?.code === 'ELEMENT_STALE';
-        if (isStale && attempt < maxAttempts) {
-          process.stderr.write(
-            `bbx: ELEMENT_STALE on "${selectorInput}", re-resolving and retrying...\n`
-          );
-        }
-        if (!isStale || attempt >= maxAttempts) break;
-      }
-      if (response) await printSummary(response, shortcutCmd.printMethod);
+      const response = await requestBridge(
+        client,
+        shortcutCmd.method,
+        shortcutCmd.build(shortcutArgs),
+        { source: REQUEST_SOURCE, tabId }
+      );
+      await printSummary(response, shortcutCmd.printMethod);
       return;
     }
 
     if (command === 'press-key') {
       const [key, refOrSelector] = rest;
       if (!key) throw new Error('Usage: press-key <key> [ref|selector]');
-      const elementRef = refOrSelector
-        ? await resolveRef(client, refOrSelector, null, REQUEST_SOURCE)
+      const target = refOrSelector
+        ? refOrSelector.startsWith('el_')
+          ? { elementRef: refOrSelector }
+          : { selector: refOrSelector }
         : undefined;
       const response = await requestBridge(
         client,
         'input.press_key',
         {
           key,
-          target: elementRef ? { elementRef } : undefined,
+          target,
         },
         { source: REQUEST_SOURCE }
       );

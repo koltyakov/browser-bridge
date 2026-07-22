@@ -112,3 +112,32 @@ test('TabDebuggerCoordinator releases the queue after task failures', async () =
   assert.equal(attachCount, 2);
   assert.equal(detachCount, 2);
 });
+
+test('TabDebuggerCoordinator can fail detached mutations without replaying them', async () => {
+  let attachCount = 0;
+  let taskCount = 0;
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {
+      attachCount += 1;
+    },
+    detach: async () => {},
+    burstIdleMs: 0,
+  });
+
+  await assert.rejects(
+    coordinator.run(
+      7,
+      async () => {
+        taskCount += 1;
+        throw new Error('Debugger is not attached');
+      },
+      { retryDetached: false }
+    ),
+    /not attached/
+  );
+  assert.equal(attachCount, 1);
+  assert.equal(taskCount, 1);
+
+  assert.equal(await coordinator.run(7, async () => 'next'), 'next');
+  assert.equal(attachCount, 2);
+});

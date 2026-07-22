@@ -6,6 +6,13 @@ export const ERROR_CODES = Object.freeze({
   ACCESS_DENIED: 'ACCESS_DENIED',
   TAB_MISMATCH: 'TAB_MISMATCH',
   ELEMENT_STALE: 'ELEMENT_STALE',
+  ELEMENT_AMBIGUOUS: 'ELEMENT_AMBIGUOUS',
+  ELEMENT_NOT_ACTIONABLE: 'ELEMENT_NOT_ACTIONABLE',
+  ELEMENT_OBSCURED: 'ELEMENT_OBSCURED',
+  ELEMENT_NOT_FOUND: 'ELEMENT_NOT_FOUND',
+  INPUT_UNSUPPORTED: 'INPUT_UNSUPPORTED',
+  INPUT_INVALID_TARGET: 'INPUT_INVALID_TARGET',
+  INPUT_FOCUS_CHANGED: 'INPUT_FOCUS_CHANGED',
   RESULT_TRUNCATED: 'RESULT_TRUNCATED',
   RATE_LIMITED: 'RATE_LIMITED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
@@ -32,7 +39,41 @@ export const ERROR_RECOVERY = Object.freeze({
   [ERROR_CODES.ELEMENT_STALE]: {
     retry: false,
     alternativeMethod: 'dom.query',
-    hint: 'Element was removed from the DOM. Re-query with the same selector to get a fresh elementRef.',
+    hint: 'Element was removed from the DOM. Re-query for a fresh elementRef, or retry an input once with recoverStale=true when the same page and a strong unique descriptor still apply.',
+  },
+  [ERROR_CODES.ELEMENT_AMBIGUOUS]: {
+    retry: false,
+    alternativeMethod: 'dom.query',
+    hint: 'Multiple equally actionable elements matched. Use a more specific selector or an elementRef.',
+  },
+  [ERROR_CODES.ELEMENT_NOT_ACTIONABLE]: {
+    retry: false,
+    alternativeMethod: 'dom.describe',
+    hint: 'The target is hidden, disabled, inert, or has no rendered area. Inspect it and choose an actionable target.',
+  },
+  [ERROR_CODES.ELEMENT_OBSCURED]: {
+    retry: false,
+    alternativeMethod: 'layout.hit_test',
+    hint: 'Another element blocks the target point. Inspect the blocker or wait for the overlay to close.',
+  },
+  [ERROR_CODES.ELEMENT_NOT_FOUND]: {
+    retry: false,
+    alternativeMethod: 'dom.query',
+    hint: 'No element matched the target selector. Check or narrow the selector with dom.query.',
+  },
+  [ERROR_CODES.INPUT_UNSUPPORTED]: {
+    retry: false,
+    hint: 'The requested execution mode does not support this input operation. Use executionMode=dom or choose a CDP-supported input method.',
+  },
+  [ERROR_CODES.INPUT_INVALID_TARGET]: {
+    retry: false,
+    alternativeMethod: 'dom.describe',
+    hint: 'The target is not compatible with this input operation or the requested option does not exist. Inspect the target and choose the appropriate control.',
+  },
+  [ERROR_CODES.INPUT_FOCUS_CHANGED]: {
+    retry: false,
+    alternativeMethod: 'dom.describe',
+    hint: 'Focus moved away from the resolved editable target before native text dispatch. Inspect focus handlers or target the control that retained focus.',
   },
   [ERROR_CODES.TAB_MISMATCH]: {
     retry: false,

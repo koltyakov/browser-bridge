@@ -13,20 +13,361 @@
   const contentHelpers =
     /** @type {typeof globalThis & { __BBX_CONTENT_HELPERS__?: {
      NON_TEXT_INPUT_TYPES: Set<string>,
-     clamp: (value: number | string | null | undefined, minimum: number, maximum: number) => number
+     clamp: (value: number | string | null | undefined, minimum: number, maximum: number) => number,
+     escapeTailwindSelector: (selector: string) => string
     } }} */ (globalThis).__BBX_CONTENT_HELPERS__;
   const registry =
     /** @type {typeof globalThis & { __BBX_CONTENT_REGISTRY__?: {
      getRequiredElement: (ref: string) => Element,
      rememberElement: (element: Element) => string,
-     resolveTarget: (target?: { elementRef?: string, selector?: string }) => Element
+     resolveTarget: (target?: { elementRef?: string, selector?: string }) => Element,
+     resolveInputReference: (ref: string, recoverStale: boolean) => {
+       element: Element,
+       recovery: null | { oldRef: string, newRef: string, matchedFields: string[], confidenceBasis: string }
+     }
     } }} */ (globalThis).__BBX_CONTENT_REGISTRY__;
   if (!contentHelpers || !registry) {
     throw new Error('Browser Bridge helpers and registry must load before content-input.js.');
   }
 
-  const { NON_TEXT_INPUT_TYPES, clamp } = contentHelpers;
-  const { rememberElement, resolveTarget } = registry;
+  const { NON_TEXT_INPUT_TYPES, clamp, escapeTailwindSelector } = contentHelpers;
+  const { rememberElement, resolveTarget, resolveInputReference } = registry;
+  const MAX_INPUT_CANDIDATES = 25;
+
+  /**
+   * @typedef {{
+   *   strategy: 'elementRef' | 'selector-first' | 'selector-ranked' | 'stale-recovery',
+   *   candidateCount: number,
+   *   evaluatedCount: number,
+   *   scrolled: boolean,
+   *   hitTest: 'target' | 'descendant' | 'none' | 'not-required',
+   *   recovered: boolean,
+   *   oldRef?: string,
+   *   newRef?: string,
+   *   matchedFields?: string[],
+   *   confidenceBasis?: string
+   * }} InputResolutionMetadata
+   */
+
+  /**
+   * @typedef {{
+   *   element: Element,
+   *   point: { x: number, y: number },
+   *   resolution: InputResolutionMetadata
+   * }} ResolvedInputTarget
+   */
+
+  /**
+   * @param {string} code
+   * @param {string} message
+   * @param {Record<string, unknown>} details
+   * @returns {Error & { code: string, details: Record<string, unknown> }}
+   */
+  function createInputError(code, message, details) {
+    return Object.assign(new Error(message), { code, details });
+  }
+
+  /** @param {Element} element @returns {CSSStyleDeclaration | { display: string, visibility: string, opacity: string, pointerEvents: string }} */
+  function readComputedStyle(element) {
+    if (typeof globalThis.getComputedStyle === 'function') {
+      return globalThis.getComputedStyle(element);
+    }
+    return {
+      display: '',
+      visibility: '',
+      opacity: '1',
+      pointerEvents: '',
+    };
+  }
+
+  /**
+   * @param {Element} element
+   * @returns {{ actionable: boolean, reasons: string[], inViewport: boolean, hitRequired: boolean, point: { x: number, y: number }, hit: Element | null }}
+   */
+  function inspectActionability(element) {
+    const rect = element.getBoundingClientRect();
+    const style = readComputedStyle(element);
+    const reasons = [];
+    const disabled =
+      ('disabled' in element &&
+        Boolean(/** @type {{ disabled?: boolean }} */ (element).disabled)) ||
+      element.getAttribute('aria-disabled') === 'true';
+    const inert =
+      ('inert' in element && Boolean(/** @type {{ inert?: boolean }} */ (element).inert)) ||
+      element.hasAttribute('inert') ||
+      Boolean(element.closest?.('[inert]'));
+    if (!document.contains(element)) reasons.push('detached');
+    if (rect.width < 1 || rect.height < 1) reasons.push('zero-size');
+    if (
+      style.display === 'none' ||
+      style.visibility === 'hidden' ||
+      style.visibility === 'collapse'
+    ) {
+      reasons.push('hidden');
+    }
+    if (Number(style.opacity) === 0) reasons.push('transparent');
+    if (style.pointerEvents === 'none') reasons.push('pointer-events-none');
+    if (disabled) reasons.push('disabled');
+    if (inert) reasons.push('inert');
+    const viewportWidth = Number(globalThis.window?.innerWidth || globalThis.innerWidth || 0);
+    const viewportHeight = Number(globalThis.window?.innerHeight || globalThis.innerHeight || 0);
+    const hitRequired = viewportWidth > 0 && viewportHeight > 0;
+    const inViewport = !hitRequired
+      ? true
+      : rect.left + rect.width > 0 &&
+        rect.top + rect.height > 0 &&
+        rect.left < viewportWidth &&
+        rect.top < viewportHeight;
+    const visibleLeft = hitRequired ? Math.max(0, rect.left) : rect.left;
+    const visibleTop = hitRequired ? Math.max(0, rect.top) : rect.top;
+    const visibleRight = hitRequired
+      ? Math.min(viewportWidth, rect.left + rect.width)
+      : rect.left + rect.width;
+    const visibleBottom = hitRequired
+      ? Math.min(viewportHeight, rect.top + rect.height)
+      : rect.top + rect.height;
+    const point =
+      inViewport && visibleRight > visibleLeft && visibleBottom > visibleTop
+        ? {
+            x: visibleLeft + (visibleRight - visibleLeft) / 2,
+            y: visibleTop + (visibleBottom - visibleTop) / 2,
+          }
+        : { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    const hit =
+      inViewport && typeof document.elementFromPoint === 'function'
+        ? document.elementFromPoint(point.x, point.y)
+        : null;
+    return { actionable: reasons.length === 0, reasons, inViewport, hitRequired, point, hit };
+  }
+
+  /** @param {Element} element @param {Element | null} hit @returns {'target' | 'descendant' | 'none'} */
+  function classifyHit(element, hit) {
+    if (!hit) return 'none';
+    if (hit === element) return 'target';
+    return typeof element.contains === 'function' && element.contains(hit) ? 'descendant' : 'none';
+  }
+
+  /** @param {Element} element @returns {Record<string, string>} */
+  function describeBlocker(element) {
+    /** @type {Record<string, string>} */
+    const description = { tag: element.tagName.toLowerCase() };
+    const id = element.getAttribute('id');
+    const role = element.getAttribute('role');
+    const name = element.getAttribute('aria-label');
+    const className = element.getAttribute('class');
+    if (id) description.id = id.slice(0, 80);
+    if (role) description.role = role.slice(0, 80);
+    if (name) description.name = name.slice(0, 120);
+    if (className) description.class = className.trim().split(/\s+/).slice(0, 3).join(' ');
+    return description;
+  }
+
+  /**
+   * Resolve one input target atomically, ranking at most 25 selector matches.
+   * Explicit refs retain exact identity unless stale recovery is opted in.
+   *
+   * @param {{ elementRef?: string, selector?: string } | undefined} target
+   * @param {{ pointer: boolean, recoverStale: boolean }} options
+   * @returns {ResolvedInputTarget}
+   */
+  function resolveActionableTarget(target, options) {
+    /** @type {Element} */
+    let element;
+    /** @type {InputResolutionMetadata} */
+    let resolution;
+    if (target?.elementRef) {
+      const resolved = resolveInputReference(target.elementRef, options.recoverStale);
+      element = resolved.element;
+      resolution = {
+        strategy: resolved.recovery ? 'stale-recovery' : 'elementRef',
+        candidateCount: 1,
+        evaluatedCount: 1,
+        scrolled: false,
+        hitTest: options.pointer ? 'none' : 'not-required',
+        recovered: Boolean(resolved.recovery),
+        ...(resolved.recovery || {}),
+      };
+    } else if (target?.selector) {
+      let allMatches;
+      try {
+        allMatches = document.querySelectorAll(escapeTailwindSelector(target.selector));
+      } catch (error) {
+        throw createInputError('INVALID_REQUEST', 'Input selector is invalid.', {
+          selector: target.selector.slice(0, 500),
+          reason:
+            error instanceof Error ? error.message.slice(0, 200) : String(error).slice(0, 200),
+        });
+      }
+      const candidates = [...allMatches].slice(0, MAX_INPUT_CANDIDATES);
+      if (!candidates.length) {
+        throw createInputError('ELEMENT_NOT_FOUND', 'Input target was not found.', {
+          selector: target.selector,
+          candidateCount: 0,
+          evaluatedCount: 0,
+        });
+      }
+      const inspected = candidates.map((candidate, index) => {
+        const state = inspectActionability(candidate);
+        const hit = classifyHit(candidate, state.hit);
+        const usable =
+          state.actionable && !(options.pointer && state.hitRequired && hit === 'none');
+        return {
+          element: candidate,
+          index,
+          state,
+          hit,
+          score: usable ? 10 + (state.inViewport ? 2 : 0) + (hit !== 'none' ? 1 : 0) : -1,
+        };
+      });
+      if (inspected[0].score >= 0) {
+        element = inspected[0].element;
+        resolution = {
+          strategy: 'selector-first',
+          candidateCount: Math.min(allMatches.length, MAX_INPUT_CANDIDATES),
+          evaluatedCount: candidates.length,
+          scrolled: false,
+          hitTest: options.pointer ? inspected[0].hit : 'not-required',
+          recovered: false,
+        };
+      } else {
+        if (allMatches.length > MAX_INPUT_CANDIDATES) {
+          throw createInputError(
+            'ELEMENT_AMBIGUOUS',
+            'Selector has too many candidates for bounded input resolution.',
+            {
+              selector: target.selector,
+              candidateCount: allMatches.length,
+              evaluatedCount: MAX_INPUT_CANDIDATES,
+              limit: MAX_INPUT_CANDIDATES,
+            }
+          );
+        }
+        const ranked = inspected
+          .filter((candidate) => candidate.score >= 0)
+          .sort((a, b) => b.score - a.score);
+        if (!ranked.length) {
+          if (
+            options.pointer &&
+            inspected[0].state.actionable &&
+            (inspected[0].state.hitRequired || inspected[0].state.hit)
+          ) {
+            element = inspected[0].element;
+            resolution = {
+              strategy: 'selector-first',
+              candidateCount: candidates.length,
+              evaluatedCount: candidates.length,
+              scrolled: false,
+              hitTest: inspected[0].hit,
+              recovered: false,
+            };
+          } else {
+            throw createInputError('ELEMENT_NOT_ACTIONABLE', 'No selector match is actionable.', {
+              selector: target.selector,
+              candidateCount: candidates.length,
+              evaluatedCount: candidates.length,
+              reasons: [
+                ...new Set(inspected.flatMap((candidate) => candidate.state.reasons)),
+              ].slice(0, 8),
+            });
+          }
+        } else {
+          if (ranked.length > 1 && ranked[0].score === ranked[1].score) {
+            throw createInputError(
+              'ELEMENT_AMBIGUOUS',
+              'Selector matches equally actionable elements.',
+              {
+                selector: target.selector,
+                candidateCount: candidates.length,
+                evaluatedCount: candidates.length,
+                topScore: ranked[0].score,
+              }
+            );
+          }
+          element = ranked[0].element;
+          resolution = {
+            strategy: 'selector-ranked',
+            candidateCount: candidates.length,
+            evaluatedCount: candidates.length,
+            scrolled: false,
+            hitTest: options.pointer ? ranked[0].hit : 'not-required',
+            recovered: false,
+          };
+        }
+      }
+    } else {
+      throw createInputError('ELEMENT_NOT_ACTIONABLE', 'Input target is required.', {
+        candidateCount: 0,
+        evaluatedCount: 0,
+      });
+    }
+
+    let state = inspectActionability(element);
+    if (!state.inViewport) {
+      scrollTargetIntoView(element);
+      resolution.scrolled = true;
+      state = inspectActionability(element);
+    }
+    if (!state.actionable) {
+      throw createInputError('ELEMENT_NOT_ACTIONABLE', 'Input target is not actionable.', {
+        elementRef: rememberElement(element),
+        reasons: state.reasons.slice(0, 8),
+        resolution,
+      });
+    }
+    if (options.pointer) {
+      const hit = classifyHit(element, state.hit);
+      resolution.hitTest = hit;
+      if (hit === 'none' && state.hitRequired) {
+        throw createInputError(
+          'ELEMENT_OBSCURED',
+          'Input target is obscured at its center point.',
+          {
+            elementRef: rememberElement(element),
+            point: state.point,
+            blocker: state.hit ? describeBlocker(state.hit) : null,
+            resolution,
+          }
+        );
+      }
+    }
+    return { element, point: state.point, resolution };
+  }
+
+  /** @param {'dom' | 'cdp'} mode @param {{ x: number, y: number }} point */
+  function getExecutionMetadata(mode, point) {
+    return {
+      requestedMode: mode,
+      actualMode: mode,
+      fallbackReason: null,
+      debuggerUsed: mode === 'cdp',
+      targetCoordinates: point,
+    };
+  }
+
+  /**
+   * Recheck a nested control selected from an actionable wrapper.
+   *
+   * @param {ResolvedInputTarget} resolved
+   * @param {Element} element
+   * @returns {ResolvedInputTarget}
+   */
+  function finalizeDerivedTarget(resolved, element) {
+    if (element === resolved.element) return resolved;
+    let state = inspectActionability(element);
+    if (!state.inViewport) {
+      scrollTargetIntoView(element);
+      resolved.resolution.scrolled = true;
+      state = inspectActionability(element);
+    }
+    if (!state.actionable) {
+      throw createInputError('ELEMENT_NOT_ACTIONABLE', 'Nested input control is not actionable.', {
+        elementRef: rememberElement(element),
+        reasons: state.reasons.slice(0, 8),
+        resolution: resolved.resolution,
+      });
+    }
+    return { element, point: state.point, resolution: resolved.resolution };
+  }
 
   /**
    * @param {Element} element
@@ -440,11 +781,10 @@
   }
 
   /**
-   * @param {{ elementRef?: string, selector?: string }} [target={}]
+   * @param {Element} element
    * @returns {HTMLInputElement}
    */
-  function resolveCheckableTarget(target = {}) {
-    const element = resolveTarget(target);
+  function resolveCheckableTarget(element) {
     if (
       element instanceof HTMLInputElement &&
       ['checkbox', 'radio'].includes(element.type.toLowerCase())
@@ -459,15 +799,16 @@
       }
     }
 
-    throw new Error('Target is not a checkbox or radio input.');
+    throw createInputError('INPUT_INVALID_TARGET', 'Target is not a checkbox or radio input.', {
+      elementRef: rememberElement(element),
+    });
   }
 
   /**
-   * @param {{ elementRef?: string, selector?: string }} [target={}]
+   * @param {Element} element
    * @returns {HTMLSelectElement}
    */
-  function resolveSelectTarget(target = {}) {
-    const element = resolveTarget(target);
+  function resolveSelectTarget(element) {
     if (element instanceof HTMLSelectElement) {
       return element;
     }
@@ -486,23 +827,27 @@
       }
     }
 
-    throw new Error('Target is not a select control.');
+    throw createInputError('INPUT_INVALID_TARGET', 'Target is not a select control.', {
+      elementRef: rememberElement(element),
+    });
   }
 
   /**
    * Trigger a click-like interaction on a target element.
    *
    * @param {Record<string, any>} params
-   * @returns {{ elementRef: string, clicked: boolean, button: string, clickCount: number }}
+   * @returns {Record<string, unknown>}
    */
   function clickTarget(params) {
-    const element = resolveTarget(params.target);
+    const resolved = resolveActionableTarget(params.target, {
+      pointer: true,
+      recoverStale: params.recoverStale === true,
+    });
+    const { element, point, resolution } = resolved;
     const button = normalizeMouseButton(params.button);
     const clickCount = clamp(params.clickCount ?? 1, 1, 2);
     const modifiers = normalizeModifierState(params.modifiers);
 
-    scrollTargetIntoView(element);
-    const point = getViewportPoint(element);
     focusElement(element);
     dispatchMouseEvent(element, 'mousemove', point, button, 0, modifiers);
     dispatchMouseEvent(element, 'mousedown', point, button, clickCount, modifiers);
@@ -532,6 +877,8 @@
       clicked: true,
       button,
       clickCount,
+      resolution,
+      execution: getExecutionMetadata('dom', point),
     };
   }
 
@@ -539,16 +886,21 @@
    * Focus one element so follow-up keyboard input lands consistently.
    *
    * @param {Record<string, any>} params
-   * @returns {{ elementRef: string, focused: boolean, tag: string }}
+   * @returns {Record<string, unknown>}
    */
   function focusTarget(params) {
-    const element = resolveTarget(params.target);
-    scrollTargetIntoView(element);
+    const resolved = resolveActionableTarget(params.target, {
+      pointer: false,
+      recoverStale: params.recoverStale === true,
+    });
+    const { element, point, resolution } = resolved;
     const focused = focusElement(element);
     return {
       elementRef: rememberElement(element),
       focused: isElementFocused(element) || isElementFocused(focused),
       tag: focused.tagName.toLowerCase(),
+      resolution,
+      execution: getExecutionMetadata('dom', point),
     };
   }
 
@@ -556,16 +908,22 @@
    * Type text into an editable control or contenteditable region.
    *
    * @param {Record<string, any>} params
-   * @returns {{ elementRef: string, typed: number, value: string }}
+   * @returns {Record<string, unknown>}
    */
   function typeIntoTarget(params) {
-    const element = resolveTarget(params.target);
-    const editable = getEditableTarget(element);
+    const base = resolveActionableTarget(params.target, {
+      pointer: false,
+      recoverStale: params.recoverStale === true,
+    });
+    const editable = getEditableTarget(base.element);
     if (!editable) {
-      throw new Error('Target is not an editable control.');
+      throw createInputError('INPUT_INVALID_TARGET', 'Target is not an editable control.', {
+        elementRef: rememberElement(base.element),
+        resolution: base.resolution,
+      });
     }
 
-    scrollTargetIntoView(editable);
+    const resolved = finalizeDerivedTarget(base, editable);
     focusElement(editable);
 
     if (params.clear) {
@@ -585,6 +943,8 @@
       elementRef: rememberElement(editable),
       typed: text.length,
       value: getEditableValue(editable),
+      resolution: resolved.resolution,
+      execution: getExecutionMetadata('dom', resolved.point),
     };
   }
 
@@ -601,16 +961,22 @@
    *   "auto" - try setter first, verify value stuck, fallback to keystrokes
    *
    * @param {Record<string, any>} params
-   * @returns {{ elementRef: string, value: string, mode: string }}
+   * @returns {Record<string, unknown>}
    */
   function fillTarget(params) {
-    const element = resolveTarget(params.target);
-    const editable = getEditableTarget(element);
+    const base = resolveActionableTarget(params.target, {
+      pointer: false,
+      recoverStale: params.recoverStale === true,
+    });
+    const editable = getEditableTarget(base.element);
     if (!editable) {
-      throw new Error('Target is not an editable control.');
+      throw createInputError('INPUT_INVALID_TARGET', 'Target is not an editable control.', {
+        elementRef: rememberElement(base.element),
+        resolution: base.resolution,
+      });
     }
 
-    scrollTargetIntoView(editable);
+    const resolved = finalizeDerivedTarget(base, editable);
     focusElement(editable);
 
     const value = String(params.value ?? '');
@@ -662,6 +1028,8 @@
       elementRef: rememberElement(editable),
       value: getEditableValue(editable),
       mode: usedMode,
+      resolution: resolved.resolution,
+      execution: getExecutionMetadata('dom', resolved.point),
     };
   }
 
@@ -669,16 +1037,31 @@
    * Send one keyboard interaction to the currently focused or targeted element.
    *
    * @param {Record<string, any>} params
-   * @returns {{ elementRef: string | null, key: string, handled: boolean }}
+   * @returns {Record<string, unknown>}
    */
   function pressKeyTarget(params) {
-    const target =
+    const resolved =
       params.target?.elementRef || params.target?.selector
-        ? resolveTarget(params.target)
-        : document.activeElement instanceof Element
-          ? document.activeElement
-          : document.body;
-    scrollTargetIntoView(target);
+        ? resolveActionableTarget(params.target, {
+            pointer: false,
+            recoverStale: params.recoverStale === true,
+          })
+        : {
+            element:
+              document.activeElement instanceof Element ? document.activeElement : document.body,
+            point: getViewportPoint(
+              document.activeElement instanceof Element ? document.activeElement : document.body
+            ),
+            resolution: /** @type {InputResolutionMetadata} */ ({
+              strategy: 'elementRef',
+              candidateCount: 1,
+              evaluatedCount: 1,
+              scrolled: false,
+              hitTest: 'not-required',
+              recovered: false,
+            }),
+          };
+    const target = resolved.element;
     focusElement(target);
     const key = String(params.key ?? '');
     if (!key) {
@@ -690,6 +1073,8 @@
       elementRef: result.target instanceof Element ? rememberElement(result.target) : null,
       key: result.key,
       handled: result.handled,
+      resolution: resolved.resolution,
+      execution: getExecutionMetadata('dom', resolved.point),
     };
   }
 
@@ -697,16 +1082,22 @@
    * Toggle a checkbox-like control to a desired checked state.
    *
    * @param {Record<string, any>} params
-   * @returns {{ elementRef: string, checked: boolean, changed: boolean, type: string }}
+   * @returns {Record<string, unknown>}
    */
   function setCheckedTarget(params) {
-    const element = resolveCheckableTarget(params.target);
+    const base = resolveActionableTarget(params.target, {
+      pointer: false,
+      recoverStale: params.recoverStale === true,
+    });
+    const element = resolveCheckableTarget(base.element);
+    const resolved = finalizeDerivedTarget(base, element);
     const checked = params.checked !== false;
     if (element.type === 'radio' && !checked && element.checked) {
-      throw new Error('Radio inputs cannot be unchecked directly.');
+      throw createInputError('INPUT_INVALID_TARGET', 'Radio inputs cannot be unchecked directly.', {
+        elementRef: rememberElement(element),
+      });
     }
 
-    scrollTargetIntoView(element);
     focusElement(element);
     const changed = element.checked !== checked;
     if (changed) {
@@ -723,6 +1114,8 @@
       checked: element.checked,
       changed,
       type: element.type,
+      resolution: resolved.resolution,
+      execution: getExecutionMetadata('dom', resolved.point),
     };
   }
 
@@ -730,10 +1123,15 @@
    * Select options in a native select control by value, label, or index.
    *
    * @param {Record<string, any>} params
-   * @returns {{ elementRef: string, changed: boolean, multiple: boolean, selectedValues: string[] }}
+   * @returns {Record<string, unknown>}
    */
   function selectOptionTarget(params) {
-    const element = resolveSelectTarget(params.target);
+    const base = resolveActionableTarget(params.target, {
+      pointer: false,
+      recoverStale: params.recoverStale === true,
+    });
+    const element = resolveSelectTarget(base.element);
+    const resolved = finalizeDerivedTarget(base, element);
     const values = Array.isArray(params.values)
       ? params.values.filter((value) => typeof value === 'string')
       : [];
@@ -750,7 +1148,6 @@
       throw new Error('At least one option selector is required.');
     }
 
-    scrollTargetIntoView(element);
     focusElement(element);
 
     const options = [...element.options];
@@ -765,7 +1162,10 @@
     });
 
     if (!matchingOptions.length) {
-      throw new Error('No matching option found.');
+      throw createInputError('INPUT_INVALID_TARGET', 'No matching option found.', {
+        elementRef: rememberElement(element),
+        requestedCount: values.length + labels.length + indexes.length,
+      });
     }
 
     if (element.multiple) {
@@ -789,6 +1189,8 @@
       changed,
       multiple: element.multiple,
       selectedValues: selectedAfter,
+      resolution: resolved.resolution,
+      execution: getExecutionMetadata('dom', resolved.point),
     };
   }
 
@@ -796,15 +1198,17 @@
    * Trigger hover state on an element by dispatching mouse events.
    *
    * @param {Record<string, any>} params
-   * @returns {Promise<{ elementRef: string, hovered: boolean }> | { elementRef: string, hovered: boolean }}
+   * @returns {Promise<Record<string, unknown>> | Record<string, unknown>}
    */
   function hoverTarget(params) {
-    const element = resolveTarget(params.target);
+    const resolved = resolveActionableTarget(params.target, {
+      pointer: true,
+      recoverStale: params.recoverStale === true,
+    });
+    const { element, point, resolution } = resolved;
     const modifiers = normalizeModifierState(params.modifiers);
     const duration = clamp(params.duration ?? 0, 0, 5000);
 
-    scrollTargetIntoView(element);
-    const point = getViewportPoint(element);
     dispatchMouseEvent(element, 'mouseenter', point, 'left', 0, modifiers);
     dispatchMouseEvent(element, 'mouseover', point, 'left', 0, modifiers);
     dispatchMouseEvent(element, 'mousemove', point, 'left', 0, modifiers);
@@ -813,22 +1217,35 @@
     if (duration > 0) {
       return new Promise((resolve) => {
         setTimeout(() => {
-          resolve({ elementRef: ref, hovered: true });
+          resolve({
+            elementRef: ref,
+            hovered: true,
+            resolution,
+            execution: getExecutionMetadata('dom', point),
+          });
         }, duration);
       });
     }
-    return { elementRef: ref, hovered: true };
+    return {
+      elementRef: ref,
+      hovered: true,
+      resolution,
+      execution: getExecutionMetadata('dom', point),
+    };
   }
 
   /**
    * Perform a drag-and-drop operation between two elements.
    *
    * @param {Record<string, any>} params
-   * @returns {{ sourceRef: string, destinationRef: string, dragged: boolean }}
+   * @returns {Record<string, unknown>}
    */
   function dragTarget(params) {
-    const source = resolveTarget(params.source);
-    const destination = resolveTarget(params.destination);
+    const sourceResolved = resolveActionableTarget(params.source, {
+      pointer: true,
+      recoverStale: params.recoverStale === true,
+    });
+    const source = sourceResolved.element;
     const offsetX = Number(params.offsetX) || 0;
     const offsetY = Number(params.offsetY) || 0;
     const emptyMods = {
@@ -838,8 +1255,7 @@
       shiftKey: false,
     };
 
-    scrollTargetIntoView(source);
-    const sourcePoint = getViewportPoint(source);
+    const sourcePoint = sourceResolved.point;
 
     const dataTransfer = new DataTransfer();
 
@@ -874,8 +1290,37 @@
       })
     );
 
-    scrollTargetIntoView(destination);
-    const destPoint = getViewportPoint(destination);
+    let destinationResolved;
+    try {
+      destinationResolved = resolveActionableTarget(params.destination, {
+        pointer: true,
+        recoverStale: params.recoverStale === true,
+      });
+    } catch (error) {
+      source.dispatchEvent(
+        new DragEvent('dragend', {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          clientX: sourcePoint.x,
+          clientY: sourcePoint.y,
+          dataTransfer,
+        })
+      );
+      source.dispatchEvent(
+        new MouseEvent('mouseup', {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          clientX: sourcePoint.x,
+          clientY: sourcePoint.y,
+          ...emptyMods,
+        })
+      );
+      throw error;
+    }
+    const destination = destinationResolved.element;
+    const destPoint = destinationResolved.point;
     const endPoint = { x: destPoint.x + offsetX, y: destPoint.y + offsetY };
 
     destination.dispatchEvent(
@@ -933,7 +1378,96 @@
       sourceRef: rememberElement(source),
       destinationRef: rememberElement(destination),
       dragged: true,
+      resolution: {
+        source: sourceResolved.resolution,
+        destination: destinationResolved.resolution,
+      },
+      execution: getExecutionMetadata('dom', endPoint),
     };
+  }
+
+  /**
+   * Resolve and validate a target immediately before debugger-backed input.
+   * This helper performs no click, typing, value setting, or drag mutation.
+   *
+   * @param {Record<string, unknown>} params
+   * @returns {{ elementRef: string, point: { x: number, y: number }, resolution: InputResolutionMetadata, tag: string, value?: string }}
+   */
+  function prepareNativeInput(params) {
+    const target =
+      params.target && typeof params.target === 'object'
+        ? /** @type {{ elementRef?: string, selector?: string }} */ (params.target)
+        : undefined;
+    const base = resolveActionableTarget(target, {
+      pointer: params.kind === 'pointer',
+      recoverStale: params.recoverStale === true,
+    });
+    let resolved = base;
+    if (params.kind === 'editable') {
+      const editable = getEditableTarget(base.element);
+      if (!editable) {
+        throw createInputError('INPUT_INVALID_TARGET', 'Target is not an editable control.', {
+          elementRef: rememberElement(base.element),
+          resolution: base.resolution,
+        });
+      }
+      resolved = finalizeDerivedTarget(base, editable);
+      focusElement(editable);
+    }
+    const editable = getEditableTarget(resolved.element);
+    return {
+      elementRef: rememberElement(resolved.element),
+      point: resolved.point,
+      resolution: resolved.resolution,
+      tag: resolved.element.tagName.toLowerCase(),
+      ...(editable ? { value: getEditableValue(editable) } : {}),
+    };
+  }
+
+  /**
+   * Verify exact editable identity and focus without attempting to restore it.
+   *
+   * @param {Record<string, unknown>} params
+   * @returns {{ elementRef: string, active: true }}
+   */
+  function revalidateNativeInput(params) {
+    const ref = typeof params.elementRef === 'string' ? params.elementRef : '';
+    const { element } = resolveInputReference(ref, false);
+    if (!isEditableElement(element)) {
+      throw createInputError('INPUT_INVALID_TARGET', 'Target is no longer an editable control.', {
+        elementRef: ref,
+      });
+    }
+    if (document.activeElement !== element) {
+      const active = document.activeElement;
+      throw createInputError(
+        'INPUT_FOCUS_CHANGED',
+        'Focus moved away from the native text target.',
+        {
+          elementRef: ref,
+          activeTag: active instanceof Element ? active.tagName.toLowerCase() : null,
+        }
+      );
+    }
+    return { elementRef: ref, active: true };
+  }
+
+  /**
+   * Read a post-dispatch editable value without replaying a mutation.
+   *
+   * @param {Record<string, unknown>} params
+   * @returns {{ elementRef: string, value: string }}
+   */
+  function readInputValue(params) {
+    const ref = typeof params.elementRef === 'string' ? params.elementRef : '';
+    const { element } = resolveInputReference(ref, false);
+    const editable = getEditableTarget(element);
+    if (!editable) {
+      throw createInputError('INPUT_INVALID_TARGET', 'Target is not an editable control.', {
+        elementRef: ref,
+      });
+    }
+    return { elementRef: rememberElement(editable), value: getEditableValue(editable) };
   }
 
   /**
@@ -1030,6 +1564,9 @@
     fillTarget,
     focusTarget,
     hoverTarget,
+    prepareNativeInput,
+    revalidateNativeInput,
+    readInputValue,
     pressKeyTarget,
     scrollIntoViewTarget,
     scrollViewport,

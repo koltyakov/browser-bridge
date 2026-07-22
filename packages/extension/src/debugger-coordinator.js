@@ -67,9 +67,10 @@ export class TabDebuggerCoordinator {
    * @template T
    * @param {number} tabId
    * @param {(target: DebuggerTarget) => Promise<T>} task
+   * @param {{ retryDetached?: boolean }} [options]
    * @returns {Promise<T>}
    */
-  async run(tabId, task) {
+  async run(tabId, task, options = {}) {
     return this.runExclusive(tabId, async () => {
       const target = { tabId };
       const held = (this.holdsByTab.get(tabId) ?? 0) > 0;
@@ -78,6 +79,7 @@ export class TabDebuggerCoordinator {
       let result;
       /** @type {unknown} */
       let taskError = null;
+      let detached = false;
 
       try {
         if (!held && !hasBurst) {
@@ -87,11 +89,17 @@ export class TabDebuggerCoordinator {
       } catch (error) {
         if (isDebuggerDetachedError(error)) {
           this.markDetached(tabId);
-          try {
-            await this.attach(target, this.protocolVersion);
-            result = await task(target);
-          } catch (retryError) {
-            taskError = retryError;
+          detached = true;
+          if (options.retryDetached === false) {
+            taskError = error;
+          } else {
+            try {
+              await this.attach(target, this.protocolVersion);
+              detached = false;
+              result = await task(target);
+            } catch (retryError) {
+              taskError = retryError;
+            }
           }
         } else {
           taskError = error;
@@ -99,7 +107,7 @@ export class TabDebuggerCoordinator {
       }
 
       // Schedule a burst-idle detach instead of detaching immediately.
-      if (!held) {
+      if (!held && !detached) {
         this._resetBurstTimer(tabId, target);
       }
 

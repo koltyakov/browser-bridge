@@ -451,6 +451,30 @@ test('summarizes click action', () => {
   assert.match(summary.summary, /Clicked el_1/);
 });
 
+test('summarizes input execution and resolution metadata', () => {
+  const resolution = {
+    strategy: 'selector-ranked',
+    candidateCount: 2,
+    evaluatedCount: 2,
+    scrolled: true,
+    hitTest: 'target',
+    recovered: false,
+  };
+  const execution = {
+    requestedMode: 'cdp',
+    actualMode: 'cdp',
+    fallbackReason: null,
+    debuggerUsed: true,
+    targetCoordinates: { x: 10, y: 20 },
+  };
+  const summary = summarizeBridgeResponse(
+    ok({ clicked: true, elementRef: 'el_1', resolution, execution }),
+    'input.click'
+  );
+  assert.equal(summary.summary, 'Clicked el_1 via cdp.');
+  assert.deepEqual(summary.evidence, { elementRef: 'el_1', resolution, execution });
+});
+
 test('summarizes hover action', () => {
   const summary = summarizeBridgeResponse(ok({ hovered: true, elementRef: 'el_1' }));
   assert.match(summary.summary, /Hover active on el_1/);

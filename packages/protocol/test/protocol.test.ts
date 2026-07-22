@@ -339,7 +339,19 @@ test('validateBridgeRequest normalizes input.fill parameters', () => {
     submit: false,
     key: '',
     modifiers: [],
+    executionMode: 'dom',
+    recoverStale: false,
   });
+});
+
+test('input execution and stale recovery options are strict and opt-in', () => {
+  const input = normalizeInputAction({ executionMode: 'cdp', recoverStale: true });
+  assert.equal(input.executionMode, 'cdp');
+  assert.equal(input.recoverStale, true);
+  assert.throws(
+    () => normalizeInputAction({ executionMode: 'native' } as never),
+    /executionMode must be either dom or cdp/
+  );
 });
 
 test('normalizeInputAction defaults invalid input details', () => {

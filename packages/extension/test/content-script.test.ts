@@ -209,6 +209,14 @@ function expectPatchResult(value: unknown): PatchResult {
   return expectRecord(value) as PatchResult;
 }
 
+function withoutInputMetadata(value: BridgeResult): BridgeResult {
+  const { resolution, execution, ...result } = value;
+  assert.equal(typeof resolution, 'object');
+  assert.equal((execution as { actualMode?: unknown })?.actualMode, 'dom');
+  assert.equal((execution as { debuggerUsed?: unknown })?.debuggerUsed, false);
+  return result;
+}
+
 async function flushMicrotasks(): Promise<void> {
   await Promise.resolve();
 }
@@ -1887,6 +1895,7 @@ test('content script input.click returns click metadata and stale element refs f
   const document = {
     ...baseDocument,
     activeElement: null,
+    elementFromPoint: () => checkbox,
     contains(element: unknown) {
       return (
         typeof element === 'object' &&
@@ -1900,6 +1909,7 @@ test('content script input.click returns click metadata and stale element refs f
     withHelpers: true,
     chrome: harness.chrome,
     document,
+    window: { innerWidth: 100, innerHeight: 100 },
   });
 
   const listener = harness.getListener();
@@ -1925,7 +1935,7 @@ test('content script input.click returns click metadata and stale element refs f
     target: { selector: '#checkbox' },
   });
 
-  assert.deepEqual(clickResult, {
+  assert.deepEqual(withoutInputMetadata(clickResult), {
     elementRef: clickResult.elementRef,
     clicked: true,
     button: 'left',
@@ -1947,7 +1957,11 @@ test('content script input.click returns click metadata and stale element refs f
   assert.deepEqual(
     await execute('input.click', { target: { elementRef: clickResult.elementRef } }),
     {
-      error: 'Element reference is stale.',
+      error: {
+        code: 'ELEMENT_STALE',
+        message: 'Element reference is stale.',
+        details: { elementRef: clickResult.elementRef, recovered: false },
+      },
     }
   );
 });
@@ -1998,7 +2012,7 @@ test('content script input.type types into text inputs and contenteditable regio
     text: 'Panel',
   });
 
-  assert.deepEqual(inputResult, {
+  assert.deepEqual(withoutInputMetadata(inputResult), {
     elementRef: inputResult.elementRef,
     typed: 6,
     value: 'Bridge',
@@ -2007,7 +2021,7 @@ test('content script input.type types into text inputs and contenteditable regio
   assert.equal(textInput.value, 'Bridge');
   assert.deepEqual(textInput.eventLog.slice(0, 4), ['keydown', 'beforeinput', 'input', 'keyup']);
 
-  assert.deepEqual(editableResult, {
+  assert.deepEqual(withoutInputMetadata(editableResult), {
     elementRef: editableResult.elementRef,
     typed: 5,
     value: 'Panel',
@@ -2065,7 +2079,7 @@ test('content script input.set_checked and input.select_option update state and 
     values: ['beta'],
   });
 
-  assert.deepEqual(checkedResult, {
+  assert.deepEqual(withoutInputMetadata(checkedResult), {
     elementRef: checkedResult.elementRef,
     checked: true,
     changed: true,
@@ -2075,7 +2089,7 @@ test('content script input.set_checked and input.select_option update state and 
   assert.deepEqual(checkbox.eventLog, ['click', 'input', 'change']);
   assert.equal(checkbox.checked, true);
 
-  assert.deepEqual(selectedResult, {
+  assert.deepEqual(withoutInputMetadata(selectedResult), {
     elementRef: selectedResult.elementRef,
     changed: true,
     multiple: false,
@@ -2772,32 +2786,32 @@ test('content script input focus, key handling, and scrolling cover form and vie
     relative: true,
   });
 
-  assert.deepEqual(focusResult, {
+  assert.deepEqual(withoutInputMetadata(focusResult), {
     elementRef: focusResult.elementRef,
     focused: true,
     tag: 'button',
   });
   assert.equal(document.activeElement, button);
-  assert.deepEqual(backspaceResult, {
+  assert.deepEqual(withoutInputMetadata(backspaceResult), {
     elementRef: backspaceResult.elementRef,
     key: 'Backspace',
     handled: true,
   });
   assert.equal(textInput.value, 'ab');
-  assert.deepEqual(enterResult, {
+  assert.deepEqual(withoutInputMetadata(enterResult), {
     elementRef: enterResult.elementRef,
     key: 'Enter',
     handled: true,
   });
   assert.equal(form.submitCount, 1);
   assert.equal(textInput.eventLog.includes('change'), true);
-  assert.deepEqual(deleteResult, {
+  assert.deepEqual(withoutInputMetadata(deleteResult), {
     elementRef: deleteResult.elementRef,
     key: 'Delete',
     handled: true,
   });
   assert.equal(textarea.value, 'wyz');
-  assert.deepEqual(buttonEnterResult, {
+  assert.deepEqual(withoutInputMetadata(buttonEnterResult), {
     elementRef: buttonEnterResult.elementRef,
     key: 'Enter',
     handled: true,
@@ -2865,6 +2879,15 @@ test('content script input hover, drag, alternative clicks, and multi-select cov
   const clickTarget = inputs.createButton({ textContent: 'Context menu' });
   const source = inputs.createButton({ textContent: 'Drag source' });
   const destination = inputs.createButton({ textContent: 'Drop target' });
+  const pointerTargets = [hoverTarget, clickTarget, source, destination];
+  pointerTargets.forEach((element, index) => {
+    Reflect.set(element, 'getBoundingClientRect', () => ({
+      left: index * 20,
+      top: 0,
+      width: 10,
+      height: 10,
+    }));
+  });
   const body = inputs.createBody([
     multiSelect,
     radio,
@@ -2873,19 +2896,26 @@ test('content script input hover, drag, alternative clicks, and multi-select cov
     source,
     destination,
   ]);
-  const document = createDocumentHarness(body, {
-    '#select': multiSelect,
-    '#radio': radio,
-    '#hover': hoverTarget,
-    '#click': clickTarget,
-    '#source': source,
-    '#destination': destination,
-  });
+  const document = createDocumentHarness(
+    body,
+    {
+      '#select': multiSelect,
+      '#radio': radio,
+      '#hover': hoverTarget,
+      '#click': clickTarget,
+      '#source': source,
+      '#destination': destination,
+    },
+    {
+      elementFromPoint: (x) => pointerTargets[Math.floor(x / 20)] ?? null,
+    }
+  );
 
   await loadContentScript(t, {
     withHelpers: true,
     chrome: harness.chrome,
     document,
+    window: { innerWidth: 100, innerHeight: 100 },
   });
 
   const listener = harness.getListener();
@@ -2921,13 +2951,13 @@ test('content script input hover, drag, alternative clicks, and multi-select cov
     checked: false,
   });
 
-  assert.deepEqual(hoverResult, {
+  assert.deepEqual(withoutInputMetadata(hoverResult), {
     elementRef: hoverResult.elementRef,
     hovered: true,
   });
   assert.equal(typeof hoverResult.elementRef, 'string');
   assert.deepEqual(hoverTarget.eventLog, ['mouseenter', 'mouseover', 'mousemove']);
-  assert.deepEqual(dragResult, {
+  assert.deepEqual(withoutInputMetadata(dragResult), {
     sourceRef: dragResult.sourceRef,
     destinationRef: dragResult.destinationRef,
     dragged: true,
@@ -2935,13 +2965,13 @@ test('content script input hover, drag, alternative clicks, and multi-select cov
   assert.equal(source.eventLog.includes('dragstart'), true);
   assert.equal(source.eventLog.includes('dragend'), true);
   assert.equal(destination.eventLog.includes('drop'), true);
-  assert.deepEqual(rightClickResult, {
+  assert.deepEqual(withoutInputMetadata(rightClickResult), {
     elementRef: rightClickResult.elementRef,
     clicked: true,
     button: 'right',
     clickCount: 1,
   });
-  assert.deepEqual(middleClickResult, {
+  assert.deepEqual(withoutInputMetadata(middleClickResult), {
     elementRef: middleClickResult.elementRef,
     clicked: true,
     button: 'middle',
@@ -2949,15 +2979,15 @@ test('content script input hover, drag, alternative clicks, and multi-select cov
   });
   assert.equal(clickTarget.eventLog.includes('contextmenu'), true);
   assert.equal(clickTarget.eventLog.includes('auxclick'), true);
-  assert.deepEqual(selectedResult, {
+  assert.deepEqual(withoutInputMetadata(selectedResult), {
     elementRef: selectedResult.elementRef,
     changed: true,
     multiple: true,
     selectedValues: ['beta', 'gamma'],
   });
   assert.deepEqual(multiSelect.eventLog, ['input', 'change']);
-  assert.deepEqual(missingOption, { error: 'No matching option found.' });
-  assert.deepEqual(radioError, { error: 'Radio inputs cannot be unchecked directly.' });
+  assert.equal((missingOption.error as { code?: unknown }).code, 'INPUT_INVALID_TARGET');
+  assert.equal((radioError.error as { code?: unknown }).code, 'INPUT_INVALID_TARGET');
 });
 
 test('content script computes pointer coordinates after scrolling elements into view', async (t) => {
@@ -2968,12 +2998,28 @@ test('content script computes pointer coordinates after scrolling elements into 
   const source = inputs.createButton({ textContent: 'Drag source' });
   const destination = inputs.createButton({ textContent: 'Drop target' });
   const body = inputs.createBody([clickTarget, hoverTarget, source, destination]);
-  const document = createDocumentHarness(body, {
-    '#click': clickTarget,
-    '#hover': hoverTarget,
-    '#source': source,
-    '#destination': destination,
-  });
+  const pointerTargets = [clickTarget, hoverTarget, source, destination];
+  const document = createDocumentHarness(
+    body,
+    {
+      '#click': clickTarget,
+      '#hover': hoverTarget,
+      '#source': source,
+      '#destination': destination,
+    },
+    {
+      elementFromPoint: (x, y) =>
+        pointerTargets.find((element) => {
+          const rect = element.getBoundingClientRect();
+          return (
+            x >= rect.left &&
+            x < rect.left + rect.width &&
+            y >= rect.top &&
+            y < rect.top + rect.height
+          );
+        }) ?? null,
+    }
+  );
   type PointerEventRecord = { type: string; x: number; y: number };
 
   function capturePointerEvents(
@@ -3028,17 +3074,25 @@ test('content script computes pointer coordinates after scrolling elements into 
     withHelpers: true,
     chrome: harness.chrome,
     document,
+    window: { innerWidth: 2000, innerHeight: 1500 },
   });
 
   const listener = harness.getListener();
-  await executeBridgeMethod(listener, 'input.click', { target: { selector: '#click' } });
-  await executeBridgeMethod(listener, 'input.hover', { target: { selector: '#hover' } });
-  await executeBridgeMethod(listener, 'input.drag', {
+  const clickResult = await executeBridgeMethod(listener, 'input.click', {
+    target: { selector: '#click' },
+  });
+  const hoverResult = await executeBridgeMethod(listener, 'input.hover', {
+    target: { selector: '#hover' },
+  });
+  const dragResult = await executeBridgeMethod(listener, 'input.drag', {
     source: { selector: '#source' },
     destination: { selector: '#destination' },
     offsetX: 4,
     offsetY: 6,
   });
+  assert.equal(clickResult.error, undefined);
+  assert.equal(hoverResult.error, undefined);
+  assert.equal(dragResult.error, undefined);
 
   assert.deepEqual(
     clickEvents.find((event) => event.type === 'mousedown'),
@@ -3268,7 +3322,308 @@ test('content script input.fill rejects non-editable targets', async (t) => {
   );
   await new Promise((resolve) => setImmediate(resolve));
 
-  assert.deepEqual(responses, [{ error: 'Target is not an editable control.' }]);
+  assert.equal(
+    ((responses[0] as BridgeResult).error as { code?: unknown }).code,
+    'INPUT_INVALID_TARGET'
+  );
+});
+
+test('input resolution ranks actionable duplicates and rejects ambiguity, disabled targets, and overlays', async (t) => {
+  const saved = captureGlobals(['getComputedStyle']);
+  t.after(() => restoreGlobals(saved));
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t);
+  const hidden = inputs.createButton({ textContent: 'Hidden' });
+  const visible = inputs.createButton({ textContent: 'Visible' });
+  const tied = inputs.createButton({ textContent: 'Tied' });
+  const disabled = inputs.createButton({ textContent: 'Disabled' });
+  const zeroSize = inputs.createButton({ textContent: 'Zero size' });
+  const overlay = inputs.createButton({ textContent: 'Overlay' });
+  Reflect.set(disabled, 'disabled', true);
+  Reflect.set(visible, 'getBoundingClientRect', () => ({ left: 0, top: 0, width: 10, height: 10 }));
+  Reflect.set(tied, 'getBoundingClientRect', () => ({ left: 20, top: 0, width: 10, height: 10 }));
+  Reflect.set(zeroSize, 'getBoundingClientRect', () => ({ left: 0, top: 0, width: 0, height: 0 }));
+  const body = inputs.createBody([hidden, visible, tied, disabled, zeroSize, overlay]);
+  const attached = new Set<FakeElementLike>([
+    body,
+    hidden,
+    visible,
+    tied,
+    disabled,
+    zeroSize,
+    overlay,
+  ]);
+  let hitTarget: FakeElementLike | null | undefined;
+  const document = createDocumentHarness(
+    body,
+    {
+      '.ranked': [hidden, visible],
+      '.ambiguous': [hidden, visible, tied],
+      '#disabled': disabled,
+      '#zero-size': zeroSize,
+      '#visible': visible,
+    },
+    {
+      contains: (element) => attached.has(element as FakeElementLike),
+      elementFromPoint: (x) => hitTarget ?? (x < 15 ? visible : tied),
+    }
+  );
+  Reflect.set(globalThis, 'getComputedStyle', (element: unknown) => ({
+    display: element === hidden ? 'none' : 'block',
+    visibility: 'visible',
+    opacity: '1',
+    pointerEvents: 'auto',
+  }));
+
+  await loadContentScript(t, {
+    withHelpers: true,
+    chrome: harness.chrome,
+    document,
+    window: { innerWidth: 100, innerHeight: 100 },
+  });
+  const listener = harness.getListener();
+  const ranked = await executeBridgeMethod(listener, 'input.click', {
+    target: { selector: '.ranked' },
+  });
+  assert.equal((ranked.resolution as { strategy?: unknown }).strategy, 'selector-ranked');
+  assert.equal(typeof ranked.elementRef, 'string');
+  assert.equal(hidden.eventLog.includes('click'), false);
+  assert.equal(visible.eventLog.includes('click'), true);
+
+  const ambiguous = await executeBridgeMethod(listener, 'input.click', {
+    target: { selector: '.ambiguous' },
+  });
+  assert.equal((ambiguous.error as { code?: unknown }).code, 'ELEMENT_AMBIGUOUS');
+
+  const disabledResult = await executeBridgeMethod(listener, 'input.focus', {
+    target: { selector: '#disabled' },
+  });
+  assert.equal((disabledResult.error as { code?: unknown }).code, 'ELEMENT_NOT_ACTIONABLE');
+
+  const zeroSizeResult = await executeBridgeMethod(listener, 'input.focus', {
+    target: { selector: '#zero-size' },
+  });
+  assert.equal((zeroSizeResult.error as { code?: unknown }).code, 'ELEMENT_NOT_ACTIONABLE');
+
+  hitTarget = overlay;
+  const obscured = await executeBridgeMethod(listener, 'input.click', {
+    target: { selector: '#visible' },
+  });
+  const obscuredError = obscured.error as {
+    code?: unknown;
+    details?: { blocker?: { tag?: unknown } };
+  };
+  assert.equal(obscuredError.code, 'ELEMENT_OBSCURED');
+  assert.equal(obscuredError.details?.blocker?.tag, 'button');
+});
+
+test('stale ref recovery is opt-in, same-URL, descriptor-strong, and ambiguity-safe', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t);
+  const oldButton = inputs.createButton({ textContent: 'Save' });
+  const newButton = inputs.createButton({ textContent: 'Save' });
+  oldButton.attributes?.set('data-testid', 'save-button');
+  newButton.attributes?.set('data-testid', 'save-button');
+  const body = inputs.createBody([oldButton, newButton]);
+  const attached = new Set<FakeElementLike>([body, oldButton]);
+  let currentButtons = [oldButton];
+  const base = createDocumentHarness(body, { '#save': oldButton });
+  const document = {
+    ...base,
+    URL: 'https://example.test/form',
+    contains: (element: unknown) => attached.has(element as FakeElementLike),
+    querySelectorAll(selector: string) {
+      return selector === 'button' ? currentButtons : base.querySelectorAll(selector);
+    },
+  };
+
+  await loadContentScript(t, { withHelpers: true, chrome: harness.chrome, document });
+  const listener = harness.getListener();
+  const first = await executeBridgeMethod(listener, 'input.focus', {
+    target: { selector: '#save' },
+  });
+  const oldRef = String(first.elementRef);
+  attached.delete(oldButton);
+  attached.add(newButton);
+  currentButtons = [newButton];
+
+  const recovered = await executeBridgeMethod(listener, 'input.focus', {
+    target: { elementRef: oldRef },
+    recoverStale: true,
+  });
+  const recovery = recovered.resolution as {
+    recovered?: unknown;
+    oldRef?: unknown;
+    newRef?: unknown;
+    matchedFields?: unknown;
+  };
+  assert.equal(recovery.recovered, true);
+  assert.equal(recovery.oldRef, oldRef);
+  assert.equal(typeof recovery.newRef, 'string');
+  assert.deepEqual(recovery.matchedFields, ['testId']);
+
+  attached.delete(newButton);
+  Reflect.set(document, 'URL', 'https://example.test/other');
+  const wrongUrl = await executeBridgeMethod(listener, 'input.focus', {
+    target: { elementRef: String(recovered.elementRef) },
+    recoverStale: true,
+  });
+  assert.equal((wrongUrl.error as { code?: unknown }).code, 'ELEMENT_STALE');
+  assert.equal(
+    (wrongUrl.error as { details?: { reason?: unknown } }).details?.reason,
+    'url_changed'
+  );
+  Reflect.set(document, 'URL', 'https://example.test/form');
+
+  const duplicate = inputs.createButton({ textContent: 'Save' });
+  duplicate.attributes?.set('data-testid', 'save-button');
+  attached.add(duplicate);
+  const duplicateTwo = inputs.createButton({ textContent: 'Save' });
+  duplicateTwo.attributes?.set('data-testid', 'save-button');
+  attached.add(duplicateTwo);
+  currentButtons = [duplicate, duplicateTwo];
+  const ambiguous = await executeBridgeMethod(listener, 'input.focus', {
+    target: { elementRef: String(recovered.elementRef) },
+    recoverStale: true,
+  });
+  assert.equal((ambiguous.error as { code?: unknown }).code, 'ELEMENT_AMBIGUOUS');
+});
+
+test('pointer resolution clips hit coordinates and rejects a null viewport hit', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t);
+  const target = inputs.createButton({ textContent: 'Clipped' });
+  Reflect.set(target, 'getBoundingClientRect', () => ({
+    left: -80,
+    top: 20,
+    width: 100,
+    height: 20,
+  }));
+  const body = inputs.createBody([target]);
+  let returnHit = true;
+  const hitPoints: Array<{ x: number; y: number }> = [];
+  const document = createDocumentHarness(
+    body,
+    { '#clipped': target },
+    {
+      elementFromPoint(x, y) {
+        hitPoints.push({ x, y });
+        return returnHit ? target : null;
+      },
+    }
+  );
+  await loadContentScript(t, {
+    withHelpers: true,
+    chrome: harness.chrome,
+    document,
+    window: { innerWidth: 100, innerHeight: 100 },
+  });
+  const listener = harness.getListener();
+
+  const clicked = await executeBridgeMethod(listener, 'input.click', {
+    target: { selector: '#clipped' },
+  });
+  assert.equal(clicked.clicked, true);
+  assert.deepEqual(hitPoints.at(-1), { x: 10, y: 30 });
+  assert.deepEqual((clicked.execution as { targetCoordinates?: unknown }).targetCoordinates, {
+    x: 10,
+    y: 30,
+  });
+
+  returnHit = false;
+  const noHit = await executeBridgeMethod(listener, 'input.click', {
+    target: { selector: '#clipped' },
+  });
+  const error = noHit.error as { code?: unknown; details?: { blocker?: unknown } };
+  assert.equal(error.code, 'ELEMENT_OBSCURED');
+  assert.equal(error.details?.blocker, null);
+});
+
+test('atomic input selectors preserve utility-class escaping', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t);
+  const target = inputs.createButton({ textContent: 'Utility' });
+  const body = inputs.createBody([target]);
+  const document = createDocumentHarness(body, {
+    '.top-\\[30px\\]': target,
+  });
+  await loadContentScript(t, { withHelpers: true, chrome: harness.chrome, document });
+  const result = await executeBridgeMethod(harness.getListener(), 'input.focus', {
+    target: { selector: '.top-[30px]' },
+  });
+  assert.equal(result.focused, true);
+  assert.equal(document.activeElement, target);
+});
+
+test('native editable revalidation rejects redirected focus', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t);
+  const target = inputs.createTextInput();
+  const redirected = inputs.createTextInput();
+  const body = inputs.createBody([target, redirected]);
+  const document = createDocumentHarness(body, { '#target': target });
+  await loadContentScript(t, { withHelpers: true, chrome: harness.chrome, document });
+  const listener = harness.getListener();
+  const resolved = await executeBridgeMethod(listener, 'input.resolve_native', {
+    target: { selector: '#target' },
+    kind: 'editable',
+  });
+  document.activeElement = redirected;
+  const revalidated = await executeBridgeMethod(listener, 'input.revalidate_native', {
+    elementRef: resolved.elementRef,
+  });
+  assert.equal((revalidated.error as { code?: unknown }).code, 'INPUT_FOCUS_CHANGED');
+});
+
+test('stale descriptors distinguish full values with identical bounded prefixes', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t);
+  const prefix = 'x'.repeat(120);
+  const originalValue = `${prefix}A`;
+  const collidingValue = `${prefix}B`;
+  const original = inputs.createButton({ textContent: 'Original' });
+  const collision = inputs.createButton({ textContent: 'Collision' });
+  const exact = inputs.createButton({ textContent: 'Exact' });
+  original.attributes?.set('data-testid', originalValue);
+  collision.attributes?.set('data-testid', collidingValue);
+  exact.attributes?.set('data-testid', originalValue);
+  const body = inputs.createBody([original, collision, exact]);
+  const attached = new Set<FakeElementLike>([body, original]);
+  let candidates = [original];
+  const base = createDocumentHarness(body, { '#original': original });
+  const document = {
+    ...base,
+    URL: 'https://example.test/collision',
+    contains: (element: unknown) => attached.has(element as FakeElementLike),
+    querySelectorAll(selector: string) {
+      return selector === 'button' ? candidates : base.querySelectorAll(selector);
+    },
+  };
+  await loadContentScript(t, { withHelpers: true, chrome: harness.chrome, document });
+  const listener = harness.getListener();
+  const remembered = await executeBridgeMethod(listener, 'input.focus', {
+    target: { selector: '#original' },
+  });
+  attached.delete(original);
+  attached.add(collision);
+  candidates = [collision];
+
+  const rejected = await executeBridgeMethod(listener, 'input.focus', {
+    target: { elementRef: String(remembered.elementRef) },
+    recoverStale: true,
+  });
+  assert.equal((rejected.error as { code?: unknown }).code, 'ELEMENT_STALE');
+  assert.equal(JSON.stringify(rejected).includes(originalValue), false);
+  assert.equal(JSON.stringify(rejected).includes(collidingValue), false);
+
+  attached.delete(collision);
+  attached.add(exact);
+  candidates = [exact];
+  const recovered = await executeBridgeMethod(listener, 'input.focus', {
+    target: { elementRef: String(remembered.elementRef) },
+    recoverStale: true,
+  });
+  assert.equal((recovered.resolution as { recovered?: unknown }).recovered, true);
 });
 
 test('content script reports unsupported execute methods as errors', async (t) => {

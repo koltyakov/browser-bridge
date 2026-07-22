@@ -6,43 +6,44 @@ import { CLI_HELP_SECTIONS, SHORTCUT_COMMANDS } from '../src/command-registry.js
 test('shortcut commands build expected params for common inputs', () => {
   assert.deepEqual(SHORTCUT_COMMANDS['access-request'].build([]), {});
   assert.deepEqual(SHORTCUT_COMMANDS['dom-query'].build(['.app']), { selector: '.app' });
-  assert.deepEqual(SHORTCUT_COMMANDS.describe.build([], 'el_1'), { elementRef: 'el_1' });
-  assert.deepEqual(SHORTCUT_COMMANDS.text.build(['button', '150'], 'el_2'), {
-    elementRef: 'el_2',
+  assert.deepEqual(SHORTCUT_COMMANDS.describe.build(['el_1']), { target: { elementRef: 'el_1' } });
+  assert.deepEqual(SHORTCUT_COMMANDS.text.build(['button', '150']), {
+    target: { selector: 'button' },
     textBudget: 150,
   });
-  assert.deepEqual(SHORTCUT_COMMANDS.styles.build(['button', 'display,color'], 'el_3'), {
-    elementRef: 'el_3',
+  assert.deepEqual(SHORTCUT_COMMANDS.styles.build(['button', 'display,color']), {
+    target: { selector: 'button' },
     properties: ['display', 'color'],
   });
-  assert.deepEqual(SHORTCUT_COMMANDS.box.build([], 'el_4'), { elementRef: 'el_4' });
-  assert.deepEqual(SHORTCUT_COMMANDS.click.build(['button', 'right'], 'el_5'), {
-    target: { elementRef: 'el_5' },
+  assert.deepEqual(SHORTCUT_COMMANDS.box.build(['el_4']), { target: { elementRef: 'el_4' } });
+  assert.deepEqual(SHORTCUT_COMMANDS.click.build(['button', 'right']), {
+    target: { selector: 'button' },
     button: 'right',
   });
-  assert.deepEqual(SHORTCUT_COMMANDS.focus.build([], 'el_6'), {
+  assert.deepEqual(SHORTCUT_COMMANDS.click.build(['.top-[30px]']), {
+    target: { selector: '.top-[30px]' },
+    button: undefined,
+  });
+  assert.deepEqual(SHORTCUT_COMMANDS.focus.build(['el_6']), {
     target: { elementRef: 'el_6' },
   });
-  assert.deepEqual(SHORTCUT_COMMANDS.type.build(['input', 'hello', 'world'], 'el_7'), {
-    target: { elementRef: 'el_7' },
+  assert.deepEqual(SHORTCUT_COMMANDS.type.build(['input', 'hello', 'world']), {
+    target: { selector: 'input' },
     text: 'hello world',
   });
-  assert.deepEqual(SHORTCUT_COMMANDS.hover.build([], 'el_8'), {
+  assert.deepEqual(SHORTCUT_COMMANDS.hover.build(['el_8']), {
     target: { elementRef: 'el_8' },
   });
-  assert.deepEqual(SHORTCUT_COMMANDS.html.build(['main', '2048'], 'el_9'), {
-    elementRef: 'el_9',
+  assert.deepEqual(SHORTCUT_COMMANDS.html.build(['main', '2048']), {
+    target: { selector: 'main' },
     maxLength: 2048,
   });
-  assert.deepEqual(
-    SHORTCUT_COMMANDS['patch-style'].build(['panel', 'display=flex', 'gap=8px'], 'el_10'),
-    {
-      target: { elementRef: 'el_10' },
-      declarations: { display: 'flex', gap: '8px' },
-    }
-  );
-  assert.deepEqual(SHORTCUT_COMMANDS['patch-text'].build(['panel', 'Updated', 'text'], 'el_11'), {
-    target: { elementRef: 'el_11' },
+  assert.deepEqual(SHORTCUT_COMMANDS['patch-style'].build(['panel', 'display=flex', 'gap=8px']), {
+    target: { selector: 'panel' },
+    declarations: { display: 'flex', gap: '8px' },
+  });
+  assert.deepEqual(SHORTCUT_COMMANDS['patch-text'].build(['panel', 'Updated', 'text']), {
+    target: { selector: 'panel' },
     operation: 'set_text',
     value: 'Updated text',
   });
@@ -81,12 +82,12 @@ test('shortcut commands build expected params for common inputs', () => {
   assert.deepEqual(SHORTCUT_COMMANDS.reload.build([]), {});
   assert.deepEqual(SHORTCUT_COMMANDS.back.build([]), {});
   assert.deepEqual(SHORTCUT_COMMANDS.forward.build([]), {});
-  assert.deepEqual(SHORTCUT_COMMANDS.attrs.build(['a', 'href,aria-label'], 'el_12'), {
-    elementRef: 'el_12',
+  assert.deepEqual(SHORTCUT_COMMANDS.attrs.build(['a', 'href,aria-label']), {
+    target: { selector: 'a' },
     attributes: ['href', 'aria-label'],
   });
-  assert.deepEqual(SHORTCUT_COMMANDS['matched-rules'].build([], 'el_13'), {
-    elementRef: 'el_13',
+  assert.deepEqual(SHORTCUT_COMMANDS['matched-rules'].build(['el_13']), {
+    target: { elementRef: 'el_13' },
   });
 });
 

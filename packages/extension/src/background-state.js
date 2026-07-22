@@ -328,6 +328,26 @@ export function toFailureResponse(request, error) {
     });
   }
 
+  if (error && typeof error === 'object') {
+    const structured = /** @type {{ code?: unknown, message?: unknown, details?: unknown }} */ (
+      error
+    );
+    const knownErrorCodes = /** @type {string[]} */ (Object.values(ERROR_CODES));
+    if (
+      typeof structured.code === 'string' &&
+      knownErrorCodes.includes(structured.code) &&
+      typeof structured.message === 'string'
+    ) {
+      return createFailure(
+        request.id,
+        /** @type {ErrorCode} */ (structured.code),
+        structured.message,
+        structured.details ?? null,
+        { method: request.method }
+      );
+    }
+  }
+
   const message = normalizeRuntimeErrorMessage(getErrorMessage(error));
   const knownErrorCodes = /** @type {string[]} */ (Object.values(ERROR_CODES));
   /** @type {ErrorCode} */

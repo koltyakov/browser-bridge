@@ -95,6 +95,7 @@ import { createTabCleanupController } from './background-tab-cleanup.js';
 import { createActionLogController, enrichBridgeResponse } from './background-action-log.js';
 import { createAccessRequestController } from './background-access-request.js';
 import { createPageRequestController } from './background-page.js';
+import { createBackgroundInputController } from './background-input.js';
 import {
   getContentScriptTimeout,
   handleTabBoundRequest as executeTabBoundRequest,
@@ -229,6 +230,15 @@ const { appendActionLogEntry, getActionContext, logBridgeAction, restoreActionLo
     resolveRequestTarget,
   });
 
+const { handleNativeInput } = createBackgroundInputController({
+  contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,
+  runWithDebugger: (tabId, operation, options) => tabDebugger.run(tabId, operation, options),
+  sendCommand: (target, method, params) =>
+    /** @type {Promise<unknown>} */ (chrome.debugger.sendCommand(target, method, params)),
+  sendTabMessage: (tabId, message, timeoutMs = CONTENT_SCRIPT_TIMEOUT_MS) =>
+    sendTabMessage(tabId, message, timeoutMs),
+});
+
 const { clearSetupStatus, handleHostStatusMessage, handleSetupInstallAction, refreshSetupStatus } =
   createSetupController(state, {
     appendActionLogEntry,
@@ -275,6 +285,7 @@ const tabBoundRequestDependencies = {
       sendTabMessage,
       tabDebugger,
     }),
+  handleNativeInput,
   resolveRequestTarget,
   sendTabMessage: (tabId, message, timeoutMs = CONTENT_SCRIPT_TIMEOUT_MS) =>
     sendTabMessage(tabId, message, timeoutMs),

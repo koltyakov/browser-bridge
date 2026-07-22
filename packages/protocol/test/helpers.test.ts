@@ -186,6 +186,10 @@ test('error helpers expose recovery guidance for known codes and preserve Bridge
   assert.ok(truncationRecovery);
   assert.equal(truncationRecovery.retry, false);
   assert.match(truncationRecovery.hint, /truncated/i);
+  assert.match(getErrorRecovery(ERROR_CODES.ELEMENT_STALE)?.hint ?? '', /recoverStale=true/);
+  assert.match(getErrorRecovery(ERROR_CODES.INPUT_UNSUPPORTED)?.hint ?? '', /executionMode=dom/);
+  assert.match(getErrorRecovery(ERROR_CODES.INPUT_INVALID_TARGET)?.hint ?? '', /not compatible/);
+  assert.match(getErrorRecovery(ERROR_CODES.INPUT_FOCUS_CHANGED)?.hint ?? '', /Focus moved/);
   assert.equal(getErrorRecovery('NOT_REAL'), null);
 
   const error = new BridgeError(ERROR_CODES.INVALID_REQUEST, 'Bad request', { field: 'method' });

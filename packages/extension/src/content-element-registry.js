@@ -51,6 +51,8 @@
 
   const elementRegistry = new Map();
   const reverseRegistry = new WeakMap();
+  /** @type {Map<string, ElementDescriptor>} */
+  const elementDescriptors = new Map();
   const patchRegistry = new Map();
   const MAX_REGISTRY_SIZE = 5000;
   const ELEMENT_REGISTRY_PRUNE_BATCH_SIZE = 100;
@@ -58,6 +60,21 @@
   let registryPruned = false;
   /** @type {IterableIterator<[string, Element]> | null} */
   let elementRegistryPruneIterator = null;
+
+  /**
+   * @typedef {{
+   *   url: string,
+   *   tag: string,
+   *   id: string,
+   *   testId: string,
+   *   role: string,
+   *   name: string,
+   *   label: string,
+   *   href: string,
+   *   type: string,
+   *   ancestry: string[]
+   * }} ElementDescriptor
+   */
 
   /**
    * Generate an ID in content scripts, including insecure HTTP pages where
@@ -139,6 +156,12 @@
     const elementRef = createContentId('el');
     elementRegistry.set(elementRef, element);
     reverseRegistry.set(element, elementRef);
+    elementDescriptors.set(elementRef, describeElementIdentity(element));
+    while (elementDescriptors.size > MAX_REGISTRY_SIZE) {
+      const oldestDescriptor = elementDescriptors.keys().next();
+      if (oldestDescriptor.done) break;
+      elementDescriptors.delete(oldestDescriptor.value);
+    }
     return elementRef;
   }
 
@@ -151,7 +174,240 @@
     const [elementRef, element] = first.value;
     elementRegistry.delete(elementRef);
     reverseRegistry.delete(element);
+    elementDescriptors.delete(elementRef);
     registryPruned = true;
+  }
+
+  /**
+   * Keep semantic identity data small and independent of application DOM.
+   *
+   * @param {Element} element
+   * @returns {ElementDescriptor}
+   */
+  function describeElementIdentity(element) {
+    const labelText = getElementLabelText(element);
+    const name = fingerprintDescriptorValue(
+      element.getAttribute('aria-label') || element.getAttribute('title') || labelText
+    );
+    const ancestry = [];
+    let parent = element.parentElement;
+    while (parent && ancestry.length < 3) {
+      const marker = getAncestryMarker(parent);
+      if (marker) ancestry.push(marker);
+      parent = parent.parentElement;
+    }
+    return {
+      url: getCurrentDocumentUrl(),
+      tag: element.tagName.toLowerCase(),
+      id: fingerprintDescriptorValue(element.id || element.getAttribute('id')),
+      testId: fingerprintDescriptorValue(
+        element.getAttribute('data-testid') ||
+          element.getAttribute('data-test') ||
+          element.getAttribute('data-cy')
+      ),
+      role: fingerprintDescriptorValue(element.getAttribute('role')),
+      name,
+      label: fingerprintDescriptorValue(labelText),
+      href: fingerprintDescriptorValue(element.getAttribute('href')),
+      type: fingerprintDescriptorValue(element.getAttribute('type')),
+      ancestry,
+    };
+  }
+
+  /** @param {Element} element @returns {string} */
+  function getElementLabelText(element) {
+    const labelledBy = element.getAttribute('aria-labelledby');
+    if (labelledBy) {
+      const labels = labelledBy
+        .split(/\s+/)
+        .slice(0, 3)
+        .map((id) => document.getElementById?.(id)?.textContent?.trim() || '')
+        .filter(Boolean)
+        .join(' ');
+      if (labels) return labels;
+    }
+    if ('labels' in element) {
+      const labels = /** @type {{ labels?: Iterable<Element> }} */ (element).labels;
+      if (labels) {
+        return [...labels]
+          .slice(0, 3)
+          .map((item) => item.textContent?.trim() || '')
+          .filter(Boolean)
+          .join(' ');
+      }
+    }
+    return '';
+  }
+
+  /** @param {Element} element @returns {string} */
+  function getAncestryMarker(element) {
+    const testId =
+      element.getAttribute('data-testid') ||
+      element.getAttribute('data-test') ||
+      element.getAttribute('data-cy');
+    const id = element.id || element.getAttribute('id');
+    if (testId) {
+      return `${element.tagName.toLowerCase()}:testid:${fingerprintDescriptorValue(testId)}`;
+    }
+    if (id) return `${element.tagName.toLowerCase()}:id:${fingerprintDescriptorValue(id)}`;
+    const role = element.getAttribute('role');
+    return role ? `${element.tagName.toLowerCase()}:role:${fingerprintDescriptorValue(role)}` : '';
+  }
+
+  /**
+   * Fingerprint the complete normalized value. The descriptor retains only
+   * length and two independent 32-bit hashes, never the source value.
+   *
+   * @param {string | null | undefined} value
+   * @returns {string}
+   */
+  function fingerprintDescriptorValue(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return '';
+    let first = 0x811c9dc5;
+    let second = 0x9e3779b9;
+    for (let index = 0; index < normalized.length; index += 1) {
+      const code = normalized.charCodeAt(index);
+      first = Math.imul(first ^ code, 0x01000193) >>> 0;
+      second = Math.imul(second ^ (code + index), 0x85ebca6b) >>> 0;
+    }
+    return `${normalized.length}:${first.toString(16).padStart(8, '0')}${second
+      .toString(16)
+      .padStart(8, '0')}`;
+  }
+
+  /** @returns {string} */
+  function getCurrentDocumentUrl() {
+    return fingerprintDescriptorValue(document.URL || globalThis.location?.href || '');
+  }
+
+  /**
+   * Resolve an explicit ref without changing its identity unless strict,
+   * same-document recovery was explicitly requested.
+   *
+   * @param {string} elementRef
+   * @param {boolean} recoverStale
+   * @returns {{ element: Element, recovery: null | { oldRef: string, newRef: string, matchedFields: string[], confidenceBasis: string } }}
+   */
+  function resolveInputReference(elementRef, recoverStale) {
+    const current = elementRegistry.get(elementRef);
+    if (current && document.contains(current)) {
+      return { element: current, recovery: null };
+    }
+    if (current) {
+      elementRegistry.delete(elementRef);
+      reverseRegistry.delete(current);
+    }
+    if (!recoverStale) {
+      throw createRegistryError('ELEMENT_STALE', 'Element reference is stale.', {
+        elementRef,
+        recovered: false,
+      });
+    }
+
+    const descriptor = elementDescriptors.get(elementRef);
+    if (!descriptor) {
+      throw createRegistryError(
+        'ELEMENT_STALE',
+        'Element reference is stale and has no recovery descriptor.',
+        {
+          elementRef,
+          recovered: false,
+          reason: 'descriptor_missing',
+        }
+      );
+    }
+    if (!descriptor.url || descriptor.url !== getCurrentDocumentUrl()) {
+      throw createRegistryError(
+        'ELEMENT_STALE',
+        'Stale reference recovery requires the same URL.',
+        {
+          elementRef,
+          recovered: false,
+          reason: 'url_changed',
+        }
+      );
+    }
+
+    const strongFields = getStrongDescriptorFields(descriptor);
+    if (!strongFields.length) {
+      throw createRegistryError(
+        'ELEMENT_STALE',
+        'Stale reference descriptor is not strong enough.',
+        {
+          elementRef,
+          recovered: false,
+          reason: 'weak_descriptor',
+        }
+      );
+    }
+    const candidates = [...document.querySelectorAll(descriptor.tag)].slice(0, 100);
+    const matches = candidates.filter((candidate) => descriptorMatches(candidate, descriptor));
+    if (matches.length !== 1) {
+      const code = matches.length > 1 ? 'ELEMENT_AMBIGUOUS' : 'ELEMENT_STALE';
+      throw createRegistryError(
+        code,
+        matches.length > 1
+          ? 'Stale reference recovery matched multiple elements.'
+          : 'No element uniquely matched the stale reference descriptor.',
+        {
+          elementRef,
+          recovered: false,
+          candidateCount: matches.length,
+          evaluatedCount: candidates.length,
+          matchedFields: strongFields,
+        }
+      );
+    }
+
+    const newRef = rememberElement(matches[0]);
+    return {
+      element: matches[0],
+      recovery: {
+        oldRef: elementRef,
+        newRef,
+        matchedFields: strongFields,
+        confidenceBasis: strongFields.join('+'),
+      },
+    };
+  }
+
+  /** @param {ElementDescriptor} descriptor @returns {string[]} */
+  function getStrongDescriptorFields(descriptor) {
+    if (descriptor.testId) return ['testId'];
+    if (descriptor.id) return ['id'];
+    if (descriptor.role && descriptor.name) return ['role', 'name'];
+    if (descriptor.label) return ['label', 'tag', ...(descriptor.type ? ['type'] : [])];
+    if (descriptor.href && (descriptor.role || descriptor.name)) {
+      return ['href', ...(descriptor.role ? ['role'] : []), ...(descriptor.name ? ['name'] : [])];
+    }
+    return [];
+  }
+
+  /** @param {Element} element @param {ElementDescriptor} descriptor @returns {boolean} */
+  function descriptorMatches(element, descriptor) {
+    const current = describeElementIdentity(element);
+    const fields = getStrongDescriptorFields(descriptor);
+    return (
+      fields.length > 0 &&
+      fields.every(
+        (field) =>
+          current[/** @type {keyof ElementDescriptor} */ (field)] ===
+          descriptor[/** @type {keyof ElementDescriptor} */ (field)]
+      ) &&
+      (!descriptor.ancestry.length ||
+        descriptor.ancestry.every((marker, index) => current.ancestry[index] === marker))
+    );
+  }
+
+  /**
+   * @param {string} code
+   * @param {string} message
+   * @param {Record<string, unknown>} details
+   * @returns {Error & { code: string, details: Record<string, unknown> }}
+   */
+  function createRegistryError(code, message, details) {
+    return Object.assign(new Error(message), { code, details });
   }
 
   /**
@@ -202,7 +458,7 @@
       return getRequiredElement(target.elementRef);
     }
     if (target.selector) {
-      const element = document.querySelector(target.selector);
+      const element = document.querySelector(escapeTailwindSelector(target.selector));
       if (element) {
         return element;
       }
@@ -265,6 +521,7 @@
     normalizeDomQuery,
     pruneRegistry,
     rememberElement,
+    resolveInputReference,
     resolveElementRefFromParams,
     resolveTarget,
   });

@@ -30,6 +30,18 @@ function createShortcutCommand(method, usage, build, options = {}) {
   };
 }
 
+/**
+ * Preserve explicit refs and pass selectors directly to methods that support
+ * atomic target resolution.
+ *
+ * @param {string | undefined} value
+ * @returns {{ elementRef: string } | { selector: string }}
+ */
+function createAtomicTarget(value) {
+  if (!value) throw new Error('A ref or selector is required.');
+  return value.startsWith('el_') ? { elementRef: value } : { selector: value };
+}
+
 /** @type {Record<string, ShortcutCommand>} */
 export const SHORTCUT_COMMANDS = {
   'access-request': createShortcutCommand('access.request', 'bbx access-request', () => ({})),
@@ -39,94 +51,83 @@ export const SHORTCUT_COMMANDS = {
   describe: createShortcutCommand(
     'dom.describe',
     'bbx describe <ref|selector>',
-    (_r, ref) => ({ elementRef: ref }),
-    { resolve: true, printMethod: 'dom.describe' }
+    (r) => ({ target: createAtomicTarget(r[0]) }),
+    { printMethod: 'dom.describe' }
   ),
   text: createShortcutCommand(
     'dom.get_text',
     'bbx text <ref|selector> [budget]',
-    (r, ref) => ({
-      elementRef: ref,
+    (r) => ({
+      target: createAtomicTarget(r[0]),
       textBudget: r[1] ? parseIntArg(r[1], 'budget') : undefined,
     }),
-    { resolve: true, printMethod: 'dom.get_text' }
+    { printMethod: 'dom.get_text' }
   ),
   styles: createShortcutCommand(
     'styles.get_computed',
     'bbx styles <ref|selector> [props]',
-    (r, ref) => ({ elementRef: ref, properties: parseCommaList(r[1]) }),
-    { resolve: true, printMethod: 'styles.get_computed' }
+    (r) => ({ target: createAtomicTarget(r[0]), properties: parseCommaList(r[1]) }),
+    { printMethod: 'styles.get_computed' }
   ),
   box: createShortcutCommand(
     'layout.get_box_model',
     'bbx box <ref|selector>',
-    (_r, ref) => ({ elementRef: ref }),
-    { resolve: true, printMethod: 'layout.get_box_model' }
+    (r) => ({ target: createAtomicTarget(r[0]) }),
+    { printMethod: 'layout.get_box_model' }
   ),
-  click: createShortcutCommand(
-    'input.click',
-    'bbx click <ref|selector> [button]',
-    (r, ref) => ({ target: { elementRef: ref }, button: r[1] }),
-    { resolve: true }
-  ),
-  focus: createShortcutCommand(
-    'input.focus',
-    'bbx focus <ref|selector>',
-    (_r, ref) => ({ target: { elementRef: ref } }),
-    { resolve: true }
-  ),
-  type: createShortcutCommand(
-    'input.type',
-    'bbx type <ref|selector> <text...>',
-    (r, ref) => ({ target: { elementRef: ref }, text: r.slice(1).join(' ') }),
-    { resolve: true }
-  ),
+  click: createShortcutCommand('input.click', 'bbx click <ref|selector> [button]', (r) => ({
+    target: createAtomicTarget(r[0]),
+    button: r[1],
+  })),
+  focus: createShortcutCommand('input.focus', 'bbx focus <ref|selector>', (r) => ({
+    target: createAtomicTarget(r[0]),
+  })),
+  type: createShortcutCommand('input.type', 'bbx type <ref|selector> <text...>', (r) => ({
+    target: createAtomicTarget(r[0]),
+    text: r.slice(1).join(' '),
+  })),
   fill: createShortcutCommand(
     'input.fill',
     'bbx fill <ref|selector> <value>',
-    (r, ref) => ({
-      target: { elementRef: ref },
+    (r) => ({
+      target: createAtomicTarget(r[0]),
       value: r.slice(1).join(' '),
       mode: 'auto',
     }),
     {
-      resolve: true,
       description: 'Set input/textarea value (React/Vue/Angular-safe, auto fallback to keystrokes)',
     }
   ),
-  hover: createShortcutCommand(
-    'input.hover',
-    'bbx hover <ref|selector>',
-    (_r, ref) => ({ target: { elementRef: ref } }),
-    { resolve: true }
-  ),
+  hover: createShortcutCommand('input.hover', 'bbx hover <ref|selector>', (r) => ({
+    target: createAtomicTarget(r[0]),
+  })),
   html: createShortcutCommand(
     'dom.get_html',
     'bbx html <ref|selector> [maxLen]',
-    (r, ref) => ({
-      elementRef: ref,
+    (r) => ({
+      target: createAtomicTarget(r[0]),
       maxLength: r[1] ? parseIntArg(r[1], 'maxLen') : undefined,
     }),
-    { resolve: true }
+    {}
   ),
   'patch-style': createShortcutCommand(
     'patch.apply_styles',
     'bbx patch-style <ref|sel> prop=val',
-    (r, ref) => ({
-      target: { elementRef: ref },
+    (r) => ({
+      target: createAtomicTarget(r[0]),
       declarations: parsePropertyAssignments(r.slice(1)),
     }),
-    { resolve: true }
+    {}
   ),
   'patch-text': createShortcutCommand(
     'patch.apply_dom',
     'bbx patch-text <ref|sel> <text...>',
-    (r, ref) => ({
-      target: { elementRef: ref },
+    (r) => ({
+      target: createAtomicTarget(r[0]),
       operation: 'set_text',
       value: r.slice(1).join(' '),
     }),
-    { resolve: true, description: 'Apply a reversible DOM text patch' }
+    { description: 'Apply a reversible DOM text patch' }
   ),
   patches: createShortcutCommand('patch.list', 'bbx patches', () => ({}), {
     printMethod: 'patch.list',
@@ -222,14 +223,14 @@ export const SHORTCUT_COMMANDS = {
   attrs: createShortcutCommand(
     'dom.get_attributes',
     'bbx attrs <ref|selector> [attr1,...]',
-    (r, ref) => ({ elementRef: ref, attributes: parseCommaList(r[1]) }),
-    { resolve: true, printMethod: 'dom.get_attributes' }
+    (r) => ({ target: createAtomicTarget(r[0]), attributes: parseCommaList(r[1]) }),
+    { printMethod: 'dom.get_attributes' }
   ),
   'matched-rules': createShortcutCommand(
     'styles.get_matched_rules',
     'bbx matched-rules <ref|selector>',
-    (_r, ref) => ({ elementRef: ref }),
-    { resolve: true, printMethod: 'styles.get_matched_rules' }
+    (r) => ({ target: createAtomicTarget(r[0]) }),
+    { printMethod: 'styles.get_matched_rules' }
   ),
 };
 

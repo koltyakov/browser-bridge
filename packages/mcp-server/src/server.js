@@ -512,6 +512,16 @@ export function createBridgeMcpServer() {
           .enum(['auto', 'setter', 'keystrokes'])
           .optional()
           .describe('Fill strategy (default: auto)'),
+        executionMode: z
+          .enum(['dom', 'cdp'])
+          .optional()
+          .describe(
+            'Input execution path (default: dom; CDP supports click, hover, drag, type, fill)'
+          ),
+        recoverStale: z
+          .boolean()
+          .optional()
+          .describe('Strict same-document stale elementRef recovery (default: false)'),
         clear: z.boolean().optional().describe('Clear field before typing (default: false)'),
         submit: z.boolean().optional().describe('Press Enter after typing (default: false)'),
         key: z

@@ -294,7 +294,20 @@ function createInputTarget(elementRef, selector) {
 }
 
 /**
- * @param {{ action: string, elementRef?: string, selector?: string, button?: string, clickCount?: number, text?: string, value?: string, mode?: 'auto' | 'setter' | 'keystrokes', clear?: boolean, submit?: boolean, key?: string, code?: string, modifiers?: string[], checked?: boolean, values?: string[], labels?: string[], indexes?: number[], duration?: number, sourceElementRef?: string, sourceSelector?: string, destinationElementRef?: string, destinationSelector?: string, offsetX?: number, offsetY?: number, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * Avoid changing legacy handler payloads when new options are omitted.
+ *
+ * @param {{ executionMode?: 'dom' | 'cdp', recoverStale?: boolean }} args
+ * @returns {{ executionMode?: 'dom' | 'cdp', recoverStale?: boolean }}
+ */
+function createInputOptions(args) {
+  return {
+    ...(args.executionMode ? { executionMode: args.executionMode } : {}),
+    ...(typeof args.recoverStale === 'boolean' ? { recoverStale: args.recoverStale } : {}),
+  };
+}
+
+/**
+ * @param {{ action: string, elementRef?: string, selector?: string, button?: string, clickCount?: number, text?: string, value?: string, mode?: 'auto' | 'setter' | 'keystrokes', executionMode?: 'dom' | 'cdp', recoverStale?: boolean, clear?: boolean, submit?: boolean, key?: string, code?: string, modifiers?: string[], checked?: boolean, values?: string[], labels?: string[], indexes?: number[], duration?: number, sourceElementRef?: string, sourceSelector?: string, destinationElementRef?: string, destinationSelector?: string, offsetX?: number, offsetY?: number, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleInputTool(args) {
@@ -337,6 +350,7 @@ export async function handleInputTool(args) {
               button: args.button,
               clickCount: args.clickCount,
               modifiers: args.modifiers,
+              ...createInputOptions(args),
             },
             {
               tabId: requestedTabId,
@@ -352,6 +366,7 @@ export async function handleInputTool(args) {
             'input.focus',
             {
               target: elementTarget(),
+              ...createInputOptions(args),
             },
             {
               tabId: requestedTabId,
@@ -371,6 +386,7 @@ export async function handleInputTool(args) {
               clear: args.clear,
               submit: args.submit,
               modifiers: args.modifiers,
+              ...createInputOptions(args),
             },
             {
               tabId: requestedTabId,
@@ -388,6 +404,7 @@ export async function handleInputTool(args) {
               target: elementTarget(),
               value: args.value,
               mode: args.mode,
+              ...createInputOptions(args),
             },
             {
               tabId: requestedTabId,
@@ -406,6 +423,7 @@ export async function handleInputTool(args) {
               target,
               key: args.key,
               modifiers: args.modifiers,
+              ...createInputOptions(args),
             },
             {
               tabId: requestedTabId,
@@ -439,6 +457,7 @@ export async function handleInputTool(args) {
             {
               target: elementTarget(),
               checked: args.checked,
+              ...createInputOptions(args),
             },
             {
               tabId: requestedTabId,
@@ -457,6 +476,7 @@ export async function handleInputTool(args) {
               values: args.values,
               labels: args.labels,
               indexes: args.indexes,
+              ...createInputOptions(args),
             },
             {
               tabId: requestedTabId,
@@ -474,6 +494,7 @@ export async function handleInputTool(args) {
               target: elementTarget(),
               duration: args.duration,
               modifiers: args.modifiers,
+              ...createInputOptions(args),
             },
             {
               tabId: requestedTabId,
@@ -502,6 +523,7 @@ export async function handleInputTool(args) {
               destination,
               offsetX: args.offsetX,
               offsetY: args.offsetY,
+              ...createInputOptions(args),
             },
             {
               tabId: requestedTabId,

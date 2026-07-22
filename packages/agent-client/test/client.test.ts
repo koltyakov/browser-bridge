@@ -435,7 +435,8 @@ test('summarizeBridgeResponse adds stale element recovery hint', () => {
 
   assert.equal(summary.ok, false);
   assert.match(summary.summary, /ELEMENT_STALE/);
-  assert.match(summary.summary, /Re-query with the same selector/);
+  assert.match(summary.summary, /Re-query for a fresh elementRef/);
+  assert.match(summary.summary, /recoverStale=true/);
   assert.equal(summary.recovery?.alternativeMethod, 'dom.query');
 });
 

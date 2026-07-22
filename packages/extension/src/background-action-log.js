@@ -207,7 +207,7 @@ export function createActionLogController(state, chromeObj, deps) {
         summaryBytes: summaryCost.bytes,
         summaryTokens: summaryCost.approxTokens,
         summaryCostClass: summaryCost.costClass,
-        debuggerBacked: diagnostics.debuggerBacked,
+        debuggerBacked: response.meta?.debugger_backed === true || diagnostics.debuggerBacked,
         overBudget: response.meta?.budget_truncated === true,
         hasScreenshot: diagnostics.hasScreenshot,
         nodeCount: diagnostics.nodeCount,
@@ -268,7 +268,8 @@ export function enrichBridgeResponse(request, response) {
       response_bytes: diagnostics.responseBytes,
       approx_tokens: diagnostics.approxTokens,
       cost_class: diagnostics.costClass,
-      debugger_backed: diagnostics.debuggerBacked,
+      debugger_backed:
+        transportSafeResponse.meta.debugger_backed === true || diagnostics.debuggerBacked,
     },
   };
 }

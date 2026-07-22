@@ -25,6 +25,13 @@ export type ErrorCode =
   | 'ACCESS_DENIED'
   | 'TAB_MISMATCH'
   | 'ELEMENT_STALE'
+  | 'ELEMENT_AMBIGUOUS'
+  | 'ELEMENT_NOT_ACTIONABLE'
+  | 'ELEMENT_OBSCURED'
+  | 'ELEMENT_NOT_FOUND'
+  | 'INPUT_UNSUPPORTED'
+  | 'INPUT_INVALID_TARGET'
+  | 'INPUT_FOCUS_CHANGED'
   | 'RESULT_TRUNCATED'
   | 'RATE_LIMITED'
   | 'INTERNAL_ERROR'
@@ -228,6 +235,29 @@ export interface InputTarget {
   selector?: string;
 }
 
+export type InputExecutionMode = 'dom' | 'cdp';
+
+export interface InputResolutionMetadata {
+  strategy: 'elementRef' | 'selector-first' | 'selector-ranked' | 'stale-recovery';
+  candidateCount: number;
+  evaluatedCount: number;
+  scrolled: boolean;
+  hitTest: 'target' | 'descendant' | 'none' | 'not-required';
+  recovered: boolean;
+  oldRef?: string;
+  newRef?: string;
+  matchedFields?: string[];
+  confidenceBasis?: string;
+}
+
+export interface InputExecutionMetadata {
+  requestedMode: InputExecutionMode;
+  actualMode: InputExecutionMode;
+  fallbackReason: null;
+  debuggerUsed: boolean;
+  targetCoordinates?: { x: number; y: number };
+}
+
 export interface InputActionParams {
   target?: InputTarget;
   button?: 'left' | 'middle' | 'right';
@@ -239,6 +269,8 @@ export interface InputActionParams {
   submit?: boolean;
   key?: string;
   modifiers?: string[];
+  executionMode?: InputExecutionMode;
+  recoverStale?: boolean;
 }
 
 export interface NormalizedInputAction extends BridgeParams {
@@ -252,6 +284,8 @@ export interface NormalizedInputAction extends BridgeParams {
   submit: boolean;
   key: string;
   modifiers: string[];
+  executionMode: InputExecutionMode;
+  recoverStale: boolean;
 }
 
 export interface CdpDispatchKeyEventParams {
@@ -277,11 +311,15 @@ export interface NormalizedCdpNodeIdParams extends BridgeParams {
 export interface CheckedActionParams {
   target?: InputTarget;
   checked?: boolean;
+  executionMode?: InputExecutionMode;
+  recoverStale?: boolean;
 }
 
 export interface NormalizedCheckedAction extends BridgeParams {
   target: InputTarget;
   checked: boolean;
+  executionMode: InputExecutionMode;
+  recoverStale: boolean;
 }
 
 export interface SelectActionParams {
@@ -289,6 +327,8 @@ export interface SelectActionParams {
   values?: string[];
   labels?: string[];
   indexes?: number[];
+  executionMode?: InputExecutionMode;
+  recoverStale?: boolean;
 }
 
 export interface NormalizedSelectAction extends BridgeParams {
@@ -296,6 +336,8 @@ export interface NormalizedSelectAction extends BridgeParams {
   values: string[];
   labels: string[];
   indexes: number[];
+  executionMode: InputExecutionMode;
+  recoverStale: boolean;
 }
 
 export interface ViewportActionParams {
@@ -483,12 +525,16 @@ export interface HoverParams {
   target?: InputTarget;
   duration?: number;
   modifiers?: string[];
+  executionMode?: InputExecutionMode;
+  recoverStale?: boolean;
 }
 
 export interface NormalizedHoverParams extends BridgeParams {
   target: InputTarget;
   duration: number;
   modifiers: string[];
+  executionMode: InputExecutionMode;
+  recoverStale: boolean;
 }
 
 export interface DragParams {
@@ -496,6 +542,8 @@ export interface DragParams {
   destination?: InputTarget;
   offsetX?: number;
   offsetY?: number;
+  executionMode?: InputExecutionMode;
+  recoverStale?: boolean;
 }
 
 export interface NormalizedDragParams extends BridgeParams {
@@ -503,6 +551,8 @@ export interface NormalizedDragParams extends BridgeParams {
   destination: InputTarget;
   offsetX: number;
   offsetY: number;
+  executionMode: InputExecutionMode;
+  recoverStale: boolean;
 }
 
 export interface StorageParams {

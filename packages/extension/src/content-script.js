@@ -60,6 +60,9 @@
    *   fillTarget: (params: Record<string, any>) => any,
    *   focusTarget: (params: Record<string, any>) => any,
    *   hoverTarget: (params: Record<string, any>) => any,
+   *   prepareNativeInput: (params: Record<string, unknown>) => unknown,
+   *   revalidateNativeInput: (params: Record<string, unknown>) => unknown,
+   *   readInputValue: (params: Record<string, unknown>) => unknown,
    *   pressKeyTarget: (params: Record<string, any>) => any,
    *   scrollIntoViewTarget: (params: Record<string, any>) => any,
    *   scrollViewport: (params: Record<string, any>) => any,
@@ -134,12 +137,12 @@
         .then(sendResponse)
         .catch((err) => {
           sendResponse({
-            error: err instanceof Error ? err.message : String(err),
+            error: serializeContentError(err),
           });
         });
     } catch (error) {
       sendResponse({
-        error: error instanceof Error ? error.message : String(error),
+        error: serializeContentError(error),
       });
     }
 
@@ -219,6 +222,12 @@
         return inputModule.hoverTarget(params);
       case 'input.drag':
         return inputModule.dragTarget(params);
+      case 'input.resolve_native':
+        return inputModule.prepareNativeInput(params);
+      case 'input.revalidate_native':
+        return inputModule.revalidateNativeInput(params);
+      case 'input.read_value':
+        return inputModule.readInputValue(params);
       case 'input.scroll_into_view':
         return inputModule.scrollIntoViewTarget(params);
       case 'patch.apply_styles':
@@ -238,6 +247,29 @@
       default:
         throw new Error(`Unsupported method ${method}`);
     }
+  }
+
+  /**
+   * Preserve structured input resolution failures while retaining string
+   * errors for older content operations.
+   *
+   * @param {unknown} error
+   * @returns {string | { code: string, message: string, details: unknown }}
+   */
+  function serializeContentError(error) {
+    if (error && typeof error === 'object') {
+      const candidate = /** @type {{ code?: unknown, message?: unknown, details?: unknown }} */ (
+        error
+      );
+      if (typeof candidate.code === 'string' && typeof candidate.message === 'string') {
+        return {
+          code: candidate.code,
+          message: candidate.message,
+          details: candidate.details ?? null,
+        };
+      }
+    }
+    return error instanceof Error ? error.message : String(error);
   }
 
   /**

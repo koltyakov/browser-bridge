@@ -40,6 +40,11 @@ import {
  *     method: string,
  *     params: Record<string, unknown> | undefined
  *   ) => Promise<unknown>,
+ *   handleNativeInput: (
+ *     request: BridgeRequest,
+ *     target: ResolvedTabTarget,
+ *     params: Record<string, unknown>
+ *   ) => Promise<Record<string, unknown>>,
  *   sendTabMessage: (
  *     tabId: number,
  *     payload: Record<string, unknown>,
@@ -165,6 +170,14 @@ export async function handleTabBoundRequest(request, dependencies) {
   if (request.method.startsWith('screenshot.')) {
     const result = await dependencies.handleScreenshot(target, request.method, request.params);
     return createSuccess(request.id, result, { method: request.method });
+  }
+
+  if (payload.executionMode === 'cdp' && request.method.startsWith('input.')) {
+    const result = await dependencies.handleNativeInput(request, target, payload);
+    return createSuccess(request.id, result, {
+      method: request.method,
+      debugger_backed: true,
+    });
   }
 
   const timeoutMs = getContentScriptTimeout(

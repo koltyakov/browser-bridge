@@ -113,6 +113,9 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
     const inputAction = inputSchema.action as {
       safeParse: (value: unknown) => { success: boolean };
     };
+    const executionMode = inputSchema.executionMode as {
+      safeParse: (value: unknown) => { success: boolean };
+    };
     const patchOperation = patchSchema.operation as {
       safeParse: (value: unknown) => { success: boolean };
     };
@@ -121,6 +124,9 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
     };
     assert.equal(tabsAction.safeParse('activate').success, true);
     assert.equal(inputAction.safeParse('fill').success, true);
+    assert.equal(executionMode.safeParse('cdp').success, true);
+    assert.equal(executionMode.safeParse('auto').success, false);
+    assert.ok(inputSchema.recoverStale);
     assert.equal(patchOperation.safeParse('setProperty').success, false);
     assert.equal(returnByValue.safeParse(true).success, true);
     assert.equal(returnByValue.safeParse(false).success, false);

@@ -384,7 +384,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'dom.describe',
     'inspect',
     true,
-    ['elementRef'],
+    ['elementRef', 'target'],
     'low',
     METHOD_POLICIES.domRead
   ),
@@ -392,7 +392,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'dom.get_text',
     'inspect',
     true,
-    ['elementRef', 'textBudget'],
+    ['elementRef', 'target', 'textBudget'],
     'low',
     METHOD_POLICIES.domRead
   ),
@@ -400,7 +400,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'dom.get_attributes',
     'inspect',
     true,
-    ['elementRef', 'attributes'],
+    ['elementRef', 'target', 'attributes'],
     'low',
     METHOD_POLICIES.domRead
   ),
@@ -432,7 +432,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'dom.get_html',
     'inspect',
     true,
-    ['elementRef', 'outer', 'maxLength'],
+    ['elementRef', 'target', 'outer', 'maxLength'],
     'low',
     METHOD_POLICIES.domRead
   ),
@@ -449,7 +449,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'layout.get_box_model',
     'inspect',
     true,
-    ['elementRef'],
+    ['elementRef', 'target'],
     'low',
     METHOD_POLICIES.layoutRead
   ),
@@ -466,7 +466,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'styles.get_computed',
     'inspect',
     true,
-    ['elementRef', 'properties'],
+    ['elementRef', 'target', 'properties'],
     'low',
     METHOD_POLICIES.stylesRead
   ),
@@ -474,7 +474,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'styles.get_matched_rules',
     'inspect',
     true,
-    ['elementRef'],
+    ['elementRef', 'target'],
     'moderate',
     METHOD_POLICIES.stylesRead
   ),
@@ -500,7 +500,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'input.click',
     'interact',
     true,
-    ['target', 'button', 'clickCount', 'modifiers'],
+    ['target', 'button', 'clickCount', 'modifiers', 'executionMode', 'recoverStale'],
     'low',
     METHOD_POLICIES.automationInput
   ),
@@ -508,7 +508,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'input.focus',
     'interact',
     true,
-    ['target'],
+    ['target', 'executionMode', 'recoverStale'],
     'low',
     METHOD_POLICIES.automationInput
   ),
@@ -516,7 +516,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'input.type',
     'interact',
     true,
-    ['target', 'text', 'clear', 'submit', 'modifiers'],
+    ['target', 'text', 'clear', 'submit', 'modifiers', 'executionMode', 'recoverStale'],
     'low',
     METHOD_POLICIES.automationInput
   ),
@@ -524,7 +524,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'input.fill',
     'interact',
     true,
-    ['target', 'value', 'mode'],
+    ['target', 'value', 'mode', 'executionMode', 'recoverStale'],
     'low',
     METHOD_POLICIES.automationInput
   ),
@@ -532,7 +532,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'input.press_key',
     'interact',
     true,
-    ['target', 'key', 'modifiers'],
+    ['target', 'key', 'modifiers', 'executionMode', 'recoverStale'],
     'low',
     METHOD_POLICIES.automationInput
   ),
@@ -540,7 +540,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'input.set_checked',
     'interact',
     true,
-    ['target', 'checked'],
+    ['target', 'checked', 'executionMode', 'recoverStale'],
     'low',
     METHOD_POLICIES.automationInput
   ),
@@ -548,7 +548,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'input.select_option',
     'interact',
     true,
-    ['target', 'values', 'labels', 'indexes'],
+    ['target', 'values', 'labels', 'indexes', 'executionMode', 'recoverStale'],
     'low',
     METHOD_POLICIES.automationInput
   ),
@@ -556,7 +556,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'input.hover',
     'interact',
     true,
-    ['target', 'duration', 'modifiers'],
+    ['target', 'duration', 'modifiers', 'executionMode', 'recoverStale'],
     'low',
     METHOD_POLICIES.automationInput
   ),
@@ -564,7 +564,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'input.drag',
     'interact',
     true,
-    ['source', 'destination', 'offsetX', 'offsetY'],
+    ['source', 'destination', 'offsetX', 'offsetY', 'executionMode', 'recoverStale'],
     'moderate',
     METHOD_POLICIES.automationInput
   ),

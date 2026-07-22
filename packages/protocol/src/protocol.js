@@ -500,6 +500,17 @@ function normalizeTarget(target) {
 }
 
 /**
+ * @param {unknown} value
+ * @returns {import('./types.js').InputExecutionMode}
+ */
+function normalizeInputExecutionMode(value) {
+  if (value !== undefined && value !== 'dom' && value !== 'cdp') {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'executionMode must be either dom or cdp.');
+  }
+  return value === 'cdp' ? 'cdp' : 'dom';
+}
+
+/**
  * @param {InputActionParams} [params={}]
  * @returns {NormalizedInputAction}
  */
@@ -527,6 +538,8 @@ export function normalizeInputAction(params = {}) {
     modifiers: Array.isArray(params.modifiers)
       ? params.modifiers.filter((modifier) => typeof modifier === 'string' && modifier.trim())
       : [],
+    executionMode: normalizeInputExecutionMode(params.executionMode),
+    recoverStale: params.recoverStale === true,
   };
 }
 
@@ -604,6 +617,8 @@ export function normalizeCheckedAction(params = {}) {
         : undefined
     ),
     checked: params.checked !== false,
+    executionMode: normalizeInputExecutionMode(params.executionMode),
+    recoverStale: params.recoverStale === true,
   };
 }
 
@@ -629,6 +644,8 @@ export function normalizeSelectAction(params = {}) {
           .map((index) => Number(index))
           .filter((index) => Number.isInteger(index) && index >= 0)
       : [],
+    executionMode: normalizeInputExecutionMode(params.executionMode),
+    recoverStale: params.recoverStale === true,
   };
 }
 
@@ -823,6 +840,8 @@ export function normalizeHoverParams(params = {}) {
     modifiers: Array.isArray(params.modifiers)
       ? params.modifiers.filter((modifier) => typeof modifier === 'string' && modifier.trim())
       : [],
+    executionMode: normalizeInputExecutionMode(params.executionMode),
+    recoverStale: params.recoverStale === true,
   };
 }
 
@@ -844,6 +863,8 @@ export function normalizeDragParams(params = {}) {
     ),
     offsetX: Number.isFinite(Number(params.offsetX)) ? Number(params.offsetX) : 0,
     offsetY: Number.isFinite(Number(params.offsetY)) ? Number(params.offsetY) : 0,
+    executionMode: normalizeInputExecutionMode(params.executionMode),
+    recoverStale: params.recoverStale === true,
   };
 }
 
@@ -1071,6 +1092,13 @@ export function createRuntimeContext() {
         'Browser Bridge is off for this window or the page is restricted; if access is off, the first denied call surfaces an Enable cue in the extension UI',
       TAB_MISMATCH: 'Tab closed or not found',
       ELEMENT_STALE: 'Element removed from DOM - re-query',
+      ELEMENT_AMBIGUOUS: 'Input selector matched equally actionable elements - narrow selector',
+      ELEMENT_NOT_ACTIONABLE: 'Input target is hidden, disabled, inert, or not rendered',
+      ELEMENT_OBSCURED: 'Pointer target is blocked by an unrelated element',
+      ELEMENT_NOT_FOUND: 'Input selector did not match an element',
+      INPUT_UNSUPPORTED: 'Execution mode does not support this input operation',
+      INPUT_INVALID_TARGET: 'Input target is incompatible with the requested operation',
+      INPUT_FOCUS_CHANGED: 'Focus moved before native text dispatch',
       INVALID_REQUEST: 'Malformed method or params',
       TIMEOUT: 'Operation exceeded time limit',
       RATE_LIMITED: 'Too many requests - back off',
