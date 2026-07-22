@@ -420,7 +420,6 @@ export class TabDebuggerCoordinator {
         ),
         resolve,
       };
-      waiter.timeoutId.unref?.();
       const waiters = this.dialogWaitersByTab.get(tabId) ?? new Set();
       waiters.add(waiter);
       this.dialogWaitersByTab.set(tabId, waiters);

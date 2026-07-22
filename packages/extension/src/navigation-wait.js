@@ -99,7 +99,6 @@ export class NavigationWaitCoordinator {
       tabWaiters.add(waiter);
       this.waitersByTab.set(tabId, tabWaiters);
       waiter.timeoutId = setTimeout(() => void this._timeout(waiter), params.timeoutMs);
-      waiter.timeoutId.unref?.();
       void this._start(waiter);
     });
   }
