@@ -104,7 +104,7 @@ export function clearSetupStatusTimer(state) {
 }
 
 /**
- * @param {{ storage: { session: { get: (key: string) => Promise<Record<string, unknown>>, set: (items: Record<string, unknown>) => Promise<void> } } }} chromeObj
+ * @param {{ runtime?: { id?: string }, storage: { session: { get: (key: string) => Promise<Record<string, unknown>>, set: (items: Record<string, unknown>) => Promise<void> } } }} chromeObj
  * @returns {Promise<string>}
  */
 export async function getProfileLabel(chromeObj) {
@@ -127,14 +127,20 @@ export async function getProfileLabel(chromeObj) {
  * Send browser/profile identity to the daemon via the native host.
  *
  * @param {chrome.runtime.Port} port
- * @param {{ storage: { session: { get: (key: string) => Promise<Record<string, unknown>>, set: (items: Record<string, unknown>) => Promise<void> } } }} chromeObj
+ * @param {{ runtime?: { id?: string }, storage: { session: { get: (key: string) => Promise<Record<string, unknown>>, set: (items: Record<string, unknown>) => Promise<void> } } }} chromeObj
  * @returns {void}
  */
 export function sendIdentity(port, chromeObj) {
   const browserName = detectBrowserName();
   void getProfileLabel(chromeObj).then((profileLabel) => {
     try {
-      port.postMessage({ type: 'host.identity', browserName, profileLabel });
+      port.postMessage({
+        type: 'host.identity',
+        browserName,
+        profileLabel,
+        browserExtensionId:
+          typeof chromeObj.runtime?.id === 'string' ? chromeObj.runtime.id : undefined,
+      });
     } catch {
       /* port may have disconnected */
     }
@@ -271,7 +277,7 @@ function getNativeBootstrapErrorMessage(message) {
 
 /**
  * @param {ExtensionState} state
- * @param {{ runtime: { connectNative: (application: string) => chrome.runtime.Port, lastError?: { message?: string } }, storage: { session: { get: (key: string) => Promise<Record<string, unknown>>, set: (items: Record<string, unknown>) => Promise<void> } } }} chromeObj
+ * @param {{ runtime: { id?: string, connectNative: (application: string) => chrome.runtime.Port, lastError?: { message?: string } }, storage: { session: { get: (key: string) => Promise<Record<string, unknown>>, set: (items: Record<string, unknown>) => Promise<void> } } }} chromeObj
  * @param {NativeConnectionDeps} deps
  * @returns {{
  *   clearNativeReconnectTimer: () => void,

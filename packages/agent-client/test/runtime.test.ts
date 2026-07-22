@@ -2,7 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-import { BRIDGE_METHOD_REGISTRY, PROTOCOL_VERSION } from '../../protocol/src/index.js';
+import {
+  BRIDGE_METHOD_REGISTRY,
+  getProtocolVersion,
+  PROTOCOL_VERSION,
+} from '../../protocol/src/index.js';
 import { CLI_METHOD_BINDINGS } from '../src/command-registry.js';
 import { detectMcpClients, detectSkillTargets } from '../src/detect.js';
 import { findConfiguredMcpClients, installMcpConfig, removeMcpConfig } from '../src/mcp-config.js';
@@ -11,7 +15,7 @@ import path from 'node:path';
 
 import { BridgeClient } from '../src/client.js';
 import { getDoctorReport, requestBridge, resolveRef, withBridgeClient } from '../src/runtime.js';
-import type { BridgeResponse } from '../../protocol/src/types.js';
+import type { BridgeResponse, SetupStatus } from '../../protocol/src/types.js';
 import type { BrowserManifestStatus } from '../src/types.js';
 
 const expectedMcpCommand = 'bbx';
@@ -47,6 +51,84 @@ function createHealthPingRunner(result: Record<string, unknown>): BridgeClientRu
         return successResponse('req-health', result);
       },
     } as BridgeClient);
+}
+
+function createDiagnosticRunner(
+  results: Record<string, unknown>,
+  failingMethods: string[] = [],
+  calls: string[] = []
+): BridgeClientRunner {
+  return async (callback) =>
+    callback({
+      request: async ({ method }: { method: string }) => {
+        calls.push(method);
+        if (failingMethods.includes(method) || !(method in results)) {
+          throw new Error(`Diagnostic unavailable: ${method}`);
+        }
+        return successResponse(`req-${method}`, results[method]);
+      },
+    } as BridgeClient);
+}
+
+function setupStatusFixture(): SetupStatus {
+  return {
+    scope: 'global',
+    mcpClients: [
+      {
+        key: 'codex',
+        label: 'Sensitive profile label',
+        detected: true,
+        configPath: '/Users/private/.codex/config.toml',
+        configExists: true,
+        configured: true,
+      },
+      {
+        key: 'cursor',
+        label: 'Cursor',
+        detected: false,
+        configPath: '/Users/private/.cursor/mcp.json',
+        configExists: false,
+        configured: false,
+      },
+    ],
+    skillTargets: [
+      {
+        key: 'codex',
+        label: 'Sensitive skill label',
+        detected: true,
+        basePath: '/Users/private/.codex/skills',
+        installed: true,
+        managed: true,
+        installedVersion: '1.0.0',
+        currentVersion: '1.1.0',
+        updateAvailable: true,
+        skills: [],
+      },
+    ],
+  };
+}
+
+function healthyDiagnosticResult(): Record<string, unknown> {
+  return {
+    daemon: 'ok',
+    daemonVersion: '1.7.8',
+    extensionConnected: true,
+    connectedExtensions: [
+      { extensionId: 'ext-1', profileLabel: 'Private profile one' },
+      { extensionId: 'ext-2', profileLabel: 'Private profile two' },
+    ],
+    daemon_supported_versions: [getProtocolVersion()],
+    supported_versions: [getProtocolVersion()],
+    proxy: { enabled: false, endpoint: null },
+    access: {
+      enabled: true,
+      windowId: 12,
+      routeTabId: 34,
+      routeReady: true,
+      reason: 'enabled',
+      routeUrl: 'https://private.example/account?token=secret',
+    },
+  };
 }
 
 function browserManifestStatuses(installedBrowsers: string[]): BrowserManifestStatus[] {
@@ -795,6 +877,597 @@ test('getDoctorReport clears readiness issues after the bridge recovers on a lat
   assert.ok(!recoveredReport.issues.includes('extension_disconnected'));
   assert.ok(!recoveredReport.issues.includes('access_disabled'));
   assert.ok(!recoveredReport.issues.includes('no_routable_active_tab'));
+});
+
+test('getDoctorReport consolidates healthy local runtime diagnostics', async () => {
+  const health = {
+    ...healthyDiagnosticResult(),
+    debugger: { state: 'active', attachedTabs: [34] },
+    capture: { state: 'armed' },
+  };
+  const report = await getDoctorReport({
+    loadManifest: async () => null,
+    checkBrowserManifests: async () => browserManifestStatuses(['edge']),
+    checkNativeHostManifestHealth: async () => [],
+    readDaemonStartHistory: async () => [],
+    checkUnwritableBridgePaths: async () => [],
+    getLocalTransport: () => ({ type: 'socket', socketPath: '/private/bridge.sock', label: '' }),
+    readProxyConfig: () => null,
+    readRemoteConfig: async () => ({ remotes: [] }),
+    bridgeClientRunner: createDiagnosticRunner({
+      'health.ping': health,
+      'setup.get_status': setupStatusFixture(),
+      'log.tail': { entries: [] },
+      'daemon.metrics': {
+        uptimeMs: 5000,
+        activeAgents: 1,
+        activeExtensions: 2,
+        pendingRequests: 0,
+        requestsProcessed: 20,
+        requestsFailed: 1,
+        avgResponseTimeMs: 12,
+      },
+    }),
+  });
+
+  assert.deepEqual(report.issues, []);
+  assert.deepEqual(report.transport, {
+    kind: 'socket',
+    local: true,
+    status: 'reachable',
+    proxyConfigured: false,
+    proxyExposed: false,
+    credentials: 'not_required',
+  });
+  assert.deepEqual(report.connections, { extensionCount: 2, profileCount: 2 });
+  assert.equal(report.protocol.compatible, true);
+  assert.equal(report.protocol.migration, 'none');
+  assert.deepEqual(report.debugger, {
+    state: 'active',
+    attachedTabCount: 1,
+    heldTabCount: null,
+    pendingTabCount: null,
+    recentReason: null,
+    captureState: 'armed',
+    captureActiveTabCount: null,
+    captureOwnershipCount: null,
+    captureInflightCount: null,
+    interceptionActiveTabCount: null,
+    interceptionRuleCount: null,
+  });
+  assert.equal(report.metrics?.pendingRequests, 0);
+  assert.deepEqual(report.setup, {
+    source: 'daemon',
+    scope: 'global',
+    mcp: { detected: 1, configured: 1 },
+    skills: { detected: 1, installed: 1, managed: 1, updatesAvailable: 1 },
+  });
+});
+
+test('getDoctorReport keeps daemon diagnostics when the extension is disconnected', async () => {
+  const report = await getDoctorReport({
+    loadManifest: async () => ({
+      allowed_origins: ['chrome-extension://different-extension-id/'],
+    }),
+    checkBrowserManifests: async () => browserManifestStatuses(['chrome']),
+    checkNativeHostManifestHealth: async () => [],
+    readDaemonStartHistory: async () => [],
+    checkUnwritableBridgePaths: async () => [],
+    readRemoteConfig: async () => ({ remotes: [] }),
+    collectSetupStatus: async () => setupStatusFixture(),
+    bridgeClientRunner: createDiagnosticRunner({
+      'health.ping': {
+        daemon: 'ok',
+        extensionConnected: false,
+        connectedExtensions: [],
+        daemon_supported_versions: [getProtocolVersion()],
+      },
+      'setup.get_status': setupStatusFixture(),
+      'log.tail': { entries: [] },
+      'daemon.metrics': {
+        activeExtensions: 0,
+        pendingRequests: 3,
+      },
+    }),
+  });
+
+  assert.equal(report.daemonReachable, true);
+  assert.equal(report.healthAvailable, true);
+  assert.equal(report.extensionConnected, false);
+  assert.equal(report.metrics?.pendingRequests, 3);
+  assert.ok(report.issues.includes('extension_disconnected'));
+  assert.ok(!report.issues.includes('extension_id_mismatch'));
+  assert.ok(!report.issues.includes('daemon_offline'));
+});
+
+test('getDoctorReport uses legacy supported_versions for a disconnected daemon mismatch', async () => {
+  const report = await getDoctorReport({
+    loadManifest: async () => null,
+    checkBrowserManifests: async () => browserManifestStatuses(['edge']),
+    checkNativeHostManifestHealth: async () => [],
+    readDaemonStartHistory: async () => [],
+    checkUnwritableBridgePaths: async () => [],
+    readInstalledExtensionIds: async () => [],
+    readRemoteConfig: async () => ({ remotes: [] }),
+    bridgeClientRunner: createDiagnosticRunner({
+      'health.ping': {
+        daemon: 'ok',
+        extensionConnected: false,
+        supported_versions: ['0.1'],
+      },
+      'setup.get_status': setupStatusFixture(),
+      'log.tail': { entries: [] },
+      'daemon.metrics': { activeExtensions: 0 },
+    }),
+  });
+
+  assert.deepEqual(report.protocol.daemonSupportedVersions, ['0.1']);
+  assert.equal(report.protocol.daemonCompatible, false);
+  assert.equal(report.protocol.extensionCompatible, null);
+  assert.ok(report.issues.includes('protocol_mismatch'));
+});
+
+test('getDoctorReport collects setup directly while the daemon is offline', async () => {
+  const report = await getDoctorReport({
+    loadManifest: async () => null,
+    checkBrowserManifests: async () => browserManifestStatuses([]),
+    checkNativeHostManifestHealth: async () => [],
+    readDaemonStartHistory: async () => [],
+    checkUnwritableBridgePaths: async () => [],
+    readRemoteConfig: async () => ({ remotes: [] }),
+    collectSetupStatus: async () => setupStatusFixture(),
+    bridgeClientRunner: async () => {
+      throw new Error('ECONNREFUSED /Users/private/bridge.sock');
+    },
+  });
+
+  assert.equal(report.transport.status, 'offline');
+  assert.equal(report.setup?.source, 'direct');
+  assert.equal(report.setup?.mcp.configured, 1);
+  assert.ok(report.issues.includes('daemon_offline'));
+  assert.ok(report.diagnosticFailures.includes('daemon_connection_failed'));
+  assert.doesNotMatch(JSON.stringify(report.setup), /Users\/private/u);
+});
+
+test('getDoctorReport closes the doctor client after registration fails', async () => {
+  const originalConnect = BridgeClient.prototype.connect;
+  const originalClose = BridgeClient.prototype.close;
+  let closeCalls = 0;
+  BridgeClient.prototype.connect = async function () {
+    throw new Error('Bridge daemon registration failed.');
+  };
+  BridgeClient.prototype.close = async function () {
+    closeCalls += 1;
+    this.connected = false;
+    this.socket = null;
+  };
+
+  try {
+    const report = await getDoctorReport({
+      loadManifest: async () => null,
+      checkBrowserManifests: async () => browserManifestStatuses([]),
+      checkNativeHostManifestHealth: async () => [],
+      readDaemonStartHistory: async () => [],
+      checkUnwritableBridgePaths: async () => [],
+      readInstalledExtensionIds: async () => [],
+      readRemoteConfig: async () => ({ remotes: [] }),
+      collectSetupStatus: async () => setupStatusFixture(),
+    });
+
+    assert.equal(closeCalls, 1);
+    assert.equal(report.daemonReachable, false);
+    assert.ok(report.issues.includes('daemon_offline'));
+  } finally {
+    BridgeClient.prototype.connect = originalConnect;
+    BridgeClient.prototype.close = originalClose;
+  }
+});
+
+test('getDoctorReport treats failed health as core health unavailable', async () => {
+  const report = await getDoctorReport({
+    loadManifest: async () => null,
+    checkBrowserManifests: async () => browserManifestStatuses(['edge']),
+    checkNativeHostManifestHealth: async () => [],
+    readDaemonStartHistory: async () => [],
+    checkUnwritableBridgePaths: async () => [],
+    readInstalledExtensionIds: async () => [],
+    readRemoteConfig: async () => ({ remotes: [] }),
+    bridgeClientRunner: async (callback) =>
+      callback({
+        request: async ({ method }: { method: string }) => {
+          if (method === 'health.ping') {
+            return {
+              id: 'req-health-failed',
+              ok: false,
+              result: null,
+              error: {
+                code: 'INTERNAL_ERROR',
+                message: 'health failed with private payload',
+                details: null,
+              },
+              meta: { protocol_version: getProtocolVersion() },
+            } as BridgeResponse;
+          }
+          if (method === 'setup.get_status') {
+            return successResponse('req-setup', setupStatusFixture());
+          }
+          if (method === 'log.tail') {
+            return successResponse('req-logs', { entries: [] });
+          }
+          return successResponse('req-metrics', { activeExtensions: 1, pendingRequests: 0 });
+        },
+      } as BridgeClient),
+  });
+
+  assert.equal(report.daemonReachable, true);
+  assert.equal(report.healthAvailable, false);
+  assert.equal(report.extensionConnected, false);
+  assert.equal(report.accessEnabled, false);
+  assert.ok(report.issues.includes('health_unavailable'));
+  assert.ok(!report.issues.includes('extension_disconnected'));
+  assert.ok(!report.issues.includes('access_disabled'));
+  assert.ok(report.nextSteps.some((step) => step.includes('health.ping')));
+  assert.doesNotMatch(JSON.stringify(report), /private payload/u);
+});
+
+test('getDoctorReport gives bounded recovery guidance for stale local proxy credentials', async () => {
+  const report = await getDoctorReport({
+    loadManifest: async () => null,
+    checkBrowserManifests: async () => browserManifestStatuses(['edge']),
+    checkNativeHostManifestHealth: async () => [],
+    readDaemonStartHistory: async () => [],
+    checkUnwritableBridgePaths: async () => [],
+    readRemoteConfig: async () => ({ remotes: [] }),
+    collectSetupStatus: async () => setupStatusFixture(),
+    getLocalTransport: () => ({
+      type: 'tcp',
+      host: '127.0.0.1',
+      port: 9223,
+      label: '127.0.0.1:9223',
+    }),
+    readProxyConfig: () => ({ enabled: true }),
+    bridgeClientRunner: async () => {
+      throw new Error('Bridge daemon authentication failed for token super-secret');
+    },
+  });
+
+  assert.equal(report.transport.status, 'authentication_failed');
+  assert.equal(report.transport.credentials, 'rejected');
+  assert.ok(report.issues.includes('proxy_credentials_stale'));
+  assert.ok(!report.issues.includes('daemon_offline'));
+  assert.ok(report.nextSteps.some((step) => step.includes('--rotate-token')));
+  assert.doesNotMatch(JSON.stringify(report), /super-secret/u);
+});
+
+test('getDoctorReport reports protocol mismatch and deterministic migration guidance', async () => {
+  const report = await getDoctorReport({
+    loadManifest: async () => null,
+    checkBrowserManifests: async () => browserManifestStatuses(['edge']),
+    checkNativeHostManifestHealth: async () => [],
+    readDaemonStartHistory: async () => [],
+    checkUnwritableBridgePaths: async () => [],
+    readRemoteConfig: async () => ({ remotes: [] }),
+    bridgeClientRunner: createDiagnosticRunner({
+      'health.ping': {
+        ...healthyDiagnosticResult(),
+        supported_versions: ['0.1'],
+      },
+      'setup.get_status': setupStatusFixture(),
+      'log.tail': { entries: [] },
+      'daemon.metrics': { activeExtensions: 1 },
+    }),
+  });
+
+  assert.equal(report.protocol.compatible, false);
+  assert.equal(report.protocol.extensionCompatible, false);
+  assert.equal(report.protocol.migration, 'update_extension');
+  assert.ok(report.issues.includes('protocol_mismatch'));
+  assert.ok(report.nextSteps.some((step) => step.includes('Update or reload')));
+});
+
+test('getDoctorReport preserves core health across partial diagnostic failures', async () => {
+  const report = await getDoctorReport({
+    loadManifest: async () => null,
+    checkBrowserManifests: async () => browserManifestStatuses(['edge']),
+    checkNativeHostManifestHealth: async () => [],
+    readDaemonStartHistory: async () => [],
+    checkUnwritableBridgePaths: async () => [],
+    readRemoteConfig: async () => ({ remotes: [] }),
+    bridgeClientRunner: createDiagnosticRunner(
+      {
+        'health.ping': healthyDiagnosticResult(),
+        'daemon.metrics': { activeExtensions: 2, pendingRequests: 4 },
+      },
+      ['setup.get_status', 'log.tail']
+    ),
+  });
+
+  assert.deepEqual(report.issues, []);
+  assert.equal(report.routeReady, true);
+  assert.equal(report.metrics?.pendingRequests, 4);
+  assert.equal(report.setup, null);
+  assert.deepEqual(report.diagnosticFailures, ['setup.get_status_failed', 'log.tail_failed']);
+});
+
+test('getDoctorReport validates and bounds malicious setup status fields', async () => {
+  const maliciousSetup = {
+    scope: 'global',
+    mcpClients: Array.from({ length: 150 }, (_, index) => ({
+      detected: index % 2 === 0 ? true : 'true',
+      configured: index < 100,
+      configPath: `/private/${index}`,
+      token: `secret-${index}`,
+    })),
+    skillTargets: Array.from({ length: 150 }, (_, index) => ({
+      detected: true,
+      installed: index % 2 === 0,
+      managed: 'true',
+      updateAvailable: index < 10,
+      basePath: `/private/skills/${index}`,
+    })),
+  };
+  const baseResults = {
+    'health.ping': healthyDiagnosticResult(),
+    'log.tail': { entries: [] },
+    'daemon.metrics': { activeExtensions: 2 },
+  };
+  const commonOptions = {
+    loadManifest: async () => null,
+    checkBrowserManifests: async () => browserManifestStatuses(['edge']),
+    checkNativeHostManifestHealth: async () => [],
+    readDaemonStartHistory: async () => [],
+    checkUnwritableBridgePaths: async () => [],
+    readInstalledExtensionIds: async () => [],
+    readRemoteConfig: async () => ({ remotes: [] }),
+  };
+  const bounded = await getDoctorReport({
+    ...commonOptions,
+    bridgeClientRunner: createDiagnosticRunner({
+      ...baseResults,
+      'setup.get_status': maliciousSetup,
+    }),
+  });
+  const invalidScope = await getDoctorReport({
+    ...commonOptions,
+    bridgeClientRunner: createDiagnosticRunner({
+      ...baseResults,
+      'setup.get_status': { ...maliciousSetup, scope: '/Users/private' },
+    }),
+  });
+
+  assert.deepEqual(bounded.setup, {
+    source: 'daemon',
+    scope: 'global',
+    mcp: { detected: 50, configured: 100 },
+    skills: { detected: 100, installed: 50, managed: 0, updatesAvailable: 10 },
+  });
+  assert.doesNotMatch(JSON.stringify(bounded.setup), /private|secret/u);
+  assert.equal(invalidScope.setup, null);
+  assert.ok(invalidScope.diagnosticFailures.includes('setup_status_invalid'));
+  assert.doesNotMatch(JSON.stringify(invalidScope), /Users\/private/u);
+});
+
+test('getDoctorReport checks connected extension IDs against every installed browser manifest', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-doctor-manifests-'));
+  const chromeManifestPath = path.join(tempDir, 'chrome.json');
+  const edgeManifestPath = path.join(tempDir, 'edge.json');
+  const connectedExtensionId = 'jjjkmmcdkpcgamlopogicbnnhdgebhie';
+  const otherExtensionId = 'a'.repeat(32);
+  await fs.promises.writeFile(
+    chromeManifestPath,
+    JSON.stringify({ allowed_origins: [`chrome-extension://${otherExtensionId}/`] }),
+    'utf8'
+  );
+  await fs.promises.writeFile(
+    edgeManifestPath,
+    JSON.stringify({ allowed_origins: [`chrome-extension://${connectedExtensionId}/`] }),
+    'utf8'
+  );
+  const browserManifests = [
+    { browser: 'chrome', manifestPath: chromeManifestPath, installed: true },
+    { browser: 'edge', manifestPath: edgeManifestPath, installed: true },
+  ];
+  const bridgeClientRunner = createDiagnosticRunner({
+    'health.ping': {
+      ...healthyDiagnosticResult(),
+      connectedExtensions: [{ browserExtensionId: connectedExtensionId, profileLabel: 'private' }],
+    },
+    'setup.get_status': setupStatusFixture(),
+    'log.tail': { entries: [] },
+    'daemon.metrics': { activeExtensions: 1 },
+  });
+
+  try {
+    const matching = await getDoctorReport({
+      loadManifest: async () => ({
+        allowed_origins: [`chrome-extension://${otherExtensionId}/`],
+      }),
+      checkBrowserManifests: async () => browserManifests,
+      checkNativeHostManifestHealth: async () => [],
+      readDaemonStartHistory: async () => [],
+      checkUnwritableBridgePaths: async () => [],
+      readRemoteConfig: async () => ({ remotes: [] }),
+      bridgeClientRunner,
+    });
+    assert.ok(!matching.issues.includes('extension_id_mismatch'));
+
+    await fs.promises.writeFile(
+      edgeManifestPath,
+      JSON.stringify({ allowed_origins: [`chrome-extension://${otherExtensionId}/`] }),
+      'utf8'
+    );
+    const mismatching = await getDoctorReport({
+      loadManifest: async () => ({
+        allowed_origins: [`chrome-extension://${otherExtensionId}/`],
+      }),
+      checkBrowserManifests: async () => browserManifests,
+      checkNativeHostManifestHealth: async () => [],
+      readDaemonStartHistory: async () => [],
+      checkUnwritableBridgePaths: async () => [],
+      readRemoteConfig: async () => ({ remotes: [] }),
+      bridgeClientRunner,
+    });
+    assert.ok(mismatching.issues.includes('extension_id_mismatch'));
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('getDoctorReport turns real health debugger conflict categories into recovery guidance', async () => {
+  const report = await getDoctorReport({
+    loadManifest: async () => null,
+    checkBrowserManifests: async () => browserManifestStatuses(['edge']),
+    checkNativeHostManifestHealth: async () => [],
+    readDaemonStartHistory: async () => [],
+    checkUnwritableBridgePaths: async () => [],
+    readRemoteConfig: async () => ({ remotes: [] }),
+    bridgeClientRunner: createDiagnosticRunner({
+      'health.ping': {
+        ...healthyDiagnosticResult(),
+        debugger: {
+          status: 'idle',
+          attachedTabCount: 0,
+          heldTabCount: 0,
+          pendingTabCount: 0,
+          recentReason: 'debugger_conflict',
+        },
+        capture: {
+          state: 'stopped',
+          activeTabCount: 0,
+          ownershipCount: 0,
+          inflightCount: 0,
+          interceptionActiveTabCount: 0,
+          interceptionRuleCount: 0,
+        },
+      },
+      'setup.get_status': setupStatusFixture(),
+      'log.tail': {
+        entries: [
+          {
+            at: '2026-07-22T11:59:59.000Z',
+            method: 'health.ping',
+            ok: true,
+            source: 'cli',
+          },
+          {
+            at: '2026-07-22T12:00:00.000Z',
+            method: 'screenshot.capture_element',
+            ok: false,
+            source: 'mcp',
+            message: 'Another debugger is already attached at https://private.example/secret',
+            request: { params: { token: 'raw-secret' } },
+          },
+        ],
+      },
+      'daemon.metrics': { activeExtensions: 2 },
+    }),
+  });
+
+  assert.equal(report.debugger.state, 'idle');
+  assert.equal(report.debugger.recentReason, 'debugger_conflict');
+  assert.equal(report.debugger.captureOwnershipCount, 0);
+  assert.equal(report.debugger.interceptionRuleCount, 0);
+  assert.deepEqual(report.recentCauses, ['debugger_conflict']);
+  assert.equal(report.recentEvents.length, 1);
+  assert.ok(!report.issues.includes('debugger_conflict'));
+  assert.ok(report.nextSteps.some((step) => step.includes('Close DevTools')));
+  assert.doesNotMatch(JSON.stringify(report.recentEvents), /private|raw-secret|request|params/u);
+});
+
+test('getDoctorReport summarizes remote config without probing or exposing destinations', async () => {
+  const calls: string[] = [];
+  const report = await getDoctorReport({
+    loadManifest: async () => null,
+    checkBrowserManifests: async () => browserManifestStatuses(['edge']),
+    checkNativeHostManifestHealth: async () => [],
+    readDaemonStartHistory: async () => [],
+    checkUnwritableBridgePaths: async () => [],
+    readRemoteConfig: async () => ({
+      remotes: [
+        {
+          id: 'private-vm',
+          host: 'secret.internal',
+          port: 9443,
+          token: 'a'.repeat(32),
+        },
+      ],
+    }),
+    bridgeClientRunner: createDiagnosticRunner(
+      {
+        'health.ping': healthyDiagnosticResult(),
+        'setup.get_status': setupStatusFixture(),
+        'log.tail': { entries: [] },
+        'daemon.metrics': { activeExtensions: 2 },
+      },
+      [],
+      calls
+    ),
+  });
+
+  assert.deepEqual(report.remoteDestinations, {
+    configuredCount: 1,
+    status: 'not_probed_local_only',
+    credentials: 'unverified',
+  });
+  assert.deepEqual(calls, ['health.ping', 'setup.get_status', 'log.tail', 'daemon.metrics']);
+  assert.doesNotMatch(
+    JSON.stringify(report.remoteDestinations),
+    /private-vm|secret\.internal|9443/u
+  );
+});
+
+test('getDoctorReport redacts newly consolidated URL, value, token, label, and path fields', async () => {
+  const report = await getDoctorReport({
+    loadManifest: async () => null,
+    checkBrowserManifests: async () => browserManifestStatuses(['edge']),
+    checkNativeHostManifestHealth: async () => [],
+    readDaemonStartHistory: async () => [],
+    checkUnwritableBridgePaths: async () => [],
+    readRemoteConfig: async () => ({ remotes: [] }),
+    getLocalTransport: () => ({
+      type: 'socket',
+      socketPath: '/Users/private/bridge.sock',
+      label: '/Users/private/bridge.sock',
+    }),
+    bridgeClientRunner: createDiagnosticRunner({
+      'health.ping': {
+        ...healthyDiagnosticResult(),
+        socketPath: '/Users/private/bridge.sock',
+        transport: '/Users/private/bridge.sock',
+      },
+      'setup.get_status': setupStatusFixture(),
+      'log.tail': {
+        entries: [
+          {
+            method: 'page.evaluate',
+            ok: false,
+            url: 'https://private.example/secret',
+            expression: 'document.querySelector("#password").value',
+            storage: { token: 'storage-secret' },
+            headers: { authorization: 'Bearer secret' },
+            body: 'form-secret',
+            profileLabel: 'Private profile one',
+          },
+        ],
+      },
+      'daemon.metrics': { activeExtensions: 2 },
+    }),
+  });
+
+  const consolidated = JSON.stringify({
+    transport: report.transport,
+    connections: report.connections,
+    protocol: report.protocol,
+    debugger: report.debugger,
+    metrics: report.metrics,
+    recentEvents: report.recentEvents,
+    setup: report.setup,
+    remoteDestinations: report.remoteDestinations,
+  });
+  assert.doesNotMatch(
+    consolidated,
+    /private\.example|password|storage-secret|Bearer secret|form-secret|Private profile|Users\/private/u
+  );
 });
 
 test('CLI bridge method bindings stay aligned with the protocol registry', () => {

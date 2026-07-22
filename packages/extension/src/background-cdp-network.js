@@ -5,6 +5,7 @@ const DEFAULT_MAX_INFLIGHT = 400;
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_TTL_RETRY_MS = 5_000;
 const MAX_URL_LENGTH = 4_096;
+const MAX_DIAGNOSTIC_COUNT = 10_000;
 
 /** @typedef {{ url: string, status: number }} RedirectHop */
 /**
@@ -308,6 +309,28 @@ export function createCdpNetworkCapture(deps) {
     }
   }
 
+  /**
+   * @returns {{ status: 'stopped' | 'armed' | 'stop_failed', activeTabCount: number, ownershipCount: number, inflightCount: number }}
+   */
+  function getDiagnostics() {
+    let activeTabCount = 0;
+    let ownershipCount = 0;
+    let inflightCount = 0;
+    let stopFailed = false;
+    for (const state of states.values()) {
+      if (state.status === 'armed') activeTabCount += 1;
+      if (state.ownsDebugger) ownershipCount += 1;
+      inflightCount += state.inflight.size;
+      stopFailed ||= state.status === 'stop_failed';
+    }
+    return {
+      status: stopFailed ? 'stop_failed' : activeTabCount > 0 ? 'armed' : 'stopped',
+      activeTabCount: Math.min(activeTabCount, MAX_DIAGNOSTIC_COUNT),
+      ownershipCount: Math.min(ownershipCount, MAX_DIAGNOSTIC_COUNT),
+      inflightCount: Math.min(inflightCount, MAX_DIAGNOSTIC_COUNT),
+    };
+  }
+
   /** @param {number} tabId @param {TabCaptureState} state @param {number} [delayMs] */
   function resetTtl(tabId, state, delayMs = ttlMs) {
     if (state.ttlTimer) clearTimeout(state.ttlTimer);
@@ -448,7 +471,7 @@ export function createCdpNetworkCapture(deps) {
     }
   }
 
-  return { start, clear, read, stop, handleDetach, handleEvent };
+  return { start, clear, read, stop, handleDetach, handleEvent, getDiagnostics };
 }
 
 /** @param {boolean} [armed] @returns {TabCaptureState} */

@@ -261,7 +261,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
       'bbx install-skill [targets|all] [--global] [--project <path>]      Install/update the managed Browser Bridge CLI skill',
       'bbx install-mcp [client|all] [--local]                             Write MCP config for codex|claude|cursor|copilot|opencode|antigravity|windsurf|agents',
       'bbx status                                                         Check bridge connection',
-      'bbx doctor                                                         Diagnose install, daemon, extension, and access readiness',
+      'bbx doctor                                                         Consolidated local runtime, setup, protocol, and readiness diagnostics',
       'bbx restart                                                        Restart the local daemon and running MCP servers',
       'bbx proxy enable [--port 9223] [--bind-host 127.0.0.1] [--rotate-token]  Enable loopback TCP proxy mode for SSH tunneling',
       '  Non-loopback binds require --unsafe-plaintext because raw TCP is unencrypted.',

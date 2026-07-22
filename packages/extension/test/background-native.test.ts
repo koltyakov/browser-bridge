@@ -833,6 +833,11 @@ test('background native scheduleNativeReconnect broadcasts disconnect state and 
     assert.equal(findMessage(secondPortMessages, 'host.activity')?.type, 'host.activity');
     assert.equal(findMessage(secondPortMessages, 'host.identity')?.type, 'host.identity');
     assert.equal(
+      (findMessage(secondPortMessages, 'host.identity') as { browserExtensionId?: string })
+        ?.browserExtensionId,
+      'test-extension-id'
+    );
+    assert.equal(
       getBridgeRequestMethod(findMessage(secondPortMessages, 'host.bridge_request')),
       'setup.get_status'
     );

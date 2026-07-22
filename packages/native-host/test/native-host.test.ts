@@ -235,6 +235,7 @@ test('runNativeHost bridges daemon socket messages and stdin frames', async () =
         type: 'host.identity',
         browserName: 'chrome',
         profileLabel: 'Default',
+        browserExtensionId: 'jjjkmmcdkpcgamlopogicbnnhdgebhie',
       })
     );
     process.stdin.emit(
@@ -281,7 +282,7 @@ test('runNativeHost bridges daemon socket messages and stdin frames', async () =
     assert.deepEqual(socketWrites.slice(1), [
       '{"type":"agent.request","request":{"id":"agent-1","method":"tabs.list"}}\n',
       '{"type":"extension.setup_status.request","requestId":"setup-3"}\n',
-      '{"type":"extension.identity","browserName":"chrome","profileLabel":"Default"}\n',
+      '{"type":"extension.identity","browserName":"chrome","profileLabel":"Default","browserExtensionId":"jjjkmmcdkpcgamlopogicbnnhdgebhie"}\n',
       '{"type":"extension.access_update","accessEnabled":true}\n',
       '{"type":"extension.activity","at":12345}\n',
       '{"type":"extension.response","response":{"id":"plain-1","ok":true}}\n',

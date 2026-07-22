@@ -4,6 +4,7 @@ import type {
   BridgeMethod,
   BridgeRequestSource,
   BridgeResponse,
+  SetupStatus,
 } from '../../protocol/src/types.js';
 import type { restartBridgeDaemon } from '../../native-host/src/daemon-process.js';
 
@@ -43,6 +44,7 @@ export interface SetupStatusOptions {
 export interface ProtocolHealthResult {
   extensionConnected?: boolean;
   supported_versions?: string[];
+  extension_supported_versions?: string[];
   daemon_supported_versions?: string[];
   deprecated_since?: string;
   migration_hint?: string;
@@ -110,6 +112,106 @@ export interface NativeHostManifestIssue {
   message: string;
 }
 
+export interface DoctorTransportDiagnostics {
+  kind: 'socket' | 'tcp' | 'unknown';
+  local: true;
+  status: 'reachable' | 'offline' | 'authentication_failed';
+  proxyConfigured: boolean;
+  proxyExposed: boolean | null;
+  credentials: 'not_required' | 'accepted' | 'rejected' | 'unknown';
+}
+
+export interface DoctorConnectionDiagnostics {
+  extensionCount: number;
+  profileCount: number;
+}
+
+export interface DoctorProtocolDiagnostics {
+  clientVersion: string;
+  daemonVersion: string | null;
+  daemonSupportedVersions: string[];
+  extensionSupportedVersions: string[];
+  daemonCompatible: boolean | null;
+  extensionCompatible: boolean | null;
+  compatible: boolean | null;
+  migration: 'none' | 'update_client' | 'restart_daemon' | 'update_extension' | 'unknown';
+}
+
+export interface DoctorDebuggerDiagnostics {
+  state: 'idle' | 'active' | 'conflict' | 'detached' | 'unknown';
+  attachedTabCount: number | null;
+  heldTabCount: number | null;
+  pendingTabCount: number | null;
+  recentReason:
+    | 'debugger_conflict'
+    | 'debugger_detached'
+    | 'debugger_replaced'
+    | 'debugger_canceled'
+    | 'target_closed'
+    | null;
+  captureState:
+    | 'idle'
+    | 'stopped'
+    | 'armed'
+    | 'active'
+    | 'capturing'
+    | 'stop_failed'
+    | 'unavailable'
+    | 'unknown';
+  captureActiveTabCount: number | null;
+  captureOwnershipCount: number | null;
+  captureInflightCount: number | null;
+  interceptionActiveTabCount: number | null;
+  interceptionRuleCount: number | null;
+}
+
+export interface DoctorDaemonMetrics {
+  uptimeMs: number;
+  activeAgents: number;
+  activeExtensions: number;
+  pendingRequests: number;
+  requestsProcessed: number;
+  requestsFailed: number;
+  avgResponseTimeMs: number;
+}
+
+export interface DoctorRecentEvent {
+  at?: string;
+  method?: BridgeMethod;
+  ok?: boolean;
+  source?: BridgeRequestSource;
+  cause?:
+    | 'debugger_conflict'
+    | 'debugger_detached'
+    | 'debugger_replaced'
+    | 'debugger_canceled'
+    | 'target_closed'
+    | 'dialog_conflict'
+    | 'extension_disconnected'
+    | 'wrong_window';
+}
+
+export interface DoctorSetupSummary {
+  source: 'daemon' | 'direct';
+  scope: 'global' | 'local';
+  mcp: {
+    detected: number;
+    configured: number;
+  };
+  skills: {
+    detected: number;
+    installed: number;
+    managed: number;
+    updatesAvailable: number;
+  };
+}
+
+export interface DoctorRemoteDiagnostics {
+  configuredCount: number;
+  status: 'not_configured' | 'not_probed_local_only' | 'config_unavailable';
+  credentials: 'not_configured' | 'unverified';
+}
+
 export interface DoctorReport {
   manifestInstalled: boolean;
   manifestPath: string;
@@ -117,6 +219,7 @@ export interface DoctorReport {
   defaultExtensionId: string | null;
   defaultExtensionIdSource: string;
   daemonReachable: boolean;
+  healthAvailable: boolean;
   extensionConnected: boolean;
   accessEnabled: boolean;
   enabledWindowId: number | null;
@@ -130,6 +233,16 @@ export interface DoctorReport {
   issues: string[];
   nextSteps: string[];
   browserManifests: BrowserManifestStatus[];
+  transport: DoctorTransportDiagnostics;
+  connections: DoctorConnectionDiagnostics;
+  protocol: DoctorProtocolDiagnostics;
+  debugger: DoctorDebuggerDiagnostics;
+  metrics: DoctorDaemonMetrics | null;
+  recentEvents: DoctorRecentEvent[];
+  recentCauses: DoctorRecentEvent['cause'][];
+  setup: DoctorSetupSummary | null;
+  remoteDestinations: DoctorRemoteDiagnostics;
+  diagnosticFailures: string[];
 }
 
 export interface DoctorReportOptions {
@@ -145,6 +258,14 @@ export interface DoctorReportOptions {
   checkNativeHostManifestHealth?: (
     browserManifests: BrowserManifestStatus[]
   ) => Promise<NativeHostManifestIssue[]>;
+  readInstalledExtensionIds?: (browserManifests: BrowserManifestStatus[]) => Promise<string[]>;
+  collectSetupStatus?: () => Promise<SetupStatus>;
+  readRemoteConfig?: () => Promise<{
+    remotes: Array<{ id: string; host: string; port: number; token: string }>;
+  }>;
+  getLocalTransport?: () => BridgeTransport;
+  readProxyConfig?: () => { enabled: boolean } | null;
+  includeSetupStatus?: boolean;
 }
 
 export type BridgeClientRequest = (options: {

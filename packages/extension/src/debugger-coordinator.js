@@ -7,6 +7,10 @@
 
 const MAX_TRACKED_DIALOGS = 100;
 const MAX_DIALOG_TEXT_LENGTH = 4_096;
+const RECENT_DEBUGGER_REASON_TTL_MS = 5 * 60 * 1000;
+const MAX_DIAGNOSTIC_COUNT = 10_000;
+
+/** @typedef {'debugger_conflict' | 'debugger_detached' | 'debugger_replaced' | 'debugger_canceled' | 'target_closed'} DebuggerReason */
 
 /**
  * @typedef {{
@@ -76,6 +80,8 @@ export class TabDebuggerCoordinator {
     this.dialogEventsByTab = new Map();
     this.dialogIdentityPrefix = globalThis.crypto.randomUUID();
     this.nextDialogGeneration = 0;
+    /** @type {{ reason: DebuggerReason, at: number } | null} */
+    this.recentReason = null;
   }
 
   /**
@@ -136,7 +142,7 @@ export class TabDebuggerCoordinator {
         result = await task(target);
       } catch (error) {
         if (isDebuggerDetachedError(error)) {
-          this.markDetached(tabId);
+          this.markDetached(tabId, 'debugger_detached');
           detached = true;
           if (options.retryDetached === false) {
             taskError = error;
@@ -170,15 +176,50 @@ export class TabDebuggerCoordinator {
    * Forget a debugger session that Chrome detached outside this coordinator.
    *
    * @param {number} tabId
+   * @param {DebuggerReason | null} [reason]
    * @returns {void}
    */
-  markDetached(tabId) {
+  markDetached(tabId, reason = null) {
     const existing = this.burstTimers.get(tabId);
     if (existing) clearTimeout(existing);
     this.burstTimers.delete(tabId);
     this.holdsByTab.delete(tabId);
     this.attachedTabs.delete(tabId);
     this.clearDialogState(tabId);
+    if (reason) {
+      this.recentReason = { reason, at: Date.now() };
+    }
+  }
+
+  /**
+   * Record Chrome's non-sensitive debugger detach category.
+   *
+   * @param {number} tabId
+   * @param {unknown} reason
+   * @returns {void}
+   */
+  handleDetach(tabId, reason) {
+    this.markDetached(tabId, normalizeDetachReason(reason));
+  }
+
+  /**
+   * Return bounded, non-sensitive runtime state for health diagnostics.
+   *
+   * @param {number} [now]
+   * @returns {{ status: 'idle' | 'active', attachedTabCount: number, heldTabCount: number, pendingTabCount: number, recentReason: DebuggerReason | null }}
+   */
+  getDiagnostics(now = Date.now()) {
+    const recentReason =
+      this.recentReason && now - this.recentReason.at <= RECENT_DEBUGGER_REASON_TTL_MS
+        ? this.recentReason.reason
+        : null;
+    return {
+      status: this.attachedTabs.size > 0 ? 'active' : 'idle',
+      attachedTabCount: Math.min(this.attachedTabs.size, MAX_DIAGNOSTIC_COUNT),
+      heldTabCount: Math.min(this.holdsByTab.size, MAX_DIAGNOSTIC_COUNT),
+      pendingTabCount: Math.min(this.pendingByTab.size, MAX_DIAGNOSTIC_COUNT),
+      recentReason,
+    };
   }
 
   /**
@@ -351,12 +392,20 @@ export class TabDebuggerCoordinator {
    * @returns {Promise<void>}
    */
   async _attach(target) {
-    await this.attach(target, this.protocolVersion);
+    try {
+      await this.attach(target, this.protocolVersion);
+    } catch (error) {
+      const reason = classifyDebuggerFailure(error);
+      if (reason) {
+        this.recentReason = { reason, at: Date.now() };
+      }
+      throw error;
+    }
     this.attachedTabs.add(target.tabId);
     try {
       await this.initialize(target);
     } catch (error) {
-      this.markDetached(target.tabId);
+      this.markDetached(target.tabId, classifyDebuggerFailure(error));
       await this.detach(target).catch(() => {});
       throw error;
     }
@@ -544,4 +593,30 @@ function boundDialogText(value) {
 function isDebuggerDetachedError(error) {
   const message = error instanceof Error ? error.message : String(error);
   return /not attached|no target with given id/i.test(message);
+}
+
+/**
+ * @param {unknown} error
+ * @returns {DebuggerReason | null}
+ */
+export function classifyDebuggerFailure(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/another debugger|debugger.{0,40}(?:already attached|conflict|in use)/iu.test(message)) {
+    return 'debugger_conflict';
+  }
+  if (/not attached|no target with given id|debugger.{0,40}detach/iu.test(message)) {
+    return 'debugger_detached';
+  }
+  return null;
+}
+
+/**
+ * @param {unknown} reason
+ * @returns {DebuggerReason}
+ */
+function normalizeDetachReason(reason) {
+  if (reason === 'replaced_with_devtools') return 'debugger_replaced';
+  if (reason === 'canceled_by_user') return 'debugger_canceled';
+  if (reason === 'target_closed') return 'target_closed';
+  return 'debugger_detached';
 }

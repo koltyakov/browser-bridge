@@ -29,6 +29,7 @@ import { normalizeNetworkInterceptAddParams } from '../../protocol/src/index.js'
 /** @typedef {{ rules: Map<string, InterceptRule>, acquirePromise?: Promise<void>, ttlTimer?: ReturnType<typeof setTimeout> }} TabInterceptState */
 
 const TTL_MS = 10 * 60 * 1000; // 10 minutes
+const MAX_DIAGNOSTIC_COUNT = 10_000;
 
 /** @typedef {Omit<InterceptRule, 'ruleId'>} InterceptRuleInput */
 
@@ -186,6 +187,23 @@ export function createFetchInterceptor(deps) {
   }
 
   /**
+   * @returns {{ status: 'idle' | 'active', activeTabCount: number, ruleCount: number }}
+   */
+  function getDiagnostics() {
+    let activeTabCount = 0;
+    let ruleCount = 0;
+    for (const state of tabStates.values()) {
+      if (state.rules.size > 0) activeTabCount += 1;
+      ruleCount += state.rules.size;
+    }
+    return {
+      status: activeTabCount > 0 ? 'active' : 'idle',
+      activeTabCount: Math.min(activeTabCount, MAX_DIAGNOSTIC_COUNT),
+      ruleCount: Math.min(ruleCount, MAX_DIAGNOSTIC_COUNT),
+    };
+  }
+
+  /**
    * @param {number} tabId
    */
   async function releaseTab(tabId) {
@@ -264,7 +282,15 @@ export function createFetchInterceptor(deps) {
     }
   }
 
-  return { addRule, removeRule, listRules, clearAllRules, releaseTab, handleDetach };
+  return {
+    addRule,
+    removeRule,
+    listRules,
+    clearAllRules,
+    releaseTab,
+    handleDetach,
+    getDiagnostics,
+  };
 }
 
 /**

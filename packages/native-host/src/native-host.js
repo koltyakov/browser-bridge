@@ -28,7 +28,8 @@ import { createNativeMessageReader, createNativeMessageWriter, writeJsonLine } f
  * @typedef {{
  *   type?: string,
  *   browserName?: string,
- *   profileLabel?: string
+ *   profileLabel?: string,
+ *   browserExtensionId?: string
  * }} HostIdentityMessage
  */
 
@@ -238,6 +239,7 @@ export async function runNativeHost({
             type: 'extension.identity',
             browserName: message.browserName,
             profileLabel: message.profileLabel,
+            browserExtensionId: message.browserExtensionId,
           });
           return;
         }

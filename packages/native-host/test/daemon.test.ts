@@ -34,11 +34,13 @@ type FakeSocket = net.Socket & {
   __extensionId?: string;
   __browserName?: string;
   __profileLabel?: string;
+  __browserExtensionId?: string;
   __accessEnabled?: boolean;
   __lastActiveAt?: number;
 };
 type ConnectedExtensionSnapshot = {
   extensionId: string;
+  browserExtensionId: string | null;
   browserName: string | null;
   profileLabel: string | null;
   accessEnabled: boolean;
@@ -958,6 +960,121 @@ test('daemon forwards health checks to the extension and merges access state', a
   assert.match(payload.response.result.migration_hint, /client protocol 0.0/);
 });
 
+test('daemon health ignores malicious extension overrides and preserves bounded diagnostics', async () => {
+  const daemon = new BridgeDaemon({ logger: console });
+  const agentSocket = createFakeSocket();
+  const extensionSocket = createFakeSocket();
+  daemon.extensionSockets.set('trusted-connection-id', extensionSocket);
+
+  await daemon.handleAgentRequest(agentSocket, {
+    request: {
+      id: 'req_health_hostile',
+      method: 'health.ping',
+      tab_id: null,
+      params: {},
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  });
+  await daemon.handleExtensionResponse(extensionSocket, {
+    response: {
+      id: 'req_health_hostile',
+      ok: true,
+      result: {
+        daemon: 'compromised',
+        daemonVersion: '999.0.0',
+        extensionConnected: false,
+        connectedExtensions: [{ profileLabel: 'private' }],
+        socketPath: '/private/socket',
+        transport: 'attacker.example:9999',
+        proxy: { enabled: true, endpoint: 'attacker.example:9999', token: 'secret' },
+        daemon_supported_versions: ['999.0'],
+        deprecated_since: 'private-version',
+        migration_hint: 'private migration payload',
+        supported_versions: ['0.9', 'private-version'],
+        access: {
+          enabled: true,
+          windowId: 9,
+          routeTabId: 42,
+          routeReady: true,
+          reason: 'enabled',
+          routeUrl: 'https://private.example/account?token=secret',
+          privateValue: 'secret',
+        },
+        debugger: {
+          status: 'active',
+          attachedTabCount: 1_000_000,
+          heldTabCount: 2,
+          pendingTabCount: -1,
+          recentReason: 'debugger_conflict',
+          rawError: 'private debugger error',
+        },
+        capture: {
+          state: 'armed',
+          activeTabCount: 3,
+          ownershipCount: 2,
+          inflightCount: 1_000_000,
+          interceptionActiveTabCount: 1,
+          interceptionRuleCount: 4,
+          requestBody: 'private body',
+        },
+      },
+      error: null,
+      meta: {
+        protocol_version: '999.0',
+        method: 'page.evaluate',
+        protocol_warning: 'private warning',
+      },
+    },
+  });
+
+  const payload = JSON.parse(agentSocket.writes[0].trim());
+  const result = payload.response.result;
+  assert.equal(result.daemon, 'ok');
+  assert.notEqual(result.daemonVersion, '999.0.0');
+  assert.equal(result.extensionConnected, true);
+  assert.deepEqual(result.connectedExtensions, [
+    {
+      extensionId: 'trusted-connection-id',
+      browserExtensionId: null,
+      browserName: null,
+      profileLabel: null,
+      accessEnabled: false,
+    },
+  ]);
+  assert.equal(result.socketPath, daemon.socketPath);
+  assert.equal(result.transport, daemon.transport.label);
+  assert.deepEqual(result.proxy, { enabled: false, endpoint: null });
+  assert.deepEqual(result.supported_versions, [PROTOCOL_VERSION]);
+  assert.deepEqual(result.daemon_supported_versions, [PROTOCOL_VERSION]);
+  assert.deepEqual(result.extension_supported_versions, ['0.9']);
+  assert.deepEqual(result.access, {
+    enabled: true,
+    windowId: 9,
+    routeTabId: 42,
+    routeReady: true,
+    reason: 'enabled',
+  });
+  assert.deepEqual(result.debugger, {
+    status: 'active',
+    attachedTabCount: 10_000,
+    heldTabCount: 2,
+    recentReason: 'debugger_conflict',
+  });
+  assert.deepEqual(result.capture, {
+    state: 'armed',
+    activeTabCount: 3,
+    ownershipCount: 2,
+    inflightCount: 10_000,
+    interceptionActiveTabCount: 1,
+    interceptionRuleCount: 4,
+  });
+  assert.deepEqual(payload.response.meta, {
+    protocol_version: PROTOCOL_VERSION,
+    method: 'health.ping',
+  });
+  assert.doesNotMatch(JSON.stringify(payload.response), /private|attacker|secret|compromised/u);
+});
+
 test('daemon prefers enabled extensions and otherwise falls back to the most recent one', async () => {
   const daemon = new BridgeDaemon({ logger: console });
   const agentSocket = createFakeSocket();
@@ -1225,13 +1342,18 @@ test('daemon health.ping refreshes connectedExtensions after connect, metadata c
   assert.deepEqual(firstPing.connectedExtensions, [
     {
       extensionId: extensionOne.__extensionId,
+      browserExtensionId: null,
       browserName: null,
       profileLabel: null,
       accessEnabled: false,
     },
   ]);
 
-  daemon.registerSocket(extensionTwo, { type: 'register', role: 'extension' });
+  daemon.registerSocket(extensionTwo, {
+    type: 'register',
+    role: 'extension',
+    browserExtensionId: 'private-extension-id',
+  });
   extensionTwo.__lastActiveAt = 20;
 
   const secondPing = await requestHealthPing(
@@ -1245,12 +1367,14 @@ test('daemon health.ping refreshes connectedExtensions after connect, metadata c
   assert.deepEqual(secondPing.connectedExtensions, [
     {
       extensionId: extensionOne.__extensionId,
+      browserExtensionId: null,
       browserName: null,
       profileLabel: null,
       accessEnabled: false,
     },
     {
       extensionId: extensionTwo.__extensionId,
+      browserExtensionId: null,
       browserName: null,
       profileLabel: null,
       accessEnabled: false,
@@ -1260,6 +1384,7 @@ test('daemon health.ping refreshes connectedExtensions after connect, metadata c
   daemon.handleExtensionIdentity(extensionOne, {
     browserName: 'Chrome',
     profileLabel: 'Work',
+    browserExtensionId: 'jjjkmmcdkpcgamlopogicbnnhdgebhie',
   });
   daemon.handleExtensionAccessUpdate(extensionOne, { accessEnabled: true });
 
@@ -1274,12 +1399,14 @@ test('daemon health.ping refreshes connectedExtensions after connect, metadata c
   assert.deepEqual(thirdPing.connectedExtensions, [
     {
       extensionId: extensionOne.__extensionId,
+      browserExtensionId: 'jjjkmmcdkpcgamlopogicbnnhdgebhie',
       browserName: 'Chrome',
       profileLabel: 'Work',
       accessEnabled: true,
     },
     {
       extensionId: extensionTwo.__extensionId,
+      browserExtensionId: null,
       browserName: null,
       profileLabel: null,
       accessEnabled: false,
@@ -1298,6 +1425,7 @@ test('daemon health.ping refreshes connectedExtensions after connect, metadata c
   assert.deepEqual(fourthPing.connectedExtensions, [
     {
       extensionId: extensionOne.__extensionId,
+      browserExtensionId: 'jjjkmmcdkpcgamlopogicbnnhdgebhie',
       browserName: 'Chrome',
       profileLabel: 'Work',
       accessEnabled: true,

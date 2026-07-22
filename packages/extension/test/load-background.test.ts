@@ -163,4 +163,23 @@ test('loadBackground exposes direct test seams for background helper functions',
   assert.equal(response.id, 'health-ping');
   assert.equal(response.ok, true);
   assert.equal(response.meta?.method, 'health.ping');
+  const health = response.result as {
+    debugger?: Record<string, unknown>;
+    capture?: Record<string, unknown>;
+  };
+  assert.deepEqual(health.debugger, {
+    status: 'idle',
+    attachedTabCount: 0,
+    heldTabCount: 0,
+    pendingTabCount: 0,
+    recentReason: null,
+  });
+  assert.deepEqual(health.capture, {
+    state: 'stopped',
+    activeTabCount: 0,
+    ownershipCount: 0,
+    inflightCount: 0,
+    interceptionActiveTabCount: 0,
+    interceptionRuleCount: 0,
+  });
 });

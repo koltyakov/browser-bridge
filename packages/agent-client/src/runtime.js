@@ -9,8 +9,10 @@ import {
   getBridgeDir,
   getDaemonLogPath,
   getDaemonPidPath,
+  getBridgeTransport,
   getManifestInstallDir,
   getSocketPath,
+  readProxyConfig,
   SUPPORTED_BROWSERS,
 } from '../../native-host/src/config.js';
 import {
@@ -20,13 +22,17 @@ import {
 import { resolveDefaultExtensionId } from '../../native-host/src/install-manifest.js';
 import {
   BridgeError,
+  BRIDGE_METHOD_REGISTRY,
   CLIENT_REQUEST_TIMEOUT_MARGIN_MS,
   DEFAULT_CLIENT_REQUEST_TIMEOUT_MS,
   getBridgeOperationTimeoutMs,
+  getProtocolVersion,
   MAX_CLIENT_REQUEST_TIMEOUT_MS,
 } from '../../protocol/src/index.js';
 import { methodNeedsTab } from './cli-helpers.js';
 import { BridgeClient } from './client.js';
+import { readRemoteConfig } from './remotes.js';
+import { collectSetupStatus } from './setup-status.js';
 
 /** @typedef {import('./types.js').BridgeMethod} BridgeMethod */
 /** @typedef {import('./types.js').BridgeMeta} BridgeMeta */
@@ -37,9 +43,48 @@ import { BridgeClient } from './client.js';
 /** @typedef {import('./types.js').NativeHostManifestIssue} NativeHostManifestIssue */
 /** @typedef {import('./types.js').DoctorReport} DoctorReport */
 /** @typedef {import('./types.js').DoctorReportOptions} DoctorReportOptions */
+/** @typedef {import('./types.js').DoctorRecentEvent} DoctorRecentEvent */
 
 const CHROMIUM_SANDBOXED_MANIFEST_RE =
   /(?:^|[/\\])(?:snap[/\\]chromium|\.var[/\\]app[/\\]org\.chromium\.Chromium)[/\\]/;
+const DOCTOR_LOG_LIMIT = 12;
+const DOCTOR_RECENT_EVENT_LIMIT = 10;
+const DOCTOR_SETUP_ENTRY_LIMIT = 100;
+const MAX_DOCTOR_COUNT = 1_000_000_000;
+const SAFE_VERSION_RE = /^\d+\.\d+(?:\.\d+)?(?:[-+][A-Za-z0-9.-]+)?$/u;
+const CHROME_EXTENSION_ID_RE = /^[a-p]{32}$/u;
+const SAFE_DEBUGGER_STATES = new Set(['idle', 'active', 'conflict', 'detached']);
+const SAFE_ROUTE_REASONS = new Set([
+  'enabled',
+  'access_disabled',
+  'enabled_window_missing',
+  'no_routable_active_tab',
+  'reconnected',
+  'restricted_page',
+]);
+const SAFE_CAPTURE_STATES = new Set([
+  'idle',
+  'stopped',
+  'armed',
+  'active',
+  'capturing',
+  'stop_failed',
+  'unavailable',
+]);
+const BRIDGE_METHOD_SET = new Set(Object.keys(BRIDGE_METHOD_REGISTRY));
+const DOCTOR_DIAGNOSTIC_METHODS = new Set([
+  'health.ping',
+  'setup.get_status',
+  'log.tail',
+  'daemon.metrics',
+]);
+const SAFE_DEBUGGER_REASONS = new Set([
+  'debugger_conflict',
+  'debugger_detached',
+  'debugger_replaced',
+  'debugger_canceled',
+  'target_closed',
+]);
 
 /**
  * @param {BridgeClient} client
@@ -186,6 +231,44 @@ export async function checkBrowserManifests() {
       }
     })
   );
+}
+
+/**
+ * Read the allowlisted extension IDs from every installed browser manifest.
+ * Invalid manifests are already reported by the native-host health check and
+ * do not prevent the remaining browsers from contributing identity data.
+ *
+ * @param {BrowserManifestStatus[]} browserManifests
+ * @param {typeof fs.promises.readFile} [readFile]
+ * @returns {Promise<string[]>}
+ */
+export async function readInstalledExtensionIds(
+  browserManifests,
+  readFile = fs.promises.readFile.bind(fs.promises)
+) {
+  /** @type {Set<string>} */
+  const extensionIds = new Set();
+  for (const entry of browserManifests.slice(0, DOCTOR_SETUP_ENTRY_LIMIT)) {
+    if (!entry.installed || extensionIds.size >= DOCTOR_SETUP_ENTRY_LIMIT) {
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(await readFile(entry.manifestPath, 'utf8'));
+      const origins = Array.isArray(parsed?.allowed_origins) ? parsed.allowed_origins : [];
+      for (const origin of origins.slice(0, DOCTOR_SETUP_ENTRY_LIMIT)) {
+        const match =
+          typeof origin === 'string'
+            ? /^chrome-extension:\/\/([a-p]{32})\/(?:\*)?$/u.exec(origin)
+            : null;
+        if (match?.[1]) {
+          extensionIds.add(match[1]);
+        }
+      }
+    } catch {
+      // The native-host manifest health collector reports malformed files.
+    }
+  }
+  return [...extensionIds];
 }
 
 /**
@@ -378,6 +461,381 @@ export async function checkUnwritableBridgePaths() {
 }
 
 /**
+ * Doctor must never restart a daemon while it is inspecting version drift.
+ *
+ * @template T
+ * @param {(client: BridgeClient) => Promise<T>} callback
+ * @returns {Promise<T>}
+ */
+async function withDoctorBridgeClient(callback) {
+  const client = new BridgeClient({ restartDaemonOnVersionMismatch: false });
+  try {
+    await ensureClientConnected(client);
+    return await callback(client);
+  } finally {
+    await client.close().catch(() => {});
+  }
+}
+
+/**
+ * @param {unknown} value
+ * @returns {Record<string, unknown> | null}
+ */
+function asRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? /** @type {Record<string, unknown>} */ (value)
+    : null;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {number}
+ */
+function boundedCount(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.min(MAX_DOCTOR_COUNT, Math.trunc(value))
+    : 0;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string | null}
+ */
+function safeVersion(value) {
+  return typeof value === 'string' && value.length <= 32 && SAFE_VERSION_RE.test(value)
+    ? value
+    : null;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string[]}
+ */
+function safeVersions(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  /** @type {Set<string>} */
+  const versions = new Set();
+  for (const candidate of value) {
+    const version = safeVersion(candidate);
+    if (version) {
+      versions.add(version);
+    }
+    if (versions.size === 10) {
+      break;
+    }
+  }
+  return [...versions];
+}
+
+/**
+ * @param {string} left
+ * @param {string} right
+ * @returns {number}
+ */
+function compareVersions(left, right) {
+  const leftParts = left.split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const rightParts = right.split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const length = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = (leftParts[index] || 0) - (rightParts[index] || 0);
+    if (difference !== 0) {
+      return difference > 0 ? 1 : -1;
+    }
+  }
+  return 0;
+}
+
+/**
+ * Convert untrusted daemon log entries into a fixed allowlisted shape. Raw
+ * messages are inspected only to derive known cause categories and are never
+ * returned.
+ *
+ * @param {unknown} value
+ * @returns {DoctorRecentEvent['cause'] | undefined}
+ */
+function classifyRecentCause(value) {
+  const entry = asRecord(value);
+  if (!entry) {
+    return undefined;
+  }
+  const error = asRecord(entry.error);
+  const candidates = [
+    entry.cause,
+    entry.reason,
+    entry.errorCode,
+    entry.code,
+    entry.message,
+    entry.summary,
+    error?.code,
+    error?.message,
+  ]
+    .filter((candidate) => typeof candidate === 'string')
+    .map((candidate) => candidate.slice(0, 200))
+    .join(' ')
+    .slice(0, 1000);
+  if (/another debugger|debugger.{0,40}(?:already attached|conflict|in use)/iu.test(candidates)) {
+    return 'debugger_conflict';
+  }
+  if (/debugger.{0,40}detach|detach.{0,40}debugger/iu.test(candidates)) {
+    return 'debugger_detached';
+  }
+  if (/DIALOG_ACTION_CONFLICT/iu.test(candidates)) {
+    return 'dialog_conflict';
+  }
+  if (/EXTENSION_DISCONNECTED|extension.{0,40}disconnect/iu.test(candidates)) {
+    return 'extension_disconnected';
+  }
+  if (/TAB_MISMATCH|wrong.{0,20}window|enabled window.{0,30}mismatch/iu.test(candidates)) {
+    return 'wrong_window';
+  }
+  return undefined;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {DoctorRecentEvent[]}
+ */
+function summarizeRecentEvents(value) {
+  const result = asRecord(value);
+  const entries = Array.isArray(result?.entries)
+    ? result.entries
+        .slice(-DOCTOR_LOG_LIMIT)
+        .filter((candidate) => {
+          const entry = asRecord(candidate);
+          return !DOCTOR_DIAGNOSTIC_METHODS.has(
+            typeof entry?.method === 'string' ? entry.method : ''
+          );
+        })
+        .slice(-DOCTOR_RECENT_EVENT_LIMIT)
+    : [];
+  /** @type {DoctorRecentEvent[]} */
+  const events = [];
+  for (const candidate of entries) {
+    const entry = asRecord(candidate);
+    if (!entry) {
+      continue;
+    }
+    /** @type {DoctorRecentEvent} */
+    const event = {};
+    if (typeof entry.at === 'string' && /^\d{4}-\d{2}-\d{2}T/u.test(entry.at)) {
+      const timestamp = Date.parse(entry.at);
+      if (Number.isFinite(timestamp)) {
+        event.at = new Date(timestamp).toISOString();
+      }
+    }
+    if (typeof entry.method === 'string' && BRIDGE_METHOD_SET.has(entry.method)) {
+      event.method = /** @type {BridgeMethod} */ (entry.method);
+    }
+    if (typeof entry.ok === 'boolean') {
+      event.ok = entry.ok;
+    }
+    if (entry.source === 'cli' || entry.source === 'mcp') {
+      event.source = entry.source;
+    }
+    event.cause = classifyRecentCause(entry);
+    if (Object.values(event).some((field) => field !== undefined)) {
+      events.push(event);
+    }
+  }
+  return events;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {import('./types.js').DoctorDaemonMetrics | null}
+ */
+function summarizeMetrics(value) {
+  const metrics = asRecord(value);
+  if (!metrics) {
+    return null;
+  }
+  return {
+    uptimeMs: boundedCount(metrics.uptimeMs),
+    activeAgents: boundedCount(metrics.activeAgents),
+    activeExtensions: boundedCount(metrics.activeExtensions),
+    pendingRequests: boundedCount(metrics.pendingRequests),
+    requestsProcessed: boundedCount(metrics.requestsProcessed),
+    requestsFailed: boundedCount(metrics.requestsFailed),
+    avgResponseTimeMs: boundedCount(metrics.avgResponseTimeMs),
+  };
+}
+
+/**
+ * @param {unknown} value
+ * @param {'daemon' | 'direct'} source
+ * @returns {import('./types.js').DoctorSetupSummary | null}
+ */
+function summarizeSetupStatus(value, source) {
+  const status = asRecord(value);
+  if (
+    (status?.scope !== 'global' && status?.scope !== 'local') ||
+    !Array.isArray(status.mcpClients) ||
+    !Array.isArray(status.skillTargets)
+  ) {
+    return null;
+  }
+  const mcpClients = status.mcpClients.slice(0, DOCTOR_SETUP_ENTRY_LIMIT).map(asRecord);
+  const skillTargets = status.skillTargets.slice(0, DOCTOR_SETUP_ENTRY_LIMIT).map(asRecord);
+  return {
+    source,
+    scope: status.scope,
+    mcp: {
+      detected: boundedCount(mcpClients.filter((client) => client?.detected === true).length),
+      configured: boundedCount(mcpClients.filter((client) => client?.configured === true).length),
+    },
+    skills: {
+      detected: boundedCount(skillTargets.filter((target) => target?.detected === true).length),
+      installed: boundedCount(skillTargets.filter((target) => target?.installed === true).length),
+      managed: boundedCount(skillTargets.filter((target) => target?.managed === true).length),
+      updatesAvailable: boundedCount(
+        skillTargets.filter((target) => target?.updateAvailable === true).length
+      ),
+    },
+  };
+}
+
+/**
+ * @param {Record<string, unknown> | null} health
+ * @returns {import('./types.js').DoctorDebuggerDiagnostics}
+ */
+function summarizeDebugger(health) {
+  const debuggerHealth = asRecord(health?.debugger);
+  const captureHealth = asRecord(health?.capture);
+  const rawState = debuggerHealth?.state ?? debuggerHealth?.status ?? health?.debuggerState;
+  /** @type {import('./types.js').DoctorDebuggerDiagnostics['state']} */
+  let state =
+    typeof rawState === 'string' && SAFE_DEBUGGER_STATES.has(rawState)
+      ? /** @type {'idle' | 'active' | 'conflict' | 'detached'} */ (rawState)
+      : 'unknown';
+  if (debuggerHealth?.conflict === true) {
+    state = 'conflict';
+  }
+
+  const attachedTabs = debuggerHealth?.attachedTabs;
+  const attachedTabCount = Array.isArray(attachedTabs)
+    ? boundedCount(attachedTabs.length)
+    : typeof debuggerHealth?.attachedTabCount === 'number'
+      ? boundedCount(debuggerHealth.attachedTabCount)
+      : null;
+  const heldTabCount =
+    typeof debuggerHealth?.heldTabCount === 'number'
+      ? boundedCount(debuggerHealth.heldTabCount)
+      : null;
+  const pendingTabCount =
+    typeof debuggerHealth?.pendingTabCount === 'number'
+      ? boundedCount(debuggerHealth.pendingTabCount)
+      : null;
+  const recentReason =
+    typeof debuggerHealth?.recentReason === 'string' &&
+    SAFE_DEBUGGER_REASONS.has(debuggerHealth.recentReason)
+      ? /** @type {import('./types.js').DoctorDebuggerDiagnostics['recentReason']} */ (
+          debuggerHealth.recentReason
+        )
+      : null;
+  const rawCaptureState =
+    captureHealth?.state ?? debuggerHealth?.captureState ?? health?.captureState;
+  const captureState =
+    typeof rawCaptureState === 'string' && SAFE_CAPTURE_STATES.has(rawCaptureState)
+      ? /** @type {import('./types.js').DoctorDebuggerDiagnostics['captureState']} */ (
+          rawCaptureState
+        )
+      : 'unknown';
+  const captureActiveTabCount =
+    typeof captureHealth?.activeTabCount === 'number'
+      ? boundedCount(captureHealth.activeTabCount)
+      : null;
+  const captureOwnershipCount =
+    typeof captureHealth?.ownershipCount === 'number'
+      ? boundedCount(captureHealth.ownershipCount)
+      : null;
+  const captureInflightCount =
+    typeof captureHealth?.inflightCount === 'number'
+      ? boundedCount(captureHealth.inflightCount)
+      : null;
+  const interceptionActiveTabCount =
+    typeof captureHealth?.interceptionActiveTabCount === 'number'
+      ? boundedCount(captureHealth.interceptionActiveTabCount)
+      : null;
+  const interceptionRuleCount =
+    typeof captureHealth?.interceptionRuleCount === 'number'
+      ? boundedCount(captureHealth.interceptionRuleCount)
+      : null;
+  return {
+    state,
+    attachedTabCount,
+    heldTabCount,
+    pendingTabCount,
+    recentReason,
+    captureState,
+    captureActiveTabCount,
+    captureOwnershipCount,
+    captureInflightCount,
+    interceptionActiveTabCount,
+    interceptionRuleCount,
+  };
+}
+
+/**
+ * @param {Record<string, unknown> | null} health
+ * @param {boolean} extensionConnected
+ * @returns {import('./types.js').DoctorProtocolDiagnostics}
+ */
+function summarizeProtocol(health, extensionConnected) {
+  const clientVersion = getProtocolVersion();
+  const advertisedDaemonVersions = safeVersions(health?.daemon_supported_versions);
+  const daemonSupportedVersions =
+    advertisedDaemonVersions.length > 0 || extensionConnected
+      ? advertisedDaemonVersions
+      : safeVersions(health?.supported_versions);
+  const extensionSupportedVersions = extensionConnected
+    ? Array.isArray(health?.extension_supported_versions)
+      ? safeVersions(health.extension_supported_versions)
+      : safeVersions(health?.supported_versions)
+    : [];
+  const daemonCompatible = daemonSupportedVersions.length
+    ? daemonSupportedVersions.includes(clientVersion)
+    : null;
+  const extensionCompatible = extensionConnected
+    ? extensionSupportedVersions.length
+      ? extensionSupportedVersions.includes(clientVersion)
+      : null
+    : null;
+  const knownCompatibility = [daemonCompatible, extensionCompatible].filter(
+    (value) => value !== null
+  );
+  const compatible = knownCompatibility.includes(false)
+    ? false
+    : knownCompatibility.length
+      ? true
+      : null;
+
+  /** @type {import('./types.js').DoctorProtocolDiagnostics['migration']} */
+  let migration = compatible === true ? 'none' : 'unknown';
+  const latestExtension = extensionSupportedVersions[0];
+  const latestDaemon = daemonSupportedVersions[0];
+  if (extensionCompatible === false && latestExtension) {
+    migration =
+      compareVersions(latestExtension, clientVersion) > 0 ? 'update_client' : 'update_extension';
+  } else if (daemonCompatible === false && latestDaemon) {
+    migration =
+      compareVersions(latestDaemon, clientVersion) > 0 ? 'update_client' : 'restart_daemon';
+  }
+
+  return {
+    clientVersion,
+    daemonVersion: safeVersion(health?.daemonVersion),
+    daemonSupportedVersions,
+    extensionSupportedVersions,
+    daemonCompatible,
+    extensionCompatible,
+    compatible,
+    migration,
+  };
+}
+
+/**
  * @param {DoctorReportOptions} [options={}]
  * @returns {Promise<DoctorReport>}
  */
@@ -404,6 +862,53 @@ export async function getDoctorReport(options = {}) {
       CHROMIUM_SANDBOXED_MANIFEST_RE.test(entry.manifestPath)
   );
 
+  /** @type {'socket' | 'tcp' | 'unknown'} */
+  let transportKind = 'unknown';
+  let proxyConfigured = false;
+  /** @type {string[]} */
+  const diagnosticFailures = [];
+  /** @type {string[]} */
+  let installedExtensionIds = [];
+  try {
+    installedExtensionIds = await (options.readInstalledExtensionIds || readInstalledExtensionIds)(
+      browserManifests
+    );
+    installedExtensionIds = installedExtensionIds
+      .filter((extensionId) => CHROME_EXTENSION_ID_RE.test(extensionId))
+      .slice(0, DOCTOR_SETUP_ENTRY_LIMIT);
+  } catch {
+    diagnosticFailures.push('manifest_identity_unavailable');
+  }
+  try {
+    transportKind = (options.getLocalTransport || getBridgeTransport)().type;
+  } catch {
+    diagnosticFailures.push('transport_config_unavailable');
+  }
+  try {
+    proxyConfigured = Boolean((options.readProxyConfig || readProxyConfig)());
+  } catch {
+    diagnosticFailures.push('proxy_config_unavailable');
+  }
+
+  /** @type {import('./types.js').DoctorRemoteDiagnostics} */
+  let remoteDestinations = {
+    configuredCount: 0,
+    status: 'not_configured',
+    credentials: 'not_configured',
+  };
+  try {
+    const remoteConfig = await (options.readRemoteConfig || readRemoteConfig)();
+    const configuredCount = remoteConfig.remotes.length;
+    remoteDestinations = {
+      configuredCount,
+      status: configuredCount > 0 ? 'not_probed_local_only' : 'not_configured',
+      credentials: configuredCount > 0 ? 'unverified' : 'not_configured',
+    };
+  } catch {
+    diagnosticFailures.push('remote_config_unavailable');
+    remoteDestinations.status = 'config_unavailable';
+  }
+
   /** @type {DoctorReport} */
   const report = {
     manifestInstalled,
@@ -412,6 +917,7 @@ export async function getDoctorReport(options = {}) {
     defaultExtensionId: defaultExtensionId.extensionId,
     defaultExtensionIdSource: defaultExtensionId.source,
     daemonReachable: false,
+    healthAvailable: false,
     extensionConnected: false,
     accessEnabled: false,
     enabledWindowId: null,
@@ -425,35 +931,202 @@ export async function getDoctorReport(options = {}) {
     issues: [],
     nextSteps: [],
     browserManifests,
+    transport: {
+      kind: transportKind,
+      local: true,
+      status: 'offline',
+      proxyConfigured,
+      proxyExposed: null,
+      credentials: transportKind === 'socket' ? 'not_required' : 'unknown',
+    },
+    connections: {
+      extensionCount: 0,
+      profileCount: 0,
+    },
+    protocol: summarizeProtocol(null, false),
+    debugger: summarizeDebugger(null),
+    metrics: null,
+    recentEvents: [],
+    recentCauses: [],
+    setup: null,
+    remoteDestinations,
+    diagnosticFailures,
   };
 
+  /** @type {Record<string, unknown> | null} */
+  let healthResult = null;
+  /** @type {unknown} */
+  let setupStatus = null;
+  /** @type {Record<string, unknown> | null} */
+  let metricsResult = null;
+  /** @type {Record<string, unknown> | null} */
+  let logsResult = null;
+  /** @type {unknown} */
+  let connectionError = null;
+
   try {
-    await (options.bridgeClientRunner || withBridgeClient)(async (client) => {
-      const response = await client.request({ method: 'health.ping' });
-      if (!response.ok) {
-        throw new Error(response.error.message);
+    await (options.bridgeClientRunner || withDoctorBridgeClient)(async (client) => {
+      report.daemonReachable = true;
+      /**
+       * @param {BridgeMethod} method
+       * @param {Record<string, unknown>} [params]
+       * @returns {Promise<Record<string, unknown> | null>}
+       */
+      async function requestDiagnostic(method, params = {}) {
+        try {
+          const response = await client.request({ method, params });
+          if (!response.ok) {
+            diagnosticFailures.push(`${method}_failed`);
+            return null;
+          }
+          report.daemonReachable = true;
+          return asRecord(response.result);
+        } catch {
+          diagnosticFailures.push(`${method}_failed`);
+          return null;
+        }
       }
-      const result = /** @type {{ daemon?: string, extensionConnected?: boolean, access?: {
-        enabled?: boolean,
-        windowId?: number | null,
-        routeTabId?: number | null,
-        routeReady?: boolean,
-        reason?: string
-      } }} */ (response.result);
-      report.daemonReachable = result.daemon === 'ok';
-      report.extensionConnected = result.extensionConnected === true;
-      report.accessEnabled = result.access?.enabled === true;
-      report.enabledWindowId =
-        typeof result.access?.windowId === 'number' ? result.access.windowId : null;
-      report.routeTabId =
-        typeof result.access?.routeTabId === 'number' ? result.access.routeTabId : null;
-      report.routeReady = result.access?.routeReady === true;
-      report.routeReason =
-        typeof result.access?.reason === 'string' ? result.access.reason : 'access_disabled';
+
+      healthResult = await requestDiagnostic('health.ping');
+      if (options.includeSetupStatus !== false) {
+        const setupResult = await requestDiagnostic('setup.get_status');
+        if (setupResult) {
+          setupStatus = setupResult;
+        }
+      }
+      logsResult = await requestDiagnostic('log.tail', { limit: DOCTOR_LOG_LIMIT });
+      metricsResult = await requestDiagnostic('daemon.metrics');
     });
-  } catch {
-    report.daemonReachable = false;
-    report.extensionConnected = false;
+  } catch (error) {
+    connectionError = error;
+    diagnosticFailures.push('daemon_connection_failed');
+  }
+
+  if (!report.daemonReachable && options.includeSetupStatus !== false) {
+    try {
+      setupStatus = await (options.collectSetupStatus || collectSetupStatus)();
+      const summary = summarizeSetupStatus(setupStatus, 'direct');
+      if (summary) {
+        report.setup = summary;
+      } else {
+        diagnosticFailures.push('setup_status_invalid');
+      }
+    } catch {
+      diagnosticFailures.push('setup_direct_failed');
+    }
+  } else if (setupStatus) {
+    const summary = summarizeSetupStatus(setupStatus, 'daemon');
+    if (summary) {
+      report.setup = summary;
+    } else {
+      diagnosticFailures.push('setup_status_invalid');
+    }
+  }
+
+  const connectionMessage =
+    connectionError instanceof Error ? connectionError.message.slice(0, 200) : '';
+  const authenticationFailed = /authentication failed|access denied|invalid.{0,20}token/iu.test(
+    connectionMessage
+  );
+  report.transport.status = authenticationFailed
+    ? 'authentication_failed'
+    : report.daemonReachable
+      ? 'reachable'
+      : 'offline';
+  report.transport.credentials =
+    transportKind === 'socket'
+      ? 'not_required'
+      : authenticationFailed
+        ? 'rejected'
+        : report.daemonReachable
+          ? 'accepted'
+          : 'unknown';
+
+  const resolvedHealth = /** @type {Record<string, unknown> | null} */ (
+    /** @type {unknown} */ (healthResult)
+  );
+  report.healthAvailable = resolvedHealth?.daemon === 'ok';
+  if (
+    report.daemonReachable &&
+    !report.healthAvailable &&
+    !diagnosticFailures.includes('health.ping_failed')
+  ) {
+    diagnosticFailures.push('health.ping_invalid');
+  }
+  const healthAccess = report.healthAvailable ? asRecord(resolvedHealth?.access) : null;
+  if (report.healthAvailable) {
+    report.extensionConnected = resolvedHealth?.extensionConnected === true;
+    report.accessEnabled = healthAccess?.enabled === true;
+    report.enabledWindowId =
+      typeof healthAccess?.windowId === 'number' ? boundedCount(healthAccess.windowId) : null;
+    report.routeTabId =
+      typeof healthAccess?.routeTabId === 'number' ? boundedCount(healthAccess.routeTabId) : null;
+    report.routeReady = healthAccess?.routeReady === true;
+    report.routeReason =
+      typeof healthAccess?.reason === 'string' && SAFE_ROUTE_REASONS.has(healthAccess.reason)
+        ? healthAccess.reason
+        : 'access_disabled';
+  }
+
+  const connectedExtensions =
+    report.healthAvailable && Array.isArray(resolvedHealth?.connectedExtensions)
+      ? resolvedHealth.connectedExtensions.slice(0, 100)
+      : [];
+  let profileCount = 0;
+  for (const extension of connectedExtensions) {
+    const extensionRecord = asRecord(extension);
+    if (typeof extensionRecord?.profileLabel === 'string' && extensionRecord.profileLabel) {
+      profileCount += 1;
+    }
+  }
+  report.metrics = summarizeMetrics(metricsResult);
+  report.connections.extensionCount = connectedExtensions.length
+    ? connectedExtensions.length
+    : report.metrics?.activeExtensions || (report.extensionConnected ? 1 : 0);
+  report.connections.profileCount = profileCount;
+  if (report.healthAvailable && report.connections.extensionCount > 0) {
+    report.extensionConnected = true;
+  }
+
+  const proxyHealth = report.healthAvailable ? asRecord(resolvedHealth?.proxy) : null;
+  report.transport.proxyConfigured = proxyConfigured;
+  report.transport.proxyExposed =
+    typeof proxyHealth?.enabled === 'boolean' ? proxyHealth.enabled : null;
+  report.protocol = summarizeProtocol(
+    report.healthAvailable ? resolvedHealth : null,
+    report.extensionConnected
+  );
+  report.recentEvents = summarizeRecentEvents(logsResult);
+  report.recentCauses = [
+    ...new Set(
+      report.recentEvents.map((event) => event.cause).filter((cause) => cause !== undefined)
+    ),
+  ];
+  report.debugger = summarizeDebugger(report.healthAvailable ? resolvedHealth : null);
+  if (report.debugger.recentReason && !report.recentCauses.includes(report.debugger.recentReason)) {
+    report.recentCauses.push(report.debugger.recentReason);
+  }
+
+  // Keep optional diagnostics deterministic even if several RPCs fail.
+  report.diagnosticFailures = [...new Set(diagnosticFailures)].slice(0, 12);
+
+  const connectedBrowserExtensionIds = connectedExtensions
+    .map((extension) => asRecord(extension)?.browserExtensionId)
+    .filter(
+      (extensionId) => typeof extensionId === 'string' && CHROME_EXTENSION_ID_RE.test(extensionId)
+    );
+  const extensionIdentityMismatch =
+    connectedBrowserExtensionIds.length > 0 &&
+    installedExtensionIds.length > 0 &&
+    connectedBrowserExtensionIds.some(
+      (extensionId) => !installedExtensionIds.includes(/** @type {string} */ (extensionId))
+    );
+
+  if (authenticationFailed) {
+    report.issues.push('proxy_credentials_stale');
+    report.nextSteps.push(
+      'Local TCP authentication failed. Run `bbx proxy enable --rotate-token`, restart the daemon, and update configured remote clients with `bbx remote add`.'
+    );
   }
 
   if (unwritableBridgePaths.length > 0) {
@@ -482,11 +1155,23 @@ export async function getDoctorReport(options = {}) {
         : 'Run `bbx install <extension-id>` (or `bbx install --all`) to install the native host manifest.'
     );
   }
-  if (!report.daemonReachable) {
+  if (!report.daemonReachable && !authenticationFailed) {
     report.issues.push('daemon_offline');
     report.nextSteps.push('Run `bbx-daemon` and retry `bbx status` or `bbx doctor`.');
   }
-  if (report.daemonReachable && !report.extensionConnected) {
+  if (report.daemonReachable && !report.healthAvailable) {
+    report.issues.push('health_unavailable');
+    report.nextSteps.push(
+      'The daemon is reachable but `health.ping` did not return valid core health. Run `bbx restart`, then update the Browser Bridge CLI and extension if the health check still fails.'
+    );
+  }
+  if (report.healthAvailable && extensionIdentityMismatch) {
+    report.issues.push('extension_id_mismatch');
+    report.nextSteps.push(
+      'A connected Chrome extension ID is not allowed by any installed native host manifest. Reinstall the matching browser manifest with `bbx install --browser <browser>` and reload that extension.'
+    );
+  }
+  if (report.healthAvailable && !report.extensionConnected) {
     report.issues.push('extension_disconnected');
     if (chromiumSandboxedManifestInstalled) {
       report.issues.push('chromium_sandboxed_native_host_limited');
@@ -495,18 +1180,64 @@ export async function getDoctorReport(options = {}) {
       );
     }
     report.nextSteps.push(
-      'Open Chrome and make sure the Browser Bridge extension is installed and active.'
+      'Open Chrome and make sure the Browser Bridge extension is installed and active. If Chrome reports a missing native host, run `bbx install --all` and reload the extension.'
     );
   }
-  if (report.daemonReachable && report.extensionConnected && !report.accessEnabled) {
-    report.issues.push('access_disabled');
-    report.nextSteps.push(
-      'If a Browser Bridge call returns ACCESS_DENIED, stop requesting access. Ask the user to click Enable for the needed window, then tell you when that window is ready.'
-    );
-  } else if (report.daemonReachable && report.extensionConnected && !report.routeReady) {
+  if (report.healthAvailable && report.extensionConnected && !report.accessEnabled) {
+    if (report.routeReason === 'enabled_window_missing') {
+      report.issues.push('enabled_window_missing');
+      report.nextSteps.push(
+        'The previously enabled window no longer exists. Focus the intended Chrome window and click Enable in the Browser Bridge popup or side panel.'
+      );
+    } else {
+      report.issues.push('access_disabled');
+      report.nextSteps.push(
+        'If a Browser Bridge call returns ACCESS_DENIED, stop requesting access. Ask the user to focus the needed Chrome window and click Enable for the needed window, then tell you when that window is ready.'
+      );
+    }
+  } else if (report.healthAvailable && report.extensionConnected && !report.routeReady) {
     report.issues.push(report.routeReason || 'no_routable_active_tab');
     report.nextSteps.push(
       'Switch to a supported page in the enabled window, or use an explicit tabId override.'
+    );
+  }
+
+  if (report.protocol.compatible === false) {
+    report.issues.push('protocol_mismatch');
+    if (report.protocol.migration === 'update_extension') {
+      report.nextSteps.push(
+        'Update or reload the Browser Bridge extension so it supports the client protocol, then retry `bbx doctor`.'
+      );
+    } else if (report.protocol.migration === 'restart_daemon') {
+      report.nextSteps.push(
+        'Run `bbx restart` to replace the stale daemon with this installed CLI version, then retry `bbx doctor`.'
+      );
+    } else {
+      report.nextSteps.push(
+        'Update the Browser Bridge CLI/npm package, run `bbx restart`, and retry `bbx doctor`.'
+      );
+    }
+  }
+
+  if (report.debugger.state === 'conflict') {
+    report.issues.push('debugger_conflict');
+  }
+  if (report.debugger.state === 'conflict' || report.recentCauses.includes('debugger_conflict')) {
+    report.nextSteps.push(
+      'Close DevTools or any other debugger attached to the target tab, then retry the debugger-backed Browser Bridge operation.'
+    );
+  } else if (
+    report.debugger.state === 'detached' ||
+    report.recentCauses.includes('debugger_detached')
+  ) {
+    report.nextSteps.push(
+      'A recent debugger session detached. Keep the target tab open and retry the debugger-backed operation; close competing debuggers if detaches continue.'
+    );
+  }
+
+  if (report.recentCauses.includes('wrong_window')) {
+    report.nextSteps.push(
+      'A recent request targeted the wrong window. Focus the intended Chrome window, click Enable there, and retry without reusing a tabId from another window.'
     );
   }
 

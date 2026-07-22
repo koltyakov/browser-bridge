@@ -141,3 +141,27 @@ test('TabDebuggerCoordinator can fail detached mutations without replaying them'
   assert.equal(await coordinator.run(7, async () => 'next'), 'next');
   assert.equal(attachCount, 2);
 });
+
+test('TabDebuggerCoordinator exposes bounded conflict and detach categories without raw errors', async () => {
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {
+      throw new Error('Another debugger is already attached at https://private.example/secret');
+    },
+    detach: async () => {},
+  });
+
+  await assert.rejects(
+    coordinator.run(7, async () => 'unreachable'),
+    /Another debugger/u
+  );
+  assert.deepEqual(coordinator.getDiagnostics(), {
+    status: 'idle',
+    attachedTabCount: 0,
+    heldTabCount: 0,
+    pendingTabCount: 0,
+    recentReason: 'debugger_conflict',
+  });
+  coordinator.handleDetach(7, 'replaced_with_devtools');
+  assert.equal(coordinator.getDiagnostics().recentReason, 'debugger_replaced');
+  assert.doesNotMatch(JSON.stringify(coordinator.getDiagnostics()), /private\.example|secret/u);
+});

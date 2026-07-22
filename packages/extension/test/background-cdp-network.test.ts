@@ -68,6 +68,12 @@ test('CDP network capture has explicit start, clear, read, and stop lifecycle', 
   assert.equal(started.armed, true);
   assert.deepEqual(acquired, [1]);
   assert.deepEqual(commands, ['Network.enable']);
+  assert.deepEqual(capture.getDiagnostics(), {
+    status: 'armed',
+    activeTabCount: 1,
+    ownershipCount: 1,
+    inflightCount: 0,
+  });
 
   emitRequest(capture, 'first', 'Document', 1);
   emitRequest(capture, 'abandoned-by-clear', 'Fetch', 1.01);
@@ -79,6 +85,7 @@ test('CDP network capture has explicit start, clear, read, and stop lifecycle', 
   assert.equal((await capture.read(1)).entries.length, 0);
 
   emitRequest(capture, 'second', 'Script', 2);
+  assert.equal(capture.getDiagnostics().inflightCount, 1);
   capture.handleEvent(1, 'Network.loadingFinished', { requestId: 'second', timestamp: 2.05 });
   const stopped = await capture.stop(1);
   assert.equal(stopped.armed, false);
@@ -87,6 +94,12 @@ test('CDP network capture has explicit start, clear, read, and stop lifecycle', 
   assert.deepEqual(commands, ['Network.enable', 'Network.disable']);
   assert.deepEqual(released, [1]);
   assert.equal((await capture.read(1)).captureState, 'stopped');
+  assert.deepEqual(capture.getDiagnostics(), {
+    status: 'stopped',
+    activeTabCount: 0,
+    ownershipCount: 0,
+    inflightCount: 0,
+  });
 });
 
 test('CDP network capture records every resource type with only allowlisted metadata', async () => {

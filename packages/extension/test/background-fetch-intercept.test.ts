@@ -104,6 +104,11 @@ test('addRule acquires the debugger and enables Fetch scoped to the rule pattern
   assert.deepEqual(acquired, [1]);
   assert.ok(filters.has(1));
   assert.deepEqual(enablePatterns(lastEnable(sent)), ['https://api.example.com/*']);
+  assert.deepEqual(interceptor.getDiagnostics(), {
+    status: 'active',
+    activeTabCount: 1,
+    ruleCount: 1,
+  });
 });
 
 test('addRule defaults an omitted action to continue', async () => {
@@ -141,6 +146,11 @@ test('removing the last rule releases the debugger and clears the event filter',
   assert.deepEqual(released, [7]);
   assert.equal(filters.has(7), false);
   assert.deepEqual(interceptor.listRules(7), []);
+  assert.deepEqual(interceptor.getDiagnostics(), {
+    status: 'idle',
+    activeTabCount: 0,
+    ruleCount: 0,
+  });
 });
 
 test('removeRule returns false for unknown tab or rule id', async () => {

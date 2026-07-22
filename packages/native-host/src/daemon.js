@@ -53,7 +53,7 @@ setProtocolPackageVersion(DAEMON_VERSION);
 /** @typedef {import('./config.js').BridgeTransport} BridgeTransport */
 /** @typedef {import('./daemon-logger.js').DaemonLoggerLike} DaemonLoggerLike */
 /** @typedef {'agent' | 'extension'} SocketRole */
-/** @typedef {import('node:net').Socket & { readonly __role?: SocketRole, __clientId?: string, __extensionId?: string, __browserName?: string, __profileLabel?: string, __accessEnabled?: boolean, __lastActiveAt?: number }} ClientSocket */
+/** @typedef {import('node:net').Socket & { readonly __role?: SocketRole, __clientId?: string, __extensionId?: string, __browserName?: string, __profileLabel?: string, __browserExtensionId?: string, __accessEnabled?: boolean, __lastActiveAt?: number }} ClientSocket */
 /** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string, method?: string, protocolVersion?: string, targets: Set<ClientSocket>, lastErrorResponse?: import('../../protocol/src/types.js').BridgeResponse }} PendingEntry */
 /**
  * @typedef {{
@@ -83,6 +83,151 @@ function compareProtocolVersions(left, right) {
     }
   }
   return 0;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string | undefined}
+ */
+function normalizeBrowserExtensionId(value) {
+  return typeof value === 'string' && /^[a-p]{32}$/u.test(value) ? value : undefined;
+}
+
+const HEALTH_DIAGNOSTIC_COUNT_LIMIT = 10_000;
+const HEALTH_ACCESS_REASONS = new Set([
+  'enabled',
+  'access_disabled',
+  'enabled_window_missing',
+  'no_routable_active_tab',
+  'restricted_page',
+]);
+const HEALTH_DEBUGGER_STATUSES = new Set(['idle', 'active']);
+const HEALTH_DEBUGGER_REASONS = new Set([
+  'debugger_conflict',
+  'debugger_detached',
+  'debugger_replaced',
+  'debugger_canceled',
+  'target_closed',
+]);
+const HEALTH_CAPTURE_STATES = new Set(['stopped', 'armed', 'active', 'stop_failed']);
+
+/**
+ * @param {unknown} value
+ * @returns {Record<string, unknown> | null}
+ */
+function asHealthRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? /** @type {Record<string, unknown>} */ (value)
+    : null;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {number | undefined}
+ */
+function normalizeHealthCount(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.min(HEALTH_DIAGNOSTIC_COUNT_LIMIT, Math.trunc(value))
+    : undefined;
+}
+
+/**
+ * Copy only extension-owned health fields into the daemon response. This keeps
+ * transport, connectivity, daemon identity, and daemon protocol negotiation
+ * authoritative even if an extension response is malformed or hostile.
+ *
+ * @param {unknown} value
+ * @returns {Record<string, unknown>}
+ */
+function normalizeExtensionHealthResult(value) {
+  const result = asHealthRecord(value);
+  if (!result) return {};
+
+  /** @type {Record<string, unknown>} */
+  const normalized = {};
+  if (result.extension === 'ok') normalized.extension = 'ok';
+
+  const access = asHealthRecord(result.access);
+  if (access) {
+    /** @type {Record<string, unknown>} */
+    const normalizedAccess = {};
+    if (typeof access.enabled === 'boolean') normalizedAccess.enabled = access.enabled;
+    if (
+      access.windowId === null ||
+      (Number.isSafeInteger(access.windowId) && Number(access.windowId) > 0)
+    ) {
+      normalizedAccess.windowId = access.windowId;
+    }
+    if (
+      access.routeTabId === null ||
+      (Number.isSafeInteger(access.routeTabId) && Number(access.routeTabId) > 0)
+    ) {
+      normalizedAccess.routeTabId = access.routeTabId;
+    }
+    if (typeof access.routeReady === 'boolean') normalizedAccess.routeReady = access.routeReady;
+    if (typeof access.reason === 'string' && HEALTH_ACCESS_REASONS.has(access.reason)) {
+      normalizedAccess.reason = access.reason;
+    }
+    normalized.access = normalizedAccess;
+  }
+
+  const debuggerDiagnostics = asHealthRecord(result.debugger);
+  if (debuggerDiagnostics) {
+    /** @type {Record<string, unknown>} */
+    const normalizedDebugger = {};
+    if (
+      typeof debuggerDiagnostics.status === 'string' &&
+      HEALTH_DEBUGGER_STATUSES.has(debuggerDiagnostics.status)
+    ) {
+      normalizedDebugger.status = debuggerDiagnostics.status;
+    }
+    for (const key of ['attachedTabCount', 'heldTabCount', 'pendingTabCount']) {
+      const count = normalizeHealthCount(debuggerDiagnostics[key]);
+      if (count !== undefined) normalizedDebugger[key] = count;
+    }
+    if (
+      typeof debuggerDiagnostics.recentReason === 'string' &&
+      HEALTH_DEBUGGER_REASONS.has(debuggerDiagnostics.recentReason)
+    ) {
+      normalizedDebugger.recentReason = debuggerDiagnostics.recentReason;
+    } else if (debuggerDiagnostics.recentReason === null) {
+      normalizedDebugger.recentReason = null;
+    }
+    normalized.debugger = normalizedDebugger;
+  }
+
+  const capture = asHealthRecord(result.capture);
+  if (capture) {
+    /** @type {Record<string, unknown>} */
+    const normalizedCapture = {};
+    if (typeof capture.state === 'string' && HEALTH_CAPTURE_STATES.has(capture.state)) {
+      normalizedCapture.state = capture.state;
+    }
+    for (const key of [
+      'activeTabCount',
+      'ownershipCount',
+      'inflightCount',
+      'interceptionActiveTabCount',
+      'interceptionRuleCount',
+    ]) {
+      const count = normalizeHealthCount(capture[key]);
+      if (count !== undefined) normalizedCapture[key] = count;
+    }
+    normalized.capture = normalizedCapture;
+  }
+
+  const extensionSupportedVersions = Array.isArray(result.supported_versions)
+    ? result.supported_versions
+        .filter(
+          (version) =>
+            typeof version === 'string' &&
+            version.length <= 32 &&
+            /^\d+\.\d+(?:\.\d+)?(?:[-+][A-Za-z0-9.-]+)?$/u.test(version)
+        )
+        .slice(0, 10)
+    : [];
+  normalized.extension_supported_versions = extensionSupportedVersions;
+  return normalized;
 }
 
 /**
@@ -140,6 +285,7 @@ export function isWindowsNamedPipePath(socketPath) {
  *   response?: import('../../protocol/src/types.js').BridgeResponse,
  *   browserName?: string,
  *   profileLabel?: string,
+ *   browserExtensionId?: string,
  *   accessEnabled?: boolean,
  *   authToken?: string,
  *   at?: number
@@ -192,7 +338,7 @@ export class BridgeDaemon {
     this.pendingTimeoutMs = DEFAULT_DAEMON_PENDING_TIMEOUT_MS;
     /** @type {Record<string, unknown>[]} */
     this.recentLog = [];
-    /** @type {Array<{ extensionId: string, browserName: string | null, profileLabel: string | null, accessEnabled: boolean }> | null} */
+    /** @type {Array<{ extensionId: string, browserExtensionId: string | null, browserName: string | null, profileLabel: string | null, accessEnabled: boolean }> | null} */
     this.connectedExtensionsCache = null;
     /** @type {Promise<void> | null} */
     this.stopPromise = null;
@@ -302,7 +448,7 @@ export class BridgeDaemon {
   }
 
   /**
-   * @returns {Array<{ extensionId: string, browserName: string | null, profileLabel: string | null, accessEnabled: boolean }>}
+   * @returns {Array<{ extensionId: string, browserExtensionId: string | null, browserName: string | null, profileLabel: string | null, accessEnabled: boolean }>}
    */
   getConnectedExtensionsSnapshot() {
     if (this.connectedExtensionsCache) {
@@ -312,6 +458,7 @@ export class BridgeDaemon {
     this.connectedExtensionsCache = Array.from(this.extensionSockets.entries()).map(
       ([extensionId, extSocket]) => ({
         extensionId,
+        browserExtensionId: extSocket.__browserExtensionId ?? null,
         browserName: extSocket.__browserName ?? null,
         profileLabel: extSocket.__profileLabel ?? null,
         accessEnabled: extSocket.__accessEnabled ?? false,
@@ -373,6 +520,7 @@ export class BridgeDaemon {
         typeof message.browserName === 'string' ? message.browserName : undefined;
       socket.__profileLabel =
         typeof message.profileLabel === 'string' ? message.profileLabel : undefined;
+      socket.__browserExtensionId = normalizeBrowserExtensionId(message.browserExtensionId);
       socket.__lastActiveAt = Date.now();
       this.extensionSockets.set(extensionId, socket);
       this.invalidateConnectedExtensionsCache();
@@ -975,6 +1123,11 @@ export class BridgeDaemon {
       changed = changed || socket.__profileLabel !== message.profileLabel;
       socket.__profileLabel = message.profileLabel;
     }
+    if (typeof message.browserExtensionId === 'string') {
+      const browserExtensionId = normalizeBrowserExtensionId(message.browserExtensionId);
+      changed = changed || socket.__browserExtensionId !== browserExtensionId;
+      socket.__browserExtensionId = browserExtensionId;
+    }
     if (changed) {
       this.invalidateConnectedExtensionsCache();
     }
@@ -1061,15 +1214,14 @@ export class BridgeDaemon {
                 socketPath: this.socketPath,
                 transport: formatBridgeTransport(this.transport),
                 connectedExtensions: this.getConnectedExtensionsSnapshot(),
+                ...normalizeExtensionHealthResult(responseMessage.result),
                 ...getVersionNegotiationPayload(pending.protocolVersion),
-                .../** @type {Record<string, unknown>} */ (responseMessage.result),
                 daemonVersion: DAEMON_VERSION,
                 daemon_supported_versions: getSupportedProtocolVersions(),
                 proxy: this.getProxyStatusPayload(),
               },
               {
-                ...responseMessage.meta,
-                method: responseMessage.meta?.method ?? pending.method,
+                method: pending.method,
               }
             )
           : responseMessage;

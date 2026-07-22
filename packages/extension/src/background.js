@@ -142,9 +142,9 @@ const cdpNetworkCapture = createCdpNetworkCapture({
     /** @type {Promise<unknown>} */ (chrome.debugger.sendCommand(target, method, params)),
 });
 
-chrome.debugger.onDetach.addListener((source) => {
+chrome.debugger.onDetach.addListener((source, reason) => {
   if (typeof source.tabId === 'number') {
-    tabDebugger.markDetached(source.tabId);
+    tabDebugger.handleDetach(source.tabId, reason);
     void cdpNetworkCapture.handleDetach(source.tabId);
     // Drop interception rules for the dead session so list reflects reality
     // (covers infobar cancel, tab close, and external debugger takeover).
@@ -534,7 +534,10 @@ async function handleBridgeRequest(request) {
  */
 async function dispatchBridgeRequest(request) {
   switch (request.method) {
-    case 'health.ping':
+    case 'health.ping': {
+      const debuggerDiagnostics = tabDebugger.getDiagnostics();
+      const cdpCaptureDiagnostics = cdpNetworkCapture.getDiagnostics();
+      const interceptionDiagnostics = fetchInterceptor.getDiagnostics();
       return createSuccess(
         request.id,
         {
@@ -545,10 +548,27 @@ async function dispatchBridgeRequest(request) {
             clearEnabledWindowIfGone,
             isRestrictedAutomationUrl,
           }),
+          debugger: debuggerDiagnostics,
+          capture: {
+            state:
+              cdpCaptureDiagnostics.status === 'stop_failed'
+                ? 'stop_failed'
+                : cdpCaptureDiagnostics.status === 'armed'
+                  ? 'armed'
+                  : interceptionDiagnostics.status === 'active'
+                    ? 'active'
+                    : 'stopped',
+            activeTabCount: cdpCaptureDiagnostics.activeTabCount,
+            ownershipCount: cdpCaptureDiagnostics.ownershipCount,
+            inflightCount: cdpCaptureDiagnostics.inflightCount,
+            interceptionActiveTabCount: interceptionDiagnostics.activeTabCount,
+            interceptionRuleCount: interceptionDiagnostics.ruleCount,
+          },
           ...getVersionNegotiationPayload(request.meta?.protocol_version),
         },
         { method: request.method }
       );
+    }
     case 'access.request':
       return handleAccessRequest(request);
     case 'skill.get_runtime_context':

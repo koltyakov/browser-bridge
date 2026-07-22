@@ -134,3 +134,8 @@ test('CLI help documents loopback proxy safety and token files', () => {
   assert.match(helpText, /--unsafe-plaintext/u);
   assert.match(helpText, /--token-file <path>/u);
 });
+
+test('CLI help describes doctor as consolidated local diagnostics', () => {
+  const helpText = CLI_HELP_SECTIONS.flatMap((section) => section.lines).join('\n');
+  assert.match(helpText, /bbx doctor\s+Consolidated local runtime, setup, protocol/u);
+});

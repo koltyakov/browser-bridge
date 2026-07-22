@@ -95,6 +95,11 @@ test('bbx doctor reports ready when manifests exist and the bridge is fully conn
           reason: 'ok',
         },
       }),
+    'setup.get_status': (request) =>
+      createSuccess(request.id, { scope: 'global', mcpClients: [], skillTargets: [] }),
+    'log.tail': (request) => createSuccess(request.id, { entries: [] }),
+    'daemon.metrics': (request) =>
+      createSuccess(request.id, { activeExtensions: 1, pendingRequests: 0 }),
   });
 
   try {
@@ -124,10 +129,9 @@ test('bbx doctor reports ready when manifests exist and the bridge is fully conn
       payload.evidence.browserManifests.length,
       Object.keys(installFs.browserManifests).length
     );
-    assert.equal(bridgeServer.requests.length >= 1, true);
-    assert.equal(
-      bridgeServer.requests.every((request) => request.method === 'health.ping'),
-      true
+    assert.deepEqual(
+      new Set(bridgeServer.requests.map((request) => request.method)),
+      new Set(['health.ping', 'setup.get_status', 'log.tail', 'daemon.metrics'])
     );
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
@@ -151,6 +155,11 @@ test('bbx doctor reports ready when only one browser manifest exists', async () 
           reason: 'ok',
         },
       }),
+    'setup.get_status': (request) =>
+      createSuccess(request.id, { scope: 'global', mcpClients: [], skillTargets: [] }),
+    'log.tail': (request) => createSuccess(request.id, { entries: [] }),
+    'daemon.metrics': (request) =>
+      createSuccess(request.id, { activeExtensions: 1, pendingRequests: 0 }),
   });
 
   try {

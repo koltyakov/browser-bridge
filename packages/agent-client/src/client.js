@@ -419,10 +419,13 @@ export class BridgeClient extends EventEmitter {
           ? healthResult.supported_versions
           : [];
     const latestRemote = remoteVersions[0];
+    const extensionVersions = Array.isArray(healthResult?.extension_supported_versions)
+      ? healthResult.extension_supported_versions
+      : healthResult?.supported_versions;
     if (
       healthResult?.extensionConnected === true &&
-      Array.isArray(healthResult.supported_versions) &&
-      !healthResult.supported_versions.includes(getProtocolVersion())
+      Array.isArray(extensionVersions) &&
+      !extensionVersions.includes(getProtocolVersion())
     ) {
       return false;
     }
@@ -466,9 +469,11 @@ export class BridgeClient extends EventEmitter {
    * @returns {{ compatible: boolean, localVersion: string, remoteVersions: string[], warning?: string }}
    */
   static checkProtocolVersion(healthResult) {
-    const remoteVersions = Array.isArray(healthResult?.supported_versions)
-      ? healthResult.supported_versions
-      : [];
+    const remoteVersions = Array.isArray(healthResult?.extension_supported_versions)
+      ? healthResult.extension_supported_versions
+      : Array.isArray(healthResult?.supported_versions)
+        ? healthResult.supported_versions
+        : [];
     if (remoteVersions.length === 0) {
       return {
         compatible: true,
