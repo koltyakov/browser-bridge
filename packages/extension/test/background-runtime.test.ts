@@ -114,3 +114,44 @@ test('background runtime ignores unrelated or unroutable messages', async () => 
 
   assert.equal(called, false);
 });
+
+test('background runtime accepts navigation kinds only from sender tabs', () => {
+  const signals: Array<{ tabId: number; kind: string; channel: string }> = [];
+  const listener = createRuntimeMessageListener({
+    openSidePanelForTab: async () => {},
+    onNavigationSignal(tabId, kind, channel) {
+      signals.push({ tabId, kind, channel });
+    },
+  });
+  const sender = { tab: { id: 19, windowId: 4 } } as unknown as chrome.runtime.MessageSender;
+
+  assert.equal(
+    listener(
+      { type: 'bridge.navigation-signal', channel: 'channel-1', kind: 'pushState' },
+      sender,
+      () => {}
+    ),
+    false
+  );
+  assert.equal(
+    listener(
+      { type: 'bridge.navigation-signal', channel: 'channel-1', kind: 'invalid' },
+      sender,
+      () => {}
+    ),
+    false
+  );
+  assert.equal(
+    listener(
+      { type: 'bridge.navigation-signal', channel: 'channel-1', kind: 'hashchange' },
+      {} as chrome.runtime.MessageSender,
+      () => {}
+    ),
+    false
+  );
+  assert.equal(
+    listener({ type: 'bridge.navigation-signal', kind: 'pushState' }, sender, () => {}),
+    false
+  );
+  assert.deepEqual(signals, [{ tabId: 19, kind: 'pushState', channel: 'channel-1' }]);
+});

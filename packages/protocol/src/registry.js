@@ -41,6 +41,10 @@ const METHOD_POLICIES = Object.freeze({
     debuggerBacked: true,
   }),
   navigationControl: Object.freeze({ capability: CAPABILITIES.NAVIGATION_CONTROL }),
+  navigationControlDebugger: Object.freeze({
+    capability: CAPABILITIES.NAVIGATION_CONTROL,
+    debuggerBacked: true,
+  }),
   domRead: Object.freeze({ capability: CAPABILITIES.DOM_READ }),
   domReadDebugger: Object.freeze({
     capability: CAPABILITIES.DOM_READ,
@@ -102,7 +106,9 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
   'page.get_state': 'Get URL, title, origin, and ready-state for the active page.',
   'page.evaluate': 'Evaluate JavaScript in the page context.',
   'page.get_console': 'Read buffered console output from the page.',
-  'page.wait_for_load_state': 'Wait for the page to finish loading.',
+  'page.handle_dialog':
+    'Inspect or explicitly act on the current JavaScript dialog. expectedDialogId is only a stale-decision check immediately before dispatch; Chrome cannot bind the CDP command atomically to that identifier.',
+  'page.wait_for_load_state': 'Wait for page load and optional URL conditions.',
   'page.get_storage': 'Read local or session storage values.',
   'page.get_text': 'Read bounded visible text from the page.',
   'page.get_network': 'Read buffered fetch and XHR network activity.',
@@ -265,11 +271,19 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'low',
     METHOD_POLICIES.pageRead
   ),
+  'page.handle_dialog': createRegistryEntry(
+    'page.handle_dialog',
+    'page',
+    true,
+    ['action', 'promptText', 'expectedDialogId'],
+    'low',
+    METHOD_POLICIES.navigationControlDebugger
+  ),
   'page.wait_for_load_state': createRegistryEntry(
     'page.wait_for_load_state',
     'wait',
     true,
-    ['timeoutMs'],
+    ['waitForLoad', 'timeoutMs', 'url', 'urlMatch'],
     'low',
     METHOD_POLICIES.pageRead
   ),

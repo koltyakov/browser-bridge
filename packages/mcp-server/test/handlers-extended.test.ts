@@ -501,6 +501,85 @@ test('handlePageTool wait_for_load calls page.wait_for_load_state', async () => 
       });
       const waitCall = calls.find((c) => c.method === 'page.wait_for_load_state');
       assert.ok(waitCall, 'page.wait_for_load_state should be called');
+      assert.deepEqual(waitCall.params, {
+        timeoutMs: 5000,
+        waitForLoad: undefined,
+        url: undefined,
+        urlMatch: undefined,
+      });
+      assert.equal(result.isError, undefined);
+    }
+  );
+});
+
+test('handlePageTool forwards URL wait conditions and explicit dialog actions', async () => {
+  await withMockedBridge(
+    async (record) =>
+      record.method === 'page.handle_dialog'
+        ? ok({ open: true, type: 'prompt', message: 'Name?', defaultPrompt: '' })
+        : ok({ finalUrl: 'https://example.com/app', observedNavigationKind: 'pushState' }),
+    async (calls) => {
+      const waited = await handlePageTool({
+        action: 'wait_for_load',
+        waitForLoad: false,
+        url: '/app',
+        urlMatch: 'contains',
+      });
+      const inspected = await handlePageTool({
+        action: 'handle_dialog',
+        dialogAction: 'inspect',
+      });
+      await handlePageTool({
+        action: 'handle_dialog',
+        dialogAction: 'accept',
+        expectedDialogId: 'dialog-1',
+        promptText: 'Andrew',
+      });
+
+      assert.deepEqual(calls[0].params, {
+        timeoutMs: undefined,
+        waitForLoad: false,
+        url: '/app',
+        urlMatch: 'contains',
+      });
+      assert.equal(calls[1].method, 'page.handle_dialog');
+      assert.deepEqual(calls[1].params, {
+        action: 'inspect',
+        promptText: undefined,
+        expectedDialogId: undefined,
+      });
+      assert.deepEqual(calls[2].params, {
+        action: 'accept',
+        promptText: 'Andrew',
+        expectedDialogId: 'dialog-1',
+      });
+      assert.equal(waited.isError, undefined);
+      assert.match(JSON.stringify(inspected), /Name\?/);
+    }
+  );
+});
+
+test('generic browser_call path accepts page.handle_dialog without a special-case command', async () => {
+  await withMockedBridge(
+    async () =>
+      ok({
+        commandDispatched: true,
+        action: 'dismiss',
+        type: 'confirm',
+        atomicDialogBinding: false,
+      }),
+    async (calls) => {
+      const result = await handleRawCallTool({
+        method: 'page.handle_dialog',
+        params: { action: 'dismiss', expectedDialogId: 'dialog-1' },
+        tabId: 17,
+      });
+      assert.equal(calls[0].method, 'page.handle_dialog');
+      assert.deepEqual(calls[0].params, {
+        action: 'dismiss',
+        expectedDialogId: 'dialog-1',
+      });
+      assert.equal(calls[0].tabId, 17);
       assert.equal(result.isError, undefined);
     }
   );

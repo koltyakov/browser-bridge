@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createFetchInterceptor } from '../src/background-fetch-intercept.js';
+import { TabDebuggerCoordinator } from '../src/debugger-coordinator.js';
 
 type SentCommand = { tabId: number; method: string; params: Record<string, unknown> };
 type FetchEventHandler = (method: string, params: unknown) => void;
@@ -51,6 +52,45 @@ function enablePatterns(command: SentCommand | undefined): string[] {
   const patterns = (command?.params.patterns ?? []) as Array<{ urlPattern: string }>;
   return patterns.map((p) => p.urlPattern);
 }
+
+test('Fetch holds share Page-initialized attachments and recover together after detach', async () => {
+  const events: string[] = [];
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {
+      events.push('attach');
+    },
+    detach: async () => {
+      events.push('detach');
+    },
+    initialize: async () => {
+      events.push('Page.enable');
+    },
+    burstIdleMs: 500,
+  });
+  const interceptor = createFetchInterceptor({
+    acquireDebugger: (tabId, initialize) => coordinator.acquire(tabId, initialize),
+    releaseDebugger: (tabId) => coordinator.release(tabId),
+    async sendCommand(_target, method) {
+      events.push(method);
+      return {};
+    },
+    addEventFilter() {},
+    removeEventFilter() {},
+  });
+
+  await interceptor.addRule(5, { urlPattern: '*first*', action: 'block' });
+  await coordinator.run(5, async () => {
+    events.push('dialog.inspect');
+  });
+  assert.deepEqual(events, ['attach', 'Page.enable', 'Fetch.enable', 'dialog.inspect']);
+
+  coordinator.markDetached(5);
+  interceptor.handleDetach(5);
+  await interceptor.addRule(5, { urlPattern: '*second*', action: 'block' });
+  assert.deepEqual(events.slice(-3), ['attach', 'Page.enable', 'Fetch.enable']);
+  await interceptor.clearAllRules(5);
+  assert.equal(events.at(-1), 'detach');
+});
 
 test('addRule acquires the debugger and enables Fetch scoped to the rule pattern', async () => {
   const { interceptor, sent, filters, acquired } = createHarness();

@@ -35,6 +35,7 @@ test('enabled-window switches revoke access, tear down the prior window, and ser
   const clearedWindows: number[] = [];
   const injectedWindows: number[] = [];
   const accessUpdates: boolean[] = [];
+  const cancelledWindows: number[] = [];
   const chromeObj = createChromeFake() as unknown as typeof globalThis.chrome;
   const controller = createWindowSessionController(state, chromeObj, {
     sendAccessUpdate(enabled) {
@@ -50,6 +51,9 @@ test('enabled-window switches revoke access, tear down the prior window, and ser
       if (windowId === 1) await firstClear.promise;
       if (windowId === 2) await secondClear.promise;
     },
+    cancelNavigationWaitsForWindow(windowId) {
+      cancelledWindows.push(windowId);
+    },
     async refreshActionIndicators() {},
     async updateActionIndicatorForTab() {},
     async emitUiState() {},
@@ -64,6 +68,7 @@ test('enabled-window switches revoke access, tear down the prior window, and ser
 
   assert.equal(state.enabledWindow, null);
   assert.deepEqual(clearedWindows, [1]);
+  assert.deepEqual(cancelledWindows, [1]);
   assert.deepEqual(injectedWindows, []);
   assert.deepEqual(accessUpdates, [false]);
 
@@ -71,6 +76,7 @@ test('enabled-window switches revoke access, tear down the prior window, and ser
   await waitFor(() => clearedWindows.length === 2);
   assert.equal(state.enabledWindow, null);
   assert.deepEqual(clearedWindows, [1, 2]);
+  assert.deepEqual(cancelledWindows, [1, 2]);
   assert.deepEqual(injectedWindows, [2]);
 
   secondClear.resolve();
@@ -83,5 +89,6 @@ test('enabled-window switches revoke access, tear down the prior window, and ser
   await controller.setWindowEnabled(3, 'Three', false);
   assert.equal(state.enabledWindow, null);
   assert.deepEqual(clearedWindows, [1, 2, 3]);
+  assert.deepEqual(cancelledWindows, [1, 2, 3]);
   assert.deepEqual(accessUpdates, [false, true, false, true, false]);
 });

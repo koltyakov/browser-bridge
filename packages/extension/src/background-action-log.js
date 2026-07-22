@@ -187,8 +187,18 @@ export function createActionLogController(state, chromeObj, deps) {
       return;
     }
 
-    const diagnostics = getResponseDiagnostics(request.method, response);
-    const summaryPayload = summarizeBridgeResponse(response, request.method);
+    // Dialog messages and prompt values are intentionally excluded from the
+    // persisted action-log path, including its summary-size diagnostics.
+    const summaryPayload =
+      request.method === 'page.handle_dialog'
+        ? summarizeDialogActionForLog(response)
+        : summarizeBridgeResponse(response, request.method);
+    const diagnostics = getResponseDiagnostics(
+      request.method,
+      request.method === 'page.handle_dialog'
+        ? sanitizeDialogResponseForDiagnostics(response, summaryPayload)
+        : response
+    );
     const summaryCost = estimateJsonPayloadCost(summaryPayload);
 
     try {
@@ -198,7 +208,10 @@ export function createActionLogController(state, chromeObj, deps) {
         tabId: actionContext?.tabId ?? null,
         url: actionContext?.url ?? '',
         ok: response.ok,
-        summary: summarizeActionResult(response),
+        summary:
+          request.method === 'page.handle_dialog'
+            ? summarizeDialogActionResultForLog(response)
+            : summarizeActionResult(response),
         responseBytes: diagnostics.responseBytes,
         approxTokens: diagnostics.textApproxTokens,
         imageApproxTokens: diagnostics.imageApproxTokens,
@@ -208,10 +221,14 @@ export function createActionLogController(state, chromeObj, deps) {
         summaryTokens: summaryCost.approxTokens,
         summaryCostClass: summaryCost.costClass,
         debuggerBacked: response.meta?.debugger_backed === true || diagnostics.debuggerBacked,
-        overBudget: response.meta?.budget_truncated === true,
+        overBudget:
+          request.method === 'page.handle_dialog'
+            ? false
+            : response.meta?.budget_truncated === true,
         hasScreenshot: diagnostics.hasScreenshot,
         nodeCount: diagnostics.nodeCount,
         continuationHint:
+          request.method !== 'page.handle_dialog' &&
           typeof response.meta?.continuation_hint === 'string'
             ? response.meta.continuation_hint
             : null,
@@ -231,6 +248,66 @@ export function createActionLogController(state, chromeObj, deps) {
     getActionContext,
     logBridgeAction,
     restoreActionLog,
+  };
+}
+
+/**
+ * @param {BridgeResponse} response
+ * @returns {Record<string, unknown>}
+ */
+function summarizeDialogActionForLog(response) {
+  if (!response.ok) {
+    return { ok: false, code: response.error.code };
+  }
+  const result =
+    response.result && typeof response.result === 'object'
+      ? /** @type {Record<string, unknown>} */ (response.result)
+      : {};
+  return {
+    ok: true,
+    open: result.open === true,
+    commandDispatched: result.commandDispatched === true,
+    action: typeof result.action === 'string' ? result.action : 'inspect',
+    type: typeof result.type === 'string' ? result.type : 'unknown',
+  };
+}
+
+/**
+ * @param {BridgeResponse} response
+ * @returns {string}
+ */
+function summarizeDialogActionResultForLog(response) {
+  if (!response.ok) return `${response.error.code}: Dialog action was not confirmed.`;
+  const result =
+    response.result && typeof response.result === 'object'
+      ? /** @type {Record<string, unknown>} */ (response.result)
+      : {};
+  if (result.commandDispatched === true) {
+    const action = typeof result.action === 'string' ? result.action : 'action';
+    return `Dialog ${action} command dispatched; Chrome did not atomically bind it to the observation identifier.`;
+  }
+  return 'Dialog inspected; no action was taken.';
+}
+
+/**
+ * Persisted diagnostics use a fixed redacted payload so dialog message and
+ * default-prompt lengths cannot be inferred from byte/token counters.
+ *
+ * @param {BridgeResponse} response
+ * @param {Record<string, unknown>} summary
+ * @returns {BridgeResponse}
+ */
+function sanitizeDialogResponseForDiagnostics(response, summary) {
+  if (response.ok) {
+    return { ...response, result: summary };
+  }
+  return {
+    ...response,
+    error: {
+      ...response.error,
+      message: 'Dialog action failed.',
+      details: null,
+    },
   };
 }
 

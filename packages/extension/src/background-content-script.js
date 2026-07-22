@@ -16,7 +16,6 @@ const CONTENT_SCRIPT_FILES = [
   'packages/extension/src/content-patch.js',
   'packages/extension/src/content-script.js',
 ];
-
 /**
  * Detect Chrome scripting errors that indicate a restricted or unscriptable page.
  *
@@ -54,6 +53,8 @@ export function isMissingContentScriptReceiverError(error) {
  *   sendTabMessage: (tabId: number, message: Record<string, unknown>, timeoutMs: number) => Promise<any>,
  *   injectContentScriptsForWindow: (windowId: number) => Promise<void>,
  *   ensureContentScript: (tabId: number) => Promise<void>,
+ *   installNavigationSignals: (tabId: number, channel: string) => Promise<void>,
+ *   uninstallNavigationSignals: (tabId: number, channel: string) => Promise<void>,
  * }}
  */
 export function createContentScriptBridge(chromeObj, deps) {
@@ -77,6 +78,56 @@ export function createContentScriptBridge(chromeObj, deps) {
       }
       throw injectError;
     }
+  }
+
+  /**
+   * Install idempotent history hooks in the page's MAIN world. The hooks only
+   * emit navigation-kind events; the background re-reads the authoritative URL.
+   *
+   * @param {number} tabId
+   * @param {string} channel
+   * @returns {Promise<void>}
+   */
+  async function installNavigationSignals(tabId, channel) {
+    let isolatedInstalled = false;
+    try {
+      await chromeObj.scripting.executeScript({
+        target: { tabId },
+        func: installIsolatedNavigationSignals,
+        args: [channel],
+      });
+      isolatedInstalled = true;
+      await chromeObj.scripting.executeScript({
+        target: { tabId },
+        world: 'MAIN',
+        func: installMainNavigationSignals,
+        args: [channel],
+      });
+    } catch (error) {
+      if (isolatedInstalled) await uninstallNavigationSignals(tabId, channel);
+      throw error;
+    }
+  }
+
+  /**
+   * @param {number} tabId
+   * @param {string} channel
+   * @returns {Promise<void>}
+   */
+  async function uninstallNavigationSignals(tabId, channel) {
+    await Promise.allSettled([
+      chromeObj.scripting.executeScript({
+        target: { tabId },
+        world: 'MAIN',
+        func: uninstallMainNavigationSignals,
+        args: [channel],
+      }),
+      chromeObj.scripting.executeScript({
+        target: { tabId },
+        func: uninstallIsolatedNavigationSignals,
+        args: [channel],
+      }),
+    ]);
   }
 
   /**
@@ -132,7 +183,7 @@ export function createContentScriptBridge(chromeObj, deps) {
    */
   async function ensureContentScript(tabId) {
     try {
-      await sendTabMessage(tabId, { type: 'bridge.ping' }, deps.contentScriptTimeoutMs);
+      await sendTabMessageWithTimeout(tabId, { type: 'bridge.ping' }, deps.contentScriptTimeoutMs);
       return;
     } catch {
       await injectContentScript(tabId);
@@ -168,5 +219,112 @@ export function createContentScriptBridge(chromeObj, deps) {
     sendTabMessage,
     injectContentScriptsForWindow,
     ensureContentScript,
+    installNavigationSignals,
+    uninstallNavigationSignals,
   };
+}
+
+/**
+ * Install the isolated-world half of one randomized navigation signal channel.
+ * The page cannot access this world's registry. Reinstallation first removes
+ * the prior listeners, preventing duplicate or half-installed state.
+ *
+ * @param {string} channel
+ * @returns {void}
+ */
+export function installIsolatedNavigationSignals(channel) {
+  const scope =
+    /** @type {Window & typeof globalThis & { __BBX_NAVIGATION_CLEANUPS__?: Map<string, () => void> }} */ (
+      window
+    );
+  const cleanups = scope.__BBX_NAVIGATION_CLEANUPS__ ?? new Map();
+  scope.__BBX_NAVIGATION_CLEANUPS__ = cleanups;
+  cleanups.get(channel)?.();
+  scope.__BBX_NAVIGATION_CLEANUPS__ = cleanups;
+  /** @type {Array<{ eventName: string, listener: () => void }>} */
+  const listeners = [];
+  for (const kind of /** @type {const} */ ([
+    'pushState',
+    'replaceState',
+    'popstate',
+    'hashchange',
+  ])) {
+    const eventName = `bbx:navigation:${channel}:${kind}`;
+    const listener = () => {
+      void chrome.runtime
+        .sendMessage({ type: 'bridge.navigation-signal', channel, kind })
+        .catch(() => {});
+    };
+    window.addEventListener(eventName, listener);
+    listeners.push({ eventName, listener });
+  }
+  cleanups.set(channel, () => {
+    for (const { eventName, listener } of listeners) {
+      window.removeEventListener(eventName, listener);
+    }
+    cleanups.delete(channel);
+    if (cleanups.size === 0) delete scope.__BBX_NAVIGATION_CLEANUPS__;
+  });
+}
+
+/** @param {string} channel @returns {void} */
+export function uninstallIsolatedNavigationSignals(channel) {
+  const scope =
+    /** @type {Window & typeof globalThis & { __BBX_NAVIGATION_CLEANUPS__?: Map<string, () => void> }} */ (
+      window
+    );
+  scope.__BBX_NAVIGATION_CLEANUPS__?.get(channel)?.();
+}
+
+/**
+ * Install reversible MAIN-world hooks without writing a page-visible marker.
+ * A randomized uninstall event owns the closure that contains original methods.
+ *
+ * @param {string} channel
+ * @returns {void}
+ */
+export function installMainNavigationSignals(channel) {
+  const eventPrefix = `bbx:navigation:${channel}`;
+  const uninstallEvent = `${eventPrefix}:uninstall`;
+  window.dispatchEvent(new Event(uninstallEvent));
+
+  const originalPushState = history.pushState;
+  const originalReplaceState = history.replaceState;
+  /** @param {'pushState' | 'replaceState' | 'popstate' | 'hashchange'} kind */
+  const signal = (kind) => window.dispatchEvent(new Event(`${eventPrefix}:${kind}`));
+  /** @type {History['pushState']} */
+  const wrappedPushState = function (data, unused, url) {
+    originalPushState.call(history, data, unused, url);
+    signal('pushState');
+  };
+  /** @type {History['replaceState']} */
+  const wrappedReplaceState = function (data, unused, url) {
+    originalReplaceState.call(history, data, unused, url);
+    signal('replaceState');
+  };
+  const onPopState = () => signal('popstate');
+  const onHashChange = () => signal('hashchange');
+  const restore = () => {
+    if (history.pushState === wrappedPushState) history.pushState = originalPushState;
+    if (history.replaceState === wrappedReplaceState) history.replaceState = originalReplaceState;
+    window.removeEventListener('popstate', onPopState);
+    window.removeEventListener('hashchange', onHashChange);
+    window.removeEventListener(uninstallEvent, restore);
+  };
+
+  window.addEventListener(uninstallEvent, restore, { once: true });
+  try {
+    history.pushState = wrappedPushState;
+    history.replaceState = wrappedReplaceState;
+    window.addEventListener('popstate', onPopState);
+    window.addEventListener('hashchange', onHashChange);
+  } catch (error) {
+    restore();
+    throw error;
+  }
+}
+
+/** @param {string} channel @returns {void} */
+export function uninstallMainNavigationSignals(channel) {
+  window.dispatchEvent(new Event(`bbx:navigation:${channel}:uninstall`));
 }

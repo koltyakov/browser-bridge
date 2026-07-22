@@ -7,6 +7,7 @@ import {
   createSuccess,
   normalizeAccessibilityTreeParams,
   normalizeConsoleParams,
+  normalizeHandleDialogParams,
   normalizeNetworkParams,
   normalizeViewportResizeParams,
   normalizeWaitForLoadStateParams,
@@ -36,8 +37,16 @@ import {
  *   readConsoleBuffer: (tabId: number, clear: boolean) => Promise<{ entries: Array<{ level: string } & Record<string, unknown>>, dropped: number }>,
  *   ensureNetworkInterceptor: (tabId: number) => Promise<void>,
  *   readNetworkBuffer: (tabId: number, clear: boolean) => Promise<{ entries: Array<{ url: string } & Record<string, unknown>>, dropped: number }>,
- *   runWithDebugger: (tabId: number, operation: (debugTarget: chrome.debugger.Debuggee) => Promise<BridgeResponse>) => Promise<BridgeResponse>,
+ *   runWithDebugger: (tabId: number, operation: (debugTarget: chrome.debugger.Debuggee) => Promise<BridgeResponse>, options?: { retryDetached?: boolean }) => Promise<BridgeResponse>,
  *   sendCommand: (target: chrome.debugger.Debuggee, method: string, params: Record<string, unknown>) => Promise<unknown>,
+ *   ensureContentScript: (tabId: number) => Promise<void>,
+ *   sendTabMessage: (tabId: number, message: Record<string, unknown>, timeoutMs: number) => Promise<unknown>,
+ *   contentScriptTimeoutMs: number,
+ *   waitForDialog: (tabId: number, timeoutMs?: number) => Promise<{ dialogId: string, type: string, message: string, defaultPrompt: string, messageTruncated: boolean, defaultPromptTruncated: boolean, openedAt: number } | null>,
+ *   getDialogObservation: (tabId: number) => { dialog: { dialogId: string, type: string, message: string, defaultPrompt: string, messageTruncated: boolean, defaultPromptTruncated: boolean, openedAt: number } | null, eventSequence: number, lastOpenedDialogId: string | null },
+ *   getDialogStatus: (tabId: number) => Record<string, unknown>,
+ *   clearDialog: (tabId: number, dialogId: string) => boolean,
+ *   waitForUrl: (tabId: number, windowId: number, params: import('../../protocol/src/types.js').NormalizedWaitForLoadStateParams) => Promise<{ tab: chrome.tabs.Tab, elapsedMs: number, observedNavigationKind: string }>,
  * }} PageRequestControllerDependencies
  */
 
@@ -52,6 +61,8 @@ import {
  *   resolveRequestTarget: (request: BridgeRequest, options?: { requireScriptable?: boolean }) => Promise<ResolvedTabTarget>,
  *   waitForTabComplete: (tabId: number, timeoutMs: number) => Promise<chrome.tabs.Tab>,
  *   handlePageGetConsole: (request: BridgeRequest) => Promise<BridgeResponse>,
+ *   handlePageGetState: (request: BridgeRequest) => Promise<BridgeResponse>,
+ *   handlePageDialog: (request: BridgeRequest) => Promise<BridgeResponse>,
  *   handleAccessibilityTree: (request: BridgeRequest) => Promise<BridgeResponse>,
  *   handleGetNetwork: (request: BridgeRequest) => Promise<BridgeResponse>,
  *   handleViewportResize: (request: BridgeRequest) => Promise<BridgeResponse>,
@@ -215,6 +226,149 @@ export function createPageRequestController(state, chromeObj, dependencies) {
   }
 
   /**
+   * Read detailed state from the content script when possible, while retaining
+   * a tabs-backed fallback for restricted or temporarily unscriptable pages.
+   * Dialog state never includes message or prompt text.
+   *
+   * @param {BridgeRequest} request
+   * @returns {Promise<BridgeResponse>}
+   */
+  async function handlePageGetState(request) {
+    const target = await resolveRequestTarget(request, { requireScriptable: false });
+    const dialog = dependencies.getDialogStatus(target.tabId);
+    try {
+      await dependencies.ensureContentScript(target.tabId);
+      const result = await dependencies.sendTabMessage(
+        target.tabId,
+        { type: 'bridge.execute', method: request.method, params: {} },
+        dependencies.contentScriptTimeoutMs
+      );
+      const pageState =
+        result && typeof result === 'object' ? /** @type {Record<string, unknown>} */ (result) : {};
+      if (pageState.error) throw new Error(String(pageState.error));
+      return createSuccess(request.id, { ...pageState, dialog }, { method: request.method });
+    } catch {
+      // Restricted pages, document replacement, and modal dialogs can all make
+      // the content script unavailable. Tab metadata remains safe and useful.
+      const tab = await chromeObj.tabs.get(target.tabId);
+      return createSuccess(
+        request.id,
+        {
+          url: tab.url ?? target.url,
+          origin: getUrlOrigin(tab.url ?? target.url),
+          title: tab.title ?? target.title,
+          readyState: tab.status === 'complete' ? 'complete' : 'loading',
+          contentAvailable: false,
+          dialog,
+        },
+        { method: request.method, background_fallback: true }
+      );
+    }
+  }
+
+  /**
+   * Inspect or explicitly handle a dialog observed through Page domain events.
+   * Mutating actions disable detached-session replay.
+   *
+   * @param {BridgeRequest} request
+   * @returns {Promise<BridgeResponse>}
+   */
+  async function handlePageDialog(request) {
+    const target = await resolveRequestTarget(request, { requireScriptable: false });
+    const params = normalizeHandleDialogParams(request.params);
+    return dependencies.runWithDebugger(
+      target.tabId,
+      async (debugTarget) => {
+        const dialog = await dependencies.waitForDialog(target.tabId);
+        if (!dialog) {
+          throw new BridgeError(
+            ERROR_CODES.DIALOG_NOT_OPEN,
+            'No observable JavaScript dialog is open in the target tab.'
+          );
+        }
+        if (params.action === 'inspect') {
+          return createSuccess(
+            request.id,
+            {
+              open: true,
+              dialogId: dialog.dialogId,
+              type: dialog.type,
+              message: dialog.message,
+              defaultPrompt: dialog.defaultPrompt,
+              messageTruncated: dialog.messageTruncated,
+              defaultPromptTruncated: dialog.defaultPromptTruncated,
+              openedAt: dialog.openedAt,
+            },
+            { method: request.method, debugger_backed: true }
+          );
+        }
+        const preDispatch = dependencies.getDialogObservation(target.tabId);
+        const currentDialog = preDispatch.dialog;
+        if (!currentDialog) {
+          throw new BridgeError(
+            ERROR_CODES.DIALOG_NOT_OPEN,
+            'No observable JavaScript dialog is open in the target tab.'
+          );
+        }
+        if (
+          params.expectedDialogId !== null &&
+          currentDialog.dialogId !== params.expectedDialogId
+        ) {
+          throw new BridgeError(
+            ERROR_CODES.DIALOG_ACTION_CONFLICT,
+            'The current dialog no longer matches the optional pre-dispatch observation check.',
+            { phase: 'before_dispatch', commandDispatched: false }
+          );
+        }
+
+        /** @type {Record<string, unknown>} */
+        const commandParams = { accept: params.action === 'accept' };
+        if (params.action === 'accept' && params.promptText !== null) {
+          commandParams.promptText = params.promptText;
+        }
+        try {
+          await dependencies.sendCommand(debugTarget, 'Page.handleJavaScriptDialog', commandParams);
+        } catch (error) {
+          await drainDialogEvents();
+          const afterFailure = dependencies.getDialogObservation(target.tabId);
+          if (dialogObservationChanged(preDispatch, currentDialog.dialogId, afterFailure)) {
+            throw createDialogActionConflict();
+          }
+          const message = error instanceof Error ? error.message : String(error);
+          if (/no (?:javascript )?dialog|no dialog is showing/i.test(message)) {
+            dependencies.clearDialog(target.tabId, currentDialog.dialogId);
+            throw new BridgeError(
+              ERROR_CODES.DIALOG_NOT_OPEN,
+              'No observable JavaScript dialog is open in the target tab.'
+            );
+          }
+          throw error;
+        }
+        await drainDialogEvents();
+        const afterDispatch = dependencies.getDialogObservation(target.tabId);
+        if (dialogObservationChanged(preDispatch, currentDialog.dialogId, afterDispatch)) {
+          throw createDialogActionConflict();
+        }
+        dependencies.clearDialog(target.tabId, currentDialog.dialogId);
+        return createSuccess(
+          request.id,
+          {
+            commandDispatched: true,
+            action: params.action,
+            type: currentDialog.type,
+            dialogId: currentDialog.dialogId,
+            expectedDialogIdChecked: params.expectedDialogId !== null,
+            atomicDialogBinding: false,
+            replacementObserved: false,
+          },
+          { method: request.method, debugger_backed: true }
+        );
+      },
+      { retryDetached: params.action === 'inspect' }
+    );
+  }
+
+  /**
    * Return the full accessibility tree for the target tab via CDP
    * Accessibility.getFullAXTree. Returns a pruned, token-efficient tree with
    * roles, names, descriptions, and interactive states.
@@ -348,6 +502,20 @@ export function createPageRequestController(state, chromeObj, dependencies) {
   async function handleWaitForLoadState(request) {
     const target = await resolveRequestTarget(request);
     const params = normalizeWaitForLoadStateParams(request.params);
+    if (params.url && params.urlMatch) {
+      const matched = await dependencies.waitForUrl(target.tabId, target.windowId, params);
+      return createSuccess(
+        request.id,
+        {
+          ...summarizeTabResult(matched.tab, request.method),
+          finalUrl: matched.tab.url ?? '',
+          urlMatch: params.urlMatch,
+          elapsedMs: matched.elapsedMs,
+          observedNavigationKind: matched.observedNavigationKind,
+        },
+        { method: request.method }
+      );
+    }
     const tab = params.waitForLoad
       ? await waitForTabComplete(target.tabId, params.timeoutMs)
       : await chromeObj.tabs.get(target.tabId);
@@ -446,6 +614,8 @@ export function createPageRequestController(state, chromeObj, dependencies) {
     resolveRequestTarget,
     waitForTabComplete,
     handlePageGetConsole,
+    handlePageGetState,
+    handlePageDialog,
     handleAccessibilityTree,
     handleGetNetwork,
     handleViewportResize,
@@ -453,4 +623,48 @@ export function createPageRequestController(state, chromeObj, dependencies) {
     handleWaitForLoadState,
     handleCdpRequest,
   };
+}
+
+/**
+ * Give debugger event delivery one task turn to preserve ordering around the
+ * command response before deciding whether a replacement was observed.
+ *
+ * @returns {Promise<void>}
+ */
+function drainDialogEvents() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
+ * @param {{ eventSequence: number, lastOpenedDialogId: string | null }} before
+ * @param {string} dispatchedDialogId
+ * @param {{ eventSequence: number, lastOpenedDialogId: string | null }} after
+ * @returns {boolean}
+ */
+function dialogObservationChanged(before, dispatchedDialogId, after) {
+  return (
+    after.eventSequence < before.eventSequence ||
+    (after.lastOpenedDialogId !== null && after.lastOpenedDialogId !== dispatchedDialogId)
+  );
+}
+
+/** @returns {BridgeError} */
+function createDialogActionConflict() {
+  return new BridgeError(
+    ERROR_CODES.DIALOG_ACTION_CONFLICT,
+    'A replacement dialog was observed during CDP dispatch, so the action outcome is uncertain.',
+    { phase: 'during_dispatch', commandDispatched: true, actionOutcome: 'uncertain' }
+  );
+}
+
+/**
+ * @param {string} url
+ * @returns {string}
+ */
+function getUrlOrigin(url) {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return '';
+  }
 }

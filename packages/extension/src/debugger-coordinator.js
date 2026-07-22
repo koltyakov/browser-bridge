@@ -3,6 +3,36 @@
 /** @typedef {{ tabId: number }} DebuggerTarget */
 /** @typedef {(target: DebuggerTarget, protocolVersion: string) => Promise<void>} DebuggerAttach */
 /** @typedef {(target: DebuggerTarget) => Promise<void>} DebuggerDetach */
+/** @typedef {(target: DebuggerTarget) => Promise<void>} DebuggerInitialize */
+
+const MAX_TRACKED_DIALOGS = 100;
+const MAX_DIALOG_TEXT_LENGTH = 4_096;
+
+/**
+ * @typedef {{
+ *   dialogId: string,
+ *   type: 'alert' | 'confirm' | 'prompt' | 'beforeunload',
+ *   message: string,
+ *   defaultPrompt: string,
+ *   messageTruncated: boolean,
+ *   defaultPromptTruncated: boolean,
+ *   openedAt: number
+ * }} TrackedDialog
+ */
+
+/**
+ * @typedef {{
+ *   timeoutId: ReturnType<typeof setTimeout>,
+ *   resolve: (dialog: TrackedDialog | null) => void
+ * }} DialogWaiter
+ */
+
+/**
+ * @typedef {{
+ *   eventSequence: number,
+ *   lastOpenedDialogId: string | null
+ * }} DialogEventState
+ */
 
 /**
  * Serialize Chrome debugger sessions per tab so concurrent bridge requests do
@@ -13,13 +43,21 @@ export class TabDebuggerCoordinator {
    * @param {{
    *   attach: DebuggerAttach,
    *   detach: DebuggerDetach,
+   *   initialize?: DebuggerInitialize,
    *   protocolVersion?: string,
    *   burstIdleMs?: number
    * }} options
    */
-  constructor({ attach, detach, protocolVersion = '1.3', burstIdleMs = 5_000 }) {
+  constructor({
+    attach,
+    detach,
+    initialize = async () => {},
+    protocolVersion = '1.3',
+    burstIdleMs = 5_000,
+  }) {
     this.attach = attach;
     this.detach = detach;
+    this.initialize = initialize;
     this.protocolVersion = protocolVersion;
     this.burstIdleMs = burstIdleMs;
     /** @type {Map<number, Promise<void>>} */
@@ -28,6 +66,16 @@ export class TabDebuggerCoordinator {
     this.holdsByTab = new Map();
     /** @type {Map<number, ReturnType<typeof setTimeout>>} */
     this.burstTimers = new Map();
+    /** @type {Set<number>} */
+    this.attachedTabs = new Set();
+    /** @type {Map<number, TrackedDialog>} */
+    this.dialogsByTab = new Map();
+    /** @type {Map<number, Set<DialogWaiter>>} */
+    this.dialogWaitersByTab = new Map();
+    /** @type {Map<number, DialogEventState>} */
+    this.dialogEventsByTab = new Map();
+    this.dialogIdentityPrefix = globalThis.crypto.randomUUID();
+    this.nextDialogGeneration = 0;
   }
 
   /**
@@ -83,7 +131,7 @@ export class TabDebuggerCoordinator {
 
       try {
         if (!held && !hasBurst) {
-          await this.attach(target, this.protocolVersion);
+          await this._attach(target);
         }
         result = await task(target);
       } catch (error) {
@@ -94,7 +142,7 @@ export class TabDebuggerCoordinator {
             taskError = error;
           } else {
             try {
-              await this.attach(target, this.protocolVersion);
+              await this._attach(target);
               detached = false;
               result = await task(target);
             } catch (retryError) {
@@ -107,7 +155,7 @@ export class TabDebuggerCoordinator {
       }
 
       // Schedule a burst-idle detach instead of detaching immediately.
-      if (!held && !detached) {
+      if (!held && !detached && this.attachedTabs.has(tabId)) {
         this._resetBurstTimer(tabId, target);
       }
 
@@ -129,6 +177,229 @@ export class TabDebuggerCoordinator {
     if (existing) clearTimeout(existing);
     this.burstTimers.delete(tabId);
     this.holdsByTab.delete(tabId);
+    this.attachedTabs.delete(tabId);
+    this.clearDialogState(tabId);
+  }
+
+  /**
+   * Track Page-domain dialog events without exposing their text through logs or
+   * page-state summaries. Only events observed while the debugger is attached
+   * are knowable; detachment clears that knowledge.
+   *
+   * @param {number} tabId
+   * @param {string} method
+   * @param {unknown} params
+   * @returns {void}
+   */
+  handleEvent(tabId, method, params) {
+    if (method === 'Page.javascriptDialogClosed') {
+      this._recordDialogEvent(tabId);
+      this.dialogsByTab.delete(tabId);
+      return;
+    }
+    if (method !== 'Page.javascriptDialogOpening' || !params || typeof params !== 'object') {
+      return;
+    }
+    const event = /** @type {Record<string, unknown>} */ (params);
+    const type = normalizeDialogType(event.type);
+    const message = boundDialogText(event.message);
+    const defaultPrompt = boundDialogText(event.defaultPrompt);
+    if (!this.dialogsByTab.has(tabId) && this.dialogsByTab.size >= MAX_TRACKED_DIALOGS) {
+      const oldestTabId = this.dialogsByTab.keys().next().value;
+      if (typeof oldestTabId === 'number') this.dialogsByTab.delete(oldestTabId);
+    }
+    this.dialogsByTab.delete(tabId);
+    const dialog = {
+      dialogId: this._nextDialogId(),
+      type,
+      message: message.value,
+      defaultPrompt: defaultPrompt.value,
+      messageTruncated: message.truncated,
+      defaultPromptTruncated: defaultPrompt.truncated,
+      openedAt: Date.now(),
+    };
+    this._recordDialogEvent(tabId, dialog.dialogId);
+    this.dialogsByTab.set(tabId, dialog);
+    this._settleDialogWaiters(tabId, dialog);
+  }
+
+  /**
+   * @param {number} tabId
+   * @returns {TrackedDialog | null}
+   */
+  getDialog(tabId) {
+    return this.dialogsByTab.get(tabId) ?? null;
+  }
+
+  /**
+   * Return non-text event ordering used to detect replacement dialogs around a
+   * CDP command. The observation does not make the CDP action identity-bound.
+   *
+   * @param {number} tabId
+   * @returns {{ dialog: TrackedDialog | null, eventSequence: number, lastOpenedDialogId: string | null }}
+   */
+  getDialogObservation(tabId) {
+    const events = this.dialogEventsByTab.get(tabId);
+    return {
+      dialog: this.dialogsByTab.get(tabId) ?? null,
+      eventSequence: events?.eventSequence ?? 0,
+      lastOpenedDialogId: events?.lastOpenedDialogId ?? null,
+    };
+  }
+
+  /**
+   * Wait briefly for an opening event that may arrive just after Page.enable.
+   * This only observes state; callers must still identity-check before acting.
+   *
+   * @param {number} tabId
+   * @param {number} [timeoutMs]
+   * @returns {Promise<TrackedDialog | null>}
+   */
+  waitForDialog(tabId, timeoutMs = 250) {
+    const current = this.dialogsByTab.get(tabId);
+    if (current) return Promise.resolve(current);
+    return new Promise((resolve) => {
+      /** @type {DialogWaiter} */
+      const waiter = {
+        timeoutId: setTimeout(
+          () => {
+            const waiters = this.dialogWaitersByTab.get(tabId);
+            waiters?.delete(waiter);
+            if (waiters?.size === 0) this.dialogWaitersByTab.delete(tabId);
+            resolve(null);
+          },
+          Math.max(0, Math.min(timeoutMs, 1_000))
+        ),
+        resolve,
+      };
+      waiter.timeoutId.unref?.();
+      const waiters = this.dialogWaitersByTab.get(tabId) ?? new Set();
+      waiters.add(waiter);
+      this.dialogWaitersByTab.set(tabId, waiters);
+
+      // Close a read/subscribe race if an event arrived while registering.
+      const observed = this.dialogsByTab.get(tabId);
+      if (observed) this._settleDialogWaiters(tabId, observed);
+    });
+  }
+
+  /**
+   * Return non-sensitive status suitable for page.get_state.
+   *
+   * @param {number} tabId
+   * @returns {{ status: 'open' | 'none' | 'unknown', observable: boolean, type?: TrackedDialog['type'], openedAt?: number }}
+   */
+  getDialogStatus(tabId) {
+    const dialog = this.dialogsByTab.get(tabId);
+    if (dialog) {
+      return {
+        status: 'open',
+        observable: true,
+        type: dialog.type,
+        openedAt: dialog.openedAt,
+      };
+    }
+    return this.attachedTabs.has(tabId)
+      ? { status: 'none', observable: true }
+      : { status: 'unknown', observable: false };
+  }
+
+  /**
+   * @param {number} tabId
+   * @param {string} dialogId
+   * @returns {boolean}
+   */
+  clearDialog(tabId, dialogId) {
+    if (this.dialogsByTab.get(tabId)?.dialogId !== dialogId) return false;
+    return this.dialogsByTab.delete(tabId);
+  }
+
+  /**
+   * Clear all dialog knowledge without changing unrelated debugger state.
+   *
+   * @param {number} tabId
+   * @returns {void}
+   */
+  clearDialogState(tabId) {
+    this.dialogsByTab.delete(tabId);
+    this.dialogEventsByTab.delete(tabId);
+    this._settleDialogWaiters(tabId, null);
+  }
+
+  /**
+   * Drop all coordinator state and detach one tab during tab/window/access
+   * cleanup. Fetch holds should be released first, but this is intentionally
+   * safe if Chrome already detached the target.
+   *
+   * @param {number} tabId
+   * @returns {Promise<void>}
+   */
+  async discard(tabId) {
+    await this.runExclusive(tabId, async () => {
+      const timer = this.burstTimers.get(tabId);
+      if (timer) clearTimeout(timer);
+      this.burstTimers.delete(tabId);
+      this.holdsByTab.delete(tabId);
+      this.clearDialogState(tabId);
+      if (!this.attachedTabs.delete(tabId)) return;
+      await this.detach({ tabId }).catch(() => {});
+    });
+  }
+
+  /**
+   * @param {DebuggerTarget} target
+   * @returns {Promise<void>}
+   */
+  async _attach(target) {
+    await this.attach(target, this.protocolVersion);
+    this.attachedTabs.add(target.tabId);
+    try {
+      await this.initialize(target);
+    } catch (error) {
+      this.markDetached(target.tabId);
+      await this.detach(target).catch(() => {});
+      throw error;
+    }
+  }
+
+  /** @returns {string} */
+  _nextDialogId() {
+    this.nextDialogGeneration =
+      this.nextDialogGeneration >= Number.MAX_SAFE_INTEGER ? 1 : this.nextDialogGeneration + 1;
+    return `${this.dialogIdentityPrefix}:${this.nextDialogGeneration}`;
+  }
+
+  /**
+   * @param {number} tabId
+   * @param {string} [openedDialogId]
+   * @returns {void}
+   */
+  _recordDialogEvent(tabId, openedDialogId) {
+    if (!this.dialogEventsByTab.has(tabId) && this.dialogEventsByTab.size >= MAX_TRACKED_DIALOGS) {
+      const oldestTabId = this.dialogEventsByTab.keys().next().value;
+      if (typeof oldestTabId === 'number') this.dialogEventsByTab.delete(oldestTabId);
+    }
+    const current = this.dialogEventsByTab.get(tabId);
+    this.dialogEventsByTab.delete(tabId);
+    this.dialogEventsByTab.set(tabId, {
+      eventSequence: (current?.eventSequence ?? 0) + 1,
+      lastOpenedDialogId: openedDialogId ?? current?.lastOpenedDialogId ?? null,
+    });
+  }
+
+  /**
+   * @param {number} tabId
+   * @param {TrackedDialog | null} dialog
+   * @returns {void}
+   */
+  _settleDialogWaiters(tabId, dialog) {
+    const waiters = this.dialogWaitersByTab.get(tabId);
+    if (!waiters) return;
+    this.dialogWaitersByTab.delete(tabId);
+    for (const waiter of waiters) {
+      clearTimeout(waiter.timeoutId);
+      waiter.resolve(dialog);
+    }
   }
 
   /**
@@ -151,6 +422,8 @@ export class TabDebuggerCoordinator {
           await this.detach(target);
         } catch {
           // Already detached or tab closed.
+        } finally {
+          this.markDetached(tabId);
         }
       });
     }, this.burstIdleMs);
@@ -189,13 +462,14 @@ export class TabDebuggerCoordinator {
         let attached = false;
         try {
           if (!hasBurst) {
-            await this.attach(target, this.protocolVersion);
+            await this._attach(target);
             attached = true;
           }
           await initialize(target);
         } catch (error) {
           if (attached) {
             await this.detach(target).catch(() => {});
+            this.markDetached(tabId);
           } else if (hasBurst) {
             this._resetBurstTimer(tabId, target);
           }
@@ -232,12 +506,35 @@ export class TabDebuggerCoordinator {
       } catch (error) {
         cleanupError = error;
       }
-      await this.detach(target);
+      try {
+        await this.detach(target);
+      } finally {
+        this.markDetached(tabId);
+      }
       if (cleanupError) {
         throw cleanupError;
       }
     });
   }
+}
+
+/**
+ * @param {unknown} value
+ * @returns {TrackedDialog['type']}
+ */
+function normalizeDialogType(value) {
+  return value === 'confirm' || value === 'prompt' || value === 'beforeunload' ? value : 'alert';
+}
+
+/**
+ * @param {unknown} value
+ * @returns {{ value: string, truncated: boolean }}
+ */
+function boundDialogText(value) {
+  const text = typeof value === 'string' ? value : '';
+  return text.length <= MAX_DIALOG_TEXT_LENGTH
+    ? { value: text, truncated: false }
+    : { value: text.slice(0, MAX_DIALOG_TEXT_LENGTH), truncated: true };
 }
 
 /**

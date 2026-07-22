@@ -41,6 +41,7 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').FindByTextParams} FindByTextParams */
 /** @typedef {import('./types.js').GetHtmlParams} GetHtmlParams */
 /** @typedef {import('./types.js').HoverParams} HoverParams */
+/** @typedef {import('./types.js').HandleDialogParams} HandleDialogParams */
 /** @typedef {import('./types.js').InputActionParams} InputActionParams */
 /** @typedef {import('./types.js').LogTailParams} LogTailParams */
 /** @typedef {import('./types.js').NavigationActionParams} NavigationActionParams */
@@ -58,6 +59,7 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').NormalizedFindByTextParams} NormalizedFindByTextParams */
 /** @typedef {import('./types.js').NormalizedGetHtmlParams} NormalizedGetHtmlParams */
 /** @typedef {import('./types.js').NormalizedHoverParams} NormalizedHoverParams */
+/** @typedef {import('./types.js').NormalizedHandleDialogParams} NormalizedHandleDialogParams */
 /** @typedef {import('./types.js').NormalizedInputAction} NormalizedInputAction */
 /** @typedef {import('./types.js').NormalizedLogTailParams} NormalizedLogTailParams */
 /** @typedef {import('./types.js').NormalizedNavigationAction} NormalizedNavigationAction */
@@ -356,6 +358,8 @@ function normalizeRequestParams(method, params) {
       return normalizeEvaluateParams(params);
     case 'page.get_console':
       return normalizeConsoleParams(params);
+    case 'page.handle_dialog':
+      return normalizeHandleDialogParams(params);
     case 'page.wait_for_load_state':
       return normalizeWaitForLoadStateParams(params);
     case 'page.get_storage':
@@ -757,6 +761,62 @@ export function normalizeConsoleParams(params = {}) {
 }
 
 /**
+ * @param {HandleDialogParams} [params={}]
+ * @returns {NormalizedHandleDialogParams}
+ */
+export function normalizeHandleDialogParams(params = {}) {
+  const action = params.action ?? 'inspect';
+  if (action !== 'inspect' && action !== 'accept' && action !== 'dismiss') {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'action must be one of inspect, accept, or dismiss.'
+    );
+  }
+  if (
+    params.promptText !== undefined &&
+    params.promptText !== null &&
+    typeof params.promptText !== 'string'
+  ) {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'promptText must be a string.');
+  }
+  if (typeof params.promptText === 'string' && params.promptText.length > 10_000) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'promptText must not exceed 10,000 characters.'
+    );
+  }
+  if (params.promptText !== undefined && params.promptText !== null && action !== 'accept') {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'promptText is only valid when action is accept.'
+    );
+  }
+  if (
+    params.expectedDialogId !== undefined &&
+    params.expectedDialogId !== null &&
+    (typeof params.expectedDialogId !== 'string' ||
+      params.expectedDialogId.length === 0 ||
+      params.expectedDialogId.length > 128)
+  ) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'expectedDialogId must be a non-empty string of at most 128 characters.'
+    );
+  }
+  if (action === 'inspect' && params.expectedDialogId != null) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'expectedDialogId is only valid when action is accept or dismiss.'
+    );
+  }
+  return {
+    action,
+    promptText: typeof params.promptText === 'string' ? params.promptText : null,
+    expectedDialogId: typeof params.expectedDialogId === 'string' ? params.expectedDialogId : null,
+  };
+}
+
+/**
  * @param {WaitForParams} [params={}]
  * @returns {NormalizedWaitForParams}
  */
@@ -884,10 +944,96 @@ export function normalizeStorageParams(params = {}) {
  * @returns {NormalizedWaitForLoadStateParams}
  */
 export function normalizeWaitForLoadStateParams(params = {}) {
+  const url = typeof params.url === 'string' && params.url.length > 0 ? params.url : null;
+  const requestedMatch = params.urlMatch ?? (url ? 'exact' : null);
+  if (params.url !== undefined && params.url !== null && typeof params.url !== 'string') {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'url must be a string.');
+  }
+  if (params.urlMatch !== undefined && params.urlMatch !== null && !url) {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'url is required when urlMatch is set.');
+  }
+  if (
+    requestedMatch !== null &&
+    requestedMatch !== 'exact' &&
+    requestedMatch !== 'contains' &&
+    requestedMatch !== 'regex'
+  ) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'urlMatch must be one of exact, contains, or regex.'
+    );
+  }
+  if (url && url.length > 2_048) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'url condition must not exceed 2,048 characters.'
+    );
+  }
+  if (requestedMatch === 'regex' && url) {
+    validateSafeUrlRegex(url);
+  }
   return {
     waitForLoad: params.waitForLoad !== false,
     timeoutMs: clampInt(params.timeoutMs, 500, 120_000, DEFAULT_NAV_TIMEOUT_MS),
+    url,
+    urlMatch: requestedMatch,
   };
+}
+
+/**
+ * URL waits accept a deliberately linear regular-expression subset. Patterns
+ * may contain literals, escapes, anchors, dots, and character classes, but no
+ * grouping, alternation, or quantifiers. With both pattern and input bounded,
+ * the accepted subset cannot trigger backtracking through repeated matches.
+ *
+ * @param {string} pattern
+ * @returns {void}
+ */
+function validateSafeUrlRegex(pattern) {
+  if (pattern.length > 256) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'Regex URL condition must not exceed 256 characters.'
+    );
+  }
+  let escaped = false;
+  let inCharacterClass = false;
+  for (let index = 0; index < pattern.length; index += 1) {
+    const character = pattern[index];
+    if (escaped) {
+      if (!inCharacterClass && /[1-9]/.test(character)) {
+        throw new BridgeError(
+          ERROR_CODES.INVALID_REQUEST,
+          'Regex URL condition uses an unsupported backreference.'
+        );
+      }
+      escaped = false;
+      continue;
+    }
+    if (character === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (character === '[' && !inCharacterClass) {
+      inCharacterClass = true;
+      continue;
+    }
+    if (character === ']' && inCharacterClass) {
+      inCharacterClass = false;
+      continue;
+    }
+    if (!inCharacterClass && '(){}*+?|'.includes(character)) {
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        'Regex URL condition uses unsupported grouping, alternation, or quantifiers.'
+      );
+    }
+  }
+  try {
+    new RegExp(pattern);
+  } catch {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'Regex URL condition is invalid.');
+  }
 }
 
 /**
@@ -1099,6 +1245,7 @@ export function createRuntimeContext() {
       INPUT_UNSUPPORTED: 'Execution mode does not support this input operation',
       INPUT_INVALID_TARGET: 'Input target is incompatible with the requested operation',
       INPUT_FOCUS_CHANGED: 'Focus moved before native text dispatch',
+      DIALOG_NOT_OPEN: 'No JavaScript dialog is currently observable',
       INVALID_REQUEST: 'Malformed method or params',
       TIMEOUT: 'Operation exceeded time limit',
       RATE_LIMITED: 'Too many requests - back off',

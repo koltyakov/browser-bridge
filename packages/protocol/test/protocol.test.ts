@@ -31,6 +31,7 @@ import {
   truncateText,
   normalizeEvaluateParams,
   normalizeConsoleParams,
+  normalizeHandleDialogParams,
   normalizeWaitForParams,
   normalizeFindByTextParams,
   normalizeFindByRoleParams,
@@ -929,6 +930,81 @@ test('registry parameters and shared defaults align for reviewed protocol fields
 
   assert.equal(normalizeViewportResizeParams({}).deviceScaleFactor, DEFAULT_DEVICE_SCALE_FACTOR);
   assert.ok(BRIDGE_METHOD_REGISTRY['viewport.resize'].params.includes('deviceScaleFactor'));
+});
+
+test('dialog params keep the pre-dispatch observation check optional and bounded', () => {
+  assert.deepEqual(normalizeHandleDialogParams({}), {
+    action: 'inspect',
+    promptText: null,
+    expectedDialogId: null,
+  });
+  assert.deepEqual(
+    normalizeHandleDialogParams({
+      action: 'accept',
+      promptText: '',
+      expectedDialogId: 'dialog-1',
+    }),
+    {
+      action: 'accept',
+      promptText: '',
+      expectedDialogId: 'dialog-1',
+    }
+  );
+  assert.deepEqual(normalizeHandleDialogParams({ action: 'accept' }), {
+    action: 'accept',
+    promptText: null,
+    expectedDialogId: null,
+  });
+  assert.throws(() => normalizeHandleDialogParams({ action: 'dismiss', expectedDialogId: '' }));
+  assert.throws(() =>
+    normalizeHandleDialogParams({ action: 'dismiss', expectedDialogId: 'x'.repeat(129) })
+  );
+  assert.throws(() =>
+    normalizeHandleDialogParams({ action: 'inspect', expectedDialogId: 'dialog-1' })
+  );
+  assert.throws(() => normalizeHandleDialogParams({ action: 'dismiss', promptText: 'secret' }));
+  assert.throws(() =>
+    normalizeHandleDialogParams({
+      action: 'accept',
+      promptText: 'x'.repeat(10_001),
+      expectedDialogId: 'dialog-1',
+    })
+  );
+  assert.equal(getErrorRecovery(ERROR_CODES.DIALOG_NOT_OPEN)?.retry, false);
+  assert.equal(getErrorRecovery(ERROR_CODES.DIALOG_ACTION_CONFLICT)?.retry, false);
+  assert.equal(BRIDGE_METHOD_REGISTRY['page.handle_dialog'].debuggerBacked, true);
+  assert.ok(BRIDGE_METHOD_REGISTRY['page.handle_dialog'].params.includes('expectedDialogId'));
+});
+
+test('load-state URL conditions normalize exact, contains, and safe bounded regex modes', () => {
+  assert.deepEqual(normalizeWaitForLoadStateParams({ url: 'https://example.com' }), {
+    waitForLoad: true,
+    timeoutMs: DEFAULT_NAV_TIMEOUT_MS,
+    url: 'https://example.com',
+    urlMatch: 'exact',
+  });
+  assert.equal(
+    normalizeWaitForLoadStateParams({ url: '/items/', urlMatch: 'contains' }).urlMatch,
+    'contains'
+  );
+  assert.equal(
+    normalizeWaitForLoadStateParams({ url: '^https://[^/][^/]/items/[0-9]$', urlMatch: 'regex' })
+      .urlMatch,
+    'regex'
+  );
+  assert.throws(() => normalizeWaitForLoadStateParams({ urlMatch: 'exact' }));
+  assert.throws(() => normalizeWaitForLoadStateParams({ url: '(a+)+$', urlMatch: 'regex' }));
+  for (const hostile of ['a+a+$', 'a*a*$', 'a{1,100}$', 'a?|aa', '(a|aa)+$', '.*.*x']) {
+    assert.throws(() => normalizeWaitForLoadStateParams({ url: hostile, urlMatch: 'regex' }));
+  }
+  assert.equal(
+    normalizeWaitForLoadStateParams({
+      url: String.raw`^https://example\.com/price\+$`,
+      urlMatch: 'regex',
+    }).urlMatch,
+    'regex'
+  );
+  assert.throws(() => normalizeWaitForLoadStateParams({ url: '[', urlMatch: 'regex' }));
 });
 
 /** Ensure runtime context flow includes page.get_console. */

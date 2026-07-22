@@ -42,6 +42,7 @@ const EXPECTED_BRIDGE_METHOD_ORDER: readonly BridgeMethod[] = [
   'page.get_state',
   'page.evaluate',
   'page.get_console',
+  'page.handle_dialog',
   'page.wait_for_load_state',
   'page.get_storage',
   'page.get_text',
@@ -359,7 +360,13 @@ test('registry policies preserve every method capability classification', () => 
     ],
     [
       CAPABILITIES.NAVIGATION_CONTROL,
-      ['navigation.navigate', 'navigation.reload', 'navigation.go_back', 'navigation.go_forward'],
+      [
+        'page.handle_dialog',
+        'navigation.navigate',
+        'navigation.reload',
+        'navigation.go_back',
+        'navigation.go_forward',
+      ],
     ],
     [
       CAPABILITIES.DOM_READ,
@@ -472,6 +479,7 @@ test('registry policies preserve debugger-backed method membership and order', (
     'cdp.get_box_model',
     'cdp.get_computed_styles_for_node',
     'cdp.dispatch_key_event',
+    'page.handle_dialog',
   ];
 
   assert.deepEqual([...DEBUGGER_BACKED_METHODS], expected);

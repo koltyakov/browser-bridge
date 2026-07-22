@@ -97,9 +97,22 @@ export const PAGE_ACTIONS = {
     method: 'page.get_console',
     params: (a) => ({ level: a.level, clear: a.clear, limit: a.limit }),
   },
+  handle_dialog: {
+    method: 'page.handle_dialog',
+    params: (a) => ({
+      action: a.dialogAction,
+      promptText: a.promptText,
+      expectedDialogId: a.expectedDialogId,
+    }),
+  },
   wait_for_load: {
     method: 'page.wait_for_load_state',
-    params: (a) => ({ timeoutMs: a.timeoutMs }),
+    params: (a) => ({
+      timeoutMs: a.timeoutMs,
+      waitForLoad: a.waitForLoad,
+      url: a.url,
+      urlMatch: a.urlMatch,
+    }),
   },
   storage: {
     method: 'page.get_storage',
@@ -121,7 +134,7 @@ export const PAGE_ACTIONS = {
 };
 
 /**
- * @param {{ action: string, expression?: string, awaitPromise?: boolean, timeoutMs?: number, returnByValue?: boolean, level?: string, clear?: boolean, limit?: number, type?: string, keys?: string[], textBudget?: number, urlPattern?: string, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @param {{ action: string, expression?: string, awaitPromise?: boolean, timeoutMs?: number, returnByValue?: boolean, level?: string, clear?: boolean, limit?: number, type?: string, keys?: string[], textBudget?: number, urlPattern?: string, dialogAction?: string, promptText?: string, expectedDialogId?: string, waitForLoad?: boolean, url?: string, urlMatch?: string, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handlePageTool(args) {

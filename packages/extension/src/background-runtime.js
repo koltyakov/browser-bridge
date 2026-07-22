@@ -3,6 +3,7 @@
 /**
  * @typedef {{
  *   openSidePanelForTab: (tabId: number, windowId: number) => Promise<void>
+ *   onNavigationSignal?: (tabId: number, kind: 'pushState' | 'replaceState' | 'popstate' | 'hashchange', channel: string) => void
  * }} RuntimeMessageListenerOptions
  */
 
@@ -38,6 +39,20 @@ export function createRuntimeMessageListener(options) {
       message && typeof message === 'object'
         ? /** @type {Record<string, unknown>} */ (message)
         : null;
+    if (
+      candidate?.type === 'bridge.navigation-signal' &&
+      typeof sender.tab?.id === 'number' &&
+      typeof candidate.channel === 'string' &&
+      candidate.channel.length > 0 &&
+      candidate.channel.length <= 128 &&
+      (candidate.kind === 'pushState' ||
+        candidate.kind === 'replaceState' ||
+        candidate.kind === 'popstate' ||
+        candidate.kind === 'hashchange')
+    ) {
+      options.onNavigationSignal?.(sender.tab.id, candidate.kind, candidate.channel);
+      return false;
+    }
     if (candidate?.type !== 'bridge.open-sidepanel') {
       return false;
     }

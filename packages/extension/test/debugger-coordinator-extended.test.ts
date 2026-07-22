@@ -281,3 +281,179 @@ test('run re-throws task errors after scheduling burst detach', async () => {
   await nextTick();
   assert.equal(detached, true);
 });
+
+test('coordinator initializes Page observation once per physical attachment', async () => {
+  const events: string[] = [];
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {
+      events.push('attach');
+    },
+    initialize: async () => {
+      events.push('Page.enable');
+    },
+    detach: async () => {
+      events.push('detach');
+    },
+    burstIdleMs: 500,
+  });
+
+  await coordinator.run(10, async () => events.push('first'));
+  await coordinator.run(10, async () => events.push('second'));
+
+  assert.deepEqual(events, ['attach', 'Page.enable', 'first', 'second']);
+  await coordinator.discard(10);
+  assert.deepEqual(events, ['attach', 'Page.enable', 'first', 'second', 'detach']);
+});
+
+test('coordinator tracks bounded dialog state and clears it on close and detach', async () => {
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {},
+    detach: async () => {},
+    burstIdleMs: 500,
+  });
+  await coordinator.run(10, async () => {});
+
+  const secret = 's'.repeat(5_000);
+  coordinator.handleEvent(10, 'Page.javascriptDialogOpening', {
+    type: 'prompt',
+    message: secret,
+    defaultPrompt: secret,
+  });
+  const dialog = coordinator.getDialog(10);
+  assert.match(dialog?.dialogId ?? '', /^[0-9a-f-]+:1$/);
+  assert.equal(dialog?.type, 'prompt');
+  assert.equal(dialog?.message.length, 4_096);
+  assert.equal(dialog?.messageTruncated, true);
+  assert.deepEqual(coordinator.getDialogStatus(10), {
+    status: 'open',
+    observable: true,
+    type: 'prompt',
+    openedAt: dialog?.openedAt,
+  });
+
+  coordinator.handleEvent(10, 'Page.javascriptDialogClosed', {});
+  assert.deepEqual(coordinator.getDialogStatus(10), { status: 'none', observable: true });
+
+  coordinator.handleEvent(10, 'Page.javascriptDialogOpening', {
+    type: 'beforeunload',
+    message: 'leave?',
+  });
+  coordinator.markDetached(10);
+  assert.equal(coordinator.getDialog(10), null);
+  assert.deepEqual(coordinator.getDialogStatus(10), { status: 'unknown', observable: false });
+});
+
+test('consecutive dialog openings replace prior tracked text', () => {
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {},
+    detach: async () => {},
+  });
+  coordinator.handleEvent(10, 'Page.javascriptDialogOpening', {
+    type: 'alert',
+    message: 'first',
+  });
+  const firstId = coordinator.getDialog(10)?.dialogId;
+  const firstObservation = coordinator.getDialogObservation(10);
+  coordinator.handleEvent(10, 'Page.javascriptDialogOpening', {
+    type: 'confirm',
+    message: 'second',
+  });
+
+  assert.equal(coordinator.getDialog(10)?.type, 'confirm');
+  assert.equal(coordinator.getDialog(10)?.message, 'second');
+  assert.notEqual(coordinator.getDialog(10)?.dialogId, firstId);
+  assert.equal(
+    coordinator.getDialogObservation(10).eventSequence,
+    firstObservation.eventSequence + 1
+  );
+  assert.equal(
+    coordinator.getDialogObservation(10).lastOpenedDialogId,
+    coordinator.getDialog(10)?.dialogId
+  );
+  assert.equal(coordinator.clearDialog(10, firstId ?? ''), false);
+  assert.equal(coordinator.getDialog(10)?.message, 'second');
+
+  const replacementId = coordinator.getDialog(10)?.dialogId;
+  coordinator.handleEvent(10, 'Page.javascriptDialogClosed', {});
+  assert.equal(coordinator.getDialogObservation(10).lastOpenedDialogId, replacementId);
+  assert.equal(
+    coordinator.getDialogObservation(10).eventSequence,
+    firstObservation.eventSequence + 2
+  );
+
+  coordinator.clearDialogState(10);
+  assert.deepEqual(coordinator.getDialogObservation(10), {
+    dialog: null,
+    eventSequence: 0,
+    lastOpenedDialogId: null,
+  });
+});
+
+test('waitForDialog closes the Page.enable event race and is bounded', async () => {
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {},
+    detach: async () => {},
+  });
+  const observed = coordinator.waitForDialog(10, 100);
+  setTimeout(() => {
+    coordinator.handleEvent(10, 'Page.javascriptDialogOpening', {
+      type: 'alert',
+      message: 'attachment dialog',
+    });
+  }, 0);
+
+  assert.equal((await observed)?.message, 'attachment dialog');
+  assert.equal(await coordinator.waitForDialog(11, 1), null);
+  assert.equal(coordinator.dialogWaitersByTab.size, 0);
+});
+
+test('Page initialization coexists with Fetch holds and detach recovery', async () => {
+  const events: string[] = [];
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {
+      events.push('attach');
+    },
+    initialize: async () => {
+      events.push('Page.enable');
+    },
+    detach: async () => {
+      events.push('detach');
+    },
+    burstIdleMs: 500,
+  });
+
+  await coordinator.acquire(10, async () => {
+    events.push('Fetch.enable');
+  });
+  await coordinator.run(10, async () => {
+    events.push('dialog.inspect');
+  });
+  assert.deepEqual(events, ['attach', 'Page.enable', 'Fetch.enable', 'dialog.inspect']);
+
+  coordinator.markDetached(10);
+  await coordinator.acquire(10, async () => {
+    events.push('Fetch.reenable');
+  });
+  assert.deepEqual(events, [
+    'attach',
+    'Page.enable',
+    'Fetch.enable',
+    'dialog.inspect',
+    'attach',
+    'Page.enable',
+    'Fetch.reenable',
+  ]);
+  await coordinator.release(10);
+  assert.equal(events.at(-1), 'detach');
+});
+
+test('detach cancels attachment-time dialog observers', async () => {
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {},
+    detach: async () => {},
+  });
+  const pending = coordinator.waitForDialog(10, 1_000);
+  coordinator.markDetached(10);
+  assert.equal(await pending, null);
+  assert.equal(coordinator.dialogWaitersByTab.size, 0);
+});

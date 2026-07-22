@@ -1,6 +1,7 @@
 // @ts-check
 
 import {
+  BridgeError,
   ERROR_CODES,
   createFailure,
   createRuntimeContext,
@@ -56,6 +57,7 @@ import {
   handleListTabs as executeListTabs,
 } from './background-tabs.js';
 import { TabDebuggerCoordinator } from './debugger-coordinator.js';
+import { NavigationWaitCoordinator } from './navigation-wait.js';
 import {
   createExtensionState,
   setExtensionState,
@@ -91,7 +93,10 @@ import {
   primeWindowConsoleCapture,
 } from './background-console.js';
 import { handleScreenshot } from './background-screenshots.js';
-import { createTabCleanupController } from './background-tab-cleanup.js';
+import {
+  createTabCleanupController,
+  createTabMoveCleanupController,
+} from './background-tab-cleanup.js';
 import { createActionLogController, enrichBridgeResponse } from './background-action-log.js';
 import { createAccessRequestController } from './background-access-request.js';
 import { createPageRequestController } from './background-page.js';
@@ -123,6 +128,9 @@ setExtensionState(state);
 const tabDebugger = new TabDebuggerCoordinator({
   attach: (target, protocolVersion) => chrome.debugger.attach(target, protocolVersion),
   detach: (target) => chrome.debugger.detach(target),
+  initialize: async (target) => {
+    await chrome.debugger.sendCommand(target, 'Page.enable', {});
+  },
   protocolVersion: DEBUGGER_PROTOCOL_VERSION,
 });
 
@@ -139,7 +147,8 @@ chrome.debugger.onDetach.addListener((source) => {
 /** @type {Map<number, (method: string, params: unknown) => void>} */
 const fetchEventFilters = new Map();
 chrome.debugger.onEvent.addListener((source, method, params) => {
-  if (typeof source.tabId === 'number' && fetchEventFilters.has(source.tabId)) {
+  if (typeof source.tabId === 'number') {
+    tabDebugger.handleEvent(source.tabId, method, params);
     fetchEventFilters.get(source.tabId)?.(method, params);
   }
 });
@@ -158,11 +167,23 @@ const fetchInterceptor = createFetchInterceptor({
   removeEventFilter: (tabId) => fetchEventFilters.delete(tabId),
 });
 
-const { sendTabMessage, injectContentScriptsForWindow, ensureContentScript } =
-  createContentScriptBridge(chrome, {
-    contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,
-    isRestrictedAutomationUrl,
-  });
+const {
+  sendTabMessage,
+  injectContentScriptsForWindow,
+  ensureContentScript,
+  installNavigationSignals,
+  uninstallNavigationSignals,
+} = createContentScriptBridge(chrome, {
+  contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,
+  isRestrictedAutomationUrl,
+});
+
+const navigationWaits = new NavigationWaitCoordinator({
+  getTab: (tabId) => chrome.tabs.get(tabId),
+  hasWindowAccess: (windowId) => state.enabledWindow?.windowId === windowId,
+  installSignals: installNavigationSignals,
+  uninstallSignals: uninstallNavigationSignals,
+});
 
 const { clearTabBridgeState, clearWindowBridgeState, rollbackAllPatchesForTab } =
   createTabCleanupController(chrome, {
@@ -171,9 +192,39 @@ const { clearTabBridgeState, clearWindowBridgeState, rollbackAllPatchesForTab } 
     readConsoleBuffer,
     readNetworkBuffer,
     clearFetchInterception: (tabId) => fetchInterceptor.clearAllRules(tabId),
+    clearDebuggerState: (tabId) => tabDebugger.discard(tabId),
+    cancelNavigationWaitsForWindow: (windowId) => navigationWaits.cancelWindow(windowId),
     isRecoverableInstrumentationError,
     isRestrictedAutomationUrl,
   });
+
+const tabMoveCleanup = createTabMoveCleanupController({
+  getEnabledWindowId: () => state.enabledWindow?.windowId ?? null,
+  isTabOutsideEnabledWindow: async (tabId) => {
+    const enabledWindowId = state.enabledWindow?.windowId ?? null;
+    if (enabledWindowId === null) return true;
+    try {
+      return (await chrome.tabs.get(tabId)).windowId !== enabledWindowId;
+    } catch {
+      return true;
+    }
+  },
+  cancelNavigationWaitsForMove: (tabId) =>
+    navigationWaits.cancelTab(
+      tabId,
+      new BridgeError(
+        ERROR_CODES.ACCESS_DENIED,
+        'Tab moved outside the enabled window while waiting for URL'
+      )
+    ),
+  cancelNavigationWaitsForRemoval: (tabId) => navigationWaits.handleTabRemoved(tabId),
+  clearDialogState: (tabId) => tabDebugger.clearDialogState(tabId),
+  clearTabBridgeState,
+  clearRemovedTabState: async (tabId) => {
+    await fetchInterceptor.clearAllRules(tabId);
+    await tabDebugger.discard(tabId);
+  },
+});
 
 const {
   restoreEnabledWindow,
@@ -191,6 +242,7 @@ const {
   primeWindowConsoleCapture,
   primeTabConsoleCapture,
   clearWindowBridgeState,
+  cancelNavigationWaitsForWindow: (windowId) => navigationWaits.cancelWindow(windowId),
   refreshActionIndicators,
   updateActionIndicatorForTab,
   emitUiState,
@@ -201,6 +253,8 @@ const {
   resolveRequestTarget,
   waitForTabComplete,
   handlePageGetConsole,
+  handlePageGetState,
+  handlePageDialog,
   handleAccessibilityTree,
   handleGetNetwork,
   handleViewportResize,
@@ -213,7 +267,7 @@ const {
   readConsoleBuffer: (tabId, clear) => readConsoleBuffer(tabId, clear, chrome),
   ensureNetworkInterceptor: (tabId) => ensureNetworkInterceptor(tabId, chrome),
   readNetworkBuffer: (tabId, clear) => readNetworkBuffer(tabId, clear, chrome),
-  runWithDebugger: (tabId, operation) => tabDebugger.run(tabId, operation),
+  runWithDebugger: (tabId, operation, options) => tabDebugger.run(tabId, operation, options),
   sendCommand: (target, method, params) =>
     /** @type {Promise<unknown>} */ (
       chrome.debugger.sendCommand(
@@ -222,6 +276,14 @@ const {
         /** @type {{ [key: string]: unknown }} */ (params)
       )
     ),
+  ensureContentScript,
+  sendTabMessage: (tabId, message, timeoutMs) => sendTabMessage(tabId, message, timeoutMs),
+  contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,
+  waitForDialog: (tabId, timeoutMs) => tabDebugger.waitForDialog(tabId, timeoutMs),
+  getDialogObservation: (tabId) => tabDebugger.getDialogObservation(tabId),
+  getDialogStatus: (tabId) => tabDebugger.getDialogStatus(tabId),
+  clearDialog: (tabId, dialogId) => tabDebugger.clearDialog(tabId, dialogId),
+  waitForUrl: (tabId, windowId, params) => navigationWaits.wait(tabId, windowId, params),
 });
 
 const { appendActionLogEntry, getActionContext, logBridgeAction, restoreActionLog } =
@@ -313,10 +375,21 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  navigationWaits.handleTabUpdated(tabId, changeInfo, tab);
   void handleTabUpdated(tabId, changeInfo, tab).catch(reportAsyncError);
 });
 
+chrome.tabs.onDetached?.addListener((tabId, detachInfo) => {
+  tabMoveCleanup.handleDetached(tabId, detachInfo);
+});
+
+chrome.tabs.onAttached?.addListener((tabId, attachInfo) => {
+  navigationWaits.handleTabMoved(tabId, attachInfo.newWindowId);
+  void tabMoveCleanup.handleAttached(tabId, attachInfo).catch(reportAsyncError);
+});
+
 chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
+  void tabMoveCleanup.handleRemoved(tabId).catch(reportAsyncError);
   void handleTabRemoved(tabId, removeInfo).catch(reportAsyncError);
 });
 
@@ -346,7 +419,13 @@ chrome.runtime.onConnect.addListener((port) => {
   }
 });
 
-chrome.runtime.onMessage.addListener(createRuntimeMessageListener({ openSidePanelForTab }));
+chrome.runtime.onMessage.addListener(
+  createRuntimeMessageListener({
+    openSidePanelForTab,
+    onNavigationSignal: (tabId, kind, channel) =>
+      navigationWaits.handleSpaSignal(tabId, kind, channel),
+  })
+);
 
 /**
  * Notify the daemon that this browser/profile was recently active so untargeted
@@ -467,6 +546,10 @@ async function dispatchBridgeRequest(request) {
       return handlePageEvaluate(request);
     case 'page.get_console':
       return handlePageGetConsole(request);
+    case 'page.get_state':
+      return handlePageGetState(request);
+    case 'page.handle_dialog':
+      return handlePageDialog(request);
     case 'page.wait_for_load_state':
       return handleWaitForLoadState(request);
     case 'dom.get_accessibility_tree':

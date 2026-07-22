@@ -348,13 +348,14 @@ export function createBridgeMcpServer() {
     {
       title: 'Browser Page State',
       description:
-        'Read page-level data: state (URL/title), evaluate (JS), console, storage, text, network, or performance. For element-level reads, use browser_dom. evaluate and performance are debugger-backed - prefer lighter reads first.',
+        'Read page-level data, wait for load/URL conditions, or explicitly inspect/handle JavaScript dialogs. For element-level reads, use browser_dom. evaluate, performance, and handle_dialog are debugger-backed.',
       inputSchema: {
         action: z
           .enum([
             'state',
             'evaluate',
             'console',
+            'handle_dialog',
             'wait_for_load',
             'storage',
             'text',
@@ -373,6 +374,23 @@ export function createBridgeMcpServer() {
           .optional()
           .describe('JavaScript expression to evaluate (for evaluate action)'),
         awaitPromise: z.boolean().optional().describe('Await returned promises (default: false)'),
+        dialogAction: z
+          .enum(['inspect', 'accept', 'dismiss'])
+          .optional()
+          .describe('Dialog operation on the current dialog (default: inspect)'),
+        promptText: z
+          .string()
+          .max(10_000)
+          .optional()
+          .describe('Prompt response text; only valid when dialogAction is accept'),
+        expectedDialogId: z
+          .string()
+          .min(1)
+          .max(128)
+          .optional()
+          .describe(
+            'Optional stale-decision check immediately before CDP dispatch; Chrome cannot atomically bind the action to this identifier'
+          ),
         timeoutMs: z
           .number()
           .int()
@@ -413,6 +431,15 @@ export function createBridgeMcpServer() {
           .optional()
           .describe(`Max chars for page text (default: ${DEFAULT_PAGE_TEXT_BUDGET})`),
         urlPattern: z.string().optional().describe('Filter network entries by URL pattern'),
+        waitForLoad: z
+          .boolean()
+          .optional()
+          .describe('For wait_for_load, also require tab status complete (default: true)'),
+        url: z.string().optional().describe('URL condition for wait_for_load'),
+        urlMatch: z
+          .enum(['exact', 'contains', 'regex'])
+          .optional()
+          .describe('URL match mode for wait_for_load (default: exact)'),
       },
     },
     handlePageTool

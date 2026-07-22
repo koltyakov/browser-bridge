@@ -25,6 +25,7 @@ import {
  *   ) => Promise<void>,
  *   primeTabConsoleCapture: (tabId: number, chrome: typeof globalThis.chrome) => Promise<void>,
  *   clearWindowBridgeState: (windowId: number) => Promise<void>,
+ *   cancelNavigationWaitsForWindow: (windowId: number) => void,
  *   refreshActionIndicators: () => Promise<void>,
  *   updateActionIndicatorForTab: (tabId: number) => Promise<void>,
  *   emitUiState: () => Promise<void>,
@@ -137,9 +138,12 @@ export function createWindowSessionController(state, chrome, deps) {
       return false;
     }
 
+    const goneWindowId = state.enabledWindow.windowId;
     state.enabledWindow = null;
+    deps.cancelNavigationWaitsForWindow(goneWindowId);
     await chrome.storage.session.remove(ENABLED_WINDOW_STORAGE_KEY);
     deps.sendAccessUpdate(false);
+    await deps.clearWindowBridgeState(goneWindowId);
     return true;
   }
 
@@ -217,6 +221,7 @@ export function createWindowSessionController(state, chrome, deps) {
 
     if (isSwitch || isActiveDisable) {
       state.enabledWindow = null;
+      deps.cancelNavigationWaitsForWindow(/** @type {number} */ (previousWindowId));
       await chrome.storage.session.remove(ENABLED_WINDOW_STORAGE_KEY);
       deps.sendAccessUpdate(false);
       await deps.clearWindowBridgeState(/** @type {number} */ (previousWindowId));

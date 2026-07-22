@@ -13,6 +13,8 @@ export const ERROR_CODES = Object.freeze({
   INPUT_UNSUPPORTED: 'INPUT_UNSUPPORTED',
   INPUT_INVALID_TARGET: 'INPUT_INVALID_TARGET',
   INPUT_FOCUS_CHANGED: 'INPUT_FOCUS_CHANGED',
+  DIALOG_NOT_OPEN: 'DIALOG_NOT_OPEN',
+  DIALOG_ACTION_CONFLICT: 'DIALOG_ACTION_CONFLICT',
   RESULT_TRUNCATED: 'RESULT_TRUNCATED',
   RATE_LIMITED: 'RATE_LIMITED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
@@ -74,6 +76,16 @@ export const ERROR_RECOVERY = Object.freeze({
     retry: false,
     alternativeMethod: 'dom.describe',
     hint: 'Focus moved away from the resolved editable target before native text dispatch. Inspect focus handlers or target the control that retained focus.',
+  },
+  [ERROR_CODES.DIALOG_NOT_OPEN]: {
+    retry: false,
+    alternativeMethod: 'page.handle_dialog',
+    hint: 'No JavaScript dialog is currently observable. Inspect or trigger the dialog before trying another explicit action.',
+  },
+  [ERROR_CODES.DIALOG_ACTION_CONFLICT]: {
+    retry: false,
+    alternativeMethod: 'page.handle_dialog',
+    hint: 'The observed dialog changed before or during CDP dispatch. Do not repeat the action automatically; inspect the current dialog state first.',
   },
   [ERROR_CODES.TAB_MISMATCH]: {
     retry: false,

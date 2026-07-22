@@ -48,6 +48,8 @@ type TabMessageCall = {
 type ChromeWithTabEvents = {
   tabs: {
     onUpdated: FakeChromeEvent;
+    onDetached: FakeChromeEvent;
+    onAttached: FakeChromeEvent;
     onRemoved: FakeChromeEvent;
   };
 };
@@ -130,8 +132,10 @@ async function loadEnabledDispatchBackground({
   const {
     tabs: tabOverrides = {},
     windows: windowOverrides = {},
+    debugger: debuggerOverrides = {},
     ...restChromeOverrides
   } = chromeOverrides;
+  const debuggerSendCommand = debuggerOverrides.sendCommand;
   const chrome = createChromeFake({
     ...restChromeOverrides,
     tabs: {
@@ -155,6 +159,20 @@ async function loadEnabledDispatchBackground({
         return { id: windowId };
       },
       ...windowOverrides,
+    },
+    debugger: {
+      ...debuggerOverrides,
+      async sendCommand(
+        target: chrome.debugger.Debuggee,
+        method: string,
+        params?: Record<string, unknown>
+      ) {
+        if (method === 'Page.enable') return {};
+        if (typeof debuggerSendCommand === 'function') {
+          return debuggerSendCommand(target, method, params);
+        }
+        return {};
+      },
     },
   });
   const loaded = await loadBackground({
@@ -758,6 +776,7 @@ test('background dispatch routes page.get_state through the tab-bound content sc
     url: 'https://example.com/app',
     title: 'Stateful page',
     ready: true,
+    dialog: { status: 'unknown', observable: false },
   });
   assert.deepEqual(executeScriptCalls, [
     {
@@ -773,10 +792,6 @@ test('background dispatch routes page.get_state through the tab-bound content sc
     },
   ]);
   assert.deepEqual(sendMessageCalls, [
-    {
-      tabId: 41,
-      message: { type: 'bridge.ping' },
-    },
     {
       tabId: 41,
       message: { type: 'bridge.ping' },
@@ -926,8 +941,21 @@ test('background dispatch reinjects and retries when content script receiver dis
     url: 'https://example.com/reloading',
     title: 'Reloading page',
     ready: true,
+    dialog: { status: 'unknown', observable: false },
   });
-  assert.equal(executeScriptCalls.length, 1);
+  assert.deepEqual(executeScriptCalls, [
+    {
+      target: { tabId: 42 },
+      files: [
+        'packages/extension/src/content-script-helpers.js',
+        'packages/extension/src/content-element-registry.js',
+        'packages/extension/src/content-dom-query.js',
+        'packages/extension/src/content-input.js',
+        'packages/extension/src/content-patch.js',
+        'packages/extension/src/content-script.js',
+      ],
+    },
+  ]);
   assert.deepEqual(sendMessageCalls, [
     {
       tabId: 42,
@@ -1472,6 +1500,80 @@ test('window bridge teardown clears interception rules and their debugger hold',
   assert.equal(listed.ok, true);
   if (listed.ok) {
     assert.deepEqual(listed.result, { rules: [] });
+  }
+  assert.deepEqual(detachCalls, [{ tabId: activeTab.id }]);
+});
+
+test('moving a tab out of the enabled window clears dialog, Fetch, debugger, and tab state before valid re-entry', async () => {
+  const detachCalls: chrome.debugger.Debuggee[] = [];
+  const activeTab = createDispatchActiveTab();
+  const { loaded } = await loadEnabledDispatchBackground({
+    queryLabel: 'test-background-dispatch-tab-move-cleanup',
+    activeTab,
+    chromeOverrides: {
+      tabs: {
+        async sendMessage(_tabId: number, message: Record<string, unknown>) {
+          if (message.type === 'bridge.ping') return { ok: true };
+          if (message.method === 'patch.list') return { patches: [] };
+          if (message.method === 'page.get_state') {
+            return {
+              url: activeTab.url,
+              title: activeTab.title,
+              readyState: 'complete',
+            };
+          }
+          return { ok: true };
+        },
+      },
+      debugger: {
+        async detach(target: chrome.debugger.Debuggee) {
+          detachCalls.push(target);
+        },
+      },
+    },
+  });
+
+  const added = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-move-intercept-add',
+      method: 'network.intercept.add',
+      params: { urlPattern: '*api*' },
+    })
+  );
+  assert.equal(added.ok, true);
+  const debuggerEvents = (loaded.chrome as unknown as { debugger: { onEvent: FakeChromeEvent } })
+    .debugger.onEvent;
+  debuggerEvents.dispatch({ tabId: activeTab.id }, 'Page.javascriptDialogOpening', {
+    type: 'alert',
+    message: 'private dialog text',
+  });
+
+  const tabEvents = getTabEvents(loaded);
+  tabEvents.onDetached.dispatch(activeTab.id, { oldWindowId: 7, oldPosition: 0 });
+  activeTab.windowId = 8;
+  tabEvents.onAttached.dispatch(activeTab.id, { newWindowId: 8, newPosition: 0 });
+  await waitForListenerCount(() => detachCalls.length, 1);
+
+  tabEvents.onDetached.dispatch(activeTab.id, { oldWindowId: 8, oldPosition: 0 });
+  activeTab.windowId = 7;
+  tabEvents.onAttached.dispatch(activeTab.id, { newWindowId: 7, newPosition: 0 });
+
+  const listed = await loaded.dispatch(
+    createRequest({ id: 'dispatch-move-intercept-list', method: 'network.intercept.list' })
+  );
+  assert.equal(listed.ok, true);
+  if (listed.ok) assert.deepEqual(listed.result, { rules: [] });
+
+  const pageState = await loaded.dispatch(
+    createRequest({ id: 'dispatch-move-page-state', method: 'page.get_state' })
+  );
+  assert.equal(pageState.ok, true);
+  if (pageState.ok) {
+    assert.deepEqual((pageState.result as Record<string, unknown>).dialog, {
+      status: 'unknown',
+      observable: false,
+    });
+    assert.doesNotMatch(JSON.stringify(pageState.result), /private dialog text/);
   }
   assert.deepEqual(detachCalls, [{ tabId: activeTab.id }]);
 });

@@ -32,6 +32,8 @@ export type ErrorCode =
   | 'INPUT_UNSUPPORTED'
   | 'INPUT_INVALID_TARGET'
   | 'INPUT_FOCUS_CHANGED'
+  | 'DIALOG_NOT_OPEN'
+  | 'DIALOG_ACTION_CONFLICT'
   | 'RESULT_TRUNCATED'
   | 'RATE_LIMITED'
   | 'INTERNAL_ERROR'
@@ -52,6 +54,7 @@ export type BridgeMethod =
   | 'page.get_state'
   | 'page.evaluate'
   | 'page.get_console'
+  | 'page.handle_dialog'
   | 'page.wait_for_load_state'
   | 'page.get_storage'
   | 'page.get_text'
@@ -459,6 +462,21 @@ export interface ConsoleParams {
   limit?: number;
 }
 
+export type DialogAction = 'inspect' | 'accept' | 'dismiss';
+
+export interface HandleDialogParams {
+  action?: DialogAction;
+  promptText?: string;
+  /** Optional stale-decision check performed immediately before CDP dispatch. */
+  expectedDialogId?: string;
+}
+
+export interface NormalizedHandleDialogParams extends BridgeParams {
+  action: DialogAction;
+  promptText: string | null;
+  expectedDialogId: string | null;
+}
+
 export interface NormalizedConsoleParams extends BridgeParams {
   level: string;
   clear: boolean;
@@ -568,11 +586,15 @@ export interface NormalizedStorageParams extends BridgeParams {
 export interface WaitForLoadStateParams {
   waitForLoad?: boolean;
   timeoutMs?: number;
+  url?: string;
+  urlMatch?: 'exact' | 'contains' | 'regex';
 }
 
 export interface NormalizedWaitForLoadStateParams extends BridgeParams {
   waitForLoad: boolean;
   timeoutMs: number;
+  url: string | null;
+  urlMatch: 'exact' | 'contains' | 'regex' | null;
 }
 
 export interface TabCreateParams {

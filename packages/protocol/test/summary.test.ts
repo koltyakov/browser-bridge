@@ -129,6 +129,21 @@ test('summarizes page state with url, title, and origin', () => {
   assert.ok(!summary.summary.includes('hasPassword'));
 });
 
+test('summarizes dialog actions as non-atomic command dispatches', () => {
+  const summary = summarizeBridgeResponse(
+    ok({
+      commandDispatched: true,
+      action: 'dismiss',
+      dialogId: 'observation-1',
+      atomicDialogBinding: false,
+    }),
+    'page.handle_dialog'
+  );
+  assert.match(summary.summary, /command dispatched/);
+  assert.match(summary.summary, /did not atomically bind/);
+  assert.doesNotMatch(summary.summary, /handled|completed/);
+});
+
 // --- summarizeBridgeResponse: text result ---
 
 test('summarizes page text result', () => {

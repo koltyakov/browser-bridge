@@ -194,6 +194,29 @@ export function summarizeBridgeResponse(response, method) {
   }
 
   const result = toRecord(response.result);
+  if (method === 'page.handle_dialog') {
+    const action = typeof result.action === 'string' ? result.action : 'inspect';
+    return {
+      ok: true,
+      summary: appendProtocolWarning(
+        result.commandDispatched === true
+          ? `JavaScript dialog ${action} command dispatched to the current dialog; Chrome did not atomically bind it to the observation identifier.`
+          : `JavaScript ${result.type ?? 'unknown'} dialog is open.`,
+        protocolWarning
+      ),
+      evidence: result,
+    };
+  }
+  if (method === 'page.wait_for_load_state' && typeof result.finalUrl === 'string') {
+    return {
+      ok: true,
+      summary: appendProtocolWarning(
+        `URL matched via ${result.observedNavigationKind ?? 'unknown'} after ${result.elapsedMs ?? 0}ms.`,
+        protocolWarning
+      ),
+      evidence: result,
+    };
+  }
   if (typeof result.daemon === 'string') {
     const access =
       result.access && typeof result.access === 'object'
