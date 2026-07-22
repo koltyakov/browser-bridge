@@ -152,7 +152,6 @@ export function createCdpKeyPressEventPair(params) {
  */
 export function shouldLogAction(method) {
   return ![
-    'health.ping',
     'log.tail',
     'skill.get_runtime_context',
     'setup.get_status',

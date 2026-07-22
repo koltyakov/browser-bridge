@@ -24,12 +24,14 @@ import {
 } from './background-state.js';
 
 /** @typedef {import('./background-state.js').ExtensionState} ExtensionState */
+/** @typedef {import('./background-state.js').CurrentTabState} CurrentTabState */
 /** @typedef {import('./background-state.js').ResolvedTabTarget} ResolvedTabTarget */
 /** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
 
 const RESPONSE_SIZE_HEADROOM_BYTES = 4096;
 const MAX_BRIDGE_RESPONSE_BYTES = MAX_NATIVE_MESSAGE_BYTES - RESPONSE_SIZE_HEADROOM_BYTES;
+const CONNECTION_CHECK_COALESCE_MS = 2_000;
 
 /**
  * @typedef {{ tabId: number | null, url: string }} ActionContext
@@ -65,6 +67,7 @@ const MAX_BRIDGE_RESPONSE_BYTES = MAX_NATIVE_MESSAGE_BYTES - RESPONSE_SIZE_HEADR
  *     request: BridgeRequest,
  *     options?: { requireScriptable?: boolean }
  *   ) => Promise<ResolvedTabTarget>,
+ *   getCurrentTabState: () => Promise<CurrentTabState | null>,
  *   emitUiState: () => Promise<void>,
  * }} ActionLogControllerDeps
  */
@@ -97,6 +100,10 @@ export function createActionLogController(state, chromeObj, deps) {
    */
   async function getActionContext(request) {
     try {
+      if (request.method === 'health.ping') {
+        const tab = await deps.getCurrentTabState();
+        return tab ? { tabId: tab.tabId, url: tab.url } : null;
+      }
       if (request.method === 'tabs.close') {
         const params = normalizeTabCloseParams(request.params);
         const tab = await chromeObj.tabs.get(params.tabId);
@@ -142,12 +149,24 @@ export function createActionLogController(state, chromeObj, deps) {
    * @returns {Promise<void>}
    */
   async function appendActionLogEntry(entry) {
+    const at = Date.now();
+    const tabId = entry.tabId ?? null;
+    const previousEntry = state.actionLog.at(-1);
+    if (
+      entry.method === 'health.ping' &&
+      previousEntry?.method === 'health.ping' &&
+      previousEntry.tabId === tabId &&
+      at >= previousEntry.at &&
+      at - previousEntry.at <= CONNECTION_CHECK_COALESCE_MS
+    ) {
+      state.actionLog.pop();
+    }
     state.actionLog.push({
       id: crypto.randomUUID(),
-      at: Date.now(),
+      at,
       method: entry.method,
       source: normalizeActionLogSource(entry.source),
-      tabId: entry.tabId ?? null,
+      tabId,
       url: entry.url ?? '',
       ok: entry.ok,
       summary: entry.summary,
@@ -211,7 +230,9 @@ export function createActionLogController(state, chromeObj, deps) {
         summary:
           request.method === 'page.handle_dialog'
             ? summarizeDialogActionResultForLog(response)
-            : summarizeActionResult(response),
+            : request.method === 'health.ping'
+              ? summarizeConnectionCheckResult(response)
+              : summarizeActionResult(response),
         responseBytes: diagnostics.responseBytes,
         approxTokens: diagnostics.textApproxTokens,
         imageApproxTokens: diagnostics.imageApproxTokens,
@@ -249,6 +270,30 @@ export function createActionLogController(state, chromeObj, deps) {
     logBridgeAction,
     restoreActionLog,
   };
+}
+
+/**
+ * @param {BridgeResponse} response
+ * @returns {string}
+ */
+function summarizeConnectionCheckResult(response) {
+  if (!response.ok) return response.error.message;
+  const result =
+    response.result && typeof response.result === 'object'
+      ? /** @type {Record<string, unknown>} */ (response.result)
+      : {};
+  const access =
+    result.access && typeof result.access === 'object'
+      ? /** @type {Record<string, unknown>} */ (result.access)
+      : null;
+  if (!access) return 'Connection check completed.';
+  if (access.enabled !== true) {
+    return 'Connection check completed; window access is disabled.';
+  }
+  if (access.routeReady === true) {
+    return 'Connection check completed; window access is ready.';
+  }
+  return 'Connection check completed; window access is enabled but unavailable.';
 }
 
 /**

@@ -241,7 +241,7 @@ test('cloneJsonValue preserves shape, severs aliasing, and passes through nullis
 
 test('background helpers expose log and origin helpers', () => {
   assert.equal(shouldLogAction('dom.query'), true);
-  assert.equal(shouldLogAction('health.ping'), false);
+  assert.equal(shouldLogAction('health.ping'), true);
   assert.equal(matchesConsoleLevel('all', 'debug'), true);
   assert.equal(matchesConsoleLevel('warn', 'warn'), true);
   assert.equal(matchesConsoleLevel('warn', 'error'), true);

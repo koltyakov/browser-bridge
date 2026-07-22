@@ -530,7 +530,9 @@ test('sidepanel UI renders activity summaries, histogram families, and repeat wa
       createActionLogEntry('no-token', 'dom.query', 0),
       createActionLogEntry('invalid-time', 'dom.query', 100, { at: Number.NaN }),
       createActionLogEntry('performance', 'performance.get_metrics', 300),
-      createActionLogEntry('other', 'health.ping', 3_400),
+      createActionLogEntry('other', 'health.ping', 3_400, {
+        summary: 'Connection check completed; window access is disabled.',
+      }),
     ];
     portPair.left.dispatchMessage(createSidepanelStateSync(true, null, null, activityEntries));
 
@@ -558,6 +560,10 @@ test('sidepanel UI renders activity summaries, histogram families, and repeat wa
     );
     assert.match(actionLog.textContent ?? '', /access\.confirmed/);
     assert.match(actionLog.textContent ?? '', /Window access request confirmed\./);
+    assert.match(
+      actionLog.textContent ?? '',
+      /Connection check completed; window access is disabled\./
+    );
     assert.match(actionLog.textContent ?? '', /Use maxLength to continue reading the HTML\./);
     assert.match(actionLog.textContent ?? '', /3n/);
     assert.match(actionLog.textContent ?? '', /512 B img/);

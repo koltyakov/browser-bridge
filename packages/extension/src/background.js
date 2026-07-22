@@ -321,6 +321,7 @@ const {
 const { appendActionLogEntry, getActionContext, logBridgeAction, restoreActionLog } =
   createActionLogController(state, chrome, {
     emitUiState,
+    getCurrentTabState,
     resolveRequestTarget,
   });
 
