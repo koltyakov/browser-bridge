@@ -14,6 +14,14 @@ import { normalizeRequestedAccessTab } from './background-routing.js';
  *   queryTabs: (queryInfo: { active?: boolean, lastFocusedWindow?: boolean }) => Promise<chrome.tabs.Tab[]>,
  *   getLastFocusedWindow: () => Promise<chrome.windows.Window>,
  *   getAccessStatus: () => Promise<Record<string, unknown>>,
+ *   appendActionLogEntry: (entry: {
+ *     method: string,
+ *     source?: string,
+ *     tabId?: number | null,
+ *     url?: string,
+ *     ok: boolean,
+ *     summary: string,
+ *   }) => Promise<void>,
  *   refreshActionIndicators: () => Promise<void>,
  *   emitUiState: () => Promise<void>,
  *   openRequestedAccessUi: (target: ResolvedTabTarget) => Promise<void>,
@@ -111,10 +119,23 @@ export function createAccessRequestController(state, deps) {
 
   /**
    * @param {ResolvedTabTarget} target
+   * @param {unknown} source
    * @returns {Promise<void>}
    */
-  async function queueAccessRequest(target) {
+  async function queueAccessRequest(target, source) {
     state.requestedAccessWindowId = target.windowId;
+    try {
+      await deps.appendActionLogEntry({
+        method: 'access.requested',
+        source: typeof source === 'string' ? source : undefined,
+        tabId: target.tabId,
+        url: target.url,
+        ok: true,
+        summary: 'Window access requested; waiting for confirmation.',
+      });
+    } catch {
+      // Activity persistence must never prevent an access prompt from opening.
+    }
     await deps.refreshActionIndicators();
     await deps.emitUiState();
     await deps.openRequestedAccessUi(target);
@@ -137,7 +158,7 @@ export function createAccessRequestController(state, deps) {
       return createBackgroundAccessFailure(request, target);
     }
 
-    await queueAccessRequest(target);
+    await queueAccessRequest(target, request.meta?.source);
     return null;
   }
 
@@ -206,7 +227,7 @@ export function createAccessRequestController(state, deps) {
       return createBackgroundAccessFailure(request, target);
     }
 
-    await queueAccessRequest(target);
+    await queueAccessRequest(target, request.meta?.source);
 
     return createSuccess(
       request.id,

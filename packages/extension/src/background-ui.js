@@ -19,7 +19,12 @@ import { POPUP_PATH } from './background-state.js';
  *   refreshSetupStatus: (force?: boolean) => void,
  *   getTabState: (tabId: number) => Promise<CurrentTabState | null>,
  *   getCurrentTabState: () => Promise<CurrentTabState | null>,
- *   setWindowEnabled: (windowId: number, title: string, enabled: boolean) => Promise<void>,
+ *   setWindowEnabled: (
+ *     windowId: number,
+ *     title: string,
+ *     enabled: boolean,
+ *     context?: { tabId: number, url: string },
+ *   ) => Promise<void>,
  *   setCurrentWindowEnabled: (enabled: boolean) => Promise<void>,
  *   handleSetupInstallAction: (message: Record<string, unknown>) => Promise<void>,
  * }} UiDeps
@@ -166,7 +171,10 @@ export async function handleUiMessage(state, port, message, deps) {
         if (!tabState) {
           throw new BridgeError(ERROR_CODES.TAB_MISMATCH, 'Requested tab state not found');
         }
-        await deps.setWindowEnabled(tabState.windowId, tabState.title, Boolean(message.enabled));
+        await deps.setWindowEnabled(tabState.windowId, tabState.title, Boolean(message.enabled), {
+          tabId: tabState.tabId,
+          url: tabState.url,
+        });
       } else {
         await deps.setCurrentWindowEnabled(Boolean(message.enabled));
       }

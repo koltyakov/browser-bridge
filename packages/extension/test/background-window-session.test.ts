@@ -54,6 +54,7 @@ test('enabled-window switches revoke access, tear down the prior window, and ser
     cancelNavigationWaitsForWindow(windowId) {
       cancelledWindows.push(windowId);
     },
+    async appendActionLogEntry() {},
     async refreshActionIndicators() {},
     async updateActionIndicatorForTab() {},
     async emitUiState() {},
@@ -91,4 +92,57 @@ test('enabled-window switches revoke access, tear down the prior window, and ser
   assert.deepEqual(clearedWindows, [1, 2, 3]);
   assert.deepEqual(cancelledWindows, [1, 2, 3]);
   assert.deepEqual(accessUpdates, [false, true, false, true, false]);
+});
+
+test('enabling a requested window records a scoped access confirmation activity', async () => {
+  const state = createExtensionState();
+  setExtensionState(state);
+  state.requestedAccessWindowId = 7;
+  const activities: Array<{
+    method: string;
+    tabId?: number | null;
+    url?: string;
+    ok: boolean;
+    summary: string;
+  }> = [];
+  const chromeObj = createChromeFake() as unknown as typeof globalThis.chrome;
+  const controller = createWindowSessionController(state, chromeObj, {
+    sendAccessUpdate() {},
+    async injectContentScriptsForWindow() {},
+    async primeWindowConsoleCapture() {},
+    async primeTabConsoleCapture() {},
+    async clearWindowBridgeState() {},
+    cancelNavigationWaitsForWindow() {},
+    async appendActionLogEntry(entry) {
+      activities.push(entry);
+    },
+    async refreshActionIndicators() {},
+    async updateActionIndicatorForTab() {},
+    async emitUiState() {},
+    isRestrictedAutomationUrl() {
+      return false;
+    },
+  });
+
+  await controller.setWindowEnabled(7, 'Requested window', true, {
+    tabId: 31,
+    url: 'https://example.com/requested',
+  });
+
+  assert.deepEqual(activities, [
+    {
+      method: 'access.confirmed',
+      tabId: 31,
+      url: 'https://example.com/requested',
+      ok: true,
+      summary: 'Window access request confirmed.',
+    },
+  ]);
+
+  await controller.setWindowEnabled(7, 'Requested window', false);
+  await controller.setWindowEnabled(7, 'Requested window', true, {
+    tabId: 31,
+    url: 'https://example.com/requested',
+  });
+  assert.equal(activities.length, 1);
 });

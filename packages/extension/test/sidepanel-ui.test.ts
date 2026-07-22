@@ -478,6 +478,13 @@ test('sidepanel UI renders activity summaries, histogram families, and repeat wa
     assert.equal(summaryTokens.dataset.costClass, 'heavy');
 
     const activityEntries = [
+      createActionLogEntry('access-requested', 'access.requested', 0, {
+        summary: 'Window access requested; waiting for confirmation.',
+      }),
+      createActionLogEntry('access-confirmed', 'access.confirmed', 0, {
+        source: '',
+        summary: 'Window access request confirmed.',
+      }),
       createActionLogEntry('repeat-extreme-1', 'dom.describe', 10, {
         costClass: 'heavy',
         summaryTokens: 0,
@@ -544,6 +551,13 @@ test('sidepanel UI renders activity summaries, histogram families, and repeat wa
     assert.match(actionLog.textContent ?? '', /Image/);
     assert.match(actionLog.textContent ?? '', /Debugger/);
     assert.match(actionLog.textContent ?? '', /Truncated/);
+    assert.match(actionLog.textContent ?? '', /access\.requested/);
+    assert.match(
+      actionLog.textContent ?? '',
+      /Window access requested; waiting for confirmation\./
+    );
+    assert.match(actionLog.textContent ?? '', /access\.confirmed/);
+    assert.match(actionLog.textContent ?? '', /Window access request confirmed\./);
     assert.match(actionLog.textContent ?? '', /Use maxLength to continue reading the HTML\./);
     assert.match(actionLog.textContent ?? '', /3n/);
     assert.match(actionLog.textContent ?? '', /512 B img/);

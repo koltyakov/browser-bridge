@@ -13,6 +13,13 @@ import { createRequest, ERROR_CODES } from '../../protocol/src/index.js';
 type AccessRequestState = {
   requestedAccessWindowId: number | null;
   requestedAccessPopupWindowId: number | null;
+  actionLog: Array<{
+    method: string;
+    source: string;
+    tabId: number | null;
+    url: string;
+    summary: string;
+  }>;
 };
 
 type AccessRequestChrome = {
@@ -121,6 +128,10 @@ test('background access request opens a popup window when no side panel is open'
   });
 
   const state = getAccessRequestState(loaded.module);
+  const requestActivity = state.actionLog.find((entry) => entry.method === 'access.requested');
+  assert.equal(requestActivity?.tabId, 27);
+  assert.equal(requestActivity?.url, 'https://example.com/access');
+  assert.equal(requestActivity?.summary, 'Window access requested; waiting for confirmation.');
   assert.equal(state.requestedAccessWindowId, 8);
   assert.equal(state.requestedAccessPopupWindowId, 91);
   assert.equal(popupUpdates.length, 0);
@@ -251,6 +262,7 @@ test('background access request reuses an open side panel instead of opening a p
     createRequest({
       id: 'background-access-request-sidepanel',
       method: 'access.request',
+      meta: { source: 'mcp' },
     })
   );
 
@@ -267,6 +279,11 @@ test('background access request reuses an open side panel instead of opening a p
   });
 
   const state = getAccessRequestState(loaded.module);
+  const requestActivity = state.actionLog.find((entry) => entry.method === 'access.requested');
+  assert.equal(requestActivity?.source, 'mcp');
+  assert.equal(requestActivity?.tabId, 31);
+  assert.equal(requestActivity?.url, 'https://example.com/focused');
+  assert.equal(requestActivity?.summary, 'Window access requested; waiting for confirmation.');
   assert.equal(state.requestedAccessWindowId, 8);
   assert.equal(state.requestedAccessPopupWindowId, null);
   assert.deepEqual(popupCreates, []);
@@ -280,6 +297,14 @@ test('background access request reuses an open side panel instead of opening a p
     ),
     false
   );
+
+  portPair.left.dispatchMessage({ type: 'scope.set_enabled', enabled: true, tabId: 31 });
+  await flushAsyncWork();
+
+  const confirmation = state.actionLog.find((entry) => entry.method === 'access.confirmed');
+  assert.equal(confirmation?.tabId, 31);
+  assert.equal(confirmation?.url, 'https://example.com/focused');
+  assert.equal(confirmation?.summary, 'Window access request confirmed.');
 });
 
 test('background access request rejects duplicate requests for the same pending window', async () => {

@@ -26,6 +26,13 @@ import {
  *   primeTabConsoleCapture: (tabId: number, chrome: typeof globalThis.chrome) => Promise<void>,
  *   clearWindowBridgeState: (windowId: number) => Promise<void>,
  *   cancelNavigationWaitsForWindow: (windowId: number) => void,
+ *   appendActionLogEntry: (entry: {
+ *     method: string,
+ *     tabId?: number | null,
+ *     url?: string,
+ *     ok: boolean,
+ *     summary: string,
+ *   }) => Promise<void>,
  *   refreshActionIndicators: () => Promise<void>,
  *   updateActionIndicatorForTab: (tabId: number) => Promise<void>,
  *   emitUiState: () => Promise<void>,
@@ -47,7 +54,12 @@ import {
  *   getCurrentTabState: () => Promise<CurrentTabState | null>,
  *   getTabState: (tabId: number | null) => Promise<CurrentTabState | null>,
  *   setCurrentWindowEnabled: (enabled: boolean) => Promise<void>,
- *   setWindowEnabled: (windowId: number, title: string, enabled: boolean) => Promise<void>,
+ *   setWindowEnabled: (
+ *     windowId: number,
+ *     title: string,
+ *     enabled: boolean,
+ *     context?: { tabId: number, url: string },
+ *   ) => Promise<void>,
  *   handleTabUpdated: (tabId: number, changeInfo: TabChangeInfo, tab: chrome.tabs.Tab) => Promise<void>,
  *   handleTabRemoved: (
  *     tabId: number,
@@ -184,19 +196,23 @@ export function createWindowSessionController(state, chrome, deps) {
       throw new BridgeError(ERROR_CODES.TAB_MISMATCH, 'No active tab available');
     }
 
-    await setWindowEnabled(currentTab.windowId, currentTab.title, enabled);
+    await setWindowEnabled(currentTab.windowId, currentTab.title, enabled, {
+      tabId: currentTab.tabId,
+      url: currentTab.url,
+    });
   }
 
   /**
    * @param {number} windowId
    * @param {string} title
    * @param {boolean} enabled
+   * @param {{ tabId: number, url: string }} [context]
    * @returns {Promise<void>}
    */
-  async function setWindowEnabled(windowId, title, enabled) {
+  async function setWindowEnabled(windowId, title, enabled, context) {
     const operation = windowTransitionTail.then(
-      () => applyWindowEnabledState(windowId, title, enabled),
-      () => applyWindowEnabledState(windowId, title, enabled)
+      () => applyWindowEnabledState(windowId, title, enabled, context),
+      () => applyWindowEnabledState(windowId, title, enabled, context)
     );
     windowTransitionTail = operation.catch(() => {});
     return operation;
@@ -206,9 +222,11 @@ export function createWindowSessionController(state, chrome, deps) {
    * @param {number} windowId
    * @param {string} title
    * @param {boolean} enabled
+   * @param {{ tabId: number, url: string } | undefined} context
    * @returns {Promise<void>}
    */
-  async function applyWindowEnabledState(windowId, title, enabled) {
+  async function applyWindowEnabledState(windowId, title, enabled, context) {
+    const confirmsAccessRequest = enabled && state.requestedAccessWindowId === windowId;
     clearRequestedAccessWindow();
     const access = {
       windowId,
@@ -232,6 +250,20 @@ export function createWindowSessionController(state, chrome, deps) {
       await chrome.storage.session.set({
         [ENABLED_WINDOW_STORAGE_KEY]: access,
       });
+      if (confirmsAccessRequest) {
+        try {
+          await deps.appendActionLogEntry({
+            method: 'access.confirmed',
+            tabId: context?.tabId ?? null,
+            url: context?.url ?? '',
+            ok: true,
+            summary: 'Window access request confirmed.',
+          });
+        } catch (error) {
+          // Activity persistence must never prevent access from being enabled.
+          reportAsyncError(error);
+        }
+      }
     }
 
     try {
