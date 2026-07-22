@@ -164,6 +164,16 @@ test('clearAllRules reports the cleared count and releases the tab', async () =>
   assert.equal(await interceptor.clearAllRules(2), 0);
 });
 
+test('Fetch disable failures still release the debugger hold', async () => {
+  const { interceptor, released } = createHarness({
+    sendCommandError: (method) =>
+      method === 'Fetch.disable' ? new Error('already disabled') : null,
+  });
+  await interceptor.addRule(1, { urlPattern: '*', action: 'continue' });
+  assert.equal(await interceptor.clearAllRules(1), 1);
+  assert.deepEqual(released, [1]);
+});
+
 test('addRule rolls back the rule when debugger acquisition fails', async () => {
   const { interceptor, filters, sent } = createHarness({
     acquireError: new Error('Cannot attach'),

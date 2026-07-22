@@ -75,7 +75,13 @@ const RETRY_SAFE_METHODS = new Set([
  */
 export function isRetrySafeBridgeMethod(method, params) {
   if (method === 'page.get_console' || method === 'page.get_network') {
-    return params.clear !== true;
+    return (
+      params.clear !== true &&
+      (method !== 'page.get_network' ||
+        params.source !== 'cdp' ||
+        params.capture === undefined ||
+        params.capture === 'read')
+    );
   }
   return RETRY_SAFE_METHODS.has(method);
 }
@@ -136,6 +142,7 @@ export function summarizeToolResponse(response, method, params = {}) {
   if (response.ok) {
     const evidence = getRequestAwareEvidence(response.result, method, params, summary.evidence);
     summary.evidence = evidence.value;
+    if (evidence.metadata) summaryRecord.evidenceMeta = evidence.metadata;
     if (evidence.truncated) {
       summaryRecord.outputTruncated = true;
       summaryRecord.outputLimit = evidence.limit;
@@ -392,7 +399,7 @@ export function applyMethodBudgetPreset(method, params, budgetPreset) {
 /**
  * @param {unknown} input
  * @param {{ maxEntries?: number, maxCharacters?: number, maxStringLength?: number }} [options]
- * @returns {{ value: unknown, truncated: boolean, limit: Record<string, number> }}
+ * @returns {{ value: unknown, truncated: boolean, limit: Record<string, number>, metadata?: Record<string, unknown> }}
  */
 export function boundToolValue(input, options = {}) {
   const maxEntries = options.maxEntries ?? 500;
@@ -451,7 +458,7 @@ export function boundToolValue(input, options = {}) {
  * @param {string | undefined} method
  * @param {Record<string, unknown>} params
  * @param {unknown} fallback
- * @returns {{ value: unknown, truncated: boolean, limit: Record<string, number> }}
+ * @returns {{ value: unknown, truncated: boolean, limit: Record<string, number>, metadata?: Record<string, unknown> }}
  */
 function getRequestAwareEvidence(rawResult, method, params, fallback) {
   const result =
@@ -506,14 +513,30 @@ function getRequestAwareEvidence(rawResult, method, params, fallback) {
       const node =
         value && typeof value === 'object' ? /** @type {Record<string, unknown>} */ (value) : {};
       return {
+        nodeId: node.nodeId,
         role: node.role,
         name: node.name,
         ...(node.interactive === true ? { interactive: true } : {}),
+        ...(node.semanticInteractive === true ? { semanticInteractive: true } : {}),
+        ...(node.focusableAndEnabled === true ? { focusableAndEnabled: true } : {}),
         ...(node.value !== undefined ? { value: node.value } : {}),
+        childIds: Array.isArray(node.childIds) ? node.childIds : [],
       };
     });
     return {
       value: nodes,
+      metadata: {
+        rootIds: Array.isArray(result.rootIds) ? result.rootIds : [],
+        count: result.count,
+        total: result.total,
+        rawTotal: result.rawTotal,
+        source: result.source,
+        compact: result.compact,
+        interactiveOnly: result.interactiveOnly,
+        truncated: result.truncated,
+        truncation: result.truncation,
+        continuationHint: result.continuationHint,
+      },
       truncated: result.truncated === true || result.nodes.length > maxEntries,
       limit: { maxEntries },
     };
@@ -535,7 +558,27 @@ function getRequestAwareEvidence(rawResult, method, params, fallback) {
         : result.entries.slice(0, maxEntries);
     const bounded = boundToolValue(selected, { maxEntries: 500, maxCharacters: 20_000 });
     return {
-      value: bounded.value,
+      value:
+        method === 'page.get_network'
+          ? {
+              entries: bounded.value,
+              count: result.count,
+              total: result.total,
+              filteredTotal: result.filteredTotal,
+              dropped: result.dropped,
+              abandoned: result.abandoned,
+              source: result.source,
+              capture: result.capture,
+              armed: result.armed,
+              armedDuringCapture: result.armedDuringCapture,
+              captureState: result.captureState,
+              startedAt: result.startedAt,
+              inflight: result.inflight,
+              ownershipHeld: result.ownershipHeld,
+              truncated: result.truncated,
+              truncation: result.truncation,
+            }
+          : bounded.value,
       truncated: result.entries.length > maxEntries || bounded.truncated,
       limit: { maxEntries, maxCharacters: 20_000 },
     };

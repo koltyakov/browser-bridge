@@ -1083,6 +1083,8 @@ export function normalizeAccessibilityTreeParams(params = {}) {
   return {
     maxDepth: clampInt(params.maxDepth, 1, 20, DEFAULT_A11Y_MAX_DEPTH),
     maxNodes: clampInt(params.maxNodes, 10, 5000, DEFAULT_A11Y_MAX_NODES),
+    compact: params.compact === true,
+    interactiveOnly: params.interactiveOnly === true,
   };
 }
 
@@ -1091,6 +1093,20 @@ export function normalizeAccessibilityTreeParams(params = {}) {
  * @returns {NormalizedNetworkParams}
  */
 export function normalizeNetworkParams(params = {}) {
+  const source = params.source ?? 'fetch-xhr';
+  if (source !== 'fetch-xhr' && source !== 'cdp') {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'source must be fetch-xhr or cdp.');
+  }
+  const capture = params.capture ?? 'read';
+  if (capture !== 'read' && capture !== 'start' && capture !== 'clear' && capture !== 'stop') {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'capture must be read, start, clear, or stop.'
+    );
+  }
+  if (source !== 'cdp' && params.capture !== undefined && params.capture !== 'read') {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'capture is only valid with source "cdp".');
+  }
   return {
     clear: Boolean(params.clear),
     limit: clampInt(params.limit, 1, 500, DEFAULT_NETWORK_LIMIT),
@@ -1098,6 +1114,8 @@ export function normalizeNetworkParams(params = {}) {
       typeof params.urlPattern === 'string' && params.urlPattern.trim()
         ? params.urlPattern.trim()
         : null,
+    source,
+    capture,
   };
 }
 
@@ -1266,7 +1284,7 @@ export function createRuntimeContext() {
       'If a tab-bound call returns ACCESS_DENIED because access is off, ask the user to click Enable in the Browser Bridge popup or side panel, then retry once',
       'dom.wait_for after HMR / navigation to detect page updates',
       'page.get_console to catch runtime errors after interactions',
-      'page.get_network to inspect XHR/fetch API calls',
+      'page.get_network for fetch/XHR reads or explicit all-resource CDP capture',
       'page.get_text for full-page content extraction',
       'input.hover before screenshot to inspect hover states',
       'performance.get_metrics for Core Web Vitals and load timing',

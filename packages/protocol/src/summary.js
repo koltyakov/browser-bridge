@@ -504,7 +504,9 @@ export function summarizeBridgeResponse(response, method) {
   if (
     Array.isArray(result.entries) &&
     (result.entries.length > 0
-      ? result.entries[0]?.type === 'fetch' || result.entries[0]?.type === 'xhr'
+      ? result.entries[0]?.type === 'fetch' ||
+        result.entries[0]?.type === 'xhr' ||
+        typeof result.entries[0]?.resourceType === 'string'
       : method === 'page.get_network')
   ) {
     const entries = /** @type {Array<Record<string, unknown>>} */ (result.entries);
@@ -519,6 +521,10 @@ export function summarizeBridgeResponse(response, method) {
         url: truncateUrl(/** @type {string} */ (e.url)),
         status: e.status,
         duration: e.duration,
+        ...(typeof e.resourceType === 'string' ? { resourceType: e.resourceType } : {}),
+        ...(typeof e.failureReason === 'string' && e.failureReason
+          ? { failureReason: e.failureReason }
+          : {}),
       })),
     };
   }

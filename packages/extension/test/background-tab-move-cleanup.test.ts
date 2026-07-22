@@ -77,6 +77,12 @@ test('tab bridge cleanup stops between destructive stages when a tab re-enters a
       calls.push('clear-fetch');
       return 1;
     },
+    async stopCdpNetworkCapture() {
+      calls.push('stop-cdp-network');
+    },
+    async discardCdpNetworkCapture() {
+      calls.push('discard-cdp-network');
+    },
     async clearDebuggerState() {
       calls.push('clear-debugger');
     },
@@ -117,4 +123,54 @@ test('tab move cleanup revalidates destination before beginning destructive clea
   await attached;
 
   assert.deepEqual(calls, ['cancel']);
+});
+
+test('tab cleanup hard-discards serialized CDP capture ownership after stop failure', async () => {
+  const calls: string[] = [];
+  const cleanup = createTabCleanupController(
+    {
+      tabs: {
+        async query() {
+          return [];
+        },
+      },
+    } as unknown as typeof chrome,
+    {
+      async ensureContentScript() {},
+      async sendTabMessage() {
+        return { patches: [] };
+      },
+      async readConsoleBuffer() {
+        return {};
+      },
+      async readNetworkBuffer() {
+        return {};
+      },
+      async clearFetchInterception() {
+        calls.push('clear-fetch');
+        return 0;
+      },
+      async stopCdpNetworkCapture() {
+        calls.push('stop-network');
+        throw new Error('disable failed');
+      },
+      async clearDebuggerState() {
+        calls.push('discard-debugger');
+      },
+      async discardCdpNetworkCapture() {
+        calls.push('discard-network-state');
+      },
+      cancelNavigationWaitsForWindow() {},
+      isRecoverableInstrumentationError: () => false,
+      isRestrictedAutomationUrl: () => false,
+    }
+  );
+
+  await cleanup.clearTabBridgeState(42);
+  assert.deepEqual(calls.slice(0, 4), [
+    'clear-fetch',
+    'stop-network',
+    'discard-debugger',
+    'discard-network-state',
+  ]);
 });

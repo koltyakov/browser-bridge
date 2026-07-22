@@ -1345,7 +1345,19 @@ test('background dispatch returns filtered network buffer entries', async () => 
     ],
     count: 1,
     total: 3,
+    filteredTotal: 2,
     dropped: 2,
+    abandoned: 0,
+    source: 'fetch-xhr',
+    capture: null,
+    armed: true,
+    armedDuringCapture: true,
+    captureState: 'instrumented',
+    startedAt: null,
+    inflight: 0,
+    ownershipHeld: false,
+    truncated: true,
+    truncation: { reason: 'limit', limit: 1, omitted: 1 },
   });
   assert.deepEqual(
     executeScriptCalls.map((call) => ({
@@ -1443,6 +1455,96 @@ test('background dispatch surfaces network buffer read failures', async () => {
   );
 });
 
+test('background dispatch wires explicit all-resource CDP network capture and dynamic debugger metadata', async () => {
+  const commands: string[] = [];
+  const detachCalls: chrome.debugger.Debuggee[] = [];
+  const { loaded, activeTab } = await loadEnabledDispatchBackground({
+    queryLabel: 'test-background-dispatch-cdp-network',
+    chromeOverrides: {
+      debugger: {
+        async sendCommand(_target: chrome.debugger.Debuggee, method: string) {
+          commands.push(method);
+          return {};
+        },
+        async detach(target: chrome.debugger.Debuggee) {
+          detachCalls.push(target);
+        },
+      },
+    },
+  });
+
+  const started = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-cdp-network-start',
+      method: 'page.get_network',
+      params: { source: 'cdp', capture: 'start' },
+    })
+  );
+  assert.equal(started.ok, true);
+  assert.equal(started.meta.debugger_backed, true);
+
+  const debuggerEvents = (loaded.chrome as unknown as { debugger: { onEvent: FakeChromeEvent } })
+    .debugger.onEvent;
+  debuggerEvents.dispatch({ tabId: activeTab.id }, 'Network.requestWillBeSent', {
+    requestId: 'resource-1',
+    type: 'Stylesheet',
+    timestamp: 1,
+    wallTime: 1_700_000_000,
+    request: {
+      url: 'https://example.com/app.css',
+      method: 'GET',
+      headers: { Authorization: 'secret' },
+    },
+  });
+  debuggerEvents.dispatch({ tabId: activeTab.id }, 'Network.responseReceived', {
+    requestId: 'resource-1',
+    type: 'Stylesheet',
+    response: { status: 200, mimeType: 'text/css', protocol: 'h2' },
+  });
+  debuggerEvents.dispatch({ tabId: activeTab.id }, 'Network.loadingFinished', {
+    requestId: 'resource-1',
+    timestamp: 1.02,
+  });
+
+  const read = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-cdp-network-read',
+      method: 'page.get_network',
+      params: { source: 'cdp', capture: 'read' },
+    })
+  );
+  assert.equal(read.ok, true);
+  if (read.ok) {
+    const result = read.result as { entries: Array<Record<string, unknown>>; armed: boolean };
+    assert.equal(result.armed, true);
+    assert.equal(result.entries[0]?.resourceType, 'Stylesheet');
+    assert.doesNotMatch(JSON.stringify(result), /Authorization|secret/);
+  }
+
+  const stopped = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-cdp-network-stop',
+      method: 'page.get_network',
+      params: { source: 'cdp', capture: 'stop' },
+    })
+  );
+  assert.equal(stopped.ok, true);
+  assert.equal(stopped.meta.debugger_backed, true);
+  assert.equal(commands.includes('Network.enable'), true);
+  assert.equal(commands.includes('Network.disable'), true);
+  assert.deepEqual(detachCalls, [{ tabId: activeTab.id }]);
+
+  const unarmed = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-cdp-network-unarmed',
+      method: 'page.get_network',
+      params: { source: 'cdp', capture: 'read' },
+    })
+  );
+  assert.equal(unarmed.ok, true);
+  assert.equal(unarmed.meta.debugger_backed, false);
+});
+
 test('window bridge teardown clears interception rules and their debugger hold', async () => {
   const detachCalls: chrome.debugger.Debuggee[] = [];
   const activeTab = createDispatchActiveTab();
@@ -1483,6 +1585,14 @@ test('window bridge teardown clears interception rules and their debugger hold',
     })
   );
   assert.equal(added.ok, true);
+  const captureStarted = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-window-cdp-network-start',
+      method: 'page.get_network',
+      params: { source: 'cdp', capture: 'start' },
+    })
+  );
+  assert.equal(captureStarted.ok, true);
   if (added.ok) {
     assert.equal((added.result as { action: string }).action, 'continue');
   }
@@ -1541,6 +1651,14 @@ test('moving a tab out of the enabled window clears dialog, Fetch, debugger, and
     })
   );
   assert.equal(added.ok, true);
+  const captureStarted = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-move-cdp-network-start',
+      method: 'page.get_network',
+      params: { source: 'cdp', capture: 'start' },
+    })
+  );
+  assert.equal(captureStarted.ok, true);
   const debuggerEvents = (loaded.chrome as unknown as { debugger: { onEvent: FakeChromeEvent } })
     .debugger.onEvent;
   debuggerEvents.dispatch({ tabId: activeTab.id }, 'Page.javascriptDialogOpening', {
@@ -1563,6 +1681,18 @@ test('moving a tab out of the enabled window clears dialog, Fetch, debugger, and
   );
   assert.equal(listed.ok, true);
   if (listed.ok) assert.deepEqual(listed.result, { rules: [] });
+
+  const captureAfterMove = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-move-cdp-network-read',
+      method: 'page.get_network',
+      params: { source: 'cdp', capture: 'read' },
+    })
+  );
+  assert.equal(captureAfterMove.ok, true);
+  if (captureAfterMove.ok) {
+    assert.equal((captureAfterMove.result as { armed: boolean }).armed, false);
+  }
 
   const pageState = await loaded.dispatch(
     createRequest({ id: 'dispatch-move-page-state', method: 'page.get_state' })
@@ -1765,39 +1895,37 @@ test('background dispatch returns a simplified accessibility tree', async () => 
     },
   ]);
   assert.equal(response.meta?.method, 'dom.get_accessibility_tree');
-  assert.deepEqual(response.result, {
-    nodes: [
-      {
-        nodeId: '1',
-        role: 'button',
-        name: 'Submit',
-        description: 'Primary action',
-        value: 'Confirm',
-        focused: true,
-        required: false,
-        checked: 'mixed',
-        disabled: false,
-        interactive: true,
-        childIds: ['2'],
-      },
-      {
-        nodeId: '2',
-        role: 'StaticText',
-        name: 'Ignored',
-        description: '',
-        value: '',
-        focused: false,
-        required: false,
-        checked: null,
-        disabled: false,
-        interactive: false,
-        childIds: [],
-      },
-    ],
-    count: 2,
-    total: 2,
-    truncated: false,
-  });
+  const result = response.result as {
+    nodes: Array<Record<string, unknown>>;
+    count: number;
+    total: number;
+    rawTotal: number;
+    source: string;
+    rootIds: string[];
+    truncated: boolean;
+    truncation: {
+      reason: string;
+      reasons: string[];
+      maxDepth: number;
+      partialTopology: boolean;
+      missingChildCount: number;
+    };
+    continuationHint: string;
+  };
+  assert.equal(result.count, 2);
+  assert.equal(result.total, 2);
+  assert.equal(result.rawTotal, 2);
+  assert.equal(result.source, 'cdp-accessibility');
+  assert.deepEqual(result.rootIds, ['1']);
+  assert.equal(result.truncated, true);
+  assert.equal(result.truncation.reason, 'maxDepth');
+  assert.deepEqual(result.truncation.reasons, ['maxDepth']);
+  assert.equal(result.truncation.maxDepth, 3);
+  assert.equal(result.truncation.partialTopology, true);
+  assert.match(result.continuationHint, /larger maxDepth/);
+  assert.equal(result.nodes[0]?.semanticInteractive, true);
+  assert.equal(result.nodes[0]?.focusableAndEnabled, false);
+  assert.deepEqual(result.nodes[0]?.childIds, ['2']);
 });
 
 test('background dispatch surfaces accessibility tree failures', async () => {

@@ -248,6 +248,16 @@ export function createBridgeMcpServer() {
           .positive()
           .optional()
           .describe(`Maximum tree depth (default: ${DEFAULT_MAX_DEPTH})`),
+        compact: z
+          .boolean()
+          .optional()
+          .describe('Remove ignored, empty, and decorative AX nodes while preserving descendants'),
+        interactiveOnly: z
+          .boolean()
+          .optional()
+          .describe(
+            'Return semantically interactive AX nodes; actionable state is reported separately'
+          ),
         textBudget: z
           .number()
           .int()
@@ -348,7 +358,7 @@ export function createBridgeMcpServer() {
     {
       title: 'Browser Page State',
       description:
-        'Read page-level data, wait for load/URL conditions, or explicitly inspect/handle JavaScript dialogs. For element-level reads, use browser_dom. evaluate, performance, and handle_dialog are debugger-backed.',
+        'Read page-level data, wait for load/URL conditions, or explicitly inspect/handle JavaScript dialogs. For element-level reads, use browser_dom. evaluate, performance, handle_dialog, and source=cdp network capture are debugger-backed.',
       inputSchema: {
         action: z
           .enum([
@@ -431,6 +441,14 @@ export function createBridgeMcpServer() {
           .optional()
           .describe(`Max chars for page text (default: ${DEFAULT_PAGE_TEXT_BUDGET})`),
         urlPattern: z.string().optional().describe('Filter network entries by URL pattern'),
+        source: z
+          .enum(['fetch-xhr', 'cdp'])
+          .optional()
+          .describe('Network source (default: fetch-xhr; cdp captures all resource types)'),
+        capture: z
+          .enum(['read', 'start', 'clear', 'stop'])
+          .optional()
+          .describe('Explicit CDP capture lifecycle action (default: read)'),
         waitForLoad: z
           .boolean()
           .optional()

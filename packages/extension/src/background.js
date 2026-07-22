@@ -81,6 +81,7 @@ import {
 } from './background-state.js';
 import { ensureNetworkInterceptor, readNetworkBuffer } from './background-network.js';
 import { createFetchInterceptor } from './background-fetch-intercept.js';
+import { createCdpNetworkCapture } from './background-cdp-network.js';
 import {
   createContentScriptBridge,
   isRestrictedScriptingError,
@@ -134,9 +135,17 @@ const tabDebugger = new TabDebuggerCoordinator({
   protocolVersion: DEBUGGER_PROTOCOL_VERSION,
 });
 
+const cdpNetworkCapture = createCdpNetworkCapture({
+  acquireDebugger: (tabId) => tabDebugger.acquire(tabId),
+  releaseDebugger: (tabId) => tabDebugger.release(tabId),
+  sendCommand: (target, method, params) =>
+    /** @type {Promise<unknown>} */ (chrome.debugger.sendCommand(target, method, params)),
+});
+
 chrome.debugger.onDetach.addListener((source) => {
   if (typeof source.tabId === 'number') {
     tabDebugger.markDetached(source.tabId);
+    void cdpNetworkCapture.handleDetach(source.tabId);
     // Drop interception rules for the dead session so list reflects reality
     // (covers infobar cancel, tab close, and external debugger takeover).
     fetchInterceptor.handleDetach(source.tabId);
@@ -149,6 +158,7 @@ const fetchEventFilters = new Map();
 chrome.debugger.onEvent.addListener((source, method, params) => {
   if (typeof source.tabId === 'number') {
     tabDebugger.handleEvent(source.tabId, method, params);
+    cdpNetworkCapture.handleEvent(source.tabId, method, params);
     fetchEventFilters.get(source.tabId)?.(method, params);
   }
 });
@@ -192,6 +202,8 @@ const { clearTabBridgeState, clearWindowBridgeState, rollbackAllPatchesForTab } 
     readConsoleBuffer,
     readNetworkBuffer,
     clearFetchInterception: (tabId) => fetchInterceptor.clearAllRules(tabId),
+    stopCdpNetworkCapture: (tabId) => cdpNetworkCapture.stop(tabId),
+    discardCdpNetworkCapture: (tabId) => cdpNetworkCapture.handleDetach(tabId),
     clearDebuggerState: (tabId) => tabDebugger.discard(tabId),
     cancelNavigationWaitsForWindow: (windowId) => navigationWaits.cancelWindow(windowId),
     isRecoverableInstrumentationError,
@@ -222,7 +234,12 @@ const tabMoveCleanup = createTabMoveCleanupController({
   clearTabBridgeState,
   clearRemovedTabState: async (tabId) => {
     await fetchInterceptor.clearAllRules(tabId);
-    await tabDebugger.discard(tabId);
+    await cdpNetworkCapture.stop(tabId).catch(() => {});
+    try {
+      await tabDebugger.discard(tabId);
+    } finally {
+      await cdpNetworkCapture.handleDetach(tabId);
+    }
   },
 });
 
@@ -267,6 +284,10 @@ const {
   readConsoleBuffer: (tabId, clear) => readConsoleBuffer(tabId, clear, chrome),
   ensureNetworkInterceptor: (tabId) => ensureNetworkInterceptor(tabId, chrome),
   readNetworkBuffer: (tabId, clear) => readNetworkBuffer(tabId, clear, chrome),
+  startCdpNetworkCapture: (tabId) => cdpNetworkCapture.start(tabId),
+  clearCdpNetworkCapture: (tabId) => cdpNetworkCapture.clear(tabId),
+  readCdpNetworkCapture: (tabId, clear) => cdpNetworkCapture.read(tabId, clear),
+  stopCdpNetworkCapture: (tabId) => cdpNetworkCapture.stop(tabId),
   runWithDebugger: (tabId, operation, options) => tabDebugger.run(tabId, operation, options),
   sendCommand: (target, method, params) =>
     /** @type {Promise<unknown>} */ (

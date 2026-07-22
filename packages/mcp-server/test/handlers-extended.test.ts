@@ -425,6 +425,61 @@ test('handleDomTool caps default accessibility requests to useful MCP evidence',
   );
 });
 
+test('accessibility MCP evidence remains an array and exposes bounded topology metadata', async () => {
+  await withMockedBridge(
+    async () =>
+      ok({
+        nodes: [
+          {
+            nodeId: 'root',
+            role: 'RootWebArea',
+            name: 'Page',
+            interactive: false,
+            childIds: ['button'],
+          },
+          {
+            nodeId: 'button',
+            role: 'button',
+            name: 'Save',
+            interactive: true,
+            semanticInteractive: true,
+            focusableAndEnabled: true,
+            childIds: [],
+          },
+        ],
+        rootIds: ['root'],
+        count: 2,
+        total: 2,
+        rawTotal: 2,
+        source: 'cdp-accessibility',
+        compact: true,
+        interactiveOnly: false,
+        truncated: true,
+        truncation: { reason: 'maxDepth', partialTopology: true },
+        continuationHint: 'Retry with a larger maxDepth.',
+      }),
+    async () => {
+      const result = await handleDomTool({ action: 'accessibility_tree', compact: true });
+      const evidence = result.structuredContent.evidence as Array<Record<string, unknown>>;
+      assert.equal(Array.isArray(evidence), true);
+      assert.deepEqual(evidence[0]?.childIds, ['button']);
+      assert.equal(evidence[1]?.nodeId, 'button');
+      assert.deepEqual(result.structuredContent.evidenceMeta, {
+        rootIds: ['root'],
+        count: 2,
+        total: 2,
+        rawTotal: 2,
+        source: 'cdp-accessibility',
+        compact: true,
+        interactiveOnly: false,
+        truncated: true,
+        truncation: { reason: 'maxDepth', partialTopology: true },
+        continuationHint: 'Retry with a larger maxDepth.',
+      });
+    }
+  );
+});
+
 // --- handlePageTool: additional actions ---
 
 test('handlePageTool console calls page.get_console with budget preset', async () => {
@@ -467,6 +522,24 @@ test('handlePageTool network calls page.get_network with budget preset', async (
       assert.ok(netCall.params);
       assert.equal(netCall.params.limit, 100);
       assert.equal(result.isError, undefined);
+    }
+  );
+});
+
+test('MCP handlers forward compact AX and explicit CDP network lifecycle options', async () => {
+  await withMockedBridge(
+    async () => ok({ entries: [], nodes: [], count: 0, total: 0 }),
+    async (calls) => {
+      await handleDomTool({
+        action: 'accessibility_tree',
+        compact: true,
+        interactiveOnly: true,
+      });
+      await handlePageTool({ action: 'network', source: 'cdp', capture: 'start' });
+      assert.equal(calls[0]?.params?.compact, true);
+      assert.equal(calls[0]?.params?.interactiveOnly, true);
+      assert.equal(calls[1]?.params?.source, 'cdp');
+      assert.equal(calls[1]?.params?.capture, 'start');
     }
   );
 });
@@ -1551,6 +1624,21 @@ test('handleBatchTool rejects destructive console and network reads', async () =
       assert.equal(calls.length, 0);
       assert.equal(result.isError, true);
       assert.match(result.content[0].text, /not safe/);
+    }
+  );
+});
+
+test('handleBatchTool rejects CDP network capture lifecycle mutations', async () => {
+  await withMockedBridge(
+    async () => ok({}),
+    async (calls) => {
+      for (const capture of ['start', 'clear', 'stop']) {
+        const result = await handleBatchTool({
+          calls: [{ method: 'page.get_network', params: { source: 'cdp', capture } }],
+        });
+        assert.equal(result.isError, true);
+      }
+      assert.equal(calls.length, 0);
     }
   );
 });

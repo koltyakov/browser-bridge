@@ -111,7 +111,8 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
   'page.wait_for_load_state': 'Wait for page load and optional URL conditions.',
   'page.get_storage': 'Read local or session storage values.',
   'page.get_text': 'Read bounded visible text from the page.',
-  'page.get_network': 'Read buffered fetch and XHR network activity.',
+  'page.get_network':
+    'Read buffered fetch/XHR activity or explicitly manage bounded all-resource CDP capture.',
   'network.intercept.add': 'Add a request interception rule (CDP Fetch domain).',
   'network.intercept.remove': 'Remove a request interception rule by ID.',
   'network.intercept.list': 'List active interception rules.',
@@ -307,7 +308,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'page.get_network',
     'page',
     true,
-    ['clear', 'limit', 'urlPattern'],
+    ['clear', 'limit', 'urlPattern', 'source', 'capture'],
     'low',
     METHOD_POLICIES.networkRead
   ),
@@ -454,7 +455,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'dom.get_accessibility_tree',
     'inspect',
     true,
-    ['maxNodes', 'maxDepth'],
+    ['maxNodes', 'maxDepth', 'compact', 'interactiveOnly'],
     'moderate',
     METHOD_POLICIES.domReadDebugger
   ),

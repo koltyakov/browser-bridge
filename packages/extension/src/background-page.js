@@ -15,9 +15,9 @@ import {
 import {
   createCdpKeyPressEventPair,
   matchesConsoleLevel,
-  simplifyAXNode,
   summarizeTabResult,
 } from './background-helpers.js';
+import { buildAccessibilityTree } from './background-accessibility.js';
 import { resolveWindowScopedTab, selectRequestTabCandidate } from './background-routing.js';
 import {
   ACCESS_DENIED_REASON_WINDOW_GONE,
@@ -37,6 +37,10 @@ import {
  *   readConsoleBuffer: (tabId: number, clear: boolean) => Promise<{ entries: Array<{ level: string } & Record<string, unknown>>, dropped: number }>,
  *   ensureNetworkInterceptor: (tabId: number) => Promise<void>,
  *   readNetworkBuffer: (tabId: number, clear: boolean) => Promise<{ entries: Array<{ url: string } & Record<string, unknown>>, dropped: number }>,
+ *   startCdpNetworkCapture: (tabId: number) => Promise<Record<string, unknown>>,
+ *   clearCdpNetworkCapture: (tabId: number) => Promise<Record<string, unknown>>,
+ *   readCdpNetworkCapture: (tabId: number, clear: boolean) => Promise<Record<string, unknown>>,
+ *   stopCdpNetworkCapture: (tabId: number) => Promise<Record<string, unknown>>,
  *   runWithDebugger: (tabId: number, operation: (debugTarget: chrome.debugger.Debuggee) => Promise<BridgeResponse>, options?: { retryDetached?: boolean }) => Promise<BridgeResponse>,
  *   sendCommand: (target: chrome.debugger.Debuggee, method: string, params: Record<string, unknown>) => Promise<unknown>,
  *   ensureContentScript: (tabId: number) => Promise<void>,
@@ -387,16 +391,39 @@ export function createPageRequestController(state, chromeObj, dependencies) {
         });
         const cdpResult = /** @type {{ nodes?: Array<Record<string, unknown>> }} */ (result);
         const rawNodes = cdpResult.nodes || [];
-        const pruned = rawNodes.slice(0, params.maxNodes).map(simplifyAXNode);
+        const tree = buildAccessibilityTree(rawNodes, params);
+        const continuationHint = tree.truncated
+          ? `The AX result reached maxNodes ${params.maxNodes} and was depth-limited to ${params.maxDepth}; retry with larger maxNodes and maxDepth values.`
+          : `The AX source was depth-limited to ${params.maxDepth}; retry with a larger maxDepth to inspect potentially omitted descendants.`;
         return createSuccess(
           request.id,
           {
-            nodes: pruned,
-            count: pruned.length,
-            total: rawNodes.length,
-            truncated: rawNodes.length > params.maxNodes,
+            nodes: tree.nodes,
+            rootIds: tree.rootIds,
+            count: tree.nodes.length,
+            total: tree.filteredCount,
+            rawTotal: tree.rawCount,
+            source: 'cdp-accessibility',
+            compact: params.compact,
+            interactiveOnly: params.interactiveOnly,
+            truncated: true,
+            truncation: {
+              reason: tree.truncated ? 'maxNodes' : 'maxDepth',
+              reasons: [...(tree.truncated ? ['maxNodes'] : []), 'maxDepth'],
+              maxNodes: params.maxNodes,
+              maxDepth: params.maxDepth,
+              omitted: tree.omitted,
+              missingChildCount: tree.missingChildCount,
+              partialTopology: true,
+            },
+            continuationHint,
           },
-          { method: request.method }
+          {
+            method: request.method,
+            debugger_backed: true,
+            result_truncated: true,
+            continuation_hint: continuationHint,
+          }
         );
       } finally {
         await dependencies.sendCommand(debugTarget, 'Accessibility.disable', {}).catch(() => {});
@@ -415,8 +442,25 @@ export function createPageRequestController(state, chromeObj, dependencies) {
     const target = await resolveRequestTarget(request);
     const params = normalizeNetworkParams(request.params);
 
-    await dependencies.ensureNetworkInterceptor(target.tabId);
-    const { entries, dropped } = await dependencies.readNetworkBuffer(target.tabId, params.clear);
+    if (params.source === 'fetch-xhr') {
+      await dependencies.ensureNetworkInterceptor(target.tabId);
+    }
+    const captureResult =
+      params.source === 'fetch-xhr'
+        ? await dependencies.readNetworkBuffer(target.tabId, params.clear)
+        : params.capture === 'start'
+          ? await dependencies.startCdpNetworkCapture(target.tabId)
+          : params.capture === 'clear'
+            ? await dependencies.clearCdpNetworkCapture(target.tabId)
+            : params.capture === 'stop'
+              ? await dependencies.stopCdpNetworkCapture(target.tabId)
+              : await dependencies.readCdpNetworkCapture(target.tabId, params.clear);
+    const capture =
+      /** @type {{ entries?: Array<{ url: string } & Record<string, unknown>>, dropped?: number, abandoned?: number, armed?: boolean, armedDuringCapture?: boolean, ownershipHeld?: boolean, captureState?: string, startedAt?: number | null, inflight?: number }} */ (
+        captureResult
+      );
+    const entries = capture.entries ?? [];
+    const dropped = capture.dropped ?? 0;
     const urlPattern = typeof params.urlPattern === 'string' ? params.urlPattern : null;
     const filtered = urlPattern
       ? entries.filter((entry) => entry.url.includes(urlPattern))
@@ -425,8 +469,35 @@ export function createPageRequestController(state, chromeObj, dependencies) {
 
     return createSuccess(
       request.id,
-      { entries: limited, count: limited.length, total: entries.length, dropped },
-      { method: request.method }
+      {
+        entries: limited,
+        count: limited.length,
+        total: entries.length,
+        filteredTotal: filtered.length,
+        dropped,
+        abandoned: capture.abandoned ?? 0,
+        source: params.source,
+        capture: params.source === 'cdp' ? params.capture : null,
+        armed: params.source === 'cdp' ? capture.armed === true : true,
+        armedDuringCapture: params.source === 'cdp' ? capture.armedDuringCapture === true : true,
+        captureState:
+          params.source === 'cdp' ? (capture.captureState ?? 'stopped') : 'instrumented',
+        startedAt: params.source === 'cdp' ? (capture.startedAt ?? null) : null,
+        inflight: params.source === 'cdp' ? (capture.inflight ?? 0) : 0,
+        ownershipHeld: params.source === 'cdp' ? capture.ownershipHeld === true : false,
+        truncated: filtered.length > limited.length,
+        truncation: {
+          reason: filtered.length > limited.length ? 'limit' : null,
+          limit: params.limit,
+          omitted: Math.max(0, filtered.length - limited.length),
+        },
+      },
+      {
+        method: request.method,
+        debugger_backed:
+          params.source === 'cdp' &&
+          (capture.armed === true || capture.armedDuringCapture === true),
+      }
     );
   }
 

@@ -192,8 +192,13 @@ export function createFetchInterceptor(deps) {
     const s = tabStates.get(tabId);
     if (s?.ttlTimer) clearTimeout(s.ttlTimer);
     tabStates.delete(tabId);
+    deps.removeEventFilter(tabId);
     try {
-      deps.removeEventFilter(tabId);
+      await deps.sendCommand({ tabId }, 'Fetch.disable', {});
+    } catch {
+      // Fetch may already be disabled or the debugger may be detached.
+    }
+    try {
       await deps.releaseDebugger(tabId);
     } catch {
       // debugger may already be detached

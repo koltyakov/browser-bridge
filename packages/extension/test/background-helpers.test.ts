@@ -202,6 +202,10 @@ test('background helpers normalize crop rects and accessibility nodes', () => {
       checked: 'mixed',
       disabled: false,
       interactive: true,
+      semanticInteractive: true,
+      focusable: true,
+      focusableAndEnabled: true,
+      ignored: false,
       childIds: ['1', '2'],
     }
   );

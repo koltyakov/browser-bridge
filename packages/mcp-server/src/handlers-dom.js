@@ -85,12 +85,17 @@ export const DOM_ACTIONS = {
   accessibility_tree: {
     ref: false,
     method: 'dom.get_accessibility_tree',
-    params: (a) => ({ maxNodes: a.maxNodes, maxDepth: a.maxDepth }),
+    params: (a) => ({
+      maxNodes: a.maxNodes,
+      maxDepth: a.maxDepth,
+      compact: a.compact,
+      interactiveOnly: a.interactiveOnly,
+    }),
   },
 };
 
 /**
- * @param {{ action: string, selector?: string, elementRef?: string, withinRef?: string, maxNodes?: number, maxDepth?: number, textBudget?: number, includeBbox?: boolean, attributeAllowlist?: string[], attributes?: string[], text?: string, exact?: boolean, maxResults?: number, role?: string, name?: string, state?: string, timeoutMs?: number, outer?: boolean, maxLength?: number, tabId?: number, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @param {{ action: string, selector?: string, elementRef?: string, withinRef?: string, maxNodes?: number, maxDepth?: number, compact?: boolean, interactiveOnly?: boolean, textBudget?: number, includeBbox?: boolean, attributeAllowlist?: string[], attributes?: string[], text?: string, exact?: boolean, maxResults?: number, role?: string, name?: string, state?: string, timeoutMs?: number, outer?: boolean, maxLength?: number, tabId?: number, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleDomTool(args) {

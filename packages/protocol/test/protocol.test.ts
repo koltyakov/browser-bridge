@@ -731,12 +731,16 @@ test('normalizeAccessibilityTreeParams clamps depth and nodes', () => {
   });
   assert.equal(params.maxDepth, 20);
   assert.equal(params.maxNodes, 5000);
+  assert.equal(params.compact, false);
+  assert.equal(params.interactiveOnly, false);
 });
 
 test('normalizeAccessibilityTreeParams defaults sensibly', () => {
   const params = normalizeAccessibilityTreeParams({});
   assert.equal(params.maxDepth, 6);
   assert.equal(params.maxNodes, 500);
+  assert.equal(params.compact, false);
+  assert.equal(params.interactiveOnly, false);
 });
 
 /** Ensure network params validate and clamp. */
@@ -749,6 +753,8 @@ test('normalizeNetworkParams clamps limit and handles urlPattern', () => {
   assert.equal(params.limit, 500);
   assert.equal(params.urlPattern, '/api/');
   assert.equal(params.clear, true);
+  assert.equal(params.source, 'fetch-xhr');
+  assert.equal(params.capture, 'read');
 });
 
 test('normalizeNetworkParams defaults sensibly', () => {
@@ -756,6 +762,29 @@ test('normalizeNetworkParams defaults sensibly', () => {
   assert.equal(params.limit, 50);
   assert.equal(params.urlPattern, null);
   assert.equal(params.clear, false);
+  assert.equal(params.source, 'fetch-xhr');
+  assert.equal(params.capture, 'read');
+});
+
+test('accessibility and CDP network options normalize strictly', () => {
+  assert.deepEqual(normalizeAccessibilityTreeParams({ compact: true, interactiveOnly: true }), {
+    maxDepth: 6,
+    maxNodes: 500,
+    compact: true,
+    interactiveOnly: true,
+  });
+  assert.deepEqual(normalizeNetworkParams({ source: 'cdp', capture: 'start' }), {
+    clear: false,
+    limit: 50,
+    urlPattern: null,
+    source: 'cdp',
+    capture: 'start',
+  });
+  assert.throws(
+    () => normalizeNetworkParams({ source: 'fetch-xhr', capture: 'stop' }),
+    /only valid with source/
+  );
+  assert.throws(() => normalizeNetworkParams({ source: 'invalid' } as never), /source must be/);
 });
 
 test('normalizeNetworkInterceptAddParams safely defaults omitted action to continue', () => {

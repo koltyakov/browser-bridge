@@ -78,6 +78,14 @@ export function isBatchSafeBridgeCall(method, params) {
   if ((method === 'page.get_console' || method === 'page.get_network') && params.clear === true) {
     return false;
   }
+  if (
+    method === 'page.get_network' &&
+    params.source === 'cdp' &&
+    params.capture !== undefined &&
+    params.capture !== 'read'
+  ) {
+    return false;
+  }
   return true;
 }
 
@@ -128,13 +136,15 @@ export const PAGE_ACTIONS = {
       clear: a.clear,
       limit: a.limit,
       urlPattern: a.urlPattern,
+      source: a.source,
+      capture: a.capture,
     }),
   },
   performance: { method: 'performance.get_metrics', params: () => ({}) },
 };
 
 /**
- * @param {{ action: string, expression?: string, awaitPromise?: boolean, timeoutMs?: number, returnByValue?: boolean, level?: string, clear?: boolean, limit?: number, type?: string, keys?: string[], textBudget?: number, urlPattern?: string, dialogAction?: string, promptText?: string, expectedDialogId?: string, waitForLoad?: boolean, url?: string, urlMatch?: string, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @param {{ action: string, expression?: string, awaitPromise?: boolean, timeoutMs?: number, returnByValue?: boolean, level?: string, clear?: boolean, limit?: number, type?: string, keys?: string[], textBudget?: number, urlPattern?: string, source?: 'fetch-xhr' | 'cdp', capture?: 'read' | 'start' | 'clear' | 'stop', dialogAction?: string, promptText?: string, expectedDialogId?: string, waitForLoad?: boolean, url?: string, urlMatch?: string, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handlePageTool(args) {

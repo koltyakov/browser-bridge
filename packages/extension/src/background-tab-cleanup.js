@@ -9,6 +9,8 @@ import { CONTENT_SCRIPT_TIMEOUT_MS, isNumber } from './background-state.js';
  *   readConsoleBuffer: (tabId: number, clear: boolean, chrome: typeof globalThis.chrome) => Promise<unknown>,
  *   readNetworkBuffer: (tabId: number, clear: boolean, chrome: typeof globalThis.chrome) => Promise<unknown>,
  *   clearFetchInterception: (tabId: number) => Promise<number>,
+ *   stopCdpNetworkCapture: (tabId: number) => Promise<unknown>,
+ *   discardCdpNetworkCapture: (tabId: number) => Promise<unknown>,
  *   clearDebuggerState: (tabId: number) => Promise<void>,
  *   cancelNavigationWaitsForWindow: (windowId: number) => void,
  *   isRecoverableInstrumentationError: (error: unknown) => boolean,
@@ -89,7 +91,17 @@ export function createTabCleanupController(chrome, deps) {
     if (!(await shouldContinue())) return;
     await deps.clearFetchInterception(tabId);
     if (!(await shouldContinue())) return;
-    await deps.clearDebuggerState(tabId);
+    try {
+      await deps.stopCdpNetworkCapture(tabId);
+    } catch {
+      // A hard coordinator discard below recovers failed Network disable/release.
+    }
+    if (!(await shouldContinue())) return;
+    try {
+      await deps.clearDebuggerState(tabId);
+    } finally {
+      await deps.discardCdpNetworkCapture(tabId);
+    }
     if (!(await shouldContinue())) return;
     try {
       await rollbackAllPatchesForTab(tabId, shouldContinue);
@@ -131,12 +143,20 @@ export function createTabCleanupController(chrome, deps) {
         const tabId = tab.id;
         return tab.url && !deps.isRestrictedAutomationUrl(tab.url)
           ? clearTabBridgeState(tabId)
-          : deps
-              .clearFetchInterception(tabId)
-              .then(() => deps.clearDebuggerState(tabId))
-              .then(() => {});
+          : clearRestrictedTabDebuggerState(tabId);
       })
     );
+  }
+
+  /** @param {number} tabId */
+  async function clearRestrictedTabDebuggerState(tabId) {
+    await deps.clearFetchInterception(tabId);
+    await deps.stopCdpNetworkCapture(tabId).catch(() => {});
+    try {
+      await deps.clearDebuggerState(tabId);
+    } finally {
+      await deps.discardCdpNetworkCapture(tabId);
+    }
   }
 
   return {

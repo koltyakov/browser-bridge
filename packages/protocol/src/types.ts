@@ -618,23 +618,115 @@ export interface NormalizedTabCloseParams extends BridgeParams {
 export interface AccessibilityTreeParams {
   maxDepth?: number;
   maxNodes?: number;
+  compact?: boolean;
+  interactiveOnly?: boolean;
 }
 
 export interface NormalizedAccessibilityTreeParams extends BridgeParams {
   maxDepth: number;
   maxNodes: number;
+  compact: boolean;
+  interactiveOnly: boolean;
 }
+
+export interface AccessibilityTreeNode {
+  nodeId: string;
+  role: string;
+  name: string;
+  description: string;
+  value: string;
+  focused: boolean;
+  required: boolean;
+  checked: 'true' | 'false' | 'mixed' | null;
+  disabled: boolean;
+  interactive: boolean;
+  semanticInteractive: boolean;
+  focusable: boolean;
+  focusableAndEnabled: boolean;
+  ignored: boolean;
+  childIds: string[];
+}
+
+export interface AccessibilityTreeResult {
+  nodes: AccessibilityTreeNode[];
+  rootIds: string[];
+  count: number;
+  total: number;
+  rawTotal: number;
+  source: 'cdp-accessibility';
+  compact: boolean;
+  interactiveOnly: boolean;
+  truncated: boolean;
+  truncation: {
+    reason: 'maxNodes' | 'maxDepth';
+    reasons: Array<'maxNodes' | 'maxDepth'>;
+    maxNodes: number;
+    maxDepth: number;
+    omitted: number;
+    missingChildCount: number;
+    partialTopology: true;
+  };
+  continuationHint: string;
+}
+
+export type NetworkSource = 'fetch-xhr' | 'cdp';
+export type NetworkCaptureAction = 'read' | 'start' | 'clear' | 'stop';
 
 export interface NetworkParams {
   clear?: boolean;
   limit?: number;
   urlPattern?: string;
+  source?: NetworkSource;
+  capture?: NetworkCaptureAction;
 }
 
 export interface NormalizedNetworkParams extends BridgeParams {
   clear: boolean;
   limit: number;
   urlPattern: string | null;
+  source: NetworkSource;
+  capture: NetworkCaptureAction;
+}
+
+export interface CdpNetworkEntry {
+  requestId: string;
+  url: string;
+  method: string;
+  resourceType: string;
+  status: number;
+  mimeType: string;
+  protocol: string;
+  fromCache: boolean;
+  fromDiskCache: boolean;
+  fromServiceWorker: boolean;
+  fromPrefetchCache: boolean;
+  redirect: {
+    count: number;
+    hops: Array<{ url: string; status: number }>;
+    truncated: boolean;
+  };
+  failureReason: string;
+  duration: number;
+  timestamp: number;
+}
+
+export interface NetworkResult {
+  entries: Array<CdpNetworkEntry | Record<string, unknown>>;
+  count: number;
+  total: number;
+  filteredTotal: number;
+  dropped: number;
+  abandoned: number;
+  source: NetworkSource;
+  capture: NetworkCaptureAction | null;
+  armed: boolean;
+  armedDuringCapture: boolean;
+  captureState: 'armed' | 'stop_failed' | 'stopped' | 'instrumented';
+  ownershipHeld: boolean;
+  startedAt: number | null;
+  inflight: number;
+  truncated: boolean;
+  truncation: { reason: 'limit' | null; limit: number; omitted: number };
 }
 
 export type NetworkInterceptAction = 'fulfill' | 'continue' | 'block';

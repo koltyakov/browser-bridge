@@ -10,29 +10,11 @@ import {
   isDebuggerBackedMethod,
   serializeJsonPayload,
 } from '../../protocol/src/index.js';
+export { simplifyAXNode } from './background-accessibility.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
 /** @typedef {import('../../protocol/src/types.js').Capability} Capability */
 /** @typedef {import('../../protocol/src/types.js').ErrorCode} ErrorCode */
-
-const INTERACTIVE_AX_ROLES = new Set([
-  'button',
-  'link',
-  'textbox',
-  'checkbox',
-  'radio',
-  'combobox',
-  'listbox',
-  'menuitem',
-  'tab',
-  'switch',
-  'slider',
-  'spinbutton',
-  'searchbox',
-  'menuitemcheckbox',
-  'menuitemradio',
-  'option',
-]);
 
 const CDP_MODIFIER_BITS = Object.freeze({
   Alt: 1,
@@ -162,59 +144,6 @@ export function createCdpKeyPressEventPair(params) {
     ...(keyDefinition.text ? { text: keyDefinition.text, unmodifiedText: keyDefinition.text } : {}),
   };
   return [keyDown, { type: 'keyUp', ...base }];
-}
-
-/**
- * @param {unknown} prop
- * @returns {string}
- */
-export function axValue(prop) {
-  if (!prop || typeof prop !== 'object') return '';
-  const val = /** @type {{ value?: unknown }} */ (prop).value;
-  return typeof val === 'string' ? val : '';
-}
-
-/**
- * @param {unknown} prop
- * @returns {boolean}
- */
-export function axBool(prop) {
-  if (!prop || typeof prop !== 'object') return false;
-  return /** @type {{ value?: unknown }} */ (prop).value === true;
-}
-
-/**
- * @param {unknown} prop
- * @returns {string | null}
- */
-export function axTristateValue(prop) {
-  if (!prop || typeof prop !== 'object') return null;
-  const val = /** @type {{ value?: unknown }} */ (prop).value;
-  if (val === 'true' || val === true) return 'true';
-  if (val === 'false' || val === false) return 'false';
-  if (val === 'mixed') return 'mixed';
-  return null;
-}
-
-/**
- * @param {Record<string, unknown>} node
- * @returns {{ nodeId: string, role: string, name: string, description: string, value: string, focused: boolean, required: boolean, checked: string | null, disabled: boolean, interactive: boolean, childIds: string[] }}
- */
-export function simplifyAXNode(node) {
-  const role = axValue(node.role);
-  return {
-    nodeId: String(node.nodeId ?? ''),
-    role,
-    name: axValue(node.name),
-    description: axValue(node.description),
-    value: axValue(node.value),
-    focused: axBool(node.focused),
-    required: axBool(node.required),
-    checked: axTristateValue(node.checked),
-    disabled: axBool(node.disabled),
-    interactive: INTERACTIVE_AX_ROLES.has(role) || axBool(node.focusable),
-    childIds: Array.isArray(node.childIds) ? node.childIds.map(String) : [],
-  };
 }
 
 /**

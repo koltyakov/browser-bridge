@@ -97,6 +97,18 @@ function createController(
     async readNetworkBuffer() {
       return { entries: [], dropped: 0 };
     },
+    async startCdpNetworkCapture() {
+      return {};
+    },
+    async clearCdpNetworkCapture() {
+      return {};
+    },
+    async readCdpNetworkCapture() {
+      return {};
+    },
+    async stopCdpNetworkCapture() {
+      return {};
+    },
     async runWithDebugger(tabId, operation, runOptions) {
       debuggerOptions.push(runOptions);
       return operation({ tabId });

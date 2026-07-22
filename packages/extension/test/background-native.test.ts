@@ -1097,7 +1097,19 @@ test('background native page.get_network falls back to an empty buffer when the 
     entries: [],
     count: 0,
     total: 0,
+    filteredTotal: 0,
     dropped: 0,
+    abandoned: 0,
+    source: 'fetch-xhr',
+    capture: null,
+    armed: true,
+    armedDuringCapture: true,
+    captureState: 'instrumented',
+    startedAt: null,
+    inflight: 0,
+    ownershipHeld: false,
+    truncated: false,
+    truncation: { reason: null, limit: 50, omitted: 0 },
   });
   assert.deepEqual(executeScriptCalls, [
     {
