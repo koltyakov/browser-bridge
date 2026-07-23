@@ -1117,6 +1117,8 @@ export function normalizeTabCloseParams(params = {}) {
  */
 export function normalizeAccessibilityTreeParams(params = {}) {
   return {
+    selector:
+      typeof params.selector === 'string' && params.selector.trim() ? params.selector.trim() : null,
     maxDepth: clampInt(params.maxDepth, 1, 20, DEFAULT_A11Y_MAX_DEPTH),
     maxNodes: clampInt(params.maxNodes, 10, 5000, DEFAULT_A11Y_MAX_NODES),
     compact: params.compact === true,

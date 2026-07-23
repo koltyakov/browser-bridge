@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildAccessibilityTree, simplifyAXNode } from '../src/background-accessibility.js';
+import {
+  buildAccessibilityTree,
+  scopeAccessibilityNodes,
+  simplifyAXNode,
+} from '../src/background-accessibility.js';
 
 test('AX simplification parses real CDP properties and separates semantics from actionability', () => {
   const node = simplifyAXNode({
@@ -120,4 +124,26 @@ test('AX filtering reports empty and truncated trees without dangling relationsh
   assert.equal(truncated.truncated, true);
   assert.equal(truncated.omitted, 1);
   assert.deepEqual(truncated.nodes[1]?.childIds, []);
+});
+
+test('partial AX scoping retains the target subtree and ancestors but removes siblings', () => {
+  const scoped = scopeAccessibilityNodes(
+    [
+      { nodeId: 'root', childIds: ['dialog', 'sidebar'] },
+      { nodeId: 'dialog', backendDOMNodeId: 42, childIds: ['button', 'group'] },
+      { nodeId: 'button', childIds: [] },
+      { nodeId: 'group', childIds: ['deep'] },
+      { nodeId: 'deep', childIds: [] },
+      { nodeId: 'sidebar', childIds: ['link'] },
+      { nodeId: 'link', childIds: [] },
+    ],
+    42,
+    1
+  );
+
+  assert.deepEqual(
+    scoped.map((node) => node.nodeId),
+    ['root', 'dialog', 'button', 'group']
+  );
+  assert.deepEqual(scopeAccessibilityNodes([{ nodeId: 'root' }], 99, 3), []);
 });

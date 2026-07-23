@@ -17,7 +17,7 @@ import {
   matchesConsoleLevel,
   summarizeTabResult,
 } from './background-helpers.js';
-import { buildAccessibilityTree } from './background-accessibility.js';
+import { buildAccessibilityTree, scopeAccessibilityNodes } from './background-accessibility.js';
 import { resolveWindowScopedTab, selectRequestTabCandidate } from './background-routing.js';
 import {
   ACCESS_DENIED_REASON_WINDOW_GONE,
@@ -387,9 +387,84 @@ export function createPageRequestController(state, chromeObj, dependencies) {
     return dependencies.runWithDebugger(target.tabId, async (debugTarget) => {
       await dependencies.sendCommand(debugTarget, 'Accessibility.enable', {});
       try {
-        const result = await dependencies.sendCommand(debugTarget, 'Accessibility.getFullAXTree', {
-          depth: params.maxDepth,
-        });
+        let result;
+        if (params.selector) {
+          const documentResult = /** @type {{ root?: { nodeId?: number } }} */ (
+            await dependencies.sendCommand(debugTarget, 'DOM.getDocument', {
+              depth: 0,
+              pierce: false,
+            })
+          );
+          const rootNodeId = Number(documentResult.root?.nodeId);
+          if (!Number.isFinite(rootNodeId) || rootNodeId <= 0) {
+            throw new BridgeError(
+              ERROR_CODES.INTERNAL_ERROR,
+              'CDP did not return a DOM root node.'
+            );
+          }
+          let queryResult;
+          try {
+            queryResult = /** @type {{ nodeIds?: number[] }} */ (
+              await dependencies.sendCommand(debugTarget, 'DOM.querySelectorAll', {
+                nodeId: rootNodeId,
+                selector: params.selector,
+              })
+            );
+          } catch (error) {
+            throw new BridgeError(
+              ERROR_CODES.INVALID_REQUEST,
+              'Accessibility tree selector is invalid.',
+              {
+                selector: params.selector,
+                reason:
+                  error instanceof Error
+                    ? error.message.slice(0, 300)
+                    : String(error).slice(0, 300),
+              }
+            );
+          }
+          const nodeIds = Array.isArray(queryResult.nodeIds) ? queryResult.nodeIds : [];
+          if (nodeIds.length === 0) {
+            throw new BridgeError(
+              ERROR_CODES.ELEMENT_NOT_FOUND,
+              'Accessibility tree selector did not match an element.',
+              { selector: params.selector, candidateCount: 0 }
+            );
+          }
+          if (nodeIds.length > 1) {
+            throw new BridgeError(
+              ERROR_CODES.ELEMENT_AMBIGUOUS,
+              'Accessibility tree selector matched multiple elements.',
+              { selector: params.selector, candidateCount: nodeIds.length }
+            );
+          }
+          const described = /** @type {{ node?: { backendNodeId?: number } }} */ (
+            await dependencies.sendCommand(debugTarget, 'DOM.describeNode', {
+              nodeId: nodeIds[0],
+              depth: 0,
+            })
+          );
+          const backendNodeId = Number(described.node?.backendNodeId);
+          if (!Number.isFinite(backendNodeId) || backendNodeId <= 0) {
+            throw new BridgeError(
+              ERROR_CODES.INTERNAL_ERROR,
+              'CDP did not resolve the accessibility target backend node.'
+            );
+          }
+          const partialResult = await dependencies.sendCommand(
+            debugTarget,
+            'Accessibility.getPartialAXTree',
+            { backendNodeId, fetchRelatives: true }
+          );
+          const partial = /** @type {{ nodes?: Array<Record<string, unknown>> }} */ (partialResult);
+          result = {
+            nodes: scopeAccessibilityNodes(partial.nodes ?? [], backendNodeId, params.maxDepth),
+          };
+        } else {
+          result = await dependencies.sendCommand(debugTarget, 'Accessibility.getFullAXTree', {
+            depth: params.maxDepth,
+          });
+        }
         const cdpResult = /** @type {{ nodes?: Array<Record<string, unknown>> }} */ (result);
         const rawNodes = cdpResult.nodes || [];
         const tree = buildAccessibilityTree(rawNodes, params);

@@ -471,7 +471,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'dom.get_accessibility_tree',
     'inspect',
     true,
-    ['maxNodes', 'maxDepth', 'compact', 'interactiveOnly'],
+    ['selector', 'maxNodes', 'maxDepth', 'compact', 'interactiveOnly'],
     'moderate',
     METHOD_POLICIES.domReadDebugger
   ),

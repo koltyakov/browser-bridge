@@ -1928,6 +1928,106 @@ test('background dispatch returns a simplified accessibility tree', async () => 
   assert.deepEqual(result.nodes[0]?.childIds, ['2']);
 });
 
+test('background dispatch returns a uniquely selector-scoped accessibility tree', async () => {
+  const calls: Array<{ method: string; params?: object }> = [];
+  const { loaded } = await loadEnabledDispatchBackground({
+    queryLabel: 'test-background-dispatch-scoped-accessibility-tree',
+    chromeOverrides: {
+      debugger: {
+        async sendCommand(_target: chrome.debugger.Debuggee, method: string, params?: object) {
+          calls.push({ method, params });
+          if (method === 'DOM.getDocument') return { root: { nodeId: 1 } };
+          if (method === 'DOM.querySelectorAll') return { nodeIds: [7] };
+          if (method === 'DOM.describeNode') return { node: { backendNodeId: 42 } };
+          if (method === 'Accessibility.getPartialAXTree') {
+            return {
+              nodes: [
+                { nodeId: 'root', role: { value: 'RootWebArea' }, childIds: ['dialog', 'side'] },
+                {
+                  nodeId: 'dialog',
+                  backendDOMNodeId: 42,
+                  role: { value: 'dialog' },
+                  name: { value: 'Settings' },
+                  childIds: ['save'],
+                },
+                { nodeId: 'save', role: { value: 'button' }, name: { value: 'Save' } },
+                { nodeId: 'side', role: { value: 'navigation' }, name: { value: 'Unrelated' } },
+              ],
+            };
+          }
+          return {};
+        },
+      },
+    },
+  });
+
+  const response = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-scoped-accessibility-tree',
+      method: 'dom.get_accessibility_tree',
+      params: { selector: '#settings', maxDepth: 3, maxNodes: 20 },
+    })
+  );
+  if (!response.ok) assert.fail(response.error.message);
+  const result = response.result as { nodes: Array<{ nodeId: string }> };
+  assert.deepEqual(
+    result.nodes.map((node) => node.nodeId),
+    ['root', 'dialog', 'save']
+  );
+  assert.deepEqual(calls, [
+    { method: 'Accessibility.enable', params: {} },
+    { method: 'DOM.getDocument', params: { depth: 0, pierce: false } },
+    { method: 'DOM.querySelectorAll', params: { nodeId: 1, selector: '#settings' } },
+    { method: 'DOM.describeNode', params: { nodeId: 7, depth: 0 } },
+    {
+      method: 'Accessibility.getPartialAXTree',
+      params: { backendNodeId: 42, fetchRelatives: true },
+    },
+    { method: 'Accessibility.disable', params: {} },
+  ]);
+});
+
+test('background dispatch rejects missing and ambiguous AX selectors', async () => {
+  const methods: string[] = [];
+  const { loaded } = await loadEnabledDispatchBackground({
+    queryLabel: 'test-background-dispatch-invalid-scoped-accessibility-tree',
+    chromeOverrides: {
+      debugger: {
+        async sendCommand(_target: chrome.debugger.Debuggee, method: string, params?: object) {
+          methods.push(method);
+          if (method === 'DOM.getDocument') return { root: { nodeId: 1 } };
+          if (method === 'DOM.querySelectorAll') {
+            const selector = (params as { selector?: string })?.selector;
+            return { nodeIds: selector === '.many' ? [2, 3] : [] };
+          }
+          return {};
+        },
+      },
+    },
+  });
+
+  const missing = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-missing-ax-selector',
+      method: 'dom.get_accessibility_tree',
+      params: { selector: '.missing' },
+    })
+  );
+  const ambiguous = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-ambiguous-ax-selector',
+      method: 'dom.get_accessibility_tree',
+      params: { selector: '.many' },
+    })
+  );
+  assert.equal(missing.ok, false);
+  assert.equal(missing.error.code, ERROR_CODES.ELEMENT_NOT_FOUND);
+  assert.equal(ambiguous.ok, false);
+  assert.equal(ambiguous.error.code, ERROR_CODES.ELEMENT_AMBIGUOUS);
+  assert.equal(methods.filter((method) => method === 'Accessibility.getPartialAXTree').length, 0);
+  assert.equal(methods.filter((method) => method === 'Accessibility.disable').length, 2);
+});
+
 test('background dispatch surfaces accessibility tree failures', async () => {
   const methods: string[] = [];
   const { loaded } = await loadEnabledDispatchBackground({

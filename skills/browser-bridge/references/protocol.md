@@ -67,7 +67,7 @@ The table below includes the legacy capability bucket for each method so agents 
 | `dom.find_by_text`                 | Yes  | -          | inspect     | `dom.read`           | Find by visible text; returns `{nodes, count}`                                             |
 | `dom.find_by_role`                 | Yes  | -          | inspect     | `dom.read`           | Find by ARIA role; optional `name` filter                                                  |
 | `dom.get_html`                     | Yes  | -          | inspect     | `dom.read`           | `innerHTML`/`outerHTML`; `maxLength` truncation                                            |
-| `dom.get_accessibility_tree`       | Yes  | CDP        | inspect     | `dom.read`           | Depth-limited AX tree with compact/interactive filters and partial-topology metadata        |
+| `dom.get_accessibility_tree`       | Yes  | CDP        | inspect     | `dom.read`           | Full or uniquely selector-scoped AX tree with compact/interactive filters                   |
 | `layout.get_box_model`             | Yes  | -          | inspect     | `layout.read`        | Element geometry                                                                           |
 | `layout.hit_test`                  | Yes  | -          | inspect     | `layout.read`        | Topmost element at viewport point                                                          |
 | `styles.get_computed`              | Yes  | -          | inspect     | `styles.read`        | Requested properties; omission returns display/position/width/height/color                 |
@@ -361,7 +361,7 @@ CDP URL output removes credentials and fragments, replaces every query value wit
 
 ### dom.get_accessibility_tree
 
-Retrieve a depth-limited accessibility tree via CDP `Accessibility.getFullAXTree`. Nodes include `role`, `name`, `description`, `value`, state fields, `interactive`, `semanticInteractive`, `focusable`, `focusableAndEnabled`, `ignored`, and `childIds`. `interactive` is semantic/focusability metadata, not current pointer actionability.
+Retrieve a depth-limited accessibility tree via CDP. Full reads use `Accessibility.getFullAXTree`; an optional unique `selector` resolves through CDP DOM methods and uses `Accessibility.getPartialAXTree`, retaining only the selected subtree and required ancestor chain. Missing and ambiguous selectors return typed errors instead of selecting an arbitrary candidate. Nodes include `role`, `name`, `description`, `value`, state fields, `interactive`, `semanticInteractive`, `focusable`, `focusableAndEnabled`, `ignored`, and `childIds`. `interactive` is semantic/focusability metadata, not current pointer actionability.
 
 This is debugger-backed. Prefer `dom.find_by_role`, `dom.find_by_text`, and targeted `dom.query`/`dom.describe` first.
 
@@ -370,6 +370,7 @@ bbx a11y-tree
 bbx a11y-tree 50 3
 bbx call dom.get_accessibility_tree '{"maxNodes":100,"maxDepth":5,"compact":true}'
 bbx call dom.get_accessibility_tree '{"maxNodes":100,"maxDepth":6,"interactiveOnly":true}'
+bbx call dom.get_accessibility_tree '{"selector":"[role=dialog]","maxNodes":50,"compact":true}'
 ```
 
 Filtering occurs before `maxNodes`. Compact mode drops ignored, decorative, and empty nodes while reconnecting retained descendants; interactive-only keeps non-ignored semantic interactive roles. Because CDP applies `maxDepth` before Browser Bridge receives the tree, every result truthfully reports `truncated: true`, `partialTopology: true`, depth metadata, missing-child counts, and a continuation hint. No AX node is written into the page DOM or converted directly into an actionable element ref; use role/name with `dom.find_by_role` before input.

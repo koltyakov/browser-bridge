@@ -664,6 +664,7 @@ export interface NormalizedTabCloseParams extends BridgeParams {
 }
 
 export interface AccessibilityTreeParams {
+  selector?: string;
   maxDepth?: number;
   maxNodes?: number;
   compact?: boolean;
@@ -671,6 +672,7 @@ export interface AccessibilityTreeParams {
 }
 
 export interface NormalizedAccessibilityTreeParams extends BridgeParams {
+  selector: string | null;
   maxDepth: number;
   maxNodes: number;
   compact: boolean;

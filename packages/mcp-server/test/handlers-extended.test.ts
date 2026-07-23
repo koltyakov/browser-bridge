@@ -533,12 +533,14 @@ test('MCP handlers forward compact AX and explicit CDP network lifecycle options
     async (calls) => {
       await handleDomTool({
         action: 'accessibility_tree',
+        selector: '#dialog',
         compact: true,
         interactiveOnly: true,
       });
       await handlePageTool({ action: 'network', source: 'cdp', capture: 'start' });
       assert.equal(calls[0]?.params?.compact, true);
       assert.equal(calls[0]?.params?.interactiveOnly, true);
+      assert.equal(calls[0]?.params?.selector, '#dialog');
       assert.equal(calls[1]?.params?.source, 'cdp');
       assert.equal(calls[1]?.params?.capture, 'start');
     }

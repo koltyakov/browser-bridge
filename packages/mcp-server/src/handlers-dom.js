@@ -86,6 +86,7 @@ export const DOM_ACTIONS = {
     ref: false,
     method: 'dom.get_accessibility_tree',
     params: (a) => ({
+      selector: a.selector,
       maxNodes: a.maxNodes,
       maxDepth: a.maxDepth,
       compact: a.compact,

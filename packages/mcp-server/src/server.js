@@ -234,7 +234,9 @@ export function createBridgeMcpServer() {
         selector: z
           .string()
           .optional()
-          .describe('CSS selector (used if no elementRef; resolves to first match)'),
+          .describe(
+            'CSS selector (used if no elementRef; accessibility_tree requires exactly one match)'
+          ),
         elementRef: z
           .string()
           .optional()

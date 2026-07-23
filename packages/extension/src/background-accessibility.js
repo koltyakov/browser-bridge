@@ -150,6 +150,52 @@ export function buildAccessibilityTree(rawNodes, options) {
   };
 }
 
+/**
+ * Remove unrelated relatives from a partial AX response while retaining the
+ * selected subtree and its coherent ancestor chain.
+ *
+ * @param {Array<Record<string, unknown>>} rawNodes
+ * @param {number} backendNodeId
+ * @param {number} maxDepth
+ * @returns {Array<Record<string, unknown>>}
+ */
+export function scopeAccessibilityNodes(rawNodes, backendNodeId, maxDepth) {
+  const byId = new Map(rawNodes.map((node) => [String(node.nodeId ?? ''), node]));
+  const parentById = new Map();
+  for (const node of rawNodes) {
+    const parentId = String(node.nodeId ?? '');
+    for (const childId of Array.isArray(node.childIds) ? node.childIds.map(String) : []) {
+      if (!parentById.has(childId)) parentById.set(childId, parentId);
+    }
+  }
+  const target = rawNodes.find((node) => Number(node.backendDOMNodeId) === backendNodeId);
+  if (!target) return [];
+  const targetId = String(target.nodeId ?? '');
+  const included = new Set([targetId]);
+  let frontier = [targetId];
+  for (let depth = 0; depth < maxDepth && frontier.length > 0; depth += 1) {
+    const next = [];
+    for (const nodeId of frontier) {
+      const node = byId.get(nodeId);
+      for (const childId of Array.isArray(node?.childIds) ? node.childIds.map(String) : []) {
+        if (byId.has(childId) && !included.has(childId)) {
+          included.add(childId);
+          next.push(childId);
+        }
+      }
+    }
+    frontier = next;
+  }
+  let ancestorId = parentById.get(targetId);
+  const visited = new Set();
+  while (ancestorId && !visited.has(ancestorId)) {
+    visited.add(ancestorId);
+    included.add(ancestorId);
+    ancestorId = parentById.get(ancestorId);
+  }
+  return rawNodes.filter((node) => included.has(String(node.nodeId ?? '')));
+}
+
 /** @param {SimplifiedAXNode} node */
 function isMeaningfulCompactNode(node) {
   if (node.ignored || DECORATIVE_ROLES.has(normalizeRole(node.role))) return false;

@@ -742,6 +742,7 @@ test('normalizeAccessibilityTreeParams clamps depth and nodes', () => {
   });
   assert.equal(params.maxDepth, 20);
   assert.equal(params.maxNodes, 5000);
+  assert.equal(params.selector, null);
   assert.equal(params.compact, false);
   assert.equal(params.interactiveOnly, false);
 });
@@ -750,6 +751,7 @@ test('normalizeAccessibilityTreeParams defaults sensibly', () => {
   const params = normalizeAccessibilityTreeParams({});
   assert.equal(params.maxDepth, 6);
   assert.equal(params.maxNodes, 500);
+  assert.equal(params.selector, null);
   assert.equal(params.compact, false);
   assert.equal(params.interactiveOnly, false);
 });
@@ -779,11 +781,13 @@ test('normalizeNetworkParams defaults sensibly', () => {
 
 test('accessibility and CDP network options normalize strictly', () => {
   assert.deepEqual(normalizeAccessibilityTreeParams({ compact: true, interactiveOnly: true }), {
+    selector: null,
     maxDepth: 6,
     maxNodes: 500,
     compact: true,
     interactiveOnly: true,
   });
+  assert.equal(normalizeAccessibilityTreeParams({ selector: ' main ' }).selector, 'main');
   assert.deepEqual(normalizeNetworkParams({ source: 'cdp', capture: 'start' }), {
     clear: false,
     limit: 50,
