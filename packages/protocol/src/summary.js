@@ -198,6 +198,44 @@ export function summarizeBridgeResponse(response, method) {
   }
 
   const result = toRecord(response.result);
+  if (method === 'dom.baseline.compare') {
+    const counts = toRecord(result.counts);
+    const added = typeof counts.added === 'number' ? counts.added : 0;
+    const removed = typeof counts.removed === 'number' ? counts.removed : 0;
+    const changed = typeof counts.changed === 'number' ? counts.changed : 0;
+    const moved = typeof counts.moved === 'number' ? counts.moved : 0;
+    return {
+      ok: true,
+      summary: appendProtocolWarning(
+        result.equal === true
+          ? `DOM baseline ${result.baselineId ?? ''} matches the current DOM.`
+          : `DOM baseline ${result.baselineId ?? ''} differs: ${added} added, ${removed} removed, ${changed} changed, ${moved} moved${result.truncated === true ? `; ${result.omittedChanges ?? 0} omitted` : ''}.`,
+        protocolWarning
+      ),
+      evidence: result,
+    };
+  }
+  if (method === 'dom.baseline.release') {
+    return {
+      ok: true,
+      summary: appendProtocolWarning(
+        `DOM baseline ${result.baselineId ?? ''} ${result.released === true ? 'released' : 'was not released'}.`,
+        protocolWarning
+      ),
+      evidence: result,
+    };
+  }
+  if (method === 'dom.baseline.create' || method === 'dom.baseline.describe') {
+    const snapshot = toRecord(result.snapshot);
+    return {
+      ok: true,
+      summary: appendProtocolWarning(
+        `DOM baseline ${result.baselineId ?? ''} ${method === 'dom.baseline.create' ? 'created' : 'described'}: ${snapshot.nodeCount ?? 0} node(s), ${snapshot.byteLength ?? 0} bytes.`,
+        protocolWarning
+      ),
+      evidence: result,
+    };
+  }
   if (method === 'page.handle_dialog') {
     const action = typeof result.action === 'string' ? result.action : 'inspect';
     return {

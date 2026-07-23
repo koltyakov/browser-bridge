@@ -413,6 +413,61 @@ test('enforceTokenBudget leaves already-shrunk results stable on a second pass',
   assert.equal(secondPass.meta.continuation_hint, null);
 });
 
+test('enforceTokenBudget preserves exact semantic baseline counts while bounding evidence', () => {
+  const counts = { added: 20, removed: 10, changed: 15, moved: 5, unchanged: 3, total: 53 };
+  const evidence = Array.from({ length: 20 }, (_, index) => ({
+    tag: 'div',
+    role: null,
+    name: `Node ${index}`,
+    text: 'x'.repeat(160),
+    attributes: { 'data-testid': `item-${index}` },
+    depth: 2,
+  }));
+  const response = successResponse('req_baseline_budget', {
+    baselineId: `baseline_${'a'.repeat(43)}`,
+    equal: false,
+    comparedAt: new Date().toISOString(),
+    counts,
+    returnedCounts: { added: 20, removed: 10, changed: 15, moved: 5, total: 50 },
+    added: evidence,
+    removed: evidence.slice(0, 10),
+    changed: evidence.slice(0, 15).map((node) => ({ fields: ['text'], before: node, after: node })),
+    moved: evidence.slice(0, 5).map((node) => ({
+      node,
+      from: { ancestry: [], order: 0 },
+      to: { ancestry: [], order: 1 },
+    })),
+    truncated: false,
+    omittedChanges: 0,
+    ambiguity: { count: 0, examples: [] },
+    guidance: '',
+  });
+
+  const budgeted = enforceTokenBudget('dom.baseline.compare', response, 300);
+  const result = budgeted.result as {
+    counts: typeof counts;
+    returnedCounts: { total: number };
+    omittedChanges: number;
+    truncated: boolean;
+  };
+  assert.deepEqual(result.counts, counts);
+  assert.equal(result.truncated, true);
+  assert.equal(result.omittedChanges, 50 - result.returnedCounts.total);
+});
+
+test('enforceTokenBudget preserves baseline lifecycle handles atomically', () => {
+  const response = successResponse('req_baseline_handle', {
+    baselineId: `baseline_${'c'.repeat(43)}`,
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    scope: { selector: 'x'.repeat(2048) },
+    options: { maxNodes: 100 },
+    snapshot: { nodeCount: 1, byteLength: 200, digest: 'digest' },
+  });
+  assert.equal(enforceTokenBudget('dom.baseline.create', response, 1), response);
+  assert.equal(enforceTokenBudget('dom.baseline.describe', response, 1), response);
+});
+
 test('enforceTokenBudget falls back to a compact continuation payload when fields remain oversized', () => {
   const result: OversizedResult = {
     value: 'x'.repeat(5000),

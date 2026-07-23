@@ -50,6 +50,8 @@ const RETRY_SAFE_METHODS = new Set([
   'page.get_text',
   'page.extract_content',
   'dom.query',
+  'dom.baseline.compare',
+  'dom.baseline.describe',
   'dom.describe',
   'dom.get_text',
   'dom.get_attributes',
@@ -374,9 +376,21 @@ export function applyHtmlBudgetPreset(args) {
  */
 export function applyMethodBudgetPreset(method, params, budgetPreset) {
   const args = { ...params, budgetPreset };
+  /** @type {Record<string, unknown>} */
   let normalized = args;
-  if (method === 'dom.query' || method === 'dom.get_accessibility_tree') {
+  if (
+    method === 'dom.query' ||
+    method === 'dom.get_accessibility_tree' ||
+    method === 'dom.baseline.create'
+  ) {
     normalized = applyTreeBudgetPreset(args);
+  } else if (method === 'dom.baseline.compare') {
+    const preset = getBudgetPresetName(budgetPreset);
+    const defaults = { quick: 10, normal: 50, deep: 100 };
+    normalized = {
+      ...args,
+      maxChanges: params.maxChanges ?? (preset ? defaults[preset] : undefined),
+    };
   } else if (method === 'dom.get_text') {
     normalized = applyTextBudgetPreset(args);
   } else if (method === 'dom.get_html') {

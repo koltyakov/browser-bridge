@@ -127,6 +127,10 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
   'navigation.go_back': 'Navigate backward in tab history.',
   'navigation.go_forward': 'Navigate forward in tab history.',
   'dom.query': 'Query a DOM subtree and return compact node summaries.',
+  'dom.baseline.create': 'Create a short-lived compact semantic DOM baseline for later comparison.',
+  'dom.baseline.compare': 'Compare the current DOM with a retained semantic baseline.',
+  'dom.baseline.describe': 'Describe a retained semantic DOM baseline and its scope.',
+  'dom.baseline.release': 'Release a retained semantic DOM baseline.',
   'dom.describe': 'Describe one element by elementRef.',
   'dom.get_text': 'Read bounded text for one element.',
   'dom.get_attributes': 'Read selected attributes for one element.',
@@ -420,6 +424,38 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
       'includeBbox',
       'attributeAllowlist',
     ],
+    'low',
+    METHOD_POLICIES.domRead
+  ),
+  'dom.baseline.create': createRegistryEntry(
+    'dom.baseline.create',
+    'inspect',
+    true,
+    ['selector', 'maxNodes', 'maxDepth', 'textBudget', 'attributeAllowlist'],
+    'low',
+    METHOD_POLICIES.domRead
+  ),
+  'dom.baseline.compare': createRegistryEntry(
+    'dom.baseline.compare',
+    'inspect',
+    true,
+    ['baselineId', 'maxChanges'],
+    'low',
+    METHOD_POLICIES.domRead
+  ),
+  'dom.baseline.describe': createRegistryEntry(
+    'dom.baseline.describe',
+    'inspect',
+    true,
+    ['baselineId'],
+    'low',
+    METHOD_POLICIES.domRead
+  ),
+  'dom.baseline.release': createRegistryEntry(
+    'dom.baseline.release',
+    'inspect',
+    true,
+    ['baselineId'],
     'low',
     METHOD_POLICIES.domRead
   ),
@@ -775,6 +811,8 @@ const BATCH_SAFE_METHODS = new Set([
   'page.extract_content',
   'page.get_network',
   'dom.query',
+  'dom.baseline.compare',
+  'dom.baseline.describe',
   'dom.describe',
   'dom.get_text',
   'dom.get_attributes',

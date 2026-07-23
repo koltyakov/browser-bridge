@@ -35,6 +35,15 @@
     throw new Error('Browser Bridge content-element-registry must load before content-script.js.');
   }
 
+  const domBaseline =
+    /** @type {typeof globalThis & { __bbxContentDomBaseline?: { capture: (params: Record<string, unknown>) => unknown } }} */ (
+      globalThis
+    ).__bbxContentDomBaseline;
+  if (!domBaseline) {
+    throw new Error('Browser Bridge content-dom-baseline must load before content-script.js.');
+  }
+  const baselineModule = domBaseline;
+
   /**
    * @typedef {{
    *   describeElement: (ref: string) => any,
@@ -173,6 +182,8 @@
         throw new Error(`Unsupported content-script method ${method}`);
       case 'dom.query':
         return domQueryModule.domQuery(params);
+      case 'dom.baseline.snapshot':
+        return baselineModule.capture(params);
       case 'dom.describe':
         return domQueryModule.describeElement(resolveElementRefFromParams(params));
       case 'dom.get_text':

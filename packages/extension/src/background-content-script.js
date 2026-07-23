@@ -12,6 +12,7 @@ import { BridgeError, ERROR_CODES } from '../../protocol/src/index.js';
 /** @type {string[]} */
 const CONTENT_SCRIPT_FILES = [
   'packages/extension/src/content-script-helpers.js',
+  'packages/extension/src/content-dom-baseline.js',
   'packages/extension/src/content-element-registry.js',
   'packages/extension/src/content-dom-query.js',
   'packages/extension/src/content-input.js',

@@ -9,6 +9,12 @@ import {
   DEFAULT_EVAL_TIMEOUT_MS,
   DEFAULT_NAV_TIMEOUT_MS,
   DEFAULT_NETWORK_INTERCEPT_ACTION,
+  DOM_BASELINE_TTL_MS,
+  MAX_DOM_BASELINES_PER_TAB,
+  MAX_DOM_BASELINES_GLOBAL,
+  MAX_DOM_BASELINE_BYTES_PER_TAB,
+  MAX_DOM_BASELINE_BYTES_GLOBAL,
+  MAX_DOM_BASELINE_BYTES,
   MAX_SENSITIVE_VALUE_BYTES,
   ERROR_CODES,
   applyBudget,
@@ -28,6 +34,9 @@ import {
   normalizeCdpNodeIdParams,
   normalizeInputAction,
   normalizeDomQuery,
+  normalizeDomBaselineCreateParams,
+  normalizeDomBaselineCompareParams,
+  normalizeDomBaselineHandleParams,
   normalizeNavigationAction,
   normalizePatchOperation,
   normalizeSelectAction,
@@ -124,6 +133,97 @@ test('normalizeDomQuery gives top-level fields precedence over a nested budget',
     includeBbox: false,
     attributeAllowlist: ['id'],
   });
+});
+
+test('DOM baseline create params normalize to a canonical bounded shape', () => {
+  assert.deepEqual(
+    normalizeDomBaselineCreateParams({
+      selector: '  main  ',
+      maxNodes: 2_000,
+      maxDepth: -5,
+      textBudget: 8,
+      attributeAllowlist: [
+        ' id ',
+        'data-testid',
+        'DATA-TESTID',
+        'id',
+        'value',
+        'onclick',
+        'onFocus',
+        '',
+        'not valid',
+        'x'.repeat(129),
+      ],
+    }),
+    {
+      selector: 'main',
+      maxNodes: 1_000,
+      maxDepth: 1,
+      textBudget: 32,
+      attributeAllowlist: ['id', 'data-testid'],
+    }
+  );
+  assert.deepEqual(normalizeDomBaselineCreateParams(), {
+    selector: 'body',
+    maxNodes: 100,
+    maxDepth: 8,
+    textBudget: 160,
+    attributeAllowlist: [],
+  });
+  assert.throws(() => normalizeDomBaselineCreateParams({ selector: 'x'.repeat(2_049) }));
+  assert.throws(() =>
+    normalizeDomBaselineCreateParams({
+      attributeAllowlist: Array.from({ length: 17 }, (_, index) => `data-${index}`),
+    })
+  );
+});
+
+test('DOM baseline compare and handle params require canonical baseline IDs', () => {
+  const baselineId = `baseline_${'a'.repeat(32)}`;
+  assert.deepEqual(normalizeDomBaselineCompareParams({ baselineId }), {
+    baselineId,
+    maxChanges: 50,
+  });
+  assert.equal(normalizeDomBaselineCompareParams({ baselineId, maxChanges: 999 }).maxChanges, 200);
+  assert.deepEqual(normalizeDomBaselineHandleParams({ baselineId }), { baselineId });
+  for (const invalid of [undefined, '', 'baseline_short', `baseline_${'a'.repeat(65)}`]) {
+    assert.throws(
+      () => normalizeDomBaselineHandleParams({ baselineId: invalid }),
+      (error: ErrorWithCode) => error.code === ERROR_CODES.INVALID_REQUEST
+    );
+  }
+});
+
+test('DOM baseline requests use their dedicated normalizers', () => {
+  const baselineId = `baseline_${'z'.repeat(32)}`;
+  assert.deepEqual(
+    createRequest({ id: 'baseline-create', method: 'dom.baseline.create', params: {} }).params,
+    normalizeDomBaselineCreateParams()
+  );
+  assert.deepEqual(
+    createRequest({
+      id: 'baseline-compare',
+      method: 'dom.baseline.compare',
+      params: { baselineId },
+    }).params,
+    { baselineId, maxChanges: 50 }
+  );
+  assert.deepEqual(
+    createRequest({
+      id: 'baseline-describe',
+      method: 'dom.baseline.describe',
+      params: { baselineId },
+    }).params,
+    { baselineId }
+  );
+  assert.deepEqual(
+    createRequest({
+      id: 'baseline-release',
+      method: 'dom.baseline.release',
+      params: { baselineId },
+    }).params,
+    { baselineId }
+  );
 });
 
 /** Ensure protocol metadata is always attached to outgoing requests. */
@@ -725,6 +825,10 @@ test('batch safety follows canonical read-only method and parameter policy', () 
   assert.equal(isBatchSafeBridgeCall('page.get_state'), true);
   assert.equal(isBatchSafeBridgeCall('input.click'), false);
   assert.equal(isBatchSafeBridgeCall('sensitive.read'), false);
+  assert.equal(isBatchSafeBridgeCall('dom.baseline.create'), false);
+  assert.equal(isBatchSafeBridgeCall('dom.baseline.compare'), true);
+  assert.equal(isBatchSafeBridgeCall('dom.baseline.describe'), true);
+  assert.equal(isBatchSafeBridgeCall('dom.baseline.release'), false);
   assert.equal(isBatchSafeBridgeCall('page.get_console', { clear: false }), true);
   assert.equal(isBatchSafeBridgeCall('page.get_console', { clear: true }), false);
   assert.equal(isBatchSafeBridgeCall('page.get_console', { clear: 1 }), false);
@@ -1079,6 +1183,10 @@ test('runtime context includes new method groups', () => {
   assert.ok(context.methods.tabs.includes('tabs.create'));
   assert.ok(context.methods.tabs.includes('tabs.close'));
   assert.ok(context.methods.inspect.includes('dom.get_accessibility_tree'));
+  assert.ok(context.methods.inspect.includes('dom.baseline.create'));
+  assert.ok(context.methods.inspect.includes('dom.baseline.compare'));
+  assert.ok(context.methods.inspect.includes('dom.baseline.describe'));
+  assert.ok(context.methods.inspect.includes('dom.baseline.release'));
   assert.ok(context.methods.page.includes('page.get_text'));
   assert.ok(context.methods.page.includes('page.get_network'));
   assert.ok(context.methods.navigate.includes('viewport.resize'));
@@ -1093,6 +1201,9 @@ test('runtime context includes error descriptions', () => {
   assert.ok(context.errors.ELEMENT_STALE);
   assert.ok(context.errors.TIMEOUT);
   assert.ok(context.errors.INVALID_REQUEST);
+  assert.ok(context.errors.DOM_BASELINE_NOT_FOUND);
+  assert.ok(context.errors.DOM_BASELINE_INVALIDATED);
+  assert.ok(context.errors.DOM_BASELINE_QUOTA_EXCEEDED);
 });
 
 test('runtime context excludes legacy capability descriptions and session methods', () => {
@@ -1109,6 +1220,60 @@ test('runtime context includes parameter limits', () => {
   assert.equal(context.limits.maxNodes.default, 25);
   assert.equal(context.limits.evalTimeout.max, 30000);
   assert.equal(context.limits.pageTextBudget.default, 8000);
+  assert.deepEqual(context.limits.baselineMaxNodes, { min: 1, max: 1000, default: 100 });
+  assert.deepEqual(context.limits.baselineMaxDepth, { min: 1, max: 20, default: 8 });
+  assert.deepEqual(context.limits.baselineTextBudget, { min: 32, max: 1000, default: 160 });
+  assert.deepEqual(context.limits.baselineMaxChanges, { min: 1, max: 200, default: 50 });
+});
+
+test('DOM baseline constants and registry contracts stay aligned', () => {
+  assert.equal(DOM_BASELINE_TTL_MS, 300_000);
+  assert.equal(MAX_DOM_BASELINES_PER_TAB, 8);
+  assert.equal(MAX_DOM_BASELINES_GLOBAL, 32);
+  assert.equal(MAX_DOM_BASELINE_BYTES_PER_TAB, 1_048_576);
+  assert.equal(MAX_DOM_BASELINE_BYTES_GLOBAL, 4_194_304);
+  assert.equal(MAX_DOM_BASELINE_BYTES, 262_144);
+
+  assert.deepEqual(BRIDGE_METHOD_REGISTRY['dom.baseline.create'].params, [
+    'selector',
+    'maxNodes',
+    'maxDepth',
+    'textBudget',
+    'attributeAllowlist',
+  ]);
+  assert.deepEqual(BRIDGE_METHOD_REGISTRY['dom.baseline.compare'].params, [
+    'baselineId',
+    'maxChanges',
+  ]);
+  assert.deepEqual(BRIDGE_METHOD_REGISTRY['dom.baseline.describe'].params, ['baselineId']);
+  assert.deepEqual(BRIDGE_METHOD_REGISTRY['dom.baseline.release'].params, ['baselineId']);
+  for (const method of [
+    'dom.baseline.create',
+    'dom.baseline.compare',
+    'dom.baseline.describe',
+    'dom.baseline.release',
+  ] as const) {
+    assert.equal(BRIDGE_METHOD_REGISTRY[method].group, 'inspect');
+    assert.equal(BRIDGE_METHOD_REGISTRY[method].tab, true);
+    assert.equal(BRIDGE_METHOD_REGISTRY[method].capability, 'dom.read');
+    assert.equal(BRIDGE_METHOD_REGISTRY[method].debuggerBacked, false);
+    assert.equal(BRIDGE_METHOD_REGISTRY[method].since, '1.0');
+  }
+});
+
+test('DOM baseline errors provide actionable recovery', () => {
+  assert.equal(
+    getErrorRecovery(ERROR_CODES.DOM_BASELINE_NOT_FOUND)?.alternativeMethod,
+    'dom.baseline.create'
+  );
+  assert.equal(
+    getErrorRecovery(ERROR_CODES.DOM_BASELINE_INVALIDATED)?.alternativeMethod,
+    'dom.baseline.create'
+  );
+  assert.equal(
+    getErrorRecovery(ERROR_CODES.DOM_BASELINE_QUOTA_EXCEEDED)?.alternativeMethod,
+    'dom.baseline.release'
+  );
 });
 
 test('runtime context budgets stay aligned with shared presets', () => {

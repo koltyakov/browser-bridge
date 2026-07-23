@@ -24,10 +24,12 @@ import {
   DAEMON_RECENT_LOG_LIMIT,
   DEFAULT_DAEMON_PENDING_TIMEOUT_MS,
   DEFAULT_LOG_TAIL_LIMIT,
+  DOM_BASELINE_TTL_MS,
   ERROR_CODES,
   getProtocolVersion,
   getSupportedProtocolVersions,
   MAX_DAEMON_PENDING_TIMEOUT_MS,
+  MAX_DOM_BASELINES_GLOBAL,
   parseJsonLines,
   sanitizeIncidentalValue,
   setProtocolPackageVersion,
@@ -57,7 +59,7 @@ setProtocolPackageVersion(DAEMON_VERSION);
 /** @typedef {import('./daemon-logger.js').DaemonLoggerLike} DaemonLoggerLike */
 /** @typedef {'agent' | 'extension'} SocketRole */
 /** @typedef {import('node:net').Socket & { readonly __role?: SocketRole, __clientId?: string, __extensionId?: string, __browserName?: string, __profileLabel?: string, __browserExtensionId?: string, __accessEnabled?: boolean, __lastActiveAt?: number }} ClientSocket */
-/** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string, method?: string, protocolVersion?: string, targets: Set<ClientSocket>, lastErrorResponse?: import('../../protocol/src/types.js').BridgeResponse }} PendingEntry */
+/** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string, method?: string, protocolVersion?: string, baselineId?: string | null, targets: Set<ClientSocket>, lastErrorResponse?: import('../../protocol/src/types.js').BridgeResponse }} PendingEntry */
 /**
  * @typedef {{
  *   installAgentFiles: typeof import('../../agent-client/src/install.js').installAgentFiles,
@@ -225,6 +227,46 @@ function normalizeExtensionHealthResult(value) {
     normalized.capture = normalizedCapture;
   }
 
+  const domBaselines = asHealthRecord(result.domBaselines);
+  if (domBaselines) {
+    /** @type {Record<string, unknown>} */
+    const normalizedBaselines = {};
+    for (const key of ['baselineCount', 'bytes', 'tabCount']) {
+      const count = normalizeHealthCount(domBaselines[key]);
+      if (count !== undefined) normalizedBaselines[key] = count;
+    }
+    const operationSource = asHealthRecord(domBaselines.operations);
+    if (operationSource) {
+      /** @type {Record<string, unknown>} */
+      const operations = {};
+      for (const name of [
+        'create',
+        'get',
+        'compare',
+        'release',
+        'invalidate',
+        'clearTab',
+        'clearWindow',
+        'clearAll',
+        'invalidateNavigation',
+        'pruneExpired',
+      ]) {
+        const source = asHealthRecord(operationSource[name]);
+        if (!source) continue;
+        const calls = normalizeHealthCount(source.calls);
+        const totalLatencyMs = normalizeHealthCount(source.totalLatencyMs);
+        const maxLatencyMs = normalizeHealthCount(source.maxLatencyMs);
+        operations[name] = {
+          ...(calls === undefined ? {} : { calls }),
+          ...(totalLatencyMs === undefined ? {} : { totalLatencyMs }),
+          ...(maxLatencyMs === undefined ? {} : { maxLatencyMs }),
+        };
+      }
+      normalizedBaselines.operations = operations;
+    }
+    normalized.domBaselines = normalizedBaselines;
+  }
+
   const extensionSupportedVersions = Array.isArray(result.supported_versions)
     ? result.supported_versions
         .filter(
@@ -371,6 +413,10 @@ export class BridgeDaemon {
     this.authToken = authToken;
     this.artifactStore = artifactStore;
     this.artifactStoreInitialized = false;
+    /** @type {Map<string, { socket: ClientSocket, expiresAt: number }>} */
+    this.domBaselineOwners = new Map();
+    /** @type {Map<string, { socket: ClientSocket, expiresAt: number }>} */
+    this.abandonedDomBaselineCreates = new Map();
   }
 
   /**
@@ -691,6 +737,8 @@ export class BridgeDaemon {
     }
     this.extensionSockets.clear();
     this.invalidateConnectedExtensionsCache();
+    this.domBaselineOwners.clear();
+    this.abandonedDomBaselineCreates.clear();
     if (this.artifactStoreInitialized) {
       this.artifactStore.reset();
       this.artifactStoreInitialized = false;
@@ -918,6 +966,7 @@ export class BridgeDaemon {
     }
 
     if (request.method === 'daemon.metrics') {
+      this.pruneDomBaselineOwners();
       const now = Date.now();
       const uptimeMs = this.startedAt > 0 ? now - this.startedAt : 0;
       const avgResponseTimeMs =
@@ -932,6 +981,7 @@ export class BridgeDaemon {
         requestsProcessed: this.requestsProcessed,
         requestsFailed: this.requestsFailed,
         avgResponseTimeMs,
+        domBaselineOwners: this.domBaselineOwners.size,
       });
       await writeJsonLine(socket, { type: 'agent.response', response });
       return;
@@ -1031,9 +1081,36 @@ export class BridgeDaemon {
       typeof request.meta?.target_profile === 'string' ? request.meta.target_profile : null;
     const hasExplicitTarget = Boolean(targetBrowser || targetProfile);
 
-    const target = this.selectExtensionTarget(targetBrowser, targetProfile);
+    const baselineId =
+      typeof request.params.baselineId === 'string' ? request.params.baselineId : null;
+    const usesBaselineOwner =
+      request.method === 'dom.baseline.compare' ||
+      request.method === 'dom.baseline.describe' ||
+      request.method === 'dom.baseline.release';
+    const baselineOwner = usesBaselineOwner ? this.getDomBaselineOwner(baselineId ?? '') : null;
+    const target = usesBaselineOwner
+      ? baselineOwner &&
+        (!targetBrowser || baselineOwner.__browserName === targetBrowser) &&
+        (!targetProfile || baselineOwner.__profileLabel === targetProfile)
+        ? baselineOwner
+        : null
+      : this.selectExtensionTarget(targetBrowser, targetProfile);
 
     if (!target) {
+      if (usesBaselineOwner) {
+        const response =
+          request.method === 'dom.baseline.release'
+            ? createSuccess(request.id, { baselineId, released: false }, { method: request.method })
+            : createFailure(
+                request.id,
+                ERROR_CODES.DOM_BASELINE_NOT_FOUND,
+                'DOM baseline is missing, expired, released, or its browser destination disconnected.',
+                { baselineId },
+                { method: request.method }
+              );
+        await writeJsonLine(socket, { type: 'agent.response', response });
+        return;
+      }
       const response = createFailure(
         request.id,
         ERROR_CODES.EXTENSION_DISCONNECTED,
@@ -1052,10 +1129,12 @@ export class BridgeDaemon {
       method: request.method,
       protocolVersion: request.meta?.protocol_version,
       source: typeof request.meta?.source === 'string' ? request.meta.source : '',
+      baselineId,
       targets: new Set([target]),
       timeoutId: setTimeout(() => {
         const pending = this.pendingRequests.get(request.id);
         if (!pending) return;
+        this.markAbandonedDomBaselineCreate(request.id, pending);
         this.clearPendingRequest(request.id, pending);
         this.recordRequestCompletion(request.id, false);
         const response = createFailure(
@@ -1154,6 +1233,113 @@ export class BridgeDaemon {
     return candidates[0]?.[1] ?? null;
   }
 
+  /** @param {string} baselineId */
+  getDomBaselineOwner(baselineId) {
+    this.pruneDomBaselineOwners();
+    const owner = this.domBaselineOwners.get(baselineId);
+    if (!owner || !owner.socket.__extensionId || !owner.socket.__accessEnabled) return null;
+    if (this.extensionSockets.get(owner.socket.__extensionId) !== owner.socket) {
+      this.domBaselineOwners.delete(baselineId);
+      return null;
+    }
+    return owner.socket;
+  }
+
+  /** @param {string} baselineId @param {ClientSocket} socket @param {unknown} expiresAt */
+  registerDomBaselineOwner(baselineId, socket, expiresAt) {
+    this.pruneDomBaselineOwners();
+    const parsedExpiry = typeof expiresAt === 'string' ? Date.parse(expiresAt) : Number.NaN;
+    const now = Date.now();
+    if (
+      !/^baseline_[A-Za-z0-9_-]{32,64}$/u.test(baselineId) ||
+      !socket.__extensionId ||
+      !Number.isFinite(parsedExpiry) ||
+      parsedExpiry <= now ||
+      parsedExpiry > now + DOM_BASELINE_TTL_MS + 10_000
+    ) {
+      return false;
+    }
+    const existing = this.domBaselineOwners.get(baselineId);
+    if (existing && existing.socket !== socket) return false;
+    const maxOwnerMappings = MAX_DOM_BASELINES_GLOBAL * 4;
+    while (
+      !existing &&
+      [...this.domBaselineOwners.values()].filter((owner) => owner.socket === socket).length >=
+        maxOwnerMappings
+    ) {
+      const oldest = [...this.domBaselineOwners].find(([, owner]) => owner.socket === socket);
+      if (!oldest) break;
+      this.domBaselineOwners.delete(oldest[0]);
+    }
+    this.domBaselineOwners.set(baselineId, { socket, expiresAt: parsedExpiry });
+    return true;
+  }
+
+  pruneDomBaselineOwners() {
+    const now = Date.now();
+    for (const [baselineId, owner] of this.domBaselineOwners) {
+      if (owner.expiresAt <= now) this.domBaselineOwners.delete(baselineId);
+    }
+  }
+
+  /** @param {ClientSocket} socket */
+  clearDomBaselineOwnersForSocket(socket) {
+    for (const [baselineId, owner] of this.domBaselineOwners) {
+      if (owner.socket === socket) this.domBaselineOwners.delete(baselineId);
+    }
+    for (const [requestId, abandoned] of this.abandonedDomBaselineCreates) {
+      if (abandoned.socket === socket) this.abandonedDomBaselineCreates.delete(requestId);
+    }
+  }
+
+  /** @param {string} requestId @param {PendingEntry} pending */
+  markAbandonedDomBaselineCreate(requestId, pending) {
+    if (pending.method !== 'dom.baseline.create') return;
+    const target = pending.targets.values().next().value;
+    if (!target) return;
+    const now = Date.now();
+    for (const [id, entry] of this.abandonedDomBaselineCreates) {
+      if (entry.expiresAt <= now) this.abandonedDomBaselineCreates.delete(id);
+    }
+    this.abandonedDomBaselineCreates.set(requestId, {
+      socket: target,
+      expiresAt: now + DOM_BASELINE_TTL_MS,
+    });
+    while (this.abandonedDomBaselineCreates.size > MAX_DOM_BASELINES_GLOBAL * 4) {
+      const oldestId = this.abandonedDomBaselineCreates.keys().next().value;
+      if (typeof oldestId !== 'string') break;
+      this.abandonedDomBaselineCreates.delete(oldestId);
+    }
+  }
+
+  /**
+   * @param {ClientSocket} socket
+   * @param {import('../../protocol/src/types.js').BridgeResponse} response
+   */
+  async releaseOrphanDomBaseline(socket, response) {
+    const result =
+      response.result && typeof response.result === 'object'
+        ? /** @type {Record<string, unknown>} */ (response.result)
+        : {};
+    const baselineId = typeof result.baselineId === 'string' ? result.baselineId : '';
+    if (!/^baseline_[A-Za-z0-9_-]{32,64}$/u.test(baselineId)) return;
+    const scope =
+      result.scope && typeof result.scope === 'object'
+        ? /** @type {Record<string, unknown>} */ (result.scope)
+        : {};
+    const tabId = Number.isSafeInteger(scope.tabId) ? Number(scope.tabId) : null;
+    await writeJsonLine(socket, {
+      type: 'extension.request',
+      request: {
+        id: `orphan_release_${randomUUID().replaceAll('-', '')}`,
+        method: 'dom.baseline.release',
+        tab_id: tabId,
+        params: { baselineId },
+        meta: { protocol_version: getProtocolVersion(), token_budget: null },
+      },
+    });
+  }
+
   /**
    * @param {BridgeRequest} request
    * @returns {number}
@@ -1230,6 +1416,7 @@ export class BridgeDaemon {
     const accessEnabled = Boolean(message.accessEnabled);
     if (!accessEnabled && socket.__extensionId) {
       this.artifactStore.deleteByExtension(socket.__extensionId);
+      this.clearDomBaselineOwnersForSocket(socket);
     }
     if (socket.__accessEnabled !== accessEnabled) {
       socket.__accessEnabled = accessEnabled;
@@ -1331,7 +1518,22 @@ export class BridgeDaemon {
     }
 
     const pending = this.pendingRequests.get(responseMessage.id);
-    if (!pending || !pending.targets.has(socket)) {
+    if (!pending) {
+      const abandoned = this.abandonedDomBaselineCreates.get(responseMessage.id);
+      if (abandoned?.socket === socket) {
+        this.abandonedDomBaselineCreates.delete(responseMessage.id);
+        if (responseMessage.ok) {
+          await this.releaseOrphanDomBaseline(socket, responseMessage).catch((error) => {
+            this.logger.error('orphan DOM baseline release failed', {
+              requestId: responseMessage.id,
+              message: error instanceof Error ? error.message : String(error),
+            });
+          });
+        }
+      }
+      return;
+    }
+    if (!pending.targets.has(socket)) {
       return;
     }
 
@@ -1368,6 +1570,32 @@ export class BridgeDaemon {
         await this.finishPendingRequestIfExhausted(responseMessage.id, pending);
         return;
       }
+      if (pending.method === 'dom.baseline.create') {
+        const baselineId = typeof result.baselineId === 'string' ? result.baselineId : '';
+        const evicted = Array.isArray(result.evicted) ? result.evicted : [];
+        for (const item of evicted) {
+          if (item && typeof item === 'object' && 'baselineId' in item) {
+            const evictedId = String(item.baselineId);
+            if (this.domBaselineOwners.get(evictedId)?.socket === socket) {
+              this.domBaselineOwners.delete(evictedId);
+            }
+          }
+        }
+        if (!this.registerDomBaselineOwner(baselineId, socket, result.expiresAt)) {
+          await this.releaseOrphanDomBaseline(socket, responseMessage);
+          pending.lastErrorResponse = createFailure(
+            responseMessage.id,
+            ERROR_CODES.DOM_BASELINE_INVALIDATED,
+            'DOM baseline owner metadata is invalid.',
+            null,
+            { method: pending.method }
+          );
+          await this.finishPendingRequestIfExhausted(responseMessage.id, pending);
+          return;
+        }
+      } else if (pending.method === 'dom.baseline.release' && pending.baselineId) {
+        this.domBaselineOwners.delete(pending.baselineId);
+      }
       const response =
         pending.method === 'health.ping'
           ? createSuccess(
@@ -1396,6 +1624,12 @@ export class BridgeDaemon {
           response,
         });
       } catch (error) {
+        if (pending.method === 'dom.baseline.create') {
+          const baselineId =
+            result && typeof result.baselineId === 'string' ? result.baselineId : null;
+          if (baselineId) this.domBaselineOwners.delete(baselineId);
+          await this.releaseOrphanDomBaseline(socket, responseMessage).catch(() => {});
+        }
         this.clearPendingRequest(responseMessage.id, pending);
         this.recordRequestCompletion(responseMessage.id, false);
         throw error;
@@ -1413,6 +1647,9 @@ export class BridgeDaemon {
     }
 
     // A routed request has one target, so its error is final.
+    if (pending.baselineId && responseMessage.error?.code === ERROR_CODES.DOM_BASELINE_NOT_FOUND) {
+      this.domBaselineOwners.delete(pending.baselineId);
+    }
     pending.lastErrorResponse = responseMessage;
 
     await this.finishPendingRequestIfExhausted(responseMessage.id, pending);
@@ -1425,6 +1662,7 @@ export class BridgeDaemon {
   handleSocketClose(socket) {
     if (socket.__extensionId) {
       this.artifactStore.deleteByExtension(socket.__extensionId);
+      this.clearDomBaselineOwnersForSocket(socket);
       this.logger.info('extension disconnected', { extensionId: socket.__extensionId });
       if (this.extensionSockets.get(socket.__extensionId) === socket) {
         this.extensionSockets.delete(socket.__extensionId);
@@ -1446,6 +1684,7 @@ export class BridgeDaemon {
         if (!pending) {
           continue;
         }
+        this.markAbandonedDomBaselineCreate(id, pending);
         this.clearPendingRequest(id, pending);
         this.recordRequestCompletion(id, false);
       }

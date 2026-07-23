@@ -216,6 +216,10 @@ export function createBridgeMcpServer() {
         action: z
           .enum([
             'query',
+            'baseline_create',
+            'baseline_compare',
+            'baseline_describe',
+            'baseline_release',
             'describe',
             'text',
             'attributes',
@@ -238,6 +242,14 @@ export function createBridgeMcpServer() {
           .describe(
             'CSS selector (used if no elementRef; accessibility_tree requires exactly one match)'
           ),
+        baselineId: z.string().optional().describe('Opaque semantic DOM baseline identifier'),
+        maxChanges: z
+          .number()
+          .int()
+          .positive()
+          .max(200)
+          .optional()
+          .describe('Maximum returned change examples; exact counts are always retained'),
         elementRef: z
           .string()
           .optional()

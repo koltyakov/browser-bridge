@@ -1309,6 +1309,7 @@ test('background native enable flow injects content scripts after ping timeouts 
           kind: 'inject',
           files: [
             'packages/extension/src/content-script-helpers.js',
+            'packages/extension/src/content-dom-baseline.js',
             'packages/extension/src/content-element-registry.js',
             'packages/extension/src/content-dom-query.js',
             'packages/extension/src/content-input.js',

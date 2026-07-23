@@ -824,6 +824,7 @@ test('background dispatch routes page.get_state through the tab-bound content sc
       target: { tabId: 41 },
       files: [
         'packages/extension/src/content-script-helpers.js',
+        'packages/extension/src/content-dom-baseline.js',
         'packages/extension/src/content-element-registry.js',
         'packages/extension/src/content-dom-query.js',
         'packages/extension/src/content-input.js',
@@ -989,6 +990,7 @@ test('background dispatch reinjects and retries when content script receiver dis
       target: { tabId: 42 },
       files: [
         'packages/extension/src/content-script-helpers.js',
+        'packages/extension/src/content-dom-baseline.js',
         'packages/extension/src/content-element-registry.js',
         'packages/extension/src/content-dom-query.js',
         'packages/extension/src/content-input.js',
@@ -2277,6 +2279,137 @@ test('background dispatch surfaces performance metric failures', async () => {
   assert.equal(response.error.code, ERROR_CODES.INTERNAL_ERROR);
   assert.equal(response.error.message, 'metrics unavailable');
   assert.equal(response.meta?.method, 'performance.get_metrics');
+});
+
+test('background dispatch creates, compares, describes, and releases semantic DOM baselines', async () => {
+  let captureCount = 0;
+  const { loaded } = await loadEnabledDispatchBackground({
+    queryLabel: 'test-background-dispatch-dom-baseline',
+    chromeOverrides: {
+      tabs: {
+        async sendMessage(_tabId: number, message: Record<string, unknown>) {
+          if (message.type !== 'bridge.execute') return { ok: true };
+          if (message.method !== 'dom.baseline.snapshot') return { ok: true };
+          const messageParams = message.params as { selector?: string };
+          if (messageParams.selector === '[') {
+            return {
+              error: {
+                code: 'INVALID_REQUEST',
+                message: 'The baseline selector is not valid CSS.',
+                details: { selector: '[' },
+              },
+            };
+          }
+          captureCount += 1;
+          return {
+            documentToken: 'doc_test',
+            representation: 'semantic-dom-v1',
+            selector: 'main',
+            nodes: [
+              {
+                nodeId: 'node_root',
+                parentId: null,
+                ancestorIds: [],
+                siblingIndex: 0,
+                order: 0,
+                depth: 0,
+                tag: 'main',
+                role: 'main',
+                name: null,
+                nameFingerprint: '',
+                textExcerpt: captureCount === 1 ? 'Before' : 'After',
+                textFingerprint: captureCount === 1 ? 'before-hash' : 'after-hash',
+                attrs: {},
+                attrsFingerprint: '',
+                state: {},
+              },
+            ],
+            stats: { nodeCount: 1, byteLength: 300, digest: `digest-${captureCount}` },
+          };
+        },
+      },
+    },
+  });
+
+  const created = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-baseline-create',
+      method: 'dom.baseline.create',
+      params: { selector: 'main', attributeAllowlist: ['data-testid', 'value', 'onclick'] },
+    })
+  );
+  if (!created.ok) assert.fail(created.error.message);
+  const descriptor = created.result as {
+    baselineId: string;
+    scope: { tabId: number; documentToken: string; selector: string };
+    snapshot: { nodeCount: number };
+    options: { attributeAllowlist: string[]; selector?: string };
+    nodes?: unknown;
+  };
+  assert.match(descriptor.baselineId, /^baseline_[A-Za-z0-9_-]{32,64}$/u);
+  assert.deepEqual(descriptor.scope, {
+    windowId: 7,
+    tabId: 81,
+    frameId: 0,
+    selector: 'main',
+    documentToken: 'doc_test',
+    representation: 'semantic-dom-v1',
+  });
+  assert.equal(descriptor.snapshot.nodeCount, 1);
+  assert.deepEqual(descriptor.options.attributeAllowlist, ['data-testid']);
+  assert.equal(descriptor.options.selector, undefined);
+  assert.equal(descriptor.nodes, undefined);
+
+  const compared = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-baseline-compare',
+      method: 'dom.baseline.compare',
+      params: { baselineId: descriptor.baselineId, maxChanges: 10 },
+    })
+  );
+  if (!compared.ok) assert.fail(compared.error.message);
+  assert.equal((compared.result as { equal: boolean }).equal, false);
+  assert.equal((compared.result as { counts: { changed: number } }).counts.changed, 1);
+
+  const described = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-baseline-describe',
+      method: 'dom.baseline.describe',
+      params: { baselineId: descriptor.baselineId },
+    })
+  );
+  assert.equal(described.ok, true);
+  getTabEvents(loaded).onUpdated.dispatch(
+    81,
+    { status: 'loading' },
+    { id: 81, windowId: 7, status: 'loading', url: 'https://example.com/dispatch' }
+  );
+  const invalidated = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-baseline-invalidated',
+      method: 'dom.baseline.compare',
+      params: { baselineId: descriptor.baselineId },
+    })
+  );
+  assert.equal(invalidated.ok, false);
+  assert.equal(invalidated.error?.code, 'DOM_BASELINE_INVALIDATED');
+  const released = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-baseline-release',
+      method: 'dom.baseline.release',
+      params: { baselineId: descriptor.baselineId },
+    })
+  );
+  assert.deepEqual(released.result, { baselineId: descriptor.baselineId, released: false });
+  const invalidSelector = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-baseline-invalid-selector',
+      method: 'dom.baseline.create',
+      params: { selector: '[' },
+    })
+  );
+  assert.equal(invalidSelector.ok, false);
+  assert.equal(invalidSelector.error?.code, 'INVALID_REQUEST');
 });
 
 test('background dispatch captures screenshot regions through a CDP clip', async () => {

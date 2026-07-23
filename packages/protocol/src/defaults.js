@@ -51,6 +51,14 @@ export const MAX_ARTIFACT_TOTAL_BYTES = 268_435_456;
 export const MAX_ARTIFACTS_PER_CLIENT = 16;
 export const ARTIFACT_TTL_MS = 300_000;
 
+/** DOM baseline retention and storage limits. */
+export const DOM_BASELINE_TTL_MS = 300_000;
+export const MAX_DOM_BASELINES_PER_TAB = 8;
+export const MAX_DOM_BASELINES_GLOBAL = 32;
+export const MAX_DOM_BASELINE_BYTES_PER_TAB = 1_048_576;
+export const MAX_DOM_BASELINE_BYTES_GLOBAL = 4_194_304;
+export const MAX_DOM_BASELINE_BYTES = 262_144;
+
 /** Default timeout for a bridge request awaiting an extension response (ms). */
 export const DEFAULT_DAEMON_PENDING_TIMEOUT_MS = 30_000;
 

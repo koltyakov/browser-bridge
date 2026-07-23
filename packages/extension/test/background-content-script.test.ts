@@ -43,6 +43,15 @@ test('general content-script injection does not install navigation listeners or 
   assert.deepEqual(injections[0].target, { tabId: 8 });
   assert.equal(injections[0].world, undefined);
   assert.ok(Array.isArray(injections[0].files));
+  assert.deepEqual(injections[0].files, [
+    'packages/extension/src/content-script-helpers.js',
+    'packages/extension/src/content-dom-baseline.js',
+    'packages/extension/src/content-element-registry.js',
+    'packages/extension/src/content-dom-query.js',
+    'packages/extension/src/content-input.js',
+    'packages/extension/src/content-patch.js',
+    'packages/extension/src/content-script.js',
+  ]);
   assert.equal(injections[0].func, undefined);
 });
 

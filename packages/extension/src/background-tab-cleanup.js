@@ -19,6 +19,7 @@ import { CONTENT_SCRIPT_TIMEOUT_MS, isNumber } from './background-state.js';
  *   cancelNavigationWaitsForWindow: (windowId: number) => void,
  *   isRecoverableInstrumentationError: (error: unknown) => boolean,
  *   isRestrictedAutomationUrl: (url: string) => boolean,
+ *   clearDomBaselinesForTab?: (tabId: number) => void,
  * }} TabCleanupControllerDeps
  */
 
@@ -116,6 +117,7 @@ export function createTabCleanupController(chrome, deps) {
       if (instrumentationErrors.length > 0) throw instrumentationErrors[0];
       return;
     }
+    deps.clearDomBaselinesForTab?.(tabId);
     const endCleanup = await deps.beginDebuggerCleanup(tabId);
     try {
       if (!(await shouldContinue())) return;

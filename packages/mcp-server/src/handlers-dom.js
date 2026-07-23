@@ -15,6 +15,32 @@ import {
 
 /** @type {Record<string, ToolAction>} */
 export const DOM_ACTIONS = {
+  baseline_create: {
+    ref: false,
+    method: 'dom.baseline.create',
+    params: (a) => ({
+      selector: a.selector,
+      maxNodes: a.maxNodes,
+      maxDepth: a.maxDepth,
+      textBudget: a.textBudget,
+      attributeAllowlist: a.attributeAllowlist,
+    }),
+  },
+  baseline_compare: {
+    ref: false,
+    method: 'dom.baseline.compare',
+    params: (a) => ({ baselineId: a.baselineId, maxChanges: a.maxChanges }),
+  },
+  baseline_describe: {
+    ref: false,
+    method: 'dom.baseline.describe',
+    params: (a) => ({ baselineId: a.baselineId }),
+  },
+  baseline_release: {
+    ref: false,
+    method: 'dom.baseline.release',
+    params: (a) => ({ baselineId: a.baselineId }),
+  },
   query: {
     ref: false,
     method: 'dom.query',
@@ -96,7 +122,7 @@ export const DOM_ACTIONS = {
 };
 
 /**
- * @param {{ action: string, selector?: string, elementRef?: string, withinRef?: string, maxNodes?: number, maxDepth?: number, compact?: boolean, interactiveOnly?: boolean, textBudget?: number, includeBbox?: boolean, attributeAllowlist?: string[], attributes?: string[], text?: string, exact?: boolean, maxResults?: number, role?: string, name?: string, state?: string, timeoutMs?: number, outer?: boolean, maxLength?: number, tabId?: number, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @param {{ action: string, baselineId?: string, maxChanges?: number, selector?: string, elementRef?: string, withinRef?: string, maxNodes?: number, maxDepth?: number, compact?: boolean, interactiveOnly?: boolean, textBudget?: number, includeBbox?: boolean, attributeAllowlist?: string[], attributes?: string[], text?: string, exact?: boolean, maxResults?: number, role?: string, name?: string, state?: string, timeoutMs?: number, outer?: boolean, maxLength?: number, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleDomTool(args) {
@@ -109,7 +135,17 @@ export async function handleDomTool(args) {
   if (args.action === 'find_role' && !hasText(args.role)) {
     return summarizeToolError('role is required for dom.find_by_role.');
   }
-  if (args.action === 'query' || args.action === 'accessibility_tree') {
+  if (
+    ['baseline_compare', 'baseline_describe', 'baseline_release'].includes(args.action) &&
+    !hasText(args.baselineId)
+  ) {
+    return summarizeToolError('baselineId is required for this DOM baseline action.');
+  }
+  if (
+    args.action === 'query' ||
+    args.action === 'accessibility_tree' ||
+    args.action === 'baseline_create'
+  ) {
     const inferred =
       args.action === 'accessibility_tree' ? 'normal' : inferBudgetFromSelector(args);
     const withBudget = inferred ? { ...args, budgetPreset: args.budgetPreset ?? inferred } : args;
@@ -117,6 +153,18 @@ export async function handleDomTool(args) {
   }
   if (args.action === 'text') {
     return dispatchToolAction(DOM_ACTIONS, applyTextBudgetPreset(args), 'DOM');
+  }
+  if (args.action === 'baseline_compare') {
+    const byPreset = { quick: 10, normal: 50, deep: 100 };
+    return dispatchToolAction(
+      DOM_ACTIONS,
+      {
+        ...args,
+        maxChanges:
+          args.maxChanges ?? (args.budgetPreset ? byPreset[args.budgetPreset] : undefined),
+      },
+      'DOM'
+    );
   }
   if (args.action === 'html') {
     return dispatchToolAction(DOM_ACTIONS, applyHtmlBudgetPreset(args), 'DOM');

@@ -688,6 +688,159 @@ test('daemon stores screenshot artifacts for the requesting client only', async 
   assert.equal(expectBridgeResponse(parsePayload(agentSocket.writes[2])).response.ok, true);
 });
 
+test('daemon routes DOM baseline operations to the creating extension only', async () => {
+  const daemon = new BridgeDaemon({ logger: { log() {}, error() {} } });
+  const agentSocket = createFakeSocket();
+  const creatingExtension = createFakeSocket();
+  creatingExtension.__extensionId = 'baseline-owner';
+  creatingExtension.__accessEnabled = true;
+  creatingExtension.__lastActiveAt = 20;
+  const otherExtension = createFakeSocket();
+  otherExtension.__extensionId = 'baseline-other';
+  otherExtension.__accessEnabled = true;
+  otherExtension.__lastActiveAt = 10;
+  daemon.extensionSockets.set('baseline-owner', creatingExtension);
+  daemon.extensionSockets.set('baseline-other', otherExtension);
+  const baselineId = `baseline_${'a'.repeat(43)}`;
+
+  await daemon.handleAgentRequest(agentSocket, {
+    request: {
+      id: 'req_baseline_create',
+      method: 'dom.baseline.create',
+      tab_id: 1,
+      params: {
+        selector: 'main',
+        maxNodes: 100,
+        maxDepth: 8,
+        textBudget: 160,
+        attributeAllowlist: [],
+      },
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  });
+  assert.equal(creatingExtension.writes.length, 1);
+  assert.equal(otherExtension.writes.length, 0);
+  await daemon.handleExtensionResponse(creatingExtension, {
+    response: {
+      id: 'req_baseline_create',
+      ok: true,
+      result: {
+        baselineId,
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+      error: null,
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'dom.baseline.create' },
+    },
+  });
+  assert.equal(expectBridgeResponse(parsePayload(agentSocket.writes[0])).response.ok, true);
+
+  otherExtension.__lastActiveAt = 100;
+  await daemon.handleAgentRequest(agentSocket, {
+    request: {
+      id: 'req_baseline_compare',
+      method: 'dom.baseline.compare',
+      tab_id: null,
+      params: { baselineId, maxChanges: 50 },
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  });
+  assert.equal(creatingExtension.writes.length, 2);
+  assert.equal(otherExtension.writes.length, 0);
+  assert.equal(parsePayload(creatingExtension.writes[1]).request?.method, 'dom.baseline.compare');
+  await daemon.handleExtensionResponse(creatingExtension, {
+    response: {
+      id: 'req_baseline_compare',
+      ok: true,
+      result: { baselineId, equal: true },
+      error: null,
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'dom.baseline.compare' },
+    },
+  });
+
+  daemon.handleExtensionAccessUpdate(creatingExtension, { accessEnabled: false });
+  await daemon.handleAgentRequest(agentSocket, {
+    request: {
+      id: 'req_baseline_describe_missing',
+      method: 'dom.baseline.describe',
+      tab_id: null,
+      params: { baselineId },
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  });
+  assert.equal(
+    expectBridgeResponse(parsePayload(agentSocket.writes[2])).response.error?.code,
+    ERROR_CODES.DOM_BASELINE_NOT_FOUND
+  );
+  assert.equal(otherExtension.writes.length, 0);
+});
+
+test('daemon releases a completed baseline when its requesting agent disconnected', async () => {
+  const daemon = new BridgeDaemon({ logger: { log() {}, error() {} } });
+  const agentSocket = createFakeSocket();
+  agentSocket.__clientId = 'baseline-agent';
+  const extensionSocket = createFakeSocket();
+  extensionSocket.__extensionId = 'baseline-extension';
+  extensionSocket.__accessEnabled = true;
+  daemon.extensionSockets.set('baseline-extension', extensionSocket);
+  const baselineId = `baseline_${'z'.repeat(43)}`;
+
+  await daemon.handleAgentRequest(agentSocket, {
+    request: {
+      id: 'req_abandoned_baseline',
+      method: 'dom.baseline.create',
+      tab_id: 17,
+      params: { selector: 'main' },
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  });
+  daemon.handleSocketClose(agentSocket);
+  await daemon.handleExtensionResponse(extensionSocket, {
+    response: {
+      id: 'req_abandoned_baseline',
+      ok: true,
+      result: {
+        baselineId,
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        scope: { tabId: 17 },
+      },
+      error: null,
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'dom.baseline.create' },
+    },
+  });
+
+  assert.equal(extensionSocket.writes.length, 2);
+  const release = parsePayload(extensionSocket.writes[1]);
+  const releaseRequest = release.request as
+    | { method?: string; tab_id?: number | null; params?: Record<string, unknown> }
+    | undefined;
+  assert.equal(releaseRequest?.method, 'dom.baseline.release');
+  assert.equal(releaseRequest?.tab_id, 17);
+  assert.deepEqual(releaseRequest?.params, { baselineId });
+  assert.equal(daemon.abandonedDomBaselineCreates.size, 0);
+});
+
+test('daemon hides baseline owner metadata until extension access is confirmed', () => {
+  const daemon = new BridgeDaemon({ logger: { log() {}, error() {} } });
+  const extensionSocket = createFakeSocket();
+  extensionSocket.__extensionId = 'disabled-baseline-extension';
+  extensionSocket.__accessEnabled = false;
+  daemon.extensionSockets.set('disabled-baseline-extension', extensionSocket);
+  const baselineId = `baseline_${'y'.repeat(43)}`;
+  assert.equal(
+    daemon.registerDomBaselineOwner(
+      baselineId,
+      extensionSocket,
+      new Date(Date.now() + 60_000).toISOString()
+    ),
+    true
+  );
+  assert.equal(daemon.getDomBaselineOwner(baselineId), null);
+  extensionSocket.__accessEnabled = true;
+  assert.equal(daemon.getDomBaselineOwner(baselineId), extensionSocket);
+});
+
 test('daemon completes a request immediately when every target write fails', async () => {
   const daemon = new BridgeDaemon({ logger: { log() {}, error() {} } });
   const agentSocket = createFakeSocket();
@@ -1189,6 +1342,16 @@ test('daemon health ignores malicious extension overrides and preserves bounded 
           interceptionRuleCount: 4,
           requestBody: 'private body',
         },
+        domBaselines: {
+          baselineCount: 2,
+          bytes: 500,
+          tabCount: 1,
+          pageText: 'private baseline text',
+          operations: {
+            compare: { calls: 3, totalLatencyMs: 12.8, maxLatencyMs: 7.2, selector: 'private' },
+            privateOperation: { calls: 99 },
+          },
+        },
       },
       error: null,
       meta: {
@@ -1240,6 +1403,12 @@ test('daemon health ignores malicious extension overrides and preserves bounded 
     inflightCount: 10_000,
     interceptionActiveTabCount: 1,
     interceptionRuleCount: 4,
+  });
+  assert.deepEqual(result.domBaselines, {
+    baselineCount: 2,
+    bytes: 500,
+    tabCount: 1,
+    operations: { compare: { calls: 3, totalLatencyMs: 12, maxLatencyMs: 7 } },
   });
   assert.deepEqual(payload.response.meta, {
     protocol_version: PROTOCOL_VERSION,

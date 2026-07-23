@@ -44,6 +44,7 @@ import {
  *   refreshActionIndicators: () => Promise<void>,
  *   refreshSetupStatus: (force?: boolean) => void,
  *   reply: (response: BridgeResponse) => void,
+ *   handleDestinationDisconnect?: () => void,
  * }} NativeConnectionDeps
  */
 
@@ -539,6 +540,7 @@ export function createNativeConnectionController(state, chromeObj, deps) {
         if (bootstrapFailed) {
           return;
         }
+        if (state.nativePort === candidatePort) deps.handleDestinationDisconnect?.();
         const disconnectError = chromeObj.runtime.lastError?.message ?? 'Native host disconnected.';
         scheduleNativeReconnect(disconnectError, {
           method: 'native.disconnect',

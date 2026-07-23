@@ -281,6 +281,7 @@ async function loadContentScript(
   const globalsToCapture = [
     'chrome',
     '__BBX_CONTENT_HELPERS__',
+    '__bbxContentDomBaseline',
     '__BBX_CONTENT_REGISTRY__',
     '__BBX_CONTENT_DOM_QUERY__',
     '__BBX_CONTENT_INPUT__',
@@ -322,6 +323,7 @@ async function loadContentScript(
   }
 
   if (options.withHelpers) {
+    await importFresh('../src/content-dom-baseline.js');
     await importFresh('../src/content-element-registry.js');
     await importFresh('../src/content-dom-query.js');
     await importFresh('../src/content-input.js');
@@ -3768,4 +3770,27 @@ test('content script reports unsupported execute methods as errors', async (t) =
   );
 
   assert.deepEqual(responses, [{ error: 'Unsupported content-script method navigation.reload' }]);
+});
+
+test('content script dispatches internal semantic baseline snapshots', async (t) => {
+  await withDocument('<main id="baseline-root"><button>Save</button></main>', async () => {
+    const harness = createChromeHarness();
+    await loadContentScript(t, {
+      withHelpers: true,
+      preserveDomGlobals: true,
+      chrome: harness.chrome,
+    });
+
+    const result = expectRecord(
+      await executeBridgeMethod(harness.getListener(), 'dom.baseline.snapshot', {
+        selector: '#baseline-root',
+        maxNodes: 10,
+        maxDepth: 3,
+        textBudget: 100,
+        attributeAllowlist: [],
+      })
+    );
+    assert.equal(result.representation, 'semantic-dom-v1');
+    assert.equal((result.stats as { nodeCount?: unknown }).nodeCount, 2);
+  });
 });

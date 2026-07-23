@@ -52,6 +52,9 @@ export type ErrorCode =
   | 'ARTIFACT_NOT_FOUND'
   | 'ARTIFACT_QUOTA_EXCEEDED'
   | 'ARTIFACT_TRANSFER_INVALID'
+  | 'DOM_BASELINE_NOT_FOUND'
+  | 'DOM_BASELINE_INVALIDATED'
+  | 'DOM_BASELINE_QUOTA_EXCEEDED'
   | 'INTERNAL_ERROR'
   | 'INVALID_REQUEST'
   | 'NATIVE_HOST_UNAVAILABLE'
@@ -86,6 +89,10 @@ export type BridgeMethod =
   | 'navigation.go_back'
   | 'navigation.go_forward'
   | 'dom.query'
+  | 'dom.baseline.create'
+  | 'dom.baseline.compare'
+  | 'dom.baseline.describe'
+  | 'dom.baseline.release'
   | 'dom.describe'
   | 'dom.get_text'
   | 'dom.get_attributes'
@@ -230,6 +237,147 @@ export interface NormalizedDomQuery extends BridgeParams {
   selector: string;
   withinRef: string | null;
   budget: Budget;
+}
+
+export interface DomBaselineCreateParams {
+  selector?: string;
+  maxNodes?: number;
+  maxDepth?: number;
+  textBudget?: number;
+  attributeAllowlist?: string[];
+}
+
+export interface NormalizedDomBaselineCreateParams extends BridgeParams {
+  selector: string;
+  maxNodes: number;
+  maxDepth: number;
+  textBudget: number;
+  attributeAllowlist: string[];
+}
+
+export interface DomBaselineCompareParams {
+  baselineId?: string;
+  maxChanges?: number;
+}
+
+export interface NormalizedDomBaselineCompareParams extends BridgeParams {
+  baselineId: string;
+  maxChanges: number;
+}
+
+export interface DomBaselineHandleParams {
+  baselineId?: string;
+}
+
+export interface NormalizedDomBaselineHandleParams extends BridgeParams {
+  baselineId: string;
+}
+
+export interface DomBaselineOptions {
+  maxNodes: number;
+  maxDepth: number;
+  textBudget: number;
+  attributeAllowlist: string[];
+}
+
+export interface DomBaselineScope {
+  windowId: number;
+  tabId: number;
+  frameId: number;
+  documentToken: string;
+  selector: string;
+  representation: 'semantic-dom-v1';
+}
+
+export interface DomBaselineSnapshotStats {
+  nodeCount: number;
+  byteLength: number;
+  digest: string;
+}
+
+export interface DomBaselineDescriptor {
+  baselineId: string;
+  createdAt: string;
+  expiresAt: string;
+  scope: DomBaselineScope;
+  options: DomBaselineOptions;
+  snapshot: DomBaselineSnapshotStats;
+  evicted?: Array<{
+    baselineId: string;
+    reason: 'per_tab_quota' | 'global_quota';
+  }>;
+}
+
+export type DomBaselineCreateResult = DomBaselineDescriptor;
+export type DomBaselineDescribeResult = DomBaselineDescriptor;
+
+export interface DomBaselineSemanticNodeEvidence {
+  tag: string;
+  role: string | null;
+  name: string | null;
+  text: string;
+  attributes: Record<string, string>;
+  depth: number;
+}
+
+export type DomBaselineNodeEvidence = DomBaselineSemanticNodeEvidence;
+
+export interface DomBaselineChangedNode {
+  fields: string[];
+  before: DomBaselineSemanticNodeEvidence;
+  after: DomBaselineSemanticNodeEvidence;
+}
+
+export interface DomBaselineNodeLocation {
+  ancestry: string[];
+  order: number;
+}
+
+export interface DomBaselineMovedNode {
+  node: DomBaselineSemanticNodeEvidence;
+  from: DomBaselineNodeLocation;
+  to: DomBaselineNodeLocation;
+}
+
+export interface DomBaselineChangeCounts {
+  added: number;
+  removed: number;
+  changed: number;
+  moved: number;
+  unchanged: number;
+  total: number;
+}
+
+export interface DomBaselineReturnedCounts {
+  added: number;
+  removed: number;
+  changed: number;
+  moved: number;
+  total: number;
+}
+
+export interface DomBaselineCompareResult {
+  baselineId: string;
+  equal: boolean;
+  comparedAt: string;
+  counts: DomBaselineChangeCounts;
+  returnedCounts: DomBaselineReturnedCounts;
+  added: DomBaselineSemanticNodeEvidence[];
+  removed: DomBaselineSemanticNodeEvidence[];
+  changed: DomBaselineChangedNode[];
+  moved: DomBaselineMovedNode[];
+  truncated: boolean;
+  omittedChanges: number;
+  ambiguity: {
+    count: number;
+    examples: DomBaselineSemanticNodeEvidence[];
+  };
+  guidance: string;
+}
+
+export interface DomBaselineReleaseResult {
+  baselineId: string;
+  released: boolean;
 }
 
 export interface DomFindResult {

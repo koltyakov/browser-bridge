@@ -22,6 +22,9 @@ export const ERROR_CODES = Object.freeze({
   ARTIFACT_NOT_FOUND: 'ARTIFACT_NOT_FOUND',
   ARTIFACT_QUOTA_EXCEEDED: 'ARTIFACT_QUOTA_EXCEEDED',
   ARTIFACT_TRANSFER_INVALID: 'ARTIFACT_TRANSFER_INVALID',
+  DOM_BASELINE_NOT_FOUND: 'DOM_BASELINE_NOT_FOUND',
+  DOM_BASELINE_INVALIDATED: 'DOM_BASELINE_INVALIDATED',
+  DOM_BASELINE_QUOTA_EXCEEDED: 'DOM_BASELINE_QUOTA_EXCEEDED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
   INVALID_REQUEST: 'INVALID_REQUEST',
   NATIVE_HOST_UNAVAILABLE: 'NATIVE_HOST_UNAVAILABLE',
@@ -126,6 +129,21 @@ export const ERROR_RECOVERY = Object.freeze({
   [ERROR_CODES.ARTIFACT_TRANSFER_INVALID]: {
     retry: false,
     hint: 'Artifact transfer validation failed. Capture the screenshot again.',
+  },
+  [ERROR_CODES.DOM_BASELINE_NOT_FOUND]: {
+    retry: false,
+    alternativeMethod: 'dom.baseline.create',
+    hint: 'The DOM baseline is missing, expired, or released. Create a new baseline before comparing or describing it.',
+  },
+  [ERROR_CODES.DOM_BASELINE_INVALIDATED]: {
+    retry: false,
+    alternativeMethod: 'dom.baseline.create',
+    hint: 'The page document or baseline scope changed. Create a new baseline in the current document.',
+  },
+  [ERROR_CODES.DOM_BASELINE_QUOTA_EXCEEDED]: {
+    retry: false,
+    alternativeMethod: 'dom.baseline.release',
+    hint: 'DOM baseline storage quota was exceeded. Release unneeded baselines, narrow the selector, or reduce maxNodes and textBudget before creating another baseline.',
   },
   [ERROR_CODES.EXTENSION_DISCONNECTED]: {
     retry: true,

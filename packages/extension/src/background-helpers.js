@@ -357,6 +357,13 @@ function estimateInlineImageBytes(image) {
  */
 export function enforceTokenBudget(method, response, tokenBudget) {
   if (
+    method === 'dom.baseline.create' ||
+    method === 'dom.baseline.describe' ||
+    method === 'dom.baseline.release'
+  ) {
+    return response;
+  }
+  if (
     !response.ok ||
     typeof tokenBudget !== 'number' ||
     !Number.isFinite(tokenBudget) ||
@@ -395,10 +402,16 @@ export function enforceTokenBudget(method, response, tokenBudget) {
   let result = cloned;
   const continuationHint = `Retry ${method} with a larger token budget or tighter params.`;
   if (estimateJsonPayloadCost(result).bytes > maxBytes) {
-    const compactFallback = {
-      truncated: true,
-      continuationHint,
-    };
+    const compactFallback =
+      method === 'dom.baseline.compare' && result && typeof result === 'object'
+        ? createCompactBaselineDiff(
+            /** @type {Record<string, unknown>} */ (result),
+            continuationHint
+          )
+        : {
+            truncated: true,
+            continuationHint,
+          };
     if (estimateJsonPayloadCost(compactFallback).bytes > maxBytes) {
       return createFailure(
         response.id,
@@ -458,6 +471,33 @@ function shrinkForBudget(value) {
     return value.length === 1 ? shrinkForBudget(value[0]) : false;
   }
 
+  if (value.counts && typeof value.counts === 'object') {
+    const categories = ['added', 'removed', 'changed', 'moved'];
+    const candidates = categories
+      .map((key) => ({ key, items: Array.isArray(value[key]) ? value[key] : [] }))
+      .filter((entry) => entry.items.length > 0)
+      .sort((left, right) => right.items.length - left.items.length);
+    const candidate = candidates[0];
+    if (candidate) {
+      candidate.items.pop();
+      const returnedCounts = value.returnedCounts ?? {};
+      for (const key of categories) {
+        returnedCounts[key] = Array.isArray(value[key]) ? value[key].length : 0;
+      }
+      returnedCounts.total = categories.reduce((total, key) => total + returnedCounts[key], 0);
+      value.returnedCounts = returnedCounts;
+      const exactTotal = categories.reduce(
+        (total, key) => total + (Number(value.counts[key]) || 0),
+        0
+      );
+      value.omittedChanges = Math.max(0, exactTotal - returnedCounts.total);
+      value.truncated = value.omittedChanges > 0;
+      value.guidance = 'Narrow the selector or increase maxChanges or the token budget.';
+      return true;
+    }
+    return false;
+  }
+
   for (const key of ['image', 'html', 'text', 'value']) {
     if (typeof value[key] === 'string' && value[key].length > 64) {
       value[key] =
@@ -504,6 +544,39 @@ function shrinkForBudget(value) {
   }
 
   return false;
+}
+
+/** @param {Record<string, unknown>} result @param {string} continuationHint */
+function createCompactBaselineDiff(result, continuationHint) {
+  const counts =
+    result.counts && typeof result.counts === 'object'
+      ? /** @type {Record<string, unknown>} */ (result.counts)
+      : {};
+  const ambiguity =
+    result.ambiguity && typeof result.ambiguity === 'object'
+      ? /** @type {Record<string, unknown>} */ (result.ambiguity)
+      : {};
+  return {
+    baselineId: result.baselineId,
+    equal: result.equal === true,
+    comparedAt: result.comparedAt,
+    counts,
+    returnedCounts: { added: 0, removed: 0, changed: 0, moved: 0, total: 0 },
+    added: [],
+    removed: [],
+    changed: [],
+    moved: [],
+    truncated: true,
+    omittedChanges: ['added', 'removed', 'changed', 'moved'].reduce(
+      (total, key) => total + (Number(counts[key]) || 0),
+      0
+    ),
+    ambiguity: {
+      count: Number(ambiguity.count) || 0,
+      examples: [],
+    },
+    guidance: continuationHint,
+  };
 }
 
 /**

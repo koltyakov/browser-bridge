@@ -160,6 +160,47 @@ test('summarizes dialog actions as non-atomic command dispatches', () => {
   assert.doesNotMatch(summary.summary, /handled|completed/);
 });
 
+test('summarizes DOM baseline creation and description', () => {
+  const result = {
+    baselineId: `baseline_${'a'.repeat(32)}`,
+    createdAt: '2026-07-23T00:00:00.000Z',
+    expiresAt: '2026-07-23T00:05:00.000Z',
+    scope: {},
+    options: {},
+    snapshot: { nodeCount: 12, byteLength: 345, digest: 'digest' },
+  };
+  const created = summarizeBridgeResponse(ok(result), 'dom.baseline.create');
+  const described = summarizeBridgeResponse(ok(result), 'dom.baseline.describe');
+  assert.match(created.summary, /DOM baseline .* created: 12 node\(s\), 345 bytes/);
+  assert.match(described.summary, /DOM baseline .* described: 12 node\(s\), 345 bytes/);
+  assert.deepEqual(created.evidence, result);
+});
+
+test('summarizes equal, changed, and released DOM baselines', () => {
+  const baselineId = `baseline_${'b'.repeat(32)}`;
+  const equal = summarizeBridgeResponse(
+    ok({ baselineId, equal: true, counts: {}, omittedChanges: 0 }),
+    'dom.baseline.compare'
+  );
+  const changed = summarizeBridgeResponse(
+    ok({
+      baselineId,
+      equal: false,
+      counts: { added: 2, removed: 1, changed: 3, moved: 4 },
+      truncated: true,
+      omittedChanges: 5,
+    }),
+    'dom.baseline.compare'
+  );
+  const released = summarizeBridgeResponse(
+    ok({ baselineId, released: true }),
+    'dom.baseline.release'
+  );
+  assert.match(equal.summary, /matches the current DOM/);
+  assert.match(changed.summary, /2 added, 1 removed, 3 changed, 4 moved; 5 omitted/);
+  assert.match(released.summary, /released/);
+});
+
 // --- summarizeBridgeResponse: text result ---
 
 test('summarizes page text result', () => {

@@ -200,6 +200,61 @@ test('grouped handlers validate action-specific required fields before bridge ca
   const missingExpression = await handlePageTool({ action: 'evaluate' });
   assert.equal(missingExpression.isError, true);
   assert.match(missingExpression.content[0].text, /expression is required/);
+
+  const missingBaseline = await handleDomTool({ action: 'baseline_compare' });
+  assert.equal(missingBaseline.isError, true);
+  assert.match(missingBaseline.content[0].text, /baselineId is required/);
+});
+
+test('handleDomTool maps explicit semantic baseline lifecycle actions', async () => {
+  const baselineId = `baseline_${'a'.repeat(43)}`;
+  await withMockedBridge(
+    async (record) =>
+      ok(
+        record.method === 'dom.baseline.compare'
+          ? { baselineId, equal: true, counts: { added: 0, removed: 0, changed: 0, moved: 0 } }
+          : { baselineId, released: record.method === 'dom.baseline.release' }
+      ),
+    async (calls) => {
+      await handleDomTool({
+        action: 'baseline_create',
+        selector: 'main',
+        budgetPreset: 'quick',
+      });
+      await handleDomTool({
+        action: 'baseline_compare',
+        baselineId,
+        maxChanges: 12,
+      });
+      await handleDomTool({ action: 'baseline_describe', baselineId });
+      await handleDomTool({ action: 'baseline_release', baselineId });
+      assert.deepEqual(
+        calls.map((call) => call.method),
+        [
+          'dom.baseline.create',
+          'dom.baseline.compare',
+          'dom.baseline.describe',
+          'dom.baseline.release',
+        ]
+      );
+      const createCall = calls[0];
+      assert.ok(createCall);
+      assert.equal(createCall.params?.selector, 'main');
+      assert.equal(createCall.params?.maxNodes, 5);
+      assert.deepEqual(calls[1].params, { baselineId, maxChanges: 12 });
+    }
+  );
+});
+
+test('handleDomTool applies baseline compare budget presets consistently', async () => {
+  const baselineId = `baseline_${'d'.repeat(43)}`;
+  await withMockedBridge(
+    async () => ok({ baselineId, equal: true }),
+    async (calls) => {
+      await handleDomTool({ action: 'baseline_compare', baselineId, budgetPreset: 'quick' });
+      assert.equal(calls[0]?.params?.maxChanges, 10);
+    }
+  );
 });
 
 test('handleDomTool html calls dom.get_html', async () => {
@@ -1772,6 +1827,32 @@ test('handleBatchTool rejects unsafe calls before dispatching any request', asyn
       assert.equal(calls.length, 0);
       assert.equal(result.isError, true);
       assert.match(result.content[0].text, /not safe for parallel batch execution/);
+    }
+  );
+});
+
+test('handleBatchTool allows read-only baseline checks and rejects lifecycle mutations', async () => {
+  const baselineId = `baseline_${'b'.repeat(43)}`;
+  await withMockedBridge(
+    async () => ok({ baselineId, equal: true }),
+    async (calls) => {
+      const reads = await handleBatchTool({
+        calls: [
+          { method: 'dom.baseline.compare', params: { baselineId } },
+          { method: 'dom.baseline.describe', params: { baselineId } },
+        ],
+      });
+      assert.equal(reads.isError, undefined);
+      assert.deepEqual(
+        calls.map((call) => call.method),
+        ['dom.baseline.compare', 'dom.baseline.describe']
+      );
+
+      for (const method of ['dom.baseline.create', 'dom.baseline.release']) {
+        const mutation = await handleBatchTool({ calls: [{ method, params: { baselineId } }] });
+        assert.equal(mutation.isError, true);
+      }
+      assert.equal(calls.length, 2);
     }
   );
 });

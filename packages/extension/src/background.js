@@ -115,6 +115,8 @@ import {
   handleTabBoundRequest as executeTabBoundRequest,
   isTabBoundMethod,
 } from './background-tab-bound.js';
+import { createDomBaselineController } from './background-dom-baselines.js';
+import { createDomBaselineRequestHandler } from './background-dom-baseline-requests.js';
 
 /** @typedef {import('./background-state.js').EnabledWindowState} EnabledWindowState */
 /** @typedef {import('./background-state.js').ResolvedTabTarget} ResolvedTabTarget */
@@ -133,6 +135,7 @@ const chrome = globalThis.chrome;
 /** @type {ExtensionState} */
 const state = createExtensionState();
 setExtensionState(state);
+const domBaselines = createDomBaselineController();
 
 const tabDebugger = new TabDebuggerCoordinator({
   attach: (target, protocolVersion) => chrome.debugger.attach(target, protocolVersion),
@@ -205,22 +208,35 @@ const navigationWaits = new NavigationWaitCoordinator({
   uninstallSignals: uninstallNavigationSignals,
 });
 
-const { clearTabBridgeState, clearWindowBridgeState, rollbackAllPatchesForTab } =
-  createTabCleanupController(chrome, {
-    ensureContentScript,
-    sendTabMessage,
-    disableConsoleInterceptor,
-    disableNetworkInterceptor,
-    beginDebuggerCleanup: (tabId) => tabDebugger.beginCleanup(tabId),
-    commitDebuggerCleanup: (tabId) => tabDebugger.commitCleanup(tabId),
-    clearFetchInterception: (tabId) => fetchInterceptor.clearAllRules(tabId),
-    discardFetchInterception: (tabId) => fetchInterceptor.handleDetach(tabId),
-    stopCdpNetworkCapture: (tabId) => cdpNetworkCapture.stop(tabId),
-    discardCdpNetworkCapture: (tabId) => cdpNetworkCapture.handleDetach(tabId),
-    cancelNavigationWaitsForWindow: (windowId) => navigationWaits.cancelWindow(windowId),
-    isRecoverableInstrumentationError,
-    isRestrictedAutomationUrl,
-  });
+const tabCleanupController = createTabCleanupController(chrome, {
+  ensureContentScript,
+  sendTabMessage,
+  disableConsoleInterceptor,
+  disableNetworkInterceptor,
+  beginDebuggerCleanup: (tabId) => tabDebugger.beginCleanup(tabId),
+  commitDebuggerCleanup: (tabId) => tabDebugger.commitCleanup(tabId),
+  clearFetchInterception: (tabId) => fetchInterceptor.clearAllRules(tabId),
+  discardFetchInterception: (tabId) => fetchInterceptor.handleDetach(tabId),
+  stopCdpNetworkCapture: (tabId) => cdpNetworkCapture.stop(tabId),
+  discardCdpNetworkCapture: (tabId) => cdpNetworkCapture.handleDetach(tabId),
+  cancelNavigationWaitsForWindow: (windowId) => navigationWaits.cancelWindow(windowId),
+  clearDomBaselinesForTab: (tabId) => domBaselines.clearTab(tabId),
+  isRecoverableInstrumentationError,
+  isRestrictedAutomationUrl,
+});
+/**
+ * @param {number} tabId
+ * @param {(() => Promise<boolean>) | undefined} [shouldContinue]
+ */
+const clearTabBridgeState = async (tabId, shouldContinue) => {
+  await tabCleanupController.clearTabBridgeState(tabId, shouldContinue);
+};
+/** @param {number} windowId */
+const clearWindowBridgeState = async (windowId) => {
+  domBaselines.clearWindow(windowId);
+  await tabCleanupController.clearWindowBridgeState(windowId);
+};
+const rollbackAllPatchesForTab = tabCleanupController.rollbackAllPatchesForTab;
 
 const tabMoveCleanup = createTabMoveCleanupController({
   getEnabledWindowId: () => state.enabledWindow?.windowId ?? null,
@@ -254,6 +270,7 @@ const tabMoveCleanup = createTabMoveCleanupController({
   },
   clearTabBridgeState,
   clearRemovedTabState: async (tabId) => {
+    domBaselines.clearTab(tabId);
     const endCleanup = await tabDebugger.beginCleanup(tabId);
     try {
       await tabDebugger.commitCleanup(tabId);
@@ -335,6 +352,13 @@ const {
   waitForUrl: (tabId, windowId, params) => navigationWaits.wait(tabId, windowId, params),
 });
 
+const domBaselineRequests = createDomBaselineRequestHandler(domBaselines, {
+  resolveRequestTarget,
+  ensureContentScript,
+  sendTabMessage,
+  contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,
+});
+
 const { appendActionLogEntry, getActionContext, logBridgeAction, restoreActionLog } =
   createActionLogController(state, chrome, {
     emitUiState,
@@ -384,6 +408,7 @@ const { connectNative, scheduleNativeReconnect } = createNativeConnectionControl
   refreshActionIndicators,
   refreshSetupStatus,
   reply,
+  handleDestinationDisconnect: () => domBaselines.clearAll(),
 });
 
 /**
@@ -504,6 +529,9 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'loading' || typeof changeInfo.url === 'string') {
+    domBaselines.invalidateNavigation(tabId);
+  }
   navigationWaits.handleTabUpdated(tabId, changeInfo, tab);
   void handleTabUpdated(tabId, changeInfo, tab).catch(reportAsyncError);
 });
@@ -518,6 +546,7 @@ chrome.tabs.onAttached?.addListener((tabId, attachInfo) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
+  domBaselines.clearTab(tabId);
   void tabMoveCleanup.handleRemoved(tabId).catch(reportAsyncError);
   void handleTabRemoved(tabId, removeInfo).catch(reportAsyncError);
 });
@@ -528,6 +557,7 @@ chrome.windows.onRemoved.addListener((windowId) => {
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === KEEPALIVE_ALARM_NAME) {
+    domBaselines.pruneExpired();
     if (!state.enabledWindow) {
       void chrome.alarms.clear(KEEPALIVE_ALARM_NAME);
     }
@@ -551,8 +581,10 @@ chrome.runtime.onConnect.addListener((port) => {
 chrome.runtime.onMessage.addListener(
   createRuntimeMessageListener({
     openSidePanelForTab,
-    onNavigationSignal: (tabId, kind, channel) =>
-      navigationWaits.handleSpaSignal(tabId, kind, channel),
+    onNavigationSignal: (tabId, kind, channel) => (
+      domBaselines.invalidateNavigation(tabId),
+      navigationWaits.handleSpaSignal(tabId, kind, channel)
+    ),
   })
 );
 
@@ -678,6 +710,7 @@ async function dispatchBridgeRequest(request) {
             interceptionActiveTabCount: interceptionDiagnostics.activeTabCount,
             interceptionRuleCount: interceptionDiagnostics.ruleCount,
           },
+          domBaselines: domBaselines.metrics(),
           ...getVersionNegotiationPayload(request.meta?.protocol_version),
         },
         { method: request.method }
@@ -685,6 +718,11 @@ async function dispatchBridgeRequest(request) {
     }
     case 'access.request':
       return handleAccessRequest(request);
+    case 'dom.baseline.create':
+    case 'dom.baseline.compare':
+    case 'dom.baseline.describe':
+    case 'dom.baseline.release':
+      return domBaselineRequests.handle(request);
     case 'skill.get_runtime_context':
       return createSuccess(request.id, createRuntimeContext(), {
         method: request.method,

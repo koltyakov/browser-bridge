@@ -44,6 +44,9 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').CdpNodeIdParams} CdpNodeIdParams */
 /** @typedef {import('./types.js').ConsoleParams} ConsoleParams */
 /** @typedef {import('./types.js').DomQueryParams} DomQueryParams */
+/** @typedef {import('./types.js').DomBaselineCreateParams} DomBaselineCreateParams */
+/** @typedef {import('./types.js').DomBaselineCompareParams} DomBaselineCompareParams */
+/** @typedef {import('./types.js').DomBaselineHandleParams} DomBaselineHandleParams */
 /** @typedef {import('./types.js').DragParams} DragParams */
 /** @typedef {import('./types.js').EvaluateParams} EvaluateParams */
 /** @typedef {import('./types.js').ExtractContentParams} ExtractContentParams */
@@ -66,6 +69,9 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').NormalizedCdpNodeIdParams} NormalizedCdpNodeIdParams */
 /** @typedef {import('./types.js').NormalizedConsoleParams} NormalizedConsoleParams */
 /** @typedef {import('./types.js').NormalizedDomQuery} NormalizedDomQuery */
+/** @typedef {import('./types.js').NormalizedDomBaselineCreateParams} NormalizedDomBaselineCreateParams */
+/** @typedef {import('./types.js').NormalizedDomBaselineCompareParams} NormalizedDomBaselineCompareParams */
+/** @typedef {import('./types.js').NormalizedDomBaselineHandleParams} NormalizedDomBaselineHandleParams */
 /** @typedef {import('./types.js').NormalizedDragParams} NormalizedDragParams */
 /** @typedef {import('./types.js').NormalizedEvaluateParams} NormalizedEvaluateParams */
 /** @typedef {import('./types.js').NormalizedExtractContentParams} NormalizedExtractContentParams */
@@ -382,6 +388,13 @@ function normalizeRequestParams(method, params) {
       return normalizeLogTailParams(params);
     case 'dom.query':
       return normalizeDomQuery(params);
+    case 'dom.baseline.create':
+      return normalizeDomBaselineCreateParams(params);
+    case 'dom.baseline.compare':
+      return normalizeDomBaselineCompareParams(params);
+    case 'dom.baseline.describe':
+    case 'dom.baseline.release':
+      return normalizeDomBaselineHandleParams(params);
     case 'page.evaluate':
       return normalizeEvaluateParams(params);
     case 'page.get_console':
@@ -539,6 +552,82 @@ export function normalizeDomQuery(params = {}) {
     withinRef: typeof params.withinRef === 'string' ? params.withinRef : null,
     budget: applyBudget({ ...nestedBudget, ...params }),
   };
+}
+
+/**
+ * @param {DomBaselineCreateParams} [params={}]
+ * @returns {NormalizedDomBaselineCreateParams}
+ */
+export function normalizeDomBaselineCreateParams(params = {}) {
+  const selector = typeof params.selector === 'string' ? params.selector.trim() : '';
+  if (selector.length > 2_048) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'selector must not exceed 2,048 characters.'
+    );
+  }
+
+  const attributeAllowlist = Array.isArray(params.attributeAllowlist)
+    ? [
+        ...new Set(
+          params.attributeAllowlist
+            .filter((name) => typeof name === 'string')
+            .map((name) => name.trim().toLowerCase())
+            .filter(
+              (name) =>
+                name.length > 0 &&
+                name.length <= 128 &&
+                name !== 'value' &&
+                !name.startsWith('on') &&
+                /^[a-z_][a-z0-9_.:-]*$/u.test(name)
+            )
+        ),
+      ]
+    : [];
+  if (attributeAllowlist.length > 16) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'attributeAllowlist must contain at most 16 unique attribute names.'
+    );
+  }
+
+  return {
+    selector: selector || 'body',
+    maxNodes: clampInt(params.maxNodes, 1, 1_000, 100),
+    maxDepth: clampInt(params.maxDepth, 1, 20, 8),
+    textBudget: clampInt(params.textBudget, 32, 1_000, 160),
+    attributeAllowlist,
+  };
+}
+
+/**
+ * @param {DomBaselineCompareParams} [params={}]
+ * @returns {NormalizedDomBaselineCompareParams}
+ */
+export function normalizeDomBaselineCompareParams(params = {}) {
+  return {
+    baselineId: normalizeDomBaselineId(params.baselineId),
+    maxChanges: clampInt(params.maxChanges, 1, 200, 50),
+  };
+}
+
+/**
+ * @param {DomBaselineHandleParams} [params={}]
+ * @returns {NormalizedDomBaselineHandleParams}
+ */
+export function normalizeDomBaselineHandleParams(params = {}) {
+  return { baselineId: normalizeDomBaselineId(params.baselineId) };
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function normalizeDomBaselineId(value) {
+  if (typeof value !== 'string' || !/^baseline_[A-Za-z0-9_-]{32,64}$/u.test(value)) {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'baselineId is invalid.');
+  }
+  return value;
 }
 
 /**
@@ -1503,6 +1592,9 @@ export function createRuntimeContext() {
       ELEMENT_NOT_ACTIONABLE: 'Input target is hidden, disabled, inert, or not rendered',
       ELEMENT_OBSCURED: 'Pointer target is blocked by an unrelated element',
       ELEMENT_NOT_FOUND: 'Input selector did not match an element',
+      DOM_BASELINE_NOT_FOUND: 'DOM baseline is missing, expired, or released',
+      DOM_BASELINE_INVALIDATED: 'DOM baseline belongs to a different document or scope',
+      DOM_BASELINE_QUOTA_EXCEEDED: 'DOM baseline retention quota was exceeded',
       INPUT_UNSUPPORTED: 'Execution mode does not support this input operation',
       INPUT_INVALID_TARGET: 'Input target is incompatible with the requested operation',
       INPUT_FOCUS_CHANGED: 'Focus moved before native text dispatch',
@@ -1517,6 +1609,7 @@ export function createRuntimeContext() {
       'dom.query quick budget first; widen only if truncated',
       "Reuse elementRef; don't re-query",
       'Set attributeAllowlist for focused DOM reads',
+      'Use dom.baseline.create / compare for bounded semantic DOM change detection; release when done',
       'patch.apply_styles before patch.apply_dom',
       'Verify with get_box_model not screenshots',
       'batch independent reads',
@@ -1561,6 +1654,10 @@ export function createRuntimeContext() {
         max: 100000,
         default: DEFAULT_PAGE_TEXT_BUDGET,
       },
+      baselineMaxNodes: { min: 1, max: 1000, default: 100 },
+      baselineMaxDepth: { min: 1, max: 20, default: 8 },
+      baselineTextBudget: { min: 32, max: 1000, default: 160 },
+      baselineMaxChanges: { min: 1, max: 200, default: 50 },
     },
   };
 }
