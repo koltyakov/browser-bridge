@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "minimum_chrome_version": "114",
   "name": "Browser Bridge (BBX)",
-  "version": "1.8.1",
+  "version": "1.8.5",
   "description": "Local bridge for structured DOM, style, input, console, network, accessibility, dialog, and reversible patch workflows.",
   "icons": {
     "16": "packages/extension/assets/icon-16.png",
