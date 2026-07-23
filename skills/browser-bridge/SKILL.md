@@ -59,12 +59,13 @@ bbx a11y-tree [maxNodes] [maxDepth]  # accessibility tree
 bbx eval [--await] <expression>      # JS eval (--await for promises, - for stdin)
 bbx console [level]                  # console output
 bbx network [limit]                  # recent fetch/XHR requests
+bbx har [options] [outPath]          # export armed CDP capture as sanitized HAR 1.2
 bbx intercept add <pattern> [--respond <body>] [--status <code>] [--block]  # intercept matching requests
 bbx intercept list|remove <id>|clear # manage interception rules
 bbx page-text [budget]               # full page text
 bbx storage [local|session] [keys]   # storage key/presence metadata
 bbx call sensitive.read '{"source":"local_storage","key":"name"}' # deliberate exact value
-bbx perf                             # performance metrics
+bbx perf                             # raw Chrome/CDP counter point sample
 bbx navigate <url>                   # navigate to URL
 bbx reload                           # reload current page
 bbx back                             # navigate back
@@ -156,6 +157,13 @@ After access is enabled:
 
 Error responses now include a machine-readable `error.recovery` field with `retry`, `retryAfterMs`, `alternativeMethod`, and `hint`.
 
+`health.ping`, `daemon.metrics`, and `bbx doctor` also expose process-local
+five-minute recovery summaries for six fixed, content-free categories. Three
+failures in the same hidden group within 60 seconds marks an active loop. Stop
+repeating the action and follow Doctor's fixed category guidance. Extension
+summaries reset on service-worker restart and daemon summaries on daemon restart;
+they contain no page data, URLs, selectors, payloads, errors, or group names.
+
 ## Core Rules
 
 1. **Work in existing tabs** - Never create new tabs unless the user explicitly asks for it, or the task absolutely requires a fresh page (e.g., testing a clean state, comparing across URLs). Prefer `tabs.list` to find an appropriate existing tab.
@@ -170,7 +178,7 @@ Error responses now include a machine-readable `error.recovery` field with `retr
 10. **Avoid debugger first** - prefer DOM/content-script methods (`dom.*`, `styles.*`, `layout.get_box_model`, `page.get_console`, `page.get_text`, `page.get_storage`, `page.get_network`) before any debugger-backed method. Escalate to CDP only when those cannot answer the question.
 11. **Evaluate only when needed** - `page.evaluate` is powerful but debugger-backed; use it only when DOM, storage, console, network, or text reads cannot expose the needed state.
 12. **Treat exact storage as sensitive** - use `page.get_storage` for metadata first. Call `sensitive.read` for one exact key only when necessary; never batch or automatically retry it, and never repeat a failed attempt without new evidence.
-12. **Debugger-backed methods are last resort** - treat `page.evaluate`, `page.handle_dialog`, `dom.get_accessibility_tree`, `page.get_network` with `source: 'cdp'`, input with `executionMode: 'cdp'`, `viewport.resize`, `performance.get_metrics`, `screenshot.capture_*`, and all `cdp.*` methods as escalation steps because they attach `chrome.debugger`.
+12. **Debugger-backed methods are last resort** - treat `page.evaluate`, `page.handle_dialog`, `dom.get_accessibility_tree`, `page.get_network` with `source: 'cdp'`, input with `executionMode: 'cdp'`, `viewport.resize`, `performance.get_metrics`, `screenshot.capture_*`, and all `cdp.*` methods as escalation steps because they attach `chrome.debugger`. `performance.get_metrics` is a raw browser-maintained CDP counter point sample, not Web Vitals.
 13. **Wait after change** - after editing source, wait for expected new text, a selector matching the changed attribute, or a detach/attach remount; waiting for `attached` on a selector that already exists does not prove HMR ran. Use `page.wait_for_load_state` for navigation, not HMR.
 14. **Prime event buffers** - before reproducing a console or fetch/XHR issue, call `page.get_console` and default `page.get_network` once with `clear: true`; then reproduce and read without clearing. CDP all-resource capture instead requires explicit `start`, reproduce, `read`, and `stop` calls.
 15. **Semantic finding** - use `dom.find_by_text` / `dom.find_by_role` when you know the label but not the selector.
@@ -183,6 +191,7 @@ Error responses now include a machine-readable `error.recovery` field with `retr
 22. **Stale recovery stays opt-in** - prefer re-querying. Use `recoverStale: true` once only when the same document/URL and a strong unique semantic descriptor should still identify the target; inspect `recovered`, old/new refs, and matched fields. A scan with more than 100 same-tag candidates fails as `ELEMENT_AMBIGUOUS`/`scan_incomplete` because uniqueness is not provable.
 23. **Dialogs are explicit** - inspect first, then accept or dismiss only when intended. `expectedDialogId` is a pre-dispatch stale-decision check, not an atomic CDP binding; never auto-repeat `DIALOG_ACTION_CONFLICT`.
 24. **DOM diffs use explicit baselines** - call `dom.baseline.create` before the action, `dom.baseline.compare` afterward, then `dom.baseline.release`. Use a narrow selector and bounded evidence. Never substitute unrelated DOM reads for the retained baseline, and recreate it after `DOM_BASELINE_INVALIDATED`.
+25. **HAR export reads an armed capture** - use CDP capture `start`, reproduce, `network.export_har`/`bbx har`, then `stop`. Export never starts, stops, or clears capture. Inspect truncation plus `dropped`, `abandoned`, and `inflight` before claiming completeness.
 
 ## Token Budget Quick Rules
 
@@ -254,12 +263,12 @@ bbx page-text 2000                                  # extract page content
 | Find        | `dom.find_by_text`, `dom.find_by_role`, `dom.wait_for`, `dom.get_accessibility_tree`                                                                |
 | Page State  | `page.get_console`, `page.get_storage`, `page.get_text`, `page.wait_for_load_state`, `page.evaluate` (debugger-backed)                              |
 | Dialogs     | `page.handle_dialog` (debugger-backed; explicit inspect/accept/dismiss only)                                                                  |
-| Network     | `page.get_network` (fetch/XHR default; optional CDP lifecycle), `network.intercept.add/remove/list/clear` (debugger-backed)                         |
+| Network     | `page.get_network` (fetch/XHR default; optional CDP lifecycle), `network.export_har`, `network.intercept.add/remove/list/clear` (debugger-backed)   |
 | Interact    | `input.click`, `input.type`, `input.fill`, `input.focus`, `input.press_key`, `cdp.dispatch_key_event`, `input.hover`, `input.drag`, `input.scroll_into_view` |
 | Tabs        | `tabs.list` (preferred), `tabs.create` (avoid unless necessary), `tabs.close`, `tabs.activate`                                                      |
 | Patch       | `patch.apply_styles`, `patch.apply_dom`, `patch.rollback`                                                                                           |
 | Navigate    | `navigation.navigate`, `viewport.scroll`, `viewport.resize`                                                                                         |
-| Performance | `performance.get_metrics` (debugger-backed)                                                                                                         |
+| Performance | `performance.get_metrics` (raw Chrome/CDP counter point sample; debugger-backed)                                                                    |
 | Escalate    | `dom.get_accessibility_tree`, `screenshot.capture_element`, `screenshot.capture_region` (tight crops only), `screenshot.capture_full_page`, `cdp.*` |
 
 ## Dev-Server Workflow (HMR-aware)
@@ -339,6 +348,7 @@ Every CLI shortcut command produces consistent `{ok, summary, evidence}` JSON. U
 - `input.drag` uses `source`, `destination`, and optional destination offsets `offsetX` / `offsetY`.
 - `executionMode` accepts `dom` or `cdp` and defaults to `dom`; CDP supports only click, hover, drag, type, and fill. `input.fill.mode` (`auto`, `setter`, `keystrokes`) is a separate DOM strategy.
 - `page.get_network` defaults to low-cost fetch/XHR instrumentation. All-resource CDP capture must be armed before the activity with `source: "cdp", capture: "start"`, read later, and explicitly stopped.
+- `network.export_har` requires that explicit capture to still be armed. Params are `limit` (1-200), sanitized-URL substring `urlPattern`, and `delivery` (`auto`, `inline`, `artifact`). Inline bounds remove whole oldest entries; export never changes capture state. `bbx har` uses the same client to download, length/SHA-256 verify, delete, validate, and atomically write artifacts locally.
 - `page.handle_dialog` mutations are not atomically bound to `expectedDialogId`; treat `commandDispatched` as dispatch evidence and verify follow-up state.
 - Raw screenshot calls default to inline base64. Use `delivery: "auto"` for size-aware artifact fallback, or explicit `inline` when MCP image content is required; prefer `bbx screenshot <ref> [outPath]` when one element is enough because the CLI downloads and verifies artifacts locally.
 
@@ -363,13 +373,14 @@ Shortcut commands intentionally expose only the common case. Use `bbx call <meth
 | Computed styles  | `result.properties + elementRef` | `Computed N style(s) for ref.`                               |
 | Box model        | `result.content + border`        | `Box model: W×H at (x, y).`                                  |
 | Network          | `result.source + entries`        | `Network: N requests.`                                       |
+| HAR export       | `result.format === "har"`        | `HAR export delivered mode: N/M entries.`                    |
 | Console          | `entries` (no type field)        | `Console: N entries.`                                        |
 | Logs             | `entries[0].at + method`         | `Log: N entries.`                                            |
 | Patch apply      | `result.patchId`                 | `Patch id applied.`                                          |
 | Patch rollback   | `result.rolled_back`             | `Patch rolled back.`                                         |
 | Patch list       | `result.patches`                 | `N active patch(es).`                                        |
 | HTML             | `result.html`                    | `HTML fragment: N chars.`                                    |
-| Performance      | `result.metrics`                 | `Performance: N metrics collected.`                          |
+| Performance      | `result.metrics`                 | `Raw CDP performance counters: N collected; Web Vitals not measured.` |
 | Storage          | `result.type + count + entries`  | `Storage (type): N entries.`                                 |
 | Click/Focus/Type | `result.clicked/focused/typed`   | `Clicked/Focused/Typed ref.`                                 |
 | Key press        | `result.pressed`                 | `Key pressed (key).`                                         |

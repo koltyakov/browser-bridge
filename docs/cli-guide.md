@@ -30,7 +30,10 @@ Chromium, or Arc, or `--all` for all supported browsers.
 `bbx doctor` is consolidated but intentionally local-only: it checks local
 transport/authentication, native host manifests, extension/profile connections,
 enabled-window active-tab routing, protocol versions, debugger/capture state,
-daemon metrics, setup status, and recent redacted event metadata. Configured
+daemon metrics, process-local recovery telemetry, setup status, and recent
+redacted event metadata. Recovery output is limited to fixed category counters,
+rates, timestamps, and active-loop flags; it contains no page data, URLs,
+selectors, payloads, error text, or internal grouping identifiers. Configured
 remotes are counted but reported as `not_probed_local_only` with credentials
 `unverified`; use `bbx remote test <name>` for an explicit remote probe. Doctor
 does not include page content, expressions, storage/form values, network
@@ -103,7 +106,9 @@ bbx eval 'window.location.href'
 
 Use `sensitive.read` only when the exact value is necessary. It is sequential,
 non-retryable, logged as Sensitive access, and returns the value whole or fails
-without a partial result. Reach for `eval` only when structured reads are not enough.
+without a partial result. `bbx perf` is a raw CDP counter point sample with
+browser-defined names and units, not Web Vitals or a Browser Bridge page-load
+measurement. Reach for `eval` only when structured reads are not enough.
 
 ## Navigate and interact
 
@@ -209,6 +214,30 @@ This holds debugger ownership and is more expensive. CDP results expose capture
 state and bounded resource/redirect/failure metadata, redact credentials,
 fragments, and query values from URLs, and exclude bodies, cookies,
 authorization values, and complete headers.
+
+Export a HAR during the same explicitly armed capture:
+
+```bash
+bbx call page.get_network '{"source":"cdp","capture":"start"}'
+# reproduce the issue
+bbx har --limit 100 --url-pattern /api/ ./tmp/reproduction.har
+bbx call page.get_network '{"source":"cdp","capture":"stop"}'
+```
+
+`bbx har` never starts, stops, or clears capture. Its `--delivery` option accepts
+`auto` (default), `inline`, or `artifact`; output must end in `.har`. The command
+uses the same connected client to download an owner-scoped artifact, verifies
+its length and SHA-256 plus the HAR structure, deletes it, and atomically writes
+the result on the CLI host. Artifact descriptors have a five-minute lifetime
+and expose no browser-host path.
+
+The metadata-only HAR keeps sanitized hosts, paths, and query names while
+removing credentials/fragments and redacting query values. It contains no
+headers, cookies, bodies, or authorization data. Unsupported sizes and
+send/wait/receive timing phases are `-1`; observed redirects, failures, cache,
+and service-worker state remain in entry metadata. Inline bounds remove whole
+oldest entries. Check `truncation`, `dropped`, `abandoned`, and `inflight`: the
+latter is unfinished activity and is not exported as an entry.
 
 ## Investigate efficiently
 

@@ -93,6 +93,7 @@ Managed installs support OpenAI Codex, Claude Code, Cursor, GitHub Copilot, Open
 ## What it's for
 
 - Debugging a UI on `localhost`: read DOM, computed styles, layout, console logs, and network state without a screenshot
+- Exporting sanitized, metadata-only HAR 1.2 evidence after explicitly capturing a network reproduction
 - Verifying a code change actually rendered the expected result in Chrome
 - Patching the live page to prove a fix visually, then moving it into source and rolling the patch back
 - Running structured browser checks from any local agent or IDE, not just one AI product
@@ -123,6 +124,8 @@ MCP mode is self-contained: the server exposes tools and startup instructions, s
 - Requests default to the active tab in that window unless a tab is targeted explicitly
 - Targeted input actions reject hidden, disabled, ambiguous, stale, or obscured targets instead of silently guessing; their responses report the resolution and DOM/CDP execution path (`cdp_press_key` and `scroll_into_view` use separate contracts)
 - Native pointer/text input, dialog handling, all-resource network capture, accessibility trees, screenshots, and raw CDP reads use the existing debugger permission only when requested
+- HAR export is a read of an already armed CDP capture: start capture, reproduce, export, then stop. Export never starts, stops, or clears capture, and omits headers, cookies, bodies, authorization values, and unsupported size/timing detail
+- HAR and screenshot artifacts are opaque, owner-scoped daemon handles with a five-minute lifetime and no browser-host path; CLI capture commands download, verify, delete, and write them on the CLI host
 - Element references are document-local and strict by default; stale input recovery is opt-in, same-document, requires one strong unique semantic match, and fails safely when its bounded scan cannot prove uniqueness
 - Semantic DOM baselines provide explicit create/compare/describe/release verification without modifying the page; compact snapshots stay memory-only, expire after five minutes, and are invalidated by navigation or access teardown
 - Patches keep per-document rollback history and Browser Bridge attempts best-effort rollback when window access is disabled or switched; committing the patch baseline keeps current changes but discards their rollback history
@@ -130,6 +133,8 @@ MCP mode is self-contained: the server exposes tools and startup instructions, s
 - Structured DOM/style/layout reads are the primary transport; screenshots are a fallback
 - Browser input dispatch does not prove the application accepted the intended change, so agents should verify with a wait or structured read
 - Open-ended investigation should start with structured reads on a smaller, lower-cost subagent when the client supports delegation
+- Recovery diagnostics use process-local five-minute counters for six fixed, content-free categories. `health.ping`, `daemon.metrics`, and `bbx doctor` expose no page data; three failures in the same category group within 60 seconds produce an active-loop warning and fixed recovery guidance
+- Performance reads are raw browser-maintained CDP counter point samples with browser-defined names and units, not Web Vitals or Browser Bridge navigation measurements
 - The native host daemon auto-starts on demand
 
 ## Documentation

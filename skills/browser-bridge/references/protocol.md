@@ -27,7 +27,7 @@ The table below includes the legacy capability bucket for each method so agents 
 - `-` means the method is global/system-scoped and was never gated by a former capability bucket.
 - Capability names are descriptive coverage labels only. Browser Bridge access is window-scoped now; there are no capability-scoped sessions.
 
-## All Methods (68)
+## All Methods (75)
 
 | Method                             | Tab? | CDP?       | Group       | Capability           | Notes                                                                                      |
 | ---------------------------------- | ---- | ---------- | ----------- | -------------------- | ------------------------------------------------------------------------------------------ |
@@ -39,9 +39,9 @@ The table below includes the legacy capability bucket for each method so agents 
 | `skill.get_runtime_context`        | No   | -          | system      | `-`                  | Live budget presets and method groups                                                      |
 | `setup.get_status`                 | No   | -          | system      | `-`                  | Global MCP config and CLI skill install status                                             |
 | `setup.install`                    | No   | -          | system      | `-`                  | Install or uninstall MCP/skill integration targets                                         |
-| `health.ping`                      | No   | -          | system      | `-`                  | Connectivity, enabled-window routing, debugger, and capture state                          |
+| `health.ping`                      | No   | -          | system      | `-`                  | Connectivity, routing, capture, and daemon/routed-extension recovery summaries             |
 | `log.tail`                         | No   | -          | system      | `-`                  | Recent redacted bridge logs                                                                |
-| `daemon.metrics`                   | No   | -          | system      | `-`                  | Daemon health and performance metrics                                                      |
+| `daemon.metrics`                   | No   | -          | system      | `-`                  | Daemon health, performance, and process-local recovery metrics                              |
 | `page.get_state`                   | Yes  | -          | page        | `page.read`          | URL, readiness, focus, viewport, and observable dialog status                              |
 | `page.evaluate`                    | Yes  | CDP        | page        | `page.evaluate`      | JS expression in page context; last resort                                                 |
 | `page.get_console`                 | Yes  | -          | page        | `page.read`          | Buffered console messages; filter by `level`, `limit`                                      |
@@ -52,6 +52,7 @@ The table below includes the legacy capability bucket for each method so agents 
 | `page.get_text`                    | Yes  | -          | page        | `page.read`          | Full page text; `textBudget` limits size                                                   |
 | `page.extract_content`             | Yes  | -          | page        | `page.read`          | Node-processed semantic text/Markdown with bounded HTML snapshots and optional settlement   |
 | `page.get_network`                 | Yes  | Conditional | page        | `network.read`       | Fetch/XHR by default; explicit CDP all-resource capture lifecycle                          |
+| `network.export_har`               | Yes  | No*        | page        | `network.read`       | Read an already armed CDP capture as bounded metadata-only HAR 1.2                         |
 | `network.intercept.add`            | Yes  | CDP        | page        | `network.intercept`  | Add interception rule; action fulfill/continue/block                                       |
 | `network.intercept.remove`         | Yes  | CDP        | page        | `network.intercept`  | Remove rule by `ruleId`                                                                    |
 | `network.intercept.list`           | Yes  | CDP        | page        | `network.intercept`  | List active rules (rules drop on debugger detach)                                          |
@@ -106,6 +107,10 @@ The table below includes the legacy capability bucket for each method so agents 
 | `cdp.get_computed_styles_for_node` | Yes  | CDP        | cdp         | `cdp.styles`         | DevTools-backed computed styles                                                            |
 | `cdp.dispatch_key_event`           | Yes  | CDP        | cdp         | `cdp.input`          | DevTools keyDown/keyUp without foreground focus                                            |
 
+`No*` means HAR export issues no CDP command itself, but its source capture must
+already be armed and continues to hold debugger ownership until explicitly
+stopped.
+
 ## CLI
 
 ```bash
@@ -115,7 +120,7 @@ bbx call --tab 123 <method> '{...}'         # explicit tab target inside enabled
 bbx batch '[{"method":"...","params":{}}]'  # parallel calls
 ```
 
-**Convenience shortcuts:** `access-request`, `dom-query`, `describe`, `text`, `styles`, `box`, `click`, `focus`, `type`, `press-key`, `cdp-press-key`, `patch-style`, `patch-text`, `patches`, `rollback`, `screenshot`, `eval`, `console`, `wait`, `find`, `find-role`, `html`, `hover`, `navigate`, `storage`, `tab-create`, `tab-close`, `page-text`, `network`, `a11y-tree`, `perf`, `scroll`, `resize`, `reload`, `back`, `forward`, `attrs`, `matched-rules`
+**Convenience shortcuts:** `access-request`, `dom-query`, `describe`, `text`, `styles`, `box`, `click`, `focus`, `type`, `press-key`, `cdp-press-key`, `patch-style`, `patch-text`, `patches`, `rollback`, `screenshot`, `har`, `eval`, `console`, `wait`, `find`, `find-role`, `html`, `hover`, `navigate`, `storage`, `tab-create`, `tab-close`, `page-text`, `network`, `a11y-tree`, `perf`, `scroll`, `resize`, `reload`, `back`, `forward`, `attrs`, `matched-rules`
 
 Newer bridge methods such as `input.scroll_into_view` and `screenshot.capture_full_page` currently use the raw path: `bbx call <method> '{...}'`.
 
@@ -394,6 +399,42 @@ bbx call page.get_network '{"source":"cdp","capture":"stop"}'
 
 CDP URL output removes credentials and fragments, replaces every query value with `[redacted]`, and summarizes data/blob URLs. Request/response bodies, cookies, authorization values, and complete headers are not returned. This mode captures all observed resource classes and is materially more expensive and intrusive than fetch/XHR instrumentation; always stop it when finished.
 
+### network.export_har
+
+Export metadata-only HAR 1.2 from a CDP capture that is currently armed. The
+method is a read and does not attach, start, stop, clear, or otherwise change the
+capture. Use this exact sequence:
+
+```bash
+bbx call page.get_network '{"source":"cdp","capture":"start"}'
+# reproduce the activity
+bbx har --limit 100 --url-pattern /api/ reproduction.har
+bbx call page.get_network '{"source":"cdp","capture":"stop"}'
+```
+
+Parameters are `limit` (1-200, default 50), `urlPattern` (at most 2048
+characters; substring match on sanitized URLs), and `delivery` (`auto` default,
+`inline`, or `artifact`). Count and inline byte/token limits retain the newest
+matching entries and remove complete oldest entries; fields are not truncated to
+fit. `auto` uses an artifact above 256 KiB, while explicit `artifact` always
+returns one. Artifacts last five minutes, are readable/deletable only by their
+requesting client, use private daemon files, and expose no browser-host path.
+
+HAR URLs preserve schemes, hosts, paths, and query names, remove credentials and
+fragments, and replace query values with `[redacted]`. `queryString`, headers,
+and cookies are empty; bodies and authorization data are absent. Unsupported
+header/body/content sizes and send/wait/receive timing phases are `-1`.
+`entry.time` is observed total duration. Redirects are separate observed entries;
+`_bbx` reports resource type, failure reason, and memory/disk/prefetch cache and
+service-worker observations. Result counters expose completed-entry loss as
+`dropped`, discarded unfinished activity as `abandoned`, and requests still
+unfinished and omitted from the HAR as `inflight`.
+
+MCP uses `browser_page` with `action: "har"`. `bbx har` accepts the same limit,
+URL pattern, and delivery choices, then uses one client connection to download
+owner-scoped chunks, verify byte length/SHA-256 and HAR shape, delete the
+artifact, and atomically write the output on the CLI host.
+
 ### dom.get_accessibility_tree
 
 Retrieve a depth-limited accessibility tree via CDP. Full reads use `Accessibility.getFullAXTree`; an optional unique `selector` resolves through CDP DOM methods and uses `Accessibility.getPartialAXTree`, retaining only the selected subtree and required ancestor chain. Missing and ambiguous selectors return typed errors instead of selecting an arbitrary candidate. Nodes include `role`, `name`, `description`, `value`, state fields, `interactive`, `semanticInteractive`, `focusable`, `focusableAndEnabled`, `ignored`, and `childIds`. `interactive` is semantic/focusability metadata, not current pointer actionability.
@@ -424,7 +465,9 @@ bbx call viewport.resize '{"reset":true}'
 
 ### performance.get_metrics
 
-Read Chrome performance counters via CDP `Performance.getMetrics`. Returns a flat `{metrics}` object with keys like `JSHeapUsedSize`, `LayoutCount`, `TaskDuration`, etc.
+Read a browser-maintained point sample of raw Chrome counters via CDP `Performance.getMetrics`. The additive result is `{metrics, measurement}`, where `measurement` identifies the CDP source, `timeTicks` domain, sample timestamp, point-sample observation, and `webVitals: "not_measured"`. Metric names, availability, and units are defined by Chrome/CDP and can vary by browser version.
+
+BBX does not establish a navigation observation window and does not measure LCP, CLS, or INP. Do not interpret the returned counters as Web Vitals or page-load measurements.
 
 Debugger-backed. Use after lighter reads fail to explain a performance symptom.
 
@@ -441,9 +484,33 @@ Element capture uses full page-coordinate bounds with CDP capture beyond the vie
 
 Raw calls default to inline base64 for compatibility. `auto` keeps small captures inline and returns a short-lived, daemon-owned opaque artifact handle for large captures; explicit `inline` preserves MCP image content when model vision is needed. Artifact handles expose no browser-host path and support owner-scoped bounded `artifact.read` and `artifact.delete` calls. Prefer `bbx screenshot [--format png|jpeg|webp] [--quality 0-100] <ref> [outPath]` when one element is enough; the CLI downloads, verifies, deletes, and atomically writes the artifact on the CLI host.
 
+Artifact handles expire after five minutes and can be read or deleted only by
+the requesting client. The daemon creates a private artifact directory and
+owner-only files on POSIX hosts, removes artifacts on expiry/teardown, and never
+returns its browser-host filesystem path.
+
 ```bash
 bbx call screenshot.capture_full_page '{"format":"jpeg","quality":75,"delivery":"auto","scale":0.75}'
 ```
+
+## Recovery Telemetry
+
+Recovery telemetry is process-local and uses fixed five-second buckets over a
+five-minute window. Three failures for the same hidden group within 60 seconds
+set `activeLoop` for that category. Public summaries always use only these fixed
+categories: `automatic_mcp_retry`, `stale_ref_recovery`, `debugger_reattach`,
+`content_script_reinjection`, `native_host_reconnect`, and `request_outcome`.
+They contain attempts/successes/failures/pending, bounded rates, saturation,
+last-event timestamps, and loop flags, but no page data, URL, selector, payload,
+error text, method name, tab identifier, or internal group name.
+
+`health.ping` includes daemon and available routed-extension summaries;
+`daemon.metrics` includes daemon scope. `bbx doctor` combines both, marks active
+loops as issues, and emits fixed guidance. Stop repeated attempts: re-query stale
+refs, close competing debuggers, reload extension/page after reinjection
+failures, restart for native-host reconnect failures, stop automatic MCP retry
+loops, or inspect the first typed error for request failures. Extension data
+resets with the service worker and daemon data resets with the daemon.
 
 ## Request Envelope
 

@@ -16,6 +16,10 @@ expressions, secrets, tokens, and full payloads. Configured remotes are listed a
 unverified and are not contacted; run `bbx remote test <name>` separately when a
 remote destination is the problem.
 
+Doctor also reports process-local recovery counters. They use six fixed
+content-free categories and contain no page data, URLs, selectors, payloads,
+error text, or internal method/tab groups.
+
 ## The extension is installed, but `bbx status` says it is disconnected
 
 - Run `bbx install` again. It targets Chromium on Linux and Chrome on macOS/Windows; for another browser, include `--browser <name>`.
@@ -78,13 +82,24 @@ remote destination is the problem.
 - `DIALOG_ACTION_CONFLICT` means the observed dialog changed around the command. Inspect again and do not automatically repeat accept/dismiss.
 - `expectedDialogId` is checked immediately before dispatch, but Chrome cannot atomically bind its dialog command to that ID.
 
-## CDP network capture is empty or still armed
+## CDP network capture or HAR export is empty or still armed
 
 - Default `page.get_network` captures only fetch/XHR. Use `source: "cdp"` for broader resource metadata.
 - Run `capture: "start"` before reproducing; a later read is not retrospective.
+- HAR requires the capture to remain armed. Use start, reproduce, `bbx har` or `network.export_har`, then stop. Export never starts, stops, or clears capture.
 - Read lifecycle fields such as `armed`, `captureState`, `ownershipHeld`, `inflight`, `dropped`, and `abandoned` before assuming capture was complete.
+- Inflight requests are unfinished and absent from the HAR. `dropped` means retained evidence was lost to bounds; `abandoned` records unfinished activity discarded by lifecycle or bounds.
 - Always run `capture: "stop"` when finished. If debugger detaches or conflicts with DevTools, close the competing debugger and retry the start/reproduce/read/stop sequence.
 - CDP URLs redact credentials, fragments, and query values. Bodies, cookies, authorization values, and complete headers are intentionally unavailable.
+- HAR URLs retain hosts, paths, and query names. Unsupported byte sizes and timing phases are `-1`; redirects, failures, cache, and service-worker observations remain metadata only.
+- If an artifact expired, was deleted, or was requested from another client, rerun the capture/export. Handles last five minutes, are owner-scoped, and expose no browser-host path.
+
+## Doctor reports an active recovery loop
+
+- Recovery uses five-second buckets over the last five minutes. An active loop means three failures in the same hidden group occurred within 60 seconds.
+- Stop repeating the failing action. `bbx doctor` supplies fixed guidance for stale refs, debugger reattachment, content-script reinjection, native-host reconnect, automatic MCP retry, or general request outcomes.
+- Re-query stale refs; close competing debuggers; reload the extension/page for reinjection failures; use `bbx restart` for reconnect failures; inspect the first typed error before retrying request failures.
+- The loop clears after failures age out of the 60-second window. Extension-side telemetry resets on service-worker restart and daemon-side telemetry resets on daemon restart, so it is not durable incident history.
 
 ## What to include in a bug report
 

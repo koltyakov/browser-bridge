@@ -25,7 +25,7 @@ Short version:
 
 | Capability | MCP Tool | CLI Command | Notes |
 |------------|----------|-------------|-------|
-| Health check | `browser_status`, `browser_health` | `bbx status`, `bbx doctor` | Doctor consolidates local diagnostics; it does not probe remotes |
+| Health check | `browser_status`, `browser_health` | `bbx status`, `bbx doctor` | Includes content-free recovery summaries; Doctor is local-only |
 | Request access | `browser_access` | `bbx access-request` | Surfaces Enable prompt in extension UI |
 | Setup status | `browser_setup` | `bbx doctor` | Check MCP/skill installation |
 | Request logs | `browser_logs` | `bbx logs` | Equivalent |
@@ -81,7 +81,8 @@ Short version:
 | Exact storage value | `browser_sensitive_read`       | `bbx call sensitive.read '{...}'`   | Sequential/high-risk |
 | Page text           | `browser_page` (text)          | `bbx page-text [budget]`            | Equivalent        |
 | Network requests    | `browser_page` (network)       | `bbx network [limit]`               | Fetch/XHR shortcut; raw calls expose CDP lifecycle |
-| Performance metrics | `browser_page` (performance)   | `bbx perf`                          | Equivalent        |
+| HAR 1.2 export      | `browser_page` (har)           | `bbx har [options] [outPath]`       | Requires an already armed CDP capture; export does not change capture state |
+| Raw Chrome/CDP counters | `browser_page` (performance)   | `bbx perf`                          | Point sample; names/units vary; no BBX navigation window or LCP/CLS/INP measurement |
 
 ### Navigation
 
@@ -137,7 +138,7 @@ Short version:
 |------------|----------|-------------|-------|
 | Raw protocol call | `browser_call` | `bbx call <method> '{...}'` | Equivalent |
 | Ordered batch calls | `browser_batch` | `bbx batch '[{...}]'` | Both preserve request order and return per-call `durationMs` / `approxTokens` |
-| Bounded artifact read/delete | `browser_call` | `bbx call artifact.read` / `bbx call artifact.delete` | Handles are owner-scoped and contain no browser-host path |
+| Bounded artifact read/delete | `browser_call` | `bbx call artifact.read` / `bbx call artifact.delete` | Five-minute handles are owner-scoped and contain no browser-host path |
 | Batch parallel reads | `browser_batch` | `bbx batch '[{...}]'` | Equivalent |
 | Install manifest | N/A | `bbx install` | CLI-only (setup) |
 | Install MCP config | N/A | `bbx install-mcp [client]` | CLI-only (setup) |
@@ -232,9 +233,17 @@ incomplete scan fails rather than claiming uniqueness. Both paths should verify
 application state after dispatch.
 
 For CDP network capture, both paths require `start` before reproduction, then
-`read` and `stop`; no read is retrospective. For dialog mutations, both paths
+`read` or HAR export, and `stop`; no read is retrospective. HAR export never
+starts, stops, or clears capture. For dialog mutations, both paths
 treat `expectedDialogId` as a pre-dispatch check rather than an atomic Chrome
 binding and must not auto-repeat conflicts.
+
+MCP `browser_page` with `action: "har"` returns inline HAR content or an opaque
+artifact descriptor according to `delivery`. Inline bounds remove complete
+oldest entries. `bbx har` handles either delivery through one client connection:
+it downloads owner-scoped chunks when needed, verifies length/SHA-256 and HAR
+shape, deletes the artifact, and atomically writes the file on the CLI host.
+Neither path receives a browser-host filesystem path.
 
 ## Use Case Recommendations
 

@@ -1,6 +1,6 @@
 # Browser Bridge (BBX) Privacy Policy
 
-Last updated: 2026-07-22
+Last updated: 2026-07-23
 
 ## Overview
 
@@ -16,6 +16,7 @@ When you enable Browser Bridge for a Chrome window, Browser Bridge can access pa
 - Console messages and uncaught page errors
 - Network request metadata captured from page `fetch` and `XMLHttpRequest` activity, such as URL, method, status, timing, type, timestamp, and size
 - Optional Chrome DevTools Protocol metadata for broader resource activity, including request ID, redacted URL, method, resource type, status, MIME type, protocol, cache indicators, redirects, failure reason, duration, and timestamp
+- Metadata-only HAR 1.2 documents exported from an explicitly armed CDP capture, including sanitized URLs and observed status, redirect, failure, cache, and service-worker metadata
 - Current JavaScript dialog information when observable and explicitly requested, including dialog type, bounded message text, and bounded default prompt text
 - `localStorage` and `sessionStorage` key metadata through ordinary inspection, and one exact value only through a deliberate `sensitive.read` request
 - Screenshots or cropped image captures when explicitly requested
@@ -26,7 +27,18 @@ All-resource network inspection excludes request and response bodies, cookies,
 authorization values, and complete headers. It removes URL credentials and
 fragments, replaces query parameter values with a redaction marker, and
 summarizes data/blob URLs before returning them. Browser Bridge does not expose
-these excluded values through that feature.
+these excluded values through that feature. HAR exports use the same URL
+sanitization: schemes, hosts, paths, and query parameter names remain visible,
+but credentials, fragments, and query values do not. HAR request/response
+headers and cookies are empty, bodies are absent, and unavailable byte sizes and
+timing phases are reported as `-1`.
+
+Recovery telemetry contains only fixed category names, bounded counts, rates,
+timestamps, and active-loop flags. It does not include page content, URLs,
+selectors, method/group identifiers, request payloads, or error text. The fixed
+categories are automatic MCP retry, stale-reference recovery, debugger
+reattachment, content-script reinjection, native-host reconnect, and request
+outcome.
 
 Browser Bridge is designed for local debugging and automation of the browser state you intentionally expose to it.
 
@@ -74,6 +86,8 @@ Browser Bridge keeps data only as long as needed for the current local session a
 - Incidental action/log URLs remove credentials and fragments and redact query values; sensitive structured fields and local path prefixes are reduced before persistence.
 - Console and fetch/XHR network buffers are bounded in memory and cleared when disabled or when the page state is reset.
 - Optional CDP network capture is bounded in memory, explicitly started/stopped, expires after a safety interval, and is cleared on relevant debugger, tab, or access teardown.
+- HAR export does not start, stop, or clear capture. Inline size limits remove whole oldest entries; artifact delivery uses opaque owner-scoped handles with no browser-host path. Artifacts expire after five minutes, are removed on daemon/extension teardown, and use private daemon directory/file modes on POSIX systems.
+- Recovery telemetry is held in fixed five-second buckets over a five-minute process-local window. Extension-side summaries reset with the extension service worker, daemon summaries reset with the daemon, and neither is durable history.
 - Dialog message/default prompt text is returned to the requesting caller when inspected but is excluded from persisted action-log summaries and size diagnostics.
 - Exact sensitive values traverse the selected client in memory but are excluded from action summaries, diagnostic size counters, daemon logs, and automatic artifact storage.
 - Patch rollback records and remembered element references live in the current document. Browser Bridge attempts patch rollback when access is disabled or switched, while page replacement/navigation removes document-local state.

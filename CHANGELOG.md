@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Metadata-only HAR export:** Added `network.export_har`, the `browser_page`
+  `har` action, and `bbx har` for bounded HAR 1.2 export from an explicitly
+  armed CDP network capture. Export preserves sanitized URL structure and
+  observed status, redirect, failure, cache, and service-worker metadata while
+  excluding headers, cookies, bodies, authorization values, and unsupported
+  size/timing detail.
+- **Recovery telemetry:** Health, daemon metrics, and `bbx doctor` now expose
+  fixed, content-free five-minute recovery summaries and identify three-failure
+  loops within 60 seconds with bounded category-specific guidance.
+
+### Changed
+
+- **HAR delivery and CLI handling:** HAR exports support inline, artifact, and
+  size-aware auto delivery. Short-lived owner-scoped artifacts expose no browser
+  host path; `bbx har` downloads with the same client, verifies length and
+  SHA-256, deletes the artifact, validates the HAR, and atomically writes it on
+  the CLI host.
+- **Performance contract clarity:** Performance output remains a raw CDP
+  `Performance.getMetrics` point sample with browser-defined names and units,
+  not Web Vitals or a Browser Bridge page-load measurement.
+
+### Security
+
+- **Sanitized HAR evidence:** HAR URLs remove credentials and fragments and
+  redact query values while retaining hosts, paths, and query names. Inline
+  byte limits remove complete oldest entries instead of truncating fields, and
+  artifact files use private daemon storage with a five-minute lifetime.
+
 ## [1.9.0] - 2026-07-23
 
 ### Added

@@ -14,7 +14,7 @@ These presets are also available at runtime via `bbx skill`.
 
 ## Debugger Policy
 
-Avoid debugger-backed methods until they are clearly necessary. In Browser Bridge, `page.evaluate`, `page.handle_dialog`, `dom.get_accessibility_tree`, CDP network capture, CDP input execution, `viewport.resize`, `performance.get_metrics`, `screenshot.capture_*`, and `cdp.*` attach `chrome.debugger`, which can make Chrome show its native debugging banner across the running browser instance.
+Avoid debugger-backed methods until they are clearly necessary. In Browser Bridge, `page.evaluate`, `page.handle_dialog`, `dom.get_accessibility_tree`, CDP network capture, CDP input execution, `viewport.resize`, `performance.get_metrics`, `screenshot.capture_*`, and `cdp.*` attach `chrome.debugger`, which can make Chrome show its native debugging banner across the running browser instance. `network.export_har` does not attach by itself, but it requires the explicit CDP capture to remain armed.
 
 ## Decision Tree
 
@@ -28,12 +28,13 @@ Avoid debugger-backed methods until they are clearly necessary. In Browser Bridg
 8. **Need article or documentation content?** → `page.extract_content` (removes navigation and repeated chrome)
 9. **Need all visible page UI text?** → `page.get_text` (cheaper than `dom.query` on body)
 10. **Need API call history?** → default `page.get_network` (intercepted fetch/XHR log)
-11. **Need framework/app state and no lighter read can expose it?** → `page.evaluate` (debugger-backed)
-12. **Need semantic structure and role/text queries are insufficient?** → compact or interactive-only `dom.get_accessibility_tree` (debugger-backed)
-13. **Need performance data?** → `performance.get_metrics` (debugger-backed)
-14. **Testing responsive with an exact forced viewport?** → `viewport.resize` (debugger-backed)
-15. **Visual ambiguity after structured reads?** → `screenshot.capture_element` first, or `screenshot.capture_region` with a tight crop when one element is not enough (debugger-backed)
-16. **Content-script blocked?** → `cdp.get_document` or `cdp.get_dom_snapshot` (debugger-backed fallback)
+11. **Need portable all-resource evidence?** → explicitly arm CDP, reproduce, `network.export_har`, then stop capture
+12. **Need framework/app state and no lighter read can expose it?** → `page.evaluate` (debugger-backed)
+13. **Need semantic structure and role/text queries are insufficient?** → compact or interactive-only `dom.get_accessibility_tree` (debugger-backed)
+14. **Need a raw Chrome/CDP counter point sample?** → `performance.get_metrics` (debugger-backed; no BBX navigation window or LCP/CLS/INP measurement)
+15. **Testing responsive with an exact forced viewport?** → `viewport.resize` (debugger-backed)
+16. **Visual ambiguity after structured reads?** → `screenshot.capture_element` first, or `screenshot.capture_region` with a tight crop when one element is not enough (debugger-backed)
+17. **Content-script blocked?** → `cdp.get_document` or `cdp.get_dom_snapshot` (debugger-backed fallback)
 
 ## Allowlist Strategy
 
@@ -70,6 +71,7 @@ Omitting allowlists or leaving the text budget wide open often returns 3–5× t
 | Fetching network via evaluate hacks      | ~400 tok            | Use `page.get_network` (auto-interceptor)                                                    |
 | Full a11y tree with no limits            | ~3000 tok           | Set `maxNodes` ≤ 50, `maxDepth` ≤ 4                                                          |
 | CDP network capture for API-only traffic | debugger lifecycle  | Use default fetch/XHR capture; reserve CDP for all-resource failures                         |
+| Broad inline HAR export                  | token/byte pressure | Narrow `urlPattern`/`limit`, or use `delivery: "artifact"`; bounds remove whole entries      |
 | Repeated page-state polling for a route  | ~500 tok/poll       | Use one event-aware `page.wait_for_load_state` URL condition                                 |
 
 ## Efficient Loop
@@ -132,6 +134,14 @@ bbx network 50           # last 50 entries
 The interceptor auto-installs on first call. Before reproducing an event, call `page.get_network` once with `clear: true` to install capture and remove old entries. Trigger the action, then read again without `clear`. Each entry shows `method`, `url`, `status`, `duration`.
 
 Only escalate to `source: "cdp"` when fetch/XHR misses the relevant document, asset, socket, cache, redirect, or failed-resource metadata. CDP must be started before reproduction and explicitly stopped afterward; it holds debugger ownership, tracks in-flight state, and returns a larger entry shape. Its URLs redact credentials, fragments, and query values, and it never returns bodies, cookies, authorization values, or complete headers.
+
+For a HAR, export while that capture is still armed, then stop it. Use a narrow
+sanitized-URL `urlPattern` and small `limit` first. Inline delivery removes whole
+oldest entries to meet byte/token bounds rather than truncating fields; inspect
+`truncation`, `dropped`, `abandoned`, and `inflight`. Use `delivery: "artifact"`
+for larger evidence. The five-minute opaque handle is owner-scoped and has no
+browser-host path; `bbx har` downloads, verifies, deletes, and atomically writes
+it on the CLI host through the same client.
 
 ## Accessibility Tree for Semantic Discovery
 

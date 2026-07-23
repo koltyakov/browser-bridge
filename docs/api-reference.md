@@ -133,6 +133,8 @@ See [`packages/protocol/src/registry.js`](../packages/protocol/src/registry.js) 
 | `page.handle_dialog`         | Inspect or explicitly handle current JS dialog |
 | `page.wait_for_load_state`   | Wait for tab complete and/or URL condition      |
 | `page.get_network`           | Fetch/XHR or explicit CDP resource capture      |
+| `network.export_har`         | Export armed CDP evidence as metadata-only HAR 1.2 |
+| `performance.get_metrics`    | Raw browser-maintained CDP counter point sample |
 | `dom.get_accessibility_tree` | Depth-limited compact/interactive AX data       |
 | `input.click`                | Actionability-aware DOM or CDP click            |
 | `input.type`                 | Actionability-aware DOM or CDP text input       |
@@ -216,6 +218,59 @@ Verify with a targeted wait or structured read.
   requires explicit start/read/clear/stop lifecycle, captures broader resource
   metadata, holds debugger ownership while armed, redacts URL secrets, and
   excludes bodies, cookies, authorization values, and complete headers.
+
+### HAR export
+
+`network.export_har` reads only an already armed explicit CDP capture. The
+required lifecycle is `page.get_network` start, reproduce, `network.export_har`,
+then `page.get_network` stop. Export never starts, stops, or clears capture.
+
+Parameters are `limit` (1-200, default 50), `urlPattern` (substring match
+against the sanitized URL), and `delivery` (`auto` default, `inline`, or
+`artifact`). The newest matching entries survive the count limit. Inline byte
+or token bounds remove complete oldest entries and report `omittedBySize`; HAR
+fields are never shortened to fit. `auto` returns an artifact when the complete
+bounded document exceeds 256 KiB, while explicit `artifact` always returns an
+opaque descriptor. Artifacts expire after five minutes, are owner-scoped to the
+client that requested them, and expose no browser-host path. Read them in
+bounded chunks with `artifact.read`, verify `byteLength` and `sha256`, then call
+`artifact.delete`.
+
+The HAR preserves sanitized scheme/host/path and query names, with credentials,
+fragments, and query values removed. It has no request/response headers,
+cookies, bodies, or authorization data. Unsupported header/body/content sizes
+and send/wait/receive phases are `-1`; `entry.time` is the observed total
+duration. Redirects are emitted as observed entries, while failures and cache,
+disk-cache, prefetch-cache, and service-worker observations appear in `_bbx`.
+Result metadata reports `dropped` retained-buffer loss, `abandoned` unfinished
+activity discarded by capture lifecycle/bounds, and currently unfinished
+`inflight` requests, which are not HAR entries.
+
+### Recovery telemetry
+
+Recovery summaries are process-local five-minute windows built from fixed
+five-second buckets. Three failures in the same internal group within 60 seconds
+set the category and summary `activeLoop` flags. Public output contains only the
+six fixed categories `automatic_mcp_retry`, `stale_ref_recovery`,
+`debugger_reattach`, `content_script_reinjection`, `native_host_reconnect`, and
+`request_outcome`, with counts, rates, timestamps, saturation, and loop flags.
+It contains no page data, URLs, selectors, payloads, errors, or internal group
+names.
+
+`health.ping` returns daemon and, when routed, extension summaries;
+`daemon.metrics` returns the daemon summary. `bbx doctor` combines them and adds
+fixed category-specific guidance for active loops. Stop repeated attempts and
+follow that guidance rather than feeding the loop. Extension telemetry resets
+when the service worker restarts; daemon telemetry resets when the daemon
+restarts.
+
+### Performance metrics
+
+`performance.get_metrics` returns `{metrics, measurement}` from CDP
+`Performance.getMetrics`. It is a browser-maintained point sample whose names,
+availability, and units vary by Chrome version. Browser Bridge establishes no
+navigation observation window and does not measure LCP, CLS, or INP; do not
+interpret these counters as Web Vitals or page-load measurements.
 
 ## Using `withBridgeClient`
 
