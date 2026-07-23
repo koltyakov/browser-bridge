@@ -44,7 +44,9 @@ function createAtomicTarget(value) {
 
 /** @type {Record<string, ShortcutCommand>} */
 export const SHORTCUT_COMMANDS = {
-  'access-request': createShortcutCommand('access.request', 'bbx access-request', () => ({})),
+  'access-request': createShortcutCommand('access.request', 'bbx access-request [intent]', (r) =>
+    r[0] ? { intent: r[0] } : {}
+  ),
   'dom-query': createShortcutCommand('dom.query', 'bbx dom-query [selector]', (r) => ({
     selector: r[0] || 'body',
   })),
@@ -271,7 +273,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
       'bbx remote list                                                    List remote destinations',
       'bbx remote test <name>                                             Ping a remote destination',
       'bbx remote remove <name>                                           Remove a remote destination',
-      'bbx access-request                                                 Request Browser Bridge access for the focused window',
+      'bbx access-request [intent]                                        Request access with inspect|interact|capture|navigate|debugger|general intent',
       'bbx logs                                                           Recent bridge logs',
       'bbx tabs                                                           List available tabs',
       'bbx tab-create [url]                                               Create a new tab',

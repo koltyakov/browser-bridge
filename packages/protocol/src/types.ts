@@ -1,5 +1,15 @@
 export type BridgeRequestSource = 'cli' | 'mcp';
 
+export type AccessIntent = 'inspect' | 'interact' | 'capture' | 'navigate' | 'debugger' | 'general';
+
+export interface AccessRequestParams {
+  intent?: AccessIntent;
+}
+
+export interface NormalizedAccessRequestParams extends BridgeParams {
+  intent: AccessIntent;
+}
+
 export type Capability =
   | 'page.read'
   | 'page.evaluate'

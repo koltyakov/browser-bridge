@@ -88,6 +88,9 @@ export function createWindowSessionController(state, chrome, deps) {
       enabled: state.enabledWindow?.windowId === tab.windowId,
       accessRequested: state.requestedAccessWindowId === tab.windowId,
       restricted: deps.isRestrictedAutomationUrl(tab.url),
+      ...(state.requestedAccessWindowId === tab.windowId && state.requestedAccessContext
+        ? { accessRequestContext: state.requestedAccessContext }
+        : {}),
     };
   }
 

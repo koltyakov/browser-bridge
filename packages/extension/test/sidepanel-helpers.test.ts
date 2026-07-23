@@ -539,6 +539,14 @@ test('getSidepanelCurrentTabView returns unavailable, restricted, and attention 
       enabled: false,
       accessRequested: true,
       restricted: false,
+      accessRequestContext: {
+        windowId: 5,
+        tabId: 13,
+        source: 'cli',
+        intent: 'capture',
+        title: 'Pending',
+        origin: 'https://example.com',
+      },
     }),
     {
       buttonLabel: 'Enable Window Access',
@@ -584,11 +592,19 @@ test('getSidepanelAgentStatusView covers unavailable, enabled, requested, and de
       enabled: false,
       accessRequested: true,
       restricted: false,
+      accessRequestContext: {
+        windowId: 5,
+        tabId: 13,
+        source: 'cli',
+        intent: 'capture',
+        title: 'Pending',
+        origin: 'https://example.com',
+      },
     }),
     {
       title: 'Window access requested',
       detail:
-        'An agent requested access for this Chrome window. Enable it to allow page inspection and interaction.',
+        'CLI requested access to capture pages in this Chrome window. Current tab: Pending - https://example.com.',
       disclosureHidden: false,
     }
   );

@@ -169,6 +169,10 @@ export function createBridgeMcpServer() {
       description: 'Ping the bridge to verify daemon and extension connectivity.',
       inputSchema: {
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+        intent: z
+          .enum(['inspect', 'interact', 'capture', 'navigate', 'debugger', 'general'])
+          .optional()
+          .describe('Reported operation family shown in the access prompt (defaults to general).'),
       },
     },
     handleHealthTool

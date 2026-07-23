@@ -69,7 +69,7 @@ export {
 const HOME_DIR = os.homedir();
 
 /**
- * @param {{ destinationId?: string }} [args]
+ * @param {{ destinationId?: string, intent?: import('../../protocol/src/types.js').AccessIntent }} [args]
  * @returns {Promise<ToolResult>}
  */
 export async function handleStatusTool(args = {}) {
@@ -155,7 +155,7 @@ async function callRemoteHealth(destinationId) {
 }
 
 /**
- * @param {{ destinationId?: string }} [args]
+ * @param {{ destinationId?: string, intent?: import('../../protocol/src/types.js').AccessIntent }} [args]
  * @returns {Promise<ToolResult>}
  */
 export async function handleSkillTool(args = {}) {
@@ -231,13 +231,13 @@ export async function handleHealthTool(args = {}) {
 }
 
 /**
- * @param {{ destinationId?: string }} [args]
+ * @param {{ destinationId?: string, intent?: import('../../protocol/src/types.js').AccessIntent }} [args]
  * @returns {Promise<ToolResult>}
  */
 export async function handleAccessTool(args = {}) {
   return callBridgeTool(
     'access.request',
-    {},
+    { intent: args.intent },
     {
       destinationId: typeof args.destinationId === 'string' ? args.destinationId : null,
     }

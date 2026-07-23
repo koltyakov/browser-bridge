@@ -25,6 +25,7 @@ import { BridgeError, ERROR_CODES, getErrorRecovery } from './errors.js';
 import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry.js';
 
 /** @typedef {import('./types.js').AccessibilityTreeParams} AccessibilityTreeParams */
+/** @typedef {import('./types.js').AccessRequestParams} AccessRequestParams */
 /** @typedef {import('./types.js').BridgeFailureResponse} BridgeFailureResponse */
 /** @typedef {import('./types.js').BridgeMeta} BridgeMeta */
 /** @typedef {import('./types.js').BridgeMethod} BridgeMethod */
@@ -48,6 +49,7 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').NetworkInterceptAddParams} NetworkInterceptAddParams */
 /** @typedef {import('./types.js').NetworkParams} NetworkParams */
 /** @typedef {import('./types.js').NormalizedAccessibilityTreeParams} NormalizedAccessibilityTreeParams */
+/** @typedef {import('./types.js').NormalizedAccessRequestParams} NormalizedAccessRequestParams */
 /** @typedef {import('./types.js').NormalizedCheckedAction} NormalizedCheckedAction */
 /** @typedef {import('./types.js').NormalizedCdpDispatchKeyEventParams} NormalizedCdpDispatchKeyEventParams */
 /** @typedef {import('./types.js').NormalizedCdpNodeIdParams} NormalizedCdpNodeIdParams */
@@ -350,6 +352,8 @@ export function validateBridgeRequest(request) {
  */
 function normalizeRequestParams(method, params) {
   switch (method) {
+    case 'access.request':
+      return normalizeAccessRequestParams(params);
     case 'log.tail':
       return normalizeLogTailParams(params);
     case 'dom.query':
@@ -424,6 +428,28 @@ function normalizeRequestParams(method, params) {
     default:
       return params;
   }
+}
+
+/**
+ * @param {AccessRequestParams} [params={}]
+ * @returns {NormalizedAccessRequestParams}
+ */
+export function normalizeAccessRequestParams(params = {}) {
+  const intent = params.intent ?? 'general';
+  if (
+    intent !== 'inspect' &&
+    intent !== 'interact' &&
+    intent !== 'capture' &&
+    intent !== 'navigate' &&
+    intent !== 'debugger' &&
+    intent !== 'general'
+  ) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'intent must be one of inspect, interact, capture, navigate, debugger, or general.'
+    );
+  }
+  return { intent };
 }
 
 /**

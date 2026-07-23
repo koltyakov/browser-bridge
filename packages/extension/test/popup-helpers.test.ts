@@ -35,11 +35,19 @@ test('getPopupViewState returns the access requested variant when access is pend
       enabled: false,
       accessRequested: true,
       restricted: false,
+      accessRequestContext: {
+        windowId: 2,
+        tabId: 10,
+        source: 'mcp',
+        intent: 'inspect',
+        title: 'Pending access',
+        origin: 'https://example.com',
+      },
     }),
     {
       eyebrow: 'Window access requested',
       detail:
-        'An agent requested access for this Chrome window. Enable it to allow page inspection and interaction.',
+        'MCP requested access to inspect pages in this Chrome window. Current tab: Pending access - https://example.com.',
       disclosureHidden: false,
       attention: true,
       buttonLabel: 'Enable Window Access',
@@ -225,7 +233,7 @@ test('renderPopupViewState applies the derived popup copy and button state to DO
   );
 
   assert.equal(targets.accessEyebrow.textContent, 'Window access requested');
-  assert.match(targets.accessDetail.textContent, /Enable it to allow page inspection/);
+  assert.match(targets.accessDetail.textContent, /requested access to use pages/);
   assert.equal(targets.accessDisclosure.hidden, false);
   assert.equal(attention.has('attention'), true);
   assert.equal(button.textContent, 'Enable Window Access');

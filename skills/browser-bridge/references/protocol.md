@@ -31,7 +31,7 @@ The table below includes the legacy capability bucket for each method so agents 
 
 | Method                             | Tab? | CDP?       | Group       | Capability           | Notes                                                                                      |
 | ---------------------------------- | ---- | ---------- | ----------- | -------------------- | ------------------------------------------------------------------------------------------ |
-| `access.request`                   | No   | -          | system      | `-`                  | Request window access; surfaces Enable prompt in extension UI                              |
+| `access.request`                   | No   | -          | system      | `intent?`            | Request window access with bounded operation context in the extension UI                    |
 | `tabs.list`                        | No   | -          | tabs        | `-`                  | Discover tabs in the enabled window                                                        |
 | `tabs.create`                      | No   | -          | tabs        | `tabs.manage`        | Open a new tab; optional `url` and `active`                                                |
 | `tabs.close`                       | No   | -          | tabs        | `tabs.manage`        | Close a tab by `tabId`                                                                     |
@@ -115,12 +115,15 @@ Newer bridge methods such as `input.scroll_into_view` and `screenshot.capture_fu
 
 ### access.request
 
-Request Browser Bridge access for the focused browser window. Surfaces an Enable prompt in the extension popup or side panel so the user can grant access. Does not require an existing session.
+Request Browser Bridge access for the focused browser window. Surfaces an Enable prompt in the extension popup or side panel with the reported source, bounded operation intent, tab title, and sanitized origin. Does not require existing access.
 
 ```bash
 bbx access-request
-bbx call access.request
+bbx access-request inspect
+bbx call access.request '{"intent":"capture"}'
 ```
+
+`intent` is optional and defaults to `general`. Accepted values are `inspect`, `interact`, `capture`, `navigate`, `debugger`, and `general`; arbitrary prompt text is rejected. The source and intent are reported context, while the title and origin are resolved and sanitized by the extension.
 
 If a tab-bound call returns `ACCESS_DENIED`, it also surfaces the Enable prompt automatically - so explicit `access.request` is optional but useful for proactive setup.
 

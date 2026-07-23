@@ -19,6 +19,7 @@ import {
   getMethodCapability,
   getBridgeOperationTimeoutMs,
   normalizeCheckedAction,
+  normalizeAccessRequestParams,
   createSuccess,
   normalizeCdpDispatchKeyEventParams,
   normalizeCdpNodeIdParams,
@@ -721,6 +722,15 @@ test('normalizeTabCloseParams requires valid tabId', () => {
 test('normalizeTabCloseParams accepts valid tabId', () => {
   const params = normalizeTabCloseParams({ tabId: 42 });
   assert.equal(params.tabId, 42);
+});
+
+test('normalizeAccessRequestParams validates the bounded intent enum', () => {
+  assert.deepEqual(normalizeAccessRequestParams({}), { intent: 'general' });
+  assert.deepEqual(normalizeAccessRequestParams({ intent: 'capture' }), { intent: 'capture' });
+  assert.throws(
+    () => normalizeAccessRequestParams({ intent: 'capture this exact secret' as never }),
+    /intent must be one of/
+  );
 });
 
 /** Ensure accessibility tree params clamp depth and node count. */

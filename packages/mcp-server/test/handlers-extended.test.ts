@@ -1828,8 +1828,9 @@ test('handleAccessTool calls access.request', async () => {
   await withMockedBridge(
     async () => ok({}),
     async (calls) => {
-      const result = await handleAccessTool();
+      const result = await handleAccessTool({ intent: 'inspect' });
       assert.equal(calls[0].method, 'access.request');
+      assert.deepEqual(calls[0].params, { intent: 'inspect' });
       assert.equal(result.isError, undefined);
     }
   );

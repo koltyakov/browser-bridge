@@ -25,6 +25,7 @@ import {
  *   enabled: boolean,
  *   accessRequested: boolean,
  *   restricted: boolean
+ *   accessRequestContext?: import('../src/background-state.js').AccessRequestContext | null
  * }} PopupCurrentTab
  */
 

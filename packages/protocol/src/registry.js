@@ -208,7 +208,7 @@ function createRegistryEntry(
 /** @type {Readonly<Record<import('./types.js').BridgeMethod, BridgeMethodRegistryEntry>>} */
 export const BRIDGE_METHOD_REGISTRY = Object.freeze({
   // system - trivial
-  'access.request': createRegistryEntry('access.request', 'system', false, [], 'trivial'),
+  'access.request': createRegistryEntry('access.request', 'system', false, ['intent'], 'trivial'),
   'skill.get_runtime_context': createRegistryEntry(
     'skill.get_runtime_context',
     'system',

@@ -7,6 +7,53 @@ import { normalizeRequestedAccessTab } from './background-routing.js';
 /** @typedef {import('./background-state.js').ResolvedTabTarget} ResolvedTabTarget */
 /** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
+/** @typedef {import('../../protocol/src/types.js').AccessIntent} AccessIntent */
+
+const MAX_ACCESS_TITLE_LENGTH = 160;
+
+/**
+ * Build display-only context from extension-resolved tab data. Raw page URLs
+ * and caller-provided text never enter the prompt model.
+ *
+ * @param {ResolvedTabTarget} target
+ * @param {unknown} source
+ * @param {unknown} intent
+ * @returns {import('./background-state.js').AccessRequestContext}
+ */
+export function createAccessRequestContext(target, source, intent) {
+  const title = Array.from(target.title, (character) => {
+    const code = character.charCodeAt(0);
+    return code < 32 || code === 127 ? ' ' : character;
+  })
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim();
+  let origin = null;
+  try {
+    const parsed = new URL(target.url);
+    if (parsed.origin !== 'null') {
+      origin = parsed.origin;
+    }
+  } catch {
+    // Unparsable and opaque URLs use fixed fallback copy in the UI.
+  }
+
+  return {
+    windowId: target.windowId,
+    tabId: target.tabId,
+    source: source === 'cli' || source === 'mcp' ? source : null,
+    intent:
+      intent === 'inspect' ||
+      intent === 'interact' ||
+      intent === 'capture' ||
+      intent === 'navigate' ||
+      intent === 'debugger'
+        ? intent
+        : 'general',
+    title: title.slice(0, MAX_ACCESS_TITLE_LENGTH),
+    origin,
+  };
+}
 
 /**
  * @typedef {{
@@ -120,10 +167,12 @@ export function createAccessRequestController(state, deps) {
   /**
    * @param {ResolvedTabTarget} target
    * @param {unknown} source
+   * @param {unknown} intent
    * @returns {Promise<void>}
    */
-  async function queueAccessRequest(target, source) {
+  async function queueAccessRequest(target, source, intent) {
     state.requestedAccessWindowId = target.windowId;
+    state.requestedAccessContext = createAccessRequestContext(target, source, intent);
     try {
       await deps.appendActionLogEntry({
         method: 'access.requested',
@@ -158,7 +207,7 @@ export function createAccessRequestController(state, deps) {
       return createBackgroundAccessFailure(request, target);
     }
 
-    await queueAccessRequest(target, request.meta?.source);
+    await queueAccessRequest(target, request.meta?.source, request.params.intent);
     return null;
   }
 
@@ -227,7 +276,7 @@ export function createAccessRequestController(state, deps) {
       return createBackgroundAccessFailure(request, target);
     }
 
-    await queueAccessRequest(target, request.meta?.source);
+    await queueAccessRequest(target, request.meta?.source, request.params.intent);
 
     return createSuccess(
       request.id,

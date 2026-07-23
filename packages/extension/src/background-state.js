@@ -26,6 +26,17 @@ import { getErrorMessage, normalizeRuntimeErrorMessage } from './background-help
 
 /**
  * @typedef {{
+ *   windowId: number,
+ *   tabId: number,
+ *   source: 'cli' | 'mcp' | null,
+ *   intent: import('../../protocol/src/types.js').AccessIntent,
+ *   title: string,
+ *   origin: string | null
+ * }} AccessRequestContext
+ */
+
+/**
+ * @typedef {{
  *   id: string,
  *   at: number,
  *   method: string,
@@ -59,6 +70,7 @@ import { getErrorMessage, normalizeRuntimeErrorMessage } from './background-help
  *   enabled: boolean,
  *   accessRequested: boolean,
  *   restricted: boolean
+ *   accessRequestContext?: AccessRequestContext
  * }} CurrentTabState
  */
 
@@ -101,6 +113,7 @@ import { getErrorMessage, normalizeRuntimeErrorMessage } from './background-help
  *   daemonProxy: DaemonProxyStatus | null,
  *   enabledWindow: EnabledWindowState | null,
  *   requestedAccessWindowId: number | null,
+ *   requestedAccessContext?: AccessRequestContext | null,
  *   requestedAccessPopupWindowId: number | null,
  *   nativeReconnectAttempts: number,
  *   nativeDisconnectTimes: number[],
@@ -168,6 +181,7 @@ export function createExtensionState() {
     daemonProxy: null,
     enabledWindow: null,
     requestedAccessWindowId: null,
+    requestedAccessContext: null,
     requestedAccessPopupWindowId: null,
     nativeReconnectAttempts: 0,
     nativeDisconnectTimes: [],
@@ -300,6 +314,7 @@ export function clearRequestedAccessWindow(windowId = null) {
   const state = getExtensionState();
   if (windowId == null || state.requestedAccessWindowId === windowId) {
     state.requestedAccessWindowId = null;
+    state.requestedAccessContext = null;
   }
 }
 

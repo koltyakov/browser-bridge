@@ -9,6 +9,7 @@
  *   enabled: boolean,
  *   accessRequested: boolean,
  *   restricted: boolean
+ *   accessRequestContext?: import('./background-state.js').AccessRequestContext | null
  * }} SidepanelCurrentTab
  */
 
@@ -627,10 +628,17 @@ export function getSidepanelAgentStatusView(currentTab) {
   }
 
   if (currentTab.accessRequested) {
+    const context = currentTab.accessRequestContext;
+    const source =
+      context?.source === 'mcp' ? 'MCP' : context?.source === 'cli' ? 'CLI' : 'A connected agent';
+    const intent = context?.intent === 'general' || !context?.intent ? 'use' : context.intent;
+    const tab =
+      context?.title || context?.origin
+        ? ` Current tab: ${context.title || 'Untitled page'}${context.origin ? ` - ${context.origin}` : ''}.`
+        : ' Current tab details are unavailable.';
     return {
       title: 'Window access requested',
-      detail:
-        'An agent requested access for this Chrome window. Enable it to allow page inspection and interaction.',
+      detail: `${source} requested access to ${intent} pages in this Chrome window.${tab}`,
       disclosureHidden: false,
     };
   }

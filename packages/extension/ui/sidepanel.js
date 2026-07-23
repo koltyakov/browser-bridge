@@ -38,7 +38,8 @@ import {
  *   url: string,
  *   enabled: boolean,
  *   accessRequested: boolean,
- *   restricted: boolean
+ *   restricted: boolean,
+ *   accessRequestContext?: import('../src/background-state.js').AccessRequestContext
  * }} SidePanelCurrentTab
  */
 

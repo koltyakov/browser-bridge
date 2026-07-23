@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { createAccessRequestContext } from '../src/background-access-request.js';
+
 import {
   createChromeEvent,
   createChromeFake,
@@ -13,6 +15,14 @@ import { createRequest, ERROR_CODES } from '../../protocol/src/index.js';
 type AccessRequestState = {
   requestedAccessWindowId: number | null;
   requestedAccessPopupWindowId: number | null;
+  requestedAccessContext?: {
+    windowId: number;
+    tabId: number;
+    source: 'cli' | 'mcp' | null;
+    intent: string;
+    title: string;
+    origin: string | null;
+  } | null;
   actionLog: Array<{
     method: string;
     source: string;
@@ -21,6 +31,33 @@ type AccessRequestState = {
     summary: string;
   }>;
 };
+
+test('access request context bounds titles and exposes only a parsed origin', () => {
+  const context = createAccessRequestContext(
+    {
+      tabId: 4,
+      windowId: 2,
+      title: `  Example\n${'x'.repeat(300)}  `,
+      url: 'https://user:secret@example.com/path?token=secret#fragment',
+    },
+    'mcp',
+    'inspect'
+  );
+
+  assert.equal(context.source, 'mcp');
+  assert.equal(context.intent, 'inspect');
+  assert.equal(context.origin, 'https://example.com');
+  assert.equal(context.title.includes('\n'), false);
+  assert.equal(context.title.length, 160);
+  assert.equal(
+    createAccessRequestContext(
+      { tabId: 4, windowId: 2, title: '', url: 'not a url' },
+      'untrusted',
+      'free form'
+    ).origin,
+    null
+  );
+});
 
 type AccessRequestChrome = {
   runtime: {
@@ -133,6 +170,14 @@ test('background access request opens a popup window when no side panel is open'
   assert.equal(requestActivity?.url, 'https://example.com/access');
   assert.equal(requestActivity?.summary, 'Window access requested; waiting for confirmation.');
   assert.equal(state.requestedAccessWindowId, 8);
+  assert.deepEqual(state.requestedAccessContext, {
+    windowId: 8,
+    tabId: 27,
+    source: null,
+    intent: 'general',
+    title: 'Access target',
+    origin: 'https://example.com',
+  });
   assert.equal(state.requestedAccessPopupWindowId, 91);
   assert.equal(popupUpdates.length, 0);
   assert.deepEqual(popupCreates, [
