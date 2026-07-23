@@ -118,9 +118,9 @@ Short version:
 
 | Capability           | MCP Tool                                | CLI Command                                 | Notes             |
 | -------------------- | --------------------------------------- | ------------------------------------------- | ----------------- |
-| Element screenshot   | `browser_capture` (element)             | `bbx screenshot <ref> [outPath]`            | Equivalent        |
-| Region screenshot    | `browser_capture` (region)              | `bbx call screenshot.capture_region`        | CLI uses raw call |
-| Full-page screenshot | `browser_capture` (full_page)           | `bbx call screenshot.capture_full_page`     | CLI uses raw call |
+| Element screenshot   | `browser_capture` (element)             | `bbx screenshot <ref> [outPath]`            | MCP defaults to size-aware `auto`; CLI downloads the artifact locally |
+| Region screenshot    | `browser_capture` (region)              | `bbx call screenshot.capture_region`        | MCP supports inline vision or artifact metadata; CLI uses raw call |
+| Full-page screenshot | `browser_capture` (full_page)           | `bbx call screenshot.capture_full_page`     | MCP supports inline vision or artifact metadata; CLI uses raw call |
 | CDP document         | `browser_capture` (cdp_document)        | `bbx call cdp.get_document`                 | CLI uses raw call |
 | CDP DOM snapshot     | `browser_capture` (cdp_dom_snapshot)    | `bbx call cdp.get_dom_snapshot`             | CLI uses raw call |
 | CDP box model        | `browser_capture` (cdp_box_model)       | `bbx call cdp.get_box_model`                | CLI uses raw call |
@@ -133,6 +133,7 @@ Short version:
 |------------|----------|-------------|-------|
 | Raw protocol call | `browser_call` | `bbx call <method> '{...}'` | Equivalent |
 | Ordered batch calls | `browser_batch` | `bbx batch '[{...}]'` | Both preserve request order and return per-call `durationMs` / `approxTokens` |
+| Bounded artifact read/delete | `browser_call` | `bbx call artifact.read` / `bbx call artifact.delete` | Handles are owner-scoped and contain no browser-host path |
 | Batch parallel reads | `browser_batch` | `bbx batch '[{...}]'` | Equivalent |
 | Install manifest | N/A | `bbx install` | CLI-only (setup) |
 | Install MCP config | N/A | `bbx install-mcp [client]` | CLI-only (setup) |

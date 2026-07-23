@@ -88,6 +88,8 @@ The table below includes the legacy capability bucket for each method so agents 
 | `screenshot.capture_element`       | Yes  | CDP        | capture     | `screenshot.partial` | Complete element screenshot with explicit completeness metadata                            |
 | `screenshot.capture_region`        | Yes  | CDP        | capture     | `screenshot.partial` | Cropped viewport region in PNG, JPEG, or WebP                                               |
 | `screenshot.capture_full_page`     | Yes  | CDP        | capture     | `screenshot.partial` | Full document screenshot; fails coherently above Chrome capture limits                     |
+| `artifact.read`                    | No   | daemon     | raw         | None                 | Read one bounded chunk from an owner-scoped artifact handle                                 |
+| `artifact.delete`                  | No   | daemon     | raw         | None                 | Delete an owner-scoped artifact handle                                                      |
 | `patch.apply_styles`               | Yes  | -          | patch       | `patch.styles`       | Reversible CSS patch; `verify` returns computed result                                     |
 | `patch.apply_dom`                  | Yes  | -          | patch       | `patch.dom`          | Reversible text, attribute, add/remove/toggle-class mutation; `verify` returns result       |
 | `patch.list`                       | Yes  | -          | patch       | `patch.dom`          | Active rollback records in the current document                                            |
@@ -412,14 +414,14 @@ bbx call performance.get_metrics
 
 ### screenshot.capture_\*
 
-Capture a complete element, a tight viewport region, or a full document. All methods accept `format: "png" | "jpeg" | "webp"`; JPEG and WebP additionally accept integer `quality` from 0 to 100. Results include matching `format`, `mimeType`, `complete`, and `clipped` metadata.
+Capture a complete element, a tight viewport region, or a full document. All methods accept `format: "png" | "jpeg" | "webp"`, `scale` from 0.1 to 4, and `delivery: "inline" | "artifact" | "auto"`; JPEG and WebP additionally accept integer `quality` from 0 to 100. Results include matching `format`, `mimeType`, encoded `byteLength`, actual `dimensions`, `complete`, `clipped`, and `delivery` metadata.
 
 Element capture uses full page-coordinate bounds with CDP capture beyond the viewport. If Browser Bridge cannot guarantee the entire element, or if an element/page exceeds Chrome capture limits, it returns a typed failure rather than a viewport-clipped image labeled complete. Use full-page capture only when element or tight region captures cannot express the issue.
 
-Raw calls return base64 JSON. Prefer `bbx screenshot [--format png|jpeg|webp] [--quality 0-100] <ref> [outPath]` when one element is enough; the CLI chooses or validates the output extension from the encoding.
+Raw calls default to inline base64 for compatibility. `auto` keeps small captures inline and returns a short-lived, daemon-owned opaque artifact handle for large captures; explicit `inline` preserves MCP image content when model vision is needed. Artifact handles expose no browser-host path and support owner-scoped bounded `artifact.read` and `artifact.delete` calls. Prefer `bbx screenshot [--format png|jpeg|webp] [--quality 0-100] <ref> [outPath]` when one element is enough; the CLI downloads, verifies, deletes, and atomically writes the artifact on the CLI host.
 
 ```bash
-bbx call screenshot.capture_full_page '{"format":"jpeg","quality":75}'
+bbx call screenshot.capture_full_page '{"format":"jpeg","quality":75,"delivery":"auto","scale":0.75}'
 ```
 
 ## Request Envelope

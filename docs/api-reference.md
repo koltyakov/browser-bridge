@@ -134,7 +134,9 @@ See [`packages/protocol/src/registry.js`](../packages/protocol/src/registry.js) 
 | `input.type`                 | Actionability-aware DOM or CDP text input       |
 | `cdp.dispatch_key_event`     | Dispatch keyDown/keyUp through CDP input       |
 | `navigation.navigate`        | Navigate to a URL                              |
-| `screenshot.capture_element` | Complete PNG/JPEG/WebP element capture (base64) |
+| `screenshot.capture_element` | Complete PNG/JPEG/WebP element capture with inline, auto, or artifact delivery |
+| `artifact.read`              | Read a bounded chunk from an owner-scoped artifact |
+| `artifact.delete`            | Delete an owner-scoped artifact                 |
 | `patch.apply_styles`         | Apply reversible CSS overrides                 |
 
 ## Error codes
@@ -145,6 +147,9 @@ See [`packages/protocol/src/registry.js`](../packages/protocol/src/registry.js) 
 | `EXTENSION_DISCONNECTED`  | Yes (3 s) | Extension not connected to daemon                 |
 | `TIMEOUT`                 | Yes (1 s) | Extension did not respond in time                 |
 | `CONTENT_SCRIPT_UNAVAILABLE` | No       | Page is restricted or cannot host the content script |
+| `ARTIFACT_NOT_FOUND`      | No        | Artifact is expired, deleted, missing, or owned by another client |
+| `ARTIFACT_QUOTA_EXCEEDED` | No        | Artifact size or owner/global quota is exhausted |
+| `ARTIFACT_TRANSFER_INVALID` | No      | Artifact chunk ordering, size, or checksum is invalid |
 | `ELEMENT_STALE`           | No        | Element was removed from the DOM                  |
 | `ELEMENT_AMBIGUOUS`       | No        | Multiple equally actionable targets matched       |
 | `ELEMENT_NOT_ACTIONABLE`  | No        | Target is hidden, disabled, inert, or zero-sized   |

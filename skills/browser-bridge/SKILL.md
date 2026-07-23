@@ -339,7 +339,7 @@ Every CLI shortcut command produces consistent `{ok, summary, evidence}` JSON. U
 - `executionMode` accepts `dom` or `cdp` and defaults to `dom`; CDP supports only click, hover, drag, type, and fill. `input.fill.mode` (`auto`, `setter`, `keystrokes`) is a separate DOM strategy.
 - `page.get_network` defaults to low-cost fetch/XHR instrumentation. All-resource CDP capture must be armed before the activity with `source: "cdp", capture: "start"`, read later, and explicitly stopped.
 - `page.handle_dialog` mutations are not atomically bound to `expectedDialogId`; treat `commandDispatched` as dispatch evidence and verify follow-up state.
-- Raw `screenshot.capture_region` and `screenshot.capture_full_page` return base64 JSON; prefer `bbx screenshot <ref> [outPath]` when one element is enough.
+- Raw screenshot calls default to inline base64. Use `delivery: "auto"` for size-aware artifact fallback, or explicit `inline` when MCP image content is required; prefer `bbx screenshot <ref> [outPath]` when one element is enough because the CLI downloads and verifies artifacts locally.
 
 ## Response Shapes
 
