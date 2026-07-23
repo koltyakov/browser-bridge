@@ -30,6 +30,26 @@ export type McpClientName =
 
 export type SupportedTarget = McpClientName;
 
+export type AutoUpdatePolicy = 'off' | 'compatible';
+
+export interface BrowserBridgeConfig {
+  autoUpdate: AutoUpdatePolicy;
+  [key: string]: unknown;
+}
+
+export interface NpmUpdateResult {
+  updated: boolean;
+  reason:
+    | 'updated'
+    | 'invalid_extension_version'
+    | 'invalid_installed_version'
+    | 'extension_not_newer'
+    | 'not_global_install'
+    | 'no_compatible_update';
+  previousVersion?: string;
+  version?: string;
+}
+
 export type Detector = () => boolean | Promise<boolean>;
 
 export interface InstallAgentOptions {
@@ -51,6 +71,8 @@ export interface SetupStatusOptions {
 
 export interface ProtocolHealthResult {
   extensionConnected?: boolean;
+  extensionVersion?: string;
+  daemonVersion?: string;
   supported_versions?: string[];
   extension_supported_versions?: string[];
   daemon_supported_versions?: string[];
@@ -91,6 +113,12 @@ export interface BridgeClientOptions {
   checkProtocolOnConnect?: boolean;
   restartDaemonOnVersionMismatch?: boolean;
   restartDaemonFn?: typeof restartBridgeDaemon;
+  updateNpmOnCompatibleVersion?: boolean;
+  exitProcessOnNpmUpdate?: boolean;
+  updateCompatibleNpmPackageFn?: (options: {
+    extensionVersion: string;
+    supportedVersions: readonly string[];
+  }) => Promise<NpmUpdateResult>;
   authToken?: string | null;
 }
 

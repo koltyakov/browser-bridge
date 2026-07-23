@@ -48,6 +48,13 @@ import {
 const expectedMcpCommand = 'bbx';
 const expectedMcpArgs = ['mcp', 'serve'];
 const expectedOpencodeCommand = ['bbx', 'mcp', 'serve'];
+const packageVersion = JSON.parse(
+  fs.readFileSync(new URL('../../../package.json', import.meta.url), 'utf8')
+).version as string;
+const [packageMajor, packageMinor, packagePatch] = packageVersion.split('.').map(Number);
+const newerCompatiblePackageVersion = `${packageMajor}.${packageMinor}.${packagePatch + 1}`;
+const newerExtensionPackageVersion = `${packageMajor}.${packageMinor + 1}.0`;
+const newerExtensionProtocolVersion = `${packageMajor}.${packageMinor + 1}`;
 
 type ErrorWithCode = Error & { code?: string };
 type EvidenceRecord = Record<string, unknown>;
@@ -412,6 +419,146 @@ test('BridgeClient does not restart to a daemon version newer than the connected
       bridgeServer.requests.filter((request) => request.method === 'health.ping').length,
       1
     );
+  } finally {
+    await client.close().catch(() => {});
+    await bridgeServer.close();
+  }
+});
+
+test('BridgeClient updates npm once and requires a fresh process for the new protocol', async () => {
+  let updateCount = 0;
+  const bridgeServer = await bridgeServerWith({
+    'health.ping': (request) =>
+      createSuccess(request.id, {
+        daemon: 'ok',
+        extensionConnected: true,
+        extensionVersion: newerExtensionPackageVersion,
+        supported_versions: [PROTOCOL_VERSION],
+        daemon_supported_versions: [PROTOCOL_VERSION],
+        extension_supported_versions: [newerExtensionProtocolVersion],
+      }),
+  });
+  const client = new BridgeClient({
+    socketPath: bridgeServer.socketPath,
+    updateNpmOnCompatibleVersion: true,
+    updateCompatibleNpmPackageFn: async (options) => {
+      updateCount += 1;
+      assert.equal(options.extensionVersion, newerExtensionPackageVersion);
+      assert.deepEqual(options.supportedVersions, [newerExtensionProtocolVersion]);
+      return {
+        updated: true,
+        reason: 'updated',
+        previousVersion: packageVersion,
+        version: newerExtensionPackageVersion,
+      };
+    },
+  });
+
+  try {
+    await assert.rejects(client.connect(), (error: unknown) => {
+      assert.equal((error as ErrorWithCode).code, 'BBX_NPM_UPDATED');
+      assert.match(error instanceof Error ? error.message : '', /restarting to load/u);
+      return true;
+    });
+    assert.equal(updateCount, 1);
+    assert.equal(client.npmUpdateResult?.version, newerExtensionPackageVersion);
+    assert.equal(
+      bridgeServer.requests.filter((request) => request.method === 'health.ping').length,
+      1
+    );
+  } finally {
+    await client.close().catch(() => {});
+    await bridgeServer.close();
+  }
+});
+
+test('BridgeClient reloads when another process already updated the package on disk', async () => {
+  const bridgeServer = await bridgeServerWith({
+    'health.ping': (request) =>
+      createSuccess(request.id, {
+        daemon: 'ok',
+        extensionConnected: true,
+        extensionVersion: newerExtensionPackageVersion,
+        supported_versions: [PROTOCOL_VERSION],
+        daemon_supported_versions: [PROTOCOL_VERSION],
+        extension_supported_versions: [newerExtensionProtocolVersion],
+      }),
+  });
+  const client = new BridgeClient({
+    socketPath: bridgeServer.socketPath,
+    updateNpmOnCompatibleVersion: true,
+    updateCompatibleNpmPackageFn: async () => ({
+      updated: false,
+      reason: 'no_compatible_update',
+      previousVersion: newerExtensionPackageVersion,
+    }),
+  });
+
+  try {
+    await assert.rejects(client.connect(), (error: unknown) => {
+      assert.equal((error as ErrorWithCode).code, 'BBX_NPM_UPDATED');
+      return true;
+    });
+    assert.equal(client.npmUpdateResult?.previousVersion, newerExtensionPackageVersion);
+  } finally {
+    await client.close().catch(() => {});
+    await bridgeServer.close();
+  }
+});
+
+test('BridgeClient leaves npm untouched unless compatible updates are enabled', async () => {
+  let updateCount = 0;
+  const bridgeServer = await bridgeServerWith({
+    'health.ping': (request) =>
+      createSuccess(request.id, {
+        daemon: 'ok',
+        extensionConnected: true,
+        extensionVersion: newerCompatiblePackageVersion,
+        supported_versions: [PROTOCOL_VERSION],
+        extension_supported_versions: [PROTOCOL_VERSION],
+      }),
+  });
+  const client = new BridgeClient({
+    socketPath: bridgeServer.socketPath,
+    updateCompatibleNpmPackageFn: async () => {
+      updateCount += 1;
+      return { updated: false, reason: 'no_compatible_update' };
+    },
+  });
+
+  try {
+    await client.connect();
+    assert.equal(updateCount, 0);
+    assert.equal(client.npmUpdateResult, null);
+  } finally {
+    await client.close().catch(() => {});
+    await bridgeServer.close();
+  }
+});
+
+test('BridgeClient reports compatible npm update failures without disconnecting', async () => {
+  const bridgeServer = await bridgeServerWith({
+    'health.ping': (request) =>
+      createSuccess(request.id, {
+        daemon: 'ok',
+        extensionConnected: true,
+        extensionVersion: newerCompatiblePackageVersion,
+        supported_versions: [PROTOCOL_VERSION],
+        extension_supported_versions: [PROTOCOL_VERSION],
+      }),
+  });
+  const client = new BridgeClient({
+    socketPath: bridgeServer.socketPath,
+    updateNpmOnCompatibleVersion: true,
+    updateCompatibleNpmPackageFn: async () => {
+      throw new Error('registry unavailable');
+    },
+  });
+
+  try {
+    await client.connect();
+    assert.equal(client.connected, true);
+    assert.match(client.protocolWarning || '', /registry unavailable/u);
   } finally {
     await client.close().catch(() => {});
     await bridgeServer.close();

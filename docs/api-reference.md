@@ -39,6 +39,8 @@ new BridgeClient(options?)
 | `clientId` | `string` | `agent_<uuid>` | Identifies this client to the daemon |
 | `defaultTimeoutMs` | `number` | `8000` | Per-request timeout in ms |
 | `autoReconnect` | `boolean` | `false` | Reconnect automatically after daemon restarts and emit `reconnected` when the session is restored |
+| `checkProtocolOnConnect` | `boolean` | `true` | Run the protocol health preflight during connection |
+| `updateNpmOnCompatibleVersion` | `boolean` | `false` | Update a verified global npm installation to the highest stable release supported by the connected extension |
 
 When `BBX_TCP_PORT` is set, `BridgeClient` connects to `127.0.0.1:<port>` instead of the Unix socket path.
 

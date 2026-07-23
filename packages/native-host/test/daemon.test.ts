@@ -172,6 +172,7 @@ async function requestHealthPing(
       ok: true,
       result: {
         extension: 'ok',
+        extensionVersion: '1.8.1',
         access: {
           enabled: Boolean(extensionSocket.__accessEnabled),
         },
@@ -934,6 +935,7 @@ test('daemon forwards health checks to the extension and merges access state', a
       ok: true,
       result: {
         extension: 'ok',
+        extensionVersion: '1.8.1',
         access: {
           enabled: true,
           windowId: 9,
@@ -952,6 +954,7 @@ test('daemon forwards health checks to the extension and merges access state', a
   assert.equal(payload.response.result.daemon, 'ok');
   assert.equal(typeof payload.response.result.daemonVersion, 'string');
   assert.equal(payload.response.result.extensionConnected, true);
+  assert.equal(payload.response.result.extensionVersion, '1.8.1');
   assert.equal(payload.response.result.access.routeTabId, 42);
   assert.equal(payload.response.result.deprecated_since, PROTOCOL_VERSION);
   assert.match(payload.response.result.migration_hint, /client protocol 0.0/);
@@ -980,6 +983,7 @@ test('daemon health ignores malicious extension overrides and preserves bounded 
         daemon: 'compromised',
         daemonVersion: '999.0.0',
         extensionConnected: false,
+        extensionVersion: 'private-version',
         connectedExtensions: [{ profileLabel: 'private' }],
         socketPath: '/private/socket',
         transport: 'attacker.example:9999',
@@ -1029,6 +1033,7 @@ test('daemon health ignores malicious extension overrides and preserves bounded 
   assert.equal(result.daemon, 'ok');
   assert.notEqual(result.daemonVersion, '999.0.0');
   assert.equal(result.extensionConnected, true);
+  assert.equal(result.extensionVersion, undefined);
   assert.deepEqual(result.connectedExtensions, [
     {
       extensionId: 'trusted-connection-id',

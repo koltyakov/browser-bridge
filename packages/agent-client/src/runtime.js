@@ -31,6 +31,7 @@ import {
 } from '../../protocol/src/index.js';
 import { methodNeedsTab } from './cli-helpers.js';
 import { BridgeClient } from './client.js';
+import { applyConfiguredAutoUpdate } from './config.js';
 import { readRemoteConfig } from './remotes.js';
 import { collectSetupStatus } from './setup-status.js';
 
@@ -185,7 +186,7 @@ function withRequestMeta(source, tokenBudget) {
  * @returns {Promise<T>}
  */
 export async function withBridgeClient(callback, options) {
-  const client = new BridgeClient(options);
+  const client = new BridgeClient(await applyConfiguredAutoUpdate(options));
   await ensureClientConnected(client);
   try {
     return await callback(client);

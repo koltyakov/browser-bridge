@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { applyWindowsTcpTransportDefaults } from '../../native-host/src/config.js';
@@ -32,6 +33,7 @@ import {
   uninstallBrowserBridge,
 } from './cli-setup-commands.js';
 import { SHORTCUT_COMMANDS } from './command-registry.js';
+import { getAutoUpdatePolicy, parseAutoUpdatePolicy, setAutoUpdatePolicy } from './config.js';
 import { formatMcpConfig, isMcpClientName, MCP_CLIENT_NAMES } from './mcp-config.js';
 import { getDoctorReport, requestBridge, resolveRef } from './runtime.js';
 import { createBridgeClientForDestination } from './remotes.js';
@@ -64,6 +66,7 @@ const LOCAL_ONLY_COMMANDS = new Set([
   'mcp',
   'proxy',
   'remote',
+  'config',
   'doctor',
   'restart',
 ]);
@@ -167,6 +170,11 @@ if (command === 'remote') {
   process.exit();
 }
 
+if (command === 'config') {
+  await runLocalCommand(() => handleConfigCommand(rest));
+  process.exit();
+}
+
 const clientTimeoutMs = getClientTimeoutOverride();
 applyWindowsTcpTransportDefaults();
 const client = await createCliClient();
@@ -187,6 +195,26 @@ async function runLocalCommand(run) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exit(1);
   }
+}
+
+/**
+ * @param {string[]} args
+ * @returns {Promise<void>}
+ */
+async function handleConfigCommand(args) {
+  const [action, key, value] = args;
+  if (action === 'get' && key === 'auto-update' && value === undefined) {
+    process.stdout.write(`${await getAutoUpdatePolicy()}\n`);
+    return;
+  }
+  if (action === 'set' && key === 'auto-update' && value !== undefined && args.length === 3) {
+    const policy = parseAutoUpdatePolicy(value);
+    const configPath = await setAutoUpdatePolicy(policy);
+    process.stdout.write(`Browser Bridge auto-update policy set to "${policy}".\n`);
+    process.stdout.write(`Config: ${configPath}\n`);
+    return;
+  }
+  throw new Error('Usage: bbx config <get auto-update|set auto-update off|compatible>');
 }
 
 /**
@@ -213,6 +241,7 @@ async function createCliClient() {
 }
 
 async function main() {
+  let relaunchAfterUpdate = false;
   try {
     if (command === 'status') {
       const healthResponse = await requestBridge(
@@ -559,25 +588,53 @@ async function main() {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const raw = getErrorCode(error);
-    let code = 'ERROR';
-    if (raw === 'ENOENT' || raw === 'ECONNREFUSED' || raw === 'EINVAL') {
-      code = 'DAEMON_OFFLINE';
-    } else if (raw === 'BRIDGE_TIMEOUT') {
-      code = 'BRIDGE_TIMEOUT';
-    } else if (/socket closed/i.test(message)) {
-      code = 'CONNECTION_LOST';
-    } else if (raw) {
-      code = String(raw);
+    if (raw === 'BBX_NPM_UPDATED') {
+      relaunchAfterUpdate = true;
+    } else {
+      let code = 'ERROR';
+      if (raw === 'ENOENT' || raw === 'ECONNREFUSED' || raw === 'EINVAL') {
+        code = 'DAEMON_OFFLINE';
+      } else if (raw === 'BRIDGE_TIMEOUT') {
+        code = 'BRIDGE_TIMEOUT';
+      } else if (/socket closed/i.test(message)) {
+        code = 'CONNECTION_LOST';
+      } else if (raw) {
+        code = String(raw);
+      }
+      printJson({
+        ok: false,
+        summary: `${code}: ${message}`,
+        evidence: null,
+      });
+      process.exitCode = 1;
     }
-    printJson({
-      ok: false,
-      summary: `${code}: ${message}`,
-      evidence: null,
-    });
-    process.exitCode = 1;
   } finally {
     await client.close();
   }
+  if (relaunchAfterUpdate) {
+    relaunchCli();
+  }
+}
+
+/**
+ * Replace this invocation with a fresh Node process after npm has replaced the
+ * package on disk. Child stdio is inherited so command output remains stable.
+ *
+ * @returns {void}
+ */
+function relaunchCli() {
+  const result = spawnSync(
+    process.execPath,
+    [fileURLToPath(import.meta.url), ...process.argv.slice(2)],
+    {
+      stdio: 'inherit',
+      env: process.env,
+    }
+  );
+  if (result.error) {
+    throw result.error;
+  }
+  process.exitCode = result.status ?? 1;
 }
 
 /**

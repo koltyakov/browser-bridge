@@ -8,6 +8,7 @@ import {
   getSidepanelCurrentTabView,
   getSidepanelNativeStatusView,
   getUnstableConnectionDiagnostic,
+  getVersionMismatchView,
   getMcpSetupCellState,
   getSetupStatusView,
   getSkillSetupCellState,
@@ -128,6 +129,15 @@ const setupHostVersion = /** @type {HTMLParagraphElement} */ (
   document.getElementById('setup-host-version')
 );
 const proxyStatusEl = /** @type {HTMLParagraphElement} */ (document.getElementById('proxy-status'));
+const versionMismatchBanner = /** @type {HTMLDivElement} */ (
+  document.getElementById('version-mismatch-banner')
+);
+const versionMismatchMessage = /** @type {HTMLParagraphElement} */ (
+  document.getElementById('version-mismatch-message')
+);
+const versionMismatchDismiss = /** @type {HTMLButtonElement} */ (
+  document.getElementById('version-mismatch-dismiss')
+);
 const setupStatusSummaryNote = /** @type {HTMLSpanElement} */ (
   document.getElementById('setup-status-summary-note')
 );
@@ -171,6 +181,10 @@ let nativeDiagnosticTimer = null;
 let pendingToggleTimer = null;
 /** @type {ReturnType<typeof setTimeout> | null} */
 let toggleErrorTimer = null;
+/** @type {string | null} */
+let currentVersionMismatchKey = null;
+/** @type {string | null} */
+let dismissedVersionMismatchKey = null;
 const NATIVE_DIAGNOSTIC_DELAY_MS = 10_000;
 const TOGGLE_PENDING_TIMEOUT_MS = 10_000;
 const TOGGLE_ERROR_DISPLAY_MS = 6_000;
@@ -372,6 +386,11 @@ document.addEventListener('keydown', (event) => {
   }
 });
 
+versionMismatchDismiss.addEventListener('click', () => {
+  dismissedVersionMismatchKey = currentVersionMismatchKey;
+  versionMismatchBanner.hidden = true;
+});
+
 window.addEventListener('beforeunload', () => {
   clearInterval(activityHistogramTimer);
 });
@@ -550,6 +569,7 @@ function renderNativeStatus(connected, error, unstable = false) {
  * @returns {void}
  */
 function renderHostVersion(hostVersion) {
+  renderVersionMismatch(hostVersion);
   if (!hostVersion) {
     setupHostVersion.hidden = true;
     setupHostVersion.textContent = '';
@@ -558,6 +578,25 @@ function renderHostVersion(hostVersion) {
 
   setupHostVersion.hidden = false;
   setupHostVersion.textContent = `Daemon version: v${hostVersion}`;
+}
+
+/**
+ * @param {string | null} cliVersion
+ * @returns {void}
+ */
+function renderVersionMismatch(cliVersion) {
+  const extensionVersion =
+    typeof chrome.runtime.getManifest === 'function' ? chrome.runtime.getManifest().version : null;
+  const view = getVersionMismatchView(extensionVersion, cliVersion);
+  currentVersionMismatchKey = view?.key ?? null;
+  if (!view || view.key === dismissedVersionMismatchKey) {
+    versionMismatchBanner.hidden = true;
+    versionMismatchMessage.textContent = '';
+    return;
+  }
+
+  versionMismatchMessage.textContent = view.message;
+  versionMismatchBanner.hidden = false;
 }
 
 /**

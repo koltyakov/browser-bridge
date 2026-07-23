@@ -376,6 +376,9 @@ test('sidepanel UI shows the global host CLI and daemon version', async (t) => {
           assert.deepEqual(connectInfo, { name: 'ui-sidepanel' });
           return portPair.left.port as unknown as chrome.runtime.Port;
         },
+        getManifest() {
+          return { version: '1.2.9' };
+        },
       },
     })
   );
@@ -391,6 +394,29 @@ test('sidepanel UI shows the global host CLI and daemon version', async (t) => {
     assert.ok(hostVersion instanceof HTMLElement);
     assert.equal(hostVersion.textContent, 'Daemon version: v1.2.0');
     assert.equal(hostVersion.hidden, false);
+
+    const mismatchBanner = document.getElementById('version-mismatch-banner');
+    const mismatchMessage = document.getElementById('version-mismatch-message');
+    const dismissMismatch = document.getElementById('version-mismatch-dismiss');
+    assert.ok(mismatchBanner instanceof HTMLElement);
+    assert.ok(mismatchMessage instanceof HTMLElement);
+    assert.ok(dismissMismatch instanceof HTMLButtonElement);
+    assert.equal(mismatchBanner.hidden, true, 'patch-only differences should remain compatible');
+
+    portPair.left.dispatchMessage(createSidepanelStateSync(true, null, '1.3.0'));
+    assert.equal(mismatchBanner.hidden, false);
+    assert.equal(
+      mismatchMessage.textContent,
+      'Browser Bridge CLI v1.3.0 and extension v1.2.9 might not be compatible. Update them so their major and minor versions match.'
+    );
+
+    dismissMismatch.click();
+    assert.equal(mismatchBanner.hidden, true);
+    portPair.left.dispatchMessage(createSidepanelStateSync(true, null, '1.3.0'));
+    assert.equal(mismatchBanner.hidden, true, 'dismissal should survive state refreshes');
+
+    portPair.left.dispatchMessage(createSidepanelStateSync(true, null, '2.0.0'));
+    assert.equal(mismatchBanner.hidden, false, 'a different mismatch should be visible');
   });
 });
 

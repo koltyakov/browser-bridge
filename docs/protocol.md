@@ -22,6 +22,16 @@ are updated/restarted. Published package, lockfile, and extension artifacts use
 the same full release version; `npm run check:release-version` enforces the
 package/extension invariant and tests enforce lockfile alignment.
 
+Extension health also reports its full manifest version. When the local
+`auto-update` policy is `compatible`, clients use that version only as an update
+trigger, query npm for published releases, and select the highest stable release
+whose derived `major.minor` appears in the extension's
+`extension_supported_versions`. Selection never downgrades or crosses to an
+unadvertised protocol line. Installation is restricted to the verified global
+`@browserbridge/bbx` package and serialized by an inter-process lock in the
+global npm scope. The triggering CLI process relaunches after installation;
+shipped MCP processes exit so their owning agent can load the updated package.
+
 ## When negotiation happens
 
 Protocol negotiation occurs during `BridgeClient.connect()`. After the TCP/Unix

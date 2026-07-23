@@ -14,6 +14,11 @@
       <span id="native-indicator" class="status-dot header-status-indicator" title="Connecting to native host…"></span>
     </header>
     <p id="proxy-status" class="proxy-status" hidden></p>
+    <div id="version-mismatch-banner" class="version-mismatch-banner" role="alert" hidden>
+      <p id="version-mismatch-message"></p>
+      <button id="version-mismatch-dismiss" type="button"
+        aria-label="Dismiss version compatibility warning">&times;</button>
+    </div>
     <section id="control-section" class="card control-card" hidden>
       <div class="control-copy">
         <div id="agent-status" class="eyebrow">Window access</div>

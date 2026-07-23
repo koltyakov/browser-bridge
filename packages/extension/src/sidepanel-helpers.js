@@ -156,6 +156,40 @@ const SETUP_MATRIX_BETA_KEYS = new Set(['antigravity', 'windsurf', 'agents']);
 const MANAGED_CLIENT_PACKAGE = '@browserbridge/bbx';
 
 /**
+ * @typedef {{ key: string, message: string }} VersionMismatchView
+ */
+
+/**
+ * Compare the compatibility-significant major and minor portions of the
+ * extension and local CLI versions. Patch releases remain compatible.
+ *
+ * @param {string | null | undefined} extensionVersion
+ * @param {string | null | undefined} cliVersion
+ * @returns {VersionMismatchView | null}
+ */
+export function getVersionMismatchView(extensionVersion, cliVersion) {
+  const extensionMajorMinor = getMajorMinorVersion(extensionVersion);
+  const cliMajorMinor = getMajorMinorVersion(cliVersion);
+  if (!extensionMajorMinor || !cliMajorMinor || extensionMajorMinor === cliMajorMinor) {
+    return null;
+  }
+
+  return {
+    key: `${extensionVersion}:${cliVersion}`,
+    message: `Browser Bridge CLI v${cliVersion} and extension v${extensionVersion} might not be compatible. Update them so their major and minor versions match.`,
+  };
+}
+
+/**
+ * @param {string | null | undefined} version
+ * @returns {string | null}
+ */
+function getMajorMinorVersion(version) {
+  const match = typeof version === 'string' ? /^(\d+)\.(\d+)(?:\.|$)/u.exec(version) : null;
+  return match ? `${match[1]}.${match[2]}` : null;
+}
+
+/**
  * @param {SetupStatusInstallState} setupStatus
  * @returns {{ hasConfiguredMcp: boolean, hasInstalledCliSkill: boolean }}
  */

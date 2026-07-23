@@ -555,6 +555,7 @@ async function dispatchBridgeRequest(request) {
         request.id,
         {
           extension: 'ok',
+          extensionVersion: chrome.runtime.getManifest().version,
           access: await getAccessStatus({
             chrome,
             state,

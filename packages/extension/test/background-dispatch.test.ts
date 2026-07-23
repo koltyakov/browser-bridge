@@ -56,6 +56,7 @@ type ChromeWithTabEvents = {
 
 type HealthPingResult = {
   extension: string;
+  extensionVersion: string;
   access: unknown;
   supported_versions: string[];
 };
@@ -215,6 +216,7 @@ test('background dispatch routes health.ping through the native reply path', asy
   assert.equal(response.meta?.method, 'health.ping');
   const result = response.result as unknown as HealthPingResult;
   assert.equal(result.extension, 'ok');
+  assert.equal(result.extensionVersion, '1.8.0');
   assert.deepEqual(result.access, {
     enabled: false,
     windowId: null,

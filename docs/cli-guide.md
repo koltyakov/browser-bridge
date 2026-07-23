@@ -16,6 +16,7 @@ bbx install --all
 bbx doctor
 bbx status
 bbx restart
+bbx config set auto-update compatible
 bbx logs
 bbx tabs
 bbx skill
@@ -39,6 +40,18 @@ Use `bbx restart` when you want to force the local daemon and running Browser
 Bridge MCP servers to reload after a CLI update, or recover from a stuck local
 bridge process. MCP servers exit cleanly so their owning agents can relaunch the
 current installed version.
+
+Compatible npm auto-update is opt-in. Enable it with
+`bbx config set auto-update compatible`, inspect it with
+`bbx config get auto-update`, and disable it with
+`bbx config set auto-update off`. When a newer extension is connected, local
+CLI and MCP clients query npm and install the highest stable
+`@browserbridge/bbx` release whose `major.minor` protocol is advertised by that
+extension. Browser Bridge never downgrades, crosses to an unadvertised protocol,
+or updates checkout-local, linked, or remote clients. `BBX_AUTO_UPDATE` can
+override the stored policy with `off` or `compatible`. After installation, CLI
+commands relaunch themselves with the new package. A running MCP server exits so
+its owning agent can relaunch it; retry the triggering tool call if needed.
 
 When upgrading from a Browser Bridge version that predates coordinated MCP
 restart, restart the agent once. MCP processes launched afterward register for

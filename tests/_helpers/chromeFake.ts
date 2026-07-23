@@ -136,6 +136,9 @@ export function createChromeFake(overrides: ChromeFakeOverrides = {}): ChromeFak
     runtime: {
       id: 'test-extension-id',
       lastError: null,
+      getManifest() {
+        return { version: '1.8.0' };
+      },
       connectNative() {
         throw new Error('chrome.runtime.connectNative was not stubbed for this test');
       },

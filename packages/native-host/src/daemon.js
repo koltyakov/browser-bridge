@@ -146,6 +146,12 @@ function normalizeExtensionHealthResult(value) {
   /** @type {Record<string, unknown>} */
   const normalized = {};
   if (result.extension === 'ok') normalized.extension = 'ok';
+  if (
+    typeof result.extensionVersion === 'string' &&
+    /^\d+\.\d+\.\d+$/u.test(result.extensionVersion)
+  ) {
+    normalized.extensionVersion = result.extensionVersion;
+  }
 
   const access = asHealthRecord(result.access);
   if (access) {

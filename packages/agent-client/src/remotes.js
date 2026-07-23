@@ -7,6 +7,7 @@ import { createTcpBridgeTransport, getBridgeDir } from '../../native-host/src/co
 import { normalizeBridgeAuthToken } from '../../native-host/src/auth-token.js';
 import { atomicWriteFile } from './atomic-write.js';
 import { BridgeClient } from './client.js';
+import { applyConfiguredAutoUpdate } from './config.js';
 
 const REMOTES_FILENAME = 'remotes.json';
 const LOCAL_DESTINATION_ID = 'local';
@@ -287,12 +288,12 @@ function validateAuthToken(token) {
 
 /**
  * @param {string | null | undefined} destinationId
- * @param {{ defaultTimeoutMs?: number, checkProtocolOnConnect?: boolean }} [options={}]
+ * @param {import('./types.js').BridgeClientOptions} [options={}]
  * @returns {Promise<BridgeClient>}
  */
 export async function createBridgeClientForDestination(destinationId, options = {}) {
   if (!destinationId || destinationId === LOCAL_DESTINATION_ID) {
-    return new BridgeClient(options);
+    return new BridgeClient(await applyConfiguredAutoUpdate(options));
   }
   const config = await readRemoteConfig();
   const remote = config.remotes.find((entry) => entry.id === destinationId);
@@ -304,5 +305,6 @@ export async function createBridgeClientForDestination(destinationId, options = 
     transport: createTcpBridgeTransport(remote.port, remote.host),
     authToken: remote.token,
     restartDaemonOnVersionMismatch: false,
+    updateNpmOnCompatibleVersion: false,
   });
 }

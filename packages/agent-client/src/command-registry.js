@@ -265,6 +265,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
       'bbx status                                                         Check bridge connection',
       'bbx doctor                                                         Consolidated local runtime, setup, protocol, and readiness diagnostics',
       'bbx restart                                                        Restart the local daemon and running MCP servers',
+      'bbx config set auto-update <off|compatible>                         Configure protocol-compatible npm updates',
       'bbx proxy enable [--port 9223] [--bind-host 127.0.0.1] [--rotate-token]  Enable loopback TCP proxy mode for SSH tunneling',
       '  Non-loopback binds require --unsafe-plaintext because raw TCP is unencrypted.',
       'bbx proxy disable                                                  Disable proxy mode and restart the daemon',

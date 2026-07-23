@@ -23,6 +23,12 @@ import {
 } from '../../native-host/src/config.js';
 import { normalizeBridgeAuthToken, readBridgeAuthToken } from '../../native-host/src/auth-token.js';
 import { restartBridgeDaemon } from '../../native-host/src/daemon-process.js';
+import {
+  comparePackageVersions,
+  NpmPackageUpdatedError,
+  parseStableVersion,
+  updateCompatibleNpmPackage,
+} from './npm-self-update.js';
 
 /** @typedef {import('./types.js').BridgeMeta} BridgeMeta */
 /** @typedef {import('./types.js').BridgeMethod} BridgeMethod */
@@ -32,7 +38,8 @@ import { restartBridgeDaemon } from '../../native-host/src/daemon-process.js';
 /** @typedef {import('./types.js').PendingRequest} PendingRequest */
 /** @typedef {import('./types.js').ProtocolHealthResult} ProtocolHealthResult */
 
-setProtocolPackageVersion(loadPackageVersion());
+const CLIENT_PACKAGE_VERSION = loadPackageVersion();
+setProtocolPackageVersion(CLIENT_PACKAGE_VERSION);
 
 /**
  * @returns {string | null}
@@ -119,6 +126,9 @@ export class BridgeClient extends EventEmitter {
     checkProtocolOnConnect = true,
     restartDaemonOnVersionMismatch = shouldAutoRestartDaemonOnVersionMismatch(),
     restartDaemonFn = restartBridgeDaemon,
+    updateNpmOnCompatibleVersion = false,
+    exitProcessOnNpmUpdate = false,
+    updateCompatibleNpmPackageFn = updateCompatibleNpmPackage,
     authToken = undefined,
   } = {}) {
     super();
@@ -131,6 +141,9 @@ export class BridgeClient extends EventEmitter {
     this.checkProtocolOnConnect = checkProtocolOnConnect;
     this.restartDaemonOnVersionMismatch = restartDaemonOnVersionMismatch;
     this.restartDaemonFn = restartDaemonFn;
+    this.updateNpmOnCompatibleVersion = updateNpmOnCompatibleVersion;
+    this.exitProcessOnNpmUpdate = exitProcessOnNpmUpdate;
+    this.updateCompatibleNpmPackageFn = updateCompatibleNpmPackageFn;
     this.authToken = authToken;
     this.socket = null;
     this.connected = false;
@@ -140,6 +153,9 @@ export class BridgeClient extends EventEmitter {
     this.waiting = new Map();
     this._reconnecting = false;
     this._attemptedVersionMismatchRestart = false;
+    this._attemptedNpmUpdate = false;
+    /** @type {import('./types.js').NpmUpdateResult | null} */
+    this.npmUpdateResult = null;
   }
 
   /**
@@ -280,11 +296,103 @@ export class BridgeClient extends EventEmitter {
     if (this.protocolCompatibility.compatible) {
       this._attemptedVersionMismatchRestart = false;
     }
+    if (await this.tryCompatibleNpmUpdate(healthResult)) {
+      return;
+    }
     if (this.shouldRestartDaemonForProtocolMismatch(healthResult)) {
       this._attemptedVersionMismatchRestart = true;
       await this.disconnectForDaemonRestart();
       await this.restartDaemonFn({ transport: this.transport });
       await this.connect();
+    }
+  }
+
+  /**
+   * @param {ProtocolHealthResult} healthResult
+   * @returns {Promise<boolean>}
+   */
+  async tryCompatibleNpmUpdate(healthResult) {
+    const extensionVersion = healthResult.extensionVersion;
+    const processVersion = CLIENT_PACKAGE_VERSION;
+    const extensionVersions = Array.isArray(healthResult.extension_supported_versions)
+      ? healthResult.extension_supported_versions
+      : healthResult.extensionConnected === true && Array.isArray(healthResult.supported_versions)
+        ? healthResult.supported_versions
+        : [];
+    if (
+      !this.updateNpmOnCompatibleVersion ||
+      this._attemptedNpmUpdate ||
+      healthResult.extensionConnected !== true ||
+      typeof extensionVersion !== 'string' ||
+      !parseStableVersion(extensionVersion) ||
+      typeof processVersion !== 'string' ||
+      !parseStableVersion(processVersion) ||
+      comparePackageVersions(extensionVersion, processVersion) <= 0 ||
+      extensionVersions.length === 0
+    ) {
+      return false;
+    }
+
+    this._attemptedNpmUpdate = true;
+    const previousAutoReconnect = this.autoReconnect;
+    this.autoReconnect = false;
+    try {
+      this.npmUpdateResult = await this.updateCompatibleNpmPackageFn({
+        extensionVersion,
+        supportedVersions: extensionVersions,
+      });
+      if (!this.npmUpdateResult.updated) {
+        if (
+          typeof this.npmUpdateResult.previousVersion === 'string' &&
+          parseStableVersion(this.npmUpdateResult.previousVersion) &&
+          comparePackageVersions(this.npmUpdateResult.previousVersion, processVersion) > 0
+        ) {
+          this.requireFreshProcess(this.npmUpdateResult.previousVersion);
+        }
+        if (this.npmUpdateResult.reason === 'not_global_install') {
+          this.setProtocolWarning(
+            'Automatic npm update skipped because this Browser Bridge client is not running from the global npm installation.'
+          );
+        }
+        return false;
+      }
+
+      this.requireFreshProcess(this.npmUpdateResult.version || extensionVersion);
+    } catch (error) {
+      if (error instanceof NpmPackageUpdatedError || this.npmUpdateResult?.updated) {
+        throw error;
+      }
+      this.setProtocolWarning(
+        `Automatic Browser Bridge npm update failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+      return false;
+    } finally {
+      this.autoReconnect = previousAutoReconnect;
+    }
+  }
+
+  /**
+   * @param {string} version
+   * @returns {never}
+   */
+  requireFreshProcess(version) {
+    if (this.exitProcessOnNpmUpdate) {
+      setTimeout(() => process.exit(0), 250).unref();
+    }
+    throw new NpmPackageUpdatedError(version);
+  }
+
+  /**
+   * @param {string} warning
+   * @returns {void}
+   */
+  setProtocolWarning(warning) {
+    this.protocolWarning = this.protocolWarning ? `${this.protocolWarning} ${warning}` : warning;
+    if (this.protocolCompatibility) {
+      this.protocolCompatibility = {
+        ...this.protocolCompatibility,
+        warning: this.protocolWarning,
+      };
     }
   }
 

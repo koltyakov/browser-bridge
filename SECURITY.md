@@ -10,6 +10,13 @@ Only the latest version published to npm (`@browserbridge/bbx`) and the Chrome W
 receives security fixes. Older versions are not patched retroactively; upgrade to the
 latest release before reporting.
 
+The optional `compatible` npm auto-update policy follows the connected
+extension's advertised `major.minor` protocol line. It installs only stable
+versions of the fixed `@browserbridge/bbx` package, never downgrades, and runs
+only from a verified global npm installation. If an older extension line is
+still installed, this policy may intentionally select an older release than the
+latest security-supported version.
+
 ## Reporting a Vulnerability
 
 Please do **not** open a public GitHub issue for security vulnerabilities.

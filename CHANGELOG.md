@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Protocol-compatible npm auto-update:** Added an opt-in local policy that
+  aligns a global CLI/native host install with the highest stable npm release on
+  a protocol line advertised by the connected extension, with fixed-package
+  validation, no downgrades, global-install verification, and cross-process
+  update locking.
+
 ## [1.8.0] - 2026-07-22
 
 ### Added
