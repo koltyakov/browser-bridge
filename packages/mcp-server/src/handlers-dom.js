@@ -189,11 +189,14 @@ export const PATCH_ACTIONS = {
         removeAttribute: 'remove_attribute',
         addClass: 'add_class',
         removeClass: 'remove_class',
+        toggleClass: 'toggle_class',
         setTextContent: 'set_text',
       };
       const normalizedOperation = opMap[operation] || operation;
       const value =
-        normalizedOperation === 'add_class' || normalizedOperation === 'remove_class'
+        normalizedOperation === 'add_class' ||
+        normalizedOperation === 'remove_class' ||
+        normalizedOperation === 'toggle_class'
           ? (a.value ?? a.name)
           : a.value;
       return {

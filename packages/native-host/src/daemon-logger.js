@@ -1,5 +1,7 @@
 // @ts-check
 
+import { sanitizeIncidentalValue } from '../../protocol/src/index.js';
+
 /** @typedef {{ write: (chunk: string) => void }} LogStream */
 
 /**
@@ -62,7 +64,7 @@ export class DaemonLogger {
       message,
       ...extra,
     };
-    this.#stream.write(`${JSON.stringify(entry)}\n`);
+    this.#stream.write(`${JSON.stringify(sanitizeIncidentalValue(entry))}\n`);
   }
 
   /**

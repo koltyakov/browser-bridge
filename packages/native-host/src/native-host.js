@@ -2,7 +2,12 @@
 
 import net from 'node:net';
 
-import { createFailure, ERROR_CODES, MAX_JSON_LINE_BYTES } from '../../protocol/src/index.js';
+import {
+  createFailure,
+  ERROR_CODES,
+  MAX_JSON_LINE_BYTES,
+  sanitizeIncidentalText,
+} from '../../protocol/src/index.js';
 import { readBridgeAuthToken } from './auth-token.js';
 import { createSocketBridgeTransport, getBridgeTransport } from './config.js';
 import { spawnBridgeDaemonProcess } from './daemon-process.js';
@@ -130,7 +135,7 @@ export async function runNativeHost({
       response: createFailure(
         'native_bootstrap',
         ERROR_CODES.NATIVE_HOST_UNAVAILABLE,
-        error instanceof Error ? error.message : String(error)
+        sanitizeIncidentalText(error instanceof Error ? error.message : String(error))
       ),
     });
     return;

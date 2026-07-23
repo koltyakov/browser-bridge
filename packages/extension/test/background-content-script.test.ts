@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { ERROR_CODES } from '../../protocol/src/index.js';
 import { createContentScriptBridge } from '../src/background-content-script.js';
 
 function createHarness(failMain = false) {
@@ -43,6 +44,33 @@ test('general content-script injection does not install navigation listeners or 
   assert.equal(injections[0].world, undefined);
   assert.ok(Array.isArray(injections[0].files));
   assert.equal(injections[0].func, undefined);
+});
+
+test('restricted content-script injection returns a typed non-retryable error', async () => {
+  const chromeObj = {
+    tabs: {
+      async sendMessage() {
+        throw new Error('Could not establish connection. Receiving end does not exist.');
+      },
+      async query() {
+        return [];
+      },
+    },
+    scripting: {
+      async executeScript() {
+        throw new Error('Cannot access contents of url "chrome://settings".');
+      },
+    },
+  } as unknown as typeof chrome;
+  const bridge = createContentScriptBridge(chromeObj, {
+    contentScriptTimeoutMs: 1_000,
+    isRestrictedAutomationUrl: () => false,
+  });
+
+  await assert.rejects(
+    () => bridge.ensureContentScript(8),
+    (error: { code?: string }) => error.code === ERROR_CODES.CONTENT_SCRIPT_UNAVAILABLE
+  );
 });
 
 test('URL wait signal instrumentation installs and uninstalls both worlds on demand', async () => {

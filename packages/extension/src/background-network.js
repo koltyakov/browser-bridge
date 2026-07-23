@@ -1,6 +1,7 @@
 // @ts-check
 
 import { getMainWorldInstrumentationKey } from './background-main-world-instrumentation.js';
+import { sanitizeIncidentalUrl } from '../../protocol/src/index.js';
 
 /**
  * @typedef {{
@@ -275,5 +276,14 @@ export async function readNetworkBuffer(tabId, clear, chromeObj) {
     },
     args: [clear, instrumentationKey],
   });
-  return /** @type {any} */ (results?.[0]?.result) || { entries: [], dropped: 0 };
+  const result = /** @type {any} */ (results?.[0]?.result) || { entries: [], dropped: 0 };
+  return {
+    ...result,
+    entries: Array.isArray(result.entries)
+      ? result.entries.map((/** @type {{ url: unknown } & Record<string, unknown>} */ entry) => ({
+          ...entry,
+          url: sanitizeIncidentalUrl(entry.url),
+        }))
+      : [],
+  };
 }

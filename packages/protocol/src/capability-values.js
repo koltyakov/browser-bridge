@@ -20,6 +20,7 @@ export const CAPABILITIES = Object.freeze({
   PERFORMANCE_READ: 'performance.read',
   NETWORK_READ: 'network.read',
   NETWORK_INTERCEPT: 'network.intercept',
+  SENSITIVE_READ: 'sensitive.read',
 });
 
 export const DEFAULT_CAPABILITIES = Object.freeze([
@@ -42,4 +43,5 @@ export const DEFAULT_CAPABILITIES = Object.freeze([
   CAPABILITIES.PERFORMANCE_READ,
   CAPABILITIES.NETWORK_READ,
   CAPABILITIES.NETWORK_INTERCEPT,
+  CAPABILITIES.SENSITIVE_READ,
 ]);

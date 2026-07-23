@@ -19,6 +19,7 @@ import {
   handleLogTool,
   handleNavigationTool,
   handlePageTool,
+  handleSensitiveReadTool,
   handlePatchTool,
   handleRawCallTool,
   handleSetupTool,
@@ -362,6 +363,25 @@ export function createBridgeMcpServer() {
   );
 
   server.registerTool(
+    'browser_sensitive_read',
+    {
+      title: 'Sensitive Browser Read',
+      description:
+        'High-risk exact-value read for one local or session storage key. This operation is logged as Sensitive access, is never batched or retried, and returns the whole value or fails atomically.',
+      inputSchema: {
+        source: z.enum(['local_storage', 'session_storage']).describe('Exact storage source'),
+        key: z
+          .string()
+          .max(2_048)
+          .describe('Exact storage key, including an empty key if intended'),
+        tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
+        destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+      },
+    },
+    handleSensitiveReadTool
+  );
+
+  server.registerTool(
     'browser_page',
     {
       title: 'Browser Page State',
@@ -626,7 +646,7 @@ export function createBridgeMcpServer() {
           .int()
           .nonnegative()
           .optional()
-          .describe('Hover duration in ms (default: 0)'),
+          .describe('Delay after hover dispatch in ms; does not end hover (default: 0)'),
         sourceElementRef: z.string().optional().describe('Drag source element (for drag action)'),
         sourceSelector: z
           .string()
@@ -674,7 +694,14 @@ export function createBridgeMcpServer() {
           .describe('CSS property: value pairs (for apply_styles)'),
         important: z.boolean().optional().describe('Add !important flag (default: false)'),
         operation: z
-          .enum(['setAttribute', 'removeAttribute', 'addClass', 'removeClass', 'setTextContent'])
+          .enum([
+            'setAttribute',
+            'removeAttribute',
+            'addClass',
+            'removeClass',
+            'toggleClass',
+            'setTextContent',
+          ])
           .optional()
           .describe('DOM mutation type'),
         value: z.unknown().optional().describe('Value for the DOM operation'),
@@ -728,6 +755,11 @@ export function createBridgeMcpServer() {
           .positive()
           .optional()
           .describe('CDP node id for cdp_box_model/cdp_computed_styles'),
+        computedStyles: z
+          .array(z.string().min(1).max(128))
+          .max(100)
+          .optional()
+          .describe('CSS property names to include for cdp_dom_snapshot'),
         rect: z
           .object({
             x: z.number().nonnegative().describe('Region left edge (viewport pixels)'),

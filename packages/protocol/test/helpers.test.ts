@@ -45,6 +45,7 @@ const EXPECTED_BRIDGE_METHOD_ORDER: readonly BridgeMethod[] = [
   'page.handle_dialog',
   'page.wait_for_load_state',
   'page.get_storage',
+  'sensitive.read',
   'page.get_text',
   'page.extract_content',
   'page.get_network',
@@ -137,6 +138,7 @@ test('capabilities helpers accept only declared capabilities and default unknown
     PERFORMANCE_READ: 'performance.read',
     NETWORK_READ: 'network.read',
     NETWORK_INTERCEPT: 'network.intercept',
+    SENSITIVE_READ: 'sensitive.read',
   });
   assert.deepEqual(DEFAULT_CAPABILITIES, [
     'page.read',
@@ -158,6 +160,7 @@ test('capabilities helpers accept only declared capabilities and default unknown
     'performance.read',
     'network.read',
     'network.intercept',
+    'sensitive.read',
   ]);
   assert.equal(isCapability(CAPABILITIES.PAGE_READ), true);
   assert.equal(isCapability('page.read '), false);
@@ -351,6 +354,7 @@ test('registry policies preserve every method capability classification', () => 
       ],
     ],
     [CAPABILITIES.PAGE_EVALUATE, ['page.evaluate']],
+    [CAPABILITIES.SENSITIVE_READ, ['sensitive.read']],
     [CAPABILITIES.NETWORK_READ, ['page.get_network']],
     [
       CAPABILITIES.NETWORK_INTERCEPT,

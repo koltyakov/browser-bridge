@@ -1,6 +1,6 @@
 // @ts-check
 
-import { BridgeError, ERROR_CODES } from '../../protocol/src/index.js';
+import { BridgeError, ERROR_CODES, sanitizeIncidentalText } from '../../protocol/src/index.js';
 import { POPUP_PATH } from './background-state.js';
 
 /** @typedef {import('./background-state.js').CurrentTabState} CurrentTabState */
@@ -237,7 +237,10 @@ export async function openRequestedAccessUi(target, state, chromeObj, deps) {
   try {
     await openRequestedAccessPopupWindow(target, state, chromeObj);
   } catch (error) {
-    console.warn('Could not open Browser Bridge popup window for access request.', error);
+    console.warn(
+      'Could not open Browser Bridge popup window for access request.',
+      sanitizeIncidentalText(error instanceof Error ? error.message : String(error))
+    );
   }
 }
 

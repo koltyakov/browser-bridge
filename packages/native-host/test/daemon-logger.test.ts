@@ -76,6 +76,26 @@ test('DaemonLogger extra fields override defaults', () => {
   assert.equal(entry.requestId, 'override');
 });
 
+test('DaemonLogger sanitizes incidental URLs, paths, and sensitive fields', () => {
+  const { entries, stream } = createCaptureStream();
+  const logger = new DaemonLogger({ stream });
+
+  logger.error('failed at /Users/alice/project/config.json', {
+    url: 'https://user:pass@example.test/api?token=secret#fragment',
+    authorization: 'Bearer secret',
+    nested: { password: 'secret', tokenCount: 2 },
+  });
+
+  assert.deepEqual(JSON.parse(entries[0]), {
+    timestamp: JSON.parse(entries[0]).timestamp,
+    level: 'error',
+    message: 'failed at [redacted-path]/config.json',
+    url: 'https://example.test/api?token=%5Bredacted%5D',
+    authorization: '[redacted]',
+    nested: { password: '[redacted]', tokenCount: 2 },
+  });
+});
+
 test('silentLogger does not throw', () => {
   assert.doesNotThrow(() => {
     silentLogger.debug('a');

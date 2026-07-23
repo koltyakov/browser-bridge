@@ -29,7 +29,8 @@ export type Capability =
   | 'tabs.manage'
   | 'performance.read'
   | 'network.read'
-  | 'network.intercept';
+  | 'network.intercept'
+  | 'sensitive.read';
 
 export type ErrorCode =
   | 'ACCESS_DENIED'
@@ -45,7 +46,9 @@ export type ErrorCode =
   | 'DIALOG_NOT_OPEN'
   | 'DIALOG_ACTION_CONFLICT'
   | 'RESULT_TRUNCATED'
-  | 'RATE_LIMITED'
+  | 'RESULT_TOO_LARGE'
+  | 'SENSITIVE_TARGET_NOT_FOUND'
+  | 'CONTENT_SCRIPT_UNAVAILABLE'
   | 'INTERNAL_ERROR'
   | 'INVALID_REQUEST'
   | 'NATIVE_HOST_UNAVAILABLE'
@@ -67,6 +70,7 @@ export type BridgeMethod =
   | 'page.handle_dialog'
   | 'page.wait_for_load_state'
   | 'page.get_storage'
+  | 'sensitive.read'
   | 'page.get_text'
   | 'page.extract_content'
   | 'page.get_network'
@@ -312,6 +316,10 @@ export interface CdpNodeIdParams {
   nodeId?: number;
 }
 
+export interface CdpDomSnapshotParams {
+  computedStyles?: string[];
+}
+
 export interface NormalizedCdpDispatchKeyEventParams extends BridgeParams {
   key: string;
   code: string;
@@ -320,6 +328,10 @@ export interface NormalizedCdpDispatchKeyEventParams extends BridgeParams {
 
 export interface NormalizedCdpNodeIdParams extends BridgeParams {
   nodeId: number;
+}
+
+export interface NormalizedCdpDomSnapshotParams extends BridgeParams {
+  computedStyles: string[];
 }
 
 export interface CheckedActionParams {
@@ -592,6 +604,25 @@ export interface StorageParams {
 export interface NormalizedStorageParams extends BridgeParams {
   type: 'local' | 'session';
   keys: string[] | null;
+}
+
+export type SensitiveStorageSource = 'local_storage' | 'session_storage';
+
+export interface SensitiveReadParams {
+  source: SensitiveStorageSource;
+  key: string;
+}
+
+export interface NormalizedSensitiveReadParams extends BridgeParams {
+  source: SensitiveStorageSource;
+  key: string;
+  maxBytes: number;
+}
+
+export interface SensitiveReadResult {
+  source: SensitiveStorageSource;
+  value: string;
+  exact: true;
 }
 
 export type ExtractContentFormat = 'text' | 'markdown';

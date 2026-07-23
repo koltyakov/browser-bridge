@@ -1,10 +1,11 @@
 // @ts-check
 
+import { sanitizeIncidentalUrl } from '../../protocol/src/index.js';
+
 const DEFAULT_MAX_ENTRIES = 200;
 const DEFAULT_MAX_INFLIGHT = 400;
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_TTL_RETRY_MS = 5_000;
-const MAX_URL_LENGTH = 4_096;
 const MAX_DIAGNOSTIC_COUNT = 10_000;
 
 /** @typedef {{ url: string, status: number }} RedirectHop */
@@ -379,7 +380,7 @@ export function createCdpNetworkCapture(deps) {
       entry = createPendingEntry(requestId, event);
       addPending(state, requestId, entry);
     }
-    entry.url = sanitizeUrl(request.url);
+    entry.url = sanitizeIncidentalUrl(request.url);
     entry.method = boundString(request.method, 32).toUpperCase();
     entry.resourceType = boundString(event.type, 64) || entry.resourceType;
   }
@@ -533,7 +534,7 @@ function createPendingEntry(requestId, event) {
 function createSpecialPendingEntry(requestId, url, method, resourceType, timestamp) {
   return {
     requestId,
-    url: sanitizeUrl(url),
+    url: sanitizeIncidentalUrl(url),
     method: boundString(method, 32).toUpperCase(),
     resourceType: boundString(resourceType, 64),
     status: 0,
@@ -600,37 +601,4 @@ function boundString(value, maxLength) {
 /** @param {unknown} value @returns {number | null} */
 function finiteNumber(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
-/** @param {unknown} value */
-function sanitizeUrl(value) {
-  const raw = boundString(value, MAX_URL_LENGTH);
-  if (/^data:/iu.test(raw)) {
-    const mime = raw
-      .slice(5)
-      .split(/[;,]/u, 1)[0]
-      .replace(/[^a-z0-9./+-]/giu, '')
-      .slice(0, 100);
-    return mime ? `data:${mime};[redacted]` : 'data:[redacted]';
-  }
-  if (/^blob:/iu.test(raw)) {
-    try {
-      return `blob:${new URL(raw.slice(5)).origin}/[redacted]`;
-    } catch {
-      return 'blob:[redacted]';
-    }
-  }
-  try {
-    const parsed = new URL(raw);
-    parsed.username = '';
-    parsed.password = '';
-    parsed.hash = '';
-    for (const key of new Set(parsed.searchParams.keys())) {
-      parsed.searchParams.set(key, '[redacted]');
-    }
-    return parsed.href.slice(0, MAX_URL_LENGTH);
-  } catch {
-    const summary = raw.split(/[?#]/u, 1)[0];
-    return summary ? summary.slice(0, MAX_URL_LENGTH) : '[redacted-url]';
-  }
 }

@@ -1,6 +1,10 @@
 // @ts-check
 
-import { ERROR_CODES } from '../../protocol/src/index.js';
+import {
+  ERROR_CODES,
+  sanitizeIncidentalText,
+  sanitizeIncidentalValue,
+} from '../../protocol/src/index.js';
 import { getErrorMessage, normalizeRuntimeErrorMessage } from './background-helpers.js';
 import { getMainWorldInstrumentationKey } from './background-main-world-instrumentation.js';
 import { isNumber } from './background-state.js';
@@ -292,7 +296,31 @@ export async function readConsoleBuffer(tabId, clear, chromeObj) {
     },
     args: [clear, instrumentationKey],
   });
-  return /** @type {any} */ (results?.[0]?.result) || { entries: [], dropped: 0 };
+  const result = /** @type {any} */ (results?.[0]?.result) || { entries: [], dropped: 0 };
+  return {
+    ...result,
+    entries: Array.isArray(result.entries)
+      ? result.entries.map(
+          (/** @type {{ args: unknown[] } & Record<string, unknown>} */ entry) => ({
+            ...entry,
+            args: entry.args.map((argument) => sanitizeConsoleArgument(argument)),
+          })
+        )
+      : [],
+  };
+}
+
+/** @param {unknown} value */
+function sanitizeConsoleArgument(value) {
+  const text = typeof value === 'string' ? value : String(value ?? '');
+  if (text.trimStart().startsWith('{') || text.trimStart().startsWith('[')) {
+    try {
+      return JSON.stringify(sanitizeIncidentalValue(JSON.parse(text)));
+    } catch {
+      // Fall through to text sanitization for malformed JSON-looking values.
+    }
+  }
+  return sanitizeIncidentalText(text, 500);
 }
 
 /**
@@ -300,6 +328,13 @@ export async function readConsoleBuffer(tabId, clear, chromeObj) {
  * @returns {boolean}
  */
 export function isRecoverableInstrumentationError(error) {
+  if (
+    error &&
+    typeof error === 'object' &&
+    /** @type {{ code?: unknown }} */ (error).code === ERROR_CODES.CONTENT_SCRIPT_UNAVAILABLE
+  ) {
+    return true;
+  }
   const message = normalizeRuntimeErrorMessage(getErrorMessage(error));
   return (
     message === ERROR_CODES.TAB_MISMATCH ||

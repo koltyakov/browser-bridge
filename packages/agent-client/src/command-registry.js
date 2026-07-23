@@ -289,7 +289,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
     lines: [
       'bbx call [--tab <tabId>] <method> [paramsJson|-]                   Call any bridge method (- reads JSON from stdin)',
       'bbx <method> [--tab <tabId>] [paramsJson|-]                        Direct alias for exact bridge methods such as page.get_state',
-      "bbx batch '[{method,params,tabId?},...]'                           Parallel method calls",
+      "bbx batch '[{method,params,tabId?},...]'                           Up to 20 parallel read-only calls",
       'Every bridge command accepts --remote <name> (or BBX_REMOTE env) to target a remote destination from `bbx remote list`.',
       'Advanced bridge params stay available through `bbx call`, even when shortcuts expose only the common case.',
       'For open-ended investigation, start with `bbx batch` on `page.get_state`, `dom.query`, and `page.get_text` before any screenshot or CDP call.',

@@ -426,7 +426,7 @@ test('readNetworkBuffer returns copied entries and clears the page state on requ
   const executeScriptCalls: ExecuteScriptCall[] = [];
   const entry: NetworkEntry = {
     method: 'GET',
-    url: 'https://example.com/api',
+    url: 'https://user:pass@example.com/api?token=secret#fragment',
     status: 200,
     duration: 9,
     type: 'fetch',
@@ -464,7 +464,12 @@ test('readNetworkBuffer returns copied entries and clears the page state on requ
 
     const firstRead = await readNetworkBuffer(29, false, chrome);
     assert.deepEqual(firstRead, {
-      entries: [entry],
+      entries: [
+        {
+          ...entry,
+          url: 'https://example.com/api?token=%5Bredacted%5D',
+        },
+      ],
       dropped: 3,
     });
     assert.notEqual(
@@ -491,7 +496,12 @@ test('readNetworkBuffer returns copied entries and clears the page state on requ
 
     const secondRead = await readNetworkBuffer(29, true, chrome);
     assert.deepEqual(secondRead, {
-      entries: [entry],
+      entries: [
+        {
+          ...entry,
+          url: 'https://example.com/api?token=%5Bredacted%5D',
+        },
+      ],
       dropped: 3,
     });
     assert.strictEqual(

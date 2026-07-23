@@ -661,7 +661,9 @@ test('getDoctorReport flags a crash-looping daemon and points at the daemon log'
   assert.equal(report.daemonRestarts.restartLoop, true);
   assert.equal(report.daemonRestarts.startsInWindow, 3);
   assert.ok(report.issues.includes('daemon_restart_loop'));
-  assert.ok(report.nextSteps.some((step) => step.includes(report.daemonLogPath)));
+  assert.equal(report.daemonLogPath, '[redacted-path]/daemon.log');
+  assert.ok(report.nextSteps.some((step) => step.includes('daemon.log')));
+  assert.doesNotMatch(report.nextSteps.join('\n'), /\/Users\/|\/home\//);
 });
 
 test('getDoctorReport flags unwritable bridge files with an ownership fix', async () => {
@@ -677,9 +679,7 @@ test('getDoctorReport flags unwritable bridge files with an ownership fix', asyn
     },
   });
 
-  assert.deepEqual(report.unwritableBridgePaths, [
-    '/home/user/.local/share/browser-bridge/daemon.pid',
-  ]);
+  assert.deepEqual(report.unwritableBridgePaths, ['[redacted-path]/daemon.pid']);
   assert.ok(report.issues.includes('bridge_files_not_writable'));
   assert.ok(report.nextSteps.some((step) => step.includes('sudo chown')));
   assert.ok(report.nextSteps.some((step) => step.includes('daemon.pid')));

@@ -1,5 +1,7 @@
 // @ts-check
 
+import { BridgeError, ERROR_CODES } from '../../protocol/src/index.js';
+
 /**
  * @typedef {{
  *   contentScriptTimeoutMs: number,
@@ -71,9 +73,10 @@ export function createContentScriptBridge(chromeObj, deps) {
     } catch (injectError) {
       const msg = injectError instanceof Error ? injectError.message : String(injectError);
       if (isRestrictedScriptingError(msg)) {
-        throw new Error(
-          'CONTENT_SCRIPT_UNAVAILABLE: Content script not available on this page (restricted or extension page).',
-          { cause: injectError }
+        throw new BridgeError(
+          ERROR_CODES.CONTENT_SCRIPT_UNAVAILABLE,
+          'Content script not available on this page (restricted or extension page).',
+          { cause: injectError instanceof Error ? injectError.message : String(injectError) }
         );
       }
       throw injectError;

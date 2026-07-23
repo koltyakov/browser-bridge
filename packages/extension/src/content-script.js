@@ -162,6 +162,8 @@
         return getPageState();
       case 'page.get_storage':
         return getStorageData(params);
+      case 'sensitive.read':
+        return getSensitiveStorageValue(params);
       case 'page.get_text':
         return getFullPageText(params);
       case 'navigation.navigate':
@@ -391,7 +393,7 @@
    * Read localStorage or sessionStorage entries.
    *
    * @param {Record<string, any>} params
-   * @returns {{ type: string, entries: Record<string, string | null>, count: number }}
+   * @returns {{ type: string, entries: Array<{ key: string, present: boolean }>, count: number, total: number, truncated: boolean }}
    */
   function getStorageData(params) {
     const type = params.type === 'session' ? 'session' : 'local';
@@ -399,22 +401,63 @@
     const keys = Array.isArray(params.keys)
       ? params.keys.filter((k) => typeof k === 'string')
       : null;
-    /** @type {Record<string, string | null>} */
-    const result = {};
+    /** @type {Array<{ key: string, present: boolean }>} */
+    const entries = [];
     if (keys) {
       for (const key of keys) {
-        result[key] = storage.getItem(key);
+        entries.push({ key, present: storage.getItem(key) !== null });
       }
     } else {
       for (let i = 0; i < Math.min(storage.length, 100); i++) {
         const key = storage.key(i);
         if (key !== null) {
-          const val = storage.getItem(key);
-          result[key] = val !== null && val.length > 500 ? val.slice(0, 500) + '\u2026' : val;
+          entries.push({ key, present: true });
         }
       }
     }
-    return { type, entries: result, count: Object.keys(result).length };
+    return {
+      type,
+      entries,
+      count: entries.length,
+      total: storage.length,
+      truncated: keys === null && entries.length < storage.length,
+    };
+  }
+
+  /**
+   * Deliberately return one exact Web Storage value or reject it atomically.
+   *
+   * @param {Record<string, any>} params
+   * @returns {{ source: 'local_storage' | 'session_storage', value: string, exact: true }}
+   */
+  function getSensitiveStorageValue(params) {
+    const source = params.source === 'session_storage' ? 'session_storage' : 'local_storage';
+    const storage = source === 'session_storage' ? sessionStorage : localStorage;
+    const key = typeof params.key === 'string' ? params.key : '';
+    const value = storage.getItem(key);
+    if (value === null) {
+      throw {
+        code: 'SENSITIVE_TARGET_NOT_FOUND',
+        message: `No ${source === 'session_storage' ? 'session' : 'local'} storage value exists for the requested key.`,
+        details: { source, keyLength: key.length },
+      };
+    }
+    const bytes = new TextEncoder().encode(value).byteLength;
+    const maxBytes = typeof params.maxBytes === 'number' ? params.maxBytes : 262_144;
+    if (bytes > maxBytes) {
+      throw {
+        code: 'RESULT_TOO_LARGE',
+        message: `The exact storage value is too large to return atomically (${bytes} bytes).`,
+        details: {
+          source,
+          characters: value.length,
+          bytes,
+          maxBytes,
+          guidance: 'Use a narrower exact target; partial sensitive values are never returned.',
+        },
+      };
+    }
+    return { source, value, exact: true };
   }
 
   /**

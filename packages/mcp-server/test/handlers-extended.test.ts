@@ -8,6 +8,7 @@ import {
   handleInputTool,
   handleNavigationTool,
   handlePageTool,
+  handleSensitiveReadTool,
   handlePatchTool,
   handleStylesLayoutTool,
   handleBatchTool,
@@ -552,8 +553,13 @@ test('handlePageTool storage calls page.get_storage', async () => {
     async () =>
       ok({
         count: 2,
-        type: 'localStorage',
-        entries: { a: '1', b: '2' },
+        total: 2,
+        type: 'local',
+        entries: [
+          { key: 'a', present: true },
+          { key: 'b', present: true },
+        ],
+        truncated: false,
       }),
     async (calls) => {
       const result = await handlePageTool({
@@ -563,6 +569,63 @@ test('handlePageTool storage calls page.get_storage', async () => {
       const storageCall = calls.find((c) => c.method === 'page.get_storage');
       assert.ok(storageCall, 'page.get_storage should be called');
       assert.equal(result.isError, undefined);
+    }
+  );
+});
+
+test('sensitive read tools deliver exact values without retry, budgeting, or delivery metrics', async () => {
+  const secret = '\u001b[31mline 1\n\u2603 {"token":"value"}';
+  await withMockedBridge(
+    async () =>
+      ok(
+        { source: 'local_storage', value: secret, exact: true },
+        { meta: { method: 'sensitive.read' } }
+      ),
+    async (calls) => {
+      const specialized = await handleSensitiveReadTool({
+        source: 'local_storage',
+        key: 'private-token',
+        tabId: 7,
+      });
+      const generic = await handleRawCallTool({
+        method: 'sensitive.read',
+        params: { source: 'local_storage', key: 'private-token' },
+        tabId: 7,
+        budgetPreset: 'quick',
+      });
+
+      assert.equal(calls.length, 2);
+      assert.equal(
+        calls.every((call) => call.method === 'sensitive.read'),
+        true
+      );
+      assert.equal(
+        calls.every((call) => typeof call.meta?.token_budget !== 'number'),
+        true
+      );
+      assert.equal(specialized.structuredContent.value, secret);
+      assert.equal(generic.structuredContent.value, secret);
+      assert.equal('deliveredBytes' in specialized.structuredContent, false);
+      assert.equal('deliveredTokens' in generic.structuredContent, false);
+      assert.doesNotMatch(specialized.content[0].text, /line 1|private-token/);
+    }
+  );
+});
+
+test('sensitive.read is rejected from browser_batch', async () => {
+  await withMockedBridge(
+    async () => ok({}),
+    async (calls) => {
+      const result = await handleBatchTool({
+        calls: [
+          {
+            method: 'sensitive.read',
+            params: { source: 'local_storage', key: 'private-token' },
+          },
+        ],
+      });
+      assert.equal(result.isError, true);
+      assert.equal(calls.length, 0);
     }
   );
 });
@@ -1225,14 +1288,21 @@ test('handlePatchTool apply_dom calls patch.apply_dom', async () => {
         operation: 'removeClass',
         name: 'active',
       });
+      const toggleClassResult = await handlePatchTool({
+        action: 'apply_dom',
+        elementRef: 'el_1',
+        operation: 'toggleClass',
+        name: 'active',
+      });
       const classPatchCalls = calls.filter(
         (call) =>
           call.method === 'patch.apply_dom' &&
-          (call.params?.operation === 'add_class' || call.params?.operation === 'remove_class')
+          ['add_class', 'remove_class', 'toggle_class'].includes(String(call.params?.operation))
       );
 
       assert.equal(addClassResult.isError, undefined);
       assert.equal(removeClassResult.isError, undefined);
+      assert.equal(toggleClassResult.isError, undefined);
       assert.deepEqual(
         classPatchCalls.map((call) => ({
           operation: call.params?.operation,
@@ -1241,6 +1311,7 @@ test('handlePatchTool apply_dom calls patch.apply_dom', async () => {
         [
           { operation: 'add_class', value: 'active' },
           { operation: 'remove_class', value: 'active' },
+          { operation: 'toggle_class', value: 'active' },
         ]
       );
     }
@@ -1444,13 +1515,16 @@ test('handleCaptureTool cdp_document returns bounded structured data', async () 
   );
 });
 
-test('handleCaptureTool cdp_dom_snapshot calls cdp.get_dom_snapshot', async () => {
+test('handleCaptureTool cdp_dom_snapshot forwards computed styles', async () => {
   await withMockedBridge(
     async () => ok({ documents: [] }),
     async (calls) => {
-      const result = await handleCaptureTool({ action: 'cdp_dom_snapshot' });
+      const result = await handleCaptureTool({
+        action: 'cdp_dom_snapshot',
+        computedStyles: ['display', 'color'],
+      });
       assert.equal(calls[0].method, 'cdp.get_dom_snapshot');
-      assert.deepEqual(calls[0].params, {});
+      assert.deepEqual(calls[0].params, { computedStyles: ['display', 'color'] });
       assert.equal(result.isError, undefined);
       assert.deepEqual(result.structuredContent.data, { documents: [] });
     }
@@ -1682,6 +1756,14 @@ test('handleBatchTool rejects destructive console and network reads', async () =
       assert.equal(calls.length, 0);
       assert.equal(result.isError, true);
       assert.match(result.content[0].text, /not safe/);
+
+      for (const clear of [1, 'false']) {
+        const coerced = await handleBatchTool({
+          calls: [{ method: 'page.get_network', params: { clear } }],
+        });
+        assert.equal(coerced.isError, true);
+      }
+      assert.equal(calls.length, 0);
     }
   );
 });

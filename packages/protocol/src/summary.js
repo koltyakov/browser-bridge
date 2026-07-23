@@ -7,6 +7,7 @@ import {
   getProtocolVersion,
   serializeJsonPayload,
 } from './index.js';
+import { sanitizeIncidentalUrl } from './incidental-sanitizer.js';
 
 /** @typedef {import('./types.js').BridgeResponse} BridgeResponse */
 /** @typedef {import('./types.js').BridgeMethod} SummaryMethod */
@@ -121,6 +122,7 @@ const ACTION_SUMMARIES = {
  * @returns {AnnotatedBridgeSummary}
  */
 export function annotateBridgeSummary(summary, response) {
+  const sensitiveRead = response.meta?.method === 'sensitive.read';
   const metaTransportBytes =
     getNumericMetaField(response.meta, 'transport_bytes') ??
     getNumericMetaField(response.meta, 'response_bytes');
@@ -128,13 +130,15 @@ export function annotateBridgeSummary(summary, response) {
     getNumericMetaField(response.meta, 'transport_approx_tokens') ??
     getNumericMetaField(response.meta, 'approx_tokens');
   const transportCost =
-    metaTransportBytes == null || metaTransportTokens == null
+    !sensitiveRead && (metaTransportBytes == null || metaTransportTokens == null)
       ? estimateSerializedPayloadCost(
           serializeJsonPayload(response.ok ? response.result : { error: response.error })
         )
       : null;
-  const transportBytes = metaTransportBytes ?? transportCost?.bytes ?? 0;
-  const transportTokens = metaTransportTokens ?? transportCost?.approxTokens ?? 0;
+  const transportBytes = sensitiveRead ? 0 : (metaTransportBytes ?? transportCost?.bytes ?? 0);
+  const transportTokens = sensitiveRead
+    ? 0
+    : (metaTransportTokens ?? transportCost?.approxTokens ?? 0);
   const summaryCost = estimateSerializedPayloadCost(serializeJsonPayload(summary));
 
   return {
@@ -545,6 +549,43 @@ export function summarizeBridgeResponse(response, method) {
       })),
     };
   }
+  if (
+    result.exact === true &&
+    typeof result.source === 'string' &&
+    typeof result.value === 'string'
+  ) {
+    return {
+      ok: true,
+      summary: appendProtocolWarning('Sensitive storage value read exactly.', protocolWarning),
+      evidence: { source: result.source, exact: true },
+    };
+  }
+  if (typeof result.count === 'number' && typeof result.type === 'string' && result.entries) {
+    const entries = Array.isArray(result.entries)
+      ? result.entries.map((entry) => {
+          const candidate =
+            entry && typeof entry === 'object'
+              ? /** @type {Record<string, unknown>} */ (entry)
+              : {};
+          return {
+            key: typeof candidate.key === 'string' ? candidate.key : '',
+            present: candidate.present === true,
+          };
+        })
+      : [];
+    return {
+      ok: true,
+      summary: appendProtocolWarning(
+        `Storage (${result.type}): ${result.count} entries.`,
+        protocolWarning
+      ),
+      evidence: {
+        entries,
+        total: typeof result.total === 'number' ? result.total : result.count,
+        truncated: result.truncated === true,
+      },
+    };
+  }
   if (Array.isArray(result.entries)) {
     const consoleEntries = /** @type {Array<Record<string, unknown>>} */ (result.entries);
     return {
@@ -638,23 +679,6 @@ export function summarizeBridgeResponse(response, method) {
         protocolWarning
       ),
       evidence: result.metrics,
-    };
-  }
-  if (typeof result.count === 'number' && typeof result.type === 'string' && result.entries) {
-    const entries = /** @type {Record<string, unknown>} */ (result.entries);
-    /** @type {Record<string, string>} */
-    const safe = {};
-    for (const [k, v] of Object.entries(entries)) {
-      const s = typeof v === 'string' ? v : JSON.stringify(v);
-      safe[k] = s.length > 80 ? `${s.slice(0, 79)}…` : s;
-    }
-    return {
-      ok: true,
-      summary: appendProtocolWarning(
-        `Storage (${result.type}): ${result.count} entries.`,
-        protocolWarning
-      ),
-      evidence: safe,
     };
   }
   if (
@@ -873,15 +897,16 @@ function appendProtocolWarning(summary, warning) {
  * @returns {string}
  */
 function truncateUrl(url) {
-  if (!url || url.length <= 120) return url;
+  const sanitized = sanitizeIncidentalUrl(url);
+  if (!sanitized || sanitized.length <= 120) return sanitized;
   try {
-    const u = new URL(url);
+    const u = new URL(sanitized);
     const base = `${u.origin}${u.pathname}`;
     if (base.length > 120) return `${base.slice(0, 119)}\u2026`;
     if (u.search) return `${base}?…`;
     return base;
   } catch {
-    return url.length > 120 ? `${url.slice(0, 119)}\u2026` : url;
+    return sanitized.length > 120 ? `${sanitized.slice(0, 119)}\u2026` : sanitized;
   }
 }
 

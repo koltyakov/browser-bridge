@@ -1100,20 +1100,28 @@ test('summarizer: health includes access routing state', () => {
   assert.match(s.summary, /Access: ready on tab 42/);
 });
 
-test('summarizer: storage truncates long values', () => {
-  const longValue = 'x'.repeat(200);
+test('summarizer: storage exposes metadata without values', () => {
   const s = summarizeBridgeResponse(
     ok({
       type: 'local',
       count: 2,
-      entries: { key1: 'short', key2: longValue },
+      total: 3,
+      entries: [
+        { key: 'key1', present: true },
+        { key: 'key2', present: false },
+      ],
+      truncated: true,
     })
   );
   assert.match(s.summary, /Storage \(local\): 2 entries/);
-  const evidence = s.evidence as Record<string, string>;
-  assert.equal(evidence.key1, 'short');
-  assert.ok(evidence.key2.length <= 80);
-  assert.ok(evidence.key2.endsWith('\u2026'));
+  assert.deepEqual(s.evidence, {
+    entries: [
+      { key: 'key1', present: true },
+      { key: 'key2', present: false },
+    ],
+    total: 3,
+    truncated: true,
+  });
 });
 
 test('summarizer: empty network uses method hint', () => {
@@ -2572,24 +2580,34 @@ test('BridgeClient cleans up all pending requests on socket error event', async 
   }
 });
 
-test('BridgeClient.batch sends requests concurrently and preserves response order', async () => {
+test('BridgeClient.batch bounds concurrency and preserves response order', async () => {
   let requestCount = 0;
+  let activeCount = 0;
+  let maxActiveCount = 0;
   const { server, port } = await startMockDaemon((socket, message) => {
     const request = message.request;
+    const params = (
+      'params' in request && request.params && typeof request.params === 'object'
+        ? request.params
+        : {}
+    ) as { marker?: unknown };
 
     requestCount += 1;
+    activeCount += 1;
+    maxActiveCount = Math.max(maxActiveCount, activeCount);
     const response = {
       type: 'agent.response',
       response: {
         id: request.id,
         ok: true,
-        result: { method: request.method, ordinal: requestCount },
+        result: { marker: params.marker },
         error: null,
         meta: { protocol_version: PROTOCOL_VERSION },
       },
     };
-    const delay = request.method === 'tabs.list' ? 20 : 5;
+    const delay = 30 - Number(params.marker);
     setTimeout(() => {
+      activeCount -= 1;
       if (!socket.destroyed) {
         socket.write(`${JSON.stringify(response)}\n`);
       }
@@ -2599,21 +2617,42 @@ test('BridgeClient.batch sends requests concurrently and preserves response orde
 
   try {
     await client.connect();
-    const responses = await client.batch([{ method: 'tabs.list' }, { method: 'health.ping' }]);
+    const responses = await client.batch(
+      Array.from({ length: 8 }, (_, marker) => ({
+        method: 'health.ping' as const,
+        params: { marker },
+      }))
+    );
 
-    assert.equal(requestCount, 2);
-    assert.equal(responses.length, 2);
+    assert.equal(requestCount, 8);
+    assert.equal(maxActiveCount, 5);
+    assert.equal(responses.length, 8);
     assert.deepEqual(
       responses.map((response) => response.result),
-      [
-        { method: 'tabs.list', ordinal: 1 },
-        { method: 'health.ping', ordinal: 2 },
-      ]
+      Array.from({ length: 8 }, (_, marker) => ({ marker }))
     );
   } finally {
     await client.close().catch(() => {});
     server.close();
   }
+});
+
+test('BridgeClient.batch rejects unsafe reads and mutations before dispatch', async () => {
+  const client = new BridgeClient();
+  for (const call of [
+    {
+      method: 'sensitive.read' as const,
+      params: { source: 'local_storage', key: 'token' },
+    },
+    { method: 'page.get_network' as const, params: { clear: true } },
+    { method: 'navigation.reload' as const },
+  ]) {
+    await assert.rejects(() => client.batch([call]), /not safe/);
+  }
+  await assert.rejects(
+    () => client.batch(Array.from({ length: 21 }, () => ({ method: 'health.ping' }))),
+    /between 1 and 20/
+  );
 });
 
 // --- autoReconnect (3.1) ---

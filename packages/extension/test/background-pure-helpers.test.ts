@@ -126,10 +126,9 @@ test('background pure helpers only log unexpected async errors', () => {
   try {
     module().reportAsyncError(new Error('No tab with id: 7.'));
 
-    const boom = new Error('boom');
-    module().reportAsyncError(boom);
+    module().reportAsyncError(new Error('boom'));
 
-    assert.deepEqual(captured, [boom]);
+    assert.deepEqual(captured, ['boom']);
   } finally {
     console.error = originalConsoleError;
   }

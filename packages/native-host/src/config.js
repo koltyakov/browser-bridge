@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { sanitizeIncidentalPath, sanitizeIncidentalText } from '../../protocol/src/index.js';
 
 export const APP_NAME = 'com.browserbridge.browser_bridge';
 export const BRIDGE_HOME_ENV = 'BROWSER_BRIDGE_HOME';
@@ -125,7 +126,9 @@ function normalizePort(value) {
  * @returns {void}
  */
 function warnProxyConfigIgnored(configPath, reason) {
-  console.error(`browser-bridge: ignoring proxy config at ${configPath}: ${reason}`);
+  console.error(
+    `browser-bridge: ignoring proxy config at ${sanitizeIncidentalPath(configPath)}: ${sanitizeIncidentalText(reason)}`
+  );
 }
 
 /**

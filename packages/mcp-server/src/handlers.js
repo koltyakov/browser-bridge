@@ -54,14 +54,15 @@ export {
 } from './handlers-capture.js';
 
 export {
-  MAX_BATCH_CALLS,
-  MAX_BATCH_CONCURRENCY,
   PAGE_ACTIONS,
   handlePageTool,
+  handleSensitiveReadTool,
   handleBatchTool,
   handleRawCallTool,
   handleInvestigateTool,
 } from './handlers-page.js';
+
+export { MAX_BATCH_CALLS, MAX_BATCH_CONCURRENCY } from '../../protocol/src/index.js';
 
 /** @typedef {import('./handlers-utils.js').ToolAction} ToolAction */
 /** @typedef {import('./handlers-utils.js').ToolResult} ToolResult */

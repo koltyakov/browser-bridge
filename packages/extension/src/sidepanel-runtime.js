@@ -38,6 +38,8 @@
  *   hasScreenshot: boolean,
  *   nodeCount: number | null,
  *   continuationHint: string | null
+ *   severity?: 'info' | 'warning',
+ *   sensitiveAccess?: { source: 'local_storage' | 'session_storage', category: 'storage_value', keyLength: number } | null,
  * }} ActionLogEntry
  */
 

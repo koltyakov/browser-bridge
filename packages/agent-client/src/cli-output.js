@@ -28,10 +28,17 @@ export async function printSummary(response, method) {
 
 /**
  * @param {import('../../protocol/src/types.js').BridgeResponse} response
+ * @param {string} [method]
  * @returns {void}
  */
-export function printCallResponse(response) {
+export function printCallResponse(response, method) {
   if (response.ok) {
+    if (method === 'sensitive.read') {
+      process.stdout.write(
+        `${JSON.stringify(response.result, null, process.stdout.isTTY ? 2 : undefined)}\n`
+      );
+      return;
+    }
     printJson(response.result);
     return;
   }

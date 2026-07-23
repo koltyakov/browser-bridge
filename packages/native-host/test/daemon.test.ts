@@ -496,6 +496,35 @@ test('log.tail honors the requested limit', async () => {
   assert.deepEqual(payload.response.result?.entries, [{ index: 7 }, { index: 8 }, { index: 9 }]);
 });
 
+test('log.tail returns sanitized extension log entries', async () => {
+  const daemon = new BridgeDaemon({ logger: { log() {}, error() {} } });
+  const socket = createFakeSocket();
+  daemon.pushLog({
+    url: 'https://user:pass@example.test/api?token=secret#fragment',
+    authorization: 'Bearer secret',
+    nested: { password: 'secret', tokenCount: 4 },
+  });
+
+  await daemon.handleAgentRequest(socket, {
+    request: {
+      id: 'req_sanitized_logs',
+      method: 'log.tail',
+      tab_id: null,
+      params: { limit: 1 },
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  });
+
+  const payload = expectBridgeResponse(JSON.parse(socket.writes[0].trim()));
+  assert.deepEqual(payload.response.result?.entries, [
+    {
+      url: 'https://example.test/api?token=%5Bredacted%5D',
+      authorization: '[redacted]',
+      nested: { password: '[redacted]', tokenCount: 4 },
+    },
+  ]);
+});
+
 test('daemon metrics include completed request response time', async () => {
   const daemon = new BridgeDaemon({ logger: { log() {}, error() {} } });
   const agentSocket = createFakeSocket();

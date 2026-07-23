@@ -29,6 +29,7 @@ import {
   getSupportedProtocolVersions,
   MAX_DAEMON_PENDING_TIMEOUT_MS,
   parseJsonLines,
+  sanitizeIncidentalValue,
   setProtocolPackageVersion,
   validateBridgeRequest,
 } from '../../protocol/src/index.js';
@@ -962,7 +963,9 @@ export class BridgeDaemon {
         ERROR_CODES.EXTENSION_DISCONNECTED,
         hasExplicitTarget
           ? `No connected extension matches target_browser="${targetBrowser ?? '*'}" target_profile="${targetProfile ?? '*'}".`
-          : 'The Chrome extension is not connected to the local bridge daemon.'
+          : 'The Chrome extension is not connected to the local bridge daemon.',
+        null,
+        { method: request.method }
       );
       await writeJsonLine(socket, { type: 'agent.response', response });
       return;
@@ -982,7 +985,9 @@ export class BridgeDaemon {
         const response = createFailure(
           request.id,
           ERROR_CODES.TIMEOUT,
-          'Extension did not respond in time.'
+          'Extension did not respond in time.',
+          null,
+          { method: pending.method }
         );
         void writeJsonLine(pending.socket, {
           type: 'agent.response',
@@ -1359,7 +1364,7 @@ export class BridgeDaemon {
    * @returns {void}
    */
   pushLog(entry) {
-    this.recentLog.push(entry);
+    this.recentLog.push(/** @type {Record<string, unknown>} */ (sanitizeIncidentalValue(entry)));
     if (this.recentLog.length > DAEMON_RECENT_LOG_LIMIT) {
       this.recentLog.shift();
     }

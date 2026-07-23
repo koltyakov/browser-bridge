@@ -49,7 +49,7 @@ export const CAPTURE_ACTIONS = {
   cdp_dom_snapshot: {
     ref: false,
     method: 'cdp.get_dom_snapshot',
-    params: () => ({}),
+    params: (a) => ({ computedStyles: a.computedStyles }),
   },
   cdp_box_model: {
     ref: false,
@@ -93,7 +93,7 @@ function isValidCaptureRegion(rect) {
 }
 
 /**
- * @param {{ action: string, elementRef?: string, selector?: string, rect?: Record<string, unknown>, format?: 'png' | 'jpeg' | 'webp', quality?: number, nodeId?: number, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @param {{ action: string, elementRef?: string, selector?: string, rect?: Record<string, unknown>, format?: 'png' | 'jpeg' | 'webp', quality?: number, nodeId?: number, computedStyles?: string[], tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleCaptureTool(args) {

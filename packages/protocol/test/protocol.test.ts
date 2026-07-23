@@ -9,6 +9,7 @@ import {
   DEFAULT_EVAL_TIMEOUT_MS,
   DEFAULT_NAV_TIMEOUT_MS,
   DEFAULT_NETWORK_INTERCEPT_ACTION,
+  MAX_SENSITIVE_VALUE_BYTES,
   ERROR_CODES,
   applyBudget,
   bridgeMethodNeedsTab,
@@ -18,10 +19,12 @@ import {
   createRuntimeContext,
   getMethodCapability,
   getBridgeOperationTimeoutMs,
+  isBatchSafeBridgeCall,
   normalizeCheckedAction,
   normalizeAccessRequestParams,
   createSuccess,
   normalizeCdpDispatchKeyEventParams,
+  normalizeCdpDomSnapshotParams,
   normalizeCdpNodeIdParams,
   normalizeInputAction,
   normalizeDomQuery,
@@ -40,6 +43,7 @@ import {
   normalizeHoverParams,
   normalizeDragParams,
   normalizeStorageParams,
+  normalizeSensitiveReadParams,
   normalizeWaitForLoadStateParams,
   normalizeTabCreateParams,
   normalizeTabCloseParams,
@@ -300,6 +304,14 @@ test('normalizePatchOperation defaults malformed patch metadata', () => {
   assert.equal(patch.value, null);
 });
 
+test('normalizePatchOperation exposes toggle_class and rejects undocumented operations', () => {
+  assert.equal(normalizePatchOperation({ operation: 'toggle_class' }).operation, 'toggle_class');
+  assert.throws(
+    () => normalizePatchOperation({ operation: 'replace_children' }),
+    (error: ErrorWithCode) => error.code === ERROR_CODES.INVALID_REQUEST
+  );
+});
+
 /** Ensure input actions normalize button and modifier defaults safely. */
 test('normalizeInputAction preserves interactive intent', () => {
   const input = normalizeInputAction({
@@ -396,6 +408,17 @@ test('normalizeCdpNodeIdParams requires a finite node id', () => {
   assert.throws(
     () => normalizeCdpNodeIdParams({ nodeId: Number.NaN }),
     /nodeId must be a finite number\./
+  );
+});
+
+test('normalizeCdpDomSnapshotParams bounds computed style names', () => {
+  assert.deepEqual(
+    normalizeCdpDomSnapshotParams({ computedStyles: ['display', '', 'x'.repeat(129), 'color'] }),
+    { computedStyles: ['display', 'color'] }
+  );
+  assert.throws(
+    () => normalizeCdpDomSnapshotParams({ computedStyles: Array(101).fill('display') }),
+    (error: ErrorWithCode) => error.code === ERROR_CODES.INVALID_REQUEST
   );
 });
 
@@ -648,6 +671,67 @@ test('normalizeStorageParams defaults to local with null keys', () => {
   const params = normalizeStorageParams({});
   assert.equal(params.type, 'local');
   assert.equal(params.keys, null);
+});
+
+test('normalizeStorageParams rejects explicit key lists above the documented bound', () => {
+  assert.throws(
+    () =>
+      normalizeStorageParams({ keys: Array.from({ length: 101 }, (_, index) => `key-${index}`) }),
+    (error: ErrorWithCode) => error.code === ERROR_CODES.INVALID_REQUEST
+  );
+});
+
+test('normalizeSensitiveReadParams preserves exact keys and rejects unsupported sources', () => {
+  assert.deepEqual(normalizeSensitiveReadParams({ source: 'local_storage', key: '' }), {
+    source: 'local_storage',
+    key: '',
+    maxBytes: MAX_SENSITIVE_VALUE_BYTES,
+  });
+  assert.deepEqual(
+    normalizeSensitiveReadParams({ source: 'session_storage', key: ' multiline\nkey ' }),
+    {
+      source: 'session_storage',
+      key: ' multiline\nkey ',
+      maxBytes: MAX_SENSITIVE_VALUE_BYTES,
+    }
+  );
+  assert.throws(
+    () => normalizeSensitiveReadParams({ source: 'network', key: 'x' }),
+    (error: ErrorWithCode) => error.code === ERROR_CODES.INVALID_REQUEST
+  );
+  assert.throws(
+    () => normalizeSensitiveReadParams({ source: 'local_storage', key: 1 }),
+    (error: ErrorWithCode) => error.code === ERROR_CODES.INVALID_REQUEST
+  );
+});
+
+test('sensitive read errors are explicitly non-retryable', () => {
+  assert.equal(getErrorRecovery(ERROR_CODES.RESULT_TOO_LARGE)?.retry, false);
+  assert.equal(getErrorRecovery(ERROR_CODES.SENSITIVE_TARGET_NOT_FOUND)?.retry, false);
+});
+
+test('sensitive-read failures override retryable transport errors', () => {
+  const response = createFailure('sensitive-timeout', ERROR_CODES.TIMEOUT, 'Timed out.', null, {
+    method: 'sensitive.read',
+  });
+  assert.equal(response.error.recovery?.retry, false);
+  assert.equal(response.error.recovery?.retryAfterMs, undefined);
+  assert.match(response.error.recovery?.hint ?? '', /never retried automatically/);
+});
+
+test('batch safety follows canonical read-only method and parameter policy', () => {
+  assert.equal(isBatchSafeBridgeCall('page.get_state'), true);
+  assert.equal(isBatchSafeBridgeCall('input.click'), false);
+  assert.equal(isBatchSafeBridgeCall('sensitive.read'), false);
+  assert.equal(isBatchSafeBridgeCall('page.get_console', { clear: false }), true);
+  assert.equal(isBatchSafeBridgeCall('page.get_console', { clear: true }), false);
+  assert.equal(isBatchSafeBridgeCall('page.get_console', { clear: 1 }), false);
+  assert.equal(isBatchSafeBridgeCall('page.get_console', { clear: 'false' }), false);
+  assert.equal(isBatchSafeBridgeCall('page.get_network', { source: 'cdp', capture: 'read' }), true);
+  assert.equal(
+    isBatchSafeBridgeCall('page.get_network', { source: 'cdp', capture: 'clear' }),
+    false
+  );
 });
 
 /** Ensure wait-for-load-state params clamp timeout. */

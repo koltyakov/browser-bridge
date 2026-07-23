@@ -40,6 +40,7 @@ const METHOD_POLICIES = Object.freeze({
     capability: CAPABILITIES.NETWORK_INTERCEPT,
     debuggerBacked: true,
   }),
+  sensitiveRead: Object.freeze({ capability: CAPABILITIES.SENSITIVE_READ }),
   navigationControl: Object.freeze({ capability: CAPABILITIES.NAVIGATION_CONTROL }),
   navigationControlDebugger: Object.freeze({
     capability: CAPABILITIES.NAVIGATION_CONTROL,
@@ -110,7 +111,8 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
     'Inspect or explicitly act on the current JavaScript dialog. expectedDialogId is only a stale-decision check immediately before dispatch; Chrome cannot bind the CDP command atomically to that identifier.',
   'page.wait_for_load_state':
     'Wait for truthful tab-complete state and/or an event-aware URL condition.',
-  'page.get_storage': 'Read local or session storage values.',
+  'page.get_storage': 'Read local or session storage key metadata without values.',
+  'sensitive.read': 'Deliberately read one exact local or session storage value.',
   'page.get_text': 'Read bounded visible text from the page.',
   'page.extract_content':
     'Extract bounded semantic page content as text or Markdown without returning source HTML.',
@@ -303,6 +305,14 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     ['type', 'keys'],
     'low',
     METHOD_POLICIES.pageRead
+  ),
+  'sensitive.read': createRegistryEntry(
+    'sensitive.read',
+    'sensitive',
+    true,
+    ['source', 'key'],
+    'low',
+    METHOD_POLICIES.sensitiveRead
   ),
   'page.get_text': createRegistryEntry(
     'page.get_text',
@@ -686,7 +696,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'cdp.get_dom_snapshot',
     'cdp',
     true,
-    [],
+    ['computedStyles'],
     'high',
     METHOD_POLICIES.cdpDomSnapshotDebugger
   ),
@@ -732,6 +742,68 @@ export const BRIDGE_METHODS = Object.freeze(
 
 /** @type {ReadonlySet<import('./types.js').BridgeMethod>} */
 export const METHOD_SET = new Set(BRIDGE_METHODS);
+
+/** Methods whose read-only forms may run concurrently without side effects. */
+const BATCH_SAFE_METHODS = new Set([
+  'health.ping',
+  'daemon.metrics',
+  'tabs.list',
+  'skill.get_runtime_context',
+  'setup.get_status',
+  'log.tail',
+  'page.get_state',
+  'page.get_console',
+  'page.wait_for_load_state',
+  'page.get_storage',
+  'page.get_text',
+  'page.extract_content',
+  'page.get_network',
+  'dom.query',
+  'dom.describe',
+  'dom.get_text',
+  'dom.get_attributes',
+  'dom.wait_for',
+  'dom.find_by_text',
+  'dom.find_by_role',
+  'dom.get_html',
+  'dom.get_accessibility_tree',
+  'layout.get_box_model',
+  'layout.hit_test',
+  'styles.get_computed',
+  'styles.get_matched_rules',
+  'network.intercept.list',
+  'patch.list',
+  'performance.get_metrics',
+]);
+
+/**
+ * Classify a normalized or raw bridge call for parallel read-only execution.
+ * Parameter checks deliberately reject malformed truthy mutation flags before
+ * protocol normalization can coerce them.
+ *
+ * @param {import('./types.js').BridgeMethod} method
+ * @param {Record<string, unknown>} [params]
+ * @returns {boolean}
+ */
+export function isBatchSafeBridgeCall(method, params = {}) {
+  if (!BATCH_SAFE_METHODS.has(method)) return false;
+  if (
+    (method === 'page.get_console' || method === 'page.get_network') &&
+    params.clear !== undefined &&
+    params.clear !== false
+  ) {
+    return false;
+  }
+  if (
+    method === 'page.get_network' &&
+    params.source === 'cdp' &&
+    params.capture !== undefined &&
+    params.capture !== 'read'
+  ) {
+    return false;
+  }
+  return true;
+}
 
 /**
  * @returns {Record<string, import('./types.js').BridgeMethod[]>}

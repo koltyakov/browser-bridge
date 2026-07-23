@@ -284,6 +284,27 @@ test('readConsoleBuffer reads, clears, and falls back when no result is returned
   });
 });
 
+test('readConsoleBuffer sanitizes structured secrets and incidental text', async (t) => {
+  clearInjectedConsoleState();
+  t.after(clearInjectedConsoleState);
+  pageGlobal().__bb_console_buffer = [
+    {
+      level: 'error',
+      args: [
+        '{"authorization":"Bearer secret","tokenCount":3}',
+        'failed at /Users/alice/project/config.json',
+      ],
+      ts: 1,
+    },
+  ];
+
+  const result = await readConsoleBuffer(8, false, createScriptExecutingChrome());
+  assert.deepEqual(result.entries[0].args, [
+    '{"authorization":"[redacted]","tokenCount":3}',
+    'failed at [redacted-path]/config.json',
+  ]);
+});
+
 test('console instrumentation errors are classified for best-effort priming', () => {
   const recoverableMessages = [
     ERROR_CODES.TAB_MISMATCH,

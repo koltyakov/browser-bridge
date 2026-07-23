@@ -16,7 +16,9 @@ export const ERROR_CODES = Object.freeze({
   DIALOG_NOT_OPEN: 'DIALOG_NOT_OPEN',
   DIALOG_ACTION_CONFLICT: 'DIALOG_ACTION_CONFLICT',
   RESULT_TRUNCATED: 'RESULT_TRUNCATED',
-  RATE_LIMITED: 'RATE_LIMITED',
+  RESULT_TOO_LARGE: 'RESULT_TOO_LARGE',
+  SENSITIVE_TARGET_NOT_FOUND: 'SENSITIVE_TARGET_NOT_FOUND',
+  CONTENT_SCRIPT_UNAVAILABLE: 'CONTENT_SCRIPT_UNAVAILABLE',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
   INVALID_REQUEST: 'INVALID_REQUEST',
   NATIVE_HOST_UNAVAILABLE: 'NATIVE_HOST_UNAVAILABLE',
@@ -37,6 +39,15 @@ export const ERROR_RECOVERY = Object.freeze({
   [ERROR_CODES.RESULT_TRUNCATED]: {
     retry: false,
     hint: 'Result was truncated to fit the response budget. Narrow the query or raise the relevant budget if more detail is required.',
+  },
+  [ERROR_CODES.RESULT_TOO_LARGE]: {
+    retry: false,
+    hint: 'The exact value exceeds the atomic sensitive-read limit. Use a narrower exact target; partial sensitive values are never returned.',
+  },
+  [ERROR_CODES.SENSITIVE_TARGET_NOT_FOUND]: {
+    retry: false,
+    alternativeMethod: 'page.get_storage',
+    hint: 'The exact storage key does not exist. Use page.get_storage to inspect metadata before another deliberate sensitive read.',
   },
   [ERROR_CODES.ELEMENT_STALE]: {
     retry: false,
@@ -97,10 +108,9 @@ export const ERROR_RECOVERY = Object.freeze({
     retryAfterMs: 1000,
     hint: 'Operation exceeded the time limit. Retry once, or simplify the request (smaller maxNodes, narrower selector).',
   },
-  [ERROR_CODES.RATE_LIMITED]: {
-    retry: true,
-    retryAfterMs: 2000,
-    hint: 'Too many requests. Back off and retry after a short delay.',
+  [ERROR_CODES.CONTENT_SCRIPT_UNAVAILABLE]: {
+    retry: false,
+    hint: 'The page cannot host the Browser Bridge content script. Switch to a normal http(s) page in the enabled window.',
   },
   [ERROR_CODES.EXTENSION_DISCONNECTED]: {
     retry: true,

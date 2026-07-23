@@ -6,7 +6,10 @@ import {
   ERROR_CODES,
   estimateJsonPayloadCost,
   MAX_NATIVE_MESSAGE_BYTES,
+  MAX_SENSITIVE_VALUE_BYTES,
   normalizeTabCloseParams,
+  sanitizeIncidentalText,
+  sanitizeIncidentalUrl,
   serializeJsonPayload,
   summarizeBridgeResponse,
 } from '../../protocol/src/index.js';
@@ -58,6 +61,8 @@ const CONNECTION_CHECK_COALESCE_MS = 2_000;
  *   hasScreenshot?: boolean,
  *   nodeCount?: number | null,
  *   continuationHint?: string | null,
+ *   severity?: 'info' | 'warning',
+ *   sensitiveAccess?: { source: 'local_storage' | 'session_storage', category: 'storage_value', keyLength: number } | null,
  * }} ActionLogEntryInput
  */
 
@@ -167,9 +172,9 @@ export function createActionLogController(state, chromeObj, deps) {
       method: entry.method,
       source: normalizeActionLogSource(entry.source),
       tabId,
-      url: entry.url ?? '',
+      url: sanitizeIncidentalUrl(entry.url ?? ''),
       ok: entry.ok,
-      summary: entry.summary,
+      summary: sanitizeIncidentalText(entry.summary),
       responseBytes: entry.responseBytes ?? 0,
       approxTokens: entry.approxTokens ?? 0,
       imageApproxTokens: entry.imageApproxTokens ?? 0,
@@ -183,6 +188,8 @@ export function createActionLogController(state, chromeObj, deps) {
       hasScreenshot: entry.hasScreenshot ?? false,
       nodeCount: entry.nodeCount ?? null,
       continuationHint: entry.continuationHint ?? null,
+      severity: entry.severity === 'warning' ? 'warning' : 'info',
+      sensitiveAccess: entry.sensitiveAccess ?? null,
     });
     while (state.actionLog.length > MAX_ACTION_LOG_ENTRIES) {
       state.actionLog.shift();
@@ -208,17 +215,36 @@ export function createActionLogController(state, chromeObj, deps) {
 
     // Dialog messages and prompt values are intentionally excluded from the
     // persisted action-log path, including its summary-size diagnostics.
-    const summaryPayload =
-      request.method === 'page.handle_dialog'
+    const sensitiveRead = request.method === 'sensitive.read';
+    const sensitiveActivity = sensitiveRead || request.method === 'page.evaluate';
+    const summaryPayload = sensitiveActivity
+      ? {
+          source: sensitiveRead ? request.params.source : 'page_evaluation',
+          exact: response.ok,
+        }
+      : request.method === 'page.handle_dialog'
         ? summarizeDialogActionForLog(response)
         : summarizeBridgeResponse(response, request.method);
-    const diagnostics = getResponseDiagnostics(
-      request.method,
-      request.method === 'page.handle_dialog'
-        ? sanitizeDialogResponseForDiagnostics(response, summaryPayload)
-        : response
-    );
-    const summaryCost = estimateJsonPayloadCost(summaryPayload);
+    const diagnostics = sensitiveActivity
+      ? {
+          responseBytes: 0,
+          textApproxTokens: 0,
+          imageApproxTokens: 0,
+          costClass: /** @type {'cheap'} */ ('cheap'),
+          imageBytes: 0,
+          debuggerBacked: false,
+          hasScreenshot: false,
+          nodeCount: null,
+        }
+      : getResponseDiagnostics(
+          request.method,
+          request.method === 'page.handle_dialog'
+            ? sanitizeDialogResponseForDiagnostics(response, summaryPayload)
+            : response
+        );
+    const summaryCost = sensitiveActivity
+      ? { bytes: 0, approxTokens: 0, costClass: /** @type {'cheap'} */ ('cheap') }
+      : estimateJsonPayloadCost(summaryPayload);
 
     try {
       await appendActionLogEntry({
@@ -227,8 +253,11 @@ export function createActionLogController(state, chromeObj, deps) {
         tabId: actionContext?.tabId ?? null,
         url: actionContext?.url ?? '',
         ok: response.ok,
-        summary:
-          request.method === 'page.handle_dialog'
+        summary: sensitiveActivity
+          ? sensitiveRead
+            ? `Sensitive ${request.params.source === 'session_storage' ? 'session' : 'local'} storage read ${response.ok ? 'succeeded' : `failed: ${response.error.code}`}.`
+            : `Page evaluation with sensitive-data access capability ${response.ok ? 'succeeded' : `failed: ${response.error.code}`}.`
+          : request.method === 'page.handle_dialog'
             ? summarizeDialogActionResultForLog(response)
             : request.method === 'health.ping'
               ? summarizeConnectionCheckResult(response)
@@ -253,6 +282,15 @@ export function createActionLogController(state, chromeObj, deps) {
           typeof response.meta?.continuation_hint === 'string'
             ? response.meta.continuation_hint
             : null,
+        severity: sensitiveActivity ? 'warning' : 'info',
+        sensitiveAccess: sensitiveRead
+          ? {
+              source:
+                request.params.source === 'session_storage' ? 'session_storage' : 'local_storage',
+              category: 'storage_value',
+              keyLength: typeof request.params.key === 'string' ? request.params.key.length : 0,
+            }
+          : null,
       });
     } catch {
       // Action persistence must never affect bridge response delivery.
@@ -365,6 +403,9 @@ function sanitizeDialogResponseForDiagnostics(response, summary) {
  * @returns {BridgeResponse}
  */
 export function enrichBridgeResponse(request, response) {
+  if (request.method === 'sensitive.read') {
+    return enforceTransportPayloadLimit(request, response);
+  }
   const budgetedResponse = enforceTokenBudget(request.method, response, request.meta?.token_budget);
   const transportSafeResponse = enforceTransportPayloadLimit(request, budgetedResponse);
   const responsePayload = transportSafeResponse.ok
@@ -409,9 +450,50 @@ export function enforceTransportPayloadLimit(request, response) {
     return response;
   }
   const responsePayload = response.result;
+  if (request.method === 'sensitive.read') {
+    const result =
+      responsePayload && typeof responsePayload === 'object'
+        ? /** @type {Record<string, unknown>} */ (responsePayload)
+        : {};
+    const valueBytes =
+      typeof result.value === 'string' ? new TextEncoder().encode(result.value).byteLength : 0;
+    if (valueBytes > MAX_SENSITIVE_VALUE_BYTES) {
+      return createFailure(
+        request.id,
+        ERROR_CODES.RESULT_TOO_LARGE,
+        `The exact storage value is too large to return atomically (${valueBytes} bytes).`,
+        {
+          source: result.source,
+          characters: typeof result.value === 'string' ? result.value.length : 0,
+          bytes: valueBytes,
+          maxBytes: MAX_SENSITIVE_VALUE_BYTES,
+        },
+        { method: request.method }
+      );
+    }
+  }
   const payloadBytes = estimateJsonPayloadCost(responsePayload).bytes;
   if (payloadBytes <= MAX_BRIDGE_RESPONSE_BYTES) {
     return response;
+  }
+
+  if (request.method === 'sensitive.read') {
+    const result = /** @type {Record<string, unknown>} */ (responsePayload);
+    const value = typeof result.value === 'string' ? result.value : '';
+    return createFailure(
+      request.id,
+      ERROR_CODES.RESULT_TOO_LARGE,
+      `The exact storage value is too large to return atomically after encoding (${payloadBytes} bytes).`,
+      {
+        source: result.source,
+        characters: value.length,
+        bytes: new TextEncoder().encode(value).byteLength,
+        responseBytes: payloadBytes,
+        maxResponseBytes: MAX_BRIDGE_RESPONSE_BYTES,
+        guidance: 'Use a narrower exact target; partial sensitive values are never returned.',
+      },
+      { method: request.method }
+    );
   }
 
   return createFailure(

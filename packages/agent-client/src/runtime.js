@@ -28,6 +28,8 @@ import {
   getBridgeOperationTimeoutMs,
   getProtocolVersion,
   MAX_CLIENT_REQUEST_TIMEOUT_MS,
+  sanitizeIncidentalPath,
+  sanitizeIncidentalText,
 } from '../../protocol/src/index.js';
 import { methodNeedsTab } from './cli-helpers.js';
 import { BridgeClient } from './client.js';
@@ -1244,5 +1246,25 @@ export async function getDoctorReport(options = {}) {
     );
   }
 
-  return report;
+  return {
+    ...report,
+    manifestPath: sanitizeDoctorPath(report.manifestPath),
+    daemonLogPath: sanitizeDoctorPath(report.daemonLogPath),
+    unwritableBridgePaths: report.unwritableBridgePaths.map(sanitizeDoctorPath),
+    nativeHostManifestIssues: report.nativeHostManifestIssues.map((issue) => ({
+      ...issue,
+      manifestPath: sanitizeDoctorPath(issue.manifestPath),
+      message: sanitizeIncidentalText(issue.message),
+    })),
+    browserManifests: report.browserManifests.map((browser) => ({
+      ...browser,
+      manifestPath: sanitizeDoctorPath(browser.manifestPath),
+    })),
+    nextSteps: report.nextSteps.map((step) => sanitizeIncidentalText(step)),
+  };
+}
+
+/** @param {string} value */
+function sanitizeDoctorPath(value) {
+  return value ? sanitizeIncidentalPath(value) : '';
 }

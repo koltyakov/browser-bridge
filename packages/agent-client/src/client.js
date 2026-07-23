@@ -12,6 +12,10 @@ import {
   DEFAULT_CLIENT_REQUEST_TIMEOUT_MS,
   ERROR_CODES,
   getProtocolVersion,
+  isBatchSafeBridgeCall,
+  isBridgeMethod,
+  MAX_BATCH_CALLS,
+  MAX_BATCH_CONCURRENCY,
   parseJsonLines,
   setProtocolPackageVersion,
 } from '../../protocol/src/index.js';
@@ -564,7 +568,7 @@ export class BridgeClient extends EventEmitter {
   }
 
   /**
-   * Send multiple bridge requests without waiting for each response serially.
+   * Send up to 20 read-only bridge requests with bounded concurrency.
    *
    * @param {Array<{
    *   method: BridgeMethod,
@@ -579,8 +583,27 @@ export class BridgeClient extends EventEmitter {
     if (!Array.isArray(calls)) {
       throw new TypeError('BridgeClient.batch expects an array of request objects.');
     }
+    if (calls.length === 0 || calls.length > MAX_BATCH_CALLS) {
+      throw new RangeError(
+        `BridgeClient.batch expects between 1 and ${MAX_BATCH_CALLS} request objects.`
+      );
+    }
+    for (const [index, call] of calls.entries()) {
+      if (!call || typeof call !== 'object' || !isBridgeMethod(call.method)) {
+        throw new TypeError(`BridgeClient.batch calls[${index}] needs a known bridge method.`);
+      }
+      const params = call.params ?? {};
+      if (!params || typeof params !== 'object' || Array.isArray(params)) {
+        throw new TypeError(`BridgeClient.batch calls[${index}].params must be an object.`);
+      }
+      if (!isBatchSafeBridgeCall(call.method, params)) {
+        throw new TypeError(
+          `${call.method} is not safe for BridgeClient.batch. Call it sequentially.`
+        );
+      }
+    }
 
-    return Promise.all(calls.map((call) => this.request(call)));
+    return mapWithConcurrency(calls, MAX_BATCH_CONCURRENCY, (call) => this.request(call));
   }
 
   /**
@@ -748,6 +771,28 @@ export class BridgeClient extends EventEmitter {
       },
     };
   }
+}
+
+/**
+ * @template T, R
+ * @param {T[]} values
+ * @param {number} concurrency
+ * @param {(value: T) => Promise<R>} callback
+ * @returns {Promise<R[]>}
+ */
+async function mapWithConcurrency(values, concurrency, callback) {
+  /** @type {R[]} */
+  const results = new Array(values.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(concurrency, values.length) }, async () => {
+    while (nextIndex < values.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await callback(values[index]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 /**

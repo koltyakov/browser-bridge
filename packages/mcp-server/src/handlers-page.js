@@ -5,6 +5,9 @@ import {
   DEFAULT_NETWORK_LIMIT,
   ERROR_CODES,
   getErrorRecovery,
+  isBatchSafeBridgeCall,
+  MAX_BATCH_CALLS,
+  MAX_BATCH_CONCURRENCY,
   METHOD_SET,
 } from '../../protocol/src/index.js';
 import { createBridgeClientForDestination } from '../../agent-client/src/remotes.js';
@@ -32,63 +35,6 @@ import { createScreenshotResult } from './handlers-capture.js';
 /** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
 /** @typedef {import('../../agent-client/src/client.js').BridgeClient} BridgeClient */
 /** @typedef {import('./handlers-utils.js').ToolResult} ToolResult */
-
-export const MAX_BATCH_CALLS = 20;
-export const MAX_BATCH_CONCURRENCY = 5;
-
-/** @type {ReadonlySet<BridgeMethod>} */
-const BATCH_SAFE_METHODS = new Set([
-  'health.ping',
-  'daemon.metrics',
-  'tabs.list',
-  'skill.get_runtime_context',
-  'setup.get_status',
-  'log.tail',
-  'page.get_state',
-  'page.get_console',
-  'page.wait_for_load_state',
-  'page.get_storage',
-  'page.get_text',
-  'page.extract_content',
-  'page.get_network',
-  'dom.query',
-  'dom.describe',
-  'dom.get_text',
-  'dom.get_attributes',
-  'dom.wait_for',
-  'dom.find_by_text',
-  'dom.find_by_role',
-  'dom.get_html',
-  'dom.get_accessibility_tree',
-  'layout.get_box_model',
-  'layout.hit_test',
-  'styles.get_computed',
-  'styles.get_matched_rules',
-  'network.intercept.list',
-  'patch.list',
-  'performance.get_metrics',
-]);
-
-/**
- * @param {BridgeMethod} method
- * @param {Record<string, unknown>} params
- * @returns {boolean}
- */
-export function isBatchSafeBridgeCall(method, params) {
-  if (!BATCH_SAFE_METHODS.has(method)) return false;
-  if ((method === 'page.get_console' || method === 'page.get_network') && params.clear === true) {
-    return false;
-  }
-  if (
-    method === 'page.get_network' &&
-    params.source === 'cdp' &&
-    params.capture !== undefined &&
-    params.capture !== 'read'
-  ) {
-    return false;
-  }
-  return true;
-}
 
 /** @type {Record<string, { method: BridgeMethod, params: (a: Record<string, unknown>) => Record<string, unknown> }>} */
 export const PAGE_ACTIONS = {
@@ -189,6 +135,32 @@ export async function handlePageTool(args) {
     tokenBudget: getToolTokenBudget(normalizedArgs),
     destinationId: normalizedArgs.destinationId ?? null,
   });
+}
+
+/**
+ * Deliberately read one exact storage value without retries, budgeting, or
+ * value-derived delivery metrics.
+ *
+ * @param {{ source: 'local_storage' | 'session_storage', key: string, tabId?: number, destinationId?: string }} args
+ * @returns {Promise<ToolResult>}
+ */
+export async function handleSensitiveReadTool(args) {
+  return withToolClient(
+    async (client) => {
+      const response = await requestBridgeWithRetry(
+        client,
+        'sensitive.read',
+        { source: args.source, key: args.key },
+        {
+          tabId: typeof args.tabId === 'number' ? args.tabId : null,
+          source: REQUEST_SOURCE,
+          tokenBudget: null,
+        }
+      );
+      return createSensitiveReadResult(response);
+    },
+    { destinationId: args.destinationId ?? null }
+  );
 }
 
 /**
@@ -361,15 +333,53 @@ export async function handleRawCallTool(args) {
       const response = await requestBridgeWithRetry(client, method, params, {
         tabId: typeof args.tabId === 'number' ? args.tabId : null,
         source: REQUEST_SOURCE,
-        tokenBudget: method.startsWith('screenshot.') ? null : getToolTokenBudget(args),
+        tokenBudget:
+          method.startsWith('screenshot.') || method === 'sensitive.read'
+            ? null
+            : getToolTokenBudget(args),
       });
       if (response.ok && method.startsWith('screenshot.')) {
         return createScreenshotResult(response, method);
+      }
+      if (method === 'sensitive.read') {
+        return createSensitiveReadResult(response);
       }
       return summarizeToolResponse(response, method, params);
     },
     { destinationId: args.destinationId ?? null }
   );
+}
+
+/**
+ * @param {import('../../protocol/src/types.js').BridgeResponse} response
+ * @returns {ToolResult}
+ */
+function createSensitiveReadResult(response) {
+  if (!response.ok) return summarizeToolResponse(response, 'sensitive.read', {});
+  const result =
+    response.result && typeof response.result === 'object'
+      ? /** @type {Record<string, unknown>} */ (response.result)
+      : {};
+  if (
+    (result.source !== 'local_storage' && result.source !== 'session_storage') ||
+    typeof result.value !== 'string' ||
+    result.exact !== true
+  ) {
+    return summarizeToolError('sensitive.read returned an invalid exact-value response.');
+  }
+  return {
+    content: [
+      {
+        type: 'text',
+        text: 'Sensitive storage read succeeded. The exact value is available in structuredContent.value.',
+      },
+    ],
+    structuredContent: {
+      source: result.source,
+      value: result.value,
+      exact: true,
+    },
+  };
 }
 
 /**

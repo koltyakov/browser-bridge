@@ -22,6 +22,7 @@ import {
   DEFAULT_VIEWPORT_WIDTH,
   DEFAULT_WAIT_TIMEOUT_MS,
   MAX_EXTRACT_SETTLE_TIMEOUT_MS,
+  MAX_SENSITIVE_VALUE_BYTES,
 } from './defaults.js';
 import { BridgeError, ERROR_CODES, getErrorRecovery } from './errors.js';
 import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry.js';
@@ -35,6 +36,7 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').BridgeSuccessResponse} BridgeSuccessResponse */
 /** @typedef {import('./types.js').CheckedActionParams} CheckedActionParams */
 /** @typedef {import('./types.js').CdpDispatchKeyEventParams} CdpDispatchKeyEventParams */
+/** @typedef {import('./types.js').CdpDomSnapshotParams} CdpDomSnapshotParams */
 /** @typedef {import('./types.js').CdpNodeIdParams} CdpNodeIdParams */
 /** @typedef {import('./types.js').ConsoleParams} ConsoleParams */
 /** @typedef {import('./types.js').DomQueryParams} DomQueryParams */
@@ -55,6 +57,7 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').NormalizedAccessRequestParams} NormalizedAccessRequestParams */
 /** @typedef {import('./types.js').NormalizedCheckedAction} NormalizedCheckedAction */
 /** @typedef {import('./types.js').NormalizedCdpDispatchKeyEventParams} NormalizedCdpDispatchKeyEventParams */
+/** @typedef {import('./types.js').NormalizedCdpDomSnapshotParams} NormalizedCdpDomSnapshotParams */
 /** @typedef {import('./types.js').NormalizedCdpNodeIdParams} NormalizedCdpNodeIdParams */
 /** @typedef {import('./types.js').NormalizedConsoleParams} NormalizedConsoleParams */
 /** @typedef {import('./types.js').NormalizedDomQuery} NormalizedDomQuery */
@@ -76,6 +79,7 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').NormalizedSelectAction} NormalizedSelectAction */
 /** @typedef {import('./types.js').NormalizedScreenshotParams} NormalizedScreenshotParams */
 /** @typedef {import('./types.js').NormalizedStorageParams} NormalizedStorageParams */
+/** @typedef {import('./types.js').NormalizedSensitiveReadParams} NormalizedSensitiveReadParams */
 /** @typedef {import('./types.js').NormalizedStyleQuery} NormalizedStyleQuery */
 /** @typedef {import('./types.js').NormalizedTabCloseParams} NormalizedTabCloseParams */
 /** @typedef {import('./types.js').NormalizedTabCreateParams} NormalizedTabCreateParams */
@@ -88,6 +92,7 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').SelectActionParams} SelectActionParams */
 /** @typedef {import('./types.js').ScreenshotParams} ScreenshotParams */
 /** @typedef {import('./types.js').StorageParams} StorageParams */
+/** @typedef {import('./types.js').SensitiveReadParams} SensitiveReadParams */
 /** @typedef {import('./types.js').StyleQueryParams} StyleQueryParams */
 /** @typedef {import('./types.js').TabCloseParams} TabCloseParams */
 /** @typedef {import('./types.js').TabCreateParams} TabCreateParams */
@@ -244,6 +249,14 @@ export function createSuccess(id, result, meta = {}) {
  */
 export function createFailure(id, code, message, details = null, meta = {}) {
   const recovery = getErrorRecovery(code);
+  const effectiveRecovery =
+    recovery && meta.method === 'sensitive.read'
+      ? {
+          retry: false,
+          ...(recovery.alternativeMethod ? { alternativeMethod: recovery.alternativeMethod } : {}),
+          hint: `Sensitive reads are never retried automatically. ${recovery.hint}`,
+        }
+      : recovery;
   return {
     id,
     ok: false,
@@ -252,7 +265,7 @@ export function createFailure(id, code, message, details = null, meta = {}) {
       code,
       message,
       details,
-      ...(recovery && { recovery }),
+      ...(effectiveRecovery && { recovery: effectiveRecovery }),
     },
     meta: {
       protocol_version: getProtocolVersion(),
@@ -374,6 +387,8 @@ function normalizeRequestParams(method, params) {
       return normalizeWaitForLoadStateParams(params);
     case 'page.get_storage':
       return normalizeStorageParams(params);
+    case 'sensitive.read':
+      return normalizeSensitiveReadParams(params);
     case 'page.get_text':
       return normalizePageTextParams(params);
     case 'page.extract_content':
@@ -415,6 +430,8 @@ function normalizeRequestParams(method, params) {
     case 'cdp.get_box_model':
     case 'cdp.get_computed_styles_for_node':
       return normalizeCdpNodeIdParams(params);
+    case 'cdp.get_dom_snapshot':
+      return normalizeCdpDomSnapshotParams(params);
     case 'input.set_checked':
       return normalizeCheckedAction(params);
     case 'input.select_option':
@@ -652,6 +669,25 @@ export function normalizeCdpNodeIdParams(params = {}) {
 }
 
 /**
+ * @param {CdpDomSnapshotParams} [params={}]
+ * @returns {NormalizedCdpDomSnapshotParams}
+ */
+export function normalizeCdpDomSnapshotParams(params = {}) {
+  const computedStyles = Array.isArray(params.computedStyles)
+    ? params.computedStyles.filter(
+        (property) => typeof property === 'string' && property.length > 0 && property.length <= 128
+      )
+    : [];
+  if (computedStyles.length > 100) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'computedStyles must contain at most 100 CSS property names.'
+    );
+  }
+  return { computedStyles };
+}
+
+/**
  * @param {CheckedActionParams} [params={}]
  * @returns {NormalizedCheckedAction}
  */
@@ -745,13 +781,30 @@ export function normalizeNavigationAction(params = {}) {
  * @returns {NormalizedPatchOperation}
  */
 export function normalizePatchOperation(params = {}) {
+  const operation = typeof params.operation === 'string' ? params.operation : null;
+  if (
+    operation !== null &&
+    ![
+      'set_text',
+      'set_attribute',
+      'remove_attribute',
+      'add_class',
+      'remove_class',
+      'toggle_class',
+    ].includes(operation)
+  ) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      `Unsupported DOM patch operation: ${operation}`
+    );
+  }
   return {
     patchId: typeof params.patchId === 'string' ? params.patchId : null,
     target:
       params.target && typeof params.target === 'object'
         ? /** @type {Record<string, unknown>} */ (params.target)
         : {},
-    operation: typeof params.operation === 'string' ? params.operation : null,
+    operation,
     name: typeof params.name === 'string' ? params.name : null,
     declarations:
       params.declarations && typeof params.declarations === 'object'
@@ -975,9 +1028,42 @@ export function normalizeDragParams(params = {}) {
  * @returns {NormalizedStorageParams}
  */
 export function normalizeStorageParams(params = {}) {
+  const keys = Array.isArray(params.keys)
+    ? params.keys.filter((key) => typeof key === 'string')
+    : null;
+  if (keys && keys.length > 100) {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'keys must contain at most 100 strings.');
+  }
   return {
     type: params.type === 'session' ? 'session' : 'local',
-    keys: Array.isArray(params.keys) ? params.keys.filter((k) => typeof k === 'string') : null,
+    keys,
+  };
+}
+
+/**
+ * @param {Record<string, unknown>} params
+ * @returns {NormalizedSensitiveReadParams}
+ */
+export function normalizeSensitiveReadParams(params) {
+  if (params?.source !== 'local_storage' && params?.source !== 'session_storage') {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'source must be local_storage or session_storage.'
+    );
+  }
+  if (typeof params.key !== 'string') {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'key must be a string.');
+  }
+  if (params.key.length > 2_048) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'key must contain at most 2,048 characters.'
+    );
+  }
+  return {
+    source: params.source,
+    key: params.key,
+    maxBytes: MAX_SENSITIVE_VALUE_BYTES,
   };
 }
 
@@ -1369,7 +1455,7 @@ export function createRuntimeContext() {
       DIALOG_NOT_OPEN: 'No JavaScript dialog is currently observable',
       INVALID_REQUEST: 'Malformed method or params',
       TIMEOUT: 'Operation exceeded time limit',
-      RATE_LIMITED: 'Too many requests - back off',
+      CONTENT_SCRIPT_UNAVAILABLE: 'Page is restricted or cannot host the content script',
       INTERNAL_ERROR: 'Unexpected extension error',
       EXTENSION_DISCONNECTED: 'Extension not connected to daemon - check Chrome',
     },
@@ -1390,7 +1476,7 @@ export function createRuntimeContext() {
       'page.get_network for fetch/XHR reads or explicit all-resource CDP capture',
       'page.get_text for full-page content extraction',
       'input.hover before screenshot to inspect hover states',
-      'performance.get_metrics for Core Web Vitals and load timing',
+      'performance.get_metrics for raw browser performance counters and load timing',
       'viewport.resize to test responsive layouts',
       'Prefer screenshot.capture_element, or a tight screenshot.capture_region when element capture cannot express the needed area',
       'page.get_storage reads localStorage/sessionStorage without evaluate',

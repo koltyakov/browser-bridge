@@ -128,6 +128,8 @@ test('loadBackground exposes direct test seams for background helper functions',
       hasScreenshot: true,
       nodeCount: 3,
       continuationHint: 'continue',
+      severity: 'info',
+      sensitiveAccess: null,
     }),
     {
       id: 'entry-1',
@@ -151,6 +153,8 @@ test('loadBackground exposes direct test seams for background helper functions',
       hasScreenshot: true,
       nodeCount: 3,
       continuationHint: 'continue',
+      severity: 'info',
+      sensitiveAccess: null,
     }
   );
 

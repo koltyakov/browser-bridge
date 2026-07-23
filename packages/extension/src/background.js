@@ -545,6 +545,11 @@ async function handleBridgeRequest(request) {
     }
   }
   response = enrichBridgeResponse(request, response);
+  if (request.method === 'sensitive.read') {
+    void logBridgeAction(request, response, actionContext).catch(reportAsyncError);
+    reply(response);
+    return;
+  }
   reply(response);
   try {
     await logBridgeAction(request, response, actionContext);

@@ -180,7 +180,7 @@ type PageStateResult = BridgeResult & {
   hints: { tailwind: boolean };
 };
 type StorageResult = BridgeResult & {
-  entries: Record<string, string>;
+  entries: Array<{ key: string; present: boolean }>;
 };
 type WaitResult = BridgeResult & { duration: number };
 type PatchListEntry = { patchId: string };
@@ -2601,7 +2601,17 @@ test('content script page state, storage, and screenshot helpers report page con
     };
   }
 
-  Reflect.set(globalThis, 'localStorage', createStorage({ short: 'ok', long: 'x'.repeat(510) }));
+  Reflect.set(
+    globalThis,
+    'localStorage',
+    createStorage({
+      short: 'ok',
+      long: 'x'.repeat(510),
+      exact: 'line 1\n\u2603 {"ok":true}',
+      empty: '',
+      huge: 'x'.repeat(262_145),
+    })
+  );
   Reflect.set(globalThis, 'sessionStorage', createStorage({ token: 'abc123' }));
 
   await withDocument(
@@ -2657,6 +2667,26 @@ test('content script page state, storage, and screenshot helpers report page con
         type: 'session',
         keys: ['token'],
       });
+      const sensitive = await executeBridgeMethod(listener, 'sensitive.read', {
+        source: 'local_storage',
+        key: 'exact',
+        maxBytes: 262_144,
+      });
+      const missingSensitive = await executeBridgeMethod(listener, 'sensitive.read', {
+        source: 'session_storage',
+        key: 'missing',
+        maxBytes: 262_144,
+      });
+      const emptySensitive = await executeBridgeMethod(listener, 'sensitive.read', {
+        source: 'local_storage',
+        key: 'empty',
+        maxBytes: 262_144,
+      });
+      const oversizedSensitive = await executeBridgeMethod(listener, 'sensitive.read', {
+        source: 'local_storage',
+        key: 'huge',
+        maxBytes: 262_144,
+      });
       const elementRect = await executeBridgeMethod(listener, 'screenshot.capture_element', {
         target: { selector: '#shot' },
       });
@@ -2676,14 +2706,46 @@ test('content script page state, storage, and screenshot helpers report page con
       assert.equal(state.selection.value, 'Selected text');
       assert.equal(state.hints.tailwind, true);
       assert.equal(local.type, 'local');
-      assert.equal(local.count, 2);
-      assert.equal(local.entries.short, 'ok');
-      assert.equal(local.entries.long.length, 501);
-      assert.equal(local.entries.long.endsWith('…'), true);
+      assert.equal(local.count, 5);
+      assert.deepEqual(local.entries, [
+        { key: 'short', present: true },
+        { key: 'long', present: true },
+        { key: 'exact', present: true },
+        { key: 'empty', present: true },
+        { key: 'huge', present: true },
+      ]);
       assert.deepEqual(session, {
         type: 'session',
-        entries: { token: 'abc123' },
+        entries: [{ key: 'token', present: true }],
         count: 1,
+        total: 1,
+        truncated: false,
+      });
+      assert.deepEqual(sensitive, {
+        source: 'local_storage',
+        value: 'line 1\n\u2603 {"ok":true}',
+        exact: true,
+      });
+      assert.deepEqual(missingSensitive.error, {
+        code: 'SENSITIVE_TARGET_NOT_FOUND',
+        message: 'No session storage value exists for the requested key.',
+        details: { source: 'session_storage', keyLength: 7 },
+      });
+      assert.deepEqual(emptySensitive, {
+        source: 'local_storage',
+        value: '',
+        exact: true,
+      });
+      assert.deepEqual(oversizedSensitive.error, {
+        code: 'RESULT_TOO_LARGE',
+        message: 'The exact storage value is too large to return atomically (262145 bytes).',
+        details: {
+          source: 'local_storage',
+          characters: 262_145,
+          bytes: 262_145,
+          maxBytes: 262_144,
+          guidance: 'Use a narrower exact target; partial sensitive values are never returned.',
+        },
       });
       assert.deepEqual(elementRect, { x: 62, y: 94, width: 200, height: 150, scale: 2 });
       assert.deepEqual(fullPage, {

@@ -14,6 +14,7 @@ import {
   normalizePatchOperation,
   normalizeSelectAction,
   normalizeStorageParams,
+  normalizeSensitiveReadParams,
   normalizeStyleQuery,
   normalizeViewportAction,
   normalizeWaitForParams,
@@ -85,12 +86,14 @@ const TAB_BOUND_NORMALIZERS = {
   'patch.rollback': normalizePatchOperation,
   'patch.commit_session_baseline': normalizePatchOperation,
   'page.get_storage': normalizeStorageParams,
+  'sensitive.read': normalizeSensitiveReadParams,
   'page.get_text': normalizePageTextParams,
 };
 
 const TAB_BOUND_METHODS = new Set([
   'page.get_state',
   'page.get_storage',
+  'sensitive.read',
   'page.get_text',
   'dom.query',
   'dom.describe',

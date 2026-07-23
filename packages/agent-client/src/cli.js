@@ -367,7 +367,7 @@ async function main() {
         tabId,
         source: REQUEST_SOURCE,
       });
-      printCallResponse(response);
+      printCallResponse(response, method);
       return;
     }
 
@@ -386,7 +386,7 @@ async function main() {
         tabId,
         source: REQUEST_SOURCE,
       });
-      printCallResponse(response);
+      printCallResponse(response, method);
       return;
     }
 

@@ -1,6 +1,13 @@
 // @ts-check
 
-import { BridgeError, ERROR_CODES, createFailure } from '../../protocol/src/index.js';
+import {
+  BridgeError,
+  ERROR_CODES,
+  createFailure,
+  sanitizeIncidentalText,
+  sanitizeIncidentalUrl,
+  sanitizeIncidentalValue,
+} from '../../protocol/src/index.js';
 import { getErrorMessage, normalizeRuntimeErrorMessage } from './background-helpers.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */
@@ -58,6 +65,8 @@ import { getErrorMessage, normalizeRuntimeErrorMessage } from './background-help
  *   hasScreenshot: boolean,
  *   nodeCount: number | null,
  *   continuationHint: string | null
+ *   severity?: 'info' | 'warning',
+ *   sensitiveAccess?: { source: 'local_storage' | 'session_storage', category: 'storage_value', keyLength: number } | null,
  * }} ActionLogEntry
  */
 
@@ -257,9 +266,9 @@ export function normalizeActionLogEntry(entry) {
     method: candidate.method,
     source: normalizeActionLogSource(candidate.source),
     tabId: typeof candidate.tabId === 'number' ? candidate.tabId : null,
-    url: typeof candidate.url === 'string' ? candidate.url : '',
+    url: typeof candidate.url === 'string' ? sanitizeIncidentalUrl(candidate.url) : '',
     ok: candidate.ok === true,
-    summary: typeof candidate.summary === 'string' ? candidate.summary : '',
+    summary: typeof candidate.summary === 'string' ? sanitizeIncidentalText(candidate.summary) : '',
     responseBytes: Number(candidate.responseBytes) || 0,
     approxTokens: Number(candidate.approxTokens) || 0,
     imageApproxTokens: Number(candidate.imageApproxTokens) || 0,
@@ -284,6 +293,27 @@ export function normalizeActionLogEntry(entry) {
     nodeCount: typeof candidate.nodeCount === 'number' ? candidate.nodeCount : null,
     continuationHint:
       typeof candidate.continuationHint === 'string' ? candidate.continuationHint : null,
+    severity: candidate.severity === 'warning' ? 'warning' : 'info',
+    sensitiveAccess:
+      candidate.sensitiveAccess && typeof candidate.sensitiveAccess === 'object'
+        ? normalizeSensitiveAccess(candidate.sensitiveAccess)
+        : null,
+  };
+}
+
+/** @param {object} value */
+function normalizeSensitiveAccess(value) {
+  const candidate = /** @type {Record<string, unknown>} */ (value);
+  if (candidate.source !== 'local_storage' && candidate.source !== 'session_storage') {
+    return null;
+  }
+  return {
+    source: /** @type {'local_storage' | 'session_storage'} */ (candidate.source),
+    category: /** @type {'storage_value'} */ ('storage_value'),
+    keyLength:
+      typeof candidate.keyLength === 'number' && Number.isFinite(candidate.keyLength)
+        ? Math.max(0, Math.trunc(candidate.keyLength))
+        : 0,
   };
 }
 
@@ -338,9 +368,15 @@ export function clearRequestedAccessPopupWindow(windowId = null) {
  */
 export function toFailureResponse(request, error) {
   if (error instanceof BridgeError) {
-    return createFailure(request.id, error.code, error.message, error.details, {
-      method: request.method,
-    });
+    return createFailure(
+      request.id,
+      error.code,
+      sanitizeIncidentalText(error.message),
+      sanitizeIncidentalValue(error.details),
+      {
+        method: request.method,
+      }
+    );
   }
 
   if (error && typeof error === 'object') {
@@ -356,8 +392,8 @@ export function toFailureResponse(request, error) {
       return createFailure(
         request.id,
         /** @type {ErrorCode} */ (structured.code),
-        structured.message,
-        structured.details ?? null,
+        sanitizeIncidentalText(structured.message),
+        sanitizeIncidentalValue(structured.details ?? null),
         { method: request.method }
       );
     }
@@ -372,7 +408,7 @@ export function toFailureResponse(request, error) {
       ? ERROR_CODES.ELEMENT_STALE
       : ERROR_CODES.INTERNAL_ERROR;
 
-  return createFailure(request.id, code, message, null, {
+  return createFailure(request.id, code, sanitizeIncidentalText(message), null, {
     method: request.method,
   });
 }
@@ -407,7 +443,7 @@ export function reportAsyncError(error) {
   if (normalizeRuntimeErrorMessage(getErrorMessage(error)) === ERROR_CODES.TAB_MISMATCH) {
     return;
   }
-  console.error(error);
+  console.error(sanitizeIncidentalText(getErrorMessage(error)));
 }
 
 /**

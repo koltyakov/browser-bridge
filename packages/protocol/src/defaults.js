@@ -34,6 +34,15 @@ export const MAX_NATIVE_MESSAGE_BYTES = 1_048_576;
 /** Maximum size of one newline-delimited daemon socket message in bytes. */
 export const MAX_JSON_LINE_BYTES = MAX_NATIVE_MESSAGE_BYTES;
 
+/** Maximum UTF-8 size of an exact sensitive value returned atomically. */
+export const MAX_SENSITIVE_VALUE_BYTES = 262_144;
+
+/** Maximum calls accepted by any read-only batch surface. */
+export const MAX_BATCH_CALLS = 20;
+
+/** Maximum read-only batch calls executing concurrently. */
+export const MAX_BATCH_CONCURRENCY = 5;
+
 /** Default timeout for a bridge request awaiting an extension response (ms). */
 export const DEFAULT_DAEMON_PENDING_TIMEOUT_MS = 30_000;
 

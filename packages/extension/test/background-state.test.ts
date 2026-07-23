@@ -171,6 +171,8 @@ test('background state normalizes action log entries and rejects malformed value
       hasScreenshot: true,
       nodeCount: null,
       continuationHint: null,
+      severity: 'info',
+      sensitiveAccess: null,
     }
   );
 });

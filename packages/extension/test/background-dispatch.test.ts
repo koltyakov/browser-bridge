@@ -706,6 +706,45 @@ test('background dispatch reports TIMEOUT when navigation does not finish loadin
   assert.equal(response.meta?.method, 'navigation.reload');
 });
 
+test('background dispatch returns sensitive storage values exactly and logs warning metadata only', async () => {
+  const secret = 'line 1\n\u2603 {"token":"value"}';
+  const { loaded, activeTab } = await loadEnabledDispatchBackground({
+    queryLabel: 'test-background-dispatch-sensitive-read',
+    chromeOverrides: {
+      tabs: {
+        async sendMessage(_tabId: number, message: Record<string, unknown>) {
+          if (message.type === 'bridge.ping') return { ok: true };
+          if (message.type === 'bridge.execute' && message.method === 'sensitive.read') {
+            return { source: 'local_storage', value: secret, exact: true };
+          }
+          return {};
+        },
+      },
+    },
+  });
+
+  const response = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-sensitive-read',
+      method: 'sensitive.read',
+      tabId: activeTab.id,
+      params: { source: 'local_storage', key: 'private-token' },
+      meta: { token_budget: 1 },
+    })
+  );
+
+  assert.equal(response.ok, true);
+  if (!response.ok) return;
+  assert.deepEqual(response.result, { source: 'local_storage', value: secret, exact: true });
+  assert.equal(response.meta.transport_bytes, undefined);
+  const state = (
+    loaded.module as { getStateForTest: () => { actionLog: unknown[] } }
+  ).getStateForTest();
+  const serializedLog = JSON.stringify(state.actionLog);
+  assert.match(serializedLog, /Sensitive local storage read succeeded/);
+  assert.doesNotMatch(serializedLog, /private-token|line 1|"token"/);
+});
+
 test('background dispatch routes page.get_state through the tab-bound content script path', async () => {
   const sendMessageCalls: TabMessageCall[] = [];
   const executeScriptCalls: ExecuteScriptCall[] = [];

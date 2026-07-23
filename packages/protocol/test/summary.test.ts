@@ -53,6 +53,22 @@ test('summarizes RESULT_TRUNCATED errors with budget recovery hint', () => {
   assert.match(summary.summary, /raise the relevant budget|Narrow the query/);
 });
 
+test('annotated sensitive-read summaries never expose value size', () => {
+  const summarize = (value: string) => {
+    const response = ok(
+      { source: 'local_storage', value, exact: true },
+      { meta: { method: 'sensitive.read' } }
+    );
+    return annotateBridgeSummary(summarizeBridgeResponse(response, 'sensitive.read'), response);
+  };
+  const short = summarize('a');
+  const long = summarize('a'.repeat(10_000));
+  assert.equal(short.transportBytes, 0);
+  assert.equal(short.transportTokens, 0);
+  assert.equal(long.transportBytes, 0);
+  assert.equal(long.transportTokens, 0);
+});
+
 test('includes protocol warning when present', () => {
   const resp = fail('TIMEOUT', 'slow');
   resp.meta = makeMeta({ protocol_warning: 'version mismatch' });
@@ -591,11 +607,35 @@ test('summarizes storage entries', () => {
   const summary = summarizeBridgeResponse(
     ok({
       count: 3,
-      type: 'localStorage',
-      entries: { key1: 'val1', key2: 'val2', key3: 'val3' },
+      total: 4,
+      type: 'local',
+      entries: [
+        { key: 'key1', present: true },
+        { key: 'key2', present: false },
+        { key: 'key3', present: true },
+      ],
+      truncated: true,
     })
   );
-  assert.match(summary.summary, /Storage.*localStorage.*3 entries/);
+  assert.match(summary.summary, /Storage.*local.*3 entries/);
+  assert.deepEqual(summary.evidence, {
+    entries: [
+      { key: 'key1', present: true },
+      { key: 'key2', present: false },
+      { key: 'key3', present: true },
+    ],
+    total: 4,
+    truncated: true,
+  });
+});
+
+test('sensitive summaries never include exact values', () => {
+  const summary = summarizeBridgeResponse(
+    ok({ source: 'local_storage', value: 'exact-secret-value', exact: true })
+  );
+  assert.match(summary.summary, /Sensitive storage value read exactly/);
+  assert.deepEqual(summary.evidence, { source: 'local_storage', exact: true });
+  assert.doesNotMatch(JSON.stringify(summary), /exact-secret-value/);
 });
 
 // --- summarizeBridgeResponse: element describe result ---

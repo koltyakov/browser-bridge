@@ -56,6 +56,12 @@ type ActionLogEntry = {
   hasScreenshot: boolean;
   nodeCount: number | null;
   continuationHint: string | null;
+  severity?: 'info' | 'warning';
+  sensitiveAccess?: {
+    source: 'local_storage' | 'session_storage';
+    category: 'storage_value';
+    keyLength: number;
+  } | null;
 };
 
 async function flushMicrotasks(): Promise<void> {
@@ -511,6 +517,25 @@ test('sidepanel UI renders activity summaries, histogram families, and repeat wa
         source: '',
         summary: 'Window access request confirmed.',
       }),
+      createActionLogEntry('sensitive-success', 'sensitive.read', 0, {
+        severity: 'warning',
+        summary: 'Sensitive local storage read succeeded.',
+        sensitiveAccess: {
+          source: 'local_storage',
+          category: 'storage_value',
+          keyLength: 13,
+        },
+      }),
+      createActionLogEntry('sensitive-failure', 'sensitive.read', 0, {
+        ok: false,
+        severity: 'warning',
+        summary: 'Sensitive session storage read failed: SENSITIVE_TARGET_NOT_FOUND.',
+        sensitiveAccess: {
+          source: 'session_storage',
+          category: 'storage_value',
+          keyLength: 7,
+        },
+      }),
       createActionLogEntry('repeat-extreme-1', 'dom.describe', 10, {
         costClass: 'heavy',
         summaryTokens: 0,
@@ -579,6 +604,10 @@ test('sidepanel UI renders activity summaries, histogram families, and repeat wa
     assert.match(actionLog.textContent ?? '', /Image/);
     assert.match(actionLog.textContent ?? '', /Debugger/);
     assert.match(actionLog.textContent ?? '', /Truncated/);
+    assert.match(actionLog.textContent ?? '', /Sensitive access/);
+    assert.match(actionLog.textContent ?? '', /Sensitive local storage read succeeded/);
+    assert.equal(actionLog.querySelectorAll('.activity-summary-error').length >= 1, true);
+    assert.doesNotMatch(actionLog.textContent ?? '', /private-token|secret-value/);
     assert.match(actionLog.textContent ?? '', /access\.requested/);
     assert.match(
       actionLog.textContent ?? '',

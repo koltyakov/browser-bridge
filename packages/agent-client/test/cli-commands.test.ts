@@ -1164,6 +1164,23 @@ test('bbx batch rejects non-array JSON before connecting', async () => {
   }
 });
 
+test('bbx batch rejects calls above the shared limit before connecting', async () => {
+  const bridgeServer = await bridgeServerWith({});
+  const calls = Array.from({ length: 21 }, () => ({ method: 'health.ping' }));
+  try {
+    const result = await runCli({
+      args: ['batch', JSON.stringify(calls)],
+      env: { ...process.env, BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome },
+    });
+    const payload = expectCliPayload(result.json);
+    assert.equal(result.status, 1);
+    assert.match(payload.summary, /between 1 and 20 calls/);
+    assert.equal(bridgeServer.messages.length, 0);
+  } finally {
+    await bridgeServer.close();
+  }
+});
+
 test('bbx batch reports unknown methods without dispatching them', async () => {
   const bridgeServer = await bridgeServerWith({});
 
@@ -1211,6 +1228,54 @@ test('bbx batch reports unknown methods without dispatching them', async () => {
   }
 });
 
+test('bbx batch rejects sensitive reads without dispatching them', async () => {
+  const bridgeServer = await bridgeServerWith({});
+  try {
+    const result = await runCli({
+      args: [
+        'batch',
+        '[{"method":"sensitive.read","params":{"source":"local_storage","key":"token"}}]',
+      ],
+      env: { ...process.env, BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome },
+    });
+    const payload = result.json as Array<{ ok: boolean; error: { message: string } }>;
+    assert.equal(result.status, 1);
+    assert.equal(payload[0].ok, false);
+    assert.match(payload[0].error.message, /never allowed in batch/);
+    assert.equal(bridgeServer.requests.length, 0);
+  } finally {
+    await bridgeServer.close();
+  }
+});
+
+test('bbx batch rejects mutations and destructive reads before dispatching any call', async () => {
+  const bridgeServer = await bridgeServerWith({});
+  try {
+    const result = await runCli({
+      args: [
+        'batch',
+        JSON.stringify([
+          { method: 'page.get_state' },
+          { method: 'page.get_console', params: { clear: true } },
+          { method: 'input.click', params: { target: { selector: 'button' } } },
+        ]),
+      ],
+      env: { ...process.env, BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome },
+    });
+    const payload = result.json as Array<{ ok: boolean; error: { message: string } }>;
+    assert.equal(result.status, 1);
+    assert.equal(
+      payload.every((item) => item.ok === false),
+      true
+    );
+    assert.match(payload[1].error.message, /not safe/);
+    assert.match(payload[2].error.message, /not safe/);
+    assert.equal(bridgeServer.requests.length, 0);
+  } finally {
+    await bridgeServer.close();
+  }
+});
+
 test('bbx batch rejects non-object params and exits unsuccessfully', async () => {
   const bridgeServer = await bridgeServerWith({});
   try {
@@ -1233,16 +1298,16 @@ test('bbx batch rejects non-object params and exits unsuccessfully', async () =>
 
 test('bbx batch uses operation-aware timeout and preserves tab routing and metadata', async () => {
   const bridgeServer = await bridgeServerWith({
-    'page.evaluate': async (request) => {
+    'page.wait_for_load_state': async (request) => {
       await new Promise((resolve) => setTimeout(resolve, 150));
-      return createSuccess(request.id, { value: 4 });
+      return createSuccess(request.id, { matched: true });
     },
   });
   try {
     const result = await runCli({
       args: [
         'batch',
-        '[{"method":"page.evaluate","tabId":17,"params":{"expression":"2 + 2","timeoutMs":300}}]',
+        '[{"method":"page.wait_for_load_state","tabId":17,"params":{"timeoutMs":700}}]',
       ],
       env: {
         ...process.env,
@@ -1255,7 +1320,7 @@ test('bbx batch uses operation-aware timeout and preserves tab routing and metad
     assert.equal(payload[0].ok, true);
     assert.equal(bridgeServer.requests[0].tab_id, 17);
     assert.equal(bridgeServer.requests[0].meta.source, 'cli');
-    assert.equal(bridgeServer.requests[0].params.timeoutMs, 300);
+    assert.equal(bridgeServer.requests[0].params.timeoutMs, 700);
   } finally {
     await bridgeServer.close();
   }
