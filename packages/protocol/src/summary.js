@@ -270,6 +270,23 @@ export function summarizeBridgeResponse(response, method) {
       evidence: result,
     };
   }
+  if (typeof result.content === 'string' && typeof result.source === 'string') {
+    return {
+      ok: true,
+      summary: appendProtocolWarning(
+        `Extracted ${result.source} ${result.format ?? 'text'}: ${result.length ?? result.content.length} chars${result.truncated ? ' (truncated)' : ''}.`,
+        protocolWarning
+      ),
+      evidence: {
+        content: result.content.slice(0, 500),
+        format: result.format,
+        source: result.source,
+        length: result.length,
+        truncated: result.truncated,
+        settlement: result.settlement,
+      },
+    };
+  }
   if (
     typeof result.url === 'string' &&
     typeof result.title === 'string' &&

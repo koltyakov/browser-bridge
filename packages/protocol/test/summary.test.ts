@@ -158,6 +158,28 @@ test('summarizes page text result', () => {
   assert.match(summary.summary, /truncated/);
 });
 
+test('summarizes semantic content with source and format metadata', () => {
+  const summary = summarizeBridgeResponse(
+    ok({
+      content: '# Guide',
+      format: 'markdown',
+      source: 'readability',
+      truncated: false,
+      length: 7,
+    }),
+    'page.extract_content'
+  );
+  assert.match(summary.summary, /Extracted readability markdown: 7 chars/);
+  assert.deepEqual(summary.evidence, {
+    content: '# Guide',
+    format: 'markdown',
+    source: 'readability',
+    length: 7,
+    truncated: false,
+    settlement: undefined,
+  });
+});
+
 test('summarizes element text result with dom.get_text method', () => {
   const summary = summarizeBridgeResponse(
     ok({

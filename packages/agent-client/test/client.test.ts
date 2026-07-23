@@ -185,6 +185,51 @@ test('BridgeClient can connect optimistically without a health preflight', async
   }
 });
 
+test('BridgeClient extracts semantic content in Node without returning the HTML snapshot', async () => {
+  const bridgeServer = await bridgeServerWith({
+    'page.get_state': (request) => createSuccess(request.id, { title: 'Guide' }),
+    'dom.get_html': (request) =>
+      createSuccess(request.id, {
+        html: '<body><nav>Noise</nav><main><h1>Guide</h1><p>Useful content.</p></main></body>',
+        truncated: false,
+        omitted: 0,
+      }),
+  });
+  const client = new BridgeClient({
+    socketPath: bridgeServer.socketPath,
+    checkProtocolOnConnect: false,
+  });
+
+  try {
+    await client.connect();
+    const response = await client.request({
+      method: 'page.extract_content',
+      params: {
+        format: 'markdown',
+        selector: 'main',
+        consistency: 'settled',
+        settleTimeoutMs: 500,
+      },
+    });
+    assert.equal(response.ok, true);
+    if (!response.ok) return;
+    const result = response.result as Record<string, unknown>;
+    assert.match(String(result.content), /# Guide/);
+    assert.equal(Object.hasOwn(result, 'html'), false);
+    assert.deepEqual(result.settlement, { requested: true, quietMs: 100, timedOut: false });
+    assert.equal(response.meta.node_processed, true);
+    assert.deepEqual(
+      bridgeServer.requests.map((request) => request.method),
+      ['page.get_state', 'dom.get_html', 'dom.get_html']
+    );
+    assert.deepEqual(bridgeServer.requests[1].params.target, { selector: 'main' });
+    assert.equal(bridgeServer.requests[1].meta.token_budget, null);
+  } finally {
+    await client.close().catch(() => {});
+    await bridgeServer.close();
+  }
+});
+
 test('BridgeClient auto-restarts an older daemon once during connect', async () => {
   let supportedVersion = '0.9';
   let restartCount = 0;

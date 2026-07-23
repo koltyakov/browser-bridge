@@ -47,6 +47,7 @@ import {
   normalizeNetworkParams,
   normalizeNetworkInterceptAddParams,
   normalizePageTextParams,
+  normalizeExtractContentParams,
   normalizeLogTailParams,
   normalizeViewportResizeParams,
   normalizeStyleQuery,
@@ -835,6 +836,40 @@ test('normalizePageTextParams clamps budget', () => {
 test('normalizePageTextParams defaults to 8000', () => {
   const params = normalizePageTextParams({});
   assert.equal(params.textBudget, 8000);
+});
+
+test('normalizeExtractContentParams applies bounded semantic extraction defaults', () => {
+  assert.deepEqual(normalizeExtractContentParams({}), {
+    format: 'text',
+    selector: null,
+    includeMetadata: true,
+    consistency: 'best_effort',
+    textBudget: 8000,
+    settleTimeoutMs: 2000,
+  });
+  assert.deepEqual(
+    normalizeExtractContentParams({
+      format: 'markdown',
+      selector: ' main ',
+      includeMetadata: false,
+      consistency: 'settled',
+      textBudget: 999_999,
+      settleTimeoutMs: 99_999,
+    }),
+    {
+      format: 'markdown',
+      selector: 'main',
+      includeMetadata: false,
+      consistency: 'settled',
+      textBudget: 100_000,
+      settleTimeoutMs: 10_000,
+    }
+  );
+  assert.throws(() => normalizeExtractContentParams({ format: 'html' as never }), /format/);
+  assert.throws(
+    () => normalizeExtractContentParams({ consistency: 'frozen' as never }),
+    /consistency/
+  );
 });
 
 test('normalizeLogTailParams clamps limit', () => {

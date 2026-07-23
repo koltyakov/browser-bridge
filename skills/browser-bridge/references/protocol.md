@@ -27,7 +27,7 @@ The table below includes the legacy capability bucket for each method so agents 
 - `-` means the method is global/system-scoped and was never gated by a former capability bucket.
 - Capability names are descriptive coverage labels only. Browser Bridge access is window-scoped now; there are no capability-scoped sessions.
 
-## All Methods (66)
+## All Methods (67)
 
 | Method                             | Tab? | CDP?       | Group       | Capability           | Notes                                                                                      |
 | ---------------------------------- | ---- | ---------- | ----------- | -------------------- | ------------------------------------------------------------------------------------------ |
@@ -49,6 +49,7 @@ The table below includes the legacy capability bucket for each method so agents 
 | `page.wait_for_load_state`         | Yes  | -          | wait        | `page.read`          | Wait for truthful tab `complete` state and/or a URL condition                              |
 | `page.get_storage`                 | Yes  | -          | page        | `page.read`          | `localStorage`/`sessionStorage`; optional `keys`                                           |
 | `page.get_text`                    | Yes  | -          | page        | `page.read`          | Full page text; `textBudget` limits size                                                   |
+| `page.extract_content`             | Yes  | -          | page        | `page.read`          | Node-processed semantic text/Markdown with bounded HTML snapshots and optional settlement   |
 | `page.get_network`                 | Yes  | Conditional | page        | `network.read`       | Fetch/XHR by default; explicit CDP all-resource capture lifecycle                          |
 | `network.intercept.add`            | Yes  | CDP        | page        | `network.intercept`  | Add interception rule; action fulfill/continue/block                                       |
 | `network.intercept.remove`         | Yes  | CDP        | page        | `network.intercept`  | Remove rule by `ruleId`                                                                    |
@@ -319,6 +320,17 @@ bbx page-text
 bbx page-text 8000
 bbx call page.get_text '{"textBudget":2000}'
 ```
+
+### page.extract_content
+
+Extract article-like or documentation content without returning source HTML to the agent. The Node client reads a bounded HTML snapshot through the existing bridge, runs pinned Mozilla Readability locally, then falls back to the largest `article`, `main`, or `[role="main"]` subtree and finally sanitized body text. Scripts, styles, hidden regions, and form controls are excluded before extraction.
+
+```bash
+bbx call page.extract_content '{"format":"text"}'
+bbx call page.extract_content '{"format":"markdown","selector":"main","textBudget":8000}'
+```
+
+Parameters: `format` (`text` default or `markdown`), optional `selector`, `includeMetadata` (default `true`), `consistency` (`best_effort` default or `settled`), `textBudget` (default 8000), and `settleTimeoutMs` (default 2000, maximum 10000). Settled extraction requires two identical bounded snapshots at least 100 ms apart; it does not claim network idle or a frozen page. Results report source, original length, truncation, omitted characters, bounded metadata, and settlement timeout state. An oversized snapshot fails coherently with guidance to narrow `selector` rather than returning partial semantic content.
 
 ### page.get_network
 

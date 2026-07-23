@@ -49,6 +49,7 @@ const BATCH_SAFE_METHODS = new Set([
   'page.wait_for_load_state',
   'page.get_storage',
   'page.get_text',
+  'page.extract_content',
   'page.get_network',
   'dom.query',
   'dom.describe',
@@ -130,6 +131,17 @@ export const PAGE_ACTIONS = {
     method: 'page.get_text',
     params: (a) => ({ textBudget: a.textBudget }),
   },
+  extract_content: {
+    method: 'page.extract_content',
+    params: (a) => ({
+      format: a.format,
+      selector: a.selector,
+      includeMetadata: a.includeMetadata,
+      consistency: a.consistency,
+      textBudget: a.textBudget,
+      settleTimeoutMs: a.settleTimeoutMs,
+    }),
+  },
   network: {
     method: 'page.get_network',
     params: (a) => ({
@@ -144,12 +156,12 @@ export const PAGE_ACTIONS = {
 };
 
 /**
- * @param {{ action: string, expression?: string, awaitPromise?: boolean, timeoutMs?: number, returnByValue?: boolean, level?: string, clear?: boolean, limit?: number, type?: string, keys?: string[], textBudget?: number, urlPattern?: string, source?: 'fetch-xhr' | 'cdp', capture?: 'read' | 'start' | 'clear' | 'stop', dialogAction?: string, promptText?: string, expectedDialogId?: string, waitForLoad?: boolean, url?: string, urlMatch?: string, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @param {{ action: string, expression?: string, awaitPromise?: boolean, timeoutMs?: number, returnByValue?: boolean, level?: string, clear?: boolean, limit?: number, type?: string, keys?: string[], textBudget?: number, format?: 'text' | 'markdown', selector?: string, includeMetadata?: boolean, consistency?: 'best_effort' | 'settled', settleTimeoutMs?: number, urlPattern?: string, source?: 'fetch-xhr' | 'cdp', capture?: 'read' | 'start' | 'clear' | 'stop', dialogAction?: string, promptText?: string, expectedDialogId?: string, waitForLoad?: boolean, url?: string, urlMatch?: string, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handlePageTool(args) {
   let normalizedArgs = args;
-  if (args.action === 'text') {
+  if (args.action === 'text' || args.action === 'extract_content') {
     normalizedArgs = applyPageTextBudgetPreset(args);
   } else if (args.action === 'console') {
     normalizedArgs = applyLimitBudgetPreset(args, {

@@ -565,6 +565,41 @@ test('handlePageTool storage calls page.get_storage', async () => {
   );
 });
 
+test('handlePageTool forwards semantic extraction options and returns content evidence', async () => {
+  await withMockedBridge(
+    async () =>
+      ok({
+        format: 'markdown',
+        content: '# Guide',
+        source: 'semantic-root',
+        length: 7,
+        truncated: false,
+        omitted: 0,
+      }),
+    async (calls) => {
+      const result = await handlePageTool({
+        action: 'extract_content',
+        format: 'markdown',
+        selector: 'main',
+        includeMetadata: false,
+        consistency: 'settled',
+        settleTimeoutMs: 500,
+        budgetPreset: 'quick',
+      });
+      assert.deepEqual(calls[0].params, {
+        format: 'markdown',
+        selector: 'main',
+        includeMetadata: false,
+        consistency: 'settled',
+        textBudget: 2000,
+        settleTimeoutMs: 500,
+      });
+      assert.equal(result.isError, undefined);
+      assert.match(JSON.stringify(result.structuredContent), /# Guide/);
+    }
+  );
+});
+
 test('handlePageTool wait_for_load calls page.wait_for_load_state', async () => {
   await withMockedBridge(
     async () => ok({}),

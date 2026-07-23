@@ -68,6 +68,7 @@ export type BridgeMethod =
   | 'page.wait_for_load_state'
   | 'page.get_storage'
   | 'page.get_text'
+  | 'page.extract_content'
   | 'page.get_network'
   | 'network.intercept.add'
   | 'network.intercept.remove'
@@ -591,6 +592,43 @@ export interface StorageParams {
 export interface NormalizedStorageParams extends BridgeParams {
   type: 'local' | 'session';
   keys: string[] | null;
+}
+
+export type ExtractContentFormat = 'text' | 'markdown';
+export type ExtractContentConsistency = 'best_effort' | 'settled';
+export type ExtractContentSource = 'readability' | 'semantic-root' | 'body';
+
+export interface ExtractContentParams {
+  format?: ExtractContentFormat;
+  selector?: string;
+  includeMetadata?: boolean;
+  consistency?: ExtractContentConsistency;
+  textBudget?: number;
+  settleTimeoutMs?: number;
+}
+
+export interface NormalizedExtractContentParams extends BridgeParams {
+  format: ExtractContentFormat;
+  selector: string | null;
+  includeMetadata: boolean;
+  consistency: ExtractContentConsistency;
+  textBudget: number;
+  settleTimeoutMs: number;
+}
+
+export interface ExtractContentResult {
+  format: ExtractContentFormat;
+  content: string;
+  title?: string;
+  byline?: string;
+  excerpt?: string;
+  siteName?: string;
+  source: ExtractContentSource;
+  root?: { tag: string; selector?: string };
+  length: number;
+  truncated: boolean;
+  omitted: number;
+  settlement?: { requested: boolean; quietMs: number; timedOut: boolean };
 }
 
 export interface WaitForLoadStateParams {

@@ -112,6 +112,8 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
     'Wait for truthful tab-complete state and/or an event-aware URL condition.',
   'page.get_storage': 'Read local or session storage values.',
   'page.get_text': 'Read bounded visible text from the page.',
+  'page.extract_content':
+    'Extract bounded semantic page content as text or Markdown without returning source HTML.',
   'page.get_network':
     'Read buffered fetch/XHR activity or explicitly manage bounded all-resource CDP capture.',
   'network.intercept.add': 'Add a request interception rule (CDP Fetch domain).',
@@ -308,6 +310,14 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['textBudget'],
     'low',
+    METHOD_POLICIES.pageRead
+  ),
+  'page.extract_content': createRegistryEntry(
+    'page.extract_content',
+    'page',
+    true,
+    ['format', 'selector', 'includeMetadata', 'consistency', 'textBudget', 'settleTimeoutMs'],
+    'moderate',
     METHOD_POLICIES.pageRead
   ),
   'page.get_network': createRegistryEntry(

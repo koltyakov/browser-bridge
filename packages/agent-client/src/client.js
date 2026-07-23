@@ -6,12 +6,16 @@ import net from 'node:net';
 import { randomUUID } from 'node:crypto';
 
 import {
+  createFailure,
   createRequest,
+  createSuccess,
   DEFAULT_CLIENT_REQUEST_TIMEOUT_MS,
+  ERROR_CODES,
   getProtocolVersion,
   parseJsonLines,
   setProtocolPackageVersion,
 } from '../../protocol/src/index.js';
+import { extractContentFromHtml } from './content-extract.js';
 import {
   createSocketBridgeTransport,
   getBridgeTransport,
@@ -317,6 +321,113 @@ export class BridgeClient extends EventEmitter {
       meta,
     });
 
+    if (method === 'page.extract_content') {
+      const params =
+        /** @type {import('../../protocol/src/types.js').NormalizedExtractContentParams} */ (
+          request.params
+        );
+      const titleResponse = params.includeMetadata
+        ? await this.request({ method: 'page.get_state', tabId, meta, timeoutMs })
+        : null;
+      if (titleResponse && !titleResponse.ok) {
+        return {
+          ...titleResponse,
+          id: request.id,
+          meta: { ...titleResponse.meta, method },
+        };
+      }
+      const titleResult =
+        titleResponse?.ok && titleResponse.result && typeof titleResponse.result === 'object'
+          ? /** @type {Record<string, unknown>} */ (titleResponse.result)
+          : {};
+      const readSnapshot = () =>
+        this.request({
+          method: 'dom.get_html',
+          tabId,
+          params: {
+            target: { selector: params.selector ?? 'body' },
+            outer: true,
+            maxLength: 50_000,
+          },
+          meta: { ...meta, token_budget: null },
+          timeoutMs,
+        });
+
+      let snapshotResponse = await readSnapshot();
+      if (!snapshotResponse.ok) {
+        return {
+          ...snapshotResponse,
+          id: request.id,
+          meta: { ...snapshotResponse.meta, method },
+        };
+      }
+      let snapshot = normalizeHtmlSnapshot(snapshotResponse.result);
+      if (snapshot.truncated) {
+        return createFailure(
+          request.id,
+          ERROR_CODES.RESULT_TRUNCATED,
+          'The bounded HTML snapshot was too large for semantic extraction.',
+          {
+            selector: params.selector,
+            omitted: snapshot.omitted,
+            maxLength: 50_000,
+          },
+          {
+            method,
+            continuation_hint: 'Retry with a narrower selector.',
+          }
+        );
+      }
+
+      let settlement;
+      if (params.consistency === 'settled') {
+        const deadline = Date.now() + params.settleTimeoutMs;
+        let timedOut = false;
+        while (true) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          const nextResponse = await readSnapshot();
+          if (!nextResponse.ok) {
+            return {
+              ...nextResponse,
+              id: request.id,
+              meta: { ...nextResponse.meta, method },
+            };
+          }
+          const nextSnapshot = normalizeHtmlSnapshot(nextResponse.result);
+          if (nextSnapshot.truncated) {
+            return createFailure(
+              request.id,
+              ERROR_CODES.RESULT_TRUNCATED,
+              'The bounded HTML snapshot was too large for semantic extraction.',
+              { selector: params.selector, omitted: nextSnapshot.omitted, maxLength: 50_000 },
+              { method, continuation_hint: 'Retry with a narrower selector.' }
+            );
+          }
+          if (nextSnapshot.html === snapshot.html) {
+            snapshot = nextSnapshot;
+            break;
+          }
+          snapshot = nextSnapshot;
+          if (Date.now() >= deadline) {
+            timedOut = true;
+            break;
+          }
+        }
+        settlement = { requested: true, quietMs: 100, timedOut };
+      }
+
+      const result = extractContentFromHtml(snapshot.html, params, {
+        title: typeof titleResult.title === 'string' ? titleResult.title : undefined,
+        settlement,
+      });
+      return this.attachProtocolWarning(
+        createSuccess(request.id, result, {
+          method,
+          node_processed: true,
+        })
+      );
+    }
+
     const responsePromise = new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         this.waiting.delete(request.id);
@@ -529,4 +640,18 @@ export class BridgeClient extends EventEmitter {
       },
     };
   }
+}
+
+/**
+ * @param {unknown} result
+ * @returns {{ html: string, truncated: boolean, omitted: number }}
+ */
+function normalizeHtmlSnapshot(result) {
+  const value =
+    result && typeof result === 'object' ? /** @type {Record<string, unknown>} */ (result) : {};
+  return {
+    html: typeof value.html === 'string' ? value.html : '',
+    truncated: value.truncated === true,
+    omitted: typeof value.omitted === 'number' ? value.omitted : 0,
+  };
 }

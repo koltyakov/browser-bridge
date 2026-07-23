@@ -13,7 +13,7 @@ Permission prompts are controlled by the host agent, not by Browser Bridge. In p
 
 Skill name: `browser-bridge` (also known as `bbx`). In GitHub Copilot, invoke as `/browser-bridge`. `bbx` is the CLI command used throughout this skill.
 When the runtime supports subagents, delegate bridge inspection to a smaller, lower-cost worker and return only concise findings to the parent.
-For open-ended investigation, start with structured reads (`page.get_state`, `dom.query`, `page.get_text`, `styles.get_computed`, and `bbx batch` for CLI or `browser_batch` for MCP) and escalate to screenshots or debugger-backed methods only when structured evidence is insufficient. `browser_call` accepts one protocol method at a time; `batch` is not a valid `browser_call` method.
+For open-ended investigation, start with structured reads (`page.get_state`, `dom.query`, `page.get_text`, `page.extract_content`, `styles.get_computed`, and `bbx batch` for CLI or `browser_batch` for MCP) and escalate to screenshots or debugger-backed methods only when structured evidence is insufficient. `browser_call` accepts one protocol method at a time; `batch` is not a valid `browser_call` method.
 
 ## CLI
 
@@ -172,7 +172,7 @@ Error responses now include a machine-readable `error.recovery` field with `retr
 13. **Wait after change** - after editing source, wait for expected new text, a selector matching the changed attribute, or a detach/attach remount; waiting for `attached` on a selector that already exists does not prove HMR ran. Use `page.wait_for_load_state` for navigation, not HMR.
 14. **Prime event buffers** - before reproducing a console or fetch/XHR issue, call `page.get_console` and default `page.get_network` once with `clear: true`; then reproduce and read without clearing. CDP all-resource capture instead requires explicit `start`, reproduce, `read`, and `stop` calls.
 15. **Semantic finding** - use `dom.find_by_text` / `dom.find_by_role` when you know the label but not the selector.
-16. **Text extraction** - use `page.get_text` for full page text instead of `dom.query` on body.
+16. **Text extraction** - use `page.extract_content` for articles/documentation, or `page.get_text` for all visible UI text, instead of `dom.query` on body.
 17. **Network monitoring** - use `page.get_network` to inspect API calls; auto-installs interceptor.
 18. **Accessibility tree only when necessary** - `dom.get_accessibility_tree` is debugger-backed; use it when semantic structure cannot be inferred from DOM queries and role/text search.
 19. **Tailwind-aware** - when `page.get_state` returns `hints.tailwind: true`, load `references/tailwind.md`; avoid selecting by utility classes, prefer `find_by_text`/`find_by_role`; `dom.query` auto-escapes `[]` brackets.

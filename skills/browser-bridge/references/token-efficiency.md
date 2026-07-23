@@ -25,14 +25,15 @@ Avoid debugger-backed methods until they are clearly necessary. In Browser Bridg
 5. **Need layout metrics?** → `layout.get_box_model` (no budget needed)
 6. **Need styles?** → `styles.get_computed` with explicit `properties` list
 7. **Need runtime errors?** → `page.get_console` with `level: 'error'`
-8. **Need full page text?** → `page.get_text` (cheaper than `dom.query` on body)
-9. **Need API call history?** → default `page.get_network` (intercepted fetch/XHR log)
-10. **Need framework/app state and no lighter read can expose it?** → `page.evaluate` (debugger-backed)
-11. **Need semantic structure and role/text queries are insufficient?** → compact or interactive-only `dom.get_accessibility_tree` (debugger-backed)
-12. **Need performance data?** → `performance.get_metrics` (debugger-backed)
-13. **Testing responsive with an exact forced viewport?** → `viewport.resize` (debugger-backed)
-14. **Visual ambiguity after structured reads?** → `screenshot.capture_element` first, or `screenshot.capture_region` with a tight crop when one element is not enough (debugger-backed)
-15. **Content-script blocked?** → `cdp.get_document` or `cdp.get_dom_snapshot` (debugger-backed fallback)
+8. **Need article or documentation content?** → `page.extract_content` (removes navigation and repeated chrome)
+9. **Need all visible page UI text?** → `page.get_text` (cheaper than `dom.query` on body)
+10. **Need API call history?** → default `page.get_network` (intercepted fetch/XHR log)
+11. **Need framework/app state and no lighter read can expose it?** → `page.evaluate` (debugger-backed)
+12. **Need semantic structure and role/text queries are insufficient?** → compact or interactive-only `dom.get_accessibility_tree` (debugger-backed)
+13. **Need performance data?** → `performance.get_metrics` (debugger-backed)
+14. **Testing responsive with an exact forced viewport?** → `viewport.resize` (debugger-backed)
+15. **Visual ambiguity after structured reads?** → `screenshot.capture_element` first, or `screenshot.capture_region` with a tight crop when one element is not enough (debugger-backed)
+16. **Content-script blocked?** → `cdp.get_document` or `cdp.get_dom_snapshot` (debugger-backed fallback)
 
 ## Allowlist Strategy
 
@@ -109,11 +110,12 @@ Install early - the buffer auto-activates on first call. Captured levels: log, w
 
 ## Page Text Instead of DOM Scan
 
-When you need the page's visible text - for summarization, search, or content extraction - use `page.get_text` instead of `dom.query` on `body`:
+When you need every visible UI label, use `page.get_text` instead of `dom.query` on `body`. For articles, documentation, or long issues, prefer `page.extract_content` so navigation and repeated chrome are removed first:
 
 ```bash
 bbx page-text           # default 8000 char budget
 bbx page-text 8000      # larger budget for long pages
+bbx call page.extract_content '{"format":"markdown","textBudget":8000}'
 ```
 
 This is 3–5× cheaper than querying the body's subtree with `dom.query`.

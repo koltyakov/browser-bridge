@@ -375,6 +375,7 @@ export function createBridgeMcpServer() {
             'wait_for_load',
             'storage',
             'text',
+            'extract_content',
             'network',
             'performance',
           ])
@@ -446,6 +447,25 @@ export function createBridgeMcpServer() {
           .positive()
           .optional()
           .describe(`Max chars for page text (default: ${DEFAULT_PAGE_TEXT_BUDGET})`),
+        format: z
+          .enum(['text', 'markdown'])
+          .optional()
+          .describe('Semantic content format (default: text)'),
+        selector: z.string().optional().describe('Scope semantic extraction to one CSS selector'),
+        includeMetadata: z
+          .boolean()
+          .optional()
+          .describe('Include bounded article metadata (default: true)'),
+        consistency: z
+          .enum(['best_effort', 'settled'])
+          .optional()
+          .describe('Optionally wait for a short mutation-quiet interval'),
+        settleTimeoutMs: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('Maximum semantic extraction settlement wait (default: 2000)'),
         urlPattern: z.string().optional().describe('Filter network entries by URL pattern'),
         source: z
           .enum(['fetch-xhr', 'cdp'])

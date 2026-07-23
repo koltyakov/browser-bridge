@@ -8,6 +8,7 @@ import {
   DEFAULT_CONSOLE_LIMIT,
   DEFAULT_DEVICE_SCALE_FACTOR,
   DEFAULT_EVAL_TIMEOUT_MS,
+  DEFAULT_EXTRACT_SETTLE_TIMEOUT_MS,
   DEFAULT_LOG_TAIL_LIMIT,
   DEFAULT_MAX_DEPTH,
   DEFAULT_MAX_HTML_LENGTH,
@@ -20,6 +21,7 @@ import {
   DEFAULT_VIEWPORT_HEIGHT,
   DEFAULT_VIEWPORT_WIDTH,
   DEFAULT_WAIT_TIMEOUT_MS,
+  MAX_EXTRACT_SETTLE_TIMEOUT_MS,
 } from './defaults.js';
 import { BridgeError, ERROR_CODES, getErrorRecovery } from './errors.js';
 import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry.js';
@@ -38,6 +40,7 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').DomQueryParams} DomQueryParams */
 /** @typedef {import('./types.js').DragParams} DragParams */
 /** @typedef {import('./types.js').EvaluateParams} EvaluateParams */
+/** @typedef {import('./types.js').ExtractContentParams} ExtractContentParams */
 /** @typedef {import('./types.js').FindByRoleParams} FindByRoleParams */
 /** @typedef {import('./types.js').FindByTextParams} FindByTextParams */
 /** @typedef {import('./types.js').GetHtmlParams} GetHtmlParams */
@@ -57,6 +60,7 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').NormalizedDomQuery} NormalizedDomQuery */
 /** @typedef {import('./types.js').NormalizedDragParams} NormalizedDragParams */
 /** @typedef {import('./types.js').NormalizedEvaluateParams} NormalizedEvaluateParams */
+/** @typedef {import('./types.js').NormalizedExtractContentParams} NormalizedExtractContentParams */
 /** @typedef {import('./types.js').NormalizedFindByRoleParams} NormalizedFindByRoleParams */
 /** @typedef {import('./types.js').NormalizedFindByTextParams} NormalizedFindByTextParams */
 /** @typedef {import('./types.js').NormalizedGetHtmlParams} NormalizedGetHtmlParams */
@@ -370,6 +374,8 @@ function normalizeRequestParams(method, params) {
       return normalizeStorageParams(params);
     case 'page.get_text':
       return normalizePageTextParams(params);
+    case 'page.extract_content':
+      return normalizeExtractContentParams(params);
     case 'page.get_network':
       return normalizeNetworkParams(params);
     case 'network.intercept.add':
@@ -472,6 +478,10 @@ export function getBridgeOperationTimeoutMs(method, params = {}) {
       return normalizeWaitForLoadStateParams(params).timeoutMs;
     case 'page.evaluate':
       return normalizeEvaluateParams(params).timeoutMs;
+    case 'page.extract_content': {
+      const normalized = normalizeExtractContentParams(params);
+      return normalized.consistency === 'settled' ? normalized.settleTimeoutMs : null;
+    }
     case 'dom.wait_for':
       return clampInt(params.timeoutMs, 100, 30_000, 5_000);
     default:
@@ -1217,6 +1227,44 @@ export function normalizeNetworkInterceptAddParams(params = {}) {
 export function normalizePageTextParams(params = {}) {
   return {
     textBudget: clampInt(params.textBudget, 100, 100_000, DEFAULT_PAGE_TEXT_BUDGET),
+  };
+}
+
+/**
+ * @param {ExtractContentParams} [params={}]
+ * @returns {NormalizedExtractContentParams}
+ */
+export function normalizeExtractContentParams(params = {}) {
+  const format = params.format ?? 'text';
+  if (format !== 'text' && format !== 'markdown') {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'format must be text or markdown.');
+  }
+  const consistency = params.consistency ?? 'best_effort';
+  if (consistency !== 'best_effort' && consistency !== 'settled') {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'consistency must be best_effort or settled.'
+    );
+  }
+  const selector = typeof params.selector === 'string' ? params.selector.trim() : '';
+  if (selector.length > 2048) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'selector must not exceed 2,048 characters.'
+    );
+  }
+  return {
+    format,
+    selector: selector || null,
+    includeMetadata: params.includeMetadata !== false,
+    consistency,
+    textBudget: clampInt(params.textBudget, 100, 100_000, DEFAULT_PAGE_TEXT_BUDGET),
+    settleTimeoutMs: clampInt(
+      params.settleTimeoutMs,
+      100,
+      MAX_EXTRACT_SETTLE_TIMEOUT_MS,
+      DEFAULT_EXTRACT_SETTLE_TIMEOUT_MS
+    ),
   };
 }
 

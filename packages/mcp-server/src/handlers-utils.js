@@ -45,6 +45,7 @@ const RETRY_SAFE_METHODS = new Set([
   'page.get_state',
   'page.get_storage',
   'page.get_text',
+  'page.extract_content',
   'dom.query',
   'dom.describe',
   'dom.get_text',
@@ -373,7 +374,7 @@ export function applyMethodBudgetPreset(method, params, budgetPreset) {
     normalized = applyTextBudgetPreset(args);
   } else if (method === 'dom.get_html') {
     normalized = applyHtmlBudgetPreset(args);
-  } else if (method === 'page.get_text') {
+  } else if (method === 'page.get_text' || method === 'page.extract_content') {
     normalized = applyPageTextBudgetPreset(args);
   } else if (method === 'page.get_console') {
     normalized = applyLimitBudgetPreset(args, {
@@ -467,6 +468,20 @@ function getRequestAwareEvidence(rawResult, method, params, fallback) {
     rawResult && typeof rawResult === 'object' && !Array.isArray(rawResult)
       ? /** @type {Record<string, unknown>} */ (rawResult)
       : {};
+  if (method === 'page.extract_content' && typeof result.content === 'string') {
+    const requested = positiveInteger(params.textBudget) ?? DEFAULT_PAGE_TEXT_BUDGET;
+    const maxCharacters = Math.min(requested, 16_000);
+    const content = result.content.slice(0, maxCharacters);
+    return {
+      value: {
+        ...result,
+        content,
+        returnedChars: content.length,
+      },
+      truncated: result.content.length > maxCharacters,
+      limit: { maxCharacters },
+    };
+  }
   if (method === 'page.get_text' || method === 'dom.get_text') {
     const text = typeof result.text === 'string' ? result.text : result.value;
     if (typeof text === 'string') {
