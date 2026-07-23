@@ -27,7 +27,7 @@ The table below includes the legacy capability bucket for each method so agents 
 - `-` means the method is global/system-scoped and was never gated by a former capability bucket.
 - Capability names are descriptive coverage labels only. Browser Bridge access is window-scoped now; there are no capability-scoped sessions.
 
-## All Methods (67)
+## All Methods (68)
 
 | Method                             | Tab? | CDP?       | Group       | Capability           | Notes                                                                                      |
 | ---------------------------------- | ---- | ---------- | ----------- | -------------------- | ------------------------------------------------------------------------------------------ |
@@ -47,7 +47,8 @@ The table below includes the legacy capability bucket for each method so agents 
 | `page.get_console`                 | Yes  | -          | page        | `page.read`          | Buffered console messages; filter by `level`, `limit`                                      |
 | `page.handle_dialog`               | Yes  | CDP        | page        | `navigation.control` | Inspect or explicitly accept/dismiss the currently observable dialog                       |
 | `page.wait_for_load_state`         | Yes  | -          | wait        | `page.read`          | Wait for truthful tab `complete` state and/or a URL condition                              |
-| `page.get_storage`                 | Yes  | -          | page        | `page.read`          | `localStorage`/`sessionStorage`; optional `keys`                                           |
+| `page.get_storage`                 | Yes  | -          | page        | `page.read`          | Bounded storage key/presence metadata; optional `keys`; never values                        |
+| `sensitive.read`                   | Yes  | -          | sensitive   | `sensitive.read`     | One exact local/session storage key; sequential, non-retryable, whole-or-error              |
 | `page.get_text`                    | Yes  | -          | page        | `page.read`          | Full page text; `textBudget` limits size                                                   |
 | `page.extract_content`             | Yes  | -          | page        | `page.read`          | Node-processed semantic text/Markdown with bounded HTML snapshots and optional settlement   |
 | `page.get_network`                 | Yes  | Conditional | page        | `network.read`       | Fetch/XHR by default; explicit CDP all-resource capture lifecycle                          |
@@ -88,13 +89,13 @@ The table below includes the legacy capability bucket for each method so agents 
 | `screenshot.capture_region`        | Yes  | CDP        | capture     | `screenshot.partial` | Cropped viewport region in PNG, JPEG, or WebP                                               |
 | `screenshot.capture_full_page`     | Yes  | CDP        | capture     | `screenshot.partial` | Full document screenshot; fails coherently above Chrome capture limits                     |
 | `patch.apply_styles`               | Yes  | -          | patch       | `patch.styles`       | Reversible CSS patch; `verify` returns computed result                                     |
-| `patch.apply_dom`                  | Yes  | -          | patch       | `patch.dom`          | Reversible DOM mutation; `verify` returns result                                           |
+| `patch.apply_dom`                  | Yes  | -          | patch       | `patch.dom`          | Reversible text, attribute, add/remove/toggle-class mutation; `verify` returns result       |
 | `patch.list`                       | Yes  | -          | patch       | `patch.dom`          | Active rollback records in the current document                                            |
 | `patch.rollback`                   | Yes  | -          | patch       | `patch.dom`          | Revert one active patch                                                                    |
 | `patch.commit_session_baseline`    | Yes  | -          | patch       | `patch.dom`          | Keep current mutations and discard their rollback history                                  |
 | `performance.get_metrics`          | Yes  | CDP        | performance | `performance.read`   | Chrome performance counters                                                                |
 | `cdp.get_document`                 | Yes  | CDP        | cdp         | `cdp.dom_snapshot`   | DevTools document tree                                                                     |
-| `cdp.get_dom_snapshot`             | Yes  | CDP        | cdp         | `cdp.dom_snapshot`   | DevTools DOM snapshot                                                                      |
+| `cdp.get_dom_snapshot`             | Yes  | CDP        | cdp         | `cdp.dom_snapshot`   | DevTools DOM snapshot; optional bounded `computedStyles` property names                     |
 | `cdp.get_box_model`                | Yes  | CDP        | cdp         | `cdp.box_model`      | DevTools-backed element geometry                                                           |
 | `cdp.get_computed_styles_for_node` | Yes  | CDP        | cdp         | `cdp.styles`         | DevTools-backed computed styles                                                            |
 | `cdp.dispatch_key_event`           | Yes  | CDP        | cdp         | `cdp.input`          | DevTools keyDown/keyUp without foreground focus                                            |
@@ -181,12 +182,23 @@ bbx call page.wait_for_load_state '{"url":"/dashboard","urlMatch":"contains","wa
 
 ### page.get_storage
 
-Read `localStorage` or `sessionStorage` entries. Values truncated at 500 chars each.
+Read bounded `localStorage` or `sessionStorage` key/presence metadata. Values are never returned.
 
 ```bash
 bbx storage                        # all localStorage
 bbx storage session token,user     # specific sessionStorage keys
 bbx call page.get_storage '{"type":"session","keys":["token"]}'
+```
+
+### sensitive.read
+
+Deliberately read one exact Web Storage value after discovering its key. The
+value bypasses token truncation, is never batched or automatically retried, and
+is returned whole or rejected whole. Every attempt creates a Sensitive access
+Recent Activity warning without retaining the key or value.
+
+```bash
+bbx call sensitive.read '{"source":"session_storage","key":"token"}'
 ```
 
 ### dom.query
@@ -442,7 +454,6 @@ bbx call screenshot.capture_full_page '{"format":"jpeg","quality":75}'
 | `NATIVE_HOST_UNAVAILABLE`    | Check daemon: `bbx status`                                     | `retry: false`                               |
 | `EXTENSION_DISCONNECTED`     | Extension not connected to daemon                              | `retry: true` after 3 s, check `health.ping` |
 | `TIMEOUT`                    | Wait/evaluate exceeded `timeoutMs`                             | `retry: true` after 1 s                      |
-| `RATE_LIMITED`               | Too many requests                                              | `retry: true` after 2 s                      |
 
 Timeout on content-script request → use narrower `dom.query` or CDP fallback.
 Timeout on navigation → increase `timeoutMs`, set `waitForLoad:false`, or check `page.get_state`.

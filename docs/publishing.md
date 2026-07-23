@@ -90,7 +90,8 @@ Reviewers will likely scrutinize `debugger`, `nativeMessaging`, and `<all_urls>`
 Current expected answers with the code as it exists today:
 
 - Remote code: do not default this to `No`. Browser Bridge can execute user-requested expressions in page context through the Chrome Debugger API. Answer this honestly in the dashboard and explain that the extension does not load remote-hosted extension scripts.
-- Data collection: disclose the page data the product can access for the enabled window, including browsing/page content, DOM/style/layout and semantic accessibility data, console output, fetch/XHR and optional all-resource network metadata, dialog messages/default prompt text, storage values when requested, screenshots when requested, and native pointer/text actions
+- Data collection: disclose the page data the product can access for the enabled window, including browsing/page content, DOM/style/layout and semantic accessibility data, console output, fetch/XHR and optional all-resource network metadata, dialog messages/default prompt text, storage key metadata and deliberate exact sensitive values when requested, screenshots when requested, and native pointer/text actions
+- Sensitive reads: verify ordinary storage is metadata-only; exact values use a distinct sequential, non-retryable, atomic method with visible warning activity and no value retention in logs/diagnostics
 - Network exclusions: explain that CDP URLs redact credentials, fragments, and query values, and that Browser Bridge does not return request/response bodies, cookies, authorization values, or complete headers from all-resource capture
 - Diagnostics and stale recovery: explain that persisted diagnostic summaries exclude dialog text and sensitive payload values, while optional same-document stale recovery keeps bounded in-memory hashed semantic descriptors rather than writing ref attributes into the page
 - Data sale: `No`

@@ -17,7 +17,7 @@ When you enable Browser Bridge for a Chrome window, Browser Bridge can access pa
 - Network request metadata captured from page `fetch` and `XMLHttpRequest` activity, such as URL, method, status, timing, type, timestamp, and size
 - Optional Chrome DevTools Protocol metadata for broader resource activity, including request ID, redacted URL, method, resource type, status, MIME type, protocol, cache indicators, redirects, failure reason, duration, and timestamp
 - Current JavaScript dialog information when observable and explicitly requested, including dialog type, bounded message text, and bounded default prompt text
-- `localStorage` and `sessionStorage` values when explicitly requested
+- `localStorage` and `sessionStorage` key metadata through ordinary inspection, and one exact value only through a deliberate `sensitive.read` request
 - Screenshots or cropped image captures when explicitly requested
 - User-triggered interaction data and results such as clicks, native pointer movement/drag, DOM or native text dispatch, key presses, selection changes, dialog decisions, and navigation actions
 - Bounded semantic descriptors for optional stale-element recovery, represented in memory with normalized hashes and structural context rather than page text values or attributes written into the application DOM
@@ -29,6 +29,16 @@ summarizes data/blob URLs before returning them. Browser Bridge does not expose
 these excluded values through that feature.
 
 Browser Bridge is designed for local debugging and automation of the browser state you intentionally expose to it.
+
+Ordinary storage inspection does not return value prefixes. Exact Web Storage
+values require a separate key-specific sensitive read, are returned whole or
+rejected whole, are never batched or retried automatically, and produce a
+textual Sensitive access warning in Recent Activity. The warning stores the
+source/category and key length, not the key or value. Powerful explicit methods
+such as page evaluation and DOM inspection can still expose page data by design.
+Every page evaluation is therefore labeled as Sensitive access in Recent
+Activity, and its returned value and derived size are excluded from persisted
+activity diagnostics.
 
 ## How Browser Bridge uses data
 
@@ -61,9 +71,11 @@ Browser Bridge keeps data only as long as needed for the current local session a
 
 - Window enablement state is stored in session storage and cleared when disabled or when the browser session ends.
 - Action log entries are stored for the current browser session only.
+- Incidental action/log URLs remove credentials and fragments and redact query values; sensitive structured fields and local path prefixes are reduced before persistence.
 - Console and fetch/XHR network buffers are bounded in memory and cleared when disabled or when the page state is reset.
 - Optional CDP network capture is bounded in memory, explicitly started/stopped, expires after a safety interval, and is cleared on relevant debugger, tab, or access teardown.
 - Dialog message/default prompt text is returned to the requesting caller when inspected but is excluded from persisted action-log summaries and size diagnostics.
+- Exact sensitive values traverse the selected client in memory but are excluded from action summaries, diagnostic size counters, daemon logs, and automatic artifact storage.
 - Patch rollback records and remembered element references live in the current document. Browser Bridge attempts patch rollback when access is disabled or switched, while page replacement/navigation removes document-local state.
 - Hashed semantic descriptors used for optional stale recovery are bounded in memory with the element registry and do not survive the document/registry lifecycle.
 

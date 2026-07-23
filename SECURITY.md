@@ -57,3 +57,8 @@ Out of scope:
 - Proxy mode (LAN exposure) is opt-in via `bbx proxy enable` and always provisions a
   token; an invalid `bindHost` in the config rejects the config rather than widening
   the bind address.
+- Incidental persisted activity and daemon logs recursively redact sensitive keys,
+  URL credentials/fragments/query values, and local path prefixes.
+- Ordinary Web Storage reads return key/presence metadata only. The separate
+  `sensitive.read` method requires one exact key, is excluded from batches and
+  automatic retries, and returns a value whole or fails atomically.

@@ -62,7 +62,8 @@ bbx network [limit]                  # recent fetch/XHR requests
 bbx intercept add <pattern> [--respond <body>] [--status <code>] [--block]  # intercept matching requests
 bbx intercept list|remove <id>|clear # manage interception rules
 bbx page-text [budget]               # full page text
-bbx storage [local|session] [keys]   # browser storage
+bbx storage [local|session] [keys]   # storage key/presence metadata
+bbx call sensitive.read '{"source":"local_storage","key":"name"}' # deliberate exact value
 bbx perf                             # performance metrics
 bbx navigate <url>                   # navigate to URL
 bbx reload                           # reload current page
@@ -145,7 +146,7 @@ After access is enabled:
 | `DIALOG_ACTION_CONFLICT`  | No       | Inspect current dialog state; never auto-repeat accept/dismiss                            |
 | `TAB_MISMATCH`            | No       | Tab closed or not found - use `tabs.list` to find an available tab                        |
 | `TIMEOUT`                 | Once     | Retry once; if still failing, simplify (smaller `maxNodes`, narrower selector)            |
-| `RATE_LIMITED`            | After 2s | Back off 2 seconds, then retry                                                            |
+| `CONTENT_SCRIPT_UNAVAILABLE` | No     | Switch to a normal http(s) page in the enabled window                                    |
 | `EXTENSION_DISCONNECTED`  | After 3s | Check Chrome is running; `bbx status` to verify, then retry                               |
 | `NATIVE_HOST_UNAVAILABLE` | No       | Run `bbx doctor` to diagnose the installation                                             |
 | `INTERNAL_ERROR`          | Once     | Retry once; if persistent, check `page.get_console` for details                           |
@@ -168,6 +169,7 @@ Error responses now include a machine-readable `error.recovery` field with `retr
 9. **Batch reads** - combine independent reads with `bbx batch` in CLI mode or `browser_batch` in MCP mode; do not pass `batch` as a `browser_call` method.
 10. **Avoid debugger first** - prefer DOM/content-script methods (`dom.*`, `styles.*`, `layout.get_box_model`, `page.get_console`, `page.get_text`, `page.get_storage`, `page.get_network`) before any debugger-backed method. Escalate to CDP only when those cannot answer the question.
 11. **Evaluate only when needed** - `page.evaluate` is powerful but debugger-backed; use it only when DOM, storage, console, network, or text reads cannot expose the needed state.
+12. **Treat exact storage as sensitive** - use `page.get_storage` for metadata first. Call `sensitive.read` for one exact key only when necessary; never batch or automatically retry it, and never repeat a failed attempt without new evidence.
 12. **Debugger-backed methods are last resort** - treat `page.evaluate`, `page.handle_dialog`, `dom.get_accessibility_tree`, `page.get_network` with `source: 'cdp'`, input with `executionMode: 'cdp'`, `viewport.resize`, `performance.get_metrics`, `screenshot.capture_*`, and all `cdp.*` methods as escalation steps because they attach `chrome.debugger`.
 13. **Wait after change** - after editing source, wait for expected new text, a selector matching the changed attribute, or a detach/attach remount; waiting for `attached` on a selector that already exists does not prove HMR ran. Use `page.wait_for_load_state` for navigation, not HMR.
 14. **Prime event buffers** - before reproducing a console or fetch/XHR issue, call `page.get_console` and default `page.get_network` once with `clear: true`; then reproduce and read without clearing. CDP all-resource capture instead requires explicit `start`, reproduce, `read`, and `stop` calls.

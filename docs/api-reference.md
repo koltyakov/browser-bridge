@@ -124,6 +124,8 @@ See [`packages/protocol/src/registry.js`](../packages/protocol/src/registry.js) 
 | `dom.find_by_text`           | Find elements by visible text                  |
 | `page.evaluate`              | Run JavaScript in the page context             |
 | `page.get_console`           | Read buffered console output                   |
+| `page.get_storage`           | Read bounded storage key/presence metadata     |
+| `sensitive.read`             | Deliberately read one exact storage value      |
 | `page.handle_dialog`         | Inspect or explicitly handle current JS dialog |
 | `page.wait_for_load_state`   | Wait for tab complete and/or URL condition      |
 | `page.get_network`           | Fetch/XHR or explicit CDP resource capture      |
@@ -142,7 +144,7 @@ See [`packages/protocol/src/registry.js`](../packages/protocol/src/registry.js) 
 | `ACCESS_DENIED`           | No        | Browser Bridge is disabled for this window        |
 | `EXTENSION_DISCONNECTED`  | Yes (3 s) | Extension not connected to daemon                 |
 | `TIMEOUT`                 | Yes (1 s) | Extension did not respond in time                 |
-| `RATE_LIMITED`            | Yes (2 s) | Too many concurrent requests                      |
+| `CONTENT_SCRIPT_UNAVAILABLE` | No       | Page is restricted or cannot host the content script |
 | `ELEMENT_STALE`           | No        | Element was removed from the DOM                  |
 | `ELEMENT_AMBIGUOUS`       | No        | Multiple equally actionable targets matched       |
 | `ELEMENT_NOT_ACTIONABLE`  | No        | Target is hidden, disabled, inert, or zero-sized   |
@@ -160,6 +162,8 @@ See [`packages/protocol/src/registry.js`](../packages/protocol/src/registry.js) 
 | `CONNECTION_LOST`         | Yes       | Socket dropped mid-request - retry                |
 | `BRIDGE_TIMEOUT`          | Yes (1 s) | Extension took too long - retry with simpler call |
 | `NATIVE_HOST_UNAVAILABLE` | No        | Run `bbx doctor` to diagnose                      |
+| `RESULT_TOO_LARGE`        | No        | Exact sensitive value exceeds the atomic limit    |
+| `SENSITIVE_TARGET_NOT_FOUND` | No     | Requested exact storage key does not exist        |
 
 ## Interaction contracts
 

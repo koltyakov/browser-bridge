@@ -95,12 +95,15 @@ legacy name, it does not inspect stylesheet rules, specificity, or cascade order
 bbx console error
 bbx network 20
 bbx page-text 4000
-bbx storage local authToken featureFlag
+bbx storage local authToken featureFlag # key/presence metadata only
+bbx call sensitive.read '{"source":"local_storage","key":"authToken"}'
 bbx perf
 bbx eval 'window.location.href'
 ```
 
-Reach for `eval` only when the structured reads are not enough.
+Use `sensitive.read` only when the exact value is necessary. It is sequential,
+non-retryable, logged as Sensitive access, and returns the value whole or fails
+without a partial result. Reach for `eval` only when structured reads are not enough.
 
 ## Navigate and interact
 
@@ -184,7 +187,9 @@ bbx batch '[{"method":"page.get_state"},{"method":"page.get_console","params":{"
 ```
 
 Use `bbx call` when you need the full protocol surface. Use `bbx batch` when
-you want parallel reads with one CLI round trip.
+you want up to 20 parallel reads with one CLI round trip. Batch preserves call
+order, executes at most five calls concurrently, and rejects clears, navigation,
+input, patches, interception changes, tab mutations, and sensitive reads.
 
 `page.get_console` and `page.get_network` also return `dropped` when hot pages
 overflow their 200-entry buffers.

@@ -39,7 +39,7 @@ Short version:
 | List tabs      | `browser_tabs` (list)         | `bbx tabs`              | Equivalent                            |
 | Create tab     | `browser_tabs` (create)       | `bbx tab-create [url]`  | CLI shortcut                          |
 | Close tab      | `browser_tabs` (close)        | `bbx tab-close <tabId>` | CLI shortcut                          |
-| Tab activation | `browser_tabs` (active param) | `bbx call tabs.create`  | CLI needs raw call for `active` param |
+| Tab activation | `browser_tabs` (activate)     | `bbx tab-activate <tabId>` | Equivalent                         |
 
 ### DOM Inspection
 
@@ -73,7 +73,8 @@ Short version:
 | Console output      | `browser_page` (console)       | `bbx console [level]`               | Equivalent        |
 | Handle JS dialog    | `browser_page` (handle_dialog) | `bbx call page.handle_dialog`       | Explicit inspect/accept/dismiss; debugger-backed |
 | Wait for load/URL   | `browser_page` (wait_for_load) | `bbx call page.wait_for_load_state` | Full and SPA navigation; truthful tab complete state |
-| Browser storage     | `browser_page` (storage)       | `bbx storage [type] [keys]`         | Equivalent        |
+| Storage metadata    | `browser_page` (storage)       | `bbx storage [type] [keys]`         | Equivalent        |
+| Exact storage value | `browser_sensitive_read`       | `bbx call sensitive.read '{...}'`   | Sequential/high-risk |
 | Page text           | `browser_page` (text)          | `bbx page-text [budget]`            | Equivalent        |
 | Network requests    | `browser_page` (network)       | `bbx network [limit]`               | Fetch/XHR shortcut; raw calls expose CDP lifecycle |
 | Performance metrics | `browser_page` (performance)   | `bbx perf`                          | Equivalent        |
@@ -99,7 +100,7 @@ Short version:
 | Press key               | `browser_input` (press_key)        | `bbx press-key <key> [ref]`       | Equivalent        |
 | Set checked             | `browser_input` (set_checked)      | `bbx call input.set_checked`      | CLI uses raw call |
 | Select option           | `browser_input` (select_option)    | `bbx call input.select_option`    | CLI uses raw call |
-| Hover                   | `browser_input` (hover)            | `bbx hover <ref>`                 | DOM default; optional native pointer path |
+| Hover                   | `browser_input` (hover)            | `bbx hover <ref>`                 | DOM dispatches synthetic pointer/mouse events; optional CDP moves the native pointer |
 | Drag                    | `browser_input` (drag)             | `bbx call input.drag`             | DOM events or optional native pointer path |
 | Scroll target into view | `browser_input` (scroll_into_view) | `bbx call input.scroll_into_view` | CLI uses raw call |
 
@@ -158,7 +159,7 @@ Short version:
 
 | Feature                        | Description                                                                                                    |
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| **Batch execution**            | `bbx batch` executes multiple calls concurrently via Promise.all and reports per-call duration/token estimates |
+| **Batch execution**            | `bbx batch` executes up to 20 read-only calls with five-call concurrency and reports per-call duration/token estimates |
 | **Request logging**            | `bbx logs` shows recent bridge request history                                                                 |
 | **Setup commands**             | Built-in install, uninstall, doctor commands                                                                   |
 | **Shell scripting**            | Can be used in scripts, pipes, and CI workflows                                                                |

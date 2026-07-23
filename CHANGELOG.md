@@ -6,13 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-07-23
+
 ### Added
 
+- **Deliberate exact storage reads:** Added `sensitive.read` and the
+  `browser_sensitive_read` MCP tool for one exact local/session storage key,
+  with atomic size rejection, no batching/retry/budget truncation, and visible
+  Sensitive access activity that never stores the key or value.
+- **Shared incidental-data sanitization:** Persisted activity, default and CDP
+  network URLs, console diagnostics, extension errors, and daemon logs now
+  share bounded URL/path/credential redaction.
 - **Protocol-compatible npm auto-update:** Added an opt-in local policy that
   aligns a global CLI/native host install with the highest stable npm release on
   a protocol line advertised by the connected extension, with fixed-package
   validation, no downgrades, global-install verification, and cross-process
   update locking.
+
+### Changed
+
+- **Storage discovery is metadata-only:** `page.get_storage`, `browser_page`
+  storage, and `bbx storage` now return bounded key/presence metadata. Use the
+  deliberate sensitive-read path when an exact value is required.
+- **Read-only batch parity:** CLI, client, and MCP batches now share a 20-call
+  limit, five-call concurrency bound, ordered results, and mutation rejection.
 
 ## [1.8.0] - 2026-07-22
 

@@ -13,10 +13,11 @@ getProtocolVersion(); // major.minor from package.json or manifest.json
 getSupportedProtocolVersions(); // [getProtocolVersion()]
 ```
 
-The current release is package/extension `1.8.0` and protocol `1.8`.
+The current release is package/extension `1.9.0` and protocol `1.9`.
 
-Major-minor must match for protocol compatibility. The protocol 1.8 additions
-are additive, but this build advertises only `1.8`; a 1.7 client, daemon, or
+Major-minor must match for protocol compatibility. Protocol 1.9 makes ordinary
+storage reads metadata-only and adds a separate exact sensitive-read path, so
+this build advertises only `1.9`; a 1.8 client, daemon, or
 extension is therefore reported as incompatible until all installed components
 are updated/restarted. Published package, lockfile, and extension artifacts use
 the same full release version; `npm run check:release-version` enforces the
@@ -47,7 +48,7 @@ sends a `health.ping` request with its protocol version embedded in
     "method": "health.ping",
     "params": {},
     "meta": {
-        "protocol_version": "1.8",
+        "protocol_version": "1.9",
       "token_budget": null
     }
   }
