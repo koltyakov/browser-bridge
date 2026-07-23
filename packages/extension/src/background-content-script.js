@@ -6,6 +6,7 @@ import { BridgeError, ERROR_CODES } from '../../protocol/src/index.js';
  * @typedef {{
  *   contentScriptTimeoutMs: number,
  *   isRestrictedAutomationUrl: (url: string) => boolean,
+ *   recordReinjection?: (outcome: 'success' | 'failure', group: string) => void,
  * }} ContentScriptBridgeDeps
  */
 
@@ -84,6 +85,17 @@ export function createContentScriptBridge(chromeObj, deps) {
     }
   }
 
+  /** @param {number} tabId */
+  async function recoverContentScript(tabId) {
+    try {
+      await injectContentScript(tabId);
+      deps.recordReinjection?.('success', String(tabId));
+    } catch (error) {
+      deps.recordReinjection?.('failure', String(tabId));
+      throw error;
+    }
+  }
+
   /**
    * Install idempotent history hooks in the page's MAIN world. The hooks only
    * emit navigation-kind events; the background re-reads the authoritative URL.
@@ -149,7 +161,7 @@ export function createContentScriptBridge(chromeObj, deps) {
       if (!isMissingContentScriptReceiverError(error)) {
         throw error;
       }
-      await injectContentScript(tabId);
+      await recoverContentScript(tabId);
       return await sendTabMessageWithTimeout(tabId, message, timeoutMs);
     }
   }
@@ -190,7 +202,7 @@ export function createContentScriptBridge(chromeObj, deps) {
       await sendTabMessageWithTimeout(tabId, { type: 'bridge.ping' }, deps.contentScriptTimeoutMs);
       return;
     } catch {
-      await injectContentScript(tabId);
+      await recoverContentScript(tabId);
     }
   }
 

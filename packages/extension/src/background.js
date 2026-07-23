@@ -11,6 +11,7 @@ import {
   createSuccess,
   normalizeNetworkInterceptAddParams,
   normalizeTabCloseParams,
+  RecoveryTelemetryCollector,
 } from '../../protocol/src/index.js';
 import {
   getErrorMessage,
@@ -136,6 +137,7 @@ const chrome = globalThis.chrome;
 const state = createExtensionState();
 setExtensionState(state);
 const domBaselines = createDomBaselineController();
+const recoveryTelemetry = new RecoveryTelemetryCollector();
 
 const tabDebugger = new TabDebuggerCoordinator({
   attach: (target, protocolVersion) => chrome.debugger.attach(target, protocolVersion),
@@ -144,6 +146,7 @@ const tabDebugger = new TabDebuggerCoordinator({
     await chrome.debugger.sendCommand(target, 'Page.enable', {});
   },
   protocolVersion: DEBUGGER_PROTOCOL_VERSION,
+  recordReattach: (outcome) => recoveryTelemetry.record('debugger_reattach', outcome),
 });
 
 const cdpNetworkCapture = createCdpNetworkCapture({
@@ -199,6 +202,8 @@ const {
 } = createContentScriptBridge(chrome, {
   contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,
   isRestrictedAutomationUrl,
+  recordReinjection: (outcome, group) =>
+    recoveryTelemetry.record('content_script_reinjection', outcome, group),
 });
 
 const navigationWaits = new NavigationWaitCoordinator({
@@ -318,6 +323,7 @@ const {
   handlePageDialog,
   handleAccessibilityTree,
   handleGetNetwork,
+  handleExportHar,
   handleViewportResize,
   handlePerformanceMetrics,
   handleWaitForLoadState,
@@ -332,6 +338,9 @@ const {
   clearCdpNetworkCapture: (tabId) => cdpNetworkCapture.clear(tabId),
   readCdpNetworkCapture: (tabId, clear) => cdpNetworkCapture.read(tabId, clear),
   stopCdpNetworkCapture: (tabId) => cdpNetworkCapture.stop(tabId),
+  readCdpHarEvidence: (tabId) => cdpNetworkCapture.readHar(tabId),
+  storeHarArtifact: (requestId, bytes) =>
+    storeByteArtifact(requestId, bytes, { kind: 'har', mimeType: 'application/json' }),
   runWithDebugger: (tabId, operation, options) => tabDebugger.run(tabId, operation, options),
   runForDialog: (tabId, operation, options) => tabDebugger.runForDialog(tabId, operation, options),
   sendCommand: (target, method, params) =>
@@ -409,6 +418,7 @@ const { connectNative, scheduleNativeReconnect } = createNativeConnectionControl
   refreshSetupStatus,
   reply,
   handleDestinationDisconnect: () => domBaselines.clearAll(),
+  recordReconnect: (outcome) => recoveryTelemetry.record('native_host_reconnect', outcome),
 });
 
 /**
@@ -418,29 +428,42 @@ const { connectNative, scheduleNativeReconnect } = createNativeConnectionControl
  * @returns {Promise<import('../../protocol/src/types.js').ArtifactDescriptor>}
  */
 async function storeScreenshotArtifact(requestId, data, metadata) {
+  return storeByteArtifact(requestId, base64ToBytes(data), {
+    kind: 'screenshot',
+    mimeType: metadata.mimeType,
+  });
+}
+
+/**
+ * @template {import('../../protocol/src/types.js').ArtifactKind} K
+ * @param {string} requestId
+ * @param {Uint8Array} bytes
+ * @param {{ kind: K, mimeType: string }} metadata
+ * @returns {Promise<import('../../protocol/src/types.js').ArtifactDescriptor<K>>}
+ */
+async function storeByteArtifact(requestId, bytes, metadata) {
   if (!state.nativePort) {
     throw new BridgeError(ERROR_CODES.EXTENSION_DISCONNECTED, 'Native host is disconnected.');
   }
-  if (metadata.byteLength > MAX_ARTIFACT_BYTES) {
+  if (bytes.byteLength > MAX_ARTIFACT_BYTES) {
     throw new BridgeError(
       ERROR_CODES.RESULT_TOO_LARGE,
-      `Screenshot exceeds the artifact limit (${metadata.byteLength} bytes).`,
-      { byteLength: metadata.byteLength, maxArtifactBytes: MAX_ARTIFACT_BYTES }
+      `Artifact exceeds the artifact limit (${bytes.byteLength} bytes).`,
+      { byteLength: bytes.byteLength, maxArtifactBytes: MAX_ARTIFACT_BYTES }
     );
   }
   const random = crypto.getRandomValues(new Uint8Array(32));
   const artifactId = `art_${bytesToBase64(random).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '')}`;
-  const bytes = base64ToBytes(data);
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(bytes)));
   const sha256 = [...digest].map((value) => value.toString(16).padStart(2, '0')).join('');
   const createdAt = new Date().toISOString();
   const expiresAt = new Date(Date.now() + ARTIFACT_TTL_MS).toISOString();
-  const chunkCount = Math.ceil(metadata.byteLength / ARTIFACT_CHUNK_BYTES);
+  const chunkCount = Math.ceil(bytes.byteLength / ARTIFACT_CHUNK_BYTES);
   const descriptor = {
     artifactId,
-    kind: /** @type {'screenshot'} */ ('screenshot'),
+    kind: metadata.kind,
     mimeType: metadata.mimeType,
-    byteLength: metadata.byteLength,
+    byteLength: bytes.byteLength,
     sha256,
     chunkSize: ARTIFACT_CHUNK_BYTES,
     chunkCount,
@@ -451,14 +474,17 @@ async function storeScreenshotArtifact(requestId, data, metadata) {
     type: 'host.artifact.begin',
     artifact: { ...descriptor, requestId },
   });
-  const chunkCharacters = (ARTIFACT_CHUNK_BYTES / 3) * 4;
   for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
+    const chunk = bytes.subarray(
+      chunkIndex * ARTIFACT_CHUNK_BYTES,
+      Math.min(bytes.byteLength, (chunkIndex + 1) * ARTIFACT_CHUNK_BYTES)
+    );
     state.nativePort.postMessage({
       type: 'host.artifact.chunk',
       artifact: { requestId },
       artifactId,
       chunkIndex,
-      data: data.slice(chunkIndex * chunkCharacters, (chunkIndex + 1) * chunkCharacters),
+      data: bytesToBase64(chunk),
     });
   }
   state.nativePort.postMessage({
@@ -506,6 +532,8 @@ const tabBoundRequestDependencies = {
   sendTabMessage: (tabId, message, timeoutMs = CONTENT_SCRIPT_TIMEOUT_MS) =>
     sendTabMessage(tabId, message, timeoutMs),
   toFailureResponse,
+  recordStaleRecovery: (outcome, group) =>
+    recoveryTelemetry.record('stale_ref_recovery', outcome, group),
 };
 
 void initializeState().catch(reportAsyncError);
@@ -711,6 +739,7 @@ async function dispatchBridgeRequest(request) {
             interceptionRuleCount: interceptionDiagnostics.ruleCount,
           },
           domBaselines: domBaselines.metrics(),
+          recovery: recoveryTelemetry.snapshot('routedExtension'),
           ...getVersionNegotiationPayload(request.meta?.protocol_version),
         },
         { method: request.method }
@@ -749,6 +778,8 @@ async function dispatchBridgeRequest(request) {
       return handleAccessibilityTree(request);
     case 'page.get_network':
       return handleGetNetwork(request);
+    case 'network.export_har':
+      return handleExportHar(request);
     case 'network.intercept.add':
     case 'network.intercept.remove':
     case 'network.intercept.list':

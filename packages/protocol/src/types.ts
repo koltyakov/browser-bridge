@@ -80,6 +80,7 @@ export type BridgeMethod =
   | 'page.get_text'
   | 'page.extract_content'
   | 'page.get_network'
+  | 'network.export_har'
   | 'network.intercept.add'
   | 'network.intercept.remove'
   | 'network.intercept.list'
@@ -158,7 +159,42 @@ export interface BridgeMeta {
   budget_applied?: boolean;
   budget_truncated?: boolean;
   continuation_hint?: string | null;
+  automatic_retry?: { attempt: 2; reason: 'retryable_error' };
+  stale_recovery?: 'success' | 'failure';
   [key: string]: unknown;
+}
+
+export type RecoveryScope = 'routedExtension' | 'daemon';
+
+export type RecoveryEventKind =
+  | 'automatic_mcp_retry'
+  | 'stale_ref_recovery'
+  | 'debugger_reattach'
+  | 'content_script_reinjection'
+  | 'native_host_reconnect'
+  | 'request_outcome';
+
+export interface RecoveryEventSummary {
+  attempts: number;
+  successes: number;
+  failures: number;
+  pending: number;
+  saturated: boolean;
+  successRate: number | null;
+  failureRate: number | null;
+  activeLoop: boolean;
+  lastEventAt: number | null;
+}
+
+export interface RecoveryTelemetrySummary {
+  scope: RecoveryScope;
+  windowMs: number;
+  bucketMs: number;
+  loopWindowMs: number;
+  loopThreshold: number;
+  asOf: number;
+  activeLoop: boolean;
+  events: Record<RecoveryEventKind, RecoveryEventSummary>;
 }
 
 export interface BridgeParams {
@@ -783,6 +819,7 @@ export type ExtractContentConsistency = 'best_effort' | 'settled';
 export type ExtractContentSource = 'readability' | 'semantic-root' | 'body';
 export type ScreenshotFormat = 'png' | 'jpeg' | 'webp';
 export type ScreenshotDelivery = 'auto' | 'inline' | 'artifact';
+export type ArtifactKind = 'screenshot' | 'har';
 
 export interface ExtractContentParams {
   format?: ExtractContentFormat;
@@ -816,9 +853,9 @@ export interface NormalizedScreenshotParams extends BridgeParams {
   scale: number;
 }
 
-export interface ArtifactDescriptor {
+export interface ArtifactDescriptor<K extends ArtifactKind = ArtifactKind> {
   artifactId: string;
-  kind: 'screenshot';
+  kind: K;
   mimeType: string;
   byteLength: number;
   sha256: string;
@@ -840,7 +877,10 @@ export interface ScreenshotMetadata {
 
 export type ScreenshotResult =
   | (ScreenshotMetadata & { delivery: 'inline'; image: string })
-  | (ScreenshotMetadata & { delivery: 'artifact'; artifact: ArtifactDescriptor });
+  | (ScreenshotMetadata & {
+      delivery: 'artifact';
+      artifact: ArtifactDescriptor<'screenshot'>;
+    });
 
 export interface ArtifactReadParams extends BridgeParams {
   artifactId?: string;
@@ -1019,6 +1059,229 @@ export interface NetworkResult {
   inflight: number;
   truncated: boolean;
   truncation: { reason: 'limit' | null; limit: number; omitted: number };
+}
+
+export interface CdpPerformanceMetric {
+  name: string;
+  value: number;
+}
+
+export interface PerformanceMeasurement {
+  source: 'cdp.Performance.getMetrics';
+  kind: 'raw_cdp_counters';
+  sampledAt: string;
+  timeDomain: 'timeTicks';
+  observation: 'browser_maintained_point_sample';
+  webVitals: 'not_measured';
+}
+
+export interface PerformanceMetricsResult {
+  metrics: Record<string, number>;
+  measurement: PerformanceMeasurement;
+}
+
+export type HarDelivery = 'auto' | 'inline' | 'artifact';
+export type HarCaptureState = NetworkResult['captureState'];
+
+export interface HarExportParams {
+  limit?: number;
+  urlPattern?: string;
+  delivery?: HarDelivery;
+}
+
+export interface NormalizedHarExportParams extends BridgeParams {
+  limit: number;
+  urlPattern: string | null;
+  delivery: HarDelivery;
+}
+
+export interface HarEvidenceEntry extends Record<string, unknown> {
+  url: string;
+  method: string;
+  resourceType: string;
+  status: number;
+  mimeType: string;
+  protocol: string;
+  fromCache: boolean;
+  fromDiskCache: boolean;
+  fromServiceWorker: boolean;
+  fromPrefetchCache: boolean;
+  failureReason: string;
+  redirectURL: string;
+  duration: number;
+  startedAt: number;
+}
+
+export interface HarNameValue extends Record<string, unknown> {
+  name: string;
+  value: string;
+  comment?: string;
+}
+
+export interface HarCookie extends HarNameValue {
+  path?: string;
+  domain?: string;
+  expires?: string;
+  httpOnly?: boolean;
+  secure?: boolean;
+}
+
+export interface HarPostDataParam extends HarNameValue {
+  fileName?: string;
+  contentType?: string;
+}
+
+export interface HarPostData extends Record<string, unknown> {
+  mimeType: string;
+  params?: HarPostDataParam[];
+  text?: string;
+  comment?: string;
+}
+
+export interface HarRequest extends Record<string, unknown> {
+  method: string;
+  url: string;
+  httpVersion: string;
+  cookies: HarCookie[];
+  headers: HarNameValue[];
+  queryString: HarNameValue[];
+  postData?: HarPostData;
+  headersSize: number;
+  bodySize: number;
+  comment?: string;
+}
+
+export interface HarContent extends Record<string, unknown> {
+  size: number;
+  compression?: number;
+  mimeType: string;
+  text?: string;
+  encoding?: string;
+  comment?: string;
+}
+
+export interface HarResponse extends Record<string, unknown> {
+  status: number;
+  statusText: string;
+  httpVersion: string;
+  cookies: HarCookie[];
+  headers: HarNameValue[];
+  content: HarContent;
+  redirectURL: string;
+  headersSize: number;
+  bodySize: number;
+  comment?: string;
+}
+
+export interface HarCacheInfo extends Record<string, unknown> {
+  expires?: string;
+  lastAccess: string;
+  eTag: string;
+  hitCount: number;
+  comment?: string;
+}
+
+export interface HarCache extends Record<string, unknown> {
+  beforeRequest?: HarCacheInfo;
+  afterRequest?: HarCacheInfo;
+  comment?: string;
+}
+
+export interface HarTimings extends Record<string, unknown> {
+  blocked?: number;
+  dns?: number;
+  connect?: number;
+  send: number;
+  wait: number;
+  receive: number;
+  ssl?: number;
+  comment?: string;
+}
+
+export interface HarPageTimings extends Record<string, unknown> {
+  onContentLoad?: number;
+  onLoad?: number;
+  comment?: string;
+}
+
+export interface HarPage extends Record<string, unknown> {
+  startedDateTime: string;
+  id: string;
+  title: string;
+  pageTimings: HarPageTimings;
+  comment?: string;
+}
+
+export interface HarCreator extends Record<string, unknown> {
+  name: string;
+  version: string;
+  comment?: string;
+}
+
+export interface HarEntry extends Record<string, unknown> {
+  pageref?: string;
+  startedDateTime: string;
+  time: number;
+  request: HarRequest;
+  response: HarResponse;
+  cache: HarCache;
+  timings: HarTimings;
+  serverIPAddress?: string;
+  connection?: string;
+  comment?: string;
+}
+
+export interface HarLog extends Record<string, unknown> {
+  version: '1.2';
+  creator: HarCreator;
+  browser?: HarCreator;
+  pages?: HarPage[];
+  entries: HarEntry[];
+  comment?: string;
+}
+
+export interface HarDocument extends Record<string, unknown> {
+  log: HarLog;
+}
+
+export interface HarExportTruncation {
+  reason: 'limit' | 'inline_bytes' | null;
+  limit: number;
+  omitted: number;
+  omittedByLimit: number;
+  omittedBySize: number;
+}
+
+export interface HarExportMetadata {
+  format: 'har';
+  harVersion: '1.2';
+  mimeType: 'application/json';
+  byteLength: number;
+  entryCount: number;
+  totalEntries: number;
+  dropped: number;
+  abandoned: number;
+  inflight: number;
+  startedAt: number | null;
+  captureState: HarCaptureState;
+  truncated: boolean;
+  truncation: HarExportTruncation;
+}
+
+export type HarExportResult =
+  | (HarExportMetadata & { delivery: 'inline'; har: HarDocument })
+  | (HarExportMetadata & {
+      delivery: 'artifact';
+      artifact: ArtifactDescriptor<'har'>;
+    });
+
+export interface HarExportEvidence {
+  delivery: HarExportResult['delivery'];
+  entryCount: number;
+  totalEntries: number;
+  dropped: number;
+  abandoned: number;
+  inflight: number;
 }
 
 export type NetworkInterceptAction = 'fulfill' | 'continue' | 'block';

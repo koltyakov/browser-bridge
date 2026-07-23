@@ -9,7 +9,12 @@ import {
 } from '../../../tests/_helpers/chromeFake.ts';
 import { loadBackground } from '../../../tests/_helpers/loadBackground.ts';
 import { createRequest, ERROR_CODES, PROTOCOL_VERSION } from '../../protocol/src/index.js';
-import type { BridgeMethod, BridgeRequest, BridgeResponse } from '../../protocol/src/types.js';
+import type {
+  BridgeMethod,
+  BridgeRequest,
+  BridgeResponse,
+  PerformanceMetricsResult,
+} from '../../protocol/src/types.js';
 
 type DebuggerAttachCall = {
   target: chrome.debugger.Debuggee;
@@ -1564,6 +1569,62 @@ test('background dispatch wires explicit all-resource CDP network capture and dy
     assert.doesNotMatch(JSON.stringify(result), /Authorization|secret/);
   }
 
+  const commandsBeforeExport = [...commands];
+  const inlineHarRequest = createRequest({
+    id: 'dispatch-har-inline',
+    method: 'network.export_har',
+    params: { limit: 10, delivery: 'inline' },
+  });
+  inlineHarRequest.params = { limit: 10, delivery: 'inline' };
+  const inlineHar = await loaded.dispatch(inlineHarRequest);
+  assert.equal(inlineHar.ok, true, inlineHar.ok ? '' : JSON.stringify(inlineHar.error));
+  if (inlineHar.ok) {
+    const result = inlineHar.result as {
+      delivery: string;
+      entryCount: number;
+      har: { log: { entries: Array<{ request: { url: string } }> } };
+    };
+    assert.equal(result.delivery, 'inline');
+    assert.equal(result.entryCount, 1);
+    assert.equal(result.har.log.entries[0]?.request.url, 'https://example.com/app.css');
+  }
+  assert.deepEqual(commands, commandsBeforeExport);
+
+  const nativePort = loaded.module.getStateForTest().nativePort;
+  assert.ok(nativePort);
+  const artifactMessages: Array<Record<string, unknown>> = [];
+  const originalPostMessage = nativePort.postMessage.bind(nativePort);
+  nativePort.postMessage = (message) => {
+    artifactMessages.push(message as Record<string, unknown>);
+    originalPostMessage(message);
+  };
+  const artifactHarRequest = createRequest({
+    id: 'dispatch-har-artifact',
+    method: 'network.export_har',
+    params: { limit: 10, delivery: 'artifact' },
+  });
+  artifactHarRequest.params = { limit: 10, delivery: 'artifact' };
+  const artifactHar = await loaded.dispatch(artifactHarRequest);
+  nativePort.postMessage = originalPostMessage;
+  assert.equal(artifactHar.ok, true);
+  if (artifactHar.ok) {
+    const result = artifactHar.result as {
+      delivery: string;
+      artifact: { kind: string; mimeType: string; byteLength: number };
+    };
+    assert.equal(result.delivery, 'artifact');
+    assert.equal(result.artifact.kind, 'har');
+    assert.equal(result.artifact.mimeType, 'application/json');
+    const chunkData = artifactMessages
+      .filter((message) => message.type === 'host.artifact.chunk')
+      .map((message) => String(message.data))
+      .join('');
+    const artifactJson = Buffer.from(chunkData, 'base64').toString('utf8');
+    assert.equal(Buffer.byteLength(artifactJson), result.artifact.byteLength);
+    assert.equal(JSON.parse(artifactJson).log.entries.length, 1);
+  }
+  assert.deepEqual(commands, commandsBeforeExport);
+
   const stopped = await loaded.dispatch(
     createRequest({
       id: 'dispatch-cdp-network-stop',
@@ -1586,6 +1647,15 @@ test('background dispatch wires explicit all-resource CDP network capture and dy
   );
   assert.equal(unarmed.ok, true);
   assert.equal(unarmed.meta.debugger_backed, false);
+
+  const unarmedHarRequest = createRequest({
+    id: 'dispatch-har-unarmed',
+    method: 'network.export_har',
+  });
+  unarmedHarRequest.params = {};
+  const unarmedHar = await loaded.dispatch(unarmedHarRequest);
+  assert.equal(unarmedHar.ok, false);
+  if (!unarmedHar.ok) assert.equal(unarmedHar.error.code, ERROR_CODES.INVALID_REQUEST);
 });
 
 test('window bridge teardown clears interception rules and their debugger hold', async () => {
@@ -2188,7 +2258,7 @@ test('background dispatch surfaces viewport reset failures', async () => {
   assert.equal(response.meta?.method, 'viewport.resize');
 });
 
-test('background dispatch returns performance metrics from CDP', async () => {
+test('background dispatch returns a self-describing raw CDP performance point sample', async () => {
   const sendCommandCalls: DebuggerSendCommandCall[] = [];
   const { loaded } = await loadEnabledDispatchBackground({
     queryLabel: 'test-background-dispatch-performance-metrics',
@@ -2200,7 +2270,9 @@ test('background dispatch returns performance metrics from CDP', async () => {
             return {
               metrics: [
                 { name: 'LayoutDuration', value: 12.5 },
+                { name: 'TaskDuration', value: 18.75 },
                 { name: 'Nodes', value: 42 },
+                { name: 'JSHeapUsedSize', value: 1_048_576 },
               ],
             };
           }
@@ -2238,12 +2310,22 @@ test('background dispatch returns performance metrics from CDP', async () => {
     },
   ]);
   assert.equal(response.meta?.method, 'performance.get_metrics');
-  assert.deepEqual(response.result, {
-    metrics: {
-      LayoutDuration: 12.5,
-      Nodes: 42,
-    },
+  const result = response.result as PerformanceMetricsResult;
+  assert.deepEqual(result.metrics, {
+    LayoutDuration: 12.5,
+    TaskDuration: 18.75,
+    Nodes: 42,
+    JSHeapUsedSize: 1_048_576,
   });
+  assert.deepEqual(result.measurement, {
+    source: 'cdp.Performance.getMetrics',
+    kind: 'raw_cdp_counters',
+    sampledAt: result.measurement.sampledAt,
+    timeDomain: 'timeTicks',
+    observation: 'browser_maintained_point_sample',
+    webVitals: 'not_measured',
+  });
+  assert.equal(new Date(result.measurement.sampledAt).toISOString(), result.measurement.sampledAt);
 });
 
 test('background dispatch surfaces performance metric failures', async () => {

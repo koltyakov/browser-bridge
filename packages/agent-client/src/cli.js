@@ -18,6 +18,7 @@ import {
 import { startBridgeMcpServer } from '../../mcp-server/src/server.js';
 import {
   extractRemoteFlag,
+  extractHarFlags,
   extractScreenshotFlags,
   extractTabFlag,
   parseCallCommand,
@@ -42,6 +43,8 @@ import { atomicWriteFile } from './atomic-write.js';
 
 /** @typedef {import('./types.js').BridgeMethod} BridgeMethod */
 /** @typedef {import('./types.js').ScreenshotResult} ScreenshotResult */
+/** @typedef {import('../../protocol/src/types.js').ArtifactDescriptor} ArtifactDescriptor */
+/** @typedef {import('../../protocol/src/types.js').HarExportResult} HarExportResult */
 
 const REQUEST_SOURCE = 'cli';
 const TEST_TIMEOUT_ENV = 'BBX_CLIENT_REQUEST_TIMEOUT_MS';
@@ -487,7 +490,7 @@ async function main() {
       }
       const imageBytes =
         screenshotResult.delivery === 'artifact'
-          ? await downloadArtifact(client, screenshotResult.artifact)
+          ? await downloadArtifact(client, screenshotResult.artifact, 'screenshot')
           : decodeScreenshotDataUrl(screenshotResult.image);
       await atomicWriteFile(filePath, imageBytes);
       printJson({
@@ -500,6 +503,50 @@ async function main() {
           complete: screenshotResult.complete,
           clipped: screenshotResult.clipped,
         },
+      });
+      return;
+    }
+
+    if (command === 'har') {
+      const parsed = extractTabFlag(rest);
+      const harOptions = extractHarFlags(parsed.rest);
+      const [outputPath = 'browser-bridge.har', ...extra] = harOptions.rest;
+      if (extra.length > 0) {
+        throw new Error(
+          'Usage: har [--tab <tabId>] [--limit 1-200] [--url-pattern <pattern>] [--delivery inline|artifact|auto] [outPath]'
+        );
+      }
+      if (path.extname(outputPath) !== '.har') {
+        throw new Error('HAR output path must use the .har extension.');
+      }
+      const response = await requestBridge(
+        client,
+        'network.export_har',
+        {
+          limit: harOptions.limit,
+          urlPattern: harOptions.urlPattern,
+          delivery: harOptions.delivery,
+        },
+        { tabId: parsed.tabId, source: REQUEST_SOURCE }
+      );
+      if (!response.ok) {
+        await printSummary(response);
+        return;
+      }
+      const result = /** @type {HarExportResult} */ (response.result);
+      let harBytes;
+      if (result.delivery === 'artifact') {
+        harBytes = await downloadArtifact(client, result.artifact, 'har');
+        assertValidHarBytes(harBytes);
+      } else {
+        assertValidHarDocument(result.har);
+        harBytes = Buffer.from(`${JSON.stringify(result.har, null, 2)}\n`, 'utf8');
+      }
+      await atomicWriteFile(outputPath, harBytes);
+      printJson({
+        ok: true,
+        summary: `HAR saved to ${outputPath}.`,
+        evidence: { savedTo: outputPath, delivery: result.delivery },
       });
       return;
     }
@@ -635,12 +682,19 @@ function decodeScreenshotDataUrl(value) {
 
 /**
  * @param {import('./client.js').BridgeClient} client
- * @param {import('../../protocol/src/types.js').ArtifactDescriptor} artifact
+ * @param {ArtifactDescriptor} artifact
+ * @param {'screenshot' | 'har'} [expectedKind]
  */
-async function downloadArtifact(client, artifact) {
+async function downloadArtifact(client, artifact, expectedKind) {
   const chunks = [];
   let offset = 0;
   try {
+    if (expectedKind && artifact.kind !== expectedKind) {
+      throw new Error(`Artifact kind does not match the expected ${expectedKind} result.`);
+    }
+    if (expectedKind === 'har' && artifact.mimeType !== 'application/json') {
+      throw new Error('HAR artifact MIME type is invalid.');
+    }
     while (offset < artifact.byteLength) {
       const response = await requestBridge(
         client,
@@ -678,6 +732,38 @@ async function downloadArtifact(client, artifact) {
       { artifactId: artifact.artifactId },
       { source: REQUEST_SOURCE }
     ).catch(() => {});
+  }
+}
+
+/** @param {Buffer} bytes */
+function assertValidHarBytes(bytes) {
+  const text = bytes.toString('utf8');
+  if (!Buffer.from(text, 'utf8').equals(bytes)) {
+    throw new Error('HAR artifact is not valid UTF-8 JSON.');
+  }
+  let document;
+  try {
+    document = JSON.parse(text);
+  } catch {
+    throw new Error('HAR artifact is not valid JSON.');
+  }
+  assertValidHarDocument(document);
+}
+
+/** @param {unknown} document */
+function assertValidHarDocument(document) {
+  if (!document || typeof document !== 'object' || Array.isArray(document)) {
+    throw new Error('HAR response does not contain an inline HAR object.');
+  }
+  const log = Reflect.get(document, 'log');
+  if (
+    !log ||
+    typeof log !== 'object' ||
+    Array.isArray(log) ||
+    Reflect.get(log, 'version') !== '1.2' ||
+    !Array.isArray(Reflect.get(log, 'entries'))
+  ) {
+    throw new Error('HAR response does not contain a valid HAR 1.2 document.');
   }
 }
 

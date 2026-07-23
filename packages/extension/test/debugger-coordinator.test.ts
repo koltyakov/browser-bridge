@@ -505,3 +505,77 @@ test('TabDebuggerCoordinator exposes bounded conflict and detach categories with
   assert.equal(coordinator.getDiagnostics().recentReason, 'debugger_replaced');
   assert.doesNotMatch(JSON.stringify(coordinator.getDiagnostics()), /private\.example|secret/u);
 });
+
+test('TabDebuggerCoordinator records reattach before and separately from request replay', async () => {
+  const outcomes: Array<'success' | 'failure'> = [];
+  let taskCalls = 0;
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {},
+    detach: async () => {},
+    recordReattach: (outcome) => outcomes.push(outcome),
+  });
+
+  await coordinator
+    .run(
+      7,
+      async () => {
+        taskCalls += 1;
+        if (taskCalls === 1) throw new Error('Debugger is not attached');
+        throw new Error('Replay request failed');
+      },
+      { retryDetached: true }
+    )
+    .catch(() => {});
+
+  assert.deepEqual(outcomes, ['success']);
+  assert.equal(taskCalls, 2);
+});
+
+test('TabDebuggerCoordinator records a failed reattach without replaying', async () => {
+  const outcomes: Array<'success' | 'failure'> = [];
+  let attachCalls = 0;
+  let taskCalls = 0;
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {
+      attachCalls += 1;
+      if (attachCalls === 2) throw new Error('Another debugger is attached');
+    },
+    detach: async () => {},
+    recordReattach: (outcome) => outcomes.push(outcome),
+  });
+
+  await assert.rejects(
+    coordinator.run(
+      7,
+      async () => {
+        taskCalls += 1;
+        throw new Error('Debugger is not attached');
+      },
+      { retryDetached: true }
+    ),
+    /Another debugger/u
+  );
+  assert.deepEqual(outcomes, ['failure']);
+  assert.equal(taskCalls, 1);
+});
+
+test('TabDebuggerCoordinator does not replay detached work unless explicitly opted in', async () => {
+  let taskCalls = 0;
+  let attachCalls = 0;
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {
+      attachCalls += 1;
+    },
+    detach: async () => {},
+  });
+
+  await assert.rejects(
+    coordinator.run(7, async () => {
+      taskCalls += 1;
+      throw new Error('Debugger is not attached');
+    }),
+    /not attached/u
+  );
+  assert.equal(taskCalls, 1);
+  assert.equal(attachCalls, 1);
+});

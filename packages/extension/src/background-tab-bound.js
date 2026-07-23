@@ -53,6 +53,7 @@ import {
  *     timeoutMs?: number
  *   ) => Promise<any>,
  *   toFailureResponse: (request: BridgeRequest, error: unknown) => BridgeResponse,
+ *   recordStaleRecovery?: (outcome: 'success' | 'failure', group: string) => void,
  *   contentScriptTimeoutMs: number,
  * }} TabBoundRequestDependencies
  */
@@ -182,11 +183,20 @@ export async function handleTabBoundRequest(request, dependencies) {
   }
 
   if (payload.executionMode === 'cdp' && request.method.startsWith('input.')) {
-    const result = await dependencies.handleNativeInput(request, target, payload);
-    return createSuccess(request.id, result, {
-      method: request.method,
-      debugger_backed: true,
-    });
+    try {
+      const result = await dependencies.handleNativeInput(request, target, payload);
+      const staleOutcome = getStaleRecoveryOutcome(result);
+      if (staleOutcome) dependencies.recordStaleRecovery?.(staleOutcome, request.method);
+      return createSuccess(request.id, result, {
+        method: request.method,
+        debugger_backed: true,
+        ...(staleOutcome ? { stale_recovery: staleOutcome } : {}),
+      });
+    } catch (error) {
+      const staleOutcome = getStaleRecoveryOutcome(error);
+      if (staleOutcome) dependencies.recordStaleRecovery?.(staleOutcome, request.method);
+      throw error;
+    }
   }
 
   const timeoutMs = getContentScriptTimeout(
@@ -204,7 +214,30 @@ export async function handleTabBoundRequest(request, dependencies) {
     timeoutMs
   );
   if (response?.error) {
-    return dependencies.toFailureResponse(request, response.error);
+    const staleOutcome = getStaleRecoveryOutcome(response.error);
+    if (staleOutcome) dependencies.recordStaleRecovery?.(staleOutcome, request.method);
+    const failure = dependencies.toFailureResponse(request, response.error);
+    return staleOutcome
+      ? { ...failure, meta: { ...failure.meta, stale_recovery: staleOutcome } }
+      : failure;
   }
-  return createSuccess(request.id, response, { method: request.method });
+  const staleOutcome = getStaleRecoveryOutcome(response);
+  if (staleOutcome) dependencies.recordStaleRecovery?.(staleOutcome, request.method);
+  return createSuccess(request.id, response, {
+    method: request.method,
+    ...(staleOutcome ? { stale_recovery: staleOutcome } : {}),
+  });
+}
+
+/** @param {unknown} value @returns {'success' | 'failure' | null} */
+export function getStaleRecoveryOutcome(value) {
+  if (!value || typeof value !== 'object') return null;
+  const record = /** @type {Record<string, unknown>} */ (value);
+  if (record.recoveryAttempted === true) return 'failure';
+  if (record.recovered === true && record.strategy === 'stale-recovery') return 'success';
+  for (const key of ['details', 'resolution', 'source', 'destination']) {
+    const outcome = getStaleRecoveryOutcome(record[key]);
+    if (outcome) return outcome;
+  }
+  return null;
 }

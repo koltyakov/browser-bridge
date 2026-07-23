@@ -59,6 +59,7 @@ export {
   handleSensitiveReadTool,
   handleBatchTool,
   handleRawCallTool,
+  createHarExportResult,
   handleInvestigateTool,
 } from './handlers-page.js';
 

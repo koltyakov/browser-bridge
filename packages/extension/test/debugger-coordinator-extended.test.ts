@@ -131,7 +131,7 @@ test('markDetached clears burst reuse so the next run reattaches', async () => {
   assert.equal(attachCount, 2);
 });
 
-test('run retries once after a debugger not-attached failure', async () => {
+test('run retries opted-in read work once after a debugger not-attached failure', async () => {
   let attachCount = 0;
   let taskCount = 0;
   const coordinator = new TabDebuggerCoordinator({
@@ -142,13 +142,17 @@ test('run retries once after a debugger not-attached failure', async () => {
     burstIdleMs: 0,
   });
 
-  const result = await coordinator.run(10, async () => {
-    taskCount += 1;
-    if (taskCount === 1) {
-      throw new Error('Debugger is not attached to the tab');
-    }
-    return 'recovered';
-  });
+  const result = await coordinator.run(
+    10,
+    async () => {
+      taskCount += 1;
+      if (taskCount === 1) {
+        throw new Error('Debugger is not attached to the tab');
+      }
+      return 'recovered';
+    },
+    { retryDetached: true }
+  );
 
   assert.equal(result, 'recovered');
   assert.equal(taskCount, 2);

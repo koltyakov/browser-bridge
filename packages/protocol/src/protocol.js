@@ -10,6 +10,7 @@ import {
   DEFAULT_DEVICE_SCALE_FACTOR,
   DEFAULT_EVAL_TIMEOUT_MS,
   DEFAULT_EXTRACT_SETTLE_TIMEOUT_MS,
+  DEFAULT_HAR_LIMIT,
   DEFAULT_LOG_TAIL_LIMIT,
   DEFAULT_MAX_DEPTH,
   DEFAULT_MAX_HTML_LENGTH,
@@ -24,6 +25,7 @@ import {
   DEFAULT_WAIT_TIMEOUT_MS,
   MAX_EXTRACT_SETTLE_TIMEOUT_MS,
   MAX_ARTIFACT_BYTES,
+  MAX_HAR_ENTRIES,
   MAX_SENSITIVE_VALUE_BYTES,
 } from './defaults.js';
 import { BridgeError, ERROR_CODES, getErrorRecovery } from './errors.js';
@@ -54,6 +56,7 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').FindByTextParams} FindByTextParams */
 /** @typedef {import('./types.js').GetHtmlParams} GetHtmlParams */
 /** @typedef {import('./types.js').HoverParams} HoverParams */
+/** @typedef {import('./types.js').HarExportParams} HarExportParams */
 /** @typedef {import('./types.js').HandleDialogParams} HandleDialogParams */
 /** @typedef {import('./types.js').InputActionParams} InputActionParams */
 /** @typedef {import('./types.js').LogTailParams} LogTailParams */
@@ -79,6 +82,7 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').NormalizedFindByTextParams} NormalizedFindByTextParams */
 /** @typedef {import('./types.js').NormalizedGetHtmlParams} NormalizedGetHtmlParams */
 /** @typedef {import('./types.js').NormalizedHoverParams} NormalizedHoverParams */
+/** @typedef {import('./types.js').NormalizedHarExportParams} NormalizedHarExportParams */
 /** @typedef {import('./types.js').NormalizedHandleDialogParams} NormalizedHandleDialogParams */
 /** @typedef {import('./types.js').NormalizedInputAction} NormalizedInputAction */
 /** @typedef {import('./types.js').NormalizedLogTailParams} NormalizedLogTailParams */
@@ -368,8 +372,26 @@ export function validateBridgeRequest(request) {
         typeof meta.protocol_version === 'string' ? meta.protocol_version : getProtocolVersion(),
       token_budget: typeof meta.token_budget === 'number' ? meta.token_budget : null,
       source: meta.source === 'cli' || meta.source === 'mcp' ? meta.source : undefined,
+      automatic_retry: normalizeAutomaticRetryMeta(meta.source, meta.automatic_retry),
     },
   };
+}
+
+/**
+ * @param {unknown} source
+ * @param {unknown} value
+ * @returns {{ attempt: 2, reason: 'retryable_error' } | undefined}
+ */
+function normalizeAutomaticRetryMeta(source, value) {
+  if (source !== 'mcp' || !isPlainRecord(value)) return undefined;
+  const keys = Object.keys(value).sort();
+  return keys.length === 2 &&
+    keys[0] === 'attempt' &&
+    keys[1] === 'reason' &&
+    value.attempt === 2 &&
+    value.reason === 'retryable_error'
+    ? { attempt: 2, reason: 'retryable_error' }
+    : undefined;
 }
 
 /**
@@ -413,6 +435,8 @@ function normalizeRequestParams(method, params) {
       return normalizeExtractContentParams(params);
     case 'page.get_network':
       return normalizeNetworkParams(params);
+    case 'network.export_har':
+      return normalizeHarExportParams(params);
     case 'network.intercept.add':
       return normalizeNetworkInterceptAddParams(params);
     case 'navigation.navigate':
@@ -1414,6 +1438,54 @@ export function normalizeNetworkParams(params = {}) {
 }
 
 /**
+ * @param {HarExportParams | NormalizedHarExportParams} [params={}]
+ * @returns {NormalizedHarExportParams}
+ */
+export function normalizeHarExportParams(params = {}) {
+  if (
+    params.limit !== undefined &&
+    (typeof params.limit !== 'number' ||
+      !Number.isSafeInteger(params.limit) ||
+      params.limit < 1 ||
+      params.limit > MAX_HAR_ENTRIES)
+  ) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      `limit must be an integer between 1 and ${MAX_HAR_ENTRIES}.`
+    );
+  }
+
+  if (
+    params.urlPattern !== undefined &&
+    params.urlPattern !== null &&
+    typeof params.urlPattern !== 'string'
+  ) {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'urlPattern must be a string.');
+  }
+  const urlPattern = params.urlPattern?.trim() || null;
+  if (urlPattern && urlPattern.length > 2_048) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'urlPattern must contain at most 2048 characters.'
+    );
+  }
+
+  const delivery = params.delivery ?? 'auto';
+  if (delivery !== 'auto' && delivery !== 'inline' && delivery !== 'artifact') {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'delivery must be auto, inline, or artifact.'
+    );
+  }
+
+  return {
+    limit: params.limit ?? DEFAULT_HAR_LIMIT,
+    urlPattern,
+    delivery,
+  };
+}
+
+/**
  * @param {NetworkInterceptAddParams} [params={}]
  * @returns {NormalizedNetworkInterceptAddParams}
  */
@@ -1623,7 +1695,7 @@ export function createRuntimeContext() {
       'page.get_network for fetch/XHR reads or explicit all-resource CDP capture',
       'page.get_text for full-page content extraction',
       'input.hover before screenshot to inspect hover states',
-      'performance.get_metrics for raw browser performance counters and load timing',
+      'performance.get_metrics returns raw Chrome/CDP counters whose names and units vary; it is a point sample with no BBX navigation window or LCP/CLS/INP measurement',
       'viewport.resize to test responsive layouts',
       'Prefer screenshot.capture_element, or a tight screenshot.capture_region when element capture cannot express the needed area',
       'page.get_storage reads localStorage/sessionStorage without evaluate',
@@ -1648,6 +1720,7 @@ export function createRuntimeContext() {
       maxHtmlLength: { min: 32, max: 50000, default: DEFAULT_MAX_HTML_LENGTH },
       a11yMaxNodes: { min: 10, max: 5000, default: DEFAULT_A11Y_MAX_NODES },
       networkLimit: { min: 1, max: 500, default: DEFAULT_NETWORK_LIMIT },
+      harLimit: { min: 1, max: MAX_HAR_ENTRIES, default: DEFAULT_HAR_LIMIT },
       consoleLimit: { min: 1, max: 200, default: DEFAULT_CONSOLE_LIMIT },
       pageTextBudget: {
         min: 100,

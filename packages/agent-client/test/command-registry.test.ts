@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { CLI_HELP_SECTIONS, SHORTCUT_COMMANDS } from '../src/command-registry.js';
+import {
+  CLI_HELP_SECTIONS,
+  CLI_METHOD_BINDINGS,
+  SHORTCUT_COMMANDS,
+} from '../src/command-registry.js';
 
 test('shortcut commands build expected params for common inputs', () => {
   assert.deepEqual(SHORTCUT_COMMANDS['access-request'].build([]), {});
@@ -138,4 +142,17 @@ test('CLI help documents loopback proxy safety and token files', () => {
 test('CLI help describes doctor as consolidated local diagnostics', () => {
   const helpText = CLI_HELP_SECTIONS.flatMap((section) => section.lines).join('\n');
   assert.match(helpText, /bbx doctor\s+Consolidated local runtime, setup, protocol/u);
+});
+
+test('perf shortcut describes raw CDP point-sample semantics', () => {
+  assert.match(SHORTCUT_COMMANDS.perf.description, /raw Chrome\/CDP counter point sample/);
+  assert.match(SHORTCUT_COMMANDS.perf.description, /names and units vary/);
+  assert.match(SHORTCUT_COMMANDS.perf.description, /no BBX navigation window/);
+  assert.match(SHORTCUT_COMMANDS.perf.description, /LCP\/CLS\/INP measurement/);
+});
+
+test('CLI registry binds and documents HAR export', () => {
+  const helpText = CLI_HELP_SECTIONS.flatMap((section) => section.lines).join('\n');
+  assert.equal(CLI_METHOD_BINDINGS.har, 'network.export_har');
+  assert.match(helpText, /bbx har .*--limit 1-200.*--delivery inline\|artifact\|auto/u);
 });

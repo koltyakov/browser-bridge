@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createChromeEvent } from '../../../tests/_helpers/chromeFake.ts';
 import { createRequest, ERROR_CODES, PROTOCOL_VERSION } from '../../protocol/src/index.js';
 import type { BridgeRequest, BridgeResponse } from '../../protocol/src/types.js';
+import type { ArtifactDescriptor } from '../../protocol/src/types.js';
 import type { ExtensionState } from '../src/background-state.js';
 import { createPageRequestController } from '../src/background-page.js';
 
@@ -30,6 +31,8 @@ function createController(
       method: string,
       setDialog: (value: Record<string, unknown> | null) => void
     ) => void;
+    harCapture?: Record<string, unknown>;
+    storeHarArtifact?: (requestId: string, bytes: Uint8Array) => Promise<ArtifactDescriptor<'har'>>;
   } = {}
 ) {
   const onUpdated = createChromeEvent();
@@ -52,6 +55,11 @@ function createController(
     },
   } as ExtensionState;
   const chromeObj = {
+    runtime: {
+      getManifest() {
+        return { version: '1.0.0' };
+      },
+    },
     windows: {
       async get() {
         return { id: 5 };
@@ -109,6 +117,14 @@ function createController(
     async stopCdpNetworkCapture() {
       return {};
     },
+    async readCdpHarEvidence() {
+      return options.harCapture ?? {};
+    },
+    storeHarArtifact:
+      options.storeHarArtifact ??
+      (async () => {
+        throw new Error('HAR artifact storage was not expected');
+      }),
     async runWithDebugger(tabId, operation, runOptions) {
       debuggerOptions.push(runOptions);
       return operation({ tabId });
@@ -648,4 +664,217 @@ test('page URL wait returns final URL, elapsed time, match mode, and observed ki
     elapsedMs: 42,
     observedNavigationKind: 'replaceState',
   });
+});
+
+test('HAR export requires an armed capture and never starts or attaches capture', async () => {
+  const { controller, commands, debuggerOptions } = createController();
+
+  await assert.rejects(
+    controller.handleExportHar(
+      createRequest({ id: 'har-unarmed', method: 'network.export_har', params: {} })
+    ),
+    (error: unknown) => {
+      const bridgeError = error as { code?: string; details?: Record<string, unknown> };
+      assert.equal(bridgeError.code, ERROR_CODES.INVALID_REQUEST);
+      assert.match(String(bridgeError.details?.guidance), /Start.*reproduce.*export.*stop/i);
+      return true;
+    }
+  );
+  assert.deepEqual(commands, []);
+  assert.deepEqual(debuggerOptions, []);
+});
+
+test('debugger replay is opt-in only for proven page and CDP reads', async () => {
+  const { controller, debuggerOptions } = createController();
+
+  await controller.handleViewportResize(
+    createRequest({
+      id: 'resize-no-replay',
+      method: 'viewport.resize',
+      params: { width: 800, height: 600 },
+    })
+  );
+  await controller.handleCdpRequest(
+    createRequest({
+      id: 'key-no-replay',
+      method: 'cdp.dispatch_key_event',
+      params: { key: 'a', code: 'KeyA' },
+    })
+  );
+  await controller.handleCdpRequest(
+    createRequest({ id: 'document-read-replay', method: 'cdp.get_document', params: {} })
+  );
+  await controller.handlePerformanceMetrics(
+    createRequest({ id: 'performance-read-replay', method: 'performance.get_metrics', params: {} })
+  );
+  await controller.handleAccessibilityTree(
+    createRequest({
+      id: 'accessibility-read-replay',
+      method: 'dom.get_accessibility_tree',
+      params: {},
+    })
+  );
+
+  assert.deepEqual(debuggerOptions, [
+    undefined,
+    undefined,
+    { retryDetached: true },
+    { retryDetached: true },
+    { retryDetached: true },
+  ]);
+});
+
+test('HAR export returns inline HAR without mutating capture lifecycle', async () => {
+  const { controller, commands, debuggerOptions } = createController({
+    harCapture: {
+      armed: true,
+      captureState: 'armed',
+      startedAt: 1_700_000_000_000,
+      dropped: 2,
+      abandoned: 1,
+      inflight: 3,
+      entries: [
+        {
+          url: 'https://example.test/api?token=%5Bredacted%5D',
+          method: 'GET',
+          resourceType: 'Fetch',
+          status: 200,
+          mimeType: 'application/json',
+          protocol: 'h2',
+          fromCache: false,
+          fromDiskCache: false,
+          fromServiceWorker: false,
+          fromPrefetchCache: false,
+          failureReason: '',
+          redirectURL: '',
+          duration: 25,
+          startedAt: 1_700_000_000_100,
+        },
+      ],
+    },
+  });
+
+  const response = await controller.handleExportHar(
+    createRequest({
+      id: 'har-inline',
+      method: 'network.export_har',
+      params: { limit: 10, delivery: 'inline' },
+    })
+  );
+  assert.equal(response.ok, true);
+  const result = response.result as Record<string, unknown> & {
+    har: { log: { entries: unknown[] } };
+  };
+  assert.equal(result.delivery, 'inline');
+  assert.equal(result.format, 'har');
+  assert.equal(result.harVersion, '1.2');
+  assert.equal(result.entryCount, 1);
+  assert.equal(result.totalEntries, 1);
+  assert.equal(result.dropped, 2);
+  assert.equal(result.abandoned, 1);
+  assert.equal(result.inflight, 3);
+  assert.equal(result.har.log.entries.length, 1);
+  assert.equal(result.byteLength, Buffer.byteLength(JSON.stringify(result.har), 'utf8'));
+  assert.deepEqual(commands, []);
+  assert.deepEqual(debuggerOptions, []);
+});
+
+test('HAR export honors token budgets by removing whole entries', async () => {
+  const entries = Array.from({ length: 20 }, (_, index) => ({
+    url: `https://example.test/api/${index}/${'x'.repeat(300)}`,
+    method: 'GET',
+    resourceType: 'Fetch',
+    status: 200,
+    mimeType: 'application/json',
+    protocol: 'h2',
+    fromCache: false,
+    fromDiskCache: false,
+    fromServiceWorker: false,
+    fromPrefetchCache: false,
+    failureReason: '',
+    redirectURL: '',
+    duration: 5,
+    startedAt: 1_700_000_000_000 + index,
+  }));
+  const { controller } = createController({
+    harCapture: { armed: true, captureState: 'armed', entries },
+  });
+  const request = createRequest({
+    id: 'har-token-budget',
+    method: 'network.export_har',
+    params: { limit: 20, delivery: 'inline' },
+  });
+  request.meta.token_budget = 500;
+  const response = await controller.handleExportHar(request);
+  assert.equal(response.ok, true);
+  const result = response.result as Record<string, unknown> & {
+    har: { log: { entries: unknown[] } };
+  };
+  assert.ok(Buffer.byteLength(JSON.stringify(result), 'utf8') <= 2_000);
+  assert.ok(result.har.log.entries.length < entries.length);
+  assert.equal(result.truncated, true);
+  assert.doesNotThrow(() => JSON.parse(JSON.stringify(result.har)));
+});
+
+test('HAR auto delivery uploads UTF-8 JSON bytes as a HAR artifact', async () => {
+  let stored: { requestId: string; bytes: Uint8Array } | null = null;
+  const artifact: ArtifactDescriptor<'har'> = {
+    artifactId: `art_${'h'.repeat(43)}`,
+    kind: 'har',
+    mimeType: 'application/json',
+    byteLength: 0,
+    sha256: 'a'.repeat(64),
+    chunkSize: 196_608,
+    chunkCount: 1,
+    createdAt: '2026-07-23T00:00:00.000Z',
+    expiresAt: '2026-07-23T00:05:00.000Z',
+  };
+  const entries = Array.from({ length: 100 }, (_, index) => ({
+    url: `https://example.test/${index}/${'x'.repeat(3_500)}`,
+    method: 'GET',
+    resourceType: 'Fetch',
+    status: 200,
+    mimeType: 'text/plain',
+    protocol: 'h2',
+    fromCache: false,
+    fromDiskCache: false,
+    fromServiceWorker: false,
+    fromPrefetchCache: false,
+    failureReason: '',
+    redirectURL: '',
+    duration: 1,
+    startedAt: 1_700_000_000_000 + index,
+  }));
+  const { controller, commands, debuggerOptions } = createController({
+    harCapture: {
+      armed: true,
+      captureState: 'armed',
+      entries,
+    },
+    async storeHarArtifact(requestId, bytes) {
+      stored = { requestId, bytes };
+      return { ...artifact, byteLength: bytes.byteLength };
+    },
+  });
+
+  const response = await controller.handleExportHar(
+    createRequest({
+      id: 'har-artifact',
+      method: 'network.export_har',
+      params: { limit: 100, delivery: 'auto' },
+    })
+  );
+  assert.equal(response.ok, true);
+  const result = response.result as Record<string, unknown> & {
+    artifact: ArtifactDescriptor<'har'>;
+  };
+  assert.equal(result.delivery, 'artifact');
+  assert.equal(result.artifact.kind, 'har');
+  const storedArtifact = stored as { requestId: string; bytes: Uint8Array } | null;
+  assert.ok(storedArtifact);
+  assert.equal(storedArtifact.requestId, 'har-artifact');
+  assert.equal(storedArtifact.bytes.byteLength, result.byteLength);
+  assert.doesNotThrow(() => JSON.parse(new TextDecoder().decode(storedArtifact.bytes)));
+  assert.deepEqual(commands, []);
+  assert.deepEqual(debuggerOptions, []);
 });

@@ -496,6 +496,20 @@ export function enforceTransportPayloadLimit(request, response) {
     );
   }
 
+  if (request.method === 'network.export_har') {
+    return createFailure(
+      request.id,
+      ERROR_CODES.RESULT_TOO_LARGE,
+      `HAR export is too large to return without truncating fields (${payloadBytes} bytes).`,
+      {
+        responseBytes: payloadBytes,
+        maxResponseBytes: MAX_BRIDGE_RESPONSE_BYTES,
+        guidance: 'Use a smaller limit, a narrower urlPattern, or delivery=artifact.',
+      },
+      { ...response.meta, method: request.method }
+    );
+  }
+
   return createFailure(
     request.id,
     ERROR_CODES.RESULT_TRUNCATED,

@@ -28,6 +28,8 @@ import {
   getBridgeOperationTimeoutMs,
   getProtocolVersion,
   MAX_CLIENT_REQUEST_TIMEOUT_MS,
+  normalizeRecoveryTelemetrySummary,
+  RECOVERY_EVENT_KINDS,
   sanitizeIncidentalPath,
   sanitizeIncidentalText,
 } from '../../protocol/src/index.js';
@@ -104,7 +106,7 @@ export async function ensureClientConnected(client) {
  * @param {BridgeClient} client
  * @param {BridgeMethod} method
  * @param {Record<string, unknown>} [params={}]
- * @param {{ tabId?: number | null, source?: BridgeRequestSource, tokenBudget?: number | null }} [options]
+ * @param {{ tabId?: number | null, source?: BridgeRequestSource, tokenBudget?: number | null, automaticRetry?: 'mcp_second_attempt' }} [options]
  * @returns {Promise<BridgeResponse>}
  */
 export async function requestBridge(client, method, params = {}, options = {}) {
@@ -125,7 +127,7 @@ export async function requestBridge(client, method, params = {}, options = {}) {
     method,
     params,
     tabId: methodNeedsTab(method) ? (options.tabId ?? null) : null,
-    meta: withRequestMeta(options.source, options.tokenBudget),
+    meta: withRequestMeta(options.source, options.tokenBudget, options.automaticRetry),
     ...(timeoutMs === undefined ? {} : { timeoutMs }),
   });
 }
@@ -167,9 +169,10 @@ export async function resolveRef(client, refOrSelector, tabId = null, source) {
 /**
  * @param {BridgeRequestSource | undefined} source
  * @param {number | null | undefined} tokenBudget
+ * @param {'mcp_second_attempt' | undefined} automaticRetry
  * @returns {BridgeMeta}
  */
-function withRequestMeta(source, tokenBudget) {
+function withRequestMeta(source, tokenBudget, automaticRetry) {
   /** @type {BridgeMeta} */
   const meta = {};
   if (source) {
@@ -177,6 +180,9 @@ function withRequestMeta(source, tokenBudget) {
   }
   if (typeof tokenBudget === 'number' && Number.isFinite(tokenBudget)) {
     meta.token_budget = tokenBudget;
+  }
+  if (automaticRetry === 'mcp_second_attempt') {
+    meta.automatic_retry = { attempt: 2, reason: 'retryable_error' };
   }
   return meta;
 }
@@ -664,6 +670,30 @@ function summarizeMetrics(value) {
     requestsProcessed: boundedCount(metrics.requestsProcessed),
     requestsFailed: boundedCount(metrics.requestsFailed),
     avgResponseTimeMs: boundedCount(metrics.avgResponseTimeMs),
+    recovery: normalizeRecoveryTelemetrySummary(metrics.recovery, 'daemon'),
+  };
+}
+
+/**
+ * @param {Record<string, unknown> | null} health
+ * @param {import('./types.js').DoctorDaemonMetrics | null} metrics
+ * @returns {import('./types.js').DoctorRecoveryDiagnostics}
+ */
+function summarizeRecovery(health, metrics) {
+  const recovery = asRecord(health?.recovery);
+  const daemon = metrics?.recovery ?? normalizeRecoveryTelemetrySummary(recovery?.daemon, 'daemon');
+  const routedExtension = normalizeRecoveryTelemetrySummary(
+    recovery?.routedExtension,
+    'routedExtension'
+  );
+  return {
+    daemon,
+    routedExtension,
+    activeLoops: RECOVERY_EVENT_KINDS.filter(
+      (kind) =>
+        daemon?.events[kind].activeLoop === true ||
+        routedExtension?.events[kind].activeLoop === true
+    ),
   };
 }
 
@@ -950,6 +980,7 @@ export async function getDoctorReport(options = {}) {
     },
     protocol: summarizeProtocol(null, false),
     debugger: summarizeDebugger(null),
+    recovery: summarizeRecovery(null, null),
     metrics: null,
     recentEvents: [],
     recentCauses: [],
@@ -1108,6 +1139,10 @@ export async function getDoctorReport(options = {}) {
     ),
   ];
   report.debugger = summarizeDebugger(report.healthAvailable ? resolvedHealth : null);
+  report.recovery = summarizeRecovery(
+    report.healthAvailable ? resolvedHealth : null,
+    report.metrics
+  );
   if (report.debugger.recentReason && !report.recentCauses.includes(report.debugger.recentReason)) {
     report.recentCauses.push(report.debugger.recentReason);
   }
@@ -1244,6 +1279,40 @@ export async function getDoctorReport(options = {}) {
     report.nextSteps.push(
       'A recent request targeted the wrong window. Focus the intended Chrome window, click Enable there, and retry without reusing a tabId from another window.'
     );
+  }
+
+  for (const loop of report.recovery.activeLoops) {
+    const issue = `${loop}_loop`;
+    if (!report.issues.includes(issue)) report.issues.push(issue);
+    if (loop === 'stale_ref_recovery') {
+      report.nextSteps.push(
+        'Stale-reference recovery is repeatedly failing. Re-query the target for a fresh elementRef and retry once without reusing old refs.'
+      );
+    } else if (
+      loop === 'debugger_reattach' &&
+      report.debugger.state !== 'conflict' &&
+      !report.recentCauses.includes('debugger_conflict')
+    ) {
+      report.nextSteps.push(
+        'Debugger reattachment is repeatedly failing. Keep the tab open, close competing debuggers, and retry one debugger-backed operation.'
+      );
+    } else if (loop === 'content_script_reinjection') {
+      report.nextSteps.push(
+        'Content-script reinjection is repeatedly failing. Reload the Browser Bridge extension and target page, then enable the window again.'
+      );
+    } else if (loop === 'native_host_reconnect' && !authenticationFailed) {
+      report.nextSteps.push(
+        'Native-host reconnects are repeatedly failing. Run `bbx restart`; for remote TCP proxy use, verify the endpoint and rotate stale credentials with `bbx proxy enable --rotate-token`.'
+      );
+    } else if (loop === 'automatic_mcp_retry') {
+      report.nextSteps.push(
+        'Automatic MCP retries are repeatedly failing. Stop the retry loop, resolve the reported bridge readiness issue, then retry the original read once.'
+      );
+    } else if (loop === 'request_outcome') {
+      report.nextSteps.push(
+        'Browser requests are repeatedly failing. Inspect the first typed bridge error, narrow the request or target as directed, and retry once after correcting that specific failure.'
+      );
+    }
   }
 
   return {

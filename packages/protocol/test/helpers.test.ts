@@ -49,6 +49,7 @@ const EXPECTED_BRIDGE_METHOD_ORDER: readonly BridgeMethod[] = [
   'page.get_text',
   'page.extract_content',
   'page.get_network',
+  'network.export_har',
   'network.intercept.add',
   'network.intercept.remove',
   'network.intercept.list',
@@ -305,6 +306,12 @@ test('registry helpers keep metadata aligned across methods, groups, and complex
     assert.equal(typeof entry.debuggerBacked, 'boolean');
   }
 
+  assert.match(BRIDGE_METHOD_REGISTRY['performance.get_metrics'].description, /raw Chrome\/CDP/);
+  assert.match(
+    BRIDGE_METHOD_REGISTRY['performance.get_metrics'].description,
+    /no navigation window, LCP, CLS, or INP/
+  );
+
   assert.equal(isBridgeMethod('dom.query'), true);
   assert.equal(isBridgeMethod('dom.missing'), false);
   assert.equal(bridgeMethodNeedsTab('dom.query'), true);
@@ -363,7 +370,7 @@ test('registry policies preserve every method capability classification', () => 
     ],
     [CAPABILITIES.PAGE_EVALUATE, ['page.evaluate']],
     [CAPABILITIES.SENSITIVE_READ, ['sensitive.read']],
-    [CAPABILITIES.NETWORK_READ, ['page.get_network']],
+    [CAPABILITIES.NETWORK_READ, ['page.get_network', 'network.export_har']],
     [
       CAPABILITIES.NETWORK_INTERCEPT,
       [

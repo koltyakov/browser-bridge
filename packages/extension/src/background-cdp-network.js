@@ -3,6 +3,7 @@
 import { sanitizeIncidentalUrl } from '../../protocol/src/index.js';
 
 const DEFAULT_MAX_ENTRIES = 200;
+const DEFAULT_MAX_HAR_ENTRIES = 200;
 const DEFAULT_MAX_INFLIGHT = 400;
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_TTL_RETRY_MS = 5_000;
@@ -29,10 +30,15 @@ const MAX_DIAGNOSTIC_COUNT = 10_000;
  * }} CdpNetworkEntry
  */
 /** @typedef {CdpNetworkEntry & { startMonotonic: number | null, established: boolean }} PendingNetworkEntry */
+/** @typedef {import('../../protocol/src/types.js').HarEvidenceEntry} HarEvidenceEntry */
+/** @typedef {HarEvidenceEntry & { startMonotonic: number | null }} PendingHarEvidenceEntry */
 /**
  * @typedef {{
  *   entries: CdpNetworkEntry[],
  *   inflight: Map<string, PendingNetworkEntry>,
+ *   harEntries: HarEvidenceEntry[],
+ *   harInflight: Map<string, PendingHarEvidenceEntry>,
+ *   harDropped: number,
  *   dropped: number,
  *   abandoned: number,
  *   startedAt: number,
@@ -51,6 +57,7 @@ const MAX_DIAGNOSTIC_COUNT = 10_000;
  *   assertDebuggerAvailable?: (tabId: number) => void,
  *   sendCommand: (target: { tabId: number }, method: string, params: Record<string, unknown>) => Promise<unknown>,
  *   maxEntries?: number,
+ *   maxHarEntries?: number,
  *   maxInflight?: number,
  *   ttlMs?: number,
  *   ttlRetryMs?: number
@@ -58,6 +65,7 @@ const MAX_DIAGNOSTIC_COUNT = 10_000;
  */
 export function createCdpNetworkCapture(deps) {
   const maxEntries = deps.maxEntries ?? DEFAULT_MAX_ENTRIES;
+  const maxHarEntries = deps.maxHarEntries ?? DEFAULT_MAX_HAR_ENTRIES;
   const maxInflight = deps.maxInflight ?? DEFAULT_MAX_INFLIGHT;
   const ttlMs = deps.ttlMs ?? DEFAULT_TTL_MS;
   const ttlRetryMs = deps.ttlRetryMs ?? DEFAULT_TTL_RETRY_MS;
@@ -211,6 +219,23 @@ export function createCdpNetworkCapture(deps) {
   }
 
   /** @param {number} tabId */
+  function readHar(tabId) {
+    return runLifecycle(tabId, () => {
+      const state = states.get(tabId);
+      if (!state || state.status !== 'armed' || !state.networkEnabled) return emptyHarSnapshot();
+      return {
+        entries: state.harEntries.map((entry) => structuredClone(entry)),
+        dropped: state.harDropped,
+        abandoned: state.abandoned,
+        armed: true,
+        captureState: 'armed',
+        startedAt: state.startedAt,
+        inflight: state.harInflight.size,
+      };
+    });
+  }
+
+  /** @param {number} tabId */
   function stop(tabId) {
     stopEpochs.set(tabId, (stopEpochs.get(tabId) ?? 0) + 1);
     return runLifecycle(tabId, async () => {
@@ -277,15 +302,26 @@ export function createCdpNetworkCapture(deps) {
     if (!state || state.status !== 'armed' || !state.networkEnabled || !isRecord(params)) return;
     if (method === 'Network.requestWillBeSent') {
       handleRequestWillBeSent(state, params);
+      handleHarRequestWillBeSent(state, params);
     } else if (method === 'Network.responseReceived') {
       handleResponseReceived(state, params);
+      handleHarResponseReceived(state, params);
     } else if (method === 'Network.requestServedFromCache') {
       const entry = getPending(state, params.requestId);
       if (entry) entry.fromCache = true;
+      const harEntry = getPendingHar(state, params.requestId);
+      if (harEntry) harEntry.fromCache = true;
     } else if (method === 'Network.loadingFinished') {
       finishRequest(state, params.requestId, params.timestamp, '');
+      finishHarRequest(state, params.requestId, params.timestamp, '');
     } else if (method === 'Network.loadingFailed') {
       finishRequest(state, params.requestId, params.timestamp, boundString(params.errorText, 256));
+      finishHarRequest(
+        state,
+        params.requestId,
+        params.timestamp,
+        boundString(params.errorText, 256)
+      );
     } else if (method === 'Network.webSocketCreated') {
       handleWebSocketCreated(state, params);
     } else if (method === 'Network.webSocketWillSendHandshakeRequest') {
@@ -295,8 +331,11 @@ export function createCdpNetworkCapture(deps) {
     } else if (method === 'Network.webSocketFrameError') {
       const entry = getPending(state, params.requestId);
       if (entry) entry.failureReason = boundString(params.errorMessage, 256);
+      const harEntry = getPendingHar(state, params.requestId);
+      if (harEntry) harEntry.failureReason = boundString(params.errorMessage, 256);
     } else if (method === 'Network.webSocketClosed') {
       finishRequest(state, params.requestId, params.timestamp, undefined);
+      finishHarRequest(state, params.requestId, params.timestamp, undefined);
     } else if (method === 'Network.webTransportCreated') {
       handleWebTransportCreated(state, params);
     } else if (method === 'Network.webTransportConnectionEstablished') {
@@ -305,10 +344,13 @@ export function createCdpNetworkCapture(deps) {
         entry.established = true;
         entry.protocol = 'webtransport';
       }
+      const harEntry = getPendingHar(state, params.transportId);
+      if (harEntry) harEntry.protocol = 'webtransport';
     } else if (method === 'Network.webTransportClosed') {
       const entry = getPending(state, params.transportId);
       const failureReason = entry?.established ? undefined : 'closed before connection established';
       finishRequest(state, params.transportId, params.timestamp, failureReason);
+      finishHarRequest(state, params.transportId, params.timestamp, failureReason);
     }
   }
 
@@ -386,6 +428,19 @@ export function createCdpNetworkCapture(deps) {
   }
 
   /** @param {TabCaptureState} state @param {Record<string, unknown>} event */
+  function handleHarRequestWillBeSent(state, event) {
+    const requestId = boundString(event.requestId, 256);
+    if (!requestId || !isRecord(event.request)) return;
+    const existing = state.harInflight.get(requestId);
+    if (existing && isRecord(event.redirectResponse)) {
+      applyResponseToHar(existing, event.redirectResponse);
+      existing.redirectURL = sanitizeIncidentalUrl(event.request.url);
+      finishHarRequest(state, requestId, event.timestamp, undefined);
+    }
+    addHarPending(state, requestId, createPendingHarEntry(event));
+  }
+
+  /** @param {TabCaptureState} state @param {Record<string, unknown>} event */
   function handleResponseReceived(state, event) {
     const entry = getPending(state, event.requestId);
     if (!entry || !isRecord(event.response)) return;
@@ -401,12 +456,23 @@ export function createCdpNetworkCapture(deps) {
   }
 
   /** @param {TabCaptureState} state @param {Record<string, unknown>} event */
+  function handleHarResponseReceived(state, event) {
+    const entry = getPendingHar(state, event.requestId);
+    if (!entry || !isRecord(event.response)) return;
+    applyResponseToHar(entry, event.response);
+    entry.resourceType = boundString(event.type, 64) || entry.resourceType;
+  }
+
+  /** @param {TabCaptureState} state @param {Record<string, unknown>} event */
   function handleWebSocketCreated(state, event) {
     const requestId = boundString(event.requestId, 256);
     if (!requestId) return;
     const entry = createSpecialPendingEntry(requestId, event.url, '', 'WebSocket', event.timestamp);
     entry.protocol = 'websocket';
     addPending(state, requestId, entry);
+    const harEntry = createSpecialPendingHarEntry(event.url, '', 'WebSocket', event.timestamp);
+    harEntry.protocol = 'websocket';
+    addHarPending(state, requestId, harEntry);
   }
 
   /** @param {TabCaptureState} state @param {Record<string, unknown>} event */
@@ -416,6 +482,11 @@ export function createCdpNetworkCapture(deps) {
     entry.startMonotonic = finiteNumber(event.timestamp) ?? entry.startMonotonic;
     const wallTime = finiteNumber(event.wallTime);
     if (wallTime !== null) entry.timestamp = Math.round(wallTime * 1000);
+    const harEntry = getPendingHar(state, event.requestId);
+    if (harEntry) {
+      harEntry.startMonotonic = finiteNumber(event.timestamp) ?? harEntry.startMonotonic;
+      if (wallTime !== null) harEntry.startedAt = Math.round(wallTime * 1000);
+    }
   }
 
   /** @param {TabCaptureState} state @param {Record<string, unknown>} event */
@@ -424,6 +495,8 @@ export function createCdpNetworkCapture(deps) {
     if (!entry || !isRecord(event.response)) return;
     entry.status = finiteNumber(event.response.status) ?? 0;
     entry.established = entry.status >= 100 && entry.status < 400;
+    const harEntry = getPendingHar(state, event.requestId);
+    if (harEntry) applyResponseToHar(harEntry, event.response);
   }
 
   /** @param {TabCaptureState} state @param {Record<string, unknown>} event */
@@ -434,6 +507,11 @@ export function createCdpNetworkCapture(deps) {
       state,
       transportId,
       createSpecialPendingEntry(transportId, event.url, '', 'WebTransport', event.timestamp)
+    );
+    addHarPending(
+      state,
+      transportId,
+      createSpecialPendingHarEntry(event.url, '', 'WebTransport', event.timestamp)
     );
   }
 
@@ -446,6 +524,16 @@ export function createCdpNetworkCapture(deps) {
       state.abandoned += 1;
     }
     state.inflight.set(id, entry);
+  }
+
+  /** @param {TabCaptureState} state @param {string} id @param {PendingHarEvidenceEntry} entry */
+  function addHarPending(state, id, entry) {
+    if (!state.harInflight.has(id) && state.harInflight.size >= maxInflight) {
+      const oldest = state.harInflight.keys().next().value;
+      if (typeof oldest === 'string') state.harInflight.delete(oldest);
+      state.harDropped += 1;
+    }
+    state.harInflight.set(id, entry);
   }
 
   /**
@@ -474,7 +562,33 @@ export function createCdpNetworkCapture(deps) {
     }
   }
 
-  return { start, clear, read, stop, handleDetach, handleEvent, getDiagnostics };
+  /**
+   * @param {TabCaptureState} state
+   * @param {unknown} requestId
+   * @param {unknown} timestamp
+   * @param {string | undefined} failureReason
+   */
+  function finishHarRequest(state, requestId, timestamp, failureReason) {
+    const id = boundString(requestId, 256);
+    const entry = state.harInflight.get(id);
+    if (!entry) return;
+    state.harInflight.delete(id);
+    if (failureReason !== undefined) entry.failureReason = failureReason;
+    const end = finiteNumber(timestamp);
+    entry.duration =
+      end !== null && entry.startMonotonic !== null
+        ? Math.max(0, Math.round((end - entry.startMonotonic) * 1000))
+        : 0;
+    const { startMonotonic: _startMonotonic, ...complete } = entry;
+    state.harEntries.push(complete);
+    if (state.harEntries.length > maxHarEntries) {
+      const overflow = state.harEntries.length - maxHarEntries;
+      state.harEntries.splice(0, overflow);
+      state.harDropped += overflow;
+    }
+  }
+
+  return { start, clear, read, readHar, stop, handleDetach, handleEvent, getDiagnostics };
 }
 
 /** @param {boolean} [armed] @returns {TabCaptureState} */
@@ -482,6 +596,9 @@ function createState(armed = true) {
   return {
     entries: [],
     inflight: new Map(),
+    harEntries: [],
+    harInflight: new Map(),
+    harDropped: 0,
     dropped: 0,
     abandoned: 0,
     startedAt: Date.now(),
@@ -497,6 +614,9 @@ function clearState(state) {
   state.entries.length = 0;
   state.abandoned = state.inflight.size;
   state.inflight.clear();
+  state.harEntries.length = 0;
+  state.harInflight.clear();
+  state.harDropped = 0;
   state.dropped = 0;
   state.startedAt = Date.now();
 }
@@ -505,6 +625,7 @@ function clearState(state) {
 function abandonInflight(state) {
   state.abandoned += state.inflight.size;
   state.inflight.clear();
+  state.harInflight.clear();
 }
 
 /** @param {string} requestId @param {Record<string, unknown>} event @returns {PendingNetworkEntry} */
@@ -521,6 +642,54 @@ function createPendingEntry(requestId, event) {
     ),
     timestamp: wallTime === null ? Date.now() : Math.round(wallTime * 1000),
   };
+}
+
+/** @param {Record<string, unknown>} event @returns {PendingHarEvidenceEntry} */
+function createPendingHarEntry(event) {
+  const request = isRecord(event.request) ? event.request : {};
+  const wallTime = finiteNumber(event.wallTime);
+  return {
+    ...createSpecialPendingHarEntry(request.url, request.method, event.type, event.timestamp),
+    startedAt: wallTime === null ? Date.now() : Math.round(wallTime * 1000),
+  };
+}
+
+/**
+ * @param {unknown} url
+ * @param {unknown} method
+ * @param {unknown} resourceType
+ * @param {unknown} timestamp
+ * @returns {PendingHarEvidenceEntry}
+ */
+function createSpecialPendingHarEntry(url, method, resourceType, timestamp) {
+  return {
+    url: sanitizeIncidentalUrl(url),
+    method: boundString(method, 32).toUpperCase(),
+    resourceType: boundString(resourceType, 64),
+    status: 0,
+    mimeType: '',
+    protocol: '',
+    fromCache: false,
+    fromDiskCache: false,
+    fromServiceWorker: false,
+    fromPrefetchCache: false,
+    failureReason: '',
+    redirectURL: '',
+    duration: 0,
+    startedAt: Date.now(),
+    startMonotonic: finiteNumber(timestamp),
+  };
+}
+
+/** @param {PendingHarEvidenceEntry} entry @param {Record<string, unknown>} response */
+function applyResponseToHar(entry, response) {
+  entry.status = finiteNumber(response.status) ?? entry.status;
+  entry.mimeType = boundString(response.mimeType, 256) || entry.mimeType;
+  entry.protocol = boundString(response.protocol, 64) || entry.protocol;
+  entry.fromDiskCache = response.fromDiskCache === true;
+  entry.fromServiceWorker = response.fromServiceWorker === true;
+  entry.fromPrefetchCache = response.fromPrefetchCache === true;
+  entry.fromCache ||= entry.fromDiskCache || entry.fromServiceWorker || entry.fromPrefetchCache;
 }
 
 /**
@@ -559,6 +728,12 @@ function getPending(state, requestId) {
   return id ? state.inflight.get(id) : undefined;
 }
 
+/** @param {TabCaptureState} state @param {unknown} requestId */
+function getPendingHar(state, requestId) {
+  const id = boundString(requestId, 256);
+  return id ? state.harInflight.get(id) : undefined;
+}
+
 /** @param {TabCaptureState} state @param {boolean} armedDuringCapture @param {boolean} [armed] */
 function snapshot(state, armedDuringCapture, armed = state.status === 'armed') {
   return {
@@ -588,6 +763,18 @@ function emptySnapshot() {
   };
 }
 
+function emptyHarSnapshot() {
+  return {
+    entries: [],
+    dropped: 0,
+    abandoned: 0,
+    armed: false,
+    captureState: 'stopped',
+    startedAt: null,
+    inflight: 0,
+  };
+}
+
 /** @param {unknown} value @returns {value is Record<string, unknown>} */
 function isRecord(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -595,7 +782,19 @@ function isRecord(value) {
 
 /** @param {unknown} value @param {number} maxLength */
 function boundString(value, maxLength) {
-  return typeof value === 'string' ? value.slice(0, maxLength) : '';
+  return typeof value === 'string'
+    ? replaceControlCharacters(value, ' ').trim().slice(0, maxLength)
+    : '';
+}
+
+/** @param {string} value @param {string} replacement */
+function replaceControlCharacters(value, replacement) {
+  let result = '';
+  for (const character of value) {
+    const code = character.charCodeAt(0);
+    result += code <= 31 || (code >= 127 && code <= 159) ? replacement : character;
+  }
+  return result;
 }
 
 /** @param {unknown} value @returns {number | null} */

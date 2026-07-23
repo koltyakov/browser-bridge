@@ -64,6 +64,7 @@ test('cli prints usage and exits successfully when no command is provided', asyn
   assert.match(result.stdout, /Usage: bbx \[--remote <name>\] <command> \[args\]/);
   assert.match(result.stdout, /Setup:/);
   assert.match(result.stdout, /Generic RPC:/);
+  assert.match(result.stdout, /bbx har .*--delivery inline\|artifact\|auto/u);
 });
 
 test('cli --help enumerates shortcut commands', async () => {

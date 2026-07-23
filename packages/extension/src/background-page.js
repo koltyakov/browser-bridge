@@ -3,8 +3,11 @@
 import {
   BridgeError,
   ERROR_CODES,
+  MAX_ARTIFACT_BYTES,
+  MAX_NATIVE_MESSAGE_BYTES,
   createFailure,
   createSuccess,
+  estimateJsonPayloadCost,
   normalizeAccessibilityTreeParams,
   normalizeConsoleParams,
   normalizeHandleDialogParams,
@@ -12,12 +15,14 @@ import {
   normalizeViewportResizeParams,
   normalizeWaitForLoadStateParams,
 } from '../../protocol/src/index.js';
+import * as protocolConstants from '../../protocol/src/index.js';
 import {
   createCdpKeyPressEventPair,
   matchesConsoleLevel,
   summarizeTabResult,
 } from './background-helpers.js';
 import { buildAccessibilityTree, scopeAccessibilityNodes } from './background-accessibility.js';
+import { buildHar } from './background-har.js';
 import { resolveWindowScopedTab, selectRequestTabCandidate } from './background-routing.js';
 import {
   ACCESS_DENIED_REASON_WINDOW_GONE,
@@ -29,6 +34,8 @@ import {
 /** @typedef {import('./background-state.js').ExtensionState} ExtensionState */
 /** @typedef {import('./background-state.js').ResolvedTabTarget} ResolvedTabTarget */
 /** @typedef {import('./background-state.js').TabChangeInfo} TabChangeInfo */
+/** @typedef {import('../../protocol/src/types.js').HarEvidenceEntry} HarEvidenceEntry */
+/** @typedef {import('../../protocol/src/types.js').CdpPerformanceMetric} CdpPerformanceMetric */
 
 /**
  * @typedef {{
@@ -41,6 +48,8 @@ import {
  *   clearCdpNetworkCapture: (tabId: number) => Promise<Record<string, unknown>>,
  *   readCdpNetworkCapture: (tabId: number, clear: boolean) => Promise<Record<string, unknown>>,
  *   stopCdpNetworkCapture: (tabId: number) => Promise<Record<string, unknown>>,
+ *   readCdpHarEvidence: (tabId: number) => Promise<Record<string, unknown>>,
+ *   storeHarArtifact: (requestId: string, bytes: Uint8Array) => Promise<import('../../protocol/src/types.js').ArtifactDescriptor<'har'>>,
  *   runWithDebugger: (tabId: number, operation: (debugTarget: chrome.debugger.Debuggee) => Promise<BridgeResponse>, options?: { retryDetached?: boolean }) => Promise<BridgeResponse>,
  *   runForDialog: (tabId: number, operation: (debugTarget: chrome.debugger.Debuggee) => Promise<BridgeResponse>, options?: { retryDetached?: boolean }) => Promise<BridgeResponse>,
  *   sendCommand: (target: chrome.debugger.Debuggee, method: string, params: Record<string, unknown>) => Promise<unknown>,
@@ -70,6 +79,7 @@ import {
  *   handlePageDialog: (request: BridgeRequest) => Promise<BridgeResponse>,
  *   handleAccessibilityTree: (request: BridgeRequest) => Promise<BridgeResponse>,
  *   handleGetNetwork: (request: BridgeRequest) => Promise<BridgeResponse>,
+ *   handleExportHar: (request: BridgeRequest) => Promise<BridgeResponse>,
  *   handleViewportResize: (request: BridgeRequest) => Promise<BridgeResponse>,
  *   handlePerformanceMetrics: (request: BridgeRequest) => Promise<BridgeResponse>,
  *   handleWaitForLoadState: (request: BridgeRequest) => Promise<BridgeResponse>,
@@ -77,6 +87,13 @@ import {
  * }}
  */
 export function createPageRequestController(state, chromeObj, dependencies) {
+  const harAutoInlineConstant = Reflect.get(protocolConstants, 'HAR_AUTO_INLINE_BYTES');
+  const HAR_AUTO_INLINE_BYTES_FALLBACK = 262_144;
+  const harAutoInlineBytes =
+    typeof harAutoInlineConstant === 'number' && Number.isFinite(harAutoInlineConstant)
+      ? harAutoInlineConstant
+      : HAR_AUTO_INLINE_BYTES_FALLBACK;
+  const harMaxInlineResponseBytes = MAX_NATIVE_MESSAGE_BYTES - 4_096;
   /**
    * Resolve the tab a request should operate on. Requests may explicitly target
    * one tab via `tab_id`; otherwise they follow the active tab in the enabled
@@ -384,127 +401,133 @@ export function createPageRequestController(state, chromeObj, dependencies) {
   async function handleAccessibilityTree(request) {
     const target = await resolveRequestTarget(request);
     const params = normalizeAccessibilityTreeParams(request.params);
-    return dependencies.runWithDebugger(target.tabId, async (debugTarget) => {
-      await dependencies.sendCommand(debugTarget, 'Accessibility.enable', {});
-      try {
-        let result;
-        if (params.selector) {
-          const documentResult = /** @type {{ root?: { nodeId?: number } }} */ (
-            await dependencies.sendCommand(debugTarget, 'DOM.getDocument', {
-              depth: 0,
-              pierce: false,
-            })
-          );
-          const rootNodeId = Number(documentResult.root?.nodeId);
-          if (!Number.isFinite(rootNodeId) || rootNodeId <= 0) {
-            throw new BridgeError(
-              ERROR_CODES.INTERNAL_ERROR,
-              'CDP did not return a DOM root node.'
-            );
-          }
-          let queryResult;
-          try {
-            queryResult = /** @type {{ nodeIds?: number[] }} */ (
-              await dependencies.sendCommand(debugTarget, 'DOM.querySelectorAll', {
-                nodeId: rootNodeId,
-                selector: params.selector,
+    return dependencies.runWithDebugger(
+      target.tabId,
+      async (debugTarget) => {
+        await dependencies.sendCommand(debugTarget, 'Accessibility.enable', {});
+        try {
+          let result;
+          if (params.selector) {
+            const documentResult = /** @type {{ root?: { nodeId?: number } }} */ (
+              await dependencies.sendCommand(debugTarget, 'DOM.getDocument', {
+                depth: 0,
+                pierce: false,
               })
             );
-          } catch (error) {
-            throw new BridgeError(
-              ERROR_CODES.INVALID_REQUEST,
-              'Accessibility tree selector is invalid.',
-              {
-                selector: params.selector,
-                reason:
-                  error instanceof Error
-                    ? error.message.slice(0, 300)
-                    : String(error).slice(0, 300),
-              }
+            const rootNodeId = Number(documentResult.root?.nodeId);
+            if (!Number.isFinite(rootNodeId) || rootNodeId <= 0) {
+              throw new BridgeError(
+                ERROR_CODES.INTERNAL_ERROR,
+                'CDP did not return a DOM root node.'
+              );
+            }
+            let queryResult;
+            try {
+              queryResult = /** @type {{ nodeIds?: number[] }} */ (
+                await dependencies.sendCommand(debugTarget, 'DOM.querySelectorAll', {
+                  nodeId: rootNodeId,
+                  selector: params.selector,
+                })
+              );
+            } catch (error) {
+              throw new BridgeError(
+                ERROR_CODES.INVALID_REQUEST,
+                'Accessibility tree selector is invalid.',
+                {
+                  selector: params.selector,
+                  reason:
+                    error instanceof Error
+                      ? error.message.slice(0, 300)
+                      : String(error).slice(0, 300),
+                }
+              );
+            }
+            const nodeIds = Array.isArray(queryResult.nodeIds) ? queryResult.nodeIds : [];
+            if (nodeIds.length === 0) {
+              throw new BridgeError(
+                ERROR_CODES.ELEMENT_NOT_FOUND,
+                'Accessibility tree selector did not match an element.',
+                { selector: params.selector, candidateCount: 0 }
+              );
+            }
+            if (nodeIds.length > 1) {
+              throw new BridgeError(
+                ERROR_CODES.ELEMENT_AMBIGUOUS,
+                'Accessibility tree selector matched multiple elements.',
+                { selector: params.selector, candidateCount: nodeIds.length }
+              );
+            }
+            const described = /** @type {{ node?: { backendNodeId?: number } }} */ (
+              await dependencies.sendCommand(debugTarget, 'DOM.describeNode', {
+                nodeId: nodeIds[0],
+                depth: 0,
+              })
             );
-          }
-          const nodeIds = Array.isArray(queryResult.nodeIds) ? queryResult.nodeIds : [];
-          if (nodeIds.length === 0) {
-            throw new BridgeError(
-              ERROR_CODES.ELEMENT_NOT_FOUND,
-              'Accessibility tree selector did not match an element.',
-              { selector: params.selector, candidateCount: 0 }
+            const backendNodeId = Number(described.node?.backendNodeId);
+            if (!Number.isFinite(backendNodeId) || backendNodeId <= 0) {
+              throw new BridgeError(
+                ERROR_CODES.INTERNAL_ERROR,
+                'CDP did not resolve the accessibility target backend node.'
+              );
+            }
+            const partialResult = await dependencies.sendCommand(
+              debugTarget,
+              'Accessibility.getPartialAXTree',
+              { backendNodeId, fetchRelatives: true }
             );
-          }
-          if (nodeIds.length > 1) {
-            throw new BridgeError(
-              ERROR_CODES.ELEMENT_AMBIGUOUS,
-              'Accessibility tree selector matched multiple elements.',
-              { selector: params.selector, candidateCount: nodeIds.length }
+            const partial = /** @type {{ nodes?: Array<Record<string, unknown>> }} */ (
+              partialResult
             );
+            result = {
+              nodes: scopeAccessibilityNodes(partial.nodes ?? [], backendNodeId, params.maxDepth),
+            };
+          } else {
+            result = await dependencies.sendCommand(debugTarget, 'Accessibility.getFullAXTree', {
+              depth: params.maxDepth,
+            });
           }
-          const described = /** @type {{ node?: { backendNodeId?: number } }} */ (
-            await dependencies.sendCommand(debugTarget, 'DOM.describeNode', {
-              nodeId: nodeIds[0],
-              depth: 0,
-            })
-          );
-          const backendNodeId = Number(described.node?.backendNodeId);
-          if (!Number.isFinite(backendNodeId) || backendNodeId <= 0) {
-            throw new BridgeError(
-              ERROR_CODES.INTERNAL_ERROR,
-              'CDP did not resolve the accessibility target backend node.'
-            );
-          }
-          const partialResult = await dependencies.sendCommand(
-            debugTarget,
-            'Accessibility.getPartialAXTree',
-            { backendNodeId, fetchRelatives: true }
-          );
-          const partial = /** @type {{ nodes?: Array<Record<string, unknown>> }} */ (partialResult);
-          result = {
-            nodes: scopeAccessibilityNodes(partial.nodes ?? [], backendNodeId, params.maxDepth),
-          };
-        } else {
-          result = await dependencies.sendCommand(debugTarget, 'Accessibility.getFullAXTree', {
-            depth: params.maxDepth,
-          });
-        }
-        const cdpResult = /** @type {{ nodes?: Array<Record<string, unknown>> }} */ (result);
-        const rawNodes = cdpResult.nodes || [];
-        const tree = buildAccessibilityTree(rawNodes, params);
-        const continuationHint = tree.truncated
-          ? `The AX result reached maxNodes ${params.maxNodes} and was depth-limited to ${params.maxDepth}; retry with larger maxNodes and maxDepth values.`
-          : `The AX source was depth-limited to ${params.maxDepth}; retry with a larger maxDepth to inspect potentially omitted descendants.`;
-        return createSuccess(
-          request.id,
-          {
-            nodes: tree.nodes,
-            rootIds: tree.rootIds,
-            count: tree.nodes.length,
-            total: tree.filteredCount,
-            rawTotal: tree.rawCount,
-            source: 'cdp-accessibility',
-            compact: params.compact,
-            interactiveOnly: params.interactiveOnly,
-            truncated: true,
-            truncation: {
-              reason: tree.truncated ? 'maxNodes' : 'maxDepth',
-              reasons: [...(tree.truncated ? ['maxNodes'] : []), 'maxDepth'],
-              maxNodes: params.maxNodes,
-              maxDepth: params.maxDepth,
-              omitted: tree.omitted,
-              missingChildCount: tree.missingChildCount,
-              partialTopology: true,
+          const cdpResult = /** @type {{ nodes?: Array<Record<string, unknown>> }} */ (result);
+          const rawNodes = cdpResult.nodes || [];
+          const tree = buildAccessibilityTree(rawNodes, params);
+          const continuationHint = tree.truncated
+            ? `The AX result reached maxNodes ${params.maxNodes} and was depth-limited to ${params.maxDepth}; retry with larger maxNodes and maxDepth values.`
+            : `The AX source was depth-limited to ${params.maxDepth}; retry with a larger maxDepth to inspect potentially omitted descendants.`;
+          return createSuccess(
+            request.id,
+            {
+              nodes: tree.nodes,
+              rootIds: tree.rootIds,
+              count: tree.nodes.length,
+              total: tree.filteredCount,
+              rawTotal: tree.rawCount,
+              source: 'cdp-accessibility',
+              compact: params.compact,
+              interactiveOnly: params.interactiveOnly,
+              truncated: true,
+              truncation: {
+                reason: tree.truncated ? 'maxNodes' : 'maxDepth',
+                reasons: [...(tree.truncated ? ['maxNodes'] : []), 'maxDepth'],
+                maxNodes: params.maxNodes,
+                maxDepth: params.maxDepth,
+                omitted: tree.omitted,
+                missingChildCount: tree.missingChildCount,
+                partialTopology: true,
+              },
+              continuationHint,
             },
-            continuationHint,
-          },
-          {
-            method: request.method,
-            debugger_backed: true,
-            result_truncated: true,
-            continuation_hint: continuationHint,
-          }
-        );
-      } finally {
-        await dependencies.sendCommand(debugTarget, 'Accessibility.disable', {}).catch(() => {});
-      }
-    });
+            {
+              method: request.method,
+              debugger_backed: true,
+              result_truncated: true,
+              continuation_hint: continuationHint,
+            }
+          );
+        } finally {
+          await dependencies.sendCommand(debugTarget, 'Accessibility.disable', {}).catch(() => {});
+        }
+      },
+      { retryDetached: true }
+    );
   }
 
   /**
@@ -578,6 +601,85 @@ export function createPageRequestController(state, chromeObj, dependencies) {
   }
 
   /**
+   * Export metadata-only evidence from an explicitly armed CDP capture. Export
+   * is a read: it never changes debugger ownership or Network domain state.
+   *
+   * @param {BridgeRequest} request
+   * @returns {Promise<BridgeResponse>}
+   */
+  async function handleExportHar(request) {
+    const target = await resolveRequestTarget(request, { requireScriptable: false });
+    const params = /** @type {import('../../protocol/src/types.js').NormalizedHarExportParams} */ (
+      request.params
+    );
+    const capture =
+      /** @type {{ entries?: HarEvidenceEntry[], dropped?: number, abandoned?: number, armed?: boolean, captureState?: string, startedAt?: number | null, inflight?: number }} */ (
+        await dependencies.readCdpHarEvidence(target.tabId)
+      );
+    if (capture.armed !== true) {
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        'HAR export requires an armed explicit CDP network capture.',
+        {
+          guidance:
+            'Start CDP capture, reproduce the network activity, export the HAR, then stop capture.',
+          steps: ['start', 'reproduce', 'export', 'stop'],
+        }
+      );
+    }
+
+    const evidence = capture.entries ?? [];
+    const buildOptions = {
+      limit: params.limit,
+      urlPattern: params.urlPattern,
+      creatorVersion: chromeObj.runtime.getManifest().version,
+    };
+    const artifactBuild = buildHar(evidence, {
+      ...buildOptions,
+      maxBytes: MAX_ARTIFACT_BYTES,
+    });
+    if (!artifactBuild.fits) {
+      throw createHarTooLargeError(artifactBuild.byteLength, MAX_ARTIFACT_BYTES);
+    }
+    const useArtifact =
+      params.delivery === 'artifact' ||
+      (params.delivery === 'auto' && artifactBuild.byteLength > harAutoInlineBytes);
+    if (useArtifact) {
+      const artifact = await dependencies.storeHarArtifact(request.id, artifactBuild.bytes);
+      return createSuccess(
+        request.id,
+        createHarResult(artifactBuild, capture, 'artifact', artifact),
+        { method: request.method, debugger_backed: true }
+      );
+    }
+
+    const requestedBudget = request.meta?.token_budget;
+    const responseLimit =
+      typeof requestedBudget === 'number' && Number.isFinite(requestedBudget) && requestedBudget > 0
+        ? Math.min(harMaxInlineResponseBytes, Math.max(128, Math.floor(requestedBudget * 4)))
+        : harMaxInlineResponseBytes;
+    let inlineBuild = buildHar(evidence, { ...buildOptions, maxBytes: responseLimit });
+    let inlineResult = createHarResult(inlineBuild, capture, 'inline');
+    let resultBytes = estimateJsonPayloadCost(inlineResult).bytes;
+    while (resultBytes > responseLimit && inlineBuild.count > 0) {
+      const overflow = resultBytes - responseLimit;
+      inlineBuild = buildHar(evidence, {
+        ...buildOptions,
+        maxBytes: Math.max(0, inlineBuild.byteLength - overflow - 1),
+      });
+      inlineResult = createHarResult(inlineBuild, capture, 'inline');
+      resultBytes = estimateJsonPayloadCost(inlineResult).bytes;
+    }
+    if (!inlineBuild.fits || resultBytes > responseLimit) {
+      throw createHarTooLargeError(resultBytes, responseLimit);
+    }
+    return createSuccess(request.id, inlineResult, {
+      method: request.method,
+      debugger_backed: true,
+    });
+  }
+
+  /**
    * Resize the browser viewport via CDP Emulation.setDeviceMetricsOverride
    * or reset to natural size when width/height are 0.
    *
@@ -613,31 +715,45 @@ export function createPageRequestController(state, chromeObj, dependencies) {
   }
 
   /**
-   * Return browser performance metrics via CDP Performance.getMetrics.
+   * Return a raw point sample of Chrome-maintained CDP performance counters.
    *
    * @param {BridgeRequest} request
    * @returns {Promise<BridgeResponse>}
    */
   async function handlePerformanceMetrics(request) {
     const target = await resolveRequestTarget(request);
-    return dependencies.runWithDebugger(target.tabId, async (debugTarget) => {
-      await dependencies.sendCommand(debugTarget, 'Performance.enable', {
-        timeDomain: 'timeTicks',
-      });
-      try {
-        const result = await dependencies.sendCommand(debugTarget, 'Performance.getMetrics', {});
-        const cdpResult = /** @type {{ metrics?: Array<{ name: string, value: number }> }} */ (
-          result
-        );
-        const metrics = (cdpResult.metrics || []).reduce((acc, metric) => {
-          acc[metric.name] = metric.value;
-          return acc;
-        }, /** @type {Record<string, number>} */ ({}));
-        return createSuccess(request.id, { metrics }, { method: request.method });
-      } finally {
-        await dependencies.sendCommand(debugTarget, 'Performance.disable', {}).catch(() => {});
-      }
-    });
+    return dependencies.runWithDebugger(
+      target.tabId,
+      async (debugTarget) => {
+        await dependencies.sendCommand(debugTarget, 'Performance.enable', {
+          timeDomain: 'timeTicks',
+        });
+        try {
+          const result = await dependencies.sendCommand(debugTarget, 'Performance.getMetrics', {});
+          const cdpResult = /** @type {{ metrics?: CdpPerformanceMetric[] }} */ (result);
+          const metrics = (cdpResult.metrics || []).reduce((acc, metric) => {
+            acc[metric.name] = metric.value;
+            return acc;
+          }, /** @type {Record<string, number>} */ ({}));
+          /** @type {import('../../protocol/src/types.js').PerformanceMetricsResult} */
+          const performanceResult = {
+            metrics,
+            measurement: {
+              source: 'cdp.Performance.getMetrics',
+              kind: 'raw_cdp_counters',
+              sampledAt: new Date().toISOString(),
+              timeDomain: 'timeTicks',
+              observation: 'browser_maintained_point_sample',
+              webVitals: 'not_measured',
+            },
+          };
+          return createSuccess(request.id, performanceResult, { method: request.method });
+        } finally {
+          await dependencies.sendCommand(debugTarget, 'Performance.disable', {}).catch(() => {});
+        }
+      },
+      { retryDetached: true }
+    );
   }
 
   /**
@@ -696,65 +812,70 @@ export function createPageRequestController(state, chromeObj, dependencies) {
     }
 
     const target = await resolveRequestTarget(request);
-    return dependencies.runWithDebugger(target.tabId, async (debugTarget) => {
-      if (request.method === 'cdp.dispatch_key_event') {
-        const events = createCdpKeyPressEventPair(request.params ?? {});
-        for (const event of events) {
-          await dependencies.sendCommand(debugTarget, 'Input.dispatchKeyEvent', event);
-        }
-        return createSuccess(
-          request.id,
-          {
-            method: 'Input.dispatchKeyEvent',
-            pressed: true,
-            key: events[0]?.key ?? '',
-            code: events[0]?.code ?? '',
-            dispatched: events.map((event) => event.type),
-          },
-          { method: request.method }
-        );
-      }
-
-      let command;
-      /** @type {Record<string, unknown>} */
-      let params = {};
-      if (request.method === 'cdp.get_document') {
-        command = 'DOM.getDocument';
-        params = { depth: 2, pierce: false };
-      } else if (request.method === 'cdp.get_dom_snapshot') {
-        command = 'DOMSnapshot.captureSnapshot';
-        params = { computedStyles: request.params?.computedStyles ?? [] };
-      } else if (request.method === 'cdp.get_box_model') {
-        const nodeId = request.params?.nodeId;
-        if (typeof nodeId !== 'number' || !Number.isFinite(nodeId)) {
-          return createFailure(
+    const retryDetached = request.method !== 'cdp.dispatch_key_event';
+    return dependencies.runWithDebugger(
+      target.tabId,
+      async (debugTarget) => {
+        if (request.method === 'cdp.dispatch_key_event') {
+          const events = createCdpKeyPressEventPair(request.params ?? {});
+          for (const event of events) {
+            await dependencies.sendCommand(debugTarget, 'Input.dispatchKeyEvent', event);
+          }
+          return createSuccess(
             request.id,
-            ERROR_CODES.INVALID_REQUEST,
-            'nodeId must be a finite number.',
-            null,
+            {
+              method: 'Input.dispatchKeyEvent',
+              pressed: true,
+              key: events[0]?.key ?? '',
+              code: events[0]?.code ?? '',
+              dispatched: events.map((event) => event.type),
+            },
             { method: request.method }
           );
         }
-        command = 'DOM.getBoxModel';
-        params = { nodeId };
-      } else {
-        const nodeId = request.params?.nodeId;
-        if (typeof nodeId !== 'number' || !Number.isFinite(nodeId)) {
-          return createFailure(
-            request.id,
-            ERROR_CODES.INVALID_REQUEST,
-            'nodeId must be a finite number.',
-            null,
-            { method: request.method }
-          );
-        }
-        command = 'CSS.getComputedStyleForNode';
-        params = { nodeId };
-      }
 
-      const result = await dependencies.sendCommand(debugTarget, command, params);
-      return createSuccess(request.id, result, { method: request.method });
-    });
+        let command;
+        /** @type {Record<string, unknown>} */
+        let params = {};
+        if (request.method === 'cdp.get_document') {
+          command = 'DOM.getDocument';
+          params = { depth: 2, pierce: false };
+        } else if (request.method === 'cdp.get_dom_snapshot') {
+          command = 'DOMSnapshot.captureSnapshot';
+          params = { computedStyles: request.params?.computedStyles ?? [] };
+        } else if (request.method === 'cdp.get_box_model') {
+          const nodeId = request.params?.nodeId;
+          if (typeof nodeId !== 'number' || !Number.isFinite(nodeId)) {
+            return createFailure(
+              request.id,
+              ERROR_CODES.INVALID_REQUEST,
+              'nodeId must be a finite number.',
+              null,
+              { method: request.method }
+            );
+          }
+          command = 'DOM.getBoxModel';
+          params = { nodeId };
+        } else {
+          const nodeId = request.params?.nodeId;
+          if (typeof nodeId !== 'number' || !Number.isFinite(nodeId)) {
+            return createFailure(
+              request.id,
+              ERROR_CODES.INVALID_REQUEST,
+              'nodeId must be a finite number.',
+              null,
+              { method: request.method }
+            );
+          }
+          command = 'CSS.getComputedStyleForNode';
+          params = { nodeId };
+        }
+
+        const result = await dependencies.sendCommand(debugTarget, command, params);
+        return createSuccess(request.id, result, { method: request.method });
+      },
+      retryDetached ? { retryDetached: true } : undefined
+    );
   }
 
   return {
@@ -765,6 +886,7 @@ export function createPageRequestController(state, chromeObj, dependencies) {
     handlePageDialog,
     handleAccessibilityTree,
     handleGetNetwork,
+    handleExportHar,
     handleViewportResize,
     handlePerformanceMetrics,
     handleWaitForLoadState,
@@ -814,4 +936,50 @@ function getUrlOrigin(url) {
   } catch {
     return '';
   }
+}
+
+/**
+ * @param {ReturnType<typeof buildHar>} build
+ * @param {{ dropped?: number, abandoned?: number, captureState?: string, startedAt?: number | null, inflight?: number }} capture
+ * @param {'inline' | 'artifact'} delivery
+ * @param {import('../../protocol/src/types.js').ArtifactDescriptor<'har'>} [artifact]
+ */
+function createHarResult(build, capture, delivery, artifact) {
+  const omitted = build.omittedByLimit + build.omittedBySize;
+  const base = {
+    delivery,
+    format: /** @type {'har'} */ ('har'),
+    harVersion: /** @type {'1.2'} */ ('1.2'),
+    mimeType: 'application/json',
+    byteLength: build.byteLength,
+    entryCount: build.count,
+    totalEntries: build.filteredTotal,
+    dropped: capture.dropped ?? 0,
+    abandoned: capture.abandoned ?? 0,
+    inflight: capture.inflight ?? 0,
+    startedAt: capture.startedAt ?? null,
+    captureState: capture.captureState ?? 'armed',
+    truncated: build.truncated,
+    truncation: {
+      reason: build.omittedBySize > 0 ? 'inline_bytes' : build.omittedByLimit > 0 ? 'limit' : null,
+      limit: build.limit,
+      omitted,
+      omittedByLimit: build.omittedByLimit,
+      omittedBySize: build.omittedBySize,
+    },
+  };
+  return delivery === 'inline' ? { ...base, har: build.har } : { ...base, artifact };
+}
+
+/** @param {number} byteLength @param {number} maxBytes */
+function createHarTooLargeError(byteLength, maxBytes) {
+  return new BridgeError(
+    ERROR_CODES.RESULT_TOO_LARGE,
+    `HAR export is too large to return without truncating fields (${byteLength} bytes).`,
+    {
+      byteLength,
+      maxBytes,
+      guidance: 'Use a smaller limit or a narrower urlPattern.',
+    }
+  );
 }

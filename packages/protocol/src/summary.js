@@ -259,6 +259,29 @@ export function summarizeBridgeResponse(response, method) {
       evidence: result,
     };
   }
+  if (method === 'network.export_har') {
+    const delivery = result.delivery === 'artifact' ? 'artifact' : 'inline';
+    const entryCount = typeof result.entryCount === 'number' ? result.entryCount : 0;
+    const totalEntries = typeof result.totalEntries === 'number' ? result.totalEntries : entryCount;
+    const dropped = typeof result.dropped === 'number' ? result.dropped : 0;
+    const abandoned = typeof result.abandoned === 'number' ? result.abandoned : 0;
+    const inflight = typeof result.inflight === 'number' ? result.inflight : 0;
+    return {
+      ok: true,
+      summary: appendProtocolWarning(
+        `HAR export delivered ${delivery}: ${entryCount}/${totalEntries} entries (${dropped} dropped, ${abandoned} abandoned, ${inflight} inflight).`,
+        protocolWarning
+      ),
+      evidence: /** @type {import('./types.js').HarExportEvidence} */ ({
+        delivery,
+        entryCount,
+        totalEntries,
+        dropped,
+        abandoned,
+        inflight,
+      }),
+    };
+  }
   if (typeof result.daemon === 'string') {
     const access =
       result.access && typeof result.access === 'object'
@@ -710,13 +733,18 @@ export function summarizeBridgeResponse(response, method) {
   }
   if (typeof result.metrics === 'object' && result.metrics !== null) {
     const keys = Object.keys(result.metrics);
+    const measurement = toRecord(result.measurement);
+    const rawCdpCounters =
+      method === 'performance.get_metrics' || measurement.kind === 'raw_cdp_counters';
     return {
       ok: true,
       summary: appendProtocolWarning(
-        `Performance: ${keys.length} metrics collected.`,
+        rawCdpCounters
+          ? `Raw CDP performance counters: ${keys.length} collected in a browser-maintained point sample; Web Vitals not measured.`
+          : `Performance: ${keys.length} metrics collected.`,
         protocolWarning
       ),
-      evidence: result.metrics,
+      evidence: rawCdpCounters ? { metrics: result.metrics, measurement } : result.metrics,
     };
   }
   if (

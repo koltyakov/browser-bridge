@@ -4,6 +4,8 @@ import type {
   BridgeMethod,
   BridgeRequestSource,
   BridgeResponse,
+  RecoveryEventKind,
+  RecoveryTelemetrySummary,
   ScreenshotResult,
   SetupStatus,
 } from '../../protocol/src/types.js';
@@ -210,6 +212,13 @@ export interface DoctorDaemonMetrics {
   requestsProcessed: number;
   requestsFailed: number;
   avgResponseTimeMs: number;
+  recovery: RecoveryTelemetrySummary | null;
+}
+
+export interface DoctorRecoveryDiagnostics {
+  daemon: RecoveryTelemetrySummary | null;
+  routedExtension: RecoveryTelemetrySummary | null;
+  activeLoops: RecoveryEventKind[];
 }
 
 export interface DoctorRecentEvent {
@@ -274,6 +283,7 @@ export interface DoctorReport {
   connections: DoctorConnectionDiagnostics;
   protocol: DoctorProtocolDiagnostics;
   debugger: DoctorDebuggerDiagnostics;
+  recovery: DoctorRecoveryDiagnostics;
   metrics: DoctorDaemonMetrics | null;
   recentEvents: DoctorRecentEvent[];
   recentCauses: DoctorRecentEvent['cause'][];

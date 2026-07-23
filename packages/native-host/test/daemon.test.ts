@@ -7,7 +7,12 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 
-import { DAEMON_RECENT_LOG_LIMIT, ERROR_CODES } from '../../protocol/src/index.js';
+import {
+  ARTIFACT_CHUNK_BYTES,
+  DAEMON_RECENT_LOG_LIMIT,
+  ERROR_CODES,
+  RecoveryTelemetryCollector,
+} from '../../protocol/src/index.js';
 import type { BridgeRequest, BridgeResponse, SetupStatus } from '../../protocol/src/types.js';
 import type { McpClientName } from '../../agent-client/src/mcp-config.js';
 import type { SupportedTarget } from '../../agent-client/src/install.js';
@@ -576,6 +581,213 @@ test('daemon metrics include completed request response time', async () => {
   assert.ok(Number(payload.response.result?.avgResponseTimeMs) > 0);
 });
 
+test('sensitive read values stay out of daemon diagnostics across terminal outcomes', async () => {
+  const loggerEntries: Record<string, unknown>[] = [];
+  const captureLog = (
+    level: string,
+    message: string,
+    extra: Record<string, unknown> = {}
+  ): void => {
+    loggerEntries.push({ level, message, ...extra });
+  };
+  const daemon = new BridgeDaemon({
+    logger: {
+      debug(message: string, extra?: Record<string, unknown>) {
+        captureLog('debug', message, extra);
+      },
+      info(message: string, extra?: Record<string, unknown>) {
+        captureLog('info', message, extra);
+      },
+      warn(message: string, extra?: Record<string, unknown>) {
+        captureLog('warn', message, extra);
+      },
+      error(message: string, extra?: Record<string, unknown>) {
+        captureLog('error', message, extra);
+      },
+    },
+  });
+  const owner = createFakeSocket();
+  owner.__clientId = 'sensitive-owner';
+  const observer = createFakeSocket();
+  observer.__clientId = 'sensitive-observer';
+  const disconnectedOwner = createFakeSocket();
+  disconnectedOwner.__clientId = 'sensitive-disconnected-owner';
+  const extension = createFakeSocket();
+  extension.__extensionId = 'sensitive-extension';
+  extension.__accessEnabled = true;
+  daemon.agentSockets.set(owner.__clientId, owner);
+  daemon.agentSockets.set(observer.__clientId, observer);
+  daemon.agentSockets.set(disconnectedOwner.__clientId, disconnectedOwner);
+  daemon.extensionSockets.set(extension.__extensionId, extension);
+
+  const sensitiveRequest = (id: string, key: string): BridgeRequest => ({
+    id,
+    method: 'sensitive.read',
+    tab_id: 7,
+    params: { source: 'local_storage', key },
+    meta: { protocol_version: PROTOCOL_VERSION, token_budget: null, source: 'mcp' },
+  });
+  const successSecret = 'BBX_DAEMON_SUCCESS_VALUE_SENTINEL';
+  const failureSecret = 'BBX_DAEMON_FAILURE_TARGET_SENTINEL';
+  const oversizeSecret = 'BBX_DAEMON_OVERSIZE_TARGET_SENTINEL';
+  const timeoutSecret = 'BBX_DAEMON_TIMEOUT_TARGET_SENTINEL';
+  const timeoutLateSecret = 'BBX_DAEMON_TIMEOUT_LATE_VALUE_SENTINEL';
+  const agentDisconnectSecret = 'BBX_DAEMON_AGENT_DISCONNECT_TARGET_SENTINEL';
+  const agentDisconnectLateSecret = 'BBX_DAEMON_AGENT_DISCONNECT_LATE_VALUE_SENTINEL';
+  const extensionDisconnectSecret = 'BBX_DAEMON_EXTENSION_DISCONNECT_TARGET_SENTINEL';
+  const extensionDisconnectLateSecret = 'BBX_DAEMON_EXTENSION_DISCONNECT_LATE_VALUE_SENTINEL';
+
+  await daemon.handleAgentRequest(owner, {
+    request: sensitiveRequest('req_sensitive_success', 'success-key'),
+  });
+  await daemon.handleExtensionResponse(extension, {
+    response: {
+      id: 'req_sensitive_success',
+      ok: true,
+      result: { source: 'local_storage', value: successSecret, exact: true },
+      error: null,
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'sensitive.read' },
+    },
+  });
+  const success = expectBridgeResponse(parsePayload(owner.writes[0].trim()));
+  assert.deepEqual(success.response.result, {
+    source: 'local_storage',
+    value: successSecret,
+    exact: true,
+  });
+  assert.equal(observer.writes.length, 0);
+  assert.equal(disconnectedOwner.writes.length, 0);
+
+  await daemon.handleAgentRequest(owner, {
+    request: sensitiveRequest('req_sensitive_failure', failureSecret),
+  });
+  await daemon.handleExtensionResponse(extension, {
+    response: {
+      id: 'req_sensitive_failure',
+      ok: false,
+      result: null,
+      error: {
+        code: ERROR_CODES.SENSITIVE_TARGET_NOT_FOUND,
+        message: 'The exact storage key was not found.',
+        details: null,
+      },
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'sensitive.read' },
+    },
+  });
+  const failure = expectBridgeResponse(parsePayload(owner.writes[1].trim()));
+  assert.equal(failure.response.error?.code, ERROR_CODES.SENSITIVE_TARGET_NOT_FOUND);
+
+  await daemon.handleAgentRequest(owner, {
+    request: sensitiveRequest('req_sensitive_oversize', oversizeSecret),
+  });
+  await daemon.handleExtensionResponse(extension, {
+    response: {
+      id: 'req_sensitive_oversize',
+      ok: false,
+      result: null,
+      error: {
+        code: ERROR_CODES.RESULT_TOO_LARGE,
+        message: 'The exact sensitive value exceeds the response transport limit.',
+        details: { bytes: 262_144, responseBytes: 1_572_864, maxBytes: 1_044_480 },
+      },
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'sensitive.read' },
+    },
+  });
+  const oversize = expectBridgeResponse(parsePayload(owner.writes[2].trim()));
+  assert.equal(oversize.response.error?.code, ERROR_CODES.RESULT_TOO_LARGE);
+
+  daemon.pendingTimeoutMs = 1;
+  await daemon.handleAgentRequest(owner, {
+    request: sensitiveRequest('req_sensitive_timeout', timeoutSecret),
+  });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const timeout = expectBridgeResponse(parsePayload(owner.writes[3].trim()));
+  assert.equal(timeout.response.error?.code, ERROR_CODES.TIMEOUT);
+  await daemon.handleExtensionResponse(extension, {
+    response: {
+      id: 'req_sensitive_timeout',
+      ok: true,
+      result: { source: 'local_storage', value: timeoutLateSecret, exact: true },
+      error: null,
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'sensitive.read' },
+    },
+  });
+  assert.equal(owner.writes.length, 4);
+
+  await daemon.handleAgentRequest(disconnectedOwner, {
+    request: sensitiveRequest('req_sensitive_agent_disconnect', agentDisconnectSecret),
+  });
+  daemon.handleSocketClose(disconnectedOwner);
+  await daemon.handleExtensionResponse(extension, {
+    response: {
+      id: 'req_sensitive_agent_disconnect',
+      ok: true,
+      result: { source: 'local_storage', value: agentDisconnectLateSecret, exact: true },
+      error: null,
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'sensitive.read' },
+    },
+  });
+  assert.equal(disconnectedOwner.writes.length, 0);
+
+  await daemon.handleAgentRequest(owner, {
+    request: sensitiveRequest('req_sensitive_extension_disconnect', extensionDisconnectSecret),
+  });
+  daemon.handleSocketClose(extension);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const disconnected = expectBridgeResponse(parsePayload(owner.writes[4].trim()));
+  assert.equal(disconnected.response.error?.code, ERROR_CODES.EXTENSION_DISCONNECTED);
+  await daemon.handleExtensionResponse(extension, {
+    response: {
+      id: 'req_sensitive_extension_disconnect',
+      ok: true,
+      result: { source: 'local_storage', value: extensionDisconnectLateSecret, exact: true },
+      error: null,
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'sensitive.read' },
+    },
+  });
+  assert.equal(owner.writes.length, 5);
+  assert.equal(observer.writes.length, 0);
+
+  await daemon.handleAgentRequest(owner, {
+    request: {
+      id: 'req_sensitive_metrics',
+      method: 'daemon.metrics',
+      tab_id: null,
+      params: {},
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  });
+  const metrics = expectBridgeResponse(parsePayload(owner.writes[5].trim()));
+  assert.equal(metrics.response.result?.requestsProcessed, 6);
+  assert.equal(metrics.response.result?.requestsFailed, 5);
+  assert.equal(metrics.response.result?.pendingRequests, 0);
+
+  const diagnostics = JSON.stringify({
+    recentLog: daemon.recentLog,
+    loggerEntries,
+    metrics: metrics.response.result,
+    errors: [
+      failure.response.error,
+      oversize.response.error,
+      timeout.response.error,
+      disconnected.response.error,
+    ],
+  });
+  for (const secret of [
+    successSecret,
+    failureSecret,
+    oversizeSecret,
+    timeoutSecret,
+    timeoutLateSecret,
+    agentDisconnectSecret,
+    agentDisconnectLateSecret,
+    extensionDisconnectSecret,
+    extensionDisconnectLateSecret,
+  ]) {
+    assert.doesNotMatch(diagnostics, new RegExp(secret));
+  }
+});
+
 test('daemon stores screenshot artifacts for the requesting client only', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bbx-daemon-artifact-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -619,6 +831,7 @@ test('daemon stores screenshot artifacts for the requesting client only', async 
     artifact: {
       requestId: 'req_artifact_capture',
       artifactId,
+      kind: 'screenshot',
       mimeType: 'image/png',
       byteLength: bytes.length,
       sha256,
@@ -645,7 +858,17 @@ test('daemon stores screenshot artifacts for the requesting client only', async 
       ok: true,
       result: {
         delivery: 'artifact',
-        artifact: { artifactId },
+        artifact: {
+          artifactId,
+          kind: 'screenshot',
+          mimeType: 'image/png',
+          byteLength: bytes.length,
+          sha256,
+          chunkSize: ARTIFACT_CHUNK_BYTES,
+          chunkCount: 1,
+          createdAt,
+          expiresAt,
+        },
         format: 'png',
         mimeType: 'image/png',
         byteLength: bytes.length,
@@ -686,6 +909,192 @@ test('daemon stores screenshot artifacts for the requesting client only', async 
     },
   });
   assert.equal(expectBridgeResponse(parsePayload(agentSocket.writes[2])).response.ok, true);
+});
+
+test('daemon routes HAR exports and rejects artifact kinds that do not match the method', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bbx-daemon-har-artifact-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const artifactStore = new ArtifactStore(path.join(root, 'store'));
+  artifactStore.reset();
+  const daemon = new BridgeDaemon({ logger: { log() {}, error() {} }, artifactStore });
+  const agentSocket = createFakeSocket();
+  agentSocket.__clientId = 'har-client';
+  const extensionSocket = createFakeSocket();
+  extensionSocket.__extensionId = 'har-extension';
+  extensionSocket.__accessEnabled = true;
+  daemon.extensionSockets.set('har-extension', extensionSocket);
+  const bytes = Buffer.from('{"log":{"version":"1.2","entries":[]}}');
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 60_000).toISOString();
+
+  await daemon.handleAgentRequest(agentSocket, {
+    request: {
+      id: 'req_har_export',
+      method: 'network.export_har',
+      tab_id: 4,
+      params: { limit: 20, urlPattern: '*api*', delivery: 'artifact' },
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  });
+  const routed = JSON.parse(extensionSocket.writes[0]) as {
+    request: { method: string; params: Record<string, unknown> };
+  };
+  assert.equal(routed.request.method, 'network.export_har');
+  assert.deepEqual(routed.request.params, {
+    limit: 20,
+    urlPattern: '*api*',
+    delivery: 'artifact',
+  });
+
+  const harArtifactId = `art_${'e'.repeat(43)}`;
+  daemon.handleExtensionArtifact(extensionSocket, {
+    type: 'extension.artifact.begin',
+    artifact: {
+      requestId: 'req_har_export',
+      artifactId: harArtifactId,
+      kind: 'har',
+      mimeType: 'application/json',
+      byteLength: bytes.length,
+      sha256,
+      chunkCount: 1,
+      createdAt,
+      expiresAt,
+    },
+  });
+  daemon.handleExtensionArtifact(extensionSocket, {
+    type: 'extension.artifact.chunk',
+    artifact: { requestId: 'req_har_export' },
+    artifactId: harArtifactId,
+    chunkIndex: 0,
+    data: bytes.toString('base64'),
+  });
+  daemon.handleExtensionArtifact(extensionSocket, {
+    type: 'extension.artifact.commit',
+    artifact: { requestId: 'req_har_export' },
+    artifactId: harArtifactId,
+  });
+  await daemon.handleExtensionResponse(extensionSocket, {
+    response: {
+      id: 'req_har_export',
+      ok: true,
+      result: {
+        delivery: 'artifact',
+        artifact: {
+          artifactId: harArtifactId,
+          kind: 'har',
+          mimeType: 'application/json',
+          byteLength: bytes.length,
+          sha256,
+          chunkSize: ARTIFACT_CHUNK_BYTES,
+          chunkCount: 1,
+          createdAt,
+          expiresAt,
+        },
+      },
+      error: null,
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'network.export_har' },
+    },
+  });
+  assert.equal(expectBridgeResponse(parsePayload(agentSocket.writes[0])).response.ok, true);
+
+  await daemon.handleAgentRequest(agentSocket, {
+    request: {
+      id: 'req_har_kind_mismatch',
+      method: 'network.export_har',
+      tab_id: 4,
+      params: { limit: 20, delivery: 'artifact' },
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  });
+  const screenshotArtifactId = `art_${'s'.repeat(43)}`;
+  artifactStore.begin({
+    artifactId: screenshotArtifactId,
+    requestId: 'req_har_kind_mismatch',
+    ownerId: 'har-client',
+    extensionId: 'har-extension',
+    kind: 'screenshot',
+    mimeType: 'image/png',
+    totalBytes: bytes.length,
+    sha256,
+    chunkCount: 1,
+    createdAt,
+    expiresAt,
+  });
+  artifactStore.writeChunk(screenshotArtifactId, 0, bytes.toString('base64'));
+  artifactStore.commit(screenshotArtifactId);
+  await daemon.handleExtensionResponse(extensionSocket, {
+    response: {
+      id: 'req_har_kind_mismatch',
+      ok: true,
+      result: {
+        delivery: 'artifact',
+        artifact: { artifactId: screenshotArtifactId, kind: 'screenshot' },
+      },
+      error: null,
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'network.export_har' },
+    },
+  });
+  const harMismatch = expectBridgeResponse(parsePayload(agentSocket.writes[1])).response;
+  assert.equal(harMismatch.error?.code, ERROR_CODES.ARTIFACT_TRANSFER_INVALID);
+
+  await daemon.handleAgentRequest(agentSocket, {
+    request: {
+      id: 'req_screenshot_kind_mismatch',
+      method: 'screenshot.capture_element',
+      tab_id: 4,
+      params: {
+        elementRef: 'el_artifact',
+        format: 'png',
+        quality: null,
+        delivery: 'artifact',
+        scale: 1,
+      },
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  });
+  const mismatchArtifactId = `art_${'m'.repeat(43)}`;
+  daemon.handleExtensionArtifact(extensionSocket, {
+    type: 'extension.artifact.begin',
+    artifact: {
+      requestId: 'req_screenshot_kind_mismatch',
+      artifactId: mismatchArtifactId,
+      kind: 'har',
+      mimeType: 'application/json',
+      byteLength: bytes.length,
+      sha256,
+      chunkCount: 1,
+      createdAt,
+      expiresAt,
+    },
+  });
+  daemon.handleExtensionArtifact(extensionSocket, {
+    type: 'extension.artifact.chunk',
+    artifact: { requestId: 'req_screenshot_kind_mismatch' },
+    artifactId: mismatchArtifactId,
+    chunkIndex: 0,
+    data: bytes.toString('base64'),
+  });
+  daemon.handleExtensionArtifact(extensionSocket, {
+    type: 'extension.artifact.commit',
+    artifact: { requestId: 'req_screenshot_kind_mismatch' },
+    artifactId: mismatchArtifactId,
+  });
+  await daemon.handleExtensionResponse(extensionSocket, {
+    response: {
+      id: 'req_screenshot_kind_mismatch',
+      ok: true,
+      result: {
+        delivery: 'artifact',
+        artifact: { artifactId: mismatchArtifactId, kind: 'har' },
+      },
+      error: null,
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'screenshot.capture_element' },
+    },
+  });
+  const mismatch = expectBridgeResponse(parsePayload(agentSocket.writes[2])).response;
+  assert.equal(mismatch.error?.code, ERROR_CODES.ARTIFACT_TRANSFER_INVALID);
+  assert.match(mismatch.error?.message ?? '', /Artifact metadata does not match/u);
 });
 
 test('daemon routes DOM baseline operations to the creating extension only', async () => {
@@ -3228,4 +3637,212 @@ test('daemon sends error response for valid JSON with missing type field', async
     socket.destroy();
     await daemon.stop();
   }
+});
+test('daemon recovery telemetry detects repeated no-target failures and excludes diagnostics', async () => {
+  const daemon = new BridgeDaemon({ logger: { log() {}, error() {} } });
+  const agent = createFakeSocket();
+  for (let index = 0; index < 3; index += 1) {
+    await daemon.handleAgentRequest(agent, {
+      request: {
+        id: `req_no_target_${index}`,
+        method: 'page.get_state',
+        tab_id: 1,
+        params: {},
+        meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+      },
+    });
+  }
+  await daemon.handleAgentRequest(agent, {
+    request: {
+      id: 'req_recovery_metrics_1',
+      method: 'daemon.metrics',
+      tab_id: null,
+      params: {},
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  });
+  await daemon.handleAgentRequest(agent, {
+    request: {
+      id: 'req_recovery_metrics_2',
+      method: 'daemon.metrics',
+      tab_id: null,
+      params: {},
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  });
+
+  const first = expectBridgeResponse(parsePayload(agent.writes[3].trim()));
+  const second = expectBridgeResponse(parsePayload(agent.writes[4].trim()));
+  const firstRecovery = (first.response.result as TestBridgeResult).recovery as {
+    activeLoop: boolean;
+    events: Record<
+      string,
+      {
+        attempts: number;
+        successes: number;
+        failures: number;
+        pending: number;
+        saturated: boolean;
+        successRate: number | null;
+        failureRate: number | null;
+        activeLoop: boolean;
+        lastEventAt: number | null;
+      }
+    >;
+  };
+  const secondRecovery = (second.response.result as TestBridgeResult)
+    .recovery as typeof firstRecovery;
+  assert.equal(firstRecovery.activeLoop, true);
+  assert.deepEqual(firstRecovery.events.request_outcome, secondRecovery.events.request_outcome);
+  assert.deepEqual(firstRecovery.events.request_outcome, {
+    attempts: 3,
+    successes: 0,
+    failures: 3,
+    pending: 0,
+    saturated: false,
+    successRate: 0,
+    failureRate: 1,
+    activeLoop: true,
+    lastEventAt: firstRecovery.events.request_outcome.lastEventAt,
+  });
+});
+
+test('daemon attributes only marked MCP second-attempt outcomes to automatic retries', async () => {
+  const daemon = new BridgeDaemon({ logger: { log() {}, error() {} } });
+  const agent = createFakeSocket();
+  const extension = createFakeSocket();
+  daemon.extensionSockets.set('retry-extension', extension);
+
+  for (let index = 0; index < 3; index += 1) {
+    const id = `req_retry_${index}`;
+    await daemon.handleAgentRequest(agent, {
+      request: {
+        id,
+        method: 'page.get_state',
+        tab_id: 1,
+        params: {},
+        meta: {
+          protocol_version: PROTOCOL_VERSION,
+          token_budget: null,
+          source: 'mcp',
+          automatic_retry: { attempt: 2, reason: 'retryable_error' },
+        },
+      },
+    });
+    await daemon.handleExtensionResponse(extension, {
+      response: {
+        id,
+        ok: false,
+        result: null,
+        error: { code: ERROR_CODES.TIMEOUT, message: 'failed', details: null },
+        meta: { protocol_version: PROTOCOL_VERSION, method: 'page.get_state' },
+      },
+    });
+  }
+  for (const [index, meta] of [
+    { source: 'cli', automatic_retry: { attempt: 2, reason: 'retryable_error' } },
+    { source: 'mcp', automatic_retry: { attempt: 2, reason: 'wrong_reason' } },
+  ].entries()) {
+    const id = `req_retry_pollution_${index}`;
+    await daemon.handleAgentRequest(agent, {
+      request: {
+        id,
+        method: 'page.get_state',
+        tab_id: 1,
+        params: {},
+        meta: { protocol_version: PROTOCOL_VERSION, token_budget: null, ...meta },
+      },
+    });
+    await daemon.handleExtensionResponse(extension, {
+      response: {
+        id,
+        ok: false,
+        result: null,
+        error: { code: ERROR_CODES.TIMEOUT, message: 'failed', details: null },
+        meta: { protocol_version: PROTOCOL_VERSION, method: 'page.get_state' },
+      },
+    });
+  }
+  await daemon.handleAgentRequest(agent, {
+    request: {
+      id: 'req_retry_metrics',
+      method: 'daemon.metrics',
+      tab_id: null,
+      params: {},
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  });
+  const payload = expectBridgeResponse(parsePayload(agent.writes[5].trim()));
+  const recovery = (payload.response.result as TestBridgeResult).recovery as {
+    events: Record<
+      string,
+      {
+        attempts: number;
+        successes: number;
+        failures: number;
+        pending: number;
+        saturated: boolean;
+        successRate: number | null;
+        failureRate: number | null;
+        activeLoop: boolean;
+        lastEventAt: number | null;
+      }
+    >;
+  };
+  assert.deepEqual(recovery.events.automatic_mcp_retry, {
+    attempts: 3,
+    successes: 0,
+    failures: 3,
+    pending: 0,
+    saturated: false,
+    successRate: 0,
+    failureRate: 1,
+    activeLoop: true,
+    lastEventAt: recovery.events.automatic_mcp_retry.lastEventAt,
+  });
+});
+
+test('daemon health strictly normalizes routed extension recovery telemetry', async () => {
+  const daemon = new BridgeDaemon({ logger: { log() {}, error() {} } });
+  const agent = createFakeSocket();
+  const extension = createFakeSocket();
+  daemon.extensionSockets.set('health-extension', extension);
+  const collector = new RecoveryTelemetryCollector({ now: () => 123_000 });
+  collector.record('content_script_reinjection', 'failure', 'private-tab-id');
+  const malicious = {
+    ...collector.snapshot('routedExtension'),
+    url: 'https://private.example/secret',
+    events: {
+      ...collector.snapshot('routedExtension').events,
+      content_script_reinjection: {
+        ...collector.snapshot('routedExtension').events.content_script_reinjection,
+        selector: '#private',
+      },
+    },
+  };
+
+  await daemon.handleAgentRequest(agent, {
+    request: {
+      id: 'req_health_recovery',
+      method: 'health.ping',
+      tab_id: null,
+      params: {},
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  });
+  await daemon.handleExtensionResponse(extension, {
+    response: {
+      id: 'req_health_recovery',
+      ok: true,
+      result: { extension: 'ok', recovery: malicious },
+      error: null,
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'health.ping' },
+    },
+  });
+
+  const payload = expectBridgeResponse(parsePayload(agent.writes[0].trim()));
+  const serialized = JSON.stringify((payload.response.result as TestBridgeResult).recovery);
+  assert.doesNotMatch(serialized, /private|selector|url|secret/u);
+  assert.match(serialized, /routedExtension/u);
+  assert.match(serialized, /daemon/u);
 });

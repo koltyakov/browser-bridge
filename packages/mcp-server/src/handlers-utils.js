@@ -6,6 +6,7 @@ import {
   BridgeError,
   bridgeMethodNeedsTab,
   DEFAULT_CONSOLE_LIMIT,
+  DEFAULT_HAR_LIMIT,
   DEFAULT_LOG_TAIL_LIMIT,
   DEFAULT_MAX_HTML_LENGTH,
   DEFAULT_MAX_NODES,
@@ -409,6 +410,12 @@ export function applyMethodBudgetPreset(method, params, budgetPreset) {
       normal: DEFAULT_NETWORK_LIMIT,
       deep: 100,
     });
+  } else if (method === 'network.export_har') {
+    normalized = applyLimitBudgetPreset(args, {
+      quick: 20,
+      normal: DEFAULT_HAR_LIMIT,
+      deep: 100,
+    });
   } else if (method === 'log.tail') {
     normalized = applyLimitBudgetPreset(args, {
       quick: 10,
@@ -658,7 +665,7 @@ function compactDomNode(value) {
  * @param {import('../../agent-client/src/client.js').BridgeClient} client
  * @param {BridgeMethod} method
  * @param {Record<string, unknown>} params
- * @param {{ tabId?: number | null, source?: import('../../protocol/src/types.js').BridgeRequestSource, tokenBudget?: number | null }} options
+ * @param {{ tabId?: number | null, source?: import('../../protocol/src/types.js').BridgeRequestSource, tokenBudget?: number | null, automaticRetry?: 'mcp_second_attempt' }} options
  * @returns {Promise<BridgeResponse>}
  */
 export async function requestBridgeWithRetry(client, method, params, options) {
@@ -673,7 +680,10 @@ export async function requestBridgeWithRetry(client, method, params, options) {
       `[bbx-mcp] Retrying ${method} after ${delay}ms (${response.error.code})\n`
     );
     await new Promise((r) => setTimeout(r, delay));
-    return requestBridge(client, method, params, options);
+    return requestBridge(client, method, params, {
+      ...options,
+      automaticRetry: 'mcp_second_attempt',
+    });
   }
   return response;
 }

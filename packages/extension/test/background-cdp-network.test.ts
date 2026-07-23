@@ -15,12 +15,15 @@ function deferred() {
   return { promise, resolve };
 }
 
-function createHarness(options: { maxEntries?: number; ttlMs?: number } = {}) {
+function createHarness(
+  options: { maxEntries?: number; maxHarEntries?: number; ttlMs?: number } = {}
+) {
   const commands: string[] = [];
   const acquired: number[] = [];
   const released: number[] = [];
   const capture = createCdpNetworkCapture({
     maxEntries: options.maxEntries,
+    maxHarEntries: options.maxHarEntries,
     ttlMs: options.ttlMs,
     async acquireDebugger(tabId) {
       acquired.push(tabId);
@@ -244,7 +247,13 @@ test('CDP network capture summarizes redirects, cache sources, failures, and dur
     },
   });
   emitRequest(capture, 'redirected', 'Document', 10.1, {
-    redirectResponse: { status: 302, headers: { Location: '/final' } },
+    redirectResponse: {
+      status: 302,
+      mimeType: 'text/plain',
+      protocol: 'h2',
+      fromPrefetchCache: true,
+      headers: { Location: '/final' },
+    },
     request: { url: 'https://example.com/final?code=private#fragment', method: 'GET' },
   });
   capture.handleEvent(1, 'Network.requestServedFromCache', { requestId: 'redirected' });
@@ -284,6 +293,72 @@ test('CDP network capture summarizes redirects, cache sources, failures, and dur
   assert.equal(redirected?.duration, 250);
   assert.equal(failed?.failureReason, 'net::ERR_FAILED');
   assert.equal(failed?.duration, 125);
+
+  const har = await capture.readHar(1);
+  assert.equal(har.armed, true);
+  assert.equal(har.entries.length, 3);
+  assert.deepEqual(har.entries[0], {
+    url: 'https://example.com/redirect?token=%5Bredacted%5D',
+    method: 'GET',
+    resourceType: 'Document',
+    status: 302,
+    mimeType: 'text/plain',
+    protocol: 'h2',
+    fromCache: true,
+    fromDiskCache: false,
+    fromServiceWorker: false,
+    fromPrefetchCache: true,
+    failureReason: '',
+    redirectURL: 'https://example.com/final?code=%5Bredacted%5D',
+    duration: 100,
+    startedAt: 1_700_000_010_000,
+  });
+  assert.deepEqual(
+    {
+      url: har.entries[1]?.url,
+      status: har.entries[1]?.status,
+      duration: har.entries[1]?.duration,
+      fromCache: har.entries[1]?.fromCache,
+      fromDiskCache: har.entries[1]?.fromDiskCache,
+      fromServiceWorker: har.entries[1]?.fromServiceWorker,
+      startedAt: har.entries[1]?.startedAt,
+    },
+    {
+      url: 'https://example.com/final?code=%5Bredacted%5D',
+      status: 200,
+      duration: 150,
+      fromCache: true,
+      fromDiskCache: true,
+      fromServiceWorker: true,
+      startedAt: 1_700_000_010_100,
+    }
+  );
+  assert.equal(har.entries[2]?.failureReason, 'net::ERR_FAILED');
+  assert.equal(har.entries[2]?.duration, 125);
+  assert.doesNotMatch(JSON.stringify(har), /headers|Location|private|password/);
+});
+
+test('HAR evidence has an independent completed-leg bound', async () => {
+  const { capture } = createHarness({ maxEntries: 1, maxHarEntries: 2 });
+  await capture.start(1);
+  for (let index = 0; index < 3; index += 1) {
+    emitRequest(capture, `bounded-${index}`, 'Fetch', index + 1);
+    capture.handleEvent(1, 'Network.loadingFinished', {
+      requestId: `bounded-${index}`,
+      timestamp: index + 1.01,
+    });
+  }
+
+  const aggregate = await capture.read(1);
+  const har = await capture.readHar(1);
+  assert.equal(aggregate.entries.length, 1);
+  assert.equal(aggregate.dropped, 2);
+  assert.equal(har.entries.length, 2);
+  assert.equal(har.dropped, 1);
+  assert.deepEqual(
+    har.entries.map((entry) => entry.url),
+    ['https://example.com/bounded-1', 'https://example.com/bounded-2']
+  );
 });
 
 test('CDP network capture bounds overflow, redacts data and URL credentials, and clears on detach', async () => {
@@ -440,6 +515,36 @@ test('CDP network capture handles realistic WebSocket and WebTransport lifecycle
     JSON.stringify([webSocket, webTransport, failedWebTransport]),
     /private|secret|password|payloadData/
   );
+  const har = await capture.readHar(1);
+  assert.deepEqual(
+    har.entries.map((entry) => ({
+      resourceType: entry.resourceType,
+      status: entry.status,
+      protocol: entry.protocol,
+      failureReason: entry.failureReason,
+    })),
+    [
+      {
+        resourceType: 'WebSocket',
+        status: 101,
+        protocol: 'websocket',
+        failureReason: 'frame decode failed',
+      },
+      {
+        resourceType: 'WebTransport',
+        status: 0,
+        protocol: 'webtransport',
+        failureReason: '',
+      },
+      {
+        resourceType: 'WebTransport',
+        status: 0,
+        protocol: '',
+        failureReason: 'closed before connection established',
+      },
+    ]
+  );
+  assert.doesNotMatch(JSON.stringify(har), /private frame body|payloadData|Authorization|Cookie/);
 });
 
 test('per-tab lifecycle serialization does not publish armed state before enable or duplicate ownership', async () => {

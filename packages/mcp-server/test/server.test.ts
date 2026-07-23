@@ -127,6 +127,15 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
     const returnByValue = pageSchema.returnByValue as {
       safeParse: (value: unknown) => { success: boolean };
     };
+    const pageAction = pageSchema.action as {
+      safeParse: (value: unknown) => { success: boolean };
+    };
+    const harDelivery = pageSchema.delivery as {
+      safeParse: (value: unknown) => { success: boolean };
+    };
+    const urlPattern = pageSchema.urlPattern as {
+      safeParse: (value: unknown) => { success: boolean };
+    };
     assert.equal(tabsAction.safeParse('activate').success, true);
     assert.equal(inputAction.safeParse('fill').success, true);
     assert.equal(executionMode.safeParse('cdp').success, true);
@@ -146,6 +155,12 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
     assert.equal(patchOperation.safeParse('toggleClass').success, true);
     assert.equal(returnByValue.safeParse(true).success, true);
     assert.equal(returnByValue.safeParse(false).success, false);
+    assert.equal(pageAction.safeParse('har').success, true);
+    assert.equal(pageAction.safeParse('performance').success, true);
+    assert.equal(harDelivery.safeParse('artifact').success, true);
+    assert.equal(harDelivery.safeParse('download').success, false);
+    assert.equal(urlPattern.safeParse('x'.repeat(2_048)).success, true);
+    assert.equal(urlPattern.safeParse('x'.repeat(2_049)).success, false);
     assert.ok(sensitiveSchema.source);
     assert.ok(sensitiveSchema.key);
     assert.ok(rawCallSchema.budgetPreset);
@@ -155,6 +170,14 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
     assert.ok(captureSchema.computedStyles);
     assert.deepEqual(BRIDGE_METHOD_REGISTRY['cdp.get_dom_snapshot'].params, ['computedStyles']);
     assert.match(String(registrations[5].config.description), /accessibility_tree/);
+    assert.match(String(registrations[8].config.description), /raw CDP Performance\.getMetrics/);
+    assert.match(String(registrations[8].config.description), /names and units, which vary/);
+    assert.match(String(registrations[8].config.description), /no navigation observation window/);
+    assert.match(String(registrations[8].config.description), /does not measure LCP, CLS, or INP/);
+    assert.match(
+      String((pageSchema.action as { description?: string }).description),
+      /raw Chrome\/CDP counters, not LCP, CLS, or INP/
+    );
     assert.equal(typeof registrations[13].handler, 'function');
     assert.deepEqual(registrations[13].config.annotations, {
       readOnlyHint: true,

@@ -359,7 +359,8 @@ export function enforceTokenBudget(method, response, tokenBudget) {
   if (
     method === 'dom.baseline.create' ||
     method === 'dom.baseline.describe' ||
-    method === 'dom.baseline.release'
+    method === 'dom.baseline.release' ||
+    method === 'network.export_har'
   ) {
     return response;
   }

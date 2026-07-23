@@ -21,7 +21,7 @@ import {
   createSuccess,
 } from '../../protocol/src/index.js';
 import type { SetupStatus } from '../../protocol/src/types.js';
-import { refreshSetupStatus } from '../src/background-native.js';
+import { createNativeConnectionController, refreshSetupStatus } from '../src/background-native.js';
 import { createExtensionState } from '../src/background-state.js';
 import type { ExtensionState } from '../src/background-state.js';
 
@@ -245,6 +245,64 @@ test('refreshSetupStatus ignores a stale timer and expires the current request',
     assert.equal(state.setupStatusError, 'Host setup request timed out.');
     assert.equal(state.setupStatusTimeoutId, null);
     assert.equal(emittedStates, 1);
+  } finally {
+    timers.restore();
+  }
+});
+
+test('native reconnect telemetry settles on disconnect or the existing stability timer', async () => {
+  const state = createExtensionState();
+  const messages: unknown[] = [];
+  const firstPort = createNativePort(messages);
+  const secondPort = createNativePort(messages);
+  const thirdPort = createNativePort(messages);
+  const ports = [firstPort, secondPort, thirdPort];
+  const outcomes: Array<'success' | 'failure'> = [];
+  const chromeObj = {
+    runtime: {
+      id: 'abcdefghijklmnopabcdefghijklmnop',
+      connectNative() {
+        const port = ports.shift();
+        if (!port) throw new Error('no test port');
+        return port;
+      },
+      lastError: undefined,
+    },
+    storage: {
+      session: createStorageArea(),
+    },
+  } as unknown as typeof chrome;
+  const timers = installManualTimers();
+  try {
+    const controller = createNativeConnectionController(state, chromeObj, {
+      async appendActionLogEntry() {},
+      broadcastUi() {},
+      clearSetupStatus() {},
+      async emitUiState() {},
+      async handleBridgeRequest() {},
+      handleHostStatusMessage: () => false,
+      async refreshActionIndicators() {},
+      refreshSetupStatus() {},
+      reply() {},
+      recordReconnect: (outcome) => outcomes.push(outcome),
+    });
+
+    controller.scheduleNativeReconnect('first disconnect');
+    timers.scheduled[0].callback();
+    firstPort.onDisconnect.dispatch();
+    assert.deepEqual(outcomes, ['failure']);
+
+    timers.scheduled[2].callback();
+    timers.scheduled[3].callback();
+    await flushAsyncWork();
+    assert.deepEqual(outcomes, ['failure', 'success']);
+
+    secondPort.onDisconnect.dispatch();
+    assert.deepEqual(outcomes, ['failure', 'success']);
+    timers.scheduled[5].callback();
+    timers.scheduled[6].callback();
+    await flushAsyncWork();
+    assert.deepEqual(outcomes, ['failure', 'success', 'success']);
   } finally {
     timers.restore();
   }

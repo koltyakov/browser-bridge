@@ -2,6 +2,7 @@
 
 import {
   DEFAULT_CONSOLE_LIMIT,
+  DEFAULT_HAR_LIMIT,
   DEFAULT_NETWORK_LIMIT,
   ERROR_CODES,
   getErrorRecovery,
@@ -98,11 +99,19 @@ export const PAGE_ACTIONS = {
       capture: a.capture,
     }),
   },
+  har: {
+    method: 'network.export_har',
+    params: (a) => ({
+      limit: a.limit,
+      urlPattern: a.urlPattern,
+      delivery: a.delivery,
+    }),
+  },
   performance: { method: 'performance.get_metrics', params: () => ({}) },
 };
 
 /**
- * @param {{ action: string, expression?: string, awaitPromise?: boolean, timeoutMs?: number, returnByValue?: boolean, level?: string, clear?: boolean, limit?: number, type?: string, keys?: string[], textBudget?: number, format?: 'text' | 'markdown', selector?: string, includeMetadata?: boolean, consistency?: 'best_effort' | 'settled', settleTimeoutMs?: number, urlPattern?: string, source?: 'fetch-xhr' | 'cdp', capture?: 'read' | 'start' | 'clear' | 'stop', dialogAction?: string, promptText?: string, expectedDialogId?: string, waitForLoad?: boolean, url?: string, urlMatch?: string, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @param {{ action: string, expression?: string, awaitPromise?: boolean, timeoutMs?: number, returnByValue?: boolean, level?: string, clear?: boolean, limit?: number, type?: string, keys?: string[], textBudget?: number, format?: 'text' | 'markdown', selector?: string, includeMetadata?: boolean, consistency?: 'best_effort' | 'settled', settleTimeoutMs?: number, urlPattern?: string, source?: 'fetch-xhr' | 'cdp', capture?: 'read' | 'start' | 'clear' | 'stop', delivery?: 'auto' | 'inline' | 'artifact', dialogAction?: string, promptText?: string, expectedDialogId?: string, waitForLoad?: boolean, url?: string, urlMatch?: string, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handlePageTool(args) {
@@ -121,6 +130,12 @@ export async function handlePageTool(args) {
       normal: DEFAULT_NETWORK_LIMIT,
       deep: 100,
     });
+  } else if (args.action === 'har') {
+    normalizedArgs = applyLimitBudgetPreset(args, {
+      quick: 20,
+      normal: DEFAULT_HAR_LIMIT,
+      deep: 100,
+    });
   }
   const entry = PAGE_ACTIONS[normalizedArgs.action];
   if (!entry) return summarizeToolError(`Unsupported page action "${args.action}".`);
@@ -130,7 +145,21 @@ export async function handlePageTool(args) {
   ) {
     return summarizeToolError('expression is required for page evaluate.');
   }
-  return callBridgeTool(entry.method, entry.params(normalizedArgs), {
+  const params = entry.params(normalizedArgs);
+  if (entry.method === 'network.export_har') {
+    return withToolClient(
+      async (client) => {
+        const response = await requestBridgeWithRetry(client, entry.method, params, {
+          tabId: typeof normalizedArgs.tabId === 'number' ? normalizedArgs.tabId : null,
+          source: REQUEST_SOURCE,
+          tokenBudget: getToolTokenBudget(normalizedArgs),
+        });
+        return createHarExportResult(response);
+      },
+      { destinationId: normalizedArgs.destinationId ?? null }
+    );
+  }
+  return callBridgeTool(entry.method, params, {
     tabId: typeof normalizedArgs.tabId === 'number' ? normalizedArgs.tabId : null,
     tokenBudget: getToolTokenBudget(normalizedArgs),
     destinationId: normalizedArgs.destinationId ?? null,
@@ -341,6 +370,9 @@ export async function handleRawCallTool(args) {
       if (response.ok && method.startsWith('screenshot.')) {
         return createScreenshotResult(response, method);
       }
+      if (method === 'network.export_har') {
+        return createHarExportResult(response);
+      }
       if (method === 'sensitive.read') {
         return createSensitiveReadResult(response);
       }
@@ -348,6 +380,84 @@ export async function handleRawCallTool(args) {
     },
     { destinationId: args.destinationId ?? null }
   );
+}
+
+/**
+ * Preserve the atomic HAR payload exactly. Generic evidence bounding must not
+ * turn a valid HAR document into a structurally invalid partial document.
+ *
+ * @param {import('../../protocol/src/types.js').BridgeResponse} response
+ * @returns {ToolResult}
+ */
+export function createHarExportResult(response) {
+  if (!response.ok) return summarizeToolResponse(response, 'network.export_har', {});
+  const result =
+    response.result && typeof response.result === 'object' && !Array.isArray(response.result)
+      ? /** @type {Record<string, unknown>} */ (response.result)
+      : {};
+  const numericFields = [
+    'byteLength',
+    'entryCount',
+    'totalEntries',
+    'dropped',
+    'abandoned',
+    'inflight',
+  ];
+  const captureState = result.captureState;
+  const validMetadata =
+    result.format === 'har' &&
+    result.harVersion === '1.2' &&
+    result.mimeType === 'application/json' &&
+    numericFields.every((field) => typeof result[field] === 'number') &&
+    (typeof result.startedAt === 'number' || result.startedAt === null) &&
+    (captureState === 'armed' ||
+      captureState === 'stop_failed' ||
+      captureState === 'stopped' ||
+      captureState === 'instrumented') &&
+    typeof result.truncated === 'boolean' &&
+    result.truncation !== null &&
+    typeof result.truncation === 'object';
+  if (!validMetadata) {
+    return summarizeToolError('network.export_har returned invalid HAR metadata.');
+  }
+
+  if (result.delivery === 'inline') {
+    const har =
+      result.har && typeof result.har === 'object' && !Array.isArray(result.har)
+        ? /** @type {Record<string, unknown>} */ (result.har)
+        : {};
+    const log =
+      har.log && typeof har.log === 'object' && !Array.isArray(har.log)
+        ? /** @type {Record<string, unknown>} */ (har.log)
+        : {};
+    if (log.version !== '1.2' || !Array.isArray(log.entries)) {
+      return summarizeToolError('network.export_har returned an invalid inline HAR document.');
+    }
+  } else if (result.delivery === 'artifact') {
+    const artifact =
+      result.artifact && typeof result.artifact === 'object' && !Array.isArray(result.artifact)
+        ? /** @type {Record<string, unknown>} */ (result.artifact)
+        : {};
+    if (
+      artifact.kind !== 'har' ||
+      artifact.mimeType !== 'application/json' ||
+      typeof artifact.artifactId !== 'string' ||
+      typeof artifact.byteLength !== 'number' ||
+      typeof artifact.sha256 !== 'string' ||
+      !/^[a-f0-9]{64}$/u.test(artifact.sha256) ||
+      typeof artifact.chunkSize !== 'number' ||
+      typeof artifact.chunkCount !== 'number' ||
+      typeof artifact.createdAt !== 'string' ||
+      typeof artifact.expiresAt !== 'string'
+    ) {
+      return summarizeToolError('network.export_har returned invalid artifact metadata.');
+    }
+  } else {
+    return summarizeToolError('network.export_har returned an invalid delivery mode.');
+  }
+
+  const summary = summarizeBridgeResponse(response, 'network.export_har');
+  return createToolResult(summary.summary, result);
 }
 
 /**

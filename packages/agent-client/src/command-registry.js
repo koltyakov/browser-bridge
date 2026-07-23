@@ -204,7 +204,10 @@ export const SHORTCUT_COMMANDS = {
       maxDepth: r[1] ? parseIntArg(r[1], 'maxDepth') : undefined,
     })
   ),
-  perf: createShortcutCommand('performance.get_metrics', 'bbx perf', () => ({})),
+  perf: createShortcutCommand('performance.get_metrics', 'bbx perf', () => ({}), {
+    description:
+      'Read a raw Chrome/CDP counter point sample (names and units vary; no BBX navigation window or LCP/CLS/INP measurement)',
+  }),
   scroll: createShortcutCommand('viewport.scroll', 'bbx scroll <top> [left]', (r) => {
     if (!r[0] && !r[1]) throw new Error('Usage: scroll <top> [left]');
     return {
@@ -250,6 +253,7 @@ export const CLI_METHOD_BINDINGS = Object.freeze({
   'press-key': 'input.press_key',
   'cdp-press-key': 'cdp.dispatch_key_event',
   screenshot: 'screenshot.capture_element',
+  har: 'network.export_har',
   eval: 'page.evaluate',
 });
 
@@ -377,6 +381,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
     title: 'Capture',
     lines: [
       'bbx screenshot [--tab <tabId>] [--format png|jpeg|webp] [--quality 0-100] <ref|selector> [path]',
+      'bbx har [--tab <tabId>] [--limit 1-200] [--url-pattern <pattern>] [--delivery inline|artifact|auto] [outPath]',
     ],
   },
 ]);

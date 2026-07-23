@@ -314,6 +314,7 @@
         {
           elementRef,
           recovered: false,
+          recoveryAttempted: true,
           reason: 'descriptor_missing',
         }
       );
@@ -325,6 +326,7 @@
         {
           elementRef,
           recovered: false,
+          recoveryAttempted: true,
           reason: 'url_changed',
         }
       );
@@ -338,6 +340,7 @@
         {
           elementRef,
           recovered: false,
+          recoveryAttempted: true,
           reason: 'weak_descriptor',
         }
       );
@@ -356,6 +359,7 @@
         {
           elementRef,
           recovered: false,
+          recoveryAttempted: true,
           reason: 'scan_incomplete',
           candidateCount: candidateNodes.length,
           evaluatedCount,
@@ -374,6 +378,7 @@
         {
           elementRef,
           recovered: false,
+          recoveryAttempted: true,
           candidateCount: matches.length,
           evaluatedCount,
           matchedFields: strongFields,

@@ -31,6 +31,8 @@ import {
   MAX_DAEMON_PENDING_TIMEOUT_MS,
   MAX_DOM_BASELINES_GLOBAL,
   parseJsonLines,
+  RecoveryTelemetryCollector,
+  normalizeRecoveryTelemetrySummary,
   sanitizeIncidentalValue,
   setProtocolPackageVersion,
   validateBridgeRequest,
@@ -59,7 +61,7 @@ setProtocolPackageVersion(DAEMON_VERSION);
 /** @typedef {import('./daemon-logger.js').DaemonLoggerLike} DaemonLoggerLike */
 /** @typedef {'agent' | 'extension'} SocketRole */
 /** @typedef {import('node:net').Socket & { readonly __role?: SocketRole, __clientId?: string, __extensionId?: string, __browserName?: string, __profileLabel?: string, __browserExtensionId?: string, __accessEnabled?: boolean, __lastActiveAt?: number }} ClientSocket */
-/** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string, method?: string, protocolVersion?: string, baselineId?: string | null, targets: Set<ClientSocket>, lastErrorResponse?: import('../../protocol/src/types.js').BridgeResponse }} PendingEntry */
+/** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string, method?: string, protocolVersion?: string, baselineId?: string | null, automaticMcpRetry?: boolean, targets: Set<ClientSocket>, lastErrorResponse?: import('../../protocol/src/types.js').BridgeResponse }} PendingEntry */
 /**
  * @typedef {{
  *   installAgentFiles: typeof import('../../agent-client/src/install.js').installAgentFiles,
@@ -115,6 +117,13 @@ const HEALTH_DEBUGGER_REASONS = new Set([
   'target_closed',
 ]);
 const HEALTH_CAPTURE_STATES = new Set(['stopped', 'armed', 'active', 'stop_failed']);
+const DIAGNOSTIC_METHODS = new Set([
+  'health.ping',
+  'daemon.metrics',
+  'log.tail',
+  'setup.get_status',
+  'setup.install',
+]);
 
 /**
  * @param {unknown} value
@@ -267,6 +276,9 @@ function normalizeExtensionHealthResult(value) {
     normalized.domBaselines = normalizedBaselines;
   }
 
+  const recovery = normalizeRecoveryTelemetrySummary(result.recovery, 'routedExtension');
+  if (recovery) normalized.recovery = recovery;
+
   const extensionSupportedVersions = Array.isArray(result.supported_versions)
     ? result.supported_versions
         .filter(
@@ -279,6 +291,19 @@ function normalizeExtensionHealthResult(value) {
     : [];
   normalized.extension_supported_versions = extensionSupportedVersions;
   return normalized;
+}
+
+/**
+ * @param {import('../../protocol/src/types.js').RecoveryTelemetrySummary} daemon
+ * @param {unknown} extensionResult
+ */
+function createHealthRecoveryPayload(daemon, extensionResult) {
+  const source = asHealthRecord(extensionResult);
+  const routedExtension = normalizeRecoveryTelemetrySummary(source?.recovery, 'routedExtension');
+  return {
+    daemon,
+    ...(routedExtension ? { routedExtension } : {}),
+  };
 }
 
 /**
@@ -346,6 +371,8 @@ export function isWindowsNamedPipePath(socketPath) {
  *   data?: string
  * }} DaemonMessage
  */
+
+/** @typedef {import('../../protocol/src/types.js').ArtifactKind} ArtifactKind */
 
 export class BridgeDaemon {
   /**
@@ -417,6 +444,7 @@ export class BridgeDaemon {
     this.domBaselineOwners = new Map();
     /** @type {Map<string, { socket: ClientSocket, expiresAt: number }>} */
     this.abandonedDomBaselineCreates = new Map();
+    this.recoveryTelemetry = new RecoveryTelemetryCollector();
   }
 
   /**
@@ -934,6 +962,7 @@ export class BridgeDaemon {
         `Request id ${JSON.stringify(request.id)} is already in flight.`
       );
       await writeJsonLine(socket, { type: 'agent.response', response });
+      this.recordDaemonRequestOutcome(request, false);
       return;
     }
 
@@ -947,6 +976,9 @@ export class BridgeDaemon {
           transport: formatBridgeTransport(this.transport),
           proxy: this.getProxyStatusPayload(),
           connectedExtensions: [],
+          recovery: {
+            daemon: this.recoveryTelemetry.snapshot('daemon'),
+          },
           daemon_supported_versions: getSupportedProtocolVersions(),
           ...getVersionNegotiationPayload(request.meta?.protocol_version),
         });
@@ -982,6 +1014,7 @@ export class BridgeDaemon {
         requestsFailed: this.requestsFailed,
         avgResponseTimeMs,
         domBaselineOwners: this.domBaselineOwners.size,
+        recovery: this.recoveryTelemetry.snapshot('daemon'),
       });
       await writeJsonLine(socket, { type: 'agent.response', response });
       return;
@@ -998,6 +1031,7 @@ export class BridgeDaemon {
           { method: request.method }
         );
         await writeJsonLine(socket, { type: 'agent.response', response });
+        this.recordDaemonRequestOutcome(request, false);
         return;
       }
       try {
@@ -1014,6 +1048,7 @@ export class BridgeDaemon {
           type: 'agent.response',
           response: createSuccess(request.id, result, { method: request.method }),
         });
+        this.recordDaemonRequestOutcome(request, true);
       } catch (error) {
         const code =
           error && typeof error === 'object' && 'code' in error
@@ -1029,6 +1064,7 @@ export class BridgeDaemon {
             { method: request.method }
           ),
         });
+        this.recordDaemonRequestOutcome(request, false);
       }
       return;
     }
@@ -1109,6 +1145,7 @@ export class BridgeDaemon {
                 { method: request.method }
               );
         await writeJsonLine(socket, { type: 'agent.response', response });
+        this.recordDaemonRequestOutcome(request, response.ok);
         return;
       }
       const response = createFailure(
@@ -1121,6 +1158,7 @@ export class BridgeDaemon {
         { method: request.method }
       );
       await writeJsonLine(socket, { type: 'agent.response', response });
+      this.recordDaemonRequestOutcome(request, false);
       return;
     }
 
@@ -1130,13 +1168,14 @@ export class BridgeDaemon {
       protocolVersion: request.meta?.protocol_version,
       source: typeof request.meta?.source === 'string' ? request.meta.source : '',
       baselineId,
+      automaticMcpRetry: isAutomaticMcpRetry(request.meta),
       targets: new Set([target]),
       timeoutId: setTimeout(() => {
         const pending = this.pendingRequests.get(request.id);
         if (!pending) return;
         this.markAbandonedDomBaselineCreate(request.id, pending);
         this.clearPendingRequest(request.id, pending);
-        this.recordRequestCompletion(request.id, false);
+        this.recordRequestCompletion(request.id, false, pending);
         const response = createFailure(
           request.id,
           ERROR_CODES.TIMEOUT,
@@ -1446,7 +1485,7 @@ export class BridgeDaemon {
           requestId,
           ownerId,
           extensionId: socket.__extensionId,
-          kind: 'screenshot',
+          kind: /** @type {ArtifactKind} */ (artifact.kind),
           mimeType: String(artifact.mimeType ?? ''),
           totalBytes: Number(artifact.byteLength),
           sha256: String(artifact.sha256 ?? ''),
@@ -1548,20 +1587,24 @@ export class BridgeDaemon {
         result.artifact && typeof result.artifact === 'object'
           ? /** @type {Record<string, unknown>} */ (result.artifact)
           : null;
+      const expectedArtifactKind = getArtifactKindForMethod(pending.method);
       if (
         result.delivery === 'artifact' &&
         (!artifact ||
+          artifact.kind !== expectedArtifactKind ||
           !pending.socket.__clientId ||
-          !this.artifactStore.ownsCommitted(
+          !this.artifactStore.matchesCommitted(
             String(artifact.artifactId ?? ''),
             pending.socket.__clientId,
-            responseMessage.id
+            responseMessage.id,
+            artifact,
+            expectedArtifactKind ?? undefined
           ))
       ) {
         pending.lastErrorResponse ??= createFailure(
           responseMessage.id,
           ERROR_CODES.ARTIFACT_TRANSFER_INVALID,
-          'Screenshot artifact was not committed before the response.',
+          'Artifact metadata does not match the request or was not committed before the response.',
           null,
           { method: pending.method }
         );
@@ -1611,6 +1654,10 @@ export class BridgeDaemon {
                 daemonVersion: DAEMON_VERSION,
                 daemon_supported_versions: getSupportedProtocolVersions(),
                 proxy: this.getProxyStatusPayload(),
+                recovery: createHealthRecoveryPayload(
+                  this.recoveryTelemetry.snapshot('daemon'),
+                  responseMessage.result
+                ),
               },
               {
                 method: pending.method,
@@ -1631,11 +1678,11 @@ export class BridgeDaemon {
           await this.releaseOrphanDomBaseline(socket, responseMessage).catch(() => {});
         }
         this.clearPendingRequest(responseMessage.id, pending);
-        this.recordRequestCompletion(responseMessage.id, false);
+        this.recordRequestCompletion(responseMessage.id, false, pending);
         throw error;
       }
       this.clearPendingRequest(responseMessage.id, pending, true);
-      this.recordRequestCompletion(responseMessage.id, true);
+      this.recordRequestCompletion(responseMessage.id, true, pending);
       this.pushLog({
         at: new Date().toISOString(),
         method: responseMessage.meta?.method ?? null,
@@ -1686,7 +1733,7 @@ export class BridgeDaemon {
         }
         this.markAbandonedDomBaselineCreate(id, pending);
         this.clearPendingRequest(id, pending);
-        this.recordRequestCompletion(id, false);
+        this.recordRequestCompletion(id, false, pending);
       }
     }
 
@@ -1723,7 +1770,7 @@ export class BridgeDaemon {
     }
 
     this.clearPendingRequest(requestId, pending);
-    this.recordRequestCompletion(requestId, false);
+    this.recordRequestCompletion(requestId, false, pending);
 
     const response =
       pending.lastErrorResponse ??
@@ -1752,9 +1799,10 @@ export class BridgeDaemon {
   /**
    * @param {string} requestId
    * @param {boolean} ok
+   * @param {PendingEntry | undefined} [pending]
    * @returns {void}
    */
-  recordRequestCompletion(requestId, ok) {
+  recordRequestCompletion(requestId, ok, pending) {
     const startedAt = this.requestStartTimes.get(requestId);
     this.requestStartTimes.delete(requestId);
     this.requestsProcessed += 1;
@@ -1763,6 +1811,34 @@ export class BridgeDaemon {
     }
     if (typeof startedAt === 'number') {
       this.totalResponseTimeMs += Date.now() - startedAt;
+    }
+    if (pending?.method && !DIAGNOSTIC_METHODS.has(pending.method)) {
+      this.recordDaemonRequestOutcome(
+        {
+          method: /** @type {BridgeRequest['method']} */ (pending.method),
+          meta: {
+            protocol_version: pending.protocolVersion ?? getProtocolVersion(),
+            token_budget: null,
+            ...(pending.automaticMcpRetry
+              ? { source: 'mcp', automatic_retry: { attempt: 2, reason: 'retryable_error' } }
+              : {}),
+          },
+        },
+        ok
+      );
+    }
+  }
+
+  /**
+   * @param {Pick<BridgeRequest, 'method' | 'meta'>} request
+   * @param {boolean} ok
+   */
+  recordDaemonRequestOutcome(request, ok) {
+    if (DIAGNOSTIC_METHODS.has(request.method)) return;
+    const outcome = ok ? 'success' : 'failure';
+    this.recoveryTelemetry.record('request_outcome', outcome, request.method);
+    if (isAutomaticMcpRetry(request.meta)) {
+      this.recoveryTelemetry.record('automatic_mcp_retry', outcome, request.method);
     }
   }
 
@@ -1776,6 +1852,27 @@ export class BridgeDaemon {
       this.recentLog.shift();
     }
   }
+}
+
+/** @param {Record<string, unknown>} meta */
+function isAutomaticMcpRetry(meta) {
+  const marker = asHealthRecord(meta.automatic_retry);
+  if (meta.source !== 'mcp' || !marker) return false;
+  const keys = Object.keys(marker).sort();
+  return (
+    keys.length === 2 &&
+    keys[0] === 'attempt' &&
+    keys[1] === 'reason' &&
+    marker.attempt === 2 &&
+    marker.reason === 'retryable_error'
+  );
+}
+
+/** @param {string | undefined} method @returns {ArtifactKind | null} */
+function getArtifactKindForMethod(method) {
+  if (method?.startsWith('screenshot.')) return 'screenshot';
+  if (method === 'network.export_har') return 'har';
+  return null;
 }
 
 /**

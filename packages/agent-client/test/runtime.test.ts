@@ -6,6 +6,7 @@ import {
   BRIDGE_METHOD_REGISTRY,
   getProtocolVersion,
   PROTOCOL_VERSION,
+  RecoveryTelemetryCollector,
 } from '../../protocol/src/index.js';
 import { CLI_METHOD_BINDINGS } from '../src/command-registry.js';
 import { detectMcpClients, detectSkillTargets } from '../src/detect.js';
@@ -1468,6 +1469,54 @@ test('getDoctorReport redacts newly consolidated URL, value, token, label, and p
     consolidated,
     /private\.example|password|storage-secret|Bearer secret|form-secret|Private profile|Users\/private/u
   );
+});
+
+test('getDoctorReport reports only active bounded recovery loops with fixed guidance', async () => {
+  const daemonCollector = new RecoveryTelemetryCollector({ now: () => 100_000 });
+  const extensionCollector = new RecoveryTelemetryCollector({ now: () => 100_000 });
+  for (let index = 0; index < 3; index += 1) {
+    daemonCollector.record('request_outcome', 'failure', 'private-method');
+    extensionCollector.record('stale_ref_recovery', 'failure', 'private-tab');
+  }
+  const report = await getDoctorReport({
+    loadManifest: async () => null,
+    checkBrowserManifests: async () => browserManifestStatuses(['chrome']),
+    checkNativeHostManifestHealth: async () => [],
+    readDaemonStartHistory: async () => [],
+    checkUnwritableBridgePaths: async () => [],
+    getLocalTransport: () => ({ type: 'socket', socketPath: '/private/bridge.sock', label: '' }),
+    readProxyConfig: () => null,
+    readRemoteConfig: async () => ({ remotes: [] }),
+    bridgeClientRunner: createDiagnosticRunner({
+      'health.ping': {
+        ...healthyDiagnosticResult(),
+        recovery: {
+          daemon: daemonCollector.snapshot('daemon'),
+          routedExtension: extensionCollector.snapshot('routedExtension'),
+        },
+      },
+      'setup.get_status': setupStatusFixture(),
+      'log.tail': { entries: [] },
+      'daemon.metrics': {
+        uptimeMs: 5_000,
+        activeAgents: 1,
+        activeExtensions: 1,
+        pendingRequests: 0,
+        requestsProcessed: 3,
+        requestsFailed: 3,
+        avgResponseTimeMs: 10,
+        recovery: daemonCollector.snapshot('daemon'),
+      },
+    }),
+  });
+
+  assert.deepEqual(report.recovery.activeLoops, ['stale_ref_recovery', 'request_outcome']);
+  assert.ok(report.issues.includes('stale_ref_recovery_loop'));
+  assert.ok(report.issues.includes('request_outcome_loop'));
+  assert.match(report.nextSteps.join(' '), /fresh elementRef/u);
+  assert.match(report.nextSteps.join(' '), /first typed bridge error/u);
+  assert.doesNotMatch(report.nextSteps.join(' '), /access, debugger, proxy, or version/u);
+  assert.doesNotMatch(JSON.stringify(report.recovery), /private-method|private-tab/u);
 });
 
 test('CLI bridge method bindings stay aligned with the protocol registry', () => {

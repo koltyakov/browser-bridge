@@ -468,6 +468,20 @@ test('enforceTokenBudget preserves baseline lifecycle handles atomically', () =>
   assert.equal(enforceTokenBudget('dom.baseline.describe', response, 1), response);
 });
 
+test('enforceTokenBudget never generically truncates HAR structure or strings', () => {
+  const response = successResponse('req_har_budget', {
+    delivery: 'inline',
+    har: {
+      log: {
+        version: '1.2',
+        entries: [{ request: { url: `https://example.test/${'x'.repeat(1_000)}` } }],
+      },
+    },
+  });
+
+  assert.equal(enforceTokenBudget('network.export_har', response, 1), response);
+});
+
 test('enforceTokenBudget falls back to a compact continuation payload when fields remain oversized', () => {
   const result: OversizedResult = {
     value: 'x'.repeat(5000),

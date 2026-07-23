@@ -269,6 +269,12 @@ test('move re-entry abort preserves an observed dialog for page.handle_dialog', 
     async stopCdpNetworkCapture() {
       return {};
     },
+    async readCdpHarEvidence() {
+      return {};
+    },
+    async storeHarArtifact() {
+      throw new Error('HAR artifact storage was not expected');
+    },
     runWithDebugger: (tabId, operation, options) => coordinator.run(tabId, operation, options),
     runForDialog: (tabId, operation, options) =>
       coordinator.runForDialog(tabId, operation, options),

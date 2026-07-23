@@ -51,7 +51,8 @@ export class TabDebuggerCoordinator {
    *   detach: DebuggerDetach,
    *   initialize?: DebuggerInitialize,
    *   protocolVersion?: string,
-   *   burstIdleMs?: number
+   *   burstIdleMs?: number,
+   *   recordReattach?: (outcome: 'success' | 'failure') => void
    * }} options
    */
   constructor({
@@ -60,12 +61,14 @@ export class TabDebuggerCoordinator {
     initialize = async () => {},
     protocolVersion = '1.3',
     burstIdleMs = 5_000,
+    recordReattach = () => {},
   }) {
     this.attach = attach;
     this.detach = detach;
     this.initialize = initialize;
     this.protocolVersion = protocolVersion;
     this.burstIdleMs = burstIdleMs;
+    this.recordReattach = recordReattach;
     /** @type {Map<number, Promise<void>>} */
     this.pendingByTab = new Map();
     /** @type {Map<number, Promise<void>>} */
@@ -168,11 +171,15 @@ export class TabDebuggerCoordinator {
         } else if (isDebuggerDetachedError(error)) {
           this.markDetached(tabId, 'debugger_detached');
           detached = true;
-          if (options.retryDetached === false) {
-            taskError = error;
-          } else {
+          if (options.retryDetached === true) {
             try {
-              await this._attach(target, generation);
+              try {
+                await this._attach(target, generation);
+                this.recordReattach('success');
+              } catch (attachError) {
+                this.recordReattach('failure');
+                throw attachError;
+              }
               detached = false;
               result = await this._runTrackedTask(tabId, generation, () => task(target));
               await this._waitForDialogLane(tabId);
@@ -182,6 +189,8 @@ export class TabDebuggerCoordinator {
                 ? retryError
                 : createDebuggerCanceledError();
             }
+          } else {
+            taskError = error;
           }
         } else {
           taskError = error;

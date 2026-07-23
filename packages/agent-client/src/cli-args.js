@@ -86,6 +86,41 @@ export function extractScreenshotFlags(args) {
 
 /**
  * @param {string[]} args
+ * @returns {{ limit: number | undefined, urlPattern: string | undefined, delivery: 'inline' | 'artifact' | 'auto', rest: string[] }}
+ */
+export function extractHarFlags(args) {
+  const rest = [...args];
+  const limitIndex = rest.indexOf('--limit');
+  let limit;
+  if (limitIndex !== -1) {
+    limit = Number(rest[limitIndex + 1]);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+      throw new Error('--limit must be an integer from 1 to 200.');
+    }
+    rest.splice(limitIndex, 2);
+  }
+
+  const urlPatternIndex = rest.indexOf('--url-pattern');
+  const urlPattern = urlPatternIndex === -1 ? undefined : rest[urlPatternIndex + 1];
+  if (urlPatternIndex !== -1) {
+    if (!urlPattern || urlPattern.startsWith('--')) {
+      throw new Error('--url-pattern requires a value.');
+    }
+    rest.splice(urlPatternIndex, 2);
+  }
+
+  const deliveryIndex = rest.indexOf('--delivery');
+  const rawDelivery = deliveryIndex === -1 ? 'auto' : rest[deliveryIndex + 1];
+  if (rawDelivery !== 'inline' && rawDelivery !== 'artifact' && rawDelivery !== 'auto') {
+    throw new Error('--delivery must be inline, artifact, or auto.');
+  }
+  if (deliveryIndex !== -1) rest.splice(deliveryIndex, 2);
+
+  return { limit, urlPattern, delivery: rawDelivery, rest };
+}
+
+/**
+ * @param {string[]} args
  * @returns {Promise<{ tabId: number | null, method: BridgeMethod, params: Record<string, unknown> }>}
  */
 export async function parseCallCommand(args) {

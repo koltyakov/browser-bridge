@@ -15,8 +15,9 @@ import {
   MAX_ARTIFACTS_PER_CLIENT,
 } from '../../protocol/src/index.js';
 
-/** @typedef {{ artifactId: string, requestId: string, ownerId: string, extensionId: string, kind: 'screenshot', mimeType: string, totalBytes: number, sha256: string, chunkCount: number, createdAt: string, expiresAt: string, fd: number, temporaryPath: string, finalPath: string, written: number, nextChunk: number, hash: import('node:crypto').Hash }} ArtifactTransfer */
-/** @typedef {{ artifactId: string, requestId: string, ownerId: string, extensionId: string, kind: 'screenshot', mimeType: string, byteLength: number, sha256: string, chunkCount: number, createdAt: string, expiresAt: string, filePath: string }} ArtifactRecord */
+/** @typedef {import('../../protocol/src/types.js').ArtifactKind} ArtifactKind */
+/** @typedef {{ artifactId: string, requestId: string, ownerId: string, extensionId: string, kind: ArtifactKind, mimeType: string, totalBytes: number, sha256: string, chunkCount: number, createdAt: string, expiresAt: string, fd: number, temporaryPath: string, finalPath: string, written: number, nextChunk: number, hash: import('node:crypto').Hash }} ArtifactTransfer */
+/** @typedef {{ artifactId: string, requestId: string, ownerId: string, extensionId: string, kind: ArtifactKind, mimeType: string, byteLength: number, sha256: string, chunkCount: number, createdAt: string, expiresAt: string, filePath: string }} ArtifactRecord */
 
 export class ArtifactStore {
   /** @param {string} rootPath @param {() => number} [now] */
@@ -68,7 +69,7 @@ export class ArtifactStore {
     const expiresAt = Date.parse(input.expiresAt);
     if (
       !/^[a-f0-9]{64}$/u.test(input.sha256) ||
-      !input.mimeType.startsWith('image/') ||
+      !isValidKindAndMimeType(input.kind, input.mimeType) ||
       !Number.isFinite(createdAt) ||
       !Number.isFinite(expiresAt) ||
       createdAt > now + 10_000 ||
@@ -223,10 +224,39 @@ export class ArtifactStore {
     return { artifactId, deleted: true };
   }
 
-  /** @param {string} artifactId @param {string} ownerId @param {string} requestId */
-  ownsCommitted(artifactId, ownerId, requestId) {
+  /** @param {string} artifactId @param {string} ownerId @param {string} requestId @param {ArtifactKind} [kind] */
+  ownsCommitted(artifactId, ownerId, requestId, kind) {
     const record = this.artifacts.get(artifactId);
-    return record?.ownerId === ownerId && record.requestId === requestId;
+    return (
+      record?.ownerId === ownerId &&
+      record.requestId === requestId &&
+      (kind === undefined || record.kind === kind)
+    );
+  }
+
+  /**
+   * @param {string} artifactId
+   * @param {string} ownerId
+   * @param {string} requestId
+   * @param {Record<string, unknown>} descriptor
+   * @param {ArtifactKind | undefined} expectedKind
+   */
+  matchesCommitted(artifactId, ownerId, requestId, descriptor, expectedKind) {
+    const record = this.artifacts.get(artifactId);
+    return Boolean(
+      record &&
+      record.ownerId === ownerId &&
+      record.requestId === requestId &&
+      (expectedKind === undefined || record.kind === expectedKind) &&
+      descriptor.kind === record.kind &&
+      descriptor.mimeType === record.mimeType &&
+      descriptor.byteLength === record.byteLength &&
+      descriptor.sha256 === record.sha256 &&
+      descriptor.chunkSize === ARTIFACT_CHUNK_BYTES &&
+      descriptor.chunkCount === record.chunkCount &&
+      descriptor.createdAt === record.createdAt &&
+      descriptor.expiresAt === record.expiresAt
+    );
   }
 
   /** @param {string} requestId */
@@ -297,6 +327,14 @@ export class ArtifactStore {
     }
     return record;
   }
+}
+
+/** @param {ArtifactKind} kind @param {string} mimeType */
+function isValidKindAndMimeType(kind, mimeType) {
+  return (
+    (kind === 'screenshot' && mimeType.startsWith('image/')) ||
+    (kind === 'har' && mimeType === 'application/json')
+  );
 }
 
 /** @param {string} value */

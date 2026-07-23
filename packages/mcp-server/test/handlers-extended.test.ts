@@ -22,6 +22,7 @@ import {
   makeSuccess as ok,
 } from '../../../tests/_helpers/protocolFactories.ts';
 import type { BridgeMethod, BridgeMeta, BridgeResponse } from '../../protocol/src/types.js';
+import { isRetrySafeBridgeMethod } from '../src/handlers-utils.js';
 
 type RequestRecord = {
   method: BridgeMethod;
@@ -583,6 +584,116 @@ test('handlePageTool network calls page.get_network with budget preset', async (
   );
 });
 
+test('handlePageTool HAR preserves the exact inline document and applies HAR presets', async () => {
+  const largeText = 'x'.repeat(30_000);
+  const har = {
+    log: {
+      version: '1.2',
+      creator: { name: 'Browser Bridge', version: '1.9.0' },
+      entries: [{ response: { content: { text: largeText } } }],
+    },
+  };
+  await withMockedBridge(
+    async () =>
+      ok({
+        format: 'har',
+        harVersion: '1.2',
+        mimeType: 'application/json',
+        byteLength: 30_100,
+        entryCount: 1,
+        totalEntries: 1,
+        dropped: 0,
+        abandoned: 0,
+        inflight: 0,
+        startedAt: 123,
+        captureState: 'armed',
+        truncated: false,
+        truncation: {
+          reason: null,
+          limit: 20,
+          omitted: 0,
+          omittedByLimit: 0,
+          omittedBySize: 0,
+        },
+        delivery: 'inline',
+        har,
+      }),
+    async (calls) => {
+      const result = await handlePageTool({
+        action: 'har',
+        budgetPreset: 'quick',
+        urlPattern: '/api',
+        delivery: 'inline',
+      });
+      assert.equal(calls[0].method, 'network.export_har');
+      assert.deepEqual(calls[0].params, {
+        limit: 20,
+        urlPattern: '/api',
+        delivery: 'inline',
+      });
+      assert.equal(calls[0].meta?.token_budget, 500);
+      assert.deepEqual(result.structuredContent.har, har);
+      assert.equal(
+        (result.structuredContent.har as typeof har).log.entries[0].response.content.text,
+        largeText
+      );
+      assert.equal(result.structuredContent.outputTruncated, undefined);
+    }
+  );
+});
+
+test('browser_call exports HAR artifacts without retry or structural budgeting', async () => {
+  const artifact = {
+    artifactId: `art_${'h'.repeat(43)}`,
+    kind: 'har',
+    mimeType: 'application/json',
+    byteLength: 500_000,
+    sha256: 'a'.repeat(64),
+    chunkSize: 196_608,
+    chunkCount: 3,
+    createdAt: '2026-07-23T00:00:00.000Z',
+    expiresAt: '2026-07-23T00:05:00.000Z',
+  };
+  await withMockedBridge(
+    async () =>
+      ok({
+        format: 'har',
+        harVersion: '1.2',
+        mimeType: 'application/json',
+        byteLength: artifact.byteLength,
+        entryCount: 50,
+        totalEntries: 60,
+        dropped: 2,
+        abandoned: 3,
+        inflight: 1,
+        startedAt: null,
+        captureState: 'stopped',
+        truncated: true,
+        truncation: {
+          reason: 'limit',
+          limit: 50,
+          omitted: 10,
+          omittedByLimit: 10,
+          omittedBySize: 0,
+        },
+        delivery: 'artifact',
+        artifact,
+      }),
+    async (calls) => {
+      const result = await handleRawCallTool({
+        method: 'network.export_har',
+        params: { delivery: 'artifact' },
+        budgetPreset: 'normal',
+      });
+      assert.equal(calls.length, 1);
+      assert.deepEqual(calls[0].params, { delivery: 'artifact', limit: 50 });
+      assert.equal(calls[0].meta?.token_budget, 1_500);
+      assert.deepEqual(result.structuredContent.artifact, artifact);
+      assert.equal(result.structuredContent.har, undefined);
+    }
+  );
+});
+
 test('MCP handlers forward compact AX and explicit CDP network lifecycle options', async () => {
   await withMockedBridge(
     async () => ok({ entries: [], nodes: [], count: 0, total: 0 }),
@@ -815,13 +926,32 @@ test('generic browser_call path accepts page.handle_dialog without a special-cas
 });
 
 test('handlePageTool performance calls performance.get_metrics', async () => {
+  const performanceResult = {
+    metrics: {
+      LayoutDuration: 0.0125,
+      TaskDuration: 0.01875,
+      Nodes: 42,
+      JSHeapUsedSize: 1_048_576,
+    },
+    measurement: {
+      source: 'cdp.Performance.getMetrics',
+      kind: 'raw_cdp_counters',
+      sampledAt: '2026-07-23T12:00:00.000Z',
+      timeDomain: 'timeTicks',
+      observation: 'browser_maintained_point_sample',
+      webVitals: 'not_measured',
+    },
+  };
   await withMockedBridge(
-    async () => ok({ metrics: { FCP: 1200 } }),
+    async () => ok(performanceResult),
     async (calls) => {
       const result = await handlePageTool({ action: 'performance' });
       const perfCall = calls.find((c) => c.method === 'performance.get_metrics');
       assert.ok(perfCall, 'performance.get_metrics should be called');
       assert.equal(result.isError, undefined);
+      assert.deepEqual(result.structuredContent.evidence, performanceResult);
+      assert.match(result.content[0].text, /Raw CDP performance counters: 4 collected/);
+      assert.match(result.content[0].text, /Web Vitals not measured/);
     }
   );
 });
@@ -1892,6 +2022,25 @@ test('handleBatchTool rejects CDP network capture lifecycle mutations', async ()
       assert.equal(calls.length, 0);
     }
   );
+});
+
+test('handleBatchTool rejects HAR export because artifact delivery can mutate state', async () => {
+  await withMockedBridge(
+    async () => ok({}),
+    async (calls) => {
+      const result = await handleBatchTool({
+        calls: [{ method: 'network.export_har', params: { delivery: 'auto' } }],
+      });
+      assert.equal(result.isError, true);
+      assert.equal(calls.length, 0);
+    }
+  );
+});
+
+test('HAR export is not automatically retryable', () => {
+  assert.equal(isRetrySafeBridgeMethod('network.export_har', { delivery: 'inline' }), false);
+  assert.equal(isRetrySafeBridgeMethod('network.export_har', { delivery: 'artifact' }), false);
+  assert.equal(isRetrySafeBridgeMethod('network.export_har', { delivery: 'auto' }), false);
 });
 
 // --- handleLogTool ---

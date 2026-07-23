@@ -37,7 +37,9 @@ test('ArtifactStore commits, reads, authorizes, and deletes private artifacts', 
   const record = store.commit(artifactId);
 
   assert.equal(record.byteLength, bytes.length);
+  assert.equal(record.kind, 'screenshot');
   assert.equal(store.ownsCommitted(artifactId, 'client-1', 'capture-1'), true);
+  assert.equal(store.ownsCommitted(artifactId, 'client-1', 'capture-1', 'har'), false);
   assert.deepEqual(store.read(artifactId, 'client-1', 0, 10), {
     artifactId,
     data: bytes.subarray(0, 10).toString('base64'),
@@ -54,13 +56,86 @@ test('ArtifactStore commits, reads, authorizes, and deletes private artifacts', 
     () => store.read(artifactId, 'client-2', 0, 10),
     (error: { code?: string }) => error.code === ERROR_CODES.ARTIFACT_NOT_FOUND
   );
+  if (process.platform !== 'win32') {
+    assert.equal(fs.statSync(storePath).mode & 0o777, 0o700);
+    assert.equal(fs.statSync(record.filePath).mode & 0o777, 0o600);
+  }
   assert.deepEqual(store.delete(artifactId, 'client-1'), { artifactId, deleted: true });
   assert.throws(
     () => store.read(artifactId, 'client-1', 0, 10),
     (error: { code?: string }) => error.code === ERROR_CODES.ARTIFACT_NOT_FOUND
   );
-  if (process.platform !== 'win32') {
-    assert.equal(fs.statSync(storePath).mode & 0o777, 0o700);
+});
+
+test('ArtifactStore accepts HAR JSON and rejects mismatched kind and MIME pairs', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bbx-artifacts-har-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const store = new ArtifactStore(path.join(root, 'store'));
+  store.reset();
+  const bytes = Buffer.from('{"log":{"version":"1.2","entries":[]}}');
+  const now = Date.now();
+  const input = {
+    artifactId: `art_${'h'.repeat(43)}`,
+    requestId: 'har-1',
+    ownerId: 'client-1',
+    extensionId: 'extension-1',
+    kind: 'har' as const,
+    mimeType: 'application/json',
+    totalBytes: bytes.length,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+    chunkCount: 1,
+    createdAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + 60_000).toISOString(),
+  };
+  store.begin(input);
+  store.writeChunk(input.artifactId, 0, bytes.toString('base64'));
+  const record = store.commit(input.artifactId);
+  assert.equal(record.kind, 'har');
+  assert.equal(store.ownsCommitted(input.artifactId, 'client-1', 'har-1', 'har'), true);
+  const descriptor = {
+    artifactId: input.artifactId,
+    kind: 'har',
+    mimeType: 'application/json',
+    byteLength: bytes.length,
+    sha256: input.sha256,
+    chunkSize: ARTIFACT_CHUNK_BYTES,
+    chunkCount: 1,
+    createdAt: input.createdAt,
+    expiresAt: input.expiresAt,
+  };
+  assert.equal(
+    store.matchesCommitted(input.artifactId, 'client-1', 'har-1', descriptor, 'har'),
+    true
+  );
+  assert.equal(
+    store.matchesCommitted(
+      input.artifactId,
+      'client-1',
+      'har-1',
+      { ...descriptor, byteLength: bytes.length + 1 },
+      'har'
+    ),
+    false
+  );
+  assert.equal(
+    store.read(input.artifactId, 'client-1', 0, bytes.length).data,
+    bytes.toString('base64')
+  );
+
+  for (const mismatch of [
+    { kind: 'har' as const, mimeType: 'image/png' },
+    { kind: 'screenshot' as const, mimeType: 'application/json' },
+  ]) {
+    assert.throws(
+      () =>
+        store.begin({
+          ...input,
+          ...mismatch,
+          artifactId: `art_${mismatch.kind.repeat(43).slice(0, 43)}`,
+          requestId: `mismatch-${mismatch.kind}`,
+        }),
+      (error: { code?: string }) => error.code === ERROR_CODES.ARTIFACT_TRANSFER_INVALID
+    );
   }
 });
 

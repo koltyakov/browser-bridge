@@ -18,7 +18,7 @@ import {
   parseNumberArg,
   parsePropertyAssignments,
 } from '../src/cli-helpers.js';
-import { extractScreenshotFlags } from '../src/cli-args.js';
+import { extractHarFlags, extractScreenshotFlags } from '../src/cli-args.js';
 import {
   findInstalledManagedTargets,
   getManagedSkillSentinelFilename,
@@ -737,6 +737,36 @@ test('extractScreenshotFlags parses bounded encoding options without consuming p
   });
   assert.throws(() => extractScreenshotFlags(['#hero', '--format', 'gif']), /png, jpeg, or webp/);
   assert.throws(() => extractScreenshotFlags(['#hero', '--quality', '101']), /0 to 100/);
+});
+
+test('extractHarFlags parses export filters and bounded delivery options', () => {
+  assert.deepEqual(
+    extractHarFlags([
+      '--url-pattern',
+      '*api*',
+      'capture.har',
+      '--delivery',
+      'artifact',
+      '--limit',
+      '200',
+    ]),
+    {
+      limit: 200,
+      urlPattern: '*api*',
+      delivery: 'artifact',
+      rest: ['capture.har'],
+    }
+  );
+  assert.deepEqual(extractHarFlags([]), {
+    limit: undefined,
+    urlPattern: undefined,
+    delivery: 'auto',
+    rest: [],
+  });
+  assert.throws(() => extractHarFlags(['--limit', '0']), /1 to 200/u);
+  assert.throws(() => extractHarFlags(['--limit', '201']), /1 to 200/u);
+  assert.throws(() => extractHarFlags(['--url-pattern']), /requires a value/u);
+  assert.throws(() => extractHarFlags(['--delivery', 'stream']), /inline, artifact, or auto/u);
 });
 
 /** Ensure JSON object parsing rejects non-object shapes. */

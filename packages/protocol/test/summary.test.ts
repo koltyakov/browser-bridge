@@ -513,6 +513,52 @@ test('summarizes empty network entries with method hint', () => {
   assert.match(summary.summary, /Network: 0 request/);
 });
 
+test('summarizes HAR exports with delivery and counts but without document evidence', () => {
+  const har = {
+    log: {
+      version: '1.2',
+      creator: { name: 'Browser Bridge', version: '1.9.0' },
+      entries: [{ secret: 'must not enter summary evidence' }],
+    },
+  };
+  const summary = summarizeBridgeResponse(
+    ok({
+      format: 'har',
+      harVersion: '1.2',
+      mimeType: 'application/json',
+      byteLength: 100,
+      entryCount: 1,
+      totalEntries: 4,
+      dropped: 1,
+      abandoned: 1,
+      inflight: 1,
+      startedAt: 1,
+      captureState: 'armed',
+      truncated: true,
+      truncation: {
+        reason: 'limit',
+        limit: 1,
+        omitted: 3,
+        omittedByLimit: 3,
+        omittedBySize: 0,
+      },
+      delivery: 'inline',
+      har,
+    }),
+    'network.export_har'
+  );
+  assert.match(summary.summary, /delivered inline: 1\/4 entries/);
+  assert.deepEqual(summary.evidence, {
+    delivery: 'inline',
+    entryCount: 1,
+    totalEntries: 4,
+    dropped: 1,
+    abandoned: 1,
+    inflight: 1,
+  });
+  assert.doesNotMatch(JSON.stringify(summary), /must not enter summary evidence/);
+});
+
 // --- summarizeBridgeResponse: console entries ---
 
 test('summarizes console entries', () => {
@@ -631,15 +677,29 @@ test('summarizes navigation.navigate result with tabId and url', () => {
   assert.match(summary.summary, /Navigated to https:\/\/example\.com/);
 });
 
-// --- summarizeBridgeResponse: performance metrics ---
+// --- summarizeBridgeResponse: raw CDP performance counters ---
 
-test('summarizes performance metrics', () => {
-  const summary = summarizeBridgeResponse(
-    ok({
-      metrics: { FCP: 1200, LCP: 2500 },
-    })
-  );
-  assert.match(summary.summary, /Performance: 2 metrics/);
+test('summarizes raw CDP performance counters without dropping measurement semantics', () => {
+  const result = {
+    metrics: {
+      LayoutDuration: 0.0125,
+      TaskDuration: 0.01875,
+      Nodes: 42,
+      JSHeapUsedSize: 1_048_576,
+    },
+    measurement: {
+      source: 'cdp.Performance.getMetrics',
+      kind: 'raw_cdp_counters',
+      sampledAt: '2026-07-23T12:00:00.000Z',
+      timeDomain: 'timeTicks',
+      observation: 'browser_maintained_point_sample',
+      webVitals: 'not_measured',
+    },
+  } as const;
+  const summary = summarizeBridgeResponse(ok(result), 'performance.get_metrics');
+  assert.match(summary.summary, /Raw CDP performance counters: 4 collected/);
+  assert.match(summary.summary, /point sample; Web Vitals not measured/);
+  assert.deepEqual(summary.evidence, result);
 });
 
 // --- summarizeBridgeResponse: storage entries ---

@@ -7,6 +7,7 @@ import {
   BRIDGE_METHOD_REGISTRY,
   DEFAULT_DEVICE_SCALE_FACTOR,
   DEFAULT_EVAL_TIMEOUT_MS,
+  DEFAULT_HAR_LIMIT,
   DEFAULT_NAV_TIMEOUT_MS,
   DEFAULT_NETWORK_INTERCEPT_ACTION,
   DOM_BASELINE_TTL_MS,
@@ -15,6 +16,8 @@ import {
   MAX_DOM_BASELINE_BYTES_PER_TAB,
   MAX_DOM_BASELINE_BYTES_GLOBAL,
   MAX_DOM_BASELINE_BYTES,
+  MAX_HAR_ENTRIES,
+  HAR_AUTO_INLINE_BYTES,
   MAX_SENSITIVE_VALUE_BYTES,
   ERROR_CODES,
   applyBudget,
@@ -61,6 +64,7 @@ import {
   normalizeArtifactReadParams,
   normalizeArtifactDeleteParams,
   normalizeNetworkParams,
+  normalizeHarExportParams,
   normalizeNetworkInterceptAddParams,
   normalizePageTextParams,
   normalizeExtractContentParams,
@@ -71,7 +75,12 @@ import {
   PROTOCOL_VERSION,
   validateBridgeRequest,
 } from '../src/index.js';
-import type { BridgeRequest, TabCloseParams, WaitForParams } from '../src/types.js';
+import type {
+  BridgeRequest,
+  PerformanceMetricsResult,
+  TabCloseParams,
+  WaitForParams,
+} from '../src/types.js';
 
 type ErrorWithCode = Error & { code?: string };
 
@@ -272,6 +281,35 @@ test('validateBridgeRequest normalizes routing and metadata fallbacks', () => {
   assert.equal(request.meta.keep, 'value');
 });
 
+test('validateBridgeRequest accepts only exact MCP automatic retry metadata', () => {
+  const base = { id: 'req_retry_meta', method: 'page.get_state' } as const;
+  const marker = { attempt: 2, reason: 'retryable_error' };
+  assert.deepEqual(
+    validateBridgeRequest({ ...base, meta: { source: 'mcp', automatic_retry: marker } }).meta
+      .automatic_retry,
+    marker
+  );
+  assert.equal(
+    validateBridgeRequest({ ...base, meta: { source: 'cli', automatic_retry: marker } }).meta
+      .automatic_retry,
+    undefined
+  );
+  assert.equal(
+    validateBridgeRequest({
+      ...base,
+      meta: { source: 'mcp', automatic_retry: { ...marker, extra: true } },
+    }).meta.automatic_retry,
+    undefined
+  );
+  assert.equal(
+    validateBridgeRequest({
+      ...base,
+      meta: { source: 'mcp', automatic_retry: { attempt: 2, reason: 'other' } },
+    }).meta.automatic_retry,
+    undefined
+  );
+});
+
 test('validateBridgeRequest accepts omitted, null, and positive safe integer tab_id routing', () => {
   const baseRequest = { id: 'req_tab', method: 'health.ping' } as const;
 
@@ -331,6 +369,30 @@ test('createSuccess and createFailure shape bridge responses', () => {
   assert.equal(failure.error.code, ERROR_CODES.ACCESS_DENIED);
 });
 
+test('performance result keeps raw counters and self-describing measurement metadata', () => {
+  const result = {
+    metrics: {
+      LayoutDuration: 0.0125,
+      TaskDuration: 0.01875,
+      Nodes: 42,
+      JSHeapUsedSize: 1_048_576,
+    },
+    measurement: {
+      source: 'cdp.Performance.getMetrics',
+      kind: 'raw_cdp_counters',
+      sampledAt: '2026-07-23T12:00:00.000Z',
+      timeDomain: 'timeTicks',
+      observation: 'browser_maintained_point_sample',
+      webVitals: 'not_measured',
+    },
+  } satisfies PerformanceMetricsResult;
+
+  const response = createSuccess('req_performance', result, {
+    method: 'performance.get_metrics',
+  });
+  assert.deepEqual(response.result, result);
+});
+
 test('access denied recovery guidance tells the agent to wait for the user', () => {
   const recovery = getErrorRecovery(ERROR_CODES.ACCESS_DENIED);
 
@@ -372,6 +434,7 @@ test('bridge method groups are derived from the registry', () => {
 test('method capability lookup stays aligned with bridge semantics', () => {
   assert.equal(getMethodCapability('page.evaluate'), 'page.evaluate');
   assert.equal(getMethodCapability('page.get_network'), 'network.read');
+  assert.equal(getMethodCapability('network.export_har'), 'network.read');
   assert.equal(getMethodCapability('tabs.create'), 'tabs.manage');
   assert.equal(getMethodCapability('tabs.list'), null);
   assert.equal(getMethodCapability('health.ping'), null);
@@ -834,6 +897,7 @@ test('batch safety follows canonical read-only method and parameter policy', () 
   assert.equal(isBatchSafeBridgeCall('page.get_console', { clear: 1 }), false);
   assert.equal(isBatchSafeBridgeCall('page.get_console', { clear: 'false' }), false);
   assert.equal(isBatchSafeBridgeCall('page.get_network', { source: 'cdp', capture: 'read' }), true);
+  assert.equal(isBatchSafeBridgeCall('network.export_har'), false);
   assert.equal(
     isBatchSafeBridgeCall('page.get_network', { source: 'cdp', capture: 'clear' }),
     false
@@ -1025,6 +1089,64 @@ test('normalizeNetworkParams defaults sensibly', () => {
   assert.equal(params.capture, 'read');
 });
 
+test('HAR export params normalize to a strict bounded canonical shape', () => {
+  assert.deepEqual(normalizeHarExportParams(), {
+    limit: DEFAULT_HAR_LIMIT,
+    urlPattern: null,
+    delivery: 'auto',
+  });
+  assert.deepEqual(normalizeHarExportParams(normalizeHarExportParams()), {
+    limit: DEFAULT_HAR_LIMIT,
+    urlPattern: null,
+    delivery: 'auto',
+  });
+  assert.deepEqual(
+    normalizeHarExportParams({
+      limit: MAX_HAR_ENTRIES,
+      urlPattern: '  /api/  ',
+      delivery: 'artifact',
+    }),
+    {
+      limit: MAX_HAR_ENTRIES,
+      urlPattern: '/api/',
+      delivery: 'artifact',
+    }
+  );
+  assert.equal(HAR_AUTO_INLINE_BYTES, 262_144);
+
+  for (const limit of [0, MAX_HAR_ENTRIES + 1, 1.5, '20']) {
+    assert.throws(
+      () => normalizeHarExportParams({ limit } as never),
+      (error: ErrorWithCode) => error.code === ERROR_CODES.INVALID_REQUEST
+    );
+  }
+  assert.throws(() => normalizeHarExportParams({ urlPattern: 'x'.repeat(2_049) }));
+  assert.throws(() => normalizeHarExportParams({ urlPattern: 1 } as never));
+  assert.throws(() => normalizeHarExportParams({ delivery: 'download' } as never));
+});
+
+test('network.export_har requests use the dedicated normalizer and registry contract', () => {
+  const request = createRequest({
+    id: 'har-export',
+    method: 'network.export_har',
+    params: { limit: 20, urlPattern: '/graphql', delivery: 'inline' },
+  });
+  assert.deepEqual(request.params, {
+    limit: 20,
+    urlPattern: '/graphql',
+    delivery: 'inline',
+  });
+  assert.deepEqual(BRIDGE_METHOD_REGISTRY['network.export_har'].params, [
+    'limit',
+    'urlPattern',
+    'delivery',
+  ]);
+  assert.equal(BRIDGE_METHOD_REGISTRY['network.export_har'].tab, true);
+  assert.equal(BRIDGE_METHOD_REGISTRY['network.export_har'].complexity, 'moderate');
+  assert.equal(BRIDGE_METHOD_REGISTRY['network.export_har'].capability, 'network.read');
+  assert.equal(BRIDGE_METHOD_REGISTRY['network.export_har'].debuggerBacked, false);
+});
+
 test('accessibility and CDP network options normalize strictly', () => {
   assert.deepEqual(normalizeAccessibilityTreeParams({ compact: true, interactiveOnly: true }), {
     selector: null,
@@ -1189,8 +1311,13 @@ test('runtime context includes new method groups', () => {
   assert.ok(context.methods.inspect.includes('dom.baseline.release'));
   assert.ok(context.methods.page.includes('page.get_text'));
   assert.ok(context.methods.page.includes('page.get_network'));
+  assert.ok(context.methods.page.includes('network.export_har'));
   assert.ok(context.methods.navigate.includes('viewport.resize'));
   assert.ok(context.methods.performance.includes('performance.get_metrics'));
+  const performanceTip = context.tips.find((tip) => tip.includes('performance.get_metrics'));
+  assert.match(performanceTip ?? '', /names and units vary/);
+  assert.match(performanceTip ?? '', /point sample/);
+  assert.match(performanceTip ?? '', /no BBX navigation window or LCP\/CLS\/INP measurement/);
 });
 
 /** Ensure runtime context includes error code descriptions. */
@@ -1220,6 +1347,7 @@ test('runtime context includes parameter limits', () => {
   assert.equal(context.limits.maxNodes.default, 25);
   assert.equal(context.limits.evalTimeout.max, 30000);
   assert.equal(context.limits.pageTextBudget.default, 8000);
+  assert.deepEqual(context.limits.harLimit, { min: 1, max: 200, default: 50 });
   assert.deepEqual(context.limits.baselineMaxNodes, { min: 1, max: 1000, default: 100 });
   assert.deepEqual(context.limits.baselineMaxDepth, { min: 1, max: 20, default: 8 });
   assert.deepEqual(context.limits.baselineTextBudget, { min: 32, max: 1000, default: 160 });

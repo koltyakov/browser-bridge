@@ -118,6 +118,8 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
     'Extract bounded semantic page content as text or Markdown without returning source HTML.',
   'page.get_network':
     'Read buffered fetch/XHR activity or explicitly manage bounded all-resource CDP capture.',
+  'network.export_har':
+    'Export bounded captured network evidence as a HAR 1.2 document, inline or as a daemon-owned artifact.',
   'network.intercept.add': 'Add a request interception rule (CDP Fetch domain).',
   'network.intercept.remove': 'Remove a request interception rule by ID.',
   'network.intercept.list': 'List active interception rules.',
@@ -175,7 +177,8 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
   'cdp.get_box_model': 'Read a CDP box model for a node.',
   'cdp.get_computed_styles_for_node': 'Read CDP computed styles for a node.',
   'cdp.dispatch_key_event': 'Dispatch a key press through Chrome DevTools Protocol input.',
-  'performance.get_metrics': 'Read browser performance metrics.',
+  'performance.get_metrics':
+    'Read a raw Chrome/CDP counter point sample; names and units vary, and BBX measures no navigation window, LCP, CLS, or INP.',
   'log.tail': 'Tail recent bridge log entries.',
   'health.ping': 'Check daemon, extension, and access-routing health.',
   'daemon.metrics': 'Daemon health and performance metrics.',
@@ -342,6 +345,14 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['clear', 'limit', 'urlPattern', 'source', 'capture'],
     'low',
+    METHOD_POLICIES.networkRead
+  ),
+  'network.export_har': createRegistryEntry(
+    'network.export_har',
+    'page',
+    true,
+    ['limit', 'urlPattern', 'delivery'],
+    'moderate',
     METHOD_POLICIES.networkRead
   ),
   // network intercept - moderate (holds debugger session)

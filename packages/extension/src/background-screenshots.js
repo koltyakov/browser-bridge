@@ -16,7 +16,7 @@ const MAX_SCREENSHOT_SCALED_PIXELS = 250_000_000;
 
 /**
  * @typedef {{
- *   run: (tabId: number, callback: (debugTarget: chrome.debugger.Debuggee) => Promise<any>) => Promise<any>,
+ *   run: (tabId: number, callback: (debugTarget: chrome.debugger.Debuggee) => Promise<any>, options?: { retryDetached?: boolean }) => Promise<any>,
  * }} TabDebuggerLike
  */
 
@@ -164,89 +164,93 @@ export async function handleScreenshot(target, method, params, deps, requestId) 
 
   // Use CDP Page.captureScreenshot - works regardless of tab focus,
   // captures renderer output directly with built-in clip support.
-  return deps.tabDebugger.run(target.tabId, async (debugTarget) => {
-    const dpr = clip.scale || 1;
-    let pageX = 0;
-    let pageY = 0;
-    if (method === 'screenshot.capture_region') {
-      const metrics = /** @type {{ cssVisualViewport?: { pageX?: number, pageY?: number } }} */ (
-        await deps.chrome.debugger.sendCommand(debugTarget, 'Page.getLayoutMetrics')
+  return deps.tabDebugger.run(
+    target.tabId,
+    async (debugTarget) => {
+      const dpr = clip.scale || 1;
+      let pageX = 0;
+      let pageY = 0;
+      if (method === 'screenshot.capture_region') {
+        const metrics = /** @type {{ cssVisualViewport?: { pageX?: number, pageY?: number } }} */ (
+          await deps.chrome.debugger.sendCommand(debugTarget, 'Page.getLayoutMetrics')
+        );
+        pageX = Number(metrics.cssVisualViewport?.pageX) || 0;
+        pageY = Number(metrics.cssVisualViewport?.pageY) || 0;
+      }
+      const cdpResult = /** @type {{ data?: string }} */ (
+        await deps.chrome.debugger.sendCommand(debugTarget, 'Page.captureScreenshot', {
+          format,
+          ...(quality === null ? {} : { quality }),
+          clip: {
+            x: Math.max(0, clip.x + pageX),
+            y: Math.max(0, clip.y + pageY),
+            width: clip.width,
+            height: clip.height,
+            scale: dpr,
+          },
+          captureBeyondViewport: true,
+        })
       );
-      pageX = Number(metrics.cssVisualViewport?.pageX) || 0;
-      pageY = Number(metrics.cssVisualViewport?.pageY) || 0;
-    }
-    const cdpResult = /** @type {{ data?: string }} */ (
-      await deps.chrome.debugger.sendCommand(debugTarget, 'Page.captureScreenshot', {
+      if (!cdpResult?.data) {
+        throw new Error('CDP Page.captureScreenshot returned empty data.');
+      }
+      const byteLength = getBase64ByteLength(cdpResult.data);
+      const capturedDimensions = getImageDimensions(cdpResult.data, format);
+      const metadata = {
+        rect: clip,
         format,
-        ...(quality === null ? {} : { quality }),
-        clip: {
-          x: Math.max(0, clip.x + pageX),
-          y: Math.max(0, clip.y + pageY),
-          width: clip.width,
-          height: clip.height,
-          scale: dpr,
+        mimeType: /** @type {`image/${import('../../protocol/src/types.js').ScreenshotFormat}`} */ (
+          `image/${format}`
+        ),
+        byteLength,
+        dimensions: capturedDimensions ?? {
+          width: Math.ceil(clip.width * dpr),
+          height: Math.ceil(clip.height * dpr),
         },
-        captureBeyondViewport: true,
-      })
-    );
-    if (!cdpResult?.data) {
-      throw new Error('CDP Page.captureScreenshot returned empty data.');
-    }
-    const byteLength = getBase64ByteLength(cdpResult.data);
-    const capturedDimensions = getImageDimensions(cdpResult.data, format);
-    const metadata = {
-      rect: clip,
-      format,
-      mimeType: /** @type {`image/${import('../../protocol/src/types.js').ScreenshotFormat}`} */ (
-        `image/${format}`
-      ),
-      byteLength,
-      dimensions: capturedDimensions ?? {
-        width: Math.ceil(clip.width * dpr),
-        height: Math.ceil(clip.height * dpr),
-      },
-      complete: true,
-      clipped: false,
-    };
-    if (delivery === 'inline' && byteLength > SCREENSHOT_MAX_INLINE_BYTES) {
-      throw new BridgeError(
-        ERROR_CODES.RESULT_TOO_LARGE,
-        `Screenshot is too large for inline delivery (${byteLength} bytes).`,
-        {
-          byteLength,
-          maxInlineBytes: SCREENSHOT_MAX_INLINE_BYTES,
-          guidance: 'Use delivery=artifact.',
-        }
-      );
-    }
-    if (
-      delivery === 'artifact' ||
-      (delivery === 'auto' &&
-        (preflightRequiresArtifact || byteLength > SCREENSHOT_AUTO_INLINE_BYTES))
-    ) {
-      if (byteLength > MAX_ARTIFACT_BYTES) {
+        complete: true,
+        clipped: false,
+      };
+      if (delivery === 'inline' && byteLength > SCREENSHOT_MAX_INLINE_BYTES) {
         throw new BridgeError(
           ERROR_CODES.RESULT_TOO_LARGE,
-          `Screenshot is too large for artifact delivery (${byteLength} bytes).`,
+          `Screenshot is too large for inline delivery (${byteLength} bytes).`,
           {
             byteLength,
-            maxArtifactBytes: MAX_ARTIFACT_BYTES,
-            guidance: 'Use a smaller region, lower scale, or lossy format and quality.',
+            maxInlineBytes: SCREENSHOT_MAX_INLINE_BYTES,
+            guidance: 'Use delivery=artifact.',
           }
         );
       }
-      const artifact = await deps.storeArtifact(requestId, cdpResult.data, {
-        mimeType: metadata.mimeType,
-        byteLength,
-      });
-      return { ...metadata, delivery: 'artifact', artifact };
-    }
-    return {
-      ...metadata,
-      delivery: 'inline',
-      image: `data:${metadata.mimeType};base64,${cdpResult.data}`,
-    };
-  });
+      if (
+        delivery === 'artifact' ||
+        (delivery === 'auto' &&
+          (preflightRequiresArtifact || byteLength > SCREENSHOT_AUTO_INLINE_BYTES))
+      ) {
+        if (byteLength > MAX_ARTIFACT_BYTES) {
+          throw new BridgeError(
+            ERROR_CODES.RESULT_TOO_LARGE,
+            `Screenshot is too large for artifact delivery (${byteLength} bytes).`,
+            {
+              byteLength,
+              maxArtifactBytes: MAX_ARTIFACT_BYTES,
+              guidance: 'Use a smaller region, lower scale, or lossy format and quality.',
+            }
+          );
+        }
+        const artifact = await deps.storeArtifact(requestId, cdpResult.data, {
+          mimeType: metadata.mimeType,
+          byteLength,
+        });
+        return { ...metadata, delivery: 'artifact', artifact };
+      }
+      return {
+        ...metadata,
+        delivery: 'inline',
+        image: `data:${metadata.mimeType};base64,${cdpResult.data}`,
+      };
+    },
+    { retryDetached: true }
+  );
 }
 
 /** @param {string} data */

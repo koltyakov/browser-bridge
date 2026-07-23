@@ -192,6 +192,251 @@ test('bbx screenshot reports bridge failures without writing a file', async () =
   }
 });
 
+test('bbx har serializes inline HAR data to the default output path', async () => {
+  const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-cli-har-inline-'));
+  const har = {
+    log: {
+      version: '1.2',
+      creator: { name: 'Browser Bridge', version: '1.0' },
+      entries: [],
+    },
+  };
+  const bridgeServer = await bridgeServerWith({
+    'network.export_har': (request) => createSuccess(request.id, { delivery: 'inline', har }),
+  });
+
+  try {
+    const result = await runCli({
+      args: [
+        'har',
+        '--tab',
+        '7',
+        '--limit',
+        '25',
+        '--url-pattern',
+        '*api*',
+        '--delivery',
+        'inline',
+      ],
+      cwd: directory,
+      env: { ...process.env, BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome },
+    });
+    const outputPath = path.join(directory, 'browser-bridge.har');
+    const payload = result.json as {
+      ok: boolean;
+      evidence: { savedTo: string; delivery: string };
+    };
+
+    assert.equal(result.status, 0, result.stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.evidence.savedTo, 'browser-bridge.har');
+    assert.equal(payload.evidence.delivery, 'inline');
+    assert.deepEqual(JSON.parse(await fs.promises.readFile(outputPath, 'utf8')), har);
+    assert.equal(bridgeServer.requests.length, 1);
+    assert.equal(bridgeServer.requests[0].method, 'network.export_har');
+    assert.equal(bridgeServer.requests[0].tab_id, 7);
+    assert.deepEqual(bridgeServer.requests[0].params, {
+      limit: 25,
+      urlPattern: '*api*',
+      delivery: 'inline',
+    });
+  } finally {
+    await bridgeServer.close();
+    await fs.promises.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('bbx har downloads, verifies, deletes, and atomically writes artifact delivery', async () => {
+  const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-cli-har-artifact-'));
+  const outputPath = path.join(directory, 'network.har');
+  const harBytes = Buffer.from('{"log":{"version":"1.2","entries":[]}}\n');
+  const firstChunk = harBytes.subarray(0, 16);
+  const secondChunk = harBytes.subarray(16);
+  const artifactId = `art_${'h'.repeat(43)}`;
+  const sha256 = createHash('sha256').update(harBytes).digest('hex');
+  const bridgeServer = await bridgeServerWith({
+    'network.export_har': (request) =>
+      createSuccess(request.id, {
+        delivery: 'artifact',
+        artifact: {
+          artifactId,
+          kind: 'har',
+          mimeType: 'application/json',
+          byteLength: harBytes.length,
+          sha256,
+          chunkSize: 196_608,
+          chunkCount: 1,
+          createdAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
+      }),
+    'artifact.read': (request) => {
+      const offset = Number(request.params.offset);
+      const bytes = offset === 0 ? firstChunk : secondChunk;
+      return createSuccess(request.id, {
+        artifactId,
+        data: bytes.toString('base64'),
+        offset,
+        byteLength: bytes.length,
+        nextOffset: offset === 0 ? firstChunk.length : null,
+      });
+    },
+    'artifact.delete': (request) => createSuccess(request.id, { artifactId, deleted: true }),
+  });
+
+  try {
+    const result = await runCli({
+      args: ['har', '--delivery', 'artifact', outputPath],
+      env: { ...process.env, BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome },
+    });
+
+    assert.equal(result.status, 0, result.stdout);
+    assert.deepEqual(await fs.promises.readFile(outputPath), harBytes);
+    assert.deepEqual(
+      bridgeServer.requests.map((request) => request.method),
+      ['network.export_har', 'artifact.read', 'artifact.read', 'artifact.delete']
+    );
+    assert.equal(
+      bridgeServer.messages.filter(
+        (message) =>
+          message &&
+          typeof message === 'object' &&
+          (message as { type?: string }).type === 'register'
+      ).length,
+      1
+    );
+    const temporaryFiles = (await fs.promises.readdir(directory)).filter((name) =>
+      name.endsWith('.tmp')
+    );
+    assert.deepEqual(temporaryFiles, []);
+  } finally {
+    await bridgeServer.close();
+    await fs.promises.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('bbx har rejects malformed inline and artifact documents without writing files', async () => {
+  for (const delivery of ['inline', 'artifact'] as const) {
+    const directory = await fs.promises.mkdtemp(
+      path.join(os.tmpdir(), `bbx-cli-har-invalid-${delivery}-`)
+    );
+    const outputPath = path.join(directory, 'invalid.har');
+    const invalidBytes = Buffer.from('{"notLog":true}', 'utf8');
+    const artifactId = `art_${delivery[0].repeat(43)}`;
+    const bridgeServer = await bridgeServerWith({
+      'network.export_har': (request) =>
+        delivery === 'inline'
+          ? createSuccess(request.id, { delivery, har: { notLog: true } })
+          : createSuccess(request.id, {
+              delivery,
+              artifact: {
+                artifactId,
+                kind: 'har',
+                mimeType: 'application/json',
+                byteLength: invalidBytes.length,
+                sha256: createHash('sha256').update(invalidBytes).digest('hex'),
+                chunkSize: 196_608,
+                chunkCount: 1,
+                createdAt: new Date().toISOString(),
+                expiresAt: new Date(Date.now() + 60_000).toISOString(),
+              },
+            }),
+      'artifact.read': (request) =>
+        createSuccess(request.id, {
+          artifactId,
+          data: invalidBytes.toString('base64'),
+          offset: 0,
+          byteLength: invalidBytes.length,
+          nextOffset: null,
+        }),
+      'artifact.delete': (request) => createSuccess(request.id, { artifactId, deleted: true }),
+    });
+    try {
+      const result = await runCli({
+        args: ['har', '--delivery', delivery, outputPath],
+        env: { ...process.env, BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome },
+      });
+      assert.equal(result.status, 1);
+      assert.match(result.stdout, /valid HAR 1\.2 document/u);
+      await assert.rejects(fs.promises.access(outputPath), { code: 'ENOENT' });
+      if (delivery === 'artifact') {
+        assert.deepEqual(
+          bridgeServer.requests.map((request) => request.method),
+          ['network.export_har', 'artifact.read', 'artifact.delete']
+        );
+      }
+    } finally {
+      await bridgeServer.close();
+      await fs.promises.rm(directory, { recursive: true, force: true });
+    }
+  }
+});
+
+test('bbx har rejects invalid artifact JSON encodings', async () => {
+  const cases = [
+    { label: 'syntax', bytes: Buffer.from('{', 'utf8'), expected: /not valid JSON/u },
+    { label: 'utf8', bytes: Buffer.from([0xff, 0xfe]), expected: /not valid UTF-8 JSON/u },
+  ];
+  for (const [index, fixture] of cases.entries()) {
+    const directory = await fs.promises.mkdtemp(
+      path.join(os.tmpdir(), `bbx-cli-har-${fixture.label}-`)
+    );
+    const outputPath = path.join(directory, 'invalid.har');
+    const artifactId = `art_${String(index).repeat(43)}`;
+    const bridgeServer = await bridgeServerWith({
+      'network.export_har': (request) =>
+        createSuccess(request.id, {
+          delivery: 'artifact',
+          artifact: {
+            artifactId,
+            kind: 'har',
+            mimeType: 'application/json',
+            byteLength: fixture.bytes.length,
+            sha256: createHash('sha256').update(fixture.bytes).digest('hex'),
+            chunkSize: 196_608,
+            chunkCount: 1,
+            createdAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          },
+        }),
+      'artifact.read': (request) =>
+        createSuccess(request.id, {
+          artifactId,
+          data: fixture.bytes.toString('base64'),
+          offset: 0,
+          byteLength: fixture.bytes.length,
+          nextOffset: null,
+        }),
+      'artifact.delete': (request) => createSuccess(request.id, { artifactId, deleted: true }),
+    });
+    try {
+      const result = await runCli({
+        args: ['har', '--delivery', 'artifact', outputPath],
+        env: { ...process.env, BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome },
+      });
+      assert.equal(result.status, 1);
+      assert.match(result.stdout, fixture.expected);
+      await assert.rejects(fs.promises.access(outputPath), { code: 'ENOENT' });
+      assert.deepEqual(
+        bridgeServer.requests.map((request) => request.method),
+        ['network.export_har', 'artifact.read', 'artifact.delete']
+      );
+    } finally {
+      await bridgeServer.close();
+      await fs.promises.rm(directory, { recursive: true, force: true });
+    }
+  }
+});
+
+test('bbx har requires a .har output extension before dispatch', async () => {
+  const result = await runCli({ args: ['har', 'network.json'] });
+  const payload = result.json as { ok: boolean; summary: string };
+
+  assert.equal(result.status, 1);
+  assert.equal(payload.ok, false);
+  assert.match(payload.summary, /HAR output path must use the \.har extension/u);
+});
+
 test('bbx intercept remove, list, and clear preserve tab routing', async () => {
   const bridgeServer = await bridgeServerWith({
     'network.intercept.remove': (request) => createSuccess(request.id, { removed: true }),

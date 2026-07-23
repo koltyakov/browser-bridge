@@ -34,6 +34,7 @@ import {
   BUDGET_PRESETS,
   DEFAULT_CONSOLE_LIMIT,
   DEFAULT_EVAL_TIMEOUT_MS,
+  DEFAULT_HAR_LIMIT,
   DEFAULT_LOG_TAIL_LIMIT,
   DEFAULT_MAX_DEPTH,
   DEFAULT_MAX_HTML_LENGTH,
@@ -42,6 +43,7 @@ import {
   DEFAULT_TEXT_BUDGET,
   DEFAULT_NAV_TIMEOUT_MS,
   DEFAULT_WAIT_TIMEOUT_MS,
+  MAX_HAR_ENTRIES,
   getMethodsByMaxComplexity,
 } from '../../protocol/src/index.js';
 import { applyWindowsTcpTransportDefaults } from '../../native-host/src/config.js';
@@ -398,7 +400,7 @@ export function createBridgeMcpServer() {
     {
       title: 'Browser Page State',
       description:
-        'Read page-level data, wait for load/URL conditions, or explicitly inspect/handle JavaScript dialogs. For element-level reads, use browser_dom. evaluate, performance, handle_dialog, and source=cdp network capture are debugger-backed.',
+        'Read page-level data, export captured network evidence as HAR 1.2, wait for load/URL conditions, or explicitly inspect/handle JavaScript dialogs. The performance action returns a raw CDP Performance.getMetrics point sample: Chrome defines names and units, which vary, while BBX sets no navigation observation window and does not measure LCP, CLS, or INP. For element-level reads, use browser_dom. evaluate, performance, handle_dialog, and source=cdp network capture are debugger-backed.',
       inputSchema: {
         action: z
           .enum([
@@ -411,9 +413,12 @@ export function createBridgeMcpServer() {
             'text',
             'extract_content',
             'network',
+            'har',
             'performance',
           ])
-          .describe('Page operation to perform'),
+          .describe(
+            'Page operation to perform; performance reads raw Chrome/CDP counters, not LCP, CLS, or INP'
+          ),
         tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
         budgetPreset: z
@@ -466,7 +471,9 @@ export function createBridgeMcpServer() {
           .int()
           .positive()
           .optional()
-          .describe(`Maximum entries to return (default: ${DEFAULT_CONSOLE_LIMIT})`),
+          .describe(
+            `Maximum entries to return (console default: ${DEFAULT_CONSOLE_LIMIT}; HAR default: ${DEFAULT_HAR_LIMIT}, max: ${MAX_HAR_ENTRIES})`
+          ),
         type: z
           .enum(['local', 'session'])
           .optional()
@@ -500,7 +507,11 @@ export function createBridgeMcpServer() {
           .positive()
           .optional()
           .describe('Maximum semantic extraction settlement wait (default: 2000)'),
-        urlPattern: z.string().optional().describe('Filter network entries by URL pattern'),
+        urlPattern: z
+          .string()
+          .max(2_048)
+          .optional()
+          .describe('Bounded URL pattern used to filter network entries or HAR export evidence'),
         source: z
           .enum(['fetch-xhr', 'cdp'])
           .optional()
@@ -509,6 +520,10 @@ export function createBridgeMcpServer() {
           .enum(['read', 'start', 'clear', 'stop'])
           .optional()
           .describe('Explicit CDP capture lifecycle action (default: read)'),
+        delivery: z
+          .enum(['auto', 'inline', 'artifact'])
+          .optional()
+          .describe('HAR delivery mode: auto chooses inline or a daemon-owned artifact'),
         waitForLoad: z
           .boolean()
           .optional()

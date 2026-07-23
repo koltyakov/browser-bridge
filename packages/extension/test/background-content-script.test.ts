@@ -6,6 +6,7 @@ import { createContentScriptBridge } from '../src/background-content-script.js';
 
 function createHarness(failMain = false) {
   const injections: Array<Record<string, unknown>> = [];
+  const recoveryOutcomes: Array<{ outcome: 'success' | 'failure'; group: string }> = [];
   const chromeObj = {
     tabs: {
       async sendMessage() {
@@ -30,7 +31,9 @@ function createHarness(failMain = false) {
     bridge: createContentScriptBridge(chromeObj, {
       contentScriptTimeoutMs: 1_000,
       isRestrictedAutomationUrl: () => false,
+      recordReinjection: (outcome, group) => recoveryOutcomes.push({ outcome, group }),
     }),
+    recoveryOutcomes,
   };
 }
 
@@ -56,6 +59,7 @@ test('general content-script injection does not install navigation listeners or 
 });
 
 test('restricted content-script injection returns a typed non-retryable error', async () => {
+  const recoveryOutcomes: Array<{ outcome: 'success' | 'failure'; group: string }> = [];
   const chromeObj = {
     tabs: {
       async sendMessage() {
@@ -74,12 +78,23 @@ test('restricted content-script injection returns a typed non-retryable error', 
   const bridge = createContentScriptBridge(chromeObj, {
     contentScriptTimeoutMs: 1_000,
     isRestrictedAutomationUrl: () => false,
+    recordReinjection: (outcome, group) => recoveryOutcomes.push({ outcome, group }),
   });
 
   await assert.rejects(
     () => bridge.ensureContentScript(8),
     (error: { code?: string }) => error.code === ERROR_CODES.CONTENT_SCRIPT_UNAVAILABLE
   );
+  assert.deepEqual(recoveryOutcomes, [{ outcome: 'failure', group: '8' }]);
+});
+
+test('missing content-script recovery records injection separately from replay', async () => {
+  const { bridge, recoveryOutcomes } = createHarness();
+  await assert.rejects(
+    bridge.sendTabMessage(8, { type: 'bridge.execute' }, 100),
+    /Receiving end does not exist/u
+  );
+  assert.deepEqual(recoveryOutcomes, [{ outcome: 'success', group: '8' }]);
 });
 
 test('URL wait signal instrumentation installs and uninstalls both worlds on demand', async () => {

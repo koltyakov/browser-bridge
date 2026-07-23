@@ -45,6 +45,7 @@ import {
  *   refreshSetupStatus: (force?: boolean) => void,
  *   reply: (response: BridgeResponse) => void,
  *   handleDestinationDisconnect?: () => void,
+ *   recordReconnect?: (outcome: 'success' | 'failure') => void,
  * }} NativeConnectionDeps
  */
 
@@ -455,12 +456,19 @@ export function createNativeConnectionController(state, chromeObj, deps) {
    */
   function connectNative() {
     clearNativeReconnectTimer();
+    const wasReconnect = nativeReconnectDelay > NATIVE_RECONNECT_BASE_MS;
+    let reconnectOutcomePending = wasReconnect;
+    /** @param {'success' | 'failure'} outcome */
+    const settleReconnect = (outcome) => {
+      if (!reconnectOutcomePending) return;
+      reconnectOutcomePending = false;
+      deps.recordReconnect?.(outcome);
+    };
     try {
       const candidatePort = chromeObj.runtime.connectNative(NATIVE_APP_NAME);
       // Track the connecting port immediately so replies to bridge requests
       // that arrive before the stability window closes are not dropped.
       state.pendingNativePort = candidatePort;
-      const wasReconnect = nativeReconnectDelay > NATIVE_RECONNECT_BASE_MS;
       const reconnectAttempts = state.nativeReconnectAttempts;
       const stabilityTimer = setTimeout(() => {
         state.nativePort = candidatePort;
@@ -499,6 +507,7 @@ export function createNativeConnectionController(state, chromeObj, deps) {
           sendAccessUpdate(true, candidatePort);
         }
         if (wasReconnect && reconnectAttempts > 0) {
+          settleReconnect('success');
           void deps.appendActionLogEntry({
             method: 'native.reconnect',
             source: 'extension',
@@ -514,6 +523,7 @@ export function createNativeConnectionController(state, chromeObj, deps) {
             const bootstrapError = getNativeBootstrapErrorMessage(message);
             if (bootstrapError) {
               bootstrapFailed = true;
+              settleReconnect('failure');
               clearTimeout(stabilityTimer);
               if (state.pendingNativePort === candidatePort) {
                 state.pendingNativePort = null;
@@ -540,6 +550,7 @@ export function createNativeConnectionController(state, chromeObj, deps) {
         if (bootstrapFailed) {
           return;
         }
+        settleReconnect('failure');
         if (state.nativePort === candidatePort) deps.handleDestinationDisconnect?.();
         const disconnectError = chromeObj.runtime.lastError?.message ?? 'Native host disconnected.';
         scheduleNativeReconnect(disconnectError, {
@@ -549,6 +560,7 @@ export function createNativeConnectionController(state, chromeObj, deps) {
         });
       });
     } catch (error) {
+      settleReconnect('failure');
       scheduleNativeReconnect(getErrorMessage(error), {
         method: 'native.connect',
         summaryPrefix: 'Native host connection failed',
