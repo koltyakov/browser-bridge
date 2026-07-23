@@ -62,6 +62,30 @@ export function extractTabFlag(args) {
 
 /**
  * @param {string[]} args
+ * @returns {{ format: 'png' | 'jpeg' | 'webp', quality: number | undefined, rest: string[] }}
+ */
+export function extractScreenshotFlags(args) {
+  const rest = [...args];
+  const formatIndex = rest.indexOf('--format');
+  const rawFormat = formatIndex === -1 ? 'png' : rest[formatIndex + 1];
+  if (rawFormat !== 'png' && rawFormat !== 'jpeg' && rawFormat !== 'webp') {
+    throw new Error('--format must be png, jpeg, or webp.');
+  }
+  if (formatIndex !== -1) rest.splice(formatIndex, 2);
+  const qualityIndex = rest.indexOf('--quality');
+  let quality;
+  if (qualityIndex !== -1) {
+    quality = Number(rest[qualityIndex + 1]);
+    if (!Number.isInteger(quality) || quality < 0 || quality > 100) {
+      throw new Error('--quality must be an integer from 0 to 100.');
+    }
+    rest.splice(qualityIndex, 2);
+  }
+  return { format: rawFormat, quality, rest };
+}
+
+/**
+ * @param {string[]} args
  * @returns {Promise<{ tabId: number | null, method: BridgeMethod, params: Record<string, unknown> }>}
  */
 export async function parseCallCommand(args) {

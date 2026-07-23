@@ -16,6 +16,7 @@ import {
 import { startBridgeMcpServer } from '../../mcp-server/src/server.js';
 import {
   extractRemoteFlag,
+  extractScreenshotFlags,
   extractTabFlag,
   parseCallCommand,
   parseInterceptAddArgs,
@@ -416,15 +417,20 @@ async function main() {
 
     if (command === 'screenshot') {
       const parsed = extractTabFlag(rest);
-      const [refOrSelector, outputPath] = parsed.rest;
+      const screenshotOptions = extractScreenshotFlags(parsed.rest);
+      const [refOrSelector, outputPath] = screenshotOptions.rest;
       if (!refOrSelector)
-        throw new Error('Usage: screenshot [--tab <tabId>] <ref|selector> [path]');
+        throw new Error(
+          'Usage: screenshot [--tab <tabId>] [--format png|jpeg|webp] [--quality 0-100] <ref|selector> [path]'
+        );
       const elementRef = await resolveRef(client, refOrSelector, parsed.tabId, REQUEST_SOURCE);
       const response = await requestBridge(
         client,
         'screenshot.capture_element',
         {
           elementRef,
+          format: screenshotOptions.format,
+          quality: screenshotOptions.quality,
         },
         { tabId: parsed.tabId, source: REQUEST_SOURCE }
       );
@@ -433,13 +439,32 @@ async function main() {
         return;
       }
       const screenshotResult = /** @type {ScreenshotResult} */ (response.result);
-      const filePath = outputPath || path.join(os.tmpdir(), `bbx-${Date.now()}.png`);
-      const data = screenshotResult.image.replace(/^data:image\/png;base64,/, '');
+      const extension = screenshotOptions.format === 'jpeg' ? 'jpg' : screenshotOptions.format;
+      const acceptedExtensions =
+        screenshotOptions.format === 'jpeg'
+          ? new Set(['.jpg', '.jpeg'])
+          : new Set([`.${extension}`]);
+      let filePath = outputPath || path.join(os.tmpdir(), `bbx-${Date.now()}.${extension}`);
+      if (outputPath && !path.extname(outputPath)) filePath = `${outputPath}.${extension}`;
+      if (
+        outputPath &&
+        path.extname(outputPath) &&
+        !acceptedExtensions.has(path.extname(outputPath))
+      ) {
+        throw new Error(`Screenshot path extension must match ${screenshotOptions.format} format.`);
+      }
+      const data = screenshotResult.image.replace(/^data:image\/(?:png|jpeg|webp);base64,/, '');
       await fs.promises.writeFile(filePath, Buffer.from(data, 'base64'));
       printJson({
         ok: true,
         summary: `Screenshot saved to ${filePath}.`,
-        evidence: { savedTo: filePath, rect: screenshotResult.rect },
+        evidence: {
+          savedTo: filePath,
+          rect: screenshotResult.rect,
+          format: screenshotResult.format,
+          complete: screenshotResult.complete,
+          clipped: screenshotResult.clipped,
+        },
       });
       return;
     }

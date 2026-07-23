@@ -59,6 +59,10 @@ test('bbx screenshot resolves a selector and writes the decoded image', async ()
       createSuccess(request.id, {
         image: `data:image/png;base64,${imageBytes.toString('base64')}`,
         rect: { x: 1, y: 2, width: 30, height: 40 },
+        format: 'png',
+        mimeType: 'image/png',
+        complete: true,
+        clipped: false,
       }),
   });
 
@@ -69,19 +73,32 @@ test('bbx screenshot resolves a selector and writes the decoded image', async ()
     });
     const payload = result.json as {
       ok: boolean;
-      evidence: { savedTo: string; rect: Record<string, number> };
+      evidence: {
+        savedTo: string;
+        rect: Record<string, number>;
+        format: string;
+        complete: boolean;
+        clipped: boolean;
+      };
     };
 
     assert.equal(result.status, 0, result.stdout);
     assert.equal(payload.ok, true);
     assert.equal(payload.evidence.savedTo, outputPath);
     assert.deepEqual(payload.evidence.rect, { x: 1, y: 2, width: 30, height: 40 });
+    assert.equal(payload.evidence.format, 'png');
+    assert.equal(payload.evidence.complete, true);
+    assert.equal(payload.evidence.clipped, false);
     assert.deepEqual(await fs.promises.readFile(outputPath), imageBytes);
     assert.deepEqual(
       bridgeServer.requests.map((request) => request.method),
       ['dom.query', 'screenshot.capture_element']
     );
-    assert.deepEqual(bridgeServer.requests[1].params, { elementRef: 'el_screenshot' });
+    assert.deepEqual(bridgeServer.requests[1].params, {
+      elementRef: 'el_screenshot',
+      format: 'png',
+      quality: null,
+    });
   } finally {
     await bridgeServer.close();
     await fs.promises.rm(directory, { recursive: true, force: true });

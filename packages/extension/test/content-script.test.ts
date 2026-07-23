@@ -2627,6 +2627,7 @@ test('content script page state, storage, and screenshot helpers report page con
       Reflect.set(window, 'innerWidth', 400);
       Reflect.set(window, 'innerHeight', 300);
       Reflect.set(window, 'devicePixelRatio', 2);
+      Reflect.set(window, 'getComputedStyle', () => ({ position: 'static' }));
       Reflect.set(window, 'scrollX', 12);
       Reflect.set(window, 'scrollY', 34);
       Reflect.set(document, 'activeElement', target);
@@ -2684,10 +2685,10 @@ test('content script page state, storage, and screenshot helpers report page con
         entries: { token: 'abc123' },
         count: 1,
       });
-      assert.deepEqual(elementRect, { x: 50, y: 60, width: 200, height: 150, scale: 2 });
+      assert.deepEqual(elementRect, { x: 62, y: 94, width: 200, height: 150, scale: 2 });
       assert.deepEqual(fullPage, {
-        scrollWidth: 16384,
-        scrollHeight: 16384,
+        scrollWidth: 18000,
+        scrollHeight: 17000,
         devicePixelRatio: 2,
       });
     }

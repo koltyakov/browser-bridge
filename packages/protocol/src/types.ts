@@ -597,6 +597,7 @@ export interface NormalizedStorageParams extends BridgeParams {
 export type ExtractContentFormat = 'text' | 'markdown';
 export type ExtractContentConsistency = 'best_effort' | 'settled';
 export type ExtractContentSource = 'readability' | 'semantic-root' | 'body';
+export type ScreenshotFormat = 'png' | 'jpeg' | 'webp';
 
 export interface ExtractContentParams {
   format?: ExtractContentFormat;
@@ -614,6 +615,25 @@ export interface NormalizedExtractContentParams extends BridgeParams {
   consistency: ExtractContentConsistency;
   textBudget: number;
   settleTimeoutMs: number;
+}
+
+export interface ScreenshotParams extends BridgeParams {
+  format?: ScreenshotFormat;
+  quality?: number;
+}
+
+export interface NormalizedScreenshotParams extends BridgeParams {
+  format: ScreenshotFormat;
+  quality: number | null;
+}
+
+export interface ScreenshotResult {
+  image: string;
+  mimeType: `image/${ScreenshotFormat}`;
+  format: ScreenshotFormat;
+  rect: { x: number; y: number; width: number; height: number; scale: number };
+  complete: boolean;
+  clipped: boolean;
 }
 
 export interface ExtractContentResult {

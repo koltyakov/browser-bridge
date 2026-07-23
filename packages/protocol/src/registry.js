@@ -612,7 +612,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'screenshot.capture_region',
     'capture',
     true,
-    ['x', 'y', 'width', 'height'],
+    ['x', 'y', 'width', 'height', 'format', 'quality'],
     'high',
     METHOD_POLICIES.screenshotPartialDebugger
   ),
@@ -620,7 +620,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'screenshot.capture_element',
     'capture',
     true,
-    ['elementRef'],
+    ['elementRef', 'format', 'quality'],
     'high',
     METHOD_POLICIES.screenshotPartialDebugger
   ),
@@ -628,7 +628,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'screenshot.capture_full_page',
     'capture',
     true,
-    [],
+    ['format', 'quality'],
     'high',
     METHOD_POLICIES.screenshotPartialDebugger
   ),

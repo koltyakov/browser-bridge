@@ -130,7 +130,7 @@ See [`packages/protocol/src/registry.js`](../packages/protocol/src/registry.js) 
 | `input.type`                 | Actionability-aware DOM or CDP text input       |
 | `cdp.dispatch_key_event`     | Dispatch keyDown/keyUp through CDP input       |
 | `navigation.navigate`        | Navigate to a URL                              |
-| `screenshot.capture_element` | Capture element as PNG (base64)                |
+| `screenshot.capture_element` | Complete PNG/JPEG/WebP element capture (base64) |
 | `patch.apply_styles`         | Apply reversible CSS overrides                 |
 
 ## Error codes

@@ -375,7 +375,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
   {
     title: 'Capture',
     lines: [
-      'bbx screenshot [--tab <tabId>] <ref|selector> [path]               Capture partial element screenshot',
+      'bbx screenshot [--tab <tabId>] [--format png|jpeg|webp] [--quality 0-100] <ref|selector> [path]',
     ],
   },
 ]);

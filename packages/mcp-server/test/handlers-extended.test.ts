@@ -1342,18 +1342,38 @@ test('handleStylesLayoutTool hit_test calls layout.hit_test', async () => {
 
 test('handleCaptureTool region calls screenshot.capture_region', async () => {
   await withMockedBridge(
-    async () => ok({ image: `data:image/png;base64,${ONE_PIXEL_PNG}`, rect: {} }),
+    async () =>
+      ok({
+        image: `data:image/webp;base64,${ONE_PIXEL_PNG}`,
+        rect: {},
+        format: 'webp',
+        complete: true,
+        clipped: false,
+      }),
     async (calls) => {
       const result = await handleCaptureTool({
         action: 'region',
         rect: { x: 0, y: 0, width: 100, height: 100 },
+        format: 'webp',
+        quality: 70,
         budgetPreset: 'quick',
       });
       assert.equal(calls[0].method, 'screenshot.capture_region');
-      assert.deepEqual(calls[0].params, { x: 0, y: 0, width: 100, height: 100 });
+      assert.deepEqual(calls[0].params, {
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+        format: 'webp',
+        quality: 70,
+      });
       assert.equal(result.isError, undefined);
       assert.equal(result.content[1].type, 'image');
       assert.equal(result.content[1].type === 'image' ? result.content[1].data : '', ONE_PIXEL_PNG);
+      assert.equal(
+        result.content[1].type === 'image' ? result.content[1].mimeType : '',
+        'image/webp'
+      );
       assert.equal(calls[0].meta?.token_budget, undefined);
     }
   );

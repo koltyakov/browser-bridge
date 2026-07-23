@@ -4,11 +4,19 @@ import type {
   BridgeMethod,
   BridgeRequestSource,
   BridgeResponse,
+  ScreenshotResult,
   SetupStatus,
 } from '../../protocol/src/types.js';
 import type { restartBridgeDaemon } from '../../native-host/src/daemon-process.js';
 
-export type { BridgeMeta, BridgeMethod, BridgeRequestSource, BridgeResponse, BridgeTransport };
+export type {
+  BridgeMeta,
+  BridgeMethod,
+  BridgeRequestSource,
+  BridgeResponse,
+  BridgeTransport,
+  ScreenshotResult,
+};
 
 export type McpClientName =
   | 'codex'
@@ -276,8 +284,3 @@ export type BridgeClientRequest = (options: {
   meta?: BridgeMeta;
   timeoutMs?: number;
 }) => Promise<BridgeResponse>;
-
-export interface ScreenshotResult {
-  image: string;
-  rect: Record<string, unknown>;
-}

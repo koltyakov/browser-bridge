@@ -31,22 +31,35 @@ const MAX_SCREENSHOT_SCALED_PIXELS = 250_000_000;
  * @param {string} method
  * @param {Record<string, unknown> | undefined} params
  * @param {ScreenshotDeps} deps
- * @returns {Promise<{ rect: unknown, image: string }>}
+ * @returns {Promise<{ rect: unknown, image: string, format: string, mimeType: string, complete: boolean, clipped: boolean }>}
  */
 export async function handleScreenshot(target, method, params, deps) {
   const captureParams = params ?? {};
+  const format =
+    captureParams.format === 'jpeg' || captureParams.format === 'webp'
+      ? captureParams.format
+      : 'png';
+  const quality =
+    format !== 'png' && typeof captureParams.quality === 'number'
+      ? Math.min(100, Math.max(0, Math.trunc(captureParams.quality)))
+      : null;
   /** @type {{ x: number, y: number, width: number, height: number, scale: number }} */
   let clip;
 
   if (method === 'screenshot.capture_element') {
     await deps.ensureContentScript(target.tabId);
+    const elementParams = Object.fromEntries(
+      ['elementRef', 'selector', 'target']
+        .filter((key) => captureParams[key] !== undefined)
+        .map((key) => [key, captureParams[key]])
+    );
     try {
       clip = await deps.sendTabMessage(
         target.tabId,
         {
           type: 'bridge.execute',
           method,
-          params: captureParams,
+          params: elementParams,
         },
         deps.contentScriptTimeoutMs
       );
@@ -59,13 +72,27 @@ export async function handleScreenshot(target, method, params, deps) {
           {
             type: 'bridge.execute',
             method,
-            params: captureParams,
+            params: elementParams,
           },
           deps.contentScriptTimeoutMs
         );
+      } else if (err instanceof Error && /Complete capture is unsupported/.test(err.message)) {
+        throw new BridgeError(ERROR_CODES.RESULT_TRUNCATED, err.message, {
+          method,
+          elementRef: captureParams.elementRef,
+          complete: false,
+          clipped: false,
+        });
       } else {
         throw err;
       }
+    }
+    if (Number(clip.x) < 0 || Number(clip.y) < 0) {
+      throw new BridgeError(
+        ERROR_CODES.RESULT_TRUNCATED,
+        'Complete capture is unsupported for an element outside page bounds.',
+        { method, elementRef: captureParams.elementRef, complete: false, clipped: false }
+      );
     }
     // Defensively coerce content-script values - NaN / undefined / negative
     // would slip past the < 1 guard and reach CDP as invalid values.
@@ -82,15 +109,15 @@ export async function handleScreenshot(target, method, params, deps) {
       /** @type {{ scrollWidth: number, scrollHeight: number, devicePixelRatio: number }} */ (
         await deps.sendTabMessage(
           target.tabId,
-          { type: 'bridge.execute', method, params: captureParams },
+          { type: 'bridge.execute', method, params: {} },
           deps.contentScriptTimeoutMs
         )
       );
     clip = {
       x: 0,
       y: 0,
-      width: Math.min(Math.max(1, Number(dims.scrollWidth) || 1), 16384),
-      height: Math.min(Math.max(1, Number(dims.scrollHeight) || 1), 16384),
+      width: Math.max(1, Number(dims.scrollWidth) || 1),
+      height: Math.max(1, Number(dims.scrollHeight) || 1),
       scale: Number(dims.devicePixelRatio) || 1,
     };
   } else {
@@ -120,7 +147,8 @@ export async function handleScreenshot(target, method, params, deps) {
     const dpr = clip.scale || 1;
     const cdpResult = /** @type {{ data?: string }} */ (
       await deps.chrome.debugger.sendCommand(debugTarget, 'Page.captureScreenshot', {
-        format: 'png',
+        format,
+        ...(quality === null ? {} : { quality }),
         clip: {
           x: Math.max(0, clip.x),
           y: Math.max(0, clip.y),
@@ -128,7 +156,7 @@ export async function handleScreenshot(target, method, params, deps) {
           height: clip.height,
           scale: dpr,
         },
-        captureBeyondViewport: method === 'screenshot.capture_full_page',
+        captureBeyondViewport: method !== 'screenshot.capture_region',
       })
     );
     if (!cdpResult?.data) {
@@ -136,7 +164,11 @@ export async function handleScreenshot(target, method, params, deps) {
     }
     return {
       rect: clip,
-      image: `data:image/png;base64,${cdpResult.data}`,
+      image: `data:image/${format};base64,${cdpResult.data}`,
+      format,
+      mimeType: `image/${format}`,
+      complete: true,
+      clipped: false,
     };
   });
 }

@@ -737,6 +737,17 @@ export function createBridgeMcpServer() {
           })
           .optional()
           .describe('Viewport region for region action (keep crop tight)'),
+        format: z
+          .enum(['png', 'jpeg', 'webp'])
+          .optional()
+          .describe('Screenshot encoding (default: png)'),
+        quality: z
+          .number()
+          .int()
+          .min(0)
+          .max(100)
+          .optional()
+          .describe('JPEG/WebP quality from 0 to 100; ignored for PNG'),
       },
     },
     handleCaptureTool

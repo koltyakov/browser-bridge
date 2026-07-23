@@ -74,6 +74,7 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').NormalizedPageTextParams} NormalizedPageTextParams */
 /** @typedef {import('./types.js').NormalizedPatchOperation} NormalizedPatchOperation */
 /** @typedef {import('./types.js').NormalizedSelectAction} NormalizedSelectAction */
+/** @typedef {import('./types.js').NormalizedScreenshotParams} NormalizedScreenshotParams */
 /** @typedef {import('./types.js').NormalizedStorageParams} NormalizedStorageParams */
 /** @typedef {import('./types.js').NormalizedStyleQuery} NormalizedStyleQuery */
 /** @typedef {import('./types.js').NormalizedTabCloseParams} NormalizedTabCloseParams */
@@ -85,6 +86,7 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').PageTextParams} PageTextParams */
 /** @typedef {import('./types.js').PatchOperationParams} PatchOperationParams */
 /** @typedef {import('./types.js').SelectActionParams} SelectActionParams */
+/** @typedef {import('./types.js').ScreenshotParams} ScreenshotParams */
 /** @typedef {import('./types.js').StorageParams} StorageParams */
 /** @typedef {import('./types.js').StyleQueryParams} StyleQueryParams */
 /** @typedef {import('./types.js').TabCloseParams} TabCloseParams */
@@ -421,6 +423,10 @@ function normalizeRequestParams(method, params) {
       return normalizeHoverParams(params);
     case 'input.drag':
       return normalizeDragParams(params);
+    case 'screenshot.capture_region':
+    case 'screenshot.capture_element':
+    case 'screenshot.capture_full_page':
+      return { ...params, ...normalizeScreenshotParams(params) };
     case 'patch.apply_styles':
     case 'patch.apply_dom':
     case 'patch.list':
@@ -1123,6 +1129,27 @@ export function normalizeAccessibilityTreeParams(params = {}) {
     maxNodes: clampInt(params.maxNodes, 10, 5000, DEFAULT_A11Y_MAX_NODES),
     compact: params.compact === true,
     interactiveOnly: params.interactiveOnly === true,
+  };
+}
+
+/**
+ * @param {ScreenshotParams} [params={}]
+ * @returns {NormalizedScreenshotParams}
+ */
+export function normalizeScreenshotParams(params = {}) {
+  const format = params.format ?? 'png';
+  if (format !== 'png' && format !== 'jpeg' && format !== 'webp') {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'format must be png, jpeg, or webp.');
+  }
+  const numericQuality = Number(params.quality);
+  return {
+    format,
+    quality:
+      format === 'png' || params.quality === undefined
+        ? null
+        : Number.isFinite(numericQuality)
+          ? Math.min(100, Math.max(0, Math.trunc(numericQuality)))
+          : 80,
   };
 }
 

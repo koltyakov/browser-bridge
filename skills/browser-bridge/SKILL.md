@@ -90,7 +90,7 @@ bbx patch-style <ref> prop=val...    # apply style patch
 bbx patch-text <ref> <text...>       # apply text patch
 bbx patches                          # list active patches
 bbx rollback <patchId>               # rollback a patch
-bbx screenshot <ref> [outPath]       # capture partial element screenshot
+bbx screenshot [--format png|jpeg|webp] [--quality 0-100] <ref> [outPath] # complete element capture
 bbx call screenshot.capture_full_page '{}' # raw base64; avoid unless document context matters
 ```
 

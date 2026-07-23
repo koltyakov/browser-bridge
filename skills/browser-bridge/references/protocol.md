@@ -84,9 +84,9 @@ The table below includes the legacy capability bucket for each method so agents 
 | `input.hover`                      | Yes  | Optional   | interact    | `automation.input`   | DOM hover events or native CDP pointer move                                                |
 | `input.drag`                       | Yes  | Optional   | interact    | `automation.input`   | DOM drag events or native interpolated pointer drag                                        |
 | `input.scroll_into_view`           | Yes  | -          | interact    | `automation.input`   | Explicitly scroll target into view before inspect/capture                                  |
-| `screenshot.capture_element`       | Yes  | CDP        | capture     | `screenshot.partial` | Cropped element screenshot                                                                 |
-| `screenshot.capture_region`        | Yes  | CDP        | capture     | `screenshot.partial` | Cropped viewport region                                                                    |
-| `screenshot.capture_full_page`     | Yes  | CDP        | capture     | `screenshot.partial` | Full document screenshot; only when page-level context is necessary                        |
+| `screenshot.capture_element`       | Yes  | CDP        | capture     | `screenshot.partial` | Complete element screenshot with explicit completeness metadata                            |
+| `screenshot.capture_region`        | Yes  | CDP        | capture     | `screenshot.partial` | Cropped viewport region in PNG, JPEG, or WebP                                               |
+| `screenshot.capture_full_page`     | Yes  | CDP        | capture     | `screenshot.partial` | Full document screenshot; fails coherently above Chrome capture limits                     |
 | `patch.apply_styles`               | Yes  | -          | patch       | `patch.styles`       | Reversible CSS patch; `verify` returns computed result                                     |
 | `patch.apply_dom`                  | Yes  | -          | patch       | `patch.dom`          | Reversible DOM mutation; `verify` returns result                                           |
 | `patch.list`                       | Yes  | -          | patch       | `patch.dom`          | Active rollback records in the current document                                            |
@@ -398,14 +398,16 @@ bbx perf
 bbx call performance.get_metrics
 ```
 
-### screenshot.capture_full_page
+### screenshot.capture_\*
 
-Capture a full-document screenshot beyond the current viewport. Use only when element or tight region captures cannot express the issue. Chrome capture limits still apply on very large pages.
+Capture a complete element, a tight viewport region, or a full document. All methods accept `format: "png" | "jpeg" | "webp"`; JPEG and WebP additionally accept integer `quality` from 0 to 100. Results include matching `format`, `mimeType`, `complete`, and `clipped` metadata.
 
-This raw call returns base64 JSON. Prefer `bbx screenshot <ref> [outPath]` when one element is enough.
+Element capture uses full page-coordinate bounds with CDP capture beyond the viewport. If Browser Bridge cannot guarantee the entire element, or if an element/page exceeds Chrome capture limits, it returns a typed failure rather than a viewport-clipped image labeled complete. Use full-page capture only when element or tight region captures cannot express the issue.
+
+Raw calls return base64 JSON. Prefer `bbx screenshot [--format png|jpeg|webp] [--quality 0-100] <ref> [outPath]` when one element is enough; the CLI chooses or validates the output extension from the encoding.
 
 ```bash
-bbx call screenshot.capture_full_page '{}'
+bbx call screenshot.capture_full_page '{"format":"jpeg","quality":75}'
 ```
 
 ## Request Envelope

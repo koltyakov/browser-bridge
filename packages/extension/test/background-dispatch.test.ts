@@ -2273,6 +2273,8 @@ test('background dispatch captures screenshot regions through a CDP clip', async
         width: 0,
         height: '56',
         scale: '2',
+        format: 'jpeg',
+        quality: 73.7,
       },
     })
   );
@@ -2292,7 +2294,8 @@ test('background dispatch captures screenshot regions through a CDP clip', async
       target: { tabId: 81 },
       method: 'Page.captureScreenshot',
       params: {
-        format: 'png',
+        format: 'jpeg',
+        quality: 73,
         clip: {
           x: 12,
           y: 34,
@@ -2313,7 +2316,11 @@ test('background dispatch captures screenshot regions through a CDP clip', async
       height: 56,
       scale: 2,
     },
-    image: 'data:image/png;base64,region-image-data',
+    image: 'data:image/jpeg;base64,region-image-data',
+    format: 'jpeg',
+    mimeType: 'image/jpeg',
+    complete: true,
+    clipped: false,
   });
 });
 
@@ -2373,6 +2380,10 @@ test('background dispatch defaults invalid screenshot region coordinates', async
       scale: 1,
     },
     image: 'data:image/png;base64,region-default-image-data',
+    format: 'png',
+    mimeType: 'image/png',
+    complete: true,
+    clipped: false,
   });
 });
 
@@ -2387,7 +2398,7 @@ test('background dispatch captures full-page screenshots after reading page dime
           sendMessageCalls.push({ tabId, message });
           if (message.type === 'bridge.execute') {
             return {
-              scrollWidth: 20_000,
+              scrollWidth: 10_000,
               scrollHeight: 5_000,
               devicePixelRatio: 1.5,
             };
@@ -2442,7 +2453,7 @@ test('background dispatch captures full-page screenshots after reading page dime
         clip: {
           x: 0,
           y: 0,
-          width: 16_384,
+          width: 10_000,
           height: 5_000,
           scale: 1.5,
         },
@@ -2455,11 +2466,15 @@ test('background dispatch captures full-page screenshots after reading page dime
     rect: {
       x: 0,
       y: 0,
-      width: 16_384,
+      width: 10_000,
       height: 5_000,
       scale: 1.5,
     },
     image: 'data:image/png;base64,full-page-image-data',
+    format: 'png',
+    mimeType: 'image/png',
+    complete: true,
+    clipped: false,
   });
 });
 
@@ -2519,6 +2534,10 @@ test('background dispatch defaults invalid full-page screenshot dimensions', asy
       scale: 1,
     },
     image: 'data:image/png;base64,full-page-default-image-data',
+    format: 'png',
+    mimeType: 'image/png',
+    complete: true,
+    clipped: false,
   });
 });
 
@@ -2538,7 +2557,7 @@ test('background dispatch retries stale element screenshots before capturing', a
               throw new Error('stale element reference');
             }
             return {
-              x: -5,
+              x: 5,
               y: '8',
               width: '120',
               height: 45,
@@ -2608,26 +2627,30 @@ test('background dispatch retries stale element screenshots before capturing', a
       params: {
         format: 'png',
         clip: {
-          x: 0,
+          x: 5,
           y: 8,
           width: 120,
           height: 45,
           scale: 2,
         },
-        captureBeyondViewport: false,
+        captureBeyondViewport: true,
       },
     },
   ]);
   assert.equal(response.meta?.method, 'screenshot.capture_element');
   assert.deepEqual(response.result, {
     rect: {
-      x: 0,
+      x: 5,
       y: 8,
       width: 120,
       height: 45,
       scale: 2,
     },
     image: 'data:image/png;base64,element-image-data',
+    format: 'png',
+    mimeType: 'image/png',
+    complete: true,
+    clipped: false,
   });
 });
 
@@ -2662,6 +2685,42 @@ test('background dispatch surfaces non-stale element screenshot errors without r
   assert.equal(response.ok, false);
   assert.equal(response.error.code, ERROR_CODES.INTERNAL_ERROR);
   assert.equal(response.error.message, 'element lookup failed');
+  assert.equal(response.meta?.method, 'screenshot.capture_element');
+});
+
+test('background dispatch rejects element captures that cannot be guaranteed complete', async () => {
+  const { loaded } = await loadEnabledDispatchBackground({
+    queryLabel: 'test-background-dispatch-screenshot-incomplete-element',
+    chromeOverrides: {
+      tabs: {
+        async sendMessage(_tabId: number, message: Record<string, unknown>) {
+          if (message.type === 'bridge.execute') {
+            throw new Error('Complete capture is unsupported for a fixed element.');
+          }
+          return { ok: true };
+        },
+      },
+      debugger: {
+        async sendCommand() {
+          assert.fail('unsupported complete element captures should not reach CDP');
+        },
+      },
+    },
+  });
+
+  const response = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-screenshot-incomplete-element',
+      method: 'screenshot.capture_element',
+      params: { selector: '.fixed' },
+    })
+  );
+
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, ERROR_CODES.RESULT_TRUNCATED);
+  const details = response.error.details as Record<string, unknown>;
+  assert.equal(details.complete, false);
+  assert.equal(details.clipped, false);
   assert.equal(response.meta?.method, 'screenshot.capture_element');
 });
 

@@ -22,17 +22,28 @@ export const CAPTURE_ACTIONS = {
   element: {
     ref: true,
     method: 'screenshot.capture_element',
-    params: (_, r) => ({ elementRef: r }),
+    params: (a, r) => ({
+      elementRef: r,
+      ...(a.format ? { format: a.format } : {}),
+      ...(typeof a.quality === 'number' ? { quality: a.quality } : {}),
+    }),
   },
   region: {
     ref: false,
     method: 'screenshot.capture_region',
-    params: (a) => /** @type {Record<string, unknown>} */ (a.rect || {}),
+    params: (a) => ({
+      .../** @type {Record<string, unknown>} */ (a.rect || {}),
+      ...(a.format ? { format: a.format } : {}),
+      ...(typeof a.quality === 'number' ? { quality: a.quality } : {}),
+    }),
   },
   full_page: {
     ref: false,
     method: 'screenshot.capture_full_page',
-    params: () => ({}),
+    params: (a) => ({
+      ...(a.format ? { format: a.format } : {}),
+      ...(typeof a.quality === 'number' ? { quality: a.quality } : {}),
+    }),
   },
   cdp_document: { ref: false, method: 'cdp.get_document', params: () => ({}) },
   cdp_dom_snapshot: {
@@ -82,7 +93,7 @@ function isValidCaptureRegion(rect) {
 }
 
 /**
- * @param {{ action: string, elementRef?: string, selector?: string, rect?: Record<string, unknown>, nodeId?: number, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @param {{ action: string, elementRef?: string, selector?: string, rect?: Record<string, unknown>, format?: 'png' | 'jpeg' | 'webp', quality?: number, nodeId?: number, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleCaptureTool(args) {
@@ -148,6 +159,9 @@ export function createScreenshotResult(response, method) {
       mimeType: image.mimeType,
       byteLength: image.byteLength,
       ...(rect ? { rect } : {}),
+      format: result.format ?? image.mimeType.replace('image/', ''),
+      complete: result.complete === true,
+      clipped: result.clipped === true,
     },
     false,
     [{ type: 'image', data: image.data, mimeType: image.mimeType }]

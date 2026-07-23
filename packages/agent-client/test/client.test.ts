@@ -18,6 +18,7 @@ import {
   parseNumberArg,
   parsePropertyAssignments,
 } from '../src/cli-helpers.js';
+import { extractScreenshotFlags } from '../src/cli-args.js';
 import {
   findInstalledManagedTargets,
   getManagedSkillSentinelFilename,
@@ -575,6 +576,20 @@ test('parsePropertyAssignments handles css style pairs', () => {
 /** Ensure property lists split cleanly for style queries. */
 test('parseCommaList splits and trims values', () => {
   assert.deepEqual(parseCommaList('display, color, width'), ['display', 'color', 'width']);
+});
+
+test('extractScreenshotFlags parses bounded encoding options without consuming paths', () => {
+  assert.deepEqual(
+    extractScreenshotFlags(['#hero', '--quality', '75', 'shot.webp', '--format', 'webp']),
+    { format: 'webp', quality: 75, rest: ['#hero', 'shot.webp'] }
+  );
+  assert.deepEqual(extractScreenshotFlags(['#hero']), {
+    format: 'png',
+    quality: undefined,
+    rest: ['#hero'],
+  });
+  assert.throws(() => extractScreenshotFlags(['#hero', '--format', 'gif']), /png, jpeg, or webp/);
+  assert.throws(() => extractScreenshotFlags(['#hero', '--quality', '101']), /0 to 100/);
 });
 
 /** Ensure JSON object parsing rejects non-object shapes. */

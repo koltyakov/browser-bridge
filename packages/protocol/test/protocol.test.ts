@@ -44,6 +44,7 @@ import {
   normalizeTabCreateParams,
   normalizeTabCloseParams,
   normalizeAccessibilityTreeParams,
+  normalizeScreenshotParams,
   normalizeNetworkParams,
   normalizeNetworkInterceptAddParams,
   normalizePageTextParams,
@@ -754,6 +755,23 @@ test('normalizeAccessibilityTreeParams defaults sensibly', () => {
   assert.equal(params.selector, null);
   assert.equal(params.compact, false);
   assert.equal(params.interactiveOnly, false);
+});
+
+test('normalizeScreenshotParams validates formats and bounds lossy quality', () => {
+  assert.deepEqual(normalizeScreenshotParams(), { format: 'png', quality: null });
+  assert.deepEqual(normalizeScreenshotParams({ format: 'jpeg', quality: 120 }), {
+    format: 'jpeg',
+    quality: 100,
+  });
+  assert.deepEqual(normalizeScreenshotParams({ format: 'webp', quality: 0 }), {
+    format: 'webp',
+    quality: 0,
+  });
+  assert.deepEqual(normalizeScreenshotParams({ format: 'png', quality: 20 }), {
+    format: 'png',
+    quality: null,
+  });
+  assert.throws(() => normalizeScreenshotParams({ format: 'gif' as 'png' }), /png, jpeg, or webp/);
 });
 
 /** Ensure network params validate and clamp. */

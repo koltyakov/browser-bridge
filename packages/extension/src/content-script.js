@@ -425,11 +425,6 @@
    */
   function getElementRect(elementRef) {
     const el = getRequiredElement(elementRef);
-    el.scrollIntoView({
-      block: 'center',
-      inline: 'center',
-      behavior: 'instant',
-    });
     const rect = el.getBoundingClientRect();
     if (rect.width < 1 || rect.height < 1) {
       throw new Error(
@@ -437,18 +432,22 @@
           'It may be hidden, collapsed, or not yet rendered.'
       );
     }
-    const x = Math.max(0, rect.x);
-    const y = Math.max(0, rect.y);
-    const width = Math.max(0, Math.min(rect.width, window.innerWidth - x));
-    const height = Math.max(0, Math.min(rect.height, window.innerHeight - y));
-    if (width < 1 || height < 1) {
-      throw new Error(
-        'Element is outside the visible viewport after scroll ' +
-          `(${Math.round(rect.x)},${Math.round(rect.y)} ${Math.round(rect.width)}\u00d7${Math.round(rect.height)}). ` +
-          'It may be in a fixed/sticky container or an iframe.'
-      );
+    const position = window.getComputedStyle(el).position;
+    if (position === 'fixed' || position === 'sticky') {
+      throw new Error(`Complete capture is unsupported for a ${position} element.`);
     }
-    return { x, y, width, height, scale: window.devicePixelRatio || 1 };
+    const x = rect.x + window.scrollX;
+    const y = rect.y + window.scrollY;
+    if (x < 0 || y < 0) {
+      throw new Error('Complete capture is unsupported for an element outside page bounds.');
+    }
+    return {
+      x,
+      y,
+      width: rect.width,
+      height: rect.height,
+      scale: window.devicePixelRatio || 1,
+    };
   }
 
   /**
@@ -460,8 +459,8 @@
   function getFullPageDimensions() {
     const el = document.scrollingElement || document.documentElement;
     return {
-      scrollWidth: Math.min(el.scrollWidth, 16384),
-      scrollHeight: Math.min(el.scrollHeight, 16384),
+      scrollWidth: el.scrollWidth,
+      scrollHeight: el.scrollHeight,
       devicePixelRatio: window.devicePixelRatio || 1,
     };
   }

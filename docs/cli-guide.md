@@ -163,7 +163,8 @@ Shortcuts cover the common cases. For exact methods or advanced parameters:
 bbx call dom.query '{"selector":".card","maxNodes":5}'
 bbx call --tab 123 page.get_state
 bbx call input.scroll_into_view '{"target":{"selector":"[data-testid=\"checkout-summary\"]"}}'
-bbx call screenshot.capture_full_page '{}'
+bbx screenshot --format webp --quality 80 '#hero' ./tmp/hero.webp
+bbx call screenshot.capture_full_page '{"format":"jpeg","quality":75}'
 bbx call --tab 123 cdp.dispatch_key_event '{"key":"Escape"}'
 bbx page.get_state
 bbx batch '[{"method":"page.get_state"},{"method":"page.get_console","params":{"level":"warn"}}]'
