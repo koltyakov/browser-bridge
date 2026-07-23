@@ -287,7 +287,7 @@ function validateAuthToken(token) {
 
 /**
  * @param {string | null | undefined} destinationId
- * @param {{ defaultTimeoutMs?: number }} [options={}]
+ * @param {{ defaultTimeoutMs?: number, checkProtocolOnConnect?: boolean }} [options={}]
  * @returns {Promise<BridgeClient>}
  */
 export async function createBridgeClientForDestination(destinationId, options = {}) {

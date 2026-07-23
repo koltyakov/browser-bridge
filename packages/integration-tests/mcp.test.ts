@@ -198,11 +198,11 @@ test(
       assert.equal(bridgeServer.errors.length, 0);
       assert.deepEqual(
         bridgeServer.requests.map((request) => request.method),
-        ['health.ping', 'page.get_state', 'dom.query']
+        ['page.get_state', 'dom.query']
       );
+      assert.equal(bridgeServer.requests[0].tab_id, 17);
       assert.equal(bridgeServer.requests[1].tab_id, 17);
-      assert.equal(bridgeServer.requests[2].tab_id, 17);
-      assert.deepEqual(bridgeServer.requests[2].params, {
+      assert.deepEqual(bridgeServer.requests[1].params, {
         selector: 'main',
         withinRef: null,
         budget: {

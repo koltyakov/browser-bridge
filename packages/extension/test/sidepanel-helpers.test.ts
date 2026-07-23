@@ -452,23 +452,23 @@ test('getActivitySourceTag prefers explicit source metadata', () => {
   );
 });
 
-test('getActivitySourceTag infers MCP when only MCP is configured', () => {
+test('getActivitySourceTag does not infer MCP from setup state', () => {
   assert.equal(
     getActivitySourceTag('', {
       mcpClients: [{ configured: true }],
       skillTargets: [{ skills: [{ exists: false }] }],
     }),
-    'mcp'
+    ''
   );
 });
 
-test('getActivitySourceTag infers CLI when only CLI skill is installed', () => {
+test('getActivitySourceTag does not infer CLI from setup state', () => {
   assert.equal(
     getActivitySourceTag('', {
       mcpClients: [{ configured: false }],
       skillTargets: [{ skills: [{ exists: true }] }],
     }),
-    'cli'
+    ''
   );
 });
 

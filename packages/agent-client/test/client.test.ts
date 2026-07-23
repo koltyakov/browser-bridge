@@ -148,6 +148,43 @@ test('BridgeClient.checkProtocolVersion falls back to a generated mismatch warni
   assert.match(result.warning || '', /remote supports \[0\.0\]/);
 });
 
+test('BridgeClient can connect optimistically without a health preflight', async () => {
+  const bridgeServer = await bridgeServerWith({
+    'input.click': (request) => createSuccess(request.id, { clicked: true }),
+    'health.ping': (request) =>
+      createSuccess(request.id, {
+        daemon: 'ok',
+        supported_versions: [PROTOCOL_VERSION],
+      }),
+  });
+  const client = new BridgeClient({
+    socketPath: bridgeServer.socketPath,
+    checkProtocolOnConnect: false,
+  });
+
+  try {
+    await client.connect();
+    assert.equal(bridgeServer.requests.length, 0);
+
+    const actionResponse = await client.request({ method: 'input.click' });
+    assert.equal(actionResponse.ok, true);
+    assert.deepEqual(
+      bridgeServer.requests.map((request) => request.method),
+      ['input.click']
+    );
+
+    const healthResponse = await client.request({ method: 'health.ping' });
+    assert.equal(healthResponse.ok, true);
+    assert.deepEqual(
+      bridgeServer.requests.map((request) => request.method),
+      ['input.click', 'health.ping']
+    );
+  } finally {
+    await client.close().catch(() => {});
+    await bridgeServer.close();
+  }
+});
+
 test('BridgeClient auto-restarts an older daemon once during connect', async () => {
   let supportedVersion = '0.9';
   let restartCount = 0;

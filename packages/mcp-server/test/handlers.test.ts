@@ -127,6 +127,7 @@ async function withMockedBridge(
   }
 
   BridgeClient.prototype.connect = async function connect() {
+    assert.equal(this.checkProtocolOnConnect, false);
     this.connected = true;
   };
   BridgeClient.prototype.close = async function close() {};

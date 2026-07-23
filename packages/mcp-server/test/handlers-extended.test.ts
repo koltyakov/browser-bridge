@@ -58,6 +58,7 @@ async function withMockedBridge(
   const calls: RequestRecord[] = [];
 
   BridgeClient.prototype.connect = async function connect() {
+    assert.equal(this.checkProtocolOnConnect, false);
     this.connected = true;
   };
   BridgeClient.prototype.close = async function close() {};

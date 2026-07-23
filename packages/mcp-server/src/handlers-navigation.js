@@ -32,7 +32,8 @@ export async function handleTabsTool(args) {
         let client = null;
         try {
           client = await createBridgeClientForDestination(
-            destination.local ? null : destination.id
+            destination.local ? null : destination.id,
+            { checkProtocolOnConnect: false }
           );
           await client.connect();
           const response = await requestBridgeWithRetry(

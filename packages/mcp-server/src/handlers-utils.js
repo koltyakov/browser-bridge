@@ -197,9 +197,11 @@ export function summarizeToolError(error) {
 export async function withToolClient(callback, options = {}) {
   try {
     if (!options.destinationId) {
-      return await withBridgeClient(callback);
+      return await withBridgeClient(callback, { checkProtocolOnConnect: false });
     }
-    const client = await createBridgeClientForDestination(options.destinationId);
+    const client = await createBridgeClientForDestination(options.destinationId, {
+      checkProtocolOnConnect: false,
+    });
     await client.connect();
     try {
       return await callback(client);

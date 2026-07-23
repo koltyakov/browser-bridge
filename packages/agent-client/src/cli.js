@@ -197,10 +197,10 @@ async function runLocalCommand(run) {
  */
 async function createCliClient() {
   try {
-    return await createBridgeClientForDestination(
-      remoteDestinationId,
-      clientTimeoutMs ? { defaultTimeoutMs: clientTimeoutMs } : {}
-    );
+    return await createBridgeClientForDestination(remoteDestinationId, {
+      checkProtocolOnConnect: false,
+      ...(clientTimeoutMs ? { defaultTimeoutMs: clientTimeoutMs } : {}),
+    });
   } catch (error) {
     printJson({
       ok: false,

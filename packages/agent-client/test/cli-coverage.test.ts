@@ -41,7 +41,7 @@ test('bbx batch rejects malformed call entries without dispatching them', async 
     }
     assert.deepEqual(
       bridgeServer.requests.map((request) => request.method),
-      ['health.ping']
+      []
     );
   } finally {
     await bridgeServer.close();
@@ -79,9 +79,9 @@ test('bbx screenshot resolves a selector and writes the decoded image', async ()
     assert.deepEqual(await fs.promises.readFile(outputPath), imageBytes);
     assert.deepEqual(
       bridgeServer.requests.map((request) => request.method),
-      ['health.ping', 'dom.query', 'screenshot.capture_element']
+      ['dom.query', 'screenshot.capture_element']
     );
-    assert.deepEqual(bridgeServer.requests[2].params, { elementRef: 'el_screenshot' });
+    assert.deepEqual(bridgeServer.requests[1].params, { elementRef: 'el_screenshot' });
   } finally {
     await bridgeServer.close();
     await fs.promises.rm(directory, { recursive: true, force: true });
@@ -109,7 +109,7 @@ test('bbx screenshot reports bridge failures without writing a file', async () =
     await assert.rejects(fs.promises.access(outputPath), { code: 'ENOENT' });
     assert.deepEqual(
       bridgeServer.requests.map((request) => request.method),
-      ['health.ping', 'screenshot.capture_element']
+      ['screenshot.capture_element']
     );
   } finally {
     await bridgeServer.close();

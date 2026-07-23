@@ -6,13 +6,9 @@ import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createSuccess } from '../../protocol/src/index.js';
 import { runCli } from '../../../tests/_helpers/runCli.ts';
 import { createInstallFs } from '../../../tests/_helpers/installFs.ts';
-import {
-  bridgeServerWith,
-  TEST_PROTOCOL_VERSION as PROTOCOL_VERSION,
-} from '../../../tests/_helpers/socketHarness.ts';
+import { bridgeServerWith } from '../../../tests/_helpers/socketHarness.ts';
 
 type CliPayload = {
   ok: boolean;
@@ -24,22 +20,6 @@ function expectCliPayload(value: unknown): CliPayload {
   assert.equal(typeof value, 'object');
   assert.notEqual(value, null);
   return value as CliPayload;
-}
-
-function createBridgeHealthResult() {
-  return {
-    daemon: 'ok',
-    supported_versions: [PROTOCOL_VERSION],
-    extensionConnected: false,
-    connectedExtensions: [],
-    access: {
-      enabled: false,
-      routeReady: false,
-      routeTabId: null,
-      windowId: null,
-      reason: 'access_disabled',
-    },
-  };
 }
 
 async function createRefusedBridgeHome() {
@@ -151,7 +131,6 @@ test('bbx status maps ECONNREFUSED to DAEMON_OFFLINE when a stale socket path is
 
 test('bbx tabs maps a mid-request socket close to CONNECTION_LOST', async () => {
   const bridgeServer = await bridgeServerWith({
-    'health.ping': (request) => createSuccess(request.id, createBridgeHealthResult()),
     'tabs.list': (_request, context) => {
       context.socket.destroy();
     },
@@ -173,9 +152,8 @@ test('bbx tabs maps a mid-request socket close to CONNECTION_LOST', async () => 
     assert.equal(payload.ok, false);
     assert.equal(payload.evidence, null);
     assert.equal(payload.summary, 'CONNECTION_LOST: Bridge socket closed.');
-    assert.equal(bridgeServer.requests.length, 2);
-    assert.equal(bridgeServer.requests[0].method, 'health.ping');
-    assert.equal(bridgeServer.requests[1].method, 'tabs.list');
+    assert.equal(bridgeServer.requests.length, 1);
+    assert.equal(bridgeServer.requests[0].method, 'tabs.list');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();
@@ -184,7 +162,6 @@ test('bbx tabs maps a mid-request socket close to CONNECTION_LOST', async () => 
 
 test('bbx tabs maps request timeouts to BRIDGE_TIMEOUT when the bridge never replies', async () => {
   const bridgeServer = await bridgeServerWith({
-    'health.ping': (request) => createSuccess(request.id, createBridgeHealthResult()),
     'tabs.list': () => undefined,
   });
 
@@ -208,16 +185,15 @@ test('bbx tabs maps request timeouts to BRIDGE_TIMEOUT when the bridge never rep
       payload.summary,
       'BRIDGE_TIMEOUT: Timed out waiting for bridge response to tabs.list after 50ms.'
     );
-    assert.equal(bridgeServer.requests.length, 2);
-    assert.equal(bridgeServer.requests[0].method, 'health.ping');
-    assert.equal(bridgeServer.requests[1].method, 'tabs.list');
+    assert.equal(bridgeServer.requests.length, 1);
+    assert.equal(bridgeServer.requests[0].method, 'tabs.list');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();
   }
 });
 
-test('bbx status passes through raw error codes that are not specially remapped', async () => {
+test('bbx status preserves raw CONNECTION_LOST for a mid-request socket close', async () => {
   const bridgeServer = await bridgeServerWith({
     'health.ping': (_request, context) => {
       context.socket.destroy();
@@ -239,9 +215,10 @@ test('bbx status passes through raw error codes that are not specially remapped'
     assert.equal(result.stderr, '');
     assert.equal(payload.ok, false);
     assert.equal(payload.evidence, null);
-    assert.equal(payload.summary, 'ENOTCONN: BridgeClient is not connected.');
+    assert.equal(payload.summary, 'CONNECTION_LOST: Bridge socket closed.');
     assert.equal(bridgeServer.requests.length, 1);
     assert.equal(bridgeServer.requests[0].method, 'health.ping');
+    assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();

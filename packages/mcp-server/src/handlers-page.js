@@ -224,7 +224,9 @@ export async function handleBatchTool(args) {
     /** @type {unknown} */
     let callError = null;
     try {
-      callClient = await createBridgeClientForDestination(destinationId);
+      callClient = await createBridgeClientForDestination(destinationId, {
+        checkProtocolOnConnect: false,
+      });
       await callClient.connect();
       const params = applyMethodBudgetPreset(method, call.params || {}, call.budgetPreset);
       response = await requestBridgeWithRetry(callClient, method, params, {

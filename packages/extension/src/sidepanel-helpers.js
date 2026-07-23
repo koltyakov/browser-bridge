@@ -211,24 +211,18 @@ export function getPromptExamplesMode(setupStatus) {
 }
 
 /**
- * Pick the activity source tag to display in the side panel. Prefer explicit
- * request metadata, but fall back to setup state when only one host path is
- * configured so older log entries stay understandable.
+ * Pick the explicit activity source tag to display in the side panel. Missing
+ * source metadata stays unlabelled because setup state cannot identify which
+ * path produced an individual request.
  *
  * @param {string | null | undefined} source
- * @param {SetupStatusInstallState | null} setupStatus
+ * @param {SetupStatusInstallState | null} _setupStatus
  * @returns {'' | 'cli' | 'mcp'}
  */
-export function getActivitySourceTag(source, setupStatus) {
+export function getActivitySourceTag(source, _setupStatus) {
   if (source === 'cli' || source === 'mcp') {
     return source;
   }
-
-  const promptMode = getPromptExamplesMode(setupStatus);
-  if (promptMode === 'cli' || promptMode === 'mcp') {
-    return promptMode;
-  }
-
   return '';
 }
 

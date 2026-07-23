@@ -97,12 +97,10 @@ test('bbx status performs a real bridge health roundtrip over the socket protoco
     assert.equal(payload.evidence.daemon, 'ok');
     assert.match(payload.summary, /Daemon: ok/);
     assert.match(payload.summary, /tab 42/);
-    assert.equal(bridgeServer.requests.length, 2);
+    assert.equal(bridgeServer.requests.length, 1);
     assert.equal(bridgeServer.requests[0].method, 'health.ping');
     assert.equal(bridgeServer.requests[0].meta.protocol_version, PROTOCOL_VERSION);
-    assert.equal(bridgeServer.requests[1].method, 'health.ping');
-    assert.equal(bridgeServer.requests[1].meta.protocol_version, PROTOCOL_VERSION);
-    assert.equal(bridgeServer.requests[1].meta.source, 'cli');
+    assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();
@@ -111,20 +109,6 @@ test('bbx status performs a real bridge health roundtrip over the socket protoco
 
 test('bbx call writes a bridge request, prints the result JSON, and exits successfully', async () => {
   const bridgeServer = await bridgeServerWith({
-    'health.ping': (request) =>
-      createSuccess(request.id, {
-        daemon: 'ok',
-        supported_versions: [PROTOCOL_VERSION],
-        extensionConnected: false,
-        connectedExtensions: [],
-        access: {
-          enabled: false,
-          routeReady: false,
-          routeTabId: null,
-          windowId: null,
-          reason: 'access_disabled',
-        },
-      }),
     'page.get_text': (request) =>
       createSuccess(request.id, {
         text: 'Bridge text payload',
@@ -151,12 +135,12 @@ test('bbx call writes a bridge request, prints the result JSON, and exits succes
       truncated: false,
       length: 19,
     });
-    assert.equal(bridgeServer.requests.length, 2);
-    assert.equal(bridgeServer.requests[1].method, 'page.get_text');
-    assert.equal(bridgeServer.requests[1].tab_id, 42);
-    assert.equal(bridgeServer.requests[1].params.textBudget, 100);
-    assert.equal(bridgeServer.requests[1].meta.source, 'cli');
-    assert.equal(bridgeServer.requests[1].meta.protocol_version, PROTOCOL_VERSION);
+    assert.equal(bridgeServer.requests.length, 1);
+    assert.equal(bridgeServer.requests[0].method, 'page.get_text');
+    assert.equal(bridgeServer.requests[0].tab_id, 42);
+    assert.equal(bridgeServer.requests[0].params.textBudget, 100);
+    assert.equal(bridgeServer.requests[0].meta.source, 'cli');
+    assert.equal(bridgeServer.requests[0].meta.protocol_version, PROTOCOL_VERSION);
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();
@@ -165,20 +149,6 @@ test('bbx call writes a bridge request, prints the result JSON, and exits succes
 
 test('bbx call exits 1 and reports bridge failures with the error code on stderr', async () => {
   const bridgeServer = await bridgeServerWith({
-    'health.ping': (request) =>
-      createSuccess(request.id, {
-        daemon: 'ok',
-        supported_versions: [PROTOCOL_VERSION],
-        extensionConnected: false,
-        connectedExtensions: [],
-        access: {
-          enabled: false,
-          routeReady: false,
-          routeTabId: null,
-          windowId: null,
-          reason: 'access_disabled',
-        },
-      }),
     'dom.query': (request) =>
       createFailure(request.id, 'INVALID_REQUEST', 'Bad \u001b[31mselector\u001b[0m', {
         selector: '#bad',
@@ -203,9 +173,9 @@ test('bbx call exits 1 and reports bridge failures with the error code on stderr
     assert.equal(payload.error.code, 'INVALID_REQUEST');
     assert.equal(payload.error.message, 'Bad selector');
     assert.deepEqual(payload.error.details, { selector: '#bad' });
-    assert.equal(bridgeServer.requests.length, 2);
-    assert.equal(bridgeServer.requests[1].method, 'dom.query');
-    assert.deepEqual(bridgeServer.requests[1].params, {
+    assert.equal(bridgeServer.requests.length, 1);
+    assert.equal(bridgeServer.requests[0].method, 'dom.query');
+    assert.deepEqual(bridgeServer.requests[0].params, {
       selector: '#bad',
       withinRef: null,
       budget: {
@@ -216,7 +186,7 @@ test('bbx call exits 1 and reports bridge failures with the error code on stderr
         attributeAllowlist: [],
       },
     });
-    assert.equal(bridgeServer.requests[1].meta.source, 'cli');
+    assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();
@@ -249,10 +219,10 @@ test('handleHealthTool uses the live bridge client path and preserves MCP reques
     assert.equal(result.isError, undefined);
     assert.match(result.content[0].text, /Daemon: ok/);
     assert.equal(result.structuredContent.ok, true);
-    assert.equal(bridgeServer.requests.length, 2);
-    assert.equal(bridgeServer.requests[1].method, 'health.ping');
-    assert.equal(bridgeServer.requests[1].meta.source, 'mcp');
-    assert.equal(bridgeServer.requests[1].meta.protocol_version, PROTOCOL_VERSION);
+    assert.equal(bridgeServer.requests.length, 1);
+    assert.equal(bridgeServer.requests[0].method, 'health.ping');
+    assert.equal(bridgeServer.requests[0].meta.source, 'mcp');
+    assert.equal(bridgeServer.requests[0].meta.protocol_version, PROTOCOL_VERSION);
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     if (originalBridgeHome === undefined) {

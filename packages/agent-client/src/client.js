@@ -112,6 +112,7 @@ export class BridgeClient extends EventEmitter {
     clientId = `agent_${randomUUID()}`,
     defaultTimeoutMs = DEFAULT_CLIENT_REQUEST_TIMEOUT_MS,
     autoReconnect = false,
+    checkProtocolOnConnect = true,
     restartDaemonOnVersionMismatch = shouldAutoRestartDaemonOnVersionMismatch(),
     restartDaemonFn = restartBridgeDaemon,
     authToken = undefined,
@@ -123,6 +124,7 @@ export class BridgeClient extends EventEmitter {
     this.clientId = clientId;
     this.defaultTimeoutMs = defaultTimeoutMs;
     this.autoReconnect = autoReconnect;
+    this.checkProtocolOnConnect = checkProtocolOnConnect;
     this.restartDaemonOnVersionMismatch = restartDaemonOnVersionMismatch;
     this.restartDaemonFn = restartDaemonFn;
     this.authToken = authToken;
@@ -246,6 +248,9 @@ export class BridgeClient extends EventEmitter {
 
     this.protocolCompatibility = null;
     this.protocolWarning = null;
+    if (!this.checkProtocolOnConnect) {
+      return;
+    }
 
     /** @type {ProtocolHealthResult | null} */
     let healthResult = null;

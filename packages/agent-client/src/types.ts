@@ -80,6 +80,7 @@ export interface BridgeClientOptions {
   clientId?: string;
   defaultTimeoutMs?: number;
   autoReconnect?: boolean;
+  checkProtocolOnConnect?: boolean;
   restartDaemonOnVersionMismatch?: boolean;
   restartDaemonFn?: typeof restartBridgeDaemon;
   authToken?: string | null;

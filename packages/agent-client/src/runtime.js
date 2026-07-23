@@ -38,6 +38,7 @@ import { collectSetupStatus } from './setup-status.js';
 /** @typedef {import('./types.js').BridgeMeta} BridgeMeta */
 /** @typedef {import('./types.js').BridgeRequestSource} BridgeRequestSource */
 /** @typedef {import('./types.js').BridgeResponse} BridgeResponse */
+/** @typedef {import('./types.js').BridgeClientOptions} BridgeClientOptions */
 /** @typedef {import('../../native-host/src/config.js').SupportedBrowser} SupportedBrowser */
 /** @typedef {import('./types.js').BrowserManifestStatus} BrowserManifestStatus */
 /** @typedef {import('./types.js').NativeHostManifestIssue} NativeHostManifestIssue */
@@ -180,10 +181,11 @@ function withRequestMeta(source, tokenBudget) {
 /**
  * @template T
  * @param {(client: BridgeClient) => Promise<T>} callback
+ * @param {BridgeClientOptions} [options]
  * @returns {Promise<T>}
  */
-export async function withBridgeClient(callback) {
-  const client = new BridgeClient();
+export async function withBridgeClient(callback, options) {
+  const client = new BridgeClient(options);
   await ensureClientConnected(client);
   try {
     return await callback(client);

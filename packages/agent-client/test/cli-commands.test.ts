@@ -247,10 +247,10 @@ test('bbx access-request forwards to the bridge and prints a summarized success 
     assert.equal(payload.ok, true);
     assert.match(payload.summary, /Bridge method succeeded with 3 top-level fields\./);
     assert.deepEqual(payload.evidence, ['enabled', 'requested', 'windowId']);
-    assert.equal(bridgeServer.requests.length, 2);
-    assert.equal(bridgeServer.requests[1].method, 'access.request');
-    assert.deepEqual(bridgeServer.requests[1].params, {});
-    assert.equal(bridgeServer.requests[1].meta.source, 'cli');
+    assert.equal(bridgeServer.requests.length, 1);
+    assert.equal(bridgeServer.requests[0].method, 'access.request');
+    assert.deepEqual(bridgeServer.requests[0].params, {});
+    assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();
@@ -278,7 +278,7 @@ test('bbx summarized bridge failures set a failing exit code', async () => {
     assert.equal(result.stderr, '');
     assert.equal(payload.ok, false);
     assert.match(payload.summary, /ACCESS_DENIED: Window access was denied\./);
-    assert.equal(bridgeServer.requests[1].method, 'access.request');
+    assert.equal(bridgeServer.requests[0].method, 'access.request');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();
@@ -406,10 +406,10 @@ test('bbx logs forwards to log.tail and summarizes returned entries', async () =
         source: 'cli',
       },
     ]);
-    assert.equal(bridgeServer.requests.length, 2);
-    assert.equal(bridgeServer.requests[1].method, 'log.tail');
-    assert.deepEqual(bridgeServer.requests[1].params, { limit: 20 });
-    assert.equal(bridgeServer.requests[1].meta.source, 'cli');
+    assert.equal(bridgeServer.requests.length, 1);
+    assert.equal(bridgeServer.requests[0].method, 'log.tail');
+    assert.deepEqual(bridgeServer.requests[0].params, { limit: 20 });
+    assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();
@@ -454,10 +454,10 @@ test('bbx tabs forwards to tabs.list and includes tab titles in evidence', async
         title: 'Example Tab',
       },
     ]);
-    assert.equal(bridgeServer.requests.length, 2);
-    assert.equal(bridgeServer.requests[1].method, 'tabs.list');
-    assert.deepEqual(bridgeServer.requests[1].params, {});
-    assert.equal(bridgeServer.requests[1].meta.source, 'cli');
+    assert.equal(bridgeServer.requests.length, 1);
+    assert.equal(bridgeServer.requests[0].method, 'tabs.list');
+    assert.deepEqual(bridgeServer.requests[0].params, {});
+    assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();
@@ -492,13 +492,13 @@ test('bbx tab-create sends the provided URL and prints the created tab summary',
       tabId: 14,
       url: 'https://example.com/docs',
     });
-    assert.equal(bridgeServer.requests.length, 2);
-    assert.equal(bridgeServer.requests[1].method, 'tabs.create');
-    assert.deepEqual(bridgeServer.requests[1].params, {
+    assert.equal(bridgeServer.requests.length, 1);
+    assert.equal(bridgeServer.requests[0].method, 'tabs.create');
+    assert.deepEqual(bridgeServer.requests[0].params, {
       url: 'https://example.com/docs',
       active: true,
     });
-    assert.equal(bridgeServer.requests[1].meta.source, 'cli');
+    assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();
@@ -533,13 +533,13 @@ test('bbx tab-create without a URL falls back to about:blank in the normalized r
       tabId: 21,
       url: 'about:blank',
     });
-    assert.equal(bridgeServer.requests.length, 2);
-    assert.equal(bridgeServer.requests[1].method, 'tabs.create');
-    assert.deepEqual(bridgeServer.requests[1].params, {
+    assert.equal(bridgeServer.requests.length, 1);
+    assert.equal(bridgeServer.requests[0].method, 'tabs.create');
+    assert.deepEqual(bridgeServer.requests[0].params, {
       url: 'about:blank',
       active: true,
     });
-    assert.equal(bridgeServer.requests[1].meta.source, 'cli');
+    assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();
@@ -574,13 +574,13 @@ test('bbx tab-close forwards the parsed numeric tabId to tabs.close', async () =
       closed: true,
       tabId: 42,
     });
-    assert.equal(bridgeServer.requests.length, 2);
-    assert.equal(bridgeServer.requests[1].method, 'tabs.close');
-    assert.equal(bridgeServer.requests[1].tab_id, null);
-    assert.deepEqual(bridgeServer.requests[1].params, {
+    assert.equal(bridgeServer.requests.length, 1);
+    assert.equal(bridgeServer.requests[0].method, 'tabs.close');
+    assert.equal(bridgeServer.requests[0].tab_id, null);
+    assert.deepEqual(bridgeServer.requests[0].params, {
       tabId: 42,
     });
-    assert.equal(bridgeServer.requests[1].meta.source, 'cli');
+    assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();
@@ -624,11 +624,11 @@ test('bbx tabs.list uses the dotted-method shortcut and prints the raw bridge re
         },
       ],
     });
-    assert.equal(bridgeServer.requests.length, 2);
-    assert.equal(bridgeServer.requests[1].method, 'tabs.list');
-    assert.equal(bridgeServer.requests[1].tab_id, null);
-    assert.deepEqual(bridgeServer.requests[1].params, {});
-    assert.equal(bridgeServer.requests[1].meta.source, 'cli');
+    assert.equal(bridgeServer.requests.length, 1);
+    assert.equal(bridgeServer.requests[0].method, 'tabs.list');
+    assert.equal(bridgeServer.requests[0].tab_id, null);
+    assert.deepEqual(bridgeServer.requests[0].params, {});
+    assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();
@@ -667,10 +667,10 @@ test('bbx click dispatches a selector atomically', async () => {
     assert.deepEqual(payload.evidence, {
       elementRef: 'el_button_2',
     });
-    assert.equal(bridgeServer.requests.length, 2);
-    assert.equal(bridgeServer.requests[1].method, 'input.click');
-    assert.equal(bridgeServer.requests[1].tab_id, null);
-    assert.deepEqual(bridgeServer.requests[1].params, {
+    assert.equal(bridgeServer.requests.length, 1);
+    assert.equal(bridgeServer.requests[0].method, 'input.click');
+    assert.equal(bridgeServer.requests[0].tab_id, null);
+    assert.deepEqual(bridgeServer.requests[0].params, {
       target: {
         selector: '#save',
       },
@@ -686,7 +686,7 @@ test('bbx click dispatches a selector atomically', async () => {
       executionMode: 'dom',
       recoverStale: false,
     });
-    assert.equal(bridgeServer.requests[1].meta.source, 'cli');
+    assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();
@@ -790,15 +790,15 @@ test('bbx console dispatches a shortcut command without selector resolution', as
         args: ['be careful'],
       },
     ]);
-    assert.equal(bridgeServer.requests.length, 2);
-    assert.equal(bridgeServer.requests[1].method, 'page.get_console');
-    assert.equal(bridgeServer.requests[1].tab_id, null);
-    assert.deepEqual(bridgeServer.requests[1].params, {
+    assert.equal(bridgeServer.requests.length, 1);
+    assert.equal(bridgeServer.requests[0].method, 'page.get_console');
+    assert.equal(bridgeServer.requests[0].tab_id, null);
+    assert.deepEqual(bridgeServer.requests[0].params, {
       level: 'warn',
       clear: false,
       limit: 50,
     });
-    assert.equal(bridgeServer.requests[1].meta.source, 'cli');
+    assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();
@@ -833,10 +833,10 @@ test('bbx press-key without a selector sends a page-level input.press_key reques
       pressed: true,
       key: 'Enter',
     });
-    assert.equal(bridgeServer.requests.length, 2);
-    assert.equal(bridgeServer.requests[1].method, 'input.press_key');
-    assert.equal(bridgeServer.requests[1].tab_id, null);
-    assert.deepEqual(bridgeServer.requests[1].params, {
+    assert.equal(bridgeServer.requests.length, 1);
+    assert.equal(bridgeServer.requests[0].method, 'input.press_key');
+    assert.equal(bridgeServer.requests[0].tab_id, null);
+    assert.deepEqual(bridgeServer.requests[0].params, {
       button: 'left',
       clickCount: 1,
       clear: false,
@@ -850,7 +850,7 @@ test('bbx press-key without a selector sends a page-level input.press_key reques
       executionMode: 'dom',
       recoverStale: false,
     });
-    assert.equal(bridgeServer.requests[1].meta.source, 'cli');
+    assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();
@@ -892,10 +892,10 @@ test('bbx press-key forwards a selector atomically', async () => {
       key: 'Escape',
       elementRef: 'el_button_1',
     });
-    assert.equal(bridgeServer.requests.length, 2);
-    assert.equal(bridgeServer.requests[1].method, 'input.press_key');
-    assert.equal(bridgeServer.requests[1].tab_id, null);
-    assert.deepEqual(bridgeServer.requests[1].params, {
+    assert.equal(bridgeServer.requests.length, 1);
+    assert.equal(bridgeServer.requests[0].method, 'input.press_key');
+    assert.equal(bridgeServer.requests[0].tab_id, null);
+    assert.deepEqual(bridgeServer.requests[0].params, {
       button: 'left',
       clickCount: 1,
       clear: false,
@@ -911,7 +911,7 @@ test('bbx press-key forwards a selector atomically', async () => {
       executionMode: 'dom',
       recoverStale: false,
     });
-    assert.equal(bridgeServer.requests[1].meta.source, 'cli');
+    assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();
@@ -967,15 +967,15 @@ test('bbx cdp-press-key forwards key and code to cdp.dispatch_key_event', async 
       code: 'Escape',
       dispatched: ['keyDown', 'keyUp'],
     });
-    assert.equal(bridgeServer.requests.length, 2);
-    assert.equal(bridgeServer.requests[1].method, 'cdp.dispatch_key_event');
-    assert.equal(bridgeServer.requests[1].tab_id, 17);
-    assert.deepEqual(bridgeServer.requests[1].params, {
+    assert.equal(bridgeServer.requests.length, 1);
+    assert.equal(bridgeServer.requests[0].method, 'cdp.dispatch_key_event');
+    assert.equal(bridgeServer.requests[0].tab_id, 17);
+    assert.deepEqual(bridgeServer.requests[0].params, {
       key: 'Escape',
       code: 'Escape',
       modifiers: [],
     });
-    assert.equal(bridgeServer.requests[1].meta.source, 'cli');
+    assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();
@@ -1022,16 +1022,16 @@ test('bbx call reads params JSON from stdin when passed - and forwards the norma
     assert.deepEqual(payload, {
       value: 'stdin branch',
     });
-    assert.equal(bridgeServer.requests.length, 2);
-    assert.equal(bridgeServer.requests[1].method, 'page.evaluate');
-    assert.equal(bridgeServer.requests[1].tab_id, null);
-    assert.deepEqual(bridgeServer.requests[1].params, {
+    assert.equal(bridgeServer.requests.length, 1);
+    assert.equal(bridgeServer.requests[0].method, 'page.evaluate');
+    assert.equal(bridgeServer.requests[0].tab_id, null);
+    assert.deepEqual(bridgeServer.requests[0].params, {
       expression: 'document.title',
       awaitPromise: false,
       timeoutMs: 5000,
       returnByValue: true,
     });
-    assert.equal(bridgeServer.requests[1].meta.source, 'cli');
+    assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();
@@ -1204,7 +1204,7 @@ test('bbx batch reports unknown methods without dispatching them', async () => {
     ]);
     assert.deepEqual(
       bridgeServer.requests.map((request) => request.method),
-      ['health.ping']
+      []
     );
   } finally {
     await bridgeServer.close();
@@ -1224,7 +1224,7 @@ test('bbx batch rejects non-object params and exits unsuccessfully', async () =>
     assert.equal(payload[0].error.message, 'Batch call params must be a JSON object.');
     assert.deepEqual(
       bridgeServer.requests.map((request) => request.method),
-      ['health.ping']
+      []
     );
   } finally {
     await bridgeServer.close();
@@ -1253,9 +1253,9 @@ test('bbx batch uses operation-aware timeout and preserves tab routing and metad
     const payload = result.json as Array<{ ok: boolean }>;
     assert.equal(result.status, 0, result.stdout);
     assert.equal(payload[0].ok, true);
-    assert.equal(bridgeServer.requests[1].tab_id, 17);
-    assert.equal(bridgeServer.requests[1].meta.source, 'cli');
-    assert.equal(bridgeServer.requests[1].params.timeoutMs, 300);
+    assert.equal(bridgeServer.requests[0].tab_id, 17);
+    assert.equal(bridgeServer.requests[0].meta.source, 'cli');
+    assert.equal(bridgeServer.requests[0].params.timeoutMs, 300);
   } finally {
     await bridgeServer.close();
   }
@@ -1271,7 +1271,7 @@ test('bbx intercept add parses status separately from response body', async () =
       env: { ...process.env, BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome },
     });
     assert.equal(result.status, 0, result.stdout);
-    assert.deepEqual(bridgeServer.requests[1].params, {
+    assert.deepEqual(bridgeServer.requests[0].params, {
       urlPattern: '*example*',
       action: 'fulfill',
       statusCode: 201,
@@ -1361,16 +1361,16 @@ test('bbx eval joins the inline expression arguments and summarizes page.evaluat
       type: 'number',
       value: 4,
     });
-    assert.equal(bridgeServer.requests.length, 2);
-    assert.equal(bridgeServer.requests[1].method, 'page.evaluate');
-    assert.equal(bridgeServer.requests[1].tab_id, null);
-    assert.deepEqual(bridgeServer.requests[1].params, {
+    assert.equal(bridgeServer.requests.length, 1);
+    assert.equal(bridgeServer.requests[0].method, 'page.evaluate');
+    assert.equal(bridgeServer.requests[0].tab_id, null);
+    assert.deepEqual(bridgeServer.requests[0].params, {
       expression: '2 + 2',
       awaitPromise: false,
       timeoutMs: 5000,
       returnByValue: true,
     });
-    assert.equal(bridgeServer.requests[1].meta.source, 'cli');
+    assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();
@@ -1406,16 +1406,16 @@ test('bbx eval reads the expression from stdin when passed -', async () => {
       type: 'string',
       value: 'Example Title',
     });
-    assert.equal(bridgeServer.requests.length, 2);
-    assert.equal(bridgeServer.requests[1].method, 'page.evaluate');
-    assert.equal(bridgeServer.requests[1].tab_id, null);
-    assert.deepEqual(bridgeServer.requests[1].params, {
+    assert.equal(bridgeServer.requests.length, 1);
+    assert.equal(bridgeServer.requests[0].method, 'page.evaluate');
+    assert.equal(bridgeServer.requests[0].tab_id, null);
+    assert.deepEqual(bridgeServer.requests[0].params, {
       expression: 'document.title',
       awaitPromise: false,
       timeoutMs: 5000,
       returnByValue: true,
     });
-    assert.equal(bridgeServer.requests[1].meta.source, 'cli');
+    assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {
     await bridgeServer.close();
