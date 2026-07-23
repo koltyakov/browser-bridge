@@ -79,7 +79,11 @@ import {
   reportAsyncError,
   getStateForTest,
 } from './background-state.js';
-import { ensureNetworkInterceptor, readNetworkBuffer } from './background-network.js';
+import {
+  disableNetworkInterceptor,
+  ensureNetworkInterceptor,
+  readNetworkBuffer,
+} from './background-network.js';
 import { createFetchInterceptor } from './background-fetch-intercept.js';
 import { createCdpNetworkCapture } from './background-cdp-network.js';
 import {
@@ -89,6 +93,7 @@ import {
 import { createWindowSessionController } from './background-window-session.js';
 import {
   readConsoleBuffer,
+  disableConsoleInterceptor,
   isRecoverableInstrumentationError,
   primeTabConsoleCapture,
   primeWindowConsoleCapture,
@@ -201,8 +206,8 @@ const { clearTabBridgeState, clearWindowBridgeState, rollbackAllPatchesForTab } 
   createTabCleanupController(chrome, {
     ensureContentScript,
     sendTabMessage,
-    readConsoleBuffer,
-    readNetworkBuffer,
+    disableConsoleInterceptor,
+    disableNetworkInterceptor,
     beginDebuggerCleanup: (tabId) => tabDebugger.beginCleanup(tabId),
     commitDebuggerCleanup: (tabId) => tabDebugger.commitCleanup(tabId),
     clearFetchInterception: (tabId) => fetchInterceptor.clearAllRules(tabId),
@@ -235,6 +240,15 @@ const tabMoveCleanup = createTabMoveCleanupController({
     ),
   cancelNavigationWaitsForRemoval: (tabId) => navigationWaits.handleTabRemoved(tabId),
   clearDialogState: (tabId) => tabDebugger.clearDialogState(tabId),
+  disableTabInstrumentation: async (tabId) => {
+    await Promise.allSettled([
+      disableConsoleInterceptor(tabId, chrome),
+      disableNetworkInterceptor(tabId, chrome),
+    ]);
+  },
+  resumeTabInstrumentation: async (tabId) => {
+    await primeTabConsoleCapture(tabId, chrome, true);
+  },
   clearTabBridgeState,
   clearRemovedTabState: async (tabId) => {
     const endCleanup = await tabDebugger.beginCleanup(tabId);

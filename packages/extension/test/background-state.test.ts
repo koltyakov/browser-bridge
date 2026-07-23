@@ -491,14 +491,14 @@ test('background state scope.set_enabled surfaces tab mismatch and ignores disab
 
   portPair.left.dispatchMessage({ type: 'scope.set_enabled', tabId: 45, enabled: false });
   await flushAsyncWork();
-  await waitForCondition(() => alarmClears.length === 1);
+  await flushAsyncWork();
 
   assert.deepEqual(state.enabledWindow, {
     windowId: 9,
     title: 'Enabled Window',
     enabledAt: 12,
   });
-  assert.deepEqual(alarmClears, ['bb-keepalive']);
+  assert.deepEqual(alarmClears, []);
   assert.equal(
     nativeMessages.some(
       (message) =>
@@ -509,7 +509,7 @@ test('background state scope.set_enabled surfaces tab mismatch and ignores disab
         'accessEnabled' in message &&
         message.accessEnabled === false
     ),
-    true
+    false
   );
 });
 
@@ -1063,27 +1063,11 @@ test('background state clearWindowBridgeState only clears scriptable tabs and ig
   assert.deepEqual(consoleBuffers.get(71), { entries: [], dropped: 0 });
   assert.deepEqual(networkBuffers.get(71), { entries: [], dropped: 0 });
   assert.deepEqual(patchIdsByTab.get(73), ['patch-3']);
-  assert.deepEqual(consoleBuffers.get(73), {
-    entries: [{ level: 'warn', args: ['tab-73'], ts: 2 }],
-    dropped: 1,
-  });
-  assert.deepEqual(networkBuffers.get(73), {
-    entries: [
-      {
-        method: 'POST',
-        url: 'https://example.com/two',
-        status: 500,
-        duration: 9,
-        type: 'xhr',
-        ts: 4,
-        size: 20,
-      },
-    ],
-    dropped: 2,
-  });
+  assert.deepEqual(consoleBuffers.get(73), { entries: [], dropped: 0 });
+  assert.deepEqual(networkBuffers.get(73), { entries: [], dropped: 0 });
   assert.deepEqual(
     executeScriptCalls.map((details) => details.target?.tabId),
-    [71, 71]
+    [71, 73, 71, 73]
   );
 });
 

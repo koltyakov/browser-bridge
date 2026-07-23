@@ -2,11 +2,27 @@
 
 import { ERROR_CODES } from '../../protocol/src/index.js';
 import { getErrorMessage, normalizeRuntimeErrorMessage } from './background-helpers.js';
+import { getMainWorldInstrumentationKey } from './background-main-world-instrumentation.js';
 import { isNumber } from './background-state.js';
 
 /**
  * @typedef {{
+ *   enabled: boolean,
+ *   buffer: Array<{level: string, args: string[], ts: number}>,
+ *   dropped: number,
+ *   levels: string[],
+ *   originals: Record<string, (...args: unknown[]) => void>,
+ *   wrappers: Record<string, (...args: unknown[]) => void>,
+ *   onError: (event: ErrorEvent) => void,
+ *   onRejection: (event: PromiseRejectionEvent) => void,
+ *   listenersAttached: boolean,
+ * }} ConsoleInstrumentationRecord
+ */
+
+/**
+ * @typedef {{
  *   scripting: { executeScript: (config: any) => Promise<any[]> },
+ *   storage?: { session?: { get: (key: string) => Promise<Record<string, unknown>>, set: (value: Record<string, unknown>) => Promise<void> } },
  *   tabs: { query: (info: any) => Promise<any[]> }
  * }} ChromeWithScripting
  */
@@ -21,14 +37,63 @@ import { isNumber } from './background-state.js';
  * @returns {Promise<void>}
  */
 export async function ensureConsoleInterceptor(tabId, chromeObj) {
+  const instrumentationKey = await getMainWorldInstrumentationKey(chromeObj);
   await chromeObj.scripting.executeScript({
     target: { tabId },
     world: 'MAIN',
-    func: () => {
-      if (globalThis.__bb_console_installed) return;
-      globalThis.__bb_console_installed = true;
+    func: (/** @type {string} */ recordKey = '__bbx_instrumentation_test') => {
+      const page = /** @type {Record<string, unknown>} */ (globalThis);
+      const root =
+        page[recordKey] && typeof page[recordKey] === 'object'
+          ? /** @type {Record<string, unknown>} */ (page[recordKey])
+          : (page[recordKey] = {});
+      const consoleMethods = /** @type {Record<string, (...args: unknown[]) => void>} */ (
+        /** @type {unknown} */ (console)
+      );
+      const existing = root.console;
+      if (existing && typeof existing === 'object') {
+        const record = /** @type {ConsoleInstrumentationRecord} */ (existing);
+        if (!record.enabled) {
+          record.buffer.length = 0;
+          record.dropped = 0;
+        }
+        record.enabled = true;
+        for (const level of record.levels) {
+          if (consoleMethods[level] === record.originals[level]) {
+            consoleMethods[level] = record.wrappers[level];
+          }
+        }
+        if (!record.listenersAttached) {
+          globalThis.addEventListener('error', record.onError);
+          globalThis.addEventListener('unhandledrejection', record.onRejection);
+          record.listenersAttached = true;
+        }
+        globalThis.__bb_console_installed = true;
+        globalThis.__bb_console_buffer = record.buffer;
+        globalThis.__bb_console_dropped = record.dropped;
+        return;
+      }
+
       /** @type {Array<{level: string, args: string[], ts: number}>} */
       const buffer = [];
+      const levels = ['log', 'warn', 'error', 'info', 'debug'];
+      const record = {
+        enabled: false,
+        buffer,
+        dropped: 0,
+        levels,
+        /** @type {Record<string, (...args: unknown[]) => void>} */
+        originals: {},
+        /** @type {Record<string, (...args: unknown[]) => void>} */
+        wrappers: {},
+        /** @type {(event: ErrorEvent) => void} */
+        onError: () => {},
+        /** @type {(event: PromiseRejectionEvent) => void} */
+        onRejection: () => {},
+        listenersAttached: false,
+      };
+      root.console = record;
+      globalThis.__bb_console_installed = true;
       globalThis.__bb_console_buffer = buffer;
       globalThis.__bb_console_dropped = 0;
       const MAX = 200;
@@ -93,39 +158,96 @@ export async function ensureConsoleInterceptor(tabId, chromeObj) {
        * @returns {void}
        */
       const pushEntry = (level, args) => {
+        if (!record.enabled) return;
         buffer.push({ level, args, ts: Date.now() });
         if (buffer.length > MAX) {
-          const dropped = /** @type {Record<string, unknown>} */ (globalThis).__bb_console_dropped;
-          /** @type {Record<string, unknown>} */ (globalThis).__bb_console_dropped =
-            (typeof dropped === 'number' ? dropped : 0) + (buffer.length - MAX);
+          record.dropped =
+            (typeof globalThis.__bb_console_dropped === 'number'
+              ? globalThis.__bb_console_dropped
+              : record.dropped) +
+            (buffer.length - MAX);
+          globalThis.__bb_console_dropped = record.dropped;
           buffer.splice(0, buffer.length - MAX);
         }
       };
 
-      const orig = /** @type {Record<string, Function>} */ ({});
-      const consoleMethods = /** @type {Record<string, (...args: unknown[]) => void>} */ (
-        /** @type {unknown} */ (console)
-      );
-      for (const level of ['log', 'warn', 'error', 'info', 'debug']) {
-        orig[level] = consoleMethods[level];
-        consoleMethods[level] = (...args) => {
+      for (const level of levels) {
+        record.originals[level] = consoleMethods[level];
+        record.wrappers[level] = (...args) => {
           pushEntry(
             level,
             args.map((a) => serializeArg(a))
           );
-          orig[level].apply(console, args);
+          record.originals[level].apply(console, args);
         };
+        consoleMethods[level] = record.wrappers[level];
       }
-      globalThis.addEventListener('error', (e) => {
+      record.onError = (e) => {
         pushEntry('exception', [
           e.message || 'Unknown error',
           e.filename ? `${e.filename}:${e.lineno}:${e.colno}` : '',
         ]);
-      });
-      globalThis.addEventListener('unhandledrejection', (e) => {
+      };
+      record.onRejection = (e) => {
         pushEntry('rejection', [String(e.reason).slice(0, MAX_ARG_CHARS)]);
-      });
+      };
+      globalThis.addEventListener('error', record.onError);
+      globalThis.addEventListener('unhandledrejection', record.onRejection);
+      record.listenersAttached = true;
+      record.enabled = true;
     },
+    args: [instrumentationKey],
+  });
+}
+
+/**
+ * Stop console collection, clear buffered data, and restore BBX-owned hooks.
+ * Repeated calls are safe, including after partial restoration failures.
+ *
+ * @param {number} tabId
+ * @param {ChromeWithScripting} chromeObj
+ * @returns {Promise<void>}
+ */
+export async function disableConsoleInterceptor(tabId, chromeObj) {
+  const instrumentationKey = await getMainWorldInstrumentationKey(chromeObj);
+  await chromeObj.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    func: (
+      /** @type {boolean} */ _shouldClear,
+      /** @type {string} */ recordKey = '__bbx_instrumentation_test'
+    ) => {
+      const page = /** @type {Record<string, unknown>} */ (globalThis);
+      const root = page[recordKey];
+      const consoleRecord =
+        root && typeof root === 'object'
+          ? /** @type {{ console?: ConsoleInstrumentationRecord }} */ (root).console
+          : null;
+      if (consoleRecord && typeof consoleRecord === 'object') {
+        const consoleMethods = /** @type {Record<string, (...args: unknown[]) => void>} */ (
+          /** @type {unknown} */ (console)
+        );
+        consoleRecord.enabled = false;
+        consoleRecord.buffer.length = 0;
+        consoleRecord.dropped = 0;
+        if (consoleRecord.listenersAttached) {
+          globalThis.removeEventListener('error', consoleRecord.onError);
+          globalThis.removeEventListener('unhandledrejection', consoleRecord.onRejection);
+          consoleRecord.listenersAttached = false;
+        }
+        for (const level of consoleRecord.levels) {
+          if (consoleMethods[level] === consoleRecord.wrappers[level]) {
+            consoleMethods[level] = consoleRecord.originals[level];
+          }
+        }
+      }
+      if (Array.isArray(globalThis.__bb_console_buffer)) {
+        globalThis.__bb_console_buffer.length = 0;
+      }
+      globalThis.__bb_console_dropped = 0;
+      globalThis.__bb_console_installed = false;
+    },
+    args: [true, instrumentationKey],
   });
 }
 
@@ -138,23 +260,37 @@ export async function ensureConsoleInterceptor(tabId, chromeObj) {
  * @returns {Promise<{ entries: Array<{level: string, args: string[], ts: number}>, dropped: number }>}
  */
 export async function readConsoleBuffer(tabId, clear, chromeObj) {
+  const instrumentationKey = await getMainWorldInstrumentationKey(chromeObj);
   const results = await chromeObj.scripting.executeScript({
     target: { tabId },
     world: 'MAIN',
-    func: (/** @type {boolean} */ shouldClear) => {
-      const buf = Array.isArray(globalThis.__bb_console_buffer)
-        ? globalThis.__bb_console_buffer
-        : [];
-      const dropped = globalThis.__bb_console_dropped || 0;
+    func: (/** @type {boolean} */ shouldClear, /** @type {string} */ recordKey) => {
+      const root = /** @type {Record<string, unknown>} */ (globalThis)[recordKey];
+      const record =
+        root && typeof root === 'object'
+          ? /** @type {{ console?: ConsoleInstrumentationRecord }} */ (root).console
+          : null;
+      const buf = Array.isArray(record?.buffer)
+        ? record.buffer
+        : Array.isArray(globalThis.__bb_console_buffer)
+          ? globalThis.__bb_console_buffer
+          : [];
+      const dropped =
+        typeof record?.dropped === 'number'
+          ? record.dropped
+          : typeof globalThis.__bb_console_dropped === 'number'
+            ? globalThis.__bb_console_dropped
+            : 0;
       const copy = [...buf];
       if (shouldClear) {
         buf.length = 0;
+        if (record) record.dropped = 0;
         globalThis.__bb_console_buffer = buf;
         globalThis.__bb_console_dropped = 0;
       }
       return { entries: copy, dropped };
     },
-    args: [clear],
+    args: [clear, instrumentationKey],
   });
   return /** @type {any} */ (results?.[0]?.result) || { entries: [], dropped: 0 };
 }

@@ -420,9 +420,9 @@ test('background native enable flow primes console capture and swallows recovera
     false
   );
   assert.deepEqual(executeScriptCalls, [
-    { tabId: 31, args: null },
-    { tabId: 32, args: null },
-    { tabId: 31, args: [true] },
+    { tabId: 31, args: [executeScriptCalls[0].args?.[0]] },
+    { tabId: 32, args: [executeScriptCalls[0].args?.[0]] },
+    { tabId: 31, args: [true, executeScriptCalls[0].args?.[0]] },
   ]);
   assert.deepEqual(findMessage(nativeMessages, 'host.access_update'), {
     type: 'host.access_update',
@@ -1120,12 +1120,12 @@ test('background native page.get_network falls back to an empty buffer when the 
     {
       target: { tabId: 75 },
       world: 'MAIN',
-      args: null,
+      args: [executeScriptCalls[0].args?.[0]],
     },
     {
       target: { tabId: 75 },
       world: 'MAIN',
-      args: [false],
+      args: [false, executeScriptCalls[0].args?.[0]],
     },
   ]);
 });
@@ -1372,15 +1372,15 @@ test('background native clearTabBridgeState swallows restricted content script c
   assert.deepEqual(executeScriptCalls, [
     {
       tabId: 92,
-      kind: 'inject',
-    },
-    {
-      tabId: 92,
       kind: 'console',
     },
     {
       tabId: 92,
       kind: 'network',
+    },
+    {
+      tabId: 92,
+      kind: 'inject',
     },
   ]);
 });

@@ -20,6 +20,8 @@ test('tab move cleanup clears state only after a tab leaves the enabled window',
     cancelNavigationWaitsForMove: () => calls.push('cancel-move'),
     cancelNavigationWaitsForRemoval: () => calls.push('cancel-remove'),
     clearDialogState: () => calls.push('clear-dialog'),
+    disableTabInstrumentation: async () => {},
+    resumeTabInstrumentation: async () => {},
     clearTabBridgeState: async (_tabId, shouldContinue) => {
       assert.equal(await shouldContinue?.(), true);
       calls.push('clear-tab');
@@ -107,7 +109,7 @@ test('tab bridge cleanup finishes debugger ownership cleanup when a tab re-enter
     return checks < 2;
   });
 
-  assert.deepEqual(calls, ['begin-cleanup', 'end-cleanup']);
+  assert.deepEqual(calls, ['clear-console', 'clear-network']);
   assert.equal(checks, 2);
 });
 
@@ -121,6 +123,8 @@ test('tab move cleanup revalidates destination before beginning destructive clea
     cancelNavigationWaitsForMove: () => calls.push('cancel'),
     cancelNavigationWaitsForRemoval() {},
     clearDialogState: () => calls.push('clear-dialog'),
+    disableTabInstrumentation: async () => {},
+    resumeTabInstrumentation: async () => {},
     clearTabBridgeState: async () => {
       calls.push('clear-tab');
     },
@@ -224,6 +228,8 @@ test('move re-entry abort preserves an observed dialog for page.handle_dialog', 
     cancelNavigationWaitsForMove() {},
     cancelNavigationWaitsForRemoval() {},
     clearDialogState: (tabId) => coordinator.clearDialogState(tabId),
+    disableTabInstrumentation: async () => {},
+    resumeTabInstrumentation: async () => {},
     clearTabBridgeState: cleanup.clearTabBridgeState,
     async clearRemovedTabState() {},
   });

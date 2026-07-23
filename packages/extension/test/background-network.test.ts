@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ensureNetworkInterceptor, readNetworkBuffer } from '../src/background-network.js';
+import {
+  disableNetworkInterceptor,
+  ensureNetworkInterceptor,
+  readNetworkBuffer,
+} from '../src/background-network.js';
 
 type NetworkEntry = {
   method: string;
@@ -101,6 +105,9 @@ function snapshotGlobalDescriptors() {
 }
 
 function restoreGlobalDescriptors(snapshot: GlobalDescriptorSnapshot) {
+  for (const key of Object.getOwnPropertyNames(globalThis)) {
+    if (key.startsWith('__bbx_instrumentation_')) Reflect.deleteProperty(globalThis, key);
+  }
   for (const [key, descriptor] of Object.entries(snapshot)) {
     if (descriptor) {
       Object.defineProperty(globalThis, key, descriptor);
@@ -497,12 +504,12 @@ test('readNetworkBuffer returns copied entries and clears the page state on requ
       {
         target: { tabId: 29 },
         world: 'MAIN',
-        args: [false],
+        args: [false, executeScriptCalls[0].args?.[1]],
       },
       {
         target: { tabId: 29 },
         world: 'MAIN',
-        args: [true],
+        args: [true, executeScriptCalls[0].args?.[1]],
       },
     ]);
   } finally {
@@ -530,6 +537,62 @@ test('readNetworkBuffer falls back to empty state when page globals are absent',
       entries: [],
       dropped: 0,
     });
+  } finally {
+    restoreGlobalDescriptors(snapshot);
+  }
+});
+
+test('disableNetworkInterceptor restores hooks and drops in-flight disabled-period records', async () => {
+  const snapshot = snapshotGlobalDescriptors();
+  let resolveFetch: (response: { status: number; headers: HeaderStub }) => void = () => {};
+  const pendingResponse = new Promise<{ status: number; headers: HeaderStub }>((resolve) => {
+    resolveFetch = resolve;
+  });
+  const originalFetch: FetchStub = async () => pendingResponse;
+  Object.defineProperty(globalThis, 'fetch', {
+    configurable: true,
+    writable: true,
+    value: originalFetch,
+  });
+  Object.defineProperty(globalThis, 'performance', {
+    configurable: true,
+    writable: true,
+    value: { now: () => 1 },
+  });
+  Object.defineProperty(globalThis, 'XMLHttpRequest', {
+    configurable: true,
+    writable: true,
+    value: FakeXMLHttpRequest,
+  });
+  const chrome = {
+    scripting: {
+      async executeScript(details: NetworkInjection) {
+        return [{ result: details.func?.(...(details.args ?? [])) }];
+      },
+    },
+  };
+
+  try {
+    await ensureNetworkInterceptor(44, chrome);
+    const mutableGlobal = globalThis as unknown as InstalledNetworkGlobal;
+    const request = mutableGlobal.fetch('https://example.com/pending');
+    await disableNetworkInterceptor(44, chrome);
+    assert.strictEqual(mutableGlobal.fetch, originalFetch);
+
+    resolveFetch({ status: 200, headers: createHeaders('10') });
+    await request;
+    assert.deepEqual(mutableGlobal.__bb_network_buffer, []);
+
+    await ensureNetworkInterceptor(44, chrome);
+    assert.deepEqual(mutableGlobal.__bb_network_buffer, []);
+    const pageReplacement: FetchStub = async () => ({
+      status: 204,
+      headers: createHeaders(null),
+    });
+    mutableGlobal.fetch = pageReplacement;
+    await disableNetworkInterceptor(44, chrome);
+    await disableNetworkInterceptor(44, chrome);
+    assert.strictEqual(mutableGlobal.fetch, pageReplacement);
   } finally {
     restoreGlobalDescriptors(snapshot);
   }

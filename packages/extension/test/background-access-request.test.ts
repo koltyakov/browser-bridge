@@ -94,6 +94,14 @@ async function flushAsyncWork(count = 6): Promise<void> {
   }
 }
 
+async function waitForCondition(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.equal(predicate(), true);
+}
+
 test('background access request opens a popup window when no side panel is open', async () => {
   const popupCreates: chrome.windows.CreateData[] = [];
   const popupUpdates: Array<chrome.windows.UpdateInfo & { windowId: number }> = [];
@@ -344,7 +352,9 @@ test('background access request reuses an open side panel instead of opening a p
   );
 
   portPair.left.dispatchMessage({ type: 'scope.set_enabled', enabled: true, tabId: 31 });
-  await flushAsyncWork();
+  await waitForCondition(() =>
+    state.actionLog.some((entry) => entry.method === 'access.confirmed')
+  );
 
   const confirmation = state.actionLog.find((entry) => entry.method === 'access.confirmed');
   assert.equal(confirmation?.tabId, 31);

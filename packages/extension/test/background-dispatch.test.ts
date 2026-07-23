@@ -1153,12 +1153,12 @@ test('background dispatch treats console levels as minimum severity', async () =
       {
         target: { tabId: 71 },
         world: 'MAIN',
-        args: null,
+        args: [executeScriptCalls[0].args?.[0]],
       },
       {
         target: { tabId: 71 },
         world: 'MAIN',
-        args: [true],
+        args: [true, executeScriptCalls[0].args?.[0]],
       },
     ]
   );
@@ -1193,7 +1193,7 @@ test('background dispatch surfaces console buffer read failures', async () => {
     scripting: {
       async executeScript(injection: ExecuteScriptCall) {
         executeScriptCalls.push(injection);
-        if (Array.isArray(injection.args)) {
+        if (typeof injection.args?.[0] === 'boolean') {
           throw new Error('console buffer read failed');
         }
         return [];
@@ -1228,12 +1228,12 @@ test('background dispatch surfaces console buffer read failures', async () => {
       {
         target: { tabId: 72 },
         world: 'MAIN',
-        args: null,
+        args: [executeScriptCalls[0].args?.[0]],
       },
       {
         target: { tabId: 72 },
         world: 'MAIN',
-        args: [false],
+        args: [false, executeScriptCalls[0].args?.[0]],
       },
     ]
   );
@@ -1371,12 +1371,12 @@ test('background dispatch returns filtered network buffer entries', async () => 
       {
         target: { tabId: 73 },
         world: 'MAIN',
-        args: null,
+        args: [executeScriptCalls[0].args?.[0]],
       },
       {
         target: { tabId: 73 },
         world: 'MAIN',
-        args: [true],
+        args: [true, executeScriptCalls[0].args?.[0]],
       },
     ]
   );
@@ -1411,7 +1411,7 @@ test('background dispatch surfaces network buffer read failures', async () => {
     scripting: {
       async executeScript(injection: ExecuteScriptCall) {
         executeScriptCalls.push(injection);
-        if (Array.isArray(injection.args)) {
+        if (typeof injection.args?.[0] === 'boolean') {
           throw new Error('network buffer read failed');
         }
         return [];
@@ -1446,12 +1446,12 @@ test('background dispatch surfaces network buffer read failures', async () => {
       {
         target: { tabId: 74 },
         world: 'MAIN',
-        args: null,
+        args: [executeScriptCalls[0].args?.[0]],
       },
       {
         target: { tabId: 74 },
         world: 'MAIN',
-        args: [false],
+        args: [false, executeScriptCalls[0].args?.[0]],
       },
     ]
   );

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { ERROR_CODES } from '../../protocol/src/index.js';
 import {
+  disableConsoleInterceptor,
   ensureConsoleInterceptor,
   isRecoverableInstrumentationError,
   primeTabConsoleCapture,
@@ -24,6 +25,7 @@ type PageGlobal = typeof globalThis & {
   __bb_console_buffer?: ConsoleEntry[];
   __bb_console_dropped?: number;
   addEventListener?: (type: string, listener: (event: Record<string, unknown>) => void) => void;
+  removeEventListener?: (type: string, listener: (event: Record<string, unknown>) => void) => void;
 };
 
 const consoleLevels = ['log', 'warn', 'error', 'info', 'debug'] as const;
@@ -34,6 +36,9 @@ function pageGlobal(): PageGlobal {
 
 function clearInjectedConsoleState(): void {
   const page = pageGlobal();
+  for (const key of Object.getOwnPropertyNames(page)) {
+    if (key.startsWith('__bbx_instrumentation_')) Reflect.deleteProperty(page, key);
+  }
   delete page.__bb_console_installed;
   delete page.__bb_console_buffer;
   delete page.__bb_console_dropped;
@@ -75,6 +80,10 @@ test('ensureConsoleInterceptor installs, records, bounds, and avoids duplicate h
     globalThis,
     'addEventListener'
   );
+  const removeEventListenerDescriptor = Object.getOwnPropertyDescriptor(
+    globalThis,
+    'removeEventListener'
+  );
   const listeners = new Map<string, (event: Record<string, unknown>) => void>();
   let listenerInstallCount = 0;
   Object.defineProperty(globalThis, 'addEventListener', {
@@ -84,13 +93,24 @@ test('ensureConsoleInterceptor installs, records, bounds, and avoids duplicate h
       listeners.set(type, listener);
     },
   });
+  Object.defineProperty(globalThis, 'removeEventListener', {
+    configurable: true,
+    value(type: string, listener: (event: Record<string, unknown>) => void): void {
+      if (listeners.get(type) === listener) listeners.delete(type);
+    },
+  });
   t.after(() => {
     clearInjectedConsoleState();
     if (addEventListenerDescriptor) {
       Object.defineProperty(globalThis, 'addEventListener', addEventListenerDescriptor);
-      return;
+    } else {
+      Reflect.deleteProperty(globalThis, 'addEventListener');
     }
-    Reflect.deleteProperty(globalThis, 'addEventListener');
+    if (removeEventListenerDescriptor) {
+      Object.defineProperty(globalThis, 'removeEventListener', removeEventListenerDescriptor);
+    } else {
+      Reflect.deleteProperty(globalThis, 'removeEventListener');
+    }
   });
 
   const executeScriptCalls: ExecuteScriptConfig[] = [];
@@ -194,6 +214,27 @@ test('ensureConsoleInterceptor installs, records, bounds, and avoids duplicate h
   await ensureConsoleInterceptor(42, chromeObj);
   assert.equal(executeScriptCalls.length, 3);
   assert.equal(listenerInstallCount, 2);
+
+  const wrappedLog = console.log;
+  await disableConsoleInterceptor(42, chromeObj);
+  assert.equal(listeners.size, 0);
+  wrappedLog('disabled-period');
+  assert.deepEqual(getBuffer(), []);
+
+  await ensureConsoleInterceptor(42, chromeObj);
+  assert.equal(listenerInstallCount, 4);
+  assert.deepEqual(getBuffer(), []);
+  console.log('re-enabled');
+  assert.deepEqual(
+    getBuffer().map((entry) => entry.args),
+    [['re-enabled']]
+  );
+
+  const pageReplacement = () => {};
+  console.log = pageReplacement;
+  await disableConsoleInterceptor(42, chromeObj);
+  await disableConsoleInterceptor(42, chromeObj);
+  assert.strictEqual(console.log, pageReplacement);
 });
 
 test('readConsoleBuffer reads, clears, and falls back when no result is returned', async (t) => {
@@ -227,8 +268,12 @@ test('readConsoleBuffer reads, clears, and falls back when no result is returned
   assert.deepEqual(
     executeScriptCalls.map((call) => ({ target: call.target, world: call.world, args: call.args })),
     [
-      { target: { tabId: 8 }, world: 'MAIN', args: [false] },
-      { target: { tabId: 8 }, world: 'MAIN', args: [true] },
+      {
+        target: { tabId: 8 },
+        world: 'MAIN',
+        args: [false, executeScriptCalls[0].args?.[1]],
+      },
+      { target: { tabId: 8 }, world: 'MAIN', args: [true, executeScriptCalls[0].args?.[1]] },
     ]
   );
 
@@ -279,10 +324,10 @@ test('primeTabConsoleCapture clears on reset and only swallows recoverable failu
   assert.deepEqual(
     executeScriptCalls.map((call) => ({ target: call.target, args: call.args ?? null })),
     [
-      { target: { tabId: 1 }, args: null },
-      { target: { tabId: 1 }, args: [true] },
-      { target: { tabId: 2 }, args: null },
-      { target: { tabId: 3 }, args: null },
+      { target: { tabId: 1 }, args: [executeScriptCalls[0].args?.[0]] },
+      { target: { tabId: 1 }, args: [true, executeScriptCalls[0].args?.[0]] },
+      { target: { tabId: 2 }, args: [executeScriptCalls[0].args?.[0]] },
+      { target: { tabId: 3 }, args: [executeScriptCalls[0].args?.[0]] },
     ]
   );
 });
@@ -312,9 +357,10 @@ test('primeWindowConsoleCapture primes numeric tab ids and settles individual fa
   assert.deepEqual(
     executeScriptCalls.map((call) => ({ target: call.target, args: call.args ?? null })),
     [
-      { target: { tabId: 11 }, args: null },
-      { target: { tabId: 12 }, args: null },
-      { target: { tabId: 11 }, args: [true] },
+      { target: { tabId: 11 }, args: [executeScriptCalls[0].args?.[0]] },
+      { target: { tabId: 12 }, args: [executeScriptCalls[0].args?.[0]] },
+      { target: { tabId: 11 }, args: [true, executeScriptCalls[0].args?.[0]] },
+      { target: { tabId: 12 }, args: [true, executeScriptCalls[0].args?.[0]] },
     ]
   );
 });

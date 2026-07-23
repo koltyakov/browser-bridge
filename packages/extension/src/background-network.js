@@ -1,8 +1,25 @@
 // @ts-check
 
+import { getMainWorldInstrumentationKey } from './background-main-world-instrumentation.js';
+
 /**
  * @typedef {{
- *   scripting: { executeScript: (config: any) => Promise<any[]> }
+ *   enabled: boolean,
+ *   buffer: Array<{method: string, url: string, status: number, duration: number, type: string, ts: number, size: number}>,
+ *   dropped: number,
+ *   originalFetch: typeof globalThis.fetch,
+ *   originalOpen: typeof XMLHttpRequest.prototype.open,
+ *   originalSend: typeof XMLHttpRequest.prototype.send,
+ *   wrappedFetch: typeof globalThis.fetch,
+ *   wrappedOpen: typeof XMLHttpRequest.prototype.open,
+ *   wrappedSend: typeof XMLHttpRequest.prototype.send,
+ * }} NetworkInstrumentationRecord
+ */
+
+/**
+ * @typedef {{
+ *   scripting: { executeScript: (config: any) => Promise<any[]> },
+ *   storage?: { session?: { get: (key: string) => Promise<Record<string, unknown>>, set: (value: Record<string, unknown>) => Promise<void> } },
  * }} ChromeWithScripting
  */
 
@@ -15,20 +32,64 @@
  * @returns {Promise<void>}
  */
 export async function ensureNetworkInterceptor(tabId, chromeObj) {
+  const instrumentationKey = await getMainWorldInstrumentationKey(chromeObj);
   await chromeObj.scripting.executeScript({
     target: { tabId },
     world: 'MAIN',
-    func: () => {
-      if (globalThis.__bb_network_installed) return;
-      globalThis.__bb_network_installed = true;
+    func: (/** @type {string} */ recordKey = '__bbx_instrumentation_test') => {
+      const page = /** @type {Record<string, unknown>} */ (globalThis);
+      const root =
+        page[recordKey] && typeof page[recordKey] === 'object'
+          ? /** @type {Record<string, unknown>} */ (page[recordKey])
+          : (page[recordKey] = {});
+      const existing = root.network;
+      if (existing && typeof existing === 'object') {
+        const record = /** @type {NetworkInstrumentationRecord} */ (existing);
+        if (!record.enabled) {
+          record.buffer.length = 0;
+          record.dropped = 0;
+        }
+        record.enabled = true;
+        if (globalThis.fetch === record.originalFetch) globalThis.fetch = record.wrappedFetch;
+        if (XMLHttpRequest.prototype.open === record.originalOpen) {
+          XMLHttpRequest.prototype.open = record.wrappedOpen;
+        }
+        if (XMLHttpRequest.prototype.send === record.originalSend) {
+          XMLHttpRequest.prototype.send = record.wrappedSend;
+        }
+        globalThis.__bb_network_installed = true;
+        globalThis.__bb_network_buffer = record.buffer;
+        globalThis.__bb_network_dropped = record.dropped;
+        return;
+      }
+
       /** @type {Array<{method: string, url: string, status: number, duration: number, type: string, ts: number, size: number}>} */
       const buffer = [];
+      const originalFetch = globalThis.fetch;
+      const originalOpen = XMLHttpRequest.prototype.open;
+      const originalSend = XMLHttpRequest.prototype.send;
+      const xhrMetadata = new WeakMap();
+      const record = {
+        enabled: false,
+        buffer,
+        dropped: 0,
+        originalFetch,
+        originalOpen,
+        originalSend,
+        /** @type {typeof globalThis.fetch} */
+        wrappedFetch: originalFetch,
+        /** @type {typeof XMLHttpRequest.prototype.open} */
+        wrappedOpen: originalOpen,
+        /** @type {typeof XMLHttpRequest.prototype.send} */
+        wrappedSend: originalSend,
+      };
+      root.network = record;
+      globalThis.__bb_network_installed = true;
       globalThis.__bb_network_buffer = buffer;
       globalThis.__bb_network_dropped = 0;
       const MAX = 200;
 
-      const origFetch = globalThis.fetch;
-      globalThis.fetch = async function (...args) {
+      record.wrappedFetch = async function (...args) {
         // Read metadata without constructing a Request: building a Request
         // from a Request input disturbs its body and would make the page's
         // own fetch call fail with "body already used".
@@ -56,7 +117,7 @@ export async function ensureNetworkInterceptor(tabId, chromeObj) {
         };
         const startTime = performance.now();
         try {
-          const resp = await origFetch.apply(globalThis, args);
+          const resp = await originalFetch.apply(globalThis, args);
           entry.status = resp.status;
           entry.duration = Math.round(performance.now() - startTime);
           const cl = resp.headers.get('content-length');
@@ -67,40 +128,40 @@ export async function ensureNetworkInterceptor(tabId, chromeObj) {
           entry.duration = Math.round(performance.now() - startTime);
           throw err;
         } finally {
-          buffer.push(entry);
-          if (buffer.length > MAX) {
-            const dropped =
-              /** @type {Record<string, unknown>} */ (globalThis).__bb_network_dropped;
-            /** @type {Record<string, unknown>} */ (globalThis).__bb_network_dropped =
-              (typeof dropped === 'number' ? dropped : 0) + (buffer.length - MAX);
-            buffer.splice(0, buffer.length - MAX);
+          if (record.enabled) {
+            buffer.push(entry);
+            if (buffer.length > MAX) {
+              record.dropped += buffer.length - MAX;
+              globalThis.__bb_network_dropped = record.dropped;
+              buffer.splice(0, buffer.length - MAX);
+            }
           }
         }
       };
+      globalThis.fetch = record.wrappedFetch;
 
-      const origOpen = XMLHttpRequest.prototype.open;
-      const origSend = XMLHttpRequest.prototype.send;
       /**
-       * @this {XMLHttpRequest & { __bb_method?: string, __bb_url?: string }}
+       * @this {XMLHttpRequest}
        * @param {string} method
        * @param {string | URL} url
        * @param {...unknown} rest
        * @returns {unknown}
        */
-      XMLHttpRequest.prototype.open = function (method, url, ...rest) {
-        this.__bb_method = method;
-        this.__bb_url = String(url);
-        return /** @type {any} */ (origOpen).call(this, method, url, ...rest);
+      record.wrappedOpen = function (method, url, ...rest) {
+        xhrMetadata.set(this, { method, url: String(url) });
+        return /** @type {any} */ (originalOpen).call(this, method, url, ...rest);
       };
+      XMLHttpRequest.prototype.open = record.wrappedOpen;
       /**
-       * @this {XMLHttpRequest & { __bb_method?: string, __bb_url?: string }}
+       * @this {XMLHttpRequest}
        * @param {...unknown} args
        * @returns {unknown}
        */
-      XMLHttpRequest.prototype.send = function (...args) {
+      record.wrappedSend = function (...args) {
+        const metadata = xhrMetadata.get(this);
         const entry = {
-          method: this.__bb_method || 'GET',
-          url: this.__bb_url || '',
+          method: metadata?.method || 'GET',
+          url: metadata?.url || '',
           status: 0,
           duration: 0,
           type: 'xhr',
@@ -113,18 +174,63 @@ export async function ensureNetworkInterceptor(tabId, chromeObj) {
           entry.duration = Math.round(performance.now() - startTime);
           const cl = this.getResponseHeader('content-length');
           if (cl) entry.size = Number(cl);
+          if (!record.enabled) return;
           buffer.push(entry);
           if (buffer.length > MAX) {
-            const dropped =
-              /** @type {Record<string, unknown>} */ (globalThis).__bb_network_dropped;
-            /** @type {Record<string, unknown>} */ (globalThis).__bb_network_dropped =
-              (typeof dropped === 'number' ? dropped : 0) + (buffer.length - MAX);
+            record.dropped += buffer.length - MAX;
+            globalThis.__bb_network_dropped = record.dropped;
             buffer.splice(0, buffer.length - MAX);
           }
         });
-        return /** @type {any} */ (origSend).apply(this, args);
+        return /** @type {any} */ (originalSend).apply(this, args);
       };
+      XMLHttpRequest.prototype.send = record.wrappedSend;
+      record.enabled = true;
     },
+    args: [instrumentationKey],
+  });
+}
+
+/**
+ * Stop fetch/XHR collection, clear buffered data, and restore owned wrappers.
+ *
+ * @param {number} tabId
+ * @param {ChromeWithScripting} chromeObj
+ * @returns {Promise<void>}
+ */
+export async function disableNetworkInterceptor(tabId, chromeObj) {
+  const instrumentationKey = await getMainWorldInstrumentationKey(chromeObj);
+  await chromeObj.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    func: (
+      /** @type {boolean} */ _shouldClear,
+      /** @type {string} */ recordKey = '__bbx_instrumentation_test'
+    ) => {
+      const root = /** @type {Record<string, unknown>} */ (globalThis)[recordKey];
+      const record =
+        root && typeof root === 'object'
+          ? /** @type {{ network?: NetworkInstrumentationRecord }} */ (root).network
+          : null;
+      if (record && typeof record === 'object') {
+        record.enabled = false;
+        record.buffer.length = 0;
+        record.dropped = 0;
+        if (globalThis.fetch === record.wrappedFetch) globalThis.fetch = record.originalFetch;
+        if (XMLHttpRequest.prototype.open === record.wrappedOpen) {
+          XMLHttpRequest.prototype.open = record.originalOpen;
+        }
+        if (XMLHttpRequest.prototype.send === record.wrappedSend) {
+          XMLHttpRequest.prototype.send = record.originalSend;
+        }
+      }
+      if (Array.isArray(globalThis.__bb_network_buffer)) {
+        globalThis.__bb_network_buffer.length = 0;
+      }
+      globalThis.__bb_network_dropped = 0;
+      globalThis.__bb_network_installed = false;
+    },
+    args: [true, instrumentationKey],
   });
 }
 
@@ -137,23 +243,37 @@ export async function ensureNetworkInterceptor(tabId, chromeObj) {
  * @returns {Promise<{ entries: Array<{method: string, url: string, status: number, duration: number, type: string, ts: number, size: number}>, dropped: number }>}
  */
 export async function readNetworkBuffer(tabId, clear, chromeObj) {
+  const instrumentationKey = await getMainWorldInstrumentationKey(chromeObj);
   const results = await chromeObj.scripting.executeScript({
     target: { tabId },
     world: 'MAIN',
-    func: (/** @type {boolean} */ shouldClear) => {
-      const buf = Array.isArray(globalThis.__bb_network_buffer)
-        ? globalThis.__bb_network_buffer
-        : [];
-      const dropped = globalThis.__bb_network_dropped || 0;
+    func: (/** @type {boolean} */ shouldClear, /** @type {string} */ recordKey) => {
+      const root = /** @type {Record<string, unknown>} */ (globalThis)[recordKey];
+      const record =
+        root && typeof root === 'object'
+          ? /** @type {{ network?: NetworkInstrumentationRecord }} */ (root).network
+          : null;
+      const buf = Array.isArray(record?.buffer)
+        ? record.buffer
+        : Array.isArray(globalThis.__bb_network_buffer)
+          ? globalThis.__bb_network_buffer
+          : [];
+      const dropped =
+        typeof record?.dropped === 'number'
+          ? record.dropped
+          : typeof globalThis.__bb_network_dropped === 'number'
+            ? globalThis.__bb_network_dropped
+            : 0;
       const copy = [...buf];
       if (shouldClear) {
         buf.length = 0;
+        if (record) record.dropped = 0;
         globalThis.__bb_network_buffer = buf;
         globalThis.__bb_network_dropped = 0;
       }
       return { entries: copy, dropped };
     },
-    args: [clear],
+    args: [clear, instrumentationKey],
   });
   return /** @type {any} */ (results?.[0]?.result) || { entries: [], dropped: 0 };
 }

@@ -115,7 +115,7 @@ export function createWindowSessionController(state, chrome, deps) {
     }
 
     await deps.injectContentScriptsForWindow(state.enabledWindow.windowId);
-    await deps.primeWindowConsoleCapture(state.enabledWindow.windowId, chrome);
+    await deps.primeWindowConsoleCapture(state.enabledWindow.windowId, chrome, true);
   }
 
   /**
@@ -249,6 +249,10 @@ export function createWindowSessionController(state, chrome, deps) {
     }
 
     if (enabled) {
+      await Promise.allSettled([
+        deps.injectContentScriptsForWindow(access.windowId),
+        deps.primeWindowConsoleCapture(access.windowId, chrome, true),
+      ]);
       state.enabledWindow = access;
       await chrome.storage.session.set({
         [ENABLED_WINDOW_STORAGE_KEY]: access,
@@ -280,21 +284,12 @@ export function createWindowSessionController(state, chrome, deps) {
     if (enabled) {
       deps.sendAccessUpdate(true);
       await chrome.alarms.create(KEEPALIVE_ALARM_NAME, { periodInMinutes: 0.4 });
-      await Promise.allSettled([
-        deps.injectContentScriptsForWindow(access.windowId),
-        deps.primeWindowConsoleCapture(access.windowId, chrome, true),
-      ]);
       return;
     }
 
-    if (!isActiveDisable) {
-      deps.sendAccessUpdate(false);
-    }
+    if (!isActiveDisable) return;
     try {
       await chrome.alarms.clear(KEEPALIVE_ALARM_NAME);
-      if (!isActiveDisable) {
-        await deps.clearWindowBridgeState(windowId);
-      }
     } catch (error) {
       reportAsyncError(error);
     }

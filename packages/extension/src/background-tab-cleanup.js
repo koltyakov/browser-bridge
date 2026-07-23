@@ -6,8 +6,10 @@ import { CONTENT_SCRIPT_TIMEOUT_MS, isNumber } from './background-state.js';
  * @typedef {{
  *   ensureContentScript: (tabId: number) => Promise<void>,
  *   sendTabMessage: (tabId: number, message: Record<string, unknown>, timeoutMs: number) => Promise<any>,
- *   readConsoleBuffer: (tabId: number, clear: boolean, chrome: typeof globalThis.chrome) => Promise<unknown>,
- *   readNetworkBuffer: (tabId: number, clear: boolean, chrome: typeof globalThis.chrome) => Promise<unknown>,
+ *   disableConsoleInterceptor?: (tabId: number, chrome: typeof globalThis.chrome) => Promise<void>,
+ *   disableNetworkInterceptor?: (tabId: number, chrome: typeof globalThis.chrome) => Promise<void>,
+ *   readConsoleBuffer?: (tabId: number, clear: boolean, chrome: typeof globalThis.chrome) => Promise<unknown>,
+ *   readNetworkBuffer?: (tabId: number, clear: boolean, chrome: typeof globalThis.chrome) => Promise<unknown>,
  *   beginDebuggerCleanup: (tabId: number) => Promise<() => void>,
  *   commitDebuggerCleanup: (tabId: number) => Promise<void>,
  *   clearFetchInterception: (tabId: number) => Promise<number>,
@@ -91,6 +93,29 @@ export function createTabCleanupController(chrome, deps) {
    */
   async function clearTabBridgeState(tabId, shouldContinue = async () => true) {
     if (!(await shouldContinue())) return;
+    /** @type {unknown[]} */
+    const instrumentationErrors = [];
+    const disableConsole =
+      deps.disableConsoleInterceptor ??
+      (async (id, chromeObj) => {
+        await deps.readConsoleBuffer?.(id, true, chromeObj);
+      });
+    const disableNetwork =
+      deps.disableNetworkInterceptor ??
+      (async (id, chromeObj) => {
+        await deps.readNetworkBuffer?.(id, true, chromeObj);
+      });
+    for (const disable of [disableConsole, disableNetwork]) {
+      try {
+        await disable(tabId, chrome);
+      } catch (error) {
+        if (!deps.isRecoverableInstrumentationError(error)) instrumentationErrors.push(error);
+      }
+    }
+    if (!(await shouldContinue())) {
+      if (instrumentationErrors.length > 0) throw instrumentationErrors[0];
+      return;
+    }
     const endCleanup = await deps.beginDebuggerCleanup(tabId);
     try {
       if (!(await shouldContinue())) return;
@@ -115,22 +140,7 @@ export function createTabCleanupController(chrome, deps) {
           throw error;
         }
       }
-      if (!(await shouldContinue())) return;
-      try {
-        await deps.readConsoleBuffer(tabId, true, chrome);
-      } catch (error) {
-        if (!deps.isRecoverableInstrumentationError(error)) {
-          throw error;
-        }
-      }
-      if (!(await shouldContinue())) return;
-      try {
-        await deps.readNetworkBuffer(tabId, true, chrome);
-      } catch (error) {
-        if (!deps.isRecoverableInstrumentationError(error)) {
-          throw error;
-        }
-      }
+      if (instrumentationErrors.length > 0) throw instrumentationErrors[0];
     } finally {
       endCleanup();
     }
@@ -189,6 +199,8 @@ export function createTabCleanupController(chrome, deps) {
  *   cancelNavigationWaitsForMove: (tabId: number) => void,
  *   cancelNavigationWaitsForRemoval: (tabId: number) => void,
  *   clearDialogState: (tabId: number) => void,
+ *   disableTabInstrumentation: (tabId: number) => Promise<void>,
+ *   resumeTabInstrumentation: (tabId: number) => Promise<void>,
  *   clearTabBridgeState: (tabId: number, shouldContinue?: () => Promise<boolean>) => Promise<void>,
  *   clearRemovedTabState: (tabId: number) => Promise<void>
  * }} deps
@@ -201,6 +213,8 @@ export function createTabCleanupController(chrome, deps) {
 export function createTabMoveCleanupController(deps) {
   /** @type {Set<number>} */
   const detachedFromEnabledWindow = new Set();
+  /** @type {Map<number, Promise<void>>} */
+  const instrumentationPauses = new Map();
 
   /** @param {number} tabId @param {{ oldWindowId: number }} detachInfo */
   function handleDetached(tabId, detachInfo) {
@@ -208,12 +222,21 @@ export function createTabMoveCleanupController(deps) {
     if (detachInfo.oldWindowId !== deps.getEnabledWindowId()) return;
     detachedFromEnabledWindow.add(tabId);
     deps.cancelNavigationWaitsForMove(tabId);
+    const pause = deps.disableTabInstrumentation(tabId).finally(() => {
+      if (instrumentationPauses.get(tabId) === pause) instrumentationPauses.delete(tabId);
+    });
+    instrumentationPauses.set(tabId, pause);
   }
 
   /** @param {number} tabId @param {{ newWindowId: number }} attachInfo */
   async function handleAttached(tabId, attachInfo) {
     const leftEnabledWindow = detachedFromEnabledWindow.delete(tabId);
-    if (!leftEnabledWindow || attachInfo.newWindowId === deps.getEnabledWindowId()) return;
+    if (!leftEnabledWindow) return;
+    await instrumentationPauses.get(tabId);
+    if (attachInfo.newWindowId === deps.getEnabledWindowId()) {
+      await deps.resumeTabInstrumentation(tabId);
+      return;
+    }
     if (!(await deps.isTabOutsideEnabledWindow(tabId))) return;
     if (attachInfo.newWindowId === deps.getEnabledWindowId()) return;
 
@@ -223,6 +246,7 @@ export function createTabMoveCleanupController(deps) {
   /** @param {number} tabId */
   async function handleRemoved(tabId) {
     detachedFromEnabledWindow.delete(tabId);
+    instrumentationPauses.delete(tabId);
     deps.cancelNavigationWaitsForRemoval(tabId);
     deps.clearDialogState(tabId);
     await deps.clearRemovedTabState(tabId);
