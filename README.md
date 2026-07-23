@@ -124,6 +124,7 @@ MCP mode is self-contained: the server exposes tools and startup instructions, s
 - Targeted input actions reject hidden, disabled, ambiguous, stale, or obscured targets instead of silently guessing; their responses report the resolution and DOM/CDP execution path (`cdp_press_key` and `scroll_into_view` use separate contracts)
 - Native pointer/text input, dialog handling, all-resource network capture, accessibility trees, screenshots, and raw CDP reads use the existing debugger permission only when requested
 - Element references are document-local and strict by default; stale input recovery is opt-in, same-document, requires one strong unique semantic match, and fails safely when its bounded scan cannot prove uniqueness
+- Semantic DOM baselines provide explicit create/compare/describe/release verification without modifying the page; compact snapshots stay memory-only, expire after five minutes, and are invalidated by navigation or access teardown
 - Patches keep per-document rollback history and Browser Bridge attempts best-effort rollback when window access is disabled or switched; committing the patch baseline keeps current changes but discards their rollback history
 - URL waits observe full navigation and same-document SPA changes, and report the final URL and observed navigation kind
 - Structured DOM/style/layout reads are the primary transport; screenshots are a fallback

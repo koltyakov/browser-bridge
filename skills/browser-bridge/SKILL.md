@@ -182,6 +182,7 @@ Error responses now include a machine-readable `error.recovery` field with `retr
 21. **Do not guess input targets** - for targeted click, focus, type, fill, press-key, checked-state, option-selection, hover, and drag calls, honor actionability errors and returned `resolution` metadata. `cdp_press_key` and `scroll_into_view` use separate contracts. `executionMode` is only `dom` or `cdp`; `input.fill.mode: auto` is a separate DOM setter/keystroke strategy.
 22. **Stale recovery stays opt-in** - prefer re-querying. Use `recoverStale: true` once only when the same document/URL and a strong unique semantic descriptor should still identify the target; inspect `recovered`, old/new refs, and matched fields. A scan with more than 100 same-tag candidates fails as `ELEMENT_AMBIGUOUS`/`scan_incomplete` because uniqueness is not provable.
 23. **Dialogs are explicit** - inspect first, then accept or dismiss only when intended. `expectedDialogId` is a pre-dispatch stale-decision check, not an atomic CDP binding; never auto-repeat `DIALOG_ACTION_CONFLICT`.
+24. **DOM diffs use explicit baselines** - call `dom.baseline.create` before the action, `dom.baseline.compare` afterward, then `dom.baseline.release`. Use a narrow selector and bounded evidence. Never substitute unrelated DOM reads for the retained baseline, and recreate it after `DOM_BASELINE_INVALIDATED`.
 
 ## Token Budget Quick Rules
 

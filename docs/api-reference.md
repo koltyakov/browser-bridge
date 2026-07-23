@@ -121,6 +121,10 @@ See [`packages/protocol/src/registry.js`](../packages/protocol/src/registry.js) 
 | `tabs.list`                  | List tabs in the enabled window                |
 | `page.get_state`             | URL, title, readyState of the active tab       |
 | `dom.query`                  | Query DOM subtree with CSS selector            |
+| `dom.baseline.create`        | Retain a short-lived memory-only semantic snapshot |
+| `dom.baseline.compare`       | Return exact bounded semantic changes from a baseline |
+| `dom.baseline.describe`      | Read baseline scope, expiry, options, and counts |
+| `dom.baseline.release`       | Idempotently release a retained baseline       |
 | `dom.find_by_text`           | Find elements by visible text                  |
 | `page.evaluate`              | Run JavaScript in the page context             |
 | `page.get_console`           | Read buffered console output                   |
@@ -147,6 +151,9 @@ See [`packages/protocol/src/registry.js`](../packages/protocol/src/registry.js) 
 | `EXTENSION_DISCONNECTED`  | Yes (3 s) | Extension not connected to daemon                 |
 | `TIMEOUT`                 | Yes (1 s) | Extension did not respond in time                 |
 | `CONTENT_SCRIPT_UNAVAILABLE` | No       | Page is restricted or cannot host the content script |
+| `DOM_BASELINE_NOT_FOUND`  | No        | Baseline expired, was released/evicted, or does not exist |
+| `DOM_BASELINE_INVALIDATED` | No       | Navigation, document, or access scope changed       |
+| `DOM_BASELINE_QUOTA_EXCEEDED` | No     | Snapshot or retained-state quota was exceeded       |
 | `ARTIFACT_NOT_FOUND`      | No        | Artifact is expired, deleted, missing, or owned by another client |
 | `ARTIFACT_QUOTA_EXCEEDED` | No        | Artifact size or owner/global quota is exhausted |
 | `ARTIFACT_TRANSFER_INVALID` | No      | Artifact chunk ordering, size, or checksum is invalid |

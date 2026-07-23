@@ -61,6 +61,10 @@ The table below includes the legacy capability bucket for each method so agents 
 | `navigation.go_back`               | Yes  | -          | navigate    | `navigation.control` | History back                                                                               |
 | `navigation.go_forward`            | Yes  | -          | navigate    | `navigation.control` | History forward                                                                            |
 | `dom.query`                        | Yes  | -          | inspect     | `dom.read`           | Query subtree with budget constraints                                                      |
+| `dom.baseline.create`              | Yes  | -          | inspect     | `dom.read`           | Retain a short-lived memory-only semantic snapshot; sequential only                        |
+| `dom.baseline.compare`             | Yes  | -          | inspect     | `dom.read`           | Compare current semantic DOM to an explicit retained baseline; batch-safe                  |
+| `dom.baseline.describe`            | Yes  | -          | inspect     | `dom.read`           | Return exact baseline scope, options, expiry, and snapshot statistics; batch-safe          |
+| `dom.baseline.release`             | Yes  | -          | inspect     | `dom.read`           | Idempotently release retained baseline state; sequential only                              |
 | `dom.describe`                     | Yes  | -          | inspect     | `dom.read`           | Single element details via `elementRef`                                                    |
 | `dom.get_text`                     | Yes  | -          | inspect     | `dom.read`           | Text content with `textBudget`                                                             |
 | `dom.get_attributes`               | Yes  | -          | inspect     | `dom.read`           | Targeted attribute read                                                                    |
@@ -213,6 +217,23 @@ bbx call dom.query '{"selector":"main","maxNodes":10,"attributeAllowlist":["clas
 ```
 
 If `_registryPruned` is true, refresh previously cached refs before reusing them.
+
+### dom.baseline.create, compare, describe, and release
+
+Use an explicit semantic baseline when an action must be verified against a known before-state without returning two full DOM snapshots. Baselines retain bounded structured summaries in extension memory only; they do not add attributes, scripts, or markers to the application page.
+
+```bash
+bbx call dom.baseline.create '{"selector":"main","maxNodes":100,"maxDepth":8,"textBudget":160,"attributeAllowlist":["data-testid"]}'
+bbx call dom.baseline.compare '{"baselineId":"baseline_...","maxChanges":50}'
+bbx call dom.baseline.describe '{"baselineId":"baseline_..."}'
+bbx call dom.baseline.release '{"baselineId":"baseline_..."}'
+```
+
+The create result is a destination-bound opaque handle plus creation/expiry timestamps, window/tab/frame/document/selector/representation scope, effective capture options, and snapshot counts. It never returns retained nodes. `compare` reports exact `added`, `removed`, `changed`, `moved`, `unchanged`, and total counts while bounding returned examples with `maxChanges`; ambiguity and omitted evidence are explicit. `describe` returns the exact descriptor. `release` is idempotent.
+
+Creation and release are stateful and excluded from read-only batch. Compare and describe do not mutate the baseline or extend its five-minute expiry, so they are batch-safe. Navigation, document replacement, tab/window cleanup, access disable, destination disconnect, expiry, quota eviction, or explicit release makes the handle unavailable. Navigation and document replacement return `DOM_BASELINE_INVALIDATED`; missing, expired, released, or evicted handles return `DOM_BASELINE_NOT_FOUND`.
+
+Capture defaults to stable semantic fields and safe attributes. Form values and event-handler attributes are never retained, URL credentials/fragments/query values are removed, opaque URL payloads are redacted, and caller-provided attribute names are canonicalized and bounded. Use a narrow selector for dialogs, forms, lists, or application regions.
 
 ### dom.wait_for
 
@@ -447,6 +468,9 @@ bbx call screenshot.capture_full_page '{"format":"jpeg","quality":75,"delivery":
 | `ELEMENT_NOT_ACTIONABLE`     | Inspect hidden/disabled/inert/zero-size target                 | `retry: false`, use `dom.describe`           |
 | `ELEMENT_OBSCURED`           | Inspect the element blocking the target point                  | `retry: false`, use `layout.hit_test`        |
 | `ELEMENT_NOT_FOUND`          | Correct or narrow the selector                                 | `retry: false`, use `dom.query`              |
+| `DOM_BASELINE_NOT_FOUND`     | Handle expired, released, evicted, or does not exist           | `retry: false`, create a new baseline        |
+| `DOM_BASELINE_INVALIDATED`   | Navigation, document, or access scope changed                  | `retry: false`, create a new baseline        |
+| `DOM_BASELINE_QUOTA_EXCEEDED` | Snapshot or retained-state quota was exceeded                 | `retry: false`, narrow selector or release   |
 | `INPUT_UNSUPPORTED`          | Use DOM execution or a CDP-supported input method              | `retry: false`                               |
 | `INPUT_INVALID_TARGET`       | Choose a control compatible with the input                     | `retry: false`, use `dom.describe`           |
 | `INPUT_FOCUS_CHANGED`        | Inspect focus handlers; do not replay native text blindly      | `retry: false`, use `dom.describe`           |

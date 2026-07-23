@@ -22,6 +22,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   a protocol line advertised by the connected extension, with fixed-package
   validation, no downgrades, global-install verification, and cross-process
   update locking.
+- **Explicit semantic DOM diffs:** Added short-lived, memory-only DOM baselines
+  with create, compare, describe, and release operations; exact bounded change
+  counts and semantic evidence; deterministic quotas; destination routing; and
+  typed navigation invalidation.
 
 ### Changed
 

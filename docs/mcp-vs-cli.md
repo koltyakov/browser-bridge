@@ -46,6 +46,10 @@ Short version:
 | Capability         | MCP Tool                           | CLI Command                   | Notes        |
 | ------------------ | ---------------------------------- | ----------------------------- | ------------ |
 | Query DOM          | `browser_dom` (query)              | `bbx dom-query [selector]`    | Equivalent   |
+| Create DOM baseline | `browser_dom` (baseline_create)    | `bbx call dom.baseline.create` | Sequential stateful operation |
+| Compare DOM baseline | `browser_dom` (baseline_compare)  | `bbx call dom.baseline.compare` | Read-only and batch-safe |
+| Describe DOM baseline | `browser_dom` (baseline_describe) | `bbx call dom.baseline.describe` | Exact descriptor metadata |
+| Release DOM baseline | `browser_dom` (baseline_release)  | `bbx call dom.baseline.release` | Sequential and idempotent |
 | Describe element   | `browser_dom` (describe)           | `bbx describe <ref>`          | Equivalent   |
 | Get text content   | `browser_dom` (text)               | `bbx text <ref>`              | Equivalent   |
 | Get HTML           | `browser_dom` (html)               | `bbx html <ref>`              | Equivalent   |
