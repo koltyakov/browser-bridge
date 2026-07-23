@@ -780,6 +780,16 @@ export function createBridgeMcpServer() {
           .max(100)
           .optional()
           .describe('JPEG/WebP quality from 0 to 100; ignored for PNG'),
+        delivery: z
+          .enum(['auto', 'inline', 'artifact'])
+          .optional()
+          .describe('Delivery mode: auto chooses inline or a daemon-owned artifact'),
+        scale: z
+          .number()
+          .min(0.1)
+          .max(4)
+          .optional()
+          .describe('Screenshot capture scale (0.1 to 4)'),
       },
     },
     handleCaptureTool

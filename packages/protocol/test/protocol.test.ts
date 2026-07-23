@@ -49,6 +49,8 @@ import {
   normalizeTabCloseParams,
   normalizeAccessibilityTreeParams,
   normalizeScreenshotParams,
+  normalizeArtifactReadParams,
+  normalizeArtifactDeleteParams,
   normalizeNetworkParams,
   normalizeNetworkInterceptAddParams,
   normalizePageTextParams,
@@ -842,20 +844,58 @@ test('normalizeAccessibilityTreeParams defaults sensibly', () => {
 });
 
 test('normalizeScreenshotParams validates formats and bounds lossy quality', () => {
-  assert.deepEqual(normalizeScreenshotParams(), { format: 'png', quality: null });
+  assert.deepEqual(normalizeScreenshotParams(), {
+    format: 'png',
+    quality: null,
+    delivery: 'inline',
+    scale: 1,
+  });
   assert.deepEqual(normalizeScreenshotParams({ format: 'jpeg', quality: 120 }), {
     format: 'jpeg',
     quality: 100,
+    delivery: 'inline',
+    scale: 1,
   });
   assert.deepEqual(normalizeScreenshotParams({ format: 'webp', quality: 0 }), {
     format: 'webp',
     quality: 0,
+    delivery: 'inline',
+    scale: 1,
   });
   assert.deepEqual(normalizeScreenshotParams({ format: 'png', quality: 20 }), {
     format: 'png',
     quality: null,
+    delivery: 'inline',
+    scale: 1,
   });
+  assert.deepEqual(
+    normalizeScreenshotParams({ delivery: 'artifact', scale: '2' as unknown as number }),
+    {
+      format: 'png',
+      quality: null,
+      delivery: 'artifact',
+      scale: 2,
+    }
+  );
+  assert.throws(
+    () => normalizeScreenshotParams({ delivery: 'remote' as 'artifact' }),
+    /auto, inline, or artifact/
+  );
   assert.throws(() => normalizeScreenshotParams({ format: 'gif' as 'png' }), /png, jpeg, or webp/);
+});
+
+test('artifact params enforce opaque handles and bounded reads', () => {
+  const artifactId = `art_${'a'.repeat(43)}`;
+  assert.deepEqual(normalizeArtifactReadParams({ artifactId, offset: 10, maxBytes: 999_999 }), {
+    artifactId,
+    offset: 10,
+    maxBytes: 196_608,
+  });
+  assert.deepEqual(normalizeArtifactDeleteParams({ artifactId }), { artifactId });
+  assert.throws(
+    () => normalizeArtifactReadParams({ artifactId: '../../private', offset: 0 }),
+    /artifactId is invalid/
+  );
 });
 
 /** Ensure network params validate and clamp. */

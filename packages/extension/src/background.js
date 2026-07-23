@@ -2,6 +2,9 @@
 
 import {
   BridgeError,
+  ARTIFACT_CHUNK_BYTES,
+  ARTIFACT_TTL_MS,
+  MAX_ARTIFACT_BYTES,
   ERROR_CODES,
   createFailure,
   createRuntimeContext,
@@ -383,18 +386,96 @@ const { connectNative, scheduleNativeReconnect } = createNativeConnectionControl
   reply,
 });
 
+/**
+ * @param {string} requestId
+ * @param {string} data
+ * @param {{ mimeType: string, byteLength: number }} metadata
+ * @returns {Promise<import('../../protocol/src/types.js').ArtifactDescriptor>}
+ */
+async function storeScreenshotArtifact(requestId, data, metadata) {
+  if (!state.nativePort) {
+    throw new BridgeError(ERROR_CODES.EXTENSION_DISCONNECTED, 'Native host is disconnected.');
+  }
+  if (metadata.byteLength > MAX_ARTIFACT_BYTES) {
+    throw new BridgeError(
+      ERROR_CODES.RESULT_TOO_LARGE,
+      `Screenshot exceeds the artifact limit (${metadata.byteLength} bytes).`,
+      { byteLength: metadata.byteLength, maxArtifactBytes: MAX_ARTIFACT_BYTES }
+    );
+  }
+  const random = crypto.getRandomValues(new Uint8Array(32));
+  const artifactId = `art_${bytesToBase64(random).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '')}`;
+  const bytes = base64ToBytes(data);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  const sha256 = [...digest].map((value) => value.toString(16).padStart(2, '0')).join('');
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + ARTIFACT_TTL_MS).toISOString();
+  const chunkCount = Math.ceil(metadata.byteLength / ARTIFACT_CHUNK_BYTES);
+  const descriptor = {
+    artifactId,
+    kind: /** @type {'screenshot'} */ ('screenshot'),
+    mimeType: metadata.mimeType,
+    byteLength: metadata.byteLength,
+    sha256,
+    chunkSize: ARTIFACT_CHUNK_BYTES,
+    chunkCount,
+    createdAt,
+    expiresAt,
+  };
+  state.nativePort.postMessage({
+    type: 'host.artifact.begin',
+    artifact: { ...descriptor, requestId },
+  });
+  const chunkCharacters = (ARTIFACT_CHUNK_BYTES / 3) * 4;
+  for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
+    state.nativePort.postMessage({
+      type: 'host.artifact.chunk',
+      artifact: { requestId },
+      artifactId,
+      chunkIndex,
+      data: data.slice(chunkIndex * chunkCharacters, (chunkIndex + 1) * chunkCharacters),
+    });
+  }
+  state.nativePort.postMessage({
+    type: 'host.artifact.commit',
+    artifact: { requestId },
+    artifactId,
+  });
+  return descriptor;
+}
+
+/** @param {string} value */
+function base64ToBytes(value) {
+  const binary = atob(value);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+/** @param {Uint8Array} value */
+function bytesToBase64(value) {
+  let binary = '';
+  for (const byte of value) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
 /** @type {Parameters<typeof executeTabBoundRequest>[1]} */
 const tabBoundRequestDependencies = {
   contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,
   ensureContentScript,
-  handleScreenshot: (target, method, params) =>
-    handleScreenshot(target, method, params, {
-      chrome,
-      contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,
-      ensureContentScript,
-      sendTabMessage,
-      tabDebugger,
-    }),
+  handleScreenshot: (target, method, params, requestId) =>
+    handleScreenshot(
+      target,
+      method,
+      params,
+      {
+        chrome,
+        contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,
+        ensureContentScript,
+        sendTabMessage,
+        tabDebugger,
+        storeArtifact: storeScreenshotArtifact,
+      },
+      requestId
+    ),
   handleNativeInput,
   resolveRequestTarget,
   sendTabMessage: (tabId, message, timeoutMs = CONTENT_SCRIPT_TIMEOUT_MS) =>

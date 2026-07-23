@@ -2,6 +2,7 @@
 
 import { applyBudget } from './budget.js';
 import {
+  ARTIFACT_CHUNK_BYTES,
   BUDGET_PRESETS,
   DEFAULT_A11Y_MAX_DEPTH,
   DEFAULT_A11Y_MAX_NODES,
@@ -22,12 +23,15 @@ import {
   DEFAULT_VIEWPORT_WIDTH,
   DEFAULT_WAIT_TIMEOUT_MS,
   MAX_EXTRACT_SETTLE_TIMEOUT_MS,
+  MAX_ARTIFACT_BYTES,
   MAX_SENSITIVE_VALUE_BYTES,
 } from './defaults.js';
 import { BridgeError, ERROR_CODES, getErrorRecovery } from './errors.js';
 import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry.js';
 
 /** @typedef {import('./types.js').AccessibilityTreeParams} AccessibilityTreeParams */
+/** @typedef {import('./types.js').ArtifactDeleteParams} ArtifactDeleteParams */
+/** @typedef {import('./types.js').ArtifactReadParams} ArtifactReadParams */
 /** @typedef {import('./types.js').AccessRequestParams} AccessRequestParams */
 /** @typedef {import('./types.js').BridgeFailureResponse} BridgeFailureResponse */
 /** @typedef {import('./types.js').BridgeMeta} BridgeMeta */
@@ -54,6 +58,7 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').NetworkInterceptAddParams} NetworkInterceptAddParams */
 /** @typedef {import('./types.js').NetworkParams} NetworkParams */
 /** @typedef {import('./types.js').NormalizedAccessibilityTreeParams} NormalizedAccessibilityTreeParams */
+/** @typedef {import('./types.js').NormalizedArtifactReadParams} NormalizedArtifactReadParams */
 /** @typedef {import('./types.js').NormalizedAccessRequestParams} NormalizedAccessRequestParams */
 /** @typedef {import('./types.js').NormalizedCheckedAction} NormalizedCheckedAction */
 /** @typedef {import('./types.js').NormalizedCdpDispatchKeyEventParams} NormalizedCdpDispatchKeyEventParams */
@@ -441,9 +446,18 @@ function normalizeRequestParams(method, params) {
     case 'input.drag':
       return normalizeDragParams(params);
     case 'screenshot.capture_region':
+      return { ...params, ...normalizeScreenshotParams(params) };
     case 'screenshot.capture_element':
     case 'screenshot.capture_full_page':
-      return { ...params, ...normalizeScreenshotParams(params) };
+      return {
+        ...params,
+        ...normalizeScreenshotParams(params),
+        ...(params.scale === undefined ? { scale: undefined } : {}),
+      };
+    case 'artifact.read':
+      return normalizeArtifactReadParams(params);
+    case 'artifact.delete':
+      return normalizeArtifactDeleteParams(params);
     case 'patch.apply_styles':
     case 'patch.apply_dom':
     case 'patch.list':
@@ -1228,6 +1242,13 @@ export function normalizeScreenshotParams(params = {}) {
     throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'format must be png, jpeg, or webp.');
   }
   const numericQuality = Number(params.quality);
+  const delivery = params.delivery ?? 'inline';
+  if (delivery !== 'auto' && delivery !== 'inline' && delivery !== 'artifact') {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'delivery must be auto, inline, or artifact.'
+    );
+  }
   return {
     format,
     quality:
@@ -1236,7 +1257,40 @@ export function normalizeScreenshotParams(params = {}) {
         : Number.isFinite(numericQuality)
           ? Math.min(100, Math.max(0, Math.trunc(numericQuality)))
           : 80,
+    delivery,
+    scale:
+      Number.isFinite(Number(params.scale)) && Number(params.scale) > 0
+        ? clampNumber(Number(params.scale), 0.1, 4, 1)
+        : 1,
   };
+}
+
+/**
+ * @param {ArtifactReadParams} [params={}]
+ * @returns {NormalizedArtifactReadParams}
+ */
+export function normalizeArtifactReadParams(params = {}) {
+  return {
+    artifactId: normalizeArtifactId(params.artifactId),
+    offset: clampInt(params.offset, 0, MAX_ARTIFACT_BYTES, 0),
+    maxBytes: clampInt(params.maxBytes, 1, ARTIFACT_CHUNK_BYTES, ARTIFACT_CHUNK_BYTES),
+  };
+}
+
+/**
+ * @param {ArtifactDeleteParams} [params={}]
+ * @returns {{ artifactId: string }}
+ */
+export function normalizeArtifactDeleteParams(params = {}) {
+  return { artifactId: normalizeArtifactId(params.artifactId) };
+}
+
+/** @param {unknown} value */
+function normalizeArtifactId(value) {
+  if (typeof value !== 'string' || !/^art_[A-Za-z0-9_-]{32,64}$/u.test(value)) {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'artifactId is invalid.');
+  }
+  return value;
 }
 
 /**

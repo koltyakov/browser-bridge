@@ -252,6 +252,16 @@ test('runNativeHost bridges daemon socket messages and stdin frames', async () =
     process.stdin.emit(
       'data',
       frameNativeMessage({
+        type: 'host.artifact.chunk',
+        artifact: { requestId: 'capture-1' },
+        artifactId: `art_${'a'.repeat(43)}`,
+        chunkIndex: 0,
+        data: 'aGVsbG8=',
+      })
+    );
+    process.stdin.emit(
+      'data',
+      frameNativeMessage({
         id: 'plain-1',
         ok: true,
       })
@@ -282,6 +292,7 @@ test('runNativeHost bridges daemon socket messages and stdin frames', async () =
       '{"type":"extension.identity","browserName":"chrome","profileLabel":"Default","browserExtensionId":"jjjkmmcdkpcgamlopogicbnnhdgebhie"}\n',
       '{"type":"extension.access_update","accessEnabled":true}\n',
       '{"type":"extension.activity","at":12345}\n',
+      `{"type":"extension.artifact.chunk","artifact":{"requestId":"capture-1"},"artifactId":"art_${'a'.repeat(43)}","chunkIndex":0,"data":"aGVsbG8="}\n`,
       '{"type":"extension.response","response":{"id":"plain-1","ok":true}}\n',
     ]);
   } finally {

@@ -115,6 +115,16 @@ function isHostActivity(message) {
   );
 }
 
+/** @param {unknown} message */
+function isHostArtifactMessage(message) {
+  return Boolean(
+    message &&
+    typeof message === 'object' &&
+    typeof (/** @type {Record<string, unknown>} */ (message).type) === 'string' &&
+    String(/** @type {Record<string, unknown>} */ (message).type).startsWith('host.artifact.')
+  );
+}
+
 /**
  * @param {{ transport?: BridgeTransport, socketPath?: string }} [options={}]
  * @returns {Promise<void>}
@@ -259,6 +269,14 @@ export async function runNativeHost({
           await writeJsonLine(socket, {
             type: 'extension.activity',
             at: message.at,
+          });
+          return;
+        }
+        if (isHostArtifactMessage(message)) {
+          const record = /** @type {Record<string, unknown>} */ (message);
+          await writeJsonLine(socket, {
+            ...record,
+            type: String(record.type).replace(/^host\./u, 'extension.'),
           });
           return;
         }

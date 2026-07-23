@@ -49,6 +49,9 @@ export type ErrorCode =
   | 'RESULT_TOO_LARGE'
   | 'SENSITIVE_TARGET_NOT_FOUND'
   | 'CONTENT_SCRIPT_UNAVAILABLE'
+  | 'ARTIFACT_NOT_FOUND'
+  | 'ARTIFACT_QUOTA_EXCEEDED'
+  | 'ARTIFACT_TRANSFER_INVALID'
   | 'INTERNAL_ERROR'
   | 'INVALID_REQUEST'
   | 'NATIVE_HOST_UNAVAILABLE'
@@ -110,6 +113,8 @@ export type BridgeMethod =
   | 'screenshot.capture_region'
   | 'screenshot.capture_element'
   | 'screenshot.capture_full_page'
+  | 'artifact.read'
+  | 'artifact.delete'
   | 'patch.apply_styles'
   | 'patch.apply_dom'
   | 'patch.list'
@@ -629,6 +634,7 @@ export type ExtractContentFormat = 'text' | 'markdown';
 export type ExtractContentConsistency = 'best_effort' | 'settled';
 export type ExtractContentSource = 'readability' | 'semantic-root' | 'body';
 export type ScreenshotFormat = 'png' | 'jpeg' | 'webp';
+export type ScreenshotDelivery = 'auto' | 'inline' | 'artifact';
 
 export interface ExtractContentParams {
   format?: ExtractContentFormat;
@@ -651,20 +657,57 @@ export interface NormalizedExtractContentParams extends BridgeParams {
 export interface ScreenshotParams extends BridgeParams {
   format?: ScreenshotFormat;
   quality?: number;
+  delivery?: ScreenshotDelivery;
+  scale?: number;
 }
 
 export interface NormalizedScreenshotParams extends BridgeParams {
   format: ScreenshotFormat;
   quality: number | null;
+  delivery: ScreenshotDelivery;
+  scale: number;
 }
 
-export interface ScreenshotResult {
-  image: string;
+export interface ArtifactDescriptor {
+  artifactId: string;
+  kind: 'screenshot';
+  mimeType: string;
+  byteLength: number;
+  sha256: string;
+  chunkSize: number;
+  chunkCount: number;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface ScreenshotMetadata {
   mimeType: `image/${ScreenshotFormat}`;
   format: ScreenshotFormat;
+  byteLength: number;
+  dimensions: { width: number; height: number };
   rect: { x: number; y: number; width: number; height: number; scale: number };
   complete: boolean;
   clipped: boolean;
+}
+
+export type ScreenshotResult =
+  | (ScreenshotMetadata & { delivery: 'inline'; image: string })
+  | (ScreenshotMetadata & { delivery: 'artifact'; artifact: ArtifactDescriptor });
+
+export interface ArtifactReadParams extends BridgeParams {
+  artifactId?: string;
+  offset?: number;
+  maxBytes?: number;
+}
+
+export interface NormalizedArtifactReadParams extends BridgeParams {
+  artifactId: string;
+  offset: number;
+  maxBytes: number;
+}
+
+export interface ArtifactDeleteParams extends BridgeParams {
+  artifactId?: string;
 }
 
 export interface ExtractContentResult {

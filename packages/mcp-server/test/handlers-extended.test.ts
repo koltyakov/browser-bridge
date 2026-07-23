@@ -1437,6 +1437,7 @@ test('handleCaptureTool region calls screenshot.capture_region', async () => {
         height: 100,
         format: 'webp',
         quality: 70,
+        delivery: 'auto',
       });
       assert.equal(result.isError, undefined);
       assert.equal(result.content[1].type, 'image');
@@ -1499,6 +1500,35 @@ test('handleCaptureTool rejects malformed successful screenshot payloads', async
       }
     );
   }
+});
+
+test('handleCaptureTool returns artifact metadata without MCP image content', async () => {
+  await withMockedBridge(
+    async () =>
+      ok({
+        delivery: 'artifact',
+        artifact: {
+          artifactId: `art_${'c'.repeat(43)}`,
+          byteLength: 300_000,
+          expiresAt: '2026-07-23T00:00:00.000Z',
+        },
+        mimeType: 'image/png',
+        byteLength: 300_000,
+        dimensions: { width: 1000, height: 800 },
+        rect: { x: 0, y: 0, width: 1000, height: 800, scale: 1 },
+        complete: true,
+        clipped: false,
+      }),
+    async () => {
+      const result = await handleCaptureTool({ action: 'full_page', delivery: 'artifact' });
+      assert.equal(result.isError, undefined);
+      assert.equal(
+        result.content.some((item) => item.type === 'image'),
+        false
+      );
+      assert.equal(result.structuredContent.delivery, 'artifact');
+    }
+  );
 });
 
 test('handleCaptureTool cdp_document returns bounded structured data', async () => {

@@ -26,6 +26,8 @@ export const CAPTURE_ACTIONS = {
       elementRef: r,
       ...(a.format ? { format: a.format } : {}),
       ...(typeof a.quality === 'number' ? { quality: a.quality } : {}),
+      delivery: a.delivery ?? 'auto',
+      ...(typeof a.scale === 'number' ? { scale: a.scale } : {}),
     }),
   },
   region: {
@@ -35,6 +37,8 @@ export const CAPTURE_ACTIONS = {
       .../** @type {Record<string, unknown>} */ (a.rect || {}),
       ...(a.format ? { format: a.format } : {}),
       ...(typeof a.quality === 'number' ? { quality: a.quality } : {}),
+      delivery: a.delivery ?? 'auto',
+      ...(typeof a.scale === 'number' ? { scale: a.scale } : {}),
     }),
   },
   full_page: {
@@ -43,6 +47,8 @@ export const CAPTURE_ACTIONS = {
     params: (a) => ({
       ...(a.format ? { format: a.format } : {}),
       ...(typeof a.quality === 'number' ? { quality: a.quality } : {}),
+      delivery: a.delivery ?? 'auto',
+      ...(typeof a.scale === 'number' ? { scale: a.scale } : {}),
     }),
   },
   cdp_document: { ref: false, method: 'cdp.get_document', params: () => ({}) },
@@ -93,7 +99,7 @@ function isValidCaptureRegion(rect) {
 }
 
 /**
- * @param {{ action: string, elementRef?: string, selector?: string, rect?: Record<string, unknown>, format?: 'png' | 'jpeg' | 'webp', quality?: number, nodeId?: number, computedStyles?: string[], tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @param {{ action: string, elementRef?: string, selector?: string, rect?: Record<string, unknown>, format?: 'png' | 'jpeg' | 'webp', quality?: number, delivery?: 'auto' | 'inline' | 'artifact', scale?: number, nodeId?: number, computedStyles?: string[], tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleCaptureTool(args) {
@@ -141,6 +147,27 @@ export async function handleCaptureTool(args) {
  */
 export function createScreenshotResult(response, method) {
   const result = toRecord(response.result);
+  if (result.delivery === 'artifact') {
+    const artifact = toRecord(result.artifact);
+    if (typeof artifact.artifactId !== 'string' || typeof artifact.byteLength !== 'number') {
+      return summarizeToolError(new Error(`${method} returned invalid artifact metadata.`));
+    }
+    return createToolResult(
+      `Captured screenshot artifact (${artifact.byteLength} bytes, expires ${artifact.expiresAt ?? 'soon'}).`,
+      {
+        ok: true,
+        method,
+        delivery: 'artifact',
+        artifact,
+        mimeType: result.mimeType,
+        byteLength: result.byteLength,
+        dimensions: result.dimensions,
+        rect: boundedRect(result.rect),
+        complete: result.complete === true,
+        clipped: result.clipped === true,
+      }
+    );
+  }
   if (typeof result.image !== 'string') {
     return summarizeToolError(new Error(`${method} returned no image data.`));
   }

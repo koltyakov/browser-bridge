@@ -1,5 +1,7 @@
 // @ts-check
 
+import { randomUUID } from 'node:crypto';
+
 import {
   BridgeError,
   bridgeMethodNeedsTab,
@@ -33,6 +35,7 @@ import { annotateBridgeSummary, summarizeBridgeResponse } from '../../agent-clie
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
 
 export const REQUEST_SOURCE = 'mcp';
+const MCP_CLIENT_ID = `mcp_${randomUUID()}`;
 
 /** @type {ReadonlySet<BridgeMethod>} */
 const RETRY_SAFE_METHODS = new Set([
@@ -198,10 +201,14 @@ export function summarizeToolError(error) {
 export async function withToolClient(callback, options = {}) {
   try {
     if (!options.destinationId) {
-      return await withBridgeClient(callback, { checkProtocolOnConnect: false });
+      return await withBridgeClient(callback, {
+        checkProtocolOnConnect: false,
+        clientId: MCP_CLIENT_ID,
+      });
     }
     const client = await createBridgeClientForDestination(options.destinationId, {
       checkProtocolOnConnect: false,
+      clientId: MCP_CLIENT_ID,
     });
     await client.connect();
     try {

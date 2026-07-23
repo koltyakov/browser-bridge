@@ -38,8 +38,10 @@ import {
   formatBridgeTransport,
   getBridgeListenTarget,
   getBridgeTransport,
+  getArtifactStorePath,
   getSocketPath,
 } from './config.js';
+import { ArtifactStore } from './artifact-store.js';
 import { bridgeAuthTokensEqual, ensureBridgeAuthToken, readBridgeAuthToken } from './auth-token.js';
 import { normalizeDaemonLogger } from './daemon-logger.js';
 import { writeJsonLine } from './framing.js';
@@ -296,6 +298,10 @@ export function isWindowsNamedPipePath(socketPath) {
  *   accessEnabled?: boolean,
  *   authToken?: string,
  *   at?: number
+ *   artifactId?: string,
+ *   artifact?: Record<string, unknown>,
+ *   chunkIndex?: number,
+ *   data?: string
  * }} DaemonMessage
  */
 
@@ -308,7 +314,8 @@ export class BridgeDaemon {
    *   setupStatusLoader?: () => Promise<SetupStatus>,
    *   setupInstaller?: (params: Record<string, unknown>) => Promise<SetupInstallResult>,
    *   logger?: DaemonLoggerLike | Pick<Console, 'log' | 'error'>,
-   *   authToken?: string | null
+   *   authToken?: string | null,
+   *   artifactStore?: ArtifactStore
    * }} [options={}]
    */
   constructor({
@@ -319,6 +326,7 @@ export class BridgeDaemon {
     setupInstaller = installSetupTarget,
     logger = undefined,
     authToken = undefined,
+    artifactStore = new ArtifactStore(getArtifactStorePath()),
   } = {}) {
     this.transport = socketPath ? createSocketBridgeTransport(socketPath) : transport;
     this.socketPath =
@@ -361,6 +369,8 @@ export class BridgeDaemon {
     this.requestStartTimes = new Map();
     /** @type {string | null | undefined} */
     this.authToken = authToken;
+    this.artifactStore = artifactStore;
+    this.artifactStoreInitialized = false;
   }
 
   /**
@@ -428,11 +438,17 @@ export class BridgeDaemon {
    * @param {PendingEntry | undefined} [pending]
    * @returns {PendingEntry | undefined}
    */
-  clearPendingRequest(requestId, pending = this.pendingRequests.get(requestId)) {
+  clearPendingRequest(
+    requestId,
+    pending = this.pendingRequests.get(requestId),
+    preserveArtifacts = false
+  ) {
     if (!pending) {
       return undefined;
     }
     clearTimeout(pending.timeoutId);
+    if (preserveArtifacts) this.artifactStore.abortRequest(requestId);
+    else this.artifactStore.deleteRequest(requestId);
     this.pendingRequests.delete(requestId);
     this.removePendingRequestIndex(this.pendingRequestsByOwnerSocket, pending.socket, requestId);
     for (const targetSocket of pending.targets) {
@@ -625,6 +641,9 @@ export class BridgeDaemon {
       await fs.promises.chmod(this.socketPath, 0o600);
     }
 
+    this.artifactStore.reset();
+    this.artifactStoreInitialized = true;
+
     this.logger.info('Daemon listening', {
       transport: formatBridgeTransport(this.transport),
       socketPath: this.socketPath ?? null,
@@ -672,6 +691,10 @@ export class BridgeDaemon {
     }
     this.extensionSockets.clear();
     this.invalidateConnectedExtensionsCache();
+    if (this.artifactStoreInitialized) {
+      this.artifactStore.reset();
+      this.artifactStoreInitialized = false;
+    }
 
     if (this.server) {
       const server = this.server;
@@ -742,6 +765,13 @@ export class BridgeDaemon {
         return this.rejectMessageForRole(socket, message);
       }
       return this.handleExtensionActivity(socket, message);
+    }
+
+    if (message?.type?.startsWith('extension.artifact.')) {
+      if (socket.__role !== 'extension') {
+        return this.rejectMessageForRole(socket, message);
+      }
+      return this.handleExtensionArtifact(socket, message);
     }
 
     if (message?.type === 'extension.setup_status.request') {
@@ -904,6 +934,52 @@ export class BridgeDaemon {
         avgResponseTimeMs,
       });
       await writeJsonLine(socket, { type: 'agent.response', response });
+      return;
+    }
+
+    if (request.method === 'artifact.read' || request.method === 'artifact.delete') {
+      const ownerId = socket.__clientId;
+      if (!ownerId) {
+        const response = createFailure(
+          request.id,
+          ERROR_CODES.ACCESS_DENIED,
+          'Artifact access requires a registered agent client.',
+          null,
+          { method: request.method }
+        );
+        await writeJsonLine(socket, { type: 'agent.response', response });
+        return;
+      }
+      try {
+        const result =
+          request.method === 'artifact.read'
+            ? this.artifactStore.read(
+                String(request.params.artifactId),
+                ownerId,
+                Number(request.params.offset),
+                Number(request.params.maxBytes)
+              )
+            : this.artifactStore.delete(String(request.params.artifactId), ownerId);
+        await writeJsonLine(socket, {
+          type: 'agent.response',
+          response: createSuccess(request.id, result, { method: request.method }),
+        });
+      } catch (error) {
+        const code =
+          error && typeof error === 'object' && 'code' in error
+            ? /** @type {import('../../protocol/src/types.js').ErrorCode} */ (error.code)
+            : ERROR_CODES.INTERNAL_ERROR;
+        await writeJsonLine(socket, {
+          type: 'agent.response',
+          response: createFailure(
+            request.id,
+            code,
+            error instanceof Error ? error.message : String(error),
+            null,
+            { method: request.method }
+          ),
+        });
+      }
       return;
     }
 
@@ -1152,12 +1228,67 @@ export class BridgeDaemon {
    */
   handleExtensionAccessUpdate(socket, message) {
     const accessEnabled = Boolean(message.accessEnabled);
+    if (!accessEnabled && socket.__extensionId) {
+      this.artifactStore.deleteByExtension(socket.__extensionId);
+    }
     if (socket.__accessEnabled !== accessEnabled) {
       socket.__accessEnabled = accessEnabled;
       this.invalidateConnectedExtensionsCache();
       return;
     }
     socket.__accessEnabled = accessEnabled;
+  }
+
+  /**
+   * @param {ClientSocket} socket
+   * @param {DaemonMessage} message
+   * @returns {void}
+   */
+  handleExtensionArtifact(socket, message) {
+    const artifact =
+      message.artifact && typeof message.artifact === 'object' ? message.artifact : {};
+    const requestId = typeof artifact.requestId === 'string' ? artifact.requestId : '';
+    const pending = this.pendingRequests.get(requestId);
+    if (!pending || !pending.targets.has(socket) || !socket.__extensionId) return;
+    const ownerId = pending.socket.__clientId;
+    if (!ownerId) return;
+    try {
+      if (message.type === 'extension.artifact.begin') {
+        this.artifactStore.begin({
+          artifactId: String(artifact.artifactId ?? ''),
+          requestId,
+          ownerId,
+          extensionId: socket.__extensionId,
+          kind: 'screenshot',
+          mimeType: String(artifact.mimeType ?? ''),
+          totalBytes: Number(artifact.byteLength),
+          sha256: String(artifact.sha256 ?? ''),
+          chunkCount: Number(artifact.chunkCount),
+          createdAt: String(artifact.createdAt ?? ''),
+          expiresAt: String(artifact.expiresAt ?? ''),
+        });
+      } else if (message.type === 'extension.artifact.chunk') {
+        this.artifactStore.writeChunk(
+          String(message.artifactId ?? ''),
+          Number(message.chunkIndex),
+          String(message.data ?? '')
+        );
+      } else if (message.type === 'extension.artifact.commit') {
+        this.artifactStore.commit(String(message.artifactId ?? ''));
+      }
+    } catch (error) {
+      const code =
+        error && typeof error === 'object' && 'code' in error
+          ? /** @type {import('../../protocol/src/types.js').ErrorCode} */ (error.code)
+          : ERROR_CODES.ARTIFACT_TRANSFER_INVALID;
+      pending.lastErrorResponse = createFailure(
+        requestId,
+        code,
+        error instanceof Error ? error.message : String(error),
+        null,
+        { method: pending.method }
+      );
+    }
   }
 
   /**
@@ -1207,15 +1338,36 @@ export class BridgeDaemon {
     this.removePendingTarget(responseMessage.id, pending, socket);
 
     if (responseMessage.ok) {
-      this.clearPendingRequest(responseMessage.id, pending);
-      this.recordRequestCompletion(responseMessage.id, true);
-      this.pushLog({
-        at: new Date().toISOString(),
-        method: responseMessage.meta?.method ?? null,
-        ok: true,
-        id: responseMessage.id,
-        source: pending.source || null,
-      });
+      const result =
+        responseMessage.result && typeof responseMessage.result === 'object'
+          ? /** @type {Record<string, unknown>} */ (responseMessage.result)
+          : {};
+      const artifact =
+        result.artifact && typeof result.artifact === 'object'
+          ? /** @type {Record<string, unknown>} */ (result.artifact)
+          : null;
+      if (
+        result.delivery === 'artifact' &&
+        (!artifact ||
+          !pending.socket.__clientId ||
+          !this.artifactStore.ownsCommitted(
+            String(artifact.artifactId ?? ''),
+            pending.socket.__clientId,
+            responseMessage.id
+          ))
+      ) {
+        pending.lastErrorResponse ??= createFailure(
+          responseMessage.id,
+          ERROR_CODES.ARTIFACT_TRANSFER_INVALID,
+          'Screenshot artifact was not committed before the response.',
+          null,
+          { method: pending.method }
+        );
+      }
+      if (pending.lastErrorResponse) {
+        await this.finishPendingRequestIfExhausted(responseMessage.id, pending);
+        return;
+      }
       const response =
         pending.method === 'health.ping'
           ? createSuccess(
@@ -1238,9 +1390,24 @@ export class BridgeDaemon {
             )
           : responseMessage;
 
-      await writeJsonLine(pending.socket, {
-        type: 'agent.response',
-        response,
+      try {
+        await writeJsonLine(pending.socket, {
+          type: 'agent.response',
+          response,
+        });
+      } catch (error) {
+        this.clearPendingRequest(responseMessage.id, pending);
+        this.recordRequestCompletion(responseMessage.id, false);
+        throw error;
+      }
+      this.clearPendingRequest(responseMessage.id, pending, true);
+      this.recordRequestCompletion(responseMessage.id, true);
+      this.pushLog({
+        at: new Date().toISOString(),
+        method: responseMessage.meta?.method ?? null,
+        ok: true,
+        id: responseMessage.id,
+        source: pending.source || null,
       });
       return;
     }
@@ -1257,6 +1424,7 @@ export class BridgeDaemon {
    */
   handleSocketClose(socket) {
     if (socket.__extensionId) {
+      this.artifactStore.deleteByExtension(socket.__extensionId);
       this.logger.info('extension disconnected', { extensionId: socket.__extensionId });
       if (this.extensionSockets.get(socket.__extensionId) === socket) {
         this.extensionSockets.delete(socket.__extensionId);

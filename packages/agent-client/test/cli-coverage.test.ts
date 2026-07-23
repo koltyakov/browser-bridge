@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -98,7 +99,64 @@ test('bbx screenshot resolves a selector and writes the decoded image', async ()
       elementRef: 'el_screenshot',
       format: 'png',
       quality: null,
+      delivery: 'artifact',
     });
+  } finally {
+    await bridgeServer.close();
+    await fs.promises.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('bbx screenshot downloads, verifies, and deletes artifact delivery', async () => {
+  const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-cli-artifact-'));
+  const outputPath = path.join(directory, 'capture.png');
+  const imageBytes = Buffer.from('artifact-image-bytes');
+  const artifactId = `art_${'b'.repeat(43)}`;
+  const sha256 = createHash('sha256').update(imageBytes).digest('hex');
+  const bridgeServer = await bridgeServerWith({
+    'screenshot.capture_element': (request) =>
+      createSuccess(request.id, {
+        delivery: 'artifact',
+        artifact: {
+          artifactId,
+          kind: 'screenshot',
+          mimeType: 'image/png',
+          byteLength: imageBytes.length,
+          sha256,
+          chunkSize: 196_608,
+          chunkCount: 1,
+          createdAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
+        rect: { x: 1, y: 2, width: 3, height: 4, scale: 1 },
+        dimensions: { width: 3, height: 4 },
+        byteLength: imageBytes.length,
+        format: 'png',
+        mimeType: 'image/png',
+        complete: true,
+        clipped: false,
+      }),
+    'artifact.read': (request) =>
+      createSuccess(request.id, {
+        artifactId,
+        data: imageBytes.toString('base64'),
+        offset: 0,
+        byteLength: imageBytes.length,
+        nextOffset: null,
+      }),
+    'artifact.delete': (request) => createSuccess(request.id, { artifactId, deleted: true }),
+  });
+  try {
+    const result = await runCli({
+      args: ['screenshot', 'el_screenshot', outputPath],
+      env: { ...process.env, BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome },
+    });
+    assert.equal(result.status, 0, result.stdout);
+    assert.deepEqual(await fs.promises.readFile(outputPath), imageBytes);
+    assert.deepEqual(
+      bridgeServer.requests.map((request) => request.method),
+      ['screenshot.capture_element', 'artifact.read', 'artifact.delete']
+    );
   } finally {
     await bridgeServer.close();
     await fs.promises.rm(directory, { recursive: true, force: true });

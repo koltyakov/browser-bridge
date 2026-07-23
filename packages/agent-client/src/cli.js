@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { applyWindowsTcpTransportDefaults } from '../../native-host/src/config.js';
@@ -37,6 +38,7 @@ import { getAutoUpdatePolicy, parseAutoUpdatePolicy, setAutoUpdatePolicy } from 
 import { formatMcpConfig, isMcpClientName, MCP_CLIENT_NAMES } from './mcp-config.js';
 import { getDoctorReport, requestBridge, resolveRef } from './runtime.js';
 import { createBridgeClientForDestination } from './remotes.js';
+import { atomicWriteFile } from './atomic-write.js';
 
 /** @typedef {import('./types.js').BridgeMethod} BridgeMethod */
 /** @typedef {import('./types.js').ScreenshotResult} ScreenshotResult */
@@ -460,6 +462,7 @@ async function main() {
           elementRef,
           format: screenshotOptions.format,
           quality: screenshotOptions.quality,
+          delivery: 'artifact',
         },
         { tabId: parsed.tabId, source: REQUEST_SOURCE }
       );
@@ -482,8 +485,11 @@ async function main() {
       ) {
         throw new Error(`Screenshot path extension must match ${screenshotOptions.format} format.`);
       }
-      const data = screenshotResult.image.replace(/^data:image\/(?:png|jpeg|webp);base64,/, '');
-      await fs.promises.writeFile(filePath, Buffer.from(data, 'base64'));
+      const imageBytes =
+        screenshotResult.delivery === 'artifact'
+          ? await downloadArtifact(client, screenshotResult.artifact)
+          : decodeScreenshotDataUrl(screenshotResult.image);
+      await atomicWriteFile(filePath, imageBytes);
       printJson({
         ok: true,
         summary: `Screenshot saved to ${filePath}.`,
@@ -613,6 +619,65 @@ async function main() {
   }
   if (relaunchAfterUpdate) {
     relaunchCli();
+  }
+}
+
+/** @param {string} value */
+function decodeScreenshotDataUrl(value) {
+  const match = /^data:image\/(?:png|jpeg|webp);base64,([A-Za-z0-9+/]*={0,2})$/u.exec(value);
+  if (!match) throw new Error('Screenshot response contains invalid base64 image data.');
+  const bytes = Buffer.from(match[1], 'base64');
+  if (bytes.toString('base64') !== match[1]) {
+    throw new Error('Screenshot response contains non-canonical base64 image data.');
+  }
+  return bytes;
+}
+
+/**
+ * @param {import('./client.js').BridgeClient} client
+ * @param {import('../../protocol/src/types.js').ArtifactDescriptor} artifact
+ */
+async function downloadArtifact(client, artifact) {
+  const chunks = [];
+  let offset = 0;
+  try {
+    while (offset < artifact.byteLength) {
+      const response = await requestBridge(
+        client,
+        'artifact.read',
+        { artifactId: artifact.artifactId, offset },
+        { source: REQUEST_SOURCE }
+      );
+      if (!response.ok) throw new Error(response.error.message);
+      const result = /** @type {Record<string, unknown>} */ (response.result);
+      if (result.artifactId !== artifact.artifactId || result.offset !== offset) {
+        throw new Error('Artifact chunk metadata is inconsistent.');
+      }
+      const data = String(result.data ?? '');
+      const bytes = Buffer.from(data, 'base64');
+      if (bytes.toString('base64') !== data || bytes.length !== result.byteLength) {
+        throw new Error('Artifact chunk contains invalid base64 data.');
+      }
+      chunks.push(bytes);
+      if (result.nextOffset === null) break;
+      if (typeof result.nextOffset !== 'number' || result.nextOffset <= offset) {
+        throw new Error('Artifact chunk did not advance the read offset.');
+      }
+      offset = result.nextOffset;
+    }
+    const output = Buffer.concat(chunks);
+    const sha256 = createHash('sha256').update(output).digest('hex');
+    if (output.length !== artifact.byteLength || sha256 !== artifact.sha256) {
+      throw new Error('Artifact length or checksum does not match the capture metadata.');
+    }
+    return output;
+  } finally {
+    await requestBridge(
+      client,
+      'artifact.delete',
+      { artifactId: artifact.artifactId },
+      { source: REQUEST_SOURCE }
+    ).catch(() => {});
   }
 }
 

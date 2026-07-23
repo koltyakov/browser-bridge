@@ -19,6 +19,9 @@ export const ERROR_CODES = Object.freeze({
   RESULT_TOO_LARGE: 'RESULT_TOO_LARGE',
   SENSITIVE_TARGET_NOT_FOUND: 'SENSITIVE_TARGET_NOT_FOUND',
   CONTENT_SCRIPT_UNAVAILABLE: 'CONTENT_SCRIPT_UNAVAILABLE',
+  ARTIFACT_NOT_FOUND: 'ARTIFACT_NOT_FOUND',
+  ARTIFACT_QUOTA_EXCEEDED: 'ARTIFACT_QUOTA_EXCEEDED',
+  ARTIFACT_TRANSFER_INVALID: 'ARTIFACT_TRANSFER_INVALID',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
   INVALID_REQUEST: 'INVALID_REQUEST',
   NATIVE_HOST_UNAVAILABLE: 'NATIVE_HOST_UNAVAILABLE',
@@ -42,7 +45,7 @@ export const ERROR_RECOVERY = Object.freeze({
   },
   [ERROR_CODES.RESULT_TOO_LARGE]: {
     retry: false,
-    hint: 'The exact value exceeds the atomic sensitive-read limit. Use a narrower exact target; partial sensitive values are never returned.',
+    hint: 'The result exceeds its atomic delivery limit. For screenshots, use artifact delivery, a smaller region, lower scale, or lossy compression. For sensitive reads, use a narrower exact target; partial values are never returned.',
   },
   [ERROR_CODES.SENSITIVE_TARGET_NOT_FOUND]: {
     retry: false,
@@ -111,6 +114,18 @@ export const ERROR_RECOVERY = Object.freeze({
   [ERROR_CODES.CONTENT_SCRIPT_UNAVAILABLE]: {
     retry: false,
     hint: 'The page cannot host the Browser Bridge content script. Switch to a normal http(s) page in the enabled window.',
+  },
+  [ERROR_CODES.ARTIFACT_NOT_FOUND]: {
+    retry: false,
+    hint: 'The artifact is missing, expired, deleted, or owned by another client. Capture it again.',
+  },
+  [ERROR_CODES.ARTIFACT_QUOTA_EXCEEDED]: {
+    retry: false,
+    hint: 'Artifact storage quota was exceeded. Delete unneeded artifacts or retry after expiry.',
+  },
+  [ERROR_CODES.ARTIFACT_TRANSFER_INVALID]: {
+    retry: false,
+    hint: 'Artifact transfer validation failed. Capture the screenshot again.',
   },
   [ERROR_CODES.EXTENSION_DISCONNECTED]: {
     retry: true,

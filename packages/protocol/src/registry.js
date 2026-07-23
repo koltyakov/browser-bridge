@@ -158,6 +158,8 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
   'screenshot.capture_region': 'Capture a screenshot of a viewport region.',
   'screenshot.capture_element': 'Capture a screenshot of one element.',
   'screenshot.capture_full_page': 'Capture a full-page screenshot beyond the viewport.',
+  'artifact.read': 'Read one bounded chunk from a daemon-owned artifact.',
+  'artifact.delete': 'Delete one daemon-owned artifact.',
   'patch.apply_styles': 'Apply a reversible inline style patch.',
   'patch.apply_dom': 'Apply a reversible DOM patch.',
   'patch.list': 'List active reversible patches.',
@@ -622,7 +624,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'screenshot.capture_region',
     'capture',
     true,
-    ['x', 'y', 'width', 'height', 'format', 'quality'],
+    ['x', 'y', 'width', 'height', 'format', 'quality', 'delivery', 'scale'],
     'high',
     METHOD_POLICIES.screenshotPartialDebugger
   ),
@@ -630,7 +632,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'screenshot.capture_element',
     'capture',
     true,
-    ['elementRef', 'format', 'quality'],
+    ['elementRef', 'format', 'quality', 'delivery', 'scale'],
     'high',
     METHOD_POLICIES.screenshotPartialDebugger
   ),
@@ -638,9 +640,23 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'screenshot.capture_full_page',
     'capture',
     true,
-    ['format', 'quality'],
+    ['format', 'quality', 'delivery', 'scale'],
     'high',
     METHOD_POLICIES.screenshotPartialDebugger
+  ),
+  'artifact.read': createRegistryEntry(
+    'artifact.read',
+    'artifact',
+    false,
+    ['artifactId', 'offset', 'maxBytes'],
+    'low'
+  ),
+  'artifact.delete': createRegistryEntry(
+    'artifact.delete',
+    'artifact',
+    false,
+    ['artifactId'],
+    'low'
   ),
   // patch - moderate (side effects)
   'patch.apply_styles': createRegistryEntry(

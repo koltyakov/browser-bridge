@@ -1,6 +1,13 @@
 // @ts-check
 
-import { BridgeError, ERROR_CODES } from '../../protocol/src/index.js';
+import {
+  BridgeError,
+  ERROR_CODES,
+  MAX_ARTIFACT_BYTES,
+  MAX_NATIVE_MESSAGE_BYTES,
+  SCREENSHOT_AUTO_INLINE_BYTES,
+  SCREENSHOT_MAX_INLINE_BYTES,
+} from '../../protocol/src/index.js';
 
 /** @typedef {import('./background-state.js').ResolvedTabTarget} ResolvedTabTarget */
 
@@ -20,6 +27,7 @@ const MAX_SCREENSHOT_SCALED_PIXELS = 250_000_000;
  *   ensureContentScript: (tabId: number) => Promise<void>,
  *   sendTabMessage: (tabId: number, message: Record<string, unknown>, timeoutMs: number) => Promise<any>,
  *   tabDebugger: TabDebuggerLike,
+ *   storeArtifact: (requestId: string, data: string, metadata: { mimeType: string, byteLength: number }) => Promise<import('../../protocol/src/types.js').ArtifactDescriptor>,
  * }} ScreenshotDeps
  */
 
@@ -31,9 +39,10 @@ const MAX_SCREENSHOT_SCALED_PIXELS = 250_000_000;
  * @param {string} method
  * @param {Record<string, unknown> | undefined} params
  * @param {ScreenshotDeps} deps
- * @returns {Promise<{ rect: unknown, image: string, format: string, mimeType: string, complete: boolean, clipped: boolean }>}
+ * @param {string} requestId
+ * @returns {Promise<import('../../protocol/src/types.js').ScreenshotResult>}
  */
-export async function handleScreenshot(target, method, params, deps) {
+export async function handleScreenshot(target, method, params, deps, requestId) {
   const captureParams = params ?? {};
   const format =
     captureParams.format === 'jpeg' || captureParams.format === 'webp'
@@ -42,6 +51,10 @@ export async function handleScreenshot(target, method, params, deps) {
   const quality =
     format !== 'png' && typeof captureParams.quality === 'number'
       ? Math.min(100, Math.max(0, Math.trunc(captureParams.quality)))
+      : null;
+  const requestedScale =
+    typeof captureParams.scale === 'number' && Number.isFinite(captureParams.scale)
+      ? Math.min(4, Math.max(0.1, captureParams.scale))
       : null;
   /** @type {{ x: number, y: number, width: number, height: number, scale: number }} */
   let clip;
@@ -132,6 +145,8 @@ export async function handleScreenshot(target, method, params, deps) {
     };
   }
 
+  if (requestedScale !== null) clip.scale = requestedScale;
+
   if (clip.width < 1 || clip.height < 1) {
     throw new Error(
       `Capture target has no visible area (${clip.width}\u00d7${clip.height}px). ` +
@@ -140,37 +155,180 @@ export async function handleScreenshot(target, method, params, deps) {
   }
 
   assertScreenshotClipWithinLimits(method, clip);
+  const delivery = captureParams.delivery ?? 'inline';
+  const estimatedTransportBytes = Math.ceil(
+    clip.width * clip.height * clip.scale * clip.scale * (4 / 3)
+  );
+  const preflightRequiresArtifact =
+    delivery === 'auto' && estimatedTransportBytes > MAX_NATIVE_MESSAGE_BYTES;
 
   // Use CDP Page.captureScreenshot - works regardless of tab focus,
   // captures renderer output directly with built-in clip support.
   return deps.tabDebugger.run(target.tabId, async (debugTarget) => {
     const dpr = clip.scale || 1;
+    let pageX = 0;
+    let pageY = 0;
+    if (method === 'screenshot.capture_region') {
+      const metrics = /** @type {{ cssVisualViewport?: { pageX?: number, pageY?: number } }} */ (
+        await deps.chrome.debugger.sendCommand(debugTarget, 'Page.getLayoutMetrics')
+      );
+      pageX = Number(metrics.cssVisualViewport?.pageX) || 0;
+      pageY = Number(metrics.cssVisualViewport?.pageY) || 0;
+    }
     const cdpResult = /** @type {{ data?: string }} */ (
       await deps.chrome.debugger.sendCommand(debugTarget, 'Page.captureScreenshot', {
         format,
         ...(quality === null ? {} : { quality }),
         clip: {
-          x: Math.max(0, clip.x),
-          y: Math.max(0, clip.y),
+          x: Math.max(0, clip.x + pageX),
+          y: Math.max(0, clip.y + pageY),
           width: clip.width,
           height: clip.height,
           scale: dpr,
         },
-        captureBeyondViewport: method !== 'screenshot.capture_region',
+        captureBeyondViewport: true,
       })
     );
     if (!cdpResult?.data) {
       throw new Error('CDP Page.captureScreenshot returned empty data.');
     }
-    return {
+    const byteLength = getBase64ByteLength(cdpResult.data);
+    const capturedDimensions = getImageDimensions(cdpResult.data, format);
+    const metadata = {
       rect: clip,
-      image: `data:image/${format};base64,${cdpResult.data}`,
       format,
-      mimeType: `image/${format}`,
+      mimeType: /** @type {`image/${import('../../protocol/src/types.js').ScreenshotFormat}`} */ (
+        `image/${format}`
+      ),
+      byteLength,
+      dimensions: capturedDimensions ?? {
+        width: Math.ceil(clip.width * dpr),
+        height: Math.ceil(clip.height * dpr),
+      },
       complete: true,
       clipped: false,
     };
+    if (delivery === 'inline' && byteLength > SCREENSHOT_MAX_INLINE_BYTES) {
+      throw new BridgeError(
+        ERROR_CODES.RESULT_TOO_LARGE,
+        `Screenshot is too large for inline delivery (${byteLength} bytes).`,
+        {
+          byteLength,
+          maxInlineBytes: SCREENSHOT_MAX_INLINE_BYTES,
+          guidance: 'Use delivery=artifact.',
+        }
+      );
+    }
+    if (
+      delivery === 'artifact' ||
+      (delivery === 'auto' &&
+        (preflightRequiresArtifact || byteLength > SCREENSHOT_AUTO_INLINE_BYTES))
+    ) {
+      if (byteLength > MAX_ARTIFACT_BYTES) {
+        throw new BridgeError(
+          ERROR_CODES.RESULT_TOO_LARGE,
+          `Screenshot is too large for artifact delivery (${byteLength} bytes).`,
+          {
+            byteLength,
+            maxArtifactBytes: MAX_ARTIFACT_BYTES,
+            guidance: 'Use a smaller region, lower scale, or lossy format and quality.',
+          }
+        );
+      }
+      const artifact = await deps.storeArtifact(requestId, cdpResult.data, {
+        mimeType: metadata.mimeType,
+        byteLength,
+      });
+      return { ...metadata, delivery: 'artifact', artifact };
+    }
+    return {
+      ...metadata,
+      delivery: 'inline',
+      image: `data:${metadata.mimeType};base64,${cdpResult.data}`,
+    };
   });
+}
+
+/** @param {string} data */
+function getBase64ByteLength(data) {
+  const padding = data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0;
+  return Math.floor((data.length * 3) / 4) - padding;
+}
+
+/**
+ * Read dimensions from a bounded image prefix so metadata reflects the encoder
+ * output without decoding the full screenshot a second time.
+ *
+ * @param {string} data
+ * @param {'png' | 'jpeg' | 'webp'} format
+ */
+function getImageDimensions(data, format) {
+  try {
+    const prefix = data.slice(0, Math.min(data.length, 87_380));
+    const binary = atob(prefix.slice(0, prefix.length - (prefix.length % 4)));
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    if (
+      format === 'png' &&
+      bytes.length >= 24 &&
+      bytes[0] === 0x89 &&
+      bytes[1] === 0x50 &&
+      bytes[2] === 0x4e &&
+      bytes[3] === 0x47
+    ) {
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      return { width: view.getUint32(16), height: view.getUint32(20) };
+    }
+    if (format === 'jpeg' && bytes[0] === 0xff && bytes[1] === 0xd8) {
+      for (let offset = 2; offset + 8 < bytes.length;) {
+        if (bytes[offset] !== 0xff) {
+          offset += 1;
+          continue;
+        }
+        const marker = bytes[offset + 1];
+        const length = (bytes[offset + 2] << 8) | bytes[offset + 3];
+        if (length < 2) break;
+        if (
+          (marker >= 0xc0 && marker <= 0xc3) ||
+          (marker >= 0xc5 && marker <= 0xc7) ||
+          (marker >= 0xc9 && marker <= 0xcb) ||
+          (marker >= 0xcd && marker <= 0xcf)
+        ) {
+          return {
+            width: (bytes[offset + 7] << 8) | bytes[offset + 8],
+            height: (bytes[offset + 5] << 8) | bytes[offset + 6],
+          };
+        }
+        offset += length + 2;
+      }
+    }
+    if (
+      format === 'webp' &&
+      bytes.length >= 30 &&
+      String.fromCharCode(...bytes.subarray(0, 4)) === 'RIFF' &&
+      String.fromCharCode(...bytes.subarray(8, 12)) === 'WEBP'
+    ) {
+      const chunk = String.fromCharCode(...bytes.subarray(12, 16));
+      if (chunk === 'VP8X') {
+        return {
+          width: 1 + bytes[24] + (bytes[25] << 8) + (bytes[26] << 16),
+          height: 1 + bytes[27] + (bytes[28] << 8) + (bytes[29] << 16),
+        };
+      }
+      if (chunk === 'VP8L' && bytes[20] === 0x2f) {
+        return {
+          width: 1 + bytes[21] + ((bytes[22] & 0x3f) << 8),
+          height: 1 + (bytes[22] >> 6) + (bytes[23] << 2) + ((bytes[24] & 0x0f) << 10),
+        };
+      }
+      if (chunk === 'VP8 ' && bytes[23] === 0x9d && bytes[24] === 0x01 && bytes[25] === 0x2a) {
+        return {
+          width: (bytes[26] | (bytes[27] << 8)) & 0x3fff,
+          height: (bytes[28] | (bytes[29] << 8)) & 0x3fff,
+        };
+      }
+    }
+  } catch {}
+  return null;
 }
 
 /**

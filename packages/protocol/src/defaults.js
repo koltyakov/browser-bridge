@@ -42,6 +42,14 @@ export const MAX_BATCH_CALLS = 20;
 
 /** Maximum read-only batch calls executing concurrently. */
 export const MAX_BATCH_CONCURRENCY = 5;
+export const SCREENSHOT_AUTO_INLINE_BYTES = 262_144;
+export const SCREENSHOT_MAX_INLINE_BYTES = 524_288;
+export const ARTIFACT_CHUNK_BYTES = 196_608;
+export const MAX_ARTIFACT_BYTES = 33_554_432;
+export const MAX_ARTIFACT_CLIENT_BYTES = 67_108_864;
+export const MAX_ARTIFACT_TOTAL_BYTES = 268_435_456;
+export const MAX_ARTIFACTS_PER_CLIENT = 16;
+export const ARTIFACT_TTL_MS = 300_000;
 
 /** Default timeout for a bridge request awaiting an extension response (ms). */
 export const DEFAULT_DAEMON_PENDING_TIMEOUT_MS = 30_000;

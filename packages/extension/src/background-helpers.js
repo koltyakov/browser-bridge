@@ -246,15 +246,25 @@ export function estimateResponseTokens(response, serializedPayload) {
     response.ok && response.result && typeof response.result === 'object'
       ? /** @type {Record<string, unknown>} */ (response.result)
       : null;
-  const hasScreenshot = result != null && typeof result.image === 'string';
+  const hasInlineScreenshot = result != null && typeof result.image === 'string';
+  const hasArtifactScreenshot =
+    result?.delivery === 'artifact' &&
+    result.artifact != null &&
+    typeof result.artifact === 'object';
+  const hasScreenshot = hasInlineScreenshot || hasArtifactScreenshot;
   const nodeCount = result != null && Array.isArray(result.nodes) ? result.nodes.length : null;
-  const textPayload = hasScreenshot && result != null ? omitScreenshotImage(result) : payload;
+  const textPayload = hasInlineScreenshot && result != null ? omitScreenshotImage(result) : payload;
   const textEstimate = estimateJsonPayloadCost(
     textPayload,
     textPayload === payload ? payloadJson : serializeJsonPayload(textPayload)
   );
   const imageTransportBytes = Math.max(0, responseBytes - textEstimate.bytes);
-  const imageBytes = hasScreenshot && result != null ? estimateInlineImageBytes(result.image) : 0;
+  const imageBytes =
+    hasInlineScreenshot && result != null
+      ? estimateInlineImageBytes(result.image)
+      : hasArtifactScreenshot && typeof result?.byteLength === 'number'
+        ? result.byteLength
+        : 0;
 
   return {
     responseBytes,

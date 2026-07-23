@@ -294,6 +294,19 @@ test('estimateResponseTokens separates screenshot image bytes from text tokens',
   assert.equal(estimate.imageBytes, 3);
 });
 
+test('estimateResponseTokens records artifact screenshot bytes without model image tokens', () => {
+  const response = successResponse('req_artifact_screenshot', {
+    delivery: 'artifact',
+    byteLength: 300_000,
+    artifact: { artifactId: `art_${'a'.repeat(43)}`, kind: 'screenshot' },
+  });
+  const estimate = estimateResponseTokens(response);
+  assert.equal(estimate.hasScreenshot, true);
+  assert.equal(estimate.imageBytes, 300_000);
+  assert.equal(estimate.imageApproxTokens, 0);
+  assert.equal(estimate.textBytes, estimate.responseBytes);
+});
+
 test('estimateResponseTokens counts failure payloads', () => {
   const failResponse = failureResponse('req_fail', 'ACCESS_DENIED', 'Denied');
   const estimate = estimateResponseTokens(failResponse);

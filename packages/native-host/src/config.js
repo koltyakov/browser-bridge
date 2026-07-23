@@ -59,6 +59,11 @@ export function getBridgeDir(env = process.env) {
   return path.join(xdgDataHome, 'browser-bridge');
 }
 
+/** @param {NodeJS.ProcessEnv} [env=process.env] */
+export function getArtifactStorePath(env = process.env) {
+  return path.join(getBridgeDir(env), 'artifacts');
+}
+
 /**
  * Resolve the IPC endpoint the daemon listens on and the CLI / native host
  * connect to. On Windows we use a Named Pipe by default because Node's AF_UNIX

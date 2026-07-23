@@ -39,7 +39,8 @@ import {
  *   handleScreenshot: (
  *     target: ResolvedTabTarget,
  *     method: string,
- *     params: Record<string, unknown> | undefined
+ *     params: Record<string, unknown> | undefined,
+ *     requestId: string
  *   ) => Promise<unknown>,
  *   handleNativeInput: (
  *     request: BridgeRequest,
@@ -171,7 +172,12 @@ export async function handleTabBoundRequest(request, dependencies) {
   const payload = normalizer ? normalizer(request.params) : request.params;
 
   if (request.method.startsWith('screenshot.')) {
-    const result = await dependencies.handleScreenshot(target, request.method, request.params);
+    const result = await dependencies.handleScreenshot(
+      target,
+      request.method,
+      request.params,
+      request.id
+    );
     return createSuccess(request.id, result, { method: request.method });
   }
 

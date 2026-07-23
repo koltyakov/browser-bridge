@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 
 import { DAEMON_RECENT_LOG_LIMIT, ERROR_CODES } from '../../protocol/src/index.js';
@@ -23,6 +24,7 @@ import {
   pingExistingDaemon,
 } from '../src/daemon.js';
 import type { BridgeTransport } from '../src/config.js';
+import { ArtifactStore } from '../src/artifact-store.js';
 
 type FakeSocket = net.Socket & {
   writes: string[];
@@ -572,6 +574,118 @@ test('daemon metrics include completed request response time', async () => {
   const payload = expectBridgeResponse(JSON.parse(agentSocket.writes[1].trim()));
   assert.equal(payload.response.result?.requestsProcessed, 1);
   assert.ok(Number(payload.response.result?.avgResponseTimeMs) > 0);
+});
+
+test('daemon stores screenshot artifacts for the requesting client only', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bbx-daemon-artifact-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const artifactStore = new ArtifactStore(path.join(root, 'store'));
+  artifactStore.reset();
+  const daemon = new BridgeDaemon({
+    logger: { log() {}, error() {} },
+    artifactStore,
+  });
+  const agentSocket = createFakeSocket();
+  agentSocket.__clientId = 'artifact-client';
+  const otherAgent = createFakeSocket();
+  otherAgent.__clientId = 'other-client';
+  const extensionSocket = createFakeSocket();
+  extensionSocket.__extensionId = 'artifact-extension';
+  extensionSocket.__accessEnabled = true;
+  daemon.extensionSockets.set('artifact-extension', extensionSocket);
+  const bytes = Buffer.from('daemon artifact bytes');
+  const artifactId = `art_${'d'.repeat(43)}`;
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 60_000).toISOString();
+
+  await daemon.handleAgentRequest(agentSocket, {
+    request: {
+      id: 'req_artifact_capture',
+      method: 'screenshot.capture_element',
+      tab_id: 1,
+      params: {
+        elementRef: 'el_artifact',
+        format: 'png',
+        quality: null,
+        delivery: 'artifact',
+        scale: 1,
+      },
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  });
+  daemon.handleExtensionArtifact(extensionSocket, {
+    type: 'extension.artifact.begin',
+    artifact: {
+      requestId: 'req_artifact_capture',
+      artifactId,
+      mimeType: 'image/png',
+      byteLength: bytes.length,
+      sha256,
+      chunkCount: 1,
+      createdAt,
+      expiresAt,
+    },
+  });
+  daemon.handleExtensionArtifact(extensionSocket, {
+    type: 'extension.artifact.chunk',
+    artifact: { requestId: 'req_artifact_capture' },
+    artifactId,
+    chunkIndex: 0,
+    data: bytes.toString('base64'),
+  });
+  daemon.handleExtensionArtifact(extensionSocket, {
+    type: 'extension.artifact.commit',
+    artifact: { requestId: 'req_artifact_capture' },
+    artifactId,
+  });
+  await daemon.handleExtensionResponse(extensionSocket, {
+    response: {
+      id: 'req_artifact_capture',
+      ok: true,
+      result: {
+        delivery: 'artifact',
+        artifact: { artifactId },
+        format: 'png',
+        mimeType: 'image/png',
+        byteLength: bytes.length,
+        dimensions: { width: 10, height: 10 },
+        rect: { x: 0, y: 0, width: 10, height: 10, scale: 1 },
+        complete: true,
+        clipped: false,
+      },
+      error: null,
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'screenshot.capture_element' },
+    },
+  });
+  assert.equal(expectBridgeResponse(parsePayload(agentSocket.writes[0])).response.ok, true);
+
+  const readRequest = {
+    id: 'req_artifact_read',
+    method: 'artifact.read' as const,
+    tab_id: null,
+    params: { artifactId, offset: 0, maxBytes: 196_608 },
+    meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+  };
+  await daemon.handleAgentRequest(otherAgent, { request: readRequest });
+  assert.equal(
+    expectBridgeResponse(parsePayload(otherAgent.writes[0])).response.error?.code,
+    ERROR_CODES.ARTIFACT_NOT_FOUND
+  );
+  await daemon.handleAgentRequest(agentSocket, { request: readRequest });
+  const readResponse = expectBridgeResponse(parsePayload(agentSocket.writes[1])).response;
+  assert.equal(readResponse.ok, true);
+  assert.equal(readResponse.result?.data, bytes.toString('base64'));
+
+  await daemon.handleAgentRequest(agentSocket, {
+    request: {
+      ...readRequest,
+      id: 'req_artifact_delete',
+      method: 'artifact.delete',
+      params: { artifactId },
+    },
+  });
+  assert.equal(expectBridgeResponse(parsePayload(agentSocket.writes[2])).response.ok, true);
 });
 
 test('daemon completes a request immediately when every target write fails', async () => {
@@ -1873,12 +1987,36 @@ test(
     const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-single-instance-'));
     const socketPath = path.join(tempDir, 'bridge.sock');
     const logger = { log() {}, error() {} };
-    const first = new BridgeDaemon({ socketPath, logger });
-    const second = new BridgeDaemon({ socketPath, logger });
+    const storePath = path.join(tempDir, 'artifacts');
+    const firstStore = new ArtifactStore(storePath);
+    const secondStore = new ArtifactStore(storePath);
+    const first = new BridgeDaemon({ socketPath, logger, artifactStore: firstStore });
+    const second = new BridgeDaemon({ socketPath, logger, artifactStore: secondStore });
 
     try {
       await first.start();
+      const bytes = Buffer.from('preserved artifact');
+      const artifactId = `art_${'f'.repeat(43)}`;
+      firstStore.begin({
+        artifactId,
+        requestId: 'capture-preserved',
+        ownerId: 'client-preserved',
+        extensionId: 'extension-preserved',
+        kind: 'screenshot',
+        mimeType: 'image/png',
+        totalBytes: bytes.length,
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+        chunkCount: 1,
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      });
+      firstStore.writeChunk(artifactId, 0, bytes.toString('base64'));
+      firstStore.commit(artifactId);
       await assert.rejects(() => second.start(), /Another daemon is already running on/);
+      assert.equal(
+        firstStore.read(artifactId, 'client-preserved', 0, bytes.length).data,
+        bytes.toString('base64')
+      );
     } finally {
       await second.stop().catch(() => {});
       await first.stop();

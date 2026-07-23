@@ -2298,6 +2298,9 @@ test('background dispatch captures screenshot regions through a CDP clip', async
         },
         async sendCommand(target: chrome.debugger.Debuggee, method: string, params?: object) {
           sendCommandCalls.push({ target, method, params });
+          if (method === 'Page.getLayoutMetrics') {
+            return { cssVisualViewport: { pageX: 100, pageY: 200 } };
+          }
           return { data: 'region-image-data' };
         },
       },
@@ -2333,18 +2336,23 @@ test('background dispatch captures screenshot regions through a CDP clip', async
   assert.deepEqual(sendCommandCalls, [
     {
       target: { tabId: 81 },
+      method: 'Page.getLayoutMetrics',
+      params: undefined,
+    },
+    {
+      target: { tabId: 81 },
       method: 'Page.captureScreenshot',
       params: {
         format: 'jpeg',
         quality: 73,
         clip: {
-          x: 12,
-          y: 34,
+          x: 112,
+          y: 234,
           width: 1,
           height: 56,
           scale: 2,
         },
-        captureBeyondViewport: false,
+        captureBeyondViewport: true,
       },
     },
   ]);
@@ -2360,9 +2368,69 @@ test('background dispatch captures screenshot regions through a CDP clip', async
     image: 'data:image/jpeg;base64,region-image-data',
     format: 'jpeg',
     mimeType: 'image/jpeg',
+    byteLength: 12,
+    dimensions: { width: 2, height: 112 },
+    delivery: 'inline',
     complete: true,
     clipped: false,
   });
+});
+
+test('background dispatch uploads artifact screenshots as ordered native chunks', async (t) => {
+  const data = Buffer.from('artifact screenshot').toString('base64');
+  const { loaded } = await loadEnabledDispatchBackground({
+    queryLabel: 'test-background-dispatch-screenshot-artifact',
+    chromeOverrides: {
+      debugger: {
+        async attach() {},
+        async sendCommand() {
+          return { data };
+        },
+      },
+    },
+  });
+  const nativePort = loaded.module.getStateForTest().nativePort;
+  assert.ok(nativePort);
+  const nativeMessages: unknown[] = [];
+  const originalPostMessage = nativePort.postMessage.bind(nativePort);
+  nativePort.postMessage = (message) => {
+    nativeMessages.push(message);
+    originalPostMessage(message);
+  };
+  t.after(() => {
+    nativePort.postMessage = originalPostMessage;
+  });
+
+  const response = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-screenshot-artifact',
+      method: 'screenshot.capture_region',
+      params: { x: 0, y: 0, width: 10, height: 10, delivery: 'artifact' },
+    })
+  );
+  if (!response.ok) assert.fail(response.error.message);
+  const result = response.result as {
+    delivery: string;
+    artifact: { artifactId: string; sha256: string };
+  };
+  assert.equal(result.delivery, 'artifact');
+  assert.match(result.artifact.artifactId, /^art_[A-Za-z0-9_-]{43}$/u);
+  assert.match(result.artifact.sha256, /^[a-f0-9]{64}$/u);
+  assert.deepEqual(
+    nativeMessages.map((message) => (message as { type?: string }).type),
+    ['host.artifact.begin', 'host.artifact.chunk', 'host.artifact.commit']
+  );
+  assert.equal(
+    (nativeMessages[0] as { artifact: { artifactId: string; requestId: string } }).artifact
+      .artifactId,
+    result.artifact.artifactId
+  );
+  assert.equal(
+    (nativeMessages[0] as { artifact: { requestId: string } }).artifact.requestId,
+    'dispatch-screenshot-artifact'
+  );
+  assert.equal((nativeMessages[1] as { chunkIndex: number }).chunkIndex, 0);
+  assert.equal((nativeMessages[1] as { data: string }).data, data);
 });
 
 test('background dispatch defaults invalid screenshot region coordinates', async () => {
@@ -2401,7 +2469,8 @@ test('background dispatch defaults invalid screenshot region coordinates', async
   if (!response.ok) {
     assert.fail(response.error.message);
   }
-  assert.deepEqual(sendCommandCalls[0]?.params, {
+  assert.equal(sendCommandCalls[0]?.method, 'Page.getLayoutMetrics');
+  assert.deepEqual(sendCommandCalls[1]?.params, {
     format: 'png',
     clip: {
       x: 0,
@@ -2410,7 +2479,7 @@ test('background dispatch defaults invalid screenshot region coordinates', async
       height: 1,
       scale: 1,
     },
-    captureBeyondViewport: false,
+    captureBeyondViewport: true,
   });
   assert.deepEqual(response.result, {
     rect: {
@@ -2423,6 +2492,9 @@ test('background dispatch defaults invalid screenshot region coordinates', async
     image: 'data:image/png;base64,region-default-image-data',
     format: 'png',
     mimeType: 'image/png',
+    byteLength: 18,
+    dimensions: { width: 7, height: 1 },
+    delivery: 'inline',
     complete: true,
     clipped: false,
   });
@@ -2514,6 +2586,9 @@ test('background dispatch captures full-page screenshots after reading page dime
     image: 'data:image/png;base64,full-page-image-data',
     format: 'png',
     mimeType: 'image/png',
+    byteLength: 15,
+    dimensions: { width: 15000, height: 7500 },
+    delivery: 'inline',
     complete: true,
     clipped: false,
   });
@@ -2577,6 +2652,9 @@ test('background dispatch defaults invalid full-page screenshot dimensions', asy
     image: 'data:image/png;base64,full-page-default-image-data',
     format: 'png',
     mimeType: 'image/png',
+    byteLength: 21,
+    dimensions: { width: 1, height: 1 },
+    delivery: 'inline',
     complete: true,
     clipped: false,
   });
@@ -2690,6 +2768,9 @@ test('background dispatch retries stale element screenshots before capturing', a
     image: 'data:image/png;base64,element-image-data',
     format: 'png',
     mimeType: 'image/png',
+    byteLength: 13,
+    dimensions: { width: 240, height: 90 },
+    delivery: 'inline',
     complete: true,
     clipped: false,
   });
