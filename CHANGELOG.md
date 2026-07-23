@@ -18,10 +18,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and restricted-regex URL waits that observe full navigation and SPA history
   changes without adding a manifest permission.
 - **Compact accessibility and all-resource network inspection:** Accessibility
-  reads can filter compact or semantically interactive nodes, while optional
-  CDP network capture adds an explicit start/read/clear/stop lifecycle for
-  bounded document, script, stylesheet, image, fetch/XHR, WebSocket, and
-  WebTransport metadata.
+  reads can filter compact or semantically interactive nodes and can scope a
+  partial AX tree to one uniquely selected region, while optional CDP network
+  capture adds an explicit start/read/clear/stop lifecycle for bounded document,
+  script, stylesheet, image, fetch/XHR, WebSocket, and WebTransport metadata.
+- **Semantic page extraction:** Added bounded `page.extract_content` text and
+  Markdown extraction with optional stable-snapshot settlement, selector
+  scoping, metadata, Readability processing in the Node client, and coherent
+  semantic-root/body fallbacks without returning source HTML to the agent.
+- **Flexible, truthful screenshots:** Element, region, and full-page captures
+  support PNG, JPEG, and WebP encoding with bounded lossy quality. Element
+  captures use complete page-coordinate clips without scrolling the page,
+  advertise MIME/completeness metadata, and fail coherently when complete
+  capture cannot be guaranteed.
 - **Consolidated local diagnostics:** `bbx doctor` now combines local transport,
   extension/profile, enabled-window routing, protocol compatibility, debugger,
   capture, daemon metrics, setup, recent redacted events, and configured-but-
@@ -33,9 +42,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - **Protocol 1.8 and documentation alignment:** Additive interaction, dialog,
-  navigation-wait, accessibility, network, and diagnostic contracts now ship as
-  protocol 1.8, with npm, lockfile, extension, MCP schema, skill, privacy, and
-  reviewer documentation aligned to implemented behavior.
+  navigation-wait, extraction, accessibility, screenshot, network, and
+  diagnostic contracts now ship as protocol 1.8, with npm, lockfile, extension,
+  MCP schema, skill, privacy, and reviewer documentation aligned to implemented
+  behavior.
+- **Context-rich access confirmation:** Access prompts and enable confirmations
+  now identify the requesting CLI or MCP source and bounded operation intent,
+  show sanitized target context, and state that access covers the selected
+  Chrome window until disabled, with generic fallback copy for older clients.
+- **Connection and action-log observability:** `BridgeClient` can optionally
+  preflight protocol compatibility on connect, while extension health checks
+  are summarized in the action log instead of appearing as unexplained generic
+  operations.
 - **Input safety and observability:** Input results identify how the target was
   selected, whether scrolling or stale recovery occurred, the hit-test outcome,
   and the actual DOM or debugger-backed dispatch path. Input dispatch remains a
