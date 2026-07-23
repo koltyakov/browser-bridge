@@ -751,11 +751,12 @@ export class BridgeDaemon {
     }
 
     if (message?.type === 'agent.request') {
-      const isExtensionSetupRequest =
+      const isExtensionLocalRequest =
         socket.__role === 'extension' &&
-        (message.request?.method === 'setup.get_status' ||
+        (message.request?.method === 'health.ping' ||
+          message.request?.method === 'setup.get_status' ||
           message.request?.method === 'setup.install');
-      if (socket.__role !== 'agent' && !isExtensionSetupRequest) {
+      if (socket.__role !== 'agent' && !isExtensionLocalRequest) {
         return this.rejectMessageForRole(socket, message);
       }
       return this.handleAgentRequest(socket, message);

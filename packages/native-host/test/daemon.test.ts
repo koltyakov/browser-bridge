@@ -335,7 +335,7 @@ test('daemon rejects extension messages from agent-role sockets', async () => {
   assert.match(failure.error?.message ?? '', /not allowed for agent sockets/);
 });
 
-test('daemon limits extension-role agent requests to setup methods', async () => {
+test('daemon limits extension-role agent requests to health and setup methods', async () => {
   const installs: Record<string, unknown>[] = [];
   const expectedStatus: SetupStatus = {
     scope: 'global',
@@ -372,6 +372,31 @@ test('daemon limits extension-role agent requests to setup methods', async () =>
   await daemon.handleClientMessage(socket, {
     type: 'agent.request',
     request: {
+      id: 'req_extension_health',
+      method: 'health.ping',
+      tab_id: null,
+      params: {},
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  });
+  const routedHealth = parsePayload(socket.writes[1].trim());
+  assert.equal(routedHealth.type, 'extension.request');
+  assert.equal(routedHealth.request?.id, 'req_extension_health');
+  await daemon.handleExtensionResponse(socket, {
+    response: {
+      id: 'req_extension_health',
+      ok: true,
+      result: {
+        extension: 'ok',
+        supported_versions: [PROTOCOL_VERSION],
+      },
+      error: null,
+      meta: { protocol_version: PROTOCOL_VERSION, method: 'health.ping' },
+    },
+  });
+  await daemon.handleClientMessage(socket, {
+    type: 'agent.request',
+    request: {
       id: 'req_extension_setup',
       method: 'setup.install',
       tab_id: null,
@@ -391,10 +416,13 @@ test('daemon limits extension-role agent requests to setup methods', async () =>
   });
 
   const rejected = parsePayload(socket.writes[0].trim());
-  const installed = expectBridgeResponse(parsePayload(socket.writes[1].trim()));
-  const status = expectBridgeResponse(parsePayload(socket.writes[2].trim()));
+  const health = expectBridgeResponse(parsePayload(socket.writes[2].trim()));
+  const installed = expectBridgeResponse(parsePayload(socket.writes[3].trim()));
+  const status = expectBridgeResponse(parsePayload(socket.writes[4].trim()));
   assert.equal(rejected.type, 'error');
   assert.match(rejected.error?.message ?? '', /not allowed for extension sockets/);
+  assert.equal(health.response.ok, true);
+  assert.equal(typeof health.response.result?.daemonVersion, 'string');
   assert.equal(installed.response.ok, true);
   assert.equal(status.response.ok, true);
   assert.deepEqual(status.response.result, expectedStatus);
