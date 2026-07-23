@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-07-23
+
 ### Added
 
 - **Metadata-only HAR export:** Added `network.export_har`, the `browser_page`
@@ -17,29 +19,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Recovery telemetry:** Health, daemon metrics, and `bbx doctor` now expose
   fixed, content-free five-minute recovery summaries and identify three-failure
   loops within 60 seconds with bounded category-specific guidance.
-
-### Changed
-
-- **HAR delivery and CLI handling:** HAR exports support inline, artifact, and
-  size-aware auto delivery. Short-lived owner-scoped artifacts expose no browser
-  host path; `bbx har` downloads with the same client, verifies length and
-  SHA-256, deletes the artifact, validates the HAR, and atomically writes it on
-  the CLI host.
-- **Performance contract clarity:** Performance output remains a raw CDP
-  `Performance.getMetrics` point sample with browser-defined names and units,
-  not Web Vitals or a Browser Bridge page-load measurement.
-
-### Security
-
-- **Sanitized HAR evidence:** HAR URLs remove credentials and fragments and
-  redact query values while retaining hosts, paths, and query names. Inline
-  byte limits remove complete oldest entries instead of truncating fields, and
-  artifact files use private daemon storage with a five-minute lifetime.
-
-## [1.9.0] - 2026-07-23
-
-### Added
-
 - **Deliberate exact storage reads:** Added `sensitive.read` and the
   `browser_sensitive_read` MCP tool for one exact local/session storage key,
   with atomic size rejection, no batching/retry/budget truncation, and visible
@@ -59,11 +38,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **HAR delivery and CLI handling:** HAR exports support inline, artifact, and
+  size-aware auto delivery. Short-lived owner-scoped artifacts expose no browser
+  host path; `bbx har` downloads with the same client, verifies length and
+  SHA-256, deletes the artifact, validates the HAR, and atomically writes it on
+  the CLI host.
+- **Performance contract clarity:** Performance output remains a raw CDP
+  `Performance.getMetrics` point sample with browser-defined names and units,
+  not Web Vitals or a Browser Bridge page-load measurement.
 - **Storage discovery is metadata-only:** `page.get_storage`, `browser_page`
   storage, and `bbx storage` now return bounded key/presence metadata. Use the
   deliberate sensitive-read path when an exact value is required.
 - **Read-only batch parity:** CLI, client, and MCP batches now share a 20-call
   limit, five-call concurrency bound, ordered results, and mutation rejection.
+
+### Security
+
+- **Sanitized HAR evidence:** HAR URLs remove credentials and fragments and
+  redact query values while retaining hosts, paths, and query names. Inline
+  byte limits remove complete oldest entries instead of truncating fields, and
+  artifact files use private daemon storage with a five-minute lifetime.
 
 ## [1.8.0] - 2026-07-22
 

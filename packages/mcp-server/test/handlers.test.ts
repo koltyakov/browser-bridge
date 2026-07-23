@@ -436,6 +436,39 @@ test(
   }
 );
 
+test('handleStatusTool limits an explicit local check to the local destination', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    await writeRemoteConfig(bridgeHome);
+    await withMockedBridge(
+      async ({ method }) => {
+        if (method === 'health.ping') {
+          return ok({
+            daemon: 'ok',
+            extensionConnected: true,
+            access: { enabled: true, routeReady: true, routeTabId: 17 },
+          });
+        }
+        if (method === 'log.tail') return ok({ entries: [] });
+        return ok({});
+      },
+      async (calls) => {
+        const result = await handleStatusTool({ destinationId: 'local' });
+        const destinations = result.structuredContent.destinations as Array<{
+          id: string;
+          local: boolean;
+        }>;
+
+        assert.deepEqual(
+          destinations.map(({ id, local }) => ({ id, local })),
+          [{ id: 'local', local: true }]
+        );
+        assert.equal(calls.length, 0);
+      },
+      { isolateBridgeHome: false }
+    );
+  });
+});
+
 test('handleSetupTool reports optional agent integration status', async () => {
   const result = await handleSetupTool({ global: false });
 

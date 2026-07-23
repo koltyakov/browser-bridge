@@ -99,8 +99,13 @@ export async function handleStatusTool(args = {}) {
     }
 
     const report = await getDoctorReport();
+    const configuredDestinations = await getBridgeDestinations();
+    const destinationsToInspect =
+      requestedDestinationId === 'local'
+        ? configuredDestinations.filter((destination) => destination.local)
+        : configuredDestinations;
     const destinations = await Promise.all(
-      (await getBridgeDestinations()).map(async (destination) => {
+      destinationsToInspect.map(async (destination) => {
         if (destination.local) {
           return {
             ...destination,
