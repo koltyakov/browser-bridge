@@ -38,6 +38,58 @@ import {
 /** @typedef {import('../../protocol/src/types.js').CdpPerformanceMetric} CdpPerformanceMetric */
 
 /**
+ * Materialize a selector-scoped AX subtree. Chrome's partial-tree response
+ * includes relatives and only a shallow child expansion, so fetch each selected
+ * descendant layer explicitly before applying the existing local depth filter.
+ *
+ * @param {chrome.debugger.Debuggee} debugTarget
+ * @param {PageRequestControllerDependencies['sendCommand']} sendCommand
+ * @param {Array<Record<string, unknown>>} partialNodes
+ * @param {number} backendNodeId
+ * @param {number} maxDepth
+ * @returns {Promise<Array<Record<string, unknown>>>}
+ */
+async function expandAccessibilitySubtree(
+  debugTarget,
+  sendCommand,
+  partialNodes,
+  backendNodeId,
+  maxDepth
+) {
+  const nodesById = new Map();
+  for (const node of partialNodes) {
+    const nodeId = String(node.nodeId ?? '');
+    if (nodeId) nodesById.set(nodeId, node);
+  }
+
+  const target = partialNodes.find((node) => Number(node.backendDOMNodeId) === backendNodeId);
+  const targetId = String(target?.nodeId ?? '');
+  if (!targetId) return [...nodesById.values()];
+
+  let frontier = [targetId];
+  const expanded = new Set();
+  for (let depth = 0; depth < maxDepth && frontier.length > 0; depth += 1) {
+    const next = new Set();
+    for (const nodeId of frontier) {
+      if (expanded.has(nodeId)) continue;
+      expanded.add(nodeId);
+      const childResult = /** @type {{ nodes?: Array<Record<string, unknown>> }} */ (
+        await sendCommand(debugTarget, 'Accessibility.getChildAXNodes', { id: nodeId })
+      );
+      for (const child of childResult.nodes ?? []) {
+        const childId = String(child.nodeId ?? '');
+        if (!childId) continue;
+        nodesById.set(childId, child);
+        if (!expanded.has(childId)) next.add(childId);
+      }
+    }
+    frontier = [...next];
+  }
+
+  return [...nodesById.values()];
+}
+
+/**
  * @typedef {{
  *   clearEnabledWindowIfGone: () => Promise<boolean>,
  *   primeTabConsoleCapture: (tabId: number) => Promise<void>,
@@ -391,9 +443,9 @@ export function createPageRequestController(state, chromeObj, dependencies) {
   }
 
   /**
-   * Return the full accessibility tree for the target tab via CDP
-   * Accessibility.getFullAXTree. Returns a pruned, token-efficient tree with
-   * roles, names, descriptions, and interactive states.
+   * Return a full or selector-scoped accessibility tree for the target tab via
+   * CDP. Returns a pruned, token-efficient tree with roles, names,
+   * descriptions, and interactive states.
    *
    * @param {BridgeRequest} request
    * @returns {Promise<BridgeResponse>}
@@ -478,8 +530,15 @@ export function createPageRequestController(state, chromeObj, dependencies) {
             const partial = /** @type {{ nodes?: Array<Record<string, unknown>> }} */ (
               partialResult
             );
+            const expandedNodes = await expandAccessibilitySubtree(
+              debugTarget,
+              dependencies.sendCommand,
+              partial.nodes ?? [],
+              backendNodeId,
+              params.maxDepth
+            );
             result = {
-              nodes: scopeAccessibilityNodes(partial.nodes ?? [], backendNodeId, params.maxDepth),
+              nodes: scopeAccessibilityNodes(expandedNodes, backendNodeId, params.maxDepth),
             };
           } else {
             result = await dependencies.sendCommand(debugTarget, 'Accessibility.getFullAXTree', {
@@ -489,9 +548,13 @@ export function createPageRequestController(state, chromeObj, dependencies) {
           const cdpResult = /** @type {{ nodes?: Array<Record<string, unknown>> }} */ (result);
           const rawNodes = cdpResult.nodes || [];
           const tree = buildAccessibilityTree(rawNodes, params);
+          const depthHint =
+            params.maxDepth < 20
+              ? 'retry with a larger maxDepth to inspect potentially omitted descendants'
+              : 'narrow the selector to inspect potentially omitted descendants';
           const continuationHint = tree.truncated
-            ? `The AX result reached maxNodes ${params.maxNodes} and was depth-limited to ${params.maxDepth}; retry with larger maxNodes and maxDepth values.`
-            : `The AX source was depth-limited to ${params.maxDepth}; retry with a larger maxDepth to inspect potentially omitted descendants.`;
+            ? `The AX result reached maxNodes ${params.maxNodes} and was depth-limited to ${params.maxDepth}; retry with a larger maxNodes or ${depthHint}.`
+            : `The AX source was depth-limited to ${params.maxDepth}; ${depthHint}.`;
           return createSuccess(
             request.id,
             {

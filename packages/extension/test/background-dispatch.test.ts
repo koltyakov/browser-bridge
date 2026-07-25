@@ -2061,12 +2061,23 @@ test('background dispatch returns a uniquely selector-scoped accessibility tree'
                   backendDOMNodeId: 42,
                   role: { value: 'dialog' },
                   name: { value: 'Settings' },
-                  childIds: ['save'],
+                  childIds: ['group'],
                 },
-                { nodeId: 'save', role: { value: 'button' }, name: { value: 'Save' } },
+                { nodeId: 'group', role: { value: 'group' }, childIds: ['save'] },
                 { nodeId: 'side', role: { value: 'navigation' }, name: { value: 'Unrelated' } },
               ],
             };
+          }
+          if (method === 'Accessibility.getChildAXNodes') {
+            const id = (params as { id?: string })?.id;
+            if (id === 'dialog') {
+              return { nodes: [{ nodeId: 'group', role: { value: 'group' }, childIds: ['save'] }] };
+            }
+            if (id === 'group') {
+              return {
+                nodes: [{ nodeId: 'save', role: { value: 'button' }, name: { value: 'Save' } }],
+              };
+            }
           }
           return {};
         },
@@ -2078,15 +2089,26 @@ test('background dispatch returns a uniquely selector-scoped accessibility tree'
     createRequest({
       id: 'dispatch-scoped-accessibility-tree',
       method: 'dom.get_accessibility_tree',
-      params: { selector: '#settings', maxDepth: 3, maxNodes: 20 },
+      params: {
+        selector: '#settings',
+        maxDepth: 2,
+        maxNodes: 20,
+        interactiveOnly: true,
+      },
     })
   );
   if (!response.ok) assert.fail(response.error.message);
-  const result = response.result as { nodes: Array<{ nodeId: string }> };
+  const result = response.result as {
+    nodes: Array<{ nodeId: string }>;
+    rawTotal: number;
+    rootIds: string[];
+  };
   assert.deepEqual(
     result.nodes.map((node) => node.nodeId),
-    ['root', 'dialog', 'save']
+    ['save']
   );
+  assert.equal(result.rawTotal, 4);
+  assert.deepEqual(result.rootIds, ['save']);
   assert.deepEqual(calls, [
     { method: 'Accessibility.enable', params: {} },
     { method: 'DOM.getDocument', params: { depth: 0, pierce: false } },
@@ -2096,6 +2118,8 @@ test('background dispatch returns a uniquely selector-scoped accessibility tree'
       method: 'Accessibility.getPartialAXTree',
       params: { backendNodeId: 42, fetchRelatives: true },
     },
+    { method: 'Accessibility.getChildAXNodes', params: { id: 'dialog' } },
+    { method: 'Accessibility.getChildAXNodes', params: { id: 'group' } },
     { method: 'Accessibility.disable', params: {} },
   ]);
 });

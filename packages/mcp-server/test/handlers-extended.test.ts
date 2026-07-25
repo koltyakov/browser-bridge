@@ -2365,6 +2365,12 @@ test('handleInterceptTool add maps to network.intercept.add', async () => {
       });
       assert.equal(calls[0].tabId, 7);
       assert.equal(result.isError, undefined);
+      assert.deepEqual(result.structuredContent.evidence, {
+        ruleId: 'rule_1',
+        urlPattern: 'example.com',
+        action: 'fulfill',
+        statusCode: 200,
+      });
     }
   );
 });
@@ -2384,6 +2390,9 @@ test('handleInterceptTool list, remove, and clear map to their bridge methods', 
       assert.equal(listed.isError, undefined);
       assert.equal(removed.isError, undefined);
       assert.equal(cleared.isError, undefined);
+      assert.deepEqual(listed.structuredContent.evidence, { rules: [] });
+      assert.deepEqual(removed.structuredContent.evidence, { removed: true });
+      assert.deepEqual(cleared.structuredContent.evidence, { cleared: 2 });
       assert.deepEqual(
         calls.map((call) => call.method),
         ['network.intercept.list', 'network.intercept.remove', 'network.intercept.clear']

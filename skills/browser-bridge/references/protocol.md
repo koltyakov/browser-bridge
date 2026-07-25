@@ -437,7 +437,7 @@ artifact, and atomically write the output on the CLI host.
 
 ### dom.get_accessibility_tree
 
-Retrieve a depth-limited accessibility tree via CDP. Full reads use `Accessibility.getFullAXTree`; an optional unique `selector` resolves through CDP DOM methods and uses `Accessibility.getPartialAXTree`, retaining only the selected subtree and required ancestor chain. Missing and ambiguous selectors return typed errors instead of selecting an arbitrary candidate. Nodes include `role`, `name`, `description`, `value`, state fields, `interactive`, `semanticInteractive`, `focusable`, `focusableAndEnabled`, `ignored`, and `childIds`. `interactive` is semantic/focusability metadata, not current pointer actionability.
+Retrieve a depth-limited accessibility tree via CDP. Full reads use `Accessibility.getFullAXTree`; an optional unique `selector` resolves through CDP DOM methods, starts with `Accessibility.getPartialAXTree`, and incrementally fetches selected descendant layers with `Accessibility.getChildAXNodes`. Only the selected subtree and required ancestor chain are retained. Missing and ambiguous selectors return typed errors instead of selecting an arbitrary candidate. Nodes include `role`, `name`, `description`, `value`, state fields, `interactive`, `semanticInteractive`, `focusable`, `focusableAndEnabled`, `ignored`, and `childIds`. `interactive` is semantic/focusability metadata, not current pointer actionability.
 
 This is debugger-backed. Prefer `dom.find_by_role`, `dom.find_by_text`, and targeted `dom.query`/`dom.describe` first.
 
@@ -449,7 +449,7 @@ bbx call dom.get_accessibility_tree '{"maxNodes":100,"maxDepth":6,"interactiveOn
 bbx call dom.get_accessibility_tree '{"selector":"[role=dialog]","maxNodes":50,"compact":true}'
 ```
 
-Filtering occurs before `maxNodes`. Compact mode drops ignored, decorative, and empty nodes while reconnecting retained descendants; interactive-only keeps non-ignored semantic interactive roles. Because CDP applies `maxDepth` before Browser Bridge receives the tree, every result truthfully reports `truncated: true`, `partialTopology: true`, depth metadata, missing-child counts, and a continuation hint. No AX node is written into the page DOM or converted directly into an actionable element ref; use role/name with `dom.find_by_role` before input.
+Filtering occurs before `maxNodes`. Compact mode drops ignored, decorative, and empty nodes while reconnecting retained descendants; interactive-only keeps non-ignored semantic interactive roles. Full reads ask CDP for the requested depth, while selector-scoped reads fetch descendant layers up to that same bound. Every result reports `truncated: true`, `partialTopology: true`, depth metadata, missing-child counts, and a continuation hint. No AX node is written into the page DOM or converted directly into an actionable element ref; use role/name with `dom.find_by_role` before input.
 
 ### viewport.resize
 
@@ -482,7 +482,7 @@ Capture a complete element, a tight viewport region, or a full document. All met
 
 Element capture uses full page-coordinate bounds with CDP capture beyond the viewport. If Browser Bridge cannot guarantee the entire element, or if an element/page exceeds Chrome capture limits, it returns a typed failure rather than a viewport-clipped image labeled complete. Use full-page capture only when element or tight region captures cannot express the issue.
 
-Raw calls default to inline base64 for compatibility. `auto` keeps small captures inline and returns a short-lived, daemon-owned opaque artifact handle for large captures; explicit `inline` preserves MCP image content when model vision is needed. Artifact handles expose no browser-host path and support owner-scoped bounded `artifact.read` and `artifact.delete` calls. Prefer `bbx screenshot [--format png|jpeg|webp] [--quality 0-100] <ref> [outPath]` when one element is enough; the CLI downloads, verifies, deletes, and atomically writes the artifact on the CLI host.
+Raw calls default to inline base64 for compatibility. `auto` keeps small captures inline and returns a short-lived, daemon-owned opaque artifact handle for large captures; explicit `inline` preserves MCP image content when model vision is needed. Artifact handles expose no browser-host path and support owner-scoped bounded `artifact.read` and `artifact.delete` calls. Each standalone CLI invocation uses a new artifact owner, so raw CLI screenshot calls should keep inline delivery. Prefer `bbx screenshot [--format png|jpeg|webp] [--quality 0-100] <ref> [outPath]` when one element is enough; the CLI downloads, verifies, deletes, and atomically writes the artifact within one process.
 
 Artifact handles expire after five minutes and can be read or deleted only by
 the requesting client. The daemon creates a private artifact directory and
@@ -490,7 +490,7 @@ owner-only files on POSIX hosts, removes artifacts on expiry/teardown, and never
 returns its browser-host filesystem path.
 
 ```bash
-bbx call screenshot.capture_full_page '{"format":"jpeg","quality":75,"delivery":"auto","scale":0.75}'
+bbx call screenshot.capture_full_page '{"format":"jpeg","quality":75,"delivery":"inline","scale":0.75}'
 ```
 
 ## Recovery Telemetry

@@ -233,7 +233,7 @@ test('bbx access-request forwards to the bridge and prints a summarized success 
 
   try {
     const result = await runCli({
-      args: ['access-request'],
+      args: ['access-request', 'inspect'],
       env: {
         ...process.env,
         BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome,
@@ -249,7 +249,7 @@ test('bbx access-request forwards to the bridge and prints a summarized success 
     assert.deepEqual(payload.evidence, ['enabled', 'requested', 'windowId']);
     assert.equal(bridgeServer.requests.length, 1);
     assert.equal(bridgeServer.requests[0].method, 'access.request');
-    assert.deepEqual(bridgeServer.requests[0].params, { intent: 'general' });
+    assert.deepEqual(bridgeServer.requests[0].params, { intent: 'inspect' });
     assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
   } finally {

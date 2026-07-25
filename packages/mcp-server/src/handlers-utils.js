@@ -433,6 +433,14 @@ function getRequestAwareEvidence(rawResult, method, params, fallback) {
       limit: { maxEntries },
     };
   }
+  if (method?.startsWith('network.intercept.')) {
+    const bounded = boundToolValue(result, { maxEntries: 100, maxCharacters: 10_000 });
+    return {
+      value: bounded.value,
+      truncated: bounded.truncated,
+      limit: { maxEntries: 100, maxCharacters: 10_000 },
+    };
+  }
   if (
     (method === 'page.get_console' || method === 'page.get_network' || method === 'log.tail') &&
     Array.isArray(result.entries)

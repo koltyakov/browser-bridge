@@ -281,8 +281,10 @@ async function main() {
     }
 
     if (command === 'access-request') {
+      if (rest.length > 1) throw new Error('Usage: bbx access-request [intent]');
+      const params = SHORTCUT_COMMANDS['access-request'].build(rest);
       await printSummary(
-        await requestBridge(client, 'access.request', {}, { source: REQUEST_SOURCE })
+        await requestBridge(client, 'access.request', params, { source: REQUEST_SOURCE })
       );
       return;
     }

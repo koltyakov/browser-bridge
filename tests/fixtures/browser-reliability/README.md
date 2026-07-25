@@ -44,6 +44,7 @@ bbx call input.click '{"target":{"selector":".duplicate-action"},"executionMode"
 bbx call page.handle_dialog '{"action":"inspect"}'
 bbx call page.wait_for_load_state '{"url":"/spa/push-","urlMatch":"contains","waitForLoad":false,"timeoutMs":10000}'
 bbx call dom.get_accessibility_tree '{"maxNodes":100,"maxDepth":6,"compact":true}'
+bbx call dom.get_accessibility_tree '{"selector":"#native-input","maxNodes":60,"maxDepth":10,"compact":true,"interactiveOnly":true}'
 bbx call page.get_network '{"source":"cdp","capture":"start"}'
 bbx call page.get_network '{"source":"cdp","capture":"read","limit":50}'
 bbx call page.get_network '{"source":"cdp","capture":"stop"}'
