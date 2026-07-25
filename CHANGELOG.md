@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Minimal MCP tool profile:** Added an opt-in `minimal` tool surface that
+  registers only `browser_call`, `browser_batch`, `browser_status`,
+  `browser_health`, and `browser_access`, cutting the tool schemas every session
+  carries from ~32 KB (~8.6k tokens) to ~4.5 KB (~1.2k tokens). Every bridge
+  method stays reachable through `browser_call`. Select it with
+  `bbx install-mcp <client> --profile minimal`, `bbx mcp config <client>
+  --profile minimal`, or `BBX_MCP_TOOLSET=minimal`. The default `full` profile
+  and its generated config output are unchanged.
+
+### Changed
+
+- **DOM baseline ownership extracted from the daemon:** Moved retained-baseline
+  ownership, expiry, per-socket caps, and abandoned-create tracking out of
+  `daemon.js` into `native-host/src/dom-baseline-owners.js`, leaving the daemon
+  responsible for transport. No protocol or behavior change.
+
+### Fixed
+
+- **Proxy and self-update test coverage:** Added coverage for `bbx proxy
+  enable/disable` success paths - token minting, documented idempotency, token
+  rotation, port changes, non-loopback warnings, and `0600` file modes - and for
+  the npm self-update refusal and failure branches, including the case where npm
+  reports success without replacing the install.
+
 ## [1.9.0] - 2026-07-23
 
 ### Added

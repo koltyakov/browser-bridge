@@ -36,7 +36,14 @@ import {
 } from './cli-setup-commands.js';
 import { SHORTCUT_COMMANDS } from './command-registry.js';
 import { getAutoUpdatePolicy, parseAutoUpdatePolicy, setAutoUpdatePolicy } from './config.js';
-import { formatMcpConfig, isMcpClientName, MCP_CLIENT_NAMES } from './mcp-config.js';
+import {
+  DEFAULT_MCP_TOOLSET_PROFILE,
+  formatMcpConfig,
+  isMcpClientName,
+  isMcpToolsetProfile,
+  MCP_CLIENT_NAMES,
+  MCP_TOOLSET_PROFILES,
+} from './mcp-config.js';
 import { getDoctorReport, requestBridge, resolveRef } from './runtime.js';
 import { createBridgeClientForDestination } from './remotes.js';
 import { atomicWriteFile } from './atomic-write.js';
@@ -155,10 +162,23 @@ if (command === 'mcp') {
   }
   if (subcommand === 'config') {
     if (!clientName || !isMcpClientName(clientName)) {
-      process.stderr.write(`Usage: bbx mcp config <${MCP_CLIENT_NAMES.join('|')}>\n`);
+      process.stderr.write(
+        `Usage: bbx mcp config <${MCP_CLIENT_NAMES.join('|')}> [--profile <${MCP_TOOLSET_PROFILES.join('|')}>]\n`
+      );
       process.exit(1);
     }
-    process.stdout.write(formatMcpConfig(clientName));
+    const profileIndex = rest.indexOf('--profile');
+    const profileValue =
+      profileIndex === -1
+        ? DEFAULT_MCP_TOOLSET_PROFILE
+        : (rest[profileIndex + 1] ?? '').trim().toLowerCase();
+    if (!isMcpToolsetProfile(profileValue)) {
+      process.stderr.write(
+        `Unknown MCP toolset profile "${profileValue}". Supported: ${MCP_TOOLSET_PROFILES.join(', ')}\n`
+      );
+      process.exit(1);
+    }
+    process.stdout.write(formatMcpConfig(clientName, profileValue));
     process.exit(0);
   }
   process.stderr.write('Usage: bbx mcp <serve|config>\n');

@@ -5,8 +5,22 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { atomicWriteFile } from './atomic-write.js';
+import {
+  DEFAULT_TOOLSET_PROFILE as DEFAULT_MCP_TOOLSET_PROFILE,
+  TOOLSET_PROFILE_ENV as MCP_TOOLSET_PROFILE_ENV,
+  TOOLSET_PROFILES as MCP_TOOLSET_PROFILES,
+  isToolsetProfile as isMcpToolsetProfile,
+} from '../../mcp-server/src/toolset.js';
 
 /** @typedef {import('./types.js').McpClientName} McpClientName */
+/** @typedef {import('../../mcp-server/src/toolset.js').ToolsetProfile} McpToolsetProfile */
+
+export {
+  DEFAULT_MCP_TOOLSET_PROFILE,
+  MCP_TOOLSET_PROFILE_ENV,
+  MCP_TOOLSET_PROFILES,
+  isMcpToolsetProfile,
+};
 
 /** @type {McpClientName[]} */
 export const MCP_CLIENT_NAMES = [
@@ -84,30 +98,47 @@ export function getMcpConfigShape(clientName) {
 }
 
 /**
+ * Environment for the generated server entry.
+ *
+ * The default `full` profile writes no environment so existing configs keep
+ * their exact shape; only an explicit `minimal` choice adds the selector.
+ *
+ * @param {McpToolsetProfile} profile
+ * @returns {Record<string, string>}
+ */
+function createServerEnv(profile) {
+  return profile === 'minimal' ? { [MCP_TOOLSET_PROFILE_ENV]: profile } : {};
+}
+
+/**
  * @param {McpClientName} clientName
+ * @param {McpToolsetProfile} [profile='full']
  * @returns {{
  *   command: string,
  *   args: string[],
  *   env: Record<string, string>
  * } | {
  *   type: 'local',
- *   command: string[]
+ *   command: string[],
+ *   environment?: Record<string, string>
  * }}
  */
-function createBaseServerConfig(clientName) {
-  const serverConfig = {
-    command: MCP_COMMAND,
-    args: [...MCP_ARGS],
-    env: {},
-  };
+function createBaseServerConfig(clientName, profile = DEFAULT_MCP_TOOLSET_PROFILE) {
+  const env = createServerEnv(profile);
 
   if (clientName === 'opencode') {
     return {
       type: 'local',
       command: [MCP_COMMAND, ...MCP_ARGS],
+      ...(Object.keys(env).length > 0 ? { environment: env } : {}),
     };
   }
-  return serverConfig;
+
+  return {
+    command: MCP_COMMAND,
+    args: [...MCP_ARGS],
+    env,
+  };
 }
 
 /** @type {Record<McpClientName, { key: string, includeType: boolean, keepEmptyBlock?: boolean }>} */
@@ -146,20 +177,23 @@ export function getMcpConfigShapeForPath(clientName, configPath) {
 
 /**
  * @param {McpClientName} clientName
+ * @param {McpToolsetProfile} [profile='full']
  * @returns {Record<string, unknown>}
  */
-export function buildMcpConfig(clientName) {
+export function buildMcpConfig(clientName, profile = DEFAULT_MCP_TOOLSET_PROFILE) {
   if (clientName === 'codex') {
+    const env = createServerEnv(profile);
     return {
       mcp_servers: {
         [BROWSER_BRIDGE_SERVER_NAME]: {
           command: MCP_COMMAND,
           args: [...MCP_ARGS],
+          ...(Object.keys(env).length > 0 ? { env } : {}),
         },
       },
     };
   }
-  const serverConfig = createBaseServerConfig(clientName);
+  const serverConfig = createBaseServerConfig(clientName, profile);
   const shape = getMcpConfigShape(clientName);
   const entry = shape.includeType ? { type: 'stdio', ...serverConfig } : serverConfig;
   return { [shape.key]: { [BROWSER_BRIDGE_SERVER_NAME]: entry } };
@@ -167,13 +201,14 @@ export function buildMcpConfig(clientName) {
 
 /**
  * @param {McpClientName} clientName
+ * @param {McpToolsetProfile} [profile='full']
  * @returns {string}
  */
-export function formatMcpConfig(clientName) {
+export function formatMcpConfig(clientName, profile = DEFAULT_MCP_TOOLSET_PROFILE) {
   if (clientName === 'codex') {
-    return formatCodexServerBlock();
+    return formatCodexServerBlock(profile);
   }
-  return `${JSON.stringify(buildMcpConfig(clientName), null, 2)}\n`;
+  return `${JSON.stringify(buildMcpConfig(clientName, profile), null, 2)}\n`;
 }
 
 /**
@@ -280,13 +315,24 @@ export async function getMcpConfigPaths(clientName, options) {
 }
 
 /**
+ * @param {McpToolsetProfile} [profile='full']
  * @returns {string}
  */
-function formatCodexServerBlock() {
+function formatCodexServerBlock(profile = DEFAULT_MCP_TOOLSET_PROFILE) {
+  const env = createServerEnv(profile);
+  const envEntries = Object.entries(env);
+
   return [
     `[mcp_servers."${BROWSER_BRIDGE_SERVER_NAME}"]`,
     `command = ${JSON.stringify(MCP_COMMAND)}`,
     `args = ${JSON.stringify(MCP_ARGS)}`,
+    ...(envEntries.length > 0
+      ? [
+          `env = { ${envEntries
+            .map(([key, value]) => `${key} = ${JSON.stringify(value)}`)
+            .join(', ')} }`,
+        ]
+      : []),
     '',
   ].join('\n');
 }
@@ -319,11 +365,12 @@ function isCodexServerHeader(line) {
  * unrelated content. This intentionally manages only our own named table.
  *
  * @param {string} raw
+ * @param {McpToolsetProfile} [profile='full']
  * @returns {string}
  */
-function upsertCodexServerBlock(raw) {
+function upsertCodexServerBlock(raw, profile = DEFAULT_MCP_TOOLSET_PROFILE) {
   const lines = raw.split(/\r?\n/);
-  const replacement = formatCodexServerBlock().trimEnd().split('\n');
+  const replacement = formatCodexServerBlock(profile).trimEnd().split('\n');
 
   let start = -1;
   for (let index = 0; index < lines.length; index += 1) {
@@ -347,9 +394,9 @@ function upsertCodexServerBlock(raw) {
 
   const trimmed = raw.trimEnd();
   if (!trimmed) {
-    return formatCodexServerBlock();
+    return formatCodexServerBlock(profile);
   }
-  return `${trimmed}\n\n${formatCodexServerBlock()}`;
+  return `${trimmed}\n\n${formatCodexServerBlock(profile)}`;
 }
 
 /**
@@ -400,19 +447,20 @@ function removeCodexServerBlock(raw) {
  * create it if it does not exist. Existing unrelated entries are preserved.
  *
  * @param {McpClientName} clientName
- * @param {{ global: boolean, cwd?: string, stdout?: Pick<NodeJS.WriteStream, 'write'> }} options
+ * @param {{ global: boolean, cwd?: string, stdout?: Pick<NodeJS.WriteStream, 'write'>, profile?: McpToolsetProfile }} options
  * @returns {Promise<string>} The path written to.
  */
 export async function installMcpConfig(clientName, options) {
   const stdout = options.stdout ?? process.stdout;
+  const profile = options.profile ?? DEFAULT_MCP_TOOLSET_PROFILE;
   const configPaths = await getMcpConfigPaths(clientName, options);
 
   for (const configPath of configPaths) {
     if (clientName === 'codex') {
-      await installCodexMcpConfig(configPath, stdout);
+      await installCodexMcpConfig(configPath, stdout, profile);
       continue;
     }
-    await installJsonMcpConfig(clientName, configPath, stdout);
+    await installJsonMcpConfig(clientName, configPath, stdout, profile);
   }
 
   return configPaths[0] || getMcpConfigPath(clientName, options);
@@ -483,9 +531,15 @@ export async function removeMcpConfig(clientName, options) {
  * @param {McpClientName} clientName
  * @param {string} configPath
  * @param {Pick<NodeJS.WriteStream, 'write'>} stdout
+ * @param {McpToolsetProfile} [profile='full']
  * @returns {Promise<void>}
  */
-async function installJsonMcpConfig(clientName, configPath, stdout) {
+async function installJsonMcpConfig(
+  clientName,
+  configPath,
+  stdout,
+  profile = DEFAULT_MCP_TOOLSET_PROFILE
+) {
   /** @type {Record<string, unknown>} */
   let existing = {};
   try {
@@ -507,7 +561,7 @@ async function installJsonMcpConfig(clientName, configPath, stdout) {
 
   const shape = getMcpConfigShapeForPath(clientName, configPath);
   const topKey = shape.key;
-  const serverConfig = createBaseServerConfig(clientName);
+  const serverConfig = createBaseServerConfig(clientName, profile);
   const entry = shape.includeType ? { type: 'stdio', ...serverConfig } : serverConfig;
   const currentBlock = existing[topKey];
   const existingBlock =
@@ -532,9 +586,10 @@ async function installJsonMcpConfig(clientName, configPath, stdout) {
 /**
  * @param {string} configPath
  * @param {Pick<NodeJS.WriteStream, 'write'>} stdout
+ * @param {McpToolsetProfile} [profile='full']
  * @returns {Promise<void>}
  */
-async function installCodexMcpConfig(configPath, stdout) {
+async function installCodexMcpConfig(configPath, stdout, profile = DEFAULT_MCP_TOOLSET_PROFILE) {
   let raw = '';
   try {
     raw = await fs.promises.readFile(configPath, 'utf8');
@@ -544,7 +599,7 @@ async function installCodexMcpConfig(configPath, stdout) {
     }
   }
 
-  const updated = upsertCodexServerBlock(raw);
+  const updated = upsertCodexServerBlock(raw, profile);
   await atomicWriteFile(configPath, updated, { encoding: 'utf8' });
   stdout.write(`Wrote ${configPath}\n`);
 }

@@ -145,6 +145,38 @@ Short version:
 | Install skill | N/A | `bbx install-skill [client]` | CLI-only (setup) |
 | Uninstall | N/A | `bbx uninstall` | CLI-only (setup) |
 
+## Tool Surface Profiles
+
+Every registered MCP tool ships its full JSON schema to the agent on `tools/list`, and that
+payload stays in context for the whole session. The default `full` profile registers all 18
+typed tools at roughly **32 KB of schema (~8.6k tokens)** before any page is inspected.
+
+The `minimal` profile registers only the tools needed to reach the entire protocol - about
+**4.5 KB (~1.2k tokens)**, a ~86% reduction:
+
+| Profile   | Tools | Schema size | Registered tools                                                          |
+| --------- | ----- | ----------- | ------------------------------------------------------------------------- |
+| `full`    | 18    | ~32 KB      | Every typed tool                                                          |
+| `minimal` | 5     | ~4.5 KB     | `browser_call`, `browser_batch`, `browser_status`, `browser_health`, `browser_access` |
+
+Nothing becomes unreachable: `browser_call` dispatches any bridge method by name, which is
+already the default the server instructions recommend for permission-ask hosts. The profile
+narrows the schema surface, not the protocol.
+
+```bash
+bbx install-mcp claude --profile minimal   # write config with the compact surface
+bbx mcp config claude --profile minimal    # print it instead of writing
+```
+
+Both forms set `BBX_MCP_TOOLSET=minimal` in the generated server entry. You can also set that
+environment variable directly on an existing config. An unrecognized value falls back to `full`
+and reports the problem on stderr. Omitting `--profile` keeps the existing `full` output byte
+for byte, so existing configs are unaffected.
+
+Prefer `minimal` when the host charges for tool schemas on every turn or asks the user to
+approve tools individually; prefer `full` when the host renders typed tools for discovery or
+you want schema validation on each specialized call.
+
 ## Feature Comparison
 
 ### MCP Advantages

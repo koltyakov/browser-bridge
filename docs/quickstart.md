@@ -68,6 +68,7 @@ bbx install-mcp                  # prompt/select detected clients
 bbx install-mcp all              # all supported clients
 bbx install-mcp codex            # or pick one: codex, claude, cursor, copilot, opencode, antigravity, windsurf, agents
 bbx install-mcp copilot --local  # scope to current project instead of global
+bbx install-mcp claude --profile minimal  # compact 5-tool surface (~7k fewer tokens per session)
 ```
 
 Configs are written globally by default. For GitHub Copilot, that means `~/.copilot/mcp-config.json`; project installs still use `.vscode/mcp.json`. Browser Bridge also writes the older VS Code `User/mcp.json` locations as compatibility fallbacks.
@@ -75,6 +76,8 @@ Configs are written globally by default. For GitHub Copilot, that means `~/.copi
 The MCP server is self-contained: clients can discover Browser Bridge tools and startup instructions. Workflow guidance is delivered to agents through the server instructions rather than MCP prompt templates, so clients do not expose it as user-facing slash commands. You do not need the CLI skill for MCP guidance.
 
 Permission prompts are client-owned and MCP instructions cannot grant permissions by themselves. In permission-ask hosts, Browser Bridge tells the agent to use the generic `browser_call` MCP tool by default so the user can approve one BBX tool instead of separate `browser_status`, `browser_page`, `browser_dom`, `browser_input`, and patch tools. See [Agent permissions](./agent-permissions.md) for wildcard/server-wide allow rules by client.
+
+`--profile minimal` takes that a step further by registering only the five tools needed to reach the whole protocol, cutting the tool schemas every session carries from ~8.6k to ~1.2k tokens. See [MCP vs CLI](./mcp-vs-cli.md#tool-surface-profiles) for the trade-off.
 
 **Skill + CLI** - for agents that can reliably run shell commands and where direct `bbx` control is the better fit than MCP tools. Use this path for shell-driven agent flows, setup and doctor flows, scripting, logs, or raw protocol access. Install the Browser Bridge skill so your agent knows how to drive `bbx`:
 

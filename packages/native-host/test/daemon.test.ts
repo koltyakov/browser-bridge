@@ -1227,7 +1227,7 @@ test('daemon releases a completed baseline when its requesting agent disconnecte
   assert.equal(releaseRequest?.method, 'dom.baseline.release');
   assert.equal(releaseRequest?.tab_id, 17);
   assert.deepEqual(releaseRequest?.params, { baselineId });
-  assert.equal(daemon.abandonedDomBaselineCreates.size, 0);
+  assert.equal(daemon.domBaselines.abandonedCreates.size, 0);
 });
 
 test('daemon hides baseline owner metadata until extension access is confirmed', () => {
@@ -1238,16 +1238,16 @@ test('daemon hides baseline owner metadata until extension access is confirmed',
   daemon.extensionSockets.set('disabled-baseline-extension', extensionSocket);
   const baselineId = `baseline_${'y'.repeat(43)}`;
   assert.equal(
-    daemon.registerDomBaselineOwner(
+    daemon.domBaselines.register(
       baselineId,
       extensionSocket,
       new Date(Date.now() + 60_000).toISOString()
     ),
     true
   );
-  assert.equal(daemon.getDomBaselineOwner(baselineId), null);
+  assert.equal(daemon.domBaselines.get(baselineId), null);
   extensionSocket.__accessEnabled = true;
-  assert.equal(daemon.getDomBaselineOwner(baselineId), extensionSocket);
+  assert.equal(daemon.domBaselines.get(baselineId), extensionSocket);
 });
 
 test('daemon completes a request immediately when every target write fails', async () => {

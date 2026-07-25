@@ -47,7 +47,8 @@ import {
   getMethodsByMaxComplexity,
 } from '../../protocol/src/index.js';
 import { applyWindowsTcpTransportDefaults } from '../../native-host/src/config.js';
-import { MCP_SERVER_INSTRUCTIONS } from './guidance.js';
+import { getMcpServerInstructions } from './guidance.js';
+import { createToolFilter, resolveToolsetProfile } from './toolset.js';
 
 export const BUDGET_PRESET_DESCRIPTION = `Budget preset: "quick", "normal", or "deep" (defaults: query ${BUDGET_PRESETS.normal.maxNodes} nodes / depth ${BUDGET_PRESETS.normal.maxDepth} / text ${BUDGET_PRESETS.normal.textBudget}). Numeric fields override the preset when both are provided.`;
 export const TAB_ID_DESCRIPTION =
@@ -99,20 +100,50 @@ const INVESTIGATE_DELEGATION_HINT = Object.freeze({
 });
 
 /**
+ * @typedef {{ profile?: import('./toolset.js').ToolsetProfile }} CreateBridgeMcpServerOptions
+ */
+
+/**
+ * Create the MCP server with the tool surface selected by the active profile.
+ *
+ * The `full` profile registers every typed tool. The `minimal` profile registers
+ * only the generic dispatch and readiness tools, which keeps the whole bridge
+ * protocol reachable through `browser_call` at a much smaller schema cost.
+ *
+ * @param {CreateBridgeMcpServerOptions} [options]
  * @returns {McpServer}
  */
-export function createBridgeMcpServer() {
+export function createBridgeMcpServer(options = {}) {
+  const { profile = resolveToolsetProfile() } = options;
+  const includeTool = createToolFilter(profile);
   const server = new McpServer(
     {
       name: 'browser-bridge',
       version: MCP_SERVER_VERSION,
     },
     {
-      instructions: MCP_SERVER_INSTRUCTIONS,
+      instructions: getMcpServerInstructions(profile),
     }
   );
 
-  server.registerTool(
+  /**
+   * Register a tool, then drop it again when the active profile excludes it.
+   *
+   * Registering first keeps every call site checked against the SDK's own
+   * generic signature instead of a hand-written passthrough type. The removal
+   * happens before `connect()`, so an excluded tool never reaches `tools/list`.
+   *
+   * @type {typeof server.registerTool}
+   */
+  const registerTool = (name, config, handler) => {
+    const registration = server.registerTool(name, config, handler);
+    if (!includeTool(name)) {
+      registration.remove();
+    }
+    return registration;
+  };
+
+  registerTool(
     'browser_status',
     {
       title: 'Browser Bridge Status',
@@ -128,7 +159,7 @@ export function createBridgeMcpServer() {
     handleStatusTool
   );
 
-  server.registerTool(
+  registerTool(
     'browser_setup',
     {
       title: 'Browser Bridge Setup Status',
@@ -143,7 +174,7 @@ export function createBridgeMcpServer() {
     handleSetupTool
   );
 
-  server.registerTool(
+  registerTool(
     'browser_logs',
     {
       title: 'Browser Bridge Logs',
@@ -165,7 +196,7 @@ export function createBridgeMcpServer() {
     handleLogTool
   );
 
-  server.registerTool(
+  registerTool(
     'browser_health',
     {
       title: 'Browser Bridge Health',
@@ -181,7 +212,7 @@ export function createBridgeMcpServer() {
     handleHealthTool
   );
 
-  server.registerTool(
+  registerTool(
     'browser_tabs',
     {
       title: 'Browser Tabs',
@@ -208,7 +239,7 @@ export function createBridgeMcpServer() {
     handleTabsTool
   );
 
-  server.registerTool(
+  registerTool(
     'browser_dom',
     {
       title: 'Browser DOM',
@@ -337,7 +368,7 @@ export function createBridgeMcpServer() {
     handleDomTool
   );
 
-  server.registerTool(
+  registerTool(
     'browser_styles_layout',
     {
       title: 'Browser Styles And Layout',
@@ -376,7 +407,7 @@ export function createBridgeMcpServer() {
     handleStylesLayoutTool
   );
 
-  server.registerTool(
+  registerTool(
     'browser_sensitive_read',
     {
       title: 'Sensitive Browser Read',
@@ -395,7 +426,7 @@ export function createBridgeMcpServer() {
     handleSensitiveReadTool
   );
 
-  server.registerTool(
+  registerTool(
     'browser_page',
     {
       title: 'Browser Page State',
@@ -538,7 +569,7 @@ export function createBridgeMcpServer() {
     handlePageTool
   );
 
-  server.registerTool(
+  registerTool(
     'browser_navigation',
     {
       title: 'Browser Navigation',
@@ -582,7 +613,7 @@ export function createBridgeMcpServer() {
     handleNavigationTool
   );
 
-  server.registerTool(
+  registerTool(
     'browser_input',
     {
       title: 'Browser Input',
@@ -694,7 +725,7 @@ export function createBridgeMcpServer() {
     handleInputTool
   );
 
-  server.registerTool(
+  registerTool(
     'browser_patch',
     {
       title: 'Browser Patch',
@@ -745,7 +776,7 @@ export function createBridgeMcpServer() {
     handlePatchTool
   );
 
-  server.registerTool(
+  registerTool(
     'browser_capture',
     {
       title: 'Browser Capture',
@@ -822,7 +853,7 @@ export function createBridgeMcpServer() {
     handleCaptureTool
   );
 
-  server.registerTool(
+  registerTool(
     'browser_batch',
     {
       title: 'Browser Bridge Batch',
@@ -859,7 +890,7 @@ export function createBridgeMcpServer() {
     handleBatchTool
   );
 
-  server.registerTool(
+  registerTool(
     'browser_call',
     {
       title: 'Raw Browser Bridge Call',
@@ -882,7 +913,7 @@ export function createBridgeMcpServer() {
     handleRawCallTool
   );
 
-  server.registerTool(
+  registerTool(
     'browser_skill',
     {
       title: 'Browser Bridge Runtime Context',
@@ -895,7 +926,7 @@ export function createBridgeMcpServer() {
     handleSkillTool
   );
 
-  server.registerTool(
+  registerTool(
     'browser_access',
     {
       title: 'Request Browser Bridge Access',
@@ -908,7 +939,7 @@ export function createBridgeMcpServer() {
     handleAccessTool
   );
 
-  server.registerTool(
+  registerTool(
     'browser_investigate',
     {
       title: 'Browser Investigate',

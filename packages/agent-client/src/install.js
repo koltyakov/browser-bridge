@@ -203,7 +203,8 @@ async function rollbackInstalledSkillDirs(attempted) {
  * @param {{
  *   global: boolean,
  *   projectPath: string,
- *   stdout?: Pick<NodeJS.WriteStream, 'write'>
+ *   stdout?: Pick<NodeJS.WriteStream, 'write'>,
+ *   profile?: import('../../mcp-server/src/toolset.js').ToolsetProfile
  * }} options
  * @returns {Promise<{ configPaths: string[] }>}
  */
@@ -218,6 +219,7 @@ export async function installMcpClientSetup(clients, options) {
         global: options.global,
         cwd: options.projectPath,
         stdout: options.stdout,
+        profile: options.profile,
       })
     );
   }

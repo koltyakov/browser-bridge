@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { BridgeDaemon } from '../../native-host/src/daemon.js';
+import { getBridgeAuthTokenPath } from '../../native-host/src/auth-token.js';
 import { runCli } from '../../../tests/_helpers/runCli.ts';
 import type { AddressInfo } from 'node:net';
 import type { BridgeTransport } from '../../native-host/src/config.js';
@@ -251,5 +252,287 @@ test('bbx proxy status reports enabled config and daemon reachability', async ()
         '',
       ].join('\n')
     );
+  });
+});
+
+/** Reserve a free loopback port so proxy tests never collide with a real daemon. */
+async function reserveLoopbackPort(): Promise<number> {
+  const net = await import('node:net');
+  return await new Promise<number>((resolve, reject) => {
+    const server = net.createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address() as AddressInfo;
+      server.close(() => resolve(port));
+    });
+  });
+}
+
+/**
+ * Stop the daemon that `bbx proxy enable` started for an isolated bridge home.
+ * The pid file is the only handle the CLI leaves behind for the test process.
+ */
+async function stopDaemonForBridgeHome(bridgeHome: string): Promise<void> {
+  let pid: number | null = null;
+  try {
+    const raw = await fs.promises.readFile(path.join(bridgeHome, 'daemon.pid'), 'utf8');
+    const parsed = Number.parseInt(raw.trim(), 10);
+    pid = Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  } catch {
+    return;
+  }
+
+  if (pid === null) return;
+
+  try {
+    process.kill(pid, 'SIGTERM');
+  } catch {
+    return;
+  }
+
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
+async function withProxyBridgeHome(
+  callback: (context: { bridgeHome: string; env: NodeJS.ProcessEnv; port: number }) => Promise<void>
+): Promise<void> {
+  await withBridgeHome(async (bridgeHome) => {
+    const port = await reserveLoopbackPort();
+    const env = { ...process.env, BROWSER_BRIDGE_HOME: bridgeHome };
+    try {
+      await callback({ bridgeHome, env, port });
+    } finally {
+      await stopDaemonForBridgeHome(bridgeHome);
+    }
+  });
+}
+
+function readProxyJson(bridgeHome: string): Promise<{
+  enabled: boolean;
+  port: number;
+  bindHost: string;
+  token: string;
+}> {
+  return fs.promises
+    .readFile(path.join(bridgeHome, 'proxy.json'), 'utf8')
+    .then((raw) => JSON.parse(raw));
+}
+
+test('bbx proxy enable persists config, mints a token, and prints tunnel setup', async () => {
+  await withProxyBridgeHome(async ({ bridgeHome, env, port }) => {
+    const result = await runCli({
+      args: ['proxy', 'enable', '--port', String(port)],
+      env,
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stderr, '');
+
+    const config = await readProxyJson(bridgeHome);
+    assert.equal(config.enabled, true);
+    assert.equal(config.port, port);
+    assert.equal(config.bindHost, '127.0.0.1');
+    assert.match(config.token, /^[0-9a-f-]{36}$/u);
+
+    // The token file is what remote clients authenticate against.
+    const tokenPath = getBridgeAuthTokenPath({ BROWSER_BRIDGE_HOME: bridgeHome });
+    const savedToken = (await fs.promises.readFile(tokenPath, 'utf8')).trim();
+    assert.equal(savedToken, config.token);
+
+    if (os.platform() !== 'win32') {
+      const [tokenStat, configStat] = await Promise.all([
+        fs.promises.stat(tokenPath),
+        fs.promises.stat(path.join(bridgeHome, 'proxy.json')),
+      ]);
+      assert.equal(tokenStat.mode & 0o777, 0o600);
+      assert.equal(configStat.mode & 0o777, 0o600);
+    }
+
+    assert.match(result.stdout, new RegExp(`proxy enabled on 127\\.0\\.0\\.1:${port}\\.`, 'u'));
+    assert.ok(result.stdout.includes(config.token));
+    assert.match(result.stdout, /ssh -N -L/u);
+    assert.match(result.stdout, new RegExp(`ssh -N -L ${port}:127\\.0\\.0\\.1:${port}`, 'u'));
+    assert.match(result.stdout, /bbx remote add remote-bbx 127\.0\.0\.1:/u);
+    assert.match(result.stdout, /Daemon: (started|restarted) \(pid \d+\)/u);
+  });
+});
+
+test('bbx proxy enable is idempotent and keeps the existing token and port', async () => {
+  await withProxyBridgeHome(async ({ bridgeHome, env, port }) => {
+    const first = await runCli({ args: ['proxy', 'enable', '--port', String(port)], env });
+    assert.equal(first.status, 0, first.stderr);
+    const firstConfig = await readProxyJson(bridgeHome);
+
+    // Re-run with no flags at all: settings and secret must survive.
+    const second = await runCli({ args: ['proxy', 'enable'], env });
+    assert.equal(second.status, 0, second.stderr);
+
+    const secondConfig = await readProxyJson(bridgeHome);
+    assert.equal(secondConfig.token, firstConfig.token);
+    assert.equal(secondConfig.port, port);
+    assert.equal(secondConfig.bindHost, '127.0.0.1');
+
+    assert.match(second.stdout, /unchanged - already-configured clients keep working/u);
+    assert.match(second.stdout, /--rotate-token to generate a new secret/u);
+    // Re-running must not re-print setup instructions for an unchanged token.
+    assert.doesNotMatch(second.stdout, /ssh -N -L/u);
+  });
+});
+
+test('bbx proxy enable --rotate-token replaces the secret and re-prints setup', async () => {
+  await withProxyBridgeHome(async ({ bridgeHome, env, port }) => {
+    const first = await runCli({ args: ['proxy', 'enable', '--port', String(port)], env });
+    assert.equal(first.status, 0, first.stderr);
+    const firstConfig = await readProxyJson(bridgeHome);
+
+    const rotated = await runCli({ args: ['proxy', 'enable', '--rotate-token'], env });
+    assert.equal(rotated.status, 0, rotated.stderr);
+
+    const rotatedConfig = await readProxyJson(bridgeHome);
+    assert.notEqual(rotatedConfig.token, firstConfig.token);
+    assert.match(rotatedConfig.token, /^[0-9a-f-]{36}$/u);
+    assert.equal(rotatedConfig.port, port, 'rotation must not reset the configured port');
+
+    const savedToken = (
+      await fs.promises.readFile(
+        getBridgeAuthTokenPath({ BROWSER_BRIDGE_HOME: bridgeHome }),
+        'utf8'
+      )
+    ).trim();
+    assert.equal(savedToken, rotatedConfig.token);
+
+    assert.match(rotated.stdout, /rotated - update every configured client/u);
+    assert.match(rotated.stdout, /ssh -N -L/u);
+  });
+});
+
+test('bbx proxy enable --token adopts a caller-supplied secret', async () => {
+  await withProxyBridgeHome(async ({ bridgeHome, env, port }) => {
+    const result = await runCli({
+      args: ['proxy', 'enable', '--port', String(port), '--token', TOKEN],
+      env,
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const config = await readProxyJson(bridgeHome);
+    assert.equal(config.token, TOKEN);
+
+    const savedToken = (
+      await fs.promises.readFile(
+        getBridgeAuthTokenPath({ BROWSER_BRIDGE_HOME: bridgeHome }),
+        'utf8'
+      )
+    ).trim();
+    assert.equal(savedToken, TOKEN);
+  });
+});
+
+test('bbx proxy enable changes the port while preserving the token', async () => {
+  await withProxyBridgeHome(async ({ bridgeHome, env, port }) => {
+    const first = await runCli({ args: ['proxy', 'enable', '--port', String(port)], env });
+    assert.equal(first.status, 0, first.stderr);
+    const firstConfig = await readProxyJson(bridgeHome);
+
+    const nextPort = await reserveLoopbackPort();
+    const second = await runCli({ args: ['proxy', 'enable', '--port', String(nextPort)], env });
+    assert.equal(second.status, 0, second.stderr);
+
+    const secondConfig = await readProxyJson(bridgeHome);
+    assert.equal(secondConfig.port, nextPort);
+    assert.equal(secondConfig.token, firstConfig.token);
+    assert.match(second.stdout, /unchanged - already-configured clients keep working/u);
+  });
+});
+
+test('bbx proxy enable --bind-host with --unsafe-plaintext warns instead of tunneling', async () => {
+  await withProxyBridgeHome(async ({ bridgeHome, env, port }) => {
+    const result = await runCli({
+      args: [
+        'proxy',
+        'enable',
+        '--port',
+        String(port),
+        '--bind-host',
+        '0.0.0.0',
+        '--unsafe-plaintext',
+      ],
+      env,
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const config = await readProxyJson(bridgeHome);
+    assert.equal(config.bindHost, '0.0.0.0');
+
+    assert.match(result.stdout, /WARNING: raw TCP is exposed without transport encryption\./u);
+    assert.match(result.stdout, /bbx remote add remote-bbx /u);
+    assert.doesNotMatch(result.stdout, /ssh -N -L/u);
+  });
+});
+
+test('bbx proxy disable removes the config and reports the daemon transition', async () => {
+  await withProxyBridgeHome(async ({ bridgeHome, env, port }) => {
+    const enabled = await runCli({ args: ['proxy', 'enable', '--port', String(port)], env });
+    assert.equal(enabled.status, 0, enabled.stderr);
+    await fs.promises.access(path.join(bridgeHome, 'proxy.json'));
+
+    const disabled = await runCli({ args: ['proxy', 'disable'], env });
+    assert.equal(disabled.status, 0, disabled.stderr);
+    assert.equal(disabled.stderr, '');
+    assert.match(
+      disabled.stdout,
+      /^Browser Bridge proxy disabled\. Daemon (restarted|started)\.\n$/u
+    );
+
+    await assert.rejects(fs.promises.access(path.join(bridgeHome, 'proxy.json')), {
+      code: 'ENOENT',
+    });
+
+    const status = await runCli({ args: ['proxy', 'status'], env });
+    assert.equal(status.stdout, 'Browser Bridge proxy is disabled.\n');
+  });
+});
+
+test('bbx proxy disable is safe when proxy mode was never enabled', async () => {
+  await withProxyBridgeHome(async ({ bridgeHome, env }) => {
+    const result = await runCli({ args: ['proxy', 'disable'], env });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Browser Bridge proxy disabled\./u);
+    await assert.rejects(fs.promises.access(path.join(bridgeHome, 'proxy.json')), {
+      code: 'ENOENT',
+    });
+  });
+});
+
+test('bbx proxy rejects unknown subcommands and enable flags', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    const env = { ...process.env, BROWSER_BRIDGE_HOME: bridgeHome };
+
+    const unknownSubcommand = await runCli({ args: ['proxy', 'bogus'], env });
+    assert.equal(unknownSubcommand.status, 1);
+    assert.match(unknownSubcommand.stderr, /Usage: bbx proxy <enable\|disable\|status>/u);
+
+    const unknownFlag = await runCli({ args: ['proxy', 'enable', '--nope'], env });
+    assert.equal(unknownFlag.status, 1);
+    assert.match(unknownFlag.stderr, /Unknown proxy enable option "--nope"\./u);
+
+    const missingBindHost = await runCli({ args: ['proxy', 'enable', '--bind-host'], env });
+    assert.equal(missingBindHost.status, 1);
+    assert.match(missingBindHost.stderr, /--bind-host requires a value\./u);
+
+    const missingToken = await runCli({ args: ['proxy', 'enable', '--token'], env });
+    assert.equal(missingToken.status, 1);
+    assert.match(missingToken.stderr, /--token requires a value\./u);
+
+    const badPort = await runCli({ args: ['proxy', 'enable', '--port', '70000'], env });
+    assert.equal(badPort.status, 1);
+    assert.match(badPort.stderr, /port must be an integer between 1 and 65535\./u);
   });
 });
