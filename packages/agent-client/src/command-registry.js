@@ -2,6 +2,7 @@
 
 import { BRIDGE_METHOD_REGISTRY, BRIDGE_METHODS } from '../../protocol/src/index.js';
 import {
+  isElementRef,
   parseCommaList,
   parseIntArg,
   parseNumberArg,
@@ -39,7 +40,7 @@ function createShortcutCommand(method, usage, build, options = {}) {
  */
 function createAtomicTarget(value) {
   if (!value) throw new Error('A ref or selector is required.');
-  return value.startsWith('el_') ? { elementRef: value } : { selector: value };
+  return isElementRef(value) ? { elementRef: value } : { selector: value };
 }
 
 /** @type {Record<string, ShortcutCommand>} */
@@ -292,9 +293,10 @@ export const CLI_HELP_SECTIONS = Object.freeze([
   {
     title: 'Generic RPC',
     lines: [
-      'bbx call [--tab <tabId>] <method> [paramsJson|-]                   Call any bridge method (- reads JSON from stdin)',
+      'bbx call [--tab <tabId>] [--preset quick|normal|deep] <method> [paramsJson|-]  Call any bridge method (- reads JSON from stdin)',
       'bbx <method> [--tab <tabId>] [paramsJson|-]                        Direct alias for exact bridge methods such as page.get_state',
-      "bbx batch '[{method,params,tabId?},...]'                           Up to 20 parallel read-only calls",
+      "bbx batch [--preset quick|normal|deep] '[{method,params,tabId?},...]'  Up to 20 parallel read-only calls",
+      '--preset fills budget gaps (maxNodes, maxDepth, textBudget, limit) from the shared quick|normal|deep presets; explicit params always win.',
       'Every bridge command accepts --remote <name> (or BBX_REMOTE env) to target a remote destination from `bbx remote list`.',
       'Advanced bridge params stay available through `bbx call`, even when shortcuts expose only the common case.',
       'For open-ended investigation, start with `bbx batch` on `page.get_state`, `dom.query`, and `page.get_text` before any screenshot or CDP call.',

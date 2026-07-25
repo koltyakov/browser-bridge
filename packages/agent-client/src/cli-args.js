@@ -1,9 +1,12 @@
 // @ts-check
 
-import { METHODS } from '../../protocol/src/index.js';
+import { applyMethodBudgetPreset, isBudgetPresetName, METHODS } from '../../protocol/src/index.js';
 import { methodNeedsTab, parseIntArg, parseJsonObject } from './cli-helpers.js';
 
 /** @typedef {import('./types.js').BridgeMethod} BridgeMethod */
+/** @typedef {import('../../protocol/src/defaults.js').BudgetPresetName} BudgetPresetName */
+
+const CALL_USAGE = 'Usage: call [--tab <tabId>] [--preset quick|normal|deep] <method> [paramsJson]';
 
 /**
  * Read all of stdin as UTF-8 text. Resolves once stdin closes.
@@ -120,17 +123,43 @@ export function extractHarFlags(args) {
 }
 
 /**
+ * Extract the --preset flag from anywhere in the argument list. Preset names
+ * are validated against the shared budget presets; explicit per-call params
+ * always override preset defaults.
+ *
+ * @param {string[]} args
+ * @returns {{ preset: BudgetPresetName | null, rest: string[] }}
+ */
+export function extractPresetFlag(args) {
+  const rest = [...args];
+  const index = rest.indexOf('--preset');
+  if (index === -1) {
+    return { preset: null, rest };
+  }
+  const value = rest[index + 1];
+  if (!value || value.startsWith('--')) {
+    throw new Error('--preset requires a value: quick, normal, or deep.');
+  }
+  if (!isBudgetPresetName(value)) {
+    throw new Error(`Unknown preset "${value}". Valid presets: quick, normal, deep.`);
+  }
+  rest.splice(index, 2);
+  return { preset: value, rest };
+}
+
+/**
  * @param {string[]} args
  * @returns {Promise<{ tabId: number | null, method: BridgeMethod, params: Record<string, unknown> }>}
  */
 export async function parseCallCommand(args) {
-  const parsed = extractTabFlag(args);
+  const presetParsed = extractPresetFlag(args);
+  const parsed = extractTabFlag(presetParsed.rest);
   const [first, second, ...extra] = parsed.rest;
   if (!first) {
-    throw new Error('Usage: call [--tab <tabId>] <method> [paramsJson]');
+    throw new Error(CALL_USAGE);
   }
   if (extra.length > 0) {
-    throw new Error('Usage: call [--tab <tabId>] <method> [paramsJson]');
+    throw new Error(CALL_USAGE);
   }
 
   if (first.includes('.')) {
@@ -146,11 +175,11 @@ export async function parseCallCommand(args) {
     return {
       method,
       tabId: methodNeedsTab(method) ? parsed.tabId : null,
-      params: parseJsonObject(rawParams),
+      params: applyMethodBudgetPreset(method, parseJsonObject(rawParams), presetParsed.preset),
     };
   }
 
-  throw new Error('Usage: call [--tab <tabId>] <method> [paramsJson]');
+  throw new Error(CALL_USAGE);
 }
 
 /**

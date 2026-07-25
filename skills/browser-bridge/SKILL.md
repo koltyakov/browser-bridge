@@ -351,6 +351,7 @@ Every CLI shortcut command produces consistent `{ok, summary, evidence}` JSON. U
 - `network.export_har` requires that explicit capture to still be armed. Params are `limit` (1-200), sanitized-URL substring `urlPattern`, and `delivery` (`auto`, `inline`, `artifact`). Inline bounds remove whole oldest entries; export never changes capture state. `bbx har` uses the same client to download, length/SHA-256 verify, delete, validate, and atomically write artifacts locally.
 - `page.handle_dialog` mutations are not atomically bound to `expectedDialogId`; treat `commandDispatched` as dispatch evidence and verify follow-up state.
 - Raw screenshot calls default to inline base64. Use `delivery: "auto"` for size-aware artifact fallback, or explicit `inline` when MCP image content is required; prefer `bbx screenshot <ref> [outPath]` when one element is enough because the CLI downloads and verifies artifacts locally.
+- Artifact delivery returns a descriptor (artifactId, sha256, byteLength), not bytes. From MCP, read chunks with the `browser_artifact` tool (`action: "read"`, paging `offset` until `nextOffset` is null, then verify the reassembled bytes against `sha256`) and free storage with `action: "delete"`; from the CLI use `bbx call artifact.read` / `bbx call artifact.delete` the same way, or let `bbx screenshot` / `bbx har` download, verify, and delete for you.
 
 ## Response Shapes
 

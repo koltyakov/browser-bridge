@@ -5,7 +5,7 @@ import net from 'node:net';
 import {
   createFailure,
   ERROR_CODES,
-  MAX_JSON_LINE_BYTES,
+  parseJsonLines,
   sanitizeIncidentalText,
 } from '../../protocol/src/index.js';
 import { readBridgeAuthToken } from './auth-token.js';
@@ -170,32 +170,10 @@ export async function runNativeHost({
     ...(authToken ? { authToken } : {}),
   });
 
-  let lineBuffer = '';
-  socket.on('data', (chunk) => {
-    lineBuffer += chunk;
-    if (!lineBuffer.includes('\n') && Buffer.byteLength(lineBuffer, 'utf8') > MAX_JSON_LINE_BYTES) {
-      console.error(`native-host: daemon JSON line exceeded ${MAX_JSON_LINE_BYTES} bytes`);
-      socket.destroy();
-      return;
-    }
-    while (lineBuffer.includes('\n')) {
-      const index = lineBuffer.indexOf('\n');
-      const line = lineBuffer.slice(0, index).trim();
-      lineBuffer = lineBuffer.slice(index + 1);
-      if (!line) {
-        continue;
-      }
-      if (Buffer.byteLength(line, 'utf8') > MAX_JSON_LINE_BYTES) {
-        console.error(`native-host: daemon JSON line exceeded ${MAX_JSON_LINE_BYTES} bytes`);
-        socket.destroy();
-        return;
-      }
-      let message;
-      try {
-        message = JSON.parse(line);
-      } catch {
-        continue;
-      }
+  parseJsonLines(
+    socket,
+    (raw) => {
+      const message = /** @type {Record<string, unknown>} */ (raw);
       void (async () => {
         if (message.type === 'extension.request') {
           await writeNativeMessageQueued(message.request);
@@ -228,8 +206,16 @@ export async function runNativeHost({
           err instanceof Error ? err.message : err
         );
       });
+    },
+    {
+      onProtocolError: (error) => {
+        console.error(`native-host: ${error.message}`);
+      },
+      onInvalidLine: (error) => {
+        console.error(`native-host: ignoring malformed daemon JSON line: ${error.message}`);
+      },
     }
-  });
+  );
 
   createNativeMessageReader(
     process.stdin,

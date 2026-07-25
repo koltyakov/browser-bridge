@@ -82,6 +82,8 @@ Short version:
 | Page text           | `browser_page` (text)          | `bbx page-text [budget]`            | Equivalent        |
 | Network requests    | `browser_page` (network)       | `bbx network [limit]`               | Fetch/XHR shortcut; raw calls expose CDP lifecycle |
 | HAR 1.2 export      | `browser_page` (har)           | `bbx har [options] [outPath]`       | Requires an already armed CDP capture; export does not change capture state |
+| Request intercept add | `browser_intercept` (add)    | `bbx intercept add <pattern> [--block] [--status N] [--body s]` | CDP Fetch rules; block/fulfill/continue |
+| Request intercept list/remove/clear | `browser_intercept` (list/remove/clear) | `bbx intercept <list|remove|clear>` | Rules persist until removed or cleared |
 | Raw Chrome/CDP counters | `browser_page` (performance)   | `bbx perf`                          | Point sample; names/units vary; no BBX navigation window or LCP/CLS/INP measurement |
 
 ### Navigation
@@ -138,7 +140,7 @@ Short version:
 |------------|----------|-------------|-------|
 | Raw protocol call | `browser_call` | `bbx call <method> '{...}'` | Equivalent |
 | Ordered batch calls | `browser_batch` | `bbx batch '[{...}]'` | Both preserve request order and return per-call `durationMs` / `approxTokens` |
-| Bounded artifact read/delete | `browser_call` | `bbx call artifact.read` / `bbx call artifact.delete` | Five-minute handles are owner-scoped and contain no browser-host path |
+| Bounded artifact read/delete | `browser_artifact` (read/delete) | `bbx call artifact.read` / `bbx call artifact.delete` | Five-minute handles are owner-scoped and contain no browser-host path; MCP read pages offset until nextOffset is null |
 | Batch parallel reads | `browser_batch` | `bbx batch '[{...}]'` | Equivalent |
 | Install manifest | N/A | `bbx install` | CLI-only (setup) |
 | Install MCP config | N/A | `bbx install-mcp [client]` | CLI-only (setup) |
@@ -148,15 +150,15 @@ Short version:
 ## Tool Surface Profiles
 
 Every registered MCP tool ships its full JSON schema to the agent on `tools/list`, and that
-payload stays in context for the whole session. The default `full` profile registers all 18
-typed tools at roughly **32 KB of schema (~8.6k tokens)** before any page is inspected.
+payload stays in context for the whole session. The default `full` profile registers all 20
+typed tools at roughly **35 KB of schema (~8.7k tokens)** before any page is inspected.
 
 The `minimal` profile registers only the tools needed to reach the entire protocol - about
-**4.5 KB (~1.2k tokens)**, a ~86% reduction:
+**4.5 KB (~1.1k tokens)**, a ~87% reduction:
 
 | Profile   | Tools | Schema size | Registered tools                                                          |
 | --------- | ----- | ----------- | ------------------------------------------------------------------------- |
-| `full`    | 18    | ~32 KB      | Every typed tool                                                          |
+| `full`    | 20    | ~35 KB      | Every typed tool                                                          |
 | `minimal` | 5     | ~4.5 KB     | `browser_call`, `browser_batch`, `browser_status`, `browser_health`, `browser_access` |
 
 Nothing becomes unreachable: `browser_call` dispatches any bridge method by name, which is

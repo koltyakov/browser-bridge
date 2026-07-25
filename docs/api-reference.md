@@ -112,38 +112,159 @@ client.on('reconnected', () => {
 
 ## Available methods
 
-See [`packages/protocol/src/registry.js`](../packages/protocol/src/registry.js) for the full list. Common ones:
+The full method list lives in
+[`packages/protocol/src/registry.js`](../packages/protocol/src/registry.js),
+grouped here by domain.
 
-| Method                       | Description                                    |
-| ---------------------------- | ---------------------------------------------- |
-| `access.request`             | Request window access (surfaces Enable prompt) |
-| `health.ping`                | Check daemon and extension connectivity        |
-| `tabs.list`                  | List tabs in the enabled window                |
-| `page.get_state`             | URL, title, readyState of the active tab       |
-| `dom.query`                  | Query DOM subtree with CSS selector            |
-| `dom.baseline.create`        | Retain a short-lived memory-only semantic snapshot |
-| `dom.baseline.compare`       | Return exact bounded semantic changes from a baseline |
-| `dom.baseline.describe`      | Read baseline scope, expiry, options, and counts |
-| `dom.baseline.release`       | Idempotently release a retained baseline       |
-| `dom.find_by_text`           | Find elements by visible text                  |
-| `page.evaluate`              | Run JavaScript in the page context             |
-| `page.get_console`           | Read buffered console output                   |
-| `page.get_storage`           | Read bounded storage key/presence metadata     |
-| `sensitive.read`             | Deliberately read one exact storage value      |
-| `page.handle_dialog`         | Inspect or explicitly handle current JS dialog |
-| `page.wait_for_load_state`   | Wait for tab complete and/or URL condition      |
-| `page.get_network`           | Fetch/XHR or explicit CDP resource capture      |
-| `network.export_har`         | Export armed CDP evidence as metadata-only HAR 1.2 |
-| `performance.get_metrics`    | Raw browser-maintained CDP counter point sample |
-| `dom.get_accessibility_tree` | Depth-limited compact/interactive AX data       |
-| `input.click`                | Actionability-aware DOM or CDP click            |
-| `input.type`                 | Actionability-aware DOM or CDP text input       |
-| `cdp.dispatch_key_event`     | Dispatch keyDown/keyUp through CDP input       |
-| `navigation.navigate`        | Navigate to a URL                              |
-| `screenshot.capture_element` | Complete PNG/JPEG/WebP element capture with inline, auto, or artifact delivery |
-| `artifact.read`              | Read a bounded chunk from an owner-scoped artifact |
-| `artifact.delete`            | Delete an owner-scoped artifact                 |
-| `patch.apply_styles`         | Apply reversible CSS overrides                 |
+### System
+
+| Method                      | Description                                                                                       |
+| --------------------------- | ------------------------------------------------------------------------------------------------- |
+| `access.request`            | Request Browser Bridge access for the focused window. Do not repeat while access is pending       |
+| `skill.get_runtime_context` | Return runtime method groups, budgets, and limits                                                 |
+| `setup.get_status`          | Return MCP and skill setup status                                                                 |
+| `setup.install`             | Install or uninstall MCP or skill integration targets                                             |
+| `log.tail`                  | Tail recent bridge log entries                                                                    |
+| `health.ping`               | Check daemon, extension, and access-routing health                                                |
+| `daemon.metrics`            | Daemon health and performance metrics                                                             |
+
+### Tabs
+
+| Method          | Description                                       |
+| --------------- | ------------------------------------------------- |
+| `tabs.list`     | List tabs in the enabled window                   |
+| `tabs.create`   | Create a new tab in the enabled window            |
+| `tabs.close`    | Close a tab in the enabled window                 |
+| `tabs.activate` | Bring a tab to the foreground in the enabled window |
+
+### Page
+
+| Method                    | Description                                                              |
+| ------------------------- | ------------------------------------------------------------------------ |
+| `page.get_state`          | Get URL, title, origin, and ready-state for the active page              |
+| `page.evaluate`           | Evaluate JavaScript in the page context                                  |
+| `page.get_console`        | Read buffered console output from the page                               |
+| `page.handle_dialog`      | Inspect or explicitly act on the current JavaScript dialog               |
+| `page.wait_for_load_state` | Wait for truthful tab-complete state and/or an event-aware URL condition |
+| `page.get_storage`        | Read local or session storage key metadata without values                |
+| `page.get_text`           | Read bounded visible text from the page                                  |
+| `page.extract_content`    | Extract bounded semantic page content as text or Markdown without returning source HTML |
+| `page.get_network`        | Read buffered fetch/XHR activity or explicitly manage bounded all-resource CDP capture |
+
+### Sensitive
+
+| Method           | Description                                              |
+| ---------------- | -------------------------------------------------------- |
+| `sensitive.read` | Deliberately read one exact local or session storage value |
+
+### Network
+
+| Method                    | Description                                                              |
+| ------------------------- | ------------------------------------------------------------------------ |
+| `network.export_har`      | Export bounded captured network evidence as a HAR 1.2 document, inline or as a daemon-owned artifact |
+| `network.intercept.add`   | Add a request interception rule (CDP Fetch domain)                       |
+| `network.intercept.remove` | Remove a request interception rule by ID                                |
+| `network.intercept.list`  | List active interception rules                                           |
+| `network.intercept.clear` | Remove all interception rules and disable interception                   |
+
+### Navigation
+
+| Method                  | Description                          |
+| ----------------------- | ------------------------------------ |
+| `navigation.navigate`   | Navigate the current tab to a URL    |
+| `navigation.reload`     | Reload the current tab               |
+| `navigation.go_back`    | Navigate backward in tab history     |
+| `navigation.go_forward` | Navigate forward in tab history      |
+
+### DOM
+
+| Method                      | Description                                                              |
+| --------------------------- | ------------------------------------------------------------------------ |
+| `dom.query`                 | Query a DOM subtree and return compact node summaries                    |
+| `dom.baseline.create`       | Create a short-lived compact semantic DOM baseline for later comparison  |
+| `dom.baseline.compare`      | Compare the current DOM with a retained semantic baseline                |
+| `dom.baseline.describe`     | Describe a retained semantic DOM baseline and its scope                  |
+| `dom.baseline.release`      | Release a retained semantic DOM baseline                                 |
+| `dom.describe`              | Describe one element by elementRef                                       |
+| `dom.get_text`              | Read bounded text for one element                                        |
+| `dom.get_attributes`        | Read selected attributes for one element                                 |
+| `dom.wait_for`              | Wait for a selector or text condition in the DOM                         |
+| `dom.find_by_text`          | Find elements by visible text                                            |
+| `dom.find_by_role`          | Find elements by ARIA role and optional name                             |
+| `dom.get_html`              | Read inner or outer HTML for one element                                 |
+| `dom.get_accessibility_tree` | Read a depth-limited accessibility tree with optional compact or interactive filtering |
+
+### Layout and styles
+
+| Method                    | Description                                                              |
+| ------------------------- | ------------------------------------------------------------------------ |
+| `layout.get_box_model`    | Read the box model for one element                                       |
+| `layout.hit_test`         | Resolve the topmost element at a viewport point                          |
+| `styles.get_computed`     | Read requested computed styles; omission returns display, position, width, height, and color |
+| `styles.get_matched_rules` | Read element classes and inline style context (not stylesheet cascade data) |
+
+### Viewport
+
+| Method            | Description                              |
+| ----------------- | ---------------------------------------- |
+| `viewport.scroll` | Scroll the viewport or a scrollable element |
+| `viewport.resize` | Resize or reset the tab viewport         |
+
+### Input
+
+| Method                  | Description                                                              |
+| ----------------------- | ------------------------------------------------------------------------ |
+| `input.click`           | Actionability-check and click an element through DOM or optional CDP input |
+| `input.focus`           | Actionability-check and focus an element through DOM input               |
+| `input.type`            | Actionability-check and type through DOM or optional CDP text input      |
+| `input.fill`            | Fill an editable target using a DOM strategy or optional CDP text input; verify afterward |
+| `input.press_key`       | Send a key press to the page or an element                               |
+| `input.set_checked`     | Set checkbox or radio checked state                                      |
+| `input.select_option`   | Select options in a select element                                       |
+| `input.hover`           | Actionability-check and hover through DOM or optional CDP pointer input  |
+| `input.drag`            | Actionability-check and drag through DOM or optional CDP pointer input   |
+| `input.scroll_into_view` | Scroll an element into the visible viewport                             |
+
+### Capture
+
+| Method                        | Description                                       |
+| ----------------------------- | ------------------------------------------------- |
+| `screenshot.capture_region`   | Capture a screenshot of a viewport region         |
+| `screenshot.capture_element`  | Capture a screenshot of one element               |
+| `screenshot.capture_full_page` | Capture a full-page screenshot beyond the viewport |
+
+### Artifacts
+
+| Method           | Description                                    |
+| ---------------- | ---------------------------------------------- |
+| `artifact.read`  | Read one bounded chunk from a daemon-owned artifact |
+| `artifact.delete` | Delete one daemon-owned artifact              |
+
+### Patch
+
+| Method                          | Description                                                   |
+| ------------------------------- | ------------------------------------------------------------- |
+| `patch.apply_styles`            | Apply a reversible inline style patch                         |
+| `patch.apply_dom`               | Apply a reversible DOM patch                                  |
+| `patch.list`                    | List active reversible patches                                |
+| `patch.rollback`                | Rollback one reversible patch                                 |
+| `patch.commit_session_baseline` | Keep current document mutations and discard their rollback history |
+
+### CDP
+
+| Method                          | Description                                                  |
+| ------------------------------- | ------------------------------------------------------------ |
+| `cdp.get_document`              | Read the CDP DOM document tree                               |
+| `cdp.get_dom_snapshot`          | Read a CDP DOM snapshot                                      |
+| `cdp.get_box_model`             | Read a CDP box model for a node                              |
+| `cdp.get_computed_styles_for_node` | Read CDP computed styles for a node                       |
+| `cdp.dispatch_key_event`        | Dispatch a key press through Chrome DevTools Protocol input  |
+
+### Performance
+
+| Method                    | Description                                                              |
+| ------------------------- | ------------------------------------------------------------------------ |
+| `performance.get_metrics` | Read a raw Chrome/CDP counter point sample; names and units vary, and BBX measures no navigation window, LCP, CLS, or INP |
 
 ## Error codes
 

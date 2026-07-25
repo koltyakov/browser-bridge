@@ -33,7 +33,7 @@ import {
   sanitizeIncidentalPath,
   sanitizeIncidentalText,
 } from '../../protocol/src/index.js';
-import { methodNeedsTab } from './cli-helpers.js';
+import { isElementRef, methodNeedsTab } from './cli-helpers.js';
 import { BridgeClient } from './client.js';
 import { applyConfiguredAutoUpdate } from './config.js';
 import { readRemoteConfig } from './remotes.js';
@@ -140,7 +140,7 @@ export async function requestBridge(client, method, params = {}, options = {}) {
  * @returns {Promise<string>}
  */
 export async function resolveRef(client, refOrSelector, tabId = null, source) {
-  if (refOrSelector.startsWith('el_')) {
+  if (isElementRef(refOrSelector)) {
     return refOrSelector;
   }
 

@@ -11,11 +11,13 @@ import * as z from 'zod/v4';
 
 import {
   handleAccessTool,
+  handleArtifactTool,
   handleCaptureTool,
   handleBatchTool,
   handleDomTool,
   handleHealthTool,
   handleInputTool,
+  handleInterceptTool,
   handleLogTool,
   handleNavigationTool,
   handlePageTool,
@@ -31,6 +33,7 @@ import {
   MAX_BATCH_CALLS,
 } from './handlers.js';
 import {
+  ARTIFACT_CHUNK_BYTES,
   BUDGET_PRESETS,
   DEFAULT_CONSOLE_LIMIT,
   DEFAULT_EVAL_TIMEOUT_MS,
@@ -82,22 +85,65 @@ const INVESTIGATE_SUBAGENT_BRIDGE_METHODS = Object.freeze(
   )
 );
 
-const INVESTIGATE_DELEGATION_HINT = Object.freeze({
-  recommended: true,
-  costTier: 'low',
-  preferredAgentProfile: {
-    modelClass: 'small',
-    reasoningEffort: 'low',
-  },
-  preferredTools: ['browser_dom', 'browser_page', 'browser_styles_layout', 'browser_batch'],
-  escalationTools: ['browser_capture'],
-  preferredBridgeMethods: INVESTIGATE_SUBAGENT_BRIDGE_METHODS,
-  escalationTriggers: [
-    'Structured DOM or page reads are insufficient.',
-    'Visual confirmation is required.',
-    'Debugger-backed evidence is required.',
-  ],
-});
+const INVESTIGATE_FULL_PREFERRED_TOOLS = Object.freeze([
+  'browser_dom',
+  'browser_page',
+  'browser_styles_layout',
+  'browser_batch',
+]);
+const INVESTIGATE_MINIMAL_PREFERRED_TOOLS = Object.freeze(['browser_call', 'browser_batch']);
+
+/**
+ * Build the subagent delegation hint for browser_investigate so it only names
+ * tools the active toolset profile actually registers.
+ *
+ * @param {import('./toolset.js').ToolsetProfile} profile
+ */
+function createInvestigateDelegationHint(profile) {
+  const minimal = profile === 'minimal';
+  return Object.freeze({
+    recommended: true,
+    costTier: 'low',
+    preferredAgentProfile: {
+      modelClass: 'small',
+      reasoningEffort: 'low',
+    },
+    preferredTools: minimal
+      ? INVESTIGATE_MINIMAL_PREFERRED_TOOLS
+      : INVESTIGATE_FULL_PREFERRED_TOOLS,
+    escalationTools: Object.freeze([minimal ? 'browser_call' : 'browser_capture']),
+    preferredBridgeMethods: INVESTIGATE_SUBAGENT_BRIDGE_METHODS,
+    escalationTriggers: [
+      'Structured DOM or page reads are insufficient.',
+      'Visual confirmation is required.',
+      'Debugger-backed evidence is required.',
+    ],
+  });
+}
+
+/**
+ * Build the browser_investigate description for the active toolset profile.
+ *
+ * @param {import('./toolset.js').ToolsetProfile} profile
+ * @returns {string}
+ */
+function getInvestigateToolDescription(profile) {
+  const minimal = profile === 'minimal';
+  const readTools = minimal
+    ? 'browser_call and browser_batch'
+    : 'browser_dom, browser_page, browser_styles_layout, and browser_batch';
+  const escalationTool = minimal ? 'browser_call' : 'browser_capture';
+  return (
+    'Investigate a page to answer a question or verify a condition. ' +
+    'Pass a natural-language objective and an optional scope (quick/normal/deep). ' +
+    'DELEGATION HINT: Prefer delegating this to a smaller, low-cost subagent ' +
+    `that starts with structured reads via ${readTools}. ` +
+    `Escalate to ${escalationTool} only ` +
+    'when structured reads are insufficient. ' +
+    'If subagent delegation is not available, a deterministic heuristic fallback ' +
+    'runs a scripted inspection sequence and returns a best-effort summary.'
+  );
+}
 
 /**
  * @typedef {{ profile?: import('./toolset.js').ToolsetProfile }} CreateBridgeMcpServerOptions
@@ -854,6 +900,85 @@ export function createBridgeMcpServer(options = {}) {
   );
 
   registerTool(
+    'browser_artifact',
+    {
+      title: 'Browser Artifact',
+      description:
+        'Read (chunked base64) or delete a daemon-owned artifact produced by artifact delivery (screenshots, HAR exports). Artifacts are scoped to this MCP session and expire quickly. Page reads with offset until nextOffset is null, then verify the reassembled bytes against sha256.',
+      inputSchema: {
+        action: z.enum(['read', 'delete']).describe('Artifact operation to perform'),
+        artifactId: z
+          .string()
+          .min(1)
+          .describe('Artifact identifier returned by a capture or HAR export'),
+        offset: z
+          .number()
+          .int()
+          .nonnegative()
+          .optional()
+          .describe('Byte offset to read from (default: 0)'),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .max(ARTIFACT_CHUNK_BYTES)
+          .optional()
+          .describe(`Maximum bytes to read in this chunk (default/max: ${ARTIFACT_CHUNK_BYTES})`),
+        destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+        budgetPreset: z
+          .enum(['quick', 'normal', 'deep'])
+          .optional()
+          .describe(BUDGET_PRESET_DESCRIPTION),
+      },
+    },
+    handleArtifactTool
+  );
+
+  registerTool(
+    'browser_intercept',
+    {
+      title: 'Browser Network Intercept',
+      description:
+        'Manage CDP Fetch request interception rules: add (block, fulfill, or continue matching requests), list, remove, or clear. Debugger-backed; rules persist until removed or cleared.',
+      inputSchema: {
+        action: z
+          .enum(['add', 'list', 'remove', 'clear'])
+          .describe('Intercept operation to perform'),
+        tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
+        destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+        budgetPreset: z
+          .enum(['quick', 'normal', 'deep'])
+          .optional()
+          .describe(BUDGET_PRESET_DESCRIPTION),
+        urlPattern: z
+          .string()
+          .min(1)
+          .max(2_048)
+          .optional()
+          .describe('URL substring to match (required for add)'),
+        ruleAction: z
+          .enum(['block', 'fulfill', 'continue'])
+          .optional()
+          .describe('How to handle matched requests (default: continue)'),
+        statusCode: z
+          .number()
+          .int()
+          .min(100)
+          .max(599)
+          .optional()
+          .describe('HTTP status for fulfill responses'),
+        body: z.string().optional().describe('Response body for fulfill'),
+        headers: z
+          .record(z.string(), z.string())
+          .optional()
+          .describe('Response headers for fulfill'),
+        ruleId: z.string().min(1).optional().describe('Rule ID (required for remove)'),
+      },
+    },
+    handleInterceptTool
+  );
+
+  registerTool(
     'browser_batch',
     {
       title: 'Browser Bridge Batch',
@@ -943,15 +1068,7 @@ export function createBridgeMcpServer(options = {}) {
     'browser_investigate',
     {
       title: 'Browser Investigate',
-      description:
-        'Investigate a page to answer a question or verify a condition. ' +
-        'Pass a natural-language objective and an optional scope (quick/normal/deep). ' +
-        'DELEGATION HINT: Prefer delegating this to a smaller, low-cost subagent ' +
-        'that starts with structured reads via browser_dom, browser_page, ' +
-        'browser_styles_layout, and browser_batch. Escalate to browser_capture only ' +
-        'when structured reads are insufficient. ' +
-        'If subagent delegation is not available, a deterministic heuristic fallback ' +
-        'runs a scripted inspection sequence and returns a best-effort summary.',
+      description: getInvestigateToolDescription(profile),
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -959,7 +1076,7 @@ export function createBridgeMcpServer(options = {}) {
         openWorldHint: true,
       },
       _meta: {
-        delegationHint: INVESTIGATE_DELEGATION_HINT,
+        delegationHint: createInvestigateDelegationHint(profile),
       },
       inputSchema: {
         objective: z

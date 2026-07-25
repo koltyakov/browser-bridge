@@ -153,7 +153,7 @@ export function createScreenshotResult(response, method) {
       return summarizeToolError(new Error(`${method} returned invalid artifact metadata.`));
     }
     return createToolResult(
-      `Captured screenshot artifact (${artifact.byteLength} bytes, expires ${artifact.expiresAt ?? 'soon'}).`,
+      `Captured screenshot artifact (${artifact.byteLength} bytes, expires ${artifact.expiresAt ?? 'soon'}). Read it in chunks with the browser_artifact tool (action "read", paging offset until nextOffset is null) or \`bbx call artifact.read\`, then delete it with browser_artifact action "delete" when done.`,
       {
         ok: true,
         method,

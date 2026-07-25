@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 import { applyWindowsTcpTransportDefaults } from '../../native-host/src/config.js';
 import { restartBridgeDaemon } from '../../native-host/src/daemon-process.js';
-import { createRuntimeContext, METHODS } from '../../protocol/src/index.js';
+import { createRuntimeContext, isHarDocument, METHODS } from '../../protocol/src/index.js';
 import {
   restartRegisteredMcpProcesses,
   tryStartMcpProcessControl,
@@ -19,6 +19,7 @@ import { startBridgeMcpServer } from '../../mcp-server/src/server.js';
 import {
   extractRemoteFlag,
   extractHarFlags,
+  extractPresetFlag,
   extractScreenshotFlags,
   extractTabFlag,
   parseCallCommand,
@@ -26,7 +27,7 @@ import {
   readStdin,
 } from './cli-args.js';
 import { runBatchCalls } from './cli-batch.js';
-import { parseIntArg } from './cli-helpers.js';
+import { isElementRef, parseIntArg } from './cli-helpers.js';
 import { printCallResponse, printJson, printSummary, printUsage } from './cli-output.js';
 import { handleProxyCommand, handleRemoteCommand } from './cli-proxy-remote.js';
 import {
@@ -397,7 +398,8 @@ async function main() {
     }
 
     if (command === 'batch') {
-      const results = await runBatchCalls(client, rest[0], REQUEST_SOURCE);
+      const { preset, rest: batchArgs } = extractPresetFlag(rest);
+      const results = await runBatchCalls(client, batchArgs[0], REQUEST_SOURCE, { preset });
       if (results.some((result) => !result.ok)) {
         process.exitCode = 1;
       }
@@ -432,7 +434,7 @@ async function main() {
       const [key, refOrSelector] = rest;
       if (!key) throw new Error('Usage: press-key <key> [ref|selector]');
       const target = refOrSelector
-        ? refOrSelector.startsWith('el_')
+        ? isElementRef(refOrSelector)
           ? { elementRef: refOrSelector }
           : { selector: refOrSelector }
         : undefined;
@@ -775,14 +777,7 @@ function assertValidHarDocument(document) {
   if (!document || typeof document !== 'object' || Array.isArray(document)) {
     throw new Error('HAR response does not contain an inline HAR object.');
   }
-  const log = Reflect.get(document, 'log');
-  if (
-    !log ||
-    typeof log !== 'object' ||
-    Array.isArray(log) ||
-    Reflect.get(log, 'version') !== '1.2' ||
-    !Array.isArray(Reflect.get(log, 'entries'))
-  ) {
+  if (!isHarDocument(document)) {
     throw new Error('HAR response does not contain a valid HAR 1.2 document.');
   }
 }

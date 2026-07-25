@@ -81,7 +81,7 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
     const delegationHint = (investigateMeta.delegationHint ?? {}) as Record<string, unknown>;
 
     assert.ok(server instanceof McpServer);
-    assert.equal(registrations.length, 18);
+    assert.equal(registrations.length, 20);
     assert.deepEqual(
       registrations.map((entry) => entry.name),
       [
@@ -98,6 +98,8 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
         'browser_input',
         'browser_patch',
         'browser_capture',
+        'browser_artifact',
+        'browser_intercept',
         'browser_batch',
         'browser_call',
         'browser_skill',
@@ -113,7 +115,9 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
     const inputSchema = registrations[10].config.inputSchema as Record<string, unknown>;
     const patchSchema = registrations[11].config.inputSchema as Record<string, unknown>;
     const captureSchema = registrations[12].config.inputSchema as Record<string, unknown>;
-    const rawCallSchema = registrations[14].config.inputSchema as Record<string, unknown>;
+    const artifactSchema = registrations[13].config.inputSchema as Record<string, unknown>;
+    const interceptSchema = registrations[14].config.inputSchema as Record<string, unknown>;
+    const rawCallSchema = registrations[16].config.inputSchema as Record<string, unknown>;
     const tabsAction = tabsSchema.action as { safeParse: (value: unknown) => { success: boolean } };
     const inputAction = inputSchema.action as {
       safeParse: (value: unknown) => { success: boolean };
@@ -178,13 +182,35 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
       String((pageSchema.action as { description?: string }).description),
       /raw Chrome\/CDP counters, not LCP, CLS, or INP/
     );
-    assert.equal(typeof registrations[13].handler, 'function');
-    assert.deepEqual(registrations[13].config.annotations, {
+    assert.equal(typeof registrations[15].handler, 'function');
+    assert.deepEqual(registrations[15].config.annotations, {
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
       openWorldHint: true,
     });
+    const artifactAction = artifactSchema.action as {
+      safeParse: (value: unknown) => { success: boolean };
+    };
+    const interceptAction = interceptSchema.action as {
+      safeParse: (value: unknown) => { success: boolean };
+    };
+    const ruleAction = interceptSchema.ruleAction as {
+      safeParse: (value: unknown) => { success: boolean };
+    };
+    assert.equal(artifactAction.safeParse('read').success, true);
+    assert.equal(artifactAction.safeParse('delete').success, true);
+    assert.equal(artifactAction.safeParse('download').success, false);
+    assert.ok(artifactSchema.artifactId);
+    assert.ok(artifactSchema.offset);
+    assert.ok(artifactSchema.limit);
+    assert.equal(interceptAction.safeParse('add').success, true);
+    assert.equal(interceptAction.safeParse('clear').success, true);
+    assert.equal(interceptAction.safeParse('block').success, false);
+    assert.equal(ruleAction.safeParse('fulfill').success, true);
+    assert.equal(ruleAction.safeParse('redirect').success, false);
+    assert.ok(interceptSchema.urlPattern);
+    assert.ok(interceptSchema.ruleId);
     assert.match(String(investigateConfig.description), /smaller, low-cost subagent/);
     assert.doesNotMatch(String(investigateConfig.description), /Haiku|GPT-/);
     assert.equal(delegationHint.costTier, 'low');

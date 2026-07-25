@@ -7,6 +7,7 @@ import {
   ERROR_CODES,
   getErrorRecovery,
   isBatchSafeBridgeCall,
+  isHarDocument,
   MAX_BATCH_CALLS,
   MAX_BATCH_CONCURRENCY,
   METHOD_SET,
@@ -164,6 +165,157 @@ export async function handlePageTool(args) {
     tokenBudget: getToolTokenBudget(normalizedArgs),
     destinationId: normalizedArgs.destinationId ?? null,
   });
+}
+
+/**
+ * Read one chunk of a daemon-owned artifact or delete it. Reads are paged by
+ * the caller: pass the returned nextOffset until it comes back null, then
+ * verify the reassembled bytes against sha256.
+ *
+ * @param {{ action: string, artifactId?: string, offset?: number, limit?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @returns {Promise<ToolResult>}
+ */
+export async function handleArtifactTool(args) {
+  if (args.action !== 'read' && args.action !== 'delete') {
+    return summarizeToolError(`Unsupported artifact action "${args.action}".`);
+  }
+  if (typeof args.artifactId !== 'string' || !args.artifactId.trim()) {
+    return summarizeToolError('artifactId is required.');
+  }
+  if (args.offset !== undefined && (!Number.isInteger(args.offset) || args.offset < 0)) {
+    return summarizeToolError('offset must be a non-negative integer.');
+  }
+  if (args.limit !== undefined && (!Number.isInteger(args.limit) || args.limit < 1)) {
+    return summarizeToolError('limit must be a positive integer.');
+  }
+  const method = /** @type {BridgeMethod} */ (
+    args.action === 'read' ? 'artifact.read' : 'artifact.delete'
+  );
+  const params =
+    args.action === 'read'
+      ? {
+          artifactId: args.artifactId,
+          offset: args.offset ?? 0,
+          ...(typeof args.limit === 'number' ? { maxBytes: args.limit } : {}),
+        }
+      : { artifactId: args.artifactId };
+  return withToolClient(
+    async (client) => {
+      const response = await requestBridgeWithRetry(client, method, params, {
+        tabId: null,
+        source: REQUEST_SOURCE,
+        tokenBudget: getToolTokenBudget(args),
+      });
+      return method === 'artifact.read'
+        ? createArtifactReadResult(response)
+        : summarizeToolResponse(response, method, params);
+    },
+    { destinationId: args.destinationId ?? null }
+  );
+}
+
+/**
+ * Manage CDP Fetch request interception rules for a tab.
+ *
+ * @param {{ action: string, urlPattern?: string, ruleAction?: 'block' | 'fulfill' | 'continue', statusCode?: number, body?: string, headers?: Record<string, string>, ruleId?: string, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @returns {Promise<ToolResult>}
+ */
+export async function handleInterceptTool(args) {
+  const requestedTabId = typeof args.tabId === 'number' ? args.tabId : null;
+  return withToolClient(
+    async (client) => {
+      /** @type {BridgeMethod} */
+      let method;
+      /** @type {Record<string, unknown>} */
+      let params;
+      switch (args.action) {
+        case 'add': {
+          if (typeof args.urlPattern !== 'string' || !args.urlPattern.trim()) {
+            return summarizeToolError('urlPattern is required for intercept add.');
+          }
+          method = 'network.intercept.add';
+          params = {
+            urlPattern: args.urlPattern,
+            ...(args.ruleAction ? { action: args.ruleAction } : {}),
+            ...(typeof args.statusCode === 'number' ? { statusCode: args.statusCode } : {}),
+            ...(typeof args.body === 'string' ? { body: args.body } : {}),
+            ...(args.headers ? { headers: args.headers } : {}),
+          };
+          break;
+        }
+        case 'remove': {
+          if (typeof args.ruleId !== 'string' || !args.ruleId.trim()) {
+            return summarizeToolError('ruleId is required for intercept remove.');
+          }
+          method = 'network.intercept.remove';
+          params = { ruleId: args.ruleId };
+          break;
+        }
+        case 'list':
+          method = 'network.intercept.list';
+          params = {};
+          break;
+        case 'clear':
+          method = 'network.intercept.clear';
+          params = {};
+          break;
+        default:
+          return summarizeToolError(`Unsupported intercept action "${args.action}".`);
+      }
+      const response = await requestBridgeWithRetry(client, method, params, {
+        tabId: requestedTabId,
+        source: REQUEST_SOURCE,
+        tokenBudget: getToolTokenBudget(args),
+      });
+      return summarizeToolResponse(response, method, params);
+    },
+    { destinationId: args.destinationId ?? null }
+  );
+}
+
+/**
+ * @param {import('../../protocol/src/types.js').BridgeResponse} response
+ * @returns {ToolResult}
+ */
+function createArtifactReadResult(response) {
+  if (!response.ok) return summarizeToolResponse(response, 'artifact.read', {});
+  const result =
+    response.result && typeof response.result === 'object' && !Array.isArray(response.result)
+      ? /** @type {Record<string, unknown>} */ (response.result)
+      : {};
+  if (
+    typeof result.artifactId !== 'string' ||
+    typeof result.data !== 'string' ||
+    typeof result.offset !== 'number' ||
+    typeof result.byteLength !== 'number' ||
+    typeof result.totalBytes !== 'number' ||
+    typeof result.sha256 !== 'string' ||
+    (result.nextOffset !== null && typeof result.nextOffset !== 'number')
+  ) {
+    return summarizeToolError('artifact.read returned invalid chunk metadata.');
+  }
+  const nextOffset = /** @type {number | null} */ (result.nextOffset);
+  return createToolResult(
+    `Read ${result.byteLength} bytes from artifact ${result.artifactId} at offset ${result.offset} (${result.totalBytes} bytes total). ${
+      nextOffset === null
+        ? 'Artifact fully read; verify the reassembled bytes against sha256.'
+        : `Continue reading with offset ${nextOffset}.`
+    }`,
+    {
+      ok: true,
+      method: 'artifact.read',
+      artifactId: result.artifactId,
+      data: result.data,
+      offset: result.offset,
+      byteLength: result.byteLength,
+      nextOffset,
+      totalBytes: result.totalBytes,
+      sha256: result.sha256,
+      chunkIndex: result.chunkIndex,
+      chunkCount: result.chunkCount,
+      expiresAt: result.expiresAt,
+    }
+  );
 }
 
 /**
@@ -422,15 +574,7 @@ export function createHarExportResult(response) {
   }
 
   if (result.delivery === 'inline') {
-    const har =
-      result.har && typeof result.har === 'object' && !Array.isArray(result.har)
-        ? /** @type {Record<string, unknown>} */ (result.har)
-        : {};
-    const log =
-      har.log && typeof har.log === 'object' && !Array.isArray(har.log)
-        ? /** @type {Record<string, unknown>} */ (har.log)
-        : {};
-    if (log.version !== '1.2' || !Array.isArray(log.entries)) {
+    if (!isHarDocument(result.har)) {
       return summarizeToolError('network.export_har returned an invalid inline HAR document.');
     }
   } else if (result.delivery === 'artifact') {

@@ -4,6 +4,14 @@ import readline from 'node:readline';
 import { bridgeMethodNeedsTab } from '../../protocol/src/index.js';
 
 /**
+ * @param {string} value
+ * @returns {boolean}
+ */
+export function isElementRef(value) {
+  return value.startsWith('el_');
+}
+
+/**
  * Strip ANSI escape sequences from a string to prevent terminal injection
  * from malicious page content (e.g. DOM text, console output, eval results).
  *

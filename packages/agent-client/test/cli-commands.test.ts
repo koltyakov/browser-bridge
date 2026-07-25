@@ -1050,7 +1050,10 @@ test('bbx call without a method reports the usage error from parseCallCommand', 
   assert.equal(result.stderr, '');
   assert.equal(payload.ok, false);
   assert.equal(payload.evidence, null);
-  assert.equal(payload.summary, 'ERROR: Usage: call [--tab <tabId>] <method> [paramsJson]');
+  assert.equal(
+    payload.summary,
+    'ERROR: Usage: call [--tab <tabId>] [--preset quick|normal|deep] <method> [paramsJson]'
+  );
 });
 
 test('bbx call rejects a first arg without a dotted bridge method name', async () => {
@@ -1065,7 +1068,10 @@ test('bbx call rejects a first arg without a dotted bridge method name', async (
   assert.equal(result.stderr, '');
   assert.equal(payload.ok, false);
   assert.equal(payload.evidence, null);
-  assert.equal(payload.summary, 'ERROR: Usage: call [--tab <tabId>] <method> [paramsJson]');
+  assert.equal(
+    payload.summary,
+    'ERROR: Usage: call [--tab <tabId>] [--preset quick|normal|deep] <method> [paramsJson]'
+  );
 });
 
 test('bbx call rejects an invalid --tab flag before dispatching the bridge request', async () => {
@@ -1101,7 +1107,178 @@ test('bbx call rejects extra positional arguments before connecting', async () =
     assert.equal(result.stderr, '');
     assert.equal(payload.ok, false);
     assert.equal(payload.evidence, null);
-    assert.equal(payload.summary, 'ERROR: Usage: call [--tab <tabId>] <method> [paramsJson]');
+    assert.equal(
+      payload.summary,
+      'ERROR: Usage: call [--tab <tabId>] [--preset quick|normal|deep] <method> [paramsJson]'
+    );
+    assert.equal(bridgeServer.messages.length, 0);
+    assert.equal(bridgeServer.requests.length, 0);
+  } finally {
+    await bridgeServer.close();
+  }
+});
+
+test('bbx call --preset fills budget params from the shared preset', async () => {
+  const bridgeServer = await bridgeServerWith({
+    'dom.query': (request) => createSuccess(request.id, { nodes: [], truncated: false }),
+  });
+
+  try {
+    const result = await runCli({
+      args: ['call', '--preset', 'quick', 'dom.query', '{"selector":".card"}'],
+      env: {
+        ...process.env,
+        BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome,
+      },
+    });
+
+    assert.equal(result.status, 0);
+    assert.equal(result.signal, null);
+    assert.equal(result.stderr, '');
+    assert.equal(bridgeServer.requests.length, 1);
+    assert.equal(bridgeServer.requests[0].method, 'dom.query');
+    const budget = bridgeServer.requests[0].params.budget as Record<string, unknown>;
+    assert.equal(budget.maxNodes, 5);
+    assert.equal(budget.maxDepth, 2);
+    assert.equal(budget.textBudget, 300);
+    assert.equal(bridgeServer.requests[0].params.budgetPreset, undefined);
+    assert.deepEqual(bridgeServer.errors, []);
+  } finally {
+    await bridgeServer.close();
+  }
+});
+
+test('bbx call --preset keeps explicit params ahead of preset defaults', async () => {
+  const bridgeServer = await bridgeServerWith({
+    'dom.query': (request) => createSuccess(request.id, { nodes: [], truncated: false }),
+  });
+
+  try {
+    const result = await runCli({
+      args: ['call', 'dom.query', '{"selector":"body","maxNodes":7}', '--preset', 'deep'],
+      env: {
+        ...process.env,
+        BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome,
+      },
+    });
+
+    assert.equal(result.status, 0);
+    assert.equal(result.stderr, '');
+    assert.equal(bridgeServer.requests.length, 1);
+    const budget = bridgeServer.requests[0].params.budget as Record<string, unknown>;
+    assert.equal(budget.maxNodes, 7);
+    assert.equal(budget.maxDepth, 8);
+    assert.equal(budget.textBudget, 2000);
+    assert.deepEqual(bridgeServer.errors, []);
+  } finally {
+    await bridgeServer.close();
+  }
+});
+
+test('bbx call rejects an unknown --preset name before dispatching', async () => {
+  const bridgeServer = await bridgeServerWith({});
+
+  try {
+    const result = await runCli({
+      args: ['call', '--preset', 'bogus', 'dom.query', '{}'],
+      env: {
+        ...process.env,
+        BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome,
+      },
+    });
+    const payload = expectCliPayload(result.json);
+
+    assert.equal(result.status, 1);
+    assert.equal(result.signal, null);
+    assert.equal(result.stderr, '');
+    assert.equal(payload.ok, false);
+    assert.equal(payload.evidence, null);
+    assert.equal(
+      payload.summary,
+      'ERROR: Unknown preset "bogus". Valid presets: quick, normal, deep.'
+    );
+    assert.equal(bridgeServer.messages.length, 0);
+    assert.equal(bridgeServer.requests.length, 0);
+  } finally {
+    await bridgeServer.close();
+  }
+});
+
+test('bbx call rejects a --preset flag without a value', async () => {
+  const result = await runCli({
+    args: ['call', 'dom.query', '{}', '--preset'],
+    env: process.env,
+  });
+  const payload = expectCliPayload(result.json);
+
+  assert.equal(result.status, 1);
+  assert.equal(result.signal, null);
+  assert.equal(result.stderr, '');
+  assert.equal(payload.ok, false);
+  assert.equal(payload.summary, 'ERROR: --preset requires a value: quick, normal, or deep.');
+});
+
+test('bbx batch --preset applies the preset to every call', async () => {
+  const bridgeServer = await bridgeServerWith({
+    'page.get_state': (request) => createSuccess(request.id, { url: 'https://example.test' }),
+    'dom.query': (request) => createSuccess(request.id, { nodes: [], truncated: false }),
+    'page.get_console': (request) => createSuccess(request.id, { entries: [], dropped: 0 }),
+  });
+
+  try {
+    const result = await runCli({
+      args: [
+        'batch',
+        '--preset',
+        'quick',
+        JSON.stringify([
+          { method: 'page.get_state' },
+          { method: 'dom.query', params: { selector: 'main' } },
+          { method: 'page.get_console', params: { level: 'warn', limit: 3 } },
+        ]),
+      ],
+      env: {
+        ...process.env,
+        BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome,
+      },
+    });
+
+    assert.equal(result.status, 0);
+    assert.equal(result.stderr, '');
+    assert.equal(bridgeServer.requests.length, 3);
+    const byMethod = new Map(bridgeServer.requests.map((request) => [request.method, request]));
+    const budget = byMethod.get('dom.query')?.params.budget as Record<string, unknown>;
+    assert.equal(budget.maxNodes, 5);
+    assert.equal(budget.maxDepth, 2);
+    assert.equal(budget.textBudget, 300);
+    assert.equal(byMethod.get('page.get_console')?.params.limit, 3);
+    assert.deepEqual(bridgeServer.errors, []);
+  } finally {
+    await bridgeServer.close();
+  }
+});
+
+test('bbx batch rejects an unknown --preset name before connecting', async () => {
+  const bridgeServer = await bridgeServerWith({});
+
+  try {
+    const result = await runCli({
+      args: ['batch', '--preset', 'bogus', '[{"method":"page.get_state"}]'],
+      env: {
+        ...process.env,
+        BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome,
+      },
+    });
+    const payload = expectCliPayload(result.json);
+
+    assert.equal(result.status, 1);
+    assert.equal(result.signal, null);
+    assert.equal(result.stderr, '');
+    assert.equal(payload.ok, false);
+    assert.equal(
+      payload.summary,
+      'ERROR: Unknown preset "bogus". Valid presets: quick, normal, deep.'
+    );
     assert.equal(bridgeServer.messages.length, 0);
     assert.equal(bridgeServer.requests.length, 0);
   } finally {

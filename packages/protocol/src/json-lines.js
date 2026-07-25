@@ -7,7 +7,7 @@ import { MAX_JSON_LINE_BYTES } from './defaults.js';
  *
  * @param {import('node:net').Socket} socket
  * @param {(message: unknown) => void} onMessage
- * @param {{ maxLineBytes?: number, onProtocolError?: (error: Error) => void }} [options]
+ * @param {{ maxLineBytes?: number, onProtocolError?: (error: Error) => void, onInvalidLine?: (error: Error) => void }} [options]
  * @returns {void}
  */
 export function parseJsonLines(socket, onMessage, options = {}) {
@@ -50,8 +50,9 @@ export function parseJsonLines(socket, onMessage, options = {}) {
       }
       try {
         onMessage(JSON.parse(line));
-      } catch {
+      } catch (error) {
         // Malformed JSON line - skip it.
+        options.onInvalidLine?.(error instanceof Error ? error : new Error(String(error)));
       }
     }
   });

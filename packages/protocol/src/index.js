@@ -4,10 +4,12 @@
  * Public protocol barrel for shared bridge helpers, errors, capabilities, and
  * request/response normalization utilities.
  */
+export * from './budget-presets.js';
 export * from './budget.js';
 export * from './capabilities.js';
 export * from './defaults.js';
 export * from './errors.js';
+export * from './har.js';
 export * from './incidental-sanitizer.js';
 export * from './json-lines.js';
 export * from './payload-cost.js';

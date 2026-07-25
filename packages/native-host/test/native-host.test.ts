@@ -355,10 +355,12 @@ test('runNativeHost reports bootstrap failures as native error responses', async
   }
 });
 
-test('runNativeHost ignores malformed daemon payloads and forwards completed lines', async () => {
+test('runNativeHost logs and ignores malformed daemon payloads and forwards completed lines', async () => {
   const originalCreateConnection = net.createConnection;
   const originalStdoutWrite = process.stdout.write;
+  const originalConsoleError = console.error;
   const stdoutChunks: Buffer[] = [];
+  const loggedErrors: string[] = [];
   const stdinListenersBefore = captureStdinListeners();
   const socket = new EventEmitter();
 
@@ -377,6 +379,9 @@ test('runNativeHost ignores malformed daemon payloads and forwards completed lin
     }
     return true;
   }) as typeof process.stdout.write;
+  console.error = (...args) => {
+    loggedErrors.push(args.map((arg) => String(arg)).join(' '));
+  };
 
   try {
     await runNativeHost({ socketPath: '/tmp/browser-bridge-test.sock' });
@@ -389,9 +394,12 @@ test('runNativeHost ignores malformed daemon payloads and forwards completed lin
     await flushAsyncWork();
 
     assert.deepEqual(decodeNativeMessages(stdoutChunks), [{ id: 'ext-split', ok: true }]);
+    assert.equal(loggedErrors.length, 1);
+    assert.match(loggedErrors[0], /native-host: ignoring malformed daemon JSON line:/u);
   } finally {
     net.createConnection = originalCreateConnection;
     process.stdout.write = originalStdoutWrite;
+    console.error = originalConsoleError;
     restoreStdinListeners(stdinListenersBefore);
   }
 });

@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 
 import { BridgeClient } from '../../agent-client/src/client.js';
 import {
+  handleArtifactTool,
   handleCaptureTool,
   handleDomTool,
   handleInputTool,
+  handleInterceptTool,
   handleNavigationTool,
   handlePageTool,
   handleSensitiveReadTool,
@@ -2231,6 +2233,183 @@ test('handleAccessTool calls access.request', async () => {
       assert.equal(calls[0].method, 'access.request');
       assert.deepEqual(calls[0].params, { intent: 'inspect' });
       assert.equal(result.isError, undefined);
+    }
+  );
+});
+
+test('handleArtifactTool read maps to artifact.read with offset and maxBytes', async () => {
+  const sha256 = 'ab'.repeat(32);
+  await withMockedBridge(
+    async () =>
+      ok({
+        artifactId: 'art_1',
+        data: 'aGk=',
+        offset: 0,
+        byteLength: 2,
+        chunkIndex: 0,
+        chunkCount: 1,
+        nextOffset: null,
+        totalBytes: 2,
+        sha256,
+        expiresAt: '2026-01-01T00:00:00.000Z',
+      }),
+    async (calls) => {
+      const result = await handleArtifactTool({
+        action: 'read',
+        artifactId: 'art_1',
+        offset: 0,
+        limit: 1024,
+      });
+
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].method, 'artifact.read');
+      assert.deepEqual(calls[0].params, { artifactId: 'art_1', offset: 0, maxBytes: 1024 });
+      assert.equal(calls[0].tabId, null);
+      assert.equal(result.isError, undefined);
+      assert.equal(result.structuredContent.ok, true);
+      assert.equal(result.structuredContent.data, 'aGk=');
+      assert.equal(result.structuredContent.nextOffset, null);
+      assert.equal(result.structuredContent.totalBytes, 2);
+      assert.equal(result.structuredContent.sha256, sha256);
+      assert.match(result.content[0].text, /Artifact fully read/);
+    }
+  );
+});
+
+test('handleArtifactTool read surfaces nextOffset for multi-chunk artifacts', async () => {
+  await withMockedBridge(
+    async () =>
+      ok({
+        artifactId: 'art_2',
+        data: 'aGk=',
+        offset: 0,
+        byteLength: 2,
+        chunkIndex: 0,
+        chunkCount: 3,
+        nextOffset: 2,
+        totalBytes: 6,
+        sha256: 'cd'.repeat(32),
+        expiresAt: '2026-01-01T00:00:00.000Z',
+      }),
+    async () => {
+      const result = await handleArtifactTool({ action: 'read', artifactId: 'art_2' });
+
+      assert.equal(result.structuredContent.nextOffset, 2);
+      assert.match(result.content[0].text, /Continue reading with offset 2/);
+    }
+  );
+});
+
+test('handleArtifactTool delete maps to artifact.delete', async () => {
+  await withMockedBridge(
+    async () => ok({ artifactId: 'art_1', deleted: true }),
+    async (calls) => {
+      const result = await handleArtifactTool({ action: 'delete', artifactId: 'art_1' });
+
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].method, 'artifact.delete');
+      assert.deepEqual(calls[0].params, { artifactId: 'art_1' });
+      assert.equal(result.isError, undefined);
+    }
+  );
+});
+
+test('handleArtifactTool rejects invalid input without calling the bridge', async () => {
+  await withMockedBridge(
+    async () => ok({}),
+    async (calls) => {
+      const missingId = await handleArtifactTool({ action: 'read' });
+      assert.equal(missingId.isError, true);
+      assert.match(missingId.content[0].text, /artifactId is required/);
+
+      const badOffset = await handleArtifactTool({
+        action: 'read',
+        artifactId: 'art_1',
+        offset: -1,
+      });
+      assert.equal(badOffset.isError, true);
+      assert.match(badOffset.content[0].text, /offset must be a non-negative integer/);
+
+      const badAction = await handleArtifactTool({ action: 'download', artifactId: 'art_1' });
+      assert.equal(badAction.isError, true);
+      assert.match(badAction.content[0].text, /Unsupported artifact action/);
+
+      assert.equal(calls.length, 0);
+    }
+  );
+});
+
+test('handleInterceptTool add maps to network.intercept.add', async () => {
+  await withMockedBridge(
+    async () =>
+      ok({ ruleId: 'rule_1', urlPattern: 'example.com', action: 'fulfill', statusCode: 200 }),
+    async (calls) => {
+      const result = await handleInterceptTool({
+        action: 'add',
+        urlPattern: 'example.com',
+        ruleAction: 'fulfill',
+        statusCode: 200,
+        body: 'ok',
+        headers: { 'content-type': 'text/plain' },
+        tabId: 7,
+      });
+
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].method, 'network.intercept.add');
+      assert.deepEqual(calls[0].params, {
+        urlPattern: 'example.com',
+        action: 'fulfill',
+        statusCode: 200,
+        body: 'ok',
+        headers: { 'content-type': 'text/plain' },
+      });
+      assert.equal(calls[0].tabId, 7);
+      assert.equal(result.isError, undefined);
+    }
+  );
+});
+
+test('handleInterceptTool list, remove, and clear map to their bridge methods', async () => {
+  await withMockedBridge(
+    async (record) => {
+      if (record.method === 'network.intercept.list') return ok({ rules: [] });
+      if (record.method === 'network.intercept.remove') return ok({ removed: true });
+      return ok({ cleared: 2 });
+    },
+    async (calls) => {
+      const listed = await handleInterceptTool({ action: 'list' });
+      const removed = await handleInterceptTool({ action: 'remove', ruleId: 'rule_1' });
+      const cleared = await handleInterceptTool({ action: 'clear' });
+
+      assert.equal(listed.isError, undefined);
+      assert.equal(removed.isError, undefined);
+      assert.equal(cleared.isError, undefined);
+      assert.deepEqual(
+        calls.map((call) => call.method),
+        ['network.intercept.list', 'network.intercept.remove', 'network.intercept.clear']
+      );
+      assert.deepEqual(calls[1].params, { ruleId: 'rule_1' });
+    }
+  );
+});
+
+test('handleInterceptTool validates required fields without calling the bridge', async () => {
+  await withMockedBridge(
+    async () => ok({}),
+    async (calls) => {
+      const addMissing = await handleInterceptTool({ action: 'add' });
+      assert.equal(addMissing.isError, true);
+      assert.match(addMissing.content[0].text, /urlPattern is required/);
+
+      const removeMissing = await handleInterceptTool({ action: 'remove' });
+      assert.equal(removeMissing.isError, true);
+      assert.match(removeMissing.content[0].text, /ruleId is required/);
+
+      const badAction = await handleInterceptTool({ action: 'block' });
+      assert.equal(badAction.isError, true);
+      assert.match(badAction.content[0].text, /Unsupported intercept action/);
+
+      assert.equal(calls.length, 0);
     }
   );
 });

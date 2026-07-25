@@ -111,9 +111,75 @@ test('minimal profile registers only the generic dispatch and readiness tools', 
 test('full profile stays the complete tool surface', () => {
   const full = registeredToolNames('full');
 
-  assert.equal(full.length, 18);
+  assert.equal(full.length, 20);
   assert.ok(full.includes('browser_dom'));
   assert.ok(full.includes('browser_investigate'));
+  assert.ok(full.includes('browser_artifact'));
+  assert.ok(full.includes('browser_intercept'));
+});
+
+/**
+ * Capture the browser_investigate registration config for a profile before the
+ * profile filter removes it.
+ */
+function investigateRegistration(profile: 'full' | 'minimal'): Record<string, unknown> {
+  const originalRegisterTool = McpServer.prototype.registerTool;
+  let captured: Record<string, unknown> | null = null;
+
+  McpServer.prototype.registerTool = function registerTool(
+    this: McpServer,
+    name: string,
+    config: Record<string, unknown>,
+    handler: unknown
+  ) {
+    if (name === 'browser_investigate') {
+      captured = config;
+    }
+    return {
+      enabled: true,
+      disable() {},
+      enable() {},
+      handler,
+      name,
+      remove() {},
+      update() {},
+    } as unknown as ReturnType<typeof originalRegisterTool>;
+  } as unknown as typeof McpServer.prototype.registerTool;
+
+  try {
+    createBridgeMcpServer({ profile });
+  } finally {
+    McpServer.prototype.registerTool = originalRegisterTool;
+  }
+  assert.ok(captured, 'browser_investigate registration was not captured');
+  return captured;
+}
+
+test('investigate delegation hint only names tools the active profile registers', () => {
+  const fullConfig = investigateRegistration('full');
+  const fullHint = (fullConfig._meta as Record<string, unknown>).delegationHint as Record<
+    string,
+    unknown
+  >;
+  assert.deepEqual(fullHint.preferredTools, [
+    'browser_dom',
+    'browser_page',
+    'browser_styles_layout',
+    'browser_batch',
+  ]);
+  assert.deepEqual(fullHint.escalationTools, ['browser_capture']);
+  assert.match(String(fullConfig.description), /browser_dom, browser_page/);
+
+  const minimalConfig = investigateRegistration('minimal');
+  const minimalHint = (minimalConfig._meta as Record<string, unknown>).delegationHint as Record<
+    string,
+    unknown
+  >;
+  assert.deepEqual(minimalHint.preferredTools, ['browser_call', 'browser_batch']);
+  assert.deepEqual(minimalHint.escalationTools, ['browser_call']);
+  assert.doesNotMatch(String(minimalConfig.description), /browser_dom/);
+  assert.doesNotMatch(String(minimalConfig.description), /browser_capture/);
+  assert.match(String(minimalConfig.description), /browser_call and browser_batch/);
 });
 
 test('minimal instructions drop guidance for tools the profile does not register', () => {

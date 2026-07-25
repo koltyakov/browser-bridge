@@ -1,6 +1,7 @@
 // @ts-check
 
 import {
+  applyMethodBudgetPreset,
   getProtocolVersion,
   isBatchSafeBridgeCall,
   MAX_BATCH_CALLS,
@@ -14,6 +15,7 @@ import { requestBridge } from './runtime.js';
 
 /** @typedef {import('./types.js').BridgeMethod} BridgeMethod */
 /** @typedef {import('./types.js').BridgeRequestSource} BridgeRequestSource */
+/** @typedef {import('../../protocol/src/defaults.js').BudgetPresetName} BudgetPresetName */
 
 /**
  * @typedef {{
@@ -72,9 +74,10 @@ function invalidBatchItem(method, message) {
  * @param {import('./client.js').BridgeClient} client
  * @param {string | undefined} input - Raw JSON array argument
  * @param {BridgeRequestSource} source - Request source tag (e.g. 'cli')
+ * @param {{ preset?: BudgetPresetName | null }} [options] - Optional budget preset applied to every call
  * @returns {Promise<BatchResultItem[]>}
  */
-export async function runBatchCalls(client, input, source) {
+export async function runBatchCalls(client, input, source, options = {}) {
   if (!input) {
     throw new Error('Usage: batch \'[{"method":"...","params":{...}}, ...]\'');
   }
@@ -90,7 +93,7 @@ export async function runBatchCalls(client, input, source) {
   if (calls.length === 0 || calls.length > MAX_BATCH_CALLS) {
     throw new Error(`Batch input must contain between 1 and ${MAX_BATCH_CALLS} calls.`);
   }
-  const prepared = calls.map((call) => prepareBatchCall(call));
+  const prepared = calls.map((call) => prepareBatchCall(call, options.preset ?? null));
   if (prepared.some((item) => 'error' in item)) {
     return prepared.map((item) =>
       'error' in item
@@ -130,9 +133,10 @@ export async function runBatchCalls(client, input, source) {
 
 /**
  * @param {unknown} call
+ * @param {BudgetPresetName | null} preset
  * @returns {{ value: PreparedBatchCall } | { error: InvalidBatchItem }}
  */
-function prepareBatchCall(call) {
+function prepareBatchCall(call, preset) {
   if (!call || typeof call !== 'object' || Array.isArray(call)) {
     return { error: invalidBatchItem('', 'Each batch call needs a method.') };
   }
@@ -162,7 +166,8 @@ function prepareBatchCall(call) {
   }
   const params =
     batchCall.params === undefined ? {} : /** @type {Record<string, unknown>} */ (batchCall.params);
-  if (!isBatchSafeBridgeCall(method, params)) {
+  const mergedParams = applyMethodBudgetPreset(method, params, preset);
+  if (!isBatchSafeBridgeCall(method, mergedParams)) {
     return {
       error: invalidBatchItem(
         method,
@@ -177,7 +182,7 @@ function prepareBatchCall(call) {
     batchCall.tabId > 0
       ? batchCall.tabId
       : null;
-  return { value: { method, params, tabId } };
+  return { value: { method, params: mergedParams, tabId } };
 }
 
 /**

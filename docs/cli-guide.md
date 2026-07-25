@@ -19,13 +19,22 @@ bbx restart
 bbx config set auto-update compatible
 bbx logs
 bbx tabs
+bbx tab-activate <tabId>
 bbx skill
+bbx uninstall
 ```
 
 Use these first when Browser Bridge is not connected, the wrong tab is routed,
 or you want to see the available runtime presets. `bbx install` targets Chromium
 on Linux and Chrome on macOS/Windows; use `--browser` for Chrome, Edge, Brave,
 Chromium, or Arc, or `--all` for all supported browsers.
+
+Use `bbx tabs` to see every tab in the enabled window, then
+`bbx tab-activate <tabId>` to bring one of them to the foreground when the
+wrong tab is routed. The tab ID must be an integer from `bbx tabs` output.
+
+`bbx uninstall` removes native host manifests, Browser Bridge runtime files,
+and managed MCP/skill installs from the local machine. It takes no arguments.
 
 `bbx doctor` is consolidated but intentionally local-only: it checks local
 transport/authentication, native host manifests, extension/profile connections,
@@ -196,6 +205,16 @@ you want up to 20 parallel reads with one CLI round trip. Batch preserves call
 order, executes at most five calls concurrently, and rejects clears, navigation,
 input, patches, interception changes, tab mutations, and sensitive reads.
 
+Both commands accept `--preset quick|normal|deep` to apply the shared budget
+presets (the same ones the MCP server exposes and `bbx skill` lists). A preset
+only fills gaps such as `maxNodes`, `maxDepth`, `textBudget`, or `limit`;
+explicit params in the JSON always win:
+
+```bash
+bbx call --preset quick dom.query '{"selector":".card"}'
+bbx batch --preset deep '[{"method":"page.get_state"},{"method":"dom.query","params":{"selector":"main","maxNodes":50}}]'
+```
+
 `page.get_console` and `page.get_network` also return `dropped` when hot pages
 overflow their 200-entry buffers.
 
@@ -238,6 +257,30 @@ send/wait/receive timing phases are `-1`; observed redirects, failures, cache,
 and service-worker state remain in entry metadata. Inline bounds remove whole
 oldest entries. Check `truncation`, `dropped`, `abandoned`, and `inflight`: the
 latter is unfinished activity and is not exported as an entry.
+
+## Intercept network requests
+
+```bash
+bbx intercept add '/api/search' --respond '{"results":[]}' --status 200
+bbx intercept add '/tracker.js' --block
+bbx intercept list
+bbx intercept remove <ruleId>
+bbx intercept clear
+```
+
+`bbx intercept add <urlPattern>` registers a request interception rule through
+the CDP Fetch domain. Without options the action is `continue` (observe the
+request without changing it). `--block` fails matching requests, and
+`--respond <body>` fulfills them locally with the given body plus an optional
+`--status <code>` (100-599, default 200). Each option may be given at most
+once. All four subcommands accept `--tab <id>` before the subcommand arguments
+to target a specific tab.
+
+`bbx intercept list` returns the active rule IDs and patterns;
+`bbx intercept remove <ruleId>` deletes one rule; `bbx intercept clear`
+removes every rule and disables interception. Interception holds debugger
+ownership on the tab while any rule is active, so clear rules when the
+reproduction is done.
 
 ## Investigate efficiently
 

@@ -6,7 +6,6 @@ import {
   BridgeError,
   bridgeMethodNeedsTab,
   DEFAULT_CONSOLE_LIMIT,
-  DEFAULT_HAR_LIMIT,
   DEFAULT_LOG_TAIL_LIMIT,
   DEFAULT_MAX_HTML_LENGTH,
   DEFAULT_MAX_NODES,
@@ -15,10 +14,20 @@ import {
   DEFAULT_TEXT_BUDGET,
   estimateJsonPayloadCost,
   getBudgetPreset,
+  getBudgetPresetName,
   getErrorRecovery,
-  isBudgetPresetName,
   summarizeBatchErrorItem,
   summarizeBatchResponseItem,
+} from '../../protocol/src/index.js';
+
+export {
+  applyHtmlBudgetPreset,
+  applyLimitBudgetPreset,
+  applyMethodBudgetPreset,
+  applyPageTextBudgetPreset,
+  applyTextBudgetPreset,
+  applyTreeBudgetPreset,
+  getBudgetPresetName,
 } from '../../protocol/src/index.js';
 import {
   getDoctorReport,
@@ -68,6 +77,8 @@ const RETRY_SAFE_METHODS = new Set([
   'screenshot.capture_region',
   'screenshot.capture_element',
   'screenshot.capture_full_page',
+  'artifact.read',
+  'network.intercept.list',
   'performance.get_metrics',
   'cdp.get_document',
   'cdp.get_dom_snapshot',
@@ -241,14 +252,6 @@ export async function resolveToolRef(client, input, tabId = null) {
 }
 
 /**
- * @param {unknown} value
- * @returns {'quick' | 'normal' | 'deep' | null}
- */
-export function getBudgetPresetName(value) {
-  return isBudgetPresetName(value) ? value : null;
-}
-
-/**
  * @param {{ budgetPreset?: unknown, selector?: unknown, elementRef?: unknown }} args
  * @returns {'quick' | 'normal' | 'deep' | null}
  */
@@ -269,162 +272,6 @@ export function inferBudgetFromSelector(args) {
 export function getToolTokenBudget(args) {
   const presetName = getBudgetPresetName(args.budgetPreset);
   return presetName ? getBudgetPreset(presetName).tokenBudget : null;
-}
-
-/**
- * @template {{ budgetPreset?: unknown, maxNodes?: unknown, maxDepth?: unknown, textBudget?: unknown }} T
- * @param {T} args
- * @returns {T}
- */
-export function applyTreeBudgetPreset(args) {
-  const presetName = getBudgetPresetName(args.budgetPreset);
-  if (!presetName) {
-    return args;
-  }
-  const preset = getBudgetPreset(presetName);
-  return /** @type {T} */ ({
-    ...args,
-    maxNodes: args.maxNodes ?? preset.maxNodes,
-    maxDepth: args.maxDepth ?? preset.maxDepth,
-    textBudget: args.textBudget ?? preset.textBudget,
-  });
-}
-
-/**
- * @template {{ budgetPreset?: unknown, textBudget?: unknown }} T
- * @param {T} args
- * @returns {T}
- */
-export function applyTextBudgetPreset(args) {
-  const presetName = getBudgetPresetName(args.budgetPreset);
-  if (!presetName) {
-    return args;
-  }
-  const preset = getBudgetPreset(presetName);
-  return /** @type {T} */ ({
-    ...args,
-    textBudget: args.textBudget ?? preset.textBudget,
-  });
-}
-
-/**
- * @template {{ budgetPreset?: unknown, textBudget?: unknown }} T
- * @param {T} args
- * @returns {T}
- */
-export function applyPageTextBudgetPreset(args) {
-  const presetName = getBudgetPresetName(args.budgetPreset);
-  if (!presetName) {
-    return args;
-  }
-  const textBudgetByPreset = {
-    quick: 2000,
-    normal: DEFAULT_PAGE_TEXT_BUDGET,
-    deep: DEFAULT_PAGE_TEXT_BUDGET * 2,
-  };
-  return /** @type {T} */ ({
-    ...args,
-    textBudget: args.textBudget ?? textBudgetByPreset[presetName],
-  });
-}
-
-/**
- * @template {{ budgetPreset?: unknown, limit?: unknown }} T
- * @param {T} args
- * @param {{ quick: number, normal: number, deep: number }} defaults
- * @returns {T}
- */
-export function applyLimitBudgetPreset(args, defaults) {
-  const presetName = getBudgetPresetName(args.budgetPreset);
-  if (!presetName) {
-    return args;
-  }
-  return /** @type {T} */ ({
-    ...args,
-    limit: args.limit ?? defaults[presetName],
-  });
-}
-
-/**
- * @template {{ budgetPreset?: unknown, maxLength?: unknown }} T
- * @param {T} args
- * @returns {T}
- */
-export function applyHtmlBudgetPreset(args) {
-  const presetName = getBudgetPresetName(args.budgetPreset);
-  if (!presetName) {
-    return args;
-  }
-  const maxLengthByPreset = {
-    quick: 600,
-    normal: DEFAULT_MAX_HTML_LENGTH,
-    deep: 6000,
-  };
-  return /** @type {T} */ ({
-    ...args,
-    maxLength: args.maxLength ?? maxLengthByPreset[presetName],
-  });
-}
-
-/**
- * Apply a preset to method parameters before dispatch. Explicit method params
- * always win over preset defaults.
- *
- * @param {BridgeMethod} method
- * @param {Record<string, unknown>} params
- * @param {unknown} budgetPreset
- * @returns {Record<string, unknown>}
- */
-export function applyMethodBudgetPreset(method, params, budgetPreset) {
-  const args = { ...params, budgetPreset };
-  /** @type {Record<string, unknown>} */
-  let normalized = args;
-  if (
-    method === 'dom.query' ||
-    method === 'dom.get_accessibility_tree' ||
-    method === 'dom.baseline.create'
-  ) {
-    normalized = applyTreeBudgetPreset(args);
-  } else if (method === 'dom.baseline.compare') {
-    const preset = getBudgetPresetName(budgetPreset);
-    const defaults = { quick: 10, normal: 50, deep: 100 };
-    normalized = {
-      ...args,
-      maxChanges: params.maxChanges ?? (preset ? defaults[preset] : undefined),
-    };
-  } else if (method === 'dom.get_text') {
-    normalized = applyTextBudgetPreset(args);
-  } else if (method === 'dom.get_html') {
-    normalized = applyHtmlBudgetPreset(args);
-  } else if (method === 'page.get_text' || method === 'page.extract_content') {
-    normalized = applyPageTextBudgetPreset(args);
-  } else if (method === 'page.get_console') {
-    normalized = applyLimitBudgetPreset(args, {
-      quick: 10,
-      normal: DEFAULT_CONSOLE_LIMIT,
-      deep: 100,
-    });
-  } else if (method === 'page.get_network') {
-    normalized = applyLimitBudgetPreset(args, {
-      quick: 10,
-      normal: DEFAULT_NETWORK_LIMIT,
-      deep: 100,
-    });
-  } else if (method === 'network.export_har') {
-    normalized = applyLimitBudgetPreset(args, {
-      quick: 20,
-      normal: DEFAULT_HAR_LIMIT,
-      deep: 100,
-    });
-  } else if (method === 'log.tail') {
-    normalized = applyLimitBudgetPreset(args, {
-      quick: 10,
-      normal: DEFAULT_LOG_TAIL_LIMIT,
-      deep: 100,
-    });
-  }
-  const { budgetPreset: _budgetPreset, ...methodParams } = normalized;
-  return methodParams;
 }
 
 /**
@@ -662,6 +509,92 @@ function compactDomNode(value) {
 }
 
 /**
+ * Socket-level Node error codes that mean the daemon connection itself was
+ * lost, as opposed to an application-level bridge failure.
+ *
+ * @type {ReadonlySet<string>}
+ */
+const CONNECTION_LOSS_CODES = new Set([
+  'ENOTCONN',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'EPIPE',
+  'ERR_SOCKET_CLOSED',
+]);
+
+const RECONNECT_WAIT_TIMEOUT_MS = 5_000;
+const RECONNECT_POLL_INTERVAL_MS = 250;
+
+/**
+ * Detect thrown transport errors caused by a lost daemon connection. These
+ * never arrive as bridge failure responses because the socket died before (or
+ * while) the daemon could reply.
+ *
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+export function isConnectionLossError(error) {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+  const code = /** @type {{ code?: unknown }} */ (error).code;
+  if (typeof code === 'string' && CONNECTION_LOSS_CODES.has(code)) {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : '';
+  return /Bridge socket closed|BridgeClient is not connected/u.test(message);
+}
+
+/**
+ * Wait, bounded, for the client to regain its daemon connection.
+ *
+ * When the client's own auto-reconnect loop is active it owns reconnecting and
+ * emits `reconnected`; otherwise one manual connect is attempted per poll
+ * interval. Application state is never touched here - this only restores the
+ * transport.
+ *
+ * @param {import('../../agent-client/src/client.js').BridgeClient} client
+ * @param {number} [timeoutMs=RECONNECT_WAIT_TIMEOUT_MS]
+ * @returns {Promise<boolean>}
+ */
+export async function waitForClientReconnect(client, timeoutMs = RECONNECT_WAIT_TIMEOUT_MS) {
+  const deadline = Date.now() + timeoutMs;
+  while (!client.connected && Date.now() < deadline) {
+    if (client.autoReconnect) {
+      await new Promise((resolve) => {
+        const remaining = Math.max(0, deadline - Date.now());
+        /** @type {ReturnType<typeof setTimeout>} */
+        let timer;
+        const cleanup = () => {
+          clearTimeout(timer);
+          client.off('reconnected', onReconnected);
+          resolve(undefined);
+        };
+        const onReconnected = () => cleanup();
+        timer = setTimeout(cleanup, Math.min(RECONNECT_POLL_INTERVAL_MS, remaining));
+        client.on('reconnected', onReconnected);
+      });
+      continue;
+    }
+    try {
+      await client.connect();
+    } catch (error) {
+      if (error instanceof Error && /already connected/u.test(error.message)) {
+        break;
+      }
+      // Daemon still unreachable; keep waiting inside the bounded window.
+    }
+    if (!client.connected) {
+      const remaining = Math.max(0, deadline - Date.now());
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.min(RECONNECT_POLL_INTERVAL_MS, remaining))
+      );
+    }
+  }
+  return client.connected;
+}
+
+/**
  * @param {import('../../agent-client/src/client.js').BridgeClient} client
  * @param {BridgeMethod} method
  * @param {Record<string, unknown>} params
@@ -669,7 +602,25 @@ function compactDomNode(value) {
  * @returns {Promise<BridgeResponse>}
  */
 export async function requestBridgeWithRetry(client, method, params, options) {
-  const response = await requestBridge(client, method, params, options);
+  /** @type {BridgeResponse} */
+  let response;
+  try {
+    response = await requestBridge(client, method, params, options);
+  } catch (error) {
+    if (!isConnectionLossError(error) || !isRetrySafeBridgeMethod(method, params)) {
+      throw error;
+    }
+    process.stderr.write(
+      `[bbx-mcp] ${method} lost its daemon connection; waiting up to ${RECONNECT_WAIT_TIMEOUT_MS}ms for reconnect before one retry.\n`
+    );
+    if (!(await waitForClientReconnect(client))) {
+      throw error;
+    }
+    return requestBridge(client, method, params, {
+      ...options,
+      automaticRetry: 'mcp_second_attempt',
+    });
+  }
   const recovery =
     !response.ok && response.error
       ? (response.error.recovery ?? getErrorRecovery(response.error.code))

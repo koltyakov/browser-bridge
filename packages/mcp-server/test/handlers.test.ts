@@ -405,6 +405,45 @@ test('specialized tools preserve thrown transport error codes', async () => {
   );
 });
 
+test('read tools retry once after a daemon connection loss', async () => {
+  await withMockedBridge(
+    async (_record, index) => {
+      if (index === 0) {
+        const error = new Error('BridgeClient is not connected.') as Error & { code: string };
+        error.code = 'ENOTCONN';
+        throw error;
+      }
+      return ok({ tabs: [] });
+    },
+    async (calls) => {
+      const result = await handleTabsTool({ action: 'list' });
+
+      assert.equal(calls.length, 2);
+      assert.equal(calls[0].method, 'tabs.list');
+      assert.equal(calls[1].method, 'tabs.list');
+      assert.deepEqual(calls[1].meta?.automatic_retry, { attempt: 2, reason: 'retryable_error' });
+      assert.equal(result.isError, undefined);
+      assert.equal(result.structuredContent.ok, true);
+    }
+  );
+});
+
+test('mutations are not retried after a daemon connection loss', async () => {
+  await withMockedBridge(
+    async () => {
+      const error = new Error('Bridge socket closed.') as Error & { code: string };
+      error.code = 'ECONNRESET';
+      throw error;
+    },
+    async (calls) => {
+      const result = await handleInputTool({ action: 'click', elementRef: 'el_1' });
+
+      assert.equal(calls.length, 1);
+      assert.equal(result.isError, true);
+    }
+  );
+});
+
 test('handleRawCallTool rejects unsupported methods without calling the bridge', async () => {
   await withMockedBridge(
     async () => ok({}),
@@ -474,6 +513,30 @@ test('handleSetupTool reports optional agent integration status', async () => {
 
   assert.match(result.content[0].text, /Optional agent integration status:/);
   assert.doesNotMatch(result.content[0].text, /No MCP or skill setup found/);
+});
+
+test('handleSetupTool surfaces the active toolset profile', async () => {
+  const originalProfile = process.env.BBX_MCP_TOOLSET;
+  process.env.BBX_MCP_TOOLSET = 'minimal';
+  try {
+    const result = await handleSetupTool({ global: false });
+
+    assert.match(result.content[0].text, /toolset profile: "minimal"/i);
+    const toolset = result.structuredContent.toolset as {
+      profile: string;
+      envVar: string;
+      profiles: string[];
+    };
+    assert.equal(toolset.profile, 'minimal');
+    assert.equal(toolset.envVar, 'BBX_MCP_TOOLSET');
+    assert.deepEqual(toolset.profiles, ['full', 'minimal']);
+  } finally {
+    if (originalProfile === undefined) {
+      delete process.env.BBX_MCP_TOOLSET;
+    } else {
+      process.env.BBX_MCP_TOOLSET = originalProfile;
+    }
+  }
 });
 
 test('handleSkillTool returns runtime context without a bridge connection', async () => {
