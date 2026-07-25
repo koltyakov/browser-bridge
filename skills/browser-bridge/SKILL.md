@@ -14,6 +14,8 @@ Permission prompts are controlled by the host agent, not by Browser Bridge. In p
 Skill name: `browser-bridge` (also known as `bbx`). In GitHub Copilot, invoke as `/browser-bridge`. `bbx` is the CLI command used throughout this skill.
 When the runtime supports subagents, delegate bridge inspection to a smaller, lower-cost worker and return only concise findings to the parent.
 For open-ended investigation, start with structured reads (`page.get_state`, `dom.query`, `page.get_text`, `page.extract_content`, `styles.get_computed`, and `bbx batch` for CLI or `browser_batch` for MCP) and escalate to screenshots or debugger-backed methods only when structured evidence is insufficient. `browser_call` accepts one protocol method at a time; `batch` is not a valid `browser_call` method.
+When an unfamiliar method is needed, run `bbx protocol describe <method|group>` before guessing parameters. In MCP mode, call `browser_call` with method `protocol.describe` and params `{ "method": "dom.query" }` or `{ "group": "inspect" }`.
+MCP exposes common tools first. Load one specialized typed tool only when needed by calling `browser_toolset` with its exact name, for example `{ "tool": "browser_dom" }`; `browser_call` remains the universal fallback.
 
 ## CLI
 
@@ -32,6 +34,7 @@ bbx tab-create [url]        # open a new tab (avoid unless necessary)
 bbx tab-close <tabId>       # close a tab
 bbx tab-activate <tabId>    # bring a tab to the foreground
 bbx skill                   # live runtime presets + limits
+bbx protocol describe [method|group] # local method params or compact group index
 ```
 
 Use the globally installed `bbx` command or `node packages/agent-client/src/cli.js ...` for live readiness checks from this repository. Avoid `rtk npm exec -- bbx status` as a health signal: that path can restart/replace the daemon and report `Extension: disconnected` before Chrome reconnects. If it happens, wait a few seconds and verify with `bbx status`.

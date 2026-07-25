@@ -30,6 +30,7 @@ import {
   handleStylesLayoutTool,
   handleTabsTool,
   handleInvestigateTool,
+  createToolResult,
   MAX_BATCH_CALLS,
 } from './handlers.js';
 import {
@@ -51,7 +52,7 @@ import {
 } from '../../protocol/src/index.js';
 import { applyWindowsTcpTransportDefaults } from '../../native-host/src/config.js';
 import { getMcpServerInstructions } from './guidance.js';
-import { createToolFilter, resolveToolsetProfile } from './toolset.js';
+import { isInitiallyEnabledTool, LOADABLE_TOOLSET_TOOLS } from './toolset.js';
 
 export const BUDGET_PRESET_DESCRIPTION = `Budget preset: "quick", "normal", or "deep" (defaults: query ${BUDGET_PRESETS.normal.maxNodes} nodes / depth ${BUDGET_PRESETS.normal.maxDepth} / text ${BUDGET_PRESETS.normal.textBudget}). Numeric fields override the preset when both are provided.`;
 export const TAB_ID_DESCRIPTION =
@@ -85,22 +86,13 @@ const INVESTIGATE_SUBAGENT_BRIDGE_METHODS = Object.freeze(
   )
 );
 
-const INVESTIGATE_FULL_PREFERRED_TOOLS = Object.freeze([
-  'browser_dom',
-  'browser_page',
-  'browser_styles_layout',
-  'browser_batch',
-]);
-const INVESTIGATE_MINIMAL_PREFERRED_TOOLS = Object.freeze(['browser_call', 'browser_batch']);
+const INVESTIGATE_PREFERRED_TOOLS = Object.freeze(['browser_call', 'browser_batch']);
 
 /**
- * Build the subagent delegation hint for browser_investigate so it only names
- * tools the active toolset profile actually registers.
- *
- * @param {import('./toolset.js').ToolsetProfile} profile
+ * Build the subagent delegation hint for browser_investigate using tools that
+ * are available before any on-demand expansion.
  */
-function createInvestigateDelegationHint(profile) {
-  const minimal = profile === 'minimal';
+function createInvestigateDelegationHint() {
   return Object.freeze({
     recommended: true,
     costTier: 'low',
@@ -108,10 +100,8 @@ function createInvestigateDelegationHint(profile) {
       modelClass: 'small',
       reasoningEffort: 'low',
     },
-    preferredTools: minimal
-      ? INVESTIGATE_MINIMAL_PREFERRED_TOOLS
-      : INVESTIGATE_FULL_PREFERRED_TOOLS,
-    escalationTools: Object.freeze([minimal ? 'browser_call' : 'browser_capture']),
+    preferredTools: INVESTIGATE_PREFERRED_TOOLS,
+    escalationTools: Object.freeze(['browser_call']),
     preferredBridgeMethods: INVESTIGATE_SUBAGENT_BRIDGE_METHODS,
     escalationTriggers: [
       'Structured DOM or page reads are insufficient.',
@@ -122,23 +112,17 @@ function createInvestigateDelegationHint(profile) {
 }
 
 /**
- * Build the browser_investigate description for the active toolset profile.
+ * Build the browser_investigate description for the progressive tool surface.
  *
- * @param {import('./toolset.js').ToolsetProfile} profile
  * @returns {string}
  */
-function getInvestigateToolDescription(profile) {
-  const minimal = profile === 'minimal';
-  const readTools = minimal
-    ? 'browser_call and browser_batch'
-    : 'browser_dom, browser_page, browser_styles_layout, and browser_batch';
-  const escalationTool = minimal ? 'browser_call' : 'browser_capture';
+function getInvestigateToolDescription() {
   return (
     'Investigate a page to answer a question or verify a condition. ' +
     'Pass a natural-language objective and an optional scope (quick/normal/deep). ' +
     'DELEGATION HINT: Prefer delegating this to a smaller, low-cost subagent ' +
-    `that starts with structured reads via ${readTools}. ` +
-    `Escalate to ${escalationTool} only ` +
+    'that starts with structured reads via browser_call and browser_batch. ' +
+    'Escalate through browser_call only ' +
     'when structured reads are insufficient. ' +
     'If subagent delegation is not available, a deterministic heuristic fallback ' +
     'runs a scripted inspection sequence and returns a best-effort summary.'
@@ -146,45 +130,39 @@ function getInvestigateToolDescription(profile) {
 }
 
 /**
- * @typedef {{ profile?: import('./toolset.js').ToolsetProfile }} CreateBridgeMcpServerOptions
- */
-
-/**
- * Create the MCP server with the tool surface selected by the active profile.
+ * Create the MCP server with a compact initial surface and on-demand typed tools.
  *
- * The `full` profile registers every typed tool. The `minimal` profile registers
- * only the generic dispatch and readiness tools, which keeps the whole bridge
- * protocol reachable through `browser_call` at a much smaller schema cost.
- *
- * @param {CreateBridgeMcpServerOptions} [options]
  * @returns {McpServer}
  */
-export function createBridgeMcpServer(options = {}) {
-  const { profile = resolveToolsetProfile() } = options;
-  const includeTool = createToolFilter(profile);
+export function createBridgeMcpServer() {
   const server = new McpServer(
     {
       name: 'browser-bridge',
       version: MCP_SERVER_VERSION,
     },
     {
-      instructions: getMcpServerInstructions(profile),
+      instructions: getMcpServerInstructions(),
     }
   );
 
+  /** @type {Map<string, ReturnType<typeof server.registerTool>>} */
+  const registrations = new Map();
+
   /**
-   * Register a tool, then drop it again when the active profile excludes it.
+   * Register a tool, then hide it when it is not part of the initial surface.
    *
    * Registering first keeps every call site checked against the SDK's own
-   * generic signature instead of a hand-written passthrough type. The removal
-   * happens before `connect()`, so an excluded tool never reaches `tools/list`.
+   * generic signature instead of a hand-written passthrough type. Disabling
+   * happens before `connect()`, so an excluded tool never reaches `tools/list`
+   * but can be enabled later by browser_toolset.
    *
    * @type {typeof server.registerTool}
    */
   const registerTool = (name, config, handler) => {
     const registration = server.registerTool(name, config, handler);
-    if (!includeTool(name)) {
-      registration.remove();
+    registrations.set(name, registration);
+    if (!isInitiallyEnabledTool(name)) {
+      registration.disable();
     }
     return registration;
   };
@@ -1068,7 +1046,7 @@ export function createBridgeMcpServer(options = {}) {
     'browser_investigate',
     {
       title: 'Browser Investigate',
-      description: getInvestigateToolDescription(profile),
+      description: getInvestigateToolDescription(),
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -1076,7 +1054,7 @@ export function createBridgeMcpServer(options = {}) {
         openWorldHint: true,
       },
       _meta: {
-        delegationHint: createInvestigateDelegationHint(profile),
+        delegationHint: createInvestigateDelegationHint(),
       },
       inputSchema: {
         objective: z
@@ -1099,6 +1077,29 @@ export function createBridgeMcpServer(options = {}) {
       },
     },
     handleInvestigateTool
+  );
+
+  registerTool(
+    'browser_toolset',
+    {
+      title: 'Load Browser Bridge Tool',
+      description:
+        'Load one specialized typed Browser Bridge tool by exact name. The tool appears in tools/list automatically and remains enabled for this MCP session.',
+      inputSchema: {
+        tool: z
+          .enum(LOADABLE_TOOLSET_TOOLS)
+          .describe('Exact specialized Browser Bridge tool to load.'),
+      },
+    },
+    ({ tool }) => {
+      const registration = registrations.get(tool);
+      const newlyEnabled = Boolean(registration && !registration.enabled);
+      if (newlyEnabled) registration?.enable();
+      return createToolResult(newlyEnabled ? `Loaded ${tool}.` : `${tool} is already loaded.`, {
+        tool,
+        newlyEnabled,
+      });
+    }
   );
 
   return server;

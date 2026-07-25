@@ -5,10 +5,16 @@ import { fileURLToPath } from 'node:url';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Readable } from 'node:stream';
-import type { CallToolResult, TextContent } from '@modelcontextprotocol/sdk/types.js';
+import {
+  ToolListChangedNotificationSchema,
+  type CallToolResult,
+  type TextContent,
+} from '@modelcontextprotocol/sdk/types.js';
 
 import { createSuccess } from '../protocol/src/index.js';
+import { createBridgeMcpServer } from '../mcp-server/src/server.js';
 import { startBridgeSocketServer } from '../../tests/_helpers/socketHarness.ts';
 import type { BridgeRequest } from '../protocol/src/types.js';
 
@@ -157,6 +163,17 @@ test(
       });
       await client.connect(transport);
 
+      const initialTools = await client.listTools();
+      assert.equal(
+        initialTools.tools.some((tool) => tool.name === 'browser_investigate'),
+        false
+      );
+      const loadResult = (await client.callTool({
+        name: 'browser_toolset',
+        arguments: { tool: 'browser_investigate' },
+      })) as CallToolResult;
+      assert.equal((loadResult.structuredContent as { newlyEnabled: boolean }).newlyEnabled, true);
+
       const toolsResult = await client.listTools();
       const investigateTool = toolsResult.tools.find((tool) => tool.name === 'browser_investigate');
 
@@ -218,3 +235,61 @@ test(
     }
   }
 );
+
+test('MCP toolset loads exact tools through tools/list notifications and fails closed', async () => {
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const server = createBridgeMcpServer();
+  const client = new Client({ name: 'browser-bridge-toolset-test', version: '1.0.0' });
+  let listChangedNotifications = 0;
+  client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+    listChangedNotifications += 1;
+  });
+
+  try {
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+
+    assert.equal(client.getServerCapabilities()?.tools?.listChanged, true);
+    assert.equal(listChangedNotifications, 0);
+    assert.deepEqual((await client.listTools()).tools.map(({ name }) => name).sort(), [
+      'browser_access',
+      'browser_batch',
+      'browser_call',
+      'browser_health',
+      'browser_status',
+      'browser_toolset',
+    ]);
+
+    const disabled = (await client.callTool({
+      name: 'browser_dom',
+      arguments: { action: 'query' },
+    })) as CallToolResult;
+    assert.equal(disabled.isError, true);
+    assert.match((disabled.content[0] as TextContent).text, /Tool browser_dom disabled/);
+
+    const loaded = (await client.callTool({
+      name: 'browser_toolset',
+      arguments: { tool: 'browser_dom' },
+    })) as CallToolResult;
+    assert.equal((loaded.structuredContent as { newlyEnabled: boolean }).newlyEnabled, true);
+    assert.equal(listChangedNotifications, 1);
+    assert.equal((await client.listTools()).tools.length, 7);
+
+    const repeated = (await client.callTool({
+      name: 'browser_toolset',
+      arguments: { tool: 'browser_dom' },
+    })) as CallToolResult;
+    assert.equal((repeated.structuredContent as { newlyEnabled: boolean }).newlyEnabled, false);
+    assert.equal(listChangedNotifications, 1);
+
+    const rejected = (await client.callTool({
+      name: 'browser_toolset',
+      arguments: { tool: 'all' },
+    })) as CallToolResult;
+    assert.equal(rejected.isError, true);
+    assert.equal(listChangedNotifications, 1);
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});

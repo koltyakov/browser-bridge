@@ -15,13 +15,10 @@ import {
   TARGET_LABELS,
 } from './install.js';
 import {
-  DEFAULT_MCP_TOOLSET_PROFILE,
   findConfiguredMcpClients,
   isMcpClientName,
-  isMcpToolsetProfile,
   MCP_CLIENT_LABELS,
   MCP_CLIENT_NAMES,
-  MCP_TOOLSET_PROFILES,
   removeMcpConfig,
 } from './mcp-config.js';
 import { collectSetupStatus } from './setup-status.js';
@@ -142,7 +139,7 @@ export async function runInstallSkillCommand(args) {
 }
 
 /**
- * Handle `bbx install-mcp [client] [--global|--local] [--profile <name>]`.
+ * Handle `bbx install-mcp [client] [--global|--local]`.
  * Exits the process when finished.
  *
  * @param {string[]} args
@@ -150,8 +147,6 @@ export async function runInstallSkillCommand(args) {
  */
 export async function runInstallMcpCommand(args) {
   let isGlobal = true;
-  /** @type {import('../../mcp-server/src/toolset.js').ToolsetProfile} */
-  let profile = DEFAULT_MCP_TOOLSET_PROFILE;
   /** @type {string[]} */
   const positionals = [];
 
@@ -163,17 +158,6 @@ export async function runInstallMcpCommand(args) {
     }
     if (arg === '--global') {
       isGlobal = true;
-      continue;
-    }
-    if (arg === '--profile' || arg.startsWith('--profile=')) {
-      const value = arg.startsWith('--profile=') ? arg.slice('--profile='.length) : args[++index];
-      if (!value || !isMcpToolsetProfile(value)) {
-        process.stderr.write(
-          `Unknown MCP toolset profile "${value ?? ''}". Supported: ${MCP_TOOLSET_PROFILES.join(', ')}\n`
-        );
-        process.exit(1);
-      }
-      profile = value;
       continue;
     }
     if (arg.startsWith('--')) {
@@ -292,14 +276,7 @@ export async function runInstallMcpCommand(args) {
     global: isGlobal,
     projectPath: process.cwd(),
     stdout: process.stdout,
-    profile,
   });
-
-  if (profile === 'minimal') {
-    process.stdout.write(
-      'Minimal MCP toolset selected: browser_call reaches every bridge method; the specialized typed tools are not registered.\n'
-    );
-  }
 
   process.exit(0);
 }

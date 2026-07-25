@@ -20,7 +20,7 @@ type ToolRegistration = {
   handler: unknown;
 };
 
-test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
+test('createBridgeMcpServer registers all tools behind one progressive surface', () => {
   const originalRegisterTool = McpServer.prototype.registerTool;
   const originalRegisterPrompt = McpServer.prototype.registerPrompt;
   const registrations: ToolRegistration[] = [];
@@ -81,7 +81,7 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
     const delegationHint = (investigateMeta.delegationHint ?? {}) as Record<string, unknown>;
 
     assert.ok(server instanceof McpServer);
-    assert.equal(registrations.length, 20);
+    assert.equal(registrations.length, 21);
     assert.deepEqual(
       registrations.map((entry) => entry.name),
       [
@@ -105,6 +105,7 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
         'browser_skill',
         'browser_access',
         'browser_investigate',
+        'browser_toolset',
       ]
     );
     assert.equal(registrations[4].config.title, 'Browser Tabs');
@@ -118,6 +119,7 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
     const artifactSchema = registrations[13].config.inputSchema as Record<string, unknown>;
     const interceptSchema = registrations[14].config.inputSchema as Record<string, unknown>;
     const rawCallSchema = registrations[16].config.inputSchema as Record<string, unknown>;
+    const toolsetSchema = registrations[20].config.inputSchema as Record<string, unknown>;
     const tabsAction = tabsSchema.action as { safeParse: (value: unknown) => { success: boolean } };
     const inputAction = inputSchema.action as {
       safeParse: (value: unknown) => { success: boolean };
@@ -138,6 +140,9 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
       safeParse: (value: unknown) => { success: boolean };
     };
     const urlPattern = pageSchema.urlPattern as {
+      safeParse: (value: unknown) => { success: boolean };
+    };
+    const loadableTool = toolsetSchema.tool as {
       safeParse: (value: unknown) => { success: boolean };
     };
     assert.equal(tabsAction.safeParse('activate').success, true);
@@ -165,6 +170,9 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
     assert.equal(harDelivery.safeParse('download').success, false);
     assert.equal(urlPattern.safeParse('x'.repeat(2_048)).success, true);
     assert.equal(urlPattern.safeParse('x'.repeat(2_049)).success, false);
+    assert.equal(loadableTool.safeParse('browser_dom').success, true);
+    assert.equal(loadableTool.safeParse('browser_status').success, false);
+    assert.equal(loadableTool.safeParse('all').success, false);
     assert.ok(sensitiveSchema.source);
     assert.ok(sensitiveSchema.key);
     assert.ok(rawCallSchema.budgetPreset);
@@ -218,13 +226,8 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
       modelClass: 'small',
       reasoningEffort: 'low',
     });
-    assert.deepEqual(delegationHint.preferredTools, [
-      'browser_dom',
-      'browser_page',
-      'browser_styles_layout',
-      'browser_batch',
-    ]);
-    assert.deepEqual(delegationHint.escalationTools, ['browser_capture']);
+    assert.deepEqual(delegationHint.preferredTools, ['browser_call', 'browser_batch']);
+    assert.deepEqual(delegationHint.escalationTools, ['browser_call']);
     assert.ok(
       Array.isArray(delegationHint.preferredBridgeMethods) &&
         delegationHint.preferredBridgeMethods.includes('page.get_state')
@@ -241,6 +244,76 @@ test('createBridgeMcpServer registers the full Browser Bridge tool set', () => {
   } finally {
     McpServer.prototype.registerTool = originalRegisterTool;
     McpServer.prototype.registerPrompt = originalRegisterPrompt;
+  }
+});
+
+test('browser_toolset loads one exact tool at a time and is idempotent', async () => {
+  const originalRegisterTool = McpServer.prototype.registerTool;
+  const registrations = new Map<
+    string,
+    { enabled: boolean; enableCalls: number; handler: unknown }
+  >();
+
+  McpServer.prototype.registerTool = function registerTool(
+    name: string,
+    _config: Record<string, unknown>,
+    handler: unknown
+  ) {
+    const state = { enabled: true, enableCalls: 0, handler };
+    registrations.set(name, state);
+    return {
+      get enabled() {
+        return state.enabled;
+      },
+      disable() {
+        state.enabled = false;
+      },
+      enable() {
+        state.enabled = true;
+        state.enableCalls += 1;
+      },
+      handler,
+      name,
+      remove() {},
+      update() {},
+    } as unknown as ReturnType<typeof originalRegisterTool>;
+  } as unknown as typeof McpServer.prototype.registerTool;
+
+  try {
+    createBridgeMcpServer();
+    const toolset = registrations.get('browser_toolset');
+    assert.ok(toolset);
+    assert.equal(registrations.size, 21);
+
+    const handler = toolset.handler as (args: {
+      tool: string;
+    }) =>
+      | { structuredContent: Record<string, unknown> }
+      | Promise<{ structuredContent: Record<string, unknown> }>;
+    const load = async (tool: string): Promise<Record<string, unknown>> => {
+      const result = await handler({ tool });
+      return {
+        tool: result.structuredContent.tool,
+        newlyEnabled: result.structuredContent.newlyEnabled,
+      };
+    };
+
+    assert.deepEqual(await load('browser_dom'), { tool: 'browser_dom', newlyEnabled: true });
+    assert.deepEqual(await load('browser_dom'), { tool: 'browser_dom', newlyEnabled: false });
+    assert.deepEqual(await load('browser_input'), { tool: 'browser_input', newlyEnabled: true });
+    assert.equal(
+      [...registrations.values()].filter((registration) => registration.enabled).length,
+      8
+    );
+    assert.equal(
+      [...registrations.values()].reduce(
+        (total, registration) => total + registration.enableCalls,
+        0
+      ),
+      2
+    );
+  } finally {
+    McpServer.prototype.registerTool = originalRegisterTool;
   }
 });
 

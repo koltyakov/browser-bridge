@@ -13,6 +13,7 @@ import {
   ERROR_CODES,
   METHOD_CAPABILITIES,
   createBridgeMethodGroups,
+  describeBridgeMethods,
   bridgeMethodNeedsTab,
   getBudgetPreset,
   getCostClass,
@@ -29,6 +30,7 @@ import type { BridgeMethod, Capability } from '../src/types.js';
 
 const EXPECTED_BRIDGE_METHOD_ORDER: readonly BridgeMethod[] = [
   'access.request',
+  'protocol.describe',
   'skill.get_runtime_context',
   'setup.get_status',
   'setup.install',
@@ -315,6 +317,7 @@ test('registry helpers keep metadata aligned across methods, groups, and complex
   assert.equal(isBridgeMethod('dom.query'), true);
   assert.equal(isBridgeMethod('dom.missing'), false);
   assert.equal(bridgeMethodNeedsTab('dom.query'), true);
+  assert.equal(bridgeMethodNeedsTab('protocol.describe'), false);
   assert.equal(bridgeMethodNeedsTab('health.ping'), false);
   assert.equal(bridgeMethodNeedsTab('not.real'), true);
 
@@ -339,12 +342,75 @@ test('registry helpers keep metadata aligned across methods, groups, and complex
   );
 });
 
+test('describeBridgeMethods returns compact method, group, and index shapes', () => {
+  assert.deepEqual(describeBridgeMethods({ method: 'dom.query' }), {
+    method: 'dom.query',
+    group: 'inspect',
+    tab: true,
+    params: [
+      'selector',
+      'withinRef',
+      'maxNodes',
+      'maxDepth',
+      'textBudget',
+      'includeBbox',
+      'attributeAllowlist',
+    ],
+    description: 'Query a DOM subtree and return compact node summaries.',
+    complexity: 'low',
+  });
+
+  assert.deepEqual(describeBridgeMethods({ group: 'capture' }), {
+    group: 'capture',
+    methods: [
+      describeBridgeMethods({ method: 'screenshot.capture_region' }),
+      describeBridgeMethods({ method: 'screenshot.capture_element' }),
+      describeBridgeMethods({ method: 'screenshot.capture_full_page' }),
+    ],
+  });
+
+  assert.deepEqual(describeBridgeMethods(), {
+    groups: [
+      { group: 'system', count: 8 },
+      { group: 'tabs', count: 4 },
+      { group: 'page', count: 13 },
+      { group: 'wait', count: 2 },
+      { group: 'sensitive', count: 1 },
+      { group: 'navigate', count: 6 },
+      { group: 'inspect', count: 16 },
+      { group: 'interact', count: 10 },
+      { group: 'capture', count: 3 },
+      { group: 'artifact', count: 2 },
+      { group: 'patch', count: 5 },
+      { group: 'cdp', count: 5 },
+      { group: 'performance', count: 1 },
+    ],
+  });
+});
+
+test('describeBridgeMethods rejects unknown or ambiguous selectors', () => {
+  assert.throws(
+    () => describeBridgeMethods({ method: 'not.real' }),
+    /Unknown bridge method "not.real"/
+  );
+  assert.throws(
+    () => describeBridgeMethods({ group: 'missing' }),
+    /Unknown bridge method group "missing"/
+  );
+  assert.throws(
+    () => describeBridgeMethods({ method: 'dom.query', group: 'inspect' }),
+    /either method or group, not both/
+  );
+  assert.throws(() => describeBridgeMethods({ method: 3 }), /Unknown bridge method "3"/);
+});
+
 test('registry policies preserve every method capability classification', () => {
   const expectedGroups: ReadonlyArray<readonly [Capability | null, readonly BridgeMethod[]]> = [
     [
       null,
       [
         'access.request',
+        'protocol.describe',
         'tabs.list',
         'skill.get_runtime_context',
         'setup.get_status',

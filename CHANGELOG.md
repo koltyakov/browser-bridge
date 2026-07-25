@@ -6,19 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-07-24
+
 ### Added
 
-- **Minimal MCP tool profile:** Added an opt-in `minimal` tool surface that
-  registers only `browser_call`, `browser_batch`, `browser_status`,
-  `browser_health`, and `browser_access`, cutting the tool schemas every session
-  carries from ~32 KB (~8.6k tokens) to ~4.5 KB (~1.2k tokens). Every bridge
-  method stays reachable through `browser_call`. Select it with
-  `bbx install-mcp <client> --profile minimal`, `bbx mcp config <client>
-  --profile minimal`, or `BBX_MCP_TOOLSET=minimal`. The default `full` profile
-  and its generated config output are unchanged.
+- **Progressive MCP tool discovery:** MCP starts with six common tools, including
+  `browser_toolset`, and can load any of 15 specialized typed tools by exact
+  name. Disabled tools remain fail-closed until loaded, and SDK
+  `tools/list_changed` notifications advertise each addition.
+- **On-demand protocol discovery:** Added local `protocol.describe` lookup by
+  method or registry group through `browser_call`, plus `bbx protocol describe`
+  for CLI/skill workflows. The compact index and scoped signatures avoid loading
+  the complete protocol registry when only one method is needed.
+- **Shared CLI budget presets:** `bbx call` and `bbx batch` now accept the shared
+  `--preset` flag with `quick`, `normal`, or `deep`, using the same method-aware
+  budget defaults as MCP while preserving explicitly supplied limits.
+- **Typed artifact and interception tools:** Added loadable `browser_artifact`
+  and `browser_intercept` MCP tools for chunked reads and deletion of
+  session-owned artifacts and for managing CDP Fetch interception rules.
 
 ### Changed
 
+- **Breaking - MCP profiles removed:** Browser Bridge now always uses progressive
+  tool discovery, reducing initial schema cost from ~9.6k to ~1.4k tokens.
+  `browser_call` still reaches every bridge method, while `browser_toolset` loads
+  one typed tool at a time. `BBX_MCP_TOOLSET` is no longer read, and
+  `install-mcp` / `mcp config` no longer accept `--profile`. Reinstalling MCP
+  config removes stale Browser Bridge toolset selectors.
+- **Protocol 1.10 alignment:** Package, extension, daemon, CLI, and MCP behavior
+  now share the 1.10 compatibility line, including progressive discovery and
+  the expanded typed tool surface.
+- **Complete scoped accessibility reads:** Selector-scoped accessibility-tree
+  requests now materialize descendant layers up to `maxDepth` instead of relying
+  on Chrome's shallow partial-tree response, with more accurate continuation
+  guidance when node or depth limits are reached.
+- **Safe MCP transport recovery:** Read-only MCP operations now wait briefly for
+  daemon reconnection and retry once after a socket-level disconnect; mutating
+  operations remain non-replayed.
 - **DOM baseline ownership extracted from the daemon:** Moved retained-baseline
   ownership, expiry, per-socket caps, and abandoned-create tracking out of
   `daemon.js` into `native-host/src/dom-baseline-owners.js`, leaving the daemon
@@ -26,6 +50,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Action-log warning labels:** Generic warning entries in the extension side
+  panel are no longer incorrectly labeled as Sensitive access.
 - **Proxy and self-update test coverage:** Added coverage for `bbx proxy
   enable/disable` success paths - token minting, documented idempotency, token
   rotation, port changes, non-loopback warnings, and `0600` file modes - and for

@@ -147,37 +147,37 @@ Short version:
 | Install skill | N/A | `bbx install-skill [client]` | CLI-only (setup) |
 | Uninstall | N/A | `bbx uninstall` | CLI-only (setup) |
 
-## Tool Surface Profiles
+## Progressive Tool Discovery
 
-Every registered MCP tool ships its full JSON schema to the agent on `tools/list`, and that
-payload stays in context for the whole session. The default `full` profile registers all 20
-typed tools at roughly **35 KB of schema (~8.7k tokens)** before any page is inspected.
+Every enabled MCP tool ships its full JSON schema to the agent on `tools/list`, and that
+payload stays in context for the whole session. Browser Bridge always starts with six common
+tools at about **5.2 KB (~1.4k schema tokens)** instead of exposing all typed schemas at roughly
+**35.6 KB (~9.6k tokens)**:
 
-The `minimal` profile registers only the tools needed to reach the entire protocol - about
-**4.5 KB (~1.1k tokens)**, a ~87% reduction:
+`browser_call`, `browser_batch`, `browser_status`, `browser_health`, `browser_access`, and
+`browser_toolset`.
 
-| Profile   | Tools | Schema size | Registered tools                                                          |
-| --------- | ----- | ----------- | ------------------------------------------------------------------------- |
-| `full`    | 20    | ~35 KB      | Every typed tool                                                          |
-| `minimal` | 5     | ~4.5 KB     | `browser_call`, `browser_batch`, `browser_status`, `browser_health`, `browser_access` |
+The other 15 typed tools remain registered but disabled. When one becomes useful, the agent
+loads that exact tool through `browser_toolset`:
 
-Nothing becomes unreachable: `browser_call` dispatches any bridge method by name, which is
-already the default the server instructions recommend for permission-ask hosts. The profile
-narrows the schema surface, not the protocol.
-
-```bash
-bbx install-mcp claude --profile minimal   # write config with the compact surface
-bbx mcp config claude --profile minimal    # print it instead of writing
+```json
+{ "tool": "browser_dom" }
 ```
 
-Both forms set `BBX_MCP_TOOLSET=minimal` in the generated server entry. You can also set that
-environment variable directly on an existing config. An unrecognized value falls back to `full`
-and reports the problem on stderr. Omitting `--profile` keeps the existing `full` output byte
-for byte, so existing configs are unaffected.
+This enables only `browser_dom`; the SDK then emits `tools/list_changed`, and the next
+`tools/list` includes its schema. Repeating the call is idempotent. Other examples are
+`browser_input`, `browser_page`, `browser_capture`, and `browser_patch`. The
+`browser_toolset` input enum is the discoverable list of every loadable tool.
 
-Prefer `minimal` when the host charges for tool schemas on every turn or asks the user to
-approve tools individually; prefer `full` when the host renders typed tools for discovery or
-you want schema validation on each specialized call.
+Nothing becomes unreachable before loading a typed tool: `browser_call` dispatches any bridge
+method by name, including in clients that ignore `tools/list_changed`. Before guessing
+unfamiliar parameters, call `protocol.describe` through `browser_call` with a `method` or
+`group`; with neither it returns a compact group index. This loads method knowledge without
+adding another MCP tool schema.
+
+There are no tool-surface profiles or profile configuration. `BBX_MCP_TOOLSET` is ignored, and
+`bbx install-mcp` / `bbx mcp config` do not accept `--profile`. Reinstalling Browser Bridge MCP
+config removes a stale selector from the managed server entry.
 
 ## Feature Comparison
 

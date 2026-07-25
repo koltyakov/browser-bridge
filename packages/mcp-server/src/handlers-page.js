@@ -4,6 +4,7 @@ import {
   DEFAULT_CONSOLE_LIMIT,
   DEFAULT_HAR_LIMIT,
   DEFAULT_NETWORK_LIMIT,
+  describeBridgeMethods,
   ERROR_CODES,
   getErrorRecovery,
   isBatchSafeBridgeCall,
@@ -506,6 +507,14 @@ async function mapWithConcurrency(values, concurrency, callback) {
 export async function handleRawCallTool(args) {
   if (!METHOD_SET.has(/** @type {BridgeMethod} */ (args.method))) {
     return summarizeToolError(`Unknown bridge method "${args.method}".`);
+  }
+  if (args.method === 'protocol.describe') {
+    try {
+      const result = describeBridgeMethods(args.params);
+      return createToolResult('Bridge protocol description loaded.', result);
+    } catch (error) {
+      return summarizeToolError(error);
+    }
   }
   return withToolClient(
     async (client) => {

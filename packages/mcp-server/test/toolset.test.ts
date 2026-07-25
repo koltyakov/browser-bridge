@@ -4,125 +4,109 @@ import assert from 'node:assert/strict';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import {
-  createToolFilter,
-  DEFAULT_TOOLSET_PROFILE,
-  isToolsetProfile,
-  MINIMAL_TOOLSET_TOOLS,
-  resolveToolsetProfile,
-  TOOLSET_PROFILE_ENV,
-  TOOLSET_PROFILES,
+  INITIAL_TOOLSET_TOOLS,
+  isInitiallyEnabledTool,
+  LOADABLE_TOOLSET_TOOLS,
 } from '../src/toolset.js';
 import { getMcpServerInstructions, MCP_SERVER_INSTRUCTIONS } from '../src/guidance.js';
 import { createBridgeMcpServer } from '../src/server.js';
 
-test('resolveToolsetProfile defaults to full when unset or blank', () => {
-  assert.equal(resolveToolsetProfile({}), 'full');
-  assert.equal(resolveToolsetProfile({ [TOOLSET_PROFILE_ENV]: '' }), 'full');
-  assert.equal(resolveToolsetProfile({ [TOOLSET_PROFILE_ENV]: '   ' }), 'full');
-  assert.equal(DEFAULT_TOOLSET_PROFILE, 'full');
-});
-
-test('resolveToolsetProfile accepts known profiles case-insensitively', () => {
-  assert.equal(resolveToolsetProfile({ [TOOLSET_PROFILE_ENV]: 'minimal' }), 'minimal');
-  assert.equal(resolveToolsetProfile({ [TOOLSET_PROFILE_ENV]: '  MINIMAL ' }), 'minimal');
-  assert.equal(resolveToolsetProfile({ [TOOLSET_PROFILE_ENV]: 'Full' }), 'full');
-});
-
-test('resolveToolsetProfile warns and falls back on an unknown profile', () => {
-  const warnings: string[] = [];
-  const profile = resolveToolsetProfile(
-    { [TOOLSET_PROFILE_ENV]: 'tiny' },
-    { warn: (message) => warnings.push(message) }
+test('toolset exposes one fixed initial surface and exact loadable tool names', () => {
+  assert.deepEqual(INITIAL_TOOLSET_TOOLS, [
+    'browser_access',
+    'browser_batch',
+    'browser_call',
+    'browser_health',
+    'browser_status',
+    'browser_toolset',
+  ]);
+  assert.deepEqual(LOADABLE_TOOLSET_TOOLS, [
+    'browser_dom',
+    'browser_styles_layout',
+    'browser_page',
+    'browser_logs',
+    'browser_input',
+    'browser_navigation',
+    'browser_tabs',
+    'browser_capture',
+    'browser_artifact',
+    'browser_patch',
+    'browser_intercept',
+    'browser_investigate',
+    'browser_sensitive_read',
+    'browser_setup',
+    'browser_skill',
+  ]);
+  assert.equal(isInitiallyEnabledTool('browser_call'), true);
+  assert.equal(isInitiallyEnabledTool('browser_toolset'), true);
+  assert.equal(isInitiallyEnabledTool('browser_dom'), false);
+  assert.equal(
+    INITIAL_TOOLSET_TOOLS.some((toolName) => new Set<string>(LOADABLE_TOOLSET_TOOLS).has(toolName)),
+    false
   );
-
-  assert.equal(profile, 'full');
-  assert.equal(warnings.length, 1);
-  assert.match(warnings[0], /ignoring unknown BBX_MCP_TOOLSET value "tiny"/);
-  assert.match(warnings[0], /full, minimal/);
 });
 
-test('isToolsetProfile narrows only to known profiles', () => {
-  assert.equal(isToolsetProfile('full'), true);
-  assert.equal(isToolsetProfile('minimal'), true);
-  assert.equal(isToolsetProfile('tiny'), false);
-  assert.equal(isToolsetProfile(undefined), false);
-  assert.equal(isToolsetProfile(3), false);
-  assert.deepEqual([...TOOLSET_PROFILES], ['full', 'minimal']);
-});
-
-test('createToolFilter admits everything for full and only the allowlist for minimal', () => {
-  const full = createToolFilter('full');
-  const minimal = createToolFilter('minimal');
-
-  assert.equal(full('browser_dom'), true);
-  assert.equal(full('browser_call'), true);
-  assert.equal(minimal('browser_call'), true);
-  assert.equal(minimal('browser_batch'), true);
-  assert.equal(minimal('browser_dom'), false);
-  assert.equal(minimal('browser_investigate'), false);
-});
-
-/**
- * Collect the tool names a profile actually exposes, driving the real server so
- * the assertion covers registration rather than the filter in isolation.
- */
-function registeredToolNames(profile: 'full' | 'minimal'): string[] {
+test('server keeps loadable tools registered but disabled until requested', () => {
   const originalRegisterTool = McpServer.prototype.registerTool;
-  const registered = new Set<string>();
+  const registrations: Array<{
+    name: string;
+    enabled: boolean;
+    disableCalls: number;
+    removeCalls: number;
+  }> = [];
 
   McpServer.prototype.registerTool = function registerTool(
     this: McpServer,
     name: string,
-    config: Record<string, unknown>,
+    _config: Record<string, unknown>,
     handler: unknown
   ) {
-    registered.add(name);
+    const state = { name, enabled: true, disableCalls: 0, removeCalls: 0 };
+    registrations.push(state);
     return {
-      enabled: true,
-      disable() {},
-      enable() {},
+      get enabled() {
+        return state.enabled;
+      },
+      disable() {
+        state.disableCalls += 1;
+        state.enabled = false;
+      },
+      enable() {
+        state.enabled = true;
+      },
       handler,
       name,
       remove() {
-        registered.delete(name);
+        state.removeCalls += 1;
       },
       update() {},
     } as unknown as ReturnType<typeof originalRegisterTool>;
   } as unknown as typeof McpServer.prototype.registerTool;
 
   try {
-    createBridgeMcpServer({ profile });
-    return [...registered];
+    createBridgeMcpServer();
   } finally {
     McpServer.prototype.registerTool = originalRegisterTool;
   }
-}
 
-test('minimal profile registers only the generic dispatch and readiness tools', () => {
-  const minimal = registeredToolNames('minimal');
-
-  assert.deepEqual(minimal.sort(), [...MINIMAL_TOOLSET_TOOLS].sort());
-  assert.equal(minimal.length, 5);
-  assert.ok(minimal.includes('browser_call'));
-  assert.ok(!minimal.includes('browser_dom'));
-  assert.ok(!minimal.includes('browser_page'));
+  const enabled = registrations
+    .filter((registration) => registration.enabled)
+    .map(({ name }) => name);
+  const disabled = registrations.filter((registration) => !registration.enabled);
+  assert.equal(registrations.length, 21);
+  assert.deepEqual(enabled.sort(), [...INITIAL_TOOLSET_TOOLS].sort());
+  assert.deepEqual(disabled.map(({ name }) => name).sort(), [...LOADABLE_TOOLSET_TOOLS].sort());
+  assert.equal(
+    disabled.every((registration) => registration.disableCalls === 1),
+    true
+  );
+  assert.equal(
+    registrations.every((registration) => registration.removeCalls === 0),
+    true
+  );
 });
 
-test('full profile stays the complete tool surface', () => {
-  const full = registeredToolNames('full');
-
-  assert.equal(full.length, 20);
-  assert.ok(full.includes('browser_dom'));
-  assert.ok(full.includes('browser_investigate'));
-  assert.ok(full.includes('browser_artifact'));
-  assert.ok(full.includes('browser_intercept'));
-});
-
-/**
- * Capture the browser_investigate registration config for a profile before the
- * profile filter removes it.
- */
-function investigateRegistration(profile: 'full' | 'minimal'): Record<string, unknown> {
+test('investigate metadata only names tools available before expansion', () => {
   const originalRegisterTool = McpServer.prototype.registerTool;
   let captured: Record<string, unknown> | null = null;
 
@@ -132,9 +116,7 @@ function investigateRegistration(profile: 'full' | 'minimal'): Record<string, un
     config: Record<string, unknown>,
     handler: unknown
   ) {
-    if (name === 'browser_investigate') {
-      captured = config;
-    }
+    if (name === 'browser_investigate') captured = config;
     return {
       enabled: true,
       disable() {},
@@ -147,80 +129,29 @@ function investigateRegistration(profile: 'full' | 'minimal'): Record<string, un
   } as unknown as typeof McpServer.prototype.registerTool;
 
   try {
-    createBridgeMcpServer({ profile });
+    createBridgeMcpServer();
   } finally {
     McpServer.prototype.registerTool = originalRegisterTool;
   }
-  assert.ok(captured, 'browser_investigate registration was not captured');
-  return captured;
-}
 
-test('investigate delegation hint only names tools the active profile registers', () => {
-  const fullConfig = investigateRegistration('full');
-  const fullHint = (fullConfig._meta as Record<string, unknown>).delegationHint as Record<
-    string,
-    unknown
-  >;
-  assert.deepEqual(fullHint.preferredTools, [
-    'browser_dom',
-    'browser_page',
-    'browser_styles_layout',
-    'browser_batch',
-  ]);
-  assert.deepEqual(fullHint.escalationTools, ['browser_capture']);
-  assert.match(String(fullConfig.description), /browser_dom, browser_page/);
-
-  const minimalConfig = investigateRegistration('minimal');
-  const minimalHint = (minimalConfig._meta as Record<string, unknown>).delegationHint as Record<
-    string,
-    unknown
-  >;
-  assert.deepEqual(minimalHint.preferredTools, ['browser_call', 'browser_batch']);
-  assert.deepEqual(minimalHint.escalationTools, ['browser_call']);
-  assert.doesNotMatch(String(minimalConfig.description), /browser_dom/);
-  assert.doesNotMatch(String(minimalConfig.description), /browser_capture/);
-  assert.match(String(minimalConfig.description), /browser_call and browser_batch/);
+  assert.ok(captured);
+  const config = captured as Record<string, unknown>;
+  const hint = (config._meta as Record<string, unknown>).delegationHint as Record<string, unknown>;
+  assert.deepEqual(hint.preferredTools, ['browser_call', 'browser_batch']);
+  assert.deepEqual(hint.escalationTools, ['browser_call']);
+  assert.match(String(config.description), /browser_call and browser_batch/);
+  assert.doesNotMatch(String(config.description), /browser_dom|browser_capture/);
 });
 
-test('minimal instructions drop guidance for tools the profile does not register', () => {
-  const minimal = getMcpServerInstructions('minimal');
+test('instructions teach exact-name loading without profile terminology', () => {
+  const instructions = getMcpServerInstructions();
 
-  assert.match(minimal, /minimal tool profile/);
-  assert.match(minimal, /browser_call reaches every bridge method by name/);
-  assert.doesNotMatch(minimal, /browser_page, browser_dom/);
-  assert.doesNotMatch(minimal, /Only use the specialized Browser Bridge MCP tools/);
-
-  // Workflow guidance is profile-independent and must survive the trim.
-  assert.match(minimal, /Page investigation:/);
-  assert.match(minimal, /Layout debugging:/);
-  assert.match(minimal, /Flow verification:/);
-});
-
-test('full instructions are unchanged by the profile split', () => {
-  assert.equal(getMcpServerInstructions(), MCP_SERVER_INSTRUCTIONS);
-  assert.equal(getMcpServerInstructions('full'), MCP_SERVER_INSTRUCTIONS);
-  assert.match(MCP_SERVER_INSTRUCTIONS, /Only use the specialized Browser Bridge MCP tools/);
-  assert.match(MCP_SERVER_INSTRUCTIONS, /use browser_call as the default/);
-});
-
-test('resolveToolsetProfile reports unknown values on stderr by default', () => {
-  const originalWrite = process.stderr.write;
-  const written: string[] = [];
-
-  // The default warn path must use stderr: stdout carries the MCP protocol.
-  process.stderr.write = ((chunk: string | Uint8Array) => {
-    written.push(String(chunk));
-    return true;
-  }) as typeof process.stderr.write;
-
-  try {
-    const profile = resolveToolsetProfile({ [TOOLSET_PROFILE_ENV]: 'huge' });
-    assert.equal(profile, 'full');
-  } finally {
-    process.stderr.write = originalWrite;
-  }
-
-  assert.equal(written.length, 1);
-  assert.match(written[0], /ignoring unknown BBX_MCP_TOOLSET value "huge"/);
-  assert.match(written[0], /\n$/);
+  assert.equal(instructions, MCP_SERVER_INSTRUCTIONS);
+  assert.match(instructions, /common tools are available immediately/i);
+  assert.match(instructions, /browser_toolset with its exact tool name/);
+  assert.match(instructions, /protocol\.describe/);
+  assert.doesNotMatch(instructions, /minimal profile|full profile|toolset profile/i);
+  assert.match(instructions, /Page investigation:/);
+  assert.match(instructions, /Layout debugging:/);
+  assert.match(instructions, /Flow verification:/);
 });

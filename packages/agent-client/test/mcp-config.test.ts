@@ -352,13 +352,27 @@ test('removeMcpConfig removes Copilot from the path-specific block without migra
   }
 });
 
-test('installMcpConfig preserves unrelated Copilot blocks instead of migrating them', async () => {
+test('installMcpConfig preserves unrelated Copilot blocks and removes stale toolset selectors', async () => {
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-install-copilot-mcp-'));
   const configPath = path.join(tempDir, '.vscode', 'mcp.json');
   await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
   await fs.promises.writeFile(
     configPath,
-    `${JSON.stringify({ mcpServers: { existing: { command: 'other' } }, theme: 'dark' }, null, 2)}\n`,
+    `${JSON.stringify(
+      {
+        servers: {
+          'browser-bridge': {
+            command: 'bbx',
+            args: ['mcp', 'serve'],
+            env: { BBX_MCP_TOOLSET: 'full' },
+          },
+        },
+        mcpServers: { existing: { command: 'other' } },
+        theme: 'dark',
+      },
+      null,
+      2
+    )}\n`,
     'utf8'
   );
 
@@ -372,6 +386,7 @@ test('installMcpConfig preserves unrelated Copilot blocks instead of migrating t
     const updated = JSON.parse(await fs.promises.readFile(configPath, 'utf8'));
     assert.deepEqual(updated.mcpServers, { existing: { command: 'other' } });
     assert.equal(updated.servers['browser-bridge'].command, expectedMcpCommand);
+    assert.deepEqual(updated.servers['browser-bridge'].env, {});
     assert.equal(updated.theme, 'dark');
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });

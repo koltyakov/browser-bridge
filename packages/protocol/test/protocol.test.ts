@@ -421,11 +421,13 @@ test('bridge method registry is the source of truth for method ordering and tab-
   assert.equal(bridgeMethodNeedsTab('health.ping'), false);
   assert.equal(bridgeMethodNeedsTab('setup.get_status'), false);
   assert.equal(bridgeMethodNeedsTab('setup.install'), false);
+  assert.equal(bridgeMethodNeedsTab('protocol.describe'), false);
   assert.equal(bridgeMethodNeedsTab('dom.query'), true);
 });
 
 test('bridge method groups are derived from the registry', () => {
   const groups = createBridgeMethodGroups();
+  assert.ok(groups.system.includes('protocol.describe'));
   assert.ok(groups.tabs.includes('tabs.create'));
   assert.ok(groups.inspect.includes('dom.find_by_role'));
   assert.ok(groups.wait.includes('page.wait_for_load_state'));
@@ -1302,6 +1304,7 @@ test('normalizeViewportResizeParams defaults to 1280x720', () => {
 /** Ensure runtime context includes new method groups. */
 test('runtime context includes new method groups', () => {
   const context = createRuntimeContext();
+  assert.ok(context.methods.system.includes('protocol.describe'));
   assert.ok(context.methods.tabs.includes('tabs.create'));
   assert.ok(context.methods.tabs.includes('tabs.close'));
   assert.ok(context.methods.inspect.includes('dom.get_accessibility_tree'));

@@ -1,6 +1,7 @@
 // @ts-check
 
 import { CAPABILITIES } from './capability-values.js';
+import { BridgeError, ERROR_CODES } from './errors.js';
 
 /**
  * @typedef {'trivial' | 'low' | 'moderate' | 'high'} BridgeMethodComplexity
@@ -97,6 +98,8 @@ const METHOD_POLICIES = Object.freeze({
 const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
   'access.request':
     'Request Browser Bridge access for the focused window. Do not repeat while access is already pending.',
+  'protocol.describe':
+    'Describe bridge method parameters and metadata by method or registry group.',
   'tabs.list': 'List tabs in the enabled window.',
   'tabs.create': 'Create a new tab in the enabled window.',
   'tabs.close': 'Close a tab in the enabled window.',
@@ -222,6 +225,13 @@ function createRegistryEntry(
 export const BRIDGE_METHOD_REGISTRY = Object.freeze({
   // system - trivial
   'access.request': createRegistryEntry('access.request', 'system', false, ['intent'], 'trivial'),
+  'protocol.describe': createRegistryEntry(
+    'protocol.describe',
+    'system',
+    false,
+    ['method', 'group'],
+    'trivial'
+  ),
   'skill.get_runtime_context': createRegistryEntry(
     'skill.get_runtime_context',
     'system',
@@ -886,6 +896,79 @@ export function createBridgeMethodGroups() {
   }
 
   return groups;
+}
+
+/**
+ * @typedef {{
+ *   method: import('./types.js').BridgeMethod,
+ *   group: string,
+ *   tab: boolean,
+ *   params: readonly string[],
+ *   description: string,
+ *   complexity: BridgeMethodComplexity
+ * }} BridgeMethodDescription
+ */
+
+/**
+ * @param {import('./types.js').BridgeMethod} method
+ * @returns {BridgeMethodDescription}
+ */
+function createBridgeMethodDescription(method) {
+  const entry = BRIDGE_METHOD_REGISTRY[method];
+  return {
+    method,
+    group: entry.group,
+    tab: entry.tab,
+    params: entry.params,
+    description: entry.description,
+    complexity: entry.complexity,
+  };
+}
+
+/**
+ * Return a compact registry index or detailed descriptions for one method or group.
+ *
+ * @param {{ method?: unknown, group?: unknown }} [options]
+ * @returns {{ groups: Array<{ group: string, count: number }> } | BridgeMethodDescription | { group: string, methods: BridgeMethodDescription[] }}
+ */
+export function describeBridgeMethods(options = {}) {
+  const { method, group } = options;
+  if (method !== undefined && group !== undefined) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'protocol.describe accepts either method or group, not both.'
+    );
+  }
+  if (method !== undefined) {
+    if (typeof method !== 'string' || !isBridgeMethod(method)) {
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        `Unknown bridge method "${String(method)}".`
+      );
+    }
+    return createBridgeMethodDescription(method);
+  }
+
+  const groups = createBridgeMethodGroups();
+  if (group !== undefined) {
+    if (typeof group !== 'string' || !Object.hasOwn(groups, group)) {
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        `Unknown bridge method group "${String(group)}".`
+      );
+    }
+    return {
+      group,
+      methods: groups[group].map(createBridgeMethodDescription),
+    };
+  }
+
+  return {
+    groups: Object.entries(groups).map(([groupName, methods]) => ({
+      group: groupName,
+      count: methods.length,
+    })),
+  };
 }
 
 /**

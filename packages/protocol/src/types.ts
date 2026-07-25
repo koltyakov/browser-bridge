@@ -63,6 +63,7 @@ export type ErrorCode =
 
 export type BridgeMethod =
   | 'access.request'
+  | 'protocol.describe'
   | 'tabs.list'
   | 'tabs.create'
   | 'tabs.close'

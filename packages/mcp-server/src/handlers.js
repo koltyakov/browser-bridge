@@ -4,7 +4,6 @@ import os from 'node:os';
 
 import { DEFAULT_LOG_TAIL_LIMIT, createRuntimeContext } from '../../protocol/src/index.js';
 import { collectSetupStatus } from '../../agent-client/src/setup-status.js';
-import { resolveToolsetProfile, TOOLSET_PROFILE_ENV, TOOLSET_PROFILES } from './toolset.js';
 import {
   callBridgeTool,
   createToolResult,
@@ -197,16 +196,10 @@ export async function handleSetupTool(args) {
   });
   const configuredMcp = status.mcpClients.filter((e) => e.configured).length;
   const installedSkills = status.skillTargets.filter((e) => e.installed).length;
-  const toolsetProfile = resolveToolsetProfile();
-  const summary = `Optional agent integration status: ${configuredMcp}/${status.mcpClients.length} MCP clients configured, ${installedSkills}/${status.skillTargets.length} skills installed. Active MCP toolset profile: "${toolsetProfile}".`;
+  const summary = `Optional agent integration status: ${configuredMcp}/${status.mcpClients.length} MCP clients configured, ${installedSkills}/${status.skillTargets.length} skills installed.`;
   return createToolResult(summary, {
     ok: true,
     status,
-    toolset: {
-      profile: toolsetProfile,
-      envVar: TOOLSET_PROFILE_ENV,
-      profiles: [...TOOLSET_PROFILES],
-    },
   });
 }
 

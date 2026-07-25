@@ -463,6 +463,13 @@ test('cli install-mcp rejects unknown options and extra positional args', async 
   assert.equal(unknownOption.stdout, '');
   assert.match(unknownOption.stderr, /Unknown install-mcp option "--bogus"/);
 
+  const obsoleteProfile = await runCli({
+    args: ['install-mcp', 'claude', '--profile', 'full'],
+  });
+  assert.equal(obsoleteProfile.status, 1);
+  assert.equal(obsoleteProfile.stdout, '');
+  assert.match(obsoleteProfile.stderr, /Unknown install-mcp option "--profile"/);
+
   const extraArg = await runCli({ args: ['install-mcp', 'claude', 'cursor'] });
   assert.equal(extraArg.status, 1);
   assert.equal(extraArg.signal, null);

@@ -137,6 +137,24 @@ test('bbx --remote is rejected for local-only commands', async () => {
   });
 });
 
+test('bbx protocol describe is local-only and ignores ambient remote selection', async () => {
+  await withBridgeHome(async (bridgeHome) => {
+    const rejected = await runCli({
+      args: ['protocol', 'describe', 'dom.query', '--remote', 'vm-private'],
+      env: { ...process.env, BROWSER_BRIDGE_HOME: bridgeHome },
+    });
+    const local = await runCli({
+      args: ['protocol', 'describe', 'dom.query'],
+      env: { ...process.env, BROWSER_BRIDGE_HOME: bridgeHome, BBX_REMOTE: 'vm-private' },
+    });
+
+    assert.equal(rejected.status, 1);
+    assert.match(rejected.stderr, /--remote flag is not supported with "protocol"/u);
+    assert.equal(local.status, 0);
+    assert.equal((local.json as { method: string }).method, 'dom.query');
+  });
+});
+
 test('BBX_REMOTE env is ignored for local-only commands', async () => {
   await withBridgeHome(async (bridgeHome) => {
     const result = await runCli({

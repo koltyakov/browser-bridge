@@ -1,9 +1,7 @@
 // @ts-check
 
-/** @typedef {import('./toolset.js').ToolsetProfile} ToolsetProfile */
-
 /**
- * Guidance lines shared by every tool-surface profile.
+ * Guidance lines shared by the progressive tool surface.
  *
  * @type {readonly string[]}
  */
@@ -28,43 +26,23 @@ const WORKFLOW_INSTRUCTIONS = Object.freeze([
   'Flow verification: read initial page state, locate controls semantically, reuse elementRef values, interact through input tools, and wait for navigation or UI state changes. Verify the final DOM or page text plus console and network state when relevant. Do not create a new tab unless requested or required by the flow.',
 ]);
 
-const FULL_PROFILE_HEADER =
-  "Browser Bridge MCP inspects and interacts with the user's real Chrome tab through typed MCP tools.";
-
-const MINIMAL_PROFILE_HEADER =
+const SERVER_HEADER =
   "Browser Bridge MCP inspects and interacts with the user's real Chrome tab through a compact tool set.";
 
-const FULL_PROFILE_TOOL_RULES = Object.freeze([
-  'In permission-ask hosts, use browser_call as the default Browser Bridge MCP tool so the user can approve one BBX tool instead of separate browser_status, browser_page, browser_dom, browser_input, and other tools.',
-]);
-
-const MINIMAL_PROFILE_TOOL_RULES = Object.freeze([
-  'This server runs the minimal tool profile: browser_call, browser_batch, browser_status, browser_health, and browser_access. The specialized typed tools are not registered, and browser_call reaches every bridge method by name.',
-]);
-
-const FULL_PROFILE_TRAILING_RULES = Object.freeze([
-  'Only use the specialized Browser Bridge MCP tools directly when the host has already allowed them or the user explicitly wants typed tool calls.',
+const TOOL_RULES = Object.freeze([
+  'The common tools are available immediately. When a specialized typed tool is useful, call browser_toolset with its exact tool name; browser_call always reaches every bridge method without loading another tool.',
+  'Use browser_call method protocol.describe with method or group params to load unfamiliar signatures cheaply.',
 ]);
 
 /**
- * Build server instructions for a tool-surface profile.
+ * Build instructions for progressive tool discovery.
  *
- * The minimal profile drops references to tools it does not register so the
- * agent is never told to reach for something that is absent.
- *
- * @param {ToolsetProfile} [profile='full']
  * @returns {string}
  */
-export function getMcpServerInstructions(profile = 'full') {
-  const minimal = profile === 'minimal';
-
-  return [
-    minimal ? MINIMAL_PROFILE_HEADER : FULL_PROFILE_HEADER,
-    ...(minimal ? MINIMAL_PROFILE_TOOL_RULES : FULL_PROFILE_TOOL_RULES),
-    ...SHARED_INSTRUCTIONS,
-    ...(minimal ? [] : FULL_PROFILE_TRAILING_RULES),
-    ...WORKFLOW_INSTRUCTIONS,
-  ].join('\n');
+export function getMcpServerInstructions() {
+  return [SERVER_HEADER, ...TOOL_RULES, ...SHARED_INSTRUCTIONS, ...WORKFLOW_INSTRUCTIONS].join(
+    '\n'
+  );
 }
 
-export const MCP_SERVER_INSTRUCTIONS = getMcpServerInstructions('full');
+export const MCP_SERVER_INSTRUCTIONS = getMcpServerInstructions();

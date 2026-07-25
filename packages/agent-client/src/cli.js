@@ -10,7 +10,13 @@ import { fileURLToPath } from 'node:url';
 
 import { applyWindowsTcpTransportDefaults } from '../../native-host/src/config.js';
 import { restartBridgeDaemon } from '../../native-host/src/daemon-process.js';
-import { createRuntimeContext, isHarDocument, METHODS } from '../../protocol/src/index.js';
+import {
+  createRuntimeContext,
+  describeBridgeMethods,
+  isBridgeMethod,
+  isHarDocument,
+  METHODS,
+} from '../../protocol/src/index.js';
 import {
   restartRegisteredMcpProcesses,
   tryStartMcpProcessControl,
@@ -37,14 +43,7 @@ import {
 } from './cli-setup-commands.js';
 import { SHORTCUT_COMMANDS } from './command-registry.js';
 import { getAutoUpdatePolicy, parseAutoUpdatePolicy, setAutoUpdatePolicy } from './config.js';
-import {
-  DEFAULT_MCP_TOOLSET_PROFILE,
-  formatMcpConfig,
-  isMcpClientName,
-  isMcpToolsetProfile,
-  MCP_CLIENT_NAMES,
-  MCP_TOOLSET_PROFILES,
-} from './mcp-config.js';
+import { formatMcpConfig, isMcpClientName, MCP_CLIENT_NAMES } from './mcp-config.js';
 import { getDoctorReport, requestBridge, resolveRef } from './runtime.js';
 import { createBridgeClientForDestination } from './remotes.js';
 import { atomicWriteFile } from './atomic-write.js';
@@ -72,6 +71,7 @@ const LOCAL_ONLY_COMMANDS = new Set([
   '--version',
   '-v',
   'skill',
+  'protocol',
   'install',
   'uninstall',
   'install-skill',
@@ -119,6 +119,22 @@ if (command === 'skill') {
   process.exit(0);
 }
 
+if (command === 'protocol') {
+  const [subcommand, target, ...extra] = rest;
+  if (subcommand !== 'describe' || extra.length > 0) {
+    process.stderr.write('Usage: bbx protocol describe [method|group]\n');
+    process.exit(1);
+  }
+  await runLocalCommand(async () => {
+    printJson(
+      target
+        ? describeBridgeMethods(isBridgeMethod(target) ? { method: target } : { group: target })
+        : describeBridgeMethods()
+    );
+  });
+  process.exit();
+}
+
 if (command === 'install') {
   const { execFileSync } = await import('node:child_process');
   const installScript = path.resolve(
@@ -150,7 +166,7 @@ if (command === 'install-mcp') {
 }
 
 if (command === 'mcp') {
-  const [subcommand, clientName] = rest;
+  const [subcommand, clientName, ...extra] = rest;
   if (subcommand === 'serve') {
     const control = await tryStartMcpProcessControl();
     try {
@@ -162,24 +178,11 @@ if (command === 'mcp') {
     await new Promise(() => {});
   }
   if (subcommand === 'config') {
-    if (!clientName || !isMcpClientName(clientName)) {
-      process.stderr.write(
-        `Usage: bbx mcp config <${MCP_CLIENT_NAMES.join('|')}> [--profile <${MCP_TOOLSET_PROFILES.join('|')}>]\n`
-      );
+    if (!clientName || !isMcpClientName(clientName) || extra.length > 0) {
+      process.stderr.write(`Usage: bbx mcp config <${MCP_CLIENT_NAMES.join('|')}>\n`);
       process.exit(1);
     }
-    const profileIndex = rest.indexOf('--profile');
-    const profileValue =
-      profileIndex === -1
-        ? DEFAULT_MCP_TOOLSET_PROFILE
-        : (rest[profileIndex + 1] ?? '').trim().toLowerCase();
-    if (!isMcpToolsetProfile(profileValue)) {
-      process.stderr.write(
-        `Unknown MCP toolset profile "${profileValue}". Supported: ${MCP_TOOLSET_PROFILES.join(', ')}\n`
-      );
-      process.exit(1);
-    }
-    process.stdout.write(formatMcpConfig(clientName, profileValue));
+    process.stdout.write(formatMcpConfig(clientName));
     process.exit(0);
   }
   process.stderr.write('Usage: bbx mcp <serve|config>\n');

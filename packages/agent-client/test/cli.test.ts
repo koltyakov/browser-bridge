@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createRuntimeContext } from '../../protocol/src/index.js';
+import { createRuntimeContext, describeBridgeMethods } from '../../protocol/src/index.js';
 import { sanitizeOutput, stripAnsi } from '../src/cli-helpers.js';
 import { SHORTCUT_COMMANDS } from '../src/command-registry.js';
 import { createInstallFs } from '../../../tests/_helpers/installFs.ts';
@@ -99,6 +99,22 @@ test('cli skill command prints the runtime context JSON', async () => {
     ...createRuntimeContext(),
     v: TEST_PROTOCOL_VERSION,
   });
+});
+
+test('cli protocol describe returns methods, groups, and the compact index locally', async () => {
+  const method = await runCli({ args: ['protocol', 'describe', 'dom.query'] });
+  const group = await runCli({ args: ['protocol', 'describe', 'capture'] });
+  const index = await runCli({ args: ['protocol', 'describe'] });
+  const unknown = await runCli({ args: ['protocol', 'describe', 'not.real'] });
+
+  assert.equal(method.status, 0);
+  assert.deepEqual(method.json, describeBridgeMethods({ method: 'dom.query' }));
+  assert.equal(group.status, 0);
+  assert.deepEqual(group.json, describeBridgeMethods({ group: 'capture' }));
+  assert.equal(index.status, 0);
+  assert.deepEqual(index.json, describeBridgeMethods());
+  assert.equal(unknown.status, 1);
+  assert.match(unknown.stderr, /Unknown bridge method group "not\.real"/);
 });
 
 test('cli install forwards browser and extension id args to the native host installer', async () => {

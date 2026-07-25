@@ -121,6 +121,7 @@ grouped here by domain.
 | Method                      | Description                                                                                       |
 | --------------------------- | ------------------------------------------------------------------------------------------------- |
 | `access.request`            | Request Browser Bridge access for the focused window. Do not repeat while access is pending       |
+| `protocol.describe`         | Return compact method or registry-group parameters and metadata locally                           |
 | `skill.get_runtime_context` | Return runtime method groups, budgets, and limits                                                 |
 | `setup.get_status`          | Return MCP and skill setup status                                                                 |
 | `setup.install`             | Install or uninstall MCP or skill integration targets                                             |

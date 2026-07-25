@@ -459,6 +459,25 @@ test('handleRawCallTool rejects unsupported methods without calling the bridge',
   );
 });
 
+test('handleRawCallTool describes protocol methods locally even with a destination', async () => {
+  await withMockedBridge(
+    async () => ok({}),
+    async (calls) => {
+      const result = await handleRawCallTool({
+        method: 'protocol.describe',
+        params: { method: 'dom.query' },
+        destinationId: 'vm-private',
+      });
+
+      assert.equal(calls.length, 0);
+      assert.equal(result.isError, undefined);
+      assert.equal(result.structuredContent.method, 'dom.query');
+      assert.equal(result.structuredContent.group, 'inspect');
+      assert.deepEqual(result.structuredContent.params, BRIDGE_METHOD_REGISTRY['dom.query'].params);
+    }
+  );
+});
+
 test(
   'handleStatusTool returns doctor report without bridge calls',
   { timeout: 5_000 },
@@ -513,30 +532,8 @@ test('handleSetupTool reports optional agent integration status', async () => {
 
   assert.match(result.content[0].text, /Optional agent integration status:/);
   assert.doesNotMatch(result.content[0].text, /No MCP or skill setup found/);
-});
-
-test('handleSetupTool surfaces the active toolset profile', async () => {
-  const originalProfile = process.env.BBX_MCP_TOOLSET;
-  process.env.BBX_MCP_TOOLSET = 'minimal';
-  try {
-    const result = await handleSetupTool({ global: false });
-
-    assert.match(result.content[0].text, /toolset profile: "minimal"/i);
-    const toolset = result.structuredContent.toolset as {
-      profile: string;
-      envVar: string;
-      profiles: string[];
-    };
-    assert.equal(toolset.profile, 'minimal');
-    assert.equal(toolset.envVar, 'BBX_MCP_TOOLSET');
-    assert.deepEqual(toolset.profiles, ['full', 'minimal']);
-  } finally {
-    if (originalProfile === undefined) {
-      delete process.env.BBX_MCP_TOOLSET;
-    } else {
-      process.env.BBX_MCP_TOOLSET = originalProfile;
-    }
-  }
+  assert.doesNotMatch(result.content[0].text, /toolset profile/i);
+  assert.equal(Object.hasOwn(result.structuredContent, 'toolset'), false);
 });
 
 test('handleSkillTool returns runtime context without a bridge connection', async () => {

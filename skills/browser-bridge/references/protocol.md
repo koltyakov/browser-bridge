@@ -27,11 +27,16 @@ The table below includes the legacy capability bucket for each method so agents 
 - `-` means the method is global/system-scoped and was never gated by a former capability bucket.
 - Capability names are descriptive coverage labels only. Browser Bridge access is window-scoped now; there are no capability-scoped sessions.
 
-## All Methods (75)
+Use `bbx protocol describe <method|group>` for a compact local signature lookup. In MCP mode,
+call `browser_call` with method `protocol.describe` and params containing `method` or `group`;
+omit both for the group index.
+
+## All Methods (76)
 
 | Method                             | Tab? | CDP?       | Group       | Capability           | Notes                                                                                      |
 | ---------------------------------- | ---- | ---------- | ----------- | -------------------- | ------------------------------------------------------------------------------------------ |
 | `access.request`                   | No   | -          | system      | `intent?`            | Request window access with bounded operation context in the extension UI                    |
+| `protocol.describe`                | No   | -          | system      | `-`                  | Local compact method/group parameters and metadata                                          |
 | `tabs.list`                        | No   | -          | tabs        | `-`                  | Discover tabs in the enabled window                                                        |
 | `tabs.create`                      | No   | -          | tabs        | `tabs.manage`        | Open a new tab; optional `url` and `active`                                                |
 | `tabs.close`                       | No   | -          | tabs        | `tabs.manage`        | Close a tab by `tabId`                                                                     |
@@ -115,6 +120,7 @@ stopped.
 
 ```bash
 bbx status | doctor | restart | logs | tabs | skill # no routed tab needed
+bbx protocol describe [method|group]             # local signature or compact group index
 bbx call <method> '{"key":"val"}'           # generic RPC (routes to active tab in enabled window)
 bbx call --tab 123 <method> '{...}'         # explicit tab target inside enabled window
 bbx batch '[{"method":"...","params":{}}]'  # parallel calls
