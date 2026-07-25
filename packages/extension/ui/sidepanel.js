@@ -1120,10 +1120,6 @@ function renderActionLogEntry(entry, setupStatus, entries, index) {
     sourceTag.textContent = activitySourceTag.toUpperCase();
     title.append(sourceTag);
   }
-  if (entry.severity === 'warning') {
-    title.append(createActivityBadge('Sensitive access', 'activity-badge-warn'));
-  }
-
   const timestamp = document.createElement('span');
   timestamp.className = 'muted activity-time';
   timestamp.textContent = new Date(entry.at).toLocaleTimeString();

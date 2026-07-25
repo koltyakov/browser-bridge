@@ -604,7 +604,7 @@ test('sidepanel UI renders activity summaries, histogram families, and repeat wa
     assert.match(actionLog.textContent ?? '', /Image/);
     assert.match(actionLog.textContent ?? '', /Debugger/);
     assert.match(actionLog.textContent ?? '', /Truncated/);
-    assert.match(actionLog.textContent ?? '', /Sensitive access/);
+    assert.doesNotMatch(actionLog.textContent ?? '', /Sensitive access/);
     assert.match(actionLog.textContent ?? '', /Sensitive local storage read succeeded/);
     assert.equal(actionLog.querySelectorAll('.activity-summary-error').length >= 1, true);
     assert.doesNotMatch(actionLog.textContent ?? '', /private-token|secret-value/);
