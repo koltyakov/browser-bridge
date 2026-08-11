@@ -106,7 +106,7 @@ export async function ensureClientConnected(client) {
  * @param {BridgeClient} client
  * @param {BridgeMethod} method
  * @param {Record<string, unknown>} [params={}]
- * @param {{ tabId?: number | null, source?: BridgeRequestSource, tokenBudget?: number | null, automaticRetry?: 'mcp_second_attempt' }} [options]
+ * @param {{ tabId?: number | null, source?: BridgeRequestSource, mcpEra?: import('./types.js').McpProtocolEra, tokenBudget?: number | null, automaticRetry?: 'mcp_second_attempt' }} [options]
  * @returns {Promise<BridgeResponse>}
  */
 export async function requestBridge(client, method, params = {}, options = {}) {
@@ -127,7 +127,12 @@ export async function requestBridge(client, method, params = {}, options = {}) {
     method,
     params,
     tabId: methodNeedsTab(method) ? (options.tabId ?? null) : null,
-    meta: withRequestMeta(options.source, options.tokenBudget, options.automaticRetry),
+    meta: withRequestMeta(
+      options.source,
+      options.mcpEra,
+      options.tokenBudget,
+      options.automaticRetry
+    ),
     ...(timeoutMs === undefined ? {} : { timeoutMs }),
   });
 }
@@ -168,15 +173,19 @@ export async function resolveRef(client, refOrSelector, tabId = null, source) {
 
 /**
  * @param {BridgeRequestSource | undefined} source
+ * @param {import('./types.js').McpProtocolEra | undefined} mcpEra
  * @param {number | null | undefined} tokenBudget
  * @param {'mcp_second_attempt' | undefined} automaticRetry
  * @returns {BridgeMeta}
  */
-function withRequestMeta(source, tokenBudget, automaticRetry) {
+function withRequestMeta(source, mcpEra, tokenBudget, automaticRetry) {
   /** @type {BridgeMeta} */
   const meta = {};
   if (source) {
     meta.source = source;
+  }
+  if (source === 'mcp' && mcpEra) {
+    meta.mcp_era = mcpEra;
   }
   if (typeof tokenBudget === 'number' && Number.isFinite(tokenBudget)) {
     meta.token_budget = tokenBudget;

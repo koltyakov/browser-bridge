@@ -11,6 +11,7 @@ import {
   getToolTokenBudget,
   getBridgeDestinations,
   applyLimitBudgetPreset,
+  requestBridgeWithRetry,
   summarizeToolError,
   summarizeToolResponse,
   withToolClient,
@@ -34,6 +35,7 @@ export {
   callBridgeTool,
   dispatchToolAction,
   REQUEST_SOURCE,
+  runWithMcpRequestEra,
 } from './handlers-utils.js';
 
 export {
@@ -233,10 +235,14 @@ export async function handleHealthTool(args = {}) {
   const destinationId = typeof args.destinationId === 'string' ? args.destinationId : null;
   return withToolClient(
     async (client) => {
-      const response = await client.request({
-        method: 'health.ping',
-        meta: { source: REQUEST_SOURCE },
-      });
+      const response = await requestBridgeWithRetry(
+        client,
+        'health.ping',
+        {},
+        {
+          source: REQUEST_SOURCE,
+        }
+      );
       return summarizeToolResponse(response, 'health.ping');
     },
     { destinationId }

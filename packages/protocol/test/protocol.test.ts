@@ -281,6 +281,27 @@ test('validateBridgeRequest normalizes routing and metadata fallbacks', () => {
   assert.equal(request.meta.keep, 'value');
 });
 
+test('validateBridgeRequest accepts MCP era metadata only from MCP requests', () => {
+  const base = { id: 'req_mcp_era', method: 'health.ping' } as const;
+
+  assert.equal(
+    validateBridgeRequest({ ...base, meta: { source: 'mcp', mcp_era: 'legacy' } }).meta.mcp_era,
+    'legacy'
+  );
+  assert.equal(
+    validateBridgeRequest({ ...base, meta: { source: 'mcp', mcp_era: 'modern' } }).meta.mcp_era,
+    'modern'
+  );
+  assert.equal(
+    validateBridgeRequest({ ...base, meta: { source: 'cli', mcp_era: 'modern' } }).meta.mcp_era,
+    undefined
+  );
+  assert.equal(
+    validateBridgeRequest({ ...base, meta: { source: 'mcp', mcp_era: 'v2' } }).meta.mcp_era,
+    undefined
+  );
+});
+
 test('validateBridgeRequest accepts only exact MCP automatic retry metadata', () => {
   const base = { id: 'req_retry_meta', method: 'page.get_state' } as const;
   const marker = { attempt: 2, reason: 'retryable_error' };

@@ -214,6 +214,8 @@ test(
       );
       assert.equal(bridgeServer.requests[0].tab_id, 17);
       assert.equal(bridgeServer.requests[1].tab_id, 17);
+      assert.equal(bridgeServer.requests[0].meta.mcp_era, 'legacy');
+      assert.equal(bridgeServer.requests[1].meta.mcp_era, 'legacy');
       assert.deepEqual(bridgeServer.requests[1].params, {
         selector: 'main',
         withinRef: null,
@@ -225,6 +227,64 @@ test(
           attributeAllowlist: [],
         },
       });
+    } finally {
+      await Promise.allSettled([transport?.close(), bridgeServer.close()]);
+    }
+  }
+);
+
+test(
+  'bbx-mcp forwards the modern MCP era to bridge requests',
+  {
+    skip:
+      process.platform === 'win32' ? 'Unix socket daemon test is not applicable on Windows' : false,
+  },
+  async () => {
+    const bridgeServer = await startBridgeSocketServer(async (message, { socket }) => {
+      const request = getBridgeRequest(message);
+      if (!request) return;
+      socket.write(
+        `${JSON.stringify({
+          type: 'agent.response',
+          response: createSuccess(
+            request.id,
+            {
+              daemon: 'ok',
+              extensionConnected: false,
+              access: { enabled: false, routeReady: false, reason: 'access_disabled' },
+            },
+            { method: request.method }
+          ),
+        })}\n`
+      );
+    });
+    let transport: StdioClientTransport | null = null;
+
+    try {
+      transport = new StdioClientTransport({
+        command: process.execPath,
+        args: [mcpBinPath],
+        cwd: repoRoot,
+        env: toSpawnEnv({
+          ...process.env,
+          BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome,
+        }),
+        stderr: 'pipe',
+      });
+      const client = new Client(
+        {
+          name: 'browser-bridge-modern-era-integration-test',
+          version: '1.0.0',
+        },
+        { versionNegotiation: { mode: { pin: '2026-07-28' } } }
+      );
+      await client.connect(transport);
+      await client.callTool({ name: 'browser_health', arguments: {} });
+
+      assert.equal(client.getProtocolEra(), 'modern');
+      assert.equal(bridgeServer.requests.length, 1);
+      assert.equal(bridgeServer.requests[0].meta.source, 'mcp');
+      assert.equal(bridgeServer.requests[0].meta.mcp_era, 'modern');
     } finally {
       await Promise.allSettled([transport?.close(), bridgeServer.close()]);
     }

@@ -1,4 +1,5 @@
 export type BridgeRequestSource = 'cli' | 'mcp';
+export type McpProtocolEra = 'legacy' | 'modern';
 
 export type AccessIntent = 'inspect' | 'interact' | 'capture' | 'navigate' | 'debugger' | 'general';
 
@@ -153,6 +154,7 @@ export interface BridgeMeta {
   image_approx_tokens?: number;
   image_bytes?: number;
   source?: BridgeRequestSource;
+  mcp_era?: McpProtocolEra;
   response_bytes?: number;
   approx_tokens?: number;
   cost_class?: CostClass;

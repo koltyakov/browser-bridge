@@ -21,6 +21,7 @@
  *   at: number,
  *   method: string,
  *   source: string,
+ *   mcpEra?: import('../../protocol/src/types.js').McpProtocolEra | null,
  *   tabId: number | null,
  *   url: string,
  *   ok: boolean,

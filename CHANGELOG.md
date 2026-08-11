@@ -21,6 +21,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `browser_toolset` loading. Modern stateless clients receive a fixed compact
   surface with `browser_skill` instead of `browser_toolset`; `browser_call`
   continues to reach every bridge method in both eras.
+- **MCP era activity labels:** Extension access prompts and side-panel activity
+  now distinguish `MCP Legacy` from `MCP Modern`; modern activity includes the
+  exact `2026-07-28` revision in its source-tag tooltip.
 
 ## [1.10.0] - 2026-07-24
 

@@ -1,5 +1,6 @@
 // @ts-check
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 
 import {
@@ -46,6 +47,18 @@ import { annotateBridgeSummary, summarizeBridgeResponse } from '../../agent-clie
 
 export const REQUEST_SOURCE = 'mcp';
 const MCP_CLIENT_ID = `mcp_${randomUUID()}`;
+/** @type {AsyncLocalStorage<import('../../protocol/src/types.js').McpProtocolEra>} */
+const MCP_REQUEST_ERA = new AsyncLocalStorage();
+
+/**
+ * @template T
+ * @param {import('../../protocol/src/types.js').McpProtocolEra} era
+ * @param {() => T} callback
+ * @returns {T}
+ */
+export function runWithMcpRequestEra(era, callback) {
+  return MCP_REQUEST_ERA.run(era, callback);
+}
 
 /** @type {ReadonlySet<BridgeMethod>} */
 const RETRY_SAFE_METHODS = new Set([
@@ -606,14 +619,18 @@ export async function waitForClientReconnect(client, timeoutMs = RECONNECT_WAIT_
  * @param {import('../../agent-client/src/client.js').BridgeClient} client
  * @param {BridgeMethod} method
  * @param {Record<string, unknown>} params
- * @param {{ tabId?: number | null, source?: import('../../protocol/src/types.js').BridgeRequestSource, tokenBudget?: number | null, automaticRetry?: 'mcp_second_attempt' }} options
+ * @param {{ tabId?: number | null, source?: import('../../protocol/src/types.js').BridgeRequestSource, mcpEra?: import('../../protocol/src/types.js').McpProtocolEra, tokenBudget?: number | null, automaticRetry?: 'mcp_second_attempt' }} options
  * @returns {Promise<BridgeResponse>}
  */
 export async function requestBridgeWithRetry(client, method, params, options) {
+  const requestOptions = {
+    ...options,
+    mcpEra: options.mcpEra ?? MCP_REQUEST_ERA.getStore(),
+  };
   /** @type {BridgeResponse} */
   let response;
   try {
-    response = await requestBridge(client, method, params, options);
+    response = await requestBridge(client, method, params, requestOptions);
   } catch (error) {
     if (!isConnectionLossError(error) || !isRetrySafeBridgeMethod(method, params)) {
       throw error;
@@ -625,7 +642,7 @@ export async function requestBridgeWithRetry(client, method, params, options) {
       throw error;
     }
     return requestBridge(client, method, params, {
-      ...options,
+      ...requestOptions,
       automaticRetry: 'mcp_second_attempt',
     });
   }
@@ -640,7 +657,7 @@ export async function requestBridgeWithRetry(client, method, params, options) {
     );
     await new Promise((r) => setTimeout(r, delay));
     return requestBridge(client, method, params, {
-      ...options,
+      ...requestOptions,
       automaticRetry: 'mcp_second_attempt',
     });
   }

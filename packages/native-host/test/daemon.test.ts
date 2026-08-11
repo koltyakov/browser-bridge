@@ -1623,6 +1623,7 @@ test('daemon log entries retain request source metadata', async () => {
         protocol_version: PROTOCOL_VERSION,
         token_budget: null,
         source: 'mcp',
+        mcp_era: 'modern',
       },
     },
   });
@@ -1639,6 +1640,7 @@ test('daemon log entries retain request source metadata', async () => {
 
   assert.equal(daemon.recentLog.length, 1);
   assert.equal(daemon.recentLog[0].source, 'mcp');
+  assert.equal(daemon.recentLog[0].mcpEra, 'modern');
 });
 
 test('daemon forwards health checks to the extension and merges access state', async () => {

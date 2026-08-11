@@ -32,6 +32,7 @@ import {
   handleInvestigateTool,
   createToolResult,
   MAX_BATCH_CALLS,
+  runWithMcpRequestEra,
 } from './handlers.js';
 import {
   ARTIFACT_CHUNK_BYTES,
@@ -170,7 +171,10 @@ export function createBridgeMcpServer(options = {}) {
    * @returns {ReturnType<typeof server.registerTool>}
    */
   const registerTool = (name, config, handler) => {
-    const registration = server.registerTool(name, config, handler);
+    const wrappedHandler = /** @type {typeof handler} */ (
+      (args, context) => runWithMcpRequestEra(era, () => handler(args, context))
+    );
+    const registration = server.registerTool(name, config, wrappedHandler);
     registrations.set(name, registration);
     if (!isToolEnabledForEra(name, era)) {
       registration.disable();

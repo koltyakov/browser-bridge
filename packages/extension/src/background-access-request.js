@@ -17,10 +17,11 @@ const MAX_ACCESS_TITLE_LENGTH = 160;
  *
  * @param {ResolvedTabTarget} target
  * @param {unknown} source
+ * @param {unknown} mcpEra
  * @param {unknown} intent
  * @returns {import('./background-state.js').AccessRequestContext}
  */
-export function createAccessRequestContext(target, source, intent) {
+export function createAccessRequestContext(target, source, mcpEra, intent) {
   const title = Array.from(target.title, (character) => {
     const code = character.charCodeAt(0);
     return code < 32 || code === 127 ? ' ' : character;
@@ -42,6 +43,7 @@ export function createAccessRequestContext(target, source, intent) {
     windowId: target.windowId,
     tabId: target.tabId,
     source: source === 'cli' || source === 'mcp' ? source : null,
+    mcpEra: source === 'mcp' && (mcpEra === 'legacy' || mcpEra === 'modern') ? mcpEra : null,
     intent:
       intent === 'inspect' ||
       intent === 'interact' ||
@@ -64,6 +66,7 @@ export function createAccessRequestContext(target, source, intent) {
  *   appendActionLogEntry: (entry: {
  *     method: string,
  *     source?: string,
+ *     mcpEra?: import('../../protocol/src/types.js').McpProtocolEra | null,
  *     tabId?: number | null,
  *     url?: string,
  *     ok: boolean,
@@ -167,16 +170,18 @@ export function createAccessRequestController(state, deps) {
   /**
    * @param {ResolvedTabTarget} target
    * @param {unknown} source
+   * @param {unknown} mcpEra
    * @param {unknown} intent
    * @returns {Promise<void>}
    */
-  async function queueAccessRequest(target, source, intent) {
+  async function queueAccessRequest(target, source, mcpEra, intent) {
     state.requestedAccessWindowId = target.windowId;
-    state.requestedAccessContext = createAccessRequestContext(target, source, intent);
+    state.requestedAccessContext = createAccessRequestContext(target, source, mcpEra, intent);
     try {
       await deps.appendActionLogEntry({
         method: 'access.requested',
         source: typeof source === 'string' ? source : undefined,
+        mcpEra: mcpEra === 'legacy' || mcpEra === 'modern' ? mcpEra : null,
         tabId: target.tabId,
         url: target.url,
         ok: true,
@@ -207,7 +212,12 @@ export function createAccessRequestController(state, deps) {
       return createBackgroundAccessFailure(request, target);
     }
 
-    await queueAccessRequest(target, request.meta?.source, request.params.intent);
+    await queueAccessRequest(
+      target,
+      request.meta?.source,
+      request.meta?.mcp_era,
+      request.params.intent
+    );
     return null;
   }
 
@@ -276,7 +286,12 @@ export function createAccessRequestController(state, deps) {
       return createBackgroundAccessFailure(request, target);
     }
 
-    await queueAccessRequest(target, request.meta?.source, request.params.intent);
+    await queueAccessRequest(
+      target,
+      request.meta?.source,
+      request.meta?.mcp_era,
+      request.params.intent
+    );
 
     return createSuccess(
       request.id,

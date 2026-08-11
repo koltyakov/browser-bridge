@@ -39,6 +39,7 @@ test('getPopupViewState returns the access requested variant when access is pend
         windowId: 2,
         tabId: 10,
         source: 'mcp',
+        mcpEra: 'modern',
         intent: 'inspect',
         title: 'Pending access',
         origin: 'https://example.com',
@@ -47,7 +48,7 @@ test('getPopupViewState returns the access requested variant when access is pend
     {
       eyebrow: 'Window access requested',
       detail:
-        'MCP requested access to inspect pages in this Chrome window. Current tab: Pending access - https://example.com.',
+        'MCP Modern requested access to inspect pages in this Chrome window. Current tab: Pending access - https://example.com.',
       disclosureHidden: false,
       attention: true,
       buttonLabel: 'Enable Window Access',

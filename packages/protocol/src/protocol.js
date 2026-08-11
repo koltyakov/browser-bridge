@@ -372,9 +372,19 @@ export function validateBridgeRequest(request) {
         typeof meta.protocol_version === 'string' ? meta.protocol_version : getProtocolVersion(),
       token_budget: typeof meta.token_budget === 'number' ? meta.token_budget : null,
       source: meta.source === 'cli' || meta.source === 'mcp' ? meta.source : undefined,
+      mcp_era: normalizeMcpEra(meta.source, meta.mcp_era),
       automatic_retry: normalizeAutomaticRetryMeta(meta.source, meta.automatic_retry),
     },
   };
+}
+
+/**
+ * @param {unknown} source
+ * @param {unknown} value
+ * @returns {import('./types.js').McpProtocolEra | undefined}
+ */
+function normalizeMcpEra(source, value) {
+  return source === 'mcp' && (value === 'legacy' || value === 'modern') ? value : undefined;
 }
 
 /**

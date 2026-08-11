@@ -459,45 +459,23 @@ test('getPromptExamplesMode returns grouped when both MCP and CLI skill exist', 
 });
 
 test('getActivitySourceTag prefers explicit source metadata', () => {
-  assert.equal(getActivitySourceTag('mcp', null), 'mcp');
-  assert.equal(
-    getActivitySourceTag('cli', {
-      mcpClients: [{ configured: true }],
-      skillTargets: [{ skills: [{ exists: true }] }],
-    }),
-    'cli'
-  );
+  assert.equal(getActivitySourceTag('mcp', null), 'MCP');
+  assert.equal(getActivitySourceTag('mcp', 'legacy'), 'MCP Legacy');
+  assert.equal(getActivitySourceTag('mcp', 'modern'), 'MCP Modern');
+  assert.equal(getActivitySourceTag('cli', 'modern'), 'CLI');
 });
 
-test('getActivitySourceTag does not infer MCP from setup state', () => {
-  assert.equal(
-    getActivitySourceTag('', {
-      mcpClients: [{ configured: true }],
-      skillTargets: [{ skills: [{ exists: false }] }],
-    }),
-    ''
-  );
-});
-
-test('getActivitySourceTag does not infer CLI from setup state', () => {
-  assert.equal(
-    getActivitySourceTag('', {
-      mcpClients: [{ configured: false }],
-      skillTargets: [{ skills: [{ exists: true }] }],
-    }),
-    ''
-  );
-});
-
-test('getActivitySourceTag does not guess when setup is ambiguous', () => {
+test('getActivitySourceTag leaves missing source metadata unlabelled', () => {
   assert.equal(getActivitySourceTag('', null), '');
-  assert.equal(
-    getActivitySourceTag('', {
-      mcpClients: [{ configured: true }],
-      skillTargets: [{ skills: [{ exists: true }] }],
-    }),
-    ''
-  );
+});
+
+test('getActivitySourceTag ignores an era without an MCP source', () => {
+  assert.equal(getActivitySourceTag('other', 'modern'), '');
+});
+
+test('getActivitySourceTag does not guess unknown source values', () => {
+  assert.equal(getActivitySourceTag('', null), '');
+  assert.equal(getActivitySourceTag('', 'modern'), '');
 });
 
 test('normalizeSidepanelToggleError maps known toggle failures to user-visible messages', () => {
@@ -622,6 +600,33 @@ test('getSidepanelAgentStatusView covers unavailable, enabled, requested, and de
       title: 'Window access requested',
       detail:
         'CLI requested access to capture pages in this Chrome window. Current tab: Pending - https://example.com.',
+      disclosureHidden: false,
+    }
+  );
+
+  assert.deepEqual(
+    getSidepanelAgentStatusView({
+      tabId: 13,
+      windowId: 5,
+      title: 'Pending',
+      url: 'https://example.com',
+      enabled: false,
+      accessRequested: true,
+      restricted: false,
+      accessRequestContext: {
+        windowId: 5,
+        tabId: 13,
+        source: 'mcp',
+        mcpEra: 'legacy',
+        intent: 'inspect',
+        title: 'Pending',
+        origin: 'https://example.com',
+      },
+    }),
+    {
+      title: 'Window access requested',
+      detail:
+        'MCP Legacy requested access to inspect pages in this Chrome window. Current tab: Pending - https://example.com.',
       disclosureHidden: false,
     }
   );

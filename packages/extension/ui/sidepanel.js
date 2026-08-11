@@ -50,6 +50,7 @@ import {
  *   at: number,
  *   method: string,
  *   source: string,
+ *   mcpEra?: import('../../protocol/src/types.js').McpProtocolEra | null,
  *   tabId: number | null,
  *   url: string,
  *   ok: boolean,
@@ -1113,11 +1114,16 @@ function renderActionLogEntry(entry, setupStatus, entries, index) {
   methodLabel.textContent = entry.method;
   methodLabel.title = entry.method;
   title.append(methodLabel);
-  const activitySourceTag = getActivitySourceTag(entry.source, setupStatus);
+  const activitySourceTag = getActivitySourceTag(entry.source, entry.mcpEra);
   if (activitySourceTag) {
     const sourceTag = document.createElement('span');
     sourceTag.className = 'activity-source-tag';
-    sourceTag.textContent = activitySourceTag.toUpperCase();
+    sourceTag.textContent = activitySourceTag;
+    if (entry.mcpEra === 'modern') {
+      sourceTag.title = 'Modern stateless MCP (protocol revision 2026-07-28)';
+    } else if (entry.mcpEra === 'legacy') {
+      sourceTag.title = 'Legacy MCP (protocol revision 2025-11-25 or earlier)';
+    }
     title.append(sourceTag);
   }
   const timestamp = document.createElement('span');

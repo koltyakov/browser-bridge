@@ -39,6 +39,7 @@ type ActionLogEntry = {
   at: number;
   method: string;
   source: string;
+  mcpEra?: 'legacy' | 'modern' | null;
   tabId: number | null;
   url: string;
   ok: boolean;
@@ -511,6 +512,8 @@ test('sidepanel UI renders activity summaries, histogram families, and repeat wa
 
     const activityEntries = [
       createActionLogEntry('access-requested', 'access.requested', 0, {
+        source: 'mcp',
+        mcpEra: 'modern',
         summary: 'Window access requested; waiting for confirmation.',
       }),
       createActionLogEntry('access-confirmed', 'access.confirmed', 0, {
@@ -609,6 +612,14 @@ test('sidepanel UI renders activity summaries, histogram families, and repeat wa
     assert.equal(actionLog.querySelectorAll('.activity-summary-error').length >= 1, true);
     assert.doesNotMatch(actionLog.textContent ?? '', /private-token|secret-value/);
     assert.match(actionLog.textContent ?? '', /access\.requested/);
+    assert.match(actionLog.textContent ?? '', /MCP Modern/);
+    const modernTag = [...actionLog.querySelectorAll('.activity-source-tag')].find(
+      (tag) => tag.textContent === 'MCP Modern'
+    );
+    assert.equal(
+      modernTag?.getAttribute('title'),
+      'Modern stateless MCP (protocol revision 2026-07-28)'
+    );
     assert.match(
       actionLog.textContent ?? '',
       /Window access requested; waiting for confirmation\./
