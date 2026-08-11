@@ -869,7 +869,10 @@ test('CDP network safety TTL serializes and retries a failed stop', async () => 
     },
   });
   await capture.start(1);
-  await new Promise((resolve) => setTimeout(resolve, 30));
+  const deadline = Date.now() + 1_000;
+  while (releases < 1 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
   assert.equal((await capture.read(1)).captureState, 'stopped');
   assert.equal(disableAttempts, 2);
   assert.equal(releases, 1);

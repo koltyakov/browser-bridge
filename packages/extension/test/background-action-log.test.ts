@@ -156,6 +156,16 @@ test('standalone handshake pings are logged and immediate sourced checks replace
   await controller.logBridgeAction(sourcedRequest, response, context);
   assert.equal(state.actionLog.length, 1);
   assert.equal(state.actionLog[0].source, 'cli');
+
+  const modernRequest = createRequest({
+    id: 'modern-connection-check',
+    method: 'health.ping',
+    meta: { source: 'mcp', mcp_era: 'modern' },
+  });
+  await controller.logBridgeAction(modernRequest, response, context);
+  assert.equal(state.actionLog.length, 1);
+  assert.equal(state.actionLog[0].source, 'mcp');
+  assert.equal(state.actionLog[0].mcpEra, 'modern');
 });
 
 test('dialog text and prompt values never enter persisted action logs', async () => {

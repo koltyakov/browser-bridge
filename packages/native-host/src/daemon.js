@@ -60,7 +60,7 @@ setProtocolPackageVersion(DAEMON_VERSION);
 /** @typedef {import('./daemon-logger.js').DaemonLoggerLike} DaemonLoggerLike */
 /** @typedef {'agent' | 'extension'} SocketRole */
 /** @typedef {import('node:net').Socket & { readonly __role?: SocketRole, __clientId?: string, __extensionId?: string, __browserName?: string, __profileLabel?: string, __browserExtensionId?: string, __accessEnabled?: boolean, __lastActiveAt?: number }} ClientSocket */
-/** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string, method?: string, protocolVersion?: string, baselineId?: string | null, automaticMcpRetry?: boolean, targets: Set<ClientSocket>, lastErrorResponse?: import('../../protocol/src/types.js').BridgeResponse }} PendingEntry */
+/** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string, mcpEra?: string, method?: string, protocolVersion?: string, baselineId?: string | null, automaticMcpRetry?: boolean, targets: Set<ClientSocket>, lastErrorResponse?: import('../../protocol/src/types.js').BridgeResponse }} PendingEntry */
 /**
  * @typedef {{
  *   installAgentFiles: typeof import('../../agent-client/src/install.js').installAgentFiles,
@@ -1165,6 +1165,7 @@ export class BridgeDaemon {
       method: request.method,
       protocolVersion: request.meta?.protocol_version,
       source: typeof request.meta?.source === 'string' ? request.meta.source : '',
+      mcpEra: typeof request.meta?.mcp_era === 'string' ? request.meta.mcp_era : '',
       baselineId,
       automaticMcpRetry: isAutomaticMcpRetry(request.meta),
       targets: new Set([target]),
@@ -1603,6 +1604,7 @@ export class BridgeDaemon {
         ok: true,
         id: responseMessage.id,
         source: pending.source || null,
+        ...(pending.mcpEra ? { mcpEra: pending.mcpEra } : {}),
       });
       return;
     }
@@ -1702,6 +1704,7 @@ export class BridgeDaemon {
       ok: false,
       id: requestId,
       source: pending.source || null,
+      ...(pending.mcpEra ? { mcpEra: pending.mcpEra } : {}),
     });
 
     await writeJsonLine(pending.socket, {

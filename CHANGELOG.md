@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-08-11
+
+### Added
+
+- **Modern stateless MCP:** The existing `bbx mcp serve` stdio command now
+  supports both legacy MCP clients and the modern `2026-07-28` protocol era,
+  including `server/discover` and per-request metadata negotiation.
+
+### Changed
+
+- **MCP TypeScript SDK v2:** Migrated from the monolithic SDK v1 package to the
+  split `@modelcontextprotocol/server` and `@modelcontextprotocol/client` v2
+  packages and Standard Schema-compatible Zod object declarations.
+- **Era-safe tool discovery:** Legacy stdio clients retain progressive
+  `browser_toolset` loading. Modern stateless clients receive a fixed compact
+  surface with `browser_skill` instead of `browser_toolset`; `browser_call`
+  continues to reach every bridge method in both eras.
+- **MCP era activity labels:** Extension access prompts identify legacy and
+  modern MCP, while side-panel activity shows a separate `v1` or `v2` pill;
+  modern activity includes the exact `2026-07-28` revision in its tooltip.
+
+### Fixed
+
+- **Reliable proxy reconfiguration:** `bbx proxy enable` and `bbx proxy disable`
+  now stop the running daemon before changing its configuration, ensuring port
+  and authentication changes are loaded when the daemon restarts.
+- **Windows npm self-update:** npm batch shims now run through the Windows shell,
+  allowing the opt-in automatic update flow to invoke `npm.cmd` reliably.
+
 ## [1.10.0] - 2026-07-24
 
 ### Added

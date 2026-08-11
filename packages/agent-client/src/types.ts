@@ -4,6 +4,7 @@ import type {
   BridgeMethod,
   BridgeRequestSource,
   BridgeResponse,
+  McpProtocolEra,
   RecoveryEventKind,
   RecoveryTelemetrySummary,
   ScreenshotResult,
@@ -17,6 +18,7 @@ export type {
   BridgeRequestSource,
   BridgeResponse,
   BridgeTransport,
+  McpProtocolEra,
   ScreenshotResult,
 };
 

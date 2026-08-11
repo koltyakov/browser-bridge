@@ -131,6 +131,7 @@ test('background state normalizes action log entries and rejects malformed value
       at: '12',
       method: 'dom.query',
       source: 'unknown',
+      mcpEra: 'modern',
       tabId: '7',
       url: 42,
       ok: false,
@@ -154,6 +155,7 @@ test('background state normalizes action log entries and rejects malformed value
       at: 12,
       method: 'dom.query',
       source: '',
+      mcpEra: null,
       tabId: null,
       url: '',
       ok: false,
@@ -174,6 +176,16 @@ test('background state normalizes action log entries and rejects malformed value
       severity: 'info',
       sensitiveAccess: null,
     }
+  );
+
+  assert.equal(
+    normalizeActionLogEntry({
+      id: 'entry-modern',
+      method: 'dom.query',
+      source: 'mcp',
+      mcpEra: 'modern',
+    })?.mcpEra,
+    'modern'
   );
 });
 

@@ -9,7 +9,7 @@ import { startBridgeMcpServer } from './server.js';
 
 /**
  * @typedef {{
- *   start?: () => Promise<void>,
+ *   start?: () => void | Promise<void>,
  *   startControl?: typeof tryStartMcpProcessControl,
  *   argv?: string[],
  *   stdout?: { write: (chunk: string) => unknown },

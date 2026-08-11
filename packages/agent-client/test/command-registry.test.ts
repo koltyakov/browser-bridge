@@ -131,7 +131,10 @@ test('CLI help lists every install-mcp target', () => {
   const helpText = CLI_HELP_SECTIONS.flatMap((section) => section.lines).join('\n');
   assert.match(helpText, /codex\|claude\|cursor\|copilot\|opencode\|antigravity\|windsurf\|agents/);
   assert.doesNotMatch(helpText, /--profile|toolset profile/i);
-  assert.match(helpText, /browser_toolset loads one specialized typed tool by name/);
+  assert.match(
+    helpText,
+    /legacy clients can load typed tools; modern stateless clients use browser_call/
+  );
 });
 
 test('CLI help documents loopback proxy safety and token files', () => {

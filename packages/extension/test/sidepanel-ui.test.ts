@@ -39,6 +39,7 @@ type ActionLogEntry = {
   at: number;
   method: string;
   source: string;
+  mcpEra?: 'legacy' | 'modern' | null;
   tabId: number | null;
   url: string;
   ok: boolean;
@@ -511,7 +512,13 @@ test('sidepanel UI renders activity summaries, histogram families, and repeat wa
 
     const activityEntries = [
       createActionLogEntry('access-requested', 'access.requested', 0, {
+        source: 'mcp',
+        mcpEra: 'modern',
         summary: 'Window access requested; waiting for confirmation.',
+      }),
+      createActionLogEntry('legacy-mcp', 'dom.query', 0, {
+        source: 'mcp',
+        mcpEra: 'legacy',
       }),
       createActionLogEntry('access-confirmed', 'access.confirmed', 0, {
         source: '',
@@ -609,6 +616,22 @@ test('sidepanel UI renders activity summaries, histogram families, and repeat wa
     assert.equal(actionLog.querySelectorAll('.activity-summary-error').length >= 1, true);
     assert.doesNotMatch(actionLog.textContent ?? '', /private-token|secret-value/);
     assert.match(actionLog.textContent ?? '', /access\.requested/);
+    const modernTag = actionLog.querySelector('.activity-version-tag[data-version="v2"]');
+    assert.equal(
+      modernTag?.getAttribute('title'),
+      'Modern stateless MCP (protocol revision 2026-07-28)'
+    );
+    assert.equal(modernTag?.textContent, 'v2');
+    assert.equal(
+      modernTag?.parentElement?.querySelector('.activity-source-tag')?.textContent,
+      'MCP'
+    );
+    const legacyTag = actionLog.querySelector('.activity-version-tag[data-version="v1"]');
+    assert.equal(
+      legacyTag?.getAttribute('title'),
+      'Legacy MCP (protocol revision 2025-11-25 or earlier)'
+    );
+    assert.equal(legacyTag?.textContent, 'v1');
     assert.match(
       actionLog.textContent ?? '',
       /Window access requested; waiting for confirmation\./

@@ -36,6 +36,7 @@ import { getErrorMessage, normalizeRuntimeErrorMessage } from './background-help
  *   windowId: number,
  *   tabId: number,
  *   source: 'cli' | 'mcp' | null,
+ *   mcpEra?: import('../../protocol/src/types.js').McpProtocolEra | null,
  *   intent: import('../../protocol/src/types.js').AccessIntent,
  *   title: string,
  *   origin: string | null
@@ -48,6 +49,7 @@ import { getErrorMessage, normalizeRuntimeErrorMessage } from './background-help
  *   at: number,
  *   method: string,
  *   source: string,
+ *   mcpEra?: import('../../protocol/src/types.js').McpProtocolEra | null,
  *   tabId: number | null,
  *   url: string,
  *   ok: boolean,
@@ -247,6 +249,15 @@ export function normalizeActionLogSource(source) {
 }
 
 /**
+ * @param {unknown} source
+ * @param {unknown} mcpEra
+ * @returns {import('../../protocol/src/types.js').McpProtocolEra | null}
+ */
+export function normalizeActionLogMcpEra(source, mcpEra) {
+  return source === 'mcp' && (mcpEra === 'legacy' || mcpEra === 'modern') ? mcpEra : null;
+}
+
+/**
  * @param {unknown} entry
  * @returns {ActionLogEntry | null}
  */
@@ -259,12 +270,14 @@ export function normalizeActionLogEntry(entry) {
   if (typeof candidate.id !== 'string' || typeof candidate.method !== 'string') {
     return null;
   }
+  const source = normalizeActionLogSource(candidate.source);
 
   return {
     id: candidate.id,
     at: Number(candidate.at) || 0,
     method: candidate.method,
-    source: normalizeActionLogSource(candidate.source),
+    source,
+    mcpEra: normalizeActionLogMcpEra(source, candidate.mcpEra),
     tabId: typeof candidate.tabId === 'number' ? candidate.tabId : null,
     url: typeof candidate.url === 'string' ? sanitizeIncidentalUrl(candidate.url) : '',
     ok: candidate.ok === true,

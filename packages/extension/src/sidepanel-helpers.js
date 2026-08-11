@@ -246,19 +246,33 @@ export function getPromptExamplesMode(setupStatus) {
 }
 
 /**
- * Pick the explicit activity source tag to display in the side panel. Missing
- * source metadata stays unlabelled because setup state cannot identify which
- * path produced an individual request.
+ * Pick the explicit activity source tag to display in the side panel.
  *
  * @param {string | null | undefined} source
- * @param {SetupStatusInstallState | null} _setupStatus
- * @returns {'' | 'cli' | 'mcp'}
+ * @param {string | null | undefined} mcpEra
+ * @returns {'' | 'CLI' | 'MCP' | 'MCP Legacy' | 'MCP Modern'}
  */
-export function getActivitySourceTag(source, _setupStatus) {
-  if (source === 'cli' || source === 'mcp') {
-    return source;
-  }
-  return '';
+export function getActivitySourceTag(source, mcpEra) {
+  if (source === 'cli') return 'CLI';
+  if (source !== 'mcp') return '';
+  if (mcpEra === 'legacy') return 'MCP Legacy';
+  if (mcpEra === 'modern') return 'MCP Modern';
+  return 'MCP';
+}
+
+/**
+ * Split MCP activity metadata into compact source and version pills.
+ *
+ * @param {string | null | undefined} source
+ * @param {string | null | undefined} mcpEra
+ * @returns {{ source: '' | 'CLI' | 'MCP', version: '' | 'v1' | 'v2' }}
+ */
+export function getActivitySourcePills(source, mcpEra) {
+  if (source === 'cli') return { source: 'CLI', version: '' };
+  if (source !== 'mcp') return { source: '', version: '' };
+  if (mcpEra === 'legacy') return { source: 'MCP', version: 'v1' };
+  if (mcpEra === 'modern') return { source: 'MCP', version: 'v2' };
+  return { source: 'MCP', version: '' };
 }
 
 /**
@@ -663,8 +677,7 @@ export function getSidepanelAgentStatusView(currentTab) {
 
   if (currentTab.accessRequested) {
     const context = currentTab.accessRequestContext;
-    const source =
-      context?.source === 'mcp' ? 'MCP' : context?.source === 'cli' ? 'CLI' : 'A connected agent';
+    const source = getActivitySourceTag(context?.source, context?.mcpEra) || 'A connected agent';
     const intent = context?.intent === 'general' || !context?.intent ? 'use' : context.intent;
     const tab =
       context?.title || context?.origin

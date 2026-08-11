@@ -6,8 +6,8 @@ import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 import { buildMcpConfig, formatMcpConfig, MCP_CLIENT_NAMES } from '../src/mcp-config.js';
 import { runCli } from '../../../tests/_helpers/runCli.ts';
@@ -169,6 +169,98 @@ test('MCP always serves the compact progressive tool surface', { timeout: 10000 
     ]);
     assert.match(String(client.getInstructions()), /common tools are available immediately/i);
     assert.match(String(client.getInstructions()), /exact tool name/i);
+  } finally {
+    await transport?.close();
+    await fs.promises.rm(bridgeHome, { recursive: true, force: true });
+  }
+});
+
+test('MCP serves the modern stateless surface over the same stdio command', async () => {
+  let transport: StdioClientTransport | null = null;
+  const bridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-cli-mcp-modern-'));
+
+  try {
+    transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [cliPath, 'mcp', 'serve'],
+      cwd: repoRoot,
+      env: toSpawnEnv({
+        ...process.env,
+        BROWSER_BRIDGE_HOME: bridgeHome,
+      }),
+      stderr: 'pipe',
+    });
+    const client = new Client(
+      {
+        name: 'browser-bridge-cli-mcp-modern-test',
+        version: '1.0.0',
+      },
+      { versionNegotiation: { mode: { pin: '2026-07-28' } } }
+    );
+    await client.connect(transport);
+
+    assert.equal(client.getProtocolEra(), 'modern');
+    assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), [
+      'browser_access',
+      'browser_batch',
+      'browser_call',
+      'browser_health',
+      'browser_skill',
+      'browser_status',
+    ]);
+    assert.match(String(client.getInstructions()), /tool list is static for stateless MCP/i);
+    assert.doesNotMatch(String(client.getInstructions()), /call browser_toolset/i);
+    const describeResult = await client.callTool({
+      name: 'browser_call',
+      arguments: {
+        method: 'protocol.describe',
+        params: { method: 'health.ping' },
+      },
+    });
+    assert.equal(describeResult.isError, undefined);
+    assert.equal(
+      (describeResult.structuredContent as { method?: string } | undefined)?.method,
+      'health.ping'
+    );
+    await assert.rejects(
+      client.callTool({
+        name: 'browser_toolset',
+        arguments: { tool: 'browser_dom' },
+      }),
+      /browser_toolset disabled/
+    );
+  } finally {
+    await transport?.close();
+    await fs.promises.rm(bridgeHome, { recursive: true, force: true });
+  }
+});
+
+test('MCP auto negotiation selects the modern era', async () => {
+  let transport: StdioClientTransport | null = null;
+  const bridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-cli-mcp-auto-'));
+
+  try {
+    transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [cliPath, 'mcp', 'serve'],
+      cwd: repoRoot,
+      env: toSpawnEnv({
+        ...process.env,
+        BROWSER_BRIDGE_HOME: bridgeHome,
+      }),
+      stderr: 'pipe',
+    });
+    const client = new Client(
+      {
+        name: 'browser-bridge-cli-mcp-auto-test',
+        version: '1.0.0',
+      },
+      { versionNegotiation: { mode: 'auto' } }
+    );
+    await client.connect(transport);
+
+    assert.equal(client.getProtocolEra(), 'modern');
+    assert.equal((await client.listTools()).tools.length, 6);
   } finally {
     await transport?.close();
     await fs.promises.rm(bridgeHome, { recursive: true, force: true });

@@ -1,14 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
+import { McpServer } from '@modelcontextprotocol/server';
 import {
   INITIAL_TOOLSET_TOOLS,
   isInitiallyEnabledTool,
+  isToolEnabledForEra,
   LOADABLE_TOOLSET_TOOLS,
+  MODERN_TOOLSET_TOOLS,
 } from '../src/toolset.js';
-import { getMcpServerInstructions, MCP_SERVER_INSTRUCTIONS } from '../src/guidance.js';
+import {
+  getMcpServerInstructions,
+  MCP_SERVER_INSTRUCTIONS,
+  MODERN_MCP_SERVER_INSTRUCTIONS,
+} from '../src/guidance.js';
 import { createBridgeMcpServer } from '../src/server.js';
 
 test('toolset exposes one fixed initial surface and exact loadable tool names', () => {
@@ -40,6 +44,16 @@ test('toolset exposes one fixed initial surface and exact loadable tool names', 
   assert.equal(isInitiallyEnabledTool('browser_call'), true);
   assert.equal(isInitiallyEnabledTool('browser_toolset'), true);
   assert.equal(isInitiallyEnabledTool('browser_dom'), false);
+  assert.deepEqual(MODERN_TOOLSET_TOOLS, [
+    'browser_access',
+    'browser_batch',
+    'browser_call',
+    'browser_health',
+    'browser_skill',
+    'browser_status',
+  ]);
+  assert.equal(isToolEnabledForEra('browser_skill', 'modern'), true);
+  assert.equal(isToolEnabledForEra('browser_toolset', 'modern'), false);
   assert.equal(
     INITIAL_TOOLSET_TOOLS.some((toolName) => new Set<string>(LOADABLE_TOOLSET_TOOLS).has(toolName)),
     false
@@ -154,4 +168,13 @@ test('instructions teach exact-name loading without profile terminology', () => 
   assert.match(instructions, /Page investigation:/);
   assert.match(instructions, /Layout debugging:/);
   assert.match(instructions, /Flow verification:/);
+});
+
+test('modern instructions describe a static stateless surface', () => {
+  const instructions = getMcpServerInstructions('modern');
+
+  assert.equal(instructions, MODERN_MCP_SERVER_INSTRUCTIONS);
+  assert.match(instructions, /tool list is static for stateless MCP/i);
+  assert.match(instructions, /browser_skill/);
+  assert.doesNotMatch(instructions, /call browser_toolset/i);
 });

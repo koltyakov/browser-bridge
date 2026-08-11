@@ -29,20 +29,26 @@ const WORKFLOW_INSTRUCTIONS = Object.freeze([
 const SERVER_HEADER =
   "Browser Bridge MCP inspects and interacts with the user's real Chrome tab through a compact tool set.";
 
-const TOOL_RULES = Object.freeze([
+const LEGACY_TOOL_RULES = Object.freeze([
   'The common tools are available immediately. When a specialized typed tool is useful, call browser_toolset with its exact tool name; browser_call always reaches every bridge method without loading another tool.',
   'Use browser_call method protocol.describe with method or group params to load unfamiliar signatures cheaply.',
 ]);
 
+const MODERN_TOOL_RULES = Object.freeze([
+  'The compact tool list is static for stateless MCP. browser_call reaches every bridge method, and browser_skill returns runtime groups and limits.',
+  'Use browser_call method protocol.describe with method or group params to load unfamiliar signatures cheaply.',
+]);
+
 /**
- * Build instructions for progressive tool discovery.
+ * Build instructions for the negotiated MCP era.
  *
+ * @param {'legacy' | 'modern'} [era='legacy']
  * @returns {string}
  */
-export function getMcpServerInstructions() {
-  return [SERVER_HEADER, ...TOOL_RULES, ...SHARED_INSTRUCTIONS, ...WORKFLOW_INSTRUCTIONS].join(
-    '\n'
-  );
+export function getMcpServerInstructions(era = 'legacy') {
+  const toolRules = era === 'modern' ? MODERN_TOOL_RULES : LEGACY_TOOL_RULES;
+  return [SERVER_HEADER, ...toolRules, ...SHARED_INSTRUCTIONS, ...WORKFLOW_INSTRUCTIONS].join('\n');
 }
 
 export const MCP_SERVER_INSTRUCTIONS = getMcpServerInstructions();
+export const MODERN_MCP_SERVER_INSTRUCTIONS = getMcpServerInstructions('modern');

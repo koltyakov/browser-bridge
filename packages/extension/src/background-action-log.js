@@ -23,6 +23,7 @@ import {
   ACTION_LOG_STORAGE_KEY,
   MAX_ACTION_LOG_ENTRIES,
   normalizeActionLogEntry,
+  normalizeActionLogMcpEra,
   normalizeActionLogSource,
 } from './background-state.js';
 
@@ -44,6 +45,7 @@ const CONNECTION_CHECK_COALESCE_MS = 2_000;
  * @typedef {{
  *   method: string,
  *   source?: string,
+ *   mcpEra?: import('../../protocol/src/types.js').McpProtocolEra | null,
  *   tabId?: number | null,
  *   url?: string,
  *   ok: boolean,
@@ -166,11 +168,13 @@ export function createActionLogController(state, chromeObj, deps) {
     ) {
       state.actionLog.pop();
     }
+    const source = normalizeActionLogSource(entry.source);
     state.actionLog.push({
       id: crypto.randomUUID(),
       at,
       method: entry.method,
-      source: normalizeActionLogSource(entry.source),
+      source,
+      mcpEra: normalizeActionLogMcpEra(source, entry.mcpEra),
       tabId,
       url: sanitizeIncidentalUrl(entry.url ?? ''),
       ok: entry.ok,
@@ -250,6 +254,10 @@ export function createActionLogController(state, chromeObj, deps) {
       await appendActionLogEntry({
         method: request.method,
         source: normalizeActionLogSource(request.meta?.source),
+        mcpEra:
+          request.meta?.mcp_era === 'legacy' || request.meta?.mcp_era === 'modern'
+            ? request.meta.mcp_era
+            : null,
         tabId: actionContext?.tabId ?? null,
         url: actionContext?.url ?? '',
         ok: response.ok,

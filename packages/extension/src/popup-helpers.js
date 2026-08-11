@@ -76,7 +76,15 @@ export function getPopupViewState(currentTab) {
   if (currentTab.accessRequested) {
     const context = currentTab.accessRequestContext;
     const source =
-      context?.source === 'mcp' ? 'MCP' : context?.source === 'cli' ? 'CLI' : 'A connected agent';
+      context?.source === 'mcp'
+        ? context.mcpEra === 'modern'
+          ? 'MCP Modern'
+          : context.mcpEra === 'legacy'
+            ? 'MCP Legacy'
+            : 'MCP'
+        : context?.source === 'cli'
+          ? 'CLI'
+          : 'A connected agent';
     const intent = context?.intent === 'general' || !context?.intent ? 'use' : context.intent;
     const tab =
       context?.title || context?.origin

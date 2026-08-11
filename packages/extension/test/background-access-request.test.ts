@@ -19,6 +19,7 @@ type AccessRequestState = {
     windowId: number;
     tabId: number;
     source: 'cli' | 'mcp' | null;
+    mcpEra?: 'legacy' | 'modern' | null;
     intent: string;
     title: string;
     origin: string | null;
@@ -26,6 +27,7 @@ type AccessRequestState = {
   actionLog: Array<{
     method: string;
     source: string;
+    mcpEra?: 'legacy' | 'modern' | null;
     tabId: number | null;
     url: string;
     summary: string;
@@ -41,10 +43,12 @@ test('access request context bounds titles and exposes only a parsed origin', ()
       url: 'https://user:secret@example.com/path?token=secret#fragment',
     },
     'mcp',
+    'modern',
     'inspect'
   );
 
   assert.equal(context.source, 'mcp');
+  assert.equal(context.mcpEra, 'modern');
   assert.equal(context.intent, 'inspect');
   assert.equal(context.origin, 'https://example.com');
   assert.equal(context.title.includes('\n'), false);
@@ -53,6 +57,7 @@ test('access request context bounds titles and exposes only a parsed origin', ()
     createAccessRequestContext(
       { tabId: 4, windowId: 2, title: '', url: 'not a url' },
       'untrusted',
+      'modern',
       'free form'
     ).origin,
     null
@@ -182,6 +187,7 @@ test('background access request opens a popup window when no side panel is open'
     windowId: 8,
     tabId: 27,
     source: null,
+    mcpEra: null,
     intent: 'general',
     title: 'Access target',
     origin: 'https://example.com',
@@ -315,7 +321,7 @@ test('background access request reuses an open side panel instead of opening a p
     createRequest({
       id: 'background-access-request-sidepanel',
       method: 'access.request',
-      meta: { source: 'mcp' },
+      meta: { source: 'mcp', mcp_era: 'modern' },
     })
   );
 
@@ -334,10 +340,12 @@ test('background access request reuses an open side panel instead of opening a p
   const state = getAccessRequestState(loaded.module);
   const requestActivity = state.actionLog.find((entry) => entry.method === 'access.requested');
   assert.equal(requestActivity?.source, 'mcp');
+  assert.equal(requestActivity?.mcpEra, 'modern');
   assert.equal(requestActivity?.tabId, 31);
   assert.equal(requestActivity?.url, 'https://example.com/focused');
   assert.equal(requestActivity?.summary, 'Window access requested; waiting for confirmation.');
   assert.equal(state.requestedAccessWindowId, 8);
+  assert.equal(state.requestedAccessContext?.mcpEra, 'modern');
   assert.equal(state.requestedAccessPopupWindowId, null);
   assert.deepEqual(popupCreates, []);
   assert.equal(
