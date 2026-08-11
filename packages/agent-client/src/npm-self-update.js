@@ -14,6 +14,8 @@ const DEFAULT_LOCK_TIMEOUT_MS = 120_000;
 const UPDATE_LOCK_PORT_START = 49_152;
 const UPDATE_LOCK_PORT_COUNT = 16_384;
 const UPDATE_LOCK_PORT_ATTEMPTS = 32;
+const UPDATE_LOCK_PORT_STEP = UPDATE_LOCK_PORT_COUNT / UPDATE_LOCK_PORT_ATTEMPTS;
+const UNAVAILABLE_LOCK_PORT_CODES = new Set(['EACCES', 'EADDRINUSE']);
 
 /** @typedef {import('./types.js').NpmUpdateResult} NpmUpdateResult */
 
@@ -156,7 +158,8 @@ export function getNpmUpdateLockPort(lockKey, offset = 0) {
   const digest = createHash('sha256').update(lockKey).digest();
   return (
     UPDATE_LOCK_PORT_START +
-    ((digest.readUInt32BE(0) + Math.max(0, Math.trunc(offset))) % UPDATE_LOCK_PORT_COUNT)
+    ((digest.readUInt32BE(0) + Math.max(0, Math.trunc(offset)) * UPDATE_LOCK_PORT_STEP) %
+      UPDATE_LOCK_PORT_COUNT)
   );
 }
 
@@ -202,7 +205,9 @@ export async function acquireNpmUpdateLock(lockKey, timeoutMs = DEFAULT_LOCK_TIM
       const server = net.createServer((socket) => socket.end(`${identity}\n`));
       const acquired = await new Promise((resolve, reject) => {
         server.once('error', (error) => {
-          if (/** @type {NodeJS.ErrnoException} */ (error).code === 'EADDRINUSE') {
+          if (
+            UNAVAILABLE_LOCK_PORT_CODES.has(/** @type {NodeJS.ErrnoException} */ (error).code ?? '')
+          ) {
             resolve(false);
             return;
           }

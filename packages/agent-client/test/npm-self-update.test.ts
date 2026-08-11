@@ -32,8 +32,8 @@ test('npm update lock skips unrelated listeners on its preferred port', async (t
       blocker.listen({ host: '127.0.0.1', port, exclusive: true }, resolve);
     });
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EADDRINUSE') {
-      t.skip('preferred lock port is already occupied');
+    if (['EACCES', 'EADDRINUSE'].includes((error as NodeJS.ErrnoException).code ?? '')) {
+      t.skip('preferred lock port is unavailable');
       return;
     }
     throw error;
@@ -45,6 +45,14 @@ test('npm update lock skips unrelated listeners on its preferred port', async (t
   } finally {
     await new Promise<void>((resolve) => blocker.close(() => resolve()));
   }
+});
+
+test('npm update lock spreads fallback ports across the dynamic range', () => {
+  const lockKey = 'distributed-lock-candidates';
+  const ports = Array.from({ length: 32 }, (_, offset) => getNpmUpdateLockPort(lockKey, offset));
+
+  assert.equal(new Set(ports).size, ports.length);
+  assert.ok(Math.max(...ports) - Math.min(...ports) >= 8_000);
 });
 
 test('selectCompatibleNpmVersion chooses the highest patch on an advertised line', () => {
