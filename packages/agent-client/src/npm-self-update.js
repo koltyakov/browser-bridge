@@ -113,6 +113,7 @@ export async function runNpmCommand(args, options = {}) {
     ? process.execPath
     : npmExecPath || (process.platform === 'win32' ? 'npm.cmd' : 'npm');
   const commandArgs = useNode && npmExecPath ? [npmExecPath, ...args] : args;
+  const useWindowsShell = process.platform === 'win32' && /\.(?:cmd|bat)$/iu.test(command);
 
   return new Promise((resolve, reject) => {
     execFile(
@@ -124,6 +125,7 @@ export async function runNpmCommand(args, options = {}) {
         timeout: options.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS,
         maxBuffer: 4 * 1024 * 1024,
         windowsHide: true,
+        shell: useWindowsShell,
       },
       (error, stdout, stderr) => {
         if (!error) {

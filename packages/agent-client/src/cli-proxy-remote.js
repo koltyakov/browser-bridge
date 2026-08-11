@@ -11,7 +11,7 @@ import {
   readProxyConfig,
 } from '../../native-host/src/config.js';
 import { pingExistingDaemon } from '../../native-host/src/daemon.js';
-import { restartBridgeDaemon } from '../../native-host/src/daemon-process.js';
+import { restartBridgeDaemon, stopBridgeDaemon } from '../../native-host/src/daemon-process.js';
 import { atomicWriteFile } from './atomic-write.js';
 import { parseIntArg } from './cli-helpers.js';
 import {
@@ -44,6 +44,8 @@ export async function handleProxyCommand(args) {
       randomUUID
     );
     assertProxyBindSafety(existing, options, bindHost);
+    // Stop against the current config before changing its port or auth token.
+    const stopResult = await stopBridgeDaemon();
     await atomicWriteFile(getBridgeAuthTokenPath(), `${token}\n`, {
       encoding: 'utf8',
       mode: 0o600,
@@ -75,7 +77,7 @@ export async function handleProxyCommand(args) {
       '',
       `Token: ${token}${tokenNote}`,
       `Config: ${configPath}`,
-      `Daemon: ${result.previouslyRunning ? 'restarted' : 'started'} (pid ${result.pid})`,
+      `Daemon: ${stopResult.previouslyRunning ? 'restarted' : 'started'} (pid ${result.pid})`,
     ];
     if (tokenSource !== 'existing') {
       if (isLoopbackHost(bindHost)) {
@@ -106,10 +108,11 @@ export async function handleProxyCommand(args) {
 
   if (subcommand === 'disable') {
     const configPath = getProxyConfigPath();
+    const stopResult = await stopBridgeDaemon();
     await fs.promises.rm(configPath, { force: true });
-    const result = await restartBridgeDaemon();
+    await restartBridgeDaemon();
     process.stdout.write(
-      `Browser Bridge proxy disabled. Daemon ${result.previouslyRunning ? 'restarted' : 'started'}.\n`
+      `Browser Bridge proxy disabled. Daemon ${stopResult.previouslyRunning ? 'restarted' : 'started'}.\n`
     );
     return;
   }
