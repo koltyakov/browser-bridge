@@ -15,7 +15,7 @@ Skill name: `browser-bridge` (also known as `bbx`). In GitHub Copilot, invoke as
 When the runtime supports subagents, delegate bridge inspection to a smaller, lower-cost worker and return only concise findings to the parent.
 For open-ended investigation, start with structured reads (`page.get_state`, `dom.query`, `page.get_text`, `page.extract_content`, `styles.get_computed`, and `bbx batch` for CLI or `browser_batch` for MCP) and escalate to screenshots or debugger-backed methods only when structured evidence is insufficient. `browser_call` accepts one protocol method at a time; `batch` is not a valid `browser_call` method.
 When an unfamiliar method is needed, run `bbx protocol describe <method|group>` before guessing parameters. In MCP mode, call `browser_call` with method `protocol.describe` and params `{ "method": "dom.query" }` or `{ "group": "inspect" }`.
-MCP exposes common tools first. Load one specialized typed tool only when needed by calling `browser_toolset` with its exact name, for example `{ "tool": "browser_dom" }`; `browser_call` remains the universal fallback.
+MCP exposes a compact tool surface. If `browser_toolset` is available on a legacy connection, load one specialized typed tool only when needed, for example `{ "tool": "browser_dom" }`. Modern stateless connections use a fixed surface with `browser_skill` instead. `browser_call` remains the universal path in both eras.
 
 ## CLI
 

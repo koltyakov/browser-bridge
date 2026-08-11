@@ -116,7 +116,7 @@ Browser Bridge is optimized for the opposite starting point: **inspect the state
 
 On Ubuntu, Chromium is commonly installed as a strict snap, and Flatpak Chromium is similarly sandboxed. If native messaging stays disconnected there, use a non-sandboxed Chromium-based browser such as Google Chrome, Brave, or Edge.
 
-MCP mode is self-contained: the server exposes tools and startup instructions, so a separate CLI skill is not required for MCP guidance.
+MCP mode is self-contained: the dual-era stdio server supports legacy MCP clients and modern stateless MCP revision `2026-07-28`, and exposes tools and matching startup instructions without requiring a separate CLI skill.
 
 ## How it works
 

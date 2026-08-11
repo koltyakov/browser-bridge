@@ -147,18 +147,16 @@ Short version:
 | Install skill | N/A | `bbx install-skill [client]` | CLI-only (setup) |
 | Uninstall | N/A | `bbx uninstall` | CLI-only (setup) |
 
-## Progressive Tool Discovery
+## Tool Discovery by Protocol Era
 
 Every enabled MCP tool ships its full JSON schema to the agent on `tools/list`, and that
-payload stays in context for the whole session. Browser Bridge always starts with six common
-tools at about **5.2 KB (~1.4k schema tokens)** instead of exposing all typed schemas at roughly
-**35.6 KB (~9.6k tokens)**:
+payload stays in context for the whole connection. Browser Bridge uses a compact six-tool
+surface at about **5.2 KB (~1.4k schema tokens)** instead of exposing all typed schemas at
+roughly **35.6 KB (~9.6k tokens)**.
 
-`browser_call`, `browser_batch`, `browser_status`, `browser_health`, `browser_access`, and
-`browser_toolset`.
-
-The other 15 typed tools remain registered but disabled. When one becomes useful, the agent
-loads that exact tool through `browser_toolset`:
+Legacy MCP clients receive `browser_call`, `browser_batch`, `browser_status`, `browser_health`,
+`browser_access`, and `browser_toolset`. The other 15 typed tools remain registered but disabled.
+When one becomes useful, the agent loads that exact tool through `browser_toolset`:
 
 ```json
 { "tool": "browser_dom" }
@@ -169,8 +167,14 @@ This enables only `browser_dom`; the SDK then emits `tools/list_changed`, and th
 `browser_input`, `browser_page`, `browser_capture`, and `browser_patch`. The
 `browser_toolset` input enum is the discoverable list of every loadable tool.
 
+Modern stateless MCP clients receive a fixed surface with `browser_skill` in place of
+`browser_toolset`. Revision `2026-07-28` does not permit `tools/list` to change as a side effect
+of another request on the connection, so progressive loading is intentionally unavailable in
+that era. `browser_skill` returns runtime method groups, presets, and limits without changing the
+tool list.
+
 Nothing becomes unreachable before loading a typed tool: `browser_call` dispatches any bridge
-method by name, including in clients that ignore `tools/list_changed`. Before guessing
+method by name in both eras, including legacy clients that ignore `tools/list_changed`. Before guessing
 unfamiliar parameters, call `protocol.describe` through `browser_call` with a `method` or
 `group`; with neither it returns a compact group index. This loads method knowledge without
 adding another MCP tool schema.

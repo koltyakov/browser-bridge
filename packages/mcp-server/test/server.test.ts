@@ -1,10 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
-
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-
+import { McpServer } from '@modelcontextprotocol/server';
 import { createBridgeMcpServer, startBridgeMcpServer } from '../src/server.js';
 import { MCP_SERVER_INSTRUCTIONS } from '../src/guidance.js';
 import { BRIDGE_METHOD_REGISTRY } from '../../protocol/src/index.js';
@@ -19,6 +16,12 @@ type ToolRegistration = {
   config: Record<string, unknown>;
   handler: unknown;
 };
+
+function getInputSchemaShape(registration: ToolRegistration): Record<string, unknown> {
+  const schema = registration.config.inputSchema as { shape?: Record<string, unknown> } | undefined;
+  assert.ok(schema?.shape, `expected Zod object input schema for ${registration.name}`);
+  return schema.shape;
+}
 
 test('createBridgeMcpServer registers all tools behind one progressive surface', () => {
   const originalRegisterTool = McpServer.prototype.registerTool;
@@ -109,17 +112,17 @@ test('createBridgeMcpServer registers all tools behind one progressive surface',
       ]
     );
     assert.equal(registrations[4].config.title, 'Browser Tabs');
-    const tabsSchema = registrations[4].config.inputSchema as Record<string, unknown>;
-    const stylesSchema = registrations[6].config.inputSchema as Record<string, unknown>;
-    const sensitiveSchema = registrations[7].config.inputSchema as Record<string, unknown>;
-    const pageSchema = registrations[8].config.inputSchema as Record<string, unknown>;
-    const inputSchema = registrations[10].config.inputSchema as Record<string, unknown>;
-    const patchSchema = registrations[11].config.inputSchema as Record<string, unknown>;
-    const captureSchema = registrations[12].config.inputSchema as Record<string, unknown>;
-    const artifactSchema = registrations[13].config.inputSchema as Record<string, unknown>;
-    const interceptSchema = registrations[14].config.inputSchema as Record<string, unknown>;
-    const rawCallSchema = registrations[16].config.inputSchema as Record<string, unknown>;
-    const toolsetSchema = registrations[20].config.inputSchema as Record<string, unknown>;
+    const tabsSchema = getInputSchemaShape(registrations[4]);
+    const stylesSchema = getInputSchemaShape(registrations[6]);
+    const sensitiveSchema = getInputSchemaShape(registrations[7]);
+    const pageSchema = getInputSchemaShape(registrations[8]);
+    const inputSchema = getInputSchemaShape(registrations[10]);
+    const patchSchema = getInputSchemaShape(registrations[11]);
+    const captureSchema = getInputSchemaShape(registrations[12]);
+    const artifactSchema = getInputSchemaShape(registrations[13]);
+    const interceptSchema = getInputSchemaShape(registrations[14]);
+    const rawCallSchema = getInputSchemaShape(registrations[16]);
+    const toolsetSchema = getInputSchemaShape(registrations[20]);
     const tabsAction = tabsSchema.action as { safeParse: (value: unknown) => { success: boolean } };
     const inputAction = inputSchema.action as {
       safeParse: (value: unknown) => { success: boolean };
@@ -317,43 +320,41 @@ test('browser_toolset loads one exact tool at a time and is idempotent', async (
   }
 });
 
-test('startBridgeMcpServer connects over stdio transport', async () => {
-  const originalConnect = McpServer.prototype.connect;
-  const transports: unknown[] = [];
+test('startBridgeMcpServer serves an era-aware stdio factory', () => {
+  const eras: string[] = [];
 
-  McpServer.prototype.connect = async function connect(transport: unknown): Promise<void> {
-    transports.push(transport);
-  } as unknown as typeof McpServer.prototype.connect;
+  startBridgeMcpServer({
+    serve(factory) {
+      const modern = factory({ era: 'modern' });
+      const legacy = factory({ era: 'legacy' });
+      assert.ok(modern instanceof McpServer);
+      assert.ok(legacy instanceof McpServer);
+      eras.push('modern', 'legacy');
+      return { close: async () => {} };
+    },
+  });
 
-  try {
-    await startBridgeMcpServer();
-
-    assert.equal(transports.length, 1);
-    assert.ok(transports[0] instanceof StdioServerTransport);
-  } finally {
-    McpServer.prototype.connect = originalConnect;
-  }
+  assert.deepEqual(eras, ['modern', 'legacy']);
 });
 
 test('startBridgeMcpServer seeds the Windows TCP default before connecting', async () => {
   const originalPlatform = os.platform;
   const originalTcpPort = process.env[BRIDGE_TCP_PORT_ENV];
   const originalBridgeHome = process.env[BRIDGE_HOME_ENV];
-  const originalConnect = McpServer.prototype.connect;
 
   os.platform = (() => 'win32') as typeof os.platform;
   delete process.env[BRIDGE_TCP_PORT_ENV];
   delete process.env[BRIDGE_HOME_ENV];
 
-  McpServer.prototype.connect =
-    async function connect(): Promise<void> {} as typeof McpServer.prototype.connect;
-
   try {
-    await startBridgeMcpServer();
+    startBridgeMcpServer({
+      serve() {
+        return { close: async () => {} };
+      },
+    });
 
     assert.equal(process.env[BRIDGE_TCP_PORT_ENV], String(DEFAULT_WINDOWS_TCP_PORT));
   } finally {
-    McpServer.prototype.connect = originalConnect;
     os.platform = originalPlatform;
     if (originalTcpPort === undefined) {
       delete process.env[BRIDGE_TCP_PORT_ENV];

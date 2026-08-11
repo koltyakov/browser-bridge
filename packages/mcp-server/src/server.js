@@ -2,9 +2,9 @@
 
 import fs from 'node:fs';
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-// zod is required at runtime by @modelcontextprotocol/sdk for tool parameter schema
+import { McpServer } from '@modelcontextprotocol/server';
+import { serveStdio } from '@modelcontextprotocol/server/stdio';
+// zod is required at runtime by @modelcontextprotocol/server for tool parameter schema
 // declarations (z.object, z.string, etc.). It is not used for request/response
 // validation - that is handled by the protocol package.
 import * as z from 'zod/v4';
@@ -52,7 +52,7 @@ import {
 } from '../../protocol/src/index.js';
 import { applyWindowsTcpTransportDefaults } from '../../native-host/src/config.js';
 import { getMcpServerInstructions } from './guidance.js';
-import { isInitiallyEnabledTool, LOADABLE_TOOLSET_TOOLS } from './toolset.js';
+import { isToolEnabledForEra, LOADABLE_TOOLSET_TOOLS } from './toolset.js';
 
 export const BUDGET_PRESET_DESCRIPTION = `Budget preset: "quick", "normal", or "deep" (defaults: query ${BUDGET_PRESETS.normal.maxNodes} nodes / depth ${BUDGET_PRESETS.normal.maxDepth} / text ${BUDGET_PRESETS.normal.textBudget}). Numeric fields override the preset when both are provided.`;
 export const TAB_ID_DESCRIPTION =
@@ -130,18 +130,20 @@ function getInvestigateToolDescription() {
 }
 
 /**
- * Create the MCP server with a compact initial surface and on-demand typed tools.
+ * Create the MCP server for one negotiated protocol era.
  *
+ * @param {{ era?: 'legacy' | 'modern' }} [options]
  * @returns {McpServer}
  */
-export function createBridgeMcpServer() {
+export function createBridgeMcpServer(options = {}) {
+  const { era = 'legacy' } = options;
   const server = new McpServer(
     {
       name: 'browser-bridge',
       version: MCP_SERVER_VERSION,
     },
     {
-      instructions: getMcpServerInstructions(),
+      instructions: getMcpServerInstructions(era),
     }
   );
 
@@ -149,19 +151,28 @@ export function createBridgeMcpServer() {
   const registrations = new Map();
 
   /**
-   * Register a tool, then hide it when it is not part of the initial surface.
+   * Register a tool, then hide it when it is not part of the era's compact surface.
    *
    * Registering first keeps every call site checked against the SDK's own
    * generic signature instead of a hand-written passthrough type. Disabling
-   * happens before `connect()`, so an excluded tool never reaches `tools/list`
-   * but can be enabled later by browser_toolset.
+   * happens before `connect()`, so an excluded tool never reaches `tools/list`.
    *
-   * @type {typeof server.registerTool}
+   * @template {z.ZodObject} InputSchema
+   * @param {string} name
+   * @param {{
+   *   title?: string,
+   *   description?: string,
+   *   inputSchema: InputSchema,
+   *   annotations?: import('@modelcontextprotocol/server').ToolAnnotations,
+   *   _meta?: Record<string, unknown>,
+   * }} config
+   * @param {import('@modelcontextprotocol/server').AnyToolHandler<InputSchema>} handler
+   * @returns {ReturnType<typeof server.registerTool>}
    */
   const registerTool = (name, config, handler) => {
     const registration = server.registerTool(name, config, handler);
     registrations.set(name, registration);
-    if (!isInitiallyEnabledTool(name)) {
+    if (!isToolEnabledForEra(name, era)) {
       registration.disable();
     }
     return registration;
@@ -173,12 +184,12 @@ export function createBridgeMcpServer() {
       title: 'Browser Bridge Status',
       description:
         'Check bridge readiness: daemon connectivity, extension state, and window access. Omit destinationId to inspect local and configured remote destinations. If access is not enabled, ask the user to click Enable in the extension popup or side panel, then retry.',
-      inputSchema: {
+      inputSchema: z.object({
         destinationId: z
           .string()
           .optional()
           .describe('Inspect one destination instead of aggregating all configured destinations.'),
-      },
+      }),
     },
     handleStatusTool
   );
@@ -188,12 +199,12 @@ export function createBridgeMcpServer() {
     {
       title: 'Browser Bridge Setup Status',
       description: 'Check MCP and CLI skill installation status for agent integration.',
-      inputSchema: {
+      inputSchema: z.object({
         global: z
           .boolean()
           .optional()
           .describe('Check global (true) or local (false) config (default: true)'),
-      },
+      }),
     },
     handleSetupTool
   );
@@ -203,7 +214,7 @@ export function createBridgeMcpServer() {
     {
       title: 'Browser Bridge Logs',
       description: 'Tail recent bridge request logs for debugging connection or routing issues.',
-      inputSchema: {
+      inputSchema: z.object({
         limit: z
           .number()
           .int()
@@ -215,7 +226,7 @@ export function createBridgeMcpServer() {
           .optional()
           .describe(BUDGET_PRESET_DESCRIPTION),
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
-      },
+      }),
     },
     handleLogTool
   );
@@ -225,13 +236,13 @@ export function createBridgeMcpServer() {
     {
       title: 'Browser Bridge Health',
       description: 'Ping the bridge to verify daemon and extension connectivity.',
-      inputSchema: {
+      inputSchema: z.object({
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
         intent: z
           .enum(['inspect', 'interact', 'capture', 'navigate', 'debugger', 'general'])
           .optional()
           .describe('Reported operation family shown in the access prompt (defaults to general).'),
-      },
+      }),
     },
     handleHealthTool
   );
@@ -242,7 +253,7 @@ export function createBridgeMcpServer() {
       title: 'Browser Tabs',
       description:
         'List, create, close, or activate browser tabs. List without destinationId aggregates configured destinations; other actions default to local. Only create a page when the user explicitly requests it.',
-      inputSchema: {
+      inputSchema: z.object({
         action: z
           .enum(['list', 'create', 'close', 'activate'])
           .describe('"list" (preferred), "create" (only when needed), "close", or "activate"'),
@@ -258,7 +269,7 @@ export function createBridgeMcpServer() {
           .string()
           .optional()
           .describe('Target one destination; list without it aggregates configured destinations.'),
-      },
+      }),
     },
     handleTabsTool
   );
@@ -269,7 +280,7 @@ export function createBridgeMcpServer() {
       title: 'Browser DOM',
       description:
         'Query, describe, read, search, or wait for DOM elements. Reuse elementRef from prior results. For full-page text, use browser_page action "text". accessibility_tree is debugger-backed and depth-limited - use query/find first.',
-      inputSchema: {
+      inputSchema: z.object({
         action: z
           .enum([
             'query',
@@ -387,7 +398,7 @@ export function createBridgeMcpServer() {
           .positive()
           .optional()
           .describe(`Max HTML chars to return (default: ${DEFAULT_MAX_HTML_LENGTH})`),
-      },
+      }),
     },
     handleDomTool
   );
@@ -398,7 +409,7 @@ export function createBridgeMcpServer() {
       title: 'Browser Styles And Layout',
       description:
         'Read computed styles, matched CSS rules, box model, or hit-test a viewport point. Reuse elementRef from prior queries. For DOM structure, use browser_dom.',
-      inputSchema: {
+      inputSchema: z.object({
         action: z
           .enum(['computed', 'matched_rules', 'box_model', 'hit_test'])
           .describe('Style/layout operation to perform'),
@@ -426,7 +437,7 @@ export function createBridgeMcpServer() {
           .nonnegative()
           .optional()
           .describe('Y coordinate for hit_test (viewport relative)'),
-      },
+      }),
     },
     handleStylesLayoutTool
   );
@@ -437,7 +448,7 @@ export function createBridgeMcpServer() {
       title: 'Sensitive Browser Read',
       description:
         'High-risk exact-value read for one local or session storage key. This operation is logged as Sensitive access, is never batched or retried, and returns the whole value or fails atomically.',
-      inputSchema: {
+      inputSchema: z.object({
         source: z.enum(['local_storage', 'session_storage']).describe('Exact storage source'),
         key: z
           .string()
@@ -445,7 +456,7 @@ export function createBridgeMcpServer() {
           .describe('Exact storage key, including an empty key if intended'),
         tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
-      },
+      }),
     },
     handleSensitiveReadTool
   );
@@ -456,7 +467,7 @@ export function createBridgeMcpServer() {
       title: 'Browser Page State',
       description:
         'Read page-level data, export captured network evidence as HAR 1.2, wait for load/URL conditions, or explicitly inspect/handle JavaScript dialogs. The performance action returns a raw CDP Performance.getMetrics point sample: Chrome defines names and units, which vary, while BBX sets no navigation observation window and does not measure LCP, CLS, or INP. For element-level reads, use browser_dom. evaluate, performance, handle_dialog, and source=cdp network capture are debugger-backed.',
-      inputSchema: {
+      inputSchema: z.object({
         action: z
           .enum([
             'state',
@@ -588,7 +599,7 @@ export function createBridgeMcpServer() {
           .enum(['exact', 'contains', 'regex'])
           .optional()
           .describe('URL match mode for wait_for_load (default: exact)'),
-      },
+      }),
     },
     handlePageTool
   );
@@ -599,7 +610,7 @@ export function createBridgeMcpServer() {
       title: 'Browser Navigation',
       description:
         'Navigate to a URL, reload, go back/forward, scroll, or resize the viewport. resize is debugger-backed - use only for exact viewport overrides.',
-      inputSchema: {
+      inputSchema: z.object({
         action: z
           .enum(['navigate', 'reload', 'go_back', 'go_forward', 'scroll', 'resize'])
           .describe('Navigation operation to perform'),
@@ -632,7 +643,7 @@ export function createBridgeMcpServer() {
           .optional()
           .describe('Viewport device scale factor (for resize)'),
         reset: z.boolean().optional().describe('Reset viewport to original size (for resize)'),
-      },
+      }),
     },
     handleNavigationTool
   );
@@ -643,7 +654,7 @@ export function createBridgeMcpServer() {
       title: 'Browser Input',
       description:
         'Dispatch browser input. Targeted click, focus, type, fill, press_key, set_checked, select_option, hover, and drag actions perform actionability checks and report resolution/execution metadata. cdp_press_key and scroll_into_view use separate contracts. Reuse elementRef values and verify application state after mutations.',
-      inputSchema: {
+      inputSchema: z.object({
         action: z
           .enum([
             'click',
@@ -744,7 +755,7 @@ export function createBridgeMcpServer() {
           .describe('Drag destination selector (alternative to destinationElementRef)'),
         offsetX: z.number().optional().describe('Drag drop offset X (default: 0)'),
         offsetY: z.number().optional().describe('Drag drop offset Y (default: 0)'),
-      },
+      }),
     },
     handleInputTool
   );
@@ -755,7 +766,7 @@ export function createBridgeMcpServer() {
       title: 'Browser Patch',
       description:
         'Apply or rollback document-local style and DOM patches for live prototyping before editing source. commit_baseline keeps current changes but discards rollback history. Set verify=true to get computed results inline.',
-      inputSchema: {
+      inputSchema: z.object({
         action: z
           .enum(['apply_styles', 'apply_dom', 'list', 'rollback', 'commit_baseline'])
           .describe('Patch operation to perform'),
@@ -795,7 +806,7 @@ export function createBridgeMcpServer() {
           .describe(
             'Return computed result inline after applying, eliminating a verification round-trip'
           ),
-      },
+      }),
     },
     handlePatchTool
   );
@@ -806,7 +817,7 @@ export function createBridgeMcpServer() {
       title: 'Browser Capture',
       description:
         'Capture screenshots or CDP snapshots. Debugger-backed and token-expensive - use only when structured reads (browser_dom, browser_styles_layout) are insufficient. Prefer element, then tight region; full_page only for document-level context.',
-      inputSchema: {
+      inputSchema: z.object({
         action: z
           .enum([
             'element',
@@ -872,7 +883,7 @@ export function createBridgeMcpServer() {
           .max(4)
           .optional()
           .describe('Screenshot capture scale (0.1 to 4)'),
-      },
+      }),
     },
     handleCaptureTool
   );
@@ -882,8 +893,8 @@ export function createBridgeMcpServer() {
     {
       title: 'Browser Artifact',
       description:
-        'Read (chunked base64) or delete a daemon-owned artifact produced by artifact delivery (screenshots, HAR exports). Artifacts are scoped to this MCP session and expire quickly. Page reads with offset until nextOffset is null, then verify the reassembled bytes against sha256.',
-      inputSchema: {
+        'Read (chunked base64) or delete a daemon-owned artifact produced by artifact delivery (screenshots, HAR exports). Artifacts are scoped to the current local MCP process and expire quickly. Page reads with offset until nextOffset is null, then verify the reassembled bytes against sha256.',
+      inputSchema: z.object({
         action: z.enum(['read', 'delete']).describe('Artifact operation to perform'),
         artifactId: z
           .string()
@@ -907,7 +918,7 @@ export function createBridgeMcpServer() {
           .enum(['quick', 'normal', 'deep'])
           .optional()
           .describe(BUDGET_PRESET_DESCRIPTION),
-      },
+      }),
     },
     handleArtifactTool
   );
@@ -918,7 +929,7 @@ export function createBridgeMcpServer() {
       title: 'Browser Network Intercept',
       description:
         'Manage CDP Fetch request interception rules: add (block, fulfill, or continue matching requests), list, remove, or clear. Debugger-backed; rules persist until removed or cleared.',
-      inputSchema: {
+      inputSchema: z.object({
         action: z
           .enum(['add', 'list', 'remove', 'clear'])
           .describe('Intercept operation to perform'),
@@ -951,7 +962,7 @@ export function createBridgeMcpServer() {
           .optional()
           .describe('Response headers for fulfill'),
         ruleId: z.string().min(1).optional().describe('Rule ID (required for remove)'),
-      },
+      }),
     },
     handleInterceptTool
   );
@@ -968,7 +979,7 @@ export function createBridgeMcpServer() {
         idempotentHint: true,
         openWorldHint: true,
       },
-      inputSchema: {
+      inputSchema: z.object({
         calls: z
           .array(
             z.object({
@@ -988,7 +999,7 @@ export function createBridgeMcpServer() {
           .min(1)
           .max(MAX_BATCH_CALLS)
           .describe('Calls to execute in parallel'),
-      },
+      }),
     },
     handleBatchTool
   );
@@ -999,7 +1010,7 @@ export function createBridgeMcpServer() {
       title: 'Raw Browser Bridge Call',
       description:
         'Primary Browser Bridge tool for permission-ask hosts: call any bridge method directly by name so the user can approve one BBX MCP tool instead of each specialized tool separately.',
-      inputSchema: {
+      inputSchema: z.object({
         method: z.string().describe('Bridge method name (e.g., "dom.query", "input.click")'),
         params: z
           .record(z.string(), z.unknown())
@@ -1011,7 +1022,7 @@ export function createBridgeMcpServer() {
           .enum(['quick', 'normal', 'deep'])
           .optional()
           .describe(BUDGET_PRESET_DESCRIPTION),
-      },
+      }),
     },
     handleRawCallTool
   );
@@ -1022,9 +1033,9 @@ export function createBridgeMcpServer() {
       title: 'Browser Bridge Runtime Context',
       description:
         'Return runtime context: budget presets, method groups, and active limits. Call to discover defaults before inspecting a page.',
-      inputSchema: {
+      inputSchema: z.object({
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
-      },
+      }),
     },
     handleSkillTool
   );
@@ -1035,9 +1046,9 @@ export function createBridgeMcpServer() {
       title: 'Request Browser Bridge Access',
       description:
         'Request window access for Browser Bridge. Surfaces an Enable prompt in the extension popup or side panel. Use once per window; if access is already pending, ask the user to enable that window instead of requesting again.',
-      inputSchema: {
+      inputSchema: z.object({
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
-      },
+      }),
     },
     handleAccessTool
   );
@@ -1056,7 +1067,7 @@ export function createBridgeMcpServer() {
       _meta: {
         delegationHint: createInvestigateDelegationHint(),
       },
-      inputSchema: {
+      inputSchema: z.object({
         objective: z
           .string()
           .describe('What to find, verify, or extract from the current page (natural language).'),
@@ -1074,7 +1085,7 @@ export function createBridgeMcpServer() {
           .string()
           .optional()
           .describe('Optional CSS selector to scope the investigation to a subtree.'),
-      },
+      }),
     },
     handleInvestigateTool
   );
@@ -1084,12 +1095,12 @@ export function createBridgeMcpServer() {
     {
       title: 'Load Browser Bridge Tool',
       description:
-        'Load one specialized typed Browser Bridge tool by exact name. The tool appears in tools/list automatically and remains enabled for this MCP session.',
-      inputSchema: {
+        'Load one specialized typed Browser Bridge tool by exact name. The tool appears in tools/list automatically and remains enabled for this legacy MCP connection.',
+      inputSchema: z.object({
         tool: z
           .enum(LOADABLE_TOOLSET_TOOLS)
           .describe('Exact specialized Browser Bridge tool to load.'),
-      },
+      }),
     },
     ({ tool }) => {
       const registration = registrations.get(tool);
@@ -1106,11 +1117,11 @@ export function createBridgeMcpServer() {
 }
 
 /**
- * @returns {Promise<void>}
+ * @param {{ serve?: typeof serveStdio }} [options]
+ * @returns {void}
  */
-export async function startBridgeMcpServer() {
+export function startBridgeMcpServer(options = {}) {
+  const { serve = serveStdio } = options;
   applyWindowsTcpTransportDefaults();
-  const server = createBridgeMcpServer();
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  serve(({ era }) => createBridgeMcpServer({ era }));
 }

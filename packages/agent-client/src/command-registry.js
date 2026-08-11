@@ -267,7 +267,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
       'bbx uninstall                                                      Remove native host manifests, Browser Bridge runtime files, and managed MCP/skill installs',
       'bbx install-skill [targets|all] [--global] [--project <path>]      Install/update the managed Browser Bridge CLI skill',
       'bbx install-mcp [client|all] [--local]                             Write MCP config for codex|claude|cursor|copilot|opencode|antigravity|windsurf|agents',
-      '  MCP starts with common tools; browser_toolset loads one specialized typed tool by name when needed.',
+      '  MCP uses a compact surface: legacy clients can load typed tools; modern stateless clients use browser_call.',
       'bbx status                                                         Check bridge connection',
       'bbx doctor                                                         Consolidated local runtime, setup, protocol, and readiness diagnostics',
       'bbx restart                                                        Restart the local daemon and running MCP servers',

@@ -3,15 +3,10 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { Client, type CallToolResult, type TextContent } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
+import { InMemoryTransport } from '@modelcontextprotocol/server';
 import type { Readable } from 'node:stream';
-import {
-  ToolListChangedNotificationSchema,
-  type CallToolResult,
-  type TextContent,
-} from '@modelcontextprotocol/sdk/types.js';
 
 import { createSuccess } from '../protocol/src/index.js';
 import { createBridgeMcpServer } from '../mcp-server/src/server.js';
@@ -241,7 +236,7 @@ test('MCP toolset loads exact tools through tools/list notifications and fails c
   const server = createBridgeMcpServer();
   const client = new Client({ name: 'browser-bridge-toolset-test', version: '1.0.0' });
   let listChangedNotifications = 0;
-  client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+  client.setNotificationHandler('notifications/tools/list_changed', () => {
     listChangedNotifications += 1;
   });
 
@@ -260,12 +255,13 @@ test('MCP toolset loads exact tools through tools/list notifications and fails c
       'browser_toolset',
     ]);
 
-    const disabled = (await client.callTool({
-      name: 'browser_dom',
-      arguments: { action: 'query' },
-    })) as CallToolResult;
-    assert.equal(disabled.isError, true);
-    assert.match((disabled.content[0] as TextContent).text, /Tool browser_dom disabled/);
+    await assert.rejects(
+      client.callTool({
+        name: 'browser_dom',
+        arguments: { action: 'query' },
+      }),
+      /Tool browser_dom disabled/
+    );
 
     const loaded = (await client.callTool({
       name: 'browser_toolset',

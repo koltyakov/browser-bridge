@@ -25,6 +25,7 @@ function createChromeTab(overrides: Partial<chrome.tabs.Tab> = {}): chrome.tabs.
     autoDiscardable: true,
     groupId: -1,
     frozen: false,
+    lastAccessed: Date.now(),
     ...overrides,
   };
 }

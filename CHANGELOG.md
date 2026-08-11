@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Modern stateless MCP:** The existing `bbx mcp serve` stdio command now
+  supports both legacy MCP clients and the modern `2026-07-28` protocol era,
+  including `server/discover` and per-request metadata negotiation.
+
+### Changed
+
+- **MCP TypeScript SDK v2:** Migrated from the monolithic SDK v1 package to the
+  split `@modelcontextprotocol/server` and `@modelcontextprotocol/client` v2
+  packages and Standard Schema-compatible Zod object declarations.
+- **Era-safe tool discovery:** Legacy stdio clients retain progressive
+  `browser_toolset` loading. Modern stateless clients receive a fixed compact
+  surface with `browser_skill` instead of `browser_toolset`; `browser_call`
+  continues to reach every bridge method in both eras.
+
 ## [1.10.0] - 2026-07-24
 
 ### Added
