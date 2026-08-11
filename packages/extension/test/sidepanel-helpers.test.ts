@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   buildSetupMatrixRows,
   createSetupInstallMessage,
+  getActivitySourcePills,
   getActivitySourceTag,
   getInstallKey,
   getMcpSetupCellState,
@@ -463,6 +464,14 @@ test('getActivitySourceTag prefers explicit source metadata', () => {
   assert.equal(getActivitySourceTag('mcp', 'legacy'), 'MCP Legacy');
   assert.equal(getActivitySourceTag('mcp', 'modern'), 'MCP Modern');
   assert.equal(getActivitySourceTag('cli', 'modern'), 'CLI');
+});
+
+test('getActivitySourcePills splits MCP source and protocol version', () => {
+  assert.deepEqual(getActivitySourcePills('mcp', null), { source: 'MCP', version: '' });
+  assert.deepEqual(getActivitySourcePills('mcp', 'legacy'), { source: 'MCP', version: 'v1' });
+  assert.deepEqual(getActivitySourcePills('mcp', 'modern'), { source: 'MCP', version: 'v2' });
+  assert.deepEqual(getActivitySourcePills('cli', 'modern'), { source: 'CLI', version: '' });
+  assert.deepEqual(getActivitySourcePills('other', 'modern'), { source: '', version: '' });
 });
 
 test('getActivitySourceTag leaves missing source metadata unlabelled', () => {

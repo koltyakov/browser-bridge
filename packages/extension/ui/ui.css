@@ -12,6 +12,10 @@
   --stroke: #e8e3de;
   --cmd-bg: rgba(128, 112, 100, 0.07);
   --cmd-bg-hover: rgba(128, 112, 100, 0.12);
+  --mcp-v1-bg: rgba(168, 137, 88, 0.14);
+  --mcp-v1-fg: #77613d;
+  --mcp-v2-bg: rgba(75, 138, 110, 0.14);
+  --mcp-v2-fg: #376b53;
   --card-shadow: rgba(0, 0, 0, 0.04);
   --disabled-bg: #c8c3be;
   --hist-surface-top: rgba(255, 255, 255, 0.38);
@@ -56,6 +60,10 @@ html[data-windowed="true"] {
     --stroke: #352f2a;
     --cmd-bg: rgba(255, 248, 240, 0.06);
     --cmd-bg-hover: rgba(255, 248, 240, 0.10);
+    --mcp-v1-bg: rgba(197, 166, 110, 0.16);
+    --mcp-v1-fg: #c5a66e;
+    --mcp-v2-bg: rgba(94, 168, 130, 0.16);
+    --mcp-v2-fg: #72bf96;
     --card-shadow: rgba(0, 0, 0, 0.3);
     --disabled-bg: #3d3a34;
     --hist-surface-top: rgba(224, 226, 232, 0.08);
@@ -213,6 +221,28 @@ body[data-windowed="true"] .panel-popup {
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.activity-source-tags {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 3px;
+}
+
+.activity-version-tag {
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.activity-version-tag[data-version="v1"] {
+  background: var(--mcp-v1-bg);
+  color: var(--mcp-v1-fg);
+}
+
+.activity-version-tag[data-version="v2"] {
+  background: var(--mcp-v2-bg);
+  color: var(--mcp-v2-fg);
 }
 
 .popup-title {

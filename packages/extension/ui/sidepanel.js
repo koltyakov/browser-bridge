@@ -2,7 +2,7 @@
 
 import {
   createSetupInstallMessage,
-  getActivitySourceTag,
+  getActivitySourcePills,
   getPromptExamplesRenderGroups,
   getSidepanelAgentStatusView,
   getSidepanelCurrentTabView,
@@ -1114,17 +1114,26 @@ function renderActionLogEntry(entry, setupStatus, entries, index) {
   methodLabel.textContent = entry.method;
   methodLabel.title = entry.method;
   title.append(methodLabel);
-  const activitySourceTag = getActivitySourceTag(entry.source, entry.mcpEra);
-  if (activitySourceTag) {
+  const activitySourcePills = getActivitySourcePills(entry.source, entry.mcpEra);
+  if (activitySourcePills.source) {
+    const sourceTags = document.createElement('span');
+    sourceTags.className = 'activity-source-tags';
     const sourceTag = document.createElement('span');
     sourceTag.className = 'activity-source-tag';
-    sourceTag.textContent = activitySourceTag;
-    if (entry.mcpEra === 'modern') {
-      sourceTag.title = 'Modern stateless MCP (protocol revision 2026-07-28)';
-    } else if (entry.mcpEra === 'legacy') {
-      sourceTag.title = 'Legacy MCP (protocol revision 2025-11-25 or earlier)';
+    sourceTag.textContent = activitySourcePills.source;
+    sourceTags.append(sourceTag);
+    if (activitySourcePills.version) {
+      const versionTag = document.createElement('span');
+      versionTag.className = 'activity-source-tag activity-version-tag';
+      versionTag.dataset.version = activitySourcePills.version;
+      versionTag.textContent = activitySourcePills.version;
+      versionTag.title =
+        activitySourcePills.version === 'v2'
+          ? 'Modern stateless MCP (protocol revision 2026-07-28)'
+          : 'Legacy MCP (protocol revision 2025-11-25 or earlier)';
+      sourceTags.append(versionTag);
     }
-    title.append(sourceTag);
+    title.append(sourceTags);
   }
   const timestamp = document.createElement('span');
   timestamp.className = 'muted activity-time';

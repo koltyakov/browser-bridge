@@ -261,6 +261,21 @@ export function getActivitySourceTag(source, mcpEra) {
 }
 
 /**
+ * Split MCP activity metadata into compact source and version pills.
+ *
+ * @param {string | null | undefined} source
+ * @param {string | null | undefined} mcpEra
+ * @returns {{ source: '' | 'CLI' | 'MCP', version: '' | 'v1' | 'v2' }}
+ */
+export function getActivitySourcePills(source, mcpEra) {
+  if (source === 'cli') return { source: 'CLI', version: '' };
+  if (source !== 'mcp') return { source: '', version: '' };
+  if (mcpEra === 'legacy') return { source: 'MCP', version: 'v1' };
+  if (mcpEra === 'modern') return { source: 'MCP', version: 'v2' };
+  return { source: 'MCP', version: '' };
+}
+
+/**
  * @param {SetupStatusInstallState | null} setupStatus
  * @param {boolean} pending
  * @param {string | null} error
