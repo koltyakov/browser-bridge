@@ -17,15 +17,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 
 /**
- * npm exec may run package lifecycle hooks while resolving the local bin. Keep
- * transient `npm exec -- bbx ...` invocations from rewriting host setup or
- * replacing a working daemon.
+ * Host setup is appropriate for a global CLI install, not when this package is
+ * an ordinary project dependency. npm exec is also always non-mutating. The
+ * explicit force switch is reserved for controlled packaging/tests.
  *
  * @param {NodeJS.ProcessEnv} [env=process.env]
  * @returns {boolean}
  */
-function shouldSkipPostinstall(env = process.env) {
-  return env.npm_command === 'exec';
+export function shouldSkipPostinstall(env = process.env) {
+  const globalInstall = env.npm_config_global === 'true' || env.npm_config_global === '1';
+  const explicitlyEnabled = env.BBX_POSTINSTALL_FORCE === '1';
+  return env.npm_command === 'exec' || (!globalInstall && !explicitlyEnabled);
 }
 
 /**

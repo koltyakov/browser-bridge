@@ -1,6 +1,11 @@
 // @ts-check
 
-import { normalizeNetworkInterceptAddParams } from '../../protocol/src/index.js';
+import {
+  BridgeError,
+  ERROR_CODES,
+  MAX_INTERCEPT_RULES_PER_TAB,
+  normalizeNetworkInterceptAddParams,
+} from '../../protocol/src/index.js';
 
 /**
  * CDP Fetch-domain request interception - declarative rule engine.
@@ -26,7 +31,8 @@ import { normalizeNetworkInterceptAddParams } from '../../protocol/src/index.js'
  */
 
 /** @typedef {{ ruleId: string, urlPattern: string, action: 'fulfill' | 'continue' | 'block', statusCode?: number, body?: string, headers?: Record<string, string> }} InterceptRule */
-/** @typedef {{ rules: Map<string, InterceptRule>, acquirePromise?: Promise<void>, ttlTimer?: ReturnType<typeof setTimeout> }} TabInterceptState */
+/** @typedef {InterceptRule & { matcher: RegExp }} StoredInterceptRule */
+/** @typedef {{ rules: Map<string, StoredInterceptRule>, acquirePromise?: Promise<void>, ttlTimer?: ReturnType<typeof setTimeout> }} TabInterceptState */
 
 const TTL_MS = 10 * 60 * 1000; // 10 minutes
 const MAX_DIAGNOSTIC_COUNT = 10_000;
@@ -112,8 +118,18 @@ export function createFetchInterceptor(deps) {
     const validatedRule = validateInterceptRule(rule);
     deps.assertDebuggerAvailable?.(tabId);
     const s = getOrCreateState(tabId);
+    if (s.rules.size >= MAX_INTERCEPT_RULES_PER_TAB) {
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        `A tab may have at most ${MAX_INTERCEPT_RULES_PER_TAB} active interception rules.`
+      );
+    }
     const ruleId = `intercept_${++ruleCounter}`;
-    const fullRule = { ...validatedRule, ruleId };
+    const fullRule = {
+      ...validatedRule,
+      ruleId,
+      matcher: compileUrlPattern(validatedRule.urlPattern),
+    };
     const wasEmpty = s.rules.size === 0;
     s.rules.set(ruleId, fullRule);
 
@@ -131,7 +147,7 @@ export function createFetchInterceptor(deps) {
     }
 
     resetTtl(tabId);
-    return fullRule;
+    return toPublicRule(fullRule);
   }
 
   /**
@@ -157,7 +173,7 @@ export function createFetchInterceptor(deps) {
    */
   function listRules(tabId) {
     const s = tabStates.get(tabId);
-    return s ? [...s.rules.values()] : [];
+    return s ? [...s.rules.values()].map(toPublicRule) : [];
   }
 
   /**
@@ -247,7 +263,7 @@ export function createFetchInterceptor(deps) {
 
       let matchedRule = null;
       for (const rule of s.rules.values()) {
-        if (urlMatchesPattern(p.request.url, rule.urlPattern)) {
+        if (rule.matcher.test(p.request.url)) {
           matchedRule = rule;
           break;
         }
@@ -384,12 +400,11 @@ function mergeRequestHeaders(original, overrides) {
  * `*` matches any characters, `?` matches exactly one character.
  * `?` must not stay a regex quantifier, or query-string patterns like
  * `/v1?x=1*` silently stop matching.
- * @param {string} url
  * @param {string} pattern
- * @returns {boolean}
+ * @returns {RegExp}
  */
-function urlMatchesPattern(url, pattern) {
-  const regex = new RegExp(
+function compileUrlPattern(pattern) {
+  return new RegExp(
     '^' +
       pattern
         .replace(/[.+^${}()|[\]\\]/g, '\\$&')
@@ -398,5 +413,10 @@ function urlMatchesPattern(url, pattern) {
       '$',
     'i'
   );
-  return regex.test(url);
+}
+
+/** @param {StoredInterceptRule} rule @returns {InterceptRule} */
+function toPublicRule(rule) {
+  const { matcher: _matcher, ...publicRule } = rule;
+  return publicRule;
 }

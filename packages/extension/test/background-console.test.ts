@@ -254,6 +254,8 @@ test('readConsoleBuffer reads, clears, and falls back when no result is returned
   assert.deepEqual(await readConsoleBuffer(8, false, chromeObj), {
     entries: [entry],
     dropped: 2,
+    provenance: 'page_main_world',
+    integrity: 'untrusted',
   });
   assert.strictEqual(pageGlobal().__bb_console_buffer, pageBuffer);
   assert.deepEqual(pageGlobal().__bb_console_buffer, [entry]);
@@ -261,6 +263,8 @@ test('readConsoleBuffer reads, clears, and falls back when no result is returned
   assert.deepEqual(await readConsoleBuffer(8, true, chromeObj), {
     entries: [entry],
     dropped: 2,
+    provenance: 'page_main_world',
+    integrity: 'untrusted',
   });
   assert.strictEqual(pageGlobal().__bb_console_buffer, pageBuffer);
   assert.deepEqual(pageBuffer, []);
@@ -281,6 +285,8 @@ test('readConsoleBuffer reads, clears, and falls back when no result is returned
   assert.deepEqual(await readConsoleBuffer(8, false, fallbackChrome), {
     entries: [],
     dropped: 0,
+    provenance: 'page_main_world',
+    integrity: 'untrusted',
   });
 });
 
@@ -303,6 +309,47 @@ test('readConsoleBuffer sanitizes structured secrets and incidental text', async
     '{"authorization":"[redacted]","tokenCount":3}',
     'failed at [redacted-path]/config.json',
   ]);
+});
+
+test('readConsoleBuffer treats main-world records as untrusted input', async (t) => {
+  clearInjectedConsoleState();
+  t.after(clearInjectedConsoleState);
+  pageGlobal().__bb_console_buffer = [
+    {
+      level: 'forged',
+      args: Array.from({ length: 25 }, (_, index) => `arg-${index}`),
+      ts: 1_700_000_000_000,
+      transport: 'extension',
+    },
+  ] as unknown as ConsoleEntry[];
+  pageGlobal().__bb_console_dropped = 9_999_999;
+
+  const result = await readConsoleBuffer(8, false, createScriptExecutingChrome());
+  assert.deepEqual(result.entries, [
+    {
+      level: 'log',
+      args: Array.from({ length: 20 }, (_, index) => `arg-${index}`),
+      ts: 1_700_000_000_000,
+    },
+  ]);
+  assert.equal(result.dropped, 1_000_000);
+  assert.equal('transport' in result.entries[0], false);
+  assert.equal(result.integrity, 'untrusted');
+});
+
+test('readConsoleBuffer bounds page-replaced buffers before returning them', async (t) => {
+  clearInjectedConsoleState();
+  t.after(clearInjectedConsoleState);
+  pageGlobal().__bb_console_buffer = Array.from({ length: 205 }, (_, index) => ({
+    level: 'log',
+    args: [`entry-${index}`],
+    ts: index,
+  }));
+
+  const result = await readConsoleBuffer(8, false, createScriptExecutingChrome());
+  assert.equal(result.entries.length, 200);
+  assert.equal(result.dropped, 5);
+  assert.deepEqual(result.entries[0].args, ['entry-5']);
 });
 
 test('console instrumentation errors are classified for best-effort priming', () => {

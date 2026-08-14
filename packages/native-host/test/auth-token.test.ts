@@ -6,11 +6,14 @@ import path from 'node:path';
 import {
   bridgeAuthTokensEqual,
   ensureBridgeAuthToken,
+  ensureBridgeExtensionAuthToken,
   BRIDGE_AUTH_TOKEN_ENV,
   BRIDGE_AUTH_TOKEN_FILE_ENV,
   getBridgeAuthTokenPath,
+  getBridgeExtensionAuthTokenPath,
   normalizeBridgeAuthToken,
   readBridgeAuthToken,
+  readBridgeExtensionAuthToken,
   readBridgeAuthTokenOverride,
   writeBridgeAuthToken,
 } from '../src/auth-token.js';
@@ -25,6 +28,33 @@ test('getBridgeAuthTokenPath resolves under the configured bridge home', () => {
   assert.equal(
     getBridgeAuthTokenPath({ BROWSER_BRIDGE_HOME: '/tmp/browser-bridge-test' }),
     path.join('/tmp/browser-bridge-test', 'daemon.auth')
+  );
+});
+
+test('extension role credentials use a separate private token path', () => {
+  const env = { BROWSER_BRIDGE_HOME: '/tmp/browser-bridge-test' };
+  assert.equal(
+    getBridgeExtensionAuthTokenPath(env),
+    path.join('/tmp/browser-bridge-test', 'daemon.extension.auth')
+  );
+  assert.notEqual(getBridgeExtensionAuthTokenPath(env), getBridgeAuthTokenPath(env));
+});
+
+test('extension auth reads and creates its dedicated credential', async () => {
+  const token = 'abcdefghijklmnopqrstuvwxyzABCDEF_-';
+  assert.equal(
+    await readBridgeExtensionAuthToken({
+      tokenPath: '/tmp/extension-token',
+      readFile: mockReadFile(async () => `${token}\n`),
+    }),
+    token
+  );
+  assert.equal(
+    await ensureBridgeExtensionAuthToken({
+      tokenPath: '/tmp/extension-token',
+      readFile: mockReadFile(async () => `${token}\n`),
+    }),
+    token
   );
 });
 

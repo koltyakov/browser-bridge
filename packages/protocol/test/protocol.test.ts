@@ -17,6 +17,10 @@ import {
   MAX_DOM_BASELINE_BYTES_GLOBAL,
   MAX_DOM_BASELINE_BYTES,
   MAX_HAR_ENTRIES,
+  MAX_INTERCEPT_BODY_BYTES,
+  MAX_INTERCEPT_HEADERS,
+  MAX_INTERCEPT_HEADER_VALUE_BYTES,
+  MAX_INTERCEPT_URL_PATTERN_LENGTH,
   HAR_AUTO_INLINE_BYTES,
   MAX_SENSITIVE_VALUE_BYTES,
   ERROR_CODES,
@@ -1222,6 +1226,42 @@ test('normalizeNetworkInterceptAddParams rejects invalid actions', () => {
   );
 });
 
+test('normalizeNetworkInterceptAddParams bounds patterns, bodies, and headers', () => {
+  assert.throws(
+    () =>
+      normalizeNetworkInterceptAddParams({
+        urlPattern: 'x'.repeat(MAX_INTERCEPT_URL_PATTERN_LENGTH + 1),
+      }),
+    /urlPattern must not exceed/
+  );
+  assert.throws(
+    () =>
+      normalizeNetworkInterceptAddParams({
+        urlPattern: '*',
+        body: 'x'.repeat(MAX_INTERCEPT_BODY_BYTES + 1),
+      }),
+    /body must not exceed/
+  );
+  assert.throws(
+    () =>
+      normalizeNetworkInterceptAddParams({
+        urlPattern: '*',
+        headers: Object.fromEntries(
+          Array.from({ length: MAX_INTERCEPT_HEADERS + 1 }, (_, index) => [`x-${index}`, 'v'])
+        ),
+      }),
+    /headers must contain at most/
+  );
+  assert.throws(
+    () =>
+      normalizeNetworkInterceptAddParams({
+        urlPattern: '*',
+        headers: { 'x-large': 'x'.repeat(MAX_INTERCEPT_HEADER_VALUE_BYTES + 1) },
+      }),
+    /must not exceed/
+  );
+});
+
 /** Ensure page text params clamp budget. */
 test('normalizePageTextParams clamps budget', () => {
   const params = normalizePageTextParams({ textBudget: 999999 });
@@ -1626,12 +1666,22 @@ test('validateBridgeRequest rejects malformed request input', () => {
     {
       name: 'missing id',
       request: { method: 'health.ping' },
-      message: /Request id must be a non-empty string\./,
+      message: /Request id must be a non-empty string/,
     },
     {
       name: 'blank id',
       request: { id: '   ', method: 'health.ping' },
-      message: /Request id must be a non-empty string\./,
+      message: /Request id must be a non-empty string/,
+    },
+    {
+      name: 'oversized id',
+      request: { id: 'x'.repeat(129), method: 'health.ping' },
+      message: /at most 128 characters/,
+    },
+    {
+      name: 'id with controls',
+      request: { id: 'req_1\nforged', method: 'health.ping' },
+      message: /without controls/,
     },
     {
       name: 'non-string method',

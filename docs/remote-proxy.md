@@ -55,6 +55,10 @@ machine without exposing Browser Bridge's unencrypted TCP transport to the netwo
 > Proxy mode does not change what the extension can do or which permissions it needs. It only
 > lets authenticated agents reach the same daemon over TCP instead of the local socket.
 
+The remote token authenticates only the agent role. It cannot register as the
+Chrome extension, and TCP agents cannot invoke setup mutation such as
+`setup.install`, including through a loopback SSH tunnel.
+
 ## 3. Register the remote on the dev machine
 
 ```bash

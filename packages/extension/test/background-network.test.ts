@@ -471,6 +471,8 @@ test('readNetworkBuffer returns copied entries and clears the page state on requ
         },
       ],
       dropped: 3,
+      provenance: 'page_main_world',
+      integrity: 'untrusted',
     });
     assert.notEqual(
       firstRead.entries,
@@ -503,6 +505,8 @@ test('readNetworkBuffer returns copied entries and clears the page state on requ
         },
       ],
       dropped: 3,
+      provenance: 'page_main_world',
+      integrity: 'untrusted',
     });
     assert.strictEqual(
       (globalThis as unknown as InstalledNetworkGlobal).__bb_network_buffer,
@@ -546,10 +550,98 @@ test('readNetworkBuffer falls back to empty state when page globals are absent',
     assert.deepEqual(result, {
       entries: [],
       dropped: 0,
+      provenance: 'page_main_world',
+      integrity: 'untrusted',
     });
   } finally {
     restoreGlobalDescriptors(snapshot);
   }
+});
+
+test('readNetworkBuffer bounds page-replaced buffers before returning them', async () => {
+  const snapshot = snapshotGlobalDescriptors();
+  const entries = Array.from({ length: 205 }, (_, index) => ({
+    method: 'GET',
+    url: `https://example.com/${index}`,
+    status: 200,
+    duration: 1,
+    type: 'fetch',
+    ts: index,
+    size: 1,
+  }));
+  Object.defineProperty(globalThis, '__bb_network_buffer', {
+    configurable: true,
+    writable: true,
+    value: entries,
+  });
+  Object.defineProperty(globalThis, '__bb_network_dropped', {
+    configurable: true,
+    writable: true,
+    value: 0,
+  });
+
+  try {
+    const result = await readNetworkBuffer(31, false, {
+      scripting: {
+        async executeScript(details: NetworkInjection) {
+          assert.equal(typeof details.func, 'function');
+          const readBuffer = details.func as (...args: unknown[]) => unknown;
+          return [{ result: readBuffer(...(details.args ?? [])) }];
+        },
+      },
+    });
+    assert.equal(result.entries.length, 200);
+    assert.equal(result.dropped, 5);
+    assert.equal(result.entries[0].url, 'https://example.com/5');
+  } finally {
+    restoreGlobalDescriptors(snapshot);
+  }
+});
+
+test('readNetworkBuffer strips forged fields and bounds main-world values', async () => {
+  const result = await readNetworkBuffer(32, false, {
+    scripting: {
+      async executeScript() {
+        return [
+          {
+            result: {
+              entries: [
+                {
+                  method: 'M'.repeat(40),
+                  url: 'https://user:pass@example.com/api?token=secret',
+                  status: -1,
+                  duration: Number.POSITIVE_INFINITY,
+                  type: 'forged',
+                  ts: 1_700_000_000_000,
+                  size: 9_999_999,
+                  daemon: 'ok',
+                },
+              ],
+              dropped: 9_999_999,
+            },
+          },
+        ];
+      },
+    },
+  });
+
+  assert.deepEqual(result, {
+    entries: [
+      {
+        method: 'M'.repeat(32),
+        url: 'https://example.com/api?token=%5Bredacted%5D',
+        status: 0,
+        duration: 0,
+        type: 'fetch',
+        ts: 1_700_000_000_000,
+        size: 9_999_999,
+      },
+    ],
+    dropped: 1_000_000,
+    provenance: 'page_main_world',
+    integrity: 'untrusted',
+  });
+  assert.equal('daemon' in result.entries[0], false);
 });
 
 test('disableNetworkInterceptor restores hooks and drops in-flight disabled-period records', async () => {

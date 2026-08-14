@@ -454,7 +454,7 @@ test('installNativeManifest wraps target directory write failures in a typed err
   }
 });
 
-test('getAllowedOrigins merges explicit ids and removes placeholders', () => {
+test('getAllowedOrigins replaces stale origins with the selected extension id', () => {
   const id = 'abcdefghijklmnopabcdefghijklmnop';
   const origins = getAllowedOrigins(
     {
@@ -466,13 +466,7 @@ test('getAllowedOrigins merges explicit ids and removes placeholders', () => {
     id
   );
 
-  assert.deepEqual(
-    origins.sort(),
-    [
-      'chrome-extension://abcdefghijklmnopabcdefghijklmnop/',
-      'chrome-extension://qrstuvwxyzabcdefghijklmnopqrstuv/',
-    ].sort()
-  );
+  assert.deepEqual(origins, ['chrome-extension://abcdefghijklmnopabcdefghijklmnop/']);
 });
 
 test('getAllowedOrigins falls back to placeholder when nothing is installed', () => {

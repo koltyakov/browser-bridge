@@ -17,6 +17,7 @@ import {
 } from '../../../tests/_helpers/nativeMessaging.ts';
 import { fakeStreamThatErrorsAfterNBytes } from '../../../tests/_helpers/faultInjection.ts';
 import { TEST_PROTOCOL_VERSION as PROTOCOL_VERSION } from '../../../tests/_helpers/socketHarness.ts';
+import { readBridgeExtensionAuthToken } from '../src/auth-token.js';
 
 type StdinListeners = {
   data: ReturnType<typeof process.stdin.listeners>;
@@ -184,9 +185,13 @@ test('runNativeHost bridges daemon socket messages and stdin frames', async () =
   }) as typeof process.stdout.write;
 
   try {
+    const authToken = await readBridgeExtensionAuthToken();
     await runNativeHost({ socketPath: '/tmp/browser-bridge-test.sock' });
 
-    assert.equal(socketWrites[0], '{"type":"register","role":"extension"}\n');
+    assert.equal(
+      socketWrites[0],
+      `${JSON.stringify({ type: 'register', role: 'extension', authToken })}\n`
+    );
 
     socket.emit(
       'data',
@@ -445,7 +450,8 @@ test('runNativeHost logs stdin handler failures when writes to the daemon socket
   const originalConsoleError = console.error;
   const stdinListenersBefore = captureStdinListeners();
   const loggedErrors: string[] = [];
-  const registrationLine = '{"type":"register","role":"extension"}\n';
+  const authToken = await readBridgeExtensionAuthToken();
+  const registrationLine = `${JSON.stringify({ type: 'register', role: 'extension', authToken })}\n`;
   const erroringStream = fakeStreamThatErrorsAfterNBytes(Buffer.byteLength(registrationLine));
   const bridgeSocket = erroringStream.stream;
 

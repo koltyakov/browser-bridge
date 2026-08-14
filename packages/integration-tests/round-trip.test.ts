@@ -26,6 +26,7 @@ async function startTestDaemon(): Promise<TestDaemon> {
     listenOptions: { host: '127.0.0.1', port: 0 },
     logger: { log() {}, error() {} },
     authToken: null,
+    extensionAuthToken: null,
   });
   await daemon.start();
   const address = daemon.serverAddress as AddressInfo;

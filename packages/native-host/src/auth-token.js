@@ -9,6 +9,7 @@ import { getBridgeDir } from './config.js';
 export const BRIDGE_AUTH_TOKEN_ENV = 'BBX_AUTH_TOKEN';
 export const BRIDGE_AUTH_TOKEN_FILE_ENV = 'BBX_AUTH_TOKEN_FILE';
 const TOKEN_FILENAME = 'daemon.auth';
+const EXTENSION_TOKEN_FILENAME = 'daemon.extension.auth';
 const TOKEN_BYTES = 32;
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{32,256}$/u;
 const UUID_TOKEN_PATTERN =
@@ -20,6 +21,17 @@ const UUID_TOKEN_PATTERN =
  */
 export function getBridgeAuthTokenPath(env = process.env) {
   return path.join(getBridgeDir(env), TOKEN_FILENAME);
+}
+
+/**
+ * Private credential used only by the Chrome native host when registering the
+ * extension role. Remote agent configurations never receive this token.
+ *
+ * @param {NodeJS.ProcessEnv} [env=process.env]
+ * @returns {string}
+ */
+export function getBridgeExtensionAuthTokenPath(env = process.env) {
+  return path.join(getBridgeDir(env), EXTENSION_TOKEN_FILENAME);
 }
 
 /**
@@ -91,6 +103,25 @@ export async function readBridgeAuthToken(options = {}) {
   }
   const tokenPath = options.tokenPath ?? getBridgeAuthTokenPath();
   const readFile = options.readFile ?? fs.promises.readFile.bind(fs.promises);
+  return readStoredBridgeAuthToken(tokenPath, readFile);
+}
+
+/**
+ * @param {{ tokenPath?: string, readFile?: typeof fs.promises.readFile }} [options={}]
+ * @returns {Promise<string | null>}
+ */
+export async function readBridgeExtensionAuthToken(options = {}) {
+  const tokenPath = options.tokenPath ?? getBridgeExtensionAuthTokenPath();
+  const readFile = options.readFile ?? fs.promises.readFile.bind(fs.promises);
+  return readStoredBridgeAuthToken(tokenPath, readFile);
+}
+
+/**
+ * @param {string} tokenPath
+ * @param {typeof fs.promises.readFile} readFile
+ * @returns {Promise<string | null>}
+ */
+async function readStoredBridgeAuthToken(tokenPath, readFile) {
   try {
     return normalizeBridgeAuthToken(await readFile(tokenPath, 'utf8'));
   } catch (error) {
@@ -136,12 +167,43 @@ export async function writeBridgeAuthToken(token, options = {}) {
  */
 export async function ensureBridgeAuthToken(options = {}) {
   const tokenPath = options.tokenPath ?? getBridgeAuthTokenPath();
+  return ensureStoredBridgeAuthToken(tokenPath, options);
+}
+
+/**
+ * @param {{
+ *   tokenPath?: string,
+ *   readFile?: typeof fs.promises.readFile,
+ *   writeFile?: typeof fs.promises.writeFile,
+ *   mkdir?: typeof fs.promises.mkdir,
+ *   chmod?: typeof fs.promises.chmod,
+ *   randomBytesFn?: typeof randomBytes
+ * }} [options={}]
+ * @returns {Promise<string>}
+ */
+export async function ensureBridgeExtensionAuthToken(options = {}) {
+  const tokenPath = options.tokenPath ?? getBridgeExtensionAuthTokenPath();
+  return ensureStoredBridgeAuthToken(tokenPath, options);
+}
+
+/**
+ * @param {string} tokenPath
+ * @param {{
+ *   readFile?: typeof fs.promises.readFile,
+ *   writeFile?: typeof fs.promises.writeFile,
+ *   mkdir?: typeof fs.promises.mkdir,
+ *   chmod?: typeof fs.promises.chmod,
+ *   randomBytesFn?: typeof randomBytes
+ * }} options
+ * @returns {Promise<string>}
+ */
+async function ensureStoredBridgeAuthToken(tokenPath, options) {
   const readFile = options.readFile ?? fs.promises.readFile.bind(fs.promises);
   const writeFile = options.writeFile ?? fs.promises.writeFile.bind(fs.promises);
   const mkdir = options.mkdir ?? fs.promises.mkdir.bind(fs.promises);
   const chmod = options.chmod ?? fs.promises.chmod.bind(fs.promises);
   const randomBytesFn = options.randomBytesFn ?? randomBytes;
-  const existing = await readBridgeAuthToken({ tokenPath, readFile });
+  const existing = await readStoredBridgeAuthToken(tokenPath, readFile);
   if (existing) {
     return existing;
   }

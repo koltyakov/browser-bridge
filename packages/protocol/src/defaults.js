@@ -45,6 +45,12 @@ export const MAX_BATCH_CALLS = 20;
 
 /** Maximum read-only batch calls executing concurrently. */
 export const MAX_BATCH_CONCURRENCY = 5;
+export const MAX_INTERCEPT_RULES_PER_TAB = 32;
+export const MAX_INTERCEPT_URL_PATTERN_LENGTH = 2_048;
+export const MAX_INTERCEPT_BODY_BYTES = 262_144;
+export const MAX_INTERCEPT_HEADERS = 64;
+export const MAX_INTERCEPT_HEADER_VALUE_BYTES = 8_192;
+export const MAX_INTERCEPT_HEADER_BYTES = 65_536;
 export const SCREENSHOT_AUTO_INLINE_BYTES = 262_144;
 export const SCREENSHOT_MAX_INLINE_BYTES = 524_288;
 export const ARTIFACT_CHUNK_BYTES = 196_608;

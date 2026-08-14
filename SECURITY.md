@@ -52,8 +52,15 @@ Out of scope:
 
 - By default the daemon listens on a user-owned Unix socket (mode `0700` directory) or,
   on Windows, a named pipe / localhost TCP.
-- Any TCP listener requires a random 256-bit auth token stored with mode `0600`;
-  registration without it is rejected and the comparison is constant-time.
+- Any TCP listener requires random 256-bit credentials stored with mode `0600`.
+  Agents and the Chrome native host use distinct credentials, so a remote agent
+  token cannot register an extension-role socket. Registration without the
+  role-appropriate credential is rejected and comparison is constant-time.
+- Setup mutation is accepted only from the local socket or authenticated native
+  host. A TCP agent remains non-local even when its peer address is loopback,
+  preventing SSH port forwarding from turning remote access into local control.
+- Daemon connections, registration time, malformed input, pending requests, and
+  per-client pending requests are bounded to limit resource exhaustion.
 - Proxy mode (LAN exposure) is opt-in via `bbx proxy enable` and always provisions a
   token; an invalid `bindHost` in the config rejects the config rather than widening
   the bind address.
@@ -62,3 +69,8 @@ Out of scope:
 - Ordinary Web Storage reads return key/presence metadata only. The separate
   `sensitive.read` method requires one exact key, is excluded from batches and
   automatic retries, and returns a value whole or fails atomically.
+- Fetch/XHR and console capture run in the inspected page's main JavaScript
+  world. Results are therefore marked `integrity: "untrusted"`, copied through
+  strict bounded schemas, and never treated as daemon or extension authority.
+- Request interception rules are bounded per tab; patterns, bodies, and headers
+  have protocol-level size limits and URL matchers are compiled once per rule.

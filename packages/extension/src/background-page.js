@@ -93,9 +93,9 @@ async function expandAccessibilitySubtree(
  * @typedef {{
  *   clearEnabledWindowIfGone: () => Promise<boolean>,
  *   primeTabConsoleCapture: (tabId: number) => Promise<void>,
- *   readConsoleBuffer: (tabId: number, clear: boolean) => Promise<{ entries: Array<{ level: string } & Record<string, unknown>>, dropped: number }>,
+ *   readConsoleBuffer: (tabId: number, clear: boolean) => Promise<{ entries: Array<{ level: string } & Record<string, unknown>>, dropped: number, provenance?: 'page_main_world', integrity?: 'untrusted' }>,
  *   ensureNetworkInterceptor: (tabId: number) => Promise<void>,
- *   readNetworkBuffer: (tabId: number, clear: boolean) => Promise<{ entries: Array<{ url: string } & Record<string, unknown>>, dropped: number }>,
+ *   readNetworkBuffer: (tabId: number, clear: boolean) => Promise<{ entries: Array<{ url: string } & Record<string, unknown>>, dropped: number, provenance?: 'page_main_world', integrity?: 'untrusted' }>,
  *   startCdpNetworkCapture: (tabId: number) => Promise<Record<string, unknown>>,
  *   clearCdpNetworkCapture: (tabId: number) => Promise<Record<string, unknown>>,
  *   readCdpNetworkCapture: (tabId: number, clear: boolean) => Promise<Record<string, unknown>>,
@@ -285,7 +285,8 @@ export function createPageRequestController(state, chromeObj, dependencies) {
     const params = normalizeConsoleParams(request.params);
 
     await dependencies.primeTabConsoleCapture(target.tabId);
-    const { entries, dropped } = await dependencies.readConsoleBuffer(target.tabId, params.clear);
+    const capture = await dependencies.readConsoleBuffer(target.tabId, params.clear);
+    const { entries, dropped } = capture;
     const filtered =
       params.level === 'all'
         ? entries
@@ -294,7 +295,14 @@ export function createPageRequestController(state, chromeObj, dependencies) {
 
     return createSuccess(
       request.id,
-      { entries: limited, count: limited.length, total: entries.length, dropped },
+      {
+        entries: limited,
+        count: limited.length,
+        total: entries.length,
+        dropped,
+        provenance: capture.provenance ?? 'page_main_world',
+        integrity: capture.integrity ?? 'untrusted',
+      },
       { method: request.method }
     );
   }
@@ -618,7 +626,7 @@ export function createPageRequestController(state, chromeObj, dependencies) {
               ? await dependencies.stopCdpNetworkCapture(target.tabId)
               : await dependencies.readCdpNetworkCapture(target.tabId, params.clear);
     const capture =
-      /** @type {{ entries?: Array<{ url: string } & Record<string, unknown>>, dropped?: number, abandoned?: number, armed?: boolean, armedDuringCapture?: boolean, ownershipHeld?: boolean, captureState?: string, startedAt?: number | null, inflight?: number }} */ (
+      /** @type {{ entries?: Array<{ url: string } & Record<string, unknown>>, dropped?: number, abandoned?: number, armed?: boolean, armedDuringCapture?: boolean, ownershipHeld?: boolean, captureState?: string, startedAt?: number | null, inflight?: number, provenance?: 'page_main_world', integrity?: 'untrusted' }} */ (
         captureResult
       );
     const entries = capture.entries ?? [];
@@ -647,6 +655,12 @@ export function createPageRequestController(state, chromeObj, dependencies) {
         startedAt: params.source === 'cdp' ? (capture.startedAt ?? null) : null,
         inflight: params.source === 'cdp' ? (capture.inflight ?? 0) : 0,
         ownershipHeld: params.source === 'cdp' ? capture.ownershipHeld === true : false,
+        provenance:
+          params.source === 'fetch-xhr'
+            ? (capture.provenance ?? 'page_main_world')
+            : 'chrome_devtools_protocol',
+        integrity:
+          params.source === 'fetch-xhr' ? (capture.integrity ?? 'untrusted') : 'browser_observed',
         truncated: filtered.length > limited.length,
         truncation: {
           reason: filtered.length > limited.length ? 'limit' : null,

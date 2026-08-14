@@ -52,6 +52,7 @@ export async function startTestDaemon(port = 0): Promise<TestDaemonContext> {
     listenOptions: { host: '127.0.0.1', port },
     logger: { log() {}, error() {} },
     authToken: null,
+    extensionAuthToken: null,
     artifactStore,
   });
 

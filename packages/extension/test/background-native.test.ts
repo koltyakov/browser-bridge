@@ -1171,6 +1171,8 @@ test('background native page.get_network falls back to an empty buffer when the 
     startedAt: null,
     inflight: 0,
     ownershipHeld: false,
+    provenance: 'page_main_world',
+    integrity: 'untrusted',
     truncated: false,
     truncation: { reason: null, limit: 50, omitted: 0 },
   });

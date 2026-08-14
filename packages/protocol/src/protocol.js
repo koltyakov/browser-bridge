@@ -26,6 +26,11 @@ import {
   MAX_EXTRACT_SETTLE_TIMEOUT_MS,
   MAX_ARTIFACT_BYTES,
   MAX_HAR_ENTRIES,
+  MAX_INTERCEPT_BODY_BYTES,
+  MAX_INTERCEPT_HEADER_BYTES,
+  MAX_INTERCEPT_HEADERS,
+  MAX_INTERCEPT_HEADER_VALUE_BYTES,
+  MAX_INTERCEPT_URL_PATTERN_LENGTH,
   MAX_SENSITIVE_VALUE_BYTES,
 } from './defaults.js';
 import { BridgeError, ERROR_CODES, getErrorRecovery } from './errors.js';
@@ -300,8 +305,16 @@ export function validateBridgeRequest(request) {
 
   const candidate = /** @type {Record<string, unknown>} */ (request);
 
-  if (typeof candidate.id !== 'string' || !candidate.id.trim()) {
-    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'Request id must be a non-empty string.');
+  if (
+    typeof candidate.id !== 'string' ||
+    !candidate.id.trim() ||
+    candidate.id.length > 128 ||
+    hasAsciiControlCharacters(candidate.id)
+  ) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'Request id must be a non-empty string of at most 128 characters without controls.'
+    );
   }
 
   if (
@@ -376,6 +389,15 @@ export function validateBridgeRequest(request) {
       automatic_retry: normalizeAutomaticRetryMeta(meta.source, meta.automatic_retry),
     },
   };
+}
+
+/** @param {string} value @returns {boolean} */
+function hasAsciiControlCharacters(value) {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 32 || code === 127) return true;
+  }
+  return false;
 }
 
 /**
@@ -1503,6 +1525,12 @@ export function normalizeNetworkInterceptAddParams(params = {}) {
   if (typeof params.urlPattern !== 'string' || !params.urlPattern) {
     throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'urlPattern is required.');
   }
+  if (params.urlPattern.length > MAX_INTERCEPT_URL_PATTERN_LENGTH) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      `urlPattern must not exceed ${MAX_INTERCEPT_URL_PATTERN_LENGTH} characters.`
+    );
+  }
 
   const action = params.action ?? DEFAULT_NETWORK_INTERCEPT_ACTION;
   if (action !== 'fulfill' && action !== 'continue' && action !== 'block') {
@@ -1523,6 +1551,15 @@ export function normalizeNetworkInterceptAddParams(params = {}) {
   if (params.body !== undefined && typeof params.body !== 'string') {
     throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'body must be a string.');
   }
+  if (
+    typeof params.body === 'string' &&
+    new TextEncoder().encode(params.body).byteLength > MAX_INTERCEPT_BODY_BYTES
+  ) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      `body must not exceed ${MAX_INTERCEPT_BODY_BYTES} UTF-8 bytes.`
+    );
+  }
 
   /** @type {Record<string, string> | undefined} */
   let headers;
@@ -1533,8 +1570,16 @@ export function normalizeNetworkInterceptAddParams(params = {}) {
         'headers must be an object containing string values.'
       );
     }
+    const entries = Object.entries(params.headers);
+    if (entries.length > MAX_INTERCEPT_HEADERS) {
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        `headers must contain at most ${MAX_INTERCEPT_HEADERS} entries.`
+      );
+    }
     headers = {};
-    for (const [name, value] of Object.entries(params.headers)) {
+    let headerBytes = 0;
+    for (const [name, value] of entries) {
       if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name)) {
         throw new BridgeError(
           ERROR_CODES.INVALID_REQUEST,
@@ -1545,6 +1590,20 @@ export function normalizeNetworkInterceptAddParams(params = {}) {
         throw new BridgeError(
           ERROR_CODES.INVALID_REQUEST,
           `Header ${name} must have a string value without newlines.`
+        );
+      }
+      const valueBytes = new TextEncoder().encode(value).byteLength;
+      if (valueBytes > MAX_INTERCEPT_HEADER_VALUE_BYTES) {
+        throw new BridgeError(
+          ERROR_CODES.INVALID_REQUEST,
+          `Header ${name} must not exceed ${MAX_INTERCEPT_HEADER_VALUE_BYTES} UTF-8 bytes.`
+        );
+      }
+      headerBytes += new TextEncoder().encode(name).byteLength + valueBytes;
+      if (headerBytes > MAX_INTERCEPT_HEADER_BYTES) {
+        throw new BridgeError(
+          ERROR_CODES.INVALID_REQUEST,
+          `headers must not exceed ${MAX_INTERCEPT_HEADER_BYTES} UTF-8 bytes in total.`
         );
       }
       headers[name] = value;

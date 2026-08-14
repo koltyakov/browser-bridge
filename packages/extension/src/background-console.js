@@ -261,7 +261,7 @@ export async function disableConsoleInterceptor(tabId, chromeObj) {
  * @param {number} tabId
  * @param {boolean} clear
  * @param {ChromeWithScripting} chromeObj
- * @returns {Promise<{ entries: Array<{level: string, args: string[], ts: number}>, dropped: number }>}
+ * @returns {Promise<{ entries: Array<{level: string, args: string[], ts: number}>, dropped: number, provenance: 'page_main_world', integrity: 'untrusted' }>}
  */
 export async function readConsoleBuffer(tabId, clear, chromeObj) {
   const instrumentationKey = await getMainWorldInstrumentationKey(chromeObj);
@@ -285,28 +285,68 @@ export async function readConsoleBuffer(tabId, clear, chromeObj) {
           : typeof globalThis.__bb_console_dropped === 'number'
             ? globalThis.__bb_console_dropped
             : 0;
-      const copy = [...buf];
+      // The page can replace this buffer. Bound the cross-world clone before
+      // Chrome serializes it back to the extension.
+      const copy = buf.slice(-200);
+      const boundedDropped =
+        (typeof dropped === 'number' && Number.isFinite(dropped) && dropped >= 0 ? dropped : 0) +
+        Math.max(0, buf.length - copy.length);
       if (shouldClear) {
         buf.length = 0;
         if (record) record.dropped = 0;
         globalThis.__bb_console_buffer = buf;
         globalThis.__bb_console_dropped = 0;
       }
-      return { entries: copy, dropped };
+      return { entries: copy, dropped: boundedDropped };
     },
     args: [clear, instrumentationKey],
   });
-  const result = /** @type {any} */ (results?.[0]?.result) || { entries: [], dropped: 0 };
+  const result = /** @type {{ entries?: unknown, dropped?: unknown }} */ (
+    results?.[0]?.result || { entries: [], dropped: 0 }
+  );
   return {
-    ...result,
     entries: Array.isArray(result.entries)
-      ? result.entries.map(
-          (/** @type {{ args: unknown[] } & Record<string, unknown>} */ entry) => ({
-            ...entry,
-            args: entry.args.map((argument) => sanitizeConsoleArgument(argument)),
-          })
-        )
+      ? result.entries
+          .slice(-200)
+          .map(normalizeConsoleEntry)
+          .filter((entry) => entry !== null)
       : [],
+    dropped: normalizeConsoleCount(result.dropped),
+    provenance: 'page_main_world',
+    integrity: 'untrusted',
+  };
+}
+
+const CONSOLE_LEVELS = new Set(['log', 'warn', 'error', 'info', 'debug', 'exception', 'rejection']);
+
+/** @param {unknown} value @returns {number} */
+function normalizeConsoleCount(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.min(1_000_000, Math.trunc(value))
+    : 0;
+}
+
+/** @param {unknown} value @returns {number} */
+function normalizeConsoleTimestamp(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.min(Number.MAX_SAFE_INTEGER, Math.trunc(value))
+    : 0;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {{ level: string, args: string[], ts: number } | null}
+ */
+function normalizeConsoleEntry(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const entry = /** @type {Record<string, unknown>} */ (value);
+  const args = Array.isArray(entry.args)
+    ? entry.args.slice(0, 20).map((argument) => sanitizeConsoleArgument(argument))
+    : [];
+  return {
+    level: typeof entry.level === 'string' && CONSOLE_LEVELS.has(entry.level) ? entry.level : 'log',
+    args,
+    ts: normalizeConsoleTimestamp(entry.ts),
   };
 }
 

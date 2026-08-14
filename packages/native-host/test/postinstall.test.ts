@@ -4,12 +4,13 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-import { runPostinstall } from '../bin/postinstall.js';
+import { runPostinstall, shouldSkipPostinstall } from '../bin/postinstall.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '../../..');
 const postinstallPath = path.join(repoRoot, 'packages', 'native-host', 'bin', 'postinstall.js');
+const GLOBAL_INSTALL_ENV = { npm_config_global: 'true' };
 
 type PostinstallDeps = NonNullable<Parameters<typeof runPostinstall>[0]>;
 type InstallNativeManifestFn = NonNullable<PostinstallDeps['installNativeManifestFn']>;
@@ -54,6 +55,7 @@ test('runPostinstall installs native host and skips restart message when daemon 
     restartBridgeDaemonIfRunningFn,
     stdout: stdout.stream,
     stderr: stderr.stream,
+    env: GLOBAL_INSTALL_ENV,
   });
 
   assert.equal(installCalls.length, 1);
@@ -92,6 +94,7 @@ test('runPostinstall reports daemon restart after successful install', async () 
     restartBridgeDaemonIfRunningFn,
     stdout: stdout.stream,
     stderr: stderr.stream,
+    env: GLOBAL_INSTALL_ENV,
   });
 
   assert.equal(
@@ -144,6 +147,14 @@ test('runPostinstall skips install and daemon restart during npm exec', async ()
   assert.equal(stderr.chunks.join(''), '');
 });
 
+test('postinstall only mutates host setup for global or explicitly enabled installs', () => {
+  assert.equal(shouldSkipPostinstall({}), true);
+  assert.equal(shouldSkipPostinstall({ npm_config_global: 'true' }), false);
+  assert.equal(shouldSkipPostinstall({ npm_config_global: '1' }), false);
+  assert.equal(shouldSkipPostinstall({ BBX_POSTINSTALL_FORCE: '1' }), false);
+  assert.equal(shouldSkipPostinstall({ npm_config_global: 'true', npm_command: 'exec' }), true);
+});
+
 test('runPostinstall keeps install success non-fatal when daemon restart fails', async () => {
   const stdout = createWriteSink();
   const stderr = createWriteSink();
@@ -163,6 +174,7 @@ test('runPostinstall keeps install success non-fatal when daemon restart fails',
     restartBridgeDaemonIfRunningFn,
     stdout: stdout.stream,
     stderr: stderr.stream,
+    env: GLOBAL_INSTALL_ENV,
   });
 
   assert.equal(
@@ -195,6 +207,7 @@ test('runPostinstall stringifies non-Error restart failures', async () => {
     restartBridgeDaemonIfRunningFn,
     stdout: stdout.stream,
     stderr: stderr.stream,
+    env: GLOBAL_INSTALL_ENV,
   });
 
   assert.match(stderr.chunks.join(''), /restart unavailable/);
@@ -222,6 +235,7 @@ test('runPostinstall exits zero and skips restart when native host install fails
     exit: (code) => {
       exitCode = code;
     },
+    env: GLOBAL_INSTALL_ENV,
   });
 
   assert.equal(exitCode, 0);
@@ -251,6 +265,7 @@ test('runPostinstall stringifies non-Error install failures', async () => {
     exit: (code) => {
       exitCode = code;
     },
+    env: GLOBAL_INSTALL_ENV,
   });
 
   assert.equal(exitCode, 0);
@@ -265,6 +280,7 @@ test('postinstall exits successfully when native host auto-install fails', () =>
     env: {
       ...process.env,
       BROWSER_BRIDGE_EXTENSION_ID: 'invalid',
+      BBX_POSTINSTALL_FORCE: '1',
     },
   });
 

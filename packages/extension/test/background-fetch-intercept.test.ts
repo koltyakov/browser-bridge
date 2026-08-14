@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { createFetchInterceptor } from '../src/background-fetch-intercept.js';
 import { TabDebuggerCoordinator } from '../src/debugger-coordinator.js';
+import { MAX_INTERCEPT_RULES_PER_TAB } from '../../protocol/src/index.js';
 
 type SentCommand = { tabId: number; method: string; params: Record<string, unknown> };
 type FetchEventHandler = (method: string, params: unknown) => void;
@@ -119,6 +120,28 @@ test('addRule defaults an omitted action to continue', async () => {
   });
 
   assert.equal(rule.action, 'continue');
+});
+
+test('addRule enforces the per-tab rule cap and does not expose compiled matchers', async () => {
+  const { interceptor } = createHarness();
+
+  for (let index = 0; index < MAX_INTERCEPT_RULES_PER_TAB; index += 1) {
+    const rule = await interceptor.addRule(1, {
+      urlPattern: `*rule-${index}*`,
+      action: 'continue',
+    });
+    assert.equal('matcher' in rule, false);
+  }
+
+  await assert.rejects(
+    interceptor.addRule(1, { urlPattern: '*overflow*', action: 'continue' }),
+    /at most 32 active interception rules/
+  );
+  assert.equal(interceptor.listRules(1).length, MAX_INTERCEPT_RULES_PER_TAB);
+  assert.equal(
+    interceptor.listRules(1).some((rule) => 'matcher' in rule),
+    false
+  );
 });
 
 test('adding and removing rules re-sends Fetch.enable with the current pattern set', async () => {

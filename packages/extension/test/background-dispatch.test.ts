@@ -1188,6 +1188,8 @@ test('background dispatch treats console levels as minimum severity', async () =
     count: 3,
     total: 4,
     dropped: 3,
+    provenance: 'page_main_world',
+    integrity: 'untrusted',
   });
   assert.deepEqual(
     executeScriptCalls.map((call) => ({
@@ -1404,6 +1406,8 @@ test('background dispatch returns filtered network buffer entries', async () => 
     startedAt: null,
     inflight: 0,
     ownershipHeld: false,
+    provenance: 'page_main_world',
+    integrity: 'untrusted',
     truncated: true,
     truncation: { reason: 'limit', limit: 1, omitted: 1 },
   });
@@ -1563,8 +1567,15 @@ test('background dispatch wires explicit all-resource CDP network capture and dy
   );
   assert.equal(read.ok, true);
   if (read.ok) {
-    const result = read.result as { entries: Array<Record<string, unknown>>; armed: boolean };
+    const result = read.result as {
+      entries: Array<Record<string, unknown>>;
+      armed: boolean;
+      provenance: string;
+      integrity: string;
+    };
     assert.equal(result.armed, true);
+    assert.equal(result.provenance, 'chrome_devtools_protocol');
+    assert.equal(result.integrity, 'browser_observed');
     assert.equal(result.entries[0]?.resourceType, 'Stylesheet');
     assert.doesNotMatch(JSON.stringify(result), /Authorization|secret/);
   }

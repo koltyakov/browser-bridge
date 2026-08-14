@@ -107,7 +107,10 @@ function expectBridgeResponse(value: unknown): TestPayload & { response: TestBri
 }
 
 // Start a daemon on a random TCP port. Caller must call `daemon.stop()`.
-async function startTestDaemon(authToken: string | null = null): Promise<{
+async function startTestDaemon(
+  authToken: string | null = null,
+  extensionAuthToken: string | null = null
+): Promise<{
   daemon: BridgeDaemon;
   connect: () => Promise<net.Socket>;
 }> {
@@ -121,6 +124,7 @@ async function startTestDaemon(authToken: string | null = null): Promise<{
     listenOptions: { host: '127.0.0.1', port: 0 },
     logger: { log() {}, error() {} },
     authToken,
+    extensionAuthToken,
   });
   await daemon.start();
   const address = daemon.serverAddress as AddressInfo;
@@ -436,7 +440,7 @@ test('daemon limits extension-role agent requests to health and setup methods', 
   assert.deepEqual(installs, [{ kind: 'mcp', target: 'codex' }]);
 });
 
-test('daemon rejects setup.install from non-local TCP agents', async () => {
+test('daemon rejects setup.install from TCP agents even over loopback', async () => {
   const daemon = new BridgeDaemon({
     transport: {
       type: 'tcp',
@@ -447,7 +451,7 @@ test('daemon rejects setup.install from non-local TCP agents', async () => {
     logger: { log() {}, error() {} },
   });
   const socket = createFakeSocket();
-  Reflect.set(socket, 'remoteAddress', '192.0.2.10');
+  Reflect.set(socket, 'remoteAddress', '127.0.0.1');
   daemon.registerSocket(socket, { type: 'register', role: 'agent', clientId: 'remote-agent' });
   socket.writes.length = 0;
 
@@ -1519,6 +1523,11 @@ test('daemon responds to setup status requests without extension', async () => {
 
 test('daemon installs setup targets without extension', async () => {
   const daemon = new BridgeDaemon({
+    transport: {
+      type: 'socket',
+      socketPath: path.join(os.tmpdir(), 'browser-bridge-setup-test.sock'),
+      label: 'unix:test',
+    },
     logger: console,
     setupInstaller: async (params) => ({
       action: params.action === 'uninstall' ? 'uninstall' : 'install',
@@ -1528,6 +1537,8 @@ test('daemon installs setup targets without extension', async () => {
     }),
   });
   const socket = createFakeSocket();
+  daemon.registerSocket(socket, { type: 'register', role: 'agent', clientId: 'local-agent' });
+  socket.writes.length = 0;
 
   await daemon.handleAgentRequest(socket, {
     request: {
@@ -3141,6 +3152,96 @@ test('daemon requires auth token before handling TCP bridge requests when config
   }
 });
 
+test('daemon uses a distinct credential for the extension role', async () => {
+  const agentToken = 'a'.repeat(32);
+  const extensionToken = 'e'.repeat(32);
+  const { daemon, connect } = await startTestDaemon(agentToken, extensionToken);
+  const spoofedSocket = await connect();
+  const extensionSocket = await connect();
+  const spoofed = makeNdjsonClient(spoofedSocket);
+  const extension = makeNdjsonClient(extensionSocket);
+
+  try {
+    spoofed.send({
+      type: 'register',
+      role: 'extension',
+      extensionId: 'abcdefghijklmnopabcdefghijklmnop',
+      authToken: agentToken,
+    });
+    assert.equal(expectPayload(await spoofed.next()).type, 'registration_failed');
+
+    extension.send({
+      type: 'register',
+      role: 'extension',
+      extensionId: 'abcdefghijklmnopabcdefghijklmnop',
+      authToken: extensionToken,
+    });
+    assert.equal(expectPayload(await extension.next()).type, 'registered');
+  } finally {
+    spoofedSocket.destroy();
+    extensionSocket.destroy();
+    await daemon.stop();
+  }
+});
+
+test('daemon bounds pending requests owned by one agent connection', async () => {
+  const { daemon, connect } = await startTestDaemon();
+  const agentSocket = await connect();
+  const extensionSocket = await connect();
+  const agent = makeNdjsonClient(agentSocket);
+  const extension = makeNdjsonClient(extensionSocket);
+
+  try {
+    agent.send({ type: 'register', role: 'agent', clientId: 'bounded-agent' });
+    assert.equal(expectPayload(await agent.next()).type, 'registered');
+    extension.send({
+      type: 'register',
+      role: 'extension',
+      extensionId: 'abcdefghijklmnopabcdefghijklmnop',
+    });
+    assert.equal(expectPayload(await extension.next()).type, 'registered');
+
+    for (let index = 0; index < 17; index += 1) {
+      agent.send({
+        type: 'agent.request',
+        request: {
+          id: `req_bounded_${index}`,
+          method: 'page.get_state',
+          tab_id: 1,
+          params: {},
+          meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+        },
+      });
+    }
+
+    for (let index = 0; index < 16; index += 1) {
+      assert.equal(expectPayload(await extension.next()).type, 'extension.request');
+    }
+    const rejected = expectBridgeResponse(await agent.next());
+    assert.equal(rejected.response.id, 'req_bounded_16');
+    assert.equal(rejected.response.error?.code, ERROR_CODES.INVALID_REQUEST);
+    assert.match(rejected.response.error?.message ?? '', /pending-request limit/i);
+
+    for (let index = 0; index < 16; index += 1) {
+      extension.send({
+        type: 'extension.response',
+        response: {
+          id: `req_bounded_${index}`,
+          ok: true,
+          result: {},
+          error: null,
+          meta: { protocol_version: PROTOCOL_VERSION, method: 'page.get_state' },
+        },
+      });
+      assert.equal(expectBridgeResponse(await agent.next()).response.ok, true);
+    }
+  } finally {
+    agentSocket.destroy();
+    extensionSocket.destroy();
+    await daemon.stop();
+  }
+});
+
 test('daemon rejects duplicate in-flight request ids', async () => {
   const { daemon, connect } = await startTestDaemon();
   const agentSocket = await connect();
@@ -3425,14 +3526,22 @@ test('daemon routes to only the most recently active enabled extension and retur
 
     ext1.send({ type: 'extension.access_update', accessEnabled: true });
     ext2.send({ type: 'extension.access_update', accessEnabled: true });
-    ext1.send({ type: 'extension.activity', at: 20 });
-    ext2.send({ type: 'extension.activity', at: 10 });
+    ext2.send({ type: 'extension.activity', at: Number.MAX_SAFE_INTEGER });
+    await waitForCondition(() =>
+      [...daemon.extensionSockets.values()].some((socket) => socket.__lastActiveAt !== undefined)
+    );
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    ext1.send({ type: 'extension.activity', at: 1 });
     await waitForCondition(() => {
       const sockets = [...daemon.extensionSockets.values()];
+      const activity = sockets
+        .map((socket) => socket.__lastActiveAt)
+        .filter((at): at is number => at !== undefined);
       return (
         sockets.every((socket) => socket.__accessEnabled === true) &&
-        sockets.some((socket) => socket.__lastActiveAt === 20) &&
-        sockets.some((socket) => socket.__lastActiveAt === 10)
+        activity.length === 2 &&
+        Math.max(...activity) > Math.min(...activity) &&
+        Math.max(...activity) < Number.MAX_SAFE_INTEGER
       );
     });
 
@@ -3568,13 +3677,20 @@ test('daemon routes untargeted requests to the most recently active extension wh
     await ext2.next();
     await agent.next();
 
-    ext1.send({ type: 'extension.activity', at: 10 });
-    ext2.send({ type: 'extension.activity', at: 20 });
+    ext1.send({ type: 'extension.activity', at: Number.MAX_SAFE_INTEGER });
+    await waitForCondition(() =>
+      [...daemon.extensionSockets.values()].some((socket) => socket.__lastActiveAt !== undefined)
+    );
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    ext2.send({ type: 'extension.activity', at: 1 });
     await waitForCondition(() => {
-      const sockets = [...daemon.extensionSockets.values()];
+      const activity = [...daemon.extensionSockets.values()]
+        .map((socket) => socket.__lastActiveAt)
+        .filter((at): at is number => at !== undefined);
       return (
-        sockets.some((socket) => socket.__lastActiveAt === 10) &&
-        sockets.some((socket) => socket.__lastActiveAt === 20)
+        activity.length === 2 &&
+        Math.max(...activity) > Math.min(...activity) &&
+        Math.max(...activity) < Number.MAX_SAFE_INTEGER
       );
     });
 

@@ -168,6 +168,13 @@ grouped here by domain.
 | `network.intercept.list`  | List active interception rules                                           |
 | `network.intercept.clear` | Remove all interception rules and disable interception                   |
 
+Fetch/XHR and console buffers originate in the inspected page's MAIN world.
+Their responses include `provenance: "page_main_world"` and
+`integrity: "untrusted"`; entries are schema-filtered and bounded, but a page
+can still forge telemetry about itself. Request interception accepts at most 32
+rules per tab, with a 2,048-character URL pattern, 256 KiB body, 64 headers,
+8 KiB per header value, and 64 KiB of headers in total.
+
 ### Navigation
 
 | Method                  | Description                          |

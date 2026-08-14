@@ -184,7 +184,8 @@ export function getDefaultExtensionId(env = process.env) {
 
 /**
  * Build the allowed_origins list.
- * If an extension ID was provided, ensures its origin is present.
+ * If an extension ID was provided, it is the complete allowlist so stale
+ * origins from an earlier installation do not retain native-host access.
  * Otherwise falls back to existing origins or a placeholder.
  *
  * @param {{allowed_origins?: string[]} | null} existingManifest
@@ -199,14 +200,7 @@ export function getAllowedOrigins(existingManifest, extensionId) {
 
   if (extensionId) {
     const origin = `chrome-extension://${extensionId}/`;
-    const merged = new Set(existing);
-    merged.add(origin);
-    for (const item of [...merged]) {
-      if (item.includes('__REPLACE_WITH_EXTENSION_ID__')) {
-        merged.delete(item);
-      }
-    }
-    return [...merged];
+    return [origin];
   }
 
   if (existing.length > 0) return existing;

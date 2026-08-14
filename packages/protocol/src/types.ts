@@ -1053,6 +1053,8 @@ export interface NetworkResult {
   dropped: number;
   abandoned: number;
   source: NetworkSource;
+  provenance: 'page_main_world' | 'chrome_devtools_protocol';
+  integrity: 'untrusted' | 'browser_observed';
   capture: NetworkCaptureAction | null;
   armed: boolean;
   armedDuringCapture: boolean;

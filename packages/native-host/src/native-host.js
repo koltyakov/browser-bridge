@@ -8,7 +8,7 @@ import {
   parseJsonLines,
   sanitizeIncidentalText,
 } from '../../protocol/src/index.js';
-import { readBridgeAuthToken } from './auth-token.js';
+import { readBridgeExtensionAuthToken } from './auth-token.js';
 import { createSocketBridgeTransport, getBridgeTransport } from './config.js';
 import { spawnBridgeDaemonProcess } from './daemon-process.js';
 import { createNativeMessageReader, createNativeMessageWriter, writeJsonLine } from './framing.js';
@@ -163,11 +163,11 @@ export async function runNativeHost({
   socket.once('close', cleanupStdinEndListener);
   socket.once('end', cleanupStdinEndListener);
   socket.once('error', cleanupStdinEndListener);
-  const authToken = resolvedTransport.type === 'tcp' ? await readBridgeAuthToken() : null;
+  const authToken = await readBridgeExtensionAuthToken();
   await writeJsonLine(socket, {
     type: 'register',
     role: 'extension',
-    ...(authToken ? { authToken } : {}),
+    authToken,
   });
 
   parseJsonLines(
