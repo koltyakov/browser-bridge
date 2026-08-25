@@ -346,7 +346,7 @@ export async function handleSensitiveReadTool(args) {
 }
 
 /**
- * @param {{ calls?: Array<{ method?: string, params?: Record<string, unknown>, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }> }} args
+ * @param {{ calls?: Array<{ method?: string, params?: Record<string, unknown>, tabId?: number, destinationId?: string, targetProfile?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }> }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleBatchTool(args) {
@@ -399,6 +399,7 @@ export async function handleBatchTool(args) {
         tabId,
         source: REQUEST_SOURCE,
         tokenBudget,
+        targetProfile: typeof call.targetProfile === 'string' ? call.targetProfile : null,
       });
     } catch (error) {
       callError = error;
@@ -501,7 +502,7 @@ async function mapWithConcurrency(values, concurrency, callback) {
 }
 
 /**
- * @param {{ method: string, params?: Record<string, unknown>, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @param {{ method: string, params?: Record<string, unknown>, tabId?: number, destinationId?: string, targetProfile?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleRawCallTool(args) {
@@ -527,6 +528,7 @@ export async function handleRawCallTool(args) {
           method.startsWith('screenshot.') || method === 'sensitive.read'
             ? null
             : getToolTokenBudget(args),
+        targetProfile: typeof args.targetProfile === 'string' ? args.targetProfile : null,
       });
       if (response.ok && method.startsWith('screenshot.')) {
         return createScreenshotResult(response, method);

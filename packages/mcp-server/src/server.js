@@ -60,6 +60,8 @@ export const TAB_ID_DESCRIPTION =
   'Target a specific tab instead of the active tab in the enabled window.';
 export const DESTINATION_ID_DESCRIPTION =
   'Optional Browser Bridge destination ID from browser_status/browser_tabs; omit for local.';
+export const TARGET_PROFILE_DESCRIPTION =
+  'Route to a specific Chrome profile by label (e.g. "profile_4uu8eq"). Use browser_status to list connected profiles.';
 
 const MCP_SERVER_VERSION = loadPackageVersion();
 
@@ -230,6 +232,7 @@ export function createBridgeMcpServer(options = {}) {
           .optional()
           .describe(BUDGET_PRESET_DESCRIPTION),
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+        targetProfile: z.string().optional().describe(TARGET_PROFILE_DESCRIPTION),
       }),
     },
     handleLogTool
@@ -242,6 +245,7 @@ export function createBridgeMcpServer(options = {}) {
       description: 'Ping the bridge to verify daemon and extension connectivity.',
       inputSchema: z.object({
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+        targetProfile: z.string().optional().describe(TARGET_PROFILE_DESCRIPTION),
         intent: z
           .enum(['inspect', 'interact', 'capture', 'navigate', 'debugger', 'general'])
           .optional()
@@ -304,6 +308,7 @@ export function createBridgeMcpServer(options = {}) {
           .describe('DOM operation to perform'),
         tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+        targetProfile: z.string().optional().describe(TARGET_PROFILE_DESCRIPTION),
         budgetPreset: z
           .enum(['quick', 'normal', 'deep'])
           .optional()
@@ -419,6 +424,7 @@ export function createBridgeMcpServer(options = {}) {
           .describe('Style/layout operation to perform'),
         tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+        targetProfile: z.string().optional().describe(TARGET_PROFILE_DESCRIPTION),
         budgetPreset: z
           .enum(['quick', 'normal', 'deep'])
           .optional()
@@ -460,6 +466,7 @@ export function createBridgeMcpServer(options = {}) {
           .describe('Exact storage key, including an empty key if intended'),
         tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+        targetProfile: z.string().optional().describe(TARGET_PROFILE_DESCRIPTION),
       }),
     },
     handleSensitiveReadTool
@@ -491,6 +498,7 @@ export function createBridgeMcpServer(options = {}) {
           ),
         tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+        targetProfile: z.string().optional().describe(TARGET_PROFILE_DESCRIPTION),
         budgetPreset: z
           .enum(['quick', 'normal', 'deep'])
           .optional()
@@ -620,6 +628,7 @@ export function createBridgeMcpServer(options = {}) {
           .describe('Navigation operation to perform'),
         tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+        targetProfile: z.string().optional().describe(TARGET_PROFILE_DESCRIPTION),
         budgetPreset: z
           .enum(['quick', 'normal', 'deep'])
           .optional()
@@ -676,6 +685,7 @@ export function createBridgeMcpServer(options = {}) {
           .describe('Input operation to perform'),
         tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+        targetProfile: z.string().optional().describe(TARGET_PROFILE_DESCRIPTION),
         budgetPreset: z
           .enum(['quick', 'normal', 'deep'])
           .optional()
@@ -776,6 +786,7 @@ export function createBridgeMcpServer(options = {}) {
           .describe('Patch operation to perform'),
         tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+        targetProfile: z.string().optional().describe(TARGET_PROFILE_DESCRIPTION),
         budgetPreset: z
           .enum(['quick', 'normal', 'deep'])
           .optional()
@@ -837,6 +848,7 @@ export function createBridgeMcpServer(options = {}) {
           ),
         tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+        targetProfile: z.string().optional().describe(TARGET_PROFILE_DESCRIPTION),
         budgetPreset: z
           .enum(['quick', 'normal', 'deep'])
           .optional()
@@ -918,6 +930,7 @@ export function createBridgeMcpServer(options = {}) {
           .optional()
           .describe(`Maximum bytes to read in this chunk (default/max: ${ARTIFACT_CHUNK_BYTES})`),
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+        targetProfile: z.string().optional().describe(TARGET_PROFILE_DESCRIPTION),
         budgetPreset: z
           .enum(['quick', 'normal', 'deep'])
           .optional()
@@ -939,6 +952,7 @@ export function createBridgeMcpServer(options = {}) {
           .describe('Intercept operation to perform'),
         tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+        targetProfile: z.string().optional().describe(TARGET_PROFILE_DESCRIPTION),
         budgetPreset: z
           .enum(['quick', 'normal', 'deep'])
           .optional()
@@ -994,6 +1008,7 @@ export function createBridgeMcpServer(options = {}) {
                 .describe('Method params for this call'),
               tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
               destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+              targetProfile: z.string().optional().describe(TARGET_PROFILE_DESCRIPTION),
               budgetPreset: z
                 .enum(['quick', 'normal', 'deep'])
                 .optional()
@@ -1022,6 +1037,7 @@ export function createBridgeMcpServer(options = {}) {
           .describe('Method parameters as object'),
         tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+        targetProfile: z.string().optional().describe(TARGET_PROFILE_DESCRIPTION),
         budgetPreset: z
           .enum(['quick', 'normal', 'deep'])
           .optional()
@@ -1039,6 +1055,7 @@ export function createBridgeMcpServer(options = {}) {
         'Return runtime context: budget presets, method groups, and active limits. Call to discover defaults before inspecting a page.',
       inputSchema: z.object({
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+        targetProfile: z.string().optional().describe(TARGET_PROFILE_DESCRIPTION),
       }),
     },
     handleSkillTool
@@ -1052,6 +1069,7 @@ export function createBridgeMcpServer(options = {}) {
         'Request window access for Browser Bridge. Surfaces an Enable prompt in the extension popup or side panel. Use once per window; if access is already pending, ask the user to enable that window instead of requesting again.',
       inputSchema: z.object({
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+        targetProfile: z.string().optional().describe(TARGET_PROFILE_DESCRIPTION),
       }),
     },
     handleAccessTool
@@ -1085,6 +1103,7 @@ export function createBridgeMcpServer(options = {}) {
           ),
         tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
         destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+        targetProfile: z.string().optional().describe(TARGET_PROFILE_DESCRIPTION),
         selector: z
           .string()
           .optional()
