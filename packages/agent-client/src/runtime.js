@@ -106,7 +106,7 @@ export async function ensureClientConnected(client) {
  * @param {BridgeClient} client
  * @param {BridgeMethod} method
  * @param {Record<string, unknown>} [params={}]
- * @param {{ tabId?: number | null, source?: BridgeRequestSource, mcpEra?: import('./types.js').McpProtocolEra, tokenBudget?: number | null, automaticRetry?: 'mcp_second_attempt' }} [options]
+ * @param {{ tabId?: number | null, source?: BridgeRequestSource, mcpEra?: import('./types.js').McpProtocolEra, tokenBudget?: number | null, automaticRetry?: 'mcp_second_attempt', targetProfile?: string | null }} [options]
  * @returns {Promise<BridgeResponse>}
  */
 export async function requestBridge(client, method, params = {}, options = {}) {
@@ -131,7 +131,8 @@ export async function requestBridge(client, method, params = {}, options = {}) {
       options.source,
       options.mcpEra,
       options.tokenBudget,
-      options.automaticRetry
+      options.automaticRetry,
+      options.targetProfile
     ),
     ...(timeoutMs === undefined ? {} : { timeoutMs }),
   });
@@ -142,9 +143,10 @@ export async function requestBridge(client, method, params = {}, options = {}) {
  * @param {string} refOrSelector
  * @param {number | null} [tabId=null]
  * @param {BridgeRequestSource} [source]
+ * @param {string | null} [targetProfile=null]
  * @returns {Promise<string>}
  */
-export async function resolveRef(client, refOrSelector, tabId = null, source) {
+export async function resolveRef(client, refOrSelector, tabId = null, source, targetProfile = null) {
   if (isElementRef(refOrSelector)) {
     return refOrSelector;
   }
@@ -155,7 +157,7 @@ export async function resolveRef(client, refOrSelector, tabId = null, source) {
     {
       selector: refOrSelector,
     },
-    { tabId, source }
+    { tabId, source, targetProfile }
   );
 
   if (!response.ok) {
@@ -176,9 +178,10 @@ export async function resolveRef(client, refOrSelector, tabId = null, source) {
  * @param {import('./types.js').McpProtocolEra | undefined} mcpEra
  * @param {number | null | undefined} tokenBudget
  * @param {'mcp_second_attempt' | undefined} automaticRetry
+ * @param {string | null | undefined} targetProfile
  * @returns {BridgeMeta}
  */
-function withRequestMeta(source, mcpEra, tokenBudget, automaticRetry) {
+function withRequestMeta(source, mcpEra, tokenBudget, automaticRetry, targetProfile) {
   /** @type {BridgeMeta} */
   const meta = {};
   if (source) {
@@ -192,6 +195,9 @@ function withRequestMeta(source, mcpEra, tokenBudget, automaticRetry) {
   }
   if (automaticRetry === 'mcp_second_attempt') {
     meta.automatic_retry = { attempt: 2, reason: 'retryable_error' };
+  }
+  if (typeof targetProfile === 'string' && targetProfile) {
+    meta.target_profile = targetProfile;
   }
   return meta;
 }

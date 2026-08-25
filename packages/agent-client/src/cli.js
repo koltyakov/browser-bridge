@@ -23,6 +23,7 @@ import {
 } from '../../mcp-server/src/lifecycle.js';
 import { startBridgeMcpServer } from '../../mcp-server/src/server.js';
 import {
+  extractProfileFlag,
   extractRemoteFlag,
   extractHarFlags,
   extractPresetFlag,
@@ -84,7 +85,8 @@ const LOCAL_ONLY_COMMANDS = new Set([
   'restart',
 ]);
 
-const remoteFlag = extractRemoteFlag(process.argv.slice(2));
+const profileFlag = extractProfileFlag(process.argv.slice(2));
+const remoteFlag = extractRemoteFlag(profileFlag.rest);
 const [command, ...rest] = remoteFlag.rest;
 
 if (remoteFlag.explicit && command && LOCAL_ONLY_COMMANDS.has(command)) {
@@ -96,6 +98,17 @@ const remoteDestinationId =
   command && LOCAL_ONLY_COMMANDS.has(command)
     ? null
     : (remoteFlag.remoteId ?? process.env[REMOTE_ENV] ?? null);
+
+const targetProfile = profileFlag.profileLabel ?? null;
+
+/**
+ * Build request options for CLI calls, always including targetProfile when set.
+ * @param {{ tabId?: number | null, tokenBudget?: number | null }} [extra]
+ * @returns {{ source: import('./types.js').BridgeRequestSource, targetProfile?: string | null, tabId?: number | null, tokenBudget?: number | null }}
+ */
+function cliRequestOptions(extra = {}) {
+  return { source: REQUEST_SOURCE, ...(targetProfile ? { targetProfile } : {}), ...extra };
+}
 
 if (!command || ['help', '--help', '-h'].includes(command)) {
   printUsage();
@@ -277,7 +290,7 @@ async function main() {
         client,
         'health.ping',
         {},
-        { source: REQUEST_SOURCE }
+        cliRequestOptions()
       );
       await printSummary(healthResponse);
       return;
@@ -287,7 +300,7 @@ async function main() {
       if (rest.length > 1) throw new Error('Usage: bbx access-request [intent]');
       const params = SHORTCUT_COMMANDS['access-request'].build(rest);
       await printSummary(
-        await requestBridge(client, 'access.request', params, { source: REQUEST_SOURCE })
+        await requestBridge(client, 'access.request', params, cliRequestOptions())
       );
       return;
     }
@@ -335,12 +348,12 @@ async function main() {
     }
 
     if (command === 'logs') {
-      await printSummary(await requestBridge(client, 'log.tail', {}, { source: REQUEST_SOURCE }));
+      await printSummary(await requestBridge(client, 'log.tail', {}, cliRequestOptions()));
       return;
     }
 
     if (command === 'tabs') {
-      await printSummary(await requestBridge(client, 'tabs.list', {}, { source: REQUEST_SOURCE }));
+      await printSummary(await requestBridge(client, 'tabs.list', {}, cliRequestOptions()));
       return;
     }
 
@@ -352,7 +365,7 @@ async function main() {
         {
           url: url || undefined,
         },
-        { source: REQUEST_SOURCE }
+        cliRequestOptions()
       );
       await printSummary(response);
       return;
@@ -369,7 +382,7 @@ async function main() {
         {
           tabId: parseIntArg(tabId, 'tabId'),
         },
-        { source: REQUEST_SOURCE }
+        cliRequestOptions()
       );
       await printSummary(response);
       return;
@@ -386,7 +399,7 @@ async function main() {
         {
           tabId: parseIntArg(tabId, 'tabId'),
         },
-        { source: REQUEST_SOURCE }
+        cliRequestOptions()
       );
       await printSummary(response);
       return;
@@ -394,17 +407,14 @@ async function main() {
 
     if (command === 'call') {
       const { tabId, method, params } = await parseCallCommand(rest);
-      const response = await requestBridge(client, method, params, {
-        tabId,
-        source: REQUEST_SOURCE,
-      });
+      const response = await requestBridge(client, method, params, cliRequestOptions({ tabId }));
       printCallResponse(response, method);
       return;
     }
 
     if (command === 'batch') {
       const { preset, rest: batchArgs } = extractPresetFlag(rest);
-      const results = await runBatchCalls(client, batchArgs[0], REQUEST_SOURCE, { preset });
+      const results = await runBatchCalls(client, batchArgs[0], REQUEST_SOURCE, { preset, targetProfile });
       if (results.some((result) => !result.ok)) {
         process.exitCode = 1;
       }
@@ -414,10 +424,7 @@ async function main() {
 
     if (command.includes('.') && METHODS.includes(/** @type {BridgeMethod} */ (command))) {
       const { tabId, method, params } = await parseCallCommand([command, ...rest]);
-      const response = await requestBridge(client, method, params, {
-        tabId,
-        source: REQUEST_SOURCE,
-      });
+      const response = await requestBridge(client, method, params, cliRequestOptions({ tabId }));
       printCallResponse(response, method);
       return;
     }
@@ -429,7 +436,7 @@ async function main() {
         client,
         shortcutCmd.method,
         shortcutCmd.build(shortcutArgs),
-        { source: REQUEST_SOURCE, tabId }
+        cliRequestOptions({ tabId })
       );
       await printSummary(response, shortcutCmd.printMethod);
       return;
@@ -450,7 +457,7 @@ async function main() {
           key,
           target,
         },
-        { source: REQUEST_SOURCE }
+        cliRequestOptions()
       );
       await printSummary(response);
       return;
@@ -467,10 +474,7 @@ async function main() {
           key,
           code,
         },
-        {
-          tabId: parsed.tabId,
-          source: REQUEST_SOURCE,
-        }
+        cliRequestOptions({ tabId: parsed.tabId })
       );
       await printSummary(response, 'cdp.dispatch_key_event');
       return;
@@ -484,7 +488,7 @@ async function main() {
         throw new Error(
           'Usage: screenshot [--tab <tabId>] [--format png|jpeg|webp] [--quality 0-100] <ref|selector> [path]'
         );
-      const elementRef = await resolveRef(client, refOrSelector, parsed.tabId, REQUEST_SOURCE);
+      const elementRef = await resolveRef(client, refOrSelector, parsed.tabId, REQUEST_SOURCE, targetProfile);
       const response = await requestBridge(
         client,
         'screenshot.capture_element',
@@ -494,7 +498,7 @@ async function main() {
           quality: screenshotOptions.quality,
           delivery: 'artifact',
         },
-        { tabId: parsed.tabId, source: REQUEST_SOURCE }
+        cliRequestOptions({ tabId: parsed.tabId })
       );
       if (!response.ok) {
         await printSummary(response);
@@ -554,7 +558,7 @@ async function main() {
           urlPattern: harOptions.urlPattern,
           delivery: harOptions.delivery,
         },
-        { tabId: parsed.tabId, source: REQUEST_SOURCE }
+        cliRequestOptions({ tabId: parsed.tabId })
       );
       if (!response.ok) {
         await printSummary(response);
@@ -592,7 +596,7 @@ async function main() {
             statusCode,
             body,
           },
-          { source: REQUEST_SOURCE, tabId }
+          cliRequestOptions({ tabId })
         );
         await printSummary(response);
       } else if (sub === 'remove') {
@@ -604,7 +608,7 @@ async function main() {
           client,
           'network.intercept.remove',
           { ruleId },
-          { source: REQUEST_SOURCE, tabId }
+          cliRequestOptions({ tabId })
         );
         await printSummary(response);
       } else if (sub === 'list') {
@@ -615,7 +619,7 @@ async function main() {
           client,
           'network.intercept.list',
           {},
-          { source: REQUEST_SOURCE, tabId }
+          cliRequestOptions({ tabId })
         );
         await printSummary(response);
       } else if (sub === 'clear') {
@@ -626,7 +630,7 @@ async function main() {
           client,
           'network.intercept.clear',
           {},
-          { source: REQUEST_SOURCE, tabId }
+          cliRequestOptions({ tabId })
         );
         await printSummary(response);
       } else {
@@ -656,7 +660,7 @@ async function main() {
           returnByValue: true,
           ...(awaitPromise ? { awaitPromise: true } : {}),
         },
-        { source: REQUEST_SOURCE, tabId }
+        cliRequestOptions({ tabId })
       );
       await printSummary(response);
       return;
@@ -727,7 +731,7 @@ async function downloadArtifact(client, artifact, expectedKind) {
         client,
         'artifact.read',
         { artifactId: artifact.artifactId, offset },
-        { source: REQUEST_SOURCE }
+        cliRequestOptions()
       );
       if (!response.ok) throw new Error(response.error.message);
       const result = /** @type {Record<string, unknown>} */ (response.result);
@@ -757,7 +761,7 @@ async function downloadArtifact(client, artifact, expectedKind) {
       client,
       'artifact.delete',
       { artifactId: artifact.artifactId },
-      { source: REQUEST_SOURCE }
+      cliRequestOptions()
     ).catch(() => {});
   }
 }
