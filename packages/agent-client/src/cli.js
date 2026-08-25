@@ -285,6 +285,91 @@ async function createCliClient() {
 async function main() {
   let relaunchAfterUpdate = false;
   try {
+    if (command === 'recipe') {
+      const fs = await import('node:fs');
+      const os = await import('node:os');
+      const path = await import('node:path');
+      const recipesDir = path.join(os.default.homedir(), '.browserbridge', 'recipes');
+      const [subcommand, ...subArgs] = rest;
+
+      if (subcommand === 'list' || !subcommand) {
+        try {
+          const entries = fs.default.readdirSync(recipesDir, { withFileTypes: true });
+          const recipes = entries.filter((e) => e.isDirectory());
+          if (recipes.length === 0) {
+            process.stdout.write('No recipes found.\n');
+            return;
+          }
+          for (const r of recipes) {
+            const recipePath = path.join(recipesDir, r.name, 'RECIPE.md');
+            let description = '';
+            try {
+              const content = fs.default.readFileSync(recipePath, 'utf-8');
+              const match = content.match(/^description:\s*(.+)$/m);
+              if (match) description = match[1];
+            } catch { /* no RECIPE.md */ }
+            process.stdout.write(`${r.name.padEnd(30)}${description}\n`);
+          }
+        } catch {
+          process.stdout.write('No recipes directory found.\n');
+        }
+        return;
+      }
+
+      if (subcommand === 'show') {
+        const domain = subArgs[0];
+        if (!domain) {
+          process.stderr.write('Usage: bbx recipe show <domain>\n');
+          process.exitCode = 1;
+          return;
+        }
+        const recipePath = path.join(recipesDir, domain, 'RECIPE.md');
+        try {
+          process.stdout.write(fs.default.readFileSync(recipePath, 'utf-8'));
+        } catch {
+          process.stderr.write(`No recipe found for ${domain}\n`);
+          process.exitCode = 1;
+        }
+        return;
+      }
+
+      if (subcommand === 'match') {
+        const origin = subArgs[0];
+        if (!origin) {
+          process.stderr.write('Usage: bbx recipe match <origin-or-url>\n');
+          process.exitCode = 1;
+          return;
+        }
+        try {
+          const hostname = new URL(origin).hostname;
+          const candidates = [hostname, hostname.replace(/^www\./, '')];
+          for (const c of candidates) {
+            const recipePath = path.join(recipesDir, c, 'RECIPE.md');
+            if (fs.default.existsSync(recipePath)) {
+              process.stdout.write(fs.default.readFileSync(recipePath, 'utf-8'));
+              return;
+            }
+          }
+          // try parent domain
+          const parts = hostname.split('.');
+          if (parts.length > 2) {
+            const parent = parts.slice(-2).join('.');
+            const recipePath = path.join(recipesDir, parent, 'RECIPE.md');
+            if (fs.default.existsSync(recipePath)) {
+              process.stdout.write(fs.default.readFileSync(recipePath, 'utf-8'));
+              return;
+            }
+          }
+        } catch { /* invalid URL */ }
+        process.stdout.write('No matching recipe.\n');
+        return;
+      }
+
+      process.stderr.write('Usage: bbx recipe [list|show <domain>|match <url>]\n');
+      process.exitCode = 1;
+      return;
+    }
+
     if (command === 'profile-name') {
       const fs = await import('node:fs');
       const os = await import('node:os');
