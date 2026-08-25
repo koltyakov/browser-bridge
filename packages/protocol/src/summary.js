@@ -400,13 +400,19 @@ export function summarizeBridgeResponse(response, method) {
   }
   if (Array.isArray(result.tabs)) {
     const tabs = /** @type {TabResult[]} */ (result.tabs);
+    const CAP = 30;
+    const truncated = tabs.length > CAP;
+    const summaryText = truncated
+      ? `Bridge listed ${tabs.length} tab(s) (showing first ${CAP}).`
+      : `Bridge listed ${tabs.length} tab(s).`;
     return {
       ok: true,
-      summary: appendProtocolWarning(`Bridge listed ${tabs.length} tab(s).`, protocolWarning),
-      evidence: tabs.slice(0, 10).map((tab) => ({
+      summary: appendProtocolWarning(summaryText, protocolWarning),
+      evidence: tabs.slice(0, CAP).map((tab) => ({
         tabId: tab.tabId,
         active: tab.active,
         origin: tab.origin,
+        url: tab.url,
         title: tab.title,
       })),
     };

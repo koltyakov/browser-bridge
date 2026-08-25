@@ -285,6 +285,100 @@ async function createCliClient() {
 async function main() {
   let relaunchAfterUpdate = false;
   try {
+    if (command === 'profile-name') {
+      const fs = await import('node:fs');
+      const os = await import('node:os');
+      const path = await import('node:path');
+      const namesPath = path.join(
+        os.default.homedir(),
+        'Library',
+        'Application Support',
+        'Browser Bridge',
+        'profile-names.json'
+      );
+      const [label, ...nameParts] = rest;
+      const name = nameParts.join(' ');
+      if (!label || !name) {
+        process.stderr.write('Usage: bbx profile-name <label> <name>\n');
+        process.exitCode = 1;
+        return;
+      }
+      let names = {};
+      try {
+        names = JSON.parse(fs.default.readFileSync(namesPath, 'utf-8'));
+      } catch {
+        /* file doesn't exist yet */
+      }
+      names[label] = name;
+      fs.default.writeFileSync(namesPath, JSON.stringify(names, null, 2) + '\n');
+      process.stdout.write(`${label} → ${name}\n`);
+      return;
+    }
+
+    if (command === 'profiles') {
+      const healthResponse = await requestBridge(
+        client,
+        'health.ping',
+        {},
+        cliRequestOptions()
+      );
+      if (!healthResponse.ok) {
+        await printSummary(healthResponse);
+        return;
+      }
+      const extensions =
+        healthResponse.result?.connectedExtensions ?? [];
+      if (extensions.length === 0) {
+        process.stdout.write('No connected profiles.\n');
+        return;
+      }
+      let profileNames = {};
+      try {
+        const fs = await import('node:fs');
+        const os = await import('node:os');
+        const path = await import('node:path');
+        const namesPath = path.join(
+          os.default.homedir(),
+          'Library',
+          'Application Support',
+          'Browser Bridge',
+          'profile-names.json'
+        );
+        profileNames = JSON.parse(fs.default.readFileSync(namesPath, 'utf-8'));
+      } catch {
+        /* no stored names */
+      }
+      for (const ext of extensions) {
+        const label = ext.profileLabel ?? '(unknown)';
+        const name = profileNames[label];
+        const status = ext.accessEnabled ? 'enabled' : 'disabled';
+        let tabHint = '';
+        if (ext.accessEnabled) {
+          try {
+            const tabResponse = await requestBridge(
+              client,
+              'tabs.list',
+              {},
+              { targetProfile: label }
+            );
+            const tabs = tabResponse.result?.tabs ?? [];
+            const origins = [...new Set(tabs.map((t) => t.origin).filter(Boolean))];
+            tabHint = `${tabs.length} tabs: ${origins.slice(0, 4).join(', ')}`;
+          } catch {
+            tabHint = '(tabs query failed)';
+          }
+        }
+        const header = name
+          ? `${label}  ${name}  ${status}`
+          : `${label}  ${ext.browserName ?? 'chrome'}  ${status}`;
+        process.stdout.write(`${header}\n`);
+        if (tabHint) {
+          process.stdout.write(`  ${tabHint}\n`);
+        }
+      }
+      return;
+    }
+
     if (command === 'status') {
       const healthResponse = await requestBridge(
         client,

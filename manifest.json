@@ -13,6 +13,7 @@
   "permissions": [
     "alarms",
     "debugger",
+    "identity",
     "nativeMessaging",
     "scripting",
     "sidePanel",
