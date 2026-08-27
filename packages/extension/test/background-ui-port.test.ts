@@ -91,6 +91,7 @@ type TestBackgroundState = {
   setupInstallPendingKey: string | null;
   setupInstallError: string | null;
   enabledWindow: { windowId: number; title: string; enabledAt: number } | null;
+  agentCreatedTabs: Set<number>;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -678,6 +679,7 @@ test('background UI port broadcasts logged bridge actions to connected surfaces'
     title: 'Enabled Window',
     enabledAt: Date.now(),
   };
+  getBackgroundState(loaded).agentCreatedTabs.add(31);
 
   getRuntimeOnConnect(loaded).dispatch(portPair.left.port);
   await flushAsyncWork();

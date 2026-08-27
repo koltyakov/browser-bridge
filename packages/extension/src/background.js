@@ -70,6 +70,8 @@ import {
   DEBUGGER_PROTOCOL_VERSION,
   ACCESS_DENIED_WINDOW_OFF,
   ACCESS_DENIED_TAB_CLOSE,
+  ACCESS_DENIED_TAB_NOT_OWNED,
+  ACCESS_DENIED_TAB_AUDIBLE,
   KEEPALIVE_ALARM_NAME,
   isNumber,
   normalizeActionLogSource,
@@ -238,6 +240,7 @@ const clearTabBridgeState = async (tabId, shouldContinue) => {
 };
 /** @param {number} windowId */
 const clearWindowBridgeState = async (windowId) => {
+  state.agentCreatedTabs.clear();
   domBaselines.clearWindow(windowId);
   await tabCleanupController.clearWindowBridgeState(windowId);
 };
@@ -574,6 +577,7 @@ chrome.tabs.onAttached?.addListener((tabId, attachInfo) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
+  state.agentCreatedTabs.delete(tabId);
   domBaselines.clearTab(tabId);
   void tabMoveCleanup.handleRemoved(tabId).catch(reportAsyncError);
   void handleTabRemoved(tabId, removeInfo).catch(reportAsyncError);
@@ -838,12 +842,33 @@ async function handleListTabs(request) {
  * @returns {Promise<BridgeResponse>}
  */
 async function handleNavigationRequest(request) {
+  const guardNavigation = async (/** @type {number} */ tabId) => {
+    if (!state.agentCreatedTabs.has(tabId)) {
+      throw new BridgeError(ERROR_CODES.ACCESS_DENIED, ACCESS_DENIED_TAB_NOT_OWNED);
+    }
+    const tab = await chrome.tabs.get(tabId);
+    if (tab.audible) {
+      throw new BridgeError(ERROR_CODES.ACCESS_DENIED, ACCESS_DENIED_TAB_AUDIBLE);
+    }
+  };
   return executeNavigationRequest(request, {
     resolveRequestTarget,
-    updateTab: (tabId, properties) => chrome.tabs.update(tabId, properties),
-    reloadTab: (tabId) => chrome.tabs.reload(tabId),
-    goBack: (tabId) => chrome.tabs.goBack(tabId),
-    goForward: (tabId) => chrome.tabs.goForward(tabId),
+    updateTab: async (tabId, properties) => {
+      await guardNavigation(tabId);
+      return chrome.tabs.update(tabId, properties);
+    },
+    reloadTab: async (tabId) => {
+      await guardNavigation(tabId);
+      return chrome.tabs.reload(tabId);
+    },
+    goBack: async (tabId) => {
+      await guardNavigation(tabId);
+      return chrome.tabs.goBack(tabId);
+    },
+    goForward: async (tabId) => {
+      await guardNavigation(tabId);
+      return chrome.tabs.goForward(tabId);
+    },
     waitForTabComplete,
     getTab: (tabId) => chrome.tabs.get(tabId),
     emitUiState,
@@ -913,7 +938,18 @@ async function handleCloseTab(request) {
       method: request.method,
     });
   }
+  if (!state.agentCreatedTabs.has(params.tabId)) {
+    return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, ACCESS_DENIED_TAB_NOT_OWNED, null, {
+      method: request.method,
+    });
+  }
+  if (tab.audible) {
+    return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, ACCESS_DENIED_TAB_AUDIBLE, null, {
+      method: request.method,
+    });
+  }
   await chrome.tabs.remove(params.tabId);
+  state.agentCreatedTabs.delete(params.tabId);
   return createSuccess(
     request.id,
     { closed: true, tabId: params.tabId },

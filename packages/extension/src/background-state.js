@@ -140,7 +140,8 @@ import { getErrorMessage, normalizeRuntimeErrorMessage } from './background-help
  *   setupInstallPendingRequestId: string | null,
  *   setupInstallPendingAction: SetupInstallAction | null,
  *   setupInstallPendingKey: string | null,
- *   setupInstallError: string | null
+ *   setupInstallError: string | null,
+ *   agentCreatedTabs: Set<number>
  * }} ExtensionState
  */
 
@@ -171,6 +172,8 @@ export const ACCESS_DENIED_WINDOW_OFF = 'Browser Bridge is off for this window.'
 export const ACCESS_DENIED_REASON_WINDOW_OFF = 'window_access_off';
 export const ACCESS_DENIED_REASON_WINDOW_GONE = 'window_access_gone';
 export const ACCESS_DENIED_TAB_CLOSE = 'tabs.close only works inside the enabled window.';
+export const ACCESS_DENIED_TAB_NOT_OWNED = 'This tab was not created by the agent. Only agent-created tabs can be closed or navigated away from.';
+export const ACCESS_DENIED_TAB_AUDIBLE = 'This tab is currently playing audio. Close or navigate it manually.';
 export const KEEPALIVE_ALARM_NAME = 'bb-keepalive';
 export const NATIVE_RECONNECT_BASE_MS = 2_000;
 export const NATIVE_RECONNECT_MAX_MS = 30_000;
@@ -209,6 +212,7 @@ export function createExtensionState() {
     setupInstallPendingAction: null,
     setupInstallPendingKey: null,
     setupInstallError: null,
+    agentCreatedTabs: new Set(),
   };
 }
 

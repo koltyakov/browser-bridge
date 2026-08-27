@@ -14,6 +14,7 @@ import { safeOrigin, summarizeTabResult } from './background-helpers.js';
 /**
  * @typedef {{
  *   enabledWindow: { windowId: number } | null,
+ *   agentCreatedTabs: Set<number>,
  * }} BackgroundTabState
  */
 
@@ -63,6 +64,8 @@ export async function handleListTabs(request, state, dependencies, accessDeniedW
         title: tab.title ?? '',
         origin: safeOrigin(tab.url),
         url: tab.url,
+        audible: Boolean(tab.audible),
+        agentOwned: state.agentCreatedTabs.has(tab.id),
       };
     })
     .filter((tab) => tab !== null);
@@ -94,6 +97,9 @@ export async function handleCreateTab(request, state, dependencies, accessDenied
     active: params.active,
     windowId: state.enabledWindow.windowId,
   });
+  if (typeof tab.id === 'number') {
+    state.agentCreatedTabs.add(tab.id);
+  }
   return createSuccess(request.id, summarizeTabResult(tab, request.method), {
     method: request.method,
   });

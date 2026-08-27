@@ -35,6 +35,7 @@ type AccessRequestState = {
   };
   requestedAccessWindowId?: number | null;
   requestedAccessPopupWindowId?: number | null;
+  agentCreatedTabs?: Set<number>;
 };
 
 type LoadedDispatchBackground = Awaited<ReturnType<typeof loadBackground>>;
@@ -187,6 +188,13 @@ async function loadEnabledDispatchBackground({
   });
 
   setEnabledWindow(loaded, activeTab.windowId);
+  if (typeof activeTab.id === 'number') {
+    const state = loaded.module.getStateForTest() as AccessRequestState;
+    if (!state.agentCreatedTabs) {
+      state.agentCreatedTabs = new Set();
+    }
+    state.agentCreatedTabs.add(activeTab.id);
+  }
 
   return { loaded, activeTab };
 }
@@ -322,6 +330,8 @@ test('background dispatch lists tabs in the enabled window', async () => {
         title: 'Example',
         origin: 'https://example.com',
         url: 'https://example.com/path',
+        audible: false,
+        agentOwned: false,
       },
     ],
   });
@@ -442,6 +452,7 @@ test('background dispatch closes a tab inside the enabled window', async () => {
   });
 
   setEnabledWindow(loaded);
+  (loaded.module.getStateForTest() as AccessRequestState).agentCreatedTabs!.add(21);
 
   const response = await loaded.dispatch(
     createRequest({
@@ -647,6 +658,7 @@ for (const scenario of navigationScenarios) {
     });
 
     setEnabledWindow(loaded);
+    (loaded.module.getStateForTest() as AccessRequestState).agentCreatedTabs!.add(31);
 
     const response = await loaded.dispatch(
       createRequest({
