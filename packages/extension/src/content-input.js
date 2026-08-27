@@ -1471,6 +1471,61 @@
   }
 
   /**
+   * Find the primary nested scroll container when the document body itself
+   * cannot scroll (scrollHeight ≈ clientHeight). Returns null when the body
+   * scrolls normally or no significant nested container exists.
+   *
+   * @returns {HTMLElement | null}
+   */
+  function detectScrollContainer() {
+    const scrollingEl = document.scrollingElement || document.documentElement;
+    if (!scrollingEl || typeof scrollingEl.scrollHeight !== 'number') return null;
+    const bodyCanScroll =
+      scrollingEl.scrollHeight > scrollingEl.clientHeight + 50;
+    if (bodyCanScroll) return null;
+
+    const THRESHOLD = 50;
+    const MIN_HEIGHT = 100;
+    /** @type {HTMLElement | null} */
+    let best = null;
+    let bestScrollHeight = 0;
+
+    if (typeof document.querySelectorAll !== 'function') return null;
+
+    const candidates = document.querySelectorAll(
+      'main,[role="main"],article,[role="article"],.main-content,#main-content,#content,#app,.app'
+    );
+    for (const el of candidates) {
+      if (!(el instanceof HTMLElement)) continue;
+      if (
+        el.scrollHeight > el.clientHeight + THRESHOLD &&
+        el.clientHeight > MIN_HEIGHT &&
+        el.scrollHeight > bestScrollHeight
+      ) {
+        best = el;
+        bestScrollHeight = el.scrollHeight;
+      }
+    }
+
+    if (!best) {
+      const all = document.querySelectorAll('*');
+      for (const el of all) {
+        if (!(el instanceof HTMLElement)) continue;
+        if (
+          el.scrollHeight > el.clientHeight + THRESHOLD &&
+          el.clientHeight > MIN_HEIGHT &&
+          el.scrollHeight > bestScrollHeight
+        ) {
+          best = el;
+          bestScrollHeight = el.scrollHeight;
+        }
+      }
+    }
+
+    return best;
+  }
+
+  /**
    * Scroll an element into the visible viewport.
    *
    * @param {Record<string, any>} params
@@ -1484,6 +1539,8 @@
 
   /**
    * Scroll the window or a specific scrollable element.
+   * When no target is given and the body cannot scroll, auto-detects the
+   * primary nested scroll container (e.g. <main> on LinkedIn).
    *
    * @param {Record<string, any>} params
    * @returns {{
@@ -1494,7 +1551,9 @@
    *   top: number,
    *   left: number,
    *   behavior: 'auto' | 'smooth',
-   *   relative: boolean
+   *   relative: boolean,
+   *   autoDetected?: boolean,
+   *   containerTag?: string
    * }}
    */
   function scrollViewport(params) {
@@ -1507,17 +1566,9 @@
       const element = resolveTarget(params.target);
       const scrollTarget = getScrollableElementTarget(element);
       if (relative) {
-        scrollTarget.scrollBy({
-          top,
-          left,
-          behavior,
-        });
+        scrollTarget.scrollBy({ top, left, behavior });
       } else {
-        scrollTarget.scrollTo({
-          top,
-          left,
-          behavior,
-        });
+        scrollTarget.scrollTo({ top, left, behavior });
       }
 
       return {
@@ -1532,18 +1583,31 @@
       };
     }
 
+    const container = detectScrollContainer();
+    if (container) {
+      if (relative) {
+        container.scrollBy({ top, left, behavior });
+      } else {
+        container.scrollTo({ top, left, behavior });
+      }
+      return {
+        scrolled: true,
+        target: rememberElement(container),
+        x: container.scrollLeft,
+        y: container.scrollTop,
+        top: container.scrollTop,
+        left: container.scrollLeft,
+        behavior,
+        relative,
+        autoDetected: true,
+        containerTag: container.tagName.toLowerCase(),
+      };
+    }
+
     if (relative) {
-      window.scrollBy({
-        top,
-        left,
-        behavior,
-      });
+      window.scrollBy({ top, left, behavior });
     } else {
-      window.scrollTo({
-        top,
-        left,
-        behavior,
-      });
+      window.scrollTo({ top, left, behavior });
     }
 
     return {
@@ -1560,6 +1624,7 @@
 
   globalState.__BBX_CONTENT_INPUT__ = Object.freeze({
     clickTarget,
+    detectScrollContainer,
     dragTarget,
     fillTarget,
     focusTarget,

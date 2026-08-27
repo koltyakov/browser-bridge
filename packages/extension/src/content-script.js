@@ -65,6 +65,7 @@
   /**
    * @typedef {{
    *   clickTarget: (params: Record<string, any>) => any,
+   *   detectScrollContainer: () => HTMLElement | null,
    *   dragTarget: (params: Record<string, any>) => any,
    *   fillTarget: (params: Record<string, any>) => any,
    *   focusTarget: (params: Record<string, any>) => any,
@@ -286,6 +287,37 @@
   }
 
   /**
+   * @param {Element} scrollingElement
+   * @returns {{ x: number, y: number, maxX: number, maxY: number, container?: { tag: string, scrollHeight: number, clientHeight: number } }}
+   */
+  function getScrollInfo(scrollingElement) {
+    const maxX = Math.max(
+      0,
+      (scrollingElement?.scrollWidth || document.documentElement.scrollWidth || 0) -
+        window.innerWidth
+    );
+    const maxY = Math.max(
+      0,
+      (scrollingElement?.scrollHeight || document.documentElement.scrollHeight || 0) -
+        window.innerHeight
+    );
+    /** @type {{ x: number, y: number, maxX: number, maxY: number, container?: { tag: string, scrollHeight: number, clientHeight: number } }} */
+    const info = { x: window.scrollX, y: window.scrollY, maxX, maxY };
+
+    if (maxY === 0 && inputModule?.detectScrollContainer) {
+      const container = inputModule.detectScrollContainer();
+      if (container) {
+        info.container = {
+          tag: container.tagName.toLowerCase(),
+          scrollHeight: container.scrollHeight,
+          clientHeight: container.clientHeight,
+        };
+      }
+    }
+    return info;
+  }
+
+  /**
    * Return lightweight page state useful for browser automation decisions.
    *
    * @returns {{
@@ -295,7 +327,7 @@
    *   readyState: DocumentReadyState,
    *   focused: boolean,
    *   viewport: { width: number, height: number, devicePixelRatio: number },
-   *   scroll: { x: number, y: number, maxX: number, maxY: number },
+   *   scroll: { x: number, y: number, maxX: number, maxY: number, container?: { tag: string, scrollHeight: number, clientHeight: number } },
    *   activeElement: NodeSummary | null,
    *   selection: { value: string, truncated: boolean, omitted: number },
    *   hints: { tailwind: boolean }
@@ -316,20 +348,7 @@
         height: window.innerHeight,
         devicePixelRatio: window.devicePixelRatio || 1,
       },
-      scroll: {
-        x: window.scrollX,
-        y: window.scrollY,
-        maxX: Math.max(
-          0,
-          (scrollingElement?.scrollWidth || document.documentElement.scrollWidth || 0) -
-            window.innerWidth
-        ),
-        maxY: Math.max(
-          0,
-          (scrollingElement?.scrollHeight || document.documentElement.scrollHeight || 0) -
-            window.innerHeight
-        ),
-      },
+      scroll: getScrollInfo(scrollingElement),
       activeElement:
         document.activeElement instanceof Element
           ? /** @type {NodeSummary} */ (
@@ -390,13 +409,28 @@
     if (!body) {
       return { value: '', truncated: false, omitted: 0, length: 0 };
     }
-    const raw = (body.innerText || body.textContent || '').trim();
+    let raw = (body.innerText || body.textContent || '').trim();
+    /** @type {string | undefined} */
+    let source;
+
+    if (raw.length < 100 && inputModule?.detectScrollContainer) {
+      const container = inputModule.detectScrollContainer();
+      if (container) {
+        const containerText = (container.innerText || container.textContent || '').trim();
+        if (containerText.length > raw.length) {
+          raw = containerText;
+          source = container.tagName.toLowerCase();
+        }
+      }
+    }
+
     const result = truncateText(raw, budget);
     return {
       value: result.value,
       truncated: result.truncated,
       omitted: result.omitted,
       length: raw.length,
+      ...(source ? { source } : {}),
     };
   }
 
