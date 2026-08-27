@@ -38,7 +38,7 @@ test('handleListTabs denies access when no window is enabled', async () => {
       id: 'req-list-0',
       params: {},
     }),
-    { enabledWindow: null },
+    { enabledWindow: null, agentCreatedTabs: new Set() },
     {
       async queryTabs() {
         queried = true;
@@ -62,7 +62,7 @@ test('handleListTabs scopes the query to the enabled window and summarizes valid
       id: 'req-list-1',
       params: {},
     }),
-    { enabledWindow: { windowId: 7 } },
+    { enabledWindow: { windowId: 7 }, agentCreatedTabs: new Set([11]) },
     {
       async queryTabs(query) {
         queries.push(query);
@@ -73,6 +73,7 @@ test('handleListTabs scopes the query to the enabled window and summarizes valid
             active: true,
             title: 'Example',
             url: 'https://example.com/path',
+            audible: false,
           }),
           createChromeTab({
             id: undefined,
@@ -105,6 +106,8 @@ test('handleListTabs scopes the query to the enabled window and summarizes valid
         title: 'Example',
         origin: 'https://example.com',
         url: 'https://example.com/path',
+        audible: false,
+        agentOwned: true,
       },
     ],
   });
@@ -118,7 +121,7 @@ test('handleCreateTab denies access when no window is enabled', async () => {
       id: 'req-create-0',
       params: {},
     }),
-    { enabledWindow: null },
+    { enabledWindow: null, agentCreatedTabs: new Set() },
     {
       async createTab() {
         created = true;
@@ -136,6 +139,7 @@ test('handleCreateTab denies access when no window is enabled', async () => {
 
 test('handleCreateTab normalizes the request and creates the tab inside the enabled window', async () => {
   const creates: TabCreateProperties[] = [];
+  const agentCreatedTabs = new Set<number>();
 
   const response = await handleCreateTab(
     makeRequest('tabs.create', {
@@ -145,7 +149,7 @@ test('handleCreateTab normalizes the request and creates the tab inside the enab
         active: false,
       },
     }),
-    { enabledWindow: { windowId: 9 } },
+    { enabledWindow: { windowId: 9 }, agentCreatedTabs },
     {
       async createTab(properties) {
         creates.push(properties);
@@ -178,6 +182,7 @@ test('handleCreateTab normalizes the request and creates the tab inside the enab
     title: 'New Tab',
     status: 'complete',
   });
+  assert.equal(agentCreatedTabs.has(41), true, 'created tab should be tracked in agentCreatedTabs');
 });
 
 test('handleCreateTab rejects invalid tab URLs before calling chrome.tabs.create', async () => {
@@ -193,7 +198,7 @@ test('handleCreateTab rejects invalid tab URLs before calling chrome.tabs.create
       });
       await handleCreateTab(
         request,
-        { enabledWindow: { windowId: 9 } },
+        { enabledWindow: { windowId: 9 }, agentCreatedTabs: new Set() },
         {
           async createTab() {
             created = true;
@@ -213,4 +218,47 @@ test('handleCreateTab rejects invalid tab URLs before calling chrome.tabs.create
   );
 
   assert.equal(created, false);
+});
+
+test('handleListTabs surfaces audible and agentOwned fields', async () => {
+  const agentCreatedTabs = new Set([20]);
+
+  const response = await handleListTabs(
+    makeRequest('tabs.list', {
+      id: 'req-list-2',
+      params: {},
+    }),
+    { enabledWindow: { windowId: 5 }, agentCreatedTabs },
+    {
+      async queryTabs() {
+        return [
+          createChromeTab({
+            id: 20,
+            windowId: 5,
+            active: false,
+            title: 'Agent Tab',
+            url: 'https://agent.example.com',
+            audible: false,
+          }),
+          createChromeTab({
+            id: 21,
+            windowId: 5,
+            active: true,
+            title: 'User Tab Playing Music',
+            url: 'https://music.example.com',
+            audible: true,
+          }),
+        ];
+      },
+    },
+    ACCESS_DENIED_WINDOW_OFF
+  );
+
+  assert.equal(response.ok, true);
+  const result = response.result as { tabs: { agentOwned: boolean; audible: boolean }[] };
+  assert.equal(result.tabs.length, 2);
+  assert.equal(result.tabs[0].agentOwned, true);
+  assert.equal(result.tabs[0].audible, false);
+  assert.equal(result.tabs[1].agentOwned, false);
+  assert.equal(result.tabs[1].audible, true);
 });

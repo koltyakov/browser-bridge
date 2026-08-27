@@ -59,7 +59,7 @@ setProtocolPackageVersion(DAEMON_VERSION);
 /** @typedef {import('./config.js').BridgeTransport} BridgeTransport */
 /** @typedef {import('./daemon-logger.js').DaemonLoggerLike} DaemonLoggerLike */
 /** @typedef {'agent' | 'extension'} SocketRole */
-/** @typedef {import('node:net').Socket & { readonly __role?: SocketRole, __clientId?: string, __extensionId?: string, __browserName?: string, __profileLabel?: string, __browserExtensionId?: string, __accessEnabled?: boolean, __lastActiveAt?: number }} ClientSocket */
+/** @typedef {import('node:net').Socket & { readonly __role?: SocketRole, __clientId?: string, __extensionId?: string, __browserName?: string, __profileLabel?: string, __profileEmail?: string | null, __browserExtensionId?: string, __accessEnabled?: boolean, __lastActiveAt?: number }} ClientSocket */
 /** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string, mcpEra?: string, method?: string, protocolVersion?: string, baselineId?: string | null, automaticMcpRetry?: boolean, targets: Set<ClientSocket>, lastErrorResponse?: import('../../protocol/src/types.js').BridgeResponse }} PendingEntry */
 /**
  * @typedef {{
@@ -557,6 +557,7 @@ export class BridgeDaemon {
         browserExtensionId: extSocket.__browserExtensionId ?? null,
         browserName: extSocket.__browserName ?? null,
         profileLabel: extSocket.__profileLabel ?? null,
+        profileEmail: extSocket.__profileEmail ?? null,
         accessEnabled: extSocket.__accessEnabled ?? false,
       })
     );
@@ -616,6 +617,8 @@ export class BridgeDaemon {
         typeof message.browserName === 'string' ? message.browserName : undefined;
       socket.__profileLabel =
         typeof message.profileLabel === 'string' ? message.profileLabel : undefined;
+      socket.__profileEmail =
+        typeof message.profileEmail === 'string' ? message.profileEmail : null;
       socket.__browserExtensionId = normalizeBrowserExtensionId(message.browserExtensionId);
       socket.__lastActiveAt = Date.now();
       this.extensionSockets.set(extensionId, socket);
@@ -624,6 +627,7 @@ export class BridgeDaemon {
         extensionId,
         browserName: socket.__browserName ?? null,
         profileLabel: socket.__profileLabel ?? null,
+        profileEmail: socket.__profileEmail ?? null,
       });
       void writeJsonLine(socket, { type: 'registered', role: 'extension' });
       return;
@@ -1355,6 +1359,10 @@ export class BridgeDaemon {
     if (typeof message.profileLabel === 'string') {
       changed = changed || socket.__profileLabel !== message.profileLabel;
       socket.__profileLabel = message.profileLabel;
+    }
+    if (typeof message.profileEmail === 'string') {
+      changed = changed || socket.__profileEmail !== message.profileEmail;
+      socket.__profileEmail = message.profileEmail;
     }
     if (typeof message.browserExtensionId === 'string') {
       const browserExtensionId = normalizeBrowserExtensionId(message.browserExtensionId);

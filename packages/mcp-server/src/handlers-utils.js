@@ -619,7 +619,7 @@ export async function waitForClientReconnect(client, timeoutMs = RECONNECT_WAIT_
  * @param {import('../../agent-client/src/client.js').BridgeClient} client
  * @param {BridgeMethod} method
  * @param {Record<string, unknown>} params
- * @param {{ tabId?: number | null, source?: import('../../protocol/src/types.js').BridgeRequestSource, mcpEra?: import('../../protocol/src/types.js').McpProtocolEra, tokenBudget?: number | null, automaticRetry?: 'mcp_second_attempt' }} options
+ * @param {{ tabId?: number | null, source?: import('../../protocol/src/types.js').BridgeRequestSource, mcpEra?: import('../../protocol/src/types.js').McpProtocolEra, tokenBudget?: number | null, automaticRetry?: 'mcp_second_attempt', targetProfile?: string | null }} options
  * @returns {Promise<BridgeResponse>}
  */
 export async function requestBridgeWithRetry(client, method, params, options) {
@@ -667,7 +667,7 @@ export async function requestBridgeWithRetry(client, method, params, options) {
 /**
  * @param {BridgeMethod} method
  * @param {Record<string, unknown>} [params={}]
- * @param {{ tabId?: number | null, summaryMethod?: string, tokenBudget?: number | null, destinationId?: string | null }} [options]
+ * @param {{ tabId?: number | null, summaryMethod?: string, tokenBudget?: number | null, destinationId?: string | null, targetProfile?: string | null }} [options]
  * @returns {Promise<ToolResult>}
  */
 export async function callBridgeTool(method, params = {}, options = {}) {
@@ -677,6 +677,7 @@ export async function callBridgeTool(method, params = {}, options = {}) {
         tabId: options.tabId ?? null,
         source: REQUEST_SOURCE,
         tokenBudget: options.tokenBudget ?? null,
+        targetProfile: options.targetProfile ?? null,
       });
       return summarizeToolResponse(response, options.summaryMethod || method, params);
     },
@@ -707,6 +708,7 @@ export async function dispatchToolAction(actions, args, toolName) {
   return withToolClient(
     async (client) => {
       const requestedTabId = typeof args.tabId === 'number' ? args.tabId : null;
+      const targetProfile = typeof args.targetProfile === 'string' ? args.targetProfile : null;
       const ref = entry.ref
         ? await resolveToolRef(
             client,
@@ -719,6 +721,7 @@ export async function dispatchToolAction(actions, args, toolName) {
         tabId: requestedTabId,
         source: REQUEST_SOURCE,
         tokenBudget: getToolTokenBudget(/** @type {{ budgetPreset?: unknown }} */ (args)),
+        targetProfile,
       });
       return summarizeToolResponse(response, entry.method, params);
     },

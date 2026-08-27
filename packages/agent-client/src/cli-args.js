@@ -27,6 +27,28 @@ export function readStdin() {
 }
 
 /**
+ * Extract the global --profile flag from anywhere in the argument list.
+ * Targets a specific Chrome profile by its profileLabel (from `bbx status`).
+ *
+ * @param {string[]} args
+ * @returns {{ profileLabel: string | null, rest: string[] }}
+ */
+export function extractProfileFlag(args) {
+  const rest = [...args];
+  const index = rest.indexOf('--profile');
+  if (index === -1) {
+    return { profileLabel: null, rest };
+  }
+  const profileLabel = rest[index + 1];
+  if (!profileLabel || profileLabel.startsWith('--')) {
+    process.stderr.write('--profile requires a profile label (see `bbx status`).\n');
+    process.exit(1);
+  }
+  rest.splice(index, 2);
+  return { profileLabel, rest };
+}
+
+/**
  * Extract the global --remote flag from anywhere in the argument list.
  * Exits with a usage error when the flag is present without a value.
  *

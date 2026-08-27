@@ -74,7 +74,7 @@ function invalidBatchItem(method, message) {
  * @param {import('./client.js').BridgeClient} client
  * @param {string | undefined} input - Raw JSON array argument
  * @param {BridgeRequestSource} source - Request source tag (e.g. 'cli')
- * @param {{ preset?: BudgetPresetName | null }} [options] - Optional budget preset applied to every call
+ * @param {{ preset?: BudgetPresetName | null, targetProfile?: string | null }} [options] - Optional budget preset and profile target
  * @returns {Promise<BatchResultItem[]>}
  */
 export async function runBatchCalls(client, input, source, options = {}) {
@@ -113,6 +113,7 @@ export async function runBatchCalls(client, input, source, options = {}) {
       const response = await requestBridge(client, method, params, {
         tabId,
         source,
+        targetProfile: options.targetProfile,
       });
       return summarizeBatchResponseItem({
         method,

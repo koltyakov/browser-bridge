@@ -242,6 +242,7 @@ export const SHORTCUT_COMMANDS = {
 
 /** @type {Readonly<Record<string, BridgeMethod>>} */
 export const CLI_METHOD_BINDINGS = Object.freeze({
+  profiles: 'health.ping',
   status: 'health.ping',
   logs: 'log.tail',
   tabs: 'tabs.list',
@@ -268,6 +269,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
       'bbx install-skill [targets|all] [--global] [--project <path>]      Install/update the managed Browser Bridge CLI skill',
       'bbx install-mcp [client|all] [--local]                             Write MCP config for codex|claude|cursor|copilot|opencode|antigravity|windsurf|agents',
       '  MCP uses a compact surface: legacy clients can load typed tools; modern stateless clients use browser_call.',
+      'bbx profiles                                                        List connected browser profiles',
       'bbx status                                                         Check bridge connection',
       'bbx doctor                                                         Consolidated local runtime, setup, protocol, and readiness diagnostics',
       'bbx restart                                                        Restart the local daemon and running MCP servers',

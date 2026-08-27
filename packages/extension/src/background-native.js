@@ -106,18 +106,18 @@ export function clearSetupStatusTimer(state) {
 }
 
 /**
- * @param {{ runtime?: { id?: string }, storage: { session: { get: (key: string) => Promise<Record<string, unknown>>, set: (items: Record<string, unknown>) => Promise<void> } } }} chromeObj
+ * @param {{ runtime?: { id?: string }, storage: { local: { get: (key: string) => Promise<Record<string, unknown>>, set: (items: Record<string, unknown>) => Promise<void> } } }} chromeObj
  * @returns {Promise<string>}
  */
 export async function getProfileLabel(chromeObj) {
   const STORAGE_KEY = 'bb_profile_label';
   try {
-    const result = await chromeObj.storage.session.get(STORAGE_KEY);
+    const result = await chromeObj.storage.local.get(STORAGE_KEY);
     if (result[STORAGE_KEY]) {
       return /** @type {string} */ (result[STORAGE_KEY]);
     }
     const label = `profile_${Math.random().toString(36).slice(2, 8)}`;
-    await chromeObj.storage.session.set({ [STORAGE_KEY]: label });
+    await chromeObj.storage.local.set({ [STORAGE_KEY]: label });
     return label;
   } catch (e) {
     reportAsyncError(e);
@@ -129,17 +129,26 @@ export async function getProfileLabel(chromeObj) {
  * Send browser/profile identity to the daemon via the native host.
  *
  * @param {chrome.runtime.Port} port
- * @param {{ runtime?: { id?: string }, storage: { session: { get: (key: string) => Promise<Record<string, unknown>>, set: (items: Record<string, unknown>) => Promise<void> } } }} chromeObj
+ * @param {{ runtime?: { id?: string }, identity?: { getProfileUserInfo?: () => Promise<{ email: string, id: string }> }, storage: { local: { get: (key: string) => Promise<Record<string, unknown>>, set: (items: Record<string, unknown>) => Promise<void> } } }} chromeObj
  * @returns {void}
  */
 export function sendIdentity(port, chromeObj) {
   const browserName = detectBrowserName();
-  void getProfileLabel(chromeObj).then((profileLabel) => {
+  void Promise.allSettled([
+    getProfileLabel(chromeObj),
+    chromeObj.identity?.getProfileUserInfo?.(),
+  ]).then(([labelResult, emailResult]) => {
+    const profileLabel = labelResult.status === 'fulfilled' ? labelResult.value : null;
+    const profileEmail =
+      emailResult?.status === 'fulfilled' && typeof emailResult.value?.email === 'string'
+        ? emailResult.value.email
+        : null;
     try {
       port.postMessage({
         type: 'host.identity',
         browserName,
         profileLabel,
+        profileEmail,
         browserExtensionId:
           typeof chromeObj.runtime?.id === 'string' ? chromeObj.runtime.id : undefined,
       });
