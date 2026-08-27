@@ -1,5 +1,19 @@
 # Project Guide
 
+## Fork info
+
+This is `galer7/browser-bridge`, a fork of `koltyakov/browser-bridge`.
+
+Remotes: `origin` = galer7 fork (push here), `upstream` = koltyakov original (pull from here).
+
+Wayfinder map: https://github.com/galer7/browser-bridge/issues/1
+
+Key branches:
+- `feat/profile-routing` — `--profile <label>` flag for multi-profile routing (merged to CLI)
+- `feat/tab-protection` — agent-owned tab guards, navigation protection (pre-existing, WIP)
+
+Keep changes upstreamable where possible. Only fork what must diverge.
+
 ## Overview
 
 `Browser Bridge` is a Chrome extension plus local Native Messaging bridge for token-efficient, scoped browser inspection and patching.
