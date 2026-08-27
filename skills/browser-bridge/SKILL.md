@@ -114,6 +114,30 @@ In MCP mode, pass `destinationId` on any browser tool call instead; `browser_sta
 
 `bbx doctor` is intentionally local-only. It reports how many remotes are configured, but marks their status `not_probed_local_only` and credentials `unverified`; use `bbx remote test <name>` when the user wants a remote probe.
 
+### Site Recipes
+
+Per-domain automation knowledge is stored in `~/.browserbridge/recipes/<domain>/RECIPE.md`.
+Recipes capture scroll container patterns, blocked methods, working selectors, auth flows,
+and extraction strategies discovered through real usage.
+
+```bash
+bbx recipe list                      # show all available recipes with descriptions
+bbx recipe show <domain>             # display full recipe for a domain
+bbx recipe match <url>               # find recipe matching a URL (subdomain-aware)
+```
+
+**Before operating on a site, check for a recipe:**
+
+1. Identify the target domain from the tab's origin
+2. Run `bbx recipe match <origin>` or `bbx recipe show <domain>`
+3. If a recipe exists, follow its patterns instead of the generic workflow — it contains
+   tested workarounds for that site's anti-automation defenses, working scroll methods,
+   and known DOM structure
+
+Recipes are created by adding a `RECIPE.md` file with YAML frontmatter to the recipes
+directory. When you discover site-specific patterns during a session (e.g., a nested scroll
+container, a blocked API, a working eval trick), suggest updating or creating a recipe.
+
 ## Access Flow
 
 Browser Bridge access is window-scoped. The user turns it on once for the current browser window in the popup or side panel.
@@ -195,6 +219,8 @@ they contain no page data, URLs, selectors, payloads, errors, or group names.
 23. **Dialogs are explicit** - inspect first, then accept or dismiss only when intended. `expectedDialogId` is a pre-dispatch stale-decision check, not an atomic CDP binding; never auto-repeat `DIALOG_ACTION_CONFLICT`.
 24. **DOM diffs use explicit baselines** - call `dom.baseline.create` before the action, `dom.baseline.compare` afterward, then `dom.baseline.release`. Use a narrow selector and bounded evidence. Never substitute unrelated DOM reads for the retained baseline, and recreate it after `DOM_BASELINE_INVALIDATED`.
 25. **HAR export reads an armed capture** - use CDP capture `start`, reproduce, `network.export_har`/`bbx har`, then `stop`. Export never starts, stops, or clears capture. Inspect truncation plus `dropped`, `abandoned`, and `inflight` before claiming completeness.
+26. **Check recipes first** - before operating on a site, run `bbx recipe match <origin>`. If a recipe exists, follow its patterns — they encode tested workarounds for that site's defenses.
+27. **Scroll container detection** - when `bbx scroll` has no effect and `page.get_state` reports `maxY: 0`, the site uses a nested scroll container (common in SPAs like LinkedIn). Find it with `page.evaluate`: `Array.from(document.querySelectorAll("*")).filter(e => e.scrollHeight > e.clientHeight + 50 && e.clientHeight > 100)`. Scroll the container directly: `document.querySelector("main").scrollTop = N`. Also try reading text from the container element (`main.innerText`) instead of `document.body.innerText`, which some sites block.
 
 ## Token Budget Quick Rules
 
