@@ -1,6 +1,6 @@
 // @ts-check
 
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -11,6 +11,12 @@ export const BRIDGE_AUTH_TOKEN_FILE_ENV = 'BBX_AUTH_TOKEN_FILE';
 const TOKEN_FILENAME = 'daemon.auth';
 const EXTENSION_TOKEN_FILENAME = 'daemon.extension.auth';
 const TOKEN_BYTES = 32;
+/**
+ * @typedef {{ tokenPath?: string, readFile?: typeof fs.promises.readFile,
+ * writeFile?: typeof fs.promises.writeFile, mkdir?: typeof fs.promises.mkdir,
+ * chmod?: typeof fs.promises.chmod, link?: typeof fs.promises.link,
+ * unlink?: typeof fs.promises.unlink, randomBytesFn?: typeof randomBytes }} TokenInitOptions
+ */
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{32,256}$/u;
 const UUID_TOKEN_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -155,14 +161,7 @@ export async function writeBridgeAuthToken(token, options = {}) {
 }
 
 /**
- * @param {{
- *   tokenPath?: string,
- *   readFile?: typeof fs.promises.readFile,
- *   writeFile?: typeof fs.promises.writeFile,
- *   mkdir?: typeof fs.promises.mkdir,
- *   chmod?: typeof fs.promises.chmod,
- *   randomBytesFn?: typeof randomBytes
- * }} [options={}]
+ * @param {TokenInitOptions} [options={}]
  * @returns {Promise<string>}
  */
 export async function ensureBridgeAuthToken(options = {}) {
@@ -171,14 +170,7 @@ export async function ensureBridgeAuthToken(options = {}) {
 }
 
 /**
- * @param {{
- *   tokenPath?: string,
- *   readFile?: typeof fs.promises.readFile,
- *   writeFile?: typeof fs.promises.writeFile,
- *   mkdir?: typeof fs.promises.mkdir,
- *   chmod?: typeof fs.promises.chmod,
- *   randomBytesFn?: typeof randomBytes
- * }} [options={}]
+ * @param {TokenInitOptions} [options={}]
  * @returns {Promise<string>}
  */
 export async function ensureBridgeExtensionAuthToken(options = {}) {
@@ -188,13 +180,7 @@ export async function ensureBridgeExtensionAuthToken(options = {}) {
 
 /**
  * @param {string} tokenPath
- * @param {{
- *   readFile?: typeof fs.promises.readFile,
- *   writeFile?: typeof fs.promises.writeFile,
- *   mkdir?: typeof fs.promises.mkdir,
- *   chmod?: typeof fs.promises.chmod,
- *   randomBytesFn?: typeof randomBytes
- * }} options
+ * @param {TokenInitOptions} options
  * @returns {Promise<string>}
  */
 async function ensureStoredBridgeAuthToken(tokenPath, options) {
@@ -202,6 +188,8 @@ async function ensureStoredBridgeAuthToken(tokenPath, options) {
   const writeFile = options.writeFile ?? fs.promises.writeFile.bind(fs.promises);
   const mkdir = options.mkdir ?? fs.promises.mkdir.bind(fs.promises);
   const chmod = options.chmod ?? fs.promises.chmod.bind(fs.promises);
+  const link = options.link ?? fs.promises.link.bind(fs.promises);
+  const unlink = options.unlink ?? fs.promises.unlink.bind(fs.promises);
   const randomBytesFn = options.randomBytesFn ?? randomBytes;
   const existing = await readStoredBridgeAuthToken(tokenPath, readFile);
   if (existing) {
@@ -210,11 +198,85 @@ async function ensureStoredBridgeAuthToken(tokenPath, options) {
 
   const token = randomBytesFn(TOKEN_BYTES).toString('base64url');
   await mkdir(path.dirname(tokenPath), { recursive: true });
-  await writeFile(tokenPath, `${token}\n`, { encoding: 'utf8', mode: 0o600 });
-  if (process.platform !== 'win32') {
-    await chmod(tokenPath, 0o600).catch(() => {});
+  const nonce = randomUUID();
+  const temporaryPath = `${tokenPath}.${nonce}.tmp`;
+  const ownerPath = `${temporaryPath}.owner`;
+  let lockPath = `${tokenPath}.init.lock`;
+  let locked = false;
+  /** @param {string} filePath */
+  const remove = async (filePath) => {
+    try {
+      await unlink(filePath);
+    } catch (error) {
+      if (!isMissingFileError(error)) throw error;
+    }
+  };
+  try {
+    // Neither the credential nor lock name is visible until its complete contents
+    // have been written and closed. Hard links publish without replacing a winner.
+    await writeFile(temporaryPath, `${token}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    await writeFile(ownerPath, `${process.pid}:${nonce}\n`, {
+      encoding: 'utf8',
+      mode: 0o600,
+      flag: 'wx',
+    });
+    if (process.platform !== 'win32') await chmod(temporaryPath, 0o600).catch(() => {});
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      try {
+        await link(ownerPath, lockPath);
+        locked = true;
+        break;
+      } catch (error) {
+        if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'EEXIST')
+          throw error;
+      }
+      let owner;
+      try {
+        owner = await readFile(lockPath, 'utf8');
+      } catch (error) {
+        if (isMissingFileError(error)) continue;
+        throw error;
+      }
+      const match = /^(\d+):([0-9a-f-]{36})\n$/u.exec(owner);
+      if (!match || !Number.isSafeInteger(Number(match[1])) || Number(match[1]) <= 0) {
+        throw new Error('Bridge auth initialization lock has invalid ownership metadata.');
+      }
+      try {
+        process.kill(Number(match[1]), 0);
+      } catch (error) {
+        if (error && typeof error === 'object' && 'code' in error && error.code === 'ESRCH') {
+          // Never unlink a dead owner's lock: two stale-lock cleaners could delete
+          // a new winner's lock. All contenders instead follow the same successor.
+          lockPath = `${tokenPath}.init-${match[2]}.lock`;
+          continue;
+        }
+        if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'EPERM')
+          throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    if (!locked) throw new Error('Timed out waiting for bridge auth initialization.');
+    const winner = await readStoredBridgeAuthToken(tokenPath, readFile);
+    if (winner) return winner;
+    await remove(tokenPath);
+    try {
+      await link(temporaryPath, tokenPath);
+      return token;
+    } catch (error) {
+      if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'EEXIST')
+        throw error;
+      const published = await readStoredBridgeAuthToken(tokenPath, readFile);
+      if (published) return published;
+      throw error;
+    }
+  } finally {
+    // Release the lock even if temporary-file cleanup fails.
+    try {
+      if (locked) await remove(lockPath);
+    } finally {
+      await Promise.all([remove(temporaryPath), remove(ownerPath)]);
+    }
   }
-  return token;
 }
 
 /**

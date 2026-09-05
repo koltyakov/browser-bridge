@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { parseHTML } from 'linkedom';
 
 import { withDocument } from '../../../tests/_helpers/dom.ts';
 
@@ -70,6 +71,8 @@ type FakeElementLike = {
   dispatchEvent?: (event: FakeEventLike) => boolean;
   click?: () => void;
   setRangeText?: (replacement: string, start: number, end: number) => void;
+  replaceChildren?: () => void;
+  appendChild?: (node: { nodeType: number; textContent: string }) => void;
 };
 type FakeOptionElement = FakeElementLike & {
   value: string;
@@ -394,6 +397,14 @@ function createFakeElement(
     children,
     childNodes: textContent ? [{ nodeType: 3, textContent }] : [],
     childElementCount: children.length,
+    replaceChildren() {
+      this.childNodes = [];
+      this.textContent = '';
+    },
+    appendChild(node) {
+      this.childNodes.push(node);
+      this.textContent += node.textContent;
+    },
     classList,
     getAttribute(name: string) {
       return attributes.get(name) ?? null;
@@ -444,6 +455,14 @@ function createDocumentHarness(
   visit(body);
 
   const documentHarness = {
+    createElement: (tag: string) => parseHTML('<html></html>').document.createElement(tag),
+    createDocumentFragment: () => ({
+      querySelector(selector: string) {
+        // LinkeDOM accepts numeric attribute names that Chrome rejects.
+        if (/\[\d/.test(selector)) throw new SyntaxError('Invalid attribute name');
+        return parseHTML('<html></html>').document.querySelector(selector);
+      },
+    }),
     body,
     documentElement: body,
     activeElement: null,
@@ -957,6 +976,120 @@ function installInputDomGlobals(t: import('node:test').TestContext): InputDomGlo
     },
   };
 }
+
+test('text patches restore original subtree nodes and listeners, including nested patches', async (t) => {
+  await withDocument(
+    '<html><body><div id="target">Before <button>Save</button><!-- retained --></div></body></html>',
+    async ({ document, window }) => {
+      const harness = createChromeHarness();
+      await loadContentScript(t, {
+        withHelpers: true,
+        preserveDomGlobals: true,
+        chrome: harness.chrome,
+      });
+      const target = document.querySelector('#target');
+      const button = document.querySelector('button');
+      assert.ok(target && button);
+      const children = [...target.childNodes];
+      let clicks = 0;
+      button.addEventListener('click', () => clicks++);
+      const listener = harness.getListener();
+      for (const [patchId, value] of [
+        ['outer', 'First'],
+        ['inner', 'Second'],
+      ]) {
+        const result = await executeBridgeMethod(listener, 'patch.apply_dom', {
+          patchId,
+          target: { selector: '#target' },
+          operation: 'set_text',
+          value,
+        });
+        assert.equal(result.applied, true);
+      }
+      await executeBridgeMethod(listener, 'patch.rollback', { patchId: 'inner' });
+      assert.equal(target.textContent, 'First');
+      await executeBridgeMethod(listener, 'patch.rollback', { patchId: 'outer' });
+      assert.equal(target.childNodes.length, children.length);
+      children.forEach((child, index) => assert.equal(target.childNodes[index], child));
+      button.dispatchEvent(new window.Event('click'));
+      assert.equal(clicks, 1);
+      assert.deepEqual(await executeBridgeMethod(listener, 'patch.list', {}), []);
+
+      await executeBridgeMethod(listener, 'patch.apply_dom', {
+        patchId: 'commit',
+        target: { selector: '#target' },
+        operation: 'set_text',
+        value: 'Kept',
+      });
+      await executeBridgeMethod(listener, 'patch.commit_session_baseline', {});
+      assert.equal(target.textContent, 'Kept');
+      assert.deepEqual(
+        await executeBridgeMethod(listener, 'patch.rollback', { patchId: 'commit' }),
+        {
+          patchId: 'commit',
+          rolledBack: false,
+        }
+      );
+    }
+  );
+});
+
+test('active DOM patches survive read-registry eviction and retain exact detached identity', async (t) => {
+  await withDocument(
+    '<html><body><div class="target" data-state="old"></div></body></html>',
+    async ({ document }) => {
+      const harness = createChromeHarness();
+      await loadContentScript(t, {
+        withHelpers: true,
+        preserveDomGlobals: true,
+        chrome: harness.chrome,
+      });
+      const listener = harness.getListener();
+      const target = document.querySelector('.target');
+      assert.ok(target);
+      const applied = await executeBridgeMethod(listener, 'patch.apply_dom', {
+        patchId: 'retained',
+        target: { selector: '.target[data-state="old"]' },
+        operation: 'set_attribute',
+        name: 'data-state',
+        value: 'patched',
+        verify: true,
+      });
+      assert.equal(applied.applied, true);
+      for (let index = 0; index < 20; index++) {
+        const section = document.createElement('section');
+        section.id = `section-${index}`;
+        for (let child = 0; child < 249; child++) section.appendChild(document.createElement('i'));
+        document.body.appendChild(section);
+        const result = await executeBridgeMethod(listener, 'dom.query', {
+          selector: `#section-${index}`,
+          maxNodes: 250,
+          includeBbox: false,
+        });
+        assert.equal((result.nodes as unknown[]).length, 250);
+      }
+      const stale = await executeBridgeMethod(listener, 'dom.get_attributes', {
+        elementRef: applied.elementRef,
+        attributes: ['data-state'],
+      });
+      assert.equal(stale.error, 'Element reference is stale.');
+      target.remove();
+      const replacement = document.createElement('div');
+      replacement.className = 'target';
+      replacement.setAttribute('data-state', 'replacement');
+      document.body.appendChild(replacement);
+      assert.deepEqual(
+        await executeBridgeMethod(listener, 'patch.rollback', { patchId: 'retained' }),
+        {
+          patchId: 'retained',
+          rolledBack: true,
+        }
+      );
+      assert.equal(target.getAttribute('data-state'), 'old');
+      assert.equal(replacement.getAttribute('data-state'), 'replacement');
+    }
+  );
+});
 
 test('content script skips initialization when Chrome runtime messaging is unavailable', async (t) => {
   const contentScriptGlobal = globalThis as typeof globalThis & {

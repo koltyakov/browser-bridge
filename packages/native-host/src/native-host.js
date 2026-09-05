@@ -173,6 +173,7 @@ export async function runNativeHost({
   parseJsonLines(
     socket,
     (raw) => {
+      if (socket.destroyed) return;
       const message = /** @type {Record<string, unknown>} */ (raw);
       void (async () => {
         if (message.type === 'extension.request') {
@@ -201,6 +202,7 @@ export async function runNativeHost({
           });
         }
       })().catch((err) => {
+        socket.destroy();
         console.error(
           'native-host: socket message handler failed:',
           err instanceof Error ? err.message : err
@@ -220,6 +222,7 @@ export async function runNativeHost({
   createNativeMessageReader(
     process.stdin,
     (message) => {
+      if (socket.destroyed) return;
       void (async () => {
         if (isHostBridgeRequest(message)) {
           await writeJsonLine(socket, {
@@ -271,6 +274,7 @@ export async function runNativeHost({
           response: message,
         });
       })().catch((err) => {
+        socket.destroy();
         console.error(
           'native-host: stdin message handler failed:',
           err instanceof Error ? err.message : err

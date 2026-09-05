@@ -445,7 +445,8 @@ test('runNativeHost destroys the bridge socket when stdin framing fails', async 
   }
 });
 
-test('runNativeHost logs stdin handler failures when writes to the daemon socket fail', async () => {
+test('runNativeHost logs stdin handler failures when writes to the daemon socket fail', async (t) => {
+  t.mock.method(process, 'exit', () => undefined as never);
   const originalCreateConnection = net.createConnection;
   const originalConsoleError = console.error;
   const stdinListenersBefore = captureStdinListeners();

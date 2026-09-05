@@ -13,7 +13,6 @@ import {
   MAX_BATCH_CONCURRENCY,
   METHOD_SET,
 } from '../../protocol/src/index.js';
-import { createBridgeClientForDestination } from '../../agent-client/src/remotes.js';
 import {
   annotateBridgeSummary,
   applyLimitBudgetPreset,
@@ -31,6 +30,8 @@ import {
   summarizeToolError,
   summarizeToolResponse,
   withToolClient,
+  withMcpRequestClient,
+  throwIfMcpRequestCancelled,
   REQUEST_SOURCE,
 } from './handlers-utils.js';
 import { createScreenshotResult } from './handlers-capture.js';
@@ -383,33 +384,23 @@ export async function handleBatchTool(args) {
     const tokenBudget = getToolTokenBudget(call);
     const destinationId = typeof call.destinationId === 'string' ? call.destinationId : null;
     const startTime = Date.now();
-    /** @type {BridgeClient | null} */
-    let callClient = null;
     /** @type {import('../../protocol/src/types.js').BridgeResponse | null} */
     let response = null;
     /** @type {unknown} */
     let callError = null;
     try {
-      callClient = await createBridgeClientForDestination(destinationId, {
-        checkProtocolOnConnect: false,
-      });
-      await callClient.connect();
       const params = applyMethodBudgetPreset(method, call.params || {}, call.budgetPreset);
-      response = await requestBridgeWithRetry(callClient, method, params, {
-        tabId,
-        source: REQUEST_SOURCE,
-        tokenBudget,
-      });
+      response = await withMcpRequestClient(
+        (client) =>
+          requestBridgeWithRetry(client, method, params, {
+            tabId,
+            source: REQUEST_SOURCE,
+            tokenBudget,
+          }),
+        { destinationId }
+      );
     } catch (error) {
       callError = error;
-    } finally {
-      if (callClient) {
-        try {
-          await callClient.close();
-        } catch (error) {
-          callError ??= error;
-        }
-      }
     }
     if (callError || !response) {
       return {
@@ -489,6 +480,7 @@ async function mapWithConcurrency(values, concurrency, callback) {
   let nextIndex = 0;
   const worker = async () => {
     while (nextIndex < values.length) {
+      throwIfMcpRequestCancelled();
       const index = nextIndex;
       nextIndex += 1;
       results[index] = await callback(values[index], index);
@@ -536,6 +528,9 @@ export async function handleRawCallTool(args) {
       }
       if (method === 'sensitive.read') {
         return createSensitiveReadResult(response);
+      }
+      if (method === 'artifact.read') {
+        return createArtifactReadResult(response);
       }
       return summarizeToolResponse(response, method, params);
     },
@@ -729,6 +724,7 @@ export async function handleInvestigateTool(args) {
       const stepResults = [];
 
       for (const step of scope.steps) {
+        throwIfMcpRequestCancelled();
         const startTime = Date.now();
         try {
           const response = await requestBridgeWithRetry(client, step.method, step.params(args), {

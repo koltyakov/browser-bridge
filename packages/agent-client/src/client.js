@@ -104,16 +104,37 @@ function shouldAutoRestartDaemonOnVersionMismatch(env = process.env) {
 /**
  * @param {net.Socket} socket
  * @param {string} line
+ * @param {AbortSignal} signal
  * @returns {Promise<void>}
  */
-async function writeSocketLine(socket, line) {
+async function writeSocketLine(socket, line, signal) {
+  signal.throwIfAborted();
   if (!socket.write(line)) {
-    await Promise.race([
-      once(socket, 'drain'),
-      once(socket, 'close').then(() => {
-        throw new Error('Bridge socket closed while writing.');
-      }),
-    ]);
+    await new Promise((resolve, reject) => {
+      const cleanup = () => {
+        socket.off('drain', onDrain);
+        socket.off('error', onError);
+        socket.off('close', onClose);
+        signal.removeEventListener('abort', onAbort);
+      };
+      const onDrain = () => {
+        cleanup();
+        resolve(undefined);
+      };
+      /** @param {unknown} error */
+      const onError = (error) => {
+        cleanup();
+        reject(error);
+      };
+      const onClose = () => onError(new Error('Bridge socket closed while writing.'));
+      const onAbort = () => onError(signal.reason);
+      socket.once('drain', onDrain);
+      socket.once('error', onError);
+      socket.once('close', onClose);
+      signal.addEventListener('abort', onAbort, { once: true });
+      if (signal.aborted) onAbort();
+      else if (socket.destroyed) onClose();
+    });
   }
 }
 
@@ -176,12 +197,31 @@ export class BridgeClient extends EventEmitter {
     this.socket = socket;
     try {
       await new Promise((resolve, reject) => {
-        socket.once('connect', resolve);
-        socket.once('error', reject);
+        const cleanup = () => {
+          socket.off('connect', onConnect);
+          socket.off('error', onError);
+          socket.off('close', onClose);
+        };
+        const onConnect = () => {
+          cleanup();
+          resolve(undefined);
+        };
+        /** @param {Error} error */
+        const onError = (error) => {
+          cleanup();
+          reject(error);
+        };
+        const onClose = () => onError(new Error('Bridge socket closed while connecting.'));
+        socket.once('connect', onConnect);
+        socket.once('error', onError);
+        socket.once('close', onClose);
       });
+      if (this.socket !== socket || socket.destroyed) {
+        throw new Error('Bridge socket closed while connecting.');
+      }
     } catch (error) {
       socket.destroy();
-      this.socket = null;
+      if (this.socket === socket) this.socket = null;
       throw error;
     }
 
@@ -198,6 +238,7 @@ export class BridgeClient extends EventEmitter {
     });
 
     parseJsonLines(socket, (raw) => {
+      if (this.socket !== socket) return;
       const message = /** @type {ClientMessage} */ (raw);
       if (message.type === 'registered') {
         const pending = this.waiting.get('registered');
@@ -231,6 +272,7 @@ export class BridgeClient extends EventEmitter {
     });
 
     socket.on('close', () => {
+      if (this.socket !== socket) return;
       this.connected = false;
       this.socket = null;
       this.rejectAllPending(new Error('Bridge socket closed.'));
@@ -240,35 +282,50 @@ export class BridgeClient extends EventEmitter {
     });
 
     socket.on('error', (error) => {
+      if (this.socket !== socket) return;
       this.rejectAllPending(error);
       // 'close' fires after 'error'; reconnect is triggered there.
     });
 
-    const authToken =
-      this.authToken === undefined
-        ? this.transport.type === 'tcp'
-          ? await readBridgeAuthToken()
-          : null
-        : normalizeBridgeAuthToken(this.authToken);
+    const registrationWrite = new AbortController();
     try {
-      await writeSocketLine(
-        socket,
-        `${JSON.stringify({
-          type: 'register',
-          role: 'agent',
-          clientId: this.clientId,
-          ...(authToken ? { authToken } : {}),
-        })}\n`
-      );
-    } catch (error) {
-      const pending = this.waiting.get('registered');
-      if (pending) {
-        clearTimeout(pending.timeoutId);
-        this.waiting.delete('registered');
+      const writePromise = (async () => {
+        const authToken =
+          this.authToken === undefined
+            ? this.transport.type === 'tcp'
+              ? await readBridgeAuthToken()
+              : null
+            : normalizeBridgeAuthToken(this.authToken);
+        await writeSocketLine(
+          socket,
+          `${JSON.stringify({
+            type: 'register',
+            role: 'agent',
+            clientId: this.clientId,
+            ...(authToken ? { authToken } : {}),
+          })}\n`,
+          registrationWrite.signal
+        );
+      })();
+      await Promise.race([registrationPromise, writePromise.then(() => registrationPromise)]);
+      if (this.socket !== socket || socket.destroyed) {
+        throw new Error('Bridge socket closed while registering.');
       }
+    } catch (error) {
+      if (this.socket === socket) {
+        const pending = this.waiting.get('registered');
+        if (pending) {
+          clearTimeout(pending.timeoutId);
+          this.waiting.delete('registered');
+        }
+        this.connected = false;
+        this.socket = null;
+      }
+      socket.destroy();
       throw error;
+    } finally {
+      registrationWrite.abort();
     }
-    await registrationPromise;
 
     this.protocolCompatibility = null;
     this.protocolWarning = null;
@@ -553,18 +610,25 @@ export class BridgeClient extends EventEmitter {
       });
     });
 
+    const requestWrite = new AbortController();
     try {
-      await writeSocketLine(this.socket, `${JSON.stringify({ type: 'agent.request', request })}\n`);
-    } catch (error) {
+      const writePromise = writeSocketLine(
+        this.socket,
+        `${JSON.stringify({ type: 'agent.request', request })}\n`,
+        requestWrite.signal
+      );
+      const response = /** @type {BridgeResponse} */ (
+        await Promise.race([responsePromise, writePromise.then(() => responsePromise)])
+      );
+      return this.attachProtocolWarning(response);
+    } finally {
+      requestWrite.abort();
       const pending = this.waiting.get(request.id);
       if (pending) {
         clearTimeout(pending.timeoutId);
         this.waiting.delete(request.id);
       }
-      throw error;
     }
-    const response = /** @type {BridgeResponse} */ (await responsePromise);
-    return this.attachProtocolWarning(response);
   }
 
   /**
@@ -611,11 +675,19 @@ export class BridgeClient extends EventEmitter {
    */
   async close() {
     this.autoReconnect = false; // prevent reconnect on intentional close
-    if (!this.socket) {
+    const socket = this.socket;
+    if (!socket) {
+      return;
+    }
+    if (socket.connecting || !this.connected || socket.destroyed || socket.writableNeedDrain) {
+      this.socket = null;
+      this.connected = false;
+      this.rejectAllPending(new Error('Bridge socket closed.'));
+      socket.destroy();
       return;
     }
     await new Promise((resolve) => {
-      this.socket?.end(() => resolve(undefined));
+      socket.end(() => resolve(undefined));
     });
   }
 
@@ -697,6 +769,7 @@ export class BridgeClient extends EventEmitter {
     const previousAutoReconnect = this.autoReconnect;
     this.autoReconnect = false;
     this.connected = false;
+    this.rejectAllPending(new Error('Bridge socket closed.'));
     this.socket = null;
 
     if (!socket.destroyed) {

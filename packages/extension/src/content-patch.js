@@ -16,7 +16,6 @@
     ).__BBX_CONTENT_HELPERS__;
   const registry =
     /** @type {typeof globalThis & { __BBX_CONTENT_REGISTRY__?: {
-      getRequiredElement: (ref: string) => Element,
       rememberElement: (element: Element) => string,
       createContentId: (prefix: string) => string,
       getPatchRegistry: () => Map<string, StoredPatch>,
@@ -28,7 +27,6 @@
   }
 
   const {
-    getRequiredElement,
     rememberElement,
     createContentId,
     getPatchRegistry,
@@ -39,8 +37,9 @@
   /** @typedef {{ elementRef?: string, selector?: string }} PatchTarget */
   /** @typedef {{ target?: PatchTarget, patchId?: string, declarations?: Record<string, string>, important?: boolean, verify?: boolean }} StylePatchParams */
   /** @typedef {{ target?: PatchTarget, patchId?: string, operation?: string, name?: string | null, value?: unknown, verify?: boolean }} DomPatchParams */
-  /** @typedef {{ kind: 'style', elementRef: string, previous: Record<string, { value: string, priority: string }> }} StoredStylePatch */
-  /** @typedef {{ kind: 'dom', elementRef: string, operation: string, previous: { text: string | null, attributes: Record<string, string | null>, toggledClass: string | null, hadClass: boolean | null, changed: boolean | null } }} StoredDomPatch */
+  /** @typedef {{ value: string, priority: string }} StyleValue */
+  /** @typedef {{ kind: 'style', element: Element, elementRef: string, previous: Map<string, StyleValue>, shorthands: Map<string, StyleValue & { longhands: string[] }> }} StoredStylePatch */
+  /** @typedef {{ kind: 'dom', element: Element, elementRef: string, operation: string, previous: { children: Node[] | null, attributes: Record<string, string | null>, toggledClass: string | null, hadClass: boolean | null, changed: boolean | null } }} StoredDomPatch */
   /** @typedef {StoredStylePatch | StoredDomPatch} StoredPatch */
 
   /**
@@ -76,20 +75,66 @@
         : createContentId('patch');
     rejectDuplicatePatchId(patchId);
     assertPatchRegistryCapacity();
-    /** @type {Record<string, { value: string, priority: string }>} */
-    const previous = {};
-    for (const [property, value] of Object.entries(params.declarations || {})) {
-      previous[property] = {
-        value: element.style.getPropertyValue(property),
-        priority: element.style.getPropertyPriority(property),
-      };
+    /** @type {Map<string, StyleValue>} */
+    const previous = new Map();
+    const declarations = Object.entries(params.declarations || {});
+    const probe = document.createElement('div').style;
+    // CSSOM expands shorthands into their affected longhands, including reset-only
+    // properties such as border-image. Capture everything before the first write.
+    for (const [property] of declarations) {
+      probe.cssText = '';
+      probe.setProperty(property, 'initial');
+      for (let index = 0; index < probe.length; index += 1) {
+        const longhand = probe[index];
+        previous.set(longhand, {
+          value: element.style.getPropertyValue(longhand),
+          priority: element.style.getPropertyPriority(longhand),
+        });
+      }
+    }
+    /** @type {Set<string>} */
+    const pending = new Set();
+    for (let index = 0; index < element.style.length; index += 1) {
+      const property = element.style[index];
+      if (previous.has(property) && !element.style.getPropertyValue(property))
+        pending.add(property);
+    }
+    /** @type {StoredStylePatch['shorthands']} */
+    const shorthands = new Map();
+    if (pending.size) {
+      // A var() shorthand can have present but unserializable longhands. Recover
+      // candidate declaration names from cssText, then let CSSOM validate them.
+      for (const match of element.style.cssText.matchAll(/(?:^|;)\s*([-\w]+)\s*:/g)) {
+        const property = match[1];
+        const value = element.style.getPropertyValue(property);
+        if (!value) continue;
+        probe.cssText = '';
+        probe.setProperty(property, 'initial');
+        const longhands = Array.from(probe);
+        if (!longhands.some((name) => pending.has(name))) continue;
+        shorthands.set(property, {
+          value,
+          priority: element.style.getPropertyPriority(property),
+          longhands,
+        });
+        for (const name of longhands) pending.delete(name);
+      }
+      if (pending.size) {
+        throw new Error(
+          'Cannot reversibly patch pending-substitution longhands without their original shorthand.'
+        );
+      }
+    }
+    for (const [property, value] of declarations) {
       element.style.setProperty(property, value, params.important ? 'important' : '');
     }
     const elementRef = rememberElement(element);
     getPatchRegistry().set(patchId, {
       kind: 'style',
+      element,
       elementRef,
       previous,
+      shorthands,
     });
     const result = { patchId, applied: true };
     if (params.verify) {
@@ -133,9 +178,9 @@
     const operation = typeof params.operation === 'string' ? params.operation : '';
     const name = typeof params.name === 'string' ? params.name : '';
 
-    /** @type {{ text: string | null, attributes: Record<string, string | null>, toggledClass: string | null, hadClass: boolean | null, changed: boolean | null }} */
+    /** @type {StoredDomPatch['previous']} */
     const previous = {
-      text: null,
+      children: null,
       attributes: {},
       toggledClass: null,
       hadClass: null,
@@ -144,7 +189,7 @@
 
     switch (operation) {
       case 'set_text':
-        previous.text = element.textContent;
+        previous.children = Array.from(element.childNodes);
         element.textContent = String(params.value ?? '');
         break;
       case 'set_attribute':
@@ -183,6 +228,7 @@
     const elementRef = rememberElement(element);
     getPatchRegistry().set(patchId, {
       kind: 'dom',
+      element,
       elementRef,
       operation,
       previous,
@@ -233,19 +279,46 @@
       return { patchId, rolledBack: false };
     }
 
-    const element = getRequiredElement(patch.elementRef);
+    const element = patch.element;
     if (patch.kind === 'style') {
       const htmlElement = /** @type {HTMLElement} */ (element);
-      for (const [property, previous] of Object.entries(patch.previous)) {
+      const present = new Set(Array.from(htmlElement.style));
+      /** @type {Map<string, StyleValue>} */
+      const unaffected = new Map();
+      /** @type {Set<string>} */
+      const restored = new Set();
+      for (const shorthand of patch.shorthands.values()) {
+        for (const property of shorthand.longhands) {
+          restored.add(property);
+          if (patch.previous.has(property)) continue;
+          const value = htmlElement.style.getPropertyValue(property);
+          // Empty, present siblings still carry the original pending substitution.
+          if (value || !present.has(property)) {
+            unaffected.set(property, {
+              value,
+              priority: htmlElement.style.getPropertyPriority(property),
+            });
+          }
+        }
+      }
+      for (const [property, shorthand] of patch.shorthands) {
+        htmlElement.style.setProperty(property, shorthand.value, shorthand.priority);
+      }
+      for (const [property, previous] of patch.previous) {
         if (previous.value) {
           htmlElement.style.setProperty(property, previous.value, previous.priority);
-        } else {
+        } else if (!restored.has(property)) {
           htmlElement.style.removeProperty(property);
         }
       }
+      for (const [property, current] of unaffected) {
+        if (current.value) htmlElement.style.setProperty(property, current.value, current.priority);
+        else htmlElement.style.removeProperty(property);
+      }
     } else if (patch.kind === 'dom') {
-      if (patch.operation === 'set_text' && patch.previous.text !== null) {
-        element.textContent = patch.previous.text;
+      if (patch.operation === 'set_text' && patch.previous.children !== null) {
+        element.replaceChildren();
+        for (const child of patch.previous.children) element.appendChild(child);
       } else if (
         (patch.operation === 'toggle_class' ||
           patch.operation === 'add_class' ||
@@ -261,9 +334,6 @@
           }
         }
       } else {
-        if (patch.previous.text !== null && patch.operation === 'set_text') {
-          element.textContent = patch.previous.text;
-        }
         for (const [name, value] of Object.entries(patch.previous.attributes || {})) {
           if (value == null) {
             element.removeAttribute(name);

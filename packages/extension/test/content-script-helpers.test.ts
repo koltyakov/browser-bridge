@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { withDocument } from '../../../tests/_helpers/dom.ts';
 
 await import('../src/content-script-helpers.js');
 
@@ -87,11 +88,38 @@ test('content script helpers clamp, truncate, and normalize budgets', () => {
   );
 });
 
-test('content script helpers escape Tailwind selectors and expose shared constants', () => {
-  assert.equal(
-    helpers.escapeTailwindSelector('.top-[30px] .bg-[#f00]'),
-    '.top-\\[30px\\] .bg-\\[#f00\\]'
-  );
+test('content script helpers preserve CSS attributes and escape invalid utility brackets', async () => {
+  await withDocument('<html></html>', ({ document }) => {
+    // LinkeDOM accepts numeric attribute names that Chrome rejects.
+    const createFragment = document.createDocumentFragment.bind(document);
+    document.createDocumentFragment = () => {
+      const fragment = createFragment();
+      const query = fragment.querySelector.bind(fragment);
+      fragment.querySelector = (selector: string) => {
+        if (/\[\d/.test(selector)) throw new SyntaxError('Invalid attribute name');
+        return query(selector);
+      };
+      return fragment;
+    };
+    assert.equal(
+      helpers.escapeTailwindSelector('.top-[30px] .bg-[#f00]'),
+      '.top-\\[30px\\] .bg-\\[\\#f00\\]'
+    );
+    for (const selector of [
+      '.btn[disabled]',
+      '.btn[data-state="ready"]',
+      '.utility-[auto]',
+      '[data-label=".top-[30px]"]',
+      '.top-\\[30px\\]',
+      ':is(.btn[disabled], .btn[data-state="ready"])',
+    ]) {
+      assert.equal(helpers.escapeTailwindSelector(selector), selector);
+    }
+    assert.equal(
+      helpers.escapeTailwindSelector('.btn[disabled] .bg-[#f00]'),
+      '.btn[disabled] .bg-\\[\\#f00\\]'
+    );
+  });
   assert.equal(helpers.NON_TEXT_INPUT_TYPES.has('checkbox'), true);
   assert.equal(helpers.NON_TEXT_INPUT_TYPES.has('text'), false);
 });

@@ -47,17 +47,119 @@ import { annotateBridgeSummary, summarizeBridgeResponse } from '../../agent-clie
 
 export const REQUEST_SOURCE = 'mcp';
 const MCP_CLIENT_ID = `mcp_${randomUUID()}`;
-/** @type {AsyncLocalStorage<import('../../protocol/src/types.js').McpProtocolEra>} */
+/** @type {AsyncLocalStorage<{ era: import('../../protocol/src/types.js').McpProtocolEra, signal?: AbortSignal }>} */
 const MCP_REQUEST_ERA = new AsyncLocalStorage();
 
 /**
  * @template T
  * @param {import('../../protocol/src/types.js').McpProtocolEra} era
  * @param {() => T} callback
+ * @param {AbortSignal} [signal]
  * @returns {T}
  */
-export function runWithMcpRequestEra(era, callback) {
-  return MCP_REQUEST_ERA.run(era, callback);
+export function runWithMcpRequestEra(era, callback, signal) {
+  return MCP_REQUEST_ERA.run({ era, signal }, callback);
+}
+
+/** @returns {void} */
+export function throwIfMcpRequestCancelled() {
+  MCP_REQUEST_ERA.getStore()?.signal?.throwIfAborted();
+}
+
+/**
+ * Race request-owned work against cancellation and an optional absolute budget.
+ * Connection attempts can finish after close(), so dispose late completions too.
+ *
+ * @template T
+ * @param {() => Promise<T>} operation
+ * @param {{ timeoutMs?: number, onCancel?: () => void }} [options]
+ * @returns {Promise<T>}
+ */
+function awaitMcpOperation(operation, options = {}) {
+  const signal = MCP_REQUEST_ERA.getStore()?.signal;
+  const deadline = options.timeoutMs === undefined ? null : Date.now() + options.timeoutMs;
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let cancelled = false;
+    /** @type {ReturnType<typeof setTimeout> | undefined} */
+    let timer;
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    };
+    /** @param {unknown} error */
+    const cancel = (error) => {
+      if (settled) return;
+      settled = true;
+      cancelled = true;
+      cleanup();
+      options.onCancel?.();
+      reject(error);
+    };
+    const onAbort = () => cancel(signal?.reason);
+    const onTimeout = () => cancel(new BridgeError('TIMEOUT', 'MCP connection deadline exceeded.'));
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (deadline !== null) {
+      timer = setTimeout(onTimeout, Math.max(0, deadline - Date.now()));
+    }
+    Promise.resolve()
+      .then(() => {
+        if (deadline !== null && Date.now() >= deadline) onTimeout();
+        if (settled) return undefined;
+        return operation();
+      })
+      .then(
+        (result) => {
+          if (cancelled) options.onCancel?.();
+          if (!settled && deadline !== null && Date.now() >= deadline) onTimeout();
+          if (settled) return;
+          settled = true;
+          cleanup();
+          resolve(/** @type {T} */ (result));
+        },
+        (error) => {
+          if (cancelled) options.onCancel?.();
+          if (settled) return;
+          settled = true;
+          cleanup();
+          reject(error);
+        }
+      );
+  });
+}
+
+/**
+ * @param {number} delayMs
+ * @returns {Promise<void>}
+ */
+function waitForMcpRequest(delayMs) {
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let timer;
+  return awaitMcpOperation(
+    () =>
+      new Promise((resolve) => {
+        timer = setTimeout(resolve, delayMs);
+      }),
+    { onCancel: () => clearTimeout(timer) }
+  );
+}
+
+/**
+ * @param {import('../../agent-client/src/client.js').BridgeClient} client
+ * @param {number} timeoutMs
+ * @returns {Promise<void>}
+ */
+function connectMcpClient(client, timeoutMs) {
+  return awaitMcpOperation(() => client.connect(), {
+    timeoutMs,
+    onCancel: () => {
+      void client.close().catch(() => {});
+    },
+  });
 }
 
 /** @type {ReadonlySet<BridgeMethod>} */
@@ -107,7 +209,7 @@ const RETRY_SAFE_METHODS = new Set([
 export function isRetrySafeBridgeMethod(method, params) {
   if (method === 'page.get_console' || method === 'page.get_network') {
     return (
-      params.clear !== true &&
+      (params.clear === undefined || params.clear === false) &&
       (method !== 'page.get_network' ||
         params.source !== 'cdp' ||
         params.capture === undefined ||
@@ -227,24 +329,46 @@ export function summarizeToolError(error) {
  */
 export async function withToolClient(callback, options = {}) {
   try {
-    if (!options.destinationId) {
-      return await withBridgeClient(callback, {
-        checkProtocolOnConnect: false,
-        clientId: MCP_CLIENT_ID,
-      });
-    }
-    const client = await createBridgeClientForDestination(options.destinationId, {
-      checkProtocolOnConnect: false,
-      clientId: MCP_CLIENT_ID,
-    });
-    await client.connect();
-    try {
-      return await callback(client);
-    } finally {
-      await client.close();
-    }
+    return await withMcpRequestClient(callback, options);
   } catch (error) {
     return summarizeToolError(error);
+  }
+}
+
+/**
+ * @template T
+ * @param {(client: import('../../agent-client/src/client.js').BridgeClient) => Promise<T>} callback
+ * @param {{ destinationId?: string | null }} [options]
+ * @returns {Promise<T>}
+ */
+export async function withMcpRequestClient(callback, options = {}) {
+  throwIfMcpRequestCancelled();
+  const client = await createBridgeClientForDestination(options.destinationId, {
+    checkProtocolOnConnect: false,
+    clientId: MCP_CLIENT_ID,
+  });
+  let completed = false;
+  try {
+    const result = await awaitMcpOperation(
+      async () => {
+        await connectMcpClient(client, client.defaultTimeoutMs);
+        throwIfMcpRequestCancelled();
+        return callback(client);
+      },
+      {
+        onCancel: () => {
+          void client.close().catch(() => {});
+        },
+      }
+    );
+    completed = true;
+    return result;
+  } finally {
+    if (completed) {
+      await client.close();
+    } else {
+      await client.close().catch(() => {});
+    }
   }
 }
 
@@ -255,11 +379,33 @@ export async function withToolClient(callback, options = {}) {
  * @returns {Promise<string>}
  */
 export async function resolveToolRef(client, input, tabId = null) {
+  throwIfMcpRequestCancelled();
   if (typeof input.elementRef === 'string' && input.elementRef) {
     return input.elementRef;
   }
   if (typeof input.selector === 'string' && input.selector) {
-    return resolveRef(client, input.selector, tabId, REQUEST_SOURCE);
+    const response = await requestBridgeWithRetry(
+      client,
+      'dom.query',
+      {
+        selector: input.selector,
+      },
+      { tabId, source: REQUEST_SOURCE }
+    );
+    if (!response.ok) {
+      throw new BridgeError(response.error.code, response.error.message, response.error.details);
+    }
+    const result = /** @type {{ nodes?: Array<{ elementRef: string }> }} */ (response.result);
+    if (!result.nodes?.length) {
+      throw new BridgeError(
+        'INVALID_REQUEST',
+        `No element found for selector "${input.selector}".`,
+        {
+          selector: input.selector,
+        }
+      );
+    }
+    return result.nodes[0].elementRef;
   }
   throw new BridgeError('INVALID_REQUEST', 'Provide either elementRef or selector.');
 }
@@ -570,7 +716,7 @@ export function isConnectionLossError(error) {
  * Wait, bounded, for the client to regain its daemon connection.
  *
  * When the client's own auto-reconnect loop is active it owns reconnecting and
- * emits `reconnected`; otherwise one manual connect is attempted per poll
+ * reconnects independently; otherwise one manual connect is attempted per poll
  * interval. Application state is never touched here - this only restores the
  * transport.
  *
@@ -580,26 +726,17 @@ export function isConnectionLossError(error) {
  */
 export async function waitForClientReconnect(client, timeoutMs = RECONNECT_WAIT_TIMEOUT_MS) {
   const deadline = Date.now() + timeoutMs;
+  throwIfMcpRequestCancelled();
   while (!client.connected && Date.now() < deadline) {
     if (client.autoReconnect) {
-      await new Promise((resolve) => {
-        const remaining = Math.max(0, deadline - Date.now());
-        /** @type {ReturnType<typeof setTimeout>} */
-        let timer;
-        const cleanup = () => {
-          clearTimeout(timer);
-          client.off('reconnected', onReconnected);
-          resolve(undefined);
-        };
-        const onReconnected = () => cleanup();
-        timer = setTimeout(cleanup, Math.min(RECONNECT_POLL_INTERVAL_MS, remaining));
-        client.on('reconnected', onReconnected);
-      });
+      await waitForMcpRequest(Math.min(RECONNECT_POLL_INTERVAL_MS, deadline - Date.now()));
       continue;
     }
     try {
-      await client.connect();
+      await connectMcpClient(client, deadline - Date.now());
     } catch (error) {
+      throwIfMcpRequestCancelled();
+      if (error instanceof BridgeError && error.code === 'TIMEOUT') return false;
       if (error instanceof Error && /already connected/u.test(error.message)) {
         break;
       }
@@ -607,9 +744,7 @@ export async function waitForClientReconnect(client, timeoutMs = RECONNECT_WAIT_
     }
     if (!client.connected) {
       const remaining = Math.max(0, deadline - Date.now());
-      await new Promise((resolve) =>
-        setTimeout(resolve, Math.min(RECONNECT_POLL_INTERVAL_MS, remaining))
-      );
+      await waitForMcpRequest(Math.min(RECONNECT_POLL_INTERVAL_MS, remaining));
     }
   }
   return client.connected;
@@ -625,13 +760,22 @@ export async function waitForClientReconnect(client, timeoutMs = RECONNECT_WAIT_
 export async function requestBridgeWithRetry(client, method, params, options) {
   const requestOptions = {
     ...options,
-    mcpEra: options.mcpEra ?? MCP_REQUEST_ERA.getStore(),
+    mcpEra: options.mcpEra ?? MCP_REQUEST_ERA.getStore()?.era,
   };
+  /** @param {typeof requestOptions} attemptOptions */
+  const attempt = (attemptOptions) =>
+    awaitMcpOperation(async () => {
+      throwIfMcpRequestCancelled();
+      if (!client.connected) await connectMcpClient(client, client.defaultTimeoutMs);
+      throwIfMcpRequestCancelled();
+      return requestBridge(client, method, params, attemptOptions);
+    });
   /** @type {BridgeResponse} */
   let response;
   try {
-    response = await requestBridge(client, method, params, requestOptions);
+    response = await attempt(requestOptions);
   } catch (error) {
+    throwIfMcpRequestCancelled();
     if (!isConnectionLossError(error) || !isRetrySafeBridgeMethod(method, params)) {
       throw error;
     }
@@ -641,7 +785,7 @@ export async function requestBridgeWithRetry(client, method, params, options) {
     if (!(await waitForClientReconnect(client))) {
       throw error;
     }
-    return requestBridge(client, method, params, {
+    return attempt({
       ...requestOptions,
       automaticRetry: 'mcp_second_attempt',
     });
@@ -655,8 +799,8 @@ export async function requestBridgeWithRetry(client, method, params, options) {
     process.stderr.write(
       `[bbx-mcp] Retrying ${method} after ${delay}ms (${response.error.code})\n`
     );
-    await new Promise((r) => setTimeout(r, delay));
-    return requestBridge(client, method, params, {
+    await waitForMcpRequest(delay);
+    return attempt({
       ...requestOptions,
       automaticRetry: 'mcp_second_attempt',
     });

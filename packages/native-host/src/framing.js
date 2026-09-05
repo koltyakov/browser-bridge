@@ -1,8 +1,110 @@
 // @ts-check
 
-import { once } from 'node:events';
-
 import { MAX_JSON_LINE_BYTES, MAX_NATIVE_MESSAGE_BYTES } from '../../protocol/src/index.js';
+
+export const MAX_OUTPUT_QUEUE_BYTES = 4 * MAX_JSON_LINE_BYTES;
+export const MAX_OUTPUT_QUEUE_MESSAGES = 128;
+export const OUTPUT_DRAIN_TIMEOUT_MS = 30_000;
+
+/** @typedef {NodeJS.WritableStream & { destroyed?: boolean, writableEnded?: boolean, destroy?: () => unknown }} OutputStream */
+/** @typedef {{ parts: Array<string | Buffer>, bytes: number, resolve: () => void, reject: (error: Error) => void }} QueuedWrite */
+
+/** @param {OutputStream} stream @returns {(parts: Array<string | Buffer>) => Promise<void>} */
+function createBoundedWriter(stream) {
+  /** @type {QueuedWrite[]} */
+  const queue = [];
+  let bytes = 0;
+  let running = false;
+  /** @type {Error | null} */
+  let failure = null;
+  /** @type {((error: Error) => void) | null} */
+  let cancelDrain = null;
+
+  /** @param {Error} error */
+  function fail(error) {
+    failure ??= error;
+    cancelDrain?.(error);
+    for (const entry of queue.splice(0)) entry.reject(error);
+    bytes = 0;
+    stream.destroy?.();
+  }
+
+  async function pump() {
+    if (running) return;
+    running = true;
+    try {
+      while (queue.length && !failure) {
+        const entry = queue[0];
+        for (const part of entry.parts) {
+          if (failure) throw failure;
+          if (stream.destroyed || stream.writableEnded) throw new Error('Output stream closed.');
+          if (!stream.write(part)) {
+            await new Promise((resolve, reject) => {
+              const timer = setTimeout(
+                () => finish(new Error('Output drain timed out.')),
+                OUTPUT_DRAIN_TIMEOUT_MS
+              );
+              timer.unref?.();
+              /** @param {Error} [error] */
+              function finish(error) {
+                clearTimeout(timer);
+                stream.removeListener('drain', drained);
+                stream.removeListener('close', closed);
+                stream.removeListener('error', finish);
+                cancelDrain = null;
+                if (error) reject(error);
+                else resolve(undefined);
+              }
+              const drained = () => finish();
+              const closed = () => finish(new Error('Output stream closed while writing.'));
+              cancelDrain = finish;
+              stream.once('drain', drained);
+              stream.once('close', closed);
+              stream.once('error', finish);
+            });
+          }
+        }
+        if (failure) break;
+        queue.shift();
+        bytes -= entry.bytes;
+        entry.resolve();
+      }
+    } catch (error) {
+      fail(error instanceof Error ? error : new Error(String(error)));
+    } finally {
+      running = false;
+    }
+  }
+
+  return (parts) => {
+    if (failure) return Promise.reject(failure);
+    const size = parts.reduce((total, part) => total + Buffer.byteLength(part), 0);
+    if (queue.length >= MAX_OUTPUT_QUEUE_MESSAGES || bytes + size > MAX_OUTPUT_QUEUE_BYTES) {
+      const error = new Error('Output queue limit exceeded.');
+      fail(error);
+      return Promise.reject(error);
+    }
+    const result = new Promise((resolve, reject) => {
+      queue.push({ parts, bytes: size, resolve: () => resolve(undefined), reject });
+      bytes += size;
+    });
+    void pump();
+    return result;
+  };
+}
+
+/** @type {WeakMap<OutputStream, ReturnType<typeof createBoundedWriter>>} */
+const outputWriters = new WeakMap();
+
+/** @param {OutputStream} stream @param {Array<string | Buffer>} parts */
+function writeParts(stream, parts) {
+  let writer = outputWriters.get(stream);
+  if (!writer) {
+    writer = createBoundedWriter(stream);
+    outputWriters.set(stream, writer);
+  }
+  return writer(parts);
+}
 
 /**
  * @param {NodeJS.WritableStream} stream
@@ -16,12 +118,7 @@ export async function writeNativeMessage(stream, message) {
   }
   const header = Buffer.alloc(4);
   header.writeUInt32LE(payload.length, 0);
-  if (!stream.write(header)) {
-    await once(stream, 'drain');
-  }
-  if (!stream.write(payload)) {
-    await once(stream, 'drain');
-  }
+  await writeParts(stream, [header, payload]);
 }
 
 /**
@@ -29,12 +126,7 @@ export async function writeNativeMessage(stream, message) {
  * @returns {(message: unknown) => Promise<void>}
  */
 export function createNativeMessageWriter(stream) {
-  let queue = Promise.resolve();
-  return (message) => {
-    const writePromise = queue.then(() => writeNativeMessage(stream, message));
-    queue = writePromise.catch(() => {});
-    return writePromise;
-  };
+  return (message) => writeNativeMessage(stream, message);
 }
 
 /**
@@ -198,7 +290,5 @@ export async function writeJsonLine(socket, message) {
   if (byteLength > MAX_JSON_LINE_BYTES) {
     throw new Error(`JSON line exceeds ${MAX_JSON_LINE_BYTES} bytes: ${byteLength}`);
   }
-  if (!socket.write(line)) {
-    await once(socket, 'drain');
-  }
+  await writeParts(socket, [line]);
 }

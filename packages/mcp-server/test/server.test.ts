@@ -288,13 +288,16 @@ test('browser_toolset loads one exact tool at a time and is idempotent', async (
     assert.ok(toolset);
     assert.equal(registrations.size, 21);
 
-    const handler = toolset.handler as (args: {
-      tool: string;
-    }) =>
+    const handler = toolset.handler as (
+      args: {
+        tool: string;
+      },
+      context: { mcpReq: { signal: AbortSignal } }
+    ) =>
       | { structuredContent: Record<string, unknown> }
       | Promise<{ structuredContent: Record<string, unknown> }>;
     const load = async (tool: string): Promise<Record<string, unknown>> => {
-      const result = await handler({ tool });
+      const result = await handler({ tool }, { mcpReq: { signal: new AbortController().signal } });
       return {
         tool: result.structuredContent.tool,
         newlyEnabled: result.structuredContent.newlyEnabled,

@@ -235,14 +235,16 @@ test('ensureBridgeAuthToken creates a token file when none exists', async () => 
       calls.push(`chmod:${String(file)}:${String(mode)}`);
     },
     randomBytesFn: () => Buffer.from('abcdefghijklmnopqrstuvwxyz123456'),
+    link: async () => {},
+    unlink: async () => {},
   });
 
   assert.equal(token, GENERATED_TOKEN);
-  assert.deepEqual(calls, [
-    `mkdir:${path.dirname(tokenPath)}:{"recursive":true}`,
-    `write:${tokenPath}:${GENERATED_TOKEN}\n:{"encoding":"utf8","mode":384}`,
-    ...(process.platform === 'win32' ? [] : [`chmod:${tokenPath}:384`]),
-  ]);
+  assert.equal(calls[0], `mkdir:${path.dirname(tokenPath)}:{"recursive":true}`);
+  assert.ok(calls[1].includes(`${GENERATED_TOKEN}\n:{"encoding":"utf8","mode":384,"flag":"wx"}`));
+  assert.ok(calls[1].includes('.tmp:'));
+  assert.ok(calls[2].includes(`.tmp.owner:${process.pid}:`));
+  assert.equal(calls.length, process.platform === 'win32' ? 3 : 4);
 });
 
 test('ensureBridgeAuthToken ignores chmod failures after writing the token', async () => {
@@ -259,6 +261,8 @@ test('ensureBridgeAuthToken ignores chmod failures after writing the token', asy
       throw new Error('chmod unavailable');
     },
     randomBytesFn: () => Buffer.from('abcdefghijklmnopqrstuvwxyz123456'),
+    link: async () => {},
+    unlink: async () => {},
   });
 
   assert.equal(token, GENERATED_TOKEN);

@@ -54,6 +54,162 @@ function enablePatterns(command: SentCommand | undefined): string[] {
   return patterns.map((p) => p.urlPattern);
 }
 
+function createDeferred() {
+  let resolve = () => {};
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+function createCoordinatorHarness(
+  options: {
+    attach?: () => Promise<void>;
+    sendCommand?: (method: string) => Promise<void>;
+  } = {}
+) {
+  const sent: SentCommand[] = [];
+  const filters = new Map<number, FetchEventHandler>();
+  let detachCount = 0;
+  const coordinator = new TabDebuggerCoordinator({
+    attach: options.attach ?? (async () => {}),
+    detach: async () => {
+      detachCount += 1;
+    },
+  });
+  const interceptor = createFetchInterceptor({
+    acquireDebugger: (tabId, init) => coordinator.acquire(tabId, init),
+    releaseDebugger: (tabId) => coordinator.release(tabId),
+    assertDebuggerAvailable: (tabId) => coordinator.assertCanStart(tabId),
+    sendCommand: async ({ tabId }, method, params) => {
+      sent.push({ tabId, method, params: params as Record<string, unknown> });
+      await options.sendCommand?.(method);
+      return {};
+    },
+    addEventFilter: (tabId, handler) => filters.set(tabId, handler),
+    removeEventFilter: (tabId) => filters.delete(tabId),
+  });
+  return { coordinator, interceptor, sent, filters, getDetachCount: () => detachCount };
+}
+
+test('stalled acquisition bounds flooded additions and mutations while reserving cleanup', async () => {
+  const attaching = createDeferred();
+  const attached = createDeferred();
+  const { interceptor, coordinator } = createCoordinatorHarness({
+    async attach() {
+      attaching.resolve();
+      await attached.promise;
+    },
+  });
+  let rejected = 0;
+  const observe = <T>(operation: Promise<T>) =>
+    operation.catch((error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /at most 32|capacity exceeded/);
+      rejected += 1;
+      return null;
+    });
+  const first = interceptor.addRule(1, { urlPattern: '*', action: 'block' });
+  await attaching.promise;
+  const adds = Array.from({ length: 999 }, () =>
+    observe(interceptor.addRule(1, { urlPattern: '*', action: 'block' }))
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(rejected, 968); // One running and 31 queued additions consume the rule quota.
+  const removes = Array.from({ length: 1000 }, () => observe(interceptor.removeRule(1, 'missing')));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(rejected, 1936); // Only 32 more mutations fit the per-tab queue.
+  const clearing = interceptor.clearAllRules(1);
+  const clears = Array.from({ length: 999 }, () => observe(interceptor.clearAllRules(1)));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(rejected, 2935);
+  attached.resolve();
+  await first;
+  await Promise.all([...adds, ...removes, ...clears]);
+  assert.equal(await clearing, 32);
+  assert.deepEqual(interceptor.listRules(1), []);
+  assert.equal(coordinator.getDiagnostics().status, 'idle');
+  await interceptor.addRule(1, { urlPattern: '*recovered*', action: 'continue' });
+  await interceptor.clearAllRules(1);
+});
+
+test('global admission bounds pending work but allows each saturated tab to clear', async () => {
+  const attached = createDeferred();
+  const { interceptor, coordinator } = createCoordinatorHarness({ attach: () => attached.promise });
+  const adds: Array<Promise<unknown>> = [];
+  for (let tabId = 1; tabId <= 8; tabId += 1) {
+    for (let rule = 0; rule < 32; rule += 1) {
+      adds.push(interceptor.addRule(tabId, { urlPattern: '*', action: 'block' }));
+    }
+  }
+  await assert.rejects(interceptor.removeRule(1, 'missing'), /capacity exceeded/);
+  await assert.rejects(interceptor.addRule(9, { urlPattern: '*' }), /capacity exceeded/);
+  const clears = Array.from({ length: 8 }, (_, index) => interceptor.clearAllRules(index + 1));
+  attached.resolve();
+  await Promise.all(adds);
+  assert.deepEqual(await Promise.all(clears), Array(8).fill(32));
+  assert.equal(coordinator.getDiagnostics().status, 'idle');
+  await interceptor.addRule(9, { urlPattern: '*' });
+  await interceptor.clearAllRules(9);
+});
+
+test('admission bounds retained tabs and frees capacity after cleanup', async () => {
+  const attached = createDeferred();
+  const { interceptor, coordinator } = createCoordinatorHarness({ attach: () => attached.promise });
+  let rejected = 0;
+  const adds = Array.from({ length: 1000 }, (_, index) =>
+    interceptor.addRule(index + 1, { urlPattern: '*' }).catch((error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /capacity exceeded/);
+      rejected += 1;
+    })
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(rejected, 936);
+  attached.resolve();
+  await Promise.all(adds);
+  await assert.rejects(interceptor.addRule(1001, { urlPattern: '*' }), /capacity exceeded/);
+  await interceptor.clearAllRules(1);
+  await interceptor.addRule(1001, { urlPattern: '*' });
+  await Promise.all(Array.from({ length: 64 }, (_, index) => interceptor.clearAllRules(index + 1)));
+  await interceptor.clearAllRules(1001);
+  assert.equal(coordinator.getDiagnostics().status, 'idle');
+});
+
+test('teardown retry retains its reserved admission when global work is saturated', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const attached = createDeferred();
+  let stall = false;
+  let failDisable = true;
+  const { interceptor, coordinator, filters } = createCoordinatorHarness({
+    async attach() {
+      if (stall) await attached.promise;
+    },
+    async sendCommand(method) {
+      if (method === 'Fetch.disable' && failDisable) throw new Error('temporary failure');
+    },
+  });
+  await coordinator.acquire(1);
+  await interceptor.addRule(1, { urlPattern: '*' });
+  stall = true;
+  const adds = Array.from({ length: 256 }, (_, index) =>
+    interceptor.addRule(2 + Math.floor(index / 32), { urlPattern: '*' })
+  );
+  await assert.rejects(interceptor.removeRule(1, 'missing'), /capacity exceeded/);
+  await assert.rejects(interceptor.clearAllRules(1), /temporary failure/);
+  assert.equal(filters.has(1), true);
+  failDisable = false;
+  t.mock.timers.tick(5_000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(filters.has(1), false);
+  assert.equal(coordinator.holdsByTab.get(1), 1);
+  attached.resolve();
+  await Promise.all(adds);
+  await Promise.all(Array.from({ length: 8 }, (_, index) => interceptor.clearAllRules(index + 2)));
+  await coordinator.release(1);
+  assert.equal(coordinator.getDiagnostics().status, 'idle');
+});
+
 test('Fetch holds share Page-initialized attachments and recover together after detach', async () => {
   const events: string[] = [];
   const coordinator = new TabDebuggerCoordinator({
@@ -135,7 +291,7 @@ test('addRule enforces the per-tab rule cap and does not expose compiled matcher
 
   await assert.rejects(
     interceptor.addRule(1, { urlPattern: '*overflow*', action: 'continue' }),
-    /at most 32 active interception rules/
+    /at most 32 active or pending interception rules/
   );
   assert.equal(interceptor.listRules(1).length, MAX_INTERCEPT_RULES_PER_TAB);
   assert.equal(
@@ -197,18 +353,194 @@ test('clearAllRules reports the cleared count and releases the tab', async () =>
   assert.equal(await interceptor.clearAllRules(2), 0);
 });
 
-test('Fetch disable failures still release the debugger hold', async () => {
-  const { interceptor, released } = createHarness({
-    sendCommandError: (method) =>
-      method === 'Fetch.disable' ? new Error('already disabled') : null,
+test('failed Fetch teardown retains shared ownership and passes requests through until retry succeeds', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let failDisable = true;
+  const { coordinator, interceptor, sent, filters, getDetachCount } = createCoordinatorHarness({
+    async sendCommand(method) {
+      if (method === 'Fetch.disable' && failDisable) throw new Error('temporary CDP failure');
+    },
   });
-  await interceptor.addRule(1, { urlPattern: '*', action: 'continue' });
+  await coordinator.acquire(1); // A separate domain retains the physical session.
+  await interceptor.addRule(1, { urlPattern: '*', action: 'block' });
+  await assert.rejects(interceptor.clearAllRules(1), /temporary CDP failure/);
+  assert.equal(coordinator.holdsByTab.get(1), 2);
+  assert.equal(getDetachCount(), 0);
+  assert.deepEqual(interceptor.listRules(1), []);
+  assert.deepEqual(interceptor.getDiagnostics(), {
+    status: 'active',
+    activeTabCount: 1,
+    ruleCount: 0,
+  });
+  filters.get(1)?.('Fetch.requestPaused', {
+    requestId: 'during-stop',
+    request: { url: 'https://example.com', headers: {} },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(
+    sent.some(
+      (command) =>
+        command.method === 'Fetch.continueRequest' && command.params.requestId === 'during-stop'
+    )
+  );
+  assert.equal(
+    sent.some((command) => command.method === 'Fetch.failRequest'),
+    false
+  );
+
+  t.mock.timers.tick(4_999);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sent.filter((command) => command.method === 'Fetch.disable').length, 1);
+  t.mock.timers.tick(1);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sent.filter((command) => command.method === 'Fetch.disable').length, 2);
+  assert.equal(filters.has(1), true);
+  assert.equal(coordinator.holdsByTab.get(1), 2);
+
+  failDisable = false;
+  t.mock.timers.tick(5_000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(filters.has(1), false);
+  assert.equal(coordinator.holdsByTab.get(1), 1);
+  assert.equal(getDetachCount(), 0);
+  assert.equal(interceptor.getDiagnostics().status, 'idle');
+  await coordinator.release(1);
+  assert.equal(getDetachCount(), 1);
+});
+
+test('clear waits for pending acquisition and releases its completed hold', async () => {
+  const attaching = createDeferred();
+  const attached = createDeferred();
+  const { coordinator, interceptor, sent, filters, getDetachCount } = createCoordinatorHarness({
+    async attach() {
+      attaching.resolve();
+      await attached.promise;
+    },
+  });
+  const adding = interceptor.addRule(1, { urlPattern: '*', action: 'block' });
+  await attaching.promise;
+  const clearing = interceptor.clearAllRules(1);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sent.length, 0);
+  attached.resolve();
+  await adding;
+  assert.equal(await clearing, 1);
+  assert.deepEqual(
+    sent.map((command) => command.method),
+    ['Fetch.enable', 'Fetch.disable']
+  );
+  assert.deepEqual(interceptor.listRules(1), []);
+  assert.equal(filters.has(1), false);
+  assert.equal(coordinator.holdsByTab.size, 0);
+  assert.equal(coordinator.getDiagnostics().status, 'idle');
+  assert.equal(getDetachCount(), 1);
+});
+
+test('new rules cannot overtake pending teardown or be removed by an old retry', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const disabling = createDeferred();
+  const disabled = createDeferred();
+  let disableCount = 0;
+  const { coordinator, interceptor, filters, sent } = createCoordinatorHarness({
+    async sendCommand(method) {
+      if (method !== 'Fetch.disable') return;
+      disableCount += 1;
+      if (disableCount === 1) throw new Error('temporary CDP failure');
+      if (disableCount === 2) {
+        disabling.resolve();
+        await disabled.promise;
+      }
+    },
+  });
+  await coordinator.acquire(1);
+  await interceptor.addRule(1, { urlPattern: '*old*', action: 'block' });
+  await assert.rejects(interceptor.clearAllRules(1), /temporary CDP failure/);
+  const adding = interceptor.addRule(1, { urlPattern: '*new*', action: 'block' });
+  await disabling.promise;
+  assert.equal(filters.has(1), true);
+  assert.equal(coordinator.holdsByTab.get(1), 2);
+  assert.equal(sent.filter((command) => command.method === 'Fetch.enable').length, 1);
+  disabled.resolve();
+  const rule = await adding;
+  t.mock.timers.tick(5_000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(interceptor.listRules(1), [rule]);
+  assert.equal(coordinator.holdsByTab.get(1), 2);
+  assert.equal(filters.has(1), true);
+  await interceptor.clearAllRules(1);
+  await coordinator.release(1);
+});
+
+test('physical detach cancels failed teardown retries without releasing another session', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let failDisable = true;
+  const { coordinator, interceptor, filters, sent } = createCoordinatorHarness({
+    async sendCommand(method) {
+      if (method === 'Fetch.disable' && failDisable) throw new Error('temporary CDP failure');
+    },
+  });
+  await coordinator.acquire(1);
+  await interceptor.addRule(1, { urlPattern: '*', action: 'block' });
+  await assert.rejects(interceptor.clearAllRules(1), /temporary CDP failure/);
+  coordinator.handleDetach(1, 'canceled_by_user');
+  interceptor.handleDetach(1);
+  assert.equal(filters.has(1), false);
+  failDisable = false;
+  const rule = await interceptor.addRule(1, { urlPattern: '*new*', action: 'continue' });
+  t.mock.timers.tick(5_000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sent.filter((command) => command.method === 'Fetch.disable').length, 1);
+  assert.deepEqual(interceptor.listRules(1), [rule]);
+  assert.equal(coordinator.holdsByTab.get(1), 1);
+  await interceptor.clearAllRules(1);
+});
+
+test('explicit debugger cleanup can confirm detachment through Fetch.disable without an event', async () => {
+  let detached = false;
+  const { coordinator, interceptor, filters, sent } = createCoordinatorHarness({
+    async sendCommand(method) {
+      if (detached && method === 'Fetch.disable')
+        throw new Error('Debugger is not attached to the tab with id: 1.');
+    },
+  });
+  await interceptor.addRule(1, { urlPattern: '*', action: 'block' });
+  await coordinator.discard(1);
+  detached = true;
   assert.equal(await interceptor.clearAllRules(1), 1);
-  assert.deepEqual(released, [1]);
+  assert.equal(filters.has(1), false);
+  assert.equal(interceptor.getDiagnostics().status, 'idle');
+  assert.equal(sent.filter((command) => command.method === 'Fetch.disable').length, 1);
+  assert.equal(coordinator.holdsByTab.size, 0);
+});
+
+test('an expired TTL queued behind an add cannot clear its renewed rules', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const enabling = createDeferred();
+  const enabled = createDeferred();
+  let enableCount = 0;
+  const { interceptor } = createCoordinatorHarness({
+    async sendCommand(method) {
+      if (method === 'Fetch.enable' && ++enableCount === 2) {
+        enabling.resolve();
+        await enabled.promise;
+      }
+    },
+  });
+  const first = await interceptor.addRule(1, { urlPattern: '*first*', action: 'block' });
+  const adding = interceptor.addRule(1, { urlPattern: '*second*', action: 'block' });
+  await enabling.promise;
+  t.mock.timers.tick(10 * 60 * 1000);
+  enabled.resolve();
+  const second = await adding;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(interceptor.listRules(1), [first, second]);
+  t.mock.timers.tick(10 * 60 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(interceptor.listRules(1), []);
 });
 
 test('addRule rolls back the rule when debugger acquisition fails', async () => {
-  const { interceptor, filters, sent } = createHarness({
+  const { interceptor, filters, sent, released } = createHarness({
     acquireError: new Error('Cannot attach'),
   });
 
@@ -219,6 +551,60 @@ test('addRule rolls back the rule when debugger acquisition fails', async () => 
   assert.deepEqual(interceptor.listRules(3), []);
   assert.equal(filters.has(3), false);
   assert.equal(lastEnable(sent), undefined);
+  assert.deepEqual(released, []);
+});
+
+test('detach during Fetch.enable rejects the stale add and lets queued acquisition recover', async () => {
+  const enabling = createDeferred();
+  const enabled = createDeferred();
+  let enableCount = 0;
+  const { coordinator, interceptor, filters } = createCoordinatorHarness({
+    async sendCommand(method) {
+      if (method === 'Fetch.enable' && ++enableCount === 1) {
+        enabling.resolve();
+        await enabled.promise;
+      }
+    },
+  });
+  const adding = interceptor.addRule(1, { urlPattern: '*old*', action: 'block' });
+  const rejected = assert.rejects(adding, /Debugger detached while adding/);
+  await enabling.promise;
+  coordinator.handleDetach(1, 'canceled_by_user');
+  interceptor.handleDetach(1);
+  assert.equal(filters.has(1), false);
+  const next = interceptor.addRule(1, { urlPattern: '*new*', action: 'block' });
+  enabled.resolve();
+  await rejected;
+  const rule = await next;
+  assert.deepEqual(interceptor.listRules(1), [rule]);
+  assert.equal(coordinator.holdsByTab.get(1), 1);
+  assert.equal(filters.has(1), true);
+  await interceptor.clearAllRules(1);
+});
+
+test('failed Fetch.enable cleanup retains pass-through ownership and preserves the original error', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let fail = true;
+  const { coordinator, interceptor, filters } = createCoordinatorHarness({
+    async sendCommand(method) {
+      if (fail && method === 'Fetch.enable') throw new Error('enable failed');
+      if (fail && method === 'Fetch.disable') throw new Error('disable failed');
+    },
+  });
+  await coordinator.acquire(1);
+  await assert.rejects(
+    interceptor.addRule(1, { urlPattern: '*', action: 'block' }),
+    /enable failed/
+  );
+  assert.equal(coordinator.holdsByTab.get(1), 2);
+  assert.equal(filters.has(1), true);
+  assert.deepEqual(interceptor.listRules(1), []);
+  fail = false;
+  t.mock.timers.tick(5_000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(coordinator.holdsByTab.get(1), 1);
+  assert.equal(filters.has(1), false);
+  await coordinator.release(1);
 });
 
 test('addRule rejects invalid actions, status codes, bodies, and headers before acquiring', async () => {

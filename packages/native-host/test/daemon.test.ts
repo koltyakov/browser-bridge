@@ -2586,6 +2586,10 @@ test(
 
     try {
       await first.start();
+      // Startup liveness must not wait for this connected, unresponsive extension.
+      const silentExtension = createFakeSocket();
+      silentExtension.destroy = () => silentExtension;
+      first.extensionSockets.set('silent-extension', silentExtension);
       const bytes = Buffer.from('preserved artifact');
       const artifactId = `art_${'f'.repeat(43)}`;
       firstStore.begin({
@@ -2617,7 +2621,7 @@ test(
 );
 
 test(
-  'daemon start removes a stale socket when the probe returns invalid JSON',
+  'daemon start preserves a live socket even when its protocol is unusable',
   {
     skip: process.platform === 'win32' ? 'Unix socket probing is not applicable on Windows' : false,
   },
@@ -2647,10 +2651,12 @@ test(
     });
 
     try {
-      await daemon.start();
-      assert.ok(
-        logs.some((entry) => entry.join(' ').includes('Removing stale socket from previous run'))
+      await assert.rejects(daemon.start(), /Another daemon is already running/);
+      assert.equal(
+        logs.some((entry) => entry.join(' ').includes('Removing stale socket')),
+        false
       );
+      assert.equal((await fs.promises.stat(staleServer.socketPath)).isSocket(), true);
     } finally {
       await daemon.stop().catch(() => {});
       await staleServer.close();

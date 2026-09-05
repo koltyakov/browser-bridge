@@ -32,10 +32,14 @@ import {
 
 /** @typedef {{ ruleId: string, urlPattern: string, action: 'fulfill' | 'continue' | 'block', statusCode?: number, body?: string, headers?: Record<string, string> }} InterceptRule */
 /** @typedef {InterceptRule & { matcher: RegExp }} StoredInterceptRule */
-/** @typedef {{ rules: Map<string, StoredInterceptRule>, acquirePromise?: Promise<void>, ttlTimer?: ReturnType<typeof setTimeout> }} TabInterceptState */
+/** @typedef {{ rules: Map<string, StoredInterceptRule>, ownsDebugger: boolean, ttlTimer?: ReturnType<typeof setTimeout> }} TabInterceptState */
 
 const TTL_MS = 10 * 60 * 1000; // 10 minutes
+const TEARDOWN_RETRY_MS = 5_000;
 const MAX_DIAGNOSTIC_COUNT = 10_000;
+const MAX_PENDING_PER_TAB = 64;
+const MAX_PENDING_GLOBAL = 256;
+const MAX_TRACKED_TABS = 64;
 
 /** @typedef {Omit<InterceptRule, 'ruleId'>} InterceptRuleInput */
 
@@ -62,8 +66,77 @@ export function validateInterceptRule(input) {
 export function createFetchInterceptor(deps) {
   /** @type {Map<number, TabInterceptState>} */
   const tabStates = new Map();
+  /** @type {Map<number, Promise<void>>} */
+  const lifecycleQueues = new Map();
+  /** @type {Map<number, { pending: number, additions: number, cleanup: boolean }>} */
+  const admissions = new Map();
+  let pendingGlobal = 0;
 
   let ruleCounter = 0;
+
+  /**
+   * @template T
+   * @param {number} tabId
+   * @param {(publishAddition: () => void) => Promise<T>} task
+   * @param {'mutation' | 'add' | 'cleanup'} [kind]
+   * @returns {Promise<T>}
+   */
+  async function runLifecycle(tabId, task, kind = 'mutation') {
+    const admission = admissions.get(tabId) ?? { pending: 0, additions: 0, cleanup: false };
+    const cleanup = kind === 'cleanup';
+    // Reserve one cleanup slot per retained tab, outside ordinary work limits.
+    // Reject duplicates instead of retaining unbounded waiters on a shared promise.
+    if (
+      admission.cleanup ||
+      (!cleanup &&
+        (admission.pending >= MAX_PENDING_PER_TAB || pendingGlobal >= MAX_PENDING_GLOBAL)) ||
+      (!admissions.has(tabId) &&
+        !tabStates.has(tabId) &&
+        new Set([...admissions.keys(), ...tabStates.keys()]).size >= MAX_TRACKED_TABS)
+    ) {
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        'Interception lifecycle capacity exceeded or cleanup already pending. Retry after pending work completes.'
+      );
+    }
+    if (
+      kind === 'add' &&
+      (tabStates.get(tabId)?.rules.size ?? 0) + admission.additions >= MAX_INTERCEPT_RULES_PER_TAB
+    ) {
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        `A tab may have at most ${MAX_INTERCEPT_RULES_PER_TAB} active or pending interception rules.`
+      );
+    }
+    admissions.set(tabId, admission);
+    admission.pending += 1;
+    if (cleanup) admission.cleanup = true;
+    else pendingGlobal += 1;
+    let reserved = kind === 'add';
+    if (reserved) admission.additions += 1;
+    const publishAddition = () => {
+      if (!reserved) return;
+      reserved = false;
+      admission.additions -= 1;
+    };
+    const previous = lifecycleQueues.get(tabId) ?? Promise.resolve();
+    const operation = previous.then(() => task(publishAddition));
+    const tail = operation.then(
+      () => {},
+      () => {}
+    );
+    lifecycleQueues.set(tabId, tail);
+    try {
+      return await operation;
+    } finally {
+      publishAddition();
+      admission.pending -= 1;
+      if (cleanup) admission.cleanup = false;
+      else pendingGlobal -= 1;
+      if (admission.pending === 0) admissions.delete(tabId);
+      if (lifecycleQueues.get(tabId) === tail) lifecycleQueues.delete(tabId);
+    }
+  }
 
   /**
    * @param {number} tabId
@@ -72,18 +145,29 @@ export function createFetchInterceptor(deps) {
   function getOrCreateState(tabId) {
     let s = tabStates.get(tabId);
     if (!s) {
-      s = { rules: new Map() };
+      s = { rules: new Map(), ownsDebugger: false };
       tabStates.set(tabId, s);
     }
     return s;
   }
 
-  /** @param {number} tabId */
-  function resetTtl(tabId) {
+  /** @param {number} tabId @param {number} [delayMs] */
+  function resetTtl(tabId, delayMs = TTL_MS) {
     const s = tabStates.get(tabId);
     if (!s) return;
     if (s.ttlTimer) clearTimeout(s.ttlTimer);
-    s.ttlTimer = setTimeout(() => clearAllRules(tabId), TTL_MS);
+    const timer = setTimeout(() => {
+      void runLifecycle(
+        tabId,
+        async () => {
+          if (tabStates.get(tabId) !== s || s.ttlTimer !== timer) return;
+          s.rules.clear();
+          await releaseTab(tabId, s);
+        },
+        'cleanup'
+      ).catch(() => {});
+    }, delayMs);
+    s.ttlTimer = timer;
     if (
       typeof s.ttlTimer === 'object' &&
       s.ttlTimer &&
@@ -117,37 +201,52 @@ export function createFetchInterceptor(deps) {
   async function addRule(tabId, rule) {
     const validatedRule = validateInterceptRule(rule);
     deps.assertDebuggerAvailable?.(tabId);
-    const s = getOrCreateState(tabId);
-    if (s.rules.size >= MAX_INTERCEPT_RULES_PER_TAB) {
-      throw new BridgeError(
-        ERROR_CODES.INVALID_REQUEST,
-        `A tab may have at most ${MAX_INTERCEPT_RULES_PER_TAB} active interception rules.`
-      );
-    }
-    const ruleId = `intercept_${++ruleCounter}`;
-    const fullRule = {
-      ...validatedRule,
-      ruleId,
-      matcher: compileUrlPattern(validatedRule.urlPattern),
-    };
-    const wasEmpty = s.rules.size === 0;
-    s.rules.set(ruleId, fullRule);
+    return runLifecycle(
+      tabId,
+      async (publishAddition) => {
+        deps.assertDebuggerAvailable?.(tabId);
+        const stopping = tabStates.get(tabId);
+        if (stopping && stopping.rules.size === 0) await releaseTab(tabId, stopping);
+        const s = getOrCreateState(tabId);
+        if (s.rules.size >= MAX_INTERCEPT_RULES_PER_TAB) {
+          throw new BridgeError(
+            ERROR_CODES.INVALID_REQUEST,
+            `A tab may have at most ${MAX_INTERCEPT_RULES_PER_TAB} active interception rules.`
+          );
+        }
+        const ruleId = `intercept_${++ruleCounter}`;
+        const fullRule = {
+          ...validatedRule,
+          ruleId,
+          matcher: compileUrlPattern(validatedRule.urlPattern),
+        };
+        const wasEmpty = s.rules.size === 0;
+        publishAddition();
+        s.rules.set(ruleId, fullRule);
 
-    try {
-      if (wasEmpty) {
-        deps.addEventFilter(tabId, (method, params) => handleFetchEvent(tabId, method, params));
-        await deps.acquireDebugger(tabId, async () => {});
-      }
-      await syncPatterns(tabId);
-    } catch (error) {
-      // Roll back so a failed acquire/enable does not leave a phantom rule.
-      s.rules.delete(ruleId);
-      if (s.rules.size === 0) await releaseTab(tabId, s);
-      throw error;
-    }
+        try {
+          if (wasEmpty) {
+            deps.addEventFilter(tabId, (method, params) => handleFetchEvent(tabId, method, params));
+            await deps.acquireDebugger(tabId, async () => {});
+            if (tabStates.get(tabId) !== s)
+              throw new Error('Debugger detached while adding interception rule.');
+            s.ownsDebugger = true;
+          }
+          await syncPatterns(tabId);
+          if (tabStates.get(tabId) !== s)
+            throw new Error('Debugger detached while adding interception rule.');
+        } catch (error) {
+          // Roll back so a failed acquire/enable does not leave a phantom rule.
+          s.rules.delete(ruleId);
+          if (s.rules.size === 0) await releaseTab(tabId, s).catch(() => {});
+          throw error;
+        }
 
-    resetTtl(tabId);
-    return toPublicRule(fullRule);
+        resetTtl(tabId);
+        return toPublicRule(fullRule);
+      },
+      'add'
+    );
   }
 
   /**
@@ -156,15 +255,17 @@ export function createFetchInterceptor(deps) {
    * @returns {Promise<boolean>}
    */
   async function removeRule(tabId, ruleId) {
-    const s = tabStates.get(tabId);
-    if (!s) return false;
-    const removed = s.rules.delete(ruleId);
-    if (removed && s.rules.size === 0) {
-      await releaseTab(tabId, s);
-    } else if (removed) {
-      await syncPatterns(tabId);
-    }
-    return removed;
+    return runLifecycle(tabId, async () => {
+      const s = tabStates.get(tabId);
+      if (!s) return false;
+      const removed = s.rules.delete(ruleId);
+      if (removed && s.rules.size === 0) {
+        await releaseTab(tabId, s);
+      } else if (removed) {
+        await syncPatterns(tabId);
+      }
+      return removed;
+    });
   }
 
   /**
@@ -181,12 +282,19 @@ export function createFetchInterceptor(deps) {
    * @returns {Promise<number>}
    */
   async function clearAllRules(tabId) {
-    const s = tabStates.get(tabId);
-    if (!s) return 0;
-    const count = s.rules.size;
-    s.rules.clear();
-    await releaseTab(tabId, s);
-    return count;
+    if (!tabStates.has(tabId) && !admissions.has(tabId)) return 0;
+    return runLifecycle(
+      tabId,
+      async () => {
+        const s = tabStates.get(tabId);
+        if (!s) return 0;
+        const count = s.rules.size;
+        s.rules.clear();
+        await releaseTab(tabId, s);
+        return count;
+      },
+      'cleanup'
+    );
   }
 
   /**
@@ -211,7 +319,7 @@ export function createFetchInterceptor(deps) {
     let activeTabCount = 0;
     let ruleCount = 0;
     for (const state of tabStates.values()) {
-      if (state.rules.size > 0) activeTabCount += 1;
+      if (state.rules.size > 0 || state.ownsDebugger) activeTabCount += 1;
       ruleCount += state.rules.size;
     }
     return {
@@ -228,19 +336,29 @@ export function createFetchInterceptor(deps) {
   async function releaseTab(tabId, expectedState) {
     const s = tabStates.get(tabId);
     if (s !== expectedState) return;
-    if (s?.ttlTimer) clearTimeout(s.ttlTimer);
-    if (tabStates.get(tabId) === s) tabStates.delete(tabId);
+    if (s.ttlTimer) clearTimeout(s.ttlTimer);
+    s.rules.clear();
+    if (s.ownsDebugger) {
+      try {
+        await deps.sendCommand({ tabId }, 'Fetch.disable', {});
+      } catch (error) {
+        if (tabStates.get(tabId) !== s) return;
+        const message = error instanceof Error ? error.message : String(error);
+        if (/not attached|no target with given id/i.test(message)) {
+          handleDetach(tabId);
+          return;
+        }
+        // Another domain may hold the debugger. Keep handling paused requests
+        // without applying rules until Fetch is confirmed disabled.
+        resetTtl(tabId, TEARDOWN_RETRY_MS);
+        throw error;
+      }
+      if (tabStates.get(tabId) !== s) return;
+      await deps.releaseDebugger(tabId).catch(() => {});
+    }
+    if (tabStates.get(tabId) !== s) return;
+    tabStates.delete(tabId);
     deps.removeEventFilter(tabId);
-    try {
-      await deps.sendCommand({ tabId }, 'Fetch.disable', {});
-    } catch {
-      // Fetch may already be disabled or the debugger may be detached.
-    }
-    try {
-      await deps.releaseDebugger(tabId);
-    } catch {
-      // debugger may already be detached
-    }
   }
 
   /**

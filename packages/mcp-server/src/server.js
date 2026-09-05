@@ -172,7 +172,8 @@ export function createBridgeMcpServer(options = {}) {
    */
   const registerTool = (name, config, handler) => {
     const wrappedHandler = /** @type {typeof handler} */ (
-      (args, context) => runWithMcpRequestEra(era, () => handler(args, context))
+      (args, context) =>
+        runWithMcpRequestEra(era, () => handler(args, context), context.mcpReq.signal)
     );
     const registration = server.registerTool(name, config, wrappedHandler);
     registrations.set(name, registration);

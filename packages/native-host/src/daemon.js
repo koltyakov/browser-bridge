@@ -132,6 +132,7 @@ export const DAEMON_REGISTRATION_TIMEOUT_MS = 5_000;
 export const MAX_DAEMON_CONNECTIONS = 64;
 export const MAX_DAEMON_PENDING_REQUESTS = 128;
 export const MAX_DAEMON_PENDING_REQUESTS_PER_CLIENT = 16;
+export const MAX_DAEMON_ACTIVE_HANDLERS_PER_CLIENT = 32;
 export const MAX_DAEMON_INVALID_LINES = 3;
 const MAX_CLIENT_ID_LENGTH = 128;
 const MAX_ROUTING_LABEL_LENGTH = 128;
@@ -462,6 +463,11 @@ export class BridgeDaemon {
     this.extensionSockets = new Map();
     /** @type {Map<string, ClientSocket>} */
     this.agentSockets = new Map();
+    /** @type {Set<ClientSocket>} */
+    this.clientSockets = new Set();
+    /** @type {Map<ClientSocket, number>} */
+    this.activeHandlers = new Map();
+    this.activeHandlerCount = 0;
     /** @type {Map<string, PendingEntry>} */
     this.pendingRequests = new Map();
     /** @type {Map<ClientSocket, Set<string>>} */
@@ -568,7 +574,7 @@ export class BridgeDaemon {
     pending = this.pendingRequests.get(requestId),
     preserveArtifacts = false
   ) {
-    if (!pending) {
+    if (!pending || this.pendingRequests.get(requestId) !== pending) {
       return undefined;
     }
     clearTimeout(pending.timeoutId);
@@ -621,6 +627,7 @@ export class BridgeDaemon {
    * @returns {void}
    */
   registerSocket(socket, message) {
+    this.clientSockets.add(socket);
     if (socket.__role) {
       void writeJsonLine(socket, {
         type: 'registration_failed',
@@ -628,7 +635,7 @@ export class BridgeDaemon {
           code: ERROR_CODES.INVALID_REQUEST,
           message: `Socket is already registered as ${socket.__role}.`,
         },
-      });
+      }).catch(() => socket.destroy());
       return;
     }
 
@@ -639,7 +646,7 @@ export class BridgeDaemon {
           code: ERROR_CODES.INVALID_REQUEST,
           message: 'Socket role must be "agent" or "extension".',
         },
-      });
+      }).catch(() => socket.destroy());
       return;
     }
 
@@ -657,7 +664,9 @@ export class BridgeDaemon {
           code: ERROR_CODES.ACCESS_DENIED,
           message: 'Bridge daemon authentication failed.',
         },
-      }).finally(() => socket.destroy());
+      })
+        .catch(() => {})
+        .finally(() => socket.destroy());
       return;
     }
 
@@ -686,7 +695,9 @@ export class BridgeDaemon {
         browserName: socket.__browserName ?? null,
         profileLabel: socket.__profileLabel ?? null,
       });
-      void writeJsonLine(socket, { type: 'registered', role: 'extension' });
+      void writeJsonLine(socket, { type: 'registered', role: 'extension' }).catch(() =>
+        socket.destroy()
+      );
       return;
     }
 
@@ -700,7 +711,9 @@ export class BridgeDaemon {
             code: ERROR_CODES.INVALID_REQUEST,
             message: 'Agent clientId is invalid.',
           },
-        }).finally(() => socket.destroy());
+        })
+          .catch(() => {})
+          .finally(() => socket.destroy());
         return;
       }
       this.agentSockets.set(clientId, socket);
@@ -710,7 +723,7 @@ export class BridgeDaemon {
         type: 'registered',
         role: 'agent',
         clientId,
-      });
+      }).catch(() => socket.destroy());
       return;
     }
   }
@@ -734,7 +747,7 @@ export class BridgeDaemon {
       }
       try {
         await fs.promises.access(this.socketPath);
-        if (await pingExistingDaemon(this.transport)) {
+        if (await hasLiveListener(this.transport)) {
           throw new Error(
             `Another daemon is already running on ${this.socketPath}. Stop it before starting a new one.`
           );
@@ -742,17 +755,17 @@ export class BridgeDaemon {
         this.logger.info('Removing stale socket from previous run', {
           socketPath: this.socketPath,
         });
+        await fs.promises.rm(this.socketPath, { force: true });
       } catch (error) {
-        if (error instanceof Error && error.message.startsWith('Another daemon')) {
+        if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'ENOENT')
           throw error;
-        }
         // Socket does not exist - normal startup.
       }
-      await fs.promises.rm(this.socketPath, { force: true });
     }
 
     this.server = net.createServer((socket) => {
       const typedSocket = /** @type {ClientSocket} */ (socket);
+      this.clientSockets.add(typedSocket);
       typedSocket.__invalidLineCount = 0;
       typedSocket.__registrationTimeoutId = setTimeout(() => {
         if (!typedSocket.__role) {
@@ -767,12 +780,37 @@ export class BridgeDaemon {
       parseJsonLines(
         typedSocket,
         (raw) => {
+          if (typedSocket.destroyed) return;
           const message = /** @type {DaemonMessage} */ (raw);
-          void this.handleClientMessage(typedSocket, message).catch((err) => {
-            this.logger.error('handler error', {
-              message: err instanceof Error ? err.message : String(err),
+          const admitted =
+            message?.type === 'agent.request' || message?.type === 'extension.setup_status.request';
+          const active = this.activeHandlers.get(typedSocket) ?? 0;
+          if (
+            admitted &&
+            (active >= MAX_DAEMON_ACTIVE_HANDLERS_PER_CLIENT ||
+              this.activeHandlerCount >= MAX_DAEMON_PENDING_REQUESTS)
+          ) {
+            typedSocket.destroy();
+            return;
+          }
+          if (admitted) {
+            this.activeHandlers.set(typedSocket, active + 1);
+            this.activeHandlerCount += 1;
+          }
+          void this.handleClientMessage(typedSocket, message)
+            .catch((err) => {
+              this.logger.error('handler error', {
+                message: err instanceof Error ? err.message : String(err),
+              });
+            })
+            .finally(() => {
+              if (admitted) {
+                const remaining = (this.activeHandlers.get(typedSocket) ?? 1) - 1;
+                if (remaining) this.activeHandlers.set(typedSocket, remaining);
+                else this.activeHandlers.delete(typedSocket);
+                this.activeHandlerCount -= 1;
+              }
             });
-          });
         },
         {
           onProtocolError: (error) => {
@@ -845,6 +883,10 @@ export class BridgeDaemon {
     this.pendingRequests.clear();
     this.pendingRequestsByOwnerSocket.clear();
     this.pendingRequestsByTargetSocket.clear();
+    this.requestStartTimes.clear();
+
+    for (const socket of this.clientSockets) socket.destroy();
+    this.clientSockets.clear();
 
     for (const socket of this.agentSockets.values()) {
       socket.destroy();
@@ -864,6 +906,7 @@ export class BridgeDaemon {
 
     if (this.server) {
       const server = this.server;
+      const ownedListener = server.listening;
       this.server = null;
       try {
         await new Promise((resolve, reject) => {
@@ -876,7 +919,11 @@ export class BridgeDaemon {
           });
         });
       } finally {
-        if (this.transport.type === 'socket' && !isWindowsNamedPipePath(this.socketPath)) {
+        if (
+          ownedListener &&
+          this.transport.type === 'socket' &&
+          !isWindowsNamedPipePath(this.socketPath)
+        ) {
           await fs.promises.rm(this.socketPath, { force: true });
         }
       }
@@ -1321,7 +1368,7 @@ export class BridgeDaemon {
         message: error instanceof Error ? error.message : String(error),
       });
       const pending = this.pendingRequests.get(request.id);
-      if (!pending) {
+      if (!pending || !pending.targets.has(target)) {
         return;
       }
       this.removePendingTarget(request.id, pending, target);
@@ -1496,6 +1543,20 @@ export class BridgeDaemon {
     const ownerId = pending.socket.__clientId;
     if (!ownerId) return;
     try {
+      if (
+        message.type === 'extension.artifact.chunk' ||
+        message.type === 'extension.artifact.commit'
+      ) {
+        const transfer = this.artifactStore.transfers.get(String(message.artifactId ?? ''));
+        if (
+          !transfer ||
+          transfer.requestId !== requestId ||
+          transfer.ownerId !== ownerId ||
+          transfer.extensionId !== socket.__extensionId
+        ) {
+          throw new Error('Artifact transfer does not belong to this request and extension.');
+        }
+      }
       if (message.type === 'extension.artifact.begin') {
         this.artifactStore.begin({
           artifactId: String(artifact.artifactId ?? ''),
@@ -1591,6 +1652,7 @@ export class BridgeDaemon {
     }
 
     this.removePendingTarget(responseMessage.id, pending, socket);
+    clearTimeout(pending.timeoutId);
 
     if (responseMessage.ok) {
       const result =
@@ -1636,7 +1698,7 @@ export class BridgeDaemon {
           }
         }
         if (!this.domBaselines.register(baselineId, socket, result.expiresAt)) {
-          await this.releaseOrphanDomBaseline(socket, responseMessage);
+          await this.releaseOrphanDomBaseline(socket, responseMessage).catch(() => {});
           pending.lastErrorResponse = createFailure(
             responseMessage.id,
             ERROR_CODES.DOM_BASELINE_INVALIDATED,
@@ -1688,11 +1750,12 @@ export class BridgeDaemon {
           if (baselineId) this.domBaselines.delete(baselineId);
           await this.releaseOrphanDomBaseline(socket, responseMessage).catch(() => {});
         }
-        this.clearPendingRequest(responseMessage.id, pending);
-        this.recordRequestCompletion(responseMessage.id, false, pending);
+        if (this.clearPendingRequest(responseMessage.id, pending)) {
+          this.recordRequestCompletion(responseMessage.id, false, pending);
+        }
         throw error;
       }
-      this.clearPendingRequest(responseMessage.id, pending, true);
+      if (!this.clearPendingRequest(responseMessage.id, pending, true)) return;
       this.recordRequestCompletion(responseMessage.id, true, pending);
       this.pushLog({
         at: new Date().toISOString(),
@@ -1719,6 +1782,7 @@ export class BridgeDaemon {
    * @returns {void}
    */
   handleSocketClose(socket) {
+    this.clientSockets.delete(socket);
     if (socket.__registrationTimeoutId) {
       clearTimeout(socket.__registrationTimeoutId);
       socket.__registrationTimeoutId = undefined;
@@ -1781,7 +1845,7 @@ export class BridgeDaemon {
    * @returns {Promise<void>}
    */
   async finishPendingRequestIfExhausted(requestId, pending) {
-    if (pending.targets.size > 0 || !this.pendingRequests.has(requestId)) {
+    if (pending.targets.size > 0 || this.pendingRequests.get(requestId) !== pending) {
       return;
     }
 
@@ -1971,6 +2035,37 @@ export async function pingExistingDaemon(transport) {
           },
         })}\n`
       );
+    });
+  });
+}
+
+/**
+ * Only a refused or missing endpoint proves a Unix socket is stale.
+ * @param {BridgeTransport} transport
+ * @returns {Promise<boolean>}
+ */
+export function hasLiveListener(transport) {
+  return new Promise((resolve, reject) => {
+    const socket =
+      transport.type === 'tcp'
+        ? net.createConnection({ host: transport.host, port: transport.port })
+        : net.createConnection(transport.socketPath);
+    const timer = setTimeout(() => finish(true), DAEMON_EXISTING_SOCKET_PING_TIMEOUT_MS);
+    /** @param {boolean} live @param {Error} [error] */
+    function finish(live, error) {
+      clearTimeout(timer);
+      socket.destroy();
+      if (error) reject(error);
+      else resolve(live);
+    }
+    socket.once('connect', () => finish(true));
+    socket.once('error', (error) => {
+      if (
+        'code' in error &&
+        (error.code === 'ENOENT' || error.code === 'ECONNREFUSED' || error.code === 'ENOTSOCK')
+      )
+        finish(false);
+      else finish(true, error);
     });
   });
 }

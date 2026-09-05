@@ -95,9 +95,27 @@
    * @returns {string}
    */
   function escapeTailwindSelector(selector) {
+    const probe = document.createDocumentFragment();
+    try {
+      probe.querySelector(selector);
+      return selector;
+    } catch {
+      // Repair utility syntax only after the browser rejects the original CSS.
+    }
+    // Leave valid attribute selectors (even .utility-[auto]) and quoted values
+    // alone. Only invalid bracket syntax on a utility-style class is shorthand.
     return selector.replace(
-      /(\.[-\w]+)\[([^\]]+)\]/g,
-      (_, prefix, value) => `${prefix}\\[${value}\\]`
+      /\\.|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\[(?:\\.|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\]\\"'])*\]|(\.[-\w]+-)\[([^\]\r\n]+)\]/g,
+      /** @param {string} match @param {string | undefined} prefix @param {string | undefined} value @returns {string} */
+      (match, prefix, value) => {
+        if (typeof prefix !== 'string' || typeof value !== 'string') return match;
+        try {
+          probe.querySelector(`*[${value}]`);
+          return match;
+        } catch {
+          return `${prefix}${`[${value}]`.replace(/[^\w-]/g, '\\$&')}`;
+        }
+      }
     );
   }
 

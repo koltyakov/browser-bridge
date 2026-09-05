@@ -1,6 +1,5 @@
 // @ts-check
 
-import { createBridgeClientForDestination } from '../../agent-client/src/remotes.js';
 import {
   callBridgeTool,
   createToolResult,
@@ -8,6 +7,7 @@ import {
   getToolTokenBudget,
   requestBridgeWithRetry,
   summarizeToolError,
+  withMcpRequestClient,
 } from './handlers-utils.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeMethod} BridgeMethod */
@@ -28,23 +28,20 @@ export async function handleTabsTool(args) {
     }
     const results = await Promise.all(
       destinations.map(async (destination) => {
-        /** @type {import('../../agent-client/src/client.js').BridgeClient | null} */
-        let client = null;
         try {
-          client = await createBridgeClientForDestination(
-            destination.local ? null : destination.id,
-            { checkProtocolOnConnect: false }
-          );
-          await client.connect();
-          const response = await requestBridgeWithRetry(
-            client,
-            'tabs.list',
-            {},
-            {
-              tabId: null,
-              source: 'mcp',
-              tokenBudget: null,
-            }
+          const response = await withMcpRequestClient(
+            (client) =>
+              requestBridgeWithRetry(
+                client,
+                'tabs.list',
+                {},
+                {
+                  tabId: null,
+                  source: 'mcp',
+                  tokenBudget: null,
+                }
+              ),
+            { destinationId: destination.local ? null : destination.id }
           );
           if (!response.ok) {
             return {
@@ -67,10 +64,6 @@ export async function handleTabsTool(args) {
             error: { message: error instanceof Error ? error.message : String(error) },
             tabs: [],
           };
-        } finally {
-          if (client) {
-            await client.close().catch(() => {});
-          }
         }
       })
     );

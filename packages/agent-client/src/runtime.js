@@ -204,8 +204,8 @@ function withRequestMeta(source, mcpEra, tokenBudget, automaticRetry) {
  */
 export async function withBridgeClient(callback, options) {
   const client = new BridgeClient(await applyConfiguredAutoUpdate(options));
-  await ensureClientConnected(client);
   try {
+    await ensureClientConnected(client);
     return await callback(client);
   } finally {
     await client.close();

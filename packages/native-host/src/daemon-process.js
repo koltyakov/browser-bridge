@@ -6,7 +6,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
-import { pingExistingDaemon } from './daemon.js';
+import { hasLiveListener, pingExistingDaemon } from './daemon.js';
 import {
   applyWindowsTcpTransportDefaults,
   createSocketBridgeTransport,
@@ -725,7 +725,6 @@ async function removeStaleSocket(transport, rmFn, pingDaemonFn) {
   if (await safePingDaemon(transport, pingDaemonFn)) {
     return false;
   }
-
   try {
     await fs.promises.access(transport.socketPath);
   } catch (error) {
@@ -733,6 +732,10 @@ async function removeStaleSocket(transport, rmFn, pingDaemonFn) {
       return false;
     }
     throw error;
+  }
+
+  if (await hasLiveListener(transport)) {
+    return false;
   }
 
   try {
