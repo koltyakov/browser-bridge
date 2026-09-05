@@ -3532,24 +3532,30 @@ test('daemon routes to only the most recently active enabled extension and retur
 
     ext1.send({ type: 'extension.access_update', accessEnabled: true });
     ext2.send({ type: 'extension.access_update', accessEnabled: true });
+    const sockets = [...daemon.extensionSockets.values()];
+    const target1 = sockets.find((socket) => socket.remotePort === s1.localPort);
+    const target2 = sockets.find((socket) => socket.remotePort === s2.localPort);
+    assert.ok(target1);
+    assert.ok(target2);
+    const registeredAt = target2.__lastActiveAt;
+    assert.ok(registeredAt !== undefined);
+    // Registration already sets activity. Wait for this specific update to be processed.
+    await waitForCondition(() => Date.now() > registeredAt);
     ext2.send({ type: 'extension.activity', at: Number.MAX_SAFE_INTEGER });
-    await waitForCondition(() =>
-      [...daemon.extensionSockets.values()].some((socket) => socket.__lastActiveAt !== undefined)
+    await waitForCondition(
+      () => target2.__lastActiveAt !== undefined && target2.__lastActiveAt > registeredAt
     );
-    await new Promise((resolve) => setTimeout(resolve, 2));
+    const firstActivityAt = target2.__lastActiveAt;
+    assert.ok(firstActivityAt !== undefined);
+    assert.ok(firstActivityAt < Number.MAX_SAFE_INTEGER);
+    await waitForCondition(() => Date.now() > firstActivityAt);
     ext1.send({ type: 'extension.activity', at: 1 });
-    await waitForCondition(() => {
-      const sockets = [...daemon.extensionSockets.values()];
-      const activity = sockets
-        .map((socket) => socket.__lastActiveAt)
-        .filter((at): at is number => at !== undefined);
-      return (
+    await waitForCondition(
+      () =>
         sockets.every((socket) => socket.__accessEnabled === true) &&
-        activity.length === 2 &&
-        Math.max(...activity) > Math.min(...activity) &&
-        Math.max(...activity) < Number.MAX_SAFE_INTEGER
-      );
-    });
+        target1.__lastActiveAt !== undefined &&
+        target1.__lastActiveAt > firstActivityAt
+    );
 
     agent.send({
       type: 'agent.request',
@@ -3683,22 +3689,27 @@ test('daemon routes untargeted requests to the most recently active extension wh
     await ext2.next();
     await agent.next();
 
+    const sockets = [...daemon.extensionSockets.values()];
+    const target1 = sockets.find((socket) => socket.remotePort === s1.localPort);
+    const target2 = sockets.find((socket) => socket.remotePort === s2.localPort);
+    assert.ok(target1);
+    assert.ok(target2);
+    const registeredAt = target1.__lastActiveAt;
+    assert.ok(registeredAt !== undefined);
+    // Observe the first activity update before sending the newer one on another socket.
+    await waitForCondition(() => Date.now() > registeredAt);
     ext1.send({ type: 'extension.activity', at: Number.MAX_SAFE_INTEGER });
-    await waitForCondition(() =>
-      [...daemon.extensionSockets.values()].some((socket) => socket.__lastActiveAt !== undefined)
+    await waitForCondition(
+      () => target1.__lastActiveAt !== undefined && target1.__lastActiveAt > registeredAt
     );
-    await new Promise((resolve) => setTimeout(resolve, 2));
+    const firstActivityAt = target1.__lastActiveAt;
+    assert.ok(firstActivityAt !== undefined);
+    assert.ok(firstActivityAt < Number.MAX_SAFE_INTEGER);
+    await waitForCondition(() => Date.now() > firstActivityAt);
     ext2.send({ type: 'extension.activity', at: 1 });
-    await waitForCondition(() => {
-      const activity = [...daemon.extensionSockets.values()]
-        .map((socket) => socket.__lastActiveAt)
-        .filter((at): at is number => at !== undefined);
-      return (
-        activity.length === 2 &&
-        Math.max(...activity) > Math.min(...activity) &&
-        Math.max(...activity) < Number.MAX_SAFE_INTEGER
-      );
-    });
+    await waitForCondition(
+      () => target2.__lastActiveAt !== undefined && target2.__lastActiveAt > firstActivityAt
+    );
 
     agent.send({
       type: 'agent.request',
