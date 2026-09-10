@@ -10,8 +10,7 @@
     return;
   }
 
-  const contentHelpers =
-    /** @type {typeof globalThis & { __BBX_CONTENT_HELPERS__?: {
+  const contentHelpers = /** @type {typeof globalThis & { __BBX_CONTENT_HELPERS__?: {
      escapeTailwindSelector: (selector: string) => string,
      applyBudget: (options?: Record<string, any>) => Budget,
      clamp: (value: number | string | null | undefined, minimum: number, maximum: number) => number,

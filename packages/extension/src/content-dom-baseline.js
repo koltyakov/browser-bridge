@@ -56,11 +56,10 @@
     return;
   }
 
-  const contentHelpers =
-    /** @type {typeof globalThis & { __BBX_CONTENT_HELPERS__?: {
-     *   getImplicitRole: (element: Element) => string,
-     *   truncateText: (value: string, budget: number) => { value: string }
-     * } }} */ (globalThis).__BBX_CONTENT_HELPERS__;
+  const contentHelpers = /** @type {typeof globalThis & { __BBX_CONTENT_HELPERS__?: {
+   *   getImplicitRole: (element: Element) => string,
+   *   truncateText: (value: string, budget: number) => { value: string }
+   * } }} */ (globalThis).__BBX_CONTENT_HELPERS__;
   if (!contentHelpers) {
     throw new Error(
       'Browser Bridge content-script helpers must load before content-dom-baseline.js.'

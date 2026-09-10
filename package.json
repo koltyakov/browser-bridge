@@ -76,7 +76,7 @@
     "@modelcontextprotocol/server": "^2.0.0",
     "@mozilla/readability": "^0.6.0",
     "linkedom": "^0.18.13",
-    "zod": "^4.5.4"
+    "zod": "^4.6.1"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "^2.0.0",

@@ -14,8 +14,7 @@
     /** @type {typeof globalThis & { __BBX_CONTENT_HELPERS__?: Record<string, unknown> }} */ (
       globalThis
     ).__BBX_CONTENT_HELPERS__;
-  const registry =
-    /** @type {typeof globalThis & { __BBX_CONTENT_REGISTRY__?: {
+  const registry = /** @type {typeof globalThis & { __BBX_CONTENT_REGISTRY__?: {
       rememberElement: (element: Element) => string,
       createContentId: (prefix: string) => string,
       getPatchRegistry: () => Map<string, StoredPatch>,

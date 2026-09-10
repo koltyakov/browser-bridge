@@ -92,19 +92,16 @@
    */
 
   const domQueryModule = /** @type {DomQueryModule} */ (
-    /** @type {typeof globalThis & { __BBX_CONTENT_DOM_QUERY__?: DomQueryModule }} */ (
-      globalThis
-    ).__BBX_CONTENT_DOM_QUERY__
+    /** @type {typeof globalThis & { __BBX_CONTENT_DOM_QUERY__?: DomQueryModule }} */ (globalThis)
+      .__BBX_CONTENT_DOM_QUERY__
   );
   const inputModule = /** @type {InputModule} */ (
-    /** @type {typeof globalThis & { __BBX_CONTENT_INPUT__?: InputModule }} */ (
-      globalThis
-    ).__BBX_CONTENT_INPUT__
+    /** @type {typeof globalThis & { __BBX_CONTENT_INPUT__?: InputModule }} */ (globalThis)
+      .__BBX_CONTENT_INPUT__
   );
   const patchModule = /** @type {PatchModule} */ (
-    /** @type {typeof globalThis & { __BBX_CONTENT_PATCH__?: PatchModule }} */ (
-      globalThis
-    ).__BBX_CONTENT_PATCH__
+    /** @type {typeof globalThis & { __BBX_CONTENT_PATCH__?: PatchModule }} */ (globalThis)
+      .__BBX_CONTENT_PATCH__
   );
 
   const { truncateText } =

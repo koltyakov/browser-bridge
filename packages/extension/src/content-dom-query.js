@@ -10,8 +10,7 @@
     return;
   }
 
-  const contentHelpers =
-    /** @type {typeof globalThis & { __BBX_CONTENT_HELPERS__?: {
+  const contentHelpers = /** @type {typeof globalThis & { __BBX_CONTENT_HELPERS__?: {
      applyBudget: (options?: Record<string, any>) => Budget,
      clamp: (value: number | string | null | undefined, minimum: number, maximum: number) => number,
      extractElementText: (element: Element) => string,
@@ -26,8 +25,7 @@
      toRect: (rect: DOMRect | DOMRectReadOnly) => { x: number, y: number, width: number, height: number },
      truncateText: (value: string, budget: number) => { value: string, truncated: boolean, omitted: number }
     } }} */ (globalThis).__BBX_CONTENT_HELPERS__;
-  const registry =
-    /** @type {typeof globalThis & { __BBX_CONTENT_REGISTRY__?: {
+  const registry = /** @type {typeof globalThis & { __BBX_CONTENT_REGISTRY__?: {
      consumePruned: () => boolean,
      getDocumentRevision: () => number,
      getRegistrySize: () => number,

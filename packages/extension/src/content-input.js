@@ -10,14 +10,12 @@
     return;
   }
 
-  const contentHelpers =
-    /** @type {typeof globalThis & { __BBX_CONTENT_HELPERS__?: {
+  const contentHelpers = /** @type {typeof globalThis & { __BBX_CONTENT_HELPERS__?: {
      NON_TEXT_INPUT_TYPES: Set<string>,
      clamp: (value: number | string | null | undefined, minimum: number, maximum: number) => number,
      escapeTailwindSelector: (selector: string) => string
     } }} */ (globalThis).__BBX_CONTENT_HELPERS__;
-  const registry =
-    /** @type {typeof globalThis & { __BBX_CONTENT_REGISTRY__?: {
+  const registry = /** @type {typeof globalThis & { __BBX_CONTENT_REGISTRY__?: {
      getRequiredElement: (ref: string) => Element,
      rememberElement: (element: Element) => string,
      resolveTarget: (target?: { elementRef?: string, selector?: string }) => Element,

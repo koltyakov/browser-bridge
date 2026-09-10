@@ -507,7 +507,9 @@ test('removeMcpConfig surfaces malformed and unreadable existing configs', async
     );
 
     const originalReadFile = fs.promises.readFile;
-    t.mock.method(fs.promises, 'readFile', (async (filePath, options) => {
+    t.mock.method(fs.promises, 'readFile', (async (
+      ...[filePath, options]: Parameters<typeof fs.promises.readFile>
+    ) => {
       if (String(filePath) === codexPath) {
         const error = new Error('permission denied') as NodeJS.ErrnoException;
         error.code = 'EACCES';
