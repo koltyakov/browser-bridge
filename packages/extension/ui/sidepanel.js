@@ -287,8 +287,11 @@ const requestedTabId = readRequestedTabId(window.location.search);
  * @returns {Promise<void>}
  */
 async function connectSidepanelPort() {
+  const panelWindow = await chrome.windows.getCurrent();
   port = /** @type {chrome.runtime.Port} */ (
     connectSidepanelRuntimePort({
+      scopeTabId: requestedTabId,
+      scopeWindowId: panelWindow.id,
       connect: (connectInfo) => chrome.runtime.connect(connectInfo),
       onMessage: handleSidepanelMessage,
       scheduleReconnect: (callback, delayMs) => {
@@ -330,6 +333,7 @@ toggleButton.addEventListener('click', () => {
 
   port.postMessage({
     type: 'scope.set_enabled',
+    tabId: currentTabState.tabId,
     enabled: pendingEnabled,
   });
 });

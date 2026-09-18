@@ -10,7 +10,7 @@ import { POPUP_PATH } from './background-state.js';
 /**
  * @typedef {{
  *   getTabState: (tabId: number) => Promise<CurrentTabState | null>,
- *   getCurrentTabState: () => Promise<CurrentTabState | null>,
+ *   getCurrentTabState: (windowId?: number | null) => Promise<CurrentTabState | null>,
  * }} AccessRequestUiDeps
  */
 
@@ -18,7 +18,7 @@ import { POPUP_PATH } from './background-state.js';
  * @typedef {{
  *   refreshSetupStatus: (force?: boolean) => void,
  *   getTabState: (tabId: number) => Promise<CurrentTabState | null>,
- *   getCurrentTabState: () => Promise<CurrentTabState | null>,
+ *   getCurrentTabState: (windowId?: number | null) => Promise<CurrentTabState | null>,
  *   setWindowEnabled: (
  *     windowId: number,
  *     title: string,
@@ -99,7 +99,11 @@ export async function emitUiStateForPort(state, port, deps) {
 
   const currentTab = portState.scopeTabId
     ? await deps.getTabState(portState.scopeTabId)
-    : await deps.getCurrentTabState();
+    : await deps.getCurrentTabState(portState.scopeWindowId);
+  // A state request may bind the panel while the initial lookup is still pending.
+  if (state.uiPorts.get(port) !== portState) {
+    return;
+  }
   const scopedTabId = currentTab?.tabId ?? portState.scopeTabId ?? null;
 
   postToUiPort(state, port, {
@@ -134,6 +138,7 @@ export async function emitUiStateForPort(state, port, deps) {
 export async function handleUiMessage(state, port, message, deps) {
   if (message?.type === 'state.request') {
     const scopeTabId = Number(message.scopeTabId);
+    const scopeWindowId = Number(message.scopeWindowId);
     const currentPortState = state.uiPorts.get(port);
     if (!currentPortState) {
       return;
@@ -141,6 +146,7 @@ export async function handleUiMessage(state, port, message, deps) {
     state.uiPorts.set(port, {
       surface: currentPortState.surface,
       scopeTabId: Number.isFinite(scopeTabId) && scopeTabId > 0 ? scopeTabId : null,
+      ...(Number.isInteger(scopeWindowId) && scopeWindowId > 0 ? { scopeWindowId } : {}),
     });
     deps.refreshSetupStatus();
     await emitUiStateForPort(state, port, deps);
@@ -345,7 +351,7 @@ async function isSidePanelOpenForWindow(windowId, state, deps) {
     }
     const currentTab = portState.scopeTabId
       ? await deps.getTabState(portState.scopeTabId)
-      : await deps.getCurrentTabState();
+      : await deps.getCurrentTabState(portState.scopeWindowId);
     if (currentTab?.windowId === windowId) {
       return true;
     }

@@ -93,6 +93,8 @@
 /**
  * @typedef {{
  *   type: 'state.request'
+ *   scopeTabId?: number,
+ *   scopeWindowId?: number,
  * }} SidePanelStateRequestMessage
  */
 
@@ -177,6 +179,8 @@ export function readRequestedTabId(search) {
  *   scheduleReconnect: (callback: () => void, delayMs: number) => void,
  *   onReconnect?: () => void,
  *   reconnectDelayMs?: number
+ *   scopeTabId?: number | null,
+ *   scopeWindowId?: number | null,
  * }} options
  * @returns {SidePanelRuntimePort}
  */
@@ -186,6 +190,8 @@ export function connectSidepanelPort({
   scheduleReconnect,
   onReconnect,
   reconnectDelayMs = 500,
+  scopeTabId,
+  scopeWindowId,
 }) {
   const port = connect({ name: 'ui-sidepanel' });
   port.onMessage.addListener(onMessage);
@@ -194,7 +200,11 @@ export function connectSidepanelPort({
       onReconnect?.();
     }, reconnectDelayMs);
   });
-  port.postMessage({ type: 'state.request' });
+  port.postMessage({
+    type: 'state.request',
+    ...(scopeTabId != null ? { scopeTabId } : {}),
+    ...(scopeWindowId != null ? { scopeWindowId } : {}),
+  });
   return port;
 }
 

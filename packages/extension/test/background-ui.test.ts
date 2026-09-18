@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createExtensionState } from '../src/background-state.js';
+import { createWindowSessionController } from '../src/background-window-session.js';
+import { createChromeFake } from '../../../tests/_helpers/chromeFake.ts';
 import {
   broadcastUi,
   emitUiStateForPort,
@@ -138,6 +140,118 @@ test('background UI state emission handles missing and scoped ports', async () =
     sync.state.actionLog.map((entry) => entry.id),
     ['visible']
   );
+});
+
+test('window-scoped panel follows a second tab despite another window having focus', async () => {
+  const state = createExtensionState();
+  state.enabledWindow = { windowId: 3, title: 'Enabled window', enabledAt: 1 };
+  let activeTabId = 7;
+  const chromeObj = createChromeFake({
+    tabs: {
+      async query(query: chrome.tabs.QueryInfo) {
+        return [
+          {
+            id: query.windowId === 3 ? activeTabId : 99,
+            windowId: query.windowId ?? 9,
+            url: 'https://example.com/',
+          },
+        ];
+      },
+    },
+  }) as unknown as typeof chrome;
+  const controller = createWindowSessionController(state, chromeObj, {
+    sendAccessUpdate() {},
+    async injectContentScriptsForWindow() {},
+    async primeWindowConsoleCapture() {},
+    async primeTabConsoleCapture() {},
+    async clearWindowBridgeState() {},
+    cancelNavigationWaitsForWindow() {},
+    async appendActionLogEntry() {},
+    async refreshActionIndicators() {},
+    async updateActionIndicatorForTab() {},
+    async emitUiState() {},
+    isRestrictedAutomationUrl() {
+      return false;
+    },
+  });
+  const messages: PostedMessage[] = [];
+  const port = createPort(messages);
+  state.uiPorts.set(port, { surface: 'sidepanel', scopeTabId: null });
+  const deps = {
+    ...controller,
+    refreshSetupStatus() {},
+    async handleSetupInstallAction() {},
+  };
+  await handleUiMessage(state, port, { type: 'state.request', scopeWindowId: 3 }, deps);
+  activeTabId = 8;
+  state.actionLog.push({
+    id: 'second-tab-action',
+    at: 1,
+    method: 'dom.query',
+    source: 'cli',
+    tabId: 8,
+    url: 'https://example.com/',
+    ok: true,
+    summary: 'Queried second tab',
+    responseBytes: 4,
+    approxTokens: 1,
+    imageApproxTokens: 0,
+    costClass: 'cheap',
+    imageBytes: 0,
+    summaryBytes: 4,
+    summaryTokens: 1,
+    summaryCostClass: 'cheap',
+    debuggerBacked: false,
+    overBudget: false,
+    hasScreenshot: false,
+    nodeCount: null,
+    continuationHint: null,
+  });
+  state.actionLog.push({ ...state.actionLog[0], id: 'other-tab-action', tabId: 99 });
+  await emitUiStateForPort(state, port, deps);
+  const snapshots = messages as Array<{
+    state: {
+      currentTab: { tabId: number; enabled: boolean };
+      actionLog: Array<{ id: string }>;
+    };
+  }>;
+  assert.equal(snapshots[0].state.currentTab.tabId, 7);
+  assert.equal(snapshots[1].state.currentTab.tabId, 8);
+  assert.equal(snapshots[1].state.currentTab.enabled, true);
+  assert.deepEqual(
+    snapshots[1].state.actionLog.map((entry) => entry.id),
+    ['second-tab-action']
+  );
+});
+
+test('a pending unscoped snapshot cannot overwrite a newly scoped panel', async () => {
+  const state = createExtensionState();
+  const messages: PostedMessage[] = [];
+  const port = createPort(messages);
+  state.uiPorts.set(port, { surface: 'sidepanel', scopeTabId: null });
+  let finishLookup: () => void = () => {};
+  const pendingLookup = new Promise<void>((resolve) => {
+    finishLookup = resolve;
+  });
+  const deps = {
+    refreshSetupStatus() {},
+    async getTabState() {
+      return null;
+    },
+    async getCurrentTabState(windowId?: number | null) {
+      if (windowId == null) await pendingLookup;
+      return null;
+    },
+    async setWindowEnabled() {},
+    async setCurrentWindowEnabled() {},
+    async handleSetupInstallAction() {},
+  };
+  const initialEmission = emitUiStateForPort(state, port, deps);
+  await handleUiMessage(state, port, { type: 'state.request', scopeWindowId: 3 }, deps);
+  assert.equal(messages.length, 1);
+  finishLookup();
+  await initialEmission;
+  assert.equal(messages.length, 1);
 });
 
 test('background UI message handling covers missing ports, refresh, install, and toggle errors', async () => {

@@ -51,7 +51,7 @@ import {
  *   restoreEnabledWindow: () => Promise<void>,
  *   primeEnabledWindowInstrumentation: () => Promise<void>,
  *   clearEnabledWindowIfGone: () => Promise<boolean>,
- *   getCurrentTabState: () => Promise<CurrentTabState | null>,
+ *   getCurrentTabState: (windowId?: number | null) => Promise<CurrentTabState | null>,
  *   getTabState: (tabId: number | null) => Promise<CurrentTabState | null>,
  *   setCurrentWindowEnabled: (enabled: boolean) => Promise<void>,
  *   setWindowEnabled: (
@@ -163,12 +163,13 @@ export function createWindowSessionController(state, chrome, deps) {
   }
 
   /**
+   * @param {number | null} [windowId]
    * @returns {Promise<CurrentTabState | null>}
    */
-  async function getCurrentTabState() {
+  async function getCurrentTabState(windowId) {
     const [activeTab] = await chrome.tabs.query({
       active: true,
-      lastFocusedWindow: true,
+      ...(windowId != null ? { windowId } : { lastFocusedWindow: true }),
     });
     return buildCurrentTabState(activeTab);
   }

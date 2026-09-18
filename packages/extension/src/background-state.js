@@ -96,6 +96,7 @@ import { getErrorMessage, normalizeRuntimeErrorMessage } from './background-help
 /**
  * @typedef {{
  *   scopeTabId: number | null,
+ *   scopeWindowId?: number | null,
  *   surface: 'popup' | 'sidepanel'
  * }} UiPortState
  */

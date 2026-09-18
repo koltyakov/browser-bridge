@@ -334,12 +334,14 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
   );
 
   await withDocument(sidepanelHtml, async ({ window }) => {
-    Reflect.set(window, 'location', new URL('https://example.com/sidepanel.html'));
+    Reflect.set(window, 'location', new URL('https://example.com/sidepanel.html?tabId=41'));
     await importFreshSidepanelScript();
     await flushMicrotasks();
 
     assert.deepEqual(intervalCalls, [{ delay: 5_000 }]);
-    assert.deepEqual(portPair.left.postedMessages, [{ type: 'state.request' }]);
+    assert.deepEqual(portPair.left.postedMessages, [
+      { type: 'state.request', scopeTabId: 41, scopeWindowId: 1 },
+    ]);
     assert.equal(portPair.left.onMessageListeners.length, 1);
 
     const button = document.getElementById('bridge-toggle') as HTMLButtonElement | null;
@@ -892,6 +894,7 @@ test('sidepanel UI handles setup matrix actions, context menus, diagnostics, and
     assert.equal(button.textContent, 'Enabling…');
     assert.deepEqual(portPairs[0].left.postedMessages.at(-1), {
       type: 'scope.set_enabled',
+      tabId: 41,
       enabled: true,
     });
     button.click();
@@ -931,8 +934,11 @@ test('sidepanel UI handles setup matrix actions, context menus, diagnostics, and
 
     portPairs[0].left.dispatchDisconnect();
     runNextTimeout(500);
+    await flushMicrotasks();
     assert.equal(connectCalls, 2);
-    assert.deepEqual(portPairs[1].left.postedMessages, [{ type: 'state.request' }]);
+    assert.deepEqual(portPairs[1].left.postedMessages, [
+      { type: 'state.request', scopeWindowId: 1 },
+    ]);
 
     window.dispatchEvent(new Event('beforeunload'));
     assert.equal(clearedIntervals.length >= 2, true);
