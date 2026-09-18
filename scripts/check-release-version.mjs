@@ -1,3 +1,4 @@
+// @ts-check
 import fs from 'node:fs';
 
 const packageJson = JSON.parse(
@@ -19,7 +20,7 @@ if (!packageLine || !extensionLine) {
   process.exitCode = 1;
 } else if (packageLine !== extensionLine) {
   process.stderr.write(
-    `Release major/minor mismatch: package.json is ${packageVersion}, manifest.json is ${extensionVersion}.\n`
+    `Release major mismatch: package.json is ${packageVersion}, manifest.json is ${extensionVersion}.\n`
   );
   process.exitCode = 1;
 } else {
@@ -29,13 +30,13 @@ if (!packageLine || !extensionLine) {
 }
 
 /**
- * npm and extension patch releases may advance independently, but both
- * artifacts must remain on the same major/minor compatibility line.
+ * npm and extension minor and patch releases may advance independently, but both
+ * artifacts must remain on the same major compatibility line.
  *
  * @param {string} version
  * @returns {string | null}
  */
 function getVersionLine(version) {
   const match = /^(\d+)\.(\d+)\.\d+(?:[-+][0-9A-Za-z.-]+)?$/u.exec(version);
-  return match ? `${match[1]}.${match[2]}` : null;
+  return match ? match[1] : null;
 }

@@ -55,16 +55,16 @@ test('npm update lock spreads fallback ports across the dynamic range', () => {
   assert.ok(Math.max(...ports) - Math.min(...ports) >= 8_000);
 });
 
-test('selectCompatibleNpmVersion chooses the highest patch on an advertised line', () => {
+test('selectCompatibleNpmVersion chooses the latest stable minor in an advertised major', () => {
   assert.equal(
     selectCompatibleNpmVersion(
       ['1.8.2', '1.9.0', '1.8.7', '1.8.9-beta.1', '2.0.0'],
       ['1.8'],
       '1.8.1'
     ),
-    '1.8.7'
+    '1.9.0'
   );
-  assert.equal(selectCompatibleNpmVersion(['1.9.0'], ['1.8'], '1.8.1'), null);
+  assert.equal(selectCompatibleNpmVersion(['1.9.0'], ['1.8'], '1.8.1'), '1.9.0');
 });
 
 test('npm update lock serializes callers and releases its OS resource', async () => {
@@ -105,7 +105,7 @@ test('updateCompatibleNpmPackage installs the highest compatible stable release'
         if (args[0] === 'install') {
           await fs.promises.writeFile(
             path.join(packageRoot, 'package.json'),
-            JSON.stringify({ name: '@browserbridge/bbx', version: '1.8.4' }),
+            JSON.stringify({ name: '@browserbridge/bbx', version: '1.9.0' }),
             'utf8'
           );
           return '';
@@ -118,7 +118,7 @@ test('updateCompatibleNpmPackage installs the highest compatible stable release'
       updated: true,
       reason: 'updated',
       previousVersion: '1.8.1',
-      version: '1.8.4',
+      version: '1.9.0',
     });
     assert.deepEqual(calls[2], [
       'install',
@@ -126,7 +126,7 @@ test('updateCompatibleNpmPackage installs the highest compatible stable release'
       '--no-audit',
       '--no-fund',
       '--',
-      '@browserbridge/bbx@1.8.4',
+      '@browserbridge/bbx@1.9.0',
     ]);
   } finally {
     await fs.promises.rm(root, { recursive: true, force: true });

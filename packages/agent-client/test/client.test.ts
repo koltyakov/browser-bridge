@@ -138,7 +138,7 @@ test('annotateBridgeSummary exposes transport and summary estimates', () => {
 
 test('BridgeClient.checkProtocolVersion prefers remote migration hints', () => {
   const result = BridgeClient.checkProtocolVersion({
-    supported_versions: ['1.1'],
+    supported_versions: ['99.1'],
     migration_hint: 'Update the Browser Bridge CLI to match the extension.',
   });
 
@@ -381,7 +381,7 @@ test('BridgeClient does not restart when the daemon is newer than the client', a
   }
 });
 
-test('BridgeClient does not restart to a daemon version newer than the connected extension supports', async () => {
+test('BridgeClient accepts older minor releases without restarting the daemon', async () => {
   let restartCount = 0;
   const bridgeServer = await bridgeServerWith({
     'health.ping': (request) =>
@@ -414,7 +414,7 @@ test('BridgeClient does not restart to a daemon version newer than the connected
     await client.connect();
 
     assert.equal(restartCount, 0);
-    assert.equal(client.protocolCompatibility?.compatible, false);
+    assert.equal(client.protocolCompatibility?.compatible, true);
     assert.equal(
       bridgeServer.requests.filter((request) => request.method === 'health.ping').length,
       1

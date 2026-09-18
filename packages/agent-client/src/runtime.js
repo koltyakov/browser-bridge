@@ -1,4 +1,5 @@
 // @ts-check
+import { isProtocolVersionSupported } from '../../protocol/src/index.js';
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -839,11 +840,11 @@ function summarizeProtocol(health, extensionConnected) {
       : safeVersions(health?.supported_versions)
     : [];
   const daemonCompatible = daemonSupportedVersions.length
-    ? daemonSupportedVersions.includes(clientVersion)
+    ? isProtocolVersionSupported(clientVersion, daemonSupportedVersions)
     : null;
   const extensionCompatible = extensionConnected
     ? extensionSupportedVersions.length
-      ? extensionSupportedVersions.includes(clientVersion)
+      ? isProtocolVersionSupported(clientVersion, extensionSupportedVersions)
       : null
     : null;
   const knownCompatibility = [daemonCompatible, extensionCompatible].filter(

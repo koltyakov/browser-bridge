@@ -134,6 +134,20 @@ export function deriveProtocolVersion(packageVersion) {
 }
 
 /**
+ * Minor and patch releases are compatible in either direction within a major.
+ * @param {string} requestedVersion
+ * @param {readonly string[]} supportedVersions
+ * @returns {boolean}
+ */
+export function isProtocolVersionSupported(requestedVersion, supportedVersions) {
+  const major = /^(\d+)\.\d+$/.exec(requestedVersion)?.[1];
+  return (
+    major !== undefined &&
+    supportedVersions.some((version) => /^(\d+)\.\d+$/.exec(version)?.[1] === major)
+  );
+}
+
+/**
  * @returns {string | null}
  */
 function getRuntimePackageVersion() {

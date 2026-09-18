@@ -1,4 +1,5 @@
 // @ts-check
+import { isProtocolVersionSupported } from '../../protocol/src/index.js';
 
 import fs from 'node:fs';
 import net from 'node:net';
@@ -361,7 +362,11 @@ function createHealthRecoveryPayload(daemon, extensionResult) {
 function getVersionNegotiationPayload(requestedVersion) {
   const supportedVersions = getSupportedProtocolVersions();
   const latestSupported = supportedVersions[0];
-  if (!requestedVersion || !latestSupported || supportedVersions.includes(requestedVersion)) {
+  if (
+    !requestedVersion ||
+    !latestSupported ||
+    isProtocolVersionSupported(requestedVersion, supportedVersions)
+  ) {
     return { supported_versions: supportedVersions };
   }
 

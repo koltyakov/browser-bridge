@@ -1,4 +1,5 @@
 // @ts-check
+import { isProtocolVersionSupported } from '../../protocol/src/index.js';
 
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -75,12 +76,12 @@ export function derivePackageProtocolVersion(version) {
  */
 export function selectCompatibleNpmVersion(versions, supportedProtocols, currentVersion) {
   if (!parseStableVersion(currentVersion)) return null;
-  const supported = new Set(supportedProtocols.filter((version) => /^\d+\.\d+$/u.test(version)));
   let selected = null;
   for (const value of versions) {
     if (typeof value !== 'string' || !parseStableVersion(value)) continue;
     const protocolVersion = derivePackageProtocolVersion(value);
-    if (!protocolVersion || !supported.has(protocolVersion)) continue;
+    if (!protocolVersion || !isProtocolVersionSupported(protocolVersion, supportedProtocols))
+      continue;
     if (comparePackageVersions(value, currentVersion) <= 0) continue;
     if (selected === null || comparePackageVersions(value, selected) > 0) selected = value;
   }
@@ -252,7 +253,10 @@ export async function updateCompatibleNpmPackage(options) {
   const packageRoot = options.packageRoot ?? PACKAGE_ROOT;
   const runNpmFn = options.runNpmFn ?? runNpmCommand;
   const extensionProtocol = derivePackageProtocolVersion(options.extensionVersion);
-  if (!extensionProtocol || !options.supportedVersions.includes(extensionProtocol)) {
+  if (
+    !extensionProtocol ||
+    !isProtocolVersionSupported(extensionProtocol, options.supportedVersions)
+  ) {
     return { updated: false, reason: 'invalid_extension_version' };
   }
 

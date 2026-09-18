@@ -1,4 +1,5 @@
 // @ts-check
+import { isProtocolVersionSupported } from '../../protocol/src/index.js';
 
 import { EventEmitter, once } from 'node:events';
 import fs from 'node:fs';
@@ -744,7 +745,7 @@ export class BridgeClient extends EventEmitter {
     if (
       healthResult?.extensionConnected === true &&
       Array.isArray(extensionVersions) &&
-      !extensionVersions.includes(getProtocolVersion())
+      !isProtocolVersionSupported(getProtocolVersion(), extensionVersions)
     ) {
       return false;
     }
@@ -802,7 +803,7 @@ export class BridgeClient extends EventEmitter {
       };
     }
     const localVersion = getProtocolVersion();
-    const compatible = remoteVersions.includes(localVersion);
+    const compatible = isProtocolVersionSupported(localVersion, remoteVersions);
     return {
       compatible,
       localVersion,

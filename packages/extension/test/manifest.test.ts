@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-import { deriveProtocolVersion } from '../../protocol/src/index.js';
+import { deriveProtocolVersion, isProtocolVersionSupported } from '../../protocol/src/index.js';
 
 test('extension manifest opens the side panel from the toolbar action', async () => {
   const manifestUrl = new URL('../../../manifest.json', import.meta.url);
@@ -13,18 +13,22 @@ test('extension manifest opens the side panel from the toolbar action', async ()
   assert.equal(manifest.side_panel.default_path, 'packages/extension/ui/sidepanel.html');
 });
 
-test('release metadata and protocol versions stay aligned', async () => {
+test('npm release metadata stays aligned and independent extension releases remain protocol-compatible', async () => {
   const [manifest, packageJson, packageLock] = await Promise.all(
     ['../../../manifest.json', '../../../package.json', '../../../package-lock.json'].map(
       async (path) => JSON.parse(await readFile(new URL(path, import.meta.url), 'utf8'))
     )
   );
 
-  assert.equal(manifest.version, packageJson.version);
   assert.equal(packageLock.version, packageJson.version);
   assert.equal(packageLock.packages[''].version, packageJson.version);
   assert.notEqual(deriveProtocolVersion(packageJson.version), '0.0');
-  assert.equal(deriveProtocolVersion(manifest.version), deriveProtocolVersion(packageJson.version));
+  // Extension and npm minor and patch releases may advance independently.
+  assert.ok(
+    isProtocolVersionSupported(deriveProtocolVersion(manifest.version), [
+      deriveProtocolVersion(packageJson.version),
+    ])
+  );
   assert.deepEqual(manifest.permissions, [
     'alarms',
     'debugger',

@@ -1,6 +1,9 @@
 // @ts-check
 
-import { getSupportedProtocolVersions } from '../../protocol/src/index.js';
+import {
+  getSupportedProtocolVersions,
+  isProtocolVersionSupported,
+} from '../../protocol/src/index.js';
 
 /**
  * @param {string} left
@@ -27,7 +30,11 @@ export function compareProtocolVersions(left, right) {
 export function getVersionNegotiationPayload(requestedVersion) {
   const supportedVersions = getSupportedProtocolVersions();
   const latestSupported = supportedVersions[0];
-  if (!requestedVersion || !latestSupported || supportedVersions.includes(requestedVersion)) {
+  if (
+    !requestedVersion ||
+    !latestSupported ||
+    isProtocolVersionSupported(requestedVersion, supportedVersions)
+  ) {
     return { supported_versions: supportedVersions };
   }
 

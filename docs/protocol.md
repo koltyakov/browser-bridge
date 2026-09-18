@@ -13,22 +13,18 @@ getProtocolVersion(); // major.minor from package.json or manifest.json
 getSupportedProtocolVersions(); // [getProtocolVersion()]
 ```
 
-The current release is package/extension `1.9.0` and protocol `1.9`.
-
-Major-minor must match for protocol compatibility. Protocol 1.9 makes ordinary
-storage reads metadata-only and adds a separate exact sensitive-read path, so
-this build advertises only `1.9`; a 1.8 client, daemon, or
-extension is therefore reported as incompatible until all installed components
-are updated/restarted. Published package, lockfile, and extension artifacts use
-the same full release version; `npm run check:release-version` enforces the
-package/extension invariant and tests enforce lockfile alignment.
+Compatibility requires the same major version. Extension and npm minor and patch
+releases advance independently. For example, an extension advertising `1.11`
+and an npm client advertising `1.12` are compatible in either direction.
+`npm run check:release-version` checks the major version; tests also enforce
+that the npm package and lockfile versions match.
 
 Extension health also reports its full manifest version. When the local
 `auto-update` policy is `compatible`, clients use that version only as an update
 trigger, query npm for published releases, and select the highest stable release
-whose derived `major.minor` appears in the extension's
+whose major version matches an entry in the extension's
 `extension_supported_versions`. Selection never downgrades or crosses to an
-unadvertised protocol line. Installation is restricted to the verified global
+unadvertised major version. Installation is restricted to the verified global
 `@browserbridge/bbx` package and serialized by an inter-process lock in the
 global npm scope. The triggering CLI process relaunches after installation;
 shipped MCP processes exit so their owning agent can load the updated package.
@@ -63,7 +59,7 @@ The daemon compares the client's `protocol_version` against
 
 ### Version matches
 
-When the client version is in `getSupportedProtocolVersions()`, the response
+When the client major version matches an entry in `getSupportedProtocolVersions()`, the response
 includes only the supported versions list:
 
 ```json
@@ -124,7 +120,7 @@ was superseded. Update the client npm package to resolve this.
 `health.ping` automatically and runs the result through
 `BridgeClient.checkProtocolVersion()`:
 
-- If the client's version is not in the daemon's `supported_versions` list, the
+- If the client's major version does not match any advertised supported version, the
   client sets `this.protocolCompatibility.compatible = false` and stores a
   warning string.
 - All subsequent responses via `client.request()` have
