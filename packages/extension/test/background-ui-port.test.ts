@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   createChromeEvent,
   createChromeFake,
+  createStorageArea,
   type FakeChromeEvent,
 } from '../../../tests/_helpers/chromeFake.ts';
 import { loadBackground, type LoadedBackground } from '../../../tests/_helpers/loadBackground.ts';
@@ -349,6 +350,65 @@ test('background UI port syncs current state and updates scoped tab state on req
       actionLog: [state.actionLog[1]],
     },
   });
+});
+
+test('background UI port waits for persisted window access to be restored before syncing', async () => {
+  let releaseStorageRead = () => {};
+  const storageRead = new Promise<void>((resolve) => {
+    releaseStorageRead = resolve;
+  });
+  const sessionStorage = createStorageArea({
+    enabledWindow: {
+      windowId: 8,
+      title: 'Enabled window',
+      enabledAt: 123,
+    },
+  });
+  const readStoredState = sessionStorage.get.bind(sessionStorage);
+  sessionStorage.get = async (keys) => {
+    await storageRead;
+    return readStoredState(keys);
+  };
+  const portPair = createMessagePortPair<unknown, unknown>({
+    leftName: 'ui-popup',
+    rightName: 'agent',
+  });
+  const chrome = createChromeFake({
+    storage: {
+      session: sessionStorage,
+    },
+    tabs: {
+      async query(queryInfo: chrome.tabs.QueryInfo = {}) {
+        if (queryInfo.active && queryInfo.lastFocusedWindow) {
+          return [
+            {
+              id: 31,
+              windowId: 8,
+              title: 'Focused tab',
+              url: 'https://example.com/current',
+              status: 'complete',
+            },
+          ];
+        }
+        return [];
+      },
+    },
+  });
+  const loaded = await loadBackground({
+    chrome,
+    flushMicrotasks: false,
+    query: `test-background-ui-port-restored-access-${Date.now()}-${Math.random()}`,
+  });
+
+  getRuntimeOnConnect(loaded).dispatch(portPair.left.port);
+  await flushAsyncWork();
+  assert.equal(getStateSyncMessages(portPair.left.postedMessages).length, 0);
+
+  releaseStorageRead();
+  await flushAsyncWork(20);
+
+  const sync = getStateSyncMessages(portPair.left.postedMessages).at(-1);
+  assert.equal((sync?.state.currentTab as { enabled?: boolean } | null | undefined)?.enabled, true);
 });
 
 test('background UI port carries daemon proxy status only when the local daemon reports it', async () => {

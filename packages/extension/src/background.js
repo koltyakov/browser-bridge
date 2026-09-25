@@ -536,6 +536,7 @@ const tabBoundRequestDependencies = {
     recoveryTelemetry.record('stale_ref_recovery', outcome, group),
 };
 
+const accessStateInitialization = restoreEnabledWindow().catch(reportAsyncError);
 void initializeState().catch(reportAsyncError);
 connectNative();
 
@@ -644,7 +645,7 @@ function sendAccessUpdate(enabled) {
  * @returns {Promise<void>}
  */
 async function initializeState() {
-  await restoreEnabledWindow();
+  await accessStateInitialization;
   if (state.enabledWindow && state.nativePort) {
     sendAccessUpdate(true);
   }
@@ -1134,6 +1135,7 @@ function broadcastUi(message) {
  * @returns {Promise<void>}
  */
 async function emitUiState() {
+  await accessStateInitialization;
   await emitUiStateUi(state, {
     refreshSetupStatus,
     getTabState,
@@ -1151,6 +1153,7 @@ async function emitUiState() {
  * @returns {Promise<void>}
  */
 async function emitUiStateForPort(port) {
+  await accessStateInitialization;
   await emitUiStateForPortUi(state, port, {
     refreshSetupStatus,
     getTabState,
