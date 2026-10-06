@@ -683,6 +683,7 @@ test('bbx click dispatches a selector atomically', async () => {
       submit: false,
       key: '',
       modifiers: [],
+      holdMs: 0,
       executionMode: 'dom',
       recoverStale: false,
     });
@@ -847,6 +848,7 @@ test('bbx press-key without a selector sends a page-level input.press_key reques
       target: {},
       text: '',
       value: '',
+      holdMs: 0,
       executionMode: 'dom',
       recoverStale: false,
     });
@@ -908,6 +910,7 @@ test('bbx press-key forwards a selector atomically', async () => {
       },
       text: '',
       value: '',
+      holdMs: 0,
       executionMode: 'dom',
       recoverStale: false,
     });

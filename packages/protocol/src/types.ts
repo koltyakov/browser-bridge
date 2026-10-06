@@ -119,6 +119,8 @@ export type BridgeMethod =
   | 'input.select_option'
   | 'input.hover'
   | 'input.drag'
+  | 'input.touch'
+  | 'input.perform'
   | 'input.scroll_into_view'
   | 'screenshot.capture_region'
   | 'screenshot.capture_element'
@@ -479,6 +481,7 @@ export interface InputActionParams {
   submit?: boolean;
   key?: string;
   modifiers?: string[];
+  holdMs?: number;
   executionMode?: InputExecutionMode;
   recoverStale?: boolean;
 }
@@ -494,8 +497,104 @@ export interface NormalizedInputAction extends BridgeParams {
   submit: boolean;
   key: string;
   modifiers: string[];
+  holdMs: number;
   executionMode: InputExecutionMode;
   recoverStale: boolean;
+}
+
+// Nullable fields let already-normalized params pass through normalization again.
+export interface TouchPositionParams {
+  target?: InputTarget | null;
+  x?: number | null;
+  y?: number | null;
+}
+
+export interface TouchPointParams extends TouchPositionParams {
+  to?: TouchPositionParams | null;
+}
+
+export interface TouchParams {
+  points?: TouchPointParams[];
+  holdMs?: number;
+  moveSteps?: number;
+  executionMode?: InputExecutionMode;
+  recoverStale?: boolean;
+}
+
+export type NormalizedTouchPosition =
+  | { target: InputTarget; x: null; y: null }
+  | { target: null; x: number; y: number };
+
+export type NormalizedTouchPoint = NormalizedTouchPosition & {
+  to: NormalizedTouchPosition | null;
+};
+
+export interface NormalizedTouchParams extends BridgeParams {
+  points: NormalizedTouchPoint[];
+  holdMs: number;
+  moveSteps: number;
+  executionMode: InputExecutionMode;
+  recoverStale: boolean;
+}
+
+export type PerformStepMethod =
+  | 'input.click'
+  | 'input.focus'
+  | 'input.type'
+  | 'input.fill'
+  | 'input.press_key'
+  | 'input.set_checked'
+  | 'input.select_option'
+  | 'input.hover'
+  | 'input.drag'
+  | 'input.touch'
+  | 'input.scroll_into_view'
+  | 'viewport.scroll'
+  | 'dom.wait_for'
+  | 'page.wait_for_load_state';
+
+export interface PerformStepParams {
+  method?: string;
+  params?: Record<string, unknown>;
+  delayMs?: number | null;
+  atMs?: number | null;
+}
+
+export interface PerformParams {
+  steps?: PerformStepParams[];
+  executionMode?: InputExecutionMode;
+  timeoutMs?: number;
+  continueOnError?: boolean;
+}
+
+export interface NormalizedPerformStep {
+  method: PerformStepMethod;
+  params: Record<string, unknown>;
+  delayMs: number;
+  atMs: number | null;
+}
+
+export interface NormalizedPerformParams extends BridgeParams {
+  steps: NormalizedPerformStep[];
+  timeoutMs: number;
+  continueOnError: boolean;
+}
+
+export interface PerformStepFailure {
+  index: number;
+  method: PerformStepMethod;
+  code: string;
+  message: string;
+  details?: unknown;
+}
+
+export interface PerformResult {
+  performed: true;
+  completed: number;
+  total: number;
+  elapsedMs: number;
+  startedAtMs: number[];
+  failures: PerformStepFailure[];
 }
 
 export interface CdpDispatchKeyEventParams {

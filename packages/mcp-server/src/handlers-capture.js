@@ -348,7 +348,7 @@ function createInputOptions(args) {
 }
 
 /**
- * @param {{ action: string, elementRef?: string, selector?: string, button?: string, clickCount?: number, text?: string, value?: string, mode?: 'auto' | 'setter' | 'keystrokes', executionMode?: 'dom' | 'cdp', recoverStale?: boolean, clear?: boolean, submit?: boolean, key?: string, code?: string, modifiers?: string[], checked?: boolean, values?: string[], labels?: string[], indexes?: number[], duration?: number, sourceElementRef?: string, sourceSelector?: string, destinationElementRef?: string, destinationSelector?: string, offsetX?: number, offsetY?: number, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @param {{ action: string, elementRef?: string, selector?: string, button?: string, clickCount?: number, holdMs?: number, text?: string, value?: string, mode?: 'auto' | 'setter' | 'keystrokes', executionMode?: 'dom' | 'cdp', recoverStale?: boolean, clear?: boolean, submit?: boolean, key?: string, code?: string, modifiers?: string[], checked?: boolean, values?: string[], labels?: string[], indexes?: number[], duration?: number, sourceElementRef?: string, sourceSelector?: string, destinationElementRef?: string, destinationSelector?: string, offsetX?: number, offsetY?: number, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleInputTool(args) {
@@ -391,6 +391,7 @@ export async function handleInputTool(args) {
               button: args.button,
               clickCount: args.clickCount,
               modifiers: args.modifiers,
+              ...(typeof args.holdMs === 'number' ? { holdMs: args.holdMs } : {}),
               ...createInputOptions(args),
             },
             {
@@ -464,6 +465,7 @@ export async function handleInputTool(args) {
               target,
               key: args.key,
               modifiers: args.modifiers,
+              ...(typeof args.holdMs === 'number' ? { holdMs: args.holdMs } : {}),
               ...createInputOptions(args),
             },
             {

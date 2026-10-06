@@ -531,8 +531,27 @@ function executeBridgeMethod(
   });
 }
 
-function installInputDomGlobals(t: import('node:test').TestContext): InputDomGlobals {
+/**
+ * Mark a fake element as natively draggable and make the destination accept
+ * drops by canceling dragover, as real drop zones must.
+ */
+function makeNativeDragPair(source: FakeElementLike, destination: FakeElementLike): void {
+  Reflect.set(source, 'draggable', true);
+  const dispatch = destination.dispatchEvent?.bind(destination);
+  Reflect.set(destination, 'dispatchEvent', (event: FakeEventLike) => {
+    if (event.type === 'dragover') event.preventDefault();
+    return dispatch ? dispatch(event) : true;
+  });
+}
+
+function installInputDomGlobals(
+  t: import('node:test').TestContext,
+  options: { pointerAndTouch?: boolean } = {}
+): InputDomGlobals {
   const saved = captureGlobals([
+    'PointerEvent',
+    'Touch',
+    'TouchEvent',
     'Element',
     'HTMLElement',
     'HTMLInputElement',
@@ -617,6 +636,16 @@ function installInputDomGlobals(t: import('node:test').TestContext): InputDomGlo
   class FakeMouseEvent extends FakeEvent {}
 
   class FakeDragEvent extends FakeMouseEvent {}
+
+  class FakePointerEvent extends FakeMouseEvent {}
+
+  class FakeTouch {
+    constructor(init: Record<string, unknown>) {
+      Object.assign(this, init);
+    }
+  }
+
+  class FakeTouchEvent extends FakeEvent {}
 
   class FakeDataTransfer {
     data: Map<string, string>;
@@ -824,13 +853,22 @@ function installInputDomGlobals(t: import('node:test').TestContext): InputDomGlo
 
     click(): void {
       this.dispatchEvent(new FakeMouseEvent('click', { bubbles: true, composed: true }));
-      if (this.type === 'checkbox') {
-        this.checked = !this.checked;
-      } else if (this.type === 'radio') {
-        this.checked = true;
+    }
+
+    // Like the DOM, any dispatched click (not only HTMLElement.click()) runs
+    // checkbox/radio activation behavior unless the click is canceled.
+    dispatchEvent(event: FakeEventLike): boolean {
+      const allowed = super.dispatchEvent(event);
+      if (
+        event.type === 'click' &&
+        allowed &&
+        (this.type === 'checkbox' || this.type === 'radio')
+      ) {
+        this.checked = this.type === 'checkbox' ? !this.checked : true;
+        super.dispatchEvent(new FakeEvent('input', { bubbles: true, composed: true }));
+        super.dispatchEvent(new FakeEvent('change', { bubbles: true, composed: true }));
       }
-      this.dispatchEvent(new FakeEvent('input', { bubbles: true, composed: true }));
-      this.dispatchEvent(new FakeEvent('change', { bubbles: true, composed: true }));
+      return allowed;
     }
   }
 
@@ -915,6 +953,9 @@ function installInputDomGlobals(t: import('node:test').TestContext): InputDomGlo
   Reflect.set(globalThis, 'MouseEvent', FakeMouseEvent);
   Reflect.set(globalThis, 'DragEvent', FakeDragEvent);
   Reflect.set(globalThis, 'DataTransfer', FakeDataTransfer);
+  Reflect.set(globalThis, 'PointerEvent', options.pointerAndTouch ? FakePointerEvent : undefined);
+  Reflect.set(globalThis, 'Touch', options.pointerAndTouch ? FakeTouch : undefined);
+  Reflect.set(globalThis, 'TouchEvent', options.pointerAndTouch ? FakeTouchEvent : undefined);
 
   return {
     createBody(children: FakeElementLike[] = []) {
@@ -2079,6 +2120,8 @@ test('content script input.click returns click metadata and stale element refs f
   assert.equal(typeof clickResult.elementRef, 'string');
   assert.equal(document.activeElement, checkbox);
   assert.deepEqual(checkbox.eventLog, [
+    'mouseover',
+    'mouseenter',
     'mousemove',
     'mousedown',
     'mouseup',
@@ -2154,7 +2197,13 @@ test('content script input.type types into text inputs and contenteditable regio
   });
   assert.equal(typeof inputResult.elementRef, 'string');
   assert.equal(textInput.value, 'Bridge');
-  assert.deepEqual(textInput.eventLog.slice(0, 4), ['keydown', 'beforeinput', 'input', 'keyup']);
+  assert.deepEqual(textInput.eventLog.slice(0, 5), [
+    'keydown',
+    'keypress',
+    'beforeinput',
+    'input',
+    'keyup',
+  ]);
 
   assert.deepEqual(withoutInputMetadata(editableResult), {
     elementRef: editableResult.elementRef,
@@ -2163,7 +2212,13 @@ test('content script input.type types into text inputs and contenteditable regio
   });
   assert.equal(typeof editableResult.elementRef, 'string');
   assert.equal(editable.textContent, 'Panel');
-  assert.deepEqual(editable.eventLog.slice(0, 4), ['keydown', 'beforeinput', 'input', 'keyup']);
+  assert.deepEqual(editable.eventLog.slice(0, 5), [
+    'keydown',
+    'keypress',
+    'beforeinput',
+    'input',
+    'keyup',
+  ]);
 });
 
 test('content script input.set_checked and input.select_option update state and emit events', async (t) => {
@@ -3078,6 +3133,7 @@ test('content script input hover, drag, alternative clicks, and multi-select cov
   const source = inputs.createButton({ textContent: 'Drag source' });
   const destination = inputs.createButton({ textContent: 'Drop target' });
   const pointerTargets = [hoverTarget, clickTarget, source, destination];
+  makeNativeDragPair(source, destination);
   pointerTargets.forEach((element, index) => {
     Reflect.set(element, 'getBoundingClientRect', () => ({
       left: index * 20,
@@ -3154,11 +3210,18 @@ test('content script input hover, drag, alternative clicks, and multi-select cov
     hovered: true,
   });
   assert.equal(typeof hoverResult.elementRef, 'string');
-  assert.deepEqual(hoverTarget.eventLog, ['mouseenter', 'mouseover', 'mousemove']);
+  assert.deepEqual(hoverTarget.eventLog, [
+    'mouseover',
+    'mouseenter',
+    'mousemove',
+    'mouseout',
+    'mouseleave',
+  ]);
   assert.deepEqual(withoutInputMetadata(dragResult), {
     sourceRef: dragResult.sourceRef,
     destinationRef: dragResult.destinationRef,
     dragged: true,
+    strategy: 'html5',
   });
   assert.equal(source.eventLog.includes('dragstart'), true);
   assert.equal(source.eventLog.includes('dragend'), true);
@@ -3197,6 +3260,7 @@ test('content script computes pointer coordinates after scrolling elements into 
   const destination = inputs.createButton({ textContent: 'Drop target' });
   const body = inputs.createBody([clickTarget, hoverTarget, source, destination]);
   const pointerTargets = [clickTarget, hoverTarget, source, destination];
+  makeNativeDragPair(source, destination);
   const document = createDocumentHarness(
     body,
     {
@@ -3926,4 +3990,318 @@ test('content script dispatches internal semantic baseline snapshots', async (t)
     assert.equal(result.representation, 'semantic-dom-v1');
     assert.equal((result.stats as { nodeCount?: unknown }).nodeCount, 2);
   });
+});
+
+type RecordedEvent = {
+  type: string;
+  at: number;
+  pointerType?: unknown;
+  pointerId?: unknown;
+  isPrimary?: unknown;
+  button?: unknown;
+  buttons?: unknown;
+  detail?: unknown;
+  code?: unknown;
+  keyCode?: unknown;
+  shiftKey?: unknown;
+  touches?: number;
+};
+
+/** Record events dispatched to one fake element, canceling the listed types. */
+function recordEvents(element: FakeElementLike, cancel: string[] = []): RecordedEvent[] {
+  const events: RecordedEvent[] = [];
+  const dispatch = element.dispatchEvent?.bind(element);
+  Reflect.set(element, 'dispatchEvent', (event: FakeEventLike) => {
+    const record = event as FakeEventLike & Record<string, unknown>;
+    if (cancel.includes(event.type)) event.preventDefault();
+    events.push({
+      type: event.type,
+      at: performance.now(),
+      pointerType: record.pointerType,
+      pointerId: record.pointerId,
+      isPrimary: record.isPrimary,
+      button: record.button,
+      buttons: record.buttons,
+      detail: record.detail,
+      code: record.code,
+      keyCode: record.keyCode,
+      shiftKey: record.shiftKey,
+      touches: Array.isArray(record.touches) ? record.touches.length : undefined,
+    });
+    return dispatch ? dispatch(event) : true;
+  });
+  return events;
+}
+
+/** Lay fake elements out left to right in 20px columns and hit-test by x. */
+function layoutRow(elements: FakeElementLike[]): (x: number) => FakeElementLike | null {
+  elements.forEach((element, index) => {
+    Reflect.set(element, 'getBoundingClientRect', () => ({
+      left: index * 20,
+      top: 0,
+      width: 10,
+      height: 10,
+    }));
+  });
+  return (x: number) => elements[Math.floor(x / 20)] ?? null;
+}
+
+function findEvent(events: RecordedEvent[], type: string): RecordedEvent {
+  const event = events.find((candidate) => candidate.type === type);
+  assert.ok(event, `expected a ${type} event`);
+  return event;
+}
+
+test('DOM click mirrors the real pointer, mouse, and click event order and holds the button', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t, { pointerAndTouch: true });
+  const key = inputs.createButton({ textContent: 'C4' });
+  const hit = layoutRow([key]);
+  const document = createDocumentHarness(
+    inputs.createBody([key]),
+    { '#key': key },
+    { elementFromPoint: (x) => hit(x) }
+  );
+  const events = recordEvents(key);
+  await loadContentScript(t, {
+    withHelpers: true,
+    chrome: harness.chrome,
+    document,
+    window: { innerWidth: 100, innerHeight: 100 },
+  });
+
+  const result = await executeBridgeMethod(harness.getListener(), 'input.click', {
+    target: { selector: '#key' },
+    holdMs: 40,
+    modifiers: ['Shift'],
+  });
+
+  assert.equal(result.error, undefined);
+  assert.equal(result.holdMs, 40);
+  assert.deepEqual(
+    events.map((event) => event.type),
+    [
+      'pointerover',
+      'pointerenter',
+      'mouseover',
+      'mouseenter',
+      'pointermove',
+      'mousemove',
+      'pointerdown',
+      'mousedown',
+      'pointerup',
+      'mouseup',
+      'click',
+    ]
+  );
+  const pointerDown = findEvent(events, 'pointerdown');
+  assert.equal(pointerDown.pointerType, 'mouse');
+  assert.equal(pointerDown.buttons, 1);
+  assert.equal(findEvent(events, 'mousemove').buttons, 0);
+  assert.equal(findEvent(events, 'pointerup').buttons, 0);
+  const click = findEvent(events, 'click');
+  assert.equal(click.pointerType, 'mouse');
+  assert.equal(click.detail, 1);
+  assert.equal(click.shiftKey, true);
+  assert.ok(findEvent(events, 'mouseup').at - findEvent(events, 'mousedown').at >= 35);
+});
+
+test('DOM click honors canceled pointerdown and mousedown like a browser', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t, { pointerAndTouch: true });
+  const field = inputs.createTextInput();
+  const pointerCanceled = inputs.createButton({ textContent: 'A' });
+  const mouseCanceled = inputs.createButton({ textContent: 'B' });
+  const hit = layoutRow([pointerCanceled, mouseCanceled]);
+  const document = createDocumentHarness(
+    inputs.createBody([field, pointerCanceled, mouseCanceled]),
+    { '#a': pointerCanceled, '#b': mouseCanceled },
+    { elementFromPoint: (x) => hit(x) }
+  );
+  document.activeElement = field;
+  const aEvents = recordEvents(pointerCanceled, ['pointerdown']);
+  const bEvents = recordEvents(mouseCanceled, ['mousedown']);
+  await loadContentScript(t, {
+    withHelpers: true,
+    chrome: harness.chrome,
+    document,
+    window: { innerWidth: 100, innerHeight: 100 },
+  });
+  const listener = harness.getListener();
+
+  await executeBridgeMethod(listener, 'input.click', { target: { selector: '#a' } });
+  const aTypes = aEvents.map((event) => event.type);
+  assert.equal(aTypes.includes('mousedown'), false);
+  assert.equal(aTypes.includes('mouseup'), false);
+  assert.equal(aTypes.at(-1), 'click');
+  assert.equal(document.activeElement, pointerCanceled);
+
+  document.activeElement = field;
+  await executeBridgeMethod(listener, 'input.click', { target: { selector: '#b' } });
+  assert.equal(document.activeElement, field, 'a canceled mousedown must not move focus');
+  assert.deepEqual(
+    aEvents.slice(aTypes.length).map((event) => event.type),
+    ['pointerout', 'pointerleave', 'mouseout', 'mouseleave']
+  );
+  assert.equal(bEvents.map((event) => event.type).at(-1), 'click');
+});
+
+test('DOM key presses carry code and keyCode, hold the key, and respect a canceled keydown', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t);
+  const field = inputs.createTextInput();
+  const guarded = inputs.createTextInput();
+  const document = createDocumentHarness(inputs.createBody([field, guarded]), {
+    '#field': field,
+    '#guarded': guarded,
+  });
+  const fieldEvents = recordEvents(field);
+  recordEvents(guarded, ['keydown']);
+  await loadContentScript(t, { withHelpers: true, chrome: harness.chrome, document });
+  const listener = harness.getListener();
+
+  const pressed = await executeBridgeMethod(listener, 'input.press_key', {
+    target: { selector: '#field' },
+    key: 'q',
+    holdMs: 30,
+  });
+  assert.equal(pressed.error, undefined);
+  assert.equal(pressed.holdMs, 30);
+  assert.equal(field.value, 'q');
+  const keyDown = findEvent(fieldEvents, 'keydown');
+  assert.equal(keyDown.code, 'KeyQ');
+  assert.equal(keyDown.keyCode, 81);
+  assert.equal(findEvent(fieldEvents, 'keypress').keyCode, 113);
+  assert.ok(findEvent(fieldEvents, 'keyup').at - keyDown.at >= 25);
+
+  const comma = await executeBridgeMethod(listener, 'input.press_key', {
+    target: { selector: '#field' },
+    key: ',',
+  });
+  assert.equal(comma.error, undefined);
+  assert.equal(fieldEvents.filter((event) => event.code === 'Comma').length, 3);
+
+  await executeBridgeMethod(listener, 'input.type', {
+    target: { selector: '#guarded' },
+    text: 'ab',
+  });
+  assert.equal(guarded.value, '', 'a canceled keydown suppresses text insertion');
+  assert.deepEqual(guarded.eventLog, ['keydown', 'keyup', 'keydown', 'keyup']);
+});
+
+test('DOM drag moves a pressed pointer for sources the browser would not drag natively', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t, { pointerAndTouch: true });
+  const handle = inputs.createButton({ textContent: 'Handle' });
+  const gap = inputs.createButton({ textContent: 'Gap' });
+  const slot = inputs.createButton({ textContent: 'Slot' });
+  const hit = layoutRow([handle, gap, slot]);
+  const document = createDocumentHarness(
+    inputs.createBody([handle, gap, slot]),
+    { '#handle': handle, '#slot': slot },
+    { elementFromPoint: (x) => hit(x) }
+  );
+  const handleEvents = recordEvents(handle);
+  const gapEvents = recordEvents(gap);
+  const slotEvents = recordEvents(slot);
+  await loadContentScript(t, {
+    withHelpers: true,
+    chrome: harness.chrome,
+    document,
+    window: { innerWidth: 100, innerHeight: 100 },
+  });
+
+  const result = await executeBridgeMethod(harness.getListener(), 'input.drag', {
+    source: { selector: '#handle' },
+    destination: { selector: '#slot' },
+  });
+
+  assert.equal(result.error, undefined);
+  assert.equal(result.strategy, 'pointer');
+  assert.equal(findEvent(handleEvents, 'pointerdown').buttons, 1);
+  assert.equal(
+    handleEvents.some((event) => event.type === 'dragstart'),
+    false
+  );
+  assert.equal(findEvent(gapEvents, 'pointerover').buttons, 1);
+  const slotMoves = slotEvents.filter((event) => event.type === 'pointermove');
+  assert.ok(slotMoves.length > 0);
+  assert.ok(slotMoves.every((event) => event.buttons === 1));
+  assert.deepEqual(
+    slotEvents.slice(-2).map((event) => event.type),
+    ['pointerup', 'mouseup']
+  );
+});
+
+test('DOM touch presses several fingers at once, moves them, and taps with a compatibility click', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t, { pointerAndTouch: true });
+  const keys = [
+    inputs.createButton({ textContent: 'C' }),
+    inputs.createButton({ textContent: 'E' }),
+    inputs.createButton({ textContent: 'G' }),
+  ];
+  const hit = layoutRow(keys);
+  const document = createDocumentHarness(
+    inputs.createBody(keys),
+    { '#c': keys[0], '#e': keys[1], '#g': keys[2] },
+    { elementFromPoint: (x) => hit(x) }
+  );
+  const [cEvents, eEvents, gEvents] = keys.map((key) => recordEvents(key));
+  await loadContentScript(t, {
+    withHelpers: true,
+    chrome: harness.chrome,
+    document,
+    window: { innerWidth: 100, innerHeight: 100 },
+  });
+  const listener = harness.getListener();
+
+  const chord = await executeBridgeMethod(listener, 'input.touch', {
+    points: [{ target: { selector: '#c' } }, { target: { selector: '#e' } }],
+    holdMs: 20,
+  });
+  assert.equal(chord.error, undefined);
+  assert.equal(chord.touched, true);
+  assert.equal(chord.pointCount, 2);
+  assert.equal(chord.clicked, false);
+  const cDown = findEvent(cEvents, 'pointerdown');
+  const eDown = findEvent(eEvents, 'pointerdown');
+  assert.equal(cDown.pointerType, 'touch');
+  assert.equal(cDown.isPrimary, true);
+  assert.equal(eDown.isPrimary, false);
+  assert.notEqual(cDown.pointerId, eDown.pointerId);
+  assert.equal(findEvent(cEvents, 'touchstart').touches, 1);
+  assert.equal(findEvent(eEvents, 'touchstart').touches, 2);
+  assert.ok(findEvent(eEvents, 'touchstart').at < findEvent(cEvents, 'pointerup').at);
+  assert.equal(findEvent(cEvents, 'touchend').touches, 1);
+  assert.equal(findEvent(eEvents, 'touchend').touches, 0);
+  assert.equal(
+    cEvents.some((event) => event.type === 'click'),
+    false
+  );
+
+  const tap = await executeBridgeMethod(listener, 'input.touch', {
+    points: [{ target: { selector: '#g' } }],
+  });
+  assert.equal(tap.clicked, true);
+  assert.deepEqual(
+    gEvents.slice(-4).map((event) => event.type),
+    ['mousemove', 'mousedown', 'mouseup', 'click']
+  );
+  assert.equal(findEvent(gEvents, 'click').pointerType, 'touch');
+
+  const swipe = await executeBridgeMethod(listener, 'input.touch', {
+    points: [{ x: 5, y: 5, to: { x: 45, y: 5 } }],
+    holdMs: 10,
+    moveSteps: 2,
+  });
+  assert.equal(swipe.clicked, false);
+  const swipePoints = swipe.points as Array<Record<string, unknown>>;
+  assert.deepEqual(swipePoints, [
+    { elementRef: swipePoints[0].elementRef, x: 5, y: 5, toX: 45, toY: 5 },
+  ]);
+  assert.equal(cEvents.filter((event) => event.type === 'touchmove').length, 2);
+
+  const missing = await executeBridgeMethod(listener, 'input.touch', { points: [{}] });
+  assert.equal((missing.error as { code?: unknown }).code, 'INVALID_REQUEST');
 });

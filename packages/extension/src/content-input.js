@@ -410,6 +410,35 @@
     return document.activeElement instanceof Element ? document.activeElement : element;
   }
 
+  const FOCUSABLE_SELECTOR =
+    'a[href], area[href], button, input, select, textarea, summary, iframe, [tabindex], [contenteditable=""], [contenteditable="true"]';
+
+  /**
+   * Apply the focus change of a real mouse press: focus the nearest focusable
+   * ancestor, or blur the current field when the press lands on content that
+   * cannot take focus.
+   *
+   * @param {Element} element
+   * @returns {void}
+   */
+  function focusForPointerPress(element) {
+    const focusable =
+      typeof element.closest === 'function' ? element.closest(FOCUSABLE_SELECTOR) : null;
+    const target = focusable ?? element;
+    focusElement(target);
+    const active = document.activeElement;
+    if (
+      !focusable &&
+      active instanceof HTMLElement &&
+      active !== document.body &&
+      active !== target &&
+      !containsNode(target, active) &&
+      typeof active.blur === 'function'
+    ) {
+      active.blur();
+    }
+  }
+
   /**
    * @param {Element} element
    * @returns {boolean}
@@ -470,29 +499,370 @@
   }
 
   /**
+   * @typedef {{ altKey: boolean, ctrlKey: boolean, metaKey: boolean, shiftKey: boolean }} ModifierState
+   */
+
+  /**
+   * @typedef {{
+   *   modifiers: ModifierState,
+   *   button?: number,
+   *   buttons?: number,
+   *   detail?: number,
+   *   bubbles?: boolean,
+   *   cancelable?: boolean,
+   *   relatedTarget?: Element | null
+   * }} MouseDispatchOptions
+   */
+
+  /**
+   * @typedef {MouseDispatchOptions & {
+   *   pointerId: number,
+   *   pointerType: 'mouse' | 'touch',
+   *   isPrimary: boolean,
+   *   pressure?: number
+   * }} PointerDispatchOptions
+   */
+
+  /** @type {Readonly<{ pointerId: number, pointerType: 'mouse', isPrimary: true }>} */
+  const MOUSE_POINTER = Object.freeze({ pointerId: 1, pointerType: 'mouse', isPrimary: true });
+  const FIRST_TOUCH_POINTER_ID = 2;
+  const NO_MODIFIERS = Object.freeze({
+    altKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    shiftKey: false,
+  });
+
+  /**
+   * Element under the virtual mouse after the last DOM pointer interaction.
+   * Boundary events (over/enter/out/leave) are derived from it so repeated
+   * interactions see the same transitions a real pointer would produce.
+   *
+   * @type {Element | null}
+   */
+  let pointerElement = null;
+
+  /** @param {number} ms @returns {Promise<void>} */
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /** @param {unknown} value @returns {number} */
+  function normalizeHoldMs(value) {
+    return clamp(Number(value) || 0, 0, 10_000);
+  }
+
+  /** @param {Element} element @returns {boolean} */
+  function isConnectedElement(element) {
+    return typeof document.contains === 'function' ? document.contains(element) : true;
+  }
+
+  /** @param {Element | null} node @param {Element | null} other @returns {boolean} */
+  function containsNode(node, other) {
+    return Boolean(node && other && typeof node.contains === 'function' && node.contains(other));
+  }
+
+  /**
+   * @param {{ x: number, y: number }} point
+   * @param {MouseDispatchOptions} options
+   * @returns {MouseEventInit}
+   */
+  function createMouseInit(point, options) {
+    return {
+      bubbles: options.bubbles ?? true,
+      cancelable: options.cancelable ?? true,
+      composed: true,
+      clientX: point.x,
+      clientY: point.y,
+      detail: options.detail ?? 0,
+      button: options.button ?? 0,
+      buttons: options.buttons ?? 0,
+      relatedTarget: options.relatedTarget ?? null,
+      ...options.modifiers,
+    };
+  }
+
+  /**
    * @param {Element} element
    * @param {string} type
    * @param {{ x: number, y: number }} point
-   * @param {'left' | 'middle' | 'right'} button
-   * @param {number} detail
-   * @param {{ altKey: boolean, ctrlKey: boolean, metaKey: boolean, shiftKey: boolean }} modifiers
+   * @param {MouseDispatchOptions} options
    * @returns {boolean}
    */
-  function dispatchMouseEvent(element, type, point, button, detail, modifiers) {
-    const buttonState = getMouseButtonState(button);
+  function dispatchMouseEvent(element, type, point, options) {
+    return element.dispatchEvent(new MouseEvent(type, createMouseInit(point, options)));
+  }
+
+  /**
+   * Dispatch a PointerEvent where the platform has one. Real input always
+   * produces pointer events before their compatibility mouse/touch events, and
+   * many applications listen only to pointer events.
+   *
+   * @param {Element} element
+   * @param {string} type
+   * @param {{ x: number, y: number }} point
+   * @param {PointerDispatchOptions} options
+   * @returns {boolean}
+   */
+  function dispatchPointerEvent(element, type, point, options) {
+    if (typeof PointerEvent !== 'function') return true;
     return element.dispatchEvent(
-      new MouseEvent(type, {
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-        clientX: point.x,
-        clientY: point.y,
-        detail,
-        button: buttonState.button,
-        buttons: buttonState.buttons,
-        ...modifiers,
+      new PointerEvent(type, {
+        ...createMouseInit(point, options),
+        pointerId: options.pointerId,
+        pointerType: options.pointerType,
+        isPrimary: options.isPrimary,
+        pressure: options.pressure ?? 0,
+        width: 1,
+        height: 1,
       })
     );
+  }
+
+  /**
+   * Dispatch a click-family event the way Chrome does: as a PointerEvent
+   * carrying the pointer type when available, otherwise as a MouseEvent.
+   * Dispatching `click` runs the element's activation behavior (checkbox
+   * toggles, link navigation, form submission) just like HTMLElement.click(),
+   * while preserving coordinates, modifiers, and click count.
+   *
+   * @param {Element} element
+   * @param {'click' | 'auxclick' | 'contextmenu'} type
+   * @param {{ x: number, y: number }} point
+   * @param {PointerDispatchOptions} options
+   * @returns {boolean}
+   */
+  function dispatchClickEvent(element, type, point, options) {
+    if (typeof PointerEvent === 'function') {
+      return dispatchPointerEvent(element, type, point, options);
+    }
+    return dispatchMouseEvent(element, type, point, options);
+  }
+
+  /**
+   * Elements from `start` upward, stopping before the first ancestor that
+   * contains `other`. These receive the non-bubbling enter/leave events.
+   *
+   * @param {Element} start
+   * @param {Element | null} other
+   * @returns {Element[]}
+   */
+  function collectBoundaryChain(start, other) {
+    /** @type {Element[]} */
+    const chain = [];
+    for (
+      let node = /** @type {Element | null} */ (start);
+      node && !containsNode(node, other);
+      node = node.parentElement ?? null
+    ) {
+      chain.push(node);
+    }
+    return chain;
+  }
+
+  /**
+   * Move the virtual mouse onto an element: out/leave on the previous element,
+   * over/enter on the new one, then pointermove/mousemove.
+   *
+   * @param {Element} element
+   * @param {{ x: number, y: number }} point
+   * @param {ModifierState} modifiers
+   * @param {{ buttons?: number, pointerEvents?: boolean }} [options]
+   * @returns {void}
+   */
+  function movePointerTo(element, point, modifiers, options = {}) {
+    const buttons = options.buttons ?? 0;
+    const pointerEvents = options.pointerEvents !== false;
+    const mouseOptions = { modifiers, buttons };
+    const pointerOptions = { ...MOUSE_POINTER, modifiers, buttons, button: -1 };
+    if (pointerElement !== element) {
+      const previous = pointerElement && isConnectedElement(pointerElement) ? pointerElement : null;
+      const leaving = previous ? collectBoundaryChain(previous, element) : [];
+      const entering = collectBoundaryChain(element, previous).reverse();
+      const quiet = { bubbles: false, cancelable: false };
+      if (pointerEvents) {
+        if (previous) {
+          dispatchPointerEvent(previous, 'pointerout', point, {
+            ...pointerOptions,
+            relatedTarget: element,
+          });
+          for (const node of leaving) {
+            dispatchPointerEvent(node, 'pointerleave', point, {
+              ...pointerOptions,
+              ...quiet,
+              relatedTarget: element,
+            });
+          }
+        }
+        dispatchPointerEvent(element, 'pointerover', point, {
+          ...pointerOptions,
+          relatedTarget: previous,
+        });
+        for (const node of entering) {
+          dispatchPointerEvent(node, 'pointerenter', point, {
+            ...pointerOptions,
+            ...quiet,
+            relatedTarget: previous,
+          });
+        }
+      }
+      if (previous) {
+        dispatchMouseEvent(previous, 'mouseout', point, {
+          ...mouseOptions,
+          relatedTarget: element,
+        });
+        for (const node of leaving) {
+          dispatchMouseEvent(node, 'mouseleave', point, {
+            ...mouseOptions,
+            ...quiet,
+            relatedTarget: element,
+          });
+        }
+      }
+      dispatchMouseEvent(element, 'mouseover', point, { ...mouseOptions, relatedTarget: previous });
+      for (const node of entering) {
+        dispatchMouseEvent(node, 'mouseenter', point, {
+          ...mouseOptions,
+          ...quiet,
+          relatedTarget: previous,
+        });
+      }
+      pointerElement = element;
+    }
+    if (pointerEvents) dispatchPointerEvent(element, 'pointermove', point, pointerOptions);
+    dispatchMouseEvent(element, 'mousemove', point, mouseOptions);
+  }
+
+  /**
+   * Press a mouse button: pointerdown, then mousedown unless the page canceled
+   * pointerdown (which suppresses compatibility mouse events per the Pointer
+   * Events spec). Focus is the default action of an uncanceled mousedown.
+   *
+   * @param {Element} element
+   * @param {{ x: number, y: number }} point
+   * @param {'left' | 'middle' | 'right'} button
+   * @param {number} detail
+   * @param {ModifierState} modifiers
+   * @returns {{ mouseEventsSuppressed: boolean, focusAllowed: boolean }}
+   */
+  function pressMouseButton(element, point, button, detail, modifiers) {
+    const state = getMouseButtonState(button);
+    const pointerAllowed = dispatchPointerEvent(element, 'pointerdown', point, {
+      ...MOUSE_POINTER,
+      modifiers,
+      button: state.button,
+      buttons: state.buttons,
+      pressure: 0.5,
+    });
+    if (!pointerAllowed) {
+      return { mouseEventsSuppressed: true, focusAllowed: true };
+    }
+    const mouseAllowed = dispatchMouseEvent(element, 'mousedown', point, {
+      modifiers,
+      button: state.button,
+      buttons: state.buttons,
+      detail,
+    });
+    return { mouseEventsSuppressed: false, focusAllowed: mouseAllowed };
+  }
+
+  /**
+   * @param {Element} element
+   * @param {{ x: number, y: number }} point
+   * @param {'left' | 'middle' | 'right'} button
+   * @param {number} detail
+   * @param {ModifierState} modifiers
+   * @param {boolean} mouseEventsSuppressed
+   * @returns {void}
+   */
+  function releaseMouseButton(element, point, button, detail, modifiers, mouseEventsSuppressed) {
+    const state = getMouseButtonState(button);
+    dispatchPointerEvent(element, 'pointerup', point, {
+      ...MOUSE_POINTER,
+      modifiers,
+      button: state.button,
+      buttons: 0,
+    });
+    if (!mouseEventsSuppressed) {
+      dispatchMouseEvent(element, 'mouseup', point, {
+        modifiers,
+        button: state.button,
+        buttons: 0,
+        detail,
+      });
+    }
+  }
+
+  /**
+   * Pick the element that receives a release after a hold: the pressed
+   * element while it is still attached, otherwise whatever is now under the
+   * pointer.
+   *
+   * @param {Element} element
+   * @param {{ x: number, y: number }} point
+   * @returns {Element}
+   */
+  function getReleaseTarget(element, point) {
+    if (isConnectedElement(element)) return element;
+    const hit =
+      typeof document.elementFromPoint === 'function'
+        ? document.elementFromPoint(point.x, point.y)
+        : null;
+    return hit ?? document.body;
+  }
+
+  /** US-layout code and legacy keyCode for keys DOM keyboard events commonly need. */
+  const KEY_DEFINITIONS = Object.freeze({
+    ' ': { code: 'Space', keyCode: 32 },
+    Enter: { code: 'Enter', keyCode: 13 },
+    Tab: { code: 'Tab', keyCode: 9 },
+    Escape: { code: 'Escape', keyCode: 27 },
+    Backspace: { code: 'Backspace', keyCode: 8 },
+    Delete: { code: 'Delete', keyCode: 46 },
+    ArrowUp: { code: 'ArrowUp', keyCode: 38 },
+    ArrowDown: { code: 'ArrowDown', keyCode: 40 },
+    ArrowLeft: { code: 'ArrowLeft', keyCode: 37 },
+    ArrowRight: { code: 'ArrowRight', keyCode: 39 },
+    Home: { code: 'Home', keyCode: 36 },
+    End: { code: 'End', keyCode: 35 },
+    PageUp: { code: 'PageUp', keyCode: 33 },
+    PageDown: { code: 'PageDown', keyCode: 34 },
+    Shift: { code: 'ShiftLeft', keyCode: 16 },
+    Control: { code: 'ControlLeft', keyCode: 17 },
+    Alt: { code: 'AltLeft', keyCode: 18 },
+    Meta: { code: 'MetaLeft', keyCode: 91 },
+    ',': { code: 'Comma', keyCode: 188 },
+    '.': { code: 'Period', keyCode: 190 },
+    '/': { code: 'Slash', keyCode: 191 },
+    ';': { code: 'Semicolon', keyCode: 186 },
+    "'": { code: 'Quote', keyCode: 222 },
+    '[': { code: 'BracketLeft', keyCode: 219 },
+    ']': { code: 'BracketRight', keyCode: 221 },
+    '\\': { code: 'Backslash', keyCode: 220 },
+    '-': { code: 'Minus', keyCode: 189 },
+    '=': { code: 'Equal', keyCode: 187 },
+    '`': { code: 'Backquote', keyCode: 192 },
+  });
+
+  /**
+   * @param {string} key
+   * @returns {{ code: string, keyCode: number }}
+   */
+  function getKeyDefinition(key) {
+    if (Object.hasOwn(KEY_DEFINITIONS, key)) {
+      return KEY_DEFINITIONS[/** @type {keyof typeof KEY_DEFINITIONS} */ (key)];
+    }
+    if (/^[a-z]$/i.test(key)) {
+      return { code: `Key${key.toUpperCase()}`, keyCode: key.toUpperCase().charCodeAt(0) };
+    }
+    if (/^[0-9]$/.test(key)) {
+      return { code: `Digit${key}`, keyCode: key.charCodeAt(0) };
+    }
+    const functionKey = /^F([1-9]|1[0-2])$/.exec(key);
+    if (functionKey) {
+      return { code: key, keyCode: 111 + Number(functionKey[1]) };
+    }
+    return { code: '', keyCode: 0 };
   }
 
   /**
@@ -593,35 +963,63 @@
    * @returns {{ target: Element, key: string, handled: boolean }}
    */
   function runKeyAction(element, key, modifiers) {
+    const pressed = beginKeyAction(element, key, modifiers);
+    endKeyAction(pressed);
+    return { target: pressed.target, key: pressed.key, handled: pressed.handled };
+  }
+
+  /**
+   * @typedef {{ target: Element, key: string, handled: boolean, modifierState: ModifierState }} PressedKey
+   */
+
+  /**
+   * Press a key: keydown, keypress for character keys, then the default
+   * editing action. A canceled keydown suppresses both, as in real browsers.
+   *
+   * @param {Element} element
+   * @param {string} key
+   * @param {unknown} modifiers
+   * @returns {PressedKey}
+   */
+  function beginKeyAction(element, key, modifiers) {
     const normalizedKey = key === 'Space' ? ' ' : key;
     const keyboardTarget = focusElement(element);
     const modifierState = normalizeModifierState(modifiers);
-    dispatchKeyboardEvent(keyboardTarget, 'keydown', normalizedKey, modifierState);
+    const keyDownAllowed = dispatchKeyboardEvent(
+      keyboardTarget,
+      'keydown',
+      normalizedKey,
+      modifierState
+    );
 
     let handled = false;
-    const editable = getEditableTarget(keyboardTarget);
-    if (
-      editable &&
-      normalizedKey.length === 1 &&
-      !modifierState.altKey &&
-      !modifierState.ctrlKey &&
-      !modifierState.metaKey
-    ) {
-      handled = insertTextIntoEditable(editable, normalizedKey);
-    } else if (editable && normalizedKey === 'Backspace') {
-      handled = deleteTextFromEditable(editable, 'backward');
-    } else if (editable && normalizedKey === 'Delete') {
-      handled = deleteTextFromEditable(editable, 'forward');
-    } else if (normalizedKey === 'Enter') {
-      handled = handleEnterKey(keyboardTarget);
+    const commandModifier = modifierState.altKey || modifierState.ctrlKey || modifierState.metaKey;
+    const producesCharacter =
+      (normalizedKey.length === 1 || normalizedKey === 'Enter') && !commandModifier;
+    const keyPressAllowed =
+      keyDownAllowed && producesCharacter
+        ? dispatchKeyboardEvent(keyboardTarget, 'keypress', normalizedKey, modifierState)
+        : keyDownAllowed;
+
+    if (keyPressAllowed) {
+      const editable = getEditableTarget(keyboardTarget);
+      if (editable && normalizedKey.length === 1 && !commandModifier) {
+        handled = insertTextIntoEditable(editable, normalizedKey);
+      } else if (editable && normalizedKey === 'Backspace') {
+        handled = deleteTextFromEditable(editable, 'backward');
+      } else if (editable && normalizedKey === 'Delete') {
+        handled = deleteTextFromEditable(editable, 'forward');
+      } else if (normalizedKey === 'Enter') {
+        handled = handleEnterKey(keyboardTarget);
+      }
     }
 
-    dispatchKeyboardEvent(keyboardTarget, 'keyup', normalizedKey, modifierState);
-    return {
-      target: keyboardTarget,
-      key: normalizedKey,
-      handled,
-    };
+    return { target: keyboardTarget, key: normalizedKey, handled, modifierState };
+  }
+
+  /** @param {PressedKey} pressed @returns {void} */
+  function endKeyAction(pressed) {
+    dispatchKeyboardEvent(pressed.target, 'keyup', pressed.key, pressed.modifierState);
   }
 
   /**
@@ -632,9 +1030,14 @@
    * @returns {boolean}
    */
   function dispatchKeyboardEvent(element, type, key, modifiers) {
+    const definition = getKeyDefinition(key);
+    const charCode = type === 'keypress' ? (key === 'Enter' ? 13 : key.charCodeAt(0)) : 0;
     return element.dispatchEvent(
       new KeyboardEvent(type, {
         key,
+        code: definition.code,
+        keyCode: type === 'keypress' ? charCode : definition.keyCode,
+        charCode,
         bubbles: true,
         cancelable: true,
         composed: true,
@@ -831,12 +1234,15 @@
   }
 
   /**
-   * Trigger a click-like interaction on a target element.
+   * Trigger a click with the event sequence of a real mouse: boundary and move
+   * events, then per click pointerdown/mousedown, focus, optional hold,
+   * pointerup/mouseup, and a click/auxclick/contextmenu event, plus dblclick
+   * for a double click.
    *
    * @param {Record<string, any>} params
-   * @returns {Record<string, unknown>}
+   * @returns {Promise<Record<string, unknown>>}
    */
-  function clickTarget(params) {
+  async function clickTarget(params) {
     const resolved = resolveActionableTarget(params.target, {
       pointer: true,
       recoverStale: params.recoverStale === true,
@@ -845,29 +1251,39 @@
     const button = normalizeMouseButton(params.button);
     const clickCount = clamp(params.clickCount ?? 1, 1, 2);
     const modifiers = normalizeModifierState(params.modifiers);
+    const holdMs = normalizeHoldMs(params.holdMs);
+    const state = getMouseButtonState(button);
+    const clickType = button === 'left' ? 'click' : button === 'right' ? 'contextmenu' : 'auxclick';
 
-    focusElement(element);
-    dispatchMouseEvent(element, 'mousemove', point, button, 0, modifiers);
-    dispatchMouseEvent(element, 'mousedown', point, button, clickCount, modifiers);
-    dispatchMouseEvent(element, 'mouseup', point, button, clickCount, modifiers);
-
-    if (button === 'left') {
-      if (element instanceof HTMLElement) {
-        element.click();
-        if (clickCount === 2) {
-          element.click();
-          dispatchMouseEvent(element, 'dblclick', point, button, clickCount, modifiers);
-        }
-      } else {
-        dispatchMouseEvent(element, 'click', point, button, clickCount, modifiers);
-        if (clickCount === 2) {
-          dispatchMouseEvent(element, 'dblclick', point, button, clickCount, modifiers);
-        }
-      }
-    } else if (button === 'right') {
-      dispatchMouseEvent(element, 'contextmenu', point, button, clickCount, modifiers);
-    } else {
-      dispatchMouseEvent(element, 'auxclick', point, button, clickCount, modifiers);
+    movePointerTo(element, point, modifiers);
+    let releaseTarget = element;
+    for (let detail = 1; detail <= clickCount; detail += 1) {
+      const pressed = pressMouseButton(element, point, button, detail, modifiers);
+      if (detail === 1 && pressed.focusAllowed) focusForPointerPress(element);
+      if (holdMs > 0) await sleep(holdMs);
+      releaseTarget = getReleaseTarget(element, point);
+      releaseMouseButton(
+        releaseTarget,
+        point,
+        button,
+        detail,
+        modifiers,
+        pressed.mouseEventsSuppressed
+      );
+      dispatchClickEvent(releaseTarget, clickType, point, {
+        ...MOUSE_POINTER,
+        modifiers,
+        button: state.button,
+        buttons: 0,
+        detail,
+      });
+    }
+    if (clickCount === 2 && button === 'left') {
+      dispatchMouseEvent(releaseTarget, 'dblclick', point, {
+        modifiers,
+        button: state.button,
+        detail: 2,
+      });
     }
 
     return {
@@ -875,6 +1291,7 @@
       clicked: true,
       button,
       clickCount,
+      ...(holdMs > 0 ? { holdMs } : {}),
       resolution,
       execution: getExecutionMetadata('dom', point),
     };
@@ -1032,12 +1449,13 @@
   }
 
   /**
-   * Send one keyboard interaction to the currently focused or targeted element.
+   * Send one keyboard interaction to the currently focused or targeted element,
+   * optionally holding the key down for holdMs before keyup.
    *
    * @param {Record<string, any>} params
-   * @returns {Record<string, unknown>}
+   * @returns {Promise<Record<string, unknown>>}
    */
-  function pressKeyTarget(params) {
+  async function pressKeyTarget(params) {
     const resolved =
       params.target?.elementRef || params.target?.selector
         ? resolveActionableTarget(params.target, {
@@ -1066,11 +1484,15 @@
       throw new Error('A key is required.');
     }
 
-    const result = runKeyAction(target, key, params.modifiers);
+    const holdMs = normalizeHoldMs(params.holdMs);
+    const result = beginKeyAction(target, key, params.modifiers);
+    if (holdMs > 0) await sleep(holdMs);
+    endKeyAction(result);
     return {
       elementRef: result.target instanceof Element ? rememberElement(result.target) : null,
       key: result.key,
       handled: result.handled,
+      ...(holdMs > 0 ? { holdMs } : {}),
       resolution: resolved.resolution,
       execution: getExecutionMetadata('dom', resolved.point),
     };
@@ -1207,9 +1629,7 @@
     const modifiers = normalizeModifierState(params.modifiers);
     const duration = clamp(params.duration ?? 0, 0, 5000);
 
-    dispatchMouseEvent(element, 'mouseenter', point, 'left', 0, modifiers);
-    dispatchMouseEvent(element, 'mouseover', point, 'left', 0, modifiers);
-    dispatchMouseEvent(element, 'mousemove', point, 'left', 0, modifiers);
+    movePointerTo(element, point, modifiers);
 
     const ref = rememberElement(element);
     if (duration > 0) {
@@ -1233,60 +1653,71 @@
   }
 
   /**
-   * Perform a drag-and-drop operation between two elements.
+   * @param {Element} element
+   * @returns {boolean}
+   */
+  function isNativeDragSource(element) {
+    if (element instanceof HTMLElement && element.draggable === true) return true;
+    return typeof element.closest === 'function' && Boolean(element.closest('[draggable="true"]'));
+  }
+
+  /**
+   * @param {Element} element
+   * @param {string} type
+   * @param {{ x: number, y: number }} point
+   * @param {DataTransfer} dataTransfer
+   * @returns {boolean}
+   */
+  function dispatchDragEvent(element, type, point, dataTransfer) {
+    return element.dispatchEvent(
+      new DragEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        clientX: point.x,
+        clientY: point.y,
+        dataTransfer,
+      })
+    );
+  }
+
+  /**
+   * @param {{ x: number, y: number }} point
+   * @param {Element} fallback
+   * @returns {Element}
+   */
+  function elementAtPoint(point, fallback) {
+    const hit =
+      typeof document.elementFromPoint === 'function'
+        ? document.elementFromPoint(point.x, point.y)
+        : null;
+    return hit ?? fallback;
+  }
+
+  /**
+   * Perform a drag between two elements. Sources the browser would drag
+   * natively (draggable elements) get the HTML5 drag-and-drop sequence; all
+   * other sources get a pointer drag (press, interpolated moves across the
+   * elements under the pointer, release), which is what pointer-driven
+   * sortable lists, sliders, and canvases listen for.
    *
    * @param {Record<string, any>} params
-   * @returns {Record<string, unknown>}
+   * @returns {Promise<Record<string, unknown>>}
    */
-  function dragTarget(params) {
+  async function dragTarget(params) {
     const sourceResolved = resolveActionableTarget(params.source, {
       pointer: true,
       recoverStale: params.recoverStale === true,
     });
     const source = sourceResolved.element;
+    const sourcePoint = sourceResolved.point;
     const offsetX = Number(params.offsetX) || 0;
     const offsetY = Number(params.offsetY) || 0;
-    const emptyMods = {
-      altKey: false,
-      ctrlKey: false,
-      metaKey: false,
-      shiftKey: false,
-    };
+    const native = isNativeDragSource(source);
 
-    const sourcePoint = sourceResolved.point;
-
-    const dataTransfer = new DataTransfer();
-
-    source.dispatchEvent(
-      new MouseEvent('mousedown', {
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-        clientX: sourcePoint.x,
-        clientY: sourcePoint.y,
-        ...emptyMods,
-      })
-    );
-    source.dispatchEvent(
-      new DragEvent('dragstart', {
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-        clientX: sourcePoint.x,
-        clientY: sourcePoint.y,
-        dataTransfer,
-      })
-    );
-    source.dispatchEvent(
-      new DragEvent('drag', {
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-        clientX: sourcePoint.x,
-        clientY: sourcePoint.y,
-        dataTransfer,
-      })
-    );
+    movePointerTo(source, sourcePoint, NO_MODIFIERS);
+    const pressed = pressMouseButton(source, sourcePoint, 'left', 1, NO_MODIFIERS);
+    if (pressed.focusAllowed) focusForPointerPress(source);
 
     let destinationResolved;
     try {
@@ -1295,25 +1726,13 @@
         recoverStale: params.recoverStale === true,
       });
     } catch (error) {
-      source.dispatchEvent(
-        new DragEvent('dragend', {
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-          clientX: sourcePoint.x,
-          clientY: sourcePoint.y,
-          dataTransfer,
-        })
-      );
-      source.dispatchEvent(
-        new MouseEvent('mouseup', {
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-          clientX: sourcePoint.x,
-          clientY: sourcePoint.y,
-          ...emptyMods,
-        })
+      releaseMouseButton(
+        source,
+        sourcePoint,
+        'left',
+        1,
+        NO_MODIFIERS,
+        pressed.mouseEventsSuppressed
       );
       throw error;
     }
@@ -1321,66 +1740,281 @@
     const destPoint = destinationResolved.point;
     const endPoint = { x: destPoint.x + offsetX, y: destPoint.y + offsetY };
 
-    destination.dispatchEvent(
-      new DragEvent('dragenter', {
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-        clientX: endPoint.x,
-        clientY: endPoint.y,
-        dataTransfer,
-      })
-    );
-    destination.dispatchEvent(
-      new DragEvent('dragover', {
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-        clientX: endPoint.x,
-        clientY: endPoint.y,
-        dataTransfer,
-      })
-    );
-    destination.dispatchEvent(
-      new DragEvent('drop', {
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-        clientX: endPoint.x,
-        clientY: endPoint.y,
-        dataTransfer,
-      })
-    );
-    source.dispatchEvent(
-      new DragEvent('dragend', {
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-        clientX: endPoint.x,
-        clientY: endPoint.y,
-        dataTransfer,
-      })
-    );
-    source.dispatchEvent(
-      new MouseEvent('mouseup', {
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-        clientX: endPoint.x,
-        clientY: endPoint.y,
-        ...emptyMods,
-      })
-    );
+    if (native) {
+      const dataTransfer = new DataTransfer();
+      const started = dispatchDragEvent(source, 'dragstart', sourcePoint, dataTransfer);
+      if (started) {
+        dispatchPointerEvent(source, 'pointercancel', sourcePoint, {
+          ...MOUSE_POINTER,
+          modifiers: NO_MODIFIERS,
+          button: -1,
+          cancelable: false,
+        });
+        dispatchDragEvent(source, 'drag', sourcePoint, dataTransfer);
+        dispatchDragEvent(destination, 'dragenter', endPoint, dataTransfer);
+        const dropAllowed = !dispatchDragEvent(destination, 'dragover', endPoint, dataTransfer);
+        if (dropAllowed) {
+          dispatchDragEvent(destination, 'drop', endPoint, dataTransfer);
+        } else {
+          dispatchDragEvent(destination, 'dragleave', endPoint, dataTransfer);
+        }
+        dispatchDragEvent(source, 'dragend', endPoint, dataTransfer);
+        pointerElement = destination;
+      } else {
+        releaseMouseButton(
+          source,
+          sourcePoint,
+          'left',
+          1,
+          NO_MODIFIERS,
+          pressed.mouseEventsSuppressed
+        );
+      }
+    } else {
+      const steps = 10;
+      let current = source;
+      for (let step = 1; step <= steps; step += 1) {
+        await sleep(16);
+        const progress = step / steps;
+        const point = {
+          x: sourcePoint.x + (endPoint.x - sourcePoint.x) * progress,
+          y: sourcePoint.y + (endPoint.y - sourcePoint.y) * progress,
+        };
+        current = elementAtPoint(point, progress < 0.5 ? source : destination);
+        movePointerTo(current, point, NO_MODIFIERS, { buttons: 1 });
+      }
+      releaseMouseButton(current, endPoint, 'left', 1, NO_MODIFIERS, pressed.mouseEventsSuppressed);
+    }
 
     return {
       sourceRef: rememberElement(source),
       destinationRef: rememberElement(destination),
       dragged: true,
+      strategy: native ? 'html5' : 'pointer',
       resolution: {
         source: sourceResolved.resolution,
         destination: destinationResolved.resolution,
       },
       execution: getExecutionMetadata('dom', endPoint),
+    };
+  }
+
+  /**
+   * @typedef {{
+   *   identifier: number,
+   *   element: Element,
+   *   start: { x: number, y: number },
+   *   end: { x: number, y: number } | null,
+   *   current: { x: number, y: number }
+   * }} TouchContact
+   */
+
+  /**
+   * Resolve one normalized touch position: an actionable target's center or
+   * a viewport point and the element under it.
+   *
+   * @param {{ target?: { elementRef?: string, selector?: string } | null, x?: number | null, y?: number | null } | null | undefined} position
+   * @param {boolean} recoverStale
+   * @returns {{ element: Element, point: { x: number, y: number } }}
+   */
+  function resolveTouchPosition(position, recoverStale) {
+    if (position?.target && (position.target.elementRef || position.target.selector)) {
+      const resolved = resolveActionableTarget(position.target, { pointer: true, recoverStale });
+      return { element: resolved.element, point: resolved.point };
+    }
+    const x = Number(position?.x);
+    const y = Number(position?.y);
+    if (position?.x == null || position?.y == null || !Number.isFinite(x) || !Number.isFinite(y)) {
+      throw createInputError(
+        'INVALID_REQUEST',
+        'Touch point needs a target or numeric x and y.',
+        {}
+      );
+    }
+    const point = { x, y };
+    return { element: elementAtPoint(point, document.body ?? document.documentElement), point };
+  }
+
+  /**
+   * @param {TouchContact} contact
+   * @param {number} pressure
+   * @param {number} buttons
+   * @returns {PointerDispatchOptions}
+   */
+  function touchPointerOptions(contact, pressure, buttons) {
+    return {
+      pointerId: FIRST_TOUCH_POINTER_ID + contact.identifier,
+      pointerType: 'touch',
+      isPrimary: contact.identifier === 0,
+      modifiers: NO_MODIFIERS,
+      button: buttons ? 0 : -1,
+      buttons,
+      pressure,
+    };
+  }
+
+  /**
+   * @param {TouchContact} contact
+   * @returns {Touch}
+   */
+  function createTouch(contact) {
+    return new Touch({
+      identifier: contact.identifier,
+      target: contact.element,
+      clientX: contact.current.x,
+      clientY: contact.current.y,
+      pageX: contact.current.x + (Number(globalThis.scrollX) || 0),
+      pageY: contact.current.y + (Number(globalThis.scrollY) || 0),
+      radiusX: 1,
+      radiusY: 1,
+      force: 0.5,
+    });
+  }
+
+  /**
+   * Dispatch a TouchEvent for one changed contact. Pages without Touch support
+   * receive only the pointer events.
+   *
+   * @param {TouchContact} changed
+   * @param {'touchstart' | 'touchmove' | 'touchend'} type
+   * @param {TouchContact[]} active - contacts still on the surface after this change
+   * @returns {boolean}
+   */
+  function dispatchTouchEvent(changed, type, active) {
+    if (typeof Touch !== 'function' || typeof TouchEvent !== 'function') return true;
+    return changed.element.dispatchEvent(
+      new TouchEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        touches: active.map(createTouch),
+        targetTouches: active
+          .filter((contact) => contact.element === changed.element)
+          .map(createTouch),
+        changedTouches: [createTouch(changed)],
+      })
+    );
+  }
+
+  /**
+   * Put one or more fingers down at the same time, optionally move them, hold
+   * for holdMs, and lift them. Each finger is a separate touch pointer, so
+   * chords and multi-finger gestures reach pointer and touch listeners alike.
+   * A single-finger tap also produces compatibility mouse events and a click.
+   *
+   * @param {Record<string, any>} params
+   * @returns {Promise<Record<string, unknown>>}
+   */
+  async function touchTarget(params) {
+    const recoverStale = params.recoverStale === true;
+    const points = Array.isArray(params.points) ? params.points : [];
+    if (!points.length) {
+      throw createInputError(
+        'INVALID_REQUEST',
+        'points must contain at least one touch point.',
+        {}
+      );
+    }
+    /** @type {TouchContact[]} */
+    const contacts = points.map((point, index) => {
+      const start = resolveTouchPosition(point, recoverStale);
+      return {
+        identifier: index,
+        element: start.element,
+        start: start.point,
+        end: point?.to ? resolveTouchPosition(point.to, recoverStale).point : null,
+        current: { ...start.point },
+      };
+    });
+    const holdMs = normalizeHoldMs(params.holdMs);
+    const moveSteps = clamp(params.moveSteps ?? 10, 1, 60);
+    const moving = contacts.some((contact) => contact.end);
+    let canceled = false;
+
+    /** @type {TouchContact[]} */
+    const active = [];
+    for (const contact of contacts) {
+      const options = touchPointerOptions(contact, 0.5, 1);
+      dispatchPointerEvent(contact.element, 'pointerover', contact.current, options);
+      dispatchPointerEvent(contact.element, 'pointerenter', contact.current, {
+        ...options,
+        bubbles: false,
+        cancelable: false,
+      });
+      dispatchPointerEvent(contact.element, 'pointerdown', contact.current, options);
+      active.push(contact);
+      if (!dispatchTouchEvent(contact, 'touchstart', active)) canceled = true;
+    }
+
+    if (moving) {
+      for (let step = 1; step <= moveSteps; step += 1) {
+        await sleep(holdMs / moveSteps);
+        const progress = step / moveSteps;
+        for (const contact of contacts) {
+          if (!contact.end) continue;
+          contact.current = {
+            x: contact.start.x + (contact.end.x - contact.start.x) * progress,
+            y: contact.start.y + (contact.end.y - contact.start.y) * progress,
+          };
+          dispatchPointerEvent(
+            contact.element,
+            'pointermove',
+            contact.current,
+            touchPointerOptions(contact, 0.5, 1)
+          );
+          if (!dispatchTouchEvent(contact, 'touchmove', active)) canceled = true;
+        }
+      }
+    } else if (holdMs > 0) {
+      await sleep(holdMs);
+    }
+
+    for (const contact of contacts) {
+      const options = touchPointerOptions(contact, 0, 0);
+      dispatchPointerEvent(contact.element, 'pointerup', contact.current, options);
+      dispatchPointerEvent(contact.element, 'pointerout', contact.current, options);
+      dispatchPointerEvent(contact.element, 'pointerleave', contact.current, {
+        ...options,
+        bubbles: false,
+        cancelable: false,
+      });
+      active.splice(active.indexOf(contact), 1);
+      if (!dispatchTouchEvent(contact, 'touchend', active)) canceled = true;
+    }
+
+    let clicked = false;
+    if (contacts.length === 1 && !moving && !canceled) {
+      const [contact] = contacts;
+      const element = getReleaseTarget(contact.element, contact.current);
+      movePointerTo(element, contact.current, NO_MODIFIERS, { pointerEvents: false });
+      const mouseOptions = { modifiers: NO_MODIFIERS, detail: 1 };
+      if (
+        dispatchMouseEvent(element, 'mousedown', contact.current, { ...mouseOptions, buttons: 1 })
+      ) {
+        focusForPointerPress(element);
+      }
+      dispatchMouseEvent(element, 'mouseup', contact.current, mouseOptions);
+      dispatchClickEvent(element, 'click', contact.current, {
+        ...touchPointerOptions(contact, 0, 0),
+        button: 0,
+        detail: 1,
+      });
+      clicked = true;
+    }
+
+    return {
+      touched: true,
+      pointCount: contacts.length,
+      points: contacts.map((contact) => ({
+        elementRef: rememberElement(contact.element),
+        x: Math.round(contact.start.x),
+        y: Math.round(contact.start.y),
+        ...(contact.end ? { toX: Math.round(contact.end.x), toY: Math.round(contact.end.y) } : {}),
+      })),
+      holdMs,
+      canceled,
+      clicked,
+      execution: getExecutionMetadata('dom', contacts[0].start),
     };
   }
 
@@ -1400,6 +2034,7 @@
       pointer: params.kind === 'pointer',
       recoverStale: params.recoverStale === true,
     });
+    if (params.kind === 'focus') focusElement(base.element);
     let resolved = base;
     if (params.kind === 'editable') {
       const editable = getEditableTarget(base.element);
@@ -1570,6 +2205,7 @@
     scrollViewport,
     selectOptionTarget,
     setCheckedTarget,
+    touchTarget,
     typeIntoTarget,
   });
 })();

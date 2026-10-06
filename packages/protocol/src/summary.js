@@ -56,8 +56,67 @@ import { sanitizeIncidentalUrl } from './incidental-sanitizer.js';
  * }} BatchItemSummary
  */
 
+/** Evaluate values longer than this stay out of the summary; evidence holds them. */
+const MAX_EVALUATE_SUMMARY_CHARS = 160;
+const EVALUATE_PREVIEW_CHARS = 80;
+
+/**
+ * Keep evaluate summaries short: small values inline, larger ones as a shape
+ * description, because the full value is already delivered in evidence.
+ *
+ * @param {unknown} value
+ * @returns {string}
+ */
+function summarizeEvaluateValue(value) {
+  const json = JSON.stringify(value) ?? String(value);
+  if (json.length <= MAX_EVALUATE_SUMMARY_CHARS) return json;
+  const shape = Array.isArray(value)
+    ? `${value.length} item(s)`
+    : value && typeof value === 'object'
+      ? `${Object.keys(value).length} key(s)`
+      : `${json.length} chars`;
+  return `${shape}, ${json.length} chars as JSON; full value in evidence.value`;
+}
+
+/**
+ * @param {string | undefined} method
+ * @param {Record<string, unknown>} result
+ * @returns {string}
+ */
+function describeTabResult(method, result) {
+  const url = typeof result.url === 'string' && result.url ? ` (${result.url})` : '';
+  switch (method) {
+    case 'navigation.reload':
+      return `Reloaded tab ${result.tabId}${url}.`;
+    case 'navigation.go_back':
+      return `Navigated back in tab ${result.tabId}${url}.`;
+    case 'navigation.go_forward':
+      return `Navigated forward in tab ${result.tabId}${url}.`;
+    case 'tabs.activate':
+      return `Tab ${result.tabId} activated${url}.`;
+    case 'page.wait_for_load_state':
+      return `Tab ${result.tabId} ${typeof result.status === 'string' ? result.status : 'ready'}${url}.`;
+    default:
+      return `Tab ${result.tabId} created${url}.`;
+  }
+}
+
 /** @type {Record<string, ActionSummary>} */
 const ACTION_SUMMARIES = {
+  performed: {
+    text: (r) => {
+      const failures = Array.isArray(r.failures) ? r.failures.length : 0;
+      return `Performed ${r.completed ?? 0}/${r.total ?? 0} step(s) in ${r.elapsedMs ?? 0}ms${failures ? ` with ${failures} failed step(s)` : ''}.`;
+    },
+    evidence: (r) => r,
+  },
+  touched: {
+    text: (r) => {
+      const mode = toRecord(r.execution).actualMode;
+      return `Touched ${r.pointCount ?? 0} point(s)${typeof mode === 'string' ? ` via ${mode}` : ''}.`;
+    },
+    evidence: (r) => r,
+  },
   hovered: {
     text: (r) => `Hover ${r.hovered ? 'active' : 'failed'} on ${r.elementRef}.`,
     evidence: (r) => r,
@@ -545,7 +604,10 @@ export function summarizeBridgeResponse(response, method) {
     } else if (isNull) {
       repr = '';
     } else if (typeof result.value === 'string') {
-      repr = result.value.length > 200 ? `${result.value.slice(0, 199)}\u2026` : result.value;
+      repr =
+        result.value.length > MAX_EVALUATE_SUMMARY_CHARS
+          ? `${result.value.length} chars, starts ${JSON.stringify(result.value.slice(0, EVALUATE_PREVIEW_CHARS))}\u2026`
+          : result.value;
     } else if (
       typeof result.value === 'object' &&
       result.value !== null &&
@@ -553,7 +615,7 @@ export function summarizeBridgeResponse(response, method) {
     ) {
       repr = '(empty - may be a Promise, Map, or non-serializable value)';
     } else {
-      repr = JSON.stringify(result.value);
+      repr = summarizeEvaluateValue(result.value);
     }
     const typeLabel = isNull ? 'null' : result.type;
     return {
@@ -724,10 +786,7 @@ export function summarizeBridgeResponse(response, method) {
     }
     return {
       ok: true,
-      summary: appendProtocolWarning(
-        `Tab ${result.tabId} created${result.url ? ` (${result.url})` : ''}.`,
-        protocolWarning
-      ),
+      summary: appendProtocolWarning(describeTabResult(actionMethod, result), protocolWarning),
       evidence: result,
     };
   }

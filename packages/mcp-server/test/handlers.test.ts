@@ -748,6 +748,26 @@ test('handleNavigationTool scroll calls viewport.scroll', async () => {
   );
 });
 
+test('handleInputTool forwards holdMs for click and press_key only when provided', async () => {
+  await withMockedBridge(
+    async () => ok({}),
+    async (calls) => {
+      await handleInputTool({ action: 'click', selector: '.key', holdMs: 350 });
+      await handleInputTool({ action: 'press_key', key: 'q', holdMs: 200, executionMode: 'cdp' });
+      await handleInputTool({ action: 'press_key', key: 'Enter' });
+      assert.deepEqual(
+        calls.map((call) => [call.method, call.params?.holdMs, call.params?.executionMode]),
+        [
+          ['input.click', 350, undefined],
+          ['input.press_key', 200, 'cdp'],
+          ['input.press_key', undefined, undefined],
+        ]
+      );
+      assert.equal(Object.hasOwn(calls[2].params ?? {}, 'holdMs'), false);
+    }
+  );
+});
+
 test('handleInputTool click passes selectors atomically to input.click', async () => {
   await withMockedBridge(
     async (record) => {

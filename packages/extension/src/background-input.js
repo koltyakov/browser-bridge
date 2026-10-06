@@ -1,6 +1,7 @@
 // @ts-check
 
 import { BridgeError, ERROR_CODES } from '../../protocol/src/index.js';
+import { createCdpKeyPressEventPair } from './background-helpers.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */
 /** @typedef {import('./background-state.js').ResolvedTabTarget} ResolvedTabTarget */
@@ -32,7 +33,19 @@ const CDP_INPUT_METHODS = new Set([
   'input.drag',
   'input.type',
   'input.fill',
+  'input.press_key',
+  'input.touch',
 ]);
+
+/**
+ * @typedef {{
+ *   id: number,
+ *   start: { x: number, y: number },
+ *   end: { x: number, y: number } | null,
+ *   current: { x: number, y: number },
+ *   elementRef: string | null
+ * }} NativeTouchContact
+ */
 
 /**
  * @param {{
@@ -72,6 +85,10 @@ export function createBackgroundInputController(dependencies) {
             return type(debuggerTarget, tab.tabId, params, false);
           case 'input.fill':
             return type(debuggerTarget, tab.tabId, params, true);
+          case 'input.press_key':
+            return pressKey(debuggerTarget, tab.tabId, params);
+          case 'input.touch':
+            return touch(debuggerTarget, tab.tabId, params);
           default:
             throw new BridgeError(
               ERROR_CODES.INPUT_UNSUPPORTED,
@@ -90,19 +107,191 @@ export function createBackgroundInputController(dependencies) {
     const clickCount = Number(params.clickCount) === 2 ? 2 : 1;
     const modifiers = toModifierMask(params.modifiers);
     const buttons = toButtonMask(button);
+    const holdMs = toHoldMs(params.holdMs);
     await sendMouse(target, 'mouseMoved', resolved.point, 'none', 0, modifiers, 0);
     for (let sequence = 1; sequence <= clickCount; sequence += 1) {
       await sendMouse(target, 'mousePressed', resolved.point, button, buttons, modifiers, sequence);
-      await sendMouse(target, 'mouseReleased', resolved.point, button, 0, modifiers, sequence);
+      try {
+        if (holdMs > 0) await sleep(holdMs);
+      } finally {
+        await sendMouse(target, 'mouseReleased', resolved.point, button, 0, modifiers, sequence);
+      }
     }
     return {
       elementRef: resolved.elementRef,
       clicked: true,
       button,
       clickCount,
+      ...(holdMs > 0 ? { holdMs } : {}),
       resolution: resolved.resolution,
       execution: executionMetadata(resolved.point),
     };
+  }
+
+  /**
+   * Press one key through CDP so the page receives trusted keyboard events
+   * (user activation included). A target is focused first; otherwise the key
+   * goes to whatever currently has focus.
+   *
+   * @param {DebuggerTarget} target
+   * @param {number} tabId
+   * @param {Record<string, unknown>} params
+   */
+  async function pressKey(target, tabId, params) {
+    const targetParams = /** @type {{ elementRef?: string, selector?: string } | undefined} */ (
+      params.target && typeof params.target === 'object' ? params.target : undefined
+    );
+    /** @type {NativeResolution | null} */
+    const resolved =
+      targetParams?.elementRef || targetParams?.selector
+        ? await resolveNative(tabId, targetParams, 'focus', params.recoverStale)
+        : null;
+    /** @type {Array<Record<string, unknown>>} */
+    let events;
+    try {
+      events = createCdpKeyPressEventPair({ key: params.key, modifiers: params.modifiers ?? [] });
+    } catch (error) {
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+    const holdMs = toHoldMs(params.holdMs);
+    const [keyDown, keyUp] = events;
+    await dependencies.sendCommand(target, 'Input.dispatchKeyEvent', keyDown);
+    try {
+      if (holdMs > 0) await sleep(holdMs);
+    } finally {
+      await dependencies.sendCommand(target, 'Input.dispatchKeyEvent', keyUp);
+    }
+    return {
+      elementRef: resolved?.elementRef ?? null,
+      key: keyDown.key,
+      code: keyDown.code,
+      ...(holdMs > 0 ? { holdMs } : {}),
+      ...(resolved ? { resolution: resolved.resolution } : {}),
+      execution: executionMetadata(resolved?.point ?? null),
+    };
+  }
+
+  /**
+   * Put all touch points down in one CDP touchStart, optionally move them in
+   * interpolated touchMove events across holdMs, then lift them together.
+   *
+   * @param {DebuggerTarget} target
+   * @param {number} tabId
+   * @param {Record<string, unknown>} params
+   */
+  async function touch(target, tabId, params) {
+    const points = Array.isArray(params.points) ? params.points : [];
+    if (!points.length) {
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        'points must contain at least one touch point.'
+      );
+    }
+    /** @type {NativeTouchContact[]} */
+    const contacts = [];
+    for (const [index, point] of points.entries()) {
+      const record =
+        point && typeof point === 'object' ? /** @type {Record<string, unknown>} */ (point) : {};
+      const start = await resolveTouchPosition(tabId, record, params.recoverStale);
+      const end = record.to
+        ? await resolveTouchPosition(tabId, record.to, params.recoverStale)
+        : null;
+      contacts.push({
+        id: index,
+        start: start.point,
+        end: end ? end.point : null,
+        current: { ...start.point },
+        elementRef: start.elementRef,
+      });
+    }
+    const holdMs = toHoldMs(params.holdMs);
+    const moveSteps = Math.min(Math.max(Math.trunc(Number(params.moveSteps) || 10), 1), 60);
+    const moving = contacts.some((contact) => contact.end);
+
+    await sendTouch(target, 'touchStart', contacts);
+    try {
+      if (moving) {
+        for (let step = 1; step <= moveSteps; step += 1) {
+          await sleep(holdMs / moveSteps);
+          const progress = step / moveSteps;
+          for (const contact of contacts) {
+            if (!contact.end) continue;
+            contact.current = {
+              x: contact.start.x + (contact.end.x - contact.start.x) * progress,
+              y: contact.start.y + (contact.end.y - contact.start.y) * progress,
+            };
+          }
+          await sendTouch(target, 'touchMove', contacts);
+        }
+      } else if (holdMs > 0) {
+        await sleep(holdMs);
+      }
+    } finally {
+      await sendTouch(target, 'touchEnd', []);
+    }
+    return {
+      touched: true,
+      pointCount: contacts.length,
+      points: contacts.map((contact) => ({
+        elementRef: contact.elementRef,
+        x: Math.round(contact.start.x),
+        y: Math.round(contact.start.y),
+        ...(contact.end ? { toX: Math.round(contact.end.x), toY: Math.round(contact.end.y) } : {}),
+      })),
+      holdMs,
+      execution: executionMetadata(contacts[0].start),
+    };
+  }
+
+  /**
+   * @param {number} tabId
+   * @param {unknown} position
+   * @param {unknown} recoverStale
+   * @returns {Promise<{ point: { x: number, y: number }, elementRef: string | null }>}
+   */
+  async function resolveTouchPosition(tabId, position, recoverStale) {
+    const record =
+      position && typeof position === 'object'
+        ? /** @type {Record<string, unknown>} */ (position)
+        : {};
+    const targetParams = /** @type {{ elementRef?: string, selector?: string } | null} */ (
+      record.target && typeof record.target === 'object' ? record.target : null
+    );
+    if (targetParams?.elementRef || targetParams?.selector) {
+      const resolved = await resolveNative(tabId, targetParams, 'pointer', recoverStale);
+      return { point: resolved.point, elementRef: resolved.elementRef };
+    }
+    const x = Number(record.x);
+    const y = Number(record.y);
+    if (record.x == null || record.y == null || !Number.isFinite(x) || !Number.isFinite(y)) {
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        'Touch point needs a target or numeric x and y.'
+      );
+    }
+    return { point: { x, y }, elementRef: null };
+  }
+
+  /**
+   * @param {DebuggerTarget} target
+   * @param {'touchStart' | 'touchMove' | 'touchEnd'} type
+   * @param {NativeTouchContact[]} contacts
+   */
+  async function sendTouch(target, type, contacts) {
+    await dependencies.sendCommand(target, 'Input.dispatchTouchEvent', {
+      type,
+      touchPoints: contacts.map((contact) => ({
+        x: contact.current.x,
+        y: contact.current.y,
+        id: contact.id,
+        radiusX: 1,
+        radiusY: 1,
+        force: 0.5,
+      })),
+    });
   }
 
   /** @param {DebuggerTarget} target @param {number} tabId @param {Record<string, unknown>} params */
@@ -396,7 +585,7 @@ export function createBackgroundInputController(dependencies) {
   /**
    * @param {number} tabId
    * @param {unknown} target
-   * @param {'pointer' | 'editable'} kind
+   * @param {'pointer' | 'editable' | 'focus'} kind
    * @param {unknown} recoverStale
    * @returns {Promise<NativeResolution>}
    */
@@ -497,13 +686,24 @@ function getInvalidationStatus(error) {
   return 'target-rerendered';
 }
 
-/** @param {{ x: number, y: number }} point */
+/** @param {{ x: number, y: number } | null} point */
 function executionMetadata(point) {
   return {
     requestedMode: 'cdp',
     actualMode: 'cdp',
     fallbackReason: null,
     debuggerUsed: true,
-    targetCoordinates: point,
+    ...(point ? { targetCoordinates: point } : {}),
   };
+}
+
+/** @param {unknown} value @returns {number} */
+function toHoldMs(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.min(Math.max(Math.round(number), 0), 10_000) : 0;
+}
+
+/** @param {number} ms @returns {Promise<void>} */
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

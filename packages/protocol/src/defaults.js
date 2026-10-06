@@ -45,6 +45,22 @@ export const MAX_BATCH_CALLS = 20;
 
 /** Maximum read-only batch calls executing concurrently. */
 export const MAX_BATCH_CONCURRENCY = 5;
+
+/** Maximum press-and-hold time for one pointer, key, or touch action (ms). */
+export const MAX_INPUT_HOLD_MS = 10_000;
+
+/** Default contact time for an input.touch gesture without explicit holdMs (ms). */
+export const DEFAULT_TOUCH_HOLD_MS = 50;
+
+/** Maximum simultaneous touch points in one input.touch gesture. */
+export const MAX_TOUCH_POINTS = 10;
+
+/** Maximum steps accepted by one input.perform sequence. */
+export const MAX_PERFORM_STEPS = 200;
+
+/** Default and maximum total budget for one input.perform sequence (ms). */
+export const DEFAULT_PERFORM_TIMEOUT_MS = 30_000;
+export const MAX_PERFORM_TIMEOUT_MS = 120_000;
 export const MAX_INTERCEPT_RULES_PER_TAB = 32;
 export const MAX_INTERCEPT_URL_PATTERN_LENGTH = 2_048;
 export const MAX_INTERCEPT_BODY_BYTES = 262_144;

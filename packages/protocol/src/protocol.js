@@ -19,19 +19,25 @@ import {
   DEFAULT_NETWORK_INTERCEPT_ACTION,
   DEFAULT_NETWORK_LIMIT,
   DEFAULT_PAGE_TEXT_BUDGET,
+  DEFAULT_PERFORM_TIMEOUT_MS,
   DEFAULT_TEXT_BUDGET,
+  DEFAULT_TOUCH_HOLD_MS,
   DEFAULT_VIEWPORT_HEIGHT,
   DEFAULT_VIEWPORT_WIDTH,
   DEFAULT_WAIT_TIMEOUT_MS,
   MAX_EXTRACT_SETTLE_TIMEOUT_MS,
   MAX_ARTIFACT_BYTES,
   MAX_HAR_ENTRIES,
+  MAX_INPUT_HOLD_MS,
   MAX_INTERCEPT_BODY_BYTES,
   MAX_INTERCEPT_HEADER_BYTES,
   MAX_INTERCEPT_HEADERS,
   MAX_INTERCEPT_HEADER_VALUE_BYTES,
   MAX_INTERCEPT_URL_PATTERN_LENGTH,
+  MAX_PERFORM_STEPS,
+  MAX_PERFORM_TIMEOUT_MS,
   MAX_SENSITIVE_VALUE_BYTES,
+  MAX_TOUCH_POINTS,
 } from './defaults.js';
 import { BridgeError, ERROR_CODES, getErrorRecovery } from './errors.js';
 import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry.js';
@@ -96,6 +102,8 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').NormalizedNetworkParams} NormalizedNetworkParams */
 /** @typedef {import('./types.js').NormalizedPageTextParams} NormalizedPageTextParams */
 /** @typedef {import('./types.js').NormalizedPatchOperation} NormalizedPatchOperation */
+/** @typedef {import('./types.js').NormalizedPerformParams} NormalizedPerformParams */
+/** @typedef {import('./types.js').NormalizedPerformStep} NormalizedPerformStep */
 /** @typedef {import('./types.js').NormalizedSelectAction} NormalizedSelectAction */
 /** @typedef {import('./types.js').NormalizedScreenshotParams} NormalizedScreenshotParams */
 /** @typedef {import('./types.js').NormalizedStorageParams} NormalizedStorageParams */
@@ -103,11 +111,17 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').NormalizedStyleQuery} NormalizedStyleQuery */
 /** @typedef {import('./types.js').NormalizedTabCloseParams} NormalizedTabCloseParams */
 /** @typedef {import('./types.js').NormalizedTabCreateParams} NormalizedTabCreateParams */
+/** @typedef {import('./types.js').NormalizedTouchParams} NormalizedTouchParams */
+/** @typedef {import('./types.js').NormalizedTouchPoint} NormalizedTouchPoint */
+/** @typedef {import('./types.js').NormalizedTouchPosition} NormalizedTouchPosition */
 /** @typedef {import('./types.js').NormalizedViewportAction} NormalizedViewportAction */
 /** @typedef {import('./types.js').NormalizedViewportResizeParams} NormalizedViewportResizeParams */
 /** @typedef {import('./types.js').NormalizedWaitForLoadStateParams} NormalizedWaitForLoadStateParams */
 /** @typedef {import('./types.js').NormalizedWaitForParams} NormalizedWaitForParams */
 /** @typedef {import('./types.js').PageTextParams} PageTextParams */
+/** @typedef {import('./types.js').PerformParams} PerformParams */
+/** @typedef {import('./types.js').PerformStepMethod} PerformStepMethod */
+/** @typedef {import('./types.js').TouchParams} TouchParams */
 /** @typedef {import('./types.js').PatchOperationParams} PatchOperationParams */
 /** @typedef {import('./types.js').SelectActionParams} SelectActionParams */
 /** @typedef {import('./types.js').ScreenshotParams} ScreenshotParams */
@@ -528,6 +542,10 @@ function normalizeRequestParams(method, params) {
       return normalizeHoverParams(params);
     case 'input.drag':
       return normalizeDragParams(params);
+    case 'input.touch':
+      return normalizeTouchParams(params);
+    case 'input.perform':
+      return normalizeInputPerformParams(params);
     case 'screenshot.capture_region':
       return { ...params, ...normalizeScreenshotParams(params) };
     case 'screenshot.capture_element':
@@ -604,10 +622,22 @@ export function getBridgeOperationTimeoutMs(method, params = {}) {
     }
     case 'dom.wait_for':
       return clampInt(params.timeoutMs, 100, 30_000, 5_000);
+    case 'input.perform':
+      return normalizeInputPerformParams(params).timeoutMs;
+    case 'input.click':
+    case 'input.press_key': {
+      const holdMs = normalizeHoldMs(params.holdMs, 0);
+      return holdMs > 0 ? holdMs + INPUT_HOLD_TIMEOUT_MARGIN_MS : null;
+    }
+    case 'input.touch':
+      return normalizeHoldMs(params.holdMs, DEFAULT_TOUCH_HOLD_MS) + INPUT_HOLD_TIMEOUT_MARGIN_MS;
     default:
       return null;
   }
 }
+
+/** Resolution and dispatch allowance added around an input hold (ms). */
+const INPUT_HOLD_TIMEOUT_MARGIN_MS = 5_000;
 
 /**
  * @param {DomQueryParams} [params={}]
@@ -774,9 +804,202 @@ export function normalizeInputAction(params = {}) {
     modifiers: Array.isArray(params.modifiers)
       ? params.modifiers.filter((modifier) => typeof modifier === 'string' && modifier.trim())
       : [],
+    holdMs: normalizeHoldMs(params.holdMs, 0),
     executionMode: normalizeInputExecutionMode(params.executionMode),
     recoverStale: params.recoverStale === true,
   };
+}
+
+/**
+ * Normalize a press-and-hold duration, honoring an explicit zero.
+ *
+ * @param {unknown} value
+ * @param {number} fallback
+ * @returns {number}
+ */
+function normalizeHoldMs(value, fallback) {
+  return Math.round(clampNumber(value, 0, MAX_INPUT_HOLD_MS, fallback));
+}
+
+/**
+ * @param {unknown} value
+ * @param {string} label
+ * @returns {NormalizedTouchPosition}
+ */
+function normalizeTouchPosition(value, label) {
+  if (!isPlainRecord(value)) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      `${label} must be an object with either target or numeric x and y.`
+    );
+  }
+  const hasTarget = isPlainRecord(value.target);
+  const hasPoint =
+    typeof value.x === 'number' &&
+    Number.isFinite(value.x) &&
+    typeof value.y === 'number' &&
+    Number.isFinite(value.y);
+  if (hasTarget === hasPoint) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      `${label} needs exactly one of target or numeric x and y.`
+    );
+  }
+  if (hasTarget) {
+    return {
+      target: normalizeTarget(
+        /** @type {{ elementRef?: string, selector?: string }} */ (value.target)
+      ),
+      x: null,
+      y: null,
+    };
+  }
+  return { target: null, x: /** @type {number} */ (value.x), y: /** @type {number} */ (value.y) };
+}
+
+/**
+ * Normalize a simultaneous touch gesture: one to MAX_TOUCH_POINTS fingers,
+ * each placed on a target or viewport point and optionally moved to an end
+ * position while all fingers stay down for holdMs.
+ *
+ * @param {TouchParams} [params={}]
+ * @returns {NormalizedTouchParams}
+ */
+export function normalizeTouchParams(params = {}) {
+  const rawPoints = params.points;
+  if (!Array.isArray(rawPoints) || rawPoints.length < 1 || rawPoints.length > MAX_TOUCH_POINTS) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      `points must be an array of 1 to ${MAX_TOUCH_POINTS} touch points.`
+    );
+  }
+  /** @type {NormalizedTouchPoint[]} */
+  const points = rawPoints.map((point, index) => {
+    const start = normalizeTouchPosition(point, `points[${index}]`);
+    const rawEnd = isPlainRecord(point) ? point.to : undefined;
+    return {
+      ...start,
+      to: rawEnd == null ? null : normalizeTouchPosition(rawEnd, `points[${index}].to`),
+    };
+  });
+  return {
+    points,
+    holdMs: normalizeHoldMs(params.holdMs, DEFAULT_TOUCH_HOLD_MS),
+    moveSteps: clampInt(params.moveSteps, 1, 60, 10),
+    executionMode: normalizeInputExecutionMode(params.executionMode),
+    recoverStale: params.recoverStale === true,
+  };
+}
+
+/** Methods that may appear as input.perform steps. */
+const PERFORM_STEP_METHODS = new Set([
+  'input.click',
+  'input.focus',
+  'input.type',
+  'input.fill',
+  'input.press_key',
+  'input.set_checked',
+  'input.select_option',
+  'input.hover',
+  'input.drag',
+  'input.touch',
+  'input.scroll_into_view',
+  'viewport.scroll',
+  'dom.wait_for',
+  'page.wait_for_load_state',
+]);
+
+/** Step methods that accept executionMode=cdp. */
+const CDP_CAPABLE_STEP_METHODS = new Set([
+  'input.click',
+  'input.hover',
+  'input.drag',
+  'input.type',
+  'input.fill',
+  'input.press_key',
+  'input.touch',
+]);
+
+/**
+ * @param {unknown} value
+ * @param {string} label
+ * @param {number} maximum
+ * @returns {number | null}
+ */
+function normalizeStepTiming(value, label, maximum) {
+  if (value == null) return null;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > maximum) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      `${label} must be a number between 0 and the sequence timeoutMs (${maximum}).`
+    );
+  }
+  return Math.round(value);
+}
+
+/**
+ * Normalize an ordered, timed input sequence. Each step reuses an existing
+ * bridge method and its own normalizer; the sequence adds only scheduling.
+ *
+ * @param {PerformParams} [params={}]
+ * @returns {NormalizedPerformParams}
+ */
+export function normalizeInputPerformParams(params = {}) {
+  const timeoutMs = clampInt(
+    params.timeoutMs,
+    100,
+    MAX_PERFORM_TIMEOUT_MS,
+    DEFAULT_PERFORM_TIMEOUT_MS
+  );
+  const executionMode =
+    params.executionMode === undefined ? null : normalizeInputExecutionMode(params.executionMode);
+  const rawSteps = params.steps;
+  if (!Array.isArray(rawSteps) || rawSteps.length < 1 || rawSteps.length > MAX_PERFORM_STEPS) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      `steps must be an array of 1 to ${MAX_PERFORM_STEPS} steps.`
+    );
+  }
+  /** @type {NormalizedPerformStep[]} */
+  const steps = rawSteps.map((step, index) => {
+    if (!isPlainRecord(step)) {
+      throw new BridgeError(ERROR_CODES.INVALID_REQUEST, `steps[${index}] must be an object.`);
+    }
+    const method = step.method;
+    if (typeof method !== 'string' || !PERFORM_STEP_METHODS.has(method)) {
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        `steps[${index}].method must be one of ${[...PERFORM_STEP_METHODS].join(', ')}.`
+      );
+    }
+    if (step.params !== undefined && !isPlainRecord(step.params)) {
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        `steps[${index}].params must be an object.`
+      );
+    }
+    const rawParams = /** @type {Record<string, unknown>} */ (step.params ?? {});
+    const stepParams =
+      executionMode && CDP_CAPABLE_STEP_METHODS.has(method) && rawParams.executionMode === undefined
+        ? { ...rawParams, executionMode }
+        : rawParams;
+    const delayMs = normalizeStepTiming(step.delayMs, `steps[${index}].delayMs`, timeoutMs);
+    const atMs = normalizeStepTiming(step.atMs, `steps[${index}].atMs`, timeoutMs);
+    if (delayMs && atMs !== null) {
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        `steps[${index}] accepts either delayMs or atMs, not both.`
+      );
+    }
+    const stepMethod = /** @type {PerformStepMethod} */ (method);
+    return {
+      method: stepMethod,
+      params: normalizeRequestParams(stepMethod, stepParams),
+      delayMs: delayMs ?? 0,
+      atMs,
+    };
+  });
+  return { steps, timeoutMs, continueOnError: params.continueOnError === true };
 }
 
 /**

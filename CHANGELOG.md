@@ -6,6 +6,86 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.11.5] - 2026-10-06
+
+### Added
+
+- **Timed input sequences:** `input.perform` runs an ordered list of input
+  steps inside the extension in one call, scheduled with `atMs` offsets from
+  the sequence start or `delayMs` delays after the previous step. Steps reuse
+  the existing input methods plus `dom.wait_for` for in-browser reactions, so
+  rhythm, games, and multi-step flows no longer depend on agent round-trips.
+- **Multi-touch:** `input.touch` presses 1-10 points at the same time for
+  chords, multi-finger taps, swipes, and pinches, through DOM touch/pointer
+  events or trusted CDP `Input.dispatchTouchEvent`.
+- **Press and hold:** `holdMs` on `input.click` and `input.press_key` keeps the
+  button or key down; `input.press_key` now also supports `executionMode: "cdp"`
+  for trusted key presses.
+
+### Changed
+
+- **Realistic DOM input:** DOM clicks now dispatch pointer events, over/enter
+  and out/leave transitions tracked across calls, correct `buttons` state, and a
+  real `click` event carrying coordinates, modifiers, and `pointerType`. Focus
+  moves only when `mousedown` is not canceled, and a canceled `pointerdown`
+  suppresses mouse events. Key events carry `code` and `keyCode`, character keys
+  fire `keypress`, and a canceled `keydown` suppresses text insertion.
+- **DOM drag strategy:** draggable sources keep the HTML5 sequence (with `drop`
+  only when the destination accepts it); other sources now get a pointer drag
+  that pointer-driven lists, sliders, and canvases respond to. Results report
+  `strategy`.
+- **Compact evaluate summaries:** large `page.evaluate` values are described by
+  shape instead of being repeated in the summary next to the full evidence.
+- **Dependency updates:** Updated the MCP server and client SDKs to `^2.3.1`
+  and refreshed development dependencies. Added explicit npm script approvals
+  for `esbuild@0.28.1` and `fsevents@2.3.3`.
+
+### Fixed
+
+- Tab summaries for `page.wait_for_load_state`, reloads, history navigation,
+  and tab activation no longer claim that a tab was created.
+
+## [1.11.4] - 2026-09-25
+
+### Fixed
+
+- Extension UI connections now wait for persisted window access to initialize
+  before syncing state, preventing incorrect access state after startup.
+
+## [1.11.3] - 2026-09-18
+
+### Changed
+
+- Protocol compatibility and npm self-update negotiation now match major
+  versions, allowing npm and extension minor releases to advance independently.
+- Updated runtime and development dependencies.
+
+### Fixed
+
+- Side-panel state and active-tab changes now stay scoped to the panel's window
+  across reconnects. Stale snapshots are ignored, and access toggles target the
+  displayed tab.
+
+## [1.11.2] - 2026-09-04
+
+### Fixed
+
+- Bounded transport queues and daemon work prevent unbounded growth under
+  backpressure. MCP cancellation now propagates through connection and retry
+  paths, and stalled client operations are cleaned up.
+- Fetch interception lifecycle changes are serialized to avoid races.
+- Patch rollback preserves the original DOM and inline style state.
+- Authentication tokens are published atomically to avoid partial reads.
+
+## [1.11.1] - 2026-08-14
+
+### Security
+
+- Extension connections use a separate authentication token from agent
+  connections. Native-host installation restricts allowed origins to the
+  specified extension ID.
+- Added limits on pending requests and tightened socket error handling.
+
 ## [1.11.0] - 2026-08-11
 
 ### Added

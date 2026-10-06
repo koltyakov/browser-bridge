@@ -195,6 +195,9 @@ they contain no page data, URLs, selectors, payloads, errors, or group names.
 23. **Dialogs are explicit** - inspect first, then accept or dismiss only when intended. `expectedDialogId` is a pre-dispatch stale-decision check, not an atomic CDP binding; never auto-repeat `DIALOG_ACTION_CONFLICT`.
 24. **DOM diffs use explicit baselines** - call `dom.baseline.create` before the action, `dom.baseline.compare` afterward, then `dom.baseline.release`. Use a narrow selector and bounded evidence. Never substitute unrelated DOM reads for the retained baseline, and recreate it after `DOM_BASELINE_INVALIDATED`.
 25. **HAR export reads an armed capture** - use CDP capture `start`, reproduce, `network.export_har`/`bbx har`, then `stop`. Export never starts, stops, or clears capture. Inspect truncation plus `dropped`, `abandoned`, and `inflight` before claiming completeness.
+26. **Keep timing inside the browser** - for rhythm, games, gestures, or any steps that must happen at set times or back-to-back, send one `input.perform` with the whole schedule (`atMs` from the sequence start, or `delayMs` after the previous step). Never spread timed input across tool calls (each call costs an agent round-trip) and never issue input as parallel tool calls (they land all at once).
+27. **Use trusted input when the page needs a user gesture** - DOM-mode events are untrusted, so Chrome may refuse audio or media start, popups, clipboard writes, and fullscreen. Use `executionMode: "cdp"` (click, hover, drag, type, fill, press_key, touch) for those pages; `input.perform` accepts it once for every step.
+28. **Simultaneous presses need touch** - a mouse has one pointer. For chords or multi-finger gestures use `input.touch` with several `points` (optionally `to` end positions for swipes and pinches); add `holdMs` to `input.click`/`input.press_key` when the press must last.
 
 ## Token Budget Quick Rules
 
@@ -267,7 +270,7 @@ bbx page-text 2000                                  # extract page content
 | Page State  | `page.get_console`, `page.get_storage`, `page.get_text`, `page.wait_for_load_state`, `page.evaluate` (debugger-backed)                              |
 | Dialogs     | `page.handle_dialog` (debugger-backed; explicit inspect/accept/dismiss only)                                                                  |
 | Network     | `page.get_network` (fetch/XHR default; optional CDP lifecycle), `network.export_har`, `network.intercept.add/remove/list/clear` (debugger-backed)   |
-| Interact    | `input.click`, `input.type`, `input.fill`, `input.focus`, `input.press_key`, `cdp.dispatch_key_event`, `input.hover`, `input.drag`, `input.scroll_into_view` |
+| Interact    | `input.click`, `input.type`, `input.fill`, `input.focus`, `input.press_key`, `cdp.dispatch_key_event`, `input.hover`, `input.drag`, `input.touch`, `input.perform` (timed sequences), `input.scroll_into_view` |
 | Tabs        | `tabs.list` (preferred), `tabs.create` (avoid unless necessary), `tabs.close`, `tabs.activate`                                                      |
 | Patch       | `patch.apply_styles`, `patch.apply_dom`, `patch.rollback`                                                                                           |
 | Navigate    | `navigation.navigate`, `viewport.scroll`, `viewport.resize`                                                                                         |
@@ -349,7 +352,8 @@ Every CLI shortcut command produces consistent `{ok, summary, evidence}` JSON. U
   bbx call input.click '{"elementRef":"el_xxx"}'
   ```
 - `input.drag` uses `source`, `destination`, and optional destination offsets `offsetX` / `offsetY`.
-- `executionMode` accepts `dom` or `cdp` and defaults to `dom`; CDP supports only click, hover, drag, type, and fill. `input.fill.mode` (`auto`, `setter`, `keystrokes`) is a separate DOM strategy.
+- `executionMode` accepts `dom` or `cdp` and defaults to `dom`; CDP supports click, hover, drag, type, fill, press_key, and touch. `input.fill.mode` (`auto`, `setter`, `keystrokes`) is a separate DOM strategy.
+- `input.perform` takes `steps: [{ method, params, atMs | delayMs }]` using the same params each method takes alone. Steps run in order inside the extension; it stops at the first failed step (or a `dom.wait_for` that times out) unless `continueOnError: true`, and reports `startedAtMs` for every step.
 - `page.get_network` defaults to low-cost fetch/XHR instrumentation. All-resource CDP capture must be armed before the activity with `source: "cdp", capture: "start"`, read later, and explicitly stopped.
 - `network.export_har` requires that explicit capture to still be armed. Params are `limit` (1-200), sanitized-URL substring `urlPattern`, and `delivery` (`auto`, `inline`, `artifact`). Inline bounds remove whole oldest entries; export never changes capture state. `bbx har` uses the same client to download, length/SHA-256 verify, delete, validate, and atomically write artifacts locally.
 - `page.handle_dialog` mutations are not atomically bound to `expectedDialogId`; treat `commandDispatched` as dispatch evidence and verify follow-up state.

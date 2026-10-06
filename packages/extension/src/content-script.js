@@ -77,6 +77,7 @@
    *   scrollViewport: (params: Record<string, any>) => any,
    *   selectOptionTarget: (params: Record<string, any>) => any,
    *   setCheckedTarget: (params: Record<string, any>) => any,
+   *   touchTarget: (params: Record<string, unknown>) => Promise<Record<string, unknown>>,
    *   typeIntoTarget: (params: Record<string, any>) => any
    * }} InputModule
    */
@@ -232,6 +233,8 @@
         return inputModule.hoverTarget(params);
       case 'input.drag':
         return inputModule.dragTarget(params);
+      case 'input.touch':
+        return inputModule.touchTarget(params);
       case 'input.resolve_native':
         return inputModule.prepareNativeInput(params);
       case 'input.revalidate_native':

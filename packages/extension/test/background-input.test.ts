@@ -277,3 +277,156 @@ test('unsupported CDP input fails before attaching or dispatching', async () => 
   assert.deepEqual(commands, []);
   assert.deepEqual(messages, []);
 });
+
+test('CDP click holds the button between press and release', async () => {
+  const { controller, commands } = createController();
+  const request = createRequest({
+    id: 'cdp-hold',
+    method: 'input.click',
+    params: { target: { selector: '#key' }, executionMode: 'cdp', holdMs: 30 },
+  });
+  const pressedAt: number[] = [];
+  const started = performance.now();
+  const result = await controller.handleNativeInput(request, tab, request.params);
+  for (const call of commands) {
+    if (call.params.type === 'mousePressed' || call.params.type === 'mouseReleased') {
+      pressedAt.push(call.params.type === 'mousePressed' ? 0 : 1);
+    }
+  }
+  assert.deepEqual(pressedAt, [0, 1]);
+  assert.ok(performance.now() - started >= 25);
+  assert.equal(result.holdMs, 30);
+});
+
+test('CDP press_key focuses the target and sends a trusted held key pair', async () => {
+  const { controller, commands, messages } = createController();
+  const request = createRequest({
+    id: 'cdp-key',
+    method: 'input.press_key',
+    params: { target: { selector: '#piano' }, key: 'q', holdMs: 20, executionMode: 'cdp' },
+  });
+  const started = performance.now();
+  const result = await controller.handleNativeInput(request, tab, request.params);
+  assert.equal(messages[0].method, 'input.resolve_native');
+  assert.equal((messages[0].params as { kind?: unknown }).kind, 'focus');
+  assert.deepEqual(
+    commands.map((call) => [call.method, call.params.type, call.params.code]),
+    [
+      ['Input.dispatchKeyEvent', 'keyDown', 'KeyQ'],
+      ['Input.dispatchKeyEvent', 'keyUp', 'KeyQ'],
+    ]
+  );
+  assert.ok(performance.now() - started >= 15);
+  assert.equal(result.key, 'q');
+  assert.equal(result.elementRef, 'el_target');
+
+  const pageLevel = createRequest({
+    id: 'cdp-key-page',
+    method: 'input.press_key',
+    params: { key: 'Enter', executionMode: 'cdp' },
+  });
+  const pageResult = await controller.handleNativeInput(pageLevel, tab, pageLevel.params);
+  assert.equal(pageResult.elementRef, null);
+  assert.equal(messages.length, 1, 'page-level key presses do not resolve a target');
+  assert.equal((pageResult.execution as Record<string, unknown>).targetCoordinates, undefined);
+
+  const invalid = createRequest({
+    id: 'cdp-key-invalid',
+    method: 'input.press_key',
+    params: { key: 'NotAKey', executionMode: 'cdp' },
+  });
+  await assert.rejects(
+    controller.handleNativeInput(invalid, tab, invalid.params),
+    (error: unknown) => (error as { code?: unknown }).code === 'INVALID_REQUEST'
+  );
+});
+
+test('CDP touch puts every finger down in one event, moves them, and always lifts them', async () => {
+  const { controller, commands } = createController();
+  const chord = createRequest({
+    id: 'cdp-chord',
+    method: 'input.touch',
+    params: {
+      points: [{ target: { selector: '#c' } }, { x: 50, y: 60 }],
+      holdMs: 10,
+      executionMode: 'cdp',
+    },
+  });
+  const chordResult = await controller.handleNativeInput(chord, tab, chord.params);
+  assert.deepEqual(
+    commands.map((call) => [call.method, call.params.type]),
+    [
+      ['Input.dispatchTouchEvent', 'touchStart'],
+      ['Input.dispatchTouchEvent', 'touchEnd'],
+    ]
+  );
+  assert.deepEqual(
+    (commands[0].params.touchPoints as Array<Record<string, unknown>>).map((point) => [
+      point.id,
+      point.x,
+      point.y,
+    ]),
+    [
+      [0, 10, 20],
+      [1, 50, 60],
+    ]
+  );
+  assert.deepEqual(commands[1].params.touchPoints, []);
+  assert.equal(chordResult.pointCount, 2);
+  assert.deepEqual(chordResult.points, [
+    { elementRef: 'el_target', x: 10, y: 20 },
+    { elementRef: null, x: 50, y: 60 },
+  ]);
+
+  commands.length = 0;
+  const pinch = createRequest({
+    id: 'cdp-pinch',
+    method: 'input.touch',
+    params: {
+      points: [
+        { x: 40, y: 40, to: { x: 20, y: 40 } },
+        { x: 60, y: 40, to: { x: 80, y: 40 } },
+      ],
+      holdMs: 4,
+      moveSteps: 2,
+      executionMode: 'cdp',
+    },
+  });
+  await controller.handleNativeInput(pinch, tab, pinch.params);
+  assert.deepEqual(
+    commands.map((call) => call.params.type),
+    ['touchStart', 'touchMove', 'touchMove', 'touchEnd']
+  );
+  assert.deepEqual(
+    (commands[2].params.touchPoints as Array<Record<string, unknown>>).map((point) => point.x),
+    [20, 80]
+  );
+});
+
+test('CDP touch lifts fingers even when a move fails', async () => {
+  const commands: CommandCall[] = [];
+  const controller = createBackgroundInputController({
+    contentScriptTimeoutMs: 5000,
+    async runWithDebugger<T>(_tabId: number, operation: (target: { tabId: number }) => Promise<T>) {
+      return operation({ tabId: 17 });
+    },
+    async sendCommand(_target, method, params) {
+      commands.push({ method, params });
+      if (params.type === 'touchMove') throw new Error('move failed');
+      return {};
+    },
+    async sendTabMessage() {
+      return {};
+    },
+  });
+  const request = createRequest({
+    id: 'cdp-touch-fail',
+    method: 'input.touch',
+    params: { points: [{ x: 1, y: 1, to: { x: 5, y: 5 } }], holdMs: 0, executionMode: 'cdp' },
+  });
+  await assert.rejects(controller.handleNativeInput(request, tab, request.params), /move failed/);
+  assert.deepEqual(
+    commands.map((call) => call.params.type),
+    ['touchStart', 'touchMove', 'touchEnd']
+  );
+});

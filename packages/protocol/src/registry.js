@@ -153,16 +153,22 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
     'Read element classes and inline style context (not stylesheet cascade data).',
   'viewport.scroll': 'Scroll the viewport or a scrollable element.',
   'viewport.resize': 'Resize or reset the tab viewport.',
-  'input.click': 'Actionability-check and click an element through DOM or optional CDP input.',
+  'input.click':
+    'Actionability-check and click an element through DOM or optional CDP input; holdMs keeps the button pressed.',
   'input.focus': 'Actionability-check and focus an element through DOM input.',
   'input.type': 'Actionability-check and type through DOM or optional CDP text input.',
   'input.fill':
     'Fill an editable target using a DOM strategy or optional CDP text input; verify afterward.',
-  'input.press_key': 'Send a key press to the page or an element.',
+  'input.press_key':
+    'Send a key press to the page or an element through DOM or optional CDP input; holdMs keeps the key down.',
   'input.set_checked': 'Set checkbox or radio checked state.',
   'input.select_option': 'Select options in a select element.',
   'input.hover': 'Actionability-check and hover through DOM or optional CDP pointer input.',
   'input.drag': 'Actionability-check and drag through DOM or optional CDP pointer input.',
+  'input.touch':
+    'Press one or more touch points at the same time (chords, multi-finger taps, swipes, pinches) through DOM or optional CDP touch input.',
+  'input.perform':
+    'Run an ordered, timed sequence of input steps inside the browser in one call; use for rhythm, games, gestures, and multi-step flows.',
   'input.scroll_into_view': 'Scroll an element into the visible viewport.',
   'screenshot.capture_region': 'Capture a screenshot of a viewport region.',
   'screenshot.capture_element': 'Capture a screenshot of one element.',
@@ -600,7 +606,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'input.click',
     'interact',
     true,
-    ['target', 'button', 'clickCount', 'modifiers', 'executionMode', 'recoverStale'],
+    ['target', 'button', 'clickCount', 'modifiers', 'holdMs', 'executionMode', 'recoverStale'],
     'low',
     METHOD_POLICIES.automationInput
   ),
@@ -632,7 +638,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'input.press_key',
     'interact',
     true,
-    ['target', 'key', 'modifiers', 'executionMode', 'recoverStale'],
+    ['target', 'key', 'modifiers', 'holdMs', 'executionMode', 'recoverStale'],
     'low',
     METHOD_POLICIES.automationInput
   ),
@@ -665,6 +671,22 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'interact',
     true,
     ['source', 'destination', 'offsetX', 'offsetY', 'executionMode', 'recoverStale'],
+    'moderate',
+    METHOD_POLICIES.automationInput
+  ),
+  'input.touch': createRegistryEntry(
+    'input.touch',
+    'interact',
+    true,
+    ['points', 'holdMs', 'moveSteps', 'executionMode', 'recoverStale'],
+    'moderate',
+    METHOD_POLICIES.automationInput
+  ),
+  'input.perform': createRegistryEntry(
+    'input.perform',
+    'interact',
+    true,
+    ['steps', 'executionMode', 'timeoutMs', 'continueOnError'],
     'moderate',
     METHOD_POLICIES.automationInput
   ),

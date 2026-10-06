@@ -707,7 +707,7 @@ export function createBridgeMcpServer(options = {}) {
           .enum(['dom', 'cdp'])
           .optional()
           .describe(
-            'Input execution path (default: dom; CDP supports click, hover, drag, type, fill)'
+            'Input execution path (default: dom; CDP supports click, hover, drag, type, fill, press_key). Use cdp when the page needs trusted input, e.g. to start audio or media.'
           ),
         recoverStale: z
           .boolean()
@@ -729,6 +729,15 @@ export function createBridgeMcpServer(options = {}) {
           .array(z.enum(['Alt', 'Control', 'Meta', 'Shift']))
           .optional()
           .describe('Modifier keys'),
+        holdMs: z
+          .number()
+          .int()
+          .min(0)
+          .max(10000)
+          .optional()
+          .describe(
+            'Keep the mouse button or key pressed this long (click, press_key; default: 0)'
+          ),
         checked: z.boolean().optional().describe('Checked state (for set_checked action)'),
         values: z.array(z.string()).optional().describe('Option values to select'),
         labels: z

@@ -222,15 +222,17 @@ rules per tab, with a 2,048-character URL pattern, 256 KiB body, 64 headers,
 
 | Method                  | Description                                                              |
 | ----------------------- | ------------------------------------------------------------------------ |
-| `input.click`           | Actionability-check and click an element through DOM or optional CDP input |
+| `input.click`           | Actionability-check and click an element through DOM or optional CDP input; `holdMs` keeps the button pressed |
 | `input.focus`           | Actionability-check and focus an element through DOM input               |
 | `input.type`            | Actionability-check and type through DOM or optional CDP text input      |
 | `input.fill`            | Fill an editable target using a DOM strategy or optional CDP text input; verify afterward |
-| `input.press_key`       | Send a key press to the page or an element                               |
+| `input.press_key`       | Send a key press to the page or an element through DOM or optional CDP input; `holdMs` keeps the key down |
 | `input.set_checked`     | Set checkbox or radio checked state                                      |
 | `input.select_option`   | Select options in a select element                                       |
 | `input.hover`           | Actionability-check and hover through DOM or optional CDP pointer input  |
 | `input.drag`            | Actionability-check and drag through DOM or optional CDP pointer input   |
+| `input.touch`           | Press 1-10 touch points at the same time (chords, taps, swipes, pinches) |
+| `input.perform`         | Run an ordered, timed sequence of input steps inside the browser in one call |
 | `input.scroll_into_view` | Scroll an element into the visible viewport                             |
 
 ### Capture
@@ -320,7 +322,10 @@ identity; selectors are ranked only when the first match is not actionable, and
 ambiguous or obscured targets fail safely.
 
 `executionMode` accepts `dom` or `cdp` and defaults to `dom`. CDP supports click,
-hover, drag, type, and fill. This is distinct from `input.fill.mode`, where
+hover, drag, type, fill, press_key, and touch. DOM events follow real device
+event order but are untrusted, so gesture-gated features such as audio may need CDP.
+`input.perform` runs timed step sequences inside the extension; see the skill's
+interaction reference for step scheduling with `atMs` and `delayMs`. This is distinct from `input.fill.mode`, where
 `auto`, `setter`, and `keystrokes` choose the DOM fill strategy. Stale recovery
 is off by default; `recoverStale: true` is same-document, unchanged-URL, and
 requires one strong unique semantic descriptor. Recovery evaluates at most 100

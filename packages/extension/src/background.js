@@ -56,6 +56,7 @@ import { createRuntimeMessageListener } from './background-runtime.js';
 import { getVersionNegotiationPayload } from './background-versioning.js';
 import { handleNavigationRequest as executeNavigationRequest } from './background-navigation.js';
 import { handlePageEvaluate as executePageEvaluate } from './background-evaluate.js';
+import { executeInputPerform } from './background-perform.js';
 import {
   handleCreateTab as executeCreateTab,
   handleListTabs as executeListTabs,
@@ -801,6 +802,17 @@ async function dispatchBridgeRequest(request) {
     case 'cdp.get_computed_styles_for_node':
     case 'cdp.dispatch_key_event':
       return handleCdpRequest(request);
+    case 'input.perform':
+      return executeInputPerform(request, {
+        resolveRequestTarget,
+        dispatch: async (step) => {
+          try {
+            return await dispatchBridgeRequest(step);
+          } catch (error) {
+            return toFailureResponse(step, error);
+          }
+        },
+      });
     default:
       if (isTabBoundMethod(request.method)) {
         return executeTabBoundRequest(request, tabBoundRequestDependencies);

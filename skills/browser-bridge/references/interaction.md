@@ -4,16 +4,18 @@
 
 | Method                   | CLI Shortcut                          | Purpose                                                     |
 | ------------------------ | ------------------------------------- | ----------------------------------------------------------- |
-| `input.click`            | `click <ref> [button]`                | Actionability-aware DOM click; optional CDP native click    |
+| `input.click`            | `click <ref> [button]`                | Actionability-aware DOM click; optional CDP native click; `holdMs` keeps the button down |
 | `input.focus`            | `focus <ref>`                         | Focus an element                                            |
 | `input.type`             | `type <ref> <text>`                   | DOM key sequence; optional CDP native text insertion        |
 | `input.fill`             | `fill <ref> <value>`                  | DOM fill strategy; optional CDP clear and text insertion    |
-| `input.press_key`        | `press-key <key> [ref]`               | Send keyboard key (Enter, Backspace, etc.)                  |
+| `input.press_key`        | `press-key <key> [ref]`               | Send keyboard key (Enter, Backspace, etc.); optional CDP; `holdMs` |
 | `cdp.dispatch_key_event` | `cdp-press-key --tab <id> <key>`      | CDP keyDown/keyUp without focusing the target tab           |
 | `input.set_checked`      | `call input.set_checked '{...}'`      | Toggle checkbox/radio                                       |
 | `input.select_option`    | `call input.select_option '{...}'`    | Select native `<select>` by value/label/index               |
 | `input.hover`            | `hover <ref>`                         | DOM hover events or optional CDP pointer move               |
-| `input.drag`             | `call input.drag '{...}'`             | DOM drag events or optional CDP pointer drag                |
+| `input.drag`             | `call input.drag '{...}'`             | HTML5 drag for draggable sources, pointer drag otherwise; optional CDP |
+| `input.touch`            | `call input.touch '{...}'`            | One or more simultaneous touch points: chords, taps, swipes, pinches |
+| `input.perform`          | `call input.perform '{...}'`          | Ordered, timed sequence of input steps run inside the browser |
 | `input.scroll_into_view` | `call input.scroll_into_view '{...}'` | Ensure a target is visible before inspect/capture           |
 
 ## Navigation
@@ -225,7 +227,69 @@ bbx type el_123 hello                    # simulate per-character keystrokes
 
 Prefer `fill` for setting form values: it uses the native prototype setter plus `input`/`change`/`blur` events, which React, Vue, and Angular pick up reliably. `mode` defaults to `auto` (setter first, keystroke fallback if the value did not stick); pass `"mode":"keystrokes"` via `bbx call input.fill` for components that only react to per-key events. Use `type` when page logic depends on individual key events (autocomplete, masked inputs).
 
-`mode` is not `executionMode`. The latter accepts only `dom` or `cdp`, defaults to `dom` for compatibility, and selects the dispatch path. CDP execution is available only for click, hover, drag, type, and fill; unsupported combinations fail with `INPUT_UNSUPPORTED` instead of silently changing paths.
+`mode` is not `executionMode`. The latter accepts only `dom` or `cdp`, defaults to `dom` for compatibility, and selects the dispatch path. CDP execution is available for click, hover, drag, type, fill, press_key, and touch; unsupported combinations fail with `INPUT_UNSUPPORTED` instead of silently changing paths.
+
+## DOM vs CDP Input
+
+DOM mode dispatches the same event sequence a real device produces, so most pages cannot tell the difference:
+
+- **Clicks**: `pointerover`/`pointerenter`/`mouseover`/`mouseenter` (only when the virtual pointer moves onto a new element), `pointermove`/`mousemove`, `pointerdown`/`mousedown`, focus, optional hold, `pointerup`/`mouseup`, then `click` (`contextmenu` for right, `auxclick` for middle) carrying coordinates, modifiers, `detail`, and `pointerType`. A canceled `pointerdown` suppresses the mouse events; a canceled `mousedown` keeps focus where it was. Leaving an element fires `pointerout`/`mouseout`/`leave` on it.
+- **Keys**: `keydown` with `key`, `code`, and `keyCode`, `keypress` for character keys, the editing action, then `keyup`. A canceled `keydown` suppresses the character, as in browsers.
+
+DOM events are still untrusted (`isTrusted: false`) and do not count as a user gesture, so Chrome may refuse what a page gates on one: starting audio or media (unless the site already has autoplay engagement), popups, clipboard writes, and fullscreen. When a page needs a real gesture, use `executionMode: "cdp"`, which dispatches trusted input through Chrome. If sound or video stays silent after a DOM click, retry the first interaction with CDP.
+
+## Press and Hold
+
+`holdMs` (0-10000) keeps a mouse button or key pressed between down and up:
+
+```bash
+bbx call input.click '{"target":{"selector":"[data-midi=\"60\"]"},"holdMs":400}'
+bbx call input.press_key '{"key":"q","holdMs":400,"executionMode":"cdp"}'
+```
+
+Use it for long-press menus, sustained notes, and buttons that act while pressed.
+
+## Timed Sequences
+
+Every tool call costs an agent round-trip, so steps sent one call at a time arrive seconds apart, and steps sent as parallel tool calls all land at once. When timing matters (music, games, animations, gestures, quick reactions), send the whole schedule as one `input.perform`:
+
+```bash
+bbx call input.perform '{
+  "executionMode": "cdp",
+  "steps": [
+    {"method":"input.click","params":{"target":{"selector":"[data-midi=\"60\"]"},"holdMs":350},"atMs":0},
+    {"method":"input.click","params":{"target":{"selector":"[data-midi=\"62\"]"},"holdMs":350},"atMs":400},
+    {"method":"input.touch","params":{"points":[{"target":{"selector":"[data-midi=\"60\"]"}},{"target":{"selector":"[data-midi=\"64\"]"}},{"target":{"selector":"[data-midi=\"67\"]"}}],"holdMs":700},"atMs":800}
+  ]
+}'
+```
+
+- Each step is `{ method, params, atMs | delayMs }`; `params` are exactly what the method takes on its own.
+- Allowed step methods: `input.click`, `input.focus`, `input.type`, `input.fill`, `input.press_key`, `input.set_checked`, `input.select_option`, `input.hover`, `input.drag`, `input.touch`, `input.scroll_into_view`, `viewport.scroll`, `dom.wait_for`, `page.wait_for_load_state`.
+- `atMs` is the earliest start measured from the sequence start, so delays never accumulate; `delayMs` waits after the previous step finished. Steps always run in order, so a step whose `atMs` has already passed starts immediately.
+- A top-level `executionMode` applies to every step that supports it unless the step sets its own.
+- Add `dom.wait_for` steps to react to the page without a round-trip, e.g. click, wait for `.menu`, click the item. A wait that times out counts as a failed step.
+- The sequence stops at the first failure with that step's error code and `details.failedStep`, `completed`, and `startedAtMs`. Set `continueOnError: true` to run every step and collect `failures`.
+- `timeoutMs` (default 30000, max 120000) bounds the whole sequence, and waiting steps are capped to the remaining budget. At most 200 steps.
+- The result reports `startedAtMs` (actual start of every step), so you can verify the rhythm without a screenshot. Then verify application state as usual.
+
+## Touch and Multi-Finger Input
+
+A mouse is one pointer, so it cannot press two things at once. `input.touch` puts every point down together, holds them for `holdMs` (default 50), and lifts them together:
+
+```bash
+# Three-finger chord
+bbx call input.touch '{"points":[{"target":{"selector":"#c4"}},{"target":{"selector":"#e4"}},{"target":{"selector":"#g4"}}],"holdMs":600,"executionMode":"cdp"}'
+# Swipe, and pinch-out with viewport coordinates
+bbx call input.touch '{"points":[{"x":300,"y":400,"to":{"x":60,"y":400}}],"holdMs":250}'
+bbx call input.touch '{"points":[{"x":200,"y":300,"to":{"x":120,"y":300}},{"x":240,"y":300,"to":{"x":320,"y":300}}],"holdMs":300,"moveSteps":12}'
+```
+
+- Each point is either `target` (`elementRef`/`selector`, actionability-checked at its center) or viewport `x`/`y`, plus an optional `to` end position. Up to 10 points.
+- Points with `to` move in `moveSteps` (default 10) interpolated steps spread across `holdMs`.
+- DOM mode fires per-finger `pointerdown`/`pointermove`/`pointerup` (`pointerType: "touch"`, distinct `pointerId`, first finger primary) and `touchstart`/`touchmove`/`touchend` with accurate `touches`. A single-finger tap without movement also produces the compatibility `mousedown`/`mouseup`/`click`.
+- CDP mode sends trusted `Input.dispatchTouchEvent` events; fingers are always lifted, even after an error. Pages that only enable touch handlers after feature-detecting a touch screen may still ignore desktop touch input.
+- Result: `pointCount`, per-point `elementRef` and coordinates, and in DOM mode `canceled` (the page called `preventDefault`) and `clicked`.
 
 ## Actionability And Stale Refs
 
@@ -256,7 +320,7 @@ bbx hover el_abc123
 bbx call input.hover '{"target":{"elementRef":"el_abc123"}}'
 ```
 
-**Hold hover for inspection:** set `duration` (ms) to keep hover active before auto-releasing with `mouseleave`:
+**Hold hover for inspection:** set `duration` (ms) to wait after hovering before the call returns. The pointer stays over the element until a later input moves it elsewhere, which then fires `mouseout`/`mouseleave`:
 
 ```bash
 bbx call input.hover '{"target":{"elementRef":"el_abc123"},"duration":2000}'
@@ -283,7 +347,12 @@ With pixel offsets for precise positioning:
 bbx call input.drag '{"source":{"elementRef":"el_src"},"destination":{"elementRef":"el_dst"},"offsetX":5,"offsetY":5}'
 ```
 
-Event sequence: `mousedown → dragstart → drag → dragenter → dragover → drop → dragend → mouseup`.
+DOM mode picks the sequence a browser would use:
+
+- **Draggable sources** (`draggable="true"`, links, images): `pointerdown → mousedown → dragstart → pointercancel → drag → dragenter → dragover → drop → dragend`. `drop` only fires when the destination cancels `dragover`, as real drop zones must; otherwise it gets `dragleave`.
+- **Other sources** (sortable lists, sliders, canvases, and other pointer-driven UIs): `pointerdown/mousedown`, ten interpolated `pointermove/mousemove` steps with the button held across whatever elements lie under the path (with over/out transitions), then `pointerup/mouseup` at the destination.
+
+The result's `strategy` reports `html5` or `pointer`. CDP mode drives a real pointer drag either way.
 
 Typical workflow - reorder a list:
 

@@ -16,6 +16,7 @@ import {
   normalizeStorageParams,
   normalizeSensitiveReadParams,
   normalizeStyleQuery,
+  normalizeTouchParams,
   normalizeViewportAction,
   normalizeWaitForParams,
 } from '../../protocol/src/index.js';
@@ -82,6 +83,7 @@ const TAB_BOUND_NORMALIZERS = {
   'input.select_option': normalizeSelectAction,
   'input.hover': normalizeHoverParams,
   'input.drag': normalizeDragParams,
+  'input.touch': normalizeTouchParams,
   'patch.apply_styles': normalizePatchOperation,
   'patch.apply_dom': normalizePatchOperation,
   'patch.list': normalizePatchOperation,
@@ -119,6 +121,7 @@ const TAB_BOUND_METHODS = new Set([
   'input.select_option',
   'input.hover',
   'input.drag',
+  'input.touch',
   'input.scroll_into_view',
   'patch.apply_styles',
   'patch.apply_dom',
@@ -154,6 +157,13 @@ export function getContentScriptTimeout(method, params, contentScriptTimeoutMs =
   const hoverDuration = Number(params?.duration);
   if (method === 'input.hover' && hoverDuration > 0) {
     return contentScriptTimeoutMs + Math.min(hoverDuration, 5_000) + 1_000;
+  }
+  const holdMs = Number(params?.holdMs);
+  if (
+    (method === 'input.click' || method === 'input.press_key' || method === 'input.touch') &&
+    holdMs > 0
+  ) {
+    return contentScriptTimeoutMs + Math.min(holdMs, 10_000) + 1_000;
   }
   return contentScriptTimeoutMs;
 }

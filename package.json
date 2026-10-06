@@ -1,6 +1,6 @@
 {
   "name": "@browserbridge/bbx",
-  "version": "1.11.3",
+  "version": "1.11.5",
   "private": false,
   "keywords": [
     "agent-tools",
@@ -73,25 +73,29 @@
     "install-manifest": "node packages/native-host/bin/install-manifest.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/server": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.3.1",
     "@mozilla/readability": "^0.6.0",
     "linkedom": "^0.18.13",
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@modelcontextprotocol/client": "^2.0.0",
-    "@types/chrome": "^0.3.0",
-    "@types/node": "^26.6.1",
+    "@modelcontextprotocol/client": "^2.3.1",
+    "@types/chrome": "^0.3.4",
+    "@types/node": "^26.6.4",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "c8": "^12.0.0",
     "har-schema": "^2.0.0",
-    "oxfmt": "^0.68.0",
-    "oxlint": "^1.83.0",
-    "tsx": "^4.23.13",
+    "oxfmt": "^0.72.0",
+    "oxlint": "^1.87.0",
+    "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   },
   "engines": {
     "node": ">=20"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "fsevents@2.3.3": true
   }
 }

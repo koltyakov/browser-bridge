@@ -547,6 +547,7 @@ test('validateBridgeRequest normalizes input.fill parameters', () => {
     submit: false,
     key: '',
     modifiers: [],
+    holdMs: 0,
     executionMode: 'dom',
     recoverStale: false,
   });

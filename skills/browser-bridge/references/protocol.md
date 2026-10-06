@@ -85,15 +85,17 @@ omit both for the group index.
 | `styles.get_matched_rules`         | Yes  | -          | inspect     | `styles.read`        | Element ref, class list, and inline style only; not stylesheet cascade data                |
 | `viewport.scroll`                  | Yes  | -          | navigate    | `viewport.control`   | Window or element scroll                                                                   |
 | `viewport.resize`                  | Yes  | CDP        | navigate    | `viewport.control`   | Set viewport via device emulation; `reset: true`                                           |
-| `input.click`                      | Yes  | Optional   | interact    | `automation.input`   | Actionability-aware DOM or CDP click                                                       |
+| `input.click`                      | Yes  | Optional   | interact    | `automation.input`   | Actionability-aware DOM or CDP click; `holdMs` keeps the button pressed                    |
 | `input.focus`                      | Yes  | -          | interact    | `automation.input`   | Actionability-aware DOM focus                                                              |
 | `input.type`                       | Yes  | Optional   | interact    | `automation.input`   | DOM key sequence or CDP text insertion                                                     |
 | `input.fill`                       | Yes  | Optional   | interact    | `automation.input`   | DOM fill strategy or CDP clear/insert; see `mode` versus `executionMode`                   |
-| `input.press_key`                  | Yes  | -          | interact    | `automation.input`   | DOM key event                                                                              |
+| `input.press_key`                  | Yes  | Optional   | interact    | `automation.input`   | DOM key events (with `code`/`keyCode`) or trusted CDP key pair; `holdMs`                   |
 | `input.set_checked`                | Yes  | -          | interact    | `automation.input`   | Checkbox/radio toggle                                                                      |
 | `input.select_option`              | Yes  | -          | interact    | `automation.input`   | Native select by value/label/index                                                         |
 | `input.hover`                      | Yes  | Optional   | interact    | `automation.input`   | DOM hover events or native CDP pointer move                                                |
-| `input.drag`                       | Yes  | Optional   | interact    | `automation.input`   | DOM drag events or native interpolated pointer drag                                        |
+| `input.drag`                       | Yes  | Optional   | interact    | `automation.input`   | HTML5 drag for draggable sources, pointer drag otherwise; or native CDP pointer drag       |
+| `input.touch`                      | Yes  | Optional   | interact    | `automation.input`   | 1-10 simultaneous touch points (chords, taps, swipes, pinches) held for `holdMs`           |
+| `input.perform`                    | Yes  | Per step   | interact    | `automation.input`   | Ordered, timed sequence of input steps executed inside the extension                       |
 | `input.scroll_into_view`           | Yes  | -          | interact    | `automation.input`   | Explicitly scroll target into view before inspect/capture                                  |
 | `screenshot.capture_element`       | Yes  | CDP        | capture     | `screenshot.partial` | Complete element screenshot with explicit completeness metadata                            |
 | `screenshot.capture_region`        | Yes  | CDP        | capture     | `screenshot.partial` | Cropped viewport region in PNG, JPEG, or WebP                                               |
@@ -294,7 +296,7 @@ When `properties` is omitted, `styles.get_computed` returns exactly `display`, `
 
 Input calls preserve an explicit `elementRef`. For selectors, the first actionable match wins; if it is not actionable, Browser Bridge evaluates at most 25 matches and chooses only a uniquely better candidate. It scrolls the selected target if needed and rechecks visibility, disabled/inert state, rendered bounds, and pointer hit testing before dispatch. Failures use `ELEMENT_NOT_FOUND`, `ELEMENT_NOT_ACTIONABLE`, `ELEMENT_OBSCURED`, or `ELEMENT_AMBIGUOUS` with bounded details.
 
-Successful targeted click, focus, type, fill, press-key, checked-state, option-selection, hover, and drag results include `resolution` (`strategy`, candidate/evaluated counts, scrolling, hit test, and recovery fields) and `execution` (`requestedMode`, `actualMode`, `fallbackReason`, `debuggerUsed`, and coordinates). `cdp.dispatch_key_event`/MCP `cdp_press_key` and `input.scroll_into_view` use separate response contracts. `executionMode` is the dispatch path and accepts only `dom` or `cdp`, defaulting to `dom` for compatibility. CDP is supported only by click, hover, drag, type, and fill; unsupported combinations return `INPUT_UNSUPPORTED` instead of falling back silently.
+Successful targeted click, focus, type, fill, press-key, checked-state, option-selection, hover, and drag results include `resolution` (`strategy`, candidate/evaluated counts, scrolling, hit test, and recovery fields) and `execution` (`requestedMode`, `actualMode`, `fallbackReason`, `debuggerUsed`, and coordinates). `cdp.dispatch_key_event`/MCP `cdp_press_key` and `input.scroll_into_view` use separate response contracts. `executionMode` is the dispatch path and accepts only `dom` or `cdp`, defaulting to `dom` for compatibility. CDP is supported by click, hover, drag, type, fill, press_key, and touch; unsupported combinations return `INPUT_UNSUPPORTED` instead of falling back silently. DOM events mirror real device event order (pointer events, boundary transitions, `code`/`keyCode`) but are untrusted, so Chrome may refuse gesture-gated features such as audio/media start; use CDP for those.
 
 `input.fill.mode` is separate: `auto`, `setter`, and `keystrokes` choose the DOM fill strategy. `mode: "auto"` may fall back from the setter to keystrokes and reports the used `mode`; it does not select CDP. With `executionMode: "cdp"`, fill uses native clear/text dispatch and reports `mode: "cdp"`.
 
@@ -313,11 +315,28 @@ bbx call input.hover '{"target":{"elementRef":"el_abc123"},"duration":1000}'
 
 ### input.drag
 
-The DOM path dispatches `mousedown → dragstart → drag → dragenter → dragover → drop → dragend → mouseup`. The CDP path performs a bounded interpolated native pointer drag and guarantees a release attempt after failure. Both accept source, destination, and optional destination offsets.
+For natively draggable sources the DOM path dispatches `pointerdown → mousedown → dragstart → pointercancel → drag → dragenter → dragover → drop → dragend` (`drop` only when the destination cancels `dragover`). Other sources get a pointer drag: press, ten interpolated moves with the button held, release at the destination. `strategy` reports `html5` or `pointer`. The CDP path performs a bounded interpolated native pointer drag and guarantees a release attempt after failure. Both accept source, destination, and optional destination offsets.
 
 ```bash
 bbx call input.drag '{"source":{"elementRef":"el_src"},"destination":{"elementRef":"el_dst"}}'
 bbx call input.drag '{"source":{"elementRef":"el_src"},"destination":{"elementRef":"el_dst"},"offsetX":10,"offsetY":10}'
+```
+
+### input.touch
+
+Put 1-10 fingers down at once, hold them for `holdMs` (default 50), optionally move points that have a `to` end position over `moveSteps` (default 10), then lift them. Each point is `{ target }` or viewport `{ x, y }`. DOM mode fires per-finger pointer events (`pointerType: "touch"`) and touch events; CDP mode uses trusted `Input.dispatchTouchEvent`.
+
+```bash
+bbx call input.touch '{"points":[{"target":{"selector":"#c4"}},{"target":{"selector":"#e4"}}],"holdMs":500,"executionMode":"cdp"}'
+bbx call input.touch '{"points":[{"x":300,"y":400,"to":{"x":60,"y":400}}],"holdMs":250}'
+```
+
+### input.perform
+
+Run `steps: [{ method, params, atMs | delayMs }]` in order inside the extension, so timing does not depend on agent round-trips. Step methods: input click/focus/type/fill/press_key/set_checked/select_option/hover/drag/touch/scroll_into_view, `viewport.scroll`, `dom.wait_for`, and `page.wait_for_load_state`. `atMs` is measured from the sequence start (no drift); `delayMs` follows the previous step. A top-level `executionMode` applies to steps that support it. The sequence stops at the first failed step (including a timed-out `dom.wait_for`) with that step's code and `details.failedStep`, unless `continueOnError: true`. `timeoutMs` defaults to 30000 (max 120000); at most 200 steps. Success returns `completed`, `total`, `elapsedMs`, `startedAtMs`, and `failures`.
+
+```bash
+bbx call input.perform '{"executionMode":"cdp","steps":[{"method":"input.click","params":{"target":{"selector":"#c4"},"holdMs":300},"atMs":0},{"method":"input.click","params":{"target":{"selector":"#d4"},"holdMs":300},"atMs":400}]}'
 ```
 
 ### input.scroll_into_view
