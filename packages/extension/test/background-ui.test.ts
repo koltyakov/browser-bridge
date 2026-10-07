@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createExtensionState } from '../src/background-state.js';
+import { createExtensionState, normalizeActionLogEntry } from '../src/background-state.js';
 import { createWindowSessionController } from '../src/background-window-session.js';
 import { createChromeFake } from '../../../tests/_helpers/chromeFake.ts';
 import {
@@ -142,6 +142,35 @@ test('background UI state emission handles missing and scoped ports', async () =
   );
 });
 
+test('unresolved panel scope never exposes histories from sibling tabs', async () => {
+  const state = createExtensionState();
+  for (const tabId of [7, 8, null]) {
+    const entry = normalizeActionLogEntry({ id: `history-${tabId}`, method: 'dom.query', tabId });
+    assert.ok(entry);
+    state.actionLog.push(entry);
+  }
+  const messages: PostedMessage[] = [];
+  const port = createPort(messages);
+  state.uiPorts.set(port, { surface: 'sidepanel', scopeTabId: null });
+  await emitUiStateForPort(state, port, {
+    refreshSetupStatus() {},
+    async getTabState() {
+      return null;
+    },
+    async getCurrentTabState() {
+      return null;
+    },
+    async setWindowEnabled() {},
+    async setCurrentWindowEnabled() {},
+    async handleSetupInstallAction() {},
+  });
+  const sync = messages[0] as { state: { actionLog: Array<{ id: string }> } };
+  assert.deepEqual(
+    sync.state.actionLog.map((entry) => entry.id),
+    ['history-null']
+  );
+});
+
 test('window-scoped panel follows a second tab despite another window having focus', async () => {
   const state = createExtensionState();
   state.enabledWindow = { windowId: 3, title: 'Enabled window', enabledAt: 1 };
@@ -253,6 +282,67 @@ test('a pending unscoped snapshot cannot overwrite a newly scoped panel', async 
   await initialEmission;
   assert.equal(messages.length, 1);
 });
+
+for (const delayedStage of ['tab', 'agent'] as const) {
+  test(`a slow ${delayedStage} lookup cannot overwrite newer state for the same panel scope`, async () => {
+    const state = createExtensionState();
+    const messages: PostedMessage[] = [];
+    const port = createPort(messages);
+    state.uiPorts.set(port, { surface: 'sidepanel', scopeTabId: 7 });
+    let release = () => {};
+    let started = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const pending = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    let tabCalls = 0;
+    let agentCalls = 0;
+    const deps = {
+      refreshSetupStatus() {},
+      async getTabState() {
+        const title = ++tabCalls === 1 ? 'Old' : 'New';
+        if (delayedStage === 'tab' && tabCalls === 1) {
+          started();
+          await gate;
+        }
+        return {
+          tabId: 7,
+          windowId: 2,
+          title,
+          url: 'https://example.test/',
+          enabled: true,
+          accessRequested: false,
+          restricted: false,
+        };
+      },
+      async getCurrentTabState() {
+        return null;
+      },
+      async getAgentTabState() {
+        const title = ++agentCalls === 1 ? 'Old agent' : 'New agent';
+        if (delayedStage === 'agent' && agentCalls === 1) {
+          started();
+          await gate;
+        }
+        return [{ tabId: 7, title, isCurrent: true }];
+      },
+      async setWindowEnabled() {},
+      async setCurrentWindowEnabled() {},
+      async handleSetupInstallAction() {},
+    };
+    const older = emitUiStateForPort(state, port, deps);
+    await pending;
+    await emitUiStateForPort(state, port, deps);
+    assert.equal(messages.length, 1);
+    const latest = messages[0];
+    release();
+    await older;
+    assert.deepEqual(messages, [latest]);
+    assert.equal((latest.state as { currentTab: { title: string } }).currentTab.title, 'New');
+  });
+}
 
 test('background UI message handling covers missing ports, refresh, install, and toggle errors', async () => {
   const state = createExtensionState();

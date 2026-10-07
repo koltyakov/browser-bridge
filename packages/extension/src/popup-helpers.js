@@ -42,7 +42,7 @@ export function getPopupViewState(currentTab) {
   if (!currentTab) {
     return {
       eyebrow: 'Window access unavailable',
-      detail: 'Open a normal web page to manage Browser Bridge for this Chrome window.',
+      detail: 'Open a normal web page to manage Browser Bridge for this browser window.',
       disclosureHidden: false,
       attention: false,
       buttonLabel: 'Enable Window Access',
@@ -65,7 +65,7 @@ export function getPopupViewState(currentTab) {
   if (currentTab.enabled) {
     return {
       eyebrow: 'Window access enabled',
-      detail: 'Your connected agent can inspect and interact with pages in this Chrome window.',
+      detail: 'Your connected agent can inspect and interact with pages in this browser window.',
       disclosureHidden: true,
       attention: false,
       buttonLabel: 'Disable Window Access',
@@ -92,7 +92,7 @@ export function getPopupViewState(currentTab) {
         : ' Current tab details are unavailable.';
     return {
       eyebrow: 'Window access requested',
-      detail: `${source} requested access to ${intent} pages in this Chrome window.${tab}`,
+      detail: `${source} requested access to ${intent} pages in this browser window.${tab}`,
       disclosureHidden: false,
       attention: true,
       buttonLabel: 'Enable Window Access',
@@ -103,7 +103,7 @@ export function getPopupViewState(currentTab) {
   return {
     eyebrow: 'Window access',
     detail:
-      'Enable Browser Bridge to let your connected agent inspect and interact with pages in this Chrome window.',
+      'Enable Browser Bridge to let your connected agent inspect and interact with pages in this browser window.',
     disclosureHidden: false,
     attention: false,
     buttonLabel: 'Enable Window Access',

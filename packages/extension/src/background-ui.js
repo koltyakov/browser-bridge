@@ -16,6 +16,15 @@ import { POPUP_PATH } from './background-state.js';
 
 /**
  * @typedef {{
+ *   tabId: number,
+ *   title: string,
+ *   isCurrent: boolean,
+ *   actionCount?: number,
+ * }} AgentTabUiState
+ */
+
+/**
+ * @typedef {{
  *   refreshSetupStatus: (force?: boolean) => void,
  *   getTabState: (tabId: number) => Promise<CurrentTabState | null>,
  *   getCurrentTabState: (windowId?: number | null) => Promise<CurrentTabState | null>,
@@ -26,6 +35,8 @@ import { POPUP_PATH } from './background-state.js';
  *     context?: { tabId: number, url: string },
  *   ) => Promise<void>,
  *   setCurrentWindowEnabled: (enabled: boolean) => Promise<void>,
+ *   getAgentTabState?: (windowId: number, currentTabId: number) => Promise<AgentTabUiState[]>,
+ *   moveAgentToTab?: (tabId: number) => Promise<void>,
  *   handleSetupInstallAction: (message: Record<string, unknown>) => Promise<void>,
  * }} UiDeps
  */
@@ -83,6 +94,9 @@ export async function emitUiState(state, deps) {
   await Promise.all([...state.uiPorts.keys()].map((port) => emitUiStateForPort(state, port, deps)));
 }
 
+/** @type {WeakMap<chrome.runtime.Port, object>} */
+const pendingSnapshots = new WeakMap();
+
 /**
  * @param {ExtensionState} state
  * @param {chrome.runtime.Port} port
@@ -94,6 +108,8 @@ export async function emitUiStateForPort(state, port, deps) {
   if (!portState) {
     return;
   }
+  const snapshot = {};
+  pendingSnapshots.set(port, snapshot);
 
   deps.refreshSetupStatus();
 
@@ -101,10 +117,17 @@ export async function emitUiStateForPort(state, port, deps) {
     ? await deps.getTabState(portState.scopeTabId)
     : await deps.getCurrentTabState(portState.scopeWindowId);
   // A state request may bind the panel while the initial lookup is still pending.
-  if (state.uiPorts.get(port) !== portState) {
+  if (state.uiPorts.get(port) !== portState || pendingSnapshots.get(port) !== snapshot) {
     return;
   }
   const scopedTabId = currentTab?.tabId ?? portState.scopeTabId ?? null;
+  const agentTabs =
+    currentTab?.enabled && deps.getAgentTabState
+      ? await deps.getAgentTabState(currentTab.windowId, currentTab.tabId)
+      : [];
+  if (state.uiPorts.get(port) !== portState || pendingSnapshots.get(port) !== snapshot) {
+    return;
+  }
 
   postToUiPort(state, port, {
     type: 'state.sync',
@@ -114,14 +137,13 @@ export async function emitUiStateForPort(state, port, deps) {
       nativeHostVersion: state.nativeHostVersion,
       daemonProxy: state.daemonProxy,
       currentTab,
+      ...(agentTabs.length ? { agentTabs } : {}),
       setupStatus: state.setupStatus,
       setupStatusPending: state.setupStatusPending,
       setupStatusError: state.setupStatusError,
       setupInstallPendingKey: state.setupInstallPendingKey,
       setupInstallError: state.setupInstallError,
-      actionLog: [...state.actionLog]
-        .filter((entry) => scopedTabId == null || entry.tabId === scopedTabId)
-        .reverse(),
+      actionLog: [...state.actionLog].filter((entry) => entry.tabId === scopedTabId).reverse(),
     },
   });
 }
@@ -192,6 +214,14 @@ export async function handleUiMessage(state, port, message, deps) {
         /* port may have disconnected */
       }
       throw error;
+    }
+    return;
+  }
+
+  if (message?.type === 'agent.move_here') {
+    const tabId = Number(message.tabId);
+    if (Number.isInteger(tabId) && tabId > 0 && deps.moveAgentToTab) {
+      await deps.moveAgentToTab(tabId);
     }
     return;
   }

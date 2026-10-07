@@ -284,7 +284,7 @@ export function createBridgeMcpServer(options = {}) {
     {
       title: 'Browser DOM',
       description:
-        'Query, describe, read, search, or wait for DOM elements. Reuse elementRef from prior results. For full-page text, use browser_page action "text". accessibility_tree is debugger-backed and depth-limited - use query/find first.',
+        'Query, describe, read, search, or wait for DOM elements. Reuse elementRef from prior results. For a page overview to act on, use accessibility_tree with source "dom": a compact outline (`- role "name" [ref]`) whose refs work directly as input targets, with no debugger. find_text/find_role search shadow DOM, use real accessible names (labels, aria-*), and skip hidden matches. For full-page text, use browser_page action "text".',
       inputSchema: z.object({
         action: z
           .enum([
@@ -350,6 +350,16 @@ export function createBridgeMcpServer(options = {}) {
           .describe(
             'Return semantically interactive AX nodes; actionable state is reported separately'
           ),
+        source: z
+          .enum(['dom', 'cdp'])
+          .optional()
+          .describe(
+            'accessibility_tree source: dom = actionable outline with refs, no debugger (recommended); cdp = Chrome AX tree (default)'
+          ),
+        format: z
+          .enum(['outline', 'tree'])
+          .optional()
+          .describe('accessibility_tree format (outline is default for source dom)'),
         textBudget: z
           .number()
           .int()
@@ -381,6 +391,10 @@ export function createBridgeMcpServer(options = {}) {
           .describe('Maximum search results (default: 10)'),
         role: z.string().optional().describe('ARIA role to search for (for find_role action)'),
         name: z.string().optional().describe('Accessible name to match with role'),
+        includeHidden: z
+          .boolean()
+          .optional()
+          .describe('Include hidden matches in find_text/find_role (default: false; counted)'),
         state: z
           .enum(['attached', 'detached', 'visible', 'hidden'])
           .optional()
@@ -658,7 +672,7 @@ export function createBridgeMcpServer(options = {}) {
     {
       title: 'Browser Input',
       description:
-        'Dispatch browser input. Targeted click, focus, type, fill, press_key, set_checked, select_option, hover, and drag actions perform actionability checks and report resolution/execution metadata. cdp_press_key and scroll_into_view use separate contracts. Reuse elementRef values and verify application state after mutations.',
+        'Dispatch browser input. Target by elementRef, selector, or a semantic locator ({role,name} / text / label / placeholder / testId) in one call. Targeted actions auto-wait for the element to become actionable (timeoutMs) and click/press_key/set_checked/select_option/submits return observed effects (URL change, dialogs, alerts, focus, DOM churn, target state), so a follow-up read is usually unnecessary. cdp_press_key and scroll_into_view use separate contracts.',
       inputSchema: z.object({
         action: z
           .enum([
@@ -769,6 +783,39 @@ export function createBridgeMcpServer(options = {}) {
           .describe('Drag destination selector (alternative to destinationElementRef)'),
         offsetX: z.number().optional().describe('Drag drop offset X (default: 0)'),
         offsetY: z.number().optional().describe('Drag drop offset Y (default: 0)'),
+        locator: z
+          .object({
+            role: z.string().max(500).optional().describe('ARIA role, e.g. button, textbox, link'),
+            name: z.string().max(500).optional().describe('Accessible name (labels, aria-*, text)'),
+            text: z.string().max(500).optional().describe('Visible text of the element'),
+            label: z.string().max(500).optional().describe('Form control label text'),
+            placeholder: z.string().max(500).optional(),
+            testId: z.string().max(500).optional().describe('data-testid / data-test / data-qa'),
+            exact: z.boolean().optional().describe('Exact instead of substring match'),
+            nth: z.number().int().min(0).max(49).optional().describe('Pick the nth visible match'),
+          })
+          .optional()
+          .describe(
+            'Find the target semantically in the same call (instead of elementRef/selector); selector narrows candidates'
+          ),
+        timeoutMs: z
+          .number()
+          .int()
+          .min(0)
+          .max(15000)
+          .optional()
+          .describe(
+            'Wait for the target to appear and become actionable (default: 2500; 0 = no wait)'
+          ),
+        observe: z
+          .union([
+            z.boolean(),
+            z.object({ settleMs: z.number().int().min(0).max(5000).optional() }),
+          ])
+          .optional()
+          .describe(
+            'Report effects (URL, dialogs, alerts, focus, DOM churn, target state) after the action; default on for click, press_key, set_checked, select_option, and submits'
+          ),
       }),
     },
     handleInputTool

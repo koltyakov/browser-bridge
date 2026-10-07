@@ -119,6 +119,7 @@ import {
 } from './background-tab-bound.js';
 import { createDomBaselineController } from './background-dom-baselines.js';
 import { createDomBaselineRequestHandler } from './background-dom-baseline-requests.js';
+import { createAgentTabLeaseStore, normalizeAgentSession } from './background-agent-tabs.js';
 
 /** @typedef {import('./background-state.js').EnabledWindowState} EnabledWindowState */
 /** @typedef {import('./background-state.js').ResolvedTabTarget} ResolvedTabTarget */
@@ -138,6 +139,49 @@ const chrome = globalThis.chrome;
 const state = createExtensionState();
 setExtensionState(state);
 const domBaselines = createDomBaselineController();
+const agentTabs = createAgentTabLeaseStore({
+  storage: chrome.storage?.session ?? null,
+});
+/** @type {Map<string, import('./background-page.js').TabRouting>} */
+const tabRoutingByRequestId = new Map();
+const MAX_TRACKED_TAB_ROUTINGS = 256;
+
+/**
+ * Remember which tab a request was routed to so the response can report it.
+ *
+ * @param {string} requestId
+ * @param {import('./background-page.js').TabRouting} routing
+ * @returns {void}
+ */
+function recordTabRouting(requestId, routing) {
+  tabRoutingByRequestId.set(requestId, routing);
+  if (tabRoutingByRequestId.size > MAX_TRACKED_TAB_ROUTINGS) {
+    const oldest = tabRoutingByRequestId.keys().next().value;
+    if (oldest !== undefined) tabRoutingByRequestId.delete(oldest);
+  }
+  void syncWorkingTabIndicators().catch(reportAsyncError);
+}
+
+/**
+ * Refresh the cached working-tab set and repaint badges whose state changed.
+ *
+ * @returns {Promise<void>}
+ */
+async function syncWorkingTabIndicators() {
+  const next = await agentTabs.getWorkingTabIds();
+  const previous = state.workingTabIds ?? new Set();
+  const changed = new Set(
+    [...previous, ...next].filter((tabId) => previous.has(tabId) !== next.has(tabId))
+  );
+  state.workingTabIds = next;
+  for (const tabId of changed) {
+    await updateActionIndicatorForTab(tabId).catch(() => {});
+  }
+  if (changed.size) {
+    await syncGlobalBadgeToActiveTab();
+    await emitUiState();
+  }
+}
 const recoveryTelemetry = new RecoveryTelemetryCollector();
 
 const tabDebugger = new TabDebuggerCoordinator({
@@ -196,6 +240,9 @@ const fetchInterceptor = createFetchInterceptor({
 
 const {
   sendTabMessage,
+  sendFrameMessage,
+  listFrames,
+  getFrameForRef,
   injectContentScriptsForWindow,
   ensureContentScript,
   installNavigationSignals,
@@ -240,6 +287,8 @@ const clearTabBridgeState = async (tabId, shouldContinue) => {
 /** @param {number} windowId */
 const clearWindowBridgeState = async (windowId) => {
   domBaselines.clearWindow(windowId);
+  await agentTabs.clear();
+  void syncWorkingTabIndicators().catch(reportAsyncError);
   await tabCleanupController.clearWindowBridgeState(windowId);
 };
 const rollbackAllPatchesForTab = tabCleanupController.rollbackAllPatchesForTab;
@@ -360,6 +409,8 @@ const {
   getDialogStatus: (tabId) => tabDebugger.getDialogStatus(tabId),
   clearDialog: (tabId, dialogId) => tabDebugger.clearDialog(tabId, dialogId),
   waitForUrl: (tabId, windowId, params) => navigationWaits.wait(tabId, windowId, params),
+  agentTabs,
+  onRequestRouted: recordTabRouting,
 });
 
 const domBaselineRequests = createDomBaselineRequestHandler(domBaselines, {
@@ -369,12 +420,17 @@ const domBaselineRequests = createDomBaselineRequestHandler(domBaselines, {
   contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,
 });
 
-const { appendActionLogEntry, getActionContext, logBridgeAction, restoreActionLog } =
-  createActionLogController(state, chrome, {
-    emitUiState,
-    getCurrentTabState,
-    resolveRequestTarget,
-  });
+const {
+  appendActionLogEntry,
+  getActionContext,
+  logBridgeAction,
+  restoreActionLog,
+  clearActionLogForTab,
+} = createActionLogController(state, chrome, {
+  emitUiState,
+  getCurrentTabState,
+  resolveRequestTarget,
+});
 
 const { handleNativeInput } = createBackgroundInputController({
   contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,
@@ -509,9 +565,44 @@ function bytesToBase64(value) {
   return btoa(binary);
 }
 
+/**
+ * Auto execution mode: use debugger (trusted) input only when it is already
+ * attached to the tab, or when the target likely ignores synthetic events
+ * (file pickers, media, new-window links, rich editors). Otherwise stay on DOM
+ * events so no debugger banner appears.
+ *
+ * @param {number} tabId
+ * @param {string} method
+ * @param {Record<string, unknown>} params
+ * @returns {Promise<{ mode: 'dom' | 'cdp', reason: string }>}
+ */
+async function chooseInputExecutionMode(tabId, method, params) {
+  if (tabDebugger.attachedTabs.has(tabId)) return { mode: 'cdp', reason: 'debugger-attached' };
+  try {
+    const hint = /** @type {{ needsTrusted?: boolean, reason?: string } | null} */ (
+      await sendTabMessage(
+        tabId,
+        {
+          type: 'bridge.execute',
+          method: 'input.trust_hint',
+          params: { method, target: params.target ?? params.source ?? null },
+        },
+        CONTENT_SCRIPT_TIMEOUT_MS
+      )
+    );
+    if (hint?.needsTrusted && typeof hint.reason === 'string') {
+      return { mode: 'cdp', reason: hint.reason };
+    }
+  } catch {
+    // Fall back to DOM input when the hint is unavailable.
+  }
+  return { mode: 'dom', reason: 'synthetic-dom-default' };
+}
+
 /** @type {Parameters<typeof executeTabBoundRequest>[1]} */
 const tabBoundRequestDependencies = {
   contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,
+  chooseInputExecutionMode,
   ensureContentScript,
   handleScreenshot: (target, method, params, requestId) =>
     handleScreenshot(
@@ -535,6 +626,7 @@ const tabBoundRequestDependencies = {
   toFailureResponse,
   recordStaleRecovery: (outcome, group) =>
     recoveryTelemetry.record('stale_ref_recovery', outcome, group),
+  frames: { listFrames, getFrameForRef, sendFrameMessage },
 };
 
 const accessStateInitialization = restoreEnabledWindow().catch(reportAsyncError);
@@ -572,11 +664,22 @@ chrome.tabs.onDetached?.addListener((tabId, detachInfo) => {
 
 chrome.tabs.onAttached?.addListener((tabId, attachInfo) => {
   navigationWaits.handleTabMoved(tabId, attachInfo.newWindowId);
+  void agentTabs
+    .handleTabMoved(tabId, attachInfo.newWindowId)
+    .then(() => syncWorkingTabIndicators())
+    .catch(reportAsyncError);
   void tabMoveCleanup.handleAttached(tabId, attachInfo).catch(reportAsyncError);
 });
 
 chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
   domBaselines.clearTab(tabId);
+  void clearActionLogForTab(tabId)
+    .finally(() => emitUiState())
+    .catch(reportAsyncError);
+  void agentTabs
+    .handleTabRemoved(tabId)
+    .then(() => syncWorkingTabIndicators())
+    .catch(reportAsyncError);
   void tabMoveCleanup.handleRemoved(tabId).catch(reportAsyncError);
   void handleTabRemoved(tabId, removeInfo).catch(reportAsyncError);
 });
@@ -651,6 +754,7 @@ async function initializeState() {
     sendAccessUpdate(true);
   }
   await restoreActionLog();
+  await emitUiState();
   await primeEnabledWindowInstrumentation();
   await refreshActionIndicators();
 }
@@ -687,6 +791,7 @@ async function handleBridgeRequest(request) {
       reportAsyncError(error);
     }
   }
+  response = attachTabRouting(request, response);
   response = enrichBridgeResponse(request, response);
   if (request.method === 'sensitive.read') {
     void logBridgeAction(request, response, actionContext).catch(reportAsyncError);
@@ -699,6 +804,48 @@ async function handleBridgeRequest(request) {
   } catch (error) {
     reportAsyncError(error);
   }
+}
+
+/**
+ * Add the calling session's working tab to an access status.
+ *
+ * @template {Record<string, unknown>} T
+ * @param {BridgeRequest} request
+ * @param {T} access
+ * @returns {Promise<T & { workingTabId?: number }>}
+ */
+async function withWorkingTab(request, access) {
+  if (!access.enabled) return access;
+  const lease = await agentTabs.get(normalizeAgentSession(request.meta?.agent_session));
+  return lease && !lease.closed && lease.windowId === access.windowId
+    ? { ...access, workingTabId: lease.tabId }
+    : access;
+}
+
+/**
+ * Report where a tab-bound request ran. `active_tab_id` is included only when
+ * the agent's working tab differs from the user's active tab, which is the
+ * case agents need to notice.
+ *
+ * @param {BridgeRequest} request
+ * @param {BridgeResponse} response
+ * @returns {BridgeResponse}
+ */
+function attachTabRouting(request, response) {
+  const routing = tabRoutingByRequestId.get(request.id);
+  if (!routing) return response;
+  tabRoutingByRequestId.delete(request.id);
+  return {
+    ...response,
+    meta: {
+      ...response.meta,
+      tab_id: routing.tabId,
+      tab_routing: routing.via,
+      ...(routing.activeTabId !== null && routing.activeTabId !== routing.tabId
+        ? { active_tab_id: routing.activeTabId }
+        : {}),
+    },
+  };
 }
 
 /**
@@ -718,12 +865,15 @@ async function dispatchBridgeRequest(request) {
         {
           extension: 'ok',
           extensionVersion: chrome.runtime.getManifest().version,
-          access: await getAccessStatus({
-            chrome,
-            state,
-            clearEnabledWindowIfGone,
-            isRestrictedAutomationUrl,
-          }),
+          access: await withWorkingTab(
+            request,
+            await getAccessStatus({
+              chrome,
+              state,
+              clearEnabledWindowIfGone,
+              isRestrictedAutomationUrl,
+            })
+          ),
           debugger: debuggerDiagnostics,
           capture: {
             state:
@@ -777,7 +927,10 @@ async function dispatchBridgeRequest(request) {
     case 'page.wait_for_load_state':
       return handleWaitForLoadState(request);
     case 'dom.get_accessibility_tree':
-      return handleAccessibilityTree(request);
+      // The DOM outline runs in the content script and needs no debugger.
+      return request.params?.source === 'dom'
+        ? executeTabBoundRequest(request, tabBoundRequestDependencies)
+        : handleAccessibilityTree(request);
     case 'page.get_network':
       return handleGetNetwork(request);
     case 'network.export_har':
@@ -833,7 +986,7 @@ async function dispatchBridgeRequest(request) {
  * @returns {Promise<BridgeResponse>}
  */
 async function handleListTabs(request) {
-  return executeListTabs(
+  const response = await executeListTabs(
     request,
     state,
     {
@@ -841,6 +994,33 @@ async function handleListTabs(request) {
     },
     ACCESS_DENIED_WINDOW_OFF
   );
+  if (!response.ok) return response;
+  const lease = await agentTabs.get(normalizeAgentSession(request.meta?.agent_session));
+  const workingTabId = lease && !lease.closed ? lease.tabId : null;
+  const result = /** @type {{ tabs: Array<Record<string, unknown>> }} */ (response.result);
+  return {
+    ...response,
+    result: {
+      ...result,
+      ...(workingTabId !== null ? { workingTabId } : {}),
+      tabs: result.tabs.map((tab) =>
+        tab.tabId === workingTabId ? { ...tab, working: true } : tab
+      ),
+    },
+  };
+}
+
+/**
+ * Make one tab the calling agent session's working tab.
+ *
+ * @param {BridgeRequest} request
+ * @param {number} tabId
+ * @param {number} windowId
+ * @returns {Promise<void>}
+ */
+async function bindWorkingTab(request, tabId, windowId) {
+  await agentTabs.bind(normalizeAgentSession(request.meta?.agent_session), tabId, windowId);
+  await syncWorkingTabIndicators();
 }
 
 /**
@@ -886,7 +1066,7 @@ async function handlePageEvaluate(request) {
  * @returns {Promise<BridgeResponse>}
  */
 async function handleCreateTab(request) {
-  return executeCreateTab(
+  const response = await executeCreateTab(
     request,
     state,
     {
@@ -894,6 +1074,13 @@ async function handleCreateTab(request) {
     },
     ACCESS_DENIED_WINDOW_OFF
   );
+  if (!response.ok) return response;
+  const created = /** @type {{ tabId?: unknown }} */ (response.result);
+  if (typeof created.tabId === 'number' && state.enabledWindow) {
+    await bindWorkingTab(request, created.tabId, state.enabledWindow.windowId);
+    return { ...response, result: { ...created, working: true } };
+  }
+  return response;
 }
 
 /**
@@ -1022,10 +1209,11 @@ async function handleActivateTab(request) {
     );
   }
   await chrome.tabs.update(tabId, { active: true });
+  await bindWorkingTab(request, tabId, tab.windowId);
   await emitUiState();
   return createSuccess(
     request.id,
-    { activated: true, tabId, title: tab.title ?? '', url: tab.url ?? '' },
+    { activated: true, working: true, tabId, title: tab.title ?? '', url: tab.url ?? '' },
     { method: request.method }
   );
 }
@@ -1155,6 +1343,8 @@ async function emitUiState() {
     setWindowEnabled,
     setCurrentWindowEnabled,
     handleSetupInstallAction,
+    getAgentTabState,
+    moveAgentToTab,
   });
 }
 
@@ -1173,6 +1363,8 @@ async function emitUiStateForPort(port) {
     setWindowEnabled,
     setCurrentWindowEnabled,
     handleSetupInstallAction,
+    getAgentTabState,
+    moveAgentToTab,
   });
 }
 
@@ -1191,7 +1383,68 @@ async function handleUiMessage(port, message) {
     setWindowEnabled,
     setCurrentWindowEnabled,
     handleSetupInstallAction,
+    getAgentTabState,
+    moveAgentToTab,
   });
+}
+
+/**
+ * Describe recently targeted tabs without choosing the latest request as a winner.
+ *
+ * @param {number} windowId
+ * @param {number} currentTabId
+ * @returns {Promise<import('./background-ui.js').AgentTabUiState[]>}
+ */
+async function getAgentTabState(windowId, currentTabId) {
+  const leases = await agentTabs.listRecentTabs();
+  const tabIds = [
+    ...new Set(leases.filter((entry) => entry.windowId === windowId).map((entry) => entry.tabId)),
+  ];
+  /** @type {Map<number, number>} */
+  const actionCounts = new Map();
+  for (const entry of state.actionLog) {
+    if (entry.tabId !== null && entry.method !== 'health.ping') {
+      actionCounts.set(entry.tabId, (actionCounts.get(entry.tabId) ?? 0) + 1);
+    }
+  }
+  const tabs = await Promise.all(
+    tabIds.map(async (tabId) => {
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        if (tab.windowId !== windowId) return null;
+        return {
+          tabId,
+          title: tab.title ?? '',
+          isCurrent: tabId === currentTabId,
+          actionCount: actionCounts.get(tabId) ?? 0,
+        };
+      } catch {
+        return null;
+      }
+    })
+  );
+  return tabs
+    .filter((tab) => tab !== null)
+    .sort(
+      (left, right) => Number(right.isCurrent) - Number(left.isCurrent) || left.tabId - right.tabId
+    );
+}
+
+/**
+ * Redirect every agent session in the tab's window to that tab. This is the
+ * user's explicit way to point an agent somewhere else, since merely switching
+ * tabs no longer moves it.
+ *
+ * @param {number} tabId
+ * @returns {Promise<void>}
+ */
+async function moveAgentToTab(tabId) {
+  if (!state.enabledWindow) return;
+  const tab = await chrome.tabs.get(tabId);
+  if (tab.windowId !== state.enabledWindow.windowId) return;
+  await agentTabs.rebindWindow(tab.windowId, tabId);
+  await syncWorkingTabIndicators();
+  await emitUiState();
 }
 
 /**

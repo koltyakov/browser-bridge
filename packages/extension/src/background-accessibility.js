@@ -256,3 +256,39 @@ function axTristate(value) {
   if (unwrapped === false || unwrapped === 'false') return 'false';
   return unwrapped === 'mixed' ? 'mixed' : null;
 }
+
+/**
+ * Render a filtered AX tree as compact indented `- role "name"` lines. AX
+ * nodes have no page refs; use `source: "dom"` for an actionable outline.
+ *
+ * @param {Array<SimplifiedAXNode>} nodes
+ * @param {string[]} rootIds
+ * @returns {string}
+ */
+export function formatAccessibilityOutline(nodes, rootIds) {
+  const byId = new Map(nodes.map((node) => [node.nodeId, node]));
+  /** @type {string[]} */
+  const lines = [];
+  const visited = new Set();
+  /** @param {string} nodeId @param {number} depth */
+  const visit = (nodeId, depth) => {
+    const node = byId.get(nodeId);
+    if (!node || visited.has(nodeId)) return;
+    visited.add(nodeId);
+    /** @type {string[]} */
+    const states = [];
+    if (node.disabled) states.push('disabled');
+    if (node.checked === 'true') states.push('checked');
+    else if (node.checked === 'mixed') states.push('mixed');
+    if (node.focused) states.push('focused');
+    if (node.required) states.push('required');
+    if (node.value) states.push(`value=${JSON.stringify(node.value.slice(0, 40))}`);
+    const name = node.name ? ` ${JSON.stringify(node.name.slice(0, 80))}` : '';
+    lines.push(
+      `${'  '.repeat(Math.min(depth, 12))}- ${node.role || 'generic'}${name}${states.length ? ` ${states.join(' ')}` : ''}`
+    );
+    for (const childId of node.childIds) visit(childId, depth + 1);
+  };
+  for (const rootId of rootIds) visit(rootId, 0);
+  return lines.join('\n');
+}

@@ -23,7 +23,18 @@
      getImplicitRole: (element: Element) => string,
      getImplicitRoleSelector: (role: string) => string,
      toRect: (rect: DOMRect | DOMRectReadOnly) => { x: number, y: number, width: number, height: number },
-     truncateText: (value: string, budget: number) => { value: string, truncated: boolean, omitted: number }
+     truncateText: (value: string, budget: number) => { value: string, truncated: boolean, omitted: number },
+     NON_RENDERED_TAGS: Set<string>,
+     collapseText: (value: string | null | undefined, budget?: number) => string,
+     escapeTailwindSelector: (selector: string) => string,
+     getAccessibleName: (element: Element) => string,
+     getElementRoles: (element: Element) => string[],
+     getElementTextContent: (element: Element, budget?: number) => string,
+     getShadowRoot: (element: Element) => ShadowRoot | null,
+     isElementVisible: (element: Element) => boolean,
+     querySelectorAllDeep: (selector: string, root?: ParentNode) => Element[],
+     querySelectorDeep: (selector: string, root?: ParentNode) => Element | null,
+     walkElementsDeep: (root?: ParentNode, limit?: number) => Generator<Element>
     } }} */ (globalThis).__BBX_CONTENT_HELPERS__;
   const registry = /** @type {typeof globalThis & { __BBX_CONTENT_REGISTRY__?: {
      consumePruned: () => boolean,
@@ -39,13 +50,22 @@
   }
 
   const {
+    NON_RENDERED_TAGS,
     clamp,
+    collapseText,
+    escapeTailwindSelector,
     extractElementText,
     findElementForWaitState,
-    getImplicitRole,
-    getImplicitRoleSelector,
+    getAccessibleName,
+    getElementRoles,
+    getElementTextContent,
+    getShadowRoot,
+    isElementVisible,
+    querySelectorAllDeep,
+    querySelectorDeep,
     toRect,
     truncateText,
+    walkElementsDeep,
   } = contentHelpers;
   const {
     consumePruned,
@@ -97,7 +117,7 @@
     const query = normalizeDomQuery(params);
     const root = query.withinRef
       ? getRequiredElement(query.withinRef)
-      : document.querySelector(query.selector);
+      : querySelectorDeep(query.selector);
     if (!root) {
       return {
         nodes: [],
@@ -347,10 +367,10 @@
       if (waitState === 'detached') {
         const exists = text
           ? findElementWithText(selector, text) !== null
-          : document.querySelector(selector) !== null;
+          : querySelectorDeep(selector) !== null;
         return { found: !exists, element: null };
       }
-      const candidates = document.querySelectorAll(selector);
+      const candidates = querySelectorAllDeep(selector);
       /** @type {Element[]} */
       const matched = [];
       for (const el of candidates) {
@@ -441,173 +461,292 @@
   }
 
   /**
+   * @typedef {{
+   *   role?: string,
+   *   name?: string,
+   *   text?: string,
+   *   label?: string,
+   *   placeholder?: string,
+   *   testId?: string,
+   *   selector?: string,
+   *   exact?: boolean,
+   *   includeHidden?: boolean
+   * }} ElementLocator
+   */
+
+  /**
+   * @typedef {{
+   *   matches: Element[],
+   *   hiddenMatches: number,
+   *   scanned: number,
+   *   truncationReason: 'maxResults' | 'scanLimit' | null
+   * }} LocateResult
+   */
+
+  const LOCATOR_KEYS = /** @type {const} */ ([
+    'role',
+    'name',
+    'text',
+    'label',
+    'placeholder',
+    'testId',
+  ]);
+  const TEST_ID_ATTRIBUTES = ['data-testid', 'data-test-id', 'data-test', 'data-qa'];
+
+  /**
+   * @param {unknown} value
+   * @returns {value is ElementLocator}
+   */
+  function isLocator(value) {
+    if (!value || typeof value !== 'object') return false;
+    const record = /** @type {Record<string, unknown>} */ (value);
+    return LOCATOR_KEYS.some((key) => typeof record[key] === 'string' && record[key] !== '');
+  }
+
+  /**
+   * @param {string} haystack
+   * @param {string} needle
+   * @param {boolean} exact
+   * @returns {boolean}
+   */
+  function textMatches(haystack, needle, exact) {
+    if (!haystack) return false;
+    const collapsedNeedle = collapseText(needle, 10_000);
+    const collapsedHaystack = exact ? collapseText(haystack, 100_000) : haystack;
+    return exact
+      ? collapsedHaystack === collapsedNeedle
+      : collapsedHaystack.toLowerCase().includes(collapsedNeedle.toLowerCase());
+  }
+
+  /**
+   * Full collapsed subtree text used for innermost text matching. Shadow hosts
+   * contribute their shadow content.
+   *
+   * @param {Element} element
+   * @returns {string}
+   */
+  function getMatchableText(element) {
+    if (getShadowRoot(element)) return getElementTextContent(element, 100_000);
+    return collapseText(element.textContent, 100_000);
+  }
+
+  /**
+   * Match visible text the way a user reads it: own text and text-like
+   * attributes first, otherwise the innermost element whose combined
+   * descendant text matches (so `<button><b>Place</b> order</button>` matches
+   * "Place order" on the button, not on `<body>`).
+   *
+   * @param {Element} element
+   * @param {string} needle
+   * @param {boolean} exact
+   * @returns {boolean}
+   */
+  function matchesTextLocator(element, needle, exact) {
+    if (NON_RENDERED_TAGS.has(element.tagName)) return false;
+    const own = extractElementText(element);
+    if (own && own.split(' | ').some((part) => textMatches(part, needle, exact))) return true;
+    if (!textMatches(getMatchableText(element), needle, exact)) return false;
+    for (const child of element.children ?? []) {
+      if (textMatches(getMatchableText(child), needle, exact)) return false;
+    }
+    return true;
+  }
+
+  /**
+   * @param {Element} element
+   * @param {ElementLocator} locator
+   * @returns {boolean}
+   */
+  function matchesLocator(element, locator) {
+    const exact = locator.exact === true;
+    if (NON_RENDERED_TAGS.has(element.tagName)) return false;
+    if (locator.role && !getElementRoles(element).includes(locator.role.toLowerCase())) {
+      return false;
+    }
+    if (
+      locator.testId &&
+      !TEST_ID_ATTRIBUTES.some((attribute) => element.getAttribute(attribute) === locator.testId)
+    ) {
+      return false;
+    }
+    if (
+      locator.placeholder &&
+      !textMatches(element.getAttribute('placeholder') ?? '', locator.placeholder, exact)
+    ) {
+      return false;
+    }
+    if (
+      locator.label &&
+      (element.tagName === 'LABEL' ||
+        getElementRoles(element).length === 0 ||
+        !textMatches(getAccessibleName(element), locator.label, exact))
+    ) {
+      return false;
+    }
+    if (locator.name && !textMatches(getAccessibleName(element), locator.name, exact)) {
+      return false;
+    }
+    if (locator.text && !matchesTextLocator(element, locator.text, exact)) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Locate elements by role, accessible name, text, label, placeholder, or test
+   * id across the light DOM and shadow roots. Hidden matches are counted but
+   * excluded unless `includeHidden` is set.
+   *
+   * @param {ElementLocator} locator
+   * @param {{ maxResults?: number, scanLimit?: number }} [options]
+   * @returns {LocateResult}
+   */
+  function locateElements(locator, options = {}) {
+    const maxResults = options.maxResults ?? 10;
+    const scanLimit = options.scanLimit ?? 5_000;
+    const scope = locator.selector && locator.selector !== '*' ? locator.selector : null;
+    /** @type {Iterable<Element>} */
+    const candidates = scope
+      ? querySelectorAllDeep(escapeTailwindSelector(scope))
+      : walkElementsDeep(document.body ?? document.documentElement ?? document);
+    /** @type {Element[]} */
+    const matches = [];
+    let hiddenMatches = 0;
+    let scanned = 0;
+    /** @type {'maxResults' | 'scanLimit' | null} */
+    let truncationReason = null;
+    for (const element of candidates) {
+      if (scanned >= scanLimit) {
+        truncationReason = 'scanLimit';
+        break;
+      }
+      scanned += 1;
+      if (!matchesLocator(element, locator)) continue;
+      if (locator.includeHidden !== true && !isElementVisible(element)) {
+        hiddenMatches += 1;
+        continue;
+      }
+      if (matches.length >= maxResults) {
+        truncationReason = 'maxResults';
+        break;
+      }
+      matches.push(element);
+    }
+    return { matches, hiddenMatches, scanned, truncationReason };
+  }
+
+  /**
+   * @param {Element} element
+   * @returns {NodeSummary & { visible?: boolean }}
+   */
+  function summarizeMatch(element) {
+    const node = summarizeNode(element, ['id', 'class', 'href', 'data-testid'], 120, true).node;
+    const role = getElementRoles(element)[0] ?? node.role;
+    const name = getAccessibleName(element);
+    return {
+      ...node,
+      role: role || null,
+      name: name ? name.slice(0, 120) : node.name,
+      ...(isElementVisible(element) ? {} : { visible: false }),
+    };
+  }
+
+  /**
+   * @param {LocateResult} located
+   * @returns {{ found: boolean, nodes: NodeSummary[], count: number, scanned: number, truncated: boolean, truncationReason: 'maxResults' | 'scanLimit' | null, hiddenMatches?: number }}
+   */
+  function toFindResult(located) {
+    return {
+      found: located.matches.length > 0,
+      nodes: located.matches.map(summarizeMatch),
+      count: located.matches.length,
+      scanned: located.scanned,
+      truncated: located.truncationReason !== null,
+      truncationReason: located.truncationReason,
+      ...(located.hiddenMatches ? { hiddenMatches: located.hiddenMatches } : {}),
+    };
+  }
+
+  /**
+   * Cheap existence check used to pick the frame that owns a selector or
+   * locator target. Hidden matches count: the action decides actionability.
+   *
+   * @param {Record<string, any>} params
+   * @returns {{ found: boolean }}
+   */
+  function probeTarget(params) {
+    const spec = params.target;
+    if (!spec || typeof spec !== 'object') return { found: false };
+    try {
+      if (spec.elementRef) return { found: true };
+      if (isLocator(spec)) {
+        return {
+          found:
+            locateElements({ ...spec, includeHidden: true }, { maxResults: 1 }).matches.length > 0,
+        };
+      }
+      if (typeof spec.selector === 'string' && spec.selector) {
+        return { found: querySelectorDeep(escapeTailwindSelector(spec.selector)) !== null };
+      }
+    } catch {
+      return { found: false };
+    }
+    return { found: false };
+  }
+
+  /**
    * Find elements matching visible text content.
    *
    * @param {Record<string, any>} params
-   * @returns {{ found: boolean, nodes: NodeSummary[], count: number, scanned: number, truncated: boolean, truncationReason: 'maxResults' | 'scanLimit' | null }}
+   * @returns {ReturnType<typeof toFindResult>}
    */
   function findByText(params) {
     const searchText = String(params.text || '');
     if (!searchText) {
       throw new Error('text is required for dom.find_by_text');
     }
-    const exact = Boolean(params.exact);
-    const scope = String(params.selector || '*');
-    const maxResults = clamp(params.maxResults ?? 10, 1, 50);
-    const scanLimit = clamp(params.scanLimit ?? 1000, 1, 5000);
-    const candidates = getElementCandidates(scope);
-    const results = [];
-    let scanned = 0;
-    /** @type {'maxResults' | 'scanLimit' | null} */
-    let truncationReason = null;
-
-    for (const el of candidates) {
-      if (scanned >= scanLimit) {
-        truncationReason = 'scanLimit';
-        break;
-      }
-      scanned += 1;
-      const visibleText = extractElementText(el);
-      if (!visibleText) continue;
-      const matches = exact
-        ? visibleText === searchText
-        : visibleText.toLowerCase().includes(searchText.toLowerCase());
-      if (matches) {
-        if (results.length >= maxResults) {
-          truncationReason = 'maxResults';
-          break;
-        }
-        results.push(
-          summarizeNode(el, ['id', 'class', 'role', 'href', 'data-testid'], 120, true).node
-        );
-      }
-    }
-
-    return {
-      found: results.length > 0,
-      nodes: results,
-      count: results.length,
-      scanned,
-      truncated: truncationReason !== null,
-      truncationReason,
-    };
-  }
-
-  /**
-   * @param {string} scope
-   * @returns {Iterable<Element>}
-   */
-  function getElementCandidates(scope) {
-    if (scope === '*' && typeof document.createTreeWalker === 'function') {
-      const root = document.body || document.documentElement;
-      if (!root) return [];
-      return {
-        *[Symbol.iterator]() {
-          const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
-          /** @type {Node | null} */
-          let node = root;
-          while (node) {
-            if (node instanceof Element) yield node;
-            node = walker.nextNode();
-          }
+    return toFindResult(
+      locateElements(
+        {
+          text: searchText,
+          exact: Boolean(params.exact),
+          selector: params.selector ? String(params.selector) : undefined,
+          includeHidden: params.includeHidden === true,
         },
-      };
-    }
-    return document.querySelectorAll(scope);
+        {
+          maxResults: clamp(params.maxResults ?? 10, 1, 50),
+          scanLimit: clamp(params.scanLimit ?? 5000, 1, 20000),
+        }
+      )
+    );
   }
 
   /**
    * Find elements matching ARIA role and optional accessible name.
    *
    * @param {Record<string, any>} params
-   * @returns {{ found: boolean, nodes: NodeSummary[], count: number, scanned: number, truncated: boolean, truncationReason: 'maxResults' | null }}
+   * @returns {ReturnType<typeof toFindResult>}
    */
   function findByRole(params) {
     const role = String(params.role || '');
     if (!role) {
       throw new Error('role is required for dom.find_by_role');
     }
-    const name = params.name ? String(params.name) : null;
-    const scope = String(params.selector || '*');
-    const maxResults = clamp(params.maxResults ?? 10, 1, 50);
-
-    const implicitSelector = getImplicitRoleSelector(role);
-    const attrSelector = `[role="${CSS.escape(role)}"]`;
-    const combinedSelector =
-      scope === '*'
-        ? implicitSelector
-          ? `${attrSelector}, ${implicitSelector}`
-          : attrSelector
-        : scope;
-    const candidates = document.querySelectorAll(combinedSelector);
-    const results = [];
-    let scanned = 0;
-    /** @type {'maxResults' | null} */
-    let truncationReason = null;
-
-    for (const el of candidates) {
-      scanned += 1;
-      const elRole = el.getAttribute('role') || getImplicitRole(el);
-      if (elRole !== role) continue;
-      if (name !== null) {
-        const accName = getAccessibleName(el);
-        if (!accName || !accName.toLowerCase().includes(name.toLowerCase())) {
-          continue;
+    return toFindResult(
+      locateElements(
+        {
+          role,
+          name: params.name ? String(params.name) : undefined,
+          exact: Boolean(params.exact),
+          selector: params.selector ? String(params.selector) : undefined,
+          includeHidden: params.includeHidden === true,
+        },
+        {
+          maxResults: clamp(params.maxResults ?? 10, 1, 50),
+          scanLimit: clamp(params.scanLimit ?? 5000, 1, 20000),
         }
-      }
-      if (results.length >= maxResults) {
-        truncationReason = 'maxResults';
-        break;
-      }
-      results.push(
-        summarizeNode(el, ['id', 'class', 'role', 'aria-label', 'href'], 120, true).node
-      );
-    }
-
-    return {
-      found: results.length > 0,
-      nodes: results,
-      count: results.length,
-      scanned,
-      truncated: truncationReason !== null,
-      truncationReason,
-    };
-  }
-
-  /**
-   * Resolve the accessible-name sources used by role search.
-   *
-   * @param {Element} element
-   * @returns {string}
-   */
-  function getAccessibleName(element) {
-    const labelledBy = element.getAttribute('aria-labelledby');
-    if (labelledBy) {
-      const text = labelledBy
-        .split(/\s+/u)
-        .map((id) => id.trim())
-        .filter(Boolean)
-        .map((id) => getLabelElementText(id))
-        .filter(Boolean)
-        .join(' ')
-        .trim();
-      if (text) return text;
-    }
-
-    return (
-      element.getAttribute('aria-label') ||
-      element.getAttribute('title') ||
-      extractElementText(element)
+      )
     );
-  }
-
-  /**
-   * @param {string} id
-   * @returns {string}
-   */
-  function getLabelElementText(id) {
-    const label = document.getElementById?.(id) || document.querySelector(`#${CSS.escape(id)}`);
-    return label ? extractElementText(label) : '';
   }
 
   /**
@@ -618,8 +757,7 @@
    * @returns {boolean}
    */
   function elementMatchesText(element, text) {
-    const visible = extractElementText(element);
-    return visible.toLowerCase().includes(text.toLowerCase());
+    return matchesTextLocator(element, text, false);
   }
 
   /**
@@ -630,7 +768,7 @@
    * @returns {Element | null}
    */
   function findElementWithText(selector, text) {
-    for (const el of document.querySelectorAll(selector)) {
+    for (const el of querySelectorAllDeep(selector)) {
       if (elementMatchesText(el, text)) {
         return el;
       }
@@ -638,11 +776,220 @@
     return null;
   }
 
+  /** Roles a user can operate; always part of the outline. */
+  const OUTLINE_INTERACTIVE_ROLES = new Set([
+    'button',
+    'checkbox',
+    'combobox',
+    'gridcell',
+    'link',
+    'listbox',
+    'menuitem',
+    'menuitemcheckbox',
+    'menuitemradio',
+    'option',
+    'radio',
+    'scrollbar',
+    'searchbox',
+    'slider',
+    'spinbutton',
+    'switch',
+    'tab',
+    'textbox',
+    'treeitem',
+  ]);
+  /** Structural roles that give the outline context when not interactive-only. */
+  const OUTLINE_CONTEXT_ROLES = new Set([
+    'alert',
+    'alertdialog',
+    'banner',
+    'complementary',
+    'contentinfo',
+    'dialog',
+    'form',
+    'heading',
+    'img',
+    'main',
+    'navigation',
+    'region',
+    'status',
+    'tablist',
+    'menu',
+    'menubar',
+    'tree',
+    'grid',
+    'table',
+  ]);
+  const OUTLINE_NAME_BUDGET = 80;
+
+  /**
+   * Compact states worth showing in an outline line.
+   *
+   * @param {Element} element
+   * @param {string} role
+   * @returns {string[]}
+   */
+  function getOutlineStates(element, role) {
+    /** @type {string[]} */
+    const states = [];
+    const control =
+      /** @type {{ disabled?: unknown, checked?: unknown, required?: unknown, value?: unknown, type?: unknown }} */ (
+        element
+      );
+    if (control.disabled === true || element.getAttribute('aria-disabled') === 'true') {
+      states.push('disabled');
+    }
+    const ariaChecked = element.getAttribute('aria-checked');
+    if (
+      (element.tagName === 'INPUT' &&
+        (control.type === 'checkbox' || control.type === 'radio') &&
+        control.checked === true) ||
+      ariaChecked === 'true'
+    ) {
+      states.push('checked');
+    } else if (ariaChecked === 'mixed') {
+      states.push('mixed');
+    }
+    for (const [attribute, label] of [
+      ['aria-expanded', 'expanded'],
+      ['aria-selected', 'selected'],
+      ['aria-pressed', 'pressed'],
+    ]) {
+      const value = element.getAttribute(attribute);
+      if (value === 'true') states.push(label);
+      else if (value === 'false' && attribute === 'aria-expanded') states.push('collapsed');
+    }
+    if (control.required === true || element.getAttribute('aria-required') === 'true') {
+      states.push('required');
+    }
+    if (role === 'heading') {
+      const level = element.getAttribute('aria-level') || element.tagName.match(/^H([1-6])$/)?.[1];
+      if (level) states.push(`level=${level}`);
+    }
+    if (['textbox', 'searchbox', 'combobox', 'spinbutton', 'slider'].includes(role)) {
+      const value =
+        typeof control.value === 'string'
+          ? control.value
+          : /** @type {HTMLElement} */ (element).isContentEditable
+            ? collapseText(element.textContent, 40)
+            : '';
+      if (value && control.type !== 'password')
+        states.push(`value=${JSON.stringify(value.slice(0, 40))}`);
+    }
+    if (document.activeElement === element) states.push('focused');
+    return states;
+  }
+
+  /**
+   * Nearest outline ancestor across shadow boundaries.
+   *
+   * @param {Element} element
+   * @param {Map<Element, number>} depths
+   * @returns {number}
+   */
+  function getOutlineDepth(element, depths) {
+    /** @type {Node | null} */
+    let current = element.parentNode;
+    for (let hops = 0; current && hops < 200; hops += 1) {
+      if (current.nodeType === 1) {
+        const depth = depths.get(/** @type {Element} */ (current));
+        if (depth !== undefined) return depth + 1;
+      }
+      current =
+        current.nodeType === 11 && /** @type {ShadowRoot} */ (current).host
+          ? /** @type {ShadowRoot} */ (current).host
+          : current.parentNode;
+    }
+    return 0;
+  }
+
+  /**
+   * Build an actionable accessibility outline from the live DOM (including
+   * shadow roots) without the debugger. Every line carries an elementRef that
+   * input methods accept directly, so agents can go from overview to action in
+   * one step. Hidden elements are skipped.
+   *
+   * @param {Record<string, any>} params
+   * @returns {{ source: 'dom', format: 'outline' | 'tree', outline?: string, nodes?: Array<Record<string, unknown>>, count: number, scanned: number, truncated: boolean }}
+   */
+  function getAccessibilityOutline(params) {
+    const maxNodes = clamp(params.maxNodes ?? 150, 10, 5000);
+    const interactiveOnly = params.interactiveOnly === true;
+    const root = params.selector
+      ? querySelectorDeep(escapeTailwindSelector(params.selector))
+      : null;
+    if (params.selector && !root) {
+      throw Object.assign(new Error('Accessibility outline selector matched no element.'), {
+        code: 'ELEMENT_NOT_FOUND',
+        details: { selector: String(params.selector).slice(0, 500) },
+      });
+    }
+    /** @type {Map<Element, number>} */
+    const depths = new Map();
+    /** @type {Array<{ ref: string, role: string, name: string, depth: number, states: string[] }>} */
+    const entries = [];
+    let scanned = 0;
+    let truncated = false;
+    const candidates = root
+      ? [root, ...walkElementsDeep(root)]
+      : walkElementsDeep(document.body ?? document.documentElement ?? document);
+    for (const element of candidates) {
+      scanned += 1;
+      if (NON_RENDERED_TAGS.has(element.tagName)) continue;
+      const roles = getElementRoles(element);
+      let role = roles[0] ?? '';
+      if (
+        !role &&
+        Number(element.getAttribute('tabindex')) >= 0 &&
+        element.hasAttribute('tabindex')
+      ) {
+        role = 'generic';
+      }
+      const interactive = OUTLINE_INTERACTIVE_ROLES.has(role) || role === 'generic';
+      if (!interactive && (interactiveOnly || !OUTLINE_CONTEXT_ROLES.has(role))) continue;
+      if (role === 'region' && !getAccessibleName(element)) continue;
+      if (!isElementVisible(element)) continue;
+      if (entries.length >= maxNodes) {
+        truncated = true;
+        break;
+      }
+      const depth = getOutlineDepth(element, depths);
+      depths.set(element, depth);
+      entries.push({
+        ref: rememberElement(element),
+        role,
+        name: collapseText(getAccessibleName(element), OUTLINE_NAME_BUDGET),
+        depth,
+        states: getOutlineStates(element, role),
+      });
+    }
+    const base = {
+      source: /** @type {'dom'} */ ('dom'),
+      count: entries.length,
+      scanned,
+      truncated,
+    };
+    if (params.format === 'tree') {
+      return { ...base, format: 'tree', nodes: entries };
+    }
+    const outline = entries
+      .map(
+        (entry) =>
+          `${'  '.repeat(Math.min(entry.depth, 12))}- ${entry.role}${entry.name ? ` ${JSON.stringify(entry.name)}` : ''} [${entry.ref}]${entry.states.length ? ` ${entry.states.join(' ')}` : ''}`
+      )
+      .join('\n');
+    return { ...base, format: 'outline', outline };
+  }
+
   globalState.__BBX_CONTENT_DOM_QUERY__ = Object.freeze({
     describeElement,
     domQuery,
     findByRole,
     findByText,
+    getAccessibilityOutline,
+    isLocator,
+    probeTarget,
+    locateElements,
     getAttributes,
     getBoxModel,
     getComputedStyles,

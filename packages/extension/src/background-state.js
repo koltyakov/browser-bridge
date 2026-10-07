@@ -141,7 +141,8 @@ import { getErrorMessage, normalizeRuntimeErrorMessage } from './background-help
  *   setupInstallPendingRequestId: string | null,
  *   setupInstallPendingAction: SetupInstallAction | null,
  *   setupInstallPendingKey: string | null,
- *   setupInstallError: string | null
+ *   setupInstallError: string | null,
+ *   workingTabIds?: Set<number>
  * }} ExtensionState
  */
 
@@ -157,6 +158,7 @@ export function isNumber(value) {
 
 export const NATIVE_APP_NAME = 'com.browserbridge.browser_bridge';
 export const CONTENT_SCRIPT_TIMEOUT_MS = 5_000;
+// Each tab owns this many entries; activity elsewhere must not evict its history.
 export const MAX_ACTION_LOG_ENTRIES = 50;
 export const ENABLED_WINDOW_STORAGE_KEY = 'enabledWindow';
 export const ACTION_LOG_STORAGE_KEY = 'actionLog';
@@ -165,6 +167,7 @@ export const POPUP_PATH = 'packages/extension/ui/popup.html';
 export const ENABLED_BADGE_TEXT = 'AI';
 export const ACCESS_REQUEST_BADGE_TEXT = '!';
 export const RESTRICTED_BADGE_TEXT = '!';
+export const WORKING_BADGE_TEXT = 'AI';
 export const DEBUGGER_PROTOCOL_VERSION = '1.3';
 export const SETUP_STATUS_STALE_MS = 30_000;
 export const SETUP_STATUS_TIMEOUT_MS = 5_000;
@@ -210,6 +213,7 @@ export function createExtensionState() {
     setupInstallPendingAction: null,
     setupInstallPendingKey: null,
     setupInstallError: null,
+    workingTabIds: new Set(),
   };
 }
 
@@ -279,7 +283,12 @@ export function normalizeActionLogEntry(entry) {
     method: candidate.method,
     source,
     mcpEra: normalizeActionLogMcpEra(source, candidate.mcpEra),
-    tabId: typeof candidate.tabId === 'number' ? candidate.tabId : null,
+    tabId:
+      typeof candidate.tabId === 'number' &&
+      Number.isSafeInteger(candidate.tabId) &&
+      candidate.tabId > 0
+        ? candidate.tabId
+        : null,
     url: typeof candidate.url === 'string' ? sanitizeIncidentalUrl(candidate.url) : '',
     ok: candidate.ok === true,
     summary: typeof candidate.summary === 'string' ? sanitizeIncidentalText(candidate.summary) : '',

@@ -166,6 +166,14 @@ export interface BridgeMeta {
   continuation_hint?: string | null;
   automatic_retry?: { attempt: 2; reason: 'retryable_error' };
   stale_recovery?: 'success' | 'failure';
+  /** Agent session for sticky working-tab routing; unset callers share a default. */
+  agent_session?: string;
+  /** Tab the request ran in. */
+  tab_id?: number;
+  /** How the tab was chosen: explicit tabId, the agent's working tab, or the active tab. */
+  tab_routing?: 'explicit' | 'working' | 'active';
+  /** Present when the user's active tab differs from the tab the request ran in. */
+  active_tab_id?: number;
   [key: string]: unknown;
 }
 
@@ -444,13 +452,42 @@ export interface NormalizedStyleQuery extends BridgeParams {
 
 export interface InputTarget {
   elementRef?: string;
+  /** CSS selector; with a locator it narrows the locator's candidates. */
   selector?: string;
+  /** ARIA role, e.g. "button" or "textbox". */
+  role?: string;
+  /** Accessible name (substring, case-insensitive unless exact). */
+  name?: string;
+  /** Visible text of the innermost matching element. */
+  text?: string;
+  /** Associated label text for form controls. */
+  label?: string;
+  placeholder?: string;
+  /** data-testid / data-test-id / data-test / data-qa value. */
+  testId?: string;
+  exact?: boolean;
+  /** Zero-based index among visible locator matches. */
+  nth?: number;
 }
 
-export type InputExecutionMode = 'dom' | 'cdp';
+export interface InputWaitObserveParams {
+  /** Wait up to this long for the target to exist and become actionable (0 disables). */
+  timeoutMs?: number;
+  /** Report post-action effects; true or { settleMs }. Defaults on for click/press_key/select/check. */
+  observe?: boolean | { settleMs?: number } | null;
+}
+
+/** auto picks cdp only when trusted input is likely required (or the debugger is already attached). */
+export type InputExecutionMode = 'dom' | 'cdp' | 'auto';
 
 export interface InputResolutionMetadata {
-  strategy: 'elementRef' | 'selector-first' | 'selector-ranked' | 'stale-recovery';
+  strategy:
+    | 'elementRef'
+    | 'selector-first'
+    | 'selector-ranked'
+    | 'locator-first'
+    | 'locator-ranked'
+    | 'stale-recovery';
   candidateCount: number;
   evaluatedCount: number;
   scrolled: boolean;
@@ -460,6 +497,8 @@ export interface InputResolutionMetadata {
   newRef?: string;
   matchedFields?: string[];
   confidenceBasis?: string;
+  /** Time spent waiting for the target to become actionable. */
+  waitedMs?: number;
 }
 
 export interface InputExecutionMetadata {
@@ -470,7 +509,7 @@ export interface InputExecutionMetadata {
   targetCoordinates?: { x: number; y: number };
 }
 
-export interface InputActionParams {
+export interface InputActionParams extends InputWaitObserveParams {
   target?: InputTarget;
   button?: 'left' | 'middle' | 'right';
   clickCount?: number;
@@ -625,7 +664,7 @@ export interface NormalizedCdpDomSnapshotParams extends BridgeParams {
   computedStyles: string[];
 }
 
-export interface CheckedActionParams {
+export interface CheckedActionParams extends InputWaitObserveParams {
   target?: InputTarget;
   checked?: boolean;
   executionMode?: InputExecutionMode;
@@ -639,7 +678,7 @@ export interface NormalizedCheckedAction extends BridgeParams {
   recoverStale: boolean;
 }
 
-export interface SelectActionParams {
+export interface SelectActionParams extends InputWaitObserveParams {
   target?: InputTarget;
   values?: string[];
   labels?: string[];
@@ -816,6 +855,7 @@ export interface FindByTextParams {
   exact?: boolean;
   selector?: string;
   maxResults?: number;
+  includeHidden?: boolean;
 }
 
 export interface NormalizedFindByTextParams extends BridgeParams {
@@ -823,20 +863,25 @@ export interface NormalizedFindByTextParams extends BridgeParams {
   exact: boolean;
   selector: string;
   maxResults: number;
+  includeHidden: boolean;
 }
 
 export interface FindByRoleParams {
   role?: string;
   name?: string;
+  exact?: boolean;
   selector?: string;
   maxResults?: number;
+  includeHidden?: boolean;
 }
 
 export interface NormalizedFindByRoleParams extends BridgeParams {
   role: string;
   name: string;
+  exact: boolean;
   selector: string;
   maxResults: number;
+  includeHidden: boolean;
 }
 
 export interface GetHtmlParams {
@@ -853,7 +898,7 @@ export interface NormalizedGetHtmlParams extends BridgeParams {
   maxLength: number;
 }
 
-export interface HoverParams {
+export interface HoverParams extends InputWaitObserveParams {
   target?: InputTarget;
   duration?: number;
   modifiers?: string[];
@@ -869,7 +914,7 @@ export interface NormalizedHoverParams extends BridgeParams {
   recoverStale: boolean;
 }
 
-export interface DragParams {
+export interface DragParams extends InputWaitObserveParams {
   source?: InputTarget;
   destination?: InputTarget;
   offsetX?: number;
@@ -1053,6 +1098,10 @@ export interface AccessibilityTreeParams {
   maxNodes?: number;
   compact?: boolean;
   interactiveOnly?: boolean;
+  /** cdp (default): Chrome's AX tree via the debugger. dom: content-script outline with elementRefs, no debugger. */
+  source?: 'cdp' | 'dom';
+  /** outline: one compact `- role "name" [ref]` line per node (default for source=dom). */
+  format?: 'tree' | 'outline';
 }
 
 export interface NormalizedAccessibilityTreeParams extends BridgeParams {
@@ -1061,6 +1110,8 @@ export interface NormalizedAccessibilityTreeParams extends BridgeParams {
   maxNodes: number;
   compact: boolean;
   interactiveOnly: boolean;
+  source?: 'dom';
+  format?: 'outline';
 }
 
 export interface AccessibilityTreeNode {

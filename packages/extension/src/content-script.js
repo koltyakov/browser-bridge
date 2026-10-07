@@ -50,6 +50,8 @@
    *   domQuery: (params: Record<string, any>) => any,
    *   findByRole: (params: Record<string, any>) => any,
    *   findByText: (params: Record<string, any>) => any,
+   *   getAccessibilityOutline: (params: Record<string, any>) => any,
+   *   probeTarget: (params: Record<string, any>) => { found: boolean },
    *   getAttributes: (ref: string, attrs: string[]) => any,
    *   getBoxModel: (ref: string) => any,
    *   getComputedStyles: (ref: string, properties?: string[]) => any,
@@ -64,6 +66,9 @@
 
   /**
    * @typedef {{
+   *   beginNativeObservation: () => { observationId: string },
+   *   getTrustHint: (params: Record<string, unknown>) => { needsTrusted: boolean, reason: string | null },
+   *   finishNativeObservation: (params: Record<string, unknown>) => Promise<Record<string, unknown>>,
    *   clickTarget: (params: Record<string, any>) => any,
    *   dragTarget: (params: Record<string, any>) => any,
    *   fillTarget: (params: Record<string, any>) => any,
@@ -197,6 +202,10 @@
         return domQueryModule.findByText(params);
       case 'dom.find_by_role':
         return domQueryModule.findByRole(params);
+      case 'dom.get_accessibility_tree':
+        return domQueryModule.getAccessibilityOutline(params);
+      case 'dom.probe_target':
+        return domQueryModule.probeTarget(params);
       case 'dom.get_html':
         return domQueryModule.getHtml({
           ...params,
@@ -237,6 +246,12 @@
         return inputModule.touchTarget(params);
       case 'input.resolve_native':
         return inputModule.prepareNativeInput(params);
+      case 'input.trust_hint':
+        return inputModule.getTrustHint(params);
+      case 'input.observe_start':
+        return inputModule.beginNativeObservation();
+      case 'input.observe_finish':
+        return inputModule.finishNativeObservation(params);
       case 'input.revalidate_native':
         return inputModule.revalidateNativeInput(params);
       case 'input.read_value':

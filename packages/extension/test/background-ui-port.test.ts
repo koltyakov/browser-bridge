@@ -170,6 +170,7 @@ async function flushAsyncWork(count = 8): Promise<void> {
   for (let index = 0; index < count; index += 1) {
     await Promise.resolve();
   }
+  await new Promise((resolve) => setImmediate(resolve));
 }
 
 function isStateSyncMessage(message: unknown): message is StateSyncMessage {

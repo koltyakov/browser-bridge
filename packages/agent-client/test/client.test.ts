@@ -193,6 +193,30 @@ test('BridgeClient can connect optimistically without a health preflight', async
   }
 });
 
+test('BridgeClient stamps its agent session on every request', async () => {
+  const bridgeServer = await bridgeServerWith({
+    'page.get_state': (request) => createSuccess(request.id, { title: 'ok' }),
+  });
+  const client = new BridgeClient({
+    socketPath: bridgeServer.socketPath,
+    checkProtocolOnConnect: false,
+    agentSession: 'agent-one',
+  });
+
+  try {
+    await client.connect();
+    await client.request({ method: 'page.get_state' });
+    await client.request({ method: 'page.get_state', meta: { agent_session: 'override' } });
+    assert.deepEqual(
+      bridgeServer.requests.map((request) => request.meta.agent_session),
+      ['agent-one', 'override']
+    );
+  } finally {
+    await client.close().catch(() => {});
+    await bridgeServer.close();
+  }
+});
+
 test('BridgeClient extracts semantic content in Node without returning the HTML snapshot', async () => {
   const bridgeServer = await bridgeServerWith({
     'page.get_state': (request) => createSuccess(request.id, { title: 'Guide' }),

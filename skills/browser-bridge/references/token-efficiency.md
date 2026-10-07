@@ -61,13 +61,15 @@ Omitting allowlists or leaving the text budget wide open often returns 3–5× t
 | Full-page screenshot                     | ~3000 tok           | Use `screenshot.capture_element`, or `screenshot.capture_region` with a tight rect           |
 | Requesting broad computed styles via CDP | ~800 tok            | Use `styles.get_computed`; omission returns five core props, or pass 3-8 explicit props      |
 | Multiple CLI calls for independent reads | overhead/call       | Use `batch` command                                                                          |
-| Guessing selectors for known labels      | ~300 tok wasted/try | Use `dom.find_by_text` or `dom.find_by_role`                                                 |
+| Guessing selectors for known labels      | ~300 tok wasted/try | Put a locator in the input target (`{"role":"button","name":"Save"}`, `{"label":"Email"}`)  |
+| Find, then act, then re-read             | 3 round trips       | One locator-targeted action; read its `effects` instead of re-querying                       |
+| `dom.wait_for` before every action       | 1 extra round trip  | Actions auto-wait (`timeoutMs`, default 2500)                                                |
 | Polling page state with repeated queries | ~500 tok/poll       | Use `dom.wait_for` (single call, waits async)                                                |
 | Inspecting DOM to read app state         | ~800 tok            | Use `page.evaluate` to read JS directly                                                      |
 | Re-querying after HMR without waiting    | ~500 tok stale      | `dom.wait_for` first, then query                                                             |
 | Separate call to verify a patch          | ~500 tok wasted     | Set `verify: true` on `patch.apply_styles` / `patch.apply_dom` to get computed result inline |
 | `dom.query` on body for page text        | ~2000 tok           | Use `page.get_text` (extracts innerText directly)                                            |
-| Guessing interactive elements from DOM   | ~600 tok/try        | Use `dom.get_accessibility_tree` for semantic roles                                          |
+| Guessing interactive elements from DOM   | ~600 tok/try        | `dom.get_accessibility_tree` with `source: "dom"`: ~10 tokens per control, refs included     |
 | Fetching network via evaluate hacks      | ~400 tok            | Use `page.get_network` (auto-interceptor)                                                    |
 | Full a11y tree with no limits            | ~3000 tok           | Set `maxNodes` ≤ 50, `maxDepth` ≤ 4                                                          |
 | CDP network capture for API-only traffic | debugger lifecycle  | Use default fetch/XHR capture; reserve CDP for all-resource failures                         |
@@ -143,15 +145,19 @@ for larger evidence. The five-minute opaque handle is owner-scoped and has no
 browser-host path; `bbx har` downloads, verifies, deletes, and atomically writes
 it on the CLI host through the same client.
 
-## Accessibility Tree for Semantic Discovery
+## Accessibility Outline for Semantic Discovery
 
-When you need to understand the page's interactive structure without guessing selectors:
+When you need the page's interactive structure without guessing selectors:
 
 ```bash
-bbx call dom.get_accessibility_tree '{"maxNodes":30,"maxDepth":4,"interactiveOnly":true}'
+bbx call dom.get_accessibility_tree '{"source":"dom","interactiveOnly":true,"maxNodes":60}'
 ```
 
-Filtering before `maxNodes` makes compact/interactive-only output much cheaper than screenshot + OCR. AX depth is always partial and `interactive` is semantic metadata, not current actionability; use role/name to find a DOM ref before input.
+Each control is one line (`- button "Save" [el_k7q2_1f]`, about 10 tokens versus about 80 for a JSON AX node), refs act directly, and no debugger is attached. The CDP tree (`source` omitted) is for audits; add `format: "outline"` to keep it compact.
+
+## Act, Then Read Effects
+
+Input actions return what changed (`effects`: URL, dialogs, alerts/status text, focus, DOM churn, target state), and the summary digests it in one line. Routine successes omit resolution/execution metadata; it appears only when something notable happened (scroll, wait, ranking, stale recovery, CDP). Element refs are short (`el_k7q2_1f`). Re-read the page only when the effects leave the question open.
 
 ## Semantic finding Saves Selector Guessing
 

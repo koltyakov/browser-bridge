@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>BBX agent interaction fixture</title>
+    <style>
+      body {
+        font:
+          14px system-ui,
+          sans-serif;
+        margin: 24px;
+      }
+      section {
+        margin: 12px 0;
+      }
+      #notes {
+        min-height: 24px;
+        border: 1px solid #999;
+        padding: 4px;
+      }
+      #animated {
+        transition: transform 400ms ease-out;
+        transform: translateX(-400px);
+      }
+      #animated.in {
+        transform: translateX(0);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Checkout</h1>
+    <output id="state" data-state="{}" hidden></output>
+
+    <section>
+      <form id="order">
+        <label for="email">Email address</label><input id="email" type="email" />
+        <label>Full name <input id="fullname" /></label>
+        <button type="submit"><b>Place</b> order</button>
+      </form>
+      <nav style="display: none"><a href="#hidden">Place order</a></nav>
+      <div id="toast" role="status"></div>
+    </section>
+
+    <section>
+      <bbx-widget></bbx-widget>
+    </section>
+
+    <section>
+      <iframe id="payment" title="Payment" src="/frame.html" width="320" height="60"></iframe>
+    </section>
+
+    <section>
+      <span id="notes-label">Notes</span>
+      <div id="notes" contenteditable="true" aria-labelledby="notes-label"></div>
+    </section>
+
+    <section>
+      <a id="dashboard-link" href="/dashboard">Dashboard</a>
+      <div id="late"></div>
+      <button id="animated" type="button">Animated action</button>
+    </section>
+
+    <script>
+      const state = {};
+      const record = (key, value) => {
+        state[key] = value;
+        document.getElementById('state').dataset.state = JSON.stringify(state);
+      };
+
+      document
+        .getElementById('email')
+        .addEventListener('change', (event) => record('email', event.target.value));
+      document
+        .getElementById('fullname')
+        .addEventListener('change', (event) => record('fullname', event.target.value));
+      document.getElementById('order').addEventListener('submit', (event) => {
+        event.preventDefault();
+        record('orderPlaced', true);
+        document.getElementById('toast').textContent = 'Order placed';
+      });
+
+      customElements.define(
+        'bbx-widget',
+        class extends HTMLElement {
+          constructor() {
+            super();
+            const root = this.attachShadow({ mode: 'closed' });
+            root.innerHTML = '<button type="button">Shadow save</button>';
+            root
+              .querySelector('button')
+              .addEventListener('click', () => record('shadowSaved', true));
+          }
+        }
+      );
+
+      window.addEventListener('message', (event) => {
+        if (event.data === 'paid') record('paid', true);
+      });
+
+      // A model-driven editor: like Lexical/ProseMirror it only accepts edits
+      // through beforeinput and re-renders from its model, so direct
+      // textContent writes are reverted.
+      const notes = document.getElementById('notes');
+      let model = '';
+      const render = () => {
+        notes.textContent = model;
+        record('notes', model);
+      };
+      notes.addEventListener('beforeinput', (event) => {
+        event.preventDefault();
+        if (event.inputType === 'insertText') {
+          const selection = document.getSelection();
+          const replaceAll =
+            selection && selection.toString().length > 0 && selection.toString() === model;
+          model = replaceAll ? event.data : model + event.data;
+        } else if (event.inputType.startsWith('delete')) {
+          model = '';
+        }
+        render();
+      });
+      notes.addEventListener('input', () => {
+        if (notes.textContent !== model) render();
+      });
+
+      document.getElementById('dashboard-link').addEventListener('click', (event) => {
+        event.preventDefault();
+        history.pushState({}, '', '/dashboard');
+        document.querySelector('h1').textContent = 'Dashboard';
+        record('route', location.pathname);
+      });
+
+      setTimeout(() => {
+        const late = document.createElement('button');
+        late.type = 'button';
+        late.textContent = 'Load more';
+        late.addEventListener('click', () => record('loadedMore', true));
+        document.getElementById('late').append(late);
+      }, 1200);
+
+      const animated = document.getElementById('animated');
+      animated.addEventListener('click', () => record('animatedClicked', true));
+      // Background tabs can pause requestAnimationFrame indefinitely. Use a
+      // timer so the benchmark's inactive working tab also reaches its end state.
+      setTimeout(() => animated.classList.add('in'), 100);
+      // Chrome can also suspend compositor transitions in an inactive tab.
+      // End this finite animation on a timer without activating the user's tab.
+      setTimeout(() => {
+        animated.style.transition = 'none';
+      }, 500);
+    </script>
+  </body>
+</html>

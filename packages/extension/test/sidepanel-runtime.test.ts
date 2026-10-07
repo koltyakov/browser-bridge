@@ -135,7 +135,7 @@ test('sidepanel runtime orchestrates full state rendering and collapses examples
     actionLog: [entry],
   };
 
-  renderSidepanelState(state, {
+  const renderOptions: Parameters<typeof renderSidepanelState>[1] = {
     hideSetupContextMenu: () => calls.push(['hide-context']),
     renderNativeStatus: (connected) => calls.push(['native', connected]),
     renderCurrentTab: (currentTab) => calls.push(['current-tab', currentTab?.tabId ?? null]),
@@ -154,7 +154,8 @@ test('sidepanel runtime orchestrates full state rendering and collapses examples
     collapseExamples: () => calls.push(['collapse-examples']),
     syncConnectedSectionsVisibility: () => calls.push(['sync-sections']),
     syncSetupStatusPolling: () => calls.push(['sync-polling']),
-  });
+  };
+  renderSidepanelState(state, renderOptions);
 
   assert.deepEqual(calls, [
     ['hide-context'],
@@ -171,6 +172,27 @@ test('sidepanel runtime orchestrates full state rendering and collapses examples
     ['sync-sections'],
     ['sync-polling'],
   ]);
+  calls.length = 0;
+  const ping = { ...entry, id: 'ping', method: 'health.ping' };
+  renderSidepanelState({ ...state, actionLog: [ping] }, renderOptions);
+  assert.equal(
+    calls.some(([name]) => name === 'collapse-examples'),
+    false
+  );
+  assert.equal(
+    calls.some(([name]) => name === 'show-empty'),
+    false
+  );
+  assert.ok(calls.some(([name, id]) => name === 'entry' && id === 'ping'));
+  calls.length = 0;
+  renderSidepanelState({ ...state, actionLog: [ping, entry] }, renderOptions);
+  assert.equal(calls.filter(([name]) => name === 'collapse-examples').length, 1);
+  calls.length = 0;
+  renderSidepanelState(
+    { ...state, actionLog: [ping], agentTabs: [{ tabId: 5, title: 'Sibling', isCurrent: false }] },
+    renderOptions
+  );
+  assert.equal(calls.filter(([name]) => name === 'collapse-examples').length, 1);
 });
 
 test('sidepanel runtime shows the empty state when there is no activity', () => {

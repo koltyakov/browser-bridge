@@ -20,7 +20,10 @@
       iterator: IterableIterator<[string, Element]> | null,
       containsElement: (element: Element) => boolean,
       batchSize: number
-    }) => { iterator: IterableIterator<[string, Element]> | null, pruned: boolean }
+    }) => { iterator: IterableIterator<[string, Element]> | null, pruned: boolean },
+     isNodeAttached?: (node: Node | null | undefined) => boolean,
+     querySelectorAllDeep?: (selector: string, root?: ParentNode) => Element[],
+     querySelectorDeep?: (selector: string, root?: ParentNode) => Element | null
     } }} */ (globalThis).__BBX_CONTENT_HELPERS__;
   if (!contentHelpers) {
     throw new Error(
@@ -29,6 +32,42 @@
   }
 
   const { escapeTailwindSelector, applyBudget, pruneElementRegistryEntries } = contentHelpers;
+  /** Attachment check that also holds for elements inside shadow roots. */
+  const isAttached =
+    contentHelpers.isNodeAttached ??
+    ((/** @type {Node | null | undefined} */ node) =>
+      Boolean(node) && document.contains(/** @type {Node} */ (node)));
+  const queryAllDeep =
+    contentHelpers.querySelectorAllDeep ??
+    ((/** @type {string} */ selector) => [...document.querySelectorAll(selector)]);
+  const queryDeep =
+    contentHelpers.querySelectorDeep ??
+    ((/** @type {string} */ selector) => document.querySelector(selector));
+
+  /**
+   * Short per-injection tag so refs stay compact (≈4 tokens instead of a
+   * UUID's ≈20) while refs minted by an earlier document or injection never
+   * resolve here and correctly read as stale.
+   */
+  const REF_DOCUMENT_TAG = createRefTag();
+  let elementRefCounter = 0;
+
+  /**
+   * @returns {string}
+   */
+  function createRefTag() {
+    const bytes = new Uint8Array(4);
+    globalThis.crypto.getRandomValues(bytes);
+    return Array.from(bytes, (byte) => (byte % 36).toString(36)).join('');
+  }
+
+  /**
+   * @returns {string}
+   */
+  function createElementRef() {
+    elementRefCounter += 1;
+    return `el_${REF_DOCUMENT_TAG}_${elementRefCounter.toString(36)}`;
+  }
 
   /**
    * @typedef {{
@@ -127,7 +166,7 @@
     if (!element) {
       throw new Error('Element reference is stale.');
     }
-    if (!document.contains(element)) {
+    if (!isAttached(element)) {
       elementRegistry.delete(elementRef);
       reverseRegistry.delete(element);
       throw new Error('Element reference is stale.');
@@ -153,7 +192,7 @@
     while (elementRegistry.size >= MAX_REGISTRY_SIZE) {
       evictOldestElementRegistryEntry();
     }
-    const elementRef = createContentId('el');
+    const elementRef = createElementRef();
     elementRegistry.set(elementRef, element);
     reverseRegistry.set(element, elementRef);
     elementDescriptors.set(elementRef, describeElementIdentity(element));
@@ -291,7 +330,7 @@
    */
   function resolveInputReference(elementRef, recoverStale) {
     const current = elementRegistry.get(elementRef);
-    if (current && document.contains(current)) {
+    if (current && isAttached(current)) {
       return { element: current, recovery: null };
     }
     if (current) {
@@ -344,7 +383,7 @@
         }
       );
     }
-    const candidateNodes = document.querySelectorAll(descriptor.tag);
+    const candidateNodes = queryAllDeep(descriptor.tag);
     const evaluatedCount = Math.min(candidateNodes.length, MAX_STALE_RECOVERY_CANDIDATES);
     const candidates = [];
     for (let index = 0; index < evaluatedCount; index += 1) {
@@ -447,7 +486,7 @@
       registry: elementRegistry,
       reverseRegistry,
       iterator: elementRegistryPruneIterator,
-      containsElement: (element) => document.contains(element),
+      containsElement: (element) => isAttached(element),
       batchSize: ELEMENT_REGISTRY_PRUNE_BATCH_SIZE,
     });
     elementRegistryPruneIterator = result.iterator;
@@ -483,7 +522,7 @@
       return getRequiredElement(target.elementRef);
     }
     if (target.selector) {
-      const element = document.querySelector(escapeTailwindSelector(target.selector));
+      const element = queryDeep(escapeTailwindSelector(target.selector));
       if (element) {
         return element;
       }
@@ -539,6 +578,7 @@
     consumePruned,
     getDocumentRevision,
     createContentId,
+    refDocumentTag: REF_DOCUMENT_TAG,
     getPatchRegistry: () => patchRegistry,
     getMaxPatchRegistrySize: () => MAX_PATCH_REGISTRY_SIZE,
     getRegistrySize,

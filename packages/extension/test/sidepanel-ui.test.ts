@@ -17,6 +17,7 @@ type SidepanelStateSync = {
     nativeConnected: true;
     nativeHostVersion: string | null;
     currentTab: SidepanelCurrentTab | null;
+    agentTabs?: import('../src/background-ui.js').AgentTabUiState[];
     setupStatus: SetupStatus | null;
     setupStatusPending: boolean;
     setupStatusError: string | null;
@@ -350,10 +351,227 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
     portPair.left.dispatchMessage(createSidepanelStateSync(false));
     assert.equal(button.textContent, 'Enable Window Access');
     assert.equal(button.disabled, false);
+    assert.equal(
+      document.getElementById('agent-status-detail')?.textContent,
+      'Allow agents to inspect and interact with the tabs.'
+    );
+    const disclosure = document.getElementById('agent-disclosure');
+    assert.ok(disclosure instanceof HTMLElement);
+    assert.equal(disclosure.hidden, true, 'the idle card should not repeat the access explanation');
 
     portPair.left.dispatchMessage(createSidepanelStateSync(true));
     assert.equal(button.textContent, 'Disable Window Access');
     assert.equal(button.disabled, false);
+  });
+});
+
+test('agent tab card appears only for sibling work and examples stay hidden during work', async (t) => {
+  const sidepanelHtml = await readFile(SIDEPANEL_HTML_URL, 'utf8');
+  const savedChrome = Object.prototype.hasOwnProperty.call(globalThis, 'chrome')
+    ? globalThis.chrome
+    : MISSING;
+  const savedSetInterval = globalThis.setInterval;
+  const savedClearInterval = globalThis.clearInterval;
+  t.after(() => {
+    restoreGlobal('chrome', savedChrome);
+    restoreGlobal('setInterval', savedSetInterval);
+    restoreGlobal('clearInterval', savedClearInterval);
+  });
+  Reflect.set(globalThis, 'setInterval', (() => 0) as unknown as typeof setInterval);
+  Reflect.set(globalThis, 'clearInterval', (() => {}) as typeof clearInterval);
+  const pair = createMessagePortPair();
+  const tabUpdates: Array<{ tabId: number; properties: chrome.tabs.UpdateProperties }> = [];
+  let failTabUpdate = false;
+  Reflect.set(
+    globalThis,
+    'chrome',
+    createChromeFake({
+      tabs: {
+        async update(tabId: number, properties: chrome.tabs.UpdateProperties) {
+          tabUpdates.push({ tabId, properties });
+          if (failTabUpdate) throw new Error('Tab was closed');
+          return { id: tabId };
+        },
+      },
+      runtime: {
+        connect() {
+          return pair.left.port as unknown as chrome.runtime.Port;
+        },
+      },
+    })
+  );
+  await withDocument(sidepanelHtml, async ({ window }) => {
+    Reflect.set(window, 'location', new URL('https://example.com/sidepanel.html?tabId=41'));
+    await importFreshSidepanelScript();
+    await flushMicrotasks();
+    const card = document.getElementById('agent-tab-row');
+    const list = document.getElementById('agent-tabs-list');
+    const examples = document.getElementById('examples-section') as HTMLDetailsElement | null;
+    assert.ok(card instanceof HTMLElement && list instanceof HTMLElement);
+    assert.ok(examples instanceof HTMLElement);
+    assert.equal(card.parentElement, document.querySelector('main'));
+    assert.equal(document.getElementById('control-section')?.contains(card), false);
+    assert.equal(document.getElementById('agent-tab-move'), null);
+
+    pair.left.dispatchMessage(createSidepanelStateSync(true));
+    assert.equal(card.hidden, true);
+    assert.equal(examples.hidden, false);
+    examples.open = true;
+    for (const source of ['', 'cli', 'mcp']) {
+      pair.left.dispatchMessage(
+        createSidepanelStateSync(true, null, null, [
+          createActionLogEntry(`ping-${source}`, 'health.ping', 10, { source }),
+        ])
+      );
+      assert.equal(examples.hidden, false, 'pings alone must not hide prompt examples');
+      assert.equal(examples.open, true, 'pings must not collapse open examples');
+      assert.ok(
+        document.querySelector('#action-log .activity-card'),
+        'ping history remains visible'
+      );
+    }
+    pair.left.dispatchMessage(
+      createSidepanelStateSync(true, null, null, [], {
+        agentTabs: [{ tabId: 41, title: 'Current page', isCurrent: true }],
+      })
+    );
+    assert.equal(card.hidden, true, 'current-tab work alone should not show the agent-tabs card');
+    assert.equal(
+      examples.hidden,
+      true,
+      'agent work hides examples even without current-tab events'
+    );
+    assert.equal(examples.open, false);
+    assert.equal(
+      document.getElementById('agent-status-detail')?.textContent,
+      'Agents can access every tab in this window.'
+    );
+    const longTitle = '<img src=x onerror=alert(1)> ' + 'Long page title '.repeat(30);
+    const agentTabs = [
+      { tabId: 41, title: 'Current page', isCurrent: true, actionCount: 99 },
+      { tabId: 42, title: longTitle, isCurrent: false, actionCount: 5 },
+    ];
+    for (let index = 0; index < 4; index += 1) {
+      pair.left.dispatchMessage(
+        createSidepanelStateSync(
+          true,
+          null,
+          null,
+          [
+            createActionLogEntry(`action-${index}`, 'dom.query', 10),
+            createActionLogEntry(`ping-${index}`, 'health.ping', 10),
+          ],
+          {
+            agentTabs: agentTabs.map((tab) => ({
+              ...tab,
+              actionCount: tab.tabId === 42 ? index + 1 : 99,
+            })),
+          }
+        )
+      );
+      assert.equal(card.hidden, false);
+      assert.equal(examples.hidden, true);
+      assert.equal(list.children.length, 1);
+      assert.equal(list.textContent?.includes('Current page'), false);
+      assert.equal(list.querySelector('.agent-tab-name')?.textContent, longTitle);
+      assert.equal(list.lastElementChild?.getAttribute('title'), longTitle);
+      const chip: HTMLElement | null = list.querySelector('.agent-tab-count');
+      assert.equal(chip?.textContent, `Actions: ${index + 1}`);
+      assert.equal(
+        chip?.classList.contains('activity-tokens'),
+        true,
+        'action counts reuse token chip styling'
+      );
+      assert.equal(
+        chip?.getAttribute('aria-label'),
+        `${index + 1} recent ${index === 0 ? 'action' : 'actions'}`
+      );
+      const rowButton: HTMLButtonElement | null = list.querySelector('.agent-tab-button');
+      assert.ok(rowButton instanceof HTMLButtonElement);
+      assert.equal(rowButton.type, 'button');
+      assert.equal(rowButton.getAttribute('aria-label'), `Switch to tab: ${longTitle}`);
+      assert.equal(rowButton.lastElementChild, chip, 'the count follows the tab name');
+      assert.equal(list.querySelector('img'), null);
+    }
+    pair.left.dispatchMessage(
+      createSidepanelStateSync(true, null, null, [], {
+        currentTab: {
+          tabId: 42,
+          windowId: 7,
+          title: longTitle,
+          url: 'https://example.com/other',
+          enabled: true,
+          accessRequested: false,
+          restricted: false,
+        },
+        agentTabs,
+      })
+    );
+    assert.equal(list.children.length, 1);
+    assert.equal(
+      list.querySelector('.agent-tab-name')?.textContent,
+      'Current page',
+      'exclude the panel tab by ID even if a current-tab flag is stale'
+    );
+    pair.left.dispatchMessage(
+      createSidepanelStateSync(true, null, null, [], {
+        agentTabs: [{ tabId: 42, title: '', isCurrent: false }],
+      })
+    );
+    assert.equal(list.querySelector('.agent-tab-name')?.textContent, 'Tab 42');
+    assert.equal(list.querySelector('.agent-tab-count')?.textContent, 'Actions: 0');
+    const switchButton: HTMLButtonElement | null = list.querySelector('.agent-tab-button');
+    assert.ok(switchButton instanceof HTMLButtonElement);
+    switchButton.click();
+    await flushMicrotasks();
+    assert.deepEqual(tabUpdates.at(-1), { tabId: 42, properties: { active: true } });
+    const countChip: HTMLElement | null = switchButton.querySelector('.agent-tab-count');
+    assert.ok(countChip instanceof HTMLElement);
+    countChip.click();
+    await flushMicrotasks();
+    assert.equal(tabUpdates.length, 2, 'clicking the chip also activates the row tab');
+    failTabUpdate = true;
+    switchButton.click();
+    await flushMicrotasks();
+    assert.equal(switchButton.title, 'Could not switch to this tab. Try again.');
+    assert.equal(
+      pair.left.postedMessages.some(
+        (message) => (message as { type: string }).type === 'agent.move_here'
+      ),
+      false,
+      'switching browser tabs must not move agent sessions'
+    );
+    pair.left.dispatchMessage(
+      createSidepanelStateSync(true, null, null, [], {
+        agentTabs: [
+          { tabId: 42, title: 'Other', isCurrent: false },
+          { tabId: 43, title: 'Third', isCurrent: false },
+        ],
+      })
+    );
+    assert.equal(list.children.length, 2);
+    pair.left.dispatchMessage(
+      createSidepanelStateSync(true, null, null, [
+        createActionLogEntry('history-only', 'dom.query', 10),
+      ])
+    );
+    assert.equal(card.hidden, true);
+    assert.equal(examples.hidden, true, 'activity history also hides examples');
+    pair.left.dispatchMessage(
+      createSidepanelStateSync(true, null, null, [
+        createActionLogEntry('ping-only-again', 'health.ping', 10),
+      ])
+    );
+    assert.equal(examples.hidden, false, 'ping-only history does not keep examples hidden');
+    pair.left.dispatchMessage(createSidepanelStateSync(true));
+    assert.equal(
+      examples.hidden,
+      false,
+      'examples return once the panel has no agent work or history'
+    );
+    assert.equal(examples.open, false);
+    pair.left.dispatchMessage(createSidepanelStateSync(false));
+    assert.equal(card.hidden, true);
   });
 });
 

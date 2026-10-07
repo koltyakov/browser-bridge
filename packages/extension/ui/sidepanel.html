@@ -23,9 +23,9 @@
       <div class="control-copy">
         <div id="agent-status" class="eyebrow">Window access</div>
         <p id="agent-status-detail" class="control-detail">
-          Enable Browser Bridge to let your connected agent inspect and interact with pages in this Chrome window.
+          Allow agents to inspect and interact with the tabs.
         </p>
-        <p id="agent-disclosure" class="control-detail control-disclosure">
+        <p id="agent-disclosure" class="control-detail control-disclosure" hidden>
           Enabling access allows the connected agent to inspect and interact with scriptable pages in every tab in
           this window until access is disabled or the browser session ends.
         </p>
@@ -39,6 +39,10 @@
         </div>
       </div>
       <button id="bridge-toggle" class="power-button" type="button">Enable Window Access</button>
+    </section>
+    <section id="agent-tab-row" class="card agent-tabs-card" aria-labelledby="agent-tabs-heading" hidden>
+      <div id="agent-tabs-heading" class="eyebrow">Other active tabs</div>
+      <ul id="agent-tabs-list" class="agent-tabs-list"></ul>
     </section>
     <details id="installation-section" class="card setup-details" hidden>
       <summary>
@@ -96,7 +100,7 @@
         <div id="activity-histogram-bars" class="activity-histogram-bars"></div>
       </div>
       <div class="activity-section-header">
-        <h2>Recent activity</h2>
+        <h2 class="eyebrow">Recent activity</h2>
         <span id="activity-summary-tokens" class="activity-summary-tokens" hidden></span>
       </div>
       <div id="action-log" class="stack"></div>

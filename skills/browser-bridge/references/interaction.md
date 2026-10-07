@@ -4,7 +4,7 @@
 
 | Method                   | CLI Shortcut                          | Purpose                                                     |
 | ------------------------ | ------------------------------------- | ----------------------------------------------------------- |
-| `input.click`            | `click <ref> [button]`                | Actionability-aware DOM click; optional CDP native click; `holdMs` keeps the button down |
+| `input.click`            | `click <ref> [button]`                | Auto-waiting, actionability-aware click with observed `effects`; locator targets; optional CDP; `holdMs` |
 | `input.focus`            | `focus <ref>`                         | Focus an element                                            |
 | `input.type`             | `type <ref> <text>`                   | DOM key sequence; optional CDP native text insertion        |
 | `input.fill`             | `fill <ref> <value>`                  | DOM fill strategy; optional CDP clear and text insertion    |
@@ -86,30 +86,26 @@ Typical workflow - compare two pages (only when comparison is required):
 3. Inspect both tabs (`--tab <id>` or MCP `tabId` only when you need the non-active tab)
 4. `tabs.close` when done
 
-## Accessibility Tree
+## Accessibility Outline
 
-Retrieve a depth-limited accessibility tree for the page. Useful for understanding semantic structure, finding interactive elements, and accessibility audits.
+For a page overview you can act on, use the DOM outline. It needs no debugger, covers shadow DOM and iframes, and every line carries a ref that input methods accept directly:
 
 ```bash
-bbx a11y-tree                   # default limits
-bbx a11y-tree 50 3              # max 50 nodes, depth 3
-bbx call dom.get_accessibility_tree '{"maxNodes":100,"maxDepth":5}'
-bbx call dom.get_accessibility_tree '{"maxNodes":100,"maxDepth":6,"compact":true}'
-bbx call dom.get_accessibility_tree '{"maxNodes":100,"maxDepth":6,"interactiveOnly":true}'
+bbx call dom.get_accessibility_tree '{"source":"dom","interactiveOnly":true}'
+# - textbox "Email address" [el_k7q2_3] required
+# - button "Place order" [el_k7q2_4]
+# - iframe [frame 7]
+#   - button "Pay now" [el_m2xa_1]
+bbx call input.click '{"target":{"elementRef":"el_m2xa_1"}}'
 ```
 
-Each node includes semantic state plus `interactive`, `semanticInteractive`, `focusable`, `focusableAndEnabled`, `ignored`, and `childIds`. `interactive` is not a current actionability guarantee. Compact and interactive-only filters run before `maxNodes`; results report partial depth topology, missing children, and continuation guidance. AX nodes do not become page refs, so use `dom.find_by_role` before input.
+Usually you can skip the overview and act with a locator in one call: `{"target":{"role":"button","name":"Pay now"}}`.
 
-Typical workflow - find interactive controls:
-
-1. `dom.get_accessibility_tree` with small `maxNodes`
-2. Scan for nodes with `interactive: true`
-3. Use role/name to identify the right control
-4. `dom.find_by_role` to get an `elementRef` for interaction
+The default `source: "cdp"` returns Chrome's AX tree through the debugger. Use it for accessibility audits (`compact`, `interactiveOnly`, `maxDepth`, `format: "outline"`); its nodes have no refs.
 
 ## Multi-Tab Workflows
 
-Access is window-scoped. Once the user enables Browser Bridge for a browser window, the bridge follows the active tab in that window automatically.
+Access is window-scoped. Your first call binds your session to the active tab in the enabled window, which becomes your working tab, and later calls stay there even when the user switches tabs. Responses include `meta.tab_id`; when the user is looking at a different tab, the summary names both. `tabs.list` marks your tab with `working: true`. Passing `tabId`, `tabs.create`, or `tabs.activate` moves your working tab. A closed working tab fails with `TAB_MISMATCH` (`working_tab_closed`) rather than switching to whatever tab is active.
 
 ```bash
 # Default routing follows the active tab in the enabled window:

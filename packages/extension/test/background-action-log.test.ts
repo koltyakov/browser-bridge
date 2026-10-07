@@ -8,7 +8,341 @@ import {
   ERROR_CODES,
 } from '../../protocol/src/index.js';
 import { createActionLogController, enrichBridgeResponse } from '../src/background-action-log.js';
-import { createExtensionState } from '../src/background-state.js';
+import { createExtensionState, MAX_ACTION_LOG_ENTRIES } from '../src/background-state.js';
+import { createStorageArea } from '../../../tests/_helpers/chromeFake.ts';
+
+const openTabsApi = {
+  async get(tabId: number) {
+    return { id: tabId, url: 'https://example.test/' };
+  },
+  async query() {
+    return [{ id: 7 }, { id: 31 }];
+  },
+};
+
+function createHistoryHarness(stored: Record<string, unknown> = {}) {
+  const storage = createStorageArea(stored);
+  const openTabIds = new Set([7, 8]);
+  const chromeObj = {
+    storage: { session: storage },
+    tabs: {
+      async get(tabId: number) {
+        if (!openTabIds.has(tabId)) throw new Error('Tab was closed');
+        return { id: tabId, url: `https://example.test/tab-${tabId}` };
+      },
+      async query() {
+        return [...openTabIds].map((id) => ({ id }));
+      },
+    },
+  } as unknown as typeof globalThis.chrome;
+  function startWorker() {
+    const state = createExtensionState();
+    const controller = createActionLogController(state, chromeObj, {
+      async getCurrentTabState() {
+        return null;
+      },
+      async resolveRequestTarget() {
+        return { tabId: 7, windowId: 2, title: 'Example', url: 'https://example.test/tab-7' };
+      },
+      async emitUiState() {},
+    });
+    return { state, controller };
+  }
+  return { storage, openTabIds, startWorker, ...startWorker() };
+}
+
+function deferred() {
+  let resolve = () => {};
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+test('sibling-tab and host activity cannot evict a quiet tab history', async () => {
+  const { controller, state, storage } = createHistoryHarness();
+  await controller.appendActionLogEntry({
+    method: 'input.click',
+    tabId: 7,
+    ok: true,
+    summary: 'Quiet tab',
+  });
+  const quietId = state.actionLog[0].id;
+  for (let index = 0; index < MAX_ACTION_LOG_ENTRIES + 10; index += 1) {
+    await controller.appendActionLogEntry({
+      method: 'dom.query',
+      tabId: 8,
+      ok: true,
+      summary: `Sibling ${index}`,
+    });
+    await controller.appendActionLogEntry({
+      method: 'native.connected',
+      ok: true,
+      summary: `Host ${index}`,
+    });
+  }
+  assert.deepEqual(
+    state.actionLog.filter((entry) => entry.tabId === 7).map((entry) => entry.id),
+    [quietId]
+  );
+  assert.equal(state.actionLog.filter((entry) => entry.tabId === 8).length, MAX_ACTION_LOG_ENTRIES);
+  assert.equal(
+    state.actionLog.filter((entry) => entry.tabId === null).length,
+    MAX_ACTION_LOG_ENTRIES
+  );
+  assert.equal(state.actionLog.find((entry) => entry.tabId === 8)?.summary, 'Sibling 10');
+  assert.deepEqual(storage.snapshot().actionLog, state.actionLog);
+});
+
+test('connection checks coalesce within their own tab despite sibling activity', async () => {
+  const { controller, state } = createHistoryHarness();
+  await controller.appendActionLogEntry({
+    method: 'health.ping',
+    tabId: 7,
+    ok: true,
+    summary: 'Handshake',
+  });
+  await controller.appendActionLogEntry({
+    method: 'input.click',
+    tabId: 8,
+    ok: true,
+    summary: 'Sibling',
+  });
+  await controller.appendActionLogEntry({
+    method: 'health.ping',
+    tabId: 7,
+    source: 'mcp',
+    ok: true,
+    summary: 'Sourced check',
+  });
+  assert.deepEqual(
+    state.actionLog.map((entry) => [entry.tabId, entry.summary]),
+    [
+      [8, 'Sibling'],
+      [7, 'Sourced check'],
+    ]
+  );
+});
+
+test('worker restart restores each open tab independently and prunes closed-tab history', async () => {
+  const actionLog = Array.from({ length: MAX_ACTION_LOG_ENTRIES + 10 }, (_, index) => [
+    { id: `tab7-${index}`, method: 'dom.query', tabId: 7, at: index },
+    { id: `tab8-${index}`, method: 'dom.query', tabId: 8, at: index },
+    { id: `closed-${index}`, method: 'dom.query', tabId: 9, at: index },
+  ]).flat();
+  const { controller, state, storage, startWorker } = createHistoryHarness({ actionLog });
+  await controller.restoreActionLog();
+  assert.equal(state.actionLog.length, MAX_ACTION_LOG_ENTRIES * 2);
+  assert.equal(state.actionLog.filter((entry) => entry.tabId === 7).length, MAX_ACTION_LOG_ENTRIES);
+  assert.equal(state.actionLog.filter((entry) => entry.tabId === 8).length, MAX_ACTION_LOG_ENTRIES);
+  assert.equal(
+    state.actionLog.some((entry) => entry.tabId === 9),
+    false
+  );
+  assert.deepEqual(storage.snapshot().actionLog, state.actionLog);
+  const restarted = startWorker();
+  await restarted.controller.restoreActionLog();
+  assert.deepEqual(restarted.state.actionLog, state.actionLog);
+  await restarted.controller.restoreActionLog();
+  assert.deepEqual(restarted.state.actionLog, state.actionLog);
+});
+
+test('events arriving during startup wait for persisted history instead of overwriting it', async () => {
+  const { controller, state, storage } = createHistoryHarness({
+    actionLog: [{ id: 'previous', tabId: 7, method: 'input.click', summary: 'Previous worker' }],
+  });
+  const read = storage.get;
+  const gate = deferred();
+  storage.get = async (keys) => {
+    await gate.promise;
+    return read(keys);
+  };
+  const restoration = controller.restoreActionLog();
+  const arriving = controller.appendActionLogEntry({
+    method: 'dom.query',
+    tabId: 8,
+    ok: true,
+    summary: 'New worker',
+  });
+  gate.resolve();
+  await Promise.all([restoration, arriving]);
+  assert.deepEqual(
+    state.actionLog.map((entry) => entry.summary),
+    ['Previous worker', 'New worker']
+  );
+  assert.deepEqual(storage.snapshot().actionLog, state.actionLog);
+});
+
+test('failed startup reads cannot overwrite stored history and are retried safely', async () => {
+  const previous = { id: 'previous', tabId: 7, method: 'input.click', summary: 'Previous worker' };
+  const { controller, state, storage } = createHistoryHarness({ actionLog: [previous] });
+  const read = storage.get;
+  let reads = 0;
+  storage.get = async (keys) => {
+    reads += 1;
+    if (reads === 1) throw new Error('Transient read failure');
+    return read(keys);
+  };
+  await controller.appendActionLogEntry({
+    method: 'dom.query',
+    tabId: 8,
+    ok: true,
+    summary: 'Memory only',
+  });
+  assert.deepEqual(storage.snapshot().actionLog, [previous]);
+  await controller.appendActionLogEntry({
+    method: 'input.click',
+    tabId: 7,
+    ok: true,
+    summary: 'After retry',
+  });
+  assert.deepEqual(
+    state.actionLog.map((entry) => entry.summary),
+    ['Previous worker', 'Memory only', 'After retry']
+  );
+  assert.deepEqual(storage.snapshot().actionLog, state.actionLog);
+});
+
+test('late failures for a closed explicit tab do not become unscoped history', async () => {
+  const { controller, state, openTabIds } = createHistoryHarness();
+  openTabIds.delete(7);
+  const request = createRequest({
+    id: 'closed-explicit-history',
+    method: 'dom.query',
+    tabId: 7,
+    params: { selector: 'main' },
+  });
+  await controller.logBridgeAction(
+    request,
+    createFailure(request.id, ERROR_CODES.TAB_MISMATCH, 'Tab closed'),
+    null
+  );
+  assert.equal(state.actionLog.length, 0);
+});
+
+test('concurrent persistence is serialized and failed writes do not block later events', async () => {
+  const { controller, state, storage } = createHistoryHarness();
+  await controller.restoreActionLog();
+  const write = storage.set;
+  const started = deferred();
+  const gate = deferred();
+  let writes = 0;
+  storage.set = async (items) => {
+    writes += 1;
+    if (writes === 1) {
+      started.resolve();
+      await gate.promise;
+      throw new Error('Transient storage failure');
+    }
+    await write(items);
+  };
+  const first = controller.appendActionLogEntry({
+    method: 'dom.query',
+    tabId: 7,
+    ok: true,
+    summary: 'First',
+  });
+  const rejected = assert.rejects(first, /Transient storage failure/);
+  await started.promise;
+  const second = controller.appendActionLogEntry({
+    method: 'dom.query',
+    tabId: 8,
+    ok: true,
+    summary: 'Second',
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(writes, 1);
+  gate.resolve();
+  await Promise.all([rejected, second]);
+  assert.deepEqual(
+    state.actionLog.map((entry) => entry.summary),
+    ['First', 'Second']
+  );
+  assert.deepEqual(storage.snapshot().actionLog, state.actionLog);
+});
+
+test('tab closure clears memory and persistence without losing siblings or reviving late responses', async () => {
+  const { controller, state, storage, openTabIds, startWorker } = createHistoryHarness();
+  await controller.appendActionLogEntry({
+    method: 'dom.query',
+    tabId: 8,
+    ok: true,
+    summary: 'Sibling',
+  });
+  const write = storage.set;
+  const started = deferred();
+  const gate = deferred();
+  let first = true;
+  storage.set = async (items) => {
+    if (first) {
+      first = false;
+      started.resolve();
+      await gate.promise;
+    }
+    await write(items);
+  };
+  const pending = controller.appendActionLogEntry({
+    method: 'input.click',
+    tabId: 7,
+    ok: true,
+    summary: 'Pending',
+  });
+  await started.promise;
+  openTabIds.delete(7);
+  const closure = controller.clearActionLogForTab(7);
+  const late = controller.appendActionLogEntry({
+    method: 'input.click',
+    tabId: 7,
+    ok: true,
+    summary: 'Late',
+  });
+  gate.resolve();
+  await Promise.all([pending, closure, late]);
+  assert.deepEqual(
+    state.actionLog.map((entry) => [entry.tabId, entry.summary]),
+    [[8, 'Sibling']]
+  );
+  assert.deepEqual(storage.snapshot().actionLog, state.actionLog);
+  const restarted = startWorker();
+  await restarted.controller.restoreActionLog();
+  assert.deepEqual(restarted.state.actionLog, state.actionLog);
+});
+
+test('action history belongs to the actual routed tab and new tab rather than the preflight tab', async () => {
+  const { controller, state } = createHistoryHarness();
+  const request = createRequest({
+    id: 'routed-history',
+    method: 'dom.query',
+    params: { selector: 'main' },
+  });
+  await controller.logBridgeAction(
+    request,
+    createSuccess(request.id, { nodes: [] }, { tab_id: 8 }),
+    {
+      tabId: 7,
+      url: 'https://example.test/tab-7',
+    }
+  );
+  const created = createRequest({
+    id: 'created-history',
+    method: 'tabs.create',
+    params: { url: 'https://example.test/new' },
+  });
+  await controller.logBridgeAction(
+    created,
+    createSuccess(created.id, { tabId: 8, url: 'https://example.test/new' }),
+    {
+      tabId: 7,
+      url: 'https://example.test/tab-7',
+    }
+  );
+  assert.deepEqual(
+    state.actionLog.map((entry) => entry.tabId),
+    [8, 8]
+  );
+  assert.equal(state.actionLog[1].url, 'https://example.test/new');
+  assert.equal(state.actionLog[0].url, '');
+});
 
 test('bridge action logging treats storage and UI failures as best-effort', async () => {
   const state = createExtensionState();
@@ -16,6 +350,9 @@ test('bridge action logging treats storage and UI failures as best-effort', asyn
   const chromeObj = {
     storage: {
       session: {
+        async get() {
+          return {};
+        },
         async set() {
           throw new Error('session storage unavailable');
         },
@@ -61,6 +398,9 @@ test('bridge action logging preserves actual optional debugger execution metadat
   const chromeObj = {
     storage: {
       session: {
+        async get() {
+          return {};
+        },
         async set() {},
       },
     },
@@ -103,8 +443,12 @@ test('bridge action logging preserves actual optional debugger execution metadat
 test('standalone handshake pings are logged and immediate sourced checks replace them', async () => {
   const state = createExtensionState();
   const chromeObj = {
+    tabs: openTabsApi,
     storage: {
       session: {
+        async get() {
+          return {};
+        },
         async set() {},
       },
     },
@@ -172,8 +516,12 @@ test('dialog text and prompt values never enter persisted action logs', async ()
   const state = createExtensionState();
   const writes: string[] = [];
   const chromeObj = {
+    tabs: openTabsApi,
     storage: {
       session: {
+        async get() {
+          return {};
+        },
         async set(value: unknown) {
           writes.push(JSON.stringify(value));
         },
@@ -315,8 +663,12 @@ test('sensitive read success, failure, and oversize activity never retains value
   const state = createExtensionState();
   const writes: string[] = [];
   const chromeObj = {
+    tabs: openTabsApi,
     storage: {
       session: {
+        async get() {
+          return {};
+        },
         async set(value: unknown) {
           writes.push(JSON.stringify(value));
         },
@@ -454,7 +806,13 @@ test('page evaluation activity warns without persisting returned values or sizes
   const state = createExtensionState();
   const writes: string[] = [];
   const chromeObj = {
-    storage: { session: { set: async (value: unknown) => writes.push(JSON.stringify(value)) } },
+    tabs: openTabsApi,
+    storage: {
+      session: {
+        get: async () => ({}),
+        set: async (value: unknown) => writes.push(JSON.stringify(value)),
+      },
+    },
   } as unknown as typeof globalThis.chrome;
   const controller = createActionLogController(state, chromeObj, {
     async getCurrentTabState() {
@@ -494,7 +852,8 @@ test('sensitive activity is recorded in memory before persistence completes', as
     releasePersistence = resolve;
   });
   const chromeObj = {
-    storage: { session: { set: () => persistence } },
+    tabs: openTabsApi,
+    storage: { session: { get: async () => ({}), set: () => persistence } },
   } as unknown as typeof globalThis.chrome;
   const controller = createActionLogController(state, chromeObj, {
     async getCurrentTabState() {
@@ -522,7 +881,7 @@ test('sensitive activity is recorded in memory before persistence completes', as
     { tabId: 7, url: 'https://example.test/' }
   );
 
-  await Promise.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(state.actionLog.length, 1);
   releasePersistence();
   await logging;

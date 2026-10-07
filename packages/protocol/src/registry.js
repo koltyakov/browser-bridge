@@ -140,11 +140,13 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
   'dom.get_text': 'Read bounded text for one element.',
   'dom.get_attributes': 'Read selected attributes for one element.',
   'dom.wait_for': 'Wait for a selector or text condition in the DOM.',
-  'dom.find_by_text': 'Find elements by visible text.',
-  'dom.find_by_role': 'Find elements by ARIA role and optional name.',
+  'dom.find_by_text':
+    'Find the innermost visible elements by text, including open/closed shadow DOM.',
+  'dom.find_by_role':
+    'Find visible elements by ARIA role and accessible name (labels, aria-*, alt, content).',
   'dom.get_html': 'Read inner or outer HTML for one element.',
   'dom.get_accessibility_tree':
-    'Read a depth-limited accessibility tree with optional compact or interactive filtering.',
+    'Read an accessibility tree; source=dom returns a compact actionable outline with elementRefs and no debugger.',
   'layout.get_box_model': 'Read the box model for one element.',
   'layout.hit_test': 'Resolve the topmost element at a viewport point.',
   'styles.get_computed':
@@ -522,7 +524,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'dom.find_by_text',
     'inspect',
     true,
-    ['text', 'exact', 'selector', 'maxResults'],
+    ['text', 'exact', 'selector', 'maxResults', 'includeHidden'],
     'low',
     METHOD_POLICIES.domRead
   ),
@@ -530,7 +532,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'dom.find_by_role',
     'inspect',
     true,
-    ['role', 'name', 'selector', 'maxResults'],
+    ['role', 'name', 'exact', 'selector', 'maxResults', 'includeHidden'],
     'low',
     METHOD_POLICIES.domRead
   ),
@@ -546,7 +548,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'dom.get_accessibility_tree',
     'inspect',
     true,
-    ['selector', 'maxNodes', 'maxDepth', 'compact', 'interactiveOnly'],
+    ['selector', 'maxNodes', 'maxDepth', 'compact', 'interactiveOnly', 'source', 'format'],
     'moderate',
     METHOD_POLICIES.domReadDebugger
   ),

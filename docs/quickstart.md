@@ -111,7 +111,7 @@ Your agent can now inspect and patch the active tab in that enabled window, or o
 You can refer to it as `BB MCP` or `Browser Bridge MCP`; both should work.
 
 > _"Why is the sidebar layout broken on this page?"_
-> _"Use BB MCP to inspect why the sidebar layout is broken."_
+> _"Use BBX MCP to inspect why the sidebar layout is broken."_
 > _"Check the CSS on the hero section and fix the spacing."_
 > _"Does my latest change actually render correctly in the browser?"_
 

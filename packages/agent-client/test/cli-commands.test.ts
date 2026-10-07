@@ -686,6 +686,8 @@ test('bbx click dispatches a selector atomically', async () => {
       holdMs: 0,
       executionMode: 'dom',
       recoverStale: false,
+      timeoutMs: 2500,
+      observe: { settleMs: 500 },
     });
     assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
@@ -851,6 +853,8 @@ test('bbx press-key without a selector sends a page-level input.press_key reques
       holdMs: 0,
       executionMode: 'dom',
       recoverStale: false,
+      timeoutMs: 2500,
+      observe: { settleMs: 500 },
     });
     assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
@@ -913,6 +917,8 @@ test('bbx press-key forwards a selector atomically', async () => {
       holdMs: 0,
       executionMode: 'dom',
       recoverStale: false,
+      timeoutMs: 2500,
+      observe: { settleMs: 500 },
     });
     assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);

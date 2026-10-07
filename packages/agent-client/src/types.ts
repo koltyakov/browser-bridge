@@ -124,6 +124,8 @@ export interface BridgeClientOptions {
     supportedVersions: readonly string[];
   }) => Promise<NpmUpdateResult>;
   authToken?: string | null;
+  /** Stable agent session id used for sticky working-tab routing. */
+  agentSession?: string | null;
 }
 
 export interface ShortcutCommand {

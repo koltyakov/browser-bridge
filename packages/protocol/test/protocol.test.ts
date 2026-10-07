@@ -306,6 +306,22 @@ test('validateBridgeRequest accepts MCP era metadata only from MCP requests', ()
   );
 });
 
+test('validateBridgeRequest keeps only safe agent session ids', () => {
+  const base = { id: 'req_agent_session', method: 'page.get_state' } as const;
+  assert.equal(
+    validateBridgeRequest({ ...base, meta: { agent_session: ' mcp_abc-1 ' } }).meta.agent_session,
+    'mcp_abc-1'
+  );
+  assert.equal(
+    validateBridgeRequest({ ...base, meta: { agent_session: 'bad session' } }).meta.agent_session,
+    undefined
+  );
+  assert.equal(
+    validateBridgeRequest({ ...base, meta: { agent_session: 7 } }).meta.agent_session,
+    undefined
+  );
+});
+
 test('validateBridgeRequest accepts only exact MCP automatic retry metadata', () => {
   const base = { id: 'req_retry_meta', method: 'page.get_state' } as const;
   const marker = { attempt: 2, reason: 'retryable_error' };
@@ -550,16 +566,62 @@ test('validateBridgeRequest normalizes input.fill parameters', () => {
     holdMs: 0,
     executionMode: 'dom',
     recoverStale: false,
+    timeoutMs: 2500,
+    observe: null,
   });
+});
+
+test('validateBridgeRequest normalizes locator targets, auto-wait, and observation', () => {
+  const click = validateBridgeRequest({
+    id: 'req_locator_click',
+    method: 'input.click',
+    params: { target: { role: 'button', name: ' Place order ', nth: 1, exact: true } },
+  });
+  assert.deepEqual(click.params.target, {
+    elementRef: undefined,
+    selector: undefined,
+    role: 'button',
+    name: 'Place order',
+    exact: true,
+    nth: 1,
+  });
+  assert.equal(click.params.timeoutMs, 2500);
+  assert.deepEqual(click.params.observe, { settleMs: 500 });
+
+  const quiet = validateBridgeRequest({
+    id: 'req_quiet_click',
+    method: 'input.click',
+    params: { target: { selector: '#go' }, observe: false, timeoutMs: 0 },
+  });
+  assert.equal(quiet.params.observe, null);
+  assert.equal(quiet.params.timeoutMs, 0);
+
+  const typed = validateBridgeRequest({
+    id: 'req_submit_type',
+    method: 'input.type',
+    params: { target: { label: 'Search' }, text: 'shoes', submit: true },
+  });
+  assert.deepEqual(typed.params.observe, { settleMs: 500 });
+
+  assert.throws(
+    () =>
+      validateBridgeRequest({
+        id: 'req_bad_nth',
+        method: 'input.click',
+        params: { target: { text: 'Go', nth: -1 } },
+      }),
+    /target.nth/
+  );
 });
 
 test('input execution and stale recovery options are strict and opt-in', () => {
   const input = normalizeInputAction({ executionMode: 'cdp', recoverStale: true });
   assert.equal(input.executionMode, 'cdp');
+  assert.equal(normalizeInputAction({ executionMode: 'auto' }).executionMode, 'auto');
   assert.equal(input.recoverStale, true);
   assert.throws(
     () => normalizeInputAction({ executionMode: 'native' } as never),
-    /executionMode must be either dom or cdp/
+    /executionMode must be dom, cdp, or auto/
   );
 });
 

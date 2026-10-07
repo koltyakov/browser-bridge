@@ -47,6 +47,8 @@ import { annotateBridgeSummary, summarizeBridgeResponse } from '../../agent-clie
 
 export const REQUEST_SOURCE = 'mcp';
 const MCP_CLIENT_ID = `mcp_${randomUUID()}`;
+// One MCP server process serves one agent conversation, so it owns one working tab.
+const MCP_AGENT_SESSION = process.env.BBX_SESSION?.trim() || MCP_CLIENT_ID;
 /** @type {AsyncLocalStorage<{ era: import('../../protocol/src/types.js').McpProtocolEra, signal?: AbortSignal }>} */
 const MCP_REQUEST_ERA = new AsyncLocalStorage();
 
@@ -346,6 +348,7 @@ export async function withMcpRequestClient(callback, options = {}) {
   const client = await createBridgeClientForDestination(options.destinationId, {
     checkProtocolOnConnect: false,
     clientId: MCP_CLIENT_ID,
+    agentSession: MCP_AGENT_SESSION,
   });
   let completed = false;
   try {

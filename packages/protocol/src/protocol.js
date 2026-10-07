@@ -415,6 +415,11 @@ export function validateBridgeRequest(request) {
       source: meta.source === 'cli' || meta.source === 'mcp' ? meta.source : undefined,
       mcp_era: normalizeMcpEra(meta.source, meta.mcp_era),
       automatic_retry: normalizeAutomaticRetryMeta(meta.source, meta.automatic_retry),
+      agent_session:
+        typeof meta.agent_session === 'string' &&
+        /^[A-Za-z0-9_.:-]{1,128}$/.test(meta.agent_session.trim())
+          ? meta.agent_session.trim()
+          : undefined,
     },
   };
 }
@@ -456,13 +461,14 @@ function normalizeAutomaticRetryMeta(source, value) {
 
 /**
  * Normalize request params early so malformed payloads fail at the shared
- * protocol boundary before daemon or extension dispatch.
+ * protocol boundary before daemon or extension dispatch. Exported so later
+ * stages re-normalize with the same per-method options (auto-wait, observe).
  *
  * @param {BridgeMethod} method
  * @param {Record<string, unknown>} params
  * @returns {Record<string, unknown>}
  */
-function normalizeRequestParams(method, params) {
+export function normalizeRequestParams(method, params) {
   switch (method) {
     case 'access.request':
       return normalizeAccessRequestParams(params);
@@ -526,7 +532,7 @@ function normalizeRequestParams(method, params) {
     case 'input.type':
     case 'input.fill':
     case 'input.press_key':
-      return normalizeInputAction(params);
+      return withInputOptions(method, normalizeInputAction(params), params);
     case 'cdp.dispatch_key_event':
       return normalizeCdpDispatchKeyEventParams(params);
     case 'cdp.get_box_model':
@@ -535,13 +541,13 @@ function normalizeRequestParams(method, params) {
     case 'cdp.get_dom_snapshot':
       return normalizeCdpDomSnapshotParams(params);
     case 'input.set_checked':
-      return normalizeCheckedAction(params);
+      return withInputOptions(method, normalizeCheckedAction(params), params);
     case 'input.select_option':
-      return normalizeSelectAction(params);
+      return withInputOptions(method, normalizeSelectAction(params), params);
     case 'input.hover':
-      return normalizeHoverParams(params);
+      return withInputOptions(method, normalizeHoverParams(params), params);
     case 'input.drag':
-      return normalizeDragParams(params);
+      return withInputOptions(method, normalizeDragParams(params), params);
     case 'input.touch':
       return normalizeTouchParams(params);
     case 'input.perform':
@@ -625,9 +631,23 @@ export function getBridgeOperationTimeoutMs(method, params = {}) {
     case 'input.perform':
       return normalizeInputPerformParams(params).timeoutMs;
     case 'input.click':
-    case 'input.press_key': {
+    case 'input.press_key':
+    case 'input.focus':
+    case 'input.type':
+    case 'input.fill':
+    case 'input.set_checked':
+    case 'input.select_option':
+    case 'input.hover':
+    case 'input.drag': {
+      const normalized =
+        /** @type {{ timeoutMs?: number, observe?: { settleMs: number } | null }} */ (
+          normalizeRequestParams(method, params)
+        );
       const holdMs = normalizeHoldMs(params.holdMs, 0);
-      return holdMs > 0 ? holdMs + INPUT_HOLD_TIMEOUT_MARGIN_MS : null;
+      const waitMs = normalized.timeoutMs ?? 0;
+      const settleMs = normalized.observe?.settleMs ?? 0;
+      const total = holdMs + waitMs + settleMs;
+      return total > 0 ? total + INPUT_HOLD_TIMEOUT_MARGIN_MS : null;
     }
     case 'input.touch':
       return normalizeHoldMs(params.holdMs, DEFAULT_TOUCH_HOLD_MS) + INPUT_HOLD_TIMEOUT_MARGIN_MS;
@@ -754,14 +774,106 @@ export function normalizeStyleQuery(params = {}) {
   };
 }
 
+const TARGET_LOCATOR_KEYS = /** @type {const} */ ([
+  'role',
+  'name',
+  'text',
+  'label',
+  'placeholder',
+  'testId',
+]);
+const MAX_LOCATOR_VALUE_LENGTH = 500;
+
 /**
- * @param {{ elementRef?: string, selector?: string } | null | undefined} target
+ * Normalize an input target. Besides `elementRef` and `selector`, a target can
+ * be a semantic locator (`role` + `name`, `text`, `label`, `placeholder`,
+ * `testId`) so one action call can find and act on an element. `selector`
+ * then narrows locator candidates; `nth` picks one of several matches.
+ *
+ * @param {Record<string, unknown> | null | undefined} target
  * @returns {import('./types.js').InputTarget}
  */
 function normalizeTarget(target) {
-  return {
+  /** @type {import('./types.js').InputTarget} */
+  const normalized = {
     elementRef: typeof target?.elementRef === 'string' ? target.elementRef : undefined,
     selector: typeof target?.selector === 'string' ? target.selector : undefined,
+  };
+  if (!target) return normalized;
+  for (const key of TARGET_LOCATOR_KEYS) {
+    const value = target[key];
+    if (typeof value !== 'string' || !value.trim()) continue;
+    if (value.length > MAX_LOCATOR_VALUE_LENGTH) {
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        `target.${key} must not exceed ${MAX_LOCATOR_VALUE_LENGTH} characters.`
+      );
+    }
+    normalized[key] = value.trim();
+  }
+  if (target.exact === true) normalized.exact = true;
+  if (target.nth !== undefined && target.nth !== null) {
+    const nth = Number(target.nth);
+    if (!Number.isInteger(nth) || nth < 0 || nth > 49) {
+      throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'target.nth must be an integer 0-49.');
+    }
+    normalized.nth = nth;
+  }
+  return normalized;
+}
+
+/** Default bounded wait for a target to exist and become actionable (ms). */
+export const DEFAULT_INPUT_WAIT_MS = 2_500;
+export const MAX_INPUT_WAIT_MS = 15_000;
+/** Default and maximum post-action settle window used by `observe` (ms). */
+export const DEFAULT_OBSERVE_SETTLE_MS = 500;
+export const MAX_OBSERVE_SETTLE_MS = 5_000;
+
+/** Actions that report their observed effects unless `observe: false`. */
+const OBSERVE_BY_DEFAULT_METHODS = new Set([
+  'input.click',
+  'input.press_key',
+  'input.select_option',
+  'input.set_checked',
+]);
+
+/**
+ * @param {string} method
+ * @param {unknown} value
+ * @param {{ submit?: boolean }} normalized
+ * @returns {{ settleMs: number } | null}
+ */
+function normalizeObserveOption(method, value, normalized) {
+  if (value === false || value === null) return null;
+  if (value && typeof value === 'object') {
+    const settleMs = /** @type {{ settleMs?: unknown }} */ (value).settleMs;
+    return {
+      settleMs: clampInt(settleMs, 0, MAX_OBSERVE_SETTLE_MS, DEFAULT_OBSERVE_SETTLE_MS),
+    };
+  }
+  const observeByDefault =
+    OBSERVE_BY_DEFAULT_METHODS.has(method) ||
+    ((method === 'input.type' || method === 'input.fill') && normalized.submit === true);
+  return value === true || observeByDefault ? { settleMs: DEFAULT_OBSERVE_SETTLE_MS } : null;
+}
+
+/**
+ * Add the shared auto-wait and observation options to normalized input params.
+ *
+ * @template {Record<string, unknown>} T
+ * @param {string} method
+ * @param {T} normalized
+ * @param {Record<string, unknown>} raw
+ * @returns {T & { timeoutMs: number, observe: { settleMs: number } | null }}
+ */
+function withInputOptions(method, normalized, raw) {
+  return {
+    ...normalized,
+    timeoutMs:
+      typeof raw.timeoutMs === 'number' && Number.isFinite(raw.timeoutMs)
+        ? Math.round(clampNumber(raw.timeoutMs, 0, MAX_INPUT_WAIT_MS, DEFAULT_INPUT_WAIT_MS))
+        : DEFAULT_INPUT_WAIT_MS,
+    observe: normalizeObserveOption(method, raw.observe, normalized),
   };
 }
 
@@ -770,10 +882,10 @@ function normalizeTarget(target) {
  * @returns {import('./types.js').InputExecutionMode}
  */
 function normalizeInputExecutionMode(value) {
-  if (value !== undefined && value !== 'dom' && value !== 'cdp') {
-    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'executionMode must be either dom or cdp.');
+  if (value !== undefined && value !== 'dom' && value !== 'cdp' && value !== 'auto') {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'executionMode must be dom, cdp, or auto.');
   }
-  return value === 'cdp' ? 'cdp' : 'dom';
+  return value === 'cdp' || value === 'auto' ? value : 'dom';
 }
 
 /**
@@ -992,9 +1104,14 @@ export function normalizeInputPerformParams(params = {}) {
       );
     }
     const stepMethod = /** @type {PerformStepMethod} */ (method);
+    const normalizedStepParams = normalizeRequestParams(stepMethod, stepParams);
+    // Timed sequences keep their schedule: steps observe effects only on request.
+    if (rawParams.observe === undefined && 'observe' in normalizedStepParams) {
+      normalizedStepParams.observe = null;
+    }
     return {
       method: stepMethod,
-      params: normalizeRequestParams(stepMethod, stepParams),
+      params: normalizedStepParams,
       delayMs: delayMs ?? 0,
       atMs,
     };
@@ -1342,6 +1459,7 @@ export function normalizeFindByTextParams(params = {}) {
     exact: Boolean(params.exact),
     selector: typeof params.selector === 'string' && params.selector.trim() ? params.selector : '*',
     maxResults: clampInt(params.maxResults, 1, 50, 10),
+    includeHidden: params.includeHidden === true,
   };
 }
 
@@ -1353,8 +1471,10 @@ export function normalizeFindByRoleParams(params = {}) {
   return {
     role: typeof params.role === 'string' ? params.role : '',
     name: typeof params.name === 'string' ? params.name : '',
+    exact: Boolean(params.exact),
     selector: typeof params.selector === 'string' && params.selector.trim() ? params.selector : '*',
     maxResults: clampInt(params.maxResults, 1, 50, 10),
+    includeHidden: params.includeHidden === true,
   };
 }
 
@@ -1604,6 +1724,14 @@ export function normalizeTabCloseParams(params = {}) {
  * @returns {NormalizedAccessibilityTreeParams}
  */
 export function normalizeAccessibilityTreeParams(params = {}) {
+  const source = params.source ?? 'cdp';
+  if (source !== 'cdp' && source !== 'dom') {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'source must be cdp or dom.');
+  }
+  const format = params.format ?? (source === 'dom' ? 'outline' : 'tree');
+  if (format !== 'tree' && format !== 'outline') {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'format must be tree or outline.');
+  }
   return {
     selector:
       typeof params.selector === 'string' && params.selector.trim() ? params.selector.trim() : null,
@@ -1611,6 +1739,9 @@ export function normalizeAccessibilityTreeParams(params = {}) {
     maxNodes: clampInt(params.maxNodes, 10, 5000, DEFAULT_A11Y_MAX_NODES),
     compact: params.compact === true,
     interactiveOnly: params.interactiveOnly === true,
+    // Omitted at defaults so existing CDP callers see an unchanged shape.
+    ...(source === 'dom' ? { source } : {}),
+    ...(format === 'outline' ? { format } : {}),
   };
 }
 

@@ -17,7 +17,7 @@ type PopupTargets = Parameters<typeof renderPopupViewState>[1];
 test('getPopupViewState renders the unavailable state', () => {
   assert.deepEqual(getPopupViewState(null), {
     eyebrow: 'Window access unavailable',
-    detail: 'Open a normal web page to manage Browser Bridge for this Chrome window.',
+    detail: 'Open a normal web page to manage Browser Bridge for this browser window.',
     disclosureHidden: false,
     attention: false,
     buttonLabel: 'Enable Window Access',
@@ -48,7 +48,7 @@ test('getPopupViewState returns the access requested variant when access is pend
     {
       eyebrow: 'Window access requested',
       detail:
-        'MCP Modern requested access to inspect pages in this Chrome window. Current tab: Pending access - https://example.com.',
+        'MCP Modern requested access to inspect pages in this browser window. Current tab: Pending access - https://example.com.',
       disclosureHidden: false,
       attention: true,
       buttonLabel: 'Enable Window Access',
@@ -94,7 +94,7 @@ test('getPopupViewState returns the default disabled state when access is not en
     {
       eyebrow: 'Window access',
       detail:
-        'Enable Browser Bridge to let your connected agent inspect and interact with pages in this Chrome window.',
+        'Enable Browser Bridge to let your connected agent inspect and interact with pages in this browser window.',
       disclosureHidden: false,
       attention: false,
       buttonLabel: 'Enable Window Access',

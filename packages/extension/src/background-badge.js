@@ -5,6 +5,7 @@ import {
   ACCESS_REQUEST_BADGE_TEXT,
   ENABLED_BADGE_TEXT,
   RESTRICTED_BADGE_TEXT,
+  WORKING_BADGE_TEXT,
   isNumber,
 } from './background-state.js';
 
@@ -31,15 +32,25 @@ import {
  * @param {boolean} enabled
  * @param {boolean} accessRequested
  * @param {boolean} restricted
+ * @param {boolean} [working=false]
  * @returns {ActionIndicatorState}
  */
-function getActionIndicatorState(enabled, accessRequested, restricted) {
+function getActionIndicatorState(enabled, accessRequested, restricted, working = false) {
   if (enabled && restricted) {
     return {
       badgeText: RESTRICTED_BADGE_TEXT,
       backgroundColor: '#e07020',
       textColor: '#ffffff',
       title: 'Browser Bridge is enabled, but this page cannot be interacted with.',
+    };
+  }
+
+  if (enabled && working) {
+    return {
+      badgeText: WORKING_BADGE_TEXT,
+      backgroundColor: '#1a73e8',
+      textColor: '#ffffff',
+      title: 'Browser Bridge agent is working in this tab. Switching tabs does not move the agent.',
     };
   }
 
@@ -126,7 +137,8 @@ export async function updateActionIndicatorForTab(tabId, state, chromeObj, depen
     }
   }
 
-  const indicator = getActionIndicatorState(enabled, accessRequested, restricted);
+  const working = enabled && Boolean(state.workingTabIds?.has(tabId));
+  const indicator = getActionIndicatorState(enabled, accessRequested, restricted, working);
 
   try {
     await chromeObj.action.setBadgeBackgroundColor({
@@ -183,7 +195,8 @@ export async function syncGlobalBadgeToActiveTab(state, chromeObj, dependencies)
     const accessRequested =
       !enabled && (await isAccessRequestedTab(activeTab.id, state, chromeObj));
     const restricted = enabled && dependencies.isRestrictedAutomationUrl(activeTab.url ?? '');
-    const indicator = getActionIndicatorState(enabled, accessRequested, restricted);
+    const working = enabled && Boolean(state.workingTabIds?.has(activeTab.id));
+    const indicator = getActionIndicatorState(enabled, accessRequested, restricted, working);
 
     await chromeObj.action.setBadgeText({ text: indicator.badgeText });
     try {

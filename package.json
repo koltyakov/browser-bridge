@@ -1,6 +1,6 @@
 {
   "name": "@browserbridge/bbx",
-  "version": "1.11.5",
+  "version": "1.12.0",
   "private": false,
   "keywords": [
     "agent-tools",
@@ -56,6 +56,8 @@
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
     "fixture:browser": "node tests/fixtures/browser-reliability/server.mjs",
+    "fixture:interaction": "node tests/fixtures/agent-interaction/server.mjs",
+    "bench:interaction": "node tests/fixtures/agent-interaction/bench.mjs",
     "test:runtime": "node --import tsx --test packages/*/test/*.test.ts packages/integration-tests/*.test.ts tests/fixtures/*/*.test.ts",
     "test": "c8 node --import tsx --test packages/*/test/*.test.ts packages/integration-tests/*.test.ts tests/fixtures/*/*.test.ts",
     "coverage": "c8 report --reporter=text --reporter=text-summary",

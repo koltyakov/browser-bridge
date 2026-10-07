@@ -151,6 +151,7 @@ type QueryNode = {
   textExcerpt?: string;
   attrs: Record<string, string | null>;
   name?: string | null;
+  role?: string | null;
 };
 type QueryResult = {
   nodes: QueryNode[];
@@ -1547,7 +1548,8 @@ test('content script dom.find_by_role matches explicit and implicit roles by acc
 
   assert.equal(matches.count, 3);
   assert.equal(matches.found, true);
-  assert.equal(matches.scanned, 4);
+  // Role search walks the whole (deep) DOM instead of a light-DOM role selector.
+  assert.equal(matches.scanned, 6);
   assert.equal(matches.truncated, false);
   assert.equal(cappedMatches.count, 1);
   assert.equal(cappedMatches.truncated, true);
@@ -1556,7 +1558,7 @@ test('content script dom.find_by_role matches explicit and implicit roles by acc
     matches.nodes.map((node) => ({
       tag: node.tag,
       id: node.attrs.id,
-      role: node.attrs.role ?? null,
+      role: node.role ?? null,
       name: node.name,
       textExcerpt: node.textExcerpt,
     })),
@@ -1571,15 +1573,15 @@ test('content script dom.find_by_role matches explicit and implicit roles by acc
       {
         tag: 'button',
         id: 'implicit',
-        role: null,
-        name: null,
+        role: 'button',
+        name: 'Bridge search',
         textExcerpt: 'Bridge search',
       },
       {
         tag: 'button',
         id: 'labelled',
-        role: null,
-        name: null,
+        role: 'button',
+        name: 'Bridge external label',
         textExcerpt: 'Use it',
       },
     ]
@@ -1617,10 +1619,8 @@ test('content script dom.query works when randomUUID is unavailable', async (t) 
         })
       );
 
-      assert.match(
-        result.nodes[0].elementRef,
-        /^el_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
-      );
+      // Compact refs: a 4-char per-injection tag plus a base-36 counter.
+      assert.match(result.nodes[0].elementRef, /^el_[0-9a-z]{4}_[0-9a-z]+$/);
     }
   );
 });
@@ -3854,6 +3854,116 @@ test('pointer resolution clips hit coordinates and rejects a null viewport hit',
   const error = noHit.error as { code?: unknown; details?: { blocker?: unknown } };
   assert.equal(error.code, 'ELEMENT_OBSCURED');
   assert.equal(error.details?.blocker, null);
+});
+
+test('DOM click and touch keep release events on connected shadow-tree targets', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t, { pointerAndTouch: true });
+  const button = inputs.createButton({ textContent: 'Shadow save' });
+  const host = inputs.createBody();
+  Reflect.set(button, 'isConnected', true);
+  Reflect.set(host, 'shadowRoot', { elementFromPoint: () => button });
+  const document = createDocumentHarness(
+    inputs.createBody([host]),
+    { '#shadow': button },
+    {
+      elementFromPoint: () => host,
+    }
+  );
+  assert.equal(document.contains(button), false);
+  const events = recordEvents(button);
+  await loadContentScript(t, {
+    withHelpers: true,
+    chrome: harness.chrome,
+    document,
+    window: { innerWidth: 100, innerHeight: 100 },
+  });
+  const listener = harness.getListener();
+  const clicked = await executeBridgeMethod(listener, 'input.click', {
+    target: { selector: '#shadow' },
+    observe: false,
+    holdMs: 1,
+  });
+  assert.equal(clicked.clicked, true);
+  assert.ok(events.some((event) => event.type === 'mouseup'));
+  assert.ok(events.some((event) => event.type === 'click'));
+  events.length = 0;
+  const touched = await executeBridgeMethod(listener, 'input.touch', {
+    points: [{ target: { selector: '#shadow' } }],
+    holdMs: 1,
+  });
+  assert.equal(touched.clicked, true);
+  assert.ok(events.some((event) => event.type === 'click'));
+});
+
+test('DOM pointer drag avoids frame timers in an inactive working tab', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t, { pointerAndTouch: true });
+  const start = inputs.createButton({ textContent: 'Start' });
+  const end = inputs.createButton({ textContent: 'End' });
+  const hit = layoutRow([start, end]);
+  const document = createDocumentHarness(
+    inputs.createBody([start, end]),
+    {
+      '#start': start,
+      '#end': end,
+    },
+    { elementFromPoint: (x) => hit(x) }
+  );
+  Reflect.set(document, 'hidden', true);
+  const events = recordEvents(end);
+  const timer = t.mock.method(globalThis, 'setTimeout');
+  await loadContentScript(t, {
+    withHelpers: true,
+    chrome: harness.chrome,
+    document,
+    window: { innerWidth: 100, innerHeight: 100 },
+  });
+  const result = await executeBridgeMethod(harness.getListener(), 'input.drag', {
+    source: { selector: '#start' },
+    destination: { selector: '#end' },
+    observe: false,
+  });
+  assert.equal(result.dragged, true);
+  assert.ok(events.some((event) => event.type === 'pointerup'));
+  assert.equal(
+    timer.mock.calls.some((call) => call.arguments[1] === 16),
+    false
+  );
+});
+
+test('DOM touch resolves semantic locators for both gesture endpoints', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t, { pointerAndTouch: true });
+  const start = inputs.createButton({ textContent: 'Start' });
+  const end = inputs.createButton({ textContent: 'End' });
+  const hit = layoutRow([start, end]);
+  const document = createDocumentHarness(
+    inputs.createBody([start, end]),
+    {},
+    {
+      elementFromPoint: (x) => hit(x),
+    }
+  );
+  const events = recordEvents(start);
+  await loadContentScript(t, {
+    withHelpers: true,
+    chrome: harness.chrome,
+    document,
+    window: { innerWidth: 100, innerHeight: 100 },
+  });
+  const result = await executeBridgeMethod(harness.getListener(), 'input.touch', {
+    points: [{ target: { role: 'button', name: 'Start' }, to: { target: { text: 'End' } } }],
+    holdMs: 1,
+    moveSteps: 1,
+  });
+  assert.equal(result.touched, true);
+  assert.equal(result.clicked, false);
+  assert.ok(events.some((event) => event.type === 'pointermove'));
+  assert.deepEqual(
+    (result.points as Array<Record<string, unknown>>).map(({ x, toX }) => ({ x, toX })),
+    [{ x: 5, toX: 25 }]
+  );
 });
 
 test('atomic input selectors preserve utility-class escaping', async (t) => {

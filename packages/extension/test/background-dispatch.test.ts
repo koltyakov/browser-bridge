@@ -385,6 +385,7 @@ test('background dispatch creates a tab in the enabled window', async () => {
     url: 'https://example.com/new',
     title: 'New tab',
     status: 'complete',
+    working: true,
   });
 });
 
@@ -745,6 +746,7 @@ test('background dispatch returns sensitive storage values exactly and logs warn
   const state = (
     loaded.module as { getStateForTest: () => { actionLog: unknown[] } }
   ).getStateForTest();
+  await waitForListenerCount(() => state.actionLog.length, 1);
   const serializedLog = JSON.stringify(state.actionLog);
   assert.match(serializedLog, /Sensitive local storage read succeeded/);
   assert.doesNotMatch(serializedLog, /private-token|line 1|"token"/);
@@ -1099,7 +1101,7 @@ test('background dispatch rejects tab-bound requests for tabs outside the enable
     getCalls.every((tabId) => tabId === 55),
     true
   );
-  assert.deepEqual(queryCalls.at(-1), { active: true, windowId: 7 });
+  assert.ok(queryCalls.some((query) => query.active === true && query.windowId === 7));
   assert.equal(sendMessageCalled, false);
   assert.equal(executeScriptCalled, false);
   assert.equal(response.ok, false);
@@ -2028,25 +2030,26 @@ test('background dispatch returns a simplified accessibility tree', async () => 
     rootIds: string[];
     truncated: boolean;
     truncation: {
-      reason: string;
+      reason: string | null;
       reasons: string[];
       maxDepth: number;
       partialTopology: boolean;
       missingChildCount: number;
     };
-    continuationHint: string;
+    continuationHint: string | null;
   };
   assert.equal(result.count, 2);
   assert.equal(result.total, 2);
   assert.equal(result.rawTotal, 2);
   assert.equal(result.source, 'cdp-accessibility');
   assert.deepEqual(result.rootIds, ['1']);
-  assert.equal(result.truncated, true);
-  assert.equal(result.truncation.reason, 'maxDepth');
-  assert.deepEqual(result.truncation.reasons, ['maxDepth']);
+  // Every child is present, so nothing was cut and no continuation is suggested.
+  assert.equal(result.truncated, false);
+  assert.equal(result.truncation.reason, null);
+  assert.deepEqual(result.truncation.reasons, []);
   assert.equal(result.truncation.maxDepth, 3);
-  assert.equal(result.truncation.partialTopology, true);
-  assert.match(result.continuationHint, /larger maxDepth/);
+  assert.equal(result.truncation.partialTopology, false);
+  assert.equal(result.continuationHint, null);
   assert.equal(result.nodes[0]?.semanticInteractive, true);
   assert.equal(result.nodes[0]?.focusableAndEnabled, false);
   assert.deepEqual(result.nodes[0]?.childIds, ['2']);

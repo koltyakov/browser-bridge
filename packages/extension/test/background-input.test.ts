@@ -59,6 +59,10 @@ function createController(
         }
         return { elementRef: params.elementRef, active: true };
       }
+      if (method === 'input.observe_start') return { observationId: 'obs_1' };
+      if (method === 'input.observe_finish') {
+        return { changed: true, dom: { added: 1, removed: 0 }, settledMs: 12 };
+      }
       const selector = params.target?.selector ?? '';
       return {
         elementRef: selector.includes('destination') ? 'el_destination' : 'el_target',
@@ -87,7 +91,12 @@ test('CDP click resolves immediately before native mouse dispatch', async () => 
     params: { target: { selector: '#save' }, executionMode: 'cdp' },
   });
   const result = await controller.handleNativeInput(request, tab, request.params);
-  assert.equal(messages[0].method, 'input.resolve_native');
+  // Clicks observe effects by default, so observation brackets the native input.
+  assert.deepEqual(
+    messages.map((message) => message.method),
+    ['input.observe_start', 'input.resolve_native', 'input.observe_finish']
+  );
+  assert.deepEqual(result.effects, { changed: true, dom: { added: 1, removed: 0 }, settledMs: 12 });
   assert.deepEqual(
     commands.map((call) => [call.method, call.params.type]),
     [
@@ -307,8 +316,9 @@ test('CDP press_key focuses the target and sends a trusted held key pair', async
   });
   const started = performance.now();
   const result = await controller.handleNativeInput(request, tab, request.params);
-  assert.equal(messages[0].method, 'input.resolve_native');
-  assert.equal((messages[0].params as { kind?: unknown }).kind, 'focus');
+  const resolveMessage = messages.find((message) => message.method === 'input.resolve_native');
+  assert.equal(resolveMessage?.method, 'input.resolve_native');
+  assert.equal((resolveMessage?.params as { kind?: unknown } | undefined)?.kind, 'focus');
   assert.deepEqual(
     commands.map((call) => [call.method, call.params.type, call.params.code]),
     [
@@ -327,7 +337,11 @@ test('CDP press_key focuses the target and sends a trusted held key pair', async
   });
   const pageResult = await controller.handleNativeInput(pageLevel, tab, pageLevel.params);
   assert.equal(pageResult.elementRef, null);
-  assert.equal(messages.length, 1, 'page-level key presses do not resolve a target');
+  assert.equal(
+    messages.filter((message) => message.method === 'input.resolve_native').length,
+    1,
+    'page-level key presses do not resolve a target'
+  );
   assert.equal((pageResult.execution as Record<string, unknown>).targetCoordinates, undefined);
 
   const invalid = createRequest({
@@ -400,6 +414,37 @@ test('CDP touch puts every finger down in one event, moves them, and always lift
   assert.deepEqual(
     (commands[2].params.touchPoints as Array<Record<string, unknown>>).map((point) => point.x),
     [20, 80]
+  );
+});
+
+test('CDP touch forwards semantic locators for both gesture endpoints', async () => {
+  const { controller, commands, messages } = createController();
+  const start = { role: 'button', name: 'Start' };
+  const end = { label: 'End' };
+  const request = createRequest({
+    id: 'cdp-touch-locators',
+    method: 'input.touch',
+    params: {
+      points: [{ target: start, to: { target: end } }],
+      holdMs: 0,
+      moveSteps: 1,
+      executionMode: 'cdp',
+    },
+  });
+  const result = await controller.handleNativeInput(request, tab, request.params);
+  assert.equal(result.touched, true);
+  assert.deepEqual(
+    messages
+      .filter((message) => message.method === 'input.resolve_native')
+      .map((message) => (message.params as Record<string, unknown>).target),
+    [
+      { elementRef: undefined, selector: undefined, ...start },
+      { elementRef: undefined, selector: undefined, ...end },
+    ]
+  );
+  assert.deepEqual(
+    commands.map((command) => command.params.type),
+    ['touchStart', 'touchMove', 'touchEnd']
   );
 });
 

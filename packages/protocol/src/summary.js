@@ -101,6 +101,126 @@ function describeTabResult(method, result) {
   }
 }
 
+const ROUTINE_STRATEGIES = new Set(['elementRef', 'selector-first', 'locator-first']);
+
+/**
+ * Keep input evidence lean: resolution/execution metadata only when something
+ * notable happened (scroll, wait, ranking, recovery, CDP, fallback), plus any
+ * observed effects. Routine successes cost a few tokens instead of ~100.
+ *
+ * @param {Record<string, unknown>} r
+ * @param {Record<string, unknown>} [extra]
+ * @returns {Record<string, unknown>}
+ */
+function compactInputEvidence(r, extra = {}) {
+  /** @type {Record<string, unknown>} */
+  const evidence = { elementRef: r.elementRef ?? null, ...extra };
+  const resolution = toRecord(r.resolution);
+  if (
+    resolution.scrolled === true ||
+    resolution.recovered === true ||
+    (typeof resolution.waitedMs === 'number' && resolution.waitedMs > 0) ||
+    (typeof resolution.strategy === 'string' && !ROUTINE_STRATEGIES.has(resolution.strategy))
+  ) {
+    /** @type {Record<string, unknown>} */
+    const notable = { strategy: resolution.strategy };
+    for (const key of ['scrolled', 'recovered', 'waitedMs', 'candidateCount', 'oldRef', 'newRef']) {
+      const value = resolution[key];
+      if (value !== undefined && value !== false && !(key === 'candidateCount' && value === 1)) {
+        notable[key] = value;
+      }
+    }
+    evidence.resolution = notable;
+  }
+  const execution = toRecord(r.execution);
+  if (execution.actualMode === 'cdp' || execution.fallbackReason) {
+    evidence.execution = {
+      actualMode: execution.actualMode,
+      ...(execution.fallbackReason ? { fallbackReason: execution.fallbackReason } : {}),
+    };
+  }
+  if (r.effects && typeof r.effects === 'object') evidence.effects = r.effects;
+  return Object.fromEntries(Object.entries(evidence).filter(([, value]) => value !== undefined));
+}
+
+/**
+ * Health evidence without idle diagnostics: zero-valued recovery counters,
+ * internal latency stats, and idle debugger/capture state are dropped, which
+ * cuts a routine health check from ~1k tokens to ~200.
+ *
+ * @param {Record<string, unknown>} result
+ * @returns {Record<string, unknown>}
+ */
+function compactHealthEvidence(result) {
+  const { recovery, domBaselines, debugger: debuggerState, capture, ...rest } = result;
+  /** @type {Record<string, unknown>} */
+  const evidence = { ...rest };
+  /** @type {Record<string, Record<string, unknown>>} */
+  const activeRecovery = {};
+  for (const [scope, value] of Object.entries(toRecord(recovery))) {
+    const events = toRecord(toRecord(value).events);
+    for (const [event, stats] of Object.entries(events)) {
+      const record = toRecord(stats);
+      if (record.attempts || record.pending || record.activeLoop) {
+        activeRecovery[`${scope}.${event}`] = {
+          attempts: record.attempts,
+          failures: record.failures,
+          ...(record.activeLoop ? { activeLoop: true } : {}),
+        };
+      }
+    }
+  }
+  if (Object.keys(activeRecovery).length) evidence.recovery = activeRecovery;
+  const baselineCount = toRecord(domBaselines).baselineCount;
+  if (typeof baselineCount === 'number' && baselineCount > 0) {
+    evidence.domBaselines = { baselineCount, bytes: toRecord(domBaselines).bytes };
+  }
+  const debuggerRecord = toRecord(debuggerState);
+  if (debuggerState && (debuggerRecord.status !== 'idle' || debuggerRecord.attachedTabCount)) {
+    evidence.debugger = debuggerState;
+  }
+  const captureRecord = toRecord(capture);
+  if (capture && captureRecord.state !== 'stopped') evidence.capture = capture;
+  return evidence;
+}
+
+/**
+ * One-line digest of observed post-action effects.
+ *
+ * @param {unknown} value
+ * @returns {string}
+ */
+function describeEffects(value) {
+  if (!value || typeof value !== 'object') return '';
+  const effects = /** @type {Record<string, unknown>} */ (value);
+  /** @type {string[]} */
+  const parts = [];
+  if (effects.navigation === 'unloading') parts.push('page is navigating');
+  if (typeof effects.url === 'string') parts.push(`URL → ${truncateUrl(effects.url)}`);
+  for (const dialog of Array.isArray(effects.dialogs) ? effects.dialogs : []) {
+    const record = toRecord(dialog);
+    parts.push(
+      `${record.role ?? 'dialog'}${record.name ? ` "${record.name}"` : ''} opened [${record.ref}]`
+    );
+  }
+  for (const message of Array.isArray(effects.messages) ? effects.messages : []) {
+    const record = toRecord(message);
+    parts.push(`${record.role ?? 'status'}: "${record.text}"`);
+  }
+  const focused = toRecord(effects.focused);
+  if (focused.ref)
+    parts.push(
+      `focus → ${focused.role ?? ''}${focused.name ? ` "${focused.name}"` : ''} [${focused.ref}]`
+    );
+  const dom = toRecord(effects.dom);
+  if (typeof dom.added === 'number' || typeof dom.removed === 'number') {
+    parts.push(`DOM +${dom.added ?? 0}/-${dom.removed ?? 0}`);
+  }
+  if (toRecord(effects.target).removed === true) parts.push('target removed');
+  if (!parts.length) return effects.changed === false ? ' No visible effect.' : '';
+  return ` Effects: ${parts.join('; ')}.`;
+}
+
 /** @type {Record<string, ActionSummary>} */
 const ACTION_SUMMARIES = {
   performed: {
@@ -118,8 +238,9 @@ const ACTION_SUMMARIES = {
     evidence: (r) => r,
   },
   hovered: {
-    text: (r) => `Hover ${r.hovered ? 'active' : 'failed'} on ${r.elementRef}.`,
-    evidence: (r) => r,
+    text: (r) =>
+      `Hover ${r.hovered ? 'active' : 'failed'} on ${r.elementRef}.${describeEffects(r.effects)}`,
+    evidence: (r) => compactInputEvidence(r),
   },
   dragged: {
     text: (r) =>
@@ -130,33 +251,25 @@ const ACTION_SUMMARIES = {
   clicked: {
     text: (r) => {
       const mode = toRecord(r.execution).actualMode;
-      return `Clicked ${r.elementRef ?? 'element'}${typeof mode === 'string' ? ` via ${mode}` : ''}.`;
+      return `Clicked ${r.elementRef ?? 'element'}${typeof mode === 'string' ? ` via ${mode}` : ''}.${describeEffects(r.effects)}`;
     },
-    evidence: (r) => ({
-      elementRef: r.elementRef,
-      resolution: r.resolution,
-      execution: r.execution,
-    }),
+    evidence: (r) => compactInputEvidence(r),
   },
   focused: {
-    text: (r) => `Focused ${r.elementRef ?? 'element'}.`,
-    evidence: (r) => ({
-      elementRef: r.elementRef,
-      resolution: r.resolution,
-      execution: r.execution,
-    }),
+    text: (r) => `Focused ${r.elementRef ?? 'element'}.${describeEffects(r.effects)}`,
+    evidence: (r) => compactInputEvidence(r),
   },
   typed: {
-    text: (r) => `Typed into ${r.elementRef ?? 'element'}.`,
-    evidence: (r) => ({
-      elementRef: r.elementRef,
-      resolution: r.resolution,
-      execution: r.execution,
-    }),
+    text: (r) => `Typed into ${r.elementRef ?? 'element'}.${describeEffects(r.effects)}`,
+    evidence: (r) => compactInputEvidence(r, { value: r.value }),
   },
   pressed: {
-    text: (r) => `Key pressed${r.key ? ` (${r.key})` : ''}.`,
-    evidence: (r) => r,
+    text: (r) => `Key pressed${r.key ? ` (${r.key})` : ''}.${describeEffects(r.effects)}`,
+    evidence: (r) => {
+      const { resolution: _resolution, execution: _execution, effects: _effects, ...rest } = r;
+      const { elementRef: _elementRef, ...compact } = compactInputEvidence(r);
+      return { ...rest, ...compact };
+    },
   },
   navigated: {
     text: (r) => `Navigated to ${r.url ?? 'page'}.`,
@@ -242,6 +355,19 @@ function getMetaCostClass(meta, field) {
  * @returns {BridgeSummary}
  */
 export function summarizeBridgeResponse(response, method) {
+  const summarized = summarizeBridgeResponseBody(response, method);
+  const routingNote = response.ok ? getTabRoutingNote(response.meta) : null;
+  return routingNote
+    ? { ...summarized, summary: `${summarized.summary} ${routingNote}` }
+    : summarized;
+}
+
+/**
+ * @param {BridgeResponse} response
+ * @param {string} [method]
+ * @returns {BridgeSummary}
+ */
+function summarizeBridgeResponseBody(response, method) {
   const protocolWarning = getProtocolWarning(response.meta);
   if (!response.ok) {
     const recovery = response.error.recovery ?? getErrorRecovery(response.error.code);
@@ -350,7 +476,7 @@ export function summarizeBridgeResponse(response, method) {
       access == null
         ? ''
         : access.enabled
-          ? ` Access: ${access.routeReady ? `ready on tab ${access.routeTabId}.` : `enabled${typeof access.reason === 'string' ? ` (${access.reason})` : '.'}`}`
+          ? ` Access: ${access.routeReady ? `ready on tab ${access.routeTabId}.` : `enabled${typeof access.reason === 'string' ? ` (${access.reason})` : '.'}`}${typeof access.workingTabId === 'number' && access.workingTabId !== access.routeTabId ? ` Your working tab is ${access.workingTabId}.` : ''}`
           : ' Access: disabled.';
     const connectedExtensions = Array.isArray(result.connectedExtensions)
       ? /** @type {Array<Record<string, unknown>>} */ (result.connectedExtensions)
@@ -369,7 +495,7 @@ export function summarizeBridgeResponse(response, method) {
         `Daemon: ${result.daemon}. Extension: ${extensionSummary}.${accessSummary}`,
         protocolWarning
       ),
-      evidence: result,
+      evidence: compactHealthEvidence(result),
     };
   }
   if (Array.isArray(result.mcpClients) && Array.isArray(result.skillTargets)) {
@@ -470,6 +596,18 @@ export function summarizeBridgeResponse(response, method) {
       })),
     };
   }
+  if (typeof result.outline === 'string') {
+    const count = typeof result.count === 'number' ? result.count : 0;
+    const refs = result.source === 'dom' ? '; refs work as input targets' : '';
+    return {
+      ok: true,
+      summary: appendProtocolWarning(
+        `Accessibility outline: ${count} node(s)${result.truncated === true ? ', truncated' : ''}${refs}.`,
+        protocolWarning
+      ),
+      evidence: result.outline,
+    };
+  }
   if (
     Array.isArray(result.nodes) &&
     typeof result.total === 'number' &&
@@ -528,6 +666,7 @@ export function summarizeBridgeResponse(response, method) {
       if (Array.isArray(n.children) && n.children.length) {
         entry.childCount = n.children.length;
       }
+      if (n.visible === false) entry.visible = false;
       return entry;
     });
     const isFind = method === 'dom.find_by_text' || method === 'dom.find_by_role';
@@ -544,6 +683,9 @@ export function summarizeBridgeResponse(response, method) {
         summary = `Found ${count} matching element(s); additional matches were omitted.`;
       } else {
         summary = `Found ${count} matching element(s)${scanned === null ? '' : ` after scanning ${scanned}`}.`;
+      }
+      if (typeof result.hiddenMatches === 'number' && result.hiddenMatches > 0) {
+        summary += ` ${result.hiddenMatches} hidden match(es) omitted (includeHidden: true to list).`;
       }
       return {
         ok: true,
@@ -754,20 +896,18 @@ export function summarizeBridgeResponse(response, method) {
     return {
       ok: true,
       summary: appendProtocolWarning(
-        `${method} completed via ${execution.actualMode ?? 'dom'}${result.elementRef ? ` on ${result.elementRef}` : ''}.`,
+        `${method} completed via ${execution.actualMode ?? 'dom'}${result.elementRef ? ` on ${result.elementRef}` : ''}.${describeEffects(result.effects)}`,
         protocolWarning
       ),
-      evidence: {
-        elementRef: result.elementRef ?? null,
-        sourceRef: result.sourceRef ?? null,
-        destinationRef: result.destinationRef ?? null,
+      evidence: compactInputEvidence(result, {
+        sourceRef: result.sourceRef ?? undefined,
+        destinationRef: result.destinationRef ?? undefined,
         typed: result.typed,
         checked: result.checked,
         selectedValues: result.selectedValues,
         mode: result.mode,
-        resolution: result.resolution,
-        execution: result.execution,
-      },
+        value: result.value,
+      }),
     };
   }
   if (typeof result.tabId === 'number' && typeof result.url === 'string') {
@@ -1004,6 +1144,18 @@ function getProtocolWarning(meta) {
   return typeof meta?.protocol_warning === 'string' && meta.protocol_warning.trim()
     ? meta.protocol_warning
     : null;
+}
+
+/**
+ * Tell the agent when it kept working in its own tab while the user looked at
+ * a different one, so "this tab" requests can be redirected explicitly.
+ *
+ * @param {Record<string, unknown> | null | undefined} meta
+ * @returns {string | null}
+ */
+function getTabRoutingNote(meta) {
+  if (typeof meta?.tab_id !== 'number' || typeof meta.active_tab_id !== 'number') return null;
+  return `Ran in working tab ${meta.tab_id}; the user's active tab is ${meta.active_tab_id} (pass tabId to switch).`;
 }
 
 /**

@@ -153,7 +153,7 @@ test('createBridgeMcpServer registers all tools behind one progressive surface',
     assert.equal(executionMode.safeParse('cdp').success, true);
     assert.equal(executionMode.safeParse('auto').success, false);
     assert.ok(inputSchema.recoverStale);
-    assert.match(String(registrations[10].config.description), /Targeted click/);
+    assert.match(String(registrations[10].config.description), /semantic locator/);
     assert.match(String(registrations[10].config.description), /separate contracts/);
     assert.match(
       String((inputSchema.recoverStale as { description?: string }).description),

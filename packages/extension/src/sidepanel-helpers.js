@@ -652,7 +652,7 @@ export function getSidepanelAgentStatusView(currentTab) {
   if (!currentTab) {
     return {
       title: 'Window access unavailable',
-      detail: 'Open a normal web page in this Chrome window to enable Browser Bridge.',
+      detail: 'Open a normal web page in this browser window to enable Browser Bridge.',
       disclosureHidden: false,
     };
   }
@@ -669,8 +669,7 @@ export function getSidepanelAgentStatusView(currentTab) {
   if (currentTab.enabled) {
     return {
       title: 'Window access enabled',
-      detail:
-        'Browser Bridge is enabled for this Chrome window. Requests default to the active tab, or can target another tab in this window explicitly.',
+      detail: 'Agents can access every tab in this window.',
       disclosureHidden: true,
     };
   }
@@ -679,22 +678,17 @@ export function getSidepanelAgentStatusView(currentTab) {
     const context = currentTab.accessRequestContext;
     const source = getActivitySourceTag(context?.source, context?.mcpEra) || 'A connected agent';
     const intent = context?.intent === 'general' || !context?.intent ? 'use' : context.intent;
-    const tab =
-      context?.title || context?.origin
-        ? ` Current tab: ${context.title || 'Untitled page'}${context.origin ? ` - ${context.origin}` : ''}.`
-        : ' Current tab details are unavailable.';
     return {
       title: 'Window access requested',
-      detail: `${source} requested access to ${intent} pages in this Chrome window.${tab}`,
+      detail: `${source} requested access to ${intent} pages in this browser window.`,
       disclosureHidden: false,
     };
   }
 
   return {
     title: 'Window access',
-    detail:
-      'Enable Browser Bridge to let your connected agent inspect and interact with pages in this Chrome window.',
-    disclosureHidden: false,
+    detail: 'Allow agents to inspect and interact with the tabs.',
+    disclosureHidden: true,
   };
 }
 

@@ -326,10 +326,17 @@ export const INPUT_ACTION_METHODS = {
  *
  * @param {unknown} elementRef
  * @param {unknown} selector
+ * @param {unknown} [locator]
  * @returns {import('../../protocol/src/types.js').InputTarget | null}
  */
-function createInputTarget(elementRef, selector) {
+function createInputTarget(elementRef, selector, locator) {
   if (typeof elementRef === 'string' && elementRef) return { elementRef };
+  if (locator && typeof locator === 'object' && Object.keys(locator).length) {
+    return {
+      ...(typeof selector === 'string' && selector ? { selector } : {}),
+      .../** @type {Record<string, unknown>} */ (locator),
+    };
+  }
   if (typeof selector === 'string' && selector) return { selector };
   return null;
 }
@@ -337,18 +344,20 @@ function createInputTarget(elementRef, selector) {
 /**
  * Avoid changing legacy handler payloads when new options are omitted.
  *
- * @param {{ executionMode?: 'dom' | 'cdp', recoverStale?: boolean }} args
- * @returns {{ executionMode?: 'dom' | 'cdp', recoverStale?: boolean }}
+ * @param {{ executionMode?: 'dom' | 'cdp', recoverStale?: boolean, timeoutMs?: number, observe?: boolean | { settleMs?: number } }} args
+ * @returns {{ executionMode?: 'dom' | 'cdp', recoverStale?: boolean, timeoutMs?: number, observe?: boolean | { settleMs?: number } }}
  */
 function createInputOptions(args) {
   return {
     ...(args.executionMode ? { executionMode: args.executionMode } : {}),
     ...(typeof args.recoverStale === 'boolean' ? { recoverStale: args.recoverStale } : {}),
+    ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {}),
+    ...(args.observe !== undefined ? { observe: args.observe } : {}),
   };
 }
 
 /**
- * @param {{ action: string, elementRef?: string, selector?: string, button?: string, clickCount?: number, holdMs?: number, text?: string, value?: string, mode?: 'auto' | 'setter' | 'keystrokes', executionMode?: 'dom' | 'cdp', recoverStale?: boolean, clear?: boolean, submit?: boolean, key?: string, code?: string, modifiers?: string[], checked?: boolean, values?: string[], labels?: string[], indexes?: number[], duration?: number, sourceElementRef?: string, sourceSelector?: string, destinationElementRef?: string, destinationSelector?: string, offsetX?: number, offsetY?: number, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @param {{ action: string, elementRef?: string, selector?: string, button?: string, clickCount?: number, holdMs?: number, text?: string, value?: string, mode?: 'auto' | 'setter' | 'keystrokes', executionMode?: 'dom' | 'cdp', recoverStale?: boolean, clear?: boolean, submit?: boolean, key?: string, code?: string, modifiers?: string[], checked?: boolean, values?: string[], labels?: string[], indexes?: number[], duration?: number, sourceElementRef?: string, sourceSelector?: string, destinationElementRef?: string, destinationSelector?: string, offsetX?: number, offsetY?: number, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep', locator?: Record<string, unknown>, timeoutMs?: number, observe?: boolean | { settleMs?: number } }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleInputTool(args) {
@@ -374,9 +383,9 @@ export async function handleInputTool(args) {
     async (client) => {
       const requestedTabId = typeof args.tabId === 'number' ? args.tabId : null;
       const elementTarget = () => {
-        const target = createInputTarget(args.elementRef, args.selector);
+        const target = createInputTarget(args.elementRef, args.selector, args.locator);
         if (!target) {
-          throw new BridgeError('INVALID_REQUEST', 'Provide either elementRef or selector.');
+          throw new BridgeError('INVALID_REQUEST', 'Provide elementRef, selector, or locator.');
         }
         return target;
       };
@@ -457,7 +466,8 @@ export async function handleInputTool(args) {
           return summarizeToolResponse(response, 'input.fill');
         }
         case 'press_key': {
-          const target = args.elementRef || args.selector ? elementTarget() : undefined;
+          const target =
+            args.elementRef || args.selector || args.locator ? elementTarget() : undefined;
           const response = await requestBridgeWithRetry(
             client,
             'input.press_key',

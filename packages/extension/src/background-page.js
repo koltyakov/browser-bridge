@@ -21,9 +21,14 @@ import {
   matchesConsoleLevel,
   summarizeTabResult,
 } from './background-helpers.js';
-import { buildAccessibilityTree, scopeAccessibilityNodes } from './background-accessibility.js';
+import {
+  buildAccessibilityTree,
+  formatAccessibilityOutline,
+  scopeAccessibilityNodes,
+} from './background-accessibility.js';
 import { buildHar } from './background-har.js';
 import { resolveWindowScopedTab, selectRequestTabCandidate } from './background-routing.js';
+import { normalizeAgentSession } from './background-agent-tabs.js';
 import {
   ACCESS_DENIED_REASON_WINDOW_GONE,
   ACCESS_DENIED_REASON_WINDOW_OFF,
@@ -36,6 +41,8 @@ import {
 /** @typedef {import('./background-state.js').TabChangeInfo} TabChangeInfo */
 /** @typedef {import('../../protocol/src/types.js').HarEvidenceEntry} HarEvidenceEntry */
 /** @typedef {import('../../protocol/src/types.js').CdpPerformanceMetric} CdpPerformanceMetric */
+/** @typedef {'explicit' | 'working' | 'active'} TabRoutingVia */
+/** @typedef {{ tabId: number, via: TabRoutingVia, activeTabId: number | null }} TabRouting */
 
 /**
  * Materialize a selector-scoped AX subtree. Chrome's partial-tree response
@@ -113,6 +120,8 @@ async function expandAccessibilitySubtree(
  *   getDialogStatus: (tabId: number) => Record<string, unknown>,
  *   clearDialog: (tabId: number, dialogId: string) => boolean,
  *   waitForUrl: (tabId: number, windowId: number, params: import('../../protocol/src/types.js').NormalizedWaitForLoadStateParams) => Promise<{ tab: chrome.tabs.Tab, elapsedMs: number, observedNavigationKind: string }>,
+ *   agentTabs?: import('./background-agent-tabs.js').AgentTabLeaseStore | null,
+ *   onRequestRouted?: (requestId: string, routing: TabRouting) => void,
  * }} PageRequestControllerDependencies
  */
 
@@ -124,7 +133,7 @@ async function expandAccessibilitySubtree(
  * @param {typeof globalThis.chrome} chromeObj
  * @param {PageRequestControllerDependencies} dependencies
  * @returns {{
- *   resolveRequestTarget: (request: BridgeRequest, options?: { requireScriptable?: boolean }) => Promise<ResolvedTabTarget>,
+ *   resolveRequestTarget: (request: BridgeRequest, options?: { requireScriptable?: boolean, peek?: boolean }) => Promise<ResolvedTabTarget>,
  *   waitForTabComplete: (tabId: number, timeoutMs: number) => Promise<chrome.tabs.Tab>,
  *   handlePageGetConsole: (request: BridgeRequest) => Promise<BridgeResponse>,
  *   handlePageGetState: (request: BridgeRequest) => Promise<BridgeResponse>,
@@ -148,15 +157,17 @@ export function createPageRequestController(state, chromeObj, dependencies) {
   const harMaxInlineResponseBytes = MAX_NATIVE_MESSAGE_BYTES - 4_096;
   /**
    * Resolve the tab a request should operate on. Requests may explicitly target
-   * one tab via `tab_id`; otherwise they follow the active tab in the enabled
-   * window.
+   * one tab via `tab_id`. Otherwise each agent session stays on its working tab
+   * (the tab it last resolved to) even after the user activates another tab, and
+   * only an unbound or idle-expired session follows the active tab.
    *
    * @param {BridgeRequest} request
-   * @param {{ requireScriptable?: boolean }} [options]
+   * @param {{ requireScriptable?: boolean, peek?: boolean }} [options]
    * @returns {Promise<ResolvedTabTarget>}
    */
   async function resolveRequestTarget(request, options = {}) {
     const requireScriptable = options.requireScriptable !== false;
+    const peek = options.peek === true;
     if (!state.enabledWindow) {
       throw new BridgeError(
         ERROR_CODES.ACCESS_DENIED,
@@ -176,20 +187,76 @@ export function createPageRequestController(state, chromeObj, dependencies) {
       }
     }
 
+    const enabledWindowId = state.enabledWindow.windowId;
+    const agentTabs = dependencies.agentTabs ?? null;
+    const session = normalizeAgentSession(request.meta?.agent_session);
+    const hasExplicitTab = typeof request.tab_id === 'number' && Number.isFinite(request.tab_id);
+
     /** @type {chrome.tabs.Tab | null} */
     let explicitTab = null;
-    if (typeof request.tab_id === 'number' && Number.isFinite(request.tab_id)) {
-      explicitTab = await chromeObj.tabs.get(request.tab_id);
+    if (hasExplicitTab) {
+      explicitTab = await chromeObj.tabs.get(/** @type {number} */ (request.tab_id));
     }
     const [activeTab] = await chromeObj.tabs.query({
       active: true,
-      windowId: state.enabledWindow.windowId,
+      windowId: enabledWindowId,
     });
-    const tab = selectRequestTabCandidate(request.tab_id, explicitTab, activeTab ?? null);
+    const activeTabId = typeof activeTab?.id === 'number' ? activeTab.id : null;
 
-    return resolveWindowScopedTab(tab, state.enabledWindow.windowId, {
-      requireScriptable,
-    });
+    /**
+     * @param {ResolvedTabTarget} resolved
+     * @param {TabRoutingVia} via
+     * @returns {Promise<ResolvedTabTarget>}
+     */
+    const finish = async (resolved, via) => {
+      if (!peek) {
+        if (agentTabs) await agentTabs.bind(session, resolved.tabId, resolved.windowId);
+        dependencies.onRequestRouted?.(request.id, {
+          tabId: resolved.tabId,
+          via,
+          activeTabId,
+        });
+      }
+      return resolved;
+    };
+
+    if (hasExplicitTab || !agentTabs) {
+      const tab = selectRequestTabCandidate(request.tab_id, explicitTab, activeTab ?? null);
+      return finish(
+        resolveWindowScopedTab(tab, enabledWindowId, { requireScriptable }),
+        hasExplicitTab ? 'explicit' : 'active'
+      );
+    }
+
+    const lease = await agentTabs.get(session);
+    if (lease && lease.windowId === enabledWindowId) {
+      if (!lease.closed) {
+        /** @type {chrome.tabs.Tab | null} */
+        let leaseTab = null;
+        try {
+          leaseTab = await chromeObj.tabs.get(lease.tabId);
+        } catch {
+          leaseTab = null;
+        }
+        if (leaseTab && leaseTab.windowId === enabledWindowId) {
+          return finish(
+            resolveWindowScopedTab(leaseTab, enabledWindowId, { requireScriptable }),
+            lease.tabId === activeTabId ? 'active' : 'working'
+          );
+        }
+        if (!peek) await agentTabs.markClosed(session);
+      }
+      throw new BridgeError(
+        ERROR_CODES.TAB_MISMATCH,
+        `Working tab ${lease.tabId} was closed or moved out of the enabled window. Browser Bridge will not silently switch to the user's active tab${activeTabId !== null ? ` (${activeTabId})` : ''}; pass tabId to choose a tab, or call tabs.create.`,
+        { reason: 'working_tab_closed', workingTabId: lease.tabId, activeTabId }
+      );
+    }
+
+    return finish(
+      resolveWindowScopedTab(activeTab, enabledWindowId, { requireScriptable }),
+      'active'
+    );
   }
 
   /**
@@ -560,36 +627,46 @@ export function createPageRequestController(state, chromeObj, dependencies) {
             params.maxDepth < 20
               ? 'retry with a larger maxDepth to inspect potentially omitted descendants'
               : 'narrow the selector to inspect potentially omitted descendants';
+          const depthLimited = tree.missingChildCount > 0;
           const continuationHint = tree.truncated
-            ? `The AX result reached maxNodes ${params.maxNodes} and was depth-limited to ${params.maxDepth}; retry with a larger maxNodes or ${depthHint}.`
-            : `The AX source was depth-limited to ${params.maxDepth}; ${depthHint}.`;
+            ? `The AX result reached maxNodes ${params.maxNodes}; retry with a larger maxNodes or ${depthHint}.`
+            : depthLimited
+              ? `The AX source was depth-limited to ${params.maxDepth}; ${depthHint}.`
+              : null;
           return createSuccess(
             request.id,
             {
-              nodes: tree.nodes,
-              rootIds: tree.rootIds,
+              ...(params.format === 'outline'
+                ? {
+                    format: 'outline',
+                    outline: formatAccessibilityOutline(tree.nodes, tree.rootIds),
+                  }
+                : { nodes: tree.nodes, rootIds: tree.rootIds }),
               count: tree.nodes.length,
               total: tree.filteredCount,
               rawTotal: tree.rawCount,
               source: 'cdp-accessibility',
               compact: params.compact,
               interactiveOnly: params.interactiveOnly,
-              truncated: true,
+              truncated: tree.truncated || depthLimited,
               truncation: {
-                reason: tree.truncated ? 'maxNodes' : 'maxDepth',
-                reasons: [...(tree.truncated ? ['maxNodes'] : []), 'maxDepth'],
+                reason: tree.truncated ? 'maxNodes' : depthLimited ? 'maxDepth' : null,
+                reasons: [
+                  ...(tree.truncated ? ['maxNodes'] : []),
+                  ...(depthLimited ? ['maxDepth'] : []),
+                ],
                 maxNodes: params.maxNodes,
                 maxDepth: params.maxDepth,
                 omitted: tree.omitted,
                 missingChildCount: tree.missingChildCount,
-                partialTopology: true,
+                partialTopology: tree.truncated || depthLimited,
               },
               continuationHint,
             },
             {
               method: request.method,
               debugger_backed: true,
-              result_truncated: true,
+              result_truncated: tree.truncated || depthLimited,
               continuation_hint: continuationHint,
             }
           );

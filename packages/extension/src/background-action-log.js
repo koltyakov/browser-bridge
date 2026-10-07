@@ -28,6 +28,7 @@ import {
 } from './background-state.js';
 
 /** @typedef {import('./background-state.js').ExtensionState} ExtensionState */
+/** @typedef {import('./background-state.js').ActionLogEntry} ActionLogEntry */
 /** @typedef {import('./background-state.js').CurrentTabState} CurrentTabState */
 /** @typedef {import('./background-state.js').ResolvedTabTarget} ResolvedTabTarget */
 /** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */
@@ -72,7 +73,7 @@ const CONNECTION_CHECK_COALESCE_MS = 2_000;
  * @typedef {{
  *   resolveRequestTarget: (
  *     request: BridgeRequest,
- *     options?: { requireScriptable?: boolean }
+ *     options?: { requireScriptable?: boolean, peek?: boolean }
  *   ) => Promise<ResolvedTabTarget>,
  *   getCurrentTabState: () => Promise<CurrentTabState | null>,
  *   emitUiState: () => Promise<void>,
@@ -95,9 +96,62 @@ const CONNECTION_CHECK_COALESCE_MS = 2_000;
  *     actionContext: ActionContext | null
  *   ) => Promise<void>,
  *   restoreActionLog: () => Promise<void>,
+ *   clearActionLogForTab: (tabId: number) => Promise<void>,
  * }}
  */
 export function createActionLogController(state, chromeObj, deps) {
+  /** @type {Promise<void>} */
+  let mutations = Promise.resolve();
+  /** @type {Promise<void> | null} */
+  let restoration = null;
+  let historyRestored = false;
+
+  /**
+   * Serialize reads and writes so a slow older snapshot cannot replace newer
+   * history, and startup restoration cannot overwrite an arriving event.
+   *
+   * @param {() => Promise<void>} operation
+   * @returns {Promise<void>}
+   */
+  function mutate(operation) {
+    const pending = mutations.then(operation);
+    mutations = pending.catch(() => {});
+    return pending;
+  }
+
+  /**
+   * Retain an independent ring for each tab, plus one for unscoped host events.
+   * Keep the existing flat storage shape so prior browser-session history can
+   * be restored without migration or changes to the panel message format.
+   *
+   * @param {ActionLogEntry[]} entries
+   * @returns {ActionLogEntry[]}
+   */
+  function boundHistory(entries) {
+    /** @type {Map<number | null, number>} */
+    const counts = new Map();
+    const ids = new Set();
+    return entries
+      .slice()
+      .reverse()
+      .filter((entry) => {
+        const count = counts.get(entry.tabId) ?? 0;
+        if (ids.has(entry.id) || count >= MAX_ACTION_LOG_ENTRIES) return false;
+        ids.add(entry.id);
+        counts.set(entry.tabId, count + 1);
+        return true;
+      })
+      .reverse();
+  }
+
+  /** @returns {Promise<void>} */
+  async function persistHistory() {
+    if (!historyRestored) return;
+    await chromeObj.storage.session.set({
+      [ACTION_LOG_STORAGE_KEY]: [...state.actionLog],
+    });
+  }
+
   /**
    * Resolve the scope context for a bridge request so the action log can show
    * where an operation happened even if that operation later revokes the session.
@@ -124,6 +178,7 @@ export function createActionLogController(state, chromeObj, deps) {
       }
       const tab = await deps.resolveRequestTarget(request, {
         requireScriptable: request.method !== 'tabs.create',
+        peek: true,
       });
       return {
         tabId: tab.tabId,
@@ -139,14 +194,56 @@ export function createActionLogController(state, chromeObj, deps) {
    *
    * @returns {Promise<void>}
    */
-  async function restoreActionLog() {
-    const stored = await chromeObj.storage.session.get(ACTION_LOG_STORAGE_KEY);
-    const entries = stored[ACTION_LOG_STORAGE_KEY];
-    if (Array.isArray(entries)) {
-      state.actionLog = entries
-        .map((entry) => normalizeActionLogEntry(entry))
-        .filter((entry) => entry !== null);
+  function restoreActionLog() {
+    if (!restoration) {
+      restoration = mutate(async () => {
+        /** @type {Record<string, unknown>} */
+        let stored;
+        try {
+          stored = await chromeObj.storage.session.get(ACTION_LOG_STORAGE_KEY);
+        } catch {
+          // Keep collecting in memory, but never overwrite history we could
+          // not read. A later event retries restoration and merges both sets.
+          restoration = null;
+          return;
+        }
+        const raw = stored[ACTION_LOG_STORAGE_KEY];
+        const entries = Array.isArray(raw)
+          ? raw.map((entry) => normalizeActionLogEntry(entry)).filter((entry) => entry !== null)
+          : [];
+        /** @type {Set<number> | null} */
+        let openTabIds = null;
+        try {
+          const tabs = await chromeObj.tabs.query({});
+          openTabIds = new Set(tabs.flatMap((tab) => (typeof tab.id === 'number' ? [tab.id] : [])));
+        } catch {
+          // Do not discard history when Chrome cannot enumerate tabs.
+        }
+        state.actionLog = boundHistory([...entries, ...state.actionLog]).filter(
+          (entry) => entry.tabId === null || !openTabIds || openTabIds.has(entry.tabId)
+        );
+        historyRestored = true;
+        if (Array.isArray(raw) || state.actionLog.length) {
+          await persistHistory().catch(() => {});
+        }
+      });
     }
+    return restoration;
+  }
+
+  /**
+   * Remove only a closed tab's history, including any earlier in-flight write.
+   * Late responses are rejected by the tab-existence check in append.
+   *
+   * @param {number} tabId
+   * @returns {Promise<void>}
+   */
+  async function clearActionLogForTab(tabId) {
+    await restoreActionLog();
+    await mutate(async () => {
+      state.actionLog = state.actionLog.filter((entry) => entry.tabId !== tabId);
+      await persistHistory();
+    });
   }
 
   /**
@@ -157,50 +254,60 @@ export function createActionLogController(state, chromeObj, deps) {
    */
   async function appendActionLogEntry(entry) {
     const at = Date.now();
-    const tabId = entry.tabId ?? null;
-    const previousEntry = state.actionLog.at(-1);
-    if (
-      entry.method === 'health.ping' &&
-      previousEntry?.method === 'health.ping' &&
-      previousEntry.tabId === tabId &&
-      at >= previousEntry.at &&
-      at - previousEntry.at <= CONNECTION_CHECK_COALESCE_MS
-    ) {
-      state.actionLog.pop();
-    }
-    const source = normalizeActionLogSource(entry.source);
-    state.actionLog.push({
-      id: crypto.randomUUID(),
-      at,
-      method: entry.method,
-      source,
-      mcpEra: normalizeActionLogMcpEra(source, entry.mcpEra),
-      tabId,
-      url: sanitizeIncidentalUrl(entry.url ?? ''),
-      ok: entry.ok,
-      summary: sanitizeIncidentalText(entry.summary),
-      responseBytes: entry.responseBytes ?? 0,
-      approxTokens: entry.approxTokens ?? 0,
-      imageApproxTokens: entry.imageApproxTokens ?? 0,
-      costClass: entry.costClass ?? 'cheap',
-      imageBytes: entry.imageBytes ?? 0,
-      summaryBytes: entry.summaryBytes ?? 0,
-      summaryTokens: entry.summaryTokens ?? 0,
-      summaryCostClass: entry.summaryCostClass ?? 'cheap',
-      debuggerBacked: entry.debuggerBacked === true,
-      overBudget: entry.overBudget === true,
-      hasScreenshot: entry.hasScreenshot ?? false,
-      nodeCount: entry.nodeCount ?? null,
-      continuationHint: entry.continuationHint ?? null,
-      severity: entry.severity === 'warning' ? 'warning' : 'info',
-      sensitiveAccess: entry.sensitiveAccess ?? null,
-    });
-    while (state.actionLog.length > MAX_ACTION_LOG_ENTRIES) {
-      state.actionLog.shift();
-    }
-
-    await chromeObj.storage.session.set({
-      [ACTION_LOG_STORAGE_KEY]: state.actionLog,
+    await restoreActionLog();
+    await mutate(async () => {
+      const tabId =
+        typeof entry.tabId === 'number' && Number.isSafeInteger(entry.tabId) && entry.tabId > 0
+          ? entry.tabId
+          : null;
+      if (tabId !== null) {
+        try {
+          await chromeObj.tabs.get(tabId);
+        } catch {
+          // The tab may have closed before this request completed.
+          return;
+        }
+      }
+      const previousIndex = state.actionLog.findLastIndex((item) => item.tabId === tabId);
+      const previousEntry = state.actionLog[previousIndex];
+      if (
+        entry.method === 'health.ping' &&
+        previousEntry?.method === 'health.ping' &&
+        previousEntry.tabId === tabId &&
+        at >= previousEntry.at &&
+        at - previousEntry.at <= CONNECTION_CHECK_COALESCE_MS
+      ) {
+        state.actionLog.splice(previousIndex, 1);
+      }
+      const source = normalizeActionLogSource(entry.source);
+      state.actionLog.push({
+        id: crypto.randomUUID(),
+        at,
+        method: entry.method,
+        source,
+        mcpEra: normalizeActionLogMcpEra(source, entry.mcpEra),
+        tabId,
+        url: sanitizeIncidentalUrl(entry.url ?? ''),
+        ok: entry.ok,
+        summary: sanitizeIncidentalText(entry.summary),
+        responseBytes: entry.responseBytes ?? 0,
+        approxTokens: entry.approxTokens ?? 0,
+        imageApproxTokens: entry.imageApproxTokens ?? 0,
+        costClass: entry.costClass ?? 'cheap',
+        imageBytes: entry.imageBytes ?? 0,
+        summaryBytes: entry.summaryBytes ?? 0,
+        summaryTokens: entry.summaryTokens ?? 0,
+        summaryCostClass: entry.summaryCostClass ?? 'cheap',
+        debuggerBacked: entry.debuggerBacked === true,
+        overBudget: entry.overBudget === true,
+        hasScreenshot: entry.hasScreenshot ?? false,
+        nodeCount: entry.nodeCount ?? null,
+        continuationHint: entry.continuationHint ?? null,
+        severity: entry.severity === 'warning' ? 'warning' : 'info',
+        sensitiveAccess: entry.sensitiveAccess ?? null,
+      });
+      state.actionLog = boundHistory(state.actionLog);
+      await persistHistory();
     });
   }
 
@@ -249,6 +356,20 @@ export function createActionLogController(state, chromeObj, deps) {
     const summaryCost = sensitiveActivity
       ? { bytes: 0, approxTokens: 0, costClass: /** @type {'cheap'} */ ('cheap') }
       : estimateJsonPayloadCost(summaryPayload);
+    const result =
+      response.ok && response.result && typeof response.result === 'object'
+        ? /** @type {Record<string, unknown>} */ (response.result)
+        : null;
+    const responseTabId =
+      request.method === 'tabs.create' && response.ok ? result?.tabId : response.meta?.tab_id;
+    const requestTabId =
+      request.method === 'tabs.close' || request.method === 'tabs.activate'
+        ? request.params.tabId
+        : request.tab_id;
+    const tabId =
+      typeof responseTabId === 'number'
+        ? responseTabId
+        : (actionContext?.tabId ?? (typeof requestTabId === 'number' ? requestTabId : null));
 
     try {
       await appendActionLogEntry({
@@ -258,8 +379,13 @@ export function createActionLogController(state, chromeObj, deps) {
           request.meta?.mcp_era === 'legacy' || request.meta?.mcp_era === 'modern'
             ? request.meta.mcp_era
             : null,
-        tabId: actionContext?.tabId ?? null,
-        url: actionContext?.url ?? '',
+        tabId,
+        url:
+          request.method === 'tabs.create' && typeof result?.url === 'string'
+            ? result.url
+            : actionContext?.tabId === tabId
+              ? actionContext.url
+              : '',
         ok: response.ok,
         summary: sensitiveActivity
           ? sensitiveRead
@@ -315,6 +441,7 @@ export function createActionLogController(state, chromeObj, deps) {
     getActionContext,
     logBridgeAction,
     restoreActionLog,
+    clearActionLogForTab,
   };
 }
 

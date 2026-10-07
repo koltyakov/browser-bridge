@@ -58,6 +58,7 @@
  *   nativeHostVersion: string | null,
  *   daemonProxy: DaemonProxyStatus | null,
  *   currentTab: SidePanelCurrentTab | null,
+ *   agentTabs?: import('./background-ui.js').AgentTabUiState[],
  *   setupStatus: SetupStatus | null,
  *   setupStatusPending: boolean,
  *   setupStatusError: string | null,
@@ -209,6 +210,19 @@ export function connectSidepanelPort({
 }
 
 /**
+ * Connection checks remain visible in history but do not count as agent work.
+ *
+ * @param {Pick<UiSnapshot, 'agentTabs' | 'actionLog'>} state
+ * @returns {boolean}
+ */
+export function hasSidepanelAgentWork(state) {
+  return (
+    Boolean(state.agentTabs?.length) ||
+    state.actionLog.some((entry) => entry.method !== 'health.ping')
+  );
+}
+
+/**
  * @param {UiSnapshot} state
  * @param {SidePanelStateRenderOptions} options
  * @returns {void}
@@ -237,7 +251,8 @@ export function renderSidepanelState(state, options) {
 
   if (!state.actionLog.length) {
     options.showEmptyActionLog();
-  } else {
+  }
+  if (hasSidepanelAgentWork(state)) {
     options.collapseExamples();
   }
 

@@ -87,6 +87,7 @@ export const DOM_ACTIONS = {
       exact: a.exact,
       selector: a.selector,
       maxResults: a.maxResults,
+      ...(a.includeHidden !== undefined ? { includeHidden: a.includeHidden } : {}),
     }),
   },
   find_role: {
@@ -95,8 +96,10 @@ export const DOM_ACTIONS = {
     params: (a) => ({
       role: a.role,
       name: a.name,
+      ...(a.exact !== undefined ? { exact: a.exact } : {}),
       selector: a.selector,
       maxResults: a.maxResults,
+      ...(a.includeHidden !== undefined ? { includeHidden: a.includeHidden } : {}),
     }),
   },
   html: {
@@ -117,12 +120,14 @@ export const DOM_ACTIONS = {
       maxDepth: a.maxDepth,
       compact: a.compact,
       interactiveOnly: a.interactiveOnly,
+      ...(a.source !== undefined ? { source: a.source } : {}),
+      ...(a.format !== undefined ? { format: a.format } : {}),
     }),
   },
 };
 
 /**
- * @param {{ action: string, baselineId?: string, maxChanges?: number, selector?: string, elementRef?: string, withinRef?: string, maxNodes?: number, maxDepth?: number, compact?: boolean, interactiveOnly?: boolean, textBudget?: number, includeBbox?: boolean, attributeAllowlist?: string[], attributes?: string[], text?: string, exact?: boolean, maxResults?: number, role?: string, name?: string, state?: string, timeoutMs?: number, outer?: boolean, maxLength?: number, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
+ * @param {{ action: string, baselineId?: string, maxChanges?: number, selector?: string, elementRef?: string, withinRef?: string, maxNodes?: number, maxDepth?: number, compact?: boolean, interactiveOnly?: boolean, source?: 'cdp' | 'dom', format?: 'tree' | 'outline', includeHidden?: boolean, textBudget?: number, includeBbox?: boolean, attributeAllowlist?: string[], attributes?: string[], text?: string, exact?: boolean, maxResults?: number, role?: string, name?: string, state?: string, timeoutMs?: number, outer?: boolean, maxLength?: number, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleDomTool(args) {

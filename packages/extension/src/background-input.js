@@ -71,38 +71,104 @@ export function createBackgroundInputController(dependencies) {
       );
     }
 
-    return dependencies.runWithDebugger(
-      tab.tabId,
-      async (debuggerTarget) => {
-        switch (request.method) {
-          case 'input.click':
-            return click(debuggerTarget, tab.tabId, params);
-          case 'input.hover':
-            return hover(debuggerTarget, tab.tabId, params);
-          case 'input.drag':
-            return drag(debuggerTarget, tab.tabId, params);
-          case 'input.type':
-            return type(debuggerTarget, tab.tabId, params, false);
-          case 'input.fill':
-            return type(debuggerTarget, tab.tabId, params, true);
-          case 'input.press_key':
-            return pressKey(debuggerTarget, tab.tabId, params);
-          case 'input.touch':
-            return touch(debuggerTarget, tab.tabId, params);
-          default:
-            throw new BridgeError(
-              ERROR_CODES.INPUT_UNSUPPORTED,
-              'Unsupported native input method.'
-            );
-        }
-      },
-      { retryDetached: false }
+    const observe = /** @type {{ settleMs?: unknown } | null | undefined} */ (params.observe);
+    const observationId = observe ? await beginObservation(tab.tabId) : null;
+    const result = /** @type {Record<string, unknown>} */ (
+      await dependencies.runWithDebugger(
+        tab.tabId,
+        async (debuggerTarget) => {
+          switch (request.method) {
+            case 'input.click':
+              return click(debuggerTarget, tab.tabId, params);
+            case 'input.hover':
+              return hover(debuggerTarget, tab.tabId, params);
+            case 'input.drag':
+              return drag(debuggerTarget, tab.tabId, params);
+            case 'input.type':
+              return type(debuggerTarget, tab.tabId, params, false);
+            case 'input.fill':
+              return type(debuggerTarget, tab.tabId, params, true);
+            case 'input.press_key':
+              return pressKey(debuggerTarget, tab.tabId, params);
+            case 'input.touch':
+              return touch(debuggerTarget, tab.tabId, params);
+            default:
+              throw new BridgeError(
+                ERROR_CODES.INPUT_UNSUPPORTED,
+                'Unsupported native input method.'
+              );
+          }
+        },
+        { retryDetached: false }
+      )
     );
+    if (observationId) {
+      result.effects = await finishObservation(
+        tab.tabId,
+        observationId,
+        Number(observe?.settleMs) || 0,
+        typeof result.elementRef === 'string' ? result.elementRef : null
+      );
+    }
+    return result;
+  }
+
+  /**
+   * Start content-side effect observation before debugger input. Observation
+   * is best effort: an unscriptable page simply reports no effects.
+   *
+   * @param {number} tabId
+   * @returns {Promise<string | null>}
+   */
+  async function beginObservation(tabId) {
+    try {
+      const response = await dependencies.sendTabMessage(
+        tabId,
+        { type: 'bridge.execute', method: 'input.observe_start', params: {} },
+        dependencies.contentScriptTimeoutMs
+      );
+      const started = unwrapContentResponse(response);
+      return typeof started.observationId === 'string' ? started.observationId : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * @param {number} tabId
+   * @param {string} observationId
+   * @param {number} settleMs
+   * @param {string | null} elementRef
+   * @returns {Promise<Record<string, unknown>>}
+   */
+  async function finishObservation(tabId, observationId, settleMs, elementRef) {
+    const boundedSettleMs = Math.min(Math.max(settleMs, 0), 5_000);
+    try {
+      const response = await dependencies.sendTabMessage(
+        tabId,
+        {
+          type: 'bridge.execute',
+          method: 'input.observe_finish',
+          params: { observationId, settleMs: boundedSettleMs, elementRef },
+        },
+        dependencies.contentScriptTimeoutMs + boundedSettleMs
+      );
+      return unwrapContentResponse(response);
+    } catch {
+      // The page may have navigated away mid-settle.
+      return { navigation: 'unloading', changed: true };
+    }
   }
 
   /** @param {DebuggerTarget} target @param {number} tabId @param {Record<string, unknown>} params */
   async function click(target, tabId, params) {
-    const resolved = await resolveNative(tabId, params.target, 'pointer', params.recoverStale);
+    const resolved = await resolveNative(
+      tabId,
+      params.target,
+      'pointer',
+      params.recoverStale,
+      params.timeoutMs
+    );
     const button = params.button === 'middle' || params.button === 'right' ? params.button : 'left';
     const clickCount = Number(params.clickCount) === 2 ? 2 : 1;
     const modifiers = toModifierMask(params.modifiers);
@@ -144,7 +210,7 @@ export function createBackgroundInputController(dependencies) {
     /** @type {NativeResolution | null} */
     const resolved =
       targetParams?.elementRef || targetParams?.selector
-        ? await resolveNative(tabId, targetParams, 'focus', params.recoverStale)
+        ? await resolveNative(tabId, targetParams, 'focus', params.recoverStale, params.timeoutMs)
         : null;
     /** @type {Array<Record<string, unknown>>} */
     let events;
@@ -257,10 +323,10 @@ export function createBackgroundInputController(dependencies) {
       position && typeof position === 'object'
         ? /** @type {Record<string, unknown>} */ (position)
         : {};
-    const targetParams = /** @type {{ elementRef?: string, selector?: string } | null} */ (
+    const targetParams = /** @type {import('../../protocol/src/types.js').InputTarget | null} */ (
       record.target && typeof record.target === 'object' ? record.target : null
     );
-    if (targetParams?.elementRef || targetParams?.selector) {
+    if (targetParams) {
       const resolved = await resolveNative(tabId, targetParams, 'pointer', recoverStale);
       return { point: resolved.point, elementRef: resolved.elementRef };
     }
@@ -296,7 +362,13 @@ export function createBackgroundInputController(dependencies) {
 
   /** @param {DebuggerTarget} target @param {number} tabId @param {Record<string, unknown>} params */
   async function hover(target, tabId, params) {
-    const resolved = await resolveNative(tabId, params.target, 'pointer', params.recoverStale);
+    const resolved = await resolveNative(
+      tabId,
+      params.target,
+      'pointer',
+      params.recoverStale,
+      params.timeoutMs
+    );
     await sendMouse(
       target,
       'mouseMoved',
@@ -323,7 +395,13 @@ export function createBackgroundInputController(dependencies) {
    * @returns {Promise<NativeDragResult>}
    */
   async function drag(target, tabId, params) {
-    const source = await resolveNative(tabId, params.source, 'pointer', params.recoverStale);
+    const source = await resolveNative(
+      tabId,
+      params.source,
+      'pointer',
+      params.recoverStale,
+      params.timeoutMs
+    );
     await sendMouse(target, 'mouseMoved', source.point, 'none', 0, 0, 0);
     let pressed = false;
     /** @type {unknown} */
@@ -333,7 +411,13 @@ export function createBackgroundInputController(dependencies) {
     try {
       await sendMouse(target, 'mousePressed', source.point, 'left', 1, 0, 1);
       pressed = true;
-      destination = await resolveNative(tabId, params.destination, 'pointer', params.recoverStale);
+      destination = await resolveNative(
+        tabId,
+        params.destination,
+        'pointer',
+        params.recoverStale,
+        params.timeoutMs
+      );
       const end = {
         x: destination.point.x + finiteNumber(params.offsetX),
         y: destination.point.y + finiteNumber(params.offsetY),
@@ -402,7 +486,13 @@ export function createBackgroundInputController(dependencies) {
    * @param {boolean} fill
    */
   async function type(target, tabId, params, fill) {
-    const resolved = await resolveNative(tabId, params.target, 'editable', params.recoverStale);
+    const resolved = await resolveNative(
+      tabId,
+      params.target,
+      'editable',
+      params.recoverStale,
+      params.timeoutMs
+    );
     const shouldClear = fill || params.clear === true;
     const text = String(fill ? (params.value ?? '') : (params.text ?? ''));
     let mutationDispatched = false;
@@ -587,17 +677,19 @@ export function createBackgroundInputController(dependencies) {
    * @param {unknown} target
    * @param {'pointer' | 'editable' | 'focus'} kind
    * @param {unknown} recoverStale
+   * @param {unknown} [timeoutMs]
    * @returns {Promise<NativeResolution>}
    */
-  async function resolveNative(tabId, target, kind, recoverStale) {
+  async function resolveNative(tabId, target, kind, recoverStale, timeoutMs) {
+    const waitMs = Math.min(Math.max(Number(timeoutMs) || 0, 0), 15_000);
     const response = await dependencies.sendTabMessage(
       tabId,
       {
         type: 'bridge.execute',
         method: 'input.resolve_native',
-        params: { target, kind, recoverStale: recoverStale === true },
+        params: { target, kind, recoverStale: recoverStale === true, timeoutMs: waitMs },
       },
-      dependencies.contentScriptTimeoutMs
+      dependencies.contentScriptTimeoutMs + waitMs
     );
     return /** @type {NativeResolution} */ (unwrapContentResponse(response));
   }

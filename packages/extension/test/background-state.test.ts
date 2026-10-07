@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   createChromeEvent,
   createChromeFake,
+  createStorageArea,
   type ChromeFake,
   type FakeChromeEvent,
   type FakeStorageArea,
@@ -22,6 +23,7 @@ import {
   setExtensionState,
   toFailureResponse,
 } from '../src/background-state.js';
+import type { ActionLogEntry } from '../src/background-state.js';
 
 type EnabledWindow = {
   windowId: number;
@@ -1303,6 +1305,54 @@ test('background state clears enabled access and updates the action when the ena
     type: 'host.access_update',
     accessEnabled: false,
   });
+});
+
+test('Chrome tab removal deletes its persisted activity while preserving sibling history', async () => {
+  const entries = [7, 8].map((tabId) => {
+    const entry = normalizeActionLogEntry({
+      id: `tab-${tabId}`,
+      tabId,
+      method: 'dom.query',
+      summary: `History ${tabId}`,
+    });
+    assert.ok(entry);
+    return entry;
+  });
+  const session = createStorageArea({ actionLog: entries });
+  const openTabs = new Set([7, 8]);
+  const chrome = createChromeFake({
+    storage: { session },
+    tabs: {
+      async query() {
+        return [...openTabs].map((id) => ({ id, windowId: 2, url: 'https://example.test/' }));
+      },
+      async get(tabId: number) {
+        if (!openTabs.has(tabId)) throw new Error('Tab was closed');
+        return { id: tabId, windowId: 2, url: 'https://example.test/' };
+      },
+    },
+  });
+  const loaded = await loadStateBackground({ chrome });
+  const state = loaded.module.getStateForTest() as BackgroundState & {
+    actionLog: ActionLogEntry[];
+  };
+  await waitForCondition(() => state.actionLog.some((entry) => entry.id === 'tab-7'));
+  openTabs.delete(7);
+  loaded.chrome.tabs.onRemoved.dispatch(7, { windowId: 2, isWindowClosing: false });
+  await waitForCondition(() => {
+    const persisted = session.snapshot().actionLog;
+    return (
+      Array.isArray(persisted) && !persisted.some((entry: ActionLogEntry) => entry.tabId === 7)
+    );
+  });
+  assert.equal(
+    state.actionLog.some((entry) => entry.tabId === 7),
+    false
+  );
+  assert.ok(state.actionLog.some((entry) => entry.id === 'tab-8'));
+  assert.ok(
+    (session.snapshot().actionLog as ActionLogEntry[]).some((entry) => entry.id === 'tab-8')
+  );
 });
 
 test('background state only clears the requested access popup for the matching window', async () => {

@@ -196,6 +196,14 @@ body[data-windowed="true"] .panel-popup {
   min-width: 0;
 }
 
+.panel-header,
+.eyebrow,
+.card-title,
+summary {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .activity-title {
   display: flex;
   align-items: center;
@@ -271,11 +279,13 @@ body[data-windowed="true"] .panel-popup {
 
 .control-card {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0;
 }
 
 .control-copy {
   display: grid;
+  min-width: 0;
   gap: 6px;
 }
 
@@ -302,9 +312,74 @@ body[data-windowed="true"] .panel-popup {
   color: var(--muted);
 }
 
+.agent-tabs-card {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.agent-tabs-card .eyebrow {
+  margin: 0;
+}
+
+.agent-tabs-list {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.agent-tabs-list li {
+  min-width: 0;
+}
+
+.agent-tab-button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--stroke);
+  border-radius: 5px;
+  background: var(--cmd-bg);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+
+.agent-tab-button:hover {
+  background: var(--cmd-bg-hover);
+}
+
+.agent-tab-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.agent-tab-name {
+  display: block;
+  min-width: 0;
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-tab-count {
+  align-self: center;
+  color: var(--muted);
+}
+
 .control-links {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 0;
   justify-content: flex-end;
@@ -978,6 +1053,10 @@ button:hover {
   margin-top: 12px;
 }
 
+#activity-section:not(:has(.activity-card)) {
+  margin-top: 18px;
+}
+
 .activity-histogram {
   display: flex;
   flex-direction: column;
@@ -1086,7 +1165,6 @@ button:hover {
 
 #activity-section h2 {
   margin: 0;
-  font-size: 15px;
   flex-shrink: 0;
 }
 

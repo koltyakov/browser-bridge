@@ -55,6 +55,9 @@ export function isMissingContentScriptReceiverError(error) {
  * @param {ContentScriptBridgeDeps} deps
  * @returns {{
  *   sendTabMessage: (tabId: number, message: Record<string, unknown>, timeoutMs: number) => Promise<any>,
+ *   sendFrameMessage: (tabId: number, frameId: number, message: Record<string, unknown>, timeoutMs: number) => Promise<unknown>,
+ *   listFrames: (tabId: number, options?: { refresh?: boolean }) => Promise<Array<{ frameId: number, tag: string | null }>>,
+ *   getFrameForRef: (tabId: number, elementRef: string) => Promise<number>,
  *   injectContentScriptsForWindow: (windowId: number) => Promise<void>,
  *   ensureContentScript: (tabId: number) => Promise<void>,
  *   installNavigationSignals: (tabId: number, channel: string) => Promise<void>,
@@ -183,7 +186,103 @@ export function createContentScriptBridge(chromeObj, deps) {
       );
     });
     try {
-      return await Promise.race([chromeObj.tabs.sendMessage(tabId, message), timeout]);
+      // Pin the top frame: once child frames host content scripts, an
+      // unscoped sendMessage would race every frame for the first reply.
+      return await Promise.race([
+        chromeObj.tabs.sendMessage(tabId, message, { frameId: 0 }),
+        timeout,
+      ]);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  /** @type {Map<number, { at: number, frames: Array<{ frameId: number, tag: string | null }> }>} */
+  const frameCache = new Map();
+  const FRAME_CACHE_TTL_MS = 3_000;
+  const MAX_SCRIPTED_FRAMES = 12;
+
+  /**
+   * Enumerate scriptable frames and their element-ref tags. Child frames are
+   * injected on demand so their DOM is reachable (including cross-origin
+   * frames, which `<all_urls>` host access permits).
+   *
+   * @param {number} tabId
+   * @param {{ refresh?: boolean }} [options]
+   * @returns {Promise<Array<{ frameId: number, tag: string | null }>>}
+   */
+  async function listFrames(tabId, options = {}) {
+    const cached = frameCache.get(tabId);
+    if (!options.refresh && cached && Date.now() - cached.at < FRAME_CACHE_TTL_MS) {
+      return cached.frames;
+    }
+    /** @returns {Promise<Array<{ frameId: number, tag: string | null }>>} */
+    const read = async () => {
+      const results = await chromeObj.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        func: readFrameRefTag,
+      });
+      return (results ?? [])
+        .filter((entry) => typeof entry?.frameId === 'number')
+        .map((entry) => ({
+          frameId: entry.frameId,
+          tag: typeof entry.result === 'string' ? entry.result : null,
+        }))
+        .slice(0, MAX_SCRIPTED_FRAMES);
+    };
+    let frames = [];
+    try {
+      frames = await read();
+      if (frames.some((frame) => frame.frameId !== 0 && frame.tag === null)) {
+        await chromeObj.scripting
+          .executeScript({ target: { tabId, allFrames: true }, files: CONTENT_SCRIPT_FILES })
+          .catch(() => {});
+        frames = await read();
+      }
+    } catch {
+      frames = [{ frameId: 0, tag: null }];
+    }
+    frameCache.set(tabId, { at: Date.now(), frames });
+    return frames;
+  }
+
+  /**
+   * Find the frame that minted an element ref (refs embed a per-document tag).
+   *
+   * @param {number} tabId
+   * @param {string} elementRef
+   * @returns {Promise<number>}
+   */
+  async function getFrameForRef(tabId, elementRef) {
+    const tag = /^el_([0-9a-z]{4})_/.exec(elementRef)?.[1];
+    if (!tag) return 0;
+    for (const refresh of [false, true]) {
+      const frames = await listFrames(tabId, { refresh });
+      const owner = frames.find((frame) => frame.tag === tag);
+      if (owner) return owner.frameId;
+    }
+    return 0;
+  }
+
+  /**
+   * @param {number} tabId
+   * @param {number} frameId
+   * @param {Record<string, unknown>} message
+   * @param {number} timeoutMs
+   * @returns {Promise<unknown>}
+   */
+  async function sendFrameMessage(tabId, frameId, message, timeoutMs) {
+    if (frameId === 0) return sendTabMessage(tabId, message, timeoutMs);
+    /** @type {ReturnType<typeof setTimeout> | undefined} */
+    let timeoutId;
+    const timeout = new Promise((_, reject) => {
+      timeoutId = setTimeout(
+        () => reject(new Error(`Timed out waiting for frame ${frameId} after ${timeoutMs}ms.`)),
+        timeoutMs
+      );
+    });
+    try {
+      return await Promise.race([chromeObj.tabs.sendMessage(tabId, message, { frameId }), timeout]);
     } finally {
       clearTimeout(timeoutId);
     }
@@ -233,11 +332,27 @@ export function createContentScriptBridge(chromeObj, deps) {
 
   return {
     sendTabMessage,
+    sendFrameMessage,
+    listFrames,
+    getFrameForRef,
     injectContentScriptsForWindow,
     ensureContentScript,
     installNavigationSignals,
     uninstallNavigationSignals,
   };
+}
+
+/**
+ * Injected into every frame to report the frame's element-ref tag (or null
+ * when Browser Bridge content scripts are not loaded there yet).
+ *
+ * @returns {string | null}
+ */
+export function readFrameRefTag() {
+  const registry = /** @type {{ __BBX_CONTENT_REGISTRY__?: { refDocumentTag?: unknown } }} */ (
+    /** @type {unknown} */ (globalThis)
+  ).__BBX_CONTENT_REGISTRY__;
+  return typeof registry?.refDocumentTag === 'string' ? registry.refDocumentTag : null;
 }
 
 /**

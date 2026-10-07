@@ -13,7 +13,14 @@
   const contentHelpers = /** @type {typeof globalThis & { __BBX_CONTENT_HELPERS__?: {
      NON_TEXT_INPUT_TYPES: Set<string>,
      clamp: (value: number | string | null | undefined, minimum: number, maximum: number) => number,
-     escapeTailwindSelector: (selector: string) => string
+     escapeTailwindSelector: (selector: string) => string,
+     getAccessibleName: (element: Element) => string,
+     getElementRoles: (element: Element) => string[],
+     getElementTextContent: (element: Element, budget?: number) => string,
+     getShadowRoot: (element: Element) => ShadowRoot | null,
+     isElementVisible: (element: Element) => boolean,
+     isNodeAttached: (node: Node | null | undefined) => boolean,
+     querySelectorAllDeep: (selector: string, root?: ParentNode) => Element[]
     } }} */ (globalThis).__BBX_CONTENT_HELPERS__;
   const registry = /** @type {typeof globalThis & { __BBX_CONTENT_REGISTRY__?: {
      getRequiredElement: (ref: string) => Element,
@@ -28,13 +35,97 @@
     throw new Error('Browser Bridge helpers and registry must load before content-input.js.');
   }
 
-  const { NON_TEXT_INPUT_TYPES, clamp, escapeTailwindSelector } = contentHelpers;
+  const {
+    NON_TEXT_INPUT_TYPES,
+    clamp,
+    escapeTailwindSelector,
+    getAccessibleName,
+    getElementRoles,
+    getElementTextContent,
+    getShadowRoot,
+    isElementVisible,
+    isNodeAttached,
+    querySelectorAllDeep,
+  } = contentHelpers;
   const { rememberElement, resolveTarget, resolveInputReference } = registry;
   const MAX_INPUT_CANDIDATES = 25;
 
   /**
    * @typedef {{
-   *   strategy: 'elementRef' | 'selector-first' | 'selector-ranked' | 'stale-recovery',
+   *   elementRef?: string,
+   *   selector?: string,
+   *   role?: string,
+   *   name?: string,
+   *   text?: string,
+   *   label?: string,
+   *   placeholder?: string,
+   *   testId?: string,
+   *   exact?: boolean,
+   *   nth?: number
+   * }} InputTargetSpec
+   */
+
+  /**
+   * The locator engine lives in content-dom-query.js, which loads first.
+   *
+   * @returns {{
+   *   isLocator: (value: unknown) => boolean,
+   *   locateElements: (locator: Record<string, unknown>, options?: { maxResults?: number, scanLimit?: number }) => { matches: Element[], hiddenMatches: number, scanned: number, truncationReason: string | null }
+   * } | null}
+   */
+  function getDomQueryModule() {
+    return (
+      /** @type {typeof globalThis & { __BBX_CONTENT_DOM_QUERY__?: ReturnType<typeof getDomQueryModule> }} */ (
+        globalThis
+      ).__BBX_CONTENT_DOM_QUERY__ ?? null
+    );
+  }
+
+  /**
+   * Hit-test through open/closed shadow roots, since document-level
+   * elementFromPoint retargets to the outermost shadow host.
+   *
+   * @param {number} x
+   * @param {number} y
+   * @returns {Element | null}
+   */
+  function deepElementFromPoint(x, y) {
+    if (typeof document.elementFromPoint !== 'function') return null;
+    let hit = document.elementFromPoint(x, y);
+    for (let depth = 0; hit && depth < 32; depth += 1) {
+      const shadowRoot = getShadowRoot(hit);
+      if (!shadowRoot || typeof shadowRoot.elementFromPoint !== 'function') break;
+      const inner = shadowRoot.elementFromPoint(x, y);
+      if (!inner || inner === hit) break;
+      hit = inner;
+    }
+    return hit;
+  }
+
+  /**
+   * `contains` across shadow boundaries (host -> shadow tree).
+   *
+   * @param {Element} ancestor
+   * @param {Node | null} node
+   * @returns {boolean}
+   */
+  function composedContains(ancestor, node) {
+    /** @type {Node | null} */
+    let current = node;
+    while (current) {
+      if (current === ancestor) return true;
+      const parent = /** @type {Node & { host?: Element }} */ (current).parentNode ?? null;
+      current =
+        parent && parent.nodeType === 11 && /** @type {ShadowRoot} */ (parent).host
+          ? /** @type {ShadowRoot} */ (parent).host
+          : parent;
+    }
+    return false;
+  }
+
+  /**
+   * @typedef {{
+   *   strategy: 'elementRef' | 'selector-first' | 'selector-ranked' | 'locator-first' | 'locator-ranked' | 'stale-recovery',
    *   candidateCount: number,
    *   evaluatedCount: number,
    *   scrolled: boolean,
@@ -43,7 +134,8 @@
    *   oldRef?: string,
    *   newRef?: string,
    *   matchedFields?: string[],
-   *   confidenceBasis?: string
+   *   confidenceBasis?: string,
+   *   waitedMs?: number
    * }} InputResolutionMetadata
    */
 
@@ -94,7 +186,7 @@
       ('inert' in element && Boolean(/** @type {{ inert?: boolean }} */ (element).inert)) ||
       element.hasAttribute('inert') ||
       Boolean(element.closest?.('[inert]'));
-    if (!document.contains(element)) reasons.push('detached');
+    if (!isNodeAttached(element)) reasons.push('detached');
     if (rect.width < 1 || rect.height < 1) reasons.push('zero-size');
     if (
       style.display === 'none' ||
@@ -131,10 +223,7 @@
             y: visibleTop + (visibleBottom - visibleTop) / 2,
           }
         : { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-    const hit =
-      inViewport && typeof document.elementFromPoint === 'function'
-        ? document.elementFromPoint(point.x, point.y)
-        : null;
+    const hit = inViewport ? deepElementFromPoint(point.x, point.y) : null;
     return { actionable: reasons.length === 0, reasons, inViewport, hitRequired, point, hit };
   }
 
@@ -142,7 +231,8 @@
   function classifyHit(element, hit) {
     if (!hit) return 'none';
     if (hit === element) return 'target';
-    return typeof element.contains === 'function' && element.contains(hit) ? 'descendant' : 'none';
+    if (typeof element.contains === 'function' && element.contains(hit)) return 'descendant';
+    return composedContains(element, hit) ? 'descendant' : 'none';
   }
 
   /** @param {Element} element @returns {Record<string, string>} */
@@ -164,11 +254,13 @@
    * Resolve one input target atomically, ranking at most 25 selector matches.
    * Explicit refs retain exact identity unless stale recovery is opted in.
    *
-   * @param {{ elementRef?: string, selector?: string } | undefined} target
+   * @param {InputTargetSpec | undefined} target
    * @param {{ pointer: boolean, recoverStale: boolean }} options
    * @returns {ResolvedInputTarget}
    */
   function resolveActionableTarget(target, options) {
+    const domQuery = getDomQueryModule();
+    const usesLocator = !target?.elementRef && Boolean(domQuery?.isLocator(target));
     /** @type {Element} */
     let element;
     /** @type {InputResolutionMetadata} */
@@ -185,13 +277,29 @@
         recovered: Boolean(resolved.recovery),
         ...(resolved.recovery || {}),
       };
-    } else if (target?.selector) {
+    } else if (target?.selector || usesLocator) {
+      const kind = usesLocator ? 'locator' : 'selector';
+      const describedTarget = usesLocator ? describeLocator(target) : null;
+      /** @type {Element[]} */
       let allMatches;
+      let hiddenMatches = 0;
       try {
-        allMatches = document.querySelectorAll(escapeTailwindSelector(target.selector));
+        if (usesLocator && domQuery) {
+          const located = domQuery.locateElements(
+            /** @type {Record<string, unknown>} */ ({ ...target }),
+            { maxResults: MAX_INPUT_CANDIDATES + 1 }
+          );
+          hiddenMatches = located.hiddenMatches;
+          allMatches =
+            typeof target?.nth === 'number'
+              ? located.matches.slice(target.nth, target.nth + 1)
+              : located.matches;
+        } else {
+          allMatches = querySelectorAllDeep(escapeTailwindSelector(String(target?.selector)));
+        }
       } catch (error) {
         throw createInputError('INVALID_REQUEST', 'Input selector is invalid.', {
-          selector: target.selector.slice(0, 500),
+          selector: String(target?.selector ?? '').slice(0, 500),
           reason:
             error instanceof Error ? error.message.slice(0, 200) : String(error).slice(0, 200),
         });
@@ -199,9 +307,10 @@
       const candidates = [...allMatches].slice(0, MAX_INPUT_CANDIDATES);
       if (!candidates.length) {
         throw createInputError('ELEMENT_NOT_FOUND', 'Input target was not found.', {
-          selector: target.selector,
+          ...(describedTarget ? { locator: describedTarget } : { selector: target?.selector }),
           candidateCount: 0,
           evaluatedCount: 0,
+          ...(hiddenMatches ? { hiddenMatches } : {}),
         });
       }
       const inspected = candidates.map((candidate, index) => {
@@ -220,7 +329,7 @@
       if (inspected[0].score >= 0) {
         element = inspected[0].element;
         resolution = {
-          strategy: 'selector-first',
+          strategy: kind === 'locator' ? 'locator-first' : 'selector-first',
           candidateCount: Math.min(allMatches.length, MAX_INPUT_CANDIDATES),
           evaluatedCount: candidates.length,
           scrolled: false,
@@ -233,7 +342,7 @@
             'ELEMENT_AMBIGUOUS',
             'Selector has too many candidates for bounded input resolution.',
             {
-              selector: target.selector,
+              ...(describedTarget ? { locator: describedTarget } : { selector: target?.selector }),
               candidateCount: allMatches.length,
               evaluatedCount: MAX_INPUT_CANDIDATES,
               limit: MAX_INPUT_CANDIDATES,
@@ -251,7 +360,7 @@
           ) {
             element = inspected[0].element;
             resolution = {
-              strategy: 'selector-first',
+              strategy: kind === 'locator' ? 'locator-first' : 'selector-first',
               candidateCount: candidates.length,
               evaluatedCount: candidates.length,
               scrolled: false,
@@ -260,7 +369,7 @@
             };
           } else {
             throw createInputError('ELEMENT_NOT_ACTIONABLE', 'No selector match is actionable.', {
-              selector: target.selector,
+              ...(describedTarget ? { locator: describedTarget } : { selector: target?.selector }),
               candidateCount: candidates.length,
               evaluatedCount: candidates.length,
               reasons: [
@@ -274,7 +383,9 @@
               'ELEMENT_AMBIGUOUS',
               'Selector matches equally actionable elements.',
               {
-                selector: target.selector,
+                ...(describedTarget
+                  ? { locator: describedTarget }
+                  : { selector: target?.selector }),
                 candidateCount: candidates.length,
                 evaluatedCount: candidates.length,
                 topScore: ranked[0].score,
@@ -283,7 +394,7 @@
           }
           element = ranked[0].element;
           resolution = {
-            strategy: 'selector-ranked',
+            strategy: kind === 'locator' ? 'locator-ranked' : 'selector-ranked',
             candidateCount: candidates.length,
             evaluatedCount: candidates.length,
             scrolled: false,
@@ -554,7 +665,7 @@
 
   /** @param {Element} element @returns {boolean} */
   function isConnectedElement(element) {
-    return typeof document.contains === 'function' ? document.contains(element) : true;
+    return isNodeAttached(element);
   }
 
   /** @param {Element | null} node @param {Element | null} other @returns {boolean} */
@@ -1364,6 +1475,46 @@
   }
 
   /**
+   * Replace a contenteditable's text through the editing pipeline
+   * (`beforeinput`/`input` with inputType insertText), which rich editors such
+   * as Lexical, ProseMirror, Slate, and Draft handle. Setting textContent
+   * directly is ignored or reverted by them.
+   *
+   * @param {HTMLElement} editable
+   * @param {string} value
+   * @returns {boolean} whether the editor accepted the text
+   */
+  function replaceRichText(editable, value) {
+    const selection = document.getSelection?.();
+    if (!selection || typeof document.execCommand !== 'function') return false;
+    try {
+      editable.focus?.();
+      const range = document.createRange();
+      range.selectNodeContents(editable);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      const applied = value
+        ? document.execCommand('insertText', false, value)
+        : document.execCommand('delete', false);
+      if (!applied) return false;
+      const normalize = (/** @type {string} */ text) => text.replace(/\s+/g, ' ').trim();
+      return normalize(editable.innerText ?? editable.textContent ?? '') === normalize(value);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * @param {Element} element
+   * @returns {void}
+   */
+  function dispatchBlurSignals(element) {
+    const FocusCtor = typeof FocusEvent === 'function' ? FocusEvent : Event;
+    element.dispatchEvent(new FocusCtor('focusout', { bubbles: true }));
+    element.dispatchEvent(new FocusCtor('blur', { bubbles: false }));
+  }
+
+  /**
    * Set the value of an input/textarea/select element using the native value
    * setter, then dispatch input + change events. This works with React, Vue,
    * Angular, and vanilla forms - frameworks intercept these events at the
@@ -1408,7 +1559,11 @@
       // setter mode: use the native prototype setter to bypass React's synthetic wrapper
       const tag = editable.tagName;
       if (editable instanceof HTMLElement && editable.isContentEditable) {
-        editable.textContent = value;
+        if (replaceRichText(editable, value)) {
+          usedMode = 'rich-text';
+        } else {
+          editable.textContent = value;
+        }
       } else {
         const proto =
           tag === 'TEXTAREA'
@@ -1423,11 +1578,17 @@
           /** @type {HTMLInputElement} */ (editable).value = value;
         }
       }
-      editable.dispatchEvent(new Event('input', { bubbles: true }));
-      editable.dispatchEvent(new Event('change', { bubbles: true }));
+      if (usedMode !== 'rich-text') {
+        editable.dispatchEvent(new Event('input', { bubbles: true }));
+        editable.dispatchEvent(new Event('change', { bubbles: true }));
+      }
 
       // auto mode: verify value stuck, fallback to keystrokes if not
-      if (requestedMode === 'auto' && getEditableValue(editable) !== value) {
+      if (
+        requestedMode === 'auto' &&
+        usedMode !== 'rich-text' &&
+        getEditableValue(editable) !== value
+      ) {
         usedMode = 'keystrokes-fallback';
         clearEditableValue(editable);
         for (const ch of value) {
@@ -1436,8 +1597,9 @@
       }
     }
 
-    // Dispatch blur to trigger field-level validation
-    editable.dispatchEvent(new Event('blur', { bubbles: true }));
+    // Trigger field-level validation without moving focus, so a following
+    // page-level Enter still reaches the field. React's onBlur listens to focusout.
+    dispatchBlurSignals(editable);
 
     return {
       elementRef: rememberElement(editable),
@@ -1687,10 +1849,7 @@
    * @returns {Element}
    */
   function elementAtPoint(point, fallback) {
-    const hit =
-      typeof document.elementFromPoint === 'function'
-        ? document.elementFromPoint(point.x, point.y)
-        : null;
+    const hit = deepElementFromPoint(point.x, point.y);
     return hit ?? fallback;
   }
 
@@ -1774,7 +1933,10 @@
       const steps = 10;
       let current = source;
       for (let step = 1; step <= steps; step += 1) {
-        await sleep(16);
+        // Hidden documents throttle each timer to about a second. DOM drags
+        // have no duration contract, so deliver the ordered moves without
+        // frame pacing rather than timing out or activating the user's tab.
+        if (!document.hidden) await sleep(16);
         const progress = step / steps;
         const point = {
           x: sourcePoint.x + (endPoint.x - sourcePoint.x) * progress,
@@ -1813,12 +1975,12 @@
    * Resolve one normalized touch position: an actionable target's center or
    * a viewport point and the element under it.
    *
-   * @param {{ target?: { elementRef?: string, selector?: string } | null, x?: number | null, y?: number | null } | null | undefined} position
+   * @param {{ target?: InputTargetSpec | null, x?: number | null, y?: number | null } | null | undefined} position
    * @param {boolean} recoverStale
    * @returns {{ element: Element, point: { x: number, y: number } }}
    */
   function resolveTouchPosition(position, recoverStale) {
-    if (position?.target && (position.target.elementRef || position.target.selector)) {
+    if (position?.target) {
       const resolved = resolveActionableTarget(position.target, { pointer: true, recoverStale });
       return { element: resolved.element, point: resolved.point };
     }
@@ -2023,17 +2185,19 @@
    * This helper performs no click, typing, value setting, or drag mutation.
    *
    * @param {Record<string, unknown>} params
-   * @returns {{ elementRef: string, point: { x: number, y: number }, resolution: InputResolutionMetadata, tag: string, value?: string }}
+   * @returns {Promise<{ elementRef: string, point: { x: number, y: number }, resolution: InputResolutionMetadata, tag: string, value?: string }>}
    */
-  function prepareNativeInput(params) {
+  async function prepareNativeInput(params) {
     const target =
       params.target && typeof params.target === 'object'
-        ? /** @type {{ elementRef?: string, selector?: string }} */ (params.target)
+        ? /** @type {InputTargetSpec} */ (params.target)
         : undefined;
-    const base = resolveActionableTarget(target, {
+    const { resolved: base, waitedMs } = await awaitActionableTarget(target, {
       pointer: params.kind === 'pointer',
       recoverStale: params.recoverStale === true,
+      timeoutMs: clamp(Number(params.timeoutMs) || 0, 0, 15_000),
     });
+    if (waitedMs > 0) base.resolution = { ...base.resolution, waitedMs };
     if (params.kind === 'focus') focusElement(base.element);
     let resolved = base;
     if (params.kind === 'editable') {
@@ -2191,21 +2355,522 @@
     };
   }
 
+  /**
+   * Compact locator description for error details.
+   *
+   * @param {InputTargetSpec | undefined} target
+   * @returns {Record<string, unknown>}
+   */
+  function describeLocator(target) {
+    /** @type {Record<string, unknown>} */
+    const described = {};
+    for (const key of ['role', 'name', 'text', 'label', 'placeholder', 'testId', 'selector']) {
+      const value = target?.[/** @type {keyof InputTargetSpec} */ (key)];
+      if (typeof value === 'string' && value) described[key] = value.slice(0, 120);
+    }
+    if (target?.exact) described.exact = true;
+    if (typeof target?.nth === 'number') described.nth = target.nth;
+    return described;
+  }
+
+  /** Failures that can clear up while the page keeps rendering. */
+  const RETRYABLE_WAIT_CODES = new Set([
+    'ELEMENT_NOT_FOUND',
+    'ELEMENT_NOT_ACTIONABLE',
+    'ELEMENT_OBSCURED',
+  ]);
+  const WAIT_POLL_MS = 100;
+  const STABILITY_SAMPLE_MS = 34;
+  const OBSERVE_QUIET_MS = 150;
+  const MAX_OBSERVED_MESSAGES = 3;
+  const DIALOG_SELECTOR =
+    'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]';
+  const LIVE_REGION_SELECTOR =
+    '[role="alert"], [role="status"], [role="log"], [aria-live]:not([aria-live="off"])';
+
+  /**
+   * Resolve after the next DOM mutation (plus a frame) or the delay.
+   *
+   * @param {number} ms
+   * @returns {Promise<void>}
+   */
+  function waitForDomActivity(ms) {
+    return new Promise((resolve) => {
+      let done = false;
+      /** @type {MutationObserver | null} */
+      let observer = null;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        observer?.disconnect();
+        clearTimeout(timer);
+        resolve();
+      };
+      const timer = setTimeout(finish, Math.max(0, ms));
+      if (typeof MutationObserver === 'function' && document.documentElement) {
+        observer = new MutationObserver(() => setTimeout(finish, 16));
+        observer.observe(document.documentElement, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+        });
+      }
+    });
+  }
+
+  /**
+   * Whether a running CSS/Web animation may still be moving the element.
+   *
+   * @param {Element} element
+   * @returns {boolean}
+   */
+  function hasRunningAnimation(element) {
+    if (typeof document.getAnimations !== 'function') return false;
+    for (const animation of document.getAnimations()) {
+      if (animation.playState !== 'running') continue;
+      const animated = /** @type {KeyframeEffect | null} */ (animation.effect)?.target;
+      if (animated && (animated === element || composedContains(animated, element))) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Wait until the target exists, is actionable, and is not mid-animation, up
+   * to `timeoutMs`. Saves agents a separate wait call plus a retry round trip.
+   *
+   * @param {InputTargetSpec | undefined} target
+   * @param {{ pointer: boolean, recoverStale: boolean, timeoutMs: number }} options
+   * @returns {Promise<{ resolved: ResolvedInputTarget, waitedMs: number }>}
+   */
+  async function awaitActionableTarget(target, options) {
+    const start = Date.now();
+    const deadline = start + Math.max(0, options.timeoutMs);
+    for (;;) {
+      try {
+        const resolved = resolveActionableTarget(target, options);
+        if (hasRunningAnimation(resolved.element) && Date.now() < deadline) {
+          const before = resolved.element.getBoundingClientRect();
+          await sleep(STABILITY_SAMPLE_MS);
+          const after = resolved.element.getBoundingClientRect();
+          if (before.x !== after.x || before.y !== after.y || before.width !== after.width) {
+            continue;
+          }
+        }
+        return { resolved, waitedMs: Date.now() - start };
+      } catch (error) {
+        const code = /** @type {{ code?: unknown }} */ (error)?.code;
+        if (typeof code !== 'string' || !RETRYABLE_WAIT_CODES.has(code) || Date.now() >= deadline) {
+          const details = /** @type {{ details?: Record<string, unknown> }} */ (error)?.details;
+          if (details && typeof details === 'object' && Date.now() > start) {
+            details.waitedMs = Date.now() - start;
+          }
+          throw error;
+        }
+      }
+      await waitForDomActivity(Math.min(WAIT_POLL_MS, deadline - Date.now()));
+    }
+  }
+
+  /**
+   * Active element, following focus into shadow roots.
+   *
+   * @returns {Element | null}
+   */
+  function deepActiveElement() {
+    let active = document.activeElement;
+    for (let depth = 0; active && depth < 32; depth += 1) {
+      const inner = getShadowRoot(active)?.activeElement ?? null;
+      if (!inner) break;
+      active = inner;
+    }
+    return active;
+  }
+
+  /**
+   * @returns {Element[]}
+   */
+  function visibleDialogs() {
+    return querySelectorAllDeep(DIALOG_SELECTOR).filter((element) => isElementVisible(element));
+  }
+
+  /**
+   * @param {Element} element
+   * @returns {{ role: string, name?: string, ref: string }}
+   */
+  function describeEffectElement(element) {
+    const name = getAccessibleName(element).slice(0, 120);
+    return {
+      role: getElementRoles(element)[0] ?? element.tagName.toLowerCase(),
+      ...(name ? { name } : {}),
+      ref: rememberElement(element),
+    };
+  }
+
+  /**
+   * Post-action state of the acted-on element, limited to fields it has.
+   *
+   * @param {Element | null} element
+   * @returns {Record<string, unknown> | null}
+   */
+  function describeTargetState(element) {
+    if (!element) return null;
+    if (!isNodeAttached(element)) return { removed: true };
+    /** @type {Record<string, unknown>} */
+    const state = {};
+    const editable = getEditableTarget(element);
+    if (editable) state.value = getEditableValue(editable).slice(0, 200);
+    const control = /** @type {{ checked?: unknown, type?: unknown }} */ (element);
+    if (element.tagName === 'INPUT' && (control.type === 'checkbox' || control.type === 'radio')) {
+      state.checked = Boolean(control.checked);
+    }
+    for (const attribute of ['aria-checked', 'aria-expanded', 'aria-pressed', 'aria-selected']) {
+      const value = element.getAttribute(attribute);
+      if (value !== null)
+        state[attribute.slice(5)] = value === 'true' ? true : value === 'false' ? false : value;
+    }
+    if (
+      ('disabled' in element &&
+        Boolean(/** @type {{ disabled?: unknown }} */ (element).disabled)) ||
+      element.getAttribute('aria-disabled') === 'true'
+    ) {
+      state.disabled = true;
+    }
+    return Object.keys(state).length ? state : null;
+  }
+
+  /**
+   * @param {Node} node
+   * @returns {Element | null}
+   */
+  function closestLiveRegion(node) {
+    const element = node.nodeType === 1 ? /** @type {Element} */ (node) : node.parentElement;
+    return element && typeof element.closest === 'function'
+      ? element.closest(LIVE_REGION_SELECTOR)
+      : null;
+  }
+
+  /**
+   * Record what an action changes: same-document URL changes, unloads, new
+   * dialogs, live-region/alert messages, focus moves, DOM churn, and the
+   * target's own state. Lets agents skip a follow-up read after most actions.
+   *
+   * @returns {{ finish: (options: { settleMs: number, element: Element | null }) => Promise<Record<string, unknown>> }}
+   */
+  function startObservation() {
+    const startedAt = Date.now();
+    const startUrl = location.href;
+    const startTitle = document.title;
+    const startActive = deepActiveElement();
+    const startDialogs = new Set(visibleDialogs());
+    let added = 0;
+    let removed = 0;
+    let lastMutationAt = startedAt;
+    let unloading = false;
+    /** @type {Set<Element>} */
+    const messageRegions = new Set();
+    /** @param {Node} node */
+    const collectNotable = (node) => {
+      if (node.nodeType !== 1) return;
+      const element = /** @type {Element} */ (node);
+      if (element.matches?.(LIVE_REGION_SELECTOR)) messageRegions.add(element);
+      for (const region of element.querySelectorAll?.(LIVE_REGION_SELECTOR) ?? []) {
+        if (messageRegions.size > 20) break;
+        messageRegions.add(region);
+      }
+    };
+    const observer =
+      typeof MutationObserver === 'function' && document.documentElement
+        ? new MutationObserver((records) => {
+            lastMutationAt = Date.now();
+            for (const record of records) {
+              if (record.type === 'childList') {
+                for (const node of record.addedNodes) {
+                  if (node.nodeType !== 1) continue;
+                  added += 1;
+                  collectNotable(node);
+                }
+                for (const node of record.removedNodes) {
+                  if (node.nodeType === 1) removed += 1;
+                }
+              }
+              const region = closestLiveRegion(record.target);
+              if (region) messageRegions.add(region);
+            }
+          })
+        : null;
+    observer?.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['open', 'hidden', 'aria-hidden', 'aria-expanded', 'class', 'style'],
+    });
+    const onUnload = () => {
+      unloading = true;
+    };
+    globalThis.addEventListener?.('pagehide', onUnload);
+    globalThis.addEventListener?.('beforeunload', onUnload);
+
+    return {
+      async finish({ settleMs, element }) {
+        const deadline = startedAt + settleMs;
+        await sleep(Math.min(50, settleMs));
+        while (
+          !unloading &&
+          Date.now() < deadline &&
+          Date.now() - lastMutationAt < OBSERVE_QUIET_MS
+        ) {
+          await sleep(Math.min(50, Math.max(0, deadline - Date.now())));
+        }
+        observer?.disconnect();
+        globalThis.removeEventListener?.('pagehide', onUnload);
+        globalThis.removeEventListener?.('beforeunload', onUnload);
+
+        /** @type {Record<string, unknown>} */
+        const effects = {};
+        if (unloading) effects.navigation = 'unloading';
+        if (location.href !== startUrl) effects.url = location.href;
+        if (document.title !== startTitle) effects.title = document.title.slice(0, 160);
+        const dialogs = visibleDialogs()
+          .filter((dialog) => !startDialogs.has(dialog))
+          .slice(0, 2)
+          .map(describeEffectElement);
+        if (dialogs.length) effects.dialogs = dialogs;
+        const messages = [...messageRegions]
+          .filter((region) => isNodeAttached(region) && isElementVisible(region))
+          .map((region) => ({
+            role: getElementRoles(region)[0] ?? 'status',
+            text: getElementTextContent(region, 160),
+          }))
+          .filter((message) => message.text)
+          .slice(0, MAX_OBSERVED_MESSAGES);
+        if (messages.length) effects.messages = messages;
+        const active = deepActiveElement();
+        if (active && active !== startActive && active !== document.body) {
+          effects.focused = describeEffectElement(active);
+        }
+        if (added || removed) effects.dom = { added, removed };
+        const targetState = describeTargetState(element);
+        if (targetState) effects.target = targetState;
+        effects.changed = Object.keys(effects).some((key) => key !== 'target');
+        effects.settledMs = Date.now() - startedAt;
+        return effects;
+      },
+    };
+  }
+
+  /** Which params hold targets per method, and whether they need a pointer hit. */
+  const INPUT_TARGET_KEYS = /** @type {Record<string, Array<[string, boolean]>>} */ ({
+    'input.click': [['target', true]],
+    'input.hover': [['target', true]],
+    'input.drag': [
+      ['source', true],
+      ['destination', true],
+    ],
+    'input.focus': [['target', false]],
+    'input.type': [['target', false]],
+    'input.fill': [['target', false]],
+    'input.press_key': [['target', false]],
+    'input.set_checked': [['target', false]],
+    'input.select_option': [['target', false]],
+  });
+
+  /**
+   * @param {unknown} value
+   * @returns {value is InputTargetSpec}
+   */
+  function hasTargetSpec(value) {
+    if (!value || typeof value !== 'object') return false;
+    const spec = /** @type {InputTargetSpec} */ (value);
+    return Boolean(spec.elementRef || spec.selector || getDomQueryModule()?.isLocator(spec));
+  }
+
+  /**
+   * Run one input method with auto-wait for its targets and optional effect
+   * observation. Targets are pre-resolved (waiting as needed) and handed to the
+   * action as exact refs, so the action itself stays synchronous and atomic.
+   *
+   * @param {string} method
+   * @param {(params: Record<string, any>) => unknown} action
+   * @returns {(params: Record<string, any>) => Promise<Record<string, unknown>>}
+   */
+  function withInputPipeline(method, action) {
+    return async (params) => {
+      const timeoutMs = clamp(Number(params.timeoutMs) || 0, 0, 15_000);
+      const recoverStale = params.recoverStale === true;
+      /** @type {Record<string, any>} */
+      const prepared = { ...params };
+      /** @type {Record<string, { resolution: InputResolutionMetadata, waitedMs: number }>} */
+      const preResolutions = {};
+      /** @type {Element | null} */
+      let primaryElement = null;
+      for (const [key, pointer] of INPUT_TARGET_KEYS[method] ?? []) {
+        const spec = params[key];
+        if (!hasTargetSpec(spec)) continue;
+        const { resolved, waitedMs } = await awaitActionableTarget(spec, {
+          pointer,
+          recoverStale,
+          timeoutMs,
+        });
+        prepared[key] = { elementRef: rememberElement(resolved.element) };
+        preResolutions[key] = { resolution: resolved.resolution, waitedMs };
+        primaryElement ??= resolved.element;
+      }
+      if (Object.keys(preResolutions).length) prepared.recoverStale = false;
+
+      const observeOptions = /** @type {{ settleMs?: unknown } | null | undefined} */ (
+        params.observe
+      );
+      const observation = observeOptions ? startObservation() : null;
+      const result = /** @type {Record<string, unknown>} */ (await action(prepared));
+      mergePreResolution(result, preResolutions);
+      if (observation) {
+        result.effects = await observation.finish({
+          settleMs: clamp(Number(observeOptions?.settleMs) || 0, 0, 5_000),
+          element: primaryElement,
+        });
+      }
+      return result;
+    };
+  }
+
+  /**
+   * Keep the original strategy (selector/locator/stale recovery) in the
+   * reported resolution even though the action ran on an exact ref.
+   *
+   * @param {Record<string, unknown>} result
+   * @param {Record<string, { resolution: InputResolutionMetadata, waitedMs: number }>} preResolutions
+   * @returns {void}
+   */
+  function mergePreResolution(result, preResolutions) {
+    const primary = preResolutions.target ?? preResolutions.source;
+    if (primary && result.resolution && typeof result.resolution === 'object') {
+      const actionResolution = /** @type {InputResolutionMetadata} */ (result.resolution);
+      result.resolution = {
+        ...primary.resolution,
+        scrolled: primary.resolution.scrolled || actionResolution.scrolled,
+        hitTest: actionResolution.hitTest,
+        ...(primary.waitedMs > 0 ? { waitedMs: primary.waitedMs } : {}),
+      };
+    }
+    for (const key of ['source', 'destination']) {
+      const pre = preResolutions[key];
+      const reported = result[key];
+      if (pre && reported && typeof reported === 'object') {
+        const record = /** @type {Record<string, unknown>} */ (reported);
+        if (record.resolution && typeof record.resolution === 'object') {
+          record.resolution = {
+            ...pre.resolution,
+            hitTest: /** @type {InputResolutionMetadata} */ (record.resolution).hitTest,
+            ...(pre.waitedMs > 0 ? { waitedMs: pre.waitedMs } : {}),
+          };
+        }
+      }
+    }
+  }
+
+  /**
+   * Whether a target likely needs trusted (debugger) input because browsers
+   * gate the behavior on user activation or rich editors ignore synthetic
+   * key events. Read-only: resolves without waiting or mutating.
+   *
+   * @param {Record<string, unknown>} params
+   * @returns {{ needsTrusted: boolean, reason: string | null }}
+   */
+  function getTrustHint(params) {
+    const spec = params.target;
+    if (!hasTargetSpec(spec)) return { needsTrusted: false, reason: null };
+    let element;
+    try {
+      element = resolveActionableTarget(spec, { pointer: false, recoverStale: false }).element;
+    } catch {
+      return { needsTrusted: false, reason: null };
+    }
+    const method = String(params.method ?? '');
+    const tag = element.tagName;
+    if (tag === 'INPUT' && element.getAttribute('type') === 'file') {
+      return { needsTrusted: true, reason: 'file-input' };
+    }
+    if (element.closest?.('video, audio') || tag === 'VIDEO' || tag === 'AUDIO') {
+      return { needsTrusted: true, reason: 'media-activation' };
+    }
+    const link = element.closest?.('a[href]');
+    if (method === 'input.click' && link && /^_blank$/i.test(link.getAttribute('target') ?? '')) {
+      return { needsTrusted: true, reason: 'new-window-link' };
+    }
+    if (
+      (method === 'input.type' || method === 'input.fill' || method === 'input.press_key') &&
+      /** @type {HTMLElement} */ (getEditableTarget(element) ?? element).isContentEditable
+    ) {
+      return { needsTrusted: true, reason: 'rich-text-editor' };
+    }
+    return { needsTrusted: false, reason: null };
+  }
+
+  /** @type {Map<string, ReturnType<typeof startObservation>>} */
+  const pendingObservations = new Map();
+  let observationCounter = 0;
+
+  /**
+   * Begin observing for a debugger-dispatched (CDP) input action.
+   *
+   * @returns {{ observationId: string }}
+   */
+  function beginNativeObservation() {
+    observationCounter += 1;
+    const observationId = `obs_${observationCounter}`;
+    pendingObservations.set(observationId, startObservation());
+    if (pendingObservations.size > 8) {
+      const oldest = pendingObservations.keys().next().value;
+      if (oldest !== undefined) pendingObservations.delete(oldest);
+    }
+    return { observationId };
+  }
+
+  /**
+   * Finish a CDP-mode observation and report its effects.
+   *
+   * @param {Record<string, unknown>} params
+   * @returns {Promise<Record<string, unknown>>}
+   */
+  async function finishNativeObservation(params) {
+    const observationId = String(params.observationId ?? '');
+    const observation = pendingObservations.get(observationId);
+    pendingObservations.delete(observationId);
+    if (!observation) return { changed: false, expired: true };
+    /** @type {Element | null} */
+    let element = null;
+    if (typeof params.elementRef === 'string' && params.elementRef) {
+      try {
+        element = resolveInputReference(params.elementRef, false).element;
+      } catch {
+        element = null;
+      }
+    }
+    return observation.finish({
+      settleMs: clamp(Number(params.settleMs) || 0, 0, 5_000),
+      element,
+    });
+  }
+
   globalState.__BBX_CONTENT_INPUT__ = Object.freeze({
-    clickTarget,
-    dragTarget,
-    fillTarget,
-    focusTarget,
-    hoverTarget,
+    beginNativeObservation,
+    getTrustHint,
+    finishNativeObservation,
+    clickTarget: withInputPipeline('input.click', clickTarget),
+    dragTarget: withInputPipeline('input.drag', dragTarget),
+    fillTarget: withInputPipeline('input.fill', fillTarget),
+    focusTarget: withInputPipeline('input.focus', focusTarget),
+    hoverTarget: withInputPipeline('input.hover', hoverTarget),
     prepareNativeInput,
     revalidateNativeInput,
     readInputValue,
-    pressKeyTarget,
+    pressKeyTarget: withInputPipeline('input.press_key', pressKeyTarget),
     scrollIntoViewTarget,
     scrollViewport,
-    selectOptionTarget,
-    setCheckedTarget,
+    selectOptionTarget: withInputPipeline('input.select_option', selectOptionTarget),
+    setCheckedTarget: withInputPipeline('input.set_checked', setCheckedTarget),
     touchTarget,
-    typeIntoTarget,
+    typeIntoTarget: withInputPipeline('input.type', typeIntoTarget),
   });
 })();

@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Payment frame</title>
+  </head>
+  <body>
+    <button id="pay" type="button">Pay now</button>
+    <script>
+      document.getElementById('pay').addEventListener('click', () => {
+        parent.postMessage('paid', '*');
+      });
+    </script>
+  </body>
+</html>

@@ -186,6 +186,7 @@ test('waitForClientReconnect manually reconnects when autoReconnect is off', asy
       }
       throw new Error('connect ECONNREFUSED');
     },
+    async close() {},
   } as unknown as BridgeClient;
 
   assert.equal(await waitForClientReconnect(client, 2_000), true);
@@ -217,9 +218,33 @@ test('waitForClientReconnect gives up inside the bounded window', async () => {
     async connect() {
       throw new Error('connect ECONNREFUSED');
     },
+    async close() {},
   } as unknown as BridgeClient;
 
   const started = Date.now();
   assert.equal(await waitForClientReconnect(client, 100), false);
   assert.ok(Date.now() - started < 2_000);
+});
+
+test('waitForClientReconnect closes the client when the deadline expires before connecting', async (t) => {
+  // Leave one millisecond when scheduling the connect, then expire before its microtask runs.
+  const times = [1_000, 1_000, 1_099, 1_099, 1_099, 1_100];
+  t.mock.method(Date, 'now', () => times.shift() ?? 1_100);
+  let connectCalls = 0;
+  let closeCalls = 0;
+  const client = {
+    autoReconnect: false,
+    connected: false,
+    async connect() {
+      connectCalls += 1;
+      throw new Error('connect ECONNREFUSED');
+    },
+    async close() {
+      closeCalls += 1;
+    },
+  } as unknown as BridgeClient;
+
+  assert.equal(await waitForClientReconnect(client, 100), false);
+  assert.equal(connectCalls, 0);
+  assert.ok(closeCalls > 0);
 });

@@ -78,7 +78,7 @@ omit both for the group index.
 | `dom.find_by_text`                 | Yes  | -          | inspect     | `dom.read`           | Find by visible text; returns `{nodes, count}`                                             |
 | `dom.find_by_role`                 | Yes  | -          | inspect     | `dom.read`           | Find by ARIA role; optional `name` filter                                                  |
 | `dom.get_html`                     | Yes  | -          | inspect     | `dom.read`           | `innerHTML`/`outerHTML`; `maxLength` truncation                                            |
-| `dom.get_accessibility_tree`       | Yes  | CDP        | inspect     | `dom.read`           | Full or uniquely selector-scoped AX tree with compact/interactive filters                   |
+| `dom.get_accessibility_tree`       | Yes  | CDP / none | inspect     | `dom.read`           | AX tree (CDP) or `source: "dom"` actionable outline with refs, no debugger                 |
 | `layout.get_box_model`             | Yes  | -          | inspect     | `layout.read`        | Element geometry                                                                           |
 | `layout.hit_test`                  | Yes  | -          | inspect     | `layout.read`        | Topmost element at viewport point                                                          |
 | `styles.get_computed`              | Yes  | -          | inspect     | `styles.read`        | Requested properties; omission returns display/position/width/height/color                 |
@@ -263,7 +263,7 @@ bbx call dom.wait_for '{"selector":".modal","state":"visible","timeoutMs":10000}
 
 ### dom.find_by_text
 
-Find elements matching visible text content. Like Playwright's `getByText`.
+Find elements matching visible text content. Like Playwright's `getByText`: own text and text-like attributes match first, otherwise the innermost element whose combined text matches (so `<button><b>Place</b> order</button>` matches "Place order" on the button). `script`/`style`/`template` content never matches. Searches open and closed shadow roots and, when the top document has no match, child iframes (nodes then carry `frameId`). Hidden matches are omitted and counted in `hiddenMatches`; pass `includeHidden: true` to list them (marked `visible: false`).
 
 ```bash
 bbx find 'Submit Order'
@@ -272,7 +272,7 @@ bbx call dom.find_by_text '{"text":"Submit","selector":"button","exact":false}'
 
 ### dom.find_by_role
 
-Find elements by ARIA role (explicit `role` attribute or implicit from HTML tag). Covers 25+ implicit role mappings.
+Find elements by ARIA role (explicit `role` attribute or implicit from HTML tag) and accessible name. Names come from `aria-labelledby`, `aria-label`, associated `<label for>` or wrapping `<label>`, `alt`, button values, content for name-from-content roles, `title`, then `placeholder`. A single `<select>` matches `combobox` and `listbox`; number inputs match `spinbutton` and `textbox`. `exact: true` requires the whole name. Same shadow DOM, iframe, and hidden-match behavior as `dom.find_by_text`. Results include the computed `role` and `name`.
 
 ```bash
 bbx find-role button 'Save'
@@ -294,9 +294,13 @@ When `properties` is omitted, `styles.get_computed` returns exactly `display`, `
 
 ### Actionable input targets
 
+Targets are `{ elementRef }`, `{ selector }`, or a semantic locator: `role` (+ `name`), `text`, `label`, `placeholder`, or `testId` (`data-testid`, `data-test-id`, `data-test`, `data-qa`), with optional `exact`, `nth` (pick among visible matches), and `selector` (narrows locator candidates). Selectors and locators reach into shadow roots; when the top document has no match, child iframes are probed and the action runs in the frame that has it (refs remember their frame).
+
+Before dispatch, targeted actions wait up to `timeoutMs` (default 2500, max 15000; `0` disables) while the target is missing, not actionable, obscured, or still animating; `resolution.waitedMs` reports the wait. Click, press_key, set_checked, select_option, and type/fill with `submit` then observe for up to `observe.settleMs` (default 500) until the DOM is quiet for 150ms and return `effects`: `url` (same-document change), `navigation: "unloading"`, `title`, newly visible `dialogs` (`role`, `name`, `ref`), `messages` from alert/status/live regions, `focused`, `dom` (`added`/`removed`), `target` state (`value`, `checked`, `expanded`, `selected`, `pressed`, `disabled`, or `removed`), `changed`, and `settledMs`. Pass `observe: true` to other actions or `observe: false` to skip. Steps inside `input.perform` observe only on request.
+
 Input calls preserve an explicit `elementRef`. For selectors, the first actionable match wins; if it is not actionable, Browser Bridge evaluates at most 25 matches and chooses only a uniquely better candidate. It scrolls the selected target if needed and rechecks visibility, disabled/inert state, rendered bounds, and pointer hit testing before dispatch. Failures use `ELEMENT_NOT_FOUND`, `ELEMENT_NOT_ACTIONABLE`, `ELEMENT_OBSCURED`, or `ELEMENT_AMBIGUOUS` with bounded details.
 
-Successful targeted click, focus, type, fill, press-key, checked-state, option-selection, hover, and drag results include `resolution` (`strategy`, candidate/evaluated counts, scrolling, hit test, and recovery fields) and `execution` (`requestedMode`, `actualMode`, `fallbackReason`, `debuggerUsed`, and coordinates). `cdp.dispatch_key_event`/MCP `cdp_press_key` and `input.scroll_into_view` use separate response contracts. `executionMode` is the dispatch path and accepts only `dom` or `cdp`, defaulting to `dom` for compatibility. CDP is supported by click, hover, drag, type, fill, press_key, and touch; unsupported combinations return `INPUT_UNSUPPORTED` instead of falling back silently. DOM events mirror real device event order (pointer events, boundary transitions, `code`/`keyCode`) but are untrusted, so Chrome may refuse gesture-gated features such as audio/media start; use CDP for those.
+Successful targeted click, focus, type, fill, press-key, checked-state, option-selection, hover, and drag results include `resolution` (`strategy`, candidate/evaluated counts, scrolling, hit test, and recovery fields) and `execution` (`requestedMode`, `actualMode`, `fallbackReason`, `debuggerUsed`, and coordinates). `cdp.dispatch_key_event`/MCP `cdp_press_key` and `input.scroll_into_view` use separate response contracts. `executionMode` is the dispatch path: `dom` (default), `cdp`, or `auto`. `auto` uses CDP only when the debugger is already attached to the tab or the target likely needs trusted input (file input, media, `target=_blank` link, rich-text editor), and reports `execution.selectionReason`. It never retries an action through a second path. CDP is not available for targets inside iframes (`INPUT_UNSUPPORTED`); `auto` stays on DOM there. CDP is supported by click, hover, drag, type, fill, press_key, and touch; unsupported combinations return `INPUT_UNSUPPORTED` instead of falling back silently. DOM events mirror real device event order (pointer events, boundary transitions, `code`/`keyCode`) but are untrusted, so Chrome may refuse gesture-gated features such as audio/media start; use CDP for those.
 
 `input.fill.mode` is separate: `auto`, `setter`, and `keystrokes` choose the DOM fill strategy. `mode: "auto"` may fall back from the setter to keystrokes and reports the used `mode`; it does not select CDP. With `executionMode: "cdp"`, fill uses native clear/text dispatch and reports `mode: "cdp"`.
 
@@ -462,7 +466,13 @@ artifact, and atomically write the output on the CLI host.
 
 ### dom.get_accessibility_tree
 
-Retrieve a depth-limited accessibility tree via CDP. Full reads use `Accessibility.getFullAXTree`; an optional unique `selector` resolves through CDP DOM methods, starts with `Accessibility.getPartialAXTree`, and incrementally fetches selected descendant layers with `Accessibility.getChildAXNodes`. Only the selected subtree and required ancestor chain are retained. Missing and ambiguous selectors return typed errors instead of selecting an arbitrary candidate. Nodes include `role`, `name`, `description`, `value`, state fields, `interactive`, `semanticInteractive`, `focusable`, `focusableAndEnabled`, `ignored`, and `childIds`. `interactive` is semantic/focusability metadata, not current pointer actionability.
+`source: "dom"` builds an actionable outline in the content script, with no debugger. It covers visible interactive controls (plus headings, landmarks, dialogs, alerts, and named regions unless `interactiveOnly: true`) across shadow roots and iframes. Each line looks like `- button "Save" [el_k7q2_1f] disabled`, and states include `checked`, `expanded`/`collapsed`, `selected`, `pressed`, `required`, `focused`, `level=N`, and `value="…"` (never for passwords). Refs work directly as input targets. `format: "tree"` returns the same entries as `nodes`. `maxNodes` bounds it (default 150).
+
+```bash
+bbx call dom.get_accessibility_tree '{"source":"dom","interactiveOnly":true}'
+```
+
+The default `source: "cdp"` retrieves a depth-limited accessibility tree via CDP. Full reads use `Accessibility.getFullAXTree`; an optional unique `selector` resolves through CDP DOM methods, starts with `Accessibility.getPartialAXTree`, and incrementally fetches selected descendant layers with `Accessibility.getChildAXNodes`. Only the selected subtree and required ancestor chain are retained. Missing and ambiguous selectors return typed errors instead of selecting an arbitrary candidate. Nodes include `role`, `name`, `description`, `value`, state fields, `interactive`, `semanticInteractive`, `focusable`, `focusableAndEnabled`, `ignored`, and `childIds`. `interactive` is semantic/focusability metadata, not current pointer actionability.
 
 This is debugger-backed. Prefer `dom.find_by_role`, `dom.find_by_text`, and targeted `dom.query`/`dom.describe` first.
 
@@ -474,7 +484,7 @@ bbx call dom.get_accessibility_tree '{"maxNodes":100,"maxDepth":6,"interactiveOn
 bbx call dom.get_accessibility_tree '{"selector":"[role=dialog]","maxNodes":50,"compact":true}'
 ```
 
-Filtering occurs before `maxNodes`. Compact mode drops ignored, decorative, and empty nodes while reconnecting retained descendants; interactive-only keeps non-ignored semantic interactive roles. Full reads ask CDP for the requested depth, while selector-scoped reads fetch descendant layers up to that same bound. Every result reports `truncated: true`, `partialTopology: true`, depth metadata, missing-child counts, and a continuation hint. No AX node is written into the page DOM or converted directly into an actionable element ref; use role/name with `dom.find_by_role` before input.
+Filtering occurs before `maxNodes`. Compact mode drops ignored, decorative, and empty nodes while reconnecting retained descendants; interactive-only keeps non-ignored semantic interactive roles. Full reads ask CDP for the requested depth, while selector-scoped reads fetch descendant layers up to that same bound. `truncated` and `partialTopology` are true only when `maxNodes` cut nodes or the depth bound left children unfetched (`missingChildCount`), and only then is a continuation hint returned. `format: "outline"` renders CDP nodes as compact lines. CDP AX nodes carry no element refs; use `source: "dom"` (or a role/name locator) to act on them.
 
 ### viewport.resize
 

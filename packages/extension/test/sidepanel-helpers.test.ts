@@ -565,7 +565,7 @@ test('getSidepanelCurrentTabView returns unavailable, restricted, and attention 
 test('getSidepanelAgentStatusView covers unavailable, enabled, requested, and default states', () => {
   assert.deepEqual(getSidepanelAgentStatusView(null), {
     title: 'Window access unavailable',
-    detail: 'Open a normal web page in this Chrome window to enable Browser Bridge.',
+    detail: 'Open a normal web page in this browser window to enable Browser Bridge.',
     disclosureHidden: false,
   });
 
@@ -581,8 +581,7 @@ test('getSidepanelAgentStatusView covers unavailable, enabled, requested, and de
     }),
     {
       title: 'Window access enabled',
-      detail:
-        'Browser Bridge is enabled for this Chrome window. Requests default to the active tab, or can target another tab in this window explicitly.',
+      detail: 'Agents can access every tab in this window.',
       disclosureHidden: true,
     }
   );
@@ -607,8 +606,7 @@ test('getSidepanelAgentStatusView covers unavailable, enabled, requested, and de
     }),
     {
       title: 'Window access requested',
-      detail:
-        'CLI requested access to capture pages in this Chrome window. Current tab: Pending - https://example.com.',
+      detail: 'CLI requested access to capture pages in this browser window.',
       disclosureHidden: false,
     }
   );
@@ -634,8 +632,7 @@ test('getSidepanelAgentStatusView covers unavailable, enabled, requested, and de
     }),
     {
       title: 'Window access requested',
-      detail:
-        'MCP Legacy requested access to inspect pages in this Chrome window. Current tab: Pending - https://example.com.',
+      detail: 'MCP Legacy requested access to inspect pages in this browser window.',
       disclosureHidden: false,
     }
   );
@@ -652,11 +649,46 @@ test('getSidepanelAgentStatusView covers unavailable, enabled, requested, and de
     }),
     {
       title: 'Window access',
-      detail:
-        'Enable Browser Bridge to let your connected agent inspect and interact with pages in this Chrome window.',
-      disclosureHidden: false,
+      detail: 'Allow agents to inspect and interact with the tabs.',
+      disclosureHidden: true,
     }
   );
+});
+
+test('access-request notices omit page metadata and unavailable-tab fallback text', () => {
+  for (const context of [
+    undefined,
+    { title: '', origin: '' },
+    { title: 'Private page', origin: 'https://private.example' },
+  ]) {
+    const view = getSidepanelAgentStatusView({
+      tabId: 13,
+      windowId: 5,
+      title: 'Private page',
+      url: 'https://private.example/path',
+      enabled: false,
+      accessRequested: true,
+      restricted: false,
+      ...(context
+        ? {
+            accessRequestContext: {
+              windowId: 5,
+              tabId: 13,
+              source: 'cli',
+              intent: 'general',
+              ...context,
+            },
+          }
+        : {}),
+    });
+    assert.equal(
+      view.detail,
+      context
+        ? 'CLI requested access to use pages in this browser window.'
+        : 'A connected agent requested access to use pages in this browser window.'
+    );
+    assert.equal(view.disclosureHidden, false);
+  }
 });
 
 test('getPromptExamplesGroups handles empty setup status gracefully', () => {

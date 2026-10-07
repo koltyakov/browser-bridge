@@ -139,6 +139,18 @@ async function writeSocketLine(socket, line, signal) {
   }
 }
 
+/**
+ * Agent session that keeps tab routing sticky across separate CLI processes.
+ * Set `BBX_SESSION` to give one agent its own working tab; unset callers share
+ * the extension's default session.
+ *
+ * @returns {string | null}
+ */
+export function getDefaultAgentSession() {
+  const value = process.env.BBX_SESSION?.trim();
+  return value ? value : null;
+}
+
 export class BridgeClient extends EventEmitter {
   /**
    * @param {BridgeClientOptions} [options={}]
@@ -156,6 +168,7 @@ export class BridgeClient extends EventEmitter {
     exitProcessOnNpmUpdate = false,
     updateCompatibleNpmPackageFn = updateCompatibleNpmPackage,
     authToken = undefined,
+    agentSession = getDefaultAgentSession(),
   } = {}) {
     super();
     this.transport = socketPath ? createSocketBridgeTransport(socketPath) : transport;
@@ -171,6 +184,7 @@ export class BridgeClient extends EventEmitter {
     this.exitProcessOnNpmUpdate = exitProcessOnNpmUpdate;
     this.updateCompatibleNpmPackageFn = updateCompatibleNpmPackageFn;
     this.authToken = authToken;
+    this.agentSession = agentSession;
     this.socket = null;
     this.connected = false;
     this.protocolCompatibility = null;
@@ -488,7 +502,10 @@ export class BridgeClient extends EventEmitter {
       method,
       params,
       tabId,
-      meta,
+      meta:
+        this.agentSession && meta.agent_session === undefined
+          ? { ...meta, agent_session: this.agentSession }
+          : meta,
     });
 
     if (method === 'page.extract_content') {

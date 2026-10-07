@@ -19,6 +19,7 @@ import {
 import {
   connectSidepanelPort as connectSidepanelRuntimePort,
   createSidepanelMessageHandler,
+  hasSidepanelAgentWork,
   readRequestedTabId,
   renderSidepanelState,
 } from '../src/sidepanel-runtime.js';
@@ -87,6 +88,7 @@ import {
  *   nativeHostVersion: string | null,
  *   daemonProxy: DaemonProxyStatus | null,
  *   currentTab: SidePanelCurrentTab | null,
+ *   agentTabs?: import('../src/background-ui.js').AgentTabUiState[],
  *   setupStatus: SetupStatus | null,
  *   setupStatusPending: boolean,
  *   setupStatusError: string | null,
@@ -167,6 +169,8 @@ const agentStatusDetail = /** @type {HTMLParagraphElement} */ (
 const agentDisclosure = /** @type {HTMLParagraphElement} */ (
   document.getElementById('agent-disclosure')
 );
+const agentTabRow = /** @type {HTMLElement} */ (document.getElementById('agent-tab-row'));
+const agentTabsList = /** @type {HTMLUListElement} */ (document.getElementById('agent-tabs-list'));
 const examplesSection = /** @type {HTMLDetailsElement} */ (
   document.getElementById('examples-section')
 );
@@ -175,6 +179,7 @@ const examplesContent = /** @type {HTMLDivElement} */ (document.getElementById('
 let currentTabState = null;
 /** @type {ActionLogEntry[]} */
 let currentActionLog = [];
+let hasAgentWork = false;
 /** @type {ReturnType<typeof setInterval> | null} */
 let setupStatusPollTimer = null;
 let hasAutoExpandedHostSetup = false;
@@ -209,10 +214,10 @@ const CLI_PROMPT_EXAMPLES = Object.freeze([
 ]);
 
 const MCP_PROMPT_EXAMPLES = Object.freeze([
-  'Use BB MCP to explain why this button is not actionable.',
-  'Use BB MCP to test a reversible layout patch and verify the result.',
-  'Use BB MCP to run the form flow and verify state after each input action.',
-  'Use BB MCP to prime network capture, reproduce the failure, and inspect errors.',
+  'Use BBX MCP to explain why this button is not actionable.',
+  'Use BBX MCP to test a reversible layout patch and verify the result.',
+  'Use BBX MCP to run the form flow and verify state after each input action.',
+  'Use BBX MCP to prime network capture, reproduce the failure, and inspect errors.',
 ]);
 const ACTIVITY_HISTOGRAM_WINDOW_MS = 10 * 60 * 1000;
 const ACTIVITY_HISTOGRAM_BUCKET_MS = 30 * 1000;
@@ -407,6 +412,7 @@ window.addEventListener('beforeunload', () => {
  * @returns {void}
  */
 function renderState(state) {
+  hasAgentWork = hasSidepanelAgentWork(state);
   renderHostVersion(state.nativeHostVersion);
   renderProxyStatus(state.daemonProxy);
   renderSidepanelState(state, {
@@ -512,6 +518,48 @@ function renderAgentStatus(state) {
   agentStatus.textContent = view.title;
   agentStatusDetail.textContent = view.detail;
   agentDisclosure.hidden = view.disclosureHidden;
+  renderAgentTabs(state);
+}
+
+/**
+ * Show recent agent targets without repeating the tab names in a summary.
+ *
+ * @param {UiSnapshot} state
+ * @returns {void}
+ */
+function renderAgentTabs(state) {
+  const tabs = (state.agentTabs ?? []).filter((tab) => tab.tabId !== state.currentTab?.tabId);
+  agentTabRow.hidden = !state.nativeConnected || !state.currentTab?.enabled || tabs.length === 0;
+  agentTabsList.replaceChildren(
+    ...tabs.map((tab) => {
+      const item = document.createElement('li');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'agent-tab-button';
+      const name = document.createElement('span');
+      name.className = 'agent-tab-name';
+      name.textContent = tab.title || `Tab ${tab.tabId}`;
+      item.title = name.textContent;
+      button.title = name.textContent;
+      button.setAttribute('aria-label', `Switch to tab: ${name.textContent}`);
+      button.addEventListener('click', () => {
+        // This is a user tab switch, not an agent request or lease rebind.
+        void chrome.tabs.update(tab.tabId, { active: true }).catch(() => {
+          button.title = 'Could not switch to this tab. Try again.';
+        });
+      });
+      const count = tab.actionCount ?? 0;
+      const chip = document.createElement('span');
+      chip.className = 'agent-tab-count activity-tokens';
+      chip.textContent = `Actions: ${count}`;
+      chip.title = `${count} recent ${count === 1 ? 'action' : 'actions'}`;
+      chip.setAttribute('aria-label', chip.title);
+      button.append(name, chip);
+      item.append(button);
+      return item;
+    })
+  );
+  agentTabsList.hidden = tabs.length === 0;
 }
 
 /**
@@ -536,6 +584,7 @@ function renderNativeStatus(connected, error, unstable = false) {
   controlSection.hidden = !connected;
   installationSection.hidden = !connected;
   if (!connected) {
+    agentTabRow.hidden = true;
     renderHostVersion(null);
     renderProxyStatus(null);
     setupInstallCmd.textContent = view.installCommand;
@@ -660,7 +709,8 @@ function syncConnectedSectionsVisibility() {
     activitySection.hidden = true;
     return;
   }
-  examplesSection.hidden = false;
+  examplesSection.hidden = hasAgentWork;
+  if (examplesSection.hidden) examplesSection.open = false;
   activitySection.hidden = false;
 }
 

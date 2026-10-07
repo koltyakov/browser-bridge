@@ -612,7 +612,49 @@ test('summarizes input execution and resolution metadata', () => {
     'input.click'
   );
   assert.equal(summary.summary, 'Clicked el_1 via cdp.');
-  assert.deepEqual(summary.evidence, { elementRef: 'el_1', resolution, execution });
+  // Only notable metadata survives: ranking + scroll, and the CDP execution mode.
+  assert.deepEqual(summary.evidence, {
+    elementRef: 'el_1',
+    resolution: { strategy: 'selector-ranked', scrolled: true, candidateCount: 2 },
+    execution: { actualMode: 'cdp' },
+  });
+});
+
+test('routine input successes drop metadata and digest observed effects', () => {
+  const summary = summarizeBridgeResponse(
+    ok({
+      clicked: true,
+      elementRef: 'el_ab12_3',
+      resolution: {
+        strategy: 'locator-first',
+        candidateCount: 1,
+        evaluatedCount: 1,
+        scrolled: false,
+        hitTest: 'target',
+        recovered: false,
+      },
+      execution: { requestedMode: 'dom', actualMode: 'dom', fallbackReason: null },
+      effects: {
+        url: 'https://shop.test/checkout/done',
+        messages: [{ role: 'alert', text: 'Order placed' }],
+        dom: { added: 3, removed: 1 },
+        changed: true,
+        settledMs: 210,
+      },
+    }),
+    'input.click'
+  );
+  assert.equal(
+    summary.summary,
+    'Clicked el_ab12_3 via dom. Effects: URL → https://shop.test/checkout/done; alert: "Order placed"; DOM +3/-1.'
+  );
+  assert.deepEqual(Object.keys(summary.evidence as object), ['elementRef', 'effects']);
+
+  const idle = summarizeBridgeResponse(
+    ok({ clicked: true, elementRef: 'el_ab12_4', effects: { changed: false, settledMs: 60 } }),
+    'input.click'
+  );
+  assert.match(idle.summary, /No visible effect\.$/);
 });
 
 test('summarizes hover action', () => {
