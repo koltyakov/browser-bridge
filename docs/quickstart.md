@@ -104,6 +104,10 @@ If Browser Bridge does not appear immediately after `bbx install-mcp` or `bbx in
 
 Your agent can now inspect and patch the active tab in that enabled window, or other tabs in the same window when explicitly targeted.
 
+Tabs with agent activity are marked with blue **AI** groups. Adjacent active tabs share a group;
+separated tabs use separate groups to preserve tab order. Pinned tabs and existing groups are
+left alone. Browser Bridge removes its groups after 15 idle minutes or when access is disabled.
+
 ## 5. Use it
 
 **MCP mode** - tools are auto-discovered by the client. Just ask naturally:

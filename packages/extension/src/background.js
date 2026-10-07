@@ -120,6 +120,7 @@ import {
 import { createDomBaselineController } from './background-dom-baselines.js';
 import { createDomBaselineRequestHandler } from './background-dom-baseline-requests.js';
 import { createAgentTabLeaseStore, normalizeAgentSession } from './background-agent-tabs.js';
+import { createAgentTabGroupController } from './background-agent-groups.js';
 
 /** @typedef {import('./background-state.js').EnabledWindowState} EnabledWindowState */
 /** @typedef {import('./background-state.js').ResolvedTabTarget} ResolvedTabTarget */
@@ -141,6 +142,16 @@ setExtensionState(state);
 const domBaselines = createDomBaselineController();
 const agentTabs = createAgentTabLeaseStore({
   storage: chrome.storage?.session ?? null,
+});
+const agentGroups = createAgentTabGroupController(chrome, {
+  async getActivity() {
+    const windowId = state.enabledWindow?.windowId ?? null;
+    const tabs = await agentTabs.listRecentTabs();
+    return {
+      windowId,
+      tabIds: new Set(tabs.filter((tab) => tab.windowId === windowId).map((tab) => tab.tabId)),
+    };
+  },
 });
 /** @type {Map<string, import('./background-page.js').TabRouting>} */
 const tabRoutingByRequestId = new Map();
@@ -168,6 +179,7 @@ function recordTabRouting(requestId, routing) {
  * @returns {Promise<void>}
  */
 async function syncWorkingTabIndicators() {
+  void agentGroups.sync().catch(reportAsyncError);
   const next = await agentTabs.getWorkingTabIds();
   const previous = state.workingTabIds ?? new Set();
   const changed = new Set(
@@ -288,6 +300,7 @@ const clearTabBridgeState = async (tabId, shouldContinue) => {
 const clearWindowBridgeState = async (windowId) => {
   domBaselines.clearWindow(windowId);
   await agentTabs.clear();
+  await agentGroups.sync().catch(reportAsyncError);
   void syncWorkingTabIndicators().catch(reportAsyncError);
   await tabCleanupController.clearWindowBridgeState(windowId);
 };
@@ -651,6 +664,9 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (typeof changeInfo.groupId === 'number' || typeof changeInfo.pinned === 'boolean') {
+    void agentGroups.sync().catch(reportAsyncError);
+  }
   if (changeInfo.status === 'loading' || typeof changeInfo.url === 'string') {
     domBaselines.invalidateNavigation(tabId);
   }
@@ -660,6 +676,10 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 chrome.tabs.onDetached?.addListener((tabId, detachInfo) => {
   tabMoveCleanup.handleDetached(tabId, detachInfo);
+});
+
+chrome.tabs.onMoved?.addListener(() => {
+  void agentGroups.sync().catch(reportAsyncError);
 });
 
 chrome.tabs.onAttached?.addListener((tabId, attachInfo) => {
@@ -691,6 +711,7 @@ chrome.windows.onRemoved.addListener((windowId) => {
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === KEEPALIVE_ALARM_NAME) {
     domBaselines.pruneExpired();
+    void syncWorkingTabIndicators().catch(reportAsyncError);
     if (!state.enabledWindow) {
       void chrome.alarms.clear(KEEPALIVE_ALARM_NAME);
     }
@@ -757,6 +778,7 @@ async function initializeState() {
   await emitUiState();
   await primeEnabledWindowInstrumentation();
   await refreshActionIndicators();
+  await syncWorkingTabIndicators();
 }
 
 /**

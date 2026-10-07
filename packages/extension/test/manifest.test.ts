@@ -36,6 +36,7 @@ test('npm release metadata stays aligned and independent extension releases rema
     'scripting',
     'sidePanel',
     'storage',
+    'tabGroups',
     'tabs',
   ]);
 });

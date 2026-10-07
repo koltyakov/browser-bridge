@@ -6,6 +6,56 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-10-07
+
+### Added
+
+- **Semantic input targets:** Input methods accept role/name, text, label,
+  placeholder, and test-ID locators directly, with `exact`, `nth`, and selector
+  scoping. Agents can locate and act on a control in one call.
+- **Actionable DOM outlines:** `dom.get_accessibility_tree` with `source: "dom"`
+  returns a compact outline with usable element refs, including shadow DOM and
+  iframes, without attaching the debugger. The default CDP source remains
+  available for accessibility audits.
+- **Post-action effects:** Input results report URL changes, unloading,
+  dialogs, live-region messages, focus, DOM changes, and updated target state.
+  `observe` controls whether and how long to settle before collecting effects.
+- **Automatic input mode:** `executionMode: "auto"` selects trusted CDP input
+  when the target likely requires it or the debugger is already attached, and
+  reports the selection reason.
+- **Working-tab indicators:** The side panel lists other tabs with agent
+  activity and lets users switch to them. Blue **AI** groups mark adjacent
+  active tabs without reordering tabs or taking over existing groups. Pinned
+  tabs are left alone; Bridge-owned groups are removed after 15 idle minutes
+  or when access is disabled. The extension now requires `tabGroups` permission.
+
+### Changed
+
+- **Session-bound working tabs:** The first tab-bound call binds an agent
+  session to its working tab. Later calls stay there when the user switches
+  tabs, including across service-worker restarts. An explicit `tabId`,
+  `tabs.create`, or `tabs.activate` changes the binding, which expires after
+  15 idle minutes. MCP sessions are isolated automatically; CLI agents can
+  use `BBX_SESSION` to keep separate working tabs.
+- **Actionability waits:** Targeted input waits for controls to appear, become
+  visible and enabled, clear obstructions, and stop animating. `timeoutMs`
+  defaults to 2500, accepts up to 15000, and disables waiting at `0`.
+- **Semantic search:** Text and role finders search shadow DOM and iframes,
+  resolve accessible names from labels and ARIA attributes, and skip hidden
+  matches by default. `includeHidden` opts into hidden results.
+- **Compact input summaries:** Routine resolution and execution metadata stays
+  in evidence while summaries retain notable details and action effects.
+  Responses identify the routed tab and flag when it differs from the user's
+  active tab; `tabs.list` marks the session's working tab.
+
+### Fixed
+
+- Closing a working tab now returns `TAB_MISMATCH` with
+  `reason: "working_tab_closed"` instead of silently routing subsequent calls
+  to another tab.
+- Element refs and semantic targets route to their owning iframe for DOM
+  inspection and input. CDP input for iframe targets remains unsupported.
+
 ## [1.11.5] - 2026-10-06
 
 ### Added

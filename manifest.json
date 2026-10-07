@@ -17,6 +17,7 @@
     "scripting",
     "sidePanel",
     "storage",
+    "tabGroups",
     "tabs"
   ],
   "host_permissions": ["<all_urls>"],
