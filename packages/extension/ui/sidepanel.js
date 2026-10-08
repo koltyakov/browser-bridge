@@ -89,6 +89,7 @@ import {
  *   daemonProxy: DaemonProxyStatus | null,
  *   currentTab: SidePanelCurrentTab | null,
  *   agentTabs?: import('../src/background-ui.js').AgentTabUiState[],
+ *   otherEnabledWindows?: import('../../protocol/src/window-access.js').BrowserWindowAccess[],
  *   setupStatus: SetupStatus | null,
  *   setupStatusPending: boolean,
  *   setupStatusError: string | null,
@@ -110,6 +111,11 @@ import {
  * } | {
  *   type: 'toggle.error',
  *   error: string
+ * } | {
+ *   type: 'windows.action.result',
+ *   action: import('../../protocol/src/window-access.js').WindowAction,
+ *   ok: boolean,
+ *   error?: string
  * }} SidePanelMessage
  */
 
@@ -171,6 +177,19 @@ const agentDisclosure = /** @type {HTMLParagraphElement} */ (
 );
 const agentTabRow = /** @type {HTMLElement} */ (document.getElementById('agent-tab-row'));
 const agentTabsList = /** @type {HTMLUListElement} */ (document.getElementById('agent-tabs-list'));
+const otherWindows = /** @type {HTMLDetailsElement} */ (document.getElementById('other-windows'));
+const otherWindowsCount = /** @type {HTMLElement} */ (
+  document.getElementById('other-windows-count')
+);
+const otherWindowsList = /** @type {HTMLUListElement} */ (
+  document.getElementById('other-windows-list')
+);
+const otherWindowsDisable = /** @type {HTMLButtonElement} */ (
+  document.getElementById('other-windows-disable')
+);
+const otherWindowsError = /** @type {HTMLParagraphElement} */ (
+  document.getElementById('other-windows-error')
+);
 const examplesSection = /** @type {HTMLDetailsElement} */ (
   document.getElementById('examples-section')
 );
@@ -179,6 +198,9 @@ const examplesContent = /** @type {HTMLDivElement} */ (document.getElementById('
 let currentTabState = null;
 /** @type {ActionLogEntry[]} */
 let currentActionLog = [];
+/** @type {string | null} */
+let currentOtherWindowsKey = null;
+let windowActionPending = false;
 let hasAgentWork = false;
 /** @type {ReturnType<typeof setInterval> | null} */
 let setupStatusPollTimer = null;
@@ -283,6 +305,7 @@ const handleSidepanelMessage = createSidepanelMessageHandler({
   renderNativeStatus,
   renderState,
   renderToggleError,
+  renderWindowActionResult,
 });
 
 /** @type {number | null} */
@@ -343,6 +366,57 @@ toggleButton.addEventListener('click', () => {
   });
 });
 
+otherWindowsDisable.addEventListener('click', () => {
+  startWindowAction('disable', { type: 'windows.disable_others' });
+});
+
+/**
+ * @param {import('../../protocol/src/window-access.js').WindowAction} action
+ * @param {Record<string, unknown>} message
+ * @returns {void}
+ */
+function startWindowAction(action, message) {
+  if (windowActionPending || otherWindows.hidden) return;
+  windowActionPending = true;
+  otherWindowsError.hidden = true;
+  otherWindowsDisable.textContent = action === 'disable' ? 'Disabling…' : 'Disable all';
+  syncOtherWindowButtons();
+  try {
+    port.postMessage(message);
+  } catch {
+    renderWindowActionResult({
+      action,
+      ok: false,
+      error: 'Extension connection lost. Reopen the side panel.',
+    });
+  }
+}
+
+/** @returns {void} */
+function syncOtherWindowButtons() {
+  otherWindowsDisable.disabled = windowActionPending || Boolean(otherWindows.hidden);
+  for (const button of /** @type {NodeListOf<HTMLButtonElement>} */ (
+    otherWindowsList.querySelectorAll('.other-window-button')
+  )) {
+    button.disabled = windowActionPending || button.dataset.controllable !== 'true';
+  }
+}
+
+/**
+ * @param {import('../../protocol/src/window-access.js').WindowActionUiResult} message
+ * @returns {void}
+ */
+function renderWindowActionResult(message) {
+  windowActionPending = false;
+  otherWindowsDisable.textContent = 'Disable all';
+  otherWindowsError.textContent = message.ok
+    ? ''
+    : message.error || 'Window action failed. Try again.';
+  otherWindowsError.hidden = message.ok;
+  syncOtherWindowButtons();
+  if (message.ok && message.action === 'focus') otherWindows.open = false;
+}
+
 installationSection.addEventListener('toggle', () => {
   syncExclusiveDetailsSections(installationSection, examplesSection);
   syncConnectedSectionsVisibility();
@@ -392,9 +466,18 @@ document.addEventListener('click', () => {
   hideSetupContextMenu();
 });
 
+document.addEventListener('click', (event) => {
+  if (event.target instanceof Node && !otherWindows.contains(event.target))
+    otherWindows.open = false;
+});
+
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
     hideSetupContextMenu();
+    if (otherWindows.open) {
+      otherWindows.open = false;
+      otherWindowsCount.focus();
+    }
   }
 });
 
@@ -519,6 +602,64 @@ function renderAgentStatus(state) {
   agentStatusDetail.textContent = view.detail;
   agentDisclosure.hidden = view.disclosureHidden;
   renderAgentTabs(state);
+  renderOtherWindows(state);
+}
+
+/**
+ * @param {UiSnapshot} state
+ * @returns {void}
+ */
+function renderOtherWindows(state) {
+  const windows = state.otherEnabledWindows ?? [];
+  otherWindows.hidden = !state.nativeConnected || windows.length === 0;
+  if (otherWindows.hidden) otherWindows.open = false;
+  syncOtherWindowButtons();
+  // Keep dropdown rows stable across unrelated activity updates.
+  const key = JSON.stringify(windows);
+  if (key === currentOtherWindowsKey) return;
+  currentOtherWindowsKey = key;
+  const label = `${windows.length} other enabled ${windows.length === 1 ? 'window' : 'windows'}`;
+  otherWindowsCount.textContent = `${windows.length} other`;
+  otherWindowsCount.setAttribute('aria-label', label);
+  otherWindowsList.replaceChildren(
+    ...windows.map((entry) => {
+      const item = document.createElement('li');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'other-window-button';
+      const canControl = Boolean(
+        entry.window && (entry.extensionId === 'local' || entry.canControl)
+      );
+      button.dataset.controllable = String(canControl);
+      button.disabled = windowActionPending || !canControl;
+      const browser = document.createElement('span');
+      browser.className = 'other-window-browser';
+      browser.textContent =
+        entry.extensionId === 'local'
+          ? 'This browser'
+          : [entry.browserName || 'Unknown browser', entry.profileLabel || 'Unknown profile'].join(
+              ' · '
+            );
+      const detail = document.createElement('span');
+      detail.className = 'other-window-detail';
+      detail.textContent = entry.window
+        ? `${entry.window.title || 'Untitled window'} · Window ${entry.window.windowId}`
+        : "Window details unavailable. Update this browser's extension and native host.";
+      button.setAttribute('aria-label', `Focus ${browser.textContent}: ${detail.textContent}`);
+      button.addEventListener('click', () => {
+        if (!button.disabled && entry.window)
+          startWindowAction('focus', {
+            type: 'windows.focus',
+            extensionId: entry.extensionId,
+            windowId: entry.window.windowId,
+            enabledAt: entry.window.enabledAt,
+          });
+      });
+      button.append(browser, detail);
+      item.append(button);
+      return item;
+    })
+  );
 }
 
 /**
@@ -585,6 +726,13 @@ function renderNativeStatus(connected, error, unstable = false) {
   installationSection.hidden = !connected;
   if (!connected) {
     agentTabRow.hidden = true;
+    otherWindows.hidden = true;
+    otherWindows.open = false;
+    otherWindowsList.replaceChildren();
+    currentOtherWindowsKey = null;
+    windowActionPending = false;
+    otherWindowsDisable.textContent = 'Disable all';
+    otherWindowsDisable.disabled = true;
     renderHostVersion(null);
     renderProxyStatus(null);
     setupInstallCmd.textContent = view.installCommand;

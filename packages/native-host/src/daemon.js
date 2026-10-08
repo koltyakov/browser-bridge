@@ -32,6 +32,7 @@ import {
   parseJsonLines,
   RecoveryTelemetryCollector,
   normalizeRecoveryTelemetrySummary,
+  sanitizeIncidentalText,
   sanitizeIncidentalValue,
   setProtocolPackageVersion,
   validateBridgeRequest,
@@ -54,6 +55,7 @@ import {
 import { normalizeDaemonLogger } from './daemon-logger.js';
 import { DomBaselineOwnerRegistry, isValidBaselineId } from './dom-baseline-owners.js';
 import { writeJsonLine } from './framing.js';
+import { WindowActionRouter } from './window-actions.js';
 
 const DAEMON_VERSION = loadDaemonVersion();
 setProtocolPackageVersion(DAEMON_VERSION);
@@ -65,7 +67,7 @@ setProtocolPackageVersion(DAEMON_VERSION);
 /** @typedef {import('./config.js').BridgeTransport} BridgeTransport */
 /** @typedef {import('./daemon-logger.js').DaemonLoggerLike} DaemonLoggerLike */
 /** @typedef {'agent' | 'extension'} SocketRole */
-/** @typedef {import('node:net').Socket & { readonly __role?: SocketRole, __localControl?: boolean, __registrationTimeoutId?: NodeJS.Timeout, __invalidLineCount?: number, __clientId?: string, __extensionId?: string, __browserName?: string, __profileLabel?: string, __browserExtensionId?: string, __accessEnabled?: boolean, __lastActiveAt?: number }} ClientSocket */
+/** @typedef {import('node:net').Socket & { readonly __role?: SocketRole, __localControl?: boolean, __registrationTimeoutId?: NodeJS.Timeout, __invalidLineCount?: number, __clientId?: string, __extensionId?: string, __browserName?: string, __profileLabel?: string, __browserExtensionId?: string, __accessEnabled?: boolean, __windowAccessUpdates?: boolean, __windowActions?: boolean, __enabledWindow?: import('../../protocol/src/window-access.js').EnabledWindowInfo | null, __lastActiveAt?: number }} ClientSocket */
 /** @typedef {{ socket: ClientSocket, timeoutId: NodeJS.Timeout, source?: string, mcpEra?: string, method?: string, protocolVersion?: string, baselineId?: string | null, automaticMcpRetry?: boolean, targets: Set<ClientSocket>, lastErrorResponse?: import('../../protocol/src/types.js').BridgeResponse }} PendingEntry */
 /**
  * @typedef {{
@@ -410,12 +412,20 @@ export function isWindowsNamedPipePath(socketPath) {
  *   entry?: Record<string, unknown>,
  *   request?: BridgeRequest,
  *   status?: SetupStatus,
- *   error?: { message?: string },
+ *   error?: { message?: string } | string,
  *   response?: import('../../protocol/src/types.js').BridgeResponse,
  *   browserName?: string,
  *   profileLabel?: string,
  *   browserExtensionId?: string,
  *   accessEnabled?: boolean,
+ *   enabledWindow?: unknown,
+ *   windowAccessUpdates?: boolean,
+ *   windowActions?: boolean,
+ *   action?: unknown,
+ *   windowId?: unknown,
+ *   enabledAt?: unknown,
+ *   extensionId?: unknown,
+ *   ok?: unknown,
  *   authToken?: string,
  *   at?: number
  *   artifactId?: string,
@@ -466,6 +476,7 @@ export class BridgeDaemon {
     this.serverAddress = null;
     /** @type {Map<string, ClientSocket>} */
     this.extensionSockets = new Map();
+    this.windowActions = new WindowActionRouter(this.extensionSockets);
     /** @type {Map<string, ClientSocket>} */
     this.agentSockets = new Map();
     /** @type {Set<ClientSocket>} */
@@ -788,7 +799,9 @@ export class BridgeDaemon {
           if (typedSocket.destroyed) return;
           const message = /** @type {DaemonMessage} */ (raw);
           const admitted =
-            message?.type === 'agent.request' || message?.type === 'extension.setup_status.request';
+            message?.type === 'agent.request' ||
+            message?.type === 'extension.setup_status.request' ||
+            message?.type === 'extension.window_action.request';
           const active = this.activeHandlers.get(typedSocket) ?? 0;
           if (
             admitted &&
@@ -882,6 +895,7 @@ export class BridgeDaemon {
    * @returns {Promise<void>}
    */
   async stopInternal() {
+    this.windowActions.clear();
     for (const pending of this.pendingRequests.values()) {
       clearTimeout(pending.timeoutId);
     }
@@ -976,6 +990,17 @@ export class BridgeDaemon {
         return this.rejectMessageForRole(socket, message);
       }
       return this.handleExtensionAccessUpdate(socket, message);
+    }
+
+    if (
+      message?.type === 'extension.window_action.request' ||
+      message?.type === 'extension.window_action.result'
+    ) {
+      if (socket.__role !== 'extension') return this.rejectMessageForRole(socket, message);
+      if (message.type === 'extension.window_action.request')
+        return this.windowActions.request(socket, message);
+      this.windowActions.result(socket, message);
+      return;
     }
 
     if (message?.type === 'extension.activity') {
@@ -1380,6 +1405,7 @@ export class BridgeDaemon {
       if (target.__extensionId && this.extensionSockets.get(target.__extensionId) === target) {
         this.extensionSockets.delete(target.__extensionId);
         this.invalidateConnectedExtensionsCache();
+        this.broadcastWindowAccess();
       }
       target.destroy(error instanceof Error ? error : undefined);
       await this.finishPendingRequestIfExhausted(request.id, pending);
@@ -1495,6 +1521,10 @@ export class BridgeDaemon {
    */
   handleExtensionIdentity(socket, message) {
     let changed = false;
+    if (message.windowAccessUpdates === true) {
+      socket.__windowAccessUpdates = true;
+    }
+    if (message.windowActions === true) socket.__windowActions = true;
     const browserName = normalizeRoutingLabel(message.browserName);
     if (browserName) {
       changed = changed || socket.__browserName !== browserName;
@@ -1513,6 +1543,7 @@ export class BridgeDaemon {
     if (changed) {
       this.invalidateConnectedExtensionsCache();
     }
+    this.broadcastWindowAccess();
   }
 
   /**
@@ -1522,6 +1553,24 @@ export class BridgeDaemon {
    */
   handleExtensionAccessUpdate(socket, message) {
     const accessEnabled = Boolean(message.accessEnabled);
+    const value = message.enabledWindow;
+    const window =
+      value && typeof value === 'object' ? /** @type {Record<string, unknown>} */ (value) : null;
+    socket.__enabledWindow =
+      accessEnabled &&
+      window &&
+      typeof window.windowId === 'number' &&
+      Number.isInteger(window.windowId) &&
+      window.windowId > 0 &&
+      typeof window.title === 'string' &&
+      typeof window.enabledAt === 'number' &&
+      Number.isFinite(window.enabledAt)
+        ? {
+            windowId: window.windowId,
+            title: sanitizeIncidentalText(window.title).slice(0, 200),
+            enabledAt: window.enabledAt,
+          }
+        : null;
     if (!accessEnabled && socket.__extensionId) {
       this.artifactStore.deleteByExtension(socket.__extensionId);
       this.domBaselines.clearForSocket(socket);
@@ -1529,9 +1578,32 @@ export class BridgeDaemon {
     if (socket.__accessEnabled !== accessEnabled) {
       socket.__accessEnabled = accessEnabled;
       this.invalidateConnectedExtensionsCache();
-      return;
     }
     socket.__accessEnabled = accessEnabled;
+    this.broadcastWindowAccess();
+  }
+
+  /** Broadcast access metadata only to locally authenticated extension connections.
+   * @returns {void}
+   */
+  broadcastWindowAccess() {
+    /** @type {import('../../protocol/src/window-access.js').BrowserWindowAccess[]} */
+    const enabledWindows = [...this.extensionSockets.entries()]
+      .filter(([, socket]) => socket.__accessEnabled === true && !socket.destroyed)
+      .map(([extensionId, socket]) => ({
+        extensionId,
+        browserName: socket.__browserName ?? null,
+        profileLabel: socket.__profileLabel ?? null,
+        window: socket.__enabledWindow ?? null,
+        ...(socket.__windowActions ? { canControl: true } : {}),
+      }));
+    for (const [extensionId, socket] of this.extensionSockets) {
+      if (socket.destroyed || !socket.__windowAccessUpdates) continue;
+      void writeJsonLine(socket, {
+        type: 'extension.window_access',
+        otherEnabledWindows: enabledWindows.filter((window) => window.extensionId !== extensionId),
+      }).catch(() => socket.destroy());
+    }
   }
 
   /**
@@ -1787,6 +1859,7 @@ export class BridgeDaemon {
    * @returns {void}
    */
   handleSocketClose(socket) {
+    this.windowActions.disconnect(socket);
     this.clientSockets.delete(socket);
     if (socket.__registrationTimeoutId) {
       clearTimeout(socket.__registrationTimeoutId);
@@ -1799,6 +1872,7 @@ export class BridgeDaemon {
       if (this.extensionSockets.get(socket.__extensionId) === socket) {
         this.extensionSockets.delete(socket.__extensionId);
         this.invalidateConnectedExtensionsCache();
+        this.broadcastWindowAccess();
       }
     }
 

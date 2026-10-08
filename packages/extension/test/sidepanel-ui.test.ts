@@ -18,6 +18,7 @@ type SidepanelStateSync = {
     nativeHostVersion: string | null;
     currentTab: SidepanelCurrentTab | null;
     agentTabs?: import('../src/background-ui.js').AgentTabUiState[];
+    otherEnabledWindows?: import('../../protocol/src/window-access.js').BrowserWindowAccess[];
     setupStatus: SetupStatus | null;
     setupStatusPending: boolean;
     setupStatusError: string | null;
@@ -350,6 +351,7 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
 
     portPair.left.dispatchMessage(createSidepanelStateSync(false));
     assert.equal(button.textContent, 'Enable Window Access');
+    assert.equal(button.dataset.enabled, 'false');
     assert.equal(button.disabled, false);
     assert.equal(
       document.getElementById('agent-status-detail')?.textContent,
@@ -361,7 +363,192 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
 
     portPair.left.dispatchMessage(createSidepanelStateSync(true));
     assert.equal(button.textContent, 'Disable Window Access');
+    assert.equal(button.dataset.enabled, 'true');
     assert.equal(button.disabled, false);
+
+    portPair.left.dispatchMessage(createSidepanelStateSync(false));
+    assert.equal(button.dataset.enabled, 'false');
+  });
+});
+
+test('other enabled windows counter shows safe details and closes when access disappears', async (t) => {
+  const html = await readFile(SIDEPANEL_HTML_URL, 'utf8');
+  const savedChrome = Object.prototype.hasOwnProperty.call(globalThis, 'chrome')
+    ? globalThis.chrome
+    : MISSING;
+  const savedSetInterval = globalThis.setInterval;
+  const savedClearInterval = globalThis.clearInterval;
+  t.after(() => {
+    restoreGlobal('chrome', savedChrome);
+    restoreGlobal('setInterval', savedSetInterval);
+    restoreGlobal('clearInterval', savedClearInterval);
+  });
+  Reflect.set(globalThis, 'setInterval', (() => 0) as unknown as typeof setInterval);
+  Reflect.set(globalThis, 'clearInterval', (() => {}) as typeof clearInterval);
+  const pair = createMessagePortPair();
+  Reflect.set(
+    globalThis,
+    'chrome',
+    createChromeFake({
+      runtime: {
+        connect() {
+          return pair.left.port as unknown as chrome.runtime.Port;
+        },
+      },
+    })
+  );
+  await withDocument(html, async ({ window }) => {
+    Reflect.set(window, 'location', new URL('https://example.com/sidepanel.html?tabId=41'));
+    await importFreshSidepanelScript();
+    await flushMicrotasks();
+    const details = document.getElementById('other-windows') as HTMLDetailsElement;
+    const summary = document.getElementById('other-windows-count') as HTMLElement;
+    const list = document.getElementById('other-windows-list') as HTMLElement;
+    assert.equal(details.closest('.control-heading')?.firstElementChild?.id, 'agent-status');
+    pair.left.dispatchMessage(createSidepanelStateSync(true));
+    assert.equal(details.hidden, true);
+    const title = '<img src=x onerror=alert(1)>';
+    const otherEnabledWindows = [
+      {
+        extensionId: 'edge',
+        browserName: 'Edge',
+        profileLabel: 'Work',
+        canControl: true,
+        window: { windowId: 7, title, enabledAt: 1 },
+      },
+    ];
+    pair.left.dispatchMessage(
+      createSidepanelStateSync(false, null, null, [], { otherEnabledWindows })
+    );
+    assert.equal(details.hidden, false, 'warn even when this window is disabled');
+    assert.equal(summary.textContent, '1 other');
+    assert.equal(summary.getAttribute('aria-label'), '1 other enabled window');
+    assert.equal(summary.getAttribute('title'), null);
+    assert.equal(list.querySelector('.other-window-browser')?.textContent, 'Edge · Work');
+    assert.equal(list.querySelector('.other-window-browser')?.getAttribute('title'), null);
+    assert.equal(list.querySelector('.other-window-detail')?.textContent, `${title} · Window 7`);
+    assert.equal(list.querySelector('.other-window-detail')?.getAttribute('title'), null);
+    assert.equal(
+      details.querySelector('[title]'),
+      null,
+      'the counter and dropdown have no tooltips'
+    );
+    assert.equal(document.querySelector('.other-windows-note'), null);
+    assert.equal(list.querySelector('img'), null);
+    const hoveredDetail = list.querySelector('.other-window-detail');
+    const hoveredBrowser = list.querySelector('.other-window-browser');
+    const counterText = summary.firstChild;
+    pair.left.dispatchMessage(
+      createSidepanelStateSync(true, null, null, [], { otherEnabledWindows })
+    );
+    assert.equal(
+      list.querySelector('.other-window-detail'),
+      hoveredDetail,
+      'unrelated state updates preserve dropdown rows'
+    );
+    assert.equal(list.querySelector('.other-window-browser'), hoveredBrowser);
+    assert.equal(summary.firstChild, counterText);
+    const focusButton = list.querySelector('.other-window-button') as HTMLButtonElement;
+    const disableAll = document.getElementById('other-windows-disable') as HTMLButtonElement;
+    const error = document.getElementById('other-windows-error') as HTMLElement;
+    assert.equal(focusButton.disabled, false);
+    assert.match(focusButton.getAttribute('aria-label') ?? '', /Focus Edge/);
+    details.open = true;
+    focusButton.click();
+    assert.deepEqual(pair.left.postedMessages.at(-1), {
+      type: 'windows.focus',
+      extensionId: 'edge',
+      windowId: 7,
+      enabledAt: 1,
+    });
+    assert.equal(disableAll.disabled, true);
+    assert.equal(focusButton.disabled, true);
+    const pendingMessageCount = pair.left.postedMessages.length;
+    disableAll.click();
+    assert.equal(
+      pair.left.postedMessages.length,
+      pendingMessageCount,
+      'pending actions cannot be submitted twice'
+    );
+    pair.left.dispatchMessage({
+      type: 'windows.action.result',
+      action: 'focus',
+      ok: false,
+      error: 'Window closed',
+    });
+    assert.equal(error.hidden, false);
+    assert.equal(error.textContent, 'Window closed');
+    assert.equal(details.open, true);
+    assert.equal(focusButton.disabled, false);
+    focusButton.click();
+    pair.left.dispatchMessage({ type: 'windows.action.result', action: 'focus', ok: true });
+    assert.equal(details.open, false);
+    assert.equal(error.hidden, true);
+    details.open = true;
+    disableAll.click();
+    assert.deepEqual(pair.left.postedMessages.at(-1), { type: 'windows.disable_others' });
+    assert.equal(disableAll.textContent, 'Disabling…');
+    assert.equal(disableAll.disabled, true);
+    pair.left.dispatchMessage({
+      type: 'windows.action.result',
+      action: 'disable',
+      ok: false,
+      error: '1 window could not be disabled',
+    });
+    assert.equal(disableAll.textContent, 'Disable all');
+    assert.equal(disableAll.disabled, false);
+    assert.equal(error.textContent, '1 window could not be disabled');
+    assert.equal(details.querySelector('[title]'), null, 'new controls must not add tooltips');
+    details.open = true;
+    pair.left.dispatchMessage(
+      createSidepanelStateSync(true, null, null, [], {
+        otherEnabledWindows: [
+          ...otherEnabledWindows,
+          { extensionId: 'local', browserName: null, profileLabel: null, window: null },
+          {
+            extensionId: 'legacy',
+            browserName: null,
+            profileLabel: null,
+            window: { windowId: 8, title: '', enabledAt: 1 },
+          },
+        ],
+      })
+    );
+    assert.equal(summary.textContent, '3 other');
+    assert.equal(details.open, true, 'state updates preserve an open dropdown');
+    assert.match(list.textContent ?? '', /This browser/);
+    assert.match(list.textContent ?? '', /Window details unavailable/);
+    assert.match(list.textContent ?? '', /Unknown browser · Unknown profile/);
+    assert.match(list.textContent ?? '', /Untitled window/);
+    const buttons = list.querySelectorAll<HTMLButtonElement>('.other-window-button');
+    assert.equal(buttons[1].disabled, true, 'unknown windows cannot be focused');
+    assert.equal(buttons[2].disabled, true, 'legacy peers do not advertise control support');
+    summary.dispatchEvent(new window.Event('click', { bubbles: true }));
+    assert.equal(details.open, true, 'inside clicks do not dismiss the dropdown');
+    document.body.dispatchEvent(new window.Event('click', { bubbles: true }));
+    assert.equal(details.open, false);
+    details.open = true;
+    const escape = new window.Event('keydown', { bubbles: true });
+    Reflect.set(escape, 'key', 'Escape');
+    summary.dispatchEvent(escape);
+    assert.equal(details.open, false);
+    details.open = true;
+    pair.left.dispatchMessage(createSidepanelStateSync(true));
+    assert.equal(details.hidden, true);
+    assert.equal(details.open, false);
+    assert.equal(list.children.length, 0);
+    pair.left.dispatchMessage(
+      createSidepanelStateSync(true, null, null, [], { otherEnabledWindows })
+    );
+    pair.left.dispatchMessage({ type: 'native.status', connected: false });
+    assert.equal(details.hidden, true);
+    assert.equal(list.children.length, 0);
+    pair.left.dispatchMessage({ type: 'native.status', connected: true });
+    pair.left.dispatchMessage(
+      createSidepanelStateSync(true, null, null, [], { otherEnabledWindows })
+    );
+    assert.equal(list.children.length, 1, 'reconnecting restores unchanged window details');
+    window.dispatchEvent(new window.Event('beforeunload'));
   });
 });
 

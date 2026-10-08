@@ -37,6 +37,7 @@ import { POPUP_PATH } from './background-state.js';
  *   setCurrentWindowEnabled: (enabled: boolean) => Promise<void>,
  *   getAgentTabState?: (windowId: number, currentTabId: number) => Promise<AgentTabUiState[]>,
  *   moveAgentToTab?: (tabId: number) => Promise<void>,
+ *   requestWindowAction?: (action: import('../../protocol/src/window-access.js').WindowAction, entry: import('../../protocol/src/window-access.js').BrowserWindowAccess) => Promise<void>,
  *   handleSetupInstallAction: (message: Record<string, unknown>) => Promise<void>,
  * }} UiDeps
  */
@@ -99,6 +100,27 @@ const pendingSnapshots = new WeakMap();
 
 /**
  * @param {ExtensionState} state
+ * @param {number | null | undefined} windowId
+ * @returns {import('../../protocol/src/window-access.js').BrowserWindowAccess[]}
+ */
+function getOtherEnabledWindows(state, windowId) {
+  return [
+    ...(state.enabledWindow && state.enabledWindow.windowId !== windowId
+      ? [
+          {
+            extensionId: 'local',
+            browserName: null,
+            profileLabel: null,
+            window: state.enabledWindow,
+          },
+        ]
+      : []),
+    ...(state.otherEnabledWindows ?? []),
+  ];
+}
+
+/**
+ * @param {ExtensionState} state
  * @param {chrome.runtime.Port} port
  * @param {UiDeps} deps
  * @returns {Promise<void>}
@@ -137,6 +159,10 @@ export async function emitUiStateForPort(state, port, deps) {
       nativeHostVersion: state.nativeHostVersion,
       daemonProxy: state.daemonProxy,
       currentTab,
+      otherEnabledWindows: getOtherEnabledWindows(
+        state,
+        currentTab?.windowId ?? portState.scopeWindowId
+      ),
       ...(agentTabs.length ? { agentTabs } : {}),
       setupStatus: state.setupStatus,
       setupStatusPending: state.setupStatusPending,
@@ -153,11 +179,60 @@ export async function emitUiStateForPort(state, port, deps) {
  *
  * @param {ExtensionState} state
  * @param {chrome.runtime.Port} port
- * @param {Record<string, any>} message
+ * @param {Record<string, unknown>} message
  * @param {UiDeps} deps
  * @returns {Promise<void>}
  */
 export async function handleUiMessage(state, port, message, deps) {
+  if (message?.type === 'windows.focus' || message?.type === 'windows.disable_others') {
+    const action = message.type === 'windows.focus' ? 'focus' : 'disable';
+    try {
+      const scope = state.uiPorts.get(port);
+      if (!scope || !deps.requestWindowAction)
+        throw new Error('Window controls are unavailable. Reload the extension.');
+      const requestWindowAction = deps.requestWindowAction;
+      const tab = scope.scopeTabId
+        ? await deps.getTabState(scope.scopeTabId)
+        : await deps.getCurrentTabState(scope.scopeWindowId);
+      const windowId = tab?.windowId ?? scope.scopeWindowId;
+      if (windowId == null)
+        throw new Error('Could not identify the current window. Reopen the side panel.');
+      const windows = getOtherEnabledWindows(state, windowId);
+      if (action === 'focus') {
+        const entry = windows.find(
+          (entry) =>
+            entry.extensionId === message.extensionId &&
+            entry.window !== null &&
+            entry.window.windowId === message.windowId &&
+            entry.window.enabledAt === message.enabledAt
+        );
+        if (!entry) throw new Error('Window access changed. Refresh the list and try again.');
+        await requestWindowAction('focus', entry);
+      } else {
+        // Snapshot only the other grants visible at the click, never the current grant.
+        const results = await Promise.allSettled(
+          windows.map((entry) => requestWindowAction('disable', entry))
+        );
+        const failures = results.filter((result) => result.status === 'rejected');
+        if (failures.length) {
+          const reason = /** @type {unknown} */ (failures[0].reason);
+          const detail = reason instanceof Error ? reason.message : 'Window action failed.';
+          throw new Error(
+            `${failures.length} ${failures.length === 1 ? 'window could' : 'windows could'} not be disabled. ${detail}`
+          );
+        }
+      }
+      postToUiPort(state, port, { type: 'windows.action.result', action, ok: true });
+    } catch (error) {
+      postToUiPort(state, port, {
+        type: 'windows.action.result',
+        action,
+        ok: false,
+        error: error instanceof Error ? error.message : 'Window action failed.',
+      });
+    }
+    return;
+  }
   if (message?.type === 'state.request') {
     const scopeTabId = Number(message.scopeTabId);
     const scopeWindowId = Number(message.scopeWindowId);

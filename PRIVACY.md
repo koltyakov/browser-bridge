@@ -82,6 +82,7 @@ You should review the privacy and retention practices of any connected agent, ID
 Browser Bridge keeps data only as long as needed for the current local session and feature behavior.
 
 - Window enablement state is stored in session storage and cleared when disabled or when the browser session ends.
+- To warn about access enabled elsewhere, the daemon shares enabled-window IDs, bounded titles, enablement timestamps, browser names, and session profile labels with connected local Browser Bridge extensions. The side panel uses this in-memory metadata for its other-enabled-windows counter. It does not include page contents or disabled-window details, and disconnecting an extension removes its entry.
 - Action log entries are stored for the current browser session only.
 - Incidental action/log URLs remove credentials and fragments and redact query values; sensitive structured fields and local path prefixes are reduced before persistence.
 - Console and fetch/XHR network buffers are bounded in memory and cleared when disabled or when the page state is reset.

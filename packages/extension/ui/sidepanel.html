@@ -21,7 +21,21 @@
     </div>
     <section id="control-section" class="card control-card" hidden>
       <div class="control-copy">
-        <div id="agent-status" class="eyebrow">Window access</div>
+        <div class="control-heading">
+          <div id="agent-status" class="eyebrow">Window access</div>
+          <details id="other-windows" class="other-windows" hidden>
+            <summary id="other-windows-count" aria-label="Other enabled windows"></summary>
+            <div class="other-windows-dropdown">
+              <div class="other-windows-heading">
+                <div class="eyebrow">Other enabled windows</div>
+                <button id="other-windows-disable" class="other-windows-disable" type="button"
+                  aria-label="Disable access in all other enabled windows">Disable all</button>
+              </div>
+              <ul id="other-windows-list" class="other-windows-list"></ul>
+              <p id="other-windows-error" class="other-windows-error" role="alert" hidden></p>
+            </div>
+          </details>
+        </div>
         <p id="agent-status-detail" class="control-detail">
           Allow agents to inspect and interact with the tabs.
         </p>

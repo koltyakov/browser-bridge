@@ -344,6 +344,58 @@ test('daemon rejects extension messages from agent-role sockets', async () => {
   assert.equal(failure.type, 'error');
   assert.equal(failure.error?.code, ERROR_CODES.INVALID_REQUEST);
   assert.match(failure.error?.message ?? '', /not allowed for agent sockets/);
+  for (const type of ['extension.window_action.request', 'extension.window_action.result']) {
+    await daemon.handleClientMessage(socket, {
+      type,
+      requestId: 'ui-request',
+      action: 'disable',
+      extensionId: 'other',
+      windowId: 7,
+      enabledAt: 123,
+      ok: true,
+    });
+    const rejection = parsePayload(socket.writes.at(-1)?.trim() ?? '{}');
+    assert.match(rejection.error?.message ?? '', /not allowed for agent sockets/);
+  }
+  assert.equal(daemon.windowActions.pending.size, 0);
+});
+
+test('daemon routes local UI window actions and their acknowledgements outside the agent RPC path', async () => {
+  const daemon = new BridgeDaemon({ logger: { log() {}, error() {} } });
+  const source = createFakeSocket();
+  const target = createFakeSocket();
+  daemon.registerSocket(source, { role: 'extension' });
+  daemon.registerSocket(target, { role: 'extension' });
+  daemon.handleExtensionIdentity(source, { windowActions: true });
+  daemon.handleExtensionIdentity(target, { windowActions: true });
+  daemon.handleExtensionAccessUpdate(target, {
+    accessEnabled: true,
+    enabledWindow: { windowId: 7, title: 'Other', enabledAt: 123 },
+  });
+  const operation = daemon.handleClientMessage(source, {
+    type: 'extension.window_action.request',
+    requestId: 'ui-request',
+    action: 'disable',
+    extensionId: target.__extensionId,
+    windowId: 7,
+    enabledAt: 123,
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  const command = JSON.parse(target.writes.at(-1) ?? '{}') as { type: string; requestId: string };
+  assert.equal(command.type, 'extension.window_action.command');
+  await daemon.handleClientMessage(target, {
+    type: 'extension.window_action.result',
+    requestId: command.requestId,
+    ok: true,
+  });
+  await operation;
+  assert.deepEqual(JSON.parse(source.writes.at(-1) ?? '{}'), {
+    type: 'extension.window_action.response',
+    requestId: 'ui-request',
+    ok: true,
+  });
+  assert.equal(daemon.pendingRequests.size, 0);
+  assert.equal(daemon.windowActions.pending.size, 0);
 });
 
 test('daemon limits extension-role agent requests to health and setup methods', async () => {
@@ -2227,6 +2279,77 @@ test('daemon reuses the same connectedExtensions snapshot across unchanged healt
 
   assert.equal(secondPing.snapshot, firstSnapshot);
   assert.deepEqual(secondPing.connectedExtensions, firstPing.connectedExtensions);
+});
+
+test('daemon pushes other enabled windows across browsers without notifying legacy extensions', () => {
+  const daemon = new BridgeDaemon({ logger: console });
+  const chrome = createFakeSocket();
+  const edge = createFakeSocket();
+  const legacy = createFakeSocket();
+  const agent = createFakeSocket();
+  daemon.registerSocket(chrome, {
+    role: 'extension',
+    browserName: 'Chrome',
+    profileLabel: 'Personal',
+  });
+  daemon.registerSocket(edge, { role: 'extension', browserName: 'Edge', profileLabel: 'Work' });
+  daemon.registerSocket(legacy, { role: 'extension' });
+  daemon.agentSockets.set('agent', agent);
+  daemon.handleExtensionIdentity(chrome, { windowAccessUpdates: true });
+  daemon.handleExtensionIdentity(edge, { windowAccessUpdates: true, windowActions: true });
+  const snapshot = (
+    socket: FakeSocket
+  ): import('../../protocol/src/window-access.js').BrowserWindowAccess[] => {
+    const message = JSON.parse(socket.writes.at(-1) ?? '{}') as {
+      type: string;
+      otherEnabledWindows: import('../../protocol/src/window-access.js').BrowserWindowAccess[];
+    };
+    assert.equal(message.type, 'extension.window_access');
+    return message.otherEnabledWindows;
+  };
+  assert.deepEqual(snapshot(chrome), []);
+  const enabledWindow = { windowId: 7, title: 'Work page', enabledAt: 123 };
+  daemon.handleExtensionAccessUpdate(edge, { accessEnabled: true, enabledWindow });
+  assert.deepEqual(snapshot(chrome), [
+    {
+      extensionId: edge.__extensionId,
+      browserName: 'Edge',
+      profileLabel: 'Work',
+      window: enabledWindow,
+      canControl: true,
+    },
+  ]);
+  assert.deepEqual(snapshot(edge), [], 'the recipient must not count itself');
+  daemon.handleExtensionAccessUpdate(chrome, {
+    accessEnabled: true,
+    enabledWindow: { ...enabledWindow, title: 'Personal page' },
+  });
+  assert.equal(snapshot(chrome).length, 1);
+  assert.equal(snapshot(edge).length, 1, 'identical window IDs across profiles remain separate');
+  daemon.handleExtensionAccessUpdate(edge, {
+    accessEnabled: true,
+    enabledWindow: { ...enabledWindow, title: 'Updated page' },
+  });
+  assert.equal(snapshot(chrome)[0].window?.title, 'Updated page');
+  daemon.handleExtensionIdentity(edge, { profileLabel: 'Renamed' });
+  assert.equal(snapshot(chrome)[0].profileLabel, 'Renamed');
+  daemon.handleExtensionAccessUpdate(legacy, {
+    accessEnabled: true,
+    enabledWindow: { windowId: 'invalid' },
+  });
+  assert.equal(
+    snapshot(chrome)[1].window,
+    null,
+    'old or malformed metadata still counts enabled access'
+  );
+  assert.equal(legacy.writes.length, 1, 'legacy peers receive only their registration response');
+  assert.equal(agent.writes.length, 0, 'window metadata is not broadcast to agents');
+  daemon.handleExtensionAccessUpdate(edge, { accessEnabled: false });
+  assert.equal(snapshot(chrome).length, 1);
+  daemon.handleSocketClose(legacy);
+  assert.deepEqual(snapshot(chrome), []);
+  daemon.handleSocketClose(chrome);
+  assert.deepEqual(snapshot(edge), []);
 });
 
 test('daemon times out pending requests and removes them once the deadline expires', async () => {

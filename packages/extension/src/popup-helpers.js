@@ -119,6 +119,7 @@ export function getPopupViewState(currentTab) {
 export function renderPopupButtonState(currentTab, button) {
   const viewState = getPopupViewState(currentTab);
   button.dataset.pending = 'false';
+  button.dataset.enabled = String(currentTab?.enabled ?? false);
   button.textContent = viewState.buttonLabel;
   button.disabled = viewState.buttonDisabled;
 }

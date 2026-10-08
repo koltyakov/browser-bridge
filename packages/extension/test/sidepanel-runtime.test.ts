@@ -76,16 +76,32 @@ test('sidepanel runtime message handler routes native status, sync, and toggle e
     renderNativeStatus: (connected, error) => calls.push(['native', connected, error ?? null]),
     renderState: (nextState) => calls.push(['state', nextState]),
     renderToggleError: (errorMessage) => calls.push(['error', errorMessage]),
+    renderWindowActionResult: (message) => calls.push(['window', message]),
   });
 
   handler({ type: 'native.status', connected: false, error: 'bridge down' });
   handler({ type: 'state.sync', state });
   handler({ type: 'toggle.error', error: 'No access' });
+  handler({
+    type: 'windows.action.result',
+    action: 'disable',
+    ok: false,
+    error: 'Other browser disconnected',
+  });
 
   assert.deepEqual(calls, [
     ['native', false, 'bridge down'],
     ['state', state],
     ['error', 'No access'],
+    [
+      'window',
+      {
+        type: 'windows.action.result',
+        action: 'disable',
+        ok: false,
+        error: 'Other browser disconnected',
+      },
+    ],
   ]);
 });
 

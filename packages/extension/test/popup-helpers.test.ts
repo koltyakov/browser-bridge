@@ -254,6 +254,7 @@ test('renderPopupButtonState resets pending flags for unavailable state', () => 
   assert.equal(button.textContent, 'Enable Window Access');
   assert.equal(button.disabled, true);
   assert.equal(button.dataset.pending, 'false');
+  assert.equal(button.dataset.enabled, 'false');
 });
 
 test('renderPopupNativeIndicator updates indicator metadata and ignores missing elements', () => {

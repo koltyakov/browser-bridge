@@ -485,6 +485,7 @@ test('background native enable flow primes console capture and swallows recovera
   assert.deepEqual(findMessage(nativeMessages, 'host.access_update'), {
     type: 'host.access_update',
     accessEnabled: true,
+    enabledWindow: getNativeModule(loaded).getStateForTest().enabledWindow,
   });
 });
 
@@ -522,6 +523,7 @@ test('background native connect syncs restored enabled access after startup', as
   assert.deepEqual(findMessage(nativeMessages, 'host.access_update'), {
     type: 'host.access_update',
     accessEnabled: true,
+    enabledWindow: { windowId: 8, title: 'Restored Window', enabledAt: 123 },
   });
 });
 
@@ -851,6 +853,7 @@ test('background native scheduleNativeReconnect broadcasts disconnect state and 
         nativeHostVersion: null,
         daemonProxy: null,
         currentTab: null,
+        otherEnabledWindows: [],
         setupStatus: null,
         setupStatusPending: false,
         setupStatusError: null,
@@ -1065,6 +1068,7 @@ test('background native enable flow broadcasts synced UI state and posts an acce
       nativeUnstable: false,
       nativeHostVersion: '1.2.0',
       daemonProxy: null,
+      otherEnabledWindows: [],
       currentTab: {
         tabId: 31,
         windowId: 8,
@@ -1090,6 +1094,7 @@ test('background native enable flow broadcasts synced UI state and posts an acce
   assert.deepEqual(findMessage(nativeMessages, 'host.access_update'), {
     type: 'host.access_update',
     accessEnabled: true,
+    enabledWindow: state.enabledWindow,
   });
 });
 

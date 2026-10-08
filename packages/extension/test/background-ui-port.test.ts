@@ -298,6 +298,7 @@ test('background UI port syncs current state and updates scoped tab state on req
       nativeUnstable: false,
       nativeHostVersion: '1.2.0',
       daemonProxy: null,
+      otherEnabledWindows: [],
       currentTab: {
         tabId: 31,
         windowId: 8,
@@ -331,6 +332,7 @@ test('background UI port syncs current state and updates scoped tab state on req
       nativeUnstable: false,
       nativeHostVersion: '1.2.0',
       daemonProxy: null,
+      otherEnabledWindows: [],
       currentTab: {
         tabId: 41,
         windowId: 8,
@@ -522,6 +524,7 @@ test('background UI port refresh clears setup status when the native host is una
       nativeUnstable: false,
       nativeHostVersion: null,
       daemonProxy: null,
+      otherEnabledWindows: [],
       currentTab: null,
       setupStatus: null,
       setupStatusPending: false,

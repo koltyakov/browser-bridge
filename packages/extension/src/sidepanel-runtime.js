@@ -59,6 +59,7 @@
  *   daemonProxy: DaemonProxyStatus | null,
  *   currentTab: SidePanelCurrentTab | null,
  *   agentTabs?: import('./background-ui.js').AgentTabUiState[],
+ *   otherEnabledWindows?: import('../../protocol/src/window-access.js').BrowserWindowAccess[],
  *   setupStatus: SetupStatus | null,
  *   setupStatusPending: boolean,
  *   setupStatusError: string | null,
@@ -80,6 +81,11 @@
  * } | {
  *   type: 'toggle.error',
  *   error: string
+ * } | {
+ *   type: 'windows.action.result',
+ *   action: import('../../protocol/src/window-access.js').WindowAction,
+ *   ok: boolean,
+ *   error?: string
  * }} SidePanelMessage
  */
 
@@ -87,7 +93,8 @@
  * @typedef {{
  *   renderNativeStatus: (connected: boolean, error?: string, unstable?: boolean) => void,
  *   renderState: (state: UiSnapshot) => void,
- *   renderToggleError: (errorMessage: string) => void
+ *   renderToggleError: (errorMessage: string) => void,
+ *   renderWindowActionResult?: (message: import('../../protocol/src/window-access.js').WindowActionUiResult) => void
  * }} SidePanelMessageHandlerOptions
  */
 
@@ -159,6 +166,9 @@ export function createSidepanelMessageHandler(options) {
 
     if (message.type === 'toggle.error') {
       options.renderToggleError(message.error);
+    }
+    if (message.type === 'windows.action.result') {
+      options.renderWindowActionResult?.(message);
     }
   };
 }

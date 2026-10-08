@@ -204,6 +204,23 @@ test('runNativeHost bridges daemon socket messages and stdin frames', async () =
     socket.emit(
       'data',
       `${JSON.stringify({
+        type: 'extension.window_access',
+        otherEnabledWindows: [
+          { extensionId: 'edge', browserName: 'Edge', profileLabel: 'Work', window: null },
+        ],
+      })}\n`
+    );
+    socket.emit(
+      'data',
+      `${JSON.stringify({ type: 'extension.window_action.command', requestId: 'focus-1', action: 'focus', windowId: 7, enabledAt: 123 })}\n`
+    );
+    socket.emit(
+      'data',
+      `${JSON.stringify({ type: 'extension.window_action.response', requestId: 'ui-1', ok: true })}\n`
+    );
+    socket.emit(
+      'data',
+      `${JSON.stringify({
         type: 'extension.setup_status.response',
         requestId: 'setup-1',
         status: { configured: true },
@@ -238,6 +255,8 @@ test('runNativeHost bridges daemon socket messages and stdin frames', async () =
         browserName: 'chrome',
         profileLabel: 'Default',
         browserExtensionId: 'jjjkmmcdkpcgamlopogicbnnhdgebhie',
+        windowAccessUpdates: true,
+        windowActions: true,
       })
     );
     process.stdin.emit(
@@ -245,6 +264,7 @@ test('runNativeHost bridges daemon socket messages and stdin frames', async () =
       frameNativeMessage({
         type: 'host.access_update',
         accessEnabled: true,
+        enabledWindow: { windowId: 7, title: 'Example', enabledAt: 123 },
       })
     );
     process.stdin.emit(
@@ -253,6 +273,21 @@ test('runNativeHost bridges daemon socket messages and stdin frames', async () =
         type: 'host.activity',
         at: 12345,
       })
+    );
+    process.stdin.emit(
+      'data',
+      frameNativeMessage({
+        type: 'host.window_action.request',
+        requestId: 'ui-1',
+        action: 'disable',
+        extensionId: 'edge',
+        windowId: 7,
+        enabledAt: 123,
+      })
+    );
+    process.stdin.emit(
+      'data',
+      frameNativeMessage({ type: 'host.window_action.result', requestId: 'focus-1', ok: true })
     );
     process.stdin.emit(
       'data',
@@ -281,6 +316,20 @@ test('runNativeHost bridges daemon socket messages and stdin frames', async () =
         response: { ok: true, result: { pong: true } },
       },
       {
+        type: 'host.window_access',
+        otherEnabledWindows: [
+          { extensionId: 'edge', browserName: 'Edge', profileLabel: 'Work', window: null },
+        ],
+      },
+      {
+        type: 'host.window_action.command',
+        requestId: 'focus-1',
+        action: 'focus',
+        windowId: 7,
+        enabledAt: 123,
+      },
+      { type: 'host.window_action.response', requestId: 'ui-1', ok: true },
+      {
         type: 'host.setup_status.response',
         requestId: 'setup-1',
         status: { configured: true },
@@ -294,9 +343,11 @@ test('runNativeHost bridges daemon socket messages and stdin frames', async () =
     assert.deepEqual(socketWrites.slice(1), [
       '{"type":"agent.request","request":{"id":"agent-1","method":"tabs.list"}}\n',
       '{"type":"extension.setup_status.request","requestId":"setup-3"}\n',
-      '{"type":"extension.identity","browserName":"chrome","profileLabel":"Default","browserExtensionId":"jjjkmmcdkpcgamlopogicbnnhdgebhie"}\n',
-      '{"type":"extension.access_update","accessEnabled":true}\n',
+      '{"type":"extension.identity","browserName":"chrome","profileLabel":"Default","browserExtensionId":"jjjkmmcdkpcgamlopogicbnnhdgebhie","windowAccessUpdates":true,"windowActions":true}\n',
+      '{"type":"extension.access_update","accessEnabled":true,"enabledWindow":{"windowId":7,"title":"Example","enabledAt":123}}\n',
       '{"type":"extension.activity","at":12345}\n',
+      '{"type":"extension.window_action.request","requestId":"ui-1","action":"disable","extensionId":"edge","windowId":7,"enabledAt":123}\n',
+      '{"type":"extension.window_action.result","requestId":"focus-1","ok":true}\n',
       `{"type":"extension.artifact.chunk","artifact":{"requestId":"capture-1"},"artifactId":"art_${'a'.repeat(43)}","chunkIndex":0,"data":"aGVsbG8="}\n`,
       '{"type":"extension.response","response":{"id":"plain-1","ok":true}}\n',
     ]);

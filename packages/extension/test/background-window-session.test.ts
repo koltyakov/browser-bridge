@@ -146,3 +146,47 @@ test('enabling a requested window records a scoped access confirmation activity'
   });
   assert.equal(activities.length, 1);
 });
+
+test('UI revocation is serialized, rejects a newer grant, and preserves another window access prompt', async () => {
+  const state = createExtensionState();
+  setExtensionState(state);
+  state.enabledWindow = { windowId: 7, title: 'Original', enabledAt: 123 };
+  const chromeObj = createChromeFake() as unknown as typeof chrome;
+  const cleared: number[] = [];
+  const updates: boolean[] = [];
+  const controller = createWindowSessionController(state, chromeObj, {
+    sendAccessUpdate(enabled) {
+      updates.push(enabled);
+    },
+    async injectContentScriptsForWindow() {},
+    async primeWindowConsoleCapture() {},
+    async primeTabConsoleCapture() {},
+    async clearWindowBridgeState(windowId) {
+      cleared.push(windowId);
+    },
+    cancelNavigationWaitsForWindow() {},
+    async appendActionLogEntry() {},
+    async refreshActionIndicators() {},
+    async updateActionIndicatorForTab() {},
+    async emitUiState() {},
+    isRestrictedAutomationUrl() {
+      return false;
+    },
+  });
+  const reenabled = controller.setWindowEnabled(7, 'New grant', true);
+  const staleDisable = controller.disableWindowAccess(7, 123);
+  const staleAssertion = assert.rejects(staleDisable, /access changed/);
+  await reenabled;
+  await staleAssertion;
+  assert.equal(state.enabledWindow?.windowId, 7);
+  assert.equal(cleared.length, 0);
+  state.requestedAccessWindowId = 8;
+  const access = state.enabledWindow!;
+  await controller.disableWindowAccess(access.windowId, access.enabledAt);
+  assert.equal(state.enabledWindow, null);
+  assert.equal(state.requestedAccessWindowId, 8, 'another panel access prompt is unaffected');
+  assert.deepEqual(cleared, [7]);
+  assert.deepEqual(updates, [true, false]);
+  await controller.disableWindowAccess(access.windowId, access.enabledAt);
+  assert.deepEqual(cleared, [7], 'already revoked grants are idempotent');
+});

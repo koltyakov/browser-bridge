@@ -734,6 +734,7 @@ test('background state clearEnabledWindowIfGone clears missing windows and sends
   assert.deepEqual(nativeMessages.at(-1), {
     type: 'host.access_update',
     accessEnabled: false,
+    enabledWindow: null,
   });
 });
 
@@ -1304,6 +1305,7 @@ test('background state clears enabled access and updates the action when the ena
   assert.deepEqual(nativeMessages.at(-1), {
     type: 'host.access_update',
     accessEnabled: false,
+    enabledWindow: null,
   });
 });
 

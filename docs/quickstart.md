@@ -104,6 +104,12 @@ If Browser Bridge does not appear immediately after `bbx install-mcp` or `bbx in
 
 Your agent can now inspect and patch the active tab in that enabled window, or other tabs in the same window when explicitly targeted.
 
+The side panel shows an **other enabled windows** counter beside the window access heading when access is also enabled elsewhere. Open it to see the browser, session profile label, and window details. It includes other browsers and profiles connected to the same local daemon, not separate daemons or machines. Each browser profile allows one enabled window at a time.
+
+Click an entry to focus its existing browser window, restoring it if minimized. This does not launch a browser or rebind an agent's working tab. **Disable all** in the dropdown header revokes access in all other listed windows, including other browsers and profiles. The side panel's current window stays unchanged. The dropdown reports failures instead of claiming that every window was disabled.
+
+Restart the daemon and reload the extension in each browser after updating. Older connected extensions still count when enabled, but their window details or focus and disable controls may be unavailable.
+
 Tabs with agent activity are marked with blue **AI** groups. Adjacent active tabs share a group;
 separated tabs use separate groups to preserve tab order. Pinned tabs and existing groups are
 left alone. Browser Bridge removes its groups after 15 idle minutes or when access is disabled.

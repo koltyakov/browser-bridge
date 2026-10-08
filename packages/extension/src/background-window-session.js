@@ -54,6 +54,7 @@ import {
  *   getCurrentTabState: (windowId?: number | null) => Promise<CurrentTabState | null>,
  *   getTabState: (tabId: number | null) => Promise<CurrentTabState | null>,
  *   setCurrentWindowEnabled: (enabled: boolean) => Promise<void>,
+ *   disableWindowAccess: (windowId: number, enabledAt: number) => Promise<void>,
  *   setWindowEnabled: (
  *     windowId: number,
  *     title: string,
@@ -222,6 +223,26 @@ export function createWindowSessionController(state, chrome, deps) {
     return operation;
   }
 
+  /** Revoke only the grant the user saw, not a window enabled after the click.
+   * @param {number} windowId
+   * @param {number} enabledAt
+   * @returns {Promise<void>}
+   */
+  async function disableWindowAccess(windowId, enabledAt) {
+    const operation = windowTransitionTail.then(async () => {
+      if (!state.enabledWindow) return;
+      if (
+        state.enabledWindow.windowId !== windowId ||
+        state.enabledWindow.enabledAt !== enabledAt
+      ) {
+        throw new Error('Window access changed. Refresh the list and try again.');
+      }
+      await applyWindowEnabledState(windowId, state.enabledWindow.title, false, undefined);
+    });
+    windowTransitionTail = operation.catch(() => {});
+    return operation;
+  }
+
   /**
    * @param {number} windowId
    * @param {string} title
@@ -231,7 +252,7 @@ export function createWindowSessionController(state, chrome, deps) {
    */
   async function applyWindowEnabledState(windowId, title, enabled, context) {
     const confirmsAccessRequest = enabled && state.requestedAccessWindowId === windowId;
-    clearRequestedAccessWindow();
+    if (enabled || state.requestedAccessWindowId === windowId) clearRequestedAccessWindow();
     const access = {
       windowId,
       title,
@@ -315,6 +336,7 @@ export function createWindowSessionController(state, chrome, deps) {
       await chrome.storage.session.set({
         [ENABLED_WINDOW_STORAGE_KEY]: state.enabledWindow,
       });
+      deps.sendAccessUpdate(true);
     }
 
     if (
@@ -364,6 +386,7 @@ export function createWindowSessionController(state, chrome, deps) {
     getTabState,
     setCurrentWindowEnabled,
     setWindowEnabled,
+    disableWindowAccess,
     handleTabUpdated,
     handleTabRemoved,
   };

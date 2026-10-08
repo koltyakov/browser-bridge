@@ -96,6 +96,7 @@ import {
   isRestrictedScriptingError,
 } from './background-content-script.js';
 import { createWindowSessionController } from './background-window-session.js';
+import { createWindowActionsController } from './background-window-actions.js';
 import {
   readConsoleBuffer,
   disableConsoleInterceptor,
@@ -362,6 +363,7 @@ const {
   getTabState,
   setCurrentWindowEnabled,
   setWindowEnabled,
+  disableWindowAccess,
   handleTabUpdated,
   handleTabRemoved,
 } = createWindowSessionController(state, chrome, {
@@ -377,6 +379,8 @@ const {
   emitUiState,
   isRestrictedAutomationUrl,
 });
+
+const windowActions = createWindowActionsController(state, chrome, { disableWindowAccess });
 
 const {
   resolveRequestTarget,
@@ -483,11 +487,15 @@ const { connectNative, scheduleNativeReconnect } = createNativeConnectionControl
   clearSetupStatus,
   emitUiState,
   handleBridgeRequest,
-  handleHostStatusMessage,
+  handleHostStatusMessage: (message) =>
+    windowActions.handleMessage(message) || handleHostStatusMessage(message),
   refreshActionIndicators,
   refreshSetupStatus,
   reply,
-  handleDestinationDisconnect: () => domBaselines.clearAll(),
+  handleDestinationDisconnect: () => {
+    domBaselines.clearAll();
+    windowActions.disconnect();
+  },
   recordReconnect: (outcome) => recoveryTelemetry.record('native_host_reconnect', outcome),
 });
 
@@ -760,7 +768,7 @@ function sendActivityUpdate(port = state.nativePort) {
  * @returns {void}
  */
 function sendAccessUpdate(enabled) {
-  sendAccessUpdateNative(enabled, state.nativePort);
+  sendAccessUpdateNative(enabled, state.nativePort, state.enabledWindow);
 }
 
 /**
@@ -1407,6 +1415,7 @@ async function handleUiMessage(port, message) {
     handleSetupInstallAction,
     getAgentTabState,
     moveAgentToTab,
+    requestWindowAction: windowActions.request,
   });
 }
 

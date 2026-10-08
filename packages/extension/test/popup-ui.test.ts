@@ -66,7 +66,7 @@ function createPopupStateSync(enabled: boolean, nativeConnected = true): PopupSt
   };
 }
 
-test('popup UI smoke test flips the action label between enable and disable states', async (t) => {
+test('popup UI flips the action label and styling state between enable and disable', async (t) => {
   const popupHtml = await readFile(POPUP_HTML_URL, 'utf8');
   const savedChrome = Object.prototype.hasOwnProperty.call(globalThis, 'chrome')
     ? globalThis.chrome
@@ -107,11 +107,16 @@ test('popup UI smoke test flips the action label between enable and disable stat
 
     portPair.left.dispatchMessage(createPopupStateSync(false));
     assert.equal(button.textContent, 'Enable Window Access');
+    assert.equal(button.dataset.enabled, 'false');
     assert.equal(button.disabled, false);
 
     portPair.left.dispatchMessage(createPopupStateSync(true));
     assert.equal(button.textContent, 'Disable Window Access');
+    assert.equal(button.dataset.enabled, 'true');
     assert.equal(button.disabled, false);
+
+    portPair.left.dispatchMessage(createPopupStateSync(false));
+    assert.equal(button.dataset.enabled, 'false');
   });
 });
 

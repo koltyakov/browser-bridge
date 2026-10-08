@@ -82,6 +82,7 @@ export function clearSetupStatus(state, errorMessage = null) {
   state.nativeHostVersion = null;
   state.nativeHostVersionRequestId = null;
   state.daemonProxy = null;
+  state.otherEnabledWindows = [];
   state.setupStatus = null;
   state.setupStatusPending = false;
   state.setupStatusPendingRequestId = null;
@@ -140,6 +141,8 @@ export function sendIdentity(port, chromeObj) {
         type: 'host.identity',
         browserName,
         profileLabel,
+        windowAccessUpdates: true,
+        windowActions: true,
         browserExtensionId:
           typeof chromeObj.runtime?.id === 'string' ? chromeObj.runtime.id : undefined,
       });
@@ -170,14 +173,16 @@ export function sendActivityUpdate(port) {
  *
  * @param {boolean} enabled
  * @param {chrome.runtime.Port | null} nativePort
+ * @param {import('../../protocol/src/window-access.js').EnabledWindowInfo | null} [enabledWindow]
  * @returns {void}
  */
-export function sendAccessUpdate(enabled, nativePort) {
+export function sendAccessUpdate(enabled, nativePort, enabledWindow) {
   if (!nativePort) return;
   try {
     nativePort.postMessage({
       type: 'host.access_update',
       accessEnabled: enabled,
+      ...(enabledWindow !== undefined ? { enabledWindow: enabled ? enabledWindow : null } : {}),
     });
   } catch {
     /* port may have disconnected */
@@ -504,7 +509,7 @@ export function createNativeConnectionController(state, chromeObj, deps) {
         sendIdentity(candidatePort, chromeObj);
         sendActivityUpdate(candidatePort);
         if (state.enabledWindow) {
-          sendAccessUpdate(true, candidatePort);
+          sendAccessUpdate(true, candidatePort, state.enabledWindow);
         }
         if (wasReconnect && reconnectAttempts > 0) {
           settleReconnect('success');
@@ -588,6 +593,13 @@ export function handleHostStatusMessage(message, state, deps) {
   }
 
   const candidate = /** @type {Record<string, unknown>} */ (message);
+  if (candidate.type === 'host.window_access') {
+    state.otherEnabledWindows = Array.isArray(candidate.otherEnabledWindows)
+      ? candidate.otherEnabledWindows.filter(isBrowserWindowAccess)
+      : [];
+    void deps.emitUiState().catch(reportAsyncError);
+    return true;
+  }
   if (candidate.type === 'host.bridge_response') {
     const response =
       candidate.response && typeof candidate.response === 'object'
@@ -731,6 +743,33 @@ export function handleHostStatusMessage(message, state, deps) {
   }
 
   return false;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is import('../../protocol/src/window-access.js').BrowserWindowAccess}
+ */
+function isBrowserWindowAccess(value) {
+  if (!value || typeof value !== 'object') return false;
+  const entry = /** @type {Record<string, unknown>} */ (value);
+  if (
+    typeof entry.extensionId !== 'string' ||
+    !(entry.browserName === null || typeof entry.browserName === 'string') ||
+    !(entry.profileLabel === null || typeof entry.profileLabel === 'string') ||
+    !(entry.canControl === undefined || typeof entry.canControl === 'boolean')
+  )
+    return false;
+  if (entry.window === null) return true;
+  if (!entry.window || typeof entry.window !== 'object') return false;
+  const window = /** @type {Record<string, unknown>} */ (entry.window);
+  return (
+    typeof window.windowId === 'number' &&
+    Number.isInteger(window.windowId) &&
+    window.windowId > 0 &&
+    typeof window.title === 'string' &&
+    typeof window.enabledAt === 'number' &&
+    Number.isFinite(window.enabledAt)
+  );
 }
 
 /**

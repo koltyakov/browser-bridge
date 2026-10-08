@@ -34,14 +34,17 @@ import { createNativeMessageReader, createNativeMessageWriter, writeJsonLine } f
  *   type?: string,
  *   browserName?: string,
  *   profileLabel?: string,
- *   browserExtensionId?: string
+ *   browserExtensionId?: string,
+ *   windowAccessUpdates?: boolean,
+ *   windowActions?: boolean
  * }} HostIdentityMessage
  */
 
 /**
  * @typedef {{
  *   type?: string,
- *   accessEnabled: boolean
+ *   accessEnabled: boolean,
+ *   enabledWindow?: unknown
  * }} HostAccessUpdateMessage
  */
 
@@ -187,6 +190,23 @@ export async function runNativeHost({
           });
           return;
         }
+        if (message.type === 'extension.window_access') {
+          await writeNativeMessageQueued({
+            type: 'host.window_access',
+            otherEnabledWindows: message.otherEnabledWindows,
+          });
+          return;
+        }
+        if (
+          message.type === 'extension.window_action.command' ||
+          message.type === 'extension.window_action.response'
+        ) {
+          await writeNativeMessageQueued({
+            ...message,
+            type: message.type.replace(/^extension\./u, 'host.'),
+          });
+          return;
+        }
         if (
           message.type === 'extension.setup_status.response' ||
           message.type === 'extension.setup_status.error'
@@ -244,6 +264,8 @@ export async function runNativeHost({
             browserName: message.browserName,
             profileLabel: message.profileLabel,
             browserExtensionId: message.browserExtensionId,
+            ...(message.windowAccessUpdates === true ? { windowAccessUpdates: true } : {}),
+            ...(message.windowActions === true ? { windowActions: true } : {}),
           });
           return;
         }
@@ -251,6 +273,9 @@ export async function runNativeHost({
           await writeJsonLine(socket, {
             type: 'extension.access_update',
             accessEnabled: message.accessEnabled,
+            ...(message.enabledWindow !== undefined
+              ? { enabledWindow: message.enabledWindow }
+              : {}),
           });
           return;
         }
@@ -260,6 +285,19 @@ export async function runNativeHost({
             at: message.at,
           });
           return;
+        }
+        if (message && typeof message === 'object') {
+          const record = /** @type {Record<string, unknown>} */ (message);
+          if (
+            record.type === 'host.window_action.request' ||
+            record.type === 'host.window_action.result'
+          ) {
+            await writeJsonLine(socket, {
+              ...record,
+              type: record.type.replace(/^host\./u, 'extension.'),
+            });
+            return;
+          }
         }
         if (isHostArtifactMessage(message)) {
           const record = /** @type {Record<string, unknown>} */ (message);
