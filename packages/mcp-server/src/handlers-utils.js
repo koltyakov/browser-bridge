@@ -5,6 +5,8 @@ import { randomUUID } from 'node:crypto';
 
 import {
   BridgeError,
+  createSuccess,
+  createFailure,
   bridgeMethodNeedsTab,
   DEFAULT_CONSOLE_LIMIT,
   DEFAULT_LOG_TAIL_LIMIT,
@@ -51,6 +53,33 @@ const MCP_CLIENT_ID = `mcp_${randomUUID()}`;
 const MCP_AGENT_SESSION = process.env.BBX_SESSION?.trim() || MCP_CLIENT_ID;
 /** @type {AsyncLocalStorage<{ era: import('../../protocol/src/types.js').McpProtocolEra, signal?: AbortSignal }>} */
 const MCP_REQUEST_ERA = new AsyncLocalStorage();
+/** @type {AsyncLocalStorage<import('../../protocol/src/types.js').BrowserTarget>} */
+const MCP_REQUEST_TARGET = new AsyncLocalStorage();
+
+/**
+ * Scope routing to one tool invocation, including selector resolution and retries.
+ * @template T
+ * @param {unknown} args
+ * @param {() => T} callback
+ * @returns {T}
+ */
+export function runWithMcpRequestTarget(args, callback) {
+  const record =
+    args && typeof args === 'object' ? /** @type {Record<string, unknown>} */ (args) : {};
+  const target = {
+    ...(MCP_REQUEST_TARGET.getStore() ?? {}),
+    ...(typeof record.extensionId === 'string' ? { extensionId: record.extensionId } : {}),
+    ...(typeof record.targetBrowser === 'string' ? { targetBrowser: record.targetBrowser } : {}),
+    ...(typeof record.targetProfile === 'string' ? { targetProfile: record.targetProfile } : {}),
+  };
+  return MCP_REQUEST_TARGET.run(target, callback);
+}
+
+/** @returns {boolean} */
+export function hasMcpBrowserTarget() {
+  const target = MCP_REQUEST_TARGET.getStore();
+  return Boolean(target?.extensionId || target?.targetBrowser || target?.targetProfile);
+}
 
 /**
  * @template T
@@ -275,6 +304,16 @@ export function summarizeToolResponse(response, method, params = {}) {
   const summary = annotateBridgeSummary(summarizeBridgeResponse(response, method), response);
   const summaryRecord = /** @type {Record<string, unknown>} */ (summary);
   if (response.ok) {
+    if (
+      method === 'tabs.list' &&
+      response.result &&
+      typeof response.result === 'object' &&
+      'partial' in response.result &&
+      response.result.partial === true
+    ) {
+      summary.summary +=
+        ' Some browser profiles could not be listed; inspect evidence.profiles before assuming a tab is absent.';
+    }
     const evidence = getRequestAwareEvidence(response.result, method, params, summary.evidence);
     summary.evidence = evidence.value;
     if (evidence.metadata) summaryRecord.evidenceMeta = evidence.metadata;
@@ -505,6 +544,35 @@ function getRequestAwareEvidence(rawResult, method, params, fallback) {
     rawResult && typeof rawResult === 'object' && !Array.isArray(rawResult)
       ? /** @type {Record<string, unknown>} */ (rawResult)
       : {};
+  if (method === 'tabs.list' && Array.isArray(result.tabs)) {
+    const tabs = /** @type {unknown[]} */ (result.tabs)
+      .filter((tab) => tab && typeof tab === 'object' && !Array.isArray(tab))
+      .map((tab) => /** @type {Record<string, unknown>} */ (tab))
+      .sort(
+        (left, right) =>
+          Number(right.working === true || right.active === true) -
+          Number(left.working === true || left.active === true)
+      )
+      .map((tab) => ({
+        ...(typeof tab.extensionId === 'string' ? { extensionId: tab.extensionId } : {}),
+        tabId: tab.tabId,
+        windowId: tab.windowId,
+        active: tab.active,
+        ...(tab.working === true ? { working: true } : {}),
+        ...(tab.browserName !== undefined ? { browserName: tab.browserName } : {}),
+        ...(tab.profileLabel !== undefined ? { profileLabel: tab.profileLabel } : {}),
+        title: typeof tab.title === 'string' ? tab.title.slice(0, 200) : tab.title,
+        origin: tab.origin,
+        ...(typeof tab.url === 'string'
+          ? { url: tab.url.slice(0, 512), ...(tab.url.length > 512 ? { urlTruncated: true } : {}) }
+          : {}),
+      }));
+    const metadata = Object.fromEntries(Object.entries(result).filter(([key]) => key !== 'tabs'));
+    return boundToolValue(
+      { tabCount: tabs.length, ...metadata, tabs },
+      { maxEntries: 2000, maxCharacters: 30_000, maxStringLength: 1000 }
+    );
+  }
   if (method === 'page.extract_content' && typeof result.content === 'string') {
     const requested = positiveInteger(params.textBudget) ?? DEFAULT_PAGE_TEXT_BUDGET;
     const maxCharacters = Math.min(requested, 16_000);
@@ -757,14 +825,24 @@ export async function waitForClientReconnect(client, timeoutMs = RECONNECT_WAIT_
  * @param {import('../../agent-client/src/client.js').BridgeClient} client
  * @param {BridgeMethod} method
  * @param {Record<string, unknown>} params
- * @param {{ tabId?: number | null, source?: import('../../protocol/src/types.js').BridgeRequestSource, mcpEra?: import('../../protocol/src/types.js').McpProtocolEra, tokenBudget?: number | null, automaticRetry?: 'mcp_second_attempt' }} options
+ * @param {import('../../protocol/src/types.js').BrowserTarget & { tabId?: number | null, source?: import('../../protocol/src/types.js').BridgeRequestSource, mcpEra?: import('../../protocol/src/types.js').McpProtocolEra, tokenBudget?: number | null, automaticRetry?: 'mcp_second_attempt', skipProfileDiscovery?: boolean }} options
  * @returns {Promise<BridgeResponse>}
  */
 export async function requestBridgeWithRetry(client, method, params, options) {
   const requestOptions = {
+    ...(MCP_REQUEST_TARGET.getStore() ?? {}),
     ...options,
     mcpEra: options.mcpEra ?? MCP_REQUEST_ERA.getStore()?.era,
   };
+  if (
+    method === 'tabs.list' &&
+    !options.skipProfileDiscovery &&
+    !requestOptions.extensionId &&
+    !requestOptions.targetBrowser &&
+    !requestOptions.targetProfile
+  ) {
+    return listBrowserProfileTabs(client, params, requestOptions);
+  }
   /** @param {typeof requestOptions} attemptOptions */
   const attempt = (attemptOptions) =>
     awaitMcpOperation(async () => {
@@ -809,6 +887,102 @@ export async function requestBridgeWithRetry(client, method, params, options) {
     });
   }
   return response;
+}
+
+/**
+ * Discover only enabled profiles. Reading tabs never chooses a working tab.
+ * @param {import('../../agent-client/src/client.js').BridgeClient} client
+ * @param {Record<string, unknown>} params
+ * @param {Parameters<typeof requestBridgeWithRetry>[3]} options
+ * @returns {Promise<BridgeResponse>}
+ */
+async function listBrowserProfileTabs(client, params, options) {
+  const health = await requestBridgeWithRetry(client, 'health.ping', {}, options);
+  if (!health.ok) return health;
+  const result =
+    health.result && typeof health.result === 'object'
+      ? /** @type {Record<string, unknown>} */ (health.result)
+      : {};
+  const profiles = Array.isArray(result.connectedExtensions)
+    ? /** @type {unknown[]} */ (result.connectedExtensions)
+        .filter((value) => value && typeof value === 'object' && !Array.isArray(value))
+        .map((value) => /** @type {Record<string, unknown>} */ (value))
+        .filter((value) => typeof value.extensionId === 'string' && value.accessEnabled === true)
+        .map((value) => /** @type {Record<string, unknown> & { extensionId: string }} */ (value))
+    : [];
+  // Older daemons and a disabled single profile keep the usual access response.
+  if (
+    profiles.length === 0 &&
+    (!Array.isArray(result.connectedExtensions) || result.connectedExtensions.length <= 1)
+  ) {
+    return requestBridgeWithRetry(client, 'tabs.list', params, {
+      ...options,
+      skipProfileDiscovery: true,
+    });
+  }
+  if (profiles.length === 0) {
+    return createFailure(
+      health.id,
+      'ACCESS_DENIED',
+      'No connected profile has an enabled window. Select an extensionId from connectedExtensions and request access only for that profile.',
+      {
+        reason: 'no_enabled_browser_profiles',
+        connectedExtensions: result.connectedExtensions,
+      },
+      { method: 'tabs.list' }
+    );
+  }
+  const results = [];
+  for (const profile of profiles) {
+    /** @type {BridgeResponse} */
+    let response;
+    try {
+      response = await requestBridgeWithRetry(client, 'tabs.list', params, {
+        ...options,
+        extensionId: profile.extensionId,
+      });
+    } catch (error) {
+      throwIfMcpRequestCancelled();
+      response = createFailure(
+        health.id,
+        error instanceof BridgeError ? error.code : 'INTERNAL_ERROR',
+        error instanceof Error ? error.message : String(error),
+        null,
+        { method: 'tabs.list' }
+      );
+    }
+    const listed =
+      response.ok && response.result && typeof response.result === 'object'
+        ? /** @type {Record<string, unknown>} */ (response.result)
+        : {};
+    results.push({
+      extensionId: profile.extensionId,
+      browserName: profile.browserName ?? null,
+      profileLabel: profile.profileLabel ?? null,
+      ok: response.ok,
+      ...(response.ok ? {} : { error: response.error }),
+      tabs: Array.isArray(listed.tabs)
+        ? /** @type {unknown[]} */ (listed.tabs)
+            .filter((tab) => tab && typeof tab === 'object' && !Array.isArray(tab))
+            .map((tab) => ({
+              .../** @type {Record<string, unknown>} */ (tab),
+              extensionId: profile.extensionId,
+              browserName: profile.browserName ?? null,
+              profileLabel: profile.profileLabel ?? null,
+            }))
+        : [],
+    });
+  }
+  return createSuccess(
+    health.id,
+    {
+      tabs: results.flatMap((profile) => profile.tabs),
+      profiles: results.map(({ tabs, ...profile }) => ({ ...profile, tabCount: tabs.length })),
+      connectedExtensions: result.connectedExtensions,
+      partial: results.some((profile) => !profile.ok),
+    },
+    { method: 'tabs.list' }
+  );
 }
 
 /**

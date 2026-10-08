@@ -6,7 +6,8 @@ import { methodNeedsTab, parseIntArg, parseJsonObject } from './cli-helpers.js';
 /** @typedef {import('./types.js').BridgeMethod} BridgeMethod */
 /** @typedef {import('../../protocol/src/defaults.js').BudgetPresetName} BudgetPresetName */
 
-const CALL_USAGE = 'Usage: call [--tab <tabId>] [--preset quick|normal|deep] <method> [paramsJson]';
+const CALL_USAGE =
+  'Usage: call [--extension <connectionId>] [--browser <name>] [--profile <label>] [--tab <tabId>] [--preset quick|normal|deep] <method> [paramsJson]';
 
 /**
  * Read all of stdin as UTF-8 text. Resolves once stdin closes.
@@ -149,10 +150,27 @@ export function extractPresetFlag(args) {
 
 /**
  * @param {string[]} args
- * @returns {Promise<{ tabId: number | null, method: BridgeMethod, params: Record<string, unknown> }>}
+ * @returns {Promise<import('../../protocol/src/types.js').BrowserTarget & { tabId: number | null, method: BridgeMethod, params: Record<string, unknown> }>}
  */
 export async function parseCallCommand(args) {
-  const presetParsed = extractPresetFlag(args);
+  const remaining = [...args];
+  /** @type {import('../../protocol/src/types.js').BrowserTarget} */
+  const target = {};
+  /** @type {Array<[string, keyof import('../../protocol/src/types.js').BrowserTarget]>} */
+  const selectors = [
+    ['--extension', 'extensionId'],
+    ['--browser', 'targetBrowser'],
+    ['--profile', 'targetProfile'],
+  ];
+  for (const [flag, field] of selectors) {
+    const index = remaining.indexOf(flag);
+    if (index === -1) continue;
+    const value = remaining[index + 1];
+    if (!value?.trim() || value.startsWith('--')) throw new Error(`${flag} requires a value.`);
+    target[field] = value;
+    remaining.splice(index, 2);
+  }
+  const presetParsed = extractPresetFlag(remaining);
   const parsed = extractTabFlag(presetParsed.rest);
   const [first, second, ...extra] = parsed.rest;
   if (!first) {
@@ -173,6 +191,7 @@ export async function parseCallCommand(args) {
       rawParams = await readStdin();
     }
     return {
+      ...target,
       method,
       tabId: methodNeedsTab(method) ? parsed.tabId : null,
       params: applyMethodBudgetPreset(method, parseJsonObject(rawParams), presetParsed.preset),

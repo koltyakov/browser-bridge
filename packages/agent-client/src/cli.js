@@ -393,8 +393,9 @@ async function main() {
     }
 
     if (command === 'call') {
-      const { tabId, method, params } = await parseCallCommand(rest);
+      const { tabId, method, params, ...target } = await parseCallCommand(rest);
       const response = await requestBridge(client, method, params, {
+        ...target,
         tabId,
         source: REQUEST_SOURCE,
       });
@@ -413,8 +414,9 @@ async function main() {
     }
 
     if (command.includes('.') && METHODS.includes(/** @type {BridgeMethod} */ (command))) {
-      const { tabId, method, params } = await parseCallCommand([command, ...rest]);
+      const { tabId, method, params, ...target } = await parseCallCommand([command, ...rest]);
       const response = await requestBridge(client, method, params, {
+        ...target,
         tabId,
         source: REQUEST_SOURCE,
       });

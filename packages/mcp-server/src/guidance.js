@@ -7,7 +7,8 @@
  */
 const SHARED_INSTRUCTIONS = Object.freeze([
   'Prefer Browser Bridge MCP tools over shelling out to bbx. Use bbx only for explicit CLI setup, doctor, logs, or raw debugging requests.',
-  'Start with browser_call method health.ping. If window access is disabled, call browser_call method access.request once, ask the user to click Enable in the Browser Bridge popup or side panel, then retry once.',
+  'Start with browser_call method health.ping. Its access status describes only the routed profile, not every window. Use connectedExtensions or unscoped tabs.list to discover profiles and existing tabs. Reuse the selected extensionId, destinationId when remote, and tabId on every follow-up call, including each browser_batch item. tabId alone does not select a profile. Never disable unrelated windows to fix routing. If a connection disappears, rediscover it instead of switching profiles or using guessed IDs.',
+  "If the selected profile has window access disabled, call browser_call method access.request once with its extensionId, ask the user to click Enable in that profile's Browser Bridge popup or side panel, then retry once with the same target. Restricted pages and ambiguous_browser_target are routing problems, not evidence that every window needs enabling.",
   'Use structured reads first through browser_call: page.get_state, dom.query, page.get_text, page.extract_content, styles.get_computed, or layout.get_box_model. Prefer semantic extraction for articles and documentation. Use browser_batch only for parallel reads; run mutations sequentially and keep limits tight before widening.',
   'Reuse elementRef values returned by DOM reads. Use attribute allowlists for focused DOM reads.',
   'Escalate to screenshot.capture_element, screenshot.capture_region, dom.get_accessibility_tree, page.evaluate, viewport.resize, or CDP only when structured reads cannot answer the question.',

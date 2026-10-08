@@ -123,6 +123,16 @@ test('createBridgeMcpServer registers all tools behind one progressive surface',
     const interceptSchema = getInputSchemaShape(registrations[14]);
     const rawCallSchema = getInputSchemaShape(registrations[16]);
     const toolsetSchema = getInputSchemaShape(registrations[20]);
+    for (const registration of registrations.filter(
+      (entry) => !['browser_setup', 'browser_toolset'].includes(entry.name)
+    )) {
+      const shape = getInputSchemaShape(registration);
+      for (const field of ['extensionId', 'targetBrowser', 'targetProfile']) {
+        const selector = shape[field] as { safeParse: (value: unknown) => { success: boolean } };
+        assert.equal(selector.safeParse('Work').success, true, `${registration.name}.${field}`);
+        assert.equal(selector.safeParse('').success, false);
+      }
+    }
     const tabsAction = tabsSchema.action as { safeParse: (value: unknown) => { success: boolean } };
     const inputAction = inputSchema.action as {
       safeParse: (value: unknown) => { success: boolean };

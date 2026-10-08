@@ -347,7 +347,7 @@ export async function handleSensitiveReadTool(args) {
 }
 
 /**
- * @param {{ calls?: Array<{ method?: string, params?: Record<string, unknown>, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }> }} args
+ * @param {{ calls?: Array<import('../../protocol/src/types.js').BrowserTarget & { method?: string, params?: Record<string, unknown>, tabId?: number, destinationId?: string, budgetPreset?: 'quick' | 'normal' | 'deep' }> }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleBatchTool(args) {
@@ -393,6 +393,9 @@ export async function handleBatchTool(args) {
       response = await withMcpRequestClient(
         (client) =>
           requestBridgeWithRetry(client, method, params, {
+            ...(call.extensionId ? { extensionId: call.extensionId } : {}),
+            ...(call.targetBrowser ? { targetBrowser: call.targetBrowser } : {}),
+            ...(call.targetProfile ? { targetProfile: call.targetProfile } : {}),
             tabId,
             source: REQUEST_SOURCE,
             tokenBudget,
@@ -405,15 +408,25 @@ export async function handleBatchTool(args) {
     if (callError || !response) {
       return {
         destinationId,
+        ...(call.extensionId ? { extensionId: call.extensionId } : {}),
         ...summarizeThrownBatchError(method, tabId, callError, Date.now() - startTime),
       };
     }
+    const discovery = method === 'tabs.list' ? summarizeToolResponse(response, method) : null;
     return {
       destinationId,
+      ...(call.extensionId ? { extensionId: call.extensionId } : {}),
       ...summarizeBatchResponseItem(
         { method, tabId, response, durationMs: Date.now() - startTime },
         { compact: true }
       ),
+      ...(discovery
+        ? {
+            summary: discovery.content[0].text,
+            evidence: discovery.structuredContent.evidence,
+            ...(discovery.structuredContent.outputTruncated ? { outputTruncated: true } : {}),
+          }
+        : {}),
     };
   });
 

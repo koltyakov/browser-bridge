@@ -1061,7 +1061,7 @@ test('bbx call without a method reports the usage error from parseCallCommand', 
   assert.equal(payload.evidence, null);
   assert.equal(
     payload.summary,
-    'ERROR: Usage: call [--tab <tabId>] [--preset quick|normal|deep] <method> [paramsJson]'
+    'ERROR: Usage: call [--extension <connectionId>] [--browser <name>] [--profile <label>] [--tab <tabId>] [--preset quick|normal|deep] <method> [paramsJson]'
   );
 });
 
@@ -1079,7 +1079,7 @@ test('bbx call rejects a first arg without a dotted bridge method name', async (
   assert.equal(payload.evidence, null);
   assert.equal(
     payload.summary,
-    'ERROR: Usage: call [--tab <tabId>] [--preset quick|normal|deep] <method> [paramsJson]'
+    'ERROR: Usage: call [--extension <connectionId>] [--browser <name>] [--profile <label>] [--tab <tabId>] [--preset quick|normal|deep] <method> [paramsJson]'
   );
 });
 
@@ -1118,7 +1118,7 @@ test('bbx call rejects extra positional arguments before connecting', async () =
     assert.equal(payload.evidence, null);
     assert.equal(
       payload.summary,
-      'ERROR: Usage: call [--tab <tabId>] [--preset quick|normal|deep] <method> [paramsJson]'
+      'ERROR: Usage: call [--extension <connectionId>] [--browser <name>] [--profile <label>] [--tab <tabId>] [--preset quick|normal|deep] <method> [paramsJson]'
     );
     assert.equal(bridgeServer.messages.length, 0);
     assert.equal(bridgeServer.requests.length, 0);

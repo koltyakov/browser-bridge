@@ -1282,7 +1282,9 @@ export class BridgeDaemon {
       typeof request.meta?.target_browser === 'string' ? request.meta.target_browser : null;
     const targetProfile =
       typeof request.meta?.target_profile === 'string' ? request.meta.target_profile : null;
-    const hasExplicitTarget = Boolean(targetBrowser || targetProfile);
+    const targetExtension =
+      typeof request.meta?.target_extension === 'string' ? request.meta.target_extension : null;
+    const hasExplicitTarget = Boolean(targetBrowser || targetProfile || targetExtension);
 
     const ownerPendingCount = this.pendingRequestsByOwnerSocket.get(socket)?.size ?? 0;
     if (
@@ -1311,13 +1313,42 @@ export class BridgeDaemon {
       request.method === 'dom.baseline.describe' ||
       request.method === 'dom.baseline.release';
     const baselineOwner = usesBaselineOwner ? this.domBaselines.get(baselineId ?? '') : null;
+    const candidates = [...this.extensionSockets.entries()].filter(
+      ([id, extension]) =>
+        (!targetExtension || id === targetExtension) &&
+        (!targetBrowser || extension.__browserName === targetBrowser) &&
+        (!targetProfile || extension.__profileLabel === targetProfile)
+    );
+    if (
+      !usesBaselineOwner &&
+      candidates.length > 1 &&
+      request.method !== 'health.ping' &&
+      request.method !== 'skill.get_runtime_context'
+    ) {
+      await writeJsonLine(socket, {
+        type: 'agent.response',
+        response: createFailure(
+          request.id,
+          ERROR_CODES.TAB_MISMATCH,
+          'Multiple browser profiles match this call. Select a connection with extensionId in MCP or meta.target_extension in raw requests, then list its tabs. A tabId alone does not select a profile. Do not disable other windows.',
+          {
+            reason: 'ambiguous_browser_target',
+            connectedExtensions: this.getConnectedExtensionsSnapshot(),
+          },
+          { method: request.method }
+        ),
+      });
+      this.recordDaemonRequestOutcome(request, false);
+      return;
+    }
     const target = usesBaselineOwner
       ? baselineOwner &&
+        (!targetExtension || this.extensionSockets.get(targetExtension) === baselineOwner) &&
         (!targetBrowser || baselineOwner.__browserName === targetBrowser) &&
         (!targetProfile || baselineOwner.__profileLabel === targetProfile)
         ? baselineOwner
         : null
-      : this.selectExtensionTarget(targetBrowser, targetProfile);
+      : this.selectExtensionTarget(targetBrowser, targetProfile, targetExtension);
 
     if (!target) {
       if (usesBaselineOwner) {
@@ -1339,9 +1370,12 @@ export class BridgeDaemon {
         request.id,
         ERROR_CODES.EXTENSION_DISCONNECTED,
         hasExplicitTarget
-          ? `No connected extension matches target_browser="${targetBrowser ?? '*'}" target_profile="${targetProfile ?? '*'}".`
+          ? `No connected extension matches target_browser="${targetBrowser ?? '*'}" target_profile="${targetProfile ?? '*'}" target_extension="${targetExtension ?? '*'}".`
           : 'The Chrome extension is not connected to the local bridge daemon.',
-        null,
+        {
+          reason: hasExplicitTarget ? 'browser_target_disconnected' : 'extension_disconnected',
+          connectedExtensions: this.getConnectedExtensionsSnapshot(),
+        },
         { method: request.method }
       );
       await writeJsonLine(socket, { type: 'agent.response', response });
@@ -1418,11 +1452,13 @@ export class BridgeDaemon {
    *
    * @param {string | null} targetBrowser
    * @param {string | null} targetProfile
+   * @param {string | null} [targetExtension]
    * @returns {ClientSocket | null}
    */
-  selectExtensionTarget(targetBrowser, targetProfile) {
-    const candidates = Array.from(this.extensionSockets.entries()).filter(([, extSocket]) => {
+  selectExtensionTarget(targetBrowser, targetProfile, targetExtension = null) {
+    const candidates = Array.from(this.extensionSockets.entries()).filter(([id, extSocket]) => {
       return (
+        (!targetExtension || id === targetExtension) &&
         (!targetBrowser || extSocket.__browserName === targetBrowser) &&
         (!targetProfile || extSocket.__profileLabel === targetProfile)
       );

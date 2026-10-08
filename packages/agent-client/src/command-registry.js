@@ -294,7 +294,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
   {
     title: 'Generic RPC',
     lines: [
-      'bbx call [--tab <tabId>] [--preset quick|normal|deep] <method> [paramsJson|-]  Call any bridge method (- reads JSON from stdin)',
+      'bbx call [--extension <connectionId>] [--browser <name>] [--profile <label>] [--tab <tabId>] [--preset quick|normal|deep] <method> [paramsJson|-]  Call any bridge method (- reads JSON from stdin)',
       'bbx <method> [--tab <tabId>] [paramsJson|-]                        Direct alias for exact bridge methods such as page.get_state',
       "bbx batch [--preset quick|normal|deep] '[{method,params,tabId?},...]'  Up to 20 parallel read-only calls",
       '--preset fills budget gaps (maxNodes, maxDepth, textBudget, limit) from the shared quick|normal|deep presets; explicit params always win.',

@@ -296,7 +296,7 @@ export function createSuccess(id, result, meta = {}) {
  * @returns {BridgeFailureResponse}
  */
 export function createFailure(id, code, message, details = null, meta = {}) {
-  const recovery = getErrorRecovery(code);
+  const recovery = getRoutingRecovery(code, details) ?? getErrorRecovery(code);
   const effectiveRecovery =
     recovery && meta.method === 'sensitive.read'
       ? {
@@ -320,6 +320,35 @@ export function createFailure(id, code, message, details = null, meta = {}) {
       ...meta,
     },
   };
+}
+
+/**
+ * Routing errors need selection guidance, not closed-tab or global enable hints.
+ * @param {import('./types.js').ErrorCode} code
+ * @param {unknown} details
+ * @returns {import('./types.js').BridgeRecovery | null}
+ */
+function getRoutingRecovery(code, details) {
+  const reason =
+    details && typeof details === 'object' && 'reason' in details ? details.reason : null;
+  if (
+    (code === ERROR_CODES.TAB_MISMATCH && reason === 'ambiguous_browser_target') ||
+    (code === ERROR_CODES.EXTENSION_DISCONNECTED && reason === 'browser_target_disconnected')
+  ) {
+    return {
+      retry: false,
+      alternativeMethod: 'health.ping',
+      hint: 'Discover connectedExtensions with health.ping or list enabled profiles with MCP tabs.list. Select extensionId and tabId for the intended page. Do not disable unrelated windows or fall back to another profile.',
+    };
+  }
+  if (code === ERROR_CODES.ACCESS_DENIED && reason === 'no_enabled_browser_profiles') {
+    return {
+      retry: false,
+      alternativeMethod: 'health.ping',
+      hint: "Choose the intended extensionId from connectedExtensions before requesting access. Ask the user to enable only that profile's window.",
+    };
+  }
+  return null;
 }
 
 /**
@@ -409,6 +438,7 @@ export function validateBridgeRequest(request) {
     params: normalizeRequestParams(method, params),
     meta: {
       ...meta,
+      ...normalizeBrowserTargetMeta(meta),
       protocol_version:
         typeof meta.protocol_version === 'string' ? meta.protocol_version : getProtocolVersion(),
       token_budget: typeof meta.token_budget === 'number' ? meta.token_budget : null,
@@ -422,6 +452,37 @@ export function validateBridgeRequest(request) {
           : undefined,
     },
   };
+}
+
+/**
+ * Never turn a malformed explicit selector into implicit routing.
+ * @param {Record<string, unknown>} meta
+ * @returns {Pick<BridgeMeta, 'target_extension' | 'target_browser' | 'target_profile'>}
+ */
+function normalizeBrowserTargetMeta(meta) {
+  /** @type {Pick<BridgeMeta, 'target_extension' | 'target_browser' | 'target_profile'>} */
+  const target = {};
+  for (const field of /** @type {const} */ ([
+    'target_extension',
+    'target_browser',
+    'target_profile',
+  ])) {
+    const value = meta[field];
+    if (value === undefined) continue;
+    if (
+      typeof value !== 'string' ||
+      !value.trim() ||
+      value.length > 256 ||
+      hasAsciiControlCharacters(value)
+    ) {
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        `meta.${field} must be a non-empty string of at most 256 characters without control characters.`
+      );
+    }
+    target[field] = value.trim();
+  }
+  return target;
 }
 
 /** @param {string} value @returns {boolean} */

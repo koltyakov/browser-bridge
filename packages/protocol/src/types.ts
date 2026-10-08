@@ -144,7 +144,17 @@ export type BridgeMethod =
 
 export type CostClass = 'cheap' | 'moderate' | 'heavy' | 'extreme';
 
+/** Browser connection selectors, independent of the machine destination and tab. */
+export interface BrowserTarget {
+  extensionId?: string;
+  targetBrowser?: string;
+  targetProfile?: string;
+}
+
 export interface BridgeMeta {
+  target_extension?: string;
+  target_browser?: string;
+  target_profile?: string;
   protocol_version?: string;
   token_budget?: number | null;
   transport_bytes?: number;

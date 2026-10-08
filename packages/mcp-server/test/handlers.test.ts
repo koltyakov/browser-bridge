@@ -108,7 +108,11 @@ async function writeRemoteConfig(bridgeHome: string): Promise<void> {
 }
 
 async function withMockedBridge(
-  responder: (record: RequestRecord, index: number) => Promise<BridgeResponse>,
+  responder: (
+    record: RequestRecord,
+    index: number,
+    client: BridgeClient
+  ) => Promise<BridgeResponse>,
   callback: (calls: RequestRecord[]) => Promise<void>,
   options: { isolateBridgeHome?: boolean } = {}
 ): Promise<void> {
@@ -139,7 +143,7 @@ async function withMockedBridge(
   }: BridgeRequestOptions): Promise<BridgeResponse> {
     const record = { method, params, tabId, meta };
     calls.push(record);
-    return responder(record, calls.length - 1);
+    return responder(record, calls.length - 1, this);
   };
 
   try {
@@ -175,8 +179,9 @@ test('handleTabsTool maps list to tabs.list and returns summarized output', asyn
     async (calls) => {
       const result = await handleTabsTool({ action: 'list' });
 
-      assert.equal(calls.length, 1);
-      assert.equal(calls[0].method, 'tabs.list');
+      assert.equal(calls.length, 2);
+      assert.equal(calls[0].method, 'health.ping');
+      assert.equal(calls[1].method, 'tabs.list');
       assert.equal(result.isError, undefined);
       assert.match(result.content[0].text, /Bridge listed 1 tab/);
       assert.equal(result.structuredContent.ok, true);
@@ -188,25 +193,29 @@ test('handleTabsTool aggregates local and remote tabs when remotes are configure
   await withBridgeHome(async (bridgeHome) => {
     await writeRemoteConfig(bridgeHome);
     await withMockedBridge(
-      async (_record, index) =>
-        ok({
+      async (_record, _index, client) => {
+        const local = client.transport.type !== 'tcp' || client.transport.host !== '10.0.0.5';
+        return ok({
           tabs: [
             {
-              tabId: index === 0 ? 4 : 8,
+              tabId: local ? 4 : 8,
               active: true,
-              origin: index === 0 ? 'https://local.example' : 'https://private.example',
-              title: index === 0 ? 'Local' : 'Remote',
+              origin: local ? 'https://local.example' : 'https://private.example',
+              title: local ? 'Local' : 'Remote',
             },
           ],
-        }),
+        });
+      },
       async (calls) => {
         const result = await handleTabsTool({ action: 'list' });
 
-        assert.equal(calls.length, 2);
-        assert.deepEqual(
-          calls.map((call) => call.method),
-          ['tabs.list', 'tabs.list']
-        );
+        assert.equal(calls.length, 4);
+        assert.deepEqual(calls.map((call) => call.method).sort(), [
+          'health.ping',
+          'health.ping',
+          'tabs.list',
+          'tabs.list',
+        ]);
         assert.equal(result.isError, undefined);
         assert.match(result.content[0].text, /Listed 2 tab\(s\) across 2 destination/);
         assert.equal(result.structuredContent.ok, true);
@@ -311,7 +320,8 @@ test('handleTabsTool translates bridge failures into MCP tool errors', async () 
 test('handleTabsTool retries one transient bridge failure', async () => {
   await withMockedBridge(
     async (_record, index) => {
-      if (index === 0) {
+      if (index === 0) return ok({});
+      if (index === 1) {
         return fail('TIMEOUT', 'Slow page text');
       }
       return ok({
@@ -328,9 +338,10 @@ test('handleTabsTool retries one transient bridge failure', async () => {
     async (calls) => {
       const result = await handleTabsTool({ action: 'list' });
 
-      assert.equal(calls.length, 2);
-      assert.equal(calls[0].method, 'tabs.list');
+      assert.equal(calls.length, 3);
+      assert.equal(calls[0].method, 'health.ping');
       assert.equal(calls[1].method, 'tabs.list');
+      assert.equal(calls[2].method, 'tabs.list');
       assert.equal(result.isError, undefined);
       assert.equal(result.structuredContent.ok, true);
     }
@@ -408,7 +419,8 @@ test('specialized tools preserve thrown transport error codes', async () => {
 test('read tools retry once after a daemon connection loss', async () => {
   await withMockedBridge(
     async (_record, index) => {
-      if (index === 0) {
+      if (index === 0) return ok({});
+      if (index === 1) {
         const error = new Error('BridgeClient is not connected.') as Error & { code: string };
         error.code = 'ENOTCONN';
         throw error;
@@ -418,10 +430,11 @@ test('read tools retry once after a daemon connection loss', async () => {
     async (calls) => {
       const result = await handleTabsTool({ action: 'list' });
 
-      assert.equal(calls.length, 2);
-      assert.equal(calls[0].method, 'tabs.list');
+      assert.equal(calls.length, 3);
+      assert.equal(calls[0].method, 'health.ping');
       assert.equal(calls[1].method, 'tabs.list');
-      assert.deepEqual(calls[1].meta?.automatic_retry, { attempt: 2, reason: 'retryable_error' });
+      assert.equal(calls[2].method, 'tabs.list');
+      assert.deepEqual(calls[2].meta?.automatic_retry, { attempt: 2, reason: 'retryable_error' });
       assert.equal(result.isError, undefined);
       assert.equal(result.structuredContent.ok, true);
     }

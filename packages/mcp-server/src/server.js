@@ -54,12 +54,43 @@ import {
 import { applyWindowsTcpTransportDefaults } from '../../native-host/src/config.js';
 import { getMcpServerInstructions } from './guidance.js';
 import { isToolEnabledForEra, LOADABLE_TOOLSET_TOOLS } from './toolset.js';
+import { runWithMcpRequestTarget } from './handlers-utils.js';
 
 export const BUDGET_PRESET_DESCRIPTION = `Budget preset: "quick", "normal", or "deep" (defaults: query ${BUDGET_PRESETS.normal.maxNodes} nodes / depth ${BUDGET_PRESETS.normal.maxDepth} / text ${BUDGET_PRESETS.normal.textBudget}). Numeric fields override the preset when both are provided.`;
 export const TAB_ID_DESCRIPTION =
-  'Target a specific tab instead of the active tab in the enabled window.';
+  'Tab ID within the selected browser profile. With multiple profiles, also pass extensionId from tabs.list or health.ping.';
 export const DESTINATION_ID_DESCRIPTION =
   'Optional Browser Bridge destination ID from browser_status/browser_tabs; omit for local.';
+
+const BROWSER_TARGET_SCHEMA = {
+  extensionId: z
+    .string()
+    .trim()
+    .min(1)
+    .max(256)
+    .optional()
+    .describe(
+      'Exact browser connection ID from health.ping connectedExtensions or tabs.list. Reuse with tabId on every call; IDs are scoped to destinationId and change on reconnect.'
+    ),
+  targetBrowser: z
+    .string()
+    .trim()
+    .min(1)
+    .max(256)
+    .optional()
+    .describe(
+      'Browser name from health.ping connectedExtensions. Prefer extensionId when names are ambiguous.'
+    ),
+  targetProfile: z
+    .string()
+    .trim()
+    .min(1)
+    .max(256)
+    .optional()
+    .describe(
+      'Profile label from health.ping connectedExtensions. Prefer extensionId when labels are missing or duplicated.'
+    ),
+};
 
 const MCP_SERVER_VERSION = loadPackageVersion();
 
@@ -173,9 +204,24 @@ export function createBridgeMcpServer(options = {}) {
   const registerTool = (name, config, handler) => {
     const wrappedHandler = /** @type {typeof handler} */ (
       (args, context) =>
-        runWithMcpRequestEra(era, () => handler(args, context), context.mcpReq.signal)
+        runWithMcpRequestEra(
+          era,
+          () => runWithMcpRequestTarget(args, () => handler(args, context)),
+          context.mcpReq.signal
+        )
     );
-    const registration = server.registerTool(name, config, wrappedHandler);
+    const routedConfig =
+      name === 'browser_setup' || name === 'browser_toolset'
+        ? config
+        : {
+            ...config,
+            // Added optional routing fields are consumed by the wrapper; handlers keep
+            // their original, SDK-checked argument contracts.
+            inputSchema: /** @type {InputSchema} */ (
+              /** @type {unknown} */ (config.inputSchema.extend(BROWSER_TARGET_SCHEMA))
+            ),
+          };
+    const registration = server.registerTool(name, routedConfig, wrappedHandler);
     registrations.set(name, registration);
     if (!isToolEnabledForEra(name, era)) {
       registration.disable();
@@ -257,7 +303,7 @@ export function createBridgeMcpServer(options = {}) {
     {
       title: 'Browser Tabs',
       description:
-        'List, create, close, or activate browser tabs. List without destinationId aggregates configured destinations; other actions default to local. Only create a page when the user explicitly requests it.',
+        "List, create, close, or activate browser tabs. Unscoped list discovers tabs across enabled browser profiles and configured destinations. Reuse each tab's extensionId, destinationId, and tabId for subsequent calls. Other actions default to local. Only create a page when the user explicitly requests it.",
       inputSchema: z.object({
         action: z
           .enum(['list', 'create', 'close', 'activate'])
@@ -1051,6 +1097,7 @@ export function createBridgeMcpServer(options = {}) {
                 .describe('Method params for this call'),
               tabId: z.number().int().positive().optional().describe(TAB_ID_DESCRIPTION),
               destinationId: z.string().optional().describe(DESTINATION_ID_DESCRIPTION),
+              ...BROWSER_TARGET_SCHEMA,
               budgetPreset: z
                 .enum(['quick', 'normal', 'deep'])
                 .optional()

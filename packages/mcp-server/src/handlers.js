@@ -16,6 +16,7 @@ import {
   summarizeToolResponse,
   withToolClient,
   REQUEST_SOURCE,
+  hasMcpBrowserTarget,
 } from './handlers-utils.js';
 
 export {
@@ -81,6 +82,9 @@ const HOME_DIR = os.homedir();
  */
 export async function handleStatusTool(args = {}) {
   try {
+    if (hasMcpBrowserTarget()) {
+      return callBridgeTool('health.ping', {}, { destinationId: args.destinationId });
+    }
     const requestedDestinationId =
       typeof args.destinationId === 'string' ? args.destinationId : null;
     if (requestedDestinationId && requestedDestinationId !== 'local') {
@@ -172,7 +176,7 @@ async function callRemoteHealth(destinationId) {
  */
 export async function handleSkillTool(args = {}) {
   try {
-    if (typeof args.destinationId === 'string') {
+    if (typeof args.destinationId === 'string' || hasMcpBrowserTarget()) {
       return callBridgeTool('skill.get_runtime_context', {}, { destinationId: args.destinationId });
     }
     const ctx = createRuntimeContext();

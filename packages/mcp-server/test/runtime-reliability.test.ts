@@ -17,16 +17,201 @@ import {
   handleBatchTool,
   handlePatchTool,
   handleRawCallTool,
+  handleTabsTool,
 } from '../src/handlers.js';
 import {
   requestBridgeWithRetry,
   runWithMcpRequestEra,
+  runWithMcpRequestTarget,
   waitForClientReconnect,
   withToolClient,
   type ToolResult,
 } from '../src/handlers-utils.js';
 
 type Request = Parameters<BridgeClient['request']>[0];
+
+test('MCP routing stays isolated across concurrent tools and selector resolution', async (t) => {
+  const bridge = mockBridge(t, async (request) => {
+    await nextTurn();
+    return ok(
+      request.method === 'dom.query'
+        ? { nodes: [{ elementRef: 'el_one' }] }
+        : { patchId: 'patch_one' }
+    );
+  });
+  await Promise.all(
+    ['work', 'personal'].map((extensionId) =>
+      runWithMcpRequestTarget(
+        { extensionId, targetBrowser: 'Chrome', targetProfile: extensionId },
+        () =>
+          handlePatchTool({
+            action: 'apply_styles',
+            selector: 'main',
+            declarations: { color: 'red' },
+            tabId: 42,
+          })
+      )
+    )
+  );
+  for (const extensionId of ['work', 'personal']) {
+    const requests = bridge.requests.filter(
+      (request) => request.meta?.target_extension === extensionId
+    );
+    assert.deepEqual(
+      requests.map((request) => request.method),
+      ['dom.query', 'patch.apply_styles']
+    );
+    assert.ok(
+      requests.every(
+        (request) =>
+          request.tabId === 42 &&
+          request.meta?.target_profile === extensionId &&
+          request.meta?.target_browser === 'Chrome'
+      )
+    );
+  }
+});
+
+test('unscoped raw tabs.list discovers enabled profiles without dropping colliding tab IDs', async (t) => {
+  const bridge = mockBridge(t, async (request) => {
+    if (request.method === 'health.ping')
+      return ok({
+        connectedExtensions: [
+          { extensionId: 'work', browserName: 'Chrome', profileLabel: 'Work', accessEnabled: true },
+          {
+            extensionId: 'personal',
+            browserName: 'Chrome',
+            profileLabel: null,
+            accessEnabled: true,
+          },
+          { extensionId: 'off', accessEnabled: false },
+        ],
+      });
+    return ok({
+      tabs: [
+        {
+          tabId: 42,
+          windowId: 1,
+          active: true,
+          title: request.meta?.target_extension,
+          url: `https://${request.meta?.target_extension}.example`,
+        },
+      ],
+    });
+  });
+  const result = await handleRawCallTool({ method: 'tabs.list' });
+  const evidence = result.structuredContent.evidence as { tabs: Array<Record<string, unknown>> };
+  assert.deepEqual(
+    evidence.tabs.map((tab) => [tab.extensionId, tab.tabId]),
+    [
+      ['work', 42],
+      ['personal', 42],
+    ]
+  );
+  assert.equal(evidence.tabs[0].url, 'https://work.example');
+  assert.deepEqual(
+    bridge.requests.map((request) => [request.method, request.meta?.target_extension]),
+    [
+      ['health.ping', undefined],
+      ['tabs.list', 'work'],
+      ['tabs.list', 'personal'],
+    ]
+  );
+});
+
+test('batch items can independently target profiles with the same tab ID', async (t) => {
+  const bridge = mockBridge(t, async () => ok({}));
+  await handleBatchTool({
+    calls: ['work', 'personal'].map((extensionId) => ({
+      method: 'page.get_state',
+      extensionId,
+      tabId: 42,
+    })),
+  });
+  assert.deepEqual(
+    bridge.requests.map((request) => request.meta?.target_extension),
+    ['work', 'personal']
+  );
+});
+
+test('profile-scoped tab listing skips discovery and retains the connection target', async (t) => {
+  const bridge = mockBridge(t, async () => ok({ tabs: [] }));
+  await runWithMcpRequestTarget({ extensionId: 'work' }, () => handleTabsTool({ action: 'list' }));
+  assert.deepEqual(
+    bridge.requests.map((request) => [request.method, request.meta?.target_extension]),
+    [['tabs.list', 'work']]
+  );
+});
+
+test('tab discovery reports disabled profiles without requesting access in an arbitrary window', async (t) => {
+  const bridge = mockBridge(t, async () =>
+    ok({
+      connectedExtensions: [
+        { extensionId: 'work', accessEnabled: false },
+        { extensionId: 'personal', accessEnabled: false },
+      ],
+    })
+  );
+  const result = await handleRawCallTool({ method: 'tabs.list' });
+  assert.equal(result.isError, true);
+  assert.deepEqual(
+    bridge.requests.map((request) => request.method),
+    ['health.ping']
+  );
+  assert.match(result.content[0].text, /Select an extensionId/);
+});
+
+test('batch tab discovery keeps target IDs and puts working tabs ahead of truncated evidence', async (t) => {
+  mockBridge(t, async (request) =>
+    request.method === 'health.ping'
+      ? ok({ connectedExtensions: [{ extensionId: 'work', accessEnabled: true }] })
+      : ok({
+          tabs: Array.from({ length: 150 }, (_, index) => ({
+            tabId: index + 1,
+            active: index === 149,
+            working: index === 149,
+            title: `Page ${index}`,
+            url: `https://example.com/${index}?${'x'.repeat(700)}`,
+          })),
+        })
+  );
+  const result = await handleBatchTool({ calls: [{ method: 'tabs.list' }] });
+  const results = result.structuredContent.results as Array<{
+    evidence: { tabs: Array<Record<string, unknown>>; tabCount: number };
+    outputTruncated: boolean;
+  }>;
+  assert.equal(results[0].evidence.tabCount, 150);
+  assert.equal(results[0].evidence.tabs[0].tabId, 150);
+  assert.equal(results[0].evidence.tabs[0].extensionId, 'work');
+  assert.equal(results[0].evidence.tabs[0].urlTruncated, true);
+  assert.equal(results[0].outputTruncated, true);
+});
+
+test('profile discovery preserves partial failures and leaves disabled profiles untouched', async (t) => {
+  mockBridge(t, async (request) => {
+    if (request.method === 'health.ping')
+      return ok({
+        connectedExtensions: [
+          { extensionId: 'work', accessEnabled: true },
+          { extensionId: 'gone', accessEnabled: true },
+        ],
+      });
+    return request.meta?.target_extension === 'work'
+      ? ok({ tabs: [{ tabId: 42 }] })
+      : fail('TAB_MISMATCH', 'Window closed');
+  });
+  const result = await handleRawCallTool({ method: 'tabs.list' });
+  const evidence = result.structuredContent.evidence as {
+    partial: boolean;
+    profiles: Array<{ ok: boolean }>;
+  };
+  assert.equal(evidence.partial, true);
+  assert.deepEqual(
+    evidence.profiles.map((profile) => profile.ok),
+    [true, false]
+  );
+  assert.match(result.content[0].text, /Some browser profiles could not be listed/);
+});
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -149,7 +334,13 @@ test('SDK cancellation during selector resolution prevents the patch followup', 
   assert.ok(patchHandler);
   const controller = new AbortController();
   const pending = patchHandler(
-    { action: 'apply_styles', selector: '#target', declarations: { color: 'red' } },
+    {
+      action: 'apply_styles',
+      selector: '#target',
+      declarations: { color: 'red' },
+      extensionId: 'work',
+      tabId: 42,
+    },
     {
       mcpReq: { signal: controller.signal },
     }
@@ -164,6 +355,8 @@ test('SDK cancellation during selector resolution prevents the patch followup', 
     ['dom.query']
   );
   assert.equal(bridge.requests[0].meta?.mcp_era, 'modern');
+  assert.equal(bridge.requests[0].meta?.target_extension, 'work');
+  assert.equal(bridge.requests[0].tabId, 42);
   assert.deepEqual(bridge.closed, bridge.clients);
   assert.equal(getEventListeners(controller.signal, 'abort').length, 0);
   await server.close();

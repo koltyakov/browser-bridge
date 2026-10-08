@@ -33,7 +33,7 @@ import { requestBridge } from './runtime.js';
  */
 
 /**
- * @typedef {{ method: BridgeMethod, params: Record<string, unknown>, tabId: number | null }} PreparedBatchCall
+ * @typedef {import('../../protocol/src/types.js').BrowserTarget & { method: BridgeMethod, params: Record<string, unknown>, tabId: number | null }} PreparedBatchCall
  */
 
 /**
@@ -107,10 +107,11 @@ export async function runBatchCalls(client, input, source, options = {}) {
   const validPrepared = /** @type {Array<{ value: PreparedBatchCall }>} */ (prepared);
   if (!client.connected) await client.connect();
   return mapWithConcurrency(validPrepared, MAX_BATCH_CONCURRENCY, async (item) => {
-    const { method, params, tabId } = item.value;
+    const { method, params, tabId, ...target } = item.value;
     const startTime = Date.now();
     try {
       const response = await requestBridge(client, method, params, {
+        ...target,
         tabId,
         source,
       });
@@ -150,6 +151,16 @@ function prepareBatchCall(call, preset) {
     };
   }
   const method = /** @type {BridgeMethod} */ (batchCall.method);
+  /** @type {import('../../protocol/src/types.js').BrowserTarget} */
+  const target = {};
+  for (const field of /** @type {const} */ (['extensionId', 'targetBrowser', 'targetProfile'])) {
+    const value = batchCall[field];
+    if (value === undefined) continue;
+    if (typeof value !== 'string' || !value.trim()) {
+      return { error: invalidBatchItem(method, `${field} must be a non-empty string.`) };
+    }
+    target[field] = value;
+  }
   if (method === 'sensitive.read') {
     return {
       error: invalidBatchItem(
@@ -182,7 +193,7 @@ function prepareBatchCall(call, preset) {
     batchCall.tabId > 0
       ? batchCall.tabId
       : null;
-  return { value: { method, params: mergedParams, tabId } };
+  return { value: { ...target, method, params: mergedParams, tabId } };
 }
 
 /**

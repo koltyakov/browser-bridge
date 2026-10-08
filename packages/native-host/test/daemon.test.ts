@@ -1180,7 +1180,11 @@ test('daemon routes DOM baseline operations to the creating extension only', asy
         textBudget: 160,
         attributeAllowlist: [],
       },
-      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+      meta: {
+        protocol_version: PROTOCOL_VERSION,
+        token_budget: null,
+        target_extension: 'baseline-owner',
+      },
     },
   });
   assert.equal(creatingExtension.writes.length, 1);
@@ -1891,7 +1895,7 @@ test('daemon health ignores malicious extension overrides and preserves bounded 
   assert.doesNotMatch(JSON.stringify(payload.response), /private|attacker|secret|compromised/u);
 });
 
-test('daemon prefers enabled extensions and otherwise falls back to the most recent one', async () => {
+test('daemon health discovery prefers enabled extensions and otherwise uses the most recent one', async () => {
   const daemon = new BridgeDaemon({ logger: console });
   const agentSocket = createFakeSocket();
   const enabledExtension = createFakeSocket();
@@ -1906,7 +1910,7 @@ test('daemon prefers enabled extensions and otherwise falls back to the most rec
   await daemon.handleAgentRequest(agentSocket, {
     request: {
       id: 'req_enabled_target',
-      method: 'page.get_state',
+      method: 'health.ping',
       tab_id: null,
       params: {},
       meta: {
@@ -1926,7 +1930,7 @@ test('daemon prefers enabled extensions and otherwise falls back to the most rec
   await daemon.handleAgentRequest(agentSocket, {
     request: {
       id: 'req_recent_target',
-      method: 'page.get_state',
+      method: 'health.ping',
       tab_id: null,
       params: {},
       meta: {
@@ -1940,7 +1944,7 @@ test('daemon prefers enabled extensions and otherwise falls back to the most rec
   assert.equal(recentExtension.writes.length, 1);
 });
 
-test('daemon routes untargeted requests to the most recently active extension when none are enabled', async () => {
+test('daemon routes health discovery to the most recently active extension when none are enabled', async () => {
   const daemon = new BridgeDaemon({ logger: console });
   const agentSocket = createFakeSocket();
   const olderExtension = createFakeSocket();
@@ -1956,7 +1960,7 @@ test('daemon routes untargeted requests to the most recently active extension wh
   await daemon.handleAgentRequest(agentSocket, {
     request: {
       id: 'req_most_recent_unit',
-      method: 'page.get_state',
+      method: 'health.ping',
       tab_id: null,
       params: {},
       meta: {
@@ -1971,7 +1975,7 @@ test('daemon routes untargeted requests to the most recently active extension wh
   assert.equal(middleExtension.writes.length, 0);
 });
 
-test('daemon deterministically selects one extension without mutating socket order', async () => {
+test('daemon deterministically selects health discovery without mutating socket order', async () => {
   const daemon = new BridgeDaemon({ logger: console });
   const agentSocket = createFakeSocket();
   const extensionB = createFakeSocket();
@@ -1987,7 +1991,7 @@ test('daemon deterministically selects one extension without mutating socket ord
   await daemon.handleAgentRequest(agentSocket, {
     request: {
       id: 'req_deterministic_unit',
-      method: 'page.get_state',
+      method: 'health.ping',
       tab_id: null,
       params: {},
       meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
@@ -2019,7 +2023,7 @@ test('daemon ignores responses forged by a non-target extension socket', async (
       method: 'page.get_state',
       tab_id: null,
       params: {},
-      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null, target_extension: 'target' },
     },
   });
 
@@ -2045,6 +2049,93 @@ test('daemon ignores responses forged by a non-target extension socket', async (
   });
   const payload = expectBridgeResponse(parsePayload(agentSocket.writes[0].trim()));
   assert.equal(payload.response.result?.url, 'https://target.example/');
+});
+
+test('daemon rejects ambiguous profiles before dispatch even when a tabId is supplied', async () => {
+  const daemon = new BridgeDaemon({ logger: console });
+  const agent = createFakeSocket();
+  const work = createFakeSocket();
+  const personal = createFakeSocket();
+  work.__accessEnabled = personal.__accessEnabled = true;
+  work.__browserName = personal.__browserName = 'Chrome';
+  work.__profileLabel = personal.__profileLabel = 'Work';
+  daemon.extensionSockets.set('work', work);
+  daemon.extensionSockets.set('personal', personal);
+  for (const method of ['page.get_state', 'input.click', 'tabs.list', 'access.request'] as const) {
+    await daemon.handleAgentRequest(agent, {
+      request: {
+        id: `ambiguous_${method}`,
+        method,
+        tab_id: 42,
+        params: method === 'input.click' ? { target: { selector: 'button' } } : {},
+        meta: {
+          protocol_version: PROTOCOL_VERSION,
+          token_budget: null,
+          target_browser: 'Chrome',
+          target_profile: 'Work',
+        },
+      },
+    });
+    const response = expectBridgeResponse(parsePayload(agent.writes.at(-1)!.trim())).response;
+    assert.equal(response.ok, false);
+    assert.equal(response.error?.code, 'TAB_MISMATCH');
+    assert.ok(response.error);
+    assert.equal(
+      (response.error.details as Record<string, unknown>).reason,
+      'ambiguous_browser_target'
+    );
+  }
+  assert.equal(work.writes.length, 0);
+  assert.equal(personal.writes.length, 0);
+  assert.equal(daemon.pendingRequests.size, 0);
+});
+
+test('daemon exact connection targeting ignores activity and never falls back after disconnect', async () => {
+  const daemon = new BridgeDaemon({ logger: console });
+  const agent = createFakeSocket();
+  const work = createFakeSocket();
+  const personal = createFakeSocket();
+  personal.__lastActiveAt = Date.now();
+  daemon.extensionSockets.set('work', work);
+  daemon.extensionSockets.set('personal', personal);
+  await daemon.handleAgentRequest(agent, {
+    request: {
+      id: 'exact',
+      method: 'page.get_state',
+      tab_id: 42,
+      params: {},
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null, target_extension: 'work' },
+    },
+  });
+  assert.equal(work.writes.length, 1);
+  assert.equal(personal.writes.length, 0);
+  await daemon.handleExtensionResponse(work, {
+    response: {
+      id: 'exact',
+      ok: true,
+      result: { url: 'https://work.example' },
+      error: null,
+      meta: { protocol_version: PROTOCOL_VERSION },
+    },
+  });
+  daemon.extensionSockets.delete('work');
+  await daemon.handleAgentRequest(agent, {
+    request: {
+      id: 'gone',
+      method: 'input.click',
+      tab_id: 42,
+      params: { target: { selector: 'button' } },
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null, target_extension: 'work' },
+    },
+  });
+  assert.equal(personal.writes.length, 0);
+  const response = expectBridgeResponse(parsePayload(agent.writes.at(-1)!.trim())).response;
+  assert.equal(response.error?.code, 'EXTENSION_DISCONNECTED');
+  assert.ok(response.error);
+  assert.equal(
+    (response.error.details as Record<string, unknown>).reason,
+    'browser_target_disconnected'
+  );
 });
 
 test('daemon routes explicit browser and profile targets only to matching extensions', async () => {
@@ -2082,6 +2173,7 @@ test('daemon routes explicit browser and profile targets only to matching extens
         token_budget: null,
         target_browser: 'Chrome',
         target_profile: 'Work',
+        target_extension: 'chrome-work-recent',
       },
     },
   });
@@ -2473,6 +2565,7 @@ test('daemon socket close clears only the disconnected agent socket pending requ
       meta: {
         protocol_version: PROTOCOL_VERSION,
         token_budget: null,
+        target_extension: 'ext-one',
       },
     },
   });
@@ -2485,6 +2578,7 @@ test('daemon socket close clears only the disconnected agent socket pending requ
       meta: {
         protocol_version: PROTOCOL_VERSION,
         token_budget: null,
+        target_extension: 'ext-one',
       },
     },
   });
@@ -2573,6 +2667,7 @@ test('daemon socket close fails only requests routed to the disconnected extensi
       meta: {
         protocol_version: PROTOCOL_VERSION,
         token_budget: null,
+        target_extension: 'ext-one',
       },
     },
   });
@@ -2587,6 +2682,7 @@ test('daemon socket close fails only requests routed to the disconnected extensi
       meta: {
         protocol_version: PROTOCOL_VERSION,
         token_budget: null,
+        target_extension: 'ext-two',
       },
     },
   });
@@ -3632,7 +3728,7 @@ test('daemon fails pending requests immediately when the only target extension d
   }
 });
 
-test('daemon routes to only the most recently active enabled extension and returns its error', async () => {
+test('daemon routes to only the explicitly selected enabled extension and returns its error', async () => {
   const { daemon, connect } = await startTestDaemon();
   const s1 = await connect();
   const s2 = await connect();
@@ -3687,7 +3783,11 @@ test('daemon routes to only the most recently active enabled extension and retur
         method: 'page.get_state',
         tab_id: null,
         params: {},
-        meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+        meta: {
+          protocol_version: PROTOCOL_VERSION,
+          token_budget: null,
+          target_extension: target1.__extensionId,
+        },
       },
     });
 
@@ -3725,7 +3825,7 @@ test('daemon routes to only the most recently active enabled extension and retur
 
 // --- Multi-extension: two Chrome profiles coexist (no kick-off) ---
 
-test('daemon routes untargeted requests to the extension with access enabled', async () => {
+test('daemon routes targeted requests to the selected extension with access enabled', async () => {
   const { daemon, connect } = await startTestDaemon();
   const s1 = await connect();
   const s2 = await connect();
@@ -3760,7 +3860,13 @@ test('daemon routes untargeted requests to the extension with access enabled', a
         method: 'page.get_state',
         tab_id: null,
         params: {},
-        meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+        meta: {
+          protocol_version: PROTOCOL_VERSION,
+          token_budget: null,
+          target_extension: [...daemon.extensionSockets.values()].find(
+            (socket) => socket.remotePort === s2.localPort
+          )?.__extensionId,
+        },
       },
     });
 
@@ -3795,7 +3901,7 @@ test('daemon routes untargeted requests to the extension with access enabled', a
   }
 });
 
-test('daemon routes untargeted requests to the most recently active extension when no window is enabled', async () => {
+test('daemon routes targeted requests to a disabled profile to request access', async () => {
   const { daemon, connect } = await startTestDaemon();
   const s1 = await connect();
   const s2 = await connect();
@@ -3841,7 +3947,11 @@ test('daemon routes untargeted requests to the most recently active extension wh
         method: 'page.get_state',
         tab_id: null,
         params: {},
-        meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+        meta: {
+          protocol_version: PROTOCOL_VERSION,
+          token_budget: null,
+          target_extension: target2.__extensionId,
+        },
       },
     });
 

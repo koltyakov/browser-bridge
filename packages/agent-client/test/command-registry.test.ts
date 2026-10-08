@@ -130,7 +130,11 @@ test('shortcut commands reject missing required arguments with usage errors', ()
 test('CLI help lists every install-mcp target', () => {
   const helpText = CLI_HELP_SECTIONS.flatMap((section) => section.lines).join('\n');
   assert.match(helpText, /codex\|claude\|cursor\|copilot\|opencode\|antigravity\|windsurf\|agents/);
-  assert.doesNotMatch(helpText, /--profile|toolset profile/i);
+  const installMcpHelp = CLI_HELP_SECTIONS.flatMap((section) => section.lines).find((line) =>
+    line.startsWith('bbx install-mcp')
+  );
+  assert.doesNotMatch(installMcpHelp ?? '', /--profile|toolset profile/i);
+  assert.match(helpText, /bbx call \[--extension <connectionId>\].*\[--profile <label>\]/);
   assert.match(
     helpText,
     /legacy clients can load typed tools; modern stateless clients use browser_call/

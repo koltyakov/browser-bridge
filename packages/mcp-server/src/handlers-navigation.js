@@ -5,6 +5,7 @@ import {
   createToolResult,
   getBridgeDestinations,
   getToolTokenBudget,
+  hasMcpBrowserTarget,
   requestBridgeWithRetry,
   summarizeToolError,
   withMcpRequestClient,
@@ -19,7 +20,7 @@ import {
  */
 export async function handleTabsTool(args) {
   if (args.action === 'list') {
-    if (typeof args.destinationId === 'string') {
+    if (typeof args.destinationId === 'string' || hasMcpBrowserTarget()) {
       return callBridgeTool('tabs.list', {}, { destinationId: args.destinationId });
     }
     const destinations = await getBridgeDestinations();
@@ -51,10 +52,14 @@ export async function handleTabsTool(args) {
               tabs: [],
             };
           }
-          const result = /** @type {{ tabs?: Array<Record<string, unknown>> }} */ (response.result);
+          const result =
+            /** @type {{ tabs?: Array<Record<string, unknown>>, profiles?: unknown[], partial?: boolean }} */ (
+              response.result
+            );
           return {
             destinationId: destination.id,
-            ok: true,
+            ok: result.partial !== true,
+            ...(result.profiles ? { profiles: result.profiles } : {}),
             tabs: (result.tabs ?? []).map((tab) => ({ destinationId: destination.id, ...tab })),
           };
         } catch (error) {
@@ -78,7 +83,7 @@ export async function handleTabsTool(args) {
         tabs,
         destinations: results,
       },
-      failures.length === results.length
+      failures.length === results.length && tabs.length === 0
     );
   }
   if (args.action === 'create') {

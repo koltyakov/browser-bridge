@@ -107,7 +107,7 @@ export async function ensureClientConnected(client) {
  * @param {BridgeClient} client
  * @param {BridgeMethod} method
  * @param {Record<string, unknown>} [params={}]
- * @param {{ tabId?: number | null, source?: BridgeRequestSource, mcpEra?: import('./types.js').McpProtocolEra, tokenBudget?: number | null, automaticRetry?: 'mcp_second_attempt' }} [options]
+ * @param {import('../../protocol/src/types.js').BrowserTarget & { tabId?: number | null, source?: BridgeRequestSource, mcpEra?: import('./types.js').McpProtocolEra, tokenBudget?: number | null, automaticRetry?: 'mcp_second_attempt' }} [options]
  * @returns {Promise<BridgeResponse>}
  */
 export async function requestBridge(client, method, params = {}, options = {}) {
@@ -128,12 +128,17 @@ export async function requestBridge(client, method, params = {}, options = {}) {
     method,
     params,
     tabId: methodNeedsTab(method) ? (options.tabId ?? null) : null,
-    meta: withRequestMeta(
-      options.source,
-      options.mcpEra,
-      options.tokenBudget,
-      options.automaticRetry
-    ),
+    meta: {
+      ...withRequestMeta(
+        options.source,
+        options.mcpEra,
+        options.tokenBudget,
+        options.automaticRetry
+      ),
+      ...(options.extensionId !== undefined ? { target_extension: options.extensionId } : {}),
+      ...(options.targetBrowser !== undefined ? { target_browser: options.targetBrowser } : {}),
+      ...(options.targetProfile !== undefined ? { target_profile: options.targetProfile } : {}),
+    },
     ...(timeoutMs === undefined ? {} : { timeoutMs }),
   });
 }

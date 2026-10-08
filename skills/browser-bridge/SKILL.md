@@ -121,6 +121,26 @@ In MCP mode, pass `destinationId` on any browser tool call instead; `browser_sta
 
 Browser Bridge access is window-scoped. The user turns it on once for the current browser window in the popup or side panel.
 
+### Multiple windows and profiles
+
+Do not disable other windows or profiles to make routing work. `health.ping` returns `connectedExtensions`; its `access` status describes only the profile that answered. A restricted active tab there does not mean the requested page in another profile is unavailable.
+
+In MCP, an unscoped `tabs.list` discovers tabs across enabled profiles. Choose the requested page by URL/title, then pass its `extensionId` and `tabId` on every call, including each batch item. Include `destinationId` for a remote machine. `tabId` and element refs are profile-local, so neither identifies a browser profile by itself. `targetBrowser` and `targetProfile` also work when their names uniquely identify a connection; prefer `extensionId` when labels are absent or duplicated.
+
+Use the daemon connection's `extensionId`, not `browserExtensionId`, which identifies the installed Chrome extension and may be shared across profiles.
+
+```json
+{ "method": "page.get_state", "extensionId": "<connection ID from discovery>", "tabId": 123 }
+```
+
+CLI calls accept the same connection selector:
+
+```bash
+bbx call --extension '<connection ID from health.ping>' --tab 123 page.get_state '{}'
+```
+
+When multiple connections match, calls fail with `TAB_MISMATCH` and `reason: ambiguous_browser_target` before reading or changing any page. Choose a connection from the error's `connectedExtensions`, list its tabs, and retry with the exact target. Connection IDs change on reconnect; rediscover a missing connection rather than falling back to another profile. Ask the user to enable access only for the selected profile if it is disabled.
+
 To request access, call `access.request` (via `bbx access-request`, `browser_access` MCP tool, or `bbx call access.request`). This surfaces an Enable cue in the extension popup/side panel for the focused window.
 
 Do not call `access.request` repeatedly while the same window is still pending. If access is already requested, tell the user to enable that window and wait for them to confirm readiness.
@@ -154,7 +174,7 @@ After access is enabled:
 | `INPUT_FOCUS_CHANGED`     | No       | Inspect focus handlers; do not replay native text automatically                           |
 | `DIALOG_NOT_OPEN`         | No       | Trigger or inspect the dialog again                                                       |
 | `DIALOG_ACTION_CONFLICT`  | No       | Inspect current dialog state; never auto-repeat accept/dismiss                            |
-| `TAB_MISMATCH`            | No       | Tab closed or not found (`working_tab_closed`: your working tab is gone) - pass `tabId` or use `tabs.list` |
+| `TAB_MISMATCH`            | No       | For `ambiguous_browser_target`, select `extensionId` and list its tabs. For a closed working tab, select a new `tabId`. Never disable unrelated windows. |
 | `TIMEOUT`                 | Once     | Retry once; if still failing, simplify (smaller `maxNodes`, narrower selector)            |
 | `CONTENT_SCRIPT_UNAVAILABLE` | No     | Switch to a normal http(s) page in the enabled window                                    |
 | `EXTENSION_DISCONNECTED`  | After 3s | Check Chrome is running; `bbx status` to verify, then retry                               |

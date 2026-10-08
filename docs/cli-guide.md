@@ -33,6 +33,24 @@ Use `bbx tabs` to see every tab in the enabled window, then
 `bbx tab-activate <tabId>` to bring one of them to the foreground when the
 wrong tab is routed. The tab ID must be an integer from `bbx tabs` output.
 
+With multiple browser profiles connected, choose a connection before listing or
+acting on tabs. `bbx call health.ping` returns connection IDs in
+`connectedExtensions`. Reuse the selected ID and tab ID on each raw call:
+
+```bash
+bbx call --extension <connectionId> tabs.list '{}'
+bbx call --extension <connectionId> --tab <tabId> page.get_state '{}'
+bbx call --browser Chrome --profile Work --tab <tabId> page.get_text '{}'
+bbx batch '[{"method":"page.get_state","extensionId":"<connectionId>","tabId":123}]'
+```
+
+Browser/profile names work only when they uniquely match a connection. Tab IDs
+are profile-local, so `--tab` alone cannot select a profile. Ambiguous calls
+fail before reaching a page. Never disable unrelated windows to fix routing,
+and rediscover connection IDs after a reconnect. Unscoped MCP `tabs.list`
+discovers tabs across enabled profiles automatically; CLI calls require an
+explicit selector when more than one connection matches.
+
 `bbx uninstall` removes native host manifests, Browser Bridge runtime files,
 and managed MCP/skill installs from the local machine. It takes no arguments.
 
