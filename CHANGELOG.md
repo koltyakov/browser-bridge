@@ -6,6 +6,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.12.2] - 2026-10-09
+
+### Added
+
+- Explicit browser/profile targeting across CLI and MCP calls and batch items.
+  CLI accepts `--extension`, `--browser`, and `--profile`; MCP accepts
+  `extensionId`, `targetBrowser`, and `targetProfile`.
+- Unscoped MCP `tabs.list` discovers tabs across enabled profiles, preserving
+  connection IDs and reporting partial failures.
+
+### Fixed
+
+- Ambiguous browser routing now fails before reading or changing a page with
+  `TAB_MISMATCH` and `reason: "ambiguous_browser_target"`. Recovery guidance
+  directs agents to select or rediscover the intended connection instead of
+  disabling unrelated windows.
+- MCP selector resolution and transport retries preserve the selected browser
+  and profile.
+
+## [1.12.1] - 2026-10-08
+
+### Added
+
+- The side panel shows an other-enabled-windows counter and dropdown across
+  browsers and profiles connected to the same local daemon. Entries show
+  browser, session profile label, and window details.
+- Clicking an entry focuses its existing window without changing agent routing.
+  `Disable all` revokes access in the other listed windows, leaves the current
+  window unchanged, and reports failures.
+
+### Changed
+
+- Connected local extensions share bounded enabled-window metadata in memory,
+  excluding page contents and disabled-window details. Entries are removed on
+  disconnect. Older enabled extensions still count when details or controls
+  are unavailable.
+- This update requires a daemon restart and extension reload in each browser.
+
 ## [1.12.0] - 2026-10-07
 
 ### Added
