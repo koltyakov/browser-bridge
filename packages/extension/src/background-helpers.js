@@ -356,6 +356,36 @@ function estimateInlineImageBytes(image) {
  * @returns {BridgeResponse}
  */
 export function enforceTokenBudget(method, response, tokenBudget) {
+  // Schemas and tool results are atomic JSON. Never shorten them or advise
+  // repeating an execution that may already have committed a side effect.
+  if (method.startsWith('webmcp.')) {
+    if (
+      !response.ok ||
+      typeof tokenBudget !== 'number' ||
+      tokenBudget <= 0 ||
+      !Number.isFinite(tokenBudget)
+    )
+      return response;
+    if (estimateJsonPayloadCost(response.result).bytes <= tokenBudget * 4) return response;
+    return createFailure(
+      response.id,
+      ERROR_CODES.RESULT_TOO_LARGE,
+      'Complete WebMCP response exceeds the token budget.',
+      {
+        method,
+        dispatched: method === 'webmcp.execute_tool',
+        outcome: method === 'webmcp.execute_tool' ? 'inspect_postconditions' : 'not_dispatched',
+      },
+      {
+        ...response.meta,
+        method,
+        continuation_hint:
+          method === 'webmcp.execute_tool'
+            ? 'Inspect postconditions; do not replay the tool.'
+            : 'Use a larger budget or narrower discovery.',
+      }
+    );
+  }
   if (
     method === 'dom.baseline.create' ||
     method === 'dom.baseline.describe' ||

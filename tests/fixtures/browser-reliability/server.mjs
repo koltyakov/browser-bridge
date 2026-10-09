@@ -14,6 +14,8 @@ const fixtureRoot = path.dirname(fileURLToPath(import.meta.url));
 const staticRoutes = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/index.html', ['index.html', 'text/html; charset=utf-8']],
+  ['/webmcp.html', ['webmcp.html', 'text/html; charset=utf-8']],
+  ['/assets/webmcp.js', ['assets/webmcp.js', 'text/javascript; charset=utf-8']],
   ['/assets/app.js', ['assets/app.js', 'text/javascript; charset=utf-8']],
   ['/assets/styles.css', ['assets/styles.css', 'text/css; charset=utf-8']],
   ['/assets/fixture.svg', ['assets/fixture.svg', 'image/svg+xml']],

@@ -59,6 +59,45 @@ function deferred() {
   return { promise, resolve };
 }
 
+test('WebMCP activity never persists website metadata, arguments, output or callback errors', async () => {
+  const { controller, storage } = createHistoryHarness();
+  const toolRef = 'wm_12345678-1234-1234-1234-123456789012';
+  for (const method of ['webmcp.list_tools', 'webmcp.get_tool', 'webmcp.execute_tool'] as const) {
+    const request = createRequest({
+      id: method,
+      method,
+      tabId: 7,
+      params: { toolRef, arguments: { secret: 'argument-secret' } },
+    });
+    await controller.logBridgeAction(
+      request,
+      createSuccess(method, {
+        value: 'output-secret',
+        tool: { name: 'tool-secret', description: 'description-secret' },
+      }),
+      { tabId: 7, url: 'https://example.test/' }
+    );
+    await controller.logBridgeAction(
+      request,
+      createFailure(method, 'WEBMCP_EXECUTION_UNCERTAIN', 'error-secret', {
+        value: 'detail-secret',
+      }),
+      { tabId: 7, url: 'https://example.test/' }
+    );
+  }
+  const stored = JSON.stringify(storage.snapshot());
+  for (const secret of [
+    'argument-secret',
+    'output-secret',
+    'tool-secret',
+    'description-secret',
+    'error-secret',
+    'detail-secret',
+  ])
+    assert.equal(stored.includes(secret), false);
+  assert.match(stored, /WebMCP/);
+});
+
 test('sibling-tab and host activity cannot evict a quiet tab history', async () => {
   const { controller, state, storage } = createHistoryHarness();
   await controller.appendActionLogEntry({

@@ -133,7 +133,9 @@ export function applyMethodBudgetPreset(method, params, budgetPreset) {
   const args = { ...params, budgetPreset };
   /** @type {Record<string, unknown>} */
   let normalized = args;
-  if (
+  if (method === 'webmcp.list_tools') {
+    normalized = applyLimitBudgetPreset(args, { quick: 5, normal: 20, deep: 100 });
+  } else if (
     method === 'dom.query' ||
     method === 'dom.get_accessibility_tree' ||
     method === 'dom.baseline.create'

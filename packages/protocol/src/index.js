@@ -17,3 +17,4 @@ export * from './protocol.js';
 export * from './registry.js';
 export * from './recovery-telemetry.js';
 export * from './summary.js';
+export * from './webmcp.js';

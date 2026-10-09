@@ -195,6 +195,8 @@ function connectMcpClient(client, timeoutMs) {
 
 /** @type {ReadonlySet<BridgeMethod>} */
 const RETRY_SAFE_METHODS = new Set([
+  'webmcp.list_tools',
+  'webmcp.get_tool',
   'skill.get_runtime_context',
   'setup.get_status',
   'log.tail',
@@ -540,6 +542,11 @@ export function boundToolValue(input, options = {}) {
  * @returns {{ value: unknown, truncated: boolean, limit: Record<string, number>, metadata?: Record<string, unknown> }}
  */
 function getRequestAwareEvidence(rawResult, method, params, fallback) {
+  if (method?.startsWith('webmcp.')) {
+    // The extension delivers these atomically under maxBytes. Generic recursive
+    // string/entry limits would silently corrupt schemas and tool output.
+    return { value: rawResult, truncated: false, limit: { maxBytes: 65_536 } };
+  }
   const result =
     rawResult && typeof rawResult === 'object' && !Array.isArray(rawResult)
       ? /** @type {Record<string, unknown>} */ (rawResult)

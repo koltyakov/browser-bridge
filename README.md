@@ -97,6 +97,7 @@ Managed installs support OpenAI Codex, Claude Code, Cursor, GitHub Copilot, Open
 - Verifying a code change actually rendered the expected result in Chrome
 - Patching the live page to prove a fix visually, then moving it into source and rolling the patch back
 - Running structured browser checks from any local agent or IDE, not just one AI product
+- Calling website-provided WebMCP tools when the browser supports them, with exact-action user approval and DOM verification
 
 ## Why Browser Bridge
 
@@ -147,6 +148,7 @@ MCP mode is self-contained: the dual-era stdio server supports legacy MCP client
 - [MCP vs CLI](https://github.com/koltyakov/browser-bridge/blob/main/docs/mcp-vs-cli.md)
 - [Troubleshooting](https://github.com/koltyakov/browser-bridge/blob/main/docs/troubleshooting.md)
 - [BridgeClient API](https://github.com/koltyakov/browser-bridge/blob/main/docs/api-reference.md)
+- [WebMCP website tools](https://github.com/koltyakov/browser-bridge/blob/main/docs/webmcp.md)
 
 ## Privacy
 

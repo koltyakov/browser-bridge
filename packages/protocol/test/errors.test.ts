@@ -6,6 +6,11 @@ import { isBridgeMethod } from '../src/registry.js';
 import type { ErrorCode } from '../src/types.js';
 
 const EXPECTED_ERROR_CODES: readonly string[] = [
+  'WEBMCP_UNAVAILABLE',
+  'WEBMCP_TOOL_STALE',
+  'WEBMCP_BUSY',
+  'WEBMCP_APPROVAL_DENIED',
+  'WEBMCP_EXECUTION_UNCERTAIN',
   'ACCESS_DENIED',
   'TAB_MISMATCH',
   'ELEMENT_STALE',

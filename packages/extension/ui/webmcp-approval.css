@@ -1,0 +1,11 @@
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+body { margin: 0; }
+main { padding: 24px; }
+h1 { font-size: 22px; }
+h2 { font-size: 16px; margin-top: 24px; }
+p { line-height: 1.5; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; border: 1px solid #888; border-radius: 6px; max-height: 240px; overflow: auto; unicode-bidi: plaintext; }
+.warning { border-left: 3px solid #b7791f; padding-left: 12px; }
+footer { display: flex; justify-content: flex-end; gap: 12px; position: sticky; bottom: 0; padding: 16px 0; background: Canvas; }
+button { padding: 10px 18px; font: inherit; cursor: pointer; }
+button:disabled { cursor: default; }

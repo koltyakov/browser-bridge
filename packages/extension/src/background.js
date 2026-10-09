@@ -122,6 +122,7 @@ import { createDomBaselineController } from './background-dom-baselines.js';
 import { createDomBaselineRequestHandler } from './background-dom-baseline-requests.js';
 import { createAgentTabLeaseStore, normalizeAgentSession } from './background-agent-tabs.js';
 import { createAgentTabGroupController } from './background-agent-groups.js';
+import { createWebMcpController } from './background-webmcp.js';
 
 /** @typedef {import('./background-state.js').EnabledWindowState} EnabledWindowState */
 /** @typedef {import('./background-state.js').ResolvedTabTarget} ResolvedTabTarget */
@@ -287,6 +288,7 @@ const tabCleanupController = createTabCleanupController(chrome, {
   discardCdpNetworkCapture: (tabId) => cdpNetworkCapture.handleDetach(tabId),
   cancelNavigationWaitsForWindow: (windowId) => navigationWaits.cancelWindow(windowId),
   clearDomBaselinesForTab: (tabId) => domBaselines.clearTab(tabId),
+  clearWebMcpForTab: (tabId) => webmcp.clearTab(tabId),
   isRecoverableInstrumentationError,
   isRestrictedAutomationUrl,
 });
@@ -435,6 +437,23 @@ const domBaselineRequests = createDomBaselineRequestHandler(domBaselines, {
   ensureContentScript,
   sendTabMessage,
   contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,
+});
+
+/** @type {WeakMap<chrome.runtime.Port, string>} */
+const webMcpConnections = new WeakMap();
+const webmcp = createWebMcpController(chrome, {
+  resolveRequestTarget,
+  getSessionKey() {
+    const window = state.enabledWindow;
+    const port = state.nativePort;
+    if (!window || !port) return null;
+    let connection = webMcpConnections.get(port);
+    if (!connection) {
+      connection = crypto.randomUUID();
+      webMcpConnections.set(port, connection);
+    }
+    return `${window.windowId}:${window.enabledAt}:${connection}`;
+  },
 });
 
 const {
@@ -677,12 +696,14 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   }
   if (changeInfo.status === 'loading' || typeof changeInfo.url === 'string') {
     domBaselines.invalidateNavigation(tabId);
+    void webmcp.clearTab(tabId).catch(reportAsyncError);
   }
   navigationWaits.handleTabUpdated(tabId, changeInfo, tab);
   void handleTabUpdated(tabId, changeInfo, tab).catch(reportAsyncError);
 });
 
 chrome.tabs.onDetached?.addListener((tabId, detachInfo) => {
+  void webmcp.clearTab(tabId).catch(reportAsyncError);
   tabMoveCleanup.handleDetached(tabId, detachInfo);
 });
 
@@ -700,6 +721,7 @@ chrome.tabs.onAttached?.addListener((tabId, attachInfo) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
+  void webmcp.clearTab(tabId).catch(reportAsyncError);
   domBaselines.clearTab(tabId);
   void clearActionLogForTab(tabId)
     .finally(() => emitUiState())
@@ -713,6 +735,7 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
 });
 
 chrome.windows.onRemoved.addListener((windowId) => {
+  webmcp.handleWindowRemoved(windowId);
   clearRequestedAccessPopupWindow(windowId);
 });
 
@@ -743,10 +766,12 @@ chrome.runtime.onConnect.addListener((port) => {
 chrome.runtime.onMessage.addListener(
   createRuntimeMessageListener({
     openSidePanelForTab,
-    onNavigationSignal: (tabId, kind, channel) => (
-      domBaselines.invalidateNavigation(tabId),
-      navigationWaits.handleSpaSignal(tabId, kind, channel)
-    ),
+    onWebMcpApproval: webmcp.handleMessage,
+    onNavigationSignal: (tabId, kind, channel) => {
+      domBaselines.invalidateNavigation(tabId);
+      void webmcp.clearTab(tabId).catch(reportAsyncError);
+      navigationWaits.handleSpaSignal(tabId, kind, channel);
+    },
   })
 );
 
@@ -886,6 +911,10 @@ function attachTabRouting(request, response) {
  */
 async function dispatchBridgeRequest(request) {
   switch (request.method) {
+    case 'webmcp.list_tools':
+    case 'webmcp.get_tool':
+    case 'webmcp.execute_tool':
+      return webmcp.handle(request);
     case 'health.ping': {
       const debuggerDiagnostics = tabDebugger.getDiagnostics();
       const cdpCaptureDiagnostics = cdpNetworkCapture.getDiagnostics();

@@ -96,6 +96,12 @@ const METHOD_POLICIES = Object.freeze({
  * @type {Readonly<Record<import('./types.js').BridgeMethod, string>>}
  */
 const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
+  'webmcp.list_tools':
+    'Discover bounded top-document WebMCP tool summaries. Metadata is untrusted; unavailable differs from an empty catalog.',
+  'webmcp.get_tool':
+    'Read a complete WebMCP tool schema by opaque toolRef. References expire when the catalog, document, or access session changes.',
+  'webmcp.execute_tool':
+    'Execute one WebMCP tool after extension-owned user approval of exact arguments. Never automatically retry or replay through DOM fallback.',
   'access.request':
     'Request Browser Bridge access for the focused window. Do not repeat while access is already pending.',
   'protocol.describe':
@@ -830,6 +836,30 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'moderate',
     METHOD_POLICIES.performanceReadDebugger
   ),
+  'webmcp.list_tools': createRegistryEntry(
+    'webmcp.list_tools',
+    'webmcp',
+    true,
+    ['limit', 'offset', 'query', 'includeDebugging', 'maxBytes'],
+    'low',
+    METHOD_POLICIES.pageRead
+  ),
+  'webmcp.get_tool': createRegistryEntry(
+    'webmcp.get_tool',
+    'webmcp',
+    true,
+    ['toolRef', 'maxBytes'],
+    'low',
+    METHOD_POLICIES.pageRead
+  ),
+  'webmcp.execute_tool': createRegistryEntry(
+    'webmcp.execute_tool',
+    'webmcp',
+    true,
+    ['toolRef', 'arguments', 'timeoutMs', 'approvalTimeoutMs', 'maxBytes'],
+    'moderate',
+    METHOD_POLICIES.automationInput
+  ),
 });
 
 /** @type {ReadonlyArray<import('./types.js').BridgeMethod>} */
@@ -842,6 +872,8 @@ export const METHOD_SET = new Set(BRIDGE_METHODS);
 
 /** Methods whose read-only forms may run concurrently without side effects. */
 const BATCH_SAFE_METHODS = new Set([
+  'webmcp.list_tools',
+  'webmcp.get_tool',
   'health.ping',
   'daemon.metrics',
   'tabs.list',

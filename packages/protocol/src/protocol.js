@@ -1,6 +1,7 @@
 // @ts-check
 
 import { applyBudget } from './budget.js';
+import { normalizeWebMcpParams } from './webmcp.js';
 import {
   ARTIFACT_CHUNK_BYTES,
   BUDGET_PRESETS,
@@ -298,13 +299,20 @@ export function createSuccess(id, result, meta = {}) {
 export function createFailure(id, code, message, details = null, meta = {}) {
   const recovery = getRoutingRecovery(code, details) ?? getErrorRecovery(code);
   const effectiveRecovery =
-    recovery && meta.method === 'sensitive.read'
+    meta.method === 'webmcp.execute_tool'
       ? {
           retry: false,
-          ...(recovery.alternativeMethod ? { alternativeMethod: recovery.alternativeMethod } : {}),
-          hint: `Sensitive reads are never retried automatically. ${recovery.hint}`,
+          hint: 'WebMCP executions are never retried automatically. Inspect postconditions if dispatch may have started; never replay through DOM fallback.',
         }
-      : recovery;
+      : recovery && meta.method === 'sensitive.read'
+        ? {
+            retry: false,
+            ...(recovery.alternativeMethod
+              ? { alternativeMethod: recovery.alternativeMethod }
+              : {}),
+            hint: `Sensitive reads are never retried automatically. ${recovery.hint}`,
+          }
+        : recovery;
   return {
     id,
     ok: false,
@@ -531,6 +539,15 @@ function normalizeAutomaticRetryMeta(source, value) {
  */
 export function normalizeRequestParams(method, params) {
   switch (method) {
+    case 'webmcp.list_tools':
+    case 'webmcp.get_tool':
+    case 'webmcp.execute_tool': {
+      const normalized = normalizeWebMcpParams(params);
+      if (method !== 'webmcp.list_tools' && !normalized.toolRef) {
+        throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'toolRef is required.');
+      }
+      return normalized;
+    }
     case 'access.request':
       return normalizeAccessRequestParams(params);
     case 'log.tail':
@@ -674,6 +691,13 @@ export function normalizeAccessRequestParams(params = {}) {
  */
 export function getBridgeOperationTimeoutMs(method, params = {}) {
   switch (method) {
+    case 'webmcp.execute_tool': {
+      const normalized = normalizeWebMcpParams(params);
+      return normalized.approvalTimeoutMs + normalized.timeoutMs + 10_000;
+    }
+    case 'webmcp.list_tools':
+    case 'webmcp.get_tool':
+      return 5000;
     case 'navigation.navigate':
     case 'navigation.reload':
     case 'navigation.go_back':

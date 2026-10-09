@@ -139,6 +139,9 @@ export function createChromeFake(overrides: ChromeFakeOverrides = {}): ChromeFak
       getManifest() {
         return { version: '1.8.0' };
       },
+      getURL(path: string) {
+        return `chrome-extension://test-extension-id/${path}`;
+      },
       connectNative() {
         throw new Error('chrome.runtime.connectNative was not stubbed for this test');
       },
@@ -185,6 +188,7 @@ export function createChromeFake(overrides: ChromeFakeOverrides = {}): ChromeFak
       async create(createData: Record<string, unknown> = {}) {
         return { id: 1, ...createData };
       },
+      async remove() {},
       onFocusChanged: createChromeEvent(),
       onRemoved: createChromeEvent(),
     },

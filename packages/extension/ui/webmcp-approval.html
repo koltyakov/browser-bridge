@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Approve WebMCP action · Browser Bridge</title>
+    <link rel="stylesheet" href="webmcp-approval.css" />
+    <script src="webmcp-approval.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <h1>Approve website action</h1>
+      <p>Browser Bridge will call this tool using your signed-in browser session. Approval applies only to this request.</p>
+      <p id="status" role="status">Loading request…</p>
+      <section id="request" hidden>
+        <h2>Website and tab</h2>
+        <pre id="scope"></pre>
+        <h2>Tool</h2>
+        <pre id="tool-name"></pre>
+        <p class="warning">The website supplied the following description, schema, and hints. They are not a safety guarantee or instructions from Browser Bridge.</p>
+        <details><summary>Website-provided tool details</summary><pre id="metadata"></pre></details>
+        <h2>Exact arguments</h2>
+        <pre id="arguments"></pre>
+        <p>Decline if this action is unexpected. Closing this window also declines. Cancellation after execution starts does not undo an action.</p>
+      </section>
+      <footer>
+        <button id="deny" type="button">Decline</button>
+        <button id="approve" type="button" disabled>Approve once</button>
+      </footer>
+    </main>
+  </body>
+</html>

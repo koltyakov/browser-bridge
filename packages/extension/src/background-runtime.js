@@ -1,9 +1,12 @@
 // @ts-check
 
+/** @typedef {{ ok: boolean, error?: string, details?: Record<string, unknown> }} RuntimeResponse */
+
 /**
  * @typedef {{
  *   openSidePanelForTab: (tabId: number, windowId: number) => Promise<void>
  *   onNavigationSignal?: (tabId: number, kind: 'pushState' | 'replaceState' | 'popstate' | 'hashchange', channel: string) => void
+ *   onWebMcpApproval?: (message: unknown, sender: chrome.runtime.MessageSender, reply: (response: RuntimeResponse) => void) => boolean
  * }} RuntimeMessageListenerOptions
  */
 
@@ -31,7 +34,7 @@ function settleSidePanelOpen(sendResponse, operation) {
  * background module and mocking every Chrome API.
  *
  * @param {RuntimeMessageListenerOptions} options
- * @returns {(message: unknown, sender: chrome.runtime.MessageSender, sendResponse: (response: { ok: boolean, error?: string }) => void) => boolean}
+ * @returns {(message: unknown, sender: chrome.runtime.MessageSender, sendResponse: (response: RuntimeResponse) => void) => boolean}
  */
 export function createRuntimeMessageListener(options) {
   return (message, sender, sendResponse) => {
@@ -39,6 +42,9 @@ export function createRuntimeMessageListener(options) {
       message && typeof message === 'object'
         ? /** @type {Record<string, unknown>} */ (message)
         : null;
+    if (candidate?.type === 'webmcp.approval.get' || candidate?.type === 'webmcp.approval.decide') {
+      return options.onWebMcpApproval?.(message, sender, sendResponse) ?? false;
+    }
     if (
       candidate?.type === 'bridge.navigation-signal' &&
       typeof sender.tab?.id === 'number' &&

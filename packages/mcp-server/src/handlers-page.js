@@ -529,7 +529,9 @@ export async function handleRawCallTool(args) {
         tabId: typeof args.tabId === 'number' ? args.tabId : null,
         source: REQUEST_SOURCE,
         tokenBudget:
-          method.startsWith('screenshot.') || method === 'sensitive.read'
+          method.startsWith('screenshot.') ||
+          method === 'sensitive.read' ||
+          method.startsWith('webmcp.')
             ? null
             : getToolTokenBudget(args),
       });

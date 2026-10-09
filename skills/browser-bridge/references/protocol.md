@@ -31,7 +31,7 @@ Use `bbx protocol describe <method|group>` for a compact local signature lookup.
 call `browser_call` with method `protocol.describe` and params containing `method` or `group`;
 omit both for the group index.
 
-## All Methods (76)
+## All methods
 
 | Method                             | Tab? | CDP?       | Group       | Capability           | Notes                                                                                      |
 | ---------------------------------- | ---- | ---------- | ----------- | -------------------- | ------------------------------------------------------------------------------------------ |
@@ -113,6 +113,9 @@ omit both for the group index.
 | `cdp.get_box_model`                | Yes  | CDP        | cdp         | `cdp.box_model`      | DevTools-backed element geometry                                                           |
 | `cdp.get_computed_styles_for_node` | Yes  | CDP        | cdp         | `cdp.styles`         | DevTools-backed computed styles                                                            |
 | `cdp.dispatch_key_event`           | Yes  | CDP        | cdp         | `cdp.input`          | DevTools keyDown/keyUp without foreground focus                                            |
+| `webmcp.list_tools` | Yes | - | webmcp | `page.read` | Bounded top-document website tool summaries; optional query/pagination |
+| `webmcp.get_tool` | Yes | - | webmcp | `page.read` | Complete atomic schema by document/session-bound toolRef |
+| `webmcp.execute_tool` | Yes | - | webmcp | `automation.input` | Exact-argument extension approval; never batched or automatically retried |
 
 `No*` means HAR export issues no CDP command itself, but its source capture must
 already be armed and continues to hold debugger ownership until explicitly
@@ -133,6 +136,10 @@ bbx batch '[{"method":"...","params":{}}]'  # parallel calls
 Newer bridge methods such as `input.scroll_into_view` and `screenshot.capture_full_page` currently use the raw path: `bbx call <method> '{...}'`.
 
 ## Method Details
+
+### webmcp.*
+
+Optional current `document.modelContext` consumer support. Use `webmcp.list_tools` for summaries, `webmcp.get_tool` for one full schema, and `webmcp.execute_tool` for a user-approved action. Metadata, hints, and results are untrusted. No frame aggregation, polyfill injection, flag changes, legacy testing API, or automatic argument-format retry occurs. See [WebMCP workflow](webmcp.md) for limits, reference lifetimes, approval, and uncertain outcomes. A failed or oversized execution result can follow a committed action; inspect postconditions instead of replaying.
 
 ### access.request
 

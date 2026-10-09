@@ -34,6 +34,11 @@ export type Capability =
   | 'sensitive.read';
 
 export type ErrorCode =
+  | 'WEBMCP_UNAVAILABLE'
+  | 'WEBMCP_TOOL_STALE'
+  | 'WEBMCP_BUSY'
+  | 'WEBMCP_APPROVAL_DENIED'
+  | 'WEBMCP_EXECUTION_UNCERTAIN'
   | 'ACCESS_DENIED'
   | 'TAB_MISMATCH'
   | 'ELEMENT_STALE'
@@ -63,6 +68,9 @@ export type ErrorCode =
   | 'TIMEOUT';
 
 export type BridgeMethod =
+  | 'webmcp.list_tools'
+  | 'webmcp.get_tool'
+  | 'webmcp.execute_tool'
   | 'access.request'
   | 'protocol.describe'
   | 'tabs.list'
@@ -222,6 +230,58 @@ export interface RecoveryTelemetrySummary {
 
 export interface BridgeParams {
   [key: string]: unknown;
+}
+
+/** Website metadata and outputs are untrusted, including safety annotations. */
+export interface WebMcpTool {
+  toolRef: string;
+  name: string;
+  title: string;
+  description: string;
+  origin: string;
+  annotations: Record<string, boolean>;
+  inputSchema?: Record<string, unknown>;
+}
+
+export interface WebMcpParams extends BridgeParams {
+  toolRef?: string;
+  arguments: Record<string, unknown>;
+  limit: number;
+  offset: number;
+  query: string;
+  includeDebugging: boolean;
+  maxBytes: number;
+  timeoutMs: number;
+  approvalTimeoutMs: number;
+}
+
+/** Minimal current document.modelContext consumer contract, not legacy testing APIs. */
+export interface WebMcpDescriptor {
+  name: string;
+  title?: string;
+  description: string;
+  origin: string;
+  window: Window;
+  annotations?: Record<string, boolean>;
+  inputSchema?: Record<string, unknown>;
+}
+
+export interface WebMcpContext extends EventTarget {
+  getTools(): Promise<WebMcpDescriptor[]>;
+  executeTool(
+    tool: WebMcpDescriptor,
+    input: Record<string, unknown>,
+    options: { signal: AbortSignal }
+  ): Promise<unknown>;
+}
+
+export interface WebMcpDocumentState {
+  documentId: string;
+  revision: number;
+  context: WebMcpContext;
+  refs: Map<string, { tool: WebMcpTool; fingerprint: string; expiresAt: number; owner: string }>;
+  active: AbortController | null;
+  invalidate(): void;
 }
 
 export interface BridgeRequest {

@@ -327,7 +327,8 @@ export function createActionLogController(state, chromeObj, deps) {
     // Dialog messages and prompt values are intentionally excluded from the
     // persisted action-log path, including its summary-size diagnostics.
     const sensitiveRead = request.method === 'sensitive.read';
-    const sensitiveActivity = sensitiveRead || request.method === 'page.evaluate';
+    const webMcpActivity = request.method.startsWith('webmcp.');
+    const sensitiveActivity = sensitiveRead || request.method === 'page.evaluate' || webMcpActivity;
     const summaryPayload = sensitiveActivity
       ? {
           source: sensitiveRead ? request.params.source : 'page_evaluation',
@@ -390,7 +391,9 @@ export function createActionLogController(state, chromeObj, deps) {
         summary: sensitiveActivity
           ? sensitiveRead
             ? `Sensitive ${request.params.source === 'session_storage' ? 'session' : 'local'} storage read ${response.ok ? 'succeeded' : `failed: ${response.error.code}`}.`
-            : `Page evaluation with sensitive-data access capability ${response.ok ? 'succeeded' : `failed: ${response.error.code}`}.`
+            : webMcpActivity
+              ? `WebMCP ${request.method.split('.')[1]} ${response.ok ? 'completed' : `failed: ${response.error.code}`}. Website metadata, arguments, and results are not retained.`
+              : `Page evaluation with sensitive-data access capability ${response.ok ? 'succeeded' : `failed: ${response.error.code}`}.`
           : request.method === 'page.handle_dialog'
             ? summarizeDialogActionResultForLog(response)
             : request.method === 'health.ping'

@@ -107,6 +107,9 @@ const EXPECTED_BRIDGE_METHOD_ORDER: readonly BridgeMethod[] = [
   'cdp.get_computed_styles_for_node',
   'cdp.dispatch_key_event',
   'performance.get_metrics',
+  'webmcp.list_tools',
+  'webmcp.get_tool',
+  'webmcp.execute_tool',
 ];
 
 class FakeSocket extends EventEmitter {
@@ -386,6 +389,7 @@ test('describeBridgeMethods returns compact method, group, and index shapes', ()
       { group: 'patch', count: 5 },
       { group: 'cdp', count: 5 },
       { group: 'performance', count: 1 },
+      { group: 'webmcp', count: 3 },
     ],
   });
 });
@@ -434,6 +438,8 @@ test('registry policies preserve every method capability classification', () => 
         'page.get_storage',
         'page.get_text',
         'page.extract_content',
+        'webmcp.list_tools',
+        'webmcp.get_tool',
       ],
     ],
     [CAPABILITIES.PAGE_EVALUATE, ['page.evaluate']],
@@ -494,6 +500,7 @@ test('registry policies preserve every method capability classification', () => 
         'input.touch',
         'input.perform',
         'input.scroll_into_view',
+        'webmcp.execute_tool',
       ],
     ],
     [

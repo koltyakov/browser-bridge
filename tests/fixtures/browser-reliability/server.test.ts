@@ -41,6 +41,12 @@ test('fixture server binds locally and serves static, redirect, cache, slow, and
     assert.equal(script.status, 200);
     assert.match(script.headers.get('content-type') ?? '', /^text\/javascript/u);
 
+    const webMcp = await fetch(`${running.origin}/webmcp.html`);
+    assert.equal(webMcp.status, 200);
+    assert.match(await webMcp.text(), /id="result" data-executions="0"/);
+    const webMcpScript = await fetch(`${running.origin}/assets/webmcp.js`);
+    assert.match(await webMcpScript.text(), /fixture_set_status/);
+
     const redirect = await fetch(`${running.origin}/redirect`, { redirect: 'manual' });
     assert.equal(redirect.status, 302);
     assert.equal(redirect.headers.get('location'), '/?redirected=1#redirect-complete');

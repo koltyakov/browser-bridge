@@ -3,6 +3,11 @@
 /** @typedef {import('./types.js').ErrorCode} ErrorCode */
 
 export const ERROR_CODES = Object.freeze({
+  WEBMCP_UNAVAILABLE: 'WEBMCP_UNAVAILABLE',
+  WEBMCP_TOOL_STALE: 'WEBMCP_TOOL_STALE',
+  WEBMCP_BUSY: 'WEBMCP_BUSY',
+  WEBMCP_APPROVAL_DENIED: 'WEBMCP_APPROVAL_DENIED',
+  WEBMCP_EXECUTION_UNCERTAIN: 'WEBMCP_EXECUTION_UNCERTAIN',
   ACCESS_DENIED: 'ACCESS_DENIED',
   TAB_MISMATCH: 'TAB_MISMATCH',
   ELEMENT_STALE: 'ELEMENT_STALE',
@@ -38,6 +43,27 @@ export const ERROR_CODES = Object.freeze({
  * @type {Readonly<Record<string, { retry: boolean, retryAfterMs?: number, alternativeMethod?: string, hint: string }>>}
  */
 export const ERROR_RECOVERY = Object.freeze({
+  [ERROR_CODES.WEBMCP_UNAVAILABLE]: {
+    retry: false,
+    hint: 'This document does not expose the current WebMCP consumer API. Use structured DOM/input methods; do not enable flags or inject a polyfill without user permission.',
+  },
+  [ERROR_CODES.WEBMCP_TOOL_STALE]: {
+    retry: false,
+    alternativeMethod: 'webmcp.list_tools',
+    hint: 'The tool reference expired or its document, catalog, or access session changed. Discover and inspect a fresh tool before a new deliberate action.',
+  },
+  [ERROR_CODES.WEBMCP_BUSY]: {
+    retry: false,
+    hint: 'Another WebMCP execution or approval is pending. Wait and inspect postconditions; a timed-out callback may still be running.',
+  },
+  [ERROR_CODES.WEBMCP_APPROVAL_DENIED]: {
+    retry: false,
+    hint: 'User approval was denied, closed, expired, or revoked. No tool was dispatched. Do not repeat the request unless the user asks.',
+  },
+  [ERROR_CODES.WEBMCP_EXECUTION_UNCERTAIN]: {
+    retry: false,
+    hint: 'The tool may have executed. Inspect DOM/page postconditions before another deliberate action. Never automatically retry or repeat the action through DOM input.',
+  },
   [ERROR_CODES.ACCESS_DENIED]: {
     retry: false,
     hint: 'Access is off for this window. Ask the user to click Enable in the Browser Bridge popup or side panel. Do not request access again until that window is enabled.',
