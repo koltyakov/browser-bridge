@@ -2132,16 +2132,34 @@ test('content script input.click returns click metadata and stale element refs f
 
   attachedElements.delete(checkbox);
 
-  assert.deepEqual(
-    await execute('input.click', { target: { elementRef: clickResult.elementRef } }),
-    {
-      error: {
-        code: 'ELEMENT_STALE',
-        message: 'Element reference is stale.',
-        details: { elementRef: clickResult.elementRef, recovered: false },
-      },
+  let now = Date.now();
+  let clockStep = 0;
+  t.mock.method(Date, 'now', () => (now += clockStep));
+
+  // Cover both same-tick failures and failures that include elapsed-time metadata.
+  for (clockStep of [0, 1]) {
+    const staleResult = await execute('input.click', {
+      target: { elementRef: clickResult.elementRef },
+    });
+    const error = expectRecord(staleResult.error);
+    const { waitedMs, ...details } = expectRecord(error.details);
+
+    assert.deepEqual(
+      { ...staleResult, error: { ...error, details } },
+      {
+        error: {
+          code: 'ELEMENT_STALE',
+          message: 'Element reference is stale.',
+          details: { elementRef: clickResult.elementRef, recovered: false },
+        },
+      }
+    );
+    if (clockStep === 0) {
+      assert.equal(waitedMs, undefined);
+    } else {
+      assert.ok(typeof waitedMs === 'number' && Number.isSafeInteger(waitedMs) && waitedMs > 0);
     }
-  );
+  }
 });
 
 test('content script input.type types into text inputs and contenteditable regions', async (t) => {
