@@ -687,7 +687,11 @@ export type PerformStepMethod =
   | 'input.scroll_into_view'
   | 'viewport.scroll'
   | 'dom.wait_for'
-  | 'page.wait_for_load_state';
+  | 'page.wait_for_load_state'
+  | 'page.get_state'
+  | 'page.get_text'
+  | 'dom.query'
+  | 'dom.get_text';
 
 export interface PerformStepParams {
   method?: string;
@@ -701,6 +705,7 @@ export interface PerformParams {
   executionMode?: InputExecutionMode;
   timeoutMs?: number;
   continueOnError?: boolean;
+  returnLastResult?: boolean;
 }
 
 export interface NormalizedPerformStep {
@@ -714,7 +719,14 @@ export interface NormalizedPerformParams extends BridgeParams {
   steps: NormalizedPerformStep[];
   timeoutMs: number;
   continueOnError: boolean;
+  returnLastResult: boolean;
 }
+
+export type PerformLastResult = {
+  index: number;
+  method: PerformStepMethod;
+  byteLength: number;
+} & ({ truncated: false; result: unknown } | { truncated: true; maxBytes: number });
 
 export interface PerformStepFailure {
   index: number;
@@ -731,6 +743,7 @@ export interface PerformResult {
   elapsedMs: number;
   startedAtMs: number[];
   failures: PerformStepFailure[];
+  lastResult?: PerformLastResult;
 }
 
 export interface CdpDispatchKeyEventParams {

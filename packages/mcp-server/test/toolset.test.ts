@@ -64,6 +64,7 @@ test('server keeps loadable tools registered but disabled until requested', () =
   const originalRegisterTool = McpServer.prototype.registerTool;
   const registrations: Array<{
     name: string;
+    description: string;
     enabled: boolean;
     disableCalls: number;
     removeCalls: number;
@@ -72,10 +73,16 @@ test('server keeps loadable tools registered but disabled until requested', () =
   McpServer.prototype.registerTool = function registerTool(
     this: McpServer,
     name: string,
-    _config: Record<string, unknown>,
+    config: Record<string, unknown>,
     handler: unknown
   ) {
-    const state = { name, enabled: true, disableCalls: 0, removeCalls: 0 };
+    const state = {
+      name,
+      description: String(config.description),
+      enabled: true,
+      disableCalls: 0,
+      removeCalls: 0,
+    };
     registrations.push(state);
     return {
       get enabled() {
@@ -117,6 +124,14 @@ test('server keeps loadable tools registered but disabled until requested', () =
   assert.equal(
     registrations.every((registration) => registration.removeCalls === 0),
     true
+  );
+  const callDescription = registrations.find(({ name }) => name === 'browser_call')?.description;
+  assert.match(callDescription ?? '', /input\.perform with returnLastResult: true/);
+  assert.match(callDescription ?? '', /never blindly replay a partial flow/);
+  const batchDescription = registrations.find(({ name }) => name === 'browser_batch')?.description;
+  assert.match(
+    batchDescription ?? '',
+    /known ordered actions use browser_call method input\.perform/
   );
 });
 
@@ -177,4 +192,19 @@ test('modern instructions describe a static stateless surface', () => {
   assert.match(instructions, /tool list is static for stateless MCP/i);
   assert.match(instructions, /browser_skill/);
   assert.doesNotMatch(instructions, /call browser_toolset/i);
+});
+
+test('both MCP eras teach low-round-trip interaction with outcome checks and safe partial failure handling', () => {
+  for (const era of ['legacy', 'modern'] as const) {
+    const instructions = getMcpServerInstructions(era);
+    assert.match(instructions, /semantic locator directly to input methods/);
+    assert.match(instructions, /Actions auto-wait/);
+    assert.match(instructions, /input\.perform/);
+    assert.match(instructions, /returnLastResult: true/);
+    assert.match(instructions, /observe: true/);
+    assert.match(instructions, /Read input effects before requesting another page snapshot/);
+    assert.match(instructions, /Stop at decisions requiring new evidence or user approval/);
+    assert.match(instructions, /never blindly replay a partially completed flow/);
+    assert.match(instructions, /completed steps alone do not prove application success/);
+  }
 });

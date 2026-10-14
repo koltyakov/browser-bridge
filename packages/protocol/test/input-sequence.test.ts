@@ -74,6 +74,7 @@ test('normalizeInputPerformParams normalizes each step with its own method norma
   });
   assert.equal(normalized.timeoutMs, 5_000);
   assert.equal(normalized.continueOnError, false);
+  assert.equal(normalized.returnLastResult, false);
   assert.deepEqual(
     normalized.steps.map((step) => [step.method, step.delayMs, step.atMs]),
     [
@@ -89,6 +90,38 @@ test('normalizeInputPerformParams normalizes each step with its own method norma
   assert.equal(normalized.steps[2].params.executionMode, undefined);
   assert.equal(normalized.steps[2].params.timeoutMs, 5_000);
   assert.deepEqual(normalizeInputPerformParams(normalized), normalized, 'idempotent');
+});
+
+test('input.perform normalizes bounded read steps and opt-in final evidence', () => {
+  const normalized = normalizeInputPerformParams({
+    returnLastResult: true,
+    executionMode: 'cdp',
+    steps: [
+      { method: 'page.get_state' },
+      { method: 'page.get_text', params: { textBudget: 400 } },
+      { method: 'dom.query', params: { selector: '.result', maxNodes: 3, textBudget: 200 } },
+      { method: 'dom.get_text', params: { target: { selector: '.result' }, textBudget: 300 } },
+    ],
+  });
+  assert.equal(normalized.returnLastResult, true);
+  assert.equal(normalized.steps[1].params.textBudget, 400);
+  assert.equal((normalized.steps[2].params.budget as { maxNodes: number }).maxNodes, 3);
+  assert.equal(normalized.steps[3].params.textBudget, 300);
+  for (const step of normalized.steps) assert.equal(step.params.executionMode, undefined);
+  assert.deepEqual(normalizeInputPerformParams(normalized), normalized);
+});
+
+test('input.perform keeps observation explicit and preserves the final action auto-wait', () => {
+  const normalized = normalizeInputPerformParams({
+    returnLastResult: true,
+    steps: [
+      { method: 'input.click', params: { target: { label: 'First' } } },
+      { method: 'input.click', params: { target: { label: 'Last' }, observe: true } },
+    ],
+  });
+  assert.equal(normalized.steps[0].params.observe, null);
+  assert.deepEqual(normalized.steps[1].params.observe, { settleMs: 500 });
+  assert.equal(normalized.steps[1].params.timeoutMs, 2_500);
 });
 
 test('normalizeInputPerformParams rejects unsafe or malformed sequences', () => {
@@ -110,6 +143,14 @@ test('normalizeInputPerformParams rejects unsafe or malformed sequences', () => 
   invalid({ steps: [null] }, /steps\[0\] must be an object/);
   invalid({ steps: [{ method: 'page.evaluate' }] }, /steps\[0\]\.method must be one of/);
   invalid({ steps: [{ method: 'input.perform' }] }, /steps\[0\]\.method must be one of/);
+  for (const method of [
+    'sensitive.read',
+    'webmcp.execute_tool',
+    'page.handle_dialog',
+    'tabs.create',
+  ]) {
+    invalid({ steps: [{ method }] }, /steps\[0\]\.method must be one of/);
+  }
   invalid({ steps: [{ method: 'input.click', params: [] }] }, /steps\[0\]\.params/);
   invalid({ steps: [{ method: 'input.click', delayMs: -1 }] }, /delayMs must be a number/);
   invalid(
@@ -175,6 +216,33 @@ test('summaries describe sequences, touch gestures, waits, and large evaluate va
     'input.perform'
   );
   assert.match(partial.summary, /with 1 failed step\(s\)/);
+
+  const withEffects = summarizeBridgeResponse(
+    ok({
+      performed: true,
+      completed: 2,
+      total: 2,
+      elapsedMs: 200,
+      lastResult: {
+        method: 'input.click',
+        result: { effects: { messages: [{ role: 'status', text: 'Saved' }] } },
+        truncated: false,
+      },
+    }),
+    'input.perform'
+  );
+  assert.match(withEffects.summary, /Effects: status: "Saved"/);
+  assert.deepEqual((withEffects.evidence as Record<string, unknown>).lastResult, {
+    method: 'input.click',
+    result: { effects: { messages: [{ role: 'status', text: 'Saved' }] } },
+    truncated: false,
+  });
+  const omitted = summarizeBridgeResponse(
+    ok({ performed: true, lastResult: { method: 'page.get_text', truncated: true } }),
+    'input.perform'
+  );
+  assert.match(omitted.summary, /Final result omitted: size limit exceeded/);
+  assert.match(omitted.summary, /do not replay actions/);
 
   const touched = summarizeBridgeResponse(
     ok({ touched: true, pointCount: 3, execution: { actualMode: 'cdp' } }),

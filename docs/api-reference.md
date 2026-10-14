@@ -232,7 +232,7 @@ rules per tab, with a 2,048-character URL pattern, 256 KiB body, 64 headers,
 | `input.hover`           | Actionability-check and hover through DOM or optional CDP pointer input  |
 | `input.drag`            | Actionability-check and drag through DOM or optional CDP pointer input   |
 | `input.touch`           | Press 1-10 touch points at the same time (chords, taps, swipes, pinches) |
-| `input.perform`         | Run an ordered, timed sequence of input steps inside the browser in one call |
+| `input.perform`         | Run ordered input, wait, and bounded read steps in one call, with optional final evidence |
 | `input.scroll_into_view` | Scroll an element into the visible viewport                             |
 
 ### Capture
@@ -324,8 +324,16 @@ ambiguous or obscured targets fail safely.
 `executionMode` accepts `dom` or `cdp` and defaults to `dom`. CDP supports click,
 hover, drag, type, fill, press_key, and touch. DOM events follow real device
 event order but are untrusted, so gesture-gated features such as audio may need CDP.
-`input.perform` runs timed step sequences inside the extension; see the skill's
-interaction reference for step scheduling with `atMs` and `delayMs`. This is distinct from `input.fill.mode`, where
+`input.perform` runs known multi-step flows inside the extension without a model
+round-trip per action. It accepts input and wait steps plus `page.get_state`,
+`page.get_text`, `dom.query`, and `dom.get_text`. Set `returnLastResult: true` to
+receive the final successful step as `lastResult.result`, bounded to 16384 UTF-8
+JSON bytes. Larger results are omitted with `lastResult.truncated: true`; narrow
+the read instead of replaying mutations. Sequence actions observe only when
+their step requests `observe: true`. Stop at decisions requiring new evidence or
+approval, and inspect partial progress after failure before continuing.
+See the skill's interaction reference for scheduling with `atMs` and `delayMs`.
+This is distinct from `input.fill.mode`, where
 `auto`, `setter`, and `keystrokes` choose the DOM fill strategy. Stale recovery
 is off by default; `recoverStale: true` is same-document, unchanged-URL, and
 requires one strong unique semantic descriptor. Recovery evaluates at most 100

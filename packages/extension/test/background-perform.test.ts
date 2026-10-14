@@ -2,8 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { executeInputPerform } from '../src/background-perform.js';
-import { createFailure, createRequest, createSuccess } from '../../protocol/src/index.js';
-import type { BridgeRequest, BridgeResponse } from '../../protocol/src/types.js';
+import {
+  createFailure,
+  createRequest,
+  createSuccess,
+  getUtf8ByteLength,
+  MAX_PERFORM_RESULT_BYTES,
+} from '../../protocol/src/index.js';
+import type { BridgeRequest, BridgeResponse, PerformResult } from '../../protocol/src/types.js';
 
 type StepHandler = (request: BridgeRequest, at: number) => BridgeResponse;
 
@@ -200,4 +206,114 @@ test('input.perform uses real timers by default', async () => {
   );
   assert.equal(response.ok, true);
   assert.ok(performance.now() - started >= 15);
+});
+
+test('input.perform returns only the final read and preserves routing and request metadata', async () => {
+  const finalResult = { text: 'Saved', truncated: false };
+  const { dependencies, dispatched } = createHarness((request) =>
+    createSuccess(request.id, request.method === 'dom.get_text' ? finalResult : { clicked: true })
+  );
+  const request = performRequest({
+    returnLastResult: true,
+    steps: [
+      click('#save'),
+      { method: 'dom.wait_for', params: { text: 'Saved' } },
+      { method: 'dom.get_text', params: { target: { selector: '#status' }, textBudget: 200 } },
+    ],
+  });
+  const response = await executeInputPerform(request, dependencies);
+  assert.equal(response.ok, true);
+  assert.deepEqual((response.result as PerformResult).lastResult, {
+    index: 2,
+    method: 'dom.get_text',
+    byteLength: getUtf8ByteLength(JSON.stringify(finalResult)),
+    truncated: false,
+    result: finalResult,
+  });
+  for (const entry of dispatched) {
+    assert.equal(entry.request.tab_id, 42);
+    assert.deepEqual(entry.request.meta, request.meta);
+  }
+});
+
+test('input.perform can return final action effects without an extra read', async () => {
+  const finalResult = {
+    clicked: true,
+    effects: { messages: [{ role: 'status', text: 'Saved' }] },
+  };
+  const { dependencies, dispatched } = createHarness((request) =>
+    createSuccess(request.id, finalResult)
+  );
+  const response = await executeInputPerform(
+    performRequest({
+      returnLastResult: true,
+      steps: [{ method: 'input.click', params: { target: { label: 'Save' }, observe: true } }],
+    }),
+    dependencies
+  );
+  const lastResult = (response.result as PerformResult).lastResult;
+  assert.equal(lastResult?.truncated, false);
+  if (lastResult && !lastResult.truncated) assert.deepEqual(lastResult.result, finalResult);
+  assert.deepEqual(dispatched[0].request.params.observe, { settleMs: 500 });
+});
+
+test('input.perform bounds final evidence by UTF-8 JSON bytes without replaying steps', async () => {
+  // Multibyte text fits in the character limit, but exceeds the byte limit.
+  const finalResult = { text: '界'.repeat(Math.floor(MAX_PERFORM_RESULT_BYTES / 2)) };
+  const { dependencies, dispatched } = createHarness((request) =>
+    createSuccess(request.id, finalResult)
+  );
+  const response = await executeInputPerform(
+    performRequest({
+      returnLastResult: true,
+      steps: [click('#save'), { method: 'page.get_text', params: { textBudget: 20_000 } }],
+    }),
+    dependencies
+  );
+  assert.equal(response.ok, true);
+  assert.equal(dispatched.length, 2);
+  assert.deepEqual((response.result as PerformResult).lastResult, {
+    index: 1,
+    method: 'page.get_text',
+    byteLength: getUtf8ByteLength(JSON.stringify(finalResult)),
+    truncated: true,
+    maxBytes: MAX_PERFORM_RESULT_BYTES,
+  });
+});
+
+test('input.perform retains final evidence exactly at the byte limit', async () => {
+  const finalResult = { text: 'x'.repeat(MAX_PERFORM_RESULT_BYTES - '{"text":""}'.length) };
+  const { dependencies } = createHarness((request) => createSuccess(request.id, finalResult));
+  const response = await executeInputPerform(
+    performRequest({ returnLastResult: true, steps: [{ method: 'page.get_text' }] }),
+    dependencies
+  );
+  const lastResult = (response.result as PerformResult).lastResult;
+  assert.equal(lastResult?.truncated, false);
+  assert.equal(lastResult?.byteLength, MAX_PERFORM_RESULT_BYTES);
+});
+
+test('input.perform never substitutes an earlier success for a failed final step', async () => {
+  for (const continueOnError of [false, true]) {
+    const { dependencies } = createHarness((request) =>
+      request.id === 'seq#1'
+        ? createFailure(request.id, 'ACCESS_DENIED', 'Read capability denied.')
+        : createSuccess(request.id, { clicked: true })
+    );
+    const response = await executeInputPerform(
+      performRequest({
+        returnLastResult: true,
+        continueOnError,
+        steps: [click('#save'), { method: 'page.get_text' }],
+      }),
+      dependencies
+    );
+    assert.equal(response.ok, continueOnError);
+    if (response.ok) {
+      assert.equal((response.result as PerformResult).lastResult, undefined);
+      assert.equal((response.result as PerformResult).failures[0].code, 'ACCESS_DENIED');
+    } else {
+      assert.equal(response.error.code, 'ACCESS_DENIED');
+    }
+  }
 });

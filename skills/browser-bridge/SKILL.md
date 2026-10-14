@@ -227,7 +227,7 @@ they contain no page data, URLs, selectors, payloads, errors, or group names.
 23. **Dialogs are explicit** - inspect first, then accept or dismiss only when intended. `expectedDialogId` is a pre-dispatch stale-decision check, not an atomic CDP binding; never auto-repeat `DIALOG_ACTION_CONFLICT`.
 24. **DOM diffs use explicit baselines** - call `dom.baseline.create` before the action, `dom.baseline.compare` afterward, then `dom.baseline.release`. Use a narrow selector and bounded evidence. Never substitute unrelated DOM reads for the retained baseline, and recreate it after `DOM_BASELINE_INVALIDATED`.
 25. **HAR export reads an armed capture** - use CDP capture `start`, reproduce, `network.export_har`/`bbx har`, then `stop`. Export never starts, stops, or clears capture. Inspect truncation plus `dropped`, `abandoned`, and `inflight` before claiming completeness.
-26. **Keep timing inside the browser** - for rhythm, games, gestures, or any steps that must happen at set times or back-to-back, send one `input.perform` with the whole schedule (`atMs` from the sequence start, or `delayMs` after the previous step). Never spread timed input across tool calls (each call costs an agent round-trip) and never issue input as parallel tool calls (they land all at once).
+26. **Keep known steps inside the browser** - use one `input.perform` for authorized multi-step flows, such as fill fields, click, wait for success, then read the result. Set `returnLastResult: true` to get bounded final-step evidence without another tool call. For rhythm, games, or gestures, add `atMs` from the sequence start or `delayMs` after the previous step. Never issue input as parallel tool calls. Stop at decisions requiring new evidence or user approval, leave `continueOnError` off, and never blindly replay a partially completed flow.
 27. **Use trusted input when the page needs a user gesture** - DOM-mode events are untrusted, so Chrome may refuse audio or media start, popups, clipboard writes, and fullscreen. `executionMode: "auto"` picks debugger input only for file inputs, media, `target=_blank` links, rich-text editors, or when the debugger is already attached (`execution.selectionReason` says why). Use `executionMode: "cdp"` to force it (click, hover, drag, type, fill, press_key, touch); `input.perform` accepts it once for every step. If a DOM click reports `changed: false` on a page that should react, retry once with `cdp` rather than repeating the DOM click. CDP input is not available for targets inside iframes.
 28. **Simultaneous presses need touch** - a mouse has one pointer. For chords or multi-finger gestures use `input.touch` with several `points` (optionally `to` end positions for swipes and pinches); add `holdMs` to `input.click`/`input.press_key` when the press must last.
 
@@ -337,12 +337,29 @@ page.get_state → page.get_console(clear: true) + page.get_network(clear: true)
 
 ## User-Flow Testing Workflow
 
+Once the next actions and expected outcome are known, run them in one call rather than pausing for model reasoning between each step:
+
+```bash
+bbx call input.perform '{
+  "returnLastResult": true,
+  "steps": [
+    {"method":"input.fill","params":{"target":{"label":"Email"},"value":"a@b.co"}},
+    {"method":"input.click","params":{"target":{"role":"button","name":"Save"}}},
+    {"method":"dom.wait_for","params":{"selector":"[role=status]","text":"Saved","state":"visible"}},
+    {"method":"dom.get_text","params":{"target":{"selector":"[role=status]"},"textBudget":200}}
+  ]
+}'
 ```
-dom.find_by_role('button', 'Login') → input.click
+
+The final read is returned in `lastResult.result`. Only the final step's result is retained, at most 16384 UTF-8 JSON bytes. If `lastResult.truncated` is true, narrow the read without replaying the actions. For a final action instead of a read, request `observe: true` on that step to receive its effects. Sequence steps do not observe by default. Completed input dispatch alone does not prove application success.
+
+When the result requires a new decision, return to the agent before continuing. Individual calls remain appropriate for exploratory flows:
+
+```
+input.click({target: {role: 'button', name: 'Login'}})
   → page.wait_for_load_state({url: '/dashboard', urlMatch: 'contains', waitForLoad: false})
-  → dom.wait_for('.dashboard', {state: 'visible', timeoutMs: 10000})
-  → page.get_console (check for errors)
-  → dom.query('.dashboard', {maxNodes: 15}) (inspect result)
+  → dom.query('.dashboard', {maxNodes: 15}) when effects do not answer the objective
+  → page.get_console only when checking runtime errors
 ```
 
 ## Detailed References (load only when needed)
@@ -385,7 +402,7 @@ Every CLI shortcut command produces consistent `{ok, summary, evidence}` JSON. U
   ```
 - `input.drag` uses `source`, `destination`, and optional destination offsets `offsetX` / `offsetY`.
 - `executionMode` accepts `dom` or `cdp` and defaults to `dom`; CDP supports click, hover, drag, type, fill, press_key, and touch. `input.fill.mode` (`auto`, `setter`, `keystrokes`) is a separate DOM strategy.
-- `input.perform` takes `steps: [{ method, params, atMs | delayMs }]` using the same params each method takes alone. Steps run in order inside the extension; it stops at the first failed step (or a `dom.wait_for` that times out) unless `continueOnError: true`, and reports `startedAtMs` for every step.
+- `input.perform` takes `steps: [{ method, params, atMs | delayMs }]` using the same params each method takes alone. Steps run in order inside the extension; it stops at the first failed step (or a `dom.wait_for` that times out) unless `continueOnError: true`, and reports `startedAtMs` for every step. It also accepts `page.get_state`, `page.get_text`, `dom.query`, and `dom.get_text` read steps. `returnLastResult: true` retains only the final successful step's bounded result; a failed final step never substitutes an earlier result.
 - `page.get_network` defaults to low-cost fetch/XHR instrumentation. All-resource CDP capture must be armed before the activity with `source: "cdp", capture: "start"`, read later, and explicitly stopped.
 - `network.export_har` requires that explicit capture to still be armed. Params are `limit` (1-200), sanitized-URL substring `urlPattern`, and `delivery` (`auto`, `inline`, `artifact`). Inline bounds remove whole oldest entries; export never changes capture state. `bbx har` uses the same client to download, length/SHA-256 verify, delete, validate, and atomically write artifacts locally.
 - `page.handle_dialog` mutations are not atomically bound to `expectedDialogId`; treat `commandDispatched` as dispatch evidence and verify follow-up state.

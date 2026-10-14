@@ -58,6 +58,9 @@ export const MAX_TOUCH_POINTS = 10;
 /** Maximum steps accepted by one input.perform sequence. */
 export const MAX_PERFORM_STEPS = 200;
 
+/** Maximum UTF-8 JSON bytes retained from the final input.perform step. */
+export const MAX_PERFORM_RESULT_BYTES = 16_384;
+
 /** Default and maximum total budget for one input.perform sequence (ms). */
 export const DEFAULT_PERFORM_TIMEOUT_MS = 30_000;
 export const MAX_PERFORM_TIMEOUT_MS = 120_000;

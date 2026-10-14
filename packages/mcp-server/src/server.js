@@ -1092,7 +1092,7 @@ export function createBridgeMcpServer(options = {}) {
     {
       title: 'Browser Bridge Batch',
       description:
-        'Execute independent read-only bridge calls in parallel to reduce round-trips. Mutations and destructive reads are rejected; run them sequentially with specialized tools or browser_call. Preserves call order in the response.',
+        'Execute independent read-only bridge calls in parallel to reduce round-trips. Mutations and destructive reads are rejected; for known ordered actions use browser_call method input.perform instead. Preserves call order in the response.',
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -1130,7 +1130,7 @@ export function createBridgeMcpServer(options = {}) {
     {
       title: 'Raw Browser Bridge Call',
       description:
-        'Primary Browser Bridge tool for permission-ask hosts: call any bridge method directly by name so the user can approve one BBX MCP tool instead of each specialized tool separately.',
+        'Call any bridge method by name through one approvable MCP tool. For known authorized multi-step flows, use input.perform with returnLastResult: true to run input, waits, and a final bounded read in one call. Stop for decisions requiring new evidence or approval; never blindly replay a partial flow.',
       inputSchema: z.object({
         method: z.string().describe('Bridge method name (e.g., "dom.query", "input.click")'),
         params: z

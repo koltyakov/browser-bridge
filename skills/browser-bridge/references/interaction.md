@@ -251,7 +251,29 @@ bbx call input.press_key '{"key":"q","holdMs":400,"executionMode":"cdp"}'
 
 Use it for long-press menus, sustained notes, and buttons that act while pressed.
 
-## Timed Sequences
+## Multi-step flows
+
+Use `input.perform` when the next authorized steps are known. Form filling, opening a menu and choosing a known item, or navigating and checking an expected result do not need a model round-trip per action. Semantic input targets auto-wait for actionability, so skip separate find and pre-action wait calls. Wait for the expected application outcome when needed.
+
+```bash
+bbx call input.perform '{
+  "returnLastResult": true,
+  "steps": [
+    {"method":"input.fill","params":{"target":{"label":"Email"},"value":"a@b.co"}},
+    {"method":"input.click","params":{"target":{"role":"button","name":"Save"}}},
+    {"method":"dom.wait_for","params":{"selector":"[role=status]","text":"Saved","state":"visible"}},
+    {"method":"dom.get_text","params":{"target":{"selector":"[role=status]"},"textBudget":200}}
+  ]
+}'
+```
+
+`returnLastResult: true` returns `lastResult` with `index`, `method`, `byteLength`, `truncated`, and `result` from the final successful step. It never returns all intermediate results. At most 16384 UTF-8 JSON bytes are retained. Larger results are omitted with `truncated: true` and `maxBytes`; inspect with a narrower read, never replay the actions just to recover evidence. If the final step fails, no earlier result is substituted.
+
+For an action as the final step, set its `observe: true` to receive effects without a separate read. Observation remains opt-in for every sequence step, preserving timed schedules. For asynchronous outcomes, include a specific wait before reading. Completed steps alone do not prove application success.
+
+Stop the sequence at any decision that requires new evidence or user approval. Keep `continueOnError` off for dependent steps. On failure, inspect progress and postconditions before deciding what to do next; mutations are not rolled back and must not be blindly retried.
+
+## Timed sequences
 
 Every tool call costs an agent round-trip, so steps sent one call at a time arrive seconds apart, and steps sent as parallel tool calls all land at once. When timing matters (music, games, animations, gestures, quick reactions), send the whole schedule as one `input.perform`:
 
@@ -267,7 +289,7 @@ bbx call input.perform '{
 ```
 
 - Each step is `{ method, params, atMs | delayMs }`; `params` are exactly what the method takes on its own.
-- Allowed step methods: `input.click`, `input.focus`, `input.type`, `input.fill`, `input.press_key`, `input.set_checked`, `input.select_option`, `input.hover`, `input.drag`, `input.touch`, `input.scroll_into_view`, `viewport.scroll`, `dom.wait_for`, `page.wait_for_load_state`.
+- Allowed step methods: `input.click`, `input.focus`, `input.type`, `input.fill`, `input.press_key`, `input.set_checked`, `input.select_option`, `input.hover`, `input.drag`, `input.touch`, `input.scroll_into_view`, `viewport.scroll`, `dom.wait_for`, `page.wait_for_load_state`, `page.get_state`, `page.get_text`, `dom.query`, `dom.get_text`. Evaluation, sensitive reads, WebMCP execution, and dialog handling are not allowed in sequences.
 - `atMs` is the earliest start measured from the sequence start, so delays never accumulate; `delayMs` waits after the previous step finished. Steps always run in order, so a step whose `atMs` has already passed starts immediately.
 - A top-level `executionMode` applies to every step that supports it unless the step sets its own.
 - Add `dom.wait_for` steps to react to the page without a round-trip, e.g. click, wait for `.menu`, click the item. A wait that times out counts as a failed step.

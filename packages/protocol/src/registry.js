@@ -176,7 +176,7 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
   'input.touch':
     'Press one or more touch points at the same time (chords, multi-finger taps, swipes, pinches) through DOM or optional CDP touch input.',
   'input.perform':
-    'Run an ordered, timed sequence of input steps inside the browser in one call; use for rhythm, games, gestures, and multi-step flows.',
+    'Run known input, wait, and bounded read steps in order inside the browser in one call. Use returnLastResult for final evidence; stop for decisions requiring new information and never blindly replay a partial flow.',
   'input.scroll_into_view': 'Scroll an element into the visible viewport.',
   'screenshot.capture_region': 'Capture a screenshot of a viewport region.',
   'screenshot.capture_element': 'Capture a screenshot of one element.',
@@ -694,7 +694,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'input.perform',
     'interact',
     true,
-    ['steps', 'executionMode', 'timeoutMs', 'continueOnError'],
+    ['steps', 'executionMode', 'timeoutMs', 'continueOnError', 'returnLastResult'],
     'moderate',
     METHOD_POLICIES.automationInput
   ),

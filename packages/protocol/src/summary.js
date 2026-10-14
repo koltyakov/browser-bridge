@@ -228,7 +228,11 @@ const ACTION_SUMMARIES = {
   performed: {
     text: (r) => {
       const failures = Array.isArray(r.failures) ? r.failures.length : 0;
-      return `Performed ${r.completed ?? 0}/${r.total ?? 0} step(s) in ${r.elapsedMs ?? 0}ms${failures ? ` with ${failures} failed step(s)` : ''}.`;
+      const lastResult = toRecord(r.lastResult);
+      const finalEvidence = lastResult.truncated
+        ? ' Final result omitted: size limit exceeded; inspect with a narrower read, do not replay actions.'
+        : describeEffects(toRecord(lastResult.result).effects);
+      return `Performed ${r.completed ?? 0}/${r.total ?? 0} step(s) in ${r.elapsedMs ?? 0}ms${failures ? ` with ${failures} failed step(s)` : ''}.${finalEvidence}`;
     },
     evidence: (r) => r,
   },

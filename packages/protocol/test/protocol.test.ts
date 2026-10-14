@@ -455,6 +455,11 @@ test('runtime context stays compact and opinionated', () => {
   assert.equal(context.v, PROTOCOL_VERSION);
   assert.ok(context.tips.length >= 3);
   assert.equal(context.flow.includes('page.get_state'), true);
+  assert.ok(
+    context.tips.some((tip) => tip.includes('input.perform') && tip.includes('returnLastResult'))
+  );
+  assert.ok(context.tips.some((tip) => tip.includes('auto-wait')));
+  assert.ok(context.tips.some((tip) => tip.includes('action effects')));
 });
 
 test('bridge method registry is the source of truth for method ordering and tab-routing requirements', () => {

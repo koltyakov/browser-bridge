@@ -1088,7 +1088,7 @@ export function normalizeTouchParams(params = {}) {
   };
 }
 
-/** Methods that may appear as input.perform steps. */
+/** Input, wait, and bounded inspection methods allowed in input.perform steps. */
 const PERFORM_STEP_METHODS = new Set([
   'input.click',
   'input.focus',
@@ -1104,6 +1104,10 @@ const PERFORM_STEP_METHODS = new Set([
   'viewport.scroll',
   'dom.wait_for',
   'page.wait_for_load_state',
+  'page.get_state',
+  'page.get_text',
+  'dom.query',
+  'dom.get_text',
 ]);
 
 /** Step methods that accept executionMode=cdp. */
@@ -1201,7 +1205,12 @@ export function normalizeInputPerformParams(params = {}) {
       atMs,
     };
   });
-  return { steps, timeoutMs, continueOnError: params.continueOnError === true };
+  return {
+    steps,
+    timeoutMs,
+    continueOnError: params.continueOnError === true,
+    returnLastResult: params.returnLastResult === true,
+  };
 }
 
 /**
@@ -2207,6 +2216,9 @@ export function createRuntimeContext() {
       'patch.apply_styles before patch.apply_dom',
       'Verify with get_box_model not screenshots',
       'batch independent reads',
+      'Use input.perform for known authorized multi-step flows; returnLastResult: true returns the final action or read in the same call. Stop for decisions that require new evidence; never blindly replay a partially completed flow',
+      'Input targets accept role/name or label locators and auto-wait for actionability; skip separate find and pre-action wait calls when the target is known',
+      'Read action effects before requesting more page data; sequence steps observe only with explicit observe: true',
       'Rollback all patches before finishing',
       'page.evaluate to read framework state (React, Vue, Next.js data)',
       'dom.find_by_text / dom.find_by_role for semantic element finding',

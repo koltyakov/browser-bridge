@@ -14,6 +14,7 @@ import type {
   BridgeRequest,
   BridgeResponse,
   PerformanceMetricsResult,
+  PerformResult,
 } from '../../protocol/src/types.js';
 
 type DebuggerAttachCall = {
@@ -917,6 +918,92 @@ test('background dispatch routes executionMode=cdp input without activating the 
     ['Input.dispatchMouseEvent', 'Input.dispatchMouseEvent', 'Input.dispatchMouseEvent']
   );
   assert.deepEqual(tabUpdates, []);
+});
+
+test('background dispatch runs a known flow and returns final page evidence in one request', async () => {
+  const executed: TabMessageCall[] = [];
+  const finalResult = { text: 'Saved', truncated: false };
+  const { loaded } = await loadEnabledDispatchBackground({
+    queryLabel: 'test-background-perform-final-evidence',
+    chromeOverrides: {
+      tabs: {
+        async sendMessage(tabId: number, message: Record<string, unknown>) {
+          if (message.type !== 'bridge.execute') return { ok: true };
+          if (message.method === 'dom.probe_target') return {};
+          executed.push({ tabId, message });
+          if (message.method === 'page.get_text') return finalResult;
+          return { clicked: true };
+        },
+      },
+    },
+  });
+  const response = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-perform-final-evidence',
+      method: 'input.perform',
+      tabId: 81,
+      params: {
+        returnLastResult: true,
+        steps: [
+          { method: 'input.fill', params: { target: { label: 'Email' }, value: 'a@b.co' } },
+          { method: 'input.click', params: { target: { role: 'button', name: 'Save' } } },
+          { method: 'page.get_text', params: { textBudget: 200 } },
+        ],
+      },
+    })
+  );
+  if (!response.ok) assert.fail(response.error.message);
+  assert.deepEqual(
+    executed.map(({ tabId, message }) => [tabId, message.method]),
+    [
+      [81, 'input.fill'],
+      [81, 'input.click'],
+      [81, 'page.get_text'],
+    ]
+  );
+  const lastResult = (response.result as PerformResult).lastResult;
+  assert.equal(lastResult?.method, 'page.get_text');
+  assert.equal(lastResult?.truncated, false);
+  if (lastResult && !lastResult.truncated) assert.deepEqual(lastResult.result, finalResult);
+  assert.equal(response.meta.tab_id, 81);
+});
+
+test('background dispatch rechecks access before sequence reads after an action', async () => {
+  const executed: unknown[] = [];
+  let state: AccessRequestState;
+  const { loaded } = await loadEnabledDispatchBackground({
+    queryLabel: 'test-background-perform-access-revoked',
+    chromeOverrides: {
+      tabs: {
+        async sendMessage(_tabId: number, message: Record<string, unknown>) {
+          if (message.type !== 'bridge.execute') return { ok: true };
+          if (message.method === 'dom.probe_target') return {};
+          executed.push(message.method);
+          state.enabledWindow = undefined;
+          return { clicked: true };
+        },
+      },
+    },
+  });
+  state = loaded.module.getStateForTest() as AccessRequestState;
+  const response = await loaded.dispatch(
+    createRequest({
+      id: 'dispatch-perform-access-revoked',
+      method: 'input.perform',
+      params: {
+        returnLastResult: true,
+        steps: [
+          { method: 'input.click', params: { target: { role: 'button', name: 'Save' } } },
+          { method: 'page.get_text' },
+        ],
+      },
+    })
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) assert.fail('Read must not run after access is revoked.');
+  assert.equal(response.error.code, 'ACCESS_DENIED');
+  assert.equal((response.error.details as { completed: number }).completed, 1);
+  assert.deepEqual(executed, ['input.click']);
 });
 
 test('background dispatch reinjects and retries when content script receiver disappears', async () => {

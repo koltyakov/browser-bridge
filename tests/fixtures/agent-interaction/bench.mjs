@@ -65,6 +65,32 @@ const SCENARIOS = [
     verify: (state) => state.paid === true,
   },
   {
+    name: 'fill and submit with final effects in one call',
+    run: (call) =>
+      call('input.perform', {
+        returnLastResult: true,
+        steps: [
+          {
+            method: 'input.fill',
+            params: { target: { label: 'Email address' }, value: 'flow@example.test' },
+          },
+          {
+            method: 'input.fill',
+            params: { target: { role: 'textbox', name: 'Full name' }, value: 'Flow test' },
+          },
+          {
+            method: 'input.click',
+            params: { target: { role: 'button', name: 'Place order' }, observe: true },
+          },
+        ],
+      }),
+    verify: (state, last) =>
+      state.email === 'flow@example.test' &&
+      state.fullname === 'Flow test' &&
+      state.orderPlaced === true &&
+      JSON.stringify(last?.ok ? last.result : null).includes('Order placed'),
+  },
+  {
     name: 'fill model-driven rich editor',
     run: (call) =>
       call('input.fill', { target: { role: 'textbox', name: 'Notes' }, value: 'Leave at door' }),

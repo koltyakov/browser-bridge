@@ -712,3 +712,34 @@ test('raw destructive flags are never retried after failures or connection loss'
     }
   }
 });
+
+test('input.perform with final evidence is never automatically replayed after uncertainty', async () => {
+  for (const lostConnection of [false, true]) {
+    let calls = 0;
+    const client = {
+      connected: true,
+      async request() {
+        calls++;
+        if (lostConnection) throw Object.assign(new Error('reset'), { code: 'ECONNRESET' });
+        const response = fail('TIMEOUT', 'Sequence may have completed some actions.');
+        response.error.recovery = { retry: true, retryAfterMs: 0, hint: 'retry' };
+        return response;
+      },
+    } as unknown as BridgeClient;
+    const pending = requestBridgeWithRetry(
+      client,
+      'input.perform',
+      {
+        returnLastResult: true,
+        steps: [
+          { method: 'input.click', params: { target: { role: 'button', name: 'Save' } } },
+          { method: 'page.get_text', params: { textBudget: 200 } },
+        ],
+      },
+      { source: 'mcp' }
+    );
+    if (lostConnection) await assert.rejects(pending, /reset/);
+    else assert.equal((await pending).ok, false);
+    assert.equal(calls, 1);
+  }
+});

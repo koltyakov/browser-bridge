@@ -4,7 +4,10 @@ import {
   createFailure,
   createSuccess,
   ERROR_CODES,
+  getUtf8ByteLength,
+  MAX_PERFORM_RESULT_BYTES,
   normalizeInputPerformParams,
+  serializeJsonPayload,
 } from '../../protocol/src/index.js';
 
 /** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */
@@ -13,6 +16,7 @@ import {
 /** @typedef {import('../../protocol/src/types.js').NormalizedPerformStep} NormalizedPerformStep */
 /** @typedef {import('../../protocol/src/types.js').PerformResult} PerformResult */
 /** @typedef {import('../../protocol/src/types.js').PerformStepFailure} PerformStepFailure */
+/** @typedef {import('../../protocol/src/types.js').PerformLastResult} PerformLastResult */
 
 /**
  * @typedef {{
@@ -54,6 +58,8 @@ export async function executeInputPerform(request, dependencies) {
   const startedAtMs = [];
   /** @type {PerformStepFailure[]} */
   const failures = [];
+  /** @type {PerformLastResult | undefined} */
+  let lastResult;
 
   /**
    * @param {ErrorCode} code
@@ -99,7 +105,22 @@ export async function executeInputPerform(request, dependencies) {
       meta: request.meta,
     });
     const failure = getStepFailure(response, step, index);
-    if (!failure) continue;
+    if (!failure) {
+      if (params.returnLastResult && index === total - 1) {
+        const byteLength = getUtf8ByteLength(serializeJsonPayload(response.result));
+        lastResult =
+          byteLength <= MAX_PERFORM_RESULT_BYTES
+            ? { index, method: step.method, byteLength, truncated: false, result: response.result }
+            : {
+                index,
+                method: step.method,
+                byteLength,
+                truncated: true,
+                maxBytes: MAX_PERFORM_RESULT_BYTES,
+              };
+      }
+      continue;
+    }
     if (!params.continueOnError) {
       return fail(
         /** @type {ErrorCode} */ (failure.code),
@@ -118,6 +139,7 @@ export async function executeInputPerform(request, dependencies) {
     elapsedMs: Math.round(now() - startedAt),
     startedAtMs,
     failures,
+    ...(lastResult ? { lastResult } : {}),
   };
   return createSuccess(request.id, result, { method: request.method });
 }
