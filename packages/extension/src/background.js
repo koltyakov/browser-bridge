@@ -302,6 +302,7 @@ const clearTabBridgeState = async (tabId, shouldContinue) => {
 /** @param {number} windowId */
 const clearWindowBridgeState = async (windowId) => {
   domBaselines.clearWindow(windowId);
+  await agentGroups.clearWindow(windowId).catch(reportAsyncError);
   await agentTabs.clear();
   await agentGroups.sync().catch(reportAsyncError);
   void syncWorkingTabIndicators().catch(reportAsyncError);
@@ -1523,6 +1524,7 @@ export {
   clearEnabledWindowIfGone,
   clearTabBridgeState,
   clearWindowBridgeState,
+  disableWindowAccess,
   enrichBridgeResponse,
   getContentScriptTimeout,
   getCurrentTabState,

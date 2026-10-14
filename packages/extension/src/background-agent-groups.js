@@ -13,11 +13,13 @@ export const AGENT_GROUP_COLOR = 'blue';
  *
  * @param {typeof globalThis.chrome} chromeObj
  * @param {{ getActivity: () => Promise<AgentActivity> }} deps
- * @returns {{ sync: () => Promise<void> }}
+ * @returns {{ sync: () => Promise<void>, clearWindow: (windowId: number) => Promise<void> }}
  */
 export function createAgentTabGroupController(chromeObj, deps) {
   /** @type {Map<number, OwnedGroup>} */
   const owned = new Map();
+  /** @type {Set<number>} */
+  const windowsToClear = new Set();
   let loaded = false;
   /** @type {Promise<void> | null} */
   let pending = null;
@@ -70,7 +72,6 @@ export function createAgentTabGroupController(chromeObj, deps) {
       group.windowId === record.windowId &&
       group.title === AGENT_GROUP_TITLE &&
       group.color === AGENT_GROUP_COLOR &&
-      !group.collapsed &&
       !group.shared &&
       members.every((tab) => typeof tab.id === 'number' && record.tabIds.includes(tab.id))
     );
@@ -112,6 +113,11 @@ export function createAgentTabGroupController(chromeObj, deps) {
     )
       return;
     await restore();
+    const clearedWindows = new Set(windowsToClear);
+    for (const record of [...owned.values()]) {
+      if (clearedWindows.has(record.windowId)) await release(record);
+    }
+    for (const windowId of clearedWindows) windowsToClear.delete(windowId);
     const activity = await deps.getActivity();
     const allTabs = (await chromeObj.tabs.query({})).sort(
       (left, right) => left.windowId - right.windowId || left.index - right.index
@@ -128,7 +134,7 @@ export function createAgentTabGroupController(chromeObj, deps) {
         continue;
       }
       if (!isUnchanged(record, group, members)) {
-        // A renamed, recolored, collapsed, moved, or expanded-by-user group is
+        // A renamed, recolored, shared, moved, or expanded-by-user group is
         // now user-owned. Never change it or its members again.
         owned.delete(record.groupId);
         await persist();
@@ -142,6 +148,7 @@ export function createAgentTabGroupController(chromeObj, deps) {
     for (const tab of allTabs) {
       const eligible =
         typeof tab.id === 'number' &&
+        !clearedWindows.has(tab.windowId) &&
         tab.windowId === activity.windowId &&
         activity.tabIds.has(tab.id) &&
         !tab.pinned &&
@@ -221,6 +228,10 @@ export function createAgentTabGroupController(chromeObj, deps) {
   }
 
   return {
+    clearWindow(windowId) {
+      windowsToClear.add(windowId);
+      return this.sync();
+    },
     sync() {
       dirty = true;
       if (!pending) {

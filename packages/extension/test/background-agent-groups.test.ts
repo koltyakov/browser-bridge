@@ -217,7 +217,6 @@ test('owned groups survive worker restart and clear when activity expires or acc
 for (const change of [
   { title: 'My group' },
   { color: 'red' as const },
-  { collapsed: true },
   { shared: true },
   { windowId: 8 },
 ]) {
@@ -244,6 +243,50 @@ test('a user adding another tab to an AI group relinquishes ownership without un
   await h.controller.sync();
   assert.equal(h.groups.size, 1);
   assert.equal(h.calls.length, 1);
+});
+
+test('collapsed AI groups remain owned and are removed when window access is disabled', async () => {
+  const h = harness();
+  h.setActive([1, 2, 4]);
+  await h.controller.sync();
+  for (const group of h.groups.values()) group.collapsed = true;
+  await h.controller.sync();
+  assert.equal(h.groups.size, 2);
+  const restarted = h.create();
+  h.disable();
+  await restarted.clearWindow(7);
+  assert.equal(h.groups.size, 0);
+  assert.deepEqual(h.order(), [1, 2, 3, 4, 5]);
+  assert.deepEqual(h.storage.snapshot()[AGENT_GROUP_STORAGE_KEY], []);
+});
+
+test('explicit window cleanup removes only owned groups in that window without regrouping active tabs', async () => {
+  const h = harness();
+  h.setActive([1, 2, 4, 5]);
+  h.tabs[3].groupId = 50;
+  h.groups.set(50, {
+    id: 50,
+    windowId: 7,
+    title: 'AI',
+    color: 'blue',
+    collapsed: false,
+    shared: false,
+  });
+  await h.controller.sync();
+  const before = h.tabs.map((tab) => ({ ...tab }));
+  const mutations = h.calls.length;
+  await h.controller.clearWindow(8);
+  assert.equal(h.calls.length, mutations, 'cleanup is scoped to the revoked window');
+  await h.controller.clearWindow(7);
+  assert.deepEqual(h.calls.slice(mutations), [
+    { method: 'ungroup', tabIds: [1, 2] },
+    { method: 'ungroup', tabIds: [5] },
+  ]);
+  assert.deepEqual([...h.groups.keys()], [50]);
+  assert.deepEqual(
+    h.tabs,
+    before.map((tab) => ({ ...tab, groupId: tab.groupId === 50 ? 50 : -1 }))
+  );
 });
 
 test('closed groups and malformed stored records are cleaned safely', async () => {
@@ -364,7 +407,15 @@ test('background routes real agent requests into adjacent AI groups, ignores pin
   await loaded.dispatch(createRequest({ id: 'group-ping', method: 'health.ping' }));
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(h.calls.length, mutations);
-  const clearWindow = loaded.module.clearWindowBridgeState as (windowId: number) => Promise<void>;
-  await clearWindow(7);
+  const access = state.enabledWindow!;
+  const disable = loaded.module.disableWindowAccess as (
+    windowId: number,
+    enabledAt: number
+  ) => Promise<void>;
+  await disable(access.windowId, access.enabledAt);
+  assert.equal(state.enabledWindow, null);
   assert.equal(h.groups.size, 0);
+  assert.deepEqual(h.order(), [81, 82, 90, 93]);
+  assert.ok(h.tabs.every((tab) => tab.groupId === -1));
+  assert.deepEqual(h.storage.snapshot()[AGENT_GROUP_STORAGE_KEY], []);
 });
