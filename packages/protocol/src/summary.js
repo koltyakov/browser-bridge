@@ -8,6 +8,7 @@ import {
   serializeJsonPayload,
 } from './index.js';
 import { sanitizeIncidentalUrl } from './incidental-sanitizer.js';
+import { describeTabList, paginateTabList } from './tab-list.js';
 
 /** @typedef {import('./types.js').BridgeResponse} BridgeResponse */
 /** @typedef {import('./types.js').BridgeMethod} SummaryMethod */
@@ -29,7 +30,8 @@ import { sanitizeIncidentalUrl } from './incidental-sanitizer.js';
  *   ok: boolean,
  *   summary: string,
  *   evidence: unknown,
- *   recovery?: import('./types.js').BridgeRecovery | null
+ *   recovery?: import('./types.js').BridgeRecovery | null,
+ *   pagination?: import('./types.js').TabPagination
  * }} BridgeSummary
  */
 
@@ -571,6 +573,10 @@ function summarizeBridgeResponseBody(response, method) {
         origin: result.origin,
         title: result.title,
         hints: result.hints,
+        ...(result.scroll && typeof result.scroll === 'object' ? { scroll: result.scroll } : {}),
+        ...(result.viewport && typeof result.viewport === 'object'
+          ? { viewport: result.viewport }
+          : {}),
       },
     };
   }
@@ -596,10 +602,14 @@ function summarizeBridgeResponseBody(response, method) {
   }
   if (Array.isArray(result.tabs)) {
     const tabs = /** @type {TabResult[]} */ (result.tabs);
+    const page = result.pagination
+      ? { tabs, pagination: /** @type {import('./types.js').TabPagination} */ (result.pagination) }
+      : paginateTabList(tabs, { limit: 10 });
     return {
       ok: true,
-      summary: appendProtocolWarning(`Bridge listed ${tabs.length} tab(s).`, protocolWarning),
-      evidence: tabs.slice(0, 10).map((tab) => ({
+      summary: appendProtocolWarning(describeTabList(page.pagination), protocolWarning),
+      pagination: page.pagination,
+      evidence: page.tabs.map((tab) => ({
         tabId: tab.tabId,
         active: tab.active,
         origin: tab.origin,

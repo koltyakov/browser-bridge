@@ -19,6 +19,9 @@ import {
   getBudgetPreset,
   getBudgetPresetName,
   getErrorRecovery,
+  describeTabPage,
+  normalizeTabListParams,
+  paginateTabList,
   summarizeBatchErrorItem,
   summarizeBatchResponseItem,
 } from '../../protocol/src/index.js';
@@ -318,6 +321,29 @@ export function summarizeToolResponse(response, method, params = {}) {
     }
     const evidence = getRequestAwareEvidence(response.result, method, params, summary.evidence);
     summary.evidence = evidence.value;
+    if (method === 'tabs.list' && evidence.value && typeof evidence.value === 'object') {
+      const listed = /** @type {Record<string, unknown>} */ (evidence.value);
+      if (Array.isArray(listed.tabs)) {
+        const raw =
+          /** @type {{ tabs: unknown[], pagination?: import('../../protocol/src/types.js').TabPagination }} */ (
+            response.result
+          );
+        const pagination = describeTabPage(
+          raw.pagination?.totalCount ?? raw.tabs.length,
+          listed.tabs.length,
+          raw.pagination?.offset ?? 0
+        );
+        summary.pagination = pagination;
+        listed.pagination = pagination;
+        summary.summary = summarizeBridgeResponse(
+          { ...response, result: { tabs: raw.tabs, pagination } },
+          method
+        ).summary;
+        if (listed.partial === true)
+          summary.summary +=
+            ' Some browser profiles could not be listed; inspect evidence.profiles.';
+      }
+    }
     if (evidence.metadata) summaryRecord.evidenceMeta = evidence.metadata;
     if (evidence.truncated) {
       summaryRecord.outputTruncated = true;
@@ -575,10 +601,18 @@ function getRequestAwareEvidence(rawResult, method, params, fallback) {
           : {}),
       }));
     const metadata = Object.fromEntries(Object.entries(result).filter(([key]) => key !== 'tabs'));
-    return boundToolValue(
+    const bounded = boundToolValue(
       { tabCount: tabs.length, ...metadata, tabs },
       { maxEntries: 2000, maxCharacters: 30_000, maxStringLength: 1000 }
     );
+    if (bounded.value && typeof bounded.value === 'object') {
+      const value = /** @type {Record<string, unknown>} */ (bounded.value);
+      if (Array.isArray(value.tabs))
+        value.tabs = value.tabs.filter(
+          (tab) => tab && typeof tab === 'object' && typeof tab.tabId === 'number'
+        );
+    }
+    return bounded;
   }
   if (method === 'page.extract_content' && typeof result.content === 'string') {
     const requested = positiveInteger(params.textBudget) ?? DEFAULT_PAGE_TEXT_BUDGET;
@@ -904,6 +938,7 @@ export async function requestBridgeWithRetry(client, method, params, options) {
  * @returns {Promise<BridgeResponse>}
  */
 async function listBrowserProfileTabs(client, params, options) {
+  normalizeTabListParams(params);
   const health = await requestBridgeWithRetry(client, 'health.ping', {}, options);
   if (!health.ok) return health;
   const result =
@@ -944,10 +979,15 @@ async function listBrowserProfileTabs(client, params, options) {
     /** @type {BridgeResponse} */
     let response;
     try {
-      response = await requestBridgeWithRetry(client, 'tabs.list', params, {
-        ...options,
-        extensionId: profile.extensionId,
-      });
+      response = await requestBridgeWithRetry(
+        client,
+        'tabs.list',
+        {},
+        {
+          ...options,
+          extensionId: profile.extensionId,
+        }
+      );
     } catch (error) {
       throwIfMcpRequestCancelled();
       response = createFailure(
@@ -983,7 +1023,12 @@ async function listBrowserProfileTabs(client, params, options) {
   return createSuccess(
     health.id,
     {
-      tabs: results.flatMap((profile) => profile.tabs),
+      ...(params.limit !== undefined || params.offset !== undefined
+        ? paginateTabList(
+            results.flatMap((profile) => profile.tabs),
+            params
+          )
+        : { tabs: results.flatMap((profile) => profile.tabs) }),
       profiles: results.map(({ tabs, ...profile }) => ({ ...profile, tabCount: tabs.length })),
       connectedExtensions: result.connectedExtensions,
       partial: results.some((profile) => !profile.ok),

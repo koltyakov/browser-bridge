@@ -265,7 +265,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
   'health.ping': createRegistryEntry('health.ping', 'system', false, [], 'trivial'),
   'daemon.metrics': createRegistryEntry('daemon.metrics', 'system', false, [], 'trivial'),
   // tabs - trivial
-  'tabs.list': createRegistryEntry('tabs.list', 'tabs', false, [], 'trivial'),
+  'tabs.list': createRegistryEntry('tabs.list', 'tabs', false, ['limit', 'offset'], 'trivial'),
   'tabs.create': createRegistryEntry(
     'tabs.create',
     'tabs',

@@ -1045,17 +1045,17 @@ async function dispatchBridgeRequest(request) {
  * @returns {Promise<BridgeResponse>}
  */
 async function handleListTabs(request) {
+  const lease = await agentTabs.get(normalizeAgentSession(request.meta?.agent_session));
+  const workingTabId = lease && !lease.closed ? lease.tabId : null;
   const response = await executeListTabs(
     request,
-    state,
+    { ...state, workingTabId },
     {
       queryTabs: (query) => chrome.tabs.query(query),
     },
     ACCESS_DENIED_WINDOW_OFF
   );
   if (!response.ok) return response;
-  const lease = await agentTabs.get(normalizeAgentSession(request.meta?.agent_session));
-  const workingTabId = lease && !lease.closed ? lease.tabId : null;
   const result = /** @type {{ tabs: Array<Record<string, unknown>> }} */ (response.result);
   return {
     ...response,

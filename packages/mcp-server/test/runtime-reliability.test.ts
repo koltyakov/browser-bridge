@@ -134,12 +134,140 @@ test('batch items can independently target profiles with the same tab ID', async
   );
 });
 
+test('tab pagination applies once across profiles and does not clip requested pages again', async (t) => {
+  const bridge = mockBridge(t, async (request) =>
+    request.method === 'health.ping'
+      ? ok({
+          connectedExtensions: ['work', 'personal'].map((extensionId) => ({
+            extensionId,
+            accessEnabled: true,
+          })),
+        })
+      : ok({
+          tabs: Array.from({ length: 20 }, (_, index) => ({
+            tabId: index + 1,
+            title: `Tab ${index + 1}`,
+            active: false,
+          })),
+        })
+  );
+  const result = await handleRawCallTool({
+    method: 'tabs.list',
+    params: { limit: 25, offset: 10 },
+  });
+  const evidence = result.structuredContent.evidence as {
+    tabs: Array<{ extensionId: string; tabId: number }>;
+    pagination: { totalCount: number; returnedCount: number; nextOffset: number };
+  };
+  assert.equal(evidence.tabs.length, 25);
+  assert.equal(evidence.tabs[0].extensionId, 'work');
+  assert.equal(evidence.tabs[0].tabId, 11);
+  assert.equal(evidence.tabs[10].extensionId, 'personal');
+  assert.equal(evidence.pagination.totalCount, 40);
+  assert.equal(evidence.pagination.returnedCount, 25);
+  assert.equal(evidence.pagination.nextOffset, 35);
+  assert.match(result.content[0].text, /showing 25.*15 omitted/);
+  assert.deepEqual(
+    bridge.requests
+      .filter((request) => request.method === 'tabs.list')
+      .map((request) => request.params),
+    [{}, {}]
+  );
+});
+
+test('MCP tab counts describe delivered evidence rather than the CLI preview', async (t) => {
+  mockBridge(t, async () =>
+    ok({
+      tabs: Array.from({ length: 47 }, (_, index) => ({
+        tabId: index + 1,
+        title: 'Tab',
+        active: false,
+      })),
+    })
+  );
+  const result = await runWithMcpRequestTarget({ extensionId: 'work' }, () =>
+    handleTabsTool({ action: 'list' })
+  );
+  assert.match(result.content[0].text, /Bridge listed 47 tab\(s\)\./);
+  const evidence = result.structuredContent.evidence as {
+    tabs: unknown[];
+    pagination: { returnedCount: number; truncated: boolean };
+  };
+  assert.equal(evidence.tabs.length, 47);
+  assert.equal(evidence.pagination.returnedCount, 47);
+  assert.equal(evidence.pagination.truncated, false);
+});
+
 test('profile-scoped tab listing skips discovery and retains the connection target', async (t) => {
   const bridge = mockBridge(t, async () => ok({ tabs: [] }));
   await runWithMcpRequestTarget({ extensionId: 'work' }, () => handleTabsTool({ action: 'list' }));
   assert.deepEqual(
     bridge.requests.map((request) => [request.method, request.meta?.target_extension]),
     [['tabs.list', 'work']]
+  );
+});
+
+test('MCP page state exposes nested scroll positions and candidate references', async (t) => {
+  const scroll = {
+    x: 0,
+    y: 0,
+    ambiguous: true,
+    candidates: [
+      { elementRef: 'el_left', y: 0 },
+      { elementRef: 'el_right', y: 0 },
+    ],
+  };
+  mockBridge(t, async () =>
+    ok({
+      url: 'https://example.com',
+      origin: 'https://example.com',
+      title: 'Example',
+      scroll,
+      viewport: { width: 1200, height: 800 },
+    })
+  );
+  const result = await runWithMcpRequestTarget({ extensionId: 'work' }, () =>
+    handleRawCallTool({ method: 'page.get_state', tabId: 42 })
+  );
+  const evidence = result.structuredContent.evidence as { scroll: unknown };
+  assert.deepEqual(evidence.scroll, scroll);
+});
+
+test('MCP bounded tab evidence reports omissions and a usable continuation offset', async (t) => {
+  mockBridge(t, async (request) =>
+    request.method === 'health.ping'
+      ? ok({ connectedExtensions: [{ extensionId: 'work', accessEnabled: true }] })
+      : ok({
+          tabs: Array.from({ length: 140 }, (_, index) => ({
+            tabId: index + 1,
+            active: index === 139,
+            title: 'Tab',
+          })),
+        })
+  );
+  const first = await handleRawCallTool({ method: 'tabs.list' });
+  const firstEvidence = first.structuredContent.evidence as {
+    tabs: Array<{ tabId: number }>;
+    pagination: { nextOffset: number; omittedCount: number };
+  };
+  assert.equal(firstEvidence.tabs.length, 100);
+  assert.equal(firstEvidence.tabs[0].tabId, 140);
+  assert.equal(firstEvidence.pagination.omittedCount, 40);
+  assert.equal(firstEvidence.pagination.nextOffset, 100);
+  const next = await handleRawCallTool({
+    method: 'tabs.list',
+    params: { limit: 100, offset: firstEvidence.pagination.nextOffset },
+  });
+  const nextEvidence = next.structuredContent.evidence as {
+    tabs: Array<{ tabId: number }>;
+    pagination: { nextOffset: number | null };
+  };
+  assert.equal(nextEvidence.tabs.length, 40);
+  assert.equal(nextEvidence.tabs[0].tabId, 100);
+  assert.equal(nextEvidence.pagination.nextOffset, null);
+  assert.equal(
+    new Set([...firstEvidence.tabs, ...nextEvidence.tabs].map((tab) => tab.tabId)).size,
+    140
   );
 });
 

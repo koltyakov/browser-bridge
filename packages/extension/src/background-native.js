@@ -25,6 +25,9 @@ import {
 /** @typedef {import('../../protocol/src/types.js').BridgeRequest} BridgeRequest */
 /** @typedef {import('../../protocol/src/types.js').BridgeResponse} BridgeResponse */
 /** @typedef {import('../../protocol/src/types.js').SetupStatus} SetupStatus */
+/** @typedef {{ get: (key: string) => Promise<Record<string, unknown>>, set: (items: Record<string, unknown>) => Promise<void> }} ProfileStorage */
+/** @type {WeakMap<object, Promise<string>>} */
+const pendingProfileLabels = new WeakMap();
 
 /**
  * @typedef {{
@@ -107,22 +110,49 @@ export function clearSetupStatusTimer(state) {
 }
 
 /**
- * @param {{ runtime?: { id?: string }, storage: { session: { get: (key: string) => Promise<Record<string, unknown>>, set: (items: Record<string, unknown>) => Promise<void> } } }} chromeObj
+ * @param {{ storage: { local: ProfileStorage, session: ProfileStorage } }} chromeObj
  * @returns {Promise<string>}
  */
-export async function getProfileLabel(chromeObj) {
+export function getProfileLabel(chromeObj) {
+  const pending = pendingProfileLabels.get(chromeObj);
+  if (pending) return pending;
+  const result = loadProfileLabel(chromeObj).finally(() => pendingProfileLabels.delete(chromeObj));
+  pendingProfileLabels.set(chromeObj, result);
+  return result;
+}
+
+/**
+ * @param {{ storage: { local: ProfileStorage, session: ProfileStorage } }} chromeObj
+ * @returns {Promise<string>}
+ */
+async function loadProfileLabel(chromeObj) {
   const STORAGE_KEY = 'bb_profile_label';
+  /** @param {unknown} value @returns {value is string} */
+  const validLabel = (value) =>
+    typeof value === 'string' && /^profile_[a-zA-Z0-9_-]{6,64}$/.test(value);
   try {
-    const result = await chromeObj.storage.session.get(STORAGE_KEY);
-    if (result[STORAGE_KEY]) {
-      return /** @type {string} */ (result[STORAGE_KEY]);
+    const result = await chromeObj.storage.local.get(STORAGE_KEY);
+    if (validLabel(result[STORAGE_KEY])) {
+      return result[STORAGE_KEY];
     }
-    const label = `profile_${Math.random().toString(36).slice(2, 8)}`;
-    await chromeObj.storage.session.set({ [STORAGE_KEY]: label });
+    const session = /** @type {Record<string, unknown>} */ (
+      await chromeObj.storage.session.get(STORAGE_KEY).catch(() => ({}))
+    );
+    const label = validLabel(session[STORAGE_KEY])
+      ? session[STORAGE_KEY]
+      : `profile_${crypto.randomUUID()}`;
+    await chromeObj.storage.local.set({ [STORAGE_KEY]: label });
+    await chromeObj.storage.session.set({ [STORAGE_KEY]: label }).catch(reportAsyncError);
     return label;
   } catch (e) {
     reportAsyncError(e);
-    return `profile_${Date.now().toString(36)}`;
+    const session = /** @type {Record<string, unknown>} */ (
+      await chromeObj.storage.session.get(STORAGE_KEY).catch(() => ({}))
+    );
+    if (validLabel(session[STORAGE_KEY])) return session[STORAGE_KEY];
+    const label = `profile_${crypto.randomUUID()}`;
+    await chromeObj.storage.session.set({ [STORAGE_KEY]: label }).catch(reportAsyncError);
+    return label;
   }
 }
 
@@ -130,7 +160,7 @@ export async function getProfileLabel(chromeObj) {
  * Send browser/profile identity to the daemon via the native host.
  *
  * @param {chrome.runtime.Port} port
- * @param {{ runtime?: { id?: string }, storage: { session: { get: (key: string) => Promise<Record<string, unknown>>, set: (items: Record<string, unknown>) => Promise<void> } } }} chromeObj
+ * @param {{ runtime?: { id?: string }, storage: { local: ProfileStorage, session: ProfileStorage } }} chromeObj
  * @returns {void}
  */
 export function sendIdentity(port, chromeObj) {
@@ -284,7 +314,7 @@ function getNativeBootstrapErrorMessage(message) {
 
 /**
  * @param {ExtensionState} state
- * @param {{ runtime: { id?: string, connectNative: (application: string) => chrome.runtime.Port, lastError?: { message?: string } }, storage: { session: { get: (key: string) => Promise<Record<string, unknown>>, set: (items: Record<string, unknown>) => Promise<void> } } }} chromeObj
+ * @param {{ runtime: { id?: string, connectNative: (application: string) => chrome.runtime.Port, lastError?: { message?: string } }, storage: { local: ProfileStorage, session: ProfileStorage } }} chromeObj
  * @param {NativeConnectionDeps} deps
  * @returns {{
  *   clearNativeReconnectTimer: () => void,

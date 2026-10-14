@@ -310,6 +310,19 @@ export function createBridgeMcpServer(options = {}) {
           .describe('"list" (preferred), "create" (only when needed), "close", or "activate"'),
         url: z.string().optional().describe('URL for create action'),
         active: z.boolean().optional().describe('Focus the new tab (default: true)'),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe('Requested tab page size. Omit for discovery of all tabs.'),
+        offset: z
+          .number()
+          .int()
+          .nonnegative()
+          .optional()
+          .describe('Tab page offset. With offset alone the page size is 10.'),
         tabId: z
           .number()
           .int()

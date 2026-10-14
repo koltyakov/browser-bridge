@@ -2280,9 +2280,140 @@
   }
 
   /**
+   * Probe visible viewport points instead of scanning every DOM node. Only
+   * large, exposed, CSS-scrollable ancestors qualify as implicit targets.
+   * @param {'x' | 'y'} axis
+   * @returns {{ elements: HTMLElement[], ambiguous: boolean, truncated: boolean }}
+   */
+  function findScrollContainers(axis) {
+    if (typeof getComputedStyle !== 'function')
+      return { elements: [], ambiguous: false, truncated: false };
+    const root = document.scrollingElement || document.documentElement;
+    const extent =
+      axis === 'y' ? root.scrollHeight - root.clientHeight : root.scrollWidth - root.clientWidth;
+    const rootStyle = getComputedStyle(document.documentElement);
+    const bodyStyle = document.body ? getComputedStyle(document.body) : rootStyle;
+    const overflow = axis === 'y' ? 'overflowY' : 'overflowX';
+    // Body overflow propagates to the viewport only while root overflow is visible.
+    const documentOverflow =
+      rootStyle[overflow] === 'visible' ? bodyStyle[overflow] : rootStyle[overflow];
+    if (extent > 1 && documentOverflow !== 'hidden' && documentOverflow !== 'clip') {
+      return { elements: [], ambiguous: false, truncated: false };
+    }
+    /** @type {Map<HTMLElement, { area: number, hits: number }>} */
+    const candidates = new Map();
+    let truncated = false;
+    const viewportArea = window.innerWidth * window.innerHeight;
+    if (!viewportArea) return { elements: [], ambiguous: false, truncated };
+    for (const x of [0.1, 0.3, 0.5, 0.7, 0.9]) {
+      for (const y of [0.1, 0.3, 0.5, 0.7, 0.9]) {
+        let element = deepElementFromPoint(x * window.innerWidth, y * window.innerHeight);
+        let depth = 0;
+        for (; element && depth < 64; depth += 1) {
+          if (element instanceof HTMLElement && element !== root && element !== document.body) {
+            const known = candidates.get(element);
+            if (known) known.hits += 1;
+            const range =
+              axis === 'y'
+                ? element.scrollHeight - element.clientHeight
+                : element.scrollWidth - element.clientWidth;
+            if (
+              !known &&
+              range > 1 &&
+              element.clientHeight >= 100 &&
+              element.clientWidth >= 100 &&
+              isElementVisible(element)
+            ) {
+              const style = getComputedStyle(element);
+              if (
+                style[overflow] === 'auto' ||
+                style[overflow] === 'scroll' ||
+                style[overflow] === 'overlay'
+              ) {
+                const rect = element.getBoundingClientRect();
+                const width = Math.max(
+                  0,
+                  Math.min(rect.right, window.innerWidth) - Math.max(0, rect.left)
+                );
+                const height = Math.max(
+                  0,
+                  Math.min(rect.bottom, window.innerHeight) - Math.max(0, rect.top)
+                );
+                const area = width * height;
+                if (area >= viewportArea * 0.1) candidates.set(element, { area, hits: 1 });
+              }
+            }
+          }
+          const parent = element.parentElement;
+          const tree = element.getRootNode?.();
+          element =
+            parent ||
+            (typeof ShadowRoot !== 'undefined' && tree instanceof ShadowRoot ? tree.host : null);
+        }
+        if (element) truncated = true;
+      }
+    }
+    const ranked = [...candidates]
+      .map(([element, candidate]) => ({
+        element,
+        area: Math.min(candidate.area, (viewportArea * candidate.hits) / 25),
+      }))
+      .sort((left, right) => right.area - left.area);
+    const ambiguous = truncated || (ranked.length > 1 && ranked[0].area < ranked[1].area * 1.8);
+    return {
+      elements: ranked.slice(0, 5).map(({ element }) => element),
+      ambiguous,
+      truncated: truncated || ranked.length > 5,
+    };
+  }
+
+  /**
+   * @param {HTMLElement} element
+   * @returns {import('../../protocol/src/types.js').ScrollContainerInfo}
+   */
+  function describeScrollContainer(element) {
+    return {
+      elementRef: rememberElement(element),
+      tag: element.tagName.toLowerCase(),
+      x: element.scrollLeft,
+      y: element.scrollTop,
+      maxX: Math.max(0, element.scrollWidth - element.clientWidth),
+      maxY: Math.max(0, element.scrollHeight - element.clientHeight),
+      clientWidth: element.clientWidth,
+      clientHeight: element.clientHeight,
+    };
+  }
+
+  /**
+   * @param {'x' | 'y'} [axis]
+   * @returns {import('../../protocol/src/types.js').ScrollContainerDetection}
+   */
+  function getScrollContainerDetection(axis) {
+    let detection = findScrollContainers(axis ?? 'y');
+    const root = document.scrollingElement || document.documentElement;
+    if (
+      axis === undefined &&
+      !detection.elements.length &&
+      !detection.ambiguous &&
+      root.scrollHeight <= root.clientHeight + 1
+    )
+      detection = findScrollContainers('x');
+    if (!detection.elements.length)
+      return detection.truncated ? { ambiguous: true, candidates: [], truncated: true } : {};
+    if (detection.ambiguous) {
+      return {
+        ambiguous: true,
+        candidates: detection.elements.map(describeScrollContainer),
+        truncated: detection.truncated,
+      };
+    }
+    return { container: describeScrollContainer(detection.elements[0]) };
+  }
+
+  /**
    * Scroll the window or a specific scrollable element.
    *
-   * @param {Record<string, any>} params
+   * @param {Record<string, unknown>} params
    * @returns {{
    *   scrolled: boolean,
    *   target: string,
@@ -2291,7 +2422,8 @@
    *   top: number,
    *   left: number,
    *   behavior: 'auto' | 'smooth',
-   *   relative: boolean
+   *   relative: boolean,
+   *   autoDetected?: boolean
    * }}
    */
   function scrollViewport(params) {
@@ -2300,8 +2432,27 @@
     const behavior = params.behavior === 'smooth' ? 'smooth' : 'auto';
     const relative = Boolean(params.relative);
 
-    if (params.target?.elementRef || params.target?.selector) {
-      const element = resolveTarget(params.target);
+    const target =
+      params.target && typeof params.target === 'object'
+        ? /** @type {{ elementRef?: string, selector?: string }} */ (params.target)
+        : undefined;
+    const detection =
+      target?.elementRef || target?.selector
+        ? {}
+        : getScrollContainerDetection(left !== 0 && top === 0 ? 'x' : 'y');
+    if (detection.ambiguous) {
+      throw createInputError(
+        'ELEMENT_AMBIGUOUS',
+        'Multiple scroll containers are plausible. Set target.elementRef to one of the reported candidates.',
+        { ...detection }
+      );
+    }
+    if (target?.elementRef || target?.selector || detection.container) {
+      const element = resolveTarget(
+        target?.elementRef || target?.selector
+          ? target
+          : { elementRef: detection.container?.elementRef }
+      );
       const scrollTarget = getScrollableElementTarget(element);
       if (relative) {
         scrollTarget.scrollBy({
@@ -2326,6 +2477,7 @@
         left: scrollTarget.scrollLeft,
         behavior,
         relative,
+        ...(detection.container ? { autoDetected: true } : {}),
       };
     }
 
@@ -2867,6 +3019,7 @@
     readInputValue,
     pressKeyTarget: withInputPipeline('input.press_key', pressKeyTarget),
     scrollIntoViewTarget,
+    getScrollContainerDetection,
     scrollViewport,
     selectOptionTarget: withInputPipeline('input.select_option', selectOptionTarget),
     setCheckedTarget: withInputPipeline('input.set_checked', setCheckedTarget),

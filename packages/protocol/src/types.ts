@@ -1,6 +1,33 @@
 export type BridgeRequestSource = 'cli' | 'mcp';
 export type McpProtocolEra = 'legacy' | 'modern';
 
+export interface TabPagination {
+  totalCount: number;
+  returnedCount: number;
+  offset: number;
+  omittedCount: number;
+  truncated: boolean;
+  nextOffset: number | null;
+}
+
+export interface ScrollContainerInfo {
+  elementRef: string;
+  tag: string;
+  x: number;
+  y: number;
+  maxX: number;
+  maxY: number;
+  clientWidth: number;
+  clientHeight: number;
+}
+
+export interface ScrollContainerDetection {
+  container?: ScrollContainerInfo;
+  ambiguous?: boolean;
+  candidates?: ScrollContainerInfo[];
+  truncated?: boolean;
+}
+
 export type AccessIntent = 'inspect' | 'interact' | 'capture' | 'navigate' | 'debugger' | 'general';
 
 export interface AccessRequestParams {

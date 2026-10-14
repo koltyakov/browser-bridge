@@ -79,7 +79,8 @@
    *   readInputValue: (params: Record<string, unknown>) => unknown,
    *   pressKeyTarget: (params: Record<string, any>) => any,
    *   scrollIntoViewTarget: (params: Record<string, any>) => any,
-   *   scrollViewport: (params: Record<string, any>) => any,
+   *   scrollViewport: (params: Record<string, unknown>) => unknown,
+   *   getScrollContainerDetection: () => import('../../protocol/src/types.js').ScrollContainerDetection,
    *   selectOptionTarget: (params: Record<string, any>) => any,
    *   setCheckedTarget: (params: Record<string, any>) => any,
    *   touchTarget: (params: Record<string, unknown>) => Promise<Record<string, unknown>>,
@@ -310,7 +311,7 @@
    *   readyState: DocumentReadyState,
    *   focused: boolean,
    *   viewport: { width: number, height: number, devicePixelRatio: number },
-   *   scroll: { x: number, y: number, maxX: number, maxY: number },
+   *   scroll: { x: number, y: number, maxX: number, maxY: number } & import('../../protocol/src/types.js').ScrollContainerDetection,
    *   activeElement: NodeSummary | null,
    *   selection: { value: string, truncated: boolean, omitted: number },
    *   hints: { tailwind: boolean }
@@ -332,6 +333,7 @@
         devicePixelRatio: window.devicePixelRatio || 1,
       },
       scroll: {
+        ...inputModule.getScrollContainerDetection(),
         x: window.scrollX,
         y: window.scrollY,
         maxX: Math.max(

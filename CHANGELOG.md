@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.12.3] - 2026-10-14
+
+### Added
+
+- `tabs.list` accepts `limit` and `offset`. Summaries expose total, returned, and
+  omitted counts plus the next offset without silently clipping requested pages.
+- Untargeted scrolling detects dominant visible nested scroll containers when
+  the document cannot scroll. Page state reports container positions and refs;
+  ambiguous panels return candidates and require an explicit scroll target.
+
+### Fixed
+
+- Generated profile labels persist across browser restarts, with automatic
+  migration of existing session labels and no additional identity permissions.
+
 ## [1.12.2] - 2026-10-09
 
 ### Added

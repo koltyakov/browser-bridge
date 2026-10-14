@@ -269,6 +269,7 @@ test('native reconnect telemetry settles on disconnect or the existing stability
       lastError: undefined,
     },
     storage: {
+      local: createStorageArea(),
       session: createStorageArea(),
     },
   } as unknown as typeof chrome;

@@ -29,9 +29,16 @@ or you want to see the available runtime presets. `bbx install` targets Chromium
 on Linux and Chrome on macOS/Windows; use `--browser` for Chrome, Edge, Brave,
 Chromium, or Arc, or `--all` for all supported browsers.
 
-Use `bbx tabs` to see every tab in the enabled window, then
+Use `bbx tabs` to preview tabs in the enabled window, then
 `bbx tab-activate <tabId>` to bring one of them to the foreground when the
 wrong tab is routed. The tab ID must be an integer from `bbx tabs` output.
+
+The preview reports total, returned, and omitted counts in `pagination`. Raw
+`bbx call tabs.list` still returns all tabs by default. For bounded pages use
+`bbx call tabs.list '{"limit":25,"offset":10}'`, then follow `pagination.nextOffset`
+until it is null. Limits are 1 to 100; offset alone uses a page size of 10.
+Pages put working or active tabs first. Tab changes between requests can shift
+offsets, so rediscover before acting on a tab.
 
 With multiple browser profiles connected, choose a connection before listing or
 acting on tabs. `bbx call health.ping` returns connection IDs in
@@ -50,6 +57,10 @@ fail before reaching a page. Never disable unrelated windows to fix routing,
 and rediscover connection IDs after a reconnect. Unscoped MCP `tabs.list`
 discovers tabs across enabled profiles automatically; CLI calls require an
 explicit selector when more than one connection matches.
+
+Generated profile labels persist across browser restarts. Existing session labels
+are migrated automatically. Labels do not grant access, and connection IDs still
+need rediscovery after reconnecting.
 
 `bbx uninstall` removes native host manifests, Browser Bridge runtime files,
 and managed MCP/skill installs from the local machine. It takes no arguments.

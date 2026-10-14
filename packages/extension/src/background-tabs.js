@@ -5,6 +5,8 @@ import {
   createSuccess,
   ERROR_CODES,
   normalizeTabCreateParams,
+  normalizeTabListParams,
+  paginateTabList,
 } from '../../protocol/src/index.js';
 import { safeOrigin, summarizeTabResult } from './background-helpers.js';
 
@@ -14,6 +16,7 @@ import { safeOrigin, summarizeTabResult } from './background-helpers.js';
 /**
  * @typedef {{
  *   enabledWindow: { windowId: number } | null,
+ *   workingTabId?: number | null,
  * }} BackgroundTabState
  */
 
@@ -48,6 +51,8 @@ export async function handleListTabs(request, state, dependencies, accessDeniedW
     );
   }
 
+  const params = request.params ?? {};
+  normalizeTabListParams(params);
   const tabs = await dependencies.queryTabs({
     windowId: state.enabledWindow.windowId,
   });
@@ -63,10 +68,16 @@ export async function handleListTabs(request, state, dependencies, accessDeniedW
         title: tab.title ?? '',
         origin: safeOrigin(tab.url),
         url: tab.url,
+        ...(tab.id === state.workingTabId ? { working: true } : {}),
       };
     })
     .filter((tab) => tab !== null);
-  return createSuccess(request.id, { tabs: summarized }, { method: request.method });
+  const page = paginateTabList(summarized, params);
+  return createSuccess(
+    request.id,
+    params.limit !== undefined || params.offset !== undefined ? page : { tabs: summarized },
+    { method: request.method }
+  );
 }
 
 /**

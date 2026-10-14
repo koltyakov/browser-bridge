@@ -1,6 +1,12 @@
 // @ts-check
 
 import {
+  describeTabList,
+  normalizeTabListParams,
+  paginateTabList,
+} from '../../protocol/src/index.js';
+
+import {
   callBridgeTool,
   createToolResult,
   getBridgeDestinations,
@@ -15,17 +21,22 @@ import {
 /** @typedef {import('./handlers-utils.js').ToolResult} ToolResult */
 
 /**
- * @param {{ action: string, url?: string, active?: boolean, tabId?: number, destinationId?: string }} args
+ * @param {{ action: string, url?: string, active?: boolean, tabId?: number, destinationId?: string, limit?: number, offset?: number }} args
  * @returns {Promise<ToolResult>}
  */
 export async function handleTabsTool(args) {
   if (args.action === 'list') {
+    const params = {
+      ...(args.limit === undefined ? {} : { limit: args.limit }),
+      ...(args.offset === undefined ? {} : { offset: args.offset }),
+    };
+    normalizeTabListParams(params);
     if (typeof args.destinationId === 'string' || hasMcpBrowserTarget()) {
-      return callBridgeTool('tabs.list', {}, { destinationId: args.destinationId });
+      return callBridgeTool('tabs.list', params, { destinationId: args.destinationId });
     }
     const destinations = await getBridgeDestinations();
     if (destinations.length === 1) {
-      return callBridgeTool('tabs.list');
+      return callBridgeTool('tabs.list', params);
     }
     const results = await Promise.all(
       destinations.map(async (destination) => {
@@ -74,13 +85,17 @@ export async function handleTabsTool(args) {
     );
     const tabs = results.flatMap((result) => result.tabs);
     const failures = results.filter((result) => !result.ok);
+    const page =
+      args.limit !== undefined || args.offset !== undefined ? paginateTabList(tabs, params) : null;
     return createToolResult(
-      failures.length === 0
-        ? `Listed ${tabs.length} tab(s) across ${results.length} destination(s).`
-        : `Listed ${tabs.length} tab(s) with ${failures.length} destination error(s).`,
+      page
+        ? `${describeTabList(page.pagination)} Across ${results.length} destination(s), ${failures.length} destination error(s).`
+        : failures.length === 0
+          ? `Listed ${tabs.length} tab(s) across ${results.length} destination(s).`
+          : `Listed ${tabs.length} tab(s) with ${failures.length} destination error(s).`,
       {
         ok: failures.length === 0,
-        tabs,
+        ...(page ?? { tabs }),
         destinations: results,
       },
       failures.length === results.length && tabs.length === 0

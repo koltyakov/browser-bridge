@@ -134,6 +134,30 @@ test('handleCreateTab denies access when no window is enabled', async () => {
   assert.equal(response.error.message, ACCESS_DENIED_WINDOW_OFF);
 });
 
+test('handleListTabs returns requested pages with explicit omission metadata', async () => {
+  const response = await handleListTabs(
+    makeRequest('tabs.list', { params: { limit: 12, offset: 10 } }),
+    { enabledWindow: { windowId: 7 } },
+    {
+      async queryTabs() {
+        return Array.from({ length: 30 }, (_, index) =>
+          createChromeTab({ id: index + 1, url: 'https://example.com' })
+        );
+      },
+    },
+    ACCESS_DENIED_WINDOW_OFF
+  );
+  assert.equal(response.ok, true);
+  const result = response.result as {
+    tabs: Array<{ tabId: number }>;
+    pagination: { totalCount: number; nextOffset: number };
+  };
+  assert.equal(result.tabs.length, 12);
+  assert.equal(result.tabs[0].tabId, 11);
+  assert.equal(result.pagination.totalCount, 30);
+  assert.equal(result.pagination.nextOffset, 22);
+});
+
 test('handleCreateTab normalizes the request and creates the tab inside the enabled window', async () => {
   const creates: TabCreateProperties[] = [];
 

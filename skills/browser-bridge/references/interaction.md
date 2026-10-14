@@ -46,7 +46,11 @@ bbx call viewport.scroll '{"top":640,"behavior":"smooth"}'
 bbx call viewport.scroll '{"target":{"elementRef":"el_123"},"top":200}'
 ```
 
-Scrolls the window or a specific scrollable element.
+Scrolls the document when it can scroll. On document-locked layouts, a dominant
+visible nested scroll container is detected automatically. `page.get_state`
+reports `scroll.container` with its reference, position, and limits. Comparable
+panels produce `scroll.ambiguous` and candidate references; an untargeted scroll
+fails with `ELEMENT_AMBIGUOUS` without mutation. Choose a candidate explicitly.
 
 ### Resize Viewport
 
@@ -138,7 +142,9 @@ bbx call viewport.scroll '{"top":640,"behavior":"smooth"}'
 bbx call viewport.scroll '{"target":{"elementRef":"el_123"},"top":200}'
 ```
 
-Scrolls the window by default. Pass `target: { elementRef }` to scroll an inner scrollable container.
+Explicit `target: { elementRef }` or `target: { selector }` always takes precedence
+over automatic nested-container detection. Window scroll coordinates in page
+state remain unchanged; nested coordinates are under `scroll.container`.
 
 ### Scroll target into view
 

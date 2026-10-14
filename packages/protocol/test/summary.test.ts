@@ -251,6 +251,36 @@ test('summarizes element text result with dom.get_text method', () => {
 
 // --- summarizeBridgeResponse: tabs list ---
 
+test('page state summaries retain scroll targets and ambiguity candidates', () => {
+  for (const scroll of [
+    { x: 0, y: 0, container: { elementRef: 'el_main', y: 200, maxY: 2400 } },
+    {
+      x: 0,
+      y: 0,
+      ambiguous: true,
+      candidates: [
+        { elementRef: 'el_left', y: 0 },
+        { elementRef: 'el_right', y: 0 },
+      ],
+    },
+  ]) {
+    const viewport = { width: 1200, height: 800 };
+    const summary = summarizeBridgeResponse(
+      ok({
+        url: 'https://example.com',
+        origin: 'https://example.com',
+        title: 'Example',
+        scroll,
+        viewport,
+      }),
+      'page.get_state'
+    );
+    const evidence = summary.evidence as { scroll: unknown; viewport: unknown };
+    assert.deepEqual(evidence.scroll, scroll);
+    assert.deepEqual(evidence.viewport, viewport);
+  }
+});
+
 test('summarizes tabs list', () => {
   const summary = summarizeBridgeResponse(
     ok({

@@ -133,7 +133,7 @@ grouped here by domain.
 
 | Method          | Description                                       |
 | --------------- | ------------------------------------------------- |
-| `tabs.list`     | List tabs in the enabled window                   |
+| `tabs.list`     | List tabs in the enabled window; optional `limit` and `offset` |
 | `tabs.create`   | Create a new tab in the enabled window            |
 | `tabs.close`    | Close a tab in the enabled window                 |
 | `tabs.activate` | Bring a tab to the foreground in the enabled window |
@@ -215,7 +215,7 @@ rules per tab, with a 2,048-character URL pattern, 256 KiB body, 64 headers,
 
 | Method            | Description                              |
 | ----------------- | ---------------------------------------- |
-| `viewport.scroll` | Scroll the viewport or a scrollable element |
+| `viewport.scroll` | Scroll the document, an explicit target, or a dominant nested container; ambiguous panels require a target |
 | `viewport.resize` | Resize or reset the tab viewport         |
 
 ### Input
