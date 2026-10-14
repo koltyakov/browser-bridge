@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import { handleScreenshot } from '../src/background-screenshots.js';
 import { ERROR_CODES, MAX_ARTIFACT_BYTES } from '../../protocol/src/index.js';
+import { TabDebuggerCoordinator } from '../src/debugger-coordinator.js';
+import type { DebuggerRunOptions } from '../src/debugger-coordinator.js';
 
 const target = {
   tabId: 7,
@@ -14,6 +16,7 @@ const target = {
 test('screenshot auto delivery uses artifact transport after a large-capture preflight', async () => {
   const commands: Array<{ method: string; params: Record<string, unknown> }> = [];
   const stored: Array<{ requestId: string; data: string }> = [];
+  let debuggerBusy = false;
   const data = Buffer.from('small compressed image').toString('base64');
   const artifact = {
     artifactId: `art_${'e'.repeat(43)}`,
@@ -41,11 +44,22 @@ test('screenshot auto delivery uses artifact transport after a large-capture pre
       return { scrollWidth: 1200, scrollHeight: 1000, devicePixelRatio: 1 };
     },
     tabDebugger: {
-      async run(_tabId: number, callback: (debugTarget: { tabId: number }) => Promise<unknown>) {
-        return callback({ tabId: 7 });
+      async run(
+        _tabId: number,
+        callback: (debugTarget: { tabId: number }) => Promise<unknown>,
+        options: DebuggerRunOptions
+      ) {
+        assert.deepEqual(options, { retryDetached: true, releaseAfterRun: true });
+        debuggerBusy = true;
+        try {
+          return await callback({ tabId: 7 });
+        } finally {
+          debuggerBusy = false;
+        }
       },
     },
     async storeArtifact(requestId: string, artifactData: string) {
+      assert.equal(debuggerBusy, false, 'artifact upload must run outside debugger work');
       stored.push({ requestId, data: artifactData });
       return artifact;
     },
@@ -189,4 +203,72 @@ test('screenshot artifact delivery rejects bytes above the daemon limit before u
     (error: { code?: string }) => error.code === ERROR_CODES.RESULT_TOO_LARGE
   );
   assert.equal(storeCalls, 0);
+});
+
+test('a blocked screenshot artifact upload does not hold the debugger attachment', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let resolveUpload: (
+    value: import('../../protocol/src/types.js').ArtifactDescriptor
+  ) => void = () => {};
+  let uploadStarted: () => void = () => {};
+  const started = new Promise<void>((resolve) => {
+    uploadStarted = resolve;
+  });
+  const upload = new Promise<import('../../protocol/src/types.js').ArtifactDescriptor>(
+    (resolve) => {
+      resolveUpload = resolve;
+    }
+  );
+  let detached: () => void = () => {};
+  const released = new Promise<void>((resolve) => {
+    detached = resolve;
+  });
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {},
+    detach: async () => detached(),
+  });
+  const deps = {
+    chrome: {
+      debugger: {
+        async sendCommand(_target: unknown, method: string) {
+          return method === 'Page.getLayoutMetrics'
+            ? { cssVisualViewport: { pageX: 0, pageY: 0 } }
+            : { data: Buffer.from('image').toString('base64') };
+        },
+      },
+    },
+    contentScriptTimeoutMs: 1000,
+    async ensureContentScript() {},
+    async sendTabMessage() {},
+    tabDebugger: coordinator,
+    async storeArtifact() {
+      uploadStarted();
+      return upload;
+    },
+  } as unknown as Parameters<typeof handleScreenshot>[3];
+  const capture = handleScreenshot(
+    target,
+    'screenshot.capture_region',
+    { x: 0, y: 0, width: 10, height: 10, delivery: 'artifact' },
+    deps,
+    'capture-slow-upload'
+  );
+
+  await started;
+  t.mock.timers.tick(0);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await released;
+  assert.equal(coordinator.attachedTabs.size, 0);
+  resolveUpload({
+    artifactId: `art_${'e'.repeat(43)}`,
+    kind: 'screenshot',
+    mimeType: 'image/png',
+    byteLength: 5,
+    sha256: 'f'.repeat(64),
+    chunkSize: 196_608,
+    chunkCount: 1,
+    createdAt: '2026-07-23T00:00:00.000Z',
+    expiresAt: '2026-07-23T00:05:00.000Z',
+  });
+  assert.equal((await capture).delivery, 'artifact');
 });

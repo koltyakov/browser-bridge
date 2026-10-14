@@ -109,7 +109,7 @@ async function expandAccessibilitySubtree(
  *   stopCdpNetworkCapture: (tabId: number) => Promise<Record<string, unknown>>,
  *   readCdpHarEvidence: (tabId: number) => Promise<Record<string, unknown>>,
  *   storeHarArtifact: (requestId: string, bytes: Uint8Array) => Promise<import('../../protocol/src/types.js').ArtifactDescriptor<'har'>>,
- *   runWithDebugger: (tabId: number, operation: (debugTarget: chrome.debugger.Debuggee) => Promise<BridgeResponse>, options?: { retryDetached?: boolean }) => Promise<BridgeResponse>,
+ *   runWithDebugger: (tabId: number, operation: (debugTarget: chrome.debugger.Debuggee) => Promise<BridgeResponse>, options?: import('./debugger-coordinator.js').DebuggerRunOptions) => Promise<BridgeResponse>,
  *   runForDialog: (tabId: number, operation: (debugTarget: chrome.debugger.Debuggee) => Promise<BridgeResponse>, options?: { retryDetached?: boolean }) => Promise<BridgeResponse>,
  *   sendCommand: (target: chrome.debugger.Debuggee, method: string, params: Record<string, unknown>) => Promise<unknown>,
  *   ensureContentScript: (tabId: number) => Promise<void>,
@@ -674,7 +674,7 @@ export function createPageRequestController(state, chromeObj, dependencies) {
           await dependencies.sendCommand(debugTarget, 'Accessibility.disable', {}).catch(() => {});
         }
       },
-      { retryDetached: true }
+      { retryDetached: true, releaseAfterRun: true }
     );
   }
 
@@ -906,7 +906,7 @@ export function createPageRequestController(state, chromeObj, dependencies) {
           await dependencies.sendCommand(debugTarget, 'Performance.disable', {}).catch(() => {});
         }
       },
-      { retryDetached: true }
+      { retryDetached: true, releaseAfterRun: true }
     );
   }
 

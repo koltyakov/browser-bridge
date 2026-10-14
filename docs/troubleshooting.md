@@ -82,6 +82,14 @@ error text, or internal method/tab groups.
 - `DIALOG_ACTION_CONFLICT` means the observed dialog changed around the command. Inspect again and do not automatically repeat accept/dismiss.
 - `expectedDialogId` is checked immediately before dispatch, but Chrome cannot atomically bind its dialog command to that ID.
 
+## Chrome shows the debugging banner in disabled windows
+
+- Chrome owns this security banner and shows it globally when an extension uses `chrome.debugger`. Extensions cannot limit it to enabled windows. The banner does not mean Browser Bridge is controlling disabled windows.
+- Standalone screenshots, accessibility trees, and performance metric reads release the debugger promptly after their CDP work. Screenshot artifact uploads do not keep the debugger busy.
+- Reads that share an existing burst session preserve its five-second idle window. Native input, evaluation, raw CDP node reads, viewport changes, and dialog operations retain normal session reuse. Explicit CDP capture and request interception keep the debugger attached until stopped or cleared.
+- Chrome can keep the banner visible briefly after the last debugger detaches. Avoid debugger-backed operations when ordinary DOM, style, console, or default fetch/XHR reads answer the question.
+- To isolate the banner from normal browsing, use a separate Chrome instance with its own user-data directory. Another window or profile in the same Chrome instance is not sufficient.
+
 ## CDP network capture or HAR export is empty or still armed
 
 - Default `page.get_network` captures only fetch/XHR. Use `source: "cdp"` for broader resource metadata.

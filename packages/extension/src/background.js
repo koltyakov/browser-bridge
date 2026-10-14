@@ -523,7 +523,7 @@ const { connectNative, scheduleNativeReconnect } = createNativeConnectionControl
  * @param {string} requestId
  * @param {string} data
  * @param {{ mimeType: string, byteLength: number }} metadata
- * @returns {Promise<import('../../protocol/src/types.js').ArtifactDescriptor>}
+ * @returns {Promise<import('../../protocol/src/types.js').ArtifactDescriptor<'screenshot'>>}
  */
 async function storeScreenshotArtifact(requestId, data, metadata) {
   return storeByteArtifact(requestId, base64ToBytes(data), {

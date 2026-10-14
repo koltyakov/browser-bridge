@@ -7,6 +7,7 @@ import type { BridgeRequest, BridgeResponse } from '../../protocol/src/types.js'
 import type { ArtifactDescriptor } from '../../protocol/src/types.js';
 import type { ExtensionState } from '../src/background-state.js';
 import { createPageRequestController } from '../src/background-page.js';
+import type { DebuggerRunOptions } from '../src/debugger-coordinator.js';
 
 type DebuggerCommand = {
   method: string;
@@ -38,7 +39,7 @@ function createController(
   const onUpdated = createChromeEvent();
   const onRemoved = createChromeEvent();
   const commands: DebuggerCommand[] = [];
-  const debuggerOptions: Array<{ retryDetached?: boolean } | undefined> = [];
+  const debuggerOptions: Array<DebuggerRunOptions | undefined> = [];
   let dialog = options.dialog ?? null;
   let dialogEventSequence = dialog ? 1 : 0;
   let lastOpenedDialogId = dialog && typeof dialog.dialogId === 'string' ? dialog.dialogId : null;
@@ -719,8 +720,8 @@ test('debugger replay is opt-in only for proven page and CDP reads', async () =>
     undefined,
     undefined,
     { retryDetached: true },
-    { retryDetached: true },
-    { retryDetached: true },
+    { retryDetached: true, releaseAfterRun: true },
+    { retryDetached: true, releaseAfterRun: true },
   ]);
 });
 

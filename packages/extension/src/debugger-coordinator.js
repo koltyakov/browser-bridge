@@ -4,6 +4,7 @@
 /** @typedef {(target: DebuggerTarget, protocolVersion: string) => Promise<void>} DebuggerAttach */
 /** @typedef {(target: DebuggerTarget) => Promise<void>} DebuggerDetach */
 /** @typedef {(target: DebuggerTarget) => Promise<void>} DebuggerInitialize */
+/** @typedef {{ retryDetached?: boolean, releaseAfterRun?: boolean }} DebuggerRunOptions */
 
 const MAX_TRACKED_DIALOGS = 100;
 const MAX_DIALOG_TEXT_LENGTH = 4_096;
@@ -89,6 +90,8 @@ export class TabDebuggerCoordinator {
     this.burstTimers = new Map();
     /** @type {Set<number>} */
     this.attachedTabs = new Set();
+    /** @type {Set<number>} */
+    this.burstRetainedTabs = new Set();
     /** @type {Map<number, TrackedDialog>} */
     this.dialogsByTab = new Map();
     /** @type {Map<number, Set<DialogWaiter>>} */
@@ -138,7 +141,7 @@ export class TabDebuggerCoordinator {
    * @template T
    * @param {number} tabId
    * @param {(target: DebuggerTarget) => Promise<T>} task
-   * @param {{ retryDetached?: boolean }} [options]
+   * @param {DebuggerRunOptions} [options]
    * @returns {Promise<T>}
    */
   async run(tabId, task, options = {}) {
@@ -204,7 +207,11 @@ export class TabDebuggerCoordinator {
         this._isCancellationGenerationCurrent(tabId, generation) &&
         this.attachedTabs.has(tabId)
       ) {
-        this._resetBurstTimer(tabId, target);
+        this._resetBurstTimer(
+          tabId,
+          target,
+          options.releaseAfterRun !== true || this.dialogsByTab.has(tabId)
+        );
       }
 
       if (taskError) {
@@ -301,6 +308,7 @@ export class TabDebuggerCoordinator {
     this.holdsByTab.delete(tabId);
     this.dialogOwnersByTab.delete(tabId);
     this.attachedTabs.delete(tabId);
+    this.burstRetainedTabs.delete(tabId);
     this.clearDialogState(tabId);
     if (reason) {
       this.recentReason = { reason, at: Date.now() };
@@ -496,6 +504,7 @@ export class TabDebuggerCoordinator {
     if (timer) clearTimeout(timer);
     this.burstTimers.delete(tabId);
     this.holdsByTab.delete(tabId);
+    this.burstRetainedTabs.delete(tabId);
     this.dialogOwnersByTab.delete(tabId);
     this.clearDialogState(tabId);
 
@@ -634,33 +643,43 @@ export class TabDebuggerCoordinator {
   }
 
   /**
-   * Reset or start the burst idle timer for a tab. When it fires, detach
-   * the debugger if no explicit hold is active.
+   * Release standalone stateless reads on the next timer turn, allowing queued
+   * work to reuse the attachment. Once a session needs burst retention, keep
+   * the usual idle window until it detaches; a read must not shorten it.
    *
    * @param {number} tabId
    * @param {DebuggerTarget} target
+   * @param {boolean} [retainBurst]
    * @returns {void}
    */
-  _resetBurstTimer(tabId, target) {
+  _resetBurstTimer(tabId, target, retainBurst = true) {
     const existing = this.burstTimers.get(tabId);
     if (existing) clearTimeout(existing);
+    if (retainBurst) this.burstRetainedTabs.add(tabId);
     const generation = this._getCancellationGeneration(tabId);
-    const timer = setTimeout(async () => {
-      await this.runExclusive(tabId, async () => {
-        await this._waitForDialogLane(tabId);
-        if (this.burstTimers.get(tabId) !== timer) return;
-        this.burstTimers.delete(tabId);
-        if (!this._isCancellationGenerationCurrent(tabId, generation)) return;
-        if ((this.holdsByTab.get(tabId) ?? 0) > 0) return;
-        try {
-          await this.detach(target);
-        } catch {
-          // Already detached or tab closed.
-        } finally {
-          this.markDetached(tabId);
-        }
-      });
-    }, this.burstIdleMs);
+    const timer = setTimeout(
+      async () => {
+        await this.runExclusive(tabId, async () => {
+          await this._waitForDialogLane(tabId);
+          if (this.burstTimers.get(tabId) !== timer) return;
+          this.burstTimers.delete(tabId);
+          if (!this._isCancellationGenerationCurrent(tabId, generation)) return;
+          if ((this.holdsByTab.get(tabId) ?? 0) > 0) return;
+          if (!this.burstRetainedTabs.has(tabId) && this.dialogsByTab.has(tabId)) {
+            this._resetBurstTimer(tabId, target);
+            return;
+          }
+          try {
+            await this.detach(target);
+          } catch {
+            // Already detached or tab closed.
+          } finally {
+            this.markDetached(tabId);
+          }
+        });
+      },
+      this.burstRetainedTabs.has(tabId) ? this.burstIdleMs : 0
+    );
     timer.unref?.();
     this.burstTimers.set(tabId, timer);
   }
