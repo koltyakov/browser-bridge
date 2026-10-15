@@ -72,45 +72,45 @@ export function createBackgroundInputController(dependencies) {
     }
 
     const observe = /** @type {{ settleMs?: unknown } | null | undefined} */ (params.observe);
-    const observationId = observe ? await beginObservation(tab.tabId) : null;
-    const result = /** @type {Record<string, unknown>} */ (
-      await dependencies.runWithDebugger(
-        tab.tabId,
-        async (debuggerTarget) => {
-          switch (request.method) {
-            case 'input.click':
-              return click(debuggerTarget, tab.tabId, params);
-            case 'input.hover':
-              return hover(debuggerTarget, tab.tabId, params);
-            case 'input.drag':
-              return drag(debuggerTarget, tab.tabId, params);
-            case 'input.type':
-              return type(debuggerTarget, tab.tabId, params, false);
-            case 'input.fill':
-              return type(debuggerTarget, tab.tabId, params, true);
-            case 'input.press_key':
-              return pressKey(debuggerTarget, tab.tabId, params);
-            case 'input.touch':
-              return touch(debuggerTarget, tab.tabId, params);
-            default:
-              throw new BridgeError(
-                ERROR_CODES.INPUT_UNSUPPORTED,
-                'Unsupported native input method.'
-              );
-          }
-        },
-        { retryDetached: false }
-      )
+    return dependencies.runWithDebugger(
+      tab.tabId,
+      async (debuggerTarget) => {
+        const observationId = observe ? await beginObservation(tab.tabId) : null;
+        const result = await executeNative(debuggerTarget);
+        if (observationId) {
+          result.effects = await finishObservation(
+            tab.tabId,
+            observationId,
+            Number(observe?.settleMs) || 0,
+            typeof result.elementRef === 'string' ? result.elementRef : null
+          );
+        }
+        return result;
+      },
+      { retryDetached: false }
     );
-    if (observationId) {
-      result.effects = await finishObservation(
-        tab.tabId,
-        observationId,
-        Number(observe?.settleMs) || 0,
-        typeof result.elementRef === 'string' ? result.elementRef : null
-      );
+
+    /** @param {DebuggerTarget} debuggerTarget @returns {Promise<Record<string, unknown>>} */
+    async function executeNative(debuggerTarget) {
+      switch (request.method) {
+        case 'input.click':
+          return click(debuggerTarget, tab.tabId, params);
+        case 'input.hover':
+          return hover(debuggerTarget, tab.tabId, params);
+        case 'input.drag':
+          return drag(debuggerTarget, tab.tabId, params);
+        case 'input.type':
+          return type(debuggerTarget, tab.tabId, params, false);
+        case 'input.fill':
+          return type(debuggerTarget, tab.tabId, params, true);
+        case 'input.press_key':
+          return pressKey(debuggerTarget, tab.tabId, params);
+        case 'input.touch':
+          return touch(debuggerTarget, tab.tabId, params);
+        default:
+          throw new BridgeError(ERROR_CODES.INPUT_UNSUPPORTED, 'Unsupported native input method.');
+      }
     }
-    return result;
   }
 
   /**

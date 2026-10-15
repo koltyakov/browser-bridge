@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.12.5] - 2026-10-15
+
+### Changed
+
+- All input modes attach the debugger to observe native JavaScript dialogs,
+  including when events are dispatched through the DOM.
+
+### Fixed
+
+- Native dialogs blocking input or evaluation now return non-retryable
+  `DIALOG_BLOCKED` instead of leaving the agent waiting. `input.perform` stops
+  even with `continueOnError: true`, including when a dialog opens during a
+  later wait or read. Blocked edits are not automatically replayed.
+- Observed dialogs remain inspectable past the debugger idle timeout until
+  they close or access is cleared. Agents can explicitly inspect and respond
+  through `page.handle_dialog`, then check whether the edit took effect.
+
 ## [1.12.3] - 2026-10-14
 
 ### Added

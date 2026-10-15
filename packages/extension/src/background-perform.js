@@ -121,7 +121,7 @@ export async function executeInputPerform(request, dependencies) {
       }
       continue;
     }
-    if (!params.continueOnError) {
+    if (!params.continueOnError || failure.code === ERROR_CODES.DIALOG_BLOCKED) {
       return fail(
         /** @type {ErrorCode} */ (failure.code),
         `Step ${index} (${step.method}) failed: ${failure.message}`,

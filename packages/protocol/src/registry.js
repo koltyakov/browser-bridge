@@ -60,6 +60,10 @@ const METHOD_POLICIES = Object.freeze({
     debuggerBacked: true,
   }),
   automationInput: Object.freeze({ capability: CAPABILITIES.AUTOMATION_INPUT }),
+  automationInputDebugger: Object.freeze({
+    capability: CAPABILITIES.AUTOMATION_INPUT,
+    debuggerBacked: true,
+  }),
   screenshotPartialDebugger: Object.freeze({
     capability: CAPABILITIES.SCREENSHOT_PARTIAL,
     debuggerBacked: true,
@@ -616,7 +620,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['target', 'button', 'clickCount', 'modifiers', 'holdMs', 'executionMode', 'recoverStale'],
     'low',
-    METHOD_POLICIES.automationInput
+    METHOD_POLICIES.automationInputDebugger
   ),
   'input.focus': createRegistryEntry(
     'input.focus',
@@ -624,7 +628,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['target', 'executionMode', 'recoverStale'],
     'low',
-    METHOD_POLICIES.automationInput
+    METHOD_POLICIES.automationInputDebugger
   ),
   'input.type': createRegistryEntry(
     'input.type',
@@ -632,7 +636,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['target', 'text', 'clear', 'submit', 'modifiers', 'executionMode', 'recoverStale'],
     'low',
-    METHOD_POLICIES.automationInput
+    METHOD_POLICIES.automationInputDebugger
   ),
   'input.fill': createRegistryEntry(
     'input.fill',
@@ -640,7 +644,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['target', 'value', 'mode', 'executionMode', 'recoverStale'],
     'low',
-    METHOD_POLICIES.automationInput
+    METHOD_POLICIES.automationInputDebugger
   ),
   'input.press_key': createRegistryEntry(
     'input.press_key',
@@ -648,7 +652,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['target', 'key', 'modifiers', 'holdMs', 'executionMode', 'recoverStale'],
     'low',
-    METHOD_POLICIES.automationInput
+    METHOD_POLICIES.automationInputDebugger
   ),
   'input.set_checked': createRegistryEntry(
     'input.set_checked',
@@ -656,7 +660,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['target', 'checked', 'executionMode', 'recoverStale'],
     'low',
-    METHOD_POLICIES.automationInput
+    METHOD_POLICIES.automationInputDebugger
   ),
   'input.select_option': createRegistryEntry(
     'input.select_option',
@@ -664,7 +668,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['target', 'values', 'labels', 'indexes', 'executionMode', 'recoverStale'],
     'low',
-    METHOD_POLICIES.automationInput
+    METHOD_POLICIES.automationInputDebugger
   ),
   'input.hover': createRegistryEntry(
     'input.hover',
@@ -672,7 +676,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['target', 'duration', 'modifiers', 'executionMode', 'recoverStale'],
     'low',
-    METHOD_POLICIES.automationInput
+    METHOD_POLICIES.automationInputDebugger
   ),
   'input.drag': createRegistryEntry(
     'input.drag',
@@ -680,7 +684,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['source', 'destination', 'offsetX', 'offsetY', 'executionMode', 'recoverStale'],
     'moderate',
-    METHOD_POLICIES.automationInput
+    METHOD_POLICIES.automationInputDebugger
   ),
   'input.touch': createRegistryEntry(
     'input.touch',
@@ -688,7 +692,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['points', 'holdMs', 'moveSteps', 'executionMode', 'recoverStale'],
     'moderate',
-    METHOD_POLICIES.automationInput
+    METHOD_POLICIES.automationInputDebugger
   ),
   'input.perform': createRegistryEntry(
     'input.perform',
@@ -696,7 +700,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['steps', 'executionMode', 'timeoutMs', 'continueOnError', 'returnLastResult'],
     'moderate',
-    METHOD_POLICIES.automationInput
+    METHOD_POLICIES.automationInputDebugger
   ),
   'input.scroll_into_view': createRegistryEntry(
     'input.scroll_into_view',
@@ -704,7 +708,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['target'],
     'low',
-    METHOD_POLICIES.automationInput
+    METHOD_POLICIES.automationInputDebugger
   ),
   // capture - high (screenshots, CDP)
   'screenshot.capture_region': createRegistryEntry(

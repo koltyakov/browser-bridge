@@ -2201,6 +2201,8 @@ export function createRuntimeContext() {
       INPUT_UNSUPPORTED: 'Execution mode does not support this input operation',
       INPUT_INVALID_TARGET: 'Input target is incompatible with the requested operation',
       INPUT_FOCUS_CHANGED: 'Focus moved before native text dispatch',
+      DIALOG_BLOCKED:
+        'Native JavaScript dialog blocked the operation; inspect before responding, never automatically replay',
       DIALOG_NOT_OPEN: 'No JavaScript dialog is currently observable',
       INVALID_REQUEST: 'Malformed method or params',
       TIMEOUT: 'Operation exceeded time limit',

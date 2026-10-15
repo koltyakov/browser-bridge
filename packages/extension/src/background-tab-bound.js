@@ -35,6 +35,8 @@ import {
  * @typedef {{
  *   resolveRequestTarget: (request: BridgeRequest, options?: { requireScriptable?: boolean }) => Promise<ResolvedTabTarget>,
  *   ensureContentScript: (tabId: number) => Promise<void>,
+ *   assertNoDialog?: (tabId: number) => void,
+ *   runWithDialogGuard?: (tabId: number, operation: () => Promise<BridgeResponse>) => Promise<BridgeResponse>,
  *   handleScreenshot: (
  *     target: ResolvedTabTarget,
  *     method: string,
@@ -190,6 +192,7 @@ export function getContentScriptTimeout(method, params, contentScriptTimeoutMs =
  */
 export async function handleTabBoundRequest(request, dependencies) {
   const target = await dependencies.resolveRequestTarget(request);
+  dependencies.assertNoDialog?.(target.tabId);
   await dependencies.ensureContentScript(target.tabId);
   const normalizer = TAB_BOUND_NORMALIZERS[request.method];
   let payload = normalizer ? normalizer(request.params) : request.params;
@@ -228,7 +231,7 @@ export async function handleTabBoundRequest(request, dependencies) {
 
   if (payload.executionMode === 'cdp' && request.method.startsWith('input.')) {
     try {
-      const result = markAutoSelection(
+      const result = markInputExecution(
         await dependencies.handleNativeInput(request, target, payload),
         autoSelection
       );
@@ -246,41 +249,49 @@ export async function handleTabBoundRequest(request, dependencies) {
     }
   }
 
-  const timeoutMs = getContentScriptTimeout(
-    request.method,
-    payload,
-    dependencies.contentScriptTimeoutMs
-  );
-  const message = { type: 'bridge.execute', method: request.method, params: payload };
-  let response =
-    frameId !== 0 && dependencies.frames
-      ? await dependencies.frames.sendFrameMessage(target.tabId, frameId, message, timeoutMs)
-      : await dependencies.sendTabMessage(target.tabId, message, timeoutMs);
-  if (frameId !== 0 && response && typeof response === 'object' && !('error' in response)) {
-    response = { ...response, frameId };
-  } else if (frameId === 0 && FAN_OUT_METHODS.has(request.method) && dependencies.frames) {
-    response = await mergeChildFrameResults(
+  const guarded = request.method.startsWith('input.') && Boolean(dependencies.runWithDialogGuard);
+  /** @returns {Promise<BridgeResponse>} */
+  const execute = async () => {
+    const timeoutMs = getContentScriptTimeout(
       request.method,
-      message,
-      response,
-      target.tabId,
-      dependencies
+      payload,
+      dependencies.contentScriptTimeoutMs
     );
-  }
-  if (response?.error) {
-    const staleOutcome = getStaleRecoveryOutcome(response.error);
+    const message = { type: 'bridge.execute', method: request.method, params: payload };
+    let response =
+      frameId !== 0 && dependencies.frames
+        ? await dependencies.frames.sendFrameMessage(target.tabId, frameId, message, timeoutMs)
+        : await dependencies.sendTabMessage(target.tabId, message, timeoutMs);
+    if (frameId !== 0 && response && typeof response === 'object' && !('error' in response)) {
+      response = { ...response, frameId };
+    } else if (frameId === 0 && FAN_OUT_METHODS.has(request.method) && dependencies.frames) {
+      response = await mergeChildFrameResults(
+        request.method,
+        message,
+        response,
+        target.tabId,
+        dependencies
+      );
+    }
+    if (response?.error) {
+      const staleOutcome = getStaleRecoveryOutcome(response.error);
+      if (staleOutcome) dependencies.recordStaleRecovery?.(staleOutcome, request.method);
+      const failure = dependencies.toFailureResponse(request, response.error);
+      return staleOutcome
+        ? { ...failure, meta: { ...failure.meta, stale_recovery: staleOutcome } }
+        : failure;
+    }
+    const staleOutcome = getStaleRecoveryOutcome(response);
     if (staleOutcome) dependencies.recordStaleRecovery?.(staleOutcome, request.method);
-    const failure = dependencies.toFailureResponse(request, response.error);
-    return staleOutcome
-      ? { ...failure, meta: { ...failure.meta, stale_recovery: staleOutcome } }
-      : failure;
-  }
-  const staleOutcome = getStaleRecoveryOutcome(response);
-  if (staleOutcome) dependencies.recordStaleRecovery?.(staleOutcome, request.method);
-  return createSuccess(request.id, markAutoSelection(response, autoSelection), {
-    method: request.method,
-    ...(staleOutcome ? { stale_recovery: staleOutcome } : {}),
-  });
+    return createSuccess(request.id, markInputExecution(response, autoSelection, guarded), {
+      method: request.method,
+      ...(guarded ? { debugger_backed: true } : {}),
+      ...(staleOutcome ? { stale_recovery: staleOutcome } : {}),
+    });
+  };
+  return guarded && dependencies.runWithDialogGuard
+    ? dependencies.runWithDialogGuard(target.tabId, execute)
+    : execute();
 }
 
 /** Reads that also search child frames (merged into the top frame's result). */
@@ -464,15 +475,16 @@ const AUTO_CDP_METHODS = new Set([
 ]);
 
 /**
- * Record that auto mode chose the execution path, and why.
+ * Record auto-mode selection and debugger use for native-dialog observation.
  *
  * @template T
  * @param {T} result
  * @param {string | null} selection
+ * @param {boolean} [dialogGuard]
  * @returns {T}
  */
-function markAutoSelection(result, selection) {
-  if (!selection || !result || typeof result !== 'object') return result;
+function markInputExecution(result, selection, dialogGuard = false) {
+  if ((!selection && !dialogGuard) || !result || typeof result !== 'object') return result;
   const record = /** @type {Record<string, unknown>} */ (result);
   const execution =
     record.execution && typeof record.execution === 'object'
@@ -480,7 +492,11 @@ function markAutoSelection(result, selection) {
       : {};
   return /** @type {T} */ ({
     ...record,
-    execution: { ...execution, requestedMode: 'auto', selectionReason: selection },
+    execution: {
+      ...execution,
+      ...(selection ? { requestedMode: 'auto', selectionReason: selection } : {}),
+      ...(dialogGuard ? { debuggerUsed: true } : {}),
+    },
   });
 }
 

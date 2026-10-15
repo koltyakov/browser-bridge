@@ -169,7 +169,7 @@ test('transient idle release does not interrupt work or a subsequent hold', asyn
   assert.equal(detachCount, 1);
 });
 
-test('observed dialogs retain the normal inspection window during and after a read', async (t) => {
+test('observed dialogs remain inspectable past idle expiry until they close', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   let detachCount = 0;
   const coordinator = new TabDebuggerCoordinator({
@@ -196,6 +196,10 @@ test('observed dialogs retain the normal inspection window during and after a re
     await flush();
     assert.equal(coordinator.attachedTabs.has(7), true);
     assert.equal(coordinator.getDialog(7)?.type, 'confirm');
+    t.mock.timers.tick(5_000);
+    await flush();
+    assert.equal(coordinator.attachedTabs.has(7), true);
+    coordinator.handleEvent(7, 'Page.javascriptDialogClosed', {});
     t.mock.timers.tick(5_000);
     await flush();
     assert.equal(coordinator.attachedTabs.has(7), false);

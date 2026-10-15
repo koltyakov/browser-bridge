@@ -298,6 +298,7 @@ rules per tab, with a 2,048-character URL pattern, 256 KiB body, 64 headers,
 | `INPUT_UNSUPPORTED`       | No        | Execution path does not support the input method   |
 | `INPUT_INVALID_TARGET`    | No        | Target/control is incompatible with the input      |
 | `INPUT_FOCUS_CHANGED`     | No        | Native text target lost focus before dispatch      |
+| `DIALOG_BLOCKED`          | No        | Native dialog blocked an action; inspect before responding or acting again |
 | `DIALOG_NOT_OPEN`         | No        | No current dialog is observable                    |
 | `DIALOG_ACTION_CONFLICT`  | No        | Dialog observation changed around dispatch         |
 | `TAB_MISMATCH`            | No        | Tab closed or not found                           |

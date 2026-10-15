@@ -18,6 +18,7 @@ export const ERROR_CODES = Object.freeze({
   INPUT_UNSUPPORTED: 'INPUT_UNSUPPORTED',
   INPUT_INVALID_TARGET: 'INPUT_INVALID_TARGET',
   INPUT_FOCUS_CHANGED: 'INPUT_FOCUS_CHANGED',
+  DIALOG_BLOCKED: 'DIALOG_BLOCKED',
   DIALOG_NOT_OPEN: 'DIALOG_NOT_OPEN',
   DIALOG_ACTION_CONFLICT: 'DIALOG_ACTION_CONFLICT',
   RESULT_TRUNCATED: 'RESULT_TRUNCATED',
@@ -119,6 +120,11 @@ export const ERROR_RECOVERY = Object.freeze({
     retry: false,
     alternativeMethod: 'dom.describe',
     hint: 'Focus moved away from the resolved editable target before native text dispatch. Inspect focus handlers or target the control that retained focus.',
+  },
+  [ERROR_CODES.DIALOG_BLOCKED]: {
+    retry: false,
+    alternativeMethod: 'page.handle_dialog',
+    hint: 'A JavaScript dialog blocked the operation. Inspect it with page.handle_dialog, then explicitly accept or dismiss it. The operation may already have taken effect and may finish after the dialog closes. Inspect postconditions; never automatically replay the action or sequence.',
   },
   [ERROR_CODES.DIALOG_NOT_OPEN]: {
     retry: false,

@@ -583,6 +583,18 @@ test('registry policies preserve debugger-backed method membership and order', (
     'cdp.get_computed_styles_for_node',
     'cdp.dispatch_key_event',
     'page.handle_dialog',
+    'input.click',
+    'input.focus',
+    'input.type',
+    'input.fill',
+    'input.press_key',
+    'input.set_checked',
+    'input.select_option',
+    'input.hover',
+    'input.drag',
+    'input.touch',
+    'input.perform',
+    'input.scroll_into_view',
   ];
 
   assert.deepEqual([...DEBUGGER_BACKED_METHODS], expected);

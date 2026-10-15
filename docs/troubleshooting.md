@@ -78,6 +78,7 @@ error text, or internal method/tab groups.
 ## Dialog handling reports a conflict or no dialog
 
 - Dialog actions are explicit and debugger-backed; Browser Bridge never auto-accepts or auto-dismisses.
+- Input and evaluation calls watch for native dialogs and return non-retryable `DIALOG_BLOCKED` instead of waiting for the blocked page. `input.perform` stops even with `continueOnError: true`. Inspect with `page.handle_dialog`, then explicitly accept or dismiss. The original operation may already have taken effect and may finish after dismissal; inspect postconditions instead of replaying it. Observed dialogs keep their debugger connection until they close or access is cleared.
 - `DIALOG_NOT_OPEN` means no current dialog was observable, including when attachment missed an earlier dialog lifecycle.
 - `DIALOG_ACTION_CONFLICT` means the observed dialog changed around the command. Inspect again and do not automatically repeat accept/dismiss.
 - `expectedDialogId` is checked immediately before dispatch, but Chrome cannot atomically bind its dialog command to that ID.
@@ -86,7 +87,7 @@ error text, or internal method/tab groups.
 
 - Chrome owns this security banner and shows it globally when an extension uses `chrome.debugger`. Extensions cannot limit it to enabled windows. The banner does not mean Browser Bridge is controlling disabled windows.
 - Standalone screenshots, accessibility trees, and performance metric reads release the debugger promptly after their CDP work. Screenshot artifact uploads do not keep the debugger busy.
-- Reads that share an existing burst session preserve its five-second idle window. Native input, evaluation, raw CDP node reads, viewport changes, and dialog operations retain normal session reuse. Explicit CDP capture and request interception keep the debugger attached until stopped or cleared.
+- Reads that share an existing burst session preserve its five-second idle window. All input modes use the debugger to observe native dialogs, even when events are dispatched through the DOM. Input, evaluation, raw CDP node reads, viewport changes, and dialog operations retain normal session reuse. Open dialogs retain observation until closed. Explicit CDP capture and request interception keep the debugger attached until stopped or cleared.
 - Chrome can keep the banner visible briefly after the last debugger detaches. Avoid debugger-backed operations when ordinary DOM, style, console, or default fetch/XHR reads answer the question.
 - To isolate the banner from normal browsing, use a separate Chrome instance with its own user-data directory. Another window or profile in the same Chrome instance is not sufficient.
 

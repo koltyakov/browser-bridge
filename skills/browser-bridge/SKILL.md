@@ -80,6 +80,11 @@ bbx call page.wait_for_load_state '{"url":"/dashboard","urlMatch":"contains","wa
 bbx call page.handle_dialog '{"action":"inspect"}' # inspect current JS dialog; never auto-accept
 ```
 
+On `DIALOG_BLOCKED`, inspect the native dialog with `page.handle_dialog`, then
+explicitly accept or dismiss using the inspected `dialogId` as `expectedDialogId`.
+Never replay the interrupted action or sequence automatically. It may already
+have taken effect or finish after dismissal. Inspect postconditions first.
+
 ### Interact & Patch
 
 ```bash

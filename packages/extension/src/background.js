@@ -471,9 +471,11 @@ const {
 
 const { handleNativeInput } = createBackgroundInputController({
   contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,
-  runWithDebugger: (tabId, operation, options) => tabDebugger.run(tabId, operation, options),
-  sendCommand: (target, method, params) =>
-    /** @type {Promise<unknown>} */ (chrome.debugger.sendCommand(target, method, params)),
+  runWithDebugger: (tabId, operation) => tabDebugger.runGuarded(tabId, operation),
+  sendCommand: (target, method, params) => {
+    tabDebugger.assertTaskActive(target);
+    return /** @type {Promise<unknown>} */ (chrome.debugger.sendCommand(target, method, params));
+  },
   sendTabMessage: (tabId, message, timeoutMs = CONTENT_SCRIPT_TIMEOUT_MS) =>
     sendTabMessage(tabId, message, timeoutMs),
 });
@@ -643,6 +645,8 @@ async function chooseInputExecutionMode(tabId, method, params) {
 /** @type {Parameters<typeof executeTabBoundRequest>[1]} */
 const tabBoundRequestDependencies = {
   contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,
+  assertNoDialog: (tabId) => tabDebugger.assertNoDialog(tabId),
+  runWithDialogGuard: (tabId, operation) => tabDebugger.runGuarded(tabId, operation),
   chooseInputExecutionMode,
   ensureContentScript,
   handleScreenshot: (target, method, params, requestId) =>
@@ -1020,7 +1024,11 @@ async function dispatchBridgeRequest(request) {
         resolveRequestTarget,
         dispatch: async (step) => {
           try {
-            return await dispatchBridgeRequest(step);
+            // Input steps own their guard. Guard waits and reads too, so an
+            // alert scheduled after an edit cannot strand the remaining flow.
+            return await (step.method.startsWith('input.') || typeof step.tab_id !== 'number'
+              ? dispatchBridgeRequest(step)
+              : tabDebugger.runGuarded(step.tab_id, () => dispatchBridgeRequest(step)));
           } catch (error) {
             return toFailureResponse(step, error);
           }
@@ -1113,7 +1121,7 @@ async function handleNavigationRequest(request) {
 async function handlePageEvaluate(request) {
   return executePageEvaluate(request, {
     resolveRequestTarget,
-    runWithDebugger: (tabId, operation) => tabDebugger.run(tabId, operation),
+    runWithDebugger: (tabId, operation) => tabDebugger.runGuarded(tabId, operation),
     sendCommand: (target, method, params) =>
       /** @type {Promise<unknown>} */ (chrome.debugger.sendCommand(target, method, params)),
   });

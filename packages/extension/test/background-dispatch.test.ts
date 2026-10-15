@@ -1947,6 +1947,99 @@ test('background replies successfully when action-log persistence fails', async 
   assert.equal(response.id, 'dispatch-activate-with-log-failure');
 });
 
+for (const scenario of [
+  {
+    method: 'input.click',
+    params: { target: { elementRef: 'el_test_1' }, executionMode: 'dom', observe: false },
+  },
+  { method: 'input.press_key', params: { key: 'Enter', executionMode: 'cdp', observe: false } },
+  { method: 'page.evaluate', params: { expression: 'alert("invalid")' } },
+  {
+    method: 'input.perform',
+    params: {
+      continueOnError: true,
+      steps: [
+        { method: 'dom.wait_for', params: { selector: '.saved' } },
+        { method: 'input.click', params: { target: { selector: '#save-again' } } },
+      ],
+    },
+  },
+] satisfies Array<{ method: BridgeMethod; params: Record<string, unknown> }>) {
+  test(`background dispatch returns a typed dialog block and permits explicit handling for ${scenario.method}`, async () => {
+    let finishCommand!: (value: Record<string, unknown>) => void;
+    const pending = new Promise<Record<string, unknown>>((resolve) => {
+      finishCommand = resolve;
+    });
+    let openDialog = () => {};
+    let closeDialog = () => {};
+    let actions = 0;
+    const { loaded, activeTab } = await loadEnabledDispatchBackground({
+      queryLabel: `test-dialog-guard-${scenario.method}`,
+      chromeOverrides: {
+        tabs: {
+          async sendMessage(_tabId: number, message: Record<string, unknown>) {
+            if (message.method === 'input.click' || message.method === 'dom.wait_for') {
+              actions += 1;
+              openDialog();
+              return pending;
+            }
+            return {};
+          },
+        },
+        debugger: {
+          async sendCommand(_target: chrome.debugger.Debuggee, method: string) {
+            if (method === 'Page.handleJavaScriptDialog') {
+              closeDialog();
+              finishCommand({});
+              return {};
+            }
+            if (method === 'Runtime.evaluate' || method === 'Input.dispatchKeyEvent') {
+              actions += 1;
+              openDialog();
+              return pending;
+            }
+            return {};
+          },
+        },
+      },
+    });
+    const events = (loaded.chrome as unknown as { debugger: { onEvent: FakeChromeEvent } }).debugger
+      .onEvent;
+    openDialog = () =>
+      events.dispatch({ tabId: activeTab.id }, 'Page.javascriptDialogOpening', {
+        type: 'alert',
+        message: 'The expression is invalid.',
+      });
+    closeDialog = () => events.dispatch({ tabId: activeTab.id }, 'Page.javascriptDialogClosed', {});
+    const blocked = await loaded.dispatch(
+      createRequest({ id: 'dialog-guard-action', ...scenario })
+    );
+    assert.equal(blocked.error?.code, 'DIALOG_BLOCKED');
+    assert.equal(blocked.error?.recovery?.retry, false);
+    assert.equal(blocked.error?.recovery?.alternativeMethod, 'page.handle_dialog');
+    assert.doesNotMatch(JSON.stringify(blocked), /The expression is invalid/);
+    const inspected = await loaded.dispatch(
+      createRequest({
+        id: 'dialog-guard-inspect',
+        method: 'page.handle_dialog',
+        params: { action: 'inspect' },
+      })
+    );
+    assert.equal(inspected.ok, true);
+    const dialog = inspected.result as { dialogId: string; message: string };
+    assert.equal(dialog.message, 'The expression is invalid.');
+    const accepted = await loaded.dispatch(
+      createRequest({
+        id: 'dialog-guard-accept',
+        method: 'page.handle_dialog',
+        params: { action: 'accept', expectedDialogId: dialog.dialogId },
+      })
+    );
+    assert.equal(accepted.ok, true);
+    assert.equal(actions, 1, 'the blocked mutation must never be replayed or continued');
+  });
+}
+
 test('background dispatch evaluates page expressions through the debugger', async () => {
   const attachCalls: DebuggerAttachCall[] = [];
   const sendCommandCalls: DebuggerSendCommandCall[] = [];

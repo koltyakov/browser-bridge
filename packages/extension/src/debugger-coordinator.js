@@ -1,5 +1,7 @@
 // @ts-check
 
+import { BridgeError, ERROR_CODES } from '../../protocol/src/index.js';
+
 /** @typedef {{ tabId: number }} DebuggerTarget */
 /** @typedef {(target: DebuggerTarget, protocolVersion: string) => Promise<void>} DebuggerAttach */
 /** @typedef {(target: DebuggerTarget) => Promise<void>} DebuggerDetach */
@@ -98,6 +100,10 @@ export class TabDebuggerCoordinator {
     this.dialogWaitersByTab = new Map();
     /** @type {Map<number, DialogEventState>} */
     this.dialogEventsByTab = new Map();
+    /** @type {Map<number, Set<(dialog: TrackedDialog) => void>>} */
+    this.dialogGuardsByTab = new Map();
+    /** @type {WeakMap<DebuggerTarget, () => void>} */
+    this.taskGuards = new WeakMap();
     this.dialogIdentityPrefix = globalThis.crypto.randomUUID();
     this.nextDialogGeneration = 0;
     /** @type {{ reason: DebuggerReason, at: number } | null} */
@@ -219,6 +225,75 @@ export class TabDebuggerCoordinator {
       }
       return /** @type {T} */ (result);
     });
+  }
+
+  /**
+   * Return control when a native dialog blocks an action. The original task
+   * stays on the normal queue until it really settles; it is never replayed.
+   * Dialog handling uses its separate lane to unblock that task.
+   *
+   * @template T
+   * @param {number} tabId
+   * @param {(target: DebuggerTarget) => Promise<T>} task
+   * @returns {Promise<T>}
+   */
+  async runGuarded(tabId, task) {
+    this.assertNoDialog(tabId);
+    let started = false;
+    /** @type {BridgeError | null} */
+    let interrupted = null;
+    /** @type {(dialog: TrackedDialog) => void} */
+    let onDialog = () => {};
+    /** @type {Promise<never>} */
+    const blocked = new Promise((resolve, reject) => {
+      onDialog = (dialog) => {
+        interrupted = createDialogBlockedError(tabId, dialog, started);
+        reject(interrupted);
+      };
+    });
+    const guards = this.dialogGuardsByTab.get(tabId) ?? new Set();
+    guards.add(onDialog);
+    this.dialogGuardsByTab.set(tabId, guards);
+    const operation = this.run(tabId, async (target) => {
+      const generation = this._getCancellationGeneration(tabId);
+      const assertActive = () => {
+        this._assertCancellationGeneration(tabId, generation);
+        if (interrupted) throw interrupted;
+        this.assertNoDialog(tabId);
+      };
+      assertActive();
+      this.taskGuards.set(target, assertActive);
+      started = true;
+      try {
+        return await task(target);
+      } finally {
+        this.taskGuards.delete(target);
+      }
+    });
+    try {
+      return await Promise.race([operation, blocked]);
+    } finally {
+      guards.delete(onDialog);
+      if (guards.size === 0 && this.dialogGuardsByTab.get(tabId) === guards) {
+        this.dialogGuardsByTab.delete(tabId);
+      }
+    }
+  }
+
+  /** @param {number} tabId @returns {void} */
+  assertNoDialog(tabId) {
+    const dialog = this.dialogsByTab.get(tabId);
+    if (dialog) throw createDialogBlockedError(tabId, dialog, false);
+  }
+
+  /**
+   * Prevent a native multi-command action from issuing its remaining commands
+   * after an interrupted command resumes, even if the dialog has since closed.
+   * @param {DebuggerTarget} target
+   * @returns {void}
+   */
+  assertTaskActive(target) {
+    this.taskGuards.get(target)?.();
   }
 
   /**
@@ -386,6 +461,7 @@ export class TabDebuggerCoordinator {
     this._recordDialogEvent(tabId, dialog.dialogId);
     this.dialogsByTab.set(tabId, dialog);
     this._settleDialogWaiters(tabId, dialog);
+    for (const guard of this.dialogGuardsByTab.get(tabId) ?? []) guard(dialog);
   }
 
   /**
@@ -665,7 +741,7 @@ export class TabDebuggerCoordinator {
           this.burstTimers.delete(tabId);
           if (!this._isCancellationGenerationCurrent(tabId, generation)) return;
           if ((this.holdsByTab.get(tabId) ?? 0) > 0) return;
-          if (!this.burstRetainedTabs.has(tabId) && this.dialogsByTab.has(tabId)) {
+          if (this.dialogsByTab.has(tabId)) {
             this._resetBurstTimer(tabId, target);
             return;
           }
@@ -859,6 +935,28 @@ export class TabDebuggerCoordinator {
       }
     });
   }
+}
+
+/**
+ * Keep dialog text out of failure responses and persisted diagnostics. Reading
+ * the message requires an explicit page.handle_dialog inspection.
+ * @param {number} tabId
+ * @param {TrackedDialog} dialog
+ * @param {boolean} actionStarted
+ * @returns {BridgeError}
+ */
+function createDialogBlockedError(tabId, dialog, actionStarted) {
+  return new BridgeError(
+    ERROR_CODES.DIALOG_BLOCKED,
+    'A JavaScript dialog blocked the operation. Inspect it with page.handle_dialog; do not automatically replay the action.',
+    {
+      tabId,
+      dialogId: dialog.dialogId,
+      type: dialog.type,
+      actionStarted,
+      outcomeUncertain: actionStarted,
+    }
+  );
 }
 
 /**

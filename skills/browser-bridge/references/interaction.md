@@ -18,6 +18,20 @@
 | `input.perform`          | `call input.perform '{...}'`          | Ordered, timed sequence of input steps run inside the browser |
 | `input.scroll_into_view` | `call input.scroll_into_view '{...}'` | Ensure a target is visible before inspect/capture           |
 
+## Native JavaScript dialogs
+
+Input and evaluation calls return `DIALOG_BLOCKED` when a native alert, confirm,
+prompt, or beforeunload dialog blocks the operation. Do not retry the action or
+sequence. `input.perform` stops even with `continueOnError: true`.
+
+Inspect with `page.handle_dialog` using `action: "inspect"`, then explicitly
+accept or dismiss using the returned `dialogId` as `expectedDialogId`. Supply
+`promptText` only when accepting a prompt. The interrupted operation may already
+have taken effect and may finish after the dialog closes. Inspect postconditions
+before deciding on the next action. Dialog messages are only returned by explicit
+inspection, not in the blocking error. Dialogs that opened before debugger
+attachment may still be unobservable.
+
 ## Navigation
 
 ```bash

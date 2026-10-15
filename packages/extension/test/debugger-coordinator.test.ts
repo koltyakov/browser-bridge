@@ -343,6 +343,7 @@ test('TabDebuggerCoordinator dialog ownership blocks new work and burst detach',
   assert.equal(normalTaskRan, true);
   assert.equal(attachCount, 1);
   assert.equal(coordinator.dialogOwnersByTab.has(7), false);
+  coordinator.handleEvent(7, 'Page.javascriptDialogClosed', {});
   await new Promise((resolve) => setTimeout(resolve, 30));
   assert.equal(detachCount, 1);
 });

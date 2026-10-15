@@ -170,6 +170,23 @@ test('input.perform continueOnError records failures, including unmet dom.wait_f
   ]);
 });
 
+test('input.perform stops on a native dialog even with continueOnError', async () => {
+  const { dependencies, dispatched } = createHarness((request) =>
+    createFailure(request.id, 'DIALOG_BLOCKED', 'A JavaScript dialog blocked the operation.', {
+      dialogId: 'observed-dialog',
+      outcomeUncertain: true,
+    })
+  );
+  const response = await executeInputPerform(
+    performRequest({ continueOnError: true, steps: [click('#edit'), click('#save')] }),
+    dependencies
+  );
+  assert.equal(response.ok, false);
+  assert.equal(response.error?.code, 'DIALOG_BLOCKED');
+  assert.equal(response.error?.recovery?.retry, false);
+  assert.equal(dispatched.length, 1);
+});
+
 test('input.perform fails with TIMEOUT when a step is scheduled past the budget', async () => {
   const { dependencies, dispatched } = createHarness();
   const response = await executeInputPerform(
