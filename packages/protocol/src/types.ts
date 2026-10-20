@@ -96,6 +96,10 @@ export type ErrorCode =
   | 'TIMEOUT';
 
 export type BridgeMethod =
+  | 'files.stage'
+  | 'files.release'
+  | 'input.set_files'
+  | 'download.resource'
   | 'emulation.apply'
   | 'emulation.status'
   | 'emulation.reset'
@@ -217,6 +221,8 @@ export interface BridgeMeta {
   stale_recovery?: 'success' | 'failure';
   /** Agent session for sticky working-tab routing; unset callers share a default. */
   agent_session?: string;
+  /** Set by the daemon on routed requests; caller values are always overwritten. */
+  transport_owner?: string;
   /** Tab the request ran in. */
   tab_id?: number;
   /** How the tab was chosen: explicit tabId, the agent's working tab, or the active tab. */
@@ -1080,7 +1086,7 @@ export type ExtractContentConsistency = 'best_effort' | 'settled';
 export type ExtractContentSource = 'readability' | 'semantic-root' | 'body';
 export type ScreenshotFormat = 'png' | 'jpeg' | 'webp';
 export type ScreenshotDelivery = 'auto' | 'inline' | 'artifact';
-export type ArtifactKind = 'screenshot' | 'har';
+export type ArtifactKind = 'screenshot' | 'har' | 'resource';
 
 export interface ExtractContentParams {
   format?: ExtractContentFormat;

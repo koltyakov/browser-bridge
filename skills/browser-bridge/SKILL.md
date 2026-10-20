@@ -89,6 +89,8 @@ have taken effect or finish after dismissal. Inspect postconditions first.
 
 For device, network, CPU, locale, timezone, or geolocation reproduction, use the [emulation workflow](references/emulation.md). Discover its compact methods with `bbx protocol describe emulation`.
 
+For uploads and authenticated downloads, use the [file workflow](references/files.md). `bbx upload` streams local file bytes without putting base64 in model context.
+
 ```bash
 bbx click <ref> [button]             # click element
 bbx focus <ref>                      # focus element

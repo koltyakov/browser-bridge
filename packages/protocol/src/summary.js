@@ -484,6 +484,32 @@ function summarizeBridgeResponseBody(response, method) {
       }),
     };
   }
+  if (method?.startsWith('emulation.')) {
+    return {
+      ok: true,
+      summary: `Emulation ${result.active ? 'active' : 'inactive'}; ${Array.isArray(result.pendingReset) ? result.pendingReset.length : 0} setting(s) retained.`,
+      evidence: result,
+    };
+  }
+  if (method === 'input.set_files') {
+    return {
+      ok: true,
+      summary: `File input ${result.assigned ? 'assigned' : 'not verified'}: ${result.count ?? 0} file(s).`,
+      evidence: result,
+    };
+  }
+  if (method?.startsWith('files.')) {
+    return {
+      ok: true,
+      summary: result.released
+        ? 'Staged file released.'
+        : `File staged: ${result.nextOffset ?? 0}/${result.size ?? 0} bytes.`,
+      evidence: result,
+    };
+  }
+  if (method === 'download.resource') {
+    return { ok: true, summary: 'Resource downloaded to a chunked artifact.', evidence: result };
+  }
   if (typeof result.daemon === 'string') {
     const access =
       result.access && typeof result.access === 'object'

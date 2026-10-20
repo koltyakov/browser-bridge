@@ -58,7 +58,7 @@ export class ArtifactStore {
     }
     if (
       !Number.isInteger(input.totalBytes) ||
-      input.totalBytes < 1 ||
+      input.totalBytes < (input.kind === 'resource' ? 0 : 1) ||
       input.totalBytes > MAX_ARTIFACT_BYTES ||
       input.chunkCount !== Math.ceil(input.totalBytes / ARTIFACT_CHUNK_BYTES)
     ) {
@@ -128,6 +128,12 @@ export class ArtifactStore {
         'Artifact chunk order is invalid.'
       );
     }
+    if (data.length > Math.ceil(ARTIFACT_CHUNK_BYTES / 3) * 4) {
+      throw new BridgeError(
+        ERROR_CODES.ARTIFACT_TRANSFER_INVALID,
+        'Artifact chunk size is invalid.'
+      );
+    }
     const bytes = decodeBase64(data);
     if (bytes.length < 1 || bytes.length > ARTIFACT_CHUNK_BYTES) {
       throw new BridgeError(
@@ -141,7 +147,17 @@ export class ArtifactStore {
         'Artifact exceeds declared size.'
       );
     }
-    fs.writeSync(transfer.fd, bytes);
+    try {
+      let offset = 0;
+      while (offset < bytes.length) {
+        const written = fs.writeSync(transfer.fd, bytes, offset, bytes.length - offset);
+        if (written <= 0) throw new Error('Artifact write made no progress.');
+        offset += written;
+      }
+    } catch (error) {
+      this.abort(artifactId);
+      throw error;
+    }
     transfer.hash.update(bytes);
     transfer.written += bytes.length;
     transfer.nextChunk += 1;
@@ -198,7 +214,16 @@ export class ArtifactStore {
     const bytes = Buffer.alloc(byteLength);
     const fd = fs.openSync(record.filePath, 'r');
     try {
-      fs.readSync(fd, bytes, 0, byteLength, start);
+      let offset = 0;
+      while (offset < byteLength) {
+        const read = fs.readSync(fd, bytes, offset, byteLength - offset, start + offset);
+        if (read <= 0)
+          throw new BridgeError(
+            ERROR_CODES.ARTIFACT_TRANSFER_INVALID,
+            'Artifact was truncated on disk.'
+          );
+        offset += read;
+      }
     } finally {
       fs.closeSync(fd);
     }
@@ -286,6 +311,16 @@ export class ArtifactStore {
     }
   }
 
+  /** @param {string} ownerId */
+  deleteByOwner(ownerId) {
+    for (const transfer of this.transfers.values()) {
+      if (transfer.ownerId === ownerId) this.abort(transfer.artifactId);
+    }
+    for (const record of this.artifacts.values()) {
+      if (record.ownerId === ownerId) this.removeCommitted(record.artifactId);
+    }
+  }
+
   pruneExpired() {
     const now = this.now();
     for (const transfer of [...this.transfers.values()]) {
@@ -333,7 +368,10 @@ export class ArtifactStore {
 function isValidKindAndMimeType(kind, mimeType) {
   return (
     (kind === 'screenshot' && mimeType.startsWith('image/')) ||
-    (kind === 'har' && mimeType === 'application/json')
+    (kind === 'har' && mimeType === 'application/json') ||
+    (kind === 'resource' &&
+      /^[a-zA-Z0-9!#$&^_.+-]+\/[a-zA-Z0-9!#$&^_.+-]+$/u.test(mimeType) &&
+      mimeType.length <= 120)
   );
 }
 

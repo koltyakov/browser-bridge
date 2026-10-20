@@ -3,6 +3,7 @@
 import { applyBudget } from './budget.js';
 import { normalizeWebMcpParams } from './webmcp.js';
 import { normalizeEmulation, onlyKeys } from './emulation.js';
+import { normalizeFileParams } from './files.js';
 import {
   ARTIFACT_CHUNK_BYTES,
   BUDGET_PRESETS,
@@ -540,6 +541,15 @@ function normalizeAutomaticRetryMeta(source, value) {
  */
 export function normalizeRequestParams(method, params) {
   switch (method) {
+    case 'files.stage':
+    case 'files.release':
+    case 'download.resource':
+      return normalizeFileParams(method, params);
+    case 'input.set_files':
+      return {
+        ...normalizeFileParams(method, params),
+        target: normalizeInputAction(params).target,
+      };
     case 'emulation.apply':
       return normalizeEmulation(params);
     case 'emulation.status':
@@ -698,6 +708,8 @@ export function normalizeAccessRequestParams(params = {}) {
  */
 export function getBridgeOperationTimeoutMs(method, params = {}) {
   switch (method) {
+    case 'download.resource':
+      return Number(normalizeFileParams(method, params).timeoutMs) + 5000;
     case 'webmcp.execute_tool': {
       const normalized = normalizeWebMcpParams(params);
       return normalized.approvalTimeoutMs + normalized.timeoutMs + 10_000;

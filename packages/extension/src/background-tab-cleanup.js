@@ -22,6 +22,7 @@ import { CONTENT_SCRIPT_TIMEOUT_MS, isNumber } from './background-state.js';
  *   clearDomBaselinesForTab?: (tabId: number) => void,
  *   clearWebMcpForTab?: (tabId: number) => Promise<void>,
  *   clearEmulationForTab?: (tabId: number) => Promise<void>,
+ *   clearFilesForTab?: (tabId: number) => Promise<void>,
  * }} TabCleanupControllerDeps
  */
 
@@ -98,6 +99,7 @@ export function createTabCleanupController(chrome, deps) {
     if (!(await shouldContinue())) return;
     await deps.clearWebMcpForTab?.(tabId);
     await deps.clearEmulationForTab?.(tabId);
+    await deps.clearFilesForTab?.(tabId);
     /** @type {unknown[]} */
     const instrumentationErrors = [];
     const disableConsole =
@@ -176,6 +178,7 @@ export function createTabCleanupController(chrome, deps) {
   async function clearRestrictedTabDebuggerState(tabId) {
     await deps.clearWebMcpForTab?.(tabId);
     await deps.clearEmulationForTab?.(tabId);
+    await deps.clearFilesForTab?.(tabId);
     const endCleanup = await deps.beginDebuggerCleanup(tabId);
     try {
       await deps.commitDebuggerCleanup(tabId);

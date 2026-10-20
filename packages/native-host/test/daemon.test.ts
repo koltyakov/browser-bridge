@@ -856,7 +856,8 @@ test('daemon stores screenshot artifacts for the requesting client only', async 
   const agentSocket = createFakeSocket();
   agentSocket.__clientId = 'artifact-client';
   const otherAgent = createFakeSocket();
-  otherAgent.__clientId = 'other-client';
+  // An authenticated peer can copy client labels, but cannot copy connection ownership.
+  otherAgent.__clientId = 'artifact-client';
   const extensionSocket = createFakeSocket();
   extensionSocket.__extensionId = 'artifact-extension';
   extensionSocket.__accessEnabled = true;
@@ -967,6 +968,46 @@ test('daemon stores screenshot artifacts for the requesting client only', async 
   assert.equal(expectBridgeResponse(parsePayload(agentSocket.writes[2])).response.ok, true);
 });
 
+test('daemon replaces forged data ownership and rejects unsolicited artifact kinds', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bbx-owner-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const artifactStore = new ArtifactStore(path.join(root, 'store'));
+  artifactStore.reset();
+  const daemon = new BridgeDaemon({ logger: { log() {}, error() {} }, artifactStore });
+  const agent = createFakeSocket();
+  agent.__clientId = 'copied-label';
+  const extension = createFakeSocket();
+  extension.__extensionId = 'extension';
+  daemon.extensionSockets.set('extension', extension);
+  await daemon.handleAgentRequest(agent, {
+    request: {
+      id: 'file-owner',
+      method: 'files.stage',
+      tab_id: 1,
+      params: { name: 'file', size: 0, data: '' },
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null, transport_owner: 'forged' },
+    },
+  });
+  const routed = JSON.parse(extension.writes[0]) as {
+    request: { meta: { transport_owner: string } };
+  };
+  assert.equal(routed.request.meta.transport_owner, daemon.getDataOwner(agent));
+  assert.notEqual(routed.request.meta.transport_owner, 'forged');
+  daemon.handleExtensionArtifact(extension, {
+    type: 'extension.artifact.begin',
+    artifact: { requestId: 'file-owner', kind: 'resource' },
+  });
+  assert.equal(artifactStore.transfers.size, 0);
+  assert.equal(
+    daemon.pendingRequests.get('file-owner')?.lastErrorResponse?.error?.code,
+    ERROR_CODES.ARTIFACT_TRANSFER_INVALID
+  );
+  const previousOwner = daemon.getDataOwner(agent);
+  daemon.handleSocketClose(agent);
+  assert.notEqual(daemon.getDataOwner(agent), previousOwner);
+  assert.equal(daemon.pendingRequests.size, 0);
+});
+
 test('daemon routes HAR exports and rejects artifact kinds that do not match the method', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bbx-daemon-har-artifact-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -1067,7 +1108,7 @@ test('daemon routes HAR exports and rejects artifact kinds that do not match the
   artifactStore.begin({
     artifactId: screenshotArtifactId,
     requestId: 'req_har_kind_mismatch',
-    ownerId: 'har-client',
+    ownerId: daemon.getDataOwner(agentSocket),
     extensionId: 'har-extension',
     kind: 'screenshot',
     mimeType: 'image/png',
@@ -1150,7 +1191,7 @@ test('daemon routes HAR exports and rejects artifact kinds that do not match the
   });
   const mismatch = expectBridgeResponse(parsePayload(agentSocket.writes[2])).response;
   assert.equal(mismatch.error?.code, ERROR_CODES.ARTIFACT_TRANSFER_INVALID);
-  assert.match(mismatch.error?.message ?? '', /Artifact metadata does not match/u);
+  assert.match(mismatch.error?.message ?? '', /Artifact kind does not match/u);
 });
 
 test('daemon routes DOM baseline operations to the creating extension only', async () => {

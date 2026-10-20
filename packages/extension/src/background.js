@@ -124,6 +124,13 @@ import { createAgentTabLeaseStore, normalizeAgentSession } from './background-ag
 import { createAgentTabGroupController } from './background-agent-groups.js';
 import { createWebMcpController } from './background-webmcp.js';
 import { createEmulationController } from './background-emulation.js';
+import {
+  createFileStaging,
+  assignStagedFiles,
+  assignBrowserFiles,
+  fileBase64,
+} from './background-files.js';
+import { fetchResourceInPage, cancelPageResources } from './background-resource.js';
 
 /** @typedef {import('./background-state.js').EnabledWindowState} EnabledWindowState */
 /** @typedef {import('./background-state.js').ResolvedTabTarget} ResolvedTabTarget */
@@ -143,6 +150,9 @@ const chrome = globalThis.chrome;
 const state = createExtensionState();
 setExtensionState(state);
 const domBaselines = createDomBaselineController();
+const stagedFiles = createFileStaging();
+/** @type {Set<number>} */
+const resourceFetches = new Set();
 const agentTabs = createAgentTabLeaseStore({
   storage: chrome.storage?.session ?? null,
 });
@@ -300,6 +310,13 @@ const tabCleanupController = createTabCleanupController(chrome, {
   clearEmulationForTab: async (tabId) => {
     await emulation.reset(tabId);
   },
+  clearFilesForTab: async (tabId) => {
+    stagedFiles.clearTab(tabId);
+    if (resourceFetches.has(tabId))
+      await chrome.scripting
+        .executeScript({ target: { tabId }, func: cancelPageResources })
+        .catch(() => {});
+  },
   isRecoverableInstrumentationError,
   isRestrictedAutomationUrl,
 });
@@ -355,6 +372,7 @@ const tabMoveCleanup = createTabMoveCleanupController({
   clearRemovedTabState: async (tabId) => {
     domBaselines.clearTab(tabId);
     emulation.detached(tabId);
+    stagedFiles.clearTab(tabId);
     const endCleanup = await tabDebugger.beginCleanup(tabId);
     try {
       await tabDebugger.commitCleanup(tabId);
@@ -528,6 +546,11 @@ const { connectNative, scheduleNativeReconnect } = createNativeConnectionControl
   reply,
   handleDestinationDisconnect: () => {
     domBaselines.clearAll();
+    stagedFiles.clearAll();
+    for (const tabId of resourceFetches)
+      void chrome.scripting
+        .executeScript({ target: { tabId }, func: cancelPageResources })
+        .catch(() => {});
     windowActions.disconnect();
   },
   recordReconnect: (outcome) => recoveryTelemetry.record('native_host_reconnect', outcome),
@@ -928,6 +951,11 @@ function attachTabRouting(request, response) {
  */
 async function dispatchBridgeRequest(request) {
   switch (request.method) {
+    case 'files.stage':
+    case 'files.release':
+    case 'input.set_files':
+    case 'download.resource':
+      return handleFileRequest(request);
     case 'emulation.apply':
     case 'emulation.status':
     case 'emulation.reset': {
@@ -1068,6 +1096,115 @@ async function dispatchBridgeRequest(request) {
         `Unhandled method ${request.method}`
       );
   }
+}
+
+/** @param {BridgeRequest} request @returns {Promise<BridgeResponse>} */
+async function handleFileRequest(request) {
+  const tab = await resolveRequestTarget(request);
+  const access = state.enabledWindow;
+  const assertScope = () => {
+    if (state.enabledWindow !== access)
+      throw new BridgeError(
+        ERROR_CODES.ACCESS_DENIED,
+        'Window access changed during file operation.'
+      );
+  };
+  const transportOwner = request.meta?.transport_owner;
+  if (typeof transportOwner !== 'string' || !transportOwner)
+    throw new BridgeError(
+      ERROR_CODES.ACCESS_DENIED,
+      'File operations require a current daemon connection identity. Restart the daemon.'
+    );
+  const owner = `${state.enabledWindow?.enabledAt}:${transportOwner}:${normalizeAgentSession(request.meta?.agent_session)}`;
+  const p = request.params;
+  let result;
+  switch (request.method) {
+    case 'files.stage':
+      result = stagedFiles.stage(p, owner, tab.tabId);
+      break;
+    case 'files.release':
+      result = stagedFiles.release(String(p.transferId), owner, tab.tabId);
+      break;
+    case 'download.resource': {
+      if (resourceFetches.size >= 4 || resourceFetches.has(tab.tabId))
+        throw new BridgeError(
+          ERROR_CODES.INVALID_REQUEST,
+          'A resource fetch is already active for this tab or the global limit is reached.'
+        );
+      resourceFetches.add(tab.tabId);
+      try {
+        const [fetched] = await chrome.scripting.executeScript({
+          target: { tabId: tab.tabId },
+          func: fetchResourceInPage,
+          args: [String(p.url), Number(p.maxBytes), Number(p.timeoutMs), request.id],
+        });
+        if (!fetched?.result || 'error' in fetched.result)
+          throw new BridgeError(
+            ERROR_CODES.INVALID_REQUEST,
+            fetched?.result && 'error' in fetched.result
+              ? fetched.result.error
+              : 'Resource fetch produced no result.'
+          );
+        await resolveRequestTarget({ ...request, tab_id: tab.tabId });
+        assertScope();
+        const artifact = await storeByteArtifact(request.id, base64ToBytes(fetched.result.data), {
+          kind: 'resource',
+          mimeType: fetched.result.mimeType,
+        });
+        result = { delivery: 'artifact', artifact, status: fetched.result.status };
+      } finally {
+        resourceFetches.delete(tab.tabId);
+      }
+      break;
+    }
+    default: {
+      const target = /** @type {Record<string, unknown>} */ (p.target);
+      if (Array.isArray(p.paths)) {
+        result = await tabDebugger.runGuarded(tab.tabId, (debugTarget) =>
+          assignBrowserFiles(
+            (method, params) => {
+              assertScope();
+              tabDebugger.assertTaskActive(debugTarget);
+              return chrome.debugger.sendCommand(debugTarget, method, params);
+            },
+            String(target.selector),
+            /** @type {string[]} */ (p.paths)
+          )
+        );
+      } else {
+        const ids = /** @type {string[]} */ (p.files);
+        const files = stagedFiles.resolve(ids, owner, tab.tabId);
+        await ensureContentScript(tab.tabId);
+        const frameId =
+          typeof target.elementRef === 'string'
+            ? await getFrameForRef(tab.tabId, target.elementRef)
+            : 0;
+        await resolveRequestTarget({ ...request, tab_id: tab.tabId });
+        assertScope();
+        const [assigned] = await chrome.scripting.executeScript({
+          target: { tabId: tab.tabId, frameIds: [frameId] },
+          func: assignStagedFiles,
+          args: [
+            target,
+            files.map((file) => ({
+              name: file.name,
+              mimeType: file.mimeType,
+              data: fileBase64(file.bytes),
+            })),
+          ],
+        });
+        if (!assigned?.result || 'error' in assigned.result)
+          throw new BridgeError(
+            ERROR_CODES.INPUT_INVALID_TARGET,
+            assigned?.result && 'error' in assigned.result
+              ? assigned.result.error
+              : 'File assignment produced no result. Inspect the input before retrying.'
+          );
+        result = assigned.result;
+      }
+    }
+  }
+  return createSuccess(request.id, result, { method: request.method });
 }
 
 /**

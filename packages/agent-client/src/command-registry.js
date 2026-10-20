@@ -300,6 +300,8 @@ export const CLI_HELP_SECTIONS = Object.freeze([
       '--preset fills budget gaps (maxNodes, maxDepth, textBudget, limit) from the shared quick|normal|deep presets; explicit params always win.',
       'Every bridge command accepts --remote <name> (or BBX_REMOTE env) to target a remote destination from `bbx remote list`.',
       'Advanced bridge params stay available through `bbx call`, even when shortcuts expose only the common case.',
+      'bbx upload --tab <id> [--extension <id>] <ref|selector> <local-file>...  Stream local files and assign a file input',
+      'bbx download --tab <id> [--extension <id>] <url> <outPath>             Save a browser-authenticated resource locally',
       'For open-ended investigation, start with `bbx batch` on `page.get_state`, `dom.query`, and `page.get_text` before any screenshot or CDP call.',
       '',
       'Interaction methods need a target wrapper (not a bare ref):',

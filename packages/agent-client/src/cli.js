@@ -47,6 +47,7 @@ import { formatMcpConfig, isMcpClientName, MCP_CLIENT_NAMES } from './mcp-config
 import { getDoctorReport, requestBridge, resolveRef } from './runtime.js';
 import { createBridgeClientForDestination } from './remotes.js';
 import { atomicWriteFile } from './atomic-write.js';
+import { uploadFiles } from './file-transfer.js';
 
 /** @typedef {import('./types.js').BridgeMethod} BridgeMethod */
 /** @typedef {import('./types.js').ScreenshotResult} ScreenshotResult */
@@ -403,6 +404,71 @@ async function main() {
       return;
     }
 
+    if (command === 'upload') {
+      const args = [...rest];
+      const flags = [];
+      for (const flag of ['--tab', '--extension', '--browser', '--profile']) {
+        const index = args.indexOf(flag);
+        if (index < 0) continue;
+        flags.push(...args.splice(index, 2));
+      }
+      const [selector, ...files] = args;
+      if (!selector || !files.length)
+        throw new Error(
+          'Usage: bbx upload --tab <id> [--extension <id>] <ref|selector> <local-file>...'
+        );
+      const {
+        tabId,
+        method: _method,
+        params: _params,
+        ...route
+      } = await parseCallCommand([...flags, 'input.set_files', '{}']);
+      if (tabId === null)
+        throw new Error('upload requires --tab so every chunk targets the same tab.');
+      const response = await uploadFiles(
+        (method, params) =>
+          requestBridge(client, method, params, { ...route, tabId, source: REQUEST_SOURCE }),
+        isElementRef(selector) ? { elementRef: selector } : { selector },
+        files
+      );
+      await printSummary(response, 'input.set_files');
+      return;
+    }
+
+    if (command === 'download') {
+      const args = [...rest];
+      const flags = [];
+      for (const flag of ['--tab', '--extension', '--browser', '--profile']) {
+        const index = args.indexOf(flag);
+        if (index >= 0) flags.push(...args.splice(index, 2));
+      }
+      const [url, output, ...extra] = args;
+      if (!url || !output || extra.length)
+        throw new Error('Usage: bbx download --tab <id> [--extension <id>] <url> <outPath>');
+      const {
+        tabId,
+        method: _method,
+        params: _params,
+        ...route
+      } = await parseCallCommand([...flags, 'download.resource', '{}']);
+      if (tabId === null) throw new Error('download requires --tab.');
+      const response = await requestBridge(
+        client,
+        'download.resource',
+        { url },
+        { ...route, tabId, source: REQUEST_SOURCE }
+      );
+      if (!response.ok) {
+        await printSummary(response);
+        return;
+      }
+      const result = /** @type {{ artifact: ArtifactDescriptor }} */ (response.result);
+      const bytes = await downloadArtifact(client, result.artifact, 'resource');
+      await atomicWriteFile(output, bytes);
+      printJson({ ok: true, path: output, byteLength: bytes.length });
+      return;
+    }
+
     if (command === 'batch') {
       const { preset, rest: batchArgs } = extractPresetFlag(rest);
       const results = await runBatchCalls(client, batchArgs[0], REQUEST_SOURCE, { preset });
@@ -712,7 +778,7 @@ function decodeScreenshotDataUrl(value) {
 /**
  * @param {import('./client.js').BridgeClient} client
  * @param {ArtifactDescriptor} artifact
- * @param {'screenshot' | 'har'} [expectedKind]
+ * @param {import('../../protocol/src/types.js').ArtifactKind} [expectedKind]
  */
 async function downloadArtifact(client, artifact, expectedKind) {
   const chunks = [];

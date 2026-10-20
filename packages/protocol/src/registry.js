@@ -100,6 +100,13 @@ const METHOD_POLICIES = Object.freeze({
  * @type {Readonly<Record<import('./types.js').BridgeMethod, string>>}
  */
 const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
+  'files.stage':
+    'Stage file bytes on the browser machine. First call: name,mimeType,size,offset=0,data=base64. Further calls: transferId,offset=nextOffset,data. Max 192 KiB per chunk, 16 MiB/file, 32 MiB total; expires after 5 minutes. Keep bytes in file tools, not model context. Returns handle and nextOffset. Never replay an uncertain chunk blindly.',
+  'files.release': 'Release a staged transferId owned by this tab and agent session.',
+  'input.set_files':
+    'Assign files to an input[type=file]. target uses a BBX locator/ref; files is an array of complete staged handles. Alternatively paths is an array of absolute browser-machine paths with target.selector in the top document. Empty files clears selection. Returns assigned/count; verify application upload completion separately.',
+  'download.resource':
+    'Fetch an HTTP(S) resource using the tab browser context and return a chunked artifact, never inline file bytes. Respects browser CORS/CSP and session cookies. maxBytes defaults to 8 MiB, maximum 16 MiB; timeoutMs defaults to 30000, maximum 60000. No downloads permission or download-manager integration.',
   'emulation.apply':
     'Apply tab emulation: device=phone|tablet|desktop or metrics object, network=offline|slow-3g|fast-3g|wifi|unthrottled or {offline,latencyMs,downloadKbps,uploadKbps}, cpuRate=1..100, locale, timezoneId, geolocation={latitude,longitude,accuracy}. Settings merge; reset afterward. Device presets emulate metrics and touch, not another browser engine.',
   'emulation.status':
@@ -893,6 +900,38 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     [],
     'low',
     METHOD_POLICIES.viewportControlDebugger
+  ),
+  'files.stage': createRegistryEntry(
+    'files.stage',
+    'files',
+    true,
+    ['name', 'mimeType', 'size', 'transferId', 'offset', 'data'],
+    'moderate',
+    METHOD_POLICIES.automationInput
+  ),
+  'files.release': createRegistryEntry(
+    'files.release',
+    'files',
+    true,
+    ['transferId'],
+    'low',
+    METHOD_POLICIES.automationInput
+  ),
+  'input.set_files': createRegistryEntry(
+    'input.set_files',
+    'files',
+    true,
+    ['target', 'files', 'paths'],
+    'moderate',
+    METHOD_POLICIES.automationInputDebugger
+  ),
+  'download.resource': createRegistryEntry(
+    'download.resource',
+    'files',
+    true,
+    ['url', 'maxBytes', 'timeoutMs'],
+    'moderate',
+    METHOD_POLICIES.networkRead
   ),
 });
 

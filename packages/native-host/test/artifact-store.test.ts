@@ -10,6 +10,78 @@ import { ARTIFACT_CHUNK_BYTES, ERROR_CODES } from '../../protocol/src/index.js';
 
 const artifactId = `art_${'a'.repeat(43)}`;
 
+test('resource artifacts handle short writes, reject truncation, and clear connection data', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bbx-resource-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const store = new ArtifactStore(path.join(root, 'store'));
+  store.reset();
+  const bytes = Buffer.from('binary resource');
+  const input = {
+    artifactId,
+    requestId: 'resource',
+    ownerId: 'owner',
+    extensionId: 'extension',
+    kind: 'resource' as const,
+    mimeType: 'application/octet-stream',
+    totalBytes: bytes.length,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+    chunkCount: 1,
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 60000).toISOString(),
+  };
+  store.begin(input);
+  const originalWrite = fs.writeSync;
+  const mocked = t.mock.method(
+    fs,
+    'writeSync',
+    (fd: number, data: Uint8Array, offset: number, length: number) =>
+      originalWrite(fd, data, offset, Math.min(length, 2))
+  );
+  store.writeChunk(artifactId, 0, bytes.toString('base64'));
+  mocked.mock.restore();
+  const record = store.commit(artifactId);
+  assert.deepEqual(fs.readFileSync(record.filePath), bytes);
+  fs.truncateSync(record.filePath, 1);
+  assert.throws(() => store.read(artifactId, 'owner', 0, bytes.length), /truncated/);
+  store.deleteByOwner('owner');
+  assert.equal(fs.existsSync(record.filePath), false);
+  const empty = {
+    ...input,
+    totalBytes: 0,
+    chunkCount: 0,
+    sha256: createHash('sha256').digest('hex'),
+  };
+  store.begin(empty);
+  store.commit(artifactId);
+  assert.equal(store.read(artifactId, 'owner', 0, 100).byteLength, 0);
+  store.deleteByOwner('owner');
+});
+
+test('failed writes abort the transfer before updating its checksum or counters', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bbx-write-failure-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const store = new ArtifactStore(path.join(root, 'store'));
+  store.reset();
+  store.begin({
+    artifactId,
+    requestId: 'resource',
+    ownerId: 'owner',
+    extensionId: 'extension',
+    kind: 'resource',
+    mimeType: 'text/plain',
+    totalBytes: 1,
+    sha256: 'a'.repeat(64),
+    chunkCount: 1,
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 60000).toISOString(),
+  });
+  const mocked = t.mock.method(fs, 'writeSync', () => 0);
+  assert.throws(() => store.writeChunk(artifactId, 0, 'YQ=='), /no progress/);
+  mocked.mock.restore();
+  assert.equal(store.transfers.size, 0);
+  assert.deepEqual(fs.readdirSync(store.rootPath), []);
+});
+
 test('ArtifactStore commits, reads, authorizes, and deletes private artifacts', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bbx-artifacts-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

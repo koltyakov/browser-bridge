@@ -61,6 +61,16 @@ Out of scope:
   preventing SSH port forwarding from turning remote access into local control.
 - Daemon connections, registration time, malformed input, pending requests, and
   per-client pending requests are bounded to limit resource exhaustion.
+- File staging and artifact access use daemon-issued connection identities.
+  Copying a client ID or agent session label does not grant access to another
+  connection's file data. Artifacts are deleted on disconnect. Staged uploads
+  become inaccessible on disconnect and expire within five minutes.
+- Artifact ingress checks the requesting connection, routed extension, request
+  ID, artifact kind, chunk order, declared size, and SHA-256 checksum. File writes
+  account for partial writes and abort on failure before acknowledging progress.
+- TCP authentication does not encrypt traffic. Use SSH or another encrypted
+  tunnel for remote connections. The default proxy listener is loopback-only;
+  exposing plaintext TCP requires an explicit unsafe option.
 - Proxy mode (LAN exposure) is opt-in via `bbx proxy enable` and always provisions a
   token; an invalid `bindHost` in the config rejects the config rather than widening
   the bind address.

@@ -438,6 +438,19 @@ export function isWindowsNamedPipePath(socketPath) {
 /** @typedef {import('../../protocol/src/types.js').ArtifactKind} ArtifactKind */
 
 export class BridgeDaemon {
+  /** File data belongs to a transport connection, never a caller-selected label.
+   * @type {WeakMap<ClientSocket, string>} */
+  dataOwners = new WeakMap();
+
+  /** @param {ClientSocket} socket */
+  getDataOwner(socket) {
+    let owner = this.dataOwners.get(socket);
+    if (!owner) {
+      owner = randomUUID();
+      this.dataOwners.set(socket, owner);
+    }
+    return owner;
+  }
   /**
    * @param {{
    *   transport?: BridgeTransport,
@@ -1188,7 +1201,7 @@ export class BridgeDaemon {
     }
 
     if (request.method === 'artifact.read' || request.method === 'artifact.delete') {
-      const ownerId = socket.__clientId;
+      const ownerId = socket.__clientId ? this.getDataOwner(socket) : null;
       if (!ownerId) {
         const response = createFailure(
           request.id,
@@ -1424,7 +1437,13 @@ export class BridgeDaemon {
       targetCount: 1,
     });
     try {
-      await writeJsonLine(target, { type: 'extension.request', request });
+      await writeJsonLine(target, {
+        type: 'extension.request',
+        request: {
+          ...request,
+          meta: { ...request.meta, transport_owner: this.getDataOwner(socket) },
+        },
+      });
     } catch (error) {
       this.logger.error('request route failed', {
         requestId: request.id,
@@ -1653,7 +1672,7 @@ export class BridgeDaemon {
     const requestId = typeof artifact.requestId === 'string' ? artifact.requestId : '';
     const pending = this.pendingRequests.get(requestId);
     if (!pending || !pending.targets.has(socket) || !socket.__extensionId) return;
-    const ownerId = pending.socket.__clientId;
+    const ownerId = pending.socket.__clientId ? this.getDataOwner(pending.socket) : null;
     if (!ownerId) return;
     try {
       if (
@@ -1671,6 +1690,9 @@ export class BridgeDaemon {
         }
       }
       if (message.type === 'extension.artifact.begin') {
+        if (artifact.kind !== getArtifactKindForMethod(pending.method)) {
+          throw new Error('Artifact kind does not match the routed operation.');
+        }
         this.artifactStore.begin({
           artifactId: String(artifact.artifactId ?? ''),
           requestId,
@@ -1698,7 +1720,7 @@ export class BridgeDaemon {
         error && typeof error === 'object' && 'code' in error
           ? /** @type {import('../../protocol/src/types.js').ErrorCode} */ (error.code)
           : ERROR_CODES.ARTIFACT_TRANSFER_INVALID;
-      pending.lastErrorResponse = createFailure(
+      pending.lastErrorResponse ??= createFailure(
         requestId,
         code,
         error instanceof Error ? error.message : String(error),
@@ -1784,7 +1806,7 @@ export class BridgeDaemon {
           !pending.socket.__clientId ||
           !this.artifactStore.matchesCommitted(
             String(artifact.artifactId ?? ''),
-            pending.socket.__clientId,
+            this.getDataOwner(pending.socket),
             responseMessage.id,
             artifact,
             expectedArtifactKind ?? undefined
@@ -1895,6 +1917,9 @@ export class BridgeDaemon {
    * @returns {void}
    */
   handleSocketClose(socket) {
+    const dataOwner = this.dataOwners.get(socket);
+    if (dataOwner) this.artifactStore.deleteByOwner(dataOwner);
+    this.dataOwners.delete(socket);
     this.windowActions.disconnect(socket);
     this.clientSockets.delete(socket);
     if (socket.__registrationTimeoutId) {
@@ -2068,6 +2093,7 @@ function isAutomaticMcpRetry(meta) {
 function getArtifactKindForMethod(method) {
   if (method?.startsWith('screenshot.')) return 'screenshot';
   if (method === 'network.export_har') return 'har';
+  if (method === 'download.resource') return 'resource';
   return null;
 }
 
