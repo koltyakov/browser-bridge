@@ -510,6 +510,22 @@ function summarizeBridgeResponseBody(response, method) {
   if (method === 'download.resource') {
     return { ok: true, summary: 'Resource downloaded to a chunked artifact.', evidence: result };
   }
+  if (method?.startsWith('download.')) {
+    return {
+      ok: true,
+      summary: result.released
+        ? 'Browser download handle released.'
+        : `Browser download ${result.state ?? 'updated'}: ${result.bytesReceived ?? 0}/${result.totalBytes ?? -1} bytes.`,
+      evidence: result,
+    };
+  }
+  if (method === 'input.paste_image') {
+    return {
+      ok: true,
+      summary: 'Native image paste dispatched. Verify insertion in the editor.',
+      evidence: result,
+    };
+  }
   if (method?.startsWith('session.')) {
     return {
       ok: true,

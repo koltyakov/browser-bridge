@@ -18,6 +18,28 @@ import type { BridgeMethod, BridgeResponse } from '../src/types.js';
 
 // --- summarizeBridgeResponse: error path ---
 
+test('native download and paste summaries preserve control handles and dispatch evidence', () => {
+  const download = {
+    downloadId: 'download_secret',
+    state: 'in_progress',
+    bytesReceived: 123,
+    totalBytes: 456,
+  };
+  for (const method of [
+    'download.start',
+    'download.status',
+    'download.pause',
+    'download.resume',
+    'download.cancel',
+  ] as const) {
+    assert.deepEqual(summarizeBridgeResponse(ok(download), method).evidence, download);
+  }
+  const released = { released: true, fileDeleted: false };
+  assert.deepEqual(summarizeBridgeResponse(ok(released), 'download.release').evidence, released);
+  const pasted = { dispatched: true, clipboardChanged: true, mimeType: 'image/png' };
+  assert.deepEqual(summarizeBridgeResponse(ok(pasted), 'input.paste_image').evidence, pasted);
+});
+
 test('summarizes error responses with code and message', () => {
   const summary = summarizeBridgeResponse(fail('ACCESS_DENIED', 'Denied'));
   assert.equal(summary.ok, false);

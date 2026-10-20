@@ -4,22 +4,50 @@ import { booleanParam, invalidWorkflow, numberParam, onlyKeys, stringParam } fro
 
 /** @param {string} method @param {Record<string, unknown>} params @returns {Record<string, unknown>} */
 export function normalizeRecording(method, params) {
+  if (method === 'session.journal_read' || method === 'session.journal_delete') {
+    onlyKeys(params, [
+      'journalId',
+      ...(method === 'session.journal_read' ? ['offset', 'maxBytes'] : []),
+    ]);
+    const journalId = stringParam(params.journalId, 'journalId', 80);
+    if (!/^journal_[a-f0-9]{64}$/u.test(journalId)) invalidWorkflow('Invalid journal capability.');
+    if (method === 'session.journal_delete') return { journalId };
+    const offset = numberParam(params.offset ?? 0, 'offset', 0, Number.MAX_SAFE_INTEGER);
+    const maxBytes = numberParam(params.maxBytes ?? 196608, 'maxBytes', 1, 196608);
+    if (!Number.isInteger(offset) || !Number.isInteger(maxBytes))
+      invalidWorkflow('Journal ranges must be integers.');
+    return { journalId, offset, maxBytes };
+  }
   if (method === 'session.start') {
-    onlyKeys(params, ['activity', 'network', 'bodies', 'messages', 'visual', 'durationMs']);
+    onlyKeys(params, [
+      'activity',
+      'network',
+      'bodies',
+      'messages',
+      'visual',
+      'durationMs',
+      'followTabs',
+      'durable',
+      'replay',
+    ]);
     const activity = booleanParam(params.activity ?? true, 'activity');
     const network = booleanParam(params.network ?? false, 'network');
     const bodies = booleanParam(params.bodies ?? false, 'bodies');
     const messages = booleanParam(params.messages ?? false, 'messages');
     const visual = booleanParam(params.visual ?? false, 'visual');
     if ((bodies || messages) && !network) invalidWorkflow('bodies/messages require network:true.');
-    if (!activity && !network && !visual) invalidWorkflow('Enable at least one recording source.');
+    if (!activity && !network && !visual && params.replay !== true)
+      invalidWorkflow('Enable at least one recording source.');
     return {
       activity,
       network,
       bodies,
       messages,
       visual,
-      durationMs: numberParam(params.durationMs ?? 60000, 'durationMs', 1000, 300000),
+      followTabs: booleanParam(params.followTabs ?? false, 'followTabs'),
+      durable: booleanParam(params.durable ?? false, 'durable'),
+      replay: booleanParam(params.replay ?? false, 'replay'),
+      durationMs: numberParam(params.durationMs ?? 60000, 'durationMs', 1000, 1800000),
     };
   }
   onlyKeys(params, [

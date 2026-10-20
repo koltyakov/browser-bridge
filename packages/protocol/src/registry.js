@@ -100,8 +100,21 @@ const METHOD_POLICIES = Object.freeze({
  * @type {Readonly<Record<import('./types.js').BridgeMethod, string>>}
  */
 const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
+  'session.journal_read':
+    'Read exact base64 bytes of a durable recording journal. Requires its secret journalId. Works after extension or daemon restart; page until nextOffset=null. Expires 24 hours after the last write.',
+  'session.journal_delete': 'Delete one durable recording journal using its secret journalId.',
+  'input.paste_image':
+    'Paste a staged PNG using the real clipboard and trusted Chrome input. Overwrites clipboard. Requires a focused top-document editor. Never automatically retry; verify insertion.',
+  'download.start':
+    'Start a browser-native download without the artifact size ceiling. Returns a secret downloadId for subsequent control. Saves on the browser machine.',
+  'download.status': 'Read progress and state of one BBX-created browser download.',
+  'download.pause': 'Pause one BBX-created browser download.',
+  'download.resume': 'Resume one resumable BBX-created browser download.',
+  'download.cancel': 'Cancel one BBX-created browser download.',
+  'download.release':
+    'Release a terminal download handle without deleting its file or browser history.',
   'session.start':
-    'Start bounded recording on this tab. activity=true by default; network,bodies,messages,visual default false. bodies/messages require network. durationMs=1000..300000, default 60000. Input values are redacted before leaving the page. visual captures visible pixels and may include sensitive data. Returns sessionId; keep the same daemon connection and tab. Maximum two retained sessions.',
+    'Start bounded recording. activity=true; network,bodies,messages,visual,followTabs,durable,replay default false. bodies/messages require network. durationMs=1000..1800000, default 60000. followTabs tracks up to eight opener descendants inside the enabled window. replay captures the root renderer stream. durable returns a secret journalId for crash recovery. Input values are redacted; pixels and binary bodies are not. Keep sessionId on one connection; two retained sessions maximum.',
   'session.status':
     'Probe a recording by sessionId, including the live page recorder, counters, gaps, body backlog and visual frame count. No event payloads.',
   'session.read':
@@ -936,6 +949,14 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'moderate',
     METHOD_POLICIES.automationInputDebugger
   ),
+  'input.paste_image': createRegistryEntry(
+    'input.paste_image',
+    'files',
+    true,
+    ['target', 'transferId'],
+    'moderate',
+    METHOD_POLICIES.automationInputDebugger
+  ),
   'download.resource': createRegistryEntry(
     'download.resource',
     'files',
@@ -944,13 +965,87 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'moderate',
     METHOD_POLICIES.networkRead
   ),
+  'download.start': createRegistryEntry(
+    'download.start',
+    'files',
+    true,
+    ['url', 'filename', 'saveAs'],
+    'moderate',
+    METHOD_POLICIES.automationInput
+  ),
+  'download.status': createRegistryEntry(
+    'download.status',
+    'files',
+    true,
+    ['downloadId'],
+    'low',
+    METHOD_POLICIES.networkRead
+  ),
+  'download.pause': createRegistryEntry(
+    'download.pause',
+    'files',
+    true,
+    ['downloadId'],
+    'low',
+    METHOD_POLICIES.automationInput
+  ),
+  'download.resume': createRegistryEntry(
+    'download.resume',
+    'files',
+    true,
+    ['downloadId'],
+    'low',
+    METHOD_POLICIES.automationInput
+  ),
+  'download.cancel': createRegistryEntry(
+    'download.cancel',
+    'files',
+    true,
+    ['downloadId'],
+    'low',
+    METHOD_POLICIES.automationInput
+  ),
+  'download.release': createRegistryEntry(
+    'download.release',
+    'files',
+    true,
+    ['downloadId'],
+    'low',
+    METHOD_POLICIES.automationInput
+  ),
   'session.start': createRegistryEntry(
     'session.start',
     'session',
     true,
-    ['activity', 'network', 'bodies', 'messages', 'visual', 'durationMs'],
+    [
+      'activity',
+      'network',
+      'bodies',
+      'messages',
+      'visual',
+      'durationMs',
+      'followTabs',
+      'durable',
+      'replay',
+    ],
     'moderate',
     METHOD_POLICIES.automationInputDebugger
+  ),
+  'session.journal_read': createRegistryEntry(
+    'session.journal_read',
+    'session',
+    false,
+    ['journalId', 'offset', 'maxBytes'],
+    'low',
+    METHOD_POLICIES.none
+  ),
+  'session.journal_delete': createRegistryEntry(
+    'session.journal_delete',
+    'session',
+    false,
+    ['journalId'],
+    'low',
+    METHOD_POLICIES.none
   ),
   'session.status': createRegistryEntry(
     'session.status',

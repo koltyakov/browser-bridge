@@ -66,6 +66,13 @@ export function normalizeFileParams(method, params) {
       invalidWorkflow('Browser-local paths require target.selector in the top document.');
     return { target, ...(files !== undefined ? { files: normalized } : { paths: normalized }) };
   }
+  if (method === 'input.paste_image') {
+    onlyKeys(params, ['target', 'transferId']);
+    return {
+      target: objectParam(params.target, 'target'),
+      transferId: stringParam(params.transferId, 'transferId', 80),
+    };
+  }
   if (method === 'download.resource') {
     onlyKeys(params, ['url', 'maxBytes', 'timeoutMs']);
     const url = stringParam(params.url, 'url', 8192);

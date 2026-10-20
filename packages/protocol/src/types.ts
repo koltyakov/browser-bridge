@@ -97,6 +97,8 @@ export type ErrorCode =
 
 export type BridgeMethod =
   | 'session.start'
+  | 'session.journal_read'
+  | 'session.journal_delete'
   | 'session.status'
   | 'session.read'
   | 'session.stop'
@@ -105,7 +107,14 @@ export type BridgeMethod =
   | 'files.stage'
   | 'files.release'
   | 'input.set_files'
+  | 'input.paste_image'
   | 'download.resource'
+  | 'download.start'
+  | 'download.status'
+  | 'download.pause'
+  | 'download.resume'
+  | 'download.cancel'
+  | 'download.release'
   | 'emulation.apply'
   | 'emulation.status'
   | 'emulation.reset'

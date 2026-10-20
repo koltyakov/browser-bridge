@@ -4,6 +4,7 @@ import { applyBudget } from './budget.js';
 import { normalizeWebMcpParams } from './webmcp.js';
 import { normalizeEmulation, onlyKeys } from './emulation.js';
 import { normalizeFileParams } from './files.js';
+import { normalizeDownload } from './downloads.js';
 import { normalizeRecording } from './recording.js';
 import {
   ARTIFACT_CHUNK_BYTES,
@@ -542,7 +543,16 @@ function normalizeAutomaticRetryMeta(source, value) {
  */
 export function normalizeRequestParams(method, params) {
   switch (method) {
+    case 'download.start':
+    case 'download.status':
+    case 'download.pause':
+    case 'download.resume':
+    case 'download.cancel':
+    case 'download.release':
+      return normalizeDownload(method, params);
     case 'session.start':
+    case 'session.journal_read':
+    case 'session.journal_delete':
     case 'session.status':
     case 'session.read':
     case 'session.stop':
@@ -554,6 +564,7 @@ export function normalizeRequestParams(method, params) {
     case 'download.resource':
       return normalizeFileParams(method, params);
     case 'input.set_files':
+    case 'input.paste_image':
       return {
         ...normalizeFileParams(method, params),
         target: normalizeInputAction(params).target,
