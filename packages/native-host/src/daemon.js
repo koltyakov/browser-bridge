@@ -46,6 +46,8 @@ import {
   getSocketPath,
 } from './config.js';
 import { ArtifactStore } from './artifact-store.js';
+import { RecordingStore } from './recording-store.js';
+import { BridgeError } from '../../protocol/src/errors.js';
 import {
   bridgeAuthTokensEqual,
   ensureBridgeAuthToken,
@@ -449,6 +451,9 @@ export function isWindowsNamedPipePath(socketPath) {
  *   artifact?: Record<string, unknown>,
  *   chunkIndex?: number,
  *   data?: string
+ *   journalId?: string,
+ *   offset?: number,
+ *   messageId?: string,
  * }} DaemonMessage
  */
 
@@ -480,7 +485,8 @@ export class BridgeDaemon {
    *   logger?: DaemonLoggerLike | Pick<Console, 'log' | 'error'>,
    *   authToken?: string | null,
    *   extensionAuthToken?: string | null,
-   *   artifactStore?: ArtifactStore
+   *   artifactStore?: ArtifactStore,
+   *   recordingStore?: RecordingStore,
    * }} [options={}]
    */
   constructor({
@@ -493,6 +499,9 @@ export class BridgeDaemon {
     authToken = undefined,
     extensionAuthToken = undefined,
     artifactStore = new ArtifactStore(getArtifactStorePath()),
+    recordingStore = new RecordingStore(
+      path.join(path.dirname(getArtifactStorePath()), 'recordings')
+    ),
   } = {}) {
     this.transport = socketPath ? createSocketBridgeTransport(socketPath) : transport;
     this.socketPath =
@@ -544,6 +553,7 @@ export class BridgeDaemon {
     /** @type {string | null | undefined} */
     this.extensionAuthToken = extensionAuthToken;
     this.artifactStore = artifactStore;
+    this.recordingStore = recordingStore;
     this.artifactStoreInitialized = false;
     this.domBaselines = new DomBaselineOwnerRegistry({
       isCurrentExtensionSocket: (socket) =>
@@ -1048,6 +1058,40 @@ export class BridgeDaemon {
       }
       return this.handleExtensionArtifact(socket, message);
     }
+    if (
+      message?.type === 'extension.journal.begin' ||
+      message?.type === 'extension.journal.append'
+    ) {
+      if (socket.__role !== 'extension' || !socket.__extensionId)
+        return this.rejectMessageForRole(socket, message);
+      try {
+        let result;
+        if (message.type === 'extension.journal.begin') {
+          const pending = this.pendingRequests.get(String(message.requestId));
+          if (!pending || pending.method !== 'session.start' || !pending.targets.has(socket))
+            throw new Error('Journal must be created by a pending session.start request.');
+          result = this.recordingStore.begin(socket.__extensionId);
+        } else
+          result = this.recordingStore.append(
+            String(message.journalId),
+            socket.__extensionId,
+            Number(message.offset),
+            String(message.data)
+          );
+        await writeJsonLine(socket, {
+          type: 'extension.journal.ack',
+          messageId: message.messageId,
+          result,
+        });
+      } catch (error) {
+        await writeJsonLine(socket, {
+          type: 'extension.journal.ack',
+          messageId: message.messageId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
 
     if (message?.type === 'extension.setup_status.request') {
       if (socket.__role !== 'extension') {
@@ -1219,6 +1263,34 @@ export class BridgeDaemon {
       return;
     }
 
+    if (request.method === 'session.journal_read' || request.method === 'session.journal_delete') {
+      try {
+        const result =
+          request.method === 'session.journal_read'
+            ? this.recordingStore.read(
+                String(request.params.journalId),
+                Number(request.params.offset),
+                Number(request.params.maxBytes)
+              )
+            : this.recordingStore.delete(String(request.params.journalId));
+        await writeJsonLine(socket, {
+          type: 'agent.response',
+          response: createSuccess(request.id, result, { method: request.method }),
+        });
+      } catch (error) {
+        await writeJsonLine(socket, {
+          type: 'agent.response',
+          response: createFailure(
+            request.id,
+            error instanceof BridgeError ? error.code : ERROR_CODES.ARTIFACT_NOT_FOUND,
+            error instanceof BridgeError ? error.message : 'Recording journal unavailable.',
+            null,
+            { method: request.method }
+          ),
+        });
+      }
+      return;
+    }
     if (request.method === 'artifact.read' || request.method === 'artifact.delete') {
       const ownerId = socket.__clientId ? this.getDataOwner(socket) : null;
       if (!ownerId) {
@@ -1456,7 +1528,9 @@ export class BridgeDaemon {
       targetCount: 1,
     });
     try {
-      if (/^(?:files\.|session\.|download\.|input\.set_files$)/u.test(request.method)) {
+      if (
+        /^(?:files\.|session\.|download\.|input\.(?:set_files|paste_image)$)/u.test(request.method)
+      ) {
         const targets = this.dataOwnerTargets.get(socket) ?? new Set();
         targets.add(target);
         this.dataOwnerTargets.set(socket, targets);
@@ -1652,6 +1726,7 @@ export class BridgeDaemon {
         : null;
     if (!accessEnabled && socket.__extensionId) {
       this.artifactStore.deleteByExtension(socket.__extensionId);
+      this.recordingStore.disconnect(socket.__extensionId);
       this.domBaselines.clearForSocket(socket);
     }
     if (socket.__accessEnabled !== accessEnabled) {

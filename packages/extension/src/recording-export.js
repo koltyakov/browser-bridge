@@ -1,9 +1,11 @@
 // @ts-check
+import { renderReplay } from '../../protocol/src/replay.js';
 
 /** Self-contained sampled-frame viewer. Site strings are escaped text, never active markup.
- * @param {{ frames: Array<{ at: number, data: string }>, events: Array<Record<string, unknown>>, gaps: number, dropped: number }} recording
+ * @param {import('../../protocol/src/replay.js').Replay} recording
  * @returns {string} */
 export function renderRecording(recording) {
+  if (recording.replayMode === 'renderer-stream') return renderReplay(recording);
   const frames = recording.frames.filter((frame) => /^[A-Za-z0-9+/]*={0,2}$/u.test(frame.data));
   const figures = frames
     .map(

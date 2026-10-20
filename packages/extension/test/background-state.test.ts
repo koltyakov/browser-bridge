@@ -1083,8 +1083,8 @@ test('background state clearWindowBridgeState only clears scriptable tabs and ig
   assert.deepEqual(consoleBuffers.get(73), { entries: [], dropped: 0 });
   assert.deepEqual(networkBuffers.get(73), { entries: [], dropped: 0 });
   assert.deepEqual(
-    executeScriptCalls.map((details) => details.target?.tabId),
-    [71, 73, 71, 73]
+    executeScriptCalls.map((details) => details.target?.tabId).sort(),
+    [71, 71, 73, 73]
   );
 });
 

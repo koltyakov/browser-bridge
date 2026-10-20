@@ -228,3 +228,106 @@ test('recording validation is strict and exported replay cannot execute site mar
   assert.match(html, /default-src 'none'/u);
   assert.match(html, /1 capture gaps; 2 dropped events/u);
 });
+
+test('watch follows only opener descendants and correlates late-drained actions without claiming causality', async (t) => {
+  const startedTabs: number[] = [];
+  const stoppedTabs: number[] = [];
+  let clickAt = 0;
+  let joined: () => void = () => {};
+  const ready = new Promise<void>((resolve) => {
+    joined = resolve;
+  });
+  const recorder = setup({
+    childTabs: async () => [{ id: 1 }, { id: 2, openerTabId: 1 }, { id: 3 }],
+    assertTab: async () => {},
+    startNetwork: async (tab) => {
+      startedTabs.push(tab);
+    },
+    stopNetwork: async (tab) => {
+      stoppedTabs.push(tab);
+    },
+    page: async (tab, action) => {
+      if (tab === 2 && action === 'drain') joined();
+      return {
+        epoch: String(tab),
+        active: true,
+        dropped: 0,
+        events:
+          action === 'stop' && tab === 2
+            ? [{ type: 'click', at: clickAt, target: { selector: '#export' } }]
+            : [],
+      };
+    },
+  });
+  t.after(() => recorder.clear(1));
+  const started = await recorder.start(
+    1,
+    'owner',
+    { ...options, activity: true, bodies: false, followTabs: true },
+    async () => {}
+  );
+  await ready;
+  clickAt = Date.now();
+  recorder.handleNetwork(2, 'Network.requestWillBeSent', {
+    requestId: 'child',
+    request: { url: 'https://example.test/export', method: 'GET' },
+  });
+  recorder.handleNetwork(2, 'Network.loadingFinished', { requestId: 'child' });
+  const exported = await recorder.exportSession(1, 'owner', started.sessionId);
+  assert.deepEqual(startedTabs, [1, 2]);
+  assert.deepEqual(stoppedTabs.sort(), [1, 2]);
+  const request = exported.events.find((event) => event.requestId === 'child');
+  assert.equal(request?.tabId, 2);
+  assert.ok(request);
+  assert.equal((request.correlation as { causality: boolean }).causality, false);
+  assert.deepEqual(exported.events.find((event) => event.type === 'click')?.target, {
+    selector: '#export',
+  });
+});
+
+test('continuous replay acknowledges frames, journals in order, and surfaces disk failures', async (t) => {
+  const commands: string[] = [];
+  const records: Record<string, unknown>[] = [];
+  let released = false;
+  let fail = false;
+  const recorder = setup({
+    acquireReplay: async () => {},
+    releaseReplay: async () => {
+      released = true;
+    },
+    send: async (_tab, method) => {
+      commands.push(method);
+      return {};
+    },
+  });
+  t.after(() => recorder.clear(1));
+  const started = await recorder.start(
+    1,
+    'owner',
+    { ...options, network: false, bodies: false, replay: true, durable: true },
+    async () => {},
+    {
+      journalId: 'journal_test',
+      append: async (record) => {
+        if (fail) throw new Error('Disk full');
+        records.push(record);
+      },
+    }
+  );
+  recorder.handleNetwork(1, 'Page.screencastFrame', {
+    sessionId: 1,
+    data: 'YQ==',
+    metadata: { deviceWidth: 800, deviceHeight: 600 },
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.ok(records.some((record) => record.kind === 'frame'));
+  fail = true;
+  recorder.handleNetwork(1, 'Page.screencastFrame', { sessionId: 2, data: 'Yg==' });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const stopped = await recorder.stop(1, 'owner', started.sessionId);
+  assert.equal(stopped.journalError, 'Disk full');
+  assert.equal(stopped.reason, 'journal_write_failed');
+  assert.equal(released, true);
+  assert.ok(commands.includes('Page.stopScreencast'));
+  assert.equal(commands.filter((command) => command === 'Page.screencastFrameAck').length, 2);
+});

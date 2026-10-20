@@ -1,9 +1,9 @@
 // @ts-check
 
-/** Activity lives in the isolated world. No input values, keys, URLs, or page markup are collected.
- * @param {'start' | 'drain' | 'status' | 'stop'} action @param {string} sessionId
+/** Activity lives in the isolated world. Input values, keys, and page markup are excluded.
+ * @param {'start' | 'drain' | 'status' | 'stop'} action @param {string} sessionId @param {number} [durationMs]
  * @returns {{ epoch: string, active: boolean, events: Array<Record<string, unknown>>, dropped: number, missing?: boolean }} */
-export function pageRecorder(action, sessionId) {
+export function pageRecorder(action, sessionId, durationMs = 300000) {
   /** @typedef {{ id: string, epoch: string, active: boolean, events: Array<Record<string, unknown>>, dropped: number, stop: () => void, flush: () => void, timer: ReturnType<typeof setTimeout> }} Recorder */
   const scope = /** @type {typeof globalThis & { __BBX_ACTIVITY_RECORDER__?: Recorder }} */ (
     globalThis
@@ -16,7 +16,7 @@ export function pageRecorder(action, sessionId) {
     /** @type {Array<Record<string, unknown>>} */
     const events = [];
     const controller = new AbortController();
-    /** @type {{ element: Element, at: number, count: number, label: string, role: string } | null} */
+    /** @type {{ element: Element, at: number, count: number, label: string, role: string, target?: Record<string, unknown> } | null} */
     let typing = null;
     let scrollAt = 0;
     let typingTimer = /** @type {ReturnType<typeof setTimeout> | undefined} */ (undefined);
@@ -38,6 +38,7 @@ export function pageRecorder(action, sessionId) {
           count: typing.count,
           label: typing.label,
           role: typing.role,
+          target: typing.target,
           value: '[redacted]',
           origin: 'trusted-event',
         });
@@ -51,15 +52,18 @@ export function pageRecorder(action, sessionId) {
       events,
       dropped: 0,
       stop() {
-        flush();
+        record.flush();
         record.active = false;
         controller.abort();
         clearTimeout(record.timer);
       },
       flush,
-      timer: setTimeout(() => {
-        record.stop();
-      }, 300000),
+      timer: setTimeout(
+        () => {
+          record.stop();
+        },
+        Math.max(1000, Math.min(1800000, durationMs))
+      ),
     };
     scope.__BBX_ACTIVITY_RECORDER__ = record;
     state = record;
@@ -90,8 +94,62 @@ export function pageRecorder(action, sessionId) {
       return {
         label,
         role: (element.getAttribute('role') || element.tagName.toLowerCase()).slice(0, 40),
+        ...(!sensitive ? { target: locator(element) } : {}),
       };
     }
+    /** @param {Element} element @returns {Record<string, unknown> | undefined} */
+    function locator(element) {
+      for (const attribute of ['id', 'data-testid']) {
+        const value = element.getAttribute(attribute);
+        if (!value || !/^[\w-]{1,80}$/u.test(value) || /token|secret|password/iu.test(value))
+          continue;
+        const selector = `[${attribute}="${value}"]`;
+        if (document.querySelectorAll(selector).length === 1) return { selector };
+      }
+      const parts = [];
+      let node = /** @type {Element | null} */ (element);
+      while (node && parts.length < 6) {
+        const tag = node.tagName.toLowerCase();
+        if (!/^[a-z][a-z0-9-]*$/u.test(tag)) break;
+        const siblings = [...(node.parentElement?.children ?? [])].filter(
+          (child) => child.tagName === node?.tagName
+        );
+        parts.unshift(`${tag}:nth-of-type(${siblings.indexOf(node) + 1})`);
+        const selector = parts.join(' > ');
+        if (
+          document.querySelectorAll(selector).length === 1 &&
+          document.querySelector(selector) === element
+        )
+          return { selector };
+        node = node.parentElement;
+      }
+      return undefined;
+    }
+    let lastUrl = '';
+    const checkNavigation = () => {
+      if (location.href === lastUrl) return;
+      lastUrl = location.href;
+      // Query and fragment values can carry credentials. Preserve the route only.
+      push({ type: 'navigation', at: Date.now(), url: location.origin + location.pathname });
+    };
+    const originalFlush = record.flush;
+    record.flush = () => {
+      originalFlush();
+      checkNavigation();
+    };
+    for (const type of ['popstate', 'hashchange'])
+      window.addEventListener(type, checkNavigation, { signal: controller.signal });
+    window.addEventListener(
+      'error',
+      () =>
+        push({
+          type: 'page-error',
+          at: Date.now(),
+          message: 'Uncaught page error; inspect console for details.',
+        }),
+      { signal: controller.signal }
+    );
+    checkNavigation();
     /** @param {Event} event */
     function handle(event) {
       if (!event.isTrusted || !record.active) return;
@@ -117,6 +175,9 @@ export function pageRecorder(action, sessionId) {
         ...describe(element),
         origin: 'trusted-event',
         ...(event.type === 'scroll' ? { x: Math.round(scrollX), y: Math.round(scrollY) } : {}),
+        ...(event instanceof MouseEvent
+          ? { x: Math.round(event.clientX), y: Math.round(event.clientY) }
+          : {}),
       });
     }
     for (const type of ['click', 'input', 'change', 'submit', 'scroll'])

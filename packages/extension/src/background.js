@@ -19,7 +19,7 @@ import {
   shouldLogAction,
 } from './background-helpers.js';
 import { isRestrictedAutomationUrl } from './background-routing.js';
-import { getAccessStatus } from './background-access.js';
+import { getAccessStatus, sameWindowGrant } from './background-access.js';
 import {
   createNativeConnectionController,
   sendAccessUpdate as sendAccessUpdateNative,
@@ -126,6 +126,9 @@ import { createWebMcpController } from './background-webmcp.js';
 import { createEmulationController } from './background-emulation.js';
 import { SOURCE_DIGEST } from './build-info.js';
 import { createRecordingController } from './background-recording.js';
+import { createDownloadController } from './background-downloads.js';
+import { pasteImage, isPasteTargetFocused } from './background-paste.js';
+import { createJournalTransport } from './recording-journal.js';
 import { pageRecorder } from './page-recorder.js';
 import { renderRecording } from './recording-export.js';
 import {
@@ -248,15 +251,33 @@ const emulation = createEmulationController({
   send: (tabId, method, params) => chrome.debugger.sendCommand({ tabId }, method, params),
 });
 
+const journals = createJournalTransport(() => state.nativePort);
 const recordings = createRecordingController({
-  page: async (tabId, action, sessionId) => {
+  acquireReplay: (tabId) => tabDebugger.acquire(tabId),
+  releaseReplay: (tabId) => tabDebugger.release(tabId),
+  page: async (tabId, action, sessionId, durationMs) => {
     const [result] = await chrome.scripting.executeScript({
       target: { tabId },
       func: pageRecorder,
-      args: [action, sessionId],
+      args: [action, sessionId, durationMs ?? 300000],
     });
     if (!result?.result) throw new Error('Page recorder unavailable.');
     return result.result;
+  },
+  childTabs: async (tabId) => {
+    const root = await chrome.tabs.get(tabId);
+    return (await chrome.tabs.query({ windowId: root.windowId }))
+      .filter((tab) => typeof tab.id === 'number' && !isRestrictedAutomationUrl(tab.url ?? ''))
+      .map((tab) => ({ id: /** @type {number} */ (tab.id), openerTabId: tab.openerTabId }));
+  },
+  assertTab: async (tabId) => {
+    const tab = await chrome.tabs.get(tabId);
+    if (
+      !state.enabledWindow ||
+      tab.windowId !== state.enabledWindow.windowId ||
+      isRestrictedAutomationUrl(tab.url ?? '')
+    )
+      throw new BridgeError(ERROR_CODES.ACCESS_DENIED, 'Child tab is outside the enabled window.');
   },
   startNetwork: async (tabId) => {
     const existing = await cdpNetworkCapture.read(tabId);
@@ -296,6 +317,10 @@ const recordings = createRecordingController({
       },
       { releaseAfterRun: true }
     ),
+});
+const downloads = createDownloadController({
+  downloads: chrome.downloads,
+  storage: chrome.storage.session,
 });
 
 chrome.debugger.onDetach.addListener((source, reason) => {
@@ -378,6 +403,7 @@ const tabCleanupController = createTabCleanupController(chrome, {
     await emulation.reset(tabId);
   },
   clearFilesForTab: async (tabId) => {
+    await downloads.clear(tabId);
     stagedFiles.clearTab(tabId);
     if (resourceFetches.has(tabId))
       await chrome.scripting
@@ -438,6 +464,7 @@ const tabMoveCleanup = createTabMoveCleanupController({
   },
   clearTabBridgeState,
   clearRemovedTabState: async (tabId) => {
+    await downloads.clear(tabId);
     await recordings.clear(tabId);
     domBaselines.clearTab(tabId);
     emulation.detached(tabId);
@@ -629,12 +656,17 @@ const { connectNative, scheduleNativeReconnect } = createNativeConnectionControl
             .catch(() => {});
       return true;
     }
-    return windowActions.handleMessage(message) || handleHostStatusMessage(message);
+    return (
+      journals.handle(message) ||
+      windowActions.handleMessage(message) ||
+      handleHostStatusMessage(message)
+    );
   },
   refreshActionIndicators,
   refreshSetupStatus,
   reply,
   handleDestinationDisconnect: () => {
+    journals.disconnect();
     for (const tabId of recordings.tabIds()) void recordings.clear(tabId).catch(reportAsyncError);
     domBaselines.clearAll();
     stagedFiles.clearAll();
@@ -955,7 +987,7 @@ async function initializeState() {
 async function handleBridgeRequest(request) {
   if (
     typeof request.meta?.transport_owner === 'string' &&
-    /^(?:files\.|session\.|download\.|input\.set_files$)/u.test(request.method)
+    /^(?:files\.|session\.|download\.|input\.(?:set_files|paste_image)$)/u.test(request.method)
   )
     dataRequestOwners.set(request.id, request.meta.transport_owner);
   let actionContext = null;
@@ -1075,7 +1107,14 @@ async function dispatchBridgeRequest(request) {
     case 'files.stage':
     case 'files.release':
     case 'input.set_files':
+    case 'input.paste_image':
     case 'download.resource':
+    case 'download.start':
+    case 'download.status':
+    case 'download.pause':
+    case 'download.resume':
+    case 'download.cancel':
+    case 'download.release':
       return handleFileRequest(request);
     case 'emulation.apply':
     case 'emulation.status':
@@ -1247,7 +1286,7 @@ async function handleRecordingRequest(request) {
   const assertAccess = async () => {
     if (disconnectedDataRequests.has(request.id))
       throw new BridgeError(ERROR_CODES.ACCESS_DENIED, 'Recording connection closed.');
-    if (access !== state.enabledWindow || port !== state.nativePort)
+    if (!sameWindowGrant(access, state.enabledWindow) || port !== state.nativePort)
       throw new BridgeError(ERROR_CODES.ACCESS_DENIED, 'Recording access or transport changed.');
     await resolveRequestTarget({ ...request, tab_id: target.tabId });
   };
@@ -1266,8 +1305,12 @@ async function handleRecordingRequest(request) {
           messages: p.messages === true,
           visual: p.visual === true,
           durationMs: Number(p.durationMs),
+          followTabs: p.followTabs === true,
+          durable: p.durable === true,
+          replay: p.replay === true,
         },
-        assertAccess
+        assertAccess,
+        p.durable === true ? await journals.begin(request.id) : undefined
       );
       break;
     case 'session.status':
@@ -1306,6 +1349,9 @@ async function handleRecordingRequest(request) {
         artifact,
         gaps: recording.gaps,
         dropped: recording.dropped,
+        journalError: recording.journalError,
+        journalId: recording.journalId,
+        memoryWindow: recording.memoryWindow,
       };
     }
   }
@@ -1317,7 +1363,7 @@ async function handleFileRequest(request) {
   const tab = await resolveRequestTarget(request);
   const access = state.enabledWindow;
   const assertScope = () => {
-    if (state.enabledWindow !== access || disconnectedDataRequests.has(request.id))
+    if (!sameWindowGrant(access, state.enabledWindow) || disconnectedDataRequests.has(request.id))
       throw new BridgeError(
         ERROR_CODES.ACCESS_DENIED,
         'Window access changed during file operation.'
@@ -1336,6 +1382,66 @@ async function handleFileRequest(request) {
   switch (request.method) {
     case 'files.stage':
       result = stagedFiles.stage(p, owner, tab.tabId);
+      break;
+    case 'input.paste_image': {
+      const [file] = stagedFiles.resolve([String(p.transferId)], owner, tab.tabId);
+      await ensureContentScript(tab.tabId);
+      const focused = /** @type {{ elementRef?: string, focused?: boolean }} */ (
+        await sendTabMessage(
+          tab.tabId,
+          {
+            type: 'bridge.execute',
+            method: 'input.focus',
+            params: { target: p.target },
+          },
+          CONTENT_SCRIPT_TIMEOUT_MS
+        )
+      );
+      if (!focused.focused || !focused.elementRef)
+        throw new BridgeError(ERROR_CODES.INPUT_FOCUS_CHANGED, 'Could not focus the paste target.');
+      const elementRef = focused.elementRef;
+      result = await tabDebugger.runGuarded(tab.tabId, (debugTarget) =>
+        pasteImage(
+          file.bytes,
+          (method, params) => {
+            assertScope();
+            tabDebugger.assertTaskActive(debugTarget);
+            return chrome.debugger.sendCommand(debugTarget, method, params);
+          },
+          async () => {
+            assertScope();
+            await resolveRequestTarget({ ...request, tab_id: tab.tabId });
+            const [checked] = await chrome.scripting.executeScript({
+              target: { tabId: tab.tabId },
+              func: isPasteTargetFocused,
+              args: [elementRef],
+            });
+            if (checked?.result !== true)
+              throw new BridgeError(
+                ERROR_CODES.INPUT_FOCUS_CHANGED,
+                'Paste target lost focus or is not editable.'
+              );
+          }
+        )
+      );
+      break;
+    }
+    case 'download.start':
+    case 'download.status':
+    case 'download.pause':
+    case 'download.resume':
+    case 'download.cancel':
+    case 'download.release':
+      result = await downloads.call(
+        request.method,
+        p,
+        tab.tabId,
+        String(access?.enabledAt),
+        async () => {
+          assertScope();
+          await resolveRequestTarget({ ...request, tab_id: tab.tabId });
+        }
+      );
       break;
     case 'files.release':
       result = stagedFiles.release(String(p.transferId), owner, tab.tabId);

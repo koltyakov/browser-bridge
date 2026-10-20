@@ -1,5 +1,17 @@
 // @ts-check
 
+/** Metadata updates preserve a grant; revocation or re-enabling does not.
+ * @param {EnabledWindowState | null} captured
+ * @param {EnabledWindowState | null} current */
+export function sameWindowGrant(captured, current) {
+  return Boolean(
+    captured &&
+    current &&
+    captured.windowId === current.windowId &&
+    captured.enabledAt === current.enabledAt
+  );
+}
+
 /**
  * @typedef {{
  *   windowId: number,

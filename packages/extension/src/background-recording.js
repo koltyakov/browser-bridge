@@ -7,6 +7,7 @@ import {
   sanitizeIncidentalUrl,
   sanitizeIncidentalValue,
 } from '../../protocol/src/index.js';
+import { correlateReplayEvents } from '../../protocol/src/replay.js';
 
 /** @typedef {import('./recording-types.js').RecordingState} RecordingState */
 /** @typedef {import('./recording-types.js').RecordingEvent} RecordingEvent */
@@ -19,6 +20,9 @@ const MAX_FRAME_BYTES = 8 * 1024 * 1024;
 export function createRecordingController(deps) {
   /** @type {Map<number, RecordingState>} */
   const sessions = new Map();
+  /** @param {number} tabId */
+  const findSession = (tabId) =>
+    sessions.get(tabId) ?? [...sessions.values()].find((state) => state.children.has(tabId));
 
   /** @param {number} tabId @param {string} owner @param {string} id */
   function owned(tabId, owner, id) {
@@ -50,7 +54,37 @@ export function createRecordingController(deps) {
       frames: state.frames.length,
       bytes: state.bytes + state.bodyBytes + state.frameBytes,
       sources: state.options,
+      tabs: [state.tabId, ...state.children.keys()],
+      ...(state.journal
+        ? {
+            journalId: state.journal.journalId,
+            journalError: state.journalError,
+            retention: '24 hours after last write; capability-protected daemon journal',
+          }
+        : {}),
     };
+  }
+  /** @param {RecordingState} state @param {Record<string, unknown>} record */
+  function persist(state, record) {
+    if (!state.journal || state.journalError) return;
+    const encoded = JSON.stringify(record);
+    if (state.journalBytes + encoded.length > 2 * 1024 * 1024) {
+      state.journalError = 'Journal backpressure limit reached.';
+      void stopState(state, 'journal_backpressure').catch(() => {});
+      return;
+    }
+    state.journalBytes += encoded.length;
+    state.journalPending = state.journalPending
+      .then(async () => {
+        if (!state.journalError) await state.journal?.append(JSON.parse(encoded));
+      })
+      .catch((error) => {
+        state.journalError = error instanceof Error ? error.message : String(error);
+        void stopState(state, 'journal_write_failed').catch(() => {});
+      })
+      .finally(() => {
+        state.journalBytes -= encoded.length;
+      });
   }
   /** @param {RecordingState} state @param {Record<string, unknown>} input @returns {RecordingEvent | null} */
   function append(state, input) {
@@ -61,6 +95,15 @@ export function createRecordingController(deps) {
       type: String(input.type),
     });
     const size = new TextEncoder().encode(JSON.stringify(event)).length;
+    if (state.journal) {
+      while (
+        state.events.length &&
+        (state.events.length >= MAX_EVENTS || state.bytes + size > MAX_EVENT_BYTES)
+      ) {
+        const removed = state.events.shift();
+        state.bytes -= new TextEncoder().encode(JSON.stringify(removed)).length;
+      }
+    }
     if (state.events.length >= MAX_EVENTS || state.bytes + size > MAX_EVENT_BYTES) {
       state.dropped++;
       if (state.active) void stopState(state, 'event_quota').catch(() => {});
@@ -69,6 +112,7 @@ export function createRecordingController(deps) {
     state.next++;
     state.events.push(event);
     state.bytes += size;
+    persist(state, { kind: 'event', event });
     wake(state);
     return event;
   }
@@ -78,17 +122,25 @@ export function createRecordingController(deps) {
     append(state, { type: 'gap', reason });
   }
 
-  /** @param {RecordingState} state @param {Awaited<ReturnType<import('./recording-types.js').RecordingDependencies['page']>>} result */
-  function ingest(state, result) {
-    if (state.epoch && result.epoch && state.epoch !== result.epoch) gap(state, 'document_changed');
-    if (result.epoch) state.epoch = result.epoch;
+  /** @param {RecordingState} state @param {Awaited<ReturnType<import('./recording-types.js').RecordingDependencies['page']>>} result @param {number} [tabId] */
+  function ingest(state, result, tabId = state.tabId) {
+    const document = state.children.get(tabId) ?? state;
+    if (document.epoch && result.epoch && document.epoch !== result.epoch)
+      gap(state, 'document_changed');
+    if (result.epoch) document.epoch = result.epoch;
     state.dropped += Math.max(0, result.dropped);
     if (result.dropped) gap(state, 'page_buffer_overflow');
     for (const input of result.events.slice(0, 128)) {
       // A strict copy keeps unexpected page data out of the recorder.
-      if (!['click', 'input', 'change', 'submit', 'scroll'].includes(String(input.type))) continue;
+      if (
+        !['click', 'input', 'change', 'submit', 'scroll', 'navigation', 'page-error'].includes(
+          String(input.type)
+        )
+      )
+        continue;
       append(state, {
         type: String(input.type),
+        tabId,
         at:
           typeof input.at === 'number' && Number.isFinite(input.at)
             ? Math.max(state.startedAt, Math.min(Date.now(), input.at))
@@ -96,10 +148,22 @@ export function createRecordingController(deps) {
         label: sanitizeIncidentalText(String(input.label ?? '').slice(0, 160)),
         role: String(input.role ?? '').slice(0, 40),
         origin: 'trusted-event',
+        ...(input.type === 'navigation'
+          ? { url: sanitizeIncidentalUrl(input.url), origin: 'location-observation' }
+          : {}),
+        ...(input.type === 'page-error'
+          ? { message: 'Uncaught page error', origin: 'page-event' }
+          : {}),
+        ...(input.target &&
+        typeof input.target === 'object' &&
+        'selector' in input.target &&
+        typeof input.target.selector === 'string'
+          ? { target: { selector: input.target.selector.slice(0, 1024) } }
+          : {}),
         ...(input.type === 'input'
           ? { value: '[redacted]', count: Math.max(1, Math.min(100000, Number(input.count) || 1)) }
           : {}),
-        ...(input.type === 'scroll'
+        ...(['scroll', 'click'].includes(String(input.type))
           ? { x: boundedCoordinate(input.x), y: boundedCoordinate(input.y) }
           : {}),
       });
@@ -110,17 +174,69 @@ export function createRecordingController(deps) {
   async function collect(state) {
     await state.assertAccess();
     if (!state.active) return;
+    if (state.options.followTabs && deps.childTabs) {
+      const tabs = await deps.childTabs(state.tabId);
+      const visible = new Set(tabs.map((tab) => tab.id));
+      for (const [id, child] of state.children) {
+        if (visible.has(id)) continue;
+        await deps.page(id, 'stop', state.id).catch(() => {});
+        if (child.networkOwned) await deps.stopNetwork(id).catch(() => {});
+        state.children.delete(id);
+        append(state, { type: 'tab-left', tabId: id });
+      }
+      for (const tab of tabs) {
+        if (state.children.size >= 8) break;
+        if (
+          tab.id === state.tabId ||
+          findSession(tab.id) ||
+          !(tab.openerTabId === state.tabId || state.children.has(tab.openerTabId ?? -1))
+        )
+          continue;
+        await state.assertAccess();
+        await deps.assertTab?.(tab.id);
+        state.children.set(tab.id, { epoch: '', networkOwned: false });
+        const child = state.children.get(tab.id);
+        if (child && state.options.network) {
+          await deps.startNetwork(tab.id);
+          child.networkOwned = true;
+        }
+        append(state, { type: 'tab-joined', tabId: tab.id, openerTabId: tab.openerTabId });
+      }
+      for (const [id, child] of state.children) {
+        await state.assertAccess();
+        await deps.assertTab?.(id);
+        if (!state.active) return;
+        if (state.options.activity) {
+          const result = await deps.page(id, 'drain', state.id);
+          if (result.missing || !result.active)
+            child.epoch = (
+              await deps.page(
+                id,
+                'start',
+                state.id,
+                state.options.durationMs - (Date.now() - state.startedAt)
+              )
+            ).epoch;
+          else ingest(state, result, id);
+        }
+      }
+    }
     if (state.options.activity) {
       const result = await deps.page(state.tabId, 'drain', state.id);
       await state.assertAccess();
       if (!state.active) return;
       if (result.missing || !result.active) {
         gap(state, 'recorder_missing_or_navigation');
-        const started = await deps.page(state.tabId, 'start', state.id);
+        const started = await deps.page(
+          state.tabId,
+          'start',
+          state.id,
+          state.options.durationMs - (Date.now() - state.startedAt)
+        );
         state.epoch = started.epoch;
       } else ingest(state, result);
     }
-    if (state.options.visual && Date.now() - state.lastFrame >= 2000) {
+    if (state.options.visual && !state.options.replay && Date.now() - state.lastFrame >= 2000) {
       state.lastFrame = Date.now();
       try {
         const data = await deps.captureFrame(state.tabId);
@@ -133,6 +249,7 @@ export function createRecordingController(deps) {
         }
         state.frames.push({ at: Date.now(), data });
         state.frameBytes += data.length;
+        persist(state, { kind: 'frame', frame: state.frames.at(-1) });
       } catch {
         gap(state, 'frame_unavailable');
       }
@@ -169,9 +286,9 @@ export function createRecordingController(deps) {
     state.timer.unref?.();
   }
 
-  /** @param {number} tabId @param {string} owner @param {import('./recording-types.js').RecordingOptions} options @param {() => Promise<void>} assertAccess */
-  async function start(tabId, owner, options, assertAccess) {
-    if (sessions.has(tabId) || sessions.size >= 2)
+  /** @param {number} tabId @param {string} owner @param {import('./recording-types.js').RecordingOptions} options @param {() => Promise<void>} assertAccess @param {RecordingState['journal']} [journal] */
+  async function start(tabId, owner, options, assertAccess, journal) {
+    if (findSession(tabId) || sessions.size >= 2)
       throw new BridgeError(
         ERROR_CODES.INVALID_REQUEST,
         'A recording already exists for this tab, or two recordings are retained. Export/release it before starting another.'
@@ -210,10 +327,21 @@ export function createRecordingController(deps) {
       waiters: new Set(),
       poll: null,
       assertAccess,
+      children: new Map(),
+      journal,
+      journalPending: Promise.resolve(),
+      journalBytes: 0,
+      journalError: null,
+      replayOwned: false,
     };
     sessions.set(tabId, state);
     try {
       await assertAccess();
+      if (options.replay) {
+        if (!deps.acquireReplay) throw new Error('Renderer replay is unavailable.');
+        await deps.acquireReplay(tabId);
+        state.replayOwned = true;
+      }
       if (options.network) {
         await deps.startNetwork(tabId);
         state.networkOwned = true;
@@ -227,18 +355,38 @@ export function createRecordingController(deps) {
       await assertAccess();
       if (sessions.get(tabId) !== state || state.reason !== null)
         throw new Error('Recording cancelled during startup.');
-      if (options.activity) state.epoch = (await deps.page(tabId, 'start', state.id)).epoch;
+      if (options.activity)
+        state.epoch = (await deps.page(tabId, 'start', state.id, options.durationMs)).epoch;
       await assertAccess();
       if (sessions.get(tabId) !== state || state.reason !== null)
         throw new Error('Recording cancelled during startup.');
       state.active = true;
+      persist(state, {
+        kind: 'header',
+        sessionId: state.id,
+        startedAt: state.startedAt,
+        tabId,
+        options,
+      });
+      if (options.replay)
+        await deps.send(tabId, 'Page.startScreencast', {
+          format: 'jpeg',
+          quality: 50,
+          maxWidth: 1280,
+          maxHeight: 900,
+          everyNthFrame: 6,
+        });
       append(state, {
         type: 'start',
-        coverage: 'top-document activity; CDP tab network; sampled renderer frames',
+        coverage: options.followTabs
+          ? 'root and up to eight opener descendants: top-document activity and CDP network; root-tab visuals'
+          : 'top-document activity; CDP tab network; root-tab visuals',
         values: 'redacted',
         visualPrivacy: options.visual ? 'visible pixels may contain sensitive data' : 'disabled',
       });
       schedule(state);
+      await state.journalPending;
+      if (state.journalError) throw new Error(state.journalError);
       started();
       return summary(state);
     } catch (error) {
@@ -264,6 +412,20 @@ export function createRecordingController(deps) {
     state.stopping = (async () => {
       await state.starting;
       await state.poll;
+      if (state.replayOwned) {
+        await deps.send(state.tabId, 'Page.stopScreencast', {}).catch(() => {
+          gap(state, 'replay_stop_failed');
+        });
+        await deps.releaseReplay?.(state.tabId);
+        state.replayOwned = false;
+      }
+      for (const [id] of state.children) {
+        try {
+          if (state.options.activity) ingest(state, await deps.page(id, 'stop', state.id), id);
+        } catch {
+          gap(state, 'child_activity_unavailable');
+        }
+      }
       if (state.options.activity) {
         try {
           ingest(state, await deps.page(state.tabId, 'stop', state.id));
@@ -273,6 +435,12 @@ export function createRecordingController(deps) {
       }
       // Complete queued response-body reads while Network is still enabled.
       while (state.bodyTasks.size) await Promise.allSettled([...state.bodyTasks]);
+      for (const [id, child] of state.children) {
+        if (child.networkOwned) {
+          await deps.stopNetwork(id);
+          child.networkOwned = false;
+        }
+      }
       if (state.networkOwned) {
         await deps.stopNetwork(state.tabId);
         state.networkOwned = false;
@@ -282,6 +450,8 @@ export function createRecordingController(deps) {
         state.pending.clear();
       }
       append(state, { type: 'stop', reason });
+      persist(state, { kind: 'end', ...summary(state) });
+      await state.journalPending;
       state.expiry = setTimeout(() => {
         if (sessions.get(state.tabId) === state) sessions.delete(state.tabId);
       }, 300000);
@@ -335,7 +505,9 @@ export function createRecordingController(deps) {
     }
     owned(tabId, owner, id);
     await state.assertAccess();
-    const candidates = state.events.filter((entry) => entry.seq >= cursor).slice(0, limit);
+    const candidates = correlateReplayEvents(state.events)
+      .filter((entry) => entry.seq >= cursor)
+      .slice(0, limit);
     /** @type {RecordingEvent[]} */
     const events = [];
     let bytes = 0;
@@ -358,6 +530,8 @@ export function createRecordingController(deps) {
       hasMore: events.length ? Number(events.at(-1)?.seq) + 1 < state.next : false,
       gaps: state.gaps,
       dropped: state.dropped,
+      droppedBeforeCursor: Math.max(0, (state.events[0]?.seq ?? cursor) - cursor),
+      journalError: state.journalError,
     };
   }
   /** @param {number} tabId @param {string} owner @param {string} id */
@@ -374,20 +548,24 @@ export function createRecordingController(deps) {
     return {
       ...summary(state),
       integrity: 'untrusted browser evidence',
-      events: state.events,
+      events: correlateReplayEvents(state.events),
       bodies: state.bodies,
       frames: state.frames,
-      replay: 'sampled frames, not video; no external assets are loaded',
+      replay: state.options.replay
+        ? 'continuous renderer frames with timed playback; no external assets'
+        : 'sampled frames, not video; no external assets are loaded',
+      replayMode: state.options.replay ? 'renderer-stream' : 'sampled-frames',
+      memoryWindow: Boolean(state.journal),
     };
   }
   /** @param {number} tabId */
   async function clear(tabId) {
-    const state = sessions.get(tabId);
+    const state = findSession(tabId);
     if (!state) return;
     try {
       await stopState(state, 'revoked');
     } finally {
-      if (sessions.get(tabId) === state) sessions.delete(tabId);
+      if (sessions.get(state.tabId) === state) sessions.delete(state.tabId);
       clearTimeout(state.expiry);
       state.events.length = 0;
       state.bodies.length = 0;
@@ -418,7 +596,7 @@ export function createRecordingController(deps) {
       const task = (async () => {
         try {
           const raw = await timedBodyRead(() =>
-            deps.send(state.tabId, 'Network.getResponseBody', { requestId: job.requestId })
+            deps.send(job.tabId, 'Network.getResponseBody', { requestId: job.requestId })
           );
           if (sessions.get(state.tabId) !== state || state.reason === 'revoked') return;
           if (!raw || typeof raw !== 'object' || !('body' in raw) || typeof raw.body !== 'string')
@@ -430,6 +608,11 @@ export function createRecordingController(deps) {
             ? raw.body.slice(0, maximum - (maximum % 4))
             : redactPayload(raw.body.slice(0, maximum));
           const storedBytes = new TextEncoder().encode(data).length;
+          if (state.journal)
+            while (state.bodies.length && state.bodyBytes + storedBytes > MAX_BODY_BYTES) {
+              const removed = state.bodies.shift();
+              state.bodyBytes -= new TextEncoder().encode(removed?.data ?? '').length;
+            }
           if (state.bodyBytes + storedBytes > MAX_BODY_BYTES) {
             job.event.bodyError = 'body_quota';
             return;
@@ -437,10 +620,12 @@ export function createRecordingController(deps) {
           state.bodyBytes += storedBytes;
           state.bodies.push({
             requestId: job.requestId,
+            tabId: job.tabId,
             encoding: base64 ? 'base64' : 'utf8',
             data,
             truncated,
           });
+          persist(state, { kind: 'body', body: state.bodies.at(-1) });
           job.event.body = {
             storedBytes,
             encoding: base64 ? 'base64' : 'utf8',
@@ -452,6 +637,7 @@ export function createRecordingController(deps) {
           job.event.bodyError = 'unavailable_or_evicted';
         }
       })().finally(() => {
+        persist(state, { kind: 'event-update', event: job.event });
         state.bodyTasks.delete(task);
         pumpBodies(state);
         wake(state);
@@ -462,16 +648,56 @@ export function createRecordingController(deps) {
 
   /** @param {number} tabId @param {string} method @param {unknown} raw */
   function handleNetwork(tabId, method, raw) {
-    const state = sessions.get(tabId);
+    const state = findSession(tabId);
+    if (method === 'Page.screencastFrame' && state?.replayOwned && raw && typeof raw === 'object') {
+      const frame =
+        /** @type {{ sessionId?: number, data?: string, metadata?: { deviceWidth?: number, deviceHeight?: number } }} */ (
+          raw
+        );
+      // Acknowledge even when stopping so Chrome cannot stall its renderer stream.
+      void deps
+        .send(tabId, 'Page.screencastFrameAck', { sessionId: frame.sessionId })
+        .catch(() => {});
+      if (!state.active || typeof frame.data !== 'string') return;
+      if (frame.data.length > 1024 * 1024) {
+        gap(state, 'oversized_replay_frame');
+        return;
+      }
+      if (state.journal)
+        while (state.frames.length && state.frameBytes + frame.data.length > MAX_FRAME_BYTES)
+          state.frameBytes -= state.frames.shift()?.data.length ?? 0;
+      if (state.frameBytes + frame.data.length > MAX_FRAME_BYTES) {
+        gap(state, 'frame_quota');
+        void stopState(state, 'frame_quota').catch(() => {});
+        return;
+      }
+      const saved = {
+        at: Date.now(),
+        data: frame.data,
+        width: frame.metadata?.deviceWidth,
+        height: frame.metadata?.deviceHeight,
+        tabId,
+      };
+      state.frames.push(saved);
+      state.frameBytes += frame.data.length;
+      persist(state, { kind: 'frame', frame: saved });
+      return;
+    }
     if (!state?.active || !state.options.network || !raw || typeof raw !== 'object') return;
     const p = /** @type {Record<string, unknown>} */ (raw);
     const requestId = typeof p.requestId === 'string' ? p.requestId.slice(0, 128) : '';
     if (!requestId) return;
     if (method === 'Network.webSocketCreated') {
-      append(state, { type: 'websocket-open', requestId, url: sanitizeIncidentalUrl(p.url) });
+      append(state, {
+        type: 'websocket-open',
+        requestId,
+        tabId,
+        url: sanitizeIncidentalUrl(p.url),
+      });
     } else if (method === 'Network.webSocketClosed' || method === 'Network.webSocketFrameError') {
       append(state, {
         type: method === 'Network.webSocketClosed' ? 'websocket-close' : 'websocket-error',
+        tabId,
         requestId,
         ...(method === 'Network.webSocketFrameError'
           ? { error: sanitizeIncidentalText(String(p.errorMessage ?? '').slice(0, 160)) }
@@ -483,24 +709,29 @@ export function createRecordingController(deps) {
       typeof p.request === 'object'
     ) {
       const request = /** @type {Record<string, unknown>} */ (p.request);
-      if (state.pending.has(requestId)) {
-        append(state, { ...state.pending.get(requestId), type: 'redirect', at: Date.now() });
+      if (state.pending.has(`${tabId}:${requestId}`)) {
+        append(state, {
+          ...state.pending.get(`${tabId}:${requestId}`),
+          type: 'redirect',
+          at: Date.now(),
+        });
       }
       if (state.pending.size >= 400) {
         gap(state, 'network_inflight_quota');
         state.dropped++;
         return;
       }
-      state.pending.set(requestId, {
+      state.pending.set(`${tabId}:${requestId}`, {
         seq: -1,
         at: Date.now(),
         type: 'request',
         requestId,
+        tabId,
         url: sanitizeIncidentalUrl(request.url),
         method: String(request.method ?? '').slice(0, 16),
       });
     } else if (method === 'Network.responseReceived') {
-      const entry = state.pending.get(requestId);
+      const entry = state.pending.get(`${tabId}:${requestId}`);
       const response =
         p.response && typeof p.response === 'object'
           ? /** @type {Record<string, unknown>} */ (p.response)
@@ -510,9 +741,9 @@ export function createRecordingController(deps) {
         entry.mimeType = String(response.mimeType ?? '').slice(0, 120);
       }
     } else if (method === 'Network.loadingFinished' || method === 'Network.loadingFailed') {
-      const entry = state.pending.get(requestId);
+      const entry = state.pending.get(`${tabId}:${requestId}`);
       if (!entry) return;
-      state.pending.delete(requestId);
+      state.pending.delete(`${tabId}:${requestId}`);
       entry.durationMs = Date.now() - entry.at;
       if (method === 'Network.loadingFailed')
         entry.error = sanitizeIncidentalText(String(p.errorText ?? '').slice(0, 160));
@@ -521,7 +752,7 @@ export function createRecordingController(deps) {
         saved.bodyError = 'pending';
         if (state.queue.length >= 32) saved.bodyError = 'queue_full';
         else {
-          state.queue.push({ requestId, event: saved });
+          state.queue.push({ requestId, event: saved, tabId });
           pumpBodies(state);
         }
       }
@@ -540,6 +771,7 @@ export function createRecordingController(deps) {
       const data = String(response.payloadData ?? response.data ?? '');
       append(state, {
         type: method === 'Network.eventSourceMessageReceived' ? 'sse' : 'websocket',
+        tabId,
         requestId,
         direction: method.endsWith('Sent') ? 'sent' : 'received',
         opcode: Number(response.opcode) || null,
@@ -550,10 +782,14 @@ export function createRecordingController(deps) {
   }
   /** @param {number} tabId */
   function handleDetach(tabId) {
-    const state = sessions.get(tabId);
-    if (!state?.networkOwned || state.stopping) return;
+    const state = findSession(tabId);
+    if ((!state?.networkOwned && !state?.replayOwned) || state.stopping) return;
     gap(state, 'debugger_detached');
-    state.networkOwned = false;
+    if (tabId === state.tabId) state.networkOwned = false;
+    else {
+      const child = state.children.get(tabId);
+      if (child) child.networkOwned = false;
+    }
     void stopState(state, 'debugger_detached').catch(() => {});
   }
   return {
@@ -568,7 +804,7 @@ export function createRecordingController(deps) {
     handleNetwork,
     handleDetach,
     has: (/** @type {number} */ tabId) => {
-      const state = sessions.get(tabId);
+      const state = findSession(tabId);
       return Boolean(
         state?.options.network && (state.active || state.reason === null || state.networkOwned)
       );

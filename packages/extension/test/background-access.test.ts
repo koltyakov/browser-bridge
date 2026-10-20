@@ -3,11 +3,21 @@ import assert from 'node:assert/strict';
 
 import {
   getAccessStatus,
+  sameWindowGrant,
   normalizeStoredEnabledWindow,
   restoreEnabledWindowState,
 } from '../src/background-access.js';
 
 type AccessChrome = Parameters<typeof getAccessStatus>[0]['chrome'];
+
+test('access grants survive title updates but reject revocation and replacement grants', () => {
+  const captured = { windowId: 7, title: 'Root', enabledAt: 123 };
+  assert.equal(sameWindowGrant(captured, { ...captured, title: 'Child' }), true);
+  assert.equal(sameWindowGrant(captured, null), false);
+  assert.equal(sameWindowGrant(null, null), false);
+  assert.equal(sameWindowGrant(captured, { ...captured, enabledAt: 124 }), false);
+  assert.equal(sameWindowGrant(captured, { ...captured, windowId: 8 }), false);
+});
 
 test('restoreEnabledWindow rehydrates state from chrome.storage', async () => {
   const state = {

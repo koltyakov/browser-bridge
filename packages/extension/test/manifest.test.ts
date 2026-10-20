@@ -32,6 +32,7 @@ test('npm release metadata stays aligned and independent extension releases rema
   assert.deepEqual(manifest.permissions, [
     'alarms',
     'debugger',
+    'downloads',
     'nativeMessaging',
     'scripting',
     'sidePanel',

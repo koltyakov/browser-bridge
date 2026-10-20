@@ -206,6 +206,7 @@ export async function runNativeHost({
         }
         if (
           message.type === 'extension.window_action.command' ||
+          message.type === 'extension.journal.ack' ||
           message.type === 'extension.window_action.response'
         ) {
           await writeNativeMessageQueued({
@@ -297,6 +298,8 @@ export async function runNativeHost({
           const record = /** @type {Record<string, unknown>} */ (message);
           if (
             record.type === 'host.window_action.request' ||
+            record.type === 'host.journal.begin' ||
+            record.type === 'host.journal.append' ||
             record.type === 'host.window_action.result'
           ) {
             await writeJsonLine(socket, {

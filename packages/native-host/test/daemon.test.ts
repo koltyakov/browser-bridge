@@ -30,6 +30,7 @@ import {
 } from '../src/daemon.js';
 import type { BridgeTransport } from '../src/config.js';
 import { ArtifactStore } from '../src/artifact-store.js';
+import { RecordingStore } from '../src/recording-store.js';
 
 type FakeSocket = net.Socket & {
   writes: string[];
@@ -152,6 +153,83 @@ function createFakeSocket(): FakeSocket {
   };
   return socket as unknown as FakeSocket;
 }
+
+test('daemon journal protocol authenticates writers and recovers evidence without an extension', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bbx-daemon-journal-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const store = new RecordingStore(root);
+  const daemon = new BridgeDaemon({ recordingStore: store, logger: { log() {}, error() {} } });
+  const agent = createFakeSocket();
+  agent.__clientId = 'agent';
+  Object.defineProperty(agent, '__role', { value: 'agent' });
+  const extension = createFakeSocket();
+  extension.__extensionId = 'extension';
+  extension.__accessEnabled = true;
+  Object.defineProperty(extension, '__role', { value: 'extension' });
+  daemon.extensionSockets.set('extension', extension);
+  await daemon.handleClientMessage(extension, {
+    type: 'extension.journal.begin',
+    requestId: 'absent',
+    messageId: 'a',
+  });
+  assert.match(extension.writes.at(-1) ?? '', /pending session.start/);
+  await daemon.handleAgentRequest(agent, {
+    request: {
+      id: 'record',
+      method: 'session.start',
+      tab_id: 1,
+      params: { durable: true },
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  });
+  await daemon.handleClientMessage(extension, {
+    type: 'extension.journal.begin',
+    requestId: 'record',
+    messageId: 'b',
+  });
+  const ack = JSON.parse(extension.writes.at(-1) ?? '{}') as { result: { journalId: string } };
+  const journalId = ack.result.journalId;
+  const data = Buffer.from('{"kind":"header"}\n').toString('base64');
+  await daemon.handleClientMessage(extension, {
+    type: 'extension.journal.append',
+    journalId,
+    offset: 0,
+    data,
+    messageId: 'c',
+  });
+  assert.match(extension.writes.at(-1) ?? '', /nextOffset/);
+  await daemon.handleExtensionResponse(extension, {
+    response: {
+      id: 'record',
+      ok: true,
+      error: null,
+      result: { sessionId: 's', journalId },
+      meta: { protocol_version: PROTOCOL_VERSION },
+    },
+  });
+  daemon.extensionSockets.clear();
+  store.disconnect('extension');
+  await daemon.handleAgentRequest(agent, {
+    request: {
+      id: 'recover',
+      method: 'session.journal_read',
+      tab_id: null,
+      params: { journalId, offset: 0, maxBytes: 196608 },
+      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+    },
+  });
+  assert.equal(
+    expectBridgeResponse(parsePayload(agent.writes.at(-1) ?? '{}')).response.result?.data,
+    data
+  );
+  await daemon.handleClientMessage(agent, {
+    type: 'extension.journal.append',
+    journalId,
+    offset: 18,
+    data,
+  });
+  assert.equal(parsePayload(agent.writes.at(-1) ?? '{}').error?.code, 'INVALID_REQUEST');
+});
 
 async function requestHealthPing(
   daemon: BridgeDaemon,

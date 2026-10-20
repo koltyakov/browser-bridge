@@ -29,6 +29,16 @@ test('isolated activity capture never reads input values or transmits untrusted 
     HTMLTextAreaElement: class {},
     HTMLSelectElement: class {},
     HTMLButtonElement: class {},
+    MouseEvent: class {},
+    location: {
+      href: 'https://example.test/route?token=secret',
+      origin: 'https://example.test',
+      pathname: '/route',
+    },
+    window: {
+      addEventListener: (type: string, handler: (event: Record<string, unknown>) => void) =>
+        listeners.set(type, handler),
+    },
     Date,
     scrollX: 0,
     scrollY: 0,
@@ -41,6 +51,8 @@ test('isolated activity capture never reads input values or transmits untrusted 
   });
   const call = vm.runInContext(`(${pageRecorder.toString()})`, scope) as typeof pageRecorder;
   call('start', 'recording');
+  const navigation = call('drain', 'recording').events;
+  assert.equal(navigation[0].url, 'https://example.test/route');
   const input = new ElementFake();
   listeners.get('input')?.({ type: 'input', isTrusted: false, composedPath: () => [input] });
   assert.equal(call('drain', 'recording').events.length, 0);
