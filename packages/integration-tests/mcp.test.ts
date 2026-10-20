@@ -7,8 +7,10 @@ import { Client, type CallToolResult, type TextContent } from '@modelcontextprot
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { InMemoryTransport } from '@modelcontextprotocol/server';
 import type { Readable } from 'node:stream';
+import type { Socket } from 'node:net';
+import { setTimeout as delay } from 'node:timers/promises';
 
-import { createSuccess } from '../protocol/src/index.js';
+import { createFailure, createSuccess } from '../protocol/src/index.js';
 import { createBridgeMcpServer } from '../mcp-server/src/server.js';
 import { startBridgeSocketServer } from '../../tests/_helpers/socketHarness.ts';
 import type { BridgeRequest } from '../protocol/src/types.js';
@@ -46,6 +48,162 @@ function getBridgeRequest(message: unknown): BridgeRequest | null {
   }
 
   return null;
+}
+
+for (const era of ['legacy', 'modern'] as const) {
+  test(
+    `MCP ${era} retains connection-owned handles across calls and closes on disconnect`,
+    {
+      skip: process.platform === 'win32',
+    },
+    async () => {
+      const owners = new Map<string, Socket>();
+      const sockets = new Set<Socket>();
+      let staged = 0;
+      let notifyPending = () => {};
+      const pendingObserved = new Promise<void>((resolve) => {
+        notifyPending = resolve;
+      });
+      const bridge = await startBridgeSocketServer((message, { socket }) => {
+        const request = getBridgeRequest(message);
+        if (!request) return;
+        if (!sockets.has(socket)) {
+          sockets.add(socket);
+          socket.on('close', () => {
+            sockets.delete(socket);
+            for (const [id, owner] of owners) if (owner === socket) owners.delete(id);
+          });
+        }
+        if (request.method === 'page.get_state') {
+          notifyPending();
+          return;
+        }
+        let response;
+        if (request.method === 'files.stage') {
+          const transferId = `file_${++staged}`;
+          owners.set(transferId, socket);
+          response = createSuccess(request.id, { transferId, complete: true });
+        } else if (request.method === 'input.set_files') {
+          const files = request.params.files as string[];
+          response = files.every((id) => owners.get(id) === socket)
+            ? createSuccess(request.id, { assigned: true, count: files.length })
+            : createFailure(request.id, 'ARTIFACT_NOT_FOUND', 'Wrong connection owner');
+        } else {
+          response = createSuccess(request.id, {});
+        }
+        socket.write(`${JSON.stringify({ type: 'agent.response', response })}\n`);
+      });
+      const connections: Array<{ client: Client; transport: StdioClientTransport }> = [];
+      try {
+        for (let i = 0; i < 2; i++) {
+          const transport = new StdioClientTransport({
+            command: process.execPath,
+            args: [mcpBinPath],
+            cwd: repoRoot,
+            env: toSpawnEnv({ ...process.env, BROWSER_BRIDGE_HOME: bridge.bridgeHome }),
+            stderr: 'pipe',
+          });
+          const client = new Client(
+            { name: 'owner-test', version: '1.0.0' },
+            era === 'modern' ? { versionNegotiation: { mode: { pin: '2026-07-28' } } } : {}
+          );
+          connections.push({ client, transport });
+          await client.connect(transport);
+        }
+        const call = (index: number, method: string, params: Record<string, unknown>) =>
+          connections[index].client.callTool({
+            name: 'browser_call',
+            arguments: { method, params, tabId: 17 },
+          });
+        const stagedResults = await Promise.all(
+          [0, 1, 2].map(() =>
+            call(0, 'files.stage', {
+              name: 'test.txt',
+              size: 3,
+              data: 'YWJj',
+            })
+          )
+        );
+        const ids = stagedResults.map((result) => {
+          assert.notEqual(result.isError, true);
+          const evidence = (result.structuredContent as { evidence: { transferId: string } })
+            .evidence;
+          assert.equal(typeof evidence.transferId, 'string');
+          return evidence.transferId;
+        });
+        assert.equal(sockets.size, 1, 'Concurrent calls share one connection');
+        const abort = new AbortController();
+        const cancelled = connections[0].client.callTool(
+          {
+            name: 'browser_call',
+            arguments: { method: 'page.get_state', tabId: 17 },
+          },
+          { signal: abort.signal }
+        );
+        const rejected = assert.rejects(cancelled, /cancel|abort/iu);
+        await pendingObserved;
+        abort.abort();
+        await rejected;
+        assert.notEqual(
+          (
+            await call(0, 'input.set_files', {
+              target: { selector: '#file' },
+              files: ids,
+            })
+          ).isError,
+          true
+        );
+        assert.equal(
+          (
+            await call(1, 'input.set_files', {
+              target: { selector: '#file' },
+              files: ids,
+            })
+          ).isError,
+          true,
+          'Another MCP connection cannot use the handles'
+        );
+        assert.notEqual(
+          (
+            await call(0, 'input.set_files', {
+              target: { selector: '#file' },
+              files: ids,
+            })
+          ).isError,
+          true,
+          'Rejected access does not invalidate the owner'
+        );
+        const owner = owners.get(ids[0]);
+        assert.ok(owner);
+        const disconnected = new Promise<void>((resolve) => owner.once('close', resolve));
+        owner.destroy();
+        await disconnected;
+        assert.equal(
+          (
+            await call(0, 'input.set_files', {
+              target: { selector: '#file' },
+              files: ids,
+            })
+          ).isError,
+          true,
+          'Reconnecting does not regain handles from a lost connection'
+        );
+        const fresh = await call(0, 'files.stage', { name: 'new.txt', size: 0, data: '' });
+        assert.notEqual(fresh.isError, true);
+        assert.equal(owners.size, 1);
+        await connections[0].client.close();
+        for (let i = 0; i < 100 && owners.size > 0; i++) await delay(10);
+        assert.equal(owners.size, 0, 'MCP disconnect releases the daemon connection');
+        assert.deepEqual(bridge.errors, []);
+      } finally {
+        for (const { client, transport } of connections) {
+          await client.close();
+          await transport.close();
+        }
+        await bridge.close();
+      }
+    }
+  );
 }
 
 test(

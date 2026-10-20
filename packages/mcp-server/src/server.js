@@ -54,7 +54,12 @@ import {
 import { applyWindowsTcpTransportDefaults } from '../../native-host/src/config.js';
 import { getMcpServerInstructions } from './guidance.js';
 import { isToolEnabledForEra, LOADABLE_TOOLSET_TOOLS } from './toolset.js';
-import { runWithMcpRequestTarget } from './handlers-utils.js';
+import {
+  runWithMcpRequestTarget,
+  createMcpClientSession,
+  runWithMcpClientSession,
+  closeMcpClientSession,
+} from './handlers-utils.js';
 
 export const BUDGET_PRESET_DESCRIPTION = `Budget preset: "quick", "normal", or "deep" (defaults: query ${BUDGET_PRESETS.normal.maxNodes} nodes / depth ${BUDGET_PRESETS.normal.maxDepth} / text ${BUDGET_PRESETS.normal.textBudget}). Numeric fields override the preset when both are provided.`;
 export const TAB_ID_DESCRIPTION =
@@ -181,6 +186,18 @@ export function createBridgeMcpServer(options = {}) {
 
   /** @type {Map<string, ReturnType<typeof server.registerTool>>} */
   const registrations = new Map();
+  const clientSession = createMcpClientSession();
+  server.server.onclose = () => {
+    void closeMcpClientSession(clientSession);
+  };
+  const closeServer = server.close.bind(server);
+  server.close = async () => {
+    try {
+      await closeServer();
+    } finally {
+      await closeMcpClientSession(clientSession);
+    }
+  };
 
   /**
    * Register a tool, then hide it when it is not part of the era's compact surface.
@@ -206,7 +223,10 @@ export function createBridgeMcpServer(options = {}) {
       (args, context) =>
         runWithMcpRequestEra(
           era,
-          () => runWithMcpRequestTarget(args, () => handler(args, context)),
+          () =>
+            runWithMcpClientSession(clientSession, () =>
+              runWithMcpRequestTarget(args, () => handler(args, context))
+            ),
           context.mcpReq.signal
         )
     );

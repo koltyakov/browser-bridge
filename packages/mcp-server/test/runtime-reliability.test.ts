@@ -485,9 +485,10 @@ test('SDK cancellation during selector resolution prevents the patch followup', 
   assert.equal(bridge.requests[0].meta?.mcp_era, 'modern');
   assert.equal(bridge.requests[0].meta?.target_extension, 'work');
   assert.equal(bridge.requests[0].tabId, 42);
-  assert.deepEqual(bridge.closed, bridge.clients);
+  assert.equal(bridge.closed.size, 0, 'Cancellation retains the shared connection');
   assert.equal(getEventListeners(controller.signal, 'abort').length, 0);
   await server.close();
+  assert.deepEqual(bridge.closed, bridge.clients);
 });
 
 test('pre-cancelled calls never connect and do not cancel independent requests', async (t) => {

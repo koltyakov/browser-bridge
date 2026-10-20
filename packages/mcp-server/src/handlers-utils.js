@@ -58,6 +58,73 @@ const MCP_AGENT_SESSION = process.env.BBX_SESSION?.trim() || MCP_CLIENT_ID;
 const MCP_REQUEST_ERA = new AsyncLocalStorage();
 /** @type {AsyncLocalStorage<import('../../protocol/src/types.js').BrowserTarget>} */
 const MCP_REQUEST_TARGET = new AsyncLocalStorage();
+/** @typedef {import('../../agent-client/src/client.js').BridgeClient} McpBridgeClient */
+/** @typedef {{ clients: Map<string, Promise<McpBridgeClient>>, clientId: string, agentSession: string, closed: boolean }} McpClientSession */
+/** @type {AsyncLocalStorage<McpClientSession>} */
+const MCP_CLIENT_SESSION = new AsyncLocalStorage();
+/** @type {WeakSet<McpBridgeClient>} */
+const PERSISTENT_CLIENTS = new WeakSet();
+/** @type {WeakMap<McpBridgeClient, Promise<void>>} */
+const CONNECTING_CLIENTS = new WeakMap();
+
+/** @returns {McpClientSession} */
+export function createMcpClientSession() {
+  const clientId = `mcp_${randomUUID()}`;
+  return {
+    clients: new Map(),
+    clientId,
+    agentSession: process.env.BBX_SESSION?.trim() || clientId,
+    closed: false,
+  };
+}
+
+/**
+ * @template T
+ * @param {McpClientSession} session
+ * @param {() => T} callback
+ * @returns {T}
+ */
+export function runWithMcpClientSession(session, callback) {
+  return MCP_CLIENT_SESSION.run(session, callback);
+}
+
+/** @param {McpClientSession} session @returns {Promise<void>} */
+export async function closeMcpClientSession(session) {
+  session.closed = true;
+  const clients = [...session.clients.values()];
+  session.clients.clear();
+  await Promise.allSettled(clients.map(async (pending) => (await pending).close()));
+}
+
+/**
+ * @param {McpClientSession} session
+ * @param {string | null | undefined} destinationId
+ * @returns {Promise<McpBridgeClient>}
+ */
+async function getSessionClient(session, destinationId) {
+  if (session.closed) throw new Error('MCP connection is closed.');
+  const key = destinationId || 'local';
+  let pending = session.clients.get(key);
+  if (!pending) {
+    pending = createBridgeClientForDestination(destinationId, {
+      checkProtocolOnConnect: false,
+      clientId: session.clientId,
+      agentSession: session.agentSession,
+    }).then(async (client) => {
+      if (session.closed) {
+        await client.close();
+        throw new Error('MCP connection is closed.');
+      }
+      PERSISTENT_CLIENTS.add(client);
+      return client;
+    });
+    session.clients.set(key, pending);
+    void pending.catch(() => {
+      if (session.clients.get(key) === pending) session.clients.delete(key);
+    });
+  }
+  return pending;
+}
 
 /**
  * Scope routing to one tool invocation, including selector resolution and retries.
@@ -188,6 +255,23 @@ function waitForMcpRequest(delayMs) {
  * @returns {Promise<void>}
  */
 function connectMcpClient(client, timeoutMs) {
+  if (PERSISTENT_CLIENTS.has(client)) {
+    if (client.connected) return Promise.resolve();
+    let connecting = CONNECTING_CLIENTS.get(client);
+    if (!connecting) {
+      // A cancelled call must not close a connection shared by other calls.
+      connecting = MCP_REQUEST_ERA.exit(() =>
+        awaitMcpOperation(() => client.connect(), {
+          timeoutMs,
+          onCancel: () => {
+            void client.close().catch(() => {});
+          },
+        })
+      ).finally(() => CONNECTING_CLIENTS.delete(client));
+      CONNECTING_CLIENTS.set(client, connecting);
+    }
+    return awaitMcpOperation(() => connecting);
+  }
   return awaitMcpOperation(() => client.connect(), {
     timeoutMs,
     onCancel: () => {
@@ -412,6 +496,18 @@ export async function withToolClient(callback, options = {}) {
  */
 export async function withMcpRequestClient(callback, options = {}) {
   throwIfMcpRequestCancelled();
+  const session = MCP_CLIENT_SESSION.getStore();
+  if (session) {
+    return awaitMcpOperation(async () => {
+      const client = await getSessionClient(session, options.destinationId);
+      throwIfMcpRequestCancelled();
+      if (session.closed) throw new Error('MCP connection is closed.');
+      await connectMcpClient(client, client.defaultTimeoutMs);
+      throwIfMcpRequestCancelled();
+      if (session.closed) throw new Error('MCP connection is closed.');
+      return callback(client);
+    });
+  }
   const client = await createBridgeClientForDestination(options.destinationId, {
     checkProtocolOnConnect: false,
     clientId: MCP_CLIENT_ID,
