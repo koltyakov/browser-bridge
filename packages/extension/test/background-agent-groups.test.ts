@@ -260,7 +260,7 @@ test('collapsed AI groups remain owned and are removed when window access is dis
   assert.deepEqual(h.storage.snapshot()[AGENT_GROUP_STORAGE_KEY], []);
 });
 
-test('explicit window cleanup removes only owned groups in that window without regrouping active tabs', async () => {
+test('explicit window cleanup removes every AI group in that window without regrouping active tabs', async () => {
   const h = harness();
   h.setActive([1, 2, 4, 5]);
   h.tabs[3].groupId = 50;
@@ -278,15 +278,55 @@ test('explicit window cleanup removes only owned groups in that window without r
   await h.controller.clearWindow(8);
   assert.equal(h.calls.length, mutations, 'cleanup is scoped to the revoked window');
   await h.controller.clearWindow(7);
-  assert.deepEqual(h.calls.slice(mutations), [
-    { method: 'ungroup', tabIds: [1, 2] },
-    { method: 'ungroup', tabIds: [5] },
-  ]);
-  assert.deepEqual([...h.groups.keys()], [50]);
+  assert.deepEqual(
+    h.calls.slice(mutations).sort((a, b) => a.tabIds[0] - b.tabIds[0]),
+    [
+      { method: 'ungroup', tabIds: [1, 2] },
+      { method: 'ungroup', tabIds: [4] },
+      { method: 'ungroup', tabIds: [5] },
+    ]
+  );
+  assert.equal(h.groups.size, 0);
   assert.deepEqual(
     h.tabs,
-    before.map((tab) => ({ ...tab, groupId: tab.groupId === 50 ? 50 : -1 }))
+    before.map((tab) => ({ ...tab, groupId: -1 }))
   );
+});
+
+test('revocation clears expanded and recolored AI groups after ownership was relinquished', async () => {
+  const h = harness();
+  h.setActive([1, 2]);
+  await h.controller.sync();
+  const group = [...h.groups.values()][0];
+  h.tabs[2].groupId = group.id;
+  group.color = 'red';
+  await h.controller.sync();
+  assert.deepEqual(h.storage.snapshot()[AGENT_GROUP_STORAGE_KEY], []);
+  const before = h.order();
+  h.disable();
+  await h.create().clearWindow(7);
+  assert.equal(h.groups.size, 0);
+  assert.deepEqual(h.order(), before);
+  assert.deepEqual(h.calls.at(-1), { method: 'ungroup', tabIds: [1, 2, 3] });
+});
+
+test('revocation preserves other windows and groups renamed during cleanup', async () => {
+  const h = harness();
+  h.setActive([1, 3, 5]);
+  await h.controller.sync();
+  const moved = h.groups.get(h.tabs[4].groupId)!;
+  moved.windowId = 8;
+  h.tabs[4].windowId = 8;
+  const renamedId = h.tabs[2].groupId;
+  h.beforeQuery((query) => {
+    if (query.groupId === renamedId) h.groups.get(renamedId)!.title = 'Keep';
+  });
+  h.disable();
+  await h.controller.clearWindow(7);
+  assert.equal(h.tabs[0].groupId, -1);
+  assert.equal(h.tabs[2].groupId, renamedId);
+  assert.equal(h.tabs[4].groupId, moved.id);
+  assert.deepEqual(h.order(), [1, 2, 3, 4, 5]);
 });
 
 test('closed groups and malformed stored records are cleaned safely', async () => {
@@ -408,6 +448,8 @@ test('background routes real agent requests into adjacent AI groups, ignores pin
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(h.calls.length, mutations);
   const access = state.enabledWindow!;
+  // Expanding a group relinquishes routine ownership, but disable must still remove it.
+  h.tabs[2].groupId = h.tabs[0].groupId;
   const disable = loaded.module.disableWindowAccess as (
     windowId: number,
     enabledAt: number

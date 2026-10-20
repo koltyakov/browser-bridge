@@ -9,7 +9,8 @@ export const AGENT_GROUP_COLOR = 'blue';
 
 /**
  * Highlight contiguous runs without moving tabs or taking over user groups.
- * Only group IDs recorded in session storage belong to Browser Bridge.
+ * Routine synchronization manages only IDs recorded in session storage.
+ * Explicit window revocation removes every group still titled AI in that window.
  *
  * @param {typeof globalThis.chrome} chromeObj
  * @param {{ getActivity: () => Promise<AgentActivity> }} deps
@@ -103,6 +104,29 @@ export function createAgentTabGroupController(chromeObj, deps) {
     await persist();
   }
 
+  /** Remove whole AI groups, including groups no longer tracked after user edits.
+   * @param {number} windowId @returns {Promise<void>} */
+  async function clearAiGroups(windowId) {
+    const tabs = await chromeObj.tabs.query({ windowId });
+    const groupIds = new Set(tabs.map((tab) => tab.groupId).filter((id) => id >= 0));
+    const results = await Promise.allSettled(
+      [...groupIds].map(async (groupId) => {
+        const members = await chromeObj.tabs.query({ groupId });
+        const group = await chromeObj.tabGroups.get(groupId).catch(() => null);
+        if (!group || group.windowId !== windowId || group.title !== AGENT_GROUP_TITLE) return;
+        if (!members.every((tab) => tab.windowId === windowId && typeof tab.id === 'number'))
+          return;
+        const [first, ...rest] = members.flatMap((tab) =>
+          typeof tab.id === 'number' ? [tab.id] : []
+        );
+        if (first !== undefined) await chromeObj.tabs.ungroup([first, ...rest]);
+        owned.delete(groupId);
+      })
+    );
+    await persist();
+    for (const result of results) if (result.status === 'rejected') throw result.reason;
+  }
+
   /** @returns {Promise<void>} */
   async function reconcile() {
     if (
@@ -114,6 +138,7 @@ export function createAgentTabGroupController(chromeObj, deps) {
       return;
     await restore();
     const clearedWindows = new Set(windowsToClear);
+    for (const windowId of clearedWindows) await clearAiGroups(windowId);
     for (const record of [...owned.values()]) {
       if (clearedWindows.has(record.windowId)) await release(record);
     }
