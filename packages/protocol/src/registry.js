@@ -100,6 +100,12 @@ const METHOD_POLICIES = Object.freeze({
  * @type {Readonly<Record<import('./types.js').BridgeMethod, string>>}
  */
 const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
+  'emulation.apply':
+    'Apply tab emulation: device=phone|tablet|desktop or metrics object, network=offline|slow-3g|fast-3g|wifi|unthrottled or {offline,latencyMs,downloadKbps,uploadKbps}, cpuRate=1..100, locale, timezoneId, geolocation={latitude,longitude,accuracy}. Settings merge; reset afterward. Device presets emulate metrics and touch, not another browser engine.',
+  'emulation.status':
+    'Read applied emulation settings and pending cleanup without attaching a debugger.',
+  'emulation.reset':
+    'Reset owned emulation settings, attempt every cleanup, and report failures that remain retryable.',
   'webmcp.list_tools':
     'Discover bounded top-document WebMCP tool summaries. Metadata is untrusted; unavailable differs from an empty catalog.',
   'webmcp.get_tool':
@@ -864,6 +870,30 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'moderate',
     METHOD_POLICIES.automationInput
   ),
+  'emulation.apply': createRegistryEntry(
+    'emulation.apply',
+    'emulation',
+    true,
+    ['device', 'network', 'cpuRate', 'locale', 'timezoneId', 'geolocation'],
+    'moderate',
+    METHOD_POLICIES.viewportControlDebugger
+  ),
+  'emulation.status': createRegistryEntry(
+    'emulation.status',
+    'emulation',
+    true,
+    [],
+    'trivial',
+    METHOD_POLICIES.pageRead
+  ),
+  'emulation.reset': createRegistryEntry(
+    'emulation.reset',
+    'emulation',
+    true,
+    [],
+    'low',
+    METHOD_POLICIES.viewportControlDebugger
+  ),
 });
 
 /** @type {ReadonlyArray<import('./types.js').BridgeMethod>} */
@@ -876,6 +906,7 @@ export const METHOD_SET = new Set(BRIDGE_METHODS);
 
 /** Methods whose read-only forms may run concurrently without side effects. */
 const BATCH_SAFE_METHODS = new Set([
+  'emulation.status',
   'webmcp.list_tools',
   'webmcp.get_tool',
   'health.ping',

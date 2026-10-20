@@ -87,6 +87,8 @@ have taken effect or finish after dismissal. Inspect postconditions first.
 
 ### Interact & Patch
 
+For device, network, CPU, locale, timezone, or geolocation reproduction, use the [emulation workflow](references/emulation.md). Discover its compact methods with `bbx protocol describe emulation`.
+
 ```bash
 bbx click <ref> [button]             # click element
 bbx focus <ref>                      # focus element

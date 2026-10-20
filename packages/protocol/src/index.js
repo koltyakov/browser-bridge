@@ -9,6 +9,7 @@ export * from './budget.js';
 export * from './capabilities.js';
 export * from './defaults.js';
 export * from './errors.js';
+export { normalizeEmulation, DEVICE_PRESETS, NETWORK_PRESETS } from './emulation.js';
 export * from './har.js';
 export * from './incidental-sanitizer.js';
 export * from './json-lines.js';

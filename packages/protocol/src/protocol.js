@@ -2,6 +2,7 @@
 
 import { applyBudget } from './budget.js';
 import { normalizeWebMcpParams } from './webmcp.js';
+import { normalizeEmulation, onlyKeys } from './emulation.js';
 import {
   ARTIFACT_CHUNK_BYTES,
   BUDGET_PRESETS,
@@ -539,6 +540,12 @@ function normalizeAutomaticRetryMeta(source, value) {
  */
 export function normalizeRequestParams(method, params) {
   switch (method) {
+    case 'emulation.apply':
+      return normalizeEmulation(params);
+    case 'emulation.status':
+    case 'emulation.reset':
+      onlyKeys(params, []);
+      return {};
     case 'webmcp.list_tools':
     case 'webmcp.get_tool':
     case 'webmcp.execute_tool': {

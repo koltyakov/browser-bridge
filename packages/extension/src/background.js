@@ -123,6 +123,7 @@ import { createDomBaselineRequestHandler } from './background-dom-baseline-reque
 import { createAgentTabLeaseStore, normalizeAgentSession } from './background-agent-tabs.js';
 import { createAgentTabGroupController } from './background-agent-groups.js';
 import { createWebMcpController } from './background-webmcp.js';
+import { createEmulationController } from './background-emulation.js';
 
 /** @typedef {import('./background-state.js').EnabledWindowState} EnabledWindowState */
 /** @typedef {import('./background-state.js').ResolvedTabTarget} ResolvedTabTarget */
@@ -216,9 +217,16 @@ const cdpNetworkCapture = createCdpNetworkCapture({
     /** @type {Promise<unknown>} */ (chrome.debugger.sendCommand(target, method, params)),
 });
 
+const emulation = createEmulationController({
+  acquire: (tabId) => tabDebugger.acquire(tabId),
+  release: (tabId) => tabDebugger.release(tabId),
+  send: (tabId, method, params) => chrome.debugger.sendCommand({ tabId }, method, params),
+});
+
 chrome.debugger.onDetach.addListener((source, reason) => {
   if (typeof source.tabId === 'number') {
     tabDebugger.handleDetach(source.tabId, reason);
+    emulation.detached(source.tabId);
     void cdpNetworkCapture.handleDetach(source.tabId);
     // Drop interception rules for the dead session so list reflects reality
     // (covers infobar cancel, tab close, and external debugger takeover).
@@ -289,6 +297,9 @@ const tabCleanupController = createTabCleanupController(chrome, {
   cancelNavigationWaitsForWindow: (windowId) => navigationWaits.cancelWindow(windowId),
   clearDomBaselinesForTab: (tabId) => domBaselines.clearTab(tabId),
   clearWebMcpForTab: (tabId) => webmcp.clearTab(tabId),
+  clearEmulationForTab: async (tabId) => {
+    await emulation.reset(tabId);
+  },
   isRecoverableInstrumentationError,
   isRestrictedAutomationUrl,
 });
@@ -343,6 +354,7 @@ const tabMoveCleanup = createTabMoveCleanupController({
   clearTabBridgeState,
   clearRemovedTabState: async (tabId) => {
     domBaselines.clearTab(tabId);
+    emulation.detached(tabId);
     const endCleanup = await tabDebugger.beginCleanup(tabId);
     try {
       await tabDebugger.commitCleanup(tabId);
@@ -916,6 +928,18 @@ function attachTabRouting(request, response) {
  */
 async function dispatchBridgeRequest(request) {
   switch (request.method) {
+    case 'emulation.apply':
+    case 'emulation.status':
+    case 'emulation.reset': {
+      const target = await resolveRequestTarget(request);
+      const result =
+        request.method === 'emulation.apply'
+          ? await emulation.apply(target.tabId, request.params)
+          : request.method === 'emulation.reset'
+            ? await emulation.reset(target.tabId)
+            : emulation.status(target.tabId);
+      return createSuccess(request.id, result, { method: request.method });
+    }
     case 'webmcp.list_tools':
     case 'webmcp.get_tool':
     case 'webmcp.execute_tool':

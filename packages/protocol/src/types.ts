@@ -96,6 +96,9 @@ export type ErrorCode =
   | 'TIMEOUT';
 
 export type BridgeMethod =
+  | 'emulation.apply'
+  | 'emulation.status'
+  | 'emulation.reset'
   | 'webmcp.list_tools'
   | 'webmcp.get_tool'
   | 'webmcp.execute_tool'

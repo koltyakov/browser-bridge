@@ -110,6 +110,9 @@ const EXPECTED_BRIDGE_METHOD_ORDER: readonly BridgeMethod[] = [
   'webmcp.list_tools',
   'webmcp.get_tool',
   'webmcp.execute_tool',
+  'emulation.apply',
+  'emulation.status',
+  'emulation.reset',
 ];
 
 class FakeSocket extends EventEmitter {
@@ -390,6 +393,7 @@ test('describeBridgeMethods returns compact method, group, and index shapes', ()
       { group: 'cdp', count: 5 },
       { group: 'performance', count: 1 },
       { group: 'webmcp', count: 3 },
+      { group: 'emulation', count: 3 },
     ],
   });
 });
@@ -440,6 +444,7 @@ test('registry policies preserve every method capability classification', () => 
         'page.extract_content',
         'webmcp.list_tools',
         'webmcp.get_tool',
+        'emulation.status',
       ],
     ],
     [CAPABILITIES.PAGE_EVALUATE, ['page.evaluate']],
@@ -484,7 +489,10 @@ test('registry policies preserve every method capability classification', () => 
     ],
     [CAPABILITIES.LAYOUT_READ, ['layout.get_box_model', 'layout.hit_test']],
     [CAPABILITIES.STYLES_READ, ['styles.get_computed', 'styles.get_matched_rules']],
-    [CAPABILITIES.VIEWPORT_CONTROL, ['viewport.scroll', 'viewport.resize']],
+    [
+      CAPABILITIES.VIEWPORT_CONTROL,
+      ['viewport.scroll', 'viewport.resize', 'emulation.apply', 'emulation.reset'],
+    ],
     [
       CAPABILITIES.AUTOMATION_INPUT,
       [
@@ -595,6 +603,8 @@ test('registry policies preserve debugger-backed method membership and order', (
     'input.touch',
     'input.perform',
     'input.scroll_into_view',
+    'emulation.apply',
+    'emulation.reset',
   ];
 
   assert.deepEqual([...DEBUGGER_BACKED_METHODS], expected);

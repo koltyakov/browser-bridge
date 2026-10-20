@@ -21,6 +21,7 @@ import { CONTENT_SCRIPT_TIMEOUT_MS, isNumber } from './background-state.js';
  *   isRestrictedAutomationUrl: (url: string) => boolean,
  *   clearDomBaselinesForTab?: (tabId: number) => void,
  *   clearWebMcpForTab?: (tabId: number) => Promise<void>,
+ *   clearEmulationForTab?: (tabId: number) => Promise<void>,
  * }} TabCleanupControllerDeps
  */
 
@@ -96,6 +97,7 @@ export function createTabCleanupController(chrome, deps) {
   async function clearTabBridgeState(tabId, shouldContinue = async () => true) {
     if (!(await shouldContinue())) return;
     await deps.clearWebMcpForTab?.(tabId);
+    await deps.clearEmulationForTab?.(tabId);
     /** @type {unknown[]} */
     const instrumentationErrors = [];
     const disableConsole =
@@ -173,6 +175,7 @@ export function createTabCleanupController(chrome, deps) {
   /** @param {number} tabId */
   async function clearRestrictedTabDebuggerState(tabId) {
     await deps.clearWebMcpForTab?.(tabId);
+    await deps.clearEmulationForTab?.(tabId);
     const endCleanup = await deps.beginDebuggerCleanup(tabId);
     try {
       await deps.commitDebuggerCleanup(tabId);
