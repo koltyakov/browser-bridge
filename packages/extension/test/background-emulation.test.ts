@@ -104,3 +104,61 @@ test('concurrent apply and reset are serialized per tab', async () => {
     [4, 1]
   );
 });
+
+test('detach during acquisition cannot publish a stale emulation owner', async () => {
+  let sends = 0;
+  const controller = createEmulationController({
+    acquire: async () => {
+      controller.detached(1);
+    },
+    release: async () => {
+      throw new Error('Must not release a detached owner');
+    },
+    send: async () => {
+      sends++;
+    },
+  });
+  await assert.rejects(controller.apply(1, { cpuRate: 4 }), /detached/);
+  assert.equal(sends, 0);
+  assert.equal(controller.status(1).active, false);
+});
+
+test('detach during reset cancels remaining cleanup commands', async () => {
+  let resetting = false;
+  const commands: string[] = [];
+  const controller = createEmulationController({
+    acquire: async () => {},
+    release: async () => {
+      throw new Error('Must not release a detached owner');
+    },
+    send: async (_tab, method) => {
+      commands.push(method);
+      if (resetting) controller.detached(1);
+    },
+  });
+  await controller.apply(1, { cpuRate: 4, locale: 'fr-FR' });
+  commands.length = 0;
+  resetting = true;
+  const result = await controller.reset(1);
+  assert.equal(result.reset, false);
+  assert.equal(result.active, false);
+  assert.deepEqual(commands, ['Emulation.setCPUThrottlingRate']);
+});
+
+test('revoked access stops a queued multi-setting apply before its next command', async () => {
+  const h = harness();
+  let checks = 0;
+  await assert.rejects(
+    h.controller.apply(1, { device: 'phone', cpuRate: 4 }, async () => {
+      if (++checks >= 3) throw new Error('access revoked');
+    }),
+    /access revoked/
+  );
+  assert.deepEqual(
+    h.commands.map((command) => command.method),
+    ['Emulation.setDeviceMetricsOverride']
+  );
+  assert.deepEqual(h.controller.status(1).pendingReset, ['device']);
+  assert.equal((await h.controller.reset(1)).reset, true);
+  assert.equal(h.owners(), 0);
+});

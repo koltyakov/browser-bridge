@@ -1048,6 +1048,14 @@ function attachTabRouting(request, response) {
  * @returns {Promise<BridgeResponse>}
  */
 async function dispatchBridgeRequest(request) {
+  if (request.method === 'viewport.resize') {
+    const target = await resolveRequestTarget(request);
+    if (emulation.status(target.tabId).pendingReset.includes('device'))
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        'Device emulation owns viewport metrics. Update emulation.apply.device or reset emulation before resizing.'
+      );
+  }
   if (request.method === 'page.get_network' && request.params.capture !== 'read') {
     const target = await resolveRequestTarget(request);
     if (recordings.has(target.tabId))
@@ -1073,9 +1081,19 @@ async function dispatchBridgeRequest(request) {
     case 'emulation.status':
     case 'emulation.reset': {
       const target = await resolveRequestTarget(request);
+      const access = state.enabledWindow;
+      const port = state.nativePort;
+      const assertAccess = async () => {
+        if (state.enabledWindow !== access || state.nativePort !== port)
+          throw new BridgeError(
+            ERROR_CODES.ACCESS_DENIED,
+            'Emulation access or transport changed.'
+          );
+        await resolveRequestTarget({ ...request, tab_id: target.tabId });
+      };
       const result =
         request.method === 'emulation.apply'
-          ? await emulation.apply(target.tabId, request.params)
+          ? await emulation.apply(target.tabId, request.params, assertAccess)
           : request.method === 'emulation.reset'
             ? await emulation.reset(target.tabId)
             : emulation.status(target.tabId);

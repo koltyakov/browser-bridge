@@ -15,4 +15,4 @@ Network presets are `offline`, `slow-3g`, `fast-3g`, `wifi`, and `unthrottled`. 
 
 Other settings are `locale`, `timezoneId`, `cpuRate`, and `geolocation:{latitude,longitude,accuracy}`. Geolocation overrides do not grant website permissions. Locale changes Intl formatting; they do not rewrite request headers.
 
-Reset after the experiment. A partial application can still have changed the tab. Reset attempts every owned setting and reports `failures` and `pendingReset`; retry cleanup if needed. Window-access cleanup also resets emulation. An external debugger detach clears ownership. Avoid mixing `viewport.resize` and device emulation in one experiment.
+Reset after the experiment. A partial application can still have changed the tab. Reset attempts every owned setting and reports `failures` and `pendingReset`; retry cleanup if needed. Window-access cleanup also resets emulation. An external debugger detach clears ownership and cancels stale cleanup commands. While device emulation owns viewport metrics, change them through `emulation.apply.device` or reset emulation before calling `viewport.resize`.

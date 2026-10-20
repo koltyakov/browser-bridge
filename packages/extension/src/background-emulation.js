@@ -35,20 +35,30 @@ export function createEmulationController(deps) {
     };
   }
 
-  /** @param {number} tabId @param {Record<string, unknown>} params */
-  function apply(tabId, params) {
+  /** @param {number} tabId @param {Record<string, unknown>} params @param {() => Promise<void>} [assertAccess] */
+  function apply(tabId, params, assertAccess = async () => {}) {
     const config = normalizeEmulation(params);
     return serial(tabId, async () => {
+      await assertAccess();
       let state = states.get(tabId);
       if (!state) {
-        await deps.acquire(tabId);
-        state = { config: {}, resets: new Map(), owned: true };
+        state = { config: {}, resets: new Map(), owned: false };
         states.set(tabId, state);
+        try {
+          await deps.acquire(tabId);
+          if (states.get(tabId) !== state)
+            throw new Error('Debugger detached while acquiring emulation.');
+          state.owned = true;
+        } catch (error) {
+          if (states.get(tabId) === state) states.delete(tabId);
+          throw error;
+        }
       }
       const current = state;
       /** Record reset BEFORE dispatch, since a failed transport can still have applied the override.
        * @param {string} key @param {string} method @param {Record<string, unknown>} values @param {string} resetMethod @param {Record<string, unknown>} resetParams */
       async function set(key, method, values, resetMethod, resetParams) {
+        await assertAccess();
         if (states.get(tabId) !== current) throw new Error('Debugger detached during emulation.');
         current.resets.set(key, { method: resetMethod, params: resetParams });
         await deps.send(tabId, method, values);
@@ -141,6 +151,13 @@ export function createEmulationController(deps) {
       /** @type {Array<{ setting: string, message: string }>} */
       const failures = [];
       for (const [key, command] of state.resets) {
+        if (states.get(tabId) !== state) {
+          failures.push({
+            setting: 'debugger',
+            message: 'Debugger detached during reset; stale cleanup was cancelled.',
+          });
+          break;
+        }
         try {
           await deps.send(tabId, command.method, command.params);
           state.resets.delete(key);
@@ -152,7 +169,7 @@ export function createEmulationController(deps) {
           });
         }
       }
-      if (!state.resets.size) {
+      if (!state.resets.size && states.get(tabId) === state) {
         try {
           await deps.release(tabId);
           if (states.get(tabId) === state) states.delete(tabId);
