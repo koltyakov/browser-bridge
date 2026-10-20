@@ -1133,6 +1133,16 @@ export interface ArtifactDescriptor<K extends ArtifactKind = ArtifactKind> {
 }
 
 export interface ScreenshotMetadata {
+  context?: {
+    startedAt: string;
+    capturedAt: string;
+    tabId: number;
+    tabActive: boolean | null;
+    windowFocused: boolean | null;
+    rectSpace: 'viewport-css' | 'document-css';
+    pageClip: { x: number; y: number; width: number; height: number; scale: number };
+    source: 'cdp-renderer';
+  };
   mimeType: `image/${ScreenshotFormat}`;
   format: ScreenshotFormat;
   byteLength: number;

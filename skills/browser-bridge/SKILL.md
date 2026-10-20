@@ -93,6 +93,8 @@ For uploads and authenticated downloads, use the [file workflow](references/file
 
 For repeatable tasks, record semantic locators and verified outcomes in a [task playbook](references/playbooks.md).
 
+Screenshot coordinate spaces and loaded extension build identifiers are described in [capture context](references/capture-context.md).
+
 ```bash
 bbx click <ref> [button]             # click element
 bbx focus <ref>                      # focus element

@@ -43,6 +43,7 @@ const MAX_SCREENSHOT_SCALED_PIXELS = 250_000_000;
  * @returns {Promise<import('../../protocol/src/types.js').ScreenshotResult>}
  */
 export async function handleScreenshot(target, method, params, deps, requestId) {
+  const startedAt = new Date().toISOString();
   const captureParams = params ?? {};
   const format =
     captureParams.format === 'jpeg' || captureParams.format === 'webp'
@@ -169,6 +170,11 @@ export async function handleScreenshot(target, method, params, deps, requestId) 
 
   // Use CDP Page.captureScreenshot - works regardless of tab focus,
   // captures renderer output directly with built-in clip support.
+  let pageClip = { ...clip };
+  const [tabState, windowState] = await Promise.all([
+    deps.chrome.tabs?.get?.(target.tabId).catch(() => null) ?? null,
+    deps.chrome.windows?.get?.(target.windowId).catch(() => null) ?? null,
+  ]);
   const data = await deps.tabDebugger.run(
     target.tabId,
     async (debugTarget) => {
@@ -195,6 +201,7 @@ export async function handleScreenshot(target, method, params, deps, requestId) 
           captureBeyondViewport: true,
         })
       );
+      pageClip = { ...clip, x: Math.max(0, clip.x + pageX), y: Math.max(0, clip.y + pageY) };
       if (!cdpResult?.data) {
         throw new Error('CDP Page.captureScreenshot returned empty data.');
       }
@@ -218,6 +225,16 @@ export async function handleScreenshot(target, method, params, deps, requestId) 
     },
     complete: true,
     clipped: false,
+    context: {
+      startedAt,
+      capturedAt: new Date().toISOString(),
+      tabId: target.tabId,
+      tabActive: tabState?.active ?? null,
+      windowFocused: windowState?.focused ?? null,
+      rectSpace: method === 'screenshot.capture_region' ? 'viewport-css' : 'document-css',
+      pageClip,
+      source: 'cdp-renderer',
+    },
   };
   if (delivery === 'inline' && byteLength > SCREENSHOT_MAX_INLINE_BYTES) {
     throw new BridgeError(

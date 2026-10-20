@@ -6,6 +6,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { createHash } from 'node:crypto';
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -60,6 +61,26 @@ async function stageExtension() {
   await copyIntoStage(path.join('packages', 'extension', 'ui'));
   await copyIntoStage(path.join('packages', 'extension', 'assets'));
   await copyIntoStage('LICENSE');
+  const hash = createHash('sha256');
+  /** @param {string} directory */
+  async function hashDirectory(directory) {
+    const entries = await fs.promises.readdir(directory, { withFileTypes: true });
+    entries.sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
+    for (const entry of entries) {
+      const filename = path.join(directory, entry.name);
+      if (entry.isDirectory()) await hashDirectory(filename);
+      else {
+        const relative = path.relative(stagingDir, filename).split(path.sep).join('/');
+        const bytes = await fs.promises.readFile(filename);
+        hash.update(`${relative}\0${bytes.length}\0`).update(bytes);
+      }
+    }
+  }
+  await hashDirectory(stagingDir);
+  await fs.promises.writeFile(
+    path.join(stagingDir, 'packages/extension/src/build-info.js'),
+    `// @ts-check\n/** SHA-256 of sorted staged paths and bytes before this generated stamp. @type {string | null} */\nexport const SOURCE_DIGEST = '${hash.digest('hex')}';\n`
+  );
 }
 
 /**

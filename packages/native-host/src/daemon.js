@@ -211,6 +211,23 @@ function normalizeExtensionHealthResult(value) {
   /** @type {Record<string, unknown>} */
   const normalized = {};
   if (result.extension === 'ok') normalized.extension = 'ok';
+  const build = asHealthRecord(result.loadedBuild);
+  if (
+    build &&
+    typeof build.workerId === 'string' &&
+    /^[a-f0-9-]{36}$/u.test(build.workerId) &&
+    typeof build.startedAt === 'string' &&
+    build.startedAt.length <= 32 &&
+    Number.isFinite(Date.parse(build.startedAt)) &&
+    (build.sourceDigest === null ||
+      (typeof build.sourceDigest === 'string' && /^[a-f0-9]{64}$/u.test(build.sourceDigest)))
+  ) {
+    normalized.loadedBuild = {
+      workerId: build.workerId,
+      startedAt: build.startedAt,
+      sourceDigest: build.sourceDigest,
+    };
+  }
   if (
     typeof result.extensionVersion === 'string' &&
     /^\d+\.\d+\.\d+$/u.test(result.extensionVersion)

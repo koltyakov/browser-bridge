@@ -124,6 +124,7 @@ import { createAgentTabLeaseStore, normalizeAgentSession } from './background-ag
 import { createAgentTabGroupController } from './background-agent-groups.js';
 import { createWebMcpController } from './background-webmcp.js';
 import { createEmulationController } from './background-emulation.js';
+import { SOURCE_DIGEST } from './build-info.js';
 import {
   createFileStaging,
   assignStagedFiles,
@@ -151,6 +152,11 @@ const state = createExtensionState();
 setExtensionState(state);
 const domBaselines = createDomBaselineController();
 const stagedFiles = createFileStaging();
+const loadedBuild = Object.freeze({
+  sourceDigest: SOURCE_DIGEST,
+  workerId: crypto.randomUUID(),
+  startedAt: new Date().toISOString(),
+});
 /** @type {Set<number>} */
 const resourceFetches = new Set();
 const agentTabs = createAgentTabLeaseStore({
@@ -981,6 +987,7 @@ async function dispatchBridgeRequest(request) {
         {
           extension: 'ok',
           extensionVersion: chrome.runtime.getManifest().version,
+          loadedBuild,
           access: await withWorkingTab(
             request,
             await getAccessStatus({

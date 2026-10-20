@@ -163,6 +163,10 @@ test('screenshot metadata reads actual dimensions from encoded image data', asyn
     'capture-dimensions'
   );
   assert.deepEqual(result.dimensions, { width: 3, height: 4 });
+  assert.equal(result.context?.rectSpace, 'viewport-css');
+  assert.equal(result.context?.source, 'cdp-renderer');
+  assert.equal(result.context?.tabActive, null);
+  assert.ok(Number.isFinite(Date.parse(result.context?.capturedAt ?? '')));
 });
 
 test('screenshot artifact delivery rejects bytes above the daemon limit before upload', async () => {
