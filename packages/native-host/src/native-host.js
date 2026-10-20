@@ -183,6 +183,13 @@ export async function runNativeHost({
           await writeNativeMessageQueued(message.request);
           return;
         }
+        if (message.type === 'extension.owner_disconnected') {
+          await writeNativeMessageQueued({
+            type: 'host.owner_disconnected',
+            ownerId: message.ownerId,
+          });
+          return;
+        }
         if (message.type === 'agent.response') {
           await writeNativeMessageQueued({
             type: 'host.bridge_response',

@@ -125,6 +125,9 @@ import { createAgentTabGroupController } from './background-agent-groups.js';
 import { createWebMcpController } from './background-webmcp.js';
 import { createEmulationController } from './background-emulation.js';
 import { SOURCE_DIGEST } from './build-info.js';
+import { createRecordingController } from './background-recording.js';
+import { pageRecorder } from './page-recorder.js';
+import { renderRecording } from './recording-export.js';
 import {
   createFileStaging,
   assignStagedFiles,
@@ -159,6 +162,12 @@ const loadedBuild = Object.freeze({
 });
 /** @type {Set<number>} */
 const resourceFetches = new Set();
+/** @type {Map<string, string>} */
+const dataRequestOwners = new Map();
+/** @type {Set<string>} */
+const disconnectedDataRequests = new Set();
+/** @type {Map<number, string>} */
+const resourceOwners = new Map();
 const agentTabs = createAgentTabLeaseStore({
   storage: chrome.storage?.session ?? null,
 });
@@ -239,10 +248,61 @@ const emulation = createEmulationController({
   send: (tabId, method, params) => chrome.debugger.sendCommand({ tabId }, method, params),
 });
 
+const recordings = createRecordingController({
+  page: async (tabId, action, sessionId) => {
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: pageRecorder,
+      args: [action, sessionId],
+    });
+    if (!result?.result) throw new Error('Page recorder unavailable.');
+    return result.result;
+  },
+  startNetwork: async (tabId) => {
+    const existing = await cdpNetworkCapture.read(tabId);
+    if (existing.armed)
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        'Stop the existing CDP network capture before recording a network session.'
+      );
+    return cdpNetworkCapture.start(tabId);
+  },
+  stopNetwork: (tabId) => cdpNetworkCapture.stop(tabId),
+  send: (tabId, method, params) => chrome.debugger.sendCommand({ tabId }, method, params),
+  captureFrame: (tabId) =>
+    tabDebugger.run(
+      tabId,
+      async (target) => {
+        const metrics =
+          /** @type {{ cssVisualViewport?: { pageX?: number, pageY?: number, clientWidth?: number, clientHeight?: number } }} */ (
+            await chrome.debugger.sendCommand(target, 'Page.getLayoutMetrics')
+          );
+        const viewport = metrics.cssVisualViewport ?? {};
+        const result = /** @type {{ data: string }} */ (
+          await chrome.debugger.sendCommand(target, 'Page.captureScreenshot', {
+            format: 'jpeg',
+            quality: 45,
+            clip: {
+              x: Math.max(0, viewport.pageX ?? 0),
+              y: Math.max(0, viewport.pageY ?? 0),
+              width: Math.max(1, Math.min(1600, viewport.clientWidth ?? 800)),
+              height: Math.max(1, Math.min(1200, viewport.clientHeight ?? 600)),
+              scale: 0.5,
+            },
+            captureBeyondViewport: false,
+          })
+        );
+        return result.data;
+      },
+      { releaseAfterRun: true }
+    ),
+});
+
 chrome.debugger.onDetach.addListener((source, reason) => {
   if (typeof source.tabId === 'number') {
     tabDebugger.handleDetach(source.tabId, reason);
     emulation.detached(source.tabId);
+    recordings.handleDetach(source.tabId);
     void cdpNetworkCapture.handleDetach(source.tabId);
     // Drop interception rules for the dead session so list reflects reality
     // (covers infobar cancel, tab close, and external debugger takeover).
@@ -257,6 +317,7 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
   if (typeof source.tabId === 'number') {
     tabDebugger.handleEvent(source.tabId, method, params);
     cdpNetworkCapture.handleEvent(source.tabId, method, params);
+    recordings.handleNetwork(source.tabId, method, params);
     fetchEventFilters.get(source.tabId)?.(method, params);
   }
 });
@@ -322,6 +383,7 @@ const tabCleanupController = createTabCleanupController(chrome, {
       await chrome.scripting
         .executeScript({ target: { tabId }, func: cancelPageResources })
         .catch(() => {});
+    await recordings.clear(tabId);
   },
   isRecoverableInstrumentationError,
   isRestrictedAutomationUrl,
@@ -376,6 +438,7 @@ const tabMoveCleanup = createTabMoveCleanupController({
   },
   clearTabBridgeState,
   clearRemovedTabState: async (tabId) => {
+    await recordings.clear(tabId);
     domBaselines.clearTab(tabId);
     emulation.detached(tabId);
     stagedFiles.clearTab(tabId);
@@ -545,12 +608,34 @@ const { connectNative, scheduleNativeReconnect } = createNativeConnectionControl
   clearSetupStatus,
   emitUiState,
   handleBridgeRequest,
-  handleHostStatusMessage: (message) =>
-    windowActions.handleMessage(message) || handleHostStatusMessage(message),
+  handleHostStatusMessage: (message) => {
+    if (
+      message &&
+      typeof message === 'object' &&
+      'type' in message &&
+      message.type === 'host.owner_disconnected'
+    ) {
+      const ownerId =
+        'ownerId' in message && typeof message.ownerId === 'string' ? message.ownerId : '';
+      if (!/^[a-f0-9-]{36}$/u.test(ownerId)) return true;
+      for (const [id, owner] of dataRequestOwners)
+        if (owner === ownerId) disconnectedDataRequests.add(id);
+      stagedFiles.clearTransportOwner(ownerId);
+      void recordings.clearTransportOwner(ownerId);
+      for (const [tabId, owner] of resourceOwners)
+        if (owner === ownerId)
+          void chrome.scripting
+            .executeScript({ target: { tabId }, func: cancelPageResources })
+            .catch(() => {});
+      return true;
+    }
+    return windowActions.handleMessage(message) || handleHostStatusMessage(message);
+  },
   refreshActionIndicators,
   refreshSetupStatus,
   reply,
   handleDestinationDisconnect: () => {
+    for (const tabId of recordings.tabIds()) void recordings.clear(tabId).catch(reportAsyncError);
     domBaselines.clearAll();
     stagedFiles.clearAll();
     for (const tabId of resourceFetches)
@@ -868,6 +953,11 @@ async function initializeState() {
  * @returns {Promise<void>}
  */
 async function handleBridgeRequest(request) {
+  if (
+    typeof request.meta?.transport_owner === 'string' &&
+    /^(?:files\.|session\.|download\.|input\.set_files$)/u.test(request.method)
+  )
+    dataRequestOwners.set(request.id, request.meta.transport_owner);
   let actionContext = null;
   if (shouldLogAction(request.method)) {
     try {
@@ -900,6 +990,8 @@ async function handleBridgeRequest(request) {
     return;
   }
   reply(response);
+  dataRequestOwners.delete(request.id);
+  disconnectedDataRequests.delete(request.id);
   try {
     await logBridgeAction(request, response, actionContext);
   } catch (error) {
@@ -956,7 +1048,22 @@ function attachTabRouting(request, response) {
  * @returns {Promise<BridgeResponse>}
  */
 async function dispatchBridgeRequest(request) {
+  if (request.method === 'page.get_network' && request.params.capture !== 'read') {
+    const target = await resolveRequestTarget(request);
+    if (recordings.has(target.tabId))
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        'A recording owns network capture on this tab. Stop it through session.stop first.'
+      );
+  }
   switch (request.method) {
+    case 'session.start':
+    case 'session.status':
+    case 'session.read':
+    case 'session.stop':
+    case 'session.export':
+    case 'session.release':
+      return handleRecordingRequest(request);
     case 'files.stage':
     case 'files.release':
     case 'input.set_files':
@@ -1106,16 +1213,99 @@ async function dispatchBridgeRequest(request) {
 }
 
 /** @param {BridgeRequest} request @returns {Promise<BridgeResponse>} */
+async function handleRecordingRequest(request) {
+  if (disconnectedDataRequests.has(request.id))
+    throw new BridgeError(ERROR_CODES.ACCESS_DENIED, 'Recording connection closed.');
+  const target = await resolveRequestTarget(request);
+  const access = state.enabledWindow;
+  const port = state.nativePort;
+  const transportOwner = request.meta?.transport_owner;
+  if (!transportOwner)
+    throw new BridgeError(
+      ERROR_CODES.ACCESS_DENIED,
+      'Recordings require a current daemon connection identity.'
+    );
+  const owner = `${transportOwner}:${normalizeAgentSession(request.meta?.agent_session)}`;
+  const assertAccess = async () => {
+    if (disconnectedDataRequests.has(request.id))
+      throw new BridgeError(ERROR_CODES.ACCESS_DENIED, 'Recording connection closed.');
+    if (access !== state.enabledWindow || port !== state.nativePort)
+      throw new BridgeError(ERROR_CODES.ACCESS_DENIED, 'Recording access or transport changed.');
+    await resolveRequestTarget({ ...request, tab_id: target.tabId });
+  };
+  const p = request.params;
+  const id = String(p.sessionId);
+  let result;
+  switch (request.method) {
+    case 'session.start':
+      result = await recordings.start(
+        target.tabId,
+        owner,
+        {
+          activity: p.activity === true,
+          network: p.network === true,
+          bodies: p.bodies === true,
+          messages: p.messages === true,
+          visual: p.visual === true,
+          durationMs: Number(p.durationMs),
+        },
+        assertAccess
+      );
+      break;
+    case 'session.status':
+      result = await recordings.status(target.tabId, owner, id);
+      break;
+    case 'session.read':
+      result = await recordings.read(
+        target.tabId,
+        owner,
+        id,
+        Number(p.cursor),
+        Number(p.limit),
+        Number(p.waitMs)
+      );
+      break;
+    case 'session.stop':
+      result = await recordings.stop(target.tabId, owner, id);
+      break;
+    case 'session.release':
+      result = await recordings.release(target.tabId, owner, id);
+      break;
+    default: {
+      const recording = await recordings.exportSession(target.tabId, owner, id);
+      await assertAccess();
+      const html = p.format === 'html';
+      const bytes = new TextEncoder().encode(
+        html ? renderRecording(recording) : JSON.stringify(recording)
+      );
+      const artifact = await storeByteArtifact(request.id, bytes, {
+        kind: 'resource',
+        mimeType: html ? 'text/html' : 'application/json',
+      });
+      result = {
+        sessionId: id,
+        delivery: 'artifact',
+        artifact,
+        gaps: recording.gaps,
+        dropped: recording.dropped,
+      };
+    }
+  }
+  return createSuccess(request.id, result, { method: request.method });
+}
+
+/** @param {BridgeRequest} request @returns {Promise<BridgeResponse>} */
 async function handleFileRequest(request) {
   const tab = await resolveRequestTarget(request);
   const access = state.enabledWindow;
   const assertScope = () => {
-    if (state.enabledWindow !== access)
+    if (state.enabledWindow !== access || disconnectedDataRequests.has(request.id))
       throw new BridgeError(
         ERROR_CODES.ACCESS_DENIED,
         'Window access changed during file operation.'
       );
   };
+  assertScope();
   const transportOwner = request.meta?.transport_owner;
   if (typeof transportOwner !== 'string' || !transportOwner)
     throw new BridgeError(
@@ -1139,6 +1329,7 @@ async function handleFileRequest(request) {
           'A resource fetch is already active for this tab or the global limit is reached.'
         );
       resourceFetches.add(tab.tabId);
+      resourceOwners.set(tab.tabId, transportOwner);
       try {
         const [fetched] = await chrome.scripting.executeScript({
           target: { tabId: tab.tabId },
@@ -1161,6 +1352,7 @@ async function handleFileRequest(request) {
         result = { delivery: 'artifact', artifact, status: fetched.result.status };
       } finally {
         resourceFetches.delete(tab.tabId);
+        resourceOwners.delete(tab.tabId);
       }
       break;
     }

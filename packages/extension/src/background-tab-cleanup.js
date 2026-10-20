@@ -97,11 +97,19 @@ export function createTabCleanupController(chrome, deps) {
    */
   async function clearTabBridgeState(tabId, shouldContinue = async () => true) {
     if (!(await shouldContinue())) return;
-    await deps.clearWebMcpForTab?.(tabId);
-    await deps.clearEmulationForTab?.(tabId);
-    await deps.clearFilesForTab?.(tabId);
     /** @type {unknown[]} */
     const instrumentationErrors = [];
+    for (const clear of [
+      deps.clearWebMcpForTab,
+      deps.clearEmulationForTab,
+      deps.clearFilesForTab,
+    ]) {
+      try {
+        await clear?.(tabId);
+      } catch (error) {
+        instrumentationErrors.push(error);
+      }
+    }
     const disableConsole =
       deps.disableConsoleInterceptor ??
       (async (id, chromeObj) => {
@@ -176,9 +184,19 @@ export function createTabCleanupController(chrome, deps) {
 
   /** @param {number} tabId */
   async function clearRestrictedTabDebuggerState(tabId) {
-    await deps.clearWebMcpForTab?.(tabId);
-    await deps.clearEmulationForTab?.(tabId);
-    await deps.clearFilesForTab?.(tabId);
+    /** @type {unknown[]} */
+    const errors = [];
+    for (const clear of [
+      deps.clearWebMcpForTab,
+      deps.clearEmulationForTab,
+      deps.clearFilesForTab,
+    ]) {
+      try {
+        await clear?.(tabId);
+      } catch (error) {
+        errors.push(error);
+      }
+    }
     const endCleanup = await deps.beginDebuggerCleanup(tabId);
     try {
       await deps.commitDebuggerCleanup(tabId);
@@ -188,6 +206,7 @@ export function createTabCleanupController(chrome, deps) {
       } finally {
         await deps.discardCdpNetworkCapture(tabId);
       }
+      if (errors.length) throw errors[0];
     } finally {
       endCleanup();
     }

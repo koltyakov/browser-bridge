@@ -95,6 +95,8 @@ For repeatable tasks, record semantic locators and verified outcomes in a [task 
 
 Screenshot coordinate spaces and loaded extension build identifiers are described in [capture context](references/capture-context.md).
 
+For opt-in activity watch, network bodies/messages, and sampled visual replay, use the [recording workflow](references/recording.md).
+
 ```bash
 bbx click <ref> [button]             # click element
 bbx focus <ref>                      # focus element

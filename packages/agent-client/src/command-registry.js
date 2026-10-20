@@ -302,6 +302,7 @@ export const CLI_HELP_SECTIONS = Object.freeze([
       'Advanced bridge params stay available through `bbx call`, even when shortcuts expose only the common case.',
       'bbx upload --tab <id> [--extension <id>] <ref|selector> <local-file>...  Stream local files and assign a file input',
       'bbx download --tab <id> [--extension <id>] <url> <outPath>             Save a browser-authenticated resource locally',
+      'bbx record --tab <id> [--extension <id>] <options-json> <out.json|out.html>  Record and export on one connection',
       'For open-ended investigation, start with `bbx batch` on `page.get_state`, `dom.query`, and `page.get_text` before any screenshot or CDP call.',
       '',
       'Interaction methods need a target wrapper (not a bare ref):',

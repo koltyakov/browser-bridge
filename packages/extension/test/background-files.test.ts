@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createFileStaging, assignBrowserFiles } from '../src/background-files.js';
+import vm from 'node:vm';
+import {
+  createFileStaging,
+  assignBrowserFiles,
+  assignStagedFiles,
+} from '../src/background-files.js';
 import { FILE_TTL_MS, normalizeFileParams } from '../../protocol/src/files.js';
 
 test('staging enforces ordering, ownership, completion, expiration, and release', () => {
@@ -69,4 +74,48 @@ test('browser path assignment validates the exact input and never retries the mu
   assert.equal(result.assigned, true);
   assert.equal(calls.filter((method) => method === 'DOM.setFileInputFiles').length, 1);
   assert.equal(calls.at(-1), 'Runtime.releaseObjectGroup');
+});
+
+test('staged file selectors reject ambiguity before changing selection', () => {
+  class Input {
+    type = 'file';
+    isConnected = true;
+    disabled = false;
+    multiple = false;
+    files: unknown[] = [];
+    matches() {
+      return false;
+    }
+    dispatchEvent() {
+      return true;
+    }
+  }
+  const matches = [new Input(), new Input()];
+  const context = vm.createContext({
+    HTMLInputElement: Input,
+    Event,
+    Uint8Array,
+    atob,
+    DataTransfer: class {
+      files = [];
+      items = { add() {} };
+    },
+    __BBX_CONTENT_DOM_QUERY__: {
+      isLocator: () => false,
+      locateElements: () => ({ matches, truncationReason: null }),
+    },
+  });
+  const assign = vm.runInContext(
+    `(${assignStagedFiles.toString()})`,
+    context
+  ) as typeof assignStagedFiles;
+  assert.match((assign({ selector: 'input' }, []) as { error: string }).error, /exactly one/);
+  const result = assign({ selector: 'input', nth: 1 }, []);
+  assert.ok('assigned' in result && result.assigned);
+  assert.throws(() =>
+    normalizeFileParams('input.set_files', {
+      target: { selector: '#file', role: 'image' },
+      paths: ['/browser/file'],
+    })
+  );
 });

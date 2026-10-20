@@ -48,6 +48,7 @@ import { getDoctorReport, requestBridge, resolveRef } from './runtime.js';
 import { createBridgeClientForDestination } from './remotes.js';
 import { atomicWriteFile } from './atomic-write.js';
 import { uploadFiles } from './file-transfer.js';
+import { recordSession } from './record-session.js';
 
 /** @typedef {import('./types.js').BridgeMethod} BridgeMethod */
 /** @typedef {import('./types.js').ScreenshotResult} ScreenshotResult */
@@ -466,6 +467,38 @@ async function main() {
       const bytes = await downloadArtifact(client, result.artifact, 'resource');
       await atomicWriteFile(output, bytes);
       printJson({ ok: true, path: output, byteLength: bytes.length });
+      return;
+    }
+
+    if (command === 'record') {
+      const args = [...rest];
+      const flags = [];
+      for (const flag of ['--tab', '--extension', '--browser', '--profile']) {
+        const index = args.indexOf(flag);
+        if (index >= 0) flags.push(...args.splice(index, 2));
+      }
+      const [config, output, ...extra] = args;
+      if (!config || !output || extra.length)
+        throw new Error(
+          'Usage: bbx record --tab <id> [--extension <id>] <options-json> <out.json|out.html>'
+        );
+      const {
+        tabId,
+        params,
+        method: _method,
+        ...route
+      } = await parseCallCommand([...flags, 'session.start', config]);
+      if (tabId === null) throw new Error('record requires --tab.');
+      const result = await recordSession(
+        (method, params) =>
+          requestBridge(client, method, params, { ...route, tabId, source: REQUEST_SOURCE }),
+        params,
+        output.endsWith('.html') ? 'html' : 'json',
+        async (artifact) =>
+          atomicWriteFile(output, await downloadArtifact(client, artifact, 'resource')),
+        (started) => printJson({ ok: true, recording: started })
+      );
+      printJson({ ok: true, path: output, ...result });
       return;
     }
 

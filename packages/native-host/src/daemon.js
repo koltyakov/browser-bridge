@@ -458,6 +458,8 @@ export class BridgeDaemon {
   /** File data belongs to a transport connection, never a caller-selected label.
    * @type {WeakMap<ClientSocket, string>} */
   dataOwners = new WeakMap();
+  /** @type {WeakMap<ClientSocket, Set<ClientSocket>>} */
+  dataOwnerTargets = new WeakMap();
 
   /** @param {ClientSocket} socket */
   getDataOwner(socket) {
@@ -1454,6 +1456,11 @@ export class BridgeDaemon {
       targetCount: 1,
     });
     try {
+      if (/^(?:files\.|session\.|download\.|input\.set_files$)/u.test(request.method)) {
+        const targets = this.dataOwnerTargets.get(socket) ?? new Set();
+        targets.add(target);
+        this.dataOwnerTargets.set(socket, targets);
+      }
       await writeJsonLine(target, {
         type: 'extension.request',
         request: {
@@ -1935,7 +1942,17 @@ export class BridgeDaemon {
    */
   handleSocketClose(socket) {
     const dataOwner = this.dataOwners.get(socket);
-    if (dataOwner) this.artifactStore.deleteByOwner(dataOwner);
+    if (dataOwner) {
+      this.artifactStore.deleteByOwner(dataOwner);
+      for (const target of this.dataOwnerTargets.get(socket) ?? []) {
+        if (!target.destroyed)
+          void writeJsonLine(target, {
+            type: 'extension.owner_disconnected',
+            ownerId: dataOwner,
+          }).catch(() => {});
+      }
+    }
+    this.dataOwnerTargets.delete(socket);
     this.dataOwners.delete(socket);
     this.windowActions.disconnect(socket);
     this.clientSockets.delete(socket);
@@ -2111,6 +2128,7 @@ function getArtifactKindForMethod(method) {
   if (method?.startsWith('screenshot.')) return 'screenshot';
   if (method === 'network.export_har') return 'har';
   if (method === 'download.resource') return 'resource';
+  if (method === 'session.export') return 'resource';
   return null;
 }
 

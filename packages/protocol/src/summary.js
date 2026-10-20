@@ -510,6 +510,13 @@ function summarizeBridgeResponseBody(response, method) {
   if (method === 'download.resource') {
     return { ok: true, summary: 'Resource downloaded to a chunked artifact.', evidence: result };
   }
+  if (method?.startsWith('session.')) {
+    return {
+      ok: true,
+      summary: `Recording ${result.sessionId ?? ''}: ${result.released ? 'released' : result.delivery === 'artifact' ? 'exported' : result.active ? 'active' : 'stopped'}; ${result.gaps ?? 0} gap(s).`,
+      evidence: result,
+    };
+  }
   if (typeof result.daemon === 'string') {
     const access =
       result.access && typeof result.access === 'object'

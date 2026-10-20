@@ -1465,10 +1465,12 @@ test('runtime context includes error descriptions', () => {
   assert.ok(context.errors.DOM_BASELINE_QUOTA_EXCEEDED);
 });
 
-test('runtime context excludes legacy capability descriptions and session methods', () => {
+test('runtime context excludes legacy capability descriptions and session access methods', () => {
   const context = createRuntimeContext();
   assert.equal('capabilities' in context, false);
-  assert.equal('session' in context.methods, false);
+  // The session group now describes opt-in evidence recording, not the removed access grants.
+  assert.doesNotMatch(JSON.stringify(context.methods), /session\.(?:open|close|grant|revoke)/u);
+  assert.match(JSON.stringify(context.methods), /session\.start/u);
 });
 
 /** Ensure runtime context includes parameter limits. */

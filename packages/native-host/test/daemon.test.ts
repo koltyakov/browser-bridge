@@ -1004,6 +1004,10 @@ test('daemon replaces forged data ownership and rejects unsolicited artifact kin
   );
   const previousOwner = daemon.getDataOwner(agent);
   daemon.handleSocketClose(agent);
+  assert.deepEqual(JSON.parse(extension.writes.at(-1) ?? '{}'), {
+    type: 'extension.owner_disconnected',
+    ownerId: previousOwner,
+  });
   assert.notEqual(daemon.getDataOwner(agent), previousOwner);
   assert.equal(daemon.pendingRequests.size, 0);
 });

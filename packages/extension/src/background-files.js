@@ -120,7 +120,11 @@ export function createFileStaging(deps = {}) {
   function clearAll() {
     for (const id of files.keys()) discard(id);
   }
-  return { stage, resolve, release, clearTab, clearAll };
+  /** @param {string} ownerId */
+  function clearTransportOwner(ownerId) {
+    for (const [id, file] of files) if (file.owner.includes(`:${ownerId}:`)) discard(id);
+  }
+  return { stage, resolve, release, clearTab, clearAll, clearTransportOwner };
 }
 
 /** Executed in the isolated world with BBX's existing locator and reference registries.
@@ -136,15 +140,22 @@ export function assignStagedFiles(target, files) {
        * }} */ (globalThis);
     const query = modules.__BBX_CONTENT_DOM_QUERY__;
     let element;
-    if (query?.isLocator(target)) {
+    if (query && (query.isLocator(target) || typeof target.selector === 'string')) {
+      const nth = typeof target.nth === 'number' ? target.nth : null;
       const found = query.locateElements(
         { ...target, includeHidden: true },
-        { maxResults: 2, scanLimit: 5000 }
+        { maxResults: nth === null ? 2 : nth + 1, scanLimit: 5000 }
       );
-      if (found.matches.length !== 1 || found.truncationReason)
+      if (
+        nth === null
+          ? found.matches.length !== 1 || found.truncationReason
+          : !found.matches[nth] || found.truncationReason === 'scanLimit'
+      )
         throw new Error('File target must resolve to exactly one element.');
-      element = found.matches[0];
-    } else element = modules.__BBX_CONTENT_REGISTRY__?.resolveTarget(target);
+      element = found.matches[nth ?? 0];
+    } else if (typeof target.elementRef === 'string')
+      element = modules.__BBX_CONTENT_REGISTRY__?.resolveTarget(target);
+    else throw new Error('File locator module is unavailable.');
     if (!(element instanceof HTMLInputElement) || element.type !== 'file')
       throw new Error('Target must be an input[type=file].');
     if (!element.isConnected || element.disabled || element.matches(':disabled'))

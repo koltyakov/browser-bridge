@@ -44,6 +44,7 @@ export function normalizeFileParams(method, params) {
     const target = objectParam(params.target, 'target');
     const files = params.files;
     const paths = params.paths;
+    if (paths !== undefined) onlyKeys(target, ['selector']);
     if ((files === undefined) === (paths === undefined))
       invalidWorkflow('Provide files or paths, not both. Empty files clears the input.');
     const values = files ?? paths;

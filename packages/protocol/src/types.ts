@@ -96,6 +96,12 @@ export type ErrorCode =
   | 'TIMEOUT';
 
 export type BridgeMethod =
+  | 'session.start'
+  | 'session.status'
+  | 'session.read'
+  | 'session.stop'
+  | 'session.export'
+  | 'session.release'
   | 'files.stage'
   | 'files.release'
   | 'input.set_files'

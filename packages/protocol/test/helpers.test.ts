@@ -117,6 +117,12 @@ const EXPECTED_BRIDGE_METHOD_ORDER: readonly BridgeMethod[] = [
   'files.release',
   'input.set_files',
   'download.resource',
+  'session.start',
+  'session.status',
+  'session.read',
+  'session.stop',
+  'session.export',
+  'session.release',
 ];
 
 class FakeSocket extends EventEmitter {
@@ -399,6 +405,7 @@ test('describeBridgeMethods returns compact method, group, and index shapes', ()
       { group: 'webmcp', count: 3 },
       { group: 'emulation', count: 3 },
       { group: 'files', count: 4 },
+      { group: 'session', count: 6 },
     ],
   });
 });
@@ -450,6 +457,8 @@ test('registry policies preserve every method capability classification', () => 
         'webmcp.list_tools',
         'webmcp.get_tool',
         'emulation.status',
+        'session.status',
+        'session.read',
       ],
     ],
     [CAPABILITIES.PAGE_EVALUATE, ['page.evaluate']],
@@ -517,6 +526,10 @@ test('registry policies preserve every method capability classification', () => 
         'files.stage',
         'files.release',
         'input.set_files',
+        'session.start',
+        'session.stop',
+        'session.export',
+        'session.release',
       ],
     ],
     [
@@ -614,6 +627,10 @@ test('registry policies preserve debugger-backed method membership and order', (
     'emulation.apply',
     'emulation.reset',
     'input.set_files',
+    'session.start',
+    'session.stop',
+    'session.export',
+    'session.release',
   ];
 
   assert.deepEqual([...DEBUGGER_BACKED_METHODS], expected);

@@ -216,6 +216,10 @@ test('runNativeHost bridges daemon socket messages and stdin frames', async () =
     );
     socket.emit(
       'data',
+      `${JSON.stringify({ type: 'extension.owner_disconnected', ownerId: 'owner' })}\n`
+    );
+    socket.emit(
+      'data',
       `${JSON.stringify({ type: 'extension.window_action.response', requestId: 'ui-1', ok: true })}\n`
     );
     socket.emit(
@@ -328,6 +332,7 @@ test('runNativeHost bridges daemon socket messages and stdin frames', async () =
         windowId: 7,
         enabledAt: 123,
       },
+      { type: 'host.owner_disconnected', ownerId: 'owner' },
       { type: 'host.window_action.response', requestId: 'ui-1', ok: true },
       {
         type: 'host.setup_status.response',

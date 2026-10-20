@@ -100,6 +100,17 @@ const METHOD_POLICIES = Object.freeze({
  * @type {Readonly<Record<import('./types.js').BridgeMethod, string>>}
  */
 const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
+  'session.start':
+    'Start bounded recording on this tab. activity=true by default; network,bodies,messages,visual default false. bodies/messages require network. durationMs=1000..300000, default 60000. Input values are redacted before leaving the page. visual captures visible pixels and may include sensitive data. Returns sessionId; keep the same daemon connection and tab. Maximum two retained sessions.',
+  'session.status':
+    'Probe a recording by sessionId, including the live page recorder, counters, gaps, body backlog and visual frame count. No event payloads.',
+  'session.read':
+    'Read bounded recording events with sessionId, cursor=0, limit=25 (max 100), waitMs=0 (max 25000). Cursors belong to this sessionId. Returns nextCursor and explicit capture gaps. No response bodies or images in this read.',
+  'session.stop':
+    'Stop intake, collect final activity, drain pending body reads and stop network capture. Retains evidence for five minutes for export. Failed cleanup is retryable.',
+  'session.export':
+    'Stop and drain a recording, then export a chunked artifact. format=json includes archived events, opt-in bodies and frames. format=html is a self-contained, script-free sampled-frame replay. Gaps and dropped counts remain explicit. Same connection required for artifact.read.',
+  'session.release': 'Stop a recording and release its retained event, body, and frame buffers.',
   'files.stage':
     'Stage file bytes on the browser machine. First call: name,mimeType,size,offset=0,data=base64. Further calls: transferId,offset=nextOffset,data. Max 192 KiB per chunk, 16 MiB/file, 32 MiB total; expires after 5 minutes. Keep bytes in file tools, not model context. Returns handle and nextOffset. Never replay an uncertain chunk blindly.',
   'files.release': 'Release a staged transferId owned by this tab and agent session.',
@@ -932,6 +943,54 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     ['url', 'maxBytes', 'timeoutMs'],
     'moderate',
     METHOD_POLICIES.networkRead
+  ),
+  'session.start': createRegistryEntry(
+    'session.start',
+    'session',
+    true,
+    ['activity', 'network', 'bodies', 'messages', 'visual', 'durationMs'],
+    'moderate',
+    METHOD_POLICIES.automationInputDebugger
+  ),
+  'session.status': createRegistryEntry(
+    'session.status',
+    'session',
+    true,
+    ['sessionId'],
+    'low',
+    METHOD_POLICIES.pageRead
+  ),
+  'session.read': createRegistryEntry(
+    'session.read',
+    'session',
+    true,
+    ['sessionId', 'cursor', 'limit', 'waitMs'],
+    'low',
+    METHOD_POLICIES.pageRead
+  ),
+  'session.stop': createRegistryEntry(
+    'session.stop',
+    'session',
+    true,
+    ['sessionId'],
+    'moderate',
+    METHOD_POLICIES.automationInputDebugger
+  ),
+  'session.export': createRegistryEntry(
+    'session.export',
+    'session',
+    true,
+    ['sessionId', 'format'],
+    'moderate',
+    METHOD_POLICIES.automationInputDebugger
+  ),
+  'session.release': createRegistryEntry(
+    'session.release',
+    'session',
+    true,
+    ['sessionId'],
+    'low',
+    METHOD_POLICIES.automationInputDebugger
   ),
 });
 
