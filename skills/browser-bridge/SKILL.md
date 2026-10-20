@@ -91,6 +91,8 @@ For device, network, CPU, locale, timezone, or geolocation reproduction, use the
 
 For uploads and authenticated downloads, use the [file workflow](references/files.md). `bbx upload` streams local file bytes without putting base64 in model context.
 
+For repeatable tasks, record semantic locators and verified outcomes in a [task playbook](references/playbooks.md).
+
 ```bash
 bbx click <ref> [button]             # click element
 bbx focus <ref>                      # focus element
