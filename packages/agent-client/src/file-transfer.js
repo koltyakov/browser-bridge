@@ -8,8 +8,11 @@ import { FILE_CHUNK_BYTES, FILE_MAX_BYTES, FILE_TOTAL_BYTES } from '../../protoc
  * @param {(method: import('../../protocol/src/types.js').BridgeMethod, params: Record<string, unknown>) => Promise<import('../../protocol/src/types.js').BridgeResponse>} call
  * @param {Record<string, unknown>} target
  * @param {string[]} paths
+ * @param {'input.set_files' | 'input.paste_image'} [action]
  */
-export async function uploadFiles(call, target, paths) {
+export async function uploadFiles(call, target, paths, action = 'input.set_files') {
+  if (action === 'input.paste_image' && paths.length !== 1)
+    throw new Error('Paste requires exactly one PNG.');
   if (!paths.length || paths.length > 10) throw new Error('Provide 1..10 local files.');
   /** @type {Array<{ file: import('node:fs/promises').FileHandle, name: string, size: number }>} */
   const opened = [];
@@ -53,7 +56,12 @@ export async function uploadFiles(call, target, paths) {
         offset = result.nextOffset;
       } while (offset < size);
     }
-    return await call('input.set_files', { target, files: handles });
+    return await call(
+      action,
+      action === 'input.paste_image'
+        ? { target, transferId: handles[0] }
+        : { target, files: handles }
+    );
   } finally {
     await Promise.allSettled(opened.map(({ file }) => file.close()));
     await Promise.allSettled(handles.map((transferId) => call('files.release', { transferId })));

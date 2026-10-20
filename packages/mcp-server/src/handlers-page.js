@@ -547,6 +547,12 @@ export async function handleRawCallTool(args) {
       if (method === 'artifact.read') {
         return createArtifactReadResult(response);
       }
+      if (method === 'session.journal_read' && response.ok) {
+        return createToolResult('Read exact journal bytes; page until nextOffset is null.', {
+          ok: true,
+          evidence: response.result,
+        });
+      }
       return summarizeToolResponse(response, method, params);
     },
     { destinationId: args.destinationId ?? null }

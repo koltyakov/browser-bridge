@@ -49,6 +49,7 @@ import { createBridgeClientForDestination } from './remotes.js';
 import { atomicWriteFile } from './atomic-write.js';
 import { uploadFiles } from './file-transfer.js';
 import { recordSession } from './record-session.js';
+import { exportReplay } from './replay.js';
 
 /** @typedef {import('./types.js').BridgeMethod} BridgeMethod */
 /** @typedef {import('./types.js').ScreenshotResult} ScreenshotResult */
@@ -405,7 +406,21 @@ async function main() {
       return;
     }
 
-    if (command === 'upload') {
+    if (command === 'replay') {
+      if (rest.length !== 2)
+        throw new Error(
+          'Usage: bbx replay <journalId|recording-file> <output.html|output.json|output.mp4>'
+        );
+      const result = await exportReplay(
+        (method, params) => requestBridge(client, method, params, { source: REQUEST_SOURCE }),
+        rest[0],
+        rest[1]
+      );
+      printJson({ ok: true, ...result });
+      return;
+    }
+    if (command === 'upload' || command === 'paste-image') {
+      const action = command === 'paste-image' ? 'input.paste_image' : 'input.set_files';
       const args = [...rest];
       const flags = [];
       for (const flag of ['--tab', '--extension', '--browser', '--profile']) {
@@ -416,7 +431,7 @@ async function main() {
       const [selector, ...files] = args;
       if (!selector || !files.length)
         throw new Error(
-          'Usage: bbx upload --tab <id> [--extension <id>] <ref|selector> <local-file>...'
+          `Usage: bbx ${command} --tab <id> [--extension <id>] <ref|selector> <local-file>...`
         );
       const {
         tabId,
@@ -430,9 +445,10 @@ async function main() {
         (method, params) =>
           requestBridge(client, method, params, { ...route, tabId, source: REQUEST_SOURCE }),
         isElementRef(selector) ? { elementRef: selector } : { selector },
-        files
+        files,
+        action
       );
-      await printSummary(response, 'input.set_files');
+      await printSummary(response, action);
       return;
     }
 
@@ -489,14 +505,26 @@ async function main() {
         ...route
       } = await parseCallCommand([...flags, 'session.start', config]);
       if (tabId === null) throw new Error('record requires --tab.');
+      if (!/\.(?:json|html|mp4)$/iu.test(output))
+        throw new Error('Recording output must be .json, .html, or .mp4.');
+      if (output.toLowerCase().endsWith('.mp4')) {
+        params.durable = true;
+        params.replay = true;
+      }
       const result = await recordSession(
         (method, params) =>
           requestBridge(client, method, params, { ...route, tabId, source: REQUEST_SOURCE }),
         params,
-        output.endsWith('.html') ? 'html' : 'json',
+        output.toLowerCase().endsWith('.html') ? 'html' : 'json',
         async (artifact) =>
           atomicWriteFile(output, await downloadArtifact(client, artifact, 'resource')),
-        (started) => printJson({ ok: true, recording: started })
+        (started) => printJson({ ok: true, recording: started }),
+        (journalId) =>
+          exportReplay(
+            (method, params) => requestBridge(client, method, params, { source: REQUEST_SOURCE }),
+            journalId,
+            output
+          )
       );
       printJson({ ok: true, path: output, ...result });
       return;
