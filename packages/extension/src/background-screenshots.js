@@ -45,6 +45,35 @@ const MAX_SCREENSHOT_SCALED_PIXELS = 250_000_000;
 export async function handleScreenshot(target, method, params, deps, requestId) {
   const startedAt = new Date().toISOString();
   const captureParams = params ?? {};
+  /** @param {Record<string, unknown>} contentParams @returns {Promise<Record<string, unknown>>} */
+  const readGeometry = async (contentParams) => {
+    const response = await deps.sendTabMessage(
+      target.tabId,
+      { type: 'bridge.execute', method, params: contentParams },
+      deps.contentScriptTimeoutMs
+    );
+    const result =
+      response && typeof response === 'object'
+        ? /** @type {Record<string, unknown>} */ (response)
+        : {};
+    if (result.error) {
+      const error = result.error;
+      if (typeof error === 'object') {
+        const structured = /** @type {Record<string, unknown>} */ (error);
+        throw new BridgeError(
+          typeof structured.code === 'string'
+            ? /** @type {import('../../protocol/src/types.js').ErrorCode} */ (structured.code)
+            : ERROR_CODES.INTERNAL_ERROR,
+          typeof structured.message === 'string'
+            ? structured.message
+            : 'Screenshot geometry failed.',
+          structured.details ?? null
+        );
+      }
+      throw new Error(String(error));
+    }
+    return result;
+  };
   const format =
     captureParams.format === 'jpeg' || captureParams.format === 'webp'
       ? captureParams.format
@@ -68,32 +97,12 @@ export async function handleScreenshot(target, method, params, deps, requestId) 
         .map((key) => [key, captureParams[key]])
     );
     try {
-      clip = /** @type {typeof clip} */ (
-        await deps.sendTabMessage(
-          target.tabId,
-          {
-            type: 'bridge.execute',
-            method,
-            params: elementParams,
-          },
-          deps.contentScriptTimeoutMs
-        )
-      );
+      clip = /** @type {typeof clip} */ (await readGeometry(elementParams));
     } catch (err) {
       // Retry once after a brief pause - the page may have been mid-render.
       if (err instanceof Error && /stale/i.test(err.message)) {
         await new Promise((resolve) => setTimeout(resolve, 250));
-        clip = /** @type {typeof clip} */ (
-          await deps.sendTabMessage(
-            target.tabId,
-            {
-              type: 'bridge.execute',
-              method,
-              params: elementParams,
-            },
-            deps.contentScriptTimeoutMs
-          )
-        );
+        clip = /** @type {typeof clip} */ (await readGeometry(elementParams));
       } else if (err instanceof Error && /Complete capture is unsupported/.test(err.message)) {
         throw new BridgeError(ERROR_CODES.RESULT_TRUNCATED, err.message, {
           method,
@@ -125,11 +134,7 @@ export async function handleScreenshot(target, method, params, deps, requestId) 
     await deps.ensureContentScript(target.tabId);
     const dims =
       /** @type {{ scrollWidth: number, scrollHeight: number, devicePixelRatio: number }} */ (
-        await deps.sendTabMessage(
-          target.tabId,
-          { type: 'bridge.execute', method, params: {} },
-          deps.contentScriptTimeoutMs
-        )
+        await readGeometry({})
       );
     clip = {
       x: 0,

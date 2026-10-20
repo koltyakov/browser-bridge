@@ -13,6 +13,44 @@ const target = {
   url: 'https://example.test/',
 };
 
+test('screenshot preserves serialized content errors before computing geometry', async () => {
+  const cases = [
+    {
+      method: 'screenshot.capture_element',
+      error: 'Complete capture is unsupported for a fixed element.',
+      code: 'RESULT_TRUNCATED',
+      message: /fixed element/u,
+    },
+    {
+      method: 'screenshot.capture_element',
+      error: {
+        code: 'ELEMENT_NOT_FOUND',
+        message: 'Target was removed.',
+        details: { ref: 'el_1' },
+      },
+      code: 'ELEMENT_NOT_FOUND',
+      message: /Target was removed/u,
+    },
+    {
+      method: 'screenshot.capture_full_page',
+      error: 'Document is unavailable.',
+      message: /Document is unavailable/u,
+    },
+  ];
+  for (const scenario of cases) {
+    const deps = {
+      async ensureContentScript() {},
+      async sendTabMessage() {
+        return { error: scenario.error };
+      },
+    } as unknown as Parameters<typeof handleScreenshot>[3];
+    await assert.rejects(handleScreenshot(target, scenario.method, {}, deps, 'content-error'), {
+      ...(scenario.code ? { code: scenario.code } : {}),
+      message: scenario.message,
+    });
+  }
+});
+
 test('screenshot auto delivery uses artifact transport after a large-capture preflight', async () => {
   const commands: Array<{ method: string; params: Record<string, unknown> }> = [];
   const stored: Array<{ requestId: string; data: string }> = [];
