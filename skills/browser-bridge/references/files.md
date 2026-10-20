@@ -25,3 +25,26 @@ bbx download --tab 123 --extension CONNECTION 'https://example.com/export' ./rep
 ```
 
 The default size ceiling is 8 MiB and the maximum is 16 MiB. Streaming stops when decoded bytes exceed the limit, even without a Content-Length header. `timeoutMs` defaults to 30 seconds and can be at most 60 seconds. The result contains an artifact descriptor, never file bytes. Retrieve it with `artifact.read` on the same connection, or use `bbx download` to fetch, verify the SHA-256 checksum, and save it in one command. Artifacts are deleted when the owning connection closes. Remote destinations still require an encrypted tunnel, such as SSH, for transport confidentiality.
+
+## Browser-native downloads
+
+Use `download.start` for large files or URLs that page fetch cannot read. Chrome streams directly to the browser machine's Downloads directory, without BBX's artifact size limit. This uses the `downloads` permission. Browser authentication, download safety checks, disk limits, and server resume support still apply.
+
+```bash
+bbx call --tab 123 --extension CONNECTION download.start '{"url":"https://example.com/export","filename":"export.zip"}'
+bbx call --tab 123 --extension CONNECTION download.status '{"downloadId":"HANDLE"}'
+bbx call --tab 123 --extension CONNECTION download.pause '{"downloadId":"HANDLE"}'
+bbx call --tab 123 --extension CONNECTION download.resume '{"downloadId":"HANDLE"}'
+bbx call --tab 123 --extension CONNECTION download.cancel '{"downloadId":"HANDLE"}'
+bbx call --tab 123 --extension CONNECTION download.release '{"downloadId":"HANDLE"}'
+```
+
+Treat `downloadId` as a secret capability. It works across CLI invocations in the same tab and access grant, and survives an extension worker restart. BBX exposes no general browser download-history search. `status` returns bytes received/total, state, pause/resume availability, and the browser-local filename. `saveAs:true` opens Chrome's save dialog; the default does not. Filenames must be single relative names, and collisions are uniquified. Release is allowed only after completion/cancellation and never deletes the file. Access revocation or tab closure cancels retained downloads. Completed handles expire after 24 hours when a new download prunes them. At most 32 handles are retained.
+
+## Trusted image paste
+
+```bash
+bbx paste-image --tab 123 --extension CONNECTION '[contenteditable=true]' ./chart.png
+```
+
+The helper stages one PNG, focuses the editor, writes the image to the real system clipboard, dispatches Chrome's native paste command, and releases staging memory. MCP can use `files.stage`, `input.paste_image` with `target` and `transferId`, then `files.release` on one connection. The browser window and tab must already be focused, and the target must be an editable control in the top document. BBX revalidates focus before clipboard writing and before paste. No clipboard-read or extra clipboard permission is requested. This overwrites the clipboard. Inspect insertion before submitting; never automatically replay after uncertainty or focus loss.

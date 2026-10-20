@@ -119,7 +119,7 @@ Google marks the Test Instructions tab as optional, but Browser Bridge should st
 13. Trigger one fetch/XHR and confirm `bbx network` returns bounded metadata. Then run the CDP network lifecycle in order: `start`, reproduce one page/resource load, `read`, then `stop`. Confirm lifecycle/drop metadata is present and URL query values are redacted. Do not expect events from before `start` or any bodies/cookies/authorization values.
 14. Request a tight element or region screenshot and confirm image data is returned only for the enabled window. Check `bbx console` after generating a test console message and confirm bounded console output is returned.
 15. Disable access in the popup or side panel and confirm a subsequent tab-bound request returns `ACCESS_DENIED` until access is enabled again.
-16. Confirm the packaged `manifest.json` permissions remain exactly `alarms`, `debugger`, `nativeMessaging`, `scripting`, `sidePanel`, `storage`, and `tabs`, with `<all_urls>` host access and no new permission.
+16. Confirm the packaged `manifest.json` permissions are exactly `alarms`, `debugger`, `downloads`, `nativeMessaging`, `scripting`, `sidePanel`, `storage`, `tabGroups`, and `tabs`, with `<all_urls>` host access. `downloads` enables browser-managed large downloads and progress/control; BBX exposes only downloads it starts.
 
 ## Post-Publish Follow-Up
 
