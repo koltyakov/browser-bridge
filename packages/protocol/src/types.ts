@@ -1145,6 +1145,8 @@ export interface ScreenshotMetadata {
     tabId: number;
     tabActive: boolean | null;
     windowFocused: boolean | null;
+    visibility: 'visible' | 'hidden' | null;
+    documentFocused: boolean | null;
     rectSpace: 'viewport-css' | 'document-css';
     pageClip: { x: number; y: number; width: number; height: number; scale: number };
     source: 'cdp-renderer';

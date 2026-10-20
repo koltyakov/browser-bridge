@@ -1,6 +1,6 @@
 # Capture and runtime identity
 
-Screenshot results include `context` with capture timestamps, tab ID, tab activity, window focus, and coordinate spaces. `null` activity/focus means the browser lookup was unavailable. These flags are sampled before capture and do not prove document visibility or that the user saw the image.
+Screenshot results include `context` with capture timestamps, tab ID, tab activity, window focus, document visibility/focus, and coordinate spaces. `null` means the lookup was unavailable. These flags are sampled before capture and do not prove that the user saw the image.
 
 `rectSpace` is `viewport-css` for region requests and `document-css` for element and full-page requests. `pageClip` is the document-space CSS rectangle sent to CDP after adding the visual viewport offset. `dimensions` describes encoded image pixels. Use these fields when relating a screenshot to DOM boxes. A renderer screenshot can capture a background tab.
 

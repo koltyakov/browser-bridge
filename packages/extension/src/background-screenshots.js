@@ -171,9 +171,13 @@ export async function handleScreenshot(target, method, params, deps, requestId) 
   // Use CDP Page.captureScreenshot - works regardless of tab focus,
   // captures renderer output directly with built-in clip support.
   let pageClip = { ...clip };
-  const [tabState, windowState] = await Promise.all([
+  const [tabState, windowState, documentState] = await Promise.all([
     deps.chrome.tabs?.get?.(target.tabId).catch(() => null) ?? null,
     deps.chrome.windows?.get?.(target.windowId).catch(() => null) ?? null,
+    deps.chrome.scripting
+      ?.executeScript?.({ target: { tabId: target.tabId }, func: readScreenshotDocumentState })
+      .then((results) => results[0]?.result ?? null)
+      .catch(() => null) ?? null,
   ]);
   const data = await deps.tabDebugger.run(
     target.tabId,
@@ -231,6 +235,11 @@ export async function handleScreenshot(target, method, params, deps, requestId) 
       tabId: target.tabId,
       tabActive: tabState?.active ?? null,
       windowFocused: windowState?.focused ?? null,
+      visibility:
+        documentState?.visibility === 'visible' || documentState?.visibility === 'hidden'
+          ? documentState.visibility
+          : null,
+      documentFocused: typeof documentState?.focused === 'boolean' ? documentState.focused : null,
       rectSpace: method === 'screenshot.capture_region' ? 'viewport-css' : 'document-css',
       pageClip,
       source: 'cdp-renderer',
@@ -274,6 +283,11 @@ export async function handleScreenshot(target, method, params, deps, requestId) 
     delivery: 'inline',
     image: `data:${metadata.mimeType};base64,${data}`,
   };
+}
+
+/** Sample document visibility in the isolated world without reading page content. */
+export function readScreenshotDocumentState() {
+  return { visibility: document.visibilityState, focused: document.hasFocus() };
 }
 
 /** @param {string} data */

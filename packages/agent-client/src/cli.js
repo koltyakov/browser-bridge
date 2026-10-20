@@ -627,6 +627,8 @@ async function main() {
         evidence: {
           savedTo: filePath,
           rect: screenshotResult.rect,
+          dimensions: screenshotResult.dimensions,
+          ...(screenshotResult.context ? { context: screenshotResult.context } : {}),
           format: screenshotResult.format,
           complete: screenshotResult.complete,
           clipped: screenshotResult.clipped,

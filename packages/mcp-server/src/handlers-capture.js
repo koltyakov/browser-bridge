@@ -162,6 +162,9 @@ export function createScreenshotResult(response, method) {
         mimeType: result.mimeType,
         byteLength: result.byteLength,
         dimensions: result.dimensions,
+        ...(result.context && typeof result.context === 'object'
+          ? { context: boundStructuredValue(result.context).value }
+          : {}),
         rect: boundedRect(result.rect),
         complete: result.complete === true,
         clipped: result.clipped === true,
@@ -186,6 +189,12 @@ export function createScreenshotResult(response, method) {
       mimeType: image.mimeType,
       byteLength: image.byteLength,
       ...(rect ? { rect } : {}),
+      ...(result.dimensions && typeof result.dimensions === 'object'
+        ? { dimensions: boundStructuredValue(result.dimensions).value }
+        : {}),
+      ...(result.context && typeof result.context === 'object'
+        ? { context: boundStructuredValue(result.context).value }
+        : {}),
       format: result.format ?? image.mimeType.replace('image/', ''),
       complete: result.complete === true,
       clipped: result.clipped === true,
