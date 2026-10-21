@@ -61,14 +61,19 @@
     <details id="installation-section" class="card setup-details" hidden>
       <summary>
         <span class="setup-details-summary-heading">
-          <span class="eyebrow">Host setup</span>
+          <span class="eyebrow">Connect your agent</span>
           <span class="setup-details-summary-icon" aria-hidden="true"></span>
         </span>
         <span id="setup-status-summary-note" class="setup-summary-note" hidden></span>
       </summary>
       <div class="setup-details-body">
-        <p id="setup-status-note" class="muted setup-status-note">Checking global install status…</p>
+        <p id="setup-status-note" class="muted setup-status-note">Checking agent connections…</p>
         <p id="setup-host-version" class="setup-host-version" hidden></p>
+        <p id="companion-migration" class="setup-status-guidance" hidden>
+          You can switch to the self-contained companion and keep your settings. Future updates will not need npm.
+          <a data-companion-download class="setup-link" href="https://github.com/koltyakov/browser-bridge/blob/main/docs/companion.md"
+            target="_blank" rel="noopener noreferrer">Download companion</a>
+        </p>
         <div id="setup-status-matrix" class="setup-status-matrix-wrap"></div>
         <p class="setup-status-guidance">
           Recommended: choose either MCP or the CLI skill. If your agent supports both, start with MCP.
@@ -85,16 +90,19 @@
     <section id="native-setup" class="card">
       <div class="eyebrow">Not connected</div>
       <p class="control-detail">
-        Browser Bridge works with a local companion host on this machine. After the host connects, you can enable window
-        access for the current Chrome window.
+        Install the Browser Bridge companion once, then return here. No developer tools or pairing code are needed.
+        Your existing settings are kept if you are upgrading.
       </p>
       <br />
       <div class="setup-steps">
-        <span class="setup-step-hint">Install CLI (skip if done):</span>
-        <code class="setup-cmd">npm install -g @browserbridge/bbx</code>
-        <span id="setup-install-hint" class="setup-step-hint">Connect this extension (if didn't run
-          automatically):</span>
-        <code id="setup-install-cmd" class="setup-cmd">bbx install</code>
+        <a id="companion-download" data-companion-download class="setup-link" href="https://github.com/koltyakov/browser-bridge/blob/main/docs/companion.md"
+          target="_blank" rel="noopener noreferrer">Download companion</a>
+        <span class="setup-step-hint">Open the installer. This extension will connect automatically.</span>
+        <details>
+          <summary>Advanced browser registration</summary>
+          <span id="setup-install-hint" class="setup-step-hint">Register this browser manually:</span>
+          <code id="setup-install-cmd" class="setup-cmd">bbx install</code>
+        </details>
       </div>
       <div class="control-links">
         <a class="setup-link" href="https://github.com/koltyakov/browser-bridge/blob/main/docs/quickstart.md"

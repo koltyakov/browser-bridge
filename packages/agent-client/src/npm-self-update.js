@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { bundled, installedLauncher } from '../../standalone/src/runtime.js';
 
 const PACKAGE_NAME = '@browserbridge/bbx';
 const PACKAGE_ROOT = path.dirname(fileURLToPath(new URL('../../../package.json', import.meta.url)));
@@ -249,6 +250,7 @@ export async function acquireNpmUpdateLock(lockKey, timeoutMs = DEFAULT_LOCK_TIM
  * @returns {Promise<NpmUpdateResult>}
  */
 export async function updateCompatibleNpmPackage(options) {
+  if (bundled || installedLauncher()) return { updated: false, reason: 'standalone_install' };
   const env = options.env ?? process.env;
   const packageRoot = options.packageRoot ?? PACKAGE_ROOT;
   const runNpmFn = options.runNpmFn ?? runNpmCommand;

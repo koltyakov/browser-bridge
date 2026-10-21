@@ -3,8 +3,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { parse as parseJsonc } from 'jsonc-parser';
 
 import { atomicWriteFile } from './atomic-write.js';
+import { bundled, getStandaloneLauncher, installedLauncher } from '../../standalone/src/runtime.js';
 
 /** @typedef {import('./types.js').McpClientName} McpClientName */
 
@@ -41,7 +43,10 @@ export function isMcpClientName(value) {
 }
 
 const BROWSER_BRIDGE_SERVER_NAME = 'browser-bridge';
-const MCP_COMMAND = 'bbx';
+/** @returns {string} */
+function getMcpCommand() {
+  return bundled ? getStandaloneLauncher() : installedLauncher() || 'bbx';
+}
 const MCP_ARGS = Object.freeze(['mcp', 'serve']);
 
 /**
@@ -99,12 +104,12 @@ function createBaseServerConfig(clientName) {
   if (clientName === 'opencode') {
     return {
       type: 'local',
-      command: [MCP_COMMAND, ...MCP_ARGS],
+      command: [getMcpCommand(), ...MCP_ARGS],
     };
   }
 
   return {
-    command: MCP_COMMAND,
+    command: getMcpCommand(),
     args: [...MCP_ARGS],
     env: {},
   };
@@ -153,7 +158,7 @@ export function buildMcpConfig(clientName) {
     return {
       mcp_servers: {
         [BROWSER_BRIDGE_SERVER_NAME]: {
-          command: MCP_COMMAND,
+          command: getMcpCommand(),
           args: [...MCP_ARGS],
         },
       },
@@ -285,7 +290,7 @@ export async function getMcpConfigPaths(clientName, options) {
 function formatCodexServerBlock() {
   return [
     `[mcp_servers."${BROWSER_BRIDGE_SERVER_NAME}"]`,
-    `command = ${JSON.stringify(MCP_COMMAND)}`,
+    `command = ${JSON.stringify(getMcpCommand())}`,
     `args = ${JSON.stringify(MCP_ARGS)}`,
     '',
   ].join('\n');
@@ -640,7 +645,10 @@ export function parseInstalledMcpConfig(clientName, raw, configPath) {
   }
 
   try {
-    const parsed = JSON.parse(raw);
+    /** @type {import('jsonc-parser').ParseError[]} */
+    const errors = [];
+    const parsed = /** @type {unknown} */ (parseJsonc(raw, errors, { allowTrailingComma: true }));
+    if (errors.length) return { configured: false };
     const config =
       parsed && typeof parsed === 'object' && !Array.isArray(parsed)
         ? /** @type {Record<string, unknown>} */ (parsed)

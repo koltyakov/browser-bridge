@@ -160,23 +160,23 @@ const MANAGED_CLIENT_PACKAGE = '@browserbridge/bbx';
  */
 
 /**
- * Compare the compatibility-significant major and minor portions of the
- * extension and local CLI versions. Patch releases remain compatible.
+ * Match the protocol's major-version compatibility contract. Independent
+ * minor and patch releases do not require users to reinstall anything.
  *
  * @param {string | null | undefined} extensionVersion
  * @param {string | null | undefined} cliVersion
  * @returns {VersionMismatchView | null}
  */
 export function getVersionMismatchView(extensionVersion, cliVersion) {
-  const extensionMajorMinor = getMajorMinorVersion(extensionVersion);
-  const cliMajorMinor = getMajorMinorVersion(cliVersion);
-  if (!extensionMajorMinor || !cliMajorMinor || extensionMajorMinor === cliMajorMinor) {
+  const extensionMajor = getMajorVersion(extensionVersion);
+  const cliMajor = getMajorVersion(cliVersion);
+  if (!extensionMajor || !cliMajor || extensionMajor === cliMajor) {
     return null;
   }
 
   return {
     key: `${extensionVersion}:${cliVersion}`,
-    message: `Browser Bridge CLI v${cliVersion} and extension v${extensionVersion} might not be compatible. Update them so their major and minor versions match.`,
+    message: `Companion v${cliVersion} and extension v${extensionVersion} use different protocol versions. Update the companion and extension to compatible releases.`,
   };
 }
 
@@ -184,9 +184,9 @@ export function getVersionMismatchView(extensionVersion, cliVersion) {
  * @param {string | null | undefined} version
  * @returns {string | null}
  */
-function getMajorMinorVersion(version) {
+function getMajorVersion(version) {
   const match = typeof version === 'string' ? /^(\d+)\.(\d+)(?:\.|$)/u.exec(version) : null;
-  return match ? `${match[1]}.${match[2]}` : null;
+  return match ? match[1] : null;
 }
 
 /**
@@ -567,9 +567,7 @@ export function shouldPollSetupStatus(connected, installationHidden, installatio
 function getNativeDiagnosticMessage(error, installCommand) {
   const normalizedError = typeof error === 'string' ? error.trim() : '';
   if (!normalizedError) {
-    return (
-      'Native host unreachable for 10s. Run: npm install -g @browserbridge/bbx && ' + installCommand
-    );
+    return 'Companion not connected. Download and open the companion installer, then return here.';
   }
 
   if (
@@ -577,10 +575,7 @@ function getNativeDiagnosticMessage(error, installCommand) {
       normalizedError
     )
   ) {
-    return (
-      `Native host unreachable for 10s. Last error: ${normalizedError} ` +
-      `Run: npm install -g @browserbridge/bbx && ${installCommand}`
-    );
+    return `Companion not connected. Open the companion installer to repair this browser connection. Details: ${normalizedError}. Advanced: ${installCommand}`;
   }
 
   if (

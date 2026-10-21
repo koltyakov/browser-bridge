@@ -39,6 +39,11 @@ import { BridgeClient } from './client.js';
 import { applyConfiguredAutoUpdate } from './config.js';
 import { readRemoteConfig } from './remotes.js';
 import { collectSetupStatus } from './setup-status.js';
+import {
+  getStandaloneLauncher,
+  getVersionExecutable,
+  readInstallation,
+} from '../../standalone/src/runtime.js';
 
 /** @typedef {import('./types.js').BridgeMethod} BridgeMethod */
 /** @typedef {import('./types.js').BridgeMeta} BridgeMeta */
@@ -410,6 +415,15 @@ export async function checkNativeHostManifestHealth(browserManifests) {
     let launcherRaw = '';
     try {
       await fs.promises.access(launcherPath, executableAccessMode);
+      if (path.resolve(launcherPath) === path.resolve(getStandaloneLauncher())) {
+        const installation = readInstallation();
+        if (!installation)
+          throw new Error(
+            'Companion installation record is missing. Open the companion installer to repair it.'
+          );
+        await fs.promises.access(getVersionExecutable(installation.version), executableAccessMode);
+        continue;
+      }
       launcherRaw = await fs.promises.readFile(launcherPath, 'utf8');
     } catch (error) {
       issues.push({

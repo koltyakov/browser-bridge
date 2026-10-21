@@ -4,6 +4,8 @@ import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { bundled, installedLauncher } from '../../standalone/src/runtime.js';
+import { atomicWriteFile } from '../../agent-client/src/atomic-write.js';
 
 import {
   APP_NAME,
@@ -63,11 +65,13 @@ export class NativeManifestInstallError extends Error {
  *   extensionIdArg?: string | undefined,
  *   browser?: SupportedBrowser | undefined,
  *   nodePath?: string | undefined,
+ *   executablePath?: string | undefined,
  *   installDir?: string | undefined,
  *   bridgeDir?: string | undefined,
  *   stdout?: Pick<NodeJS.WriteStream, 'write'>,
  *   stderr?: Pick<NodeJS.WriteStream, 'write'>,
  *   preserveCustomExtensionId?: boolean | undefined,
+ *   preserveAllowedOrigins?: boolean | undefined,
  *   writeRegistryValue?: ((keyPath: string, value: string) => Promise<void> | void) | undefined,
  *   env?: NodeJS.ProcessEnv
  * }} InstallManifestOptions
@@ -281,7 +285,9 @@ export async function installNativeManifest(options) {
   }
   const requestedExtensionId = parsedExtensionId || defaultExtensionId.extensionId;
   const hostPath = path.join(repoRoot, 'packages', 'native-host', 'bin', 'native-host.js');
-  const launcherPath = path.join(bridgeDir, getLauncherFilename());
+  const executablePath =
+    options.executablePath ?? installedLauncher() ?? (bundled ? process.execPath : null);
+  const launcherPath = executablePath || path.join(bridgeDir, getLauncherFilename());
   const manifestPath = path.join(installDir, `${APP_NAME}.json`);
 
   const launcher =
@@ -302,9 +308,12 @@ exec '${escapeSingleQuotes(nodePath)}' '${escapeSingleQuotes(hostPath)}' "$@"
     defaultExtensionId.source === BUILT_IN_EXTENSION_ID_SOURCE &&
     customExtensionIds.length > 0 &&
     !hasStoreOrigin;
-  const allowedOrigins = preservedCustomExtensionId
-    ? getAllowedOrigins(existingManifest, null)
-    : getAllowedOrigins(existingManifest, requestedExtensionId);
+  const allowedOrigins =
+    options.preserveAllowedOrigins && existingExtensionIds.length > 0
+      ? existingExtensionIds.map((id) => `chrome-extension://${id}/`)
+      : preservedCustomExtensionId
+        ? getAllowedOrigins(existingManifest, null)
+        : getAllowedOrigins(existingManifest, requestedExtensionId);
   const extensionId = preservedCustomExtensionId
     ? customExtensionIds[0] || requestedExtensionId
     : requestedExtensionId;
@@ -324,12 +333,16 @@ exec '${escapeSingleQuotes(nodePath)}' '${escapeSingleQuotes(hostPath)}' "$@"
     failingPath = bridgeDir;
     await fs.promises.mkdir(bridgeDir, { recursive: true });
     failingPath = launcherPath;
-    await fs.promises.writeFile(launcherPath, launcher, 'utf8');
-    if (process.platform !== 'win32') {
-      await fs.promises.chmod(launcherPath, 0o755);
+    if (!executablePath) {
+      await fs.promises.writeFile(launcherPath, launcher, 'utf8');
+      if (process.platform !== 'win32') {
+        await fs.promises.chmod(launcherPath, 0o755);
+      }
     }
     failingPath = manifestPath;
-    await fs.promises.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+    await atomicWriteFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, {
+      encoding: 'utf8',
+    });
     if (process.platform === 'win32') {
       failingPath = getWindowsRegistryKey(browser);
       await writeRegistryValueFn(getWindowsRegistryKey(browser), manifestPath);

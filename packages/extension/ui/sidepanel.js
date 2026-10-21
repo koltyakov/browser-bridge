@@ -129,6 +129,28 @@ const actionLog = /** @type {HTMLDivElement} */ (document.getElementById('action
 const setupSection = /** @type {HTMLElement} */ (document.getElementById('native-setup'));
 const setupInstallHint = /** @type {HTMLElement} */ (document.getElementById('setup-install-hint'));
 const setupInstallCmd = /** @type {HTMLElement} */ (document.getElementById('setup-install-cmd'));
+const companionDownloads = document.querySelectorAll('a[data-companion-download]');
+const companionMigration = document.getElementById('companion-migration');
+if (companionDownloads.length && chrome.runtime.getPlatformInfo) {
+  void chrome.runtime
+    .getPlatformInfo()
+    .then(({ os }) => {
+      const asset =
+        os === 'mac'
+          ? 'Browser-Bridge-macOS.zip'
+          : os === 'win'
+            ? 'Browser-Bridge-Setup.exe'
+            : null;
+      if (asset) {
+        for (const link of companionDownloads)
+          link.setAttribute(
+            'href',
+            `https://github.com/koltyakov/browser-bridge/releases/latest/download/${asset}`
+          );
+      }
+    })
+    .catch(() => {});
+}
 const controlSection = /** @type {HTMLElement} */ (document.getElementById('control-section'));
 const installationSection = /** @type {HTMLDetailsElement} */ (
   document.getElementById('installation-section')
@@ -990,6 +1012,8 @@ function syncExclusiveDetailsSections(source, other) {
  * @returns {void}
  */
 function renderSetupStatus(setupStatus, pending, error, installPendingKey, installError) {
+  if (companionMigration)
+    companionMigration.hidden = !setupStatus || setupStatus.distribution === 'standalone';
   const view = getSetupStatusView(setupStatus, pending, error, installError);
   setupStatusSummaryNote.textContent = view.summaryNote;
   setupStatusSummaryNote.hidden = view.summaryHidden;

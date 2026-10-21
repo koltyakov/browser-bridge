@@ -327,6 +327,9 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
     'chrome',
     createChromeFake({
       runtime: {
+        async getPlatformInfo() {
+          return { os: 'mac', arch: 'arm64', nacl_arch: 'arm' } as chrome.runtime.PlatformInfo;
+        },
         connect(connectInfo: chrome.runtime.ConnectInfo) {
           assert.deepEqual(connectInfo, { name: 'ui-sidepanel' });
           return portPair.left.port as unknown as chrome.runtime.Port;
@@ -339,6 +342,11 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
     Reflect.set(window, 'location', new URL('https://example.com/sidepanel.html?tabId=41'));
     await importFreshSidepanelScript();
     await flushMicrotasks();
+
+    assert.equal(
+      document.getElementById('companion-download')?.getAttribute('href'),
+      'https://github.com/koltyakov/browser-bridge/releases/latest/download/Browser-Bridge-macOS.zip'
+    );
 
     assert.deepEqual(intervalCalls, [{ delay: 5_000 }]);
     assert.deepEqual(portPair.left.postedMessages, [
@@ -818,18 +826,20 @@ test('sidepanel UI shows the global host CLI and daemon version', async (t) => {
     assert.equal(mismatchBanner.hidden, true, 'patch-only differences should remain compatible');
 
     portPair.left.dispatchMessage(createSidepanelStateSync(true, null, '1.3.0'));
+    assert.equal(mismatchBanner.hidden, true, 'minor-only differences remain compatible');
+    portPair.left.dispatchMessage(createSidepanelStateSync(true, null, '2.0.0'));
     assert.equal(mismatchBanner.hidden, false);
     assert.equal(
       mismatchMessage.textContent,
-      'Browser Bridge CLI v1.3.0 and extension v1.2.9 might not be compatible. Update them so their major and minor versions match.'
+      'Companion v2.0.0 and extension v1.2.9 use different protocol versions. Update the companion and extension to compatible releases.'
     );
 
     dismissMismatch.click();
     assert.equal(mismatchBanner.hidden, true);
-    portPair.left.dispatchMessage(createSidepanelStateSync(true, null, '1.3.0'));
+    portPair.left.dispatchMessage(createSidepanelStateSync(true, null, '2.0.0'));
     assert.equal(mismatchBanner.hidden, true, 'dismissal should survive state refreshes');
 
-    portPair.left.dispatchMessage(createSidepanelStateSync(true, null, '2.0.0'));
+    portPair.left.dispatchMessage(createSidepanelStateSync(true, null, '3.0.0'));
     assert.equal(mismatchBanner.hidden, false, 'a different mismatch should be visible');
   });
 });

@@ -2,6 +2,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { bundled } from '../../standalone/src/runtime.js';
 
 import { detectMcpClients, detectSkillTargets } from './detect.js';
 import {
@@ -106,6 +107,7 @@ export async function collectSetupStatus(options = {}) {
 
   return {
     scope: isGlobal ? 'global' : 'local',
+    ...(bundled ? { distribution: /** @type {const} */ ('standalone') } : {}),
     mcpClients,
     skillTargets,
   };

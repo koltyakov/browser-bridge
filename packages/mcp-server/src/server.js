@@ -1,4 +1,5 @@
 // @ts-check
+import { bundled } from '../../standalone/src/runtime.js';
 
 import fs from 'node:fs';
 
@@ -104,6 +105,7 @@ const MCP_SERVER_VERSION = loadPackageVersion();
  */
 function loadPackageVersion() {
   try {
+    if (bundled) return bundled.version;
     const raw = fs.readFileSync(new URL('../../../package.json', import.meta.url), 'utf8');
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed.version === 'string' ? parsed.version : '0.0.0';

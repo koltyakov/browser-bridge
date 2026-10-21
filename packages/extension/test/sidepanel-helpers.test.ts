@@ -26,19 +26,15 @@ import {
 
 type SetupStatus = NonNullable<Parameters<typeof getSetupStatusView>[0]>;
 
-test('getVersionMismatchView ignores patch drift and warns on major or minor drift', () => {
+test('getVersionMismatchView accepts independent minor releases and warns on major drift', () => {
   assert.equal(getVersionMismatchView('1.8.1', '1.8.9'), null);
   assert.equal(getVersionMismatchView('1.8', '1.8.0'), null);
   assert.equal(getVersionMismatchView('invalid', '1.8.0'), null);
-  assert.deepEqual(getVersionMismatchView('1.8.1', '1.7.9'), {
-    key: '1.8.1:1.7.9',
-    message:
-      'Browser Bridge CLI v1.7.9 and extension v1.8.1 might not be compatible. Update them so their major and minor versions match.',
-  });
+  assert.equal(getVersionMismatchView('1.8.1', '1.7.9'), null);
   assert.deepEqual(getVersionMismatchView('2.0.0', '1.8.1'), {
     key: '2.0.0:1.8.1',
     message:
-      'Browser Bridge CLI v1.8.1 and extension v2.0.0 might not be compatible. Update them so their major and minor versions match.',
+      'Companion v1.8.1 and extension v2.0.0 use different protocol versions. Update the companion and extension to compatible releases.',
   });
 });
 
@@ -747,7 +743,7 @@ test('getSidepanelNativeStatusView derives install commands and disconnected lab
       label: 'Native host connected',
       diagnosticCommand: 'bbx install',
       diagnosticMessage:
-        'Native host unreachable for 10s. Run: npm install -g @browserbridge/bbx && bbx install',
+        'Companion not connected. Download and open the companion installer, then return here.',
     }
   );
 });

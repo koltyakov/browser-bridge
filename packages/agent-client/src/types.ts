@@ -49,6 +49,7 @@ export interface NpmUpdateResult {
     | 'invalid_installed_version'
     | 'extension_not_newer'
     | 'not_global_install'
+    | 'standalone_install'
     | 'no_compatible_update';
   previousVersion?: string;
   version?: string;

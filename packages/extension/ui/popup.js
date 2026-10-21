@@ -2,7 +2,6 @@
 
 import {
   createPopupToggleMessage,
-  getPopupInstallCommand,
   getUnstableConnectionDiagnostic,
   normalizePopupToggleError,
   renderPopupButtonState,
@@ -111,7 +110,6 @@ let resizeFrameId = null;
 /** @type {ReturnType<typeof setTimeout> | null} */
 let nativeDiagnosticTimer = null;
 const NATIVE_DIAGNOSTIC_DELAY_MS = 10_000;
-const PUBLISHED_EXTENSION_ID = 'jjjkmmcdkpcgamlopogicbnnhdgebhie';
 
 if (windowedPopup) {
   document.documentElement.dataset.windowed = 'true';
@@ -236,7 +234,7 @@ function renderNativeStatus(connected, unstable = false) {
     nativeDiagnosticTimer = setTimeout(() => {
       nativeDiagnosticTimer = null;
       showDiagnostic(
-        `Native host unreachable. Run: npm install -g @browserbridge/bbx && ${getInstallCommand()}`
+        'Companion not connected. Open the side panel to download or repair Browser Bridge.'
       );
     }, NATIVE_DIAGNOSTIC_DELAY_MS);
   }
@@ -275,13 +273,6 @@ function hideDiagnostic() {
  */
 function setCommunicationEnabled(enabled) {
   port.postMessage(createPopupToggleMessage(enabled, currentTabState, popupScopeTabId));
-}
-
-/**
- * @returns {string}
- */
-function getInstallCommand() {
-  return getPopupInstallCommand(chrome.runtime.id, PUBLISHED_EXTENSION_ID);
 }
 
 /**
