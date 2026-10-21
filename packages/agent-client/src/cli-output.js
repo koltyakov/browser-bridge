@@ -52,7 +52,7 @@ export function printCallResponse(response, method) {
 }
 
 /**
- * @returns {void}
+ * @returns {Promise<void>}
  */
 export function printUsage() {
   const blocks = ['Usage: bbx [--remote <name>] <command> [args]'];
@@ -60,5 +60,11 @@ export function printUsage() {
     blocks.push('', `${section.title}:`);
     blocks.push(...section.lines.map((line) => `  ${line}`));
   }
-  process.stdout.write(`${blocks.join('\n')}\n`);
+  // Wait for piped output to flush before the CLI exits.
+  return new Promise((resolve, reject) => {
+    process.stdout.write(`${blocks.join('\n')}\n`, (error) => {
+      if (error) reject(error);
+      else resolve();
+    });
+  });
 }

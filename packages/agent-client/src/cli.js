@@ -101,7 +101,7 @@ const remoteDestinationId =
     : (remoteFlag.remoteId ?? process.env[REMOTE_ENV] ?? null);
 
 if (!command || ['help', '--help', '-h'].includes(command)) {
-  printUsage();
+  await printUsage();
   process.exit(0);
 }
 
@@ -794,7 +794,7 @@ async function main() {
     }
 
     process.stderr.write(`Unknown command: ${command}\n`);
-    printUsage();
+    await printUsage();
     process.exitCode = 1;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

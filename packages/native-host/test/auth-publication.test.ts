@@ -62,6 +62,52 @@ test('publication failure releases the lock and permits another initializer', as
   assert.equal(fs.readFileSync(tokenPath, 'utf8').trim(), token);
 });
 
+for (const platform of ['win32', 'linux']) {
+  test(`lock read EPERM ${platform === 'win32' ? 'retries and preserves the winner' : 'propagates'} on ${platform}`, async (t) => {
+    const { root, tokenPath } = fixture(t);
+    const descriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+    assert.ok(descriptor);
+    Object.defineProperty(process, 'platform', { ...descriptor, value: platform });
+    t.after(() => Object.defineProperty(process, 'platform', descriptor));
+    const lockPath = `${tokenPath}.init.lock`;
+    const permissionError = Object.assign(new Error('lock is pending deletion'), { code: 'EPERM' });
+    const winner = 'w'.repeat(43);
+    let lockAttempts = 0;
+    let lockReads = 0;
+    const initializing = ensureBridgeAuthToken({
+      tokenPath,
+      link: async (source, target) => {
+        if (target === lockPath && ++lockAttempts === 1) {
+          throw Object.assign(new Error('another initializer owns the lock'), { code: 'EEXIST' });
+        }
+        await fs.promises.link(source, target);
+      },
+      readFile: (async (
+        file: Parameters<typeof fs.promises.readFile>[0],
+        options: Parameters<typeof fs.promises.readFile>[1]
+      ) => {
+        if (file === lockPath) {
+          lockReads++;
+          // The winner publishes and removes its lock between our link and read.
+          await fs.promises.writeFile(tokenPath, `${winner}\n`);
+          throw permissionError;
+        }
+        return fs.promises.readFile(file, options);
+      }) as typeof fs.promises.readFile,
+    });
+    if (platform === 'win32') {
+      assert.equal(await initializing, winner);
+      assert.equal(lockAttempts, 2);
+    } else {
+      await assert.rejects(initializing, permissionError);
+      assert.equal(lockAttempts, 1);
+    }
+    assert.equal(lockReads, 1);
+    assert.equal(fs.readFileSync(tokenPath, 'utf8'), `${winner}\n`);
+    assert.deepEqual(fs.readdirSync(root), ['credential']);
+  });
+}
+
 for (const initial of [null, '', 'bad-token']) {
   test(`a paused incomplete write preserves a concurrent winner, initial=${JSON.stringify(initial)}`, async (t) => {
     const { tokenPath } = fixture(t);

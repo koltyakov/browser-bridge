@@ -230,6 +230,7 @@ test('recording validation is strict and exported replay cannot execute site mar
 });
 
 test('watch follows only opener descendants and correlates late-drained actions without claiming causality', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const startedTabs: number[] = [];
   const stoppedTabs: number[] = [];
   let clickAt = 0;
@@ -266,6 +267,8 @@ test('watch follows only opener descendants and correlates late-drained actions 
     { ...options, activity: true, bodies: false, followTabs: true },
     async () => {}
   );
+  // Drive the unreferenced poll timer without relying on other event-loop work.
+  t.mock.timers.tick(500);
   await ready;
   clickAt = Date.now();
   recorder.handleNetwork(2, 'Network.requestWillBeSent', {

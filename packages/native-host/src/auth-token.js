@@ -235,6 +235,18 @@ async function ensureStoredBridgeAuthToken(tokenPath, options) {
         owner = await readFile(lockPath, 'utf8');
       } catch (error) {
         if (isMissingFileError(error)) continue;
+        // Windows can report EPERM while a competing owner deletes the lock.
+        // Retry within the same bounded acquisition loop, then recheck the winner.
+        if (
+          process.platform === 'win32' &&
+          error &&
+          typeof error === 'object' &&
+          'code' in error &&
+          error.code === 'EPERM'
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          continue;
+        }
         throw error;
       }
       const match = /^(\d+):([0-9a-f-]{36})\n$/u.exec(owner);
