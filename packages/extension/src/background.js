@@ -1727,8 +1727,9 @@ async function handleFetchInterceptRequest(request) {
 
 /**
  * Bring a tab to the foreground (make it the active tab in its window).
- * Useful for agents that need to focus a specific tab before performing
- * debugger-backed operations or ensuring the tab is visible.
+ * Agents may switch to tabs they opened while the active tab is in use for
+ * their task; otherwise they need a user request or permission to take focus.
+ * Tab-targeted operations do not normally require activation.
  */
 /** @param {BridgeRequest} request */
 async function handleActivateTab(request) {

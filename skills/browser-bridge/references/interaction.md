@@ -88,12 +88,16 @@ Uses CDP device emulation - the page re-renders at the new size immediately.
 
 Always start with `tabs.list` to find an appropriate existing tab before considering `tabs.create`.
 
+Reads, input, navigation, and screenshots can target background tabs by `tabId`. New tabs open in the background by default. You may switch to tabs you opened for this task without asking while the active tab is also one you are using for this task. Check `tabs.list` active state before switching, and track opened tabs from your own `tabs.create` results. `working:true` identifies routing, not ownership or foreground focus.
+
+If the user switches to their own tab, continue in the background. Activate only at their request or with their permission. If an operation cannot work while the tab is inactive, explain why and ask whether activation is allowed. A timeout or a different `active_tab_id` alone does not justify activation. Permission for one activation does not allow repeatedly taking focus back after the user switches away. Apply these rules to `tabs.activate`, `active:true`, and equivalent focus APIs.
+
 ```bash
 bbx tabs                                 # list available tabs (start here)
 bbx tab-create https://example.com       # open new tab (avoid unless necessary)
 bbx tab-create                           # open blank tab (avoid unless necessary)
 bbx tab-close 12345                      # close tab by ID
-bbx tab-activate 12345                   # bring a tab to the foreground
+bbx tab-activate 12345                   # bring forward under the tab focus rules above
 bbx call tabs.create '{"url":"https://example.com","active":false}'
 ```
 
@@ -126,7 +130,7 @@ The default `source: "cdp"` returns Chrome's AX tree through the debugger. Use i
 Access is window-scoped. Your first call binds your session to the active tab in the enabled window, which becomes your working tab, and later calls stay there even when the user switches tabs. Responses include `meta.tab_id`; when the user is looking at a different tab, the summary names both. `tabs.list` marks your tab with `working: true`. Passing `tabId`, `tabs.create`, or `tabs.activate` moves your working tab. A closed working tab fails with `TAB_MISMATCH` (`working_tab_closed`) rather than switching to whatever tab is active.
 
 ```bash
-# Default routing follows the active tab in the enabled window:
+# The first page call binds to the active tab; later calls keep that working tab:
 bbx tabs
 bbx page-text
 

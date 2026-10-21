@@ -1841,7 +1841,7 @@ export function normalizeTabCreateParams(params = {}) {
   }
   return {
     url,
-    active: params.active !== false,
+    active: params.active === true,
   };
 }
 

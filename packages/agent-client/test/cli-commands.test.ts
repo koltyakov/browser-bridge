@@ -496,7 +496,7 @@ test('bbx tab-create sends the provided URL and prints the created tab summary',
     assert.equal(bridgeServer.requests[0].method, 'tabs.create');
     assert.deepEqual(bridgeServer.requests[0].params, {
       url: 'https://example.com/docs',
-      active: true,
+      active: false,
     });
     assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);
@@ -537,7 +537,7 @@ test('bbx tab-create without a URL falls back to about:blank in the normalized r
     assert.equal(bridgeServer.requests[0].method, 'tabs.create');
     assert.deepEqual(bridgeServer.requests[0].params, {
       url: 'about:blank',
-      active: true,
+      active: false,
     });
     assert.equal(bridgeServer.requests[0].meta.source, 'cli');
     assert.deepEqual(bridgeServer.errors, []);

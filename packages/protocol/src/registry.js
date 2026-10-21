@@ -148,9 +148,11 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
   'protocol.describe':
     'Describe bridge method parameters and metadata by method or registry group.',
   'tabs.list': 'List tabs in the enabled window.',
-  'tabs.create': 'Create a new tab in the enabled window.',
+  'tabs.create':
+    "Create a background tab in the enabled window. Set active:true when the current active tab is in use for this task, or at the user's request or with their permission.",
   'tabs.close': 'Close a tab in the enabled window.',
-  'tabs.activate': 'Bring a tab to the foreground in the enabled window.',
+  'tabs.activate':
+    "Bring a tab forward at the user's request or with their permission, or switch to a tab you opened for this task while the active tab is also in use for this task. Check active state first; if background work needs activation outside this case, ask. Targeting tabId does not require activation.",
   'skill.get_runtime_context': 'Return runtime method groups, budgets, and limits.',
   'setup.get_status': 'Return MCP and skill setup status.',
   'setup.install': 'Install or uninstall MCP or skill integration targets.',

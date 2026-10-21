@@ -186,8 +186,29 @@ async function loadTwoTabBackground(label: string) {
     [82, { id: 82, windowId: 7, active: false, title: 'Mail', url: 'https://mail.test/' }],
   ] as Array<[number, chrome.tabs.Tab]>);
   const reloads: number[] = [];
+  const updates: Array<{ tabId: number; properties: chrome.tabs.UpdateProperties }> = [];
+  const windowUpdates: Array<{ windowId: number; properties: chrome.windows.UpdateInfo }> = [];
   const chrome = createChromeFake({
     tabs: {
+      async create(properties: chrome.tabs.CreateProperties) {
+        const tabId = Math.max(...tabs.keys()) + 1;
+        const tab = { id: tabId, title: 'New', ...properties } as chrome.tabs.Tab;
+        if (tab.active) {
+          for (const existing of tabs.values()) existing.active = false;
+        }
+        tabs.set(tabId, tab);
+        return { ...tab };
+      },
+      async update(tabId: number, properties: chrome.tabs.UpdateProperties) {
+        updates.push({ tabId, properties });
+        const tab = tabs.get(tabId);
+        if (!tab) throw new Error(`No tab with id: ${tabId}.`);
+        if (properties.active) {
+          for (const existing of tabs.values()) existing.active = existing.id === tabId;
+        }
+        Object.assign(tab, properties);
+        return { ...tab };
+      },
       async query(queryInfo: chrome.tabs.QueryInfo = {}) {
         const all = [...tabs.values()].map((tab) => ({ ...tab }));
         if (queryInfo.active) {
@@ -207,6 +228,10 @@ async function loadTwoTabBackground(label: string) {
       },
     },
     windows: {
+      async update(windowId: number, properties: chrome.windows.UpdateInfo) {
+        windowUpdates.push({ windowId, properties });
+        return { id: windowId, ...properties };
+      },
       async get(windowId: number) {
         return { id: windowId };
       },
@@ -230,7 +255,7 @@ async function loadTwoTabBackground(label: string) {
       }
     ).tabs.onRemoved.dispatch(tabId, { windowId: 7, isWindowClosing: false });
   };
-  return { loaded, reloads, activate, remove };
+  return { loaded, tabs, reloads, updates, windowUpdates, activate, remove };
 }
 
 let requestCounter = 0;
@@ -255,8 +280,9 @@ function call(
   );
 }
 
-test('agent keeps working in its tab after the user activates another tab', async () => {
-  const { loaded, reloads, activate } = await loadTwoTabBackground('agent-tabs-sticky');
+test('agent keeps working without taking focus after the user activates another tab', async () => {
+  const { loaded, tabs, reloads, updates, windowUpdates, activate } =
+    await loadTwoTabBackground('agent-tabs-sticky');
 
   const first = await call(loaded, 'navigation.reload');
   assert.equal(first.ok, true);
@@ -273,6 +299,34 @@ test('agent keeps working in its tab after the user activates another tab', asyn
     summarizeBridgeResponse(second, 'navigation.reload').summary,
     /working tab 81; the user's active tab is 82/
   );
+  const navigated = await call(loaded, 'navigation.navigate', {
+    tabId: 81,
+    params: { url: 'https://app.test/report', waitForLoad: false },
+  });
+  assert.equal(navigated.ok, true);
+  assert.deepEqual(updates, [{ tabId: 81, properties: { url: 'https://app.test/report' } }]);
+  assert.deepEqual(windowUpdates, []);
+  assert.equal(tabs.get(81)?.active, false);
+  assert.equal(tabs.get(82)?.active, true);
+});
+
+test('creating a working tab preserves user focus unless activation is explicit', async () => {
+  const { loaded, tabs, reloads, activate } = await loadTwoTabBackground('agent-tabs-create');
+  activate(82);
+  const created = await call(loaded, 'tabs.create', { params: { url: 'https://app.test/new' } });
+  assert.equal(created.ok, true);
+  assert.equal(tabs.get(83)?.active, false);
+  assert.equal(tabs.get(82)?.active, true);
+  assert.equal((await call(loaded, 'navigation.reload')).ok, true);
+  assert.deepEqual(reloads, [83]);
+
+  const foreground = await call(loaded, 'tabs.create', {
+    params: { url: 'https://app.test/foreground', active: true },
+  });
+  assert.equal(foreground.ok, true);
+  assert.equal(tabs.get(84)?.active, true);
+  assert.equal(tabs.get(83)?.active, false);
+  assert.equal(tabs.get(82)?.active, false);
 });
 
 test('a closed working tab fails loudly instead of hijacking the active tab', async () => {
@@ -328,11 +382,13 @@ test('agent sessions keep separate working tabs and tabs.list marks the caller t
 });
 
 test('tabs.activate moves the calling agent to the activated tab', async () => {
-  const { loaded, reloads } = await loadTwoTabBackground('agent-tabs-activate');
+  const { loaded, tabs, reloads, updates } = await loadTwoTabBackground('agent-tabs-activate');
 
   assert.equal((await call(loaded, 'navigation.reload')).ok, true);
   const activated = await call(loaded, 'tabs.activate', { params: { tabId: 82 } });
   assert.equal(activated.ok, true);
+  assert.deepEqual(updates, [{ tabId: 82, properties: { active: true } }]);
+  assert.equal(tabs.get(82)?.active, true);
   assert.equal((await call(loaded, 'navigation.reload')).ok, true);
   assert.deepEqual(reloads, [81, 82]);
 });

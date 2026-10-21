@@ -134,9 +134,11 @@ grouped here by domain.
 | Method          | Description                                       |
 | --------------- | ------------------------------------------------- |
 | `tabs.list`     | List tabs in the enabled window; optional `limit` and `offset` |
-| `tabs.create`   | Create a new tab in the enabled window            |
+| `tabs.create`   | Create a background tab in the enabled window; `active` defaults to `false` |
 | `tabs.close`    | Close a tab in the enabled window                 |
 | `tabs.activate` | Bring a tab to the foreground in the enabled window |
+
+Targeting a tab does not activate it. Reads, input, navigation, and screenshots can run in background tabs while the user works elsewhere. Agents may switch to tabs they opened for the current task while the active tab is also in use for that task. They should check active state before switching and track opened tabs from their own `tabs.create` results; `working:true` identifies routing, not ownership or foreground focus. Otherwise, activation requires a user request or permission. If background work needs the tab to be active, the agent should explain why and ask. Permission for one activation does not allow repeatedly taking focus back after the user switches away. These rules apply to `tabs.activate`, `active:true`, and equivalent focus APIs.
 
 ### Page
 

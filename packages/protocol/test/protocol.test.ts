@@ -1017,11 +1017,12 @@ test('normalizeWaitForLoadStateParams defaults sensibly', () => {
 
 // ── New method normalizer tests ─────────────────────────────────────
 
-/** Ensure tab create params default to about:blank and active. */
-test('normalizeTabCreateParams defaults to about:blank and active', () => {
+/** New tabs must not take focus unless activation is explicit. */
+test('normalizeTabCreateParams defaults to about:blank in the background', () => {
   const params = normalizeTabCreateParams({});
   assert.equal(params.url, 'about:blank');
-  assert.equal(params.active, true);
+  assert.equal(params.active, false);
+  assert.equal(normalizeTabCreateParams({ active: true }).active, true);
 });
 
 test('normalizeTabCreateParams preserves URL', () => {

@@ -32,7 +32,7 @@ bbx tabs                    # list available tabs (prefer this)
 bbx logs                    # recent bridge request log
 bbx tab-create [url]        # open a new tab (avoid unless necessary)
 bbx tab-close <tabId>       # close a tab
-bbx tab-activate <tabId>    # bring a tab to the foreground
+bbx tab-activate <tabId>    # bring forward under the tab focus rules below
 bbx skill                   # live runtime presets + limits
 bbx protocol describe [method|group] # local method params or compact group index
 ```
@@ -176,12 +176,20 @@ After the Enable cue appears:
 After access is enabled:
 
 1. Your first tab-bound call binds your session to the active tab: that becomes your **working tab**.
-2. The working tab is sticky. If the user switches to another tab (to read mail, say), your calls keep running in your working tab; they never navigate or type into the tab the user is looking at.
+2. The working tab is sticky. If the user switches to their own tab, keep running in your working tab without taking focus back. Reads, input, navigation, and screenshots can run in background tabs. A different `active_tab_id` is informational, not an error to fix.
 3. Responses report `meta.tab_id`; when the user's active tab differs, the summary says so (`Ran in working tab 12; the user's active tab is 34`). If the user asks you to work in "this tab", pass that `tabId` once; the explicit tab becomes your new working tab. `tabs.create` and `tabs.activate` also move your working tab.
 4. If your working tab was closed, calls fail with `TAB_MISMATCH` (`reason: working_tab_closed`) instead of silently using another tab; pick a tab with `tabId` or `tabs.list` (which marks `working: true`).
 5. The binding expires after 15 idle minutes.
 6. Do not stop at a generic "no access" message before making a real Browser Bridge call, because the first denied call is what triggers the UI cue.
 7. CLI agents running separate `bbx` processes share one working tab unless each sets `BBX_SESSION=<name>`; MCP sessions are separated automatically.
+
+### Tab focus
+
+You may switch to tabs you opened for the current task without asking while the currently active tab is also one you are using for that task. Check `tabs.list` active state before switching. Track tabs you opened from your own `tabs.create` results; `working:true` identifies the routed tab, not ownership or foreground focus.
+
+If the user has switched to their own tab, continue in the background. Activate only at their request or with their permission. If something cannot work while the target tab is inactive, explain why and ask whether you may activate it. A timeout alone does not establish that activation is needed. Permission for one activation does not allow repeatedly taking focus back after the user switches away.
+
+These rules apply to `tabs.activate`, `active:true` on creation, and equivalent focus APIs. New tabs open in the background by default.
 
 ## Error Recovery
 

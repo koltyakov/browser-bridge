@@ -323,13 +323,18 @@ export function createBridgeMcpServer(options = {}) {
     {
       title: 'Browser Tabs',
       description:
-        "List, create, close, or activate browser tabs. Unscoped list discovers tabs across enabled browser profiles and configured destinations. Reuse each tab's extensionId, destinationId, and tabId for subsequent calls. Other actions default to local. Only create a page when the user explicitly requests it.",
+        "List, create, close, or activate browser tabs. Unscoped list discovers tabs across enabled browser profiles and configured destinations. Reuse each tab's extensionId, destinationId, and tabId for subsequent calls. Other actions default to local. Only create a page when the user explicitly requests it. New tabs open in the background. You may activate tabs you opened for this task while the active tab is also in use for this task. Otherwise, activate only at the user's request or with their permission. Targeting tabId does not require activation.",
       inputSchema: z.object({
         action: z
           .enum(['list', 'create', 'close', 'activate'])
           .describe('"list" (preferred), "create" (only when needed), "close", or "activate"'),
         url: z.string().optional().describe('URL for create action'),
-        active: z.boolean().optional().describe('Focus the new tab (default: true)'),
+        active: z
+          .boolean()
+          .optional()
+          .describe(
+            'Focus the new tab when the active tab is in use for this task, or with user permission (default: false)'
+          ),
         limit: z
           .number()
           .int()

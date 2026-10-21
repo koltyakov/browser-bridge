@@ -5,7 +5,7 @@ Prefer non-debugger methods first. `chrome.debugger`-backed methods (marked **CD
 ## Access Model
 
 1. The user turns Browser Bridge on for one browser window.
-2. Default routing follows the active tab in that enabled window.
+2. The first page call binds to the active tab in that enabled window. Later calls keep the working tab when the user switches tabs. You may activate tabs you opened for this task while the active tab is also in use for this task; check active state first. Otherwise, target background tabs without activating them unless the user requests or permits activation. If background work requires activation, explain why and ask.
 3. Use `tabId` only when you intentionally need a different tab in the same enabled window.
 4. Turning Browser Bridge off removes access immediately.
 
@@ -126,7 +126,7 @@ stopped.
 ```bash
 bbx status | doctor | restart | logs | tabs | skill # no routed tab needed
 bbx protocol describe [method|group]             # local signature or compact group index
-bbx call <method> '{"key":"val"}'           # generic RPC (routes to active tab in enabled window)
+bbx call <method> '{"key":"val"}'           # generic RPC (routes to the session's working tab)
 bbx call --tab 123 <method> '{...}'         # explicit tab target inside enabled window
 bbx batch '[{"method":"...","params":{}}]'  # parallel calls
 ```
