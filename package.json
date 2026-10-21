@@ -42,6 +42,7 @@
     "packages/native-host/bin",
     "packages/native-host/src",
     "packages/protocol/src",
+    "packages/standalone/src",
     "skills/browser-bridge",
     "!**/test/**",
     "!**/*.test.*",
@@ -66,6 +67,8 @@
     "typecheck": "tsc --noEmit",
     "postinstall": "node packages/native-host/bin/postinstall.js",
     "package:extension": "node scripts/package-extension.mjs",
+    "package:standalone": "node scripts/build-standalone.mjs",
+    "test:standalone": "node scripts/smoke-standalone.mjs",
     "check:extension-zip": "node scripts/check-extension-zip.mjs",
     "check:release-version": "node scripts/check-release-version.mjs",
     "release:check": "npm run check:release-version && npm run lint && npm run typecheck && npm test && npm run coverage:check && npm run package:extension && npm run check:extension-zip && npm pack --dry-run",
@@ -77,6 +80,7 @@
   "dependencies": {
     "@modelcontextprotocol/server": "^2.3.1",
     "@mozilla/readability": "^0.6.0",
+    "jsonc-parser": "^3.3.1",
     "linkedom": "^0.18.14",
     "zod": "^4.6.7"
   },

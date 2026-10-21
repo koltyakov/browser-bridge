@@ -50,6 +50,9 @@ import { atomicWriteFile } from './atomic-write.js';
 import { uploadFiles } from './file-transfer.js';
 import { recordSession } from './record-session.js';
 import { exportReplay } from './replay.js';
+import { bundled, forwardToCompanion } from '../../standalone/src/runtime.js';
+
+if (!bundled) await forwardToCompanion(process.argv.slice(2));
 
 /** @typedef {import('./types.js').BridgeMethod} BridgeMethod */
 /** @typedef {import('./types.js').ScreenshotResult} ScreenshotResult */
@@ -106,6 +109,10 @@ if (!command || ['help', '--help', '-h'].includes(command)) {
 }
 
 if (['--version', '-v'].includes(command)) {
+  if (bundled) {
+    process.stdout.write(`${bundled.version}\n`);
+    process.exit(0);
+  }
   const pkgPath = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     '../../../package.json'
@@ -144,7 +151,7 @@ if (command === 'install') {
     path.dirname(fileURLToPath(import.meta.url)),
     '../../native-host/bin/install-manifest.js'
   );
-  execFileSync(process.execPath, [installScript, ...rest], {
+  execFileSync(process.execPath, [bundled ? '--install-manifest' : installScript, ...rest], {
     stdio: 'inherit',
   });
   process.exit(0);

@@ -14,7 +14,142 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  companion:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            target: bun-darwin-arm64
+            asset: bbx-darwin-arm64
+          - os: macos-15-intel
+            target: bun-darwin-x64
+            asset: bbx-darwin-x64
+          - os: ubuntu-24.04
+            target: bun-linux-x64-baseline
+            asset: bbx-linux-x64-baseline
+          - os: ubuntu-24.04-arm
+            target: bun-linux-arm64
+            asset: bbx-linux-arm64
+          - os: windows-2025
+            target: bun-windows-x64-baseline
+            asset: bbx-windows-x64-baseline.exe
+    runs-on: ${{ matrix.os }}
+    env:
+      BBX_UPDATE_PUBLIC_KEY: ${{ vars.BBX_UPDATE_PUBLIC_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.14.0
+          cache: npm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - run: npm ci
+      - name: Require update verification key
+        run: node -e "if (!process.env.BBX_UPDATE_PUBLIC_KEY) throw Error('Configure BBX_UPDATE_PUBLIC_KEY before releasing companions')"
+      - run: npm run package:standalone -- ${{ matrix.target }}
+      - run: npm run test:standalone -- dist/standalone/${{ matrix.asset }}
+      - name: Sign Windows executable and installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_SIGN_PFX: ${{ secrets.WINDOWS_SIGN_PFX }}
+          WINDOWS_SIGN_PASSWORD: ${{ secrets.WINDOWS_SIGN_PASSWORD }}
+        run: |
+          if (!$env:WINDOWS_SIGN_PFX) { throw 'Configure Windows signing before publishing installers' }
+          $certificate = Join-Path $env:RUNNER_TEMP 'publisher.pfx'
+          [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:WINDOWS_SIGN_PFX))
+          $signtool = (Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          & $signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $certificate /p $env:WINDOWS_SIGN_PASSWORD dist/standalone/bbx-windows-x64-baseline.exe
+          if ($LASTEXITCODE) { throw 'Executable signing failed' }
+          choco install nsis --no-progress -y
+          & 'C:\Program Files (x86)\NSIS\makensis.exe' scripts/companion.nsi
+          if ($LASTEXITCODE) { throw 'Installer packaging failed' }
+          & $signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $certificate /p $env:WINDOWS_SIGN_PASSWORD dist/standalone/Browser-Bridge-Setup.exe
+          if ($LASTEXITCODE) { throw 'Installer signing failed' }
+          Remove-Item $certificate
+      - uses: actions/upload-artifact@v7
+        with:
+          name: companion-${{ matrix.target }}
+          path: dist/standalone/*
+          if-no-files-found: error
+
+  macos-installer:
+    needs: companion
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.14.0
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: companion-bun-darwin-*
+          path: dist/standalone
+          merge-multiple: true
+      - name: Sign and notarize macOS installer
+        env:
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_SIGN_IDENTITY: ${{ vars.MACOS_SIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          MACOS_NOTARY_PROFILE: browser-bridge-release
+        run: |
+          test -n "$MACOS_SIGN_P12" && test -n "$MACOS_SIGN_IDENTITY" && test -n "$APPLE_ID"
+          echo "$MACOS_SIGN_P12" | base64 --decode > "$RUNNER_TEMP/publisher.p12"
+          security create-keychain -p "$MACOS_SIGN_PASSWORD" "$RUNNER_TEMP/build.keychain-db"
+          security set-keychain-settings -lut 21600 "$RUNNER_TEMP/build.keychain-db"
+          security unlock-keychain -p "$MACOS_SIGN_PASSWORD" "$RUNNER_TEMP/build.keychain-db"
+          security import "$RUNNER_TEMP/publisher.p12" -k "$RUNNER_TEMP/build.keychain-db" -P "$MACOS_SIGN_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$MACOS_SIGN_PASSWORD" "$RUNNER_TEMP/build.keychain-db"
+          security list-keychains -d user -s "$RUNNER_TEMP/build.keychain-db" login.keychain-db
+          xcrun notarytool store-credentials "$MACOS_NOTARY_PROFILE" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
+          chmod +x dist/standalone/bbx-darwin-*
+          node scripts/package-macos.mjs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: companion-macos-signed
+          path: |
+            dist/standalone/bbx-darwin-*
+            dist/standalone/Browser-Bridge-macOS.zip
+
+  publish-companion:
+    needs: [package, companion, macos-installer]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.14.0
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: companion-bun-*
+          path: dist/standalone
+          merge-multiple: true
+      - uses: actions/download-artifact@v7
+        with:
+          name: companion-macos-signed
+          path: dist/standalone
+      - name: Sign update metadata
+        env:
+          BBX_UPDATE_PRIVATE_KEY: ${{ secrets.BBX_UPDATE_PRIVATE_KEY }}
+          BBX_UPDATE_PUBLIC_KEY: ${{ vars.BBX_UPDATE_PUBLIC_KEY }}
+        run: node scripts/sign-standalone.mjs
+      - name: Publish companion assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp scripts/install.sh scripts/install.ps1 dist/standalone/
+          gh release create "$GITHUB_REF_NAME" dist/standalone/* --verify-tag --generate-notes
+
   package:
+    needs: [companion, macos-installer]
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout

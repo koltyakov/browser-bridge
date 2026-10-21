@@ -2,6 +2,7 @@
 import { isProtocolVersionSupported } from '../../protocol/src/index.js';
 
 import { EventEmitter, once } from 'node:events';
+import { bundled } from '../../standalone/src/runtime.js';
 import fs from 'node:fs';
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
@@ -50,6 +51,7 @@ setProtocolPackageVersion(CLIENT_PACKAGE_VERSION);
  * @returns {string | null}
  */
 function loadPackageVersion() {
+  if (bundled) return bundled.version;
   try {
     const raw = fs.readFileSync(new URL('../../../package.json', import.meta.url), 'utf8');
     const parsed = JSON.parse(raw);

@@ -212,8 +212,8 @@ test('popup UI handles windowed diagnostics, toggles, and resize', async (t) => 
 
     const diagnostic = document.getElementById('native-diagnostic');
     assert.ok(diagnostic);
-    assert.match(diagnostic.textContent ?? '', /Native host unreachable/);
-    assert.match(diagnostic.textContent ?? '', /bbx install test-extension-id/);
+    assert.match(diagnostic.textContent ?? '', /Companion not connected/);
+    assert.match(diagnostic.textContent ?? '', /Open the side panel/);
     assert.equal(diagnostic.hidden, false);
 
     button.click();

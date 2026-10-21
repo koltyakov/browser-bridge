@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 
 import { tryStartMcpProcessControl } from './lifecycle.js';
 import { startBridgeMcpServer } from './server.js';
+import { forwardToCompanion } from '../../standalone/src/runtime.js';
 
 /**
  * @typedef {{
@@ -67,5 +68,6 @@ export async function runBridgeMcpCli(options = {}) {
 const entryPointUrl = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : null;
 
 if (entryPointUrl === import.meta.url) {
+  await forwardToCompanion(['mcp', 'serve', ...process.argv.slice(2)]);
   void runBridgeMcpCli();
 }

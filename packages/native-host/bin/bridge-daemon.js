@@ -1,6 +1,15 @@
 #!/usr/bin/env node
 // @ts-check
 import { BridgeDaemon } from '../src/daemon.js';
+import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import {
+  bundled,
+  forwardToCompanion,
+  getStandaloneLauncher,
+} from '../../standalone/src/runtime.js';
+
+if (!bundled) await forwardToCompanion(['--bridge-daemon']);
 import {
   applyWindowsTcpTransportDefaults,
   formatBridgeTransport,
@@ -11,6 +20,7 @@ import {
   clearDaemonPidFile,
   recordDaemonStart,
   writeDaemonPidFile,
+  openDaemonLogFd,
 } from '../src/daemon-process.js';
 
 applyWindowsTcpTransportDefaults();
@@ -52,6 +62,37 @@ try {
 }
 
 process.stdout.write(`Browser Bridge daemon listening on ${formatBridgeTransport(transport)}\n`);
+
+if (bundled) {
+  let checking = false;
+  /** @returns {void} */
+  const check = () => {
+    if (
+      checking ||
+      daemon.agentSockets.size ||
+      daemon.pendingRequests.size ||
+      daemon.activeHandlerCount
+    )
+      return;
+    checking = true;
+    const log = openDaemonLogFd();
+    const child = spawn(getStandaloneLauncher(), ['--auto-update'], {
+      detached: true,
+      stdio: log === null ? 'ignore' : ['ignore', log, log],
+      windowsHide: true,
+    });
+    child.once('exit', () => {
+      checking = false;
+    });
+    child.once('error', () => {
+      checking = false;
+    });
+    child.unref();
+    if (log !== null) fs.closeSync(log);
+  };
+  setTimeout(check, 60_000 + Math.random() * 60_000).unref();
+  setInterval(check, 60 * 60 * 1000).unref();
+}
 
 let shuttingDown = false;
 

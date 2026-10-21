@@ -1,4 +1,5 @@
 // @ts-check
+import { bundled } from '../../standalone/src/runtime.js';
 import { isProtocolVersionSupported } from '../../protocol/src/index.js';
 
 import fs from 'node:fs';
@@ -406,6 +407,7 @@ function getVersionNegotiationPayload(requestedVersion) {
  */
 function loadDaemonVersion() {
   try {
+    if (bundled) return bundled.version;
     const raw = fs.readFileSync(new URL('../../../package.json', import.meta.url), 'utf8');
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed.version === 'string' ? parsed.version : null;

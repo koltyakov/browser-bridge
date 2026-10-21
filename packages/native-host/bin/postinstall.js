@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 import { restartBridgeDaemonIfRunning } from '../src/daemon-process.js';
 import { installNativeManifest } from '../src/install-manifest.js';
+import { installedLauncher } from '../../standalone/src/runtime.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -49,7 +50,7 @@ export async function runPostinstall({
   exit = (code) => process.exit(code),
   env = process.env,
 } = {}) {
-  if (shouldSkipPostinstall(env)) {
+  if (shouldSkipPostinstall(env) || installedLauncher()) {
     return;
   }
 

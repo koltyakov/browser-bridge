@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { installMcpConfig } from './mcp-config.js';
+import { bundled } from '../../standalone/src/runtime.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, '../../..');
@@ -460,7 +461,15 @@ async function installManagedSkill(skillName, target, targetDir) {
   let backupCreated = false;
 
   try {
-    await copyDir(sourceDir, temporaryDir);
+    if (bundled) {
+      for (const [relative, content] of Object.entries(bundled.skills)) {
+        const destination = path.join(temporaryDir, relative);
+        await fs.promises.mkdir(path.dirname(destination), { recursive: true });
+        await fs.promises.writeFile(destination, content, 'utf8');
+      }
+    } else {
+      await copyDir(sourceDir, temporaryDir);
+    }
     await applyManagedSkillPatches(skillName, target, temporaryDir);
     await fs.promises.writeFile(
       path.join(temporaryDir, managedSentinelFilename),
@@ -570,6 +579,7 @@ async function applyManagedSkillPatches(skillName, target, targetDir) {
  * @returns {{ name?: unknown, version?: unknown }}
  */
 function loadPackageManifest() {
+  if (bundled) return { name: '@browserbridge/bbx', version: bundled.version };
   try {
     return JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
   } catch {

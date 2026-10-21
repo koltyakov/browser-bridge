@@ -1,4 +1,5 @@
 // @ts-check
+import { bundled, installedLauncher } from '../../standalone/src/runtime.js';
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -110,6 +111,7 @@ export async function applyConfiguredAutoUpdate(
   env = process.env,
   argv = process.argv
 ) {
+  if (bundled || installedLauncher()) return { ...options, updateNpmOnCompatibleVersion: false };
   if (options.updateNpmOnCompatibleVersion !== undefined) {
     return options;
   }

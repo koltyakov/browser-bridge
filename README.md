@@ -108,12 +108,14 @@ Browser Bridge is optimized for the opposite starting point: **inspect the state
 ## Setup
 
 1. Install [Browser Bridge from the Chrome Web Store](https://chromewebstore.google.com/detail/browser-bridge/jjjkmmcdkpcgamlopogicbnnhdgebhie) in Chrome or another Chromium-based browser
-2. `npm install -g @browserbridge/bbx` - installs the CLI and native host
-3. Run `bbx install` (Chromium on Linux, Chrome elsewhere), or target a specific browser with `bbx install --browser chrome`, `bbx install --browser edge`, `bbx install --browser brave`, `bbx install --browser chromium`, or `bbx install --browser arc`
-4. Optionally run `bbx config set auto-update compatible` to keep the global CLI on the highest stable npm release supported by the connected extension
-5. In the extension side panel, install MCP or CLI (skill) for your agent of choice
-6. Enable Browser Bridge for the browser window you want to inspect/control with the AI agent
-7. Ask your agent to use Browser Bridge via MCP (`BB MCP` or `Browser Bridge MCP`), or invoke the installed Browser Bridge skill in CLI mode (`/browser-bridge`, `browser-bridge`, or the client-specific skill trigger)
+2. Click **Download companion** in the extension and open the installer. No Node, npm, or Bun installation is needed.
+3. Return to the extension and choose your agent under **Connect your agent**. Start with MCP.
+4. Enable access for the browser window you want the agent to use.
+5. Ask your agent to use Browser Bridge.
+
+Already installed with npm? Run the companion installer directly. It keeps your settings and migrates recognized agent connections without requiring an uninstall. See the [companion setup and migration guide](https://github.com/koltyakov/browser-bridge/blob/main/docs/companion.md) for Linux, scripts, updates, and project-specific configurations.
+
+The npm installation remains available for developers: `npm install -g @browserbridge/bbx`, then `bbx install`. Register other browsers with `bbx install --browser chrome|edge|brave|chromium|arc`.
 
 On Ubuntu, Chromium is commonly installed as a strict snap, and Flatpak Chromium is similarly sandboxed. If native messaging stays disconnected there, use a non-sandboxed Chromium-based browser such as Google Chrome, Brave, or Edge.
 

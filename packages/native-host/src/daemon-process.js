@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { bundled, installedLauncher, sourceCheckout } from '../../standalone/src/runtime.js';
 
 import { hasLiveListener, pingExistingDaemon } from './daemon.js';
 import {
@@ -99,10 +100,15 @@ export function openDaemonLogFd(logPath = getDaemonLogPath()) {
  */
 export function spawnBridgeDaemonProcess() {
   const logFd = openDaemonLogFd();
-  const child = spawn(process.execPath, [daemonEntryPath], {
-    detached: true,
-    stdio: logFd === null ? 'ignore' : ['ignore', logFd, logFd],
-  });
+  const companion = sourceCheckout ? null : installedLauncher();
+  const child = spawn(
+    companion || process.execPath,
+    companion || bundled ? ['--bridge-daemon'] : [daemonEntryPath],
+    {
+      detached: true,
+      stdio: logFd === null ? 'ignore' : ['ignore', logFd, logFd],
+    }
+  );
   child.unref();
   if (logFd !== null) {
     fs.closeSync(logFd);

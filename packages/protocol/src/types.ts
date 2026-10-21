@@ -913,6 +913,7 @@ export interface SkillTargetStatus {
 
 export interface SetupStatus {
   scope: 'global' | 'local';
+  distribution?: 'standalone';
   mcpClients: McpClientStatus[];
   skillTargets: SkillTargetStatus[];
 }
