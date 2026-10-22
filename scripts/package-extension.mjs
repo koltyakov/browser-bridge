@@ -18,7 +18,7 @@ const stagingDir = path.join(distDir, 'extension');
 const manifestPath = path.join(repoRoot, 'manifest.json');
 const buildOnly = process.argv.includes('--build-only');
 
-/** @typedef {{ version: string, minimum_chrome_version: string, icons?: Record<string, string> }} ExtensionManifest */
+/** @typedef {{ version: string, version_name?: string, minimum_chrome_version: string, icons?: Record<string, string> }} ExtensionManifest */
 
 const manifest = /** @type {ExtensionManifest} */ (await readJson(manifestPath));
 manifest.version = resolveVersion({ root: repoRoot }).version;
@@ -29,7 +29,9 @@ await stageExtension();
 const zipPath = path.join(distDir, `browser-bridge-extension-v${manifest.version}.zip`);
 if (!buildOnly) await createZipArchive(stagingDir, zipPath);
 
-process.stdout.write(`Staged extension at ${stagingDir}\n`);
+process.stdout.write(
+  `Staged extension v${manifest.version_name ?? manifest.version} at ${stagingDir}\n`
+);
 if (!buildOnly) process.stdout.write(`Wrote ${zipPath}\n`);
 
 /**
@@ -136,9 +138,17 @@ async function stageExtension() {
   }
   await hashDirectory(stagingDir);
   const sourceDigest = hash.digest('hex');
+  if (buildOnly) {
+    // Hash before adding the derived label so identical builds keep the same ID.
+    manifest.version_name = `${manifest.version}-dev.${sourceDigest.slice(0, 8)}`;
+    await fs.promises.writeFile(
+      path.join(stagingDir, 'manifest.json'),
+      `${JSON.stringify(manifest, null, 2)}\n`
+    );
+  }
   await fs.promises.writeFile(
     path.join(stagingDir, 'src/build-info.js'),
-    `// @ts-check\n/** SHA-256 of sorted staged paths and bytes before this generated stamp. @type {string | null} */\nexport const SOURCE_DIGEST = '${sourceDigest}';\n/** @type {boolean} */\nexport const DEVELOPMENT_AUTO_RELOAD = ${buildOnly};\n`
+    `// @ts-check\n/** SHA-256 of sorted staged paths and bytes before generated build metadata. @type {string | null} */\nexport const SOURCE_DIGEST = '${sourceDigest}';\n/** @type {boolean} */\nexport const DEVELOPMENT_AUTO_RELOAD = ${buildOnly};\n`
   );
   if (buildOnly) {
     // Publish last, and atomically, so running workers never reload a partial

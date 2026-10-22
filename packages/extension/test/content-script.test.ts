@@ -1134,6 +1134,45 @@ test('active DOM patches survive read-registry eviction and retain exact detache
   );
 });
 
+for (const event of ['beforeunload', 'pagehide']) {
+  test(`input observation returns on ${event} even when document timers freeze`, async (t) => {
+    const NativeEvent = globalThis.Event;
+    await withDocument('<html><body></body></html>', async () => {
+      const saved = captureGlobals(['location', 'addEventListener', 'removeEventListener']);
+      const events = new EventTarget();
+      try {
+        Reflect.set(globalThis, 'location', { href: 'https://example.test/' });
+        Reflect.set(globalThis, 'addEventListener', events.addEventListener.bind(events));
+        Reflect.set(globalThis, 'removeEventListener', events.removeEventListener.bind(events));
+        const harness = createChromeHarness();
+        await loadContentScript(t, {
+          withHelpers: true,
+          preserveDomGlobals: true,
+          chrome: harness.chrome,
+        });
+        const listener = harness.getListener();
+        const started = await executeBridgeMethod(listener, 'input.observe_start', {});
+        t.mock.timers.enable({ apis: ['setTimeout'] });
+        const finished = executeBridgeMethod(listener, 'input.observe_finish', {
+          observationId: started.observationId,
+          settleMs: 1000,
+        });
+        events.dispatchEvent(new NativeEvent(event));
+        const result = await Promise.race([
+          finished,
+          new Promise<null>((resolve) => setImmediate(() => resolve(null))),
+        ]);
+        assert.ok(result, 'navigation must finish observation without another timer tick');
+        assert.equal(result.navigation, 'unloading');
+        assert.equal(result.changed, true);
+      } finally {
+        t.mock.timers.reset();
+        restoreGlobals(saved);
+      }
+    });
+  });
+}
+
 test('content script skips initialization when Chrome runtime messaging is unavailable', async (t) => {
   const contentScriptGlobal = globalThis as typeof globalThis & {
     __chromeCodexBridgeContentScriptLoaded?: boolean;

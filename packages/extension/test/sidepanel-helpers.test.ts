@@ -17,7 +17,6 @@ import {
   getSetupStatusView,
   getSkillSetupCellState,
   getVersionMismatchView,
-  isSetupMatrixBetaKey,
   normalizeSidepanelToggleError,
   shouldPollSetupStatus,
   shouldAutoExpandHostSetup,
@@ -368,9 +367,6 @@ test('getSkillSetupCellState covers custom, installed, update, and install varia
 });
 
 test('sidepanel install and polling helpers normalize action messages and refresh conditions', () => {
-  assert.equal(isSetupMatrixBetaKey('agents'), true);
-  assert.equal(isSetupMatrixBetaKey('cursor'), false);
-
   assert.equal(shouldPollSetupStatus(true, false, true), true);
   assert.equal(shouldPollSetupStatus(false, false, true), false);
   assert.equal(shouldPollSetupStatus(true, true, true), false);

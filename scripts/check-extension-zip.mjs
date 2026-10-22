@@ -53,6 +53,9 @@ if (
 if (!/^export const DEVELOPMENT_AUTO_RELOAD = false;$/m.test(buildInfo)) {
   throw new Error('Release extension ZIP must disable development auto-reload.');
 }
+if ('version_name' in packedManifest && packedManifest.version_name !== version) {
+  throw new Error('Release extension ZIP must not include a development version suffix.');
+}
 
 process.stdout.write(`Validated ${path.basename(zipPath)}\n`);
 for (const entry of entries) {

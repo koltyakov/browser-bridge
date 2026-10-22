@@ -857,68 +857,79 @@ test('background dispatch routes page.get_state through the tab-bound content sc
   ]);
 });
 
-test('background dispatch routes executionMode=cdp input without activating the tab', async () => {
-  const commands: DebuggerSendCommandCall[] = [];
-  const messages: TabMessageCall[] = [];
-  const tabUpdates: Array<{ tabId: number; properties: Record<string, unknown> }> = [];
-  const activeTab = createDispatchActiveTab({ id: 42, active: false });
-  const { loaded } = await loadEnabledDispatchBackground({
-    queryLabel: 'test-background-dispatch-cdp-input',
-    activeTab,
-    chromeOverrides: {
-      tabs: {
-        async sendMessage(tabId: number, message: Record<string, unknown>) {
-          messages.push({ tabId, message });
-          if (message.type === 'bridge.ping') return { ok: true };
-          return {
-            elementRef: 'el_native',
-            point: { x: 25, y: 35 },
-            resolution: {
-              strategy: 'selector-first',
-              candidateCount: 1,
-              evaluatedCount: 1,
-              scrolled: false,
-              hitTest: 'target',
-              recovered: false,
-            },
-          };
+for (const active of [true, false]) {
+  test(`background dispatch handles native pointer input with active=${active} without switching tabs`, async () => {
+    const commands: DebuggerSendCommandCall[] = [];
+    const messages: TabMessageCall[] = [];
+    const tabUpdates: Array<{ tabId: number; properties: Record<string, unknown> }> = [];
+    const activeTab = createDispatchActiveTab({ id: 42, active });
+    const { loaded } = await loadEnabledDispatchBackground({
+      queryLabel: 'test-background-dispatch-cdp-input',
+      activeTab,
+      chromeOverrides: {
+        tabs: {
+          async sendMessage(tabId: number, message: Record<string, unknown>) {
+            messages.push({ tabId, message });
+            if (message.type === 'bridge.ping') return { ok: true };
+            return {
+              elementRef: 'el_native',
+              point: { x: 25, y: 35 },
+              resolution: {
+                strategy: 'selector-first',
+                candidateCount: 1,
+                evaluatedCount: 1,
+                scrolled: false,
+                hitTest: 'target',
+                recovered: false,
+              },
+            };
+          },
+          async update(tabId: number, properties: Record<string, unknown>) {
+            tabUpdates.push({ tabId, properties });
+            return { ...activeTab, ...properties };
+          },
         },
-        async update(tabId: number, properties: Record<string, unknown>) {
-          tabUpdates.push({ tabId, properties });
-          return { ...activeTab, ...properties };
+        debugger: {
+          async sendCommand(target: chrome.debugger.Debuggee, method: string, params?: object) {
+            commands.push({ target, method, params });
+            return {};
+          },
         },
       },
-      debugger: {
-        async sendCommand(target: chrome.debugger.Debuggee, method: string, params?: object) {
-          commands.push({ target, method, params });
-          return {};
-        },
-      },
-    },
+    });
+
+    const response = await loaded.dispatch(
+      createRequest({
+        id: 'dispatch-cdp-click',
+        method: 'input.click',
+        tabId: 42,
+        params: { target: { selector: '#save' }, executionMode: 'cdp' },
+      })
+    );
+
+    if (!active) {
+      assert.equal(response.ok, false);
+      if (response.ok) assert.fail('Inactive native pointer input must fail');
+      assert.equal(response.error.code, ERROR_CODES.INPUT_UNSUPPORTED);
+      assert.equal(response.error.recovery?.retry, false);
+      assert.deepEqual(commands, []);
+      assert.deepEqual(tabUpdates, []);
+      return;
+    }
+    if (!response.ok) assert.fail(response.error.message);
+    assert.equal(response.meta.debugger_backed, true);
+    assert.equal((response.result as { clicked?: unknown }).clicked, true);
+    assert.equal(
+      messages.some((call) => call.message.method === 'input.resolve_native'),
+      true
+    );
+    assert.deepEqual(
+      commands.map((call) => call.method),
+      ['Input.dispatchMouseEvent', 'Input.dispatchMouseEvent', 'Input.dispatchMouseEvent']
+    );
+    assert.deepEqual(tabUpdates, []);
   });
-
-  const response = await loaded.dispatch(
-    createRequest({
-      id: 'dispatch-cdp-click',
-      method: 'input.click',
-      tabId: 42,
-      params: { target: { selector: '#save' }, executionMode: 'cdp' },
-    })
-  );
-
-  if (!response.ok) assert.fail(response.error.message);
-  assert.equal(response.meta.debugger_backed, true);
-  assert.equal((response.result as { clicked?: unknown }).clicked, true);
-  assert.equal(
-    messages.some((call) => call.message.method === 'input.resolve_native'),
-    true
-  );
-  assert.deepEqual(
-    commands.map((call) => call.method),
-    ['Input.dispatchMouseEvent', 'Input.dispatchMouseEvent', 'Input.dispatchMouseEvent']
-  );
-  assert.deepEqual(tabUpdates, []);
-});
+}
 
 test('background dispatch runs a known flow and returns final page evidence in one request', async () => {
   const executed: TabMessageCall[] = [];

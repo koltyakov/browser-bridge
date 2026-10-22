@@ -1234,7 +1234,8 @@ test('sidepanel UI handles setup matrix actions, context menus, diagnostics, and
     assert.equal(examplesSection.open, false);
 
     portPairs[0].left.dispatchMessage(createSidepanelStateSync(false, createRichSetupStatus()));
-    assert.match(setupStatusMatrix.textContent ?? '', /Windsurf \(beta\)/);
+    assert.match(setupStatusMatrix.textContent ?? '', /Windsurf/);
+    assert.doesNotMatch(setupStatusMatrix.textContent ?? '', /\(beta\)/);
     assert.match(setupStatusMatrix.textContent ?? '', /Custom/);
 
     const cursorMcpInstall = setupStatusMatrix.querySelector(

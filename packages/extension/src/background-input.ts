@@ -41,6 +41,7 @@ export type NativeTouchContact = {
 };
 
 export function createBackgroundInputController(dependencies: {
+  getTab: (tabId: number) => Promise<Pick<chrome.tabs.Tab, 'active'>>;
   runWithDebugger: <T>(
     tabId: number,
     operation: (target: DebuggerTarget) => Promise<T>,
@@ -68,6 +69,17 @@ export function createBackgroundInputController(dependencies: {
         ERROR_CODES.INPUT_UNSUPPORTED,
         `${request.method} does not support executionMode=cdp.`,
         { method: request.method, executionMode: 'cdp' }
+      );
+    }
+
+    if (
+      ['input.click', 'input.hover', 'input.drag', 'input.touch'].includes(request.method) &&
+      !(await dependencies.getTab(tab.tabId)).active
+    ) {
+      throw new BridgeError(
+        ERROR_CODES.INPUT_UNSUPPORTED,
+        'Chrome does not deliver native pointer input to an inactive tab. Use executionMode=dom when trusted input is unnecessary, or ask permission to activate this tab before using CDP input.',
+        { reason: 'inactive_native_pointer_target', tabId: tab.tabId }
       );
     }
 

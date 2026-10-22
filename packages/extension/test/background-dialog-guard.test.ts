@@ -96,6 +96,7 @@ for (const phase of ['command', 'observation']) {
     const { coordinator, block, dismiss } = createHarness();
     let commands = 0;
     const controller = createBackgroundInputController({
+      getTab: async () => ({ active: true }),
       runWithDebugger: (tabId, operation) => coordinator.runGuarded(tabId, operation),
       sendCommand: async (target) => {
         coordinator.assertTaskActive(target);
