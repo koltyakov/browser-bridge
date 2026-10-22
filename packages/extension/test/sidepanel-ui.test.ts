@@ -301,6 +301,104 @@ function createActionLogEntry(
   };
 }
 
+test('startup loading covers the first retry and reveals setup only after twelve seconds', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const html = await readFile(SIDEPANEL_HTML_URL, 'utf8');
+  const savedChrome = Reflect.get(globalThis, 'chrome') ?? MISSING;
+  const savedSetInterval = globalThis.setInterval;
+  const savedClearInterval = globalThis.clearInterval;
+  t.after(() => {
+    restoreGlobal('chrome', savedChrome);
+    restoreGlobal('setInterval', savedSetInterval);
+    restoreGlobal('clearInterval', savedClearInterval);
+  });
+  Reflect.set(globalThis, 'setInterval', (() => 0) as unknown as typeof setInterval);
+  Reflect.set(globalThis, 'clearInterval', (() => {}) as typeof clearInterval);
+  for (const connected of [true, false]) {
+    const pairs = [createMessagePortPair(), createMessagePortPair()];
+    let connections = 0;
+    Reflect.set(
+      globalThis,
+      'chrome',
+      createChromeFake({
+        runtime: {
+          connect() {
+            return pairs[connections++].left.port;
+          },
+        },
+      })
+    );
+    await withDocument(html, async ({ window }) => {
+      Reflect.set(window, 'location', new URL('https://example.com/sidepanel.html'));
+      const loading = document.getElementById('native-loading') as HTMLElement;
+      const setup = document.getElementById('native-setup') as HTMLElement;
+      const control = document.getElementById('control-section') as HTMLElement;
+      assert.equal(
+        loading.hidden,
+        false,
+        'the first paint must show loading rather than install instructions'
+      );
+      assert.equal(loading.getAttribute('role'), 'status');
+      assert.equal(setup.hidden, true);
+      assert.equal(control.hidden, true);
+      await importFreshSidepanelScript();
+      await flushMicrotasks();
+      pairs[0].left.dispatchMessage({ type: 'native.status', connected: false });
+      t.mock.timers.tick(500);
+      assert.equal(loading.hidden, false);
+      assert.equal(
+        setup.hidden,
+        true,
+        'an early disconnected snapshot must not bypass startup loading'
+      );
+      if (connected) {
+        t.mock.timers.tick(10000);
+        assert.equal(loading.hidden, false);
+        assert.equal(
+          setup.hidden,
+          true,
+          'loading must cover the first ten-second connection retry'
+        );
+        pairs[0].left.dispatchMessage({ type: 'native.status', connected: true });
+        assert.equal(loading.hidden, true);
+        assert.equal(setup.hidden, true);
+        assert.equal(control.hidden, false);
+        t.mock.timers.tick(12000);
+        assert.equal(
+          setup.hidden,
+          true,
+          'the cancelled startup timer must not reveal setup after connection'
+        );
+        pairs[0].left.dispatchDisconnect();
+        assert.equal(loading.hidden, false, 'a restarted extension worker must show loading again');
+        assert.equal(control.hidden, true);
+        t.mock.timers.tick(500);
+        await flushMicrotasks();
+        pairs[1].left.dispatchMessage({ type: 'native.status', connected: true });
+        assert.equal(loading.hidden, true);
+        assert.equal(setup.hidden, true);
+        assert.equal(control.hidden, false);
+      } else {
+        t.mock.timers.tick(11499);
+        pairs[0].left.dispatchMessage({ type: 'native.status', connected: false });
+        assert.equal(loading.hidden, false);
+        t.mock.timers.tick(1);
+        assert.equal(loading.hidden, true);
+        assert.equal(
+          setup.hidden,
+          false,
+          'repeated disconnected snapshots must not extend the grace period'
+        );
+        assert.equal(document.getElementById('native-diagnostic'), null);
+        pairs[0].left.dispatchMessage({ type: 'native.status', connected: true });
+        assert.equal(setup.hidden, true, 'a late connection still replaces setup immediately');
+        assert.equal(control.hidden, false);
+      }
+      window.dispatchEvent(new window.Event('beforeunload'));
+    });
+  }
+});
+
 test('sidepanel UI smoke test flips the action label between enable and disable states', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const sidepanelHtml = await readFile(SIDEPANEL_HTML_URL, 'utf8');
@@ -475,7 +573,29 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
     assert.deepEqual(intervalCalls, [{ delay: 5_000 }]);
     assert.deepEqual(portPair.left.postedMessages, [
       { type: 'state.request', scopeTabId: 41, scopeWindowId: 1 },
+      { type: 'native.retry', installationCopied: true },
+      { type: 'native.retry', installationCopied: true },
     ]);
+    registrationCommand.click();
+    await flushMicrotasks();
+    assert.deepEqual(portPair.left.postedMessages.at(-1), {
+      type: 'native.retry',
+      installationCopied: true,
+    });
+    t.mock.timers.tick(1500);
+    const copiedMessages = portPair.left.postedMessages.length;
+    Reflect.set(navigator, 'clipboard', {
+      async writeText() {
+        throw new Error('Clipboard denied');
+      },
+    });
+    npmCommand.click();
+    await flushMicrotasks();
+    assert.equal(
+      portPair.left.postedMessages.length,
+      copiedMessages,
+      'failed copies must not speed up connection checks'
+    );
     assert.equal(portPair.left.onMessageListeners.length, 1);
 
     const button = document.getElementById('bridge-toggle') as HTMLButtonElement | null;
@@ -500,6 +620,18 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
 
     portPair.left.dispatchMessage(createSidepanelStateSync(false));
     assert.equal(button.dataset.enabled, 'false');
+    portPair.left.dispatchMessage({ type: 'native.status', connected: false });
+    assert.equal(document.getElementById('native-loading')?.hidden, false);
+    t.mock.timers.tick(12000);
+    assert.equal(document.getElementById('native-setup')?.hidden, false);
+    assert.match(
+      document.getElementById('native-setup')?.textContent ?? '',
+      /Checking for the local daemon automatically/
+    );
+    document.getElementById('setup-native-retry')?.click();
+    assert.deepEqual(portPair.left.postedMessages.at(-1), { type: 'native.retry' });
+    portPair.left.dispatchMessage({ type: 'native.status', connected: true });
+    assert.equal(document.getElementById('native-setup')?.hidden, true);
   });
 });
 
@@ -1641,6 +1773,7 @@ test('sidepanel UI handles setup matrix actions, context menus, diagnostics, and
       false,
       'manual registration stays available for the Web Store extension'
     );
+    runNextTimeout(12_000);
     runNextTimeout(10_000);
     const diagnostic = document.getElementById('native-diagnostic');
     assert.ok(diagnostic instanceof HTMLElement);

@@ -157,6 +157,10 @@ export const ACCESS_DENIED_TAB_CLOSE = 'tabs.close only works inside the enabled
 export const KEEPALIVE_ALARM_NAME = 'bb-keepalive';
 export const NATIVE_RECONNECT_BASE_MS = 2_000;
 export const NATIVE_RECONNECT_MAX_MS = 30_000;
+export const NATIVE_SETUP_POLL_MS = 10_000;
+export const NATIVE_SETUP_IDLE_POLL_MS = 5 * 60_000;
+export const NATIVE_SETUP_RETRY_ALARM = 'bb-native-setup-retry';
+export const NATIVE_SETUP_COPY_BOOST_MS = 60_000;
 export const NATIVE_FLAP_WINDOW_MS = 60_000;
 export const NATIVE_FLAP_THRESHOLD = 3;
 
