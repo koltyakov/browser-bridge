@@ -128,13 +128,15 @@ be restored without migration or changes to the panel message format. */
 
   async function persistHistory(): Promise<void> {
     if (!historyRestored) return;
+    // Connection checks belong only to the live worker, not restored history.
+    const history = state.actionLog.filter((entry) => entry.method !== 'health.ping');
     // Session storage survives worker suspension, but Chrome clears it on an
     // extension reload/update. Keep a bounded local copy for that transition.
     await chromeObj.storage.local.set({
-      [ACTION_LOG_STORAGE_KEY]: [...state.actionLog],
+      [ACTION_LOG_STORAGE_KEY]: history,
     });
     await chromeObj.storage.session.set({
-      [ACTION_LOG_STORAGE_KEY]: [...state.actionLog],
+      [ACTION_LOG_STORAGE_KEY]: history,
     });
   }
 
@@ -188,7 +190,11 @@ where an operation happened even if that operation later revokes the session. */
         }
         const raw = stored[ACTION_LOG_STORAGE_KEY];
         const entries = Array.isArray(raw)
-          ? raw.map((entry) => normalizeActionLogEntry(entry)).filter((entry) => entry !== null)
+          ? raw
+              .map((entry) => normalizeActionLogEntry(entry))
+              .filter(
+                (entry): entry is ActionLogEntry => entry !== null && entry.method !== 'health.ping'
+              )
           : [];
 
         let openTabIds: Set<number> | null = null;
