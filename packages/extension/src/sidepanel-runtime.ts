@@ -127,7 +127,8 @@ export type SidePanelStateRenderOptions = {
     entry: ActionLogEntry,
     setupStatus: SetupStatus | null,
     entries: ActionLogEntry[],
-    index: number
+    index: number,
+    repeatCount: number
   ) => HTMLElement;
   replaceActionLogChildren: (children: HTMLElement[]) => void;
   setCurrentActionLog: (entries: ActionLogEntry[]) => void;
@@ -224,11 +225,25 @@ export function renderSidepanelState(
     state.setupInstallError
   );
 
-  options.replaceActionLogChildren(
-    state.actionLog.map((entry, index, entries) =>
-      options.renderActionLogEntry(entry, state.setupStatus, entries, index)
-    )
-  );
+  const children: HTMLElement[] = [];
+  for (let index = 0; index < state.actionLog.length;) {
+    const entry = state.actionLog[index];
+    let repeatCount = 1;
+    if (entry.method === 'health.ping') {
+      while (index + repeatCount < state.actionLog.length) {
+        const next = state.actionLog[index + repeatCount];
+        // Keep changed outcomes visible rather than hiding failures in a group.
+        if (next.method !== entry.method || next.ok !== entry.ok || next.summary !== entry.summary)
+          break;
+        repeatCount += 1;
+      }
+    }
+    children.push(
+      options.renderActionLogEntry(entry, state.setupStatus, state.actionLog, index, repeatCount)
+    );
+    index += repeatCount;
+  }
+  options.replaceActionLogChildren(children);
   options.setCurrentActionLog(state.actionLog);
   options.updateActivityVisualizations();
 

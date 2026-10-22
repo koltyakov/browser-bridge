@@ -1276,6 +1276,73 @@ test('sidepanel UI shows the global host CLI and daemon version', async (t) => {
   });
 });
 
+test('sidepanel UI groups consecutive pings with a light counter and combined tokens', async (t) => {
+  const html = await readFile(SIDEPANEL_HTML_URL, 'utf8');
+  const savedChrome = Reflect.get(globalThis, 'chrome') ?? MISSING;
+  const savedSetInterval = globalThis.setInterval;
+  const savedClearInterval = globalThis.clearInterval;
+  t.after(() => {
+    restoreGlobal('chrome', savedChrome);
+    restoreGlobal('setInterval', savedSetInterval);
+    restoreGlobal('clearInterval', savedClearInterval);
+  });
+  Reflect.set(globalThis, 'setInterval', (() => 0) as unknown as typeof setInterval);
+  Reflect.set(globalThis, 'clearInterval', (() => {}) as typeof clearInterval);
+  const pair = createMessagePortPair();
+  Reflect.set(
+    globalThis,
+    'chrome',
+    createChromeFake({ runtime: { connect: () => pair.left.port } })
+  );
+  await withDocument(html, async ({ window }) => {
+    Reflect.set(window, 'location', new URL('https://example.com/sidepanel.html'));
+    await importFreshSidepanelScript();
+    await flushMicrotasks();
+
+    const entries = [
+      createActionLogEntry('ping-3', 'health.ping', 300),
+      createActionLogEntry('ping-2', 'health.ping', 200, { source: '' }),
+      createActionLogEntry('ping-1', 'health.ping', 100, { source: 'mcp' }),
+      createActionLogEntry('query-2', 'dom.query', 10),
+      createActionLogEntry('query-1', 'dom.query', 10),
+      createActionLogEntry('separate-ping', 'health.ping', 50),
+      createActionLogEntry('failed-ping', 'health.ping', 20, { ok: false }),
+      createActionLogEntry('changed-summary', 'health.ping', 10, { summary: 'Access required' }),
+    ];
+    pair.left.dispatchMessage(createSidepanelStateSync(true, null, null, entries));
+    const cards = [...document.querySelectorAll('#action-log .activity-card')];
+    assert.equal(cards.length, 6);
+    const counter = cards[0].querySelector('.activity-repeat-count');
+    assert.equal(counter?.textContent, 'x3');
+    assert.equal(counter?.previousElementSibling?.textContent, 'health.ping');
+    assert.equal(counter?.nextElementSibling?.textContent, 'CLI');
+    assert.equal(cards[0].querySelector('.activity-tokens')?.textContent, '≈600 tok');
+    assert.equal(
+      cards[0].querySelector('.activity-time')?.textContent,
+      new Date(entries[0].at).toLocaleTimeString()
+    );
+    assert.equal(document.querySelectorAll('.activity-repeat-count').length, 1);
+    assert.ok(cards[4].querySelector('.activity-summary-error'));
+    assert.equal(document.getElementById('activity-summary-tokens')?.textContent, '≈700 tok');
+
+    pair.left.dispatchMessage(
+      createSidepanelStateSync(true, null, null, [
+        createActionLogEntry('ping-4', 'health.ping', 400),
+        ...entries,
+      ])
+    );
+    assert.equal(document.querySelectorAll('#action-log .activity-card').length, 6);
+    assert.equal(document.querySelector('.activity-repeat-count')?.textContent, 'x4');
+    assert.equal(document.querySelector('#action-log .activity-tokens')?.textContent, '≈1,000 tok');
+
+    pair.left.dispatchMessage(createSidepanelStateSync(true, null, null, [entries[0]]));
+    assert.equal(document.querySelector('.activity-repeat-count'), null);
+    window.dispatchEvent(new window.Event('beforeunload'));
+  });
+  const css = await readFile(extensionFile('ui/ui.css'), 'utf8');
+  assert.match(css, /\.activity-repeat-count\s*\{[^}]*font-weight:\s*400/u);
+});
+
 test('sidepanel UI renders activity summaries, histogram families, and repeat warnings', async (t) => {
   const sidepanelHtml = await readFile(SIDEPANEL_HTML_URL, 'utf8');
   const savedChrome = Object.prototype.hasOwnProperty.call(globalThis, 'chrome')
