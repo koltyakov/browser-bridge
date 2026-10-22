@@ -4,7 +4,6 @@ import assert from 'node:assert/strict';
 import {
   AGENT_TAB_STORAGE_KEY,
   DEFAULT_AGENT_SESSION,
-  MAX_AGENT_RECENT_TABS,
   createAgentTabLeaseStore,
   normalizeAgentSession,
 } from '../src/background-agent-tabs.js';
@@ -167,18 +166,41 @@ test('older stored leases become recent targets and malformed target data is ign
   );
 });
 
-test('recent targets stay bounded, follow window rebinding, and clear with access', async () => {
+test('recent targets have no tab-count cap, follow window rebinding, and clear with access', async () => {
   const store = createAgentTabLeaseStore({ now: () => 100 });
-  for (let tabId = 1; tabId <= MAX_AGENT_RECENT_TABS + 3; tabId += 1) {
+  for (let tabId = 1; tabId <= 20; tabId += 1) {
     await store.bind('a', tabId, 7);
   }
   const tabs = await store.listRecentTabs();
-  assert.equal(tabs.length, MAX_AGENT_RECENT_TABS);
-  assert.equal(tabs[0].tabId, 4);
+  assert.deepEqual(
+    tabs.map((tab) => tab.tabId),
+    Array.from({ length: 20 }, (_, index) => index + 1)
+  );
   await store.bind('a', 50, 8);
   assert.deepEqual(await store.listRecentTabs(), [{ tabId: 50, windowId: 8, lastUsedAt: 100 }]);
   await store.clear();
   assert.deepEqual(await store.listRecentTabs(), []);
+});
+
+test('all recent targets survive worker restarts and revisits without truncation or duplication', async () => {
+  const storage = createStorageArea();
+  const store = createAgentTabLeaseStore({ storage, now: () => 100 });
+  const ids = Array.from({ length: 64 }, (_, index) => index + 1);
+  for (const tabId of ids) await store.bind('a', tabId, 7);
+  await store.bind('a', 1, 7);
+  const expected = [...ids.slice(1), 1];
+  assert.deepEqual(
+    (await store.listRecentTabs()).map((tab) => tab.tabId),
+    expected
+  );
+  assert.equal((await store.get('a'))?.tabId, 1);
+
+  const restarted = createAgentTabLeaseStore({ storage, now: () => 100 });
+  assert.deepEqual(
+    (await restarted.listRecentTabs()).map((tab) => tab.tabId),
+    expected
+  );
+  assert.equal((await restarted.get('a'))?.tabId, 1);
 });
 
 /**
@@ -186,8 +208,11 @@ test('recent targets stay bounded, follow window rebinding, and clear with acces
  */
 async function loadTwoTabBackground(label: string) {
   const tabs = new Map<number, chrome.tabs.Tab>([
-    [81, { id: 81, windowId: 7, active: true, title: 'App', url: 'https://app.test/' }],
-    [82, { id: 82, windowId: 7, active: false, title: 'Mail', url: 'https://mail.test/' }],
+    [81, { id: 81, index: 0, windowId: 7, active: true, title: 'App', url: 'https://app.test/' }],
+    [
+      82,
+      { id: 82, index: 1, windowId: 7, active: false, title: 'Mail', url: 'https://mail.test/' },
+    ],
   ] as Array<[number, chrome.tabs.Tab]>);
   const reloads: number[] = [];
   const updates: Array<{ tabId: number; properties: chrome.tabs.UpdateProperties }> = [];
@@ -398,7 +423,7 @@ test('tabs.activate moves the calling agent to the activated tab', async () => {
 });
 
 test('panel shows both targets for one alternating agent and stays scoped to its own tab', async () => {
-  const { loaded, remove } = await loadTwoTabBackground('agent-tabs-panel');
+  const { loaded, remove, tabs } = await loadTwoTabBackground('agent-tabs-panel');
   const state = loaded.module.getStateForTest() as ExtensionState;
   const pair = createMessagePortPair();
   const port = pair.left.port as unknown as chrome.runtime.Port;
@@ -419,6 +444,9 @@ test('panel shows both targets for one alternating agent and stays scoped to its
   await call(loaded, 'navigation.reload', { session: 'a', tabId: 82 });
   await emit();
   const expected = latest();
+  assert.ok(
+    expected?.every((tab) => Number.isFinite(tab.lastActivityAt) && (tab.lastActivityAt ?? 0) > 0)
+  );
   assert.deepEqual(
     expected?.map((tab) => [tab.tabId, tab.isCurrent]),
     [
@@ -449,6 +477,29 @@ test('panel shows both targets for one alternating agent and stays scoped to its
     latest()?.map((tab) => tab.actionCount),
     [2, 2],
     'pings do not inflate action counts'
+  );
+  const app = tabs.get(81);
+  const mail = tabs.get(82);
+  assert.ok(app && mail);
+  app.index = 1;
+  mail.index = 0;
+  (loaded.chrome.tabs.onMoved as unknown as FakeChromeEvent).dispatch(81, {
+    windowId: 7,
+    fromIndex: 0,
+    toIndex: 1,
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(
+    latest()?.map((tab) => tab.tabId),
+    [82, 81],
+    'dragging a tab refreshes browser order'
+  );
+  await call(loaded, 'navigation.reload', { session: 'a', tabId: 81 });
+  await emit();
+  assert.deepEqual(
+    latest()?.map((tab) => tab.tabId),
+    [82, 81],
+    'new activity does not change window order'
   );
   remove(82);
   await new Promise((resolve) => setImmediate(resolve));

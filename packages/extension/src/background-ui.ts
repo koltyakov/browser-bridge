@@ -10,6 +10,7 @@ export type AgentTabUiState = {
   title: string;
   isCurrent: boolean;
   actionCount?: number;
+  lastActivityAt?: number;
 };
 export type UiDeps = {
   refreshSetupStatus: (force?: boolean) => void;

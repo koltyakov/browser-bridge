@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import {
   buildSetupMatrixRows,
   createSetupInstallMessage,
+  formatTabActivityAge,
+  getAgentTabsInlineHeight,
   getActivitySourcePills,
   getActivitySourceTag,
   getInstallKey,
@@ -24,6 +26,34 @@ import {
 } from '../src/sidepanel-helpers.js';
 
 type SetupStatus = NonNullable<Parameters<typeof getSetupStatusView>[0]>;
+
+test('active tabs use inline space only when enough tab rows remain usable', () => {
+  assert.equal(getAgentTabsInlineHeight(500, 174), 174);
+  assert.equal(getAgentTabsInlineHeight(150, 500), 150);
+  assert.equal(getAgentTabsInlineHeight(100, 500), 100);
+  assert.equal(getAgentTabsInlineHeight(60, 500), null);
+  assert.equal(getAgentTabsInlineHeight(50, 45), 45);
+  assert.equal(getAgentTabsInlineHeight(-1, 174), null);
+  assert.equal(getAgentTabsInlineHeight(500, 0), null);
+  assert.equal(getAgentTabsInlineHeight(Number.NaN, 174), null);
+  assert.equal(getAgentTabsInlineHeight(500, Number.NaN), null);
+});
+
+test('tab activity age uses compact minute/second labels and handles missing timestamps', () => {
+  const at = 1_000_000;
+  assert.equal(formatTabActivityAge(at, at), '<1m');
+  assert.equal(formatTabActivityAge(at, at + 1_999), '<1m');
+  assert.equal(formatTabActivityAge(at, at + 59_999), '<1m');
+  assert.equal(formatTabActivityAge(at, at + 60_000), '1m 0s');
+  assert.equal(formatTabActivityAge(at, at + 61_000), '1m 1s');
+  assert.equal(formatTabActivityAge(at, at + 3_661_000), '61m 1s');
+  assert.equal(formatTabActivityAge(at, at - 1_000), '<1m');
+  assert.equal(formatTabActivityAge(undefined, at), '');
+  assert.equal(formatTabActivityAge(0, at), '');
+  assert.equal(formatTabActivityAge(Number.NaN, at), '');
+  assert.equal(formatTabActivityAge(at, Number.NaN), '');
+  assert.equal(formatTabActivityAge(Date.now()), '<1m');
+});
 
 test('getVersionMismatchView accepts independent minor releases and warns on major drift', () => {
   assert.equal(getVersionMismatchView('1.8.1', '1.8.9'), null);

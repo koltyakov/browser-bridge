@@ -9,7 +9,6 @@ export const AGENT_TAB_STORAGE_KEY = 'bbxAgentTabLeases';
 export const DEFAULT_AGENT_SESSION = 'default';
 export const AGENT_TAB_IDLE_MS = 15 * 60_000;
 export const MAX_AGENT_TAB_LEASES = 16;
-export const MAX_AGENT_RECENT_TABS = 16;
 
 export type AgentRecentTab = { tabId: number; windowId: number; lastUsedAt: number };
 
@@ -58,20 +57,18 @@ function normalizeStoredLease(value: unknown): AgentTabLease | null {
   const lastUsedAt = Number(candidate.lastUsedAt);
   if (![tabId, windowId, boundAt, lastUsedAt].every(Number.isFinite)) return null;
   const recentTabs = Array.isArray(candidate.recentTabs)
-    ? candidate.recentTabs
-        .flatMap((entry) => {
-          if (!entry || typeof entry !== 'object') return [];
-          const tab = entry as Record<string, unknown>;
-          return typeof tab.tabId === 'number' &&
-            Number.isSafeInteger(tab.tabId) &&
-            tab.tabId > 0 &&
-            tab.windowId === windowId &&
-            typeof tab.lastUsedAt === 'number' &&
-            Number.isFinite(tab.lastUsedAt)
-            ? [{ tabId: tab.tabId, windowId, lastUsedAt: tab.lastUsedAt }]
-            : [];
-        })
-        .slice(-MAX_AGENT_RECENT_TABS)
+    ? candidate.recentTabs.flatMap((entry) => {
+        if (!entry || typeof entry !== 'object') return [];
+        const tab = entry as Record<string, unknown>;
+        return typeof tab.tabId === 'number' &&
+          Number.isSafeInteger(tab.tabId) &&
+          tab.tabId > 0 &&
+          tab.windowId === windowId &&
+          typeof tab.lastUsedAt === 'number' &&
+          Number.isFinite(tab.lastUsedAt)
+          ? [{ tabId: tab.tabId, windowId, lastUsedAt: tab.lastUsedAt }]
+          : [];
+      })
     : candidate.closed === true
       ? []
       : [{ tabId, windowId, lastUsedAt }];
@@ -166,12 +163,13 @@ export function createAgentTabLeaseStore(
           : { tabId, windowId, boundAt: timestamp, lastUsedAt: timestamp, closed: false };
       // Explicit requests can alternate targets without changing the set shown
       // in the panel. Keep routing's single default tab separate from this list.
+      // Retain every recent target so opening more tabs does not ungroup earlier ones.
       lease.recentTabs = [
         ...(previous?.windowId === windowId ? (previous.recentTabs ?? []) : []).filter(
           (tab) => tab.tabId !== tabId && timestamp - tab.lastUsedAt <= idleMs
         ),
         { tabId, windowId, lastUsedAt: timestamp },
-      ].slice(-MAX_AGENT_RECENT_TABS);
+      ];
       leases.set(session, lease);
       evictOverflow();
       await persist();

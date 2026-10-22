@@ -5,6 +5,7 @@ import { createChromeFake, createStorageArea } from '../../../tests/_helpers/chr
 import { loadBackground } from '../../../tests/_helpers/loadBackground.ts';
 import { createRequest } from '../../../protocol/src/index.js';
 import type { ExtensionState } from '../src/background-state.js';
+import { createAgentTabLeaseStore } from '../src/background-agent-tabs.js';
 import {
   AGENT_GROUP_STORAGE_KEY,
   createAgentTabGroupController,
@@ -155,6 +156,29 @@ test('adjacent active tabs share an AI group and separated tabs get separate gro
   assert.deepEqual(h.order(), before);
   await Promise.all([h.controller.sync(), h.controller.sync()]);
   assert.equal(h.calls.length, 2, 'repeated routing does not recreate groups');
+});
+
+test('all 20 tabs used by one agent stay in the AI group without moving', async () => {
+  const ids = Array.from({ length: 20 }, (_, index) => index + 1);
+  const h = harness(ids);
+  const store = createAgentTabLeaseStore({ storage: h.storage, now: () => 100 });
+  const controller = createAgentTabGroupController(h.chromeObj, {
+    async getActivity() {
+      return {
+        windowId: 7,
+        tabIds: new Set((await store.listRecentTabs()).map((tab) => tab.tabId)),
+      };
+    },
+  });
+  for (const tabId of ids) {
+    await store.bind('a', tabId, 7);
+    await controller.sync();
+  }
+  assert.equal(h.groups.size, 1);
+  const group = [...h.groups.values()][0];
+  assert.equal(group.title, 'AI');
+  assert.ok(h.tabs.every((tab) => tab.groupId === group.id));
+  assert.deepEqual(h.order(), ids);
 });
 
 test('neighboring blocks merge when the intervening tab becomes active and split when it becomes idle', async () => {
