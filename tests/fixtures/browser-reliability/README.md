@@ -7,12 +7,12 @@ its routes and required markers without launching Chrome.
 ## Launch
 
 ```bash
-npm run fixture:browser
+make fixture-browser
 # http://127.0.0.1:4173/
 ```
 
-Override the port with `BBX_FIXTURE_PORT=4317 npm run fixture:browser` or
-`npm run fixture:browser -- --port 4317`. The server always binds `127.0.0.1`, never a LAN
+Override the port with `BBX_FIXTURE_PORT=4317 make fixture-browser` or
+`make fixture-browser ARGS='--port 4317'`. The server always binds `127.0.0.1`, never a LAN
 interface. An invalid or occupied port exits with a clear error. Stop it with `Ctrl+C`.
 
 The page makes requests only to its own origin. Dialogs and `beforeunload` are never armed

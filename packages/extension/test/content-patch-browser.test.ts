@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { promisify } from 'node:util';
+import { extensionFile } from '../../../tests/_helpers/extensionBuild.ts';
 
 // This function runs in Chrome, not LinkeDOM. Keep it self-contained.
 function checkBrowserPatches(): void {
@@ -206,7 +207,7 @@ test(
     t.after(() => rm(profile, { recursive: true, force: true }));
     const scripts = await Promise.all(
       ['content-script-helpers.js', 'content-element-registry.js', 'content-patch.js'].map((name) =>
-        readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')
+        readFile(extensionFile(`src/${name}`), 'utf8')
       )
     );
     const html = `<html><body><script>${scripts.join('\n')}</script><script>

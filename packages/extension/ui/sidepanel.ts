@@ -1,0 +1,1509 @@
+import {
+  createSetupInstallMessage,
+  getActivitySourcePills,
+  getPromptExamplesRenderGroups,
+  getSidepanelAgentStatusView,
+  getSidepanelCurrentTabView,
+  getSidepanelNativeStatusView,
+  getUnstableConnectionDiagnostic,
+  getVersionMismatchView,
+  getMcpSetupCellState,
+  getSetupStatusView,
+  getSkillSetupCellState,
+  isSetupMatrixBetaKey,
+  normalizeSidepanelToggleError,
+  syncSetupStatusPolling as syncSetupStatusPollingState,
+} from '../src/sidepanel-helpers.js';
+import {
+  connectSidepanelPort as connectSidepanelRuntimePort,
+  createSidepanelMessageHandler,
+  hasSidepanelAgentWork,
+  readRequestedTabId,
+  renderSidepanelState,
+} from '../src/sidepanel-runtime.js';
+
+export type McpClientStatus = import('../../../protocol/src/types.js').McpClientStatus;
+export type SkillInstallationStatus =
+  import('../../../protocol/src/types.js').SkillInstallationStatus;
+export type SkillTargetStatus = import('../../../protocol/src/types.js').SkillTargetStatus;
+export type SetupStatus = import('../../../protocol/src/types.js').SetupStatus;
+export type SetupContextAction = import('../src/sidepanel-helpers.js').SetupContextAction;
+export type SetupMatrixCellState = import('../src/sidepanel-helpers.js').SetupMatrixCellState;
+export type SetupMatrixRow = import('../src/sidepanel-helpers.js').SetupMatrixRow;
+
+export type SidePanelCurrentTab = {
+  tabId: number;
+  windowId: number;
+  title: string;
+  url: string;
+  enabled: boolean;
+  accessRequested: boolean;
+  restricted: boolean;
+  accessRequestContext?: import('../src/background-state.js').AccessRequestContext;
+};
+
+export type ActionLogEntry = {
+  id: string;
+  at: number;
+  method: string;
+  source: string;
+  mcpEra?: import('../../../protocol/src/types.js').McpProtocolEra | null;
+  tabId: number | null;
+  url: string;
+  ok: boolean;
+  summary: string;
+  responseBytes: number;
+  approxTokens: number;
+  imageApproxTokens: number;
+  costClass: 'cheap' | 'moderate' | 'heavy' | 'extreme';
+  imageBytes: number;
+  summaryBytes: number;
+  summaryTokens: number;
+  summaryCostClass: 'cheap' | 'moderate' | 'heavy' | 'extreme';
+  debuggerBacked: boolean;
+  overBudget: boolean;
+  hasScreenshot: boolean;
+  nodeCount: number | null;
+  continuationHint: string | null;
+  severity?: 'info' | 'warning';
+  sensitiveAccess?: {
+    source: 'local_storage' | 'session_storage';
+    category: 'storage_value';
+    keyLength: number;
+  } | null;
+};
+
+export type DaemonProxyStatus = {
+  enabled: boolean;
+  endpoint: string | null;
+};
+
+export type UiSnapshot = {
+  nativeConnected: boolean;
+  nativeUnstable?: boolean;
+  nativeHostVersion: string | null;
+  daemonProxy: DaemonProxyStatus | null;
+  currentTab: SidePanelCurrentTab | null;
+  agentTabs?: import('../src/background-ui.js').AgentTabUiState[];
+  otherEnabledWindows?: import('../../../protocol/src/window-access.js').BrowserWindowAccess[];
+  setupStatus: SetupStatus | null;
+  setupStatusPending: boolean;
+  setupStatusError: string | null;
+  setupInstallPendingKey: string | null;
+  setupInstallError: string | null;
+  actionLog: ActionLogEntry[];
+};
+
+export type SidePanelMessage =
+  | {
+      type: 'native.status';
+      connected: boolean;
+      unstable?: boolean;
+      error?: string;
+    }
+  | {
+      type: 'state.sync';
+      state: UiSnapshot;
+    }
+  | {
+      type: 'toggle.error';
+      error: string;
+    }
+  | {
+      type: 'windows.action.result';
+      action: import('../../../protocol/src/window-access.js').WindowAction;
+      ok: boolean;
+      error?: string;
+    };
+
+const PUBLISHED_EXTENSION_ID = 'jjjkmmcdkpcgamlopogicbnnhdgebhie';
+const SETUP_STATUS_POLL_MS = 15_000;
+const nativeIndicator = document.getElementById('native-indicator') as HTMLSpanElement;
+const toggleButton = document.getElementById('bridge-toggle') as HTMLButtonElement;
+const actionLog = document.getElementById('action-log') as HTMLDivElement;
+const setupSection = document.getElementById('native-setup') as HTMLElement;
+const setupInstallHint = document.getElementById('setup-install-hint') as HTMLElement;
+const setupInstallCmd = document.getElementById('setup-install-cmd') as HTMLElement;
+const controlSection = document.getElementById('control-section') as HTMLElement;
+const installationSection = document.getElementById('installation-section') as HTMLDetailsElement;
+const setupStatusNote = document.getElementById('setup-status-note') as HTMLParagraphElement;
+const setupHostVersion = document.getElementById('setup-host-version') as HTMLParagraphElement;
+const proxyStatusEl = document.getElementById('proxy-status') as HTMLParagraphElement;
+const versionMismatchBanner = document.getElementById('version-mismatch-banner') as HTMLDivElement;
+const versionMismatchMessage = document.getElementById(
+  'version-mismatch-message'
+) as HTMLParagraphElement;
+const versionMismatchDismiss = document.getElementById(
+  'version-mismatch-dismiss'
+) as HTMLButtonElement;
+const setupStatusSummaryNote = document.getElementById(
+  'setup-status-summary-note'
+) as HTMLSpanElement;
+const setupStatusMatrix = document.getElementById('setup-status-matrix') as HTMLDivElement;
+const activitySection = document.getElementById('activity-section') as HTMLElement;
+const activityHistogram = document.getElementById('activity-histogram') as HTMLDivElement;
+const activityHistogramBars = document.getElementById('activity-histogram-bars') as HTMLDivElement;
+const activityHistogramRange = document.getElementById(
+  'activity-histogram-range'
+) as HTMLSpanElement;
+const activitySummaryTokens = document.getElementById('activity-summary-tokens') as HTMLSpanElement;
+const agentStatus = document.getElementById('agent-status') as HTMLDivElement;
+const agentStatusDetail = document.getElementById('agent-status-detail') as HTMLParagraphElement;
+const agentDisclosure = document.getElementById('agent-disclosure') as HTMLParagraphElement;
+const agentTabRow = document.getElementById('agent-tab-row') as HTMLElement;
+const agentTabsList = document.getElementById('agent-tabs-list') as HTMLUListElement;
+const otherWindows = document.getElementById('other-windows') as HTMLDetailsElement;
+const otherWindowsCount = document.getElementById('other-windows-count') as HTMLElement;
+const otherWindowsList = document.getElementById('other-windows-list') as HTMLUListElement;
+const otherWindowsDisable = document.getElementById('other-windows-disable') as HTMLButtonElement;
+const otherWindowsError = document.getElementById('other-windows-error') as HTMLParagraphElement;
+const examplesSection = document.getElementById('examples-section') as HTMLDetailsElement;
+const examplesContent = document.getElementById('examples-content') as HTMLDivElement;
+
+let currentTabState: SidePanelCurrentTab | null = null;
+
+let currentActionLog: ActionLogEntry[] = [];
+
+let currentOtherWindowsKey: string | null = null;
+let windowActionPending = false;
+let hasAgentWork = false;
+
+let setupStatusPollTimer: ReturnType<typeof setInterval> | null = null;
+let hasAutoExpandedHostSetup = false;
+
+let nativeDiagnosticTimer: ReturnType<typeof setTimeout> | null = null;
+
+let pendingToggleTimer: ReturnType<typeof setTimeout> | null = null;
+
+let toggleErrorTimer: ReturnType<typeof setTimeout> | null = null;
+
+let currentVersionMismatchKey: string | null = null;
+
+let dismissedVersionMismatchKey: string | null = null;
+const NATIVE_DIAGNOSTIC_DELAY_MS = 10_000;
+const TOGGLE_PENDING_TIMEOUT_MS = 10_000;
+const TOGGLE_ERROR_DISPLAY_MS = 6_000;
+
+const toggleErrorEl = document.createElement('p');
+toggleErrorEl.className = 'toggle-error';
+toggleErrorEl.hidden = true;
+toggleButton.insertAdjacentElement('afterend', toggleErrorEl);
+const setupContextMenu = document.createElement('div');
+setupContextMenu.className = 'setup-context-menu';
+setupContextMenu.hidden = true;
+document.body.append(setupContextMenu);
+
+const CLI_PROMPT_EXAMPLES = Object.freeze([
+  'Use Browser Bridge to explain why this button is not actionable.',
+  'Inspect the live layout, test a reversible spacing patch, then verify it.',
+  'Run the form flow and verify the page state after each input action.',
+  'Prime network capture, reproduce this failure, and inspect the resulting errors.',
+]);
+
+const MCP_PROMPT_EXAMPLES = Object.freeze([
+  'Use BBX MCP to explain why this button is not actionable.',
+  'Use BBX MCP to test a reversible layout patch and verify the result.',
+  'Use BBX MCP to run the form flow and verify state after each input action.',
+  'Use BBX MCP to prime network capture, reproduce the failure, and inspect errors.',
+]);
+const ACTIVITY_HISTOGRAM_WINDOW_MS = 10 * 60 * 1000;
+const ACTIVITY_HISTOGRAM_BUCKET_MS = 30 * 1000;
+const ACTIVITY_HISTOGRAM_BARS = Math.floor(
+  ACTIVITY_HISTOGRAM_WINDOW_MS / ACTIVITY_HISTOGRAM_BUCKET_MS
+);
+const ACTIVITY_HISTOGRAM_TICK_MS = 5 * 1000;
+const HISTOGRAM_METHOD_FAMILIES = [
+  'dom',
+  'page',
+  'layout',
+  'style',
+  'input',
+  'patch',
+  'capture',
+  'other',
+] as const;
+for (const cmd of document.querySelectorAll('.setup-cmd') as NodeListOf<HTMLElement>) {
+  if (cmd.classList.contains('example-cmd')) {
+    continue;
+  }
+  cmd.addEventListener('click', () => {
+    copySetupText(cmd, cmd.textContent?.trim() ?? '');
+  });
+}
+
+function copySetupText(target: HTMLElement, text: string): void {
+  if (!text) {
+    return;
+  }
+  navigator.clipboard
+    .writeText(text)
+    .then(() => {
+      target.classList.add('copied');
+      const copyButton = target.querySelector('.example-copy-button');
+      const resetLabel = copyButton instanceof HTMLButtonElement ? copyButton.textContent : null;
+      if (copyButton instanceof HTMLButtonElement) {
+        copyButton.textContent = '✓';
+      }
+      setTimeout(() => {
+        target.classList.remove('copied');
+        if (copyButton instanceof HTMLButtonElement) {
+          copyButton.textContent = resetLabel || '⧉';
+        }
+      }, 1500);
+    })
+    .catch(() => {
+      // Ignore clipboard failures; prompt chips expose a dedicated copy button.
+    });
+}
+
+let port: chrome.runtime.Port;
+
+const handleSidepanelMessage = createSidepanelMessageHandler({
+  renderNativeStatus,
+  renderState,
+  renderToggleError,
+  renderWindowActionResult,
+});
+
+const requestedTabId: number | null = readRequestedTabId(window.location.search);
+
+async function connectSidepanelPort(): Promise<void> {
+  const panelWindow = await chrome.windows.getCurrent();
+  port = connectSidepanelRuntimePort({
+    scopeTabId: requestedTabId,
+    scopeWindowId: panelWindow.id,
+    connect: (connectInfo) => chrome.runtime.connect(connectInfo),
+    onMessage: handleSidepanelMessage,
+    scheduleReconnect: (callback, delayMs) => {
+      setTimeout(callback, delayMs);
+    },
+    onReconnect: () => {
+      void connectSidepanelPort();
+    },
+  }) as chrome.runtime.Port;
+}
+
+void connectSidepanelPort();
+const activityHistogramTimer = setInterval(() => {
+  updateActivityVisualizations();
+}, ACTIVITY_HISTOGRAM_TICK_MS);
+
+toggleButton.addEventListener('click', () => {
+  if (!currentTabState || toggleButton.dataset.pending === 'true') {
+    return;
+  }
+
+  const pendingEnabled = !currentTabState.enabled;
+  toggleButton.dataset.pending = 'true';
+  toggleButton.textContent = pendingEnabled ? 'Enabling\u2026' : 'Disabling\u2026';
+
+  if (pendingToggleTimer) {
+    clearTimeout(pendingToggleTimer);
+  }
+  pendingToggleTimer = setTimeout(() => {
+    toggleButton.dataset.pending = 'false';
+    if (currentTabState) {
+      toggleButton.textContent = currentTabState.enabled
+        ? 'Disable Window Access'
+        : 'Enable Window Access';
+    }
+    pendingToggleTimer = null;
+  }, TOGGLE_PENDING_TIMEOUT_MS);
+
+  port.postMessage({
+    type: 'scope.set_enabled',
+    tabId: currentTabState.tabId,
+    enabled: pendingEnabled,
+  });
+});
+
+otherWindowsDisable.addEventListener('click', () => {
+  startWindowAction('disable', { type: 'windows.disable_others' });
+});
+
+function startWindowAction(
+  action: import('../../../protocol/src/window-access.js').WindowAction,
+  message: Record<string, unknown>
+): void {
+  if (windowActionPending || otherWindows.hidden) return;
+  windowActionPending = true;
+  otherWindowsError.hidden = true;
+  otherWindowsDisable.textContent = action === 'disable' ? 'Disabling…' : 'Disable all';
+  syncOtherWindowButtons();
+  try {
+    port.postMessage(message);
+  } catch {
+    renderWindowActionResult({
+      action,
+      ok: false,
+      error: 'Extension connection lost. Reopen the side panel.',
+    });
+  }
+}
+
+function syncOtherWindowButtons(): void {
+  otherWindowsDisable.disabled = windowActionPending || Boolean(otherWindows.hidden);
+  for (const button of otherWindowsList.querySelectorAll(
+    '.other-window-button'
+  ) as NodeListOf<HTMLButtonElement>) {
+    button.disabled = windowActionPending || button.dataset.controllable !== 'true';
+  }
+}
+
+function renderWindowActionResult(
+  message: import('../../../protocol/src/window-access.js').WindowActionUiResult
+): void {
+  windowActionPending = false;
+  otherWindowsDisable.textContent = 'Disable all';
+  otherWindowsError.textContent = message.ok
+    ? ''
+    : message.error || 'Window action failed. Try again.';
+  otherWindowsError.hidden = message.ok;
+  syncOtherWindowButtons();
+  if (message.ok && message.action === 'focus') otherWindows.open = false;
+}
+
+installationSection.addEventListener('toggle', () => {
+  syncExclusiveDetailsSections(installationSection, examplesSection);
+  syncConnectedSectionsVisibility();
+  syncSetupStatusPolling();
+});
+
+examplesSection.addEventListener('toggle', () => {
+  syncExclusiveDetailsSections(examplesSection, installationSection);
+  syncConnectedSectionsVisibility();
+  syncSetupStatusPolling();
+});
+
+setupStatusMatrix.addEventListener('contextmenu', (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+  const actionTarget = target.closest('[data-context-kind][data-context-target]');
+  if (!(actionTarget instanceof HTMLElement)) {
+    hideSetupContextMenu();
+    return;
+  }
+
+  const kind = actionTarget.dataset.contextKind;
+  const targetKey = actionTarget.dataset.contextTarget;
+  const copyLabel = actionTarget.dataset.contextCopyLabel;
+  const copyText = actionTarget.dataset.contextCopyText;
+  const reinstallLabel = actionTarget.dataset.contextReinstallLabel;
+  const uninstallLabel = actionTarget.dataset.contextUninstallLabel;
+  if ((kind !== 'mcp' && kind !== 'skill') || !targetKey || !copyLabel || !copyText) {
+    hideSetupContextMenu();
+    return;
+  }
+
+  event.preventDefault();
+  showSetupContextMenu(event.clientX, event.clientY, {
+    kind,
+    target: targetKey,
+    copyLabel,
+    copyText,
+    reinstallLabel: reinstallLabel || undefined,
+    uninstallLabel: uninstallLabel || undefined,
+  });
+});
+
+document.addEventListener('click', () => {
+  hideSetupContextMenu();
+});
+
+document.addEventListener('click', (event) => {
+  if (event.target instanceof Node && !otherWindows.contains(event.target))
+    otherWindows.open = false;
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    hideSetupContextMenu();
+    if (otherWindows.open) {
+      otherWindows.open = false;
+      otherWindowsCount.focus();
+    }
+  }
+});
+
+versionMismatchDismiss.addEventListener('click', () => {
+  dismissedVersionMismatchKey = currentVersionMismatchKey;
+  versionMismatchBanner.hidden = true;
+});
+
+window.addEventListener('beforeunload', () => {
+  clearInterval(activityHistogramTimer);
+});
+
+function renderState(state: UiSnapshot): void {
+  hasAgentWork = hasSidepanelAgentWork(state);
+  renderHostVersion(state.nativeHostVersion);
+  renderProxyStatus(state.daemonProxy);
+  renderSidepanelState(state, {
+    hideSetupContextMenu,
+    renderNativeStatus,
+    renderCurrentTab,
+    renderAgentStatus,
+    renderPromptExamples,
+    renderSetupStatus,
+    renderActionLogEntry,
+    replaceActionLogChildren(children) {
+      actionLog.replaceChildren(...children);
+    },
+    setCurrentActionLog(entries) {
+      currentActionLog = entries;
+    },
+    updateActivityVisualizations,
+    showEmptyActionLog() {
+      actionLog.textContent = 'No recent agent actions.';
+    },
+    collapseExamples() {
+      examplesSection.removeAttribute('open');
+    },
+    syncConnectedSectionsVisibility,
+    syncSetupStatusPolling,
+  });
+}
+
+function updateActivityVisualizations(): void {
+  const histogram = buildActivityHistogram(currentActionLog);
+  renderActivityHistogram(histogram);
+  renderActivitySummary(histogram.totalTokens);
+}
+
+function renderCurrentTab(currentTab: SidePanelCurrentTab | null): void {
+  currentTabState = currentTab;
+  toggleButton.dataset.pending = 'false';
+  toggleErrorEl.hidden = true;
+
+  if (pendingToggleTimer) {
+    clearTimeout(pendingToggleTimer);
+    pendingToggleTimer = null;
+  }
+
+  if (toggleErrorTimer) {
+    clearTimeout(toggleErrorTimer);
+    toggleErrorTimer = null;
+  }
+
+  const view = getSidepanelCurrentTabView(currentTab);
+  toggleButton.textContent = view.buttonLabel;
+  toggleButton.disabled = view.buttonDisabled;
+  toggleButton.dataset.enabled = String(view.buttonEnabled);
+  toggleErrorEl.textContent = view.errorMessage ?? '';
+  toggleErrorEl.hidden = view.errorMessage == null;
+  controlSection.classList.toggle('attention', view.attention);
+}
+
+function renderToggleError(errorMessage: string): void {
+  toggleButton.dataset.pending = 'false';
+
+  if (pendingToggleTimer) {
+    clearTimeout(pendingToggleTimer);
+    pendingToggleTimer = null;
+  }
+
+  if (currentTabState) {
+    toggleButton.textContent = currentTabState.enabled
+      ? 'Disable Window Access'
+      : 'Enable Window Access';
+  }
+
+  const friendly = normalizeSidepanelToggleError(errorMessage);
+  toggleErrorEl.textContent = friendly;
+  toggleErrorEl.hidden = false;
+
+  if (toggleErrorTimer) {
+    clearTimeout(toggleErrorTimer);
+  }
+  toggleErrorTimer = setTimeout(() => {
+    toggleErrorEl.hidden = true;
+    toggleErrorTimer = null;
+  }, TOGGLE_ERROR_DISPLAY_MS);
+}
+
+function renderAgentStatus(state: UiSnapshot): void {
+  const view = getSidepanelAgentStatusView(state.currentTab);
+  agentStatus.textContent = view.title;
+  agentStatusDetail.textContent = view.detail;
+  agentDisclosure.hidden = view.disclosureHidden;
+  renderAgentTabs(state);
+  renderOtherWindows(state);
+}
+
+function renderOtherWindows(state: UiSnapshot): void {
+  const windows = state.otherEnabledWindows ?? [];
+  otherWindows.hidden = !state.nativeConnected || windows.length === 0;
+  if (otherWindows.hidden) otherWindows.open = false;
+  syncOtherWindowButtons();
+  // Keep dropdown rows stable across unrelated activity updates.
+  const key = JSON.stringify(windows);
+  if (key === currentOtherWindowsKey) return;
+  currentOtherWindowsKey = key;
+  const label = `${windows.length} other enabled ${windows.length === 1 ? 'window' : 'windows'}`;
+  otherWindowsCount.textContent = `${windows.length} other`;
+  otherWindowsCount.setAttribute('aria-label', label);
+  otherWindowsList.replaceChildren(
+    ...windows.map((entry) => {
+      const item = document.createElement('li');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'other-window-button';
+      const canControl = Boolean(
+        entry.window && (entry.extensionId === 'local' || entry.canControl)
+      );
+      button.dataset.controllable = String(canControl);
+      button.disabled = windowActionPending || !canControl;
+      const browser = document.createElement('span');
+      browser.className = 'other-window-browser';
+      browser.textContent =
+        entry.extensionId === 'local'
+          ? 'This browser'
+          : [entry.browserName || 'Unknown browser', entry.profileLabel || 'Unknown profile'].join(
+              ' · '
+            );
+      const detail = document.createElement('span');
+      detail.className = 'other-window-detail';
+      detail.textContent = entry.window
+        ? `${entry.window.title || 'Untitled window'} · Window ${entry.window.windowId}`
+        : "Window details unavailable. Update this browser's extension and native host.";
+      button.setAttribute('aria-label', `Focus ${browser.textContent}: ${detail.textContent}`);
+      button.addEventListener('click', () => {
+        if (!button.disabled && entry.window)
+          startWindowAction('focus', {
+            type: 'windows.focus',
+            extensionId: entry.extensionId,
+            windowId: entry.window.windowId,
+            enabledAt: entry.window.enabledAt,
+          });
+      });
+      button.append(browser, detail);
+      item.append(button);
+      return item;
+    })
+  );
+}
+
+/** Show recent agent targets without repeating the tab names in a summary. */
+function renderAgentTabs(state: UiSnapshot): void {
+  const tabs = (state.agentTabs ?? []).filter((tab) => tab.tabId !== state.currentTab?.tabId);
+  agentTabRow.hidden = !state.nativeConnected || !state.currentTab?.enabled || tabs.length === 0;
+  agentTabsList.replaceChildren(
+    ...tabs.map((tab) => {
+      const item = document.createElement('li');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'agent-tab-button';
+      const name = document.createElement('span');
+      name.className = 'agent-tab-name';
+      name.textContent = tab.title || `Tab ${tab.tabId}`;
+      item.title = name.textContent;
+      button.title = name.textContent;
+      button.setAttribute('aria-label', `Switch to tab: ${name.textContent}`);
+      button.addEventListener('click', () => {
+        // This is a user tab switch, not an agent request or lease rebind.
+        void chrome.tabs.update(tab.tabId, { active: true }).catch(() => {
+          button.title = 'Could not switch to this tab. Try again.';
+        });
+      });
+      const count = tab.actionCount ?? 0;
+      const chip = document.createElement('span');
+      chip.className = 'agent-tab-count activity-tokens';
+      chip.textContent = `Actions: ${count}`;
+      chip.title = `${count} recent ${count === 1 ? 'action' : 'actions'}`;
+      chip.setAttribute('aria-label', chip.title);
+      button.append(name, chip);
+      item.append(button);
+      return item;
+    })
+  );
+  agentTabsList.hidden = tabs.length === 0;
+}
+
+function renderNativeStatus(
+  connected: boolean,
+  error?: string | undefined,
+  unstable: boolean = false
+): void {
+  const view = getSidepanelNativeStatusView({
+    connected,
+    error,
+    runtimeId: chrome.runtime.id,
+    publishedExtensionId: PUBLISHED_EXTENSION_ID,
+    fallbackInstallCommand: setupInstallCmd.textContent || 'bbx install',
+  });
+  nativeIndicator.dataset.connected = String(connected);
+  nativeIndicator.title = view.label;
+  nativeIndicator.setAttribute('aria-label', view.label);
+
+  setupSection.hidden = view.hidden;
+  controlSection.hidden = !connected;
+  installationSection.hidden = !connected;
+  if (!connected) {
+    agentTabRow.hidden = true;
+    otherWindows.hidden = true;
+    otherWindows.open = false;
+    otherWindowsList.replaceChildren();
+    currentOtherWindowsKey = null;
+    windowActionPending = false;
+    otherWindowsDisable.textContent = 'Disable all';
+    otherWindowsDisable.disabled = true;
+    renderHostVersion(null);
+    renderProxyStatus(null);
+    setupInstallCmd.textContent = view.installCommand;
+    setupInstallHint.hidden = view.installCommandHidden;
+    setupInstallCmd.hidden = view.installCommandHidden;
+    hideSetupContextMenu();
+  }
+  syncConnectedSectionsVisibility();
+
+  if (unstable) {
+    // A flapping connection reconnects before the offline diagnostic delay
+    // elapses, so surface the crash-loop hint immediately and keep it visible
+    // across the connected/disconnected flips.
+    if (nativeDiagnosticTimer) {
+      clearTimeout(nativeDiagnosticTimer);
+      nativeDiagnosticTimer = null;
+    }
+    showSidepanelDiagnostic(getUnstableConnectionDiagnostic());
+    return;
+  }
+
+  if (connected) {
+    if (nativeDiagnosticTimer) {
+      clearTimeout(nativeDiagnosticTimer);
+      nativeDiagnosticTimer = null;
+    }
+    hideSidepanelDiagnostic();
+  } else if (!nativeDiagnosticTimer) {
+    nativeDiagnosticTimer = setTimeout(() => {
+      nativeDiagnosticTimer = null;
+      showSidepanelDiagnostic(view.diagnosticMessage);
+    }, NATIVE_DIAGNOSTIC_DELAY_MS);
+  }
+}
+
+function renderHostVersion(hostVersion: string | null): void {
+  renderVersionMismatch(hostVersion);
+  if (!hostVersion) {
+    setupHostVersion.hidden = true;
+    setupHostVersion.textContent = '';
+    return;
+  }
+
+  setupHostVersion.hidden = false;
+  setupHostVersion.textContent = `Daemon version: v${hostVersion}`;
+}
+
+function renderVersionMismatch(cliVersion: string | null): void {
+  const extensionVersion =
+    typeof chrome.runtime.getManifest === 'function' ? chrome.runtime.getManifest().version : null;
+  const view = getVersionMismatchView(extensionVersion, cliVersion);
+  currentVersionMismatchKey = view?.key ?? null;
+  if (!view || view.key === dismissedVersionMismatchKey) {
+    versionMismatchBanner.hidden = true;
+    versionMismatchMessage.textContent = '';
+    return;
+  }
+
+  versionMismatchMessage.textContent = view.message;
+  versionMismatchBanner.hidden = false;
+}
+
+/** Show a warning banner while the daemon accepts remote agent connections
+(bbx proxy mode), so remote exposure is never silent on this machine. */
+function renderProxyStatus(proxy: DaemonProxyStatus | null): void {
+  if (!proxy || !proxy.enabled) {
+    proxyStatusEl.hidden = true;
+    proxyStatusEl.textContent = '';
+    return;
+  }
+
+  proxyStatusEl.hidden = false;
+  proxyStatusEl.textContent = `Remote proxy is on${
+    proxy.endpoint ? ` (${proxy.endpoint})` : ''
+  } - agents on other machines can reach this browser. Run \`bbx proxy disable\` to turn it off.`;
+}
+
+function showSidepanelDiagnostic(message: string): void {
+  let el = document.getElementById('native-diagnostic');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'native-diagnostic';
+    el.style.cssText =
+      'padding:8px 12px;margin:8px 0;background:var(--status-badge-bg,#fef3cd);color:var(--text-primary,#856404);border-radius:6px;font-size:12px;line-height:1.4';
+    setupSection.after(el);
+  }
+  el.textContent = message;
+  el.hidden = false;
+}
+
+function hideSidepanelDiagnostic() {
+  const el = document.getElementById('native-diagnostic');
+  if (el) {
+    el.remove();
+  }
+}
+
+function syncConnectedSectionsVisibility(): void {
+  const connected = nativeIndicator.dataset.connected === 'true';
+  if (!connected) {
+    examplesSection.hidden = true;
+    activitySection.hidden = true;
+    return;
+  }
+  examplesSection.hidden = hasAgentWork;
+  if (examplesSection.hidden) examplesSection.open = false;
+  activitySection.hidden = false;
+}
+
+function syncSetupStatusPolling(): void {
+  setupStatusPollTimer = syncSetupStatusPollingState({
+    connected: nativeIndicator.dataset.connected === 'true',
+    installationHidden: Boolean(installationSection.hidden),
+    installationOpen: installationSection.open,
+    currentTimer: setupStatusPollTimer,
+    pollMs: SETUP_STATUS_POLL_MS,
+    refresh: requestSetupStatusRefresh,
+  });
+}
+
+function stopSetupStatusPolling(): void {
+  if (!setupStatusPollTimer) {
+    return;
+  }
+  clearInterval(setupStatusPollTimer);
+  setupStatusPollTimer = null;
+}
+
+function requestSetupStatusRefresh(): void {
+  port.postMessage({ type: 'setup.status.refresh' });
+}
+
+function renderPromptExamples(setupStatus: SetupStatus | null): void {
+  const groups = getPromptExamplesRenderGroups(
+    setupStatus,
+    CLI_PROMPT_EXAMPLES,
+    MCP_PROMPT_EXAMPLES
+  );
+  examplesContent.replaceChildren(
+    ...groups.map((group) =>
+      group.title
+        ? createExamplesGroup(group.title, group.prompts)
+        : createExamplesList(group.prompts)
+    )
+  );
+}
+
+function createExamplesGroup(
+  title: string,
+  prompts: import('../src/sidepanel-helpers.js').PromptExampleItem[]
+): HTMLElement {
+  const section = document.createElement('section');
+  section.className = 'examples-group';
+
+  const heading = document.createElement('h3');
+  heading.className = 'examples-group-title';
+  heading.textContent = title;
+
+  section.append(heading, createExamplesList(prompts));
+  return section;
+}
+
+function createExamplesList(
+  prompts: import('../src/sidepanel-helpers.js').PromptExampleItem[]
+): HTMLElement {
+  const list = document.createElement('div');
+  list.className = 'examples-list';
+
+  for (const prompt of prompts) {
+    const row = document.createElement('div');
+    row.className = 'setup-cmd example-cmd';
+
+    const text = document.createElement('code');
+    text.className = 'example-cmd-text';
+    text.textContent = prompt.copyPrompt;
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'example-copy-button';
+    button.setAttribute('aria-label', prompt.copyLabel);
+    button.title = 'Copy prompt';
+    button.textContent = '⧉';
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      copySetupText(row, prompt.copyPrompt);
+    });
+
+    row.append(text, button);
+    list.append(row);
+  }
+
+  return list;
+}
+
+window.addEventListener('beforeunload', () => {
+  stopSetupStatusPolling();
+  hideSetupContextMenu();
+});
+
+function syncExclusiveDetailsSections(source: HTMLDetailsElement, other: HTMLDetailsElement): void {
+  if (!source.open || !other.open) {
+    return;
+  }
+  other.open = false;
+}
+
+function renderSetupStatus(
+  setupStatus: SetupStatus | null,
+  pending: boolean,
+  error: string | null,
+  installPendingKey: string | null,
+  installError: string | null
+): void {
+  const view = getSetupStatusView(setupStatus, pending, error, installError);
+  setupStatusSummaryNote.textContent = view.summaryNote;
+  setupStatusSummaryNote.hidden = view.summaryHidden;
+  setupStatusNote.textContent = view.note;
+  setupStatusNote.hidden = view.noteHidden;
+
+  if (!hasAutoExpandedHostSetup && setupStatus) {
+    hasAutoExpandedHostSetup = true;
+    installationSection.open = view.autoExpandHostSetup;
+    if (view.autoExpandHostSetup) {
+      examplesSection.open = false;
+    }
+  }
+
+  if (view.placeholder) {
+    setupStatusMatrix.replaceChildren(createStatusPlaceholder(view.placeholder));
+    return;
+  }
+
+  setupStatusMatrix.replaceChildren(renderSetupMatrix(view.rows, installPendingKey));
+}
+
+function renderSetupMatrix(rows: SetupMatrixRow[], installPendingKey: string | null): HTMLElement {
+  const table = document.createElement('table');
+  table.className = 'setup-status-matrix';
+
+  const thead = document.createElement('thead');
+  const headerRow = document.createElement('tr');
+  for (const heading of ['Client', 'MCP', 'CLI']) {
+    const th = document.createElement('th');
+    th.textContent = heading;
+    headerRow.append(th);
+  }
+  thead.append(headerRow);
+
+  const tbody = document.createElement('tbody');
+  for (const row of rows) {
+    const tr = document.createElement('tr');
+
+    const labelCell = document.createElement('td');
+    labelCell.className = 'setup-matrix-client';
+    labelCell.append(createSetupMatrixClientLabel(row));
+
+    const mcpCell = document.createElement('td');
+    mcpCell.append(renderMcpMatrixCell(row, installPendingKey));
+
+    const skillCell = document.createElement('td');
+    skillCell.append(renderSkillMatrixCell(row, installPendingKey));
+
+    tr.append(labelCell, mcpCell, skillCell);
+    tbody.append(tr);
+  }
+
+  table.append(thead, tbody);
+  return table;
+}
+
+function createSetupMatrixClientLabel(row: SetupMatrixRow): DocumentFragment {
+  const fragment = document.createDocumentFragment();
+  fragment.append(row.label);
+
+  if (isSetupMatrixBetaKey(row.key)) {
+    const beta = document.createElement('span');
+    beta.className = 'setup-matrix-beta';
+    beta.textContent = ' (beta)';
+    fragment.append(beta);
+  }
+
+  return fragment;
+}
+
+function renderMcpMatrixCell(row: SetupMatrixRow, installPendingKey: string | null): HTMLElement {
+  return renderSetupMatrixCell(getMcpSetupCellState(row, installPendingKey));
+}
+
+function renderSkillMatrixCell(row: SetupMatrixRow, installPendingKey: string | null): HTMLElement {
+  return renderSetupMatrixCell(getSkillSetupCellState(row, installPendingKey));
+}
+
+function renderSetupMatrixCell(cellState: SetupMatrixCellState): HTMLElement {
+  if (cellState.kind === 'muted') {
+    return createMatrixMutedValue(cellState.text);
+  }
+
+  if (cellState.kind === 'badge') {
+    return createMatrixBadge(
+      cellState.label,
+      cellState.ok,
+      cellState.title,
+      cellState.contextAction ?? null
+    );
+  }
+
+  const button = createSetupActionButton(
+    cellState.setupKind,
+    cellState.target,
+    cellState.pending,
+    cellState.variant,
+    cellState.label,
+    cellState.pendingLabel
+  );
+  if (cellState.title) {
+    button.title = cellState.title;
+  }
+  if (cellState.contextAction) {
+    assignSetupContext(button, cellState.contextAction);
+  }
+  return button;
+}
+
+function createSetupActionButton(
+  kind: 'mcp' | 'skill',
+  target: string,
+  pending: boolean,
+  variant: 'install' | 'update',
+  label: string,
+  pendingLabel: string
+): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'setup-install-button';
+  button.dataset.action = 'setup-install';
+  button.dataset.kind = kind;
+  button.dataset.target = target;
+  button.dataset.variant = variant;
+  button.disabled = pending;
+  button.textContent = pending ? pendingLabel : label;
+  button.addEventListener('click', () => {
+    if (button.disabled) {
+      return;
+    }
+    hideSetupContextMenu();
+    button.disabled = true;
+    button.textContent = pendingLabel;
+    port.postMessage(createSetupInstallMessage(kind, target));
+  });
+  return button;
+}
+
+function createMatrixBadge(
+  label: string,
+  ok: boolean,
+  title: string,
+  contextAction: SetupContextAction | null = null
+): HTMLElement {
+  const badge = document.createElement('span');
+  badge.className = 'setup-status-badge';
+  badge.dataset.ok = String(ok);
+  badge.textContent = label;
+  badge.title = title;
+  if (contextAction) {
+    assignSetupContext(badge, contextAction);
+  }
+  return badge;
+}
+
+function createMatrixMutedValue(text: string): HTMLElement {
+  const value = document.createElement('span');
+  value.className = 'setup-matrix-muted';
+  value.textContent = text;
+  return value;
+}
+
+function assignSetupContext(element: HTMLElement, contextAction: SetupContextAction): void {
+  element.dataset.contextKind = contextAction.kind;
+  element.dataset.contextTarget = contextAction.target;
+  element.dataset.contextCopyLabel = contextAction.copyLabel;
+  element.dataset.contextCopyText = contextAction.copyText;
+  if (contextAction.reinstallLabel) {
+    element.dataset.contextReinstallLabel = contextAction.reinstallLabel;
+  } else {
+    delete element.dataset.contextReinstallLabel;
+  }
+  if (contextAction.uninstallLabel) {
+    element.dataset.contextUninstallLabel = contextAction.uninstallLabel;
+  } else {
+    delete element.dataset.contextUninstallLabel;
+  }
+}
+
+function showSetupContextMenu(
+  clientX: number,
+  clientY: number,
+  contextAction: SetupContextAction
+): void {
+  setupContextMenu.replaceChildren();
+
+  const copyButton = document.createElement('button');
+  copyButton.type = 'button';
+  copyButton.className = 'setup-context-menu-item';
+  copyButton.textContent = contextAction.copyLabel;
+  copyButton.addEventListener(
+    'click',
+    () => {
+      navigator.clipboard.writeText(contextAction.copyText).catch(() => {
+        // Ignore clipboard failures; the menu still exposes the path in the title.
+      });
+      hideSetupContextMenu();
+    },
+    { once: true }
+  );
+  setupContextMenu.append(copyButton);
+
+  if (contextAction.reinstallLabel) {
+    const reinstallButton = document.createElement('button');
+    reinstallButton.type = 'button';
+    reinstallButton.className = 'setup-context-menu-item';
+    reinstallButton.textContent = contextAction.reinstallLabel;
+    reinstallButton.addEventListener(
+      'click',
+      () => {
+        port.postMessage(createSetupInstallMessage(contextAction.kind, contextAction.target));
+        hideSetupContextMenu();
+      },
+      { once: true }
+    );
+    setupContextMenu.append(reinstallButton);
+  }
+
+  if (contextAction.uninstallLabel) {
+    const uninstallButton = document.createElement('button');
+    uninstallButton.type = 'button';
+    uninstallButton.className = 'setup-context-menu-item';
+    uninstallButton.textContent = contextAction.uninstallLabel;
+    uninstallButton.addEventListener(
+      'click',
+      () => {
+        port.postMessage(
+          createSetupInstallMessage(contextAction.kind, contextAction.target, 'uninstall')
+        );
+        hideSetupContextMenu();
+      },
+      { once: true }
+    );
+    setupContextMenu.append(uninstallButton);
+  }
+
+  setupContextMenu.hidden = false;
+  setupContextMenu.style.left = `${clientX}px`;
+  setupContextMenu.style.top = `${clientY}px`;
+
+  const rect = setupContextMenu.getBoundingClientRect();
+  const left = Math.min(clientX, window.innerWidth - rect.width - 12);
+  const top = Math.min(clientY, window.innerHeight - rect.height - 12);
+  setupContextMenu.style.left = `${Math.max(8, left)}px`;
+  setupContextMenu.style.top = `${Math.max(8, top)}px`;
+}
+
+function hideSetupContextMenu(): void {
+  setupContextMenu.hidden = true;
+  setupContextMenu.replaceChildren();
+}
+
+function createStatusPlaceholder(text: string): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'setup-status-placeholder';
+  row.textContent = text;
+  return row;
+}
+
+function renderActionLogEntry(
+  entry: ActionLogEntry,
+  setupStatus: SetupStatus | null,
+  entries: ActionLogEntry[],
+  index: number
+): HTMLElement {
+  const container = document.createElement('article');
+  container.className = 'card activity-card';
+
+  const header = document.createElement('div');
+  header.className = 'activity-header';
+
+  const title = document.createElement('h3');
+  title.className = 'card-title activity-title';
+  const methodLabel = document.createElement('span');
+  methodLabel.className = 'activity-method';
+  methodLabel.textContent = entry.method;
+  methodLabel.title = entry.method;
+  title.append(methodLabel);
+  const activitySourcePills = getActivitySourcePills(entry.source, entry.mcpEra);
+  if (activitySourcePills.source) {
+    const sourceTags = document.createElement('span');
+    sourceTags.className = 'activity-source-tags';
+    const sourceTag = document.createElement('span');
+    sourceTag.className = 'activity-source-tag';
+    sourceTag.textContent = activitySourcePills.source;
+    sourceTags.append(sourceTag);
+    if (activitySourcePills.version) {
+      const versionTag = document.createElement('span');
+      versionTag.className = 'activity-source-tag activity-version-tag';
+      versionTag.dataset.version = activitySourcePills.version;
+      versionTag.textContent = activitySourcePills.version;
+      versionTag.title =
+        activitySourcePills.version === 'v2'
+          ? 'Modern stateless MCP (protocol revision 2026-07-28)'
+          : 'Legacy MCP (protocol revision 2025-11-25 or earlier)';
+      sourceTags.append(versionTag);
+    }
+    title.append(sourceTags);
+  }
+  const timestamp = document.createElement('span');
+  timestamp.className = 'muted activity-time';
+  timestamp.textContent = new Date(entry.at).toLocaleTimeString();
+
+  header.append(title, timestamp);
+
+  const footer = document.createElement('div');
+  footer.className = 'activity-footer';
+
+  const summary = document.createElement('span');
+  summary.className = 'activity-summary';
+  if (!entry.ok) summary.classList.add('activity-summary-error');
+  const dot = document.createElement('span');
+  dot.className = 'activity-status-dot';
+  dot.dataset.ok = String(entry.ok);
+  const summaryText = document.createElement('span');
+  summaryText.textContent = entry.summary;
+  summary.append(dot, summaryText);
+  footer.append(summary);
+
+  const badges = document.createElement('span');
+  badges.className = 'activity-badges';
+
+  const showScope = !(requestedTabId != null && requestedTabId > 0) && entry.url;
+  if (showScope) {
+    const scopeLink = document.createElement('a');
+    scopeLink.className = 'activity-scope-link';
+    scopeLink.href = entry.url;
+    scopeLink.target = '_blank';
+    scopeLink.rel = 'noopener';
+    scopeLink.title = entry.url;
+    scopeLink.innerHTML =
+      '<svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4.5 1.5H2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V8"/><path d="M7 1h4v4"/><path d="M5 7L11 1"/></svg>';
+    badges.append(scopeLink);
+  }
+
+  const transportTokens = getEntryTransportTokens(entry);
+  if (transportTokens > 0 || entry.imageBytes > 0) {
+    const tokenLine = document.createElement('span');
+    tokenLine.className = 'muted activity-tokens';
+
+    const parts: string[] = [];
+    if (transportTokens > 0) {
+      parts.push(`\u2248${transportTokens.toLocaleString()} tok`);
+    }
+    if (entry.nodeCount != null) {
+      parts.push(`${entry.nodeCount}n`);
+    }
+    if (entry.imageBytes > 0) {
+      parts.push(`${formatByteCount(entry.imageBytes)} img`);
+    }
+    if (entry.debuggerBacked) {
+      parts.push('cdp');
+    }
+    tokenLine.textContent = parts.join(' \u00b7 ');
+    tokenLine.dataset.costClass = entry.costClass;
+    badges.append(tokenLine);
+  }
+
+  if (entry.debuggerBacked) {
+    badges.append(createActivityBadge('Debugger', 'activity-badge-warn'));
+  }
+
+  if (entry.overBudget) {
+    badges.append(createActivityBadge('Truncated', 'activity-badge-warn'));
+  }
+
+  if (entry.hasScreenshot) {
+    badges.append(createActivityBadge('Image', 'activity-badge-neutral'));
+  }
+
+  if (countRecentExpensiveRepeats(entries, index) >= 2) {
+    badges.append(createActivityBadge('Repeat', 'activity-badge-warn'));
+  }
+
+  if (badges.childElementCount) footer.append(badges);
+
+  if (entry.continuationHint) {
+    const hint = document.createElement('p');
+    hint.className = 'muted activity-hint';
+    hint.textContent = entry.continuationHint;
+    container.append(header, footer, hint);
+    return container;
+  }
+
+  container.append(header, footer);
+  return container;
+}
+
+function createActivityBadge(label: string, className: string): HTMLElement {
+  const badge = document.createElement('span');
+  badge.className = `activity-badge ${className}`;
+  badge.textContent = label;
+  return badge;
+}
+
+function renderActivitySummary(totalTokens: number): void {
+  if (totalTokens <= 0) {
+    activitySummaryTokens.hidden = true;
+    activitySummaryTokens.textContent = '';
+    activitySummaryTokens.removeAttribute('data-cost-class');
+    return;
+  }
+
+  activitySummaryTokens.hidden = false;
+  activitySummaryTokens.textContent = `≈${formatCompactCount(totalTokens)} tok`;
+  activitySummaryTokens.dataset.costClass = getAggregateCostClass(totalTokens);
+}
+
+function formatByteCount(value: number): string {
+  if (value < 1024) {
+    return `${value} B`;
+  }
+  if (value < 10 * 1024) {
+    return `${Math.round((value / 1024) * 10) / 10} KB`;
+  }
+  if (value < 1024 * 1024) {
+    return `${Math.round(value / 1024)} KB`;
+  }
+  return `${Math.round((value / (1024 * 1024)) * 10) / 10} MB`;
+}
+
+function getEntryTransportTokens(entry: ActionLogEntry): number {
+  return Math.max(0, entry.approxTokens + entry.imageApproxTokens);
+}
+
+/** Snap the histogram window to the active bucket boundary so bars only shift
+when the 30s bin rolls over instead of drifting on every refresh tick. */
+function alignHistogramEndAt(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    return ACTIVITY_HISTOGRAM_BUCKET_MS;
+  }
+  return Math.ceil(value / ACTIVITY_HISTOGRAM_BUCKET_MS) * ACTIVITY_HISTOGRAM_BUCKET_MS;
+}
+
+export type ActivityHistogramModel = {
+  startAt: number;
+  endAt: number;
+  totalTokens: number;
+  buckets: Array<{
+    bucketStart: number;
+    totalTokens: number;
+    segments: Array<{ family: string; tokens: number }>;
+  }>;
+};
+
+function buildActivityHistogram(entries: ActionLogEntry[]): ActivityHistogramModel {
+  const latestAt = entries.reduce(
+    (maxAt, entry) => Math.max(maxAt, Number.isFinite(entry.at) ? entry.at : 0),
+    0
+  );
+  const endAt = alignHistogramEndAt(Math.max(Date.now(), latestAt));
+  const startAt = endAt - ACTIVITY_HISTOGRAM_WINDOW_MS;
+  const buckets = Array.from({ length: ACTIVITY_HISTOGRAM_BARS }, (_, index) => ({
+    bucketStart: startAt + index * ACTIVITY_HISTOGRAM_BUCKET_MS,
+    totalTokens: 0,
+    segments: [],
+  }));
+
+  const bucketFamilies: Map<number, Map<string, number>> = new Map(
+    buckets.map((_, index) => [index, new Map()])
+  );
+  let totalTokens = 0;
+
+  for (const entry of entries) {
+    const transportTokens = getEntryTransportTokens(entry);
+    if (!Number.isFinite(transportTokens) || transportTokens <= 0) {
+      continue;
+    }
+    if (!Number.isFinite(entry.at) || entry.at < startAt || entry.at > endAt) {
+      continue;
+    }
+
+    const offset = Math.min(
+      ACTIVITY_HISTOGRAM_BARS - 1,
+      Math.max(0, Math.floor((entry.at - startAt) / ACTIVITY_HISTOGRAM_BUCKET_MS))
+    );
+    const family = getHistogramMethodFamily(entry.method);
+    const familyTotals = bucketFamilies.get(offset) as Map<string, number>;
+    familyTotals.set(family, (familyTotals.get(family) ?? 0) + transportTokens);
+    buckets[offset].totalTokens += transportTokens;
+    totalTokens += transportTokens;
+  }
+
+  for (let index = 0; index < buckets.length; index += 1) {
+    const familyTotals = bucketFamilies.get(index) as Map<string, number>;
+    buckets[index].segments = HISTOGRAM_METHOD_FAMILIES.map((family) => ({
+      family,
+      tokens: familyTotals.get(family) ?? 0,
+    })).filter((segment) => segment.tokens > 0) as (typeof buckets)[number]['segments'];
+  }
+
+  return {
+    startAt,
+    endAt,
+    totalTokens,
+    buckets,
+  };
+}
+
+function renderActivityHistogram(histogram: ActivityHistogramModel): void {
+  const activeBuckets = histogram.buckets.filter((bucket) => bucket.totalTokens > 0);
+  if (!activeBuckets.length) {
+    activityHistogram.hidden = true;
+    activityHistogramBars.replaceChildren();
+    activityHistogramRange.textContent = '';
+    return;
+  }
+
+  const maxTokens = Math.max(...histogram.buckets.map((bucket) => bucket.totalTokens), 1);
+  activityHistogram.hidden = false;
+  activityHistogramRange.textContent = '10m window · 30s bins';
+  activityHistogramBars.replaceChildren(
+    ...histogram.buckets.map((bucket) => createHistogramBar(bucket, maxTokens))
+  );
+}
+
+function formatCompactCount(value: number): string {
+  if (value >= 1000) {
+    const compact = value >= 10000 ? Math.round(value / 1000) : Math.round(value / 100) / 10;
+    return `${compact}k`;
+  }
+  return String(value);
+}
+
+function getAggregateCostClass(approxTokens: number): 'cheap' | 'moderate' | 'heavy' | 'extreme' {
+  if (approxTokens <= 250) {
+    return 'cheap';
+  }
+  if (approxTokens <= 1000) {
+    return 'moderate';
+  }
+  if (approxTokens <= 3000) {
+    return 'heavy';
+  }
+  return 'extreme';
+}
+
+function createHistogramBar(
+  bucket: ActivityHistogramModel['buckets'][number],
+  maxTokens: number
+): HTMLElement {
+  const bar = document.createElement('span');
+  const ratio = Math.log1p(bucket.totalTokens) / Math.log1p(maxTokens);
+  const height = bucket.totalTokens > 0 ? Math.max(14, Math.round(ratio * 100)) : 6;
+  bar.className = 'activity-histogram-bar';
+  bar.style.height = `${height}%`;
+
+  if (!bucket.totalTokens) {
+    bar.dataset.empty = 'true';
+    bar.title = `${new Date(bucket.bucketStart).toLocaleTimeString()} · no activity`;
+    bar.setAttribute(
+      'aria-label',
+      `${new Date(bucket.bucketStart).toLocaleTimeString()}, no token activity`
+    );
+    return bar;
+  }
+
+  const tooltipParts = bucket.segments.map(
+    (segment) => `${segment.family}: ${segment.tokens.toLocaleString()} tok`
+  );
+  bar.title = `${new Date(bucket.bucketStart).toLocaleTimeString()} · ${bucket.totalTokens.toLocaleString()} tok\n${tooltipParts.join('\n')}`;
+  bar.setAttribute(
+    'aria-label',
+    `${new Date(bucket.bucketStart).toLocaleTimeString()}, approximately ${bucket.totalTokens.toLocaleString()} tokens`
+  );
+  bar.append(
+    ...bucket.segments.map((segment) => createHistogramSegment(segment, bucket.totalTokens))
+  );
+  return bar;
+}
+
+function createHistogramSegment(
+  segment: { family: string; tokens: number },
+  totalTokens: number
+): HTMLElement {
+  const el = document.createElement('span');
+  el.className = 'activity-histogram-segment';
+  el.dataset.family = segment.family;
+  el.style.height = `${(segment.tokens / totalTokens) * 100}%`;
+  return el;
+}
+
+function getHistogramMethodFamily(method: string): string {
+  if (method.startsWith('dom.')) {
+    return 'dom';
+  }
+  if (method.startsWith('page.')) {
+    return 'page';
+  }
+  if (method.startsWith('layout.')) {
+    return 'layout';
+  }
+  if (method.startsWith('styles.')) {
+    return 'style';
+  }
+  if (
+    method.startsWith('input.') ||
+    method.startsWith('navigation.') ||
+    method.startsWith('viewport.')
+  ) {
+    return 'input';
+  }
+  if (method.startsWith('patch.')) {
+    return 'patch';
+  }
+  if (
+    method.startsWith('screenshot.') ||
+    method.startsWith('cdp.') ||
+    method.startsWith('performance.')
+  ) {
+    return 'capture';
+  }
+  return 'other';
+}
+
+function countRecentExpensiveRepeats(entries: ActionLogEntry[], index: number): number {
+  const current = entries[index];
+  const currentCostClass =
+    current?.summaryTokens > 0 ? current.summaryCostClass : current?.costClass;
+  if (
+    !current ||
+    (!current.debuggerBacked && currentCostClass !== 'heavy' && currentCostClass !== 'extreme')
+  ) {
+    return 0;
+  }
+
+  let count = 0;
+  for (let cursor = index + 1; cursor < Math.min(entries.length, index + 4); cursor += 1) {
+    const candidate = entries[cursor];
+    if (!candidate || candidate.method !== current.method) {
+      break;
+    }
+    const candidateCostClass =
+      candidate.summaryTokens > 0 ? candidate.summaryCostClass : candidate.costClass;
+    if (
+      candidate.debuggerBacked ||
+      candidateCostClass === 'heavy' ||
+      candidateCostClass === 'extreme'
+    ) {
+      count += 1;
+    }
+  }
+  return count;
+}

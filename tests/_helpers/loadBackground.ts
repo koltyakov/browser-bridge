@@ -5,13 +5,11 @@ import {
   type FakeChromeEvent,
 } from './chromeFake.ts';
 import { webcrypto } from 'node:crypto';
-import type { BridgeRequest, BridgeResponse } from '../../packages/protocol/src/types.js';
+import type { BridgeRequest, BridgeResponse } from '../../protocol/src/types.js';
+import { extensionFile } from './extensionBuild.ts';
 
 const MISSING = Symbol('missing');
-const BACKGROUND_MODULE_URL = new URL(
-  '../../packages/extension/src/background.js',
-  import.meta.url
-);
+const BACKGROUND_MODULE_URL = extensionFile('src/background.js');
 
 if (!globalThis.crypto) {
   Reflect.set(globalThis, 'crypto', webcrypto);

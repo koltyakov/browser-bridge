@@ -1,0 +1,422 @@
+{
+  "authentication_failure": {
+    "manifestInstalled": true,
+    "manifestPath": "[redacted-path]/com.browserbridge.browser_bridge.json",
+    "allowedOrigins": [],
+    "defaultExtensionId": "jjjkmmcdkpcgamlopogicbnnhdgebhie",
+    "defaultExtensionIdSource": "built_in",
+    "daemonReachable": false,
+    "healthAvailable": false,
+    "extensionConnected": false,
+    "accessEnabled": false,
+    "enabledWindowId": null,
+    "routeTabId": null,
+    "routeReady": false,
+    "routeReason": "access_disabled",
+    "daemonRestarts": {
+      "startsInWindow": 0,
+      "windowMs": 60000,
+      "restartLoop": false
+    },
+    "daemonLogPath": "[redacted-path]/daemon.log",
+    "unwritableBridgePaths": [],
+    "nativeHostManifestIssues": [],
+    "issues": ["proxy_credentials_stale"],
+    "nextSteps": [
+      "Local TCP authentication failed. Run `bbx proxy enable --rotate-token`, restart the daemon, and update configured remote clients with `bbx remote add`."
+    ],
+    "browserManifests": [],
+    "transport": {
+      "kind": "tcp",
+      "local": true,
+      "status": "authentication_failed",
+      "proxyConfigured": false,
+      "proxyExposed": null,
+      "credentials": "rejected"
+    },
+    "connections": {
+      "extensionCount": 0,
+      "profileCount": 0
+    },
+    "protocol": {
+      "clientVersion": "$PROTOCOL_VERSION",
+      "daemonVersion": null,
+      "daemonSupportedVersions": [],
+      "extensionSupportedVersions": [],
+      "daemonCompatible": null,
+      "extensionCompatible": null,
+      "compatible": null,
+      "migration": "unknown"
+    },
+    "debugger": {
+      "state": "unknown",
+      "attachedTabCount": null,
+      "heldTabCount": null,
+      "pendingTabCount": null,
+      "recentReason": null,
+      "captureState": "unknown",
+      "captureActiveTabCount": null,
+      "captureOwnershipCount": null,
+      "captureInflightCount": null,
+      "interceptionActiveTabCount": null,
+      "interceptionRuleCount": null
+    },
+    "recovery": {
+      "daemon": null,
+      "routedExtension": null,
+      "activeLoops": []
+    },
+    "metrics": null,
+    "recentEvents": [],
+    "recentCauses": [],
+    "setup": null,
+    "remoteDestinations": {
+      "configuredCount": 0,
+      "status": "not_configured",
+      "credentials": "not_configured"
+    },
+    "diagnosticFailures": ["daemon_connection_failed"]
+  },
+  "disconnected_compatible_minor": {
+    "manifestInstalled": true,
+    "manifestPath": "[redacted-path]/com.browserbridge.browser_bridge.json",
+    "allowedOrigins": [],
+    "defaultExtensionId": "jjjkmmcdkpcgamlopogicbnnhdgebhie",
+    "defaultExtensionIdSource": "built_in",
+    "daemonReachable": true,
+    "healthAvailable": true,
+    "extensionConnected": false,
+    "accessEnabled": false,
+    "enabledWindowId": null,
+    "routeTabId": null,
+    "routeReady": false,
+    "routeReason": "access_disabled",
+    "daemonRestarts": {
+      "startsInWindow": 0,
+      "windowMs": 60000,
+      "restartLoop": false
+    },
+    "daemonLogPath": "[redacted-path]/daemon.log",
+    "unwritableBridgePaths": [],
+    "nativeHostManifestIssues": [],
+    "issues": ["extension_disconnected"],
+    "nextSteps": [
+      "Open Chrome and make sure the Browser Bridge extension is installed and active. If Chrome reports a missing native host, run `bbx install --all` and reload the extension."
+    ],
+    "browserManifests": [],
+    "transport": {
+      "kind": "tcp",
+      "local": true,
+      "status": "reachable",
+      "proxyConfigured": false,
+      "proxyExposed": null,
+      "credentials": "accepted"
+    },
+    "connections": {
+      "extensionCount": 0,
+      "profileCount": 0
+    },
+    "protocol": {
+      "clientVersion": "$PROTOCOL_VERSION",
+      "daemonVersion": null,
+      "daemonSupportedVersions": ["$COMPATIBLE_MINOR_VERSION"],
+      "extensionSupportedVersions": [],
+      "daemonCompatible": true,
+      "extensionCompatible": null,
+      "compatible": true,
+      "migration": "none"
+    },
+    "debugger": {
+      "state": "unknown",
+      "attachedTabCount": null,
+      "heldTabCount": null,
+      "pendingTabCount": null,
+      "recentReason": null,
+      "captureState": "unknown",
+      "captureActiveTabCount": null,
+      "captureOwnershipCount": null,
+      "captureInflightCount": null,
+      "interceptionActiveTabCount": null,
+      "interceptionRuleCount": null
+    },
+    "recovery": {
+      "daemon": null,
+      "routedExtension": null,
+      "activeLoops": []
+    },
+    "metrics": null,
+    "recentEvents": [],
+    "recentCauses": [],
+    "setup": null,
+    "remoteDestinations": {
+      "configuredCount": 0,
+      "status": "not_configured",
+      "credentials": "not_configured"
+    },
+    "diagnosticFailures": []
+  },
+  "invalid_health": {
+    "manifestInstalled": true,
+    "manifestPath": "[redacted-path]/com.browserbridge.browser_bridge.json",
+    "allowedOrigins": [],
+    "defaultExtensionId": "jjjkmmcdkpcgamlopogicbnnhdgebhie",
+    "defaultExtensionIdSource": "built_in",
+    "daemonReachable": true,
+    "healthAvailable": false,
+    "extensionConnected": false,
+    "accessEnabled": false,
+    "enabledWindowId": null,
+    "routeTabId": null,
+    "routeReady": false,
+    "routeReason": "access_disabled",
+    "daemonRestarts": {
+      "startsInWindow": 0,
+      "windowMs": 60000,
+      "restartLoop": false
+    },
+    "daemonLogPath": "[redacted-path]/daemon.log",
+    "unwritableBridgePaths": [],
+    "nativeHostManifestIssues": [],
+    "issues": ["health_unavailable"],
+    "nextSteps": [
+      "The daemon is reachable but `health.ping` did not return valid core health. Run `bbx restart`, then update the Browser Bridge CLI and extension if the health check still fails."
+    ],
+    "browserManifests": [],
+    "transport": {
+      "kind": "tcp",
+      "local": true,
+      "status": "reachable",
+      "proxyConfigured": false,
+      "proxyExposed": null,
+      "credentials": "accepted"
+    },
+    "connections": {
+      "extensionCount": 0,
+      "profileCount": 0
+    },
+    "protocol": {
+      "clientVersion": "$PROTOCOL_VERSION",
+      "daemonVersion": null,
+      "daemonSupportedVersions": [],
+      "extensionSupportedVersions": [],
+      "daemonCompatible": null,
+      "extensionCompatible": null,
+      "compatible": null,
+      "migration": "unknown"
+    },
+    "debugger": {
+      "state": "unknown",
+      "attachedTabCount": null,
+      "heldTabCount": null,
+      "pendingTabCount": null,
+      "recentReason": null,
+      "captureState": "unknown",
+      "captureActiveTabCount": null,
+      "captureOwnershipCount": null,
+      "captureInflightCount": null,
+      "interceptionActiveTabCount": null,
+      "interceptionRuleCount": null
+    },
+    "recovery": {
+      "daemon": null,
+      "routedExtension": null,
+      "activeLoops": []
+    },
+    "metrics": null,
+    "recentEvents": [],
+    "recentCauses": [],
+    "setup": null,
+    "remoteDestinations": {
+      "configuredCount": 0,
+      "status": "not_configured",
+      "credentials": "not_configured"
+    },
+    "diagnosticFailures": ["health.ping_invalid"]
+  },
+  "ready": {
+    "manifestInstalled": true,
+    "manifestPath": "[redacted-path]/com.browserbridge.browser_bridge.json",
+    "allowedOrigins": [],
+    "defaultExtensionId": "jjjkmmcdkpcgamlopogicbnnhdgebhie",
+    "defaultExtensionIdSource": "built_in",
+    "daemonReachable": true,
+    "healthAvailable": true,
+    "extensionConnected": true,
+    "accessEnabled": true,
+    "enabledWindowId": 4,
+    "routeTabId": 12,
+    "routeReady": true,
+    "routeReason": "enabled",
+    "daemonRestarts": {
+      "startsInWindow": 0,
+      "windowMs": 60000,
+      "restartLoop": false
+    },
+    "daemonLogPath": "[redacted-path]/daemon.log",
+    "unwritableBridgePaths": [],
+    "nativeHostManifestIssues": [],
+    "issues": [],
+    "nextSteps": [],
+    "browserManifests": [],
+    "transport": {
+      "kind": "tcp",
+      "local": true,
+      "status": "reachable",
+      "proxyConfigured": false,
+      "proxyExposed": null,
+      "credentials": "accepted"
+    },
+    "connections": {
+      "extensionCount": 1,
+      "profileCount": 1
+    },
+    "protocol": {
+      "clientVersion": "$PROTOCOL_VERSION",
+      "daemonVersion": "1.2.3",
+      "daemonSupportedVersions": ["$PROTOCOL_VERSION"],
+      "extensionSupportedVersions": ["$PROTOCOL_VERSION"],
+      "daemonCompatible": true,
+      "extensionCompatible": true,
+      "compatible": true,
+      "migration": "none"
+    },
+    "debugger": {
+      "state": "unknown",
+      "attachedTabCount": null,
+      "heldTabCount": null,
+      "pendingTabCount": null,
+      "recentReason": null,
+      "captureState": "unknown",
+      "captureActiveTabCount": null,
+      "captureOwnershipCount": null,
+      "captureInflightCount": null,
+      "interceptionActiveTabCount": null,
+      "interceptionRuleCount": null
+    },
+    "recovery": {
+      "daemon": null,
+      "routedExtension": null,
+      "activeLoops": []
+    },
+    "metrics": {
+      "uptimeMs": 0,
+      "activeAgents": 0,
+      "activeExtensions": 1,
+      "pendingRequests": 0,
+      "requestsProcessed": 0,
+      "requestsFailed": 0,
+      "avgResponseTimeMs": 0,
+      "recovery": null
+    },
+    "recentEvents": [],
+    "recentCauses": [],
+    "setup": null,
+    "remoteDestinations": {
+      "configuredCount": 0,
+      "status": "not_configured",
+      "credentials": "not_configured"
+    },
+    "diagnosticFailures": []
+  },
+  "untrusted_diagnostics": {
+    "manifestInstalled": true,
+    "manifestPath": "[redacted-path]/com.browserbridge.browser_bridge.json",
+    "allowedOrigins": [],
+    "defaultExtensionId": "jjjkmmcdkpcgamlopogicbnnhdgebhie",
+    "defaultExtensionIdSource": "built_in",
+    "daemonReachable": true,
+    "healthAvailable": true,
+    "extensionConnected": true,
+    "accessEnabled": true,
+    "enabledWindowId": null,
+    "routeTabId": 0,
+    "routeReady": false,
+    "routeReason": "restricted_page",
+    "daemonRestarts": {
+      "startsInWindow": 0,
+      "windowMs": 60000,
+      "restartLoop": false
+    },
+    "daemonLogPath": "[redacted-path]/daemon.log",
+    "unwritableBridgePaths": [],
+    "nativeHostManifestIssues": [],
+    "issues": ["restricted_page", "protocol_mismatch", "debugger_conflict"],
+    "nextSteps": [
+      "Switch to a supported page in the enabled window, or use an explicit tabId override.",
+      "Update or reload the Browser Bridge extension so it supports the client protocol, then retry `bbx doctor`.",
+      "Close DevTools or any other debugger attached to the target tab, then retry the debugger-backed Browser Bridge operation.",
+      "A recent request targeted the wrong window. Focus the intended Chrome window, click Enable there, and retry without reusing a tabId from another window."
+    ],
+    "browserManifests": [],
+    "transport": {
+      "kind": "tcp",
+      "local": true,
+      "status": "reachable",
+      "proxyConfigured": false,
+      "proxyExposed": null,
+      "credentials": "accepted"
+    },
+    "connections": {
+      "extensionCount": 1,
+      "profileCount": 0
+    },
+    "protocol": {
+      "clientVersion": "$PROTOCOL_VERSION",
+      "daemonVersion": null,
+      "daemonSupportedVersions": ["999.0"],
+      "extensionSupportedVersions": ["0.0"],
+      "daemonCompatible": false,
+      "extensionCompatible": false,
+      "compatible": false,
+      "migration": "update_extension"
+    },
+    "debugger": {
+      "state": "conflict",
+      "attachedTabCount": 2,
+      "heldTabCount": 0,
+      "pendingTabCount": 1000000000,
+      "recentReason": "target_closed",
+      "captureState": "active",
+      "captureActiveTabCount": 3,
+      "captureOwnershipCount": null,
+      "captureInflightCount": 1,
+      "interceptionActiveTabCount": null,
+      "interceptionRuleCount": null
+    },
+    "recovery": {
+      "daemon": null,
+      "routedExtension": null,
+      "activeLoops": []
+    },
+    "metrics": {
+      "uptimeMs": 0,
+      "activeAgents": 0,
+      "activeExtensions": 0,
+      "pendingRequests": 0,
+      "requestsProcessed": 1000000000,
+      "requestsFailed": 0,
+      "avgResponseTimeMs": 0,
+      "recovery": null
+    },
+    "recentEvents": [
+      {
+        "at": "2026-10-22T08:00:00.000Z",
+        "method": "dom.query",
+        "ok": false,
+        "source": "mcp",
+        "cause": "debugger_conflict"
+      },
+      {
+        "cause": "wrong_window"
+      }
+    ],
+    "recentCauses": ["debugger_conflict", "wrong_window", "target_closed"],
+    "setup": null,
+    "remoteDestinations": {
+      "configuredCount": 0,
+      "status": "not_configured",
+      "credentials": "not_configured"
+    },
+    "diagnosticFailures": []
+  }
+}

@@ -10,7 +10,7 @@ import {
 } from '../../../tests/_helpers/chromeFake.ts';
 import { loadBackground } from '../../../tests/_helpers/loadBackground.ts';
 import { createMessagePortPair } from '../../../tests/_helpers/messagePort.ts';
-import { createRequest, ERROR_CODES } from '../../protocol/src/index.js';
+import { createRequest, ERROR_CODES } from '../../../protocol/src/index.js';
 
 type AccessRequestState = {
   requestedAccessWindowId: number | null;
@@ -196,7 +196,7 @@ test('background access request opens a popup window when no side panel is open'
   assert.equal(popupUpdates.length, 0);
   assert.deepEqual(popupCreates, [
     {
-      url: 'chrome-extension://test-extension-id/packages/extension/ui/popup.html?tabId=27&windowed=1',
+      url: 'chrome-extension://test-extension-id/ui/popup.html?tabId=27&windowed=1',
       type: 'popup',
       focused: true,
       width: 420,

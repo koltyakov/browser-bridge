@@ -8,8 +8,8 @@ import {
   createSuccess,
   getUtf8ByteLength,
   MAX_PERFORM_RESULT_BYTES,
-} from '../../protocol/src/index.js';
-import type { BridgeRequest, BridgeResponse, PerformResult } from '../../protocol/src/types.js';
+} from '../../../protocol/src/index.js';
+import type { BridgeRequest, BridgeResponse, PerformResult } from '../../../protocol/src/types.js';
 
 type StepHandler = (request: BridgeRequest, at: number) => BridgeResponse;
 

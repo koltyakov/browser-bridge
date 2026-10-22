@@ -48,6 +48,6 @@ Discovery and schema reads may be batched and retried. Executions may not, regar
 
 ## Local fixture
 
-Run `npm run fixture:browser` and open `http://127.0.0.1:4173/webmcp.html` in an approved test profile with native WebMCP enabled. The fixture reports availability and registers a harmless tool that changes a visible status. It does not install a compatibility library. Use it to verify discovery, approval, execution, and DOM postconditions after loading this checkout's extension.
+Run `make fixture-browser` and open `http://127.0.0.1:4173/webmcp.html` in an approved test profile with native WebMCP enabled. The fixture reports availability and registers a harmless tool that changes a visible status. It does not install a compatibility library. Use it to verify discovery, approval, execution, and DOM postconditions after loading this checkout's extension.
 
 See the [Chrome API documentation](https://developer.chrome.com/docs/ai/webmcp/imperative-api) and [WebMCP draft](https://webmachinelearning.github.io/webmcp/). Their experimental contracts may change independently of BBX.

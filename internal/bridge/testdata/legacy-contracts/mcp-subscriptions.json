@@ -1,0 +1,54 @@
+[
+  {
+    "jsonrpc": "2.0",
+    "method": "notifications/subscriptions/acknowledged",
+    "params": {
+      "notifications": {
+        "toolsListChanged": true
+      },
+      "_meta": {
+        "io.modelcontextprotocol/subscriptionId": 1
+      }
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "method": "notifications/subscriptions/acknowledged",
+    "params": {
+      "notifications": {},
+      "_meta": {
+        "io.modelcontextprotocol/subscriptionId": 2
+      }
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "error": {
+      "code": -32602,
+      "message": "Invalid params: 'notifications' is required and must be a valid SubscriptionFilter"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "error": {
+      "code": -32601,
+      "message": "Method not found"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "resultType": "complete",
+      "_meta": {
+        "io.modelcontextprotocol/subscriptionId": 1,
+        "io.modelcontextprotocol/serverInfo": {
+          "name": "browser-bridge",
+          "version": "$SERVER_VERSION"
+        }
+      }
+    }
+  }
+]

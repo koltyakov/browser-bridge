@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createChromeEvent } from '../../../tests/_helpers/chromeFake.ts';
-import { createRequest, ERROR_CODES, PROTOCOL_VERSION } from '../../protocol/src/index.js';
-import type { BridgeRequest, BridgeResponse } from '../../protocol/src/types.js';
-import type { ArtifactDescriptor } from '../../protocol/src/types.js';
+import { createRequest, ERROR_CODES, PROTOCOL_VERSION } from '../../../protocol/src/index.js';
+import type { BridgeRequest, BridgeResponse } from '../../../protocol/src/types.js';
+import type { ArtifactDescriptor } from '../../../protocol/src/types.js';
 import type { ExtensionState } from '../src/background-state.js';
 import { createPageRequestController } from '../src/background-page.js';
 import type { DebuggerRunOptions } from '../src/debugger-coordinator.js';

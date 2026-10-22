@@ -9,7 +9,7 @@ import {
 } from '../../../tests/_helpers/chromeFake.ts';
 import { loadBackground, type LoadedBackground } from '../../../tests/_helpers/loadBackground.ts';
 import { createMessagePortPair } from '../../../tests/_helpers/messagePort.ts';
-import { createRequest, createSuccess } from '../../protocol/src/index.js';
+import { createRequest, createSuccess } from '../../../protocol/src/index.js';
 
 type SetupStatus = {
   mcpClients?: unknown[];

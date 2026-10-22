@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { extensionFile } from '../../../tests/_helpers/extensionBuild.ts';
 import { withDocument } from '../../../tests/_helpers/dom.ts';
 
 async function render(
   available: boolean,
   body: (messages: Record<string, unknown>[], closed: () => number) => Promise<void>
 ) {
-  const html = await readFile(new URL('../ui/webmcp-approval.html', import.meta.url), 'utf8');
+  const html = await readFile(extensionFile('ui/webmcp-approval.html'), 'utf8');
   await withDocument(html, async ({ document, window }) => {
     const saved = Reflect.get(globalThis, 'chrome');
     const messages: Record<string, unknown>[] = [];
@@ -40,9 +41,7 @@ async function render(
       },
     });
     try {
-      await import(
-        `${new URL('../ui/webmcp-approval.js', import.meta.url).href}?case=${crypto.randomUUID()}`
-      );
+      await import(`${extensionFile('ui/webmcp-approval.js').href}?case=${crypto.randomUUID()}`);
       await new Promise((resolve) => setImmediate(resolve));
       await body(messages, () => closes);
     } finally {

@@ -10,7 +10,7 @@ import { emitUiStateForPort, handleUiMessage } from '../src/background-ui.js';
 import { createWindowActionsController } from '../src/background-window-actions.js';
 import { createChromeFake } from '../../../tests/_helpers/chromeFake.ts';
 import { clockController } from '../../../tests/_helpers/faultInjection.ts';
-import type { BrowserWindowAccess } from '../../protocol/src/window-access.js';
+import type { BrowserWindowAccess } from '../../../protocol/src/window-access.js';
 
 const remote: BrowserWindowAccess = {
   extensionId: 'edge-work',

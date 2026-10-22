@@ -1,0 +1,94 @@
+{
+  "article_metadata": {
+    "format": "markdown",
+    "content": "A careful browser inspection starts with the visible document, reads the relevant article, and keeps its surrounding context. This paragraph supplies enough natural prose for both Readability implementations to distinguish the article from navigation and unrelated page furniture. A careful browser inspection starts with the visible document, reads the relevant article, and keeps its surrounding context. This paragraph supplies enough natural prose for both Readability implementations to distinguish the article from navigation and unrelated page furniture.\n\nSecond paragraph with **important facts** and [a source](/source).",
+    "title": "Reading the browser document",
+    "byline": "Ada Example",
+    "excerpt": "A concise editorial description.",
+    "siteName": "Example Journal",
+    "source": "readability",
+    "root": {
+      "tag": "article"
+    },
+    "length": 629,
+    "truncated": false,
+    "omitted": 0
+  },
+  "body_fallback_without_metadata": {
+    "format": "markdown",
+    "content": "Brief text & punctuation.\n\nUnsafe[Safe](/safe)",
+    "source": "body",
+    "root": {
+      "tag": "body"
+    },
+    "length": 46,
+    "truncated": false,
+    "omitted": 0
+  },
+  "bounded_article_markdown": {
+    "format": "markdown",
+    "content": "A careful browser inspection starts with the visible document, reads the relevant article, and keeps its surrounding context. This paragraph supplies enough natural prose",
+    "title": "Long article",
+    "excerpt": "A careful browser inspection starts with the visible document, reads the relevant article, and keeps its surrounding context. This paragraph supplies enough natural prose for both Readability implementations to distinguish the article from navigation and unrelated page furniture. A careful browser inspection starts with the visible document, reads the relevant article, and keeps its surrounding context. This paragraph supplies enough natural prose for both Readability implementations to distingu",
+    "source": "readability",
+    "root": {
+      "tag": "article"
+    },
+    "length": 971,
+    "truncated": true,
+    "omitted": 801
+  },
+  "byline_and_article_selection": {
+    "format": "text",
+    "content": "A careful browser inspection starts with the visible document, reads the relevant article, and keeps its surrounding context. This paragraph supplies enough natural prose for both Readability implementations to distinguish the article from navigation and unrelated page furniture. A careful browser inspection starts with the visible document, reads the relevant article, and keeps its surrounding context. This paragraph supplies enough natural prose for both Readability implementations to distinguish the article from navigation and unrelated page furniture. A careful browser inspection starts with the visible document, reads the relevant article, and keeps its surrounding context. This paragraph supplies enough natural prose for both Readability implementations to distinguish the article from navigation and unrelated page furniture.",
+    "title": "Browser extraction experiment",
+    "byline": "By Grace Writer",
+    "excerpt": "A careful browser inspection starts with the visible document, reads the relevant article, and keeps its surrounding context. This paragraph supplies enough natural prose for both Readability implementations to distinguish the article from navigation and unrelated page furniture. A careful browser inspection starts with the visible document, reads the relevant article, and keeps its surrounding context. This paragraph supplies enough natural prose for both Readability implementations to distingu",
+    "source": "readability",
+    "root": {
+      "tag": "article"
+    },
+    "length": 842,
+    "truncated": false,
+    "omitted": 0
+  },
+  "hidden_and_inert_content": {
+    "format": "text",
+    "content": "A careful browser inspection starts with the visible document, reads the relevant article, and keeps its surrounding context. This paragraph supplies enough natural prose for both Readability implementations to distinguish the article from navigation and unrelated page furniture. A careful browser inspection starts with the visible document, reads the relevant article, and keeps its surrounding context. This paragraph supplies enough natural prose for both Readability implementations to distinguish the article from navigation and unrelated page furniture. Visible conclusion.",
+    "title": "Collected facts",
+    "excerpt": "A careful browser inspection starts with the visible document, reads the relevant article, and keeps its surrounding context. This paragraph supplies enough natural prose for both Readability implementations to distinguish the article from navigation and unrelated page furniture. A careful browser inspection starts with the visible document, reads the relevant article, and keeps its surrounding context. This paragraph supplies enough natural prose for both Readability implementations to distingu",
+    "source": "readability",
+    "root": {
+      "tag": "article"
+    },
+    "length": 581,
+    "truncated": false,
+    "omitted": 0
+  },
+  "small_semantic_fallback": {
+    "format": "markdown",
+    "content": "## Small guide\n\nShort useful content.\n\n1. First\n2. Second",
+    "title": "Small guide",
+    "excerpt": "Short useful content.",
+    "source": "semantic-root",
+    "root": {
+      "tag": "main"
+    },
+    "length": 57,
+    "truncated": false,
+    "omitted": 0
+  },
+  "unicode_whitespace": {
+    "format": "markdown",
+    "content": "## Reading guide\n\nVisible text with spaces.",
+    "title": "Reading guide",
+    "excerpt": "Visible text with spaces.",
+    "source": "semantic-root",
+    "root": {
+      "tag": "main"
+    },
+    "length": 43,
+    "truncated": false,
+    "omitted": 0
+  }
+}

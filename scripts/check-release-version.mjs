@@ -1,42 +1,10 @@
 // @ts-check
-import fs from 'node:fs';
+import { checkVersion } from './version.mjs';
 
-const packageJson = JSON.parse(
-  fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')
-);
-const extensionManifest = JSON.parse(
-  fs.readFileSync(new URL('../manifest.json', import.meta.url), 'utf8')
-);
-
-const packageVersion = String(packageJson.version);
-const extensionVersion = String(extensionManifest.version);
-const packageLine = getVersionLine(packageVersion);
-const extensionLine = getVersionLine(extensionVersion);
-
-if (!packageLine || !extensionLine) {
-  process.stderr.write(
-    `Invalid release version: package.json is ${packageVersion}, manifest.json is ${extensionVersion}.\n`
-  );
+try {
+  const { version, source } = checkVersion();
+  process.stdout.write(`Release version matches: ${version} (${source}).\n`);
+} catch (error) {
+  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
-} else if (packageLine !== extensionLine) {
-  process.stderr.write(
-    `Release major mismatch: package.json is ${packageVersion}, manifest.json is ${extensionVersion}.\n`
-  );
-  process.exitCode = 1;
-} else {
-  process.stdout.write(
-    `Release version line matches (${packageLine}): package ${packageVersion}, extension ${extensionVersion}.\n`
-  );
-}
-
-/**
- * npm and extension minor and patch releases may advance independently, but both
- * artifacts must remain on the same major compatibility line.
- *
- * @param {string} version
- * @returns {string | null}
- */
-function getVersionLine(version) {
-  const match = /^(\d+)\.(\d+)\.\d+(?:[-+][0-9A-Za-z.-]+)?$/u.exec(version);
-  return match ? match[1] : null;
 }

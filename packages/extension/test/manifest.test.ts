@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-import { deriveProtocolVersion, isProtocolVersionSupported } from '../../protocol/src/index.js';
+import { deriveProtocolVersion, isProtocolVersionSupported } from '../../../protocol/src/index.js';
 
 test('extension manifest opens the side panel from the toolbar action', async () => {
   const manifestUrl = new URL('../../../manifest.json', import.meta.url);
@@ -10,7 +10,7 @@ test('extension manifest opens the side panel from the toolbar action', async ()
 
   assert.equal(manifest.action.default_title, 'Browser Bridge');
   assert.equal(manifest.action.default_popup, undefined);
-  assert.equal(manifest.side_panel.default_path, 'packages/extension/ui/sidepanel.html');
+  assert.equal(manifest.side_panel.default_path, 'ui/sidepanel.html');
 });
 
 test('npm release metadata stays aligned and independent extension releases remain protocol-compatible', async () => {

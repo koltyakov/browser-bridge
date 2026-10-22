@@ -1,0 +1,57 @@
+{
+  "call": {
+    "ok": false,
+    "summary": "ERROR: Usage: call [--extension <connectionId>] [--browser <name>] [--profile <label>] [--tab <tabId>] [--preset quick|normal|deep] <method> [paramsJson]",
+    "evidence": null
+  },
+  "call_page.get_state_--extension": {
+    "ok": false,
+    "summary": "ERROR: --extension requires a value.",
+    "evidence": null
+  },
+  "call_page.get_state_--preset_invalid": {
+    "ok": false,
+    "summary": "ERROR: Unknown preset \"invalid\". Valid presets: quick, normal, deep.",
+    "evidence": null
+  },
+  "call_page.get_state_--tab_0": {
+    "ok": false,
+    "summary": "ERROR: tabId must be a positive integer (got \"0\").",
+    "evidence": null
+  },
+  "call_page.get_state_3": {
+    "ok": false,
+    "summary": "ERROR: Expected a JSON object but got number. Wrap your input in {}.",
+    "evidence": null
+  },
+  "call_page.get_state_[]": {
+    "ok": false,
+    "summary": "ERROR: Expected a JSON object but got array. Wrap your input in {}.",
+    "evidence": null
+  },
+  "call_page.get_state_null": {
+    "ok": false,
+    "summary": "ERROR: Expected a JSON object but got object. Wrap your input in {}.",
+    "evidence": null
+  },
+  "call_page.get_state_true": {
+    "ok": false,
+    "summary": "ERROR: Expected a JSON object but got boolean. Wrap your input in {}.",
+    "evidence": null
+  },
+  "call_page.get_state_{": {
+    "ok": false,
+    "summary": "ERROR: Invalid JSON syntax. Expected a JSON object, e.g. '{\"key\":\"value\"}'.",
+    "evidence": null
+  },
+  "call_page.get_state_{}_{}": {
+    "ok": false,
+    "summary": "ERROR: Usage: call [--extension <connectionId>] [--browser <name>] [--profile <label>] [--tab <tabId>] [--preset quick|normal|deep] <method> [paramsJson]",
+    "evidence": null
+  },
+  "call_unknown.method": {
+    "ok": false,
+    "summary": "ERROR: Unknown method \"unknown.method\". Run bbx skill to see available methods.",
+    "evidence": null
+  }
+}

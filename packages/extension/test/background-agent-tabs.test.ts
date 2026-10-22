@@ -11,8 +11,12 @@ import {
 import { createChromeFake, createStorageArea } from '../../../tests/_helpers/chromeFake.ts';
 import type { FakeChromeEvent } from '../../../tests/_helpers/chromeFake.ts';
 import { loadBackground } from '../../../tests/_helpers/loadBackground.ts';
-import { createRequest, ERROR_CODES, summarizeBridgeResponse } from '../../protocol/src/index.js';
-import type { BridgeMethod, BridgeResponse } from '../../protocol/src/types.js';
+import {
+  createRequest,
+  ERROR_CODES,
+  summarizeBridgeResponse,
+} from '../../../protocol/src/index.js';
+import type { BridgeMethod, BridgeResponse } from '../../../protocol/src/types.js';
 import type { ExtensionState } from '../src/background-state.js';
 import type { AgentTabUiState } from '../src/background-ui.js';
 import { createMessagePortPair } from '../../../tests/_helpers/messagePort.ts';

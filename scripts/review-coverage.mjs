@@ -48,7 +48,7 @@ async function readCoverageSummary(filePath) {
   } catch (error) {
     if (isMissingFileError(error)) {
       throw new Error(
-        `Missing coverage summary at ${filePath}. Run npm test before npm run coverage:review.`
+        `Missing coverage summary at ${filePath}. Run make test before make coverage-review.`
       );
     }
 

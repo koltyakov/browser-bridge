@@ -21,7 +21,7 @@ This index keeps those paths separate.
 
 ## Reference
 
-- [BridgeClient API](./api-reference.md): programmatic client usage without MCP or CLI shortcuts
+- [CLI and wire API](./api-reference.md): raw method calls, transport envelopes, and response contracts
 
 ## Maintainers
 

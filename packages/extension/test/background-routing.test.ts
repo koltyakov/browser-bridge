@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { BridgeError, ERROR_CODES } from '../../protocol/src/index.js';
+import { BridgeError, ERROR_CODES } from '../../../protocol/src/index.js';
 import {
   isRestrictedAutomationUrl,
   normalizeRequestedAccessTab,

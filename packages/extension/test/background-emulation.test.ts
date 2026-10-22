@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createEmulationController } from '../src/background-emulation.js';
-import { normalizeRequestParams } from '../../protocol/src/index.js';
+import { normalizeRequestParams } from '../../../protocol/src/index.js';
 
 function harness() {
   const commands: Array<{ method: string; params: Record<string, unknown> }> = [];

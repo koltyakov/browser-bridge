@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ERROR_CODES } from '../../protocol/src/index.js';
+import { ERROR_CODES } from '../../../protocol/src/index.js';
 import { handleCreateTab, handleListTabs } from '../src/background-tabs.js';
 import { makeRequest } from '../../../tests/_helpers/protocolFactories.ts';
 

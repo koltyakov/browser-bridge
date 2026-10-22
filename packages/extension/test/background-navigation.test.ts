@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { BridgeError, ERROR_CODES } from '../../protocol/src/index.js';
-import type { BridgeRequest } from '../../protocol/src/types.js';
+import { BridgeError, ERROR_CODES } from '../../../protocol/src/index.js';
+import type { BridgeRequest } from '../../../protocol/src/types.js';
 import { handleNavigationRequest } from '../src/background-navigation.js';
 import { makeRequest } from '../../../tests/_helpers/protocolFactories.ts';
 

@@ -7,26 +7,30 @@ import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
+import { build } from 'esbuild';
+import { resolveVersion } from './version.mjs';
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const distDir = path.join(repoRoot, 'dist');
-const stagingDir = path.join(distDir, 'browser-bridge-extension');
+const stagingDir = path.join(distDir, 'extension');
 const manifestPath = path.join(repoRoot, 'manifest.json');
+const buildOnly = process.argv.includes('--build-only');
 
-/** @typedef {{ version: string, icons?: Record<string, string> }} ExtensionManifest */
+/** @typedef {{ version: string, minimum_chrome_version: string, icons?: Record<string, string> }} ExtensionManifest */
 
 const manifest = /** @type {ExtensionManifest} */ (await readJson(manifestPath));
+manifest.version = resolveVersion({ root: repoRoot }).version;
 
 await verifyManifestAssets(manifest);
 await stageExtension();
 
 const zipPath = path.join(distDir, `browser-bridge-extension-v${manifest.version}.zip`);
-await createZipArchive(stagingDir, zipPath);
+if (!buildOnly) await createZipArchive(stagingDir, zipPath);
 
 process.stdout.write(`Staged extension at ${stagingDir}\n`);
-process.stdout.write(`Wrote ${zipPath}\n`);
+if (!buildOnly) process.stdout.write(`Wrote ${zipPath}\n`);
 
 /**
  * @param {string} filePath
@@ -43,7 +47,7 @@ async function readJson(filePath) {
 async function verifyManifestAssets(extensionManifest) {
   const iconPaths = Object.values(extensionManifest.icons || {});
   for (const relativePath of iconPaths) {
-    const absolutePath = path.join(repoRoot, relativePath);
+    const absolutePath = path.join(repoRoot, 'packages/extension', relativePath);
     await fs.promises.access(absolutePath);
   }
 }
@@ -55,11 +59,65 @@ async function stageExtension() {
   await fs.promises.rm(stagingDir, { recursive: true, force: true });
   await fs.promises.mkdir(stagingDir, { recursive: true });
 
-  await copyIntoStage('manifest.json');
-  await copyIntoStage(path.join('packages', 'protocol', 'src'));
-  await copyIntoStage(path.join('packages', 'extension', 'src'));
-  await copyIntoStage(path.join('packages', 'extension', 'ui'));
-  await copyIntoStage(path.join('packages', 'extension', 'assets'));
+  await fs.promises.writeFile(
+    path.join(stagingDir, 'manifest.json'),
+    `${JSON.stringify(manifest, null, 2)}\n`
+  );
+  /** @type {Record<string, string>} */
+  const entryPoints = {};
+  for (const outputDirectory of ['src', 'ui']) {
+    const directory = path.join('packages/extension', outputDirectory);
+    const files = await fs.promises.readdir(path.join(repoRoot, directory));
+    if (files.some((file) => file.endsWith('.js'))) {
+      throw new Error(`Extension runtime sources must be TypeScript: ${directory}`);
+    }
+    for (const file of files.filter((file) => file.endsWith('.ts') && !file.endsWith('.d.ts'))) {
+      entryPoints[`${outputDirectory}/${path.basename(file, '.ts')}`] = path.join(directory, file);
+    }
+    for (const file of files.filter((file) => /\.(html|css)$/.test(file))) {
+      await copyIntoStage(path.join(directory, file), path.join(outputDirectory, file));
+    }
+  }
+  // Shared browser helpers remain JavaScript. Type-only protocol
+  // imports disappear during compilation and never enter the extension ZIP.
+  const protocolDirectory = 'protocol/src';
+  const protocolFiles = await fs.promises.readdir(path.join(repoRoot, protocolDirectory));
+  for (const file of protocolFiles.filter((file) => file.endsWith('.js'))) {
+    entryPoints[`protocol/${path.basename(file, '.js')}`] = path.join(protocolDirectory, file);
+  }
+  await build({
+    absWorkingDir: repoRoot,
+    entryPoints,
+    outdir: stagingDir,
+    bundle: false,
+    plugins: [
+      {
+        name: 'flatten-protocol-imports',
+        setup(builder) {
+          builder.onLoad(
+            { filter: /packages[\\/]extension[\\/].*\.ts$/ },
+            async ({ path: source }) => ({
+              // Source imports keep resolving against the repository for tsc.
+              // Rewrite before compilation so source maps match the emitted code.
+              contents: (await fs.promises.readFile(source, 'utf8')).replaceAll(
+                '../../../protocol/src/',
+                '../protocol/'
+              ),
+              loader: 'ts',
+            })
+          );
+        },
+      },
+    ],
+    platform: 'browser',
+    target: `chrome${manifest.minimum_chrome_version}`,
+    // Keep classic content-script IIFEs classic, and injected functions free
+    // of module-level name-preservation helpers when Chrome serializes them.
+    keepNames: false,
+    sourcemap: buildOnly ? 'linked' : false,
+    tsconfigRaw: { compilerOptions: { useDefineForClassFields: true, verbatimModuleSyntax: true } },
+  });
+  await copyIntoStage(path.join('packages', 'extension', 'assets'), 'assets');
   await copyIntoStage('LICENSE');
   const hash = createHash('sha256');
   /** @param {string} directory */
@@ -77,19 +135,31 @@ async function stageExtension() {
     }
   }
   await hashDirectory(stagingDir);
+  const sourceDigest = hash.digest('hex');
   await fs.promises.writeFile(
-    path.join(stagingDir, 'packages/extension/src/build-info.js'),
-    `// @ts-check\n/** SHA-256 of sorted staged paths and bytes before this generated stamp. @type {string | null} */\nexport const SOURCE_DIGEST = '${hash.digest('hex')}';\n`
+    path.join(stagingDir, 'src/build-info.js'),
+    `// @ts-check\n/** SHA-256 of sorted staged paths and bytes before this generated stamp. @type {string | null} */\nexport const SOURCE_DIGEST = '${sourceDigest}';\n/** @type {boolean} */\nexport const DEVELOPMENT_AUTO_RELOAD = ${buildOnly};\n`
   );
+  if (buildOnly) {
+    // Publish last, and atomically, so running workers never reload a partial
+    // build. This resource contains no machine-specific paths.
+    const stampPath = path.join(stagingDir, 'development-build.json');
+    await fs.promises.writeFile(
+      `${stampPath}.tmp`,
+      `${JSON.stringify({ formatVersion: 1, complete: true, sourceDigest })}\n`
+    );
+    await fs.promises.rename(`${stampPath}.tmp`, stampPath);
+  }
 }
 
 /**
  * @param {string} relativePath
+ * @param {string} [outputPath]
  * @returns {Promise<void>}
  */
-async function copyIntoStage(relativePath) {
+async function copyIntoStage(relativePath, outputPath = relativePath) {
   const sourcePath = path.join(repoRoot, relativePath);
-  const targetPath = path.join(stagingDir, relativePath);
+  const targetPath = path.join(stagingDir, outputPath);
 
   await fs.promises.mkdir(path.dirname(targetPath), { recursive: true });
   await fs.promises.cp(sourcePath, targetPath, { recursive: true });

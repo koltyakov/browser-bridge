@@ -38,7 +38,7 @@
   },
   "overrides": [
     {
-      "files": ["packages/extension/src/**/*.js", "packages/extension/ui/**/*.js"],
+      "files": ["packages/extension/src/**/*.ts", "packages/extension/ui/**/*.ts"],
       "env": {
         "browser": true,
         "serviceworker": true
@@ -48,19 +48,13 @@
       }
     },
     {
-      "files": ["packages/**/*.test.js"],
+      "files": ["packages/**/*.test.ts", "protocol/**/*.test.ts", "tests/**/*.ts"],
       "env": {
         "node": true
       }
     },
     {
-      "files": [
-        "packages/agent-client/**/*.js",
-        "packages/mcp-server/**/*.js",
-        "packages/native-host/**/*.js",
-        "packages/protocol/**/*.js",
-        "scripts/**/*.mjs"
-      ],
+      "files": ["packages/npm/**/*.js", "protocol/**/*.js", "scripts/**/*.mjs"],
       "env": {
         "node": true
       }

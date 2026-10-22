@@ -42,7 +42,7 @@ path when that profile exists.
 
 Ubuntu's default Chromium package is usually a strict snap, and Flatpak Chromium
 is similarly sandboxed. Those builds can use different native messaging manifest
-paths and may still be unable to launch Browser Bridge's Node-based native host
+paths and may still be unable to launch Browser Bridge's Go native host
 because the host lives outside the browser sandbox. If `bbx status` shows
 `Daemon: ok. Extension: disconnected` after installing for Chromium, use Google
 Chrome, Brave, or Edge from a non-sandboxed package and run the matching

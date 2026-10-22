@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { handleScreenshot } from '../src/background-screenshots.js';
-import { ERROR_CODES, MAX_ARTIFACT_BYTES } from '../../protocol/src/index.js';
+import { ERROR_CODES, MAX_ARTIFACT_BYTES } from '../../../protocol/src/index.js';
 import { TabDebuggerCoordinator } from '../src/debugger-coordinator.js';
 import type { DebuggerRunOptions } from '../src/debugger-coordinator.js';
 
@@ -250,13 +250,13 @@ test('screenshot artifact delivery rejects bytes above the daemon limit before u
 test('a blocked screenshot artifact upload does not hold the debugger attachment', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   let resolveUpload: (
-    value: import('../../protocol/src/types.js').ArtifactDescriptor
+    value: import('../../../protocol/src/types.js').ArtifactDescriptor
   ) => void = () => {};
   let uploadStarted: () => void = () => {};
   const started = new Promise<void>((resolve) => {
     uploadStarted = resolve;
   });
-  const upload = new Promise<import('../../protocol/src/types.js').ArtifactDescriptor>(
+  const upload = new Promise<import('../../../protocol/src/types.js').ArtifactDescriptor>(
     (resolve) => {
       resolveUpload = resolve;
     }

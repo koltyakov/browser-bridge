@@ -8,7 +8,7 @@ import {
   createChromeFake,
 } from '../../../tests/_helpers/chromeFake.ts';
 import { loadBackground } from '../../../tests/_helpers/loadBackground.ts';
-import { createRequest } from '../../protocol/src/index.js';
+import { createRequest } from '../../../protocol/src/index.js';
 
 function createNativePort(): {
   postMessage: () => void;

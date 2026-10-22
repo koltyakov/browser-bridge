@@ -1,6 +1,6 @@
 {
   "name": "@browserbridge/bbx",
-  "version": "1.14.2",
+  "version": "2.0.0",
   "private": false,
   "keywords": [
     "agent-tools",
@@ -26,10 +26,10 @@
     "url": "git+https://github.com/koltyakov/browser-bridge.git"
   },
   "bin": {
-    "bbx": "packages/agent-client/src/cli.js",
-    "bbx-daemon": "packages/native-host/bin/bridge-daemon.js",
-    "bbx-install": "packages/native-host/bin/install-manifest.js",
-    "bbx-mcp": "packages/mcp-server/src/bin.js"
+    "bbx": "packages/npm/bin/bbx.js",
+    "bbx-daemon": "packages/npm/bin/bbx-daemon.js",
+    "bbx-install": "packages/npm/bin/bbx-install.js",
+    "bbx-mcp": "packages/npm/bin/bbx-mcp.js"
   },
   "files": [
     "LICENSE",
@@ -37,13 +37,9 @@
     "RESPONSIBLE_USE.md",
     "README.md",
     "SECURITY.md",
-    "packages/agent-client/src",
-    "packages/mcp-server/src",
-    "packages/native-host/bin",
-    "packages/native-host/src",
-    "packages/protocol/src",
-    "packages/standalone/src",
-    "skills/browser-bridge",
+    "packages/npm/bin",
+    "packages/npm/src",
+    "packages/npm/native-manifest.json",
     "!**/test/**",
     "!**/*.test.*",
     "!**/*.spec.*"
@@ -53,45 +49,22 @@
     "access": "public"
   },
   "scripts": {
-    "lint": "oxlint . && oxfmt --check .",
-    "format": "oxfmt .",
-    "format:check": "oxfmt --check .",
-    "fixture:browser": "node tests/fixtures/browser-reliability/server.mjs",
-    "fixture:interaction": "node tests/fixtures/agent-interaction/server.mjs",
-    "bench:interaction": "node tests/fixtures/agent-interaction/bench.mjs",
-    "test:runtime": "node --import tsx --test packages/*/test/*.test.ts packages/integration-tests/*.test.ts tests/fixtures/*/*.test.ts",
-    "test": "c8 node --import tsx --test packages/*/test/*.test.ts packages/integration-tests/*.test.ts tests/fixtures/*/*.test.ts",
-    "coverage": "c8 report --reporter=text --reporter=text-summary",
-    "coverage:review": "c8 report --reporter=json-summary && node scripts/review-coverage.mjs",
-    "coverage:check": "c8 check-coverage --lines 92 --branches 83",
-    "typecheck": "tsc --noEmit",
-    "postinstall": "node packages/native-host/bin/postinstall.js",
+    "build:extension": "node scripts/package-extension.mjs --build-only",
     "package:extension": "node scripts/package-extension.mjs",
-    "package:standalone": "node scripts/build-standalone.mjs",
-    "test:standalone": "node scripts/smoke-standalone.mjs",
-    "check:extension-zip": "node scripts/check-extension-zip.mjs",
-    "check:release-version": "node scripts/check-release-version.mjs",
-    "release:check": "npm run check:release-version && npm run lint && npm run typecheck && npm test && npm run coverage:check && npm run package:extension && npm run check:extension-zip && npm pack --dry-run",
-    "prepublishOnly": "npm run check:release-version && npm run lint && npm run typecheck && npm test && npm run coverage:check",
-    "status": "node packages/agent-client/src/cli.js status",
-    "daemon": "node packages/native-host/bin/bridge-daemon.js",
-    "install-manifest": "node packages/native-host/bin/install-manifest.js"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/server": "^2.3.1",
-    "@mozilla/readability": "^0.6.0",
-    "jsonc-parser": "^3.3.1",
-    "linkedom": "^0.18.14",
-    "zod": "^4.6.7"
+    "postinstall": "node packages/npm/bin/postinstall.js",
+    "prepack": "node scripts/prepare-npm.mjs"
   },
   "devDependencies": {
+    "@babel/parser": "^8.0.7",
     "@modelcontextprotocol/client": "^2.3.1",
     "@types/chrome": "^0.3.6",
     "@types/node": "^26.6.5",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "c8": "^12.0.0",
+    "esbuild": "^0.28.2",
     "har-schema": "^2.0.0",
+    "linkedom": "^0.18.14",
     "oxfmt": "^0.74.0",
     "oxlint": "^1.89.0",
     "tsx": "^4.23.15",
@@ -101,7 +74,7 @@
     "node": ">=20"
   },
   "allowScripts": {
-    "esbuild@0.28.1": true,
+    "esbuild@0.28.2": true,
     "fsevents@2.3.3": true
   }
 }

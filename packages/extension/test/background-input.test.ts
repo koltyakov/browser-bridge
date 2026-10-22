@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createBackgroundInputController } from '../src/background-input.js';
-import { createRequest } from '../../protocol/src/index.js';
+import { createRequest } from '../../../protocol/src/index.js';
 
 type CommandCall = { method: string; params: Record<string, unknown> };
 

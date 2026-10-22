@@ -1,0 +1,203 @@
+{
+  "[null,5,[],{}]": [
+    {
+      "method": "",
+      "tabId": null,
+      "ok": false,
+      "summary": "INVALID_REQUEST: Each batch call needs a method.",
+      "evidence": null,
+      "durationMs": 0,
+      "approxTokens": 0,
+      "meta": {
+        "protocol_version": "$PROTOCOL_VERSION"
+      },
+      "error": {
+        "code": "INVALID_REQUEST",
+        "message": "Each batch call needs a method."
+      },
+      "response": null
+    },
+    {
+      "method": "",
+      "tabId": null,
+      "ok": false,
+      "summary": "INVALID_REQUEST: Each batch call needs a method.",
+      "evidence": null,
+      "durationMs": 0,
+      "approxTokens": 0,
+      "meta": {
+        "protocol_version": "$PROTOCOL_VERSION"
+      },
+      "error": {
+        "code": "INVALID_REQUEST",
+        "message": "Each batch call needs a method."
+      },
+      "response": null
+    },
+    {
+      "method": "",
+      "tabId": null,
+      "ok": false,
+      "summary": "INVALID_REQUEST: Each batch call needs a method.",
+      "evidence": null,
+      "durationMs": 0,
+      "approxTokens": 0,
+      "meta": {
+        "protocol_version": "$PROTOCOL_VERSION"
+      },
+      "error": {
+        "code": "INVALID_REQUEST",
+        "message": "Each batch call needs a method."
+      },
+      "response": null
+    },
+    {
+      "method": "",
+      "tabId": null,
+      "ok": false,
+      "summary": "INVALID_REQUEST: Each batch call needs a method.",
+      "evidence": null,
+      "durationMs": 0,
+      "approxTokens": 0,
+      "meta": {
+        "protocol_version": "$PROTOCOL_VERSION"
+      },
+      "error": {
+        "code": "INVALID_REQUEST",
+        "message": "Each batch call needs a method."
+      },
+      "response": null
+    }
+  ],
+  "[{\"method\":\"no.method\"}]": [
+    {
+      "method": "no.method",
+      "tabId": null,
+      "ok": false,
+      "summary": "INVALID_REQUEST: Unknown bridge method \"no.method\".",
+      "evidence": null,
+      "durationMs": 0,
+      "approxTokens": 0,
+      "meta": {
+        "protocol_version": "$PROTOCOL_VERSION"
+      },
+      "error": {
+        "code": "INVALID_REQUEST",
+        "message": "Unknown bridge method \"no.method\"."
+      },
+      "response": null
+    }
+  ],
+  "[{\"method\":\"page.get_console\",\"params\":{\"clear\":true}}]": [
+    {
+      "method": "page.get_console",
+      "tabId": null,
+      "ok": false,
+      "summary": "INVALID_REQUEST: page.get_console is not safe for batch execution. Call it sequentially.",
+      "evidence": null,
+      "durationMs": 0,
+      "approxTokens": 0,
+      "meta": {
+        "protocol_version": "$PROTOCOL_VERSION"
+      },
+      "error": {
+        "code": "INVALID_REQUEST",
+        "message": "page.get_console is not safe for batch execution. Call it sequentially."
+      },
+      "response": null
+    }
+  ],
+  "[{\"method\":\"page.get_state\",\"extensionId\":\"\"}]": [
+    {
+      "method": "page.get_state",
+      "tabId": null,
+      "ok": false,
+      "summary": "INVALID_REQUEST: extensionId must be a non-empty string.",
+      "evidence": null,
+      "durationMs": 0,
+      "approxTokens": 0,
+      "meta": {
+        "protocol_version": "$PROTOCOL_VERSION"
+      },
+      "error": {
+        "code": "INVALID_REQUEST",
+        "message": "extensionId must be a non-empty string."
+      },
+      "response": null
+    }
+  ],
+  "[{\"method\":\"page.get_state\",\"params\":null}]": [
+    {
+      "method": "page.get_state",
+      "tabId": null,
+      "ok": false,
+      "summary": "INVALID_REQUEST: Batch call params must be a JSON object.",
+      "evidence": null,
+      "durationMs": 0,
+      "approxTokens": 0,
+      "meta": {
+        "protocol_version": "$PROTOCOL_VERSION"
+      },
+      "error": {
+        "code": "INVALID_REQUEST",
+        "message": "Batch call params must be a JSON object."
+      },
+      "response": null
+    }
+  ],
+  "[{\"method\":\"page.get_state\"},{\"method\":\"input.click\",\"params\":{}}]": [
+    {
+      "method": "page.get_state",
+      "tabId": null,
+      "ok": false,
+      "summary": "INVALID_REQUEST: Batch was not executed because another call failed validation.",
+      "evidence": null,
+      "durationMs": 0,
+      "approxTokens": 0,
+      "meta": {
+        "protocol_version": "$PROTOCOL_VERSION"
+      },
+      "error": {
+        "code": "INVALID_REQUEST",
+        "message": "Batch was not executed because another call failed validation."
+      },
+      "response": null
+    },
+    {
+      "method": "input.click",
+      "tabId": null,
+      "ok": false,
+      "summary": "INVALID_REQUEST: input.click is not safe for batch execution. Call it sequentially.",
+      "evidence": null,
+      "durationMs": 0,
+      "approxTokens": 0,
+      "meta": {
+        "protocol_version": "$PROTOCOL_VERSION"
+      },
+      "error": {
+        "code": "INVALID_REQUEST",
+        "message": "input.click is not safe for batch execution. Call it sequentially."
+      },
+      "response": null
+    }
+  ],
+  "[{\"method\":\"sensitive.read\"}]": [
+    {
+      "method": "sensitive.read",
+      "tabId": null,
+      "ok": false,
+      "summary": "INVALID_REQUEST: sensitive.read is never allowed in batch execution. Call it sequentially.",
+      "evidence": null,
+      "durationMs": 0,
+      "approxTokens": 0,
+      "meta": {
+        "protocol_version": "$PROTOCOL_VERSION"
+      },
+      "error": {
+        "code": "INVALID_REQUEST",
+        "message": "sensitive.read is never allowed in batch execution. Call it sequentially."
+      },
+      "response": null
+    }
+  ]
+}

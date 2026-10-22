@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { createDomBaselineController, DomBaselineError } from '../src/background-dom-baselines.js';
 import { createDomBaselineRequestHandler } from '../src/background-dom-baseline-requests.js';
-import { BridgeError, createRequest, ERROR_CODES } from '../../protocol/src/index.js';
+import { BridgeError, createRequest, ERROR_CODES } from '../../../protocol/src/index.js';
 
 type SnapshotNode = {
   nodeId: string;

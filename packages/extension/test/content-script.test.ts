@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { parseHTML } from 'linkedom';
 
 import { withDocument } from '../../../tests/_helpers/dom.ts';
+import { extensionFile } from '../../../tests/_helpers/extensionBuild.ts';
 
 const MISSING = Symbol('missing');
 
@@ -227,7 +228,7 @@ async function flushMicrotasks(): Promise<void> {
 
 async function importFresh(relativePath: string): Promise<void> {
   await import(
-    `${new URL(relativePath, import.meta.url).href}?case=${Date.now()}-${Math.random()}`
+    `${extensionFile(relativePath.replace('../', '')).href}?case=${Date.now()}-${Math.random()}`
   );
 }
 

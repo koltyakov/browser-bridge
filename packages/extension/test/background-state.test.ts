@@ -15,7 +15,7 @@ import {
   type LoadBackgroundOptions,
 } from '../../../tests/_helpers/loadBackground.ts';
 import { createMessagePortPair } from '../../../tests/_helpers/messagePort.ts';
-import { BridgeError, createRequest, ERROR_CODES } from '../../protocol/src/index.js';
+import { BridgeError, createRequest, ERROR_CODES } from '../../../protocol/src/index.js';
 import {
   createExtensionState,
   normalizeActionLogEntry,
@@ -24,6 +24,7 @@ import {
   toFailureResponse,
 } from '../src/background-state.js';
 import type { ActionLogEntry } from '../src/background-state.js';
+import { DEVELOPMENT_RELOAD_ALARM } from '../src/background-development.js';
 
 type EnabledWindow = {
   windowId: number;
@@ -303,6 +304,7 @@ function createBufferedExecuteScript(
 test('background state scope.set_enabled enables and disables the requested current window', async () => {
   const nativeMessages: unknown[] = [];
   const alarmCreates: Record<string, unknown>[] = [];
+  const keepaliveCreates = () => alarmCreates.filter((alarm) => alarm.name === 'bb-keepalive');
   const alarmClears: string[] = [];
   const portPair = createMessagePortPair({ leftName: 'ui-sidepanel', rightName: 'agent' });
   const chrome = createChromeFake({
@@ -371,13 +373,13 @@ test('background state scope.set_enabled enables and disables the requested curr
 
   portPair.left.dispatchMessage({ type: 'scope.set_enabled', enabled: true });
   await flushAsyncWork();
-  await waitForCondition(() => alarmCreates.length === 1);
+  await waitForCondition(() => keepaliveCreates().length === 1);
 
   assert.equal(state.requestedAccessWindowId, null);
   assert.equal(state.enabledWindow?.windowId, 8);
   assert.equal(state.enabledWindow?.title, 'Current Window');
   assert.deepEqual(loaded.chrome.storage.session.snapshot().enabledWindow, state.enabledWindow);
-  assert.deepEqual(alarmCreates, [{ name: 'bb-keepalive', periodInMinutes: 0.4 }]);
+  assert.deepEqual(keepaliveCreates(), [{ name: 'bb-keepalive', periodInMinutes: 0.4 }]);
   assert.equal(
     nativeMessages.some(
       (message) =>
@@ -394,20 +396,24 @@ test('background state scope.set_enabled enables and disables the requested curr
   const enabledAt = state.enabledWindow?.enabledAt;
   portPair.left.dispatchMessage({ type: 'scope.set_enabled', enabled: true });
   await flushAsyncWork();
-  await waitForCondition(() => alarmCreates.length === 2);
+  await waitForCondition(() => keepaliveCreates().length === 2);
 
   assert.equal(state.enabledWindow?.windowId, 8);
   assert.equal(typeof state.enabledWindow?.enabledAt, 'number');
   assert.equal((state.enabledWindow?.enabledAt ?? 0) >= (enabledAt ?? 0), true);
-  assert.equal(alarmCreates.length, 2);
+  assert.equal(keepaliveCreates().length, 2);
 
   portPair.left.dispatchMessage({ type: 'scope.set_enabled', enabled: false });
   await flushAsyncWork();
-  await waitForCondition(() => alarmClears.length === 1);
+  await waitForCondition(() => alarmClears.includes('bb-keepalive'));
 
   assert.equal(state.enabledWindow, null);
   assert.equal(loaded.chrome.storage.session.snapshot().enabledWindow, undefined);
   assert.deepEqual(alarmClears, ['bb-keepalive']);
+  assert.deepEqual(
+    alarmCreates.filter((alarm) => alarm.name === DEVELOPMENT_RELOAD_ALARM),
+    [{ name: DEVELOPMENT_RELOAD_ALARM, periodInMinutes: 1 }]
+  );
   assert.equal(
     nativeMessages.some(
       (message) =>

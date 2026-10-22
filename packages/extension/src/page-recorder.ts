@@ -1,0 +1,223 @@
+/** Activity lives in the isolated world. Input values, keys, and page markup are excluded. */
+export function pageRecorder(
+  action: 'start' | 'drain' | 'status' | 'stop',
+  sessionId: string,
+  durationMs: number = 300000
+): {
+  epoch: string;
+  active: boolean;
+  events: Array<Record<string, unknown>>;
+  dropped: number;
+  missing?: boolean;
+} {
+  type Recorder = {
+    id: string;
+    epoch: string;
+    active: boolean;
+    events: Array<Record<string, unknown>>;
+    dropped: number;
+    stop: () => void;
+    flush: () => void;
+    timer: ReturnType<typeof setTimeout>;
+  };
+  const scope = globalThis as typeof globalThis & { __BBX_ACTIVITY_RECORDER__?: Recorder };
+  let state = scope.__BBX_ACTIVITY_RECORDER__;
+  if (action === 'start') {
+    if (state?.id === sessionId && state.active)
+      return { epoch: state.epoch, active: true, events: [], dropped: state.dropped };
+    state?.stop();
+
+    const events: Array<Record<string, unknown>> = [];
+    const controller = new AbortController();
+
+    let typing: {
+      element: Element;
+      at: number;
+      count: number;
+      label: string;
+      role: string;
+      target?: Record<string, unknown>;
+    } | null = null;
+    let scrollAt = 0;
+    let typingTimer = undefined as ReturnType<typeof setTimeout> | undefined;
+
+    function push(event: Record<string, unknown>) {
+      if (!record.active) return;
+      if (events.length >= 128) {
+        events.shift();
+        record.dropped++;
+      }
+      events.push(event);
+    }
+    function flush() {
+      clearTimeout(typingTimer);
+      if (typing) {
+        push({
+          type: 'input',
+          at: typing.at,
+          count: typing.count,
+          label: typing.label,
+          role: typing.role,
+          target: typing.target,
+          value: '[redacted]',
+          origin: 'trusted-event',
+        });
+        typing = null;
+      }
+    }
+    const record = {
+      id: sessionId,
+      epoch: crypto.randomUUID(),
+      active: true,
+      events,
+      dropped: 0,
+      stop() {
+        record.flush();
+        record.active = false;
+        controller.abort();
+        clearTimeout(record.timer);
+      },
+      flush,
+      timer: setTimeout(
+        () => {
+          record.stop();
+        },
+        Math.max(1000, Math.min(1800000, durationMs))
+      ),
+    };
+    scope.__BBX_ACTIVITY_RECORDER__ = record;
+    state = record;
+
+    function describe(element: Element) {
+      element =
+        element.closest('button,[role="button"],input,textarea,select,a,[role="link"]') ?? element;
+      const sensitive =
+        element.matches('input[type="password"],[contenteditable], [contenteditable] *') ||
+        element.closest('[data-private],[data-sensitive],[autocomplete*="password"]');
+      // Names come from the event-time DOM. Never derive them from value, innerHTML or href.
+      const text = sensitive
+        ? ''
+        : element.getAttribute('aria-label') ||
+          (element instanceof HTMLInputElement ||
+          element instanceof HTMLTextAreaElement ||
+          element instanceof HTMLSelectElement
+            ? element.labels?.[0]?.textContent
+            : '') ||
+          (element instanceof HTMLButtonElement ? element.textContent : '') ||
+          '';
+      const label = text
+        .slice(0, 160)
+        .replace(
+          /(?:bearer\s+\S+|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|(?:password|token|secret|key)\s*[:=]\s*\S+)/giu,
+          '[redacted]'
+        );
+      return {
+        label,
+        role: (element.getAttribute('role') || element.tagName.toLowerCase()).slice(0, 40),
+        ...(!sensitive ? { target: locator(element) } : {}),
+      };
+    }
+
+    function locator(element: Element): Record<string, unknown> | undefined {
+      for (const attribute of ['id', 'data-testid']) {
+        const value = element.getAttribute(attribute);
+        if (!value || !/^[\w-]{1,80}$/u.test(value) || /token|secret|password/iu.test(value))
+          continue;
+        const selector = `[${attribute}="${value}"]`;
+        if (document.querySelectorAll(selector).length === 1) return { selector };
+      }
+      const parts = [];
+      let node = element as Element | null;
+      while (node && parts.length < 6) {
+        const tag = node.tagName.toLowerCase();
+        if (!/^[a-z][a-z0-9-]*$/u.test(tag)) break;
+        const siblings = [...(node.parentElement?.children ?? [])].filter(
+          (child) => child.tagName === node?.tagName
+        );
+        parts.unshift(`${tag}:nth-of-type(${siblings.indexOf(node) + 1})`);
+        const selector = parts.join(' > ');
+        if (
+          document.querySelectorAll(selector).length === 1 &&
+          document.querySelector(selector) === element
+        )
+          return { selector };
+        node = node.parentElement;
+      }
+      return undefined;
+    }
+    let lastUrl = '';
+    const checkNavigation = () => {
+      if (location.href === lastUrl) return;
+      lastUrl = location.href;
+      // Query and fragment values can carry credentials. Preserve the route only.
+      push({ type: 'navigation', at: Date.now(), url: location.origin + location.pathname });
+    };
+    const originalFlush = record.flush;
+    record.flush = () => {
+      originalFlush();
+      checkNavigation();
+    };
+    for (const type of ['popstate', 'hashchange'])
+      window.addEventListener(type, checkNavigation, { signal: controller.signal });
+    window.addEventListener(
+      'error',
+      () =>
+        push({
+          type: 'page-error',
+          at: Date.now(),
+          message: 'Uncaught page error; inspect console for details.',
+        }),
+      { signal: controller.signal }
+    );
+    checkNavigation();
+
+    function handle(event: Event) {
+      if (!event.isTrusted || !record.active) return;
+      const element = event.composedPath().find((node) => node instanceof Element);
+      if (!(element instanceof Element)) return;
+      const at = Date.now();
+      if (event.type === 'input') {
+        if (typing?.element !== element) flush();
+        typing ??= { element, at, count: 0, ...describe(element) };
+        typing.count++;
+        clearTimeout(typingTimer);
+        typingTimer = setTimeout(flush, 400);
+        return;
+      }
+      if (event.type === 'scroll') {
+        if (at - scrollAt < 500) return;
+        scrollAt = at;
+      }
+      flush();
+      push({
+        type: event.type,
+        at,
+        ...describe(element),
+        origin: 'trusted-event',
+        ...(event.type === 'scroll' ? { x: Math.round(scrollX), y: Math.round(scrollY) } : {}),
+        ...(event instanceof MouseEvent
+          ? { x: Math.round(event.clientX), y: Math.round(event.clientY) }
+          : {}),
+      });
+    }
+    for (const type of ['click', 'input', 'change', 'submit', 'scroll'])
+      document.addEventListener(type, handle, {
+        capture: true,
+        passive: true,
+        signal: controller.signal,
+      });
+  }
+  if (!state || state.id !== sessionId)
+    return { epoch: '', active: false, events: [], dropped: 0, missing: true };
+  if (action === 'status')
+    return { epoch: state.epoch, active: state.active, events: [], dropped: state.dropped };
+  if (action === 'stop') state.stop();
+  if (action === 'drain' || action === 'stop') {
+    state.flush();
+    const events = state.events.splice(0);
+    const dropped = state.dropped;
+    state.dropped = 0;
+    return { epoch: state.epoch, active: state.active, events, dropped };
+  }
+  return { epoch: state.epoch, active: state.active, events: [], dropped: state.dropped };
+}

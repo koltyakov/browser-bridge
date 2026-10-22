@@ -19,8 +19,8 @@ import {
   createFailure,
   createRequest,
   createSuccess,
-} from '../../protocol/src/index.js';
-import type { SetupStatus } from '../../protocol/src/types.js';
+} from '../../../protocol/src/index.js';
+import type { SetupStatus } from '../../../protocol/src/types.js';
 import { createNativeConnectionController, refreshSetupStatus } from '../src/background-native.js';
 import { createExtensionState } from '../src/background-state.js';
 import type { ExtensionState } from '../src/background-state.js';
@@ -258,6 +258,7 @@ test('native reconnect telemetry settles on disconnect or the existing stability
   const thirdPort = createNativePort(messages);
   const ports = [firstPort, secondPort, thirdPort];
   const outcomes: Array<'success' | 'failure'> = [];
+  let developmentChecks = 0;
   const chromeObj = {
     runtime: {
       id: 'abcdefghijklmnopabcdefghijklmnop',
@@ -286,14 +287,19 @@ test('native reconnect telemetry settles on disconnect or the existing stability
       refreshSetupStatus() {},
       reply() {},
       recordReconnect: (outcome) => outcomes.push(outcome),
+      async checkDevelopmentUpdate() {
+        developmentChecks += 1;
+      },
     });
 
     controller.scheduleNativeReconnect('first disconnect');
     timers.scheduled[0].callback();
+    assert.equal(developmentChecks, 1);
     firstPort.onDisconnect.dispatch();
     assert.deepEqual(outcomes, ['failure']);
 
     timers.scheduled[2].callback();
+    assert.equal(developmentChecks, 2);
     timers.scheduled[3].callback();
     await flushAsyncWork();
     assert.deepEqual(outcomes, ['failure', 'success']);
@@ -301,6 +307,7 @@ test('native reconnect telemetry settles on disconnect or the existing stability
     secondPort.onDisconnect.dispatch();
     assert.deepEqual(outcomes, ['failure', 'success']);
     timers.scheduled[5].callback();
+    assert.equal(developmentChecks, 3);
     timers.scheduled[6].callback();
     await flushAsyncWork();
     assert.deepEqual(outcomes, ['failure', 'success', 'success']);
@@ -1374,13 +1381,13 @@ test('background native enable flow injects content scripts after ping timeouts 
           tabId: 41,
           kind: 'inject',
           files: [
-            'packages/extension/src/content-script-helpers.js',
-            'packages/extension/src/content-dom-baseline.js',
-            'packages/extension/src/content-element-registry.js',
-            'packages/extension/src/content-dom-query.js',
-            'packages/extension/src/content-input.js',
-            'packages/extension/src/content-patch.js',
-            'packages/extension/src/content-script.js',
+            'src/content-script-helpers.js',
+            'src/content-dom-baseline.js',
+            'src/content-element-registry.js',
+            'src/content-dom-query.js',
+            'src/content-input.js',
+            'src/content-patch.js',
+            'src/content-script.js',
           ],
         },
       ]

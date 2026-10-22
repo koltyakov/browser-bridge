@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { createFetchInterceptor } from '../src/background-fetch-intercept.js';
 import { TabDebuggerCoordinator } from '../src/debugger-coordinator.js';
-import { MAX_INTERCEPT_RULES_PER_TAB } from '../../protocol/src/index.js';
+import { MAX_INTERCEPT_RULES_PER_TAB } from '../../../protocol/src/index.js';
 
 type SentCommand = { tabId: number; method: string; params: Record<string, unknown> };
 type FetchEventHandler = (method: string, params: unknown) => void;

@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { createWebMcpController } from '../src/background-webmcp.js';
 import { createChromeFake, createChromeEvent } from '../../../tests/_helpers/chromeFake.ts';
 import { withDocument } from '../../../tests/_helpers/dom.ts';
-import { createRequest } from '../../protocol/src/index.js';
-import type { BridgeMethod, WebMcpContext, WebMcpTool } from '../../protocol/src/types.js';
+import { createRequest } from '../../../protocol/src/index.js';
+import type { BridgeMethod, WebMcpContext, WebMcpTool } from '../../../protocol/src/types.js';
 
 const NativeEvent = globalThis.Event;
 

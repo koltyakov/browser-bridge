@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { NavigationWaitCoordinator } from '../src/navigation-wait.js';
-import type { NormalizedWaitForLoadStateParams } from '../../protocol/src/types.js';
+import type { NormalizedWaitForLoadStateParams } from '../../../protocol/src/types.js';
 
 function tab(value: Partial<chrome.tabs.Tab>): chrome.tabs.Tab {
   return value as chrome.tabs.Tab;

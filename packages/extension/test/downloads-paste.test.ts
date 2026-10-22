@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createDownloadController } from '../src/background-downloads.js';
 import { pasteImage } from '../src/background-paste.js';
-import { normalizeRequestParams } from '../../protocol/src/index.js';
+import { normalizeRequestParams } from '../../../protocol/src/index.js';
 
 test('native download capabilities survive worker restart and isolate browser history and access scopes', async () => {
   let stored: Record<string, unknown> = {};

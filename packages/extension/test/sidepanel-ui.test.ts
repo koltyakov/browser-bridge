@@ -1,15 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { extensionFile } from '../../../tests/_helpers/extensionBuild.ts';
 
 import { createChromeFake } from '../../../tests/_helpers/chromeFake.ts';
 import { withDocument } from '../../../tests/_helpers/dom.ts';
 import { createMessagePortPair } from '../../../tests/_helpers/messagePort.ts';
-import type { SetupStatus } from '../../protocol/src/types.js';
+import type { SetupStatus } from '../../../protocol/src/types.js';
 
 const MISSING = Symbol('missing');
-const SIDEPANEL_HTML_URL = new URL('../ui/sidepanel.html', import.meta.url);
-const SIDEPANEL_SCRIPT_URL = new URL('../ui/sidepanel.js', import.meta.url);
+const SIDEPANEL_HTML_URL = extensionFile('ui/sidepanel.html');
+const SIDEPANEL_SCRIPT_URL = extensionFile('ui/sidepanel.js');
 
 type SidepanelStateSync = {
   type: 'state.sync';
@@ -18,7 +19,7 @@ type SidepanelStateSync = {
     nativeHostVersion: string | null;
     currentTab: SidepanelCurrentTab | null;
     agentTabs?: import('../src/background-ui.js').AgentTabUiState[];
-    otherEnabledWindows?: import('../../protocol/src/window-access.js').BrowserWindowAccess[];
+    otherEnabledWindows?: import('../../../protocol/src/window-access.js').BrowserWindowAccess[];
     setupStatus: SetupStatus | null;
     setupStatusPending: boolean;
     setupStatusError: string | null;
@@ -327,9 +328,6 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
     'chrome',
     createChromeFake({
       runtime: {
-        async getPlatformInfo() {
-          return { os: 'mac', arch: 'arm64', nacl_arch: 'arm' } as chrome.runtime.PlatformInfo;
-        },
         connect(connectInfo: chrome.runtime.ConnectInfo) {
           assert.deepEqual(connectInfo, { name: 'ui-sidepanel' });
           return portPair.left.port as unknown as chrome.runtime.Port;
@@ -343,9 +341,9 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
     await importFreshSidepanelScript();
     await flushMicrotasks();
 
-    assert.equal(
-      document.getElementById('companion-download')?.getAttribute('href'),
-      'https://github.com/koltyakov/browser-bridge/releases/latest/download/Browser-Bridge-macOS.zip'
+    assert.match(
+      document.getElementById('native-setup')?.textContent ?? '',
+      /npm install -g @browserbridge\/bbx/
     );
 
     assert.deepEqual(intervalCalls, [{ delay: 5_000 }]);
@@ -831,7 +829,7 @@ test('sidepanel UI shows the global host CLI and daemon version', async (t) => {
     assert.equal(mismatchBanner.hidden, false);
     assert.equal(
       mismatchMessage.textContent,
-      'Companion v2.0.0 and extension v1.2.9 use different protocol versions. Update the companion and extension to compatible releases.'
+      'CLI v2.0.0 and extension v1.2.9 use different protocol versions. Update the CLI and extension to compatible releases.'
     );
 
     dismissMismatch.click();

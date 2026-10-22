@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { promisify } from 'node:util';
-import type { ScrollContainerDetection } from '../../protocol/src/types.ts';
+import { extensionFile } from '../../../tests/_helpers/extensionBuild.ts';
+import type { ScrollContainerDetection } from '../../../protocol/src/types.ts';
 
 // Runs in a real browser with production content scripts and layout engines.
 async function checkBrowserScrolling(): Promise<void> {
@@ -182,7 +183,7 @@ test(
         'content-input.js',
         'content-patch.js',
         'content-script.js',
-      ].map((name) => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8'))
+      ].map((name) => readFile(extensionFile(`src/${name}`), 'utf8'))
     );
     // tsx preserves nested function names with this helper when serializing tests.
     const html = `<!doctype html><html><body><script>function __name(fn){return fn} globalThis.chrome={runtime:{onMessage:{addListener(fn){globalThis.__bbxListener=fn}}}};</script><script>${scripts.join('\n')}</script><script>

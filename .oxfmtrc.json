@@ -4,6 +4,8 @@
     "**/*.md",
     "assets/**",
     "dist/**",
+    "protocol/generated/**",
+    "internal/bridge/generated/**",
     "packages/extension/assets/**",
     "packages/extension/ui/**/*.css",
     "packages/extension/ui/**/*.html",

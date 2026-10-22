@@ -1,0 +1,112 @@
+// @ts-check
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import { resolveVersion } from './version.mjs';
+
+/** @typedef {{asset: string, sha256: string, bytes: number}} NativeArtifact */
+/** @typedef {{version: string, artifacts: Record<string, NativeArtifact>}} NativeManifest */
+
+const root = fileURLToPath(new URL('../', import.meta.url));
+const targets = [
+  { target: 'darwin-arm64', key: 'darwin-arm64', asset: 'bbx-darwin-arm64' },
+  { target: 'darwin-amd64', key: 'darwin-x64', asset: 'bbx-darwin-x64' },
+  { target: 'linux-arm64', key: 'linux-arm64', asset: 'bbx-linux-arm64' },
+  { target: 'linux-amd64', key: 'linux-x64', asset: 'bbx-linux-x64' },
+  { target: 'windows-amd64', key: 'win32-x64', asset: 'bbx-windows-x64.exe' },
+];
+
+/** @param {unknown} value @returns {value is Record<string, unknown>} */
+function isRecord(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Validate the complete build report and pin the exact bytes shipped on GitHub.
+ * @param {string} [directory]
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {Promise<NativeManifest>}
+ */
+export async function readNativeBuild(directory = root, env = process.env) {
+  const { version } = resolveVersion({ root: directory, env });
+  /** @type {unknown} */
+  const pkg = JSON.parse(await fs.readFile(path.join(directory, 'package.json'), 'utf8'));
+  if (!isRecord(pkg) || pkg.version !== version) {
+    throw new Error(`package.json version must match ${version}; run make sync-version`);
+  }
+  /** @type {unknown} */
+  const report = JSON.parse(
+    await fs.readFile(path.join(directory, 'dist/cli/size-report.json'), 'utf8')
+  );
+  if (!Array.isArray(report) || report.length !== targets.length) {
+    throw new Error(
+      'Native size report must contain all five platforms; run make package-native-all'
+    );
+  }
+  /** @type {NativeManifest} */
+  const manifest = { version, artifacts: {} };
+  const seen = new Set();
+  for (const raw of report) {
+    /** @type {unknown} */
+    const entry = raw;
+    if (!isRecord(entry)) throw new Error('Invalid native size report entry');
+    const platform = targets.find(({ target }) => target === entry.target);
+    if (!platform || seen.has(platform.key)) {
+      throw new Error(`Unsupported or duplicate native target: ${String(entry.target)}`);
+    }
+    seen.add(platform.key);
+    if (entry.version !== version) {
+      throw new Error(
+        `Native build version mismatch for ${platform.target}; rebuild all platforms for ${version}`
+      );
+    }
+    if (entry.asset !== platform.asset) {
+      throw new Error(`Unexpected native asset for ${platform.target}: ${String(entry.asset)}`);
+    }
+    const file = path.join(directory, 'dist/cli', platform.asset);
+    const stat = await fs.lstat(file);
+    if (!stat.isFile() || stat.size <= 0 || stat.size >= 10_000_000) {
+      throw new Error(`${platform.asset} must be a regular file smaller than 10 MB`);
+    }
+    if (entry.bytes !== stat.size) {
+      throw new Error(`Native size report mismatch for ${platform.asset}`);
+    }
+    const bytes = await fs.readFile(file);
+    if (bytes.length !== stat.size)
+      throw new Error(`Native asset changed while reading: ${platform.asset}`);
+    manifest.artifacts[platform.key] = {
+      asset: platform.asset,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      bytes: bytes.length,
+    };
+  }
+  return manifest;
+}
+
+/**
+ * Replace the generated manifest only after every platform passes validation.
+ * @param {string} [directory]
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {Promise<NativeManifest>}
+ */
+export async function prepareNpm(directory = root, env = process.env) {
+  const manifest = await readNativeBuild(directory, env);
+  const destination = path.join(directory, 'packages/npm/native-manifest.json');
+  await fs.mkdir(path.dirname(destination), { recursive: true });
+  const temporary = `${destination}.${randomUUID()}.tmp`;
+  try {
+    await fs.writeFile(temporary, `${JSON.stringify(manifest, null, 2)}\n`, { flag: 'wx' });
+    await fs.rename(temporary, destination);
+  } finally {
+    await fs.rm(temporary, { force: true });
+  }
+  return manifest;
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const manifest = await prepareNpm();
+  console.log(
+    `Prepared npm native manifest for ${manifest.version} (${Object.keys(manifest.artifacts).length} platforms)`
+  );
+}

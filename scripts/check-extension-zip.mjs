@@ -6,17 +6,14 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { resolveVersion } from './version.mjs';
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const distDir = path.join(repoRoot, 'dist');
-const manifestPath = path.join(repoRoot, 'manifest.json');
-
-/** @typedef {{ version: string }} ExtensionManifest */
-
-const manifest = /** @type {ExtensionManifest} */ (await readJson(manifestPath));
-const zipPath = path.join(distDir, `browser-bridge-extension-v${manifest.version}.zip`);
+const { version } = resolveVersion({ root: repoRoot });
+const zipPath = path.join(distDir, `browser-bridge-extension-v${version}.zip`);
 const entries = await listZipEntries(zipPath);
 
 const unexpectedEntries = entries.filter((entry) => !isAllowedEntry(entry));
@@ -26,10 +23,35 @@ if (unexpectedEntries.length > 0) {
   );
 }
 
-for (const requiredEntry of ['manifest.json', 'LICENSE']) {
+for (const requiredEntry of [
+  'manifest.json',
+  'LICENSE',
+  'src/background.js',
+  'src/build-info.js',
+  'src/content-script.js',
+  'ui/sidepanel.html',
+  'ui/sidepanel.js',
+  'protocol/index.js',
+]) {
   if (!entries.includes(requiredEntry)) {
     throw new Error(`Missing required file in ${path.basename(zipPath)}: ${requiredEntry}`);
   }
+}
+
+const buildInfo = await readZipEntry(zipPath, 'src/build-info.js');
+const packedManifest = /** @type {unknown} */ (
+  JSON.parse(await readZipEntry(zipPath, 'manifest.json'))
+);
+if (
+  !packedManifest ||
+  typeof packedManifest !== 'object' ||
+  !('version' in packedManifest) ||
+  packedManifest.version !== version
+) {
+  throw new Error(`Extension ZIP version must match ${version}.`);
+}
+if (!/^export const DEVELOPMENT_AUTO_RELOAD = false;$/m.test(buildInfo)) {
+  throw new Error('Release extension ZIP must disable development auto-reload.');
 }
 
 process.stdout.write(`Validated ${path.basename(zipPath)}\n`);
@@ -38,11 +60,29 @@ for (const entry of entries) {
 }
 
 /**
- * @param {string} filePath
- * @returns {Promise<unknown>}
+ * @param {string} archivePath
+ * @param {string} entry
+ * @returns {Promise<string>}
  */
-async function readJson(filePath) {
-  return JSON.parse(await fs.promises.readFile(filePath, 'utf8'));
+async function readZipEntry(archivePath, entry) {
+  if (process.platform === 'win32') {
+    const escapedArchivePath = archivePath.replace(/'/g, "''");
+    const escapedEntry = entry.replace(/'/g, "''");
+    const command = [
+      'Add-Type -AssemblyName System.IO.Compression.FileSystem',
+      `$zip = [System.IO.Compression.ZipFile]::OpenRead('${escapedArchivePath}')`,
+      `try { $reader = [System.IO.StreamReader]::new($zip.GetEntry('${escapedEntry}').Open()); try { $reader.ReadToEnd() } finally { $reader.Dispose() } } finally { $zip.Dispose() }`,
+    ].join('; ');
+    const { stdout } = await execFileAsync('powershell.exe', [
+      '-NoLogo',
+      '-NoProfile',
+      '-Command',
+      command,
+    ]);
+    return stdout;
+  }
+  const { stdout } = await execFileAsync('unzip', ['-p', archivePath, entry]);
+  return stdout;
 }
 
 /**
@@ -127,12 +167,13 @@ function isMissingArchiveError(error) {
  * @returns {boolean}
  */
 function isAllowedEntry(entry) {
+  if (/\.(?:ts|map)$/.test(entry)) return false;
   return (
     entry === 'manifest.json' ||
     entry === 'LICENSE' ||
-    entry.startsWith('packages/protocol/src/') ||
-    entry.startsWith('packages/extension/assets/') ||
-    entry.startsWith('packages/extension/src/') ||
-    entry.startsWith('packages/extension/ui/')
+    (entry.startsWith('protocol/') && entry.endsWith('.js')) ||
+    entry.startsWith('assets/') ||
+    (entry.startsWith('src/') && entry.endsWith('.js')) ||
+    (entry.startsWith('ui/') && /\.(?:js|html|css)$/.test(entry))
   );
 }

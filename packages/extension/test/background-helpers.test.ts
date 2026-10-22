@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PROTOCOL_VERSION } from '../../protocol/src/index.js';
-import type { BridgeResponse } from '../../protocol/src/types.js';
+import { PROTOCOL_VERSION } from '../../../protocol/src/index.js';
+import type { BridgeResponse } from '../../../protocol/src/types.js';
 
 import {
   cloneJsonValue,

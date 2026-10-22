@@ -3,32 +3,38 @@
 Use this path when you want to run Browser Bridge without installing the
 published [Chrome Web Store build](https://chromewebstore.google.com/detail/browser-bridge/jjjkmmcdkpcgamlopogicbnnhdgebhie), or anytime you need a local custom build.
 
-## 1. Install the CLI
+## 1. Build and install the checkout
 
 ```bash
-npm install -g @browserbridge/bbx
+make deps
+make install
 ```
 
-## 2. Build the unpacked extension bundle
+This installs the Go CLI and command aliases under `~/.local/bin`, updates native-host registration, and restarts the local bridge runtime. Add that directory to `PATH`. See [development prerequisites](./development.md) for Make, Node.js, and Go requirements.
 
-From this repository, stage the extension files into `dist/`:
+## 2. Find the unpacked extension bundle
 
-```bash
-npm run package:extension
-```
-
-That writes the unpacked extension to:
+`make install` writes the unpacked extension to:
 
 ```text
-dist/browser-bridge-extension/
+dist/extension/
+├── assets/
+├── protocol/
+├── src/
+├── ui/
+├── development-build.json
+├── LICENSE
+└── manifest.json
 ```
+
+The build includes source maps for debugging. After editing extension files, run `make build-extension`; development instances loading that directory detect the completed build within a minute and reload. `make install` also refreshes the CLI and triggers the check through native-host reconnects. Older extension versions without the build-stamp listener need one manual reload first. Use `make package-extension` to produce the release ZIP without source maps, TypeScript sources, or automatic development reloads.
 
 ## 3. Load it into Chrome
 
 1. Open `chrome://extensions`.
 2. Enable **Developer mode**.
 3. Click **Load unpacked**.
-4. Select `dist/browser-bridge-extension`.
+4. Select `dist/extension`.
 
 ## 4. Copy the extension ID
 

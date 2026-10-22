@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ERROR_CODES, createRequest, PROTOCOL_VERSION } from '../../protocol/src/index.js';
-import type { BridgeRequest, BridgeResponse } from '../../protocol/src/types.js';
+import { ERROR_CODES, createRequest, PROTOCOL_VERSION } from '../../../protocol/src/index.js';
+import type { BridgeRequest, BridgeResponse } from '../../../protocol/src/types.js';
 import { createNativePortMessageListener } from '../src/background-bridge.js';
 
 test('background bridge returns INVALID_REQUEST when native-port message fails validation', () => {

@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import {
-  createFileStaging,
-  assignBrowserFiles,
-  assignStagedFiles,
-} from '../src/background-files.js';
-import { FILE_TTL_MS, normalizeFileParams } from '../../protocol/src/files.js';
+import { createFileStaging, assignBrowserFiles } from '../src/background-files.js';
+import { loadExtensionModule } from '../../../tests/_helpers/extensionBuild.ts';
+import { FILE_TTL_MS, normalizeFileParams } from '../../../protocol/src/files.js';
+
+const { assignStagedFiles } =
+  await loadExtensionModule<typeof import('../src/background-files.js')>('src/background-files.js');
 
 test('staging enforces ordering, ownership, completion, expiration, and release', () => {
   let now = 1000;

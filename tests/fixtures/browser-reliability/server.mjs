@@ -251,7 +251,7 @@ function readCliPort(args) {
   let value = process.env[FIXTURE_PORT_ENV];
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] !== '--port' || index + 1 >= args.length) {
-      throw new Error('Usage: npm run fixture:browser -- --port <1-65535>');
+      throw new Error('Usage: make fixture-browser ARGS="--port <1-65535>"');
     }
     value = args[index + 1];
     index += 1;

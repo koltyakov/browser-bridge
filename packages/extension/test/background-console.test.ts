@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ERROR_CODES } from '../../protocol/src/index.js';
+import { ERROR_CODES } from '../../../protocol/src/index.js';
 import {
   disableConsoleInterceptor,
   ensureConsoleInterceptor,
@@ -15,7 +15,6 @@ type ConsoleEntry = { level: string; args: string[]; ts: number };
 type ExecuteScriptConfig = {
   target?: { tabId?: number };
   world?: string;
-  func?: (...args: unknown[]) => unknown;
   args?: unknown[];
 };
 type ExecuteScriptResult = Array<{ result?: unknown }>;
@@ -51,15 +50,19 @@ function getBuffer(): ConsoleEntry[] {
 }
 
 function createScriptExecutingChrome(
-  onExecute?: (config: ExecuteScriptConfig) => ExecuteScriptResult | Promise<ExecuteScriptResult>
+  onExecute?: <Args extends unknown[], Result>(
+    config: chrome.scripting.ScriptInjection<Args, Result>
+  ) => ExecuteScriptResult | Promise<ExecuteScriptResult>
 ): ConsoleChrome {
   return {
     scripting: {
-      async executeScript(config: ExecuteScriptConfig) {
+      async executeScript<Args extends unknown[], Result>(
+        config: chrome.scripting.ScriptInjection<Args, Result>
+      ) {
         if (onExecute) {
           return onExecute(config);
         }
-        return [{ result: config.func?.(...(config.args ?? [])) }];
+        return [{ result: executeInjected(config) }];
       },
     },
     tabs: {
@@ -68,6 +71,12 @@ function createScriptExecutingChrome(
       },
     },
   };
+}
+
+function executeInjected<Args extends unknown[], Result>(
+  config: chrome.scripting.ScriptInjection<Args, Result>
+): Result | undefined {
+  return config.func?.(...(('args' in config ? config.args : []) as Args));
 }
 
 test('ensureConsoleInterceptor installs, records, bounds, and avoids duplicate hooks', async (t) => {
@@ -116,7 +125,7 @@ test('ensureConsoleInterceptor installs, records, bounds, and avoids duplicate h
   const executeScriptCalls: ExecuteScriptConfig[] = [];
   const chromeObj = createScriptExecutingChrome((config) => {
     executeScriptCalls.push(config);
-    return [{ result: config.func?.(...(config.args ?? [])) }];
+    return [{ result: executeInjected(config) }];
   });
 
   await ensureConsoleInterceptor(42, chromeObj);
@@ -248,7 +257,7 @@ test('readConsoleBuffer reads, clears, and falls back when no result is returned
   const executeScriptCalls: ExecuteScriptConfig[] = [];
   const chromeObj = createScriptExecutingChrome((config) => {
     executeScriptCalls.push(config);
-    return [{ result: config.func?.(...(config.args ?? [])) }];
+    return [{ result: executeInjected(config) }];
   });
 
   assert.deepEqual(await readConsoleBuffer(8, false, chromeObj), {

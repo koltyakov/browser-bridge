@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { BridgeError, getErrorRecovery } from '../../protocol/src/index.js';
+import { BridgeError, getErrorRecovery } from '../../../protocol/src/index.js';
 import { TabDebuggerCoordinator } from '../src/debugger-coordinator.js';
 
 function deferred<T>() {

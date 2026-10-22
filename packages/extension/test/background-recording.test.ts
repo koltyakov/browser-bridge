@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRecordingController, redactPayload } from '../src/background-recording.js';
 import { renderRecording } from '../src/recording-export.js';
-import { normalizeRecording } from '../../protocol/src/recording.js';
+import { normalizeRecording } from '../../../protocol/src/recording.js';
 import type { RecordingDependencies, RecordingOptions } from '../src/recording-types.js';
 
 const options: RecordingOptions = {
