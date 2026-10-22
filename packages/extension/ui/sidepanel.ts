@@ -1411,7 +1411,8 @@ function renderActionLogEntry(
   entry: ActionLogEntry,
   setupStatus: SetupStatus | null,
   entries: ActionLogEntry[],
-  index: number
+  index: number,
+  repeatCount: number
 ): HTMLElement {
   const container = document.createElement('article');
   container.className = 'card activity-card';
@@ -1426,6 +1427,12 @@ function renderActionLogEntry(
   methodLabel.textContent = entry.method;
   methodLabel.title = entry.method;
   title.append(methodLabel);
+  if (repeatCount > 1) {
+    const count = document.createElement('span');
+    count.className = 'activity-repeat-count';
+    count.textContent = `x${repeatCount}`;
+    title.append(count);
+  }
   const activitySourcePills = getActivitySourcePills(entry.source, entry.mcpEra);
   if (activitySourcePills.source) {
     const sourceTags = document.createElement('span');
@@ -1484,7 +1491,9 @@ function renderActionLogEntry(
     badges.append(scopeLink);
   }
 
-  const transportTokens = getEntryTransportTokens(entry);
+  const transportTokens = entries
+    .slice(index, index + repeatCount)
+    .reduce((total, item) => total + getEntryTransportTokens(item), 0);
   if (transportTokens > 0 || entry.imageBytes > 0) {
     const tokenLine = document.createElement('span');
     tokenLine.className = 'muted activity-tokens';
@@ -1503,7 +1512,8 @@ function renderActionLogEntry(
       parts.push('cdp');
     }
     tokenLine.textContent = parts.join(' \u00b7 ');
-    tokenLine.dataset.costClass = entry.costClass;
+    tokenLine.dataset.costClass =
+      repeatCount > 1 ? getAggregateCostClass(transportTokens) : entry.costClass;
     badges.append(tokenLine);
   }
 

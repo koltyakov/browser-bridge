@@ -300,6 +300,12 @@ summary {
   white-space: nowrap;
 }
 
+.activity-repeat-count {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-weight: 400;
+}
+
 .activity-source-tag {
   flex-shrink: 0;
   padding: 1px 5px;
@@ -929,7 +935,8 @@ summary {
 
 .setup-status-matrix {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   table-layout: auto;
 }
 
@@ -957,12 +964,26 @@ summary {
 }
 
 .setup-status-matrix thead th {
-  padding-top: 8px;
-  border-top: 1px solid var(--stroke);
-  font-size: 11px;
-  letter-spacing: 0.08em;
+  padding: 7px 6px;
+  border-top: 0;
+  background: var(--cmd-bg);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+.setup-status-matrix thead th:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.setup-status-matrix thead th:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
+.setup-status-matrix tbody tr:first-child td {
+  border-top: 0;
 }
 
 .setup-matrix-client {

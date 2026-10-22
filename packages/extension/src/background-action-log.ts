@@ -34,7 +34,6 @@ export type BridgeResponse = import('../../../protocol/src/types.js').BridgeResp
 
 const RESPONSE_SIZE_HEADROOM_BYTES = 4096;
 const MAX_BRIDGE_RESPONSE_BYTES = MAX_NATIVE_MESSAGE_BYTES - RESPONSE_SIZE_HEADROOM_BYTES;
-const CONNECTION_CHECK_COALESCE_MS = 2_000;
 
 export type ActionContext = { tabId: number | null; url: string };
 
@@ -252,17 +251,6 @@ Late responses are rejected by the tab-existence check in append. */
           // The tab may have closed before this request completed.
           return;
         }
-      }
-      const previousIndex = state.actionLog.findLastIndex((item) => item.tabId === tabId);
-      const previousEntry = state.actionLog[previousIndex];
-      if (
-        entry.method === 'health.ping' &&
-        previousEntry?.method === 'health.ping' &&
-        previousEntry.tabId === tabId &&
-        at >= previousEntry.at &&
-        at - previousEntry.at <= CONNECTION_CHECK_COALESCE_MS
-      ) {
-        state.actionLog.splice(previousIndex, 1);
       }
       const source = normalizeActionLogSource(entry.source);
       state.actionLog.push({

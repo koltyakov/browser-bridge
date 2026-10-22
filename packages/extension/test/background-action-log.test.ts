@@ -134,7 +134,7 @@ test('sibling-tab and host activity cannot evict a quiet tab history', async () 
   assert.deepEqual(storage.snapshot().actionLog, state.actionLog);
 });
 
-test('connection checks coalesce within their own tab despite sibling activity', async () => {
+test('connection checks retain every ping for UI grouping despite sibling activity', async () => {
   const { controller, state } = createHistoryHarness();
   await controller.appendActionLogEntry({
     method: 'health.ping',
@@ -158,6 +158,7 @@ test('connection checks coalesce within their own tab despite sibling activity',
   assert.deepEqual(
     state.actionLog.map((entry) => [entry.tabId, entry.summary]),
     [
+      [7, 'Handshake'],
       [8, 'Sibling'],
       [7, 'Sourced check'],
     ]
@@ -562,7 +563,7 @@ test('bridge action logging preserves actual optional debugger execution metadat
   assert.equal(state.actionLog[0].debuggerBacked, true);
 });
 
-test('standalone handshake pings are logged and immediate sourced checks replace them', async () => {
+test('standalone handshake pings and immediate sourced checks are retained for grouping', async () => {
   const state = createExtensionState();
   const chromeObj = {
     tabs: openTabsApi,
@@ -621,8 +622,8 @@ test('standalone handshake pings are logged and immediate sourced checks replace
     meta: { source: 'cli' },
   });
   await controller.logBridgeAction(sourcedRequest, response, context);
-  assert.equal(state.actionLog.length, 1);
-  assert.equal(state.actionLog[0].source, 'cli');
+  assert.equal(state.actionLog.length, 2);
+  assert.equal(state.actionLog[1].source, 'cli');
 
   const modernRequest = createRequest({
     id: 'modern-connection-check',
@@ -630,9 +631,9 @@ test('standalone handshake pings are logged and immediate sourced checks replace
     meta: { source: 'mcp', mcp_era: 'modern' },
   });
   await controller.logBridgeAction(modernRequest, response, context);
-  assert.equal(state.actionLog.length, 1);
-  assert.equal(state.actionLog[0].source, 'mcp');
-  assert.equal(state.actionLog[0].mcpEra, 'modern');
+  assert.equal(state.actionLog.length, 3);
+  assert.equal(state.actionLog[2].source, 'mcp');
+  assert.equal(state.actionLog[2].mcpEra, 'modern');
 });
 
 test('dialog text and prompt values never enter persisted action logs', async () => {
