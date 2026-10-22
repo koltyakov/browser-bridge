@@ -26,7 +26,7 @@ export function selectRequestTabCandidate(
 export function resolveWindowScopedTab(
   tab: chrome.tabs.Tab | null | undefined,
   enabledWindowId: number,
-  options: { requireScriptable?: boolean } = {}
+  options: { requireScriptable?: boolean; allowPendingUrl?: boolean } = {}
 ): ResolvedTabTarget {
   const requireScriptable = options.requireScriptable !== false;
   if (typeof tab?.id !== 'number' || !Number.isFinite(tab.id) || typeof tab.windowId !== 'number') {
@@ -38,10 +38,13 @@ export function resolveWindowScopedTab(
   if (tab.windowId !== enabledWindowId) {
     throw new BridgeError(ERROR_CODES.ACCESS_DENIED, 'Tab does not belong to the enabled window');
   }
-  if (typeof tab.url !== 'string' || !tab.url) {
+  // Load waits may target a newly created tab before its first URL commits.
+  // Keep normal DOM routing tied to the committed document.
+  const url = tab.url || (options.allowPendingUrl ? tab.pendingUrl : undefined);
+  if (typeof url !== 'string' || !url) {
     throw new BridgeError(ERROR_CODES.TAB_MISMATCH, 'Tab has no URL available');
   }
-  if (requireScriptable && isRestrictedAutomationUrl(tab.url)) {
+  if (requireScriptable && isRestrictedAutomationUrl(url)) {
     throw new BridgeError(ERROR_CODES.ACCESS_DENIED, 'Tab URL is restricted for automation');
   }
 
@@ -49,7 +52,7 @@ export function resolveWindowScopedTab(
     tabId: tab.id,
     windowId: tab.windowId,
     title: tab.title ?? '',
-    url: tab.url,
+    url,
   };
 }
 

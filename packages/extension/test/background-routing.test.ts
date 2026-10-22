@@ -92,6 +92,34 @@ test('background routing can allow restricted pages when scriptability is not re
   });
 });
 
+test('load-wait routing accepts pending URLs without weakening document or window checks', () => {
+  const loading = tab({
+    id: 7,
+    windowId: 3,
+    url: '',
+    pendingUrl: 'https://example.com/loading',
+    status: 'loading',
+  });
+  const options = { allowPendingUrl: true };
+  assert.equal(resolveWindowScopedTab(loading, 3, options).url, loading.pendingUrl);
+  assert.throws(() => resolveWindowScopedTab(loading, 3), { code: ERROR_CODES.TAB_MISMATCH });
+  assert.throws(() => resolveWindowScopedTab(loading, 4, options), {
+    code: ERROR_CODES.ACCESS_DENIED,
+  });
+  assert.throws(
+    () => resolveWindowScopedTab({ ...loading, pendingUrl: 'chrome://settings' }, 3, options),
+    { code: ERROR_CODES.ACCESS_DENIED }
+  );
+  assert.throws(
+    () => resolveWindowScopedTab({ ...loading, url: 'chrome://settings' }, 3, options),
+    { code: ERROR_CODES.ACCESS_DENIED }
+  );
+  assert.equal(
+    resolveWindowScopedTab({ ...loading, url: 'https://example.com/current' }, 3, options).url,
+    'https://example.com/current'
+  );
+});
+
 test('background routing rejects restricted automation pages and access requests ignore them', () => {
   const restrictedUrl = 'chrome://extensions';
   const restrictedTab = tab({
