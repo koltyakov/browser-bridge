@@ -302,6 +302,7 @@ function createActionLogEntry(
 }
 
 test('sidepanel UI smoke test flips the action label between enable and disable states', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const sidepanelHtml = await readFile(SIDEPANEL_HTML_URL, 'utf8');
   const savedChrome = Object.prototype.hasOwnProperty.call(globalThis, 'chrome')
     ? globalThis.chrome
@@ -328,6 +329,10 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
     'chrome',
     createChromeFake({
       runtime: {
+        id: 'a'.repeat(32),
+        async getPlatformInfo() {
+          return { os: 'mac', arch: 'arm64' };
+        },
         connect(connectInfo: chrome.runtime.ConnectInfo) {
           assert.deepEqual(connectInfo, { name: 'ui-sidepanel' });
           return portPair.left.port as unknown as chrome.runtime.Port;
@@ -345,6 +350,41 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
       document.getElementById('native-setup')?.textContent ?? '',
       /npm install -g @browserbridge\/bbx/
     );
+    assert.equal(
+      document.getElementById('setup-npm-cmd')?.textContent,
+      'npm install -g @browserbridge/bbx@1.8'
+    );
+    const standaloneCommand = document.getElementById('setup-native-cmd');
+    assert.equal(standaloneCommand?.hidden, false);
+    assert.ok(standaloneCommand?.textContent?.includes('/main/scripts/install.sh'));
+    assert.ok(standaloneCommand?.textContent?.includes('BBX_VERSION=1.8.0'));
+    assert.ok(standaloneCommand?.textContent?.includes(`BBX_EXTENSION_ID=${'a'.repeat(32)} sh`));
+    assert.equal(
+      document.getElementById('setup-native-hint')?.textContent,
+      'macOS arm64 · Run in Terminal'
+    );
+    const clipboardWrites: string[] = [];
+    Reflect.set(navigator, 'clipboard', {
+      async writeText(text: string) {
+        clipboardWrites.push(text);
+      },
+    });
+    standaloneCommand?.click();
+    await flushMicrotasks();
+    assert.deepEqual(clipboardWrites, [standaloneCommand?.textContent]);
+    t.mock.timers.tick(1500);
+    assert.match(
+      document.getElementById('native-setup')?.textContent ?? '',
+      /Standalone binary · No Node.js required/
+    );
+    const releasesLink = document.getElementById('setup-releases-link');
+    assert.equal(
+      releasesLink?.getAttribute('href'),
+      'https://github.com/koltyakov/browser-bridge/releases/latest'
+    );
+    assert.equal(releasesLink?.getAttribute('target'), '_blank');
+    assert.doesNotMatch(document.getElementById('native-setup')?.textContent ?? '', /Manual setup/);
+    assert.equal(document.getElementById('setup-install-cmd')?.hidden, false);
     assert.equal(
       document.getElementById('native-indicator')?.closest('#native-setup'),
       document.getElementById('native-setup')
@@ -1511,11 +1551,18 @@ test('sidepanel UI handles setup matrix actions, context menus, diagnostics, and
     assert.match(document.body.textContent ?? '', /This tab is no longer available/);
     runNextTimeout(6_000);
 
+    Reflect.set(chrome.runtime, 'id', 'jjjkmmcdkpcgamlopogicbnnhdgebhie');
     portPairs[0].left.dispatchMessage({
       type: 'native.status',
       connected: false,
       error: 'daemon crashed',
     });
+    assert.equal(setupInstallCmd.textContent, 'bbx install');
+    assert.equal(
+      setupInstallCmd.hidden,
+      false,
+      'manual registration stays available for the Web Store extension'
+    );
     runNextTimeout(10_000);
     const diagnostic = document.getElementById('native-diagnostic');
     assert.ok(diagnostic instanceof HTMLElement);

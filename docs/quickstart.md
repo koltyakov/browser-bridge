@@ -2,7 +2,7 @@
 
 Browser Bridge lets your coding agent inspect and patch the real Chrome or Chromium-based browser tab you already have open - DOM, styles, console, network, and more - without screenshots or raw HTML dumps.
 
-> **Requires:** Google Chrome, Node.js 20 or later, and the Browser Bridge npm package on your computer. Remote-only agents need an explicitly configured remote connection.
+> **Requires:** Google Chrome and Browser Bridge on your computer. Install through npm with Node.js 20 or later, or use a standalone binary without Node.js. Remote-only agents need an explicitly configured remote connection.
 >
 > **Privacy:** The extension and native host communicate on the browser machine, and local clients are the default. Explicitly configured authenticated remote destinations can carry results over your own tunnel or network route. Your chosen agent or IDE may also forward tool results under its own policy. See [`PRIVACY.md`](../PRIVACY.md).
 
@@ -10,13 +10,17 @@ Browser Bridge lets your coding agent inspect and patch the real Chrome or Chrom
 
 Install [Browser Bridge from the Chrome Web Store](https://chromewebstore.google.com/detail/browser-bridge/jjjkmmcdkpcgamlopogicbnnhdgebhie).
 
-## 2. Install the npm package
+## 2. Install Browser Bridge
+
+With npm, using Node.js 20 or later:
 
 ```bash
 npm install -g @browserbridge/bbx
 ```
 
 The npm package is a bootstrap and launcher with zero runtime npm dependencies. It downloads the Go executable for the exact installed package version and your platform from GitHub Releases, verifies its pinned SHA-256 digest, then registers the native messaging host for a global install. Supported platforms are macOS arm64/x64, Linux arm64/x64, and Windows x64.
+
+Alternatively, [download a standalone binary](https://github.com/koltyakov/browser-bridge/releases/latest) and follow the [manual installation steps](./native-cli.md#install-without-nodejs). This path does not require Node.js or npm.
 
 A local dependency install downloads the executable without registering a browser. If npm install scripts were skipped, the first `bbx` command downloads it; run `bbx install` to register the native host. Source checkouts skip this bootstrap during development. See the [native CLI guide](./native-cli.md).
 
@@ -56,7 +60,7 @@ There are two integration paths. Pick the one that matches how your agent works:
 
 Supported clients: `codex` (OpenAI Codex), `claude` (Claude Code), `cursor` (Cursor), `copilot` (GitHub Copilot), `opencode` (OpenCode), `antigravity` (Antigravity), `windsurf` (Windsurf), `agents` (generic `.agents` MCP/skill layout).
 
-After installing the extension and npm package, finish setup from **Connect your agent** in the extension side panel. Terminal users can use `bbx install-mcp` / `bbx install-skill` below. With no target argument, the CLI prompts in interactive shells; in non-interactive shells it prefers already configured or detected clients before falling back to all supported clients.
+After installing the extension and Browser Bridge, finish setup from **Connect agent** in the extension side panel. Terminal users can use `bbx install-mcp` / `bbx install-skill` below. With no target argument, the CLI prompts in interactive shells; in non-interactive shells it prefers already configured or detected clients before falling back to all supported clients.
 
 > **Recommendation:** MCP and the CLI skill are not meant to be installed together by default. If your agent supports both, start with MCP. The bridge protocol and browser data are the same either way; the difference is integration style. MCP fits agent tool systems better because it is structured, validated, and does not depend on shell access. Choose the CLI skill when you specifically want direct `bbx` control for shell-driven workflows such as setup, debugging, scripting, or raw protocol calls. If CLI mode is unreliable because the agent runs in a sandboxed shell, such as GitHub Copilot, use MCP instead.
 

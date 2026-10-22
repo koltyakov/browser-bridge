@@ -160,6 +160,44 @@ const SETUP_MATRIX_RANK: Map<string, number> = new Map(
 );
 
 const MANAGED_CLIENT_PACKAGE = '@browserbridge/bbx';
+export const PUBLISHED_EXTENSION_ID = 'jjjkmmcdkpcgamlopogicbnnhdgebhie';
+
+export function getNpmInstallCommand(version: string): string {
+  const versionMatch = /^(\d+\.\d+)(?:\.|$)/u.exec(version);
+  return `npm install -g ${MANAGED_CLIENT_PACKAGE}${versionMatch ? `@${versionMatch[1]}` : ''}`;
+}
+
+export function getStandaloneInstallView(
+  version: string,
+  platform: { os: string; arch: string },
+  runtimeId: string
+): { label: string; command: string } | null {
+  if (!/^\d+\.\d+\.\d+(?:\.\d+)?$/u.test(version) || !/^[a-z]{32}$/u.test(runtimeId)) {
+    return null;
+  }
+  const arch =
+    platform.arch === 'arm' || platform.arch === 'arm64'
+      ? 'arm64'
+      : platform.arch === 'x86-64'
+        ? 'x64'
+        : null;
+  if (!arch) return null;
+  const scriptsUrl = 'https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts';
+  const customExtension = runtimeId !== PUBLISHED_EXTENSION_ID;
+  if (platform.os === 'win' && arch === 'x64') {
+    const extensionOption = customExtension ? ` -ExtensionId '${runtimeId}'` : '';
+    return {
+      label: 'Windows x64 · Run in PowerShell',
+      command: `& ([scriptblock]::Create((irm '${scriptsUrl}/install.ps1'))) -Version '${version}'${extensionOption}`,
+    };
+  }
+  if (platform.os !== 'mac' && platform.os !== 'linux') return null;
+  const extensionOption = customExtension ? ` BBX_EXTENSION_ID=${runtimeId}` : '';
+  return {
+    label: `${platform.os === 'mac' ? 'macOS' : 'Linux'} ${arch} · Run in Terminal`,
+    command: `curl -fsSL ${scriptsUrl}/install.sh | BBX_VERSION=${version}${extensionOption} sh`,
+  };
+}
 
 /** Match the protocol's major-version compatibility contract. Independent
 minor and patch releases do not require users to reinstall anything. */
@@ -500,7 +538,6 @@ export type PromptExamplesRenderGroup = {
 export type SidepanelNativeStatusView = {
   hidden: boolean;
   installCommand: string;
-  installCommandHidden: boolean;
   skillCommand: string;
   mcpCommand: string;
   label: string;
@@ -511,7 +548,7 @@ export type SidepanelNativeStatusView = {
 function getNativeDiagnosticMessage(error: string | undefined, installCommand: string): string {
   const normalizedError = typeof error === 'string' ? error.trim() : '';
   if (!normalizedError) {
-    return 'Native host not connected. Run npm install -g @browserbridge/bbx, then return here.';
+    return `Native host not connected. Install Browser Bridge with npm or a standalone binary, then run ${installCommand} to register this browser.`;
   }
 
   if (
@@ -676,12 +713,11 @@ export function getSidepanelNativeStatusView({
   publishedExtensionId: string;
   fallbackInstallCommand?: string;
 }): SidepanelNativeStatusView {
-  const installCommandHidden = runtimeId === publishedExtensionId;
-  const installCommand = installCommandHidden ? 'bbx install' : `bbx install ${runtimeId}`;
+  const installCommand =
+    runtimeId === publishedExtensionId ? 'bbx install' : `bbx install ${runtimeId}`;
   return {
     hidden: connected,
     installCommand,
-    installCommandHidden,
     skillCommand: 'bbx install-skill',
     mcpCommand: 'bbx install-mcp',
     label: connected ? 'Native host connected' : error || 'Native host disconnected',

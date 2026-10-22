@@ -1,4 +1,5 @@
 import {
+  PUBLISHED_EXTENSION_ID,
   createSetupInstallMessage,
   formatTabActivityAge,
   getAgentTabsInlineHeight,
@@ -10,8 +11,10 @@ import {
   getUnstableConnectionDiagnostic,
   getVersionMismatchView,
   getMcpSetupCellState,
+  getNpmInstallCommand,
   getSetupStatusView,
   getSkillSetupCellState,
+  getStandaloneInstallView,
   normalizeSidepanelToggleError,
   syncSetupStatusPolling as syncSetupStatusPollingState,
 } from '../src/sidepanel-helpers.js';
@@ -117,7 +120,6 @@ export type SidePanelMessage =
       error?: string;
     };
 
-const PUBLISHED_EXTENSION_ID = 'jjjkmmcdkpcgamlopogicbnnhdgebhie';
 const SETUP_STATUS_POLL_MS = 15_000;
 const nativeIndicator = document.getElementById('native-indicator') as HTMLSpanElement;
 const extensionVersion = document.getElementById('extension-version') as HTMLSpanElement;
@@ -126,8 +128,10 @@ extensionVersion.textContent = `Extension: v${manifest.version_name ?? manifest.
 const toggleButton = document.getElementById('bridge-toggle') as HTMLButtonElement;
 const actionLog = document.getElementById('action-log') as HTMLDivElement;
 const setupSection = document.getElementById('native-setup') as HTMLElement;
-const setupInstallHint = document.getElementById('setup-install-hint') as HTMLElement;
 const setupInstallCmd = document.getElementById('setup-install-cmd') as HTMLElement;
+const setupNpmCmd = document.getElementById('setup-npm-cmd') as HTMLElement;
+setupNpmCmd.textContent = getNpmInstallCommand(manifest.version);
+void renderStandaloneInstall();
 const controlSection = document.getElementById('control-section') as HTMLElement;
 const installationSection = document.getElementById('installation-section') as HTMLDetailsElement;
 const setupStatusNote = document.getElementById('setup-status-note') as HTMLParagraphElement;
@@ -166,6 +170,28 @@ const otherWindowsError = document.getElementById('other-windows-error') as HTML
 const examplesSection = document.getElementById('examples-section') as HTMLDetailsElement;
 const examplesContent = document.getElementById('examples-content') as HTMLDivElement;
 const panelHelp = document.querySelector('.panel-help') as HTMLDivElement;
+
+async function renderStandaloneInstall(): Promise<void> {
+  try {
+    const platform = await chrome.runtime.getPlatformInfo();
+    const view = getStandaloneInstallView(manifest.version, platform, chrome.runtime.id);
+    if (!view) return;
+    const command = document.getElementById('setup-native-cmd') as HTMLElement;
+    const hint = document.getElementById('setup-native-hint') as HTMLElement;
+    const pathHint = document.getElementById('setup-native-path-hint') as HTMLElement;
+    command.textContent = view.command;
+    command.hidden = false;
+    hint.textContent = view.label;
+    hint.hidden = false;
+    pathHint.textContent =
+      platform.os === 'win'
+        ? 'Open a new terminal to use bbx after installation.'
+        : 'Keep ~/.local/bin on your PATH for future terminals.';
+    pathHint.hidden = false;
+  } catch {
+    // Keep the release and setup guide links available if platform detection fails.
+  }
+}
 
 function isCompactPanel(): boolean {
   return window.matchMedia?.('(max-height: 700px)').matches ?? false;
@@ -824,8 +850,6 @@ function renderNativeStatus(
     renderHostVersion(null);
     renderProxyStatus(null);
     setupInstallCmd.textContent = view.installCommand;
-    setupInstallHint.hidden = view.installCommandHidden;
-    setupInstallCmd.hidden = view.installCommandHidden;
     hideSetupContextMenu();
   }
   syncConnectedSectionsVisibility();

@@ -228,6 +228,9 @@ function getNativeHostVersion(result: unknown): string | null {
     return null;
   }
   const candidate = result as Record<string, unknown>;
+  if (typeof candidate.daemonVersionName === 'string' && candidate.daemonVersionName) {
+    return candidate.daemonVersionName;
+  }
   return typeof candidate.daemonVersion === 'string' ? candidate.daemonVersion : null;
 }
 

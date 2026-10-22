@@ -14,9 +14,54 @@ The wrapper selects macOS arm64/x64, Linux arm64/x64, or Windows x64. It downloa
 
 A global npm install initializes browser registration. A local dependency install downloads the binary without registering a browser. If install scripts were skipped, the launcher fetches the binary on first use; run `bbx install` to register it. Source checkouts skip the npm bootstrap so development does not download a published runtime.
 
-If the extension does not connect, run `bbx install`, or `bbx install --browser chrome` for Google Chrome on Linux. Choose your agent under **Connect your agent** in the extension, then enable window access. See the [quickstart](./quickstart.md).
+If the extension does not connect, run `bbx install`, or `bbx install --browser chrome` for Google Chrome on Linux. Choose your agent under **Connect agent** in the extension, then enable window access. See the [quickstart](./quickstart.md).
 
 Node runs only the npm bootstrap and launcher. The downloaded Go executable runs without Node and contains the runtime metadata and agent skills it needs.
+
+## Install without Node.js
+
+Run the GitHub-hosted installer for your platform. On macOS or Linux:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.sh | sh
+```
+
+On Windows x64, run in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.ps1 | iex
+```
+
+The installers download the latest release, verify its SHA-256 against the release's `checksums.txt`, install to `~/.local/bin`, register Chrome, and restart the daemon. Windows also adds the installation directory to your user `PATH`. Keep `~/.local/bin` on your shell's `PATH` on macOS and Linux.
+
+The extension's setup panel provides a copyable command targeting its release and extension ID. To select these yourself, set `BBX_VERSION` and `BBX_EXTENSION_ID` for the Unix script, or pass `-Version` and `-ExtensionId` to the PowerShell script. Use `BBX_BROWSER` or `-Browser` for another supported browser, and `BBX_INSTALL_DIR` or `-InstallDir` for another installation directory. Run with `--help` or `-Help` for options.
+
+### Download manually
+
+Download a standalone executable from [GitHub Releases](https://github.com/koltyakov/browser-bridge/releases/latest). Choose the asset for your operating system and CPU:
+
+| Platform | Asset |
+| --- | --- |
+| macOS, Apple silicon | `bbx-darwin-arm64` |
+| macOS, Intel | `bbx-darwin-x64` |
+| Linux, arm64 | `bbx-linux-arm64` |
+| Linux, x64 | `bbx-linux-x64` |
+| Windows, x64 | `bbx-windows-x64.exe` |
+
+On macOS or Linux, replace `/path/to/downloaded-binary` below with the downloaded file's path:
+
+```sh
+mkdir -p "$HOME/.local/bin"
+install -m 755 /path/to/downloaded-binary "$HOME/.local/bin/bbx"
+export PATH="$HOME/.local/bin:$PATH"
+bbx install
+```
+
+Keep `~/.local/bin` on your shell's `PATH` for future sessions. On Windows, rename the downloaded file to `bbx.exe`, place it in a permanent folder, add that folder to your user `PATH`, and run `bbx install` in a new terminal. You can also run `.\bbx.exe install` from that folder to register the browser before configuring `PATH`.
+
+`bbx install` registers the native messaging host using the executable's location, so do not move or delete the binary afterward. On Linux, it targets Chromium by default; use `bbx install --browser chrome` for Google Chrome. For an unpacked extension, use the registration command shown in its side panel, which includes the extension ID.
+
+No Node.js, npm, or Go installation is needed to run these binaries. Return to the extension after registration. See the [quickstart](./quickstart.md) for agent setup.
 
 ## Versions and updates
 
@@ -44,6 +89,6 @@ make package-native-all
 make pack
 ```
 
-Build all targets after tests, because native tests can replace the size report with a host-only build. Packaging writes executables and a versioned `size-report.json` to `dist/cli`. Each binary must be smaller than 10,000,000 bytes. The npm prepack step validates all five targets and generates the manifest from their exact bytes. The manifest is generated output and must not be committed.
+Build all targets after tests so every release binary uses the current source and version. Packaging writes executables to `dist/cli` and prints their sizes. Each binary must be smaller than 10,000,000 bytes. The npm prepack step checks the five expected files directly and generates the manifest from their exact bytes. The manifest is generated output and must not be committed.
 
 The release workflow uploads and verifies all five native assets on the public `v<version>` GitHub release before publishing npm. It also packages the Chrome extension. See [publishing](./publishing.md) and the [native runtime README](../internal/bridge/README.md).

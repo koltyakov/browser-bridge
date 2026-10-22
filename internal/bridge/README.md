@@ -23,9 +23,9 @@ make test-native
 
 Change `protocol/types.ts` for wire type changes and `protocol/mcp-tools.json` for MCP tool metadata, then run `make generate-protocol`. The same target updates Go bindings, JSON Schema, runtime metadata, and embedded skills. Shared JavaScript helpers under `protocol/src/` serve the browser and build tooling. See [the shared protocol guide](../../protocol/README.md).
 
-Release binaries go to `dist/cli`. The build rejects executables at or above **10,000,000 bytes** and writes `size-report.json` with the resolved version on every entry. Local builds derive it from `manifest.json`; release pipelines derive it from the Git tag. The build uses `CGO_ENABLED=0`, strips debug information, and disables compiler inlining with `-gcflags=all=-l` to reduce executable size. Ordinary `go build` retains Go's default optimization settings and uses the checked-in catalog version. Interop tests use the repository's TypeScript/Node test runner.
+Release binaries go to `dist/cli`. The build rejects executables at or above **10,000,000 bytes** and prints each binary's size. Local builds derive the version from `manifest.json`; release pipelines derive it from the Git tag. The build uses `CGO_ENABLED=0`, strips debug information, and disables compiler inlining with `-gcflags=all=-l` to reduce executable size. Ordinary `go build` retains Go's default optimization settings and uses the checked-in catalog version. Interop tests use the repository's TypeScript/Node test runner.
 
-Build sizes are recorded in `dist/cli/size-report.json`. The budget applies to each executable. Installed agent files, update payloads, and rollback copies also consume disk space and must be measured separately.
+The budget applies to each executable. Installed agent files, update payloads, and rollback copies also consume disk space and must be measured separately.
 
 Measured with Go 1.27.3 and the packaging flags above:
 
@@ -53,7 +53,7 @@ Measured with Go 1.27.3 and the packaging flags above:
 
 ## npm release packaging
 
-After tests, `make package-native-all` builds the five supported targets. `scripts/prepare-npm.mjs` requires a complete current-version report, validates each file and its size, then atomically generates `packages/npm/native-manifest.json`. It pins asset names, sizes, and SHA-256 digests for `darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, and `win32-x64`. Do not commit generated hashes.
+After tests, `make package-native-all` builds the five supported targets for the current version. `scripts/prepare-npm.mjs` validates the five expected files and reads their sizes directly, then atomically generates `packages/npm/native-manifest.json`. It pins asset names, sizes, and SHA-256 digests for `darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, and `win32-x64`. Do not commit generated hashes.
 
 The release workflow publishes and verifies these assets on the public GitHub `v<version>` release before npm publication. Existing assets must match exactly; publishing never overwrites them. The npm tarball contains only the launcher, bootstrap, generated manifest, and package metadata/license/docs. It does not export a JavaScript client library.
 

@@ -75,10 +75,10 @@ func run(ctx context.Context, args []string) error {
 	}
 	switch args[0] {
 	case "--version", "-v":
-		fmt.Println(version)
+		fmt.Println(versionName())
 		return nil
 	case "--self-test":
-		return printJSON(object{"version": value(version), "target": value(buildTarget), "runtime": value("go"), "methodCount": value(len(catalog.Methods))})
+		return printJSON(object{"version": value(version), "versionName": value(versionName()), "target": value(buildTarget), "runtime": value("go"), "methodCount": value(len(catalog.Methods))})
 	case "skill":
 		return printJSON(catalog.Runtime)
 	case "protocol.describe":

@@ -41,7 +41,7 @@ make package-extension
 make check-extension-zip
 ```
 
-That compiles the extension's TypeScript sources, stages browser JavaScript and assets in `dist/extension/`, and writes the upload artifact below. The ZIP excludes TypeScript sources, declarations, and development source maps.
+That compiles the extension's TypeScript sources, stages browser JavaScript and assets in `dist/ext/`, and writes the upload artifact below. The ZIP excludes TypeScript sources, declarations, and development source maps.
 
 ```bash
 dist/browser-bridge-extension-v<version>.zip
@@ -70,7 +70,7 @@ It contains exactly these platform keys and GitHub asset names:
 
 The wrapper downloads `https://github.com/koltyakov/browser-bridge/releases/download/v<packageVersion>/<asset>`. It never selects a newer release. Size and SHA-256 verification use the values shipped in npm.
 
-`scripts/build-native.mjs` records the resolved version on every `dist/cli/size-report.json` entry. Native tests can replace this report with a host-only build, so always build all five platforms after tests. `scripts/prepare-npm.mjs` runs during prepack. It requires synchronized npm metadata and five unique supported targets at the resolved version, checks exact asset names and actual file sizes, rejects files at or above 10,000,000 bytes, then hashes the files and atomically writes `packages/npm/native-manifest.json`. Do not commit this generated manifest.
+Always run `make package-native-all` after tests to rebuild all five platforms for the resolved version. `scripts/prepare-npm.mjs` runs during prepack. It requires synchronized npm metadata and all five expected binary files in `dist/cli`, rejects empty files and files at or above 10,000,000 bytes, then hashes the files and atomically writes `packages/npm/native-manifest.json`. It reads sizes directly from the binaries; there is no separate build report or per-binary version check. Do not commit this generated manifest.
 
 The tarball contains only `packages/npm/bin`, `packages/npm/src`, the generated manifest, and package metadata/license/docs. Go binaries live on GitHub Releases. Shared JavaScript helpers in `protocol/` support browser builds and generation; they are not a published runtime or client library. `npm ci` in a source checkout skips the wrapper bootstrap, so CI does not download a published release during dependency installation.
 

@@ -36,7 +36,7 @@ The runtime is a root Go module (`go.mod`). `cmd/bbx` is its executable; `intern
 | `internal/bridge/` | `main.go` | Native implementation of the npm-distributed runtime and setup services. |
 | `packages/npm/` | `bin/`, `src/` | npm bootstrap and launchers; downloads the exact package version/platform Go binary and verifies its pinned digest. |
 | `protocol/` | `types.ts`, `src/`, `mcp-tools.json` | Canonical wire types, method and MCP metadata, browser/build helpers, fixtures, and generated JSON Schema. Go bindings live in `internal/protocol/`. |
-| `packages/extension/` | `src/background.ts` | MV3 service worker - native port, request dispatch, state management. `src/content-script.ts` handles all DOM operations. TypeScript compiles to browser JavaScript under `dist/extension`. |
+| `packages/extension/` | `src/background.ts` | MV3 service worker - native port, request dispatch, state management. `src/content-script.ts` handles all DOM operations. TypeScript compiles to browser JavaScript under `dist/ext`. |
 | `tests/integration/` | `*.test.ts` | Real-process integration tests against the Go runtime. |
 
 ### Where to Find Things
@@ -142,9 +142,9 @@ make daemon                    # start daemon locally
 ## Working Rules
 
 - **JavaScript ESM only** - `"type": "module"` in root package.json. JavaScript modules use `import`/`export`; injected extension scripts follow the classic-script rules below.
-- **Build output** - unpacked extension files go in `dist/extension`; local and release Go executables go in `dist/cli`. Extension ZIPs stay directly under `dist/`.
+- **Build output** - unpacked extension files go in `dist/ext`; local and release Go executables go in `dist/cli`. Extension ZIPs stay directly under `dist/`.
 - **Development installation** - `make install` regenerates metadata, builds both components, and runs the Go self-installer. Keep one executable in the user bin directory with lightweight aliases. Development extension builds detect completed on-disk builds on native reconnect and periodic alarms; release ZIPs must disable this behavior.
-- **Extension TypeScript build** - author extension background, content, and UI code in `.ts` with native type annotations. `make build-extension` uses esbuild to emit browser JavaScript at the existing manifest paths in `dist/extension`, with source maps for development. `make package-extension` compiles a release ZIP without TypeScript sources or source maps. npm launchers run directly from JavaScript source. Build Go from the root with `make build-native`.
+- **Extension TypeScript build** - author extension background, content, and UI code in `.ts` with native type annotations. `make build-extension` uses esbuild to emit browser JavaScript at the existing manifest paths in `dist/ext`, with source maps for development. `make package-extension` compiles a release ZIP without TypeScript sources or source maps. npm launchers run directly from JavaScript source. Build Go from the root with `make build-native`.
 - **TypeScript tests use Node built-in runner** - `node --test`, not Jest/Mocha. These tests must be TypeScript (`*.test.ts`) and cover the extension, protocol, npm launcher, and real-process integration. Integration tests live in `tests/integration/`; native cross-language tests live in `tests/native/`. Runtime unit tests belong beside the Go implementation.
 - **Go tests use the standard testing package** - `*_test.go` beside implementation files. Run `make test-go vet-go` from the root. Shared wire fixtures live in `protocol/fixtures/`.
 - **Linting** - `oxlint` (Rust-based), formatting with `oxfmt`. 2-space indent, single quotes, semicolons, trailing commas.
@@ -212,7 +212,7 @@ When adding or modifying agent/editor support (e.g., adding a new IDE or agent c
 - `manifest.json.version` is the local version source; release pipelines use the `vX.Y.Z` Git tag instead. `scripts/version.mjs` resolves this authority and `make sync-version` updates npm version mirrors. Never independently bump `package.json` or `package-lock.json`. Release builds synchronize metadata and regenerate the native catalog before validation.
 - Published runtime files are limited to `packages/npm/bin`, `packages/npm/src`, and generated `packages/npm/native-manifest.json`, plus package metadata/license/docs. npm has zero runtime dependencies; browser/build dependencies stay development-only.
 - npm global postinstall downloads the exact matching Go release and initializes native registration. Local dependency installs must not register browsers; source checkout installs skip bootstrap. Skipped scripts use lazy fetch followed by explicit `bbx install`.
-- Build all native targets after tests before packing. `scripts/prepare-npm.mjs` requires the current-version five-platform size report and hashes exact files under `dist/cli`; never commit generated manifest hashes.
+- Build all native targets for the current version after tests before packing. `scripts/prepare-npm.mjs` validates sizes and hashes the five expected binaries directly under `dist/cli`; never commit generated manifest hashes.
 - Native GitHub release assets must be public and verified before npm publish. Never overwrite a published binary with different bytes. npm's pinned assets are independent of the native signed-update feed.
 - `npm link` from this repo exposes `bbx`, `bbx-mcp`, `bbx-daemon`, and `bbx-install` machine-wide for consumer repos.
 - When working from this repository for debugging, use `make run ARGS='...'` for the workspace Go CLI.

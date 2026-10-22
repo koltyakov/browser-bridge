@@ -10,6 +10,7 @@ import {
   getActivitySourceTag,
   getInstallKey,
   getMcpSetupCellState,
+  getNpmInstallCommand,
   getPromptExamplesGroups,
   getPromptExamplesRenderGroups,
   getPromptExamplesMode,
@@ -18,6 +19,7 @@ import {
   getSidepanelNativeStatusView,
   getSetupStatusView,
   getSkillSetupCellState,
+  getStandaloneInstallView,
   getVersionMismatchView,
   normalizeSidepanelToggleError,
   shouldPollSetupStatus,
@@ -26,6 +28,70 @@ import {
 } from '../src/sidepanel-helpers.js';
 
 type SetupStatus = NonNullable<Parameters<typeof getSetupStatusView>[0]>;
+
+test('npm setup targets the extension major-minor release line', () => {
+  assert.equal(getNpmInstallCommand('2.3.4'), 'npm install -g @browserbridge/bbx@2.3');
+  assert.equal(getNpmInstallCommand('2.3'), 'npm install -g @browserbridge/bbx@2.3');
+  assert.equal(getNpmInstallCommand('0.8.1.4'), 'npm install -g @browserbridge/bbx@0.8');
+  assert.equal(getNpmInstallCommand('invalid'), 'npm install -g @browserbridge/bbx');
+});
+
+test('standalone setup selects the GitHub installer and passes the version and extension ID', () => {
+  const runtimeId = 'a'.repeat(32);
+  for (const [os, arch, label] of [
+    ['mac', 'arm64', 'macOS arm64 · Run in Terminal'],
+    ['mac', 'arm', 'macOS arm64 · Run in Terminal'],
+    ['mac', 'x86-64', 'macOS x64 · Run in Terminal'],
+    ['linux', 'arm', 'Linux arm64 · Run in Terminal'],
+    ['linux', 'arm64', 'Linux arm64 · Run in Terminal'],
+    ['linux', 'x86-64', 'Linux x64 · Run in Terminal'],
+    ['win', 'x86-64', 'Windows x64 · Run in PowerShell'],
+  ]) {
+    const view = getStandaloneInstallView('2.3.4', { os, arch }, runtimeId);
+    assert.ok(view);
+    assert.equal(view.label, label);
+    if (os === 'win') {
+      assert.equal(
+        view.command,
+        `& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.ps1'))) -Version '2.3.4' -ExtensionId '${runtimeId}'`
+      );
+    } else {
+      assert.equal(
+        view.command,
+        `curl -fsSL https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.sh | BBX_VERSION=2.3.4 BBX_EXTENSION_ID=${runtimeId} sh`
+      );
+    }
+  }
+});
+
+test('standalone setup falls back to links for unsupported or invalid inputs', () => {
+  const id = 'b'.repeat(32);
+  for (const platform of [
+    { os: 'win', arch: 'arm64' },
+    { os: 'linux', arch: 'x86-32' },
+    { os: 'cros', arch: 'x86-64' },
+  ]) {
+    assert.equal(getStandaloneInstallView('2.3.4', platform, id), null);
+  }
+  assert.equal(getStandaloneInstallView('invalid', { os: 'mac', arch: 'arm64' }, id), null);
+  assert.equal(getStandaloneInstallView('2.3.4', { os: 'mac', arch: 'arm64' }, "';bad"), null);
+});
+
+test('standalone setup omits the extension override for the Chrome Web Store installation', () => {
+  const publishedId = 'jjjkmmcdkpcgamlopogicbnnhdgebhie';
+  for (const os of ['mac', 'linux']) {
+    const view = getStandaloneInstallView('2.3.4', { os, arch: 'x86-64' }, publishedId);
+    assert.equal(
+      view?.command,
+      'curl -fsSL https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.sh | BBX_VERSION=2.3.4 sh'
+    );
+  }
+  const windows = getStandaloneInstallView('2.3.4', { os: 'win', arch: 'x86-64' }, publishedId);
+  assert.equal(
+    windows?.command,
+    "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.ps1'))) -Version '2.3.4'"
+  );
+});
 
 test('active tabs use inline space only when enough tab rows remain usable', () => {
   assert.equal(getAgentTabsInlineHeight(500, 174), 174);
@@ -745,7 +811,6 @@ test('getSidepanelNativeStatusView derives install commands and disconnected lab
     {
       hidden: false,
       installCommand: 'bbx install dev-extension-id',
-      installCommandHidden: false,
       skillCommand: 'bbx install-skill',
       mcpCommand: 'bbx install-mcp',
       label: 'bridge down',
@@ -763,13 +828,12 @@ test('getSidepanelNativeStatusView derives install commands and disconnected lab
     {
       hidden: true,
       installCommand: 'bbx install',
-      installCommandHidden: true,
       skillCommand: 'bbx install-skill',
       mcpCommand: 'bbx install-mcp',
       label: 'Native host connected',
       diagnosticCommand: 'bbx install',
       diagnosticMessage:
-        'Native host not connected. Run npm install -g @browserbridge/bbx, then return here.',
+        'Native host not connected. Install Browser Bridge with npm or a standalone binary, then run bbx install to register this browser.',
     }
   );
 });
