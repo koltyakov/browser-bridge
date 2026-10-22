@@ -209,9 +209,10 @@ one tab via `tab_id`. Otherwise each agent session stays on its working tab
 only an unbound or idle-expired session follows the active tab. */
   async function resolveRequestTarget(
     request: BridgeRequest,
-    options: { requireScriptable?: boolean; peek?: boolean } = {}
+    options: { requireScriptable?: boolean; peek?: boolean; allowPendingUrl?: boolean } = {}
   ): Promise<ResolvedTabTarget> {
     const requireScriptable = options.requireScriptable !== false;
+    const routingOptions = { requireScriptable, allowPendingUrl: options.allowPendingUrl };
     const peek = options.peek === true;
     if (!state.enabledWindow) {
       throw new BridgeError(
@@ -265,7 +266,7 @@ only an unbound or idle-expired session follows the active tab. */
     if (hasExplicitTab || !agentTabs) {
       const tab = selectRequestTabCandidate(request.tab_id, explicitTab, activeTab ?? null);
       return finish(
-        resolveWindowScopedTab(tab, enabledWindowId, { requireScriptable }),
+        resolveWindowScopedTab(tab, enabledWindowId, routingOptions),
         hasExplicitTab ? 'explicit' : 'active'
       );
     }
@@ -281,7 +282,7 @@ only an unbound or idle-expired session follows the active tab. */
         }
         if (leaseTab && leaseTab.windowId === enabledWindowId) {
           return finish(
-            resolveWindowScopedTab(leaseTab, enabledWindowId, { requireScriptable }),
+            resolveWindowScopedTab(leaseTab, enabledWindowId, routingOptions),
             lease.tabId === activeTabId ? 'active' : 'working'
           );
         }
@@ -294,10 +295,7 @@ only an unbound or idle-expired session follows the active tab. */
       );
     }
 
-    return finish(
-      resolveWindowScopedTab(activeTab, enabledWindowId, { requireScriptable }),
-      'active'
-    );
+    return finish(resolveWindowScopedTab(activeTab, enabledWindowId, routingOptions), 'active');
   }
 
   /** Wait for a tab to reach the `complete` status after a navigation-like action. */
@@ -906,7 +904,7 @@ or reset to natural size when width/height are 0. */
 
   /** Wait for the tab to reach the 'complete' load state. */
   async function handleWaitForLoadState(request: BridgeRequest): Promise<BridgeResponse> {
-    const target = await resolveRequestTarget(request);
+    const target = await resolveRequestTarget(request, { allowPendingUrl: true });
     const params = normalizeWaitForLoadStateParams(request.params);
     if (params.url && params.urlMatch) {
       const matched = await dependencies.waitForUrl(target.tabId, target.windowId, params);

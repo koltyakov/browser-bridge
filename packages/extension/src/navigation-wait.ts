@@ -190,7 +190,9 @@ access revocation and tab-removal events cannot pass an untracked waiter. */
         this._resolve(waiter, initial, 'current');
         return;
       }
-      await this._acquireSignals(waiter);
+      // A new tab can have only pendingUrl. Wait for a committed document
+      // before injecting the SPA observer; tabs.onUpdated covers the load.
+      if (initial.url) await this._acquireSignals(waiter);
       if (!waiter.settled) await this._check(waiter, 'current');
     } catch (error) {
       if (!waiter.settled) this._reject(waiter, normalizeWaitError(error));
@@ -201,7 +203,14 @@ access revocation and tab-removal events cannot pass an untracked waiter. */
     if (waiter.settled) return;
     try {
       const tab = await this._readScopedTab(waiter);
-      if (waiter.settled || !isSatisfied(tab, waiter.params)) return;
+      if (waiter.settled) return;
+      if (!isSatisfied(tab, waiter.params)) {
+        if (tab.url && !waiter.signalsHeld) {
+          await this._acquireSignals(waiter);
+          if (!waiter.settled) await this._check(waiter, observedKind);
+        }
+        return;
+      }
       this._resolve(waiter, tab, waiter.pendingKind ?? observedKind);
     } catch (error) {
       if (!waiter.settled) this._reject(waiter, normalizeWaitError(error));
@@ -230,7 +239,7 @@ access revocation and tab-removal events cannot pass an untracked waiter. */
   async _acquireSignals(waiter: NavigationWaiter) {
     const cleanup = this.signalCleanupByTab.get(waiter.tabId);
     if (cleanup) await cleanup;
-    if (waiter.settled) return;
+    if (waiter.settled || waiter.signalsHeld) return;
     this._assertAccess(waiter);
 
     let lease = this.signalsByTab.get(waiter.tabId);
@@ -357,7 +366,8 @@ function normalizeWaitError(error: unknown): BridgeError {
 
 function isSatisfied(tab: chrome.tabs.Tab, params: WaitParams): boolean {
   if (params.waitForLoad && tab.status !== 'complete') return false;
-  if (!params.url || !params.urlMatch || typeof tab.url !== 'string') return true;
+  if (!params.url || !params.urlMatch) return true;
+  if (typeof tab.url !== 'string' || !tab.url) return false;
   if (params.urlMatch === 'exact') return tab.url === params.url;
   if (params.urlMatch === 'contains') return tab.url.includes(params.url);
   if (tab.url.length > MAX_REGEX_URL_LENGTH) return false;

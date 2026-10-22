@@ -44,6 +44,42 @@ test('URL wait returns immediately when current state already matches', async ()
   assert.equal(result.tab.url, 'https://example.com/final');
 });
 
+for (const url of [undefined, '']) {
+  test(`URL wait does not match or inject into a new tab with URL ${JSON.stringify(url)}`, async () => {
+    let current = tab({
+      id: 7,
+      windowId: 2,
+      status: 'loading',
+      url,
+      pendingUrl: 'https://example.com/final',
+    });
+    let reads = 0;
+    let installs = 0;
+    const waits = new NavigationWaitCoordinator({
+      async getTab() {
+        reads += 1;
+        return { ...current };
+      },
+      async installSignals() {
+        installs += 1;
+        assert.ok(current.url, 'SPA signals require a committed document');
+      },
+    });
+    const pending = waits.wait(7, 2, params({ waitForLoad: false }));
+    await waitFor(() => reads >= 2);
+    assert.equal(waits.waitersByTab.get(7)?.size, 1);
+    assert.equal(installs, 0);
+
+    current = tab({ ...current, url: 'https://example.com/redirect', status: 'complete' });
+    waits.handleTabUpdated(7, { status: 'complete', url: current.url });
+    await waitFor(() => installs > 0);
+    current = tab({ ...current, url: 'https://example.com/final' });
+    waits.handleSpaSignal(7, 'pushState');
+    assert.equal((await pending).tab.url, current.url);
+    assert.equal(waits.waitersByTab.size, 0);
+  });
+}
+
 test('URL wait follows redirect updates and reports a full navigation truthfully', async () => {
   let currentTab = tab({
     id: 7,

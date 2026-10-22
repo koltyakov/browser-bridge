@@ -248,6 +248,59 @@ test('page request controller reports load timeouts with the TIMEOUT code', asyn
   });
 });
 
+test('load-state wait accepts a new tab before its first URL commits', async () => {
+  const url = 'https://example.com/new';
+  const { controller } = createController({
+    async getTab(tabId, updatedListenerCount) {
+      return {
+        id: tabId,
+        windowId: 5,
+        url: updatedListenerCount > 0 ? url : '',
+        pendingUrl: updatedListenerCount > 0 ? undefined : url,
+        status: updatedListenerCount > 0 ? 'complete' : 'loading',
+      };
+    },
+  });
+  const response = await controller.handleWaitForLoadState(
+    createRequest({
+      id: 'pending-load',
+      method: 'page.wait_for_load_state',
+      tabId: 21,
+      params: { timeoutMs: 100 },
+    })
+  );
+  assert.equal(response.ok, true);
+  assert.equal((response.result as { url: string }).url, url);
+});
+
+test('URL wait routes a pending tab to the navigation coordinator', async () => {
+  const url = 'https://example.com/new';
+  let waited = false;
+  const { controller } = createController({
+    async getTab(tabId) {
+      return { id: tabId, windowId: 5, url: '', pendingUrl: url, status: 'loading' };
+    },
+    async waitForUrl() {
+      waited = true;
+      return {
+        tab: { id: 21, windowId: 5, url, status: 'complete' } as chrome.tabs.Tab,
+        elapsedMs: 10,
+        observedNavigationKind: 'full-navigation',
+      };
+    },
+  });
+  const response = await controller.handleWaitForLoadState(
+    createRequest({
+      id: 'pending-url',
+      method: 'page.wait_for_load_state',
+      tabId: 21,
+      params: { url, urlMatch: 'exact', timeoutMs: 100 },
+    })
+  );
+  assert.equal(response.ok, true);
+  assert.equal(waited, true);
+});
+
 test('page request controller handles CDP computed-style validation and dispatches valid requests', async () => {
   const { controller, commands } = createController();
   const invalid = await controller.handleCdpRequest({
