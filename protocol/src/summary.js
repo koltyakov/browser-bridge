@@ -389,6 +389,16 @@ function summarizeBridgeResponseBody(response, method) {
   }
 
   const result = toRecord(response.result);
+  if (method === 'dom.get_attributes') {
+    return {
+      ok: true,
+      summary: appendProtocolWarning(
+        `Read ${Object.keys(result).length} attribute(s).`,
+        protocolWarning
+      ),
+      evidence: result,
+    };
+  }
   if (method === 'dom.baseline.compare') {
     const counts = toRecord(result.counts);
     const added = typeof counts.added === 'number' ? counts.added : 0;

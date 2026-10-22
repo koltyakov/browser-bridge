@@ -22,9 +22,10 @@ const openTabsApi = {
 
 function createHistoryHarness(stored: Record<string, unknown> = {}) {
   const storage = createStorageArea(stored);
+  const localStorage = createStorageArea();
   const openTabIds = new Set([7, 8]);
   const chromeObj = {
-    storage: { session: storage },
+    storage: { session: storage, local: localStorage },
     tabs: {
       async get(tabId: number) {
         if (!openTabIds.has(tabId)) throw new Error('Tab was closed');
@@ -48,7 +49,7 @@ function createHistoryHarness(stored: Record<string, unknown> = {}) {
     });
     return { state, controller };
   }
-  return { storage, openTabIds, startWorker, ...startWorker() };
+  return { storage, localStorage, openTabIds, startWorker, ...startWorker() };
 }
 
 function deferred() {
@@ -210,6 +211,38 @@ test('events arriving during startup wait for persisted history instead of overw
     ['Previous worker', 'New worker']
   );
   assert.deepEqual(storage.snapshot().actionLog, state.actionLog);
+});
+
+test('extension reload preserves history after Chrome clears session storage', async () => {
+  const { controller, state, storage, localStorage, startWorker, openTabIds } =
+    createHistoryHarness();
+  await controller.appendActionLogEntry({
+    method: 'dom.query',
+    tabId: 7,
+    ok: true,
+    summary: 'Before update',
+  });
+  await controller.appendActionLogEntry({
+    method: 'input.focus',
+    tabId: 8,
+    ok: true,
+    summary: 'Closed during update',
+  });
+  const retained = state.actionLog.filter((entry) => entry.tabId === 7);
+  await storage.clear();
+  openTabIds.delete(8);
+  const updated = startWorker();
+  await updated.controller.restoreActionLog();
+  assert.deepEqual(updated.state.actionLog, retained);
+  assert.deepEqual(localStorage.snapshot().actionLog, retained);
+  assert.deepEqual(storage.snapshot().actionLog, retained);
+  await updated.controller.clearActionLog();
+  assert.deepEqual(updated.state.actionLog, []);
+  assert.deepEqual(localStorage.snapshot().actionLog, []);
+  assert.deepEqual(storage.snapshot().actionLog, []);
+  const restarted = startWorker();
+  await restarted.controller.restoreActionLog();
+  assert.deepEqual(restarted.state.actionLog, []);
 });
 
 test('failed startup reads cannot overwrite stored history and are retried safely', async () => {
@@ -388,6 +421,7 @@ test('bridge action logging treats storage and UI failures as best-effort', asyn
   let uiEmissions = 0;
   const chromeObj = {
     storage: {
+      local: createStorageArea(),
       session: {
         async get() {
           return {};
@@ -436,6 +470,7 @@ test('bridge action logging preserves actual optional debugger execution metadat
   const state = createExtensionState();
   const chromeObj = {
     storage: {
+      local: createStorageArea(),
       session: {
         async get() {
           return {};
@@ -484,6 +519,7 @@ test('standalone handshake pings are logged and immediate sourced checks replace
   const chromeObj = {
     tabs: openTabsApi,
     storage: {
+      local: createStorageArea(),
       session: {
         async get() {
           return {};
@@ -557,6 +593,7 @@ test('dialog text and prompt values never enter persisted action logs', async ()
   const chromeObj = {
     tabs: openTabsApi,
     storage: {
+      local: createStorageArea(),
       session: {
         async get() {
           return {};
@@ -654,6 +691,7 @@ test('action logs sanitize incidental URL and error details before persistence',
   const writes: string[] = [];
   const chromeObj = {
     storage: {
+      local: createStorageArea(),
       session: {
         async get() {
           return {
@@ -704,6 +742,7 @@ test('sensitive read success, failure, and oversize activity never retains value
   const chromeObj = {
     tabs: openTabsApi,
     storage: {
+      local: createStorageArea(),
       session: {
         async get() {
           return {};
@@ -847,6 +886,7 @@ test('page evaluation activity warns without persisting returned values or sizes
   const chromeObj = {
     tabs: openTabsApi,
     storage: {
+      local: createStorageArea(),
       session: {
         get: async () => ({}),
         set: async (value: unknown) => writes.push(JSON.stringify(value)),
@@ -892,7 +932,10 @@ test('sensitive activity is recorded in memory before persistence completes', as
   });
   const chromeObj = {
     tabs: openTabsApi,
-    storage: { session: { get: async () => ({}), set: () => persistence } },
+    storage: {
+      local: createStorageArea(),
+      session: { get: async () => ({}), set: () => persistence },
+    },
   } as unknown as typeof globalThis.chrome;
   const controller = createActionLogController(state, chromeObj, {
     async getCurrentTabState() {

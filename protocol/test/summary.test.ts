@@ -18,6 +18,19 @@ import type { BridgeMethod, BridgeResponse } from '../src/types.js';
 
 // --- summarizeBridgeResponse: error path ---
 
+test('attribute summaries retain values without interpreting attribute names as result metadata', () => {
+  for (const attributes of [
+    { id: 'send-email', type: 'checkbox' },
+    { id: 'fileTitle', type: 'text', value: '' },
+    { title: 'A title', width: '100', height: '40', hidden: '' },
+    {},
+  ]) {
+    const result = summarizeBridgeResponse(ok(attributes), 'dom.get_attributes');
+    assert.deepEqual(result.evidence, attributes);
+    assert.equal(result.summary, `Read ${Object.keys(attributes).length} attribute(s).`);
+  }
+});
+
 test('native download and paste summaries preserve control handles and dispatch evidence', () => {
   const download = {
     downloadId: 'download_secret',

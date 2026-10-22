@@ -1298,7 +1298,7 @@ test('background state clears enabled access and updates the action when the ena
     windowId: 7,
     isWindowClosing: true,
   });
-  await flushAsyncWork();
+  await waitForCondition(() => titleCalls.length > 0 && badgeTextCalls.length > 0);
 
   assert.equal(state.enabledWindow, null);
   assert.equal(state.requestedAccessWindowId, null);

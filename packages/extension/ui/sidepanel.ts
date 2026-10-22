@@ -120,7 +120,7 @@ const SETUP_STATUS_POLL_MS = 15_000;
 const nativeIndicator = document.getElementById('native-indicator') as HTMLSpanElement;
 const extensionVersion = document.getElementById('extension-version') as HTMLSpanElement;
 const manifest = chrome.runtime.getManifest();
-extensionVersion.textContent = `v${manifest.version_name ?? manifest.version}`;
+extensionVersion.textContent = `Extension: v${manifest.version_name ?? manifest.version}\nDaemon: disconnected`;
 const toggleButton = document.getElementById('bridge-toggle') as HTMLButtonElement;
 const actionLog = document.getElementById('action-log') as HTMLDivElement;
 const setupSection = document.getElementById('native-setup') as HTMLElement;
@@ -161,6 +161,17 @@ const otherWindowsDisable = document.getElementById('other-windows-disable') as 
 const otherWindowsError = document.getElementById('other-windows-error') as HTMLParagraphElement;
 const examplesSection = document.getElementById('examples-section') as HTMLDetailsElement;
 const examplesContent = document.getElementById('examples-content') as HTMLDivElement;
+
+function syncActivityScrollFade(): void {
+  activitySection.dataset.moreBelow = String(
+    actionLog.scrollHeight - actionLog.scrollTop - actionLog.clientHeight > 1
+  );
+}
+
+actionLog.addEventListener('scroll', syncActivityScrollFade, { passive: true });
+const activityResizeObserver =
+  typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(syncActivityScrollFade);
+activityResizeObserver?.observe(actionLog);
 
 let currentTabState: SidePanelCurrentTab | null = null;
 
@@ -436,6 +447,7 @@ versionMismatchDismiss.addEventListener('click', () => {
 
 window.addEventListener('beforeunload', () => {
   clearInterval(activityHistogramTimer);
+  activityResizeObserver?.disconnect();
 });
 
 function renderState(state: UiSnapshot): void {
@@ -466,6 +478,7 @@ function renderState(state: UiSnapshot): void {
     syncConnectedSectionsVisibility,
     syncSetupStatusPolling,
   });
+  syncActivityScrollFade();
 }
 
 function updateActivityVisualizations(): void {
@@ -687,6 +700,7 @@ function renderNativeStatus(
 }
 
 function renderHostVersion(hostVersion: string | null): void {
+  extensionVersion.textContent = `Extension: v${manifest.version_name ?? manifest.version}\nDaemon: ${hostVersion ? `v${hostVersion}` : 'disconnected'}`;
   renderVersionMismatch(hostVersion);
   if (!hostVersion) {
     setupHostVersion.hidden = true;

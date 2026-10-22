@@ -30,6 +30,7 @@ export type PopupMessage =
       state: {
         nativeConnected: boolean;
         nativeUnstable?: boolean;
+        nativeHostVersion?: string | null;
         currentTab: PopupCurrentTab | null;
       };
     }
@@ -41,7 +42,7 @@ export type PopupMessage =
 const nativeIndicator = document.getElementById('native-indicator') as HTMLSpanElement;
 const extensionVersion = document.getElementById('extension-version') as HTMLSpanElement;
 const manifest = chrome.runtime.getManifest();
-extensionVersion.textContent = `v${manifest.version_name ?? manifest.version}`;
+extensionVersion.textContent = `Extension: v${manifest.version_name ?? manifest.version}\nDaemon: disconnected`;
 const button = document.getElementById('communication-action') as HTMLButtonElement;
 const accessEyebrow = document.getElementById('popup-access-eyebrow') as HTMLDivElement;
 const accessDetail = document.getElementById('popup-access-detail') as HTMLParagraphElement;
@@ -67,6 +68,9 @@ let port: chrome.runtime.Port;
 
 const handlePopupMessage = createPopupMessageHandler({
   renderNativeStatus,
+  renderHostVersion(hostVersion) {
+    extensionVersion.textContent = `Extension: v${manifest.version_name ?? manifest.version}\nDaemon: ${hostVersion ? `v${hostVersion}` : 'disconnected'}`;
+  },
   renderPopupState,
   shouldResetPendingToggleOnSync,
   getPendingEnabledState: () => pendingEnabledState,

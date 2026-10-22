@@ -58,7 +58,9 @@ Installation restarts the local daemon. Connected native hosts exit and Chrome r
 
 Load `dist/extension` once through `chrome://extensions` with Developer mode enabled. Development builds check their build stamp on native-host reconnect and every minute. All profiles loading that same directory reload when the completed build changes. An extension version predating this feature needs one manual reload to enable it. Release ZIPs do not include this automatic development reload behavior.
 
-Development builds display a content-based suffix, such as `v2.0.0-dev.a1b2c3d4`, in the popup and side-panel footers. Compare it with the label printed by `make install` to confirm the installed build. The suffix changes when build contents change; rebuilding identical contents keeps the same label. Release builds display the plain version.
+Development builds display a content-based suffix, such as `v2.0.0-dev.a1b2c3d4`, in the popup and side-panel version tooltips. Hover or focus the info icon at the top-right of the access card to see the extension and daemon versions. Compare the extension label with the one printed by `make install` to confirm the installed build. The suffix changes when build contents change; rebuilding identical contents keeps the same label. Release builds display the plain version.
+
+Recent activity and enabled-window access survive extension updates and development reloads. Each tab keeps its bounded history until the tab closes or Chrome starts a new browser session. Access is restored only for the same open window; disabling access, closing that window, or restarting Chrome clears the saved grant.
 
 ## Focused tests and local tools
 

@@ -21,7 +21,16 @@
       </header>
       <section class="card control-card popup-control-card">
         <div class="control-copy">
-          <div id="popup-access-eyebrow" class="eyebrow">Window access</div>
+          <div class="control-heading">
+            <div id="popup-access-eyebrow" class="eyebrow">Window access</div>
+            <span class="version-info">
+              <button class="version-info-button" type="button" aria-label="Version information"
+                aria-describedby="extension-version">
+                <span aria-hidden="true">i</span>
+              </button>
+              <span id="extension-version" class="version-tooltip" role="tooltip"></span>
+            </span>
+          </div>
           <p id="popup-access-detail" class="control-detail">
             Enable Browser Bridge to let your connected agent inspect and interact with pages in this browser window.
           </p>
@@ -31,9 +40,6 @@
         </div>
         <button id="communication-action" class="popup-action popup-power-button" type="button">Enable Window Access</button>
       </section>
-      <footer class="panel-footer">
-        <span id="extension-version" class="extension-version" title="Extension version"></span>
-      </footer>
     </main>
     <script type="module" src="./popup.js"></script>
   </body>
