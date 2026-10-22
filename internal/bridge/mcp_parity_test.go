@@ -87,6 +87,20 @@ func TestMCPResultContracts(t *testing.T) {
 	}
 }
 
+func TestMCPAttributeEvidencePreservesValues(t *testing.T) {
+	for _, attributes := range []object{
+		{"id": value("send-email"), "type": value("checkbox")},
+		{"id": value("fileTitle"), "type": value("text"), "value": value("")},
+		{"title": value("A title"), "width": value("100"), "height": value("40"), "hidden": value("")},
+		{},
+	} {
+		result := mcpResponse(success("attributes", attributes), "dom.get_attributes", object{}).object("structuredContent")
+		if !result.boolean("ok") || !jsonEqual(result["evidence"], value(attributes)) || !strings.HasPrefix(result.text("summary"), "Read ") {
+			t.Fatalf("attribute result lost values or was misclassified: %s", value(result))
+		}
+	}
+}
+
 func TestMCPDoctorCollectsOptionalDiagnosticsWithoutRetry(t *testing.T) {
 	c, requests := mcpTestDaemon(t, func(request object) object {
 		if request.text("method") == "health.ping" {

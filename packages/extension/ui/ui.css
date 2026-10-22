@@ -143,6 +143,7 @@ body[data-windowed="true"] .panel-popup {
   width: 100%;
   max-width: none;
   flex: 1 1 auto;
+  padding-bottom: 6px;
 }
 
 .panel section + section {
@@ -174,18 +175,76 @@ body[data-windowed="true"] .panel-popup {
   display: none;
 }
 
-.extension-version {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 400;
-  white-space: nowrap;
+.version-info {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  flex: 0 0 auto;
 }
 
-.panel-footer {
-  margin-top: auto;
-  padding-top: 10px;
-  text-align: right;
-  flex-shrink: 0;
+.version-info-button {
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font: 600 12px/1 Georgia, serif;
+  background: transparent;
+  color: var(--muted);
+}
+
+.version-info-button:hover,
+.version-info-button:focus-visible {
+  background: transparent;
+  color: var(--muted);
+}
+
+.version-info-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.control-heading:not(:has(.other-windows:not([hidden]))) .version-info-button {
+  width: 16px;
+  height: 16px;
+  font-size: 11px;
+}
+
+.version-tooltip {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 10;
+  width: max-content;
+  padding: 12px;
+  border: 1px solid var(--dropdown-stroke);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 8px 24px var(--dropdown-shadow);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre;
+  visibility: hidden;
+}
+
+.version-tooltip::before {
+  content: "";
+  position: absolute;
+  top: -7px;
+  left: 0;
+  right: 0;
+  height: 7px;
+}
+
+.version-info:hover .version-tooltip,
+.version-info:focus-within .version-tooltip {
+  visibility: visible;
 }
 
 .stack {
@@ -315,7 +374,7 @@ summary {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 10px;
+  gap: 5px;
 }
 
 .control-heading .eyebrow {
@@ -339,6 +398,7 @@ summary {
 .other-windows > summary {
   display: flex;
   align-items: center;
+  line-height: 14px;
   gap: 5px;
   padding: 2px 7px;
   border: 1px solid var(--accent);
@@ -1242,12 +1302,24 @@ button:hover {
 
 /* Activity section: fill remaining space & scroll */
 #activity-section {
+  position: relative;
   flex: 1 1 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   margin-top: 12px;
+}
+
+#activity-section[data-more-below="true"]::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 8px;
+  height: 24px;
+  background: linear-gradient(transparent, var(--bg));
+  pointer-events: none;
 }
 
 #activity-section:not(:has(.activity-card)) {

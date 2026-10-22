@@ -91,6 +91,7 @@ export function createActionLogController(
     actionContext: ActionContext | null
   ) => Promise<void>;
   restoreActionLog: () => Promise<void>;
+  clearActionLog: () => Promise<void>;
   clearActionLogForTab: (tabId: number) => Promise<void>;
 } {
   let mutations: Promise<void> = Promise.resolve();
@@ -127,6 +128,11 @@ be restored without migration or changes to the panel message format. */
 
   async function persistHistory(): Promise<void> {
     if (!historyRestored) return;
+    // Session storage survives worker suspension, but Chrome clears it on an
+    // extension reload/update. Keep a bounded local copy for that transition.
+    await chromeObj.storage.local.set({
+      [ACTION_LOG_STORAGE_KEY]: [...state.actionLog],
+    });
     await chromeObj.storage.session.set({
       [ACTION_LOG_STORAGE_KEY]: [...state.actionLog],
     });
@@ -170,7 +176,10 @@ where an operation happened even if that operation later revokes the session. */
       restoration = mutate(async () => {
         let stored: Record<string, unknown>;
         try {
-          stored = await chromeObj.storage.session.get(ACTION_LOG_STORAGE_KEY);
+          stored = await chromeObj.storage.local.get(ACTION_LOG_STORAGE_KEY);
+          if (!Array.isArray(stored[ACTION_LOG_STORAGE_KEY])) {
+            stored = await chromeObj.storage.session.get(ACTION_LOG_STORAGE_KEY);
+          }
         } catch {
           // Keep collecting in memory, but never overwrite history we could
           // not read. A later event retries restoration and merges both sets.
@@ -207,6 +216,16 @@ Late responses are rejected by the tab-existence check in append. */
     await restoreActionLog();
     await mutate(async () => {
       state.actionLog = state.actionLog.filter((entry) => entry.tabId !== tabId);
+      await persistHistory();
+    });
+  }
+
+  /** A browser restart starts a new history, unlike an extension update. */
+  async function clearActionLog(): Promise<void> {
+    await restoreActionLog();
+    await mutate(async () => {
+      state.actionLog = [];
+      historyRestored = true;
       await persistHistory();
     });
   }
@@ -401,6 +420,7 @@ Late responses are rejected by the tab-existence check in append. */
     getActionContext,
     logBridgeAction,
     restoreActionLog,
+    clearActionLog,
     clearActionLogForTab,
   };
 }

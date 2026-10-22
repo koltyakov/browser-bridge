@@ -15,6 +15,7 @@ export type PopupMessage =
       state: {
         nativeConnected: boolean;
         nativeUnstable?: boolean;
+        nativeHostVersion?: string | null;
         currentTab: PopupCurrentTab | null;
       };
     }
@@ -25,6 +26,7 @@ export type PopupMessage =
 
 export type PopupMessageHandlerOptions = {
   renderNativeStatus: (connected: boolean, unstable?: boolean) => void;
+  renderHostVersion?: (version: string | null) => void;
   renderPopupState: (currentTab: PopupCurrentTab | null) => void;
   shouldResetPendingToggleOnSync: (
     currentTab: PopupCurrentTab | null,
@@ -54,6 +56,9 @@ export function createPopupMessageHandler(
 ): (message: PopupMessage) => void {
   return (message) => {
     if (message.type === 'state.sync') {
+      options.renderHostVersion?.(
+        message.state.nativeConnected ? (message.state.nativeHostVersion ?? null) : null
+      );
       options.renderNativeStatus(
         message.state.nativeConnected,
         message.state.nativeUnstable === true

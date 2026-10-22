@@ -69,6 +69,9 @@ func cliSummaryBody(response object, method string, now int64) object {
 		}
 		return def
 	}
+	if method == "dom.get_attributes" {
+		return done(fmt.Sprintf("Read %d attribute(s).", len(r)), record, true)
+	}
 	if method == "dom.baseline.compare" {
 		counts := r.object("counts")
 		text := "DOM baseline " + d("baselineId", "") + " matches the current DOM."

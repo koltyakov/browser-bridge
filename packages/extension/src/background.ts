@@ -479,6 +479,8 @@ const tabMoveCleanup = createTabMoveCleanupController({
 
 const {
   restoreEnabledWindow,
+  restoreEnabledWindowAfterUpdate,
+  clearEnabledWindowOnBrowserStartup,
   primeEnabledWindowInstrumentation,
   clearEnabledWindowIfGone,
   getCurrentTabState,
@@ -578,6 +580,7 @@ const {
   getActionContext,
   logBridgeAction,
   restoreActionLog,
+  clearActionLog,
   clearActionLogForTab,
 } = createActionLogController(state, chrome, {
   emitUiState,
@@ -825,8 +828,16 @@ if (DEVELOPMENT_AUTO_RELOAD) {
     .catch(reportAsyncError);
 }
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
   void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(reportAsyncError);
+  if (details.reason === 'update') {
+    void accessStateInitialization.then(restoreEnabledWindowAfterUpdate).catch(reportAsyncError);
+  }
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  void clearEnabledWindowOnBrowserStartup().catch(reportAsyncError);
+  void clearActionLog().then(emitUiState).catch(reportAsyncError);
 });
 
 chrome.tabs.onActivated.addListener(({ tabId }) => {

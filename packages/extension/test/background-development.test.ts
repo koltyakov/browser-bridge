@@ -5,12 +5,42 @@ import {
   DEVELOPMENT_BUILD_STAMP,
   DEVELOPMENT_RELOAD_ALARM,
 } from '../src/background-development.js';
-import { createChromeFake, type FakeChromeEvent } from '../../../tests/_helpers/chromeFake.ts';
+import {
+  createChromeFake,
+  createStorageArea,
+  type FakeChromeEvent,
+} from '../../../tests/_helpers/chromeFake.ts';
 import { loadBackground } from '../../../tests/_helpers/loadBackground.ts';
 import { loadExtensionModule } from '../../../tests/_helpers/extensionBuild.ts';
 
 const loadedDigest = 'a'.repeat(64);
 const changedDigest = 'b'.repeat(64);
+
+test('update lifecycle restores saved window access while browser startup revokes it', async () => {
+  const grant = { windowId: 7, title: 'Workspace', enabledAt: 123 };
+  const local = createStorageArea({ enabledWindow: grant });
+  const session = createStorageArea();
+  const chrome = createChromeFake({ storage: { local, session } });
+  await loadBackground({ chrome });
+  const events = {
+    onInstalled: chrome.runtime.onInstalled as FakeChromeEvent,
+    onStartup: chrome.runtime.onStartup as FakeChromeEvent,
+  };
+  events.onInstalled.dispatch({ reason: 'install' });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(session.snapshot().enabledWindow, undefined);
+  events.onInstalled.dispatch({ reason: 'update', previousVersion: '2.0.0' });
+  for (let attempt = 0; attempt < 20 && !session.snapshot().enabledWindow; attempt += 1) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  assert.deepEqual(session.snapshot().enabledWindow, grant);
+  events.onStartup.dispatch();
+  for (let attempt = 0; attempt < 20 && local.snapshot().enabledWindow; attempt += 1) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  assert.equal(local.snapshot().enabledWindow, undefined);
+  assert.equal(session.snapshot().enabledWindow, undefined);
+});
 
 function stamp(sourceDigest: string = changedDigest): Response {
   return new Response(JSON.stringify({ formatVersion: 1, complete: true, sourceDigest }));
