@@ -347,6 +347,10 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
     await flushMicrotasks();
 
     assert.match(
+      document.querySelector('#native-setup .control-detail')?.textContent ?? '',
+      /Install the Browser Bridge CLI and local daemon to connect this extension\./
+    );
+    assert.match(
       document.getElementById('native-setup')?.textContent ?? '',
       /npm install -g @browserbridge\/bbx/
     );
@@ -357,7 +361,7 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
     const standaloneCommand = document.getElementById('setup-native-cmd');
     assert.equal(standaloneCommand?.hidden, false);
     assert.ok(standaloneCommand?.textContent?.includes('/main/scripts/install.sh'));
-    assert.ok(standaloneCommand?.textContent?.includes('BBX_VERSION=1.8.0'));
+    assert.ok(standaloneCommand?.textContent?.includes('BBX_VERSION=1.8 '));
     assert.ok(standaloneCommand?.textContent?.includes(`BBX_EXTENSION_ID=${'a'.repeat(32)} sh`));
     assert.equal(
       document.getElementById('setup-native-hint')?.textContent,
@@ -373,9 +377,70 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
     await flushMicrotasks();
     assert.deepEqual(clipboardWrites, [standaloneCommand?.textContent]);
     t.mock.timers.tick(1500);
-    assert.match(
+    const nativeTab = document.getElementById('setup-native-tab') as HTMLButtonElement;
+    const npmTab = document.getElementById('setup-npm-tab') as HTMLButtonElement;
+    const nativePanel = document.getElementById('setup-native-panel') as HTMLElement;
+    const npmPanel = document.getElementById('setup-npm-panel') as HTMLElement;
+    const npmCommand = document.getElementById('setup-npm-cmd') as HTMLElement;
+    const registrationCommand = document.getElementById('setup-install-cmd') as HTMLElement;
+    const tabs = [nativeTab, npmTab];
+    const panels = [nativePanel, npmPanel];
+    function assertSelectedTab(index: number): void {
+      for (const [i, tab] of tabs.entries()) {
+        assert.equal(tab.getAttribute('role'), 'tab');
+        assert.equal(tab.getAttribute('aria-controls'), panels[i].id);
+        assert.equal(tab.getAttribute('aria-selected'), String(index === i));
+        assert.equal(tab.getAttribute('tabindex'), index === i ? '0' : '-1');
+        assert.equal(panels[i].hidden, index !== i);
+        assert.equal(panels[i].getAttribute('role'), 'tabpanel');
+        assert.equal(panels[i].getAttribute('aria-labelledby'), tab.id);
+      }
+      assert.equal(registrationCommand.closest('[role="tabpanel"]'), null);
+      assert.equal(registrationCommand.hidden, false);
+    }
+    assertSelectedTab(0);
+    assert.equal(standaloneCommand?.closest('[role="tabpanel"]'), nativePanel);
+    assert.equal(npmCommand.closest('[role="tabpanel"]'), npmPanel);
+    assert.equal(
+      document.getElementById('setup-releases-link')?.closest('[role="tabpanel"]'),
+      nativePanel
+    );
+    npmTab.click();
+    assertSelectedTab(1);
+    npmCommand.click();
+    await flushMicrotasks();
+    assert.equal(clipboardWrites.at(-1), 'npm install -g @browserbridge/bbx@1.8');
+    t.mock.timers.tick(1500);
+    let focusedTab: HTMLButtonElement | undefined;
+    for (const tab of tabs)
+      Reflect.set(tab, 'focus', () => {
+        focusedTab = tab;
+      });
+    for (const [source, key, expected] of [
+      [1, 'ArrowRight', 0],
+      [0, 'ArrowLeft', 1],
+      [1, 'Home', 0],
+      [0, 'End', 1],
+      [1, 'ArrowLeft', 0],
+      [0, 'ArrowRight', 1],
+    ] as const) {
+      const event = new window.Event('keydown', { bubbles: true, cancelable: true });
+      Reflect.set(event, 'key', key);
+      tabs[source].dispatchEvent(event);
+      assert.equal(event.defaultPrevented, true);
+      assertSelectedTab(expected);
+      assert.equal(focusedTab, tabs[expected]);
+    }
+    const escape = new window.Event('keydown', { bubbles: true, cancelable: true });
+    Reflect.set(escape, 'key', 'Escape');
+    npmTab.dispatchEvent(escape);
+    assert.equal(escape.defaultPrevented, false);
+    assertSelectedTab(1);
+    nativeTab.click();
+    assertSelectedTab(0);
+    assert.doesNotMatch(
       document.getElementById('native-setup')?.textContent ?? '',
-      /Standalone binary · No Node.js required/
+      /Standalone binary|No Node\.js required/
     );
     const releasesLink = document.getElementById('setup-releases-link');
     assert.equal(
@@ -383,7 +448,20 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
       'https://github.com/koltyakov/browser-bridge/releases/latest'
     );
     assert.equal(releasesLink?.getAttribute('target'), '_blank');
+    assert.deepEqual(
+      [...document.querySelectorAll('#native-setup .setup-cmd')].map((element) => element.id),
+      ['setup-native-cmd', 'setup-npm-cmd', 'setup-install-cmd']
+    );
     assert.doesNotMatch(document.getElementById('native-setup')?.textContent ?? '', /Manual setup/);
+    assert.match(document.getElementById('native-setup')?.textContent ?? '', /Install with npm/);
+    assert.match(
+      document.getElementById('native-setup')?.textContent ?? '',
+      /If the CLI is installed and you still see this screen, initialize the browser connection:/
+    );
+    assert.doesNotMatch(
+      document.getElementById('native-setup')?.textContent ?? '',
+      /npm wrapper|Requires Node\.js 20\+/
+    );
     assert.equal(document.getElementById('setup-install-cmd')?.hidden, false);
     assert.equal(
       document.getElementById('native-indicator')?.closest('#native-setup'),

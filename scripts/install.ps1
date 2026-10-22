@@ -12,7 +12,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if ($Help) {
-  Write-Host 'Install Browser Bridge from GitHub Releases. Options: -Version, -ExtensionId, -Browser, -InstallDir.'
+  Write-Host 'Install Browser Bridge from GitHub Releases. -Version accepts a major-minor release line such as 2.0, or an exact version. Options: -ExtensionId, -Browser, -InstallDir.'
   return
 }
 if ($ExtensionId -cnotmatch '^[a-z]{32}$') { throw 'Invalid extension ID' }
@@ -21,7 +21,27 @@ if ($nativeArch -ne 'AMD64') { throw 'Unsupported architecture: Windows x64 is r
 $base = 'https://github.com/koltyakov/browser-bridge/releases/latest/download'
 if ($Version) {
   $Version = $Version -replace '^v', ''
-  if ($Version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+([.-][a-zA-Z0-9.-]+)?$') { throw 'Invalid version' }
+  if ($Version -notmatch '^[0-9]+\.[0-9]+(\.[0-9]+([.-][a-zA-Z0-9.-]+)?)?$') { throw 'Invalid version' }
+  if ($Version -match '^[0-9]+\.[0-9]+$') {
+    $releaseLine = $Version
+    $pattern = '^v' + [regex]::Escape($releaseLine) + '\.[0-9]+$'
+    $best = $null
+    $page = 1
+    do {
+      $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/koltyakov/browser-bridge/releases?per_page=100&page=$page"
+      if ($releases -isnot [Array]) { throw 'Invalid GitHub release list' }
+      foreach ($release in $releases) {
+        if ($release.draft -eq $false -and $release.prerelease -eq $false -and $release.tag_name -cmatch $pattern) {
+          $candidate = [version]$release.tag_name.Substring(1)
+          if ($null -eq $best -or $candidate -gt $best) { $best = $candidate }
+        }
+      }
+      $page++
+    } while ($releases.Count -eq 100)
+    if ($null -eq $best) { throw "No published stable release found for $releaseLine.x" }
+    $Version = $best.ToString()
+    Write-Host "Selected Browser Bridge v$Version for $releaseLine.x"
+  }
   $base = "https://github.com/koltyakov/browser-bridge/releases/download/v$Version"
 }
 $InstallDir = [IO.Path]::GetFullPath($InstallDir)
@@ -40,6 +60,21 @@ try {
   Invoke-WebRequest -UseBasicParsing -Uri "$base/$asset" -OutFile $exe
   if ((Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash.ToLowerInvariant() -ne $expected) {
     throw 'Binary checksum mismatch'
+  }
+  # Prefer npm.cmd so a PowerShell execution policy cannot block npm.ps1.
+  $npm = Get-Command npm.cmd, npm -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($npm) {
+    try {
+      $npmRoot = & $npm.Source root --global 2>$null
+      if ($LASTEXITCODE -ne 0) { throw 'Could not locate the global npm package directory' }
+      if (Test-Path -LiteralPath (Join-Path $npmRoot '@browserbridge\bbx\package.json')) {
+        Write-Host 'Removing the legacy global npm package @browserbridge/bbx...'
+        & $npm.Source uninstall --global '@browserbridge/bbx'
+        if ($LASTEXITCODE -ne 0) { throw 'npm uninstall failed' }
+      }
+    } catch {
+      Write-Warning "Could not check or remove the legacy npm package: $_. Run npm uninstall -g @browserbridge/bbx manually if it still shadows the standalone CLI. Continuing with standalone installation."
+    }
   }
   $env:BBX_AUTO_UPDATE = 'off'
   & $exe install-self --bin-dir $InstallDir --no-restart
