@@ -586,6 +586,7 @@ const {
 });
 
 const { handleNativeInput } = createBackgroundInputController({
+  getTab: (tabId) => chrome.tabs.get(tabId),
   contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,
   runWithDebugger: (tabId, operation) => tabDebugger.runGuarded(tabId, operation),
   sendCommand: (target, method, params) => {

@@ -7,13 +7,19 @@ import { createRequest } from '../../../protocol/src/index.js';
 type CommandCall = { method: string; params: Record<string, unknown> };
 
 function createController(
-  options: { failMove?: boolean; failRevalidationAt?: number; staleRead?: boolean } = {}
+  options: {
+    failMove?: boolean;
+    failRevalidationAt?: number;
+    staleRead?: boolean;
+    active?: boolean;
+  } = {}
 ) {
   const commands: CommandCall[] = [];
   const messages: Array<Record<string, unknown>> = [];
   let moveCount = 0;
   let revalidationCount = 0;
   const controller = createBackgroundInputController({
+    getTab: async () => ({ active: options.active ?? true }),
     contentScriptTimeoutMs: 5000,
     async runWithDebugger<T>(_tabId: number, operation: (target: { tabId: number }) => Promise<T>) {
       return operation({ tabId: 17 });
@@ -82,6 +88,21 @@ function createController(
 }
 
 const tab = { tabId: 17, windowId: 3, title: 'Input', url: 'https://example.test' };
+
+test('native pointer input rejects inactive tabs before dispatch instead of claiming a click', async () => {
+  const { controller, commands, messages } = createController({ active: false });
+  const request = createRequest({
+    id: 'inactive-click',
+    method: 'input.click',
+    params: { target: { selector: '#save' }, executionMode: 'cdp' },
+  });
+  await assert.rejects(controller.handleNativeInput(request, tab, request.params), {
+    code: 'INPUT_UNSUPPORTED',
+    details: { reason: 'inactive_native_pointer_target', tabId: 17 },
+  });
+  assert.deepEqual(commands, []);
+  assert.deepEqual(messages, []);
+});
 
 test('CDP click resolves immediately before native mouse dispatch', async () => {
   const { controller, commands, messages } = createController();
@@ -451,6 +472,7 @@ test('CDP touch forwards semantic locators for both gesture endpoints', async ()
 test('CDP touch lifts fingers even when a move fails', async () => {
   const commands: CommandCall[] = [];
   const controller = createBackgroundInputController({
+    getTab: async () => ({ active: true }),
     contentScriptTimeoutMs: 5000,
     async runWithDebugger<T>(_tabId: number, operation: (target: { tabId: number }) => Promise<T>) {
       return operation({ tabId: 17 });

@@ -12,6 +12,14 @@ test('development build publishes a complete stamp matching its loaded health di
     await loadExtensionModule<typeof import('../src/build-info.js')>('src/build-info.js');
   assert.equal(buildInfo.DEVELOPMENT_AUTO_RELOAD, true);
   assert.match(buildInfo.SOURCE_DIGEST ?? '', /^[a-f0-9]{64}$/);
+  const manifest = JSON.parse(await readFile(new URL('manifest.json', root), 'utf8')) as {
+    version: string;
+    version_name: string;
+  };
+  assert.equal(
+    manifest.version_name,
+    `${manifest.version}-dev.${buildInfo.SOURCE_DIGEST?.slice(0, 8)}`
+  );
   const stamp = JSON.parse(
     await readFile(new URL('development-build.json', root), 'utf8')
   ) as unknown;

@@ -39,6 +39,9 @@ export type PopupMessage =
     };
 
 const nativeIndicator = document.getElementById('native-indicator') as HTMLSpanElement;
+const extensionVersion = document.getElementById('extension-version') as HTMLSpanElement;
+const manifest = chrome.runtime.getManifest();
+extensionVersion.textContent = `v${manifest.version_name ?? manifest.version}`;
 const button = document.getElementById('communication-action') as HTMLButtonElement;
 const accessEyebrow = document.getElementById('popup-access-eyebrow') as HTMLDivElement;
 const accessDetail = document.getElementById('popup-access-detail') as HTMLParagraphElement;

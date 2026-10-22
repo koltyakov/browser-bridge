@@ -133,7 +133,6 @@ const SETUP_MATRIX_RANK: Map<string, number> = new Map(
   SETUP_MATRIX_ORDER.map((key, index) => [key, index])
 );
 
-const SETUP_MATRIX_BETA_KEYS = new Set(['antigravity', 'windsurf', 'agents']);
 const MANAGED_CLIENT_PACKAGE = '@browserbridge/bbx';
 
 /** Match the protocol's major-version compatibility contract. Independent
@@ -324,10 +323,6 @@ export function buildSetupMatrixRows(setupStatus: SetupStatusInstallState): Setu
   return [...rowsByKey.entries()]
     .sort(([leftKey], [rightKey]) => compareSetupMatrixKeys(leftKey, rightKey))
     .map(([, row]) => row);
-}
-
-export function isSetupMatrixBetaKey(key: string): boolean {
-  return SETUP_MATRIX_BETA_KEYS.has(key);
 }
 
 export function getMcpSetupCellState(

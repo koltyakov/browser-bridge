@@ -10,7 +10,6 @@ import {
   getMcpSetupCellState,
   getSetupStatusView,
   getSkillSetupCellState,
-  isSetupMatrixBetaKey,
   normalizeSidepanelToggleError,
   syncSetupStatusPolling as syncSetupStatusPollingState,
 } from '../src/sidepanel-helpers.js';
@@ -119,6 +118,9 @@ export type SidePanelMessage =
 const PUBLISHED_EXTENSION_ID = 'jjjkmmcdkpcgamlopogicbnnhdgebhie';
 const SETUP_STATUS_POLL_MS = 15_000;
 const nativeIndicator = document.getElementById('native-indicator') as HTMLSpanElement;
+const extensionVersion = document.getElementById('extension-version') as HTMLSpanElement;
+const manifest = chrome.runtime.getManifest();
+extensionVersion.textContent = `v${manifest.version_name ?? manifest.version}`;
 const toggleButton = document.getElementById('bridge-toggle') as HTMLButtonElement;
 const actionLog = document.getElementById('action-log') as HTMLDivElement;
 const setupSection = document.getElementById('native-setup') as HTMLElement;
@@ -903,7 +905,7 @@ function renderSetupMatrix(rows: SetupMatrixRow[], installPendingKey: string | n
 
     const labelCell = document.createElement('td');
     labelCell.className = 'setup-matrix-client';
-    labelCell.append(createSetupMatrixClientLabel(row));
+    labelCell.textContent = row.label;
 
     const mcpCell = document.createElement('td');
     mcpCell.append(renderMcpMatrixCell(row, installPendingKey));
@@ -917,20 +919,6 @@ function renderSetupMatrix(rows: SetupMatrixRow[], installPendingKey: string | n
 
   table.append(thead, tbody);
   return table;
-}
-
-function createSetupMatrixClientLabel(row: SetupMatrixRow): DocumentFragment {
-  const fragment = document.createDocumentFragment();
-  fragment.append(row.label);
-
-  if (isSetupMatrixBetaKey(row.key)) {
-    const beta = document.createElement('span');
-    beta.className = 'setup-matrix-beta';
-    beta.textContent = ' (beta)';
-    fragment.append(beta);
-  }
-
-  return fragment;
 }
 
 function renderMcpMatrixCell(row: SetupMatrixRow, installPendingKey: string | null): HTMLElement {

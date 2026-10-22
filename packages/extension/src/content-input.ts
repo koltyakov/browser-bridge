@@ -2440,6 +2440,10 @@ target's own state. Lets agents skip a follow-up read after most actions. */
     let removed = 0;
     let lastMutationAt = startedAt;
     let unloading = false;
+    let notifyUnload = () => {};
+    const unloadSignal = new Promise<void>((resolve) => {
+      notifyUnload = resolve;
+    });
 
     const messageRegions: Set<Element> = new Set();
 
@@ -2481,6 +2485,7 @@ target's own state. Lets agents skip a follow-up read after most actions. */
     });
     const onUnload = () => {
       unloading = true;
+      notifyUnload();
     };
     globalThis.addEventListener?.('pagehide', onUnload);
     globalThis.addEventListener?.('beforeunload', onUnload);
@@ -2488,13 +2493,18 @@ target's own state. Lets agents skip a follow-up read after most actions. */
     return {
       async finish({ settleMs, element }) {
         const deadline = startedAt + settleMs;
-        await sleep(Math.min(50, settleMs));
+        // Chrome can freeze this document's timers and close its message port
+        // on navigation. Finish before that happens instead of waiting to settle.
+        await Promise.race([sleep(Math.min(50, settleMs)), unloadSignal]);
         while (
           !unloading &&
           Date.now() < deadline &&
           Date.now() - lastMutationAt < OBSERVE_QUIET_MS
         ) {
-          await sleep(Math.min(50, Math.max(0, deadline - Date.now())));
+          await Promise.race([
+            sleep(Math.min(50, Math.max(0, deadline - Date.now()))),
+            unloadSignal,
+          ]);
         }
         observer?.disconnect();
         globalThis.removeEventListener?.('pagehide', onUnload);

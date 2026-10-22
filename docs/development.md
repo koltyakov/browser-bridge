@@ -58,6 +58,8 @@ Installation restarts the local daemon. Connected native hosts exit and Chrome r
 
 Load `dist/extension` once through `chrome://extensions` with Developer mode enabled. Development builds check their build stamp on native-host reconnect and every minute. All profiles loading that same directory reload when the completed build changes. An extension version predating this feature needs one manual reload to enable it. Release ZIPs do not include this automatic development reload behavior.
 
+Development builds display a content-based suffix, such as `v2.0.0-dev.a1b2c3d4`, in the popup and side-panel footers. Compare it with the label printed by `make install` to confirm the installed build. The suffix changes when build contents change; rebuilding identical contents keeps the same label. Release builds display the plain version.
+
 ## Focused tests and local tools
 
 ```sh
