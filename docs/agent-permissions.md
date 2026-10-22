@@ -48,7 +48,7 @@ Notes:
 
 Sources: [Claude Code permissions](https://docs.anthropic.com/en/docs/claude-code/permissions), [Claude Code settings](https://docs.anthropic.com/en/docs/claude-code/settings).
 
-## OpenAI Codex
+## Codex (OpenAI)
 
 Codex stores user config at `~/.codex/config.toml` and project config at `.codex/config.toml` for trusted projects. Codex documents MCP server approval settings on each `mcp_servers.<id>` entry.
 
@@ -136,17 +136,17 @@ For MCP mode, OpenCode's public permission docs list built-in permission keys su
 
 Sources: [OpenCode config](https://opencode.ai/docs/config/), [OpenCode permissions](https://opencode.ai/docs/permissions/).
 
-## Windsurf
+## Devin Desktop
 
-Windsurf documents MCP config at `~/.codeium/windsurf/mcp_config.json`. Its MCP UI lets users enable or disable individual tools for a server, and team admins can whitelist MCP servers by server id and config pattern. The public docs do not document a user-level wildcard approval rule for all tools from one MCP server.
+Devin Desktop is the new name for Windsurf. Browser Bridge retains the `windsurf` setup target and existing Windsurf configuration support. The legacy Windsurf MCP integration uses `~/.codeium/windsurf/mcp_config.json`. Its MCP UI lets users enable or disable individual tools for a server, and team admins can whitelist MCP servers by server id and config pattern. The public docs do not document a user-level wildcard approval rule for all tools from one MCP server.
 
 Recommended BBX approach:
 
-- Use the Windsurf MCP tool toggles to enable the BBX tools you want.
-- In permission-ask workflows, ask Cascade to use `browser_call` for Browser Bridge operations to avoid separate prompts for every specialized BBX tool.
-- For team control, whitelist the `browser-bridge` MCP server id and its expected command/args in Windsurf team settings if your organization restricts MCP servers.
+- Use the MCP tool toggles to enable the BBX tools you want.
+- In permission-ask workflows, ask the agent to use `browser_call` for Browser Bridge operations to avoid separate prompts for every specialized BBX tool.
+- For team control, whitelist the `browser-bridge` MCP server id and its expected command/args in team settings if your organization restricts MCP servers.
 
-Source: [Windsurf MCP docs](https://docs.windsurf.com/windsurf/cascade/mcp).
+Sources: [Devin Desktop transition FAQ](https://docs.devin.ai/desktop/devin-desktop-faq), [legacy Windsurf MCP docs](https://docs.windsurf.com/windsurf/cascade/mcp).
 
 ## Antigravity
 

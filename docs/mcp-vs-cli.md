@@ -307,13 +307,13 @@ Neither path receives a browser-host filesystem path.
 
 | Client         | MCP Support              | CLI Skill Support | Recommended Path             |
 | -------------- | ------------------------ | ----------------- | ---------------------------- |
-| OpenAI Codex   | Yes (TOML config)        | Yes               | MCP preferred                |
+| Codex (OpenAI) | Yes (TOML config)        | Yes               | MCP preferred                |
 | Claude Code    | Yes                      | Yes               | MCP preferred                |
-| Cursor         | Yes                      | Yes               | MCP preferred                |
-| GitHub Copilot | Yes (VS Code)            | Limited (sandbox) | **MCP required**             |
 | OpenCode       | Yes (local type)         | Yes               | MCP preferred                |
+| GitHub Copilot | Yes (VS Code)            | Limited (sandbox) | **MCP required**             |
+| Cursor         | Yes                      | Yes               | MCP preferred                |
+| Devin Desktop  | Yes                      | Yes               | MCP preferred                |
 | Antigravity    | Yes                      | Yes               | MCP preferred                |
-| Windsurf       | Yes                      | Yes               | MCP preferred                |
 | Generic agents | Yes (`.agents/mcp.json`) | `.agents/skills/` | MCP preferred when available |
 
 ## Summary

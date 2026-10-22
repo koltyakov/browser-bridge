@@ -35,7 +35,7 @@ type installSkillMetadata struct {
 
 func installSkillBase(target string, scope installScope) string {
 	base := scope.project
-	paths := map[string]string{"codex": ".codex/skills", "claude": ".claude/skills", "cursor": ".cursor/skills", "copilot": ".github/skills", "opencode": ".opencode/skills", "antigravity": ".agents/skills", "windsurf": ".windsurf/skills", "agents": ".agents/skills"}
+	paths := map[string]string{"codex": ".codex/skills", "claude": ".claude/skills", "opencode": ".opencode/skills", "copilot": ".github/skills", "cursor": ".cursor/skills", "windsurf": ".windsurf/skills", "antigravity": ".agents/skills", "agents": ".agents/skills"}
 	if scope.global {
 		base = scope.home
 		paths["copilot"] = ".copilot/skills"

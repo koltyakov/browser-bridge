@@ -41,6 +41,19 @@
   display: none !important;
 }
 
+/* Modifier keys can activate :focus-visible on a previously clicked control. */
+:focus {
+  outline: none;
+}
+
+summary:focus-visible {
+  background-color: var(--cmd-bg);
+}
+
+button:focus-visible {
+  filter: brightness(0.9);
+}
+
 html {
   min-height: 100%;
   background: var(--bg);
@@ -202,11 +215,6 @@ body[data-windowed="true"] .panel-popup {
 .version-info-button:focus-visible {
   background: transparent;
   color: var(--muted);
-}
-
-.version-info-button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 
 .control-heading:not(:has(.other-windows:not([hidden]))) .version-info-button {
@@ -443,11 +451,6 @@ summary {
   display: none;
 }
 
-.other-windows > summary:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
 .other-windows-dropdown {
   position: absolute;
   z-index: 10;
@@ -517,12 +520,6 @@ summary {
   opacity: 0.6;
 }
 
-.other-window-button:focus-visible,
-.other-windows-disable:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
 .other-windows-error {
   margin: 8px 0 0;
   color: var(--danger);
@@ -584,8 +581,6 @@ summary {
 }
 
 .agent-tabs-summary:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
   border-radius: 7px;
 }
 
@@ -671,11 +666,6 @@ summary {
 
 .agent-tab-button:hover {
   background: var(--cmd-bg-hover);
-}
-
-.agent-tab-button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 
 .agent-tab-name {
@@ -922,8 +912,10 @@ summary {
 }
 
 .setup-status-matrix-wrap {
+  min-height: 0;
   margin-top: 4px;
-  overflow-x: auto;
+  overflow: auto;
+  padding-right: 4px;
 }
 
 .setup-status-guidance {
@@ -964,9 +956,12 @@ summary {
 }
 
 .setup-status-matrix thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   padding: 7px 6px;
   border-top: 0;
-  background: var(--cmd-bg);
+  background: linear-gradient(var(--cmd-bg), var(--cmd-bg)), var(--panel);
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -1043,11 +1038,6 @@ summary {
 
 .version-mismatch-banner button:hover {
   background: rgba(180, 83, 9, 0.12);
-}
-
-.version-mismatch-banner button:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 1px;
 }
 
 .setup-install-button {
@@ -1207,12 +1197,6 @@ button:hover {
   background: var(--danger-hover);
 }
 
-.power-button:focus-visible,
-.popup-power-button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
 .power-button:disabled,
 .popup-power-button:disabled {
   background: var(--disabled-bg);
@@ -1305,12 +1289,6 @@ button:hover {
   color: var(--accent);
 }
 
-.setup-install-tab:focus-visible,
-.setup-install-panel:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
 .setup-install-panel {
   display: grid;
   gap: 6px;
@@ -1345,11 +1323,6 @@ button:hover {
 .setup-retry-button:hover {
   background: transparent;
   color: var(--accent-strong);
-}
-
-.setup-retry-button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 
 .examples-eyebrow {
@@ -1425,11 +1398,6 @@ button:hover {
 .example-copy-button:hover {
   background: transparent;
   color: var(--muted);
-}
-
-.example-copy-button:focus-visible {
-  outline: 1px solid var(--accent);
-  outline-offset: 2px;
 }
 
 .setup-step-hint {
@@ -1668,10 +1636,13 @@ button:hover {
   align-content: start;
 }
 
-#activity-section .stack::-webkit-scrollbar {
+#activity-section .stack::-webkit-scrollbar,
+.setup-status-matrix-wrap::-webkit-scrollbar {
   width: 4px;
+  height: 4px;
 }
-#activity-section .stack::-webkit-scrollbar-thumb {
+#activity-section .stack::-webkit-scrollbar-thumb,
+.setup-status-matrix-wrap::-webkit-scrollbar-thumb {
   background: var(--stroke);
   border-radius: 2px;
 }
@@ -1855,11 +1826,6 @@ button:hover {
     background: var(--cmd-bg);
   }
 
-  .panel-help > details > summary:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: -2px;
-  }
-
   .panel-help .setup-summary-note {
     display: none;
   }
@@ -1880,6 +1846,21 @@ button:hover {
     border-radius: 8px;
     background: var(--panel);
     box-shadow: 0 8px 24px var(--dropdown-shadow);
+  }
+
+  .panel-help .setup-details-body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .panel-help .setup-status-matrix-wrap {
+    flex: 0 1 auto;
+  }
+
+  .panel-help .setup-status-note,
+  .panel-help .setup-status-guidance {
+    flex-shrink: 0;
   }
 
   #activity-section {

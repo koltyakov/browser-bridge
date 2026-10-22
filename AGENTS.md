@@ -191,7 +191,7 @@ When adding or modifying agent/editor support (e.g., adding a new IDE or agent c
    - Extension UI: Side panel settings and host setup UI
 
 2. **Order preservation**: Maintain the same agent order across all locations. Current order:
-   - codex, claude, cursor, copilot, opencode, antigravity, windsurf, agents
+   - codex, claude, opencode, copilot, cursor, windsurf, antigravity, agents
 
 3. **README.md table restriction**: The "Supported Agents" table in `README.md` is **manually maintained** and should NOT be modified by AI agents. Only update text descriptions and example commands in README.md, not the visual table layout.
 

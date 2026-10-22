@@ -897,7 +897,7 @@ test(
     assert.equal(cursor?.configured, true);
     assert.deepEqual(
       status.mcpClients.map((entry) => record(entry).key),
-      ['codex', 'claude', 'cursor', 'copilot', 'opencode', 'antigravity', 'windsurf', 'agents']
+      ['codex', 'claude', 'opencode', 'copilot', 'cursor', 'windsurf', 'antigravity', 'agents']
     );
     const host = await f.native('primary');
     assert.deepEqual(await host.barrier(), status);

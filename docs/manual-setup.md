@@ -77,8 +77,10 @@ probe configured remotes and reports their credentials as unverified; use
 ## 3. Managed setup for supported clients
 
 Supported managed targets are kept in this order across the project:
-`codex`, `claude`, `cursor`, `copilot`, `opencode`, `antigravity`,
-`windsurf`, `agents`.
+`codex`, `claude`, `opencode`, `copilot`, `cursor`, `windsurf`,
+`antigravity`, `agents`.
+
+The `windsurf` target is Devin Desktop, formerly Windsurf. Its target key and existing configuration paths remain supported for compatibility.
 
 ### MCP setup
 
@@ -94,11 +96,11 @@ Managed MCP config paths:
 
 - `codex`: `~/.codex/config.toml` or `./.codex/config.toml`
 - `claude`: `~/.claude.json` or `./.mcp.json`
-- `cursor`: `~/.cursor/mcp.json` or `./.cursor/mcp.json`
-- `copilot`: `~/.copilot/mcp-config.json` or `./.vscode/mcp.json`
 - `opencode`: `~/.config/opencode/opencode.json` or `./opencode.json`
-- `antigravity`: `~/.gemini/antigravity/mcp_config.json` or `./.agents/mcp_config.json`
+- `copilot`: `~/.copilot/mcp-config.json` or `./.vscode/mcp.json`
+- `cursor`: `~/.cursor/mcp.json` or `./.cursor/mcp.json`
 - `windsurf`: `~/.codeium/windsurf/mcp_config.json` or `./.windsurf/mcp_config.json`
+- `antigravity`: `~/.gemini/antigravity/mcp_config.json` or `./.agents/mcp_config.json`
 - `agents`: `~/.agents/mcp.json` or `./.agents/mcp.json`
 
 ### CLI skill setup
@@ -115,11 +117,11 @@ Managed skill paths:
 
 - `codex`: `~/.codex/skills/browser-bridge` or `./.codex/skills/browser-bridge`
 - `claude`: `~/.claude/skills/browser-bridge` or `./.claude/skills/browser-bridge`
-- `cursor`: `~/.cursor/skills/browser-bridge` or `./.cursor/skills/browser-bridge`
-- `copilot`: `~/.copilot/skills/browser-bridge` or `./.github/skills/browser-bridge`
 - `opencode`: `~/.opencode/skills/browser-bridge` or `./.opencode/skills/browser-bridge`
-- `antigravity`: `~/.gemini/antigravity/skills/browser-bridge` or `./.agents/skills/browser-bridge`
+- `copilot`: `~/.copilot/skills/browser-bridge` or `./.github/skills/browser-bridge`
+- `cursor`: `~/.cursor/skills/browser-bridge` or `./.cursor/skills/browser-bridge`
 - `windsurf`: `~/.codeium/windsurf/skills/browser-bridge` or `./.windsurf/skills/browser-bridge`
+- `antigravity`: `~/.gemini/antigravity/skills/browser-bridge` or `./.agents/skills/browser-bridge`
 - `agents`: `~/.agents/skills/browser-bridge` or `./.agents/skills/browser-bridge`
 
 ## 4. Custom-agent MCP wiring

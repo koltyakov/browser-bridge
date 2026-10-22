@@ -11,8 +11,10 @@ import (
 	"strings"
 )
 
-var installAgentNames = []string{"codex", "claude", "cursor", "copilot", "opencode", "antigravity", "windsurf", "agents"}
-var installAgentLabels = map[string]string{"codex": "OpenAI Codex", "claude": "Claude Code", "cursor": "Cursor", "copilot": "GitHub Copilot", "opencode": "OpenCode", "antigravity": "Antigravity", "windsurf": "Windsurf", "agents": "Generic agents"}
+var installAgentNames = []string{"codex", "claude", "opencode", "copilot", "cursor", "windsurf", "antigravity", "agents"}
+
+// Keep the windsurf target key and config paths compatible with existing installs.
+var installAgentLabels = map[string]string{"codex": "Codex (OpenAI)", "claude": "Claude Code", "opencode": "OpenCode", "copilot": "GitHub Copilot", "cursor": "Cursor", "windsurf": "Devin Desktop", "antigravity": "Antigravity", "agents": "Generic agents"}
 
 type installScope struct {
 	global  bool
@@ -31,13 +33,13 @@ func installCurrentScope() (installScope, error) {
 
 func installMCPPath(client string, scope installScope) string {
 	if !scope.global {
-		paths := map[string]string{"codex": ".codex/config.toml", "claude": ".mcp.json", "cursor": ".cursor/mcp.json", "copilot": ".vscode/mcp.json", "opencode": "opencode.json", "antigravity": ".agents/mcp_config.json", "windsurf": ".windsurf/mcp_config.json", "agents": ".agents/mcp.json"}
+		paths := map[string]string{"codex": ".codex/config.toml", "claude": ".mcp.json", "opencode": "opencode.json", "copilot": ".vscode/mcp.json", "cursor": ".cursor/mcp.json", "windsurf": ".windsurf/mcp_config.json", "antigravity": ".agents/mcp_config.json", "agents": ".agents/mcp.json"}
 		return filepath.Join(scope.project, filepath.FromSlash(paths[client]))
 	}
 	if client == "codex" && os.Getenv("CODEX_HOME") != "" {
 		return filepath.Join(os.Getenv("CODEX_HOME"), "config.toml")
 	}
-	paths := map[string]string{"codex": ".codex/config.toml", "claude": ".claude.json", "cursor": ".cursor/mcp.json", "copilot": ".copilot/mcp-config.json", "opencode": ".config/opencode/opencode.json", "antigravity": ".gemini/antigravity/mcp_config.json", "windsurf": ".codeium/windsurf/mcp_config.json", "agents": ".agents/mcp.json"}
+	paths := map[string]string{"codex": ".codex/config.toml", "claude": ".claude.json", "opencode": ".config/opencode/opencode.json", "copilot": ".copilot/mcp-config.json", "cursor": ".cursor/mcp.json", "windsurf": ".codeium/windsurf/mcp_config.json", "antigravity": ".gemini/antigravity/mcp_config.json", "agents": ".agents/mcp.json"}
 	return filepath.Join(scope.home, filepath.FromSlash(paths[client]))
 }
 
