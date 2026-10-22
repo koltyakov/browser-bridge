@@ -53,12 +53,12 @@ test('standalone setup selects the GitHub installer and passes the version and e
     if (os === 'win') {
       assert.equal(
         view.command,
-        `& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.ps1'))) -Version '2.3.4' -ExtensionId '${runtimeId}'`
+        `& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.ps1'))) -Version '2.3' -ExtensionId '${runtimeId}'`
       );
     } else {
       assert.equal(
         view.command,
-        `curl -fsSL https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.sh | BBX_VERSION=2.3.4 BBX_EXTENSION_ID=${runtimeId} sh`
+        `curl -fsSL https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.sh | BBX_VERSION=2.3 BBX_EXTENSION_ID=${runtimeId} sh`
       );
     }
   }
@@ -83,13 +83,13 @@ test('standalone setup omits the extension override for the Chrome Web Store ins
     const view = getStandaloneInstallView('2.3.4', { os, arch: 'x86-64' }, publishedId);
     assert.equal(
       view?.command,
-      'curl -fsSL https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.sh | BBX_VERSION=2.3.4 sh'
+      'curl -fsSL https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.sh | BBX_VERSION=2.3 sh'
     );
   }
   const windows = getStandaloneInstallView('2.3.4', { os: 'win', arch: 'x86-64' }, publishedId);
   assert.equal(
     windows?.command,
-    "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.ps1'))) -Version '2.3.4'"
+    "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.ps1'))) -Version '2.3'"
   );
 });
 

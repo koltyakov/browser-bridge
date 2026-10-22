@@ -34,7 +34,11 @@ irm https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/inst
 
 The installers download the latest release, verify its SHA-256 against the release's `checksums.txt`, install to `~/.local/bin`, register Chrome, and restart the daemon. Windows also adds the installation directory to your user `PATH`. Keep `~/.local/bin` on your shell's `PATH` on macOS and Linux.
 
-The extension's setup panel provides a copyable command targeting its release and extension ID. To select these yourself, set `BBX_VERSION` and `BBX_EXTENSION_ID` for the Unix script, or pass `-Version` and `-ExtensionId` to the PowerShell script. Use `BBX_BROWSER` or `-Browser` for another supported browser, and `BBX_INSTALL_DIR` or `-InstallDir` for another installation directory. Run with `--help` or `-Help` for options.
+After verifying the download, the installers try to remove an existing global `@browserbridge/bbx` npm package before installing the standalone CLI. If npm is unavailable, they skip this step. If detection or removal fails, they warn and continue without requesting elevated permissions.
+
+The extension's setup panel provides a copyable command targeting its major-minor release line, such as `BBX_VERSION=2.0` or `-Version '2.0'`. The installer checks published GitHub releases and selects the highest stable `2.0.x` patch, excluding drafts and prereleases. It fails if no matching release is available rather than installing another release line. An exact version such as `2.0.3` is also supported. Without a version, it installs GitHub's latest release.
+
+For an unpacked extension, set `BBX_EXTENSION_ID` for the Unix script or pass `-ExtensionId` to the PowerShell script. The Chrome Web Store ID is the default and is omitted from the setup command. Use `BBX_BROWSER` or `-Browser` for another supported browser, and `BBX_INSTALL_DIR` or `-InstallDir` for another installation directory. Run with `--help` or `-Help` for options.
 
 ### Download manually
 

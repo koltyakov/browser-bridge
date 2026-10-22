@@ -1222,6 +1222,45 @@ button:hover {
   margin-bottom: 12px;
 }
 
+.setup-install-tabs {
+  display: flex;
+  gap: 12px;
+  border-bottom: 1px solid var(--stroke);
+  margin-bottom: 4px;
+}
+
+.setup-install-tab {
+  margin: 0;
+  padding: 7px 2px;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.setup-install-tab:hover {
+  background: transparent;
+  color: var(--ink);
+}
+
+.setup-install-tab[aria-selected="true"] {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+}
+
+.setup-install-tab:focus-visible,
+.setup-install-panel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.setup-install-panel {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
 .setup-download-links {
   display: flex;
   flex-wrap: wrap;

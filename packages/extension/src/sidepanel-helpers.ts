@@ -182,20 +182,21 @@ export function getStandaloneInstallView(
         ? 'x64'
         : null;
   if (!arch) return null;
+  const releaseLine = version.split('.').slice(0, 2).join('.');
   const scriptsUrl = 'https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts';
   const customExtension = runtimeId !== PUBLISHED_EXTENSION_ID;
   if (platform.os === 'win' && arch === 'x64') {
     const extensionOption = customExtension ? ` -ExtensionId '${runtimeId}'` : '';
     return {
       label: 'Windows x64 · Run in PowerShell',
-      command: `& ([scriptblock]::Create((irm '${scriptsUrl}/install.ps1'))) -Version '${version}'${extensionOption}`,
+      command: `& ([scriptblock]::Create((irm '${scriptsUrl}/install.ps1'))) -Version '${releaseLine}'${extensionOption}`,
     };
   }
   if (platform.os !== 'mac' && platform.os !== 'linux') return null;
   const extensionOption = customExtension ? ` BBX_EXTENSION_ID=${runtimeId}` : '';
   return {
     label: `${platform.os === 'mac' ? 'macOS' : 'Linux'} ${arch} · Run in Terminal`,
-    command: `curl -fsSL ${scriptsUrl}/install.sh | BBX_VERSION=${version}${extensionOption} sh`,
+    command: `curl -fsSL ${scriptsUrl}/install.sh | BBX_VERSION=${releaseLine}${extensionOption} sh`,
   };
 }
 

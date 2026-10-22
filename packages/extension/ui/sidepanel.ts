@@ -131,6 +131,41 @@ const setupSection = document.getElementById('native-setup') as HTMLElement;
 const setupInstallCmd = document.getElementById('setup-install-cmd') as HTMLElement;
 const setupNpmCmd = document.getElementById('setup-npm-cmd') as HTMLElement;
 setupNpmCmd.textContent = getNpmInstallCommand(manifest.version);
+const setupInstallTabs = [
+  {
+    button: document.getElementById('setup-native-tab') as HTMLButtonElement,
+    panel: document.getElementById('setup-native-panel') as HTMLElement,
+  },
+  {
+    button: document.getElementById('setup-npm-tab') as HTMLButtonElement,
+    panel: document.getElementById('setup-npm-panel') as HTMLElement,
+  },
+];
+for (const [index, tab] of setupInstallTabs.entries()) {
+  tab.button.addEventListener('click', () => selectSetupInstallTab(index));
+  tab.button.addEventListener('keydown', (event) => {
+    let next: number;
+    switch (event.key) {
+      case 'ArrowRight':
+        next = (index + 1) % setupInstallTabs.length;
+        break;
+      case 'ArrowLeft':
+        next = (index + setupInstallTabs.length - 1) % setupInstallTabs.length;
+        break;
+      case 'Home':
+        next = 0;
+        break;
+      case 'End':
+        next = setupInstallTabs.length - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    selectSetupInstallTab(next);
+    setupInstallTabs[next].button.focus();
+  });
+}
 void renderStandaloneInstall();
 const controlSection = document.getElementById('control-section') as HTMLElement;
 const installationSection = document.getElementById('installation-section') as HTMLDetailsElement;
@@ -170,6 +205,15 @@ const otherWindowsError = document.getElementById('other-windows-error') as HTML
 const examplesSection = document.getElementById('examples-section') as HTMLDetailsElement;
 const examplesContent = document.getElementById('examples-content') as HTMLDivElement;
 const panelHelp = document.querySelector('.panel-help') as HTMLDivElement;
+
+function selectSetupInstallTab(selectedIndex: number): void {
+  for (const [index, tab] of setupInstallTabs.entries()) {
+    const selected = index === selectedIndex;
+    tab.button.setAttribute('aria-selected', String(selected));
+    tab.button.tabIndex = selected ? 0 : -1;
+    tab.panel.hidden = !selected;
+  }
+}
 
 async function renderStandaloneInstall(): Promise<void> {
   try {
