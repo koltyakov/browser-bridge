@@ -1,161 +1,95 @@
-# Protocol Negotiation
+# Protocol Compatibility
 
-Browser Bridge uses a lightweight version negotiation mechanism to detect
-mismatched versions between the agent client (CLI/MCP) and the daemon.
+The Go CLI, daemon, native host, and MCP server use the shared wire definitions
+in [`protocol/types.ts`](../protocol/types.ts). The extension and build tooling
+use shared metadata and helpers under `protocol/src/`. MCP tool schemas and
+instructions live in `protocol/mcp-tools.json`.
 
-## Current version
+## Versions
 
-The protocol compatibility version is derived from the package/extension version
-in `packages/protocol/src/protocol.js`:
+The Go runtime derives its protocol version from the built executable's
+major-minor version (`protocolVersion()` in `internal/bridge/client.go`).
+The extension derives its version from its manifest through the shared
+protocol helpers.
 
-```js
-getProtocolVersion(); // major.minor from package.json or manifest.json
-getSupportedProtocolVersions(); // [getProtocolVersion()]
-```
-
-Compatibility requires the same major version. Extension and npm minor and patch
-releases advance independently. For example, an extension advertising `1.11`
-and an npm client advertising `1.12` are compatible in either direction.
-`npm run check:release-version` checks the major version; tests also enforce
+Compatibility requires the same major version. Extension and npm minor and
+patch releases advance independently: an extension advertising `1.11` and
+a client advertising `1.12` are compatible in either direction.
+`make check-release-version` checks the major version; tests also enforce
 that the npm package and lockfile versions match.
 
-Extension health also reports its full manifest version. When the local
-`auto-update` policy is `compatible`, clients use that version only as an update
-trigger, query npm for published releases, and select the highest stable release
-whose major version matches an entry in the extension's
-`extension_supported_versions`. Selection never downgrades or crosses to an
-unadvertised major version. Installation is restricted to the verified global
-`@browserbridge/bbx` package and serialized by an inter-process lock in the
-global npm scope. The triggering CLI process relaunches after installation;
-shipped MCP processes exit so their owning agent can load the updated package.
+## Requests and health
 
-## When negotiation happens
+The Go client registers an authenticated agent connection, then sends requests
+with `meta.protocol_version`. Registration itself does not perform a health
+preflight. Inspect health explicitly when checking compatibility:
 
-Protocol negotiation occurs during `BridgeClient.connect()`. After the TCP/Unix
-socket is established and the agent registration handshake completes, the client
-sends a `health.ping` request with its protocol version embedded in
-`meta.protocol_version`:
+```bash
+bbx call health.ping '{}'
+bbx doctor
+```
+
+A wire request looks like this; the version is illustrative:
 
 ```json
 {
   "type": "agent.request",
   "request": {
-    "id": "req_abc123",
+    "id": "req_health_1",
     "method": "health.ping",
     "params": {},
+    "tab_id": null,
     "meta": {
-        "protocol_version": "1.9",
+      "protocol_version": "1.14",
       "token_budget": null
     }
   }
 }
 ```
 
-## How the daemon responds
+Health reports the daemon's `daemonVersion`, `daemon_supported_versions`, and
+`supported_versions`. When a routed extension responds, it also reports
+`extensionVersion` and `extension_supported_versions`. `connectedExtensions`
+identifies the available browser/profile connections. See the
+[wire API reference](./api-reference.md) for registration and response envelopes.
 
-The daemon compares the client's `protocol_version` against
-`getSupportedProtocolVersions()` using `getVersionNegotiationPayload()` in
-`packages/native-host/src/daemon.js`.
+Doctor compares the client's major version with the daemon and extension
+version lists and reports compatibility. A successful transport connection or
+`ok: true` health response alone does not establish version compatibility.
+Use Doctor's `protocol` diagnostics for the compatibility result.
 
-### Version matches
+## Updating a mismatched installation
 
-When the client major version matches an entry in `getSupportedProtocolVersions()`, the response
-includes only the supported versions list:
+For npm installations, npm owns the runtime version:
 
-```json
-{
-  "ok": true,
-  "result": {
-    "daemon": "ok",
-    "extensionConnected": true,
-    "supported_versions": ["1.8"]
-  }
-}
+```bash
+npm install -g @browserbridge/bbx@latest
+bbx restart
+bbx doctor
 ```
 
-No `migration_hint` or `deprecated_since` fields are present.
+The npm launcher downloads the exact package version's Go executable and
+verifies its pinned digest. `bbx update status` reports `distribution: "npm"`;
+native self-update does not replace npm's selected runtime.
 
-### Client is newer (daemon outdated)
+Separately installed native executables can use a configured signed update
+feed. With `auto-update` set to `compatible`, a local health check may trigger
+an update before CLI browser work or MCP startup. It selects a compatible
+release using the extension's advertised protocol versions. Remote
+destinations do not update the local installation, and browser actions are
+not replayed after an update. See [native runtime](../internal/bridge/README.md)
+for signed update configuration.
 
-When the client version is newer than any version the daemon supports
-(e.g., client sends `99.0` but daemon only knows the current package major-minor):
+## Changing the protocol
 
-```json
-{
-  "ok": true,
-  "result": {
-    "daemon": "ok",
-    "supported_versions": ["<package major.minor>"],
-    "migration_hint": "Browser Bridge daemon is older than the client protocol 99.0. Restart or update the Browser Bridge CLI so the daemon supports 99.0."
-  }
-}
-```
+1. Change canonical wire types in `protocol/types.ts`, method metadata in
+   `protocol/src/`, or MCP metadata in `protocol/mcp-tools.json` as appropriate.
+2. Run `make generate-protocol` and `make check-protocol`. Commit generated Go
+   bindings, schemas, runtime catalog, and embedded skills with their sources.
+3. Add Go runtime tests and shared fixture or TypeScript extension/integration
+   tests for the changed behavior.
+4. For breaking wire changes, coordinate the package and extension major
+   versions and publish compatible artifacts.
 
-This means the daemon process was started from an older installation. Restarting
-the daemon (or updating the npm package and restarting) resolves it.
-
-### Client is older (daemon newer)
-
-When the client version is older than the daemon's latest supported version
-(e.g., client sends `0.5` but daemon supports the current package major-minor):
-
-```json
-{
-  "ok": true,
-  "result": {
-    "daemon": "ok",
-    "supported_versions": ["<package major.minor>"],
-    "deprecated_since": "<package major.minor>",
-    "migration_hint": "Browser Bridge daemon is newer than the client protocol 0.5. Restart or update the Browser Bridge CLI/npm package to <package major.minor> or later."
-  }
-}
-```
-
-The `deprecated_since` field indicates the version at which the client's version
-was superseded. Update the client npm package to resolve this.
-
-## Client-side handling
-
-`BridgeClient.connect()` (in `packages/agent-client/src/client.js:104`) calls
-`health.ping` automatically and runs the result through
-`BridgeClient.checkProtocolVersion()`:
-
-- If the client's major version does not match any advertised supported version, the
-  client sets `this.protocolCompatibility.compatible = false` and stores a
-  warning string.
-- All subsequent responses via `client.request()` have
-  `meta.protocol_warning` attached when a version mismatch exists.
-- The `connect()` call itself does **not** throw on version mismatch - the
-  client remains usable, but callers should check `client.protocolWarning` or
-  `client.protocolCompatibility` after connecting.
-
-```js
-const client = new BridgeClient();
-await client.connect();
-
-if (client.protocolWarning) {
-  console.warn('Protocol version mismatch:', client.protocolWarning);
-}
-```
-
-## Wire format summary
-
-| Scenario | `supported_versions` | `deprecated_since` | `migration_hint` |
-|---|---|---|---|
-| Versions match | current package major-minor | absent | absent |
-| Client newer | current package major-minor | absent | "daemon is older..." |
-| Client older | current package major-minor | current package major-minor | "daemon is newer..." |
-
-## Version comparison
-
-Versions are compared as dot-separated numeric sequences
-(`compareProtocolVersions` in `daemon.js:67`). This allows future versions like
-`1.1` or `2.0` to be ordered correctly without tight coupling to semver.
-
-## Adding a new protocol version
-
-1. Update the root `package.json` and extension `manifest.json` version.
-2. Publish the updated `@browserbridge/bbx` npm package and matching extension artifact.
-3. The daemon automatically advertises the new major-minor version. Clients that still send
-   the old version will receive a `deprecated_since` hint pointing them to
-   upgrade.
+Go source and tests own runtime behavior. TypeScript tests cover browser code,
+shared protocol helpers, npm packaging, and real-process wire integration.

@@ -1,14 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { extensionFile } from '../../../tests/_helpers/extensionBuild.ts';
 
 import { createChromeFake } from '../../../tests/_helpers/chromeFake.ts';
 import { withDocument } from '../../../tests/_helpers/dom.ts';
 import { createMessagePortPair } from '../../../tests/_helpers/messagePort.ts';
 
 const MISSING = Symbol('missing');
-const POPUP_HTML_URL = new URL('../ui/popup.html', import.meta.url);
-const POPUP_SCRIPT_URL = new URL('../ui/popup.js', import.meta.url);
+const POPUP_HTML_URL = extensionFile('ui/popup.html');
+const POPUP_SCRIPT_URL = extensionFile('ui/popup.js');
 
 type PopupStateSync = {
   type: 'state.sync';
@@ -212,7 +213,7 @@ test('popup UI handles windowed diagnostics, toggles, and resize', async (t) => 
 
     const diagnostic = document.getElementById('native-diagnostic');
     assert.ok(diagnostic);
-    assert.match(diagnostic.textContent ?? '', /Companion not connected/);
+    assert.match(diagnostic.textContent ?? '', /CLI not connected/);
     assert.match(diagnostic.textContent ?? '', /Open the side panel/);
     assert.equal(diagnostic.hidden, false);
 

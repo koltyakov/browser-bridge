@@ -2,14 +2,10 @@ import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 
-import {
-  createSuccess,
-  deriveProtocolVersion,
-  parseJsonLines,
-} from '../../packages/protocol/src/index.js';
-import { getSocketPath } from '../../packages/native-host/src/config.js';
-import type { BridgeRequest, BridgeResponse } from '../../packages/protocol/src/types.js';
+import { createSuccess, deriveProtocolVersion, parseJsonLines } from '../../protocol/src/index.js';
+import type { BridgeRequest, BridgeResponse } from '../../protocol/src/types.js';
 
 export type BridgeSocketMessageContext = {
   socket: net.Socket;
@@ -54,7 +50,8 @@ function loadRepositoryProtocolVersion(): string {
 export const TEST_PROTOCOL_VERSION = loadRepositoryProtocolVersion();
 
 function getTempSocketRoot(): string {
-  return process.platform === 'win32' ? os.tmpdir() : fs.existsSync('/tmp') ? '/tmp' : os.tmpdir();
+  // Unix socket names have a small platform limit; keep the directory short.
+  return process.platform === 'win32' ? os.tmpdir() : '/tmp';
 }
 
 function createTempSocketPath({
@@ -62,11 +59,14 @@ function createTempSocketPath({
   socketName = 'bridge.sock',
 }: SocketPathOptions = {}): SocketPathSet {
   const bridgeHome = fs.mkdtempSync(path.join(getTempSocketRoot(), prefix));
+  fs.writeFileSync(path.join(bridgeHome, 'daemon.auth'), 'test_agent_'.padEnd(43, 'a'), {
+    mode: 0o600,
+  });
   return {
     bridgeHome,
     socketPath:
       process.platform === 'win32'
-        ? getSocketPath({ ...process.env, BROWSER_BRIDGE_HOME: bridgeHome })
+        ? `\\\\.\\pipe\\com.browserbridge.browser_bridge-${createHash('sha256').update(bridgeHome.toLowerCase()).digest('hex').slice(0, 16)}`
         : path.join(bridgeHome, socketName),
   };
 }

@@ -34,7 +34,7 @@ test('getVersionMismatchView accepts independent minor releases and warns on maj
   assert.deepEqual(getVersionMismatchView('2.0.0', '1.8.1'), {
     key: '2.0.0:1.8.1',
     message:
-      'Companion v1.8.1 and extension v2.0.0 use different protocol versions. Update the companion and extension to compatible releases.',
+      'CLI v1.8.1 and extension v2.0.0 use different protocol versions. Update the CLI and extension to compatible releases.',
   });
 });
 
@@ -743,7 +743,7 @@ test('getSidepanelNativeStatusView derives install commands and disconnected lab
       label: 'Native host connected',
       diagnosticCommand: 'bbx install',
       diagnosticMessage:
-        'Companion not connected. Download and open the companion installer, then return here.',
+        'Native host not connected. Run npm install -g @browserbridge/bbx, then return here.',
     }
   );
 });

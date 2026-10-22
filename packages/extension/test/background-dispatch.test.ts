@@ -8,14 +8,14 @@ import {
   type FakeChromeEvent,
 } from '../../../tests/_helpers/chromeFake.ts';
 import { loadBackground } from '../../../tests/_helpers/loadBackground.ts';
-import { createRequest, ERROR_CODES, PROTOCOL_VERSION } from '../../protocol/src/index.js';
+import { createRequest, ERROR_CODES, PROTOCOL_VERSION } from '../../../protocol/src/index.js';
 import type {
   BridgeMethod,
   BridgeRequest,
   BridgeResponse,
   PerformanceMetricsResult,
   PerformResult,
-} from '../../protocol/src/types.js';
+} from '../../../protocol/src/types.js';
 
 type DebuggerAttachCall = {
   target: chrome.debugger.Debuggee;
@@ -831,13 +831,13 @@ test('background dispatch routes page.get_state through the tab-bound content sc
     {
       target: { tabId: 41 },
       files: [
-        'packages/extension/src/content-script-helpers.js',
-        'packages/extension/src/content-dom-baseline.js',
-        'packages/extension/src/content-element-registry.js',
-        'packages/extension/src/content-dom-query.js',
-        'packages/extension/src/content-input.js',
-        'packages/extension/src/content-patch.js',
-        'packages/extension/src/content-script.js',
+        'src/content-script-helpers.js',
+        'src/content-dom-baseline.js',
+        'src/content-element-registry.js',
+        'src/content-dom-query.js',
+        'src/content-input.js',
+        'src/content-patch.js',
+        'src/content-script.js',
       ],
     },
   ]);
@@ -1083,13 +1083,13 @@ test('background dispatch reinjects and retries when content script receiver dis
     {
       target: { tabId: 42 },
       files: [
-        'packages/extension/src/content-script-helpers.js',
-        'packages/extension/src/content-dom-baseline.js',
-        'packages/extension/src/content-element-registry.js',
-        'packages/extension/src/content-dom-query.js',
-        'packages/extension/src/content-input.js',
-        'packages/extension/src/content-patch.js',
-        'packages/extension/src/content-script.js',
+        'src/content-script-helpers.js',
+        'src/content-dom-baseline.js',
+        'src/content-element-registry.js',
+        'src/content-dom-query.js',
+        'src/content-input.js',
+        'src/content-patch.js',
+        'src/content-script.js',
       ],
     },
   ]);
@@ -3872,7 +3872,7 @@ test('background dispatch triggers the access-request UI after a window-off deni
   );
   assert.deepEqual(popupCreateCalls, [
     {
-      url: 'chrome-extension://test-extension-id/packages/extension/ui/popup.html?tabId=61&windowed=1',
+      url: 'chrome-extension://test-extension-id/ui/popup.html?tabId=61&windowed=1',
       type: 'popup',
       focused: true,
       width: 420,

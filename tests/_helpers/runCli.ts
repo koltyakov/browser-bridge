@@ -4,8 +4,27 @@ import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const repoRoot = path.resolve(__dirname, '../..');
-const cliPath = path.join(repoRoot, 'packages', 'agent-client', 'src', 'cli.js');
+export const repoRoot = path.resolve(__dirname, '../..');
+export const nativeExecutable =
+  process.env.BBX_NATIVE_EXECUTABLE ||
+  path.join(repoRoot, 'dist', 'cli', process.platform === 'win32' ? 'bbx.exe' : 'bbx');
+
+// Each test supplies its own bridge home. Do not inherit a developer's remote
+// destination, proxy address, or credentials when launching test processes.
+export function isolatedBridgeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const result: NodeJS.ProcessEnv = { ...env, BBX_AUTO_UPDATE: 'off' };
+  for (const key of [
+    'BBX_REMOTE',
+    'BBX_TCP_HOST',
+    'BBX_TCP_PORT',
+    'BBX_TCP_BIND_HOST',
+    'BBX_AUTH_TOKEN',
+    'BBX_AUTH_TOKEN_FILE',
+  ]) {
+    delete result[key];
+  }
+  return result;
+}
 
 export type RunCliOptions = {
   args: string[];
@@ -31,7 +50,7 @@ export function runCli({
   cwd = repoRoot,
 }: RunCliOptions): Promise<RunCliResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [cliPath, ...args], {
+    const child = spawn(nativeExecutable, args, {
       cwd,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],

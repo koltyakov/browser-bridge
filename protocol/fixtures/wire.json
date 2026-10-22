@@ -1,0 +1,113 @@
+[
+  {
+    "type": "BridgeRequest",
+    "valid": true,
+    "input": {
+      "id": "request-1",
+      "method": "input.perform",
+      "tab_id": 42,
+      "params": {
+        "steps": [
+          {
+            "method": "input.fill",
+            "params": { "target": { "label": "Email" }, "value": "x@example.com" }
+          }
+        ]
+      },
+      "meta": {
+        "protocol_version": "1.14",
+        "token_budget": null,
+        "source": "mcp",
+        "target_extension": "profile-1",
+        "future_field": { "flag": false }
+      }
+    }
+  },
+  {
+    "type": "BridgeRequest",
+    "valid": true,
+    "input": {
+      "id": "request-2",
+      "method": "health.ping",
+      "tab_id": null,
+      "params": {},
+      "meta": { "protocol_version": "1.14", "token_budget": 0 }
+    }
+  },
+  {
+    "type": "BridgeSuccessResponse",
+    "valid": true,
+    "input": {
+      "id": "request-1",
+      "ok": true,
+      "result": { "items": [null, false, 0, "text"], "future": { "n": 1 } },
+      "error": null,
+      "meta": { "protocol_version": "1.14", "tab_id": 42 }
+    }
+  },
+  {
+    "type": "BridgeFailureResponse",
+    "valid": true,
+    "input": {
+      "id": "request-1",
+      "ok": false,
+      "result": null,
+      "error": {
+        "code": "ELEMENT_STALE",
+        "message": "Reinspect the element",
+        "details": { "ref": "el_old" },
+        "recovery": { "hint": "Read the DOM again", "retry": false }
+      },
+      "meta": { "protocol_version": "1.14" }
+    }
+  },
+  {
+    "type": "BridgeMeta",
+    "valid": true,
+    "input": {
+      "token_budget": null,
+      "debugger_backed": false,
+      "transport_bytes": 0,
+      "continuation_hint": null,
+      "future": { "nested": [1, 2] }
+    }
+  },
+  {
+    "type": "BridgeMeta",
+    "valid": true,
+    "input": {}
+  },
+  {
+    "type": "BridgeRequest",
+    "valid": false,
+    "input": {
+      "id": "bad",
+      "method": "unknown.method",
+      "tab_id": null,
+      "params": {},
+      "meta": { "protocol_version": "1.14", "token_budget": null }
+    }
+  },
+  {
+    "type": "BridgeRequest",
+    "valid": false,
+    "input": {
+      "id": "bad",
+      "method": "health.ping",
+      "tab_id": null,
+      "params": {},
+      "meta": { "protocol_version": "1.14" }
+    }
+  },
+  {
+    "type": "BridgeFailureResponse",
+    "valid": false,
+    "input": {
+      "id": "bad",
+      "ok": true,
+      "result": null,
+      "error": { "code": "NOT_A_PROTOCOL_ERROR", "message": "bad", "details": null },
+      "meta": { "protocol_version": "1.14" }
+    }
+  }
+]

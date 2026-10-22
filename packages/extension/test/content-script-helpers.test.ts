@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withDocument } from '../../../tests/_helpers/dom.ts';
+import { extensionFile } from '../../../tests/_helpers/extensionBuild.ts';
 
-await import('../src/content-script-helpers.js');
+await import(extensionFile('src/content-script-helpers.js').href);
 
 type HelperBudget = {
   maxNodes?: number;

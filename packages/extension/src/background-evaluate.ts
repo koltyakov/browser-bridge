@@ -1,0 +1,85 @@
+import {
+  createFailure,
+  createSuccess,
+  ERROR_CODES,
+  normalizeEvaluateParams,
+} from '../../../protocol/src/index.js';
+
+export type BridgeRequest = import('../../../protocol/src/types.js').BridgeRequest;
+export type BridgeResponse = import('../../../protocol/src/types.js').BridgeResponse;
+
+export type ResolvedTabTarget = {
+  tabId: number;
+  windowId: number;
+  title: string;
+  url: string;
+};
+
+export type PageEvaluateDependencies = {
+  resolveRequestTarget: (
+    request: BridgeRequest,
+    options?: { requireScriptable?: boolean }
+  ) => Promise<ResolvedTabTarget>;
+  runWithDebugger: (
+    tabId: number,
+    operation: (debugTarget: chrome.debugger.Debuggee) => Promise<BridgeResponse>
+  ) => Promise<BridgeResponse>;
+  sendCommand: (
+    target: chrome.debugger.Debuggee,
+    method: string,
+    params: {
+      expression: string;
+      returnByValue: boolean;
+      awaitPromise: boolean;
+      timeout: number;
+      userGesture: boolean;
+      generatePreview: boolean;
+    }
+  ) => Promise<unknown>;
+};
+
+/** Evaluate a JavaScript expression in the page's main context using the
+Chrome DevTools Protocol, avoiding content-script CSP restrictions. */
+export async function handlePageEvaluate(
+  request: BridgeRequest,
+  dependencies: PageEvaluateDependencies
+): Promise<BridgeResponse> {
+  const params = normalizeEvaluateParams(request.params);
+  if (!params.expression) {
+    return createFailure(request.id, ERROR_CODES.INVALID_REQUEST, 'expression is required.', null, {
+      method: request.method,
+    });
+  }
+  const target = await dependencies.resolveRequestTarget(request);
+  return dependencies.runWithDebugger(target.tabId, async (debugTarget) => {
+    const result = await dependencies.sendCommand(debugTarget, 'Runtime.evaluate', {
+      expression: params.expression,
+      returnByValue: params.returnByValue,
+      awaitPromise: params.awaitPromise,
+      timeout: params.timeoutMs,
+      userGesture: true,
+      generatePreview: false,
+    });
+    const cdpResult = result as {
+      result?: { type?: string; value?: unknown };
+      exceptionDetails?: { text?: string; exception?: { description?: string } };
+    };
+    if (cdpResult.exceptionDetails) {
+      const errText =
+        cdpResult.exceptionDetails.exception?.description ||
+        cdpResult.exceptionDetails.text ||
+        'Evaluation failed.';
+      return createFailure(request.id, ERROR_CODES.INTERNAL_ERROR, errText, null, {
+        method: request.method,
+      });
+    }
+    return createSuccess(
+      request.id,
+      {
+        value: cdpResult.result?.value ?? null,
+        type: cdpResult.result?.type ?? 'undefined',
+      },
+      { method: request.method }
+    );
+  });
+}

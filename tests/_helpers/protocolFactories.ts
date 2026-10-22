@@ -3,7 +3,7 @@ import {
   createFailure as createBridgeFailure,
   createRequest as createBridgeRequest,
   createSuccess as createBridgeSuccess,
-} from '../../packages/protocol/src/index.js';
+} from '../../protocol/src/index.js';
 import type {
   BridgeFailureResponse,
   BridgeMeta,
@@ -11,7 +11,7 @@ import type {
   BridgeRequest,
   BridgeSuccessResponse,
   ErrorCode,
-} from '../../packages/protocol/src/types.js';
+} from '../../protocol/src/types.js';
 
 export type TestBridgeMeta = BridgeMeta;
 export type TestBridgeMethod = BridgeMethod;

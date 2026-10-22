@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { handleTabBoundRequest } from '../src/background-tab-bound.js';
-import { createFailure, createRequest } from '../../protocol/src/index.js';
-import type { BridgeMethod, BridgeRequest } from '../../protocol/src/types.js';
+import { createFailure, createRequest } from '../../../protocol/src/index.js';
+import type { BridgeMethod, BridgeRequest } from '../../../protocol/src/types.js';
 
 type FrameMessage = { frameId: number; method: string; params: Record<string, unknown> };
 

@@ -7,7 +7,7 @@ import {
 } from '../src/background-tab-cleanup.js';
 import { createPageRequestController } from '../src/background-page.js';
 import { TabDebuggerCoordinator } from '../src/debugger-coordinator.js';
-import { createRequest } from '../../protocol/src/index.js';
+import { createRequest } from '../../../protocol/src/index.js';
 import type { ExtensionState } from '../src/background-state.js';
 
 test('tab move cleanup clears state only after a tab leaves the enabled window', async () => {

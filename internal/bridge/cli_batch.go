@@ -1,0 +1,128 @@
+package bridge
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+)
+
+func cliShortcutPrintMethod(command string) string {
+	switch command {
+	case "describe", "text", "styles", "box", "patches", "console", "find", "find-role", "page-text", "network", "attrs", "matched-rules", "cdp-press-key":
+		return shortcutMethods[command]
+	}
+	return ""
+}
+func cliInvalidBatchItem(method, message string) object {
+	return object{"method": value(method), "tabId": cliNull, "ok": value(false), "summary": value("INVALID_REQUEST: " + message), "evidence": cliNull, "durationMs": value(0), "approxTokens": value(0), "meta": value(object{"protocol_version": value(protocolVersion())}), "error": value(object{"code": value("INVALID_REQUEST"), "message": value(message)}), "response": cliNull}
+}
+func prepareCLIBatch(raw json.RawMessage, preset string) ([]object, []object, error) {
+	if len(raw) == 0 {
+		return nil, nil, errors.New(`Usage: batch '[{"method":"...","params":{...}}, ...]'`)
+	}
+	if !json.Valid(raw) {
+		return nil, nil, errors.New("Invalid JSON syntax. Expected a JSON array of bridge calls.")
+	}
+	items, ok := cliArray(raw)
+	if !ok {
+		return nil, nil, errors.New("Batch input must be a JSON array.")
+	}
+	if len(items) == 0 || len(items) > 20 {
+		return nil, nil, errors.New("Batch input must contain between 1 and 20 calls.")
+	}
+	calls := make([]object, len(items))
+	invalid := make([]object, len(items))
+	anyInvalid := false
+	for i, raw := range items {
+		call, e := decodeObject(raw)
+		method := call.text("method")
+		message := ""
+		if e != nil || !cliString(call["method"]) {
+			message = "Each batch call needs a method."
+		} else if _, ok := catalog.Methods[method]; !ok {
+			message = fmt.Sprintf("Unknown bridge method %q.", method)
+		}
+		if message == "" {
+			for _, field := range []string{"extensionId", "targetBrowser", "targetProfile"} {
+				if v, ok := call[field]; ok && (!cliString(v) || strings.TrimSpace(call.text(field)) == "") {
+					message = field + " must be a non-empty string."
+					break
+				}
+			}
+		}
+		if message == "" && method == "sensitive.read" {
+			message = "sensitive.read is never allowed in batch execution. Call it sequentially."
+		}
+		params := call.object("params")
+		if message == "" {
+			if _, exists := call["params"]; exists && params == nil {
+				message = "Batch call params must be a JSON object."
+			}
+		}
+		if params == nil {
+			params = object{}
+		}
+		if message == "" {
+			for k, v := range catalog.Presets[preset][method] {
+				if _, ok := params[k]; !ok {
+					params[k] = v
+				}
+			}
+			delete(params, "budgetPreset")
+			if !batchSafe(method, params) {
+				message = method + " is not safe for batch execution. Call it sequentially."
+			}
+		}
+		if message != "" {
+			invalid[i] = cliInvalidBatchItem(method, message)
+			anyInvalid = true
+			continue
+		}
+		prepared := cliClone(call)
+		prepared["params"] = value(params)
+		tab := call.number("tabId")
+		if !catalog.Methods[method].boolean("tab") || tab <= 0 {
+			prepared["tabId"] = cliNull
+		} else {
+			prepared["tabId"] = value(tab)
+		}
+		calls[i] = prepared
+	}
+	if anyInvalid {
+		for i, call := range calls {
+			if invalid[i] == nil {
+				invalid[i] = cliInvalidBatchItem(call.text("method"), "Batch was not executed because another call failed validation.")
+			}
+		}
+		return nil, invalid, nil
+	}
+	return calls, nil, nil
+}
+func cliBatchResult(method string, tab int64, response object, err error, duration, now int64) object {
+	if err != nil {
+		response = object{"id": value("batch_error"), "ok": value(false), "result": cliNull, "error": value(object{"code": value("INTERNAL_ERROR"), "message": value(err.Error()), "details": cliNull}), "meta": value(object{"protocol_version": value(protocolVersion())})}
+	}
+	out := cliAnnotate(cliSummarize(response, method, now), response)
+	out["method"] = value(method)
+	out["tabId"] = cliNull
+	if tab > 0 {
+		out["tabId"] = value(tab)
+	}
+	out["durationMs"] = value(duration)
+	out["approxTokens"] = out["transportTokens"]
+	if err != nil {
+		out["approxTokens"] = value(0)
+	}
+	if meta, ok := response["meta"]; ok {
+		out["meta"] = meta
+	}
+	out["error"] = cliNull
+	out["response"] = cliNull
+	if response.boolean("ok") {
+		out["response"] = response["result"]
+	} else {
+		out["error"] = response["error"]
+	}
+	return out
+}

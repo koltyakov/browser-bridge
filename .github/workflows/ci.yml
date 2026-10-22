@@ -8,6 +8,11 @@ on:
       - '**/*.js'
       - '**/*.mjs'
       - '**/*.ts'
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
+      - 'protocol/**'
       - 'manifest.json'
       - 'package.json'
       - 'package-lock.json'
@@ -47,28 +52,40 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: make deps
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Check generated protocol
+        run: make check-protocol
+
+      - name: Go tests and vet
+        run: make test-go vet-go check-go-format
 
       - name: Lint
-        run: npm run lint
+        run: make lint
 
       - name: Typecheck
-        run: npm run typecheck
+        run: make typecheck
 
       - name: Test
-        run: npm test
+        run: make test-js
 
       - name: Review lowest coverage files
-        run: npm run coverage:review
+        run: make coverage-review
 
       - name: Check coverage threshold
-        run: npm run coverage:check
+        run: make coverage-check
 
       - name: Package extension
-        run: npm run package:extension
+        run: make package-extension
 
       - name: Validate extension ZIP contents
-        run: npm run check:extension-zip
+        run: make check-extension-zip
 
   validate-runtime:
     runs-on: ${{ matrix.os }}
@@ -97,8 +114,12 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
 
+      - name: Install Make on Windows
+        if: runner.os == 'Windows'
+        run: choco install make --yes --no-progress
+
       - name: Install dependencies
-        run: npm ci
+        run: make deps
 
       - name: Test
-        run: npm run test:runtime
+        run: make test-runtime

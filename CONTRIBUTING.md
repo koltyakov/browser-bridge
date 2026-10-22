@@ -5,57 +5,62 @@
 ```bash
 git clone <repo>
 cd browser-bridge
-npm install
+make deps
 ```
 
-No build step - the project runs directly from source (`type: "module"`).
+Use the root Makefile for repository tasks. Development requires GNU Make, Node.js 20 or later, and the Go version in `go.mod`. Run `make build` to compile the TypeScript extension and Go executable. See [development](docs/development.md) for details.
 
 ## Running tests
 
 ```bash
-npm test          # run all tests (with c8 coverage)
-npm run format    # oxfmt
-npm run lint      # oxlint
-npm run typecheck # TypeScript type-check (JSDoc annotations)
+make test         # Go race tests and Node tests with coverage
+make format       # oxfmt and gofmt
+make lint         # oxlint and oxfmt check
+make typecheck    # TypeScript and typed JavaScript
 ```
 
-All tests use Node's built-in test runner (`node --test`). No Jest or Mocha.
+TypeScript tests use Node's built-in test runner (`node --test`) for the extension, shared protocol, npm launcher, and real-process integration. Go tests beside the implementation own runtime behavior and use the standard testing package.
 
 ## Project structure
 
 ```
+cmd/bbx/          Go executable entrypoint
+internal/bridge/  Go CLI, daemon, native host, MCP server, installation and setup
+internal/protocol/ Generated Go wire bindings
+protocol/         Canonical wire types, metadata, browser/build helpers, fixtures
 packages/
-  protocol/      Shared request/response types, error codes, defaults, normalization
-  native-host/   Local bridge daemon (socket/TCP) + install scripts
-  agent-client/  BridgeClient, CLI (bbx), setup helpers
-  mcp-server/    MCP stdio server (bbx-mcp) + tool handlers
-  extension/     Chrome extension (background, content scripts, UI)
-scripts/         Build and packaging scripts
-docs/            Internal planning and reference docs
+  extension/      TypeScript Chrome extension (background, content scripts, UI)
+  npm/            Zero-runtime-dependency npm bootstrap and launcher
+tests/
+  integration/    Real-process integration tests against the Go runtime
+  native/         Native installation, packaging, and wire-contract tests
+scripts/          Build and packaging scripts
+docs/             User and contributor reference docs
 ```
 
 ## Making changes
 
-- **Protocol changes** belong in `packages/protocol/src/` - shared by all packages.
-- **Daemon changes** live in `packages/native-host/src/daemon.js`.
-- **CLI commands** are registered in `packages/agent-client/src/command-registry.js`.
-- **MCP tools** are defined in `packages/mcp-server/src/server.js` (schema) and `handlers.js` (logic).
-- **Extension logic** lives in `packages/extension/src/background.js`.
+- **Protocol changes** belong in `protocol/`: wire types in `types.ts`, shared browser/build helpers and method metadata in `src/`. Run `make generate-protocol` after changing canonical definitions.
+- **Daemon changes** live in `internal/bridge/daemon.go`.
+- **CLI commands** are dispatched in `internal/bridge/main.go`, with shortcuts in `cli_shortcuts.go`. Exercise the checkout with `make run ARGS='call health.ping'`.
+- **MCP tools** are defined in `protocol/mcp-tools.json` (metadata and schemas), with runtime handling in `internal/bridge/mcp*.go`.
+- **Extension logic** lives in `packages/extension/src/background.ts` and the related TypeScript modules.
+- **Agent setup** lives in `internal/bridge/agents_config.go` and `agents_skills.go`.
 
-Run `npm run lint && npm run typecheck && npm test` before opening a PR.
+Run `make check` before opening a PR.
 
 ## Pull requests
 
 - Keep PRs focused - one logical change per PR.
-- Add or update tests for any new behaviour (test files live in `packages/*/test/`).
+- Add or update tests for new behavior: Go runtime tests beside the source; TypeScript tests in `packages/extension/test/`, `packages/npm/test/`, `protocol/test/`, and `tests/`.
 - Update `CHANGELOG.md` under `[Unreleased]`.
 - The CI matrix tests Node 20, 22, and 24 on Linux (plus macOS and Windows legs) - make sure nothing uses APIs newer than Node 20.
 
 ## Extension packaging
 
 ```bash
-npm run package:extension   # produces dist/browser-bridge-extension-v<manifest-version>.zip
-npm run check:extension-zip  # validates ZIP contents before upload
+make package-extension     # produces dist/browser-bridge-extension-v<manifest-version>.zip
+make check-extension-zip   # validates ZIP contents before upload
 ```
 
 The ZIP can be submitted to the Chrome Web Store. Do not commit `dist/`.

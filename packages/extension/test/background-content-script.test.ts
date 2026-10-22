@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ERROR_CODES } from '../../protocol/src/index.js';
+import { ERROR_CODES } from '../../../protocol/src/index.js';
 import { createContentScriptBridge } from '../src/background-content-script.js';
 
 function createHarness(failMain = false) {
@@ -47,13 +47,13 @@ test('general content-script injection does not install navigation listeners or 
   assert.equal(injections[0].world, undefined);
   assert.ok(Array.isArray(injections[0].files));
   assert.deepEqual(injections[0].files, [
-    'packages/extension/src/content-script-helpers.js',
-    'packages/extension/src/content-dom-baseline.js',
-    'packages/extension/src/content-element-registry.js',
-    'packages/extension/src/content-dom-query.js',
-    'packages/extension/src/content-input.js',
-    'packages/extension/src/content-patch.js',
-    'packages/extension/src/content-script.js',
+    'src/content-script-helpers.js',
+    'src/content-dom-baseline.js',
+    'src/content-element-registry.js',
+    'src/content-dom-query.js',
+    'src/content-input.js',
+    'src/content-patch.js',
+    'src/content-script.js',
   ]);
   assert.equal(injections[0].func, undefined);
 });

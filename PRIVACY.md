@@ -66,7 +66,7 @@ The extension/native-host segment remains on the browser machine. If you explici
 
 ## Sharing and downstream processing
 
-Browser Bridge shares page data only with the companion components and client you choose to connect. The normal path is local. If you explicitly configure Browser Bridge's authenticated remote proxy and your own tunnel or network route, the selected remote client can receive bridge results through that user-configured path; Browser Bridge does not provide or operate that network service.
+Browser Bridge shares page data only with the local bridge components and client you choose to connect. The normal path is local. If you explicitly configure Browser Bridge's authenticated remote proxy and your own tunnel or network route, the selected remote client can receive bridge results through that user-configured path; Browser Bridge does not provide or operate that network service.
 
 Important:
 
@@ -125,7 +125,7 @@ application-level outcome.
 ## Security
 
 - Extension code is packaged with the extension; Browser Bridge does not fetch and execute remote extension scripts.
-- Communication with the companion host uses Chrome Native Messaging.
+- Communication with the native host uses Chrome Native Messaging.
 - Access is limited to the explicitly enabled browser window.
 - The extension includes bounded buffers and document-local rollback records for temporary page patches, with rollback attempted when enabled-window access ends or switches.
 

@@ -2,19 +2,32 @@ import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { once } from 'node:events';
+import { setTimeout as delay } from 'node:timers/promises';
 
-import { BridgeDaemon } from '../../packages/native-host/src/daemon.js';
-import { ArtifactStore } from '../../packages/native-host/src/artifact-store.js';
-import { BridgeClient } from '../../packages/agent-client/src/client.js';
-import { parseJsonLines, PROTOCOL_VERSION } from '../../packages/protocol/src/index.js';
+import {
+  parseJsonLines,
+  getProtocolVersion,
+  setProtocolPackageVersion,
+} from '../../protocol/src/index.js';
+import { isolatedBridgeEnv, nativeExecutable } from './runCli.ts';
+import { NativeWireClient } from './nativeWire.ts';
 import type { AddressInfo, Socket } from 'node:net';
-import type { BridgeTransport } from '../../packages/native-host/src/config.js';
-import type { BridgeRequest } from '../../packages/protocol/src/types.js';
+import type { BridgeRequest } from '../../protocol/src/types.js';
+
+const agentToken = 'test_agent_'.padEnd(43, 'a');
+const extensionToken = 'test_extension_'.padEnd(43, 'b');
+const pkg = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as {
+  version: string;
+};
+setProtocolPackageVersion(pkg.version);
 
 export type TestDaemonContext = {
-  daemon: BridgeDaemon;
+  child: ChildProcessWithoutNullStreams;
   address: AddressInfo;
   tempRoot: string;
+  env: NodeJS.ProcessEnv;
   connect: () => Promise<Socket>;
   stop: () => Promise<void>;
 };
@@ -30,45 +43,40 @@ export type FakeExtension = {
   destroy: () => void;
 };
 
-export type TestClientOptions = {
-  clientId?: string;
-  defaultTimeoutMs?: number;
-  autoReconnect?: boolean;
-  checkProtocolOnConnect?: boolean;
-};
-
-// Start an in-process daemon on a loopback TCP port with an isolated artifact
-// store so tests never touch the real bridge home.
+// Start the Go daemon with isolated credentials and storage. The extension peer
+// below implements only test framing; runtime behavior stays in the Go process.
 export async function startTestDaemon(port = 0): Promise<TestDaemonContext> {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bbx-it-daemon-'));
-  const artifactStore = new ArtifactStore(path.join(tempRoot, 'artifacts'));
-  const daemon = new BridgeDaemon({
-    transport: {
-      type: 'tcp',
-      host: '127.0.0.1',
-      port,
-      label: `127.0.0.1:${port}`,
-    } satisfies BridgeTransport,
-    listenOptions: { host: '127.0.0.1', port },
-    logger: { log() {}, error() {} },
-    authToken: null,
-    extensionAuthToken: null,
-    artifactStore,
+  fs.writeFileSync(path.join(tempRoot, 'daemon.auth'), agentToken, { mode: 0o600 });
+  fs.writeFileSync(path.join(tempRoot, 'daemon.extension.auth'), extensionToken, { mode: 0o600 });
+  const listener = net.createServer();
+  listener.listen(port, '127.0.0.1');
+  await once(listener, 'listening');
+  const address = listener.address() as AddressInfo;
+  await new Promise<void>((resolve, reject) =>
+    listener.close((error) => (error ? reject(error) : resolve()))
+  );
+  const env = {
+    ...isolatedBridgeEnv(process.env),
+    BROWSER_BRIDGE_HOME: tempRoot,
+    BBX_TCP_PORT: String(address.port),
+  };
+  const child = spawn(nativeExecutable, ['--bridge-daemon'], { env, stdio: 'pipe' });
+  let stderr = '';
+  let startupError: Error | undefined;
+  child.on('error', (error) => {
+    startupError = error;
   });
-
+  child.stderr.on('data', (chunk: Buffer) => {
+    stderr += chunk.toString();
+  });
+  child.stdout.resume();
   let stopped = false;
-  try {
-    await daemon.start();
-  } catch (error) {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-    throw error;
-  }
-
-  const address = daemon.serverAddress as AddressInfo;
-  return {
-    daemon,
+  const ctx: TestDaemonContext = {
+    child,
     address,
     tempRoot,
+    env,
     connect: () =>
       new Promise((resolve, reject) => {
         const socket = net.createConnection({
@@ -83,10 +91,36 @@ export async function startTestDaemon(port = 0): Promise<TestDaemonContext> {
         return;
       }
       stopped = true;
-      await daemon.stop();
+      if (child.exitCode === null && child.signalCode === null && child.pid) {
+        const exited = once(child, 'exit');
+        child.kill();
+        const force = setTimeout(() => child.kill('SIGKILL'), 3_000);
+        try {
+          await exited;
+        } finally {
+          clearTimeout(force);
+        }
+      }
       fs.rmSync(tempRoot, { recursive: true, force: true });
     },
   };
+  try {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      if (startupError) throw startupError;
+      if (child.exitCode !== null || child.signalCode !== null) break;
+      try {
+        const probe = await connectTestClient(ctx);
+        await probe.close();
+        return ctx;
+      } catch {
+        await delay(20);
+      }
+    }
+    throw new Error(`Go daemon did not start: ${stderr}`);
+  } catch (error) {
+    await ctx.stop();
+    throw error;
+  }
 }
 
 // Connect a fake extension that records forwarded requests and auto-answers
@@ -116,7 +150,7 @@ export async function connectFakeExtension(
         ok: true,
         result,
         error: null,
-        meta: { protocol_version: PROTOCOL_VERSION, method: request.method },
+        meta: { protocol_version: getProtocolVersion(), method: request.method },
       },
     });
   }
@@ -129,7 +163,7 @@ export async function connectFakeExtension(
         ok: false,
         result: null,
         error: { code, message, details: null },
-        meta: { protocol_version: PROTOCOL_VERSION, method: request.method },
+        meta: { protocol_version: getProtocolVersion(), method: request.method },
       },
     });
   }
@@ -167,7 +201,7 @@ export async function connectFakeExtension(
       }
     });
   });
-  sendMessage({ type: 'register', role: 'extension' });
+  sendMessage({ type: 'register', role: 'extension', authToken: extensionToken });
   await registered;
 
   function nextRequest(timeoutMs = 3_000): Promise<BridgeRequest> {
@@ -209,25 +243,6 @@ export async function connectFakeExtension(
   };
 }
 
-// Connect a BridgeClient to the in-process daemon.
-export async function connectTestClient(
-  ctx: TestDaemonContext,
-  options: TestClientOptions = {}
-): Promise<BridgeClient> {
-  const client = new BridgeClient({
-    socketPath: undefined,
-    defaultTimeoutMs: options.defaultTimeoutMs ?? 2_000,
-    autoReconnect: options.autoReconnect ?? false,
-    checkProtocolOnConnect: options.checkProtocolOnConnect ?? true,
-    ...(options.clientId ? { clientId: options.clientId } : {}),
-  });
-  client.transport = {
-    type: 'tcp',
-    host: ctx.address.address,
-    port: ctx.address.port,
-    label: `${ctx.address.address}:${ctx.address.port}`,
-  } satisfies BridgeTransport;
-  client.socketPath = '';
-  await client.connect();
-  return client;
+export function connectTestClient(ctx: TestDaemonContext): Promise<NativeWireClient> {
+  return NativeWireClient.connect(ctx.address.port, agentToken);
 }

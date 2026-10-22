@@ -1,4 +1,7 @@
 node_modules
+/bbx
+/bbx.exe
+/packages/npm/native-manifest.json
 *.log
 .DS_Store
 tmp

@@ -37,7 +37,7 @@ bbx skill                   # live runtime presets + limits
 bbx protocol describe [method|group] # local method params or compact group index
 ```
 
-Use the globally installed `bbx` command or `node packages/agent-client/src/cli.js ...` for live readiness checks from this repository. Avoid `rtk npm exec -- bbx status` as a health signal: that path can restart/replace the daemon and report `Extension: disconnected` before Chrome reconnects. If it happens, wait a few seconds and verify with `bbx status`.
+Use the globally installed `bbx` command for live readiness checks. The npm package launches the Go runtime and has zero runtime npm dependencies. Avoid `rtk npm exec -- bbx status` as a health signal: that path can restart/replace the daemon and report `Extension: disconnected` before Chrome reconnects. If it happens, wait a few seconds and verify with `bbx status`.
 
 ### Inspect & Find
 

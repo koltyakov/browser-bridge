@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withDocument } from '../../../tests/_helpers/dom.ts';
 import { runWebMcpInDocument } from '../src/webmcp-document.js';
-import { normalizeWebMcpParams } from '../../protocol/src/index.js';
-import type { WebMcpContext, WebMcpDescriptor, WebMcpTool } from '../../protocol/src/types.js';
+import { normalizeWebMcpParams } from '../../../protocol/src/index.js';
+import type { WebMcpContext, WebMcpDescriptor, WebMcpTool } from '../../../protocol/src/types.js';
 
 const NativeEvent = globalThis.Event;
 

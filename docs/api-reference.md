@@ -1,119 +1,107 @@
-# BridgeClient API Reference
+# CLI and Wire API Reference
 
-`BridgeClient` is the programmatic interface for agents and tools that want to
-communicate with the Browser Bridge daemon directly, without going through the
-CLI or MCP server.
+Browser Bridge exposes browser methods through the Go CLI, MCP server, and
+authenticated daemon wire protocol. The npm package bootstraps and launches
+the Go executable; it does not export a JavaScript client API.
 
 If you are setting up Browser Bridge for normal end-user agent usage, start with
 [quickstart](./quickstart.md) or [manual setup](./manual-setup.md) instead.
 
-## Install
+## Raw CLI calls
 
 ```bash
-npm install @browserbridge/bbx
+npm install -g @browserbridge/bbx
+bbx call health.ping '{}'
+bbx protocol describe dom.query
 ```
 
-## Quick start
+Discover connections and tabs, then reuse the selected connection ID and tab ID:
 
-```js
-import { BridgeClient } from '@browserbridge/bbx/packages/agent-client/src/client.js';
-
-const client = new BridgeClient();
-await client.connect();
-
-const response = await client.request({ method: 'health.ping' });
-console.log(response.result); // { daemon: 'ok', extensionConnected: true, ... }
-
-await client.close();
+```bash
+bbx call tabs.list '{}'
+bbx call --extension '<connection ID>' --tab 123 --preset quick dom.query '{"selector":"h1","maxNodes":5}'
 ```
 
-## Constructor
+`bbx call` prints the raw bridge response. Shortcuts such as `bbx dom-query`
+print `{ok, summary, evidence}`. For automation, parse JSON stdout and check
+`ok`; keep diagnostics on stderr separate. Use `bbx batch` for independent
+reads and `input.perform` for ordered browser actions. See [CLI guide](./cli-guide.md).
 
-```js
-new BridgeClient(options?)
+## Daemon wire protocol
+
+The Go transport implementation lives in `internal/bridge/client.go` and
+`wire.go`. Canonical message types live in [`protocol/types.ts`](../protocol/types.ts).
+Messages are newline-delimited JSON over the configured local socket, TCP
+connection, or Windows named pipe. Native Messaging uses a separate four-byte
+little-endian length prefix between Chrome and the native host.
+
+Register an agent before sending requests. The following shows message shapes;
+replace the credential placeholder with the configured agent token:
+
+```json
+{"type":"register","role":"agent","clientId":"my-tool-session","authToken":"<agent credential>"}
 ```
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `socketPath` | `string` | `~/.config/browser-bridge/bridge.sock` | Optional bridge socket path override when not using `BBX_TCP_PORT` |
-| `clientId` | `string` | `agent_<uuid>` | Identifies this client to the daemon |
-| `defaultTimeoutMs` | `number` | `8000` | Per-request timeout in ms |
-| `autoReconnect` | `boolean` | `false` | Reconnect automatically after daemon restarts and emit `reconnected` when the session is restored |
-| `checkProtocolOnConnect` | `boolean` | `true` | Run the protocol health preflight during connection |
-| `updateNpmOnCompatibleVersion` | `boolean` | `false` | Update a verified global npm installation to the highest stable release supported by the connected extension |
+Wait for `{"type":"registered","role":"agent"}` before sending an
+`agent.request`. Use a unique request ID and correlate it with the response ID.
+The wire field is `tab_id`; CLI and MCP adapters accept their documented tab selectors.
 
-When `BBX_TCP_PORT` is set, `BridgeClient` connects to `127.0.0.1:<port>` instead of the Unix socket path.
-
-## Methods
-
-### `connect()`
-
-Connect to the daemon and register as an agent. Performs a `health.ping` to
-establish protocol compatibility. Throws if the daemon is not running.
-
-```js
-await client.connect();
-```
-
-### `request(options)`
-
-Send a bridge request and return the response.
-
-```js
-const response = await client.request({
-  method: 'dom.query',
-  params: { selector: 'h1', maxNodes: 5 },
-  tabId: 123, // optional - omit to route to the active tab in the enabled window
-  timeoutMs: 10_000, // optional - overrides defaultTimeoutMs
-});
-
-if (response.ok) {
-  console.log(response.result);
-} else {
-  console.error(response.error.code, response.error.message);
+```json
+{
+  "type": "agent.request",
+  "request": {
+    "id": "req_health_1",
+    "method": "health.ping",
+    "params": {},
+    "tab_id": null,
+    "meta": {"protocol_version": "1.14", "token_budget": null}
+  }
 }
 ```
 
-**Returns** a `BridgeResponse`:
+The example version is illustrative; use the installed runtime's major-minor
+version. A successful response has this shape (result fields vary by method):
 
-```ts
-{ id, ok: true, result: unknown, error: null, meta }
-| { id, ok: false, result: null, error: { code, message, details, recovery? }, meta }
-```
-
-When `ok` is `false`, `error.recovery` (if present) contains machine-readable
-retry guidance:
-
-```js
-if (!response.ok && response.error.recovery?.retry) {
-  await new Promise((r) => setTimeout(r, response.error.recovery.retryAfterMs ?? 1000));
-  // retry once
+```json
+{
+  "type": "agent.response",
+  "response": {
+    "id": "req_health_1",
+    "ok": true,
+    "result": {"daemon": "ok", "extensionConnected": false},
+    "error": null,
+    "meta": {}
+  }
 }
 ```
 
-### `close()`
+Failures set `ok: false`, `result: null`, and an `error` object containing
+`code`, `message`, optional `details`, and optional `recovery`. Transport loss
+or timeout after dispatch does not establish whether a mutation happened.
+Inspect postconditions before sending it again; the Go client does not
+automatically replay requests.
 
-Gracefully close the connection (sends TCP FIN, waits for acknowledgement).
+### Local configuration
 
-```js
-await client.close();
-```
+`BROWSER_BRIDGE_HOME` overrides the runtime data directory. Defaults are:
 
-### `reconnected` event
+| Platform | Directory |
+| --- | --- |
+| macOS | `~/Library/Application Support/Browser Bridge` |
+| Linux | `$XDG_DATA_HOME/browser-bridge`, or `~/.local/share/browser-bridge` |
+| Windows | `%LOCALAPPDATA%\Browser Bridge` |
 
-When `autoReconnect: true` is enabled, `BridgeClient` emits `reconnected` after
-the socket is re-established and the agent is registered again.
-
-```js
-client.on('reconnected', () => {
-  console.log('Browser Bridge reconnected');
-});
-```
+macOS and Linux default to `bridge.sock` inside that directory. Windows defaults
+to TCP at `127.0.0.1:9223`; an explicit bridge home without a TCP override uses
+an isolated named pipe. `BBX_TCP_PORT` selects TCP; `BBX_TCP_HOST` defaults to
+`127.0.0.1`. Agent credentials come from `BBX_AUTH_TOKEN`, `BBX_AUTH_TOKEN_FILE`,
+or `daemon.auth` in the bridge home. The native host uses a separate extension
+credential. See [remote access](./remote-proxy.md) for configured remote destinations.
 
 ## Available methods
 
 The full method list lives in
-[`packages/protocol/src/registry.js`](../packages/protocol/src/registry.js),
+[`protocol/src/registry.js`](../protocol/src/registry.js),
 grouped here by domain.
 
 ### System
@@ -417,14 +405,15 @@ availability, and units vary by Chrome version. Browser Bridge establishes no
 navigation observation window and does not measure LCP, CLS, or INP; do not
 interpret these counters as Web Vitals or page-load measurements.
 
-## Using `withBridgeClient`
+## One-off calls
 
-For one-off calls, `withBridgeClient` handles connect/close automatically:
+Each CLI invocation opens and closes its own transport connection:
 
-```js
-import { withBridgeClient } from '@browserbridge/bbx/packages/agent-client/src/runtime.js';
-
-const result = await withBridgeClient(async (client) => {
-  return client.request({ method: 'page.get_state' });
-});
+```bash
+bbx call --extension '<connection ID>' --tab 123 page.get_state '{}'
 ```
+
+MCP keeps an agent connection for the process lifetime. Owner-scoped resources
+such as artifacts need that same connection for follow-up reads. CLI helpers
+such as `bbx screenshot` and `bbx har` perform capture, download, verification,
+and deletion in one process.

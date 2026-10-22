@@ -8,22 +8,21 @@
  * scenario the way an agent would, and reports success, bridge calls, and the
  * tokens an agent would read. Requires a running daemon and an enabled window.
  *
+ *   make build-native
  *   node tests/fixtures/agent-interaction/bench.mjs [--json]
  */
 
-import { BridgeClient } from '../../../packages/agent-client/src/client.js';
-import {
-  annotateBridgeSummary,
-  summarizeBridgeResponse,
-} from '../../../packages/protocol/src/index.js';
+import { fileURLToPath } from 'node:url';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { startInteractionFixtureServer } from './server.mjs';
 
-/** @typedef {import('../../../packages/protocol/src/types.js').BridgeMethod} BridgeMethod */
-/** @typedef {import('../../../packages/protocol/src/types.js').BridgeResponse} BridgeResponse */
+/** @typedef {import('../../../protocol/types.js').BridgeMethod} BridgeMethod */
+/** @typedef {{ok: true, result: unknown, tokens: number} | {ok: false, result: null, error: {message: string, code: string}, tokens: number}} BridgeResponse */
 /**
  * @typedef {{
  *   name: string,
- *   run: (call: (method: BridgeMethod, params?: Record<string, unknown>) => Promise<BridgeResponse>) => Promise<void>,
+ *   run: (call: (method: BridgeMethod, params?: Record<string, unknown>) => Promise<BridgeResponse>) => Promise<unknown>,
  *   verify: (state: Record<string, unknown>, last: BridgeResponse | null) => boolean,
  * }} Scenario
  */
@@ -120,24 +119,71 @@ const SCENARIOS = [
   },
 ];
 
-const client = new BridgeClient({
-  agentSession: 'bbx-interaction-bench',
-  checkProtocolOnConnect: false,
+const executable =
+  process.env.BBX_NATIVE_EXECUTABLE ||
+  fileURLToPath(
+    new URL(`../../../dist/cli/bbx${process.platform === 'win32' ? '.exe' : ''}`, import.meta.url)
+  );
+const client = new Client({ name: 'bbx-interaction-bench', version: '1.0.0' });
+const transport = new StdioClientTransport({
+  command: executable,
+  args: ['mcp', 'serve'],
+  env: Object.fromEntries(
+    Object.entries({
+      ...process.env,
+      BBX_SESSION: 'bbx-interaction-bench',
+      BBX_AUTO_UPDATE: 'off',
+    }).filter((entry) => typeof entry[1] === 'string')
+  ),
+  stderr: 'inherit',
 });
 const { server, origin } = await startInteractionFixtureServer({ port: 0 });
 /** @type {Array<{ scenario: string, ok: boolean, calls: number, tokens: number, ms: number, error?: string }>} */
 const rows = [];
 let tabId = /** @type {number | null} */ (null);
 
+/**
+ * @param {{method: BridgeMethod, params?: Record<string, unknown>, tabId?: number, timeoutMs?: number}} input
+ * @returns {Promise<BridgeResponse>}
+ */
+async function request(input) {
+  const result = await client.callTool({
+    name: 'browser_call',
+    arguments: {
+      method: input.method,
+      params: input.params ?? {},
+      ...((input.tabId ?? tabId) ? { tabId: input.tabId ?? tabId } : {}),
+      timeoutMs: input.timeoutMs ?? 30_000,
+    },
+  });
+  const structured =
+    /** @type {{ok?: boolean, evidence?: unknown, error?: {code?: string, message?: string}, deliveredTokens?: number}} */ (
+      result.structuredContent ?? {}
+    );
+  const tokens = structured.deliveredTokens ?? Math.ceil(JSON.stringify(result.content).length / 4);
+  if (result.isError || structured.ok === false) {
+    return {
+      ok: false,
+      result: null,
+      error: {
+        code: structured.error?.code ?? 'BRIDGE_ERROR',
+        message: structured.error?.message ?? JSON.stringify(result.content),
+      },
+      tokens,
+    };
+  }
+  return { ok: true, result: structured.evidence, tokens };
+}
+
 try {
-  await client.connect();
-  const created = await client.request({
+  await client.connect(transport);
+  const created = await request({
     method: 'tabs.create',
     params: { url: `${origin}/`, active: false },
   });
   if (!created.ok) throw new Error(`tabs.create failed: ${created.error.message}`);
   tabId = /** @type {{ tabId: number }} */ (created.result).tabId;
-  await client.request({
+  await request({
     method: 'page.wait_for_load_state',
     tabId,
     params: { waitForLoad: true, timeoutMs: 10_000 },
@@ -153,17 +199,14 @@ try {
     /** @param {BridgeMethod} method @param {Record<string, unknown>} [params] */
     const call = async (method, params = {}) => {
       calls += 1;
-      const response = await client.request({ method, params, timeoutMs: 30_000 });
-      tokens += annotateBridgeSummary(
-        summarizeBridgeResponse(response, method),
-        response
-      ).summaryTokens;
+      const response = await request({ method, params, timeoutMs: 30_000 });
+      tokens += response.tokens;
       last = response;
       return response;
     };
     try {
       await scenario.run(call);
-      const stateResponse = await client.request({
+      const stateResponse = await request({
         method: 'dom.get_attributes',
         params: { target: { selector: '#state' }, attributes: ['data-state'] },
       });
@@ -171,15 +214,14 @@ try {
         ? /** @type {Record<string, string | undefined>} */ (stateResponse.result)
         : {};
       const state = JSON.parse(attributes['data-state'] ?? '{}');
+      const outcome = /** @type {BridgeResponse | null} */ (last);
       rows.push({
         scenario: scenario.name,
         ok: scenario.verify(state, last),
         calls,
         tokens,
         ms: Date.now() - started,
-        ...(/** @type {BridgeResponse | null} */ (last)?.ok === false
-          ? { error: /** @type {{ error: { code: string } }} */ (last).error.code }
-          : {}),
+        ...(outcome?.ok === false ? { error: outcome.error.code } : {}),
       });
     } catch (error) {
       rows.push({
@@ -194,9 +236,10 @@ try {
   }
 } finally {
   if (tabId !== null) {
-    await client.request({ method: 'tabs.close', params: { tabId } }).catch(() => {});
+    await request({ method: 'tabs.close', params: { tabId } }).catch(() => {});
   }
   await client.close().catch(() => {});
+  await transport.close().catch(() => {});
   server.close();
 }
 

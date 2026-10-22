@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { extensionFile } from '../../../tests/_helpers/extensionBuild.ts';
 
 import { withDocument } from '../../../tests/_helpers/dom.ts';
 
@@ -32,7 +33,7 @@ const GLOBAL_KEYS = [
 
 async function importFresh(relativePath: string): Promise<void> {
   await import(
-    `${new URL(relativePath, import.meta.url).href}?case=${Date.now()}-${Math.random()}`
+    `${extensionFile(relativePath.replace('../', '')).href}?case=${Date.now()}-${Math.random()}`
   );
 }
 

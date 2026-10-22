@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { createChromeFake, createStorageArea } from '../../../tests/_helpers/chromeFake.ts';
 import { loadBackground } from '../../../tests/_helpers/loadBackground.ts';
-import { createRequest } from '../../protocol/src/index.js';
+import { createRequest } from '../../../protocol/src/index.js';
 import type { ExtensionState } from '../src/background-state.js';
 import {
   AGENT_GROUP_STORAGE_KEY,

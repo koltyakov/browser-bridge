@@ -4,32 +4,32 @@
     {
       "label": "Run Tests",
       "type": "shell",
-      "command": "node --test packages/protocol/test/*.test.ts packages/agent-client/test/*.test.ts"
+      "command": "make test"
     },
     {
       "label": "Run Native Host Tests",
       "type": "shell",
-      "command": "node --test packages/native-host/test/*.test.ts"
+      "command": "make test-native"
     },
     {
       "label": "TypeCheck",
       "type": "shell",
-      "command": "npx tsc --noEmit"
+      "command": "make typecheck"
     },
     {
       "label": "Run Protocol Tests",
       "type": "shell",
-      "command": "node --test packages/protocol/test/protocol.test.ts"
+      "command": "node --import tsx --test protocol/test/*.test.ts"
     },
     {
       "label": "Run All Tests",
       "type": "shell",
-      "command": "npm run test:runtime && npx tsc --noEmit"
+      "command": "make test typecheck"
     },
     {
       "label": "Tests + Typecheck",
       "type": "shell",
-      "command": "npm run test:runtime && npx tsc --noEmit"
+      "command": "make test typecheck"
     }
   ]
 }

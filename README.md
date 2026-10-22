@@ -108,14 +108,14 @@ Browser Bridge is optimized for the opposite starting point: **inspect the state
 ## Setup
 
 1. Install [Browser Bridge from the Chrome Web Store](https://chromewebstore.google.com/detail/browser-bridge/jjjkmmcdkpcgamlopogicbnnhdgebhie) in Chrome or another Chromium-based browser
-2. Click **Download companion** in the extension and open the installer. No Node, npm, or Bun installation is needed.
+2. With Node.js 20 or later installed, run `npm install -g @browserbridge/bbx`. The npm launcher downloads the matching Go executable, verifies its pinned SHA-256 digest, and registers the native messaging host.
 3. Return to the extension and choose your agent under **Connect your agent**. Start with MCP.
 4. Enable access for the browser window you want the agent to use.
 5. Ask your agent to use Browser Bridge.
 
-Already installed with npm? Run the companion installer directly. It keeps your settings and migrates recognized agent connections without requiring an uninstall. See the [companion setup and migration guide](https://github.com/koltyakov/browser-bridge/blob/main/docs/companion.md) for Linux, scripts, updates, and project-specific configurations.
+The npm package is a bootstrap and launcher with zero runtime npm dependencies. It downloads the exact package version for macOS arm64/x64, Linux arm64/x64, or Windows x64 from GitHub Releases. The Go executable runs the CLI, daemon, native host, and MCP server. Local dependency installs do not register a browser; if install scripts were skipped, the first command downloads the executable, then run `bbx install` to register it. See the [native CLI guide](https://github.com/koltyakov/browser-bridge/blob/main/docs/native-cli.md).
 
-The npm installation remains available for developers: `npm install -g @browserbridge/bbx`, then `bbx install`. Register other browsers with `bbx install --browser chrome|edge|brave|chromium|arc`.
+If the extension does not connect, run `bbx install`. Register a specific browser with `bbx install --browser chrome|edge|brave|chromium|arc`.
 
 On Ubuntu, Chromium is commonly installed as a strict snap, and Flatpak Chromium is similarly sandboxed. If native messaging stays disconnected there, use a non-sandboxed Chromium-based browser such as Google Chrome, Brave, or Edge.
 
@@ -153,6 +153,7 @@ MCP mode is self-contained: the dual-era stdio server supports legacy MCP client
 - [Troubleshooting](https://github.com/koltyakov/browser-bridge/blob/main/docs/troubleshooting.md)
 - [BridgeClient API](https://github.com/koltyakov/browser-bridge/blob/main/docs/api-reference.md)
 - [WebMCP website tools](https://github.com/koltyakov/browser-bridge/blob/main/docs/webmcp.md)
+- [Development and Make tasks](https://github.com/koltyakov/browser-bridge/blob/main/docs/development.md)
 
 ## Privacy
 

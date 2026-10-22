@@ -1,0 +1,70 @@
+name: Native CLI
+
+on:
+  pull_request:
+    paths:
+      - 'cmd/**'
+      - 'internal/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
+      - 'tests/native/**'
+      - 'protocol/**'
+      - 'skills/**'
+      - 'scripts/generate-*.mjs'
+      - 'tests/integration/**'
+      - 'tests/_helpers/**'
+      - 'scripts/build-native.mjs'
+      - '.github/workflows/native.yml'
+      - 'package*.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            asset: bbx-darwin-arm64
+          - os: macos-15-intel
+            asset: bbx-darwin-x64
+          - os: ubuntu-24.04
+            asset: bbx-linux-x64
+          - os: ubuntu-24.04-arm
+            asset: bbx-linux-arm64
+          - os: windows-2025
+            asset: bbx-windows-x64.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.14.0
+          cache: npm
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+          cache: false
+      - name: Install Make on Windows
+        if: runner.os == 'Windows'
+        run: choco install make --yes --no-progress
+      - run: make deps
+      - run: make check-protocol
+      - run: make package-native
+      - name: Native interop tests
+        run: make test-native
+        env:
+          BBX_NATIVE_EXECUTABLE: ${{ github.workspace }}/dist/cli/${{ matrix.asset }}
+      - name: Go vet
+        run: make vet-go
+      - name: Go formatting
+        run: make check-go-format
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-${{ matrix.asset }}
+          path: dist/cli/*
+          if-no-files-found: error

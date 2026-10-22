@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 
 import { loadBackground } from '../../../tests/_helpers/loadBackground.ts';
 import type { LoadedBackground } from '../../../tests/_helpers/loadBackground.ts';
-import type { BridgeRequest, BridgeResponse } from '../../protocol/src/types.js';
+import type { BridgeRequest, BridgeResponse } from '../../../protocol/src/types.js';
 import {
   BridgeError,
   createRequest,
   createSuccess,
   ERROR_CODES,
   MAX_NATIVE_MESSAGE_BYTES,
-} from '../../protocol/src/index.js';
+} from '../../../protocol/src/index.js';
 
 type AccessPopupPlacement = { left: number; top: number } | null;
 type SetupAction = { action: string; kind: string; target: string };

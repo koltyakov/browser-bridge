@@ -6,7 +6,7 @@ import {
   createRequest,
   createSuccess,
   ERROR_CODES,
-} from '../../protocol/src/index.js';
+} from '../../../protocol/src/index.js';
 import { createActionLogController, enrichBridgeResponse } from '../src/background-action-log.js';
 import { createExtensionState, MAX_ACTION_LOG_ENTRIES } from '../src/background-state.js';
 import { createStorageArea } from '../../../tests/_helpers/chromeFake.ts';

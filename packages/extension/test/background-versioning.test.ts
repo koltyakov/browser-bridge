@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import {
   getSupportedProtocolVersions,
   setProtocolPackageVersion,
-} from '../../protocol/src/index.js';
+} from '../../../protocol/src/index.js';
 import {
   compareProtocolVersions,
   getVersionNegotiationPayload,
