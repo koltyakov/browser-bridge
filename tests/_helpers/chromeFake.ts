@@ -172,6 +172,7 @@ export function createChromeFake(overrides: ChromeFakeOverrides = {}): ChromeFak
       async remove() {},
       onUpdated: createChromeEvent(),
       onActivated: createChromeEvent(),
+      onMoved: createChromeEvent(),
       onDetached: createChromeEvent(),
       onAttached: createChromeEvent(),
       onRemoved: createChromeEvent(),

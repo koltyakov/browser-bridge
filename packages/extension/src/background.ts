@@ -872,6 +872,7 @@ chrome.tabs.onDetached?.addListener((tabId, detachInfo) => {
 
 chrome.tabs.onMoved?.addListener(() => {
   void agentGroups.sync().catch(reportAsyncError);
+  void emitUiState().catch(reportAsyncError);
 });
 
 chrome.tabs.onAttached?.addListener((tabId, attachInfo) => {
@@ -1826,7 +1827,7 @@ async function handleUiMessage(
   });
 }
 
-/** Describe recently targeted tabs without choosing the latest request as a winner. */
+/** Describe recently targeted tabs in their left-to-right browser window order. */
 async function getAgentTabState(
   windowId: number,
   currentTabId: number
@@ -1835,6 +1836,7 @@ async function getAgentTabState(
   const tabIds = [
     ...new Set(leases.filter((entry) => entry.windowId === windowId).map((entry) => entry.tabId)),
   ];
+  const lastActivityByTab = new Map(leases.map((entry) => [entry.tabId, entry.lastUsedAt]));
 
   const actionCounts: Map<number, number> = new Map();
   for (const entry of state.actionLog) {
@@ -1847,12 +1849,7 @@ async function getAgentTabState(
       try {
         const tab = await chrome.tabs.get(tabId);
         if (tab.windowId !== windowId) return null;
-        return {
-          tabId,
-          title: tab.title ?? '',
-          isCurrent: tabId === currentTabId,
-          actionCount: actionCounts.get(tabId) ?? 0,
-        };
+        return { ...tab, id: tabId };
       } catch {
         return null;
       }
@@ -1861,8 +1858,17 @@ async function getAgentTabState(
   return tabs
     .filter((tab) => tab !== null)
     .sort(
-      (left, right) => Number(right.isCurrent) - Number(left.isCurrent) || left.tabId - right.tabId
-    );
+      (left, right) =>
+        (left.index ?? Number.MAX_SAFE_INTEGER) - (right.index ?? Number.MAX_SAFE_INTEGER) ||
+        left.id - right.id
+    )
+    .map((tab) => ({
+      tabId: tab.id,
+      title: tab.title ?? '',
+      isCurrent: tab.id === currentTabId,
+      actionCount: actionCounts.get(tab.id) ?? 0,
+      lastActivityAt: lastActivityByTab.get(tab.id) ?? 0,
+    }));
 }
 
 /** Redirect every agent session in the tab's window to that tab. This is the

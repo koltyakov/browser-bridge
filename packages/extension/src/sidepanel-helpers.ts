@@ -1,4 +1,30 @@
 export type VersionMismatchView = { key: string; message: string };
+
+export function getAgentTabsInlineHeight(
+  availableHeight: number,
+  contentHeight: number
+): number | null {
+  if (!Number.isFinite(availableHeight) || !Number.isFinite(contentHeight) || contentHeight <= 0)
+    return null;
+  // Keep at least two tab rows usable when the rest of the list needs scrolling.
+  const minimumHeight = Math.min(contentHeight, 2 * 32 + 13);
+  return availableHeight >= minimumHeight ? Math.min(availableHeight, contentHeight) : null;
+}
+
+export function formatTabActivityAge(lastActivityAt: number | undefined, now = Date.now()): string {
+  if (
+    lastActivityAt == null ||
+    !Number.isFinite(lastActivityAt) ||
+    lastActivityAt <= 0 ||
+    !Number.isFinite(now)
+  ) {
+    return '';
+  }
+  const elapsedSeconds = Math.floor(Math.max(0, now - lastActivityAt) / 1000);
+  if (elapsedSeconds < 60) return '<1m';
+  return `${Math.floor(elapsedSeconds / 60)}m ${elapsedSeconds % 60}s`;
+}
+
 export type IntervalScheduler = (
   handler: () => void,
   timeout?: number

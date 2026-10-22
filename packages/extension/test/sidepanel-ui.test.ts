@@ -345,6 +345,14 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
       document.getElementById('native-setup')?.textContent ?? '',
       /npm install -g @browserbridge\/bbx/
     );
+    assert.equal(
+      document.getElementById('native-indicator')?.closest('#native-setup'),
+      document.getElementById('native-setup')
+    );
+    assert.equal(
+      document.querySelector('.native-setup-heading .status-dot')?.id,
+      'native-indicator'
+    );
 
     assert.deepEqual(intervalCalls, [{ delay: 5_000 }]);
     assert.deepEqual(portPair.left.postedMessages, [
@@ -374,6 +382,95 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
 
     portPair.left.dispatchMessage(createSidepanelStateSync(false));
     assert.equal(button.dataset.enabled, 'false');
+  });
+});
+
+test('compact help uses remaining height and dismisses without adding activity controls', async (t) => {
+  const html = await readFile(SIDEPANEL_HTML_URL, 'utf8');
+  const savedChrome = Reflect.get(globalThis, 'chrome') ?? MISSING;
+  const savedMatchMedia = Reflect.get(globalThis, 'matchMedia') ?? MISSING;
+  const savedInnerHeight = Reflect.get(globalThis, 'innerHeight') ?? MISSING;
+  const savedSetInterval = globalThis.setInterval;
+  const savedClearInterval = globalThis.clearInterval;
+  t.after(() => {
+    restoreGlobal('chrome', savedChrome);
+    restoreGlobal('matchMedia', savedMatchMedia);
+    restoreGlobal('innerHeight', savedInnerHeight);
+    restoreGlobal('setInterval', savedSetInterval);
+    restoreGlobal('clearInterval', savedClearInterval);
+  });
+  Reflect.set(globalThis, 'setInterval', (() => 0) as unknown as typeof setInterval);
+  Reflect.set(globalThis, 'clearInterval', (() => {}) as typeof clearInterval);
+  const pair = createMessagePortPair();
+  Reflect.set(
+    globalThis,
+    'chrome',
+    createChromeFake({
+      runtime: {
+        connect() {
+          return pair.left.port as unknown as chrome.runtime.Port;
+        },
+      },
+    })
+  );
+  await withDocument(html, async ({ window }) => {
+    Reflect.set(window, 'location', new URL('https://example.com/sidepanel.html'));
+    Reflect.set(window, 'innerHeight', 620);
+    const panelHelp = document.querySelector('.panel-help') as HTMLElement;
+    Reflect.set(panelHelp, 'getBoundingClientRect', () => ({ bottom: 180 }));
+    let compact = true;
+    Reflect.set(window, 'matchMedia', (query: string) => {
+      assert.equal(query, '(max-height: 700px)');
+      return { matches: compact };
+    });
+    await importFreshSidepanelScript();
+    await flushMicrotasks();
+    pair.left.dispatchMessage(
+      createSidepanelStateSync(false, null, null, [
+        createActionLogEntry('ping', 'health.ping', 487),
+      ])
+    );
+    const installation = document.getElementById('installation-section') as HTMLDetailsElement;
+    const examples = document.getElementById('examples-section') as HTMLDetailsElement;
+    assert.equal(installation.parentElement?.className, 'panel-help');
+    assert.equal(examples.parentElement, installation.parentElement);
+    assert.equal(panelHelp.style.getPropertyValue('--panel-help-height'), '422px');
+    Reflect.set(window, 'innerHeight', 480);
+    window.dispatchEvent(new window.Event('resize'));
+    assert.equal(panelHelp.style.getPropertyValue('--panel-help-height'), '282px');
+    Reflect.set(window, 'innerHeight', 100);
+    window.dispatchEvent(new window.Event('resize'));
+    assert.equal(panelHelp.style.getPropertyValue('--panel-help-height'), '0px');
+    installation.open = true;
+    installation.dispatchEvent(new window.Event('toggle'));
+    installation
+      .querySelector('summary')
+      ?.dispatchEvent(new window.Event('click', { bubbles: true }));
+    assert.equal(installation.open, true, 'inside clicks keep the help drawer open');
+    examples.open = true;
+    examples.dispatchEvent(new window.Event('toggle'));
+    assert.equal(installation.open, false, 'only one help drawer opens at a time');
+    assert.equal(examples.open, true);
+    document.body.dispatchEvent(new window.Event('click', { bubbles: true }));
+    assert.equal(examples.open, false, 'outside clicks dismiss compact help');
+    installation.open = true;
+    const escape = new window.Event('keydown', { bubbles: true });
+    Reflect.set(escape, 'key', 'Escape');
+    document.dispatchEvent(escape);
+    assert.equal(installation.open, false, 'Escape dismisses help');
+    examples.open = true;
+    compact = false;
+    document.body.dispatchEvent(new window.Event('click', { bubbles: true }));
+    assert.equal(examples.open, true, 'outside clicks do not collapse tall-panel help');
+    compact = true;
+    assert.equal(examples.open, true, 'resizing does not discard an open help section');
+    assert.equal(document.querySelector('.activity-card button'), null);
+    assert.equal(document.querySelector('.activity-method')?.textContent, 'health.ping');
+    assert.equal(
+      document.querySelector('.activity-summary > span:last-child')?.getAttribute('title'),
+      'Ran health.ping'
+    );
+    window.dispatchEvent(new window.Event('beforeunload'));
   });
 });
 
@@ -565,12 +662,18 @@ test('agent tab card appears only for sibling work and examples stay hidden duri
     : MISSING;
   const savedSetInterval = globalThis.setInterval;
   const savedClearInterval = globalThis.clearInterval;
+  const savedDateNow = Date.now;
+  const ageTicks: Array<() => void> = [];
   t.after(() => {
     restoreGlobal('chrome', savedChrome);
     restoreGlobal('setInterval', savedSetInterval);
     restoreGlobal('clearInterval', savedClearInterval);
+    Date.now = savedDateNow;
   });
-  Reflect.set(globalThis, 'setInterval', (() => 0) as unknown as typeof setInterval);
+  Reflect.set(globalThis, 'setInterval', ((callback: TimerHandler, delay?: number) => {
+    if (delay === 1000 && typeof callback === 'function') ageTicks.push(() => callback());
+    return 0;
+  }) as unknown as typeof setInterval);
   Reflect.set(globalThis, 'clearInterval', (() => {}) as typeof clearInterval);
   const pair = createMessagePortPair();
   const tabUpdates: Array<{ tabId: number; properties: chrome.tabs.UpdateProperties }> = [];
@@ -597,7 +700,7 @@ test('agent tab card appears only for sibling work and examples stay hidden duri
     Reflect.set(window, 'location', new URL('https://example.com/sidepanel.html?tabId=41'));
     await importFreshSidepanelScript();
     await flushMicrotasks();
-    const card = document.getElementById('agent-tab-row');
+    const card = document.getElementById('agent-tab-row') as HTMLDetailsElement | null;
     const list = document.getElementById('agent-tabs-list');
     const examples = document.getElementById('examples-section') as HTMLDetailsElement | null;
     assert.ok(card instanceof HTMLElement && list instanceof HTMLElement);
@@ -605,6 +708,9 @@ test('agent tab card appears only for sibling work and examples stay hidden duri
     assert.equal(card.parentElement, document.querySelector('main'));
     assert.equal(document.getElementById('control-section')?.contains(card), false);
     assert.equal(document.getElementById('agent-tab-move'), null);
+    assert.equal(card.tagName, 'DETAILS');
+    assert.equal(card.hasAttribute('open'), false);
+    assert.equal(document.getElementById('agent-tabs-heading')?.textContent, 'Active tabs');
 
     pair.left.dispatchMessage(createSidepanelStateSync(true));
     assert.equal(card.hidden, true);
@@ -644,6 +750,7 @@ test('agent tab card appears only for sibling work and examples stay hidden duri
       { tabId: 41, title: 'Current page', isCurrent: true, actionCount: 99 },
       { tabId: 42, title: longTitle, isCurrent: false, actionCount: 5 },
     ];
+    let stableButton: HTMLButtonElement | null = null;
     for (let index = 0; index < 4; index += 1) {
       pair.left.dispatchMessage(
         createSidepanelStateSync(
@@ -663,8 +770,18 @@ test('agent tab card appears only for sibling work and examples stay hidden duri
         )
       );
       assert.equal(card.hidden, false);
+      assert.equal(document.getElementById('agent-tabs-total')?.textContent, '1 tab');
+      assert.equal(
+        document.getElementById('agent-tabs-actions')?.textContent,
+        `${index + 1} ${index === 0 ? 'action' : 'actions'}`
+      );
+      assert.equal(
+        document.getElementById('agent-tabs-summary')?.getAttribute('aria-label'),
+        `Active tabs: 1, ${index + 1} ${index === 0 ? 'action' : 'actions'}`
+      );
       assert.equal(examples.hidden, true);
       assert.equal(list.children.length, 1);
+      assert.equal(list.querySelector<HTMLElement>('.agent-tab-recency')?.hidden, true);
       assert.equal(list.textContent?.includes('Current page'), false);
       assert.equal(list.querySelector('.agent-tab-name')?.textContent, longTitle);
       assert.equal(list.lastElementChild?.getAttribute('title'), longTitle);
@@ -681,6 +798,15 @@ test('agent tab card appears only for sibling work and examples stay hidden duri
       );
       const rowButton: HTMLButtonElement | null = list.querySelector('.agent-tab-button');
       assert.ok(rowButton instanceof HTMLButtonElement);
+      if (stableButton) {
+        assert.equal(rowButton, stableButton, 'activity updates preserve tab-switcher rows');
+        assert.equal(card.open, true, 'activity updates do not close the tab switcher');
+      } else {
+        assert.equal(card.open, false, 'new sibling work does not open the switcher');
+        stableButton = rowButton;
+        card.open = true;
+        card.dispatchEvent(new window.Event('toggle'));
+      }
       assert.equal(rowButton.type, 'button');
       assert.equal(rowButton.getAttribute('aria-label'), `Switch to tab: ${longTitle}`);
       assert.equal(rowButton.lastElementChild, chip, 'the count follows the tab name');
@@ -718,15 +844,18 @@ test('agent tab card appears only for sibling work and examples stay hidden duri
     switchButton.click();
     await flushMicrotasks();
     assert.deepEqual(tabUpdates.at(-1), { tabId: 42, properties: { active: true } });
+    assert.equal(card.open, false, 'a successful switch closes the switcher');
     const countChip: HTMLElement | null = switchButton.querySelector('.agent-tab-count');
     assert.ok(countChip instanceof HTMLElement);
     countChip.click();
     await flushMicrotasks();
     assert.equal(tabUpdates.length, 2, 'clicking the chip also activates the row tab');
     failTabUpdate = true;
+    card.open = true;
     switchButton.click();
     await flushMicrotasks();
     assert.equal(switchButton.title, 'Could not switch to this tab. Try again.');
+    assert.equal(card.open, true, 'failed switches keep the switcher available');
     assert.equal(
       pair.left.postedMessages.some(
         (message) => (message as { type: string }).type === 'agent.move_here'
@@ -743,12 +872,62 @@ test('agent tab card appears only for sibling work and examples stay hidden duri
       })
     );
     assert.equal(list.children.length, 2);
+    Date.now = () => 1_061_000;
+    const manyTabs = Array.from({ length: 50 }, (_, index) => ({
+      tabId: index + 42,
+      title: `Page ${index + 1}`,
+      isCurrent: false,
+      actionCount: index + 1,
+      lastActivityAt: 1_000_000 - index * 1000,
+    }));
+    pair.left.dispatchMessage(
+      createSidepanelStateSync(true, null, null, [], { agentTabs: manyTabs })
+    );
+    assert.equal(document.getElementById('agent-tabs-total')?.textContent, '50 tabs');
+    assert.equal(
+      document.getElementById('agent-tabs-actions')?.textContent,
+      `${(1275).toLocaleString()} actions`
+    );
+    assert.equal(list.children.length, 50, 'all tabs remain available behind the disclosure');
+    assert.equal(list.querySelector('.agent-tab-recency')?.textContent, '1m 1s');
+    Date.now = () => 1_062_000;
+    assert.ok(ageTicks.length > 0, 'the open switcher updates ages every second');
+    ageTicks.at(-1)?.();
+    assert.equal(list.querySelector('.agent-tab-recency')?.textContent, '1m 2s');
+    const firstTab = list.firstElementChild;
+    pair.left.dispatchMessage(
+      createSidepanelStateSync(true, null, null, [], {
+        agentTabs: manyTabs.map((tab, index) => ({
+          ...tab,
+          lastActivityAt: 1_000_000 + index * 1000,
+        })),
+      })
+    );
+    assert.equal(list.firstElementChild, firstTab, 'new activity does not reorder window tabs');
+    pair.left.dispatchMessage(
+      createSidepanelStateSync(true, null, null, [], { agentTabs: [...manyTabs].reverse() })
+    );
+    assert.equal(
+      list.firstElementChild?.getAttribute('data-tab-id'),
+      '91',
+      'the list follows the browser order supplied by the background'
+    );
+    assert.equal(list.lastElementChild, firstTab, 'browser reordering reuses existing tab rows');
+    document.body.dispatchEvent(new window.Event('click', { bubbles: true }));
+    assert.equal(card.open, false, 'outside clicks dismiss the tab switcher');
+    card.open = true;
+    const escape = new window.Event('keydown', { bubbles: true });
+    Reflect.set(escape, 'key', 'Escape');
+    document.dispatchEvent(escape);
+    assert.equal(card.open, false, 'Escape dismisses the tab switcher');
+    card.open = true;
     pair.left.dispatchMessage(
       createSidepanelStateSync(true, null, null, [
         createActionLogEntry('history-only', 'dom.query', 10),
       ])
     );
     assert.equal(card.hidden, true);
+    assert.equal(card.open, false, 'the switcher closes when there are no sibling targets');
     assert.equal(examples.hidden, true, 'activity history also hides examples');
     pair.left.dispatchMessage(
       createSidepanelStateSync(true, null, null, [
@@ -810,10 +989,15 @@ test('sidepanel UI shows the global host CLI and daemon version', async (t) => {
 
     portPair.left.dispatchMessage(createSidepanelStateSync(true, null, '1.2.0'));
 
-    const hostVersion = document.getElementById('setup-host-version');
-    assert.ok(hostVersion instanceof HTMLElement);
-    assert.equal(hostVersion.textContent, 'Daemon version: v1.2.0');
-    assert.equal(hostVersion.hidden, false);
+    assert.equal(document.getElementById('setup-host-version'), null);
+    assert.equal(
+      document.getElementById('extension-version')?.textContent,
+      'Extension: v1.2.9\nDaemon: v1.2.0'
+    );
+    assert.doesNotMatch(
+      document.getElementById('installation-section')?.textContent ?? '',
+      /Daemon version:/
+    );
 
     const mismatchBanner = document.getElementById('version-mismatch-banner');
     const mismatchMessage = document.getElementById('version-mismatch-message');

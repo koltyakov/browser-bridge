@@ -1,5 +1,7 @@
 import {
   createSetupInstallMessage,
+  formatTabActivityAge,
+  getAgentTabsInlineHeight,
   getActivitySourcePills,
   getPromptExamplesRenderGroups,
   getSidepanelAgentStatusView,
@@ -129,7 +131,6 @@ const setupInstallCmd = document.getElementById('setup-install-cmd') as HTMLElem
 const controlSection = document.getElementById('control-section') as HTMLElement;
 const installationSection = document.getElementById('installation-section') as HTMLDetailsElement;
 const setupStatusNote = document.getElementById('setup-status-note') as HTMLParagraphElement;
-const setupHostVersion = document.getElementById('setup-host-version') as HTMLParagraphElement;
 const proxyStatusEl = document.getElementById('proxy-status') as HTMLParagraphElement;
 const versionMismatchBanner = document.getElementById('version-mismatch-banner') as HTMLDivElement;
 const versionMismatchMessage = document.getElementById(
@@ -152,7 +153,10 @@ const activitySummaryTokens = document.getElementById('activity-summary-tokens')
 const agentStatus = document.getElementById('agent-status') as HTMLDivElement;
 const agentStatusDetail = document.getElementById('agent-status-detail') as HTMLParagraphElement;
 const agentDisclosure = document.getElementById('agent-disclosure') as HTMLParagraphElement;
-const agentTabRow = document.getElementById('agent-tab-row') as HTMLElement;
+const agentTabRow = document.getElementById('agent-tab-row') as HTMLDetailsElement;
+const agentTabsSummary = document.getElementById('agent-tabs-summary') as HTMLElement;
+const agentTabsTotal = document.getElementById('agent-tabs-total') as HTMLSpanElement;
+const agentTabsActions = document.getElementById('agent-tabs-actions') as HTMLSpanElement;
 const agentTabsList = document.getElementById('agent-tabs-list') as HTMLUListElement;
 const otherWindows = document.getElementById('other-windows') as HTMLDetailsElement;
 const otherWindowsCount = document.getElementById('other-windows-count') as HTMLElement;
@@ -161,6 +165,67 @@ const otherWindowsDisable = document.getElementById('other-windows-disable') as 
 const otherWindowsError = document.getElementById('other-windows-error') as HTMLParagraphElement;
 const examplesSection = document.getElementById('examples-section') as HTMLDetailsElement;
 const examplesContent = document.getElementById('examples-content') as HTMLDivElement;
+const panelHelp = document.querySelector('.panel-help') as HTMLDivElement;
+
+function isCompactPanel(): boolean {
+  return window.matchMedia?.('(max-height: 700px)').matches ?? false;
+}
+
+function syncPanelHelpHeight(): void {
+  syncAgentTabsExpansion();
+  const availableHeight = Math.max(
+    0,
+    window.innerHeight - panelHelp.getBoundingClientRect().bottom - 18
+  );
+  panelHelp.style.setProperty('--panel-help-height', `${availableHeight}px`);
+  const tabListHeight = Math.max(
+    0,
+    window.innerHeight - agentTabsSummary.getBoundingClientRect().bottom - 18
+  );
+  agentTabRow.style.setProperty('--agent-tabs-height', `${tabListHeight}px`);
+}
+
+function syncAgentTabsExpansion(): void {
+  if (
+    agentTabRow.hidden ||
+    !agentTabRow.open ||
+    activitySection.hidden ||
+    typeof getComputedStyle !== 'function'
+  ) {
+    agentTabRow.dataset.inline = 'false';
+    return;
+  }
+  const cards = [...actionLog.querySelectorAll<HTMLElement>('.activity-card')];
+  const visibleCards = cards.slice(0, 5);
+  const eventGap = Number.parseFloat(getComputedStyle(actionLog).rowGap) || 0;
+  const eventHeight = visibleCards.length
+    ? visibleCards.reduce((height, card) => height + card.getBoundingClientRect().height, 0) +
+      Math.max(0, visibleCards.length - 1) * eventGap
+    : 20;
+  const fadeHeight = cards.length > 5 ? 24 : 0;
+  const activityRect = activitySection.getBoundingClientRect();
+  const gapBelowTabs = Math.max(0, activityRect.top - agentTabRow.getBoundingClientRect().bottom);
+  const activityHeaderHeight = Math.max(
+    0,
+    actionLog.getBoundingClientRect().top - activityRect.top
+  );
+  const panelBottomPadding =
+    Number.parseFloat(getComputedStyle(agentTabRow.parentElement as HTMLElement).paddingBottom) ||
+    0;
+  const availableHeight =
+    window.innerHeight -
+    agentTabsSummary.getBoundingClientRect().bottom -
+    gapBelowTabs -
+    activityHeaderHeight -
+    eventHeight -
+    fadeHeight -
+    panelBottomPadding -
+    2;
+  const inlineHeight = getAgentTabsInlineHeight(availableHeight, agentTabsList.scrollHeight + 13);
+  agentTabRow.dataset.inline = String(inlineHeight !== null);
+  if (inlineHeight !== null)
+    agentTabRow.style.setProperty('--agent-tabs-inline-height', `${inlineHeight}px`);
+}
 
 function syncActivityScrollFade(): void {
   activitySection.dataset.moreBelow = String(
@@ -170,8 +235,19 @@ function syncActivityScrollFade(): void {
 
 actionLog.addEventListener('scroll', syncActivityScrollFade, { passive: true });
 const activityResizeObserver =
-  typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(syncActivityScrollFade);
-activityResizeObserver?.observe(actionLog);
+  typeof ResizeObserver === 'undefined'
+    ? null
+    : new ResizeObserver(() => {
+        syncActivityScrollFade();
+        syncPanelHelpHeight();
+      });
+for (const element of [actionLog, panelHelp, controlSection, agentTabRow]) {
+  activityResizeObserver?.observe(element);
+}
+window.addEventListener('resize', syncPanelHelpHeight);
+document
+  .querySelector('.panel')
+  ?.addEventListener('scroll', syncPanelHelpHeight, { passive: true });
 
 let currentTabState: SidePanelCurrentTab | null = null;
 
@@ -180,6 +256,7 @@ let currentActionLog: ActionLogEntry[] = [];
 let currentOtherWindowsKey: string | null = null;
 let windowActionPending = false;
 let hasAgentWork = false;
+let agentTabAgeTimer: ReturnType<typeof setInterval> | null = null;
 
 let setupStatusPollTimer: ReturnType<typeof setInterval> | null = null;
 let hasAutoExpandedHostSetup = false;
@@ -377,15 +454,29 @@ function renderWindowActionResult(
 }
 
 installationSection.addEventListener('toggle', () => {
+  if (installationSection.open) agentTabRow.open = false;
+  syncPanelHelpHeight();
   syncExclusiveDetailsSections(installationSection, examplesSection);
   syncConnectedSectionsVisibility();
   syncSetupStatusPolling();
 });
 
 examplesSection.addEventListener('toggle', () => {
+  if (examplesSection.open) agentTabRow.open = false;
+  syncPanelHelpHeight();
   syncExclusiveDetailsSections(examplesSection, installationSection);
   syncConnectedSectionsVisibility();
   syncSetupStatusPolling();
+});
+
+agentTabRow.addEventListener('toggle', () => {
+  if (agentTabRow.open) {
+    installationSection.open = false;
+    examplesSection.open = false;
+  }
+  syncPanelHelpHeight();
+  updateAgentTabAges();
+  syncAgentTabAgeTimer();
 });
 
 setupStatusMatrix.addEventListener('contextmenu', (event) => {
@@ -428,11 +519,22 @@ document.addEventListener('click', () => {
 document.addEventListener('click', (event) => {
   if (event.target instanceof Node && !otherWindows.contains(event.target))
     otherWindows.open = false;
+  if (event.target instanceof Node && !agentTabRow.contains(event.target)) agentTabRow.open = false;
+  if (isCompactPanel() && event.target instanceof Node && !panelHelp.contains(event.target)) {
+    installationSection.open = false;
+    examplesSection.open = false;
+  }
 });
 
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
     hideSetupContextMenu();
+    for (const details of [installationSection, examplesSection, agentTabRow]) {
+      if (details.open) {
+        details.open = false;
+        details.querySelector('summary')?.focus();
+      }
+    }
     if (otherWindows.open) {
       otherWindows.open = false;
       otherWindowsCount.focus();
@@ -447,6 +549,7 @@ versionMismatchDismiss.addEventListener('click', () => {
 
 window.addEventListener('beforeunload', () => {
   clearInterval(activityHistogramTimer);
+  if (agentTabAgeTimer !== null) clearInterval(agentTabAgeTimer);
   activityResizeObserver?.disconnect();
 });
 
@@ -479,6 +582,7 @@ function renderState(state: UiSnapshot): void {
     syncSetupStatusPolling,
   });
   syncActivityScrollFade();
+  syncPanelHelpHeight();
 }
 
 function updateActivityVisualizations(): void {
@@ -600,40 +704,91 @@ function renderOtherWindows(state: UiSnapshot): void {
   );
 }
 
-/** Show recent agent targets without repeating the tab names in a summary. */
+/** Keep sibling targets behind a fixed-height disclosure, preserving rows during activity updates. */
 function renderAgentTabs(state: UiSnapshot): void {
   const tabs = (state.agentTabs ?? []).filter((tab) => tab.tabId !== state.currentTab?.tabId);
   agentTabRow.hidden = !state.nativeConnected || !state.currentTab?.enabled || tabs.length === 0;
-  agentTabsList.replaceChildren(
-    ...tabs.map((tab) => {
-      const item = document.createElement('li');
+  if (agentTabRow.hidden) agentTabRow.open = false;
+  const totalActions = tabs.reduce((total, tab) => total + (tab.actionCount ?? 0), 0);
+  agentTabsTotal.textContent = `${tabs.length} ${tabs.length === 1 ? 'tab' : 'tabs'}`;
+  agentTabsActions.textContent = `${totalActions.toLocaleString()} ${totalActions === 1 ? 'action' : 'actions'}`;
+  agentTabsSummary.setAttribute(
+    'aria-label',
+    `Active tabs: ${tabs.length}, ${agentTabsActions.textContent}`
+  );
+  const existingItems = new Map(
+    [...agentTabsList.children].map((item) => [(item as HTMLElement).dataset.tabId, item])
+  );
+  for (const [index, tab] of tabs.entries()) {
+    const key = String(tab.tabId);
+    let item = existingItems.get(key) as HTMLLIElement | undefined;
+    existingItems.delete(key);
+    if (!item) {
+      item = document.createElement('li');
+      item.dataset.tabId = key;
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'agent-tab-button';
       const name = document.createElement('span');
       name.className = 'agent-tab-name';
-      name.textContent = tab.title || `Tab ${tab.tabId}`;
-      item.title = name.textContent;
-      button.title = name.textContent;
-      button.setAttribute('aria-label', `Switch to tab: ${name.textContent}`);
       button.addEventListener('click', () => {
         // This is a user tab switch, not an agent request or lease rebind.
-        void chrome.tabs.update(tab.tabId, { active: true }).catch(() => {
-          button.title = 'Could not switch to this tab. Try again.';
-        });
+        void chrome.tabs.update(tab.tabId, { active: true }).then(
+          () => {
+            agentTabRow.open = false;
+          },
+          () => {
+            button.title = 'Could not switch to this tab. Try again.';
+          }
+        );
       });
-      const count = tab.actionCount ?? 0;
       const chip = document.createElement('span');
       chip.className = 'agent-tab-count activity-tokens';
-      chip.textContent = `Actions: ${count}`;
-      chip.title = `${count} recent ${count === 1 ? 'action' : 'actions'}`;
-      chip.setAttribute('aria-label', chip.title);
-      button.append(name, chip);
+      const recency = document.createElement('span');
+      recency.className = 'agent-tab-recency';
+      button.append(name, recency, chip);
       item.append(button);
-      return item;
-    })
-  );
+    }
+    const button = item.querySelector('button') as HTMLButtonElement;
+    const name = item.querySelector('.agent-tab-name') as HTMLSpanElement;
+    const chip = item.querySelector('.agent-tab-count') as HTMLSpanElement;
+    const recency = item.querySelector('.agent-tab-recency') as HTMLSpanElement;
+    recency.dataset.lastActivityAt = String(tab.lastActivityAt ?? '');
+    name.textContent = tab.title || `Tab ${tab.tabId}`;
+    item.title = name.textContent;
+    button.title = name.textContent;
+    button.setAttribute('aria-label', `Switch to tab: ${name.textContent}`);
+    const count = tab.actionCount ?? 0;
+    chip.textContent = `Actions: ${count}`;
+    chip.title = `${count} recent ${count === 1 ? 'action' : 'actions'}`;
+    chip.setAttribute('aria-label', chip.title);
+    if (agentTabsList.children[index] !== item) {
+      agentTabsList.insertBefore(item, agentTabsList.children[index] ?? null);
+    }
+  }
+  for (const item of existingItems.values()) item.remove();
   agentTabsList.hidden = tabs.length === 0;
+  updateAgentTabAges();
+  syncAgentTabAgeTimer();
+}
+
+function updateAgentTabAges(): void {
+  const now = Date.now();
+  for (const recency of agentTabsList.querySelectorAll<HTMLElement>('.agent-tab-recency')) {
+    const age = formatTabActivityAge(Number(recency.dataset.lastActivityAt), now);
+    recency.textContent = age;
+    recency.hidden = !age;
+    recency.title = age ? `Last active ${age} ago` : '';
+  }
+}
+
+function syncAgentTabAgeTimer(): void {
+  if (!agentTabRow.hidden && agentTabRow.open) {
+    if (agentTabAgeTimer === null) agentTabAgeTimer = setInterval(updateAgentTabAges, 1000);
+  } else if (agentTabAgeTimer !== null) {
+    clearInterval(agentTabAgeTimer);
+    agentTabAgeTimer = null;
+  }
 }
 
 function renderNativeStatus(
@@ -657,6 +812,8 @@ function renderNativeStatus(
   installationSection.hidden = !connected;
   if (!connected) {
     agentTabRow.hidden = true;
+    agentTabRow.open = false;
+    syncAgentTabAgeTimer();
     otherWindows.hidden = true;
     otherWindows.open = false;
     otherWindowsList.replaceChildren();
@@ -702,14 +859,6 @@ function renderNativeStatus(
 function renderHostVersion(hostVersion: string | null): void {
   extensionVersion.textContent = `Extension: v${manifest.version_name ?? manifest.version}\nDaemon: ${hostVersion ? `v${hostVersion}` : 'disconnected'}`;
   renderVersionMismatch(hostVersion);
-  if (!hostVersion) {
-    setupHostVersion.hidden = true;
-    setupHostVersion.textContent = '';
-    return;
-  }
-
-  setupHostVersion.hidden = false;
-  setupHostVersion.textContent = `Daemon version: v${hostVersion}`;
 }
 
 function renderVersionMismatch(cliVersion: string | null): void {
@@ -1181,6 +1330,7 @@ function renderActionLogEntry(
   dot.dataset.ok = String(entry.ok);
   const summaryText = document.createElement('span');
   summaryText.textContent = entry.summary;
+  summaryText.title = entry.summary;
   summary.append(dot, summaryText);
   footer.append(summary);
 
