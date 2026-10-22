@@ -1222,6 +1222,12 @@ button:hover {
   margin-bottom: 12px;
 }
 
+.setup-download-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
 .examples-eyebrow {
   margin-bottom: 8px;
 }
@@ -1331,6 +1337,10 @@ button:hover {
 
 .setup-cmd:hover {
   background: var(--cmd-bg-hover);
+}
+
+.setup-native-cmd {
+  white-space: pre-wrap;
 }
 
 .setup-cmd::after {

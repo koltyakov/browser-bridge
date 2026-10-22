@@ -3,7 +3,7 @@
 .DEFAULT_GOAL := help
 .DELETE_ON_ERROR:
 
-# Tests and packaging share dist/ and native build reports. Preserve prerequisite
+# Tests and packaging share dist/. Preserve prerequisite
 # order even with make -j, especially tests -> native builds -> npm packaging.
 .NOTPARALLEL:
 
@@ -17,6 +17,7 @@ ARGS ?=
 TEST_ARGS ?=
 TEST_FILES ?= packages/*/test/*.test.ts protocol/test/*.test.ts tests/integration/*.test.ts tests/fixtures/*/*.test.ts tests/native/*.test.ts
 EXEC = $(NPM) exec --no --
+DEVELOPMENT_LDFLAGS = -X github.com/koltyakov/browser-bridge/internal/bridge.developmentHash=$(shell "$(NODE)" scripts/native-build-hash.mjs)
 # npm exec sets npm_command=exec, which changes the installer behavior exercised
 # by subprocess tests. Invoke c8 directly to preserve the caller's environment.
 C8 = "$(NODE)" node_modules/c8/bin/c8.js
@@ -48,7 +49,7 @@ build-extension: sync-version ## Compile the unpacked extension with source maps
 
 build-native: export CGO_ENABLED = 0
 build-native: generate-protocol ## Build the local Go executable with current version metadata
-	$(GO) build -trimpath -gcflags=all=-l -ldflags="-s -w" -o dist/cli/bbx$(EXE) ./cmd/bbx
+	$(GO) build -trimpath -gcflags=all=-l -ldflags="-s -w $(DEVELOPMENT_LDFLAGS)" -o dist/cli/bbx$(EXE) ./cmd/bbx
 
 install: generate-protocol build ## Build and install to ~/.local/bin, refresh native registration, and restart runtime
 	./dist/cli/bbx$(EXE) install-self $(if $(INSTALL_DIR),--bin-dir "$(INSTALL_DIR)",) $(ARGS)
@@ -124,7 +125,7 @@ check-extension-zip: ## Validate the existing extension ZIP
 package-native: generate-protocol ## Build a size-checked native release binary; optional TARGET=linux-amd64
 	"$(NODE)" scripts/build-native.mjs $(TARGET)
 
-package-native-all: generate-protocol ## Build all five native release targets and their size report
+package-native-all: generate-protocol ## Build all five size-checked native release targets
 	"$(NODE)" scripts/build-native.mjs --all
 
 pack: sync-version ## Pack npm using existing native assets; prepack generates pinned hashes
@@ -155,13 +156,13 @@ bench-interaction: build-native ## Run the interaction benchmark
 	"$(NODE)" tests/fixtures/agent-interaction/bench.mjs $(ARGS)
 
 run: generate-protocol ## Run the workspace Go CLI; e.g. make run ARGS='call health.ping'
-	$(GO) run ./cmd/bbx $(ARGS)
+	$(GO) run -ldflags="$(DEVELOPMENT_LDFLAGS)" ./cmd/bbx $(ARGS)
 
 status: generate-protocol ## Check bridge status using the workspace Go CLI
-	$(GO) run ./cmd/bbx status
+	$(GO) run -ldflags="$(DEVELOPMENT_LDFLAGS)" ./cmd/bbx status
 
 daemon: generate-protocol ## Start the daemon using the workspace Go CLI
-	$(GO) run ./cmd/bbx --bridge-daemon
+	$(GO) run -ldflags="$(DEVELOPMENT_LDFLAGS)" ./cmd/bbx --bridge-daemon
 
 install-manifest: build-native ## Register the built workspace native host; optional ARGS='<extension-id>'
 	./dist/cli/bbx$(EXE) install $(ARGS)

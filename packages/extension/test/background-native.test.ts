@@ -69,7 +69,10 @@ type NativeBackgroundModule = {
 };
 type StateSyncMessage = { type: 'state.sync'; state: Record<string, unknown> };
 
-function createNativePort(messages: unknown[]): NativeTestPort {
+function createNativePort(
+  messages: unknown[],
+  healthMetadata: Record<string, unknown> = {}
+): NativeTestPort {
   const onMessage = createChromeEvent();
   return {
     postMessage(message: unknown) {
@@ -108,6 +111,7 @@ function createNativePort(messages: unknown[]): NativeTestPort {
                 daemon: 'ok',
                 daemonVersion: '1.2.0',
                 extensionConnected: true,
+                ...healthMetadata,
               },
               {
                 method: 'health.ping',
@@ -129,6 +133,21 @@ async function flushAsyncWork(count = 8) {
     await Promise.resolve();
   }
 }
+
+test('native host version prefers the development label and falls back for older daemons', async () => {
+  for (const daemonVersionName of ['1.2.0-dev.a1b2c3d4', undefined, null, 42, '']) {
+    const nativePort = createNativePort([], { daemonVersionName });
+    const loaded = await loadBackground({
+      chrome: createChromeFake({ runtime: { connectNative: () => nativePort } }),
+      query: `test-native-version-name-${String(daemonVersionName)}`,
+    });
+    await flushAsyncWork();
+    assert.equal(
+      getNativeModule(loaded).getStateForTest().nativeHostVersion,
+      typeof daemonVersionName === 'string' && daemonVersionName ? daemonVersionName : '1.2.0'
+    );
+  }
+});
 
 async function waitForCondition(predicate: () => boolean): Promise<void> {
   for (let attempt = 0; attempt < 20; attempt += 1) {

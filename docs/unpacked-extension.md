@@ -17,7 +17,7 @@ This installs the Go CLI and command aliases under `~/.local/bin`, updates nativ
 `make install` writes the unpacked extension to:
 
 ```text
-dist/extension/
+dist/ext/
 ├── assets/
 ├── protocol/
 ├── src/
@@ -34,7 +34,7 @@ The build includes source maps for debugging. After editing extension files, run
 1. Open `chrome://extensions`.
 2. Enable **Developer mode**.
 3. Click **Load unpacked**.
-4. Select `dist/extension`.
+4. Select `dist/ext`.
 
 ## 4. Copy the extension ID
 

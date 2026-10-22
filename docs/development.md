@@ -25,7 +25,7 @@ The Go runtime lives in `cmd/bbx` and `internal/bridge`; its unit tests live bes
 
 | Command | Result |
 | --- | --- |
-| `make build-extension` | Unpacked extension with source maps in `dist/extension` |
+| `make build-extension` | Unpacked extension with source maps in `dist/ext` |
 | `make build-native` | Local Go executable at `dist/cli/bbx`, or `dist/cli/bbx.exe` on Windows |
 | `make install` | Build both components, install the CLI to the user bin directory, refresh native registration, and restart the runtime |
 | `make lint typecheck` | JavaScript/TypeScript lint, formatting, and type checks |
@@ -42,7 +42,7 @@ The Go runtime lives in `cmd/bbx` and `internal/bridge`; its unit tests live bes
 | `make package-npm` | Build all native targets and pack the thin npm wrapper |
 | `make release-check` | Full validation and release packaging without publishing |
 
-Targets run serially even with `make -j`: tests and packaging share output directories and native size reports. Release checks build all native assets after tests and before npm packing.
+Targets run serially even with `make -j`: tests and packaging share output directories. Release checks build all native assets after tests and before npm packing.
 
 ## Install a checkout
 
@@ -52,13 +52,13 @@ make install
 make install INSTALL_DIR="$HOME/.local/bin"
 ```
 
-This regenerates protocol metadata, builds the unpacked extension in `dist/extension`, and installs one Go executable plus lightweight command aliases under `~/.local/bin`. Native-host manifests point to the installed executable. Keep that directory on your application's `PATH` when using `bbx` or `bbx-mcp` by name.
+This regenerates protocol metadata, builds the unpacked extension in `dist/ext`, and installs one Go executable plus lightweight command aliases under `~/.local/bin`. Native-host manifests point to the installed executable. Keep that directory on your application's `PATH` when using `bbx` or `bbx-mcp` by name.
 
 Installation restarts the local daemon. Connected native hosts exit and Chrome reconnects them through the updated launcher. Registered MCP servers receive restart requests; their owning applications must reconnect their stdio sessions.
 
-Load `dist/extension` once through `chrome://extensions` with Developer mode enabled. Development builds check their build stamp on native-host reconnect and every minute. All profiles loading that same directory reload when the completed build changes. An extension version predating this feature needs one manual reload to enable it. Release ZIPs do not include this automatic development reload behavior.
+Load `dist/ext` once through `chrome://extensions` with Developer mode enabled. Development builds check their build stamp on native-host reconnect and every minute. All profiles loading that same directory reload when the completed build changes. An extension version predating this feature needs one manual reload to enable it. Release ZIPs do not include this automatic development reload behavior.
 
-Development builds display a content-based suffix, such as `v2.0.0-dev.a1b2c3d4`, in the popup and side-panel version tooltips. Hover or focus the info icon at the top-right of the access card to see the extension and daemon versions. Compare the extension label with the one printed by `make install` to confirm the installed build. The suffix changes when build contents change; rebuilding identical contents keeps the same label. Release builds display the plain version.
+Development builds display a content-based suffix, such as `v2.0.0-dev.a1b2c3d4`, in the popup and side-panel version tooltips. Hover or focus the info icon at the top-right of the access card to see the extension and daemon versions. `bbx --version` also includes the suffix for a CLI built with `make build-native` or `make install`; `make run ARGS='--version'` shows the workspace CLI label. The CLI hash covers native sources and embedded assets, so it differs from the extension hash. Each suffix changes when its build inputs change; rebuilding identical inputs keeps the same label. Release builds display the plain version, and update checks continue to use the base version.
 
 Recent activity and enabled-window access survive extension updates and development reloads. Each tab keeps its bounded history until the tab closes or Chrome starts a new browser session. Access is restored only for the same open window; disabling access, closing that window, or restarting Chrome clears the saved grant.
 

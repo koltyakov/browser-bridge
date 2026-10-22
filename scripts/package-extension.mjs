@@ -14,7 +14,7 @@ const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const distDir = path.join(repoRoot, 'dist');
-const stagingDir = path.join(distDir, 'extension');
+const stagingDir = path.join(distDir, 'ext');
 const manifestPath = path.join(repoRoot, 'manifest.json');
 const buildOnly = process.argv.includes('--build-only');
 

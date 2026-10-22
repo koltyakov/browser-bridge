@@ -101,12 +101,21 @@
         <span id="native-indicator" class="status-dot header-status-indicator" title="Connecting to native host…"></span>
       </div>
       <p class="control-detail">
-        Install the Browser Bridge npm package using Node.js 20 or later, then return here.
+        Install Browser Bridge with npm or download a standalone binary.
       </p>
       <br />
       <div class="setup-steps">
-        <code class="setup-cmd">npm install -g @browserbridge/bbx</code>
-        <span id="setup-install-hint" class="setup-step-hint">If the extension does not connect, register this browser:</span>
+        <span class="setup-step-hint">npm wrapper · Requires Node.js 20+</span>
+        <code id="setup-npm-cmd" class="setup-cmd">npm install -g @browserbridge/bbx</code>
+        <span class="setup-step-hint">Standalone binary · No Node.js required</span>
+        <span id="setup-native-hint" class="setup-step-hint" hidden></span>
+        <code id="setup-native-cmd" class="setup-cmd setup-native-cmd" title="Click to copy the install command" hidden></code>
+        <span id="setup-native-path-hint" class="setup-step-hint" hidden>Keep ~/.local/bin on your PATH for future terminals.</span>
+        <div class="setup-download-links">
+          <a id="setup-releases-link" class="setup-link" href="https://github.com/koltyakov/browser-bridge/releases/latest"
+            target="_blank" rel="noopener noreferrer">GitHub Releases ↗</a>
+        </div>
+        <span class="setup-step-hint">After a manual download, or if npm does not connect, register this browser:</span>
         <code id="setup-install-cmd" class="setup-cmd">bbx install</code>
       </div>
       <div class="control-links">

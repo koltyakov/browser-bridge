@@ -14,14 +14,12 @@ const releaseEnv = {
 };
 
 const platforms = [
-  ['darwin-arm64', 'darwin-arm64', 'bbx-darwin-arm64'],
-  ['darwin-amd64', 'darwin-x64', 'bbx-darwin-x64'],
-  ['linux-arm64', 'linux-arm64', 'bbx-linux-arm64'],
-  ['linux-amd64', 'linux-x64', 'bbx-linux-x64'],
-  ['windows-amd64', 'win32-x64', 'bbx-windows-x64.exe'],
+  ['darwin-arm64', 'bbx-darwin-arm64'],
+  ['darwin-x64', 'bbx-darwin-x64'],
+  ['linux-arm64', 'bbx-linux-arm64'],
+  ['linux-x64', 'bbx-linux-x64'],
+  ['win32-x64', 'bbx-windows-x64.exe'],
 ];
-
-type ReportEntry = { version: string; target: string; asset: string; bytes: number };
 
 async function fixture(t: TestContext) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'bbx-npm-release-'));
@@ -33,16 +31,11 @@ async function fixture(t: TestContext) {
     path.join(directory, 'package-lock.json'),
     JSON.stringify({ version: '1.2.3', packages: { '': { version: '1.2.3' } } })
   );
-  const report: ReportEntry[] = [];
-  for (const [target, , asset] of platforms) {
+  for (const [, asset] of platforms) {
     const bytes = Buffer.from(`binary fixture: ${asset}`);
     await fs.writeFile(path.join(directory, 'dist/cli', asset), bytes);
-    report.push({ version: '1.2.3', target, asset, bytes: bytes.length });
   }
-  const writeReport = () =>
-    fs.writeFile(path.join(directory, 'dist/cli/size-report.json'), JSON.stringify(report));
-  await writeReport();
-  return { directory, report, writeReport };
+  return { directory };
 }
 
 test('npm manifest pins exact assets and platform keys, replacing atomically', async (t) => {
@@ -51,9 +44,9 @@ test('npm manifest pins exact assets and platform keys, replacing atomically', a
   assert.equal(manifest.version, '1.2.3');
   assert.deepEqual(
     Object.keys(manifest.artifacts),
-    platforms.map(([, key]) => key)
+    platforms.map(([key]) => key)
   );
-  for (const [, key, asset] of platforms) {
+  for (const [key, asset] of platforms) {
     const bytes = await fs.readFile(path.join(directory, 'dist/cli', asset));
     assert.deepEqual(manifest.artifacts[key], {
       asset,
@@ -73,19 +66,29 @@ test('npm manifest pins exact assets and platform keys, replacing atomically', a
   );
 });
 
-test('npm preparation uses the tag authority and requires matching package and build versions', async (t) => {
-  const { directory, report, writeReport } = await fixture(t);
+test('npm preparation uses the tag authority and requires a matching package version', async (t) => {
+  const { directory } = await fixture(t);
   await fs.writeFile(path.join(directory, 'manifest.json'), JSON.stringify({ version: '1.2.2' }));
   assert.equal((await prepareNpm(directory, releaseEnv)).version, '1.2.3');
   const manifestPath = path.join(directory, 'packages/npm/native-manifest.json');
   const original = await fs.readFile(manifestPath, 'utf8');
   await fs.writeFile(path.join(directory, 'package.json'), JSON.stringify({ version: '1.2.2' }));
   await assert.rejects(prepareNpm(directory, releaseEnv), /match 1\.2\.3; run make sync-version/);
-  await fs.writeFile(path.join(directory, 'package.json'), JSON.stringify({ version: '1.2.3' }));
-  for (const entry of report) entry.version = '1.2.2';
-  await writeReport();
-  await assert.rejects(prepareNpm(directory, releaseEnv), /rebuild all platforms for 1\.2\.3/);
   assert.equal(await fs.readFile(manifestPath, 'utf8'), original);
+});
+
+test('npm preparation reads updated binary sizes and hashes directly', async (t) => {
+  const { directory } = await fixture(t);
+  await prepareNpm(directory, {});
+  const [key, asset] = platforms[0];
+  const bytes = Buffer.from('rebuilt binary with different contents and size');
+  await fs.writeFile(path.join(directory, 'dist/cli', asset), bytes);
+  const manifest = await prepareNpm(directory, {});
+  assert.deepEqual(manifest.artifacts[key], {
+    asset,
+    bytes: bytes.length,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+  });
 });
 
 test('prepack rejects stale metadata without synchronizing it during npm packing', async (t) => {
@@ -119,38 +122,21 @@ test('prepack rejects stale metadata without synchronizing it during npm packing
 });
 
 for (const mutation of [
-  'missing-platform',
-  'unsupported',
-  'duplicate',
-  'wrong-version',
   'wrong-manifest-version',
   'wrong-package-version',
-  'missing-version',
-  'wrong-asset',
-  'wrong-size',
   'missing-file',
+  'wrong-filename',
+  'directory',
   'empty-file',
   'oversized-file',
 ] as const) {
   test(`npm manifest rejects ${mutation} without replacing an existing manifest`, async (t) => {
-    const { directory, report, writeReport } = await fixture(t);
+    const { directory } = await fixture(t);
     await prepareNpm(directory, {});
     const manifestPath = path.join(directory, 'packages/npm/native-manifest.json');
     const original = await fs.readFile(manifestPath, 'utf8');
-    const file = path.join(directory, 'dist/cli', report[0].asset);
+    const file = path.join(directory, 'dist/cli', platforms[0][1]);
     switch (mutation) {
-      case 'missing-platform':
-        report.pop();
-        break;
-      case 'unsupported':
-        report[0].target = 'freebsd-amd64';
-        break;
-      case 'duplicate':
-        report[0] = { ...report[1] };
-        break;
-      case 'wrong-version':
-        report[0].version = '1.2.2';
-        break;
       case 'wrong-manifest-version':
       case 'wrong-package-version':
         await fs.writeFile(
@@ -161,28 +147,23 @@ for (const mutation of [
           JSON.stringify({ version: '1.2.2' })
         );
         break;
-      case 'missing-version':
-        Reflect.deleteProperty(report[0], 'version');
-        break;
-      case 'wrong-asset':
-        report[0].asset = '../bbx-other';
-        break;
-      case 'wrong-size':
-        report[0].bytes++;
-        break;
       case 'missing-file':
         await fs.rm(file);
         break;
+      case 'wrong-filename':
+        await fs.rename(file, `${file}-other`);
+        break;
+      case 'directory':
+        await fs.rm(file);
+        await fs.mkdir(file);
+        break;
       case 'empty-file':
         await fs.truncate(file, 0);
-        report[0].bytes = 0;
         break;
       case 'oversized-file':
         await fs.truncate(file, 10_000_000);
-        report[0].bytes = 10_000_000;
         break;
     }
-    await writeReport();
     await assert.rejects(
       prepareNpm(directory, {}),
       mutation === 'wrong-manifest-version' || mutation === 'wrong-package-version'
@@ -198,7 +179,7 @@ test(
   'native publishing reuses identical assets and refuses replacement or draft releases',
   { skip: process.platform === 'win32' },
   async (t) => {
-    const { directory, report } = await fixture(t);
+    const { directory } = await fixture(t);
     await fs.mkdir(path.join(directory, 'scripts'));
     for (const name of ['prepare-npm.mjs', 'publish-native.mjs', 'version.mjs']) {
       await fs.copyFile(
@@ -269,18 +250,31 @@ switch (args[1]) {
     const first = publish();
     assert.equal(first.status, 0, first.stderr);
     assert.equal((await calls()).filter((args) => args[1] === 'create').length, 1);
-    assert.equal((await calls()).filter((args) => args[1] === 'upload').length, 5);
+    assert.equal((await calls()).filter((args) => args[1] === 'upload').length, 6);
+    const checksums = await fs.readFile(path.join(directory, 'dist/cli/checksums.txt'), 'utf8');
+    for (const [, asset] of platforms) {
+      const bytes = await fs.readFile(path.join(directory, 'dist/cli', asset));
+      assert.ok(
+        checksums.includes(`${createHash('sha256').update(bytes).digest('hex')}  ${asset}\n`)
+      );
+    }
     await fs.writeFile(path.join(directory, 'calls.jsonl'), '');
     const rerun = publish();
     assert.equal(rerun.status, 0, rerun.stderr);
     assert.equal((await calls()).filter((args) => args[1] === 'upload').length, 0);
-    assert.equal((await calls()).filter((args) => args[1] === 'download').length, 5);
+    assert.equal((await calls()).filter((args) => args[1] === 'download').length, 6);
     for (const state of [
       {
         tagName: 'v1.2.3',
         isDraft: false,
-        assets: [{ name: report[0].asset }],
-        corrupt: report[0].asset,
+        assets: [{ name: platforms[0][1] }],
+        corrupt: platforms[0][1],
+      },
+      {
+        tagName: 'v1.2.3',
+        isDraft: false,
+        assets: [{ name: 'checksums.txt' }],
+        corrupt: 'checksums.txt',
       },
       { tagName: 'v1.2.3', isDraft: true, assets: [] },
     ]) {

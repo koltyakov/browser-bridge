@@ -23,9 +23,6 @@ execFileSync(process.execPath, ['scripts/generate-protocol.mjs', '--check'], {
   stdio: 'inherit',
 });
 await fs.mkdir(path.join(root, 'dist/cli'), { recursive: true });
-// A failed or single-target build must not leave a complete release report behind.
-await fs.rm(path.join(root, 'dist/cli/size-report.json'), { force: true });
-const report = [];
 for (const target of targets) {
   const [goos, goarch] = target.split('-');
   const asset = `bbx-${target.replace('amd64', 'x64')}${goos === 'windows' ? '.exe' : ''}`;
@@ -61,10 +58,5 @@ for (const target of targets) {
   const bytes = (await fs.stat(output)).size;
   if (bytes >= 10_000_000)
     throw new Error(`${asset}: ${bytes} bytes exceeds the 10 MB native executable budget`);
-  report.push({ version, target, asset, bytes });
   console.log(`${asset}: ${(bytes / 1e6).toFixed(2)} MB (${bytes} bytes)`);
 }
-await fs.writeFile(
-  path.join(root, 'dist/cli/size-report.json'),
-  `${JSON.stringify(report, null, 2)}\n`
-);

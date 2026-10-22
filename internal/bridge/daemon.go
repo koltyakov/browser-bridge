@@ -498,6 +498,7 @@ func (d *daemon) health(result object) object {
 	result = normalizeExtensionHealth(result)
 	result["daemon"] = value("ok")
 	result["daemonVersion"] = value(version)
+	result["daemonVersionName"] = value(versionName())
 	result["daemon_supported_versions"] = value([]string{protocolVersion()})
 	result["supported_versions"] = value([]string{protocolVersion()})
 	result["protocol_version"] = value(protocolVersion())

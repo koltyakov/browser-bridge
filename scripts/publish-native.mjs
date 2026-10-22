@@ -22,6 +22,18 @@ function gh(args) {
 
 const resolved = resolveVersion({ root });
 const manifest = await readNativeBuild();
+const checksumBytes = Buffer.from(
+  Object.values(manifest.artifacts)
+    .map((artifact) => `${artifact.sha256}  ${artifact.asset}\n`)
+    .join('')
+);
+const checksums = {
+  asset: 'checksums.txt',
+  bytes: checksumBytes.length,
+  sha256: createHash('sha256').update(checksumBytes).digest('hex'),
+};
+await fs.writeFile(path.join(root, 'dist/cli', checksums.asset), checksumBytes);
+const artifacts = [...Object.values(manifest.artifacts), checksums];
 const tag = resolved.tag ?? `v${resolved.version}`;
 const viewArgs = ['release', 'view', tag, '--repo', repository, '--json', 'isDraft,tagName,assets'];
 const view = spawnSync('gh', viewArgs, { cwd: root, encoding: 'utf8' });
@@ -94,11 +106,11 @@ async function verifyRemote(artifact) {
   }
 }
 try {
-  // Check every existing binary before adding any missing binaries.
-  for (const artifact of Object.values(manifest.artifacts)) {
+  // Check every existing asset before adding any missing assets.
+  for (const artifact of artifacts) {
     if (existing.has(artifact.asset)) await verifyRemote(artifact);
   }
-  for (const artifact of Object.values(manifest.artifacts)) {
+  for (const artifact of artifacts) {
     if (existing.has(artifact.asset)) continue;
     gh([
       'release',
@@ -111,7 +123,7 @@ try {
     await verifyRemote(artifact);
   }
   console.log(
-    `Verified all five native assets on https://github.com/${repository}/releases/tag/${tag}`
+    `Verified all five native assets and checksums on https://github.com/${repository}/releases/tag/${tag}`
   );
 } finally {
   await fs.rm(temporary, { recursive: true, force: true });

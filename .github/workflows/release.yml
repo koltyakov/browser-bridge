@@ -76,7 +76,7 @@ jobs:
       - name: Validate extension ZIP contents
         run: make check-extension-zip
 
-      # Native tests can replace the size report with a host-only build.
+      # Rebuild every target after tests so all release assets use the current source.
       - name: Build all native release assets
         run: make package-native-all
 
