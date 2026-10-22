@@ -31,9 +31,11 @@ func installAgentDetected(target string, scope installScope) bool {
 		return true
 	}
 	if runtime.GOOS == "darwin" {
-		apps := map[string]string{"cursor": "Cursor.app", "copilot": "Visual Studio Code.app", "windsurf": "Windsurf.app"}
-		if app := apps[target]; app != "" {
-			return installExists(filepath.Join("/Applications", app))
+		apps := map[string][]string{"cursor": {"Cursor.app"}, "copilot": {"Visual Studio Code.app"}, "windsurf": {"Devin.app", "Windsurf.app"}}
+		for _, app := range apps[target] {
+			if installExists(filepath.Join("/Applications", app)) || installExists(filepath.Join(scope.home, "Applications", app)) {
+				return true
+			}
 		}
 	}
 	if runtime.GOOS == "windows" && target == "copilot" {
@@ -49,6 +51,14 @@ func installAgentDetected(target string, scope installScope) bool {
 	}
 	if target == "antigravity" {
 		command = "agy"
+	}
+	if target == "windsurf" {
+		for _, command := range []string{"devin-desktop", "surf", "windsurf"} {
+			if _, err := exec.LookPath(command); err == nil {
+				return true
+			}
+		}
+		return false
 	}
 	_, err := exec.LookPath(command)
 	return err == nil

@@ -58,7 +58,14 @@ Google Chrome, Brave, or Edge and install the manifest for that browser.
 
 There are two integration paths. Pick the one that matches how your agent works:
 
-Supported clients: `codex` (OpenAI Codex), `claude` (Claude Code), `cursor` (Cursor), `copilot` (GitHub Copilot), `opencode` (OpenCode), `antigravity` (Antigravity), `windsurf` (Windsurf), `agents` (generic `.agents` MCP/skill layout).
+Supported clients: Codex (OpenAI) (`codex`), Claude Code (`claude`), OpenCode (`opencode`), GitHub Copilot (`copilot`), Cursor (`cursor`), Devin Desktop, formerly Windsurf (`windsurf`), Antigravity (`antigravity`), and generic `.agents` MCP/skill layouts (`agents`).
+
+Devin Desktop retains the `windsurf` setup target and existing configuration paths for compatibility:
+
+```bash
+bbx install-mcp windsurf
+bbx install-skill windsurf
+```
 
 After installing the extension and Browser Bridge, finish setup from **Connect agent** in the extension side panel. Terminal users can use `bbx install-mcp` / `bbx install-skill` below. With no target argument, the CLI prompts in interactive shells; in non-interactive shells it prefers already configured or detected clients before falling back to all supported clients.
 
@@ -69,7 +76,7 @@ After installing the extension and Browser Bridge, finish setup from **Connect a
 ```bash
 bbx install-mcp                  # prompt/select detected clients
 bbx install-mcp all              # all supported clients
-bbx install-mcp codex            # or pick one: codex, claude, cursor, copilot, opencode, antigravity, windsurf, agents
+bbx install-mcp codex            # or pick one: codex, claude, opencode, copilot, cursor, windsurf, antigravity, agents
 bbx install-mcp copilot --local  # scope to current project instead of global
 ```
 
@@ -86,7 +93,7 @@ The same stdio command supports both MCP protocol eras. Legacy clients start wit
 ```bash
 bbx install-skill                  # prompt/select detected clients
 bbx install-skill all              # all supported clients
-bbx install-skill codex            # or pick one: codex, claude, cursor, copilot, opencode, antigravity, windsurf, agents
+bbx install-skill codex            # or pick one: codex, claude, opencode, copilot, cursor, windsurf, antigravity, agents
 bbx install-skill agents --project .
 ```
 

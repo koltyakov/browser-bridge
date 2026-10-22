@@ -517,6 +517,15 @@ func TestSetupStatusAndInstallContract(t *testing.T) {
 			if entry.text("key") != installAgentNames[i] {
 				t.Fatal("agent order changed")
 			}
+			if entry.text("label") != installAgentLabels[installAgentNames[i]] {
+				t.Fatal("agent label does not match setup UI", entry)
+			}
+			if entry.text("key") == "codex" && entry.text("label") != "Codex (OpenAI)" {
+				t.Fatal("Codex setup label must identify the vendor", entry)
+			}
+			if entry.text("key") == "windsurf" && entry.text("label") != "Devin Desktop" {
+				t.Fatal("legacy Windsurf target must display the current product name", entry)
+			}
 		}
 		if key == "mcpClients" && !entries[0].boolean("configured") {
 			t.Fatal(entries[0])
@@ -533,6 +542,43 @@ func TestSetupStatusAndInstallContract(t *testing.T) {
 	for _, params := range []object{{"kind": value("bad"), "target": value("codex")}, {"kind": value("mcp"), "target": value("all")}, {"kind": value("mcp"), "target": value("codex"), "action": value("bad")}, {"kind": value("mcp"), "target": value("codex"), "action": value(42)}} {
 		if _, err := setupInstall(c, params); err == nil {
 			t.Fatalf("accepted %s", value(params))
+		}
+	}
+}
+
+func TestDevinDesktopDetection(t *testing.T) {
+	for _, command := range []string{"devin-desktop", "surf", "windsurf"} {
+		t.Run(command, func(t *testing.T) {
+			_, scope := installTestScope(t)
+			bin := t.TempDir()
+			t.Setenv("PATH", bin)
+			name := command
+			if runtime.GOOS == "windows" {
+				name += ".exe"
+				t.Setenv("PATHEXT", ".EXE")
+			}
+			path := filepath.Join(bin, name)
+			installTestWrite(t, path, "#!/bin/sh\n")
+			if err := os.Chmod(path, 0755); err != nil {
+				t.Fatal(err)
+			}
+			if !installAgentDetected("windsurf", scope) {
+				t.Fatalf("Devin Desktop not detected from %s", command)
+			}
+		})
+	}
+	if runtime.GOOS == "darwin" {
+		for _, app := range []string{"Devin.app", "Windsurf.app"} {
+			t.Run(app, func(t *testing.T) {
+				_, scope := installTestScope(t)
+				t.Setenv("PATH", t.TempDir())
+				if err := os.MkdirAll(filepath.Join(scope.home, "Applications", app), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if !installAgentDetected("windsurf", scope) {
+					t.Fatalf("Devin Desktop not detected from %s", app)
+				}
+			})
 		}
 	}
 }

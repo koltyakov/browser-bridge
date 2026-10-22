@@ -147,11 +147,11 @@ export type SidepanelAgentStatusViewState = {
 const SETUP_MATRIX_ORDER = [
   'codex',
   'claude',
-  'cursor',
-  'copilot',
   'opencode',
-  'antigravity',
+  'copilot',
+  'cursor',
   'windsurf',
+  'antigravity',
   'agents',
 ] as const;
 

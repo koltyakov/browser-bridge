@@ -241,7 +241,7 @@ function createRichSetupStatus(): SetupStatus {
       },
       {
         key: 'windsurf',
-        label: 'Windsurf',
+        label: 'Devin Desktop',
         detected: true,
         basePath: '/skills/windsurf',
         installed: false,
@@ -1735,7 +1735,7 @@ test('sidepanel UI handles setup matrix actions, context menus, diagnostics, and
     assert.equal(examplesSection.open, false);
 
     portPairs[0].left.dispatchMessage(createSidepanelStateSync(false, createRichSetupStatus()));
-    assert.match(setupStatusMatrix.textContent ?? '', /Windsurf/);
+    assert.match(setupStatusMatrix.textContent ?? '', /Devin Desktop/);
     assert.doesNotMatch(setupStatusMatrix.textContent ?? '', /\(beta\)/);
     assert.match(setupStatusMatrix.textContent ?? '', /Custom/);
 

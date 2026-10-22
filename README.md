@@ -10,7 +10,7 @@ See [Quickstart](https://github.com/koltyakov/browser-bridge/blob/main/docs/quic
 
 ## Supported Agents
 
-Managed installs support OpenAI Codex, Claude Code, Cursor, GitHub Copilot, OpenCode, Antigravity, Windsurf, and generic `.agents` layouts for both MCP and CLI skill setup.
+Managed installs support Codex (OpenAI), Claude Code, OpenCode, GitHub Copilot, Cursor, Devin Desktop (formerly Windsurf), Antigravity, and generic `.agents` layouts for both MCP and CLI skill setup. Devin Desktop keeps the `windsurf` setup target for compatibility.
 
 <table align="center">
   <tr>

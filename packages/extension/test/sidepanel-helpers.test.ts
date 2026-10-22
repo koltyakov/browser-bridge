@@ -206,6 +206,34 @@ test('buildSetupMatrixRows filters unsupported entries and preserves preferred o
     buildSetupMatrixRows({
       mcpClients: [
         {
+          key: 'antigravity',
+          label: 'Antigravity',
+          detected: true,
+          configPath: '/configs/antigravity.json',
+          configured: false,
+        },
+        {
+          key: 'cursor',
+          label: 'Cursor',
+          detected: true,
+          configPath: '/configs/cursor.json',
+          configured: false,
+        },
+        {
+          key: 'copilot',
+          label: 'GitHub Copilot',
+          detected: true,
+          configPath: '/configs/copilot.json',
+          configured: false,
+        },
+        {
+          key: 'opencode',
+          label: 'OpenCode',
+          detected: true,
+          configPath: '/configs/opencode.json',
+          configured: false,
+        },
+        {
           key: 'zzz',
           label: 'ZZZ',
           detected: true,
@@ -230,7 +258,7 @@ test('buildSetupMatrixRows filters unsupported entries and preserves preferred o
       skillTargets: [
         {
           key: 'windsurf',
-          label: 'Windsurf',
+          label: 'Devin Desktop',
           detected: true,
           basePath: '/skills/windsurf',
           installed: false,
@@ -254,7 +282,7 @@ test('buildSetupMatrixRows filters unsupported entries and preserves preferred o
         },
       ],
     }).map((row) => row.key),
-    ['claude', 'windsurf', 'zzz']
+    ['claude', 'opencode', 'copilot', 'cursor', 'windsurf', 'antigravity', 'zzz']
   );
 });
 
