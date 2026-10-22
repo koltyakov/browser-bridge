@@ -164,6 +164,54 @@ test('connection checks coalesce within their own tab despite sibling activity',
   );
 });
 
+test('health pings stay live but are excluded from both persisted history copies and reloads', async () => {
+  const { controller, state, storage, localStorage, startWorker } = createHistoryHarness();
+  await controller.appendActionLogEntry({
+    method: 'dom.query',
+    tabId: 7,
+    ok: true,
+    summary: 'Read',
+  });
+  for (const tabId of [7, null]) {
+    await controller.appendActionLogEntry({
+      method: 'health.ping',
+      tabId,
+      ok: true,
+      summary: 'Ping',
+    });
+  }
+  assert.equal(state.actionLog.filter((entry) => entry.method === 'health.ping').length, 2);
+  const retained = state.actionLog.filter((entry) => entry.method !== 'health.ping');
+  assert.deepEqual(storage.snapshot().actionLog, retained);
+  assert.deepEqual(localStorage.snapshot().actionLog, retained);
+  const restarted = startWorker();
+  await restarted.controller.restoreActionLog();
+  assert.deepEqual(restarted.state.actionLog, retained);
+  await storage.clear();
+  const updated = startWorker();
+  await updated.controller.restoreActionLog();
+  assert.deepEqual(updated.state.actionLog, retained);
+});
+
+test('restoration removes legacy saved pings from local backups and session-only history', async () => {
+  const actionLog = [
+    { id: 'read', method: 'dom.query', tabId: 7 },
+    { id: 'ping', method: 'health.ping', tabId: 7 },
+    { id: 'host-ping', method: 'health.ping', tabId: null },
+  ];
+  for (const useLocal of [true, false]) {
+    const { controller, state, storage, localStorage } = createHistoryHarness({ actionLog });
+    if (useLocal) await localStorage.set({ actionLog });
+    await controller.restoreActionLog();
+    assert.deepEqual(
+      state.actionLog.map((entry) => entry.id),
+      ['read']
+    );
+    assert.deepEqual(storage.snapshot().actionLog, state.actionLog);
+    assert.deepEqual(localStorage.snapshot().actionLog, state.actionLog);
+  }
+});
+
 test('worker restart restores each open tab independently and prunes closed-tab history', async () => {
   const actionLog = Array.from({ length: MAX_ACTION_LOG_ENTRIES + 10 }, (_, index) => [
     { id: `tab7-${index}`, method: 'dom.query', tabId: 7, at: index },
