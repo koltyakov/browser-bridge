@@ -13,6 +13,7 @@ export type AgentTabUiState = {
   lastActivityAt?: number;
 };
 export type UiDeps = {
+  retryNativeConnection?: (options?: { installationCopied?: boolean }) => void;
   refreshSetupStatus: (force?: boolean) => void;
   getTabState: (tabId: number) => Promise<CurrentTabState | null>;
   getCurrentTabState: (windowId?: number | null) => Promise<CurrentTabState | null>;
@@ -152,6 +153,12 @@ export async function handleUiMessage(
   message: Record<string, unknown>,
   deps: UiDeps
 ): Promise<void> {
+  if (message?.type === 'native.retry') {
+    if (!state.uiPorts.has(port)) return;
+    deps.retryNativeConnection?.({ installationCopied: message.installationCopied === true });
+    await emitUiStateForPort(state, port, deps);
+    return;
+  }
   if (message?.type === 'windows.focus' || message?.type === 'windows.disable_others') {
     const action = message.type === 'windows.focus' ? 'focus' : 'disable';
     try {

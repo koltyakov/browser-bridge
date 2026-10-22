@@ -13,6 +13,9 @@ import {
   NATIVE_FLAP_WINDOW_MS,
   NATIVE_RECONNECT_BASE_MS,
   NATIVE_RECONNECT_MAX_MS,
+  NATIVE_SETUP_POLL_MS,
+  NATIVE_SETUP_IDLE_POLL_MS,
+  NATIVE_SETUP_COPY_BOOST_MS,
   reportAsyncError,
   SETUP_STATUS_STALE_MS,
   SETUP_STATUS_TIMEOUT_MS,
@@ -58,6 +61,8 @@ export type NativeConnectionDeps = {
   handleDestinationDisconnect?: () => void;
   recordReconnect?: (outcome: 'success' | 'failure') => void;
   checkDevelopmentUpdate?: () => Promise<void>;
+  scheduleIdleReconnect?: (delayMs: number) => void;
+  clearIdleReconnect?: () => void;
 };
 
 export type HostStatusDeps = {
@@ -300,6 +305,8 @@ export function createNativeConnectionController(
 ): {
   clearNativeReconnectTimer: () => void;
   connectNative: () => void;
+  retryNativeConnection: (options?: { installationCopied?: boolean }) => void;
+  syncNativeReconnectSchedule: () => void;
   scheduleNativeReconnect: (
     errorMessage: string,
     options?: { method?: string; summaryPrefix?: string; updateDisconnectedUi?: boolean }
@@ -309,6 +316,10 @@ export function createNativeConnectionController(
 
   let nativeUnstableTimer: ReturnType<typeof setTimeout> | null = null;
   let nativeReconnectDelay = NATIVE_RECONNECT_BASE_MS;
+  let nativeRegistrationMissing = false;
+  let installationCopyBoostUntil = 0;
+  // A worker restart can inherit an alarm created by the previous worker.
+  let idleReconnectScheduled = true;
 
   function clearNativeReconnectTimer(): void {
     if (!nativeReconnectTimer) {
@@ -316,6 +327,61 @@ export function createNativeConnectionController(
     }
     clearTimeout(nativeReconnectTimer);
     nativeReconnectTimer = null;
+  }
+
+  function syncNativeReconnectSchedule(): void {
+    if (state.uiPorts.size === 0) {
+      installationCopyBoostUntil = 0;
+      if (nativeRegistrationMissing && !state.nativePort && !state.pendingNativePort) {
+        queueNativeReconnect(NATIVE_SETUP_IDLE_POLL_MS);
+      }
+    }
+  }
+
+  function clearIdleReconnect(): void {
+    if (!idleReconnectScheduled) return;
+    idleReconnectScheduled = false;
+    deps.clearIdleReconnect?.();
+  }
+
+  function queueNativeReconnect(delay: number): void {
+    if (delay === NATIVE_SETUP_IDLE_POLL_MS && deps.scheduleIdleReconnect) {
+      clearNativeReconnectTimer();
+      if (!idleReconnectScheduled) {
+        idleReconnectScheduled = true;
+        deps.scheduleIdleReconnect(delay);
+      }
+      return;
+    }
+    clearIdleReconnect();
+    const scheduled = scheduleReconnectAttempt({
+      currentTimer: nativeReconnectTimer,
+      currentDelay: delay,
+      maxDelay: NATIVE_RECONNECT_MAX_MS,
+      onReconnect: () => {
+        nativeReconnectTimer = null;
+        if (
+          nativeRegistrationMissing &&
+          state.uiPorts.size === 0 &&
+          delay !== NATIVE_SETUP_IDLE_POLL_MS
+        ) {
+          queueNativeReconnect(NATIVE_SETUP_IDLE_POLL_MS);
+          return;
+        }
+        connectNative();
+      },
+      clearTimeoutFn: clearTimeout,
+      setTimeoutFn: setTimeout,
+    });
+    nativeReconnectTimer = scheduled.timer;
+  }
+
+  function retryNativeConnection(options: { installationCopied?: boolean } = {}): void {
+    if (state.nativePort) return;
+    if (options.installationCopied === true && state.uiPorts.size > 0) {
+      installationCopyBoostUntil = Date.now() + NATIVE_SETUP_COPY_BOOST_MS;
+    }
+    connectNative();
   }
 
   function clearNativeUnstableTimer(): void {
@@ -397,11 +463,18 @@ when it has recovered without requiring another connect/disconnect event. */
     state.nativeReconnectAttempts += 1;
     const reconnectAttempt = state.nativeReconnectAttempts;
     const now = Date.now();
-    state.nativeDisconnectTimes = recordNativeDisconnect(
-      state.nativeDisconnectTimes,
-      now,
-      NATIVE_FLAP_WINDOW_MS
-    );
+    // An unregistered or unauthorized host never started. Repeated installation
+    // checks are not evidence that a running daemon is crash-looping.
+    const registrationMissing =
+      /native messaging host not found|native messaging host is forbidden/i.test(errorMessage);
+    nativeRegistrationMissing = registrationMissing;
+    if (!registrationMissing) {
+      state.nativeDisconnectTimes = recordNativeDisconnect(
+        state.nativeDisconnectTimes,
+        now,
+        NATIVE_FLAP_WINDOW_MS
+      );
+    }
     state.nativeUnstable = isNativeConnectionUnstable(
       state.nativeDisconnectTimes,
       now,
@@ -428,29 +501,29 @@ when it has recovered without requiring another connect/disconnect event. */
     }
     void deps.emitUiState().catch(reportAsyncError);
 
+    const retryDelay = registrationMissing
+      ? state.uiPorts.size === 0
+        ? NATIVE_SETUP_IDLE_POLL_MS
+        : now < installationCopyBoostUntil
+          ? NATIVE_RECONNECT_BASE_MS
+          : NATIVE_SETUP_POLL_MS
+      : nativeReconnectDelay;
+    const nextDelay = Math.min(nativeReconnectDelay * 2, NATIVE_RECONNECT_MAX_MS);
     void deps.appendActionLogEntry({
       method,
       source: 'extension',
       ok: false,
-      summary: `${summaryPrefix} (attempt ${reconnectAttempt}): ${errorMessage}. Reconnecting in ${nativeReconnectDelay}ms.`,
+      summary: `${summaryPrefix} (attempt ${reconnectAttempt}): ${errorMessage}. Reconnecting in ${retryDelay}ms.`,
     });
 
-    const scheduledReconnect = scheduleReconnectAttempt({
-      currentTimer: nativeReconnectTimer,
-      currentDelay: nativeReconnectDelay,
-      maxDelay: NATIVE_RECONNECT_MAX_MS,
-      onReconnect: () => {
-        nativeReconnectTimer = null;
-        connectNative();
-      },
-      clearTimeoutFn: clearTimeout,
-      setTimeoutFn: setTimeout,
-    });
-    nativeReconnectTimer = scheduledReconnect.timer;
-    nativeReconnectDelay = scheduledReconnect.nextDelay;
+    queueNativeReconnect(retryDelay);
+    nativeReconnectDelay = nextDelay;
   }
 
   function connectNative(): void {
+    clearIdleReconnect();
+    // UI opens and explicit retries can race an existing connection attempt.
+    if (state.nativePort || state.pendingNativePort) return;
     clearNativeReconnectTimer();
     void deps.checkDevelopmentUpdate?.().catch(reportAsyncError);
     const wasReconnect = nativeReconnectDelay > NATIVE_RECONNECT_BASE_MS;
@@ -469,6 +542,8 @@ when it has recovered without requiring another connect/disconnect event. */
       const reconnectAttempts = state.nativeReconnectAttempts;
       const stabilityTimer = setTimeout(() => {
         state.nativePort = candidatePort;
+        nativeRegistrationMissing = false;
+        installationCopyBoostUntil = 0;
         if (state.pendingNativePort === candidatePort) {
           state.pendingNativePort = null;
         }
@@ -569,6 +644,8 @@ when it has recovered without requiring another connect/disconnect event. */
   return {
     clearNativeReconnectTimer,
     connectNative,
+    retryNativeConnection,
+    syncNativeReconnectSchedule,
     scheduleNativeReconnect,
   };
 }

@@ -11,6 +11,7 @@ import {
   getUiSurfaceFromPortName,
   handleUiMessage,
   openRequestedAccessUi,
+  type UiDeps,
 } from '../src/background-ui.js';
 
 type PostedMessage = Record<string, unknown>;
@@ -38,6 +39,39 @@ function createPort(messages: PostedMessage[] = []): chrome.runtime.Port {
     },
   } as unknown as chrome.runtime.Port;
 }
+
+test('UI connection checks trigger a retry only for registered UI ports', async () => {
+  const state = createExtensionState();
+  const messages: PostedMessage[] = [];
+  const port = createPort(messages);
+  let retries = 0;
+  const copied: boolean[] = [];
+  const deps: UiDeps = {
+    retryNativeConnection(options) {
+      retries++;
+      copied.push(options?.installationCopied === true);
+    },
+    refreshSetupStatus() {},
+    async getTabState() {
+      return null;
+    },
+    async getCurrentTabState() {
+      return null;
+    },
+    async setWindowEnabled() {},
+    async setCurrentWindowEnabled() {},
+    async handleSetupInstallAction() {},
+  };
+  await handleUiMessage(state, port, { type: 'native.retry' }, deps);
+  assert.equal(retries, 0);
+  state.uiPorts.set(port, { surface: 'sidepanel', scopeTabId: null });
+  await handleUiMessage(state, port, { type: 'native.retry' }, deps);
+  assert.equal(retries, 1);
+  assert.equal(messages.at(-1)?.type, 'state.sync');
+  await handleUiMessage(state, port, { type: 'native.retry', installationCopied: true }, deps);
+  assert.equal(retries, 2);
+  assert.deepEqual(copied, [false, true]);
+});
 
 test('background UI helpers classify surfaces and prune disconnected ports', () => {
   assert.equal(getUiSurfaceFromPortName('ui-popup'), 'popup');

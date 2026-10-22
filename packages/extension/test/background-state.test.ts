@@ -18,6 +18,7 @@ import { createMessagePortPair } from '../../../tests/_helpers/messagePort.ts';
 import { BridgeError, createRequest, ERROR_CODES } from '../../../protocol/src/index.js';
 import {
   createExtensionState,
+  NATIVE_SETUP_RETRY_ALARM,
   normalizeActionLogEntry,
   reportAsyncError,
   setExtensionState,
@@ -409,7 +410,7 @@ test('background state scope.set_enabled enables and disables the requested curr
 
   assert.equal(state.enabledWindow, null);
   assert.equal(loaded.chrome.storage.session.snapshot().enabledWindow, undefined);
-  assert.deepEqual(alarmClears, ['bb-keepalive']);
+  assert.deepEqual(alarmClears, [NATIVE_SETUP_RETRY_ALARM, 'bb-keepalive']);
   assert.deepEqual(
     alarmCreates.filter((alarm) => alarm.name === DEVELOPMENT_RELOAD_ALARM),
     [{ name: DEVELOPMENT_RELOAD_ALARM, periodInMinutes: 1 }]
@@ -520,7 +521,7 @@ test('background state scope.set_enabled surfaces tab mismatch and ignores disab
     title: 'Enabled Window',
     enabledAt: 12,
   });
-  assert.deepEqual(alarmClears, []);
+  assert.deepEqual(alarmClears, [NATIVE_SETUP_RETRY_ALARM]);
   assert.equal(
     nativeMessages.some(
       (message) =>

@@ -95,7 +95,11 @@
         <div id="examples-content" class="examples-content"></div>
       </details>
     </div>
-    <section id="native-setup" class="card">
+    <section id="native-loading" class="card native-loading" role="status" aria-live="polite">
+      <span class="native-loading-spinner" aria-hidden="true"></span>
+      <span>Connecting to the local daemon…</span>
+    </section>
+    <section id="native-setup" class="card" hidden>
       <div class="control-heading native-setup-heading">
         <div class="eyebrow">Not connected</div>
         <span id="native-indicator" class="status-dot header-status-indicator" title="Connecting to native host…"></span>
@@ -124,6 +128,10 @@
         </div>
         <span class="setup-step-hint">If the CLI is installed and you still see this screen, initialize the browser connection:</span>
         <code id="setup-install-cmd" class="setup-cmd">bbx install</code>
+        <div class="setup-connection-check">
+          <span class="setup-step-hint">Checking for the local daemon automatically.</span>
+          <button id="setup-native-retry" class="setup-retry-button" type="button">Check connection</button>
+        </div>
       </div>
       <div class="control-links">
         <a class="setup-link" href="https://github.com/koltyakov/browser-bridge/blob/main/docs/quickstart.md"

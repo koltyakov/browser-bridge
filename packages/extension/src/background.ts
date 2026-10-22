@@ -70,6 +70,7 @@ import {
   ACCESS_DENIED_WINDOW_OFF,
   ACCESS_DENIED_TAB_CLOSE,
   KEEPALIVE_ALARM_NAME,
+  NATIVE_SETUP_RETRY_ALARM,
   isNumber,
   normalizeActionLogSource,
   normalizeActionLogEntry,
@@ -628,7 +629,20 @@ const developmentReload = createDevelopmentReloadController(chrome, {
   sourceDigest: SOURCE_DIGEST,
 });
 
-const { connectNative, scheduleNativeReconnect } = createNativeConnectionController(state, chrome, {
+const {
+  connectNative,
+  scheduleNativeReconnect,
+  retryNativeConnection,
+  syncNativeReconnectSchedule,
+} = createNativeConnectionController(state, chrome, {
+  scheduleIdleReconnect: (delayMs) => {
+    void chrome.alarms
+      .create(NATIVE_SETUP_RETRY_ALARM, { delayInMinutes: delayMs / 60_000 })
+      .catch(reportAsyncError);
+  },
+  clearIdleReconnect: () => {
+    void chrome.alarms.clear(NATIVE_SETUP_RETRY_ALARM).catch(reportAsyncError);
+  },
   checkDevelopmentUpdate: developmentReload.checkForUpdate,
   appendActionLogEntry,
   broadcastUi,
@@ -904,6 +918,10 @@ chrome.windows.onRemoved.addListener((windowId) => {
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === NATIVE_SETUP_RETRY_ALARM) {
+    connectNative();
+    return;
+  }
   if (alarm.name === DEVELOPMENT_RELOAD_ALARM) {
     void developmentReload.checkForUpdate();
   }
@@ -920,11 +938,13 @@ chrome.runtime.onConnect.addListener((port) => {
   const surface = getUiSurfaceFromPortName(port.name);
   if (surface) {
     state.uiPorts.set(port, { scopeTabId: null, surface });
+    connectNative();
     port.onMessage.addListener((message) => {
       void handleUiMessage(port, message).catch(reportAsyncError);
     });
     port.onDisconnect.addListener(() => {
       state.uiPorts.delete(port);
+      syncNativeReconnectSchedule();
     });
     void emitUiStateForPort(port);
   }
@@ -1815,6 +1835,7 @@ async function handleUiMessage(
   message: Record<string, unknown>
 ): Promise<void> {
   await handleUiMessageUi(state, port, message, {
+    retryNativeConnection,
     refreshSetupStatus,
     getTabState,
     getCurrentTabState,

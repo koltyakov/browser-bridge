@@ -1216,6 +1216,41 @@ button:hover {
   line-height: 1.4;
 }
 
+.native-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 96px;
+  color: var(--muted);
+}
+
+.native-loading-spinner {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border: 2px solid var(--stroke);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: native-loading-spin 0.8s linear infinite;
+}
+
+.native-loading + #native-setup {
+  margin-top: 0;
+}
+
+@keyframes native-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .native-loading-spinner {
+    animation: none;
+  }
+}
+
 .setup-steps {
   display: grid;
   gap: 6px;
@@ -1265,6 +1300,35 @@ button:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+.setup-connection-check {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.setup-connection-check .setup-step-hint {
+  margin: 0;
+}
+
+.setup-retry-button {
+  margin: 0;
+  padding: 4px 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.setup-retry-button:hover {
+  background: transparent;
+  color: var(--accent-strong);
+}
+
+.setup-retry-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .examples-eyebrow {

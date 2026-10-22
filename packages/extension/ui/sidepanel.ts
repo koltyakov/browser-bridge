@@ -128,6 +128,7 @@ extensionVersion.textContent = `Extension: v${manifest.version_name ?? manifest.
 const toggleButton = document.getElementById('bridge-toggle') as HTMLButtonElement;
 const actionLog = document.getElementById('action-log') as HTMLDivElement;
 const setupSection = document.getElementById('native-setup') as HTMLElement;
+const nativeLoading = document.getElementById('native-loading') as HTMLElement;
 const setupInstallCmd = document.getElementById('setup-install-cmd') as HTMLElement;
 const setupNpmCmd = document.getElementById('setup-npm-cmd') as HTMLElement;
 setupNpmCmd.textContent = getNpmInstallCommand(manifest.version);
@@ -332,6 +333,12 @@ let setupStatusPollTimer: ReturnType<typeof setInterval> | null = null;
 let hasAutoExpandedHostSetup = false;
 
 let nativeDiagnosticTimer: ReturnType<typeof setTimeout> | null = null;
+let nativeStartupTimer: ReturnType<typeof setTimeout> | null = null;
+let nativeStartupPending = true;
+let latestNativeStatus: { connected: boolean; error?: string; unstable: boolean } = {
+  connected: false,
+  unstable: false,
+};
 
 let pendingToggleTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -341,6 +348,7 @@ let currentVersionMismatchKey: string | null = null;
 
 let dismissedVersionMismatchKey: string | null = null;
 const NATIVE_DIAGNOSTIC_DELAY_MS = 10_000;
+const NATIVE_STARTUP_GRACE_MS = 12_000;
 const TOGGLE_PENDING_TIMEOUT_MS = 10_000;
 const TOGGLE_ERROR_DISPLAY_MS = 6_000;
 
@@ -399,6 +407,13 @@ function copySetupText(target: HTMLElement, text: string): void {
     .writeText(text)
     .then(() => {
       target.classList.add('copied');
+      if (['setup-native-cmd', 'setup-npm-cmd', 'setup-install-cmd'].includes(target.id)) {
+        try {
+          port.postMessage({ type: 'native.retry', installationCopied: true });
+        } catch {
+          // A lost extension connection must not turn a successful copy into a failure.
+        }
+      }
       const copyButton = target.querySelector('.example-copy-button');
       const resetLabel = copyButton instanceof HTMLButtonElement ? copyButton.textContent : null;
       if (copyButton instanceof HTMLButtonElement) {
@@ -418,6 +433,16 @@ function copySetupText(target: HTMLElement, text: string): void {
 
 let port: chrome.runtime.Port;
 
+document.getElementById('setup-native-retry')?.addEventListener('click', () => {
+  try {
+    port.postMessage({ type: 'native.retry' });
+  } catch {
+    showSidepanelDiagnostic(
+      'Extension connection lost. Reopen the side panel to check the local daemon.'
+    );
+  }
+});
+
 const handleSidepanelMessage = createSidepanelMessageHandler({
   renderNativeStatus,
   renderState,
@@ -435,6 +460,10 @@ async function connectSidepanelPort(): Promise<void> {
     connect: (connectInfo) => chrome.runtime.connect(connectInfo),
     onMessage: handleSidepanelMessage,
     scheduleReconnect: (callback, delayMs) => {
+      if (nativeIndicator.dataset.connected === 'true') {
+        startNativeConnectionCheck();
+        renderNativeStatus(false);
+      }
       setTimeout(callback, delayMs);
     },
     onReconnect: () => {
@@ -443,6 +472,7 @@ async function connectSidepanelPort(): Promise<void> {
   }) as chrome.runtime.Port;
 }
 
+startNativeConnectionCheck();
 void connectSidepanelPort();
 const activityHistogramTimer = setInterval(() => {
   updateActivityVisualizations();
@@ -618,6 +648,8 @@ versionMismatchDismiss.addEventListener('click', () => {
 });
 
 window.addEventListener('beforeunload', () => {
+  if (nativeStartupTimer !== null) clearTimeout(nativeStartupTimer);
+  if (nativeDiagnosticTimer !== null) clearTimeout(nativeDiagnosticTimer);
   clearInterval(activityHistogramTimer);
   if (agentTabAgeTimer !== null) clearInterval(agentTabAgeTimer);
   activityResizeObserver?.disconnect();
@@ -861,11 +893,37 @@ function syncAgentTabAgeTimer(): void {
   }
 }
 
+function startNativeConnectionCheck(): void {
+  if (nativeStartupTimer !== null) return;
+  nativeStartupPending = true;
+  nativeStartupTimer = setTimeout(() => {
+    nativeStartupTimer = null;
+    nativeStartupPending = false;
+    renderNativeStatus(
+      latestNativeStatus.connected,
+      latestNativeStatus.error,
+      latestNativeStatus.unstable
+    );
+  }, NATIVE_STARTUP_GRACE_MS);
+}
+
 function renderNativeStatus(
   connected: boolean,
   error?: string | undefined,
   unstable: boolean = false
 ): void {
+  latestNativeStatus = { connected, error, unstable };
+  if (connected) {
+    nativeStartupPending = false;
+    if (nativeStartupTimer !== null) {
+      clearTimeout(nativeStartupTimer);
+      nativeStartupTimer = null;
+    }
+  } else if (nativeIndicator.dataset.connected === 'true') {
+    startNativeConnectionCheck();
+  }
+  const loading = nativeStartupPending && !connected;
+  nativeLoading.hidden = !loading;
   const view = getSidepanelNativeStatusView({
     connected,
     error,
@@ -877,7 +935,7 @@ function renderNativeStatus(
   nativeIndicator.title = view.label;
   nativeIndicator.setAttribute('aria-label', view.label);
 
-  setupSection.hidden = view.hidden;
+  setupSection.hidden = view.hidden || loading;
   controlSection.hidden = !connected;
   installationSection.hidden = !connected;
   if (!connected) {
@@ -898,6 +956,14 @@ function renderNativeStatus(
   }
   syncConnectedSectionsVisibility();
 
+  if (loading) {
+    if (nativeDiagnosticTimer !== null) {
+      clearTimeout(nativeDiagnosticTimer);
+      nativeDiagnosticTimer = null;
+    }
+    hideSidepanelDiagnostic();
+    return;
+  }
   if (unstable) {
     // A flapping connection reconnects before the offline diagnostic delay
     // elapses, so surface the crash-loop hint immediately and keep it visible

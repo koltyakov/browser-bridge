@@ -22,7 +22,7 @@ import {
 } from '../../../protocol/src/index.js';
 import type { SetupStatus } from '../../../protocol/src/types.js';
 import { createNativeConnectionController, refreshSetupStatus } from '../src/background-native.js';
-import { createExtensionState } from '../src/background-state.js';
+import { createExtensionState, NATIVE_SETUP_RETRY_ALARM } from '../src/background-state.js';
 import type { ExtensionState } from '../src/background-state.js';
 
 type ScheduledTimer = {
@@ -204,6 +204,278 @@ function installManualTimers(): {
     },
   };
 }
+
+function createConnectionControllerForTest(
+  state: ExtensionState,
+  connect: () => chrome.runtime.Port,
+  lastError?: { message: string }
+) {
+  return createNativeConnectionController(
+    state,
+    {
+      runtime: { connectNative: connect, lastError },
+      storage: { local: createStorageArea(), session: createStorageArea() },
+    },
+    {
+      async appendActionLogEntry() {},
+      broadcastUi() {},
+      clearSetupStatus() {},
+      async emitUiState() {},
+      async handleBridgeRequest() {},
+      handleHostStatusMessage: () => false,
+      async refreshActionIndicators() {},
+      refreshSetupStatus() {},
+      reply() {},
+    }
+  );
+}
+
+test('missing native registrations check only every five minutes while the UI is closed', () => {
+  for (const error of [
+    'Specified native messaging host not found.',
+    'Access to the specified native messaging host is forbidden.',
+  ]) {
+    const timers = installManualTimers();
+    try {
+      const state = createExtensionState();
+      const controller = createConnectionControllerForTest(state, () => {
+        throw new Error(error);
+      });
+      controller.connectNative();
+      for (let attempt = 0; attempt < 6; attempt++) timers.scheduled.at(-1)?.callback();
+      assert.deepEqual(
+        timers.scheduled.map((timer) => timer.delay),
+        Array.from({ length: 7 }, () => 300000)
+      );
+      assert.equal(state.nativeUnstable, false);
+      assert.deepEqual(state.nativeDisconnectTimes, []);
+    } finally {
+      timers.restore();
+    }
+  }
+});
+
+test('Chrome asynchronous missing-host disconnects check every ten seconds only while setup is open', () => {
+  const timers = installManualTimers();
+  try {
+    const state = createExtensionState();
+    const uiPort = createNativePort([]) as unknown as chrome.runtime.Port;
+    state.uiPorts.set(uiPort, { surface: 'sidepanel', scopeTabId: null });
+    const ports: NativeTestPort[] = [];
+    const controller = createConnectionControllerForTest(
+      state,
+      () => {
+        const port = createNativePort([]);
+        ports.push(port);
+        return port as unknown as chrome.runtime.Port;
+      },
+      { message: 'Specified native messaging host not found.' }
+    );
+    controller.connectNative();
+    for (let attempt = 0; attempt < 5; attempt++) {
+      ports.at(-1)?.onDisconnect.dispatch();
+      assert.equal(state.pendingNativePort, null);
+      assert.equal(state.nativePort, null);
+      assert.equal(state.nativeUnstable, false);
+      assert.equal(timers.scheduled.at(-1)?.delay, 10000);
+      if (attempt < 4) timers.scheduled.at(-1)?.callback();
+    }
+    const retry = timers.scheduled.at(-1);
+    state.uiPorts.clear();
+    controller.syncNativeReconnectSchedule();
+    assert.ok(retry && timers.cleared.includes(retry.handle));
+    assert.equal(timers.scheduled.at(-1)?.delay, 300000);
+    const attempts = ports.length;
+    retry?.callback();
+    assert.equal(
+      ports.length,
+      attempts,
+      'a cancelled timer must not launch another host after setup closes'
+    );
+  } finally {
+    timers.restore();
+  }
+});
+
+test('closed setup uses a five-minute Chrome alarm and cancels it when the panel opens or the host connects', async () => {
+  let installed = false;
+  let attempts = 0;
+  const created: Array<{ name: string; delay?: number }> = [];
+  const cleared: string[] = [];
+  const nativePort = createNativePort([]);
+  const pair = createMessagePortPair({ leftName: 'ui-sidepanel', rightName: 'agent' });
+  const loaded = await loadBackground({
+    chrome: createChromeFake({
+      runtime: {
+        connectNative() {
+          attempts++;
+          if (!installed) throw new Error('Specified native messaging host not found.');
+          return nativePort;
+        },
+      },
+      alarms: {
+        async create(name: string, info: chrome.alarms.AlarmCreateInfo) {
+          created.push({ name, delay: info.delayInMinutes });
+        },
+        async clear(name: string) {
+          cleared.push(name);
+          return true;
+        },
+      },
+    }),
+    query: `test-native-idle-alarm-${Date.now()}`,
+  });
+  const alarms = loaded.chrome.alarms as { onAlarm: FakeChromeEvent };
+  const idleAlarms = () => created.filter((entry) => entry.name === NATIVE_SETUP_RETRY_ALARM);
+  assert.deepEqual(idleAlarms(), [{ name: NATIVE_SETUP_RETRY_ALARM, delay: 5 }]);
+  assert.equal(attempts, 1);
+  const timers = installManualTimers();
+  try {
+    alarms.onAlarm.dispatch({ name: NATIVE_SETUP_RETRY_ALARM });
+    assert.equal(attempts, 2);
+    assert.equal(idleAlarms().length, 2);
+    assert.equal(timers.scheduled.length, 0, 'idle retries must not rely on worker-local timers');
+    getRuntimeOnConnect(loaded.chrome).dispatch(pair.left.port);
+    assert.equal(attempts, 3);
+    assert.equal(timers.scheduled.at(-1)?.delay, 10000);
+    assert.ok(cleared.includes(NATIVE_SETUP_RETRY_ALARM));
+    const panelRetry = timers.scheduled.at(-1);
+    pair.left.dispatchDisconnect();
+    assert.ok(panelRetry && timers.cleared.includes(panelRetry.handle));
+    assert.equal(idleAlarms().length, 3);
+    installed = true;
+    alarms.onAlarm.dispatch({ name: NATIVE_SETUP_RETRY_ALARM });
+    assert.equal(attempts, 4);
+    assert.equal(timers.scheduled.at(-1)?.delay, 500);
+    timers.scheduled.at(-1)?.callback();
+    await flushAsyncWork();
+    assert.equal(getNativeModule(loaded).getStateForTest().nativePort, nativePort);
+    alarms.onAlarm.dispatch({ name: NATIVE_SETUP_RETRY_ALARM });
+    assert.equal(attempts, 4, 'an established connection must not launch another native host');
+    assert.equal(idleAlarms().length, 3);
+  } finally {
+    timers.restore();
+  }
+});
+
+test('opening setup retries immediately and discovers a newly installed host on the next ten-second check', async () => {
+  let installed = false;
+  let calls = 0;
+  const nativePort = createNativePort([]);
+  const pair = createMessagePortPair({ leftName: 'ui-sidepanel', rightName: 'agent' });
+  const loaded = await loadBackground({
+    chrome: createChromeFake({
+      runtime: {
+        connectNative() {
+          calls++;
+          if (!installed) throw new Error('Specified native messaging host not found.');
+          return nativePort;
+        },
+      },
+    }),
+    query: `test-native-install-discovery-${Date.now()}`,
+  });
+  assert.equal(calls, 1);
+  const timers = installManualTimers();
+  try {
+    getRuntimeOnConnect(loaded.chrome).dispatch(pair.left.port);
+    assert.equal(calls, 2, 'opening the panel must bypass the existing backoff');
+    for (let attempt = 0; attempt < 20; attempt++) {
+      assert.equal(timers.scheduled.at(-1)?.delay, 10000);
+      timers.scheduled.at(-1)?.callback();
+    }
+    const state = getNativeModule(loaded).getStateForTest();
+    assert.equal(state.nativeUnstable, false);
+    installed = true;
+    timers.scheduled.at(-1)?.callback();
+    assert.equal(state.pendingNativePort, nativePort);
+    assert.equal(timers.scheduled.at(-1)?.delay, 500);
+    timers.scheduled.at(-1)?.callback();
+    await flushAsyncWork();
+    assert.equal(state.nativePort, nativePort);
+    assert.equal(state.nativeUnstable, false);
+    assert.ok(
+      pair.left.postedMessages.some(
+        (message) => hasMessageType(message, 'native.status') && message.connected === true
+      )
+    );
+  } finally {
+    timers.restore();
+  }
+});
+
+test('copying an installation command boosts retries for one minute and closing setup cancels the boost', (t) => {
+  let now = 1_000_000;
+  t.mock.method(Date, 'now', () => now);
+  const timers = installManualTimers();
+  try {
+    const state = createExtensionState();
+    const uiPort = createNativePort([]) as unknown as chrome.runtime.Port;
+    state.uiPorts.set(uiPort, { surface: 'sidepanel', scopeTabId: null });
+    let attempts = 0;
+    const controller = createConnectionControllerForTest(state, () => {
+      attempts++;
+      throw new Error('Specified native messaging host not found.');
+    });
+    controller.connectNative();
+    const initial = timers.scheduled.at(-1);
+    assert.equal(initial?.delay, 10000);
+    controller.retryNativeConnection({ installationCopied: true });
+    assert.equal(attempts, 2);
+    assert.ok(initial && timers.cleared.includes(initial.handle));
+    assert.equal(timers.scheduled.at(-1)?.delay, 2000);
+    now += 59_000;
+    timers.scheduled.at(-1)?.callback();
+    assert.equal(timers.scheduled.at(-1)?.delay, 2000);
+    now += 1_000;
+    timers.scheduled.at(-1)?.callback();
+    assert.equal(timers.scheduled.at(-1)?.delay, 10000);
+    controller.retryNativeConnection();
+    assert.equal(
+      timers.scheduled.at(-1)?.delay,
+      10000,
+      'manual checks must not extend the post-copy boost'
+    );
+    controller.retryNativeConnection({ installationCopied: true });
+    const boosted = timers.scheduled.at(-1);
+    assert.equal(boosted?.delay, 2000);
+    state.uiPorts.clear();
+    controller.syncNativeReconnectSchedule();
+    assert.ok(boosted && timers.cleared.includes(boosted.handle));
+    state.uiPorts.set(uiPort, { surface: 'sidepanel', scopeTabId: null });
+    controller.connectNative();
+    assert.equal(
+      timers.scheduled.at(-1)?.delay,
+      10000,
+      'reopening setup must not revive an old boost'
+    );
+  } finally {
+    timers.restore();
+  }
+});
+
+test('connection retries reuse pending and connected ports instead of opening duplicate native hosts', () => {
+  const timers = installManualTimers();
+  try {
+    const state = createExtensionState();
+    const port = createNativePort([]) as unknown as chrome.runtime.Port;
+    let calls = 0;
+    const controller = createConnectionControllerForTest(state, () => {
+      calls++;
+      return port;
+    });
+    controller.connectNative();
+    controller.connectNative();
+    assert.equal(calls, 1);
+    assert.equal(state.pendingNativePort, port);
+    timers.scheduled.at(-1)?.callback();
+    controller.connectNative();
+    assert.equal(state.nativePort, port);
+    assert.equal(calls, 1);
+  } finally {
+    timers.restore();
+  }
+});
 
 test('refreshSetupStatus ignores a stale timer and expires the current request', async () => {
   const state = createExtensionState();
