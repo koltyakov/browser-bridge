@@ -78,7 +78,7 @@ probe configured remotes and reports their credentials as unverified; use
 
 Supported managed targets are kept in this order across the project:
 `codex`, `claude`, `opencode`, `copilot`, `cursor`, `windsurf`,
-`antigravity`, `agents`.
+`antigravity`, `gemini`, `cline`, `zed`, `amp`, `droid`, `agents`.
 
 The `windsurf` target is Devin Desktop, formerly Windsurf. Its target key and existing configuration paths remain supported for compatibility.
 
@@ -90,6 +90,7 @@ Use MCP when your agent supports it:
 bbx install-mcp
 bbx install-mcp codex
 bbx install-mcp copilot --local
+bbx install-mcp gemini,cline,zed,amp,droid
 ```
 
 Managed MCP config paths:
@@ -101,7 +102,16 @@ Managed MCP config paths:
 - `cursor`: `~/.cursor/mcp.json` or `./.cursor/mcp.json`
 - `windsurf`: `~/.codeium/windsurf/mcp_config.json` or `./.windsurf/mcp_config.json`
 - `antigravity`: `~/.gemini/antigravity/mcp_config.json` or `./.agents/mcp_config.json`
+- `gemini`: `~/.gemini/settings.json` or `./.gemini/settings.json`, under `mcpServers`
+- `cline`: `~/.cline/data/settings/cline_mcp_settings.json`, under `mcpServers`; user scope only
+- `zed`: `~/.config/zed/settings.json` on macOS/Linux, `%APPDATA%\Zed\settings.json` on Windows, or `./.zed/settings.json`, under `context_servers`
+- `amp`: `~/.config/amp/settings.json` or `./.amp/settings.json`, under the literal key `amp.mcpServers`; existing `.jsonc` files are reused
+- `droid`: `~/.factory/mcp.json` or `./.factory/mcp.json`, under `mcpServers`
 - `agents`: `~/.agents/mcp.json` or `./.agents/mcp.json`
+
+Cline does not have a verified native project MCP scope: `bbx install-mcp cline --local` fails without writing, while `bbx install-mcp all --local` skips it. Amp setup refuses to choose silently when both `settings.json` and `settings.jsonc` exist in the same scope. Configuration updates preserve comments, environment variables, disabled settings, and tool policy. Existing remote or legacy command-object entries for the new clients require explicit migration instead of silent conversion; Cline's nested stdio transport is updated in place.
+
+`GEMINI_CLI_HOME` changes Gemini's user home root, so `/custom/home` resolves to `/custom/home/.gemini/settings.json`. Cline honors `CLINE_MCP_SETTINGS_PATH`, then `CLINE_DATA_DIR`, then `CLINE_DIR`. Linux Zed honors `FLATPAK_XDG_CONFIG_HOME` before `XDG_CONFIG_HOME`; macOS uses `~/.config/zed`. Runtime-only profile flags such as Zed's `--user-data-dir` and Amp's `--settings-file` are not inferred by BBX; configure those custom files manually.
 
 ### CLI skill setup
 
@@ -122,7 +132,18 @@ Managed skill paths:
 - `cursor`: `~/.cursor/skills/browser-bridge` or `./.cursor/skills/browser-bridge`
 - `windsurf`: `~/.codeium/windsurf/skills/browser-bridge` or `./.windsurf/skills/browser-bridge`
 - `antigravity`: `~/.gemini/antigravity/skills/browser-bridge` or `./.agents/skills/browser-bridge`
+- `gemini`: `~/.gemini/skills/browser-bridge` or `./.gemini/skills/browser-bridge`; user home follows `GEMINI_CLI_HOME`
+- `cline`: `~/.cline/skills/browser-bridge` or `./.cline/skills/browser-bridge`; the CLI user root follows `CLINE_DIR`
+- `zed`: `~/.agents/skills/browser-bridge` or `./.agents/skills/browser-bridge`
+- `amp`: `~/.config/amp/skills/browser-bridge` or `./.agents/skills/browser-bridge`
+- `droid`: `~/.factory/skills/browser-bridge` or `./.factory/skills/browser-bridge`
 - `agents`: `~/.agents/skills/browser-bridge` or `./.agents/skills/browser-bridge`
+
+The installer copies the complete BBX skill bundle, not just `SKILL.md`. Shared `.agents` destinations are deduplicated and record selected target ownership; removing one target preserves another target's managed bundle. User-edited and unmanaged files remain protected. A shared skill by itself does not make Zed appear installed.
+
+Skill precedence is agent-specific. Gemini prefers shared `.agents` skills within the same scope; Cline's user skills can override project copies; Amp's shared user skills can override its native user and project copies. BBX does not overwrite unrelated shadowing skills or change disabled-skill settings. Check discovery in the agent after installation. Zed's launcher is an editor CLI, not a separate coding agent; the BBX CLI skill runs through the native agent's terminal tool. ACP external agents and cloud executors require their own setup.
+
+New-client detection uses passive executable/package, native-install, or Cline extension fingerprints, not retained configuration folders. Detection is a setup hint, never proof of an active caller or authorization. See [the fingerprint catalog](./agent-fingerprints.json) and [setup research](./agent-support-research.md) for upstream evidence and scope limits.
 
 ## 4. Custom-agent MCP wiring
 

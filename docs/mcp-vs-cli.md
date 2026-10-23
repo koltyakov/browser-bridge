@@ -314,6 +314,11 @@ Neither path receives a browser-host filesystem path.
 | Cursor         | Yes                      | Yes               | MCP preferred                |
 | Devin Desktop  | Yes                      | Yes               | MCP preferred                |
 | Antigravity    | Yes                      | Yes               | MCP preferred                |
+| Gemini CLI     | Yes                      | Yes               | MCP preferred                |
+| Cline          | Yes (user scope)         | Yes               | MCP preferred                |
+| Zed            | Yes (native agent)       | Yes               | MCP preferred (native agent) |
+| Amp            | Yes                      | Yes               | MCP preferred                |
+| Factory Droid  | Yes                      | Yes               | MCP preferred                |
 | Generic agents | Yes (`.agents/mcp.json`) | `.agents/skills/` | MCP preferred when available |
 
 ## Summary

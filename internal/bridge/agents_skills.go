@@ -30,17 +30,28 @@ type installSkillMetadata struct {
 	Skill     string            `json:"skill"`
 	ManagedBy string            `json:"managedBy"`
 	Version   string            `json:"version"`
+	Targets   []string          `json:"targets,omitempty"`
 	Files     map[string]string `json:"files,omitempty"`
 }
 
 func installSkillBase(target string, scope installScope) string {
+	if !installContains(installAgentNames, target) {
+		return ""
+	}
 	base := scope.project
-	paths := map[string]string{"codex": ".codex/skills", "claude": ".claude/skills", "opencode": ".opencode/skills", "copilot": ".github/skills", "cursor": ".cursor/skills", "windsurf": ".windsurf/skills", "antigravity": ".agents/skills", "agents": ".agents/skills"}
+	paths := map[string]string{"codex": ".codex/skills", "claude": ".claude/skills", "opencode": ".opencode/skills", "copilot": ".github/skills", "cursor": ".cursor/skills", "windsurf": ".windsurf/skills", "antigravity": ".agents/skills", "gemini": ".gemini/skills", "cline": ".cline/skills", "zed": ".agents/skills", "amp": ".agents/skills", "droid": ".factory/skills", "agents": ".agents/skills"}
 	if scope.global {
 		base = scope.home
+		if target == "gemini" {
+			base = installGeminiHome(scope)
+		}
+		if target == "cline" {
+			return filepath.Join(installClineHome(scope), "skills")
+		}
 		paths["copilot"] = ".copilot/skills"
 		paths["antigravity"] = ".gemini/antigravity/skills"
 		paths["windsurf"] = ".codeium/windsurf/skills"
+		paths["amp"] = ".config/amp/skills"
 	}
 	return filepath.Join(base, filepath.FromSlash(paths[target]))
 }
@@ -93,20 +104,53 @@ func installAgentSkills(targets []string, scope installScope) ([]string, error) 
 	created := []string{}
 	seen := map[string]bool{}
 	for _, target := range targets {
+		if !installContains(installAgentNames, target) {
+			return nil, fmt.Errorf("unsupported skill target %q", target)
+		}
+	}
+	rollback := func(cause error) ([]string, error) {
+		for _, previous := range created {
+			path := filepath.Join(installSkillBase(previous, scope), "browser-bridge")
+			resolved, resolveErr := installCanonicalDestination(path)
+			if resolveErr != nil {
+				cause = errors.Join(cause, resolveErr)
+				continue
+			}
+			metadata, managed, readErr := installReadSkillMetadata(resolved)
+			if readErr != nil {
+				cause = errors.Join(cause, readErr)
+			} else if managed {
+				if _, err := installRemoveSkill(previous, path, resolved, metadata); err != nil {
+					cause = errors.Join(cause, fmt.Errorf("rollback %s: %w", previous, err))
+				}
+			}
+		}
+		return nil, cause
+	}
+	for _, target := range targets {
 		path := filepath.Join(installSkillBase(target, scope), "browser-bridge")
-		if seen[path] {
+		resolved, err := installCanonicalDestination(path)
+		if err != nil {
+			return rollback(err)
+		}
+		if seen[resolved] {
+			metadata, managed, readErr := installReadSkillMetadata(resolved)
+			if readErr != nil {
+				return rollback(readErr)
+			}
+			if managed && !installContains(metadata.Targets, target) {
+				metadata.Targets = append(metadata.Targets, target)
+				if err := installWriteSkillMetadata(resolved, metadata); err != nil {
+					return rollback(err)
+				}
+			}
 			continue
 		}
-		seen[path] = true
+		seen[resolved] = true
 		existed := installExists(path)
 		installed, err := installAgentSkill(target, scope, false)
 		if err != nil {
-			for _, previous := range created {
-				if _, rollbackErr := installAgentSkill(previous, scope, true); rollbackErr != nil {
-					err = errors.Join(err, fmt.Errorf("rollback %s: %w", previous, rollbackErr))
-				}
-			}
-			return nil, err
+			return rollback(err)
 		}
 		if !existed {
 			created = append(created, target)
@@ -189,6 +233,19 @@ func installAgentSkill(target string, scope installScope, remove bool) ([]string
 		if !exists || !managed {
 			return []string{}, nil
 		}
+		owners := installSkillOwners(metadata, target, scope)
+		if !installContains(owners, target) {
+			return []string{}, nil
+		}
+		if len(owners) > 1 {
+			metadata.Targets = nil
+			for _, owner := range owners {
+				if owner != target {
+					metadata.Targets = append(metadata.Targets, owner)
+				}
+			}
+			return []string{path}, installWriteSkillMetadata(resolved, metadata)
+		}
 		return installRemoveSkill(target, path, resolved, metadata)
 	}
 	if exists && !managed {
@@ -212,6 +269,12 @@ func installAgentSkill(target string, scope installScope, remove bool) ([]string
 		}
 	}
 	updated := installSkillMetadata{Skill: "browser-bridge", ManagedBy: "@browserbridge/bbx", Version: version, Files: map[string]string{}}
+	if exists && managed {
+		updated.Targets = installSkillOwners(metadata, target, scope)
+	}
+	if !installContains(updated.Targets, target) {
+		updated.Targets = append(updated.Targets, target)
+	}
 	for name, data := range files {
 		dest := filepath.Join(stage, filepath.FromSlash(name))
 		// A link at any level is user-owned; do not dereference it while writing.
@@ -279,7 +342,43 @@ func installAgentSkill(target string, scope installScope, remove bool) ([]string
 	return []string{path}, nil
 }
 
+// Shared .agents skills can serve several explicitly selected clients. Preserve
+// the other clients' ownership when uninstalling one integration. Legacy shared
+// bundles are conservatively attributed to the generic agents target.
+func installSkillOwners(metadata installSkillMetadata, target string, scope installScope) []string {
+	if len(metadata.Targets) > 0 {
+		return append([]string{}, metadata.Targets...)
+	}
+	base := installSkillBase(target, scope)
+	generic := installSkillBase("agents", scope)
+	if base == generic {
+		return []string{"agents"}
+	}
+	resolved, err := installCanonicalDestination(base)
+	shared, sharedErr := installCanonicalDestination(generic)
+	if err == nil && sharedErr == nil && resolved == shared {
+		return []string{"agents"}
+	}
+	return []string{target}
+}
+
+func installWriteSkillMetadata(path string, metadata installSkillMetadata) error {
+	sentinel := filepath.Join(path, installSkillSentinel)
+	if info, err := os.Lstat(sentinel); err != nil {
+		return err
+	} else if !info.Mode().IsRegular() {
+		return fmt.Errorf("refusing to overwrite non-file skill metadata: %s", sentinel)
+	}
+	data, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		return err
+	}
+	return installAtomicWrite(sentinel, append(data, '\n'), 0644)
+}
+
 func installRemoveSkill(target, path, resolved string, metadata installSkillMetadata) ([]string, error) {
+	info, statErr := os.Lstat(path)
+	preserveTopLink := statErr == nil && info.Mode()&os.ModeSymlink != 0
 	files := metadata.Files
 	if files == nil {
 		// Legacy sentinels have no inventory. Remove only recognizable shipped
@@ -340,7 +439,7 @@ func installRemoveSkill(target, path, resolved string, metadata installSkillMeta
 	sort.Slice(dirs, func(i, j int) bool { return len(dirs[i]) > len(dirs[j]) })
 	for _, dir := range dirs {
 		// Preserve a user's top-level link, including its empty target.
-		if dir == resolved && path != resolved {
+		if dir == resolved && preserveTopLink {
 			continue
 		}
 		entries, err := os.ReadDir(dir)

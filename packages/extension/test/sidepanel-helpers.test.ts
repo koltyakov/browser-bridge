@@ -286,6 +286,38 @@ test('buildSetupMatrixRows filters unsupported entries and preserves preferred o
   );
 });
 
+test('new agent setup rows follow the existing agents and retain the requested order', () => {
+  const keys = [
+    'codex',
+    'claude',
+    'opencode',
+    'copilot',
+    'cursor',
+    'windsurf',
+    'antigravity',
+    'gemini',
+    'cline',
+    'zed',
+    'amp',
+    'droid',
+    'agents',
+  ];
+  const rows = buildSetupMatrixRows({
+    mcpClients: [...keys].reverse().map((key) => ({
+      key,
+      label: key,
+      detected: true,
+      configPath: `/configs/${key}.json`,
+      configured: false,
+    })),
+    skillTargets: [],
+  });
+  assert.deepEqual(
+    rows.map((row) => row.key),
+    keys
+  );
+});
+
 test('getMcpSetupCellState covers agents fallback, installed badges, and pending installs', () => {
   assert.deepEqual(
     getMcpSetupCellState(

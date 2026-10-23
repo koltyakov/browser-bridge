@@ -76,6 +76,13 @@ test(
       APPDATA: path.join(home, 'AppData', 'Roaming'),
       LOCALAPPDATA: path.join(home, 'AppData', 'Local'),
       XDG_CONFIG_HOME: path.join(home, '.config'),
+      CODEX_HOME: '',
+      GEMINI_CLI_HOME: '',
+      CLINE_DIR: '',
+      CLINE_DATA_DIR: '',
+      CLINE_MCP_SETTINGS_PATH: '',
+      AMP_HOME: '',
+      FLATPAK_XDG_CONFIG_HOME: '',
       BROWSER_BRIDGE_HOME: path.join(home, 'runtime'),
       BBX_TCP_HOST: '127.0.0.1',
       BBX_TCP_BIND_HOST: '127.0.0.1',
@@ -105,6 +112,34 @@ test(
     );
     await run('install-mcp', 'all');
     await run('install-skill', 'all', '--global');
+    const zedSettings =
+      process.platform === 'win32'
+        ? path.join(home, 'AppData', 'Roaming', 'Zed', 'settings.json')
+        : path.join(home, '.config', 'zed', 'settings.json');
+    const newClients = [
+      [path.join(home, '.gemini', 'settings.json'), 'mcpServers'],
+      [path.join(home, '.cline', 'data', 'settings', 'cline_mcp_settings.json'), 'mcpServers'],
+      [zedSettings, 'context_servers'],
+      [path.join(home, '.config', 'amp', 'settings.json'), 'amp.mcpServers'],
+      [path.join(home, '.factory', 'mcp.json'), 'mcpServers'],
+    ] as const;
+    for (const [filename, key] of newClients) {
+      const config = JSON.parse(await fs.readFile(filename, 'utf8')) as Record<
+        string,
+        Record<string, { command: unknown; args: unknown }>
+      >;
+      assert.equal(config[key]['browser-bridge'].command, 'bbx');
+      assert.deepEqual(config[key]['browser-bridge'].args, ['mcp', 'serve']);
+    }
+    await run('install-mcp', 'all', '--local');
+    await run('install-skill', 'gemini,cline,zed,amp,droid', '--local');
+    await assert.rejects(run('install-mcp', 'cline', '--local'), /user-scope MCP only/u);
+    for (const root of ['.gemini', '.cline', '.agents', '.factory']) {
+      assert.match(
+        await fs.readFile(path.join(project, root, 'skills', 'browser-bridge', 'SKILL.md'), 'utf8'),
+        /Browser Bridge/u
+      );
+    }
     t.diagnostic(`All-agent setup: ${await diskBytes(directory)} bytes`);
     assert(
       (

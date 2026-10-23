@@ -14,6 +14,9 @@ import (
 )
 
 func installAgentDetected(target string, scope installScope) bool {
+	if installAdditionalAgent(target) {
+		return installAdditionalAgentDetected(target, scope)
+	}
 	if target == "agents" {
 		return false
 	}
@@ -132,7 +135,10 @@ func installCollectStatus(scope installScope) object {
 		mcpDetected := installDetectedOverride("BBX_TEST_DETECTED_MCP_CLIENTS", target, detected)
 		skillDetected := target == "agents" || mcpDetected || installDetectedOverride("BBX_TEST_DETECTED_SKILL_TARGETS", target, detected)
 		paths := installMCPPaths(target, scope)
-		preferred := paths[0]
+		preferred := ""
+		if len(paths) > 0 {
+			preferred = paths[0]
+		}
 		exists, configured := false, false
 		for _, path := range paths {
 			data, err := os.ReadFile(path)
@@ -155,6 +161,10 @@ func installCollectStatus(scope installScope) object {
 		path := filepath.Join(base, "browser-bridge")
 		metadata, managed, _ := installReadSkillMetadata(path)
 		installed := installExists(path)
+		if (target == "zed" || (target == "amp" && !scope.global)) && !detected && !installContains(metadata.Targets, target) {
+			// A generic shared bundle is not proof that this editor/agent exists.
+			installed = false
+		}
 		managed = managed && installed
 		var installedVersion *string
 		if managed && metadata.Version != "" {
@@ -207,12 +217,19 @@ func setupInstall(c config, params object) (object, error) {
 	return object{"action": value(action), "kind": value(kind), "target": value(target), "paths": value(paths)}, nil
 }
 
+func installSelectsAll(raw string) bool {
+	for _, part := range strings.Split(strings.ToLower(raw), ",") {
+		if strings.TrimSpace(part) == "all" {
+			return true
+		}
+	}
+	return false
+}
+
 func installParseTargets(raw string, aliases bool) ([]string, error) {
 	parts := strings.Split(strings.ToLower(strings.TrimSpace(raw)), ",")
-	for _, part := range parts {
-		if strings.TrimSpace(part) == "all" {
-			return append([]string{}, installAgentNames...), nil
-		}
+	if installSelectsAll(raw) {
+		return append([]string{}, installAgentNames...), nil
 	}
 	result := []string{}
 	for _, part := range parts {
@@ -247,6 +264,7 @@ func installParseAgentArgs(args []string, skill bool) (installScope, []string, e
 		return scope, nil, err
 	}
 	var targets []string
+	allTargets := false
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		key, inline, hasInline := strings.Cut(arg, "=")
@@ -296,6 +314,7 @@ func installParseAgentArgs(args []string, skill bool) (installScope, []string, e
 			if err != nil {
 				return scope, nil, err
 			}
+			allTargets = installSelectsAll(raw)
 		default:
 			if strings.HasPrefix(arg, "-") {
 				return scope, nil, fmt.Errorf("unknown setup option %s", arg)
@@ -307,7 +326,21 @@ func installParseAgentArgs(args []string, skill bool) (installScope, []string, e
 			if err != nil {
 				return scope, nil, err
 			}
+			allTargets = installSelectsAll(arg)
 		}
+	}
+	if !skill && targets != nil {
+		selected := []string{}
+		for _, target := range targets {
+			if allTargets && !installMCPSupported(target, scope) {
+				continue
+			}
+			if err := installValidateMCPScope(target, scope); err != nil {
+				return scope, nil, err
+			}
+			selected = append(selected, target)
+		}
+		targets = selected
 	}
 	return scope, targets, nil
 }
@@ -315,9 +348,13 @@ func installParseAgentArgs(args []string, skill bool) (installScope, []string, e
 func installDefaultTargets(scope installScope, skill bool) ([]string, []string) {
 	installed, detected := []string{}, []string{}
 	for _, target := range installAgentNames {
+		if !skill && !installMCPSupported(target, scope) {
+			continue
+		}
 		found := false
 		if skill {
-			_, found, _ = installReadSkillMetadata(filepath.Join(installSkillBase(target, scope), "browser-bridge"))
+			metadata, managed, _ := installReadSkillMetadata(filepath.Join(installSkillBase(target, scope), "browser-bridge"))
+			found = managed && installContains(installSkillOwners(metadata, target, scope), target)
 		} else {
 			for _, path := range installMCPPaths(target, scope) {
 				if raw, err := os.ReadFile(path); err == nil && installMCPConfigured(string(raw), target, path, scope) {
@@ -346,7 +383,13 @@ func installDefaultTargets(scope installScope, skill bool) ([]string, []string) 
 	if len(detected) > 0 {
 		return detected, installed
 	}
-	return append([]string{}, installAgentNames...), installed
+	fallback := []string{}
+	for _, target := range installAgentNames {
+		if skill || installMCPSupported(target, scope) {
+			fallback = append(fallback, target)
+		}
+	}
+	return fallback, installed
 }
 
 func installChooseTargets(scope installScope, skill bool) ([]string, []string, error) {
@@ -361,6 +404,9 @@ func installChooseTargets(scope installScope, skill bool) ([]string, []string, e
 	}
 	fmt.Fprintf(os.Stderr, "Select %s (comma-separated names, all, or none).\n", kind)
 	for _, name := range installAgentNames {
+		if !skill && !installMCPSupported(name, scope) {
+			continue
+		}
 		mark := " "
 		if installContains(installed, name) {
 			mark = "x"
@@ -381,6 +427,15 @@ func installChooseTargets(scope installScope, skill bool) ([]string, []string, e
 		selected, err = installParseTargets(line, skill)
 		if err != nil {
 			return nil, nil, err
+		}
+		if !skill && installSelectsAll(line) {
+			available := []string{}
+			for _, target := range selected {
+				if installMCPSupported(target, scope) {
+					available = append(available, target)
+				}
+			}
+			selected = available
 		}
 	}
 	removed := []string{}
@@ -422,6 +477,13 @@ func handleSetupCommand(ctx context.Context, c config, args []string) (bool, err
 			targets, removed, err = installChooseTargets(scope, skill)
 			if err != nil {
 				return true, err
+			}
+		}
+		if !skill {
+			for _, target := range targets {
+				if err := installValidateMCPScope(target, scope); err != nil {
+					return true, err
+				}
 			}
 		}
 		for _, remove := range []bool{true, false} {
@@ -574,14 +636,16 @@ func installUninstallAll(ctx context.Context, c config) error {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			paths, err := installAgentMCP(target, scope, true)
-			if err != nil {
-				return err
+			if installMCPSupported(target, scope) {
+				paths, err := installAgentMCP(target, scope, true)
+				if err != nil {
+					return err
+				}
+				for _, path := range paths {
+					fmt.Println("Removed Browser Bridge from", path)
+				}
 			}
-			for _, path := range paths {
-				fmt.Println("Removed Browser Bridge from", path)
-			}
-			paths, err = installAgentSkill(target, scope, true)
+			paths, err := installAgentSkill(target, scope, true)
 			if err != nil {
 				return err
 			}
