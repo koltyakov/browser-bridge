@@ -222,21 +222,32 @@ func (s *recordingStore) disconnect(extension string) {
 }
 
 func (d *daemon) journalMessage(p *peer, m object) {
-	var result object
-	var err error
 	if m.text("type") == "extension.journal.begin" {
 		pending := d.pending[m.text("requestId")]
 		if pending == nil || pending.method != "session.start" || pending.target != p {
-			err = errors.New("Journal must be created by a pending session.start request.")
-		} else {
-			result, err = d.recordings.begin(p.id)
+			p.send(object{"type": value("extension.journal.ack"), "messageId": m["messageId"], "error": value("Journal must be created by a pending session.start request.")})
+			return
 		}
+	}
+	if !d.store(len(value(m)), false, func() func() {
+		ack := d.writeJournalMessage(p.id, m)
+		return func() { p.send(ack) }
+	}) {
+		p.send(object{"type": value("extension.journal.ack"), "messageId": m["messageId"], "error": value("Journal storage queue capacity reached.")})
+	}
+}
+
+func (d *daemon) writeJournalMessage(extension string, m object) object {
+	var result object
+	var err error
+	if m.text("type") == "extension.journal.begin" {
+		result, err = d.recordings.begin(extension)
 	} else if offset, valid := serviceInteger(m, "offset"); valid {
 		var data string
 		if json.Unmarshal(m["data"], &data) != nil || string(m["data"]) == "null" {
 			err = errors.New("Invalid journal chunk.")
 		} else {
-			result, err = d.recordings.append(m.text("journalId"), p.id, offset, data)
+			result, err = d.recordings.append(m.text("journalId"), extension, offset, data)
 		}
 	} else {
 		err = errors.New("Invalid journal chunk.")
@@ -247,5 +258,5 @@ func (d *daemon) journalMessage(p *peer, m object) {
 	} else {
 		ack["result"] = value(result)
 	}
-	p.send(ack)
+	return ack
 }

@@ -448,6 +448,12 @@
         "transport_owner": {
           "type": "string"
         },
+        "deadline_ms": {
+          "type": "number"
+        },
+        "artifact_ack": {
+          "type": "boolean"
+        },
         "tab_id": {
           "type": "number"
         },

@@ -99,6 +99,9 @@ func TestBaselineDaemonLateCreateReleasesOnlyOwnedOrphan(t *testing.T) {
 	d.route(agent, newRequest("dom.baseline.create", object{}, object{"target_extension": value(extension.id)}, 0))
 	request := serviceNextMessage(t, extension).object("request")
 	d.disconnect(agent)
+	if serviceNextMessage(t, extension).text("type") != "extension.request_cancelled" {
+		t.Fatal("disconnected owner did not cancel pending work")
+	}
 	_ = serviceNextMessage(t, extension)
 	result := object{"baselineId": value("baseline_" + strings.Repeat("b", 43)), "expiresAt": value(time.Now().Add(time.Minute).Format(time.RFC3339Nano)), "scope": value(object{"tabId": value(42)})}
 	d.response(foreign, success(request.text("id"), result))

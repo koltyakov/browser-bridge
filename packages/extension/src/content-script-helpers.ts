@@ -423,7 +423,10 @@ their host. Bounded so pathological pages cannot stall the content script. */
   /** Collect every shadow root reachable from a root, including nested ones. */
   function collectShadowRoots(root: ParentNode = document): ShadowRoot[] {
     const roots: ShadowRoot[] = [];
-    for (const element of walkElementsDeep(root)) {
+    let scanned = 0;
+    const started = performance.now();
+    for (const element of walkElementsDeep(root, DEEP_SCAN_LIMIT + 1)) {
+      if (++scanned > DEEP_SCAN_LIMIT || performance.now() - started > 100) throw scanLimitError();
       const shadowRoot = getShadowRoot(element);
       if (shadowRoot) roots.push(shadowRoot);
     }
@@ -433,12 +436,34 @@ their host. Bounded so pathological pages cannot stall the content script. */
   /** `querySelectorAll` that also searches open (and, for the extension, closed)
 shadow roots. Light-DOM matches come first. */
   function querySelectorAllDeep(selector: string, root: ParentNode = document): Element[] {
-    const results = [...root.querySelectorAll(selector)];
-    if (typeof root.querySelectorAll !== 'function' || !('children' in root)) return results;
-    for (const shadowRoot of collectShadowRoots(root)) {
-      results.push(...shadowRoot.querySelectorAll(selector));
+    // Validate even on an empty tree. :scope requires native tree-scoped CSS
+    // semantics; ordinary selectors can be matched lazily without a NodeList
+    // containing the entire document.
+    root.querySelector(selector);
+    if (selector.includes(':scope') || !('children' in root)) {
+      const results: Element[] = [];
+      for (const scope of [root, ...collectShadowRoots(root)]) {
+        const matches = scope.querySelectorAll(selector);
+        if (matches.length + results.length > DEEP_SCAN_LIMIT) throw scanLimitError();
+        for (const element of matches) results.push(element);
+      }
+      return results;
+    }
+    const results: Element[] = [];
+    const started = performance.now();
+    let scanned = 0;
+    for (const element of walkElementsDeep(root, DEEP_SCAN_LIMIT + 1)) {
+      if (++scanned > DEEP_SCAN_LIMIT || performance.now() - started > 100) throw scanLimitError();
+      if (element.matches(selector)) results.push(element);
     }
     return results;
+  }
+
+  function scanLimitError(): Error {
+    return Object.assign(
+      new Error('DOM scan limit reached. Use a narrower selector or element scope.'),
+      { code: 'RESULT_TRUNCATED', details: { scanLimit: DEEP_SCAN_LIMIT } }
+    );
   }
 
   /** First light-DOM match, falling back to shadow roots. */
@@ -482,28 +507,33 @@ shadow roots. Light-DOM matches come first. */
 descending into shadow roots. */
   function getElementTextContent(element: Element, budget: number = 200): string {
     if (NON_RENDERED_TAGS.has(element.tagName)) return '';
-    const hasNonRendered =
-      typeof element.querySelector === 'function' &&
-      element.querySelector('script, style, noscript, template') !== null;
-    const shadowRoot = getShadowRoot(element);
-    if (!hasNonRendered && !shadowRoot) return collapseText(element.textContent, budget);
-
+    const elementShadowRoot = getShadowRoot(element);
+    if (!elementShadowRoot && element.childNodes.length === 0)
+      return collapseText(element.textContent, budget);
     const parts: string[] = [];
     let length = 0;
-
-    const visit = (node: Node) => {
-      if (length > budget) return;
-      if (node.nodeType === 3) {
-        parts.push(node.textContent || '');
-        length += (node.textContent || '').length;
-        return;
+    const stack: Array<{ children: NodeListOf<ChildNode>; index: number }> = [
+      { children: (elementShadowRoot ?? element).childNodes, index: 0 },
+    ];
+    let scanned = 0;
+    while (stack.length && length < budget && scanned++ < DEEP_SCAN_LIMIT) {
+      const current = stack[stack.length - 1];
+      if (current.index >= current.children.length) {
+        stack.pop();
+        continue;
       }
-      if (node.nodeType !== 1 && node.nodeType !== 11) return;
-      if (node.nodeType === 1 && NON_RENDERED_TAGS.has((node as Element).tagName)) return;
+      const node = current.children[current.index++];
+      if (node.nodeType === 3) {
+        const text = (node.textContent || '').slice(0, budget - length);
+        parts.push(text);
+        length += text.length;
+        continue;
+      }
+      if (node.nodeType !== 1 && node.nodeType !== 11) continue;
+      if (node.nodeType === 1 && NON_RENDERED_TAGS.has((node as Element).tagName)) continue;
       const root = node.nodeType === 1 ? getShadowRoot(node as Element) : null;
-      for (const child of (root ?? node).childNodes) visit(child);
-    };
-    visit(element);
+      stack.push({ children: (root ?? node).childNodes, index: 0 });
+    }
     return collapseText(parts.join(' '), budget);
   }
 

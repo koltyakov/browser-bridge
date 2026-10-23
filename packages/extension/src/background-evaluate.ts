@@ -4,6 +4,7 @@ import {
   ERROR_CODES,
   normalizeEvaluateParams,
 } from '../../../protocol/src/index.js';
+import { requestLifetimes } from './background-request-lifetime.js';
 
 export type BridgeRequest = import('../../../protocol/src/types.js').BridgeRequest;
 export type BridgeResponse = import('../../../protocol/src/types.js').BridgeResponse;
@@ -51,7 +52,9 @@ export async function handlePageEvaluate(
     });
   }
   const target = await dependencies.resolveRequestTarget(request);
+  const assertActive = requestLifetimes.guard(request.id);
   return dependencies.runWithDebugger(target.tabId, async (debugTarget) => {
+    assertActive();
     const result = await dependencies.sendCommand(debugTarget, 'Runtime.evaluate', {
       expression: params.expression,
       returnByValue: params.returnByValue,

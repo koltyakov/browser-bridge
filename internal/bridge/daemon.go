@@ -19,26 +19,28 @@ import (
 )
 
 type peer struct {
-	conn          net.Conn
-	out           chan queuedMessage
-	queuedBytes   atomic.Int64
-	queueMu       sync.Mutex
-	done          chan struct{}
-	role          string
-	id            string
-	owner         string
-	identity      object
-	access        bool
-	active        int64
-	window        object
-	windowPush    bool
-	windowControl bool
-	pending       int
-	dataTargets   map[*peer]bool
+	conn                  net.Conn
+	out                   chan queuedMessage
+	queuedBytes           atomic.Int64
+	queueMu               sync.Mutex
+	done                  chan struct{}
+	role                  string
+	id                    string
+	owner                 string
+	identity              object
+	access                bool
+	active                int64
+	window                object
+	windowPush            bool
+	windowControl         bool
+	pending               int
+	dataTargets           map[*peer]bool
+	legacyArtifactBarrier <-chan struct{}
 }
 
 type queuedMessage struct {
 	message object
+	payload []byte
 	bytes   int64
 	onWrite func(bool)
 }
@@ -70,6 +72,9 @@ type daemon struct {
 	artifacts                         *artifactStore
 	recordings                        *recordingStore
 	baselines                         *baselineRegistry
+	storage                           *storageExecutor
+	storagePruning                    bool
+	stopping                          bool
 	windowActions                     map[string]*pendingWindowAction
 	telemetry                         recoveryTelemetry
 	started                           time.Time
@@ -102,7 +107,8 @@ func (p *peer) enqueue(message object, onWrite func(bool)) bool {
 		return false
 	default:
 	}
-	size := int64(len(value(message)) + 1)
+	payload := value(message)
+	size := int64(len(payload) + 1)
 	if size-1 > maxMessageBytes {
 		_ = p.conn.Close()
 		return false
@@ -113,7 +119,7 @@ func (p *peer) enqueue(message object, onWrite func(bool)) bool {
 		return false
 	}
 	select {
-	case p.out <- queuedMessage{message: message, bytes: size, onWrite: onWrite}:
+	case p.out <- queuedMessage{message: message, payload: payload, bytes: size, onWrite: onWrite}:
 		return true
 	case <-p.done:
 		p.queuedBytes.Add(-size)
@@ -190,6 +196,7 @@ func runDaemon(ctx context.Context, c config) error {
 	if err := d.artifacts.reset(); err != nil {
 		return err
 	}
+	d.storage = &storageExecutor{}
 	pidPath := filepath.Join(c.home, "daemon.pid")
 	pid := []byte(fmt.Sprintf("%d\n", os.Getpid()))
 	if err := os.WriteFile(pidPath, pid, 0600); err != nil {
@@ -214,7 +221,12 @@ func runDaemon(ctx context.Context, c config) error {
 				return
 			case <-ticker.C:
 				d.mu.Lock()
-				d.artifacts.prune()
+				if !d.stopping && !d.storagePruning {
+					d.storagePruning = d.store(0, false, func() func() {
+						d.artifacts.prune()
+						return func() { d.storagePruning = false }
+					})
+				}
 				d.baselines.prune()
 				d.mu.Unlock()
 			}
@@ -223,6 +235,7 @@ func runDaemon(ctx context.Context, c config) error {
 	var workers sync.WaitGroup
 	defer func() {
 		d.mu.Lock()
+		d.stopping = true
 		for p := range d.peers {
 			_ = p.conn.Close()
 		}
@@ -235,6 +248,7 @@ func runDaemon(ctx context.Context, c config) error {
 		d.mu.Unlock()
 		workers.Wait()
 		d.setupWorkers.Wait()
+		d.storage.workers.Wait()
 		d.mu.Lock()
 		_ = d.artifacts.reset()
 		d.mu.Unlock()
@@ -296,8 +310,7 @@ func (d *daemon) serve(p *peer) {
 		for {
 			select {
 			case queued := <-p.out:
-				_ = p.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-				err := writer.send(queued.message)
+				_, err := writer.sendPayloadContext(context.Background(), queued.payload)
 				p.queuedBytes.Add(-queued.bytes)
 				if err != nil {
 					_ = p.conn.Close()
@@ -343,7 +356,7 @@ func (d *daemon) serve(p *peer) {
 		_ = writer.send(object{"type": value("registration_failed"), "error": value(object{"code": value("ACCESS_DENIED"), "message": value("Bridge daemon authentication or registration failed.")})})
 		return
 	}
-	ack := object{"type": value("registered"), "role": value(role)}
+	ack := object{"type": value("registered"), "role": value(role), "requestCancellation": value(true)}
 	if role == "agent" {
 		ack["clientId"] = message["clientId"]
 	}
@@ -361,7 +374,12 @@ func (d *daemon) serve(p *peer) {
 		}
 		d.mu.Lock()
 		d.handle(p, message)
+		barrier := p.legacyArtifactBarrier
+		p.legacyArtifactBarrier = nil
 		d.mu.Unlock()
+		if barrier != nil {
+			<-barrier
+		}
 	}
 }
 
@@ -448,6 +466,16 @@ func (d *daemon) windows() {
 func (d *daemon) handle(p *peer, message object) {
 	d.initServices()
 	kind := message.text("type")
+	if kind == "agent.cancel" && p.role == "agent" {
+		for id, pending := range d.pending {
+			if pending.owner == p && pending.original == message.text("requestId") {
+				d.cancelBrowserRequest(id, pending)
+				d.finish(id, failure(pending.original, "TIMEOUT", "Request canceled. Inspect postconditions before retrying a mutation."))
+				break
+			}
+		}
+		return
+	}
 	if kind == "agent.request" {
 		d.route(p, message.object("request"))
 		return
@@ -472,8 +500,8 @@ func (d *daemon) handle(p *peer, message object) {
 		if p.access {
 			p.window = normalizeEnabledWindow(message.object("enabledWindow"))
 		} else {
-			d.artifacts.cleanup("", "", p.id, false)
-			d.recordings.disconnect(p.id)
+			d.cleanupArtifacts("", "", p.id, false)
+			d.disconnectRecordings(p.id)
 			d.baselines.clear(p)
 		}
 		d.windows()
@@ -683,14 +711,18 @@ func (d *daemon) route(p *peer, request object) {
 	routedID := uniqueID()
 	target := candidates[0]
 	meta["transport_owner"] = value(p.owner)
+	meta["artifact_ack"] = value(true)
+	timeout := daemonOperationTimeout(method, params)
+	meta["deadline_ms"] = value(time.Now().Add(timeout).UnixMilli())
 	request["id"], request["meta"] = value(routedID), value(meta)
 	pending := &pendingRequest{owner: p, target: target, original: id, method: method, baselineID: params.text("baselineId"), started: time.Now(), meta: meta}
 	d.pending[routedID] = pending
 	p.pending++
-	pending.timer = time.AfterFunc(daemonPendingTimeout(params), func() {
+	pending.timer = time.AfterFunc(timeout, func() {
 		d.mu.Lock()
 		defer d.mu.Unlock()
 		if d.pending[routedID] == pending {
+			d.cancelBrowserRequest(routedID, pending)
 			d.baselines.abandon(routedID, pending)
 			d.finish(routedID, failure(id, "TIMEOUT", "Extension did not respond in time. Inspect postconditions before retrying a mutation."))
 		}
@@ -704,6 +736,12 @@ func daemonPendingTimeout(params object) time.Duration {
 	// otherwise overflows into a negative duration and expires immediately.
 	timeout := min(params.number("timeoutMs"), protocol.MaxDaemonPendingTimeoutMS-protocol.DaemonPendingTimeoutMarginMS)
 	return time.Duration(max(protocol.DefaultDaemonPendingTimeoutMS, timeout+protocol.DaemonPendingTimeoutMarginMS)) * time.Millisecond
+}
+
+func (d *daemon) cancelBrowserRequest(id string, pending *pendingRequest) {
+	if d.peers[pending.target] {
+		pending.target.send(object{"type": value("extension.request_cancelled"), "requestId": value(id)})
+	}
 }
 
 func (d *daemon) routingError(p *peer, request, response object, reason string) {
@@ -724,7 +762,9 @@ func (d *daemon) finish(id string, response object) {
 	pending.timer.Stop()
 	delete(d.pending, id)
 	pending.owner.pending--
-	d.artifacts.cleanup(id, "", "", response.boolean("ok"))
+	if artifactKind(pending.method) != "" {
+		d.cleanupArtifacts(id, "", "", response.boolean("ok"))
+	}
 	d.recordCompletion(pending, response.boolean("ok"))
 	response["id"] = value(pending.original)
 	meta := response.object("meta")
@@ -788,14 +828,35 @@ func (d *daemon) response(p *peer, response object) {
 		d.finish(id, failure(id, "INVALID_REQUEST", "Malformed extension response."))
 		return
 	}
+	if artifactKind(pending.method) != "" {
+		if !d.store(len(value(response)), false, func() func() {
+			valid := true
+			if response.boolean("ok") {
+				result := response.object("result")
+				valid = result.text("delivery") != "artifact" || d.artifacts.matches(result.object("artifact"), pending.owner.owner, id, artifactKind(pending.method))
+			}
+			return func() {
+				if d.pending[id] != pending {
+					return
+				}
+				if !valid && pending.localError == nil {
+					pending.localError = failure(id, "ARTIFACT_TRANSFER_INVALID", "Artifact metadata does not match a committed transfer.")
+				}
+				d.completeResponse(p, pending, response)
+			}
+		}) {
+			d.finish(id, failure(id, "ARTIFACT_QUOTA_EXCEEDED", "Storage queue capacity reached."))
+		}
+		return
+	}
+	d.completeResponse(p, pending, response)
+}
+
+func (d *daemon) completeResponse(p *peer, pending *pendingRequest, response object) {
+	id := response.text("id")
 	if response.boolean("ok") {
 		if pending.localError != nil {
 			d.finish(id, pending.localError)
-			return
-		}
-		result := response.object("result")
-		if result.text("delivery") == "artifact" && !d.artifacts.matches(result.object("artifact"), pending.owner.owner, id, artifactKind(pending.method)) {
-			d.finish(id, failure(id, "ARTIFACT_TRANSFER_INVALID", "Artifact metadata does not match the request or was not committed before the response."))
 			return
 		}
 		if pending.method == "health.ping" {
@@ -813,10 +874,10 @@ func (d *daemon) disconnect(p *peer) {
 	defer d.mu.Unlock()
 	d.initServices()
 	delete(d.peers, p)
-	d.artifacts.cleanup("", p.owner, "", false)
+	d.cleanupArtifacts("", p.owner, "", false)
 	if p.role == "extension" {
-		d.artifacts.cleanup("", "", p.id, false)
-		d.recordings.disconnect(p.id)
+		d.cleanupArtifacts("", "", p.id, false)
+		d.disconnectRecordings(p.id)
 		d.baselines.clear(p)
 	}
 	for id, action := range d.windowActions {
@@ -826,8 +887,11 @@ func (d *daemon) disconnect(p *peer) {
 	}
 	for id, pending := range d.pending {
 		if pending.owner == p {
+			d.cancelBrowserRequest(id, pending)
 			d.baselines.abandon(id, pending)
-			d.artifacts.cleanup(id, "", "", false)
+			if artifactKind(pending.method) != "" {
+				d.cleanupArtifacts(id, "", "", false)
+			}
 			d.recordCompletion(pending, false)
 			pending.timer.Stop()
 			delete(d.pending, id)
@@ -893,23 +957,33 @@ func (d *daemon) localService(p *peer, request, params object) bool {
 			return true
 		}
 	}
-	var result object
-	var err error
-	fallback := "INTERNAL_ERROR"
 	switch method {
 	case "setup.get_status":
 		d.setupRequest(p, request, func() (object, error) { return setupStatus(d.config) }, "INTERNAL_ERROR")
 		return true
 	case "setup.install":
 		if !localControlPeer(p) {
-			err = serviceFailure("ACCESS_DENIED", "setup.install is restricted to local Browser Bridge clients.")
-		} else {
-			d.setupRequest(p, request, func() (object, error) { return setupInstall(d.config, params) }, "INVALID_REQUEST")
+			d.localResponse(p, request, failure(id, "ACCESS_DENIED", "setup.install is restricted to local Browser Bridge clients."))
 			return true
 		}
-		fallback = "INVALID_REQUEST"
+		d.setupRequest(p, request, func() (object, error) { return setupInstall(d.config, params) }, "INVALID_REQUEST")
+		return true
+	case "artifact.delete", "artifact.read", "session.journal_read", "session.journal_delete":
+		d.storageRequest(p, request, func() object { return d.localStorageResponse(p.owner, request, params) })
+		return true
+	default:
+		return false
+	}
+}
+
+func (d *daemon) localStorageResponse(owner string, request, params object) object {
+	method, id := request.text("method"), request.text("id")
+	var result object
+	var err error
+	fallback := "INTERNAL_ERROR"
+	switch method {
 	case "artifact.delete":
-		result, err = d.artifacts.delete(params.text("artifactId"), p.owner)
+		result, err = d.artifacts.delete(params.text("artifactId"), owner)
 	case "artifact.read", "session.journal_read":
 		offset, offsetOK := serviceInteger(params, "offset")
 		limit, limitOK := serviceInteger(params, "maxBytes")
@@ -926,7 +1000,7 @@ func (d *daemon) localService(p *peer, request, params object) bool {
 		if !offsetOK || !limitOK || offset < 0 || limit < 1 || limit > artifactChunkBytes {
 			err = serviceFailure("INVALID_REQUEST", "Invalid read range.")
 		} else if method == "artifact.read" {
-			result, err = d.artifacts.read(params.text("artifactId"), p.owner, offset, limit)
+			result, err = d.artifacts.read(params.text("artifactId"), owner, offset, limit)
 		} else {
 			result, err = d.recordings.read(params.text("journalId"), offset, limit)
 			fallback = "ARTIFACT_NOT_FOUND"
@@ -934,8 +1008,6 @@ func (d *daemon) localService(p *peer, request, params object) bool {
 	case "session.journal_delete":
 		result, err = d.recordings.delete(params.text("journalId"))
 		fallback = "ARTIFACT_NOT_FOUND"
-	default:
-		return false
 	}
 	if err != nil && fallback == "ARTIFACT_NOT_FOUND" {
 		var typed *serviceError
@@ -943,8 +1015,7 @@ func (d *daemon) localService(p *peer, request, params object) bool {
 			err = serviceFailure("ARTIFACT_NOT_FOUND", "Recording journal unavailable.")
 		}
 	}
-	d.localResponse(p, request, serviceResponse(id, result, err, fallback))
-	return true
+	return serviceResponse(id, result, err, fallback)
 }
 
 func localControlPeer(p *peer) bool {

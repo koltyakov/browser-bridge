@@ -203,7 +203,7 @@ test('tab bridge cleanup finishes debugger ownership cleanup when a tab re-enter
     return checks < 2;
   });
 
-  assert.deepEqual(calls, ['clear-console', 'clear-network']);
+  assert.deepEqual(calls, ['begin-cleanup', 'end-cleanup']);
   assert.equal(checks, 2);
 });
 

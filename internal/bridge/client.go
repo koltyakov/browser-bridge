@@ -21,27 +21,33 @@ type callResult struct {
 }
 
 type client struct {
-	conn    net.Conn
-	writer  wireWriter
-	mu      sync.Mutex
-	pending map[string]chan callResult
-	closed  error
+	conn                 net.Conn
+	writer               wireWriter
+	mu                   sync.Mutex
+	pending              map[string]chan callResult
+	closed               error
+	supportsCancellation bool
 }
 
 func connect(c config, role string) (*client, error) {
-	conn, reader, err := register(c, role)
+	conn, reader, ack, err := registerConnection(c, role)
 	if err != nil {
 		return nil, err
 	}
-	cl := &client{conn: conn, writer: wireWriter{out: conn}, pending: make(map[string]chan callResult)}
+	cl := &client{conn: conn, writer: wireWriter{out: conn}, pending: make(map[string]chan callResult), supportsCancellation: ack.boolean("requestCancellation")}
 	go cl.read(reader)
 	return cl, nil
 }
 
 func register(c config, role string) (net.Conn, *bufio.Reader, error) {
+	conn, reader, _, err := registerConnection(c, role)
+	return conn, reader, err
+}
+
+func registerConnection(c config, role string) (net.Conn, *bufio.Reader, object, error) {
 	conn, err := c.dial()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	token, err := c.credential(role)
 	// Existing Node Unix-socket daemons rely on filesystem access and may not
@@ -51,7 +57,7 @@ func register(c config, role string) (net.Conn, *bufio.Reader, error) {
 	}
 	if err != nil {
 		_ = conn.Close()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
 	w := wireWriter{out: conn}
@@ -62,11 +68,11 @@ func register(c config, role string) (net.Conn, *bufio.Reader, error) {
 	message, err := decodeObject(value(registration))
 	if err != nil {
 		_ = conn.Close()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if err := w.send(message); err != nil {
 		_ = conn.Close()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	reader := bufio.NewReader(conn)
 	reply, err := readLine(reader)
@@ -75,10 +81,10 @@ func register(c config, role string) (net.Conn, *bufio.Reader, error) {
 	}
 	if err != nil {
 		_ = conn.Close()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	_ = conn.SetDeadline(time.Time{})
-	return conn, reader, nil
+	return conn, reader, reply, nil
 }
 
 func (c *client) read(reader *bufio.Reader) {
@@ -206,6 +212,14 @@ func (c *client) request(ctx context.Context, request object) (object, error) {
 	case result := <-ch:
 		return result.response, result.err
 	case <-ctx.Done():
+		if !c.supportsCancellation {
+			return nil, ctx.Err()
+		}
+		cancelCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if dispatched, err := c.writer.sendContext(cancelCtx, object{"type": value("agent.cancel"), "requestId": value(id)}); err != nil && dispatched {
+			c.fail(err)
+		}
 		return nil, ctx.Err()
 	}
 }

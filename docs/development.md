@@ -88,6 +88,7 @@ make test-runtime TEST_FILES=packages/extension/test/page-recorder.test.ts
 make test-runtime TEST_FILES=packages/extension/test/background-files.test.ts TEST_ARGS='--test-name-pattern=staging'
 make fixture-browser ARGS='--port 4317'
 make run ARGS='call health.ping'
+make bench-runtime
 ```
 
 `test-js` and `test-runtime` build the extension and Go executable before testing. `test-js` replaces the coverage results, so use `test-runtime` for focused runs when retaining full-suite coverage. Set `BBX_TEST_CHROME` to your browser executable to include the real-Chrome tests.
@@ -97,3 +98,13 @@ make run ARGS='call health.ping'
 `make status` and `make daemon` run the workspace Go CLI. `make install-manifest ARGS='<extension-id>'` registers the persistent executable produced by `make build-native`.
 
 `package.json` contains only `build:extension`, `package:extension`, `postinstall`, and `prepack`. These run Node directly. Use Make for testing, linting, fixtures, native builds, and release validation. Run `make prepublish-check` before a manual publication from the checkout; npm no longer runs it as a lifecycle hook. See [publishing](./publishing.md) for release order and authentication.
+
+## Request lifetime and storage ordering
+
+The daemon advertises request cancellation during registration and overwrites routed deadlines and artifact-acknowledgement metadata. Timeout policies live in `protocol/src/operation-timeouts.js` and are generated into the native catalog. Keep approval waits and callback execution in the same transport budget.
+
+Cancellation stops queued work and later steps, including content-side auto-waits. It cannot undo a mutation already dispatched to Chrome. Treat a timed-out mutation as uncertain and inspect its postconditions rather than replaying it automatically.
+
+Production artifact and journal disk operations run on a bounded, ordered storage executor, outside `daemon.mu`. Artifact acknowledgements follow validation and disk writes. Cleanup has reserved queue capacity, and artifact responses wait behind their commits. Legacy extensions receive per-connection read backpressure. New extensions talking to an older daemon yield between chunks instead of waiting for unsupported acknowledgements.
+
+`make bench-runtime` measures daemon health-request routing with its storage worker deliberately blocked. It does not measure Chrome round-trip latency. The stability regression tests also cover dialog-blocked teardown, iframe patch rollback, oversized errors, cancellation, and concurrent lease persistence.

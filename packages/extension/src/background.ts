@@ -17,7 +17,7 @@ import {
   shouldLogAction,
 } from './background-helpers.js';
 import { isRestrictedAutomationUrl } from './background-routing.js';
-import { captureWindowGrant, getAccessStatus } from './background-access.js';
+import { captureWindowGrant, getAccessStatus, sameWindowGrant } from './background-access.js';
 import {
   createNativeConnectionController,
   sendAccessUpdate as sendAccessUpdateNative,
@@ -136,6 +136,8 @@ import { createFileStaging } from './background-files.js';
 import { cancelPageResources } from './background-resource.js';
 import { createFileRequestHandler } from './background-file-requests.js';
 import { createRecordingRequestHandler } from './background-recording-requests.js';
+import { requestLifetimes } from './background-request-lifetime.js';
+import { createArtifactTransport } from './background-artifact-transport.js';
 
 export type EnabledWindowState = import('./background-state.js').EnabledWindowState;
 export type ResolvedTabTarget = import('./background-state.js').ResolvedTabTarget;
@@ -198,7 +200,24 @@ function recordTabRouting(
 }
 
 /** Refresh the cached working-tab set and repaint badges whose state changed. */
-async function syncWorkingTabIndicators(): Promise<void> {
+let workingIndicatorsPending: Promise<void> | null = null;
+let workingIndicatorsDirty = false;
+function syncWorkingTabIndicators(): Promise<void> {
+  workingIndicatorsDirty = true;
+  workingIndicatorsPending ??= Promise.resolve().then(async () => {
+    try {
+      while (workingIndicatorsDirty) {
+        workingIndicatorsDirty = false;
+        await refreshWorkingTabIndicators();
+      }
+    } finally {
+      workingIndicatorsPending = null;
+    }
+  });
+  return workingIndicatorsPending;
+}
+
+async function refreshWorkingTabIndicators(): Promise<void> {
   void agentGroups.sync().catch(reportAsyncError);
   const next = await agentTabs.getWorkingTabIds();
   const previous = state.workingTabIds ?? new Set();
@@ -241,6 +260,7 @@ const emulation = createEmulationController({
 });
 
 const journals = createJournalTransport(() => state.nativePort);
+const artifactTransport = createArtifactTransport(() => state.nativePort);
 const recordings = createRecordingController({
   acquireReplay: (tabId) => tabDebugger.acquire(tabId),
   releaseReplay: (tabId) => tabDebugger.release(tabId),
@@ -358,6 +378,8 @@ const {
   getFrameForRef,
   injectContentScriptsForWindow,
   ensureContentScript,
+  getCleanupFrames,
+  clearCleanupFrames,
   installNavigationSignals,
   uninstallNavigationSignals,
 } = createContentScriptBridge(chrome, {
@@ -377,6 +399,9 @@ const navigationWaits = new NavigationWaitCoordinator({
 const tabCleanupController = createTabCleanupController(chrome, {
   ensureContentScript,
   sendTabMessage,
+  listFrames: getCleanupFrames,
+  clearFrames: clearCleanupFrames,
+  sendFrameMessage,
   disableConsoleInterceptor,
   disableNetworkInterceptor,
   beginDebuggerCleanup: (tabId) => tabDebugger.beginCleanup(tabId),
@@ -419,6 +444,7 @@ const clearTabBridgeState = async (
 };
 
 const clearWindowBridgeState = async (windowId: number) => {
+  requestLifetimes.disconnect();
   domBaselines.clearWindow(windowId);
   await agentGroups.clearWindow(windowId).catch(reportAsyncError);
   await agentTabs.clear();
@@ -492,7 +518,7 @@ const {
 const windowActions = createWindowActionsController(state, chrome, { disableWindowAccess });
 
 const {
-  resolveRequestTarget,
+  resolveRequestTarget: resolvePageRequestTarget,
   waitForTabComplete,
   handlePageGetConsole,
   handlePageGetState,
@@ -536,6 +562,17 @@ const {
   agentTabs,
   onRequestRouted: recordTabRouting,
 });
+
+async function resolveRequestTarget(
+  request: BridgeRequest,
+  options?: Parameters<typeof resolvePageRequestTarget>[1]
+): Promise<ResolvedTabTarget> {
+  const assertActive = requestLifetimes.guard(request.id, request.meta?.deadline_ms);
+  assertActive();
+  const target = await resolvePageRequestTarget(request, options);
+  assertActive();
+  return target;
+}
 
 const domBaselineRequests = createDomBaselineRequestHandler(domBaselines, {
   resolveRequestTarget,
@@ -663,11 +700,22 @@ const {
       message &&
       typeof message === 'object' &&
       'type' in message &&
+      message.type === 'host.request_cancelled'
+    ) {
+      if ('requestId' in message && typeof message.requestId === 'string')
+        requestLifetimes.cancel(message.requestId);
+      return true;
+    }
+    if (
+      message &&
+      typeof message === 'object' &&
+      'type' in message &&
       message.type === 'host.owner_disconnected'
     ) {
       const ownerId =
         'ownerId' in message && typeof message.ownerId === 'string' ? message.ownerId : '';
       if (!/^[a-f0-9-]{36}$/u.test(ownerId)) return true;
+      requestLifetimes.cancelOwner(ownerId);
       for (const [id, owner] of dataRequestOwners)
         if (owner === ownerId) disconnectedDataRequests.add(id);
       stagedFiles.clearTransportOwner(ownerId);
@@ -680,6 +728,7 @@ const {
       return true;
     }
     return (
+      artifactTransport.handle(message) ||
       journals.handle(message) ||
       windowActions.handleMessage(message) ||
       handleHostStatusMessage(message)
@@ -689,6 +738,8 @@ const {
   refreshSetupStatus,
   reply,
   handleDestinationDisconnect: () => {
+    requestLifetimes.disconnect();
+    artifactTransport.disconnect();
     journals.disconnect();
     for (const tabId of recordings.tabIds()) void recordings.clear(tabId).catch(reportAsyncError);
     domBaselines.clearAll();
@@ -718,6 +769,21 @@ async function storeByteArtifact<K extends import('../../../protocol/src/types.j
   bytes: Uint8Array,
   metadata: { kind: K; mimeType: string }
 ): Promise<import('../../../protocol/src/types.js').ArtifactDescriptor<K>> {
+  const port = state.nativePort;
+  const assertActive = requestLifetimes.guard(requestId);
+  const send = async (message: Record<string, unknown>) => {
+    assertActive();
+    if (state.nativePort !== port)
+      throw new BridgeError(ERROR_CODES.EXTENSION_DISCONNECTED, 'Artifact destination changed.');
+    if (requestLifetimes.acknowledgesArtifacts(requestId)) await artifactTransport.send(message);
+    else {
+      // Older daemons do not acknowledge chunks. Yield between bounded frames
+      // rather than enqueueing an entire artifact in one worker turn.
+      port?.postMessage(message);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    assertActive();
+  };
   if (!state.nativePort) {
     throw new BridgeError(ERROR_CODES.EXTENSION_DISCONNECTED, 'Native host is disconnected.');
   }
@@ -746,7 +812,7 @@ async function storeByteArtifact<K extends import('../../../protocol/src/types.j
     createdAt,
     expiresAt,
   };
-  state.nativePort.postMessage({
+  await send({
     type: 'host.artifact.begin',
     artifact: { ...descriptor, requestId },
   });
@@ -755,7 +821,7 @@ async function storeByteArtifact<K extends import('../../../protocol/src/types.j
       chunkIndex * ARTIFACT_CHUNK_BYTES,
       Math.min(bytes.byteLength, (chunkIndex + 1) * ARTIFACT_CHUNK_BYTES)
     );
-    state.nativePort.postMessage({
+    await send({
       type: 'host.artifact.chunk',
       artifact: { requestId },
       artifactId,
@@ -763,7 +829,7 @@ async function storeByteArtifact<K extends import('../../../protocol/src/types.j
       data: bytesToBase64(chunk),
     });
   }
-  state.nativePort.postMessage({
+  await send({
     type: 'host.artifact.commit',
     artifact: { requestId },
     artifactId,
@@ -778,7 +844,8 @@ function base64ToBytes(value: string) {
 
 function bytesToBase64(value: Uint8Array) {
   let binary = '';
-  for (const byte of value) binary += String.fromCharCode(byte);
+  for (let offset = 0; offset < value.length; offset += 32768)
+    binary += String.fromCharCode(...value.subarray(offset, offset + 32768));
   return btoa(binary);
 }
 
@@ -1000,49 +1067,62 @@ async function initializeState(): Promise<void> {
 /** Route a validated bridge request to the extension capability that should
 satisfy it. */
 async function handleBridgeRequest(request: BridgeRequest): Promise<void> {
-  if (
-    typeof request.meta?.transport_owner === 'string' &&
-    /^(?:files\.|session\.|download\.|input\.(?:set_files|paste_image)$)/u.test(request.method)
-  )
-    dataRequestOwners.set(request.id, request.meta.transport_owner);
-  let actionContext = null;
-  if (shouldLogAction(request.method)) {
-    try {
-      actionContext = await getActionContext(request);
-    } catch (error) {
-      reportAsyncError(error);
-    }
-  }
-
-  let response: BridgeResponse;
-
+  let finish: () => void;
   try {
-    response = await dispatchBridgeRequest(request);
+    finish = requestLifetimes.begin(request);
   } catch (error) {
-    response = toFailureResponse(request, error);
-  }
-
-  if (isWindowAccessDeniedResponse(response)) {
-    try {
-      response = (await requestEnableFromAgentSide(request)) ?? response;
-    } catch (error) {
-      reportAsyncError(error);
-    }
-  }
-  response = attachTabRouting(request, response);
-  response = enrichBridgeResponse(request, response);
-  if (request.method === 'sensitive.read') {
-    void logBridgeAction(request, response, actionContext).catch(reportAsyncError);
-    reply(response);
+    reply(toFailureResponse(request, error));
     return;
   }
-  reply(response);
-  dataRequestOwners.delete(request.id);
-  disconnectedDataRequests.delete(request.id);
   try {
-    await logBridgeAction(request, response, actionContext);
-  } catch (error) {
-    reportAsyncError(error);
+    if (
+      typeof request.meta?.transport_owner === 'string' &&
+      /^(?:files\.|session\.|download\.|input\.(?:set_files|paste_image)$)/u.test(request.method)
+    )
+      dataRequestOwners.set(request.id, request.meta.transport_owner);
+    let actionContext = null;
+    if (shouldLogAction(request.method)) {
+      try {
+        actionContext = await getActionContext(request);
+      } catch (error) {
+        reportAsyncError(error);
+      }
+    }
+
+    let response: BridgeResponse;
+
+    try {
+      response = await dispatchBridgeRequest(request);
+    } catch (error) {
+      response = toFailureResponse(request, error);
+    }
+
+    if (isWindowAccessDeniedResponse(response)) {
+      try {
+        response = (await requestEnableFromAgentSide(request)) ?? response;
+      } catch (error) {
+        reportAsyncError(error);
+      }
+    }
+    response = attachTabRouting(request, response);
+    response = enrichBridgeResponse(request, response);
+    if (request.method === 'sensitive.read') {
+      void logBridgeAction(request, response, actionContext).catch(reportAsyncError);
+      reply(response);
+      return;
+    }
+    reply(response);
+    dataRequestOwners.delete(request.id);
+    disconnectedDataRequests.delete(request.id);
+    try {
+      await logBridgeAction(request, response, actionContext);
+    } catch (error) {
+      reportAsyncError(error);
+    }
+  } finally {
+    finish();
+    dataRequestOwners.delete(request.id);
+    disconnectedDataRequests.delete(request.id);
   }
 }
 
@@ -1080,6 +1160,7 @@ function attachTabRouting(request: BridgeRequest, response: BridgeResponse): Bri
 
 /** Resolve one bridge request into a structured response. */
 async function dispatchBridgeRequest(request: BridgeRequest): Promise<BridgeResponse> {
+  requestLifetimes.guard(request.id, request.meta?.deadline_ms)();
   if (request.method === 'viewport.resize') {
     const target = await resolveRequestTarget(request);
     if (emulation.status(target.tabId).pendingReset.includes('device'))
@@ -1123,7 +1204,7 @@ async function dispatchBridgeRequest(request: BridgeRequest): Promise<BridgeResp
       const access = state.enabledWindow;
       const port = state.nativePort;
       const assertAccess = async () => {
-        if (state.enabledWindow !== access || state.nativePort !== port)
+        if (!sameWindowGrant(access, state.enabledWindow) || state.nativePort !== port)
           throw new BridgeError(
             ERROR_CODES.ACCESS_DENIED,
             'Emulation access or transport changed.'

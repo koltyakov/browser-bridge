@@ -224,7 +224,12 @@ only an unbound or idle-expired session follows the active tab. */
     }
 
     const grant = { ...state.enabledWindow };
-    const assertAccess = captureWindowGrant(state);
+    const assertGrant = captureWindowGrant(state);
+    const assertActive = requestLifetimes.guard(request.id, request.meta?.deadline_ms);
+    const assertAccess = () => {
+      assertActive();
+      assertGrant();
+    };
     try {
       await chromeObj.windows.get(grant.windowId);
     } catch {
@@ -845,9 +850,11 @@ is a read: it never changes debugger ownership or Network domain state. */
   /** Resize the browser viewport via CDP Emulation.setDeviceMetricsOverride
 or reset to natural size when width/height are 0. */
   async function handleViewportResize(request: BridgeRequest): Promise<BridgeResponse> {
+    const assertActive = requestLifetimes.guard(request.id);
     const target = await resolveRequestTarget(request);
     const params = normalizeViewportResizeParams(request.params);
     return dependencies.runWithDebugger(target.tabId, async (debugTarget) => {
+      assertActive();
       if (params.reset || (params.width === 0 && params.height === 0)) {
         await dependencies.sendCommand(debugTarget, 'Emulation.clearDeviceMetricsOverride', {});
       } else {
@@ -942,6 +949,7 @@ or reset to natural size when width/height are 0. */
   /** Execute a restricted Chrome DevTools Protocol request against the enabled
 tab. */
   async function handleCdpRequest(request: BridgeRequest): Promise<BridgeResponse> {
+    const assertActive = requestLifetimes.guard(request.id);
     if (
       request.method === 'cdp.get_box_model' ||
       request.method === 'cdp.get_computed_styles_for_node'
@@ -966,6 +974,7 @@ tab. */
         if (request.method === 'cdp.dispatch_key_event') {
           const events = createCdpKeyPressEventPair(request.params ?? {});
           for (const event of events) {
+            assertActive();
             await dependencies.sendCommand(debugTarget, 'Input.dispatchKeyEvent', event);
           }
           return createSuccess(
@@ -1123,3 +1132,4 @@ function createHarTooLargeError(byteLength: number, maxBytes: number) {
     }
   );
 }
+import { requestLifetimes } from './background-request-lifetime.js';

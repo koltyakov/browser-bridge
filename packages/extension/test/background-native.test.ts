@@ -1562,6 +1562,7 @@ test('background native clearTabBridgeState surfaces unexpected network buffer r
         clear: true,
         source: 'network',
       },
+      { tabId: 91, clear: undefined, source: 'other' },
     ]
   );
 });

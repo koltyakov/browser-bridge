@@ -10,20 +10,21 @@ import (
 var catalogBytes []byte
 
 type protocolCatalog struct {
-	Version            string                       `json:"version"`
-	AllTools           []object                     `json:"allTools"`
-	LegacyTools        []string                     `json:"legacyTools"`
-	LoadableTools      []string                     `json:"loadableTools"`
-	ToolBindings       map[string]string            `json:"toolBindings"`
-	ToolGroups         map[string][]string          `json:"toolGroups"`
-	LegacyInstructions string                       `json:"legacyInstructions"`
-	Tools              []object                     `json:"tools"`
-	Instructions       string                       `json:"instructions"`
-	Methods            map[string]object            `json:"methods"`
-	Runtime            object                       `json:"runtime"`
-	Presets            map[string]map[string]object `json:"presets"`
-	BatchSafe          []string                     `json:"batchSafe"`
-	ErrorRecovery      map[string]object            `json:"errorRecovery"`
+	Version            string                            `json:"version"`
+	AllTools           []object                          `json:"allTools"`
+	LegacyTools        []string                          `json:"legacyTools"`
+	LoadableTools      []string                          `json:"loadableTools"`
+	ToolBindings       map[string]string                 `json:"toolBindings"`
+	ToolGroups         map[string][]string               `json:"toolGroups"`
+	LegacyInstructions string                            `json:"legacyInstructions"`
+	Tools              []object                          `json:"tools"`
+	Instructions       string                            `json:"instructions"`
+	Methods            map[string]object                 `json:"methods"`
+	OperationTimeouts  map[string]operationTimeoutPolicy `json:"operationTimeouts"`
+	Runtime            object                            `json:"runtime"`
+	Presets            map[string]map[string]object      `json:"presets"`
+	BatchSafe          []string                          `json:"batchSafe"`
+	ErrorRecovery      map[string]object                 `json:"errorRecovery"`
 }
 
 var catalog protocolCatalog

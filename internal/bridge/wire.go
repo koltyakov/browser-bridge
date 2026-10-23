@@ -158,6 +158,15 @@ func (w *wireWriter) sendContext(ctx context.Context, message object) (bool, err
 	if err != nil {
 		return false, err
 	}
+	return w.sendPayloadContext(ctx, payload)
+}
+
+// Reuse already encoded queued frames instead of serializing large results a
+// second time. The caller must not mutate the payload after handing it off.
+func (w *wireWriter) sendPayloadContext(ctx context.Context, payload []byte) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	limit := maxMessageBytes
 	if w.native {
 		limit = protocol.MaxNativeMessageBytes

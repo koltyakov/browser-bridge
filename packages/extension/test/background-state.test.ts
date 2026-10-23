@@ -932,6 +932,7 @@ test('background state clearTabBridgeState clears tracked patches and bridge buf
     [
       { tabId: 62, world: 'MAIN', clear: true },
       { tabId: 62, world: 'MAIN', clear: true },
+      { tabId: 62, world: undefined, clear: undefined },
     ]
   );
 });
@@ -977,6 +978,7 @@ test('background state clearTabBridgeState swallows recoverable instrumentation 
     [
       { tabId: 63, clear: true },
       { tabId: 63, clear: true },
+      { tabId: 63, clear: undefined },
     ]
   );
 });
@@ -1107,7 +1109,7 @@ test('background state clearWindowBridgeState clears sibling tabs before reporti
   assert.deepEqual(networkBuffers.get(73), { entries: [], dropped: 0 });
   assert.deepEqual(
     executeScriptCalls.map((details) => details.target?.tabId).sort(),
-    [71, 71, 73, 73]
+    [71, 71, 71, 73, 73, 73]
   );
 });
 

@@ -507,7 +507,7 @@ export function enrichBridgeResponse(
     transportSafeResponse,
     serializeJsonPayload(responsePayload)
   );
-  return {
+  return enforceTransportPayloadLimit(request, {
     ...transportSafeResponse,
     meta: {
       ...transportSafeResponse.meta,
@@ -525,7 +525,7 @@ export function enrichBridgeResponse(
       debugger_backed:
         transportSafeResponse.meta.debugger_backed === true || diagnostics.debuggerBacked,
     },
-  };
+  });
 }
 
 /** Keep responses below Chrome native-messaging's outbound frame limit. Token
@@ -535,7 +535,14 @@ export function enforceTransportPayloadLimit(
   response: BridgeResponse
 ): BridgeResponse {
   if (!response.ok) {
-    return response;
+    if (estimateJsonPayloadCost(response).bytes <= MAX_BRIDGE_RESPONSE_BYTES) return response;
+    return createFailure(
+      request.id,
+      response.error.code,
+      'Operation failed. Error details exceeded the transport limit; inspect postconditions before retrying.',
+      { truncated: true, outcomeUncertain: true },
+      { method: request.method }
+    );
   }
   const responsePayload = response.result;
   if (request.method === 'sensitive.read') {
@@ -561,7 +568,10 @@ export function enforceTransportPayloadLimit(
     }
   }
   const payloadBytes = estimateJsonPayloadCost(responsePayload).bytes;
-  if (payloadBytes <= MAX_BRIDGE_RESPONSE_BYTES) {
+  if (
+    payloadBytes <= MAX_BRIDGE_RESPONSE_BYTES &&
+    estimateJsonPayloadCost(response).bytes <= MAX_BRIDGE_RESPONSE_BYTES
+  ) {
     return response;
   }
 
@@ -594,7 +604,7 @@ export function enforceTransportPayloadLimit(
         maxResponseBytes: MAX_BRIDGE_RESPONSE_BYTES,
         guidance: 'Use a smaller limit, a narrower urlPattern, or delivery=artifact.',
       },
-      { ...response.meta, method: request.method }
+      { method: request.method }
     );
   }
 
@@ -608,7 +618,6 @@ export function enforceTransportPayloadLimit(
       maxResponseBytes: MAX_BRIDGE_RESPONSE_BYTES,
     },
     {
-      ...response.meta,
       method: request.method,
       budget_applied: true,
       budget_truncated: true,

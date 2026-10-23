@@ -94,7 +94,7 @@ func daemonToNative(message object) object {
 		return object{"type": value("host.bridge_response"), "response": message["response"]}
 	}
 	switch kind {
-	case "extension.owner_disconnected", "extension.window_access", "extension.window_action.command",
+	case "extension.request_cancelled", "extension.artifact.ack", "extension.owner_disconnected", "extension.window_access", "extension.window_action.command",
 		"extension.journal.ack", "extension.window_action.response", "extension.setup_status.response", "extension.setup_status.error":
 		message["type"] = value("host." + strings.TrimPrefix(kind, "extension."))
 		return message

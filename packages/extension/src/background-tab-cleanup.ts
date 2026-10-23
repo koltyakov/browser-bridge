@@ -11,6 +11,14 @@ export type TabCleanupControllerDeps = {
     message: Record<string, unknown>,
     timeoutMs: number
   ) => Promise<unknown>;
+  listFrames?: (tabId: number) => Promise<Array<{ frameId: number }>>;
+  clearFrames?: (tabId: number) => void;
+  sendFrameMessage?: (
+    tabId: number,
+    frameId: number,
+    message: Record<string, unknown>,
+    timeoutMs: number
+  ) => Promise<unknown>;
   disableConsoleInterceptor?: (tabId: number, chrome: typeof globalThis.chrome) => Promise<void>;
   disableNetworkInterceptor?: (tabId: number, chrome: typeof globalThis.chrome) => Promise<void>;
   readConsoleBuffer?: (
@@ -61,11 +69,16 @@ export function createTabCleanupController(
     return errors;
   }
 
-  async function clearDebuggerState(tabId: number, errors: unknown[]): Promise<void> {
+  async function clearDebuggerState(
+    tabId: number,
+    errors: unknown[],
+    removed = false
+  ): Promise<void> {
     const endCleanup = await deps.beginDebuggerCleanup(tabId);
     try {
       for (const clear of [
         deps.commitDebuggerCleanup,
+        async (id: number) => errors.push(...(await clearResources(id, removed))),
         deps.clearFetchInterception,
         deps.stopCdpNetworkCapture,
         deps.discardCdpNetworkCapture,
@@ -82,8 +95,9 @@ export function createTabCleanupController(
   }
 
   async function clearRemovedTabState(tabId: number): Promise<void> {
-    const errors = await clearResources(tabId, true);
-    await clearDebuggerState(tabId, errors);
+    const errors: unknown[] = [];
+    await clearDebuggerState(tabId, errors, true);
+    deps.clearFrames?.(tabId);
     if (errors.length) throw new AggregateError(errors, `Tab ${tabId} cleanup failed`);
   }
   /** Roll back all reversible patches currently tracked in one tab. */
@@ -95,40 +109,60 @@ export function createTabCleanupController(
       if (!(await shouldContinue())) return;
       await deps.ensureContentScript(tabId);
       if (!(await shouldContinue())) return;
-      const listed = await deps.sendTabMessage(
-        tabId,
-        {
-          type: 'bridge.execute',
-          method: 'patch.list',
-          params: {},
-        },
-        CONTENT_SCRIPT_TIMEOUT_MS
-      );
-      const patches = Array.isArray(listed)
-        ? listed
-        : listed && typeof listed === 'object' && 'patches' in listed
-          ? listed.patches
-          : undefined;
-      if (!Array.isArray(patches)) {
-        return;
-      }
-      for (const patch of [...patches].reverse()) {
-        if (!(await shouldContinue())) return;
-        const patchId =
-          patch && typeof patch === 'object' ? (patch as Record<string, unknown>).patchId : null;
-        if (typeof patchId !== 'string' || !patchId) {
-          continue;
-        }
-        await deps.sendTabMessage(
-          tabId,
-          {
+      const frames = [
+        { frameId: 0 },
+        ...(deps.listFrames ? await deps.listFrames(tabId) : []).filter(
+          (frame) => frame.frameId !== 0
+        ),
+      ];
+      const results = await Promise.allSettled(
+        frames.map(async ({ frameId }) => {
+          if (!(await shouldContinue())) return;
+          const send = (message: Record<string, unknown>) =>
+            frameId !== 0 && deps.sendFrameMessage
+              ? deps.sendFrameMessage(tabId, frameId, message, CONTENT_SCRIPT_TIMEOUT_MS)
+              : deps.sendTabMessage(tabId, message, CONTENT_SCRIPT_TIMEOUT_MS);
+          const listed = await send({
             type: 'bridge.execute',
-            method: 'patch.rollback',
-            params: { patchId },
-          },
-          CONTENT_SCRIPT_TIMEOUT_MS
+            method: 'patch.list',
+            params: {},
+          });
+          const patches = Array.isArray(listed)
+            ? listed
+            : listed && typeof listed === 'object' && 'patches' in listed
+              ? listed.patches
+              : undefined;
+          if (!Array.isArray(patches)) {
+            return;
+          }
+          for (const patch of [...patches].reverse()) {
+            if (!(await shouldContinue())) return;
+            const patchId =
+              patch && typeof patch === 'object'
+                ? (patch as Record<string, unknown>).patchId
+                : null;
+            if (typeof patchId !== 'string' || !patchId) {
+              continue;
+            }
+            await send({
+              type: 'bridge.execute',
+              method: 'patch.rollback',
+              params: { patchId },
+            });
+          }
+        })
+      );
+      const errors = results.filter(
+        (result): result is PromiseRejectedResult =>
+          result.status === 'rejected' && !deps.isRecoverableInstrumentationError(result.reason)
+      );
+      if (errors.length === 1) throw errors[0].reason;
+      if (errors.length)
+        throw new AggregateError(
+          errors.map((result) => result.reason),
+          'Frame patch cleanup failed'
         );
-      }
+      deps.clearFrames?.(tabId);
     } catch (error) {
       if (!deps.isRecoverableInstrumentationError(error)) {
         throw error;
@@ -143,36 +177,40 @@ export function createTabCleanupController(
   ): Promise<void> {
     if (!(await shouldContinue())) return;
 
-    const instrumentationErrors = await clearResources(tabId);
-    const disableConsole =
-      deps.disableConsoleInterceptor ??
-      (async (id, chromeObj) => {
-        await deps.readConsoleBuffer?.(id, true, chromeObj);
-      });
-    const disableNetwork =
-      deps.disableNetworkInterceptor ??
-      (async (id, chromeObj) => {
-        await deps.readNetworkBuffer?.(id, true, chromeObj);
-      });
-    for (const disable of [disableConsole, disableNetwork]) {
-      try {
-        await disable(tabId, chrome);
-      } catch (error) {
-        if (!deps.isRecoverableInstrumentationError(error)) instrumentationErrors.push(error);
-      }
-    }
-    if (!(await shouldContinue())) {
-      if (instrumentationErrors.length > 0) throw instrumentationErrors[0];
-      return;
-    }
+    const instrumentationErrors: unknown[] = [];
     const endCleanup = await deps.beginDebuggerCleanup(tabId);
     try {
       if (!(await shouldContinue())) return;
+      // Hard cancellation must precede resources whose release is queued behind
+      // a command paused by a JavaScript dialog.
       try {
         await deps.commitDebuggerCleanup(tabId);
       } catch (error) {
         instrumentationErrors.push(error);
       }
+      instrumentationErrors.push(...(await clearResources(tabId)));
+      const disableConsole =
+        deps.disableConsoleInterceptor ??
+        (async (id, chromeObj) => {
+          await deps.readConsoleBuffer?.(id, true, chromeObj);
+        });
+      const disableNetwork =
+        deps.disableNetworkInterceptor ??
+        (async (id, chromeObj) => {
+          await deps.readNetworkBuffer?.(id, true, chromeObj);
+        });
+      for (const disable of [disableConsole, disableNetwork]) {
+        try {
+          await disable(tabId, chrome);
+        } catch (error) {
+          if (!deps.isRecoverableInstrumentationError(error)) instrumentationErrors.push(error);
+        }
+      }
+      if (!(await shouldContinue())) {
+        if (instrumentationErrors.length > 0) throw instrumentationErrors[0];
+        return;
+      }
+      if (!(await shouldContinue())) return;
       try {
         if (await shouldContinue()) {
           try {
@@ -232,8 +270,9 @@ export function createTabCleanupController(
   }
 
   async function clearRestrictedTabDebuggerState(tabId: number) {
-    const errors = await clearResources(tabId);
+    const errors: unknown[] = [];
     await clearDebuggerState(tabId, errors);
+    deps.clearFrames?.(tabId);
     if (errors.length) throw new AggregateError(errors, `Tab ${tabId} cleanup failed`);
   }
 

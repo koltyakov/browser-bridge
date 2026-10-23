@@ -186,6 +186,15 @@ test('operation timeouts cover sequences and held input', () => {
   );
   // Default auto-wait (2.5s) and observation settle (0.5s) extend the deadline.
   assert.equal(getBridgeOperationTimeoutMs('input.click', {}), 8_000);
+  assert.equal(
+    getBridgeOperationTimeoutMs('input.click', {
+      holdMs: 10000,
+      clickCount: 2,
+      timeoutMs: 15000,
+      observe: { settleMs: 5000 },
+    }),
+    45000
+  );
   assert.equal(getBridgeOperationTimeoutMs('input.click', { timeoutMs: 0, observe: false }), null);
   assert.equal(
     getBridgeOperationTimeoutMs('input.click', { holdMs: 2_000, timeoutMs: 0, observe: false }),

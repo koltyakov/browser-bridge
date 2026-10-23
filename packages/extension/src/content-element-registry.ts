@@ -479,9 +479,27 @@ registry at once. */
     throw new Error('Element target not found.');
   }
 
-  /** Return a cheap document revision marker for change detection. */
+  let documentRevision = 0;
+  let revisionObserver: MutationObserver | null = null;
+  if (typeof MutationObserver === 'function' && document.documentElement) {
+    try {
+      revisionObserver = new MutationObserver(() => {
+        documentRevision++;
+      });
+      revisionObserver.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        characterData: true,
+      });
+    } catch {
+      revisionObserver = null;
+    }
+  }
+  /** Mutation revisions avoid copying the entire body's text on every read. */
   function getDocumentRevision(): number {
-    return (document.body?.textContent || '').length;
+    if (revisionObserver?.takeRecords().length) documentRevision++;
+    return documentRevision;
   }
 
   /** Normalize DOM query parameters. */
