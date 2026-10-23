@@ -201,7 +201,7 @@ test('getSetupStatusView summarizes scope, install errors, and auto-expand state
   });
 });
 
-test('buildSetupMatrixRows filters unsupported entries and preserves preferred order', () => {
+test('buildSetupMatrixRows filters unsupported entries and preserves native registry order', () => {
   assert.deepEqual(
     buildSetupMatrixRows({
       mcpClients: [
@@ -282,11 +282,11 @@ test('buildSetupMatrixRows filters unsupported entries and preserves preferred o
         },
       ],
     }).map((row) => row.key),
-    ['claude', 'opencode', 'copilot', 'cursor', 'windsurf', 'antigravity', 'zzz']
+    ['antigravity', 'cursor', 'copilot', 'opencode', 'zzz', 'claude', 'windsurf']
   );
 });
 
-test('new agent setup rows follow the existing agents and retain the requested order', () => {
+test('agent setup rows use the native registry order without a separate client list', () => {
   const keys = [
     'codex',
     'claude',
@@ -300,10 +300,17 @@ test('new agent setup rows follow the existing agents and retain the requested o
     'zed',
     'amp',
     'droid',
+    'pi',
+    'kilo',
+    'qwen',
+    'goose',
+    'openhands',
+    'muse',
+    'grok',
     'agents',
   ];
   const rows = buildSetupMatrixRows({
-    mcpClients: [...keys].reverse().map((key) => ({
+    mcpClients: keys.map((key) => ({
       key,
       label: key,
       detected: true,
@@ -311,6 +318,35 @@ test('new agent setup rows follow the existing agents and retain the requested o
       configured: false,
     })),
     skillTargets: [],
+  });
+  assert.deepEqual(
+    rows.map((row) => row.key),
+    keys
+  );
+});
+
+test('skill-only rows retain the native order even when MCP rows are hidden', () => {
+  const keys = ['future-agent', 'other-agent', 'agents'];
+  const rows = buildSetupMatrixRows({
+    mcpClients: keys.map((key) => ({
+      key,
+      label: key,
+      detected: false,
+      configPath: '',
+      configured: false,
+    })),
+    skillTargets: [...keys].reverse().map((key) => ({
+      key,
+      label: key,
+      detected: true,
+      basePath: `/skills/${key}`,
+      installed: false,
+      managed: false,
+      installedVersion: null,
+      currentVersion: null,
+      updateAvailable: false,
+      skills: [],
+    })),
   });
   assert.deepEqual(
     rows.map((row) => row.key),

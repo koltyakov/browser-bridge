@@ -20,7 +20,7 @@ func cliCompactInput(r, extra object) object {
 	if resolution.boolean("scrolled") || resolution.boolean("recovered") || waited > 0 || cliString(resolution["strategy"]) && (strategy != "elementRef" && strategy != "selector-first" && strategy != "locator-first") {
 		notable := cliPick(resolution, "strategy")
 		for _, k := range []string{"scrolled", "recovered", "waitedMs", "candidateCount", "oldRef", "newRef"} {
-			if v, ok := resolution[k]; ok && string(v) != "false" && !(k == "candidateCount" && string(v) == "1") {
+			if v, ok := resolution[k]; ok && string(v) != "false" && (k != "candidateCount" || string(v) != "1") {
 				notable[k] = v
 			}
 		}

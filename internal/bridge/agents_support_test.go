@@ -45,8 +45,8 @@ func TestAdditionalAgentPathsAndScope(t *testing.T) {
 		t.Fatal("unknown targets resolved to a directory")
 	}
 	_, targets, err := installParseAgentArgs([]string{"all", "--project", scope.project}, false)
-	if err != nil || len(targets) != len(installAgentNames)-1 || installContains(targets, "cline") {
-		t.Fatalf("project all must omit unsupported Cline MCP: %v %v", targets, err)
+	if err != nil || len(targets) != len(installAgentNames)-4 || installContains(targets, "cline") {
+		t.Fatalf("project all must omit unsupported user-only MCP: %v %v", targets, err)
 	}
 	if _, _, err := installParseAgentArgs([]string{"gemini,cline", "--project", scope.project}, false); err == nil {
 		t.Fatal("explicit mixed-scope request must fail before any writes")
@@ -81,7 +81,8 @@ func TestAdditionalAgentOverrides(t *testing.T) {
 	if got := installMCPPath("cline", scope); got != filepath.Join(custom, "selected.json") {
 		t.Fatal(got)
 	}
-	if runtime.GOOS == "linux" {
+	switch runtime.GOOS {
+	case "linux":
 		t.Setenv("XDG_CONFIG_HOME", filepath.Join(custom, "xdg"))
 		if got := installZedHome(scope); got != filepath.Join(custom, "xdg", "zed") {
 			t.Fatal(got)
@@ -90,7 +91,7 @@ func TestAdditionalAgentOverrides(t *testing.T) {
 		if got := installZedHome(scope); got != filepath.Join(custom, "flatpak", "zed") {
 			t.Fatal(got)
 		}
-	} else if runtime.GOOS == "darwin" {
+	case "darwin":
 		t.Setenv("XDG_CONFIG_HOME", filepath.Join(custom, "xdg"))
 		if got := installZedHome(scope); got != filepath.Join(scope.home, ".config", "zed") {
 			t.Fatal("macOS Zed must not inherit Linux XDG behavior", got)
@@ -346,7 +347,7 @@ func TestAdditionalSkillParentSymlinksAreDeduplicated(t *testing.T) {
 func TestAdditionalSetupInstallAndStatus(t *testing.T) {
 	c, _ := installTestScope(t)
 	t.Setenv("PATH", t.TempDir())
-	targets := []string{"gemini", "cline", "zed", "amp", "droid"}
+	targets := []string{"gemini", "cline", "zed", "amp", "droid", "pi", "kilo", "qwen", "goose", "openhands", "muse", "grok"}
 	for _, target := range targets {
 		for _, kind := range []string{"mcp", "skill"} {
 			result, err := setupInstall(c, object{"kind": value(kind), "target": value(target)})

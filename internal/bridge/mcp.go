@@ -26,14 +26,6 @@ type mcpSession struct {
 	closed       bool
 }
 
-func (s *mcpSession) connection() (*client, error) {
-	return s.destinationConnection("")
-}
-
-func (s *mcpSession) destinationConnection(destination string) (*client, error) {
-	return s.destinationConnectionContext(context.Background(), destination)
-}
-
 func rpcError(id json.RawMessage, code int, message string) object {
 	return object{"jsonrpc": value("2.0"), "id": id, "error": value(object{"code": value(code), "message": value(message)})}
 }

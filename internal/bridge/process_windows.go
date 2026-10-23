@@ -15,7 +15,7 @@ func terminateProcess(pid int) error {
 	if err != nil {
 		return err
 	}
-	defer p.Release()
+	defer func() { _ = p.Release() }()
 	return p.Kill()
 }
 func processRunning(pid int) bool {
@@ -23,7 +23,7 @@ func processRunning(pid int) bool {
 	if err != nil {
 		return err == syscall.ERROR_ACCESS_DENIED
 	}
-	defer syscall.CloseHandle(handle)
+	defer func() { _ = syscall.CloseHandle(handle) }()
 	var code uint32
 	if syscall.GetExitCodeProcess(handle, &code) != nil {
 		return true

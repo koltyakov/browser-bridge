@@ -301,7 +301,7 @@ func reportCLIError(args []string, err error, out, stderr io.Writer) {
 		command = rest[0]
 	}
 	if remoteErr != nil || localOnlyCommand(command) && command != "doctor" && command != "restart" {
-		fmt.Fprintln(stderr, cliANSI.ReplaceAllString(err.Error(), ""))
+		_, _ = fmt.Fprintln(stderr, cliANSI.ReplaceAllString(err.Error(), ""))
 		return
 	}
 	_ = writeCLIJSONOutput(out, value(cliErrorPayload(err)), true, false)

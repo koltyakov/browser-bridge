@@ -78,7 +78,8 @@ probe configured remotes and reports their credentials as unverified; use
 
 Supported managed targets are kept in this order across the project:
 `codex`, `claude`, `opencode`, `copilot`, `cursor`, `windsurf`,
-`antigravity`, `gemini`, `cline`, `zed`, `amp`, `droid`, `agents`.
+`antigravity`, `gemini`, `cline`, `zed`, `amp`, `droid`, `pi`, `kilo`,
+`qwen`, `goose`, `openhands`, `muse`, `grok`, `agents`.
 
 The `windsurf` target is Devin Desktop, formerly Windsurf. Its target key and existing configuration paths remain supported for compatibility.
 
@@ -91,6 +92,7 @@ bbx install-mcp
 bbx install-mcp codex
 bbx install-mcp copilot --local
 bbx install-mcp gemini,cline,zed,amp,droid
+bbx install-mcp pi,kilo,qwen,goose,openhands,muse,grok
 ```
 
 Managed MCP config paths:
@@ -107,11 +109,24 @@ Managed MCP config paths:
 - `zed`: `~/.config/zed/settings.json` on macOS/Linux, `%APPDATA%\Zed\settings.json` on Windows, or `./.zed/settings.json`, under `context_servers`
 - `amp`: `~/.config/amp/settings.json` or `./.amp/settings.json`, under the literal key `amp.mcpServers`; existing `.jsonc` files are reused
 - `droid`: `~/.factory/mcp.json` or `./.factory/mcp.json`, under `mcpServers`
+- `pi`: `~/.pi/agent/mcp.json` or `./.pi/mcp.json`, under `mcpServers`
+- `kilo`: `~/.config/kilo/kilo.jsonc` or `./.kilo/kilo.jsonc`, under `mcp`; local commands are arrays
+- `qwen`: `~/.qwen/settings.json` or `./.qwen/settings.json`, under `mcpServers`
+- `goose`: `~/.config/goose/config.yaml`, or `%APPDATA%\Block\goose\config\config.yaml` on Windows, under `extensions`; user scope only
+- `openhands`: `~/.openhands/mcp.json`, under `mcpServers`; user scope only
+- `muse`: `~/.config/muse/settings.json`, under `mcp_servers`, with `schema_version: 1` and string `transport: "stdio"`; user scope only
+- `grok`: `~/.grok/config.toml` or `./.grok/config.toml`, under `[mcp_servers.browser-bridge]`
 - `agents`: `~/.agents/mcp.json` or `./.agents/mcp.json`
 
-Cline does not have a verified native project MCP scope: `bbx install-mcp cline --local` fails without writing, while `bbx install-mcp all --local` skips it. Amp setup refuses to choose silently when both `settings.json` and `settings.jsonc` exist in the same scope. Configuration updates preserve comments, environment variables, disabled settings, and tool policy. Existing remote or legacy command-object entries for the new clients require explicit migration instead of silent conversion; Cline's nested stdio transport is updated in place.
+Cline, Goose, OpenHands, and Muse have user-only managed MCP setup. Selecting one explicitly with `--local` fails without writing, while `bbx install-mcp all --local` skips them. Amp setup refuses to choose silently when both `settings.json` and `settings.jsonc` exist in the same scope. Configuration updates preserve comments, environment variables, disabled settings, and tool policy. Existing remote or legacy command-object entries for the new clients require explicit migration instead of silent conversion; Cline's nested stdio transport is updated in place.
+
+Kilo reuses existing `kilo.json[c]`, `opencode.json[c]`, or `config.json` files. Project `.kilo` files take priority over project-root candidates. Setup updates an existing Browser Bridge entry wherever found and refuses duplicate definitions across merged files. Explicit removal checks all these candidates. It does not write legacy extension-only `mcpServers` settings.
+
+Goose YAML edits preserve comments and policy values but may normalize whitespace. Duplicate keys, multiple documents, and aliases or merge keys on the edited path require manual resolution. Only `config.yaml` is edited, never secrets or permission files. Muse adds optional mode for new entries and preserves existing mode and disabled state. Muse MCP tools run outside its sandbox; setup does not grant approval or project trust. Grok inline/dotted Browser Bridge definitions require manual conversion to a table.
 
 `GEMINI_CLI_HOME` changes Gemini's user home root, so `/custom/home` resolves to `/custom/home/.gemini/settings.json`. Cline honors `CLINE_MCP_SETTINGS_PATH`, then `CLINE_DATA_DIR`, then `CLINE_DIR`. Linux Zed honors `FLATPAK_XDG_CONFIG_HOME` before `XDG_CONFIG_HOME`; macOS uses `~/.config/zed`. Runtime-only profile flags such as Zed's `--user-data-dir` and Amp's `--settings-file` are not inferred by BBX; configure those custom files manually.
+
+Pi honors `PI_CODING_AGENT_DIR`, Qwen honors `QWEN_HOME`, OpenHands honors `OPENHANDS_PERSISTENCE_DIR`, and Grok honors `GROK_HOME`. These replace their agent directories, not the OS home. Goose accepts absolute `GOOSE_PATH_ROOT`, using `<root>/config/config.yaml` and `<root>/.agents/skills`. Muse uses `$XDG_CONFIG_HOME/muse` when set. These user overrides do not redirect project paths. Current Pi has native MCP; older releases may require an MCP extension. Use `/reload` after changing Pi settings or skills; restart other clients if their tools or skills do not refresh.
 
 ### CLI skill setup
 
@@ -137,13 +152,20 @@ Managed skill paths:
 - `zed`: `~/.agents/skills/browser-bridge` or `./.agents/skills/browser-bridge`
 - `amp`: `~/.config/amp/skills/browser-bridge` or `./.agents/skills/browser-bridge`
 - `droid`: `~/.factory/skills/browser-bridge` or `./.factory/skills/browser-bridge`
+- `pi`: `~/.pi/agent/skills/browser-bridge` or `./.pi/skills/browser-bridge`
+- `kilo`: `~/.kilo/skills/browser-bridge` or `./.kilo/skills/browser-bridge`
+- `qwen`: `~/.qwen/skills/browser-bridge` or `./.qwen/skills/browser-bridge`
+- `goose`: `~/.agents/skills/browser-bridge` or `./.agents/skills/browser-bridge`
+- `openhands`: `~/.agents/skills/browser-bridge` or `./.agents/skills/browser-bridge`
+- `muse`: `~/.config/muse/skills/browser-bridge` or `./.agents/skills/browser-bridge`
+- `grok`: `~/.grok/skills/browser-bridge` or `./.grok/skills/browser-bridge`
 - `agents`: `~/.agents/skills/browser-bridge` or `./.agents/skills/browser-bridge`
 
-The installer copies the complete BBX skill bundle, not just `SKILL.md`. Shared `.agents` destinations are deduplicated and record selected target ownership; removing one target preserves another target's managed bundle. User-edited and unmanaged files remain protected. A shared skill by itself does not make Zed appear installed.
+The installer copies the complete BBX skill bundle, not just `SKILL.md`. Shared `.agents` destinations are deduplicated and record selected target ownership; removing one target preserves another target's managed bundle. User-edited and unmanaged files remain protected. A generic shared skill by itself does not make other agents appear installed.
 
 Skill precedence is agent-specific. Gemini prefers shared `.agents` skills within the same scope; Cline's user skills can override project copies; Amp's shared user skills can override its native user and project copies. BBX does not overwrite unrelated shadowing skills or change disabled-skill settings. Check discovery in the agent after installation. Zed's launcher is an editor CLI, not a separate coding agent; the BBX CLI skill runs through the native agent's terminal tool. ACP external agents and cloud executors require their own setup.
 
-New-client detection uses passive executable/package, native-install, or Cline extension fingerprints, not retained configuration folders. Detection is a setup hint, never proof of an active caller or authorization. See [the fingerprint catalog](./agent-fingerprints.json) and [setup research](./agent-support-research.md) for upstream evidence and scope limits.
+New-client detection uses passive executable/package, native-install, or Cline/Kilo extension fingerprints, not retained configuration folders. It verifies OpenHands' Python distribution and entrypoint, and Muse's official launcher markers. Official Grok's package is `@xai-official/grok`; community Grok clients are not matched. Goose's documented native path is checked without executing it, and Go build metadata excludes the unrelated SQL migration tool. `GOOSE_BIN_DIR`, `MUSE_INSTALL_DIR`, and `GROK_BIN_DIR` affect native installation hints, not configuration locations. Custom installs can be missed; explicit setup remains available. Detection is a setup hint, never proof of an active caller or authorization. See [the fingerprint catalog](./agent-fingerprints.json) and [setup research](./agent-support-research.md) for upstream evidence and scope limits.
 
 ## 4. Custom-agent MCP wiring
 

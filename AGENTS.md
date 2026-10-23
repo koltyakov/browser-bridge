@@ -114,7 +114,8 @@ The root Makefile is the primary task runner for development and CI. Run `make` 
 
 ```bash
 make deps                      # install locked development dependencies
-make lint                      # oxlint + oxfmt check
+make lint                      # oxlint + oxfmt + Go formatting and golangci-lint
+make lint-go                   # Go formatting and pinned golangci-lint
 make format                    # format JavaScript, TypeScript, and Go
 make typecheck                 # tsc --noEmit
 make test                      # Go race tests + Node tests with c8 coverage
@@ -147,7 +148,7 @@ make daemon                    # start daemon locally
 - **Extension TypeScript build** - author extension background, content, and UI code in `.ts` with native type annotations. `make build-extension` uses esbuild to emit browser JavaScript at the existing manifest paths in `dist/ext`, with source maps for development. `make package-extension` compiles a release ZIP without TypeScript sources or source maps. npm launchers run directly from JavaScript source. Build Go from the root with `make build-native`.
 - **TypeScript tests use Node built-in runner** - `node --test`, not Jest/Mocha. These tests must be TypeScript (`*.test.ts`) and cover the extension, protocol, npm launcher, and real-process integration. Integration tests live in `tests/integration/`; native cross-language tests live in `tests/native/`. Runtime unit tests belong beside the Go implementation.
 - **Go tests use the standard testing package** - `*_test.go` beside implementation files. Run `make test-go vet-go` from the root. Shared wire fixtures live in `protocol/fixtures/`.
-- **Linting** - `oxlint` (Rust-based), formatting with `oxfmt`. 2-space indent, single quotes, semicolons, trailing commas.
+- **Linting** - JavaScript/TypeScript uses `oxlint` (Rust-based), formatting with `oxfmt`. 2-space indent, single quotes, semicolons, trailing commas. Go uses pinned `golangci-lint` and `gofmt` through `make lint-go`. `make lint` checks both.
 - **Node >= 20** - no Node 22+ only APIs.
 - Do not use the `any` type in source or tests. Use `unknown`, explicit narrowing, discriminated unions, or protocol/domain types instead.
 - Preserve the generic protocol shape. Do not add task-specific bridge commands for one-off actions when an existing RPC method can express the action.
@@ -184,22 +185,23 @@ make daemon                    # start daemon locally
 When adding or modifying agent/editor support (e.g., adding a new IDE or agent client):
 
 1. **Alignment requirement**: Agent support must be kept consistent across:
-   - Code base: `internal/bridge/agents_config.go` (`installAgentNames`, `installAgentLabels`, MCP config shapes and paths)
-   - Code base: `internal/bridge/agents_skills.go` (`installSkillBase`, skill installation)
+   - Registry: `internal/bridge/agents_registry.go` owns all targets, labels, aliases, ordering, MCP scopes/formats/paths, skill paths, and installation fingerprints
+   - Shared installers: `internal/bridge/agents_config.go`, `agents_paths.go`, `agents_skills.go`, and `agents_detection.go` consume registry definitions; client-specific resolver/detector hooks live in `agents_paths_clients.go` and `agents_detection_clients.go`
    - Documentation: `README.md` (text descriptions, example commands)
    - Documentation: `docs/quickstart.md` (supported clients list, example commands)
    - Extension UI: Side panel settings and host setup UI
 
 2. **Order preservation**: Maintain the same agent order across all locations. Current order:
-   - codex, claude, opencode, copilot, cursor, windsurf, antigravity, gemini, cline, zed, amp, droid, agents
+   - codex, claude, opencode, copilot, cursor, windsurf, antigravity, gemini, cline, zed, amp, droid, pi, kilo, qwen, goose, openhands, muse, grok, agents
+   - The extension consumes native setup-response ordering; do not add a separate UI target list
 
 3. **README.md table restriction**: The "Supported Agents" table in `README.md` is **manually maintained** and should NOT be modified by AI agents. Only update text descriptions and example commands in README.md, not the visual table layout.
 
 4. **When adding a new agent**:
-   - Add to `installAgentNames` and `installAgentLabels` in `internal/bridge/agents_config.go`
-   - Add MCP config handling to `installMCPKey` and `installMCPEntry`
-   - Add global and local config paths to `installMCPPath`; update `installMCPPaths` for clients with multiple config locations
-   - Add global and local skill paths to `installSkillBase` in `internal/bridge/agents_skills.go`
+   - Add one ordered entry to `installAgentRegistry` in `internal/bridge/agents_registry.go`; names and labels are derived from it
+   - Declare MCP scopes, format, entry template, paths, transport validation, and any special removal/locking behavior in that entry
+   - Declare user/project skill paths, shared ownership behavior, and passive installation evidence there too
+   - Use shared path/detection helpers or register a client-specific hook; do not add parallel target switches to shared installers
    - Update Go installation tests and regenerate embedded skills after changing skill sources
    - Update text descriptions in README.md and `docs/quickstart.md`
    - Update example commands in `docs/quickstart.md`

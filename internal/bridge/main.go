@@ -477,7 +477,7 @@ func writeCLIResponse(response object, raw bool, method string, now int64, out, 
 		if color {
 			message = "\x1b[31m" + message + "\x1b[0m"
 		}
-		fmt.Fprintln(stderr, message)
+		_, _ = fmt.Fprintln(stderr, message)
 		if err := writeCLIJSONOutput(out, value(response), true, pretty); err != nil {
 			return err
 		}

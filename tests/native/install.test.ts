@@ -83,6 +83,14 @@ test(
       CLINE_MCP_SETTINGS_PATH: '',
       AMP_HOME: '',
       FLATPAK_XDG_CONFIG_HOME: '',
+      PI_CODING_AGENT_DIR: '',
+      QWEN_HOME: '',
+      GOOSE_PATH_ROOT: '',
+      GOOSE_BIN_DIR: '',
+      OPENHANDS_PERSISTENCE_DIR: '',
+      MUSE_INSTALL_DIR: '',
+      GROK_HOME: '',
+      GROK_BIN_DIR: '',
       BROWSER_BRIDGE_HOME: path.join(home, 'runtime'),
       BBX_TCP_HOST: '127.0.0.1',
       BBX_TCP_BIND_HOST: '127.0.0.1',
@@ -122,6 +130,10 @@ test(
       [zedSettings, 'context_servers'],
       [path.join(home, '.config', 'amp', 'settings.json'), 'amp.mcpServers'],
       [path.join(home, '.factory', 'mcp.json'), 'mcpServers'],
+      [path.join(home, '.pi', 'agent', 'mcp.json'), 'mcpServers'],
+      [path.join(home, '.qwen', 'settings.json'), 'mcpServers'],
+      [path.join(home, '.openhands', 'mcp.json'), 'mcpServers'],
+      [path.join(home, '.config', 'muse', 'settings.json'), 'mcp_servers'],
     ] as const;
     for (const [filename, key] of newClients) {
       const config = JSON.parse(await fs.readFile(filename, 'utf8')) as Record<
@@ -131,10 +143,39 @@ test(
       assert.equal(config[key]['browser-bridge'].command, 'bbx');
       assert.deepEqual(config[key]['browser-bridge'].args, ['mcp', 'serve']);
     }
+    const kilo = JSON.parse(
+      await fs.readFile(path.join(home, '.config', 'kilo', 'kilo.jsonc'), 'utf8')
+    ) as { mcp: Record<string, { type: string; command: string[] }> };
+    assert.equal(kilo.mcp['browser-bridge'].type, 'local');
+    assert.deepEqual(kilo.mcp['browser-bridge'].command, ['bbx', 'mcp', 'serve']);
+    const gooseConfig =
+      process.platform === 'win32'
+        ? path.join(home, 'AppData', 'Roaming', 'Block', 'goose', 'config', 'config.yaml')
+        : path.join(home, '.config', 'goose', 'config.yaml');
+    assert.match(await fs.readFile(gooseConfig, 'utf8'), /cmd: bbx/u);
+    assert.match(
+      await fs.readFile(path.join(home, '.grok', 'config.toml'), 'utf8'),
+      /command = "bbx"/u
+    );
     await run('install-mcp', 'all', '--local');
-    await run('install-skill', 'gemini,cline,zed,amp,droid', '--local');
-    await assert.rejects(run('install-mcp', 'cline', '--local'), /user-scope MCP only/u);
-    for (const root of ['.gemini', '.cline', '.agents', '.factory']) {
+    await run(
+      'install-skill',
+      'gemini,cline,zed,amp,droid,pi,kilo,qwen,goose,openhands,muse,grok',
+      '--local'
+    );
+    for (const target of ['cline', 'goose', 'openhands', 'muse']) {
+      await assert.rejects(run('install-mcp', target, '--local'), /user-scope MCP only/u);
+    }
+    for (const root of [
+      '.gemini',
+      '.cline',
+      '.agents',
+      '.factory',
+      '.pi',
+      '.kilo',
+      '.qwen',
+      '.grok',
+    ]) {
       assert.match(
         await fs.readFile(path.join(project, root, 'skills', 'browser-bridge', 'SKILL.md'), 'utf8'),
         /Browser Bridge/u

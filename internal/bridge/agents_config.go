@@ -10,11 +10,6 @@ import (
 	"strings"
 )
 
-var installAgentNames = []string{"codex", "claude", "opencode", "copilot", "cursor", "windsurf", "antigravity", "gemini", "cline", "zed", "amp", "droid", "agents"}
-
-// Keep the windsurf target key and config paths compatible with existing installs.
-var installAgentLabels = map[string]string{"codex": "Codex (OpenAI)", "claude": "Claude Code", "opencode": "OpenCode", "copilot": "GitHub Copilot", "cursor": "Cursor", "windsurf": "Devin Desktop", "antigravity": "Antigravity", "gemini": "Gemini CLI", "cline": "Cline", "zed": "Zed", "amp": "Amp", "droid": "Factory Droid", "agents": "Generic agents"}
-
 type installScope struct {
 	global  bool
 	project string
@@ -31,21 +26,11 @@ func installCurrentScope() (installScope, error) {
 }
 
 func installMCPPath(client string, scope installScope) string {
-	if !installMCPSupported(client, scope) {
-		return ""
+	paths := installMCPPaths(client, scope)
+	if len(paths) > 0 {
+		return paths[0]
 	}
-	if path, ok := installAdditionalMCPPath(client, scope); ok {
-		return path
-	}
-	if !scope.global {
-		paths := map[string]string{"codex": ".codex/config.toml", "claude": ".mcp.json", "opencode": "opencode.json", "copilot": ".vscode/mcp.json", "cursor": ".cursor/mcp.json", "windsurf": ".windsurf/mcp_config.json", "antigravity": ".agents/mcp_config.json", "agents": ".agents/mcp.json"}
-		return filepath.Join(scope.project, filepath.FromSlash(paths[client]))
-	}
-	if client == "codex" && os.Getenv("CODEX_HOME") != "" {
-		return filepath.Join(os.Getenv("CODEX_HOME"), "config.toml")
-	}
-	paths := map[string]string{"codex": ".codex/config.toml", "claude": ".claude.json", "opencode": ".config/opencode/opencode.json", "copilot": ".copilot/mcp-config.json", "cursor": ".cursor/mcp.json", "windsurf": ".codeium/windsurf/mcp_config.json", "antigravity": ".gemini/antigravity/mcp_config.json", "agents": ".agents/mcp.json"}
-	return filepath.Join(scope.home, filepath.FromSlash(paths[client]))
+	return ""
 }
 
 func installVSCodeHome(scope installScope) string {
@@ -64,54 +49,30 @@ func installVSCodeHome(scope installScope) string {
 }
 
 func installMCPPaths(client string, scope installScope) []string {
-	path := installMCPPath(client, scope)
-	if path == "" {
+	agent := installAgentByKey(client)
+	if agent == nil || !installMCPSupported(client, scope) {
 		return nil
 	}
-	paths := []string{path}
-	if client != "copilot" || !scope.global {
-		return paths
-	}
-	user := filepath.Join(installVSCodeHome(scope), "User")
-	paths = append(paths, filepath.Join(user, "mcp.json"))
-	profiles := filepath.Join(user, "profiles")
-	entries, err := os.ReadDir(profiles)
-	if err != nil {
-		return paths
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			paths = append(paths, filepath.Join(profiles, entry.Name(), "mcp.json"))
-		}
-	}
-	return paths
+	return agent.mcp.paths(scope)
 }
 
 func installMCPKey(client, path string, scope installScope) string {
-	switch client {
-	case "codex":
-		return "mcp_servers"
-	case "opencode":
-		return "mcp"
-	case "zed":
-		return "context_servers"
-	case "amp":
-		return "amp.mcpServers"
-	case "copilot":
-		if filepath.Clean(path) != filepath.Join(scope.home, ".copilot", "mcp-config.json") {
-			return "servers"
-		}
+	agent := installAgentByKey(client)
+	if agent == nil {
+		return ""
 	}
-	return "mcpServers"
+	if agent.mcp.keyForPath != nil {
+		return agent.mcp.keyForPath(path, scope)
+	}
+	return agent.mcp.key
 }
 
 func installMCPEntry(client string) object {
-	if client == "opencode" {
-		return object{"type": value("local"), "command": value([]string{"bbx", "mcp", "serve"})}
-	}
-	entry := object{"command": value("bbx"), "args": value([]string{"mcp", "serve"}), "env": value(object{})}
-	if client == "claude" || client == "copilot" || client == "cline" || client == "droid" || client == "agents" {
-		entry["type"] = value("stdio")
+	entry := object{}
+	if agent := installAgentByKey(client); agent != nil {
+		for key, val := range agent.mcp.entry {
+			entry[key] = append([]byte(nil), val...)
+		}
 	}
 	return entry
 }
@@ -120,6 +81,25 @@ func installUpdateJSONConfig(raw, client, path string, scope installScope, remov
 	root, err := installParseJSON(raw)
 	if err != nil {
 		return "", err
+	}
+	agent := installAgentByKey(client)
+	if agent == nil {
+		return "", fmt.Errorf("unsupported MCP client %q", client)
+	}
+	if agent.mcp.schemaVersion != 0 && !remove {
+		version := fmt.Sprint(agent.mcp.schemaVersion)
+		if schema := installJSONLookup(root, "schema_version"); schema == nil {
+			raw, err = installJSONEdit(raw, []string{"schema_version"}, &version)
+			if err != nil {
+				return "", err
+			}
+			root, err = installParseJSON(raw)
+			if err != nil {
+				return "", err
+			}
+		} else if strings.TrimSpace(raw[schema.start:schema.end]) != version {
+			return "", fmt.Errorf("%s requires schema_version %s; refusing to change an unsupported settings schema", agent.label, version)
+		}
 	}
 	key := installMCPKey(client, path, scope)
 	if block := installJSONLookup(root, key); block != nil && block.kind != '{' {
@@ -140,7 +120,7 @@ func installUpdateJSONConfig(raw, client, path string, scope installScope, remov
 	}
 	// Cline's CLI writes a nested transport; update it in place rather than
 	// adding a competing flat command. Never silently convert a remote server.
-	if installAdditionalAgent(client) {
+	if agent.mcp.transport != installTransportLegacy {
 		var err error
 		keys, err = installStdioEntryKeys(raw, existing, client, keys)
 		if err != nil {
@@ -149,7 +129,7 @@ func installUpdateJSONConfig(raw, client, path string, scope installScope, remov
 	}
 	// Preserve environment variables, disabled flags and custom timeouts.
 	settings := installJSONLookup(root, keys...)
-	fields := []string{"type", "command", "args", "env"}
+	fields := []string{"type", "transport", "command", "args", "env"}
 	for _, field := range fields {
 		v, exists := entry[field]
 		if !exists {
@@ -335,7 +315,14 @@ func installUpdateCodex(raw string, remove bool) (string, error) {
 }
 
 func installMCPConfigured(raw, client, path string, scope installScope) bool {
-	if client == "codex" {
+	agent := installAgentByKey(client)
+	if agent == nil {
+		return false
+	}
+	if agent.mcp.format == installConfigYAML {
+		return installGooseMCPConfigured(raw)
+	}
+	if agent.mcp.format == installConfigTOML {
 		statements, err := installTOMLStatements(raw)
 		if err != nil {
 			return false
@@ -353,7 +340,8 @@ func installMCPConfigured(raw, client, path string, scope installScope) bool {
 }
 
 func installAgentMCP(client string, scope installScope, remove bool) ([]string, error) {
-	if !installContains(installAgentNames, client) {
+	agent := installAgentByKey(client)
+	if agent == nil {
 		return nil, fmt.Errorf("unsupported MCP client %q", client)
 	}
 	if !remove || !installMCPSupported(client, scope) {
@@ -363,11 +351,8 @@ func installAgentMCP(client string, scope installScope, remove bool) ([]string, 
 	}
 	paths := []string{}
 	candidates := installMCPPaths(client, scope)
-	if remove && client == "amp" {
-		// Explicit removal can safely remove only our entry from both files;
-		// installation must still refuse to guess which one Amp will read.
-		path := filepath.Join(filepath.Dir(installMCPPath(client, scope)), "settings.json")
-		candidates = []string{path, path + "c"}
+	if remove && agent.mcp.removePaths != nil {
+		candidates = agent.mcp.removePaths(scope)
 	}
 	for _, path := range candidates {
 		changed, err := installWriteMCPConfig(client, path, scope, remove)

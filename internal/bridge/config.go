@@ -159,7 +159,7 @@ func ensureToken(path string) (string, error) {
 	if err := os.WriteFile(temporary, []byte(token+"\n"), 0600); err != nil {
 		return "", err
 	}
-	defer os.Remove(temporary)
+	defer func() { _ = os.Remove(temporary) }()
 	if err := os.Link(temporary, path); err != nil && !errors.Is(err, os.ErrExist) {
 		return "", err
 	}

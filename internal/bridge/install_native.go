@@ -148,7 +148,7 @@ func installAtomicWrite(path string, data []byte, mode os.FileMode) error {
 		return err
 	}
 	temporary := f.Name()
-	defer os.Remove(temporary)
+	defer func() { _ = os.Remove(temporary) }()
 	if err = f.Chmod(mode); err == nil {
 		_, err = f.Write(data)
 	}

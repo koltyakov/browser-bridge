@@ -25,11 +25,11 @@ func startMCPControl(c config, cancel context.CancelFunc) func() {
 		err = os.WriteFile(path, value(registration), 0600)
 	}
 	if err != nil {
-		listener.Close()
+		_ = listener.Close()
 		return func() {}
 	}
 	var once sync.Once
-	cleanup := func() { once.Do(func() { listener.Close(); _ = os.Remove(path) }) }
+	cleanup := func() { once.Do(func() { _ = listener.Close(); _ = os.Remove(path) }) }
 	go func() {
 		for {
 			conn, err := listener.Accept()
@@ -37,7 +37,7 @@ func startMCPControl(c config, cancel context.CancelFunc) func() {
 				return
 			}
 			go func() {
-				defer conn.Close()
+				defer func() { _ = conn.Close() }()
 				_ = conn.SetDeadline(time.Now().Add(time.Second))
 				line, err := bufio.NewReaderSize(conn, 4096).ReadSlice('\n')
 				if err != nil || len(line) > 4096 {

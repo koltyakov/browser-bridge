@@ -10,7 +10,7 @@ See [Quickstart](https://github.com/koltyakov/browser-bridge/blob/main/docs/quic
 
 ## Supported Agents
 
-Managed installs support Codex (OpenAI), Claude Code, OpenCode, GitHub Copilot, Cursor, Devin Desktop (formerly Windsurf), Antigravity, Gemini CLI, Cline, Zed, Amp, Factory Droid, and generic `.agents` layouts for both MCP and CLI skill setup. Devin Desktop keeps the `windsurf` setup target for compatibility. Cline MCP setup is user-scope only; its CLI skill also supports projects. Zed support targets its native agent; external agents keep their own configuration.
+Managed installs support Codex (OpenAI), Claude Code, OpenCode, GitHub Copilot, Cursor, Devin Desktop (formerly Windsurf), Antigravity, Gemini CLI, Cline, Zed, Amp, Factory Droid, Pi, Kilo Code, Qwen Code, Goose, OpenHands, Muse Code, Grok Build, and generic `.agents` layouts for MCP and CLI skills. Devin Desktop keeps the `windsurf` setup target for compatibility. Cline, Goose, OpenHands, and Muse MCP setup is user-scope only; their CLI skills also support projects. Zed support targets its native agent; external agents keep their own configuration.
 
 <table align="center">
   <tr>

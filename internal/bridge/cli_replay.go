@@ -165,7 +165,7 @@ func exportCLIReplay(ctx context.Context, call cliInvoker, source, output string
 		if err != nil {
 			return nil, err
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		stat, err := f.Stat()
 		if err != nil {
 			return nil, err
@@ -318,7 +318,7 @@ func writeCLIReplayMP4(ctx context.Context, r cliReplay, output string) error {
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(directory)
+	defer func() { _ = os.RemoveAll(directory) }()
 	frames := append([]object(nil), r.Frames...)
 	sort.SliceStable(frames, func(i, j int) bool { return replayNumber(frames[i], "at") < replayNumber(frames[j], "at") })
 	lines := []string{"ffconcat version 1.0"}

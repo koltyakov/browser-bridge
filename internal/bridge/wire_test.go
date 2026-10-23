@@ -105,8 +105,8 @@ func TestFramingAcceptsExactNodePayloadLimit(t *testing.T) {
 
 func TestDaemonQueueAcceptsExactPayloadLimit(t *testing.T) {
 	local, remote := net.Pipe()
-	defer local.Close()
-	defer remote.Close()
+	defer func() { _ = local.Close() }()
+	defer func() { _ = remote.Close() }()
 	p := &peer{conn: local, out: make(chan queuedMessage, 1), done: make(chan struct{})}
 	message := object{"data": value(strings.Repeat("x", maxMessageBytes-len(value(object{"data": value("")}))))}
 	if !p.enqueue(message, nil) {

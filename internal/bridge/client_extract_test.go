@@ -11,7 +11,7 @@ import (
 
 func TestCLIExtractionKeepsRoutingAndClearsSnapshotBudget(t *testing.T) {
 	agent, daemon := net.Pipe()
-	defer daemon.Close()
+	defer func() { _ = daemon.Close() }()
 	cl := &client{conn: agent, writer: wireWriter{out: agent}, pending: make(map[string]chan callResult)}
 	defer cl.close()
 	go cl.read(bufio.NewReader(agent))

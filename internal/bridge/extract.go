@@ -194,9 +194,10 @@ func extractShallowNode(node *nethtml.Node) *extractNode {
 		out.tag = "body"
 		return out
 	}
-	if node.Type == nethtml.TextNode {
+	switch node.Type {
+	case nethtml.TextNode:
 		out.text = node.Data
-	} else if node.Type == nethtml.ElementNode {
+	case nethtml.ElementNode:
 		out.tag = node.Data
 	}
 	for _, attr := range node.Attr {

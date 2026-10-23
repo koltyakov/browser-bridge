@@ -55,7 +55,7 @@ func updateReadRegular(path string, limit int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	opened, err := file.Stat()
 	if err != nil {
 		return nil, err
@@ -118,7 +118,7 @@ func updateSyncDirectory(path string) error {
 	if err != nil {
 		return err
 	}
-	defer dir.Close()
+	defer func() { _ = dir.Close() }()
 	return dir.Sync()
 }
 
@@ -135,7 +135,7 @@ func updateAtomicWrite(path string, data []byte, mode os.FileMode) error {
 		return err
 	}
 	temporary := file.Name()
-	defer os.Remove(temporary)
+	defer func() { _ = os.Remove(temporary) }()
 	if err = file.Chmod(mode); err == nil {
 		_, err = file.Write(data)
 	}
@@ -267,7 +267,7 @@ func updateVerifyPayload(root string, record updateInstalled) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	opened, err := file.Stat()
 	if err != nil {
 		return err
@@ -361,16 +361,16 @@ func updateOpenLock(root string) (*os.File, error) {
 	}
 	opened, err := file.Stat()
 	if err != nil {
-		file.Close()
+		_ = file.Close()
 		return nil, err
 	}
 	info, err := os.Lstat(path)
 	if err != nil {
-		file.Close()
+		_ = file.Close()
 		return nil, err
 	}
 	if !info.Mode().IsRegular() || !os.SameFile(info, opened) {
-		file.Close()
+		_ = file.Close()
 		return nil, errors.New("native update lock changed while opening")
 	}
 	return file, nil

@@ -99,7 +99,7 @@ func newArtifactStore(root string) *artifactStore {
 
 func (s *artifactStore) reset() error {
 	for id := range s.items {
-		s.remove(id)
+		_ = s.remove(id)
 	}
 	if err := os.RemoveAll(s.root); err != nil {
 		return err
@@ -154,7 +154,7 @@ func (s *artifactStore) write(id string, index int64, data string) error {
 		return serviceFailure("ARTIFACT_TRANSFER_INVALID", "Artifact chunk is not canonical base64 or exceeds its declared size.")
 	}
 	if _, err := r.file.Write(b); err != nil {
-		s.remove(id)
+		_ = s.remove(id)
 		return err
 	}
 	_, _ = r.hash.Write(b)
@@ -169,17 +169,17 @@ func (s *artifactStore) commit(id string) error {
 		return serviceFailure("ARTIFACT_TRANSFER_INVALID", "Artifact transfer is missing.")
 	}
 	if r.written != r.size || r.next != r.chunks || hex.EncodeToString(r.hash.Sum(nil)) != r.descriptor.SHA256 {
-		s.remove(id)
+		_ = s.remove(id)
 		return serviceFailure("ARTIFACT_TRANSFER_INVALID", "Artifact checksum is invalid.")
 	}
 	if err := r.file.Close(); err != nil {
-		s.remove(id)
+		_ = s.remove(id)
 		return err
 	}
 	r.file = nil
 	final := filepath.Join(s.root, id+".bin")
 	if err := os.Rename(r.path, final); err != nil {
-		s.remove(id)
+		_ = s.remove(id)
 		return err
 	}
 	r.path, r.hash = final, nil
@@ -211,7 +211,7 @@ func (s *artifactStore) read(id, owner string, offset, limit int64) (object, err
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	b := make([]byte, int(count))
 	if _, err := io.ReadFull(io.NewSectionReader(f, offset, count), b); err != nil {
 		return nil, serviceFailure("ARTIFACT_TRANSFER_INVALID", "Artifact was truncated on disk.")

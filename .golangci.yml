@@ -1,0 +1,9 @@
+version: '2'
+
+linters:
+  exclusions:
+    rules:
+      # User-facing errors preserve legacy CLI wording, usage text, and product names.
+      - linters:
+          - staticcheck
+        text: 'ST1005:'

@@ -21,7 +21,7 @@ func startDaemon(c config) error {
 	if err != nil {
 		return err
 	}
-	defer log.Close()
+	defer func() { _ = log.Close() }()
 	executable, err := os.Executable()
 	if err != nil {
 		return err
@@ -112,8 +112,8 @@ func nativeHost(ctx context.Context, c config, input io.Reader, output io.Writer
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
-	stop := context.AfterFunc(ctx, func() { conn.Close() })
+	defer func() { _ = conn.Close() }()
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
 	defer stop()
 	toDaemon := &wireWriter{out: conn}
 	done := make(chan error, 2)
