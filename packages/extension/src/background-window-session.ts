@@ -160,13 +160,16 @@ export function createWindowSessionController(
       state.enabledWindow = null;
       deps.sendAccessUpdate(false);
       await clearStoredEnabledWindow();
-      if (access) {
-        deps.cancelNavigationWaitsForWindow(access.windowId);
-        await deps.clearWindowBridgeState(access.windowId);
+      try {
+        if (access) {
+          deps.cancelNavigationWaitsForWindow(access.windowId);
+          await deps.clearWindowBridgeState(access.windowId);
+        }
+      } finally {
+        await chrome.alarms.clear(KEEPALIVE_ALARM_NAME);
+        await deps.refreshActionIndicators();
+        await deps.emitUiState();
       }
-      await chrome.alarms.clear(KEEPALIVE_ALARM_NAME);
-      await deps.refreshActionIndicators();
-      await deps.emitUiState();
     });
   }
 
@@ -216,7 +219,11 @@ export function createWindowSessionController(
     deps.cancelNavigationWaitsForWindow(goneWindowId);
     await clearStoredEnabledWindow();
     deps.sendAccessUpdate(false);
-    await deps.clearWindowBridgeState(goneWindowId);
+    try {
+      await deps.clearWindowBridgeState(goneWindowId);
+    } finally {
+      await chrome.alarms.clear(KEEPALIVE_ALARM_NAME);
+    }
     return true;
   }
 
@@ -298,16 +305,21 @@ export function createWindowSessionController(
     const previousWindowId = state.enabledWindow?.windowId ?? null;
     const isSwitch = enabled && previousWindowId !== null && previousWindowId !== windowId;
     const isActiveDisable = !enabled && previousWindowId === windowId;
+    const cleanupErrors: unknown[] = [];
 
     if (isSwitch || isActiveDisable) {
       state.enabledWindow = null;
       deps.cancelNavigationWaitsForWindow(previousWindowId as number);
       await clearStoredEnabledWindow();
       deps.sendAccessUpdate(false);
-      await deps.clearWindowBridgeState(previousWindowId as number);
+      try {
+        await deps.clearWindowBridgeState(previousWindowId as number);
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
     }
 
-    if (enabled) {
+    if (enabled && cleanupErrors.length === 0) {
       await Promise.allSettled([
         deps.injectContentScriptsForWindow(access.windowId),
         deps.primeWindowConsoleCapture(access.windowId, chrome, true),
@@ -338,17 +350,20 @@ export function createWindowSessionController(
     }
     await deps.emitUiState();
 
-    if (enabled) {
+    if (enabled && cleanupErrors.length === 0) {
       deps.sendAccessUpdate(true);
       await chrome.alarms.create(KEEPALIVE_ALARM_NAME, { periodInMinutes: 0.4 });
       return;
     }
 
-    if (!isActiveDisable) return;
+    if (!isActiveDisable && cleanupErrors.length === 0) return;
     try {
       await chrome.alarms.clear(KEEPALIVE_ALARM_NAME);
     } catch (error) {
       reportAsyncError(error);
+    }
+    if (cleanupErrors.length) {
+      throw new AggregateError(cleanupErrors, `Window ${previousWindowId} cleanup failed`);
     }
   }
 

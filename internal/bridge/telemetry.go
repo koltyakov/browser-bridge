@@ -45,45 +45,7 @@ func normalizeDaemonRequestMeta(meta object) {
 }
 
 func daemonErrorRecovery(code string) object {
-	hint, alternative := "", ""
-	retry := false
-	var after int
-	switch code {
-	case "ACCESS_DENIED":
-		hint = "Access is off for this window. Ask the user to click Enable in the Browser Bridge popup or side panel. Do not request access again until that window is enabled."
-	case "INVALID_REQUEST":
-		hint = "Malformed method or params. Check the method name and parameter types."
-	case "INTERNAL_ERROR":
-		retry, after, hint = true, 1000, "Unexpected extension error. Retry once; if persistent, check page.get_console for details."
-	case "TIMEOUT":
-		retry, after, hint = true, 1000, "Operation exceeded the time limit. Retry once, or simplify the request (smaller maxNodes, narrower selector)."
-	case "EXTENSION_DISCONNECTED":
-		retry, after, alternative, hint = true, 3000, "health.ping", "Extension not connected. Check Chrome is running, then retry. Use health.ping to verify connectivity."
-	case "TAB_MISMATCH":
-		alternative, hint = "tabs.list", "Tab was closed or not found. Use tabs.list to find an available tab."
-	case "ARTIFACT_NOT_FOUND":
-		hint = "The artifact is missing, expired, deleted, or owned by another client. Capture it again."
-	case "ARTIFACT_QUOTA_EXCEEDED":
-		hint = "Artifact storage quota was exceeded. Delete unneeded artifacts or retry after expiry."
-	case "ARTIFACT_TRANSFER_INVALID":
-		hint = "Artifact transfer validation failed. Capture the screenshot again."
-	case "DOM_BASELINE_NOT_FOUND":
-		alternative, hint = "dom.baseline.create", "The DOM baseline is missing, expired, or released. Create a new baseline before comparing or describing it."
-	case "DOM_BASELINE_INVALIDATED":
-		alternative, hint = "dom.baseline.create", "The page document or baseline scope changed. Create a new baseline in the current document."
-	case "DOM_BASELINE_QUOTA_EXCEEDED":
-		alternative, hint = "dom.baseline.release", "DOM baseline storage quota was exceeded. Release unneeded baselines, narrow the selector, or reduce maxNodes and textBudget before creating another baseline."
-	default:
-		return nil
-	}
-	recovery := object{"retry": value(retry), "hint": value(hint)}
-	if alternative != "" {
-		recovery["alternativeMethod"] = value(alternative)
-	}
-	if after > 0 {
-		recovery["retryAfterMs"] = value(after)
-	}
-	return recovery
+	return catalog.ErrorRecovery[code]
 }
 
 func protectResponseRecovery(response object, method string) {
@@ -431,6 +393,8 @@ var incidentalCookiePattern = regexp.MustCompile(`(?i)\b(set-cookie|cookie)\s*:\
 var incidentalURLPattern = regexp.MustCompile(`(?i)\b(?:https?|file|blob|chrome|chrome-extension|edge|devtools|data):[^\s"'<>]+`)
 var incidentalPathPattern = regexp.MustCompile(`(?:^|[\s"'(])(?:[a-zA-Z]:\\[^\s"')]+|\\\\[^\s"')]+|/(?:Users|home|private|var|tmp|opt|etc|root|usr|srv|mnt|Volumes|Library|Applications)/[^\s"')]+)`)
 var incidentalKeyPattern = regexp.MustCompile(`[^a-z0-9]`)
+var incidentalCredentialsPattern = regexp.MustCompile(`(?i)^([a-z][a-z0-9+.-]*://)[^/@\s]*@`)
+var incidentalMIMEPattern = regexp.MustCompile(`[^a-zA-Z0-9./+-]`)
 
 func servicePathSummary(s string) string {
 	parts := strings.FieldsFunc(s, func(r rune) bool { return r == '/' || r == '\\' })
@@ -450,11 +414,15 @@ func serviceURLSummary(s string) string {
 	}
 	lower := strings.ToLower(s)
 	if strings.HasPrefix(lower, "data:") {
-		mime := strings.FieldsFunc(s[5:], func(r rune) bool { return r == ';' || r == ',' })
-		if len(mime) == 0 {
+		mime := strings.SplitN(strings.SplitN(s[5:], ";", 2)[0], ",", 2)[0]
+		mime = incidentalMIMEPattern.ReplaceAllString(mime, "")
+		if len(mime) > 100 {
+			mime = mime[:100]
+		}
+		if mime == "" {
 			return "data:[redacted]"
 		}
-		return "data:" + mime[0] + ";[redacted]"
+		return "data:" + mime + ";[redacted]"
 	}
 	if strings.HasPrefix(lower, "blob:") {
 		u, err := url.Parse(s[5:])
@@ -465,7 +433,10 @@ func serviceURLSummary(s string) string {
 	}
 	u, err := url.Parse(s)
 	if err != nil {
-		return strings.SplitN(strings.SplitN(s, "?", 2)[0], "#", 2)[0]
+		// Malformed escapes/hosts must not bypass credential redaction. Match
+		// the browser sanitizer's conservative fallback before dropping suffixes.
+		clean := incidentalCredentialsPattern.ReplaceAllString(s, "$1")
+		return strings.SplitN(strings.SplitN(clean, "?", 2)[0], "#", 2)[0]
 	}
 	if strings.HasPrefix(lower, "file:") {
 		return "file:" + servicePathSummary(u.Path)
@@ -544,7 +515,7 @@ func (d *daemon) pushServiceLog(entry object) {
 	nodes := 0
 	clean, _ := decodeObject(sanitizeLogValue(value(entry), "", 0, &nodes))
 	d.logs = append(d.logs, clean)
-	if len(d.logs) > 200 {
-		d.logs = d.logs[len(d.logs)-200:]
+	if len(d.logs) > protocol.DaemonRecentLogLimit {
+		d.logs = d.logs[len(d.logs)-protocol.DaemonRecentLogLimit:]
 	}
 }

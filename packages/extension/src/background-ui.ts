@@ -8,6 +8,7 @@ export type AccessRequestUiDeps = {
 export type AgentTabUiState = {
   tabId: number;
   title: string;
+  favIconUrl?: string;
   isCurrent: boolean;
   actionCount?: number;
   lastActivityAt?: number;

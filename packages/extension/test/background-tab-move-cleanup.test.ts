@@ -10,6 +10,100 @@ import { TabDebuggerCoordinator } from '../src/debugger-coordinator.js';
 import { createRequest } from '../../../protocol/src/index.js';
 import type { ExtensionState } from '../src/background-state.js';
 
+test('resource cleanup attempts every resource after failures, including removed and restricted tabs', async () => {
+  for (const mode of ['tab', 'removed', 'window'] as const) {
+    const calls: string[] = [];
+    const controller = createTabCleanupController(
+      {
+        tabs: {
+          async query() {
+            return [{ id: 7, url: 'chrome://settings' }];
+          },
+        },
+      } as unknown as typeof chrome,
+      {
+        resources: [
+          {
+            name: 'downloads',
+            async clear() {
+              calls.push('downloads');
+              throw new Error('storage failed');
+            },
+          },
+          {
+            name: 'staged files',
+            clear() {
+              calls.push('files');
+            },
+          },
+          {
+            name: 'recordings',
+            async clear() {
+              calls.push('recordings');
+            },
+          },
+          {
+            name: 'emulation',
+            async clear() {
+              calls.push('reset');
+            },
+            removed() {
+              calls.push('detached');
+            },
+          },
+        ],
+        async ensureContentScript() {},
+        async sendTabMessage() {
+          return { patches: [] };
+        },
+        async beginDebuggerCleanup() {
+          calls.push('begin');
+          return () => {
+            calls.push('end');
+          };
+        },
+        async commitDebuggerCleanup() {
+          calls.push('commit');
+          throw new Error('commit failed');
+        },
+        async clearFetchInterception() {
+          calls.push('fetch');
+          throw new Error('fetch failed');
+        },
+        discardFetchInterception() {},
+        async stopCdpNetworkCapture() {
+          calls.push('stop');
+        },
+        async discardCdpNetworkCapture() {
+          calls.push('discard');
+        },
+        cancelNavigationWaitsForWindow() {},
+        isRecoverableInstrumentationError: () => false,
+        isRestrictedAutomationUrl: () => true,
+      }
+    );
+    const operation =
+      mode === 'tab'
+        ? controller.clearTabBridgeState
+        : mode === 'removed'
+          ? controller.clearRemovedTabState
+          : controller.clearWindowBridgeState;
+    await assert.rejects(operation(7), AggregateError);
+    for (const expected of [
+      'downloads',
+      'files',
+      'recordings',
+      'commit',
+      'fetch',
+      'stop',
+      'discard',
+      'end',
+    ])
+      assert(calls.includes(expected), `${mode}: skipped ${expected}`);
+    assert(calls.includes(mode === 'removed' ? 'detached' : 'reset'));
+  }
+});
+
 test('tab move cleanup clears state only after a tab leaves the enabled window', async () => {
   let enabledWindowId: number | null = 1;
   let tabWindowId = 1;

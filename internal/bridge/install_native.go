@@ -13,9 +13,6 @@ import (
 	"strings"
 )
 
-const publishedExtensionID = "jjjkmmcdkpcgamlopogicbnnhdgebhie"
-
-var installBrowsers = []string{"chrome", "edge", "brave", "chromium", "arc"}
 var installExtensionPattern = regexp.MustCompile(`^[a-z]{32}$`)
 
 func installContains(values []string, value string) bool {
@@ -41,17 +38,21 @@ func installUserHome() (string, error) { return os.UserHomeDir() }
 // Platform and environment arguments keep path rules testable without touching
 // a browser profile on the machine running the tests.
 func installManifestDir(platform, home, browser string, env func(string) string) string {
+	definition := installBrowserByKey(browser)
+	if definition == nil {
+		return ""
+	}
 	var base, sub string
 	switch platform {
 	case "darwin":
 		base = filepath.Join(home, "Library", "Application Support")
-		sub = map[string]string{"chrome": "Google/Chrome", "edge": "Microsoft Edge", "brave": "BraveSoftware/Brave-Browser", "chromium": "Chromium", "arc": "Arc/User Data"}[browser]
+		sub = definition.macDir
 	case "windows":
 		base = env("LOCALAPPDATA")
 		if base == "" {
 			base = filepath.Join(home, "AppData", "Local")
 		}
-		sub = map[string]string{"chrome": "Google/Chrome/User Data", "edge": "Microsoft/Edge/User Data", "brave": "BraveSoftware/Brave-Browser/User Data", "chromium": "Chromium/User Data", "arc": "Arc/User Data"}[browser]
+		sub = definition.windowsDir
 	default:
 		base = env("CHROME_CONFIG_HOME")
 		if base == "" {
@@ -60,7 +61,7 @@ func installManifestDir(platform, home, browser string, env func(string) string)
 		if base == "" {
 			base = filepath.Join(home, ".config")
 		}
-		sub = map[string]string{"chrome": "google-chrome", "edge": "microsoft-edge", "brave": "BraveSoftware/Brave-Browser", "chromium": "chromium", "arc": "Arc/User Data"}[browser]
+		sub = definition.linuxDir
 		snap := filepath.Join(home, "snap", "chromium", "common", "chromium")
 		if browser == "chromium" && env("CHROME_CONFIG_HOME") == "" && env("XDG_CONFIG_HOME") == "" && installExists(snap) {
 			return filepath.Join(snap, "NativeMessagingHosts")
@@ -70,8 +71,11 @@ func installManifestDir(platform, home, browser string, env func(string) string)
 }
 
 func installRegistryKey(browser string) string {
-	root := map[string]string{"chrome": `Google\Chrome`, "edge": `Microsoft\Edge`, "brave": `BraveSoftware\Brave-Browser`, "chromium": `Chromium`, "arc": `Chromium`}[browser]
-	return `HKCU\Software\` + root + `\NativeMessagingHosts\` + hostName
+	definition := installBrowserByKey(browser)
+	if definition == nil {
+		return ""
+	}
+	return `HKCU\Software\` + definition.registry + `\NativeMessagingHosts\` + hostName
 }
 
 func installRegistry(ctx context.Context, args ...string) error {

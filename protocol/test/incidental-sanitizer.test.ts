@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
 
 import {
   isSensitiveIncidentalKey,
@@ -8,6 +9,20 @@ import {
   sanitizeIncidentalUrl,
   sanitizeIncidentalValue,
 } from '../src/incidental-sanitizer.js';
+
+test('shared adversarial fixtures never retain incidental credentials or payloads', async () => {
+  const fixtures = JSON.parse(
+    await fs.readFile(new URL('../fixtures/incidental-redaction.json', import.meta.url), 'utf8')
+  ) as Array<{ input: string; forbidden: string[] }>;
+  for (const fixture of fixtures) {
+    const output = JSON.stringify({
+      text: sanitizeIncidentalText(`failed ${fixture.input}`),
+      value: sanitizeIncidentalValue({ url: fixture.input }),
+    });
+    for (const secret of fixture.forbidden)
+      assert.equal(output.includes(secret), false, fixture.input);
+  }
+});
 
 test('sanitizeIncidentalUrl removes credentials, fragments, and query values', () => {
   assert.equal(

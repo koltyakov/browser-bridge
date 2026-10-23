@@ -11,6 +11,8 @@ import {
   describeBridgeMethods,
   isBatchSafeBridgeCall,
   applyMethodBudgetPreset,
+  ERROR_RECOVERY,
+  BUDGET_PRESETS,
 } from '../protocol/src/index.js';
 
 /** @typedef {import('../protocol/mcp-metadata.js').McpMetadata} McpMetadata */
@@ -225,7 +227,7 @@ export function createCatalog(version, metadata) {
     BRIDGE_METHODS.map((method) => [method, describeBridgeMethods({ method })])
   );
   const presets = Object.fromEntries(
-    ['quick', 'normal', 'deep'].map((preset) => [
+    Object.keys(BUDGET_PRESETS).map((preset) => [
       preset,
       Object.fromEntries(
         BRIDGE_METHODS.map((method) => [
@@ -240,6 +242,7 @@ export function createCatalog(version, metadata) {
     methods,
     runtime: { ...createRuntimeContext(), v: deriveProtocolVersion(version) },
     presets,
+    errorRecovery: ERROR_RECOVERY,
     batchSafe: BRIDGE_METHODS.filter((method) => isBatchSafeBridgeCall(method)),
     tools: metadata.allTools.filter((tool) => metadata.modernTools.includes(tool.name)),
     allTools: metadata.allTools,

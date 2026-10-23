@@ -65,8 +65,56 @@ function createUpdateHarness() {
     setExtensionState(state);
     return { state, controller: createWindowSessionController(state, chromeObj, deps) };
   }
-  return { chromeObj, windows, updates, injected, startWorker, ...startWorker() };
+  return { chromeObj, windows, updates, injected, deps, startWorker, ...startWorker() };
 }
+
+test('cleanup failures finish revocation and never grant access to a replacement window', async () => {
+  for (const mode of ['disable', 'switch', 'startup', 'closed'] as const) {
+    const { chromeObj, controller, state, deps, updates, windows, injected } =
+      createUpdateHarness();
+    const alarms: string[] = [];
+    const ui: string[] = [];
+    chromeObj.alarms.clear = async (name) => {
+      if (typeof name === 'string') alarms.push(name);
+      return true;
+    };
+    await controller.setWindowEnabled(7, 'Workspace', true);
+    deps.clearWindowBridgeState = async () => {
+      throw new Error('cleanup fixture');
+    };
+    deps.refreshActionIndicators = async () => {
+      ui.push('badge');
+    };
+    deps.emitUiState = async () => {
+      ui.push('state');
+    };
+    windows.delete(7);
+    const operation =
+      mode === 'disable'
+        ? controller.setWindowEnabled(7, 'Workspace', false)
+        : mode === 'switch'
+          ? controller.setWindowEnabled(8, 'Other', true)
+          : mode === 'startup'
+            ? controller.clearEnabledWindowOnBrowserStartup()
+            : controller.clearEnabledWindowIfGone();
+    await assert.rejects(operation);
+    assert.equal(state.enabledWindow, null, mode);
+    assert.equal(
+      (await chromeObj.storage.session.get('enabledWindow')).enabledWindow,
+      undefined,
+      mode
+    );
+    assert.equal(
+      (await chromeObj.storage.local.get('enabledWindow')).enabledWindow,
+      undefined,
+      mode
+    );
+    assert.equal(updates.at(-1), false, mode);
+    assert(alarms.includes('bb-keepalive'), mode);
+    assert.deepEqual(injected, [7], mode);
+    if (mode !== 'closed') assert.deepEqual(ui, ['badge', 'state'], mode);
+  }
+});
 
 test('extension updates restore only the previously enabled window and preserve its grant', async () => {
   const { chromeObj, controller, state, startWorker, injected } = createUpdateHarness();

@@ -7,6 +7,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { nativePlatforms, nativeTargets, nativeMaxBytes } from './install-targets.js';
 
 /** @typedef {{asset: string, sha256: string, bytes: number}} Artifact */
 /** @typedef {{version: string, target: string, artifact: Artifact, url: string, binary: string}} Release */
@@ -14,15 +15,8 @@ import { promisify } from 'node:util';
 
 export const packageRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const exec = promisify(execFile);
-const maxBytes = 10_000_000;
-/** @type {Readonly<Record<string, string>>} */
-export const nativeTargets = Object.freeze({
-  'darwin-arm64': 'bbx-darwin-arm64',
-  'darwin-x64': 'bbx-darwin-x64',
-  'linux-arm64': 'bbx-linux-arm64',
-  'linux-x64': 'bbx-linux-x64',
-  'win32-x64': 'bbx-windows-x64.exe',
-});
+const maxBytes = nativeMaxBytes;
+export { nativeTargets };
 
 /** @param {unknown} value @returns {Record<string, unknown>} */
 function object(value) {
@@ -148,7 +142,8 @@ export async function probeExecutable(binary, release, env) {
       windowsHide: true,
     });
     const result = object(JSON.parse(stdout));
-    const target = `go-${release.target.replace('win32', 'windows').replace('x64', 'amd64')}`;
+    const platform = nativePlatforms.find((entry) => entry.key === release.target);
+    const target = platform ? `go-${platform.goos}-${platform.goarch}` : '';
     if (result.runtime !== 'go' || result.version !== release.version || result.target !== target)
       throw new Error(
         `Downloaded binary does not match Browser Bridge ${release.version} for ${release.target}`

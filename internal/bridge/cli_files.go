@@ -21,11 +21,8 @@ import (
 type cliInvoker func(context.Context, string, object) (object, error)
 
 func isFileCommand(command string) bool {
-	switch command {
-	case "upload", "paste-image", "download", "screenshot", "har", "record", "replay":
-		return true
-	}
-	return false
+	definition := cliCommandByName(command)
+	return definition != nil && definition.file
 }
 func fileRoute(args []string) (object, []string, error) {
 	flags := []string{"page.get_state"}
@@ -103,10 +100,10 @@ func runFileCLI(ctx context.Context, c config, args []string) (runErr error) {
 	switch command {
 	case "upload", "paste-image":
 		if route.number("tab_id") == 0 {
-			return errors.New("upload requires --tab so every chunk targets the same tab")
+			return fmt.Errorf("%s requires --tab so every chunk targets the same tab", command)
 		}
 		if len(rest) < 2 {
-			return errors.New("usage: bbx upload --tab <id> <ref|selector> <local-file>...")
+			return fmt.Errorf("usage: bbx %s", cliCommandByName(command).usage)
 		}
 		target, err := atomicTarget(rest[0])
 		if err != nil {

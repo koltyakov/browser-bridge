@@ -76,7 +76,7 @@ format-go: ## Format Go source
 	gofmt -w cmd internal
 
 check-go-format: ## Check Go formatting without changing files
-	"$(NODE)" -e "const output = require('node:child_process').execFileSync('gofmt', ['-l', 'cmd', 'internal'], {encoding: 'utf8'}); if (output.trim()) throw Error(output);"
+	"$(NODE)" scripts/check-go-format.mjs
 
 format-check: check-go-format ## Check all source formatting
 	$(EXEC) oxfmt --check .

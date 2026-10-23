@@ -123,7 +123,7 @@ try {
     await verifyRemote(artifact);
   }
   console.log(
-    `Verified all five native assets and checksums on https://github.com/${repository}/releases/tag/${tag}`
+    `Verified all native assets and checksums on https://github.com/${repository}/releases/tag/${tag}`
   );
 } finally {
   await fs.rm(temporary, { recursive: true, force: true });

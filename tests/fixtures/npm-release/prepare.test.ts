@@ -100,6 +100,11 @@ test('prepack rejects stale metadata without synchronizing it during npm packing
       path.join(directory, 'scripts', name)
     );
   }
+  await fs.mkdir(path.join(directory, 'packages/npm/src'), { recursive: true });
+  await fs.copyFile(
+    new URL('../../../packages/npm/src/install-targets.js', import.meta.url),
+    path.join(directory, 'packages/npm/src/install-targets.js')
+  );
   const env: NodeJS.ProcessEnv = { ...process.env, ...releaseEnv };
   delete env.RELEASE_TAG;
   const prepare = () =>
@@ -187,6 +192,11 @@ test(
         path.join(directory, 'scripts', name)
       );
     }
+    await fs.mkdir(path.join(directory, 'packages/npm/src'), { recursive: true });
+    await fs.copyFile(
+      new URL('../../../packages/npm/src/install-targets.js', import.meta.url),
+      path.join(directory, 'packages/npm/src/install-targets.js')
+    );
     const bin = path.join(directory, 'bin');
     await fs.mkdir(bin);
     // This fake gh only copies fixture bytes; no request reaches GitHub.

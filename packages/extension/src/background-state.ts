@@ -135,7 +135,7 @@ export function isNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
-export const NATIVE_APP_NAME = 'com.browserbridge.browser_bridge';
+export { NATIVE_APP_NAME } from './install-targets.js';
 export const CONTENT_SCRIPT_TIMEOUT_MS = 5_000;
 // Each tab owns this many entries; activity elsewhere must not evict its history.
 export const MAX_ACTION_LOG_ENTRIES = 50;

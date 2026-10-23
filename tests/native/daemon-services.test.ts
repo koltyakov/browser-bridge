@@ -269,7 +269,7 @@ async function fixture(t: TestContext) {
       close: () => stopChild(child),
     };
   };
-  const rawAgent = async () => {
+  const rawPeer = async (role: 'agent' | 'extension') => {
     const socket = net.connect(port, '127.0.0.1');
     sockets.push(socket);
     const inbox = new Inbox();
@@ -280,13 +280,14 @@ async function fixture(t: TestContext) {
     await once(socket, 'connect');
     await writeJsonLine(socket, {
       type: 'register',
-      role: 'agent',
-      authToken: agentToken,
+      role,
+      authToken: role === 'agent' ? agentToken : extensionToken,
       clientId: randomUUID(),
     });
     assert.equal((await inbox.next()).type, 'registered');
     return {
       socket,
+      sendMessage: (message: Message) => writeJsonLine(socket, message),
       send: (request: Message) => writeJsonLine(socket, { type: 'agent.request', request }),
       response: async () => record((await inbox.next()).response),
     };
@@ -296,7 +297,8 @@ async function fixture(t: TestContext) {
     userHome,
     client,
     native,
-    rawAgent,
+    rawAgent: () => rawPeer('agent'),
+    rawExtension: () => rawPeer('extension'),
     restart: async () => {
       await stopChild(daemon, 'SIGKILL');
       await start();
@@ -375,6 +377,76 @@ async function artifactsOnDisk(home: string) {
 }
 
 const options = { skip: !enabled, timeout: 60000 };
+
+test(
+  'Go daemon services: a held setup lock cannot block native-host health routing',
+  options,
+  async (t) => {
+    const f = await fixture(t);
+    const host = await f.native('setup-lock');
+    const lockPath = path.join(f.userHome, '.claude.json.bbx.lock');
+    await fs.writeFile(lockPath, 'fixture');
+    const setupId = randomUUID();
+    const healthId = randomUUID();
+    await host.send({
+      type: 'host.bridge_request',
+      request: { id: setupId, method: 'setup.install', params: { kind: 'mcp', target: 'claude' } },
+    });
+    await host.send({
+      type: 'host.bridge_request',
+      request: { id: healthId, method: 'health.ping', params: {} },
+    });
+    const routed = await host.request('health.ping');
+    await host.reply(routed, { extension: 'ok' });
+    const health = record(
+      (
+        await host.inbox.next(
+          (message) =>
+            message.type === 'host.bridge_response' && record(message.response).id === healthId
+        )
+      ).response
+    );
+    assert.equal(health.ok, true);
+    // Release only after health has passed through the same native-host stream.
+    // A synchronous setup handler would have already timed out on this lock.
+    await fs.unlink(lockPath);
+    const setup = record(
+      (
+        await host.inbox.next(
+          (message) =>
+            message.type === 'host.bridge_response' && record(message.response).id === setupId
+        )
+      ).response
+    );
+    assert.equal(setup.ok, true, JSON.stringify(setup));
+    const config = JSON.parse(
+      await fs.readFile(path.join(f.userHome, '.claude.json'), 'utf8')
+    ) as Message;
+    assert.ok(record(config.mcpServers)['browser-bridge']);
+  }
+);
+
+test(
+  'Go daemon services: malformed URL credentials never survive the log transport',
+  options,
+  async (t) => {
+    const f = await fixture(t);
+    const extension = await f.rawExtension();
+    const url = 'https://demo:fixture-secret@example.test/%ZZ?token=private-query#private-fragment';
+    await extension.sendMessage({ type: 'log', entry: { message: `failed ${url}`, url } });
+    // A reply on this stream proves the preceding log was processed.
+    await extension.send({ id: randomUUID(), method: 'setup.get_status', params: {} });
+    assert.equal((await extension.response()).ok, true);
+    const client = await f.client();
+    const logs = await client.request({ method: 'log.tail' });
+    assert.equal(logs.ok, true);
+    const entries = record(logs.result).entries;
+    assert.ok(Array.isArray(entries) && entries.length > 0);
+    const output = JSON.stringify(entries);
+    assert.match(output, /example\.test/u);
+    assert.doesNotMatch(output, /demo:|fixture-secret|private-query|private-fragment/u);
+  }
+);
 test(
   'Go daemon services: wire client and native relay transfer artifacts with connection ownership',
   options,

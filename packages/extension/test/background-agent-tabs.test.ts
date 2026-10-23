@@ -424,6 +424,9 @@ test('tabs.activate moves the calling agent to the activated tab', async () => {
 
 test('panel shows both targets for one alternating agent and stays scoped to its own tab', async () => {
   const { loaded, remove, tabs } = await loadTwoTabBackground('agent-tabs-panel');
+  const faviconTab = tabs.get(82);
+  assert.ok(faviconTab);
+  faviconTab.favIconUrl = 'https://app.test/favicon.ico';
   const state = loaded.module.getStateForTest() as ExtensionState;
   const pair = createMessagePortPair();
   const port = pair.left.port as unknown as chrome.runtime.Port;
@@ -444,6 +447,10 @@ test('panel shows both targets for one alternating agent and stays scoped to its
   await call(loaded, 'navigation.reload', { session: 'a', tabId: 82 });
   await emit();
   const expected = latest();
+  assert.deepEqual(
+    expected?.map((tab) => tab.favIconUrl),
+    [undefined, 'https://app.test/favicon.ico']
+  );
   assert.ok(
     expected?.every((tab) => Number.isFinite(tab.lastActivityAt) && (tab.lastActivityAt ?? 0) > 0)
   );

@@ -350,6 +350,9 @@ test('background state scope.set_enabled enables and disables the requested curr
           status: 'complete',
         };
       },
+      async sendMessage(_tabId: number, message: BridgeMessage) {
+        return message.type === 'bridge.ping' ? { ok: true } : { patches: [] };
+      },
     },
     alarms: {
       async create(name: string, info: chrome.alarms.AlarmCreateInfo) {
@@ -978,7 +981,7 @@ test('background state clearTabBridgeState swallows recoverable instrumentation 
   );
 });
 
-test('background state clearWindowBridgeState only clears scriptable tabs and ignores per-tab failures', async () => {
+test('background state clearWindowBridgeState clears sibling tabs before reporting per-tab failures', async () => {
   const patchIdsByTab = new Map([
     [71, ['patch-1']],
     [73, ['patch-3']],
@@ -1081,7 +1084,20 @@ test('background state clearWindowBridgeState only clears scriptable tabs and ig
     query: `test-background-state-clear-window-bridge-${Date.now()}`,
   });
 
-  await loaded.module.clearWindowBridgeState(9);
+  await assert.rejects(loaded.module.clearWindowBridgeState(9), (error: unknown) => {
+    assert(error instanceof AggregateError);
+    assert(
+      error.errors.some(
+        (cause: unknown) =>
+          cause instanceof AggregateError &&
+          cause.errors.some(
+            (failure: unknown) =>
+              failure instanceof Error && /Patch enumeration failed/.test(failure.message)
+          )
+      )
+    );
+    return true;
+  });
 
   assert.deepEqual(patchIdsByTab.get(71), []);
   assert.deepEqual(consoleBuffers.get(71), { entries: [], dropped: 0 });

@@ -145,7 +145,8 @@ export type SidepanelAgentStatusViewState = {
 };
 
 const MANAGED_CLIENT_PACKAGE = '@browserbridge/bbx';
-export const PUBLISHED_EXTENSION_ID = 'jjjkmmcdkpcgamlopogicbnnhdgebhie';
+import { PUBLISHED_EXTENSION_ID } from './install-targets.js';
+export { PUBLISHED_EXTENSION_ID };
 
 export function getNpmInstallCommand(version: string): string {
   const versionMatch = /^(\d+\.\d+)(?:\.|$)/u.exec(version);
