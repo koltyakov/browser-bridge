@@ -21,6 +21,17 @@ The Go runtime lives in `cmd/bbx` and `internal/bridge`; its unit tests live bes
 
 `manifest.json.version` is the local version source. Build targets synchronize npm metadata from it and regenerate the native catalog. Release pipelines override the checkout version with the Git tag. `make sync-version` updates version mirrors without building; `make check-release-version` verifies them. A direct `go build ./cmd/bbx` uses the checked-in catalog and needs no Node tooling.
 
+### Registry ownership
+
+- `internal/bridge/agents_registry.go` owns supported agents and their setup/detection behavior.
+- `internal/bridge/cli_registry.go` owns command metadata, shortcut parsers, help, targeting, and output policy. Command handlers still own execution.
+- `protocol/install-targets.json` owns native platforms, browser installation paths, asset names, the binary-size limit, and published extension/native-host identities. `make generate-protocol` updates all generated consumers, including marked installer and CI blocks.
+- `protocol/src/defaults.js` owns shared numeric limits; `protocol/src/errors.js` owns default error recovery. Generated Go limits and the catalog carry those policies into the native runtime.
+
+Do not add parallel command, platform, or browser lists. `make check-protocol` rejects stale generated consumers. Add behavioral tests alongside registry contract tests; metadata agreement alone does not verify dispatch or cleanup.
+
+Setup filesystem work is serialized separately from daemon routing and admitted through a bounded queue. Tab-resource cleanup runs each registered hook even after another resource fails, then reports the collected failures.
+
 ## Common tasks
 
 | Command | Result |

@@ -649,7 +649,7 @@ summary {
 
 .agent-tab-button {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: 16px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -666,6 +666,12 @@ summary {
 
 .agent-tab-button:hover {
   background: var(--cmd-bg-hover);
+}
+
+.agent-tab-icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
 }
 
 .agent-tab-name {

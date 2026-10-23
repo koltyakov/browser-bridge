@@ -4,14 +4,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { parse } from '@babel/parser';
-import {
-  BRIDGE_METHODS,
-  ERROR_CODES,
-  MAX_JSON_LINE_BYTES,
-  MAX_NATIVE_MESSAGE_BYTES,
-} from '../protocol/src/index.js';
+import { BRIDGE_METHODS, ERROR_CODES } from '../protocol/src/index.js';
 import { generateCatalog } from './generate-catalog.mjs';
 import { generateSkills } from './generate-skills.mjs';
+import * as defaults from '../protocol/src/defaults.js';
+import { generateInstallTargets } from './generate-install-targets.mjs';
 
 /** @typedef {{type: string, [key: string]: unknown}} Node */
 /** @typedef {{ $ref?: string, type?: string, enum?: unknown[], properties?: Record<string, Schema>, required?: string[], additionalProperties?: boolean | Schema, items?: Schema, anyOf?: Schema[] }} Schema */
@@ -406,7 +403,24 @@ await write('internal/protocol/types.gen.go', goSource);
 await write(
   'internal/protocol/limits.gen.go',
   execFileSync('gofmt', [], {
-    input: `// Code generated from protocol/src/defaults.js. DO NOT EDIT.\npackage protocol\nconst MaxJSONLineBytes = ${MAX_JSON_LINE_BYTES}\nconst MaxNativeMessageBytes = ${MAX_NATIVE_MESSAGE_BYTES}\n`,
+    input: `// Code generated from protocol/src/defaults.js. DO NOT EDIT.\npackage protocol\n${Object.entries(
+      defaults
+    )
+      .filter(([, value]) => typeof value === 'number')
+      .map(
+        ([key, value]) =>
+          `const ${key
+            .split('_')
+            .map((part) =>
+              ['JSON', 'MS', 'TTL', 'HTML', 'HAR', 'DOM', 'CDP', 'URL', 'UTF8', 'A11Y'].includes(
+                part
+              )
+                ? part
+                : part[0] + part.slice(1).toLowerCase()
+            )
+            .join('')} = ${value}`
+      )
+      .join('\n')}\n`,
     encoding: 'utf8',
   })
 );
@@ -418,6 +432,7 @@ await write('protocol/generated/bridge.schema.json', `${JSON.stringify(document,
 await write('protocol/generated/roundtrip-fixtures.json', `${JSON.stringify(fixtures, null, 2)}\n`);
 await generateCatalog(process.argv.includes('--check'));
 await generateSkills(process.argv.includes('--check'));
+await generateInstallTargets(process.argv.includes('--check'));
 console.log(
   `Protocol: ${Object.keys(definitions).length} shared types; ${BRIDGE_METHODS.length} methods; Go bindings and JSON Schema ${process.argv.includes('--check') ? 'verified' : 'generated'}.`
 );

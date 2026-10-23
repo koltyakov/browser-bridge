@@ -1,3 +1,9 @@
+export type TabCleanupResource = {
+  name: string;
+  clear: (tabId: number) => void | Promise<unknown>;
+  removed?: (tabId: number) => void | Promise<unknown>;
+};
+
 export type TabCleanupControllerDeps = {
   ensureContentScript: (tabId: number) => Promise<void>;
   sendTabMessage: (
@@ -26,10 +32,7 @@ export type TabCleanupControllerDeps = {
   cancelNavigationWaitsForWindow: (windowId: number) => void;
   isRecoverableInstrumentationError: (error: unknown) => boolean;
   isRestrictedAutomationUrl: (url: string) => boolean;
-  clearDomBaselinesForTab?: (tabId: number) => void;
-  clearWebMcpForTab?: (tabId: number) => Promise<void>;
-  clearEmulationForTab?: (tabId: number) => Promise<void>;
-  clearFilesForTab?: (tabId: number) => Promise<void>;
+  resources?: readonly TabCleanupResource[];
 };
 import { CONTENT_SCRIPT_TIMEOUT_MS, isNumber } from './background-state.js';
 
@@ -41,8 +44,48 @@ export function createTabCleanupController(
 ): {
   clearTabBridgeState: (tabId: number, shouldContinue?: () => Promise<boolean>) => Promise<void>;
   clearWindowBridgeState: (windowId: number) => Promise<void>;
+  clearRemovedTabState: (tabId: number) => Promise<void>;
   rollbackAllPatchesForTab: (tabId: number) => Promise<void>;
 } {
+  async function clearResources(tabId: number, removed = false): Promise<unknown[]> {
+    const errors: unknown[] = [];
+    for (const resource of deps.resources ?? []) {
+      try {
+        await (removed ? (resource.removed ?? resource.clear) : resource.clear)(tabId);
+      } catch (error) {
+        errors.push(
+          new Error(`Could not clear ${resource.name} for tab ${tabId}`, { cause: error })
+        );
+      }
+    }
+    return errors;
+  }
+
+  async function clearDebuggerState(tabId: number, errors: unknown[]): Promise<void> {
+    const endCleanup = await deps.beginDebuggerCleanup(tabId);
+    try {
+      for (const clear of [
+        deps.commitDebuggerCleanup,
+        deps.clearFetchInterception,
+        deps.stopCdpNetworkCapture,
+        deps.discardCdpNetworkCapture,
+      ]) {
+        try {
+          await clear(tabId);
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+    } finally {
+      endCleanup();
+    }
+  }
+
+  async function clearRemovedTabState(tabId: number): Promise<void> {
+    const errors = await clearResources(tabId, true);
+    await clearDebuggerState(tabId, errors);
+    if (errors.length) throw new AggregateError(errors, `Tab ${tabId} cleanup failed`);
+  }
   /** Roll back all reversible patches currently tracked in one tab. */
   async function rollbackAllPatchesForTab(
     tabId: number,
@@ -100,18 +143,7 @@ export function createTabCleanupController(
   ): Promise<void> {
     if (!(await shouldContinue())) return;
 
-    const instrumentationErrors: unknown[] = [];
-    for (const clear of [
-      deps.clearWebMcpForTab,
-      deps.clearEmulationForTab,
-      deps.clearFilesForTab,
-    ]) {
-      try {
-        await clear?.(tabId);
-      } catch (error) {
-        instrumentationErrors.push(error);
-      }
-    }
+    const instrumentationErrors = await clearResources(tabId);
     const disableConsole =
       deps.disableConsoleInterceptor ??
       (async (id, chromeObj) => {
@@ -133,14 +165,21 @@ export function createTabCleanupController(
       if (instrumentationErrors.length > 0) throw instrumentationErrors[0];
       return;
     }
-    deps.clearDomBaselinesForTab?.(tabId);
     const endCleanup = await deps.beginDebuggerCleanup(tabId);
     try {
       if (!(await shouldContinue())) return;
-      await deps.commitDebuggerCleanup(tabId);
+      try {
+        await deps.commitDebuggerCleanup(tabId);
+      } catch (error) {
+        instrumentationErrors.push(error);
+      }
       try {
         if (await shouldContinue()) {
-          await deps.clearFetchInterception(tabId);
+          try {
+            await deps.clearFetchInterception(tabId);
+          } catch (error) {
+            instrumentationErrors.push(error);
+          }
         } else {
           deps.discardFetchInterception(tabId);
         }
@@ -148,17 +187,22 @@ export function createTabCleanupController(
           await deps.stopCdpNetworkCapture(tabId).catch(() => {});
         }
       } finally {
-        await deps.discardCdpNetworkCapture(tabId);
+        try {
+          await deps.discardCdpNetworkCapture(tabId);
+        } catch (error) {
+          instrumentationErrors.push(error);
+        }
       }
       if (!(await shouldContinue())) return;
       try {
         await rollbackAllPatchesForTab(tabId, shouldContinue);
       } catch (error) {
         if (!deps.isRecoverableInstrumentationError(error)) {
-          throw error;
+          instrumentationErrors.push(error);
         }
       }
-      if (instrumentationErrors.length > 0) throw instrumentationErrors[0];
+      if (instrumentationErrors.length > 0)
+        throw new AggregateError(instrumentationErrors, `Tab ${tabId} cleanup failed`);
     } finally {
       endCleanup();
     }
@@ -168,7 +212,7 @@ export function createTabCleanupController(
   async function clearWindowBridgeState(windowId: number): Promise<void> {
     deps.cancelNavigationWaitsForWindow(windowId);
     const tabs = await chrome.tabs.query({ windowId });
-    await Promise.allSettled(
+    const results = await Promise.allSettled(
       tabs.map((tab) => {
         if (!isNumber(tab.id)) return Promise.resolve();
         const tabId = tab.id;
@@ -177,39 +221,26 @@ export function createTabCleanupController(
           : clearRestrictedTabDebuggerState(tabId);
       })
     );
+    const failures = results.filter(
+      (result): result is PromiseRejectedResult => result.status === 'rejected'
+    );
+    if (failures.length)
+      throw new AggregateError(
+        failures.map((result) => result.reason),
+        `Window ${windowId} cleanup failed`
+      );
   }
 
   async function clearRestrictedTabDebuggerState(tabId: number) {
-    const errors: unknown[] = [];
-    for (const clear of [
-      deps.clearWebMcpForTab,
-      deps.clearEmulationForTab,
-      deps.clearFilesForTab,
-    ]) {
-      try {
-        await clear?.(tabId);
-      } catch (error) {
-        errors.push(error);
-      }
-    }
-    const endCleanup = await deps.beginDebuggerCleanup(tabId);
-    try {
-      await deps.commitDebuggerCleanup(tabId);
-      try {
-        await deps.clearFetchInterception(tabId);
-        await deps.stopCdpNetworkCapture(tabId).catch(() => {});
-      } finally {
-        await deps.discardCdpNetworkCapture(tabId);
-      }
-      if (errors.length) throw errors[0];
-    } finally {
-      endCleanup();
-    }
+    const errors = await clearResources(tabId);
+    await clearDebuggerState(tabId, errors);
+    if (errors.length) throw new AggregateError(errors, `Tab ${tabId} cleanup failed`);
   }
 
   return {
     clearTabBridgeState,
     clearWindowBridgeState,
+    clearRemovedTabState,
     rollbackAllPatchesForTab,
   };
 }

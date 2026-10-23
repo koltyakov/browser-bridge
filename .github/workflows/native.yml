@@ -29,16 +29,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # BEGIN GENERATED PLATFORMS
           - os: macos-15
             asset: bbx-darwin-arm64
           - os: macos-15-intel
             asset: bbx-darwin-x64
-          - os: ubuntu-24.04
-            asset: bbx-linux-x64
           - os: ubuntu-24.04-arm
             asset: bbx-linux-arm64
+          - os: ubuntu-24.04
+            asset: bbx-linux-x64
           - os: windows-2025
             asset: bbx-windows-x64.exe
+          # END GENERATED PLATFORMS
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7

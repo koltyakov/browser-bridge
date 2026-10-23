@@ -12,16 +12,27 @@ if [ "$#" -ne 0 ]; then
 fi
 
 version="${BBX_VERSION:-}"
+# BEGIN GENERATED EXTENSION_ID
 extension_id="${BBX_EXTENSION_ID:-jjjkmmcdkpcgamlopogicbnnhdgebhie}"
+# END GENERATED EXTENSION_ID
 browser="${BBX_BROWSER:-chrome}"
 install_dir="${BBX_INSTALL_DIR:-$HOME/.local/bin}"
 if ! printf '%s\n' "$extension_id" | grep -Eq '^[a-z]{32}$'; then
   echo 'Invalid extension ID' >&2
   exit 1
 fi
+# BEGIN GENERATED BROWSERS
 case "$browser" in chrome|edge|brave|chromium|arc) ;; *) echo 'Unsupported browser' >&2; exit 1;; esac
-case "$(uname -s)" in Darwin) os=darwin;; Linux) os=linux;; *) echo 'Unsupported OS' >&2; exit 1;; esac
-case "$(uname -m)" in x86_64|amd64) arch=x64;; arm64|aarch64) arch=arm64;; *) echo 'Unsupported architecture' >&2; exit 1;; esac
+# END GENERATED BROWSERS
+# BEGIN GENERATED PLATFORMS
+case "$(uname -s):$(uname -m)" in
+  Darwin:arm64|Darwin:aarch64) asset='bbx-darwin-arm64';;
+  Darwin:x86_64|Darwin:amd64) asset='bbx-darwin-x64';;
+  Linux:arm64|Linux:aarch64) asset='bbx-linux-arm64';;
+  Linux:x86_64|Linux:amd64) asset='bbx-linux-x64';;
+  *) echo 'Unsupported OS or architecture' >&2; exit 1;;
+esac
+# END GENERATED PLATFORMS
 base='https://github.com/koltyakov/browser-bridge/releases/latest/download'
 if [ -n "$version" ]; then
   version="${version#v}"
@@ -43,7 +54,6 @@ download() {
   fi
 }
 
-asset="bbx-$os-$arch"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 trap 'exit 1' HUP INT TERM

@@ -23,6 +23,7 @@ type protocolCatalog struct {
 	Runtime            object                       `json:"runtime"`
 	Presets            map[string]map[string]object `json:"presets"`
 	BatchSafe          []string                     `json:"batchSafe"`
+	ErrorRecovery      map[string]object            `json:"errorRecovery"`
 }
 
 var catalog protocolCatalog

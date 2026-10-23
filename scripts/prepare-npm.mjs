@@ -4,18 +4,12 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { resolveVersion } from './version.mjs';
+import { nativePlatforms, nativeMaxBytes } from '../packages/npm/src/install-targets.js';
 
 /** @typedef {{asset: string, sha256: string, bytes: number}} NativeArtifact */
 /** @typedef {{version: string, artifacts: Record<string, NativeArtifact>}} NativeManifest */
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const targets = [
-  { key: 'darwin-arm64', asset: 'bbx-darwin-arm64' },
-  { key: 'darwin-x64', asset: 'bbx-darwin-x64' },
-  { key: 'linux-arm64', asset: 'bbx-linux-arm64' },
-  { key: 'linux-x64', asset: 'bbx-linux-x64' },
-  { key: 'win32-x64', asset: 'bbx-windows-x64.exe' },
-];
 
 /** @param {unknown} value @returns {value is Record<string, unknown>} */
 function isRecord(value) {
@@ -23,7 +17,7 @@ function isRecord(value) {
 }
 
 /**
- * Validate all five native assets and pin the exact bytes shipped on GitHub.
+ * Validate every registered native asset and pin the exact bytes shipped on GitHub.
  * @param {string} [directory]
  * @param {NodeJS.ProcessEnv} [env]
  * @returns {Promise<NativeManifest>}
@@ -37,11 +31,13 @@ export async function readNativeBuild(directory = root, env = process.env) {
   }
   /** @type {NativeManifest} */
   const manifest = { version, artifacts: {} };
-  for (const platform of targets) {
+  for (const platform of nativePlatforms) {
     const file = path.join(directory, 'dist/cli', platform.asset);
     const stat = await fs.lstat(file);
-    if (!stat.isFile() || stat.size <= 0 || stat.size >= 10_000_000) {
-      throw new Error(`${platform.asset} must be a regular file smaller than 10 MB`);
+    if (!stat.isFile() || stat.size <= 0 || stat.size >= nativeMaxBytes) {
+      throw new Error(
+        `${platform.asset} must be a regular file smaller than ${nativeMaxBytes} bytes`
+      );
     }
     const bytes = await fs.readFile(file);
     if (bytes.length !== stat.size)

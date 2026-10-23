@@ -1,0 +1,20 @@
+[
+  {
+    "input": "https://demo:fixture-secret@example.test/%ZZ?token=private-query#private-fragment",
+    "forbidden": ["demo:", "fixture-secret", "private-query", "private-fragment"]
+  },
+  {
+    "input": "https://demo:fixture-secret@[bad]?token=private-query",
+    "forbidden": ["demo:", "fixture-secret", "private-query"]
+  },
+  {
+    "input": "https://demo:fixture-secret@example.test:bad/?token=private-query",
+    "forbidden": ["demo:", "fixture-secret", "private-query"]
+  },
+  {
+    "input": "https://demo:fixture-secret@example.test/path?token=private-query#private-fragment",
+    "forbidden": ["demo:", "fixture-secret", "private-query", "private-fragment"]
+  },
+  { "input": "data:text/plain;base64,cHJpdmF0ZS1wYXlsb2Fk", "forbidden": ["cHJpdmF0ZS1wYXlsb2Fk"] },
+  { "input": "blob:https://example.test/private-blob", "forbidden": ["private-blob"] }
+]

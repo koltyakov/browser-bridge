@@ -14,6 +14,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/koltyakov/browser-bridge/internal/protocol"
 )
 
 type peer struct {
@@ -55,6 +57,10 @@ type pendingRequest struct {
 
 type daemon struct {
 	mu                                sync.Mutex
+	setupMu                           sync.Mutex
+	setupWorkers                      sync.WaitGroup
+	setupPending                      map[*peer]map[string]bool
+	setupJobs                         int
 	config                            config
 	agentToken                        string
 	extensionToken                    string
@@ -228,6 +234,7 @@ func runDaemon(ctx context.Context, c config) error {
 		}
 		d.mu.Unlock()
 		workers.Wait()
+		d.setupWorkers.Wait()
 		d.mu.Lock()
 		_ = d.artifacts.reset()
 		d.mu.Unlock()
@@ -481,12 +488,7 @@ func (d *daemon) handle(p *peer, message object) {
 	case "extension.activity":
 		p.active = time.Now().UnixMilli()
 	case "extension.setup_status.request":
-		status, err := setupStatus(d.config)
-		if err != nil {
-			p.send(object{"type": value("extension.setup_status.error"), "requestId": message["requestId"], "error": value(object{"message": value(err.Error())})})
-		} else {
-			p.send(object{"type": value("extension.setup_status.response"), "requestId": message["requestId"], "status": value(status)})
-		}
+		d.setupStatusMessage(p, message)
 	default:
 		p.send(object{"type": value("error"), "error": value(object{"code": value("INVALID_REQUEST"), "message": value("Unknown message type.")})})
 	}
@@ -571,6 +573,10 @@ func (d *daemon) route(p *peer, request object) {
 			return
 		}
 	}
+	if d.setupPending[p][id] {
+		d.localResponse(p, request, failure(id, "INVALID_REQUEST", "Duplicate pending request id."))
+		return
+	}
 	if d.localService(p, request, params) {
 		return
 	}
@@ -599,7 +605,7 @@ func (d *daemon) route(p *peer, request object) {
 		d.localResponse(p, request, success(id, catalog.Runtime))
 		return
 	case "log.tail":
-		limit := int(serviceClampInt(params, "limit", 1, 200, 30))
+		limit := int(serviceClampInt(params, "limit", 1, protocol.DaemonRecentLogLimit, protocol.DefaultLogTailLimit))
 		if limit > len(d.logs) {
 			limit = len(d.logs)
 		}
@@ -681,12 +687,9 @@ func (d *daemon) route(p *peer, request object) {
 	pending := &pendingRequest{owner: p, target: target, original: id, method: method, baselineID: params.text("baselineId"), started: time.Now(), meta: meta}
 	d.pending[routedID] = pending
 	p.pending++
-	duration := 30 * time.Second
-	if timeout := params.number("timeoutMs"); timeout > 28_000 {
-		if timeout > 120_000 {
-			timeout = 120_000
-		}
-		duration = time.Duration(timeout+2_000) * time.Millisecond
+	duration := protocol.DefaultDaemonPendingTimeoutMS * time.Millisecond
+	if timeout := params.number("timeoutMs"); timeout > protocol.DefaultDaemonPendingTimeoutMS-protocol.DaemonPendingTimeoutMarginMS {
+		duration = time.Duration(min(timeout+protocol.DaemonPendingTimeoutMarginMS, protocol.MaxDaemonPendingTimeoutMS)) * time.Millisecond
 	}
 	pending.timer = time.AfterFunc(duration, func() {
 		d.mu.Lock()
@@ -892,12 +895,14 @@ func (d *daemon) localService(p *peer, request, params object) bool {
 	fallback := "INTERNAL_ERROR"
 	switch method {
 	case "setup.get_status":
-		result, err = setupStatus(d.config)
+		d.setupRequest(p, request, func() (object, error) { return setupStatus(d.config) }, "INTERNAL_ERROR")
+		return true
 	case "setup.install":
 		if !localControlPeer(p) {
 			err = serviceFailure("ACCESS_DENIED", "setup.install is restricted to local Browser Bridge clients.")
 		} else {
-			result, err = setupInstall(d.config, params)
+			d.setupRequest(p, request, func() (object, error) { return setupInstall(d.config, params) }, "INVALID_REQUEST")
+			return true
 		}
 		fallback = "INVALID_REQUEST"
 	case "artifact.delete":

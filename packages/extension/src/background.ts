@@ -391,20 +391,27 @@ const tabCleanupController = createTabCleanupController(chrome, {
   stopCdpNetworkCapture: (tabId) => cdpNetworkCapture.stop(tabId),
   discardCdpNetworkCapture: (tabId) => cdpNetworkCapture.handleDetach(tabId),
   cancelNavigationWaitsForWindow: (windowId) => navigationWaits.cancelWindow(windowId),
-  clearDomBaselinesForTab: (tabId) => domBaselines.clearTab(tabId),
-  clearWebMcpForTab: (tabId) => webmcp.clearTab(tabId),
-  clearEmulationForTab: async (tabId) => {
-    await emulation.reset(tabId);
-  },
-  clearFilesForTab: async (tabId) => {
-    await downloads.clear(tabId);
-    stagedFiles.clearTab(tabId);
-    if (resourceFetches.has(tabId))
-      await chrome.scripting
-        .executeScript({ target: { tabId }, func: cancelPageResources })
-        .catch(() => {});
-    await recordings.clear(tabId);
-  },
+  resources: [
+    { name: 'DOM baselines', clear: (tabId) => domBaselines.clearTab(tabId) },
+    { name: 'WebMCP', clear: (tabId) => webmcp.clearTab(tabId) },
+    {
+      name: 'emulation',
+      clear: (tabId) => emulation.reset(tabId),
+      removed: (tabId) => emulation.detached(tabId),
+    },
+    { name: 'downloads', clear: (tabId) => downloads.clear(tabId) },
+    { name: 'staged files', clear: (tabId) => stagedFiles.clearTab(tabId) },
+    {
+      name: 'resource fetches',
+      clear: async (tabId) => {
+        if (resourceFetches.has(tabId))
+          await chrome.scripting
+            .executeScript({ target: { tabId }, func: cancelPageResources })
+            .catch(() => {});
+      },
+    },
+    { name: 'recordings', clear: (tabId) => recordings.clear(tabId) },
+  ],
   isRecoverableInstrumentationError,
   isRestrictedAutomationUrl,
 });
@@ -457,25 +464,7 @@ const tabMoveCleanup = createTabMoveCleanupController({
     await primeTabConsoleCapture(tabId, chrome, true);
   },
   clearTabBridgeState,
-  clearRemovedTabState: async (tabId) => {
-    await downloads.clear(tabId);
-    await recordings.clear(tabId);
-    domBaselines.clearTab(tabId);
-    emulation.detached(tabId);
-    stagedFiles.clearTab(tabId);
-    const endCleanup = await tabDebugger.beginCleanup(tabId);
-    try {
-      await tabDebugger.commitCleanup(tabId);
-      try {
-        await fetchInterceptor.clearAllRules(tabId);
-        await cdpNetworkCapture.stop(tabId).catch(() => {});
-      } finally {
-        await cdpNetworkCapture.handleDetach(tabId);
-      }
-    } finally {
-      endCleanup();
-    }
-  },
+  clearRemovedTabState: tabCleanupController.clearRemovedTabState,
 });
 
 const {
@@ -1886,6 +1875,7 @@ async function getAgentTabState(
     .map((tab) => ({
       tabId: tab.id,
       title: tab.title ?? '',
+      ...(tab.favIconUrl ? { favIconUrl: tab.favIconUrl } : {}),
       isCurrent: tab.id === currentTabId,
       actionCount: actionCounts.get(tab.id) ?? 0,
       lastActivityAt: lastActivityByTab.get(tab.id) ?? 0,

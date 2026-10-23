@@ -45,7 +45,7 @@ Measured with Go 1.27.3 and the packaging flags above:
 - CLI shortcuts, raw calls, read-only batches, summaries, file transfers, screenshots/HAR, recording and replay, configuration, doctor, and restart. Explicit browser/profile/connection/tab targeting and budget presets are supported.
 - Native messaging relay with little-endian framing, separate extension credentials, control-message translation, daemon bootstrap, and shutdown propagation.
 - Daemon socket/TCP/named-pipe listeners, authentication, profile routing, quotas, artifacts, durable journals, baseline ownership, window actions, setup services, and recovery telemetry. Request IDs are scoped to their agent connection.
-- Native registration for Chrome, Edge, Brave, Chromium, and Arc; MCP configuration and embedded skills for all eight supported agents. Install/uninstall preserves unrelated settings and locally modified skill files.
+- Native registration for browsers declared in `protocol/install-targets.json`; MCP configuration and embedded skills for every registered agent. Install/uninstall preserves unrelated settings and locally modified skill files.
 - Remote destinations and authenticated proxy listeners.
 - MCP legacy progressive tools and modern stateless tools, generated schemas, discovery, subscriptions, cancellation, image/artifact delivery, and native Readability extraction. Each MCP process retains its agent connection; raw calls are not retried.
 - Signed native update verification, bounded downloads, compatible-version selection, atomic activation, repair, and rollback. Production use requires a release feed and trust keys.

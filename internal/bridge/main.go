@@ -14,6 +14,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/koltyakov/browser-bridge/internal/protocol"
 )
 
 // Main runs the CLI, native host, daemon, or MCP server selected by arguments.
@@ -296,14 +298,6 @@ func parseCLI(args []string) (object, error) {
 		}
 		rest = nil
 	}
-	switch method {
-	case "status":
-		method = "health.ping"
-	case "tabs":
-		method = "tabs.list"
-	case "logs":
-		method = "log.tail"
-	}
 	if method != "batch" {
 		if _, ok := catalog.Methods[method]; !ok {
 			return nil, fmt.Errorf("unknown method or command: %s", method)
@@ -374,8 +368,8 @@ func runBatch(ctx context.Context, c config, request object) error {
 	defer cl.close()
 	results := make([]object, len(calls))
 	jobs := make(chan int)
-	done := make(chan struct{}, 5)
-	for worker := 0; worker < 5; worker++ {
+	done := make(chan struct{}, protocol.MaxBatchConcurrency)
+	for worker := 0; worker < protocol.MaxBatchConcurrency; worker++ {
 		go func() {
 			defer func() { done <- struct{}{} }()
 			for i := range jobs {
@@ -402,7 +396,7 @@ func runBatch(ctx context.Context, c config, request object) error {
 		jobs <- i
 	}
 	close(jobs)
-	for worker := 0; worker < 5; worker++ {
+	for worker := 0; worker < protocol.MaxBatchConcurrency; worker++ {
 		<-done
 	}
 	if err := writeCLIJSONOutput(os.Stdout, value(results), true, cliTTY(os.Stdout)); err != nil {
@@ -438,9 +432,8 @@ func extractRemote(args []string) (string, bool, []string, error) {
 	return remote, explicit, rest, nil
 }
 func localOnlyCommand(s string) bool {
-	switch s {
-	case "help", "--help", "-h", "--version", "-v", "--self-test", "skill", "protocol", "protocol.describe", "install", "install-self", "uninstall", "install-skill", "install-mcp", "mcp", "proxy", "remote", "config", "update", "doctor", "restart", "--bridge-daemon", "--native-host":
-		return true
+	if command := cliCommandByName(s); command != nil {
+		return command.localOnly
 	}
 	return strings.HasPrefix(s, "chrome-extension://")
 }
@@ -449,7 +442,7 @@ func cliRequestTimeout() time.Duration {
 	if e == nil && n > 0 {
 		return time.Duration(n) * time.Millisecond
 	}
-	return 124 * time.Second
+	return protocol.MaxClientRequestTimeoutMS * time.Millisecond
 }
 func readCLIInput(s string) ([]byte, error) {
 	if s != "-" {
@@ -522,7 +515,16 @@ func requestCLIResponse(ctx context.Context, cl *client, route object, method st
 	return response, nil
 }
 func printCLIUsage() {
-	fmt.Println("Usage: bbx [--remote <name>] <command> [args]\n\nSetup: install, install-self, uninstall, install-skill, install-mcp, mcp serve, mcp config, doctor, restart\nDevelopment install: install-self [--bin-dir <directory>] [--no-restart]\nUpdates: update [check|apply|install|repair|rollback|status]\nConfiguration: config get auto-update | config set auto-update off|compatible\nDestinations: remote add|remove|list|test|destinations, proxy enable|disable|status\nRPC: call [--extension ID] [--browser NAME] [--profile LABEL] [--tab ID] [--preset quick|normal|deep] METHOD [JSON|-]\nBatch: batch [--preset quick|normal|deep] JSON\nProtocol: protocol describe [method|group], skill\nFiles: upload, paste-image, download, screenshot, har, record, replay\nOther commands: intercept add|remove|list|clear, eval [--await] EXPRESSION\n\nShortcuts:")
+	fmt.Println("Usage: bbx [--remote <name>] <command> [args]")
+	for _, category := range []string{"Setup", "Updates", "Configuration", "Destinations", "RPC", "Batch", "Protocol", "Files", "Other commands"} {
+		fmt.Printf("\n%s:\n", category)
+		for _, command := range cliCommands {
+			if command.category == category {
+				fmt.Println("  " + command.usage)
+			}
+		}
+	}
+	fmt.Println("\nShortcuts:")
 	keys := make([]string, 0, len(shortcutMethods))
 	for key := range shortcutMethods {
 		keys = append(keys, key)

@@ -20,7 +20,7 @@ import (
 )
 
 const updateMetadataLimit int64 = 1024 * 1024
-const updateBinaryLimit int64 = 10_000_000 - 1
+const updateBinaryLimit int64 = nativeMaxBytes - 1
 
 // Release builds supply these with -ldflags -X. They are deliberately not read
 // from environment variables, config.json, the feed itself, or CLI arguments.
@@ -120,12 +120,12 @@ func updateCompareVersions(a, b string) (int, error) {
 
 func updatePlatformTarget(platform, architecture string) (string, error) {
 	target := "go-" + platform + "-" + architecture
-	switch target {
-	case "go-darwin-arm64", "go-darwin-amd64", "go-linux-arm64", "go-linux-amd64", "go-windows-amd64":
-		return target, nil
-	default:
-		return "", fmt.Errorf("native updates are not published for %s/%s", platform, architecture)
+	for _, candidate := range nativePlatformRegistry {
+		if candidate.goos == platform && candidate.goarch == architecture {
+			return target, nil
+		}
 	}
+	return "", fmt.Errorf("native updates are not published for %s/%s", platform, architecture)
 }
 
 func updateValidateURL(raw string) error {

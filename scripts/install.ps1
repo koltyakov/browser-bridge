@@ -2,8 +2,10 @@
 [CmdletBinding()]
 param(
   [string]$Version = '',
+  # BEGIN GENERATED PARAMETERS
   [string]$ExtensionId = 'jjjkmmcdkpcgamlopogicbnnhdgebhie',
   [ValidateSet('chrome', 'edge', 'brave', 'chromium', 'arc')]
+  # END GENERATED PARAMETERS
   [string]$Browser = 'chrome',
   [string]$InstallDir = (Join-Path $HOME '.local\bin'),
   [switch]$Help
@@ -17,7 +19,12 @@ if ($Help) {
 }
 if ($ExtensionId -cnotmatch '^[a-z]{32}$') { throw 'Invalid extension ID' }
 $nativeArch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
-if ($nativeArch -ne 'AMD64') { throw 'Unsupported architecture: Windows x64 is required' }
+# BEGIN GENERATED PLATFORMS
+switch ($nativeArch) {
+  'AMD64' { $asset = 'bbx-windows-x64.exe'; break }
+  default { throw 'Unsupported Windows architecture' }
+}
+# END GENERATED PLATFORMS
 $base = 'https://github.com/koltyakov/browser-bridge/releases/latest/download'
 if ($Version) {
   $Version = $Version -replace '^v', ''
@@ -45,7 +52,6 @@ if ($Version) {
   $base = "https://github.com/koltyakov/browser-bridge/releases/download/v$Version"
 }
 $InstallDir = [IO.Path]::GetFullPath($InstallDir)
-$asset = 'bbx-windows-x64.exe'
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ([IO.Path]::GetRandomFileName())
 New-Item -ItemType Directory -Path $tmp | Out-Null
 $previousAutoUpdate = $env:BBX_AUTO_UPDATE

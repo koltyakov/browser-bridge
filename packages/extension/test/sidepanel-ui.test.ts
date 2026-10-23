@@ -998,7 +998,13 @@ test('agent tab card appears only for sibling work and examples stay hidden duri
     const longTitle = '<img src=x onerror=alert(1)> ' + 'Long page title '.repeat(30);
     const agentTabs = [
       { tabId: 41, title: 'Current page', isCurrent: true, actionCount: 99 },
-      { tabId: 42, title: longTitle, isCurrent: false, actionCount: 5 },
+      {
+        tabId: 42,
+        title: longTitle,
+        favIconUrl: 'https://example.com/favicon.ico',
+        isCurrent: false,
+        actionCount: 5,
+      },
     ];
     let stableButton: HTMLButtonElement | null = null;
     for (let index = 0; index < 4; index += 1) {
@@ -1060,8 +1066,32 @@ test('agent tab card appears only for sibling work and examples stay hidden duri
       assert.equal(rowButton.type, 'button');
       assert.equal(rowButton.getAttribute('aria-label'), `Switch to tab: ${longTitle}`);
       assert.equal(rowButton.lastElementChild, chip, 'the count follows the tab name');
-      assert.equal(list.querySelector('img'), null);
+      assert.equal(list.querySelector('.agent-tab-name img'), null, 'titles remain plain text');
+      const icon: HTMLImageElement | null = list.querySelector('.agent-tab-icon');
+      assert.ok(icon);
+      assert.equal(icon.getAttribute('src'), 'https://example.com/favicon.ico');
+      assert.equal(icon.alt, '');
+      assert.equal(icon.getAttribute('aria-hidden'), 'true');
+      assert.equal(icon.referrerPolicy, 'no-referrer');
+      assert.equal(rowButton.firstElementChild, icon);
     }
+    const icon: HTMLImageElement | null = list.querySelector('.agent-tab-icon');
+    assert.ok(icon);
+    icon.dispatchEvent(new window.Event('error'));
+    assert.equal(icon.getAttribute('src'), '../assets/tab-fallback.svg');
+    pair.left.dispatchMessage(createSidepanelStateSync(true, null, null, [], { agentTabs }));
+    assert.equal(list.querySelector('.agent-tab-icon'), icon);
+    assert.equal(
+      icon.getAttribute('src'),
+      '../assets/tab-fallback.svg',
+      'failed icons stay cached'
+    );
+    pair.left.dispatchMessage(
+      createSidepanelStateSync(true, null, null, [], {
+        agentTabs: agentTabs.map((tab) => ({ ...tab, favIconUrl: 'https://example.com/new.ico' })),
+      })
+    );
+    assert.equal(icon.getAttribute('src'), 'https://example.com/new.ico');
     pair.left.dispatchMessage(
       createSidepanelStateSync(true, null, null, [], {
         currentTab: {
@@ -1088,6 +1118,11 @@ test('agent tab card appears only for sibling work and examples stay hidden duri
       })
     );
     assert.equal(list.querySelector('.agent-tab-name')?.textContent, 'Tab 42');
+    assert.equal(
+      list.querySelector('.agent-tab-icon')?.getAttribute('src'),
+      '../assets/tab-fallback.svg',
+      'tabs without favicons use the generic icon'
+    );
     assert.equal(list.querySelector('.agent-tab-count')?.textContent, 'Actions: 0');
     const switchButton: HTMLButtonElement | null = list.querySelector('.agent-tab-button');
     assert.ok(switchButton instanceof HTMLButtonElement);

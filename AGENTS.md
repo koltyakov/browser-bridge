@@ -68,8 +68,10 @@ The runtime is a root Go module (`go.mod`). `cmd/bbx` is its executable; `intern
 - Transport client: `internal/bridge/client.go`
 - CLI entry point and dispatch: `cmd/bbx/main.go`, `internal/bridge/main.go`
 - CLI shortcuts: `internal/bridge/cli_shortcuts.go`
+- CLI command definitions: `internal/bridge/cli_registry.go`; do not add parallel help, targeting, or output-policy lists
+- Native platforms, browser paths, and install identities: `protocol/install-targets.json`; regenerate Go/npm/extension/installer/CI consumers with `make generate-protocol`
 - Skill install logic and paths: `internal/bridge/agents_skills.go`
-- Agent names and MCP config generation: `internal/bridge/agents_config.go`
+- Agent definitions: `internal/bridge/agents_registry.go`; shared MCP config editing: `internal/bridge/agents_config.go`
 
 **MCP server**:
 - Tool schemas and instructions: `protocol/mcp-tools.json`

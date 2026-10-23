@@ -1532,7 +1532,15 @@ test('background native clearTabBridgeState surfaces unexpected network buffer r
     query: `test-background-native-network-error-${Date.now()}-${Math.random()}`,
   });
 
-  await assert.rejects(getNativeModule(loaded).clearTabBridgeState(91), /network buffer exploded/);
+  await assert.rejects(getNativeModule(loaded).clearTabBridgeState(91), (error: unknown) => {
+    assert(error instanceof AggregateError);
+    assert(
+      error.errors.some(
+        (cause: unknown) => cause instanceof Error && /network buffer exploded/.test(cause.message)
+      )
+    );
+    return true;
+  });
   assert.deepEqual(
     executeScriptCalls.map((call) => ({
       tabId: call.tabId,

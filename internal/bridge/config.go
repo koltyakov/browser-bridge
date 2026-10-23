@@ -19,8 +19,6 @@ import (
 var version = "0.0.0-dev"
 var buildTarget = "development"
 
-const hostName = "com.browserbridge.browser_bridge"
-
 type config struct {
 	home       string
 	network    string

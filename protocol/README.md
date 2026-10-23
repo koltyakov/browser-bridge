@@ -12,14 +12,18 @@ make check-protocol
 Generation produces:
 
 - `internal/protocol/types.gen.go`: Go structs, enums, optional fields, and nullable values.
+- `internal/protocol/limits.gen.go`: numeric runtime limits from `src/defaults.js`, not separately maintained Go constants.
 - `protocol/generated/bridge.schema.json`: JSON Schema for the same wire types.
-- `internal/bridge/generated/catalog.json`: method metadata and budgets from the shared protocol sources, plus MCP tool schemas and instructions from `protocol/mcp-tools.json`.
+- `internal/bridge/generated/catalog.json`: method metadata, budgets, and error-recovery policies from the shared protocol sources, plus MCP tool schemas and instructions from `protocol/mcp-tools.json`.
 - `internal/bridge/assets/skills.bundle`: deterministic embedded copy of the shared CLI skill files.
+- `install-targets.json` generates Go browser/platform registries, npm target metadata, extension installation constants, and marked platform/browser blocks in standalone installers and native CI. Edit this source when adding a platform or browser; do not update consumers independently.
 
 The method and error unions in `types.ts` must match the shared registries. Generation fails if they disagree. Browser/build imports use `protocol/src/`; wire types come from `protocol/types.ts`.
 
 Generated files are checked in. `go build ./cmd/bbx` and `go test ./...` work without Node or npm. Node is needed only to regenerate shared definitions and assets. CI checks for stale output before testing.
 
 `fixtures/wire.json` is read by both Go tests and TypeScript schema tests. It exercises required fields, discriminated responses, null versus omission, explicit zero values, unknown fields, and invalid method/error names. Go's `Optional[T]` preserves omission; `Nullable[T]` preserves explicit null. Arbitrary JSON payloads use `json.RawMessage`; they are not converted through floating-point maps.
+
+`fixtures/incidental-redaction.json` supplies adversarial privacy cases to both the Go daemon and JavaScript sanitizer tests. Native and browser URL parsers can serialize malformed inputs differently, but neither may retain credentials or payloads from those cases.
 
 Change the source definition and regenerate instead of editing generated Go or JSON files.

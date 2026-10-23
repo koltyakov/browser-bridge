@@ -19,11 +19,11 @@ import (
 	"github.com/koltyakov/browser-bridge/internal/protocol"
 )
 
-const artifactChunkBytes int64 = 196608
-const artifactMaxBytes int64 = 33554432
-const artifactClientBytes int64 = 67108864
-const artifactTotalBytes int64 = 268435456
-const artifactTTL = 5 * time.Minute
+const artifactChunkBytes int64 = protocol.ArtifactChunkBytes
+const artifactMaxBytes int64 = protocol.MaxArtifactBytes
+const artifactClientBytes int64 = protocol.MaxArtifactClientBytes
+const artifactTotalBytes int64 = protocol.MaxArtifactTotalBytes
+const artifactTTL = protocol.ArtifactTTLMS * time.Millisecond
 
 var artifactIDPattern = regexp.MustCompile(`^art_[A-Za-z0-9_-]{32,64}$`)
 var digestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
@@ -131,7 +131,7 @@ func (s *artifactStore) begin(a object, request, owner, extension string) error 
 			ownedCount++
 		}
 	}
-	if ownedCount >= 16 || ownedBytes+size > artifactClientBytes || totalBytes+size > artifactTotalBytes {
+	if ownedCount >= protocol.MaxArtifactsPerClient || ownedBytes+size > artifactClientBytes || totalBytes+size > artifactTotalBytes {
 		return serviceFailure("ARTIFACT_QUOTA_EXCEEDED", "Artifact quota exceeded.")
 	}
 	path := filepath.Join(s.root, id+".part")

@@ -8,11 +8,6 @@ import (
 	"strings"
 )
 
-var shortcutMethods = map[string]string{
-	"status": "health.ping", "tabs": "tabs.list", "logs": "log.tail",
-	"access-request": "access.request", "dom-query": "dom.query", "describe": "dom.describe", "text": "dom.get_text", "styles": "styles.get_computed", "box": "layout.get_box_model", "click": "input.click", "focus": "input.focus", "type": "input.type", "fill": "input.fill", "hover": "input.hover", "html": "dom.get_html", "patch-style": "patch.apply_styles", "patch-text": "patch.apply_dom", "patches": "patch.list", "rollback": "patch.rollback", "console": "page.get_console", "wait": "dom.wait_for", "find": "dom.find_by_text", "find-role": "dom.find_by_role", "navigate": "navigation.navigate", "storage": "page.get_storage", "page-text": "page.get_text", "network": "page.get_network", "a11y-tree": "dom.get_accessibility_tree", "perf": "performance.get_metrics", "scroll": "viewport.scroll", "resize": "viewport.resize", "reload": "navigation.reload", "back": "navigation.go_back", "forward": "navigation.go_forward", "attrs": "dom.get_attributes", "matched-rules": "styles.get_matched_rules", "tab-create": "tabs.create", "tab-close": "tabs.close", "tab-activate": "tabs.activate", "press-key": "input.press_key", "cdp-press-key": "cdp.dispatch_key_event",
-}
-
 func atomicTarget(s string) (object, error) {
 	if s == "" {
 		return nil, errors.New("A ref or selector is required.")
@@ -49,193 +44,118 @@ func cliNumber(s, name string, positiveInteger bool) (float64, error) {
 	return n, nil
 }
 func buildShortcut(command string, args []string) (string, object, error) {
-	method, ok := shortcutMethods[command]
-	if !ok {
+	definition := cliCommandByName(command)
+	if definition == nil || definition.method == "" {
 		return "", nil, nil
 	}
-	p := object{}
-	arg := func(i int) string {
-		if i < len(args) {
-			return args[i]
+	a := &cliShortcutArgs{definition: definition, args: args, params: object{}}
+	if definition.target {
+		target, err := atomicTarget(a.arg(0))
+		if err != nil {
+			return "", nil, err
 		}
-		return ""
+		a.params["target"] = value(target)
 	}
-	put := func(key string, i int) {
-		if arg(i) != "" {
-			p[key] = value(arg(i))
-		}
+	if definition.parse != nil {
+		definition.parse(a)
 	}
-	number := func(key string, i int, positive bool) error {
-		if arg(i) == "" {
-			return nil
-		}
-		label := key
-		if command == "text" && key == "textBudget" {
-			label = "budget"
-		}
-		if command == "html" && key == "maxLength" {
-			label = "maxLen"
-		}
-		n, e := cliNumber(arg(i), label, positive)
-		if e == nil {
-			p[key] = value(n)
-		}
-		return e
+	return definition.method, a.params, a.err
+}
+
+type cliShortcutArgs struct {
+	definition *cliCommandDefinition
+	args       []string
+	params     object
+	err        error
+}
+
+func (a *cliShortcutArgs) arg(index int) string {
+	if index < len(a.args) {
+		return a.args[index]
 	}
-	require := func(i int) error {
-		if arg(i) == "" {
-			usage := map[string]string{"rollback": "rollback <patchId>", "wait": "wait <selector> [timeoutMs]", "find-role": "find-role <role> [name]", "navigate": "navigate <url>", "scroll": "scroll <top> [left]", "resize": "resize <width> <height>", "tab-close": "tab-close <tabId>", "tab-activate": "tab-activate <tabId>", "press-key": "press-key <key> [ref|selector]", "cdp-press-key": "cdp-press-key [--tab <tabId>] <key> [code]"}
-			return fmt.Errorf("Usage: %s", usage[command])
-		}
-		return nil
+	return ""
+}
+func (a *cliShortcutArgs) put(key string, index int) {
+	if text := a.arg(index); text != "" {
+		a.params[key] = value(text)
 	}
-	targetCommands := " describe text styles box click focus type fill hover html patch-style patch-text attrs matched-rules "
-	if strings.Contains(targetCommands, " "+command+" ") {
-		t, e := atomicTarget(arg(0))
-		if e != nil {
-			return "", nil, e
-		}
-		p["target"] = value(t)
+}
+func (a *cliShortcutArgs) require(index int) {
+	if a.err == nil && a.arg(index) == "" {
+		a.err = fmt.Errorf("Usage: %s", a.definition.usage)
 	}
-	var err error
-	switch command {
-	case "access-request":
-		if len(args) > 1 {
-			return "", nil, errors.New("Usage: bbx access-request [intent]")
-		}
-		put("intent", 0)
-	case "dom-query":
-		p["selector"] = value("body")
-		put("selector", 0)
-	case "text":
-		err = number("textBudget", 1, true)
-	case "html":
-		err = number("maxLength", 1, true)
-	case "styles", "attrs":
+}
+func (a *cliShortcutArgs) number(key, label string, index int, positive bool) {
+	if a.err != nil || a.arg(index) == "" {
+		return
+	}
+	n, err := cliNumber(a.arg(index), label, positive)
+	if err != nil {
+		a.err = err
+	} else {
+		a.params[key] = value(n)
+	}
+}
+func parseAccessShortcut(a *cliShortcutArgs) {
+	if len(a.args) > 1 {
+		a.err = fmt.Errorf("Usage: %s", a.definition.usage)
+		return
+	}
+	a.put("intent", 0)
+}
+func shortcutList(field string) func(*cliShortcutArgs) {
+	return func(a *cliShortcutArgs) {
 		list := []string{}
-		for _, s := range strings.Split(arg(1), ",") {
-			if s = strings.TrimSpace(s); s != "" {
-				list = append(list, s)
+		for _, item := range strings.Split(a.arg(1), ",") {
+			if item = strings.TrimSpace(item); item != "" {
+				list = append(list, item)
 			}
 		}
-		key := "properties"
-		if command == "attrs" {
-			key = "attributes"
-		}
-		p[key] = value(list)
-	case "click":
-		put("button", 1)
-	case "type", "fill", "patch-text":
-		text := ""
-		if len(args) > 1 {
-			text = strings.Join(args[1:], " ")
-		}
-		key := "text"
-		if command != "type" {
-			key = "value"
-		}
-		p[key] = value(text)
-		if command == "fill" {
-			p["mode"] = value("auto")
-		}
-		if command == "patch-text" {
-			p["operation"] = value("set_text")
-		}
-	case "patch-style":
-		declarations := map[string]string{}
-		for _, s := range args[1:] {
-			k, v, ok := strings.Cut(s, "=")
-			if ok && strings.TrimSpace(k) != "" {
-				declarations[strings.TrimSpace(k)] = strings.TrimSpace(v)
-			}
-		}
-		p["declarations"] = value(declarations)
-	case "rollback":
-		err = require(0)
-		put("patchId", 0)
-	case "console":
-		p["level"] = value("all")
-		p["clear"] = value(false)
-		put("level", 0)
-	case "wait":
-		err = require(0)
-		put("selector", 0)
-		p["timeoutMs"] = value(5000)
-		if err == nil {
-			err = number("timeoutMs", 1, true)
-		}
-	case "find":
-		text := strings.Join(args, " ")
-		if text == "" {
-			err = errors.New("Usage: find <text>")
-		} else {
-			p["text"] = value(text)
-		}
-	case "find-role":
-		err = require(0)
-		put("role", 0)
-		if len(args) > 1 && strings.Join(args[1:], " ") != "" {
-			p["name"] = value(strings.Join(args[1:], " "))
-		}
-	case "navigate":
-		err = require(0)
-		put("url", 0)
-	case "storage":
-		p["type"] = value("local")
-		if arg(0) == "session" {
-			p["type"] = value("session")
-		}
-		if len(args) > 1 {
-			p["keys"] = value(args[1:])
-		}
-	case "page-text":
-		err = number("textBudget", 0, true)
-	case "network":
-		err = number("limit", 0, true)
-	case "a11y-tree":
-		err = number("maxNodes", 0, true)
-		if err == nil {
-			err = number("maxDepth", 1, true)
-		}
-	case "scroll":
-		err = require(0)
-		if err == nil {
-			err = number("top", 0, false)
-		}
-		if err == nil {
-			err = number("left", 1, false)
-		}
-	case "resize":
-		err = require(1)
-		if err == nil {
-			err = number("width", 0, true)
-		}
-		if err == nil {
-			err = number("height", 1, true)
-		}
-	case "tab-create":
-		put("url", 0)
-	case "tab-close", "tab-activate":
-		err = require(0)
-		if err == nil {
-			err = number("tabId", 0, true)
-		}
-	case "press-key":
-		err = require(0)
-		put("key", 0)
-		if arg(1) != "" {
-			t, e := atomicTarget(arg(1))
-			if e != nil {
-				return "", nil, e
-			}
-			p["target"] = value(t)
-		}
-	case "cdp-press-key":
-		err = require(0)
-		put("key", 0)
-		put("code", 1)
+		a.params[field] = value(list)
 	}
-	return method, p, err
+}
+func shortcutText(field string, extras object) func(*cliShortcutArgs) {
+	return func(a *cliShortcutArgs) {
+		text := ""
+		if len(a.args) > 1 {
+			text = strings.Join(a.args[1:], " ")
+		}
+		a.params[field] = value(text)
+		for key, val := range extras {
+			a.params[key] = val
+		}
+	}
+}
+func parseStyleShortcut(a *cliShortcutArgs) {
+	declarations := map[string]string{}
+	for _, item := range a.args[1:] {
+		key, val, ok := strings.Cut(item, "=")
+		if ok && strings.TrimSpace(key) != "" {
+			declarations[strings.TrimSpace(key)] = strings.TrimSpace(val)
+		}
+	}
+	a.params["declarations"] = value(declarations)
+}
+func parseStorageShortcut(a *cliShortcutArgs) {
+	a.params["type"] = value("local")
+	if a.arg(0) == "session" {
+		a.params["type"] = value("session")
+	}
+	if len(a.args) > 1 {
+		a.params["keys"] = value(a.args[1:])
+	}
+}
+func parseKeyShortcut(a *cliShortcutArgs) {
+	a.require(0)
+	a.put("key", 0)
+	if a.arg(1) != "" {
+		target, err := atomicTarget(a.arg(1))
+		if err != nil {
+			a.err = err
+		} else {
+			a.params["target"] = value(target)
+		}
+	}
 }
 
 func parseIntercept(args []string) (string, object, error) {

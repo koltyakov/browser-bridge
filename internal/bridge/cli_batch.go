@@ -5,12 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/koltyakov/browser-bridge/internal/protocol"
 )
 
 func cliShortcutPrintMethod(command string) string {
-	switch command {
-	case "describe", "text", "styles", "box", "patches", "console", "find", "find-role", "page-text", "network", "attrs", "matched-rules", "cdp-press-key":
-		return shortcutMethods[command]
+	if definition := cliCommandByName(command); definition != nil && definition.summarize {
+		return definition.method
 	}
 	return ""
 }
@@ -28,8 +29,8 @@ func prepareCLIBatch(raw json.RawMessage, preset string) ([]object, []object, er
 	if !ok {
 		return nil, nil, errors.New("Batch input must be a JSON array.")
 	}
-	if len(items) == 0 || len(items) > 20 {
-		return nil, nil, errors.New("Batch input must contain between 1 and 20 calls.")
+	if len(items) == 0 || len(items) > protocol.MaxBatchCalls {
+		return nil, nil, fmt.Errorf("Batch input must contain between 1 and %d calls.", protocol.MaxBatchCalls)
 	}
 	calls := make([]object, len(items))
 	invalid := make([]object, len(items))

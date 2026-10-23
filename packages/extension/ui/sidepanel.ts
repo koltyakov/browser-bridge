@@ -121,6 +121,7 @@ export type SidePanelMessage =
     };
 
 const SETUP_STATUS_POLL_MS = 15_000;
+const DEFAULT_TAB_ICON = '../assets/tab-fallback.svg';
 const nativeIndicator = document.getElementById('native-indicator') as HTMLSpanElement;
 const extensionVersion = document.getElementById('extension-version') as HTMLSpanElement;
 const manifest = chrome.runtime.getManifest();
@@ -831,6 +832,14 @@ function renderAgentTabs(state: UiSnapshot): void {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'agent-tab-button';
+      const icon = document.createElement('img');
+      icon.className = 'agent-tab-icon';
+      icon.alt = '';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.referrerPolicy = 'no-referrer';
+      icon.addEventListener('error', () => {
+        if (icon.getAttribute('src') !== DEFAULT_TAB_ICON) icon.src = DEFAULT_TAB_ICON;
+      });
       const name = document.createElement('span');
       name.className = 'agent-tab-name';
       button.addEventListener('click', () => {
@@ -848,10 +857,17 @@ function renderAgentTabs(state: UiSnapshot): void {
       chip.className = 'agent-tab-count activity-tokens';
       const recency = document.createElement('span');
       recency.className = 'agent-tab-recency';
-      button.append(name, recency, chip);
+      button.append(icon, name, recency, chip);
       item.append(button);
     }
     const button = item.querySelector('button') as HTMLButtonElement;
+    const icon = item.querySelector('.agent-tab-icon') as HTMLImageElement;
+    const iconUrl = tab.favIconUrl || '';
+    // Do not reload failed icons on every activity update. Retry when the URL changes.
+    if (icon.dataset.faviconUrl !== iconUrl) {
+      icon.dataset.faviconUrl = iconUrl;
+      icon.src = iconUrl || DEFAULT_TAB_ICON;
+    }
     const name = item.querySelector('.agent-tab-name') as HTMLSpanElement;
     const chip = item.querySelector('.agent-tab-count') as HTMLSpanElement;
     const recency = item.querySelector('.agent-tab-recency') as HTMLSpanElement;

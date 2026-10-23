@@ -4,12 +4,13 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { resolveVersion } from './version.mjs';
+import { nativePlatforms, nativeMaxBytes } from '../packages/npm/src/install-targets.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const { version } = resolveVersion({ root });
 const platform = process.platform === 'win32' ? 'windows' : process.platform;
 const architecture = process.arch === 'x64' ? 'amd64' : process.arch;
-const supported = ['darwin-arm64', 'darwin-amd64', 'linux-arm64', 'linux-amd64', 'windows-amd64'];
+const supported = nativePlatforms.map((entry) => `${entry.goos}-${entry.goarch}`);
 const targets = process.argv.includes('--all')
   ? supported
   : [process.argv[2] ?? `${platform}-${architecture}`];
@@ -24,8 +25,9 @@ execFileSync(process.execPath, ['scripts/generate-protocol.mjs', '--check'], {
 });
 await fs.mkdir(path.join(root, 'dist/cli'), { recursive: true });
 for (const target of targets) {
-  const [goos, goarch] = target.split('-');
-  const asset = `bbx-${target.replace('amd64', 'x64')}${goos === 'windows' ? '.exe' : ''}`;
+  const entry = nativePlatforms.find((entry) => `${entry.goos}-${entry.goarch}` === target);
+  if (!entry) throw new Error(`Unsupported native target: ${target}`);
+  const { goos, goarch, asset } = entry;
   const output = path.join(root, 'dist/cli', asset);
   execFileSync(
     'go',
@@ -56,7 +58,9 @@ for (const target of targets) {
     }
   );
   const bytes = (await fs.stat(output)).size;
-  if (bytes >= 10_000_000)
-    throw new Error(`${asset}: ${bytes} bytes exceeds the 10 MB native executable budget`);
+  if (bytes >= nativeMaxBytes)
+    throw new Error(
+      `${asset}: ${bytes} bytes exceeds the ${nativeMaxBytes}-byte native executable budget`
+    );
   console.log(`${asset}: ${(bytes / 1e6).toFixed(2)} MB (${bytes} bytes)`);
 }

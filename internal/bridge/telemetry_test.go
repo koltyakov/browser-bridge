@@ -1,6 +1,8 @@
 package bridge
 
 import (
+	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -100,6 +102,29 @@ func TestDaemonLogsSanitizeIncidentalDataAndBoundStorage(t *testing.T) {
 	}
 	if len(d.logs) != 200 || d.logs[0].number("index") != 10 {
 		t.Fatal("log ring exceeded bound or retained oldest entries")
+	}
+}
+
+func TestSharedIncidentalRedactionFixtures(t *testing.T) {
+	data, err := os.ReadFile("../../protocol/fixtures/incidental-redaction.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixtures []struct {
+		Input     string   `json:"input"`
+		Forbidden []string `json:"forbidden"`
+	}
+	if err := json.Unmarshal(data, &fixtures); err != nil {
+		t.Fatal(err)
+	}
+	for _, fixture := range fixtures {
+		d := serviceTestDaemon(t)
+		d.pushServiceLog(object{"message": value("failed " + fixture.Input), "url": value(fixture.Input)})
+		for _, secret := range fixture.Forbidden {
+			if strings.Contains(string(value(d.logs)), secret) {
+				t.Fatalf("log retained %q for %s", secret, fixture.Input)
+			}
+		}
 	}
 }
 
