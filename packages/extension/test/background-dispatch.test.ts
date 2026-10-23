@@ -1521,12 +1521,12 @@ test('background dispatch returns filtered network buffer entries', async () => 
       {
         target: { tabId: 73 },
         world: 'MAIN',
-        args: [executeScriptCalls[0].args?.[0]],
+        args: [executeScriptCalls[0].args?.[0], executeScriptCalls[0].args?.[1]],
       },
       {
         target: { tabId: 73 },
         world: 'MAIN',
-        args: [true, executeScriptCalls[0].args?.[0]],
+        args: [true, executeScriptCalls[0].args?.[0], false],
       },
     ]
   );
@@ -1596,12 +1596,12 @@ test('background dispatch surfaces network buffer read failures', async () => {
       {
         target: { tabId: 74 },
         world: 'MAIN',
-        args: [executeScriptCalls[0].args?.[0]],
+        args: [executeScriptCalls[0].args?.[0], executeScriptCalls[0].args?.[1]],
       },
       {
         target: { tabId: 74 },
         world: 'MAIN',
-        args: [false, executeScriptCalls[0].args?.[0]],
+        args: [false, executeScriptCalls[0].args?.[0], false],
       },
     ]
   );

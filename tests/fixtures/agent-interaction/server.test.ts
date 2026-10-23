@@ -20,6 +20,9 @@ test('interaction fixture serves the page, SPA route, and payment frame on loopb
     }
     const frame = await fetch(`${origin}/frame.html`);
     assert.match(await frame.text(), /Pay now/u);
+    const saved = await fetch(`${origin}/api/profile`, { method: 'POST' });
+    assert.equal(saved.status, 200);
+    assert.deepEqual(await saved.json(), { saved: true });
     assert.equal((await fetch(`${origin}/missing`)).status, 404);
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));

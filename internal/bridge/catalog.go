@@ -23,6 +23,7 @@ type protocolCatalog struct {
 	Instructions       string                            `json:"instructions"`
 	Methods            map[string]object                 `json:"methods"`
 	MethodInputs       map[string]object                 `json:"methodInputs"`
+	MutationMethods    []string                          `json:"mutationMethods"`
 	OperationTimeouts  map[string]operationTimeoutPolicy `json:"operationTimeouts"`
 	Runtime            object                            `json:"runtime"`
 	Presets            map[string]map[string]object      `json:"presets"`

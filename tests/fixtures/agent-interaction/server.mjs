@@ -26,6 +26,11 @@ const routes = new Map([
 export async function startInteractionFixtureServer(options = {}) {
   const server = createServer(async (request, response) => {
     const pathname = new URL(request.url ?? '/', 'http://fixture.invalid').pathname;
+    if (pathname === '/api/profile' && request.method === 'POST') {
+      response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      response.end('{"saved":true}');
+      return;
+    }
     const file = routes.get(pathname);
     if (!file || request.method !== 'GET') {
       response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });

@@ -323,6 +323,9 @@ func cliAnnotate(summary, response object) object {
 	out := cliClone(summary)
 	meta := response.object("meta")
 	sensitive := meta.text("method") == "sensitive.read"
+	if timing := meta.object("timing"); timing != nil && !sensitive {
+		out["timing"] = value(mcpPick(timing, "preparationMs queueMs executionMs totalMs scheduled"))
+	}
 	bytesN, bok := cliNumberValue(meta["transport_bytes"])
 	if !bok {
 		bytesN, bok = cliNumberValue(meta["response_bytes"])

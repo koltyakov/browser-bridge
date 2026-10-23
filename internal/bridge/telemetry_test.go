@@ -161,7 +161,7 @@ func TestDaemonHealthDropsExtensionCostEnvelope(t *testing.T) {
 	response["meta"] = value(object{"method": value("forged"), "approx_tokens": value(999), "transport_cost_class": value("high")})
 	d.response(extension, response)
 	meta := serviceNextMessage(t, agent).object("response").object("meta")
-	if len(meta) != 2 || meta.text("method") != "health.ping" || meta.text("protocol_version") != protocolVersion() {
+	if len(meta) != 3 || meta.object("timing") == nil || meta.text("method") != "health.ping" || meta.text("protocol_version") != protocolVersion() {
 		t.Fatal("health reconstruction retained extension cost metadata")
 	}
 }

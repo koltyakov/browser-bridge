@@ -13,6 +13,7 @@ export interface BridgeRegistration {
   browserExtensionId?: string;
   windowAccessUpdates?: boolean;
   windowActions?: boolean;
+  mutationScheduling?: boolean;
 }
 
 /** Control envelope accepted by the daemon. Per-operation validation checks required fields. */
@@ -34,6 +35,7 @@ export interface DaemonMessage {
   enabledWindow?: unknown;
   windowAccessUpdates?: boolean;
   windowActions?: boolean;
+  mutationScheduling?: boolean;
   action?: unknown;
   windowId?: unknown;
   enabledAt?: unknown;
@@ -110,6 +112,7 @@ export type Capability =
   | 'sensitive.read';
 
 export type ErrorCode =
+  | 'OUTCOME_NOT_MET'
   | 'WEBMCP_UNAVAILABLE'
   | 'WEBMCP_TOOL_STALE'
   | 'WEBMCP_BUSY'
@@ -395,6 +398,18 @@ export interface BridgeRequest {
   tab_id: number | null;
   params: BridgeParams;
   meta: Required<Pick<BridgeMeta, 'protocol_version' | 'token_budget'>> & Record<string, unknown>;
+}
+
+/** Internal native scheduling handshake. Never an agent-facing permission grant. */
+export interface MutationReadyMessage {
+  type: 'host.mutation_ready' | 'extension.mutation_ready';
+  requestId: string;
+  tabId: number;
+}
+
+export interface MutationGrantedMessage {
+  type: 'host.mutation_granted' | 'extension.mutation_granted';
+  requestId: string;
 }
 
 export interface BridgeRecovery {
@@ -784,6 +799,37 @@ export interface PerformParams {
   timeoutMs?: number;
   continueOnError?: boolean;
   returnLastResult?: boolean;
+  /** All conditions must be observed; network capture is armed before the first step. */
+  outcomes?: PerformOutcomeParams[];
+}
+
+export type PerformOutcomeParams =
+  | ({ kind: 'dom' } & WaitForParams)
+  | ({ kind: 'url' } & Pick<WaitForLoadStateParams, 'url' | 'urlMatch'>)
+  | {
+      kind: 'network';
+      urlPattern: string;
+      method?: string | null;
+      statusMin?: number;
+      statusMax?: number;
+    };
+
+export type NormalizedPerformOutcome =
+  | ({ kind: 'dom' } & NormalizedWaitForParams)
+  | ({ kind: 'url' } & NormalizedWaitForLoadStateParams)
+  | {
+      kind: 'network';
+      urlPattern: string;
+      method: string | null;
+      statusMin: number;
+      statusMax: number;
+    };
+
+export interface PerformOutcomeResult {
+  index: number;
+  kind: 'dom' | 'url' | 'network';
+  status: 'matched' | 'failed' | 'timeout' | 'interrupted';
+  evidence?: Record<string, unknown>;
 }
 
 export interface NormalizedPerformStep {
@@ -798,6 +844,7 @@ export interface NormalizedPerformParams extends BridgeParams {
   timeoutMs: number;
   continueOnError: boolean;
   returnLastResult: boolean;
+  outcomes?: NormalizedPerformOutcome[];
 }
 
 export type PerformLastResult = {
@@ -822,6 +869,8 @@ export interface PerformResult {
   startedAtMs: number[];
   failures: PerformStepFailure[];
   lastResult?: PerformLastResult;
+  verified?: boolean;
+  outcomes?: PerformOutcomeResult[];
 }
 
 export interface CdpDispatchKeyEventParams {
@@ -1026,7 +1075,7 @@ export interface NormalizedConsoleParams extends BridgeParams {
 
 export interface WaitForParams {
   selector?: string;
-  text?: string;
+  text?: string | null;
   state?: 'attached' | 'detached' | 'visible' | 'hidden';
   timeoutMs?: number;
 }
@@ -1263,8 +1312,8 @@ export interface ExtractContentResult {
 export interface WaitForLoadStateParams {
   waitForLoad?: boolean;
   timeoutMs?: number;
-  url?: string;
-  urlMatch?: 'exact' | 'contains' | 'regex';
+  url?: string | null;
+  urlMatch?: 'exact' | 'contains' | 'regex' | null;
 }
 
 export interface NormalizedWaitForLoadStateParams extends BridgeParams {

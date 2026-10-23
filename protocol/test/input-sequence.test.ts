@@ -124,6 +124,54 @@ test('input.perform keeps observation explicit and preserves the final action au
   assert.equal(normalized.steps[1].params.timeoutMs, 2_500);
 });
 
+test('input.perform normalizes bounded outcome conditions idempotently', () => {
+  const normalized = normalizeInputPerformParams({
+    steps: [{ method: 'input.click', params: { target: { role: 'button', name: 'Save' } } }],
+    outcomes: [
+      { kind: 'dom', selector: '[role="status"]', text: 'Saved' },
+      { kind: 'url', url: '/done', urlMatch: 'contains' },
+      { kind: 'network', urlPattern: '/api/save', method: 'post' },
+    ],
+  });
+  assert.deepEqual(normalizeInputPerformParams(normalized), normalized);
+  assert.deepEqual(normalized.outcomes?.[2], {
+    kind: 'network',
+    urlPattern: '/api/save',
+    method: 'POST',
+    statusMin: 200,
+    statusMax: 299,
+  });
+});
+
+test('input.perform rejects malformed outcomes and ambiguous continue-on-error verification', () => {
+  const steps = [{ method: 'input.click' }];
+  for (const outcomes of [
+    [],
+    Array(9).fill({ kind: 'dom', selector: 'main' }),
+    [null],
+    [{ kind: 'other' }],
+    [{ kind: 'dom' }],
+    [{ kind: 'url', url: '' }],
+    [{ kind: 'network', urlPattern: '' }],
+    [{ kind: 'network', urlPattern: 'x'.repeat(501) }],
+    [{ kind: 'network', urlPattern: '/api', method: 'bad method' }],
+    [{ kind: 'network', urlPattern: '/api', statusMin: 300, statusMax: 200 }],
+    [{ kind: 'network', urlPattern: '/api', statusMax: 600 }],
+  ])
+    assert.throws(() => normalizeInputPerformParams({ steps, outcomes } as never), {
+      code: 'INVALID_REQUEST',
+    });
+  assert.throws(
+    () =>
+      normalizeInputPerformParams({
+        steps,
+        continueOnError: true,
+        outcomes: [{ kind: 'dom', selector: 'main' }],
+      }),
+    { code: 'INVALID_REQUEST' }
+  );
+});
+
 test('normalizeInputPerformParams rejects unsafe or malformed sequences', () => {
   const invalid = (params: Record<string, unknown>, pattern: RegExp) =>
     assert.throws(

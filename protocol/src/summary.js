@@ -389,6 +389,16 @@ function summarizeBridgeResponseBody(response, method) {
   }
 
   const result = toRecord(response.result);
+  if (method === 'input.perform' && result.verified === true) {
+    return {
+      ok: true,
+      summary: appendProtocolWarning(
+        `Sequence completed ${result.completed ?? 0}/${result.total ?? 0} steps; verified ${Array.isArray(result.outcomes) ? result.outcomes.length : 0} outcome(s).`,
+        protocolWarning
+      ),
+      evidence: result,
+    };
+  }
   if (method === 'dom.get_attributes') {
     return {
       ok: true,

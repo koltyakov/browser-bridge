@@ -55,18 +55,20 @@ type BridgeRegistration struct {
 
 	WindowActions Optional[bool] `json:"windowActions,omitzero"`
 
+	MutationScheduling Optional[bool] `json:"mutationScheduling,omitzero"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v BridgeRegistration) MarshalJSON() ([]byte, error) {
 	type alias BridgeRegistration
-	return marshalOpen(alias(v), v.Extra, []string{"type", "role", "authToken", "clientId", "browserName", "profileLabel", "browserExtensionId", "windowAccessUpdates", "windowActions"})
+	return marshalOpen(alias(v), v.Extra, []string{"type", "role", "authToken", "clientId", "browserName", "profileLabel", "browserExtensionId", "windowAccessUpdates", "windowActions", "mutationScheduling"})
 }
 
 func (v *BridgeRegistration) UnmarshalJSON(data []byte) error {
 	type alias BridgeRegistration
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"type", "role", "authToken", "clientId", "browserName", "profileLabel", "browserExtensionId", "windowAccessUpdates", "windowActions"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"type", "role", "authToken", "clientId", "browserName", "profileLabel", "browserExtensionId", "windowAccessUpdates", "windowActions", "mutationScheduling"})
 	if err != nil {
 		return err
 	}
@@ -108,6 +110,8 @@ type DaemonMessage struct {
 
 	WindowActions Optional[bool] `json:"windowActions,omitzero"`
 
+	MutationScheduling Optional[bool] `json:"mutationScheduling,omitzero"`
+
 	Action Optional[json.RawMessage] `json:"action,omitzero"`
 
 	WindowId Optional[json.RawMessage] `json:"windowId,omitzero"`
@@ -141,13 +145,13 @@ type DaemonMessage struct {
 
 func (v DaemonMessage) MarshalJSON() ([]byte, error) {
 	type alias DaemonMessage
-	return marshalOpen(alias(v), v.Extra, []string{"type", "role", "clientId", "requestId", "entry", "request", "status", "error", "response", "browserName", "profileLabel", "browserExtensionId", "accessEnabled", "enabledWindow", "windowAccessUpdates", "windowActions", "action", "windowId", "enabledAt", "extensionId", "ok", "authToken", "at", "artifactId", "artifact", "chunkIndex", "data", "journalId", "offset", "messageId"})
+	return marshalOpen(alias(v), v.Extra, []string{"type", "role", "clientId", "requestId", "entry", "request", "status", "error", "response", "browserName", "profileLabel", "browserExtensionId", "accessEnabled", "enabledWindow", "windowAccessUpdates", "windowActions", "mutationScheduling", "action", "windowId", "enabledAt", "extensionId", "ok", "authToken", "at", "artifactId", "artifact", "chunkIndex", "data", "journalId", "offset", "messageId"})
 }
 
 func (v *DaemonMessage) UnmarshalJSON(data []byte) error {
 	type alias DaemonMessage
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"type", "role", "clientId", "requestId", "entry", "request", "status", "error", "response", "browserName", "profileLabel", "browserExtensionId", "accessEnabled", "enabledWindow", "windowAccessUpdates", "windowActions", "action", "windowId", "enabledAt", "extensionId", "ok", "authToken", "at", "artifactId", "artifact", "chunkIndex", "data", "journalId", "offset", "messageId"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"type", "role", "clientId", "requestId", "entry", "request", "status", "error", "response", "browserName", "profileLabel", "browserExtensionId", "accessEnabled", "enabledWindow", "windowAccessUpdates", "windowActions", "mutationScheduling", "action", "windowId", "enabledAt", "extensionId", "ok", "authToken", "at", "artifactId", "artifact", "chunkIndex", "data", "journalId", "offset", "messageId"})
 	if err != nil {
 		return err
 	}
@@ -738,6 +742,8 @@ func (v *BridgeFailure) UnmarshalJSON(data []byte) error {
 type ErrorCode string
 
 const (
+	ErrorCodeOUTCOMENOTMET ErrorCode = "OUTCOME_NOT_MET"
+
 	ErrorCodeWEBMCPUNAVAILABLE ErrorCode = "WEBMCP_UNAVAILABLE"
 
 	ErrorCodeWEBMCPTOOLSTALE ErrorCode = "WEBMCP_TOOL_STALE"
@@ -807,7 +813,7 @@ const (
 
 func (v ErrorCode) Valid() bool {
 	switch v {
-	case ErrorCodeWEBMCPUNAVAILABLE, ErrorCodeWEBMCPTOOLSTALE, ErrorCodeWEBMCPBUSY, ErrorCodeWEBMCPAPPROVALDENIED, ErrorCodeWEBMCPEXECUTIONUNCERTAIN, ErrorCodeACCESSDENIED, ErrorCodeTABMISMATCH, ErrorCodeELEMENTSTALE, ErrorCodeELEMENTAMBIGUOUS, ErrorCodeELEMENTNOTACTIONABLE, ErrorCodeELEMENTOBSCURED, ErrorCodeELEMENTNOTFOUND, ErrorCodeINPUTUNSUPPORTED, ErrorCodeINPUTINVALIDTARGET, ErrorCodeINPUTFOCUSCHANGED, ErrorCodeDIALOGBLOCKED, ErrorCodeDIALOGNOTOPEN, ErrorCodeDIALOGACTIONCONFLICT, ErrorCodeRESULTTRUNCATED, ErrorCodeRESULTTOOLARGE, ErrorCodeSENSITIVETARGETNOTFOUND, ErrorCodeCONTENTSCRIPTUNAVAILABLE, ErrorCodeARTIFACTNOTFOUND, ErrorCodeARTIFACTQUOTAEXCEEDED, ErrorCodeARTIFACTTRANSFERINVALID, ErrorCodeDOMBASELINENOTFOUND, ErrorCodeDOMBASELINEINVALIDATED, ErrorCodeDOMBASELINEQUOTAEXCEEDED, ErrorCodeINTERNALERROR, ErrorCodeINVALIDREQUEST, ErrorCodeNATIVEHOSTUNAVAILABLE, ErrorCodeEXTENSIONDISCONNECTED, ErrorCodeTIMEOUT:
+	case ErrorCodeOUTCOMENOTMET, ErrorCodeWEBMCPUNAVAILABLE, ErrorCodeWEBMCPTOOLSTALE, ErrorCodeWEBMCPBUSY, ErrorCodeWEBMCPAPPROVALDENIED, ErrorCodeWEBMCPEXECUTIONUNCERTAIN, ErrorCodeACCESSDENIED, ErrorCodeTABMISMATCH, ErrorCodeELEMENTSTALE, ErrorCodeELEMENTAMBIGUOUS, ErrorCodeELEMENTNOTACTIONABLE, ErrorCodeELEMENTOBSCURED, ErrorCodeELEMENTNOTFOUND, ErrorCodeINPUTUNSUPPORTED, ErrorCodeINPUTINVALIDTARGET, ErrorCodeINPUTFOCUSCHANGED, ErrorCodeDIALOGBLOCKED, ErrorCodeDIALOGNOTOPEN, ErrorCodeDIALOGACTIONCONFLICT, ErrorCodeRESULTTRUNCATED, ErrorCodeRESULTTOOLARGE, ErrorCodeSENSITIVETARGETNOTFOUND, ErrorCodeCONTENTSCRIPTUNAVAILABLE, ErrorCodeARTIFACTNOTFOUND, ErrorCodeARTIFACTQUOTAEXCEEDED, ErrorCodeARTIFACTTRANSFERINVALID, ErrorCodeDOMBASELINENOTFOUND, ErrorCodeDOMBASELINEINVALIDATED, ErrorCodeDOMBASELINEQUOTAEXCEEDED, ErrorCodeINTERNALERROR, ErrorCodeINVALIDREQUEST, ErrorCodeNATIVEHOSTUNAVAILABLE, ErrorCodeEXTENSIONDISCONNECTED, ErrorCodeTIMEOUT:
 		return true
 	}
 	return false
@@ -1277,6 +1283,58 @@ func (v *WebMcpParams) UnmarshalJSON(data []byte) error {
 	}
 	decoded.Extra = extra
 	*v = WebMcpParams(decoded)
+	return nil
+}
+
+type MutationReadyMessage struct {
+	Type string `json:"type"`
+
+	RequestId string `json:"requestId"`
+
+	TabId float64 `json:"tabId"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v MutationReadyMessage) MarshalJSON() ([]byte, error) {
+	type alias MutationReadyMessage
+	return marshalOpen(alias(v), v.Extra, []string{"type", "requestId", "tabId"})
+}
+
+func (v *MutationReadyMessage) UnmarshalJSON(data []byte) error {
+	type alias MutationReadyMessage
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"type", "requestId", "tabId"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = MutationReadyMessage(decoded)
+	return nil
+}
+
+type MutationGrantedMessage struct {
+	Type string `json:"type"`
+
+	RequestId string `json:"requestId"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v MutationGrantedMessage) MarshalJSON() ([]byte, error) {
+	type alias MutationGrantedMessage
+	return marshalOpen(alias(v), v.Extra, []string{"type", "requestId"})
+}
+
+func (v *MutationGrantedMessage) UnmarshalJSON(data []byte) error {
+	type alias MutationGrantedMessage
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"type", "requestId"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = MutationGrantedMessage(decoded)
 	return nil
 }
 
@@ -2522,23 +2580,174 @@ type PerformParams struct {
 
 	ReturnLastResult Optional[bool] `json:"returnLastResult,omitzero"`
 
+	Outcomes Optional[[]PerformOutcomeParams] `json:"outcomes,omitzero"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v PerformParams) MarshalJSON() ([]byte, error) {
 	type alias PerformParams
-	return marshalOpen(alias(v), v.Extra, []string{"steps", "executionMode", "timeoutMs", "continueOnError", "returnLastResult"})
+	return marshalOpen(alias(v), v.Extra, []string{"steps", "executionMode", "timeoutMs", "continueOnError", "returnLastResult", "outcomes"})
 }
 
 func (v *PerformParams) UnmarshalJSON(data []byte) error {
 	type alias PerformParams
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"steps", "executionMode", "timeoutMs", "continueOnError", "returnLastResult"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"steps", "executionMode", "timeoutMs", "continueOnError", "returnLastResult", "outcomes"})
 	if err != nil {
 		return err
 	}
 	decoded.Extra = extra
 	*v = PerformParams(decoded)
+	return nil
+}
+
+type PerformOutcomeParams = json.RawMessage
+
+type WaitForParams struct {
+	Selector Optional[string] `json:"selector,omitzero"`
+
+	Text Optional[Nullable[string]] `json:"text,omitzero"`
+
+	State Optional[string] `json:"state,omitzero"`
+
+	TimeoutMs Optional[float64] `json:"timeoutMs,omitzero"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v WaitForParams) MarshalJSON() ([]byte, error) {
+	type alias WaitForParams
+	return marshalOpen(alias(v), v.Extra, []string{"selector", "text", "state", "timeoutMs"})
+}
+
+func (v *WaitForParams) UnmarshalJSON(data []byte) error {
+	type alias WaitForParams
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"selector", "text", "state", "timeoutMs"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = WaitForParams(decoded)
+	return nil
+}
+
+type WaitForLoadStateParams struct {
+	WaitForLoad Optional[bool] `json:"waitForLoad,omitzero"`
+
+	TimeoutMs Optional[float64] `json:"timeoutMs,omitzero"`
+
+	URL Optional[Nullable[string]] `json:"url,omitzero"`
+
+	UrlMatch Optional[json.RawMessage] `json:"urlMatch,omitzero"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v WaitForLoadStateParams) MarshalJSON() ([]byte, error) {
+	type alias WaitForLoadStateParams
+	return marshalOpen(alias(v), v.Extra, []string{"waitForLoad", "timeoutMs", "url", "urlMatch"})
+}
+
+func (v *WaitForLoadStateParams) UnmarshalJSON(data []byte) error {
+	type alias WaitForLoadStateParams
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"waitForLoad", "timeoutMs", "url", "urlMatch"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = WaitForLoadStateParams(decoded)
+	return nil
+}
+
+type NormalizedPerformOutcome = json.RawMessage
+
+type NormalizedWaitForParams struct {
+	Selector string `json:"selector"`
+
+	Text Nullable[string] `json:"text"`
+
+	State string `json:"state"`
+
+	TimeoutMs float64 `json:"timeoutMs"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v NormalizedWaitForParams) MarshalJSON() ([]byte, error) {
+	type alias NormalizedWaitForParams
+	return marshalOpen(alias(v), v.Extra, []string{"selector", "text", "state", "timeoutMs"})
+}
+
+func (v *NormalizedWaitForParams) UnmarshalJSON(data []byte) error {
+	type alias NormalizedWaitForParams
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"selector", "text", "state", "timeoutMs"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = NormalizedWaitForParams(decoded)
+	return nil
+}
+
+type NormalizedWaitForLoadStateParams struct {
+	WaitForLoad bool `json:"waitForLoad"`
+
+	TimeoutMs float64 `json:"timeoutMs"`
+
+	URL Nullable[string] `json:"url"`
+
+	UrlMatch json.RawMessage `json:"urlMatch"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v NormalizedWaitForLoadStateParams) MarshalJSON() ([]byte, error) {
+	type alias NormalizedWaitForLoadStateParams
+	return marshalOpen(alias(v), v.Extra, []string{"waitForLoad", "timeoutMs", "url", "urlMatch"})
+}
+
+func (v *NormalizedWaitForLoadStateParams) UnmarshalJSON(data []byte) error {
+	type alias NormalizedWaitForLoadStateParams
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"waitForLoad", "timeoutMs", "url", "urlMatch"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = NormalizedWaitForLoadStateParams(decoded)
+	return nil
+}
+
+type PerformOutcomeResult struct {
+	Index float64 `json:"index"`
+
+	Kind string `json:"kind"`
+
+	Status string `json:"status"`
+
+	Evidence Optional[map[string]json.RawMessage] `json:"evidence,omitzero"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v PerformOutcomeResult) MarshalJSON() ([]byte, error) {
+	type alias PerformOutcomeResult
+	return marshalOpen(alias(v), v.Extra, []string{"index", "kind", "status", "evidence"})
+}
+
+func (v *PerformOutcomeResult) UnmarshalJSON(data []byte) error {
+	type alias PerformOutcomeResult
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"index", "kind", "status", "evidence"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = PerformOutcomeResult(decoded)
 	return nil
 }
 
@@ -2580,18 +2789,20 @@ type NormalizedPerformParams struct {
 
 	ReturnLastResult bool `json:"returnLastResult"`
 
+	Outcomes Optional[[]NormalizedPerformOutcome] `json:"outcomes,omitzero"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v NormalizedPerformParams) MarshalJSON() ([]byte, error) {
 	type alias NormalizedPerformParams
-	return marshalOpen(alias(v), v.Extra, []string{"steps", "timeoutMs", "continueOnError", "returnLastResult"})
+	return marshalOpen(alias(v), v.Extra, []string{"steps", "timeoutMs", "continueOnError", "returnLastResult", "outcomes"})
 }
 
 func (v *NormalizedPerformParams) UnmarshalJSON(data []byte) error {
 	type alias NormalizedPerformParams
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"steps", "timeoutMs", "continueOnError", "returnLastResult"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"steps", "timeoutMs", "continueOnError", "returnLastResult", "outcomes"})
 	if err != nil {
 		return err
 	}
@@ -2648,18 +2859,22 @@ type PerformResult struct {
 
 	LastResult Optional[PerformLastResult] `json:"lastResult,omitzero"`
 
+	Verified Optional[bool] `json:"verified,omitzero"`
+
+	Outcomes Optional[[]PerformOutcomeResult] `json:"outcomes,omitzero"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v PerformResult) MarshalJSON() ([]byte, error) {
 	type alias PerformResult
-	return marshalOpen(alias(v), v.Extra, []string{"performed", "completed", "total", "elapsedMs", "startedAtMs", "failures", "lastResult"})
+	return marshalOpen(alias(v), v.Extra, []string{"performed", "completed", "total", "elapsedMs", "startedAtMs", "failures", "lastResult", "verified", "outcomes"})
 }
 
 func (v *PerformResult) UnmarshalJSON(data []byte) error {
 	type alias PerformResult
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"performed", "completed", "total", "elapsedMs", "startedAtMs", "failures", "lastResult"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"performed", "completed", "total", "elapsedMs", "startedAtMs", "failures", "lastResult", "verified", "outcomes"})
 	if err != nil {
 		return err
 	}
@@ -3373,64 +3588,6 @@ func (v *NormalizedConsoleParams) UnmarshalJSON(data []byte) error {
 	}
 	decoded.Extra = extra
 	*v = NormalizedConsoleParams(decoded)
-	return nil
-}
-
-type WaitForParams struct {
-	Selector Optional[string] `json:"selector,omitzero"`
-
-	Text Optional[string] `json:"text,omitzero"`
-
-	State Optional[string] `json:"state,omitzero"`
-
-	TimeoutMs Optional[float64] `json:"timeoutMs,omitzero"`
-
-	Extra map[string]json.RawMessage `json:"-"`
-}
-
-func (v WaitForParams) MarshalJSON() ([]byte, error) {
-	type alias WaitForParams
-	return marshalOpen(alias(v), v.Extra, []string{"selector", "text", "state", "timeoutMs"})
-}
-
-func (v *WaitForParams) UnmarshalJSON(data []byte) error {
-	type alias WaitForParams
-	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"selector", "text", "state", "timeoutMs"})
-	if err != nil {
-		return err
-	}
-	decoded.Extra = extra
-	*v = WaitForParams(decoded)
-	return nil
-}
-
-type NormalizedWaitForParams struct {
-	Selector string `json:"selector"`
-
-	Text Nullable[string] `json:"text"`
-
-	State string `json:"state"`
-
-	TimeoutMs float64 `json:"timeoutMs"`
-
-	Extra map[string]json.RawMessage `json:"-"`
-}
-
-func (v NormalizedWaitForParams) MarshalJSON() ([]byte, error) {
-	type alias NormalizedWaitForParams
-	return marshalOpen(alias(v), v.Extra, []string{"selector", "text", "state", "timeoutMs"})
-}
-
-func (v *NormalizedWaitForParams) UnmarshalJSON(data []byte) error {
-	type alias NormalizedWaitForParams
-	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"selector", "text", "state", "timeoutMs"})
-	if err != nil {
-		return err
-	}
-	decoded.Extra = extra
-	*v = NormalizedWaitForParams(decoded)
 	return nil
 }
 
@@ -4326,64 +4483,6 @@ func (v *ExtractContentResult) UnmarshalJSON(data []byte) error {
 	}
 	decoded.Extra = extra
 	*v = ExtractContentResult(decoded)
-	return nil
-}
-
-type WaitForLoadStateParams struct {
-	WaitForLoad Optional[bool] `json:"waitForLoad,omitzero"`
-
-	TimeoutMs Optional[float64] `json:"timeoutMs,omitzero"`
-
-	URL Optional[string] `json:"url,omitzero"`
-
-	UrlMatch Optional[string] `json:"urlMatch,omitzero"`
-
-	Extra map[string]json.RawMessage `json:"-"`
-}
-
-func (v WaitForLoadStateParams) MarshalJSON() ([]byte, error) {
-	type alias WaitForLoadStateParams
-	return marshalOpen(alias(v), v.Extra, []string{"waitForLoad", "timeoutMs", "url", "urlMatch"})
-}
-
-func (v *WaitForLoadStateParams) UnmarshalJSON(data []byte) error {
-	type alias WaitForLoadStateParams
-	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"waitForLoad", "timeoutMs", "url", "urlMatch"})
-	if err != nil {
-		return err
-	}
-	decoded.Extra = extra
-	*v = WaitForLoadStateParams(decoded)
-	return nil
-}
-
-type NormalizedWaitForLoadStateParams struct {
-	WaitForLoad bool `json:"waitForLoad"`
-
-	TimeoutMs float64 `json:"timeoutMs"`
-
-	URL Nullable[string] `json:"url"`
-
-	UrlMatch json.RawMessage `json:"urlMatch"`
-
-	Extra map[string]json.RawMessage `json:"-"`
-}
-
-func (v NormalizedWaitForLoadStateParams) MarshalJSON() ([]byte, error) {
-	type alias NormalizedWaitForLoadStateParams
-	return marshalOpen(alias(v), v.Extra, []string{"waitForLoad", "timeoutMs", "url", "urlMatch"})
-}
-
-func (v *NormalizedWaitForLoadStateParams) UnmarshalJSON(data []byte) error {
-	type alias NormalizedWaitForLoadStateParams
-	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"waitForLoad", "timeoutMs", "url", "urlMatch"})
-	if err != nil {
-		return err
-	}
-	decoded.Extra = extra
-	*v = NormalizedWaitForLoadStateParams(decoded)
 	return nil
 }
 

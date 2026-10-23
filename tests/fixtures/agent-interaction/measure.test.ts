@@ -107,3 +107,29 @@ test('latency percentiles use nearest ranks without mutating samples', () => {
   assert.deepEqual(samples, [100, 1, 10, 2]);
   assert.deepEqual(latencyPercentiles([]), { p50: 0, p95: 0 });
 });
+
+test('action timing aggregates bridge stages without including verification reads', async () => {
+  const scenario: Scenario = {
+    name: 'timed',
+    run: (call) => call('input.click'),
+    verify: () => true,
+  };
+  const result = await measureScenario(
+    scenario,
+    async (method) => ({
+      ok: true,
+      result: method === 'input.click' ? {} : { 'data-state': '{}' },
+      tokens: 1,
+      timing: { preparationMs: 5, queueMs: 10, executionMs: 20, totalMs: 35, scheduled: true },
+    }),
+    () => 0
+  );
+  assert.deepEqual(result.bridgeTiming, {
+    preparationMs: 5,
+    queueMs: 10,
+    executionMs: 20,
+    totalMs: 35,
+    scheduledCalls: 1,
+    samples: 1,
+  });
+});

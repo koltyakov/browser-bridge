@@ -39,6 +39,8 @@
       </form>
       <nav style="display: none"><a href="#hidden">Place order</a></nav>
       <div id="toast" role="status"></div>
+      <button id="save-profile" type="button">Save profile</button>
+      <div id="profile-status" role="status"></div>
     </section>
 
     <section>
@@ -77,6 +79,13 @@
         event.preventDefault();
         record('orderPlaced', true);
         document.getElementById('toast').textContent = 'Order placed';
+      });
+      document.getElementById('save-profile').addEventListener('click', async () => {
+        const response = await fetch('/api/profile', { method: 'POST' });
+        if (response.ok) {
+          record('profileSaved', true);
+          document.getElementById('profile-status').textContent = 'Profile saved';
+        }
       });
 
       customElements.define(

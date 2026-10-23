@@ -31,6 +31,49 @@ import { latencyPercentiles, measureScenario, outlineText } from './measure.mjs'
 /** @type {Scenario[]} */
 const SCENARIOS = [
   {
+    name: 'verified save with response and DOM evidence',
+    run: (call) =>
+      call('input.perform', {
+        steps: [
+          {
+            method: 'input.click',
+            params: { target: { role: 'button', name: 'Save profile', exact: true } },
+          },
+        ],
+        outcomes: [
+          {
+            kind: 'network',
+            urlPattern: '/api/profile',
+            method: 'POST',
+            statusMin: 200,
+            statusMax: 299,
+          },
+          { kind: 'dom', selector: '#profile-status', text: 'Profile saved' },
+        ],
+        timeoutMs: 10000,
+      }),
+    verify: (state, last) =>
+      state.profileSaved === true &&
+      last?.ok === true &&
+      /** @type {{verified?: boolean}} */ (last.result).verified === true,
+  },
+  {
+    name: 'verified navigation with URL and DOM evidence',
+    run: (call) =>
+      call('input.perform', {
+        steps: [{ method: 'input.click', params: { target: { role: 'link', name: 'Dashboard' } } }],
+        outcomes: [
+          { kind: 'url', url: '/dashboard', urlMatch: 'contains' },
+          { kind: 'dom', selector: 'h1', text: 'Dashboard' },
+        ],
+        timeoutMs: 10000,
+      }),
+    verify: (state, last) =>
+      state.route === '/dashboard' &&
+      last?.ok === true &&
+      /** @type {{verified?: boolean}} */ (last.result).verified === true,
+  },
+  {
     name: 'fill by label[for]',
     run: (call) =>
       call('input.fill', { target: { label: 'Email address' }, value: 'ada@example.test' }),
@@ -162,7 +205,7 @@ async function request(input) {
     },
   });
   const structured =
-    /** @type {{ok?: boolean, evidence?: unknown, error?: {code?: string, message?: string}, deliveredTokens?: number}} */ (
+    /** @type {{ok?: boolean, evidence?: unknown, error?: {code?: string, message?: string}, deliveredTokens?: number, timing?: import('./measure.mjs').BridgeTiming}} */ (
       result.structuredContent ?? {}
     );
   const tokens = structured.deliveredTokens ?? Math.ceil(JSON.stringify(result.content).length / 4);
@@ -175,9 +218,15 @@ async function request(input) {
         message: structured.error?.message ?? JSON.stringify(result.content),
       },
       tokens,
+      ...(structured.timing ? { timing: structured.timing } : {}),
     };
   }
-  return { ok: true, result: structured.evidence, tokens };
+  return {
+    ok: true,
+    result: structured.evidence,
+    tokens,
+    ...(structured.timing ? { timing: structured.timing } : {}),
+  };
 }
 
 try {

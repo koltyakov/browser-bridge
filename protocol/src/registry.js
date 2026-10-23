@@ -18,6 +18,7 @@ import { BridgeError, ERROR_CODES } from './errors.js';
  *   capability: import('./types.js').Capability | null,
  *   debuggerBacked: boolean
  *   discovery?: Readonly<BridgeMethodDiscovery>
+ *   exclusive: boolean
  * }} BridgeMethodRegistryEntry
  */
 
@@ -30,6 +31,7 @@ import { BridgeError, ERROR_CODES } from './errors.js';
  * @typedef {{
  *   capability: import('./types.js').Capability | null,
  *   debuggerBacked?: boolean
+ *   exclusive?: boolean
  * }} BridgeMethodPolicy
  */
 
@@ -41,15 +43,25 @@ const METHOD_POLICIES = Object.freeze({
   pageEvaluateDebugger: Object.freeze({
     capability: CAPABILITIES.PAGE_EVALUATE,
     debuggerBacked: true,
+    exclusive: true,
   }),
   networkRead: Object.freeze({ capability: CAPABILITIES.NETWORK_READ }),
   networkInterceptDebugger: Object.freeze({
     capability: CAPABILITIES.NETWORK_INTERCEPT,
     debuggerBacked: true,
+    exclusive: true,
   }),
   sensitiveRead: Object.freeze({ capability: CAPABILITIES.SENSITIVE_READ }),
-  navigationControl: Object.freeze({ capability: CAPABILITIES.NAVIGATION_CONTROL }),
+  navigationControl: Object.freeze({
+    capability: CAPABILITIES.NAVIGATION_CONTROL,
+    exclusive: true,
+  }),
   navigationControlDebugger: Object.freeze({
+    capability: CAPABILITIES.NAVIGATION_CONTROL,
+    debuggerBacked: true,
+    exclusive: true,
+  }),
+  dialogControlDebugger: Object.freeze({
     capability: CAPABILITIES.NAVIGATION_CONTROL,
     debuggerBacked: true,
   }),
@@ -60,22 +72,24 @@ const METHOD_POLICIES = Object.freeze({
   }),
   layoutRead: Object.freeze({ capability: CAPABILITIES.LAYOUT_READ }),
   stylesRead: Object.freeze({ capability: CAPABILITIES.STYLES_READ }),
-  viewportControl: Object.freeze({ capability: CAPABILITIES.VIEWPORT_CONTROL }),
+  viewportControl: Object.freeze({ capability: CAPABILITIES.VIEWPORT_CONTROL, exclusive: true }),
   viewportControlDebugger: Object.freeze({
     capability: CAPABILITIES.VIEWPORT_CONTROL,
     debuggerBacked: true,
+    exclusive: true,
   }),
-  automationInput: Object.freeze({ capability: CAPABILITIES.AUTOMATION_INPUT }),
+  automationInput: Object.freeze({ capability: CAPABILITIES.AUTOMATION_INPUT, exclusive: true }),
   automationInputDebugger: Object.freeze({
     capability: CAPABILITIES.AUTOMATION_INPUT,
     debuggerBacked: true,
+    exclusive: true,
   }),
   screenshotPartialDebugger: Object.freeze({
     capability: CAPABILITIES.SCREENSHOT_PARTIAL,
     debuggerBacked: true,
   }),
-  patchDom: Object.freeze({ capability: CAPABILITIES.PATCH_DOM }),
-  patchStyles: Object.freeze({ capability: CAPABILITIES.PATCH_STYLES }),
+  patchDom: Object.freeze({ capability: CAPABILITIES.PATCH_DOM, exclusive: true }),
+  patchStyles: Object.freeze({ capability: CAPABILITIES.PATCH_STYLES, exclusive: true }),
   cdpDomSnapshotDebugger: Object.freeze({
     capability: CAPABILITIES.CDP_DOM_SNAPSHOT,
     debuggerBacked: true,
@@ -91,6 +105,7 @@ const METHOD_POLICIES = Object.freeze({
   cdpInputDebugger: Object.freeze({
     capability: CAPABILITIES.CDP_INPUT,
     debuggerBacked: true,
+    exclusive: true,
   }),
   performanceReadDebugger: Object.freeze({
     capability: CAPABILITIES.PERFORMANCE_READ,
@@ -225,7 +240,7 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
   'input.touch':
     'Press one or more touch points at the same time (chords, multi-finger taps, swipes, pinches) through DOM or optional CDP touch input.',
   'input.perform':
-    'Run known input, wait, and bounded read steps in order inside the browser in one call. Use returnLastResult for final evidence; stop for decisions requiring new information and never blindly replay a partial flow.',
+    'Run known input, wait, and bounded read steps in order inside the browser. Optional outcomes verify DOM, URL, and fresh fetch/XHR response conditions; network capture arms before steps. Use returnLastResult for final evidence. Never blindly replay a partial or unverified flow.',
   'input.scroll_into_view': 'Scroll an element into the visible viewport.',
   'screenshot.capture_region': 'Capture a screenshot of a viewport region.',
   'screenshot.capture_element': 'Capture a screenshot of one element.',
@@ -283,6 +298,7 @@ function createRegistryEntry(
       capability: { value: policy.capability },
       debuggerBacked: { value: policy.debuggerBacked ?? false },
       discovery: { value: discovery },
+      exclusive: { value: policy.exclusive ?? false },
     })
   );
 }
@@ -374,7 +390,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['action', 'promptText', 'expectedDialogId'],
     'low',
-    METHOD_POLICIES.navigationControlDebugger
+    METHOD_POLICIES.dialogControlDebugger
   ),
   'page.wait_for_load_state': createRegistryEntry(
     'page.wait_for_load_state',
@@ -865,7 +881,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'input.perform',
     'interact',
     true,
-    ['steps', 'executionMode', 'timeoutMs', 'continueOnError', 'returnLastResult'],
+    ['steps', 'executionMode', 'timeoutMs', 'continueOnError', 'returnLastResult', 'outcomes'],
     'moderate',
     METHOD_POLICIES.automationInputDebugger,
     {
@@ -873,6 +889,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
       required: ['steps'],
       example: {
         returnLastResult: true,
+        outcomes: [{ kind: 'dom', selector: '[role="status"]', text: 'Saved' }],
         steps: [
           {
             method: 'input.fill',

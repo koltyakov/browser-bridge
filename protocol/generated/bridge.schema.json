@@ -52,6 +52,9 @@
         },
         "windowActions": {
           "type": "boolean"
+        },
+        "mutationScheduling": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -122,6 +125,9 @@
           "type": "boolean"
         },
         "windowActions": {
+          "type": "boolean"
+        },
+        "mutationScheduling": {
           "type": "boolean"
         },
         "action": {},
@@ -755,6 +761,7 @@
     "ErrorCode": {
       "type": "string",
       "enum": [
+        "OUTCOME_NOT_MET",
         "WEBMCP_UNAVAILABLE",
         "WEBMCP_TOOL_STALE",
         "WEBMCP_BUSY",
@@ -1218,6 +1225,50 @@
         "maxBytes",
         "timeoutMs",
         "approvalTimeoutMs"
+      ],
+      "additionalProperties": true
+    },
+    "MutationReadyMessage": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "host.mutation_ready",
+            "extension.mutation_ready"
+          ]
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "requestId",
+        "tabId"
+      ],
+      "additionalProperties": true
+    },
+    "MutationGrantedMessage": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "host.mutation_granted",
+            "extension.mutation_granted"
+          ]
+        },
+        "requestId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "requestId"
       ],
       "additionalProperties": true
     },
@@ -2648,9 +2699,495 @@
         },
         "returnLastResult": {
           "type": "boolean"
+        },
+        "outcomes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PerformOutcomeParams"
+          }
         }
       },
       "required": [],
+      "additionalProperties": true
+    },
+    "PerformOutcomeParams": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "dom"
+              ]
+            },
+            "selector": {
+              "type": "string"
+            },
+            "text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "attached",
+                "detached",
+                "visible",
+                "hidden"
+              ]
+            },
+            "timeoutMs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "url"
+              ]
+            },
+            "url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "urlMatch": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "exact"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "contains"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "regex"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "network"
+              ]
+            },
+            "urlPattern": {
+              "type": "string"
+            },
+            "method": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "statusMin": {
+              "type": "number"
+            },
+            "statusMax": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "urlPattern"
+          ],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "WaitForParams": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "type": "string"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "attached",
+            "detached",
+            "visible",
+            "hidden"
+          ]
+        },
+        "timeoutMs": {
+          "type": "number"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "WaitForLoadStateParams": {
+      "type": "object",
+      "properties": {
+        "waitForLoad": {
+          "type": "boolean"
+        },
+        "timeoutMs": {
+          "type": "number"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "urlMatch": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "exact"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "contains"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "regex"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "NormalizedPerformOutcome": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "dom"
+              ]
+            },
+            "selector": {
+              "type": "string"
+            },
+            "text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "attached",
+                "detached",
+                "visible",
+                "hidden"
+              ]
+            },
+            "timeoutMs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "selector",
+            "text",
+            "state",
+            "timeoutMs"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "url"
+              ]
+            },
+            "waitForLoad": {
+              "type": "boolean"
+            },
+            "timeoutMs": {
+              "type": "number"
+            },
+            "url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "urlMatch": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "exact"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "contains"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "regex"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "waitForLoad",
+            "timeoutMs",
+            "url",
+            "urlMatch"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "network"
+              ]
+            },
+            "urlPattern": {
+              "type": "string"
+            },
+            "method": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "statusMin": {
+              "type": "number"
+            },
+            "statusMax": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "urlPattern",
+            "method",
+            "statusMin",
+            "statusMax"
+          ],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "NormalizedWaitForParams": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "type": "string"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "attached",
+            "detached",
+            "visible",
+            "hidden"
+          ]
+        },
+        "timeoutMs": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "selector",
+        "text",
+        "state",
+        "timeoutMs"
+      ],
+      "additionalProperties": true
+    },
+    "NormalizedWaitForLoadStateParams": {
+      "type": "object",
+      "properties": {
+        "waitForLoad": {
+          "type": "boolean"
+        },
+        "timeoutMs": {
+          "type": "number"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "urlMatch": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "exact"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "contains"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "regex"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "waitForLoad",
+        "timeoutMs",
+        "url",
+        "urlMatch"
+      ],
+      "additionalProperties": true
+    },
+    "PerformOutcomeResult": {
+      "type": "object",
+      "properties": {
+        "index": {
+          "type": "number"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "dom",
+            "url",
+            "network"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "matched",
+            "failed",
+            "timeout",
+            "interrupted"
+          ]
+        },
+        "evidence": {
+          "type": "object",
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "index",
+        "kind",
+        "status"
+      ],
       "additionalProperties": true
     },
     "NormalizedPerformStep": {
@@ -2702,6 +3239,12 @@
         },
         "returnLastResult": {
           "type": "boolean"
+        },
+        "outcomes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NormalizedPerformOutcome"
+          }
         }
       },
       "required": [
@@ -2833,6 +3376,15 @@
         },
         "lastResult": {
           "$ref": "#/$defs/PerformLastResult"
+        },
+        "verified": {
+          "type": "boolean"
+        },
+        "outcomes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PerformOutcomeResult"
+          }
         }
       },
       "required": [
@@ -3522,68 +4074,6 @@
         "level",
         "clear",
         "limit"
-      ],
-      "additionalProperties": true
-    },
-    "WaitForParams": {
-      "type": "object",
-      "properties": {
-        "selector": {
-          "type": "string"
-        },
-        "text": {
-          "type": "string"
-        },
-        "state": {
-          "type": "string",
-          "enum": [
-            "attached",
-            "detached",
-            "visible",
-            "hidden"
-          ]
-        },
-        "timeoutMs": {
-          "type": "number"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
-    "NormalizedWaitForParams": {
-      "type": "object",
-      "properties": {
-        "selector": {
-          "type": "string"
-        },
-        "text": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "state": {
-          "type": "string",
-          "enum": [
-            "attached",
-            "detached",
-            "visible",
-            "hidden"
-          ]
-        },
-        "timeoutMs": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "selector",
-        "text",
-        "state",
-        "timeoutMs"
       ],
       "additionalProperties": true
     },
@@ -4996,83 +5486,6 @@
         "length",
         "truncated",
         "omitted"
-      ],
-      "additionalProperties": true
-    },
-    "WaitForLoadStateParams": {
-      "type": "object",
-      "properties": {
-        "waitForLoad": {
-          "type": "boolean"
-        },
-        "timeoutMs": {
-          "type": "number"
-        },
-        "url": {
-          "type": "string"
-        },
-        "urlMatch": {
-          "type": "string",
-          "enum": [
-            "exact",
-            "contains",
-            "regex"
-          ]
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
-    "NormalizedWaitForLoadStateParams": {
-      "type": "object",
-      "properties": {
-        "waitForLoad": {
-          "type": "boolean"
-        },
-        "timeoutMs": {
-          "type": "number"
-        },
-        "url": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "urlMatch": {
-          "anyOf": [
-            {
-              "type": "string",
-              "enum": [
-                "exact"
-              ]
-            },
-            {
-              "type": "string",
-              "enum": [
-                "contains"
-              ]
-            },
-            {
-              "type": "string",
-              "enum": [
-                "regex"
-              ]
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "waitForLoad",
-        "timeoutMs",
-        "url",
-        "urlMatch"
       ],
       "additionalProperties": true
     },

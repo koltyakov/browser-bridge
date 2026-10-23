@@ -93,6 +93,8 @@ For uploads and authenticated downloads, use the [file workflow](references/file
 
 For repeatable tasks, record semantic locators and verified outcomes in a [task playbook](references/playbooks.md).
 
+For known flows, `input.perform.outcomes` can verify DOM, URL, and fresh fetch/XHR response conditions in the same call. Network capture arms before steps; `verified: true` requires every condition to match. On `OUTCOME_NOT_MET`, inspect returned evidence and application postconditions, never replay automatically. See [interaction](references/interaction.md).
+
 Screenshot coordinate spaces and loaded extension build identifiers are described in [capture context](references/capture-context.md).
 
 For opt-in activity watch, network bodies/messages, and sampled visual replay, use the [recording workflow](references/recording.md).

@@ -75,6 +75,14 @@ For npm installations, `bbx update status` identifies npm as the version manager
 
 Separately installed native executables support `bbx update` through a signed release feed and built-in trust keys. Publishing npm assets does not configure that feed. Retained cached versions and rollback payloads consume disk space in addition to the active executable.
 
+## Scheduled mutations and verified flows
+
+Scheduling-capable extensions advertise `mutationScheduling: true` in `health.ping.connectedExtensions`. The native daemon queues page-mutating operations per resolved tab, with at most 32 reservations per connection and 128 overall. The extension prepares the target before execution and rejects queued work if its document or access grant changes. Reads stay concurrent; cancellation retains a running slot until browser execution settles. Older components continue without scheduling, so update both components to use this protection.
+
+`input.perform.outcomes` verifies final DOM/URL conditions and fresh top-document fetch/XHR response metadata in one call. It does not enable debugger network capture or fetch response bodies. An unverified sequence returns `OUTCOME_NOT_MET` and must not be automatically repeated. See the [interaction reference](../skills/browser-bridge/references/interaction.md#verify-outcomes-in-the-same-call) for the condition format and evidence limitations.
+
+Raw responses expose stage timing in `meta.timing`; compact CLI/MCP responses expose `timing`. `daemon.metrics.scheduler` reports preparing, queued, running, and canceling reservations. `daemon.metrics.timings` reports bounded process-lifetime histograms. `p50UpperBoundMs` and `p95UpperBoundMs` are bucket upper bounds, and execution includes transport. These metrics contain no page content or identifiers.
+
 ## Build from source
 
 Go 1.27.3 or later is sufficient for an ordinary build:

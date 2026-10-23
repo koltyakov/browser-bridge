@@ -18,6 +18,7 @@ export const ERROR_CODES = Object.freeze({
   INPUT_UNSUPPORTED: 'INPUT_UNSUPPORTED',
   INPUT_INVALID_TARGET: 'INPUT_INVALID_TARGET',
   INPUT_FOCUS_CHANGED: 'INPUT_FOCUS_CHANGED',
+  OUTCOME_NOT_MET: 'OUTCOME_NOT_MET',
   DIALOG_BLOCKED: 'DIALOG_BLOCKED',
   DIALOG_NOT_OPEN: 'DIALOG_NOT_OPEN',
   DIALOG_ACTION_CONFLICT: 'DIALOG_ACTION_CONFLICT',
@@ -44,6 +45,10 @@ export const ERROR_CODES = Object.freeze({
  * @type {Readonly<Record<string, { retry: boolean, retryAfterMs?: number, alternativeMethod?: string, hint: string }>>}
  */
 export const ERROR_RECOVERY = Object.freeze({
+  [ERROR_CODES.OUTCOME_NOT_MET]: {
+    retry: false,
+    hint: 'The sequence ran but its expected outcomes were not verified. Inspect returned evidence and application postconditions before another deliberate action. Never automatically replay the sequence.',
+  },
   [ERROR_CODES.WEBMCP_UNAVAILABLE]: {
     retry: false,
     hint: 'This document does not expose the current WebMCP consumer API. Use structured DOM/input methods; do not enable flags or inject a polyfill without user permission.',

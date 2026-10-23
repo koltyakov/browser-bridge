@@ -55,6 +55,7 @@ import { getVersionNegotiationPayload } from './background-versioning.js';
 import { handleNavigationRequest as executeNavigationRequest } from './background-navigation.js';
 import { handlePageEvaluate as executePageEvaluate } from './background-evaluate.js';
 import { executeInputPerform } from './background-perform.js';
+import { createMutationGate } from './background-mutation-gate.js';
 import {
   handleCreateTab as executeCreateTab,
   handleListTabs as executeListTabs,
@@ -574,6 +575,30 @@ async function resolveRequestTarget(
   return target;
 }
 
+const mutationGate = createMutationGate({
+  resolveTarget: resolveRequestTarget,
+  captureAccess: () => captureWindowGrant(state),
+  snapshot: async (tabId) => {
+    tabDebugger.assertNoDialog(tabId);
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => location.href,
+    });
+    const result = results[0];
+    if (!result?.documentId || typeof result.result !== 'string')
+      throw new BridgeError(ERROR_CODES.TAB_MISMATCH, 'Mutation target has no committed document.');
+    return { documentId: result.documentId, url: result.result };
+  },
+  send: (message) => {
+    if (!state.nativePort)
+      throw new BridgeError(
+        ERROR_CODES.EXTENSION_DISCONNECTED,
+        'Native connection disappeared while scheduling.'
+      );
+    state.nativePort.postMessage(message);
+  },
+});
+
 const domBaselineRequests = createDomBaselineRequestHandler(domBaselines, {
   resolveRequestTarget,
   ensureContentScript,
@@ -696,6 +721,7 @@ const {
   emitUiState,
   handleBridgeRequest,
   handleHostStatusMessage: (message) => {
+    if (mutationGate.handle(message)) return true;
     if (
       message &&
       typeof message === 'object' &&
@@ -949,6 +975,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     void agentGroups.sync().catch(reportAsyncError);
   }
   if (changeInfo.status === 'loading' || typeof changeInfo.url === 'string') {
+    mutationGate.invalidate(tabId);
     domBaselines.invalidateNavigation(tabId);
     void webmcp.clearTab(tabId).catch(reportAsyncError);
   }
@@ -957,6 +984,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 });
 
 chrome.tabs.onDetached?.addListener((tabId, detachInfo) => {
+  mutationGate.invalidate(tabId);
   void webmcp.clearTab(tabId).catch(reportAsyncError);
   tabMoveCleanup.handleDetached(tabId, detachInfo);
 });
@@ -976,6 +1004,7 @@ chrome.tabs.onAttached?.addListener((tabId, attachInfo) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
+  mutationGate.invalidate(tabId);
   void webmcp.clearTab(tabId).catch(reportAsyncError);
   domBaselines.clearTab(tabId);
   void clearActionLogForTab(tabId)
@@ -1092,6 +1121,7 @@ async function handleBridgeRequest(request: BridgeRequest): Promise<void> {
     let response: BridgeResponse;
 
     try {
+      request = await mutationGate.prepare(request);
       response = await dispatchBridgeRequest(request);
     } catch (error) {
       response = toFailureResponse(request, error);
@@ -1327,6 +1357,8 @@ async function dispatchBridgeRequest(request: BridgeRequest): Promise<BridgeResp
       return executeInputPerform(request, {
         captureAccess: () => captureWindowGrant(state),
         resolveRequestTarget,
+        armNetwork: (tabId) => ensureNetworkInterceptor(tabId, chrome),
+        readNetwork: (tabId) => readNetworkBuffer(tabId, false, chrome, true),
         dispatch: async (step) => {
           try {
             // Input steps own their guard. Guard waits and reads too, so an

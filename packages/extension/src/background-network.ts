@@ -3,6 +3,9 @@ import { sanitizeIncidentalUrl } from '../../../protocol/src/index.js';
 
 export type NetworkInstrumentationRecord = {
   enabled: boolean;
+  epoch: string;
+  nextSequence: number;
+  generation: number;
   buffer: Array<{
     method: string;
     url: string;
@@ -11,6 +14,7 @@ export type NetworkInstrumentationRecord = {
     type: string;
     ts: number;
     size: number;
+    sequence: number;
   }>;
   dropped: number;
   originalFetch: typeof globalThis.fetch;
@@ -45,7 +49,10 @@ export async function ensureNetworkInterceptor(
   await chromeObj.scripting.executeScript({
     target: { tabId },
     world: 'MAIN',
-    func: (recordKey: string = '__bbx_instrumentation_test') => {
+    func: (
+      recordKey: string = '__bbx_instrumentation_test',
+      captureEpoch: string = 'test_epoch'
+    ) => {
       const page = globalThis as Record<string, unknown>;
       const root =
         page[recordKey] && typeof page[recordKey] === 'object'
@@ -54,22 +61,33 @@ export async function ensureNetworkInterceptor(
       const existing = root.network;
       if (existing && typeof existing === 'object') {
         const record = existing as NetworkInstrumentationRecord;
-        if (!record.enabled) {
-          record.buffer.length = 0;
-          record.dropped = 0;
+        if (typeof record.epoch !== 'string' || !Number.isSafeInteger(record.nextSequence)) {
+          record.enabled = false;
+          if (globalThis.fetch === record.wrappedFetch) globalThis.fetch = record.originalFetch;
+          if (XMLHttpRequest.prototype.open === record.wrappedOpen)
+            XMLHttpRequest.prototype.open = record.originalOpen;
+          if (XMLHttpRequest.prototype.send === record.wrappedSend)
+            XMLHttpRequest.prototype.send = record.originalSend;
+          delete root.network;
+        } else {
+          if (!record.enabled) {
+            record.buffer.length = 0;
+            record.dropped = 0;
+            record.generation += 1;
+          }
+          record.enabled = true;
+          if (globalThis.fetch === record.originalFetch) globalThis.fetch = record.wrappedFetch;
+          if (XMLHttpRequest.prototype.open === record.originalOpen) {
+            XMLHttpRequest.prototype.open = record.wrappedOpen;
+          }
+          if (XMLHttpRequest.prototype.send === record.originalSend) {
+            XMLHttpRequest.prototype.send = record.wrappedSend;
+          }
+          globalThis.__bb_network_installed = true;
+          globalThis.__bb_network_buffer = record.buffer;
+          globalThis.__bb_network_dropped = record.dropped;
+          return;
         }
-        record.enabled = true;
-        if (globalThis.fetch === record.originalFetch) globalThis.fetch = record.wrappedFetch;
-        if (XMLHttpRequest.prototype.open === record.originalOpen) {
-          XMLHttpRequest.prototype.open = record.wrappedOpen;
-        }
-        if (XMLHttpRequest.prototype.send === record.originalSend) {
-          XMLHttpRequest.prototype.send = record.wrappedSend;
-        }
-        globalThis.__bb_network_installed = true;
-        globalThis.__bb_network_buffer = record.buffer;
-        globalThis.__bb_network_dropped = record.dropped;
-        return;
       }
 
       const buffer: Array<{
@@ -80,6 +98,7 @@ export async function ensureNetworkInterceptor(
         type: string;
         ts: number;
         size: number;
+        sequence: number;
       }> = [];
       const originalFetch = globalThis.fetch;
       const originalOpen = XMLHttpRequest.prototype.open;
@@ -87,6 +106,9 @@ export async function ensureNetworkInterceptor(
       const xhrMetadata = new WeakMap<XMLHttpRequest, { method: string; url: string }>();
       const record: NetworkInstrumentationRecord = {
         enabled: false,
+        epoch: captureEpoch,
+        nextSequence: 0,
+        generation: 0,
         buffer,
         dropped: 0,
         originalFetch,
@@ -130,6 +152,7 @@ export async function ensureNetworkInterceptor(
           type: 'fetch',
           ts: Date.now(),
           size: 0,
+          sequence: record.nextSequence++,
         };
         const startTime = performance.now();
         try {
@@ -179,6 +202,7 @@ export async function ensureNetworkInterceptor(
           type: 'xhr',
           ts: Date.now(),
           size: 0,
+          sequence: record.nextSequence++,
         };
         const startTime = performance.now();
         this.addEventListener('loadend', () => {
@@ -199,7 +223,7 @@ export async function ensureNetworkInterceptor(
       XMLHttpRequest.prototype.send = record.wrappedSend;
       record.enabled = true;
     },
-    args: [instrumentationKey],
+    args: [instrumentationKey, crypto.randomUUID()],
   });
 }
 
@@ -244,7 +268,8 @@ export async function disableNetworkInterceptor(
 export async function readNetworkBuffer(
   tabId: number,
   clear: boolean,
-  chromeObj: ChromeWithScripting
+  chromeObj: ChromeWithScripting,
+  includeCursor = false
 ): Promise<{
   entries: Array<{
     method: string;
@@ -254,16 +279,18 @@ export async function readNetworkBuffer(
     type: string;
     ts: number;
     size: number;
+    sequence?: number;
   }>;
   dropped: number;
   provenance: 'page_main_world';
   integrity: 'untrusted';
+  cursor?: { epoch: string; nextSequence: number; generation: number };
 }> {
   const instrumentationKey = await getMainWorldInstrumentationKey(chromeObj);
   const results = await chromeObj.scripting.executeScript({
     target: { tabId },
     world: 'MAIN',
-    func: (shouldClear: boolean, recordKey: string) => {
+    func: (shouldClear: boolean, recordKey: string, withCursor: boolean) => {
       const root = (globalThis as Record<string, unknown>)[recordKey];
       const record =
         root && typeof root === 'object'
@@ -289,25 +316,48 @@ export async function readNetworkBuffer(
       if (shouldClear) {
         buf.length = 0;
         if (record) record.dropped = 0;
+        if (record) record.generation += 1;
         globalThis.__bb_network_buffer = buf;
         globalThis.__bb_network_dropped = 0;
       }
-      return { entries: copy, dropped: boundedDropped };
+      return {
+        entries: copy,
+        dropped: boundedDropped,
+        ...(withCursor && record
+          ? {
+              cursor: {
+                epoch: typeof record.epoch === 'string' ? record.epoch.slice(0, 64) : '',
+                nextSequence: Number.isSafeInteger(record.nextSequence) ? record.nextSequence : -1,
+                generation: Number.isSafeInteger(record.generation) ? record.generation : -1,
+              },
+            }
+          : {}),
+      };
     },
-    args: [clear, instrumentationKey],
+    args: [clear, instrumentationKey, includeCursor],
   });
-  const result = (results?.[0] as { result?: { entries?: unknown; dropped?: unknown } } | undefined)
-    ?.result || { entries: [], dropped: 0 };
+  const result = (
+    results?.[0] as
+      | {
+          result?: {
+            entries?: unknown;
+            dropped?: unknown;
+            cursor?: { epoch: string; nextSequence: number; generation: number };
+          };
+        }
+      | undefined
+  )?.result || { entries: [], dropped: 0 };
   return {
     entries: Array.isArray(result.entries)
       ? result.entries
           .slice(-200)
-          .map(normalizeNetworkEntry)
+          .map((entry) => normalizeNetworkEntry(entry, includeCursor))
           .filter((entry) => entry !== null)
       : [],
     dropped: normalizeNonNegativeInteger(result.dropped, 1_000_000),
     provenance: 'page_main_world',
     integrity: 'untrusted',
+    ...(includeCursor && result.cursor ? { cursor: result.cursor } : {}),
   };
 }
 
@@ -322,7 +372,10 @@ function normalizeNonNegativeInteger(
 
 /** MAIN-world state is controlled by the inspected page. Copy only the bounded
 fields this feature owns before returning evidence to an agent. */
-function normalizeNetworkEntry(value: unknown): {
+function normalizeNetworkEntry(
+  value: unknown,
+  includeCursor = false
+): {
   method: string;
   url: string;
   status: number;
@@ -330,6 +383,7 @@ function normalizeNetworkEntry(value: unknown): {
   type: string;
   ts: number;
   size: number;
+  sequence?: number;
 } | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const entry = value as Record<string, unknown>;
@@ -341,5 +395,11 @@ function normalizeNetworkEntry(value: unknown): {
     type: entry.type === 'xhr' ? 'xhr' : 'fetch',
     ts: normalizeNonNegativeInteger(entry.ts),
     size: normalizeNonNegativeInteger(entry.size),
+    ...(includeCursor &&
+    typeof entry.sequence === 'number' &&
+    Number.isSafeInteger(entry.sequence) &&
+    entry.sequence >= 0
+      ? { sequence: entry.sequence }
+      : {}),
   };
 }

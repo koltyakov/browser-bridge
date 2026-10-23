@@ -174,6 +174,7 @@ export function sendIdentity(
         profileLabel,
         windowAccessUpdates: true,
         windowActions: true,
+        mutationScheduling: true,
         browserExtensionId:
           typeof chromeObj.runtime?.id === 'string' ? chromeObj.runtime.id : undefined,
       });

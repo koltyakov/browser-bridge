@@ -289,8 +289,35 @@ func (d *daemon) recordCompletion(pending *pendingRequest, ok bool) {
 	}
 	if !pending.started.IsZero() {
 		d.responseMillis += time.Since(pending.started).Milliseconds()
+		d.timings.record(pending)
 	}
 	d.recordOutcome(pending.method, pending.meta, ok)
+}
+
+// Execution includes bridge transport and browser work, not just DOM CPU time.
+// These timings contain no browser content or target identifiers.
+func requestTiming(pending *pendingRequest) object {
+	now := time.Now()
+	prepared, dispatched := pending.prepared, pending.dispatched
+	if prepared.IsZero() {
+		prepared = pending.started
+		if pending.meta.boolean("mutation_schedule") {
+			prepared = now
+		}
+	}
+	if dispatched.IsZero() {
+		dispatched = now
+		if !pending.meta.boolean("mutation_schedule") {
+			dispatched = pending.started
+		}
+	}
+	return object{
+		"preparationMs": value(max(0, prepared.Sub(pending.started).Milliseconds())),
+		"queueMs":       value(max(0, dispatched.Sub(prepared).Milliseconds())),
+		"executionMs":   value(max(0, now.Sub(dispatched).Milliseconds())),
+		"totalMs":       value(max(0, now.Sub(pending.started).Milliseconds())),
+		"scheduled":     value(pending.meta.boolean("mutation_schedule")),
+	}
 }
 
 var extensionVersionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)

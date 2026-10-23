@@ -49,6 +49,125 @@ const click = (selector: string) => ({
   params: { target: { selector } },
 });
 
+test('input.perform verifies DOM and URL conditions in the same call', async () => {
+  const { dependencies, dispatched } = createHarness((request) =>
+    createSuccess(
+      request.id,
+      request.method === 'dom.wait_for' ? { found: true, elementRef: 'el_done' } : {}
+    )
+  );
+  const response = await executeInputPerform(
+    performRequest({
+      steps: [click('#save')],
+      outcomes: [
+        { kind: 'dom', selector: '[role="status"]', text: 'Saved' },
+        { kind: 'url', url: '/done', urlMatch: 'contains' },
+      ],
+    }),
+    dependencies
+  );
+  assert.equal(response.ok, true);
+  const result = response.result as PerformResult;
+  assert.equal(result.verified, true);
+  assert.deepEqual(
+    result.outcomes?.map((outcome) => outcome.status),
+    ['matched', 'matched']
+  );
+  assert.deepEqual(
+    dispatched.map((entry) => entry.request.method),
+    ['input.click', 'dom.wait_for', 'page.wait_for_load_state']
+  );
+});
+
+test('input.perform arms response capture before input and reports application failure without replay', async () => {
+  let acted = false;
+  let armed = false;
+  const { dependencies, dispatched } = createHarness((request) => {
+    assert.equal(armed, true);
+    acted = true;
+    return createSuccess(request.id, {});
+  });
+  const response = await executeInputPerform(
+    performRequest({
+      timeoutMs: 1000,
+      steps: [click('#save')],
+      outcomes: [{ kind: 'network', urlPattern: '/api/save', method: 'POST' }],
+    }),
+    {
+      ...dependencies,
+      armNetwork: async () => {
+        armed = true;
+      },
+      readNetwork: async () => ({
+        cursor: { epoch: 'document', nextSequence: acted ? 1 : 0, generation: 0 },
+        dropped: 0,
+        entries: acted
+          ? [{ sequence: 0, method: 'POST', url: 'https://example.test/api/save', status: 503 }]
+          : [],
+      }),
+    }
+  );
+  assert.equal(response.ok, false);
+  assert.equal(response.error?.code, 'OUTCOME_NOT_MET');
+  assert.equal(response.error?.recovery?.retry, false);
+  assert.equal(dispatched.length, 1);
+  const details = response.error?.details as {
+    outcomeUncertain: boolean;
+    outcomes: Array<{ status: string }>;
+  };
+  assert.equal(details.outcomeUncertain, false);
+  assert.equal(details.outcomes[0].status, 'failed');
+});
+
+test('input.perform excludes old network responses and does not claim success after capture gaps', async () => {
+  for (const gap of [false, true]) {
+    let reads = 0;
+    const { dependencies } = createHarness();
+    const response = await executeInputPerform(
+      performRequest({
+        timeoutMs: 100,
+        steps: [click('#save')],
+        outcomes: [{ kind: 'network', urlPattern: '/api/save' }],
+      }),
+      {
+        ...dependencies,
+        armNetwork: async () => {},
+        readNetwork: async () => ({
+          cursor: {
+            epoch: gap && reads++ > 0 ? 'new-document' : 'document',
+            nextSequence: 1,
+            generation: 0,
+          },
+          dropped: 0,
+          entries: [{ sequence: 0, method: 'POST', url: '/api/save', status: 200 }],
+        }),
+      }
+    );
+    assert.equal(response.ok, false);
+    const details = response.error?.details as {
+      outcomeUncertain: boolean;
+      outcomes: Array<{ status: string }>;
+    };
+    assert.equal(details.outcomeUncertain, true);
+    assert.equal(details.outcomes[0].status, gap ? 'interrupted' : 'timeout');
+  }
+});
+
+test('input.perform never starts input when required network evidence cannot be armed', async () => {
+  const { dependencies, dispatched } = createHarness();
+  await assert.rejects(
+    executeInputPerform(
+      performRequest({
+        steps: [click('#save')],
+        outcomes: [{ kind: 'network', urlPattern: '/api/save' }],
+      }),
+      dependencies
+    ),
+    /unavailable/
+  );
+  assert.equal(dispatched.length, 0);
+});
+
 test('input.perform schedules atMs steps from the sequence start without drift', async () => {
   const { dependencies, dispatched } = createHarness();
   const response = await executeInputPerform(

@@ -518,12 +518,12 @@ test('readNetworkBuffer returns copied entries and clears the page state on requ
       {
         target: { tabId: 29 },
         world: 'MAIN',
-        args: [false, executeScriptCalls[0].args?.[1]],
+        args: [false, executeScriptCalls[0].args?.[1], false],
       },
       {
         target: { tabId: 29 },
         world: 'MAIN',
-        args: [true, executeScriptCalls[0].args?.[1]],
+        args: [true, executeScriptCalls[0].args?.[1], false],
       },
     ]);
   } finally {
@@ -695,6 +695,56 @@ test('disableNetworkInterceptor restores hooks and drops in-flight disabled-peri
     await disableNetworkInterceptor(44, chrome);
     await disableNetworkInterceptor(44, chrome);
     assert.strictEqual(mutableGlobal.fetch, pageReplacement);
+  } finally {
+    restoreGlobalDescriptors(snapshot);
+  }
+});
+
+test('network outcome cursors distinguish request start, ordinary reads, and capture resets', async () => {
+  const snapshot = snapshotGlobalDescriptors();
+  const completions: Array<() => void> = [];
+  Object.defineProperty(globalThis, 'fetch', {
+    configurable: true,
+    writable: true,
+    value: () =>
+      new Promise((resolve) =>
+        completions.push(() => resolve({ status: 200, headers: createHeaders(null) }))
+      ),
+  });
+  Object.defineProperty(globalThis, 'XMLHttpRequest', {
+    configurable: true,
+    writable: true,
+    value: FakeXMLHttpRequest,
+  });
+  const chrome = {
+    scripting: {
+      async executeScript(details: NetworkInjection) {
+        return [{ result: details.func?.(...(details.args ?? [])) }];
+      },
+    },
+  };
+  try {
+    await ensureNetworkInterceptor(44, chrome);
+    const page = globalThis as unknown as InstalledNetworkGlobal;
+    const old = page.fetch('https://example.test/api/save');
+    const baseline = await readNetworkBuffer(44, false, chrome, true);
+    assert.equal(baseline.cursor?.nextSequence, 1);
+    const fresh = page.fetch('https://example.test/api/save');
+    completions.forEach((complete) => complete());
+    await Promise.all([old, fresh]);
+    const evidence = await readNetworkBuffer(44, false, chrome, true);
+    assert.deepEqual(
+      evidence.entries.map((entry) => entry.sequence),
+      [0, 1]
+    );
+    assert.equal(evidence.cursor?.epoch, baseline.cursor?.epoch);
+    assert.equal(evidence.cursor?.nextSequence, 2);
+    const ordinary = await readNetworkBuffer(44, false, chrome);
+    assert.equal(ordinary.cursor, undefined);
+    assert.equal('sequence' in ordinary.entries[0], false);
+    const cleared = await readNetworkBuffer(44, true, chrome, true);
+    assert.equal(cleared.cursor?.generation, (baseline.cursor?.generation ?? -1) + 1);
+    await disableNetworkInterceptor(44, chrome);
   } finally {
     restoreGlobalDescriptors(snapshot);
   }
