@@ -26,7 +26,10 @@ export function nativeBuildHash(root = repositoryRoot) {
   }
   collectSources('cmd');
   collectSources('internal');
-  files.push('internal/bridge/generated/catalog.json', 'internal/bridge/assets/skills.bundle');
+  files.push(
+    'internal/bridge/generated/catalog.json.gz',
+    'internal/bridge/assets/skills.bundle.gz'
+  );
   const hash = createHash('sha256');
   for (const relative of files.sort()) {
     const bytes = fs.readFileSync(path.join(root, relative));

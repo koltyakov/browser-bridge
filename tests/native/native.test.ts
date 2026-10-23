@@ -193,7 +193,18 @@ test(
       'protocol.describe',
       '{"method":"input.perform"}',
     ]);
-    assert.equal((JSON.parse(described.stdout) as { method: string }).method, 'input.perform');
+    const detail = JSON.parse(described.stdout) as {
+      method: string;
+      inputSchema: { properties: Record<string, unknown>; required: string[] };
+      example: { steps: unknown[]; returnLastResult: boolean };
+    };
+    assert.equal(detail.method, 'input.perform');
+    assert.ok(detail.inputSchema.properties.steps);
+    assert.deepEqual(detail.inputSchema.required, ['steps']);
+    assert.equal(detail.example.returnLastResult, true);
+    assert.equal(detail.example.steps.length, 2);
+    const alias = await execFileAsync(executable, ['protocol', 'describe', 'input.perform']);
+    assert.deepEqual(JSON.parse(alias.stdout), detail);
   }
 );
 

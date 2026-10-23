@@ -17,7 +17,13 @@ import { BridgeError, ERROR_CODES } from './errors.js';
  *   complexity: BridgeMethodComplexity,
  *   capability: import('./types.js').Capability | null,
  *   debuggerBacked: boolean
+ *   discovery?: Readonly<BridgeMethodDiscovery>
  * }} BridgeMethodRegistryEntry
+ */
+
+/**
+ * Canonical input type and minimal example for on-demand agent discovery.
+ * @typedef {{paramsType: string, required?: readonly string[], example: Record<string, unknown>}} BridgeMethodDiscovery
  */
 
 /**
@@ -251,6 +257,7 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
  * @param {readonly string[]} params
  * @param {BridgeMethodComplexity} [complexity='low']
  * @param {Readonly<BridgeMethodPolicy>} [policy=METHOD_POLICIES.none]
+ * @param {Readonly<BridgeMethodDiscovery>} [discovery]
  * @returns {BridgeMethodRegistryEntry}
  */
 function createRegistryEntry(
@@ -259,7 +266,8 @@ function createRegistryEntry(
   tab,
   params,
   complexity = 'low',
-  policy = METHOD_POLICIES.none
+  policy = METHOD_POLICIES.none,
+  discovery
 ) {
   const entry = {
     group,
@@ -274,6 +282,7 @@ function createRegistryEntry(
     Object.defineProperties(entry, {
       capability: { value: policy.capability },
       debuggerBacked: { value: policy.debuggerBacked ?? false },
+      discovery: { value: discovery },
     })
   );
 }
@@ -356,7 +365,8 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['level', 'clear', 'limit'],
     'low',
-    METHOD_POLICIES.pageRead
+    METHOD_POLICIES.pageRead,
+    { paramsType: 'ConsoleParams', example: { level: 'error', limit: 10 } }
   ),
   'page.handle_dialog': createRegistryEntry(
     'page.handle_dialog',
@@ -372,7 +382,11 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['waitForLoad', 'timeoutMs', 'url', 'urlMatch'],
     'low',
-    METHOD_POLICIES.pageRead
+    METHOD_POLICIES.pageRead,
+    {
+      paramsType: 'WaitForLoadStateParams',
+      example: { url: '/dashboard', urlMatch: 'contains', waitForLoad: false },
+    }
   ),
   'page.get_storage': createRegistryEntry(
     'page.get_storage',
@@ -396,7 +410,8 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['textBudget'],
     'low',
-    METHOD_POLICIES.pageRead
+    METHOD_POLICIES.pageRead,
+    { paramsType: 'PageTextParams', example: { textBudget: 800 } }
   ),
   'page.extract_content': createRegistryEntry(
     'page.extract_content',
@@ -404,7 +419,8 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['format', 'selector', 'includeMetadata', 'consistency', 'textBudget', 'settleTimeoutMs'],
     'moderate',
-    METHOD_POLICIES.pageRead
+    METHOD_POLICIES.pageRead,
+    { paramsType: 'ExtractContentParams', example: { format: 'markdown', textBudget: 4000 } }
   ),
   'page.get_network': createRegistryEntry(
     'page.get_network',
@@ -503,7 +519,8 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
       'attributeAllowlist',
     ],
     'low',
-    METHOD_POLICIES.domRead
+    METHOD_POLICIES.domRead,
+    { paramsType: 'DomQueryParams', example: { selector: 'main', maxNodes: 10, textBudget: 300 } }
   ),
   'dom.baseline.create': createRegistryEntry(
     'dom.baseline.create',
@@ -567,7 +584,12 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['selector', 'text', 'state', 'timeoutMs'],
     'low',
-    METHOD_POLICIES.domRead
+    METHOD_POLICIES.domRead,
+    {
+      paramsType: 'WaitForParams',
+      required: ['selector'],
+      example: { selector: '[role="status"]', text: 'Saved', timeoutMs: 5000 },
+    }
   ),
   'dom.find_by_text': createRegistryEntry(
     'dom.find_by_text',
@@ -575,7 +597,8 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['text', 'exact', 'selector', 'maxResults', 'includeHidden'],
     'low',
-    METHOD_POLICIES.domRead
+    METHOD_POLICIES.domRead,
+    { paramsType: 'FindByTextParams', required: ['text'], example: { text: 'Save', maxResults: 5 } }
   ),
   'dom.find_by_role': createRegistryEntry(
     'dom.find_by_role',
@@ -583,7 +606,12 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['role', 'name', 'exact', 'selector', 'maxResults', 'includeHidden'],
     'low',
-    METHOD_POLICIES.domRead
+    METHOD_POLICIES.domRead,
+    {
+      paramsType: 'FindByRoleParams',
+      required: ['role'],
+      example: { role: 'button', name: 'Save', maxResults: 5 },
+    }
   ),
   'dom.get_html': createRegistryEntry(
     'dom.get_html',
@@ -599,7 +627,11 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['selector', 'maxNodes', 'maxDepth', 'compact', 'interactiveOnly', 'source', 'format'],
     'moderate',
-    METHOD_POLICIES.domReadDebugger
+    METHOD_POLICIES.domReadDebugger,
+    {
+      paramsType: 'AccessibilityTreeParams',
+      example: { source: 'dom', interactiveOnly: true, maxNodes: 30 },
+    }
   ),
   // layout - low
   'layout.get_box_model': createRegistryEntry(
@@ -625,7 +657,11 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['elementRef', 'target', 'properties'],
     'low',
-    METHOD_POLICIES.stylesRead
+    METHOD_POLICIES.stylesRead,
+    {
+      paramsType: 'StyleQueryParams',
+      example: { target: { selector: 'main' }, properties: ['display', 'width'] },
+    }
   ),
   'styles.get_matched_rules': createRegistryEntry(
     'styles.get_matched_rules',
@@ -657,73 +693,160 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'input.click',
     'interact',
     true,
-    ['target', 'button', 'clickCount', 'modifiers', 'holdMs', 'executionMode', 'recoverStale'],
+    [
+      'target',
+      'button',
+      'clickCount',
+      'modifiers',
+      'holdMs',
+      'executionMode',
+      'recoverStale',
+      'timeoutMs',
+      'observe',
+    ],
     'low',
-    METHOD_POLICIES.automationInputDebugger
+    METHOD_POLICIES.automationInputDebugger,
+    {
+      paramsType: 'InputActionParams',
+      required: ['target'],
+      example: { target: { role: 'button', name: 'Save' } },
+    }
   ),
   'input.focus': createRegistryEntry(
     'input.focus',
     'interact',
     true,
-    ['target', 'executionMode', 'recoverStale'],
+    ['target', 'executionMode', 'recoverStale', 'timeoutMs', 'observe'],
     'low',
-    METHOD_POLICIES.automationInputDebugger
+    METHOD_POLICIES.automationInputDebugger,
+    {
+      paramsType: 'InputActionParams',
+      required: ['target'],
+      example: { target: { label: 'Email' } },
+    }
   ),
   'input.type': createRegistryEntry(
     'input.type',
     'interact',
     true,
-    ['target', 'text', 'clear', 'submit', 'modifiers', 'executionMode', 'recoverStale'],
+    [
+      'target',
+      'text',
+      'clear',
+      'submit',
+      'modifiers',
+      'executionMode',
+      'recoverStale',
+      'timeoutMs',
+      'observe',
+    ],
     'low',
-    METHOD_POLICIES.automationInputDebugger
+    METHOD_POLICIES.automationInputDebugger,
+    {
+      paramsType: 'InputActionParams',
+      example: { target: { label: 'Search' }, text: 'browser bridge' },
+    }
   ),
   'input.fill': createRegistryEntry(
     'input.fill',
     'interact',
     true,
-    ['target', 'value', 'mode', 'executionMode', 'recoverStale'],
+    ['target', 'value', 'mode', 'executionMode', 'recoverStale', 'timeoutMs', 'observe'],
     'low',
-    METHOD_POLICIES.automationInputDebugger
+    METHOD_POLICIES.automationInputDebugger,
+    {
+      paramsType: 'InputActionParams',
+      required: ['target'],
+      example: { target: { label: 'Email' }, value: 'ada@example.test' },
+    }
   ),
   'input.press_key': createRegistryEntry(
     'input.press_key',
     'interact',
     true,
-    ['target', 'key', 'modifiers', 'holdMs', 'executionMode', 'recoverStale'],
+    [
+      'target',
+      'key',
+      'modifiers',
+      'holdMs',
+      'executionMode',
+      'recoverStale',
+      'timeoutMs',
+      'observe',
+    ],
     'low',
-    METHOD_POLICIES.automationInputDebugger
+    METHOD_POLICIES.automationInputDebugger,
+    { paramsType: 'InputActionParams', example: { key: 'Enter' } }
   ),
   'input.set_checked': createRegistryEntry(
     'input.set_checked',
     'interact',
     true,
-    ['target', 'checked', 'executionMode', 'recoverStale'],
+    ['target', 'checked', 'executionMode', 'recoverStale', 'timeoutMs', 'observe'],
     'low',
-    METHOD_POLICIES.automationInputDebugger
+    METHOD_POLICIES.automationInputDebugger,
+    {
+      paramsType: 'CheckedActionParams',
+      required: ['target'],
+      example: { target: { role: 'checkbox', name: 'Remember me' }, checked: true },
+    }
   ),
   'input.select_option': createRegistryEntry(
     'input.select_option',
     'interact',
     true,
-    ['target', 'values', 'labels', 'indexes', 'executionMode', 'recoverStale'],
+    [
+      'target',
+      'values',
+      'labels',
+      'indexes',
+      'executionMode',
+      'recoverStale',
+      'timeoutMs',
+      'observe',
+    ],
     'low',
-    METHOD_POLICIES.automationInputDebugger
+    METHOD_POLICIES.automationInputDebugger,
+    {
+      paramsType: 'SelectActionParams',
+      required: ['target'],
+      example: { target: { label: 'Country' }, labels: ['Canada'] },
+    }
   ),
   'input.hover': createRegistryEntry(
     'input.hover',
     'interact',
     true,
-    ['target', 'duration', 'modifiers', 'executionMode', 'recoverStale'],
+    ['target', 'duration', 'modifiers', 'executionMode', 'recoverStale', 'timeoutMs', 'observe'],
     'low',
-    METHOD_POLICIES.automationInputDebugger
+    METHOD_POLICIES.automationInputDebugger,
+    {
+      paramsType: 'HoverParams',
+      required: ['target'],
+      example: { target: { role: 'button', name: 'Menu' } },
+    }
   ),
   'input.drag': createRegistryEntry(
     'input.drag',
     'interact',
     true,
-    ['source', 'destination', 'offsetX', 'offsetY', 'executionMode', 'recoverStale'],
+    [
+      'source',
+      'destination',
+      'offsetX',
+      'offsetY',
+      'executionMode',
+      'recoverStale',
+      'timeoutMs',
+      'observe',
+    ],
     'moderate',
-    METHOD_POLICIES.automationInputDebugger
+    METHOD_POLICIES.automationInputDebugger,
+    {
+      paramsType: 'DragParams',
+      required: ['source'],
+      example: { source: { testId: 'card' }, destination: { testId: 'column' } },
+    }
   ),
   'input.touch': createRegistryEntry(
     'input.touch',
@@ -731,7 +854,12 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['points', 'holdMs', 'moveSteps', 'executionMode', 'recoverStale'],
     'moderate',
-    METHOD_POLICIES.automationInputDebugger
+    METHOD_POLICIES.automationInputDebugger,
+    {
+      paramsType: 'TouchParams',
+      required: ['points'],
+      example: { points: [{ x: 100, y: 100 }], holdMs: 50 },
+    }
   ),
   'input.perform': createRegistryEntry(
     'input.perform',
@@ -739,7 +867,24 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['steps', 'executionMode', 'timeoutMs', 'continueOnError', 'returnLastResult'],
     'moderate',
-    METHOD_POLICIES.automationInputDebugger
+    METHOD_POLICIES.automationInputDebugger,
+    {
+      paramsType: 'PerformParams',
+      required: ['steps'],
+      example: {
+        returnLastResult: true,
+        steps: [
+          {
+            method: 'input.fill',
+            params: { target: { label: 'Email' }, value: 'ada@example.test' },
+          },
+          {
+            method: 'input.click',
+            params: { target: { role: 'button', name: 'Save' }, observe: true },
+          },
+        ],
+      },
+    }
   ),
   'input.scroll_into_view': createRegistryEntry(
     'input.scroll_into_view',
@@ -747,7 +892,12 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     true,
     ['target'],
     'low',
-    METHOD_POLICIES.automationInputDebugger
+    METHOD_POLICIES.automationInputDebugger,
+    {
+      paramsType: 'InputActionParams',
+      required: ['target'],
+      example: { target: { testId: 'footer' } },
+    }
   ),
   // capture - high (screenshots, CDP)
   'screenshot.capture_region': createRegistryEntry(

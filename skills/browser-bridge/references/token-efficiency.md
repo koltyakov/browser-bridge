@@ -30,7 +30,7 @@ Avoid debugger-backed methods until they are clearly necessary. In Browser Bridg
 10. **Need API call history?** → default `page.get_network` (intercepted fetch/XHR log)
 11. **Need portable all-resource evidence?** → explicitly arm CDP, reproduce, `network.export_har`, then stop capture
 12. **Need framework/app state and no lighter read can expose it?** → `page.evaluate` (debugger-backed)
-13. **Need semantic structure and role/text queries are insufficient?** → compact or interactive-only `dom.get_accessibility_tree` (debugger-backed)
+13. **Need an actionable page overview?** → `dom.get_accessibility_tree` with `source: "dom"` and `interactiveOnly: true`; reserve the debugger-backed CDP source for accessibility audits
 14. **Need a raw Chrome/CDP counter point sample?** → `performance.get_metrics` (debugger-backed; no BBX navigation window or LCP/CLS/INP measurement)
 15. **Testing responsive with an exact forced viewport?** → `viewport.resize` (debugger-backed)
 16. **Visual ambiguity after structured reads?** → `screenshot.capture_element` first, or `screenshot.capture_region` with a tight crop when one element is not enough (debugger-backed)

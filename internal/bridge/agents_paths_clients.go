@@ -42,7 +42,7 @@ func installZedHome(scope installScope) string {
 		return filepath.Join(base, "Zed")
 	case "linux":
 		for _, env := range []string{"FLATPAK_XDG_CONFIG_HOME", "XDG_CONFIG_HOME"} {
-			if base := os.Getenv(env); base != "" {
+			if base := xdgDirectory(os.Getenv, env, ""); base != "" {
 				return filepath.Join(base, "zed")
 			}
 		}
@@ -137,10 +137,7 @@ func installGrokHome(scope installScope) string {
 }
 
 func installMuseHome(scope installScope) string {
-	base := os.Getenv("XDG_CONFIG_HOME")
-	if base == "" {
-		base = filepath.Join(scope.home, ".config")
-	}
+	base := xdgDirectory(os.Getenv, "XDG_CONFIG_HOME", filepath.Join(scope.home, ".config"))
 	return filepath.Join(base, "muse")
 }
 
@@ -155,10 +152,7 @@ func installGooseHome(scope installScope) string {
 		}
 		return filepath.Join(base, "Block", "goose", "config")
 	}
-	base := os.Getenv("XDG_CONFIG_HOME")
-	if base == "" {
-		base = filepath.Join(scope.home, ".config")
-	}
+	base := xdgDirectory(os.Getenv, "XDG_CONFIG_HOME", filepath.Join(scope.home, ".config"))
 	return filepath.Join(base, "goose")
 }
 

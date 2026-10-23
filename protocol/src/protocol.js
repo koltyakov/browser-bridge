@@ -2236,7 +2236,8 @@ export function createRuntimeContext() {
       EXTENSION_DISCONNECTED: 'Extension not connected to daemon - check Chrome',
     },
     tips: [
-      'dom.query quick budget first; widen only if truncated',
+      'For known actions use a semantic input target directly; inspect only when new evidence is needed',
+      'For scoped DOM inspection start with a quick budget; widen only if truncated',
       "Reuse elementRef; don't re-query",
       'Set attributeAllowlist for focused DOM reads',
       'Use dom.baseline.create / compare for bounded semantic DOM change detection; release when done',
@@ -2249,7 +2250,7 @@ export function createRuntimeContext() {
       'Rollback all patches before finishing',
       'page.evaluate to read framework state (React, Vue, Next.js data)',
       'dom.find_by_text / dom.find_by_role for semantic element finding',
-      'dom.get_accessibility_tree for reliable interactive element discovery',
+      'dom.get_accessibility_tree with source: "dom" for compact interactive discovery without the debugger',
       'If a tab-bound call returns ACCESS_DENIED because access is off, ask the user to click Enable in the Browser Bridge popup or side panel, then retry once',
       'dom.wait_for after HMR / navigation to detect page updates',
       'page.get_console to catch runtime errors after interactions',

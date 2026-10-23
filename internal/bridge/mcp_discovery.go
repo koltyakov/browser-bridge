@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 )
 
 func mcpDescribe(params object) object {
@@ -14,7 +15,7 @@ func mcpDescribe(params object) object {
 	}
 	if params["method"] != nil {
 		if method, exists := catalog.Methods[params.text("method")]; exists {
-			return mcpResult("Bridge protocol description loaded.", method, false)
+			return mcpResult("Bridge protocol description loaded.", describeMethod(params.text("method"), method), false)
 		}
 		return mcpErrorResult("INVALID_REQUEST", "Unknown bridge method: "+params.text("method"))
 	}
@@ -87,19 +88,40 @@ func (s *mcpSession) profileTabs(ctx context.Context, params, args object, era s
 		}
 		return failure(health.text("id"), "ACCESS_DENIED", "No connected profile has an enabled window. Select an extensionId from connectedExtensions and request access only for that profile."), nil
 	}
+	responses := make([]object, len(profiles))
+	jobs := make(chan int, len(profiles))
+	for i := range profiles {
+		jobs <- i
+	}
+	close(jobs)
+	var workers sync.WaitGroup
+	for worker := 0; worker < min(5, len(profiles)); worker++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for i := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				options := mcpClone(args)
+				options["extensionId"] = profiles[i]["extensionId"]
+				response, err := s.bridge(ctx, "tabs.list", object{}, options, era)
+				if err != nil {
+					response = failure("", "INTERNAL_ERROR", err.Error())
+				}
+				responses[i] = response
+			}
+		}()
+	}
+	workers.Wait()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	tabs, results := []object{}, []object{}
 	partial := false
-	for _, profile := range profiles {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		options := mcpClone(args)
-		options["extensionId"] = profile["extensionId"]
-		response, err := s.bridge(ctx, "tabs.list", object{}, options, era)
+	for i, profile := range profiles {
+		response := responses[i]
 		record := mcpPick(profile, "extensionId browserName profileLabel")
-		if err != nil {
-			response = failure("", "INTERNAL_ERROR", err.Error())
-		}
 		record["ok"] = response["ok"]
 		if !response.boolean("ok") {
 			record["error"] = response["error"]

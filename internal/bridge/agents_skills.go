@@ -20,8 +20,10 @@ import (
 // Generated from skills/browser-bridge by the native build script. Keeping the
 // bundle inside the executable makes `go install` installations self-contained.
 //
-//go:embed assets/skills.bundle
-var installSkillArchive []byte
+//go:embed assets/skills.bundle.gz
+var compressedSkillArchive []byte
+
+var installSkillArchive = expandEmbeddedAsset(compressedSkillArchive)
 
 const installSkillSentinel = ".browser-bridge-managed"
 const installCopilotNote = "\n\n## GitHub Copilot Note\n\nWhen this skill is installed for GitHub Copilot, do not keep retrying `bbx` inside a sandboxed shell if Browser Bridge MCP is already configured for Copilot.\nIf Browser Bridge MCP is installed, use the MCP tools directly instead of shelling out to `bbx`.\nIf `bbx` fails with a bridge socket permission error such as `EPERM`, stop retrying in the sandbox and ask the user to run the command locally or use MCP.\n"

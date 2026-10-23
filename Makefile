@@ -52,7 +52,7 @@ build-extension: sync-version ## Compile the unpacked extension with source maps
 
 build-native: export CGO_ENABLED = 0
 build-native: generate-protocol ## Build the local Go executable with current version metadata
-	$(GO) build -trimpath -gcflags=all=-l -ldflags="-s -w $(DEVELOPMENT_LDFLAGS)" -o dist/cli/bbx$(EXE) ./cmd/bbx
+	$(GO) build -trimpath -tags=nethttpomithttp2 -gcflags=all=-l -ldflags="-s -w $(DEVELOPMENT_LDFLAGS)" -o dist/cli/bbx$(EXE) ./cmd/bbx
 
 install: generate-protocol build ## Build and install to ~/.local/bin, refresh native registration, and restart runtime
 	./dist/cli/bbx$(EXE) install-self $(if $(INSTALL_DIR),--bin-dir "$(INSTALL_DIR)",) $(ARGS)

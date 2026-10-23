@@ -8,10 +8,13 @@ import {
   generateCatalog,
   validateMcpMetadata,
 } from '../../scripts/generate-catalog.mjs';
-import { BRIDGE_METHODS } from '../src/index.js';
+import { BRIDGE_METHODS, normalizeRequestParams } from '../src/index.js';
 import type { McpMetadata } from '../mcp-metadata.js';
 
 const root = new URL('../../', import.meta.url);
+const wire = JSON.parse(
+  await fs.readFile(new URL('protocol/generated/bridge.schema.json', root), 'utf8')
+) as { $defs: Record<string, unknown> };
 
 async function metadata(): Promise<McpMetadata> {
   const value: unknown = JSON.parse(
@@ -21,6 +24,29 @@ async function metadata(): Promise<McpMetadata> {
   return value;
 }
 
+test('on-demand discovery schemas inline wire types and examples normalize successfully', async () => {
+  const source = await metadata();
+  const catalog = createCatalog('2.0.0', source, wire.$defs) as {
+    methodInputs: Record<
+      string,
+      { inputSchema: { properties: Record<string, unknown> }; example: Record<string, unknown> }
+    >;
+  };
+  assert.ok(Object.keys(catalog.methodInputs).length >= 20);
+  for (const method of BRIDGE_METHODS) {
+    const detail = catalog.methodInputs[method];
+    if (!detail) continue;
+    assert.doesNotThrow(() => normalizeRequestParams(method, detail.example), method);
+    assert.ok(!JSON.stringify(detail.inputSchema).includes('"$ref"'), method);
+    assert.ok(JSON.stringify(detail).length < 8000, `${method} details are too large`);
+  }
+  const properties = catalog.methodInputs['input.click'].inputSchema.properties;
+  assert.ok(properties.timeoutMs);
+  assert.ok(properties.observe);
+  assert.ok(!properties.value, 'click schema includes unrelated fill fields');
+  assert.throws(() => createCatalog('2.0.0', source, {}), /Missing input type/);
+});
+
 test('canonical MCP metadata reproduces every catalog field and its serialization', async () => {
   const source = await metadata();
   const generated = await fs.readFile(
@@ -29,7 +55,10 @@ test('canonical MCP metadata reproduces every catalog field and its serializatio
   );
   const catalog = JSON.parse(generated) as { version: string };
   // The authoritative version may change before regeneration; no other byte may drift.
-  assert.equal(`${JSON.stringify(createCatalog(catalog.version, source))}\n`, generated);
+  assert.equal(
+    `${JSON.stringify(createCatalog(catalog.version, source, wire.$defs))}\n`,
+    generated
+  );
 });
 
 test('generation is independent of existing output and checks every stale field', async () => {
@@ -37,13 +66,18 @@ test('generation is independent of existing output and checks every stale field'
   try {
     const source = await metadata();
     await fs.mkdir(path.join(directory, 'protocol'));
+    await fs.mkdir(path.join(directory, 'protocol/generated'));
+    await fs.writeFile(
+      path.join(directory, 'protocol/generated/bridge.schema.json'),
+      JSON.stringify(wire)
+    );
     await fs.writeFile(path.join(directory, 'protocol/mcp-tools.json'), JSON.stringify(source));
     await fs.writeFile(path.join(directory, 'manifest.json'), JSON.stringify({ version: '2.0.0' }));
     await fs.writeFile(path.join(directory, 'package.json'), JSON.stringify({ version: '9.9.9' }));
     await generateCatalog(false, directory, {});
     await generateCatalog(true, directory, {});
     const filename = path.join(directory, 'internal/bridge/generated/catalog.json');
-    const catalog = createCatalog('2.0.0', source);
+    const catalog = createCatalog('2.0.0', source, wire.$defs);
     assert.equal(await fs.readFile(filename, 'utf8'), `${JSON.stringify(catalog)}\n`);
     for (const key of Object.keys(catalog)) {
       await fs.writeFile(filename, `${JSON.stringify({ ...catalog, [key]: null })}\n`);
@@ -54,7 +88,7 @@ test('generation is independent of existing output and checks every stale field'
     await generateCatalog(false, directory, { GITHUB_REF: 'refs/tags/v3.4.5' });
     assert.equal(
       await fs.readFile(filename, 'utf8'),
-      `${JSON.stringify(createCatalog('3.4.5', source))}\n`
+      `${JSON.stringify(createCatalog('3.4.5', source, wire.$defs))}\n`
     );
   } finally {
     await fs.rm(directory, { recursive: true, force: true });

@@ -9,16 +9,17 @@
  * tokens an agent would read. Requires a running daemon and an enabled window.
  *
  *   make build-native
- *   node tests/fixtures/agent-interaction/bench.mjs [--json]
+ *   node tests/fixtures/agent-interaction/bench.mjs [--json] [--runs=5]
  */
 
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { startInteractionFixtureServer } from './server.mjs';
+import { latencyPercentiles, measureScenario, outlineText } from './measure.mjs';
 
 /** @typedef {import('../../../protocol/types.js').BridgeMethod} BridgeMethod */
-/** @typedef {{ok: true, result: unknown, tokens: number} | {ok: false, result: null, error: {message: string, code: string}, tokens: number}} BridgeResponse */
+/** @typedef {import('./measure.mjs').BridgeResponse} BridgeResponse */
 /**
  * @typedef {{
  *   name: string,
@@ -111,9 +112,7 @@ const SCENARIOS = [
     name: 'actionable outline overview',
     run: (call) => call('dom.get_accessibility_tree', { source: 'dom', interactiveOnly: true }),
     verify: (_state, last) => {
-      const outline = last?.ok
-        ? String(/** @type {{ outline?: unknown }} */ (last.result).outline)
-        : '';
+      const outline = last?.ok ? outlineText(last.result) : '';
       return /button "Pay now" \[el_/.test(outline) && /button "Shadow save" \[el_/.test(outline);
     },
   },
@@ -124,6 +123,11 @@ const executable =
   fileURLToPath(
     new URL(`../../../dist/cli/bbx${process.platform === 'win32' ? '.exe' : ''}`, import.meta.url)
   );
+const runs = Number(
+  process.argv.find((argument) => argument.startsWith('--runs='))?.split('=')[1] ?? 1
+);
+if (!Number.isInteger(runs) || runs < 1 || runs > 100)
+  throw new Error('--runs must be an integer between 1 and 100');
 const client = new Client({ name: 'bbx-interaction-bench', version: '1.0.0' });
 const transport = new StdioClientTransport({
   command: executable,
@@ -138,12 +142,13 @@ const transport = new StdioClientTransport({
   stderr: 'inherit',
 });
 const { server, origin } = await startInteractionFixtureServer({ port: 0 });
-/** @type {Array<{ scenario: string, ok: boolean, calls: number, tokens: number, ms: number, error?: string }>} */
+/** @type {Array<Awaited<ReturnType<typeof measureScenario>> & {run: number}>} */
 const rows = [];
 let tabId = /** @type {number | null} */ (null);
+let extensionId = /** @type {string | null} */ (null);
 
 /**
- * @param {{method: BridgeMethod, params?: Record<string, unknown>, tabId?: number, timeoutMs?: number}} input
+ * @param {{method: BridgeMethod, params?: Record<string, unknown>, tabId?: number}} input
  * @returns {Promise<BridgeResponse>}
  */
 async function request(input) {
@@ -153,7 +158,7 @@ async function request(input) {
       method: input.method,
       params: input.params ?? {},
       ...((input.tabId ?? tabId) ? { tabId: input.tabId ?? tabId } : {}),
-      timeoutMs: input.timeoutMs ?? 30_000,
+      ...(extensionId ? { extensionId } : {}),
     },
   });
   const structured =
@@ -177,60 +182,47 @@ async function request(input) {
 
 try {
   await client.connect(transport);
+  const health = await request({ method: 'health.ping' });
+  if (!health.ok) throw new Error(`health.ping failed: ${health.error.message}`);
+  const connections =
+    /** @type {{connectedExtensions?: Array<{extensionId?: string, accessEnabled?: boolean}>}} */ (
+      health.result
+    ).connectedExtensions ?? [];
+  const enabled = connections.filter(
+    (connection) => connection.accessEnabled && connection.extensionId
+  );
+  if (enabled.length !== 1)
+    throw new Error(
+      'The benchmark requires exactly one enabled profile to avoid ambiguous routing.'
+    );
+  extensionId = enabled[0].extensionId ?? null;
   const created = await request({
     method: 'tabs.create',
     params: { url: `${origin}/`, active: false },
   });
   if (!created.ok) throw new Error(`tabs.create failed: ${created.error.message}`);
   tabId = /** @type {{ tabId: number }} */ (created.result).tabId;
-  await request({
+  const loaded = await request({
     method: 'page.wait_for_load_state',
-    tabId,
-    params: { waitForLoad: true, timeoutMs: 10_000 },
+    params: { waitForLoad: true, url: origin, urlMatch: 'contains', timeoutMs: 10_000 },
   });
-  await new Promise((resolve) => setTimeout(resolve, 300));
-
-  for (const scenario of SCENARIOS) {
-    let calls = 0;
-    let tokens = 0;
-    /** @type {BridgeResponse | null} */
-    let last = null;
-    const started = Date.now();
-    /** @param {BridgeMethod} method @param {Record<string, unknown>} [params] */
-    const call = async (method, params = {}) => {
-      calls += 1;
-      const response = await request({ method, params, timeoutMs: 30_000 });
-      tokens += response.tokens;
-      last = response;
-      return response;
-    };
-    try {
-      await scenario.run(call);
-      const stateResponse = await request({
-        method: 'dom.get_attributes',
-        params: { target: { selector: '#state' }, attributes: ['data-state'] },
+  if (!loaded.ok) throw new Error(`Fixture initial load failed: ${loaded.error.message}`);
+  for (let run = 1; run <= runs; run += 1) {
+    for (const [index, scenario] of SCENARIOS.entries()) {
+      // Reset state outside the measured interval so repeated actions cannot pass
+      // from a prior scenario's state or miss an already-visible toast.
+      const reset = await request({
+        method: 'navigation.navigate',
+        params: {
+          url: `${origin}/?run=${run}&scenario=${index}`,
+          waitForLoad: true,
+          timeoutMs: 10_000,
+        },
       });
-      const attributes = stateResponse.ok
-        ? /** @type {Record<string, string | undefined>} */ (stateResponse.result)
-        : {};
-      const state = JSON.parse(attributes['data-state'] ?? '{}');
-      const outcome = /** @type {BridgeResponse | null} */ (last);
+      if (!reset.ok) throw new Error(`Fixture reset failed: ${reset.error.message}`);
       rows.push({
-        scenario: scenario.name,
-        ok: scenario.verify(state, last),
-        calls,
-        tokens,
-        ms: Date.now() - started,
-        ...(outcome?.ok === false ? { error: outcome.error.code } : {}),
-      });
-    } catch (error) {
-      rows.push({
-        scenario: scenario.name,
-        ok: false,
-        calls,
-        tokens,
-        ms: Date.now() - started,
-        error: error instanceof Error ? error.message : String(error),
+        ...(await measureScenario(scenario, (method, params) => request({ method, params }))),
+        run,
       });
     }
   }
@@ -249,7 +241,7 @@ if (process.argv.includes('--json')) {
   const passed = rows.filter((row) => row.ok).length;
   for (const row of rows) {
     process.stdout.write(
-      `${row.ok ? 'PASS' : 'FAIL'}  ${row.scenario.padEnd(44)} calls=${row.calls} tokens=${String(row.tokens).padStart(4)} ${row.ms}ms${row.error ? `  (${row.error})` : ''}\n`
+      `${row.ok ? 'PASS' : 'FAIL'}  ${row.scenario.padEnd(44)} calls=${row.calls} tokens=${String(row.tokens).padStart(4)} ${row.ms.toFixed(1)}ms${row.error ? `  (${row.error})` : ''}\n`
     );
   }
   const totalTokens = rows.reduce((sum, row) => sum + row.tokens, 0);
@@ -257,5 +249,14 @@ if (process.argv.includes('--json')) {
   process.stdout.write(
     `\n${passed}/${rows.length} scenarios passed, ${totalCalls} calls, ~${totalTokens} agent-visible tokens.\n`
   );
-  process.exitCode = passed === rows.length ? 0 : 1;
+  for (const scenario of SCENARIOS) {
+    const samples = rows
+      .filter((row) => row.scenario === scenario.name && row.ok)
+      .map((row) => row.ms);
+    const latency = latencyPercentiles(samples);
+    process.stdout.write(
+      `${scenario.name}: successes=${samples.length}/${runs} ${samples.length ? `p50=${latency.p50.toFixed(1)}ms p95=${latency.p95.toFixed(1)}ms` : 'no successful latency samples'}\n`
+    );
+  }
 }
+process.exitCode = rows.every((row) => row.ok) ? 0 : 1;

@@ -172,7 +172,7 @@ func installSelfAlias(binDir, alias string) error {
 	temporary := filepath.Join(dir, name)
 	if runtime.GOOS == "windows" {
 		role := map[string]string{"bbx-mcp": "mcp serve", "bbx-daemon": "--bridge-daemon", "bbx-install": "install"}[alias]
-		err = os.WriteFile(temporary, []byte("@echo off\r\n\"%~dp0bbx.exe\" "+role+" %*\r\n"), 0644)
+		err = os.WriteFile(temporary, []byte("@echo off\r\nsetlocal DisableDelayedExpansion\r\n\"%~dp0bbx.exe\" "+role+" %*\r\n"), 0644)
 	} else {
 		err = os.Symlink("bbx", temporary)
 	}

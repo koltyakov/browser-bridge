@@ -6,8 +6,10 @@ import (
 	"sort"
 )
 
-//go:embed generated/catalog.json
-var catalogBytes []byte
+//go:embed generated/catalog.json.gz
+var compressedCatalog []byte
+
+var catalogBytes = expandEmbeddedAsset(compressedCatalog)
 
 type protocolCatalog struct {
 	Version            string                            `json:"version"`
@@ -20,6 +22,7 @@ type protocolCatalog struct {
 	Tools              []object                          `json:"tools"`
 	Instructions       string                            `json:"instructions"`
 	Methods            map[string]object                 `json:"methods"`
+	MethodInputs       map[string]object                 `json:"methodInputs"`
 	OperationTimeouts  map[string]operationTimeoutPolicy `json:"operationTimeouts"`
 	Runtime            object                            `json:"runtime"`
 	Presets            map[string]map[string]object      `json:"presets"`
@@ -41,7 +44,7 @@ func init() {
 func describe(params object) object {
 	if method := params.text("method"); method != "" {
 		if entry, ok := catalog.Methods[method]; ok {
-			return entry
+			return describeMethod(method, entry)
 		}
 		return object{"error": value("Unknown bridge method: " + method)}
 	}
@@ -53,6 +56,15 @@ func describe(params object) object {
 	}
 	sort.Slice(methods, func(i, j int) bool { return methods[i].text("method") < methods[j].text("method") })
 	return object{"methods": value(methods)}
+}
+
+// Keep schemas out of broad group listings; load them only for an exact method.
+func describeMethod(method string, entry object) object {
+	result := mcpClone(entry)
+	for key, field := range catalog.MethodInputs[method] {
+		result[key] = field
+	}
+	return result
 }
 
 func batchSafe(method string, params object) bool {
