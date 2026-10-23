@@ -152,6 +152,11 @@ const SETUP_MATRIX_ORDER = [
   'cursor',
   'windsurf',
   'antigravity',
+  'gemini',
+  'cline',
+  'zed',
+  'amp',
+  'droid',
   'agents',
 ] as const;
 

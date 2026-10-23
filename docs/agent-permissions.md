@@ -160,6 +160,36 @@ Recommended BBX approach:
 
 Source checked: [Antigravity](https://antigravity.google/).
 
+## Gemini CLI
+
+Use `bbx install-mcp gemini` or `bbx install-skill gemini`. User and project scope are supported. Keep folder trust, sandbox settings, and MCP tool confirmations under the user's control. Installing BBX does not enable `trust: true` or make an untrusted workspace safe; globally configured stdio servers may also be blocked in untrusted workspaces.
+
+Sources: [Gemini MCP](https://geminicli.com/docs/tools/mcp-server/), [skills](https://geminicli.com/docs/cli/skills/).
+
+## Cline
+
+Use `bbx install-mcp cline` for current user-scope CLI/extension configuration. Project CLI skills are supported, but native project MCP is not. BBX preserves existing approvals and disabled flags. The extension's `autoApprove` list does not enforce CLI confirmations; review the running CLI's approval policy separately.
+
+Sources: [Cline MCP](https://docs.cline.bot/mcp/configuring-mcp-servers), [skills](https://docs.cline.bot/customization/skills).
+
+## Zed
+
+Use `bbx install-mcp zed` or `bbx install-skill zed` for Zed's native agent. Preserve project trust and tool confirmations. The `.agents` skill destination is shared with the generic target. An external ACP agent can have different MCP forwarding, absolute-command, skill, and permission requirements; terminal-host markers do not identify the active agent.
+
+Sources: [Zed MCP](https://zed.dev/docs/ai/mcp), [skills](https://zed.dev/docs/ai/skills), [external agents](https://zed.dev/docs/ai/external-agents).
+
+## Amp
+
+Use `bbx install-mcp amp` or `bbx install-skill amp`. Project MCP servers require Amp's own approval. BBX preserves those approvals and does not run approval commands on the user's behalf. Shared user skill roots may shadow a native Amp or project skill. Orbs and runners are separate execution environments; local setup does not grant them workstation browser access.
+
+Sources: [Amp MCP](https://ampcode.com/docs/customize/mcp), [skills](https://ampcode.com/docs/customize/skills).
+
+## Factory Droid
+
+Use `bbx install-mcp droid` or `bbx install-skill droid`. User and project files are supported without relying on `droid mcp add`'s user-only write scope. Preserve autonomy settings, organization policy, disabled servers, and per-droid MCP filters. Changing the server command or args can invalidate existing approvals; review the agent's MCP status after an upgrade.
+
+Sources: [Factory MCP](https://docs.factory.ai/cli/configuration/mcp), [skills](https://docs.factory.com/harness/skills.md).
+
 ## Generic `.agents` Layouts
 
 Generic `.agents` integrations are not a single product, so permission syntax depends on the runtime.

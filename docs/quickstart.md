@@ -58,7 +58,9 @@ Google Chrome, Brave, or Edge and install the manifest for that browser.
 
 There are two integration paths. Pick the one that matches how your agent works:
 
-Supported clients: Codex (OpenAI) (`codex`), Claude Code (`claude`), OpenCode (`opencode`), GitHub Copilot (`copilot`), Cursor (`cursor`), Devin Desktop, formerly Windsurf (`windsurf`), Antigravity (`antigravity`), and generic `.agents` MCP/skill layouts (`agents`).
+Supported clients: Codex (OpenAI) (`codex`), Claude Code (`claude`), OpenCode (`opencode`), GitHub Copilot (`copilot`), Cursor (`cursor`), Devin Desktop, formerly Windsurf (`windsurf`), Antigravity (`antigravity`), Gemini CLI (`gemini`), Cline (`cline`), Zed (`zed`), Amp (`amp`), Factory Droid (`droid`), and generic `.agents` MCP/skill layouts (`agents`).
+
+Cline MCP configuration is user-scope only; its CLI skill supports projects too. Zed support configures the native agent, not every ACP agent it can host. Gemini CLI is a separate target from Antigravity. See [manual setup](./manual-setup.md#3-managed-setup-for-supported-clients) for paths, overrides, and shared-skill behavior.
 
 Devin Desktop retains the `windsurf` setup target and existing configuration paths for compatibility:
 
@@ -76,7 +78,7 @@ After installing the extension and Browser Bridge, finish setup from **Connect a
 ```bash
 bbx install-mcp                  # prompt/select detected clients
 bbx install-mcp all              # all supported clients
-bbx install-mcp codex            # or pick one: codex, claude, opencode, copilot, cursor, windsurf, antigravity, agents
+bbx install-mcp codex            # or pick one: codex, claude, opencode, copilot, cursor, windsurf, antigravity, gemini, cline, zed, amp, droid, agents
 bbx install-mcp copilot --local  # scope to current project instead of global
 ```
 
@@ -93,7 +95,7 @@ The same stdio command supports both MCP protocol eras. Legacy clients start wit
 ```bash
 bbx install-skill                  # prompt/select detected clients
 bbx install-skill all              # all supported clients
-bbx install-skill codex            # or pick one: codex, claude, opencode, copilot, cursor, windsurf, antigravity, agents
+bbx install-skill codex            # or pick one: codex, claude, opencode, copilot, cursor, windsurf, antigravity, gemini, cline, zed, amp, droid, agents
 bbx install-skill agents --project .
 ```
 

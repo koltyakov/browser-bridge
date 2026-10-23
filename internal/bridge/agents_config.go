@@ -1,7 +1,6 @@
 package bridge
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,10 +10,10 @@ import (
 	"strings"
 )
 
-var installAgentNames = []string{"codex", "claude", "opencode", "copilot", "cursor", "windsurf", "antigravity", "agents"}
+var installAgentNames = []string{"codex", "claude", "opencode", "copilot", "cursor", "windsurf", "antigravity", "gemini", "cline", "zed", "amp", "droid", "agents"}
 
 // Keep the windsurf target key and config paths compatible with existing installs.
-var installAgentLabels = map[string]string{"codex": "Codex (OpenAI)", "claude": "Claude Code", "opencode": "OpenCode", "copilot": "GitHub Copilot", "cursor": "Cursor", "windsurf": "Devin Desktop", "antigravity": "Antigravity", "agents": "Generic agents"}
+var installAgentLabels = map[string]string{"codex": "Codex (OpenAI)", "claude": "Claude Code", "opencode": "OpenCode", "copilot": "GitHub Copilot", "cursor": "Cursor", "windsurf": "Devin Desktop", "antigravity": "Antigravity", "gemini": "Gemini CLI", "cline": "Cline", "zed": "Zed", "amp": "Amp", "droid": "Factory Droid", "agents": "Generic agents"}
 
 type installScope struct {
 	global  bool
@@ -32,6 +31,12 @@ func installCurrentScope() (installScope, error) {
 }
 
 func installMCPPath(client string, scope installScope) string {
+	if !installMCPSupported(client, scope) {
+		return ""
+	}
+	if path, ok := installAdditionalMCPPath(client, scope); ok {
+		return path
+	}
 	if !scope.global {
 		paths := map[string]string{"codex": ".codex/config.toml", "claude": ".mcp.json", "opencode": "opencode.json", "copilot": ".vscode/mcp.json", "cursor": ".cursor/mcp.json", "windsurf": ".windsurf/mcp_config.json", "antigravity": ".agents/mcp_config.json", "agents": ".agents/mcp.json"}
 		return filepath.Join(scope.project, filepath.FromSlash(paths[client]))
@@ -59,7 +64,11 @@ func installVSCodeHome(scope installScope) string {
 }
 
 func installMCPPaths(client string, scope installScope) []string {
-	paths := []string{installMCPPath(client, scope)}
+	path := installMCPPath(client, scope)
+	if path == "" {
+		return nil
+	}
+	paths := []string{path}
 	if client != "copilot" || !scope.global {
 		return paths
 	}
@@ -84,6 +93,10 @@ func installMCPKey(client, path string, scope installScope) string {
 		return "mcp_servers"
 	case "opencode":
 		return "mcp"
+	case "zed":
+		return "context_servers"
+	case "amp":
+		return "amp.mcpServers"
 	case "copilot":
 		if filepath.Clean(path) != filepath.Join(scope.home, ".copilot", "mcp-config.json") {
 			return "servers"
@@ -97,7 +110,7 @@ func installMCPEntry(client string) object {
 		return object{"type": value("local"), "command": value([]string{"bbx", "mcp", "serve"})}
 	}
 	entry := object{"command": value("bbx"), "args": value([]string{"mcp", "serve"}), "env": value(object{})}
-	if client == "claude" || client == "copilot" || client == "agents" {
+	if client == "claude" || client == "copilot" || client == "cline" || client == "droid" || client == "agents" {
 		entry["type"] = value("stdio")
 	}
 	return entry
@@ -125,18 +138,28 @@ func installUpdateJSONConfig(raw, client, path string, scope installScope, remov
 	if existing.kind != '{' {
 		return "", fmt.Errorf("browser-bridge configuration must be an object")
 	}
+	// Cline's CLI writes a nested transport; update it in place rather than
+	// adding a competing flat command. Never silently convert a remote server.
+	if installAdditionalAgent(client) {
+		var err error
+		keys, err = installStdioEntryKeys(raw, existing, client, keys)
+		if err != nil {
+			return "", err
+		}
+	}
 	// Preserve environment variables, disabled flags and custom timeouts.
+	settings := installJSONLookup(root, keys...)
 	fields := []string{"type", "command", "args", "env"}
 	for _, field := range fields {
 		v, exists := entry[field]
 		if !exists {
 			continue
 		}
-		if field == "env" && installJSONLookup(existing, field) != nil {
+		if field == "env" && installJSONLookup(settings, field) != nil {
 			continue
 		}
 		replacement := string(v)
-		raw, err = installJSONEdit(raw, []string{key, "browser-bridge", field}, &replacement)
+		raw, err = installJSONEdit(raw, append(append([]string{}, keys...), field), &replacement)
 		if err != nil {
 			return "", err
 		}
@@ -333,37 +356,27 @@ func installAgentMCP(client string, scope installScope, remove bool) ([]string, 
 	if !installContains(installAgentNames, client) {
 		return nil, fmt.Errorf("unsupported MCP client %q", client)
 	}
+	if !remove || !installMCPSupported(client, scope) {
+		if err := installValidateMCPScope(client, scope); err != nil {
+			return nil, err
+		}
+	}
 	paths := []string{}
-	for _, path := range installMCPPaths(client, scope) {
-		data, err := os.ReadFile(path)
-		if errors.Is(err, os.ErrNotExist) {
-			if remove {
-				continue
-			}
-			data = []byte("{}\n")
-			if client == "codex" {
-				data = nil
-			}
-		} else if err != nil {
-			return paths, err
-		}
-		raw := string(data)
-		var updated string
-		if client == "codex" {
-			updated, err = installUpdateCodex(raw, remove)
-		} else {
-			updated, err = installUpdateJSONConfig(raw, client, path, scope, remove)
-		}
+	candidates := installMCPPaths(client, scope)
+	if remove && client == "amp" {
+		// Explicit removal can safely remove only our entry from both files;
+		// installation must still refuse to guess which one Amp will read.
+		path := filepath.Join(filepath.Dir(installMCPPath(client, scope)), "settings.json")
+		candidates = []string{path, path + "c"}
+	}
+	for _, path := range candidates {
+		changed, err := installWriteMCPConfig(client, path, scope, remove)
 		if err != nil {
 			return paths, fmt.Errorf("cannot update %s: %w", path, err)
 		}
-		if remove && updated == raw {
-			continue
+		if changed {
+			paths = append(paths, path)
 		}
-		if err := installAtomicWrite(path, []byte(updated), 0600); err != nil {
-			return paths, err
-		}
-		paths = append(paths, path)
 	}
 	return paths, nil
 }

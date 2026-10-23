@@ -22,6 +22,9 @@ func installTestScope(t *testing.T) (config, installScope) {
 	t.Setenv("CODEX_HOME", "")
 	t.Setenv("CHROME_CONFIG_HOME", "")
 	t.Setenv("XDG_CONFIG_HOME", "")
+	for _, key := range []string{"GEMINI_CLI_HOME", "CLINE_DIR", "CLINE_DATA_DIR", "CLINE_MCP_SETTINGS_PATH", "AMP_HOME", "FLATPAK_XDG_CONFIG_HOME"} {
+		t.Setenv(key, "")
+	}
 	t.Setenv("BROWSER_BRIDGE_HOME", filepath.Join(home, "bridge"))
 	t.Setenv("BBX_TCP_PORT", "")
 	t.Setenv("BBX_TCP_HOST", "")
@@ -204,6 +207,12 @@ func TestInstallMCPAllClientsAndCopilotProfiles(t *testing.T) {
 	for _, global := range []bool{true, false} {
 		scope.global = global
 		for _, client := range installAgentNames {
+			if !installMCPSupported(client, scope) {
+				if _, err := installAgentMCP(client, scope, false); err == nil {
+					t.Fatalf("unsupported project MCP scope accepted: %s", client)
+				}
+				continue
+			}
 			paths, err := installAgentMCP(client, scope, false)
 			if err != nil {
 				t.Fatalf("%s: %v", client, err)
@@ -590,7 +599,7 @@ func TestInstallDefaultSelectionAndAliases(t *testing.T) {
 		t.Fatal(targets, installed)
 	}
 	targets, _ = installDefaultTargets(scope, false)
-	if len(targets) != 8 {
+	if len(targets) != len(installAgentNames) {
 		t.Fatal(targets)
 	}
 	if _, err := installAgentMCP("cursor", scope, false); err != nil {

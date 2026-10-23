@@ -150,8 +150,17 @@ async function fixture(t: TestContext) {
     mode: 0o600,
   });
   const env: NodeJS.ProcessEnv = { ...process.env };
+  const agentOverrides = new Set([
+    'CODEX_HOME',
+    'GEMINI_CLI_HOME',
+    'CLINE_DIR',
+    'CLINE_DATA_DIR',
+    'CLINE_MCP_SETTINGS_PATH',
+    'AMP_HOME',
+    'FLATPAK_XDG_CONFIG_HOME',
+  ]);
   for (const key of Object.keys(env))
-    if (key.startsWith('BBX_') || key === 'CODEX_HOME') delete env[key];
+    if (key.startsWith('BBX_') || agentOverrides.has(key)) delete env[key];
   Object.assign(env, {
     BROWSER_BRIDGE_HOME: home,
     BBX_AUTH_TOKEN: agentToken,
@@ -897,7 +906,21 @@ test(
     assert.equal(cursor?.configured, true);
     assert.deepEqual(
       status.mcpClients.map((entry) => record(entry).key),
-      ['codex', 'claude', 'opencode', 'copilot', 'cursor', 'windsurf', 'antigravity', 'agents']
+      [
+        'codex',
+        'claude',
+        'opencode',
+        'copilot',
+        'cursor',
+        'windsurf',
+        'antigravity',
+        'gemini',
+        'cline',
+        'zed',
+        'amp',
+        'droid',
+        'agents',
+      ]
     );
     const host = await f.native('primary');
     assert.deepEqual(await host.barrier(), status);

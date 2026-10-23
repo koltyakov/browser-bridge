@@ -1,0 +1,1187 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-10-22",
+  "purpose": "Cited setup and fingerprint evidence; runtime code implements selected passive install hints, not this catalog as executable rules",
+  "integrationStatus": "Managed setup and passive installation detection implemented; active-caller attribution remains future work",
+  "report": "./agent-support-research.md",
+  "runtimeSupportAdded": true,
+  "implementation": {
+    "targets": ["gemini", "cline", "zed", "amp", "droid"],
+    "placement": "After antigravity, before generic agents; existing relative order unchanged",
+    "capabilities": [
+      "Managed user/project MCP except Cline user-only MCP",
+      "Managed user/project CLI skills with shared-destination ownership",
+      "Passive package, executable installation-tree and Cline extension detection",
+      "JSONC-preserving updates, nested Cline stdio support and conflicting-transport refusal"
+    ],
+    "notImplemented": [
+      "Capturing and propagating MCP caller fingerprints",
+      "Automatic selection of runtime-only custom profiles/settings-file flags",
+      "Dynamic shadowed-skill or policy-readiness diagnostics",
+      "Live acceptance across every client, platform, sandbox and ACP adapter"
+    ],
+    "sourceFiles": [
+      "internal/bridge/agents_paths.go",
+      "internal/bridge/agents_detection.go",
+      "internal/bridge/agents_config.go",
+      "internal/bridge/agents_skills.go"
+    ]
+  },
+  "testedLive": false,
+  "evidencePolicy": {
+    "confidence": "Confidence in cited fact or labeled inference, not authentication or live readiness",
+    "categories": [
+      "installationEvidence",
+      "historicalEvidence",
+      "configuredEvidence",
+      "activeCallerEvidence",
+      "readiness"
+    ],
+    "observations": "Upstream source, public documentation and distribution evidence cited here; no live clients tested; local working notes are not required",
+    "allCallerHintsSpoofable": true,
+    "authorization": "Never grant access from clientInfo, environment, process ancestry or configured labels",
+    "execution": "Data only; do not evaluate catalog strings or run installers, npx or updates as detection probes",
+    "probes": "Approved resolved executable only, literal argv, timeout, bounded output; provenance before execution",
+    "privacy": "No API keys, auth files, whole environments, keychains or transcripts for detection",
+    "unknown": "Not established by checked evidence; does not mean impossible or unsupported"
+  },
+  "bbxRegistration": {
+    "serverName": "browser-bridge",
+    "command": "bbx",
+    "args": ["mcp", "serve"],
+    "origin": "Already globally installed BBX executable, not agent binary or npx",
+    "absolutePathFallback": "Resolve global executable when agent launch PATH cannot find bbx; retain args",
+    "skillInstallation": "Copy existing BBX CLI SKILL.md and complete references/resources; does not install agent or register MCP",
+    "preserve": ["Tool approvals", "Workspace trust", "Managed policy", "Disabled skills"],
+    "confidence": "high",
+    "sources": ["bbx-config", "bbx-skills"]
+  },
+  "repository": {
+    "researchBaselineTargets": [
+      "codex",
+      "claude",
+      "opencode",
+      "copilot",
+      "cursor",
+      "windsurf",
+      "antigravity",
+      "agents"
+    ],
+    "proposedOrderBeforeGenericAgents": ["gemini", "cline", "zed", "amp", "droid"],
+    "researchBaselineGaps": [
+      "Capability-aware scopes and selected override paths, not map-only path additions",
+      "Zed context_servers and Amp literal amp.mcpServers keys",
+      "Conflict-aware nested/URL/legacy transport migration and JSONC preservation",
+      "Resolved destination deduplication, shared skill ownership and concurrent Cline writes",
+      "Structured install/config/history/caller evidence instead of directory/PATH boolean",
+      "Legacy initialize does not retain clientInfo; bounded connection metadata needs implementation",
+      "Separate immediate MCP peer, integration host and terminal host; modern MCP handled separately",
+      "Align status/protocol, tests, UI, help and docs; never change README Supported Agents visual table"
+    ],
+    "sources": ["bbx-config", "bbx-skills", "bbx-setup", "bbx-mcp", "bbx-transport", "bbx-guide"]
+  },
+  "agents": [
+    {
+      "displayName": "Gemini CLI",
+      "proposedKey": "gemini",
+      "snapshot": {
+        "mainCommit": "a713410aba5d594594e20d5c822e3aab8f822089",
+        "selectedStableChecks": "v0.65.0, commit 6006c14a4decfe4b891c6263ad6ad5992e404b5b",
+        "minimumVersion": null,
+        "testedLive": false
+      },
+      "agentInstallation": {
+        "notBbxSkillInstallation": true,
+        "commands": [
+          "npm install -g @google/gemini-cli",
+          "brew install gemini-cli",
+          "sudo port install gemini-cli"
+        ],
+        "platforms": "npm macOS/Linux/Windows; brew macOS/Linux; MacPorts macOS",
+        "runtime": "Node >=20; documented recommended OS versions are not exhaustive support limits",
+        "basis": "public-documentation",
+        "confidence": "high",
+        "sources": ["gemini-install"]
+      },
+      "mcp": {
+        "capability": "local-stdio",
+        "scopes": { "user": true, "project": true },
+        "paths": {
+          "user": "<effective-home>/.gemini/settings.json",
+          "project": "<project>/.gemini/settings.json",
+          "Windows": "Same relative paths under effective home/project with Windows separators"
+        },
+        "overrides": {
+          "GEMINI_CLI_HOME": "Home root replacement; /custom/root -> /custom/root/.gemini/settings.json",
+          "GEMINI_CLI_SYSTEM_SETTINGS_PATH": "Administrator file override, not BBX install target",
+          "GEMINI_CLI_SYSTEM_DEFAULTS_PATH": "Independent system-defaults file override"
+        },
+        "keyPath": ["mcpServers", "browser-bridge"],
+        "command": "bbx",
+        "args": ["mcp", "serve"],
+        "schema": {
+          "mcpServers": {
+            "browser-bridge": { "command": "bbx", "args": ["mcp", "serve"] }
+          }
+        },
+        "registrationCommands": [
+          "gemini mcp add --scope user --transport stdio browser-bridge bbx mcp serve",
+          "gemini mcp add --scope project --transport stdio browser-bridge bbx mcp serve"
+        ],
+        "commandStatus": "Unexecuted documented syntax; default scope project; add replaces same-name entry",
+        "format": "JSON comments supported; arbitrary JSON5 not established",
+        "precedence": "defaults < system defaults < user < project < system policy",
+        "limitations": [
+          "Untrusted folder blocks all stdio, including user servers, and skips project settings",
+          "Current trust source defaults on despite contradictory guide prose",
+          "Keep trust false/omitted and preserve server/tool restrictions",
+          "Sanitized env and sandbox may affect global bbx/socket reachability",
+          "Prefer new session after external edits; /mcp reload disk reread not established"
+        ],
+        "verification": ["gemini mcp list", "/mcp", "Actual BBX tools and approved harmless call"],
+        "basis": "public-documentation-and-upstream-source",
+        "confidence": "high",
+        "sources": [
+          "gemini-mcp",
+          "gemini-paths",
+          "gemini-storage",
+          "gemini-settings",
+          "gemini-client"
+        ]
+      },
+      "skills": {
+        "capability": "Native on-demand SKILL.md CLI workflow",
+        "paths": {
+          "user": "<effective-home>/.gemini/skills/browser-bridge/SKILL.md",
+          "project": "<project>/.gemini/skills/browser-bridge/SKILL.md",
+          "sharedUser": "<effective-home>/.agents/skills/browser-bridge/SKILL.md",
+          "sharedProject": "<project>/.agents/skills/browser-bridge/SKILL.md"
+        },
+        "override": "GEMINI_CLI_HOME affects native and shared user roots",
+        "precedence": "built-in < extension < user .gemini < user .agents < workspace .gemini < workspace .agents",
+        "collisionKey": "Frontmatter name",
+        "requiredFrontmatter": ["name", "description"],
+        "installSyntax": "gemini skills install <directory-or-git-url> --scope user|workspace; default user",
+        "limitations": "Untrusted workspace skips project skills; activation consent is not MCP blanket approval",
+        "refresh": "/skills reload or /skills refresh; /skills list",
+        "basis": "public-documentation-and-source; stable checked",
+        "confidence": "high",
+        "sources": ["gemini-skills", "gemini-stable-skills", "gemini-storage", "gemini-paths"]
+      },
+      "installationFingerprints": [
+        {
+          "kind": "package-and-executable",
+          "package": "@google/gemini-cli",
+          "bin": "gemini",
+          "entry": "dist/index.js",
+          "requires": "Resolve target/manifest, or supported brew/MacPorts receipt plus real artifact",
+          "basis": "upstream-source-and-public-documentation",
+          "confidence": "high",
+          "sources": ["gemini-package", "gemini-install"]
+        },
+        {
+          "kind": "readiness-probe",
+          "argv": ["<verified-resolved-gemini>", "--version"],
+          "requires": "Provenance and execution permission first; no npx fetching",
+          "basis": "public-documentation",
+          "confidence": "high",
+          "sources": ["gemini-cli"]
+        }
+      ],
+      "historicalEvidence": [
+        {
+          "signal": "Gemini-to-Antigravity transition banner",
+          "meaning": "Product/account boundary, not identity equivalence or universal migration mechanics",
+          "basis": "public-documentation",
+          "confidence": "high",
+          "identityConfidence": "low",
+          "sources": ["gemini-install"]
+        }
+      ],
+      "configuredEvidence": [
+        {
+          "signals": [".gemini", "GEMINI.md", "settings.json", ".agents/skills", "Selected model"],
+          "meaning": "Saved/shared config, not install or current caller",
+          "basis": "public-documentation",
+          "confidence": "high",
+          "identityConfidence": "low",
+          "sources": ["gemini-settings", "gemini-skills"]
+        }
+      ],
+      "callerFingerprints": [
+        {
+          "kind": "mcp-clientInfo",
+          "name": "gemini-cli-mcp-client",
+          "version": "Dynamic clientVersion: CLI_VERSION || package version || unknown",
+          "meaning": "Immediate implementation hint, not durable installation or authenticated product",
+          "basis": "upstream-source; selected stable snapshot checks",
+          "confidence": "high",
+          "testedLive": false,
+          "sources": ["gemini-client", "gemini-version"]
+        },
+        {
+          "kind": "child-environment",
+          "name": "GEMINI_CLI",
+          "value": "1",
+          "scope": "Shell and stdio MCP children; environment composition can override",
+          "meaning": "Supporting child context, not guaranteed in existing daemon",
+          "basis": "upstream-source; selected stable snapshot checks",
+          "confidence": "high",
+          "testedLive": false,
+          "sources": ["gemini-shell", "gemini-client"]
+        }
+      ],
+      "nonIdentityInputs": [
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "GEMINI_CLI_HOME",
+        "GEMINI_CLI_SURFACE",
+        "CLI_VERSION",
+        "Model/provider names"
+      ],
+      "unknowns": [
+        "Live BBX handshake, skill activation, sandbox/socket and Windows shim behavior",
+        "Historical minimum feature versions",
+        "Antigravity CLI identities or marker reuse",
+        "Exhaustive install prefixes or macOS bundle ID"
+      ]
+    },
+    {
+      "displayName": "Cline",
+      "proposedKey": "cline",
+      "variants": ["CLI", "VS Code extension"],
+      "snapshot": {
+        "mainCommit": "96cb5c4c083d2fdaae1918099e887bfd544a602b",
+        "releaseMigrationThreshold": null,
+        "testedLive": false
+      },
+      "agentInstallation": {
+        "notBbxSkillInstallation": true,
+        "commands": ["npm install -g cline", "code --install-extension saoudrizwan.claude-dev"],
+        "nextStep": "cline auth for CLI; provider setup for extension",
+        "runtime": "Recommend Node >=22; docs >=20/22 recommended conflicts with workspace >=22",
+        "basis": "public-docs; extension command composes verified ID with editor CLI syntax",
+        "confidence": "high",
+        "sources": ["cline-install", "cline-extension", "vscode-cli"]
+      },
+      "mcp": {
+        "capability": "local-stdio",
+        "scopes": { "user": true, "project": false, "explicitReplacementFile": true },
+        "paths": {
+          "userCurrentCliAndExtension": "<home>/.cline/data/settings/cline_mcp_settings.json",
+          "Windows": "%USERPROFILE%\\.cline\\data\\settings\\cline_mcp_settings.json",
+          "project": null
+        },
+        "overridesHighToLow": [
+          "CLINE_MCP_SETTINGS_PATH exact filename",
+          "CLINE_DATA_DIR/settings/cline_mcp_settings.json",
+          "<resolved-cline-root>/data/settings/cline_mcp_settings.json"
+        ],
+        "rootHighToLow": ["Programmatic --config root", "CLINE_DIR", "<home>/.cline"],
+        "isolatedContexts": "CLI --data-dir and sandbox selection can change storage",
+        "extensionOverrideCaveat": "Controller takes dirname then hub appends cline_mcp_settings.json; atypical explicit basename may differ from CLI, source-derived not live reproduced",
+        "keyPath": ["mcpServers", "browser-bridge"],
+        "command": "bbx",
+        "args": ["mcp", "serve"],
+        "schema": {
+          "mcpServers": {
+            "browser-bridge": {
+              "type": "stdio",
+              "command": "bbx",
+              "args": ["mcp", "serve"],
+              "disabled": false,
+              "autoApprove": []
+            }
+          }
+        },
+        "acceptedAlternativeEntry": {
+          "transport": { "type": "stdio", "command": "bbx", "args": ["mcp", "serve"] }
+        },
+        "registrationCommand": "cline mcp add browser-bridge --yes -- bbx mcp serve",
+        "commandStatus": "Unexecuted documented syntax; --yes skips wizard, not tool approval; writes nested transport and replaces name",
+        "format": "JSON; coordinated atomic edit; upstream uses <settings-file>.lock and same-directory rename",
+        "limitations": [
+          "No native project MCP discovery/merge verified; explicit override is replacement file",
+          "Old extension targets migrate once; first released migration version unknown",
+          "autoApprove empty controls extension only; CLI global auto-approve defaults true in docs",
+          "Deduplicate CLI/extension selected resolved file; no indiscriminate legacy writes"
+        ],
+        "verification": "Extension Configure UI opens actual file; file watcher reconnects; cline config mcp/--json diagnostic, never log unrelated credentials",
+        "basis": "public-documentation-and-upstream-source; main not every deployed release",
+        "confidence": "high",
+        "sources": [
+          "cline-paths",
+          "cline-controller",
+          "cline-disk",
+          "cline-loader",
+          "cline-migration",
+          "cline-mcp",
+          "cline-approval"
+        ]
+      },
+      "skills": {
+        "capability": "Native CLI and extension SKILL.md",
+        "paths": {
+          "userDefault": "<home>/.cline/skills/browser-bridge/SKILL.md",
+          "cliUserOverride": "<resolved-cline-root>/skills/browser-bridge/SKILL.md",
+          "extensionUiUser": "<os-home>/.cline/skills/browser-bridge/SKILL.md",
+          "project": "<project>/.cline/skills/browser-bridge/SKILL.md",
+          "sharedUser": "<home>/.agents/skills/browser-bridge/SKILL.md"
+        },
+        "diskPrecedence": "project .clinerules < .cline < .claude < .agents < global .cline < global .agents",
+        "enterprise": "Extension remote skills override disk; complete core plugin/enterprise ordering unknown",
+        "requiredFrontmatter": ["name matching directory", "description, max 1024 characters"],
+        "preserveState": ["disabled: true", "enabled: false"],
+        "limitations": "Global beats project; extension UI hardcodes user root; no global .claude root verified",
+        "verification": "Extension Skills tab; cline config skills; cline skill add/list/remove",
+        "basis": "public-documentation-and-upstream-source",
+        "confidence": "high",
+        "sources": ["cline-skills", "cline-paths", "cline-skill-roots", "cline-skill-order"]
+      },
+      "installationFingerprints": [
+        {
+          "kind": "extension-inventory",
+          "value": "saoudrizwan.claude-dev",
+          "defaultPayloadRoots": "~/.vscode/extensions or %USERPROFILE%\\.vscode\\extensions",
+          "requires": "Exact publisher/name in actual profile inventory/manifest; enabled/active separate; portable/remotes/--extensions-dir alter roots",
+          "basis": "upstream-manifest-and-editor-documentation",
+          "confidence": "high",
+          "sources": ["cline-extension", "vscode-cli", "vscode-extensions"]
+        },
+        {
+          "kind": "cli-package-and-payload",
+          "package": "cline",
+          "bin": "bin/cline",
+          "platformPackages": [
+            "@cline/cli-darwin-arm64",
+            "@cline/cli-darwin-x64",
+            "@cline/cli-linux-arm64",
+            "@cline/cli-linux-x64",
+            "@cline/cli-windows-arm64",
+            "@cline/cli-windows-x64"
+          ],
+          "requires": "Resolve wrapper/native payload; CLINE_BIN_PATH overrides; workspace @cline/cli not published wrapper name",
+          "probeArgv": ["<verified-resolved-cline>", "version"],
+          "basis": "upstream-publishing-and-wrapper-source",
+          "confidence": "high",
+          "sources": ["cline-publish", "cline-wrapper", "cline-main"]
+        }
+      ],
+      "historicalEvidence": [
+        {
+          "kind": "legacy-mcp-candidates",
+          "paths": {
+            "macOS": "~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json",
+            "Windows": "%APPDATA%\\Code\\User\\globalStorage\\saoudrizwan.claude-dev\\settings\\cline_mcp_settings.json",
+            "Linux": "~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json",
+            "other": "<resolved Documents>/Cline/MCP/cline_mcp_settings.json"
+          },
+          "variants": "Insiders substitutes Code - Insiders; obtain actual globalStorageUri for profiles/remotes",
+          "basis": "Migration source plus documented default editor root composition",
+          "confidence": "high-default-composition; medium-unqueried-profile",
+          "identityConfidence": "low",
+          "sources": ["cline-migration", "vscode-settings", "vscode-profiles"]
+        }
+      ],
+      "configuredEvidence": [
+        {
+          "signals": [".cline", ".clinerules", ".vscode", "Code/User", "Skills", "CLINE_DIR"],
+          "meaning": "Shared/retained state or selectors, not install or caller",
+          "basis": "public-documentation-and-upstream-source",
+          "confidence": "high",
+          "identityConfidence": "low",
+          "sources": ["cline-paths", "cline-skills"]
+        }
+      ],
+      "callerFingerprints": [
+        {
+          "kind": "mcp-clientInfo",
+          "variant": "extension",
+          "name": "Cline",
+          "version": "ExtensionRegistryInfo.version supplied as clientVersion",
+          "basis": "upstream-source",
+          "confidence": "high",
+          "testedLive": false,
+          "sources": ["cline-extension-client", "cline-controller"]
+        },
+        {
+          "kind": "mcp-clientInfo",
+          "variant": "core-local-stdio",
+          "name": "@cline/core",
+          "version": "0.0.0",
+          "meaning": "Reusable Cline-family SDK, not uniquely CLI and not installed version",
+          "basis": "upstream-source",
+          "confidence": "high",
+          "testedLive": false,
+          "sources": ["cline-core-client"]
+        },
+        {
+          "kind": "child-environment",
+          "name": "CLINE_WRAPPER_PATH",
+          "value": "npm wrapper path",
+          "scope": "Wrapper sets native child env; core inherits; direct native/custom host may omit",
+          "basis": "Source plus chain-dependent propagation inference",
+          "confidence": "high-setting; medium-specific-BBX-child",
+          "testedLive": false,
+          "sources": ["cline-wrapper", "cline-core-client"]
+        },
+        {
+          "kind": "internal-session-not-mcp",
+          "name": "cline-cli",
+          "meaning": "Internal session label, not MCP initialize name",
+          "basis": "upstream-source",
+          "confidence": "high",
+          "testedLive": false,
+          "sources": ["cline-main", "cline-core-client"]
+        }
+      ],
+      "unknowns": [
+        "First released shared-file migration version and native project MCP scope",
+        "Universal CLINE_ACTIVE/CLINE_CLI marker",
+        "Complete profile/portable/remote legacy placement and plugin/enterprise skill order",
+        "Live handshake/reload and Windows bbx launcher behavior"
+      ]
+    },
+    {
+      "displayName": "Zed",
+      "proposedKey": "zed",
+      "target": "Editor/native agent; not autonomous launcher CLI, ACP agent or Terminal Thread CLI",
+      "snapshot": {
+        "mainCommit": "cfb894a5dde8ccf3fba1659164f47fdd1c024e2e",
+        "selectedStableChecks": "v1.25.2, commit d25fa01ccd788d812f236810b71af4feff6b2e38",
+        "minimumVersion": null,
+        "testedLive": false
+      },
+      "agentInstallation": {
+        "notBbxSkillInstallation": true,
+        "commands": [
+          "brew install --cask zed",
+          "brew install --cask zed@preview",
+          "winget install --id ZedIndustries.Zed"
+        ],
+        "platforms": "Casks macOS; winget Windows; official DMG/Windows/Linux installers also documented",
+        "basis": "Compositions from documented package IDs; no standalone native coding-agent CLI verified",
+        "confidence": "high",
+        "sources": ["zed-macos", "zed-windows", "zed-linux", "zed-cli"]
+      },
+      "mcp": {
+        "capability": "Native context server local stdio",
+        "scopes": { "user": true, "project": true, "explicitProfile": true },
+        "paths": {
+          "macOS": "~/.config/zed/settings.json; XDG_CONFIG_HOME not consulted",
+          "Linux": "$XDG_CONFIG_HOME/zed/settings.json, default ~/.config/zed/settings.json",
+          "LinuxFlatpak": "$FLATPAK_XDG_CONFIG_HOME/zed/settings.json when set, before XDG",
+          "Windows": "%APPDATA%\\Zed\\settings.json",
+          "project": "<root-worktree>/.zed/settings.json",
+          "explicitProfile": "<--user-data-dir>/config/settings.json"
+        },
+        "channelCaveat": "Stable/preview default config not channel-separated",
+        "keyPath": ["context_servers", "browser-bridge"],
+        "command": "bbx",
+        "args": ["mcp", "serve"],
+        "schema": {
+          "context_servers": {
+            "browser-bridge": { "command": "bbx", "args": ["mcp", "serve"], "env": {} }
+          }
+        },
+        "optionalFields": "enabled defaults true, remote defaults false, timeout seconds",
+        "format": "JSONC; flattened command string, not legacy command.path/source:custom or agent_servers",
+        "precedence": "Project over user; duplicate visible worktree server IDs first-wins in root order",
+        "limitations": "Profile tools, disable_ai, trust, native confirm permissions and GUI executable environment remain separate",
+        "acp": {
+          "integrationHost": "Zed",
+          "activeAgent": "External adapter/client, not automatically Zed",
+          "forwards": "MCP launch specification, not guaranteed rebranded/proxied MCP clientInfo",
+          "v2Main": "Agent stdio MCP capability and absolute command required; resolve global bbx with same args",
+          "remote": "Remote ACP projects exclude local-only stdio; test adapter independently",
+          "skills": "Native Zed skills do not configure external agents or Terminal Thread CLIs"
+        },
+        "verification": "MCP UI green Server is active; settings update without normal full restart; use new ACP thread and actual BBX tool test",
+        "basis": "Docs/source, native selected stable checks; ACP v2 main only",
+        "confidence": "high-native; conditional-per-ACP-agent",
+        "sources": [
+          "zed-mcp",
+          "zed-paths",
+          "zed-schema",
+          "zed-store",
+          "zed-external",
+          "zed-acp-v2",
+          "zed-acp-filter"
+        ]
+      },
+      "skills": {
+        "capability": "Native Zed Agent SKILL.md with terminal-capable CLI workflow",
+        "paths": {
+          "user": "~/.agents/skills/browser-bridge/SKILL.md",
+          "WindowsUser": "%USERPROFILE%\\.agents\\skills\\browser-bridge\\SKILL.md",
+          "project": "<worktree>/.agents/skills/browser-bridge/SKILL.md"
+        },
+        "precedence": "Trusted project frontmatter name overrides user",
+        "requiredFrontmatter": ["name", "description"],
+        "limitations": "Direct child skill directories only; no custom roots; shared generic agents destination; AGENTS.md is not skill install; ACP/Terminal Threads own skills",
+        "refresh": "Live reload; /browser-bridge or @skill; user skill permission flow",
+        "basis": "public-documentation-and-source; stable checked",
+        "confidence": "high",
+        "sources": ["zed-skills", "zed-stable-skills", "zed-external"]
+      },
+      "installationFingerprints": [
+        {
+          "kind": "macos-bundle",
+          "ids": ["dev.zed.Zed", "dev.zed.Zed-Preview", "dev.zed.Zed-Nightly", "dev.zed.Zed-Dev"],
+          "candidatePaths": "/Applications or ~/Applications: Zed.app, Zed Preview.app",
+          "gui": "Contents/MacOS/zed",
+          "launcher": "Contents/MacOS/cli",
+          "signingTeam": "MQ55VZLNZQ",
+          "requires": "Actual bundle metadata/executables; source builds need not have official signature",
+          "basis": "upstream-packaging-source-and-docs",
+          "confidence": "high",
+          "sources": ["zed-macos", "zed-mac-metadata", "zed-mac-bundle"]
+        },
+        {
+          "kind": "windows-installation",
+          "wingetStable": "ZedIndustries.Zed",
+          "innoAppIds": {
+            "stable": "{2DB0DA96-CA55-49BB-AF4F-64AF36A86712}",
+            "preview": "{F70E4811-D0E2-4D88-AC99-D63752799F95}"
+          },
+          "appUserModelIds": ["ZedIndustries.Zed", "ZedIndustries.Zed.Preview"],
+          "candidateRoots": "%LOCALAPPDATA%\\Programs\\Zed or Zed Preview, not guaranteed",
+          "gui": "<install-root>\\Zed.exe",
+          "launcher": "<install-root>\\bin\\zed.exe",
+          "requires": "GUIDs are build inputs, not tested registry key/hive; resolve actual files",
+          "basis": "upstream-packaging-source-and-docs",
+          "confidence": "high-identities; medium-default-root-inference",
+          "sources": ["zed-windows", "zed-win-bundle", "zed-win-installer"]
+        },
+        {
+          "kind": "linux-installation",
+          "trees": ["~/.local/zed.app", "~/.local/zed-preview.app"],
+          "gui": "<tree>/libexec/zed-editor",
+          "launcher": "<tree>/bin/zed; shared ~/.local/bin/zed symlink",
+          "desktopIds": ["dev.zed.Zed.desktop", "dev.zed.Zed-Preview.desktop"],
+          "flatpakStable": "dev.zed.Zed",
+          "communityCandidates": [
+            "zed",
+            "zed-editor",
+            "zed-preview",
+            "zed-preview-bin",
+            "zedit",
+            "zeditor"
+          ],
+          "requires": "Actual metadata/files; names not universal; Flatpak may lack host PATH launcher",
+          "basis": "upstream-installer-source-and-docs",
+          "confidence": "high-documented-candidates",
+          "sources": ["zed-linux", "zed-unix-installer"]
+        },
+        {
+          "kind": "readiness-probe",
+          "argv": ["<verified-resolved-zed-launcher>", "--version"],
+          "meaning": "Reports app version/path without launching editor; verify target exists",
+          "basis": "public-documentation-and-source",
+          "confidence": "high",
+          "sources": ["zed-cli"]
+        }
+      ],
+      "historicalEvidence": [
+        {
+          "signal": "Orphan launcher or desktop/registry/Explorer registration",
+          "meaning": "Discovery only until app verified; optional Explorer AppX 1.0.0.0 not editor version",
+          "basis": "upstream-packaging-source",
+          "confidence": "high",
+          "identityConfidence": "low",
+          "sources": ["zed-win-bundle", "zed-win-installer", "zed-unix-installer"]
+        }
+      ],
+      "configuredEvidence": [
+        {
+          "signals": [".config/zed", ".zed", ".agents/skills", "AGENTS.md"],
+          "meaning": "Mutable/shared/retained config, not install or agent identity",
+          "basis": "public-documentation",
+          "confidence": "high",
+          "identityConfidence": "low",
+          "sources": ["zed-macos", "zed-linux", "zed-skills"]
+        }
+      ],
+      "callerFingerprints": [
+        {
+          "kind": "mcp-clientInfo",
+          "name": "Zed",
+          "version": "0.1.0 from context_server CARGO_PKG_VERSION, not editor app version",
+          "meaning": "Native immediate MCP client only",
+          "basis": "upstream-source; stable checked",
+          "confidence": "high",
+          "testedLive": false,
+          "sources": ["zed-client", "zed-client-version"]
+        },
+        {
+          "kind": "acp-clientInfo-not-mcp",
+          "name": "zed",
+          "version": "Editor AppVersion; v2 title is release-channel display name",
+          "meaning": "Editor to external agent hop, not automatically BBX-visible peer",
+          "basis": "upstream-source",
+          "confidence": "high",
+          "testedLive": false,
+          "sources": ["zed-acp-identity", "zed-external"]
+        },
+        {
+          "kind": "terminal-host-env",
+          "values": {
+            "ZED_TERM": "true",
+            "TERM_PROGRAM": "zed",
+            "TERM_PROGRAM_VERSION": "app version"
+          },
+          "meaning": "Local/remote terminal host only, never override CLI agent identity",
+          "basis": "upstream-source",
+          "confidence": "high",
+          "testedLive": false,
+          "sources": ["zed-terminal"]
+        }
+      ],
+      "unknowns": [
+        "Standalone native coding-agent CLI, preview winget/Flathub IDs",
+        "Exhaustive custom registry paths or universal Linux executable name",
+        "Earliest skill version and live native/ACP BBX activation",
+        "Per-adapter forwarding/permissions/BBX-visible identity"
+      ]
+    },
+    {
+      "displayName": "Amp",
+      "proposedKey": "amp",
+      "snapshot": {
+        "distributionVersion": "0.0.1792699242-g1cbc87",
+        "publishedGitHead": "1cbc8728401761bb51b07c3757282aeea8581b02",
+        "runtimeSourceAudited": false,
+        "testedLive": false
+      },
+      "agentInstallation": {
+        "notBbxSkillInstallation": true,
+        "commands": [
+          "curl -fsSL https://ampcode.com/install.sh | bash",
+          "npm install -g @ampcode/cli",
+          "irm https://ampcode.com/install.ps1 | iex"
+        ],
+        "commandBasis": "Unix documented for macOS/Linux/WSL; npm package composition; PowerShell official-script invocation composition, not recovered verbatim docs command",
+        "limitations": "Native Windows x64 binary exists but full feature parity unknown; brew install amp is unrelated editor",
+        "basis": "public-docs-and-distribution",
+        "confidence": "high-distribution; unknown-native-parity",
+        "sources": [
+          "amp-cli",
+          "amp-unix-installer",
+          "amp-win-installer",
+          "amp-package",
+          "amp-collision"
+        ]
+      },
+      "mcp": {
+        "capability": "Executor-local stdio, distinct from cloud remote definitions",
+        "scopes": { "user": true, "workspace": true, "explicitUserFile": true, "sessionMap": true },
+        "paths": {
+          "macOSLinux": "~/.config/amp/settings.json or settings.jsonc",
+          "Windows": "%USERPROFILE%\\.config\\amp\\settings.json or settings.jsonc",
+          "workspace": "Nearest .amp/settings.json or .jsonc, upward to repo root; current dir outside Git",
+          "explicitUserFile": "--settings-file <path>"
+        },
+        "keyPath": ["amp.mcpServers", "browser-bridge"],
+        "literalDottedRootKey": true,
+        "command": "bbx",
+        "args": ["mcp", "serve"],
+        "schema": {
+          "amp.mcpServers": {
+            "browser-bridge": { "command": "bbx", "args": ["mcp", "serve"] }
+          }
+        },
+        "sessionOverride": {
+          "flag": "--mcp-config",
+          "schema": { "browser-bridge": { "command": "bbx", "args": ["mcp", "serve"] } }
+        },
+        "precedence": "--mcp-config > workspace > user > skill bundle, per server name",
+        "format": "JSON/JSONC; same-scope coexistence winner unknown, preserve selected existing file",
+        "registrationCommand": "amp mcp add browser-bridge -- bbx mcp serve",
+        "commandStatus": "Unexecuted syntax composition; write scope/scope flags unknown, use verified file choice",
+        "limitations": [
+          "Workspace requires approval; user/flag definitions not that approval, managed rules still apply",
+          "Local tools generally lack per-call confirmation; cloud remote policy is separate",
+          "Orbs/runners are separate executors; laptop config/bbx/browser do not transfer",
+          "Do not install direct and bundled MCP expecting deferred visibility"
+        ],
+        "verification": "Fresh local process conservatively; amp mcp doctor; user amp mcp approve browser-bridge for workspace; actual executor connectivity",
+        "basis": "public-documentation-and-published-schema",
+        "confidence": "high",
+        "sources": ["amp-settings", "amp-schema", "amp-mcp", "amp-execute", "amp-skills"]
+      },
+      "skills": {
+        "capability": "Native SKILL.md with optional bundled MCP",
+        "paths": {
+          "targetedUser": "~/.config/amp/skills/browser-bridge/SKILL.md",
+          "project": "<project>/.agents/skills/browser-bridge/SKILL.md",
+          "ampSkillAddGlobal": "~/.config/agents/skills/browser-bridge/SKILL.md"
+        },
+        "precedenceFirstNameWins": [
+          "~/.config/agents/skills",
+          "~/.agents/skills",
+          "~/.config/amp/skills",
+          "project/searched-parent .agents/skills",
+          "corresponding .claude/skills",
+          "~/.claude/skills",
+          "~/.claude/plugins/cache",
+          "amp.skills.path",
+          "personal repository",
+          "active workspace repository",
+          "official skills"
+        ],
+        "extraPaths": "amp.skills.path: colon-separated Unix, semicolon Windows; tilde/home and workspace-relative expansion",
+        "requiredFrontmatter": ["name", "description"],
+        "optionalBundledMcp": {
+          "file": "browser-bridge/mcp.json",
+          "schema": { "browser-bridge": { "command": "bbx", "args": ["mcp", "serve"] } },
+          "alternative": "SKILL.md mcpServers frontmatter wins over sibling file",
+          "lifecycle": "Connects at discovery; tools hidden until skill loads unless direct same-name config wins",
+          "workingDirectory": "Thread directory, not skill directory",
+          "env": "AMP_SKILL_DIR is absolute skill directory, expandable in bundle command/args/env"
+        },
+        "recommendedMode": "Direct MCP plus instruction-only skill; bundled MCP only explicit alternative",
+        "limitations": "Project does not universally win; .amp/skills not default; Windows home-relative roots, no invented APPDATA/XDG override",
+        "refresh": "amp skills list/--json inspects; active reload_skills or fresh thread, list alone no reload",
+        "basis": "public-documentation",
+        "confidence": "high",
+        "sources": ["amp-skills", "amp-settings"]
+      },
+      "installationFingerprints": [
+        {
+          "kind": "direct-binary",
+          "paths": {
+            "Unix": "$AMP_HOME/bin/amp or ~/.amp/bin/amp",
+            "Windows": "$env:AMP_HOME\\bin\\amp.exe or $HOME\\.amp\\bin\\amp.exe"
+          },
+          "possibleUnixLinks": ["~/.local/bin/amp", "~/bin/amp", "~/.bin/amp"],
+          "requires": "Actual executable and official provenance, not basename",
+          "basis": "official-installer-text-not-executed",
+          "confidence": "high",
+          "sources": ["amp-unix-installer", "amp-win-installer"]
+        },
+        {
+          "kind": "npm-package",
+          "package": "@ampcode/cli",
+          "binMappingAtSnapshot": "amp -> bin/amp.exe",
+          "platformPackages": [
+            "@ampcode/cli-darwin-x64",
+            "@ampcode/cli-darwin-arm64",
+            "@ampcode/cli-linux-x64",
+            "@ampcode/cli-linux-arm64",
+            "@ampcode/cli-win32-x64"
+          ],
+          "requires": "Matching actual payload and metadata; no fixed npm prefix",
+          "basis": "published-versioned-distribution-metadata",
+          "confidence": "high",
+          "sources": ["amp-package", "amp-package-change"]
+        },
+        {
+          "kind": "name-collision",
+          "signal": "Homebrew core amp is amp.rs terminal editor, not Amp Code",
+          "probeArgv": ["<verified-resolved-amp-code>", "version"],
+          "requires": "Provenance before probe; no output identity regex verified",
+          "basis": "published-formula-metadata-and-docs",
+          "confidence": "high",
+          "sources": ["amp-collision", "amp-cli"]
+        }
+      ],
+      "historicalEvidence": [
+        {
+          "signals": ["sourcegraph.amp extension", "@sourcegraph/amp legacy npm wrapper"],
+          "meaning": "Editor retired March 2026; legacy package still existed despite announced removal, requires actual current payload",
+          "basis": "Dated official articles and checked registry metadata",
+          "confidence": "high",
+          "identityConfidence": "low-for-current-caller",
+          "sources": [
+            "amp-old-extension",
+            "amp-retirement",
+            "amp-legacy-package",
+            "amp-package-change"
+          ]
+        }
+      ],
+      "configuredEvidence": [
+        {
+          "signals": [
+            ".config/amp",
+            ".amp/settings.json",
+            ".agents/skills",
+            ".claude/skills",
+            "AGENTS.md"
+          ],
+          "meaning": "Mutable/shared config, not current install/caller/executor",
+          "basis": "public-documentation",
+          "confidence": "high",
+          "identityConfidence": "low",
+          "sources": ["amp-settings", "amp-skills", "amp-cli"]
+        }
+      ],
+      "callerFingerprints": [
+        {
+          "kind": "mcp-clientInfo",
+          "name": null,
+          "version": null,
+          "basis": "Not established by checked primary docs/distribution; runtime source not audited",
+          "confidence": "unknown",
+          "testedLive": false,
+          "sources": ["amp-mcp", "amp-package-change"]
+        },
+        {
+          "kind": "skill-bundle-environment",
+          "name": "AMP_SKILL_DIR",
+          "value": "Absolute skill directory",
+          "meaning": "Local bundled MCP only, not universal session marker",
+          "basis": "public-documentation",
+          "confidence": "high",
+          "testedLive": false,
+          "sources": ["amp-skills"]
+        },
+        {
+          "kind": "process-provenance-recommendation",
+          "value": "Verified actual Amp binary/package in current ancestry",
+          "meaning": "Supporting inference if visible, not audited runtime internals or authentication",
+          "basis": "design-inference-from-distribution",
+          "confidence": "medium",
+          "testedLive": false,
+          "sources": ["amp-package", "amp-unix-installer"]
+        }
+      ],
+      "nonIdentityInputs": [
+        "AMP_API_KEY",
+        "AMP_HOME",
+        "AMP_VERSION",
+        "AMP_STORAGE_BASE",
+        "AMP_URL"
+      ],
+      "unknowns": [
+        "Exact MCP name/version and universal AMP_AGENT/SESSION_ID/THREAD_ID child marker",
+        "Current standalone extension ID or Amp Code Homebrew command",
+        "Same-scope json/jsonc winner, mcp add scope and exact local reload command",
+        "Native Windows feature parity and live direct/bundled BBX behavior"
+      ]
+    },
+    {
+      "displayName": "Factory Droid",
+      "proposedKey": "droid",
+      "snapshot": {
+        "distributionVersion": "0.247.0",
+        "runtimeSourceAudited": false,
+        "distributionWrapperInspected": true,
+        "testedLive": false
+      },
+      "agentInstallation": {
+        "notBbxSkillInstallation": true,
+        "commands": [
+          "curl -fsSL https://app.factory.ai/cli | sh",
+          "brew install --cask droid",
+          "irm https://app.factory.ai/cli/windows | iex",
+          "npm install -g droid"
+        ],
+        "platforms": "Shell macOS/Linux, cask macOS, PowerShell Windows; npm supported platform payloads",
+        "runtime": "npm Node >=20; Linux xdg-utils prerequisite, apt command only on apt-based distros",
+        "warning": "Installers terminate running droid processes; never use as detection probes",
+        "basis": "public-docs-and-inspected-distribution",
+        "confidence": "high",
+        "sources": [
+          "droid-quickstart",
+          "droid-reference",
+          "droid-package",
+          "droid-unix-installer",
+          "droid-win-installer"
+        ]
+      },
+      "mcp": {
+        "capability": "local-stdio",
+        "scopes": { "user": true, "project": true, "ancestorFolder": true, "cliAddProject": false },
+        "paths": {
+          "user": "~/.factory/mcp.json",
+          "WindowsUser": "%USERPROFILE%\\.factory\\mcp.json",
+          "project": "<project>/.factory/mcp.json",
+          "ancestor": "<ancestor-folder>/.factory/mcp.json"
+        },
+        "keyPath": ["mcpServers", "browser-bridge"],
+        "command": "bbx",
+        "args": ["mcp", "serve"],
+        "schema": {
+          "mcpServers": {
+            "browser-bridge": {
+              "type": "stdio",
+              "command": "bbx",
+              "args": ["mcp", "serve"],
+              "disabled": false
+            }
+          }
+        },
+        "registrationCommand": "droid mcp add browser-bridge \"bbx mcp serve\" --type stdio",
+        "commandStatus": "Unexecuted documented substitution, user only; tokenizer/--/duplicate behavior unknown; prefer explicit JSON argv",
+        "overrides": "--settings participates in general hierarchy, not established alternate mcp.json filename; managed definition injection schema/path unknown",
+        "format": "Documented JSON mcp.json; no mcp.local.json established",
+        "generalHierarchy": "Org > runtime --settings > folder > project > user > dynamic > built-in",
+        "precedenceCaveat": "Locked hierarchy plus user copies for project toggles do not establish full unmanaged duplicate-command/nearest-ancestor order",
+        "limitations": [
+          "type optional, disabled defaults false; command/args/url do not expand variables",
+          "MCP approval fingerprints bind command/args, changing command invalidates approval",
+          "Managed allowlists/autonomy, /mcp off and custom droid server filters remain separate",
+          "No universal project trust prompt or autoapproval key established; do not invent one",
+          "System policy settings.json is not an adjacent managed mcp.json install target"
+        ],
+        "verification": "MCP files auto-reload; /mcp source/status/tools and droid mcp list; configured/connected/approved separate",
+        "basis": "public-documentation; private runtime source not audited",
+        "confidence": "high-documented-contract; unresolved-unmanaged-duplicates",
+        "sources": ["droid-mcp", "droid-hierarchy", "droid-settings", "droid-subagents"]
+      },
+      "skills": {
+        "capability": "Native inline/on-demand SKILL.md, not custom droid subagent",
+        "paths": {
+          "user": "~/.factory/skills/browser-bridge/SKILL.md",
+          "WindowsUser": "%USERPROFILE%\\.factory\\skills\\browser-bridge\\SKILL.md",
+          "project": "<repo>/.factory/skills/browser-bridge/SKILL.md",
+          "folder": "<repo>/<area>/.factory/skills/browser-bridge/SKILL.md",
+          "compatibility": "Personal/repository .agents/skills and .agent/skills recursive SKILL.md"
+        },
+        "ordinaryPrecedence": "folder/project > project plugin > personal > user plugin > built-in",
+        "specialPrecedence": "Org plugins outrank ordinary sources; missions/automations add overrides",
+        "requiredFrontmatter": ["name", "description"],
+        "preserveState": "enabled/user-invocable/disable-model-invocation controls and combined user/project disabledSkills ledger",
+        "limitations": "allowed-tools is descriptive, not sandbox/tool grant; .factory/droids is subagents, not skills; depth/compatibility ties unknown",
+        "refresh": "/skills Effective/User/Project/etc; new session if absent, no immediate arbitrary skill watching guarantee",
+        "basis": "public-documentation",
+        "confidence": "high",
+        "sources": ["droid-skills", "droid-subagents", "droid-settings"]
+      },
+      "installationFingerprints": [
+        {
+          "kind": "standalone-binary",
+          "paths": {
+            "macOSLinux": "~/.local/bin/droid",
+            "Windows": "%USERPROFILE%\\bin\\droid.exe"
+          },
+          "distribution": "downloads.factory.ai/factory-cli/releases/<version>/<platform>/<arch>/<binary> plus .sha256",
+          "requires": "Actual executable/provenance; parameter list not proof every platform/arch exists",
+          "basis": "official-installer-text-and-docs",
+          "confidence": "high",
+          "sources": ["droid-unix-installer", "droid-win-installer", "droid-reference"]
+        },
+        {
+          "kind": "npm-package",
+          "package": "droid",
+          "versionAnchor": "0.247.0",
+          "bin": "bin/droid",
+          "repository": "Factory-AI/factory apps/cli",
+          "platformPackages": [
+            "@factory/cli-darwin-arm64",
+            "@factory/cli-darwin-x64",
+            "@factory/cli-darwin-x64-baseline",
+            "@factory/cli-linux-arm64",
+            "@factory/cli-linux-x64",
+            "@factory/cli-linux-x64-baseline",
+            "@factory/cli-win32-arm64",
+            "@factory/cli-win32-x64",
+            "@factory/cli-win32-x64-baseline"
+          ],
+          "wrapper": "Unix hardlink/symlink native binary, Windows Node shim; payload bin/droid or droid.exe",
+          "requires": "Factory provenance plus payload; not ownership of all historical packages named droid",
+          "basis": "Versioned published metadata and inspected archive, not executed",
+          "confidence": "high",
+          "sources": ["droid-package", "droid-tarball", "droid-reference"]
+        },
+        {
+          "kind": "homebrew-cask",
+          "value": "droid",
+          "requires": "Actual cask/prefix and binary with Factory URL/hash",
+          "basis": "Factory docs and Homebrew cask source",
+          "confidence": "high",
+          "sources": ["droid-quickstart", "droid-cask"]
+        },
+        {
+          "kind": "editor-integration-only",
+          "value": "Factory.factory-vscode-extension",
+          "meaning": "CLI must be installed separately",
+          "basis": "public-docs-and-Marketplace",
+          "confidence": "high",
+          "sources": ["droid-ide", "droid-extension"]
+        },
+        {
+          "kind": "desktop-only",
+          "value": "Factory macOS/Windows app and MSIX",
+          "meaning": "Separate component, exact bundle/MSIX IDs unknown, not global CLI proof",
+          "basis": "public-documentation",
+          "confidence": "high-separate-component",
+          "sources": ["droid-app", "droid-msix"]
+        },
+        {
+          "kind": "readiness-probe",
+          "argv": ["<verified-resolved-droid>", "--version"],
+          "envOverride": { "FACTORY_DROID_AUTO_UPDATE_ENABLED": "false" },
+          "meaning": "Recommended bounded probe; output bare version or droid <version>, not publisher proof",
+          "basis": "Docs/wrapper source; controlled probe is design recommendation",
+          "confidence": "high-flags-output-variability",
+          "sources": ["droid-reference", "droid-tarball"]
+        }
+      ],
+      "historicalEvidence": [
+        {
+          "signals": [".droid.yaml", "Retained .factory state"],
+          "meaning": "Legacy/configuration, not installed CLI or caller",
+          "basis": "public-documentation",
+          "confidence": "high",
+          "identityConfidence": "low",
+          "sources": ["droid-settings"]
+        }
+      ],
+      "configuredEvidence": [
+        {
+          "signals": [
+            ".factory",
+            ".factory/mcp.json",
+            ".factory/skills",
+            ".agents/skills",
+            ".agent/skills"
+          ],
+          "meaning": "May be shared, disabled or retained, not install or caller",
+          "basis": "public-documentation",
+          "confidence": "high",
+          "identityConfidence": "low",
+          "sources": ["droid-mcp", "droid-skills"]
+        }
+      ],
+      "callerFingerprints": [
+        {
+          "kind": "mcp-clientInfo",
+          "name": null,
+          "version": null,
+          "basis": "Not established by checked public evidence; private runtime source not audited",
+          "confidence": "unknown",
+          "testedLive": false,
+          "sources": ["droid-mcp", "droid-package"]
+        },
+        {
+          "kind": "universal-child-environment",
+          "name": null,
+          "value": null,
+          "meaning": "Hook/plugin/API/updater inputs not universal caller outputs",
+          "basis": "No universal identity contract established in checked docs",
+          "confidence": "unknown",
+          "testedLive": false,
+          "sources": ["droid-hooks", "droid-reference"]
+        },
+        {
+          "kind": "process-provenance-recommendation",
+          "value": "Verified actual Droid executable/package ancestry, allowing npm Node wrapper and ACP frontend",
+          "meaning": "Supporting evidence if observable, not inspected ancestry or authentication",
+          "basis": "design-inference-from-wrapper-and-ACP-docs",
+          "confidence": "medium",
+          "testedLive": false,
+          "sources": ["droid-tarball", "droid-ide"]
+        }
+      ],
+      "nonIdentityInputs": [
+        "FACTORY_API_KEY",
+        "FACTORY_DROID_AUTO_UPDATE_ENABLED",
+        "FACTORY_PROJECT_DIR",
+        "DROID_PLUGIN_ROOT"
+      ],
+      "unknowns": [
+        "Exact MCP name/version and universal child marker",
+        "Full unmanaged duplicate/ancestor MCP precedence and managed definition injection schema/path",
+        "Quoted add tokenizer, duplicate behavior and -- separator",
+        "Factory desktop bundle/signing/MSIX IDs and Linux desktop identity",
+        "Windows ARM64 integration parity, earliest package feature floor and live BBX activation"
+      ]
+    }
+  ],
+  "sources": {
+    "bbx-config": "https://github.com/koltyakov/browser-bridge/blob/main/internal/bridge/agents_config.go",
+    "bbx-skills": "https://github.com/koltyakov/browser-bridge/blob/main/internal/bridge/agents_skills.go",
+    "bbx-setup": "https://github.com/koltyakov/browser-bridge/blob/main/internal/bridge/setup.go",
+    "bbx-mcp": "https://github.com/koltyakov/browser-bridge/blob/main/internal/bridge/mcp.go",
+    "bbx-transport": "https://github.com/koltyakov/browser-bridge/blob/main/internal/bridge/mcp_transport.go",
+    "bbx-guide": "https://github.com/koltyakov/browser-bridge/blob/main/AGENTS.md",
+    "gemini-install": "https://geminicli.com/docs/get-started/installation/",
+    "gemini-package": "https://github.com/google-gemini/gemini-cli/blob/a713410aba5d594594e20d5c822e3aab8f822089/packages/cli/package.json",
+    "gemini-mcp": "https://geminicli.com/docs/tools/mcp-server/",
+    "gemini-paths": "https://github.com/google-gemini/gemini-cli/blob/a713410aba5d594594e20d5c822e3aab8f822089/packages/core/src/utils/paths.ts#L17-L28",
+    "gemini-storage": "https://github.com/google-gemini/gemini-cli/blob/a713410aba5d594594e20d5c822e3aab8f822089/packages/core/src/config/storage.ts",
+    "gemini-settings": "https://geminicli.com/docs/reference/configuration/",
+    "gemini-client": "https://github.com/google-gemini/gemini-cli/blob/a713410aba5d594594e20d5c822e3aab8f822089/packages/core/src/tools/mcp-client.ts",
+    "gemini-skills": "https://geminicli.com/docs/cli/skills/",
+    "gemini-stable-skills": "https://github.com/google-gemini/gemini-cli/blob/6006c14a4decfe4b891c6263ad6ad5992e404b5b/packages/core/src/skills/skillManager.ts#L54-L99",
+    "gemini-cli": "https://geminicli.com/docs/cli/cli-reference/",
+    "gemini-version": "https://github.com/google-gemini/gemini-cli/blob/a713410aba5d594594e20d5c822e3aab8f822089/packages/core/src/utils/version.ts#L16-L25",
+    "gemini-shell": "https://github.com/google-gemini/gemini-cli/blob/a713410aba5d594594e20d5c822e3aab8f822089/packages/core/src/services/shellExecutionService.ts#L55-L64",
+    "cline-install": "https://docs.cline.bot/getting-started/installing-cline",
+    "cline-extension": "https://github.com/cline/cline/blob/96cb5c4c083d2fdaae1918099e887bfd544a602b/apps/vscode/package.json",
+    "cline-paths": "https://github.com/cline/cline/blob/96cb5c4c083d2fdaae1918099e887bfd544a602b/sdk/packages/shared/src/storage/paths.ts",
+    "cline-controller": "https://github.com/cline/cline/blob/96cb5c4c083d2fdaae1918099e887bfd544a602b/apps/vscode/src/sdk/SdkController.ts#L330-L345",
+    "cline-disk": "https://github.com/cline/cline/blob/96cb5c4c083d2fdaae1918099e887bfd544a602b/apps/vscode/src/core/storage/disk.ts#L132-L152",
+    "cline-loader": "https://github.com/cline/cline/blob/96cb5c4c083d2fdaae1918099e887bfd544a602b/sdk/packages/core/src/extensions/mcp/config-loader.ts",
+    "cline-migration": "https://github.com/cline/cline/blob/96cb5c4c083d2fdaae1918099e887bfd544a602b/apps/vscode/src/hosts/vscode/mcp-settings-legacy-migration.ts",
+    "cline-mcp": "https://docs.cline.bot/mcp/mcp-overview",
+    "cline-approval": "https://github.com/cline/cline/blob/96cb5c4c083d2fdaae1918099e887bfd544a602b/docs/usage/cli-overview.mdx#L90-L103",
+    "cline-skills": "https://docs.cline.bot/customization/skills",
+    "cline-skill-roots": "https://github.com/cline/cline/blob/96cb5c4c083d2fdaae1918099e887bfd544a602b/apps/vscode/src/core/storage/skill-directories.ts",
+    "cline-skill-order": "https://github.com/cline/cline/blob/96cb5c4c083d2fdaae1918099e887bfd544a602b/apps/vscode/src/core/context/instructions/user-instructions/skills.ts#L177-L232",
+    "cline-publish": "https://github.com/cline/cline/blob/96cb5c4c083d2fdaae1918099e887bfd544a602b/apps/cli/script/publish-npm.ts",
+    "cline-wrapper": "https://github.com/cline/cline/blob/96cb5c4c083d2fdaae1918099e887bfd544a602b/apps/cli/bin/cline",
+    "cline-main": "https://github.com/cline/cline/blob/96cb5c4c083d2fdaae1918099e887bfd544a602b/apps/cli/src/main.ts",
+    "cline-extension-client": "https://github.com/cline/cline/blob/96cb5c4c083d2fdaae1918099e887bfd544a602b/apps/vscode/src/services/mcp/McpHub.ts#L465-L474",
+    "cline-core-client": "https://github.com/cline/cline/blob/96cb5c4c083d2fdaae1918099e887bfd544a602b/sdk/packages/core/src/extensions/mcp/client.ts",
+    "vscode-cli": "https://code.visualstudio.com/docs/configure/command-line",
+    "vscode-extensions": "https://code.visualstudio.com/docs/configure/extensions/extension-marketplace#_where-are-extensions-installed",
+    "vscode-settings": "https://code.visualstudio.com/docs/configure/settings#_settings-file-locations",
+    "vscode-profiles": "https://code.visualstudio.com/docs/configure/profiles#_where-are-profiles-kept",
+    "zed-macos": "https://zed.dev/docs/macos",
+    "zed-windows": "https://zed.dev/docs/windows",
+    "zed-linux": "https://zed.dev/docs/linux",
+    "zed-cli": "https://zed.dev/docs/reference/cli",
+    "zed-mcp": "https://zed.dev/docs/ai/mcp",
+    "zed-paths": "https://github.com/zed-industries/zed/blob/cfb894a5dde8ccf3fba1659164f47fdd1c024e2e/crates/paths/src/paths.rs#L135-L155",
+    "zed-schema": "https://github.com/zed-industries/zed/blob/d25fa01ccd788d812f236810b71af4feff6b2e38/crates/settings_content/src/project.rs",
+    "zed-store": "https://github.com/zed-industries/zed/blob/cfb894a5dde8ccf3fba1659164f47fdd1c024e2e/crates/project/src/context_server_store.rs",
+    "zed-external": "https://zed.dev/docs/ai/external-agents#configuration-boundaries",
+    "zed-acp-v2": "https://github.com/zed-industries/zed/blob/cfb894a5dde8ccf3fba1659164f47fdd1c024e2e/crates/agent_servers/src/acp/v2.rs#L608-L679",
+    "zed-acp-filter": "https://github.com/zed-industries/zed/blob/cfb894a5dde8ccf3fba1659164f47fdd1c024e2e/crates/agent_servers/src/acp.rs#L44-L65",
+    "zed-skills": "https://zed.dev/docs/ai/skills",
+    "zed-stable-skills": "https://github.com/zed-industries/zed/blob/d25fa01ccd788d812f236810b71af4feff6b2e38/crates/agent_skills/agent_skills.rs",
+    "zed-mac-metadata": "https://github.com/zed-industries/zed/blob/cfb894a5dde8ccf3fba1659164f47fdd1c024e2e/crates/zed/Cargo.toml#L286-L320",
+    "zed-mac-bundle": "https://github.com/zed-industries/zed/blob/cfb894a5dde8ccf3fba1659164f47fdd1c024e2e/script/bundle-mac",
+    "zed-win-bundle": "https://github.com/zed-industries/zed/blob/cfb894a5dde8ccf3fba1659164f47fdd1c024e2e/script/bundle-windows.ps1",
+    "zed-win-installer": "https://github.com/zed-industries/zed/blob/cfb894a5dde8ccf3fba1659164f47fdd1c024e2e/crates/zed/resources/windows/zed.iss",
+    "zed-unix-installer": "https://github.com/zed-industries/zed/blob/cfb894a5dde8ccf3fba1659164f47fdd1c024e2e/script/install.sh",
+    "zed-client": "https://github.com/zed-industries/zed/blob/d25fa01ccd788d812f236810b71af4feff6b2e38/crates/context_server/src/context_server.rs",
+    "zed-client-version": "https://github.com/zed-industries/zed/blob/d25fa01ccd788d812f236810b71af4feff6b2e38/crates/context_server/Cargo.toml#L1-L4",
+    "zed-acp-identity": "https://github.com/zed-industries/zed/blob/cfb894a5dde8ccf3fba1659164f47fdd1c024e2e/crates/agent_servers/src/acp/v2.rs#L249-L254",
+    "zed-terminal": "https://github.com/zed-industries/zed/blob/cfb894a5dde8ccf3fba1659164f47fdd1c024e2e/crates/terminal/src/terminal.rs#L654-L665",
+    "amp-cli": "https://ampcode.com/docs/cli",
+    "amp-unix-installer": "https://ampcode.com/install.sh",
+    "amp-win-installer": "https://ampcode.com/install.ps1",
+    "amp-package-change": "https://ampcode.com/news/npm-package-changes",
+    "amp-package": "https://registry.npmjs.org/@ampcode%2fcli/0.0.1792699242-g1cbc87",
+    "amp-collision": "https://formulae.brew.sh/api/formula/amp.json",
+    "amp-legacy-package": "https://registry.npmjs.org/@sourcegraph/amp/latest",
+    "amp-old-extension": "https://ampcode.com/news/cli-vscode-neovim",
+    "amp-retirement": "https://ampcode.com/news/the-coding-agent-is-dead",
+    "amp-settings": "https://ampcode.com/docs/cli/settings",
+    "amp-schema": "https://ampcode.com/cli-settings.schema.json",
+    "amp-mcp": "https://ampcode.com/docs/customize/mcp",
+    "amp-execute": "https://ampcode.com/docs/cli/execute-mode",
+    "amp-skills": "https://ampcode.com/docs/customize/skills",
+    "droid-quickstart": "https://docs.factory.com/droid-cli/quickstart.md",
+    "droid-reference": "https://docs.factory.com/droid-cli/cli-reference.md",
+    "droid-unix-installer": "https://app.factory.ai/cli",
+    "droid-win-installer": "https://app.factory.ai/cli/windows",
+    "droid-package": "https://registry.npmjs.org/droid/0.247.0",
+    "droid-tarball": "https://registry.npmjs.org/droid/-/droid-0.247.0.tgz",
+    "droid-cask": "https://github.com/Homebrew/homebrew-cask/blob/master/Casks/d/droid.rb",
+    "droid-ide": "https://docs.factory.com/ide-integrations.md",
+    "droid-extension": "https://marketplace.visualstudio.com/items?itemName=Factory.factory-vscode-extension",
+    "droid-app": "https://docs.factory.com/factory-app/quickstart.md",
+    "droid-msix": "https://docs.factory.com/enterprise/windows-msix-deployment.md",
+    "droid-mcp": "https://docs.factory.com/harness/mcp.md",
+    "droid-hierarchy": "https://docs.factory.com/enterprise/hierarchical-settings-and-org-control.md",
+    "droid-settings": "https://docs.factory.com/droid-cli/settings.md",
+    "droid-skills": "https://docs.factory.com/harness/skills.md",
+    "droid-subagents": "https://docs.factory.com/harness/subagents.md",
+    "droid-hooks": "https://docs.factory.com/harness/hooks.md"
+  }
+}
