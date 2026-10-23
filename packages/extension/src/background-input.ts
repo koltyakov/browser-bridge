@@ -41,6 +41,7 @@ export type NativeTouchContact = {
 };
 
 export function createBackgroundInputController(dependencies: {
+  captureAccess?: () => () => void;
   getTab: (tabId: number) => Promise<Pick<chrome.tabs.Tab, 'active'>>;
   runWithDebugger: <T>(
     tabId: number,
@@ -64,6 +65,7 @@ export function createBackgroundInputController(dependencies: {
     tab: ResolvedTabTarget,
     params: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
+    const assertAccess = dependencies.captureAccess?.() ?? (() => {});
     if (!CDP_INPUT_METHODS.has(request.method)) {
       throw new BridgeError(
         ERROR_CODES.INPUT_UNSUPPORTED,
@@ -87,7 +89,9 @@ export function createBackgroundInputController(dependencies: {
     return dependencies.runWithDebugger(
       tab.tabId,
       async (debuggerTarget) => {
+        assertAccess();
         const observationId = observe ? await beginObservation(tab.tabId) : null;
+        assertAccess();
         const result = await executeNative(debuggerTarget);
         if (observationId) {
           result.effects = await finishObservation(

@@ -80,7 +80,7 @@ jobs:
         run: make coverage-review
 
       - name: Check coverage threshold
-        run: make coverage-check
+        run: make coverage-check coverage-go-check
 
       - name: Package extension
         run: make package-extension

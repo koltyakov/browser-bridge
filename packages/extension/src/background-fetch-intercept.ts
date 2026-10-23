@@ -5,6 +5,7 @@ import {
   MAX_INTERCEPT_RULES_PER_TAB,
   normalizeNetworkInterceptAddParams,
 } from '../../../protocol/src/index.js';
+import { compileUrlPattern } from './background-url-pattern.js';
 
 /**
  * CDP Fetch-domain request interception - declarative rule engine.
@@ -37,7 +38,9 @@ export type InterceptRule = {
   body?: string;
   headers?: Record<string, string>;
 };
-export type StoredInterceptRule = InterceptRule & { matcher: RegExp };
+export type StoredInterceptRule = InterceptRule & {
+  matcher: ReturnType<typeof compileUrlPattern>;
+};
 export type TabInterceptState = {
   rules: Map<string, StoredInterceptRule>;
   ownsDebugger: boolean;
@@ -463,22 +466,6 @@ function mergeRequestHeaders(
     }
   }
   return merged;
-}
-
-/** Glob-style URL pattern matching mirroring CDP Fetch.enable semantics:
-`*` matches any characters, `?` matches exactly one character.
-`?` must not stay a regex quantifier, or query-string patterns like
-`/v1?x=1*` silently stop matching. */
-function compileUrlPattern(pattern: string): RegExp {
-  return new RegExp(
-    '^' +
-      pattern
-        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-        .replace(/\*/g, '.*')
-        .replace(/\?/g, '.') +
-      '$',
-    'i'
-  );
 }
 
 function toPublicRule(rule: StoredInterceptRule): InterceptRule {

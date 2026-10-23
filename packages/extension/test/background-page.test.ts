@@ -8,6 +8,8 @@ import type { ArtifactDescriptor } from '../../../protocol/src/types.js';
 import type { ExtensionState } from '../src/background-state.js';
 import { createPageRequestController } from '../src/background-page.js';
 import type { DebuggerRunOptions } from '../src/debugger-coordinator.js';
+import { createAgentTabLeaseStore } from '../src/background-agent-tabs.js';
+import { handleNavigationRequest } from '../src/background-navigation.js';
 
 type DebuggerCommand = {
   method: string;
@@ -34,6 +36,7 @@ function createController(
     ) => void;
     harCapture?: Record<string, unknown>;
     storeHarArtifact?: (requestId: string, bytes: Uint8Array) => Promise<ArtifactDescriptor<'har'>>;
+    agentTabs?: ReturnType<typeof createAgentTabLeaseStore>;
   } = {}
 ) {
   const onUpdated = createChromeEvent();
@@ -185,10 +188,13 @@ function createController(
       (async () => {
         throw new Error('waitForUrl was not expected');
       }),
+    agentTabs: options.agentTabs,
   });
 
   return {
     controller,
+    state,
+    chromeObj,
     onUpdated,
     onRemoved,
     commands,
@@ -196,6 +202,93 @@ function createController(
     getDialog: () => dialog,
   };
 }
+
+for (const phase of ['window', 'tab', 'query', 'lease', 'bind'] as const) {
+  for (const change of ['revoke', 'replace'] as const) {
+    test(`routing rejects ${change} access during ${phase} lookup before navigation`, async () => {
+      const agentTabs = createAgentTabLeaseStore();
+      const { controller, state, chromeObj } = createController({ agentTabs });
+      const changeGrant = () => {
+        state.enabledWindow =
+          change === 'revoke' ? null : { windowId: 5, title: 'New grant', enabledAt: 2 };
+      };
+      if (phase === 'window') {
+        chromeObj.windows.get = async () => {
+          changeGrant();
+          return { id: 5 } as chrome.windows.Window;
+        };
+      } else if (phase === 'tab') {
+        const get = chromeObj.tabs.get;
+        chromeObj.tabs.get = async (tabId) => {
+          changeGrant();
+          return get(tabId);
+        };
+      } else if (phase === 'query') {
+        const query = chromeObj.tabs.query;
+        chromeObj.tabs.query = async (options) => {
+          changeGrant();
+          return query(options);
+        };
+      } else if (phase === 'lease') {
+        agentTabs.get = async () => {
+          changeGrant();
+          return null;
+        };
+      } else {
+        const bind = agentTabs.bind;
+        agentTabs.bind = async (...args) => {
+          const result = await bind(...args);
+          changeGrant();
+          return result;
+        };
+      }
+      let dispatched = false;
+      await assert.rejects(
+        handleNavigationRequest(
+          createRequest({
+            id: 'revocation',
+            method: 'navigation.navigate',
+            tabId: phase === 'lease' ? null : 21,
+            params: { url: 'https://example.com/next' },
+          }),
+          {
+            resolveRequestTarget: controller.resolveRequestTarget,
+            updateTab: async () => {
+              dispatched = true;
+            },
+            reloadTab: async () => {},
+            goBack: async () => {},
+            goForward: async () => {},
+            waitForTabComplete: async () => {
+              throw new Error('navigation must not start');
+            },
+            getTab: chromeObj.tabs.get,
+            emitUiState: async () => {},
+          }
+        ),
+        { code: 'ACCESS_DENIED' }
+      );
+      assert.equal(dispatched, false);
+    });
+  }
+}
+
+test('routing permits title-only updates to the captured grant', async () => {
+  const { controller, state, chromeObj } = createController();
+  const query = chromeObj.tabs.query;
+  chromeObj.tabs.query = async (options) => {
+    state.enabledWindow = { windowId: 5, enabledAt: 1, title: 'Updated title' };
+    return query(options);
+  };
+  assert.equal(
+    (
+      await controller.resolveRequestTarget(
+        createRequest({ id: 'title-update', method: 'page.get_state' })
+      )
+    ).tabId,
+    21
+  );
+});
 
 test('page request controller waits for matching load completion and ignores unrelated events', async () => {
   const { controller, onUpdated, onRemoved } = createController();

@@ -773,7 +773,7 @@ test('non-requestPaused debugger events are ignored', async () => {
   assert.equal(sent.length, sentBefore);
 });
 
-test('pattern matching follows CDP glob semantics: * any chars, ? one char', async () => {
+test('pattern matching follows CDP glob semantics without treating ? as a regex quantifier', async () => {
   const { interceptor, sent, filters } = createHarness();
   await interceptor.addRule(1, { urlPattern: 'https://a.example.com/v1?x=1*', action: 'block' });
 
@@ -802,4 +802,32 @@ test('pattern matching follows CDP glob semantics: * any chars, ? one char', asy
     sent.some((c) => c.method === 'Fetch.failRequest' && c.params.requestId === 'req-7'),
     false
   );
+});
+
+test('overlapping interception rules preserve path case and escaped wildcards', async () => {
+  const { interceptor, sent, filters } = createHarness();
+  await interceptor.addRule(1, { urlPattern: 'https://example.com/API/*', action: 'block' });
+  await interceptor.addRule(1, { urlPattern: 'https://example.com/v1\\?x=1', action: 'block' });
+  await interceptor.addRule(1, { urlPattern: '*', action: 'continue' });
+  for (const [requestId, url] of [
+    ['lowercase', 'https://example.com/api/users'],
+    ['literal-question', 'https://example.com/v1?x=1'],
+    ['not-question', 'https://example.com/v1Ax=1'],
+  ]) {
+    filters.get(1)?.('Fetch.requestPaused', { requestId, request: { url, headers: {} } });
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(
+    sent
+      .filter((command) => command.method === 'Fetch.failRequest')
+      .map((command) => command.params.requestId),
+    ['literal-question']
+  );
+  assert.deepEqual(
+    sent
+      .filter((command) => command.method === 'Fetch.continueRequest')
+      .map((command) => command.params.requestId),
+    ['lowercase', 'not-question']
+  );
+  await interceptor.clearAllRules(1);
 });

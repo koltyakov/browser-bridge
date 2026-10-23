@@ -17,6 +17,7 @@ export type ResolvedTabTarget = {
 };
 
 export type HandleNavigationRequestDependencies = {
+  captureAccess?: () => () => void;
   resolveRequestTarget: (
     request: BridgeRequest,
     options?: { requireScriptable?: boolean }
@@ -36,7 +37,9 @@ export async function handleNavigationRequest(
   request: BridgeRequest,
   dependencies: HandleNavigationRequestDependencies
 ): Promise<BridgeResponse> {
+  const assertAccess = dependencies.captureAccess?.() ?? (() => {});
   const target = await dependencies.resolveRequestTarget(request);
+  assertAccess();
   const action = normalizeNavigationAction(request.params);
 
   if (request.method === 'navigation.navigate') {
@@ -55,6 +58,7 @@ export async function handleNavigationRequest(
   const tab = action.waitForLoad
     ? await dependencies.waitForTabComplete(target.tabId, action.timeoutMs)
     : await dependencies.getTab(target.tabId);
+  assertAccess();
   await dependencies.emitUiState();
 
   return createSuccess(request.id, summarizeTabResult(tab, request.method), {

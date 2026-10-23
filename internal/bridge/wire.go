@@ -3,6 +3,7 @@ package bridge
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
@@ -136,22 +137,33 @@ func readNative(reader io.Reader) (object, error) {
 // A single lock covers header and payload, including short writes. Native
 // stdout must contain frames only, even when requests finish concurrently.
 type wireWriter struct {
-	mu     sync.Mutex
+	once   sync.Once
+	turn   chan struct{}
 	out    io.Writer
 	native bool
 }
 
 func (w *wireWriter) send(message object) error {
+	_, err := w.sendContext(context.Background(), message)
+	return err
+}
+
+// Report whether a write was attempted. Cancellation while queued must not
+// dispatch a stale mutation or invalidate a connection used by other calls.
+func (w *wireWriter) sendContext(ctx context.Context, message object) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	payload, err := encodeJSON(message)
 	if err != nil {
-		return err
+		return false, err
 	}
 	limit := maxMessageBytes
 	if w.native {
 		limit = protocol.MaxNativeMessageBytes
 	}
 	if len(payload) > limit {
-		return errors.New("bridge message exceeds 1 MiB")
+		return false, errors.New("bridge message exceeds 1 MiB")
 	}
 	if w.native {
 		frame := make([]byte, 4, len(payload)+4)
@@ -160,22 +172,53 @@ func (w *wireWriter) send(message object) error {
 	} else {
 		payload = append(payload, '\n')
 	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
+	w.once.Do(func() { w.turn = make(chan struct{}, 1) })
+	select {
+	case w.turn <- struct{}{}:
+		defer func() { <-w.turn }()
+	case <-ctx.Done():
+		return false, ctx.Err()
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	if conn, ok := w.out.(net.Conn); ok {
-		if err := conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
-			return err
+		deadline := time.Now().Add(5 * time.Second)
+		if limit, ok := ctx.Deadline(); ok && limit.Before(deadline) {
+			deadline = limit
+		}
+		if err := conn.SetWriteDeadline(deadline); err != nil {
+			return false, err
+		}
+		if ctx.Done() != nil {
+			interrupted := make(chan struct{})
+			stop := context.AfterFunc(ctx, func() {
+				_ = conn.SetWriteDeadline(time.Now())
+				close(interrupted)
+			})
+			defer func() {
+				// Join the callback before another writer sets its own deadline.
+				if !stop() {
+					<-interrupted
+				}
+			}()
 		}
 	}
 	for len(payload) > 0 {
 		n, err := w.out.Write(payload)
 		if err != nil {
-			return err
+			if ctx.Err() != nil {
+				return true, ctx.Err()
+			}
+			if limit, ok := ctx.Deadline(); ok && !time.Now().Before(limit) {
+				return true, context.DeadlineExceeded
+			}
+			return true, err
 		}
 		if n == 0 {
-			return io.ErrShortWrite
+			return true, io.ErrShortWrite
 		}
 		payload = payload[n:]
 	}
-	return nil
+	return true, nil
 }

@@ -28,6 +28,7 @@ export type ResolvedTabTarget = {
 };
 
 export type TabBoundRequestDependencies = {
+  captureAccess?: () => () => void;
   resolveRequestTarget: (
     request: BridgeRequest,
     options?: { requireScriptable?: boolean }
@@ -188,9 +189,12 @@ export async function handleTabBoundRequest(
   request: BridgeRequest,
   dependencies: TabBoundRequestDependencies
 ): Promise<BridgeResponse> {
+  const assertAccess = dependencies.captureAccess?.() ?? (() => {});
   const target = await dependencies.resolveRequestTarget(request);
+  assertAccess();
   dependencies.assertNoDialog?.(target.tabId);
   await dependencies.ensureContentScript(target.tabId);
+  assertAccess();
   const normalizer = TAB_BOUND_NORMALIZERS[request.method];
   let payload = normalizer ? normalizer(request.params) : request.params;
 
@@ -205,6 +209,7 @@ export async function handleTabBoundRequest(
   }
 
   const frameId = await chooseFrame(request.method, payload, target.tabId, dependencies);
+  assertAccess();
   if (frameId !== 0 && payload.executionMode === 'cdp') {
     throw new BridgeError(
       ERROR_CODES.INPUT_UNSUPPORTED,
@@ -226,6 +231,7 @@ export async function handleTabBoundRequest(
   }
 
   if (payload.executionMode === 'cdp' && request.method.startsWith('input.')) {
+    assertAccess();
     try {
       const result = markInputExecution(
         await dependencies.handleNativeInput(request, target, payload),
@@ -248,6 +254,7 @@ export async function handleTabBoundRequest(
   const guarded = request.method.startsWith('input.') && Boolean(dependencies.runWithDialogGuard);
 
   const execute = async (): Promise<BridgeResponse> => {
+    assertAccess();
     const timeoutMs = getContentScriptTimeout(
       request.method,
       payload,

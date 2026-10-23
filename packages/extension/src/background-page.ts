@@ -115,6 +115,7 @@ import {
 import { buildHar } from './background-har.js';
 import { resolveWindowScopedTab, selectRequestTabCandidate } from './background-routing.js';
 import { normalizeAgentSession } from './background-agent-tabs.js';
+import { captureWindowGrant } from './background-access.js';
 import {
   ACCESS_DENIED_REASON_WINDOW_GONE,
   ACCESS_DENIED_REASON_WINDOW_OFF,
@@ -222,9 +223,12 @@ only an unbound or idle-expired session follows the active tab. */
       );
     }
 
+    const grant = { ...state.enabledWindow };
+    const assertAccess = captureWindowGrant(state);
     try {
-      await chromeObj.windows.get(state.enabledWindow.windowId);
+      await chromeObj.windows.get(grant.windowId);
     } catch {
+      assertAccess();
       const cleared = await dependencies.clearEnabledWindowIfGone();
       if (cleared) {
         throw new BridgeError(ERROR_CODES.ACCESS_DENIED, 'Enabled window no longer exists', {
@@ -232,8 +236,9 @@ only an unbound or idle-expired session follows the active tab. */
         });
       }
     }
+    assertAccess();
 
-    const enabledWindowId = state.enabledWindow.windowId;
+    const enabledWindowId = grant.windowId;
     const agentTabs = dependencies.agentTabs ?? null;
     const session = normalizeAgentSession(request.meta?.agent_session);
     const hasExplicitTab = typeof request.tab_id === 'number' && Number.isFinite(request.tab_id);
@@ -241,19 +246,23 @@ only an unbound or idle-expired session follows the active tab. */
     let explicitTab: chrome.tabs.Tab | null = null;
     if (hasExplicitTab) {
       explicitTab = await chromeObj.tabs.get(request.tab_id as number);
+      assertAccess();
     }
     const [activeTab] = await chromeObj.tabs.query({
       active: true,
       windowId: enabledWindowId,
     });
+    assertAccess();
     const activeTabId = typeof activeTab?.id === 'number' ? activeTab.id : null;
 
     const finish = async (
       resolved: ResolvedTabTarget,
       via: TabRoutingVia
     ): Promise<ResolvedTabTarget> => {
+      assertAccess();
       if (!peek) {
         if (agentTabs) await agentTabs.bind(session, resolved.tabId, resolved.windowId);
+        assertAccess();
         dependencies.onRequestRouted?.(request.id, {
           tabId: resolved.tabId,
           via,
@@ -272,6 +281,7 @@ only an unbound or idle-expired session follows the active tab. */
     }
 
     const lease = await agentTabs.get(session);
+    assertAccess();
     if (lease && lease.windowId === enabledWindowId) {
       if (!lease.closed) {
         let leaseTab: chrome.tabs.Tab | null = null;
@@ -280,6 +290,7 @@ only an unbound or idle-expired session follows the active tab. */
         } catch {
           leaseTab = null;
         }
+        assertAccess();
         if (leaseTab && leaseTab.windowId === enabledWindowId) {
           return finish(
             resolveWindowScopedTab(leaseTab, enabledWindowId, routingOptions),

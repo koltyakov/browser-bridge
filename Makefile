@@ -2,6 +2,7 @@
 # published bootstrap package can install on machines without development tools.
 .DEFAULT_GOAL := help
 .DELETE_ON_ERROR:
+.SILENT:
 
 # Tests and packaging share dist/. Preserve prerequisite
 # order even with make -j, especially tests -> native builds -> npm packaging.
@@ -10,6 +11,7 @@
 NODE ?= node
 NPM ?= npm
 GO ?= go
+GO_COVER_PROFILE = dist/coverage/go-unit.out
 GOLANGCI_LINT_VERSION ?= v2.14.0
 INSTALL_DIR ?=
 TARGET ?=
@@ -28,7 +30,7 @@ endif
 
 .PHONY: help deps clean build build-extension build-native lint lint-js lint-go typecheck format format-js \
 	format-go check-go-format format-check test test-js test-runtime test-go test-native \
-	vet-go coverage coverage-review coverage-check generate-protocol check-protocol \
+	vet-go coverage coverage-review coverage-check coverage-go coverage-go-check generate-protocol check-protocol \
 	check-release-version check check-extension-zip package-extension package-native \
 	package-native-all package-npm pack pack-dry-run release-check prepublish-check \
 	publish-native publish-npm fixture-browser fixture-interaction bench-interaction \
@@ -89,8 +91,15 @@ test-js: build-extension build-native ## Run Node tests with coverage; override 
 test-runtime: build-extension build-native ## Run the Node suite without coverage
 	"$(NODE)" --import tsx --test $(TEST_ARGS) $(TEST_FILES)
 
-test-go: ## Run Go tests with the race detector
-	$(GO) test -race ./...
+test-go: ## Run Go race tests and collect unit-test coverage
+	"$(NODE)" -e "require('node:fs').mkdirSync('dist/coverage', {recursive: true})"
+	$(GO) test -race -coverprofile=$(GO_COVER_PROFILE) ./...
+
+coverage-go: ## Report Go unit-test statement coverage from the last test-go run
+	$(GO) tool cover -func=$(GO_COVER_PROFILE)
+
+coverage-go-check: ## Enforce separate Go runtime and protocol unit-coverage baselines
+	"$(NODE)" scripts/check-go-coverage.mjs $(GO_COVER_PROFILE)
 
 test-native: test-go build-native ## Run Go race tests and native cross-language integration tests
 	"$(NODE)" --import tsx --test $(TEST_ARGS) tests/native/*.test.ts tests/integration/*.test.ts
@@ -120,7 +129,7 @@ check-protocol: ## Check that generated protocol files are current
 check-release-version: ## Check release version consistency
 	"$(NODE)" scripts/check-release-version.mjs
 
-check: sync-version check-release-version check-protocol lint typecheck vet-go test coverage-check ## Run all source validation and tests
+check: sync-version check-release-version check-protocol lint typecheck vet-go test coverage-check coverage-go-check ## Run all source validation and tests
 
 package-extension: sync-version ## Build the release extension directory and ZIP without source maps
 	"$(NODE)" scripts/package-extension.mjs

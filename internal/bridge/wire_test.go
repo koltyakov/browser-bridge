@@ -3,6 +3,7 @@ package bridge
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 type shortWriter struct{ bytes.Buffer }
@@ -21,6 +23,66 @@ func (w *shortWriter) Write(p []byte) (int, error) {
 		p = p[:3]
 	}
 	return w.Buffer.Write(p)
+}
+
+func TestWireCanceledFrameDoesNotWriteOrConsumeTheNextDeadline(t *testing.T) {
+	local, remote := net.Pipe()
+	t.Cleanup(func() { _ = local.Close(); _ = remote.Close() })
+	writer := wireWriter{out: local}
+	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan struct{})
+	finished := make(chan error, 1)
+	go func() {
+		close(started)
+		_, err := writer.sendContext(ctx, object{"id": value("blocked")})
+		finished <- err
+	}()
+	<-started
+	cancel()
+	if err := <-finished; !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancellation was not surfaced: %v", err)
+	}
+	// A canceled writer joins its deadline callback before another frame starts.
+	read := make(chan error, 1)
+	go func() {
+		_, err := readLine(bufio.NewReader(remote))
+		read <- err
+	}()
+	if err := writer.send(object{"id": value("next")}); err != nil {
+		t.Fatalf("stale cancellation corrupted the next write: %v", err)
+	}
+	if err := <-read; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWireQueuedCancellationReturnsWithoutWaitingForWriter(t *testing.T) {
+	var output bytes.Buffer
+	writer := wireWriter{out: &output}
+	writer.once.Do(func() { writer.turn = make(chan struct{}, 1) })
+	writer.turn <- struct{}{}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	started, err := writer.sendContext(ctx, object{"id": value("must-not-send")})
+	if started || !errors.Is(err, context.DeadlineExceeded) || output.Len() != 0 {
+		t.Fatalf("queued frame was dispatched after cancellation: started=%t err=%v", started, err)
+	}
+	<-writer.turn
+}
+
+func FuzzJSONLineReader(f *testing.F) {
+	for _, seed := range []string{"{}\n", "{\"text\":\"日本語\"}\n", "null\n", "[]\n", "{\"unfinished\":"} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, input string) {
+		if len(input) > maxMessageBytes+2 {
+			t.Skip()
+		}
+		message, err := readLine(bufio.NewReader(strings.NewReader(input)))
+		if err == nil && message == nil {
+			t.Fatal("reader accepted a non-object")
+		}
+	})
 }
 
 func TestNativeFramesRemainAtomicAcrossConcurrentShortWrites(t *testing.T) {

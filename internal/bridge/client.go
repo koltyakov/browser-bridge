@@ -187,14 +187,19 @@ func (c *client) request(ctx context.Context, request object) (object, error) {
 	c.mu.Unlock()
 	defer func() {
 		c.mu.Lock()
-		delete(c.pending, id)
+		if c.pending[id] == ch {
+			delete(c.pending, id)
+		}
 		c.mu.Unlock()
 	}()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if err := c.writer.send(object{"type": value("agent.request"), "request": value(request)}); err != nil {
-		c.fail(err)
+	if dispatched, err := c.writer.sendContext(ctx, object{"type": value("agent.request"), "request": value(request)}); err != nil {
+		if dispatched {
+			// A partial frame cannot safely share the transport with later calls.
+			c.fail(err)
+		}
 		return nil, err
 	}
 	select {

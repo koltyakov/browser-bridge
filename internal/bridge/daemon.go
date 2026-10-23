@@ -687,11 +687,7 @@ func (d *daemon) route(p *peer, request object) {
 	pending := &pendingRequest{owner: p, target: target, original: id, method: method, baselineID: params.text("baselineId"), started: time.Now(), meta: meta}
 	d.pending[routedID] = pending
 	p.pending++
-	duration := protocol.DefaultDaemonPendingTimeoutMS * time.Millisecond
-	if timeout := params.number("timeoutMs"); timeout > protocol.DefaultDaemonPendingTimeoutMS-protocol.DaemonPendingTimeoutMarginMS {
-		duration = time.Duration(min(timeout+protocol.DaemonPendingTimeoutMarginMS, protocol.MaxDaemonPendingTimeoutMS)) * time.Millisecond
-	}
-	pending.timer = time.AfterFunc(duration, func() {
+	pending.timer = time.AfterFunc(daemonPendingTimeout(params), func() {
 		d.mu.Lock()
 		defer d.mu.Unlock()
 		if d.pending[routedID] == pending {
@@ -701,6 +697,13 @@ func (d *daemon) route(p *peer, request object) {
 	})
 	p.dataTargets[target] = true
 	target.send(object{"type": value("extension.request"), "request": value(request)})
+}
+
+func daemonPendingTimeout(params object) time.Duration {
+	// Clamp before adding the margin: raw callers can send MaxInt64, which
+	// otherwise overflows into a negative duration and expires immediately.
+	timeout := min(params.number("timeoutMs"), protocol.MaxDaemonPendingTimeoutMS-protocol.DaemonPendingTimeoutMarginMS)
+	return time.Duration(max(protocol.DefaultDaemonPendingTimeoutMS, timeout+protocol.DaemonPendingTimeoutMarginMS)) * time.Millisecond
 }
 
 func (d *daemon) routingError(p *peer, request, response object, reason string) {
