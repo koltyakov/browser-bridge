@@ -340,7 +340,7 @@ func updateDownload(ctx context.Context, client updateHTTPClient, url string, li
 	if err != nil {
 		return 0, err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.Request != nil && response.Request.URL != nil {
 		if err := updateValidateURL(response.Request.URL.String()); err != nil {
 			return 0, err

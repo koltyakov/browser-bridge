@@ -158,6 +158,14 @@ async function fixture(t: TestContext) {
     'CLINE_MCP_SETTINGS_PATH',
     'AMP_HOME',
     'FLATPAK_XDG_CONFIG_HOME',
+    'PI_CODING_AGENT_DIR',
+    'QWEN_HOME',
+    'GOOSE_PATH_ROOT',
+    'GOOSE_BIN_DIR',
+    'OPENHANDS_PERSISTENCE_DIR',
+    'MUSE_INSTALL_DIR',
+    'GROK_HOME',
+    'GROK_BIN_DIR',
   ]);
   for (const key of Object.keys(env))
     if (key.startsWith('BBX_') || agentOverrides.has(key)) delete env[key];
@@ -919,6 +927,13 @@ test(
         'zed',
         'amp',
         'droid',
+        'pi',
+        'kilo',
+        'qwen',
+        'goose',
+        'openhands',
+        'muse',
+        'grok',
         'agents',
       ]
     );

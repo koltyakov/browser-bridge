@@ -45,14 +45,14 @@ func stopLocalDaemon(ctx context.Context, c config) (bool, error) {
 		}
 		return false, err
 	}
-	conn.Close()
+	_ = conn.Close()
 	// Registration authenticates without a versioned RPC. A replacement CLI
 	// must be able to stop a daemon from an older protocol major version.
 	conn, _, err = register(c, "agent")
 	if err != nil {
 		return true, err
 	}
-	conn.Close()
+	_ = conn.Close()
 	pid, err := daemonPID(c)
 	if err != nil {
 		return true, err
@@ -67,7 +67,7 @@ func stopLocalDaemon(ctx context.Context, c config) (bool, error) {
 			return true, nil
 		}
 		if conn != nil {
-			conn.Close()
+			_ = conn.Close()
 		}
 		if err = waitLifecycle(ctx); err != nil {
 			return true, err
@@ -130,13 +130,13 @@ func restartMCPProcesses(c config) (object, error) {
 		conn, e := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.FormatInt(r.number("port"), 10)), time.Second)
 		accepted := false
 		if e == nil {
-			conn.SetDeadline(time.Now().Add(time.Second))
+			_ = conn.SetDeadline(time.Now().Add(time.Second))
 			w := wireWriter{out: conn}
 			if w.send(object{"action": value("restart"), "token": r["token"]}) == nil {
 				result, e := readLine(bufio.NewReaderSize(conn, 4096))
 				accepted = e == nil && result.boolean("ok")
 			}
-			conn.Close()
+			_ = conn.Close()
 		}
 		if accepted {
 			requested++

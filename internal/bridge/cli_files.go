@@ -245,7 +245,7 @@ func uploadCLIFiles(ctx context.Context, call cliInvoker, target object, paths [
 	handles := []string{}
 	defer func() {
 		for _, item := range opened {
-			item.file.Close()
+			_ = item.file.Close()
 		}
 		for _, id := range handles {
 			cleanupCLICall(call, "files.release", object{"transferId": value(id)})
@@ -380,7 +380,7 @@ func screenshotCLI(ctx context.Context, call cliInvoker, args []string) error {
 		suffix := filepath.Ext(output)
 		if suffix == "" {
 			output += "." + ext
-		} else if suffix != "."+ext && !(format == "jpeg" && suffix == ".jpeg") {
+		} else if suffix != "."+ext && (format != "jpeg" || suffix != ".jpeg") {
 			return errors.New("screenshot path extension must match format")
 		}
 	}

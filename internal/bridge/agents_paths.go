@@ -6,104 +6,24 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"time"
 )
 
-func installAdditionalAgent(target string) bool {
-	switch target {
-	case "gemini", "cline", "zed", "amp", "droid":
-		return true
-	}
-	return false
-}
-
 func installMCPSupported(target string, scope installScope) bool {
-	return installContains(installAgentNames, target) && (target != "cline" || scope.global)
-}
-
-func installGeminiHome(scope installScope) string {
-	if home := os.Getenv("GEMINI_CLI_HOME"); home != "" {
-		return home
-	}
-	return scope.home
-}
-
-func installClineHome(scope installScope) string {
-	if home := os.Getenv("CLINE_DIR"); home != "" {
-		return home
-	}
-	return filepath.Join(scope.home, ".cline")
-}
-
-func installZedHome(scope installScope) string {
-	switch runtime.GOOS {
-	case "windows":
-		base := os.Getenv("APPDATA")
-		if base == "" {
-			base = filepath.Join(scope.home, "AppData", "Roaming")
-		}
-		return filepath.Join(base, "Zed")
-	case "linux":
-		for _, env := range []string{"FLATPAK_XDG_CONFIG_HOME", "XDG_CONFIG_HOME"} {
-			if base := os.Getenv(env); base != "" {
-				return filepath.Join(base, "zed")
-			}
-		}
-	}
-	return filepath.Join(scope.home, ".config", "zed")
-}
-
-func installAdditionalMCPPath(target string, scope installScope) (string, bool) {
-	base := scope.project
-	if scope.global {
-		base = scope.home
-	}
-	switch target {
-	case "gemini":
-		if scope.global {
-			base = installGeminiHome(scope)
-		}
-		return filepath.Join(base, ".gemini", "settings.json"), true
-	case "cline":
-		if path := os.Getenv("CLINE_MCP_SETTINGS_PATH"); path != "" {
-			return path, true
-		}
-		data := os.Getenv("CLINE_DATA_DIR")
-		if data == "" {
-			data = filepath.Join(installClineHome(scope), "data")
-		}
-		return filepath.Join(data, "settings", "cline_mcp_settings.json"), true
-	case "zed":
-		if scope.global {
-			return filepath.Join(installZedHome(scope), "settings.json"), true
-		}
-		return filepath.Join(base, ".zed", "settings.json"), true
-	case "amp":
-		dir := filepath.Join(base, ".amp")
-		if scope.global {
-			dir = filepath.Join(base, ".config", "amp")
-		}
-		path := filepath.Join(dir, "settings.json")
-		if !installExists(path) && installExists(path+"c") {
-			path += "c"
-		}
-		return path, true
-	case "droid":
-		return filepath.Join(base, ".factory", "mcp.json"), true
-	}
-	return "", false
+	agent := installAgentByKey(target)
+	return agent != nil && (!agent.mcp.userOnly || scope.global)
 }
 
 func installValidateMCPScope(target string, scope installScope) error {
-	if !installMCPSupported(target, scope) {
-		return fmt.Errorf("%s supports user-scope MCP only; use --global (project CLI skills remain supported)", installAgentLabels[target])
+	agent := installAgentByKey(target)
+	if agent == nil {
+		return fmt.Errorf("unsupported MCP client %q", target)
 	}
-	if target == "amp" {
-		path := filepath.Join(filepath.Dir(installMCPPath(target, scope)), "settings.json")
-		if installExists(path) && installExists(path+"c") {
-			return fmt.Errorf("both %s and %s exist; select one Amp settings file before installing", path, path+"c")
-		}
+	if !installMCPSupported(target, scope) {
+		return fmt.Errorf("%s supports user-scope MCP only; use --global (project CLI skills remain supported)", agent.label)
+	}
+	if agent.mcp.validateScope != nil {
+		return agent.mcp.validateScope(scope)
 	}
 	return nil
 }
@@ -134,18 +54,40 @@ func installCanonicalDestination(path string) (string, error) {
 }
 
 func installStdioEntryKeys(raw string, entry *installJSONNode, target string, keys []string) ([]string, error) {
-	transport := entry
-	if nested := installJSONLookup(entry, "transport"); nested != nil {
-		if target != "cline" || nested.kind != '{' {
-			return nil, errors.New("existing browser-bridge transport requires manual migration to stdio")
+	agent := installAgentByKey(target)
+	policy := agent.mcp.transport
+	if policy == installTransportLocalArray {
+		if kind := installJSONLookup(entry, "type"); kind == nil || raw[kind.start:kind.end] != `"local"` {
+			return nil, fmt.Errorf("existing browser-bridge is not a %s local server; migrate that entry explicitly", agent.label)
 		}
-		for _, field := range []string{"command", "args", "env", "url", "httpUrl"} {
+		for _, field := range []string{"url", "transport", "args", "env"} {
 			if installJSONLookup(entry, field) != nil {
-				return nil, errors.New("existing browser-bridge mixes flat and nested transports; resolve it before installing")
+				return nil, fmt.Errorf("existing browser-bridge mixes %s and legacy transports; migrate that entry explicitly", agent.label)
 			}
 		}
-		transport = nested
-		keys = append(keys, "transport")
+		if command := installJSONLookup(entry, "command"); command != nil && command.kind != '[' {
+			return nil, fmt.Errorf("%s local command must be an argument array", agent.label)
+		}
+		return keys, nil
+	}
+	transport := entry
+	if nested := installJSONLookup(entry, "transport"); nested != nil {
+		if policy == installTransportStringStdio {
+			if raw[nested.start:nested.end] != `"stdio"` {
+				return nil, fmt.Errorf("existing %s browser-bridge is not stdio; migrate that entry explicitly", agent.label)
+			}
+		} else {
+			if policy != installTransportNestedStdio || nested.kind != '{' {
+				return nil, errors.New("existing browser-bridge transport requires manual migration to stdio")
+			}
+			for _, field := range []string{"command", "args", "env", "url", "httpUrl"} {
+				if installJSONLookup(entry, field) != nil {
+					return nil, errors.New("existing browser-bridge mixes flat and nested transports; resolve it before installing")
+				}
+			}
+			transport = nested
+			keys = append(keys, "transport")
+		}
 	}
 	for _, field := range []string{"url", "httpUrl", "serverUrl"} {
 		if installJSONLookup(transport, field) != nil {
@@ -168,6 +110,10 @@ func installStdioEntryKeys(raw string, entry *installJSONNode, target string, ke
 // Other clients use a BBX-specific lock; unknown external writers still own
 // their policy, so never break a lock or overwrite a concurrent changed file.
 func installWriteMCPConfig(client, path string, scope installScope, remove bool) (bool, error) {
+	agent := installAgentByKey(client)
+	if agent == nil {
+		return false, fmt.Errorf("unsupported MCP client %q", client)
+	}
 	resolved, err := installCanonicalDestination(path)
 	if err != nil {
 		return false, err
@@ -178,10 +124,11 @@ func installWriteMCPConfig(client, path string, scope installScope, remove bool)
 	if err := os.MkdirAll(filepath.Dir(resolved), 0755); err != nil {
 		return false, err
 	}
-	lockPath := resolved + ".bbx.lock"
-	if client == "cline" {
-		lockPath = resolved + ".lock"
+	lockSuffix := agent.mcp.lockSuffix
+	if lockSuffix == "" {
+		lockSuffix = ".bbx.lock"
 	}
+	lockPath := resolved + lockSuffix
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		lock, err := os.OpenFile(lockPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
@@ -197,7 +144,7 @@ func installWriteMCPConfig(client, path string, scope installScope, remove bool)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	defer os.Remove(lockPath)
+	defer func() { _ = os.Remove(lockPath) }()
 	data, err := os.ReadFile(resolved)
 	missing := errors.Is(err, os.ErrNotExist)
 	if missing {
@@ -205,7 +152,7 @@ func installWriteMCPConfig(client, path string, scope installScope, remove bool)
 			return false, nil
 		}
 		data = []byte("{}\n")
-		if client == "codex" {
+		if agent.mcp.format != installConfigJSON {
 			data = nil
 		}
 	} else if err != nil {
@@ -213,9 +160,17 @@ func installWriteMCPConfig(client, path string, scope installScope, remove bool)
 	}
 	raw := string(data)
 	var updated string
-	if client == "codex" {
+	if agent.mcp.validateRaw != nil && !remove {
+		if err := agent.mcp.validateRaw(raw); err != nil {
+			return false, err
+		}
+	}
+	switch agent.mcp.format {
+	case installConfigTOML:
 		updated, err = installUpdateCodex(raw, remove)
-	} else {
+	case installConfigYAML:
+		updated, err = installUpdateGooseConfig(raw, remove)
+	default:
 		updated, err = installUpdateJSONConfig(raw, client, path, scope, remove)
 	}
 	if err != nil || (remove && updated == raw) {

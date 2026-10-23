@@ -59,7 +59,7 @@ func TestInstallSelfReplacesLinksWithoutChangingTargets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer old.Close()
+	defer func() { _ = old.Close() }()
 	installTestWrite(t, source, "second executable")
 	if _, err := installSelfFiles(source, bin); err != nil {
 		t.Fatal(err)
@@ -151,7 +151,7 @@ func TestInstallSelfStopsLegacyDaemonAfterAuthentication(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, port, _ := net.SplitHostPort(listener.Addr().String())
-	listener.Close()
+	_ = listener.Close()
 	t.Setenv("BBX_TCP_PORT", port)
 	c, err := loadConfig()
 	if err != nil {
@@ -162,8 +162,8 @@ func TestInstallSelfStopsLegacyDaemonAfterAuthentication(t *testing.T) {
 	if err := child.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer child.Wait()
-	defer child.Process.Kill()
+	defer func() { _ = child.Wait() }()
+	defer func() { _ = child.Process.Kill() }()
 	installSelfWait(t, func() bool { _, err := daemonPID(c); return err == nil })
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -220,7 +220,7 @@ func TestInstallSelfCLI(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, port, _ := net.SplitHostPort(listener.Addr().String())
-	listener.Close()
+	_ = listener.Close()
 	t.Setenv("BBX_TCP_PORT", port)
 	c, err := loadConfig()
 	if err != nil {
@@ -271,8 +271,8 @@ func TestInstallSelfCLI(t *testing.T) {
 	if err := daemon.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer daemon.Wait()
-	defer daemon.Process.Kill()
+	defer func() { _ = daemon.Wait() }()
+	defer func() { _ = daemon.Process.Kill() }()
 	installSelfWait(t, func() bool {
 		_, err := daemonPID(c)
 		if !processRunning(daemon.Process.Pid) {
@@ -305,7 +305,7 @@ func TestInstallSelfCLI(t *testing.T) {
 		}
 		done := make(chan error, 1)
 		go func() { done <- cmd.Wait() }()
-		t.Cleanup(func() { input.Close(); _ = cmd.Process.Kill() })
+		t.Cleanup(func() { _ = input.Close(); _ = cmd.Process.Kill() })
 		return done, input, output
 	}
 	mcpDone, _, _ := startRole(filepath.Join(bin, "bbx-mcp"))

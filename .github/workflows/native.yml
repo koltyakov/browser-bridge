@@ -8,6 +8,7 @@ on:
       - 'go.mod'
       - 'go.sum'
       - 'Makefile'
+      - '.golangci.yml'
       - 'tests/native/**'
       - 'protocol/**'
       - 'skills/**'
@@ -61,8 +62,8 @@ jobs:
           BBX_NATIVE_EXECUTABLE: ${{ github.workspace }}/dist/cli/${{ matrix.asset }}
       - name: Go vet
         run: make vet-go
-      - name: Go formatting
-        run: make check-go-format
+      - name: Go lint and formatting
+        run: make lint-go
       - uses: actions/upload-artifact@v7
         with:
           name: native-${{ matrix.asset }}

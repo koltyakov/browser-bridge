@@ -24,11 +24,11 @@ func updateAcquireLock(ctx context.Context, root string) (func(), error) {
 			return func() { _ = windows.UnlockFileEx(windows.Handle(file.Fd()), 0, 1, 0, overlapped); _ = file.Close() }, nil
 		}
 		if !errors.Is(err, windows.ERROR_LOCK_VIOLATION) {
-			file.Close()
+			_ = file.Close()
 			return nil, err
 		}
 		if err := updateWaitForLock(ctx); err != nil {
-			file.Close()
+			_ = file.Close()
 			return nil, err
 		}
 	}

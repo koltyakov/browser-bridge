@@ -6,13 +6,27 @@
   "report": "./agent-support-research.md",
   "runtimeSupportAdded": true,
   "implementation": {
-    "targets": ["gemini", "cline", "zed", "amp", "droid"],
+    "targets": [
+      "gemini",
+      "cline",
+      "zed",
+      "amp",
+      "droid",
+      "pi",
+      "kilo",
+      "qwen",
+      "goose",
+      "openhands",
+      "muse",
+      "grok"
+    ],
     "placement": "After antigravity, before generic agents; existing relative order unchanged",
     "capabilities": [
-      "Managed user/project MCP except Cline user-only MCP",
+      "One ordered native registry for all target identities, setup capabilities and installation evidence",
+      "Managed user/project MCP except Cline, Goose, OpenHands and Muse user-only MCP",
       "Managed user/project CLI skills with shared-destination ownership",
-      "Passive package, executable installation-tree and Cline extension detection",
-      "JSONC-preserving updates, nested Cline stdio support and conflicting-transport refusal"
+      "Passive package, native installation-tree, Python distribution, launcher and Cline/Kilo extension detection",
+      "JSONC/TOML/YAML updates, nested Cline stdio support and conflicting-transport refusal"
     ],
     "notImplemented": [
       "Capturing and propagating MCP caller fingerprints",
@@ -21,6 +35,7 @@
       "Live acceptance across every client, platform, sandbox and ACP adapter"
     ],
     "sourceFiles": [
+      "internal/bridge/agents_registry.go",
       "internal/bridge/agents_paths.go",
       "internal/bridge/agents_detection.go",
       "internal/bridge/agents_config.go",
@@ -67,7 +82,20 @@
       "antigravity",
       "agents"
     ],
-    "proposedOrderBeforeGenericAgents": ["gemini", "cline", "zed", "amp", "droid"],
+    "proposedOrderBeforeGenericAgents": [
+      "gemini",
+      "cline",
+      "zed",
+      "amp",
+      "droid",
+      "pi",
+      "kilo",
+      "qwen",
+      "goose",
+      "openhands",
+      "muse",
+      "grok"
+    ],
     "researchBaselineGaps": [
       "Capability-aware scopes and selected override paths, not map-only path additions",
       "Zed context_servers and Amp literal amp.mcpServers keys",
@@ -1088,9 +1116,252 @@
         "Factory desktop bundle/signing/MSIX IDs and Linux desktop identity",
         "Windows ARM64 integration parity, earliest package feature floor and live BBX activation"
       ]
+    },
+    {
+      "displayName": "Pi",
+      "proposedKey": "pi",
+      "snapshot": { "checkedAt": "2026-10-22", "minimumVersion": null, "testedLive": false },
+      "mcp": {
+        "scopes": { "user": true, "project": true },
+        "paths": { "user": "~/.pi/agent/mcp.json", "project": ".pi/mcp.json" },
+        "keyPath": ["mcpServers", "browser-bridge"],
+        "override": "PI_CODING_AGENT_DIR replaces ~/.pi/agent",
+        "limitations": "Native MCP in current Pi; older releases may require an extension; project trust and /reload apply",
+        "sources": ["pi-config", "pi-mcp"]
+      },
+      "skills": { "user": "~/.pi/agent/skills", "project": ".pi/skills", "sources": ["pi-skills"] },
+      "installationFingerprints": [
+        {
+          "kind": "package-and-executable",
+          "packages": ["@earendil-works/pi-coding-agent", "@mariozechner/pi-coding-agent"],
+          "bin": "pi",
+          "confidence": "high-package-identity-not-authentication",
+          "sources": ["pi-package"]
+        }
+      ]
+    },
+    {
+      "displayName": "Kilo Code",
+      "proposedKey": "kilo",
+      "snapshot": { "checkedAt": "2026-10-22", "testedLive": false },
+      "mcp": {
+        "scopes": { "user": true, "project": true },
+        "paths": {
+          "user": "~/.config/kilo/kilo.jsonc",
+          "project": ".kilo/kilo.jsonc or merged project root candidates"
+        },
+        "keyPath": ["mcp", "browser-bridge"],
+        "schema": { "type": "local", "command": ["bbx", "mcp", "serve"] },
+        "limitations": "Reuse existing kilo.json[c], opencode.json[c], config.json; .kilo before root; refuse duplicate Browser Bridge definitions; do not mix legacy extension mcpServers config",
+        "sources": ["kilo-mcp", "kilo-settings"]
+      },
+      "skills": {
+        "user": "~/.kilo/skills",
+        "project": ".kilo/skills",
+        "sources": ["kilo-settings"]
+      },
+      "installationFingerprints": [
+        {
+          "kind": "package-and-executable",
+          "package": "@kilocode/cli",
+          "bin": "kilo",
+          "confidence": "high-package-identity",
+          "sources": ["kilo-cli"]
+        },
+        { "kind": "native-tree", "path": "~/.kilo/bin/kilo", "confidence": "medium-install-hint" },
+        {
+          "kind": "extension-manifest-and-payload",
+          "id": "kilocode.kilo-code",
+          "main": "./dist/extension.js",
+          "confidence": "high-source-identity",
+          "sources": ["kilo-extension"]
+        }
+      ]
+    },
+    {
+      "displayName": "Qwen Code",
+      "proposedKey": "qwen",
+      "snapshot": { "checkedAt": "2026-10-22", "testedLive": false },
+      "mcp": {
+        "scopes": { "user": true, "project": true },
+        "paths": { "user": "~/.qwen/settings.json", "project": ".qwen/settings.json" },
+        "keyPath": ["mcpServers", "browser-bridge"],
+        "override": "QWEN_HOME is the .qwen directory, not an OS home replacement; QWEN_RUNTIME_DIR does not select settings",
+        "sources": ["qwen-storage", "qwen-mcp"]
+      },
+      "skills": {
+        "user": "~/.qwen/skills",
+        "project": ".qwen/skills",
+        "sources": ["qwen-storage"]
+      },
+      "installationFingerprints": [
+        {
+          "kind": "package-and-executable",
+          "package": "@qwen-code/qwen-code",
+          "bin": "qwen",
+          "confidence": "high-package-identity"
+        }
+      ]
+    },
+    {
+      "displayName": "Goose",
+      "proposedKey": "goose",
+      "snapshot": { "checkedAt": "2026-10-22", "testedLive": false },
+      "mcp": {
+        "scopes": { "user": true, "project": false },
+        "paths": {
+          "Unix": "~/.config/goose/config.yaml",
+          "Windows": "%APPDATA%/Block/goose/config/config.yaml"
+        },
+        "keyPath": ["extensions", "browser-bridge"],
+        "schema": {
+          "type": "stdio",
+          "name": "browser-bridge",
+          "cmd": "bbx",
+          "args": ["mcp", "serve"],
+          "enabled": true
+        },
+        "override": "Absolute GOOSE_PATH_ROOT selects <root>/config/config.yaml; relative values ignored",
+        "preserve": ["enabled", "envs", "env_keys", "available_tools", "policy and comments"],
+        "sources": ["goose-config", "goose-paths"]
+      },
+      "skills": {
+        "user": "~/.agents/skills or <GOOSE_PATH_ROOT>/.agents/skills",
+        "project": ".agents/skills",
+        "sources": ["goose-skills", "goose-paths"]
+      },
+      "installationFingerprints": [
+        {
+          "kind": "native-tree",
+          "Unix": "~/.local/bin/goose",
+          "Windows": "~/goose/goose.exe",
+          "override": "GOOSE_BIN_DIR",
+          "confidence": "medium-install-hint",
+          "exclude": "Go build metadata excludes unrelated SQL migration executable",
+          "sources": ["goose-installer"]
+        }
+      ],
+      "limitations": "Only config.yaml edited, never secrets or permission files; edited-path aliases/merges, duplicate keys and multiple documents rejected"
+    },
+    {
+      "displayName": "OpenHands",
+      "proposedKey": "openhands",
+      "snapshot": { "checkedAt": "2026-10-22", "testedLive": false },
+      "mcp": {
+        "scopes": { "user": true, "project": false },
+        "paths": { "user": "~/.openhands/mcp.json" },
+        "keyPath": ["mcpServers", "browser-bridge"],
+        "override": "OPENHANDS_PERSISTENCE_DIR replaces ~/.openhands",
+        "sources": ["openhands-mcp", "openhands-paths"]
+      },
+      "skills": {
+        "user": "~/.agents/skills",
+        "project": ".agents/skills",
+        "sources": ["openhands-skills"]
+      },
+      "installationFingerprints": [
+        {
+          "kind": "python-distribution-and-payload",
+          "package": "openhands",
+          "entrypoint": "openhands_cli.entrypoint:main",
+          "bin": "openhands",
+          "confidence": "high-source-identity-not-authentication",
+          "sources": ["openhands-package"]
+        }
+      ]
+    },
+    {
+      "displayName": "Muse Code",
+      "proposedKey": "muse",
+      "snapshot": { "checkedAt": "2026-10-22", "testedLive": false },
+      "mcp": {
+        "scopes": { "user": true, "project": false },
+        "paths": { "user": "~/.config/muse/settings.json" },
+        "keyPath": ["mcp_servers", "browser-bridge"],
+        "schemaVersion": 1,
+        "schema": {
+          "transport": "stdio",
+          "command": "bbx",
+          "args": ["mcp", "serve"],
+          "mode": "optional"
+        },
+        "override": "XDG_CONFIG_HOME/muse",
+        "limitations": "Preserve mode/disabled state; tools execute outside Muse sandbox; never relax project trust or approval policy",
+        "sources": ["muse-config", "muse-extending"]
+      },
+      "skills": {
+        "user": "~/.config/muse/skills",
+        "project": ".agents/skills",
+        "sources": ["muse-extending"]
+      },
+      "installationFingerprints": [
+        {
+          "kind": "official-launcher-markers",
+          "path": "${MUSE_INSTALL_DIR:-~/.local/bin}/muse",
+          "markers": ["https://api.meta.ai/muse-code/channels/", "muse-code/launcher-"],
+          "confidence": "medium-passive-spoofable-hint",
+          "sources": ["muse-installer", "muse-launcher"]
+        }
+      ],
+      "exclude": "JavaScript SDK and unrelated Python packages do not establish Muse Code installation"
+    },
+    {
+      "displayName": "Grok Build",
+      "proposedKey": "grok",
+      "snapshot": { "checkedAt": "2026-10-22", "testedLive": false },
+      "mcp": {
+        "scopes": { "user": true, "project": true },
+        "paths": { "user": "~/.grok/config.toml", "project": ".grok/config.toml" },
+        "keyPath": ["mcp_servers", "browser-bridge"],
+        "override": "GROK_HOME replaces ~/.grok; separate from GROK_BIN_DIR",
+        "limitations": "Conflicting remote, inline and dotted Browser Bridge definitions require manual migration",
+        "sources": ["grok-mcp", "grok-settings"]
+      },
+      "skills": { "user": "~/.grok/skills", "project": ".grok/skills", "sources": ["grok-skills"] },
+      "installationFingerprints": [
+        {
+          "kind": "package-and-executable",
+          "package": "@xai-official/grok",
+          "bin": "grok",
+          "confidence": "high-package-identity"
+        },
+        {
+          "kind": "native-tree",
+          "path": "${GROK_BIN_DIR:-~/.grok/bin}/grok",
+          "confidence": "medium-install-hint",
+          "sources": ["grok-installer"]
+        }
+      ],
+      "exclude": "Community grok-cli-hurry-mode and other model wrappers are not official Grok Build"
     }
   ],
   "sources": {
+    "pi-config": "https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/configuration.md",
+    "pi-mcp": "https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/mcp.md",
+    "pi-skills": "https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/skills.md",
+    "pi-package": "https://github.com/earendil-works/pi/blob/main/packages/coding-agent/package.json",
+    "kilo-mcp": "https://kilo.ai/docs/automate/mcp/using-in-kilo-code",
+    "kilo-settings": "https://kilo.ai/docs/getting-started/settings",
+    "kilo-cli": "https://kilo.ai/cli",
+    "kilo-extension": "https://github.com/Kilo-Org/kilocode/blob/main/packages/kilo-vscode/package.json",
+    "qwen-storage": "https://github.com/QwenLM/qwen-code/blob/main/packages/core/src/config/storage.ts",
+    "qwen-mcp": "https://qwenlm.github.io/qwen-code-docs/en/users/features/mcp/",
+    "goose-config": "https://github.com/aaif-goose/goose/blob/main/documentation/docs/guides/config-files.md",
+    "goose-paths": "https://github.com/aaif-goose/goose/blob/main/crates/goose/src/config/paths.rs",
+    "goose-skills": "https://github.com/aaif-goose/goose/blob/main/documentation/docs/guides/context-engineering/using-skills.md",
+    "goose-installer": "https://github.com/aaif-goose/goose/blob/main/download_cli.sh",
+    "openhands-mcp": "https://docs.openhands.dev/openhands/usage/cli/mcp-servers",
+    "openhands-paths": "https://github.com/OpenHands/OpenHands-CLI/blob/main/openhands_cli/locations.py",
+    "openhands-skills": "https://docs.openhands.dev/overview/skills",
+    "openhands-package": "https://github.com/OpenHands/OpenHands-CLI/blob/main/pyproject.toml",
+    "muse-config": "https://dev.meta.ai/docs/muse-code/configuration.md",
+    "muse-extending": "https://dev.meta.ai/docs/muse-code/extending.md",
+    "muse-installer": "https://dev.meta.ai/install.sh",
+    "muse-launcher": "https://api.meta.ai/muse-launcher.sh",
+    "grok-mcp": "https://docs.x.ai/build/features/mcp-servers",
+    "grok-settings": "https://docs.x.ai/build/settings",
+    "grok-skills": "https://docs.x.ai/build/features/skills-plugins-marketplaces",
+    "grok-installer": "https://x.ai/cli/install.sh",
     "bbx-config": "https://github.com/koltyakov/browser-bridge/blob/main/internal/bridge/agents_config.go",
     "bbx-skills": "https://github.com/koltyakov/browser-bridge/blob/main/internal/bridge/agents_skills.go",
     "bbx-setup": "https://github.com/koltyakov/browser-bridge/blob/main/internal/bridge/setup.go",

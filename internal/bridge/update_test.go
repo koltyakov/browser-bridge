@@ -399,7 +399,7 @@ func TestUpdateRepairUsesNewExecutableInstanceAndPreservesBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer open.Close()
+	defer func() { _ = open.Close() }()
 	if runtime.GOOS != "windows" {
 		if err := os.WriteFile(oldPath, []byte("damaged"), 0755); err != nil {
 			t.Fatal(err)

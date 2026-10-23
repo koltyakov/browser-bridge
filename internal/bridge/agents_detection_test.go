@@ -30,6 +30,11 @@ func TestAdditionalPackageFingerprints(t *testing.T) {
 		{"amp", `{"name":"@sourcegraph/amp"}`},
 		{"droid", `{"name":"droid","optionalDependencies":{"@factory/cli-linux-x64":"1"}}`},
 		{"droid", `{"name":"@factory/cli-darwin-arm64"}`},
+		{"pi", `{"name":"@earendil-works/pi-coding-agent"}`},
+		{"pi", `{"name":"@mariozechner/pi-coding-agent"}`},
+		{"kilo", `{"name":"@kilocode/cli"}`},
+		{"qwen", `{"name":"@qwen-code/qwen-code"}`},
+		{"grok", `{"name":"@xai-official/grok"}`},
 	} {
 		t.Run(test.target+test.manifest, func(t *testing.T) {
 			_, scope := installTestScope(t)
@@ -60,7 +65,7 @@ func TestAdditionalDetectionRejectsRetainedFoldersAndNameCollisions(t *testing.T
 			t.Fatal(err)
 		}
 	}
-	for _, target := range []string{"gemini", "cline", "amp", "droid"} {
+	for _, target := range []string{"gemini", "cline", "amp", "droid", "pi", "kilo", "qwen", "goose", "openhands", "muse", "grok"} {
 		if installAgentDetected(target, scope) {
 			t.Fatalf("retained %s config directory counted as an installation", target)
 		}
@@ -77,6 +82,12 @@ func TestAdditionalDetectionRejectsRetainedFoldersAndNameCollisions(t *testing.T
 	installTestWrite(t, filepath.Join(bin, "package.json"), `{"name":"amp","description":"text editor"}`)
 	if installAgentDetected("amp", scope) {
 		t.Fatal("the unrelated amp editor counted as the coding agent")
+	}
+	for _, target := range []string{"pi", "grok", "muse"} {
+		installTestWrite(t, filepath.Join(bin, "package.json"), `{"name":"`+target+`-cli"}`)
+		if installAgentDetected(target, scope) {
+			t.Fatal("unofficial package counted as", target)
+		}
 	}
 }
 

@@ -130,9 +130,9 @@ func writeCLIFile(path string, data []byte) error {
 		return err
 	}
 	temporary := f.Name()
-	defer os.Remove(temporary)
+	defer func() { _ = os.Remove(temporary) }()
 	if _, err = f.Write(data); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if err = f.Close(); err != nil {

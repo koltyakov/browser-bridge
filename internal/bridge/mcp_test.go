@@ -29,8 +29,8 @@ func mcpTestStart(t *testing.T, c config) *mcpTestPeer {
 	go func() { done <- mcpServe(ctx, c, server, server) }()
 	t.Cleanup(func() {
 		cancel()
-		peer.Close()
-		server.Close()
+		_ = peer.Close()
+		_ = server.Close()
 		select {
 		case <-done:
 		case <-time.After(3 * time.Second):
@@ -177,8 +177,8 @@ func mcpTestDaemon(t *testing.T, handler func(object) object) (config, <-chan ob
 	requests := make(chan object, 32)
 	var connections sync.Map
 	t.Cleanup(func() {
-		listener.Close()
-		connections.Range(func(key, value interface{}) bool { key.(net.Conn).Close(); return true })
+		_ = listener.Close()
+		connections.Range(func(key, value interface{}) bool { _ = key.(net.Conn).Close(); return true })
 	})
 	go func() {
 		for {
@@ -188,7 +188,7 @@ func mcpTestDaemon(t *testing.T, handler func(object) object) (config, <-chan ob
 			}
 			connections.Store(conn, true)
 			go func() {
-				defer conn.Close()
+				defer func() { _ = conn.Close() }()
 				defer connections.Delete(conn)
 				reader := bufio.NewReader(conn)
 				_, err := readLine(reader)

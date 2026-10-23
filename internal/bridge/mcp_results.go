@@ -203,7 +203,7 @@ func mcpEvidence(raw json.RawMessage, method string, params object, fallback jso
 		var tabs []object
 		if json.Unmarshal(r["tabs"], &tabs) == nil {
 			sort.SliceStable(tabs, func(i, j int) bool {
-				return (tabs[i].boolean("working") || tabs[i].boolean("active")) && !(tabs[j].boolean("working") || tabs[j].boolean("active"))
+				return (tabs[i].boolean("working") || tabs[i].boolean("active")) && !tabs[j].boolean("working") && !tabs[j].boolean("active")
 			})
 			listed := []object{}
 			for _, tab := range tabs {

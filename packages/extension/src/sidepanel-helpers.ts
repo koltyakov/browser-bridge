@@ -144,26 +144,6 @@ export type SidepanelAgentStatusViewState = {
   disclosureHidden: boolean;
 };
 
-const SETUP_MATRIX_ORDER = [
-  'codex',
-  'claude',
-  'opencode',
-  'copilot',
-  'cursor',
-  'windsurf',
-  'antigravity',
-  'gemini',
-  'cline',
-  'zed',
-  'amp',
-  'droid',
-  'agents',
-] as const;
-
-const SETUP_MATRIX_RANK: Map<string, number> = new Map(
-  SETUP_MATRIX_ORDER.map((key, index) => [key, index])
-);
-
 const MANAGED_CLIENT_PACKAGE = '@browserbridge/bbx';
 export const PUBLISHED_EXTENSION_ID = 'jjjkmmcdkpcgamlopogicbnnhdgebhie';
 
@@ -351,6 +331,14 @@ export function getSetupStatusView(
 
 export function buildSetupMatrixRows(setupStatus: SetupStatusInstallState): SetupMatrixRow[] {
   const rowsByKey: Map<string, SetupMatrixRow> = new Map();
+  // The native agent registry owns ordering. Include hidden entries when
+  // ranking so a skill-only row keeps its registry position after filtering.
+  const rank = new Map<string, number>();
+  for (const entry of [...setupStatus.mcpClients, ...setupStatus.skillTargets]) {
+    if ('key' in entry && typeof entry.key === 'string' && !rank.has(entry.key)) {
+      rank.set(entry.key, rank.size);
+    }
+  }
 
   for (const entry of setupStatus.mcpClients) {
     if (!isMcpClientSetupState(entry) || !shouldRenderMcpClientRow(entry)) {
@@ -391,7 +379,7 @@ export function buildSetupMatrixRows(setupStatus: SetupStatusInstallState): Setu
   }
 
   return [...rowsByKey.entries()]
-    .sort(([leftKey], [rightKey]) => compareSetupMatrixKeys(leftKey, rightKey))
+    .sort(([leftKey], [rightKey]) => (rank.get(leftKey) ?? 0) - (rank.get(rightKey) ?? 0))
     .map(([, row]) => row);
 }
 
@@ -794,22 +782,6 @@ export function createSetupInstallMessage(
     kind,
     target,
   };
-}
-
-function compareSetupMatrixKeys(leftKey: string, rightKey: string): number {
-  const leftRank = SETUP_MATRIX_RANK.get(leftKey);
-  const rightRank = SETUP_MATRIX_RANK.get(rightKey);
-
-  if (leftRank !== undefined && rightRank !== undefined) {
-    return leftRank - rightRank;
-  }
-  if (leftRank !== undefined) {
-    return -1;
-  }
-  if (rightRank !== undefined) {
-    return 1;
-  }
-  return leftKey.localeCompare(rightKey);
 }
 
 function isMcpClientSetupState(

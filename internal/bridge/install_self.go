@@ -106,7 +106,7 @@ func installSelfCopy(source, destination string) error {
 	if err != nil {
 		return err
 	}
-	defer input.Close()
+	defer func() { _ = input.Close() }()
 	info, err := input.Stat()
 	if err != nil {
 		return err
@@ -118,7 +118,7 @@ func installSelfCopy(source, destination string) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(output.Name())
+	defer func() { _ = os.Remove(output.Name()) }()
 	if _, err = io.Copy(output, input); err == nil {
 		err = output.Chmod(0755)
 	}
@@ -168,7 +168,7 @@ func installSelfAlias(binDir, alias string) error {
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 	temporary := filepath.Join(dir, name)
 	if runtime.GOOS == "windows" {
 		role := map[string]string{"bbx-mcp": "mcp serve", "bbx-daemon": "--bridge-daemon", "bbx-install": "install"}[alias]

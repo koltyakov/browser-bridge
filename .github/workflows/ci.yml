@@ -19,6 +19,7 @@ on:
       - 'tsconfig.json'
       - '.oxlintrc.json'
       - '.oxfmtrc.json'
+      - '.golangci.yml'
       - 'docs/**'
       - 'skills/**'
       - 'scripts/**'

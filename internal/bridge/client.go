@@ -50,7 +50,7 @@ func register(c config, role string) (net.Conn, *bufio.Reader, error) {
 		token, err = "", nil
 	}
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, nil, err
 	}
 	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
@@ -61,11 +61,11 @@ func register(c config, role string) (net.Conn, *bufio.Reader, error) {
 	}
 	message, err := decodeObject(value(registration))
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, nil, err
 	}
 	if err := w.send(message); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, nil, err
 	}
 	reader := bufio.NewReader(conn)
@@ -74,7 +74,7 @@ func register(c config, role string) (net.Conn, *bufio.Reader, error) {
 		err = fmt.Errorf("bridge registration failed: %s", reply.object("error").text("message"))
 	}
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, nil, err
 	}
 	_ = conn.SetDeadline(time.Time{})
@@ -103,7 +103,7 @@ func (c *client) read(reader *bufio.Reader) {
 }
 
 func (c *client) fail(err error) {
-	c.conn.Close()
+	_ = c.conn.Close()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed != nil {

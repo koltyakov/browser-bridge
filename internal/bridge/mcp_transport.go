@@ -29,14 +29,14 @@ func mcpConnect(c config, clientID string) (*client, error) {
 		token, err = "", nil
 	}
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
 	writer := wireWriter{out: conn}
 	err = writer.send(object{"type": value("register"), "role": value("agent"), "authToken": value(token), "clientId": value(clientID)})
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 	reader := bufio.NewReader(conn)
@@ -45,7 +45,7 @@ func mcpConnect(c config, clientID string) (*client, error) {
 		err = fmt.Errorf("bridge registration failed: %s", reply.object("error").text("message"))
 	}
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 	_ = conn.SetDeadline(time.Time{})

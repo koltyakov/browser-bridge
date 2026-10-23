@@ -212,7 +212,7 @@ func serviceTestDaemon(t *testing.T) *daemon {
 func serviceTestPeer(t *testing.T, d *daemon, role string) *peer {
 	t.Helper()
 	conn, other := net.Pipe()
-	t.Cleanup(func() { conn.Close(); other.Close() })
+	t.Cleanup(func() { _ = conn.Close(); _ = other.Close() })
 	p := &peer{conn: conn, out: make(chan queuedMessage, 32), done: make(chan struct{}), role: role, id: uniqueID(), owner: uniqueID(), identity: object{}, dataTargets: make(map[*peer]bool), access: true}
 	d.peers[p] = true
 	return p
@@ -284,7 +284,7 @@ func serviceWirePeer(t *testing.T, d *daemon, role string) (*wireWriter, *bufio.
 	d.mu.Unlock()
 	finished := make(chan struct{})
 	go func() { defer close(finished); d.serve(p) }()
-	t.Cleanup(func() { connection.Close(); server.Close(); <-finished })
+	t.Cleanup(func() { _ = connection.Close(); _ = server.Close(); <-finished })
 	if err := connection.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		t.Fatal(err)
 	}

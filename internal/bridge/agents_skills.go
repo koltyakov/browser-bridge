@@ -35,28 +35,25 @@ type installSkillMetadata struct {
 }
 
 func installSkillBase(target string, scope installScope) string {
-	if !installContains(installAgentNames, target) {
+	agent := installAgentByKey(target)
+	if agent == nil {
 		return ""
 	}
-	base := scope.project
-	paths := map[string]string{"codex": ".codex/skills", "claude": ".claude/skills", "opencode": ".opencode/skills", "copilot": ".github/skills", "cursor": ".cursor/skills", "windsurf": ".windsurf/skills", "antigravity": ".agents/skills", "gemini": ".gemini/skills", "cline": ".cline/skills", "zed": ".agents/skills", "amp": ".agents/skills", "droid": ".factory/skills", "agents": ".agents/skills"}
-	if scope.global {
-		base = scope.home
-		if target == "gemini" {
-			base = installGeminiHome(scope)
-		}
-		if target == "cline" {
-			return filepath.Join(installClineHome(scope), "skills")
-		}
-		paths["copilot"] = ".copilot/skills"
-		paths["antigravity"] = ".gemini/antigravity/skills"
-		paths["windsurf"] = ".codeium/windsurf/skills"
-		paths["amp"] = ".config/amp/skills"
+	return agent.skill.base(scope)
+}
+
+func installSharedSkillTarget(target string, scope installScope) bool {
+	if agent := installAgentByKey(target); agent != nil {
+		return (scope.global && agent.skill.sharedUser) || (!scope.global && agent.skill.sharedProject)
 	}
-	return filepath.Join(base, filepath.FromSlash(paths[target]))
+	return false
 }
 
 func installSkillFiles(target string) (map[string][]byte, error) {
+	note := ""
+	if agent := installAgentByKey(target); agent != nil {
+		note = agent.skill.note
+	}
 	archive, err := zip.NewReader(bytes.NewReader(installSkillArchive), int64(len(installSkillArchive)))
 	if err != nil {
 		return nil, err
@@ -81,8 +78,8 @@ func installSkillFiles(target string) (map[string][]byte, error) {
 		if closeErr != nil {
 			return nil, closeErr
 		}
-		if target == "copilot" && entry.Name == "SKILL.md" && !bytes.Contains(data, []byte("## GitHub Copilot Note")) {
-			data = []byte(strings.TrimRight(string(data), "\r\n") + installCopilotNote)
+		if note != "" && entry.Name == "SKILL.md" && !bytes.Contains(data, []byte(strings.TrimSpace(note))) {
+			data = []byte(strings.TrimRight(string(data), "\r\n") + note)
 		}
 		files[entry.Name] = data
 	}
@@ -262,7 +259,7 @@ func installAgentSkill(target string, scope installScope, remove bool) ([]string
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(stage)
+	defer func() { _ = os.RemoveAll(stage) }()
 	if exists {
 		if err := installCopySkillTree(resolved, stage); err != nil {
 			return nil, err

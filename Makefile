@@ -10,6 +10,7 @@
 NODE ?= node
 NPM ?= npm
 GO ?= go
+GOLANGCI_LINT_VERSION ?= v2.14.0
 INSTALL_DIR ?=
 TARGET ?=
 TARBALL ?= ./browserbridge-bbx-$(shell "$(NODE)" scripts/version.mjs --print).tgz
@@ -25,7 +26,7 @@ ifeq ($(OS),Windows_NT)
 EXE = .exe
 endif
 
-.PHONY: help deps clean build build-extension build-native lint typecheck format format-js \
+.PHONY: help deps clean build build-extension build-native lint lint-js lint-go typecheck format format-js \
 	format-go check-go-format format-check test test-js test-runtime test-go test-native \
 	vet-go coverage coverage-review coverage-check generate-protocol check-protocol \
 	check-release-version check check-extension-zip package-extension package-native \
@@ -54,9 +55,14 @@ build-native: generate-protocol ## Build the local Go executable with current ve
 install: generate-protocol build ## Build and install to ~/.local/bin, refresh native registration, and restart runtime
 	./dist/cli/bbx$(EXE) install-self $(if $(INSTALL_DIR),--bin-dir "$(INSTALL_DIR)",) $(ARGS)
 
-lint: ## Check JavaScript/TypeScript lint and formatting
+lint: lint-js lint-go ## Check JavaScript/TypeScript and Go lint and formatting
+
+lint-js: ## Check JavaScript/TypeScript lint and formatting
 	$(EXEC) oxlint .
 	$(EXEC) oxfmt --check .
+
+lint-go: check-go-format ## Check Go formatting and run pinned golangci-lint
+	$(GO) run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) run --timeout=5m
 
 typecheck: ## Check TypeScript and typed JavaScript
 	$(EXEC) tsc --noEmit
@@ -114,7 +120,7 @@ check-protocol: ## Check that generated protocol files are current
 check-release-version: ## Check release version consistency
 	"$(NODE)" scripts/check-release-version.mjs
 
-check: sync-version check-release-version check-protocol lint typecheck check-go-format vet-go test coverage-check ## Run all source validation and tests
+check: sync-version check-release-version check-protocol lint typecheck vet-go test coverage-check ## Run all source validation and tests
 
 package-extension: sync-version ## Build the release extension directory and ZIP without source maps
 	"$(NODE)" scripts/package-extension.mjs

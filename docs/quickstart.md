@@ -58,9 +58,9 @@ Google Chrome, Brave, or Edge and install the manifest for that browser.
 
 There are two integration paths. Pick the one that matches how your agent works:
 
-Supported clients: Codex (OpenAI) (`codex`), Claude Code (`claude`), OpenCode (`opencode`), GitHub Copilot (`copilot`), Cursor (`cursor`), Devin Desktop, formerly Windsurf (`windsurf`), Antigravity (`antigravity`), Gemini CLI (`gemini`), Cline (`cline`), Zed (`zed`), Amp (`amp`), Factory Droid (`droid`), and generic `.agents` MCP/skill layouts (`agents`).
+Supported clients: Codex (OpenAI) (`codex`), Claude Code (`claude`), OpenCode (`opencode`), GitHub Copilot (`copilot`), Cursor (`cursor`), Devin Desktop, formerly Windsurf (`windsurf`), Antigravity (`antigravity`), Gemini CLI (`gemini`), Cline (`cline`), Zed (`zed`), Amp (`amp`), Factory Droid (`droid`), Pi (`pi`), Kilo Code (`kilo`), Qwen Code (`qwen`), Goose (`goose`), OpenHands (`openhands`), Muse Code (`muse`), Grok Build (`grok`), and generic `.agents` MCP/skill layouts (`agents`).
 
-Cline MCP configuration is user-scope only; its CLI skill supports projects too. Zed support configures the native agent, not every ACP agent it can host. Gemini CLI is a separate target from Antigravity. See [manual setup](./manual-setup.md#3-managed-setup-for-supported-clients) for paths, overrides, and shared-skill behavior.
+Cline, Goose, OpenHands, and Muse MCP configuration is user-scope only; their CLI skills support projects too. Zed support configures the native agent, not every ACP agent it can host. Gemini CLI is a separate target from Antigravity. Grok means official Grok Build, not a community wrapper. See [manual setup](./manual-setup.md#3-managed-setup-for-supported-clients) for paths, overrides, and shared-skill behavior.
 
 Devin Desktop retains the `windsurf` setup target and existing configuration paths for compatibility:
 
@@ -78,7 +78,8 @@ After installing the extension and Browser Bridge, finish setup from **Connect a
 ```bash
 bbx install-mcp                  # prompt/select detected clients
 bbx install-mcp all              # all supported clients
-bbx install-mcp codex            # or pick one: codex, claude, opencode, copilot, cursor, windsurf, antigravity, gemini, cline, zed, amp, droid, agents
+bbx install-mcp codex            # Pick a supported target listed above
+bbx install-mcp pi,kilo,qwen,goose,openhands,muse,grok
 bbx install-mcp copilot --local  # scope to current project instead of global
 ```
 
@@ -95,7 +96,8 @@ The same stdio command supports both MCP protocol eras. Legacy clients start wit
 ```bash
 bbx install-skill                  # prompt/select detected clients
 bbx install-skill all              # all supported clients
-bbx install-skill codex            # or pick one: codex, claude, opencode, copilot, cursor, windsurf, antigravity, gemini, cline, zed, amp, droid, agents
+bbx install-skill codex            # Pick a supported target listed above
+bbx install-skill pi,kilo,qwen,goose,openhands,muse,grok --local
 bbx install-skill agents --project .
 ```
 

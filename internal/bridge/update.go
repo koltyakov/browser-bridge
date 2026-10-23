@@ -129,7 +129,7 @@ func (manager *updateManager) stageFrom(ctx context.Context, feed updateVerified
 		return record, err
 	}
 	temporary := file.Name()
-	defer os.Remove(temporary)
+	defer func() { _ = os.Remove(temporary) }()
 	hash := sha256.New()
 	var size int64
 	var downloadErr error

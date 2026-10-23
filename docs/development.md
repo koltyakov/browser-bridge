@@ -28,7 +28,9 @@ The Go runtime lives in `cmd/bbx` and `internal/bridge`; its unit tests live bes
 | `make build-extension` | Unpacked extension with source maps in `dist/ext` |
 | `make build-native` | Local Go executable at `dist/cli/bbx`, or `dist/cli/bbx.exe` on Windows |
 | `make install` | Build both components, install the CLI to the user bin directory, refresh native registration, and restart the runtime |
-| `make lint typecheck` | JavaScript/TypeScript lint, formatting, and type checks |
+| `make lint typecheck` | JavaScript/TypeScript and Go lint, formatting, and TypeScript type checks |
+| `make lint-go` | Go formatting and pinned golangci-lint |
+| `make lint-js` | JavaScript/TypeScript lint and formatting |
 | `make format` | Format JavaScript, TypeScript, configuration, and Go |
 | `make test` | Go race tests, then Node tests with coverage |
 | `make test-runtime` | Node tests without coverage |
@@ -43,6 +45,10 @@ The Go runtime lives in `cmd/bbx` and `internal/bridge`; its unit tests live bes
 | `make release-check` | Full validation and release packaging without publishing |
 
 Targets run serially even with `make -j`: tests and packaging share output directories. Release checks build all native assets after tests and before npm packing.
+
+`make lint-go` runs golangci-lint through `go run` at the version pinned in `Makefile`. No separate installation is required. CI and release validation run it through `make lint`.
+
+The default linters check errors, vet diagnostics, static analysis, and unused code. `.golangci.yml` keeps Staticcheck's default checks except `ST1005`, since existing user-facing error messages preserve CLI wording, usage text, and product names.
 
 ## Install a checkout
 

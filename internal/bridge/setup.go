@@ -6,65 +6,16 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 )
 
 func installAgentDetected(target string, scope installScope) bool {
-	if installAdditionalAgent(target) {
-		return installAdditionalAgentDetected(target, scope)
+	if agent := installAgentByKey(target); agent != nil {
+		return installPresenceDetected(agent, scope)
 	}
-	if target == "agents" {
-		return false
-	}
-	paths := map[string][]string{
-		"codex": {".codex"}, "claude": {".claude", ".claude.json"}, "cursor": {".cursor"},
-		"copilot": {".vscode"}, "opencode": {".config/opencode", ".opencode"},
-		"antigravity": {".gemini/antigravity"}, "windsurf": {".codeium/windsurf"},
-	}
-	for _, path := range paths[target] {
-		if installExists(filepath.Join(scope.home, filepath.FromSlash(path))) {
-			return true
-		}
-	}
-	if target == "copilot" && installExists(filepath.Join(installVSCodeHome(scope), "User")) {
-		return true
-	}
-	if runtime.GOOS == "darwin" {
-		apps := map[string][]string{"cursor": {"Cursor.app"}, "copilot": {"Visual Studio Code.app"}, "windsurf": {"Devin.app", "Windsurf.app"}}
-		for _, app := range apps[target] {
-			if installExists(filepath.Join("/Applications", app)) || installExists(filepath.Join(scope.home, "Applications", app)) {
-				return true
-			}
-		}
-	}
-	if runtime.GOOS == "windows" && target == "copilot" {
-		local := os.Getenv("LOCALAPPDATA")
-		if local == "" {
-			local = filepath.Join(scope.home, "AppData", "Local")
-		}
-		return installExists(filepath.Join(local, "Programs", "Microsoft VS Code"))
-	}
-	command := target
-	if target == "copilot" {
-		command = "code"
-	}
-	if target == "antigravity" {
-		command = "agy"
-	}
-	if target == "windsurf" {
-		for _, command := range []string{"devin-desktop", "surf", "windsurf"} {
-			if _, err := exec.LookPath(command); err == nil {
-				return true
-			}
-		}
-		return false
-	}
-	_, err := exec.LookPath(command)
-	return err == nil
+	return false
 }
 
 func installDetectedOverride(env, target string, fallback bool) bool {
@@ -161,7 +112,7 @@ func installCollectStatus(scope installScope) object {
 		path := filepath.Join(base, "browser-bridge")
 		metadata, managed, _ := installReadSkillMetadata(path)
 		installed := installExists(path)
-		if (target == "zed" || (target == "amp" && !scope.global)) && !detected && !installContains(metadata.Targets, target) {
+		if installSharedSkillTarget(target, scope) && !detected && !installContains(metadata.Targets, target) {
 			// A generic shared bundle is not proof that this editor/agent exists.
 			installed = false
 		}
@@ -238,11 +189,11 @@ func installParseTargets(raw string, aliases bool) ([]string, error) {
 			continue
 		}
 		if aliases {
-			if target == "openai" {
-				target = "codex"
-			}
-			if target == "google" {
-				target = "antigravity"
+			for _, agent := range installAgentRegistry {
+				if installContains(agent.aliases, target) {
+					target = agent.key
+					break
+				}
 			}
 		}
 		if !installContains(installAgentNames, target) {

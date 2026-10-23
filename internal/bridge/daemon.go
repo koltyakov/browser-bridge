@@ -98,12 +98,12 @@ func (p *peer) enqueue(message object, onWrite func(bool)) bool {
 	}
 	size := int64(len(value(message)) + 1)
 	if size-1 > maxMessageBytes {
-		p.conn.Close()
+		_ = p.conn.Close()
 		return false
 	}
 	if p.queuedBytes.Add(size) > 4*maxMessageBytes {
 		p.queuedBytes.Add(-size)
-		p.conn.Close()
+		_ = p.conn.Close()
 		return false
 	}
 	select {
@@ -113,7 +113,7 @@ func (p *peer) enqueue(message object, onWrite func(bool)) bool {
 		p.queuedBytes.Add(-size)
 	default:
 		p.queuedBytes.Add(-size)
-		p.conn.Close()
+		_ = p.conn.Close()
 	}
 	return false
 }
@@ -135,7 +135,7 @@ func listen(c config) (net.Listener, error) {
 			}
 			conn, err := c.dial()
 			if err == nil {
-				conn.Close()
+				_ = conn.Close()
 				return nil, errors.New("another daemon is already running")
 			}
 			// Refuse ambiguous failures such as permission errors and timeouts.
@@ -152,7 +152,7 @@ func listen(c config) (net.Listener, error) {
 	listener, err := c.listen()
 	if err == nil && c.network == "unix" {
 		if chmodErr := os.Chmod(c.address, 0600); chmodErr != nil {
-			listener.Close()
+			_ = listener.Close()
 			return nil, chmodErr
 		}
 	}
@@ -178,7 +178,7 @@ func runDaemon(ctx context.Context, c config) error {
 	if err != nil {
 		return err
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 	d := &daemon{config: c, agentToken: agent, extensionToken: extension, peers: make(map[*peer]bool), pending: make(map[string]*pendingRequest), started: time.Now()}
 	d.initServices()
 	if err := d.artifacts.reset(); err != nil {
@@ -202,7 +202,7 @@ func runDaemon(ctx context.Context, c config) error {
 		for {
 			select {
 			case <-ctx.Done():
-				listener.Close()
+				_ = listener.Close()
 				return
 			case <-finished:
 				return
@@ -218,7 +218,7 @@ func runDaemon(ctx context.Context, c config) error {
 	defer func() {
 		d.mu.Lock()
 		for p := range d.peers {
-			p.conn.Close()
+			_ = p.conn.Close()
 		}
 		for _, pending := range d.pending {
 			pending.timer.Stop()
@@ -243,7 +243,7 @@ func runDaemon(ctx context.Context, c config) error {
 		d.mu.Lock()
 		if len(d.peers) >= 64 {
 			d.mu.Unlock()
-			conn.Close()
+			_ = conn.Close()
 			continue
 		}
 		p := &peer{conn: conn, out: make(chan queuedMessage, 32), done: make(chan struct{}), identity: object{}, owner: uniqueID(), dataTargets: make(map[*peer]bool)}
@@ -258,7 +258,7 @@ func runDaemon(ctx context.Context, c config) error {
 }
 
 func (d *daemon) serve(p *peer) {
-	defer p.conn.Close()
+	defer func() { _ = p.conn.Close() }()
 	defer d.disconnect(p)
 	writerDone := make(chan struct{})
 	defer func() {
@@ -293,7 +293,7 @@ func (d *daemon) serve(p *peer) {
 				err := writer.send(queued.message)
 				p.queuedBytes.Add(-queued.bytes)
 				if err != nil {
-					p.conn.Close()
+					_ = p.conn.Close()
 					if queued.onWrite != nil {
 						queued.onWrite(false)
 					}
@@ -380,7 +380,7 @@ func (d *daemon) identity(p *peer, message object) {
 			p.identity[key] = value(s)
 		}
 	}
-	if raw := message["browserExtensionId"]; raw != nil && len(raw) > 0 && raw[0] == '"' {
+	if raw := message["browserExtensionId"]; len(raw) > 0 && raw[0] == '"' {
 		delete(p.identity, "browserExtensionId")
 		if id := message.text("browserExtensionId"); browserExtensionIDPattern.MatchString(id) {
 			p.identity["browserExtensionId"] = value(id)
@@ -450,7 +450,7 @@ func (d *daemon) handle(p *peer, message object) {
 		return
 	}
 	if p.role != "extension" {
-		p.conn.Close()
+		_ = p.conn.Close()
 		return
 	}
 	switch kind {

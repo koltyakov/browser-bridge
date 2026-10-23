@@ -53,7 +53,7 @@ func openRegularFile(path string, flag int) (*os.File, error) {
 	}
 	after, err := f.Stat()
 	if err != nil || !after.Mode().IsRegular() || !os.SameFile(before, after) {
-		f.Close()
+		_ = f.Close()
 		return nil, errors.New("journal/artifact file changed while opening")
 	}
 	return f, nil
@@ -151,7 +151,7 @@ func (s *recordingStore) append(id, extension string, offset int64, data string)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	stat, err := f.Stat()
 	if err != nil {
 		return nil, err
@@ -180,7 +180,7 @@ func (s *recordingStore) read(id string, offset, limit int64) (object, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	stat, err := f.Stat()
 	if err != nil {
 		return nil, err

@@ -10,42 +10,64 @@ import (
 	"strings"
 )
 
-// Passive installation hints only. Never execute a discovered program, inspect
-// credentials, or infer an installed agent from a retained settings directory.
-// These fingerprints do not identify or authorize an active MCP caller.
-func installAdditionalAgentDetected(target string, scope installScope) bool {
-	if target == "cline" && installClineExtensionDetected(scope) {
+type installExtensionIdentity struct {
+	publisher string
+	name      string
+}
+
+type installAgentPresence struct {
+	// Legacy agents retain their existing weak directory/PATH hints. New
+	// agents use passive package/payload evidence, never credential inspection.
+	legacy             bool
+	commands           []string
+	homeHints          []string
+	apps               []string
+	packages           []string
+	packagePrefixes    []string
+	dependencyPrefixes []string
+	extension          installExtensionIdentity
+	nativePaths        func(installScope) []string
+	nativeMatch        func(string) bool
+	pathMatch          func(string) bool
+	detect             func(installScope) bool
+}
+
+// Presence is a setup hint, not active-caller identity or authorization. All
+// fingerprints are passive. No discovered program or installer is executed.
+func installPresenceDetected(agent *installAgentDefinition, scope installScope) bool {
+	presence := agent.presence
+	if presence.detect != nil && presence.detect(scope) {
 		return true
 	}
-	if target == "zed" {
-		return installZedDetected(scope)
-	}
-	if path, err := exec.LookPath(target); err == nil && installAgentPackageMatches(path, target) {
+	if presence.extension.name != "" && installEditorExtensionDetected(scope, presence.extension.publisher, presence.extension.name) {
 		return true
 	}
-	// Native installers have no npm manifest. Require an executable in their
-	// documented installation tree, not an arbitrary PATH basename such as the
-	// unrelated Homebrew text editor called amp.
-	var paths []string
-	switch target {
-	case "amp":
-		home := os.Getenv("AMP_HOME")
-		if home == "" {
-			home = filepath.Join(scope.home, ".amp")
-		}
-		paths = []string{filepath.Join(home, "bin", "amp")}
-	case "droid":
-		paths = []string{filepath.Join(scope.home, ".local", "bin", "droid")}
-		if runtime.GOOS == "windows" {
-			paths = []string{filepath.Join(scope.home, "bin", "droid")}
+	for _, command := range presence.commands {
+		if path, err := exec.LookPath(command); err == nil {
+			if presence.legacy || (presence.pathMatch != nil && presence.pathMatch(path)) || installAgentPackageMatches(path, agent.key) {
+				return true
+			}
 		}
 	}
-	for _, path := range paths {
-		if runtime.GOOS == "windows" {
-			path += ".exe"
+	if presence.nativePaths != nil {
+		for _, path := range presence.nativePaths(scope) {
+			if installExecutableExists(path) && (presence.nativeMatch == nil || presence.nativeMatch(path)) {
+				return true
+			}
 		}
-		if installExecutableExists(path) {
-			return true
+	}
+	if presence.legacy {
+		for _, path := range presence.homeHints {
+			if installExists(filepath.Join(scope.home, filepath.FromSlash(path))) {
+				return true
+			}
+		}
+		if runtime.GOOS == "darwin" {
+			for _, app := range presence.apps {
+				if installExists(filepath.Join("/Applications", app)) || installExists(filepath.Join(scope.home, "Applications", app)) {
+					return true
+				}
+			}
 		}
 	}
 	return false
@@ -61,7 +83,7 @@ func installReadFingerprint(path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	return io.ReadAll(io.LimitReader(file, 256*1024))
 }
 
@@ -74,6 +96,10 @@ type installAgentPackage struct {
 }
 
 func installPackageMatches(manifest, target string) bool {
+	agent := installAgentByKey(target)
+	if agent == nil {
+		return false
+	}
 	data, err := installReadFingerprint(manifest)
 	if err != nil {
 		return false
@@ -82,32 +108,33 @@ func installPackageMatches(manifest, target string) bool {
 	if json.Unmarshal(data, &pkg) != nil {
 		return false
 	}
-	switch target {
-	case "gemini":
-		return pkg.Name == "@google/gemini-cli"
-	case "cline":
-		return pkg.Name == "cline" || pkg.Name == "@cline/cli"
-	case "amp":
-		return pkg.Name == "@ampcode/cli" || strings.HasPrefix(pkg.Name, "@ampcode/cli-") || pkg.Name == "@sourcegraph/amp"
-	case "droid":
-		if strings.HasPrefix(pkg.Name, "@factory/cli-") {
+	presence := agent.presence
+	for _, prefix := range presence.packagePrefixes {
+		if strings.HasPrefix(pkg.Name, prefix) {
 			return true
 		}
-		if pkg.Name == "droid" {
+	}
+	if installContains(presence.packages, pkg.Name) {
+		if len(presence.dependencyPrefixes) > 0 {
 			for _, dependencies := range []map[string]string{pkg.Dependencies, pkg.OptionalDependencies} {
 				for name := range dependencies {
-					if strings.HasPrefix(name, "@factory/cli-") {
-						return true
+					for _, prefix := range presence.dependencyPrefixes {
+						if strings.HasPrefix(name, prefix) {
+							return true
+						}
 					}
 				}
 			}
+			return false
 		}
+		return true
 	}
 	return false
 }
 
 func installAgentPackageMatches(path, target string) bool {
-	if !installExecutableExists(path) {
+	agent := installAgentByKey(target)
+	if agent == nil || (len(agent.presence.packages) == 0 && len(agent.presence.packagePrefixes) == 0) || !installExecutableExists(path) {
 		return false
 	}
 	resolved, err := filepath.EvalSymlinks(path)
@@ -132,11 +159,7 @@ func installAgentPackageMatches(path, target string) bool {
 		return false
 	}
 	normalized := strings.ReplaceAll(string(shim), "\\", "/")
-	packages := map[string][]string{
-		"gemini": {"@google/gemini-cli"}, "cline": {"cline"},
-		"amp": {"@ampcode/cli", "@sourcegraph/amp"}, "droid": {"droid"},
-	}
-	for _, name := range packages[target] {
+	for _, name := range agent.presence.packages {
 		if strings.Contains(normalized, "node_modules/"+name+"/") && installPackageMatches(filepath.Join(filepath.Dir(path), "node_modules", filepath.FromSlash(name), "package.json"), target) {
 			return true
 		}
@@ -144,7 +167,7 @@ func installAgentPackageMatches(path, target string) bool {
 	return false
 }
 
-func installClineExtensionDetected(scope installScope) bool {
+func installEditorExtensionDetected(scope installScope, publisher, name string) bool {
 	for _, editor := range []string{".vscode", ".vscode-insiders", ".vscode-oss", ".cursor", ".devin", ".windsurf"} {
 		root := filepath.Join(scope.home, editor, "extensions")
 		obsolete := map[string]bool{}
@@ -155,13 +178,13 @@ func installClineExtensionDetected(scope installScope) bool {
 		}
 		entries, _ := os.ReadDir(root)
 		for _, entry := range entries {
-			if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "saoudrizwan.claude-dev-") || obsolete[entry.Name()] {
+			if !entry.IsDir() || !strings.HasPrefix(entry.Name(), publisher+"."+name+"-") || obsolete[entry.Name()] {
 				continue
 			}
 			dir := filepath.Join(root, entry.Name())
 			raw, err := installReadFingerprint(filepath.Join(dir, "package.json"))
 			var pkg installAgentPackage
-			if err != nil || json.Unmarshal(raw, &pkg) != nil || pkg.Publisher != "saoudrizwan" || pkg.Name != "claude-dev" || pkg.Main == "" {
+			if err != nil || json.Unmarshal(raw, &pkg) != nil || pkg.Publisher != publisher || pkg.Name != name || pkg.Main == "" {
 				continue
 			}
 			main := filepath.Clean(filepath.FromSlash(pkg.Main))

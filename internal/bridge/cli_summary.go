@@ -297,7 +297,7 @@ func cliSummaryBody(response object, method string, now int64) object {
 		if page == nil {
 			sort.SliceStable(tabs, func(i, j int) bool {
 				a, b := cliRecord(tabs[i]), cliRecord(tabs[j])
-				return (a.boolean("working") || a.boolean("active")) && !(b.boolean("working") || b.boolean("active"))
+				return (a.boolean("working") || a.boolean("active")) && !b.boolean("working") && !b.boolean("active")
 			})
 			total := len(tabs)
 			tabs = tabs[:min(10, total)]
