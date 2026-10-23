@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.15.0] - Unreleased
+
+### Changed
+
+- The Node-only transition release speaks protocol 2.0 and accepts v1 peers.
+- Compatible global npm updates default to enabled when no policy was set.
+  Explicit opt-outs remain respected. The v2 extension must arrive before a
+  1.15 installation can automatically select a v2 npm package.
+- CLI updates resolve the installed package's new entrypoint before command
+  dispatch. MCP startup checks run before its stdin initialization handshake.
+- Enabled-window grants are backed up for extension updates and cleared at
+  browser startup. See [the rollout checklist](./docs/v1-to-v2.md).
+- Ported the v2 popup and side panel: responsive layouts, version tooltips,
+  active-tab dropdowns with favicons and recency, grouped health checks, and
+  connection loading and retry controls. Setup remains npm-only for 1.15.
+
 ## [1.12.5] - 2026-10-15
 
 ### Changed

@@ -18,16 +18,16 @@ npm install -g @browserbridge/bbx
 
 This also installs the native messaging host automatically.
 
-To keep the global CLI aligned when the browser updates the extension, opt in
-to protocol-compatible npm updates:
+Starting with 1.15, compatible global npm updates are enabled unless you
+explicitly disabled them. To opt out:
 
 ```bash
-bbx config set auto-update compatible
+bbx config set auto-update off
 ```
 
-This selects only stable releases on a `major.minor` protocol line advertised
-by the connected extension. It never downgrades or updates remote, linked, or
-checkout-local clients.
+Updates select stable releases with a wire protocol supported by the connected
+extension, without exceeding that extension's package major. Remote, linked,
+and checkout-local clients are not replaced. See [the v1 to v2 rollout](./v1-to-v2.md).
 
 If the extension does not connect itself during setup, run:
 

@@ -591,7 +591,7 @@ test('agent tab card appears only for sibling work and examples stay hidden duri
     Reflect.set(window, 'location', new URL('https://example.com/sidepanel.html?tabId=41'));
     await importFreshSidepanelScript();
     await flushMicrotasks();
-    const card = document.getElementById('agent-tab-row');
+    const card = document.getElementById('agent-tab-row') as HTMLDetailsElement | null;
     const list = document.getElementById('agent-tabs-list');
     const examples = document.getElementById('examples-section') as HTMLDetailsElement | null;
     assert.ok(card instanceof HTMLElement && list instanceof HTMLElement);
@@ -636,8 +636,16 @@ test('agent tab card appears only for sibling work and examples stay hidden duri
     const longTitle = '<img src=x onerror=alert(1)> ' + 'Long page title '.repeat(30);
     const agentTabs = [
       { tabId: 41, title: 'Current page', isCurrent: true, actionCount: 99 },
-      { tabId: 42, title: longTitle, isCurrent: false, actionCount: 5 },
+      {
+        tabId: 42,
+        title: longTitle,
+        isCurrent: false,
+        actionCount: 5,
+        favIconUrl: 'https://example.com/favicon.ico',
+        lastActivityAt: Date.now() - 75_000,
+      },
     ];
+    let previousRow: Element | null = null;
     for (let index = 0; index < 4; index += 1) {
       pair.left.dispatchMessage(
         createSidepanelStateSync(
@@ -659,6 +667,18 @@ test('agent tab card appears only for sibling work and examples stay hidden duri
       assert.equal(card.hidden, false);
       assert.equal(examples.hidden, true);
       assert.equal(list.children.length, 1);
+      if (previousRow)
+        assert.equal(
+          list.firstElementChild === previousRow,
+          true,
+          'rows stay stable during activity updates'
+        );
+      previousRow = list.firstElementChild;
+      assert.equal(document.getElementById('agent-tabs-total')?.textContent, '1 tab');
+      assert.equal(
+        document.getElementById('agent-tabs-actions')?.textContent,
+        `${index + 1} ${index === 0 ? 'action' : 'actions'}`
+      );
       assert.equal(list.textContent?.includes('Current page'), false);
       assert.equal(list.querySelector('.agent-tab-name')?.textContent, longTitle);
       assert.equal(list.lastElementChild?.getAttribute('title'), longTitle);
@@ -678,8 +698,14 @@ test('agent tab card appears only for sibling work and examples stay hidden duri
       assert.equal(rowButton.type, 'button');
       assert.equal(rowButton.getAttribute('aria-label'), `Switch to tab: ${longTitle}`);
       assert.equal(rowButton.lastElementChild, chip, 'the count follows the tab name');
-      assert.equal(list.querySelector('img'), null);
+      const icon: HTMLImageElement | null = list.querySelector('img');
+      assert.equal(icon?.getAttribute('src'), 'https://example.com/favicon.ico');
+      assert.equal(icon?.getAttribute('aria-hidden'), 'true');
+      assert.equal(list.querySelector('.agent-tab-recency')?.textContent, '1m 15s');
     }
+    const failedIcon = list.querySelector('img');
+    failedIcon?.dispatchEvent(new Event('error'));
+    assert.equal(failedIcon?.getAttribute('src'), '../assets/tab-fallback.svg');
     pair.left.dispatchMessage(
       createSidepanelStateSync(true, null, null, [], {
         currentTab: {
@@ -804,9 +830,9 @@ test('sidepanel UI shows the global host CLI and daemon version', async (t) => {
 
     portPair.left.dispatchMessage(createSidepanelStateSync(true, null, '1.2.0'));
 
-    const hostVersion = document.getElementById('setup-host-version');
+    const hostVersion = document.getElementById('extension-version');
     assert.ok(hostVersion instanceof HTMLElement);
-    assert.equal(hostVersion.textContent, 'Daemon version: v1.2.0');
+    assert.equal(hostVersion.textContent, 'Extension: v1.2.9\nDaemon: v1.2.0');
     assert.equal(hostVersion.hidden, false);
 
     const mismatchBanner = document.getElementById('version-mismatch-banner');
@@ -818,18 +844,20 @@ test('sidepanel UI shows the global host CLI and daemon version', async (t) => {
     assert.equal(mismatchBanner.hidden, true, 'patch-only differences should remain compatible');
 
     portPair.left.dispatchMessage(createSidepanelStateSync(true, null, '1.3.0'));
+    assert.equal(mismatchBanner.hidden, true, 'minor releases remain compatible');
+    portPair.left.dispatchMessage(createSidepanelStateSync(true, null, '2.0.0'));
     assert.equal(mismatchBanner.hidden, false);
     assert.equal(
       mismatchMessage.textContent,
-      'Browser Bridge CLI v1.3.0 and extension v1.2.9 might not be compatible. Update them so their major and minor versions match.'
+      'Browser Bridge CLI v2.0.0 and extension v1.2.9 use different protocols. Update the CLI and extension to compatible releases.'
     );
 
     dismissMismatch.click();
     assert.equal(mismatchBanner.hidden, true);
-    portPair.left.dispatchMessage(createSidepanelStateSync(true, null, '1.3.0'));
+    portPair.left.dispatchMessage(createSidepanelStateSync(true, null, '2.0.0'));
     assert.equal(mismatchBanner.hidden, true, 'dismissal should survive state refreshes');
 
-    portPair.left.dispatchMessage(createSidepanelStateSync(true, null, '2.0.0'));
+    portPair.left.dispatchMessage(createSidepanelStateSync(true, null, '3.0.0'));
     assert.equal(mismatchBanner.hidden, false, 'a different mismatch should be visible');
   });
 });
@@ -1059,6 +1087,25 @@ test('sidepanel UI renders activity summaries, histogram families, and repeat wa
     intervalCallbacks[0]();
     assert.equal(summaryTokens.dataset.costClass, 'extreme');
 
+    const ping = createActionLogEntry('group-ping-1', 'health.ping', 1000);
+    portPair.left.dispatchMessage(
+      createSidepanelStateSync(true, null, null, [
+        ping,
+        { ...ping, id: 'group-ping-2', approxTokens: 2000 },
+      ])
+    );
+    assert.equal(actionLog.children.length, 1);
+    assert.equal(actionLog.querySelector('.activity-repeat-count')?.textContent, 'x2');
+    assert.match(actionLog.querySelector('.activity-tokens')?.textContent ?? '', /3,000 tok/);
+    assert.equal(
+      actionLog.querySelector('.activity-tokens')?.getAttribute('data-cost-class'),
+      'heavy'
+    );
+    assert.equal(
+      actionLog.querySelector('.activity-summary > span:last-child')?.getAttribute('title'),
+      ping.summary
+    );
+
     Date.now = () => Number.NaN;
     portPair.left.dispatchMessage(
       createSidepanelStateSync(true, null, null, [
@@ -1113,6 +1160,7 @@ test('sidepanel UI handles setup matrix actions, context menus, diagnostics, and
       (call) => call.delay === delay && !clearedTimeouts.includes(call.token)
     );
     assert.ok(timeoutCall, `expected pending timeout with delay ${delay}`);
+    clearedTimeouts.push(timeoutCall.token);
     timeoutCall.callback();
     return timeoutCall.token;
   }
@@ -1165,6 +1213,9 @@ test('sidepanel UI handles setup matrix actions, context menus, diagnostics, and
           connectCalls += 1;
           return portPair.left.port as unknown as chrome.runtime.Port;
         },
+        getManifest() {
+          return { version: '1.15.0' };
+        },
       },
     })
   );
@@ -1203,6 +1254,28 @@ test('sidepanel UI handles setup matrix actions, context menus, diagnostics, and
     assert.ok(setupInstallCmd instanceof HTMLElement);
     assert.ok(contextMenu instanceof HTMLElement);
 
+    assert.equal(document.getElementById('native-loading')?.hidden, false);
+    assert.equal(document.getElementById('native-setup')?.hidden, true);
+    runNextTimeout(12_000);
+    assert.equal(document.getElementById('native-loading')?.hidden, true);
+    assert.equal(document.getElementById('native-setup')?.hidden, false);
+    assert.equal(
+      document.getElementById('setup-native-tab'),
+      null,
+      'v1 must not offer standalone Go installation'
+    );
+    const npmCommand = document.getElementById('setup-npm-cmd');
+    assert.equal(npmCommand?.textContent, 'npm install -g @browserbridge/bbx@1.15');
+    npmCommand?.click();
+    await flushMicrotasks();
+    assert.deepEqual(portPairs[0].left.postedMessages.at(-1), {
+      type: 'native.retry',
+      installationCopied: true,
+    });
+    document.getElementById('setup-native-retry')?.click();
+    assert.deepEqual(portPairs[0].left.postedMessages.at(-1), { type: 'native.retry' });
+    runNextTimeout(1500);
+
     portPairs[0].left.dispatchMessage(
       createSidepanelStateSync(false, createUnconfiguredSetupStatus())
     );
@@ -1216,7 +1289,7 @@ test('sidepanel UI handles setup matrix actions, context menus, diagnostics, and
 
     setupInstallCmd.click();
     await flushMicrotasks();
-    assert.equal(clipboardWrites.at(-1), 'bbx install');
+    assert.equal(clipboardWrites.at(-1), 'bbx install test-extension-id');
     assert.equal(setupInstallCmd.classList.contains('copied'), true);
     runNextTimeout(1500);
     assert.equal(setupInstallCmd.classList.contains('copied'), false);
@@ -1226,7 +1299,8 @@ test('sidepanel UI handles setup matrix actions, context menus, diagnostics, and
     assert.equal(examplesSection.open, false);
 
     portPairs[0].left.dispatchMessage(createSidepanelStateSync(false, createRichSetupStatus()));
-    assert.match(setupStatusMatrix.textContent ?? '', /Windsurf \(beta\)/);
+    assert.match(setupStatusMatrix.textContent ?? '', /Windsurf/);
+    assert.equal(setupStatusMatrix.querySelector('.setup-matrix-beta'), null);
     assert.match(setupStatusMatrix.textContent ?? '', /Custom/);
 
     const cursorMcpInstall = setupStatusMatrix.querySelector(
@@ -1323,6 +1397,8 @@ test('sidepanel UI handles setup matrix actions, context menus, diagnostics, and
       connected: false,
       error: 'daemon crashed',
     });
+    assert.equal(document.getElementById('native-loading')?.hidden, false);
+    runNextTimeout(12_000);
     runNextTimeout(10_000);
     const diagnostic = document.getElementById('native-diagnostic');
     assert.ok(diagnostic instanceof HTMLElement);

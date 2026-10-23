@@ -7,6 +7,7 @@ const startControl = async () => ({
   registrationPath: '',
   dispose: async () => {},
 });
+const prepare = async () => null;
 
 test('runBridgeMcpCli prints usage and exits successfully for --help', async () => {
   let startCalls = 0;
@@ -15,6 +16,7 @@ test('runBridgeMcpCli prints usage and exits successfully for --help', async () 
 
   const statusCode = await runBridgeMcpCli({
     argv: ['--help'],
+    prepare,
     start: async () => {
       startCalls += 1;
     },
@@ -41,6 +43,7 @@ test('runBridgeMcpCli starts the MCP server without writing errors', async () =>
   let stderrOutput = '';
 
   const statusCode = await runBridgeMcpCli({
+    prepare,
     start: async () => {
       startCalls += 1;
     },
@@ -68,6 +71,7 @@ test('runBridgeMcpCli writes stack traces and exits 1 on startup failure', async
   error.stack = 'Error: stdio failed\n    at startBridgeMcpServer (server.js:1:1)';
 
   const statusCode = await runBridgeMcpCli({
+    prepare,
     start: async () => {
       throw error;
     },
@@ -94,6 +98,7 @@ test('runBridgeMcpCli stringifies non-Error startup failures', async () => {
   let stderrOutput = '';
 
   const statusCode = await runBridgeMcpCli({
+    prepare,
     start: async () => {
       throw 'bridge unavailable';
     },
@@ -111,4 +116,17 @@ test('runBridgeMcpCli stringifies non-Error startup failures', async () => {
   assert.equal(statusCode, 1);
   assert.equal(exitCode, 1);
   assert.equal(stderrOutput, 'bridge unavailable\n');
+});
+
+test('MCP runtime handoff happens before controls, stdin, or server initialization', async () => {
+  const status = await runBridgeMcpCli({
+    prepare: async () => 7,
+    start: () => {
+      throw new Error('old MCP server must not start');
+    },
+    startControl: async () => {
+      throw new Error('old process must not register');
+    },
+  });
+  assert.equal(status, 7);
 });

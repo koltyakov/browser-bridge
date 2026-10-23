@@ -82,17 +82,22 @@ Bridge MCP servers to reload after a CLI update, or recover from a stuck local
 bridge process. MCP servers exit cleanly so their owning agents can relaunch the
 current installed version.
 
-Compatible npm auto-update is opt-in. Enable it with
-`bbx config set auto-update compatible`, inspect it with
-`bbx config get auto-update`, and disable it with
-`bbx config set auto-update off`. When a newer extension is connected, local
-CLI and MCP clients query npm and install the highest stable
-`@browserbridge/bbx` release whose `major.minor` protocol is advertised by that
-extension. Browser Bridge never downgrades, crosses to an unadvertised protocol,
-or updates checkout-local, linked, or remote clients. `BBX_AUTO_UPDATE` can
-override the stored policy with `off` or `compatible`. After installation, CLI
-commands relaunch themselves with the new package. A running MCP server exits so
-its owning agent can relaunch it; retry the triggering tool call if needed.
+Starting with 1.15, compatible npm updates are enabled when no policy was set.
+Existing explicit opt-outs remain off. Inspect the policy with
+`bbx config get auto-update`, disable it with `bbx config set auto-update off`,
+or re-enable it with `bbx config set auto-update compatible`.
+
+When a newer extension is connected, local CLI and MCP startup checks select a
+stable npm release with a compatible wire protocol. Selection cannot exceed the
+installed extension's package major, so a 1.15 extension cannot trigger the v2
+upgrade before its own update. Checkout-local, linked, and remote clients are
+not replaced. `BBX_AUTO_UPDATE=off` overrides the stored policy.
+
+CLI commands relaunch the installed package's current entrypoint before reading
+piped input or dispatching an action. MCP performs the handoff before reading
+its initialization message. Existing MCP sessions remain on their loaded code
+until restarted; browser actions are never replayed for migration. See
+[the v1 to v2 rollout](./v1-to-v2.md).
 
 When upgrading from a Browser Bridge version that predates coordinated MCP
 restart, restart the agent once. MCP processes launched afterward register for

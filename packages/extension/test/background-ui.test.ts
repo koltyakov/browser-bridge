@@ -15,6 +15,35 @@ import {
 
 type PostedMessage = Record<string, unknown>;
 
+test('only registered UI ports can request a native connection retry', async () => {
+  const state = createExtensionState();
+  const messages: PostedMessage[] = [];
+  const port = createPort(messages);
+  let retries = 0;
+  const deps = {
+    retryNativeConnection() {
+      retries += 1;
+    },
+    refreshSetupStatus() {},
+    async getTabState() {
+      return null;
+    },
+    async getCurrentTabState() {
+      return null;
+    },
+    async setWindowEnabled() {},
+    async setCurrentWindowEnabled() {},
+    async handleSetupInstallAction() {},
+  };
+  await handleUiMessage(state, port, { type: 'native.retry' }, deps);
+  assert.equal(retries, 0);
+  assert.equal(messages.length, 0);
+  state.uiPorts.set(port, { surface: 'sidepanel', scopeTabId: null });
+  await handleUiMessage(state, port, { type: 'native.retry', installationCopied: true }, deps);
+  assert.equal(retries, 1);
+  assert.equal(messages.at(-1)?.type, 'state.sync');
+});
+
 function createPort(messages: PostedMessage[] = []): chrome.runtime.Port {
   return {
     name: 'ui-popup',

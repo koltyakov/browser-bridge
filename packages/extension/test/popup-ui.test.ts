@@ -14,6 +14,7 @@ type PopupStateSync = {
   type: 'state.sync';
   state: {
     nativeConnected: boolean;
+    nativeHostVersion?: string | null;
     currentTab: {
       tabId: number;
       windowId: number;
@@ -106,11 +107,21 @@ test('popup UI flips the action label and styling state between enable and disab
     assert.ok(button, 'popup action button should be present');
 
     portPair.left.dispatchMessage(createPopupStateSync(false));
+    assert.match(
+      document.getElementById('extension-version')?.textContent ?? '',
+      /Extension: v[^\n]+\nDaemon: disconnected/
+    );
     assert.equal(button.textContent, 'Enable Window Access');
     assert.equal(button.dataset.enabled, 'false');
     assert.equal(button.disabled, false);
 
-    portPair.left.dispatchMessage(createPopupStateSync(true));
+    const connected = createPopupStateSync(true);
+    connected.state.nativeHostVersion = '1.15.0';
+    portPair.left.dispatchMessage(connected);
+    assert.match(
+      document.getElementById('extension-version')?.textContent ?? '',
+      /Daemon: v1\.15\.0/
+    );
     assert.equal(button.textContent, 'Disable Window Access');
     assert.equal(button.dataset.enabled, 'true');
     assert.equal(button.disabled, false);
@@ -212,8 +223,7 @@ test('popup UI handles windowed diagnostics, toggles, and resize', async (t) => 
 
     const diagnostic = document.getElementById('native-diagnostic');
     assert.ok(diagnostic);
-    assert.match(diagnostic.textContent ?? '', /Native host unreachable/);
-    assert.match(diagnostic.textContent ?? '', /bbx install test-extension-id/);
+    assert.match(diagnostic.textContent ?? '', /CLI not connected.*Open the side panel/);
     assert.equal(diagnostic.hidden, false);
 
     button.click();

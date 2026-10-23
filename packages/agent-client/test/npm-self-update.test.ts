@@ -67,6 +67,43 @@ test('selectCompatibleNpmVersion chooses the latest stable minor in an advertise
   assert.equal(selectCompatibleNpmVersion(['1.9.0'], ['1.8'], '1.8.1'), '1.9.0');
 });
 
+test('migration waits for the v2 extension despite shared protocols', () => {
+  const releases = ['1.14.2', '1.15.0', '1.15.1', '2.0.0', '2.0.1', '3.0.0', '2.1.0-beta.1'];
+  assert.equal(derivePackageProtocolVersion('1.15.0'), '2.0');
+  assert.equal(selectCompatibleNpmVersion(releases, ['1.14'], '1.14.2', '1.14.3'), '1.15.1');
+  assert.equal(selectCompatibleNpmVersion(releases, ['2.0', '1.15'], '1.15.0', '1.15.1'), '1.15.1');
+  assert.equal(selectCompatibleNpmVersion(releases, ['2.0'], '1.15.1', '2.0.0'), '2.0.1');
+  assert.equal(selectCompatibleNpmVersion(releases, ['3.0'], '1.15.1', '2.0.0'), null);
+  assert.equal(selectCompatibleNpmVersion(releases, ['2.0'], '1.15.1', 'invalid'), null);
+});
+
+test('npm handoff installs v2 from the final Node release', async () => {
+  await withGlobalInstall('1.15.0', async ({ globalRoot, packageRoot, lockPath }) => {
+    const result = await updateCompatibleNpmPackage({
+      extensionVersion: '2.0.0',
+      supportedVersions: ['2.0'],
+      packageRoot,
+      lockPath,
+      runNpmFn: async (args) => {
+        if (args[0] === 'root') return globalRoot;
+        if (args[0] === 'view') return JSON.stringify(['1.15.1', '2.0.0', '3.0.0']);
+        assert.equal(args.at(-1), '@browserbridge/bbx@2.0.0');
+        await fs.promises.writeFile(
+          path.join(packageRoot, 'package.json'),
+          JSON.stringify({ version: '2.0.0' })
+        );
+        return '';
+      },
+    });
+    assert.deepEqual(result, {
+      updated: true,
+      reason: 'updated',
+      previousVersion: '1.15.0',
+      version: '2.0.0',
+    });
+  });
+});
+
 test('npm update lock serializes callers and releases its OS resource', async () => {
   const bridgeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bbx-update-lock-test-'));
   const lockPath = path.join(bridgeHome, 'npm-update.lock');

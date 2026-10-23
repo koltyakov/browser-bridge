@@ -108,6 +108,8 @@ async function getSessionClient(session, destinationId) {
   if (!pending) {
     pending = createBridgeClientForDestination(destinationId, {
       checkProtocolOnConnect: false,
+      // Runtime replacement belongs to startup, before the MCP handshake.
+      updateNpmOnCompatibleVersion: false,
       clientId: session.clientId,
       agentSession: session.agentSession,
     }).then(async (client) => {

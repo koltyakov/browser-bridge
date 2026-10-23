@@ -12,6 +12,7 @@ import {
   DAEMON_RECENT_LOG_LIMIT,
   ERROR_CODES,
   RecoveryTelemetryCollector,
+  getSupportedProtocolVersions,
 } from '../../protocol/src/index.js';
 import type { BridgeRequest, BridgeResponse, SetupStatus } from '../../protocol/src/types.js';
 import type { McpClientName } from '../../agent-client/src/mcp-config.js';
@@ -1981,8 +1982,8 @@ test('daemon health ignores malicious extension overrides and preserves bounded 
   assert.equal(result.socketPath, daemon.socketPath);
   assert.equal(result.transport, daemon.transport.label);
   assert.deepEqual(result.proxy, { enabled: false, endpoint: null });
-  assert.deepEqual(result.supported_versions, [PROTOCOL_VERSION]);
-  assert.deepEqual(result.daemon_supported_versions, [PROTOCOL_VERSION]);
+  assert.deepEqual(result.supported_versions, getSupportedProtocolVersions());
+  assert.deepEqual(result.daemon_supported_versions, getSupportedProtocolVersions());
   assert.deepEqual(result.extension_supported_versions, ['0.9']);
   assert.deepEqual(result.access, {
     enabled: true,

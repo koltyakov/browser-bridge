@@ -110,7 +110,7 @@ Browser Bridge is optimized for the opposite starting point: **inspect the state
 1. Install [Browser Bridge from the Chrome Web Store](https://chromewebstore.google.com/detail/browser-bridge/jjjkmmcdkpcgamlopogicbnnhdgebhie) in Chrome or another Chromium-based browser
 2. `npm install -g @browserbridge/bbx` - installs the CLI and native host
 3. Run `bbx install` (Chromium on Linux, Chrome elsewhere), or target a specific browser with `bbx install --browser chrome`, `bbx install --browser edge`, `bbx install --browser brave`, `bbx install --browser chromium`, or `bbx install --browser arc`
-4. Optionally run `bbx config set auto-update compatible` to keep the global CLI on the highest stable npm release supported by the connected extension
+4. Compatible global npm updates are enabled by default starting with 1.15. Existing opt-outs remain respected; use `bbx config set auto-update off` to disable them. See the [v1 to v2 rollout](https://github.com/koltyakov/browser-bridge/blob/v1/docs/v1-to-v2.md).
 5. In the extension side panel, install MCP or CLI (skill) for your agent of choice
 6. Enable Browser Bridge for the browser window you want to inspect/control with the AI agent
 7. Ask your agent to use Browser Bridge via MCP (`BB MCP` or `Browser Bridge MCP`), or invoke the installed Browser Bridge skill in CLI mode (`/browser-bridge`, `browser-bridge`, or the client-specific skill trigger)

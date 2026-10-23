@@ -2,6 +2,8 @@
 
 import {
   createSetupInstallMessage,
+  formatTabActivityAge,
+  getAgentTabsInlineHeight,
   getActivitySourcePills,
   getPromptExamplesRenderGroups,
   getSidepanelAgentStatusView,
@@ -10,9 +12,9 @@ import {
   getUnstableConnectionDiagnostic,
   getVersionMismatchView,
   getMcpSetupCellState,
+  getNpmInstallCommand,
   getSetupStatusView,
   getSkillSetupCellState,
-  isSetupMatrixBetaKey,
   normalizeSidepanelToggleError,
   syncSetupStatusPolling as syncSetupStatusPollingState,
 } from '../src/sidepanel-helpers.js';
@@ -121,13 +123,21 @@ import {
 
 const PUBLISHED_EXTENSION_ID = 'jjjkmmcdkpcgamlopogicbnnhdgebhie';
 const SETUP_STATUS_POLL_MS = 15_000;
+const DEFAULT_TAB_ICON = '../assets/tab-fallback.svg';
 const nativeIndicator = /** @type {HTMLSpanElement} */ (
   document.getElementById('native-indicator')
 );
+const extensionVersion = /** @type {HTMLSpanElement} */ (
+  document.getElementById('extension-version')
+);
+const manifest = chrome.runtime.getManifest();
+extensionVersion.textContent = `Extension: v${manifest.version_name ?? manifest.version}\nDaemon: disconnected`;
 const toggleButton = /** @type {HTMLButtonElement} */ (document.getElementById('bridge-toggle'));
 const actionLog = /** @type {HTMLDivElement} */ (document.getElementById('action-log'));
 const setupSection = /** @type {HTMLElement} */ (document.getElementById('native-setup'));
-const setupInstallHint = /** @type {HTMLElement} */ (document.getElementById('setup-install-hint'));
+const nativeLoading = /** @type {HTMLElement} */ (document.getElementById('native-loading'));
+const setupNpmCmd = /** @type {HTMLElement} */ (document.getElementById('setup-npm-cmd'));
+setupNpmCmd.textContent = getNpmInstallCommand(manifest.version);
 const setupInstallCmd = /** @type {HTMLElement} */ (document.getElementById('setup-install-cmd'));
 const controlSection = /** @type {HTMLElement} */ (document.getElementById('control-section'));
 const installationSection = /** @type {HTMLDetailsElement} */ (
@@ -135,9 +145,6 @@ const installationSection = /** @type {HTMLDetailsElement} */ (
 );
 const setupStatusNote = /** @type {HTMLParagraphElement} */ (
   document.getElementById('setup-status-note')
-);
-const setupHostVersion = /** @type {HTMLParagraphElement} */ (
-  document.getElementById('setup-host-version')
 );
 const proxyStatusEl = /** @type {HTMLParagraphElement} */ (document.getElementById('proxy-status'));
 const versionMismatchBanner = /** @type {HTMLDivElement} */ (
@@ -175,7 +182,12 @@ const agentStatusDetail = /** @type {HTMLParagraphElement} */ (
 const agentDisclosure = /** @type {HTMLParagraphElement} */ (
   document.getElementById('agent-disclosure')
 );
-const agentTabRow = /** @type {HTMLElement} */ (document.getElementById('agent-tab-row'));
+const agentTabRow = /** @type {HTMLDetailsElement} */ (document.getElementById('agent-tab-row'));
+const agentTabsSummary = /** @type {HTMLElement} */ (document.getElementById('agent-tabs-summary'));
+const agentTabsTotal = /** @type {HTMLSpanElement} */ (document.getElementById('agent-tabs-total'));
+const agentTabsActions = /** @type {HTMLSpanElement} */ (
+  document.getElementById('agent-tabs-actions')
+);
 const agentTabsList = /** @type {HTMLUListElement} */ (document.getElementById('agent-tabs-list'));
 const otherWindows = /** @type {HTMLDetailsElement} */ (document.getElementById('other-windows'));
 const otherWindowsCount = /** @type {HTMLElement} */ (
@@ -194,6 +206,93 @@ const examplesSection = /** @type {HTMLDetailsElement} */ (
   document.getElementById('examples-section')
 );
 const examplesContent = /** @type {HTMLDivElement} */ (document.getElementById('examples-content'));
+const panelHelp = /** @type {HTMLDivElement} */ (document.querySelector('.panel-help'));
+
+/** @returns {boolean} */
+function isCompactPanel() {
+  return window.matchMedia?.('(max-height: 700px)').matches ?? false;
+}
+
+/** @returns {void} */
+function syncPanelHelpHeight() {
+  syncAgentTabsExpansion();
+  const availableHeight = Math.max(
+    0,
+    window.innerHeight - panelHelp.getBoundingClientRect().bottom - 18
+  );
+  panelHelp.style.setProperty('--panel-help-height', `${availableHeight}px`);
+  const tabListHeight = Math.max(
+    0,
+    window.innerHeight - agentTabsSummary.getBoundingClientRect().bottom - 18
+  );
+  agentTabRow.style.setProperty('--agent-tabs-height', `${tabListHeight}px`);
+}
+
+/** @returns {void} */
+function syncAgentTabsExpansion() {
+  if (
+    agentTabRow.hidden ||
+    !agentTabRow.open ||
+    activitySection.hidden ||
+    typeof getComputedStyle !== 'function'
+  ) {
+    agentTabRow.dataset.inline = 'false';
+    return;
+  }
+  const cards = [...actionLog.querySelectorAll('.activity-card')];
+  const visibleCards = cards.slice(0, 5);
+  const eventGap = Number.parseFloat(getComputedStyle(actionLog).rowGap) || 0;
+  const eventHeight = visibleCards.length
+    ? visibleCards.reduce((height, card) => height + card.getBoundingClientRect().height, 0) +
+      Math.max(0, visibleCards.length - 1) * eventGap
+    : 20;
+  const fadeHeight = cards.length > 5 ? 24 : 0;
+  const activityRect = activitySection.getBoundingClientRect();
+  const gapBelowTabs = Math.max(0, activityRect.top - agentTabRow.getBoundingClientRect().bottom);
+  const activityHeaderHeight = Math.max(
+    0,
+    actionLog.getBoundingClientRect().top - activityRect.top
+  );
+  const panelBottomPadding =
+    Number.parseFloat(
+      getComputedStyle(/** @type {HTMLElement} */ (agentTabRow.parentElement)).paddingBottom
+    ) || 0;
+  const availableHeight =
+    window.innerHeight -
+    agentTabsSummary.getBoundingClientRect().bottom -
+    gapBelowTabs -
+    activityHeaderHeight -
+    eventHeight -
+    fadeHeight -
+    panelBottomPadding -
+    2;
+  const inlineHeight = getAgentTabsInlineHeight(availableHeight, agentTabsList.scrollHeight + 13);
+  agentTabRow.dataset.inline = String(inlineHeight !== null);
+  if (inlineHeight !== null)
+    agentTabRow.style.setProperty('--agent-tabs-inline-height', `${inlineHeight}px`);
+}
+
+/** @returns {void} */
+function syncActivityScrollFade() {
+  activitySection.dataset.moreBelow = String(
+    actionLog.scrollHeight - actionLog.scrollTop - actionLog.clientHeight > 1
+  );
+}
+
+actionLog.addEventListener('scroll', syncActivityScrollFade, { passive: true });
+const activityResizeObserver =
+  typeof ResizeObserver === 'undefined'
+    ? null
+    : new ResizeObserver(() => {
+        syncActivityScrollFade();
+        syncPanelHelpHeight();
+      });
+for (const element of [actionLog, panelHelp, controlSection, agentTabRow])
+  activityResizeObserver?.observe(element);
+window.addEventListener('resize', syncPanelHelpHeight);
+document
+  .querySelector('.panel')
+  ?.addEventListener('scroll', syncPanelHelpHeight, { passive: true });
 /** @type {SidePanelCurrentTab | null} */
 let currentTabState = null;
 /** @type {ActionLogEntry[]} */
@@ -203,10 +302,17 @@ let currentOtherWindowsKey = null;
 let windowActionPending = false;
 let hasAgentWork = false;
 /** @type {ReturnType<typeof setInterval> | null} */
+let agentTabAgeTimer = null;
+/** @type {ReturnType<typeof setInterval> | null} */
 let setupStatusPollTimer = null;
 let hasAutoExpandedHostSetup = false;
 /** @type {ReturnType<typeof setTimeout> | null} */
 let nativeDiagnosticTimer = null;
+/** @type {ReturnType<typeof setTimeout> | null} */
+let nativeStartupTimer = null;
+let nativeStartupPending = true;
+/** @type {{ connected: boolean, error?: string, unstable: boolean }} */
+let latestNativeStatus = { connected: false, unstable: false };
 /** @type {ReturnType<typeof setTimeout> | null} */
 let pendingToggleTimer = null;
 /** @type {ReturnType<typeof setTimeout> | null} */
@@ -216,6 +322,7 @@ let currentVersionMismatchKey = null;
 /** @type {string | null} */
 let dismissedVersionMismatchKey = null;
 const NATIVE_DIAGNOSTIC_DELAY_MS = 10_000;
+const NATIVE_STARTUP_GRACE_MS = 12_000;
 const TOGGLE_PENDING_TIMEOUT_MS = 10_000;
 const TOGGLE_ERROR_DISPLAY_MS = 6_000;
 
@@ -281,6 +388,13 @@ function copySetupText(target, text) {
     .writeText(text)
     .then(() => {
       target.classList.add('copied');
+      if (['setup-npm-cmd', 'setup-install-cmd'].includes(target.id)) {
+        try {
+          port.postMessage({ type: 'native.retry', installationCopied: true });
+        } catch {
+          // The panel may have disconnected while copying.
+        }
+      }
       const copyButton = target.querySelector('.example-copy-button');
       const resetLabel = copyButton instanceof HTMLButtonElement ? copyButton.textContent : null;
       if (copyButton instanceof HTMLButtonElement) {
@@ -300,6 +414,15 @@ function copySetupText(target, text) {
 
 /** @type {chrome.runtime.Port} */
 let port;
+document.getElementById('setup-native-retry')?.addEventListener('click', () => {
+  try {
+    port.postMessage({ type: 'native.retry' });
+  } catch {
+    showSidepanelDiagnostic(
+      'Extension connection lost. Reopen the side panel to check the local daemon.'
+    );
+  }
+});
 
 const handleSidepanelMessage = createSidepanelMessageHandler({
   renderNativeStatus,
@@ -323,6 +446,10 @@ async function connectSidepanelPort() {
       connect: (connectInfo) => chrome.runtime.connect(connectInfo),
       onMessage: handleSidepanelMessage,
       scheduleReconnect: (callback, delayMs) => {
+        if (nativeIndicator.dataset.connected === 'true') {
+          startNativeConnectionCheck();
+          renderNativeStatus(false);
+        }
         setTimeout(callback, delayMs);
       },
       onReconnect: () => {
@@ -332,6 +459,7 @@ async function connectSidepanelPort() {
   );
 }
 
+startNativeConnectionCheck();
 void connectSidepanelPort();
 const activityHistogramTimer = setInterval(() => {
   updateActivityVisualizations();
@@ -418,15 +546,29 @@ function renderWindowActionResult(message) {
 }
 
 installationSection.addEventListener('toggle', () => {
+  if (installationSection.open) agentTabRow.open = false;
+  syncPanelHelpHeight();
   syncExclusiveDetailsSections(installationSection, examplesSection);
   syncConnectedSectionsVisibility();
   syncSetupStatusPolling();
 });
 
 examplesSection.addEventListener('toggle', () => {
+  if (examplesSection.open) agentTabRow.open = false;
+  syncPanelHelpHeight();
   syncExclusiveDetailsSections(examplesSection, installationSection);
   syncConnectedSectionsVisibility();
   syncSetupStatusPolling();
+});
+
+agentTabRow.addEventListener('toggle', () => {
+  if (agentTabRow.open) {
+    installationSection.open = false;
+    examplesSection.open = false;
+  }
+  syncPanelHelpHeight();
+  updateAgentTabAges();
+  syncAgentTabAgeTimer();
 });
 
 setupStatusMatrix.addEventListener('contextmenu', (event) => {
@@ -469,11 +611,22 @@ document.addEventListener('click', () => {
 document.addEventListener('click', (event) => {
   if (event.target instanceof Node && !otherWindows.contains(event.target))
     otherWindows.open = false;
+  if (event.target instanceof Node && !agentTabRow.contains(event.target)) agentTabRow.open = false;
+  if (isCompactPanel() && event.target instanceof Node && !panelHelp.contains(event.target)) {
+    installationSection.open = false;
+    examplesSection.open = false;
+  }
 });
 
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
     hideSetupContextMenu();
+    for (const details of [installationSection, examplesSection, agentTabRow]) {
+      if (details.open) {
+        details.open = false;
+        details.querySelector('summary')?.focus();
+      }
+    }
     if (otherWindows.open) {
       otherWindows.open = false;
       otherWindowsCount.focus();
@@ -487,7 +640,11 @@ versionMismatchDismiss.addEventListener('click', () => {
 });
 
 window.addEventListener('beforeunload', () => {
+  if (nativeStartupTimer !== null) clearTimeout(nativeStartupTimer);
+  if (nativeDiagnosticTimer !== null) clearTimeout(nativeDiagnosticTimer);
   clearInterval(activityHistogramTimer);
+  if (agentTabAgeTimer !== null) clearInterval(agentTabAgeTimer);
+  activityResizeObserver?.disconnect();
 });
 
 /**
@@ -522,6 +679,8 @@ function renderState(state) {
     syncConnectedSectionsVisibility,
     syncSetupStatusPolling,
   });
+  syncActivityScrollFade();
+  syncPanelHelpHeight();
 }
 
 /**
@@ -671,36 +830,122 @@ function renderOtherWindows(state) {
 function renderAgentTabs(state) {
   const tabs = (state.agentTabs ?? []).filter((tab) => tab.tabId !== state.currentTab?.tabId);
   agentTabRow.hidden = !state.nativeConnected || !state.currentTab?.enabled || tabs.length === 0;
-  agentTabsList.replaceChildren(
-    ...tabs.map((tab) => {
-      const item = document.createElement('li');
+  if (agentTabRow.hidden) agentTabRow.open = false;
+  const totalActions = tabs.reduce((total, tab) => total + (tab.actionCount ?? 0), 0);
+  agentTabsTotal.textContent = `${tabs.length} ${tabs.length === 1 ? 'tab' : 'tabs'}`;
+  agentTabsActions.textContent = `${totalActions.toLocaleString()} ${totalActions === 1 ? 'action' : 'actions'}`;
+  agentTabsSummary.setAttribute(
+    'aria-label',
+    `Active tabs: ${tabs.length}, ${agentTabsActions.textContent}`
+  );
+  const existingItems = new Map(
+    [...agentTabsList.children].map((item) => [
+      /** @type {HTMLElement} */ (item).dataset.tabId,
+      item,
+    ])
+  );
+  for (const [index, tab] of tabs.entries()) {
+    const key = String(tab.tabId);
+    let item = /** @type {HTMLLIElement | undefined} */ (existingItems.get(key));
+    existingItems.delete(key);
+    if (!item) {
+      item = document.createElement('li');
+      item.dataset.tabId = key;
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'agent-tab-button';
+      const icon = document.createElement('img');
+      icon.className = 'agent-tab-icon';
+      icon.alt = '';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.referrerPolicy = 'no-referrer';
+      icon.addEventListener('error', () => {
+        if (icon.getAttribute('src') !== DEFAULT_TAB_ICON) icon.src = DEFAULT_TAB_ICON;
+      });
       const name = document.createElement('span');
       name.className = 'agent-tab-name';
-      name.textContent = tab.title || `Tab ${tab.tabId}`;
-      item.title = name.textContent;
-      button.title = name.textContent;
-      button.setAttribute('aria-label', `Switch to tab: ${name.textContent}`);
       button.addEventListener('click', () => {
         // This is a user tab switch, not an agent request or lease rebind.
-        void chrome.tabs.update(tab.tabId, { active: true }).catch(() => {
-          button.title = 'Could not switch to this tab. Try again.';
-        });
+        void chrome.tabs.update(tab.tabId, { active: true }).then(
+          () => {
+            agentTabRow.open = false;
+          },
+          () => {
+            button.title = 'Could not switch to this tab. Try again.';
+          }
+        );
       });
-      const count = tab.actionCount ?? 0;
       const chip = document.createElement('span');
       chip.className = 'agent-tab-count activity-tokens';
-      chip.textContent = `Actions: ${count}`;
-      chip.title = `${count} recent ${count === 1 ? 'action' : 'actions'}`;
-      chip.setAttribute('aria-label', chip.title);
-      button.append(name, chip);
+      const recency = document.createElement('span');
+      recency.className = 'agent-tab-recency';
+      button.append(icon, name, recency, chip);
       item.append(button);
-      return item;
-    })
-  );
+    }
+    const button = /** @type {HTMLButtonElement} */ (item.querySelector('button'));
+    const icon = /** @type {HTMLImageElement} */ (item.querySelector('.agent-tab-icon'));
+    const iconUrl = tab.favIconUrl || '';
+    if (icon.dataset.faviconUrl !== iconUrl) {
+      icon.dataset.faviconUrl = iconUrl;
+      icon.src = iconUrl || DEFAULT_TAB_ICON;
+    }
+    const name = /** @type {HTMLSpanElement} */ (item.querySelector('.agent-tab-name'));
+    const chip = /** @type {HTMLSpanElement} */ (item.querySelector('.agent-tab-count'));
+    const recency = /** @type {HTMLSpanElement} */ (item.querySelector('.agent-tab-recency'));
+    recency.dataset.lastActivityAt = String(tab.lastActivityAt ?? '');
+    name.textContent = tab.title || `Tab ${tab.tabId}`;
+    item.title = name.textContent;
+    button.title = name.textContent;
+    button.setAttribute('aria-label', `Switch to tab: ${name.textContent}`);
+    const count = tab.actionCount ?? 0;
+    chip.textContent = `Actions: ${count}`;
+    chip.title = `${count} recent ${count === 1 ? 'action' : 'actions'}`;
+    chip.setAttribute('aria-label', chip.title);
+    if (agentTabsList.children[index] !== item)
+      agentTabsList.insertBefore(item, agentTabsList.children[index] ?? null);
+  }
+  for (const item of existingItems.values()) item.remove();
   agentTabsList.hidden = tabs.length === 0;
+  updateAgentTabAges();
+  syncAgentTabAgeTimer();
+}
+
+/** @returns {void} */
+function updateAgentTabAges() {
+  const now = Date.now();
+  for (const recency of /** @type {NodeListOf<HTMLElement>} */ (
+    agentTabsList.querySelectorAll('.agent-tab-recency')
+  )) {
+    const age = formatTabActivityAge(Number(recency.dataset.lastActivityAt), now);
+    recency.textContent = age;
+    recency.hidden = !age;
+    recency.title = age ? `Last active ${age} ago` : '';
+  }
+}
+
+/** @returns {void} */
+function syncAgentTabAgeTimer() {
+  if (!agentTabRow.hidden && agentTabRow.open) {
+    if (agentTabAgeTimer === null) agentTabAgeTimer = setInterval(updateAgentTabAges, 1000);
+  } else if (agentTabAgeTimer !== null) {
+    clearInterval(agentTabAgeTimer);
+    agentTabAgeTimer = null;
+  }
+}
+
+/** @returns {void} */
+function startNativeConnectionCheck() {
+  if (nativeStartupTimer !== null) return;
+  nativeStartupPending = true;
+  nativeStartupTimer = setTimeout(() => {
+    nativeStartupTimer = null;
+    nativeStartupPending = false;
+    renderNativeStatus(
+      latestNativeStatus.connected,
+      latestNativeStatus.error,
+      latestNativeStatus.unstable
+    );
+  }, NATIVE_STARTUP_GRACE_MS);
 }
 
 /**
@@ -710,6 +955,18 @@ function renderAgentTabs(state) {
  * @returns {void}
  */
 function renderNativeStatus(connected, error, unstable = false) {
+  latestNativeStatus = { connected, error, unstable };
+  if (connected) {
+    nativeStartupPending = false;
+    if (nativeStartupTimer !== null) {
+      clearTimeout(nativeStartupTimer);
+      nativeStartupTimer = null;
+    }
+  } else if (nativeIndicator.dataset.connected === 'true') {
+    startNativeConnectionCheck();
+  }
+  const loading = nativeStartupPending && !connected;
+  nativeLoading.hidden = !loading;
   const view = getSidepanelNativeStatusView({
     connected,
     error,
@@ -721,11 +978,13 @@ function renderNativeStatus(connected, error, unstable = false) {
   nativeIndicator.title = view.label;
   nativeIndicator.setAttribute('aria-label', view.label);
 
-  setupSection.hidden = view.hidden;
+  setupSection.hidden = view.hidden || loading;
   controlSection.hidden = !connected;
   installationSection.hidden = !connected;
   if (!connected) {
     agentTabRow.hidden = true;
+    agentTabRow.open = false;
+    syncAgentTabAgeTimer();
     otherWindows.hidden = true;
     otherWindows.open = false;
     otherWindowsList.replaceChildren();
@@ -736,11 +995,18 @@ function renderNativeStatus(connected, error, unstable = false) {
     renderHostVersion(null);
     renderProxyStatus(null);
     setupInstallCmd.textContent = view.installCommand;
-    setupInstallHint.hidden = view.installCommandHidden;
-    setupInstallCmd.hidden = view.installCommandHidden;
     hideSetupContextMenu();
   }
   syncConnectedSectionsVisibility();
+
+  if (loading) {
+    if (nativeDiagnosticTimer !== null) {
+      clearTimeout(nativeDiagnosticTimer);
+      nativeDiagnosticTimer = null;
+    }
+    hideSidepanelDiagnostic();
+    return;
+  }
 
   if (unstable) {
     // A flapping connection reconnects before the offline diagnostic delay
@@ -773,15 +1039,8 @@ function renderNativeStatus(connected, error, unstable = false) {
  * @returns {void}
  */
 function renderHostVersion(hostVersion) {
+  extensionVersion.textContent = `Extension: v${manifest.version_name ?? manifest.version}\nDaemon: ${hostVersion ? `v${hostVersion}` : 'disconnected'}`;
   renderVersionMismatch(hostVersion);
-  if (!hostVersion) {
-    setupHostVersion.hidden = true;
-    setupHostVersion.textContent = '';
-    return;
-  }
-
-  setupHostVersion.hidden = false;
-  setupHostVersion.textContent = `Daemon version: v${hostVersion}`;
 }
 
 /**
@@ -1036,7 +1295,7 @@ function renderSetupMatrix(rows, installPendingKey) {
 
     const labelCell = document.createElement('td');
     labelCell.className = 'setup-matrix-client';
-    labelCell.append(createSetupMatrixClientLabel(row));
+    labelCell.textContent = row.label;
 
     const mcpCell = document.createElement('td');
     mcpCell.append(renderMcpMatrixCell(row, installPendingKey));
@@ -1050,24 +1309,6 @@ function renderSetupMatrix(rows, installPendingKey) {
 
   table.append(thead, tbody);
   return table;
-}
-
-/**
- * @param {SetupMatrixRow} row
- * @returns {DocumentFragment}
- */
-function createSetupMatrixClientLabel(row) {
-  const fragment = document.createDocumentFragment();
-  fragment.append(row.label);
-
-  if (isSetupMatrixBetaKey(row.key)) {
-    const beta = document.createElement('span');
-    beta.className = 'setup-matrix-beta';
-    beta.textContent = ' (beta)';
-    fragment.append(beta);
-  }
-
-  return fragment;
 }
 
 /**
@@ -1300,9 +1541,10 @@ function createStatusPlaceholder(text) {
  * @param {SetupStatus | null} setupStatus
  * @param {ActionLogEntry[]} entries
  * @param {number} index
+ * @param {number} repeatCount
  * @returns {HTMLElement}
  */
-function renderActionLogEntry(entry, setupStatus, entries, index) {
+function renderActionLogEntry(entry, setupStatus, entries, index, repeatCount) {
   const container = document.createElement('article');
   container.className = 'card activity-card';
 
@@ -1316,6 +1558,12 @@ function renderActionLogEntry(entry, setupStatus, entries, index) {
   methodLabel.textContent = entry.method;
   methodLabel.title = entry.method;
   title.append(methodLabel);
+  if (repeatCount > 1) {
+    const count = document.createElement('span');
+    count.className = 'activity-repeat-count';
+    count.textContent = `x${repeatCount}`;
+    title.append(count);
+  }
   const activitySourcePills = getActivitySourcePills(entry.source, entry.mcpEra);
   if (activitySourcePills.source) {
     const sourceTags = document.createElement('span');
@@ -1354,6 +1602,7 @@ function renderActionLogEntry(entry, setupStatus, entries, index) {
   dot.dataset.ok = String(entry.ok);
   const summaryText = document.createElement('span');
   summaryText.textContent = entry.summary;
+  summaryText.title = entry.summary;
   summary.append(dot, summaryText);
   footer.append(summary);
 
@@ -1373,7 +1622,9 @@ function renderActionLogEntry(entry, setupStatus, entries, index) {
     badges.append(scopeLink);
   }
 
-  const transportTokens = getEntryTransportTokens(entry);
+  const transportTokens = entries
+    .slice(index, index + repeatCount)
+    .reduce((total, item) => total + getEntryTransportTokens(item), 0);
   if (transportTokens > 0 || entry.imageBytes > 0) {
     const tokenLine = document.createElement('span');
     tokenLine.className = 'muted activity-tokens';
@@ -1392,7 +1643,8 @@ function renderActionLogEntry(entry, setupStatus, entries, index) {
       parts.push('cdp');
     }
     tokenLine.textContent = parts.join(' \u00b7 ');
-    tokenLine.dataset.costClass = entry.costClass;
+    tokenLine.dataset.costClass =
+      repeatCount > 1 ? getAggregateCostClass(transportTokens) : entry.costClass;
     badges.append(tokenLine);
   }
 

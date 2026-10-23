@@ -25,11 +25,29 @@ async function withBridgeHome(callback: (bridgeHome: string) => Promise<void>): 
 
 const CLI_ARGV = ['node', '/package/agent-client/src/cli.js', 'status'];
 
-test('bridge config defaults auto-update to off', async () => {
+test('bridge config enables compatible updates only when no policy was set', async () => {
   await withBridgeHome(async (bridgeHome) => {
     const env = { BROWSER_BRIDGE_HOME: bridgeHome };
     assert.equal(getBridgeConfigPath(env), path.join(bridgeHome, 'config.json'));
-    assert.deepEqual(await readBridgeConfig(env), { autoUpdate: 'off' });
+    assert.deepEqual(await readBridgeConfig(env), { autoUpdate: 'compatible' });
+    assert.equal(
+      (await applyConfiguredAutoUpdate({}, env, CLI_ARGV)).updateNpmOnCompatibleVersion,
+      true
+    );
+    await fs.promises.writeFile(getBridgeConfigPath(env), '{"future":true}');
+    assert.deepEqual(await readBridgeConfig(env), { future: true, autoUpdate: 'compatible' });
+    await setAutoUpdatePolicy('off', env);
+    assert.equal(await getAutoUpdatePolicy(env), 'off');
+    assert.deepEqual(await applyConfiguredAutoUpdate({}, env, CLI_ARGV), {});
+    assert.deepEqual(
+      await applyConfiguredAutoUpdate({}, { ...env, BBX_AUTO_UPDATE: 'off' }, CLI_ARGV),
+      {}
+    );
+    assert.equal(
+      await getAutoUpdatePolicy({ ...env, BBX_AUTO_UPDATE: 'compatible' }),
+      'compatible'
+    );
+    assert.deepEqual(await applyConfiguredAutoUpdate({}, env, ['node', '/consumer/app.js']), {});
   });
 });
 

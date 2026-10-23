@@ -290,6 +290,8 @@ test('native reconnect telemetry settles on disconnect or the existing stability
 
     controller.scheduleNativeReconnect('first disconnect');
     timers.scheduled[0].callback();
+    controller.connectNative();
+    assert.equal(ports.length, 2, 'retry must not replace a pending native port');
     firstPort.onDisconnect.dispatch();
     assert.deepEqual(outcomes, ['failure']);
 
@@ -297,6 +299,8 @@ test('native reconnect telemetry settles on disconnect or the existing stability
     timers.scheduled[3].callback();
     await flushAsyncWork();
     assert.deepEqual(outcomes, ['failure', 'success']);
+    controller.connectNative();
+    assert.equal(ports.length, 1, 'retry must not replace a connected native port');
 
     secondPort.onDisconnect.dispatch();
     assert.deepEqual(outcomes, ['failure', 'success']);

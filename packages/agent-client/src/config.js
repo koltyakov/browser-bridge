@@ -44,7 +44,7 @@ export async function readBridgeConfig(env = process.env) {
     raw = await fs.promises.readFile(configPath, 'utf8');
   } catch (error) {
     if (isMissingFileError(error)) {
-      return { autoUpdate: 'off' };
+      return { autoUpdate: 'compatible' };
     }
     throw error;
   }
@@ -64,7 +64,8 @@ export async function readBridgeConfig(env = process.env) {
   const config = /** @type {Record<string, unknown>} */ (parsed);
   return {
     ...config,
-    autoUpdate: config.autoUpdate === undefined ? 'off' : parseAutoUpdatePolicy(config.autoUpdate),
+    autoUpdate:
+      config.autoUpdate === undefined ? 'compatible' : parseAutoUpdatePolicy(config.autoUpdate),
   };
 }
 
@@ -127,7 +128,7 @@ export async function applyConfiguredAutoUpdate(
     ...options,
     checkProtocolOnConnect: true,
     updateNpmOnCompatibleVersion: true,
-    exitProcessOnNpmUpdate: isMcpProcess(argv),
+    exitProcessOnNpmUpdate: options.exitProcessOnNpmUpdate ?? isMcpProcess(argv),
   };
 }
 

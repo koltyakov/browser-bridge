@@ -1,5 +1,34 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {
+  formatTabActivityAge,
+  getAgentTabsInlineHeight,
+  getNpmInstallCommand,
+} from '../src/sidepanel-helpers.js';
+
+test('tab dropdown sizing preserves two rows and rejects invalid geometry', () => {
+  assert.equal(getAgentTabsInlineHeight(100, 200), 100);
+  assert.equal(getAgentTabsInlineHeight(500, 200), 200);
+  assert.equal(getAgentTabsInlineHeight(76, 200), null);
+  assert.equal(getAgentTabsInlineHeight(40, 40), 40);
+  assert.equal(getAgentTabsInlineHeight(NaN, 200), null);
+  assert.equal(getAgentTabsInlineHeight(200, 0), null);
+  assert.equal(getAgentTabsInlineHeight(200, Infinity), null);
+});
+
+test('tab recency is bounded and npm setup stays on the Node release line', () => {
+  const now = 180_000;
+  assert.equal(formatTabActivityAge(undefined, now), '');
+  assert.equal(formatTabActivityAge(0, now), '');
+  assert.equal(formatTabActivityAge(NaN, now), '');
+  assert.equal(formatTabActivityAge(1, NaN), '');
+  assert.equal(formatTabActivityAge(now + 1000, now), '<1m');
+  assert.equal(formatTabActivityAge(now - 59_000, now), '<1m');
+  assert.equal(formatTabActivityAge(now - 75_000, now), '1m 15s');
+  assert.equal(getNpmInstallCommand('1.15.0'), 'npm install -g @browserbridge/bbx@1.15');
+  assert.equal(getNpmInstallCommand('1.15.8'), 'npm install -g @browserbridge/bbx@1.15');
+  assert.equal(getNpmInstallCommand('invalid'), 'npm install -g @browserbridge/bbx@1.15');
+});
 
 import {
   buildSetupMatrixRows,
@@ -26,19 +55,21 @@ import {
 
 type SetupStatus = NonNullable<Parameters<typeof getSetupStatusView>[0]>;
 
-test('getVersionMismatchView ignores patch drift and warns on major or minor drift', () => {
+test('getVersionMismatchView uses wire compatibility across the Node to Go transition', () => {
   assert.equal(getVersionMismatchView('1.8.1', '1.8.9'), null);
   assert.equal(getVersionMismatchView('1.8', '1.8.0'), null);
   assert.equal(getVersionMismatchView('invalid', '1.8.0'), null);
-  assert.deepEqual(getVersionMismatchView('1.8.1', '1.7.9'), {
-    key: '1.8.1:1.7.9',
-    message:
-      'Browser Bridge CLI v1.7.9 and extension v1.8.1 might not be compatible. Update them so their major and minor versions match.',
-  });
+  assert.equal(getVersionMismatchView('1.8.1', '1.7.9'), null);
+  assert.equal(getVersionMismatchView('1.15.0', '2.0.0'), null);
+  assert.equal(getVersionMismatchView('2.0.0', '1.15.1'), null);
+  assert.match(
+    getVersionMismatchView('1.15.0', '1.14.2')?.message ?? '',
+    /npm install -g @browserbridge\/bbx@1\.15/
+  );
   assert.deepEqual(getVersionMismatchView('2.0.0', '1.8.1'), {
     key: '2.0.0:1.8.1',
     message:
-      'Browser Bridge CLI v1.8.1 and extension v2.0.0 might not be compatible. Update them so their major and minor versions match.',
+      'Browser Bridge CLI v1.8.1 and extension v2.0.0 use different protocols. Update the CLI and extension to compatible releases.',
   });
 });
 

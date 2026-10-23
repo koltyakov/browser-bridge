@@ -203,6 +203,39 @@ test('sidepanel runtime orchestrates full state rendering and collapses examples
   calls.length = 0;
   renderSidepanelState({ ...state, actionLog: [ping, entry] }, renderOptions);
   assert.equal(calls.filter(([name]) => name === 'collapse-examples').length, 1);
+  const groups: Array<[string, number, number]> = [];
+  const entries = [
+    ping,
+    { ...ping, id: 'ping-2' },
+    { ...ping, id: 'changed', summary: 'Changed' },
+    { ...ping, id: 'failed', ok: false },
+    entry,
+    { ...entry, id: 'query-2' },
+    { ...ping, id: 'ping-after-action' },
+  ];
+  renderSidepanelState(
+    { ...state, actionLog: entries },
+    {
+      ...renderOptions,
+      renderActionLogEntry(nextEntry, _setup, originalEntries, index, repeatCount) {
+        assert.equal(
+          originalEntries,
+          entries,
+          'grouping must not drop raw history or histogram tokens'
+        );
+        groups.push([nextEntry.id, index, repeatCount]);
+        return {} as HTMLElement;
+      },
+    }
+  );
+  assert.deepEqual(groups, [
+    ['ping', 0, 2],
+    ['changed', 2, 1],
+    ['failed', 3, 1],
+    ['entry-1', 4, 1],
+    ['query-2', 5, 1],
+    ['ping-after-action', 6, 1],
+  ]);
   calls.length = 0;
   renderSidepanelState(
     { ...state, actionLog: [ping], agentTabs: [{ tabId: 5, title: 'Sibling', isCurrent: false }] },

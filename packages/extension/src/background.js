@@ -486,6 +486,8 @@ const tabMoveCleanup = createTabMoveCleanupController({
 
 const {
   restoreEnabledWindow,
+  restoreEnabledWindowAfterUpdate,
+  clearEnabledWindowOnBrowserStartup,
   primeEnabledWindowInstrumentation,
   clearEnabledWindowIfGone,
   getCurrentTabState,
@@ -836,8 +838,15 @@ const accessStateInitialization = restoreEnabledWindow().catch(reportAsyncError)
 void initializeState().catch(reportAsyncError);
 connectNative();
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
   void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(reportAsyncError);
+  if (details.reason === 'update') {
+    void accessStateInitialization.then(restoreEnabledWindowAfterUpdate).catch(reportAsyncError);
+  }
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  void clearEnabledWindowOnBrowserStartup().catch(reportAsyncError);
 });
 
 chrome.tabs.onActivated.addListener(({ tabId }) => {
@@ -1925,11 +1934,12 @@ async function emitUiStateForPort(port) {
  * Handle commands coming from the popup or side panel.
  *
  * @param {chrome.runtime.Port} port
- * @param {Record<string, any>} message
+ * @param {Record<string, unknown>} message
  * @returns {Promise<void>}
  */
 async function handleUiMessage(port, message) {
   await handleUiMessageUi(state, port, message, {
+    retryNativeConnection: connectNative,
     refreshSetupStatus,
     getTabState,
     getCurrentTabState,
@@ -1954,6 +1964,7 @@ async function getAgentTabState(windowId, currentTabId) {
   const tabIds = [
     ...new Set(leases.filter((entry) => entry.windowId === windowId).map((entry) => entry.tabId)),
   ];
+  const lastActivityByTab = new Map(leases.map((entry) => [entry.tabId, entry.lastUsedAt]));
   /** @type {Map<number, number>} */
   const actionCounts = new Map();
   for (const entry of state.actionLog) {
@@ -1966,12 +1977,7 @@ async function getAgentTabState(windowId, currentTabId) {
       try {
         const tab = await chrome.tabs.get(tabId);
         if (tab.windowId !== windowId) return null;
-        return {
-          tabId,
-          title: tab.title ?? '',
-          isCurrent: tabId === currentTabId,
-          actionCount: actionCounts.get(tabId) ?? 0,
-        };
+        return { ...tab, id: tabId };
       } catch {
         return null;
       }
@@ -1980,8 +1986,18 @@ async function getAgentTabState(windowId, currentTabId) {
   return tabs
     .filter((tab) => tab !== null)
     .sort(
-      (left, right) => Number(right.isCurrent) - Number(left.isCurrent) || left.tabId - right.tabId
-    );
+      (left, right) =>
+        (left.index ?? Number.MAX_SAFE_INTEGER) - (right.index ?? Number.MAX_SAFE_INTEGER) ||
+        left.id - right.id
+    )
+    .map((tab) => ({
+      tabId: tab.id,
+      title: tab.title ?? '',
+      ...(tab.favIconUrl ? { favIconUrl: tab.favIconUrl } : {}),
+      isCurrent: tab.id === currentTabId,
+      actionCount: actionCounts.get(tab.id) ?? 0,
+      lastActivityAt: lastActivityByTab.get(tab.id) ?? 0,
+    }));
 }
 
 /**

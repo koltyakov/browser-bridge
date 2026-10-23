@@ -1293,6 +1293,7 @@ test('background state clears enabled access and updates the action when the ena
     isWindowClosing: true,
   });
   await flushAsyncWork();
+  await new Promise<void>((resolve) => setImmediate(resolve));
 
   assert.equal(state.enabledWindow, null);
   assert.equal(state.requestedAccessWindowId, null);

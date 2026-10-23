@@ -9,25 +9,28 @@ The protocol compatibility version is derived from the package/extension version
 in `packages/protocol/src/protocol.js`:
 
 ```js
-getProtocolVersion(); // major.minor from package.json or manifest.json
-getSupportedProtocolVersions(); // [getProtocolVersion()]
+getProtocolVersion(); // 2.0 for Node 1.15 and Go 2.0
+getSupportedProtocolVersions(); // ['2.0', '1.15'] for the transition release
 ```
 
 Compatibility requires the same major version. Extension and npm minor and patch
 releases advance independently. For example, an extension advertising `1.11`
 and an npm client advertising `1.12` are compatible in either direction.
+The Node-only 1.15 release emits protocol `2.0` and additionally accepts v1
+peers during rollout. Package version `1.15.x` is not protocol version `1.15`.
 `npm run check:release-version` checks the major version; tests also enforce
 that the npm package and lockfile versions match.
 
 Extension health also reports its full manifest version. When the local
 `auto-update` policy is `compatible`, clients use that version only as an update
 trigger, query npm for published releases, and select the highest stable release
-whose major version matches an entry in the extension's
-`extension_supported_versions`. Selection never downgrades or crosses to an
-unadvertised major version. Installation is restricted to the verified global
+whose supported wire protocols overlap the extension's
+`extension_supported_versions`. Selection never downgrades, crosses to an
+unadvertised wire protocol, or exceeds the extension's package major.
+Installation is restricted to the verified global
 `@browserbridge/bbx` package and serialized by an inter-process lock in the
-global npm scope. The triggering CLI process relaunches after installation;
-shipped MCP processes exit so their owning agent can load the updated package.
+global npm scope. The CLI process relaunches before command dispatch. MCP startup
+hands off before reading stdin, rather than replacing a negotiated session.
 
 ## When negotiation happens
 

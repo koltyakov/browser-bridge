@@ -1,6 +1,54 @@
 export type BridgeRequestSource = 'cli' | 'mcp';
 export type McpProtocolEra = 'legacy' | 'modern';
 
+/** Registration on the JSON-lines transport; Chrome frames use the same JSON payloads. */
+export interface BridgeRegistration {
+  type: 'register';
+  role: 'agent' | 'extension';
+  authToken?: string;
+  clientId?: string;
+  browserName?: string;
+  profileLabel?: string;
+  browserExtensionId?: string;
+  windowAccessUpdates?: boolean;
+  windowActions?: boolean;
+}
+
+/** Control envelope accepted by the daemon. Per-operation validation checks required fields. */
+export interface DaemonMessage {
+  [key: string]: unknown;
+  type?: string;
+  role?: string;
+  clientId?: string;
+  requestId?: string;
+  entry?: Record<string, unknown>;
+  request?: BridgeRequest;
+  status?: SetupStatus;
+  error?: { message?: string } | string;
+  response?: BridgeResponse;
+  browserName?: string;
+  profileLabel?: string;
+  browserExtensionId?: string;
+  accessEnabled?: boolean;
+  enabledWindow?: unknown;
+  windowAccessUpdates?: boolean;
+  windowActions?: boolean;
+  action?: unknown;
+  windowId?: unknown;
+  enabledAt?: unknown;
+  extensionId?: unknown;
+  ok?: unknown;
+  authToken?: string;
+  at?: number;
+  artifactId?: string;
+  artifact?: Record<string, unknown>;
+  chunkIndex?: number;
+  data?: string;
+  journalId?: string;
+  offset?: number;
+  messageId?: string;
+}
+
 export interface TabPagination {
   totalCount: number;
   returnedCount: number;
@@ -238,6 +286,10 @@ export interface BridgeMeta {
   agent_session?: string;
   /** Set by the daemon on routed requests; caller values are always overwritten. */
   transport_owner?: string;
+  /** Absolute daemon deadline; overwritten when a request is routed. */
+  deadline_ms?: number;
+  /** The routed daemon supports acknowledged artifact chunks. */
+  artifact_ack?: boolean;
   /** Tab the request ran in. */
   tab_id?: number;
   /** How the tab was chosen: explicit tabId, the agent's working tab, or the active tab. */

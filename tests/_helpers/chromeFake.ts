@@ -152,6 +152,7 @@ export function createChromeFake(overrides: ChromeFakeOverrides = {}): ChromeFak
         throw new Error('chrome.runtime.sendMessage was not stubbed for this test');
       },
       onInstalled: createChromeEvent(),
+      onStartup: createChromeEvent(),
       onMessage: createChromeEvent(),
       onConnect: createChromeEvent(),
     },

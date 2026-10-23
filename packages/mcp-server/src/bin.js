@@ -2,15 +2,18 @@
 // @ts-check
 
 import path from 'node:path';
+import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 import { tryStartMcpProcessControl } from './lifecycle.js';
 import { startBridgeMcpServer } from './server.js';
+import { prepareMcpRuntime } from './update.js';
 
 /**
  * @typedef {{
  *   start?: () => void | Promise<void>,
  *   startControl?: typeof tryStartMcpProcessControl,
+ *   prepare?: () => Promise<number | null>,
  *   argv?: string[],
  *   stdout?: { write: (chunk: string) => unknown },
  *   stderr?: { write: (chunk: string) => unknown },
@@ -36,6 +39,7 @@ export async function runBridgeMcpCli(options = {}) {
   const {
     start = startBridgeMcpServer,
     startControl = tryStartMcpProcessControl,
+    prepare = prepareMcpRuntime,
     argv = process.argv.slice(2),
     stdout = process.stdout,
     stderr = process.stderr,
@@ -48,6 +52,8 @@ export async function runBridgeMcpCli(options = {}) {
   }
 
   try {
+    const handoffStatus = await prepare();
+    if (handoffStatus !== null) return handoffStatus;
     const control = await startControl();
     try {
       await start();
@@ -64,8 +70,12 @@ export async function runBridgeMcpCli(options = {}) {
   }
 }
 
-const entryPointUrl = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : null;
+const entryPointUrl = process.argv[1]
+  ? pathToFileURL(fs.realpathSync(path.resolve(process.argv[1]))).href
+  : null;
 
 if (entryPointUrl === import.meta.url) {
-  void runBridgeMcpCli();
+  void runBridgeMcpCli().then((status) => {
+    process.exitCode = status;
+  });
 }

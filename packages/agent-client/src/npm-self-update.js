@@ -1,5 +1,9 @@
 // @ts-check
-import { isProtocolVersionSupported } from '../../protocol/src/index.js';
+import {
+  deriveProtocolVersion,
+  deriveSupportedProtocolVersions,
+  isProtocolVersionSupported,
+} from '../../protocol/src/index.js';
 
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -65,22 +69,34 @@ export function comparePackageVersions(left, right) {
  */
 export function derivePackageProtocolVersion(version) {
   const parsed = parseStableVersion(version);
-  return parsed ? `${parsed[0]}.${parsed[1]}` : null;
+  return parsed ? deriveProtocolVersion(version) : null;
 }
 
 /**
  * @param {unknown[]} versions
  * @param {readonly string[]} supportedProtocols
  * @param {string} currentVersion
+ * @param {string} [extensionVersion] Caps upgrades to the installed extension's package major.
  * @returns {string | null}
  */
-export function selectCompatibleNpmVersion(versions, supportedProtocols, currentVersion) {
+export function selectCompatibleNpmVersion(
+  versions,
+  supportedProtocols,
+  currentVersion,
+  extensionVersion
+) {
   if (!parseStableVersion(currentVersion)) return null;
+  const maxMajor = extensionVersion ? parseStableVersion(extensionVersion)?.[0] : Infinity;
+  if (maxMajor === undefined) return null;
   let selected = null;
   for (const value of versions) {
     if (typeof value !== 'string' || !parseStableVersion(value)) continue;
-    const protocolVersion = derivePackageProtocolVersion(value);
-    if (!protocolVersion || !isProtocolVersionSupported(protocolVersion, supportedProtocols))
+    if (Number(value.split('.')[0]) > maxMajor) continue;
+    if (
+      !deriveSupportedProtocolVersions(value).some((version) =>
+        isProtocolVersionSupported(version, supportedProtocols)
+      )
+    )
       continue;
     if (comparePackageVersions(value, currentVersion) <= 0) continue;
     if (selected === null || comparePackageVersions(value, selected) > 0) selected = value;
@@ -288,7 +304,8 @@ export async function updateCompatibleNpmPackage(options) {
     const targetVersion = selectCompatibleNpmVersion(
       versions,
       options.supportedVersions,
-      currentVersion
+      currentVersion,
+      options.extensionVersion
     );
     if (!targetVersion) {
       return { updated: false, reason: 'no_compatible_update', previousVersion: currentVersion };

@@ -1,6 +1,7 @@
 // @ts-check
 
 import { applyBudget } from './budget.js';
+import { getOperationTimeout } from './operation-timeouts.js';
 import { normalizeWebMcpParams } from './webmcp.js';
 import { normalizeEmulation, onlyKeys } from './emulation.js';
 import { normalizeFileParams } from './files.js';
@@ -34,6 +35,11 @@ import {
   MAX_ARTIFACT_BYTES,
   MAX_HAR_ENTRIES,
   MAX_INPUT_HOLD_MS,
+  DEFAULT_INPUT_WAIT_MS,
+  MAX_INPUT_WAIT_MS,
+  DEFAULT_OBSERVE_SETTLE_MS,
+  MAX_OBSERVE_SETTLE_MS,
+  INPUT_HOLD_TIMEOUT_MARGIN_MS,
   MAX_INTERCEPT_BODY_BYTES,
   MAX_INTERCEPT_HEADER_BYTES,
   MAX_INTERCEPT_HEADERS,
@@ -149,7 +155,22 @@ let protocolPackageVersion = null;
  */
 export function deriveProtocolVersion(packageVersion) {
   const match = typeof packageVersion === 'string' ? /^(\d+)\.(\d+)/.exec(packageVersion) : null;
+  // The final Node release speaks the same wire protocol as the Go runtime.
+  if (match && Number(match[1]) === 1 && Number(match[2]) >= 15) return '2.0';
   return match ? `${match[1]}.${match[2]}` : '0.0';
+}
+
+/**
+ * v1.15 keeps accepting v1 peers while emitting v2 requests. Package versions
+ * identify distributions, not the wire protocol they implement.
+ * @param {string | null | undefined} packageVersion
+ * @returns {readonly string[]}
+ */
+export function deriveSupportedProtocolVersions(packageVersion) {
+  const primary = deriveProtocolVersion(packageVersion);
+  return Object.freeze(
+    primary === '2.0' && /^1\./u.test(packageVersion ?? '') ? [primary, '1.15'] : [primary]
+  );
 }
 
 /**
@@ -202,7 +223,7 @@ export const PROTOCOL_VERSION = getProtocolVersion();
 
 /** Versions this build can speak. Newest first. */
 export function getSupportedProtocolVersions() {
-  return Object.freeze([getProtocolVersion()]);
+  return deriveSupportedProtocolVersions(protocolPackageVersion ?? getRuntimePackageVersion());
 }
 
 /** Snapshot retained for older callers; new code should call getSupportedProtocolVersions(). */
@@ -726,39 +747,13 @@ export function normalizeAccessRequestParams(params = {}) {
  * @returns {number | null}
  */
 export function getBridgeOperationTimeoutMs(method, params = {}) {
+  const shared = getOperationTimeout(method, params);
+  if (shared !== null) return shared;
   switch (method) {
-    case 'session.read':
-      return Number(normalizeRecording(method, params).waitMs) + 5000;
-    case 'session.stop':
-    case 'session.export':
-    case 'session.release':
-      return 100000;
-    case 'download.resource':
-      return Number(normalizeFileParams(method, params).timeoutMs) + 5000;
-    case 'webmcp.execute_tool': {
-      const normalized = normalizeWebMcpParams(params);
-      return normalized.approvalTimeoutMs + normalized.timeoutMs + 10_000;
-    }
-    case 'webmcp.list_tools':
-    case 'webmcp.get_tool':
-      return 5000;
-    case 'navigation.navigate':
-    case 'navigation.reload':
-    case 'navigation.go_back':
-    case 'navigation.go_forward':
-      return normalizeNavigationAction(params).timeoutMs;
-    case 'page.wait_for_load_state':
-      return normalizeWaitForLoadStateParams(params).timeoutMs;
-    case 'page.evaluate':
-      return normalizeEvaluateParams(params).timeoutMs;
     case 'page.extract_content': {
       const normalized = normalizeExtractContentParams(params);
       return normalized.consistency === 'settled' ? normalized.settleTimeoutMs : null;
     }
-    case 'dom.wait_for':
-      return clampInt(params.timeoutMs, 100, 30_000, 5_000);
-    case 'input.perform':
-      return normalizeInputPerformParams(params).timeoutMs;
     case 'input.click':
     case 'input.press_key':
     case 'input.focus':
@@ -772,10 +767,13 @@ export function getBridgeOperationTimeoutMs(method, params = {}) {
         /** @type {{ timeoutMs?: number, observe?: { settleMs: number } | null }} */ (
           normalizeRequestParams(method, params)
         );
-      const holdMs = normalizeHoldMs(params.holdMs, 0);
+      const holdMs =
+        normalizeHoldMs(params.holdMs, 0) *
+        (method === 'input.click' && clampInt(params.clickCount, 1, 2, 1) === 2 ? 2 : 1);
       const waitMs = normalized.timeoutMs ?? 0;
       const settleMs = normalized.observe?.settleMs ?? 0;
-      const total = holdMs + waitMs + settleMs;
+      const duration = method === 'input.hover' ? normalizeHoverParams(params).duration : 0;
+      const total = holdMs + waitMs + settleMs + duration;
       return total > 0 ? total + INPUT_HOLD_TIMEOUT_MARGIN_MS : null;
     }
     case 'input.touch':
@@ -784,9 +782,6 @@ export function getBridgeOperationTimeoutMs(method, params = {}) {
       return null;
   }
 }
-
-/** Resolution and dispatch allowance added around an input hold (ms). */
-const INPUT_HOLD_TIMEOUT_MARGIN_MS = 5_000;
 
 /**
  * @param {DomQueryParams} [params={}]
@@ -951,12 +946,13 @@ function normalizeTarget(target) {
   return normalized;
 }
 
-/** Default bounded wait for a target to exist and become actionable (ms). */
-export const DEFAULT_INPUT_WAIT_MS = 2_500;
-export const MAX_INPUT_WAIT_MS = 15_000;
-/** Default and maximum post-action settle window used by `observe` (ms). */
-export const DEFAULT_OBSERVE_SETTLE_MS = 500;
-export const MAX_OBSERVE_SETTLE_MS = 5_000;
+/** Shared target auto-wait and post-action observation bounds (ms). */
+export {
+  DEFAULT_INPUT_WAIT_MS,
+  MAX_INPUT_WAIT_MS,
+  DEFAULT_OBSERVE_SETTLE_MS,
+  MAX_OBSERVE_SETTLE_MS,
+} from './defaults.js';
 
 /** Actions that report their observed effects unless `observe: false`. */
 const OBSERVE_BY_DEFAULT_METHODS = new Set([

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createChromeFake } from '../../../tests/_helpers/chromeFake.ts';
 import { createExtensionState, setExtensionState } from '../src/background-state.js';
 import { createWindowSessionController } from '../src/background-window-session.js';
+import { ENABLED_WINDOW_STORAGE_KEY } from '../src/background-state.js';
 
 type Deferred = {
   promise: Promise<void>;
@@ -92,6 +93,79 @@ test('enabled-window switches revoke access, tear down the prior window, and ser
   assert.deepEqual(clearedWindows, [1, 2, 3]);
   assert.deepEqual(cancelledWindows, [1, 2, 3]);
   assert.deepEqual(accessUpdates, [false, true, false, true, false]);
+});
+
+function createMigrationSession() {
+  const state = createExtensionState();
+  setExtensionState(state);
+  const chromeObj = createChromeFake() as unknown as typeof globalThis.chrome;
+  const controller = createWindowSessionController(state, chromeObj, {
+    sendAccessUpdate() {},
+    async injectContentScriptsForWindow() {},
+    async primeWindowConsoleCapture() {},
+    async primeTabConsoleCapture() {},
+    async clearWindowBridgeState() {},
+    cancelNavigationWaitsForWindow() {},
+    async appendActionLogEntry() {},
+    async refreshActionIndicators() {},
+    async updateActionIndicatorForTab() {},
+    async emitUiState() {},
+    isRestrictedAutomationUrl() {
+      return false;
+    },
+  });
+  return { state, chromeObj, controller };
+}
+
+test('v1.15 backs up access for a v2 extension update and clears it on revocation', async () => {
+  const { state, chromeObj, controller } = createMigrationSession();
+  await controller.setWindowEnabled(7, 'Same browser window', true);
+  const original = state.enabledWindow;
+  assert.deepEqual(
+    (await chromeObj.storage.local.get(ENABLED_WINDOW_STORAGE_KEY))[ENABLED_WINDOW_STORAGE_KEY],
+    original
+  );
+  await chromeObj.storage.session.clear();
+  state.enabledWindow = null;
+  await controller.restoreEnabledWindow();
+  assert.equal(state.enabledWindow, null, 'ordinary worker startup must not restore local grants');
+  await controller.restoreEnabledWindowAfterUpdate();
+  assert.deepEqual(state.enabledWindow, original);
+  await controller.setWindowEnabled(7, '', false);
+  assert.equal(
+    (await chromeObj.storage.local.get(ENABLED_WINDOW_STORAGE_KEY))[ENABLED_WINDOW_STORAGE_KEY],
+    undefined
+  );
+});
+
+test('browser startup wins over a simultaneous extension update', async () => {
+  const { state, chromeObj, controller } = createMigrationSession();
+  await controller.setWindowEnabled(7, 'Old grant', true);
+  const updating = controller.restoreEnabledWindowAfterUpdate();
+  await controller.clearEnabledWindowOnBrowserStartup();
+  await updating;
+  assert.equal(state.enabledWindow, null);
+  await controller.restoreEnabledWindowAfterUpdate();
+  assert.equal(state.enabledWindow, null);
+  assert.equal(
+    (await chromeObj.storage.local.get(ENABLED_WINDOW_STORAGE_KEY))[ENABLED_WINDOW_STORAGE_KEY],
+    undefined
+  );
+});
+
+test('updates do not restore access to a closed window', async () => {
+  const { state, chromeObj, controller } = createMigrationSession();
+  await controller.setWindowEnabled(7, 'Closed', true);
+  state.enabledWindow = null;
+  chromeObj.windows.get = async () => {
+    throw new Error('No window');
+  };
+  await controller.restoreEnabledWindowAfterUpdate();
+  assert.equal(state.enabledWindow, null);
+  assert.equal(
+    (await chromeObj.storage.local.get(ENABLED_WINDOW_STORAGE_KEY))[ENABLED_WINDOW_STORAGE_KEY],
+    undefined
+  );
 });
 
 test('enabling a requested window records a scoped access confirmation activity', async () => {

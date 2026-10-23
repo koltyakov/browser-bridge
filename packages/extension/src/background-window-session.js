@@ -1,7 +1,7 @@
 // @ts-check
 
 import { BridgeError, ERROR_CODES } from '../../protocol/src/index.js';
-import { restoreEnabledWindowState } from './background-access.js';
+import { normalizeStoredEnabledWindow, restoreEnabledWindowState } from './background-access.js';
 import { getErrorMessage } from './background-helpers.js';
 import {
   ENABLED_WINDOW_STORAGE_KEY,
@@ -49,6 +49,8 @@ import {
  * @param {WindowSessionControllerDeps} deps
  * @returns {{
  *   restoreEnabledWindow: () => Promise<void>,
+ *   restoreEnabledWindowAfterUpdate: () => Promise<void>,
+ *   clearEnabledWindowOnBrowserStartup: () => Promise<void>,
  *   primeEnabledWindowInstrumentation: () => Promise<void>,
  *   clearEnabledWindowIfGone: () => Promise<boolean>,
  *   getCurrentTabState: (windowId?: number | null) => Promise<CurrentTabState | null>,
@@ -71,6 +73,28 @@ import {
 export function createWindowSessionController(state, chrome, deps) {
   /** @type {Promise<void>} */
   let windowTransitionTail = Promise.resolve();
+  let browserStarting = false;
+
+  /** @param {() => Promise<void>} operation @returns {Promise<void>} */
+  function enqueueWindowTransition(operation) {
+    const pending = windowTransitionTail.then(operation, operation);
+    windowTransitionTail = pending.catch(() => {});
+    return pending;
+  }
+
+  /** @returns {Promise<void>} */
+  async function persistEnabledWindow() {
+    const stored = { [ENABLED_WINDOW_STORAGE_KEY]: state.enabledWindow };
+    await Promise.all([chrome.storage.local.set(stored), chrome.storage.session.set(stored)]);
+  }
+
+  /** @returns {Promise<void>} */
+  async function clearStoredEnabledWindow() {
+    await Promise.all([
+      chrome.storage.local.remove(ENABLED_WINDOW_STORAGE_KEY),
+      chrome.storage.session.remove(ENABLED_WINDOW_STORAGE_KEY),
+    ]);
+  }
 
   /**
    * @param {chrome.tabs.Tab | null | undefined} tab
@@ -99,11 +123,69 @@ export function createWindowSessionController(state, chrome, deps) {
    * @returns {Promise<void>}
    */
   async function restoreEnabledWindow() {
-    await restoreEnabledWindowState({
-      chrome,
-      state,
-      storageKey: ENABLED_WINDOW_STORAGE_KEY,
-      sendAccessUpdate: deps.sendAccessUpdate,
+    await enqueueWindowTransition(async () => {
+      if (browserStarting) return;
+      await restoreEnabledWindowState({
+        chrome,
+        state,
+        storageKey: ENABLED_WINDOW_STORAGE_KEY,
+        sendAccessUpdate(enabled) {
+          if (!browserStarting) deps.sendAccessUpdate(enabled);
+        },
+      });
+      if (browserStarting) {
+        state.enabledWindow = null;
+        return;
+      }
+      if (state.enabledWindow) await persistEnabledWindow();
+    });
+  }
+
+  /** Read the local backup only for an update, never an ordinary startup.
+   * @returns {Promise<void>}
+   */
+  async function restoreEnabledWindowAfterUpdate() {
+    await enqueueWindowTransition(async () => {
+      if (browserStarting || state.enabledWindow) return;
+      const stored = await chrome.storage.local.get(ENABLED_WINDOW_STORAGE_KEY);
+      const access = normalizeStoredEnabledWindow(stored[ENABLED_WINDOW_STORAGE_KEY]);
+      if (!access || browserStarting) return;
+      try {
+        await chrome.windows.get(access.windowId);
+      } catch {
+        await clearStoredEnabledWindow();
+        return;
+      }
+      if (browserStarting) return;
+      await chrome.storage.session.set({ [ENABLED_WINDOW_STORAGE_KEY]: access });
+      if (browserStarting) return;
+      state.enabledWindow = access;
+      deps.sendAccessUpdate(true);
+      await primeEnabledWindowInstrumentation();
+      await chrome.alarms.create(KEEPALIVE_ALARM_NAME, { periodInMinutes: 0.4 });
+      await deps.refreshActionIndicators();
+      await deps.emitUiState();
+    });
+  }
+
+  /** @returns {Promise<void>} */
+  function clearEnabledWindowOnBrowserStartup() {
+    browserStarting = true;
+    return enqueueWindowTransition(async () => {
+      const access = state.enabledWindow;
+      state.enabledWindow = null;
+      deps.sendAccessUpdate(false);
+      await clearStoredEnabledWindow();
+      try {
+        if (access) {
+          deps.cancelNavigationWaitsForWindow(access.windowId);
+          await deps.clearWindowBridgeState(access.windowId);
+        }
+      } finally {
+        await chrome.alarms.clear(KEEPALIVE_ALARM_NAME);
+        await deps.refreshActionIndicators();
+        await deps.emitUiState();
+      }
     });
   }
 
@@ -157,7 +239,7 @@ export function createWindowSessionController(state, chrome, deps) {
     const goneWindowId = state.enabledWindow.windowId;
     state.enabledWindow = null;
     deps.cancelNavigationWaitsForWindow(goneWindowId);
-    await chrome.storage.session.remove(ENABLED_WINDOW_STORAGE_KEY);
+    await clearStoredEnabledWindow();
     deps.sendAccessUpdate(false);
     await deps.clearWindowBridgeState(goneWindowId);
     return true;
@@ -265,7 +347,7 @@ export function createWindowSessionController(state, chrome, deps) {
     if (isSwitch || isActiveDisable) {
       state.enabledWindow = null;
       deps.cancelNavigationWaitsForWindow(/** @type {number} */ (previousWindowId));
-      await chrome.storage.session.remove(ENABLED_WINDOW_STORAGE_KEY);
+      await clearStoredEnabledWindow();
       deps.sendAccessUpdate(false);
       await deps.clearWindowBridgeState(/** @type {number} */ (previousWindowId));
     }
@@ -276,9 +358,7 @@ export function createWindowSessionController(state, chrome, deps) {
         deps.primeWindowConsoleCapture(access.windowId, chrome, true),
       ]);
       state.enabledWindow = access;
-      await chrome.storage.session.set({
-        [ENABLED_WINDOW_STORAGE_KEY]: access,
-      });
+      await persistEnabledWindow();
       if (confirmsAccessRequest) {
         try {
           await deps.appendActionLogEntry({
@@ -333,9 +413,7 @@ export function createWindowSessionController(state, chrome, deps) {
         ...state.enabledWindow,
         title: changeInfo.title,
       };
-      await chrome.storage.session.set({
-        [ENABLED_WINDOW_STORAGE_KEY]: state.enabledWindow,
-      });
+      await persistEnabledWindow();
       deps.sendAccessUpdate(true);
     }
 
@@ -368,7 +446,7 @@ export function createWindowSessionController(state, chrome, deps) {
       removeInfo.windowId === state.enabledWindow.windowId
     ) {
       state.enabledWindow = null;
-      await chrome.storage.session.remove(ENABLED_WINDOW_STORAGE_KEY);
+      await clearStoredEnabledWindow();
       deps.sendAccessUpdate(false);
     }
     if (removeInfo.isWindowClosing && removeInfo.windowId === state.requestedAccessWindowId) {
@@ -380,6 +458,8 @@ export function createWindowSessionController(state, chrome, deps) {
 
   return {
     restoreEnabledWindow,
+    restoreEnabledWindowAfterUpdate,
+    clearEnabledWindowOnBrowserStartup,
     primeEnabledWindowInstrumentation,
     clearEnabledWindowIfGone,
     getCurrentTabState,

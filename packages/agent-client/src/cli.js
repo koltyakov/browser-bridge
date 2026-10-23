@@ -4,7 +4,6 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
@@ -50,6 +49,8 @@ import { atomicWriteFile } from './atomic-write.js';
 import { uploadFiles } from './file-transfer.js';
 import { recordSession } from './record-session.js';
 import { exportReplay } from './replay.js';
+import { handoffUpdatedRuntime, isSourceCheckout } from './update-handoff.js';
+import { prepareMcpRuntime } from '../../mcp-server/src/update.js';
 
 /** @typedef {import('./types.js').BridgeMethod} BridgeMethod */
 /** @typedef {import('./types.js').ScreenshotResult} ScreenshotResult */
@@ -171,6 +172,8 @@ if (command === 'install-mcp') {
 if (command === 'mcp') {
   const [subcommand, clientName, ...extra] = rest;
   if (subcommand === 'serve') {
+    const handoffStatus = await prepareMcpRuntime('bbx', process.argv.slice(2));
+    if (handoffStatus !== null) process.exit(handoffStatus);
     const control = await tryStartMcpProcessControl();
     try {
       await startBridgeMcpServer();
@@ -259,6 +262,7 @@ async function handleConfigCommand(args) {
 async function createCliClient() {
   try {
     return await createBridgeClientForDestination(remoteDestinationId, {
+      updateNpmOnCompatibleVersion: isSourceCheckout() ? false : undefined,
       checkProtocolOnConnect: false,
       ...(clientTimeoutMs ? { defaultTimeoutMs: clientTimeoutMs } : {}),
     });
@@ -275,6 +279,11 @@ async function createCliClient() {
 async function main() {
   let relaunchAfterUpdate = false;
   try {
+    // Do the update preflight before parsing piped input or dispatching an
+    // action. A relaunch must inherit stdin before this process consumes it.
+    if (client.updateNpmOnCompatibleVersion && !LOCAL_ONLY_COMMANDS.has(command)) {
+      await client.connect();
+    }
     if (command === 'status') {
       const healthResponse = await requestBridge(
         client,
@@ -925,18 +934,7 @@ function assertValidHarDocument(document) {
  * @returns {void}
  */
 function relaunchCli() {
-  const result = spawnSync(
-    process.execPath,
-    [fileURLToPath(import.meta.url), ...process.argv.slice(2)],
-    {
-      stdio: 'inherit',
-      env: process.env,
-    }
-  );
-  if (result.error) {
-    throw result.error;
-  }
-  process.exitCode = result.status ?? 1;
+  process.exitCode = handoffUpdatedRuntime('bbx', process.argv.slice(2));
 }
 
 /**

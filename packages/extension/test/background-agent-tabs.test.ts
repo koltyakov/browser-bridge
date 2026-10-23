@@ -394,15 +394,24 @@ test('tabs.activate moves the calling agent to the activated tab', async () => {
 });
 
 test('panel shows both targets for one alternating agent and stays scoped to its own tab', async () => {
-  const { loaded, remove } = await loadTwoTabBackground('agent-tabs-panel');
+  const { loaded, remove, tabs } = await loadTwoTabBackground('agent-tabs-panel');
+  const sibling = tabs.get(82);
+  assert.ok(sibling);
+  sibling.favIconUrl = 'https://example.com/favicon.ico';
   const state = loaded.module.getStateForTest() as ExtensionState;
-  const pair = createMessagePortPair();
+  const pair = createMessagePortPair({ leftName: 'ui-sidepanel' });
   const port = pair.left.port as unknown as chrome.runtime.Port;
   (loaded.chrome.runtime.onConnect as unknown as FakeChromeEvent).dispatch(port);
   state.uiPorts.set(port, { surface: 'sidepanel', scopeTabId: 81 });
   const emit = async () => {
-    pair.left.dispatchMessage({ type: 'state.request', scopeTabId: 81 });
-    await new Promise((resolve) => setImmediate(resolve));
+    const savedChrome = globalThis.chrome;
+    Reflect.set(globalThis, 'chrome', loaded.chrome);
+    try {
+      pair.left.dispatchMessage({ type: 'state.request', scopeTabId: 81 });
+      await new Promise((resolve) => setImmediate(resolve));
+    } finally {
+      Reflect.set(globalThis, 'chrome', savedChrome);
+    }
   };
   const latest = () => {
     const messages = pair.left.postedMessages as Array<{
@@ -415,6 +424,8 @@ test('panel shows both targets for one alternating agent and stays scoped to its
   await call(loaded, 'navigation.reload', { session: 'a', tabId: 82 });
   await emit();
   const expected = latest();
+  assert.equal(expected?.find((tab) => tab.tabId === 82)?.favIconUrl, sibling.favIconUrl);
+  assert.ok((expected?.find((tab) => tab.tabId === 82)?.lastActivityAt ?? 0) > 0);
   assert.deepEqual(
     expected?.map((tab) => [tab.tabId, tab.isCurrent]),
     [
@@ -445,6 +456,13 @@ test('panel shows both targets for one alternating agent and stays scoped to its
     latest()?.map((tab) => tab.actionCount),
     [2, 2],
     'pings do not inflate action counts'
+  );
+  sibling.index = -1;
+  await emit();
+  assert.deepEqual(
+    latest()?.map((tab) => tab.tabId),
+    [82, 81],
+    'dropdown order follows the browser tab strip'
   );
   remove(82);
   await new Promise((resolve) => setImmediate(resolve));

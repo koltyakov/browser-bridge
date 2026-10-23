@@ -10,9 +10,6 @@
 
 <body>
   <main class="panel panel-wide">
-    <header class="panel-header panel-header-compact">
-      <span id="native-indicator" class="status-dot header-status-indicator" title="Connecting to native host…"></span>
-    </header>
     <p id="proxy-status" class="proxy-status" hidden></p>
     <div id="version-mismatch-banner" class="version-mismatch-banner" role="alert" hidden>
       <p id="version-mismatch-message"></p>
@@ -23,6 +20,13 @@
       <div class="control-copy">
         <div class="control-heading">
           <div id="agent-status" class="eyebrow">Window access</div>
+          <span class="version-info">
+            <button class="version-info-button" type="button" aria-label="Version information"
+              aria-describedby="extension-version">
+              <span aria-hidden="true">i</span>
+            </button>
+            <span id="extension-version" class="version-tooltip" role="tooltip"></span>
+          </span>
           <details id="other-windows" class="other-windows" hidden>
             <summary id="other-windows-count" aria-label="Other enabled windows"></summary>
             <div class="other-windows-dropdown">
@@ -54,47 +58,64 @@
       </div>
       <button id="bridge-toggle" class="power-button" type="button">Enable Window Access</button>
     </section>
-    <section id="agent-tab-row" class="card agent-tabs-card" aria-labelledby="agent-tabs-heading" hidden>
-      <div id="agent-tabs-heading" class="eyebrow">Other active tabs</div>
-      <ul id="agent-tabs-list" class="agent-tabs-list"></ul>
-    </section>
-    <details id="installation-section" class="card setup-details" hidden>
-      <summary>
-        <span class="setup-details-summary-heading">
-          <span class="eyebrow">Host setup</span>
-          <span class="setup-details-summary-icon" aria-hidden="true"></span>
+    <details id="agent-tab-row" class="card agent-tabs-card" hidden>
+      <summary id="agent-tabs-summary" class="agent-tabs-summary">
+        <span id="agent-tabs-heading" class="eyebrow">Active tabs</span>
+        <span class="agent-tabs-totals">
+          <span id="agent-tabs-total" class="activity-tokens"></span>
+          <span id="agent-tabs-actions" class="activity-tokens"></span>
         </span>
-        <span id="setup-status-summary-note" class="setup-summary-note" hidden></span>
       </summary>
-      <div class="setup-details-body">
-        <p id="setup-status-note" class="muted setup-status-note">Checking global install status…</p>
-        <p id="setup-host-version" class="setup-host-version" hidden></p>
-        <div id="setup-status-matrix" class="setup-status-matrix-wrap"></div>
-        <p class="setup-status-guidance">
-          Recommended: choose either MCP or the CLI skill. If your agent supports both, start with MCP.
-          After adding MCP or the CLI skill, restart the agent if Browser Bridge does not appear immediately.
-          <a class="setup-link" href="https://github.com/koltyakov/browser-bridge/blob/main/docs/mcp-vs-cli.md"
-            target="_blank" rel="noopener noreferrer">Details ↗</a>
-        </p>
+      <div class="agent-tabs-dropdown">
+        <ul id="agent-tabs-list" class="agent-tabs-list" aria-labelledby="agent-tabs-heading"></ul>
       </div>
     </details>
-    <details id="examples-section" class="card examples-details" hidden>
-      <summary><span class="eyebrow examples-eyebrow">Prompt examples</span></summary>
-      <div id="examples-content" class="examples-content"></div>
-    </details>
-    <section id="native-setup" class="card">
-      <div class="eyebrow">Not connected</div>
+    <div class="panel-help">
+      <details id="installation-section" class="card setup-details" hidden>
+        <summary>
+          <span class="setup-details-summary-heading">
+            <span class="eyebrow">Connect agent</span>
+            <span class="setup-details-summary-icon" aria-hidden="true"></span>
+          </span>
+          <span id="setup-status-summary-note" class="setup-summary-note" hidden></span>
+        </summary>
+        <div class="setup-details-body">
+          <p id="setup-status-note" class="muted setup-status-note">Checking agent connections…</p>
+          <div id="setup-status-matrix" class="setup-status-matrix-wrap"></div>
+          <p class="setup-status-guidance">
+            Recommended: choose either MCP or the CLI skill. If your agent supports both, start with MCP.
+            After adding MCP or the CLI skill, restart the agent if Browser Bridge does not appear immediately.
+            <a class="setup-link" href="https://github.com/koltyakov/browser-bridge/blob/main/docs/mcp-vs-cli.md"
+              target="_blank" rel="noopener noreferrer">Details ↗</a>
+          </p>
+        </div>
+      </details>
+      <details id="examples-section" class="card examples-details" hidden>
+        <summary><span class="eyebrow examples-eyebrow">Prompt examples</span></summary>
+        <div id="examples-content" class="examples-content"></div>
+      </details>
+    </div>
+    <section id="native-loading" class="card native-loading" role="status" aria-live="polite">
+      <span class="native-loading-spinner" aria-hidden="true"></span>
+      <span>Connecting to the local daemon…</span>
+    </section>
+    <section id="native-setup" class="card" hidden>
+      <div class="control-heading native-setup-heading">
+        <div class="eyebrow">Not connected</div>
+        <span id="native-indicator" class="status-dot header-status-indicator" title="Connecting to native host…"></span>
+      </div>
       <p class="control-detail">
-        Browser Bridge works with a local companion host on this machine. After the host connects, you can enable window
-        access for the current Chrome window.
+        Install the Browser Bridge CLI and local daemon to connect this extension.
       </p>
-      <br />
       <div class="setup-steps">
-        <span class="setup-step-hint">Install CLI (skip if done):</span>
-        <code class="setup-cmd">npm install -g @browserbridge/bbx</code>
-        <span id="setup-install-hint" class="setup-step-hint">Connect this extension (if didn't run
-          automatically):</span>
+        <span class="setup-step-hint">Install with npm (Node.js 20 or newer):</span>
+        <code id="setup-npm-cmd" class="setup-cmd">npm install -g @browserbridge/bbx@1.15</code>
+        <span class="setup-step-hint">If the CLI is installed and you still see this screen, initialize the browser connection:</span>
         <code id="setup-install-cmd" class="setup-cmd">bbx install</code>
+        <div class="setup-connection-check">
+          <span class="setup-step-hint">Checking for the local daemon automatically.</span>
+          <button id="setup-native-retry" class="setup-retry-button" type="button">Check connection</button>
+        </div>
       </div>
       <div class="control-links">
         <a class="setup-link" href="https://github.com/koltyakov/browser-bridge/blob/main/docs/quickstart.md"

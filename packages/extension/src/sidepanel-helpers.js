@@ -1,5 +1,10 @@
 // @ts-check
 
+import {
+  deriveSupportedProtocolVersions,
+  isProtocolVersionSupported,
+} from '../../protocol/src/index.js';
+
 /**
  * @typedef {{
  *   tabId: number,
@@ -155,28 +160,72 @@ const SETUP_MATRIX_RANK = new Map(SETUP_MATRIX_ORDER.map((key, index) => [key, i
 const SETUP_MATRIX_BETA_KEYS = new Set(['antigravity', 'windsurf', 'agents']);
 const MANAGED_CLIENT_PACKAGE = '@browserbridge/bbx';
 
+/** @param {string} version @returns {string} */
+export function getNpmInstallCommand(version) {
+  const versionMatch = /^(\d+\.\d+)(?:\.|$)/u.exec(version);
+  return `npm install -g ${MANAGED_CLIENT_PACKAGE}${versionMatch ? `@${versionMatch[1]}` : '@1.15'}`;
+}
+
+/** @param {number} availableHeight @param {number} contentHeight @returns {number | null} */
+export function getAgentTabsInlineHeight(availableHeight, contentHeight) {
+  if (!Number.isFinite(availableHeight) || !Number.isFinite(contentHeight) || contentHeight <= 0)
+    return null;
+  const minimumHeight = Math.min(contentHeight, 2 * 32 + 13);
+  return availableHeight >= minimumHeight ? Math.min(availableHeight, contentHeight) : null;
+}
+
+/** @param {number | undefined} lastActivityAt @param {number} [now] @returns {string} */
+export function formatTabActivityAge(lastActivityAt, now = Date.now()) {
+  if (
+    lastActivityAt == null ||
+    !Number.isFinite(lastActivityAt) ||
+    lastActivityAt <= 0 ||
+    !Number.isFinite(now)
+  )
+    return '';
+  const elapsedSeconds = Math.floor(Math.max(0, now - lastActivityAt) / 1000);
+  if (elapsedSeconds < 60) return '<1m';
+  return `${Math.floor(elapsedSeconds / 60)}m ${elapsedSeconds % 60}s`;
+}
+
 /**
  * @typedef {{ key: string, message: string }} VersionMismatchView
  */
 
 /**
- * Compare the compatibility-significant major and minor portions of the
- * extension and local CLI versions. Patch releases remain compatible.
+ * Compare advertised wire protocols rather than package version numbers.
+ * Node v1.15 and Go v2 both speak protocol 2.0.
  *
  * @param {string | null | undefined} extensionVersion
  * @param {string | null | undefined} cliVersion
  * @returns {VersionMismatchView | null}
  */
 export function getVersionMismatchView(extensionVersion, cliVersion) {
-  const extensionMajorMinor = getMajorMinorVersion(extensionVersion);
-  const cliMajorMinor = getMajorMinorVersion(cliVersion);
-  if (!extensionMajorMinor || !cliMajorMinor || extensionMajorMinor === cliMajorMinor) {
+  if (!getMajorMinorVersion(extensionVersion) || !getMajorMinorVersion(cliVersion)) {
+    return null;
+  }
+  if (
+    getMajorMinorVersion(extensionVersion) === '1.15' &&
+    /^1\./u.test(cliVersion ?? '') &&
+    Number(cliVersion?.split('.')[1]) < 15
+  ) {
+    return {
+      key: `prepare-v2:${cliVersion}`,
+      message:
+        'Update the local CLI with npm install -g @browserbridge/bbx@1.15 to enable automatic migration when the v2 extension arrives.',
+    };
+  }
+  if (
+    deriveSupportedProtocolVersions(extensionVersion).some((version) =>
+      isProtocolVersionSupported(version, deriveSupportedProtocolVersions(cliVersion))
+    )
+  ) {
     return null;
   }
 
   return {
     key: `${extensionVersion}:${cliVersion}`,
-    message: `Browser Bridge CLI v${cliVersion} and extension v${extensionVersion} might not be compatible. Update them so their major and minor versions match.`,
+    message: `Browser Bridge CLI v${cliVersion} and extension v${extensionVersion} use different protocols. Update the CLI and extension to compatible releases.`,
   };
 }
 

@@ -18,14 +18,17 @@ import { POPUP_PATH } from './background-state.js';
  * @typedef {{
  *   tabId: number,
  *   title: string,
+ *   favIconUrl?: string,
  *   isCurrent: boolean,
  *   actionCount?: number,
+ *   lastActivityAt?: number,
  * }} AgentTabUiState
  */
 
 /**
  * @typedef {{
  *   refreshSetupStatus: (force?: boolean) => void,
+ *   retryNativeConnection?: () => void,
  *   getTabState: (tabId: number) => Promise<CurrentTabState | null>,
  *   getCurrentTabState: (windowId?: number | null) => Promise<CurrentTabState | null>,
  *   setWindowEnabled: (
@@ -184,6 +187,12 @@ export async function emitUiStateForPort(state, port, deps) {
  * @returns {Promise<void>}
  */
 export async function handleUiMessage(state, port, message, deps) {
+  if (message?.type === 'native.retry') {
+    if (!state.uiPorts.has(port)) return;
+    deps.retryNativeConnection?.();
+    await emitUiStateForPort(state, port, deps);
+    return;
+  }
   if (message?.type === 'windows.focus' || message?.type === 'windows.disable_others') {
     const action = message.type === 'windows.focus' ? 'focus' : 'disable';
     try {

@@ -13,6 +13,7 @@ import {
   DEFAULT_CLIENT_REQUEST_TIMEOUT_MS,
   ERROR_CODES,
   getProtocolVersion,
+  getSupportedProtocolVersions,
   isBatchSafeBridgeCall,
   isBridgeMethod,
   MAX_BATCH_CALLS,
@@ -820,7 +821,9 @@ export class BridgeClient extends EventEmitter {
       };
     }
     const localVersion = getProtocolVersion();
-    const compatible = isProtocolVersionSupported(localVersion, remoteVersions);
+    const compatible = getSupportedProtocolVersions().some((version) =>
+      isProtocolVersionSupported(version, remoteVersions)
+    );
     return {
       compatible,
       localVersion,

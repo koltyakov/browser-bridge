@@ -490,6 +490,8 @@ export function createNativeConnectionController(state, chromeObj, deps) {
    * @returns {void}
    */
   function connectNative() {
+    // A panel retry must not replace a connected or still-connecting port.
+    if (state.nativePort || state.pendingNativePort) return;
     clearNativeReconnectTimer();
     const wasReconnect = nativeReconnectDelay > NATIVE_RECONNECT_BASE_MS;
     let reconnectOutcomePending = wasReconnect;
