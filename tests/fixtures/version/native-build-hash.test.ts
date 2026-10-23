@@ -13,8 +13,8 @@ function fixture(t: TestContext) {
     'go.sum',
     'cmd/bbx/main.go',
     'internal/bridge/main.go',
-    'internal/bridge/generated/catalog.json',
-    'internal/bridge/assets/skills.bundle',
+    'internal/bridge/generated/catalog.json.gz',
+    'internal/bridge/assets/skills.bundle.gz',
     'internal/protocol/types.gen.go',
   ]) {
     fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
@@ -42,8 +42,8 @@ test('native hash tracks source contents, paths, module metadata, and embedded a
     'internal/protocol/types.gen.go',
     'go.mod',
     'go.sum',
-    'internal/bridge/generated/catalog.json',
-    'internal/bridge/assets/skills.bundle',
+    'internal/bridge/generated/catalog.json.gz',
+    'internal/bridge/assets/skills.bundle.gz',
   ]) {
     fs.appendFileSync(path.join(root, file), '\nchanged');
     const hash = nativeBuildHash(root);

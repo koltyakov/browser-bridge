@@ -4,9 +4,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveVersion } from './version.mjs';
+import { generateGzip } from './generated-gzip.mjs';
 import { OPERATION_TIMEOUT_POLICIES } from '../protocol/src/operation-timeouts.js';
 import {
   BRIDGE_METHODS,
+  BRIDGE_METHOD_REGISTRY,
   createRuntimeContext,
   deriveProtocolVersion,
   describeBridgeMethods,
@@ -17,6 +19,64 @@ import {
 } from '../protocol/src/index.js';
 
 /** @typedef {import('../protocol/mcp-metadata.js').McpMetadata} McpMetadata */
+
+/** Inline only the wire types needed for one method, with no dangling references.
+ * @param {unknown} value
+ * @param {Record<string, unknown>} definitions
+ * @param {string[]} [parents]
+ * @returns {unknown}
+ */
+function inlineSchema(value, definitions, parents = []) {
+  if (Array.isArray(value)) return value.map((item) => inlineSchema(item, definitions, parents));
+  if (value === null || typeof value !== 'object') return value;
+  const schema = record(value, 'wire schema');
+  if (typeof schema.$ref === 'string') {
+    const name = schema.$ref.replace('#/$defs/', '');
+    assert(Object.hasOwn(definitions, name), `Missing wire schema: ${name}`);
+    assert(!parents.includes(name), `Recursive discovery schema: ${name}`);
+    return inlineSchema(definitions[name], definitions, [...parents, name]);
+  }
+  return Object.fromEntries(
+    Object.entries(schema).map(([key, child]) => [key, inlineSchema(child, definitions, parents)])
+  );
+}
+
+/** Generate on-demand details separately so group indexes stay compact.
+ * @param {Record<string, unknown>} definitions
+ * @returns {Record<string, unknown>}
+ */
+function createMethodInputs(definitions) {
+  return Object.fromEntries(
+    BRIDGE_METHODS.flatMap((method) => {
+      const entry = BRIDGE_METHOD_REGISTRY[method];
+      const detail = entry.discovery;
+      if (!detail) return [];
+      assert(
+        Object.hasOwn(definitions, detail.paramsType),
+        `Missing input type: ${detail.paramsType}`
+      );
+      const schema = record(inlineSchema(definitions[detail.paramsType], definitions), method);
+      const properties = record(schema.properties, `${method}.properties`);
+      const selected = Object.fromEntries(
+        entry.params.map((key) => {
+          assert(
+            Object.hasOwn(properties, key),
+            `${method}: ${key} missing from ${detail.paramsType}`
+          );
+          return [key, properties[key]];
+        })
+      );
+      const inputSchema = {
+        type: 'object',
+        properties: selected,
+        required: detail.required ?? [],
+        additionalProperties: schema.additionalProperties,
+      };
+      validateSchema(inputSchema, method);
+      return [[method, { inputSchema, example: detail.example }]];
+    })
+  );
+}
 
 /** @param {unknown} value @param {string} location @returns {Record<string, unknown>} */
 function record(value, location) {
@@ -220,9 +280,10 @@ export function validateMcpMetadata(value) {
 /** Build the catalog without loading runtime implementations or generated output.
  * @param {string} version
  * @param {unknown} metadata
+ * @param {Record<string, unknown>} definitions Generated from canonical protocol/types.ts.
  * @returns {Record<string, unknown>}
  */
-export function createCatalog(version, metadata) {
+export function createCatalog(version, metadata, definitions) {
   validateMcpMetadata(metadata);
   const methods = Object.fromEntries(
     BRIDGE_METHODS.map((method) => [method, describeBridgeMethods({ method })])
@@ -241,6 +302,7 @@ export function createCatalog(version, metadata) {
   return {
     version,
     methods,
+    methodInputs: createMethodInputs(definitions),
     operationTimeouts: OPERATION_TIMEOUT_POLICIES,
     runtime: { ...createRuntimeContext(), v: deriveProtocolVersion(version) },
     presets,
@@ -272,7 +334,11 @@ export async function generateCatalog(
   const metadata = /** @type {unknown} */ (
     JSON.parse(await fs.readFile(path.join(root, 'protocol/mcp-tools.json'), 'utf8'))
   );
-  const catalog = createCatalog(version, metadata);
+  const wire = record(
+    JSON.parse(await fs.readFile(path.join(root, 'protocol/generated/bridge.schema.json'), 'utf8')),
+    'wire schema'
+  );
+  const catalog = createCatalog(version, metadata, record(wire.$defs, 'wire definitions'));
   const filename = path.join(root, 'internal/bridge/generated/catalog.json');
   const content = `${JSON.stringify(catalog)}\n`;
   if (check) {
@@ -282,4 +348,5 @@ export async function generateCatalog(
     await fs.mkdir(path.dirname(filename), { recursive: true });
     await fs.writeFile(filename, content);
   }
+  await generateGzip(`${filename}.gz`, Buffer.from(content), check);
 }

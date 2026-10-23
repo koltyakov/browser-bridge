@@ -1,7 +1,7 @@
 package bridge
 
 import (
-	"debug/buildinfo"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -24,9 +24,19 @@ func installCopilotDetected(scope installScope) bool {
 
 func installGooseExecutableMatches(path string) bool {
 	// The SQL migration CLI shares the name and may use the same directory.
-	// Official Goose is Rust, so Go build metadata rules out the coding agent.
-	_, err := buildinfo.ReadFile(path)
-	return err != nil
+	// Official Goose is Rust, so a Go linker fingerprint rules it out. Parsing
+	// every executable format via debug/buildinfo adds too much to the runtime.
+	file, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return false
+	}
+	found, err := installHasGoBuildInfo(io.NewSectionReader(file, 0, info.Size()))
+	return err == nil && !found
 }
 
 func installMuseLauncherMatches(path string) bool {

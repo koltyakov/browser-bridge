@@ -76,6 +76,7 @@ test(
         'build',
         '-trimpath',
         '-buildvcs=false',
+        '-tags=nethttpomithttp2',
         '-gcflags=all=-l',
         '-ldflags',
         `-s -w -X github.com/koltyakov/browser-bridge/internal/bridge.buildTarget=${goTarget}`,

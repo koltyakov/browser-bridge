@@ -46,10 +46,7 @@ func loadConfig() (config, error) {
 			}
 			bridgeHome = filepath.Join(local, "Browser Bridge")
 		default:
-			data := os.Getenv("XDG_DATA_HOME")
-			if data == "" {
-				data = filepath.Join(home, ".local", "share")
-			}
+			data := xdgDirectory(os.Getenv, "XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
 			bridgeHome = filepath.Join(data, "browser-bridge")
 		}
 	}

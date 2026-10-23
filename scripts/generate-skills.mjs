@@ -2,6 +2,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { generateGzip } from './generated-gzip.mjs';
 
 /** @param {Uint8Array} bytes @returns {number} */
 function crc32(bytes) {
@@ -85,4 +86,5 @@ export async function generateSkills(check) {
     await fs.mkdir(path.dirname(destination), { recursive: true });
     await fs.writeFile(destination, content);
   }
+  await generateGzip(`${destination}.gz`, content, check);
 }

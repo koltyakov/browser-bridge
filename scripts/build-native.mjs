@@ -35,6 +35,9 @@ for (const target of targets) {
       'build',
       '-trimpath',
       '-buildvcs=false',
+      // The native HTTP client only downloads update metadata and assets.
+      // HTTP/1.1 keeps those HTTPS requests within the fresh-install budget.
+      '-tags=nethttpomithttp2',
       // Inlining trades executable size for call-site speed. This I/O-oriented
       // runtime keeps the full implementation under the native payload budget.
       '-gcflags=all=-l',

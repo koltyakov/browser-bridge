@@ -40,7 +40,12 @@ function cacheDirectory(env, platform) {
       'npm'
     );
   if (platform === 'darwin') return path.join(home, 'Library', 'Caches', 'Browser Bridge', 'npm');
-  return path.join(env.XDG_CACHE_HOME || path.join(home, '.cache'), 'browser-bridge', 'npm');
+  const cache = env.XDG_CACHE_HOME;
+  return path.join(
+    cache && path.isAbsolute(cache) ? cache : path.join(home, '.cache'),
+    'browser-bridge',
+    'npm'
+  );
 }
 
 /** @param {InstallOptions} [options] @returns {Promise<Release>} */

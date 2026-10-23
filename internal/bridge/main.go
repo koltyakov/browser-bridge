@@ -545,7 +545,7 @@ func printCLIDescription(params object) error {
 		if _, ok := catalog.Methods[method]; !ok {
 			return fmt.Errorf("unknown bridge method: %s", method)
 		}
-		return printJSON(catalog.Methods[method])
+		return printJSON(describeMethod(method, catalog.Methods[method]))
 	}
 	if group := params.text("group"); hasGroup {
 		methods := []object{}

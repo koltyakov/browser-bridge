@@ -56,14 +56,11 @@ func installManifestDir(platform, home, browser string, env func(string) string)
 	default:
 		base = env("CHROME_CONFIG_HOME")
 		if base == "" {
-			base = env("XDG_CONFIG_HOME")
-		}
-		if base == "" {
-			base = filepath.Join(home, ".config")
+			base = xdgDirectory(env, "XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 		}
 		sub = definition.linuxDir
 		snap := filepath.Join(home, "snap", "chromium", "common", "chromium")
-		if browser == "chromium" && env("CHROME_CONFIG_HOME") == "" && env("XDG_CONFIG_HOME") == "" && installExists(snap) {
+		if browser == "chromium" && env("CHROME_CONFIG_HOME") == "" && !filepath.IsAbs(env("XDG_CONFIG_HOME")) && installExists(snap) {
 			return filepath.Join(snap, "NativeMessagingHosts")
 		}
 	}
@@ -175,7 +172,7 @@ func installLauncher(c config, executable string) (string, []byte) {
 	if runtime.GOOS == "windows" {
 		// Percent signs expand even inside cmd.exe double quotes.
 		escape := func(s string) string { return strings.ReplaceAll(s, "%", "%%") }
-		body := "@echo off\r\nsetlocal\r\n"
+		body := "@echo off\r\nsetlocal DisableDelayedExpansion\r\n"
 		// An explicit bridge home selects an isolated named pipe on Windows.
 		// Do not turn the default TCP installation into that mode implicitly.
 		if os.Getenv("BROWSER_BRIDGE_HOME") != "" {

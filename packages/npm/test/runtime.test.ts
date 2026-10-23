@@ -115,6 +115,26 @@ test('npm bootstrap validates all supported artifact mappings', async (t) => {
   }
 });
 
+test('Linux npm cache ignores relative XDG overrides', async (t) => {
+  const f = await fixture(t);
+  const target = 'linux-x64';
+  f.manifest.artifacts[target] = {
+    ...f.manifest.artifacts[f.target],
+    asset: nativeTargets[target],
+  };
+  await f.writeManifest();
+  for (const cache of ['', 'relative', '~/not-expanded', path.join(f.root, 'absolute-cache')]) {
+    const release = await loadRelease({
+      ...f.options,
+      platform: 'linux',
+      arch: 'x64',
+      env: { HOME: path.join(f.root, 'home'), XDG_CACHE_HOME: cache },
+    });
+    const base = path.isAbsolute(cache) ? cache : path.join(f.root, 'home', '.cache');
+    assert.ok(release.binary.startsWith(path.join(base, 'browser-bridge', 'npm') + path.sep));
+  }
+});
+
 test('npm bootstrap rejects missing or malformed release metadata before download', async (t) => {
   const f = await fixture(t);
   const filename = path.join(f.root, 'packages/npm/native-manifest.json');

@@ -14,7 +14,7 @@ Permission prompts are controlled by the host agent, not by Browser Bridge. In p
 Skill name: `browser-bridge` (also known as `bbx`). In GitHub Copilot, invoke as `/browser-bridge`. `bbx` is the CLI command used throughout this skill.
 When the runtime supports subagents, delegate bridge inspection to a smaller, lower-cost worker and return only concise findings to the parent.
 For open-ended investigation, start with structured reads (`page.get_state`, `dom.query`, `page.get_text`, `page.extract_content`, `styles.get_computed`, and `bbx batch` for CLI or `browser_batch` for MCP) and escalate to screenshots or debugger-backed methods only when structured evidence is insufficient. `browser_call` accepts one protocol method at a time; `batch` is not a valid `browser_call` method.
-When an unfamiliar method is needed, run `bbx protocol describe <method|group>` before guessing parameters. In MCP mode, call `browser_call` with method `protocol.describe` and params `{ "method": "dom.query" }` or `{ "group": "inspect" }`.
+When an unfamiliar method is needed, run `bbx protocol describe <method|group>` before guessing parameters. Exact-method discovery includes input schemas and minimal examples for common inspection and input methods; group listings stay compact. In MCP mode, call `browser_call` with method `protocol.describe` and params `{ "method": "dom.query" }` or `{ "group": "inspect" }`.
 MCP exposes a compact tool surface. If `browser_toolset` is available on a legacy connection, load one specialized typed tool only when needed, for example `{ "tool": "browser_dom" }`. Modern stateless connections use a fixed surface with `browser_skill` instead. `browser_call` remains the universal path in both eras.
 
 ## CLI
@@ -225,7 +225,7 @@ they contain no page data, URLs, selectors, payloads, errors, or group names.
 ## Core Rules
 
 1. **Work in existing tabs** - Never create new tabs unless the user explicitly asks for it, or the task absolutely requires a fresh page (e.g., testing a clean state, comparing across URLs). Prefer `tabs.list` to find an appropriate existing tab.
-2. **Structured first** - `dom.query` → `styles.get_computed` → `layout.get_box_model` before screenshots.
+2. **Use the shortest sufficient path** - act directly with a semantic locator when the target and intended action are known. For discovery, use the DOM outline (`source: "dom"`); for inspection, use scoped DOM, style, and layout reads before screenshots.
 3. **Budget tight** - `maxNodes≤20`, `maxDepth≤4`, `textBudget≤800`. Always set allowlists.
 4. **Reuse refs** - use returned `elementRef` for follow-ups; don't rescan.
 5. **Style before DOM** - `patch.apply_styles` before `patch.apply_dom`.

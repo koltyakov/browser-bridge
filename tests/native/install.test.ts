@@ -58,6 +58,7 @@ test(
           'build',
           '-trimpath',
           '-buildvcs=false',
+          '-tags=nethttpomithttp2',
           '-gcflags=all=-l',
           '-ldflags',
           '-s -w',
