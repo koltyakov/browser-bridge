@@ -1551,7 +1551,7 @@
     {
       "name": "browser_call",
       "title": "Raw Browser Bridge Call",
-      "description": "Call any bridge method by name through one approvable MCP tool. For unfamiliar parameters, protocol.describe with params.method returns on-demand schemas and examples for common methods. Act directly on known semantic targets. For known authorized multi-step flows, use input.perform with returnLastResult: true for input, waits, and final bounded evidence in one call. Stop for decisions requiring new evidence or approval; never blindly replay a partial flow.",
+      "description": "Call any bridge method by name through one approvable MCP tool. For unfamiliar parameters, protocol.describe with params.method returns on-demand schemas and examples for common methods. Act directly on known semantic targets. For authorized known flows, input.perform combines ordered steps, optional DOM/URL/fresh fetch-XHR outcomes, and returnLastResult for bounded final evidence. OUTCOME_NOT_MET is not retryable. Stop for new decisions or approval; never blindly replay a partial flow.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",

@@ -1230,11 +1230,86 @@ export function normalizeInputPerformParams(params = {}) {
       atMs,
     };
   });
+  /** @type {import('./types.js').NormalizedPerformOutcome[] | undefined} */
+  let outcomes;
+  if (params.outcomes !== undefined) {
+    if (
+      !Array.isArray(params.outcomes) ||
+      params.outcomes.length < 1 ||
+      params.outcomes.length > 8 ||
+      params.continueOnError === true
+    )
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        'outcomes must contain 1 to 8 conditions and requires continueOnError=false.'
+      );
+    const rawOutcomes = /** @type {unknown[]} */ (params.outcomes);
+    outcomes = rawOutcomes.map((condition, index) => {
+      if (!isPlainRecord(condition))
+        throw new BridgeError(ERROR_CODES.INVALID_REQUEST, `outcomes[${index}] must be an object.`);
+      if (condition.kind === 'dom') {
+        if (typeof condition.selector !== 'string' || !condition.selector.trim())
+          throw new BridgeError(
+            ERROR_CODES.INVALID_REQUEST,
+            'DOM outcomes require a non-empty selector.'
+          );
+        return { kind: 'dom', ...normalizeWaitForParams({ ...condition, timeoutMs }) };
+      }
+      if (condition.kind === 'url') {
+        if (typeof condition.url !== 'string' || !condition.url.trim())
+          throw new BridgeError(
+            ERROR_CODES.INVALID_REQUEST,
+            'URL outcomes require a non-empty url.'
+          );
+        return {
+          kind: 'url',
+          ...normalizeWaitForLoadStateParams({ ...condition, waitForLoad: false, timeoutMs }),
+        };
+      }
+      if (
+        condition.kind !== 'network' ||
+        typeof condition.urlPattern !== 'string' ||
+        !condition.urlPattern.trim() ||
+        condition.urlPattern.length > 500
+      )
+        throw new BridgeError(
+          ERROR_CODES.INVALID_REQUEST,
+          'Network outcomes require a non-empty urlPattern of at most 500 characters.'
+        );
+      const method = condition.method == null ? null : condition.method;
+      if (method !== null && (typeof method !== 'string' || !/^[A-Za-z]{1,16}$/u.test(method)))
+        throw new BridgeError(
+          ERROR_CODES.INVALID_REQUEST,
+          'Network outcome method must be an HTTP method.'
+        );
+      const statusMin = condition.statusMin ?? 200;
+      const statusMax = condition.statusMax ?? 299;
+      if (
+        !Number.isInteger(statusMin) ||
+        !Number.isInteger(statusMax) ||
+        Number(statusMin) < 0 ||
+        Number(statusMax) > 599 ||
+        Number(statusMin) > Number(statusMax)
+      )
+        throw new BridgeError(
+          ERROR_CODES.INVALID_REQUEST,
+          'Network outcome status bounds must be integers from 0 to 599, in order.'
+        );
+      return {
+        kind: 'network',
+        urlPattern: condition.urlPattern,
+        method: method?.toUpperCase() ?? null,
+        statusMin: Number(statusMin),
+        statusMax: Number(statusMax),
+      };
+    });
+  }
   return {
     steps,
     timeoutMs,
     continueOnError: params.continueOnError === true,
     returnLastResult: params.returnLastResult === true,
+    ...(outcomes ? { outcomes } : {}),
   };
 }
 

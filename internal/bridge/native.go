@@ -76,6 +76,7 @@ func nativeToDaemon(message object) object {
 	}
 	switch kind {
 	case "host.setup_status.request", "host.identity", "host.access_update", "host.activity",
+		"host.mutation_ready",
 		"host.window_action.request", "host.window_action.result", "host.journal.begin", "host.journal.append",
 		"host.artifact.begin", "host.artifact.append", "host.artifact.finish", "host.artifact.abort":
 		message["type"] = value("extension." + strings.TrimPrefix(kind, "host."))
@@ -95,6 +96,7 @@ func daemonToNative(message object) object {
 	}
 	switch kind {
 	case "extension.request_cancelled", "extension.artifact.ack", "extension.owner_disconnected", "extension.window_access", "extension.window_action.command",
+		"extension.mutation_granted",
 		"extension.journal.ack", "extension.window_action.response", "extension.setup_status.response", "extension.setup_status.error":
 		message["type"] = value("host." + strings.TrimPrefix(kind, "extension."))
 		return message

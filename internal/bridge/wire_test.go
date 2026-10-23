@@ -181,7 +181,7 @@ func TestDaemonQueueAcceptsExactPayloadLimit(t *testing.T) {
 }
 
 func TestNativeControlMessagesPreserveOwnershipAndPayloads(t *testing.T) {
-	for _, kind := range []string{"host.identity", "host.access_update", "host.artifact.begin", "host.journal.append", "host.window_action.result"} {
+	for _, kind := range []string{"host.identity", "host.access_update", "host.artifact.begin", "host.journal.append", "host.window_action.result", "host.mutation_ready"} {
 		message := object{"type": value(kind), "ownerId": value("owner-1"), "data": value("AA==")}
 		translated := nativeToDaemon(message)
 		if translated.text("type") != strings.Replace(kind, "host.", "extension.", 1) || translated.text("ownerId") != "owner-1" || translated.text("data") != "AA==" {
@@ -191,6 +191,10 @@ func TestNativeControlMessagesPreserveOwnershipAndPayloads(t *testing.T) {
 	message := daemonToNative(object{"type": value("extension.owner_disconnected"), "ownerId": value("owner-1")})
 	if message.text("type") != "host.owner_disconnected" || message.text("ownerId") != "owner-1" {
 		t.Fatal("lost owner disconnect event")
+	}
+	grant := daemonToNative(object{"type": value("extension.mutation_granted"), "requestId": value("request-1")})
+	if grant.text("type") != "host.mutation_granted" || grant.text("requestId") != "request-1" {
+		t.Fatal("lost mutation scheduling grant")
 	}
 }
 

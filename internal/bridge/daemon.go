@@ -54,6 +54,8 @@ type pendingRequest struct {
 	baselineID string
 	localError object
 	started    time.Time
+	prepared   time.Time
+	dispatched time.Time
 	meta       object
 }
 
@@ -77,6 +79,8 @@ type daemon struct {
 	stopping                          bool
 	windowActions                     map[string]*pendingWindowAction
 	telemetry                         recoveryTelemetry
+	scheduler                         mutationScheduler
+	timings                           requestTimingMetrics
 	started                           time.Time
 	processed, failed, responseMillis int64
 }
@@ -417,6 +421,9 @@ func (d *daemon) identity(p *peer, message object) {
 	if message.boolean("windowActions") {
 		p.windowControl = true
 	}
+	if message.boolean("mutationScheduling") {
+		p.identity["mutationScheduling"] = value(true)
+	}
 }
 
 func (d *daemon) snapshot() []object {
@@ -426,6 +433,9 @@ func (d *daemon) snapshot() []object {
 			continue
 		}
 		entry := object{"extensionId": value(p.id), "accessEnabled": value(p.access)}
+		if p.identity.boolean("mutationScheduling") {
+			entry["mutationScheduling"] = value(true)
+		}
 		for _, key := range []string{"browserExtensionId", "browserName", "profileLabel"} {
 			entry[key] = value[*string](nil)
 			if v, ok := p.identity[key]; ok {
@@ -491,6 +501,8 @@ func (d *daemon) handle(p *peer, message object) {
 	switch kind {
 	case "extension.response":
 		d.response(p, message.object("response"))
+	case "extension.mutation_ready":
+		d.mutationReady(p, message)
 	case "extension.identity":
 		d.identity(p, message)
 		d.windows()
@@ -500,6 +512,7 @@ func (d *daemon) handle(p *peer, message object) {
 		if p.access {
 			p.window = normalizeEnabledWindow(message.object("enabledWindow"))
 		} else {
+			d.revokeMutations(p)
 			d.cleanupArtifacts("", "", p.id, false)
 			d.disconnectRecordings(p.id)
 			d.baselines.clear(p)
@@ -624,7 +637,7 @@ func (d *daemon) route(p *peer, request object) {
 		if d.processed > 0 {
 			average = (d.responseMillis + d.processed/2) / d.processed
 		}
-		d.localResponse(p, request, success(id, object{"uptimeMs": value(uptime), "activeAgents": value(agents), "pendingRequests": value(len(d.pending)), "activeExtensions": value(len(d.snapshot())), "requestsProcessed": value(d.processed), "requestsFailed": value(d.failed), "avgResponseTimeMs": value(average), "domBaselineOwners": value(len(d.baselines.owners)), "recovery": value(d.telemetry.snapshot("daemon"))}))
+		d.localResponse(p, request, success(id, object{"uptimeMs": value(uptime), "activeAgents": value(agents), "pendingRequests": value(len(d.pending)), "activeExtensions": value(len(d.snapshot())), "requestsProcessed": value(d.processed), "requestsFailed": value(d.failed), "avgResponseTimeMs": value(average), "domBaselineOwners": value(len(d.baselines.owners)), "scheduler": value(d.schedulerMetrics()), "timings": value(d.timings.snapshot()), "recovery": value(d.telemetry.snapshot("daemon"))}))
 		return
 	case "protocol.describe":
 		d.localResponse(p, request, success(id, describe(params)))
@@ -716,6 +729,11 @@ func (d *daemon) route(p *peer, request object) {
 	meta["deadline_ms"] = value(time.Now().Add(timeout).UnixMilli())
 	request["id"], request["meta"] = value(routedID), value(meta)
 	pending := &pendingRequest{owner: p, target: target, original: id, method: method, baselineID: params.text("baselineId"), started: time.Now(), meta: meta}
+	if !d.scheduleMutation(routedID, pending) {
+		d.localResponse(p, request, failure(id, "INVALID_REQUEST", "Mutation scheduling capacity reached. Wait for running work to settle."))
+		return
+	}
+	request["meta"] = value(meta)
 	d.pending[routedID] = pending
 	p.pending++
 	pending.timer = time.AfterFunc(timeout, func() {
@@ -761,6 +779,7 @@ func (d *daemon) finish(id string, response object) {
 	}
 	pending.timer.Stop()
 	delete(d.pending, id)
+	d.cancelMutation(id)
 	pending.owner.pending--
 	if artifactKind(pending.method) != "" {
 		d.cleanupArtifacts(id, "", "", response.boolean("ok"))
@@ -773,6 +792,7 @@ func (d *daemon) finish(id string, response object) {
 	}
 	meta["method"] = value(pending.method)
 	meta["protocol_version"] = value(protocolVersion())
+	meta["timing"] = value(requestTiming(pending))
 	response["meta"] = value(meta)
 	protectResponseRecovery(response, pending.method)
 	if response.boolean("ok") && pending.method == "dom.baseline.create" {
@@ -813,6 +833,7 @@ func (d *daemon) response(p *peer, response object) {
 	id := response.text("id")
 	pending := d.pending[id]
 	if pending == nil {
+		d.removeMutation(id, p)
 		if d.baselines.abandoned[id].target == p {
 			delete(d.baselines.abandoned, id)
 			if response.boolean("ok") {
@@ -828,6 +849,7 @@ func (d *daemon) response(p *peer, response object) {
 		d.finish(id, failure(id, "INVALID_REQUEST", "Malformed extension response."))
 		return
 	}
+	d.removeMutation(id, p)
 	if artifactKind(pending.method) != "" {
 		if !d.store(len(value(response)), false, func() func() {
 			valid := true
@@ -895,6 +917,7 @@ func (d *daemon) disconnect(p *peer) {
 			d.recordCompletion(pending, false)
 			pending.timer.Stop()
 			delete(d.pending, id)
+			d.cancelMutation(id)
 			p.pending--
 		} else if pending.target == p {
 			d.finish(id, failure(pending.original, "EXTENSION_DISCONNECTED", "The selected browser profile disconnected."))
@@ -909,6 +932,11 @@ func (d *daemon) disconnect(p *peer) {
 		delete(other.dataTargets, p)
 	}
 	if p.role == "extension" {
+		for id, entry := range d.scheduler.entries {
+			if entry.target == p {
+				d.removeMutation(id, p)
+			}
+		}
 		d.windows()
 	}
 }

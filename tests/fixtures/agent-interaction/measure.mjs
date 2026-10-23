@@ -1,7 +1,8 @@
 // @ts-check
 
 /** @typedef {import('../../../protocol/types.js').BridgeMethod} BridgeMethod */
-/** @typedef {{ok: true, result: unknown, tokens: number} | {ok: false, result: null, error: {message: string, code: string}, tokens: number}} BridgeResponse */
+/** @typedef {{preparationMs: number, queueMs: number, executionMs: number, totalMs: number, scheduled: boolean}} BridgeTiming */
+/** @typedef {({ok: true, result: unknown, tokens: number} | {ok: false, result: null, error: {message: string, code: string}, tokens: number}) & {timing?: BridgeTiming}} BridgeResponse */
 /** @typedef {(method: BridgeMethod, params?: Record<string, unknown>) => Promise<BridgeResponse>} Call */
 /** @typedef {{name: string, run: (call: Call) => Promise<unknown>, verify: (state: Record<string, unknown>, last: BridgeResponse | null) => boolean}} Scenario */
 
@@ -34,6 +35,16 @@ export async function measureScenario(scenario, request, now = () => performance
   let actionFailed = false;
   /** @type {string | undefined} */
   let actionError;
+  const bridgeTiming = {
+    preparationMs: 0,
+    queueMs: 0,
+    executionMs: 0,
+    totalMs: 0,
+    scheduledCalls: 0,
+  };
+  let timingSamples = 0;
+  const timingEvidence = () =>
+    timingSamples ? { bridgeTiming: { ...bridgeTiming, samples: timingSamples } } : {};
   const started = now();
   /** @type {Call} */
   const call = async (method, params = {}) => {
@@ -42,6 +53,19 @@ export async function measureScenario(scenario, request, now = () => performance
     tokens += last.tokens;
     actionFailed ||= !last.ok;
     if (!last.ok) actionError ??= last.error.code;
+    if (last.timing) {
+      timingSamples += 1;
+      for (const key of /** @type {const} */ ([
+        'preparationMs',
+        'queueMs',
+        'executionMs',
+        'totalMs',
+      ])) {
+        const ms = last.timing[key];
+        if (typeof ms === 'number' && Number.isFinite(ms) && ms >= 0) bridgeTiming[key] += ms;
+      }
+      if (last.timing.scheduled) bridgeTiming.scheduledCalls += 1;
+    }
     return last;
   };
   try {
@@ -55,6 +79,7 @@ export async function measureScenario(scenario, request, now = () => performance
       ms: now() - started,
       verification: { calls: 0, tokens: 0, ms: 0 },
       error: error instanceof Error ? error.message : String(error),
+      ...timingEvidence(),
     };
   }
   const ms = now() - started;
@@ -81,6 +106,7 @@ export async function measureScenario(scenario, request, now = () => performance
       ms,
       verification,
       ...(!ok ? { error: actionError ?? 'Postcondition failed' } : {}),
+      ...timingEvidence(),
     };
   } catch (error) {
     verification.ms = now() - verifying;
@@ -92,6 +118,7 @@ export async function measureScenario(scenario, request, now = () => performance
       ms,
       verification,
       error: error instanceof Error ? error.message : String(error),
+      ...timingEvidence(),
     };
   }
 }

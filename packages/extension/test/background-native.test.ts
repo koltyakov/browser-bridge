@@ -1484,12 +1484,12 @@ test('background native page.get_network falls back to an empty buffer when the 
     {
       target: { tabId: 75 },
       world: 'MAIN',
-      args: [executeScriptCalls[0].args?.[0]],
+      args: [executeScriptCalls[0].args?.[0], executeScriptCalls[0].args?.[1]],
     },
     {
       target: { tabId: 75 },
       world: 'MAIN',
-      args: [false, executeScriptCalls[0].args?.[0]],
+      args: [false, executeScriptCalls[0].args?.[0], false],
     },
   ]);
 });

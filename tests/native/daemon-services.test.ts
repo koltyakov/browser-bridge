@@ -1050,8 +1050,11 @@ test(
     );
     const health = await pending;
     assert.equal(health.ok, true);
+    const { timing, ...healthMeta } = health.meta;
+    assert.equal(record(timing).scheduled, false);
+    assert.equal(typeof record(timing).totalMs, 'number');
     assert.deepEqual(
-      health.meta,
+      healthMeta,
       { protocol_version: getProtocolVersion(), method: 'health.ping' },
       'health reconstruction must discard extension-owned cost/meta fields'
     );

@@ -22,6 +22,7 @@
       "browserExtensionId": "wire-✓",
       "windowAccessUpdates": false,
       "windowActions": false,
+      "mutationScheduling": false,
       "future_extension": {
         "arbitrary": [
           null,
@@ -209,6 +210,7 @@
       },
       "windowAccessUpdates": false,
       "windowActions": false,
+      "mutationScheduling": false,
       "action": {
         "arbitrary": [
           null,
@@ -626,7 +628,7 @@
       "ok": false,
       "result": null,
       "error": {
-        "code": "WEBMCP_UNAVAILABLE",
+        "code": "OUTCOME_NOT_MET",
         "message": "wire-✓",
         "details": {
           "arbitrary": [
@@ -684,7 +686,7 @@
     "type": "BridgeFailure",
     "valid": true,
     "input": {
-      "code": "WEBMCP_UNAVAILABLE",
+      "code": "OUTCOME_NOT_MET",
       "message": "wire-✓",
       "details": {
         "arbitrary": [
@@ -721,7 +723,7 @@
   {
     "type": "ErrorCode",
     "valid": true,
-    "input": "WEBMCP_UNAVAILABLE"
+    "input": "OUTCOME_NOT_MET"
   },
   {
     "type": "BridgeRecovery",
@@ -1126,6 +1128,39 @@
       "maxBytes": 1.25,
       "timeoutMs": 1.25,
       "approvalTimeoutMs": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "MutationReadyMessage",
+    "valid": true,
+    "input": {
+      "type": "host.mutation_ready",
+      "requestId": "wire-✓",
+      "tabId": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "MutationGrantedMessage",
+    "valid": true,
+    "input": {
+      "type": "host.mutation_granted",
+      "requestId": "wire-✓",
       "future_extension": {
         "arbitrary": [
           null,
@@ -2866,6 +2901,160 @@
       "timeoutMs": 1.25,
       "continueOnError": false,
       "returnLastResult": false,
+      "outcomes": [
+        {
+          "kind": "dom",
+          "selector": "wire-✓",
+          "text": "wire-✓",
+          "state": "attached",
+          "timeoutMs": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        }
+      ],
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "PerformOutcomeParams",
+    "valid": true,
+    "input": {
+      "kind": "dom",
+      "selector": "wire-✓",
+      "text": "wire-✓",
+      "state": "attached",
+      "timeoutMs": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "WaitForParams",
+    "valid": true,
+    "input": {
+      "selector": "wire-✓",
+      "text": "wire-✓",
+      "state": "attached",
+      "timeoutMs": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "WaitForLoadStateParams",
+    "valid": true,
+    "input": {
+      "waitForLoad": false,
+      "timeoutMs": 1.25,
+      "url": "wire-✓",
+      "urlMatch": "exact",
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "NormalizedPerformOutcome",
+    "valid": true,
+    "input": {
+      "kind": "dom",
+      "selector": "wire-✓",
+      "text": "wire-✓",
+      "state": "attached",
+      "timeoutMs": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "NormalizedWaitForParams",
+    "valid": true,
+    "input": {
+      "selector": "wire-✓",
+      "text": "wire-✓",
+      "state": "attached",
+      "timeoutMs": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "NormalizedWaitForLoadStateParams",
+    "valid": true,
+    "input": {
+      "waitForLoad": false,
+      "timeoutMs": 1.25,
+      "url": "wire-✓",
+      "urlMatch": "exact",
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "PerformOutcomeResult",
+    "valid": true,
+    "input": {
+      "index": 1.25,
+      "kind": "dom",
+      "status": "matched",
+      "evidence": {
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
       "future_extension": {
         "arbitrary": [
           null,
@@ -2935,6 +3124,23 @@
       "timeoutMs": 1.25,
       "continueOnError": false,
       "returnLastResult": false,
+      "outcomes": [
+        {
+          "kind": "dom",
+          "selector": "wire-✓",
+          "text": "wire-✓",
+          "state": "attached",
+          "timeoutMs": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        }
+      ],
       "future_extension": {
         "arbitrary": [
           null,
@@ -3054,6 +3260,32 @@
           ]
         }
       },
+      "verified": false,
+      "outcomes": [
+        {
+          "index": 1.25,
+          "kind": "dom",
+          "status": "matched",
+          "evidence": {
+            "future_extension": {
+              "arbitrary": [
+                null,
+                false,
+                0,
+                "JSON"
+              ]
+            }
+          },
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        }
+      ],
       "future_extension": {
         "arbitrary": [
           null,
@@ -3660,42 +3892,6 @@
       "level": "wire-✓",
       "clear": false,
       "limit": 1.25,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "WaitForParams",
-    "valid": true,
-    "input": {
-      "selector": "wire-✓",
-      "text": "wire-✓",
-      "state": "attached",
-      "timeoutMs": 1.25,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "NormalizedWaitForParams",
-    "valid": true,
-    "input": {
-      "selector": "wire-✓",
-      "text": "wire-✓",
-      "state": "attached",
-      "timeoutMs": 1.25,
       "future_extension": {
         "arbitrary": [
           null,
@@ -4528,42 +4724,6 @@
           ]
         }
       },
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "WaitForLoadStateParams",
-    "valid": true,
-    "input": {
-      "waitForLoad": false,
-      "timeoutMs": 1.25,
-      "url": "wire-✓",
-      "urlMatch": "exact",
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "NormalizedWaitForLoadStateParams",
-    "valid": true,
-    "input": {
-      "waitForLoad": false,
-      "timeoutMs": 1.25,
-      "url": "wire-✓",
-      "urlMatch": "exact",
       "future_extension": {
         "arbitrary": [
           null,

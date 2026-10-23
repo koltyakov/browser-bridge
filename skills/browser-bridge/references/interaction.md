@@ -291,6 +291,38 @@ For an action as the final step, set its `observe: true` to receive effects with
 
 Stop the sequence at any decision that requires new evidence or user approval. Keep `continueOnError` off for dependent steps. On failure, inspect progress and postconditions before deciding what to do next; mutations are not rolled back and must not be blindly retried.
 
+### Verify outcomes in the same call
+
+Add `outcomes` to require up to eight final conditions. All must match; `continueOnError: true` is not allowed with outcomes.
+
+```bash
+bbx call input.perform '{
+  "timeoutMs":10000,
+  "steps":[
+    {"method":"input.fill","params":{"target":{"label":"Name"},"value":"Ada"}},
+    {"method":"input.click","params":{"target":{"role":"button","name":"Save"}}}
+  ],
+  "outcomes":[
+    {"kind":"network","urlPattern":"/api/profile","method":"POST","statusMin":200,"statusMax":299},
+    {"kind":"dom","selector":"[role=status]","text":"Saved","state":"visible"}
+  ]
+}'
+```
+
+- `dom` uses the existing selector/text/state wait. `url` uses a `url` condition and `urlMatch: "exact" | "contains" | "regex"`. These check state after the steps, so an already-satisfied condition is not proof of causation.
+- `network` arms the default top-document fetch/XHR interceptor before any steps. It matches the first completed response for a request started after arming. `urlPattern` is a literal substring of the sanitized URL, not a regex; `method` is optional, and status bounds default to 200..299. No bodies, headers, or debugger capture are enabled.
+- Network metadata comes from the page's main world and remains untrusted. Matching traffic is evidence, not proof it was caused by the action. Use a narrow path and method, and combine it with application-state checks.
+- Successful verification returns `verified: true` and bounded `outcomes`. Each condition reports `matched`, `failed`, `timeout`, or `interrupted`. A buffer clear, dropped capture, or document replacement cannot be silently reported as verified.
+- Unmet conditions return `OUTCOME_NOT_MET`, completed-step progress, outcomes, and an uncertainty flag. The sequence is never automatically replayed. Inspect application postconditions before another deliberate mutation.
+
+### Concurrent agents
+
+With a scheduling-capable daemon and extension, page mutations are scheduled per browser connection and resolved tab. An entire `input.perform` holds one slot; other tabs can proceed independently. The extension pins implicit working tabs and rejects queued actions after navigation, document replacement, tab movement, or access-grant replacement.
+
+Reads remain concurrent and may observe intermediate state. Scheduling does not authorize parallel input tool calls, take focus, or make application changes transactional. Caller cancellation does not free a running slot until the extension reports that execution settled. `health.ping.connectedExtensions[].mutationScheduling` identifies supporting connections; older components retain their previous behavior.
+
+Response `timing` reports `preparationMs`, `queueMs`, `executionMs`, `totalMs`, and `scheduled`. Execution includes transport and browser work, not only DOM CPU time. `daemon.metrics` includes queue occupancy and fixed-histogram timing summaries; percentile fields are upper bounds rather than exact samples.
+
 ## Timed sequences
 
 Every tool call costs an agent round-trip, so steps sent one call at a time arrive seconds apart, and steps sent as parallel tool calls all land at once. When timing matters (music, games, animations, gestures, quick reactions), send the whole schedule as one `input.perform`:
