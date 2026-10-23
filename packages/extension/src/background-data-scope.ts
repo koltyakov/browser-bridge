@@ -1,6 +1,7 @@
 import { BridgeError, ERROR_CODES } from '../../../protocol/src/index.js';
 import { sameWindowGrant } from './background-access.js';
 import { normalizeAgentSession } from './background-agent-tabs.js';
+import { requestLifetimes } from './background-request-lifetime.js';
 
 export type BridgeRequest = import('../../../protocol/src/types.js').BridgeRequest;
 export type DataScopeDependencies = {
@@ -21,6 +22,7 @@ export async function resolveDataRequestScope(request: BridgeRequest, deps: Data
   const access = deps.state.enabledWindow ? { ...deps.state.enabledWindow } : null;
   const port = deps.state.nativePort;
   const transportOwner = request.meta?.transport_owner;
+  const assertActive = requestLifetimes.guard(request.id);
   if (typeof transportOwner !== 'string' || !transportOwner) {
     throw new BridgeError(
       ERROR_CODES.ACCESS_DENIED,
@@ -28,6 +30,7 @@ export async function resolveDataRequestScope(request: BridgeRequest, deps: Data
     );
   }
   const assertScope = () => {
+    assertActive();
     if (
       !sameWindowGrant(access, deps.state.enabledWindow) ||
       port !== deps.state.nativePort ||

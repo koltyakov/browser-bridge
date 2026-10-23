@@ -34,7 +34,7 @@ endif
 	check-release-version check check-extension-zip package-extension package-native \
 	package-native-all package-npm pack pack-dry-run release-check prepublish-check \
 	publish-native publish-npm fixture-browser fixture-interaction bench-interaction \
-	run status daemon install-manifest install sync-version
+	run status daemon install-manifest install sync-version bench-runtime
 
 help: ## Show available tasks; the default when running make
 	@"$(NODE)" -e "const fs = require('node:fs'); for (const m of fs.readFileSync('Makefile', 'utf8').matchAll(/^([a-z][a-z-]+):.*?## (.+)$$/gm)) console.log(m[1].padEnd(24) + m[2]);"
@@ -169,6 +169,9 @@ fixture-interaction: ## Start the agent interaction fixture
 
 bench-interaction: build-native ## Run the interaction benchmark
 	"$(NODE)" tests/fixtures/agent-interaction/bench.mjs $(ARGS)
+
+bench-runtime: ## Benchmark daemon routing while storage is blocked; optional ARGS='-benchtime=2s'
+	$(GO) test -run '^$$' -bench BenchmarkDaemonHealthWhileStorageBlocked -benchmem $(ARGS) ./internal/bridge
 
 run: generate-protocol ## Run the workspace Go CLI; e.g. make run ARGS='call health.ping'
 	$(GO) run -ldflags="$(DEVELOPMENT_LDFLAGS)" ./cmd/bbx $(ARGS)

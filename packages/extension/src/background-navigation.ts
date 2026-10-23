@@ -5,6 +5,7 @@ import {
   normalizeNavigationAction,
 } from '../../../protocol/src/index.js';
 import { summarizeTabResult } from './background-helpers.js';
+import { requestLifetimes } from './background-request-lifetime.js';
 
 export type BridgeRequest = import('../../../protocol/src/types.js').BridgeRequest;
 export type BridgeResponse = import('../../../protocol/src/types.js').BridgeResponse;
@@ -37,7 +38,12 @@ export async function handleNavigationRequest(
   request: BridgeRequest,
   dependencies: HandleNavigationRequestDependencies
 ): Promise<BridgeResponse> {
-  const assertAccess = dependencies.captureAccess?.() ?? (() => {});
+  const assertGrant = dependencies.captureAccess?.() ?? (() => {});
+  const assertActive = requestLifetimes.guard(request.id);
+  const assertAccess = () => {
+    assertActive();
+    assertGrant();
+  };
   const target = await dependencies.resolveRequestTarget(request);
   assertAccess();
   const action = normalizeNavigationAction(request.params);

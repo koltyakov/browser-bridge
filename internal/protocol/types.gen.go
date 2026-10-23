@@ -460,6 +460,10 @@ type BridgeMeta struct {
 
 	TransportOwner Optional[string] `json:"transport_owner,omitzero"`
 
+	DeadlineMs Optional[float64] `json:"deadline_ms,omitzero"`
+
+	ArtifactAck Optional[bool] `json:"artifact_ack,omitzero"`
+
 	TabID Optional[float64] `json:"tab_id,omitzero"`
 
 	TabRouting Optional[string] `json:"tab_routing,omitzero"`
@@ -471,13 +475,13 @@ type BridgeMeta struct {
 
 func (v BridgeMeta) MarshalJSON() ([]byte, error) {
 	type alias BridgeMeta
-	return marshalOpen(alias(v), v.Extra, []string{"target_extension", "target_browser", "target_profile", "protocol_version", "token_budget", "transport_bytes", "transport_approx_tokens", "transport_cost_class", "text_bytes", "text_approx_tokens", "text_cost_class", "image_approx_tokens", "image_bytes", "source", "mcp_era", "response_bytes", "approx_tokens", "cost_class", "debugger_backed", "budget_applied", "budget_truncated", "continuation_hint", "automatic_retry", "stale_recovery", "agent_session", "transport_owner", "tab_id", "tab_routing", "active_tab_id"})
+	return marshalOpen(alias(v), v.Extra, []string{"target_extension", "target_browser", "target_profile", "protocol_version", "token_budget", "transport_bytes", "transport_approx_tokens", "transport_cost_class", "text_bytes", "text_approx_tokens", "text_cost_class", "image_approx_tokens", "image_bytes", "source", "mcp_era", "response_bytes", "approx_tokens", "cost_class", "debugger_backed", "budget_applied", "budget_truncated", "continuation_hint", "automatic_retry", "stale_recovery", "agent_session", "transport_owner", "deadline_ms", "artifact_ack", "tab_id", "tab_routing", "active_tab_id"})
 }
 
 func (v *BridgeMeta) UnmarshalJSON(data []byte) error {
 	type alias BridgeMeta
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"target_extension", "target_browser", "target_profile", "protocol_version", "token_budget", "transport_bytes", "transport_approx_tokens", "transport_cost_class", "text_bytes", "text_approx_tokens", "text_cost_class", "image_approx_tokens", "image_bytes", "source", "mcp_era", "response_bytes", "approx_tokens", "cost_class", "debugger_backed", "budget_applied", "budget_truncated", "continuation_hint", "automatic_retry", "stale_recovery", "agent_session", "transport_owner", "tab_id", "tab_routing", "active_tab_id"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"target_extension", "target_browser", "target_profile", "protocol_version", "token_budget", "transport_bytes", "transport_approx_tokens", "transport_cost_class", "text_bytes", "text_approx_tokens", "text_cost_class", "image_approx_tokens", "image_bytes", "source", "mcp_era", "response_bytes", "approx_tokens", "cost_class", "debugger_backed", "budget_applied", "budget_truncated", "continuation_hint", "automatic_retry", "stale_recovery", "agent_session", "transport_owner", "deadline_ms", "artifact_ack", "tab_id", "tab_routing", "active_tab_id"})
 	if err != nil {
 		return err
 	}

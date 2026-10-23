@@ -51,6 +51,10 @@ test('WebMCP discovery, schema, and approved execution preserve JSON through cli
       params: { toolRef, arguments: { query: 'item-123' } },
     });
     const dispatched = await extension.nextRequest();
+    assert(
+      Number(dispatched.meta.deadline_ms) - Date.now() > 60000,
+      'Daemon deadline must include approval and execution, not just callback timeout'
+    );
     assert.equal(dispatched.method, 'webmcp.execute_tool');
     assert.deepEqual(dispatched.params.arguments, { query: 'item-123' });
     extension.respondError(dispatched, 'WEBMCP_APPROVAL_DENIED', 'User declined.');

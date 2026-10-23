@@ -303,8 +303,52 @@ func (d *daemon) artifactMessage(p *peer, message object) {
 	requestID := a.text("requestId")
 	pending := d.pending[requestID]
 	if pending == nil || pending.target != p || pending.owner.role != "agent" {
+		d.artifactAck(p, message, errors.New("Artifact request is no longer active."))
 		return
 	}
+	var barrier chan struct{}
+	if d.storage != nil && !validID(message.text("messageId")) {
+		// Legacy extensions enqueue all chunks without acknowledgements. Slow
+		// only this connection's reads, never daemon routing, until its write
+		// settles so a valid large transfer cannot overflow the storage queue.
+		barrier = make(chan struct{})
+		p.legacyArtifactBarrier = barrier
+	}
+	if !d.store(len(value(message)), false, func() func() {
+		err := d.writeArtifactMessage(p, pending, message)
+		return func() {
+			if barrier != nil {
+				defer close(barrier)
+			}
+			if err != nil && d.pending[requestID] == pending && pending.localError == nil {
+				pending.localError = serviceResponse(requestID, nil, err, "ARTIFACT_TRANSFER_INVALID")
+			}
+			d.artifactAck(p, message, err)
+		}
+	}) {
+		if barrier != nil {
+			close(barrier)
+		}
+		err := serviceFailure("ARTIFACT_QUOTA_EXCEEDED", "Artifact storage queue capacity reached.")
+		pending.localError = serviceResponse(requestID, nil, err, "ARTIFACT_TRANSFER_INVALID")
+		d.artifactAck(p, message, err)
+	}
+}
+
+func (d *daemon) artifactAck(p *peer, message object, err error) {
+	if !validID(message.text("messageId")) {
+		return
+	}
+	ack := object{"type": value("extension.artifact.ack"), "messageId": message["messageId"]}
+	if err != nil {
+		ack["error"] = value(err.Error())
+	}
+	p.send(ack)
+}
+
+func (d *daemon) writeArtifactMessage(p *peer, pending *pendingRequest, message object) error {
+	a := message.object("artifact")
+	requestID := a.text("requestId")
 	var err error
 	id := message.text("artifactId")
 	switch message.text("type") {
@@ -328,7 +372,5 @@ func (d *daemon) artifactMessage(p *peer, message object) {
 			err = serviceFailure("ARTIFACT_TRANSFER_INVALID", "Invalid artifact chunk index.")
 		}
 	}
-	if err != nil && pending.localError == nil {
-		pending.localError = serviceResponse(requestID, nil, err, "ARTIFACT_TRANSFER_INVALID")
-	}
+	return err
 }

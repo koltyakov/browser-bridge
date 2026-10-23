@@ -88,6 +88,19 @@ function createNativePortStub(): FakeRuntimePort {
   const onMessage = createChromeEvent();
   return {
     postMessage(message: unknown) {
+      if (
+        message &&
+        typeof message === 'object' &&
+        'type' in message &&
+        typeof message.type === 'string' &&
+        message.type.startsWith('host.artifact.') &&
+        'messageId' in message
+      ) {
+        queueMicrotask(() =>
+          onMessage.dispatch({ type: 'host.artifact.ack', messageId: message.messageId })
+        );
+        return;
+      }
       const candidate =
         message && typeof message === 'object'
           ? (message as { type?: string; request?: { id?: string; method?: string } })

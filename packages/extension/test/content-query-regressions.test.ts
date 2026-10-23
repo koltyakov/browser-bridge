@@ -35,10 +35,33 @@ type QueryApi = {
 };
 type RegistryApi = { getRequiredElement: (ref: string) => Element };
 type HelpersApi = {
+  querySelectorAllDeep: (selector: string, root?: ParentNode) => Element[];
   getAccessibleName: (element: Element) => string;
   getElementRoles: (element: Element) => string[];
   getElementTextContent: (element: Element, budget?: number) => string;
 };
+
+test('deep DOM scans fail explicitly at their work limit instead of claiming unique matches', async () => {
+  await withQuery('<section>' + '<span>item</span>'.repeat(20010) + '</section>', ({ helpers }) => {
+    assert.throws(() => helpers.querySelectorAllDeep('span'), { code: 'RESULT_TRUNCATED' });
+  });
+});
+
+test('bounded text extraction stops before reading later text nodes', async () => {
+  await withQuery(
+    '<p id="text">' + 'x'.repeat(2000) + '<span>must not read</span></p>',
+    ({ document, helpers }) => {
+      const element = document.getElementById('text')!;
+      const span = element.querySelector('span')!;
+      Object.defineProperty(span.firstChild!, 'textContent', {
+        get() {
+          throw new Error('unbounded read');
+        },
+      });
+      assert.equal(helpers.getElementTextContent(element, 20), 'x'.repeat(20));
+    }
+  );
+});
 
 async function withQuery(
   body: string,

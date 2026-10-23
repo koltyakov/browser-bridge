@@ -1,5 +1,6 @@
 import { BridgeError, ERROR_CODES } from '../../../protocol/src/index.js';
 import { createCdpKeyPressEventPair } from './background-helpers.js';
+import { requestLifetimes } from './background-request-lifetime.js';
 
 export type BridgeRequest = import('../../../protocol/src/types.js').BridgeRequest;
 export type ResolvedTabTarget = import('./background-state.js').ResolvedTabTarget;
@@ -60,12 +61,29 @@ export function createBackgroundInputController(dependencies: {
   ) => Promise<unknown>;
   contentScriptTimeoutMs: number;
 }) {
+  const guards = new WeakMap<DebuggerTarget, () => void>();
+  const originalSend = dependencies.sendCommand;
+  dependencies = {
+    ...dependencies,
+    sendCommand: (target, method, params) => {
+      // Always allow physical releases after interruption so a held key, mouse,
+      // or touch contact cannot be left pressed.
+      if (!['keyUp', 'mouseReleased', 'touchEnd', 'touchCancel'].includes(String(params.type)))
+        guards.get(target)?.();
+      return originalSend(target, method, params);
+    },
+  };
   async function handleNativeInput(
     request: BridgeRequest,
     tab: ResolvedTabTarget,
     params: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    const assertAccess = dependencies.captureAccess?.() ?? (() => {});
+    const assertGrant = dependencies.captureAccess?.() ?? (() => {});
+    const assertActive = requestLifetimes.guard(request.id, request.meta?.deadline_ms);
+    const assertAccess = () => {
+      assertActive();
+      assertGrant();
+    };
     if (!CDP_INPUT_METHODS.has(request.method)) {
       throw new BridgeError(
         ERROR_CODES.INPUT_UNSUPPORTED,
@@ -89,19 +107,24 @@ export function createBackgroundInputController(dependencies: {
     return dependencies.runWithDebugger(
       tab.tabId,
       async (debuggerTarget) => {
-        assertAccess();
-        const observationId = observe ? await beginObservation(tab.tabId) : null;
-        assertAccess();
-        const result = await executeNative(debuggerTarget);
-        if (observationId) {
-          result.effects = await finishObservation(
-            tab.tabId,
-            observationId,
-            Number(observe?.settleMs) || 0,
-            typeof result.elementRef === 'string' ? result.elementRef : null
-          );
+        guards.set(debuggerTarget, assertAccess);
+        try {
+          assertAccess();
+          const observationId = observe ? await beginObservation(tab.tabId) : null;
+          assertAccess();
+          const result = await executeNative(debuggerTarget);
+          if (observationId) {
+            result.effects = await finishObservation(
+              tab.tabId,
+              observationId,
+              Number(observe?.settleMs) || 0,
+              typeof result.elementRef === 'string' ? result.elementRef : null
+            );
+          }
+          return result;
+        } finally {
+          guards.delete(debuggerTarget);
         }
-        return result;
       },
       { retryDetached: false }
     );

@@ -72,7 +72,6 @@
     getAccessibleName,
     getElementRoles,
     getElementTextContent,
-    getShadowRoot,
     isElementVisible,
     querySelectorAllDeep,
     querySelectorDeep,
@@ -348,6 +347,7 @@ element reference. */
     const start = Date.now();
 
     function check(): { found: boolean; element: Element | null } {
+      if (typeof params.__bbxAssertActive === 'function') params.__bbxAssertActive();
       if (waitState === 'detached') {
         const exists = text
           ? findElementWithText(selector, text) !== null
@@ -388,7 +388,7 @@ element reference. */
       });
     }
 
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       let observer: MutationObserver | null = null;
 
       let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
@@ -405,7 +405,14 @@ element reference. */
       }
 
       function tryResolve() {
-        const result = check();
+        let result: ReturnType<typeof check>;
+        try {
+          result = check();
+        } catch (error) {
+          cleanup();
+          reject(error);
+          return;
+        }
         if (result.found) {
           cleanup();
           resolve({
@@ -483,8 +490,7 @@ element reference. */
   /** Full collapsed subtree text used for innermost text matching. Shadow hosts
 contribute their shadow content. */
   function getMatchableText(element: Element): string {
-    if (getShadowRoot(element)) return getElementTextContent(element, 100_000);
-    return collapseText(element.textContent, 100_000);
+    return getElementTextContent(element, 100_000);
   }
 
   /** Match visible text the way a user reads it: own text and text-like
@@ -557,8 +563,9 @@ excluded unless `includeHidden` is set. */
     let scanned = 0;
 
     let truncationReason: 'maxResults' | 'scanLimit' | null = null;
+    const started = performance.now();
     for (const element of candidates) {
-      if (scanned >= scanLimit) {
+      if (scanned >= scanLimit || performance.now() - started > 100) {
         truncationReason = 'scanLimit';
         break;
       }
@@ -618,15 +625,26 @@ locator target. Hidden matches count: the action decides actionability. */
     try {
       if (spec.elementRef) return { found: true };
       if (isLocator(spec)) {
+        const located = locateElements({ ...spec, includeHidden: true }, { maxResults: 1 });
+        if (located.truncationReason === 'scanLimit' && !located.matches.length)
+          throw Object.assign(new Error('Target probe scan was incomplete. Narrow the locator.'), {
+            code: 'RESULT_TRUNCATED',
+          });
         return {
-          found:
-            locateElements({ ...spec, includeHidden: true }, { maxResults: 1 }).matches.length > 0,
+          found: located.matches.length > 0,
         };
       }
       if (typeof spec.selector === 'string' && spec.selector) {
         return { found: querySelectorDeep(escapeTailwindSelector(spec.selector)) !== null };
       }
-    } catch {
+    } catch (error) {
+      if (
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code === 'RESULT_TRUNCATED'
+      )
+        throw error;
       return { found: false };
     }
     return { found: false };

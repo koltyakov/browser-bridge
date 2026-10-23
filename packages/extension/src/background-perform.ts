@@ -8,6 +8,7 @@ import {
   normalizeInputPerformParams,
   serializeJsonPayload,
 } from '../../../protocol/src/index.js';
+import { requestLifetimes } from './background-request-lifetime.js';
 
 export type BridgeRequest = import('../../../protocol/src/types.js').BridgeRequest;
 export type BridgeResponse = import('../../../protocol/src/types.js').BridgeResponse;
@@ -41,7 +42,12 @@ export async function executeInputPerform(
   request: BridgeRequest,
   dependencies: PerformDependencies
 ): Promise<BridgeResponse> {
-  const assertAccess = dependencies.captureAccess?.() ?? (() => {});
+  const assertGrant = dependencies.captureAccess?.() ?? (() => {});
+  const assertActive = requestLifetimes.guard(request.id);
+  const assertAccess = () => {
+    assertActive();
+    assertGrant();
+  };
   const params = normalizeInputPerformParams(request.params);
   const target = await dependencies.resolveRequestTarget(request);
   const now = dependencies.now ?? (() => performance.now());
@@ -103,7 +109,13 @@ export async function executeInputPerform(
       method: step.method,
       tab_id: target.tabId,
       params: capStepTimeout(step, deadline - stepStartedAt),
-      meta: request.meta,
+      meta: {
+        ...request.meta,
+        deadline_ms: Math.min(
+          typeof request.meta?.deadline_ms === 'number' ? request.meta.deadline_ms : Infinity,
+          Date.now() + Math.max(0, deadline - stepStartedAt)
+        ),
+      },
     });
     const failure = getStepFailure(response, step, index);
     if (!failure) {

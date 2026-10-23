@@ -48,6 +48,11 @@ export const MAX_BATCH_CONCURRENCY = 5;
 
 /** Maximum press-and-hold time for one pointer, key, or touch action (ms). */
 export const MAX_INPUT_HOLD_MS = 10_000;
+export const DEFAULT_INPUT_WAIT_MS = 2_500;
+export const MAX_INPUT_WAIT_MS = 15_000;
+export const DEFAULT_OBSERVE_SETTLE_MS = 500;
+export const MAX_OBSERVE_SETTLE_MS = 5_000;
+export const INPUT_HOLD_TIMEOUT_MARGIN_MS = 5_000;
 
 /** Default contact time for an input.touch gesture without explicit holdMs (ms). */
 export const DEFAULT_TOUCH_HOLD_MS = 50;

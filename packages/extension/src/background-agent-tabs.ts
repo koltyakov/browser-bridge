@@ -112,13 +112,25 @@ export function createAgentTabLeaseStore(
     return loading;
   }
 
-  async function persist(): Promise<void> {
-    if (!storage) return;
-    try {
-      await storage.set({ [AGENT_TAB_STORAGE_KEY]: Object.fromEntries(leases) });
-    } catch {
-      // Best effort only.
-    }
+  let persisting: Promise<void> | null = null;
+  let dirty = false;
+  function persist(): Promise<void> {
+    if (!storage) return Promise.resolve();
+    dirty = true;
+    persisting ??= Promise.resolve().then(async () => {
+      try {
+        while (dirty) {
+          dirty = false;
+          // Snapshot before the await: concurrent updates cannot mutate a write
+          // already handed to storage or let an old write overtake a new one.
+          const snapshot = structuredClone(Object.fromEntries(leases));
+          await storage.set({ [AGENT_TAB_STORAGE_KEY]: snapshot }).catch(() => {});
+        }
+      } finally {
+        persisting = null;
+      }
+    });
+    return persisting;
   }
 
   function isExpired(lease: AgentTabLease): boolean {

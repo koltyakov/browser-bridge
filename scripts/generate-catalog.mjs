@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveVersion } from './version.mjs';
+import { OPERATION_TIMEOUT_POLICIES } from '../protocol/src/operation-timeouts.js';
 import {
   BRIDGE_METHODS,
   createRuntimeContext,
@@ -240,6 +241,7 @@ export function createCatalog(version, metadata) {
   return {
     version,
     methods,
+    operationTimeouts: OPERATION_TIMEOUT_POLICIES,
     runtime: { ...createRuntimeContext(), v: deriveProtocolVersion(version) },
     presets,
     errorRecovery: ERROR_RECOVERY,

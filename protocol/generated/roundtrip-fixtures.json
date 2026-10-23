@@ -376,6 +376,8 @@
       "stale_recovery": "success",
       "agent_session": "wire-✓",
       "transport_owner": "wire-✓",
+      "deadline_ms": 1.25,
+      "artifact_ack": false,
       "tab_id": 1.25,
       "tab_routing": "explicit",
       "active_tab_id": 1.25,

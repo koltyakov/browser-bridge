@@ -533,6 +533,38 @@ function executeBridgeMethod(
   });
 }
 
+test('canceling a content auto-wait prevents a late field edit', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t);
+  const field = inputs.createTextInput({ value: 'original' });
+  let available = false;
+  const base = createDocumentHarness(inputs.createBody([field]), { '#late': field });
+  const document = {
+    ...base,
+    querySelectorAll(selector: string) {
+      return selector === '#late' && !available ? [] : base.querySelectorAll(selector);
+    },
+  };
+  await loadContentScript(t, { withHelpers: true, chrome: harness.chrome, document });
+  const response = new Promise<BridgeResult>((resolve) => {
+    harness.getListener()(
+      {
+        type: 'bridge.execute',
+        requestId: 'late-edit',
+        method: 'input.fill',
+        params: { target: { selector: '#late' }, value: 'changed', timeoutMs: 1000 },
+      },
+      EMPTY_SENDER,
+      (result) => resolve(expectRecord(result))
+    );
+  });
+  harness.getListener()({ type: 'bridge.cancel', requestId: 'late-edit' }, EMPTY_SENDER, () => {});
+  available = true;
+  const result = await response;
+  assert.equal((result.error as { code: string }).code, 'TIMEOUT');
+  assert.equal(field.value, 'original');
+});
+
 /**
  * Mark a fake element as natively draggable and make the destination accept
  * drops by canceling dragover, as real drop zones must.

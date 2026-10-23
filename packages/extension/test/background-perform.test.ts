@@ -313,7 +313,9 @@ test('input.perform returns only the final read and preserves routing and reques
   });
   for (const entry of dispatched) {
     assert.equal(entry.request.tab_id, 42);
-    assert.deepEqual(entry.request.meta, request.meta);
+    const { deadline_ms: deadline, ...meta } = entry.request.meta;
+    assert.equal(typeof deadline, 'number');
+    assert.deepEqual(meta, request.meta);
   }
 });
 
@@ -336,6 +338,28 @@ test('input.perform can return final action effects without an extra read', asyn
   assert.equal(lastResult?.truncated, false);
   if (lastResult && !lastResult.truncated) assert.deepEqual(lastResult.result, finalResult);
   assert.deepEqual(dispatched[0].request.params.observe, { settleMs: 500 });
+});
+
+test('input.perform bounds each step by the remaining sequence and parent deadline', async () => {
+  const request = createRequest({
+    id: 'step-deadline',
+    method: 'input.perform',
+    params: {
+      timeoutMs: 1000,
+      steps: [{ method: 'input.click' }],
+    },
+    meta: { deadline_ms: Date.now() + 200 },
+  });
+  let stepDeadline = 0;
+  await executeInputPerform(request, {
+    resolveRequestTarget: async () => ({ tabId: 1 }),
+    dispatch: async (step) => {
+      stepDeadline = Number(step.meta.deadline_ms);
+      return createSuccess(step.id, { clicked: true });
+    },
+  });
+  assert(stepDeadline > Date.now() - 1000);
+  assert.equal(stepDeadline, request.meta.deadline_ms);
 });
 
 test('input.perform bounds final evidence by UTF-8 JSON bytes without replaying steps', async () => {

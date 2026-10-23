@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { once } from 'node:events';
-import { getProtocolVersion, normalizeDomQuery } from '../../protocol/src/index.js';
+import { getProtocolVersion, normalizeDomQuery, parseJsonLines } from '../../protocol/src/index.js';
 import {
   connectFakeExtension,
   connectTestClient,
@@ -53,6 +53,8 @@ test('Go CLI preserves custom DOM budgets through the daemon for extension norma
     const forwarded = await extension.nextRequest();
     assert.equal(forwarded.method, 'dom.query');
     assert.equal(forwarded.meta.source, 'cli');
+    assert.equal(forwarded.meta.artifact_ack, true);
+    assert(Number(forwarded.meta.deadline_ms) > Date.now());
     assert.deepEqual(normalizeDomQuery(forwarded.params), {
       selector: 'main',
       withinRef: null,
@@ -69,6 +71,42 @@ test('Go CLI preserves custom DOM budgets through the daemon for extension norma
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(result.json, { nodes: [{ elementRef: 'el_main', text: 'Budget kept' }] });
   } finally {
+    extension.destroy();
+    await ctx.stop();
+  }
+});
+
+test('Go CLI timeout propagates a remapped cancellation without restarting the daemon', async () => {
+  const ctx = await startTestDaemon();
+  const extension = await connectFakeExtension(ctx);
+  const client = await connectTestClient(ctx);
+  try {
+    const canceled = new Promise<Record<string, unknown>>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Cancellation was not forwarded')), 5000);
+      parseJsonLines(extension.socket, (message) => {
+        if (
+          message &&
+          typeof message === 'object' &&
+          'type' in message &&
+          message.type === 'extension.request_cancelled'
+        ) {
+          clearTimeout(timer);
+          resolve(message as Record<string, unknown>);
+        }
+      });
+    });
+    const result = runCli({
+      args: ['call', 'input.click', '{}'],
+      env: { ...ctx.env, BBX_CLIENT_REQUEST_TIMEOUT_MS: '1000' },
+    });
+    const forwarded = await extension.nextRequest();
+    assert.equal((await canceled).requestId, forwarded.id);
+    assert.notEqual((await result).status, 0);
+    const metrics = await client.request({ method: 'daemon.metrics' });
+    assert.equal((metrics.result as Record<string, unknown>).pendingRequests, 0);
+    assert.equal((metrics.result as Record<string, unknown>).activeExtensions, 1);
+  } finally {
+    await client.close();
     extension.destroy();
     await ctx.stop();
   }

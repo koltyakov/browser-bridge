@@ -287,6 +287,10 @@ export interface BridgeMeta {
   agent_session?: string;
   /** Set by the daemon on routed requests; caller values are always overwritten. */
   transport_owner?: string;
+  /** Absolute daemon deadline; overwritten when a request is routed. */
+  deadline_ms?: number;
+  /** The routed daemon supports acknowledged artifact chunks. */
+  artifact_ack?: boolean;
   /** Tab the request ran in. */
   tab_id?: number;
   /** How the tab was chosen: explicit tabId, the agent's working tab, or the active tab. */

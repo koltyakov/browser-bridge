@@ -49,7 +49,7 @@ func mcpConnect(c config, clientID string) (*client, error) {
 		return nil, err
 	}
 	_ = conn.SetDeadline(time.Time{})
-	cl := &client{conn: conn, writer: wireWriter{out: conn}, pending: make(map[string]chan callResult)}
+	cl := &client{conn: conn, writer: wireWriter{out: conn}, pending: make(map[string]chan callResult), supportsCancellation: reply.boolean("requestCancellation")}
 	go cl.read(reader)
 	return cl, nil
 }

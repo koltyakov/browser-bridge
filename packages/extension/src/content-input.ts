@@ -158,6 +158,10 @@ elementFromPoint retargets to the outermost shadow host. */
     return Object.assign(new Error(message), { code, details });
   }
 
+  function assertInputActive(params: InputParams): void {
+    if (typeof params.__bbxAssertActive === 'function') params.__bbxAssertActive();
+  }
+
   function readComputedStyle(
     element: Element
   ):
@@ -288,6 +292,13 @@ Explicit refs retain exact identity unless stale recovery is opted in. */
           const located = domQuery.locateElements({ ...target } as Record<string, unknown>, {
             maxResults: MAX_INPUT_CANDIDATES + 1,
           });
+          if (located.truncationReason && typeof target?.nth !== 'number') {
+            throw createInputError(
+              'RESULT_TRUNCATED',
+              'Input scan was incomplete; uniqueness could not be proven. Use a narrower locator.',
+              { reason: located.truncationReason, scanned: located.scanned }
+            );
+          }
           hiddenMatches = located.hiddenMatches;
           allMatches =
             typeof target?.nth === 'number'
@@ -297,6 +308,13 @@ Explicit refs retain exact identity unless stale recovery is opted in. */
           allMatches = querySelectorAllDeep(escapeTailwindSelector(String(target?.selector)));
         }
       } catch (error) {
+        if (
+          error &&
+          typeof error === 'object' &&
+          'code' in error &&
+          error.code === 'RESULT_TRUNCATED'
+        )
+          throw error;
         throw createInputError('INVALID_REQUEST', 'Input selector is invalid.', {
           selector: String(target?.selector ?? '').slice(0, 500),
           reason:
@@ -1235,6 +1253,7 @@ for a double click. */
         modifiers,
         pressed.mouseEventsSuppressed
       );
+      if (typeof params.__bbxAssertActive === 'function') params.__bbxAssertActive();
       dispatchClickEvent(releaseTarget, clickType, point, {
         ...MOUSE_POINTER,
         modifiers,
@@ -1474,6 +1493,7 @@ optionally holding the key down for holdMs before keyup. */
     const result = beginKeyAction(target, key, params.modifiers);
     if (holdMs > 0) await sleep(holdMs);
     endKeyAction(result);
+    assertInputActive(params);
     return {
       elementRef: result.target instanceof Element ? rememberElement(result.target) : null,
       key: result.key,
@@ -1727,20 +1747,33 @@ sortable lists, sliders, and canvases listen for. */
     } else {
       const steps = 10;
       let current = source;
-      for (let step = 1; step <= steps; step += 1) {
-        // Hidden documents throttle each timer to about a second. DOM drags
-        // have no duration contract, so deliver the ordered moves without
-        // frame pacing rather than timing out or activating the user's tab.
-        if (!document.hidden) await sleep(16);
-        const progress = step / steps;
-        const point = {
-          x: sourcePoint.x + (endPoint.x - sourcePoint.x) * progress,
-          y: sourcePoint.y + (endPoint.y - sourcePoint.y) * progress,
-        };
-        current = elementAtPoint(point, progress < 0.5 ? source : destination);
-        movePointerTo(current, point, NO_MODIFIERS, { buttons: 1 });
+      let currentPoint = sourcePoint;
+      try {
+        for (let step = 1; step <= steps; step += 1) {
+          // Hidden documents throttle each timer to about a second. DOM drags
+          // have no duration contract, so deliver the ordered moves without
+          // frame pacing rather than timing out or activating the user's tab.
+          if (!document.hidden) await sleep(16);
+          assertInputActive(params);
+          const progress = step / steps;
+          const point = {
+            x: sourcePoint.x + (endPoint.x - sourcePoint.x) * progress,
+            y: sourcePoint.y + (endPoint.y - sourcePoint.y) * progress,
+          };
+          current = elementAtPoint(point, progress < 0.5 ? source : destination);
+          currentPoint = point;
+          movePointerTo(current, point, NO_MODIFIERS, { buttons: 1 });
+        }
+      } finally {
+        releaseMouseButton(
+          current,
+          currentPoint,
+          'left',
+          1,
+          NO_MODIFIERS,
+          pressed.mouseEventsSuppressed
+        );
       }
-      releaseMouseButton(current, endPoint, 'left', 1, NO_MODIFIERS, pressed.mouseEventsSuppressed);
     }
 
     return {
@@ -1886,41 +1919,45 @@ A single-finger tap also produces compatibility mouse events and a click. */
       if (!dispatchTouchEvent(contact, 'touchstart', active)) canceled = true;
     }
 
-    if (moving) {
-      for (let step = 1; step <= moveSteps; step += 1) {
-        await sleep(holdMs / moveSteps);
-        const progress = step / moveSteps;
-        for (const contact of contacts) {
-          if (!contact.end) continue;
-          contact.current = {
-            x: contact.start.x + (contact.end.x - contact.start.x) * progress,
-            y: contact.start.y + (contact.end.y - contact.start.y) * progress,
-          };
-          dispatchPointerEvent(
-            contact.element,
-            'pointermove',
-            contact.current,
-            touchPointerOptions(contact, 0.5, 1)
-          );
-          if (!dispatchTouchEvent(contact, 'touchmove', active)) canceled = true;
+    try {
+      if (moving) {
+        for (let step = 1; step <= moveSteps; step += 1) {
+          await sleep(holdMs / moveSteps);
+          assertInputActive(params);
+          const progress = step / moveSteps;
+          for (const contact of contacts) {
+            if (!contact.end) continue;
+            contact.current = {
+              x: contact.start.x + (contact.end.x - contact.start.x) * progress,
+              y: contact.start.y + (contact.end.y - contact.start.y) * progress,
+            };
+            dispatchPointerEvent(
+              contact.element,
+              'pointermove',
+              contact.current,
+              touchPointerOptions(contact, 0.5, 1)
+            );
+            if (!dispatchTouchEvent(contact, 'touchmove', active)) canceled = true;
+          }
         }
+      } else if (holdMs > 0) {
+        await sleep(holdMs);
       }
-    } else if (holdMs > 0) {
-      await sleep(holdMs);
+    } finally {
+      for (const contact of contacts) {
+        const options = touchPointerOptions(contact, 0, 0);
+        dispatchPointerEvent(contact.element, 'pointerup', contact.current, options);
+        dispatchPointerEvent(contact.element, 'pointerout', contact.current, options);
+        dispatchPointerEvent(contact.element, 'pointerleave', contact.current, {
+          ...options,
+          bubbles: false,
+          cancelable: false,
+        });
+        active.splice(active.indexOf(contact), 1);
+        if (!dispatchTouchEvent(contact, 'touchend', active)) canceled = true;
+      }
     }
-
-    for (const contact of contacts) {
-      const options = touchPointerOptions(contact, 0, 0);
-      dispatchPointerEvent(contact.element, 'pointerup', contact.current, options);
-      dispatchPointerEvent(contact.element, 'pointerout', contact.current, options);
-      dispatchPointerEvent(contact.element, 'pointerleave', contact.current, {
-        ...options,
-        bubbles: false,
-        cancelable: false,
-      });
-      active.splice(active.indexOf(contact), 1);
-      if (!dispatchTouchEvent(contact, 'touchend', active)) canceled = true;
-    }
+    assertInputActive(params);
 
     let clicked = false;
     if (contacts.length === 1 && !moving && !canceled) {
@@ -2335,16 +2372,23 @@ large, exposed, CSS-scrollable ancestors qualify as implicit targets. */
 to `timeoutMs`. Saves agents a separate wait call plus a retry round trip. */
   async function awaitActionableTarget(
     target: InputTargetSpec | undefined,
-    options: { pointer: boolean; recoverStale: boolean; timeoutMs: number }
+    options: {
+      pointer: boolean;
+      recoverStale: boolean;
+      timeoutMs: number;
+      assertActive?: () => void;
+    }
   ): Promise<{ resolved: ResolvedInputTarget; waitedMs: number }> {
     const start = Date.now();
     const deadline = start + Math.max(0, options.timeoutMs);
     for (;;) {
+      options.assertActive?.();
       try {
         const resolved = resolveActionableTarget(target, options);
         if (hasRunningAnimation(resolved.element) && Date.now() < deadline) {
           const before = resolved.element.getBoundingClientRect();
           await sleep(STABILITY_SAMPLE_MS);
+          options.assertActive?.();
           const after = resolved.element.getBoundingClientRect();
           if (before.x !== after.x || before.y !== after.y || before.width !== after.width) {
             continue;
@@ -2572,6 +2616,11 @@ action as exact refs, so the action itself stays synchronous and atomic. */
     action: (params: InputParams) => Record<string, unknown> | Promise<Record<string, unknown>>
   ): (params: InputParams) => Promise<Record<string, unknown>> {
     return async (params) => {
+      const assertActive =
+        typeof params.__bbxAssertActive === 'function'
+          ? (params.__bbxAssertActive as () => void)
+          : () => {};
+      assertActive();
       const timeoutMs = clamp(Number(params.timeoutMs) || 0, 0, 15_000);
       const recoverStale = params.recoverStale === true;
 
@@ -2590,6 +2639,7 @@ action as exact refs, so the action itself stays synchronous and atomic. */
           pointer,
           recoverStale,
           timeoutMs,
+          assertActive,
         });
         prepared[key] = { elementRef: rememberElement(resolved.element) };
         preResolutions[key] = { resolution: resolved.resolution, waitedMs };
@@ -2599,6 +2649,7 @@ action as exact refs, so the action itself stays synchronous and atomic. */
 
       const observeOptions = params.observe as { settleMs?: unknown } | null | undefined;
       const observation = observeOptions ? startObservation() : null;
+      assertActive();
       const result = await action(prepared);
       mergePreResolution(result, preResolutions);
       if (observation) {

@@ -16,6 +16,7 @@ import {
   normalizeViewportAction,
   normalizeWaitForParams,
 } from '../../../protocol/src/index.js';
+import { requestLifetimes } from './background-request-lifetime.js';
 
 export type BridgeRequest = import('../../../protocol/src/types.js').BridgeRequest;
 export type BridgeResponse = import('../../../protocol/src/types.js').BridgeResponse;
@@ -173,7 +174,9 @@ export function getContentScriptTimeout(
   const holdAllowance =
     (method === 'input.click' || method === 'input.press_key' || method === 'input.touch') &&
     holdMs > 0
-      ? Math.min(holdMs, 10_000) + 1_000
+      ? Math.min(holdMs, 10_000) *
+          (method === 'input.click' && Number(params?.clickCount) === 2 ? 2 : 1) +
+        1_000
       : 0;
   // Auto-wait and post-action observation run inside the content script.
   const waitMs = method.startsWith('input.') ? Math.min(Number(params?.timeoutMs) || 0, 15_000) : 0;
@@ -189,7 +192,12 @@ export async function handleTabBoundRequest(
   request: BridgeRequest,
   dependencies: TabBoundRequestDependencies
 ): Promise<BridgeResponse> {
-  const assertAccess = dependencies.captureAccess?.() ?? (() => {});
+  const assertGrant = dependencies.captureAccess?.() ?? (() => {});
+  const assertActive = requestLifetimes.guard(request.id, request.meta?.deadline_ms);
+  const assertAccess = () => {
+    assertActive();
+    assertGrant();
+  };
   const target = await dependencies.resolveRequestTarget(request);
   assertAccess();
   dependencies.assertNoDialog?.(target.tabId);
@@ -260,7 +268,13 @@ export async function handleTabBoundRequest(
       payload,
       dependencies.contentScriptTimeoutMs
     );
-    const message = { type: 'bridge.execute', method: request.method, params: payload };
+    const message = {
+      type: 'bridge.execute',
+      requestId: request.id,
+      deadlineMs: request.meta?.deadline_ms,
+      method: request.method,
+      params: payload,
+    };
     let response =
       frameId !== 0 && dependencies.frames
         ? await dependencies.frames.sendFrameMessage(target.tabId, frameId, message, timeoutMs)
@@ -363,9 +377,15 @@ async function chooseFrame(
         frameId,
         { type: 'bridge.execute', method: 'dom.probe_target', params: { target: spec } },
         FRAME_PROBE_TIMEOUT_MS
-      )) as { found?: boolean } | null;
+      )) as { found?: boolean; error?: { code?: string; message?: string } } | null;
+      if (result?.error?.code === ERROR_CODES.RESULT_TRUNCATED)
+        throw new BridgeError(
+          ERROR_CODES.RESULT_TRUNCATED,
+          result.error.message ?? 'Frame target probe was incomplete. Narrow the target.'
+        );
       return result?.found === true;
-    } catch {
+    } catch (error) {
+      if (error instanceof BridgeError && error.code === ERROR_CODES.RESULT_TRUNCATED) throw error;
       return false;
     }
   };

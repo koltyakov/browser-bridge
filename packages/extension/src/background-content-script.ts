@@ -1,4 +1,5 @@
 import { BridgeError, ERROR_CODES } from '../../../protocol/src/index.js';
+import { requestLifetimes } from './background-request-lifetime.js';
 
 export type ContentScriptBridgeDeps = {
   contentScriptTimeoutMs: number;
@@ -57,9 +58,26 @@ export function createContentScriptBridge(
   getFrameForRef: (tabId: number, elementRef: string) => Promise<number>;
   injectContentScriptsForWindow: (windowId: number) => Promise<void>;
   ensureContentScript: (tabId: number) => Promise<void>;
+  getCleanupFrames: (tabId: number) => Promise<Array<{ frameId: number }>>;
+  clearCleanupFrames: (tabId: number) => void;
   installNavigationSignals: (tabId: number, channel: string) => Promise<void>;
   uninstallNavigationSignals: (tabId: number, channel: string) => Promise<void>;
 } {
+  const patchFrames = new Map<number, Set<number>>();
+  function trackPatchFrame(tabId: number, frameId: number, message: Record<string, unknown>) {
+    if (message.method !== 'patch.apply_styles' && message.method !== 'patch.apply_dom') return;
+    const frames = patchFrames.get(tabId) ?? new Set<number>();
+    if (
+      (!patchFrames.has(tabId) && patchFrames.size >= 64) ||
+      (!frames.has(frameId) && frames.size >= 64)
+    )
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        'Patch frame capacity reached. Roll back patches before targeting more frames.'
+      );
+    frames.add(frameId);
+    patchFrames.set(tabId, frames);
+  }
   async function injectContentScript(tabId: number): Promise<void> {
     try {
       await chromeObj.scripting.executeScript({
@@ -150,6 +168,16 @@ emit navigation-kind events; the background re-reads the authoritative URL. */
     message: Record<string, unknown>,
     timeoutMs: number
   ): Promise<unknown> {
+    trackPatchFrame(tabId, 0, message);
+    const cancel = () => {
+      void chromeObj.tabs
+        .sendMessage(tabId, { type: 'bridge.cancel', requestId: message.requestId }, { frameId: 0 })
+        .catch(() => {});
+    };
+    const untrack =
+      typeof message.requestId === 'string'
+        ? requestLifetimes.track(message.requestId, cancel)
+        : () => {};
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise((_, reject) => {
       timeoutId = setTimeout(
@@ -166,6 +194,7 @@ emit navigation-kind events; the background re-reads the authoritative URL. */
         timeout,
       ]);
     } finally {
+      untrack();
       clearTimeout(timeoutId);
     }
   }
@@ -206,8 +235,11 @@ frames, which `<all_urls>` host access permits). */
     try {
       frames = await read();
       if (frames.some((frame) => frame.frameId !== 0 && frame.tag === null)) {
+        const frameIds = frames
+          .filter((frame) => frame.frameId !== 0 && frame.tag === null)
+          .map((frame) => frame.frameId);
         await chromeObj.scripting
-          .executeScript({ target: { tabId, allFrames: true }, files: CONTENT_SCRIPT_FILES })
+          .executeScript({ target: { tabId, frameIds }, files: CONTENT_SCRIPT_FILES })
           .catch(() => {});
         frames = await read();
       }
@@ -215,6 +247,11 @@ frames, which `<all_urls>` host access permits). */
       frames = [{ frameId: 0, tag: null }];
     }
     frameCache.set(tabId, { at: Date.now(), frames });
+    while (frameCache.size > 64) {
+      const oldest = frameCache.keys().next().value;
+      if (oldest === undefined) break;
+      frameCache.delete(oldest);
+    }
     return frames;
   }
 
@@ -237,6 +274,16 @@ frames, which `<all_urls>` host access permits). */
     timeoutMs: number
   ): Promise<unknown> {
     if (frameId === 0) return sendTabMessage(tabId, message, timeoutMs);
+    trackPatchFrame(tabId, frameId, message);
+    const cancel = () => {
+      void chromeObj.tabs
+        .sendMessage(tabId, { type: 'bridge.cancel', requestId: message.requestId }, { frameId })
+        .catch(() => {});
+    };
+    const untrack =
+      typeof message.requestId === 'string'
+        ? requestLifetimes.track(message.requestId, cancel)
+        : () => {};
 
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise((_, reject) => {
@@ -248,6 +295,7 @@ frames, which `<all_urls>` host access permits). */
     try {
       return await Promise.race([chromeObj.tabs.sendMessage(tabId, message, { frameId }), timeout]);
     } finally {
+      untrack();
       clearTimeout(timeoutId);
     }
   }
@@ -291,6 +339,30 @@ ignored since ensureContentScript will handle them on demand. */
     getFrameForRef,
     injectContentScriptsForWindow,
     ensureContentScript,
+    getCleanupFrames: async (tabId) => {
+      const frames = new Set(patchFrames.get(tabId));
+      // Content registries survive a worker restart. Read only a boolean in
+      // every existing frame so restored cleanup cannot miss old child patches
+      // or a touched frame displaced from the bounded discovery list.
+      try {
+        const results = await chromeObj.scripting.executeScript({
+          target: { tabId, allFrames: true },
+          func: frameHasPatches,
+        });
+        for (const result of results) if (result.result === true) frames.add(result.frameId);
+      } catch (error) {
+        if (
+          !isRestrictedScriptingError(String(error)) &&
+          !/No tab|not found|frame.*removed/iu.test(String(error))
+        )
+          throw error;
+      }
+      return [...frames].map((frameId) => ({ frameId }));
+    },
+    clearCleanupFrames: (tabId) => {
+      patchFrames.delete(tabId);
+      frameCache.delete(tabId);
+    },
     installNavigationSignals,
     uninstallNavigationSignals,
   };
@@ -303,6 +375,14 @@ export function readFrameRefTag(): string | null {
     globalThis as unknown as { __BBX_CONTENT_REGISTRY__?: { refDocumentTag?: unknown } }
   ).__BBX_CONTENT_REGISTRY__;
   return typeof registry?.refDocumentTag === 'string' ? registry.refDocumentTag : null;
+}
+
+/** Tiny isolated-world probe for rollback after a service-worker restart. */
+export function frameHasPatches(): boolean {
+  const registry = Reflect.get(globalThis, '__BBX_CONTENT_REGISTRY__') as
+    | { getPatchRegistry?: () => Map<unknown, unknown> }
+    | undefined;
+  return Boolean(registry?.getPatchRegistry?.().size);
 }
 
 /** Install the isolated-world half of one randomized navigation signal channel.

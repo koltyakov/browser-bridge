@@ -6,6 +6,7 @@ import {
   normalizeWebMcpParams,
 } from '../../../protocol/src/index.js';
 import { runWebMcpInDocument } from './webmcp-document.js';
+import { requestLifetimes } from './background-request-lifetime.js';
 
 export type WebMcpDependencies = {
   resolveRequestTarget: (
@@ -77,7 +78,8 @@ export function createWebMcpController(
   function approve(
     tabId: number,
     details: Record<string, unknown>,
-    timeoutMs: number
+    timeoutMs: number,
+    requestId: string
   ): Promise<boolean> {
     return new Promise((resolve) => {
       const id = crypto.randomUUID();
@@ -85,6 +87,7 @@ export function createWebMcpController(
       let settled = false;
 
       let timer: ReturnType<typeof setTimeout> | undefined;
+      let untrack = () => {};
       const pending = {
         tabId,
         windowId: null as number | null,
@@ -96,6 +99,7 @@ export function createWebMcpController(
           settled = true;
           approvals.delete(id);
           clearTimeout(timer);
+          untrack();
           if (pending.windowId !== null)
             void chromeObj.windows.remove(pending.windowId).catch(() => {});
           resolve(approved);
@@ -103,6 +107,8 @@ export function createWebMcpController(
       };
       approvals.set(id, pending);
       timer = setTimeout(() => pending.finish(false), timeoutMs);
+      untrack = requestLifetimes.track(requestId, () => pending.finish(false));
+      if (settled) return;
       void chromeObj.windows
         .create({ url, type: 'popup', width: 560, height: 680, focused: true })
         .then((created) => {
@@ -180,7 +186,8 @@ Content scripts share sender.id but must never satisfy this URL check. */
           tool: prepared.result.tool,
           arguments: params.arguments,
         },
-        params.approvalTimeoutMs
+        params.approvalTimeoutMs,
+        request.id
       );
       if (!approved)
         throw new BridgeError(

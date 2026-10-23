@@ -129,6 +129,7 @@
   };
 
   contentScriptGlobal.__chromeCodexBridgeContentScriptLoaded = true;
+  const activeRequests = new Map<string, AbortController>();
 
   runtimeOnMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === 'bridge.ping') {
@@ -136,20 +137,57 @@
       return false;
     }
 
+    if (message?.type === 'bridge.cancel') {
+      activeRequests.get(String(message.requestId))?.abort();
+      sendResponse({ ok: true });
+      return false;
+    }
     if (message?.type !== 'bridge.execute') {
       return false;
     }
 
+    const id = typeof message.requestId === 'string' ? message.requestId : '';
+    const controller = new AbortController();
+    if (id && activeRequests.size >= 128) {
+      sendResponse({
+        error: {
+          code: 'INVALID_REQUEST',
+          message: 'Content request capacity reached.',
+          details: null,
+        },
+      });
+      return false;
+    }
+    if (id) activeRequests.set(id, controller);
+    const assertActive = () => {
+      if (
+        controller.signal.aborted ||
+        (typeof message.deadlineMs === 'number' && Date.now() >= message.deadlineMs)
+      )
+        throw Object.assign(
+          new Error('Content request canceled or expired. Inspect postconditions before retrying.'),
+          { code: 'TIMEOUT' }
+        );
+    };
+    const finish = () => {
+      if (activeRequests.get(id) === controller) activeRequests.delete(id);
+    };
     try {
-      const result = handleCommand(message.method, message.params);
+      assertActive();
+      const result = handleCommand(message.method, {
+        ...message.params,
+        __bbxAssertActive: assertActive,
+      });
       Promise.resolve(result)
         .then(sendResponse)
         .catch((err) => {
           sendResponse({
             error: serializeContentError(err),
           });
-        });
+        })
+        .finally(finish);
     } catch (error) {
+      finish();
       sendResponse({
         error: serializeContentError(error),
       });
