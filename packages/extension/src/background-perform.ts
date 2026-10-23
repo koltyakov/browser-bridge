@@ -1,4 +1,5 @@
 import {
+  BridgeError,
   createFailure,
   createSuccess,
   ERROR_CODES,
@@ -17,6 +18,7 @@ export type PerformStepFailure = import('../../../protocol/src/types.js').Perfor
 export type PerformLastResult = import('../../../protocol/src/types.js').PerformLastResult;
 
 export type PerformDependencies = {
+  captureAccess?: () => () => void;
   resolveRequestTarget: (request: BridgeRequest) => Promise<{ tabId: number }>;
   dispatch: (request: BridgeRequest) => Promise<BridgeResponse>;
   now?: () => number;
@@ -39,6 +41,7 @@ export async function executeInputPerform(
   request: BridgeRequest,
   dependencies: PerformDependencies
 ): Promise<BridgeResponse> {
+  const assertAccess = dependencies.captureAccess?.() ?? (() => {});
   const params = normalizeInputPerformParams(request.params);
   const target = await dependencies.resolveRequestTarget(request);
   const now = dependencies.now ?? (() => performance.now());
@@ -74,17 +77,25 @@ export async function executeInputPerform(
     );
 
   for (const [index, step] of params.steps.entries()) {
-    const scheduledAt = step.atMs !== null ? startedAt + step.atMs : now() + step.delayMs;
-    if (scheduledAt >= deadline) {
-      return fail(
+    const timeout = () =>
+      fail(
         ERROR_CODES.TIMEOUT,
         `Sequence timeoutMs (${params.timeoutMs}) elapsed before step ${index} (${step.method}).`,
         null
       );
-    }
+    const scheduledAt = step.atMs !== null ? startedAt + step.atMs : now() + step.delayMs;
+    if (now() >= deadline || scheduledAt >= deadline) return timeout();
     const waitMs = scheduledAt - now();
     if (waitMs > 0) await sleep(waitMs);
     const stepStartedAt = now();
+    // Timers can resume late after worker suspension or a busy event loop.
+    if (stepStartedAt >= deadline) return timeout();
+    try {
+      assertAccess();
+    } catch (error) {
+      if (error instanceof BridgeError) return fail(error.code, error.message, null);
+      throw error;
+    }
     startedAtMs.push(Math.round(stepStartedAt - startedAt));
 
     const response = await dependencies.dispatch({

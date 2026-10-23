@@ -17,7 +17,7 @@ import {
   shouldLogAction,
 } from './background-helpers.js';
 import { isRestrictedAutomationUrl } from './background-routing.js';
-import { getAccessStatus, sameWindowGrant } from './background-access.js';
+import { captureWindowGrant, getAccessStatus } from './background-access.js';
 import {
   createNativeConnectionController,
   sendAccessUpdate as sendAccessUpdateNative,
@@ -130,17 +130,12 @@ import {
 } from './background-development.js';
 import { createRecordingController } from './background-recording.js';
 import { createDownloadController } from './background-downloads.js';
-import { pasteImage, isPasteTargetFocused } from './background-paste.js';
 import { createJournalTransport } from './recording-journal.js';
 import { pageRecorder } from './page-recorder.js';
-import { renderRecording } from './recording-export.js';
-import {
-  createFileStaging,
-  assignStagedFiles,
-  assignBrowserFiles,
-  fileBase64,
-} from './background-files.js';
-import { fetchResourceInPage, cancelPageResources } from './background-resource.js';
+import { createFileStaging } from './background-files.js';
+import { cancelPageResources } from './background-resource.js';
+import { createFileRequestHandler } from './background-file-requests.js';
+import { createRecordingRequestHandler } from './background-recording-requests.js';
 
 export type EnabledWindowState = import('./background-state.js').EnabledWindowState;
 export type ResolvedTabTarget = import('./background-state.js').ResolvedTabTarget;
@@ -549,6 +544,30 @@ const domBaselineRequests = createDomBaselineRequestHandler(domBaselines, {
   contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,
 });
 
+const dataRequestDependencies = {
+  state,
+  disconnectedDataRequests,
+  resolveRequestTarget,
+  storeByteArtifact,
+};
+const handleRecordingRequest = createRecordingRequestHandler({
+  ...dataRequestDependencies,
+  recordings,
+  journals,
+});
+const handleFileRequest = createFileRequestHandler({
+  ...dataRequestDependencies,
+  chrome,
+  stagedFiles,
+  downloads,
+  tabDebugger,
+  ensureContentScript,
+  getFrameForRef,
+  sendTabMessage,
+  resourceFetches,
+  resourceOwners,
+});
+
 const webMcpConnections: WeakMap<chrome.runtime.Port, string> = new WeakMap();
 const webmcp = createWebMcpController(chrome, {
   resolveRequestTarget,
@@ -579,6 +598,7 @@ const {
 });
 
 const { handleNativeInput } = createBackgroundInputController({
+  captureAccess: () => captureWindowGrant(state),
   getTab: (tabId) => chrome.tabs.get(tabId),
   contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,
   runWithDebugger: (tabId, operation) => tabDebugger.runGuarded(tabId, operation),
@@ -792,6 +812,7 @@ async function chooseInputExecutionMode(
 }
 
 const tabBoundRequestDependencies: Parameters<typeof executeTabBoundRequest>[1] = {
+  captureAccess: () => captureWindowGrant(state),
   contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,
   assertNoDialog: (tabId) => tabDebugger.assertNoDialog(tabId),
   runWithDialogGuard: (tabId, operation) => tabDebugger.runGuarded(tabId, operation),
@@ -1223,6 +1244,7 @@ async function dispatchBridgeRequest(request: BridgeRequest): Promise<BridgeResp
       return handleCdpRequest(request);
     case 'input.perform':
       return executeInputPerform(request, {
+        captureAccess: () => captureWindowGrant(state),
         resolveRequestTarget,
         dispatch: async (step) => {
           try {
@@ -1246,263 +1268,6 @@ async function dispatchBridgeRequest(request: BridgeRequest): Promise<BridgeResp
         `Unhandled method ${request.method}`
       );
   }
-}
-
-async function handleRecordingRequest(request: BridgeRequest): Promise<BridgeResponse> {
-  if (disconnectedDataRequests.has(request.id))
-    throw new BridgeError(ERROR_CODES.ACCESS_DENIED, 'Recording connection closed.');
-  const target = await resolveRequestTarget(request);
-  const access = state.enabledWindow;
-  const port = state.nativePort;
-  const transportOwner = request.meta?.transport_owner;
-  if (!transportOwner)
-    throw new BridgeError(
-      ERROR_CODES.ACCESS_DENIED,
-      'Recordings require a current daemon connection identity.'
-    );
-  const owner = `${transportOwner}:${normalizeAgentSession(request.meta?.agent_session)}`;
-  const assertAccess = async () => {
-    if (disconnectedDataRequests.has(request.id))
-      throw new BridgeError(ERROR_CODES.ACCESS_DENIED, 'Recording connection closed.');
-    if (!sameWindowGrant(access, state.enabledWindow) || port !== state.nativePort)
-      throw new BridgeError(ERROR_CODES.ACCESS_DENIED, 'Recording access or transport changed.');
-    await resolveRequestTarget({ ...request, tab_id: target.tabId });
-  };
-  const p = request.params;
-  const id = String(p.sessionId);
-  let result;
-  switch (request.method) {
-    case 'session.start':
-      result = await recordings.start(
-        target.tabId,
-        owner,
-        {
-          activity: p.activity === true,
-          network: p.network === true,
-          bodies: p.bodies === true,
-          messages: p.messages === true,
-          visual: p.visual === true,
-          durationMs: Number(p.durationMs),
-          followTabs: p.followTabs === true,
-          durable: p.durable === true,
-          replay: p.replay === true,
-        },
-        assertAccess,
-        p.durable === true ? await journals.begin(request.id) : undefined
-      );
-      break;
-    case 'session.status':
-      result = await recordings.status(target.tabId, owner, id);
-      break;
-    case 'session.read':
-      result = await recordings.read(
-        target.tabId,
-        owner,
-        id,
-        Number(p.cursor),
-        Number(p.limit),
-        Number(p.waitMs)
-      );
-      break;
-    case 'session.stop':
-      result = await recordings.stop(target.tabId, owner, id);
-      break;
-    case 'session.release':
-      result = await recordings.release(target.tabId, owner, id);
-      break;
-    default: {
-      const recording = await recordings.exportSession(target.tabId, owner, id);
-      await assertAccess();
-      const html = p.format === 'html';
-      const bytes = new TextEncoder().encode(
-        html ? renderRecording(recording) : JSON.stringify(recording)
-      );
-      const artifact = await storeByteArtifact(request.id, bytes, {
-        kind: 'resource',
-        mimeType: html ? 'text/html' : 'application/json',
-      });
-      result = {
-        sessionId: id,
-        delivery: 'artifact',
-        artifact,
-        gaps: recording.gaps,
-        dropped: recording.dropped,
-        journalError: recording.journalError,
-        journalId: recording.journalId,
-        memoryWindow: recording.memoryWindow,
-      };
-    }
-  }
-  return createSuccess(request.id, result, { method: request.method });
-}
-
-async function handleFileRequest(request: BridgeRequest): Promise<BridgeResponse> {
-  const tab = await resolveRequestTarget(request);
-  const access = state.enabledWindow;
-  const assertScope = () => {
-    if (!sameWindowGrant(access, state.enabledWindow) || disconnectedDataRequests.has(request.id))
-      throw new BridgeError(
-        ERROR_CODES.ACCESS_DENIED,
-        'Window access changed during file operation.'
-      );
-  };
-  assertScope();
-  const transportOwner = request.meta?.transport_owner;
-  if (typeof transportOwner !== 'string' || !transportOwner)
-    throw new BridgeError(
-      ERROR_CODES.ACCESS_DENIED,
-      'File operations require a current daemon connection identity. Restart the daemon.'
-    );
-  const owner = `${state.enabledWindow?.enabledAt}:${transportOwner}:${normalizeAgentSession(request.meta?.agent_session)}`;
-  const p = request.params;
-  let result;
-  switch (request.method) {
-    case 'files.stage':
-      result = stagedFiles.stage(p, owner, tab.tabId);
-      break;
-    case 'input.paste_image': {
-      const [file] = stagedFiles.resolve([String(p.transferId)], owner, tab.tabId);
-      await ensureContentScript(tab.tabId);
-      const focused = (await sendTabMessage(
-        tab.tabId,
-        {
-          type: 'bridge.execute',
-          method: 'input.focus',
-          params: { target: p.target },
-        },
-        CONTENT_SCRIPT_TIMEOUT_MS
-      )) as { elementRef?: string; focused?: boolean };
-      if (!focused.focused || !focused.elementRef)
-        throw new BridgeError(ERROR_CODES.INPUT_FOCUS_CHANGED, 'Could not focus the paste target.');
-      const elementRef = focused.elementRef;
-      result = await tabDebugger.runGuarded(tab.tabId, (debugTarget) =>
-        pasteImage(
-          file.bytes,
-          (method, params) => {
-            assertScope();
-            tabDebugger.assertTaskActive(debugTarget);
-            return chrome.debugger.sendCommand(debugTarget, method, params);
-          },
-          async () => {
-            assertScope();
-            await resolveRequestTarget({ ...request, tab_id: tab.tabId });
-            const [checked] = await chrome.scripting.executeScript({
-              target: { tabId: tab.tabId },
-              func: isPasteTargetFocused,
-              args: [elementRef],
-            });
-            if (checked?.result !== true)
-              throw new BridgeError(
-                ERROR_CODES.INPUT_FOCUS_CHANGED,
-                'Paste target lost focus or is not editable.'
-              );
-          }
-        )
-      );
-      break;
-    }
-    case 'download.start':
-    case 'download.status':
-    case 'download.pause':
-    case 'download.resume':
-    case 'download.cancel':
-    case 'download.release':
-      result = await downloads.call(
-        request.method,
-        p,
-        tab.tabId,
-        String(access?.enabledAt),
-        async () => {
-          assertScope();
-          await resolveRequestTarget({ ...request, tab_id: tab.tabId });
-        }
-      );
-      break;
-    case 'files.release':
-      result = stagedFiles.release(String(p.transferId), owner, tab.tabId);
-      break;
-    case 'download.resource': {
-      if (resourceFetches.size >= 4 || resourceFetches.has(tab.tabId))
-        throw new BridgeError(
-          ERROR_CODES.INVALID_REQUEST,
-          'A resource fetch is already active for this tab or the global limit is reached.'
-        );
-      resourceFetches.add(tab.tabId);
-      resourceOwners.set(tab.tabId, transportOwner);
-      try {
-        const [fetched] = await chrome.scripting.executeScript({
-          target: { tabId: tab.tabId },
-          func: fetchResourceInPage,
-          args: [String(p.url), Number(p.maxBytes), Number(p.timeoutMs), request.id],
-        });
-        if (!fetched?.result || 'error' in fetched.result)
-          throw new BridgeError(
-            ERROR_CODES.INVALID_REQUEST,
-            fetched?.result && 'error' in fetched.result
-              ? fetched.result.error
-              : 'Resource fetch produced no result.'
-          );
-        await resolveRequestTarget({ ...request, tab_id: tab.tabId });
-        assertScope();
-        const artifact = await storeByteArtifact(request.id, base64ToBytes(fetched.result.data), {
-          kind: 'resource',
-          mimeType: fetched.result.mimeType,
-        });
-        result = { delivery: 'artifact', artifact, status: fetched.result.status };
-      } finally {
-        resourceFetches.delete(tab.tabId);
-        resourceOwners.delete(tab.tabId);
-      }
-      break;
-    }
-    default: {
-      const target = p.target as Record<string, unknown>;
-      if (Array.isArray(p.paths)) {
-        result = await tabDebugger.runGuarded(tab.tabId, (debugTarget) =>
-          assignBrowserFiles(
-            (method, params) => {
-              assertScope();
-              tabDebugger.assertTaskActive(debugTarget);
-              return chrome.debugger.sendCommand(debugTarget, method, params);
-            },
-            String(target.selector),
-            p.paths as string[]
-          )
-        );
-      } else {
-        const ids = p.files as string[];
-        const files = stagedFiles.resolve(ids, owner, tab.tabId);
-        await ensureContentScript(tab.tabId);
-        const frameId =
-          typeof target.elementRef === 'string'
-            ? await getFrameForRef(tab.tabId, target.elementRef)
-            : 0;
-        await resolveRequestTarget({ ...request, tab_id: tab.tabId });
-        assertScope();
-        const [assigned] = await chrome.scripting.executeScript({
-          target: { tabId: tab.tabId, frameIds: [frameId] },
-          func: assignStagedFiles,
-          args: [
-            target,
-            files.map((file) => ({
-              name: file.name,
-              mimeType: file.mimeType,
-              data: fileBase64(file.bytes),
-            })),
-          ],
-        });
-        if (!assigned?.result || 'error' in assigned.result)
-          throw new BridgeError(
-            ERROR_CODES.INPUT_INVALID_TARGET,
-            assigned?.result && 'error' in assigned.result
-              ? assigned.result.error
-              : 'File assignment produced no result. Inspect the input before retrying.'
-          );
-        result = assigned.result;
-      }
-    }
-  }
-  return createSuccess(request.id, result, { method: request.method });
 }
 
 /** Summarize the currently open tabs in the enabled window so the client can
@@ -1546,6 +1311,7 @@ async function bindWorkingTab(
 cycle to complete. */
 async function handleNavigationRequest(request: BridgeRequest): Promise<BridgeResponse> {
   return executeNavigationRequest(request, {
+    captureAccess: () => captureWindowGrant(state),
     resolveRequestTarget,
     updateTab: (tabId, properties) => chrome.tabs.update(tabId, properties),
     reloadTab: (tabId) => chrome.tabs.reload(tabId),

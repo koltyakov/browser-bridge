@@ -1,3 +1,21 @@
+import { BridgeError, ERROR_CODES } from '../../../protocol/src/index.js';
+
+/** Capture authorization before an await; title-only updates keep it valid. */
+export function captureWindowGrant(state: EnabledWindowContainer): () => void {
+  const captured = state.enabledWindow ? { ...state.enabledWindow } : null;
+  return () => {
+    if (!sameWindowGrant(captured, state.enabledWindow)) {
+      throw new BridgeError(
+        ERROR_CODES.ACCESS_DENIED,
+        'Window access changed during the operation.',
+        {
+          reason: 'window_access_changed',
+        }
+      );
+    }
+  };
+}
+
 /** Metadata updates preserve a grant; revocation or re-enabling does not. */
 export function sameWindowGrant(
   captured: EnabledWindowState | null,

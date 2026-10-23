@@ -46,6 +46,8 @@ Setup filesystem work is serialized separately from daemon routing and admitted 
 | `make test` | Go race tests, then Node tests with coverage |
 | `make test-runtime` | Node tests without coverage |
 | `make test-native` | Go race tests and native cross-language tests |
+| `make coverage-go` | Go unit-test statement coverage by function |
+| `make coverage-go-check` | Check Go runtime and protocol unit-coverage baselines |
 | `make check` | Version/protocol checks, lint, typechecking, Go formatting/vet, tests, and coverage thresholds |
 | `make generate-protocol` | Regenerate shared wire types, schemas, catalog, and skills |
 | `make sync-version` | Synchronize npm metadata from the manifest or release tag |
@@ -89,6 +91,8 @@ make run ARGS='call health.ping'
 ```
 
 `test-js` and `test-runtime` build the extension and Go executable before testing. `test-js` replaces the coverage results, so use `test-runtime` for focused runs when retaining full-suite coverage. Set `BBX_TEST_CHROME` to your browser executable to include the real-Chrome tests.
+
+`make test-go` writes race-enabled unit-test coverage to `dist/coverage/go-unit.out`, separately from c8. `make check` and CI enforce a 68% statement baseline for `internal/bridge` and 85% for `internal/protocol`. These percentages exclude separately launched integration binaries and the CLI entry point. Use the Go report to target uncovered error and lifecycle paths rather than relying on the JS/TS coverage total.
 
 `make status` and `make daemon` run the workspace Go CLI. `make install-manifest ARGS='<extension-id>'` registers the persistent executable produced by `make build-native`.
 

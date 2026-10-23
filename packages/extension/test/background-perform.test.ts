@@ -10,6 +10,8 @@ import {
   MAX_PERFORM_RESULT_BYTES,
 } from '../../../protocol/src/index.js';
 import type { BridgeRequest, BridgeResponse, PerformResult } from '../../../protocol/src/types.js';
+import { captureWindowGrant } from '../src/background-access.js';
+import type { EnabledWindowContainer } from '../src/background-access.js';
 
 type StepHandler = (request: BridgeRequest, at: number) => BridgeResponse;
 
@@ -209,6 +211,68 @@ test('input.perform fails with TIMEOUT when a step is scheduled past the budget'
     elapsedMs: 5,
     startedAtMs: [0],
   });
+});
+
+test('input.perform does not dispatch an overdue atMs step after a slow action', async () => {
+  const { dependencies, dispatched } = createHarness(undefined, 200);
+  const response = await executeInputPerform(
+    performRequest({
+      timeoutMs: 100,
+      steps: [
+        { ...click('#first'), atMs: 0 },
+        { ...click('#second'), atMs: 1 },
+      ],
+    }),
+    dependencies
+  );
+  assert.equal(response.ok, false);
+  assert.equal(response.error?.code, 'TIMEOUT');
+  assert.equal(dispatched.length, 1);
+  const details = response.error?.details as { completed?: number } | undefined;
+  assert.equal(details?.completed, 1);
+});
+
+test('input.perform rechecks the deadline after a delayed timer wakes up', async () => {
+  let clock = 0;
+  let dispatches = 0;
+  const response = await executeInputPerform(
+    performRequest({ timeoutMs: 100, steps: [{ ...click('#late'), atMs: 50 }] }),
+    {
+      now: () => clock,
+      sleep: async () => {
+        clock = 200;
+      },
+      resolveRequestTarget: async () => ({ tabId: 42 }),
+      dispatch: async (request) => {
+        dispatches += 1;
+        return createSuccess(request.id, {});
+      },
+    }
+  );
+  assert.equal(response.ok, false);
+  assert.equal(response.error?.code, 'TIMEOUT');
+  assert.equal(dispatches, 0);
+});
+
+test('input.perform does not continue under a replacement grant after a delay', async () => {
+  const { dependencies, dispatched } = createHarness();
+  const state: EnabledWindowContainer = {
+    enabledWindow: { windowId: 5, enabledAt: 1, title: 'First grant' },
+  };
+  const response = await executeInputPerform(
+    performRequest({ steps: [click('#first'), { ...click('#second'), delayMs: 10 }] }),
+    {
+      ...dependencies,
+      captureAccess: () => captureWindowGrant(state),
+      sleep: async (ms) => {
+        await dependencies.sleep(ms);
+        state.enabledWindow = { windowId: 5, enabledAt: 2, title: 'Replacement grant' };
+      },
+    }
+  );
+  assert.equal(response.ok, false);
+  assert.equal(response.error?.code, 'ACCESS_DENIED');
+  assert.equal(dispatched.length, 1);
 });
 
 test('input.perform uses real timers by default', async () => {
