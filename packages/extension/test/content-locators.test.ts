@@ -18,11 +18,13 @@ type Locator = {
 type LocateResult = { matches: Element[]; hiddenMatches: number; scanned: number };
 type DomQueryApi = {
   locateElements: (locator: Locator, options?: { maxResults?: number }) => LocateResult;
+  getAccessibilityOutline: (params: Record<string, unknown>) => { outline: string; count: number };
 };
 type HelpersApi = {
   getAccessibleName: (element: Element) => string;
   getElementRoles: (element: Element) => string[];
-  walkElementsDeep: (root?: ParentNode) => Generator<Element>;
+  walkElementsDeep: (root?: ParentNode, limit?: number) => Generator<Element>;
+  querySelectorDeep: (selector: string, root?: ParentNode) => Element | null;
 };
 
 const GLOBAL_KEYS = [
@@ -144,5 +146,57 @@ test('hidden matches are excluded by default and counted', async (t) => {
       ['BUTTON']
     );
     assert.equal(result.hiddenMatches, 1);
+  });
+});
+
+test('scoped deep walks include the root host shadow tree before its light children', async () => {
+  await withDocument(
+    '<html><body><div id="host"><b id="light"></b></div></body></html>',
+    async ({ document }) => {
+      const { helpers, query } = await loadModules();
+      const host = document.getElementById('host') as HTMLElement;
+      const shadow = host.attachShadow({ mode: 'open' });
+      shadow.innerHTML =
+        '<div id="nested"><i id="nested-light"></i></div><button id="save">Save</button>';
+      (shadow.querySelector('#nested') as HTMLElement).attachShadow({ mode: 'open' }).innerHTML =
+        '<input id="nested-input">';
+      assert.deepEqual(
+        [...helpers.walkElementsDeep(host)].map((element) => element.id),
+        ['nested', 'nested-input', 'nested-light', 'save', 'light']
+      );
+      assert.deepEqual(
+        [...helpers.walkElementsDeep(host, 2)].map((element) => element.id),
+        ['nested', 'nested-input']
+      );
+      assert.equal(helpers.querySelectorDeep('#save', host), shadow.querySelector('#save'));
+      const outline = query.getAccessibilityOutline({ selector: '#host', interactiveOnly: true });
+      assert.equal(outline.count, 2);
+      assert.match(outline.outline, /button "Save"/);
+      assert.match(outline.outline, /textbox/);
+    }
+  );
+});
+
+test('scoped deep walks and queries include closed roots available through chrome.dom', async () => {
+  await withDocument('<html><body><div id="host"></div></body></html>', async ({ document }) => {
+    const { helpers } = await loadModules();
+    const host = document.getElementById('host') as HTMLElement;
+    const shadow = host.attachShadow({ mode: 'closed' });
+    shadow.innerHTML = '<button id="save">Save</button>';
+    const savedChrome = globalThis.chrome;
+    Reflect.set(globalThis, 'chrome', {
+      dom: { openOrClosedShadowRoot: (element: Element) => (element === host ? shadow : null) },
+    });
+    try {
+      assert.equal(host.shadowRoot, null);
+      assert.deepEqual(
+        [...helpers.walkElementsDeep(host)].map((element) => element.id),
+        ['save']
+      );
+      assert.equal(helpers.querySelectorDeep('#save', host), shadow.querySelector('#save'));
+    } finally {
+      if (savedChrome === undefined) Reflect.deleteProperty(globalThis, 'chrome');
+      else Reflect.set(globalThis, 'chrome', savedChrome);
+    }
   });
 });

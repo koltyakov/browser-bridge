@@ -133,6 +133,13 @@ func cliKeys(raw json.RawMessage) []string {
 	if o, e := decodeObject(raw); e != nil || o == nil {
 		return []string{}
 	}
+	return cliObjectKeys(raw)
+}
+
+// cliObjectKeys enumerates an already-decoded object without decoding all of
+// its values again. Keep first-key order and let the decoded map supply the
+// last value for duplicate keys, matching JavaScript object enumeration.
+func cliObjectKeys(raw json.RawMessage) []string {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	_, _ = dec.Token()
 	keys := []string{}
@@ -225,7 +232,7 @@ func cliJSON(raw json.RawMessage, sanitize bool) []byte {
 	if o, e := decodeObject(raw); e == nil {
 		var out bytes.Buffer
 		out.WriteByte('{')
-		for i, k := range cliKeys(raw) {
+		for i, k := range cliObjectKeys(raw) {
 			if i > 0 {
 				out.WriteByte(',')
 			}

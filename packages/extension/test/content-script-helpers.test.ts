@@ -32,6 +32,7 @@ type WaitElement = {
   visibility: string;
 };
 type Helpers = {
+  querySelectorDeep: (selector: string, root?: ParentNode) => Element | null;
   clamp: (value: number, min: number, max: number) => number;
   delay: (ms: number) => Promise<void>;
   truncateText: (
@@ -64,6 +65,36 @@ type Helpers = {
 const loadedHelpers = Reflect.get(globalThis, '__BBX_CONTENT_HELPERS__') as Helpers | undefined;
 assert.ok(loadedHelpers, 'content-script helpers should be registered on globalThis');
 const helpers: Helpers = loadedHelpers;
+
+test('first shadow match returns without scanning unrelated elements on large pages', async () => {
+  await withDocument(
+    `<html><body><div id="host"></div>${'<i></i>'.repeat(20005)}</body></html>`,
+    ({ document }) => {
+      const host = document.getElementById('host') as HTMLElement;
+      const shadow = host.attachShadow({ mode: 'open' });
+      shadow.innerHTML = '<button id="save">Save</button>';
+      assert.equal(helpers.querySelectorDeep('#save'), shadow.querySelector('#save'));
+      assert.throws(() => helpers.querySelectorDeep('#missing'), { code: 'RESULT_TRUNCATED' });
+
+      const light = document.createElement('button');
+      light.id = 'save';
+      document.body.append(light);
+      assert.equal(helpers.querySelectorDeep('#save'), light);
+    }
+  );
+});
+
+test('first shadow match preserves outer-root precedence over nested roots', async () => {
+  await withDocument('<html><body><div id="host"></div></body></html>', ({ document }) => {
+    const shadow = (document.getElementById('host') as HTMLElement).attachShadow({ mode: 'open' });
+    shadow.innerHTML = '<div id="nested"></div><button id="save">Outer</button>';
+    const nested = (shadow.querySelector('#nested') as HTMLElement).attachShadow({ mode: 'open' });
+    nested.innerHTML = '<button id="save">Inner</button>';
+    assert.equal(helpers.querySelectorDeep('#save'), shadow.querySelector('#save'));
+    assert.equal(helpers.querySelectorDeep('#missing'), null);
+    assert.throws(() => helpers.querySelectorDeep('['));
+  });
+});
 
 test('content script helpers clamp, truncate, and normalize budgets', () => {
   assert.equal(helpers.clamp(999, 1, 10), 10);
