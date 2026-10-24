@@ -990,6 +990,8 @@ export interface McpClientStatus {
   configPath: string;
   configExists: boolean;
   configured: boolean;
+  /** Configured, but the command or arguments name a missing absolute path. */
+  stale?: boolean;
 }
 
 export interface SkillInstallationStatus {

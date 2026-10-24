@@ -90,7 +90,7 @@ func installCollectStatus(scope installScope) object {
 		if len(paths) > 0 {
 			preferred = paths[0]
 		}
-		exists, configured := false, false
+		exists, configured, stale := false, false, false
 		for _, path := range paths {
 			data, err := os.ReadFile(path)
 			if err != nil {
@@ -103,11 +103,12 @@ func installCollectStatus(scope installScope) object {
 			if installMCPConfigured(string(data), target, path, scope) {
 				if !configured {
 					preferred = path
+					stale = installMCPStale(string(data), target, path, scope)
 				}
 				configured = true
 			}
 		}
-		mcpClients = append(mcpClients, object{"key": value(target), "label": value(installAgentLabels[target]), "detected": value(mcpDetected), "configPath": value(preferred), "configExists": value(exists), "configured": value(configured)})
+		mcpClients = append(mcpClients, object{"key": value(target), "label": value(installAgentLabels[target]), "detected": value(mcpDetected), "configPath": value(preferred), "configExists": value(exists), "configured": value(configured), "stale": value(stale)})
 		base := installSkillBase(target, scope)
 		path := filepath.Join(base, "browser-bridge")
 		metadata, managed, _ := installReadSkillMetadata(path)

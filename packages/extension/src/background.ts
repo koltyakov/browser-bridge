@@ -1376,7 +1376,7 @@ async function dispatchBridgeRequest(request: BridgeRequest): Promise<BridgeResp
         captureAccess: () => captureWindowGrant(state),
         resolveRequestTarget,
         armNetwork: (tabId) => ensureNetworkInterceptor(tabId, chrome),
-        readNetwork: (tabId) => readNetworkBuffer(tabId, false, chrome, true),
+        readNetwork: (tabId, after) => readNetworkBuffer(tabId, false, chrome, true, after),
         dispatch: async (step) => {
           try {
             // Input steps own their guard. Guard waits and reads too, so an

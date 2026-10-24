@@ -1017,3 +1017,31 @@ test('syncSetupStatusPolling starts polling once and reuses an existing interval
   assert.equal(reusedTimer, createdTimer);
   assert.deepEqual(refreshCalls, ['refresh', 'refresh']);
 });
+
+test('getMcpSetupCellState offers reinstall for a stale MCP entry', () => {
+  const mcpClient = {
+    key: 'claude',
+    label: 'Claude Code',
+    detected: true,
+    configPath: '/home/user/.claude.json',
+    configured: true,
+    stale: true,
+  };
+  const cell = getMcpSetupCellState(
+    { key: 'claude', label: 'Claude Code', mcpClient, skillTarget: null },
+    null
+  );
+  assert.equal(cell.kind, 'button');
+  assert.equal(
+    getMcpSetupCellState(
+      {
+        key: 'claude',
+        label: 'Claude Code',
+        mcpClient: { ...mcpClient, stale: false },
+        skillTarget: null,
+      },
+      null
+    ).kind,
+    'badge'
+  );
+});

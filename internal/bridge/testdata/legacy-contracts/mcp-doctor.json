@@ -305,8 +305,7 @@
       "pendingRequests": 0,
       "requestsProcessed": 0,
       "requestsFailed": 0,
-      "avgResponseTimeMs": 0,
-      "recovery": null
+      "avgResponseTimeMs": 0
     },
     "recentEvents": [],
     "recentCauses": [],
@@ -395,8 +394,7 @@
       "pendingRequests": 0,
       "requestsProcessed": 1000000000,
       "requestsFailed": 0,
-      "avgResponseTimeMs": 0,
-      "recovery": null
+      "avgResponseTimeMs": 0
     },
     "recentEvents": [
       {

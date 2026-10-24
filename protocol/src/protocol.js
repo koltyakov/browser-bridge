@@ -1176,11 +1176,17 @@ function normalizeNetworkUrlPattern(pattern) {
     new BridgeError(ERROR_CODES.INVALID_REQUEST, message);
   if (pattern.includes('#'))
     throw invalid('Network outcome urlPattern cannot include a fragment; captured URLs omit it.');
-  const queryStart = pattern.indexOf('?');
+  // Without '?', a pattern can still begin inside the query at an '&'.
+  const queryStart = pattern.includes('?') ? pattern.indexOf('?') : pattern.indexOf('&');
+  const separator = queryStart >= 0 ? pattern[queryStart] : '';
   const query = queryStart >= 0 ? pattern.slice(queryStart + 1) : null;
   // Every captured parameter has a redacted value, so a match can include at
-  // most one parameter name, ending the pattern.
-  if (query !== null && /=.|&/u.test(query))
+  // most one parameter name, ending the pattern. Text before a bare '&' is the
+  // tail of a redacted value, so it cannot hold a value of its own either.
+  if (
+    query !== null &&
+    (/=.|&/u.test(query) || (separator === '&' && pattern.slice(0, queryStart).includes('=')))
+  )
     throw invalid(
       'Captured query values are redacted. End the pattern at one parameter name, for example /api/items?id=.'
     );
@@ -1189,17 +1195,14 @@ function normalizeNetworkUrlPattern(pattern) {
   try {
     // The URL path percent-encode set, plus every non-ASCII code point.
     const encodedPath = path.replace(/[^\x21-\x7e]|["<>`{}]/gu, (c) => encodeURIComponent(c));
-    // URLSearchParams decodes each name, then reserializes it form-encoded.
-    const encodedQuery = query
-      ?.split('&')
-      .map((segment) => {
-        const name = [...new URLSearchParams(segment).keys()][0];
-        if (name === undefined) return segment;
-        const encoded = new URLSearchParams([[name, '']]).toString().slice(0, -1);
-        return segment.includes('=') ? `${encoded}=` : encoded;
-      })
-      .join('&');
-    return `${authority.toLowerCase()}${encodedPath}${encodedQuery === undefined ? '' : `?${encodedQuery}`}`;
+    // URLSearchParams decodes the name, then reserializes it form-encoded.
+    let encodedQuery = '';
+    const name = query === null ? undefined : [...new URLSearchParams(query).keys()][0];
+    if (name !== undefined) {
+      encodedQuery = new URLSearchParams([[name, '']]).toString().slice(0, -1);
+      if (query?.includes('=')) encodedQuery += '=';
+    }
+    return `${authority.toLowerCase()}${encodedPath}${separator}${encodedQuery}`;
   } catch {
     throw invalid('Network outcome urlPattern must be well-formed Unicode text.');
   }

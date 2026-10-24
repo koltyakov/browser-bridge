@@ -192,6 +192,16 @@ func doctorCLI(ctx context.Context, c config, args []string) error {
 	} else {
 		report["setup"] = value(setup)
 	}
+	warnings := []string{}
+	if clients, ok := cliArray(setup["mcpClients"]); ok {
+		for _, raw := range clients {
+			client, _ := decodeObject(raw)
+			if client.boolean("stale") {
+				warnings = append(warnings, fmt.Sprintf("%s MCP config at %s launches a missing file; run `bbx install-mcp %s` to rewrite it.", client.text("label"), client.text("configPath"), client.text("key")))
+			}
+		}
+	}
+	report["warnings"] = value(warnings)
 	manifests := []object{}
 	validManifest := false
 	if home, err := os.UserHomeDir(); err == nil {
@@ -263,6 +273,9 @@ func doctorCLI(ctx context.Context, c config, args []string) error {
 	}
 	report["issues"] = value(issues)
 	summary := "Browser Bridge is ready."
+	if len(warnings) > 0 {
+		summary = fmt.Sprintf("Browser Bridge is ready with %d warning(s).", len(warnings))
+	}
 	if len(issues) > 0 {
 		summary = fmt.Sprintf("Browser Bridge has %d readiness issue(s).", len(issues))
 	}

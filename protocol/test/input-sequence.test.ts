@@ -155,6 +155,8 @@ test('network outcome patterns are written in the form captured URLs are sanitiz
     ['/a b?x y=', 'https://app.test/a%20b?x+y=%5Bredacted%5D&z=%5Bredacted%5D'],
     ['?k[0]=', 'https://app.test/list?k%5B0%5D=%5Bredacted%5D'],
     ['HTTPS://App.Test/API?id', 'https://app.test/API?id=%5Bredacted%5D'],
+    ['&page=', 'https://app.test/list?a=1&page=2'],
+    ['%5D&page', 'https://app.test/list?a=1&page=2'],
   ] as const) {
     const normalized = pattern(raw);
     assert.equal(normalized?.kind, 'network');
@@ -169,6 +171,8 @@ test('network outcome patterns are written in the form captured URLs are sanitiz
     ['/items?id=42', /query values are redacted/],
     ['/items?id=&page=', /query values are redacted/],
     ['/items?id&page', /query values are redacted/],
+    ['&page=2', /query values are redacted/],
+    ['id=1&page=', /query values are redacted/],
     ['/page#done', /fragment/],
     ['/bad\ud800', /well-formed/],
   ] as const)

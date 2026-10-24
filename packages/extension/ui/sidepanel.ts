@@ -125,7 +125,7 @@ const DEFAULT_TAB_ICON = '../assets/tab-fallback.svg';
 const nativeIndicator = document.getElementById('native-indicator') as HTMLSpanElement;
 const extensionVersion = document.getElementById('extension-version') as HTMLSpanElement;
 const manifest = chrome.runtime.getManifest();
-extensionVersion.textContent = `Extension: v${manifest.version_name ?? manifest.version}\nDaemon: disconnected`;
+extensionVersion.textContent = `Extension: v${manifest.version_name ?? manifest.version}\nHarness: disconnected`;
 const toggleButton = document.getElementById('bridge-toggle') as HTMLButtonElement;
 const actionLog = document.getElementById('action-log') as HTMLDivElement;
 const setupSection = document.getElementById('native-setup') as HTMLElement;
@@ -1007,7 +1007,7 @@ function renderNativeStatus(
 }
 
 function renderHostVersion(hostVersion: string | null): void {
-  extensionVersion.textContent = `Extension: v${manifest.version_name ?? manifest.version}\nDaemon: ${hostVersion ? `v${hostVersion}` : 'disconnected'}`;
+  extensionVersion.textContent = `Extension: v${manifest.version_name ?? manifest.version}\nHarness: ${hostVersion ? `v${hostVersion}` : 'disconnected'}`;
   renderVersionMismatch(hostVersion);
 }
 

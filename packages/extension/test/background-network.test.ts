@@ -830,3 +830,74 @@ test('network outcome cursors report the newest evicted sequence, not routine tr
     restoreGlobalDescriptors(snapshot);
   }
 });
+
+test('outcome reads return only requests completed since the previous read', async () => {
+  const snapshot = snapshotGlobalDescriptors();
+  const completions = new Map<string, () => void>();
+  Object.defineProperty(globalThis, 'fetch', {
+    configurable: true,
+    writable: true,
+    value: (url: string) =>
+      new Promise((resolve) =>
+        completions.set(url, () => resolve({ status: 200, headers: createHeaders(null) }))
+      ),
+  });
+  Object.defineProperty(globalThis, 'XMLHttpRequest', {
+    configurable: true,
+    writable: true,
+    value: FakeXMLHttpRequest,
+  });
+  const chrome = {
+    scripting: {
+      async executeScript(details: NetworkInjection) {
+        return [{ result: details.func?.(...(details.args ?? [])) }];
+      },
+    },
+  };
+  const finish = async (url: string, pending: Promise<unknown>) => {
+    completions.get(url)?.();
+    await pending;
+  };
+  try {
+    await ensureNetworkInterceptor(46, chrome);
+    const page = globalThis as unknown as InstalledNetworkGlobal;
+    await finish('https://example.test/before', page.fetch('https://example.test/before'));
+    // Started before arming, completes after it: excluded by sequence.
+    const straddling = page.fetch('https://example.test/straddling');
+    const armed = await readNetworkBuffer(46, false, chrome, true);
+    assert.equal(armed.cursor?.completed, 1);
+    const baseline = armed.cursor?.nextSequence ?? -1;
+
+    const slow = page.fetch('https://example.test/slow');
+    await finish('https://example.test/fast', page.fetch('https://example.test/fast'));
+    await finish('https://example.test/straddling', straddling);
+    const first = await readNetworkBuffer(46, false, chrome, true, {
+      sequence: baseline,
+      order: armed.cursor?.completed ?? -1,
+    });
+    assert.deepEqual(
+      first.entries.map((entry) => entry.url),
+      ['https://example.test/fast']
+    );
+
+    // A request that started earlier but completed later is still returned.
+    await finish('https://example.test/slow', slow);
+    const second = await readNetworkBuffer(46, false, chrome, true, {
+      sequence: baseline,
+      order: first.cursor?.completed ?? -1,
+    });
+    assert.deepEqual(
+      second.entries.map((entry) => entry.url),
+      ['https://example.test/slow']
+    );
+    const idle = await readNetworkBuffer(46, false, chrome, true, {
+      sequence: baseline,
+      order: second.cursor?.completed ?? -1,
+    });
+    assert.deepEqual(idle.entries, []);
+    assert.equal((await readNetworkBuffer(46, false, chrome, true)).entries.length, 4);
+    await disableNetworkInterceptor(46, chrome);
+  } finally {
+    restoreGlobalDescriptors(snapshot);
+  }
+});

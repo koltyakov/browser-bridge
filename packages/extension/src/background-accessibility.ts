@@ -46,6 +46,8 @@ const SEMANTIC_INTERACTIVE_ROLES = new Set([
 
 const ROOT_ROLES = new Set(['rootwebarea', 'webarea', 'document', 'application']);
 const DECORATIVE_ROLES = new Set(['none', 'presentation']);
+// Layout text fragments only repeat their StaticText parent's name.
+const TEXT_FRAGMENT_ROLES = new Set(['inlinetextbox', 'linebreak']);
 
 /** Parse a real CDP AXNode. Dynamic states are represented in `properties`, not
 as top-level fields. The top-level fallback keeps synthetic older fixtures
@@ -91,7 +93,7 @@ export function buildAccessibilityTree(
 } {
   const simplified = rawNodes.map(simplifyAXNode).filter((node) => node.nodeId !== '');
   const byId = new Map(simplified.map((node) => [node.nodeId, node]));
-  const parentById = new Map();
+  const parentById = new Map<string, string>();
   let missingChildCount = 0;
   for (const node of simplified) {
     for (const childId of node.childIds) {
@@ -106,7 +108,11 @@ export function buildAccessibilityTree(
   const kept = simplified.filter((node) => {
     if (options.interactiveOnly) return node.semanticInteractive && !node.ignored;
     if (!options.compact) return true;
-    return isMeaningfulCompactNode(node);
+    const parentId = parentById.get(node.nodeId);
+    return (
+      isMeaningfulCompactNode(node) &&
+      !repeatsParentText(node, parentId ? byId.get(parentId) : undefined)
+    );
   });
   const limited = kept.slice(0, options.maxNodes);
   const includedIds = new Set(limited.map((node) => node.nodeId));
@@ -192,6 +198,14 @@ function isMeaningfulCompactNode(node: SimplifiedAXNode) {
   if (node.ignored || DECORATIVE_ROLES.has(normalizeRole(node.role))) return false;
   if (node.semanticInteractive || ROOT_ROLES.has(normalizeRole(node.role))) return true;
   return Boolean(node.name || node.description || node.value);
+}
+
+/** Drop text leaves whose content the parent already names, such as the
+StaticText under a heading or link with the same accessible name. */
+function repeatsParentText(node: SimplifiedAXNode, parent: SimplifiedAXNode | undefined) {
+  const role = normalizeRole(node.role);
+  if (TEXT_FRAGMENT_ROLES.has(role)) return true;
+  return role === 'statictext' && parent !== undefined && parent.name === node.name;
 }
 
 function isSemanticInteractive(role: string) {

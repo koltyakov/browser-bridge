@@ -554,18 +554,20 @@ type McpClientStatus struct {
 
 	Configured bool `json:"configured"`
 
+	Stale Optional[bool] `json:"stale,omitzero"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v McpClientStatus) MarshalJSON() ([]byte, error) {
 	type alias McpClientStatus
-	return marshalOpen(alias(v), v.Extra, []string{"key", "label", "detected", "configPath", "configExists", "configured"})
+	return marshalOpen(alias(v), v.Extra, []string{"key", "label", "detected", "configPath", "configExists", "configured", "stale"})
 }
 
 func (v *McpClientStatus) UnmarshalJSON(data []byte) error {
 	type alias McpClientStatus
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"key", "label", "detected", "configPath", "configExists", "configured"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"key", "label", "detected", "configPath", "configExists", "configured", "stale"})
 	if err != nil {
 		return err
 	}

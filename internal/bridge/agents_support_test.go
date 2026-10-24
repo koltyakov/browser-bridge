@@ -427,3 +427,37 @@ func TestLegacySharedSkillOwnershipSurvivesAliases(t *testing.T) {
 		t.Fatal("alias removal deleted legacy generic skill", err)
 	}
 }
+
+func TestMCPStaleDetectsMissingLauncherPaths(t *testing.T) {
+	_, scope := installTestScope(t)
+	path := filepath.Join(scope.home, ".claude.json")
+	key := installMCPKey("claude", path, scope)
+	live, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	missing := filepath.Join(scope.home, "removed", "packages", "mcp-server", "src", "bin.js")
+	entry := func(command string, args ...string) string {
+		raw, _ := json.Marshal(map[string]any{key: map[string]any{"browser-bridge": map[string]any{"type": "stdio", "command": command, "args": args}}})
+		return string(raw)
+	}
+	for name, test := range map[string]struct {
+		raw   string
+		stale bool
+	}{
+		"bare command":    {entry("bbx", "mcp", "serve"), false},
+		"existing binary": {entry(live, "mcp", "serve"), false},
+		"missing command": {entry(missing), true},
+		"missing script":  {entry(live, missing), true},
+		"other server":    {`{"` + key + `":{"other":{"command":"` + missing + `"}}}`, false},
+	} {
+		if got := installMCPStale(test.raw, "claude", path, scope); got != test.stale {
+			t.Errorf("%s: stale = %v, want %v", name, got, test.stale)
+		}
+	}
+	clinePath := filepath.Join(scope.home, ".cline", "data", "settings", "cline_mcp_settings.json")
+	nested, _ := json.Marshal(map[string]any{installMCPKey("cline", clinePath, scope): map[string]any{"browser-bridge": map[string]any{"transport": map[string]any{"type": "stdio", "command": "bbx", "args": []string{missing}}}}})
+	if !installMCPStale(string(nested), "cline", clinePath, scope) {
+		t.Error("nested transport args should be checked")
+	}
+}

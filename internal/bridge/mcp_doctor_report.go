@@ -78,7 +78,7 @@ func mcpDoctorResolve(report, health, rawMetrics, logs object, connectionError e
 		transport["proxyExposed"] = enabled
 	}
 	report["transport"] = value(transport)
-	protocol, debugger, recovery := mcpDoctorProtocol(health, report.boolean("extensionConnected")), mcpDoctorDebugger(health), mcpDoctorRecovery(health, metrics)
+	protocol, debugger, recovery := mcpDoctorProtocol(health, report.boolean("extensionConnected")), mcpDoctorDebugger(health), mcpDoctorRecovery(health, rawMetrics)
 	report["protocol"], report["debugger"], report["recovery"] = value(protocol), value(debugger), value(recovery)
 	events := mcpDoctorEvents(logs)
 	causes := []string{}
@@ -180,6 +180,9 @@ func mcpDoctorResolve(report, health, rawMetrics, logs object, connectionError e
 	}
 	if stringIn("wrong_window", causes) {
 		steps = append(steps, "A recent request targeted the wrong window. Focus the intended Chrome window, click Enable there, and retry without reusing a tabId from another window.")
+	}
+	if report.object("setup").object("mcp").number("stale") > 0 {
+		steps = append(steps, "An MCP client config launches a missing file, so that client cannot start Browser Bridge. Run `bbx doctor` to identify it, then `bbx install-mcp <client>` to rewrite the entry.")
 	}
 	var loops []string
 	_ = json.Unmarshal(recovery["activeLoops"], &loops)
