@@ -57,6 +57,13 @@ error text, or internal method/tab groups.
 - For project-local installs, confirm the client is opened in the same repository where the config was written.
 - For managed paths and examples, see [manual-setup.md](./manual-setup.md).
 
+## The MCP server fails to start after upgrading to v2
+
+- `bbx install`, which npm runs after a global upgrade, rewrites global MCP entries that still launch a removed v1 entrypoint such as `packages/mcp-server/src/bin.js` (written by v1 on Windows). It keeps the entry's environment and client-specific settings.
+- `bbx doctor` warns about any other entry that launches a missing file. Rewrite it with `bbx install-mcp <client>`, then restart the client.
+- Project-local configs are not scanned during upgrade; run `bbx install-mcp <client> --local` in that repository.
+- If the install ran as another user, such as under `sudo`, files owned by your account are left unchanged. Run `bbx install` without `sudo`.
+
 ## Patches disappear
 
 - Patch rollback history belongs to the current document, not a durable browser session.

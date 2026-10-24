@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Upgrading to v2 rewrites global MCP entries that still launch the removed v1
+  Node entrypoint, so existing agent clients keep starting Browser Bridge.
+  `bbx doctor` warns about other MCP entries that launch a missing file.
+
 ## [1.12.5] - 2026-10-15
 
 ### Changed

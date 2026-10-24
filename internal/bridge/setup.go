@@ -560,6 +560,15 @@ func installNativeCommand(ctx context.Context, c config, args []string) error {
 		}
 	}
 	if !remove {
+		// npm's global postinstall runs this command, so an upgrade also moves
+		// agent configs off launchers the previous release no longer ships.
+		repaired, failed := installRepairStaleMCP(ctx)
+		for _, path := range repaired {
+			fmt.Println("Repaired Browser Bridge MCP launcher in", path)
+		}
+		for _, message := range failed {
+			fmt.Fprintln(os.Stderr, "Warning:", message)
+		}
 		running, err := stopLocalDaemon(ctx, c)
 		if err != nil {
 			return err
