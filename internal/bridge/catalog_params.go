@@ -19,7 +19,9 @@ var cliRoutingFlags = map[string]string{"tabId": "--tab", "extensionId": "--exte
 // declares it.
 var paramSynonyms = func() map[string][]string {
 	groups := [][2][]string{
-		{{"limit", "max", "count", "maxcount", "maxitems", "top"}, {"maxResults", "maxNodes", "maxEntries", "limit"}},
+		// Bridge methods name their size bound differently, so each name also
+		// suggests the others.
+		{{"limit", "max", "count", "maxcount", "maxitems", "top", "maxresults", "maxnodes", "maxentries"}, {"maxResults", "maxNodes", "maxEntries", "limit"}},
 		{{"attributes", "attrs", "attributelist"}, {"attributeAllowlist", "attributes"}},
 		{{"y", "scrolly", "deltay"}, {"top"}},
 		{{"x", "scrollx", "deltax"}, {"left"}},

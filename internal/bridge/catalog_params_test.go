@@ -15,6 +15,8 @@ func TestParamWarningsSuggestNearMisses(t *testing.T) {
 		want   []string
 	}{
 		{"dom.find_by_role", object{"role": value("link"), "limit": value(5)}, []string{"limit is not a dom.find_by_role param; did you mean maxResults?"}},
+		{"dom.find_by_role", object{"role": value("link"), "maxNodes": value(5)}, []string{"maxNodes is not a dom.find_by_role param; did you mean maxResults?"}},
+		{"page.get_console", object{"maxResults": value(5)}, []string{"maxResults is not a page.get_console param; did you mean limit?"}},
 		{"dom.query", object{"selector": value("a"), "attributes": value([]string{"href"}), "maxnodes": value(4)}, []string{"attributes is not a dom.query param; did you mean attributeAllowlist?", "maxnodes is not a dom.query param; did you mean maxNodes?"}},
 		{"page.evaluate", object{"expression": value("1"), "timeout": value(5)}, []string{"timeout is not a page.evaluate param; did you mean timeoutMs?"}},
 		{"input.fill", object{"target": value(object{}), "values": value("x")}, []string{"values is not a input.fill param; did you mean value?"}},

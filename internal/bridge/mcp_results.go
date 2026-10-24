@@ -154,7 +154,26 @@ func mcpResponse(response object, method string, params object) object {
 		}
 	}
 	structured := mcpStructuredResponse(response, method, params)
-	return mcpResult(structured.text("summary"), structured, !structured.boolean("ok"))
+	summary := structured.text("summary")
+	if err := structured.object("error"); err != nil {
+		summary += mcpErrorDetailsText(err["details"])
+	}
+	return mcpResult(summary, structured, !structured.boolean("ok"))
+}
+
+// Clients often render only the text of an error result, so the text names
+// the error's details too, bounded like a hint. Structured content already
+// carries them under error.details.
+func mcpErrorDetailsText(details json.RawMessage) string {
+	switch string(details) {
+	case "", "null", "{}", "[]":
+		return ""
+	}
+	text := string(cliJSON(details, true))
+	if mcpStringLength(text) > 300 {
+		text = mcpSlice(text, 300) + "…"
+	}
+	return " Details: " + text
 }
 
 // Keep image bytes out of structured text. Each image has an immediately preceding
@@ -195,6 +214,7 @@ func mcpVisualBaseline(result object, method string) object {
 // Share bounded evidence and error shaping between standalone and batch calls.
 // Exact payload methods are handled by mcpResponse and are not batch-safe.
 func mcpStructuredResponse(response object, method string, params object) object {
+	response = mcpRoundGeometry(response, method)
 	structured := cliSummaryNow(response, method)
 	mcpCompactEnvelope(structured)
 	summary := structured.text("summary")
@@ -250,6 +270,39 @@ func mcpStructuredResponse(response object, method string, params object) object
 	}
 	structured["summary"] = value(summary)
 	return structured
+}
+
+// mcpRoundGeometry rounds element rectangles to 0.1px, as dom.query bboxes
+// are, before the summary and evidence both repeat them.
+func mcpRoundGeometry(response object, method string) object {
+	switch method {
+	case "layout.get_box_model", "dom.describe", "layout.hit_test":
+	default:
+		return response
+	}
+	result := response.object("result")
+	if result == nil {
+		return response
+	}
+	result = mcpRoundRect(result)
+	if box := result.object("bbox"); box != nil {
+		result["bbox"] = value(mcpRoundRect(box))
+	}
+	// Absent element fields such as a null role are not evidence.
+	mcpOmitEmpty(result, "id", "role", "name")
+	out := mcpClone(response)
+	out["result"] = value(result)
+	return out
+}
+
+func mcpRoundRect(rect object) object {
+	out := mcpClone(rect)
+	for _, key := range []string{"x", "y", "width", "height"} {
+		if mcpIsNumber(rect[key]) {
+			out[key] = value(math.Round(mcpFloat(rect[key])*10) / 10)
+		}
+	}
+	return out
 }
 
 // mcpCompactEnvelope drops envelope fields that do not describe the MCP
@@ -316,6 +369,39 @@ func mcpDedupeFindEvidence(raw json.RawMessage) json.RawMessage {
 	found["nodes"] = value(nodes)
 	mcpOmitEmpty(found, "truncationReason")
 	return value(found)
+}
+
+// mcpPerformEvidence shapes a final read step's result as a standalone call to
+// its method would be, so returnLastResult costs no more than the follow-up
+// read it replaces. Action and wait results stay whole: their summaries carry
+// outcomes, such as found: false, that the step result has no other room for.
+func mcpPerformEvidence(r, params object) json.RawMessage {
+	out := mcpClone(r)
+	mcpOmitEmpty(out, "failures")
+	last := r.object("lastResult")
+	result := last.object("result")
+	switch last.text("method") {
+	case "page.get_state", "page.get_text", "dom.query", "dom.get_text":
+	default:
+		return value(out)
+	}
+	if result == nil {
+		return value(out)
+	}
+	var steps []object
+	_ = json.Unmarshal(params["steps"], &steps)
+	stepParams := object{}
+	if index := int(last.number("index")); index >= 0 && index < len(steps) && steps[index].object("params") != nil {
+		stepParams = steps[index].object("params")
+	}
+	shaped := mcpStructuredResponse(success("", result), last.text("method"), stepParams)
+	last = mcpClone(last)
+	last["result"] = shaped["evidence"]
+	if shaped.boolean("outputTruncated") {
+		last["outputTruncated"] = value(true)
+	}
+	out["lastResult"] = value(last)
+	return value(out)
 }
 
 func mcpEvidence(raw json.RawMessage, method string, params object, fallback json.RawMessage) (json.RawMessage, bool, object) {
@@ -508,6 +594,19 @@ func mcpEvidence(raw json.RawMessage, method string, params object, fallback jso
 				if string(r["truncated"]) == "false" {
 					delete(out, "truncation")
 				}
+				// Idle capture counters only matter once nonzero; dropped stays
+				// as the explicit no-loss signal.
+				for _, key := range []string{"abandoned", "inflight"} {
+					if string(out[key]) == "0" {
+						delete(out, key)
+					}
+				}
+				if string(out["ownershipHeld"]) == "false" {
+					delete(out, "ownershipHeld")
+				}
+				if out["filteredTotal"] != nil && string(out["filteredTotal"]) == string(out["total"]) {
+					delete(out, "filteredTotal")
+				}
 				out["entries"] = bounded
 				bounded = value(out)
 			}
@@ -517,9 +616,18 @@ func mcpEvidence(raw json.RawMessage, method string, params object, fallback jso
 	if method == "dom.find_by_text" || method == "dom.find_by_role" {
 		fallback = mcpDedupeFindEvidence(fallback)
 	}
+	if method == "input.perform" && r != nil {
+		fallback = mcpPerformEvidence(r, params)
+	}
 	if strings.HasPrefix(method, "network.intercept.") {
 		bounded, truncated := mcpBound(raw, 100, 10000, 4000)
 		return bounded, truncated, object{"maxEntries": value(100), "maxCharacters": value(10000)}
+	}
+	// The CLI summary lists only the keys of result shapes it does not
+	// recognize, such as styles.get_matched_rules. MCP has no raw response
+	// beside the evidence, so deliver the bounded values instead.
+	if keys := cliKeys(raw); len(keys) > 0 && string(fallback) == string(value(keys[:min(10, len(keys))])) {
+		fallback = raw
 	}
 	bounded, truncated := mcpBound(fallback, 500, 20000, 4000)
 	return bounded, truncated, object{"maxEntries": value(500), "maxCharacters": value(20000), "maxStringLength": value(4000)}

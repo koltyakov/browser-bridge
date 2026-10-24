@@ -28,6 +28,7 @@ bbx call <method> '{...}'   # any RPC method (raw output)
 bbx <method> '{...}'        # direct alias for an exact bridge method such as page.get_state
 bbx call --tab 123 <method> '{...}' # explicit tab override
 bbx batch '[{...},...]'     # parallel reads (concurrent)
+bbx batch --evidence-only '[{...},...]' # bounded evidence without fuller responses
 bbx tabs                    # list available tabs (prefer this)
 bbx logs                    # recent bridge request log
 bbx tab-create [url]        # open a new tab (avoid unless necessary)
@@ -417,6 +418,8 @@ Return: verdict, tab id + origin, minimal evidence set. No raw HTML or base64 im
 ## Output Format
 
 Every CLI shortcut command produces consistent `{ok, summary, evidence}` JSON. Use `bbx call <method>` for raw protocol output when needed.
+
+CLI batches keep fuller `response` values when bounded `evidence` omits information. Use `--evidence-only` to omit those values for smaller agent output; `responseOmitted: true` marks affected items. The default remains lossless. `protocol.describe` can share a CLI or MCP batch with page reads and runs locally; discovery-only batches need no daemon. Text summaries show returned/source character counts when they differ, such as `Page text: 600/3015 chars (truncated).` Evidence previews can be shorter than the bridge result.
 
 ## CLI Raw Params Gotchas
 

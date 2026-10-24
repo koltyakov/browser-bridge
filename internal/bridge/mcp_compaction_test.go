@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -67,6 +68,26 @@ func TestMCPEvidenceOmitsEmptyAndRepeatedFields(t *testing.T) {
 			structured := mcpResponse(success("fixture", compactionFixture(t, tc.result)), tc.method, object{}).object("structuredContent")
 			assertJSONEqual(t, structured["evidence"], []byte(tc.want))
 		})
+	}
+}
+
+func TestMCPEvidenceKeepsValuesOfUnrecognizedResults(t *testing.T) {
+	result := compactionFixture(t, `{"elementRef":"el_1","classes":["nav","active"],"inlineStyle":"color: red"}`)
+	structured := mcpResponse(success("rules", result), "styles.get_matched_rules", object{}).object("structuredContent")
+	assertJSONEqual(t, structured["evidence"], []byte(`{"elementRef":"el_1","classes":["nav","active"],"inlineStyle":"color: red"}`))
+	if !strings.Contains(structured.text("summary"), "3 top-level fields") {
+		t.Fatalf("summary changed: %s", structured.text("summary"))
+	}
+}
+
+func TestMCPHitTestEvidenceKeepsNodeText(t *testing.T) {
+	result := compactionFixture(t, `{"elementRef":"el_3","tag":"a","role":null,"name":null,"textExcerpt":"Services","attrs":{},"bbox":{"x":189.375,"y":0,"width":80.5,"height":50}}`)
+	structured := mcpResponse(success("hit", result), "layout.hit_test", object{}).object("structuredContent")
+	if got := structured.object("evidence").text("text"); got != "Services" {
+		t.Fatalf("hit_test text = %q, want Services: %s", got, value(structured))
+	}
+	if summary := structured.text("summary"); summary != "Element a, Services, 80.5×50." {
+		t.Fatalf("hit_test summary = %q", summary)
 	}
 }
 

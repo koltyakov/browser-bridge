@@ -12,7 +12,8 @@ import (
 )
 
 // These fixed expectations were captured from the retired JavaScript runtime.
-// Only release version strings are substituted; behavior stays fixture-defined.
+// Only release version strings are substituted. Intentional regression fixes
+// update their affected expectations alongside focused tests below.
 func readContractFixture(t *testing.T, name string) json.RawMessage {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join("testdata", "legacy-contracts", name+".json"))
@@ -178,6 +179,16 @@ func TestCLISummaryDOMQueryReportsOtherMatches(t *testing.T) {
 	response = object{"ok": value(true), "result": value(object{"nodes": value([]object{{"tag": value("a")}})})}
 	if text := cliText(cliSummarize(response, "dom.query", 1700000000000), "summary"); strings.Contains(text, "matched") {
 		t.Fatalf("single match should not mention other matches: %s", text)
+	}
+}
+
+func TestCLITextSummaryDistinguishesReturnedAndSourceLengths(t *testing.T) {
+	for _, method := range []string{"page.get_text", "dom.get_text"} {
+		response := success("text", object{"value": value("😀abc"), "length": value(3015), "truncated": value(true)})
+		summary := cliSummarize(response, method, 1700000000000)
+		if !strings.Contains(summary.text("summary"), "text: 5/3015 chars (truncated).") {
+			t.Fatalf("summary lost returned or source length: %s", value(summary))
+		}
 	}
 }
 

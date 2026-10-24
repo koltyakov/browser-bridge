@@ -97,7 +97,9 @@ export function buildAccessibilityTree(
   omitted: number;
   missingChildCount: number;
 } {
-  const simplified = rawNodes.map(simplifyAXNode).filter((node) => node.nodeId !== '');
+  const simplified = inDocumentOrder(
+    rawNodes.map(simplifyAXNode).filter((node) => node.nodeId !== '')
+  );
   const byId = new Map(simplified.map((node) => [node.nodeId, node]));
   const parentById = new Map<string, string>();
   let missingChildCount = 0;
@@ -154,6 +156,31 @@ export function buildAccessibilityTree(
     omitted: Math.max(0, kept.length - limited.length),
     missingChildCount,
   };
+}
+
+/** CDP lists full trees level by level. Walk each root depth-first so siblings
+keep page order and maxNodes keeps the top of the page rather than one shallow
+slice of all of it. Nodes no root reaches keep their CDP order at the end. */
+function inDocumentOrder(nodes: SimplifiedAXNode[]): SimplifiedAXNode[] {
+  const byId = new Map(nodes.map((node) => [node.nodeId, node]));
+  const childIds = new Set(nodes.flatMap((node) => node.childIds));
+  const ordered: SimplifiedAXNode[] = [];
+  const visited = new Set<string>();
+  for (const root of nodes) {
+    if (childIds.has(root.nodeId)) continue;
+    const stack = [root.nodeId];
+    for (let nodeId = stack.pop(); nodeId !== undefined; nodeId = stack.pop()) {
+      const node = byId.get(nodeId);
+      if (!node || visited.has(nodeId)) continue;
+      visited.add(nodeId);
+      ordered.push(node);
+      for (const childId of [...node.childIds].reverse()) stack.push(childId);
+    }
+  }
+  for (const node of nodes) {
+    if (!visited.has(node.nodeId)) ordered.push(node);
+  }
+  return ordered;
 }
 
 /** Remove unrelated relatives from a partial AX response while retaining the
@@ -225,7 +252,14 @@ function toWireAXNode(node: SimplifiedAXNode): AXWireNode {
 function isMeaningfulCompactNode(node: SimplifiedAXNode) {
   if (node.ignored || DECORATIVE_ROLES.has(normalizeRole(node.role))) return false;
   if (node.semanticInteractive || ROOT_ROLES.has(normalizeRole(node.role))) return true;
-  return Boolean(node.name || node.description || node.value);
+  return Boolean(readableText(node.name) || node.description || node.value);
+}
+
+// Icon fonts name controls with private-use glyphs, which read as nothing.
+const PRIVATE_USE_CHARACTERS = /[\uE000-\uF8FF\u{F0000}-\u{FFFFD}\u{100000}-\u{10FFFD}]/gu;
+
+function readableText(text: string) {
+  return text.replace(PRIVATE_USE_CHARACTERS, '').trim();
 }
 
 /** Drop text leaves whose content the parent already names, such as the
@@ -303,7 +337,8 @@ export function formatAccessibilityOutline(nodes: Array<AXWireNode>, rootIds: st
     if (node.focused) states.push('focused');
     if (node.required) states.push('required');
     if (node.value) states.push(`value=${JSON.stringify(node.value.slice(0, 40))}`);
-    const name = node.name ? ` ${JSON.stringify(node.name.slice(0, 80))}` : '';
+    const label = readableText(node.name ?? '');
+    const name = label ? ` ${JSON.stringify(label.slice(0, 80))}` : '';
     lines.push(
       `${'  '.repeat(Math.min(depth, 12))}- ${node.role || 'generic'}${name}${states.length ? ` ${states.join(' ')}` : ''}`
     );

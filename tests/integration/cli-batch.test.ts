@@ -16,7 +16,9 @@ type BatchItem = {
   ok: boolean;
   summary: string;
   error?: { code: string; message: string };
+  evidence?: unknown;
   response?: unknown;
+  responseOmitted?: boolean;
 };
 
 async function runCli(args: string[], env: NodeJS.ProcessEnv): Promise<ProcessResult> {
@@ -94,6 +96,94 @@ test(
     }
   }
 );
+
+test('bbx batch resolves protocol discovery locally alongside page reads', async () => {
+  const bridgeServer = await bridgeServerWith(
+    { 'page.get_state': (request) => createSuccess(request.id, { readyState: 'complete' }) },
+    { prefix: 'bbx-it-batch-discovery-' }
+  );
+  try {
+    const batch = JSON.stringify([
+      { method: 'protocol.describe', params: { method: 'dom.query' } },
+      { method: 'page.get_state', tabId: 7 },
+    ]);
+    const result = await runCli(['batch', batch], {
+      ...process.env,
+      BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome,
+    });
+    assert.equal(result.code, 0, result.stdout + result.stderr);
+    const items = parseBatchOutput(result);
+    assert.equal(items[0].ok, true);
+    assert.equal((items[0].evidence as { method: string }).method, 'dom.query');
+    assert.equal(items[1].ok, true);
+    assert.deepEqual(
+      bridgeServer.requests.map((request) => request.method),
+      ['page.get_state']
+    );
+    assert.deepEqual(bridgeServer.errors, []);
+  } finally {
+    await bridgeServer.close();
+  }
+});
+
+test('bbx batch serves discovery without a daemon and reports invalid descriptions', async () => {
+  const bridgeServer = await bridgeServerWith({}, { prefix: 'bbx-it-batch-local-' });
+  const bridgeHome = bridgeServer.bridgeHome;
+  await bridgeServer.close();
+  for (const [params, expected] of [
+    [{ method: 'dom.query' }, true],
+    [{ group: 'inspect' }, true],
+    [{}, true],
+    [{ method: 'no.method' }, false],
+    [{ group: 'no.group' }, false],
+    [{ method: 'dom.query', group: 'inspect' }, false],
+  ] as const) {
+    const result = await runCli(
+      ['batch', JSON.stringify([{ method: 'protocol.describe', params }])],
+      { ...process.env, BROWSER_BRIDGE_HOME: bridgeHome }
+    );
+    assert.equal(result.code, expected ? 0 : 1, result.stdout + result.stderr);
+    const [item] = parseBatchOutput(result);
+    assert.equal(item.ok, expected);
+    if (!expected) assert.equal(item.error?.code, 'INVALID_REQUEST');
+  }
+});
+
+test('bbx batch can omit fuller responses without changing the default output', async () => {
+  const text = 'x'.repeat(2000);
+  const bridgeServer = await bridgeServerWith(
+    {
+      'page.get_text': (request) =>
+        createSuccess(request.id, { value: text, length: text.length, truncated: false }),
+      'dom.query': (request) => createFailure(request.id, 'ELEMENT_STALE', 'Gone'),
+    },
+    { prefix: 'bbx-it-batch-evidence-' }
+  );
+  try {
+    const env = { ...process.env, BROWSER_BRIDGE_HOME: bridgeServer.bridgeHome };
+    const batch = JSON.stringify([
+      { method: 'page.get_text' },
+      { method: 'dom.query', params: { selector: 'main' } },
+    ]);
+    const full = await runCli(['batch', batch], env);
+    const compact = await runCli(['batch', '--evidence-only', batch], env);
+    assert.equal(full.code, 1);
+    assert.equal(compact.code, 1);
+    const fullItems = parseBatchOutput(full);
+    const compactItems = parseBatchOutput(compact);
+    assert.deepEqual(fullItems[0].response, { value: text, length: text.length, truncated: false });
+    assert.equal(fullItems[0].responseOmitted, undefined);
+    assert.equal(compactItems[0].response, undefined);
+    assert.equal(compactItems[0].responseOmitted, true);
+    assert.deepEqual(compactItems[0].evidence, fullItems[0].evidence);
+    assert.deepEqual(compactItems[1].error, fullItems[1].error);
+    assert.equal(compactItems[1].responseOmitted, undefined);
+    assert.ok(compact.stdout.length < full.stdout.length - text.length);
+    assert.deepEqual(bridgeServer.errors, []);
+  } finally {
+    await bridgeServer.close();
+  }
+});
 
 test('bbx batch isolates per-call failures and exits non-zero', { timeout: 15_000 }, async () => {
   const bridgeServer = await bridgeServerWith(

@@ -210,10 +210,18 @@ func parseCLI(args []string) (object, error) {
 	meta, params := object{"source": value("cli")}, object{}
 	var tab int64
 	var preset string
+	var evidenceOnly bool
 	rest := []string{}
 	seen := map[string]bool{}
 	for i := 0; i < len(args); i++ {
 		key := args[i]
+		if key == "--evidence-only" {
+			if evidenceOnly {
+				return nil, errors.New("--evidence-only may only be specified once")
+			}
+			evidenceOnly = true
+			continue
+		}
 		if key == "--extension" || key == "--browser" || key == "--profile" || key == "--tab" || key == "--preset" {
 			if seen[key] {
 				return nil, fmt.Errorf("%s may only be specified once", key)
@@ -308,6 +316,9 @@ func parseCLI(args []string) (object, error) {
 		rest = nil
 	}
 	if method != "batch" {
+		if evidenceOnly {
+			return nil, errors.New("--evidence-only is only supported by batch")
+		}
 		if _, ok := catalog.Methods[method]; !ok {
 			return nil, fmt.Errorf("unknown method or command: %s", method)
 		}
@@ -334,7 +345,11 @@ func parseCLI(args []string) (object, error) {
 			if len(meta) > 1 || tab != 0 {
 				return nil, errors.New("batch routing and budgets must be specified on each call")
 			}
-			return object{"calls": raw, "preset": value(preset)}, nil
+			request := object{"calls": raw, "preset": value(preset)}
+			if evidenceOnly {
+				request["evidenceOnly"] = value(true)
+			}
+			return request, nil
 		}
 		var err error
 		params, err = parseCLIJSONObject(raw)
@@ -375,19 +390,30 @@ func runBatch(ctx context.Context, c config, request object) error {
 			fmt.Fprintf(os.Stderr, "Warning: calls[%d]: %s\n", i, warning)
 		}
 	}
-	cl, err := connect(c, "agent")
-	if err != nil {
-		return err
+	var cl *client
+	for _, call := range calls {
+		if call.text("method") != "protocol.describe" {
+			cl, err = connect(c, "agent")
+			if err != nil {
+				return err
+			}
+			defer cl.close()
+			break
+		}
 	}
-	defer cl.close()
 	results := make([]object, len(calls))
 	jobs := make(chan int)
-	done := make(chan struct{}, protocol.MaxBatchConcurrency)
-	for worker := 0; worker < protocol.MaxBatchConcurrency; worker++ {
+	concurrency := min(protocol.MaxBatchConcurrency, len(calls))
+	done := make(chan struct{}, concurrency)
+	for worker := 0; worker < concurrency; worker++ {
 		go func() {
 			defer func() { done <- struct{}{} }()
 			for i := range jobs {
 				call := calls[i]
+				if call.text("method") == "protocol.describe" {
+					results[i] = mcpBatchDescribe(call.object("params"))
+					continue
+				}
 				meta := object{"source": value("cli")}
 				for key, dest := range map[string]string{"extensionId": "target_extension", "targetBrowser": "target_browser", "targetProfile": "target_profile"} {
 					if v, ok := call[key]; ok {
@@ -403,6 +429,10 @@ func runBatch(ctx context.Context, c config, request object) error {
 				response, err := cl.request(callCtx, newRequest(call.text("method"), call.object("params"), meta, tab))
 				cancel()
 				results[i] = cliBatchResult(call.text("method"), tab, response, err, time.Since(started).Milliseconds(), time.Now().UnixMilli())
+				if request.boolean("evidenceOnly") && results[i]["response"] != nil {
+					delete(results[i], "response")
+					results[i]["responseOmitted"] = value(true)
+				}
 			}
 		}()
 	}
@@ -410,7 +440,7 @@ func runBatch(ctx context.Context, c config, request object) error {
 		jobs <- i
 	}
 	close(jobs)
-	for worker := 0; worker < protocol.MaxBatchConcurrency; worker++ {
+	for worker := 0; worker < concurrency; worker++ {
 		<-done
 	}
 	if err := writeCLIJSONOutput(os.Stdout, value(results), true, cliTTY(os.Stdout)); err != nil {

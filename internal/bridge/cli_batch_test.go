@@ -35,3 +35,33 @@ func TestCLIBatchItemsKeepOnlyDistinctFields(t *testing.T) {
 		}
 	}
 }
+
+func TestCLIBatchAcceptsLocalDiscovery(t *testing.T) {
+	calls, invalid, err := prepareCLIBatch([]byte(`[{"method":"protocol.describe","params":{"method":"dom.query"}},{"method":"page.get_state","tabId":12}]`), "quick")
+	if err != nil || invalid != nil || len(calls) != 2 {
+		t.Fatalf("local discovery rejected: %v %s", err, value(invalid))
+	}
+	if calls[0].text("method") != "protocol.describe" || string(calls[0]["tabId"]) != "null" || calls[1].number("tabId") != 12 {
+		t.Fatalf("discovery changed routing: %s", value(calls))
+	}
+}
+
+func TestCLIBatchEvidenceOnlyFlag(t *testing.T) {
+	const calls = `[{"method":"page.get_text"}]`
+	request, err := parseCLI([]string{"batch", "--evidence-only", "--preset", "quick", calls})
+	if err != nil || !request.boolean("evidenceOnly") || request.text("preset") != "quick" {
+		t.Fatalf("evidence-only option rejected: %v %s", err, value(request))
+	}
+	request, err = parseCLI([]string{"batch", calls})
+	if err != nil || request["evidenceOnly"] != nil {
+		t.Fatalf("default batch output changed: %v %s", err, value(request))
+	}
+	for _, args := range [][]string{
+		{"batch", "--evidence-only", "--evidence-only", calls},
+		{"call", "page.get_text", "--evidence-only"},
+	} {
+		if _, err := parseCLI(args); err == nil {
+			t.Fatalf("invalid flag use accepted: %q", args)
+		}
+	}
+}

@@ -246,8 +246,18 @@ test('summarizes page text result', () => {
       length: 5000,
     })
   );
-  assert.match(summary.summary, /Page text: 5000 chars/);
+  assert.match(summary.summary, /Page text: 24\/5000 chars/);
   assert.match(summary.summary, /truncated/);
+});
+
+test('text summaries distinguish returned UTF-16 characters from source length', () => {
+  for (const method of ['page.get_text', 'dom.get_text']) {
+    const summary = summarizeBridgeResponse(
+      ok({ value: '😀abc', length: 3015, truncated: true }),
+      method
+    );
+    assert.match(summary.summary, /text: 5\/3015 chars \(truncated\)\./);
+  }
 });
 
 test('summarizes semantic content with source and format metadata', () => {
@@ -885,6 +895,22 @@ test('summarizes element describe result', () => {
   );
   assert.match(summary.summary, /Element button#submit-btn/);
   assert.match(summary.summary, /100×40/);
+});
+
+test('summarizes hit-test node text from textExcerpt', () => {
+  const summary = summarizeBridgeResponse(
+    ok({
+      elementRef: 'el_3',
+      tag: 'a',
+      role: null,
+      name: null,
+      textExcerpt: 'Services',
+      attrs: {},
+      bbox: { x: 189, y: 0, width: 80, height: 50 },
+    })
+  );
+  assert.equal(summary.summary, 'Element a, Services, 80×50.');
+  assert.equal((summary.evidence as { text?: string }).text, 'Services');
 });
 
 // --- summarizeBridgeResponse: computed styles ---
