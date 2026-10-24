@@ -346,6 +346,31 @@ test('summarizes accessibility tree with interactive nodes', () => {
   assert.match(summary.summary, /2 interactive/);
 });
 
+test('summarizes DOM-source accessibility trees as actionable outlines, not DOM queries', () => {
+  const summary = summarizeBridgeResponse(
+    ok({
+      source: 'dom',
+      format: 'tree',
+      count: 2,
+      scanned: 9,
+      truncated: true,
+      nodes: [
+        { ref: 'el_1', role: 'link', name: '', depth: 0, states: [] },
+        { ref: 'el_2', role: 'heading', name: 'Pricing', depth: 1, states: ['level=2'] },
+      ],
+    }),
+    'dom.get_accessibility_tree'
+  );
+  assert.equal(
+    summary.summary,
+    'Accessibility tree (DOM): 2 node(s), truncated; refs work as input targets.'
+  );
+  assert.deepEqual(summary.evidence, [
+    { ref: 'el_1', role: 'link' },
+    { ref: 'el_2', role: 'heading', name: 'Pricing', states: ['level=2'] },
+  ]);
+});
+
 // --- summarizeBridgeResponse: DOM query results ---
 
 test('summarizes DOM query result', () => {

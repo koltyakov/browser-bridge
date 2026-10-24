@@ -195,6 +195,7 @@ func mcpVisualBaseline(result object, method string) object {
 // Exact payload methods are handled by mcpResponse and are not batch-safe.
 func mcpStructuredResponse(response object, method string, params object) object {
 	structured := cliSummaryNow(response, method)
+	mcpCompactEnvelope(structured)
 	summary := structured.text("summary")
 	if !response.boolean("ok") {
 		err := mcpClone(response.object("error"))
@@ -233,8 +234,9 @@ func mcpStructuredResponse(response object, method string, params object) object
 			if offset+int64(len(delivered)) < total {
 				pagination["nextOffset"] = value(offset + int64(len(delivered)))
 			}
+			// Pagination is reported once, beside the evidence.
 			structured["pagination"] = value(pagination)
-			listed["pagination"] = value(pagination)
+			delete(listed, "pagination")
 			structured["evidence"] = value(listed)
 			summary = fmt.Sprintf("Bridge listed %d tab(s).", total)
 			if pagination.boolean("truncated") {
@@ -247,6 +249,54 @@ func mcpStructuredResponse(response object, method string, params object) object
 	}
 	structured["summary"] = value(summary)
 	return structured
+}
+
+// mcpCompactEnvelope drops envelope fields that do not describe the MCP
+// delivery: the CLI summary's own size, and idle timing phases.
+func mcpCompactEnvelope(structured object) {
+	for _, suffix := range []string{"Bytes", "Tokens", "CostClass"} {
+		delete(structured, "summary"+suffix)
+	}
+	if timing := structured.object("timing"); timing != nil {
+		for _, key := range []string{"preparationMs", "queueMs", "scheduled"} {
+			if string(timing[key]) == "0" || string(timing[key]) == "false" {
+				delete(timing, key)
+			}
+		}
+		structured["timing"] = value(timing)
+	}
+}
+
+// mcpOmitEmpty drops fields whose empty string, empty array, or null value
+// carries no evidence.
+func mcpOmitEmpty(record object, keys ...string) {
+	for _, key := range keys {
+		switch string(record[key]) {
+		case `""`, "[]", "null":
+			delete(record, key)
+		}
+	}
+}
+
+// Find results usually name links and buttons by their own text. Drop the
+// repeat after the CLI summary, whose shape is a pinned contract.
+func mcpDedupeFindEvidence(raw json.RawMessage) json.RawMessage {
+	found, err := decodeObject(raw)
+	if err != nil {
+		return raw
+	}
+	var nodes []object
+	if json.Unmarshal(found["nodes"], &nodes) != nil {
+		return raw
+	}
+	for _, node := range nodes {
+		if cliPresent(node["text"]) && string(node["text"]) == string(node["label"]) {
+			delete(node, "text")
+		}
+	}
+	found["nodes"] = value(nodes)
+	mcpOmitEmpty(found, "truncationReason")
+	return value(found)
 }
 
 func mcpEvidence(raw json.RawMessage, method string, params object, fallback json.RawMessage) (json.RawMessage, bool, object) {
@@ -265,8 +315,18 @@ func mcpEvidence(raw json.RawMessage, method string, params object, fallback jso
 				return (tabs[i].boolean("working") || tabs[i].boolean("active")) && !tabs[j].boolean("working") && !tabs[j].boolean("active")
 			})
 			listed := []object{}
+			_, profiled := cliArray(r["profiles"])
 			for _, tab := range tabs {
 				out := mcpPick(tab, "extensionId tabId windowId active browserName profileLabel title origin url")
+				// The URL already carries its origin, and multi-profile listings
+				// name each extensionId's browser and profile once in profiles.
+				if origin := tab.text("origin"); origin != "" && strings.HasPrefix(tab.text("url"), origin) {
+					delete(out, "origin")
+				}
+				if profiled {
+					delete(out, "browserName")
+					delete(out, "profileLabel")
+				}
 				if tab.boolean("working") {
 					out["working"] = value(true)
 				}
@@ -282,7 +342,7 @@ func mcpEvidence(raw json.RawMessage, method string, params object, fallback jso
 				listed = append(listed, out)
 			}
 			out := mcpClone(r)
-			out["tabCount"], out["tabs"] = value(len(listed)), value(listed)
+			out["tabs"] = value(listed)
 			bounded, truncated := mcpBound(value(out), 2000, 30000, 1000)
 			boundedObject, _ := decodeObject(bounded)
 			var boundedTabs []json.RawMessage
@@ -366,7 +426,7 @@ func mcpEvidence(raw json.RawMessage, method string, params object, fallback jso
 					if !mcpIsString(node["textExcerpt"]) {
 						text = node.text("text")
 					}
-					if text != "" {
+					if text != "" && (!mcpIsString(compact["label"]) || compact.text("label") != text) {
 						compact["text"] = value(mcpSlice(text, 120))
 					}
 					if children, ok := cliArray(node["children"]); ok && len(children) > 0 {
@@ -375,9 +435,12 @@ func mcpEvidence(raw json.RawMessage, method string, params object, fallback jso
 					out = append(out, compact)
 				} else if r.text("source") == "dom" {
 					// DOM trees carry actionable refs and states, not CDP node IDs.
-					out = append(out, mcpPick(node, "ref role name depth states"))
+					compact := mcpPick(node, "ref role name depth states")
+					mcpOmitEmpty(compact, "name", "states")
+					out = append(out, compact)
 				} else {
 					compact := mcpPick(node, "nodeId role name value childIds")
+					mcpOmitEmpty(compact, "name", "value")
 					for _, key := range []string{"interactive", "semanticInteractive", "focusableAndEnabled"} {
 						if node.boolean(key) {
 							compact[key] = value(true)
@@ -412,11 +475,18 @@ func mcpEvidence(raw json.RawMessage, method string, params object, fallback jso
 			bounded, extra := mcpBound(value(entries), 500, 20000, 4000)
 			if method == "page.get_network" {
 				out := mcpPick(r, "count total filteredTotal dropped abandoned source capture armed armedDuringCapture captureState startedAt inflight ownershipHeld truncated truncation")
+				mcpOmitEmpty(out, "capture", "startedAt")
+				if string(r["truncated"]) == "false" {
+					delete(out, "truncation")
+				}
 				out["entries"] = bounded
 				bounded = value(out)
 			}
 			return bounded, truncated || extra, object{"maxEntries": value(limit), "maxCharacters": value(20000)}
 		}
+	}
+	if method == "dom.find_by_text" || method == "dom.find_by_role" {
+		fallback = mcpDedupeFindEvidence(fallback)
 	}
 	if strings.HasPrefix(method, "network.intercept.") {
 		bounded, truncated := mcpBound(raw, 100, 10000, 4000)

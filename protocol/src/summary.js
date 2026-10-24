@@ -721,6 +721,26 @@ function summarizeBridgeResponseBody(response, method) {
       evidence: result.outline,
     };
   }
+  if (Array.isArray(result.nodes) && result.source === 'dom' && result.format === 'tree') {
+    const nodes = /** @type {Array<Record<string, unknown>>} */ (result.nodes);
+    const count = typeof result.count === 'number' ? result.count : nodes.length;
+    return {
+      ok: true,
+      summary: appendProtocolWarning(
+        `Accessibility tree (DOM): ${count} node(s)${result.truncated === true ? ', truncated' : ''}; refs work as input targets.`,
+        protocolWarning
+      ),
+      evidence: nodes.slice(0, 20).map((n) => {
+        /** @type {Record<string, unknown>} */
+        const entry = {};
+        if ('ref' in n) entry.ref = n.ref;
+        if ('role' in n) entry.role = n.role;
+        if (n.name) entry.name = n.name;
+        if (Array.isArray(n.states) && n.states.length > 0) entry.states = n.states;
+        return entry;
+      }),
+    };
+  }
   if (
     Array.isArray(result.nodes) &&
     typeof result.total === 'number' &&

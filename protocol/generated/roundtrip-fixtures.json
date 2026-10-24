@@ -7583,6 +7583,36 @@
     }
   },
   {
+    "type": "HealthPingParams",
+    "valid": true,
+    "input": {
+      "diagnostics": false,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "NormalizedHealthPingParams",
+    "valid": true,
+    "input": {
+      "diagnostics": false,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
     "type": "ViewportResizeParams",
     "valid": true,
     "input": {

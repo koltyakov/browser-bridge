@@ -211,6 +211,8 @@ var wireRoundTrips = map[string]func([]byte) ([]byte, error){
 	"NormalizedPageTextParams":            roundTrip[NormalizedPageTextParams],
 	"LogTailParams":                       roundTrip[LogTailParams],
 	"NormalizedLogTailParams":             roundTrip[NormalizedLogTailParams],
+	"HealthPingParams":                    roundTrip[HealthPingParams],
+	"NormalizedHealthPingParams":          roundTrip[NormalizedHealthPingParams],
 	"ViewportResizeParams":                roundTrip[ViewportResizeParams],
 	"NormalizedViewportResizeParams":      roundTrip[NormalizedViewportResizeParams],
 }

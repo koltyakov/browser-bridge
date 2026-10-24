@@ -80,6 +80,7 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').HoverParams} HoverParams */
 /** @typedef {import('./types.js').HarExportParams} HarExportParams */
 /** @typedef {import('./types.js').HandleDialogParams} HandleDialogParams */
+/** @typedef {import('./types.js').HealthPingParams} HealthPingParams */
 /** @typedef {import('./types.js').InputActionParams} InputActionParams */
 /** @typedef {import('./types.js').LogTailParams} LogTailParams */
 /** @typedef {import('./types.js').NavigationActionParams} NavigationActionParams */
@@ -106,6 +107,7 @@ import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry
 /** @typedef {import('./types.js').NormalizedHoverParams} NormalizedHoverParams */
 /** @typedef {import('./types.js').NormalizedHarExportParams} NormalizedHarExportParams */
 /** @typedef {import('./types.js').NormalizedHandleDialogParams} NormalizedHandleDialogParams */
+/** @typedef {import('./types.js').NormalizedHealthPingParams} NormalizedHealthPingParams */
 /** @typedef {import('./types.js').NormalizedInputAction} NormalizedInputAction */
 /** @typedef {import('./types.js').NormalizedLogTailParams} NormalizedLogTailParams */
 /** @typedef {import('./types.js').NormalizedNavigationAction} NormalizedNavigationAction */
@@ -594,6 +596,8 @@ export function normalizeRequestParams(method, params) {
       return normalizeAccessRequestParams(params);
     case 'log.tail':
       return normalizeLogTailParams(params);
+    case 'health.ping':
+      return normalizeHealthPingParams(params);
     case 'dom.query':
       return normalizeDomQuery(params);
     case 'dom.baseline.create':
@@ -2282,6 +2286,17 @@ export function normalizeLogTailParams(params = {}) {
   return {
     limit: clampInt(params.limit, 1, 200, DEFAULT_LOG_TAIL_LIMIT),
   };
+}
+
+/**
+ * @param {HealthPingParams} [params={}]
+ * @returns {NormalizedHealthPingParams}
+ */
+export function normalizeHealthPingParams(params = {}) {
+  if (params.diagnostics !== undefined && typeof params.diagnostics !== 'boolean') {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'diagnostics must be a boolean.');
+  }
+  return { diagnostics: params.diagnostics === true };
 }
 
 /**

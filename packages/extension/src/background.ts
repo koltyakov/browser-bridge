@@ -1281,24 +1281,34 @@ async function dispatchBridgeRequest(request: BridgeRequest): Promise<BridgeResp
     case 'webmcp.execute_tool':
       return webmcp.handle(request);
     case 'health.ping': {
+      const access = await withWorkingTab(
+        request,
+        await getAccessStatus({
+          chrome,
+          state,
+          clearEnabledWindowIfGone,
+          isRestrictedAutomationUrl,
+        })
+      );
+      const { routeUrl, ...routing } = access;
+      const result = {
+        extension: 'ok',
+        extensionVersion: chrome.runtime.getManifest().version,
+        access: routing,
+        ...getVersionNegotiationPayload(request.meta?.protocol_version),
+      };
+      if (request.params.diagnostics !== true) {
+        return createSuccess(request.id, result, { method: request.method });
+      }
       const debuggerDiagnostics = tabDebugger.getDiagnostics();
       const cdpCaptureDiagnostics = cdpNetworkCapture.getDiagnostics();
       const interceptionDiagnostics = fetchInterceptor.getDiagnostics();
       return createSuccess(
         request.id,
         {
-          extension: 'ok',
-          extensionVersion: chrome.runtime.getManifest().version,
+          ...result,
+          access: { ...routing, routeUrl },
           loadedBuild,
-          access: await withWorkingTab(
-            request,
-            await getAccessStatus({
-              chrome,
-              state,
-              clearEnabledWindowIfGone,
-              isRestrictedAutomationUrl,
-            })
-          ),
           debugger: debuggerDiagnostics,
           capture: {
             state:
@@ -1317,7 +1327,6 @@ async function dispatchBridgeRequest(request: BridgeRequest): Promise<BridgeResp
           },
           domBaselines: domBaselines.metrics(),
           recovery: recoveryTelemetry.snapshot('routedExtension'),
-          ...getVersionNegotiationPayload(request.meta?.protocol_version),
         },
         { method: request.method }
       );

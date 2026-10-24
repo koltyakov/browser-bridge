@@ -6,8 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- CDP accessibility-tree nodes omit empty strings and false flags on the wire,
+  cutting transport and raw CLI output by about half to three quarters.
+- MCP results drop repeated or empty evidence: the CLI summary's size fields,
+  idle timing phases, duplicate tab pagination and origins, find-result text
+  that repeats the label, empty AX names and states, and null network capture
+  fields. Batch items omit untruncated budgets and repeated hints.
+
 ### Fixed
 
+- DOM-source accessibility trees with `format: "tree"` are summarized as
+  accessibility trees instead of DOM query results.
 - Upgrading to v2 rewrites global MCP entries that still launch the removed v1
   Node entrypoint, so existing agent clients keep starting Browser Bridge.
   `bbx doctor` warns about other MCP entries that launch a missing file.

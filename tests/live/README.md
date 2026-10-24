@@ -1,0 +1,13 @@
+# Live visual verification
+
+Run `make test-visual-live` with Browser Bridge's current development native runtime installed and access already enabled in Chrome. This target does not install/restart the running runtime, request access, activate a tab, or change unrelated tabs. If multiple profiles are enabled, set `BBX_LIVE_EXTENSION_ID` to the intended connection ID from `bbx status`.
+
+The test opens a private local fixture in one background tab, simulates text, CSS, canvas, removal, subtle-pixel, distant and outside-scope changes, then checks the actual MCP tool output. An independent PNG decoder compares every returned crop pixel with separately captured full originals, verifies changed-pixel counts and checks coverage and complete chart/removal component boxes. It also exercises fixed/advancing references, after-only delivery, scrolling/layout invalidation, DPR 2, quota recovery, navigation cleanup and ordinary input/DOM/style/screenshot workflows.
+
+Only the task-owned tab receives a temporary viewport override. The test resets that override, releases its handles, closes the tab and local server, and saves synthetic fixture evidence and timings under `dist/visual-live/<timestamp>/`. No user page pixels are captured. The test is separate from `make test` because it requires a real browser and an enabled access grant.
+
+Background tabs can suspend animation-frame callbacks. The fixture waits for font readiness and forces layout rather than waiting on `requestAnimationFrame`. After changing DPR, three independently captured identical images establish a stable reference before the pixel-verification step. This preparation is outside measured comparison timings; the production tool still reports real rendering/animation differences rather than suppressing them.
+
+Timing blocks compare ordinary operations before retaining a baseline, while retaining one, and after releasing it. Two warmups precede ten recorded samples per block, with repeated retained/released blocks to expose drift. Concurrent comparison/daemon-metrics calls check responsiveness. These are measurements on the same implementation, not an old/new binary comparison or proof of statistical equivalence. Avoid running other benchmarks or builds concurrently when collecting final latency numbers.
+
+Image-token figures are explicitly dimension-based GPT-4o high-detail estimates using the documented 85 base plus 170 per 512-pixel tile rules. They compare all delivered before/after images with **one** new full scoped screenshot, exclude text metadata/history and do not measure API billing. Full-image fallback with before evidence can increase cost. PNG bytes and image tokens are reported separately.

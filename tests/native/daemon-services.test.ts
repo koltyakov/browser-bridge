@@ -1028,6 +1028,7 @@ test(
     await host.barrier();
     const pending = client.request({
       method: 'health.ping',
+      params: { diagnostics: true },
       meta: { target_profile: 'primary' },
     });
     const request = await host.request('health.ping');

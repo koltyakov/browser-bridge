@@ -53,6 +53,10 @@ Health reports the daemon's `daemonVersion`, `daemon_supported_versions`, and
 identifies the available browser/profile connections. See the
 [wire API reference](./api-reference.md) for registration and response envelopes.
 
+`health.ping` is compact by default. Use `bbx call health.ping '{"diagnostics":true}'`
+for build identity, debugger/capture status, DOM baseline metrics, transport/proxy
+details, and recovery telemetry. Doctor requests these details automatically.
+
 Doctor compares the client's major version with the daemon and extension
 version lists and reports compatibility. A successful transport connection or
 `ok: true` health response alone does not establish version compatibility.

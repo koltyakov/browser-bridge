@@ -68,7 +68,8 @@ export async function captureVisualBaseline(
       'Visual scope exceeds four million pixels. Choose a smaller component.'
     );
   }
-  // Explicit scale=1 gives one screenshot pixel per viewport CSS pixel, independent of display DPR.
+  // Keep CDP clip scale explicit. Actual PNG dimensions still depend on DPR;
+  // native evidence maps from those decoded dimensions, not an assumed 1:1 ratio.
   const image = await handleScreenshot(
     target,
     'screenshot.capture_region',

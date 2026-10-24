@@ -15,6 +15,12 @@ export type SimplifiedAXNode = {
   ignored: boolean;
   childIds: string[];
 };
+
+/** Wire form of an AX node: empty strings, false flags, and a null checked
+state are omitted, so absence means the default. */
+export type AXWireNode = Pick<SimplifiedAXNode, 'nodeId' | 'role' | 'childIds'> &
+  Partial<Omit<SimplifiedAXNode, 'nodeId' | 'role' | 'childIds'>>;
+
 const SEMANTIC_INTERACTIVE_ROLES = new Set([
   'button',
   'checkbox',
@@ -83,7 +89,7 @@ export function buildAccessibilityTree(
   rawNodes: Array<Record<string, unknown>>,
   options: { compact: boolean; interactiveOnly: boolean; maxNodes: number }
 ): {
-  nodes: SimplifiedAXNode[];
+  nodes: AXWireNode[];
   filteredCount: number;
   rawCount: number;
   rootIds: string[];
@@ -136,10 +142,9 @@ export function buildAccessibilityTree(
     childrenByParent.set(parentId, children);
   }
 
-  const nodes = limited.map((node) => ({
-    ...node,
-    childIds: childrenByParent.get(node.nodeId) ?? [],
-  }));
+  const nodes = limited.map((node) =>
+    toWireAXNode({ ...node, childIds: childrenByParent.get(node.nodeId) ?? [] })
+  );
   return {
     nodes,
     filteredCount: kept.length,
@@ -192,6 +197,29 @@ export function scopeAccessibilityNodes(
     ancestorId = parentById.get(ancestorId);
   }
   return rawNodes.filter((node) => included.has(String(node.nodeId ?? '')));
+}
+
+/** Most AX nodes carry only a role and topology; serializing every default
+flag roughly quadrupled transport size for real pages. */
+function toWireAXNode(node: SimplifiedAXNode): AXWireNode {
+  const wire: AXWireNode = { nodeId: node.nodeId, role: node.role, childIds: node.childIds };
+  for (const key of ['name', 'description', 'value'] as const) {
+    if (node[key]) wire[key] = node[key];
+  }
+  if (node.checked !== null) wire.checked = node.checked;
+  for (const key of [
+    'focused',
+    'required',
+    'disabled',
+    'interactive',
+    'semanticInteractive',
+    'focusable',
+    'focusableAndEnabled',
+    'ignored',
+  ] as const) {
+    if (node[key]) wire[key] = true;
+  }
+  return wire;
 }
 
 function isMeaningfulCompactNode(node: SimplifiedAXNode) {
@@ -257,10 +285,7 @@ function axTristate(value: unknown): string | null {
 
 /** Render a filtered AX tree as compact indented `- role "name"` lines. AX
 nodes have no page refs; use `source: "dom"` for an actionable outline. */
-export function formatAccessibilityOutline(
-  nodes: Array<SimplifiedAXNode>,
-  rootIds: string[]
-): string {
+export function formatAccessibilityOutline(nodes: Array<AXWireNode>, rootIds: string[]): string {
   const byId = new Map(nodes.map((node) => [node.nodeId, node]));
 
   const lines: string[] = [];

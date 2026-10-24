@@ -268,7 +268,8 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
   'performance.get_metrics':
     'Read a raw Chrome/CDP counter point sample; names and units vary, and BBX measures no navigation window, LCP, CLS, or INP.',
   'log.tail': 'Tail recent bridge log entries.',
-  'health.ping': 'Check daemon, extension, and access-routing health.',
+  'health.ping':
+    'Check connectivity, compatibility, and access routing. Set diagnostics:true for build, debugger, capture, baseline, transport, and recovery details.',
   'daemon.metrics': 'Daemon health and performance metrics.',
 });
 
@@ -337,7 +338,15 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'trivial'
   ),
   'log.tail': createRegistryEntry('log.tail', 'system', false, ['limit'], 'trivial'),
-  'health.ping': createRegistryEntry('health.ping', 'system', false, [], 'trivial'),
+  'health.ping': createRegistryEntry(
+    'health.ping',
+    'system',
+    false,
+    ['diagnostics'],
+    'trivial',
+    METHOD_POLICIES.none,
+    { paramsType: 'HealthPingParams', example: { diagnostics: true } }
+  ),
   'daemon.metrics': createRegistryEntry('daemon.metrics', 'system', false, [], 'trivial'),
   // tabs - trivial
   'tabs.list': createRegistryEntry('tabs.list', 'tabs', false, ['limit', 'offset'], 'trivial'),

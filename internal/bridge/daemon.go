@@ -615,18 +615,25 @@ func (d *daemon) handleEnvelope(p *peer, message, body object) {
 	}
 }
 
-func (d *daemon) health(result object) object {
+func (d *daemon) health(result object, diagnostics bool) object {
 	d.initServices()
-	extensionRecovery := normalizeRecovery(result.object("recovery"), "routedExtension")
-	result = normalizeExtensionHealth(result)
+	var extensionRecovery object
+	if diagnostics {
+		extensionRecovery = normalizeRecovery(result.object("recovery"), "routedExtension")
+	}
+	result = normalizeExtensionHealth(result, diagnostics)
 	result["daemon"] = value("ok")
 	result["daemonVersion"] = value(version)
 	result["daemonVersionName"] = value(versionName())
 	result["daemon_supported_versions"] = value([]string{protocolVersion()})
 	result["supported_versions"] = value([]string{protocolVersion()})
 	result["protocol_version"] = value(protocolVersion())
-	result["extensionConnected"] = value(len(d.snapshot()) > 0)
-	result["connectedExtensions"] = value(d.snapshot())
+	connected := d.snapshot()
+	result["extensionConnected"] = value(len(connected) > 0)
+	result["connectedExtensions"] = value(connected)
+	if !diagnostics {
+		return result
+	}
 	result["socketPath"] = value(d.config.address)
 	result["transport"] = value(d.config.address)
 	proxy := object{"enabled": value(false), "endpoint": value[*string](nil)}
@@ -664,6 +671,10 @@ func (d *daemon) route(p *peer, request object) {
 		return
 	}
 	request["params"] = value(params)
+	if method == "health.ping" && params["diagnostics"] != nil && !jsonBoolean(params["diagnostics"]) {
+		p.respond(failure(id, "INVALID_REQUEST", "diagnostics must be a boolean."))
+		return
+	}
 	normalizeDaemonRequestMeta(meta)
 	request["meta"] = value(meta)
 	for _, field := range []string{"target_extension", "target_browser", "target_profile"} {
@@ -777,7 +788,7 @@ func (d *daemon) route(p *peer, request object) {
 	}
 	if len(candidates) == 0 {
 		if method == "health.ping" && meta.text("target_extension") == "" && meta.text("target_profile") == "" && meta.text("target_browser") == "" {
-			d.localResponse(p, request, success(id, d.health(nil)))
+			d.localResponse(p, request, success(id, d.health(nil, params.boolean("diagnostics"))))
 		} else {
 			response := failure(id, "EXTENSION_DISCONNECTED", "No connected extension matches the requested browser profile.")
 			reason := "browser_target_disconnected"
@@ -816,6 +827,9 @@ func (d *daemon) route(p *peer, request object) {
 	meta["deadline_ms"] = value(time.Now().Add(timeout).UnixMilli())
 	request["id"], request["meta"] = value(routedID), value(meta)
 	pending := &pendingRequest{owner: p, target: target, original: id, method: method, baselineID: params.text("baselineId"), started: time.Now(), meta: meta}
+	if method == "health.ping" {
+		pending.params = params
+	}
 	if isVisualBaseline(method) {
 		pending.params = params
 		pending.visualEpoch = target.accessEpoch
@@ -998,7 +1012,7 @@ func (d *daemon) completeResponse(p *peer, pending *pendingRequest, response obj
 		if pending.method == "health.ping" {
 			// Health is reconstructed by the daemon. Extension cost estimates and
 			// other response metadata describe the discarded extension envelope.
-			response = success(id, d.health(response.object("result")))
+			response = success(id, d.health(response.object("result"), pending.params.boolean("diagnostics")))
 		}
 	}
 	response = d.baselineResponse(p, pending, response)

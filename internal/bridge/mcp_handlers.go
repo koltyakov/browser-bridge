@@ -168,7 +168,9 @@ func (s *mcpSession) handleTool(ctx context.Context, name string, args object, e
 	ref := false
 	switch name {
 	case "browser_call":
-	case "browser_health", "browser_status":
+	case "browser_health":
+		method, params = "health.ping", mcpPick(args, "diagnostics")
+	case "browser_status":
 		method, params = "health.ping", object{}
 	case "browser_skill":
 		method, params = "skill.get_runtime_context", object{}
@@ -521,6 +523,13 @@ func mcpCompactBatchItem(item object) {
 	meta := item.object("meta")
 	if meta.text("protocol_version") == protocolVersion() {
 		delete(meta, "protocol_version")
+	}
+	// An untruncated budget and a hint already in evidenceMeta add nothing.
+	if string(meta["budget_truncated"]) == "false" {
+		delete(meta, "budget_truncated")
+	}
+	if !cliPresent(meta["continuation_hint"]) || string(meta["continuation_hint"]) == string(item.object("evidenceMeta")["continuationHint"]) {
+		delete(meta, "continuation_hint")
 	}
 	if len(meta) == 0 {
 		delete(item, "meta")

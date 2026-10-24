@@ -258,7 +258,7 @@ func doctorCLI(ctx context.Context, c config, args []string) error {
 		issues = append(issues, "Daemon unavailable: "+err.Error())
 	} else {
 		defer cl.close()
-		health, e := invokeCLI(ctx, cl, nil, "health.ping", object{})
+		health, e := invokeCLI(ctx, cl, nil, "health.ping", object{"diagnostics": value(true)})
 		if e != nil {
 			issues = append(issues, e.Error())
 		} else {

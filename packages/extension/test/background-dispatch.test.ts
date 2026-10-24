@@ -239,12 +239,46 @@ test('background dispatch routes health.ping through the native reply path', asy
     windowId: null,
     routeTabId: null,
     routeReady: false,
-    routeUrl: '',
     reason: 'access_disabled',
   });
   assert.equal(Array.isArray(result.supported_versions), true);
   assert.equal(result.supported_versions.length > 0, true);
   assert.equal(typeof response.meta?.transport_bytes, 'number');
+  for (const key of ['loadedBuild', 'debugger', 'capture', 'domBaselines', 'recovery']) {
+    assert.equal(Object.hasOwn(result, key), false, `compact ping included ${key}`);
+  }
+  assert(Number(response.meta?.transport_approx_tokens) < 100);
+});
+
+test('background health diagnostics are explicit and leave compact activity costs small', async () => {
+  const loaded = await loadBackground({
+    query: `test-background-dispatch-health-diagnostics-${Date.now()}`,
+  });
+  for (const diagnostics of [true, false]) {
+    const response = await loaded.dispatch(
+      createRequest({
+        id: `health-diagnostics-${diagnostics}`,
+        method: 'health.ping',
+        params: { diagnostics },
+      })
+    );
+    assert(response.ok);
+    const result = response.result as Record<string, unknown>;
+    for (const key of ['loadedBuild', 'debugger', 'capture', 'domBaselines', 'recovery']) {
+      assert.equal(Object.hasOwn(result, key), diagnostics, key);
+    }
+    const state = loaded.module.getStateForTest() as {
+      actionLog: Array<{ method: string; approxTokens: number }>;
+    };
+    await waitForListenerCount(
+      () => state.actionLog.filter((action) => action.method === 'health.ping').length,
+      diagnostics ? 1 : 2
+    );
+    const entry = state.actionLog.filter((action) => action.method === 'health.ping').at(-1);
+    assert(entry);
+    assert.equal(entry.approxTokens, response.meta?.text_approx_tokens);
+    if (!diagnostics) assert(entry.approxTokens < 100);
+  }
 });
 
 test('background dispatch routes skill.get_runtime_context with enriched metadata', async () => {
@@ -2263,7 +2297,8 @@ test('background dispatch returns a simplified accessibility tree', async () => 
   assert.equal(result.truncation.partialTopology, false);
   assert.equal(result.continuationHint, null);
   assert.equal(result.nodes[0]?.semanticInteractive, true);
-  assert.equal(result.nodes[0]?.focusableAndEnabled, false);
+  // Default-valued AX flags are omitted from the wire node.
+  assert.equal('focusableAndEnabled' in (result.nodes[0] ?? {}), false);
   assert.deepEqual(result.nodes[0]?.childIds, ['2']);
 });
 

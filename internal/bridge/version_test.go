@@ -15,7 +15,7 @@ func TestVersionName(t *testing.T) {
 			t.Fatalf("versionName() = %q, want %q", got, want)
 		}
 		d := serviceTestDaemon(t)
-		health := d.health(object{"daemonVersionName": value("forged")})
+		health := d.health(object{"daemonVersionName": value("forged")}, false)
 		if health.text("daemonVersion") != version || health.text("daemonVersionName") != want {
 			t.Fatalf("unexpected health version metadata: %s", value(health))
 		}

@@ -302,7 +302,7 @@ func (s *mcpSession) doctor(ctx context.Context) (object, error) {
 			method string
 			params object
 			result *object
-		}{{"health.ping", object{}, &health}, {"setup.get_status", object{}, &setup}, {"log.tail", object{"limit": value(12)}, &logs}, {"daemon.metrics", object{}, &metrics}} {
+		}{{"health.ping", object{"diagnostics": value(true)}, &health}, {"setup.get_status", object{}, &setup}, {"log.tail", object{"limit": value(12)}, &logs}, {"daemon.metrics", object{}, &metrics}} {
 			response, err := cl.request(ctx, newRequest(diagnostic.method, diagnostic.params, object{}, 0))
 			if ctx.Err() != nil {
 				return nil, ctx.Err()

@@ -335,7 +335,7 @@ func healthCounts(source object, keys []string) object {
 	return result
 }
 
-func normalizeExtensionHealth(source object) object {
+func normalizeExtensionHealth(source object, diagnostics bool) object {
 	result := object{}
 	if source == nil {
 		return result
@@ -345,11 +345,6 @@ func normalizeExtensionHealth(source object) object {
 	}
 	if extensionVersionPattern.MatchString(source.text("extensionVersion")) {
 		result["extensionVersion"] = source["extensionVersion"]
-	}
-	build := source.object("loadedBuild")
-	_, dateErr := time.Parse(time.RFC3339Nano, build.text("startedAt"))
-	if workerIDPattern.MatchString(build.text("workerId")) && len(build.text("startedAt")) <= 32 && dateErr == nil && (bytes.Equal(build["sourceDigest"], []byte("null")) || digestPattern.MatchString(build.text("sourceDigest"))) {
-		result["loadedBuild"] = value(object{"workerId": build["workerId"], "startedAt": build["startedAt"], "sourceDigest": build["sourceDigest"]})
 	}
 	if access := source.object("access"); access != nil {
 		a := object{}
@@ -368,6 +363,27 @@ func normalizeExtensionHealth(source object) object {
 			a["reason"] = access["reason"]
 		}
 		result["access"] = value(a)
+	}
+	var versions []json.RawMessage
+	_ = json.Unmarshal(source["supported_versions"], &versions)
+	cleanVersions := []string{}
+	for _, raw := range versions {
+		var text string
+		if json.Unmarshal(raw, &text) == nil && len(text) <= 32 && supportedVersionPattern.MatchString(text) {
+			cleanVersions = append(cleanVersions, text)
+			if len(cleanVersions) == 10 {
+				break
+			}
+		}
+	}
+	result["extension_supported_versions"] = value(cleanVersions)
+	if !diagnostics {
+		return result
+	}
+	build := source.object("loadedBuild")
+	_, dateErr := time.Parse(time.RFC3339Nano, build.text("startedAt"))
+	if workerIDPattern.MatchString(build.text("workerId")) && len(build.text("startedAt")) <= 32 && dateErr == nil && (bytes.Equal(build["sourceDigest"], []byte("null")) || digestPattern.MatchString(build.text("sourceDigest"))) {
+		result["loadedBuild"] = value(object{"workerId": build["workerId"], "startedAt": build["startedAt"], "sourceDigest": build["sourceDigest"]})
 	}
 	if debugger := source.object("debugger"); debugger != nil {
 		a := healthCounts(debugger, []string{"attachedTabCount", "heldTabCount", "pendingTabCount"})
@@ -399,19 +415,6 @@ func normalizeExtensionHealth(source object) object {
 		}
 		result["domBaselines"] = value(a)
 	}
-	var versions []json.RawMessage
-	_ = json.Unmarshal(source["supported_versions"], &versions)
-	cleanVersions := []string{}
-	for _, raw := range versions {
-		var text string
-		if json.Unmarshal(raw, &text) == nil && len(text) <= 32 && supportedVersionPattern.MatchString(text) {
-			cleanVersions = append(cleanVersions, text)
-			if len(cleanVersions) == 10 {
-				break
-			}
-		}
-	}
-	result["extension_supported_versions"] = value(cleanVersions)
 	return result
 }
 

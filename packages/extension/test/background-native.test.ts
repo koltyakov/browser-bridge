@@ -32,7 +32,7 @@ type ScheduledTimer = {
 };
 type NativeRequestMessage = {
   type?: string;
-  request?: { id?: string; method?: string };
+  request?: { id?: string; method?: string; params?: Record<string, unknown> };
 };
 type NativeTestPort = FakeRuntimePort & { name: string };
 type ExecuteScriptDetails = chrome.scripting.ScriptInjection<unknown[], unknown> & {
@@ -101,6 +101,7 @@ function createNativePort(
         request?.method === 'health.ping' &&
         typeof request.id === 'string'
       ) {
+        assert.deepEqual(request.params, { diagnostics: true });
         const requestId = request.id;
         queueMicrotask(() => {
           onMessage.dispatch({
