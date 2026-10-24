@@ -120,12 +120,25 @@ func cliDescribeEffects(raw json.RawMessage) string {
 	}
 	if len(parts) == 0 {
 		if string(effects["changed"]) == "false" {
+			// Target state is a post-action snapshot, not part of changed.
+			// A successful value or checked-state edit can still report false.
+			if len(effects.object("target")) > 0 {
+				return " No additional page effect."
+			}
 			return " No visible effect."
 		}
 		return ""
 	}
 	return " Effects: " + strings.Join(parts, "; ") + "."
 }
+
+func cliPatchListSummary(total, shown int) string {
+	if shown < total {
+		return fmt.Sprintf("%d active patch(es); showing first %d.", total, shown)
+	}
+	return fmt.Sprintf("%d active patch(es).", total)
+}
+
 func cliActionSummary(r object) (string, object, bool) {
 	d := func(k, f string) string { return cliDefault(r, k, f) }
 	effect := func() string { return cliDescribeEffects(r["effects"]) }

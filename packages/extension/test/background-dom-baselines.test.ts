@@ -164,6 +164,25 @@ test('compare reports exact added, removed, and semantic field changes', () => {
   assert.equal(result.added[0]?.name, 'add');
   assert.equal(result.removed[0]?.name, 'remove');
   assert.deepEqual(result.changed[0]?.fields, ['name', 'text', 'state']);
+  assert.deepEqual(result.changed[0]?.before.state, { disabled: false });
+  assert.deepEqual(result.changed[0]?.after.state, { disabled: true });
+});
+
+test('state-only baseline changes include safe flags, not arbitrary state or fingerprints', () => {
+  const { controller } = harness();
+  const before = snapshot([{ ...node('check', null), state: { checked: false, disabled: false } }]);
+  const descriptor = createBaseline(controller, before);
+  const after = snapshot([
+    {
+      ...node('check', null),
+      state: { checked: 'mixed', expanded: true, value: 'private', selected: 'invalid' },
+    },
+  ]);
+  const result = controller.compare(descriptor.baselineId, after, 10);
+  assert.deepEqual(result.changed[0]?.fields, ['state']);
+  assert.deepEqual(result.changed[0]?.before.state, { checked: false, disabled: false });
+  assert.deepEqual(result.changed[0]?.after.state, { checked: 'mixed', expanded: true });
+  assert.doesNotMatch(JSON.stringify(result), /private|invalid/);
 });
 
 test('compare detects parent moves and true surviving-sibling reorder at top roots only', () => {

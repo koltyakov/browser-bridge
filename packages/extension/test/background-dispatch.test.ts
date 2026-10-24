@@ -2499,6 +2499,7 @@ test('background dispatch resizes the viewport through CDP metrics override', as
         height: 667,
         deviceScaleFactor: 2.5,
         mobile: true,
+        dontSetVisibleSize: true,
       },
     },
   ]);

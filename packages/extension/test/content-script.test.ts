@@ -1139,6 +1139,72 @@ test('selector syntax errors are non-retryable invalid requests, not internal fa
   });
 });
 
+test('scoped DOM waits match descendant text without requiring an innermost selector', async (t) => {
+  await withDocument(
+    '<html><body><ul><li><label>Draft</label></li><li><label>BBX review</label></li></ul><section role="status"><span>Saved</span></section></body></html>',
+    async () => {
+      const harness = createChromeHarness();
+      await loadContentScript(t, {
+        withHelpers: true,
+        preserveDomGlobals: true,
+        chrome: harness.chrome,
+      });
+      const listener = harness.getListener();
+      for (const [selector, text, tag] of [
+        ['li', 'BBX review', 'li'],
+        ['[role="status"]', 'Saved', 'section'],
+      ]) {
+        const result = await executeBridgeMethod(listener, 'dom.wait_for', {
+          selector,
+          text,
+          timeoutMs: 100,
+        });
+        assert.equal(result.found, true);
+        const described = await executeBridgeMethod(listener, 'dom.describe', {
+          elementRef: result.elementRef,
+        });
+        assert.equal(described.tag, tag);
+        const detached = await executeBridgeMethod(listener, 'dom.wait_for', {
+          selector,
+          text,
+          state: 'detached',
+          timeoutMs: 100,
+        });
+        assert.equal(detached.found, false, 'a matching descendant prevents a detached result');
+      }
+    }
+  );
+});
+
+test('transparent custom checkbox inputs remain actionable when they have a rendered hit area', async (t) => {
+  const saved = captureGlobals(['getComputedStyle']);
+  t.after(() => restoreGlobals(saved));
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t);
+  const checkbox = inputs.createCheckbox();
+  const body = inputs.createBody([checkbox]);
+  const document = createDocumentHarness(
+    body,
+    { '#toggle': checkbox },
+    {
+      elementFromPoint: () => checkbox,
+    }
+  );
+  Reflect.set(globalThis, 'getComputedStyle', () => ({
+    display: 'block',
+    visibility: 'visible',
+    opacity: '0',
+    pointerEvents: 'auto',
+  }));
+  await loadContentScript(t, { withHelpers: true, chrome: harness.chrome, document });
+  const checked = await executeBridgeMethod(harness.getListener(), 'input.set_checked', {
+    target: { selector: '#toggle' },
+    checked: true,
+  });
+  assert.equal(checked.checked, true);
+  assert.equal(checkbox.checked, true);
+});
+
 test('text patches restore original subtree nodes and listeners, including nested patches', async (t) => {
   await withDocument(
     '<html><body><div id="target">Before <button>Save</button><!-- retained --></div></body></html>',
@@ -1249,6 +1315,110 @@ test('active DOM patches survive read-registry eviction and retain exact detache
       );
       assert.equal(target.getAttribute('data-state'), 'old');
       assert.equal(replacement.getAttribute('data-state'), 'replacement');
+    }
+  );
+});
+
+test('failed, discarded, and evicted input observations release observers and unload listeners', async (t) => {
+  await withDocument(
+    '<html><body><button>Not editable</button></body></html>',
+    async ({ document }) => {
+      const saved = captureGlobals([
+        'location',
+        'MutationObserver',
+        'addEventListener',
+        'removeEventListener',
+      ]);
+      const active = new Set<object>();
+      const listeners = new Map<string, Set<unknown>>();
+      let disconnected = 0;
+      try {
+        Reflect.set(globalThis, 'location', { href: 'https://example.test/' });
+        Reflect.set(
+          globalThis,
+          'MutationObserver',
+          class {
+            observe() {
+              active.add(this);
+            }
+            disconnect() {
+              disconnected += 1;
+              active.delete(this);
+            }
+          }
+        );
+        Reflect.set(globalThis, 'addEventListener', (type: string, listener: unknown) => {
+          if (!listeners.has(type)) listeners.set(type, new Set());
+          listeners.get(type)?.add(listener);
+        });
+        Reflect.set(globalThis, 'removeEventListener', (type: string, listener: unknown) => {
+          listeners.get(type)?.delete(listener);
+        });
+        const button = document.querySelector('button');
+        assert.ok(button);
+        Reflect.set(button, 'getBoundingClientRect', () => ({
+          left: 0,
+          top: 0,
+          width: 10,
+          height: 10,
+        }));
+        const harness = createChromeHarness();
+        await loadContentScript(t, {
+          withHelpers: true,
+          preserveDomGlobals: true,
+          chrome: harness.chrome,
+        });
+        const listener = harness.getListener();
+        const baselineObservers = active.size;
+        const failure = await executeBridgeMethod(listener, 'input.fill', {
+          target: { selector: 'button' },
+          value: 'nope',
+          observe: { settleMs: 5000 },
+        });
+        assert.equal((failure.error as { code?: unknown }).code, 'INPUT_INVALID_TARGET');
+        assert.equal(active.size, baselineObservers);
+        assert.equal(disconnected, 1);
+        assert.equal(listeners.get('pagehide')?.size, 0);
+        assert.equal(listeners.get('beforeunload')?.size, 0);
+
+        const ids: unknown[] = [];
+        for (let index = 0; index < 9; index++) {
+          const started = await executeBridgeMethod(listener, 'input.observe_start', {});
+          ids.push(started.observationId);
+        }
+        assert.equal(active.size, baselineObservers + 8);
+        assert.equal(disconnected, 2);
+        assert.equal(listeners.get('pagehide')?.size, 8);
+        assert.equal(listeners.get('beforeunload')?.size, 8);
+        assert.deepEqual(
+          await executeBridgeMethod(listener, 'input.observe_finish', { observationId: ids[0] }),
+          { changed: false, expired: true }
+        );
+        for (const observationId of ids.slice(1)) {
+          assert.deepEqual(
+            await executeBridgeMethod(listener, 'input.observe_finish', {
+              observationId,
+              discard: true,
+              settleMs: 5000,
+            }),
+            { changed: false }
+          );
+        }
+        assert.equal(active.size, baselineObservers);
+        assert.equal(disconnected, 10);
+        assert.equal(listeners.get('pagehide')?.size, 0);
+        assert.equal(listeners.get('beforeunload')?.size, 0);
+
+        const started = await executeBridgeMethod(listener, 'input.observe_start', {});
+        await executeBridgeMethod(listener, 'input.observe_finish', {
+          observationId: started.observationId,
+          settleMs: 0,
+        });
+        assert.equal(active.size, baselineObservers);
+        assert.equal(disconnected, 11);
+      } finally {
+        restoreGlobals(saved);
+      }
     }
   );
 });

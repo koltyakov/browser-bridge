@@ -385,6 +385,43 @@ export function enforceTokenBudget(
     };
   }
 
+  if (method === 'input.perform') {
+    // Progress, failures, timing, and verified outcomes describe completed
+    // mutations. Never slice them or tell a caller to repeat the sequence.
+    // Only the optional final-step evidence may be omitted, atomically.
+    const result = response.result;
+    if (result && typeof result === 'object' && !Array.isArray(result)) {
+      const sequence = result as Record<string, unknown>;
+      const last = sequence.lastResult;
+      if (last && typeof last === 'object' && !Array.isArray(last) && 'result' in last) {
+        const evidence = last as Record<string, unknown>;
+        const omitted = {
+          index: evidence.index,
+          method: evidence.method,
+          byteLength: evidence.byteLength,
+          truncated: true,
+          maxBytes: 0,
+        };
+        const compact = { ...sequence, lastResult: omitted };
+        omitted.maxBytes = Math.max(0, maxBytes - estimateJsonPayloadCost(compact).bytes);
+        return {
+          ...response,
+          result: compact,
+          meta: {
+            ...response.meta,
+            budget_applied: true,
+            budget_truncated: true,
+            continuation_hint:
+              'Final-step evidence was omitted to preserve sequence progress. Inspect current state with a separate bounded read; do not replay input.perform.',
+          },
+        };
+      }
+    }
+    // Protocol limits already bound the control envelope. Exceed a smaller
+    // caller budget rather than discard evidence of actions that already ran.
+    return response;
+  }
+
   const cloned = cloneJsonValue(response.result);
   let truncated = false;
   let iterations = 0;

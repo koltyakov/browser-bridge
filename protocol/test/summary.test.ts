@@ -474,6 +474,19 @@ test('summarizes empty patch list array for patch.list method', () => {
   assert.match(summary.summary, /0 active patch/);
 });
 
+test('patch list summaries disclose IDs omitted by the CLI preview', () => {
+  const patches = Array.from({ length: 12 }, (_, index) => ({
+    patchId: `patch_${index}`,
+    kind: 'style',
+    elementRef: `el_${index}`,
+  }));
+  for (const result of [patches, { patches }]) {
+    const summary = summarizeBridgeResponse(ok(result), 'patch.list');
+    assert.equal(summary.summary, '12 active patch(es); showing first 10.');
+    assert.deepEqual(summary.evidence, patches.slice(0, 10));
+  }
+});
+
 test('summarizes patches field in result', () => {
   const summary = summarizeBridgeResponse(
     ok({
@@ -755,6 +768,27 @@ test('routine input successes drop metadata and digest observed effects', () => 
     'input.click'
   );
   assert.match(idle.summary, /No visible effect\.$/);
+});
+
+test('target-state evidence does not imply a successful input had no visible effect', () => {
+  for (const target of [{ value: 'updated' }, { value: '' }, { checked: false }]) {
+    const effects = { target, changed: false, settledMs: 60 };
+    const result = { clicked: true, elementRef: 'el_1', effects };
+    const summary = summarizeBridgeResponse(ok(result), 'input.click');
+    assert.match(summary.summary, /No additional page effect\.$/);
+    assert.deepEqual((summary.evidence as { effects: unknown }).effects, effects);
+    const sequence = summarizeBridgeResponse(
+      ok({
+        performed: true,
+        completed: 1,
+        total: 1,
+        elapsedMs: 60,
+        lastResult: { result },
+      }),
+      'input.perform'
+    );
+    assert.match(sequence.summary, /No additional page effect\.$/);
+  }
 });
 
 test('summarizes hover action', () => {

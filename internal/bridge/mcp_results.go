@@ -1,9 +1,12 @@
 package bridge
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/json/jsontext"
 	"fmt"
+	"io"
 	"math"
 	"regexp"
 	"sort"
@@ -117,13 +120,11 @@ func mcpBoundValue(raw json.RawMessage, maxEntries, maxCharacters, maxString int
 			}
 			return value(mcpSlice(text, limit))
 		}
-		var array []json.RawMessage
-		if len(raw) > 0 && raw[0] == '[' && json.Unmarshal(raw, &array) == nil {
-			limit := min(len(array), 100, maxEntries-state.entries)
-			if limit < len(array) {
+		if array, omitted, ok := mcpArrayPrefix(raw, min(100, maxEntries-state.entries)); ok {
+			if omitted {
 				state.truncated = true
 			}
-			out := make([]json.RawMessage, limit)
+			out := make([]json.RawMessage, len(array))
 			for i := range out {
 				out[i] = visit(array[i], depth+1)
 			}
@@ -158,6 +159,41 @@ func mcpBoundValue(raw json.RawMessage, maxEntries, maxCharacters, maxString int
 	}
 	result := visit(raw, 0)
 	return result, state.truncated
+}
+
+// Retain only the evidence prefix. Validate the remainder without allocating
+// RawMessages for entries that the output budget will discard.
+func mcpArrayPrefix(raw json.RawMessage, limit int) ([]json.RawMessage, bool, bool) {
+	if len(raw) == 0 || raw[0] != '[' {
+		return nil, false, false
+	}
+	dec := jsontext.NewDecoder(bytes.NewReader(raw), jsontext.AllowDuplicateNames(true), jsontext.AllowInvalidUTF8(true))
+	if _, err := dec.ReadToken(); err != nil {
+		return nil, false, false
+	}
+	prefix := make([]json.RawMessage, 0, limit)
+	omitted := false
+	for dec.PeekKind() != ']' {
+		if len(prefix) < limit {
+			item, err := dec.ReadValue()
+			if err != nil {
+				return nil, false, false
+			}
+			prefix = append(prefix, append(json.RawMessage(nil), item...))
+		} else {
+			omitted = true
+			if err := dec.SkipValue(); err != nil {
+				return nil, false, false
+			}
+		}
+	}
+	if _, err := dec.ReadToken(); err != nil {
+		return nil, false, false
+	}
+	if _, err := dec.ReadToken(); err != io.EOF {
+		return nil, false, false
+	}
+	return prefix, omitted, true
 }
 
 func mcpResponse(response object, method string, params object) object {
@@ -266,6 +302,13 @@ func mcpStructuredResponse(response object, method string, params object) object
 		}
 		r := response.object("result")
 		switch method {
+		case "patch.list":
+			patches, ok := cliArray(response["result"])
+			if !ok {
+				patches, _ = cliArray(r["patches"])
+			}
+			delivered, _ := cliArray(evidence)
+			summary = cliPatchListSummary(len(patches), len(delivered))
 		case "tabs.list":
 			var tabs []object
 			_ = json.Unmarshal(r["tabs"], &tabs)
@@ -631,6 +674,14 @@ func mcpEvidence(raw json.RawMessage, method string, params object, fallback jso
 	}
 	if method == "input.perform" && r != nil {
 		fallback = mcpPerformEvidence(r, params)
+	}
+	if method == "patch.list" {
+		// CLI shortcuts preview ten patches. MCP has no adjacent raw response,
+		// so bound the original list and report any actual output truncation.
+		fallback = raw
+		if r != nil && r["patches"] != nil {
+			fallback = r["patches"]
+		}
 	}
 	if strings.HasPrefix(method, "network.intercept.") {
 		bounded, truncated := mcpBound(raw, 100, 10000, 4000)

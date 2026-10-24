@@ -157,7 +157,7 @@ test('CDP fill clears, inserts text once, and reads without mutation replay', as
 });
 
 test('CDP text insertion revalidates exact focus immediately before insertText', async () => {
-  const { controller, commands, messages } = createController({ failRevalidationAt: 2 });
+  const { controller, commands, messages } = createController({ failRevalidationAt: 1 });
   const request = createRequest({
     id: 'cdp-redirected-focus',
     method: 'input.type',
@@ -172,12 +172,76 @@ test('CDP text insertion revalidates exact focus immediately before insertText',
   );
   assert.equal(
     messages.filter((message) => message.method === 'input.revalidate_native').length,
-    2
+    1
   );
   assert.equal(
     commands.some((call) => call.method === 'Input.insertText'),
     false
   );
+});
+
+test('CDP append validates once, while clearing retains checks before clear and insertion', async () => {
+  for (const clear of [false, true]) {
+    const { controller, commands, messages } = createController();
+    const request = createRequest({
+      id: `cdp-append-${clear}`,
+      method: 'input.type',
+      params: { target: { selector: '#name' }, text: 'hello', clear, executionMode: 'cdp' },
+    });
+    await controller.handleNativeInput(request, tab, request.params);
+    assert.equal(
+      messages.filter((message) => message.method === 'input.revalidate_native').length,
+      clear ? 2 : 1
+    );
+    assert.equal(commands.filter((call) => call.method === 'Input.insertText').length, 1);
+  }
+});
+
+test('CDP clear does not insert into redirected focus after the clear', async () => {
+  const { controller, commands, messages } = createController({ failRevalidationAt: 2 });
+  const request = createRequest({
+    id: 'cdp-focus-after-clear',
+    method: 'input.fill',
+    params: { target: { selector: '#name' }, value: 'unsafe', executionMode: 'cdp' },
+  });
+  const result = await controller.handleNativeInput(request, tab, request.params);
+  assert.equal(commands.filter((call) => call.method === 'Input.insertText').length, 0);
+  assert.equal(messages.filter((message) => message.method === 'input.read_value').length, 0);
+  assert.equal(result.value, null);
+  assert.deepEqual(result.postMutation, { status: 'focus-changed', verified: false });
+});
+
+test('failed observed CDP input discards its observation without settling or replaying', async () => {
+  const { controller, commands, messages } = createController({ failRevalidationAt: 1 });
+  const request = createRequest({
+    id: 'cdp-observation-failure',
+    method: 'input.type',
+    params: {
+      target: { selector: '#name' },
+      text: 'unsafe',
+      executionMode: 'cdp',
+      observe: { settleMs: 5000 },
+    },
+  });
+  await assert.rejects(controller.handleNativeInput(request, tab, request.params), {
+    code: 'INPUT_FOCUS_CHANGED',
+  });
+  assert.deepEqual(
+    messages.map((message) => message.method),
+    [
+      'input.observe_start',
+      'input.resolve_native',
+      'input.revalidate_native',
+      'input.observe_finish',
+    ]
+  );
+  assert.deepEqual(messages.at(-1)?.params, {
+    observationId: 'obs_1',
+    settleMs: 0,
+    elementRef: null,
+    discard: true,
+  });
+  assert.deepEqual(commands, []);
 });
 
 test('CDP text reports an unverified rerender without failing after mutation', async () => {

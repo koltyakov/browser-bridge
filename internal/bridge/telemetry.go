@@ -64,6 +64,12 @@ func protectResponseRecovery(response object, method string) {
 	recovery := err.object("recovery")
 	if method == "webmcp.execute_tool" {
 		recovery = object{"retry": value(false), "hint": value("WebMCP executions are never retried automatically. Inspect postconditions if dispatch may have started; never replay through DOM fallback.")}
+	} else if method == "input.perform" && string(err.object("details")["dispatched"]) != "false" {
+		result := object{"retry": value(false), "hint": value("Sequence steps may already have changed the page. Inspect partial progress and current state; do not replay input.perform automatically.")}
+		if alternative := recovery["alternativeMethod"]; alternative != nil {
+			result["alternativeMethod"] = alternative
+		}
+		recovery = result
 	} else if method == "sensitive.read" && recovery != nil {
 		result := object{"retry": value(false), "hint": value("Sensitive reads are never retried automatically. " + recovery.text("hint"))}
 		if v := recovery["alternativeMethod"]; v != nil {

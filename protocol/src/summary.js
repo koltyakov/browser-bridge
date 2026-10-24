@@ -219,7 +219,13 @@ function describeEffects(value) {
     parts.push(`DOM +${dom.added ?? 0}/-${dom.removed ?? 0}`);
   }
   if (toRecord(effects.target).removed === true) parts.push('target removed');
-  if (!parts.length) return effects.changed === false ? ' No visible effect.' : '';
+  if (!parts.length) {
+    if (effects.changed !== false) return '';
+    // Target state is a post-action snapshot, not part of changed.
+    return Object.keys(toRecord(effects.target)).length
+      ? ' No additional page effect.'
+      : ' No visible effect.';
+  }
   return ` Effects: ${parts.join('; ')}.`;
 }
 
@@ -1180,14 +1186,14 @@ function summarizeBridgeResponseBody(response, method) {
     const patches = /** @type {Array<Record<string, unknown>>} */ (response.result);
     return {
       ok: true,
-      summary: appendProtocolWarning(`${patches.length} active patch(es).`, protocolWarning),
+      summary: appendProtocolWarning(patchListSummary(patches.length), protocolWarning),
       evidence: patches.slice(0, 10),
     };
   }
   if (Array.isArray(result.patches)) {
     return {
       ok: true,
-      summary: appendProtocolWarning(`${result.patches.length} active patch(es).`, protocolWarning),
+      summary: appendProtocolWarning(patchListSummary(result.patches.length), protocolWarning),
       evidence: result.patches.slice(0, 10),
     };
   }
@@ -1329,6 +1335,14 @@ function truncateUrl(url) {
   } catch {
     return sanitized.length > 120 ? `${sanitized.slice(0, 119)}\u2026` : sanitized;
   }
+}
+
+/**
+ * @param {number} total
+ * @returns {string}
+ */
+function patchListSummary(total) {
+  return total > 10 ? `${total} active patch(es); showing first 10.` : `${total} active patch(es).`;
 }
 
 /**

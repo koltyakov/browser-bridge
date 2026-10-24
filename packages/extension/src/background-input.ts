@@ -117,21 +117,27 @@ export function createBackgroundInputController(dependencies: {
       tab.tabId,
       async (debuggerTarget) => {
         guards.set(debuggerTarget, assertAccess);
+        let observationId: string | null = null;
         try {
           assertAccess();
-          const observationId = observe ? await beginObservation(tab.tabId) : null;
+          observationId = observe ? await beginObservation(tab.tabId) : null;
           assertAccess();
           const result = await executeNative(debuggerTarget);
           if (observationId) {
+            const finishedId = observationId;
+            observationId = null;
             result.effects = await finishObservation(
               tab.tabId,
-              observationId,
+              finishedId,
               Number(observe?.settleMs) || 0,
               typeof result.elementRef === 'string' ? result.elementRef : null
             );
           }
           return result;
         } finally {
+          if (observationId) {
+            await finishObservation(tab.tabId, observationId, 0, null, true);
+          }
           guards.delete(debuggerTarget);
         }
       },
@@ -180,7 +186,8 @@ is best effort: an unscriptable page simply reports no effects. */
     tabId: number,
     observationId: string,
     settleMs: number,
-    elementRef: string | null
+    elementRef: string | null,
+    discard = false
   ): Promise<Record<string, unknown>> {
     const boundedSettleMs = Math.min(Math.max(settleMs, 0), 5_000);
     try {
@@ -189,7 +196,12 @@ is best effort: an unscriptable page simply reports no effects. */
         {
           type: 'bridge.execute',
           method: 'input.observe_finish',
-          params: { observationId, settleMs: boundedSettleMs, elementRef },
+          params: {
+            observationId,
+            settleMs: boundedSettleMs,
+            elementRef,
+            ...(discard ? { discard: true } : {}),
+          },
         },
         dependencies.contentScriptTimeoutMs + boundedSettleMs
       );
@@ -519,8 +531,8 @@ interpolated touchMove events across holdMs, then lift them together. */
 
     let postMutationStatus: string | null = null;
 
-    await revalidateEditable(tabId, resolved.elementRef);
     if (shouldClear) {
+      await revalidateEditable(tabId, resolved.elementRef);
       await clearEditable(target);
       mutationDispatched = true;
     }

@@ -739,11 +739,13 @@ func cliSummaryBody(response object, method string, now int64) object {
 			looks = first["patchId"] != nil && first["kind"] != nil
 		}
 		if looks {
-			return done(fmt.Sprintf("%d active patch(es).", len(patches)), value(patches[:min(10, len(patches))]), true)
+			shown := min(10, len(patches))
+			return done(cliPatchListSummary(len(patches), shown), value(patches[:shown]), true)
 		}
 	}
 	if patches, ok := arr("patches"); ok {
-		return done(fmt.Sprintf("%d active patch(es).", len(patches)), value(patches[:min(10, len(patches))]), true)
+		shown := min(10, len(patches))
+		return done(cliPatchListSummary(len(patches), shown), value(patches[:shown]), true)
 	}
 	keys := cliKeys(raw)
 	return done(fmt.Sprintf("Bridge method succeeded with %d top-level fields.", len(keys)), value(keys[:min(10, len(keys))]), true)

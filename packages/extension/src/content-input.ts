@@ -207,7 +207,8 @@ elementFromPoint retargets to the outermost shadow host. */
     ) {
       reasons.push('hidden');
     }
-    if (Number(style.opacity) === 0) reasons.push('transparent');
+    // Opacity does not remove hit testing or focusability. Custom checkboxes
+    // commonly paint a sibling label over an otherwise transparent input.
     if (style.pointerEvents === 'none') reasons.push('pointer-events-none');
     if (disabled) reasons.push('disabled');
     if (inert) reasons.push('inert');
@@ -2496,6 +2497,7 @@ to `timeoutMs`. Saves agents a separate wait call plus a retry round trip. */
 dialogs, live-region/alert messages, focus moves, DOM churn, and the
 target's own state. Lets agents skip a follow-up read after most actions. */
   function startObservation(): {
+    dispose: () => void;
     finish: (options: {
       settleMs: number;
       element: Element | null;
@@ -2560,7 +2562,17 @@ target's own state. Lets agents skip a follow-up read after most actions. */
     globalThis.addEventListener?.('pagehide', onUnload);
     globalThis.addEventListener?.('beforeunload', onUnload);
 
+    let disposed = false;
+    const dispose = () => {
+      if (disposed) return;
+      disposed = true;
+      observer?.disconnect();
+      globalThis.removeEventListener?.('pagehide', onUnload);
+      globalThis.removeEventListener?.('beforeunload', onUnload);
+    };
+
     return {
+      dispose,
       async finish({ settleMs, element }) {
         const deadline = startedAt + settleMs;
         // Chrome can freeze this document's timers and close its message port
@@ -2576,9 +2588,7 @@ target's own state. Lets agents skip a follow-up read after most actions. */
             unloadSignal,
           ]);
         }
-        observer?.disconnect();
-        globalThis.removeEventListener?.('pagehide', onUnload);
-        globalThis.removeEventListener?.('beforeunload', onUnload);
+        dispose();
 
         const effects: Record<string, unknown> = {};
         if (unloading) effects.navigation = 'unloading';
@@ -2675,16 +2685,20 @@ action as exact refs, so the action itself stays synchronous and atomic. */
 
       const observeOptions = params.observe as { settleMs?: unknown } | null | undefined;
       const observation = observeOptions ? startObservation() : null;
-      assertActive();
-      const result = await action(prepared);
-      mergePreResolution(result, preResolutions);
-      if (observation) {
-        result.effects = await observation.finish({
-          settleMs: clamp(Number(observeOptions?.settleMs) || 0, 0, 5_000),
-          element: primaryElement,
-        });
+      try {
+        assertActive();
+        const result = await action(prepared);
+        mergePreResolution(result, preResolutions);
+        if (observation) {
+          result.effects = await observation.finish({
+            settleMs: clamp(Number(observeOptions?.settleMs) || 0, 0, 5_000),
+            element: primaryElement,
+          });
+        }
+        return result;
+      } finally {
+        observation?.dispose();
       }
-      return result;
     };
   }
 
@@ -2766,7 +2780,10 @@ key events. Read-only: resolves without waiting or mutating. */
     pendingObservations.set(observationId, startObservation());
     if (pendingObservations.size > 8) {
       const oldest = pendingObservations.keys().next().value;
-      if (oldest !== undefined) pendingObservations.delete(oldest);
+      if (oldest !== undefined) {
+        pendingObservations.get(oldest)?.dispose();
+        pendingObservations.delete(oldest);
+      }
     }
     return { observationId };
   }
@@ -2779,6 +2796,10 @@ key events. Read-only: resolves without waiting or mutating. */
     const observation = pendingObservations.get(observationId);
     pendingObservations.delete(observationId);
     if (!observation) return { changed: false, expired: true };
+    if (params.discard === true) {
+      observation.dispose();
+      return { changed: false };
+    }
 
     let element: Element | null = null;
     if (typeof params.elementRef === 'string' && params.elementRef) {
