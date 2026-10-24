@@ -464,10 +464,10 @@ test('input.perform bounds each step by the remaining sequence and parent deadli
     id: 'step-deadline',
     method: 'input.perform',
     params: {
-      timeoutMs: 1000,
+      timeoutMs: 5000,
       steps: [{ method: 'input.click' }],
     },
-    meta: { deadline_ms: Date.now() + 200 },
+    meta: { deadline_ms: Date.now() + 2000 },
   });
   let stepDeadline = 0;
   await executeInputPerform(request, {
@@ -477,8 +477,10 @@ test('input.perform bounds each step by the remaining sequence and parent deadli
       return createSuccess(step.id, { clicked: true });
     },
   });
-  assert(stepDeadline > Date.now() - 1000);
-  assert.equal(stepDeadline, request.meta.deadline_ms);
+  // Steps end early enough for the sequence's own reply to reach the daemon.
+  const parent = Number(request.meta.deadline_ms);
+  assert(stepDeadline <= parent - 450, `${parent - stepDeadline}ms before the parent`);
+  assert(stepDeadline > parent - 1000);
 });
 
 test('input.perform bounds final evidence by UTF-8 JSON bytes without replaying steps', async () => {
@@ -540,4 +542,50 @@ test('input.perform never substitutes an earlier success for a failed final step
       assert.equal(response.error.code, 'ACCESS_DENIED');
     }
   }
+});
+
+test('input.perform caps its sequence budget at the request deadline left after queueing', async () => {
+  const { dependencies, dispatched } = createHarness();
+  const response = await executeInputPerform(
+    createRequest({
+      id: 'seq-queued',
+      method: 'input.perform',
+      params: {
+        timeoutMs: 30_000,
+        steps: [click('#first'), { ...click('#second'), delayMs: 2_000 }],
+      },
+      meta: { deadline_ms: Date.now() + 1_500 },
+    }),
+    dependencies
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.code, 'TIMEOUT');
+  assert.match(
+    response.error.message,
+    /request deadline left \d+ms of sequence timeoutMs \(30000\)/
+  );
+  assert.equal((response.error.details as { completed: number }).completed, 1);
+  assert.deepEqual(
+    dispatched.map((entry) => (entry.request.params.target as { selector?: string }).selector),
+    ['#first']
+  );
+});
+
+test('input.perform runs no steps when queueing consumed the request deadline', async () => {
+  const { dependencies, dispatched } = createHarness();
+  const response = await executeInputPerform(
+    createRequest({
+      id: 'seq-expired',
+      method: 'input.perform',
+      params: { steps: [click('#save')], outcomes: [{ kind: 'url', url: '/done' }] },
+      meta: { deadline_ms: Date.now() + 100 },
+    }),
+    dependencies
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.code, 'TIMEOUT');
+  assert.equal((response.error.details as { dispatched: boolean }).dispatched, false);
+  assert.equal(dispatched.length, 0);
 });

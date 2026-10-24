@@ -27,6 +27,10 @@ export type PerformDependencies = {
   sleep?: (ms: number) => Promise<void>;
 } & Pick<import('./background-outcomes.js').OutcomeDependencies, 'armNetwork' | 'readNetwork'>;
 
+/** Leave room for the failure, with progress, to reach the daemon before its
+ * own timer answers the caller without it. */
+const PERFORM_REPLY_MARGIN_MS = 500;
+
 /** Step methods whose own timeoutMs is capped by the remaining sequence budget. */
 const WAITING_STEP_METHODS = new Set(['dom.wait_for', 'page.wait_for_load_state']);
 
@@ -54,7 +58,16 @@ export async function executeInputPerform(
   const now = dependencies.now ?? (() => performance.now());
   const sleep = dependencies.sleep ?? defaultSleep;
   const startedAt = now();
-  const deadline = startedAt + params.timeoutMs;
+  // Time spent queued behind other mutations on this tab is part of the
+  // request deadline, so the sequence cannot keep its full timeoutMs.
+  const requestDeadline = request.meta?.deadline_ms;
+  const lifetimeMs =
+    typeof requestDeadline === 'number' && Number.isFinite(requestDeadline)
+      ? requestDeadline - Date.now() - PERFORM_REPLY_MARGIN_MS
+      : Infinity;
+  const budgetMs = Math.min(params.timeoutMs, lifetimeMs);
+  const limitedByRequest = budgetMs < params.timeoutMs;
+  const deadline = startedAt + budgetMs;
   const total = params.steps.length;
 
   const startedAtMs: number[] = [];
@@ -85,6 +98,14 @@ export async function executeInputPerform(
       { method: request.method }
     );
 
+  if (budgetMs <= 0)
+    return fail(
+      ERROR_CODES.TIMEOUT,
+      'The request deadline elapsed while this sequence was queued. No steps ran.',
+      null,
+      { dispatched: false }
+    );
+
   const monitor = params.outcomes
     ? await armPerformOutcomes(
         request,
@@ -99,7 +120,9 @@ export async function executeInputPerform(
       const timeout = () =>
         fail(
           ERROR_CODES.TIMEOUT,
-          `Sequence timeoutMs (${params.timeoutMs}) elapsed before step ${index} (${step.method}).`,
+          limitedByRequest
+            ? `The request deadline left ${Math.round(budgetMs)}ms of sequence timeoutMs (${params.timeoutMs}) after queueing; it elapsed before step ${index} (${step.method}).`
+            : `Sequence timeoutMs (${params.timeoutMs}) elapsed before step ${index} (${step.method}).`,
           null
         );
       const scheduledAt = step.atMs !== null ? startedAt + step.atMs : now() + step.delayMs;

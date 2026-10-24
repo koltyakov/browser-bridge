@@ -1164,6 +1164,48 @@ function normalizeStepTiming(value, label, maximum) {
 }
 
 /**
+ * Captured URLs are sanitized before outcome matching: the fragment is dropped,
+ * the path is percent-encoded, and the query is reserialized with every value
+ * redacted. Write the pattern in that form so a literal substring can match.
+ *
+ * @param {string} pattern
+ * @returns {string}
+ */
+function normalizeNetworkUrlPattern(pattern) {
+  const invalid = (/** @type {string} */ message) =>
+    new BridgeError(ERROR_CODES.INVALID_REQUEST, message);
+  if (pattern.includes('#'))
+    throw invalid('Network outcome urlPattern cannot include a fragment; captured URLs omit it.');
+  const queryStart = pattern.indexOf('?');
+  const query = queryStart >= 0 ? pattern.slice(queryStart + 1) : null;
+  // Every captured parameter has a redacted value, so a match can include at
+  // most one parameter name, ending the pattern.
+  if (query !== null && /=.|&/u.test(query))
+    throw invalid(
+      'Captured query values are redacted. End the pattern at one parameter name, for example /api/items?id=.'
+    );
+  const authority = /^[a-z][a-z0-9+.-]*:\/\/[^/?#]*/iu.exec(pattern)?.[0] ?? '';
+  const path = pattern.slice(authority.length, queryStart >= 0 ? queryStart : undefined);
+  try {
+    // The URL path percent-encode set, plus every non-ASCII code point.
+    const encodedPath = path.replace(/[^\x21-\x7e]|["<>`{}]/gu, (c) => encodeURIComponent(c));
+    // URLSearchParams decodes each name, then reserializes it form-encoded.
+    const encodedQuery = query
+      ?.split('&')
+      .map((segment) => {
+        const name = [...new URLSearchParams(segment).keys()][0];
+        if (name === undefined) return segment;
+        const encoded = new URLSearchParams([[name, '']]).toString().slice(0, -1);
+        return segment.includes('=') ? `${encoded}=` : encoded;
+      })
+      .join('&');
+    return `${authority.toLowerCase()}${encodedPath}${encodedQuery === undefined ? '' : `?${encodedQuery}`}`;
+  } catch {
+    throw invalid('Network outcome urlPattern must be well-formed Unicode text.');
+  }
+}
+
+/**
  * Normalize an ordered, timed input sequence. Each step reuses an existing
  * bridge method and its own normalizer; the sequence adds only scheduling.
  *
@@ -1297,7 +1339,7 @@ export function normalizeInputPerformParams(params = {}) {
         );
       return {
         kind: 'network',
-        urlPattern: condition.urlPattern,
+        urlPattern: normalizeNetworkUrlPattern(condition.urlPattern),
         method: method?.toUpperCase() ?? null,
         statusMin: Number(statusMin),
         statusMax: Number(statusMax),

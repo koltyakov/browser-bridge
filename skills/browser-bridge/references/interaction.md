@@ -310,8 +310,9 @@ bbx call input.perform '{
 ```
 
 - `dom` uses the existing selector/text/state wait. `url` uses a `url` condition and `urlMatch: "exact" | "contains" | "regex"`. These check state after the steps, so an already-satisfied condition is not proof of causation.
-- `network` arms the default top-document fetch/XHR interceptor before any steps. It matches the first completed response for a request started after arming. `urlPattern` is a literal substring of the sanitized URL, not a regex; `method` is optional, and status bounds default to 200..299. No bodies, headers, or debugger capture are enabled.
+- `network` arms the default top-document fetch/XHR interceptor before any steps. It matches the first completed response for a request started after arming. `urlPattern` is a literal substring of the sanitized URL, not a regex. Captured query values are redacted, so give a path that may end at one parameter name (`/api/items?id=`); patterns with query values, several parameters, or a fragment are rejected. The path is percent-encoded and the scheme and host lowercased to match capture. `method` is optional, and status bounds default to 200..299. No bodies, headers, or debugger capture are enabled.
 - Network metadata comes from the page's main world and remains untrusted. Matching traffic is evidence, not proof it was caused by the action. Use a narrow path and method, and combine it with application-state checks.
+- Time spent queued behind other mutations on the tab counts against the request deadline. The sequence budget is the smaller of `timeoutMs` and what remains, so a long queue wait shortens it; a sequence that cannot start in time fails with `TIMEOUT` and `dispatched: false`.
 - Successful verification returns `verified: true` and bounded `outcomes`. Each condition reports `matched`, `failed`, `timeout`, or `interrupted`. A buffer clear, dropped capture, or document replacement cannot be silently reported as verified.
 - Unmet conditions return `OUTCOME_NOT_MET`, completed-step progress, outcomes, and an uncertainty flag. The sequence is never automatically replayed. Inspect application postconditions before another deliberate mutation.
 

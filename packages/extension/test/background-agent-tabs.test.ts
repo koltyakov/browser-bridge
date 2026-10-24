@@ -339,6 +339,42 @@ test('agent keeps working without taking focus after the user activates another 
   assert.equal(tabs.get(82)?.active, true);
 });
 
+test('scheduled mutations report how the gate chose their implicit tab', async () => {
+  const { loaded, reloads, activate } = await loadTwoTabBackground('agent-tabs-scheduled');
+  const port = loaded.module.getStateForTest().nativePort as unknown as {
+    postMessage: (message: unknown) => void;
+    onMessage: FakeChromeEvent;
+  };
+  const post = port.postMessage.bind(port);
+  port.postMessage = (message) => {
+    const ready = message as { type?: string; requestId?: string };
+    if (ready?.type === 'host.mutation_ready')
+      queueMicrotask(() =>
+        port.onMessage.dispatch({ type: 'host.mutation_granted', requestId: ready.requestId })
+      );
+    post(message);
+  };
+  const scheduled = (id: string) =>
+    loaded.dispatch(
+      createRequest({
+        id,
+        method: 'navigation.reload',
+        params: { waitForLoad: false },
+        meta: { mutation_schedule: true, deadline_ms: Date.now() + 5_000 },
+      })
+    );
+
+  const first = await scheduled('scheduled-active');
+  assert.equal(first.ok, true, JSON.stringify(first));
+  assert.equal(first.meta.tab_routing, 'active');
+  activate(82);
+  const second = await scheduled('scheduled-working');
+  assert.equal(second.ok, true, JSON.stringify(second));
+  assert.equal(second.meta.tab_routing, 'working');
+  assert.equal(second.meta.active_tab_id, 82);
+  assert.deepEqual(reloads, [81, 81]);
+});
+
 test('creating a working tab preserves user focus unless activation is explicit', async () => {
   const { loaded, tabs, reloads, activate } = await loadTwoTabBackground('agent-tabs-create');
   activate(82);

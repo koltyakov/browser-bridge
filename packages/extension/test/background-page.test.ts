@@ -323,6 +323,28 @@ test('routing issues its independent browser reads together and keeps their chec
   chromeObj.tabs.get = getTab;
 });
 
+test('a peek reports its routing without binding the working tab', async () => {
+  const agentTabs = createAgentTabLeaseStore();
+  let binds = 0;
+  const bind = agentTabs.bind;
+  agentTabs.bind = async (...args) => {
+    binds += 1;
+    return bind(...args);
+  };
+  const { controller } = createController({ agentTabs });
+  const routed: unknown[] = [];
+  const request = createRequest({ id: 'peek-routing', method: 'input.click' });
+  const target = await controller.resolveRequestTarget(request, {
+    peek: true,
+    onRouted: (routing) => routed.push(routing),
+  });
+  assert.equal(target.tabId, 21);
+  assert.deepEqual(routed, [{ tabId: 21, via: 'active', activeTabId: 21 }]);
+  assert.equal(binds, 0);
+  await controller.resolveRequestTarget(request);
+  assert.equal(binds, 1);
+});
+
 test('page request controller waits for matching load completion and ignores unrelated events', async () => {
   const { controller, onUpdated, onRemoved } = createController();
   const pending = controller.waitForTabComplete(21, 1_000);

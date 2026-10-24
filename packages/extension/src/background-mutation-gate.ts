@@ -2,7 +2,13 @@ import { BridgeError, ERROR_CODES } from '../../../protocol/src/index.js';
 import { requestLifetimes } from './background-request-lifetime.js';
 
 type BridgeRequest = import('../../../protocol/src/types.js').BridgeRequest;
-type Target = { tabId: number; windowId: number; url: string };
+type TabRouting = import('./background-page.js').TabRouting;
+type Target = {
+  tabId: number;
+  windowId: number;
+  url: string;
+  via?: TabRouting['via'];
+};
 type Snapshot = { documentId: string; url: string };
 export type SnapshotScope = 'document' | 'tab';
 
@@ -24,6 +30,9 @@ export function createMutationGate(dependencies: {
     string,
     { tabId: number; grant: () => void; reject: (error: unknown) => void }
   >();
+  // Pinning turns an implicit target into tab_id, which later resolutions
+  // report as explicit. Keep how the gate chose the tab until release.
+  const pins = new Map<string, { tabId: number; via: TabRouting['via'] }>();
 
   async function prepare(request: BridgeRequest): Promise<BridgeRequest> {
     if (request.meta.mutation_schedule !== true) return request;
@@ -44,6 +53,8 @@ export function createMutationGate(dependencies: {
         dependencies.snapshot(tabId, scope).then(resolve, reject).finally(untrack);
       });
     const target = await dependencies.resolveTarget(request);
+    if (target.via && target.via !== 'explicit')
+      pins.set(request.id, { tabId: target.tabId, via: target.via });
     assertAccess();
     assertActive();
     let untrack = () => {};
@@ -116,5 +127,17 @@ export function createMutationGate(dependencies: {
     }
   }
 
-  return { prepare, handle, invalidate };
+  /** Report a pinned request's routing as the gate chose it. */
+  function routing(requestId: string, routed: TabRouting): TabRouting {
+    const pin = pins.get(requestId);
+    return pin && routed.via === 'explicit' && routed.tabId === pin.tabId
+      ? { ...routed, via: pin.via }
+      : routed;
+  }
+
+  function release(requestId: string): void {
+    pins.delete(requestId);
+  }
+
+  return { prepare, handle, invalidate, routing, release };
 }

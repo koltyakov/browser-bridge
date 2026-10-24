@@ -192,7 +192,7 @@ function recordTabRouting(
   requestId: string,
   routing: import('./background-page.js').TabRouting
 ): void {
-  tabRoutingByRequestId.set(requestId, routing);
+  tabRoutingByRequestId.set(requestId, mutationGate.routing(requestId, routing));
   if (tabRoutingByRequestId.size > MAX_TRACKED_TAB_ROUTINGS) {
     const oldest = tabRoutingByRequestId.keys().next().value;
     if (oldest !== undefined) tabRoutingByRequestId.delete(oldest);
@@ -576,7 +576,17 @@ async function resolveRequestTarget(
 }
 
 const mutationGate = createMutationGate({
-  resolveTarget: resolveRequestTarget,
+  // Peek: the dispatched handler resolves the pinned tab again and binds it.
+  resolveTarget: async (request) => {
+    let via: import('./background-page.js').TabRoutingVia | undefined;
+    const target = await resolveRequestTarget(request, {
+      peek: true,
+      onRouted: (routing) => {
+        via = routing.via;
+      },
+    });
+    return { ...target, via };
+  },
   captureAccess: () => captureWindowGrant(state),
   snapshot: async (tabId, scope) => {
     tabDebugger.assertNoDialog(tabId);
@@ -1158,6 +1168,7 @@ async function handleBridgeRequest(request: BridgeRequest): Promise<void> {
     }
   } finally {
     finish();
+    mutationGate.release(request.id);
     dataRequestOwners.delete(request.id);
     disconnectedDataRequests.delete(request.id);
   }

@@ -9,6 +9,7 @@ import {
   normalizeInputAction,
   normalizeInputPerformParams,
   normalizeTouchParams,
+  sanitizeIncidentalUrl,
   summarizeBridgeResponse,
 } from '../src/index.js';
 import { makeSuccess as ok } from '../../tests/_helpers/protocolFactories.ts';
@@ -141,6 +142,37 @@ test('input.perform normalizes bounded outcome conditions idempotently', () => {
     statusMin: 200,
     statusMax: 299,
   });
+});
+
+test('network outcome patterns are written in the form captured URLs are sanitized to', () => {
+  const pattern = (urlPattern: string) =>
+    normalizeInputPerformParams({
+      steps: [{ method: 'input.click' }],
+      outcomes: [{ kind: 'network', urlPattern }],
+    }).outcomes?.[0];
+  for (const [raw, captured] of [
+    ['/api/café', 'https://app.test/api/caf%C3%A9'],
+    ['/a b?x y=', 'https://app.test/a%20b?x+y=%5Bredacted%5D&z=%5Bredacted%5D'],
+    ['?k[0]=', 'https://app.test/list?k%5B0%5D=%5Bredacted%5D'],
+    ['HTTPS://App.Test/API?id', 'https://app.test/API?id=%5Bredacted%5D'],
+  ] as const) {
+    const normalized = pattern(raw);
+    assert.equal(normalized?.kind, 'network');
+    if (normalized?.kind !== 'network') continue;
+    assert.ok(
+      sanitizeIncidentalUrl(captured).includes(normalized.urlPattern),
+      `${raw} -> ${normalized.urlPattern}`
+    );
+    assert.deepEqual(pattern(normalized.urlPattern), normalized);
+  }
+  for (const [raw, message] of [
+    ['/items?id=42', /query values are redacted/],
+    ['/items?id=&page=', /query values are redacted/],
+    ['/items?id&page', /query values are redacted/],
+    ['/page#done', /fragment/],
+    ['/bad\ud800', /well-formed/],
+  ] as const)
+    assert.throws(() => pattern(raw), { code: 'INVALID_REQUEST', message });
 });
 
 test('input.perform rejects malformed outcomes and ambiguous continue-on-error verification', () => {
