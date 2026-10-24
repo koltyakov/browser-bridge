@@ -412,8 +412,8 @@ func (s *mcpSession) batch(ctx context.Context, args object, era string) (object
 		return mcpErrorResult("INVALID_REQUEST", "calls must contain 1 to 20 entries."), nil
 	}
 	for _, call := range calls {
-		if !batchSafe(call.text("method"), call.object("params")) {
-			return mcpErrorResult("INVALID_REQUEST", call.text("method")+" is not safe for parallel batch execution."), nil
+		if call.text("method") != "protocol.describe" && !batchSafe(call.text("method"), call.object("params")) {
+			return mcpErrorResult("INVALID_REQUEST", call.text("method")+" is not safe for parallel batch execution.", "Call it with browser_call; use input.perform for ordered actions."), nil
 		}
 	}
 	results := make([]object, len(calls))
@@ -429,9 +429,14 @@ func (s *mcpSession) batch(ctx context.Context, args object, era string) (object
 			defer workers.Done()
 			for i := range jobs {
 				call := calls[i]
+				if call.text("method") == "protocol.describe" {
+					results[i] = mcpBatchDescribe(call.object("params"))
+					continue
+				}
 				if !catalog.Methods[call.text("method")].boolean("tab") {
 					delete(call, "tabId")
 				}
+				explicitExtension := call["extensionId"] != nil
 				for _, key := range []string{"extensionId", "targetBrowser", "targetProfile"} {
 					if call[key] == nil && args[key] != nil {
 						call[key] = args[key]
@@ -465,15 +470,16 @@ func (s *mcpSession) batch(ctx context.Context, args object, era string) (object
 						item["summary"] = value(item.text("summary") + " " + hint)
 					}
 				}
-				if method == "tabs.list" && err == nil {
-					discovery := mcpResponse(response, method, params).object("structuredContent")
-					for _, key := range []string{"summary", "evidence", "pagination", "outputTruncated"} {
-						if discovery[key] != nil {
-							item[key] = discovery[key]
+				if err == nil && response.boolean("ok") {
+					// Batch items carry the same bounded evidence as browser_call.
+					shaped := mcpResponse(response, method, params).object("structuredContent")
+					for _, key := range []string{"summary", "evidence", "evidenceMeta", "pagination", "outputTruncated", "outputLimit"} {
+						if shaped[key] != nil {
+							item[key] = shaped[key]
 						}
 					}
 				}
-				item["destinationId"] = value[*string](nil)
+				mcpCompactBatchItem(item)
 				if call["destinationId"] != nil {
 					item["destinationId"] = call["destinationId"]
 				}
@@ -481,7 +487,7 @@ func (s *mcpSession) batch(ctx context.Context, args object, era string) (object
 				if call["tabId"] != nil {
 					item["tabId"] = call["tabId"]
 				}
-				if call["extensionId"] != nil {
+				if explicitExtension {
 					item["extensionId"] = call["extensionId"]
 				}
 				results[i] = item
@@ -503,6 +509,53 @@ func (s *mcpSession) batch(ctx context.Context, args object, era string) (object
 		summary = fmt.Sprintf("Batch executed %d call(s) with %d error(s).", len(calls), failures)
 	}
 	return mcpResult(summary, object{"ok": value(failures == 0), "successCount": value(len(calls) - failures), "failureCount": value(failures), "compactOutput": value(true), "results": value(results)}, failures > 0), nil
+}
+
+// mcpCompactBatchItem drops per-item fields that repeat batch-level context or
+// other item fields: null routing/error placeholders, the current protocol
+// version, unscheduled timing (durationMs covers it), and the cost breakdown
+// already summarized by approxTokens.
+func mcpCompactBatchItem(item object) {
+	for _, key := range []string{"destinationId", "error"} {
+		if !cliPresent(item[key]) {
+			delete(item, key)
+		}
+	}
+	for _, prefix := range []string{"summary", "transport"} {
+		for _, suffix := range []string{"Bytes", "Tokens", "CostClass"} {
+			delete(item, prefix+suffix)
+		}
+	}
+	if !item.object("timing").boolean("scheduled") {
+		delete(item, "timing")
+	}
+	meta := item.object("meta")
+	if meta.text("protocol_version") == protocolVersion() {
+		delete(meta, "protocol_version")
+	}
+	if len(meta) == 0 {
+		delete(item, "meta")
+	} else {
+		item["meta"] = value(meta)
+	}
+}
+
+// mcpBatchDescribe answers protocol.describe from the local catalog without a
+// bridge round-trip, so discovery can share a batch with page reads.
+func mcpBatchDescribe(params object) object {
+	described := mcpDescribe(params).object("structuredContent")
+	for _, suffix := range []string{"Bytes", "Tokens", "CostClass"} {
+		delete(described, "delivered"+suffix)
+	}
+	item := object{"method": value("protocol.describe"), "tabId": value[*int](nil), "durationMs": value(0)}
+	if err := described.object("error"); err != nil {
+		item["ok"], item["evidence"], item["error"] = value(false), cliNull, value(err)
+		item["summary"] = value(err.text("code") + ": " + err.text("message"))
+	} else {
+		item["ok"], item["summary"], item["evidence"] = value(true), value("Bridge protocol description loaded."), value(described)
+	}
+	item["approxTokens"] = value((len(cliJSON(item["evidence"], false)) + 3) / 4)
+	return item
 }
 
 func (s *mcpSession) investigate(ctx context.Context, args object, era string) (object, error) {

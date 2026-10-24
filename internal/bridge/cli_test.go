@@ -471,3 +471,11 @@ func TestCLIReplayRecovery(t *testing.T) {
 		t.Fatal("local replay unexpectedly used daemon", err)
 	}
 }
+
+func TestCLICallHelpPrintsUsage(t *testing.T) {
+	for _, flag := range []string{"--help", "-h"} {
+		if _, err := parseCLI([]string{"call", flag}); err == nil || err.Error() != cliCallUsage {
+			t.Fatalf("call %s did not print usage: %v", flag, err)
+		}
+	}
+}

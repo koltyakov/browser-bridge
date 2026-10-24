@@ -768,6 +768,17 @@ locator target. Hidden matches count: the action decides actionability. */
     'table',
   ]);
   const OUTLINE_NAME_BUDGET = 80;
+  const OUTLINE_SCAN_LIMIT = 20000;
+
+  /** Include a scoped root without eagerly traversing its descendants. Read one
+  extra candidate so scan exhaustion is distinguishable from a complete tree. */
+  function* walkOutlineCandidates(root: Element | null): Generator<Element> {
+    if (root) yield root;
+    yield* walkElementsDeep(
+      root ?? document.body ?? document.documentElement ?? document,
+      OUTLINE_SCAN_LIMIT + 1
+    );
+  }
 
   /** Compact states worth showing in an outline line. */
   function getOutlineStates(element: Element, role: string): string[] {
@@ -875,10 +886,11 @@ one step. Hidden elements are skipped. */
     }> = [];
     let scanned = 0;
     let truncated = false;
-    const candidates = root
-      ? [root, ...walkElementsDeep(root)]
-      : walkElementsDeep(document.body ?? document.documentElement ?? document);
-    for (const element of candidates) {
+    for (const element of walkOutlineCandidates(root)) {
+      if (scanned >= OUTLINE_SCAN_LIMIT) {
+        truncated = true;
+        break;
+      }
       scanned += 1;
       if (NON_RENDERED_TAGS.has(element.tagName)) continue;
       const roles = getElementRoles(element);

@@ -84,3 +84,10 @@ func TestExtractSettlesAndPreservesMarkdownFence(t *testing.T) {
 		t.Fatalf("bad settlement or truncation: %s", value(result))
 	}
 }
+
+func TestExtractTextDropsIndentationOnlyLines(t *testing.T) {
+	result := extractContentHTML("<main>\n    <h2>Workshops</h2>\n    \n  \t\n    <p>Plan the work.</p>\n  </main>", "text", 8000, "", false)
+	if content := result.text("content"); content != "Workshops\n\nPlan the work." {
+		t.Fatalf("indentation survived text extraction: %q", content)
+	}
+}

@@ -276,6 +276,51 @@ test('outlines and semantic search report truncation while respecting scopes and
   );
 });
 
+test('scoped outlines stop traversing after the first omitted eligible node', async () => {
+  await withQuery(
+    `<main id="scope">${'<button>Action</button>'.repeat(12)}<div id="later"></div></main>`,
+    ({ document, query }) => {
+      Object.defineProperty(document.getElementById('later')!, 'shadowRoot', {
+        get() {
+          throw new Error('outline traversed beyond its result budget');
+        },
+      });
+      const result = query.getAccessibilityOutline({
+        selector: '#scope',
+        interactiveOnly: true,
+        maxNodes: 10,
+        format: 'tree',
+      });
+      assert.equal(result.count, 10);
+      assert.equal(result.scanned, 12);
+      assert.equal(result.truncated, true);
+    }
+  );
+});
+
+test('sparse outlines report scan-limit truncation for scoped and document reads', async () => {
+  await withQuery(
+    `<main id="scope">${'<div></div>'.repeat(20001)}<button>Beyond scan limit</button></main>`,
+    ({ query }) => {
+      for (const selector of [undefined, '#scope']) {
+        const result = query.getAccessibilityOutline({ selector, interactiveOnly: true });
+        assert.equal(result.count, 0);
+        assert.equal(result.scanned, 20000);
+        assert.equal(result.truncated, true);
+      }
+    }
+  );
+});
+
+test('an outline ending exactly at the scan limit remains complete', async () => {
+  await withQuery(`<main id="scope">${'<div></div>'.repeat(19999)}</main>`, ({ query }) => {
+    const result = query.getAccessibilityOutline({ selector: '#scope', interactiveOnly: true });
+    assert.equal(result.count, 0);
+    assert.equal(result.scanned, 20000);
+    assert.equal(result.truncated, false);
+  });
+});
+
 test('accessible names honor native labels, input defaults, images, and fieldset legends', async () => {
   await withQuery(
     `

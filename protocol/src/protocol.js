@@ -1980,7 +1980,7 @@ export function normalizeAccessibilityTreeParams(params = {}) {
     interactiveOnly: params.interactiveOnly === true,
     // Omitted at defaults so existing CDP callers see an unchanged shape.
     ...(source === 'dom' ? { source } : {}),
-    ...(format === 'outline' ? { format } : {}),
+    ...(source === 'dom' || format === 'outline' ? { format } : {}),
   };
 }
 

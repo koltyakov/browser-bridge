@@ -1107,6 +1107,12 @@ test('normalizeAccessibilityTreeParams defaults sensibly', () => {
   assert.equal(params.interactiveOnly, false);
 });
 
+test('normalizeAccessibilityTreeParams preserves explicit DOM tree format', () => {
+  assert.equal(normalizeAccessibilityTreeParams({ source: 'dom' }).format, 'outline');
+  assert.equal(normalizeAccessibilityTreeParams({ source: 'dom', format: 'tree' }).format, 'tree');
+  assert.equal(normalizeAccessibilityTreeParams({ source: 'cdp' }).format, undefined);
+});
+
 test('normalizeScreenshotParams validates formats and bounds lossy quality', () => {
   assert.deepEqual(normalizeScreenshotParams(), {
     format: 'png',
