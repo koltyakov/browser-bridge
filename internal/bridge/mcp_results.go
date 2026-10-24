@@ -150,6 +150,13 @@ func mcpResponse(response object, method string, params object) object {
 			return mcpResult("Read exact journal bytes; page until nextOffset is null.", object{"ok": value(true), "evidence": response["result"]}, false)
 		}
 	}
+	structured := mcpStructuredResponse(response, method, params)
+	return mcpResult(structured.text("summary"), structured, !structured.boolean("ok"))
+}
+
+// Share bounded evidence and error shaping between standalone and batch calls.
+// Exact payload methods are handled by mcpResponse and are not batch-safe.
+func mcpStructuredResponse(response object, method string, params object) object {
 	structured := cliSummaryNow(response, method)
 	summary := structured.text("summary")
 	if !response.boolean("ok") {
@@ -202,7 +209,7 @@ func mcpResponse(response object, method string, params object) object {
 		}
 	}
 	structured["summary"] = value(summary)
-	return mcpResult(summary, structured, !structured.boolean("ok"))
+	return structured
 }
 
 func mcpEvidence(raw json.RawMessage, method string, params object, fallback json.RawMessage) (json.RawMessage, bool, object) {

@@ -241,6 +241,143 @@ test('general content-script injection does not install navigation listeners or 
   assert.equal(injections[0].func, undefined);
 });
 
+test('concurrent content-script checks share one ping per tab without caching readiness', async () => {
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const pings: number[] = [];
+  const chromeFake = createChromeFake({
+    tabs: {
+      sendMessage: async (tabId: number) => {
+        pings.push(tabId);
+        await pending;
+        return { ok: true };
+      },
+    },
+    scripting: { executeScript: async () => assert.fail('ready tabs must not reinject') },
+  });
+  const bridge = createContentScriptBridge(chromeFake as unknown as typeof chrome, {
+    contentScriptTimeoutMs: 1_000,
+    isRestrictedAutomationUrl: () => false,
+  });
+  const checks = [
+    ...Array.from({ length: 16 }, () => bridge.ensureContentScript(8)),
+    bridge.ensureContentScript(9),
+  ];
+  try {
+    await Promise.resolve();
+    assert.deepEqual(pings, [8, 9]);
+  } finally {
+    release();
+    await Promise.all(checks);
+  }
+  await bridge.ensureContentScript(8);
+  assert.deepEqual(pings, [8, 9, 8], 'later requests recheck the current document');
+});
+
+for (const fails of [false, true]) {
+  test(`concurrent content-script checks share injection ${fails ? 'failure' : 'success'} and clear pending work`, async () => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let injections = 0;
+    const outcomes: string[] = [];
+    const chromeFake = createChromeFake({
+      tabs: {
+        sendMessage: async () => {
+          throw new Error('Could not establish connection. Receiving end does not exist.');
+        },
+      },
+      scripting: {
+        executeScript: async () => {
+          injections += 1;
+          await pending;
+          if (fails) throw new Error('Injection failed');
+          return [];
+        },
+      },
+    });
+    const bridge = createContentScriptBridge(chromeFake as unknown as typeof chrome, {
+      contentScriptTimeoutMs: 1_000,
+      isRestrictedAutomationUrl: () => false,
+      recordReinjection: (outcome) => outcomes.push(outcome),
+    });
+    const checks = Promise.allSettled(
+      Array.from({ length: 16 }, () => bridge.ensureContentScript(8))
+    );
+    release();
+    const results = await checks;
+    assert.equal(injections, 1);
+    assert.deepEqual(outcomes, [fails ? 'failure' : 'success']);
+    assert(results.every((result) => result.status === (fails ? 'rejected' : 'fulfilled')));
+    if (fails) await assert.rejects(bridge.ensureContentScript(8), /Injection failed/);
+    else await bridge.ensureContentScript(8);
+    assert.equal(injections, 2, 'settled setup must not suppress later injections');
+  });
+}
+
+test('preflight and missing-receiver recovery share injection but not command results', async () => {
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let started!: () => void;
+  const injecting = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  let ready = false;
+  let injections = 0;
+  const attempts = new Map<string, number>();
+  const chromeFake = createChromeFake({
+    tabs: {
+      sendMessage: async (_tabId: number, message: Record<string, unknown>) => {
+        if (message.type === 'bridge.execute') {
+          const id = String(message.requestId);
+          attempts.set(id, (attempts.get(id) ?? 0) + 1);
+        }
+        if (!ready)
+          throw new Error('Could not establish connection. Receiving end does not exist.');
+        return message.method;
+      },
+    },
+    scripting: {
+      executeScript: async () => {
+        injections += 1;
+        started();
+        await pending;
+        ready = true;
+        return [];
+      },
+    },
+  });
+  const bridge = createContentScriptBridge(chromeFake as unknown as typeof chrome, {
+    contentScriptTimeoutMs: 1_000,
+    isRestrictedAutomationUrl: () => false,
+  });
+  const check = bridge.ensureContentScript(8);
+  await injecting;
+  const commands = ['page.get_state', 'page.get_text'].map((method) =>
+    bridge.sendTabMessage(8, { type: 'bridge.execute', requestId: method, method }, 1_000)
+  );
+  try {
+    for (let i = 0; i < 20; i += 1) await Promise.resolve();
+    assert.equal(injections, 1);
+  } finally {
+    release();
+    await check;
+    assert.deepEqual(await Promise.all(commands), ['page.get_state', 'page.get_text']);
+  }
+  assert.deepEqual(
+    [...attempts],
+    [
+      ['page.get_state', 2],
+      ['page.get_text', 2],
+    ]
+  );
+});
+
 test('restricted content-script injection returns a typed non-retryable error', async () => {
   const recoveryOutcomes: Array<{ outcome: 'success' | 'failure'; group: string }> = [];
   const chromeObj = {

@@ -53,6 +53,24 @@ func toolResult(response object, err error) object {
 	return response
 }
 
+func mcpWriteToolResult(writer *wireWriter, id json.RawMessage, era string, result object) error {
+	payload, err := encodeJSON(mcpRPCResult(id, "tools/call", era, result))
+	if err != nil {
+		return err
+	}
+	if len(payload) > maxMessageBytes {
+		// No bytes have been written. Keep the session alive and preserve atomic
+		// evidence by rejecting the aggregate instead of clipping schema fields.
+		result = mcpErrorResult("RESULT_TOO_LARGE", "MCP tool output exceeds 1 MiB. The call has already executed.", "Narrow read-only results or split the batch into smaller calls. Inspect postconditions before repeating actions.")
+		payload, err = encodeJSON(mcpRPCResult(id, "tools/call", era, result))
+		if err != nil {
+			return err
+		}
+	}
+	_, err = writer.sendPayloadContext(context.Background(), payload)
+	return err
+}
+
 func mcpServe(ctx context.Context, c config, input io.Reader, output io.Writer) error {
 	s := &mcpSession{config: c, enabled: make(map[string]bool), agentSession: os.Getenv("BBX_SESSION")}
 	if s.agentSession == "" {
@@ -283,7 +301,7 @@ func mcpServe(ctx context.Context, c config, input io.Reader, output io.Writer) 
 					pendingMu.Unlock()
 				}()
 				response, err := s.tool(callCtx, name, arguments, era)
-				if err := writer.send(mcpRPCResult(id, "tools/call", era, toolResult(response, err))); err != nil {
+				if err := mcpWriteToolResult(writer, id, era, toolResult(response, err)); err != nil {
 					cancel()
 				}
 			}(era)
