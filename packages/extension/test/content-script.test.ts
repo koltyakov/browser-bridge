@@ -565,6 +565,66 @@ test('canceling a content auto-wait prevents a late field edit', async (t) => {
   assert.equal(field.value, 'original');
 });
 
+test('a mutation delivered after its deadline never edits the document', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t);
+  const field = inputs.createTextInput({ value: 'original' });
+  const document = createDocumentHarness(inputs.createBody([field]), { '#field': field });
+  await loadContentScript(t, { withHelpers: true, chrome: harness.chrome, document });
+  const result = await new Promise<BridgeResult>((resolve) => {
+    harness.getListener()(
+      {
+        type: 'bridge.execute',
+        requestId: 'expired-before-delivery',
+        deadlineMs: Date.now() - 1,
+        method: 'input.fill',
+        params: { target: { selector: '#field' }, value: 'changed' },
+      },
+      EMPTY_SENDER,
+      (response) => resolve(expectRecord(response))
+    );
+  });
+  assert.equal((result.error as { code: string }).code, 'TIMEOUT');
+  assert.equal(field.value, 'original');
+  assert.deepEqual(field.eventLog, []);
+});
+
+test('canceling native target preparation prevents delayed focus changes', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t);
+  const field = inputs.createTextInput({ value: 'original' });
+  let available = false;
+  const base = createDocumentHarness(inputs.createBody([field]), { '#late': field });
+  const document = {
+    ...base,
+    querySelectorAll(selector: string) {
+      return selector === '#late' && !available ? [] : base.querySelectorAll(selector);
+    },
+  };
+  await loadContentScript(t, { withHelpers: true, chrome: harness.chrome, document });
+  const response = new Promise<BridgeResult>((resolve) => {
+    harness.getListener()(
+      {
+        type: 'bridge.execute',
+        requestId: 'late-native-focus',
+        method: 'input.resolve_native',
+        params: { target: { selector: '#late' }, kind: 'editable', timeoutMs: 1000 },
+      },
+      EMPTY_SENDER,
+      (result) => resolve(expectRecord(result))
+    );
+  });
+  harness.getListener()(
+    { type: 'bridge.cancel', requestId: 'late-native-focus' },
+    EMPTY_SENDER,
+    () => {}
+  );
+  available = true;
+  const result = await response;
+  assert.equal((result.error as { code: string }).code, 'TIMEOUT');
+  assert.deepEqual(field.eventLog, []);
+});
+
 /**
  * Mark a fake element as natively draggable and make the destination accept
  * drops by canceling dragover, as real drop zones must.

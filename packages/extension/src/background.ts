@@ -112,7 +112,7 @@ import {
 import { createActionLogController, enrichBridgeResponse } from './background-action-log.js';
 import { createAccessRequestController } from './background-access-request.js';
 import { createPageRequestController } from './background-page.js';
-import { createBackgroundInputController } from './background-input.js';
+import { createBackgroundInputController, isNativeInputRelease } from './background-input.js';
 import {
   getContentScriptTimeout,
   handleTabBoundRequest as executeTabBoundRequest,
@@ -665,7 +665,7 @@ const { handleNativeInput } = createBackgroundInputController({
   contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,
   runWithDebugger: (tabId, operation) => tabDebugger.runGuarded(tabId, operation),
   sendCommand: (target, method, params) => {
-    tabDebugger.assertTaskActive(target);
+    if (!isNativeInputRelease(method, params)) tabDebugger.assertTaskActive(target);
     return chrome.debugger.sendCommand(target, method, params) as Promise<unknown>;
   },
   sendTabMessage: (tabId, message, timeoutMs = CONTENT_SCRIPT_TIMEOUT_MS) =>

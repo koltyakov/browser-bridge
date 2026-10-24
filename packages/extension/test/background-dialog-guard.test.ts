@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { BridgeError, createFailure, createRequest } from '../../../protocol/src/index.js';
 import { handlePageEvaluate } from '../src/background-evaluate.js';
-import { createBackgroundInputController } from '../src/background-input.js';
+import { createBackgroundInputController, isNativeInputRelease } from '../src/background-input.js';
 import { handleTabBoundRequest } from '../src/background-tab-bound.js';
 import { TabDebuggerCoordinator } from '../src/debugger-coordinator.js';
 
@@ -98,10 +98,10 @@ for (const phase of ['command', 'observation']) {
     const controller = createBackgroundInputController({
       getTab: async () => ({ active: true }),
       runWithDebugger: (tabId, operation) => coordinator.runGuarded(tabId, operation),
-      sendCommand: async (target) => {
-        coordinator.assertTaskActive(target);
+      sendCommand: async (target, method, params) => {
+        if (!isNativeInputRelease(method, params)) coordinator.assertTaskActive(target);
         commands += 1;
-        return phase === 'command' ? block() : {};
+        return phase === 'command' && !isNativeInputRelease(method, params) ? block() : {};
       },
       sendTabMessage: async (_tabId, message) => {
         if (message.method === 'input.observe_start') return { observationId: 'obs_test' };
@@ -122,9 +122,63 @@ for (const phase of ['command', 'observation']) {
       { code: 'DIALOG_BLOCKED' }
     );
     await dismiss();
-    assert.equal(commands, phase === 'command' ? 1 : 2);
+    assert.equal(commands, 2, 'key-up must still be dispatched after interruption');
   });
 }
+
+for (const action of [
+  {
+    method: 'input.click' as const,
+    params: { target: { selector: 'button' }, clickCount: 2 },
+    down: 'mousePressed',
+    up: 'mouseReleased',
+  },
+  {
+    method: 'input.touch' as const,
+    params: { points: [{ x: 10, y: 20 }] },
+    down: 'touchStart',
+    up: 'touchEnd',
+  },
+]) {
+  test(`${action.method} releases held input after a dialog without resuming edits`, async () => {
+    const { coordinator, block, dismiss } = createHarness();
+    const events: unknown[] = [];
+    const controller = createBackgroundInputController({
+      getTab: async () => ({ active: true }),
+      runWithDebugger: (tabId, operation) => coordinator.runGuarded(tabId, operation),
+      sendCommand: async (target, method, params) => {
+        if (!isNativeInputRelease(method, params)) coordinator.assertTaskActive(target);
+        events.push(params.type);
+        return params.type === action.down ? block() : {};
+      },
+      sendTabMessage: async () => ({
+        elementRef: 'el_test_1',
+        point: { x: 10, y: 20 },
+        resolution: {},
+      }),
+      contentScriptTimeoutMs: 5000,
+    });
+    await assert.rejects(
+      controller.handleNativeInput(
+        createRequest({ id: action.method, method: action.method, params: action.params }),
+        tab,
+        action.params
+      ),
+      { code: 'DIALOG_BLOCKED' }
+    );
+    await dismiss();
+    assert.equal(events.at(-1), action.up);
+    assert.equal(events.filter((type) => type === action.down).length, 1);
+    assert.deepEqual(events.slice(events.indexOf(action.down) + 1), [action.up]);
+  });
+}
+
+test('release exemptions apply only to matching native input commands', () => {
+  assert.equal(isNativeInputRelease('Runtime.evaluate', { type: 'keyUp' }), false);
+  assert.equal(isNativeInputRelease('Input.dispatchKeyEvent', { type: 'keyDown' }), false);
+  assert.equal(isNativeInputRelease('Input.dispatchMouseEvent', { type: 'keyUp' }), false);
+  assert.equal(isNativeInputRelease('Input.dispatchTouchEvent', { type: 'touchCancel' }), true);
+});
 
 test('evaluation returns DIALOG_BLOCKED while Runtime.evaluate is still pending', async () => {
   const { coordinator, block, dismiss } = createHarness();

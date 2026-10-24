@@ -2004,6 +2004,8 @@ This helper performs no click, typing, value setting, or drag mutation. */
     tag: string;
     value?: string;
   }> {
+    const assertActive = () => assertInputActive(params);
+    assertActive();
     const target =
       params.target && typeof params.target === 'object'
         ? (params.target as InputTargetSpec)
@@ -2012,7 +2014,9 @@ This helper performs no click, typing, value setting, or drag mutation. */
       pointer: params.kind === 'pointer',
       recoverStale: params.recoverStale === true,
       timeoutMs: clamp(Number(params.timeoutMs) || 0, 0, 15_000),
+      assertActive,
     });
+    assertActive();
     if (waitedMs > 0) base.resolution = { ...base.resolution, waitedMs };
     if (params.kind === 'focus') focusElement(base.element);
     let resolved = base;
