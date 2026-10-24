@@ -56,7 +56,7 @@ func TestCLIFormatterContracts(t *testing.T) {
 			assertJSONEqual(t, value(summary), fixture["summary"])
 			annotated := cliAnnotate(summary, response)
 			assertJSONEqual(t, value(annotated), fixture["annotated"])
-			assertJSONEqual(t, cliJSON(value(annotated), true), fixture["sanitized"])
+			assertJSONEqual(t, cliJSON(value(cliPrintedSummary(response, method, 1700000000000)), true), fixture["sanitized"])
 			if method == "" {
 				method = "page.get_state"
 			}
@@ -137,6 +137,49 @@ func TestCLIPrinterChannelContracts(t *testing.T) {
 			}
 			if (nativeErr != nil) != expected.boolean("failed") {
 				t.Fatalf("exit status: got %v, want failure %v", nativeErr, expected.boolean("failed"))
+			}
+		})
+	}
+}
+
+func TestCLIPrintedSummaryOmitsIdleTimingAndCheapTransport(t *testing.T) {
+	response := success("timed", object{"x": value(1), "y": value(2), "width": value(3), "height": value(4)})
+	response["meta"] = value(object{"timing": value(object{"preparationMs": value(0), "queueMs": value(0), "executionMs": value(2), "totalMs": value(2), "scheduled": value(false)}), "transport_bytes": value(40), "transport_approx_tokens": value(10), "transport_cost_class": value("cheap")})
+	printed := cliPrintedSummary(response, "layout.get_box_model", 1700000000000)
+	for _, key := range []string{"summaryBytes", "summaryTokens", "summaryCostClass", "transportBytes", "transportTokens", "transportCostClass"} {
+		if printed[key] != nil {
+			t.Fatalf("printed summary kept %s: %s", key, value(printed))
+		}
+	}
+	assertJSONEqual(t, printed["timing"], []byte(`{"executionMs":2,"totalMs":2}`))
+
+	response["meta"] = value(object{"timing": value(object{"preparationMs": value(1), "queueMs": value(4), "executionMs": value(2), "totalMs": value(7), "scheduled": value(true)}), "transport_bytes": value(6000), "transport_approx_tokens": value(1500), "transport_cost_class": value("heavy")})
+	printed = cliPrintedSummary(response, "layout.get_box_model", 1700000000000)
+	assertJSONEqual(t, printed["timing"], []byte(`{"preparationMs":1,"queueMs":4,"executionMs":2,"totalMs":7,"scheduled":true}`))
+	if string(printed["transportTokens"]) != "1500" || printed["transportBytes"] != nil || printed["transportCostClass"] != nil {
+		t.Fatalf("above-cheap transport should print only its token estimate: %s", value(printed))
+	}
+}
+
+func TestCLIRawFailureKeepsOnlyNotableMeta(t *testing.T) {
+	recovery := `{"retry":false,"alternativeMethod":"dom.query","hint":"Re-query."}`
+	meta := `"protocol_version":"` + protocolVersion() + `","approx_tokens":84,"cost_class":"cheap","image_bytes":0,"transport_bytes":333,"timing":{"executionMs":4,"totalMs":4},"budget_truncated":false,"tab_id":5,"active_tab_id":7`
+	for _, tc := range []struct{ name, routing, want string }{
+		{"explicit tab", `,"tab_routing":"explicit"`, `{"ok":false,"error":{"code":"ELEMENT_STALE","message":"Gone","details":null},"recovery":` + recovery + `}`},
+		{"working tab", `,"tab_routing":"working","protocol_warning":"Update bbx."`, `{"ok":false,"error":{"code":"ELEMENT_STALE","message":"Gone","details":null},"recovery":` + recovery + `,"meta":{"protocol_warning":"Update bbx.","tab_id":5}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			response, err := decodeObject([]byte(`{"id":"r1","ok":false,"result":null,"error":{"code":"ELEMENT_STALE","message":"Gone","details":null,"recovery":` + recovery + `},"meta":{` + meta + tc.routing + `}}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var out, stderr bytes.Buffer
+			if writeCLIResponse(response, true, "dom.describe", 1700000000000, &out, &stderr, false, false) == nil {
+				t.Fatal("raw failure exited zero")
+			}
+			assertJSONEqual(t, out.Bytes(), []byte(tc.want))
+			if stderr.String() != "ELEMENT_STALE: Gone\n" {
+				t.Fatalf("stderr: %q", stderr.String())
 			}
 		})
 	}

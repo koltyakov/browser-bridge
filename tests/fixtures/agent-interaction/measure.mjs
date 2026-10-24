@@ -1,7 +1,8 @@
 // @ts-check
 
 /** @typedef {import('../../../protocol/types.js').BridgeMethod} BridgeMethod */
-/** @typedef {{preparationMs: number, queueMs: number, executionMs: number, totalMs: number, scheduled: boolean}} BridgeTiming */
+/** Compact responses omit zero preparation and queue phases and an unscheduled run.
+ * @typedef {{preparationMs?: number, queueMs?: number, executionMs: number, totalMs: number, scheduled?: boolean}} BridgeTiming */
 /** @typedef {({ok: true, result: unknown, tokens: number} | {ok: false, result: null, error: {message: string, code: string}, tokens: number}) & {timing?: BridgeTiming}} BridgeResponse */
 /** @typedef {(method: BridgeMethod, params?: Record<string, unknown>) => Promise<BridgeResponse>} Call */
 /** @typedef {{name: string, run: (call: Call) => Promise<unknown>, verify: (state: Record<string, unknown>, last: BridgeResponse | null) => boolean}} Scenario */

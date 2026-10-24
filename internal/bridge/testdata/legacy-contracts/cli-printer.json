@@ -2,7 +2,7 @@
   "raw_failure": {
     "failed": true,
     "stderr": "INVALID_REQUEST: Bad selector\n",
-    "stdout": "{\"ok\":false,\"result\":null,\"error\":{\"code\":\"INVALID_REQUEST\",\"message\":\"Bad selector\",\"details\":null},\"meta\":{}}\n"
+    "stdout": "{\"ok\":false,\"error\":{\"code\":\"INVALID_REQUEST\",\"message\":\"Bad selector\",\"details\":null},\"recovery\":{\"retry\":false,\"hint\":\"Malformed method or params. Check the method name and parameter types.\"}}\n"
   },
   "raw_success": {
     "failed": false,
@@ -17,16 +17,16 @@
   "summary_failure": {
     "failed": true,
     "stderr": "",
-    "stdout": "{\"ok\":false,\"summary\":\"ELEMENT_STALE: Gone Element was removed from the DOM. Re-query for a fresh elementRef, or retry an input once with recoverStale=true when the same page and a strong unique descriptor still apply.\",\"evidence\":null,\"recovery\":{\"retry\":false,\"alternativeMethod\":\"dom.query\",\"hint\":\"Element was removed from the DOM. Re-query for a fresh elementRef, or retry an input once with recoverStale=true when the same page and a strong unique descriptor still apply.\"},\"transportBytes\":66,\"transportTokens\":17,\"transportCostClass\":\"cheap\",\"summaryBytes\":480,\"summaryTokens\":120,\"summaryCostClass\":\"cheap\"}\n"
+    "stdout": "{\"ok\":false,\"summary\":\"ELEMENT_STALE: Gone Element was removed from the DOM. Re-query for a fresh elementRef, or retry an input once with recoverStale=true when the same page and a strong unique descriptor still apply.\",\"evidence\":null,\"recovery\":{\"retry\":false,\"alternativeMethod\":\"dom.query\",\"hint\":\"Element was removed from the DOM. Re-query for a fresh elementRef, or retry an input once with recoverStale=true when the same page and a strong unique descriptor still apply.\"}}\n"
   },
   "summary_success": {
     "failed": false,
     "stderr": "",
-    "stdout": "{\"ok\":true,\"summary\":\"Clicked el_a.\",\"evidence\":{\"elementRef\":\"el_a\"},\"transportBytes\":36,\"transportTokens\":9,\"transportCostClass\":\"cheap\",\"summaryBytes\":70,\"summaryTokens\":18,\"summaryCostClass\":\"cheap\"}\n"
+    "stdout": "{\"ok\":true,\"summary\":\"Clicked el_a.\",\"evidence\":{\"elementRef\":\"el_a\"}}\n"
   },
   "wait_false_exits_zero": {
     "failed": false,
     "stderr": "",
-    "stdout": "{\"ok\":false,\"summary\":\"Element not found (timed out after 5000ms).\",\"evidence\":{\"elementRef\":null,\"duration\":5000},\"transportBytes\":31,\"transportTokens\":8,\"transportCostClass\":\"cheap\",\"summaryBytes\":115,\"summaryTokens\":29,\"summaryCostClass\":\"cheap\"}\n"
+    "stdout": "{\"ok\":false,\"summary\":\"Element not found (timed out after 5000ms).\",\"evidence\":{\"elementRef\":null,\"duration\":5000}}\n"
   }
 }

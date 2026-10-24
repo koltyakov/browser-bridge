@@ -216,7 +216,6 @@ func mcpVisualBaseline(result object, method string) object {
 func mcpStructuredResponse(response object, method string, params object) object {
 	response = mcpRoundGeometry(response, method)
 	structured := cliSummaryNow(response, method)
-	mcpCompactEnvelope(structured)
 	summary := structured.text("summary")
 	if !response.boolean("ok") {
 		err := mcpClone(response.object("error"))
@@ -303,22 +302,6 @@ func mcpRoundRect(rect object) object {
 		}
 	}
 	return out
-}
-
-// mcpCompactEnvelope drops envelope fields that do not describe the MCP
-// delivery: the CLI summary's own size, and idle timing phases.
-func mcpCompactEnvelope(structured object) {
-	for _, suffix := range []string{"Bytes", "Tokens", "CostClass"} {
-		delete(structured, "summary"+suffix)
-	}
-	if timing := structured.object("timing"); timing != nil {
-		for _, key := range []string{"preparationMs", "queueMs", "scheduled"} {
-			if string(timing[key]) == "0" || string(timing[key]) == "false" {
-				delete(timing, key)
-			}
-		}
-		structured["timing"] = value(timing)
-	}
 }
 
 // mcpRequestedAttributes keeps allowlisted attributes that the compact node

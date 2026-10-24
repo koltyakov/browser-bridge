@@ -233,6 +233,15 @@ bbx page.get_state
 bbx batch '[{"method":"page.get_state"},{"method":"page.get_console","params":{"level":"warn"}}]'
 ```
 
+`bbx call` prints the bare result on success. On failure it writes
+`CODE: message` to stderr, exits 1, and prints `{ok, error, recovery}`. `meta`
+appears only for warnings, truncation, continuation hints, a non-current
+protocol version, or the tab a call without `tabId` ran in. Shortcuts print
+`{ok, summary, evidence}` and `timing`, omitting zero `preparationMs` and
+`queueMs` and `scheduled: false`. They add `transportTokens` only when the raw
+result is above the cheap tier (250 tokens), where `bbx call` would return
+noticeably more than the summary.
+
 Use `bbx call` when you need the full protocol surface. Use `bbx batch` when
 you want up to 20 parallel reads with one CLI round trip. Batch preserves call
 order, executes at most five calls concurrently, and rejects clears, navigation,
