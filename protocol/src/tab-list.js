@@ -12,7 +12,7 @@ import { BridgeError, ERROR_CODES } from './errors.js';
 export function normalizeTabListParams(params) {
   const offset = params.offset === undefined ? 0 : params.offset;
   const limit =
-    params.limit === undefined ? (params.offset === undefined ? null : 10) : params.limit;
+    params.limit === undefined ? (params.offset === undefined ? null : 30) : params.limit;
   if (typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0) {
     throw new BridgeError(
       ERROR_CODES.INVALID_REQUEST,

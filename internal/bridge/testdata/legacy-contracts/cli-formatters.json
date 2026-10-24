@@ -12583,7 +12583,7 @@
     }
   },
   {
-    "name": "tabs truncated",
+    "name": "tabs below default page size",
     "response": {
       "id": "fixture",
       "ok": true,
@@ -12668,14 +12668,14 @@
     },
     "summary": {
       "ok": true,
-      "summary": "Bridge listed 12 tab(s); showing 10 at offset 0, 2 omitted. Use tabs.list with limit and offset to retrieve another page.",
+      "summary": "Bridge listed 12 tab(s).",
       "pagination": {
         "totalCount": 12,
-        "returnedCount": 10,
+        "returnedCount": 12,
         "offset": 0,
-        "omittedCount": 2,
-        "truncated": true,
-        "nextOffset": 10
+        "omittedCount": 0,
+        "truncated": false,
+        "nextOffset": null
       },
       "evidence": [
         {
@@ -12737,19 +12737,31 @@
           "active": false,
           "origin": "https://example.com",
           "title": "Tab 8"
+        },
+        {
+          "tabId": 9,
+          "active": false,
+          "origin": "https://example.com",
+          "title": "Tab 9"
+        },
+        {
+          "tabId": 10,
+          "active": false,
+          "origin": "https://example.com",
+          "title": "Tab 10"
         }
       ]
     },
     "annotated": {
       "ok": true,
-      "summary": "Bridge listed 12 tab(s); showing 10 at offset 0, 2 omitted. Use tabs.list with limit and offset to retrieve another page.",
+      "summary": "Bridge listed 12 tab(s).",
       "pagination": {
         "totalCount": 12,
-        "returnedCount": 10,
+        "returnedCount": 12,
         "offset": 0,
-        "omittedCount": 2,
-        "truncated": true,
-        "nextOffset": 10
+        "omittedCount": 0,
+        "truncated": false,
+        "nextOffset": null
       },
       "evidence": [
         {
@@ -12811,25 +12823,37 @@
           "active": false,
           "origin": "https://example.com",
           "title": "Tab 8"
+        },
+        {
+          "tabId": 9,
+          "active": false,
+          "origin": "https://example.com",
+          "title": "Tab 9"
+        },
+        {
+          "tabId": 10,
+          "active": false,
+          "origin": "https://example.com",
+          "title": "Tab 10"
         }
       ],
       "transportBytes": 901,
       "transportTokens": 226,
       "transportCostClass": "cheap",
-      "summaryBytes": 1010,
-      "summaryTokens": 253,
+      "summaryBytes": 1066,
+      "summaryTokens": 267,
       "summaryCostClass": "moderate"
     },
     "sanitized": {
       "ok": true,
-      "summary": "Bridge listed 12 tab(s); showing 10 at offset 0, 2 omitted. Use tabs.list with limit and offset to retrieve another page.",
+      "summary": "Bridge listed 12 tab(s).",
       "pagination": {
         "totalCount": 12,
-        "returnedCount": 10,
+        "returnedCount": 12,
         "offset": 0,
-        "omittedCount": 2,
-        "truncated": true,
-        "nextOffset": 10
+        "omittedCount": 0,
+        "truncated": false,
+        "nextOffset": null
       },
       "evidence": [
         {
@@ -12891,27 +12915,39 @@
           "active": false,
           "origin": "https://example.com",
           "title": "Tab 8"
+        },
+        {
+          "tabId": 9,
+          "active": false,
+          "origin": "https://example.com",
+          "title": "Tab 9"
+        },
+        {
+          "tabId": 10,
+          "active": false,
+          "origin": "https://example.com",
+          "title": "Tab 10"
         }
       ],
       "transportBytes": 901,
       "transportTokens": 226,
       "transportCostClass": "cheap",
-      "summaryBytes": 1010,
-      "summaryTokens": 253,
+      "summaryBytes": 1066,
+      "summaryTokens": 267,
       "summaryCostClass": "moderate"
     },
     "batch": {
       "method": "page.get_state",
       "tabId": 9,
       "ok": true,
-      "summary": "Bridge listed 12 tab(s); showing 10 at offset 0, 2 omitted. Use tabs.list with limit and offset to retrieve another page.",
+      "summary": "Bridge listed 12 tab(s).",
       "pagination": {
         "totalCount": 12,
-        "returnedCount": 10,
+        "returnedCount": 12,
         "offset": 0,
-        "omittedCount": 2,
-        "truncated": true,
-        "nextOffset": 10
+        "omittedCount": 0,
+        "truncated": false,
+        "nextOffset": null
       },
       "evidence": [
         {
@@ -12973,13 +13009,25 @@
           "active": false,
           "origin": "https://example.com",
           "title": "Tab 8"
+        },
+        {
+          "tabId": 9,
+          "active": false,
+          "origin": "https://example.com",
+          "title": "Tab 9"
+        },
+        {
+          "tabId": 10,
+          "active": false,
+          "origin": "https://example.com",
+          "title": "Tab 10"
         }
       ],
       "transportBytes": 901,
       "transportTokens": 226,
       "transportCostClass": "cheap",
-      "summaryBytes": 1010,
-      "summaryTokens": 253,
+      "summaryBytes": 1066,
+      "summaryTokens": 267,
       "summaryCostClass": "moderate",
       "durationMs": 12,
       "approxTokens": 226,

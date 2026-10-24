@@ -33,10 +33,12 @@ Use `bbx tabs` to preview tabs in the enabled window, then
 `bbx tab-activate <tabId>` to bring one of them to the foreground when the
 wrong tab is routed. The tab ID must be an integer from `bbx tabs` output.
 
-The preview reports total, returned, and omitted counts in `pagination`. Raw
-`bbx call tabs.list` still returns all tabs by default. For bounded pages use
+The preview shows up to 30 tabs and reports total, returned, and omitted counts
+in `pagination`. MCP tab discovery also defaults to 30 tabs. Follow
+`pagination.nextOffset` until it is null before concluding a requested URL is
+not open. Raw `bbx call tabs.list` still returns all tabs by default. For bounded pages use
 `bbx call tabs.list '{"limit":25,"offset":10}'`, then follow `pagination.nextOffset`
-until it is null. Limits are 1 to 100; offset alone uses a page size of 10.
+until it is null. Limits are 1 to 100; offset alone uses a page size of 30.
 Pages put working or active tabs first. Tab changes between requests can shift
 offsets, so rediscover before acting on a tab.
 

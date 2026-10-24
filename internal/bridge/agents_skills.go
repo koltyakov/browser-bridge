@@ -23,7 +23,7 @@ import (
 //go:embed assets/skills.bundle.gz
 var compressedSkillArchive []byte
 
-var installSkillArchive = expandEmbeddedAsset(compressedSkillArchive)
+var installSkillArchive = lazyEmbeddedAsset(compressedSkillArchive)
 
 const installSkillSentinel = ".browser-bridge-managed"
 const installCopilotNote = "\n\n## GitHub Copilot Note\n\nWhen this skill is installed for GitHub Copilot, do not keep retrying `bbx` inside a sandboxed shell if Browser Bridge MCP is already configured for Copilot.\nIf Browser Bridge MCP is installed, use the MCP tools directly instead of shelling out to `bbx`.\nIf `bbx` fails with a bridge socket permission error such as `EPERM`, stop retrying in the sandbox and ask the user to run the command locally or use MCP.\n"
@@ -56,7 +56,8 @@ func installSkillFiles(target string) (map[string][]byte, error) {
 	if agent := installAgentByKey(target); agent != nil {
 		note = agent.skill.note
 	}
-	archive, err := zip.NewReader(bytes.NewReader(installSkillArchive), int64(len(installSkillArchive)))
+	data := installSkillArchive()
+	archive, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return nil, err
 	}

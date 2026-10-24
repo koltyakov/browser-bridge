@@ -46,16 +46,13 @@ func mcpDescribe(params object) object {
 }
 
 func mcpTabPage(tabs []object, params object) object {
-	if params["limit"] == nil && params["offset"] == nil {
-		return object{"tabs": value(tabs)}
-	}
 	sort.SliceStable(tabs, func(i, j int) bool {
 		return (tabs[i].boolean("working") || tabs[i].boolean("active")) && !tabs[j].boolean("working") && !tabs[j].boolean("active")
 	})
 	offset := max(0, int(params.number("offset")))
 	limit := int(params.number("limit"))
 	if limit <= 0 {
-		limit = 10
+		limit = 30
 	}
 	limit = min(limit, 100)
 	start := min(offset, len(tabs))
@@ -138,7 +135,10 @@ func (s *mcpSession) profileTabs(ctx context.Context, params, args object, era s
 		}
 		results = append(results, record)
 	}
-	result := mcpTabPage(tabs, params)
+	result := object{"tabs": value(tabs)}
+	if params["limit"] != nil || params["offset"] != nil {
+		result = mcpTabPage(tabs, params)
+	}
 	result["profiles"], result["connectedExtensions"], result["partial"] = value(results), value(connected), value(partial)
 	return success(health.text("id"), result), nil
 }
@@ -270,10 +270,14 @@ func (s *mcpSession) destinationTabs(ctx context.Context, args object, era strin
 			tab["destinationId"] = destination["id"]
 			tabs = append(tabs, tab)
 		}
-		record["tabs"] = value(destinationTabs)
+		record["tabCount"] = value(len(destinationTabs))
 		results = append(results, record)
 	}
 	out := mcpTabPage(tabs, mcpPick(args, "limit offset"))
 	out["ok"], out["destinations"] = value(failures == 0), value(results)
-	return mcpResult(fmt.Sprintf("Listed %d tab(s) across %d destination(s), %d destination error(s).", len(tabs), len(destinations), failures), out, failures == len(destinations) && len(tabs) == 0), nil
+	summary := fmt.Sprintf("Listed %d tab(s) across %d destination(s), %d destination error(s).", len(tabs), len(destinations), failures)
+	if page := out.object("pagination"); page.boolean("truncated") {
+		summary += fmt.Sprintf(" Showing %d at offset %d, %d omitted. Follow pagination.nextOffset until null to retrieve remaining tabs.", page.number("returnedCount"), page.number("offset"), page.number("omittedCount"))
+	}
+	return mcpResult(summary, out, failures == len(destinations) && len(tabs) == 0), nil
 }

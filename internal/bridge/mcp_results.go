@@ -202,6 +202,10 @@ func mcpEvidence(raw json.RawMessage, method string, params object, fallback jso
 	if method == "tabs.list" {
 		var tabs []object
 		if json.Unmarshal(r["tabs"], &tabs) == nil {
+			if r.object("pagination") == nil {
+				page := mcpTabPage(tabs, params)
+				_ = json.Unmarshal(page["tabs"], &tabs)
+			}
 			sort.SliceStable(tabs, func(i, j int) bool {
 				return (tabs[i].boolean("working") || tabs[i].boolean("active")) && !tabs[j].boolean("working") && !tabs[j].boolean("active")
 			})

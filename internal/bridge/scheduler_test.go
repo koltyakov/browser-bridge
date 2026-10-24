@@ -147,3 +147,23 @@ func TestMutationSchedulerCapacityOwnershipAndQueuedCancellation(t *testing.T) {
 		t.Fatal("invalid scheduling target was not rejected")
 	}
 }
+
+func TestMutationSchedulerSlowPreparationDoesNotBlockKnownOtherTabs(t *testing.T) {
+	d := serviceTestDaemon(t)
+	extension := serviceTestPeer(t, d, "extension")
+	extension.identity["mutationScheduling"] = value(true)
+	agent := serviceTestPeer(t, d, "agent")
+	d.route(agent, newRequest("input.click", nil, nil, 12))
+	first := serviceNextMessage(t, extension).object("request")
+	d.route(agent, newRequest("input.click", nil, nil, 34))
+	second := serviceNextMessage(t, extension).object("request")
+	d.mutationReady(extension, object{"requestId": second["id"], "tabId": value(34)})
+	if serviceNextMessage(t, extension).text("requestId") != second.text("id") {
+		t.Fatal("slow preparation blocked a known independent tab")
+	}
+	d.mutationReady(extension, object{"requestId": first["id"], "tabId": value(99)})
+	if serviceNextMessage(t, agent).object("response").object("error").text("code") != "INVALID_REQUEST" {
+		t.Fatal("preparation changed an explicitly requested tab")
+	}
+	d.response(extension, success(second.text("id"), object{}))
+}
