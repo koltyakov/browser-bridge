@@ -322,7 +322,7 @@ With a scheduling-capable daemon and extension, page mutations are scheduled per
 
 Reads remain concurrent and may observe intermediate state. Scheduling does not authorize parallel input tool calls, take focus, or make application changes transactional. Caller cancellation does not free a running slot until the extension reports that execution settled. `health.ping.connectedExtensions[].mutationScheduling` identifies supporting connections; older components retain their previous behavior.
 
-Response `timing` reports `preparationMs`, `queueMs`, `executionMs`, `totalMs`, and `scheduled`. Execution includes transport and browser work, not only DOM CPU time. `daemon.metrics` includes queue occupancy and fixed-histogram timing summaries; percentile fields are upper bounds rather than exact samples.
+Response `timing` reports `executionMs` and `totalMs`, plus `preparationMs` and `queueMs` when nonzero and `scheduled: true` for a scheduled mutation. Execution includes transport and browser work, not only DOM CPU time. `daemon.metrics` includes queue occupancy and fixed-histogram timing summaries; percentile fields are upper bounds rather than exact samples.
 
 ## Timed sequences
 

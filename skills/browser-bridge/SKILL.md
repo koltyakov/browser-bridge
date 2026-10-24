@@ -417,7 +417,7 @@ Return: verdict, tab id + origin, minimal evidence set. No raw HTML or base64 im
 
 ## Output Format
 
-Every CLI shortcut command produces consistent `{ok, summary, evidence}` JSON. Use `bbx call <method>` for raw protocol output when needed.
+Every CLI shortcut command produces consistent `{ok, summary, evidence}` JSON, plus `transportTokens` when the raw result is above 250 tokens. Use `bbx call <method>` for raw protocol output when needed; it prints the bare result, or `{ok: false, error, recovery}` on failure.
 
 CLI batches keep fuller `response` values when bounded `evidence` omits information. Use `--evidence-only` to omit those values for smaller agent output; `responseOmitted: true` marks affected items. The default remains lossless. `protocol.describe` can share a CLI or MCP batch with page reads and runs locally; discovery-only batches need no daemon. Text summaries show returned/source character counts when they differ, such as `Page text: 600/3015 chars (truncated).` Evidence previews can be shorter than the bridge result.
 

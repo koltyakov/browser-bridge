@@ -35,6 +35,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   geometry to 0.1px in evidence and summaries and omit null element fields.
 - MCP `page.get_network` evidence omits zero `abandoned` and `inflight`
   counts, a false `ownershipHeld`, and a `filteredTotal` equal to `total`.
+- CLI output contract change: shortcut output drops `summaryBytes`,
+  `summaryTokens`, `summaryCostClass`, `transportBytes`, and
+  `transportCostClass`, and keeps `transportTokens` only above the cheap tier
+  (250 tokens). Timing drops zero `preparationMs` and `queueMs` and
+  `scheduled: false`, in CLI, batch, and MCP output. A failed `bbx call`
+  prints `{ok, error, recovery}` with `meta` only for warnings, truncation,
+  continuation hints, a non-current protocol version, or an implicitly routed
+  tab, instead of the full response with transport meta, request ID, and null
+  result. Scripts that read the removed fields must stop relying on them. On a
+  live page, `bbx box` fell from 351 to 168 bytes, `bbx console` from 290 to
+  107, and a raw `call` error from 894 to 345.
 
 ### Fixed
 

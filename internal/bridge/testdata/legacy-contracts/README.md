@@ -16,4 +16,6 @@ These JSON expectations were captured on 2026-10-22 from the JavaScript runtime 
 
 On 2026-10-24 the batch expectations in `cli-formatters.json`, `cli-batch-validation.json`, and `cli-batch-error.json` were intentionally compacted: items omit size and cost triples, null errors, unscheduled timing, a `response` equal to `evidence`, and meta keys other than warnings, truncation, continuation hints, a non-current protocol version, and the routed tab of an untargeted call. All other captured fields are unchanged.
 
+Also on 2026-10-24 the CLI envelope was intentionally compacted. In `cli-formatters.json`, `annotated` and `sanitized` drop the summary size triple (`summaryBytes`, `summaryTokens`, `summaryCostClass`). `sanitized` is now the shortcut's printed output: it also drops `transportBytes` and `transportCostClass`, and keeps `transportTokens` only when the transport cost class is above `cheap`. Timing omits zero `preparationMs` and `queueMs` and `scheduled: false`; no captured case carried timing. In `cli-printer.json`, the summary cases drop the same fields, and a raw failure prints `{ok, error, recovery}` with `meta` limited to the keys batch items keep, instead of the full response.
+
 Change expectations only when intentionally changing the public contract. Preserve distinctions between omitted fields, `null`, empty arrays, and empty objects.

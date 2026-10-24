@@ -48,10 +48,7 @@
       },
       "transportBytes": 240,
       "transportTokens": 60,
-      "transportCostClass": "cheap",
-      "summaryBytes": 120,
-      "summaryTokens": 30,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -59,13 +56,7 @@
       "evidence": {
         "daemon": "ready",
         "extensionConnected": false
-      },
-      "transportBytes": 240,
-      "transportTokens": 60,
-      "transportCostClass": "cheap",
-      "summaryBytes": 120,
-      "summaryTokens": 30,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -233,10 +224,7 @@
       },
       "transportBytes": 444,
       "transportTokens": 111,
-      "transportCostClass": "cheap",
-      "summaryBytes": 575,
-      "summaryTokens": 144,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -276,13 +264,7 @@
         "capture": {
           "state": "running"
         }
-      },
-      "transportBytes": 444,
-      "transportTokens": 111,
-      "transportCostClass": "cheap",
-      "summaryBytes": 575,
-      "summaryTokens": 144,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -407,10 +389,7 @@
       },
       "transportBytes": 63,
       "transportTokens": 16,
-      "transportCostClass": "cheap",
-      "summaryBytes": 164,
-      "summaryTokens": 41,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -421,13 +400,7 @@
           "enabled": true,
           "reason": "waiting"
         }
-      },
-      "transportBytes": 63,
-      "transportTokens": 16,
-      "transportCostClass": "cheap",
-      "summaryBytes": 164,
-      "summaryTokens": 41,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -480,10 +453,7 @@
       },
       "transportBytes": 45,
       "transportTokens": 12,
-      "transportCostClass": "cheap",
-      "summaryBytes": 138,
-      "summaryTokens": 35,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -493,13 +463,7 @@
         "access": {
           "enabled": false
         }
-      },
-      "transportBytes": 45,
-      "transportTokens": 12,
-      "transportCostClass": "cheap",
-      "summaryBytes": 138,
-      "summaryTokens": 35,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -578,10 +542,7 @@
       },
       "transportBytes": 93,
       "transportTokens": 24,
-      "transportCostClass": "cheap",
-      "summaryBytes": 200,
-      "summaryTokens": 50,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -600,13 +561,7 @@
             "installed": true
           }
         ]
-      },
-      "transportBytes": 93,
-      "transportTokens": 24,
-      "transportCostClass": "cheap",
-      "summaryBytes": 200,
-      "summaryTokens": 50,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -697,10 +652,7 @@
       },
       "transportBytes": 164,
       "transportTokens": 41,
-      "transportCostClass": "cheap",
-      "summaryBytes": 247,
-      "summaryTokens": 62,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -720,13 +672,7 @@
         "viewport": {
           "width": 800
         }
-      },
-      "transportBytes": 164,
-      "transportTokens": 41,
-      "transportCostClass": "cheap",
-      "summaryBytes": 247,
-      "summaryTokens": 62,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -794,10 +740,7 @@
       },
       "transportBytes": 124,
       "transportTokens": 31,
-      "transportCostClass": "cheap",
-      "summaryBytes": 209,
-      "summaryTokens": 53,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -809,13 +752,7 @@
         "length": 17,
         "truncated": true,
         "settlement": "complete"
-      },
-      "transportBytes": 124,
-      "transportTokens": 31,
-      "transportCostClass": "cheap",
-      "summaryBytes": 209,
-      "summaryTokens": 53,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -866,10 +803,7 @@
       },
       "transportBytes": 40,
       "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 108,
-      "summaryTokens": 27,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -878,13 +812,7 @@
         "text": "hello 😀",
         "length": 8,
         "truncated": false
-      },
-      "transportBytes": 40,
-      "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 108,
-      "summaryTokens": 27,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "dom.get_text",
@@ -936,10 +864,7 @@
       },
       "transportBytes": 44,
       "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 114,
-      "summaryTokens": 29,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -948,13 +873,7 @@
         "text": "text",
         "length": 99,
         "truncated": true
-      },
-      "transportBytes": 44,
-      "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 114,
-      "summaryTokens": 29,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -1047,10 +966,7 @@
       ],
       "transportBytes": 131,
       "transportTokens": 33,
-      "transportCostClass": "cheap",
-      "summaryBytes": 293,
-      "summaryTokens": 74,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -1076,13 +992,7 @@
           "origin": "http://a",
           "title": "one"
         }
-      ],
-      "transportBytes": 131,
-      "transportTokens": 33,
-      "transportCostClass": "cheap",
-      "summaryBytes": 293,
-      "summaryTokens": 74,
-      "summaryCostClass": "cheap"
+      ]
     },
     "batch": {
       "method": "page.get_state",
@@ -1192,10 +1102,7 @@
       ],
       "transportBytes": 149,
       "transportTokens": 38,
-      "transportCostClass": "cheap",
-      "summaryBytes": 298,
-      "summaryTokens": 75,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -1213,13 +1120,7 @@
           "tabId": 3,
           "active": false
         }
-      ],
-      "transportBytes": 149,
-      "transportTokens": 38,
-      "transportCostClass": "cheap",
-      "summaryBytes": 298,
-      "summaryTokens": 75,
-      "summaryCostClass": "cheap"
+      ]
     },
     "batch": {
       "method": "page.get_state",
@@ -1285,21 +1186,12 @@
       "evidence": "button Save",
       "transportBytes": 67,
       "transportTokens": 17,
-      "transportCostClass": "cheap",
-      "summaryBytes": 121,
-      "summaryTokens": 31,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
       "summary": "Accessibility outline: 1 node(s), truncated; refs work as input targets.",
-      "evidence": "button Save",
-      "transportBytes": 67,
-      "transportTokens": 17,
-      "transportCostClass": "cheap",
-      "summaryBytes": 121,
-      "summaryTokens": 31,
-      "summaryCostClass": "cheap"
+      "evidence": "button Save"
     },
     "batch": {
       "method": "page.get_state",
@@ -1367,10 +1259,7 @@
       ],
       "transportBytes": 143,
       "transportTokens": 36,
-      "transportCostClass": "cheap",
-      "summaryBytes": 145,
-      "summaryTokens": 37,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -1382,13 +1271,7 @@
           "interactive": true,
           "value": "ok"
         }
-      ],
-      "transportBytes": 143,
-      "transportTokens": 36,
-      "transportCostClass": "cheap",
-      "summaryBytes": 145,
-      "summaryTokens": 37,
-      "summaryCostClass": "cheap"
+      ]
     },
     "batch": {
       "method": "page.get_state",
@@ -1465,10 +1348,7 @@
       ],
       "transportBytes": 71,
       "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 115,
-      "summaryTokens": 29,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -1478,13 +1358,7 @@
           "role": "heading",
           "name": "Title"
         }
-      ],
-      "transportBytes": 71,
-      "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 115,
-      "summaryTokens": 29,
-      "summaryCostClass": "cheap"
+      ]
     },
     "batch": {
       "method": "page.get_state",
@@ -1578,10 +1452,7 @@
       ],
       "transportBytes": 232,
       "transportTokens": 58,
-      "transportCostClass": "cheap",
-      "summaryBytes": 217,
-      "summaryTokens": 55,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -1599,13 +1470,7 @@
           "childCount": 1,
           "visible": false
         }
-      ],
-      "transportBytes": 232,
-      "transportTokens": 58,
-      "transportCostClass": "cheap",
-      "summaryBytes": 217,
-      "summaryTokens": 55,
-      "summaryCostClass": "cheap"
+      ]
     },
     "batch": {
       "method": "page.get_state",
@@ -1714,10 +1579,7 @@
       },
       "transportBytes": 133,
       "transportTokens": 34,
-      "transportCostClass": "cheap",
-      "summaryBytes": 304,
-      "summaryTokens": 76,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -1737,13 +1599,7 @@
             "text": "Save"
           }
         ]
-      },
-      "transportBytes": 133,
-      "transportTokens": 34,
-      "transportCostClass": "cheap",
-      "summaryBytes": 304,
-      "summaryTokens": 76,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "dom.find_by_role",
@@ -1835,10 +1691,7 @@
       },
       "transportBytes": 50,
       "transportTokens": 13,
-      "transportCostClass": "cheap",
-      "summaryBytes": 199,
-      "summaryTokens": 50,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -1854,13 +1707,7 @@
             "tag": "p"
           }
         ]
-      },
-      "transportBytes": 50,
-      "transportTokens": 13,
-      "transportCostClass": "cheap",
-      "summaryBytes": 199,
-      "summaryTokens": 50,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "dom.find_by_text",
@@ -1933,10 +1780,7 @@
       },
       "transportBytes": 80,
       "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 195,
-      "summaryTokens": 49,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -1948,13 +1792,7 @@
         "truncated": true,
         "truncationReason": "limit",
         "nodes": []
-      },
-      "transportBytes": 80,
-      "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 195,
-      "summaryTokens": 49,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "dom.find_by_text",
@@ -2017,10 +1855,7 @@
       },
       "transportBytes": 12,
       "transportTokens": 3,
-      "transportCostClass": "cheap",
-      "summaryBytes": 156,
-      "summaryTokens": 39,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -2032,13 +1867,7 @@
         "truncated": false,
         "truncationReason": null,
         "nodes": []
-      },
-      "transportBytes": 12,
-      "transportTokens": 3,
-      "transportCostClass": "cheap",
-      "summaryBytes": 156,
-      "summaryTokens": 39,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "dom.find_by_text",
@@ -2086,23 +1915,14 @@
       },
       "transportBytes": 21,
       "transportTokens": 6,
-      "transportCostClass": "cheap",
-      "summaryBytes": 79,
-      "summaryTokens": 20,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
       "summary": "Patch patch_a applied.",
       "evidence": {
         "patchId": "patch_a"
-      },
-      "transportBytes": 21,
-      "transportTokens": 6,
-      "transportCostClass": "cheap",
-      "summaryBytes": 79,
-      "summaryTokens": 20,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -2142,23 +1962,14 @@
       },
       "transportBytes": 21,
       "transportTokens": 6,
-      "transportCostClass": "cheap",
-      "summaryBytes": 75,
-      "summaryTokens": 19,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
       "summary": "Patch rolled back.",
       "evidence": {
         "rolled_back": false
-      },
-      "transportBytes": 21,
-      "transportTokens": 6,
-      "transportCostClass": "cheap",
-      "summaryBytes": 75,
-      "summaryTokens": 19,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -2208,10 +2019,7 @@
       ],
       "transportBytes": 39,
       "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 94,
-      "summaryTokens": 24,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -2221,13 +2029,7 @@
           "patchId": "patch_a",
           "kind": "styles"
         }
-      ],
-      "transportBytes": 39,
-      "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 94,
-      "summaryTokens": 24,
-      "summaryCostClass": "cheap"
+      ]
     },
     "batch": {
       "method": "patch.list",
@@ -2265,21 +2067,12 @@
       "evidence": [],
       "transportBytes": 2,
       "transportTokens": 1,
-      "transportCostClass": "cheap",
-      "summaryBytes": 57,
-      "summaryTokens": 15,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
       "summary": "0 active patch(es).",
-      "evidence": [],
-      "transportBytes": 2,
-      "transportTokens": 1,
-      "transportCostClass": "cheap",
-      "summaryBytes": 57,
-      "summaryTokens": 15,
-      "summaryCostClass": "cheap"
+      "evidence": []
     },
     "batch": {
       "method": "patch.list",
@@ -2325,10 +2118,7 @@
       ],
       "transportBytes": 35,
       "transportTokens": 9,
-      "transportCostClass": "cheap",
-      "summaryBytes": 78,
-      "summaryTokens": 20,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -2337,13 +2127,7 @@
         {
           "patchId": "patch_a"
         }
-      ],
-      "transportBytes": 35,
-      "transportTokens": 9,
-      "transportCostClass": "cheap",
-      "summaryBytes": 78,
-      "summaryTokens": 20,
-      "summaryCostClass": "cheap"
+      ]
     },
     "batch": {
       "method": "page.get_state",
@@ -2396,10 +2180,7 @@
       },
       "transportBytes": 48,
       "transportTokens": 12,
-      "transportCostClass": "cheap",
-      "summaryBytes": 96,
-      "summaryTokens": 24,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -2407,13 +2188,7 @@
       "evidence": {
         "elementRef": "el_a",
         "duration": 12
-      },
-      "transportBytes": 48,
-      "transportTokens": 12,
-      "transportCostClass": "cheap",
-      "summaryBytes": 96,
-      "summaryTokens": 24,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -2459,23 +2234,14 @@
       },
       "transportBytes": 15,
       "transportTokens": 4,
-      "transportCostClass": "cheap",
-      "summaryBytes": 96,
-      "summaryTokens": 24,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
       "summary": "Element not found (timed out after 0ms).",
       "evidence": {
         "elementRef": null
-      },
-      "transportBytes": 15,
-      "transportTokens": 4,
-      "transportCostClass": "cheap",
-      "summaryBytes": 96,
-      "summaryTokens": 24,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -2521,10 +2287,7 @@
       },
       "transportBytes": 33,
       "transportTokens": 9,
-      "transportCostClass": "cheap",
-      "summaryBytes": 95,
-      "summaryTokens": 24,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -2532,13 +2295,7 @@
       "evidence": {
         "type": "string",
         "value": "hello"
-      },
-      "transportBytes": 33,
-      "transportTokens": 9,
-      "transportCostClass": "cheap",
-      "summaryBytes": 95,
-      "summaryTokens": 24,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -2582,10 +2339,7 @@
       },
       "transportBytes": 28,
       "transportTokens": 7,
-      "transportCostClass": "cheap",
-      "summaryBytes": 143,
-      "summaryTokens": 36,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -2593,13 +2347,7 @@
       "evidence": {
         "type": "object",
         "value": {}
-      },
-      "transportBytes": 28,
-      "transportTokens": 7,
-      "transportCostClass": "cheap",
-      "summaryBytes": 143,
-      "summaryTokens": 36,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -2643,10 +2391,7 @@
       },
       "transportBytes": 28,
       "transportTokens": 7,
-      "transportCostClass": "cheap",
-      "summaryBytes": 143,
-      "summaryTokens": 36,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -2654,13 +2399,7 @@
       "evidence": {
         "type": "object",
         "value": []
-      },
-      "transportBytes": 28,
-      "transportTokens": 7,
-      "transportCostClass": "cheap",
-      "summaryBytes": 143,
-      "summaryTokens": 36,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -2704,10 +2443,7 @@
       },
       "transportBytes": 30,
       "transportTokens": 8,
-      "transportCostClass": "cheap",
-      "summaryBytes": 84,
-      "summaryTokens": 21,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -2715,13 +2451,7 @@
       "evidence": {
         "type": "object",
         "value": null
-      },
-      "transportBytes": 30,
-      "transportTokens": 8,
-      "transportCostClass": "cheap",
-      "summaryBytes": 84,
-      "summaryTokens": 21,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -2765,10 +2495,7 @@
       },
       "transportBytes": 33,
       "transportTokens": 9,
-      "transportCostClass": "cheap",
-      "summaryBytes": 92,
-      "summaryTokens": 23,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -2776,13 +2503,7 @@
       "evidence": {
         "type": "undefined",
         "value": null
-      },
-      "transportBytes": 33,
-      "transportTokens": 9,
-      "transportCostClass": "cheap",
-      "summaryBytes": 92,
-      "summaryTokens": 23,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -2835,10 +2556,7 @@
       },
       "transportBytes": 46,
       "transportTokens": 12,
-      "transportCostClass": "cheap",
-      "summaryBytes": 129,
-      "summaryTokens": 33,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -2849,13 +2567,7 @@
           "a": 1,
           "html": "<>&"
         }
-      },
-      "transportBytes": 46,
-      "transportTokens": 12,
-      "transportCostClass": "cheap",
-      "summaryBytes": 129,
-      "summaryTokens": 33,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -2916,10 +2628,7 @@
       ],
       "transportBytes": 79,
       "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 118,
-      "summaryTokens": 30,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -2931,13 +2640,7 @@
           "ok": true,
           "source": "cli"
         }
-      ],
-      "transportBytes": 79,
-      "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 118,
-      "summaryTokens": 30,
-      "summaryCostClass": "cheap"
+      ]
     },
     "batch": {
       "method": "page.get_state",
@@ -3017,10 +2720,7 @@
       ],
       "transportBytes": 203,
       "transportTokens": 51,
-      "transportCostClass": "cheap",
-      "summaryBytes": 205,
-      "summaryTokens": 52,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -3033,13 +2733,7 @@
           "duration": 5,
           "resourceType": "Fetch"
         }
-      ],
-      "transportBytes": 203,
-      "transportTokens": 51,
-      "transportCostClass": "cheap",
-      "summaryBytes": 205,
-      "summaryTokens": 52,
-      "summaryCostClass": "cheap"
+      ]
     },
     "batch": {
       "method": "page.get_network",
@@ -3097,21 +2791,12 @@
       "evidence": [],
       "transportBytes": 14,
       "transportTokens": 4,
-      "transportCostClass": "cheap",
-      "summaryBytes": 68,
-      "summaryTokens": 17,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
       "summary": "Network: 0 requests (? total).",
-      "evidence": [],
-      "transportBytes": 14,
-      "transportTokens": 4,
-      "transportCostClass": "cheap",
-      "summaryBytes": 68,
-      "summaryTokens": 17,
-      "summaryCostClass": "cheap"
+      "evidence": []
     },
     "batch": {
       "method": "page.get_network",
@@ -3196,10 +2881,7 @@
       },
       "transportBytes": 134,
       "transportTokens": 34,
-      "transportCostClass": "cheap",
-      "summaryBytes": 188,
-      "summaryTokens": 47,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -3221,13 +2903,7 @@
         ],
         "total": 3,
         "truncated": true
-      },
-      "transportBytes": 134,
-      "transportTokens": 34,
-      "transportCostClass": "cheap",
-      "summaryBytes": 188,
-      "summaryTokens": 47,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -3306,10 +2982,7 @@
       },
       "transportBytes": 0,
       "transportTokens": 0,
-      "transportCostClass": "heavy",
-      "summaryBytes": 104,
-      "summaryTokens": 26,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "heavy"
     },
     "sanitized": {
       "ok": true,
@@ -3318,12 +2991,7 @@
         "source": "local",
         "exact": true
       },
-      "transportBytes": 0,
-      "transportTokens": 0,
-      "transportCostClass": "heavy",
-      "summaryBytes": 104,
-      "summaryTokens": 26,
-      "summaryCostClass": "cheap"
+      "transportTokens": 0
     },
     "batch": {
       "method": "page.get_state",
@@ -3399,10 +3067,7 @@
       ],
       "transportBytes": 129,
       "transportTokens": 33,
-      "transportCostClass": "cheap",
-      "summaryBytes": 167,
-      "summaryTokens": 42,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -3418,13 +3083,7 @@
           "args": ["no"],
           "ago": "just now"
         }
-      ],
-      "transportBytes": 129,
-      "transportTokens": 33,
-      "transportCostClass": "cheap",
-      "summaryBytes": 167,
-      "summaryTokens": 42,
-      "summaryCostClass": "cheap"
+      ]
     },
     "batch": {
       "method": "page.get_state",
@@ -3491,10 +3150,7 @@
       },
       "transportBytes": 43,
       "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 103,
-      "summaryTokens": 26,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -3502,13 +3158,7 @@
       "evidence": {
         "html": "<p>Hi 😀</p>",
         "truncated": false
-      },
-      "transportBytes": 43,
-      "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 103,
-      "summaryTokens": 26,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -3568,10 +3218,7 @@
       },
       "transportBytes": 189,
       "transportTokens": 48,
-      "transportCostClass": "cheap",
-      "summaryBytes": 125,
-      "summaryTokens": 32,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -3581,13 +3228,7 @@
         "effects": {
           "changed": false
         }
-      },
-      "transportBytes": 189,
-      "transportTokens": 48,
-      "transportCostClass": "cheap",
-      "summaryBytes": 125,
-      "summaryTokens": 32,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -3773,10 +3414,7 @@
       },
       "transportBytes": 524,
       "transportTokens": 131,
-      "transportCostClass": "cheap",
-      "summaryBytes": 757,
-      "summaryTokens": 190,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -3825,13 +3463,7 @@
             "removed": true
           }
         }
-      },
-      "transportBytes": 524,
-      "transportTokens": 131,
-      "transportCostClass": "cheap",
-      "summaryBytes": 757,
-      "summaryTokens": 190,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -3960,23 +3592,14 @@
       },
       "transportBytes": 37,
       "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 78,
-      "summaryTokens": 20,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
       "summary": "Hover failed on el_a.",
       "evidence": {
         "elementRef": "el_a"
-      },
-      "transportBytes": 37,
-      "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 78,
-      "summaryTokens": 20,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -4020,23 +3643,14 @@
       },
       "transportBytes": 16,
       "transportTokens": 4,
-      "transportCostClass": "cheap",
-      "summaryBytes": 71,
-      "summaryTokens": 18,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
       "summary": "Focused element.",
       "evidence": {
         "elementRef": null
-      },
-      "transportBytes": 16,
-      "transportTokens": 4,
-      "transportCostClass": "cheap",
-      "summaryBytes": 71,
-      "summaryTokens": 18,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -4082,10 +3696,7 @@
       },
       "transportBytes": 27,
       "transportTokens": 7,
-      "transportCostClass": "cheap",
-      "summaryBytes": 87,
-      "summaryTokens": 22,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -4093,13 +3704,7 @@
       "evidence": {
         "elementRef": null,
         "value": "hi"
-      },
-      "transportBytes": 27,
-      "transportTokens": 7,
-      "transportCostClass": "cheap",
-      "summaryBytes": 87,
-      "summaryTokens": 22,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -4168,10 +3773,7 @@
       },
       "transportBytes": 111,
       "transportTokens": 28,
-      "transportCostClass": "cheap",
-      "summaryBytes": 186,
-      "summaryTokens": 47,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -4186,13 +3788,7 @@
         "effects": {
           "changed": false
         }
-      },
-      "transportBytes": 111,
-      "transportTokens": 28,
-      "transportCostClass": "cheap",
-      "summaryBytes": 186,
-      "summaryTokens": 47,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -4246,10 +3842,7 @@
       },
       "transportBytes": 59,
       "transportTokens": 15,
-      "transportCostClass": "cheap",
-      "summaryBytes": 125,
-      "summaryTokens": 32,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -4258,13 +3851,7 @@
         "dragged": true,
         "sourceRef": "el_a",
         "destinationRef": "el_b"
-      },
-      "transportBytes": 59,
-      "transportTokens": 15,
-      "transportCostClass": "cheap",
-      "summaryBytes": 125,
-      "summaryTokens": 32,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -4309,10 +3896,7 @@
       },
       "transportBytes": 25,
       "transportTokens": 7,
-      "transportCostClass": "cheap",
-      "summaryBytes": 74,
-      "summaryTokens": 19,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -4320,13 +3904,7 @@
       "evidence": {
         "closed": true,
         "tabId": 3
-      },
-      "transportBytes": 25,
-      "transportTokens": 7,
-      "transportCostClass": "cheap",
-      "summaryBytes": 74,
-      "summaryTokens": 19,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -4368,23 +3946,14 @@
       },
       "transportBytes": 46,
       "transportTokens": 12,
-      "transportCostClass": "cheap",
-      "summaryBytes": 98,
-      "summaryTokens": 25,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
       "summary": "Navigated to https://example.com.",
       "evidence": {
         "url": "https://example.com"
-      },
-      "transportBytes": 46,
-      "transportTokens": 12,
-      "transportCostClass": "cheap",
-      "summaryBytes": 98,
-      "summaryTokens": 25,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -4434,10 +4003,7 @@
       },
       "transportBytes": 32,
       "transportTokens": 8,
-      "transportCostClass": "cheap",
-      "summaryBytes": 90,
-      "summaryTokens": 23,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -4446,13 +4012,7 @@
         "scrolled": true,
         "x": -1.5,
         "y": 0
-      },
-      "transportBytes": 32,
-      "transportTokens": 8,
-      "transportCostClass": "cheap",
-      "summaryBytes": 90,
-      "summaryTokens": 23,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -4500,10 +4060,7 @@
       },
       "transportBytes": 41,
       "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 106,
-      "summaryTokens": 27,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -4512,13 +4069,7 @@
         "resized": true,
         "width": 800,
         "height": 600
-      },
-      "transportBytes": 41,
-      "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 106,
-      "summaryTokens": 27,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -4581,10 +4132,7 @@
       },
       "transportBytes": 105,
       "transportTokens": 27,
-      "transportCostClass": "cheap",
-      "summaryBytes": 289,
-      "summaryTokens": 73,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -4598,13 +4146,7 @@
         "lastResult": {
           "truncated": true
         }
-      },
-      "transportBytes": 105,
-      "transportTokens": 27,
-      "transportCostClass": "cheap",
-      "summaryBytes": 289,
-      "summaryTokens": 73,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -4663,10 +4205,7 @@
       },
       "transportBytes": 64,
       "transportTokens": 16,
-      "transportCostClass": "cheap",
-      "summaryBytes": 127,
-      "summaryTokens": 32,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -4677,13 +4216,7 @@
         "execution": {
           "actualMode": "cdp"
         }
-      },
-      "transportBytes": 64,
-      "transportTokens": 16,
-      "transportCostClass": "cheap",
-      "summaryBytes": 127,
-      "summaryTokens": 32,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -4743,10 +4276,7 @@
       },
       "transportBytes": 83,
       "transportTokens": 21,
-      "transportCostClass": "cheap",
-      "summaryBytes": 156,
-      "summaryTokens": 39,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -4758,13 +4288,7 @@
         "execution": {
           "actualMode": "cdp"
         }
-      },
-      "transportBytes": 83,
-      "transportTokens": 21,
-      "transportCostClass": "cheap",
-      "summaryBytes": 156,
-      "summaryTokens": 39,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "input.fill",
@@ -4812,10 +4336,7 @@
       },
       "transportBytes": 39,
       "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 111,
-      "summaryTokens": 28,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -4823,13 +4344,7 @@
       "evidence": {
         "tabId": 2,
         "url": "https://example.com"
-      },
-      "transportBytes": 39,
-      "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 111,
-      "summaryTokens": 28,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -4874,10 +4389,7 @@
       },
       "transportBytes": 39,
       "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 113,
-      "summaryTokens": 29,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -4885,13 +4397,7 @@
       "evidence": {
         "tabId": 2,
         "url": "https://example.com"
-      },
-      "transportBytes": 39,
-      "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 113,
-      "summaryTokens": 29,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "tabs.activate",
@@ -4936,10 +4442,7 @@
       },
       "transportBytes": 39,
       "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 112,
-      "summaryTokens": 28,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -4947,13 +4450,7 @@
       "evidence": {
         "tabId": 2,
         "url": "https://example.com"
-      },
-      "transportBytes": 39,
-      "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 112,
-      "summaryTokens": 28,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "navigation.reload",
@@ -4998,10 +4495,7 @@
       },
       "transportBytes": 39,
       "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 121,
-      "summaryTokens": 31,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -5009,13 +4503,7 @@
       "evidence": {
         "tabId": 2,
         "url": "https://example.com"
-      },
-      "transportBytes": 39,
-      "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 121,
-      "summaryTokens": 31,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "navigation.go_back",
@@ -5060,10 +4548,7 @@
       },
       "transportBytes": 39,
       "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 124,
-      "summaryTokens": 31,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -5071,13 +4556,7 @@
       "evidence": {
         "tabId": 2,
         "url": "https://example.com"
-      },
-      "transportBytes": 39,
-      "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 124,
-      "summaryTokens": 31,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "navigation.go_forward",
@@ -5128,10 +4607,7 @@
       },
       "transportBytes": 75,
       "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 144,
-      "summaryTokens": 36,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -5141,13 +4617,7 @@
         "title": "hello",
         "status": "complete",
         "tabId": 2
-      },
-      "transportBytes": 75,
-      "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 144,
-      "summaryTokens": 36,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "navigation.navigate",
@@ -5197,10 +4667,7 @@
       },
       "transportBytes": 59,
       "transportTokens": 15,
-      "transportCostClass": "cheap",
-      "summaryBytes": 132,
-      "summaryTokens": 33,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -5209,13 +4676,7 @@
         "tabId": 2,
         "url": "https://example.com",
         "status": "complete"
-      },
-      "transportBytes": 59,
-      "transportTokens": 15,
-      "transportCostClass": "cheap",
-      "summaryBytes": 132,
-      "summaryTokens": 33,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.wait_for_load_state",
@@ -5264,10 +4725,7 @@
       },
       "transportBytes": 89,
       "transportTokens": 23,
-      "transportCostClass": "cheap",
-      "summaryBytes": 165,
-      "summaryTokens": 42,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -5276,13 +4734,7 @@
         "finalUrl": "https://example.com",
         "observedNavigationKind": "same-document",
         "elapsedMs": 5
-      },
-      "transportBytes": 89,
-      "transportTokens": 23,
-      "transportCostClass": "cheap",
-      "summaryBytes": 165,
-      "summaryTokens": 42,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.wait_for_load_state",
@@ -5343,10 +4795,7 @@
       },
       "transportBytes": 80,
       "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 220,
-      "summaryTokens": 55,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -5359,13 +4808,7 @@
         "measurement": {
           "kind": "raw_cdp_counters"
         }
-      },
-      "transportBytes": 80,
-      "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 220,
-      "summaryTokens": 55,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "performance.get_metrics",
@@ -5413,23 +4856,14 @@
       },
       "transportBytes": 24,
       "transportTokens": 6,
-      "transportCostClass": "cheap",
-      "summaryBytes": 81,
-      "summaryTokens": 21,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
       "summary": "Performance: 1 metrics collected.",
       "evidence": {
         "Nodes": 30
-      },
-      "transportBytes": 24,
-      "transportTokens": 6,
-      "transportCostClass": "cheap",
-      "summaryBytes": 81,
-      "summaryTokens": 21,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -5500,10 +4934,7 @@
       },
       "transportBytes": 120,
       "transportTokens": 30,
-      "transportCostClass": "cheap",
-      "summaryBytes": 180,
-      "summaryTokens": 45,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -5518,13 +4949,7 @@
           "width": 30,
           "height": 10
         }
-      },
-      "transportBytes": 120,
-      "transportTokens": 30,
-      "transportCostClass": "cheap",
-      "summaryBytes": 180,
-      "summaryTokens": 45,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -5588,23 +5013,14 @@
       },
       "transportBytes": 50,
       "transportTokens": 13,
-      "transportCostClass": "cheap",
-      "summaryBytes": 80,
-      "summaryTokens": 20,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
       "summary": "Computed 1 style(s) for el_a.",
       "evidence": {
         "color": "red"
-      },
-      "transportBytes": 50,
-      "transportTokens": 13,
-      "transportCostClass": "cheap",
-      "summaryBytes": 80,
-      "summaryTokens": 20,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -5651,23 +5067,14 @@
       },
       "transportBytes": 15,
       "transportTokens": 4,
-      "transportCostClass": "cheap",
-      "summaryBytes": 71,
-      "summaryTokens": 18,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
       "summary": "Computed 1 style(s).",
       "evidence": {
         "color": "red"
-      },
-      "transportBytes": 15,
-      "transportTokens": 4,
-      "transportCostClass": "cheap",
-      "summaryBytes": 71,
-      "summaryTokens": 18,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "styles.get_computed",
@@ -5725,10 +5132,7 @@
       },
       "transportBytes": 61,
       "transportTokens": 16,
-      "transportCostClass": "cheap",
-      "summaryBytes": 126,
-      "summaryTokens": 32,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -5741,13 +5145,7 @@
           "y": 3
         },
         "border": {}
-      },
-      "transportBytes": 61,
-      "transportTokens": 16,
-      "transportCostClass": "cheap",
-      "summaryBytes": 126,
-      "summaryTokens": 32,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -5802,10 +5200,7 @@
       },
       "transportBytes": 37,
       "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 102,
-      "summaryTokens": 26,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -5815,13 +5210,7 @@
         "height": 50,
         "x": 2,
         "y": 3
-      },
-      "transportBytes": 37,
-      "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 102,
-      "summaryTokens": 26,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -5877,10 +5266,7 @@
       },
       "transportBytes": 71,
       "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 161,
-      "summaryTokens": 41,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -5891,13 +5277,7 @@
           "nodeCount": 5,
           "byteLength": 100
         }
-      },
-      "transportBytes": 71,
-      "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 161,
-      "summaryTokens": 41,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "dom.baseline.create",
@@ -5945,10 +5325,7 @@
       },
       "transportBytes": 41,
       "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 131,
-      "summaryTokens": 33,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -5956,13 +5333,7 @@
       "evidence": {
         "baselineId": "baseline_a",
         "snapshot": {}
-      },
-      "transportBytes": 41,
-      "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 131,
-      "summaryTokens": 33,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "dom.baseline.describe",
@@ -6007,10 +5378,7 @@
       },
       "transportBytes": 40,
       "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 124,
-      "summaryTokens": 31,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -6018,13 +5386,7 @@
       "evidence": {
         "baselineId": "baseline_a",
         "equal": true
-      },
-      "transportBytes": 40,
-      "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 124,
-      "summaryTokens": 31,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "dom.baseline.compare",
@@ -6087,10 +5449,7 @@
       },
       "transportBytes": 110,
       "transportTokens": 28,
-      "transportCostClass": "cheap",
-      "summaryBytes": 229,
-      "summaryTokens": 58,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -6104,13 +5463,7 @@
         },
         "truncated": true,
         "omittedChanges": 5
-      },
-      "transportBytes": 110,
-      "transportTokens": 28,
-      "transportCostClass": "cheap",
-      "summaryBytes": 229,
-      "summaryTokens": 58,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "dom.baseline.compare",
@@ -6161,10 +5514,7 @@
       },
       "transportBytes": 43,
       "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 112,
-      "summaryTokens": 28,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -6172,13 +5522,7 @@
       "evidence": {
         "baselineId": "baseline_a",
         "released": true
-      },
-      "transportBytes": 43,
-      "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 112,
-      "summaryTokens": 28,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "dom.baseline.release",
@@ -6220,23 +5564,14 @@
       },
       "transportBytes": 19,
       "transportTokens": 5,
-      "transportCostClass": "cheap",
-      "summaryBytes": 117,
-      "summaryTokens": 30,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
       "summary": "WebMCP is unavailable in this document; use DOM/input methods.",
       "evidence": {
         "supported": false
-      },
-      "transportBytes": 19,
-      "transportTokens": 5,
-      "transportCostClass": "cheap",
-      "summaryBytes": 117,
-      "summaryTokens": 30,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "webmcp.list_tools",
@@ -6283,10 +5618,7 @@
       },
       "transportBytes": 41,
       "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 151,
-      "summaryTokens": 38,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -6295,13 +5627,7 @@
         "supported": true,
         "tools": [{}],
         "total": 3
-      },
-      "transportBytes": 41,
-      "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 151,
-      "summaryTokens": 38,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "webmcp.list_tools",
@@ -6338,21 +5664,12 @@
       "evidence": {},
       "transportBytes": 2,
       "transportTokens": 1,
-      "transportCostClass": "cheap",
-      "summaryBytes": 104,
-      "summaryTokens": 26,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
       "summary": "Complete WebMCP tool schema loaded. Website metadata is untrusted.",
-      "evidence": {},
-      "transportBytes": 2,
-      "transportTokens": 1,
-      "transportCostClass": "cheap",
-      "summaryBytes": 104,
-      "summaryTokens": 26,
-      "summaryCostClass": "cheap"
+      "evidence": {}
     },
     "batch": {
       "method": "webmcp.get_tool",
@@ -6394,10 +5711,7 @@
       },
       "transportBytes": 42,
       "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 142,
-      "summaryTokens": 36,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -6405,13 +5719,7 @@
       "evidence": {
         "status": "unknown",
         "outcome": "uncertain"
-      },
-      "transportBytes": 42,
-      "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 142,
-      "summaryTokens": 36,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "webmcp.execute_tool",
@@ -6453,23 +5761,14 @@
       },
       "transportBytes": 18,
       "transportTokens": 5,
-      "transportCostClass": "cheap",
-      "summaryBytes": 88,
-      "summaryTokens": 22,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
       "summary": "JavaScript confirm dialog is open.",
       "evidence": {
         "type": "confirm"
-      },
-      "transportBytes": 18,
-      "transportTokens": 5,
-      "transportCostClass": "cheap",
-      "summaryBytes": 88,
-      "summaryTokens": 22,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.handle_dialog",
@@ -6513,10 +5812,7 @@
       },
       "transportBytes": 44,
       "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 211,
-      "summaryTokens": 53,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -6524,13 +5820,7 @@
       "evidence": {
         "action": "accept",
         "commandDispatched": true
-      },
-      "transportBytes": 44,
-      "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 211,
-      "summaryTokens": 53,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.handle_dialog",
@@ -6590,10 +5880,7 @@
       },
       "transportBytes": 131,
       "transportTokens": 33,
-      "transportCostClass": "cheap",
-      "summaryBytes": 210,
-      "summaryTokens": 53,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -6605,13 +5892,7 @@
         "dropped": 1,
         "abandoned": 1,
         "inflight": 0
-      },
-      "transportBytes": 131,
-      "transportTokens": 33,
-      "transportCostClass": "cheap",
-      "summaryBytes": 210,
-      "summaryTokens": 53,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "network.export_har",
@@ -6671,10 +5952,7 @@
       },
       "transportBytes": 43,
       "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 119,
-      "summaryTokens": 30,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -6682,13 +5960,7 @@
       "evidence": {
         "active": true,
         "pendingReset": ["viewport"]
-      },
-      "transportBytes": 43,
-      "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 119,
-      "summaryTokens": 30,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "emulation.set",
@@ -6733,10 +6005,7 @@
       },
       "transportBytes": 27,
       "transportTokens": 7,
-      "transportCostClass": "cheap",
-      "summaryBytes": 94,
-      "summaryTokens": 24,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -6744,13 +6013,7 @@
       "evidence": {
         "assigned": true,
         "count": 2
-      },
-      "transportBytes": 27,
-      "transportTokens": 7,
-      "transportCostClass": "cheap",
-      "summaryBytes": 94,
-      "summaryTokens": 24,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "input.set_files",
@@ -6795,10 +6058,7 @@
       },
       "transportBytes": 26,
       "transportTokens": 7,
-      "transportCostClass": "cheap",
-      "summaryBytes": 86,
-      "summaryTokens": 22,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -6806,13 +6066,7 @@
       "evidence": {
         "nextOffset": 4,
         "size": 10
-      },
-      "transportBytes": 26,
-      "transportTokens": 7,
-      "transportCostClass": "cheap",
-      "summaryBytes": 86,
-      "summaryTokens": 22,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "files.stage",
@@ -6854,23 +6108,14 @@
       },
       "transportBytes": 17,
       "transportTokens": 5,
-      "transportCostClass": "cheap",
-      "summaryBytes": 74,
-      "summaryTokens": 19,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
       "summary": "Staged file released.",
       "evidence": {
         "released": true
-      },
-      "transportBytes": 17,
-      "transportTokens": 5,
-      "transportCostClass": "cheap",
-      "summaryBytes": 74,
-      "summaryTokens": 19,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "files.release",
@@ -6911,23 +6156,14 @@
       },
       "transportBytes": 15,
       "transportTokens": 4,
-      "transportCostClass": "cheap",
-      "summaryBytes": 93,
-      "summaryTokens": 24,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
       "summary": "Resource downloaded to a chunked artifact.",
       "evidence": {
         "artifact": {}
-      },
-      "transportBytes": 15,
-      "transportTokens": 4,
-      "transportCostClass": "cheap",
-      "summaryBytes": 93,
-      "summaryTokens": 24,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "download.resource",
@@ -6974,10 +6210,7 @@
       },
       "transportBytes": 55,
       "transportTokens": 14,
-      "transportCostClass": "cheap",
-      "summaryBytes": 130,
-      "summaryTokens": 33,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -6986,13 +6219,7 @@
         "state": "complete",
         "bytesReceived": 10,
         "totalBytes": 10
-      },
-      "transportBytes": 55,
-      "transportTokens": 14,
-      "transportCostClass": "cheap",
-      "summaryBytes": 130,
-      "summaryTokens": 33,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "download.status",
@@ -7035,23 +6262,14 @@
       },
       "transportBytes": 17,
       "transportTokens": 5,
-      "transportCostClass": "cheap",
-      "summaryBytes": 86,
-      "summaryTokens": 22,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
       "summary": "Browser download handle released.",
       "evidence": {
         "released": true
-      },
-      "transportBytes": 17,
-      "transportTokens": 5,
-      "transportCostClass": "cheap",
-      "summaryBytes": 86,
-      "summaryTokens": 22,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "download.release",
@@ -7092,23 +6310,14 @@
       },
       "transportBytes": 19,
       "transportTokens": 5,
-      "transportCostClass": "cheap",
-      "summaryBytes": 117,
-      "summaryTokens": 30,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
       "summary": "Native image paste dispatched. Verify insertion in the editor.",
       "evidence": {
         "dispatched": true
-      },
-      "transportBytes": 19,
-      "transportTokens": 5,
-      "transportCostClass": "cheap",
-      "summaryBytes": 117,
-      "summaryTokens": 30,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "input.paste_image",
@@ -7155,10 +6364,7 @@
       },
       "transportBytes": 48,
       "transportTokens": 12,
-      "transportCostClass": "cheap",
-      "summaryBytes": 122,
-      "summaryTokens": 31,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -7167,13 +6373,7 @@
         "sessionId": "session_a",
         "active": true,
         "gaps": 2
-      },
-      "transportBytes": 48,
-      "transportTokens": 12,
-      "transportCostClass": "cheap",
-      "summaryBytes": 122,
-      "summaryTokens": 31,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "session.read",
@@ -7214,21 +6414,12 @@
       "evidence": ["2", "4", "z", "a"],
       "transportBytes": 25,
       "transportTokens": 7,
-      "transportCostClass": "cheap",
-      "summaryBytes": 101,
-      "summaryTokens": 26,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
       "summary": "Bridge method succeeded with 4 top-level fields.",
-      "evidence": ["2", "4", "z", "a"],
-      "transportBytes": 25,
-      "transportTokens": 7,
-      "transportCostClass": "cheap",
-      "summaryBytes": 101,
-      "summaryTokens": 26,
-      "summaryCostClass": "cheap"
+      "evidence": ["2", "4", "z", "a"]
     },
     "batch": {
       "method": "page.get_state",
@@ -7266,21 +6457,12 @@
       "evidence": [],
       "transportBytes": 4,
       "transportTokens": 1,
-      "transportCostClass": "cheap",
-      "summaryBytes": 86,
-      "summaryTokens": 22,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
       "summary": "Bridge method succeeded with 0 top-level fields.",
-      "evidence": [],
-      "transportBytes": 4,
-      "transportTokens": 1,
-      "transportCostClass": "cheap",
-      "summaryBytes": 86,
-      "summaryTokens": 22,
-      "summaryCostClass": "cheap"
+      "evidence": []
     },
     "batch": {
       "method": "page.get_state",
@@ -7313,21 +6495,12 @@
       "evidence": [],
       "transportBytes": 4,
       "transportTokens": 1,
-      "transportCostClass": "cheap",
-      "summaryBytes": 86,
-      "summaryTokens": 22,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
       "summary": "Bridge method succeeded with 0 top-level fields.",
-      "evidence": [],
-      "transportBytes": 4,
-      "transportTokens": 1,
-      "transportCostClass": "cheap",
-      "summaryBytes": 86,
-      "summaryTokens": 22,
-      "summaryCostClass": "cheap"
+      "evidence": []
     },
     "batch": {
       "method": "page.get_state",
@@ -7369,23 +6542,14 @@
       },
       "transportBytes": 16,
       "transportTokens": 4,
-      "transportCostClass": "cheap",
-      "summaryBytes": 176,
-      "summaryTokens": 44,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
       "summary": "Clicked element. Protocol warning: version drift Ran in working tab 5; the user's active tab is 7 (pass tabId to switch).",
       "evidence": {
         "elementRef": null
-      },
-      "transportBytes": 16,
-      "transportTokens": 4,
-      "transportCostClass": "cheap",
-      "summaryBytes": 176,
-      "summaryTokens": 44,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -7440,10 +6604,7 @@
       },
       "transportBytes": 5,
       "transportTokens": 4,
-      "transportCostClass": "heavy",
-      "summaryBytes": 97,
-      "summaryTokens": 25,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "heavy"
     },
     "sanitized": {
       "ok": true,
@@ -7453,12 +6614,7 @@
         "length": 2,
         "truncated": false
       },
-      "transportBytes": 5,
-      "transportTokens": 4,
-      "transportCostClass": "heavy",
-      "summaryBytes": 97,
-      "summaryTokens": 25,
-      "summaryCostClass": "cheap"
+      "transportTokens": 4
     },
     "batch": {
       "method": "page.get_state",
@@ -7513,10 +6669,7 @@
       },
       "transportBytes": 7,
       "transportTokens": 6,
-      "transportCostClass": "moderate",
-      "summaryBytes": 97,
-      "summaryTokens": 25,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "moderate"
     },
     "sanitized": {
       "ok": true,
@@ -7526,12 +6679,7 @@
         "length": 2,
         "truncated": false
       },
-      "transportBytes": 7,
-      "transportTokens": 6,
-      "transportCostClass": "moderate",
-      "summaryBytes": 97,
-      "summaryTokens": 25,
-      "summaryCostClass": "cheap"
+      "transportTokens": 6
     },
     "batch": {
       "method": "page.get_state",
@@ -7584,10 +6732,7 @@
       },
       "transportBytes": 5,
       "transportTokens": 8,
-      "transportCostClass": "cheap",
-      "summaryBytes": 97,
-      "summaryTokens": 25,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -7596,13 +6741,7 @@
         "text": "hi",
         "length": 2,
         "truncated": false
-      },
-      "transportBytes": 5,
-      "transportTokens": 8,
-      "transportCostClass": "cheap",
-      "summaryBytes": 97,
-      "summaryTokens": 25,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -7666,10 +6805,7 @@
       },
       "transportBytes": 129,
       "transportTokens": 33,
-      "transportCostClass": "cheap",
-      "summaryBytes": 167,
-      "summaryTokens": 42,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -7680,13 +6816,7 @@
       "recovery": {
         "retry": false,
         "hint": "Custom recovery."
-      },
-      "transportBytes": 129,
-      "transportTokens": 33,
-      "transportCostClass": "cheap",
-      "summaryBytes": 167,
-      "summaryTokens": 42,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -7744,22 +6874,13 @@
       "recovery": null,
       "transportBytes": 61,
       "transportTokens": 16,
-      "transportCostClass": "cheap",
-      "summaryBytes": 71,
-      "summaryTokens": 18,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
       "summary": "CUSTOM: Broken",
       "evidence": null,
-      "recovery": null,
-      "transportBytes": 61,
-      "transportTokens": 16,
-      "transportCostClass": "cheap",
-      "summaryBytes": 71,
-      "summaryTokens": 18,
-      "summaryCostClass": "cheap"
+      "recovery": null
     },
     "batch": {
       "method": "page.get_state",
@@ -7808,10 +6929,7 @@
       },
       "transportBytes": 531,
       "transportTokens": 133,
-      "transportCostClass": "cheap",
-      "summaryBytes": 615,
-      "summaryTokens": 154,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -7820,13 +6938,7 @@
         "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\ud83d",
         "length": 501,
         "truncated": true
-      },
-      "transportBytes": 531,
-      "transportTokens": 133,
-      "transportCostClass": "cheap",
-      "summaryBytes": 615,
-      "summaryTokens": 154,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -7875,10 +6987,7 @@
       },
       "transportBytes": 211,
       "transportTokens": 53,
-      "transportCostClass": "cheap",
-      "summaryBytes": 379,
-      "summaryTokens": 95,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -7886,13 +6995,7 @@
       "evidence": {
         "type": "string",
         "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
-      },
-      "transportBytes": 211,
-      "transportTokens": 53,
-      "transportCostClass": "cheap",
-      "summaryBytes": 379,
-      "summaryTokens": 95,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -7942,10 +7045,7 @@
       },
       "transportBytes": 114,
       "transportTokens": 29,
-      "transportCostClass": "cheap",
-      "summaryBytes": 227,
-      "summaryTokens": 57,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -7955,13 +7055,7 @@
         "tag": "p",
         "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀",
         "bbox": {}
-      },
-      "transportBytes": 114,
-      "transportTokens": 29,
-      "transportCostClass": "cheap",
-      "summaryBytes": 227,
-      "summaryTokens": 57,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -8010,10 +7104,7 @@
       },
       "transportBytes": 74,
       "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 430,
-      "summaryTokens": 108,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -8022,13 +7113,7 @@
       "recovery": {
         "retry": false,
         "hint": "This document does not expose the current WebMCP consumer API. Use structured DOM/input methods; do not enable flags or inject a polyfill without user permission."
-      },
-      "transportBytes": 74,
-      "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 430,
-      "summaryTokens": 108,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -8083,10 +7168,7 @@
       },
       "transportBytes": 73,
       "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 435,
-      "summaryTokens": 109,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -8096,13 +7178,7 @@
         "retry": false,
         "alternativeMethod": "webmcp.list_tools",
         "hint": "The tool reference expired or its document, catalog, or access session changed. Discover and inspect a fresh tool before a new deliberate action."
-      },
-      "transportBytes": 73,
-      "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 435,
-      "summaryTokens": 109,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -8156,10 +7232,7 @@
       },
       "transportBytes": 67,
       "transportTokens": 17,
-      "transportCostClass": "cheap",
-      "summaryBytes": 347,
-      "summaryTokens": 87,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -8168,13 +7241,7 @@
       "recovery": {
         "retry": false,
         "hint": "Another WebMCP execution or approval is pending. Wait and inspect postconditions; a timed-out callback may still be running."
-      },
-      "transportBytes": 67,
-      "transportTokens": 17,
-      "transportCostClass": "cheap",
-      "summaryBytes": 347,
-      "summaryTokens": 87,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -8227,10 +7294,7 @@
       },
       "transportBytes": 78,
       "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 362,
-      "summaryTokens": 91,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -8239,13 +7303,7 @@
       "recovery": {
         "retry": false,
         "hint": "User approval was denied, closed, expired, or revoked. No tool was dispatched. Do not repeat the request unless the user asks."
-      },
-      "transportBytes": 78,
-      "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 362,
-      "summaryTokens": 91,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -8298,10 +7356,7 @@
       },
       "transportBytes": 82,
       "transportTokens": 21,
-      "transportCostClass": "cheap",
-      "summaryBytes": 432,
-      "summaryTokens": 108,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -8310,13 +7365,7 @@
       "recovery": {
         "retry": false,
         "hint": "The tool may have executed. Inspect DOM/page postconditions before another deliberate action. Never automatically retry or repeat the action through DOM input."
-      },
-      "transportBytes": 82,
-      "transportTokens": 21,
-      "transportCostClass": "cheap",
-      "summaryBytes": 432,
-      "summaryTokens": 108,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -8369,10 +7418,7 @@
       },
       "transportBytes": 69,
       "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 421,
-      "summaryTokens": 106,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -8381,13 +7427,7 @@
       "recovery": {
         "retry": false,
         "hint": "Access is off for this window. Ask the user to click Enable in the Browser Bridge popup or side panel. Do not request access again until that window is enabled."
-      },
-      "transportBytes": 69,
-      "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 421,
-      "summaryTokens": 106,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -8440,10 +7480,7 @@
       },
       "transportBytes": 72,
       "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 348,
-      "summaryTokens": 87,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -8452,13 +7489,7 @@
       "recovery": {
         "retry": false,
         "hint": "Result was truncated to fit the response budget. Narrow the query or raise the relevant budget if more detail is required."
-      },
-      "transportBytes": 72,
-      "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 348,
-      "summaryTokens": 87,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -8511,10 +7542,7 @@
       },
       "transportBytes": 72,
       "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 550,
-      "summaryTokens": 138,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -8523,13 +7551,7 @@
       "recovery": {
         "retry": false,
         "hint": "The result exceeds its atomic delivery limit. For screenshots, use artifact delivery, a smaller region, lower scale, or lossy compression. For sensitive reads, use a narrower exact target; partial values are never returned."
-      },
-      "transportBytes": 72,
-      "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 550,
-      "summaryTokens": 138,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -8584,10 +7606,7 @@
       },
       "transportBytes": 82,
       "transportTokens": 21,
-      "transportCostClass": "cheap",
-      "summaryBytes": 393,
-      "summaryTokens": 99,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -8597,13 +7616,7 @@
         "retry": false,
         "alternativeMethod": "page.get_storage",
         "hint": "The exact storage key does not exist. Use page.get_storage to inspect metadata before another deliberate sensitive read."
-      },
-      "transportBytes": 82,
-      "transportTokens": 21,
-      "transportCostClass": "cheap",
-      "summaryBytes": 393,
-      "summaryTokens": 99,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -8659,10 +7672,7 @@
       },
       "transportBytes": 69,
       "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 483,
-      "summaryTokens": 121,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -8672,13 +7682,7 @@
         "retry": false,
         "alternativeMethod": "dom.query",
         "hint": "Element was removed from the DOM. Re-query for a fresh elementRef, or retry an input once with recoverStale=true when the same page and a strong unique descriptor still apply."
-      },
-      "transportBytes": 69,
-      "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 483,
-      "summaryTokens": 121,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -8734,10 +7738,7 @@
       },
       "transportBytes": 73,
       "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 475,
-      "summaryTokens": 119,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -8747,13 +7748,7 @@
         "retry": false,
         "alternativeMethod": "dom.query",
         "hint": "Multiple candidates matched, candidates tied, or a bounded stale-recovery scan could not prove uniqueness. Re-query and use a more specific selector or fresh elementRef."
-      },
-      "transportBytes": 73,
-      "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 475,
-      "summaryTokens": 119,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -8809,10 +7804,7 @@
       },
       "transportBytes": 78,
       "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 359,
-      "summaryTokens": 90,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -8822,13 +7814,7 @@
         "retry": false,
         "alternativeMethod": "dom.describe",
         "hint": "The target is hidden, disabled, inert, or has no rendered area. Inspect it and choose an actionable target."
-      },
-      "transportBytes": 78,
-      "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 359,
-      "summaryTokens": 90,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -8884,10 +7870,7 @@
       },
       "transportBytes": 72,
       "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 330,
-      "summaryTokens": 83,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -8897,13 +7880,7 @@
         "retry": false,
         "alternativeMethod": "layout.hit_test",
         "hint": "Another element blocks the target point. Inspect the blocker or wait for the overlay to close."
-      },
-      "transportBytes": 72,
-      "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 330,
-      "summaryTokens": 83,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -8959,10 +7936,7 @@
       },
       "transportBytes": 73,
       "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 305,
-      "summaryTokens": 77,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -8972,13 +7946,7 @@
         "retry": false,
         "alternativeMethod": "dom.query",
         "hint": "No element matched the target selector. Check or narrow the selector with dom.query."
-      },
-      "transportBytes": 73,
-      "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 305,
-      "summaryTokens": 77,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -9032,10 +8000,7 @@
       },
       "transportBytes": 73,
       "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 363,
-      "summaryTokens": 91,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -9044,13 +8009,7 @@
       "recovery": {
         "retry": false,
         "hint": "The requested execution mode does not support this input operation. Use executionMode=dom or choose a CDP-supported input method."
-      },
-      "transportBytes": 73,
-      "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 363,
-      "summaryTokens": 91,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -9105,10 +8064,7 @@
       },
       "transportBytes": 76,
       "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 441,
-      "summaryTokens": 111,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -9118,13 +8074,7 @@
         "retry": false,
         "alternativeMethod": "dom.describe",
         "hint": "The target is not compatible with this input operation or the requested option does not exist. Inspect the target and choose the appropriate control."
-      },
-      "transportBytes": 76,
-      "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 441,
-      "summaryTokens": 111,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -9180,10 +8130,7 @@
       },
       "transportBytes": 75,
       "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 432,
-      "summaryTokens": 108,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -9193,13 +8140,7 @@
         "retry": false,
         "alternativeMethod": "dom.describe",
         "hint": "Focus moved away from the resolved editable target before native text dispatch. Inspect focus handlers or target the control that retained focus."
-      },
-      "transportBytes": 75,
-      "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 432,
-      "summaryTokens": 108,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -9255,10 +8196,7 @@
       },
       "transportBytes": 70,
       "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 693,
-      "summaryTokens": 174,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -9268,13 +8206,7 @@
         "retry": false,
         "alternativeMethod": "page.handle_dialog",
         "hint": "A JavaScript dialog blocked the operation. Inspect it with page.handle_dialog, then explicitly accept or dismiss it. The operation may already have taken effect and may finish after the dialog closes. Inspect postconditions; never automatically replay the action or sequence."
-      },
-      "transportBytes": 70,
-      "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 693,
-      "summaryTokens": 174,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -9330,10 +8262,7 @@
       },
       "transportBytes": 71,
       "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 372,
-      "summaryTokens": 93,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -9343,13 +8272,7 @@
         "retry": false,
         "alternativeMethod": "page.handle_dialog",
         "hint": "No JavaScript dialog is currently observable. Inspect or trigger the dialog before trying another explicit action."
-      },
-      "transportBytes": 71,
-      "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 372,
-      "summaryTokens": 93,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -9405,10 +8328,7 @@
       },
       "transportBytes": 78,
       "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 427,
-      "summaryTokens": 107,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -9418,13 +8338,7 @@
         "retry": false,
         "alternativeMethod": "page.handle_dialog",
         "hint": "The observed dialog changed before or during CDP dispatch. Do not repeat the action automatically; inspect the current dialog state first."
-      },
-      "transportBytes": 78,
-      "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 427,
-      "summaryTokens": 107,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -9480,10 +8394,7 @@
       },
       "transportBytes": 68,
       "transportTokens": 17,
-      "transportCostClass": "cheap",
-      "summaryBytes": 268,
-      "summaryTokens": 67,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -9493,13 +8404,7 @@
         "retry": false,
         "alternativeMethod": "tabs.list",
         "hint": "Tab was closed or not found. Use tabs.list to find an available tab."
-      },
-      "transportBytes": 68,
-      "transportTokens": 17,
-      "transportCostClass": "cheap",
-      "summaryBytes": 268,
-      "summaryTokens": 67,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -9555,10 +8460,7 @@
       },
       "transportBytes": 63,
       "transportTokens": 16,
-      "transportCostClass": "cheap",
-      "summaryBytes": 332,
-      "summaryTokens": 83,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -9568,13 +8470,7 @@
         "retry": true,
         "retryAfterMs": 1000,
         "hint": "Operation exceeded the time limit. Retry once, or simplify the request (smaller maxNodes, narrower selector)."
-      },
-      "transportBytes": 63,
-      "transportTokens": 16,
-      "transportCostClass": "cheap",
-      "summaryBytes": 332,
-      "summaryTokens": 83,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -9628,10 +8524,7 @@
       },
       "transportBytes": 82,
       "transportTokens": 21,
-      "transportCostClass": "cheap",
-      "summaryBytes": 334,
-      "summaryTokens": 84,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -9640,13 +8533,7 @@
       "recovery": {
         "retry": false,
         "hint": "The page cannot host the Browser Bridge content script. Switch to a normal http(s) page in the enabled window."
-      },
-      "transportBytes": 82,
-      "transportTokens": 21,
-      "transportCostClass": "cheap",
-      "summaryBytes": 334,
-      "summaryTokens": 84,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -9699,10 +8586,7 @@
       },
       "transportBytes": 74,
       "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 282,
-      "summaryTokens": 71,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -9711,13 +8595,7 @@
       "recovery": {
         "retry": false,
         "hint": "The artifact is missing, expired, deleted, or owned by another client. Capture it again."
-      },
-      "transportBytes": 74,
-      "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 282,
-      "summaryTokens": 71,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -9770,10 +8648,7 @@
       },
       "transportBytes": 79,
       "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 281,
-      "summaryTokens": 71,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -9782,13 +8657,7 @@
       "recovery": {
         "retry": false,
         "hint": "Artifact storage quota was exceeded. Delete unneeded artifacts or retry after expiry."
-      },
-      "transportBytes": 79,
-      "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 281,
-      "summaryTokens": 71,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -9841,10 +8710,7 @@
       },
       "transportBytes": 81,
       "transportTokens": 21,
-      "transportCostClass": "cheap",
-      "summaryBytes": 245,
-      "summaryTokens": 62,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -9853,13 +8719,7 @@
       "recovery": {
         "retry": false,
         "hint": "Artifact transfer validation failed. Capture the screenshot again."
-      },
-      "transportBytes": 81,
-      "transportTokens": 21,
-      "transportCostClass": "cheap",
-      "summaryBytes": 245,
-      "summaryTokens": 62,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -9914,10 +8774,7 @@
       },
       "transportBytes": 78,
       "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 366,
-      "summaryTokens": 92,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -9927,13 +8784,7 @@
         "retry": false,
         "alternativeMethod": "dom.baseline.create",
         "hint": "The DOM baseline is missing, expired, or released. Create a new baseline before comparing or describing it."
-      },
-      "transportBytes": 78,
-      "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 366,
-      "summaryTokens": 92,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -9989,10 +8840,7 @@
       },
       "transportBytes": 80,
       "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 336,
-      "summaryTokens": 84,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -10002,13 +8850,7 @@
         "retry": false,
         "alternativeMethod": "dom.baseline.create",
         "hint": "The page document or baseline scope changed. Create a new baseline in the current document."
-      },
-      "transportBytes": 80,
-      "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 336,
-      "summaryTokens": 84,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -10064,10 +8906,7 @@
       },
       "transportBytes": 83,
       "transportTokens": 21,
-      "transportCostClass": "cheap",
-      "summaryBytes": 472,
-      "summaryTokens": 118,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -10077,13 +8916,7 @@
         "retry": false,
         "alternativeMethod": "dom.baseline.release",
         "hint": "DOM baseline storage quota was exceeded. Release unneeded baselines, narrow the selector, or reduce maxNodes and textBudget before creating another baseline."
-      },
-      "transportBytes": 83,
-      "transportTokens": 21,
-      "transportCostClass": "cheap",
-      "summaryBytes": 472,
-      "summaryTokens": 118,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -10141,10 +8974,7 @@
       },
       "transportBytes": 78,
       "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 365,
-      "summaryTokens": 92,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -10155,13 +8985,7 @@
         "retryAfterMs": 3000,
         "alternativeMethod": "health.ping",
         "hint": "Extension not connected. Check Chrome is running, then retry. Use health.ping to verify connectivity."
-      },
-      "transportBytes": 78,
-      "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 365,
-      "summaryTokens": 92,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -10216,10 +9040,7 @@
       },
       "transportBytes": 79,
       "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 257,
-      "summaryTokens": 65,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -10228,13 +9049,7 @@
       "recovery": {
         "retry": false,
         "hint": "Native host not reachable. Run `bbx doctor` to diagnose the installation."
-      },
-      "transportBytes": 79,
-      "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 257,
-      "summaryTokens": 65,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -10287,10 +9102,7 @@
       },
       "transportBytes": 71,
       "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 243,
-      "summaryTokens": 61,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -10299,13 +9111,7 @@
       "recovery": {
         "retry": false,
         "hint": "Malformed method or params. Check the method name and parameter types."
-      },
-      "transportBytes": 71,
-      "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 243,
-      "summaryTokens": 61,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -10360,10 +9166,7 @@
       },
       "transportBytes": 70,
       "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 301,
-      "summaryTokens": 76,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": false,
@@ -10373,13 +9176,7 @@
         "retry": true,
         "retryAfterMs": 1000,
         "hint": "Unexpected extension error. Retry once; if persistent, check page.get_console for details."
-      },
-      "transportBytes": 70,
-      "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 301,
-      "summaryTokens": 76,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -10432,10 +9229,7 @@
       },
       "transportBytes": 533,
       "transportTokens": 134,
-      "transportCostClass": "cheap",
-      "summaryBytes": 610,
-      "summaryTokens": 153,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -10444,13 +9238,7 @@
         "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "length": 503,
         "truncated": true
-      },
-      "transportBytes": 533,
-      "transportTokens": 134,
-      "transportCostClass": "cheap",
-      "summaryBytes": 610,
-      "summaryTokens": 153,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -10499,10 +9287,7 @@
       },
       "transportBytes": 208,
       "transportTokens": 52,
-      "transportCostClass": "cheap",
-      "summaryBytes": 370,
-      "summaryTokens": 93,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -10510,13 +9295,7 @@
       "evidence": {
         "type": "string",
         "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-      },
-      "transportBytes": 208,
-      "transportTokens": 52,
-      "transportCostClass": "cheap",
-      "summaryBytes": 370,
-      "summaryTokens": 93,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -10566,10 +9345,7 @@
       },
       "transportBytes": 237,
       "transportTokens": 60,
-      "transportCostClass": "cheap",
-      "summaryBytes": 351,
-      "summaryTokens": 88,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -10579,13 +9355,7 @@
         "value": {
           "long": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
         }
-      },
-      "transportBytes": 237,
-      "transportTokens": 60,
-      "transportCostClass": "cheap",
-      "summaryBytes": 351,
-      "summaryTokens": 88,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -10652,10 +9422,7 @@
       },
       "transportBytes": 427,
       "transportTokens": 107,
-      "transportCostClass": "cheap",
-      "summaryBytes": 544,
-      "summaryTokens": 136,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -10670,13 +9437,7 @@
           123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123,
           123, 123, 123, 123, 123, 123, 123, 123, 123, 123
         ]
-      },
-      "transportBytes": 427,
-      "transportTokens": 107,
-      "transportCostClass": "cheap",
-      "summaryBytes": 544,
-      "summaryTokens": 136,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",
@@ -10907,10 +9668,7 @@
       ],
       "transportBytes": 1969,
       "transportTokens": 493,
-      "transportCostClass": "moderate",
-      "summaryBytes": 1698,
-      "summaryTokens": 425,
-      "summaryCostClass": "moderate"
+      "transportCostClass": "moderate"
     },
     "sanitized": {
       "ok": true,
@@ -10977,12 +9735,7 @@
           "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
         }
       ],
-      "transportBytes": 1969,
-      "transportTokens": 493,
-      "transportCostClass": "moderate",
-      "summaryBytes": 1698,
-      "summaryTokens": 425,
-      "summaryCostClass": "moderate"
+      "transportTokens": 493
     },
     "batch": {
       "method": "page.get_state",
@@ -11380,10 +10133,7 @@
       ],
       "transportBytes": 901,
       "transportTokens": 226,
-      "transportCostClass": "cheap",
-      "summaryBytes": 1066,
-      "summaryTokens": 267,
-      "summaryCostClass": "moderate"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -11469,13 +10219,7 @@
           "origin": "https://example.com",
           "title": "Tab 10"
         }
-      ],
-      "transportBytes": 901,
-      "transportTokens": 226,
-      "transportCostClass": "cheap",
-      "summaryBytes": 1066,
-      "summaryTokens": 267,
-      "summaryCostClass": "moderate"
+      ]
     },
     "batch": {
       "method": "page.get_state",
@@ -11673,10 +10417,7 @@
       },
       "transportBytes": 54,
       "transportTokens": 14,
-      "transportCostClass": "cheap",
-      "summaryBytes": 114,
-      "summaryTokens": 29,
-      "summaryCostClass": "cheap"
+      "transportCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
@@ -11684,13 +10425,7 @@
       "evidence": {
         "elementRef": null,
         "value": "ared<&> "
-      },
-      "transportBytes": 54,
-      "transportTokens": 14,
-      "transportCostClass": "cheap",
-      "summaryBytes": 114,
-      "summaryTokens": 29,
-      "summaryCostClass": "cheap"
+      }
     },
     "batch": {
       "method": "page.get_state",

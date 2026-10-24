@@ -39,25 +39,9 @@ func cliCompactBatchItem(item object) {
 	if !item.object("timing").boolean("scheduled") {
 		delete(item, "timing")
 	}
-	meta, kept := item.object("meta"), object{}
-	for _, key := range []string{"protocol_warning", "continuation_hint"} {
-		if cliPresent(meta[key]) {
-			kept[key] = meta[key]
-		}
-	}
-	for _, key := range []string{"budget_truncated", "result_truncated"} {
-		if meta.boolean(key) {
-			kept[key] = value(true)
-		}
-	}
-	if version := meta.text("protocol_version"); version != "" && version != protocolVersion() {
-		kept["protocol_version"] = meta["protocol_version"]
-	}
 	// Without an explicit tab, the routed tab is the only record of where the
 	// call ran.
-	if !cliPresent(item["tabId"]) && cliPresent(meta["tab_id"]) {
-		kept["tab_id"] = meta["tab_id"]
-	}
+	kept := cliNotableMeta(item.object("meta"), !cliPresent(item["tabId"]))
 	if len(kept) == 0 {
 		delete(item, "meta")
 	} else {

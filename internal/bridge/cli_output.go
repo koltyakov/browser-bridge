@@ -362,12 +362,22 @@ func cliCostClass(tokens float64) string {
 	}
 	return "extreme"
 }
+
+// cliAnnotate adds the bridge payload size and stage timing that CLI, batch,
+// and MCP results share. Idle preparation and queue phases and an unscheduled
+// run are omitted; the summary's own size is evident to whoever reads it.
 func cliAnnotate(summary, response object) object {
 	out := cliClone(summary)
 	meta := response.object("meta")
 	sensitive := meta.text("method") == "sensitive.read"
 	if timing := meta.object("timing"); timing != nil && !sensitive {
-		out["timing"] = value(mcpPick(timing, "preparationMs queueMs executionMs totalMs scheduled"))
+		timing = mcpPick(timing, "preparationMs queueMs executionMs totalMs scheduled")
+		for _, key := range []string{"preparationMs", "queueMs", "scheduled"} {
+			if string(timing[key]) == "0" || string(timing[key]) == "false" {
+				delete(timing, key)
+			}
+		}
+		out["timing"] = value(timing)
 	}
 	bytesN, bok := cliNumberValue(meta["transport_bytes"])
 	if !bok {
@@ -403,13 +413,67 @@ func cliAnnotate(summary, response object) object {
 	if cost == "" {
 		cost = cliCostClass(tokens)
 	}
-	summaryBytes := len(cliJSON(value(summary), false))
-	summaryTokens := int(math.Ceil(float64(summaryBytes) / 4))
 	out["transportBytes"] = value(bytesN)
 	out["transportTokens"] = value(tokens)
 	out["transportCostClass"] = value(cost)
-	out["summaryBytes"] = value(summaryBytes)
-	out["summaryTokens"] = value(summaryTokens)
-	out["summaryCostClass"] = value(cliCostClass(float64(summaryTokens)))
 	return out
+}
+
+// cliPrintedSummary is what a shortcut prints. The raw result's size matters
+// only when fetching it would cost more than a cheap read; its byte count and
+// cost class follow from the token estimate and the documented thresholds.
+func cliPrintedSummary(response object, method string, now int64) object {
+	out := cliAnnotate(cliSummarize(response, method, now), response)
+	if out.text("transportCostClass") == "cheap" {
+		delete(out, "transportTokens")
+	}
+	delete(out, "transportBytes")
+	delete(out, "transportCostClass")
+	return out
+}
+
+// cliRawFailure is what `bbx call` prints for a failed request: the error,
+// its recovery guidance, and only meta that changes how to read or retry it.
+// Success prints the bare result, so transport sizes, request IDs, and the
+// null result add nothing here either.
+func cliRawFailure(response object) object {
+	err := cliClone(response.object("error"))
+	recovery := err["recovery"]
+	delete(err, "recovery")
+	if !cliPresent(recovery) {
+		recovery = value(cliErrorRecovery(err.text("code")))
+	}
+	out := object{"ok": value(false), "error": value(err)}
+	if cliPresent(recovery) {
+		out["recovery"] = recovery
+	}
+	meta := response.object("meta")
+	if kept := cliNotableMeta(meta, meta.text("tab_routing") != "explicit"); len(kept) > 0 {
+		out["meta"] = value(kept)
+	}
+	return out
+}
+
+// cliNotableMeta keeps response meta that the result itself does not already
+// convey: warnings, truncation, continuation hints, a protocol version other
+// than the current one, and, for implicitly routed calls, the tab that ran.
+func cliNotableMeta(meta object, routed bool) object {
+	kept := object{}
+	for _, key := range []string{"protocol_warning", "continuation_hint"} {
+		if cliPresent(meta[key]) {
+			kept[key] = meta[key]
+		}
+	}
+	for _, key := range []string{"budget_truncated", "result_truncated"} {
+		if meta.boolean(key) {
+			kept[key] = value(true)
+		}
+	}
+	if version := meta.text("protocol_version"); version != "" && version != protocolVersion() {
+		kept["protocol_version"] = meta["protocol_version"]
+	}
+	if routed && cliPresent(meta["tab_id"]) {
+		kept["tab_id"] = meta["tab_id"]
+	}
+	return kept
 }

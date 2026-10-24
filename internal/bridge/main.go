@@ -515,12 +515,12 @@ func writeCLIResponse(response object, raw bool, method string, now int64, out, 
 			message = "\x1b[31m" + message + "\x1b[0m"
 		}
 		_, _ = fmt.Fprintln(stderr, message)
-		if err := writeCLIJSONOutput(out, value(response), true, pretty); err != nil {
+		if err := writeCLIJSONOutput(out, value(cliRawFailure(response)), true, pretty); err != nil {
 			return err
 		}
 		return cliPrintedError{}
 	}
-	if err := writeCLIJSONOutput(out, value(cliAnnotate(cliSummarize(response, method, now), response)), true, pretty); err != nil {
+	if err := writeCLIJSONOutput(out, value(cliPrintedSummary(response, method, now)), true, pretty); err != nil {
 		return err
 	}
 	if !response.boolean("ok") {
