@@ -105,3 +105,90 @@ test('invalid network cursors fail before dispatching any input', async () => {
     /could not be armed/
   );
 });
+
+test('trimming entries older than the baseline keeps fresh evidence valid', async () => {
+  const stale = Array.from({ length: 200 }, (_, sequence) => ({
+    sequence,
+    method: 'GET',
+    url: '/poll',
+    status: 200,
+  }));
+  for (const [evictedThrough, expected] of [
+    [0, 'matched'],
+    [200, 'interrupted'],
+  ] as const) {
+    let reads = 0;
+    const monitor = await armPerformOutcomes(request(), 12, [condition], 1000, {
+      dispatch: async (req) => createSuccess(req.id, {}),
+      armNetwork: async () => {},
+      readNetwork: async () =>
+        reads++ === 0
+          ? {
+              cursor: { epoch: 'e', nextSequence: 200, generation: 0, evictedThrough: -1 },
+              dropped: 50,
+              entries: stale,
+            }
+          : {
+              cursor: { epoch: 'e', nextSequence: 201, generation: 0, evictedThrough },
+              dropped: 51,
+              entries: [
+                ...stale.slice(1),
+                { sequence: 200, method: 'POST', url: '/api/save', status: 201 },
+              ],
+            },
+    });
+    try {
+      assert.equal((await monitor.complete())[0].status, expected);
+    } finally {
+      monitor.stop();
+    }
+  }
+});
+
+test('a page read that never settles times out at the sequence deadline', async () => {
+  let reads = 0;
+  const monitor = await armPerformOutcomes(request(), 12, [condition], 50, {
+    dispatch: async (req) => createSuccess(req.id, {}),
+    armNetwork: async () => {},
+    readNetwork: () =>
+      reads++ === 0 ? Promise.resolve({ cursor, dropped: 0, entries: [] }) : new Promise(() => {}),
+  });
+  try {
+    const [result] = await monitor.complete();
+    assert.equal(result.status, 'timeout');
+    assert.equal(result.evidence?.reason, 'deadline_elapsed');
+  } finally {
+    monitor.stop();
+  }
+});
+
+test('cancellation abandons a hung page read during observation', async () => {
+  let reads = 0;
+  let reading!: () => void;
+  const hung = new Promise<void>((resolve) => {
+    reading = resolve;
+  });
+  const monitor = await armPerformOutcomes(request(), 12, [condition], 120000, {
+    dispatch: async (req) => createSuccess(req.id, {}),
+    armNetwork: async () => {},
+    readNetwork: () => {
+      if (reads++ === 0) return Promise.resolve({ cursor, dropped: 0, entries: [] });
+      reading();
+      return new Promise(() => {});
+    },
+  });
+  await hung;
+  monitor.stop();
+  assert.equal((await monitor.complete())[0].status, 'interrupted');
+});
+
+test('arming that never settles fails before any input runs', async () => {
+  await assert.rejects(
+    armPerformOutcomes(request(), 12, [condition], 50, {
+      dispatch: async (req) => createSuccess(req.id, {}),
+      armNetwork: () => new Promise(() => {}),
+      readNetwork: async () => ({ cursor, dropped: 0, entries: [] }),
+    }),
+    /did not arm/
+  );
+});

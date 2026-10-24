@@ -7,7 +7,7 @@ type Condition = import('../../../protocol/src/types.js').NormalizedPerformOutco
 type Result = import('../../../protocol/src/types.js').PerformOutcomeResult;
 
 export type OutcomeNetworkSnapshot = {
-  cursor?: { epoch: string; nextSequence: number; generation: number };
+  cursor?: import('./background-network.js').NetworkCaptureCursor;
   dropped: number;
   entries: Array<{ sequence?: number; method: string; url: string; status: number }>;
 };
@@ -41,8 +41,18 @@ export async function armPerformOutcomes(
           ERROR_CODES.INPUT_UNSUPPORTED,
           'Network outcome observation is unavailable.'
         );
-      await dependencies.armNetwork(tabId);
-      initial = await dependencies.readNetwork(tabId);
+      const armed = await untilStopped(
+        dependencies.armNetwork(tabId).then(() => dependencies.readNetwork!(tabId)),
+        controller.signal,
+        deadline
+      );
+      if (!armed)
+        throw new BridgeError(
+          ERROR_CODES.TIMEOUT,
+          'Network outcome capture did not arm before the request ended. No sequence steps ran.',
+          { dispatched: false }
+        );
+      initial = armed.value;
       if (
         !initial.cursor?.epoch ||
         initial.cursor.nextSequence < 0 ||
@@ -78,18 +88,28 @@ export async function armPerformOutcomes(
     };
     try {
       while (pending.size && !controller.signal.aborted && performance.now() < deadline) {
-        const snapshot = await readNetwork(tabId);
+        // A hung renderer never answers the page read. Stop waiting for it at
+        // the deadline or on cancellation so the request can still settle.
+        const read = await untilStopped(readNetwork(tabId), controller.signal, deadline);
         if (controller.signal.aborted) {
           interrupt('interrupted', 'observation_stopped');
           break;
         }
+        if (!read) break;
+        const snapshot = read.value;
         const cursor = snapshot.cursor;
+        // A full buffer evicts its oldest entries on every request. That loses
+        // evidence only when an evicted entry is at or after the baseline.
+        const lostFresh =
+          cursor?.evictedThrough !== undefined
+            ? cursor.evictedThrough >= baseline.nextSequence
+            : snapshot.dropped > initial!.dropped;
         if (
           !cursor ||
           cursor.epoch !== baseline.epoch ||
           cursor.generation !== baseline.generation ||
           cursor.nextSequence < baseline.nextSequence ||
-          snapshot.dropped > initial!.dropped
+          lostFresh
         ) {
           interrupt('interrupted', 'capture_gap_or_document_changed');
           break;
@@ -202,6 +222,41 @@ export async function armPerformOutcomes(
       untrack();
     },
   };
+}
+
+/** Resolve with the operation's value, or null once the signal aborts or the
+ * performance-clock deadline passes. The abandoned operation keeps running. */
+function untilStopped<T>(
+  operation: Promise<T>,
+  signal: AbortSignal,
+  deadline: number
+): Promise<{ value: T } | null> {
+  if (signal.aborted) {
+    operation.catch(() => {});
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', stop);
+    };
+    const stop = () => {
+      cleanup();
+      resolve(null);
+    };
+    const timer = setTimeout(stop, Math.max(0, deadline - performance.now()));
+    signal.addEventListener('abort', stop, { once: true });
+    operation.then(
+      (value) => {
+        cleanup();
+        resolve({ value });
+      },
+      (error: unknown) => {
+        cleanup();
+        reject(error);
+      }
+    );
+  });
 }
 
 function pause(ms: number, signal: AbortSignal): Promise<void> {

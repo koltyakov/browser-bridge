@@ -789,3 +789,44 @@ test('network outcome cursors distinguish request start, ordinary reads, and cap
     restoreGlobalDescriptors(snapshot);
   }
 });
+
+test('network outcome cursors report the newest evicted sequence, not routine trimming', async () => {
+  const snapshot = snapshotGlobalDescriptors();
+  Object.defineProperty(globalThis, 'fetch', {
+    configurable: true,
+    writable: true,
+    value: async () => ({ status: 200, headers: createHeaders(null) }),
+  });
+  Object.defineProperty(globalThis, 'XMLHttpRequest', {
+    configurable: true,
+    writable: true,
+    value: FakeXMLHttpRequest,
+  });
+  const chrome = {
+    scripting: {
+      async executeScript(details: NetworkInjection) {
+        return [{ result: details.func?.(...(details.args ?? [])) }];
+      },
+    },
+  };
+  try {
+    await ensureNetworkInterceptor(45, chrome);
+    const page = globalThis as unknown as InstalledNetworkGlobal;
+    for (let index = 0; index < 200; index += 1) await page.fetch(`https://example.test/${index}`);
+    const full = await readNetworkBuffer(45, false, chrome, true);
+    assert.equal(full.cursor?.evictedThrough, -1);
+
+    await page.fetch('https://example.test/fresh');
+    const trimmed = await readNetworkBuffer(45, false, chrome, true);
+    assert.equal(trimmed.dropped, 1);
+    assert.equal(trimmed.cursor?.evictedThrough, 0);
+    assert.ok((trimmed.cursor?.evictedThrough ?? Infinity) < (full.cursor?.nextSequence ?? 0));
+
+    for (let index = 0; index < 200; index += 1) await page.fetch(`https://example.test/n${index}`);
+    const overrun = await readNetworkBuffer(45, false, chrome, true);
+    assert.ok((overrun.cursor?.evictedThrough ?? -1) >= (full.cursor?.nextSequence ?? Infinity));
+    await disableNetworkInterceptor(45, chrome);
+  } finally {
+    restoreGlobalDescriptors(snapshot);
+  }
+});

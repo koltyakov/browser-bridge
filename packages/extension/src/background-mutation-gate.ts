@@ -44,12 +44,15 @@ export function createMutationGate(dependencies: {
         dependencies.snapshot(tabId, scope).then(resolve, reject).finally(untrack);
       });
     const target = await dependencies.resolveTarget(request);
-    const snapshot = await snapshotUntilCanceled(target.tabId);
     assertAccess();
     assertActive();
     let untrack = () => {};
+    let snapshot: Snapshot;
     try {
-      await new Promise<void>((resolve, reject) => {
+      // Report the tab before reading the page. The daemon orders later
+      // mutations behind one whose tab it does not know, so a hung renderer
+      // would otherwise stall every tab. The read also overlaps the round trip.
+      const granted = new Promise<void>((resolve, reject) => {
         waiting.set(request.id, { tabId: target.tabId, grant: resolve, reject });
         untrack = requestLifetimes.track(request.id, () =>
           reject(
@@ -67,6 +70,7 @@ export function createMutationGate(dependencies: {
           tabId: target.tabId,
         });
       });
+      [snapshot] = await Promise.all([snapshotUntilCanceled(target.tabId), granted]);
     } finally {
       waiting.delete(request.id);
       untrack();

@@ -6,6 +6,9 @@ export type NetworkInstrumentationRecord = {
   epoch: string;
   nextSequence: number;
   generation: number;
+  /** Highest sequence evicted from the bounded buffer, or -1. Evicting older
+   * entries is routine; only evicting one at or after a cursor loses evidence. */
+  evictedThrough: number;
   buffer: Array<{
     method: string;
     url: string;
@@ -23,6 +26,13 @@ export type NetworkInstrumentationRecord = {
   wrappedFetch: typeof globalThis.fetch;
   wrappedOpen: typeof XMLHttpRequest.prototype.open;
   wrappedSend: typeof XMLHttpRequest.prototype.send;
+};
+
+export type NetworkCaptureCursor = {
+  epoch: string;
+  nextSequence: number;
+  generation: number;
+  evictedThrough?: number;
 };
 
 export type ChromeWithScripting = {
@@ -70,6 +80,10 @@ export async function ensureNetworkInterceptor(
             XMLHttpRequest.prototype.send = record.originalSend;
           delete root.network;
         } else {
+          // Records from an older build do not track evictions. Every entry they
+          // could have evicted predates the next cursor taken from them.
+          if (!Number.isSafeInteger(record.evictedThrough))
+            record.evictedThrough = record.nextSequence - 1;
           if (!record.enabled) {
             record.buffer.length = 0;
             record.dropped = 0;
@@ -109,6 +123,7 @@ export async function ensureNetworkInterceptor(
         epoch: captureEpoch,
         nextSequence: 0,
         generation: 0,
+        evictedThrough: -1,
         buffer,
         dropped: 0,
         originalFetch,
@@ -172,7 +187,8 @@ export async function ensureNetworkInterceptor(
             if (buffer.length > MAX) {
               record.dropped += buffer.length - MAX;
               globalThis.__bb_network_dropped = record.dropped;
-              buffer.splice(0, buffer.length - MAX);
+              for (const evicted of buffer.splice(0, buffer.length - MAX))
+                record.evictedThrough = Math.max(record.evictedThrough, evicted.sequence);
             }
           }
         }
@@ -215,7 +231,8 @@ export async function ensureNetworkInterceptor(
           if (buffer.length > MAX) {
             record.dropped += buffer.length - MAX;
             globalThis.__bb_network_dropped = record.dropped;
-            buffer.splice(0, buffer.length - MAX);
+            for (const evicted of buffer.splice(0, buffer.length - MAX))
+              record.evictedThrough = Math.max(record.evictedThrough, evicted.sequence);
           }
         };
         this.addEventListener('loadend', onLoadEnd, { once: true });
@@ -290,7 +307,7 @@ export async function readNetworkBuffer(
   dropped: number;
   provenance: 'page_main_world';
   integrity: 'untrusted';
-  cursor?: { epoch: string; nextSequence: number; generation: number };
+  cursor?: NetworkCaptureCursor;
 }> {
   const instrumentationKey = await getMainWorldInstrumentationKey(chromeObj);
   const results = await chromeObj.scripting.executeScript({
@@ -335,6 +352,9 @@ export async function readNetworkBuffer(
                 epoch: typeof record.epoch === 'string' ? record.epoch.slice(0, 64) : '',
                 nextSequence: Number.isSafeInteger(record.nextSequence) ? record.nextSequence : -1,
                 generation: Number.isSafeInteger(record.generation) ? record.generation : -1,
+                ...(Number.isSafeInteger(record.evictedThrough)
+                  ? { evictedThrough: record.evictedThrough }
+                  : {}),
               },
             }
           : {}),
@@ -348,7 +368,7 @@ export async function readNetworkBuffer(
           result?: {
             entries?: unknown;
             dropped?: unknown;
-            cursor?: { epoch: string; nextSequence: number; generation: number };
+            cursor?: NetworkCaptureCursor;
           };
         }
       | undefined
