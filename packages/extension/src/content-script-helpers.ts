@@ -460,27 +460,39 @@ their host. Bounded so pathological pages cannot stall the content script. */
   /** `querySelectorAll` that also searches open (and, for the extension, closed)
 shadow roots. Light-DOM matches come first. */
   function querySelectorAllDeep(selector: string, root: ParentNode = document): Element[] {
+    return [...querySelectorMatchesDeep(selector, root)];
+  }
+
+  /** Iterate selector matches without scanning later subtrees when a bounded
+consumer has enough results. Complete scans still enforce the work limit. */
+  function* querySelectorMatchesDeep(
+    selector: string,
+    root: ParentNode = document
+  ): Generator<Element> {
     // Validate even on an empty tree. :scope requires native tree-scoped CSS
     // semantics; ordinary selectors can be matched lazily without a NodeList
     // containing the entire document.
     root.querySelector(selector);
     if (selector.includes(':scope') || !('children' in root)) {
-      const results: Element[] = [];
-      for (const scope of [root, ...walkShadowRoots(root)]) {
+      let count = 0;
+      const scopes = function* (): Generator<ParentNode> {
+        yield root;
+        yield* walkShadowRoots(root);
+      };
+      for (const scope of scopes()) {
         const matches = scope.querySelectorAll(selector);
-        if (matches.length + results.length > DEEP_SCAN_LIMIT) throw scanLimitError();
-        for (const element of matches) results.push(element);
+        if (matches.length + count > DEEP_SCAN_LIMIT) throw scanLimitError();
+        count += matches.length;
+        yield* matches;
       }
-      return results;
+      return;
     }
-    const results: Element[] = [];
     const started = performance.now();
     let scanned = 0;
     for (const element of walkElementsDeep(root, DEEP_SCAN_LIMIT + 1)) {
       if (++scanned > DEEP_SCAN_LIMIT || performance.now() - started > 100) throw scanLimitError();
-      if (element.matches(selector)) results.push(element);
+      if (element.matches(selector)) yield element;
     }
-    return results;
   }
 
   function scanLimitError(): Error {
@@ -709,6 +721,7 @@ content for name-from-content roles, title, and placeholder. */
     isElementVisible,
     isNodeAttached,
     querySelectorAllDeep,
+    querySelectorMatchesDeep,
     querySelectorDeep,
     walkElementsDeep,
     normalizeList,

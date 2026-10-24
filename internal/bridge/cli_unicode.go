@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"bytes"
 	"encoding/json"
 	"strconv"
 	"unicode/utf8"
@@ -47,6 +48,9 @@ func cliFromUTF16(units []uint16) string {
 	return string(out)
 }
 func cliDecodeString(raw json.RawMessage) string {
+	if len(raw) >= 2 && bytes.IndexByte(raw, '\\') < 0 {
+		return string(raw[1 : len(raw)-1])
+	}
 	out := []byte{}
 	for i := 1; i < len(raw)-1; i++ {
 		if raw[i] != '\\' {

@@ -1655,7 +1655,11 @@ button:hover {
   letter-spacing: 0.02em;
 }
 
-.activity-summary-tokens[data-cost-class="heavy"],
+.activity-summary-tokens[data-cost-class="moderate"] {
+  background: rgba(217, 119, 6, 0.14);
+  color: var(--ink);
+}
+
 .activity-summary-tokens[data-cost-class="extreme"] {
   background: rgba(209, 17, 68, 0.1);
   color: var(--ink);

@@ -1544,7 +1544,7 @@ test('sidepanel UI renders activity summaries, histogram families, and repeat wa
         createActionLogEntry('moderate', 'page.get_text', 500),
       ])
     );
-    assert.equal(summaryTokens.dataset.costClass, 'moderate');
+    assert.equal(summaryTokens.dataset.costClass, 'cheap');
 
     portPair.left.dispatchMessage(
       createSidepanelStateSync(true, null, null, [
@@ -1552,7 +1552,30 @@ test('sidepanel UI renders activity summaries, histogram families, and repeat wa
       ])
     );
     assert.equal(summaryTokens.textContent, '≈1.5k tok');
-    assert.equal(summaryTokens.dataset.costClass, 'heavy');
+    assert.equal(summaryTokens.dataset.costClass, 'cheap');
+    assert.equal(
+      actionLog.querySelector<HTMLElement>('.activity-tokens')?.dataset.costClass,
+      'heavy'
+    );
+
+    for (const [totalTokens, costClass] of [
+      [49_999, 'cheap'],
+      [50_000, 'moderate'],
+      [50_001, 'moderate'],
+      [99_999, 'moderate'],
+      [100_000, 'extreme'],
+      [100_001, 'extreme'],
+    ] as const) {
+      portPair.left.dispatchMessage(
+        createSidepanelStateSync(true, null, null, [
+          createActionLogEntry('text', 'page.get_text', totalTokens - 1_000),
+          createActionLogEntry('image', 'screenshot.capture_element', 0, {
+            imageApproxTokens: 1_000,
+          }),
+        ])
+      );
+      assert.equal(summaryTokens.dataset.costClass, costClass, `total tokens: ${totalTokens}`);
+    }
 
     const activityEntries = [
       createActionLogEntry('access-requested', 'access.requested', 0, {
@@ -1639,7 +1662,7 @@ test('sidepanel UI renders activity summaries, histogram families, and repeat wa
     portPair.left.dispatchMessage(createSidepanelStateSync(true, null, null, activityEntries));
 
     assert.equal(summaryTokens.textContent, '≈12k tok');
-    assert.equal(summaryTokens.dataset.costClass, 'extreme');
+    assert.equal(summaryTokens.dataset.costClass, 'cheap');
     assert.equal(histogram.hidden, false);
     assert.equal(bars.childElementCount, 20);
     const segmentFamilies = new Set(
@@ -1694,7 +1717,7 @@ test('sidepanel UI renders activity summaries, histogram families, and repeat wa
 
     assert.equal(intervalCallbacks.length, 1);
     intervalCallbacks[0]();
-    assert.equal(summaryTokens.dataset.costClass, 'extreme');
+    assert.equal(summaryTokens.dataset.costClass, 'cheap');
 
     Date.now = () => Number.NaN;
     portPair.left.dispatchMessage(
