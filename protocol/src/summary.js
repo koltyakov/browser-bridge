@@ -794,10 +794,15 @@ function summarizeBridgeResponseBody(response, method) {
         },
       };
     }
+    const matchCount = typeof result.matchCount === 'number' ? result.matchCount : 0;
+    const matchNote =
+      matchCount > 1
+        ? ` The selector matched ${matchCount} elements; only the first match's subtree is shown. Narrow the selector or use dom.find_by_role or dom.find_by_text to list matches.`
+        : '';
     return {
       ok: true,
       summary: appendProtocolWarning(
-        `DOM query returned ${nodes.length} element(s)${nodes.length > 15 ? '; showing first 15' : ''}.`,
+        `DOM query returned ${nodes.length} element(s)${nodes.length > 15 ? '; showing first 15' : ''}.${matchNote}`,
         protocolWarning
       ),
       evidence: compact,
@@ -1249,6 +1254,8 @@ function getProtocolWarning(meta) {
  */
 function getTabRoutingNote(meta) {
   if (typeof meta?.tab_id !== 'number' || typeof meta.active_tab_id !== 'number') return null;
+  // A caller that passed tabId already chose the tab.
+  if (meta.tab_routing === 'explicit') return null;
   return `Ran in working tab ${meta.tab_id}; the user's active tab is ${meta.active_tab_id} (pass tabId to switch).`;
 }
 

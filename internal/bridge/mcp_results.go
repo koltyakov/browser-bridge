@@ -142,11 +142,11 @@ func mcpResponse(response object, method string, params object) object {
 	structured := cliSummaryNow(response, method)
 	summary := structured.text("summary")
 	if !response.boolean("ok") {
-		err := response.object("error")
-		details, truncated := mcpBound(structured["evidence"], 500, 20000, 4000)
-		err = mcpClone(err)
-		err["details"], _ = mcpBound(err["details"], 500, 20000, 4000)
-		structured["error"], structured["evidence"] = value(err), details
+		err := mcpClone(response.object("error"))
+		// Error evidence is the error's details; report them once, under error.
+		var truncated bool
+		err["details"], truncated = mcpBound(err["details"], 500, 20000, 4000)
+		structured["error"], structured["evidence"] = value(err), cliNull
 		if truncated {
 			structured["outputTruncated"] = value(true)
 		}

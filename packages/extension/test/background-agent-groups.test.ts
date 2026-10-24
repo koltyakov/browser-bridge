@@ -23,7 +23,7 @@ function harness(ids: number[] = [1, 2, 3, 4, 5]) {
   }));
   const groups = new Map<number, chrome.tabGroups.TabGroup>();
   const storage = createStorageArea();
-  const calls: Array<{ method: string; tabIds: number[] }> = [];
+  const calls: Array<{ method: string; tabIds: number[]; groupId?: number }> = [];
   let active = new Set<number>();
   let enabledWindow: number | null = 7;
   let nextGroupId = 100;
@@ -45,8 +45,10 @@ function harness(ids: number[] = [1, 2, 3, 4, 5]) {
       async group(options: chrome.tabs.GroupOptions) {
         const tabIds =
           typeof options.tabIds === 'number' ? [options.tabIds] : (options.tabIds ?? []);
+        const joined = options.groupId === undefined ? undefined : groups.get(options.groupId);
+        const windowId = joined?.windowId ?? options.createProperties?.windowId;
         const current = tabs
-          .filter((tab) => tab.windowId === options.createProperties?.windowId)
+          .filter((tab) => tab.windowId === windowId)
           .sort((a, b) => a.index - b.index);
         const start = current.findIndex((tab) => tab.id === tabIds[0]);
         assert.ok(
@@ -57,6 +59,18 @@ function harness(ids: number[] = [1, 2, 3, 4, 5]) {
           tabIds.every((id) => tabs.find((tab) => tab.id === id)?.groupId === -1),
           'never take tabs from existing groups'
         );
+        if (options.groupId !== undefined) {
+          assert.ok(joined, 'joined group exists');
+          assert.ok(
+            [current[start - 1], current[start + tabIds.length]].some(
+              (tab) => tab?.groupId === options.groupId
+            ),
+            'joined tabs must already be adjacent to the group'
+          );
+          calls.push({ method: 'group', groupId: options.groupId, tabIds: [...tabIds] });
+          for (const tab of tabs) if (tabIds.includes(tab.id)) tab.groupId = options.groupId;
+          return options.groupId;
+        }
         const groupId = nextGroupId++;
         calls.push({ method: 'group', tabIds: [...tabIds] });
         for (const tab of tabs) if (tabIds.includes(tab.id)) tab.groupId = groupId;
@@ -196,7 +210,7 @@ test('neighboring blocks merge when the intervening tab becomes active and split
   assert.deepEqual(h.order(), [1, 2, 3]);
 });
 
-test('pinned tabs and existing user groups are left untouched, even groups named AI', async () => {
+test('pinned tabs and existing user groups are left untouched', async () => {
   const h = harness();
   h.tabs[0].pinned = true;
   h.tabs[1].groupId = 50;
@@ -204,7 +218,7 @@ test('pinned tabs and existing user groups are left untouched, even groups named
   h.groups.set(50, {
     id: 50,
     windowId: 7,
-    title: 'AI',
+    title: 'Work',
     color: 'blue',
     collapsed: false,
     shared: false,
@@ -218,6 +232,74 @@ test('pinned tabs and existing user groups are left untouched, even groups named
   assert.equal(h.tabs[2].groupId, 50);
   assert.equal(h.groups.size, 1);
   assert.deepEqual(h.order(), [1, 2, 3, 4, 5]);
+});
+
+test('new agent tabs join an adjacent untracked AI group without taking it over', async () => {
+  const h = harness();
+  h.tabs[1].groupId = 50;
+  h.tabs[2].groupId = 50;
+  h.groups.set(50, {
+    id: 50,
+    windowId: 7,
+    title: 'AI',
+    color: 'blue',
+    collapsed: false,
+    shared: false,
+  });
+  h.setActive([4, 5]);
+  await h.controller.sync();
+  assert.deepEqual(h.calls, [{ method: 'group', groupId: 50, tabIds: [4, 5] }]);
+  assert.equal(h.groups.size, 1);
+  h.disable();
+  await h.controller.sync();
+  assert.deepEqual(
+    h.tabs.map((tab) => tab.groupId),
+    [-1, 50, 50, 50, 50]
+  );
+  assert.deepEqual(h.order(), [1, 2, 3, 4, 5]);
+});
+
+test('a new tab next to an owned AI group joins it instead of regrouping', async () => {
+  const h = harness();
+  h.setActive([2, 3]);
+  await h.controller.sync();
+  const groupId = h.tabs[1].groupId;
+  h.setActive([1, 2, 3, 4]);
+  await h.controller.sync();
+  assert.deepEqual(h.calls, [
+    { method: 'group', tabIds: [2, 3] },
+    { method: 'group', groupId, tabIds: [1] },
+    { method: 'group', groupId, tabIds: [4] },
+  ]);
+  assert.deepEqual(
+    h.tabs.map((tab) => tab.groupId),
+    [groupId, groupId, groupId, groupId, -1]
+  );
+  assert.deepEqual(h.storage.snapshot()[AGENT_GROUP_STORAGE_KEY], [
+    { groupId, windowId: 7, tabIds: [2, 3, 1, 4] },
+  ]);
+  await h.controller.sync();
+  assert.equal(h.calls.length, 3, 'the extended group stays owned');
+  h.setActive([]);
+  await h.controller.sync();
+  assert.equal(h.groups.size, 0);
+  assert.deepEqual(h.order(), [1, 2, 3, 4, 5]);
+});
+
+test('a new tab next to a renamed or recolored group starts its own AI group', async () => {
+  const h = harness();
+  h.tabs[0].groupId = 50;
+  h.groups.set(50, {
+    id: 50,
+    windowId: 7,
+    title: 'AI',
+    color: 'red',
+    collapsed: false,
+    shared: false,
+  });
+  h.setActive([2]);
+  await h.controller.sync();
+  assert.deepEqual(h.calls, [{ method: 'group', tabIds: [2] }]);
 });
 
 test('owned groups survive worker restart and clear when activity expires or access is disabled', async () => {
@@ -306,8 +388,7 @@ test('explicit window cleanup removes every AI group in that window without regr
     h.calls.slice(mutations).sort((a, b) => a.tabIds[0] - b.tabIds[0]),
     [
       { method: 'ungroup', tabIds: [1, 2] },
-      { method: 'ungroup', tabIds: [4] },
-      { method: 'ungroup', tabIds: [5] },
+      { method: 'ungroup', tabIds: [4, 5] },
     ]
   );
   assert.equal(h.groups.size, 0);

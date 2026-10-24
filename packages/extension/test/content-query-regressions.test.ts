@@ -24,6 +24,10 @@ type QueryApi = {
     scanned: number;
     truncated: boolean;
   };
+  domQuery: (params: Record<string, unknown>) => {
+    nodes: Array<{ tag: string }>;
+    matchCount?: number;
+  };
   findByRole: (params: Record<string, unknown>) => FindResult;
   findByText: (params: Record<string, unknown>) => FindResult;
   probeTarget: (params: Record<string, unknown>) => { found: boolean };
@@ -423,3 +427,18 @@ test(
     );
   }
 );
+
+test('dom.query reports when a selector matched more than the returned subtree', async () => {
+  await withQuery(
+    '<nav><a href="/one"><img alt=""></a><a href="/two">Two</a><a href="/three">Three</a></nav><p id="only">Only</p>',
+    ({ query }) => {
+      const links = query.domQuery({ selector: 'a', maxNodes: 10 });
+      assert.deepEqual(
+        links.nodes.map((node) => node.tag),
+        ['a', 'img']
+      );
+      assert.equal(links.matchCount, 3);
+      assert.equal('matchCount' in query.domQuery({ selector: '#only' }), false);
+    }
+  );
+});

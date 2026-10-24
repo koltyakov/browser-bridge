@@ -3188,6 +3188,10 @@ test('content script input focus, key handling, and scrolling cover form and vie
     left: 6,
     relative: true,
   });
+  const windowScrollUnchanged = await executeBridgeMethod(listener, 'viewport.scroll', {
+    top: 24,
+    left: 21,
+  });
 
   assert.deepEqual(withoutInputMetadata(focusResult), {
     elementRef: focusResult.elementRef,
@@ -3264,6 +3268,7 @@ test('content script input focus, key handling, and scrolling cover form and vie
     behavior: 'auto',
     relative: true,
   });
+  assert.equal(windowScrollUnchanged.scrolled, false);
 });
 
 test('content script input hover, drag, alternative clicks, and multi-select cover extra interaction branches', async (t) => {

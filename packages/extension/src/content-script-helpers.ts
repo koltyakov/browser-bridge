@@ -32,6 +32,26 @@
     return Math.min(Math.max(Number(value) || minimum, minimum), maximum);
   }
 
+  /** Chrome aligns timers in hidden tabs to roughly one-second wake-ups, which
+turns short polling and settle waits into seconds. Hidden documents let the
+service worker, whose timers are not throttled, time the delay instead, and
+fall back to setTimeout when the extension context is unavailable. */
+  function delay(ms: number): Promise<void> {
+    const wait = Math.max(0, Number(ms) || 0);
+    const runtime = globalThis.chrome?.runtime;
+    if (document.visibilityState !== 'hidden' || !runtime?.id) {
+      return new Promise((resolve) => setTimeout(resolve, wait));
+    }
+    return new Promise((resolve) => {
+      const fallback = () => setTimeout(resolve, wait);
+      try {
+        runtime.sendMessage({ type: 'bridge.delay', ms: wait }).then(() => resolve(), fallback);
+      } catch {
+        fallback();
+      }
+    });
+  }
+
   function normalizeList(value: unknown): string[] {
     if (!Array.isArray(value)) {
       return [];
@@ -669,6 +689,7 @@ content for name-from-content roles, title, and placeholder. */
     NON_TEXT_INPUT_TYPES,
     applyBudget,
     clamp,
+    delay,
     escapeTailwindSelector,
     extractElementText,
     findElementForWaitState,

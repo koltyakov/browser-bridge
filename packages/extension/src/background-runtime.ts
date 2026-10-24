@@ -33,6 +33,8 @@ function settleSidePanelOpen(
 /** Create the runtime message listener used by the background service worker so
 its side-panel routing behavior can be tested without importing the whole
 background module and mocking every Chrome API. */
+const MAX_CONTENT_DELAY_MS = 30_000;
+
 export function createRuntimeMessageListener(
   options: RuntimeMessageListenerOptions
 ): (
@@ -45,6 +47,13 @@ export function createRuntimeMessageListener(
       message && typeof message === 'object' ? (message as Record<string, unknown>) : null;
     if (candidate?.type === 'webmcp.approval.get' || candidate?.type === 'webmcp.approval.decide') {
       return options.onWebMcpApproval?.(message, sender, sendResponse) ?? false;
+    }
+    // Content scripts in hidden tabs time short waits here because Chrome
+    // throttles their own timers to about one wake-up per second.
+    if (candidate?.type === 'bridge.delay' && typeof sender.tab?.id === 'number') {
+      const ms = Math.min(Math.max(Number(candidate.ms) || 0, 0), MAX_CONTENT_DELAY_MS);
+      setTimeout(() => sendResponse({ ok: true }), ms);
+      return true;
     }
     if (
       candidate?.type === 'bridge.navigation-signal' &&

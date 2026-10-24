@@ -146,3 +146,40 @@ func TestMCPDiscoveryPaginationAcrossProfiles(t *testing.T) {
 		})
 	}
 }
+
+func TestMCPErrorDetailsAreNotRepeatedAsEvidence(t *testing.T) {
+	c, _ := mcpTestDaemon(t, func(request object) object {
+		response := failure("", "TAB_MISMATCH", "Multiple browser profiles match.")
+		err := response.object("error")
+		err["details"] = value(object{"reason": value("ambiguous_browser_target")})
+		response["error"] = value(err)
+		return response
+	})
+	s := &mcpSession{config: c}
+	t.Cleanup(func() {
+		for _, client := range s.clients {
+			client.close()
+		}
+	})
+	call := object{"method": value("page.get_state"), "tabId": value(4)}
+	for tool, args := range map[string]object{
+		"browser_call":  call,
+		"browser_batch": {"calls": value([]object{call})},
+	} {
+		response, err := s.handleTool(context.Background(), tool, args, "modern")
+		if err != nil {
+			t.Fatal(err)
+		}
+		result := response.object("structuredContent")
+		if tool == "browser_batch" {
+			var results []object
+			if err := json.Unmarshal(result["results"], &results); err != nil || len(results) != 1 {
+				t.Fatalf("invalid batch results: %v %s", err, value(result))
+			}
+			result = results[0]
+		}
+		if string(result["evidence"]) != "null" || result.object("error").object("details").text("reason") != "ambiguous_browser_target" {
+			t.Errorf("%s: details should appear once, under error: %s", tool, value(result))
+		}
+	}
+}

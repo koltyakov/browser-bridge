@@ -6,6 +6,7 @@ export type OwnedGroup = { groupId: number; windowId: number; tabIds: number[] }
 export type AgentActivity = { windowId: number | null; tabIds: Set<number> };
 
 /** Highlight contiguous runs without moving tabs or taking over user groups.
+New agent tabs join an adjacent AI group instead of starting a second one.
 Routine synchronization manages only IDs recorded in session storage.
 Explicit window revocation removes every group still titled AI in that window. */
 export function createAgentTabGroupController(
@@ -174,11 +175,21 @@ Recheck ownership because the user may edit groups while a sync is pending. */
     const kept: Set<number> = new Set();
     for (const record of [...owned.values()]) {
       const members = allTabs.filter((tab) => tab.groupId === record.groupId);
-      const matching = blocks.find(
-        (tabs) =>
-          tabs.length === members.length &&
-          tabs.every((tab, index) => tab.groupId === record.groupId && tab.id === members[index].id)
-      );
+      // Keep a group whose members sit inside one block next to new ungrouped
+      // agent tabs; those tabs join it below instead of forcing a regroup.
+      const matching = blocks.find((tabs) => {
+        const start = tabs.findIndex((tab) => tab.groupId === record.groupId);
+        return (
+          members.length > 0 &&
+          start >= 0 &&
+          members.every((member, index) => tabs[start + index]?.id === member.id) &&
+          tabs.every(
+            (tab) =>
+              tab.groupId === record.groupId ||
+              tab.groupId === chromeObj.tabGroups.TAB_GROUP_ID_NONE
+          )
+        );
+      });
       if (matching) {
         kept.add(record.groupId);
       } else {
@@ -187,48 +198,97 @@ Recheck ownership because the user may edit groups while a sync is pending. */
     }
 
     for (const tabs of blocks) {
-      if (kept.has(tabs[0].groupId)) continue;
-      const [first, ...rest] = tabs.flatMap((tab) => (typeof tab.id === 'number' ? [tab.id] : []));
-      if (first === undefined) continue;
-
-      const tabIds: [number, ...number[]] = [first, ...rest];
-      // Query again after ungrouping. Never group a stale, non-adjacent list:
-      // Chrome would otherwise move tabs to make the group contiguous.
-      const current = (await chromeObj.tabs.query({ windowId: tabs[0].windowId })).sort(
-        (left, right) => left.index - right.index
-      );
-      const start = current.findIndex((tab) => tab.id === tabIds[0]);
-      const latest = await deps.getActivity();
-      if (
-        start < 0 ||
-        latest.windowId !== tabs[0].windowId ||
-        !tabIds.every((id, index) => {
-          const tab = current[start + index];
-          return (
-            tab?.id === id &&
-            !tab.pinned &&
-            tab.groupId === chromeObj.tabGroups.TAB_GROUP_ID_NONE &&
-            latest.tabIds.has(id)
-          );
-        })
-      )
-        continue;
-      const groupId = await chromeObj.tabs.group({
-        tabIds,
-        createProperties: { windowId: tabs[0].windowId },
-      });
-      const record = { groupId, windowId: tabs[0].windowId, tabIds };
-      owned.set(groupId, record);
-      try {
-        await chromeObj.tabGroups.update(groupId, {
-          title: AGENT_GROUP_TITLE,
-          color: AGENT_GROUP_COLOR,
-        });
-        await persist();
-      } catch (error) {
-        await release(record, true);
-        throw error;
+      // Split each block around its kept group so every run is contiguous.
+      const runs: number[][] = [];
+      let run: number[] = [];
+      for (const tab of tabs) {
+        if (kept.has(tab.groupId) || typeof tab.id !== 'number') {
+          run = [];
+          continue;
+        }
+        if (!run.length) runs.push(run);
+        run.push(tab.id);
       }
+      for (const [first, ...rest] of runs) {
+        if (first !== undefined) await attach(tabs[0].windowId, [first, ...rest]);
+      }
+    }
+  }
+
+  /** Whether a neighboring group can absorb new agent tabs: a group this
+controller owns, or one that still looks like an AI group (for example after
+the extension reloaded and lost its ownership records). */
+  async function isJoinable(groupId: number, windowId: number): Promise<boolean> {
+    if (groupId === chromeObj.tabGroups.TAB_GROUP_ID_NONE) return false;
+    if (owned.has(groupId)) return true;
+    const group = await chromeObj.tabGroups.get(groupId).catch(() => null);
+    return (
+      !!group &&
+      group.windowId === windowId &&
+      group.title === AGENT_GROUP_TITLE &&
+      group.color === AGENT_GROUP_COLOR &&
+      !group.shared
+    );
+  }
+
+  /** Add a contiguous run of ungrouped agent tabs to an adjacent AI group, or
+start a new one. Joining never takes ownership of a group this controller did
+not create. */
+  async function attach(windowId: number, tabIds: [number, ...number[]]): Promise<void> {
+    // Query again after ungrouping. Never group a stale, non-adjacent list:
+    // Chrome would otherwise move tabs to make the group contiguous.
+    const current = (await chromeObj.tabs.query({ windowId })).sort(
+      (left, right) => left.index - right.index
+    );
+    const start = current.findIndex((tab) => tab.id === tabIds[0]);
+    const latest = await deps.getActivity();
+    if (
+      start < 0 ||
+      latest.windowId !== windowId ||
+      !tabIds.every((id, index) => {
+        const tab = current[start + index];
+        return (
+          tab?.id === id &&
+          !tab.pinned &&
+          tab.groupId === chromeObj.tabGroups.TAB_GROUP_ID_NONE &&
+          latest.tabIds.has(id)
+        );
+      })
+    )
+      return;
+
+    const neighbors = [current[start - 1], current[start + tabIds.length]].flatMap((tab) =>
+      tab && !tab.pinned ? [tab.groupId] : []
+    );
+    let target: number | null = neighbors.find((groupId) => owned.has(groupId)) ?? null;
+    for (const groupId of neighbors) {
+      if (target === null && (await isJoinable(groupId, windowId))) target = groupId;
+    }
+    if (target !== null) {
+      await chromeObj.tabs.group({ groupId: target, tabIds });
+      const record = owned.get(target);
+      if (record) {
+        record.tabIds.push(...tabIds);
+        await persist();
+      }
+      return;
+    }
+
+    const groupId = await chromeObj.tabs.group({
+      tabIds,
+      createProperties: { windowId },
+    });
+    const record = { groupId, windowId, tabIds };
+    owned.set(groupId, record);
+    try {
+      await chromeObj.tabGroups.update(groupId, {
+        title: AGENT_GROUP_TITLE,
+        color: AGENT_GROUP_COLOR,
+      });
+      await persist();
+    } catch (error) {
+      await release(record, true);
+      throw error;
     }
   }
 

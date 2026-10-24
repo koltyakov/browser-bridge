@@ -12,6 +12,7 @@
       __BBX_CONTENT_HELPERS__?: {
         applyBudget: (options?: Record<string, unknown>) => Budget;
         clamp: (value: unknown, minimum: number, maximum: number) => number;
+        delay: (ms: number) => Promise<void>;
         extractElementText: (element: Element) => string;
         findElementForWaitState: (options: {
           elements: Iterable<Element>;
@@ -66,6 +67,7 @@
     NON_RENDERED_TAGS,
     clamp,
     collapseText,
+    delay,
     escapeTailwindSelector,
     extractElementText,
     findElementForWaitState,
@@ -118,6 +120,7 @@ element reference. */
     nodes: NodeSummary[];
     revision: number;
     truncated?: boolean;
+    matchCount?: number;
     registrySize: number;
     _registryPruned?: boolean;
   } {
@@ -173,10 +176,15 @@ element reference. */
       }
     }
 
+    // The result is the first match's subtree. Say when the selector matched
+    // more, so a broad selector is not mistaken for a complete list. The
+    // native light-DOM count stays cheap on large pages.
+    const matchCount = query.withinRef ? 0 : document.querySelectorAll(query.selector).length;
     const pruned = consumePruned();
     return {
       nodes,
       revision: getDocumentRevision(),
+      ...(matchCount > 1 ? { matchCount } : {}),
       truncated:
         truncatedByQueueCap ||
         queueIndex < queue.length ||
@@ -388,34 +396,33 @@ element reference. */
       });
     }
 
+    // Timers go through delay() so a hidden tab is not held to Chrome's
+    // one-second timer alignment for the debounce, poll, or timeout.
     return new Promise((resolve, reject) => {
-      let observer: MutationObserver | null = null;
+      let settled = false;
+      let checkScheduled = false;
+      const observer = new MutationObserver(scheduleObserverCheck);
 
-      let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
-
-      let pollHandle: ReturnType<typeof setInterval> | null = null;
-
-      let observerDebounceHandle: ReturnType<typeof setTimeout> | null = null;
-
-      function cleanup() {
-        if (observer) observer.disconnect();
-        if (timeoutHandle) clearTimeout(timeoutHandle);
-        if (pollHandle) clearInterval(pollHandle);
-        if (observerDebounceHandle) clearTimeout(observerDebounceHandle);
+      function finish(result: { found: boolean; elementRef: string | null; duration: number }) {
+        if (settled) return;
+        settled = true;
+        observer.disconnect();
+        resolve(result);
       }
 
       function tryResolve() {
+        if (settled) return;
         let result: ReturnType<typeof check>;
         try {
           result = check();
         } catch (error) {
-          cleanup();
+          settled = true;
+          observer.disconnect();
           reject(error);
           return;
         }
         if (result.found) {
-          cleanup();
-          resolve({
+          finish({
             found: true,
             elementRef: result.element ? rememberElement(result.element) : null,
             duration: Date.now() - start,
@@ -424,29 +431,35 @@ element reference. */
       }
 
       function scheduleObserverCheck() {
-        if (observerDebounceHandle) return;
-        observerDebounceHandle = setTimeout(() => {
-          observerDebounceHandle = null;
+        if (checkScheduled || settled) return;
+        checkScheduled = true;
+        void delay(50).then(() => {
+          checkScheduled = false;
           tryResolve();
-        }, 50);
+        });
       }
 
-      observer = new MutationObserver(scheduleObserverCheck);
+      async function poll() {
+        while (!settled) {
+          await delay(250);
+          tryResolve();
+        }
+      }
+
       observer.observe(document.documentElement, {
         childList: true,
         subtree: true,
         attributes: true,
         characterData: true,
       });
-      pollHandle = setInterval(tryResolve, 250);
-      timeoutHandle = setTimeout(() => {
-        cleanup();
-        resolve({
+      void poll();
+      void delay(timeout).then(() =>
+        finish({
           found: false,
           elementRef: null,
           duration: Math.max(timeout, Date.now() - start),
-        });
-      }, timeout);
+        })
+      );
     });
   }
 
