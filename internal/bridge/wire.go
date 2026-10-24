@@ -92,7 +92,12 @@ func (o object) boolean(key string) bool {
 
 func (o object) number(key string) int64 {
 	var n int64
-	_ = json.Unmarshal(o[key], &n)
+	if json.Unmarshal(o[key], &n) == nil {
+		return n
+	}
+	// Preserve exact int64 literals for native counters and timeout clamping.
+	// Decimal/exponent spellings must match the schema's safe-integer rules.
+	n, _ = serviceInteger(o, key)
 	return n
 }
 

@@ -413,11 +413,18 @@ Lightweight - only checks a few DOM/stylesheet signals. */
         )
       );
       if (!tailwind) {
-        const sample = document.querySelectorAll('[class]');
+        // Sample lazily instead of allocating every classed element on large
+        // pages. Sparse class attributes must not cause an unbounded walk.
+        const walker = document.createTreeWalker(document, 1);
         const twPattern =
-          /\b(?:flex|grid|bg-|text-|p[xytblr]?-|m[xytblr]?-|w-|h-|rounded|shadow|border)-/;
-        for (let i = 0; i < Math.min(sample.length, 30); i++) {
-          const cls = sample[i].className;
+          /\b(?:(?:flex|grid|rounded|shadow|border)(?:\s|$|-)|(?:bg|text|p[xytblr]?|m[xytblr]?|w|h)-)/;
+        let sampled = 0;
+        for (let visited = 0; visited < 2000 && sampled < 30; visited++) {
+          const element = walker.nextNode() as Element | null;
+          if (!element) break;
+          if (!element.hasAttribute('class')) continue;
+          sampled += 1;
+          const cls = element.className;
           if (typeof cls === 'string' && twPattern.test(cls)) {
             tailwind = true;
             break;
