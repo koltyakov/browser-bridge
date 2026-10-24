@@ -1378,6 +1378,99 @@ test('sidepanel UI groups consecutive pings with a light counter and combined to
   assert.match(css, /\.activity-repeat-count\s*\{[^}]*font-weight:\s*400/u);
 });
 
+test('sidepanel clears activity only from this view and keeps new events visible', async (t) => {
+  const html = await readFile(SIDEPANEL_HTML_URL, 'utf8');
+  const savedChrome = Reflect.get(globalThis, 'chrome') ?? MISSING;
+  const savedSetInterval = globalThis.setInterval;
+  const savedClearInterval = globalThis.clearInterval;
+  t.after(() => {
+    restoreGlobal('chrome', savedChrome);
+    restoreGlobal('setInterval', savedSetInterval);
+    restoreGlobal('clearInterval', savedClearInterval);
+  });
+  Reflect.set(globalThis, 'setInterval', (() => 0) as unknown as typeof setInterval);
+  Reflect.set(globalThis, 'clearInterval', (() => {}) as typeof clearInterval);
+  const pair = createMessagePortPair();
+  Reflect.set(
+    globalThis,
+    'chrome',
+    createChromeFake({ runtime: { connect: () => pair.left.port } })
+  );
+  const entries = [
+    createActionLogEntry('ping-2', 'health.ping', 200),
+    createActionLogEntry('ping-1', 'health.ping', 100),
+    createActionLogEntry('query-1', 'dom.query', 50),
+  ];
+  const snapshot = createSidepanelStateSync(true, null, null, entries);
+  const originalSnapshot = structuredClone(snapshot);
+
+  await withDocument(html, async ({ window }) => {
+    Reflect.set(window, 'location', new URL('https://example.com/sidepanel.html'));
+    await importFreshSidepanelScript();
+    await flushMicrotasks();
+    const clear = document.getElementById('activity-clear') as HTMLButtonElement;
+    const log = document.getElementById('action-log') as HTMLElement;
+    const summary = document.getElementById('activity-summary-tokens') as HTMLElement;
+    const histogram = document.getElementById('activity-histogram') as HTMLElement;
+    assert.equal(clear.disabled, true);
+    assert.equal(clear.hidden, true);
+    clear.click();
+    pair.left.dispatchMessage(snapshot);
+    assert.equal(clear.disabled, false);
+    assert.equal(clear.hidden, false);
+    assert.equal(log.querySelectorAll('.activity-card').length, 2);
+    assert.equal(summary.textContent, '≈350 tok');
+    const messagesBeforeClear = [...pair.left.postedMessages];
+
+    log.scrollTop = 100;
+    clear.click();
+    assert.equal(log.querySelectorAll('.activity-card').length, 0);
+    assert.equal(log.textContent, 'No recent agent actions.');
+    assert.equal(log.scrollTop, 0);
+    assert.equal(clear.disabled, true);
+    assert.equal(clear.hidden, true);
+    assert.equal(summary.hidden, true);
+    assert.equal(histogram.hidden, true);
+    assert.deepEqual(pair.left.postedMessages, messagesBeforeClear, 'clearing stays local');
+    assert.deepEqual(snapshot, originalSnapshot, 'the underlying history is unchanged');
+
+    pair.left.dispatchMessage(snapshot);
+    assert.equal(log.querySelectorAll('.activity-card').length, 0, 'sync must not restore events');
+    pair.left.dispatchMessage(
+      createSidepanelStateSync(true, null, null, [
+        // Even events with the same timestamp as cleared entries are new by ID.
+        createActionLogEntry('ping-3', 'health.ping', 75, { at: entries[0].at }),
+        ...entries,
+      ])
+    );
+    assert.equal(log.querySelectorAll('.activity-card').length, 1);
+    assert.equal(log.querySelector('.activity-repeat-count'), null);
+    assert.equal(summary.textContent, '≈75 tok');
+    assert.equal(histogram.hidden, false);
+    assert.equal(clear.disabled, false);
+    assert.equal(clear.hidden, false);
+    clear.click();
+    pair.left.dispatchMessage(snapshot);
+    assert.equal(log.querySelectorAll('.activity-card').length, 0);
+    window.dispatchEvent(new window.Event('beforeunload'));
+  });
+
+  const reopenedPair = createMessagePortPair();
+  Reflect.set(
+    globalThis,
+    'chrome',
+    createChromeFake({ runtime: { connect: () => reopenedPair.left.port } })
+  );
+  await withDocument(html, async ({ window }) => {
+    Reflect.set(window, 'location', new URL('https://example.com/sidepanel.html'));
+    await importFreshSidepanelScript();
+    await flushMicrotasks();
+    reopenedPair.left.dispatchMessage(snapshot);
+    assert.equal(document.querySelectorAll('#action-log .activity-card').length, 2);
+    window.dispatchEvent(new window.Event('beforeunload'));
+  });
+});
+
 test('sidepanel UI renders activity summaries, histogram families, and repeat warnings', async (t) => {
   const sidepanelHtml = await readFile(SIDEPANEL_HTML_URL, 'utf8');
   const savedChrome = Object.prototype.hasOwnProperty.call(globalThis, 'chrome')
