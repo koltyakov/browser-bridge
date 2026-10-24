@@ -461,7 +461,7 @@ bbx call page.get_network '{"source":"cdp","capture":"read","limit":50}'
 bbx call page.get_network '{"source":"cdp","capture":"stop"}'
 ```
 
-`capture: "clear"` clears completed/in-flight entries while leaving an armed capture running. CDP entries contain `requestId`, redacted `url`, `method`, `resourceType`, `status`, `mimeType`, `protocol`, cache flags, bounded redirect summary, `failureReason`, `duration`, and `timestamp`. Result lifecycle fields include `armed`, `armedDuringCapture`, `captureState`, `ownershipHeld`, `startedAt`, `inflight`, `dropped`, and `abandoned`.
+`capture: "clear"` clears completed/in-flight entries while leaving an armed capture running. CDP entries contain `requestId`, redacted `url`, `method`, `resourceType`, `status`, `mimeType`, `protocol`, cache flags, bounded redirect summary, `failureReason`, `duration`, and `timestamp`. Result lifecycle fields include `armed`, `armedDuringCapture`, `captureState`, `ownershipHeld`, `startedAt`, `inflight`, `dropped`, and `abandoned`. MCP evidence omits zero `inflight` and `abandoned`, a false `ownershipHeld`, and a `filteredTotal` equal to `total`, and keeps `dropped`.
 
 CDP URL output removes credentials and fragments, replaces every query value with `[redacted]`, and summarizes data/blob URLs. Request/response bodies, cookies, authorization values, and complete headers are not returned. This mode captures all observed resource classes and is materially more expensive and intrusive than fetch/XHR instrumentation; always stop it when finished.
 
@@ -521,7 +521,7 @@ bbx call dom.get_accessibility_tree '{"maxNodes":100,"maxDepth":6,"interactiveOn
 bbx call dom.get_accessibility_tree '{"selector":"[role=dialog]","maxNodes":50,"compact":true}'
 ```
 
-Filtering occurs before `maxNodes`. Compact mode drops ignored, decorative, and empty nodes while reconnecting retained descendants; interactive-only keeps non-ignored semantic interactive roles. Full reads ask CDP for the requested depth, while selector-scoped reads fetch descendant layers up to that same bound. `truncated` and `partialTopology` are true only when `maxNodes` cut nodes or the depth bound left children unfetched (`missingChildCount`), and only then is a continuation hint returned. `format: "outline"` renders CDP nodes as compact lines. CDP AX nodes carry no element refs; use `source: "dom"` (or a role/name locator) to act on them.
+Filtering occurs before `maxNodes`. Compact mode drops ignored, decorative, and empty nodes while reconnecting retained descendants; interactive-only keeps non-ignored semantic interactive roles. Full reads ask CDP for the requested depth, while selector-scoped reads fetch descendant layers up to that same bound. `truncated` and `partialTopology` are true only when `maxNodes` cut nodes or the depth bound left children unfetched (`missingChildCount`), and only then is a continuation hint returned. `format: "outline"` renders CDP nodes as compact lines and applies compact filtering unless `compact: false` is passed. CDP AX nodes carry no element refs; use `source: "dom"` (or a role/name locator) to act on them.
 
 ### viewport.resize
 

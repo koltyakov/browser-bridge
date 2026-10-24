@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"io"
@@ -140,21 +141,21 @@ func cliKeys(raw json.RawMessage) []string {
 // its values again. Keep first-key order and let the decoded map supply the
 // last value for duplicate keys, matching JavaScript object enumeration.
 func cliObjectKeys(raw json.RawMessage) []string {
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	_, _ = dec.Token()
+	dec := jsontext.NewDecoder(bytes.NewReader(raw), jsontext.AllowDuplicateNames(true), jsontext.AllowInvalidUTF8(true))
+	if token, err := dec.ReadToken(); err != nil || token.Kind() != '{' {
+		return []string{}
+	}
 	keys := []string{}
 	seen := map[string]bool{}
-	for dec.More() {
-		token, e := dec.Token()
-		if e != nil {
+	for dec.PeekKind() == '"' {
+		token, err := dec.ReadToken()
+		if err != nil {
 			break
 		}
-		key, ok := token.(string)
-		if !ok {
-			break
-		}
-		var v json.RawMessage
-		if dec.Decode(&v) != nil {
+		key := token.String()
+		// Values have already been decoded by the caller. Skip their bytes
+		// without allocating another RawMessage for every nested value.
+		if dec.SkipValue() != nil {
 			break
 		}
 		if !seen[key] {
@@ -164,16 +165,30 @@ func cliObjectKeys(raw json.RawMessage) []string {
 	}
 	// ECMAScript enumerates array-index properties before other keys.
 	sort.SliceStable(keys, func(i, j int) bool {
-		a, ea := strconv.ParseUint(keys[i], 10, 32)
-		b, eb := strconv.ParseUint(keys[j], 10, 32)
-		ai := ea == nil && a < 4294967295 && strconv.FormatUint(a, 10) == keys[i]
-		bi := eb == nil && b < 4294967295 && strconv.FormatUint(b, 10) == keys[j]
+		a, ai := cliArrayIndex(keys[i])
+		b, bi := cliArrayIndex(keys[j])
 		if ai && bi {
 			return a < b
 		}
 		return ai && !bi
 	})
 	return keys
+}
+
+// Most keys are names, not array indices. Reject them without ParseUint's
+// allocated syntax errors or FormatUint's round-trip string.
+func cliArrayIndex(key string) (uint64, bool) {
+	if len(key) == 0 || len(key) > 10 || len(key) > 1 && key[0] == '0' {
+		return 0, false
+	}
+	var index uint64
+	for i := 0; i < len(key); i++ {
+		if key[i] < '0' || key[i] > '9' {
+			return 0, false
+		}
+		index = index*10 + uint64(key[i]-'0')
+	}
+	return index, index < 4294967295
 }
 func cliQuote(s string) []byte {
 	return cliAppendQuote(make([]byte, 0, len(s)+2), s)

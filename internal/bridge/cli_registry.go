@@ -116,7 +116,7 @@ var cliCommands = []cliCommandDefinition{
 	{name: "remote", localOnly: true, category: "Destinations", usage: "remote add|remove|list|test|destinations"},
 	{name: "proxy", localOnly: true, category: "Destinations", usage: "proxy enable|disable|status"},
 	{name: "call", category: "RPC", usage: "call [--extension ID] [--browser NAME] [--profile LABEL] [--tab ID] [--preset quick|normal|deep] METHOD [JSON|-]"},
-	{name: "batch", category: "Batch", usage: "batch [--preset quick|normal|deep] JSON"},
+	{name: "batch", category: "Batch", usage: "batch [--preset quick|normal|deep] [--evidence-only] JSON"},
 	{name: "protocol", localOnly: true, category: "Protocol", usage: "protocol describe [method|group]"},
 	{name: "protocol.describe", localOnly: true},
 	{name: "skill", localOnly: true, category: "Protocol", usage: "skill"},

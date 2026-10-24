@@ -1985,7 +1985,9 @@ export function normalizeAccessibilityTreeParams(params = {}) {
       typeof params.selector === 'string' && params.selector.trim() ? params.selector.trim() : null,
     maxDepth: clampInt(params.maxDepth, 1, 20, DEFAULT_A11Y_MAX_DEPTH),
     maxNodes: clampInt(params.maxNodes, 10, 5000, DEFAULT_A11Y_MAX_NODES),
-    compact: params.compact === true,
+    // An outline of unnamed generic and none nodes says nothing, so outlines
+    // are compact unless the caller opts out.
+    compact: params.compact === true || (params.compact !== false && format === 'outline'),
     interactiveOnly: params.interactiveOnly === true,
     // Omitted at defaults so existing CDP callers see an unchanged shape.
     ...(source === 'dom' ? { source } : {}),

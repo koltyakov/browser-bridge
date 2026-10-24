@@ -678,11 +678,12 @@ function summarizeBridgeResponseBody(response, method) {
   ) {
     const text = /** @type {string} */ (result.text ?? result.value);
     const len = typeof result.length === 'number' ? result.length : text.length;
+    const count = text.length < len ? `${text.length}/${len}` : String(len);
     const label = method === 'dom.get_text' ? 'Element text' : 'Page text';
     return {
       ok: true,
       summary: appendProtocolWarning(
-        `${label}: ${len} chars${result.truncated ? ' (truncated)' : ''}.`,
+        `${label}: ${count} chars${result.truncated ? ' (truncated)' : ''}.`,
         protocolWarning
       ),
       evidence: {
@@ -1091,12 +1092,15 @@ function summarizeBridgeResponseBody(response, method) {
   ) {
     const desc = [result.tag];
     if (result.id) desc[0] += `#${result.id}`;
-    const textValue =
+    const declaredText =
       typeof result.text === 'object' && result.text !== null && 'value' in result.text
         ? /** @type {{ value: string }} */ (result.text).value
         : typeof result.text === 'string'
           ? result.text
           : '';
+    // layout.hit_test returns a node summary, which names its text textExcerpt.
+    const textValue =
+      declaredText || (typeof result.textExcerpt === 'string' ? result.textExcerpt : '');
     if (textValue) desc.push(String(textValue).slice(0, 60));
     const bbox = /** @type {Record<string, number>} */ (result.bbox);
     if (bbox.width && bbox.height) {

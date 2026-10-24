@@ -122,7 +122,7 @@ func prepareCLIBatch(raw json.RawMessage, preset string) ([]object, []object, er
 				}
 			}
 			delete(params, "budgetPreset")
-			if !batchSafe(method, params) {
+			if method != "protocol.describe" && !batchSafe(method, params) {
 				message = method + " is not safe for batch execution. Call it sequentially."
 			}
 		}

@@ -16,16 +16,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   fields. Batch items omit untruncated budgets and repeated hints.
 - MCP and CLI calls warn when a param closely matches a documented one, such as
   `limit` for `maxResults` or `y` for `viewport.scroll` `top`, including
-  `input.perform` steps. Routing keys such as `tabId` nested in params are
-  rejected instead of silently targeting the default tab.
+  `input.perform` steps. Size bounds suggest each other, so `maxNodes` on
+  `dom.find_by_role` points to `maxResults`. Routing keys such as `tabId`
+  nested in params are rejected instead of silently targeting the default tab.
+- CDP accessibility trees with `format: "outline"` apply compact filtering
+  unless `compact: false` is passed, instead of outlining unnamed generic and
+  none nodes.
 - MCP `dom.query` asks the extension to skip bounding boxes unless
   `includeBbox: true` is set, and then delivers them rounded.
 - `bbx batch` items omit fields that repeat other fields: size and cost
   triples, null errors, unscheduled timing, and meta that restates cost or
   routing. `response` is kept only when `evidence` is a bounded view of it.
   Small reads shrink by about three quarters.
+- MCP `input.perform` delivers a final `page.get_state`, `page.get_text`,
+  `dom.query`, or `dom.get_text` result with the same evidence as a standalone
+  call, and omits an empty `failures` list.
+- MCP box-model, `dom.describe`, and `layout.hit_test` results round
+  geometry to 0.1px in evidence and summaries and omit null element fields.
+- MCP `page.get_network` evidence omits zero `abandoned` and `inflight`
+  counts, a false `ownershipHeld`, and a `filteredTotal` equal to `total`.
 
 ### Fixed
+
+- CDP accessibility trees list nodes in page order. CDP returns full trees
+  level by level, so outlines put deep headings before shallower nav links,
+  and `maxNodes` kept a shallow slice of the whole page.
+- CDP accessibility outlines and compact filtering treat icon-font glyph
+  names from Unicode private use areas as unnamed.
+- MCP error text includes the error's details, bounded to 300 characters,
+  for clients that render only the text of an error result.
+- `browser_batch` names every call that is unsafe for parallel execution in
+  one rejection instead of only the first.
 
 - DOM-source accessibility trees with `format: "tree"` are summarized as
   accessibility trees instead of DOM query results.
@@ -34,6 +55,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   The summary names each failed call's index, method, and error.
 - MCP `dom.query` delivers allowlisted attributes such as `href` instead of
   dropping everything except id, role, label, test id, and class.
+- MCP results for shapes without a dedicated summary, such as
+  `styles.get_matched_rules` and `daemon.metrics`, deliver bounded values
+  instead of only the result's key names.
+- `layout.hit_test` summaries and MCP evidence include the element's text.
 - Element reads given a role or name target explain how to resolve it to an
   `elementRef`, and style queries say to pass `target.selector`.
 - Upgrading to v2 rewrites global MCP entries that still launch the removed v1

@@ -451,10 +451,18 @@ func (s *mcpSession) batch(ctx context.Context, args object, era string) (object
 	if json.Unmarshal(args["calls"], &calls) != nil || len(calls) == 0 || len(calls) > 20 {
 		return mcpErrorResult("INVALID_REQUEST", "calls must contain 1 to 20 entries."), nil
 	}
-	for _, call := range calls {
+	// Name every unsafe call at once so one retry can move them all.
+	unsafe := []string{}
+	for i, call := range calls {
 		if call.text("method") != "protocol.describe" && !batchSafe(call.text("method"), call.object("params")) {
-			return mcpErrorResult("INVALID_REQUEST", call.text("method")+" is not safe for parallel batch execution.", "Call it with browser_call; use input.perform for ordered actions."), nil
+			unsafe = append(unsafe, fmt.Sprintf("calls[%d] %s", i, call.text("method")))
 		}
+	}
+	if len(unsafe) == 1 {
+		return mcpErrorResult("INVALID_REQUEST", unsafe[0]+" is not safe for parallel batch execution.", "Call it with browser_call; use input.perform for ordered actions."), nil
+	}
+	if len(unsafe) > 1 {
+		return mcpErrorResult("INVALID_REQUEST", strings.Join(unsafe, ", ")+" are not safe for parallel batch execution.", "Call them with browser_call; use input.perform for ordered actions."), nil
 	}
 	results := make([]object, len(calls))
 	jobs := make(chan int, len(calls))
@@ -602,8 +610,8 @@ func mcpCompactBatchItem(item object) {
 	}
 }
 
-// mcpBatchDescribe answers protocol.describe from the local catalog without a
-// bridge round-trip, so discovery can share a batch with page reads.
+// mcpBatchDescribe answers protocol.describe for CLI and MCP batches from the
+// local catalog, without a bridge round-trip or a running daemon.
 func mcpBatchDescribe(params object) object {
 	described := mcpDescribe(params).object("structuredContent")
 	for _, suffix := range []string{"Bytes", "Tokens", "CostClass"} {

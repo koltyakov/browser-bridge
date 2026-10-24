@@ -299,9 +299,14 @@ func cliSummaryBody(response object, method string, now int64) object {
 		if !present("text") {
 			text = cliText(r, "value")
 		}
-		length := float64(cliLen(text))
+		returned := cliLen(text)
+		length := float64(returned)
 		if number("length") {
 			length = num("length", length)
+		}
+		count := fmt.Sprintf("%g", length)
+		if float64(returned) < length {
+			count = fmt.Sprintf("%d/%g", returned, length)
 		}
 		label := "Page text"
 		if method == "dom.get_text" {
@@ -311,7 +316,7 @@ func cliSummaryBody(response object, method string, now int64) object {
 		if r.boolean("truncated") {
 			suffix = " (truncated)"
 		}
-		return done(fmt.Sprintf("%s: %g chars%s.", label, length, suffix), value(object{"text": cliStringValue(cliSlice(text, 500)), "length": value(length), "truncated": r["truncated"]}), true)
+		return done(fmt.Sprintf("%s: %s chars%s.", label, count, suffix), value(object{"text": cliStringValue(cliSlice(text, 500)), "length": value(length), "truncated": r["truncated"]}), true)
 	}
 	if tabs, ok := arr("tabs"); ok {
 		page := r.object("pagination")
@@ -684,6 +689,10 @@ func cliSummaryBody(response object, method string, now int64) object {
 		text := cliText(r, "text")
 		if t := r.object("text"); t != nil && t["value"] != nil {
 			text = cliJSString(t["value"])
+		}
+		// layout.hit_test returns a node summary, which names its text textExcerpt.
+		if text == "" && cliString(r["textExcerpt"]) {
+			text = cliText(r, "textExcerpt")
 		}
 		if text != "" {
 			desc = append(desc, cliSlice(text, 60))

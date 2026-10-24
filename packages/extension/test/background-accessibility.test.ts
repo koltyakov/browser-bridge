@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   buildAccessibilityTree,
+  formatAccessibilityOutline,
   scopeAccessibilityNodes,
   simplifyAXNode,
 } from '../src/background-accessibility.js';
@@ -201,6 +202,76 @@ test('AX filtering reports empty and truncated trees without dangling relationsh
   assert.equal(truncated.truncated, true);
   assert.equal(truncated.omitted, 1);
   assert.deepEqual(truncated.nodes[1]?.childIds, []);
+});
+
+test('AX trees keep page order when CDP lists nodes level by level', () => {
+  // getFullAXTree lists shallow nodes first: the main heading before the
+  // nav links that precede it on the page.
+  const rawNodes = [
+    { nodeId: 'root', role: { value: 'RootWebArea' }, childIds: ['header', 'main'] },
+    { nodeId: 'header', role: { value: 'generic' }, childIds: ['nav'] },
+    { nodeId: 'main', role: { value: 'generic' }, childIds: ['heading'] },
+    { nodeId: 'nav', role: { value: 'generic' }, childIds: ['home', 'docs'] },
+    { nodeId: 'heading', role: { value: 'heading' }, name: { value: 'Welcome' } },
+    { nodeId: 'home', role: { value: 'link' }, name: { value: 'Home' } },
+    { nodeId: 'docs', role: { value: 'link' }, name: { value: 'Docs' } },
+  ];
+  const tree = buildAccessibilityTree(rawNodes, {
+    compact: true,
+    interactiveOnly: false,
+    maxNodes: 10,
+  });
+  assert.deepEqual(tree.nodes[0]?.childIds, ['home', 'docs', 'heading']);
+  assert.equal(
+    formatAccessibilityOutline(tree.nodes, tree.rootIds),
+    '- RootWebArea\n  - link "Home"\n  - link "Docs"\n  - heading "Welcome"'
+  );
+
+  const top = buildAccessibilityTree(rawNodes, {
+    compact: true,
+    interactiveOnly: false,
+    maxNodes: 2,
+  });
+  assert.deepEqual(
+    top.nodes.map((node) => node.nodeId),
+    ['root', 'home']
+  );
+
+  // Nodes no root reaches are kept after the reachable tree.
+  const cyclic = buildAccessibilityTree(
+    [
+      { nodeId: 'a', role: { value: 'link' }, name: { value: 'A' }, childIds: ['b'] },
+      { nodeId: 'b', role: { value: 'link' }, name: { value: 'B' }, childIds: ['a'] },
+      { nodeId: 'c', role: { value: 'button' }, name: { value: 'C' } },
+    ],
+    { compact: false, interactiveOnly: false, maxNodes: 10 }
+  );
+  assert.deepEqual(
+    cyclic.nodes.map((node) => node.nodeId),
+    ['c', 'a', 'b']
+  );
+});
+
+test('AX outlines treat icon-font glyph names as unnamed', () => {
+  const tree = buildAccessibilityTree(
+    [
+      { nodeId: 'root', role: { value: 'RootWebArea' }, childIds: ['search', 'icon'] },
+      {
+        nodeId: 'search',
+        role: { value: 'button' },
+        name: { value: '\ue6a3' },
+        childIds: ['glyph'],
+      },
+      { nodeId: 'glyph', role: { value: 'StaticText' }, name: { value: '\ue6a3' } },
+      { nodeId: 'icon', role: { value: 'StaticText' }, name: { value: ' \u{F0001} ' } },
+    ],
+    { compact: true, interactiveOnly: false, maxNodes: 10 }
+  );
+  assert.deepEqual(
+    tree.nodes.map((node) => node.nodeId),
+    ['root', 'search']
+  );
+  assert.equal(formatAccessibilityOutline(tree.nodes, tree.rootIds), '- RootWebArea\n  - button');
 });
 
 test('partial AX scoping retains the target subtree and ancestors but removes siblings', () => {

@@ -1113,6 +1113,15 @@ test('normalizeAccessibilityTreeParams preserves explicit DOM tree format', () =
   assert.equal(normalizeAccessibilityTreeParams({ source: 'cdp' }).format, undefined);
 });
 
+test('normalizeAccessibilityTreeParams makes CDP outlines compact unless opted out', () => {
+  assert.equal(normalizeAccessibilityTreeParams({ format: 'outline' }).compact, true);
+  assert.equal(
+    normalizeAccessibilityTreeParams({ format: 'outline', compact: false }).compact,
+    false
+  );
+  assert.equal(normalizeAccessibilityTreeParams({ format: 'tree' }).compact, false);
+});
+
 test('normalizeScreenshotParams validates formats and bounds lossy quality', () => {
   assert.deepEqual(normalizeScreenshotParams(), {
     format: 'png',

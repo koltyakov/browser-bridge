@@ -919,7 +919,7 @@
     },
     "summary": {
       "ok": true,
-      "summary": "Page text: 99 chars (truncated).",
+      "summary": "Page text: 4/99 chars (truncated).",
       "evidence": {
         "text": "text",
         "length": 99,
@@ -928,7 +928,7 @@
     },
     "annotated": {
       "ok": true,
-      "summary": "Page text: 99 chars (truncated).",
+      "summary": "Page text: 4/99 chars (truncated).",
       "evidence": {
         "text": "text",
         "length": 99,
@@ -937,13 +937,13 @@
       "transportBytes": 44,
       "transportTokens": 11,
       "transportCostClass": "cheap",
-      "summaryBytes": 112,
-      "summaryTokens": 28,
+      "summaryBytes": 114,
+      "summaryTokens": 29,
       "summaryCostClass": "cheap"
     },
     "sanitized": {
       "ok": true,
-      "summary": "Page text: 99 chars (truncated).",
+      "summary": "Page text: 4/99 chars (truncated).",
       "evidence": {
         "text": "text",
         "length": 99,
@@ -952,15 +952,15 @@
       "transportBytes": 44,
       "transportTokens": 11,
       "transportCostClass": "cheap",
-      "summaryBytes": 112,
-      "summaryTokens": 28,
+      "summaryBytes": 114,
+      "summaryTokens": 29,
       "summaryCostClass": "cheap"
     },
     "batch": {
       "method": "page.get_state",
       "tabId": 9,
       "ok": true,
-      "summary": "Page text: 99 chars (truncated).",
+      "summary": "Page text: 4/99 chars (truncated).",
       "evidence": {
         "text": "text",
         "length": 99,
