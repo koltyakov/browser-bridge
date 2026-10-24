@@ -578,8 +578,12 @@ async function resolveRequestTarget(
 const mutationGate = createMutationGate({
   resolveTarget: resolveRequestTarget,
   captureAccess: () => captureWindowGrant(state),
-  snapshot: async (tabId) => {
+  snapshot: async (tabId, scope) => {
     tabDebugger.assertNoDialog(tabId);
+    if (scope === 'tab') {
+      const tab = await chrome.tabs.get(tabId);
+      return { documentId: '', url: tab.url ?? '' };
+    }
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       func: () => location.href,
@@ -1109,14 +1113,14 @@ async function handleBridgeRequest(request: BridgeRequest): Promise<void> {
       /^(?:files\.|session\.|download\.|input\.(?:set_files|paste_image)$)/u.test(request.method)
     )
       dataRequestOwners.set(request.id, request.meta.transport_owner);
-    let actionContext = null;
-    if (shouldLogAction(request.method)) {
-      try {
-        actionContext = await getActionContext(request);
-      } catch (error) {
-        reportAsyncError(error);
-      }
-    }
+    // Capture the log context beside the command instead of before it: the
+    // lookup is read-only and starts first, so it still sees the prior page.
+    const actionContext = shouldLogAction(request.method)
+      ? getActionContext(request).catch((error: unknown) => {
+          reportAsyncError(error);
+          return null;
+        })
+      : Promise.resolve(null);
 
     let response: BridgeResponse;
 
@@ -1137,7 +1141,10 @@ async function handleBridgeRequest(request: BridgeRequest): Promise<void> {
     response = attachTabRouting(request, response);
     response = enrichBridgeResponse(request, response);
     if (request.method === 'sensitive.read') {
-      void logBridgeAction(request, response, actionContext).catch(reportAsyncError);
+      const loggedResponse = response;
+      void actionContext
+        .then((context) => logBridgeAction(request, loggedResponse, context))
+        .catch(reportAsyncError);
       reply(response);
       return;
     }
@@ -1145,7 +1152,7 @@ async function handleBridgeRequest(request: BridgeRequest): Promise<void> {
     dataRequestOwners.delete(request.id);
     disconnectedDataRequests.delete(request.id);
     try {
-      await logBridgeAction(request, response, actionContext);
+      await logBridgeAction(request, response, await actionContext);
     } catch (error) {
       reportAsyncError(error);
     }

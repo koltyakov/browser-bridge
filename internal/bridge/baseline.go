@@ -116,8 +116,8 @@ func (d *daemon) releaseOrphan(p *peer, result object) {
 }
 
 func (d *daemon) baselineResponse(p *peer, pending *pendingRequest, response object) object {
-	result := response.object("result")
 	if response.boolean("ok") && pending.method == "dom.baseline.create" {
+		result := response.object("result")
 		var evicted []object
 		_ = json.Unmarshal(result["evicted"], &evicted)
 		for _, entry := range evicted {

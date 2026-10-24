@@ -290,6 +290,39 @@ test('routing permits title-only updates to the captured grant', async () => {
   );
 });
 
+test('routing issues its independent browser reads together and keeps their check order', async () => {
+  const { controller, chromeObj } = createController();
+  const issued: string[] = [];
+  let releaseWindow!: () => void;
+  const windowGate = new Promise<void>((resolve) => {
+    releaseWindow = resolve;
+  });
+  const getWindow = chromeObj.windows.get;
+  const getTab = chromeObj.tabs.get;
+  const query = chromeObj.tabs.query;
+  chromeObj.windows.get = (async (windowId: number) => {
+    issued.push('window');
+    await windowGate;
+    return getWindow(windowId);
+  }) as typeof chrome.windows.get;
+  chromeObj.tabs.get = (async (tabId: number) => {
+    issued.push('tab');
+    throw new Error(`No tab with id: ${tabId}`);
+  }) as typeof chrome.tabs.get;
+  chromeObj.tabs.query = (async (options: chrome.tabs.QueryInfo) => {
+    issued.push('active');
+    return query(options);
+  }) as typeof chrome.tabs.query;
+  const resolved = controller.resolveRequestTarget(
+    createRequest({ id: 'parallel-reads', method: 'page.get_state', tabId: 99 })
+  );
+  await Promise.resolve();
+  assert.deepEqual(issued, ['window', 'tab', 'active']);
+  releaseWindow();
+  await assert.rejects(resolved, /No tab with id: 99/);
+  chromeObj.tabs.get = getTab;
+});
+
 test('page request controller waits for matching load completion and ignores unrelated events', async () => {
   const { controller, onUpdated, onRemoved } = createController();
   const pending = controller.waitForTabComplete(21, 1_000);

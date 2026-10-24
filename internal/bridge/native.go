@@ -82,7 +82,7 @@ func nativeToDaemon(message object) object {
 		message["type"] = value("extension." + strings.TrimPrefix(kind, "host."))
 		return message
 	default:
-		return object{"type": value("extension.response"), "response": value(message)}
+		return object{"type": value("extension.response"), "response": rawObject(message)}
 	}
 }
 
@@ -126,7 +126,7 @@ func nativeHost(ctx context.Context, c config, input io.Reader, output io.Writer
 				done <- err
 				return
 			}
-			if err := toDaemon.send(nativeToDaemon(message)); err != nil {
+			if _, err := toDaemon.sendPayloadContext(context.Background(), rawObject(nativeToDaemon(message))); err != nil {
 				done <- err
 				return
 			}
@@ -140,7 +140,7 @@ func nativeHost(ctx context.Context, c config, input io.Reader, output io.Writer
 				return
 			}
 			if response := daemonToNative(message); response != nil {
-				if err := out.send(response); err != nil {
+				if _, err := out.sendPayloadContext(context.Background(), rawObject(response)); err != nil {
 					done <- err
 					return
 				}

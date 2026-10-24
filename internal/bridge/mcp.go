@@ -86,6 +86,9 @@ func mcpServe(ctx context.Context, c config, input io.Reader, output io.Writer) 
 	go func() {
 		for {
 			message, err := readLine(reader)
+			if skipErr := skipOversizedLine(reader, err); skipErr != nil && !errors.Is(skipErr, io.EOF) {
+				err = skipErr
+			}
 			select {
 			case messages <- incoming{message, err}:
 			case <-ctx.Done():
@@ -121,6 +124,11 @@ func mcpServe(ctx context.Context, c config, input io.Reader, output io.Writer) 
 			}
 			var syntax *json.SyntaxError
 			var shape *json.UnmarshalTypeError
+			var oversized *oversizedLineError
+			if errors.As(err, &oversized) {
+				_ = writer.send(rpcError(value[*int](nil), -32600, "Request exceeds the 1 MiB message limit."))
+				continue
+			}
 			if errors.As(err, &syntax) {
 				_ = writer.send(rpcError(value[*int](nil), -32700, "Parse error."))
 				continue

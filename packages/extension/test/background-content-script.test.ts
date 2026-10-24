@@ -80,6 +80,54 @@ for (const frameId of [0, 7]) {
   }
 }
 
+test('a timed-out mutation releases its turn after the grace period when the page never settles', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const request = createRequest({
+    id: 'timeout-unsettled',
+    method: 'input.click',
+    meta: { deadline_ms: Date.now() + 30_000 },
+  });
+  const finish = requestLifetimes.begin(request);
+  const chromeFake = createChromeFake({
+    tabs: {
+      sendMessage: async (_tabId: number, message: Record<string, unknown>) =>
+        message.type === 'bridge.execute' ? new Promise(() => {}) : {},
+    },
+  });
+  const bridge = createContentScriptBridge(chromeFake as unknown as typeof chrome, {
+    contentScriptTimeoutMs: 100,
+    unsettledCommandGraceMs: 1_000,
+    isRestrictedAutomationUrl: () => false,
+  });
+  try {
+    let settled = false;
+    const response = bridge
+      .sendTabMessage(
+        8,
+        { type: 'bridge.execute', requestId: request.id, method: request.method },
+        100
+      )
+      .finally(() => {
+        settled = true;
+      });
+    const rejected = assert.rejects(response, { code: ERROR_CODES.TIMEOUT });
+    const flush = async () => {
+      for (let i = 0; i < 20; i += 1) await Promise.resolve();
+    };
+    await flush();
+    t.mock.timers.tick(100);
+    await flush();
+    t.mock.timers.tick(999);
+    await flush();
+    assert.equal(settled, false, 'the turn is held during the grace period');
+    t.mock.timers.tick(1);
+    await rejected;
+    assert.equal(settled, true);
+  } finally {
+    finish();
+  }
+});
+
 test('read-only content timeouts cancel without waiting for renderer settlement', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   let resolveCommand!: (value: unknown) => void;
