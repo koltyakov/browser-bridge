@@ -176,86 +176,107 @@ func cliObjectKeys(raw json.RawMessage) []string {
 	return keys
 }
 func cliQuote(s string) []byte {
-	var out bytes.Buffer
-	out.WriteByte('"')
+	return cliAppendQuote(make([]byte, 0, len(s)+2), s)
+}
+func cliAppendQuote(out []byte, s string) []byte {
+	const hex = "0123456789abcdef"
+	out = append(out, '"')
 	for len(s) > 0 {
+		// Most browser text is plain ASCII. Copy runs rather than appending
+		// one rune at a time, especially for large exact schema payloads.
+		i := 0
+		for i < len(s) && s[i] >= 32 && s[i] < 128 && s[i] != '"' && s[i] != '\\' {
+			i++
+		}
+		out = append(out, s[:i]...)
+		s = s[i:]
+		if len(s) == 0 {
+			break
+		}
 		r, n := cliRune(s)
 		s = s[n:]
 		switch r {
 		case '"', '\\':
-			out.WriteByte('\\')
-			out.WriteRune(r)
+			out = append(out, '\\', byte(r))
 		case '\b':
-			out.WriteString(`\b`)
+			out = append(out, `\b`...)
 		case '\f':
-			out.WriteString(`\f`)
+			out = append(out, `\f`...)
 		case '\n':
-			out.WriteString(`\n`)
+			out = append(out, `\n`...)
 		case '\r':
-			out.WriteString(`\r`)
+			out = append(out, `\r`...)
 		case '\t':
-			out.WriteString(`\t`)
+			out = append(out, `\t`...)
 		default:
 			if r < 32 || r >= 0xd800 && r <= 0xdfff {
-				fmt.Fprintf(&out, `\u%04x`, r)
+				out = append(out, '\\', 'u', hex[r>>12&15], hex[r>>8&15], hex[r>>4&15], hex[r&15])
 			} else {
-				out.WriteRune(r)
+				out = cliAppendRune(out, r)
 			}
 		}
 	}
-	out.WriteByte('"')
-	return out.Bytes()
+	return append(out, '"')
 }
 func cliJSON(raw json.RawMessage, sanitize bool) []byte {
 	if raw == nil {
 		return nil
 	}
-	if cliString(raw) {
-		s := cliJSString(raw)
-		if sanitize {
+	// Reuse one output buffer for the whole tree. Type dispatch also avoids
+	// trying to decode every primitive as both an array and an object.
+	return cliAppendJSON(make([]byte, 0, len(raw)), raw, sanitize)
+}
+func cliAppendJSON(out []byte, raw json.RawMessage, sanitize bool) []byte {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		return out
+	}
+	switch raw[0] {
+	case '"':
+		s := cliDecodeString(raw)
+		if sanitize && strings.ContainsRune(s, '\x1b') {
 			s = cliANSI.ReplaceAllString(s, "")
 		}
-		return cliQuote(s)
-	}
-	if a, ok := cliArray(raw); ok {
-		var out bytes.Buffer
-		out.WriteByte('[')
-		for i, item := range a {
-			if i > 0 {
-				out.WriteByte(',')
+		return cliAppendQuote(out, s)
+	case '[':
+		if a, ok := cliArray(raw); ok {
+			out = append(out, '[')
+			for i, item := range a {
+				if i > 0 {
+					out = append(out, ',')
+				}
+				out = cliAppendJSON(out, item, sanitize)
 			}
-			out.Write(cliJSON(item, sanitize))
+			return append(out, ']')
 		}
-		out.WriteByte(']')
-		return out.Bytes()
-	}
-	if o, e := decodeObject(raw); e == nil {
-		var out bytes.Buffer
-		out.WriteByte('{')
-		for i, k := range cliObjectKeys(raw) {
-			if i > 0 {
-				out.WriteByte(',')
+	case '{':
+		if o, e := decodeObject(raw); e == nil {
+			out = append(out, '{')
+			for i, k := range cliObjectKeys(raw) {
+				if i > 0 {
+					out = append(out, ',')
+				}
+				out = cliAppendQuote(out, k)
+				out = append(out, ':')
+				out = cliAppendJSON(out, o[k], sanitize)
 			}
-			out.Write(cliQuote(k))
-			out.WriteByte(':')
-			out.Write(cliJSON(o[k], sanitize))
+			return append(out, '}')
 		}
-		out.WriteByte('}')
-		return out.Bytes()
+	case '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+		if n, ok := cliNumberValue(raw); ok {
+			if n == 0 {
+				return append(out, '0')
+			}
+			format := 'f'
+			if math.Abs(n) >= 1e21 || math.Abs(n) < 1e-6 {
+				format = 'e'
+			}
+			s := strconv.FormatFloat(n, byte(format), -1, 64)
+			s = strings.ReplaceAll(strings.ReplaceAll(s, "e-0", "e-"), "e+0", "e+")
+			return append(out, s...)
+		}
 	}
-	if n, ok := cliNumberValue(raw); ok {
-		if n == 0 {
-			return []byte("0")
-		}
-		format := 'f'
-		if math.Abs(n) >= 1e21 || math.Abs(n) < 1e-6 {
-			format = 'e'
-		}
-		s := strconv.FormatFloat(n, byte(format), -1, 64)
-		s = strings.ReplaceAll(strings.ReplaceAll(s, "e-0", "e-"), "e+0", "e+")
-		return []byte(s)
-	}
-	return bytes.TrimSpace(raw)
+	return append(out, raw...)
 }
 func writeCLIJSONOutput(out io.Writer, raw json.RawMessage, sanitize, pretty bool) error {
 	data := cliJSON(raw, sanitize)

@@ -1599,7 +1599,8 @@ function renderActivitySummary(totalTokens: number): void {
 
   activitySummaryTokens.hidden = false;
   activitySummaryTokens.textContent = `≈${formatCompactCount(totalTokens)} tok`;
-  activitySummaryTokens.dataset.costClass = getAggregateCostClass(totalTokens);
+  activitySummaryTokens.dataset.costClass =
+    totalTokens >= 100_000 ? 'extreme' : totalTokens >= 50_000 ? 'moderate' : 'cheap';
 }
 
 function formatByteCount(value: number): string {

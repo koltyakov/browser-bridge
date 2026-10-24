@@ -41,6 +41,7 @@
         getShadowRoot: (element: Element) => ShadowRoot | null;
         isElementVisible: (element: Element) => boolean;
         querySelectorAllDeep: (selector: string, root?: ParentNode) => Element[];
+        querySelectorMatchesDeep: (selector: string, root?: ParentNode) => Generator<Element>;
         querySelectorDeep: (selector: string, root?: ParentNode) => Element | null;
         walkElementsDeep: (root?: ParentNode, limit?: number) => Generator<Element>;
       };
@@ -76,6 +77,7 @@
     getElementTextContent,
     isElementVisible,
     querySelectorAllDeep,
+    querySelectorMatchesDeep,
     querySelectorDeep,
     toRect,
     truncateText,
@@ -185,11 +187,7 @@ element reference. */
       nodes,
       revision: getDocumentRevision(),
       ...(matchCount > 1 ? { matchCount } : {}),
-      truncated:
-        truncatedByQueueCap ||
-        queueIndex < queue.length ||
-        nodes.length >= query.budget.maxNodes ||
-        remaining <= 0,
+      truncated: truncatedByQueueCap || queueIndex < queue.length || remaining <= 0,
       registrySize: getRegistrySize(),
       ...(pruned ? { _registryPruned: true } : {}),
     };
@@ -477,6 +475,7 @@ element reference. */
 
   type LocateResult = {
     matches: Element[];
+    visibleOnly: boolean;
     hiddenMatches: number;
     scanned: number;
     truncationReason: 'maxResults' | 'scanLimit' | null;
@@ -568,7 +567,7 @@ excluded unless `includeHidden` is set. */
     const scope = locator.selector && locator.selector !== '*' ? locator.selector : null;
 
     const candidates: Iterable<Element> = scope
-      ? querySelectorAllDeep(escapeTailwindSelector(scope))
+      ? querySelectorMatchesDeep(escapeTailwindSelector(scope))
       : walkElementsDeep(document.body ?? document.documentElement ?? document);
 
     const matches: Element[] = [];
@@ -594,10 +593,19 @@ excluded unless `includeHidden` is set. */
       }
       matches.push(element);
     }
-    return { matches, hiddenMatches, scanned, truncationReason };
+    return {
+      matches,
+      visibleOnly: locator.includeHidden !== true,
+      hiddenMatches,
+      scanned,
+      truncationReason,
+    };
   }
 
-  function summarizeMatch(element: Element): NodeSummary & { visible?: boolean } {
+  function summarizeMatch(
+    element: Element,
+    knownVisible: boolean
+  ): NodeSummary & { visible?: boolean } {
     const node = summarizeNode(element, ['id', 'class', 'href', 'data-testid'], 120, true).node;
     const role = getElementRoles(element)[0] ?? node.role;
     const name = getAccessibleName(element);
@@ -605,7 +613,7 @@ excluded unless `includeHidden` is set. */
       ...node,
       role: role || null,
       name: name ? name.slice(0, 120) : node.name,
-      ...(isElementVisible(element) ? {} : { visible: false }),
+      ...(knownVisible || isElementVisible(element) ? {} : { visible: false }),
     };
   }
 
@@ -620,7 +628,9 @@ excluded unless `includeHidden` is set. */
   } {
     return {
       found: located.matches.length > 0,
-      nodes: located.matches.map(summarizeMatch),
+      // Visibility was already checked during this synchronous scan unless
+      // hidden matches were requested. Do not repeat its layout reads.
+      nodes: located.matches.map((element) => summarizeMatch(element, located.visibleOnly)),
       count: located.matches.length,
       scanned: located.scanned,
       truncated: located.truncationReason !== null,
@@ -864,6 +874,7 @@ one step. Hidden elements are skipped. */
     truncated: boolean;
   } {
     const maxNodes = clamp(params.maxNodes ?? 150, 10, 5000);
+    const maxDepth = clamp(params.maxDepth ?? 6, 1, 20);
     const interactiveOnly = params.interactiveOnly === true;
     const root = params.selector
       ? querySelectorDeep(escapeTailwindSelector(String(params.selector)))
@@ -906,12 +917,18 @@ one step. Hidden elements are skipped. */
       if (!interactive && (interactiveOnly || !OUTLINE_CONTEXT_ROLES.has(role))) continue;
       if (role === 'region' && !getAccessibleName(element)) continue;
       if (!isElementVisible(element)) continue;
+      const depth = getOutlineDepth(element, depths);
+      // Retain omitted ancestors' depths so their descendants cannot reappear
+      // at a shallower level. Later siblings still get their own depth check.
+      depths.set(element, depth);
+      if (depth > maxDepth) {
+        truncated = true;
+        continue;
+      }
       if (entries.length >= maxNodes) {
         truncated = true;
         break;
       }
-      const depth = getOutlineDepth(element, depths);
-      depths.set(element, depth);
       entries.push({
         ref: rememberElement(element),
         role,

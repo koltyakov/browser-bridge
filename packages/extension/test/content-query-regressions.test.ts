@@ -27,6 +27,7 @@ type QueryApi = {
   domQuery: (params: Record<string, unknown>) => {
     nodes: Array<{ tag: string }>;
     matchCount?: number;
+    truncated: boolean;
   };
   findByRole: (params: Record<string, unknown>) => FindResult;
   findByText: (params: Record<string, unknown>) => FindResult;
@@ -40,6 +41,7 @@ type QueryApi = {
 type RegistryApi = { getRequiredElement: (ref: string) => Element };
 type HelpersApi = {
   querySelectorAllDeep: (selector: string, root?: ParentNode) => Element[];
+  querySelectorMatchesDeep: (selector: string, root?: ParentNode) => Generator<Element>;
   getAccessibleName: (element: Element) => string;
   getElementRoles: (element: Element) => string[];
   getElementTextContent: (element: Element, budget?: number) => string;
@@ -49,6 +51,28 @@ test('deep DOM scans fail explicitly at their work limit instead of claiming uni
   await withQuery('<section>' + '<span>item</span>'.repeat(20010) + '</section>', ({ helpers }) => {
     assert.throws(() => helpers.querySelectorAllDeep('span'), { code: 'RESULT_TRUNCATED' });
   });
+});
+
+test('lazy deep selectors preserve scoped matching and validate empty trees', async () => {
+  await withQuery(
+    '<section><button>Child</button><div><button>Nested</button></div></section>',
+    ({ document, helpers }) => {
+      const root = document.querySelector('section')!;
+      assert.deepEqual(
+        [...helpers.querySelectorMatchesDeep(':scope > button', root)].map(
+          (element) => element.textContent
+        ),
+        ['Child']
+      );
+      assert.deepEqual(
+        [...helpers.querySelectorMatchesDeep('button', root)],
+        helpers.querySelectorAllDeep('button', root)
+      );
+      assert.throws(() => [
+        ...helpers.querySelectorMatchesDeep('[', document.createDocumentFragment()),
+      ]);
+    }
+  );
 });
 
 test('bounded text extraction stops before reading later text nodes', async () => {
@@ -65,6 +89,99 @@ test('bounded text extraction stops before reading later text nodes', async () =
       assert.equal(helpers.getElementTextContent(element, 20), 'x'.repeat(20));
     }
   );
+});
+
+test('scoped semantic searches stop after the truncation lookahead instead of scanning the page', async () => {
+  await withQuery(
+    '<button>First</button><button>Second</button><section>' +
+      '<span>unrelated</span>'.repeat(20010) +
+      '</section>',
+    ({ document, query }) => {
+      const sentinel = document.querySelector('span')!;
+      Object.defineProperty(sentinel, 'matches', {
+        value() {
+          throw new Error('bounded search visited an unrelated subtree');
+        },
+      });
+      const result = query.findByRole({ role: 'button', selector: 'button', maxResults: 1 });
+      assert.equal(result.found, true);
+      assert.equal(result.count, 1);
+      assert.equal(result.scanned, 2);
+      assert.equal(result.nodes[0].name, 'First');
+      assert.equal(result.truncated, true);
+      assert.equal(result.truncationReason, 'maxResults');
+    }
+  );
+});
+
+test('semantic result summaries reuse visibility checks and retain hidden and zero-size handling', async () => {
+  await withQuery('<button id="target">Save</button>', ({ document, query }) => {
+    const target = document.getElementById('target')!;
+    let checks = 0;
+    let rectangles = 0;
+    let visible = true;
+    let width = 100;
+    Reflect.set(target, 'checkVisibility', () => {
+      checks += 1;
+      return visible;
+    });
+    Reflect.set(target, 'getBoundingClientRect', () => {
+      rectangles += 1;
+      return { x: 0, y: 0, width, height: width ? 20 : 0 };
+    });
+    const found = query.findByRole({ role: 'button', name: 'Save' });
+    assert.equal(found.count, 1);
+    assert.equal(found.nodes[0].visible, undefined);
+    assert.equal(checks, 1);
+    assert.equal(rectangles, 2);
+
+    for (const state of ['hidden', 'zero-size']) {
+      visible = state !== 'hidden';
+      width = state === 'zero-size' ? 0 : 100;
+      checks = 0;
+      const skipped = query.findByRole({ role: 'button', name: 'Save' });
+      assert.equal(skipped.count, 0);
+      assert.equal(skipped.hiddenMatches, 1);
+      assert.equal(checks, 1);
+      const included = query.findByRole({ role: 'button', name: 'Save', includeHidden: true });
+      assert.equal(included.count, 1);
+      assert.equal(included.nodes[0].visible, false);
+      assert.equal(checks, 2);
+    }
+  });
+});
+
+test('DOM queries ending exactly at maxNodes report complete subtrees', async () => {
+  await withQuery('<a id="logo"><img alt="Logo"></a>', ({ query }) => {
+    for (const maxNodes of [2, 3]) {
+      const result = query.domQuery({ selector: '#logo', maxNodes });
+      assert.deepEqual(
+        result.nodes.map((node) => node.tag),
+        ['a', 'img']
+      );
+      assert.equal(result.truncated, false);
+    }
+    const leaf = query.domQuery({ selector: '#logo img', maxNodes: 1 });
+    assert.equal(leaf.nodes.length, 1);
+    assert.equal(leaf.truncated, false);
+  });
+});
+
+test('DOM queries still report omitted siblings, descendants, and depth-limited nodes', async () => {
+  await withQuery('<main><div><span></span></div><aside></aside></main>', ({ query }) => {
+    for (const maxNodes of [1, 2, 3]) {
+      const result = query.domQuery({ selector: 'main', maxNodes });
+      assert.equal(result.nodes.length, maxNodes);
+      assert.equal(result.truncated, true);
+    }
+    assert.equal(query.domQuery({ selector: 'main', maxNodes: 4 }).truncated, false);
+    const shallow = query.domQuery({ selector: 'main', maxNodes: 10, maxDepth: 1 });
+    assert.deepEqual(
+      shallow.nodes.map((node) => node.tag),
+      ['main', 'div', 'aside']
+    );
+    assert.equal(shallow.truncated, true);
+  });
 });
 
 async function withQuery(
@@ -220,12 +337,57 @@ test('outline traverses shadow roots with tree-scoped names and usable target re
       assert(payNode && cancelNode);
       assert.equal(payNode.depth, 2);
       assert.equal(cancelNode.depth, 2);
+      const shallow = query.getAccessibilityOutline({ format: 'tree', maxDepth: 1 });
+      assert.deepEqual(
+        shallow.nodes?.map((node) => node.name),
+        ['Shop', 'Payment']
+      );
+      assert.equal(shallow.truncated, true);
+      assert.equal(query.getAccessibilityOutline({ maxDepth: 2 }).truncated, false);
       assert.equal(registry.getRequiredElement(payNode.ref), pay);
       assert.equal(query.probeTarget({ target: { selector: '#pay' } }).found, true);
       assert.equal(query.probeTarget({ target: { testId: 'cancel' } }).found, true);
       const roleResult = query.findByRole({ role: 'button', name: 'Pay securely', exact: true });
       assert.equal(roleResult.count, 1);
       assert.equal(roleResult.nodes[0].elementRef, payNode.ref);
+    }
+  );
+});
+
+test('outline maxDepth bounds semantic depth without dropping later siblings or scoped roots', async () => {
+  await withQuery(
+    '<main id="scope" aria-label="Root"><section aria-label="Section"><div><nav aria-label="Nested"><button>Deep</button></nav></div></section><h2>Sibling</h2></main>',
+    ({ query }) => {
+      for (const format of ['tree', 'outline']) {
+        const shallow = query.getAccessibilityOutline({ selector: '#scope', format, maxDepth: 1 });
+        assert.equal(shallow.count, 3);
+        assert.equal(shallow.truncated, true);
+        if (format === 'tree') {
+          assert.deepEqual(
+            shallow.nodes?.map((node) => [node.name, node.depth]),
+            [
+              ['Root', 0],
+              ['Section', 1],
+              ['Sibling', 1],
+            ]
+          );
+        } else {
+          assert.doesNotMatch(shallow.outline ?? '', /Nested|Deep/);
+        }
+        const complete = query.getAccessibilityOutline({ selector: '#scope', format, maxDepth: 3 });
+        assert.equal(complete.count, 5);
+        assert.equal(complete.truncated, false);
+        const scoped = query.getAccessibilityOutline({ selector: 'nav', format, maxDepth: 1 });
+        assert.equal(scoped.count, 2);
+        assert.equal(scoped.truncated, false);
+        const controls = query.getAccessibilityOutline({
+          format,
+          maxDepth: 1,
+          interactiveOnly: true,
+        });
+        assert.equal(controls.count, 1);
+        assert.equal(controls.truncated, false);
+      }
     }
   );
 });

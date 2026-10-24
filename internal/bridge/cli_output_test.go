@@ -203,6 +203,29 @@ func TestCLIJSONPreservesObjectEnumeration(t *testing.T) {
 	}
 }
 
+func TestCLIJSONNestedEncoding(t *testing.T) {
+	for _, tc := range []struct {
+		name, raw, want string
+		sanitize        bool
+	}{
+		{"primitives", ` [ null, true, false, -0, 1.0, 1e-7, 1e21 ] `, `[null,true,false,0,1,1e-7,1e+21]`, false},
+		{"unicode", `{"text":["\ud83d\ude00","\ud800","\udfff","<&>\u2028\u2029"],"empty":[{},[]]}`, "{\"text\":[\"😀\",\"\\ud800\",\"\\udfff\",\"<&>\u2028\u2029\"],\"empty\":[{},[]]}", false},
+		{"unescaped unicode", ` {"text":"café 😀"} `, `{"text":"café 😀"}`, true},
+		{"control escapes", ` ["\u0000\b\f\n\r\t\u001f\"\\\/"] `, `["\u0000\b\f\n\r\t\u001f\"\\/"]`, false},
+		{"sanitize values only", `{"\u001b[31mkey":["\u001b[32mgreen\u001b[0m",{"v":"\u001b[1mbold"}]}`, `{"\u001b[31mkey":["green",{"v":"bold"}]}`, true},
+		{"exact values", `{"v":"\u001b[31msecret\u001b[0m"}`, `{"v":"\u001b[31msecret\u001b[0m"}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := string(cliJSON(json.RawMessage(tc.raw), tc.sanitize)); got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+	if cliJSON(nil, false) != nil {
+		t.Fatal("nil input must remain nil")
+	}
+}
+
 func BenchmarkCLIJSONNestedResponse(b *testing.B) {
 	nodes := make([]object, 25)
 	for i := range nodes {
@@ -213,6 +236,15 @@ func BenchmarkCLIJSONNestedResponse(b *testing.B) {
 	b.SetBytes(int64(len(raw)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		_ = cliJSON(raw, true)
+	}
+}
+
+func BenchmarkCLIJSONLargeString(b *testing.B) {
+	raw := value(object{"description": value(strings.Repeat("x", 60000))})
+	b.ReportAllocs()
+	b.SetBytes(int64(len(raw)))
+	for b.Loop() {
 		_ = cliJSON(raw, true)
 	}
 }
