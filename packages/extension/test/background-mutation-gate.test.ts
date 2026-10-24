@@ -123,7 +123,7 @@ test('older daemon requests do not enter the scheduling handshake', async () => 
   }
 });
 
-test('cancellation abandons a page read that never settles', async () => {
+test('a hung page read still reports its tab and is abandoned on cancellation', async () => {
   const request = createRequest({
     id: crypto.randomUUID(),
     method: 'input.click',
@@ -131,17 +131,54 @@ test('cancellation abandons a page read that never settles', async () => {
     meta: { mutation_schedule: true },
   });
   const finish = requestLifetimes.begin(request);
+  const sent: MutationReadyMessage[] = [];
   const gate = createMutationGate({
     resolveTarget: async () => ({ tabId: 42, windowId: 1, url: 'https://example.test/' }),
     captureAccess: () => () => {},
     snapshot: () => new Promise(() => {}),
-    send: () => assert.fail('a hung page read must not reach the scheduler'),
+    send: (message) => sent.push(message),
   });
   try {
     const result = gate.prepare(request);
     await new Promise((resolve) => setTimeout(resolve, 0));
+    // The daemon can order other tabs around this one while the read hangs.
+    assert.deepEqual(sent, [{ type: 'host.mutation_ready', requestId: request.id, tabId: 42 }]);
+    gate.handle({ type: 'host.mutation_granted', requestId: request.id });
+    await new Promise((resolve) => setTimeout(resolve, 0));
     requestLifetimes.cancel(request.id);
-    await assert.rejects(result, /preparation canceled/);
+    await assert.rejects(result, /canceled/);
+  } finally {
+    finish();
+  }
+});
+
+test('an early grant still waits for the pre-grant page read', async () => {
+  const request = createRequest({
+    id: crypto.randomUUID(),
+    method: 'input.click',
+    params: {},
+    meta: { mutation_schedule: true },
+  });
+  const finish = requestLifetimes.begin(request);
+  const reads: Array<(value: { documentId: string; url: string }) => void> = [];
+  const gate = createMutationGate({
+    resolveTarget: async () => ({ tabId: 42, windowId: 1, url: 'https://example.test/' }),
+    captureAccess: () => () => {},
+    snapshot: () => new Promise((resolve) => reads.push(resolve)),
+    send: (message) =>
+      queueMicrotask(() =>
+        gate.handle({ type: 'host.mutation_granted', requestId: message.requestId })
+      ),
+  });
+  try {
+    const result = gate.prepare(request);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(reads.length, 1);
+    reads[0]({ documentId: 'first', url: 'https://example.test/' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(reads.length, 2);
+    reads[1]({ documentId: 'replacement', url: 'https://example.test/' });
+    await assert.rejects(result, /document changed/);
   } finally {
     finish();
   }
