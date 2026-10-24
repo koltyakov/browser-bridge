@@ -262,7 +262,7 @@ func (s *mcpSession) handleTool(ctx context.Context, name string, args object, e
 			if args.text("selector") == "" {
 				return mcpErrorResult("INVALID_REQUEST", "Provide either elementRef or selector."), nil
 			}
-			response, err := s.bridge(ctx, "dom.query", object{"selector": args["selector"]}, args, era)
+			response, err := s.bridge(ctx, "dom.query", elementRefQueryParams(args.text("selector")), args, era)
 			if err != nil {
 				return nil, err
 			}

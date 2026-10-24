@@ -383,7 +383,7 @@ func screenshotCLI(ctx context.Context, call cliInvoker, args []string) error {
 	}
 	ref := rest[0]
 	if !strings.HasPrefix(ref, "el_") {
-		r, e := call(ctx, "dom.query", object{"selector": value(ref)})
+		r, e := call(ctx, "dom.query", elementRefQueryParams(ref))
 		if e != nil {
 			return e
 		}

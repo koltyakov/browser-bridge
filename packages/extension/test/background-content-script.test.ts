@@ -220,6 +220,127 @@ function createHarness(failMain = false) {
   };
 }
 
+test('concurrent frame discovery shares enumeration and child injection per tab', async () => {
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const reads = new Map<number, number>();
+  const injections: unknown[] = [];
+  const chromeFake = createChromeFake({
+    scripting: {
+      executeScript: async (details: {
+        target: { tabId: number; frameIds?: number[] };
+        files?: string[];
+      }) => {
+        const tabId = details.target.tabId;
+        if (details.files) {
+          injections.push(details.target);
+          return [];
+        }
+        const count = (reads.get(tabId) ?? 0) + 1;
+        reads.set(tabId, count);
+        await pending;
+        return [
+          { frameId: 0, result: 'top0' },
+          { frameId: 7, result: count === 1 ? null : 'pay7' },
+        ];
+      },
+    },
+  });
+  const bridge = createContentScriptBridge(chromeFake as unknown as typeof chrome, {
+    contentScriptTimeoutMs: 1_000,
+    isRestrictedAutomationUrl: () => false,
+  });
+  const lookups = [
+    ...Array.from({ length: 16 }, (_, index) => bridge.listFrames(8, { refresh: index % 2 === 0 })),
+    bridge.listFrames(9),
+  ];
+  assert.deepEqual(
+    [...reads],
+    [
+      [8, 1],
+      [9, 1],
+    ]
+  );
+  release();
+  const results = await Promise.all(lookups);
+  assert(results.every((frames) => frames[1].tag === 'pay7'));
+  assert.deepEqual(
+    [...reads],
+    [
+      [8, 2],
+      [9, 2],
+    ]
+  );
+  assert.deepEqual(injections, [
+    { tabId: 8, frameIds: [7] },
+    { tabId: 9, frameIds: [7] },
+  ]);
+  await Promise.all(Array.from({ length: 16 }, () => bridge.getFrameForRef(8, 'el_pay7_1')));
+  assert.equal(reads.get(8), 2, 'ref routing reuses cached discovery');
+  await Promise.all(Array.from({ length: 16 }, () => bridge.listFrames(8, { refresh: true })));
+  assert.equal(reads.get(8), 3, 'explicit refresh shares one new enumeration');
+});
+
+test('frame discovery clears pending work after a failed enumeration', async () => {
+  let attempts = 0;
+  const chromeFake = createChromeFake({
+    scripting: {
+      executeScript: async () => {
+        attempts += 1;
+        if (attempts === 1) throw new Error('Frame removed');
+        return [{ frameId: 0, result: 'new0' }];
+      },
+    },
+  });
+  const bridge = createContentScriptBridge(chromeFake as unknown as typeof chrome, {
+    contentScriptTimeoutMs: 1_000,
+    isRestrictedAutomationUrl: () => false,
+  });
+  const results = await Promise.all(Array.from({ length: 16 }, () => bridge.listFrames(8)));
+  assert(results.every((frames) => frames[0].tag === null));
+  assert.equal(attempts, 1);
+  assert.deepEqual(await bridge.listFrames(8, { refresh: true }), [{ frameId: 0, tag: 'new0' }]);
+  assert.equal(attempts, 2);
+});
+
+test('cleanup prevents old frame discovery from replacing or clearing a newer lookup', async () => {
+  const releases: Array<(results: Array<{ frameId: number; result: string }>) => void> = [];
+  const chromeFake = createChromeFake({
+    scripting: {
+      executeScript: () =>
+        new Promise<Array<{ frameId: number; result: string }>>((resolve) => {
+          releases.push(resolve);
+        }),
+    },
+  });
+  const bridge = createContentScriptBridge(chromeFake as unknown as typeof chrome, {
+    contentScriptTimeoutMs: 1_000,
+    isRestrictedAutomationUrl: () => false,
+  });
+  const old = bridge.listFrames(8);
+  bridge.clearCleanupFrames(8);
+  const current = bridge.listFrames(8);
+  releases[0]([{ frameId: 0, result: 'old0' }]);
+  await old;
+  const joined = bridge.listFrames(8);
+  assert.equal(releases.length, 2, 'old completion must not clear newer pending work');
+  releases[1]([{ frameId: 0, result: 'new0' }]);
+  assert.deepEqual(await joined, [{ frameId: 0, tag: 'new0' }]);
+  await current;
+  assert.deepEqual(await bridge.listFrames(8), [{ frameId: 0, tag: 'new0' }]);
+  bridge.clearCleanupFrames(8);
+  const invalidated = bridge.listFrames(8);
+  bridge.clearCleanupFrames(8);
+  releases[2]([{ frameId: 0, result: 'old1' }]);
+  await invalidated;
+  const fresh = bridge.listFrames(8);
+  assert.equal(releases.length, 4, 'invalidated discovery must not repopulate the cache');
+  releases[3]([{ frameId: 0, result: 'new1' }]);
+  await fresh;
+});
+
 test('general content-script injection does not install navigation listeners or MAIN hooks', async () => {
   const { bridge, injections } = createHarness();
 

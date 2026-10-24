@@ -284,26 +284,45 @@ emit navigation-kind events; the background re-reads the authoritative URL. */
     }
   }
 
-  const frameCache: Map<
-    number,
-    { at: number; frames: Array<{ frameId: number; tag: string | null }> }
-  > = new Map();
+  type Frame = { frameId: number; tag: string | null };
+  const frameCache = new Map<number, { at: number; frames: Frame[] }>();
+  const frameDiscoveries = new Map<number, Promise<Frame[]>>();
   const FRAME_CACHE_TTL_MS = 3_000;
   const MAX_SCRIPTED_FRAMES = 12;
 
   /** Enumerate scriptable frames and their element-ref tags. Child frames are
 injected on demand so their DOM is reachable (including cross-origin
 frames, which `<all_urls>` host access permits). */
-  async function listFrames(
-    tabId: number,
-    options: { refresh?: boolean } = {}
-  ): Promise<Array<{ frameId: number; tag: string | null }>> {
+  function listFrames(tabId: number, options: { refresh?: boolean } = {}): Promise<Frame[]> {
+    const pending = frameDiscoveries.get(tabId);
+    if (pending) return pending;
     const cached = frameCache.get(tabId);
     if (!options.refresh && cached && Date.now() - cached.at < FRAME_CACHE_TTL_MS) {
-      return cached.frames;
+      return Promise.resolve(cached.frames);
     }
 
-    const read = async (): Promise<Array<{ frameId: number; tag: string | null }>> => {
+    const discovery = discoverFrames(tabId)
+      .then((frames) => {
+        // Cleanup may invalidate this lookup while Chrome is still responding.
+        if (frameDiscoveries.get(tabId) === discovery) {
+          frameCache.set(tabId, { at: Date.now(), frames });
+          while (frameCache.size > 64) {
+            const oldest = frameCache.keys().next().value;
+            if (oldest === undefined) break;
+            frameCache.delete(oldest);
+          }
+        }
+        return frames;
+      })
+      .finally(() => {
+        if (frameDiscoveries.get(tabId) === discovery) frameDiscoveries.delete(tabId);
+      });
+    frameDiscoveries.set(tabId, discovery);
+    return discovery;
+  }
+
+  async function discoverFrames(tabId: number): Promise<Frame[]> {
+    const read = async (): Promise<Frame[]> => {
       const results = await chromeObj.scripting.executeScript({
         target: { tabId, allFrames: true },
         func: readFrameRefTag,
@@ -330,12 +349,6 @@ frames, which `<all_urls>` host access permits). */
       }
     } catch {
       frames = [{ frameId: 0, tag: null }];
-    }
-    frameCache.set(tabId, { at: Date.now(), frames });
-    while (frameCache.size > 64) {
-      const oldest = frameCache.keys().next().value;
-      if (oldest === undefined) break;
-      frameCache.delete(oldest);
     }
     return frames;
   }
@@ -435,6 +448,7 @@ ignored since ensureContentScript will handle them on demand. */
     clearCleanupFrames: (tabId) => {
       patchFrames.delete(tabId);
       frameCache.delete(tabId);
+      frameDiscoveries.delete(tabId);
     },
     installNavigationSignals,
     uninstallNavigationSignals,
