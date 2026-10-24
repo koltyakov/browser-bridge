@@ -114,6 +114,65 @@ test('scoped semantic searches stop after the truncation lookahead instead of sc
   );
 });
 
+test('target existence probes stop at the first semantic match without a uniqueness scan', async () => {
+  await withQuery(
+    '<button>Save</button><section>' + '<span>unrelated</span>'.repeat(20010) + '</section>',
+    ({ document, query }) => {
+      Object.defineProperty(document.querySelector('span')!, 'matches', {
+        value() {
+          throw new Error('existence probe visited an unrelated subtree');
+        },
+      });
+      for (const target of [
+        { role: 'button', name: 'Save', selector: 'button' },
+        { text: 'Save', selector: 'button' },
+      ]) {
+        assert.equal(query.probeTarget({ target }).found, true);
+      }
+    }
+  );
+});
+
+test('attached and visible waits stop at the first match on large pages', async () => {
+  await withQuery(
+    '<button>Save</button><section>' + '<span>unrelated</span>'.repeat(20010) + '</section>',
+    async ({ document, query, registry }) => {
+      const first = document.querySelector('button')!;
+      Object.defineProperty(document.querySelector('span')!, 'matches', {
+        value() {
+          throw new Error('wait visited an unrelated subtree');
+        },
+      });
+      for (const state of ['attached', 'visible']) {
+        for (const text of [undefined, 'Save']) {
+          const result = await query.waitForDom({ selector: 'button', text, state });
+          assert.equal(result.found, true);
+          assert.equal(registry.getRequiredElement(result.elementRef!), first);
+        }
+      }
+    }
+  );
+});
+
+test('hidden waits stop at the first visible match but inspect all hidden matches', async () => {
+  await withQuery('<button>Save</button><button>Save</button>', async ({ document, query }) => {
+    const buttons = [...document.querySelectorAll('button')];
+    let laterChecks = 0;
+    Reflect.set(buttons[1], 'getBoundingClientRect', () => {
+      laterChecks += 1;
+      return { x: 0, y: 0, width: 0, height: 0 };
+    });
+    const visible = await query.waitForDom({ selector: 'button', state: 'hidden', timeoutMs: 100 });
+    assert.equal(visible.found, false);
+    assert.equal(laterChecks, 0);
+    Reflect.set(buttons[0], 'getBoundingClientRect', () => ({ width: 0, height: 0 }));
+    const hidden = await query.waitForDom({ selector: 'button', state: 'hidden' });
+    assert.equal(hidden.found, true);
+    assert.equal(laterChecks, 1);
+    assert.equal((await query.waitForDom({ selector: '.missing', state: 'hidden' })).found, true);
+  });
+});
+
 test('semantic result summaries reuse visibility checks and retain hidden and zero-size handling', async () => {
   await withQuery('<button id="target">Save</button>', ({ document, query }) => {
     const target = document.getElementById('target')!;

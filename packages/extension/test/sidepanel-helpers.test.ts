@@ -656,11 +656,11 @@ test('caller tooltips show known details without inventing an identity', () => {
   assert.equal(getActivityCallerTooltip({ name: '<unsafe>', source: 'mcp' }), '');
   assert.equal(
     getActivityCallerTooltip({ name: 'Claude Code', version: '2.1.0', source: 'mcp' }),
-    'Claude Code\nVersion: 2.1.0\nReported by MCP clientInfo'
+    'Claude Code\nVersion: 2.1.0\nDetected with MCP client'
   );
   assert.equal(
     getActivityCallerTooltip({ name: 'OpenCode', source: 'environment', signal: 'OPENCODE' }),
-    'OpenCode\nDetected from OPENCODE'
+    'OpenCode\nDetected via env var'
   );
   assert.equal(
     getActivityCallerTooltip({ name: 'Codex', source: 'explicit' }),
@@ -668,7 +668,7 @@ test('caller tooltips show known details without inventing an identity', () => {
   );
   assert.equal(
     getActivityCallerTooltip({ name: 'Agent', source: 'environment' }),
-    'Agent\nDetected from environment'
+    'Agent\nDetected via env var'
   );
 });
 

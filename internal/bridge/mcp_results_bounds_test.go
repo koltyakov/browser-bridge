@@ -4,7 +4,68 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"unicode/utf16"
 )
+
+func TestMCPStringBoundsPreserveUTF16Semantics(t *testing.T) {
+	for _, text := range []string{"", "plain ASCII", "é漢字", "a😀b🚀", "\xff\xfe😀z"} {
+		units := utf16.Encode([]rune(text))
+		if got := mcpStringLength(text); got != len(units) {
+			t.Fatalf("length(%q)=%d, want %d", text, got, len(units))
+		}
+		for limit := -1; limit <= len(units)+1; limit++ {
+			want := text
+			if len(units) > limit {
+				want = string(utf16.Decode(units[:max(0, limit)]))
+			}
+			if got := mcpSlice(text, limit); got != want {
+				t.Fatalf("slice(%q,%d)=%q, want %q", text, limit, got, want)
+			}
+		}
+	}
+}
+
+func TestMCPBoundStringSurrogateBoundaryAndCapture(t *testing.T) {
+	for _, capture := range []bool{false, true} {
+		bounded, truncated := mcpBoundValue(value("a😀b"), 10, 100, 2, capture)
+		want := "a�"
+		if capture {
+			want += "[truncated]"
+		}
+		if !truncated || string(bounded) != string(value(want)) {
+			t.Fatalf("capture=%v: %s truncated=%v", capture, bounded, truncated)
+		}
+	}
+}
+
+func BenchmarkMCPStringBounds(b *testing.B) {
+	text := strings.Repeat("some text 😀 ", 10000)
+	b.Run("length", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			if mcpStringLength(text) == 0 {
+				b.Fatal("empty length")
+			}
+		}
+	})
+	b.Run("prefix", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			if mcpSlice(text, 120) == "" {
+				b.Fatal("empty prefix")
+			}
+		}
+	})
+	b.Run("evidence", func(b *testing.B) {
+		raw := value(object{"text": value(text)})
+		params := object{"textBudget": value(120)}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			mcpEvidence(raw, "page.get_text", params, nil)
+		}
+	})
+}
 
 func TestMCPBoundOmitsKeysThatExceedCharacterBudget(t *testing.T) {
 	for _, key := range []string{strings.Repeat("x", 100000), strings.Repeat("😀", 10001)} {
