@@ -1,3 +1,5 @@
+import { normalizeBridgeCaller } from '../../../protocol/src/caller.js';
+
 export type VersionMismatchView = { key: string; message: string };
 
 export function getAgentTabsInlineHeight(
@@ -279,6 +281,22 @@ export function getActivitySourcePills(
   if (mcpEra === 'legacy') return { source: 'MCP', version: 'v1' };
   if (mcpEra === 'modern') return { source: 'MCP', version: 'v2' };
   return { source: 'MCP', version: '' };
+}
+
+/** Caller details stay in the existing source pill's native hover tooltip. */
+export function getActivityCallerTooltip(value: unknown): string {
+  const caller = normalizeBridgeCaller(value);
+  if (!caller) return '';
+  const lines = [caller.name];
+  if (caller.version) lines.push(`Version: ${caller.version}`);
+  if (caller.source === 'mcp') {
+    lines.push('Reported by MCP clientInfo');
+  } else if (caller.source === 'explicit') {
+    lines.push('Reported by BBX_AGENT');
+  } else {
+    lines.push(caller.signal ? `Detected from ${caller.signal}` : 'Detected from environment');
+  }
+  return lines.join('\n');
 }
 
 export function getSetupStatusView(

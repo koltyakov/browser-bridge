@@ -103,6 +103,8 @@ bbx install-skill agents --project .
 
 The Browser Bridge skill is a CLI path. Use `bbx install-skill` for shell-driven agent flows and generic agent runtimes.
 
+Activity keeps the same CLI/MCP tags. Hover a tag to see the calling client and version when known. MCP uses the client's reported identity; CLI calls recognize active OpenCode, Claude Code, Codex, Cursor, and Gemini CLI environment markers. If markers are missing or conflicting, set `BBX_AGENT=opencode` or another client name in the calling process's environment. This is display-only attribution, not authentication. Marker values and model identities are not collected.
+
 Shortcut commands cover the common cases. Advanced protocol fields stay available through `bbx call <method> '{...}'` when you need the full bridge surface, and exact bridge methods can also be invoked directly for the raw path, for example `bbx page.get_state`.
 
 If Browser Bridge does not appear immediately after `bbx install-mcp` or `bbx install-skill`, restart the agent so it reloads MCP config or skill definitions.

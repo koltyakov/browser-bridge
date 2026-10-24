@@ -29,6 +29,7 @@ type AccessRequestState = {
     source: string;
     mcpEra?: 'legacy' | 'modern' | null;
     tabId: number | null;
+    caller?: import('../../../protocol/src/types.js').BridgeCaller;
     url: string;
     summary: string;
   }>;
@@ -321,7 +322,7 @@ test('background access request reuses an open side panel instead of opening a p
     createRequest({
       id: 'background-access-request-sidepanel',
       method: 'access.request',
-      meta: { source: 'mcp', mcp_era: 'modern' },
+      meta: { source: 'mcp', mcp_era: 'modern', caller: { name: 'OpenCode', source: 'mcp' } },
     })
   );
 
@@ -341,6 +342,7 @@ test('background access request reuses an open side panel instead of opening a p
   const requestActivity = state.actionLog.find((entry) => entry.method === 'access.requested');
   assert.equal(requestActivity?.source, 'mcp');
   assert.equal(requestActivity?.mcpEra, 'modern');
+  assert.deepEqual(requestActivity?.caller, { name: 'OpenCode', source: 'mcp' });
   assert.equal(requestActivity?.tabId, 31);
   assert.equal(requestActivity?.url, 'https://example.com/focused');
   assert.equal(requestActivity?.summary, 'Window access requested; waiting for confirmation.');

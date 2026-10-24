@@ -31,6 +31,11 @@ func normalizeDaemonRequestMeta(meta object) {
 	if source != "mcp" || !stringIn(meta.text("mcp_era"), []string{"legacy", "modern"}) {
 		delete(meta, "mcp_era")
 	}
+	if caller := normalizeCaller(meta["caller"]); caller != nil && (source == "cli" || source == "mcp") {
+		meta["caller"] = value(caller)
+	} else {
+		delete(meta, "caller")
+	}
 	retry := meta.object("automatic_retry")
 	attempt, numeric := serviceInteger(retry, "attempt")
 	if source != "mcp" || len(retry) != 2 || !numeric || attempt != 2 || retry.text("reason") != "retryable_error" {

@@ -16,6 +16,36 @@
         "modern"
       ]
     },
+    "BridgeCallerSource": {
+      "type": "string",
+      "enum": [
+        "mcp",
+        "environment",
+        "explicit"
+      ]
+    },
+    "BridgeCaller": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/BridgeCallerSource"
+        },
+        "signal": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "source"
+      ],
+      "additionalProperties": true
+    },
     "BridgeRegistration": {
       "type": "object",
       "properties": {
@@ -396,6 +426,9 @@
         },
         "mcp_era": {
           "$ref": "#/$defs/McpProtocolEra"
+        },
+        "caller": {
+          "$ref": "#/$defs/BridgeCaller"
         },
         "response_bytes": {
           "type": "number"

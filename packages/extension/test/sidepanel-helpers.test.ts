@@ -7,6 +7,7 @@ import {
   formatTabActivityAge,
   getAgentTabsInlineHeight,
   getActivitySourcePills,
+  getActivityCallerTooltip,
   getActivitySourceTag,
   getInstallKey,
   getMcpSetupCellState,
@@ -648,6 +649,27 @@ test('getActivitySourceTag prefers explicit source metadata', () => {
   assert.equal(getActivitySourceTag('mcp', 'legacy'), 'MCP Legacy');
   assert.equal(getActivitySourceTag('mcp', 'modern'), 'MCP Modern');
   assert.equal(getActivitySourceTag('cli', 'modern'), 'CLI');
+});
+
+test('caller tooltips show known details without inventing an identity', () => {
+  assert.equal(getActivityCallerTooltip(undefined), '');
+  assert.equal(getActivityCallerTooltip({ name: '<unsafe>', source: 'mcp' }), '');
+  assert.equal(
+    getActivityCallerTooltip({ name: 'Claude Code', version: '2.1.0', source: 'mcp' }),
+    'Claude Code\nVersion: 2.1.0\nReported by MCP clientInfo'
+  );
+  assert.equal(
+    getActivityCallerTooltip({ name: 'OpenCode', source: 'environment', signal: 'OPENCODE' }),
+    'OpenCode\nDetected from OPENCODE'
+  );
+  assert.equal(
+    getActivityCallerTooltip({ name: 'Codex', source: 'explicit' }),
+    'Codex\nReported by BBX_AGENT'
+  );
+  assert.equal(
+    getActivityCallerTooltip({ name: 'Agent', source: 'environment' }),
+    'Agent\nDetected from environment'
+  );
 });
 
 test('getActivitySourcePills splits MCP source and protocol version', () => {

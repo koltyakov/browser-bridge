@@ -8,6 +8,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/koltyakov/browser-bridge/internal/protocol"
 )
 
 const modernVersion = "2026-07-28"
@@ -23,6 +25,7 @@ type mcpSession struct {
 	clientID     string
 	enabled      map[string]bool
 	agentSession string
+	caller       *protocol.BridgeCaller
 	closed       bool
 }
 
@@ -211,6 +214,7 @@ func mcpServe(ctx context.Context, c config, input io.Reader, output io.Writer) 
 				revision = "2025-11-25"
 			}
 			era = "legacy"
+			s.caller = reportedCaller(params.object("clientInfo"))
 			_ = writer.send(rpcResult(id, object{"protocolVersion": value(revision), "serverInfo": value(object{"name": value("browser-bridge"), "version": value(version)}), "capabilities": value(object{"tools": value(object{"listChanged": value(true)})}), "instructions": value(mcpCatalogData().LegacyInstructions)}))
 			continue
 		}
@@ -280,6 +284,7 @@ func mcpServe(ctx context.Context, c config, input io.Reader, output io.Writer) 
 				continue
 			}
 			callCtx, callCancel := context.WithTimeout(ctx, 124*time.Second)
+			callCtx = s.callerContext(callCtx, era, envelope)
 			pendingMu.Lock()
 			if _, duplicate := pending[string(id)]; duplicate {
 				pendingMu.Unlock()

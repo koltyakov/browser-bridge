@@ -136,6 +136,11 @@ func newRequest(method string, params, meta object, tab int64) object {
 	if meta == nil {
 		meta = object{}
 	}
+	if meta.text("source") == "cli" && meta["caller"] == nil {
+		if caller := environmentCaller(os.Getenv); caller != nil {
+			meta["caller"] = value(caller)
+		}
+	}
 	if params == nil {
 		params = object{}
 	}

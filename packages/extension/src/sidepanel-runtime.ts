@@ -17,6 +17,7 @@ export type ActionLogEntry = {
   method: string;
   source: string;
   mcpEra?: import('../../../protocol/src/types.js').McpProtocolEra | null;
+  caller?: import('../../../protocol/src/types.js').BridgeCaller;
   tabId: number | null;
   url: string;
   ok: boolean;

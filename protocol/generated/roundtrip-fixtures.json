@@ -10,6 +10,29 @@
     "input": "legacy"
   },
   {
+    "type": "BridgeCallerSource",
+    "valid": true,
+    "input": "mcp"
+  },
+  {
+    "type": "BridgeCaller",
+    "valid": true,
+    "input": {
+      "name": "wire-✓",
+      "version": "wire-✓",
+      "source": "mcp",
+      "signal": "wire-✓",
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
     "type": "BridgeRegistration",
     "valid": true,
     "input": {
@@ -358,6 +381,20 @@
       "image_bytes": 1.25,
       "source": "cli",
       "mcp_era": "legacy",
+      "caller": {
+        "name": "wire-✓",
+        "version": "wire-✓",
+        "source": "mcp",
+        "signal": "wire-✓",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
       "response_bytes": 1.25,
       "approx_tokens": 1.25,
       "cost_class": "cheap",

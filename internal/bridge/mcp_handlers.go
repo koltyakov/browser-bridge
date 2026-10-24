@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/koltyakov/browser-bridge/internal/protocol"
 )
 
 type mcpCatalog struct {
@@ -424,6 +426,9 @@ func (s *mcpSession) bridge(ctx context.Context, method string, params, args obj
 	agentSession := s.agentSession
 	s.mu.Unlock()
 	meta := object{"source": value("mcp"), "mcp_era": value(era), "agent_session": value(agentSession)}
+	if caller, ok := ctx.Value(mcpCallerContextKey{}).(*protocol.BridgeCaller); ok {
+		meta["caller"] = value(caller)
+	}
 	for key, dest := range map[string]string{"extensionId": "target_extension", "targetBrowser": "target_browser", "targetProfile": "target_profile"} {
 		if v, ok := args[key]; ok {
 			meta[dest] = v

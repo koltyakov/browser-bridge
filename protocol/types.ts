@@ -2,6 +2,17 @@
 export type BridgeRequestSource = 'cli' | 'mcp';
 export type McpProtocolEra = 'legacy' | 'modern';
 
+export type BridgeCallerSource = 'mcp' | 'environment' | 'explicit';
+
+/** Best-effort display attribution only. Never use caller metadata for authorization. */
+export interface BridgeCaller {
+  name: string;
+  version?: string;
+  source: BridgeCallerSource;
+  /** Environment variable name only, never its value. */
+  signal?: string;
+}
+
 /** Registration on the JSON-lines transport; Chrome frames use the same JSON payloads. */
 export interface BridgeRegistration {
   type: 'register';
@@ -284,6 +295,7 @@ export interface BridgeMeta {
   image_bytes?: number;
   source?: BridgeRequestSource;
   mcp_era?: McpProtocolEra;
+  caller?: BridgeCaller;
   response_bytes?: number;
   approx_tokens?: number;
   cost_class?: CostClass;

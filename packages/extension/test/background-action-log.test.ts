@@ -60,6 +60,26 @@ function deferred() {
   return { promise, resolve };
 }
 
+test('caller attribution survives activity persistence and worker restart', async () => {
+  const { controller, storage, startWorker } = createHistoryHarness();
+  const caller = { name: 'OpenCode', source: 'environment', signal: 'OPENCODE' } as const;
+  const reportedCaller = { ...caller, secret: 'not-retained' };
+  const request = createRequest({
+    id: 'caller-persistence',
+    method: 'dom.query',
+    tabId: 7,
+    meta: { source: 'cli', caller: reportedCaller },
+  });
+  await controller.logBridgeAction(request, createSuccess(request.id, { nodes: [] }), {
+    tabId: 7,
+    url: 'https://example.test/',
+  });
+  assert.doesNotMatch(JSON.stringify(storage.snapshot()), /not-retained/);
+  const restarted = startWorker();
+  await restarted.controller.restoreActionLog();
+  assert.deepEqual(restarted.state.actionLog[0].caller, caller);
+});
+
 test('WebMCP activity never persists website metadata, arguments, output or callback errors', async () => {
   const { controller, storage } = createHistoryHarness();
   const toolRef = 'wm_12345678-1234-1234-1234-123456789012';
@@ -628,12 +648,22 @@ test('standalone handshake pings and immediate sourced checks are retained for g
   const modernRequest = createRequest({
     id: 'modern-connection-check',
     method: 'health.ping',
-    meta: { source: 'mcp', mcp_era: 'modern' },
+    meta: {
+      source: 'mcp',
+      mcp_era: 'modern',
+      caller: { name: 'OpenCode', version: '2.0.0', source: 'mcp' },
+    },
   });
   await controller.logBridgeAction(modernRequest, response, context);
   assert.equal(state.actionLog.length, 3);
   assert.equal(state.actionLog[2].source, 'mcp');
   assert.equal(state.actionLog[2].mcpEra, 'modern');
+  assert.deepEqual(state.actionLog[2].caller, {
+    name: 'OpenCode',
+    version: '2.0.0',
+    source: 'mcp',
+  });
+  assert.equal(state.actionLog[0].caller, undefined);
 });
 
 test('dialog text and prompt values never enter persisted action logs', async () => {
