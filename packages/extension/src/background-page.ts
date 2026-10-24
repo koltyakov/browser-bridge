@@ -183,7 +183,11 @@ export function createPageRequestController(
 ): {
   resolveRequestTarget: (
     request: BridgeRequest,
-    options?: { requireScriptable?: boolean; peek?: boolean }
+    options?: {
+      requireScriptable?: boolean;
+      peek?: boolean;
+      onRouted?: (routing: TabRouting) => void;
+    }
   ) => Promise<ResolvedTabTarget>;
   waitForTabComplete: (tabId: number, timeoutMs: number) => Promise<chrome.tabs.Tab>;
   handlePageGetConsole: (request: BridgeRequest) => Promise<BridgeResponse>;
@@ -210,7 +214,13 @@ one tab via `tab_id`. Otherwise each agent session stays on its working tab
 only an unbound or idle-expired session follows the active tab. */
   async function resolveRequestTarget(
     request: BridgeRequest,
-    options: { requireScriptable?: boolean; peek?: boolean; allowPendingUrl?: boolean } = {}
+    options: {
+      requireScriptable?: boolean;
+      peek?: boolean;
+      allowPendingUrl?: boolean;
+      /** Receives the routing decision, including for a peek. */
+      onRouted?: (routing: TabRouting) => void;
+    } = {}
   ): Promise<ResolvedTabTarget> {
     const requireScriptable = options.requireScriptable !== false;
     const routingOptions = { requireScriptable, allowPendingUrl: options.allowPendingUrl };
@@ -277,15 +287,13 @@ only an unbound or idle-expired session follows the active tab. */
       via: TabRoutingVia
     ): Promise<ResolvedTabTarget> => {
       assertAccess();
+      const routing = { tabId: resolved.tabId, via, activeTabId };
       if (!peek) {
         if (agentTabs) await agentTabs.bind(session, resolved.tabId, resolved.windowId);
         assertAccess();
-        dependencies.onRequestRouted?.(request.id, {
-          tabId: resolved.tabId,
-          via,
-          activeTabId,
-        });
+        dependencies.onRequestRouted?.(request.id, routing);
       }
+      options.onRouted?.(routing);
       return resolved;
     };
 

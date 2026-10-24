@@ -215,3 +215,57 @@ test('navigation is checked at tab level so it can recover an unresponsive page'
     finish();
   }
 });
+
+test('a pinned implicit target keeps the routing the gate chose', async () => {
+  const request = createRequest({
+    id: crypto.randomUUID(),
+    method: 'input.click',
+    params: {},
+    meta: { mutation_schedule: true },
+  });
+  const finish = requestLifetimes.begin(request);
+  const gate = createMutationGate({
+    resolveTarget: async () => ({
+      tabId: 42,
+      windowId: 1,
+      url: 'https://example.test/',
+      via: 'working',
+    }),
+    captureAccess: () => () => {},
+    snapshot: async () => ({ documentId: 'first', url: 'https://example.test/' }),
+    send: (message) =>
+      queueMicrotask(() =>
+        gate.handle({ type: 'host.mutation_granted', requestId: message.requestId })
+      ),
+  });
+  try {
+    const pinned = await gate.prepare(request);
+    assert.equal(pinned.tab_id, 42);
+    const explicit = { tabId: 42, via: 'explicit' as const, activeTabId: 7 };
+    assert.deepEqual(gate.routing(request.id, explicit), { ...explicit, via: 'working' });
+    // A different tab or request is reported as resolved.
+    assert.deepEqual(gate.routing(request.id, { ...explicit, tabId: 43 }), {
+      ...explicit,
+      tabId: 43,
+    });
+    assert.deepEqual(gate.routing('other', explicit), explicit);
+    gate.release(request.id);
+    assert.deepEqual(gate.routing(request.id, explicit), explicit);
+  } finally {
+    finish();
+  }
+});
+
+test('an explicit target is not pinned', async () => {
+  const h = harness();
+  try {
+    const result = h.gate.prepare(h.request);
+    await h.prepared;
+    h.gate.handle({ type: 'host.mutation_granted', requestId: h.request.id });
+    await result;
+    const routed = { tabId: 42, via: 'explicit' as const, activeTabId: null };
+    assert.deepEqual(h.gate.routing(h.request.id, routed), routed);
+  } finally {
+    h.finish();
+  }
+});
