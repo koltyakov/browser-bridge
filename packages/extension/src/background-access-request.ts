@@ -10,6 +10,7 @@ export type AccessRequestControllerDeps = {
     method: string;
     source?: string;
     mcpEra?: import('../../../protocol/src/types.js').McpProtocolEra | null;
+    caller?: import('../../../protocol/src/types.js').BridgeCaller;
     tabId?: number | null;
     url?: string;
     ok: boolean;
@@ -19,7 +20,12 @@ export type AccessRequestControllerDeps = {
   emitUiState: () => Promise<void>;
   openRequestedAccessUi: (target: ResolvedTabTarget) => Promise<void>;
 };
-import { createFailure, createSuccess, ERROR_CODES } from '../../../protocol/src/index.js';
+import {
+  createFailure,
+  createSuccess,
+  ERROR_CODES,
+  normalizeBridgeCaller,
+} from '../../../protocol/src/index.js';
 import { normalizeRequestedAccessTab } from './background-routing.js';
 
 export type ExtensionState = import('./background-state.js').ExtensionState;
@@ -154,7 +160,8 @@ export function createAccessRequestController(
     target: ResolvedTabTarget,
     source: unknown,
     mcpEra: unknown,
-    intent: unknown
+    intent: unknown,
+    caller?: unknown
   ): Promise<void> {
     state.requestedAccessWindowId = target.windowId;
     state.requestedAccessContext = createAccessRequestContext(target, source, mcpEra, intent);
@@ -163,6 +170,7 @@ export function createAccessRequestController(
         method: 'access.requested',
         source: typeof source === 'string' ? source : undefined,
         mcpEra: mcpEra === 'legacy' || mcpEra === 'modern' ? mcpEra : null,
+        caller: normalizeBridgeCaller(caller),
         tabId: target.tabId,
         url: target.url,
         ok: true,
@@ -194,7 +202,8 @@ because Browser Bridge is off for the target window. */
       target,
       request.meta?.source,
       request.meta?.mcp_era,
-      request.params.intent
+      request.params.intent,
+      request.meta?.caller
     );
     return null;
   }
@@ -263,7 +272,8 @@ returns the requested window/tab metadata. */
       target,
       request.meta?.source,
       request.meta?.mcp_era,
-      request.params.intent
+      request.params.intent,
+      request.meta?.caller
     );
 
     return createSuccess(

@@ -6,6 +6,7 @@ import {
   MAX_NATIVE_MESSAGE_BYTES,
   MAX_SENSITIVE_VALUE_BYTES,
   normalizeTabCloseParams,
+  normalizeBridgeCaller,
   sanitizeIncidentalText,
   sanitizeIncidentalUrl,
   serializeJsonPayload,
@@ -41,6 +42,7 @@ export type ActionLogEntryInput = {
   method: string;
   source?: string;
   mcpEra?: import('../../../protocol/src/types.js').McpProtocolEra | null;
+  caller?: import('../../../protocol/src/types.js').BridgeCaller;
   tabId?: number | null;
   url?: string;
   ok: boolean;
@@ -253,12 +255,14 @@ Late responses are rejected by the tab-existence check in append. */
         }
       }
       const source = normalizeActionLogSource(entry.source);
+      const caller = source ? normalizeBridgeCaller(entry.caller) : undefined;
       state.actionLog.push({
         id: crypto.randomUUID(),
         at,
         method: entry.method,
         source,
         mcpEra: normalizeActionLogMcpEra(source, entry.mcpEra),
+        ...(caller ? { caller } : {}),
         tabId,
         url: sanitizeIncidentalUrl(entry.url ?? ''),
         ok: entry.ok,
@@ -346,6 +350,7 @@ Late responses are rejected by the tab-existence check in append. */
       await appendActionLogEntry({
         method: request.method,
         source: normalizeActionLogSource(request.meta?.source),
+        caller: normalizeBridgeCaller(request.meta?.caller),
         mcpEra:
           request.meta?.mcp_era === 'legacy' || request.meta?.mcp_era === 'modern'
             ? request.meta.mcp_era

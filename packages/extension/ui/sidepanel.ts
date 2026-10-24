@@ -4,6 +4,7 @@ import {
   formatTabActivityAge,
   getAgentTabsInlineHeight,
   getActivitySourcePills,
+  getActivityCallerTooltip,
   getPromptExamplesRenderGroups,
   getSidepanelAgentStatusView,
   getSidepanelCurrentTabView,
@@ -52,6 +53,7 @@ export type ActionLogEntry = {
   method: string;
   source: string;
   mcpEra?: import('../../../protocol/src/types.js').McpProtocolEra | null;
+  caller?: import('../../../protocol/src/types.js').BridgeCaller;
   tabId: number | null;
   url: string;
   ok: boolean;
@@ -1475,6 +1477,15 @@ function renderActionLogEntry(
     const sourceTag = document.createElement('span');
     sourceTag.className = 'activity-source-tag';
     sourceTag.textContent = activitySourcePills.source;
+    const callerTooltip = [
+      ...new Set(
+        entries
+          .slice(index, index + repeatCount)
+          .map((item) => getActivityCallerTooltip(item.caller))
+          .filter(Boolean)
+      ),
+    ].join('\n\n');
+    if (callerTooltip) sourceTag.title = callerTooltip;
     sourceTags.append(sourceTag);
     if (activitySourcePills.version) {
       const versionTag = document.createElement('span');

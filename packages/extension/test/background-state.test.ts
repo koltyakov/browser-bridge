@@ -193,6 +193,31 @@ test('background state normalizes action log entries and rejects malformed value
   );
 });
 
+test('stored activity preserves safe caller attribution and strips incidental fields', () => {
+  const entry = { id: 'caller-history', method: 'dom.query', source: 'cli' };
+  assert.deepEqual(
+    normalizeActionLogEntry({
+      ...entry,
+      caller: {
+        name: 'OpenCode',
+        source: 'environment',
+        signal: 'OPENCODE',
+        token: 'private-secret',
+      },
+    })?.caller,
+    { name: 'OpenCode', source: 'environment', signal: 'OPENCODE' }
+  );
+  assert.equal(
+    normalizeActionLogEntry({ ...entry, caller: { name: '<unsafe>', source: 'mcp' } })?.caller,
+    undefined
+  );
+  assert.equal(
+    normalizeActionLogEntry({ ...entry, source: '', caller: { name: 'Agent', source: 'mcp' } })
+      ?.caller,
+    undefined
+  );
+});
+
 test('background state maps thrown errors to bridge failures', () => {
   const request = createRequest({ id: 'req-state-failure', method: 'dom.query' });
   const bridgeFailure = toFailureResponse(

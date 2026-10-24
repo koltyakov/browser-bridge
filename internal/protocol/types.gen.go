@@ -36,6 +36,53 @@ func (v McpProtocolEra) Valid() bool {
 	return false
 }
 
+type BridgeCallerSource string
+
+const (
+	BridgeCallerSourceMCP BridgeCallerSource = "mcp"
+
+	BridgeCallerSourceEnvironment BridgeCallerSource = "environment"
+
+	BridgeCallerSourceExplicit BridgeCallerSource = "explicit"
+)
+
+func (v BridgeCallerSource) Valid() bool {
+	switch v {
+	case BridgeCallerSourceMCP, BridgeCallerSourceEnvironment, BridgeCallerSourceExplicit:
+		return true
+	}
+	return false
+}
+
+type BridgeCaller struct {
+	Name string `json:"name"`
+
+	Version Optional[string] `json:"version,omitzero"`
+
+	Source BridgeCallerSource `json:"source"`
+
+	Signal Optional[string] `json:"signal,omitzero"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v BridgeCaller) MarshalJSON() ([]byte, error) {
+	type alias BridgeCaller
+	return marshalOpen(alias(v), v.Extra, []string{"name", "version", "source", "signal"})
+}
+
+func (v *BridgeCaller) UnmarshalJSON(data []byte) error {
+	type alias BridgeCaller
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"name", "version", "source", "signal"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = BridgeCaller(decoded)
+	return nil
+}
+
 type BridgeRegistration struct {
 	Type string `json:"type"`
 
@@ -450,6 +497,8 @@ type BridgeMeta struct {
 
 	MCPEra Optional[McpProtocolEra] `json:"mcp_era,omitzero"`
 
+	Caller Optional[BridgeCaller] `json:"caller,omitzero"`
+
 	ResponseBytes Optional[float64] `json:"response_bytes,omitzero"`
 
 	ApproxTokens Optional[float64] `json:"approx_tokens,omitzero"`
@@ -487,13 +536,13 @@ type BridgeMeta struct {
 
 func (v BridgeMeta) MarshalJSON() ([]byte, error) {
 	type alias BridgeMeta
-	return marshalOpen(alias(v), v.Extra, []string{"target_extension", "target_browser", "target_profile", "protocol_version", "token_budget", "transport_bytes", "transport_approx_tokens", "transport_cost_class", "text_bytes", "text_approx_tokens", "text_cost_class", "image_approx_tokens", "image_bytes", "source", "mcp_era", "response_bytes", "approx_tokens", "cost_class", "debugger_backed", "budget_applied", "budget_truncated", "continuation_hint", "automatic_retry", "stale_recovery", "agent_session", "transport_owner", "deadline_ms", "artifact_ack", "tab_id", "tab_routing", "active_tab_id"})
+	return marshalOpen(alias(v), v.Extra, []string{"target_extension", "target_browser", "target_profile", "protocol_version", "token_budget", "transport_bytes", "transport_approx_tokens", "transport_cost_class", "text_bytes", "text_approx_tokens", "text_cost_class", "image_approx_tokens", "image_bytes", "source", "mcp_era", "caller", "response_bytes", "approx_tokens", "cost_class", "debugger_backed", "budget_applied", "budget_truncated", "continuation_hint", "automatic_retry", "stale_recovery", "agent_session", "transport_owner", "deadline_ms", "artifact_ack", "tab_id", "tab_routing", "active_tab_id"})
 }
 
 func (v *BridgeMeta) UnmarshalJSON(data []byte) error {
 	type alias BridgeMeta
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"target_extension", "target_browser", "target_profile", "protocol_version", "token_budget", "transport_bytes", "transport_approx_tokens", "transport_cost_class", "text_bytes", "text_approx_tokens", "text_cost_class", "image_approx_tokens", "image_bytes", "source", "mcp_era", "response_bytes", "approx_tokens", "cost_class", "debugger_backed", "budget_applied", "budget_truncated", "continuation_hint", "automatic_retry", "stale_recovery", "agent_session", "transport_owner", "deadline_ms", "artifact_ack", "tab_id", "tab_routing", "active_tab_id"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"target_extension", "target_browser", "target_profile", "protocol_version", "token_budget", "transport_bytes", "transport_approx_tokens", "transport_cost_class", "text_bytes", "text_approx_tokens", "text_cost_class", "image_approx_tokens", "image_bytes", "source", "mcp_era", "caller", "response_bytes", "approx_tokens", "cost_class", "debugger_backed", "budget_applied", "budget_truncated", "continuation_hint", "automatic_retry", "stale_recovery", "agent_session", "transport_owner", "deadline_ms", "artifact_ack", "tab_id", "tab_routing", "active_tab_id"})
 	if err != nil {
 		return err
 	}

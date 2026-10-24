@@ -7,6 +7,7 @@
 export * from './budget-presets.js';
 export * from './budget.js';
 export * from './capabilities.js';
+export * from './caller.js';
 export * from './defaults.js';
 export * from './errors.js';
 export { normalizeEmulation, DEVICE_PRESETS, NETWORK_PRESETS } from './emulation.js';

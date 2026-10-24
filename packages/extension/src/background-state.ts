@@ -2,6 +2,7 @@ import {
   BridgeError,
   ERROR_CODES,
   createFailure,
+  normalizeBridgeCaller,
   sanitizeIncidentalText,
   sanitizeIncidentalUrl,
   sanitizeIncidentalValue,
@@ -41,6 +42,7 @@ export type ActionLogEntry = {
   method: string;
   source: string;
   mcpEra?: import('../../../protocol/src/types.js').McpProtocolEra | null;
+  caller?: import('../../../protocol/src/types.js').BridgeCaller;
   tabId: number | null;
   url: string;
   ok: boolean;
@@ -237,6 +239,7 @@ export function normalizeActionLogEntry(entry: unknown): ActionLogEntry | null {
     return null;
   }
   const source = normalizeActionLogSource(candidate.source);
+  const caller = source ? normalizeBridgeCaller(candidate.caller) : undefined;
 
   return {
     id: candidate.id,
@@ -244,6 +247,7 @@ export function normalizeActionLogEntry(entry: unknown): ActionLogEntry | null {
     method: candidate.method,
     source,
     mcpEra: normalizeActionLogMcpEra(source, candidate.mcpEra),
+    ...(caller ? { caller } : {}),
     tabId:
       typeof candidate.tabId === 'number' &&
       Number.isSafeInteger(candidate.tabId) &&

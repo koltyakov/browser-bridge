@@ -43,6 +43,7 @@ type ActionLogEntry = {
   method: string;
   source: string;
   mcpEra?: 'legacy' | 'modern' | null;
+  caller?: import('../../../protocol/src/types.js').BridgeCaller;
   tabId: number | null;
   url: string;
   ok: boolean;
@@ -1335,9 +1336,14 @@ test('sidepanel UI groups consecutive pings with a light counter and combined to
     await flushMicrotasks();
 
     const entries = [
-      createActionLogEntry('ping-3', 'health.ping', 300),
+      createActionLogEntry('ping-3', 'health.ping', 300, {
+        caller: { name: 'OpenCode', source: 'environment', signal: 'OPENCODE' },
+      }),
       createActionLogEntry('ping-2', 'health.ping', 200, { source: '' }),
-      createActionLogEntry('ping-1', 'health.ping', 100, { source: 'mcp' }),
+      createActionLogEntry('ping-1', 'health.ping', 100, {
+        source: 'mcp',
+        caller: { name: 'Claude Code', source: 'mcp', version: '2.1.0' },
+      }),
       createActionLogEntry('query-2', 'dom.query', 10),
       createActionLogEntry('query-1', 'dom.query', 10),
       createActionLogEntry('separate-ping', 'health.ping', 50),
@@ -1351,6 +1357,10 @@ test('sidepanel UI groups consecutive pings with a light counter and combined to
     assert.equal(counter?.textContent, 'x3');
     assert.equal(counter?.previousElementSibling?.textContent, 'health.ping');
     assert.equal(counter?.nextElementSibling?.textContent, 'CLI');
+    assert.equal(
+      counter?.nextElementSibling?.querySelector('.activity-source-tag')?.getAttribute('title'),
+      'OpenCode\nDetected from OPENCODE\n\nClaude Code\nVersion: 2.1.0\nReported by MCP clientInfo'
+    );
     assert.equal(cards[0].querySelector('.activity-tokens')?.textContent, '≈600 tok');
     assert.equal(
       cards[0].querySelector('.activity-time')?.textContent,
@@ -1633,6 +1643,7 @@ test('sidepanel UI renders activity summaries, histogram families, and repeat wa
       createActionLogEntry('legacy-mcp', 'dom.query', 0, {
         source: 'mcp',
         mcpEra: 'legacy',
+        caller: { name: 'Claude Code', version: '2.1.0', source: 'mcp' },
       }),
       createActionLogEntry('access-confirmed', 'access.confirmed', 0, {
         source: '',
@@ -1672,7 +1683,9 @@ test('sidepanel UI renders activity summaries, histogram families, and repeat wa
       createActionLogEntry('repeat-1', 'cdp.get_document', 1_200, { debuggerBacked: true }),
       createActionLogEntry('repeat-2', 'cdp.get_document', 1_100, { debuggerBacked: true }),
       createActionLogEntry('repeat-3', 'cdp.get_document', 1_050, { debuggerBacked: true }),
-      createActionLogEntry('dom', 'dom.query', 800),
+      createActionLogEntry('dom', 'dom.query', 800, {
+        caller: { name: 'OpenCode', source: 'environment', signal: 'OPENCODE' },
+      }),
       createActionLogEntry('page', 'page.get_text', 700),
       createActionLogEntry('layout', 'layout.get_box_model', 650),
       createActionLogEntry('style', 'styles.get_computed', 600),
@@ -1746,6 +1759,19 @@ test('sidepanel UI renders activity summaries, histogram families, and repeat wa
       'Legacy MCP (protocol revision 2025-11-25 or earlier)'
     );
     assert.equal(legacyTag?.textContent, 'v1');
+    assert.equal(
+      legacyTag?.parentElement?.querySelector('.activity-source-tag')?.getAttribute('title'),
+      'Claude Code\nVersion: 2.1.0\nReported by MCP clientInfo'
+    );
+    const callerTag = [...actionLog.querySelectorAll('.activity-source-tag')].find(
+      (tag) => tag.getAttribute('title') === 'OpenCode\nDetected from OPENCODE'
+    );
+    assert.equal(callerTag?.textContent, 'CLI');
+    assert.equal(
+      modernTag?.parentElement?.querySelector('.activity-source-tag')?.getAttribute('title'),
+      null
+    );
+    assert.doesNotMatch(actionLog.textContent ?? '', /OpenCode|Claude Code/);
     assert.match(
       actionLog.textContent ?? '',
       /Window access requested; waiting for confirmation\./

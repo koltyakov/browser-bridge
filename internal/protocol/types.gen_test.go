@@ -4,6 +4,8 @@ package protocol
 var wireRoundTrips = map[string]func([]byte) ([]byte, error){
 	"BridgeRequestSource":                 roundTrip[BridgeRequestSource],
 	"McpProtocolEra":                      roundTrip[McpProtocolEra],
+	"BridgeCallerSource":                  roundTrip[BridgeCallerSource],
+	"BridgeCaller":                        roundTrip[BridgeCaller],
 	"BridgeRegistration":                  roundTrip[BridgeRegistration],
 	"DaemonMessage":                       roundTrip[DaemonMessage],
 	"BridgeRequest":                       roundTrip[BridgeRequest],

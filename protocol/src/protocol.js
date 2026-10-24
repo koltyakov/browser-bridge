@@ -1,5 +1,6 @@
 // @ts-check
 
+import { normalizeBridgeCaller } from './caller.js';
 import { applyBudget } from './budget.js';
 import { getOperationTimeout } from './operation-timeouts.js';
 import { normalizeWebMcpParams } from './webmcp.js';
@@ -464,6 +465,10 @@ export function validateBridgeRequest(request) {
       token_budget: typeof meta.token_budget === 'number' ? meta.token_budget : null,
       source: meta.source === 'cli' || meta.source === 'mcp' ? meta.source : undefined,
       mcp_era: normalizeMcpEra(meta.source, meta.mcp_era),
+      caller:
+        meta.source === 'cli' || meta.source === 'mcp'
+          ? normalizeBridgeCaller(meta.caller)
+          : undefined,
       automatic_retry: normalizeAutomaticRetryMeta(meta.source, meta.automatic_retry),
       agent_session:
         typeof meta.agent_session === 'string' &&

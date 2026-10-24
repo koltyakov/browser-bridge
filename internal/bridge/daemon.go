@@ -950,6 +950,9 @@ func (d *daemon) finish(id string, response object) {
 	if era := pending.meta.text("mcp_era"); era != "" {
 		entry["mcpEra"] = value(era)
 	}
+	if caller := pending.meta["caller"]; caller != nil {
+		entry["caller"] = caller
+	}
 	d.pushServiceLog(entry)
 }
 
