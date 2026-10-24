@@ -18,8 +18,16 @@ import (
 	"github.com/koltyakov/browser-bridge/internal/protocol"
 )
 
+// Unregistered connections get a separate, smaller budget so idle handshakes
+// cannot exhaust the slots that authenticated clients use.
+const (
+	maxRegisteredPeers   = 64
+	maxUnregisteredPeers = 16
+)
+
 type peer struct {
 	conn                  net.Conn
+	accepted              time.Time
 	out                   chan queuedMessage
 	queuedBytes           atomic.Int64
 	queueMu               sync.Mutex
@@ -112,7 +120,7 @@ func (p *peer) enqueue(message object, onWrite func(bool)) bool {
 		return false
 	default:
 	}
-	payload := value(message)
+	payload := rawObject(message)
 	size := int64(len(payload) + 1)
 	if size-1 > maxMessageBytes {
 		_ = p.conn.Close()
@@ -136,7 +144,7 @@ func (p *peer) enqueue(message object, onWrite func(bool)) bool {
 }
 
 func (p *peer) respond(response object) {
-	p.send(object{"type": value("agent.response"), "response": value(response)})
+	p.send(object{"type": value("agent.response"), "response": rawObject(response)})
 }
 
 func listen(c config) (net.Listener, error) {
@@ -267,12 +275,12 @@ func runDaemon(ctx context.Context, c config) error {
 			return err
 		}
 		d.mu.Lock()
-		if len(d.peers) >= 64 {
+		if !d.admitConnection() {
 			d.mu.Unlock()
 			_ = conn.Close()
 			continue
 		}
-		p := &peer{conn: conn, out: make(chan queuedMessage, 32), done: make(chan struct{}), identity: object{}, owner: uniqueID(), dataTargets: make(map[*peer]bool)}
+		p := &peer{conn: conn, accepted: time.Now(), out: make(chan queuedMessage, 32), done: make(chan struct{}), identity: object{}, owner: uniqueID(), dataTargets: make(map[*peer]bool)}
 		d.peers[p] = true
 		d.mu.Unlock()
 		workers.Add(1)
@@ -348,6 +356,10 @@ func (d *daemon) serve(p *peer) {
 	if role == "agent" && !validID(message.text("clientId")) {
 		valid = false
 	}
+	// An evicted handshake may still have buffered its registration.
+	if !d.peers[p] || d.registeredPeers() >= maxRegisteredPeers {
+		valid = false
+	}
 	if valid {
 		p.role, p.id, p.active = role, uniqueID(), time.Now().UnixMilli()
 		d.identity(p, message)
@@ -377,8 +389,10 @@ func (d *daemon) serve(p *peer) {
 		if err != nil {
 			return
 		}
+		// Parse large bodies before taking the lock shared by every connection.
+		body := envelopeBody(message)
 		d.mu.Lock()
-		d.handle(p, message)
+		d.handleEnvelope(p, message, body)
 		barrier := p.legacyArtifactBarrier
 		p.legacyArtifactBarrier = nil
 		d.mu.Unlock()
@@ -386,6 +400,42 @@ func (d *daemon) serve(p *peer) {
 			<-barrier
 		}
 	}
+}
+
+func (d *daemon) registeredPeers() int {
+	count := 0
+	for p := range d.peers {
+		if p.role != "" {
+			count++
+		}
+	}
+	return count
+}
+
+// Refuse a connection when authenticated slots are full. When handshakes are
+// full, drop the oldest one: an honest local client registers within
+// milliseconds, so the stale entries are the idle ones.
+func (d *daemon) admitConnection() bool {
+	var oldest *peer
+	registered, waiting := 0, 0
+	for p := range d.peers {
+		if p.role != "" {
+			registered++
+			continue
+		}
+		waiting++
+		if oldest == nil || p.accepted.Before(oldest.accepted) {
+			oldest = p
+		}
+	}
+	if registered >= maxRegisteredPeers {
+		return false
+	}
+	if waiting >= maxUnregisteredPeers {
+		delete(d.peers, oldest)
+		_ = oldest.conn.Close()
+	}
+	return true
 }
 
 func validID(id string) bool {
@@ -474,7 +524,22 @@ func (d *daemon) windows() {
 	}
 }
 
+// The bodies of requests and responses are the only large message fields.
+func envelopeBody(message object) object {
+	switch message.text("type") {
+	case "agent.request":
+		return message.object("request")
+	case "extension.response":
+		return message.object("response")
+	}
+	return nil
+}
+
 func (d *daemon) handle(p *peer, message object) {
+	d.handleEnvelope(p, message, envelopeBody(message))
+}
+
+func (d *daemon) handleEnvelope(p *peer, message, body object) {
 	d.initServices()
 	kind := message.text("type")
 	if kind == "agent.cancel" && p.role == "agent" {
@@ -488,7 +553,7 @@ func (d *daemon) handle(p *peer, message object) {
 		return
 	}
 	if kind == "agent.request" {
-		d.route(p, message.object("request"))
+		d.route(p, body)
 		return
 	}
 	if kind == "register" {
@@ -501,7 +566,7 @@ func (d *daemon) handle(p *peer, message object) {
 	}
 	switch kind {
 	case "extension.response":
-		d.response(p, message.object("response"))
+		d.response(p, body)
 	case "extension.mutation_ready":
 		d.mutationReady(p, message)
 	case "extension.identity":
@@ -512,6 +577,8 @@ func (d *daemon) handle(p *peer, message object) {
 		p.window = nil
 		if p.access {
 			p.window = normalizeEnabledWindow(message.object("enabledWindow"))
+			// Work that became ready while access was off waits for a grant.
+			d.grantMutations(p)
 		} else {
 			d.revokeMutations(p)
 			d.cleanupArtifacts("", "", p.id, false)
@@ -742,13 +809,20 @@ func (d *daemon) route(p *peer, request object) {
 		d.mu.Lock()
 		defer d.mu.Unlock()
 		if d.pending[routedID] == pending {
+			response := failure(id, "TIMEOUT", "Extension did not respond in time. Inspect postconditions before retrying a mutation.")
+			if d.queuedBehindCanceled(routedID) {
+				err := response.object("error")
+				err["message"] = value("Mutation stayed queued behind canceled work on this tab that the browser has not settled. The page may be unresponsive; navigation.reload can take over the tab.")
+				err["details"] = value(object{"reason": value("queued_behind_canceled_mutation"), "tabId": value(d.scheduler.entries[routedID].tab), "dispatched": value(false)})
+				response["error"] = value(err)
+			}
 			d.cancelBrowserRequest(routedID, pending)
 			d.baselines.abandon(routedID, pending)
-			d.finish(routedID, failure(id, "TIMEOUT", "Extension did not respond in time. Inspect postconditions before retrying a mutation."))
+			d.finish(routedID, response)
 		}
 	})
 	p.dataTargets[target] = true
-	target.send(object{"type": value("extension.request"), "request": value(request)})
+	target.send(object{"type": value("extension.request"), "request": rawObject(request)})
 }
 
 func daemonPendingTimeout(params object) time.Duration {
@@ -808,7 +882,7 @@ func (d *daemon) finish(id string, response object) {
 				d.releaseOrphan(pending.target, result)
 			}
 		}
-		accepted := pending.owner.enqueue(object{"type": value("agent.response"), "response": value(response)}, func(ok bool) {
+		accepted := pending.owner.enqueue(object{"type": value("agent.response"), "response": rawObject(response)}, func(ok bool) {
 			if !ok {
 				d.mu.Lock()
 				defer d.mu.Unlock()
@@ -853,7 +927,7 @@ func (d *daemon) response(p *peer, response object) {
 	}
 	d.removeMutation(id, p)
 	if artifactKind(pending.method) != "" {
-		if !d.store(len(value(response)), false, func() func() {
+		if !d.store(len(rawObject(response)), false, func() func() {
 			valid := true
 			if response.boolean("ok") {
 				result := response.object("result")

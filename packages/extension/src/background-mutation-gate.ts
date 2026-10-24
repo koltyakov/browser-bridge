@@ -4,13 +4,20 @@ import { requestLifetimes } from './background-request-lifetime.js';
 type BridgeRequest = import('../../../protocol/src/types.js').BridgeRequest;
 type Target = { tabId: number; windowId: number; url: string };
 type Snapshot = { documentId: string; url: string };
+export type SnapshotScope = 'document' | 'tab';
+
+/** Navigation replaces the document, so it is checked at tab level. Reading the
+ * page would hang on the unresponsive renderer that navigation must recover. */
+export function mutationSnapshotScope(method: string): SnapshotScope {
+  return method.startsWith('navigation.') ? 'tab' : 'document';
+}
 
 /** A native scheduling grant is not permission. Capture the existing window
  * grant, pin the resolved tab, and recheck the committed document after waiting. */
 export function createMutationGate(dependencies: {
   resolveTarget: (request: BridgeRequest) => Promise<Target>;
   captureAccess: () => () => void;
-  snapshot: (tabId: number) => Promise<Snapshot>;
+  snapshot: (tabId: number, scope: SnapshotScope) => Promise<Snapshot>;
   send: (message: import('../../../protocol/src/types.js').MutationReadyMessage) => void;
 }) {
   const waiting = new Map<
@@ -22,8 +29,22 @@ export function createMutationGate(dependencies: {
     if (request.meta.mutation_schedule !== true) return request;
     const assertAccess = dependencies.captureAccess();
     const assertActive = requestLifetimes.guard(request.id, request.meta.deadline_ms);
+    const scope = mutationSnapshotScope(request.method);
+    // A snapshot only reads the page, so cancellation may abandon it. Without
+    // this, a hung renderer would hold the request lifetime indefinitely.
+    const snapshotUntilCanceled = (tabId: number) =>
+      new Promise<Snapshot>((resolve, reject) => {
+        const untrack = requestLifetimes.track(request.id, () =>
+          reject(
+            new BridgeError(ERROR_CODES.TIMEOUT, 'Mutation preparation canceled.', {
+              dispatched: false,
+            })
+          )
+        );
+        dependencies.snapshot(tabId, scope).then(resolve, reject).finally(untrack);
+      });
     const target = await dependencies.resolveTarget(request);
-    const snapshot = await dependencies.snapshot(target.tabId);
+    const snapshot = await snapshotUntilCanceled(target.tabId);
     assertAccess();
     assertActive();
     let untrack = () => {};
@@ -52,7 +73,7 @@ export function createMutationGate(dependencies: {
     }
     assertAccess();
     assertActive();
-    const current = await dependencies.snapshot(target.tabId);
+    const current = await snapshotUntilCanceled(target.tabId);
     assertAccess();
     assertActive();
     if (current.documentId !== snapshot.documentId || current.url !== snapshot.url) {

@@ -6,8 +6,14 @@ import {
 } from '../../../protocol/src/index.js';
 import { requestLifetimes } from './background-request-lifetime.js';
 
+/** How long a timed-out mutation keeps its tab turn while its content command
+ * is still running. A hung renderer never settles, so the turn is released. */
+export const UNSETTLED_COMMAND_GRACE_MS = 15_000;
+
 export type ContentScriptBridgeDeps = {
   contentScriptTimeoutMs: number;
+  /** Override for tests; defaults to UNSETTLED_COMMAND_GRACE_MS. */
+  unsettledCommandGraceMs?: number;
   isRestrictedAutomationUrl: (url: string) => boolean;
   recordReinjection?: (outcome: 'success' | 'failure', group: string) => void;
 };
@@ -246,8 +252,22 @@ emit navigation-kind events; the background re-reads the authoritative URL. */
       return await Promise.race([operation, timeout]);
     } catch (error) {
       // A caller timing out does not mean a mutation has stopped. Hold its
-      // debugger/scheduler turn until the original content command settles.
-      if (timedOut && awaitSettlement) await operation.catch(() => {});
+      // debugger/scheduler turn until the original content command settles,
+      // but not past the grace period: an unresponsive page never settles.
+      if (timedOut && awaitSettlement) {
+        let graceId: ReturnType<typeof setTimeout> | undefined;
+        const grace = new Promise<void>((resolve) => {
+          graceId = setTimeout(resolve, deps.unsettledCommandGraceMs ?? UNSETTLED_COMMAND_GRACE_MS);
+        });
+        await Promise.race([
+          operation.then(
+            () => {},
+            () => {}
+          ),
+          grace,
+        ]);
+        clearTimeout(graceId);
+      }
       throw error;
     } finally {
       clearTimeout(timeoutId);

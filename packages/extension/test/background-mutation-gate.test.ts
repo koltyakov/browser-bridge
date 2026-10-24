@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createMutationGate } from '../src/background-mutation-gate.js';
+import { createMutationGate, mutationSnapshotScope } from '../src/background-mutation-gate.js';
 import { requestLifetimes } from '../src/background-request-lifetime.js';
 import { createRequest } from '../../../protocol/src/index.js';
 import type { MutationReadyMessage } from '../../../protocol/src/types.js';
@@ -120,5 +120,61 @@ test('older daemon requests do not enter the scheduling handshake', async () => 
     assert.equal(h.sent.length, 0);
   } finally {
     h.finish();
+  }
+});
+
+test('cancellation abandons a page read that never settles', async () => {
+  const request = createRequest({
+    id: crypto.randomUUID(),
+    method: 'input.click',
+    params: {},
+    meta: { mutation_schedule: true },
+  });
+  const finish = requestLifetimes.begin(request);
+  const gate = createMutationGate({
+    resolveTarget: async () => ({ tabId: 42, windowId: 1, url: 'https://example.test/' }),
+    captureAccess: () => () => {},
+    snapshot: () => new Promise(() => {}),
+    send: () => assert.fail('a hung page read must not reach the scheduler'),
+  });
+  try {
+    const result = gate.prepare(request);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    requestLifetimes.cancel(request.id);
+    await assert.rejects(result, /preparation canceled/);
+  } finally {
+    finish();
+  }
+});
+
+test('navigation is checked at tab level so it can recover an unresponsive page', async () => {
+  assert.equal(mutationSnapshotScope('navigation.reload'), 'tab');
+  assert.equal(mutationSnapshotScope('navigation.navigate'), 'tab');
+  assert.equal(mutationSnapshotScope('input.click'), 'document');
+  const request = createRequest({
+    id: crypto.randomUUID(),
+    method: 'navigation.reload',
+    params: {},
+    meta: { mutation_schedule: true },
+  });
+  const finish = requestLifetimes.begin(request);
+  const scopes: string[] = [];
+  const gate = createMutationGate({
+    resolveTarget: async () => ({ tabId: 42, windowId: 1, url: 'https://example.test/' }),
+    captureAccess: () => () => {},
+    snapshot: async (_tabId, scope) => {
+      scopes.push(scope);
+      return { documentId: '', url: 'https://example.test/' };
+    },
+    send: (message) =>
+      queueMicrotask(() =>
+        gate.handle({ type: 'host.mutation_granted', requestId: message.requestId })
+      ),
+  });
+  try {
+    assert.equal((await gate.prepare(request)).tab_id, 42);
+    assert.deepEqual(scopes, ['tab', 'tab']);
+  } finally {
+    finish();
   }
 });

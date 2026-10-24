@@ -230,9 +230,25 @@ only an unbound or idle-expired session follows the active tab. */
       assertActive();
       assertGrant();
     };
-    try {
-      await chromeObj.windows.get(grant.windowId);
-    } catch {
+    const enabledWindowId = grant.windowId;
+    const agentTabs = dependencies.agentTabs ?? null;
+    const session = normalizeAgentSession(request.meta?.agent_session);
+    const hasExplicitTab = typeof request.tab_id === 'number' && Number.isFinite(request.tab_id);
+
+    // These reads are independent browser round trips. Issue them together,
+    // then apply the checks in their original order.
+    const settle = <T>(promise: Promise<T>) =>
+      promise.then(
+        (value) => ({ ok: true as const, value }),
+        (error: unknown) => ({ ok: false as const, error })
+      );
+    const windowRead = settle(chromeObj.windows.get(grant.windowId));
+    const explicitRead = hasExplicitTab
+      ? settle(chromeObj.tabs.get(request.tab_id as number))
+      : null;
+    const activeRead = settle(chromeObj.tabs.query({ active: true, windowId: enabledWindowId }));
+
+    if (!(await windowRead).ok) {
       assertAccess();
       const cleared = await dependencies.clearEnabledWindowIfGone();
       if (cleared) {
@@ -243,20 +259,16 @@ only an unbound or idle-expired session follows the active tab. */
     }
     assertAccess();
 
-    const enabledWindowId = grant.windowId;
-    const agentTabs = dependencies.agentTabs ?? null;
-    const session = normalizeAgentSession(request.meta?.agent_session);
-    const hasExplicitTab = typeof request.tab_id === 'number' && Number.isFinite(request.tab_id);
-
     let explicitTab: chrome.tabs.Tab | null = null;
-    if (hasExplicitTab) {
-      explicitTab = await chromeObj.tabs.get(request.tab_id as number);
+    if (explicitRead) {
+      const read = await explicitRead;
+      if (!read.ok) throw read.error;
+      explicitTab = read.value;
       assertAccess();
     }
-    const [activeTab] = await chromeObj.tabs.query({
-      active: true,
-      windowId: enabledWindowId,
-    });
+    const active = await activeRead;
+    if (!active.ok) throw active.error;
+    const [activeTab] = active.value;
     assertAccess();
     const activeTabId = typeof activeTab?.id === 'number' ? activeTab.id : null;
 

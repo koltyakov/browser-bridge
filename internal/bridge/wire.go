@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sort"
 	"sync"
 	"time"
 
@@ -39,6 +40,44 @@ func encodeJSON[T interface{}](v T) ([]byte, error) {
 		return nil, err
 	}
 	return bytes.TrimSuffix(buffer.Bytes(), []byte{'\n'}), nil
+}
+
+// Encode an object whose values are already JSON without re-validating them.
+// Values from value() or a decoded message are valid; a value holding a newline
+// would break line framing, so it takes the compacting encoder instead.
+func rawObject(o object) json.RawMessage {
+	keys := make([]string, 0, len(o))
+	size := 2
+	for key, raw := range o {
+		if len(raw) == 0 || bytes.IndexByte(raw, '\n') >= 0 || !plainKey(key) {
+			return value(o)
+		}
+		keys = append(keys, key)
+		size += len(key) + len(raw) + 4
+	}
+	sort.Strings(keys)
+	out := make([]byte, 0, size)
+	out = append(out, '{')
+	for i, key := range keys {
+		if i > 0 {
+			out = append(out, ',')
+		}
+		out = append(out, '"')
+		out = append(out, key...)
+		out = append(out, '"', ':')
+		out = append(out, o[key]...)
+	}
+	return append(out, '}')
+}
+
+// Keys that encode to themselves inside JSON quotes.
+func plainKey(key string) bool {
+	for i := 0; i < len(key); i++ {
+		if c := key[i]; c < 0x20 || c > 0x7e || c == '"' || c == '\\' {
+			return false
+		}
+	}
+	return true
 }
 
 func (o object) text(key string) string {
@@ -91,20 +130,26 @@ func uniqueID() string {
 	return h[:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:]
 }
 
+// An oversized line leaves the reader inside that line unless its newline was
+// already consumed. Callers that keep the stream call skipOversizedLine.
+type oversizedLineError struct{ terminated bool }
+
+func (e *oversizedLineError) Error() string { return "bridge JSON line exceeds 1 MiB" }
+
 func readLine(reader *bufio.Reader) (object, error) {
 	var line []byte
 	for {
 		part, err := reader.ReadSlice('\n')
 		if len(line)+len(part) > maxMessageBytes+1 {
-			return nil, errors.New("bridge JSON line exceeds 1 MiB")
+			return nil, &oversizedLineError{terminated: err == nil}
 		}
 		line = append(line, part...)
 		if len(line) > maxMessageBytes && line[len(line)-1] != '\n' {
-			return nil, errors.New("bridge JSON line exceeds 1 MiB")
+			return nil, &oversizedLineError{terminated: false}
 		}
 		if errors.Is(err, bufio.ErrBufferFull) {
 			if len(line) > maxMessageBytes {
-				return nil, errors.New("bridge JSON line exceeds 1 MiB")
+				return nil, &oversizedLineError{terminated: false}
 			}
 			continue
 		}
@@ -115,6 +160,21 @@ func readLine(reader *bufio.Reader) (object, error) {
 			return nil, err
 		}
 		return decodeObject(line)
+	}
+}
+
+// Discard the rest of an oversized line without buffering it, so the next read
+// starts at the following message.
+func skipOversizedLine(reader *bufio.Reader, err error) error {
+	var oversized *oversizedLineError
+	if !errors.As(err, &oversized) || oversized.terminated {
+		return nil
+	}
+	for {
+		_, err := reader.ReadSlice('\n')
+		if !errors.Is(err, bufio.ErrBufferFull) {
+			return err
+		}
 	}
 }
 

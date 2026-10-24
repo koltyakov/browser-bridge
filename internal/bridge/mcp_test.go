@@ -445,3 +445,21 @@ func TestSchemaUnionsAndRecords(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPOversizedRequestFailsWithoutEndingTheSession(t *testing.T) {
+	for _, size := range []int{maxMessageBytes, maxMessageBytes + 64*1024} {
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
+			var output bytes.Buffer
+			input := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}` + "\n" +
+				`{"jsonrpc":"2.0","id":2,"method":"ping","params":{"pad":"` + strings.Repeat("x", size) + `"}}` + "\n" +
+				`{"jsonrpc":"2.0","id":3,"method":"ping"}` + "\n"
+			if err := mcpServe(context.Background(), config{home: t.TempDir()}, strings.NewReader(input), &output); err != nil {
+				t.Fatalf("oversized request ended the MCP session: %v", err)
+			}
+			lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+			if len(lines) != 3 || !strings.Contains(lines[1], `"code":-32600`) || !strings.Contains(lines[2], `"id":3`) {
+				t.Fatalf("unexpected responses: %q", lines)
+			}
+		})
+	}
+}

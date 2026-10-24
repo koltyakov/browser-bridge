@@ -167,3 +167,117 @@ func TestMutationSchedulerSlowPreparationDoesNotBlockKnownOtherTabs(t *testing.T
 	}
 	d.response(extension, success(second.text("id"), object{}))
 }
+
+func TestMutationSchedulerNavigationTakesOverCanceledTurn(t *testing.T) {
+	d := serviceTestDaemon(t)
+	extension := serviceTestPeer(t, d, "extension")
+	extension.identity["mutationScheduling"] = value(true)
+	agent := serviceTestPeer(t, d, "agent")
+	route := func(method string) object {
+		t.Helper()
+		d.route(agent, newRequest(method, nil, nil, 12))
+		request := serviceNextMessage(t, extension).object("request")
+		d.mutationReady(extension, object{"requestId": request["id"], "tabId": value(12)})
+		return request
+	}
+	click := route("input.click")
+	serviceNextMessage(t, extension) // grant
+	d.handle(agent, object{"type": value("agent.cancel"), "requestId": value(d.pending[click.text("id")].original)})
+	serviceNextMessage(t, extension) // request_cancelled
+	serviceNextMessage(t, agent)
+	typed := route("input.type")
+	if len(extension.out) != 0 {
+		t.Fatal("input ran beside an unsettled canceled command")
+	}
+	reload := route("navigation.reload")
+	if grant := serviceNextMessage(t, extension); grant.text("requestId") != reload.text("id") {
+		t.Fatalf("navigation could not recover the tab: %s", value(grant))
+	}
+	d.response(extension, success(reload.text("id"), object{}))
+	serviceNextMessage(t, agent)
+	if len(extension.out) != 0 {
+		t.Fatal("input ran before the canceled command settled")
+	}
+	d.response(extension, failure(click.text("id"), "TIMEOUT", "settled"))
+	if grant := serviceNextMessage(t, extension); grant.text("requestId") != typed.text("id") {
+		t.Fatalf("settled command did not release queued input: %s", value(grant))
+	}
+}
+
+func TestMutationSchedulerReleasesUnsettledCanceledTurn(t *testing.T) {
+	grace := canceledMutationGrace
+	canceledMutationGrace = 10 * time.Millisecond
+	t.Cleanup(func() { canceledMutationGrace = grace })
+	d := serviceTestDaemon(t)
+	extension := serviceTestPeer(t, d, "extension")
+	extension.identity["mutationScheduling"] = value(true)
+	agent := serviceTestPeer(t, d, "agent")
+	d.route(agent, newRequest("input.click", nil, nil, 12))
+	click := serviceNextMessage(t, extension).object("request")
+	d.mutationReady(extension, object{"requestId": click["id"], "tabId": value(12)})
+	serviceNextMessage(t, extension)
+	d.route(agent, newRequest("input.type", nil, nil, 12))
+	typed := serviceNextMessage(t, extension).object("request")
+	d.mutationReady(extension, object{"requestId": typed["id"], "tabId": value(12)})
+	d.mu.Lock()
+	if d.scheduler.entries[click.text("id")].deadline.Before(time.Now().Add(time.Second)) {
+		t.Fatal("scheduled work did not record its request deadline")
+	}
+	d.scheduler.entries[click.text("id")].deadline = time.Now()
+	d.handle(agent, object{"type": value("agent.cancel"), "requestId": value(d.pending[click.text("id")].original)})
+	if !d.queuedBehindCanceled(typed.text("id")) {
+		t.Fatal("queued work did not report the canceled blocker")
+	}
+	d.mu.Unlock()
+	serviceNextMessage(t, extension) // request_cancelled
+	deadline := time.Now().Add(time.Second)
+	for {
+		d.mu.Lock()
+		released := d.scheduler.entries[click.text("id")] == nil
+		d.mu.Unlock()
+		if released {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("unsettled canceled work held the tab past its grace period")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if grant := serviceNextMessage(t, extension); grant.text("requestId") != typed.text("id") {
+		t.Fatalf("expired turn did not release queued input: %s", value(grant))
+	}
+	d.mu.Lock()
+	d.response(extension, success(click.text("id"), object{}))
+	d.mu.Unlock()
+	if d.scheduler.entries[typed.text("id")] == nil {
+		t.Fatal("a late settlement released another request's slot")
+	}
+}
+
+func TestMutationSchedulerInvalidTargetReleasesExtensionAndAccessRegrants(t *testing.T) {
+	d := serviceTestDaemon(t)
+	extension := serviceTestPeer(t, d, "extension")
+	extension.identity["mutationScheduling"] = value(true)
+	agent := serviceTestPeer(t, d, "agent")
+	d.route(agent, newRequest("input.click", nil, nil, 12))
+	first := serviceNextMessage(t, extension).object("request")
+	d.mutationReady(extension, object{"requestId": first["id"], "tabId": value(99)})
+	if message := serviceNextMessage(t, extension); message.text("type") != "extension.request_cancelled" || message.text("requestId") != first.text("id") {
+		t.Fatalf("rejected preparation left the extension waiting: %s", value(message))
+	}
+	serviceNextMessage(t, agent)
+	extension.access = false
+	d.route(agent, newRequest("input.click", nil, nil, 12))
+	second := serviceNextMessage(t, extension).object("request")
+	d.mutationReady(extension, object{"requestId": second["id"], "tabId": value(12)})
+	if len(extension.out) != 0 {
+		t.Fatal("mutation granted without access")
+	}
+	d.handle(extension, object{"type": value("extension.access_update"), "accessEnabled": value(true)})
+	for len(extension.out) > 0 {
+		if message := serviceNextMessage(t, extension); message.text("type") == "extension.mutation_granted" {
+			return
+		}
+	}
+	t.Fatal("restored access did not grant ready work")
+}

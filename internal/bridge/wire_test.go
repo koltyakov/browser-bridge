@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -213,5 +214,72 @@ func TestBootstrapDoesNotStartLocalDaemonForLoopbackRemote(t *testing.T) {
 	}
 	if _, err := os.Stat(home); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("remote bootstrap touched local runtime: %v", err)
+	}
+}
+
+func TestSkipOversizedLineResumesAtNextMessage(t *testing.T) {
+	for _, terminated := range []bool{false, true} {
+		// With a 4 KiB buffer, the first line overflows in the middle; the second
+		// overflows only in the chunk that contains its newline.
+		line := strings.Repeat("x", maxMessageBytes+3*4096)
+		if terminated {
+			line = strings.Repeat("x", maxMessageBytes+10)
+		}
+		reader := bufio.NewReaderSize(strings.NewReader(line+"\n"+`{"id":"next"}`+"\n"), 4096)
+		_, err := readLine(reader)
+		var oversized *oversizedLineError
+		if !errors.As(err, &oversized) || oversized.terminated != terminated {
+			t.Fatalf("expected an oversized-line error (terminated=%v), got %#v", terminated, err)
+		}
+		if err := skipOversizedLine(reader, err); err != nil {
+			t.Fatal(err)
+		}
+		next, err := readLine(reader)
+		if err != nil || next.text("id") != "next" {
+			t.Fatalf("reader did not resume at the next message: %v %v", next, err)
+		}
+	}
+}
+
+func TestRawObjectMatchesCompactEncoding(t *testing.T) {
+	decoded, err := decodeObject([]byte(`{"z":1,"a":{"b":[1,2]},"m":"<&>","n":null}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded["added"] = value(object{"x": value("y")})
+	if got, want := string(rawObject(decoded)), string(value(decoded)); got != want {
+		t.Fatalf("raw encoding differs:\n got %s\nwant %s", got, want)
+	}
+	if got := string(rawObject(object{})); got != "{}" {
+		t.Fatalf("empty object encoded as %s", got)
+	}
+}
+
+func TestRawObjectFallsBackForUnsafeValues(t *testing.T) {
+	for name, o := range map[string]object{
+		"newline":   {"a": json.RawMessage("{\n\"b\":1}")},
+		"missing":   {"a": nil},
+		"quotedKey": {`a"b`: value(1)},
+	} {
+		raw := rawObject(o)
+		if bytes.IndexByte(raw, '\n') >= 0 || !json.Valid(raw) || string(raw) != string(value(o)) {
+			t.Fatalf("%s: unsafe value was copied verbatim: %q", name, raw)
+		}
+	}
+}
+
+func BenchmarkDaemonResponseRelay(b *testing.B) {
+	response := object{"id": value("abc"), "ok": value(true), "result": value(object{"html": value(strings.Repeat("x", 900*1024))}), "meta": value(object{})}
+	line := append(value(object{"type": value("extension.response"), "response": value(response)}), '\n')
+	b.SetBytes(int64(len(line)))
+	b.ReportAllocs()
+	for b.Loop() {
+		message, err := readLine(bufio.NewReader(bytes.NewReader(line)))
+		if err != nil {
+			b.Fatal(err)
+		}
+		body := envelopeBody(message)
+		body["meta"] = value(object{"method": value("dom.get_html")})
+		_ = rawObject(object{"type": value("agent.response"), "response": rawObject(body)})
 	}
 }
