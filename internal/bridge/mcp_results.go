@@ -19,11 +19,15 @@ func mcpCost(tokens int) string {
 func mcpResult(summary string, structured object, isError bool, images ...object) object {
 	content := []object{{"type": value("text"), "text": value(summary)}}
 	content = append(content, images...)
-	result := object{"content": value(content), "structuredContent": value(structured)}
+	contentJSON := value(content)
+	// Count the two canonical values separately. Serializing and decoding the
+	// complete envelope just to count bytes repeats work over large evidence.
+	size := len(`{"content":,"structuredContent":}`) + len(cliJSON(contentJSON, false)) + len(cliJSON(value(structured), false))
+	result := object{"content": contentJSON}
 	if isError {
 		result["isError"] = value(true)
+		size += len(`,"isError":true`)
 	}
-	size := len(cliJSON(value(result), false))
 	tokens := (size + 3) / 4
 	structured = mcpClone(structured)
 	structured["deliveredBytes"], structured["deliveredTokens"], structured["deliveredCostClass"] = value(size), value(tokens), value(mcpCost(tokens))

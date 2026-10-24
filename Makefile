@@ -95,7 +95,7 @@ test-visual-live: build-extension build-native ## Verify visual baselines and op
 	"$(NODE)" --import tsx --test tests/live/visual-baselines.test.ts
 
 test-inspection-live: build-extension build-native ## Read-only CLI/MCP matrix; set BBX_LIVE_EXTENSION_ID and BBX_LIVE_TAB_ID
-	"$(NODE)" --import tsx --test tests/live/inspection.test.ts
+	"$(NODE)" --import tsx --test --test-concurrency=1 tests/live/inspection.test.ts tests/live/inspection-fuzz.test.ts
 
 test-go: ## Run Go race tests and collect unit-test coverage
 	"$(NODE)" -e "require('node:fs').mkdirSync('dist/coverage', {recursive: true})"

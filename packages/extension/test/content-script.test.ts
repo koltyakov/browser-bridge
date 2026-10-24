@@ -2935,6 +2935,98 @@ test('content script patch operations verify and roll back DOM and style changes
   });
 });
 
+test('page hints recognize common Tailwind utilities without collecting the full DOM', async (t) => {
+  const harness = createChromeHarness();
+  await withDocument(
+    '<html><body><div id="sample"></div></body></html>',
+    async ({ window, document }) => {
+      Reflect.set(window, 'location', {
+        href: 'https://example.test/',
+        origin: 'https://example.test',
+      });
+      Reflect.set(document, 'hasFocus', () => false);
+      await loadContentScript(t, {
+        withHelpers: true,
+        preserveDomGlobals: true,
+        chrome: harness.chrome,
+      });
+      const sample = document.getElementById('sample')!;
+      for (const className of [
+        'flex',
+        'grid',
+        'bg-blue-500',
+        'text-sm',
+        'px-4',
+        'mt-2',
+        'w-full',
+        'h-8',
+        'rounded-lg',
+        'shadow-sm',
+        'border-gray-200',
+      ]) {
+        sample.className = className;
+        const state = (await executeBridgeMethod(
+          harness.getListener(),
+          'page.get_state',
+          {}
+        )) as PageStateResult;
+        assert.equal(state.hints.tailwind, true, className);
+      }
+      sample.className = 'application-content';
+      const ordinary = (await executeBridgeMethod(
+        harness.getListener(),
+        'page.get_state',
+        {}
+      )) as PageStateResult;
+      assert.equal(ordinary.hints.tailwind, false);
+
+      document.body.innerHTML =
+        '<div class="ordinary"></div>'.repeat(31) + '<div class="bg-blue-500"></div>';
+      const queryAll = document.querySelectorAll.bind(document);
+      t.mock.method(document, 'querySelectorAll', (selector: string) => {
+        assert.notEqual(
+          selector,
+          '[class]',
+          'page hints must not allocate a full-page class NodeList'
+        );
+        return queryAll(selector);
+      });
+      let visited = 0;
+      const createWalker = document.createTreeWalker.bind(document);
+      t.mock.method(
+        document,
+        'createTreeWalker',
+        (...args: Parameters<Document['createTreeWalker']>) => {
+          const walker = createWalker(...args);
+          const next = walker.nextNode.bind(walker);
+          walker.nextNode = () => {
+            visited += 1;
+            return next();
+          };
+          return walker;
+        }
+      );
+      const bounded = (await executeBridgeMethod(
+        harness.getListener(),
+        'page.get_state',
+        {}
+      )) as PageStateResult;
+      assert.equal(bounded.hints.tailwind, false, 'only the first 30 classed elements are sampled');
+      assert(visited > 0 && visited <= 33, `visited ${visited} elements`);
+
+      document.body.innerHTML = '<span></span>'.repeat(3000) + '<div class="bg-blue-500"></div>';
+      visited = 0;
+      const sparse = (await executeBridgeMethod(
+        harness.getListener(),
+        'page.get_state',
+        {}
+      )) as PageStateResult;
+      assert.equal(sparse.hints.tailwind, false, 'sparse DOM scans still have a work limit');
+      assert(visited <= 2000, `visited ${visited} elements`);
+    }
+  );
+});
+
 test('content script page state, storage, and screenshot helpers report page context', async (t) => {
   const saved = captureGlobals(['localStorage', 'sessionStorage']);
   t.after(() => restoreGlobals(saved));
