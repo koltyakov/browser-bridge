@@ -167,6 +167,16 @@ func run(ctx context.Context, args []string) error {
 	if args[0] == "batch" {
 		return runBatch(ctx, c, request)
 	}
+	raw := args[0] == "call" || strings.Contains(args[0], ".")
+	if raw {
+		method, params := request.text("method"), request.object("params")
+		if key := misplacedRoutingParam(method, params); key != "" {
+			return fmt.Errorf("%s inside params is ignored by %s. Use %s instead.", key, method, cliRoutingFlags[key])
+		}
+		for _, warning := range paramWarnings(method, params) {
+			fmt.Fprintln(os.Stderr, "Warning: "+warning)
+		}
+	}
 	cl, err := connect(c, "agent")
 	if err != nil {
 		return err
@@ -178,7 +188,6 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	raw := args[0] == "call" || strings.Contains(args[0], ".")
 	method := request.text("method")
 	if !raw {
 		method = cliShortcutPrintMethod(args[0])
@@ -360,6 +369,11 @@ func runBatch(ctx context.Context, c config, request object) error {
 			return err
 		}
 		return cliPrintedError{}
+	}
+	for i, call := range calls {
+		for _, warning := range paramWarnings(call.text("method"), call.object("params")) {
+			fmt.Fprintf(os.Stderr, "Warning: calls[%d]: %s\n", i, warning)
+		}
 	}
 	cl, err := connect(c, "agent")
 	if err != nil {

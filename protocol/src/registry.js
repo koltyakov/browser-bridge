@@ -249,7 +249,7 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
   'screenshot.baseline.create':
     'Opt in to a five-minute memory-only visual baseline of one selector or viewport CSS rect. Use only when semantic DOM diffs cannot verify CSS, canvas, charts, or visual regressions. Returns metadata, no image.',
   'screenshot.baseline.compare':
-    'Compare exact pixels locally in Go. Unchanged returns no images; changes return a context-expanded union crop with coordinates and before/after evidence, or full scoped evidence when crops are unsuitable. Geometry changes return one current scoped image and require a new baseline. Not proof of action success. Defaults includeBefore=true, advance=false; advance never extends expiry.',
+    'Compare exact pixels locally in Go. Unchanged returns no images; useful local changes return context-expanded before/after crops. Broad, scattered or oversized diffs return status=diff_not_useful with counts/reason and no images, retaining the reference without advancing. Geometry changes return status=not_comparable without images and require a new baseline. fallback=current explicitly requests at most one current full scoped image instead, never a full before/after pair. Not proof of action success. Defaults includeBefore=true, advance=false, fallback=summary.',
   'screenshot.baseline.release':
     'Release retained visual pixels. Idempotent; use after visual verification.',
   'artifact.read': 'Read one bounded chunk from a daemon-owned artifact.',
@@ -946,7 +946,7 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     'screenshot.baseline.compare',
     'capture',
     true,
-    ['baselineId', 'advance', 'includeBefore'],
+    ['baselineId', 'advance', 'includeBefore', 'fallback'],
     'high',
     METHOD_POLICIES.screenshotPartialDebugger,
     {

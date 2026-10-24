@@ -164,6 +164,7 @@
         if (name === 'remove') element('remove-target').remove();
         if (name === 'distant') element('far-value').textContent = '8';
         if (name === 'subtle') element('subtle').style.backgroundColor = 'rgb(101, 101, 101)';
+        if (name === 'dense') element('board').style.backgroundColor = '#d7ad31';
         if (name === 'outside') element('outside').textContent = 'Changed outside capture';
         if (name === 'layout')
           element('board').style.width = element('board').getBoundingClientRect().width - 40 + 'px';
@@ -175,6 +176,7 @@
         document.activeElement?.blur();
         element('board').innerHTML = initialBoard;
         element('board').style.width = '';
+        element('board').style.backgroundColor = '';
         element('outside').textContent = 'Outside capture';
         element('form').addEventListener('submit', (event) => {
           event.preventDefault();

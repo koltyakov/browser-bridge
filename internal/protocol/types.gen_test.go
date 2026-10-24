@@ -147,6 +147,7 @@ var wireRoundTrips = map[string]func([]byte) ([]byte, error){
 	"VisualRect":                          roundTrip[VisualRect],
 	"VisualBaselineInvalidationMessage":   roundTrip[VisualBaselineInvalidationMessage],
 	"VisualBaselineCreateParams":          roundTrip[VisualBaselineCreateParams],
+	"VisualBaselineFallback":              roundTrip[VisualBaselineFallback],
 	"VisualBaselineCompareParams":         roundTrip[VisualBaselineCompareParams],
 	"VisualBaselineReleaseParams":         roundTrip[VisualBaselineReleaseParams],
 	"VisualFrameScope":                    roundTrip[VisualFrameScope],

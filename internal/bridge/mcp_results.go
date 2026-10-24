@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"regexp"
 	"sort"
 	"strings"
@@ -267,6 +268,24 @@ func mcpCompactEnvelope(structured object) {
 	}
 }
 
+// mcpRequestedAttributes keeps allowlisted attributes that the compact node
+// fields (id, role, label, testId, cls) do not already carry.
+func mcpRequestedAttributes(attrs, params object) object {
+	var allowlist []string
+	_ = json.Unmarshal(params["attributeAllowlist"], &allowlist)
+	requested := object{}
+	for _, name := range allowlist {
+		switch name {
+		case "id", "role", "aria-label", "data-testid", "class":
+			continue
+		}
+		if mcpIsString(attrs[name]) {
+			requested[name] = value(mcpSlice(attrs.text(name), 300))
+		}
+	}
+	return requested
+}
+
 // mcpOmitEmpty drops fields whose empty string, empty array, or null value
 // carries no evidence.
 func mcpOmitEmpty(record object, keys ...string) {
@@ -431,6 +450,16 @@ func mcpEvidence(raw json.RawMessage, method string, params object, fallback jso
 					}
 					if children, ok := cliArray(node["children"]); ok && len(children) > 0 {
 						compact["childCount"] = value(len(children))
+					}
+					if requested := mcpRequestedAttributes(attrs, params); len(requested) > 0 {
+						compact["attrs"] = value(requested)
+					}
+					if box := node.object("bbox"); params.boolean("includeBbox") && box != nil {
+						rounded := object{}
+						for _, key := range []string{"x", "y", "width", "height"} {
+							rounded[key] = value(math.Round(mcpFloat(box[key])*10) / 10)
+						}
+						compact["bbox"] = value(rounded)
 					}
 					out = append(out, compact)
 				} else if r.text("source") == "dom" {

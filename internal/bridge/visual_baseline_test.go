@@ -36,7 +36,7 @@ func TestVisualComparisonExactPixelsContextAndCoordinates(t *testing.T) {
 	after.SetNRGBA(510, 220, color.NRGBA{R: 1, A: 255})
 	frame.Contexts = []protocol.VisualRect{{X: 410, Y: 120, Width: 260, Height: 260}}
 	baseline := &visualBaseline{frame: frame, pixels: before}
-	result, err := compareVisual(baseline, frame, after, true)
+	result, err := compareVisual(baseline, frame, after, visualCompareOptions{includeBefore: true})
 	if err != nil || result.Strategy != "crop" || result.Equal.Value || result.ChangedPixels.Value != 1 || len(result.Images) != 2 {
 		t.Fatalf("comparison: %+v %v", result, err)
 	}
@@ -57,11 +57,11 @@ func TestVisualComparisonExactPixelsContextAndCoordinates(t *testing.T) {
 			t.Fatal("crop did not preserve changed pixels")
 		}
 	}
-	unchanged, err := compareVisual(baseline, frame, before, true)
+	unchanged, err := compareVisual(baseline, frame, before, visualCompareOptions{includeBefore: true})
 	if err != nil || !unchanged.Equal.Valid || !unchanged.Equal.Value || len(unchanged.Images) != 0 || unchanged.Strategy != "none" {
 		t.Fatal("unchanged must return no images")
 	}
-	currentOnly, err := compareVisual(baseline, frame, after, false)
+	currentOnly, err := compareVisual(baseline, frame, after, visualCompareOptions{})
 	if err != nil || len(currentOnly.Images) != 1 || currentOnly.Images[0].Phase != "after" {
 		t.Fatal("after-only option ignored")
 	}
@@ -73,19 +73,27 @@ func TestVisualComparisonDPRGeometryAndFullFallback(t *testing.T) {
 	after.SetNRGBA(0, 0, color.NRGBA{A: 255})
 	after.SetNRGBA(799, 599, color.NRGBA{A: 255})
 	baseline := &visualBaseline{frame: frame, pixels: before}
-	result, err := compareVisual(baseline, frame, after, true)
-	if err != nil || result.Strategy != "full" || !result.Comparable || len(result.Images) != 2 {
-		t.Fatal("broad diff must preserve requested before evidence")
+	result, err := compareVisual(baseline, frame, after, visualCompareOptions{includeBefore: true})
+	if err != nil || result.Status != "diff_not_useful" || result.Reason != "changes_too_spread_out" || !result.Comparable || len(result.Images) != 0 || result.ChangedPixels.Value != 2 || !result.ChangedRect.Valid {
+		t.Fatal("scattered changes must return exact metadata without images")
+	}
+	result, err = compareVisual(baseline, frame, after, visualCompareOptions{includeBefore: true, fallbackCurrent: true})
+	if err != nil || result.Status != "diff_not_useful" || result.Strategy != "full" || len(result.Images) != 1 || result.Images[0].Phase != "after" {
+		t.Fatal("explicit fallback must return only one current image")
 	}
 	frame.Scope.ScrollY = 180
-	result, err = compareVisual(baseline, frame, after, true)
-	if err != nil || result.Comparable || result.Equal.Valid || !result.RequiresNewBaseline || len(result.Images) != 1 || result.Images[0].Phase != "after" {
+	result, err = compareVisual(baseline, frame, after, visualCompareOptions{includeBefore: true})
+	if err != nil || result.Status != "not_comparable" || result.Comparable || result.Equal.Valid || !result.RequiresNewBaseline || len(result.Images) != 0 {
 		t.Fatal("scroll was falsely compared")
+	}
+	result, err = compareVisual(baseline, frame, after, visualCompareOptions{includeBefore: true, fallbackCurrent: true})
+	if err != nil || result.Comparable || result.Equal.Valid || len(result.Images) != 1 || result.Images[0].Phase != "after" {
+		t.Fatal("geometry fallback cannot imply a meaningful diff or include before pixels")
 	}
 	// Crop-to-CSS mapping uses actual image dimensions, not display DPR assumptions.
 	frame.Scope = baseline.frame.Scope
 	frame.Scope.VisualViewportX = 10
-	result, err = compareVisual(baseline, frame, after, true)
+	result, err = compareVisual(baseline, frame, after, visualCompareOptions{includeBefore: true})
 	if err != nil || result.Comparable || !result.RequiresNewBaseline {
 		t.Fatal("pinch viewport panning was falsely compared")
 	}
@@ -95,6 +103,116 @@ func TestVisualComparisonDPRGeometryAndFullFallback(t *testing.T) {
 	box := visualContextRect(image.Rect(210, 210, 211, 211), before.Bounds(), frame)
 	if !image.Pt(200, 200).In(box) || !image.Pt(399, 359).In(box) {
 		t.Fatalf("DPR mapping clipped component: %v", box)
+	}
+}
+
+func TestVisualDenseAndContextHeavyDiffsAreImageFree(t *testing.T) {
+	frame, before := visualTestFrame(t, 800, 600)
+	_, after := visualTestFrame(t, 800, 600)
+	for y := 0; y < 210; y++ {
+		for x := 0; x < 800; x++ {
+			after.SetNRGBA(x, y, color.NRGBA{A: 255})
+		}
+	}
+	baseline := &visualBaseline{frame: frame, pixels: before}
+	result, err := compareVisual(baseline, frame, after, visualCompareOptions{})
+	if err != nil || result.Status != "diff_not_useful" || result.Reason != "too_different" || result.Equal.Value || result.ChangedPixels.Value != 168000 || result.ChangedPixelRatio.Value != 0.35 || len(result.Images) != 0 {
+		t.Fatalf("dense change must return an exact, image-free observation: %+v %v", result, err)
+	}
+	after.SetNRGBA(799, 209, color.NRGBA{})
+	result, err = compareVisual(baseline, frame, after, visualCompareOptions{})
+	if err != nil || result.Status != "changed" || result.ChangedPixels.Value != 167999 || len(result.Images) != 1 {
+		t.Fatal("density limit must not erase exact differences below its boundary")
+	}
+	frame, before = visualTestFrame(t, 1000, 700)
+	_, after = visualTestFrame(t, 1000, 700)
+	after.SetNRGBA(500, 300, color.NRGBA{A: 255})
+	frame.Contexts = []protocol.VisualRect{frame.Scope.Rect}
+	baseline = &visualBaseline{frame: frame, pixels: before}
+	result, err = compareVisual(baseline, frame, after, visualCompareOptions{includeBefore: true})
+	if err != nil || result.Reason != "context_too_large" || result.ChangedPixels.Value != 1 || result.CropAreaRatio.Value != 1 || len(result.Images) != 0 {
+		t.Fatal("context-heavy tiny change was mislabeled or sent as full images")
+	}
+}
+
+func TestVisualEvidenceBudgetSuppressesPairsInsteadOfFailing(t *testing.T) {
+	frame, before := visualTestFrame(t, 2000, 2000)
+	_, after := visualTestFrame(t, 2000, 2000)
+	// Opaque RGB screenshots compress like Chrome output; only the local patch is noisy.
+	for i := 3; i < len(before.Pix); i += 4 {
+		before.Pix[i], after.Pix[i] = 255, 255
+	}
+	state := uint32(1327)
+	for y := 300; y < 650; y++ {
+		for x := 300; x < 650; x++ {
+			var rgb [3]uint8
+			for channel := range rgb {
+				state ^= state << 13
+				state ^= state >> 17
+				state ^= state << 5
+				rgb[channel] = uint8(state)
+			}
+			before.SetNRGBA(x, y, color.NRGBA{R: rgb[0], G: rgb[1], B: rgb[2], A: 255})
+			after.SetNRGBA(x, y, color.NRGBA{R: ^rgb[0], G: ^rgb[1], B: ^rgb[2], A: 255})
+		}
+	}
+	baseline := &visualBaseline{frame: frame, pixels: before}
+	result, err := compareVisual(baseline, frame, after, visualCompareOptions{includeBefore: true})
+	if err != nil || result.Reason != "evidence_too_large" || result.Status != "diff_not_useful" || result.ChangedPixels.Value != 122500 || len(result.Images) != 0 {
+		t.Fatalf("oversized pair must be a compact successful result, not an error: %+v %v", result, err)
+	}
+	result, err = compareVisual(baseline, frame, after, visualCompareOptions{includeBefore: true, fallbackCurrent: true})
+	if err != nil || result.Strategy != "full" || len(result.Images) != 1 || result.Images[0].Phase != "after" {
+		t.Fatalf("explicit fallback must not repeat the oversized pair: %+v %v", result, err)
+	}
+}
+
+func TestVisualSuppressedDiffRetainsReferenceUntilExplicitFallback(t *testing.T) {
+	d := serviceTestDaemon(t)
+	agent := serviceTestPeer(t, d, "agent")
+	extension := serviceTestPeer(t, d, "extension")
+	frame, before := visualTestFrame(t, 800, 600)
+	key := "visual_" + strings.Repeat("d", 32)
+	baseline := &visualBaseline{target: extension, frame: frame, pixels: before, params: object{"selector": value("#card")}, expires: time.Now().Add(time.Minute)}
+	d.baselines.visual[key] = baseline
+	_, after := visualTestFrame(t, 800, 600)
+	after.SetNRGBA(0, 0, color.NRGBA{A: 255})
+	after.SetNRGBA(799, 599, color.NRGBA{A: 255})
+	compare := func(params object) object {
+		d.route(agent, newRequest("screenshot.baseline.compare", params, nil, 42))
+		request := serviceNextMessage(t, extension).object("request")
+		if request.object("params").text("selector") != "#card" || request.object("params")["fallback"] != nil {
+			t.Fatal("fallback options leaked into renderer capture scope")
+		}
+		d.response(extension, visualTestResponse(t, request.text("id"), frame, after))
+		response := serviceNextMessage(t, agent).object("response")
+		if !response.boolean("ok") {
+			t.Fatalf("compare failed: %s", value(response))
+		}
+		return response.object("result")
+	}
+	result := compare(object{"baselineId": value(key), "advance": value(true)})
+	if result.text("status") != "diff_not_useful" || result.boolean("advanced") || d.baselines.visual[key] != baseline || !bytes.Equal(result["images"], []byte("[]")) {
+		t.Fatal("suppressed evidence advanced or lost the before-state")
+	}
+	mcp := mcpResponse(success("suppressed", result), "screenshot.baseline.compare", nil)
+	if mcp.boolean("isError") || bytes.Contains(mcp["content"], []byte(`"type":"image"`)) {
+		t.Fatal("compact observation was turned into an error or image")
+	}
+	result = compare(object{"baselineId": value(key), "advance": value(true), "fallback": value("current")})
+	images, _ := cliArray(result["images"])
+	if !result.boolean("advanced") || len(images) != 1 || cliRecord(images[0]).text("phase") != "after" || !d.baselines.visual[key].expires.Equal(baseline.expires) {
+		t.Fatal("explicit current evidence did not advance safely with original expiry")
+	}
+	result = compare(object{"baselineId": value(key)})
+	if !result.boolean("equal") || result.text("status") != "unchanged" {
+		t.Fatal("reference did not advance to the observed current frame")
+	}
+	for _, fallback := range []json.RawMessage{value("always"), value(1), value[*string](nil)} {
+		d.route(agent, newRequest("screenshot.baseline.compare", object{"baselineId": value(key), "fallback": fallback}, nil, 42))
+		if serviceNextMessage(t, agent).object("response").object("error").text("code") != "INVALID_REQUEST" {
+			t.Fatal("invalid fallback was silently accepted")
+		}
 	}
 }
 

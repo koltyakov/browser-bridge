@@ -14,11 +14,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   idle timing phases, duplicate tab pagination and origins, find-result text
   that repeats the label, empty AX names and states, and null network capture
   fields. Batch items omit untruncated budgets and repeated hints.
+- MCP and CLI calls warn when a param closely matches a documented one, such as
+  `limit` for `maxResults` or `y` for `viewport.scroll` `top`, including
+  `input.perform` steps. Routing keys such as `tabId` nested in params are
+  rejected instead of silently targeting the default tab.
+- MCP `dom.query` asks the extension to skip bounding boxes unless
+  `includeBbox: true` is set, and then delivers them rounded.
+- `bbx batch` items omit fields that repeat other fields: size and cost
+  triples, null errors, unscheduled timing, and meta that restates cost or
+  routing. `response` is kept only when `evidence` is a bounded view of it.
+  Small reads shrink by about three quarters.
 
 ### Fixed
 
 - DOM-source accessibility trees with `format: "tree"` are summarized as
   accessibility trees instead of DOM query results.
+- `browser_batch` with only some failed calls is no longer an MCP error
+  result, so clients that render error text alone keep the successful results.
+  The summary names each failed call's index, method, and error.
+- MCP `dom.query` delivers allowlisted attributes such as `href` instead of
+  dropping everything except id, role, label, test id, and class.
+- Element reads given a role or name target explain how to resolve it to an
+  `elementRef`, and style queries say to pass `target.selector`.
 - Upgrading to v2 rewrites global MCP entries that still launch the removed v1
   Node entrypoint, so existing agent clients keep starting Browser Bridge.
   `bbx doctor` warns about other MCP entries that launch a missing file.

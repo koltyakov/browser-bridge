@@ -14,4 +14,6 @@ These JSON expectations were captured on 2026-10-22 from the JavaScript runtime 
 
 `$PROTOCOL_VERSION`, `$COMPATIBLE_MINOR_VERSION`, and `$SERVER_VERSION` replace release-specific version strings. Doctor fixtures were captured with compatible health inputs matching the JavaScript runtime's protocol 2.0. These substitutions keep protocol compatibility cases valid across releases without deriving behavioral expectations from Go code.
 
+On 2026-10-24 the batch expectations in `cli-formatters.json`, `cli-batch-validation.json`, and `cli-batch-error.json` were intentionally compacted: items omit size and cost triples, null errors, unscheduled timing, a `response` equal to `evidence`, and meta keys other than warnings, truncation, continuation hints, a non-current protocol version, and the routed tab of an untargeted call. All other captured fields are unchanged.
+
 Change expectations only when intentionally changing the public contract. Preserve distinctions between omitted fields, `null`, empty arrays, and empty objects.

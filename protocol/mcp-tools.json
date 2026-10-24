@@ -1178,7 +1178,7 @@
     {
       "name": "browser_capture",
       "title": "Browser Capture",
-      "description": "Capture screenshots or CDP snapshots only when structured reads are insufficient. Opt-in visual_baseline_create/compare/release is for CSS, canvas, charts or visual regressions that DOM diffs cannot verify. Create a complete component selector or viewport rect before the action, compare afterward, release when done. Exact Go comparison emits no images when unchanged, context-expanded before/after crops for local changes, and full scoped evidence otherwise. Coordinates are screenshot pixels with scope metadata. Not proof of action success; animations count as changes. Normal screenshots never retain visual baselines.",
+      "description": "Capture screenshots only when structured reads are insufficient. Opt-in visual_baseline_create/compare/release is for CSS, canvas, charts or visual regressions DOM diffs cannot verify. Create a complete component selector or viewport rect before the action, compare afterward, release when done. Exact Go comparison returns no images when unchanged, useful before/after crops for local changes, or a compact diff_not_useful/not_comparable result when images would be wasteful. Do not automatically retry an unhelpful diff; inspect DOM, narrow scope or explicitly request fallback=current for one current scoped image. No full before/after fallback pairs. Not proof of action success; animations count as changes. Normal screenshots never retain baselines.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1244,12 +1244,17 @@
             "pattern": "^visual_[a-f0-9]{32}$"
           },
           "advance": {
-            "description": "Advance the reference only after a successful comparable visual comparison. Default false; does not extend expiry. Use for explicitly requested successive-frame checks.",
+            "description": "Advance after comparable unchanged/cropped/explicit-current evidence. Never advances an image-free diff_not_useful result. Default false; does not extend expiry.",
             "type": "boolean"
           },
           "includeBefore": {
-            "description": "Include before pixels for comparable changes, default true. Set false only when prior visual context is known; after-only evidence cannot establish disappearance.",
+            "description": "Include before pixels in useful crops, default true. After-only evidence cannot establish disappearance. Explicit fallback=current always returns only the current image.",
             "type": "boolean"
+          },
+          "fallback": {
+            "description": "When a compact diff is not useful or coordinates changed: summary (default) returns reason/counts without images. current explicitly requests at most one full current scoped image. Suppressed diffs do not advance the baseline; geometry changes invalidate it.",
+            "type": "string",
+            "enum": ["summary", "current"]
           },
           "rect": {
             "description": "Viewport region for region action (keep crop tight)",

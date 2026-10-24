@@ -4501,12 +4501,18 @@
     }
   },
   {
+    "type": "VisualBaselineFallback",
+    "valid": true,
+    "input": "summary"
+  },
+  {
     "type": "VisualBaselineCompareParams",
     "valid": true,
     "input": {
       "baselineId": "wire-✓",
       "advance": false,
       "includeBefore": false,
+      "fallback": "summary",
       "future_extension": {
         "arbitrary": [
           null,
@@ -4743,10 +4749,26 @@
     "valid": true,
     "input": {
       "baselineId": "wire-✓",
+      "status": "unchanged",
       "comparable": false,
       "equal": false,
       "changedPixels": 1.25,
       "changedPixelRatio": 1.25,
+      "changedRect": {
+        "x": 1.25,
+        "y": 1.25,
+        "width": 1.25,
+        "height": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "cropAreaRatio": 1.25,
       "strategy": "none",
       "reason": "wire-✓",
       "advanced": false,

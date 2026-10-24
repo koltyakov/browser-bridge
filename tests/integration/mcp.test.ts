@@ -372,7 +372,8 @@ test(
           maxNodes: 10,
           maxDepth: 2,
           textBudget: 300,
-          includeBbox: true,
+          // MCP query evidence omits boxes, so the request skips them too.
+          includeBbox: false,
           attributeAllowlist: [],
         },
       });

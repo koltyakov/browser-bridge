@@ -4700,6 +4700,13 @@
       "required": [],
       "additionalProperties": true
     },
+    "VisualBaselineFallback": {
+      "type": "string",
+      "enum": [
+        "summary",
+        "current"
+      ]
+    },
     "VisualBaselineCompareParams": {
       "type": "object",
       "properties": {
@@ -4711,6 +4718,9 @@
         },
         "includeBefore": {
           "type": "boolean"
+        },
+        "fallback": {
+          "$ref": "#/$defs/VisualBaselineFallback"
         }
       },
       "required": [
@@ -4892,6 +4902,15 @@
         "baselineId": {
           "type": "string"
         },
+        "status": {
+          "type": "string",
+          "enum": [
+            "unchanged",
+            "changed",
+            "diff_not_useful",
+            "not_comparable"
+          ]
+        },
         "comparable": {
           "type": "boolean"
         },
@@ -4916,6 +4935,26 @@
           ]
         },
         "changedPixelRatio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "changedRect": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VisualRect"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cropAreaRatio": {
           "anyOf": [
             {
               "type": "number"
@@ -4976,10 +5015,13 @@
       },
       "required": [
         "baselineId",
+        "status",
         "comparable",
         "equal",
         "changedPixels",
         "changedPixelRatio",
+        "changedRect",
+        "cropAreaRatio",
         "strategy",
         "reason",
         "advanced",

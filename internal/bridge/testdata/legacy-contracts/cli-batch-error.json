@@ -9,21 +9,11 @@
     "retryAfterMs": 1000,
     "hint": "Unexpected extension error. Retry once; if persistent, check page.get_console for details."
   },
-  "transportBytes": 78,
-  "transportTokens": 20,
-  "transportCostClass": "cheap",
-  "summaryBytes": 309,
-  "summaryTokens": 78,
-  "summaryCostClass": "cheap",
   "durationMs": 12,
   "approxTokens": 0,
-  "meta": {
-    "protocol_version": "$PROTOCOL_VERSION"
-  },
   "error": {
     "code": "INTERNAL_ERROR",
     "message": "Connection lost",
     "details": null
-  },
-  "response": null
+  }
 }
