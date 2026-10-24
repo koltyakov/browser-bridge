@@ -32,6 +32,9 @@ export const ERROR_CODES = Object.freeze({
   DOM_BASELINE_NOT_FOUND: 'DOM_BASELINE_NOT_FOUND',
   DOM_BASELINE_INVALIDATED: 'DOM_BASELINE_INVALIDATED',
   DOM_BASELINE_QUOTA_EXCEEDED: 'DOM_BASELINE_QUOTA_EXCEEDED',
+  VISUAL_BASELINE_NOT_FOUND: 'VISUAL_BASELINE_NOT_FOUND',
+  VISUAL_BASELINE_INVALIDATED: 'VISUAL_BASELINE_INVALIDATED',
+  VISUAL_BASELINE_QUOTA_EXCEEDED: 'VISUAL_BASELINE_QUOTA_EXCEEDED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
   INVALID_REQUEST: 'INVALID_REQUEST',
   NATIVE_HOST_UNAVAILABLE: 'NATIVE_HOST_UNAVAILABLE',
@@ -45,6 +48,21 @@ export const ERROR_CODES = Object.freeze({
  * @type {Readonly<Record<string, { retry: boolean, retryAfterMs?: number, alternativeMethod?: string, hint: string }>>}
  */
 export const ERROR_RECOVERY = Object.freeze({
+  [ERROR_CODES.VISUAL_BASELINE_NOT_FOUND]: {
+    retry: false,
+    alternativeMethod: 'screenshot.baseline.create',
+    hint: 'Create a new scoped visual baseline. The handle expired, was released, or its browser access ended.',
+  },
+  [ERROR_CODES.VISUAL_BASELINE_INVALIDATED]: {
+    retry: false,
+    alternativeMethod: 'screenshot.baseline.create',
+    hint: 'The document, capture scope, or baseline revision changed. Inspect current state and create a new baseline.',
+  },
+  [ERROR_CODES.VISUAL_BASELINE_QUOTA_EXCEEDED]: {
+    retry: false,
+    alternativeMethod: 'screenshot.baseline.release',
+    hint: 'Release unused visual baselines or capture a smaller component. Pixels are retained in bounded memory for five minutes.',
+  },
   [ERROR_CODES.OUTCOME_NOT_MET]: {
     retry: false,
     hint: 'The sequence ran but its expected outcomes were not verified. Inspect returned evidence and application postconditions before another deliberate action. Never automatically replay the sequence.',

@@ -92,6 +92,13 @@ export const MAX_DOM_BASELINE_BYTES_PER_TAB = 1_048_576;
 export const MAX_DOM_BASELINE_BYTES_GLOBAL = 4_194_304;
 export const MAX_DOM_BASELINE_BYTES = 262_144;
 
+/** Visual baselines are explicit, memory-only, lossless, and never collected by normal reads. */
+export const VISUAL_BASELINE_TTL_MS = 300_000;
+export const MAX_VISUAL_BASELINE_PIXELS = 4_000_000;
+export const MAX_VISUAL_BASELINES_GLOBAL = 8;
+export const MAX_VISUAL_BASELINES_PER_TAB = 2;
+export const MAX_VISUAL_BASELINE_BYTES_GLOBAL = 67_108_864;
+
 /** Default timeout for a bridge request awaiting an extension response (ms). */
 export const DEFAULT_DAEMON_PENDING_TIMEOUT_MS = 30_000;
 

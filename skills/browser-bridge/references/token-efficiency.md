@@ -36,6 +36,16 @@ Avoid debugger-backed methods until they are clearly necessary. In Browser Bridg
 16. **Visual ambiguity after structured reads?** → `screenshot.capture_element` first, or `screenshot.capture_region` with a tight crop when one element is not enough (debugger-backed)
 17. **Content-script blocked?** → `cdp.get_document` or `cdp.get_dom_snapshot` (debugger-backed fallback)
 
+### Optional visual deltas
+
+Use `screenshot.baseline.create/compare/release` only for visual questions that semantic DOM diffs cannot answer, such as CSS regressions or canvas/chart updates. Create before the action with one complete component `selector` or viewport CSS `rect`. Compare afterward; no images are sent for exact equality. Changes retain real pixels and expand a single union crop into bounded semantic component boxes in both frames, with surrounding padding. Broad changes return full scoped evidence. This heuristic cannot guarantee readable labels; request a complete screenshot when context is missing.
+
+Decide whether visual verification is needed before the action. If no reference was captured, inspect the current view instead of replaying an action just to manufacture before evidence. For removal checks, scope to a stable parent rather than the element that will disappear.
+
+Keep `includeBefore: true` for disappearance or uncertain prior context. `includeBefore: false` saves an image only when the previous visual state is already known. `advance: true` explicitly makes a comparable frame the next reference without extending retention. Navigation invalidates the handle; scroll/viewport/geometry changes return one current scoped image, `equal: null`, and `requiresNewBaseline: true`, not a misleading pixel diff.
+
+Crops can reduce dimension-based image-token costs. Full-size masks do not; PNG bytes and changed-pixel percentages are not token counts. A before/after pair may cost more than one new screenshot, especially on broad changes. Never claim action success or readiness from unchanged pixels. Baselines retain sensitive pixels in bounded native memory for at most five minutes; release promptly. Normal screenshots and DOM reads never create them.
+
 ## Allowlist Strategy
 
 Always set allowlists when you know what you need:

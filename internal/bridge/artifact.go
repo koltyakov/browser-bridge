@@ -286,6 +286,9 @@ func (s *artifactStore) cleanup(request, owner, extension string, preserve bool)
 }
 
 func artifactKind(method string) string {
+	if isVisualBaseline(method) {
+		return ""
+	}
 	if strings.HasPrefix(method, "screenshot.") {
 		return "screenshot"
 	}

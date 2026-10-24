@@ -71,6 +71,9 @@ omit both for the group index.
 | `dom.baseline.compare`             | Yes  | -          | inspect     | `dom.read`           | Compare current semantic DOM to an explicit retained baseline; batch-safe                  |
 | `dom.baseline.describe`            | Yes  | -          | inspect     | `dom.read`           | Return exact baseline scope, options, expiry, and snapshot statistics; batch-safe          |
 | `dom.baseline.release`             | Yes  | -          | inspect     | `dom.read`           | Idempotently release retained baseline state; sequential only                              |
+| `screenshot.baseline.create`       | Yes  | -          | capture     | `screenshot.partial` | Opt-in scoped visual reference when DOM diffs are insufficient; memory-only, sequential    |
+| `screenshot.baseline.compare`      | Yes  | -          | capture     | `screenshot.partial` | Exact Go comparison, context-expanded before/after evidence; sequential                     |
+| `screenshot.baseline.release`      | Yes  | -          | capture     | `screenshot.partial` | Idempotently release visual pixels; sequential                                               |
 | `dom.describe`                     | Yes  | -          | inspect     | `dom.read`           | Single element details via `elementRef`                                                    |
 | `dom.get_text`                     | Yes  | -          | inspect     | `dom.read`           | Text content with `textBudget`                                                             |
 | `dom.get_attributes`               | Yes  | -          | inspect     | `dom.read`           | Targeted attribute read                                                                    |
@@ -254,6 +257,27 @@ The create result is a destination-bound opaque handle plus creation/expiry time
 Creation and release are stateful and excluded from read-only batch. Compare and describe do not mutate the baseline or extend its five-minute expiry, so they are batch-safe. Navigation, document replacement, tab/window cleanup, access disable, destination disconnect, expiry, quota eviction, or explicit release makes the handle unavailable. Navigation and document replacement return `DOM_BASELINE_INVALIDATED`; missing, expired, released, or evicted handles return `DOM_BASELINE_NOT_FOUND`.
 
 Capture defaults to stable semantic fields and safe attributes. Form values and event-handler attributes are never retained, URL credentials/fragments/query values are removed, opaque URL payloads are redacted, and caller-provided attribute names are canonicalized and bounded. Use a narrow selector for dialogs, forms, lists, or application regions.
+
+### screenshot.baseline.create, compare, and release
+
+Opt in only when semantic DOM diffs cannot answer a visual question, such as CSS appearance, canvas/charts, or visual regressions. These debugger-backed calls are sequential and excluded from read-only batch. Available through `browser_call`, or legacy `browser_capture` actions `visual_baseline_create`, `visual_baseline_compare`, and `visual_baseline_release`. Use `protocol.describe` for generated schemas and examples.
+
+```bash
+bbx call screenshot.baseline.create '{"selector":"#chart-card"}'
+# Perform the intended action, wait for its expected application outcome, then:
+bbx call screenshot.baseline.compare '{"baselineId":"visual_...","includeBefore":true}'
+bbx call screenshot.baseline.release '{"baselineId":"visual_..."}'
+```
+
+Create requires exactly one unique top-document `selector` or `rect: {x,y,width,height}` in viewport CSS pixels, fully inside the viewport. Include complete labels and component context. Capture is lossless PNG at explicit scale 1. Native memory retains at most two baselines per tab, eight globally, 64 MiB decoded pixels total, four million pixels per capture, with five-minute expiry. Individual captures and combined evidence PNGs must fit the 512 KiB inline limit; narrow the scope or omit before evidence when appropriate. No baseline pixels are returned on create or written to disk.
+
+Compare performs exact RGBA comparison in Go, without thresholds or tiny-change filtering. `equal: true` returns `images: []`. Local changes return a single padded, context-expanded union crop, otherwise full scoped evidence. `images` contain explicit `phase: before|after` and `rect` in original screenshot pixels; MCP presents image content separately from text metadata. Use `beforeScope` and `afterScope`, capture origin and actual image dimensions to map coordinates to CSS. No full-size erased/masked image is sent. Bounded DOM component boxes help preserve context but do not guarantee semantic completeness. Normal screenshot methods are unchanged.
+
+`includeBefore` defaults true. Set false only when prior visual context is known; current-only images cannot establish disappearance. `advance` defaults false; true advances only a successful comparable frame, preserving original expiry. Comparisons in flight fail if another operation releases or advances the reference. A changed document returns `VISUAL_BASELINE_INVALIDATED`. Scroll, zoom, viewport or capture geometry changes return only the current scoped image, `comparable: false`, `equal: null`, and `requiresNewBaseline: true`; the old handle is removed. Create a new reference before another comparison. Release is idempotent. Expiry, revocation and browser disconnect clear retained pixels. Handles work across CLI connections but only within their browser destination and tab.
+
+Animations, clocks and carets count as real pixel changes. Do not infer business success or readiness from equality. Prefer DOM evidence and expected-outcome waits; visual comparison is supplemental. Crops may reduce image tokens, but savings depend on provider sizing rules and before/after overhead. The tool does not report invented token savings. Pixels can contain secrets, including deleted content in the before image; cropping is not redaction.
+
+Navigation, tab closure and movement out of scope proactively discard native pixels through content-free tab lifecycle signals, even without another comparison. A later lookup can return `VISUAL_BASELINE_NOT_FOUND`; in-flight invalidation returns `VISUAL_BASELINE_INVALIDATED`. Both require a new reference. Use a stable parent scope for removal checks.
 
 ### dom.wait_for
 

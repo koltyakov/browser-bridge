@@ -37,6 +37,7 @@ type peer struct {
 	owner                 string
 	identity              object
 	access                bool
+	accessEpoch           uint64
 	active                int64
 	window                object
 	windowPush            bool
@@ -66,6 +67,9 @@ type pendingRequest struct {
 	dispatched   time.Time
 	requestedTab int64
 	meta         object
+	params       object
+	visual       *visualBaseline
+	visualEpoch  uint64
 }
 
 type daemon struct {
@@ -573,10 +577,14 @@ func (d *daemon) handleEnvelope(p *peer, message, body object) {
 		d.identity(p, message)
 		d.windows()
 	case "extension.access_update":
+		previousWindow := p.window
 		p.access = message.boolean("accessEnabled")
 		p.window = nil
 		if p.access {
 			p.window = normalizeEnabledWindow(message.object("enabledWindow"))
+			if previousWindow.number("windowId") != p.window.number("windowId") || !bytes.Equal(previousWindow["enabledAt"], p.window["enabledAt"]) {
+				d.baselines.clear(p)
+			}
 			// Work that became ready while access was off waits for a grant.
 			d.grantMutations(p)
 		} else {
@@ -596,6 +604,10 @@ func (d *daemon) handleEnvelope(p *peer, message, body object) {
 		d.pushServiceLog(message.object("entry"))
 	case "extension.activity":
 		p.active = time.Now().UnixMilli()
+	case "extension.visual_baseline_invalidated":
+		if tab, ok := serviceInteger(message, "tabId"); ok && tab > 0 {
+			d.invalidateVisualTab(p, tab)
+		}
 	case "extension.setup_status.request":
 		d.setupStatusMessage(p, message)
 	default:
@@ -730,6 +742,13 @@ func (d *daemon) route(p *peer, request object) {
 		}
 		candidates = append(candidates, target)
 	}
+	if isVisualBaseline(method) {
+		var handled bool
+		candidates, handled = d.prepareVisualRequest(p, request, params, candidates)
+		if handled {
+			return
+		}
+	}
 	if usesBaselineOwner(method) {
 		if !baselineIDPattern.MatchString(params.text("baselineId")) {
 			d.localResponse(p, request, failure(id, "INVALID_REQUEST", "baselineId is invalid."))
@@ -797,6 +816,17 @@ func (d *daemon) route(p *peer, request object) {
 	meta["deadline_ms"] = value(time.Now().Add(timeout).UnixMilli())
 	request["id"], request["meta"] = value(routedID), value(meta)
 	pending := &pendingRequest{owner: p, target: target, original: id, method: method, baselineID: params.text("baselineId"), started: time.Now(), meta: meta}
+	if isVisualBaseline(method) {
+		pending.params = params
+		pending.visualEpoch = target.accessEpoch
+		if method == "screenshot.baseline.compare" {
+			pending.visual = d.baselines.visual[pending.baselineID]
+			request["params"] = value(pending.visual.params)
+		} else {
+			pending.params = mcpPick(params, "selector rect")
+			request["params"] = value(pending.params)
+		}
+	}
 	pending.requestedTab = request.number("tab_id")
 	if !d.scheduleMutation(routedID, pending) {
 		d.localResponse(p, request, failure(id, "INVALID_REQUEST", "Mutation scheduling capacity reached. Wait for running work to settle."))
@@ -871,10 +901,14 @@ func (d *daemon) finish(id string, response object) {
 	meta["timing"] = value(requestTiming(pending))
 	response["meta"] = value(meta)
 	protectResponseRecovery(response, pending.method)
-	if response.boolean("ok") && pending.method == "dom.baseline.create" {
+	if response.boolean("ok") && (pending.method == "dom.baseline.create" || pending.method == "screenshot.baseline.create") {
 		result := response.object("result")
 		release := func() {
 			id := result.text("baselineId")
+			if pending.method == "screenshot.baseline.create" {
+				delete(d.baselines.visual, id)
+				return
+			}
 			if d.baselines.owners[id].target == pending.target {
 				delete(d.baselines.owners, id)
 			}
@@ -926,6 +960,10 @@ func (d *daemon) response(p *peer, response object) {
 		return
 	}
 	d.removeMutation(id, p)
+	if isVisualBaseline(pending.method) && response.boolean("ok") {
+		d.visualResponse(p, pending, response)
+		return
+	}
 	if artifactKind(pending.method) != "" {
 		if !d.store(len(rawObject(response)), false, func() func() {
 			valid := true

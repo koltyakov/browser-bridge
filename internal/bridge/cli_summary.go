@@ -74,6 +74,21 @@ func cliSummaryBody(response object, method string, now int64) object {
 	if method == "dom.get_attributes" {
 		return done(fmt.Sprintf("Read %d attribute(s).", len(r)), record, true)
 	}
+	if isVisualBaseline(method) {
+		evidence := cliClone(r)
+		if images, ok := arr("images"); ok {
+			metadata := []object{}
+			for _, raw := range images {
+				metadata = append(metadata, mcpPick(cliRecord(raw), "phase rect"))
+			}
+			evidence["images"] = value(metadata)
+		}
+		text := "Visual baseline " + d("baselineId", "") + "."
+		if method == "screenshot.baseline.compare" {
+			text = "Visual comparison: " + d("reason", "unknown") + ". " + d("guidance", "")
+		}
+		return done(text, value(evidence), true)
+	}
 	if method == "input.perform" && r.boolean("verified") {
 		outcomes, _ := arr("outcomes")
 		return done(fmt.Sprintf("Sequence completed %s/%s steps; verified %d outcome(s).", d("completed", "0"), d("total", "0"), len(outcomes)), record, true)

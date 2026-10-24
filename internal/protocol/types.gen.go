@@ -128,6 +128,8 @@ type DaemonMessage struct {
 
 	ArtifactId Optional[string] `json:"artifactId,omitzero"`
 
+	TabId Optional[float64] `json:"tabId,omitzero"`
+
 	Artifact Optional[map[string]json.RawMessage] `json:"artifact,omitzero"`
 
 	ChunkIndex Optional[float64] `json:"chunkIndex,omitzero"`
@@ -145,13 +147,13 @@ type DaemonMessage struct {
 
 func (v DaemonMessage) MarshalJSON() ([]byte, error) {
 	type alias DaemonMessage
-	return marshalOpen(alias(v), v.Extra, []string{"type", "role", "clientId", "requestId", "entry", "request", "status", "error", "response", "browserName", "profileLabel", "browserExtensionId", "accessEnabled", "enabledWindow", "windowAccessUpdates", "windowActions", "mutationScheduling", "action", "windowId", "enabledAt", "extensionId", "ok", "authToken", "at", "artifactId", "artifact", "chunkIndex", "data", "journalId", "offset", "messageId"})
+	return marshalOpen(alias(v), v.Extra, []string{"type", "role", "clientId", "requestId", "entry", "request", "status", "error", "response", "browserName", "profileLabel", "browserExtensionId", "accessEnabled", "enabledWindow", "windowAccessUpdates", "windowActions", "mutationScheduling", "action", "windowId", "enabledAt", "extensionId", "ok", "authToken", "at", "artifactId", "tabId", "artifact", "chunkIndex", "data", "journalId", "offset", "messageId"})
 }
 
 func (v *DaemonMessage) UnmarshalJSON(data []byte) error {
 	type alias DaemonMessage
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"type", "role", "clientId", "requestId", "entry", "request", "status", "error", "response", "browserName", "profileLabel", "browserExtensionId", "accessEnabled", "enabledWindow", "windowAccessUpdates", "windowActions", "mutationScheduling", "action", "windowId", "enabledAt", "extensionId", "ok", "authToken", "at", "artifactId", "artifact", "chunkIndex", "data", "journalId", "offset", "messageId"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"type", "role", "clientId", "requestId", "entry", "request", "status", "error", "response", "browserName", "profileLabel", "browserExtensionId", "accessEnabled", "enabledWindow", "windowAccessUpdates", "windowActions", "mutationScheduling", "action", "windowId", "enabledAt", "extensionId", "ok", "authToken", "at", "artifactId", "tabId", "artifact", "chunkIndex", "data", "journalId", "offset", "messageId"})
 	if err != nil {
 		return err
 	}
@@ -368,6 +370,12 @@ const (
 
 	BridgeMethodScreenshotCaptureFullPage BridgeMethod = "screenshot.capture_full_page"
 
+	BridgeMethodScreenshotBaselineCreate BridgeMethod = "screenshot.baseline.create"
+
+	BridgeMethodScreenshotBaselineCompare BridgeMethod = "screenshot.baseline.compare"
+
+	BridgeMethodScreenshotBaselineRelease BridgeMethod = "screenshot.baseline.release"
+
 	BridgeMethodArtifactRead BridgeMethod = "artifact.read"
 
 	BridgeMethodArtifactDelete BridgeMethod = "artifact.delete"
@@ -403,7 +411,7 @@ const (
 
 func (v BridgeMethod) Valid() bool {
 	switch v {
-	case BridgeMethodSessionStart, BridgeMethodSessionJournalRead, BridgeMethodSessionJournalDelete, BridgeMethodSessionStatus, BridgeMethodSessionRead, BridgeMethodSessionStop, BridgeMethodSessionExport, BridgeMethodSessionRelease, BridgeMethodFilesStage, BridgeMethodFilesRelease, BridgeMethodInputSetFiles, BridgeMethodInputPasteImage, BridgeMethodDownloadResource, BridgeMethodDownloadStart, BridgeMethodDownloadStatus, BridgeMethodDownloadPause, BridgeMethodDownloadResume, BridgeMethodDownloadCancel, BridgeMethodDownloadRelease, BridgeMethodEmulationApply, BridgeMethodEmulationStatus, BridgeMethodEmulationReset, BridgeMethodWebmcpListTools, BridgeMethodWebmcpGetTool, BridgeMethodWebmcpExecuteTool, BridgeMethodAccessRequest, BridgeMethodProtocolDescribe, BridgeMethodTabsList, BridgeMethodTabsCreate, BridgeMethodTabsClose, BridgeMethodTabsActivate, BridgeMethodSkillGetRuntimeContext, BridgeMethodSetupGetStatus, BridgeMethodSetupInstall, BridgeMethodPageGetState, BridgeMethodPageEvaluate, BridgeMethodPageGetConsole, BridgeMethodPageHandleDialog, BridgeMethodPageWaitForLoadState, BridgeMethodPageGetStorage, BridgeMethodSensitiveRead, BridgeMethodPageGetText, BridgeMethodPageExtractContent, BridgeMethodPageGetNetwork, BridgeMethodNetworkExportHar, BridgeMethodNetworkInterceptAdd, BridgeMethodNetworkInterceptRemove, BridgeMethodNetworkInterceptList, BridgeMethodNetworkInterceptClear, BridgeMethodNavigationNavigate, BridgeMethodNavigationReload, BridgeMethodNavigationGoBack, BridgeMethodNavigationGoForward, BridgeMethodDomQuery, BridgeMethodDomBaselineCreate, BridgeMethodDomBaselineCompare, BridgeMethodDomBaselineDescribe, BridgeMethodDomBaselineRelease, BridgeMethodDomDescribe, BridgeMethodDomGetText, BridgeMethodDomGetAttributes, BridgeMethodDomWaitFor, BridgeMethodDomFindByText, BridgeMethodDomFindByRole, BridgeMethodDomGetHTML, BridgeMethodDomGetAccessibilityTree, BridgeMethodLayoutGetBoxModel, BridgeMethodLayoutHitTest, BridgeMethodStylesGetComputed, BridgeMethodStylesGetMatchedRules, BridgeMethodViewportScroll, BridgeMethodViewportResize, BridgeMethodInputClick, BridgeMethodInputFocus, BridgeMethodInputType, BridgeMethodInputFill, BridgeMethodInputPressKey, BridgeMethodInputSetChecked, BridgeMethodInputSelectOption, BridgeMethodInputHover, BridgeMethodInputDrag, BridgeMethodInputTouch, BridgeMethodInputPerform, BridgeMethodInputScrollIntoView, BridgeMethodScreenshotCaptureRegion, BridgeMethodScreenshotCaptureElement, BridgeMethodScreenshotCaptureFullPage, BridgeMethodArtifactRead, BridgeMethodArtifactDelete, BridgeMethodPatchApplyStyles, BridgeMethodPatchApplyDom, BridgeMethodPatchList, BridgeMethodPatchRollback, BridgeMethodPatchCommitSessionBaseline, BridgeMethodCDPGetDocument, BridgeMethodCDPGetDomSnapshot, BridgeMethodCDPGetBoxModel, BridgeMethodCDPGetComputedStylesForNode, BridgeMethodCDPDispatchKeyEvent, BridgeMethodPerformanceGetMetrics, BridgeMethodLogTail, BridgeMethodHealthPing, BridgeMethodDaemonMetrics:
+	case BridgeMethodSessionStart, BridgeMethodSessionJournalRead, BridgeMethodSessionJournalDelete, BridgeMethodSessionStatus, BridgeMethodSessionRead, BridgeMethodSessionStop, BridgeMethodSessionExport, BridgeMethodSessionRelease, BridgeMethodFilesStage, BridgeMethodFilesRelease, BridgeMethodInputSetFiles, BridgeMethodInputPasteImage, BridgeMethodDownloadResource, BridgeMethodDownloadStart, BridgeMethodDownloadStatus, BridgeMethodDownloadPause, BridgeMethodDownloadResume, BridgeMethodDownloadCancel, BridgeMethodDownloadRelease, BridgeMethodEmulationApply, BridgeMethodEmulationStatus, BridgeMethodEmulationReset, BridgeMethodWebmcpListTools, BridgeMethodWebmcpGetTool, BridgeMethodWebmcpExecuteTool, BridgeMethodAccessRequest, BridgeMethodProtocolDescribe, BridgeMethodTabsList, BridgeMethodTabsCreate, BridgeMethodTabsClose, BridgeMethodTabsActivate, BridgeMethodSkillGetRuntimeContext, BridgeMethodSetupGetStatus, BridgeMethodSetupInstall, BridgeMethodPageGetState, BridgeMethodPageEvaluate, BridgeMethodPageGetConsole, BridgeMethodPageHandleDialog, BridgeMethodPageWaitForLoadState, BridgeMethodPageGetStorage, BridgeMethodSensitiveRead, BridgeMethodPageGetText, BridgeMethodPageExtractContent, BridgeMethodPageGetNetwork, BridgeMethodNetworkExportHar, BridgeMethodNetworkInterceptAdd, BridgeMethodNetworkInterceptRemove, BridgeMethodNetworkInterceptList, BridgeMethodNetworkInterceptClear, BridgeMethodNavigationNavigate, BridgeMethodNavigationReload, BridgeMethodNavigationGoBack, BridgeMethodNavigationGoForward, BridgeMethodDomQuery, BridgeMethodDomBaselineCreate, BridgeMethodDomBaselineCompare, BridgeMethodDomBaselineDescribe, BridgeMethodDomBaselineRelease, BridgeMethodDomDescribe, BridgeMethodDomGetText, BridgeMethodDomGetAttributes, BridgeMethodDomWaitFor, BridgeMethodDomFindByText, BridgeMethodDomFindByRole, BridgeMethodDomGetHTML, BridgeMethodDomGetAccessibilityTree, BridgeMethodLayoutGetBoxModel, BridgeMethodLayoutHitTest, BridgeMethodStylesGetComputed, BridgeMethodStylesGetMatchedRules, BridgeMethodViewportScroll, BridgeMethodViewportResize, BridgeMethodInputClick, BridgeMethodInputFocus, BridgeMethodInputType, BridgeMethodInputFill, BridgeMethodInputPressKey, BridgeMethodInputSetChecked, BridgeMethodInputSelectOption, BridgeMethodInputHover, BridgeMethodInputDrag, BridgeMethodInputTouch, BridgeMethodInputPerform, BridgeMethodInputScrollIntoView, BridgeMethodScreenshotCaptureRegion, BridgeMethodScreenshotCaptureElement, BridgeMethodScreenshotCaptureFullPage, BridgeMethodScreenshotBaselineCreate, BridgeMethodScreenshotBaselineCompare, BridgeMethodScreenshotBaselineRelease, BridgeMethodArtifactRead, BridgeMethodArtifactDelete, BridgeMethodPatchApplyStyles, BridgeMethodPatchApplyDom, BridgeMethodPatchList, BridgeMethodPatchRollback, BridgeMethodPatchCommitSessionBaseline, BridgeMethodCDPGetDocument, BridgeMethodCDPGetDomSnapshot, BridgeMethodCDPGetBoxModel, BridgeMethodCDPGetComputedStylesForNode, BridgeMethodCDPDispatchKeyEvent, BridgeMethodPerformanceGetMetrics, BridgeMethodLogTail, BridgeMethodHealthPing, BridgeMethodDaemonMetrics:
 		return true
 	}
 	return false
@@ -802,6 +810,12 @@ const (
 
 	ErrorCodeDOMBASELINEQUOTAEXCEEDED ErrorCode = "DOM_BASELINE_QUOTA_EXCEEDED"
 
+	ErrorCodeVISUALBASELINENOTFOUND ErrorCode = "VISUAL_BASELINE_NOT_FOUND"
+
+	ErrorCodeVISUALBASELINEINVALIDATED ErrorCode = "VISUAL_BASELINE_INVALIDATED"
+
+	ErrorCodeVISUALBASELINEQUOTAEXCEEDED ErrorCode = "VISUAL_BASELINE_QUOTA_EXCEEDED"
+
 	ErrorCodeINTERNALERROR ErrorCode = "INTERNAL_ERROR"
 
 	ErrorCodeINVALIDREQUEST ErrorCode = "INVALID_REQUEST"
@@ -815,7 +829,7 @@ const (
 
 func (v ErrorCode) Valid() bool {
 	switch v {
-	case ErrorCodeOUTCOMENOTMET, ErrorCodeWEBMCPUNAVAILABLE, ErrorCodeWEBMCPTOOLSTALE, ErrorCodeWEBMCPBUSY, ErrorCodeWEBMCPAPPROVALDENIED, ErrorCodeWEBMCPEXECUTIONUNCERTAIN, ErrorCodeACCESSDENIED, ErrorCodeTABMISMATCH, ErrorCodeELEMENTSTALE, ErrorCodeELEMENTAMBIGUOUS, ErrorCodeELEMENTNOTACTIONABLE, ErrorCodeELEMENTOBSCURED, ErrorCodeELEMENTNOTFOUND, ErrorCodeINPUTUNSUPPORTED, ErrorCodeINPUTINVALIDTARGET, ErrorCodeINPUTFOCUSCHANGED, ErrorCodeDIALOGBLOCKED, ErrorCodeDIALOGNOTOPEN, ErrorCodeDIALOGACTIONCONFLICT, ErrorCodeRESULTTRUNCATED, ErrorCodeRESULTTOOLARGE, ErrorCodeSENSITIVETARGETNOTFOUND, ErrorCodeCONTENTSCRIPTUNAVAILABLE, ErrorCodeARTIFACTNOTFOUND, ErrorCodeARTIFACTQUOTAEXCEEDED, ErrorCodeARTIFACTTRANSFERINVALID, ErrorCodeDOMBASELINENOTFOUND, ErrorCodeDOMBASELINEINVALIDATED, ErrorCodeDOMBASELINEQUOTAEXCEEDED, ErrorCodeINTERNALERROR, ErrorCodeINVALIDREQUEST, ErrorCodeNATIVEHOSTUNAVAILABLE, ErrorCodeEXTENSIONDISCONNECTED, ErrorCodeTIMEOUT:
+	case ErrorCodeOUTCOMENOTMET, ErrorCodeWEBMCPUNAVAILABLE, ErrorCodeWEBMCPTOOLSTALE, ErrorCodeWEBMCPBUSY, ErrorCodeWEBMCPAPPROVALDENIED, ErrorCodeWEBMCPEXECUTIONUNCERTAIN, ErrorCodeACCESSDENIED, ErrorCodeTABMISMATCH, ErrorCodeELEMENTSTALE, ErrorCodeELEMENTAMBIGUOUS, ErrorCodeELEMENTNOTACTIONABLE, ErrorCodeELEMENTOBSCURED, ErrorCodeELEMENTNOTFOUND, ErrorCodeINPUTUNSUPPORTED, ErrorCodeINPUTINVALIDTARGET, ErrorCodeINPUTFOCUSCHANGED, ErrorCodeDIALOGBLOCKED, ErrorCodeDIALOGNOTOPEN, ErrorCodeDIALOGACTIONCONFLICT, ErrorCodeRESULTTRUNCATED, ErrorCodeRESULTTOOLARGE, ErrorCodeSENSITIVETARGETNOTFOUND, ErrorCodeCONTENTSCRIPTUNAVAILABLE, ErrorCodeARTIFACTNOTFOUND, ErrorCodeARTIFACTQUOTAEXCEEDED, ErrorCodeARTIFACTTRANSFERINVALID, ErrorCodeDOMBASELINENOTFOUND, ErrorCodeDOMBASELINEINVALIDATED, ErrorCodeDOMBASELINEQUOTAEXCEEDED, ErrorCodeVISUALBASELINENOTFOUND, ErrorCodeVISUALBASELINEINVALIDATED, ErrorCodeVISUALBASELINEQUOTAEXCEEDED, ErrorCodeINTERNALERROR, ErrorCodeINVALIDREQUEST, ErrorCodeNATIVEHOSTUNAVAILABLE, ErrorCodeEXTENSIONDISCONNECTED, ErrorCodeTIMEOUT:
 		return true
 	}
 	return false
@@ -4259,6 +4273,320 @@ func (v *ScreenshotParams) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+type VisualRect struct {
+	X float64 `json:"x"`
+
+	Y float64 `json:"y"`
+
+	Width float64 `json:"width"`
+
+	Height float64 `json:"height"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v VisualRect) MarshalJSON() ([]byte, error) {
+	type alias VisualRect
+	return marshalOpen(alias(v), v.Extra, []string{"x", "y", "width", "height"})
+}
+
+func (v *VisualRect) UnmarshalJSON(data []byte) error {
+	type alias VisualRect
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"x", "y", "width", "height"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = VisualRect(decoded)
+	return nil
+}
+
+type VisualBaselineInvalidationMessage struct {
+	Type string `json:"type"`
+
+	TabId float64 `json:"tabId"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v VisualBaselineInvalidationMessage) MarshalJSON() ([]byte, error) {
+	type alias VisualBaselineInvalidationMessage
+	return marshalOpen(alias(v), v.Extra, []string{"type", "tabId"})
+}
+
+func (v *VisualBaselineInvalidationMessage) UnmarshalJSON(data []byte) error {
+	type alias VisualBaselineInvalidationMessage
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"type", "tabId"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = VisualBaselineInvalidationMessage(decoded)
+	return nil
+}
+
+type VisualBaselineCreateParams struct {
+	Selector Optional[string] `json:"selector,omitzero"`
+
+	Rect Optional[VisualRect] `json:"rect,omitzero"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v VisualBaselineCreateParams) MarshalJSON() ([]byte, error) {
+	type alias VisualBaselineCreateParams
+	return marshalOpen(alias(v), v.Extra, []string{"selector", "rect"})
+}
+
+func (v *VisualBaselineCreateParams) UnmarshalJSON(data []byte) error {
+	type alias VisualBaselineCreateParams
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"selector", "rect"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = VisualBaselineCreateParams(decoded)
+	return nil
+}
+
+type VisualBaselineCompareParams struct {
+	BaselineId string `json:"baselineId"`
+
+	Advance Optional[bool] `json:"advance,omitzero"`
+
+	IncludeBefore Optional[bool] `json:"includeBefore,omitzero"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v VisualBaselineCompareParams) MarshalJSON() ([]byte, error) {
+	type alias VisualBaselineCompareParams
+	return marshalOpen(alias(v), v.Extra, []string{"baselineId", "advance", "includeBefore"})
+}
+
+func (v *VisualBaselineCompareParams) UnmarshalJSON(data []byte) error {
+	type alias VisualBaselineCompareParams
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"baselineId", "advance", "includeBefore"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = VisualBaselineCompareParams(decoded)
+	return nil
+}
+
+type VisualBaselineReleaseParams struct {
+	BaselineId string `json:"baselineId"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v VisualBaselineReleaseParams) MarshalJSON() ([]byte, error) {
+	type alias VisualBaselineReleaseParams
+	return marshalOpen(alias(v), v.Extra, []string{"baselineId"})
+}
+
+func (v *VisualBaselineReleaseParams) UnmarshalJSON(data []byte) error {
+	type alias VisualBaselineReleaseParams
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"baselineId"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = VisualBaselineReleaseParams(decoded)
+	return nil
+}
+
+type VisualFrameScope struct {
+	TabId float64 `json:"tabId"`
+
+	WindowId float64 `json:"windowId"`
+
+	DocumentId string `json:"documentId"`
+
+	Rect VisualRect `json:"rect"`
+
+	ViewportWidth float64 `json:"viewportWidth"`
+
+	ViewportHeight float64 `json:"viewportHeight"`
+
+	ScrollX float64 `json:"scrollX"`
+
+	ScrollY float64 `json:"scrollY"`
+
+	DevicePixelRatio float64 `json:"devicePixelRatio"`
+
+	ViewportScale float64 `json:"viewportScale"`
+
+	VisualViewportX float64 `json:"visualViewportX"`
+
+	VisualViewportY float64 `json:"visualViewportY"`
+
+	VisualViewportWidth float64 `json:"visualViewportWidth"`
+
+	VisualViewportHeight float64 `json:"visualViewportHeight"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v VisualFrameScope) MarshalJSON() ([]byte, error) {
+	type alias VisualFrameScope
+	return marshalOpen(alias(v), v.Extra, []string{"tabId", "windowId", "documentId", "rect", "viewportWidth", "viewportHeight", "scrollX", "scrollY", "devicePixelRatio", "viewportScale", "visualViewportX", "visualViewportY", "visualViewportWidth", "visualViewportHeight"})
+}
+
+func (v *VisualFrameScope) UnmarshalJSON(data []byte) error {
+	type alias VisualFrameScope
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"tabId", "windowId", "documentId", "rect", "viewportWidth", "viewportHeight", "scrollX", "scrollY", "devicePixelRatio", "viewportScale", "visualViewportX", "visualViewportY", "visualViewportWidth", "visualViewportHeight"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = VisualFrameScope(decoded)
+	return nil
+}
+
+type VisualCaptureFrame struct {
+	Image string `json:"image"`
+
+	CapturedAt string `json:"capturedAt"`
+
+	Scope VisualFrameScope `json:"scope"`
+
+	Contexts []VisualRect `json:"contexts"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v VisualCaptureFrame) MarshalJSON() ([]byte, error) {
+	type alias VisualCaptureFrame
+	return marshalOpen(alias(v), v.Extra, []string{"image", "capturedAt", "scope", "contexts"})
+}
+
+func (v *VisualCaptureFrame) UnmarshalJSON(data []byte) error {
+	type alias VisualCaptureFrame
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"image", "capturedAt", "scope", "contexts"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = VisualCaptureFrame(decoded)
+	return nil
+}
+
+type VisualBaselineDescriptor struct {
+	BaselineId string `json:"baselineId"`
+
+	CreatedAt string `json:"createdAt"`
+
+	ExpiresAt string `json:"expiresAt"`
+
+	Scope VisualFrameScope `json:"scope"`
+
+	Dimensions VisualBaselineDescriptorDimensions `json:"dimensions"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v VisualBaselineDescriptor) MarshalJSON() ([]byte, error) {
+	type alias VisualBaselineDescriptor
+	return marshalOpen(alias(v), v.Extra, []string{"baselineId", "createdAt", "expiresAt", "scope", "dimensions"})
+}
+
+func (v *VisualBaselineDescriptor) UnmarshalJSON(data []byte) error {
+	type alias VisualBaselineDescriptor
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"baselineId", "createdAt", "expiresAt", "scope", "dimensions"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = VisualBaselineDescriptor(decoded)
+	return nil
+}
+
+type VisualEvidenceImage struct {
+	Phase string `json:"phase"`
+
+	Image string `json:"image"`
+
+	Rect VisualRect `json:"rect"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v VisualEvidenceImage) MarshalJSON() ([]byte, error) {
+	type alias VisualEvidenceImage
+	return marshalOpen(alias(v), v.Extra, []string{"phase", "image", "rect"})
+}
+
+func (v *VisualEvidenceImage) UnmarshalJSON(data []byte) error {
+	type alias VisualEvidenceImage
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"phase", "image", "rect"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = VisualEvidenceImage(decoded)
+	return nil
+}
+
+type VisualBaselineCompareResult struct {
+	BaselineId string `json:"baselineId"`
+
+	Comparable bool `json:"comparable"`
+
+	Equal Nullable[bool] `json:"equal"`
+
+	ChangedPixels Nullable[float64] `json:"changedPixels"`
+
+	ChangedPixelRatio Nullable[float64] `json:"changedPixelRatio"`
+
+	Strategy string `json:"strategy"`
+
+	Reason string `json:"reason"`
+
+	Advanced bool `json:"advanced"`
+
+	RequiresNewBaseline bool `json:"requiresNewBaseline"`
+
+	BeforeScope VisualFrameScope `json:"beforeScope"`
+
+	AfterScope VisualFrameScope `json:"afterScope"`
+
+	Dimensions VisualBaselineCompareResultDimensions `json:"dimensions"`
+
+	Images []VisualEvidenceImage `json:"images"`
+
+	Guidance string `json:"guidance"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v VisualBaselineCompareResult) MarshalJSON() ([]byte, error) {
+	type alias VisualBaselineCompareResult
+	return marshalOpen(alias(v), v.Extra, []string{"baselineId", "comparable", "equal", "changedPixels", "changedPixelRatio", "strategy", "reason", "advanced", "requiresNewBaseline", "beforeScope", "afterScope", "dimensions", "images", "guidance"})
+}
+
+func (v *VisualBaselineCompareResult) UnmarshalJSON(data []byte) error {
+	type alias VisualBaselineCompareResult
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"baselineId", "comparable", "equal", "changedPixels", "changedPixelRatio", "strategy", "reason", "advanced", "requiresNewBaseline", "beforeScope", "afterScope", "dimensions", "images", "guidance"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = VisualBaselineCompareResult(decoded)
+	return nil
+}
+
 type NormalizedScreenshotParams struct {
 	Format ScreenshotFormat `json:"format"`
 
@@ -6238,6 +6566,56 @@ func (v *InputExecutionMetadataTargetCoordinates) UnmarshalJSON(data []byte) err
 	}
 	decoded.Extra = extra
 	*v = InputExecutionMetadataTargetCoordinates(decoded)
+	return nil
+}
+
+type VisualBaselineDescriptorDimensions struct {
+	Width float64 `json:"width"`
+
+	Height float64 `json:"height"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v VisualBaselineDescriptorDimensions) MarshalJSON() ([]byte, error) {
+	type alias VisualBaselineDescriptorDimensions
+	return marshalOpen(alias(v), v.Extra, []string{"width", "height"})
+}
+
+func (v *VisualBaselineDescriptorDimensions) UnmarshalJSON(data []byte) error {
+	type alias VisualBaselineDescriptorDimensions
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"width", "height"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = VisualBaselineDescriptorDimensions(decoded)
+	return nil
+}
+
+type VisualBaselineCompareResultDimensions struct {
+	Width float64 `json:"width"`
+
+	Height float64 `json:"height"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v VisualBaselineCompareResultDimensions) MarshalJSON() ([]byte, error) {
+	type alias VisualBaselineCompareResultDimensions
+	return marshalOpen(alias(v), v.Extra, []string{"width", "height"})
+}
+
+func (v *VisualBaselineCompareResultDimensions) UnmarshalJSON(data []byte) error {
+	type alias VisualBaselineCompareResultDimensions
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"width", "height"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = VisualBaselineCompareResultDimensions(decoded)
 	return nil
 }
 
