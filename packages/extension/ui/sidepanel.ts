@@ -191,6 +191,7 @@ const activityHistogramRange = document.getElementById(
   'activity-histogram-range'
 ) as HTMLSpanElement;
 const activitySummaryTokens = document.getElementById('activity-summary-tokens') as HTMLSpanElement;
+const activityClear = document.getElementById('activity-clear') as HTMLButtonElement;
 const agentStatus = document.getElementById('agent-status') as HTMLDivElement;
 const agentStatusDetail = document.getElementById('agent-status-detail') as HTMLParagraphElement;
 const agentDisclosure = document.getElementById('agent-disclosure') as HTMLParagraphElement;
@@ -324,6 +325,8 @@ document
 let currentTabState: SidePanelCurrentTab | null = null;
 
 let currentActionLog: ActionLogEntry[] = [];
+let latestState: UiSnapshot | null = null;
+const clearedActionIds = new Set<string>();
 
 let currentOtherWindowsKey: string | null = null;
 let windowActionPending = false;
@@ -648,6 +651,13 @@ versionMismatchDismiss.addEventListener('click', () => {
   versionMismatchBanner.hidden = true;
 });
 
+activityClear.addEventListener('click', () => {
+  if (!latestState || !currentActionLog.length) return;
+  for (const entry of currentActionLog) clearedActionIds.add(entry.id);
+  actionLog.scrollTop = 0;
+  renderState(latestState);
+});
+
 window.addEventListener('beforeunload', () => {
   if (nativeStartupTimer !== null) clearTimeout(nativeStartupTimer);
   if (nativeDiagnosticTimer !== null) clearTimeout(nativeDiagnosticTimer);
@@ -657,33 +667,42 @@ window.addEventListener('beforeunload', () => {
 });
 
 function renderState(state: UiSnapshot): void {
+  latestState = state;
   hasAgentWork = hasSidepanelAgentWork(state);
   renderHostVersion(state.nativeHostVersion);
   renderProxyStatus(state.daemonProxy);
-  renderSidepanelState(state, {
-    hideSetupContextMenu,
-    renderNativeStatus,
-    renderCurrentTab,
-    renderAgentStatus,
-    renderPromptExamples,
-    renderSetupStatus,
-    renderActionLogEntry,
-    replaceActionLogChildren(children) {
-      actionLog.replaceChildren(...children);
+  renderSidepanelState(
+    {
+      ...state,
+      actionLog: state.actionLog.filter((entry) => !clearedActionIds.has(entry.id)),
     },
-    setCurrentActionLog(entries) {
-      currentActionLog = entries;
-    },
-    updateActivityVisualizations,
-    showEmptyActionLog() {
-      actionLog.textContent = 'No recent agent actions.';
-    },
-    collapseExamples() {
-      examplesSection.removeAttribute('open');
-    },
-    syncConnectedSectionsVisibility,
-    syncSetupStatusPolling,
-  });
+    {
+      hideSetupContextMenu,
+      renderNativeStatus,
+      renderCurrentTab,
+      renderAgentStatus,
+      renderPromptExamples,
+      renderSetupStatus,
+      renderActionLogEntry,
+      replaceActionLogChildren(children) {
+        actionLog.replaceChildren(...children);
+      },
+      setCurrentActionLog(entries) {
+        currentActionLog = entries;
+        activityClear.disabled = entries.length === 0;
+        activityClear.hidden = entries.length === 0;
+      },
+      updateActivityVisualizations,
+      showEmptyActionLog() {
+        actionLog.textContent = 'No recent agent actions.';
+      },
+      collapseExamples() {
+        examplesSection.removeAttribute('open');
+      },
+      syncConnectedSectionsVisibility,
+      syncSetupStatusPolling,
+    }
+  );
   syncActivityScrollFade();
   syncPanelHelpHeight();
 }
