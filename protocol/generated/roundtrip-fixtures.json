@@ -1734,6 +1734,26 @@
     }
   },
   {
+    "type": "DomBaselineSemanticState",
+    "valid": true,
+    "input": {
+      "disabled": false,
+      "checked": false,
+      "selected": false,
+      "expanded": false,
+      "pressed": false,
+      "hidden": false,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
     "type": "DomBaselineSemanticNodeEvidence",
     "valid": true,
     "input": {
@@ -1745,6 +1765,22 @@
         "future_extension": "wire-✓"
       },
       "depth": 1.25,
+      "state": {
+        "disabled": false,
+        "checked": false,
+        "selected": false,
+        "expanded": false,
+        "pressed": false,
+        "hidden": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
       "future_extension": {
         "arbitrary": [
           null,
@@ -1767,6 +1803,22 @@
         "future_extension": "wire-✓"
       },
       "depth": 1.25,
+      "state": {
+        "disabled": false,
+        "checked": false,
+        "selected": false,
+        "expanded": false,
+        "pressed": false,
+        "hidden": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
       "future_extension": {
         "arbitrary": [
           null,
@@ -1793,6 +1845,22 @@
           "future_extension": "wire-✓"
         },
         "depth": 1.25,
+        "state": {
+          "disabled": false,
+          "checked": false,
+          "selected": false,
+          "expanded": false,
+          "pressed": false,
+          "hidden": false,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
         "future_extension": {
           "arbitrary": [
             null,
@@ -1811,6 +1879,22 @@
           "future_extension": "wire-✓"
         },
         "depth": 1.25,
+        "state": {
+          "disabled": false,
+          "checked": false,
+          "selected": false,
+          "expanded": false,
+          "pressed": false,
+          "hidden": false,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
         "future_extension": {
           "arbitrary": [
             null,
@@ -1861,6 +1945,22 @@
           "future_extension": "wire-✓"
         },
         "depth": 1.25,
+        "state": {
+          "disabled": false,
+          "checked": false,
+          "selected": false,
+          "expanded": false,
+          "pressed": false,
+          "hidden": false,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
         "future_extension": {
           "arbitrary": [
             null,
@@ -1995,6 +2095,22 @@
             "future_extension": "wire-✓"
           },
           "depth": 1.25,
+          "state": {
+            "disabled": false,
+            "checked": false,
+            "selected": false,
+            "expanded": false,
+            "pressed": false,
+            "hidden": false,
+            "future_extension": {
+              "arbitrary": [
+                null,
+                false,
+                0,
+                "JSON"
+              ]
+            }
+          },
           "future_extension": {
             "arbitrary": [
               null,
@@ -2015,6 +2131,22 @@
             "future_extension": "wire-✓"
           },
           "depth": 1.25,
+          "state": {
+            "disabled": false,
+            "checked": false,
+            "selected": false,
+            "expanded": false,
+            "pressed": false,
+            "hidden": false,
+            "future_extension": {
+              "arbitrary": [
+                null,
+                false,
+                0,
+                "JSON"
+              ]
+            }
+          },
           "future_extension": {
             "arbitrary": [
               null,
@@ -2039,6 +2171,22 @@
               "future_extension": "wire-✓"
             },
             "depth": 1.25,
+            "state": {
+              "disabled": false,
+              "checked": false,
+              "selected": false,
+              "expanded": false,
+              "pressed": false,
+              "hidden": false,
+              "future_extension": {
+                "arbitrary": [
+                  null,
+                  false,
+                  0,
+                  "JSON"
+                ]
+              }
+            },
             "future_extension": {
               "arbitrary": [
                 null,
@@ -2057,6 +2205,22 @@
               "future_extension": "wire-✓"
             },
             "depth": 1.25,
+            "state": {
+              "disabled": false,
+              "checked": false,
+              "selected": false,
+              "expanded": false,
+              "pressed": false,
+              "hidden": false,
+              "future_extension": {
+                "arbitrary": [
+                  null,
+                  false,
+                  0,
+                  "JSON"
+                ]
+              }
+            },
             "future_extension": {
               "arbitrary": [
                 null,
@@ -2087,6 +2251,22 @@
               "future_extension": "wire-✓"
             },
             "depth": 1.25,
+            "state": {
+              "disabled": false,
+              "checked": false,
+              "selected": false,
+              "expanded": false,
+              "pressed": false,
+              "hidden": false,
+              "future_extension": {
+                "arbitrary": [
+                  null,
+                  false,
+                  0,
+                  "JSON"
+                ]
+              }
+            },
             "future_extension": {
               "arbitrary": [
                 null,
@@ -2148,6 +2328,22 @@
               "future_extension": "wire-✓"
             },
             "depth": 1.25,
+            "state": {
+              "disabled": false,
+              "checked": false,
+              "selected": false,
+              "expanded": false,
+              "pressed": false,
+              "hidden": false,
+              "future_extension": {
+                "arbitrary": [
+                  null,
+                  false,
+                  0,
+                  "JSON"
+                ]
+              }
+            },
             "future_extension": {
               "arbitrary": [
                 null,

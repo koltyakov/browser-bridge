@@ -479,6 +479,50 @@ test('enforceTokenBudget preserves baseline lifecycle handles atomically', () =>
   assert.equal(enforceTokenBudget('dom.baseline.describe', response, 1), response);
 });
 
+test('perform budgets omit final evidence atomically without changing progress or outcomes', () => {
+  const controls = {
+    performed: true,
+    completed: 3,
+    total: 3,
+    elapsedMs: 50,
+    startedAtMs: [0, 20, 40],
+    failures: [{ index: 1, method: 'dom.wait_for', code: 'TIMEOUT', message: 'Not found' }],
+    verified: true,
+    outcomes: [{ kind: 'url', status: 'matched', finalUrl: 'https://example.test/done' }],
+  };
+  const response = successResponse('perform-budget', {
+    ...controls,
+    lastResult: {
+      index: 2,
+      method: 'page.get_text',
+      byteLength: 8000,
+      truncated: false,
+      result: { value: 'x'.repeat(8000), truncated: false },
+    },
+  });
+  const bounded = enforceTokenBudget('input.perform', response, 500);
+  const { lastResult, ...progress } = bounded.result as Record<string, unknown>;
+  assert.deepEqual(progress, controls);
+  assert.deepEqual(lastResult, {
+    index: 2,
+    method: 'page.get_text',
+    byteLength: 8000,
+    truncated: true,
+    maxBytes: (lastResult as { maxBytes: number }).maxBytes,
+  });
+  assert.equal(bounded.meta.budget_truncated, true);
+  assert.match(String(bounded.meta.continuation_hint ?? ''), /do not replay/);
+  assert.doesNotMatch(String(bounded.meta.continuation_hint ?? ''), /Retry/);
+  assert.equal(
+    (response.result as { lastResult: { result: { value: string } } }).lastResult.result.value
+      .length,
+    8000,
+    'budgeting must not mutate the original result'
+  );
+  const envelope = successResponse('perform-controls', controls);
+  assert.equal(enforceTokenBudget('input.perform', envelope, 1), envelope);
+});
+
 test('enforceTokenBudget never generically truncates HAR structure or strings', () => {
   const response = successResponse('req_har_budget', {
     delivery: 'inline',

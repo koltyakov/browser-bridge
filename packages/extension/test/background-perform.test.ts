@@ -324,6 +324,8 @@ test('input.perform fails with TIMEOUT when a step is scheduled past the budget'
   assert.equal(response.ok, false);
   assert.equal(response.error?.code, 'TIMEOUT');
   assert.equal(dispatched.length, 1);
+  assert.equal(response.error?.recovery?.retry, false);
+  assert.match(response.error?.recovery?.hint ?? '', /do not replay/);
   assert.deepEqual(response.error?.details, {
     completed: 1,
     total: 2,
@@ -392,6 +394,42 @@ test('input.perform does not continue under a replacement grant after a delay', 
   assert.equal(response.ok, false);
   assert.equal(response.error?.code, 'ACCESS_DENIED');
   assert.equal(dispatched.length, 1);
+});
+
+test('input.perform retains progress when access changes during outcome verification', async () => {
+  const state: EnabledWindowContainer = {
+    enabledWindow: { windowId: 5, enabledAt: 1, title: 'First grant' },
+  };
+  const { dependencies, dispatched } = createHarness((request) => {
+    if (request.method === 'dom.wait_for') {
+      state.enabledWindow = null;
+      return createSuccess(request.id, { found: true });
+    }
+    return createSuccess(request.id, { clicked: true });
+  });
+  const response = await executeInputPerform(
+    performRequest({
+      steps: [click('#save')],
+      outcomes: [{ kind: 'dom', selector: '[role="status"]', text: 'Saved' }],
+    }),
+    { ...dependencies, captureAccess: () => captureWindowGrant(state) }
+  );
+  assert.equal(response.ok, false);
+  assert.equal(response.error?.code, 'ACCESS_DENIED');
+  assert.equal(response.error?.recovery?.retry, false);
+  const details = response.error?.details as {
+    completed: number;
+    verified: boolean;
+    outcomeUncertain: boolean;
+    startedAtMs: number[];
+    outcomes: Array<{ status: string }>;
+  };
+  assert.equal(details.completed, 1);
+  assert.deepEqual(details.startedAtMs, [0]);
+  assert.equal(details.verified, false);
+  assert.equal(details.outcomeUncertain, true);
+  assert.equal(details.outcomes[0].status, 'matched');
+  assert.equal(dispatched.length, 2);
 });
 
 test('input.perform uses real timers by default', async () => {

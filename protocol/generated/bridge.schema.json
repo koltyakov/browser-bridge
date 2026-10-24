@@ -1711,6 +1711,51 @@
     "DomBaselineDescribeResult": {
       "$ref": "#/$defs/DomBaselineDescriptor"
     },
+    "DomBaselineSemanticState": {
+      "type": "object",
+      "properties": {
+        "disabled": {
+          "type": "boolean"
+        },
+        "checked": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string",
+              "enum": [
+                "mixed"
+              ]
+            }
+          ]
+        },
+        "selected": {
+          "type": "boolean"
+        },
+        "expanded": {
+          "type": "boolean"
+        },
+        "pressed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string",
+              "enum": [
+                "mixed"
+              ]
+            }
+          ]
+        },
+        "hidden": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
     "DomBaselineSemanticNodeEvidence": {
       "type": "object",
       "properties": {
@@ -1748,6 +1793,9 @@
         },
         "depth": {
           "type": "number"
+        },
+        "state": {
+          "$ref": "#/$defs/DomBaselineSemanticState"
         }
       },
       "required": [

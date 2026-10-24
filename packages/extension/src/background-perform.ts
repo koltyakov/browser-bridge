@@ -81,8 +81,8 @@ export async function executeInputPerform(
     message: string,
     failedStep: PerformStepFailure | null,
     details: Record<string, unknown> = {}
-  ): BridgeResponse =>
-    createFailure(
+  ): BridgeResponse => {
+    const response = createFailure(
       request.id,
       code,
       message,
@@ -97,6 +97,16 @@ export async function executeInputPerform(
       },
       { method: request.method }
     );
+    if (startedAtMs.length && response.error) {
+      const alternativeMethod = response.error.recovery?.alternativeMethod;
+      response.error.recovery = {
+        retry: false,
+        ...(alternativeMethod ? { alternativeMethod } : {}),
+        hint: 'Sequence steps may already have changed the page. Inspect partial progress and current state; do not replay input.perform automatically.',
+      };
+    }
+    return response;
+  };
 
   if (budgetMs <= 0)
     return fail(
@@ -187,7 +197,16 @@ export async function executeInputPerform(
     }
 
     const outcomes = monitor ? await monitor.complete() : undefined;
-    assertAccess();
+    try {
+      assertAccess();
+    } catch (error) {
+      if (error instanceof BridgeError) {
+        return fail(error.code, error.message, null, {
+          ...(outcomes ? { verified: false, outcomes, outcomeUncertain: true } : {}),
+        });
+      }
+      throw error;
+    }
     if (outcomes?.some((outcome) => outcome.status !== 'matched')) {
       return fail(
         ERROR_CODES.OUTCOME_NOT_MET,

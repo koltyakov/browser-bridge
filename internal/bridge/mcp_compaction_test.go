@@ -2,9 +2,42 @@ package bridge
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
+
+func TestMCPPatchListDoesNotInheritTenItemCLIPreview(t *testing.T) {
+	for _, count := range []int{0, 10, 54, 120} {
+		patches := make([]object, count)
+		for index := range patches {
+			patches[index] = object{"patchId": value(fmt.Sprintf("patch_%d", index)), "kind": value("style"), "elementRef": value(fmt.Sprintf("el_%d", index))}
+		}
+		for _, raw := range []json.RawMessage{value(patches), value(object{"patches": value(patches)})} {
+			response := object{"ok": value(true), "result": raw}
+			cli := cliSummaryNow(response, "patch.list")
+			if want := cliPatchListSummary(count, min(count, 10)); cli.text("summary") != want {
+				t.Fatalf("CLI summary=%q, want %q", cli.text("summary"), want)
+			}
+			for _, structured := range []object{
+				mcpResponse(response, "patch.list", nil).object("structuredContent"),
+				mcpBatchResult(response, "patch.list", nil, nil, 0),
+			} {
+				var delivered []object
+				if err := json.Unmarshal(structured["evidence"], &delivered); err != nil {
+					t.Fatal(err)
+				}
+				if len(delivered) != min(count, 100) || structured.boolean("outputTruncated") != (count > 100) {
+					t.Fatalf("count=%d, delivered=%d: %s", count, len(delivered), value(structured))
+				}
+				if got, want := structured.text("summary"), cliPatchListSummary(count, len(delivered)); got != want {
+					t.Fatalf("MCP summary=%q, want %q", got, want)
+				}
+				assertJSONEqual(t, structured["evidence"], value(patches[:min(count, 100)]))
+			}
+		}
+	}
+}
 
 func compactionFixture(t *testing.T, raw string) object {
 	t.Helper()

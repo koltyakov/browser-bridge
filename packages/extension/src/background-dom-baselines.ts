@@ -100,6 +100,7 @@ export type NormalizedNode = {
   text: unknown;
   attrs: unknown;
   state: unknown;
+  stateEvidence: import('../../../protocol/src/types.js').DomBaselineSemanticState;
   displayName: string | null;
   textExcerpt: string;
   attributes: Record<string, string>;
@@ -108,14 +109,7 @@ export type NormalizedNode = {
   order: number;
 };
 
-export type NodeEvidence = {
-  tag: string;
-  role: string | null;
-  name: string | null;
-  text: string;
-  attributes: Record<string, string>;
-  depth: number;
-};
+export type NodeEvidence = import('../../../protocol/src/types.js').DomBaselineSemanticNodeEvidence;
 
 export type ChangedEvidence = { before: NodeEvidence; after: NodeEvidence; fields: string[] };
 
@@ -744,6 +738,7 @@ function normalizeNodes(nodes: DomBaselineNode[]) {
       text: firstDefined(node.textFingerprint, node.textExcerpt, node.text),
       attrs: firstDefined(node.attrsFingerprint, node.attributesFingerprint, node.attrs),
       state: firstDefined(node.stateFingerprint, node.state),
+      stateEvidence: normalizeEvidenceState(node.state),
       displayName,
       textExcerpt,
       attributes: normalizeEvidenceAttributes(node.attrs),
@@ -843,7 +838,29 @@ function toEvidence(node: NormalizedNode): NodeEvidence {
     text: node.textExcerpt,
     attributes: node.attributes,
     depth: node.depth,
+    ...(Object.keys(node.stateEvidence).length ? { state: node.stateEvidence } : {}),
   };
+}
+
+/** Expose only semantic flags, never arbitrary state or comparison fingerprints. */
+function normalizeEvidenceState(
+  value: unknown
+): import('../../../protocol/src/types.js').DomBaselineSemanticState {
+  const state: import('../../../protocol/src/types.js').DomBaselineSemanticState = {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return state;
+  for (const name of [
+    'disabled',
+    'checked',
+    'selected',
+    'expanded',
+    'pressed',
+    'hidden',
+  ] as const) {
+    const entry: unknown = Reflect.get(value, name);
+    if (typeof entry === 'boolean') state[name] = entry;
+    else if ((name === 'checked' || name === 'pressed') && entry === 'mixed') state[name] = entry;
+  }
+  return state;
 }
 
 function normalizeEvidenceAttributes(value: unknown): Record<string, string> {

@@ -569,6 +569,15 @@ export interface DomBaselineDescriptor {
 export type DomBaselineCreateResult = DomBaselineDescriptor;
 export type DomBaselineDescribeResult = DomBaselineDescriptor;
 
+export interface DomBaselineSemanticState {
+  disabled?: boolean;
+  checked?: boolean | 'mixed';
+  selected?: boolean;
+  expanded?: boolean;
+  pressed?: boolean | 'mixed';
+  hidden?: boolean;
+}
+
 export interface DomBaselineSemanticNodeEvidence {
   tag: string;
   role: string | null;
@@ -576,6 +585,7 @@ export interface DomBaselineSemanticNodeEvidence {
   text: string;
   attributes: Record<string, string>;
   depth: number;
+  state?: DomBaselineSemanticState;
 }
 
 export type DomBaselineNodeEvidence = DomBaselineSemanticNodeEvidence;

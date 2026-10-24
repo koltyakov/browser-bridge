@@ -722,9 +722,14 @@ locator target. Hidden matches count: the action decides actionability. */
     );
   }
 
-  /** Check whether an element's visible text contains the given string. */
+  /** A scoped wait matches descendant text too. Finder locators deliberately
+  prefer innermost matches, but a status/container wait must retain its scope. */
   function elementMatchesText(element: Element, text: string): boolean {
-    return matchesTextLocator(element, text, false);
+    return (
+      matchesTextLocator(element, text, false) ||
+      (!NON_RENDERED_TAGS.has(element.tagName) &&
+        textMatches(getMatchableText(element), text, false))
+    );
   }
 
   /** Find the first element matching a selector whose text contains a string. */

@@ -66,6 +66,34 @@ func TestCLIFormatterContracts(t *testing.T) {
 	}
 }
 
+func TestInputTargetStateDoesNotClaimNoVisibleEffect(t *testing.T) {
+	for _, target := range []object{{"value": value("updated")}, {"value": value("")}, {"checked": value(false)}} {
+		effects := object{"target": value(target), "changed": value(false), "settledMs": value(60)}
+		result := object{"clicked": value(true), "elementRef": value("el_1"), "effects": value(effects)}
+		for method, response := range map[string]object{
+			"input.click": success("click", result),
+			"input.perform": success("sequence", object{
+				"performed": value(true), "completed": value(1), "total": value(1),
+				"elapsedMs": value(60), "lastResult": value(object{"result": value(result)}),
+			}),
+		} {
+			cli := cliSummaryNow(response, method)
+			mcp := mcpResponse(response, method, nil).object("structuredContent")
+			for _, formatted := range []object{cli, mcp} {
+				if !strings.HasSuffix(formatted.text("summary"), " No additional page effect.") {
+					t.Fatalf("%s: %s", method, formatted.text("summary"))
+				}
+			}
+			if method == "input.click" {
+				assertJSONEqual(t, cli.object("evidence")["effects"], value(effects))
+			}
+		}
+	}
+	if got := cliDescribeEffects(value(object{"changed": value(false)})); got != " No visible effect." {
+		t.Fatalf("idle effect: %q", got)
+	}
+}
+
 func TestCLIBatchValidationContracts(t *testing.T) {
 	fixtures := []string{`[{"method":"page.get_state"},{"method":"input.click","params":{}}]`, `[null,5,[],{}]`, `[{"method":"no.method"}]`, `[{"method":"sensitive.read"}]`, `[{"method":"page.get_state","params":null}]`, `[{"method":"page.get_state","extensionId":""}]`, `[{"method":"page.get_console","params":{"clear":true}}]`}
 	for _, raw := range fixtures {

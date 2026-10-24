@@ -56,6 +56,7 @@ var wireRoundTrips = map[string]func([]byte) ([]byte, error){
 	"DomBaselineDescriptor":               roundTrip[DomBaselineDescriptor],
 	"DomBaselineCreateResult":             roundTrip[DomBaselineCreateResult],
 	"DomBaselineDescribeResult":           roundTrip[DomBaselineDescribeResult],
+	"DomBaselineSemanticState":            roundTrip[DomBaselineSemanticState],
 	"DomBaselineSemanticNodeEvidence":     roundTrip[DomBaselineSemanticNodeEvidence],
 	"DomBaselineNodeEvidence":             roundTrip[DomBaselineNodeEvidence],
 	"DomBaselineChangedNode":              roundTrip[DomBaselineChangedNode],

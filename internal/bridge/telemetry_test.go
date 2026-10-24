@@ -8,6 +8,31 @@ import (
 	"time"
 )
 
+func TestPerformRecoveryNeverSuggestsReplayingDispatchedSequences(t *testing.T) {
+	for _, details := range []object{nil, {"completed": value(1)}, {"completed": value(0), "failedStep": value(object{"index": value(0)})}} {
+		response := object{"ok": value(false), "error": value(object{
+			"code": value("TIMEOUT"), "details": value(details),
+			"recovery": value(object{"retry": value(true), "hint": value("Retry once"), "alternativeMethod": value("page.handle_dialog")}),
+		})}
+		protectResponseRecovery(response, "input.perform")
+		recovery := response.object("error").object("recovery")
+		if recovery.boolean("retry") || !strings.Contains(recovery.text("hint"), "do not replay") {
+			t.Fatalf("unsafe perform recovery: %s", value(response))
+		}
+		if recovery.text("alternativeMethod") != "page.handle_dialog" {
+			t.Fatal("perform recovery lost the specific alternative method")
+		}
+	}
+	response := object{"ok": value(false), "error": value(object{
+		"details":  value(object{"dispatched": value(false)}),
+		"recovery": value(object{"retry": value(true)}),
+	})}
+	protectResponseRecovery(response, "input.perform")
+	if !response.object("error").object("recovery").boolean("retry") {
+		t.Fatal("an explicitly undispatched sequence lost its safe retry policy")
+	}
+}
+
 func TestRecoveryTelemetryWindowLoopsAndSaturation(t *testing.T) {
 	now := time.UnixMilli(1000000)
 	telemetry := recoveryTelemetry{now: func() time.Time { return now }}

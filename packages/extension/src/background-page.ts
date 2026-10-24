@@ -883,6 +883,10 @@ or reset to natural size when width/height are 0. */
           height: params.height,
           deviceScaleFactor: params.deviceScaleFactor,
           mobile: params.width < 768,
+          // Emulate layout metrics without resizing the underlying render
+          // widget. Otherwise desktop -> mobile -> reset can leave Chrome at
+          // the previous desktop override instead of the natural tab size.
+          dontSetVisibleSize: true,
         });
       }
       return createSuccess(

@@ -110,3 +110,15 @@ Production artifact and journal disk operations run on a bounded, ordered storag
 `make bench-runtime` measures daemon health-request routing with its storage worker deliberately blocked. It does not measure Chrome round-trip latency. The stability regression tests also cover dialog-blocked teardown, iframe patch rollback, oversized errors, cancellation, and concurrent lease persistence.
 
 `make bench-interaction ARGS='--runs=5'` measures real-Chrome interaction scenarios through MCP. It requires exactly one enabled browser profile, opens its fixture in a background tab, and closes that tab afterward. Every scenario starts with fresh fixture state. Reported action calls, approximate output tokens, and elapsed time exclude fixture setup and ground-truth verification; JSON rows report verification costs separately. Repeated runs report per-scenario success counts and p50/p95 latency for successful actions. These scripted scenarios test bridge execution, not model planning time or real-agent task success.
+
+### Public-site workflow tests
+
+`make test-workflows-live` runs opt-in, mutating workflows on httpbin's echo form, Playwright's TodoMVC demo, and The Internet's delayed controls. Enable one browser window and select its exact profile label from `health.ping.connectedExtensions`:
+
+```sh
+BBX_LIVE_PROFILE_LABEL='<profileLabel>' make test-workflows-live
+```
+
+The runner waits for the workspace extension build before mutating pages. It opens background tabs, submits synthetic form data only to an echo endpoint, and removes only its uniquely named todos. It tests independent MCP working tabs, cross-tab read batches, partial sequence failures, inline React editing, delayed enablement, stale refs after remounting, DOM/visual baselines, desktop/mobile/reset, and closing a working tab. It never navigates, resizes, activates, or closes a pre-existing tab.
+
+Timing and bounded failure evidence go to `dist/workflows-live/metrics.json`. These tests require internet access and are excluded from `make test`; public-site changes and network failures need separate diagnosis from bridge regressions.

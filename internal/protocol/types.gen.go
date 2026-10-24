@@ -1842,6 +1842,39 @@ type DomBaselineCreateResult = DomBaselineDescriptor
 
 type DomBaselineDescribeResult = DomBaselineDescriptor
 
+type DomBaselineSemanticState struct {
+	Disabled Optional[bool] `json:"disabled,omitzero"`
+
+	Checked Optional[json.RawMessage] `json:"checked,omitzero"`
+
+	Selected Optional[bool] `json:"selected,omitzero"`
+
+	Expanded Optional[bool] `json:"expanded,omitzero"`
+
+	Pressed Optional[json.RawMessage] `json:"pressed,omitzero"`
+
+	Hidden Optional[bool] `json:"hidden,omitzero"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v DomBaselineSemanticState) MarshalJSON() ([]byte, error) {
+	type alias DomBaselineSemanticState
+	return marshalOpen(alias(v), v.Extra, []string{"disabled", "checked", "selected", "expanded", "pressed", "hidden"})
+}
+
+func (v *DomBaselineSemanticState) UnmarshalJSON(data []byte) error {
+	type alias DomBaselineSemanticState
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"disabled", "checked", "selected", "expanded", "pressed", "hidden"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = DomBaselineSemanticState(decoded)
+	return nil
+}
+
 type DomBaselineSemanticNodeEvidence struct {
 	Tag string `json:"tag"`
 
@@ -1855,18 +1888,20 @@ type DomBaselineSemanticNodeEvidence struct {
 
 	Depth float64 `json:"depth"`
 
+	State Optional[DomBaselineSemanticState] `json:"state,omitzero"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v DomBaselineSemanticNodeEvidence) MarshalJSON() ([]byte, error) {
 	type alias DomBaselineSemanticNodeEvidence
-	return marshalOpen(alias(v), v.Extra, []string{"tag", "role", "name", "text", "attributes", "depth"})
+	return marshalOpen(alias(v), v.Extra, []string{"tag", "role", "name", "text", "attributes", "depth", "state"})
 }
 
 func (v *DomBaselineSemanticNodeEvidence) UnmarshalJSON(data []byte) error {
 	type alias DomBaselineSemanticNodeEvidence
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"tag", "role", "name", "text", "attributes", "depth"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"tag", "role", "name", "text", "attributes", "depth", "state"})
 	if err != nil {
 		return err
 	}
