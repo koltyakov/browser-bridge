@@ -777,7 +777,11 @@ summary {
   letter-spacing: 0.01em;
 }
 
-.activity-tokens[data-cost-class="heavy"],
+.activity-tokens[data-cost-class="moderate"] {
+  background: rgba(217, 119, 6, 0.14);
+  color: var(--ink);
+}
+
 .activity-tokens[data-cost-class="extreme"] {
   background: rgba(209, 17, 68, 0.1);
   color: var(--ink);

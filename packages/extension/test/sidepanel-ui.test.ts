@@ -1555,8 +1555,55 @@ test('sidepanel UI renders activity summaries, histogram families, and repeat wa
     assert.equal(summaryTokens.dataset.costClass, 'cheap');
     assert.equal(
       actionLog.querySelector<HTMLElement>('.activity-tokens')?.dataset.costClass,
-      'heavy'
+      'cheap'
     );
+
+    for (const [tokens, costClass] of [
+      [1_076, 'cheap'],
+      [4_999, 'cheap'],
+      [5_000, 'moderate'],
+      [5_001, 'moderate'],
+      [9_999, 'moderate'],
+      [10_000, 'extreme'],
+      [10_001, 'extreme'],
+    ] as const) {
+      portPair.left.dispatchMessage(
+        createSidepanelStateSync(true, null, null, [
+          createActionLogEntry('single', 'page.get_text', tokens),
+        ])
+      );
+      assert.equal(
+        actionLog.querySelector<HTMLElement>('.activity-tokens')?.dataset.costClass,
+        costClass,
+        `single call tokens: ${tokens}`
+      );
+
+      portPair.left.dispatchMessage(
+        createSidepanelStateSync(true, null, null, [
+          createActionLogEntry('image', 'screenshot.capture_element', 1_000, {
+            imageApproxTokens: tokens - 1_000,
+          }),
+        ])
+      );
+      assert.equal(
+        actionLog.querySelector<HTMLElement>('.activity-tokens')?.dataset.costClass,
+        costClass,
+        `text and image tokens: ${tokens}`
+      );
+
+      portPair.left.dispatchMessage(
+        createSidepanelStateSync(true, null, null, [
+          createActionLogEntry('ping-2', 'health.ping', Math.ceil(tokens / 2)),
+          createActionLogEntry('ping-1', 'health.ping', Math.floor(tokens / 2)),
+        ])
+      );
+      assert.equal(actionLog.querySelector('.activity-repeat-count')?.textContent, 'x2');
+      assert.equal(
+        actionLog.querySelector<HTMLElement>('.activity-tokens')?.dataset.costClass,
+        costClass,
+        `grouped call tokens: ${tokens}`
+      );
+    }
 
     for (const [totalTokens, costClass] of [
       [49_999, 'cheap'],
