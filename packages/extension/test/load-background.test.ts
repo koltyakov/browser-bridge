@@ -164,6 +164,7 @@ test('loadBackground exposes direct test seams for background helper functions',
     createRequest({
       id: 'health-ping',
       method: 'health.ping',
+      params: { diagnostics: true },
     })
   );
   assert.equal(response.id, 'health-ping');

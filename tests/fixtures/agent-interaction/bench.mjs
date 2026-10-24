@@ -282,6 +282,9 @@ try {
   await client.close().catch(() => {});
   await transport.close().catch(() => {});
   server.close();
+  // Chrome can retain HTTP connections after its fixture tab closes. Do not let
+  // those test-owned sockets keep a completed benchmark process alive.
+  server.closeAllConnections();
 }
 
 if (process.argv.includes('--json')) {

@@ -34,7 +34,7 @@ endif
 	check-release-version check check-extension-zip package-extension package-native \
 	package-native-all package-npm pack pack-dry-run release-check prepublish-check \
 	publish-native publish-npm fixture-browser fixture-interaction bench-interaction \
-	run status daemon install-manifest install sync-version bench-runtime
+	run status daemon install-manifest install sync-version bench-runtime test-visual-live
 
 help: ## Show available tasks; the default when running make
 	@"$(NODE)" -e "const fs = require('node:fs'); for (const m of fs.readFileSync('Makefile', 'utf8').matchAll(/^([a-z][a-z-]+):.*?## (.+)$$/gm)) console.log(m[1].padEnd(24) + m[2]);"
@@ -90,6 +90,9 @@ test-js: build-extension build-native ## Run Node tests with coverage; override 
 
 test-runtime: build-extension build-native ## Run the Node suite without coverage
 	"$(NODE)" --import tsx --test $(TEST_ARGS) $(TEST_FILES)
+
+test-visual-live: build-extension build-native ## Verify visual baselines and opt-in overhead in real Chrome; requires enabled access
+	"$(NODE)" --import tsx --test tests/live/visual-baselines.test.ts
 
 test-go: ## Run Go race tests and collect unit-test coverage
 	"$(NODE)" -e "require('node:fs').mkdirSync('dist/coverage', {recursive: true})"

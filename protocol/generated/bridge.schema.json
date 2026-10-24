@@ -7675,6 +7675,28 @@
       ],
       "additionalProperties": true
     },
+    "HealthPingParams": {
+      "type": "object",
+      "properties": {
+        "diagnostics": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "NormalizedHealthPingParams": {
+      "type": "object",
+      "properties": {
+        "diagnostics": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "diagnostics"
+      ],
+      "additionalProperties": true
+    },
     "ViewportResizeParams": {
       "type": "object",
       "properties": {

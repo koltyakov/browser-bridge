@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Browser Bridge visual verification fixture</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 24px;
+        height: 2200px;
+        background: #e8edf3;
+        color: #182334;
+        font:
+          16px Arial,
+          sans-serif;
+      }
+      #board {
+        position: relative;
+        width: min(1200px, calc(100vw - 48px));
+        height: min(700px, calc(100vh - 48px));
+        background: #f6f8fb;
+        border: 1px solid #bbc6d6;
+      }
+      article,
+      figure {
+        margin: 0;
+        padding: 16px;
+        border: 1px solid #aab8ca;
+        background: white;
+      }
+      h2,
+      figcaption {
+        margin: 0 0 12px;
+        font-size: 18px;
+      }
+      #metric {
+        position: absolute;
+        left: 20px;
+        top: 20px;
+        width: 230px;
+        height: 140px;
+      }
+      #value {
+        font-size: 40px;
+        font-weight: bold;
+      }
+      #color {
+        position: absolute;
+        left: 42%;
+        top: 30px;
+        width: 150px;
+        height: 48px;
+        color: white;
+        background: #245bd0;
+        border: 0;
+        font: inherit;
+      }
+      #subtle {
+        position: absolute;
+        right: 20px;
+        top: 25px;
+        width: 120px;
+        height: 60px;
+        background: rgb(100, 100, 100);
+      }
+      #chart {
+        position: absolute;
+        left: 20px;
+        bottom: 20px;
+        width: 300px;
+        height: 190px;
+      }
+      canvas {
+        display: block;
+      }
+      #remove-group {
+        position: absolute;
+        left: 42%;
+        bottom: 20px;
+        width: 240px;
+        height: 190px;
+      }
+      #remove-target {
+        width: 180px;
+        height: 44px;
+        font: inherit;
+      }
+      #far {
+        position: absolute;
+        right: 20px;
+        bottom: 30px;
+        font-size: 24px;
+      }
+      #outside {
+        position: absolute;
+        top: 2000px;
+      }
+      #form {
+        position: absolute;
+        left: 42%;
+        top: 110px;
+      }
+      #form input {
+        width: 160px;
+      }
+      #form button {
+        margin-top: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="board">
+      <article id="metric">
+        <h2>Orders received</h2>
+        <div id="value">128</div>
+      </article>
+      <button id="color">Run preview</button>
+      <div id="subtle" aria-label="Low contrast sample"></div>
+      <figure id="chart">
+        <figcaption>Weekly sales, seven days</figcaption>
+        <canvas id="canvas" width="260" height="110"></canvas>
+      </figure>
+      <article id="remove-group">
+        <h2>Scheduled export</h2>
+        <button id="remove-target">Cancel export</button>
+        <p>Next run at 09:00</p>
+      </article>
+      <div id="far">Queue: <span id="far-value">7</span></div>
+      <form id="form">
+        <label>Email <input id="email" type="email" /></label><br /><button type="submit">
+          Save fixture</button
+        ><output id="status"></output>
+      </form>
+    </div>
+    <div id="outside">Outside capture</div>
+    <script>
+      // @ts-check
+      /** @param {string} id @returns {HTMLElement} */
+      function element(id) {
+        const found = document.getElementById(id);
+        if (!found) throw new Error('Missing fixture element: ' + id);
+        return found;
+      }
+      /** @param {boolean} changed */
+      function drawChart(changed) {
+        const canvas = /** @type {HTMLCanvasElement} */ (element('canvas'));
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Canvas unavailable');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, 260, 110);
+        ctx.fillStyle = '#245bd0';
+        for (let i = 0; i < 7; i++) {
+          const height = 30 + i * 7 + (changed && i === 4 ? 22 : 0);
+          ctx.fillRect(8 + i * 35, 105 - height, 22, height);
+        }
+      }
+      /** @param {string} name */
+      function applyChange(name) {
+        if (name === 'text' || name === 'distant') element('value').textContent = '129';
+        if (name === 'css') element('color').style.backgroundColor = '#c92c36';
+        if (name === 'canvas') drawChart(true);
+        if (name === 'remove') element('remove-target').remove();
+        if (name === 'distant') element('far-value').textContent = '8';
+        if (name === 'subtle') element('subtle').style.backgroundColor = 'rgb(101, 101, 101)';
+        if (name === 'outside') element('outside').textContent = 'Changed outside capture';
+        if (name === 'layout')
+          element('board').style.width = element('board').getBoundingClientRect().width - 40 + 'px';
+        return name;
+      }
+      const initialBoard = element('board').innerHTML;
+      /** Reset without navigation so tests explicitly control baseline lifetime. */
+      function resetFixture() {
+        document.activeElement?.blur();
+        element('board').innerHTML = initialBoard;
+        element('board').style.width = '';
+        element('outside').textContent = 'Outside capture';
+        element('form').addEventListener('submit', (event) => {
+          event.preventDefault();
+          element('status').textContent = 'Saved fixture';
+        });
+        window.scrollTo(0, 0);
+        drawChart(false);
+      }
+      resetFixture();
+    </script>
+  </body>
+</html>

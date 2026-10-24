@@ -390,12 +390,18 @@ six fixed categories `automatic_mcp_retry`, `stale_ref_recovery`,
 It contains no page data, URLs, selectors, payloads, errors, or internal group
 names.
 
-`health.ping` returns daemon and, when routed, extension summaries;
+`health.ping` with `diagnostics: true` returns daemon and, when routed, extension summaries;
 `daemon.metrics` returns the daemon summary. `bbx doctor` combines them and adds
 fixed category-specific guidance for active loops. Stop repeated attempts and
 follow that guidance rather than feeding the loop. Extension telemetry resets
 when the service worker restarts; daemon telemetry resets when the daemon
 restarts.
+
+Routine `health.ping` calls omit build identity, debugger/capture status, DOM
+baseline metrics, transport/proxy details, and recovery telemetry. Connectivity,
+version compatibility fields, access readiness, and `connectedExtensions` remain
+available. Use `bbx call health.ping '{"diagnostics":true}'` for the full report,
+or pass `diagnostics: true` to MCP `browser_health`.
 
 ### Performance metrics
 

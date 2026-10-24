@@ -222,6 +222,7 @@ function requestNativeHostVersion(port: chrome.runtime.Port, state: ExtensionSta
       request: createRequest({
         id: requestId,
         method: 'health.ping',
+        params: { diagnostics: true },
       }),
     });
   } catch {

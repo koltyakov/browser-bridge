@@ -1821,6 +1821,15 @@ export interface NormalizedLogTailParams extends BridgeParams {
   limit: number;
 }
 
+export interface HealthPingParams {
+  /** Include build, debugger, capture, baseline, transport, and recovery diagnostics. */
+  diagnostics?: boolean;
+}
+
+export interface NormalizedHealthPingParams extends BridgeParams {
+  diagnostics: boolean;
+}
+
 export interface ViewportResizeParams {
   width?: number;
   height?: number;

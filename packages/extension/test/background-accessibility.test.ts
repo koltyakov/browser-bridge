@@ -65,7 +65,38 @@ test('compact AX filtering promotes meaningful descendants through ignored and e
   assert.deepEqual(tree.nodes[0]?.childIds, ['label', 'button']);
   assert.deepEqual(tree.rootIds, ['root']);
   assert.equal(tree.nodes[2]?.semanticInteractive, true);
-  assert.equal(tree.nodes[2]?.focusableAndEnabled, false);
+  assert.equal(tree.nodes[2]?.disabled, true);
+  assert.equal('focusableAndEnabled' in (tree.nodes[2] ?? {}), false);
+});
+
+test('AX wire nodes omit default-valued fields', () => {
+  const tree = buildAccessibilityTree(
+    [
+      { nodeId: 'root', role: { value: 'RootWebArea' }, childIds: ['wrapper', 'box'] },
+      { nodeId: 'wrapper', ignored: true, role: { value: 'none' } },
+      {
+        nodeId: 'box',
+        role: { value: 'checkbox' },
+        name: { value: 'Remember me' },
+        properties: [{ name: 'checked', value: { value: 'false' } }],
+      },
+    ],
+    { compact: false, interactiveOnly: false, maxNodes: 10 }
+  );
+
+  assert.deepEqual(tree.nodes, [
+    { nodeId: 'root', role: 'RootWebArea', childIds: ['wrapper', 'box'] },
+    { nodeId: 'wrapper', role: 'none', childIds: [], ignored: true },
+    {
+      nodeId: 'box',
+      role: 'checkbox',
+      childIds: [],
+      name: 'Remember me',
+      checked: 'false',
+      interactive: true,
+      semanticInteractive: true,
+    },
+  ]);
 });
 
 test('compact AX filtering drops text fragments that repeat their parent name', () => {

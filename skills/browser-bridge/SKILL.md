@@ -217,7 +217,11 @@ These rules apply to `tabs.activate`, `active:true` on creation, and equivalent 
 
 Error responses now include a machine-readable `error.recovery` field with `retry`, `retryAfterMs`, `alternativeMethod`, and `hint`.
 
-`health.ping`, `daemon.metrics`, and `bbx doctor` also expose process-local
+`health.ping` is compact by default. Set `diagnostics: true` for build, debugger,
+capture, baseline, transport, and recovery details. Routine pings still include
+connectivity, compatibility, access readiness, and profile connection IDs.
+
+`health.ping` with `diagnostics: true`, `daemon.metrics`, and `bbx doctor` expose process-local
 five-minute recovery summaries for six fixed, content-free categories. Three
 failures in the same hidden group within 60 seconds marks an active loop. Stop
 repeating the action and follow Doctor's fixed category guidance. Extension

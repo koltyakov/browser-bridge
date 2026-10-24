@@ -123,6 +123,9 @@ func TestMCPDoctorCollectsOptionalDiagnosticsWithoutRetry(t *testing.T) {
 		if request.text("method") != method {
 			t.Fatalf("diagnostic order differs: %s", value(request))
 		}
+		if method == "health.ping" && !request.object("params").boolean("diagnostics") {
+			t.Fatal("doctor did not request full health diagnostics")
+		}
 	}
 	select {
 	case request := <-requests:
@@ -134,6 +137,27 @@ func TestMCPDoctorCollectsOptionalDiagnosticsWithoutRetry(t *testing.T) {
 	}
 	if !jsonEqual(report["diagnosticFailures"], value([]string{"setup.get_status_failed", "log.tail_failed", "daemon.metrics_failed"})) {
 		t.Fatalf("wrong diagnostic failures: %s", report["diagnosticFailures"])
+	}
+}
+
+func TestMCPHealthDiagnosticOption(t *testing.T) {
+	c, requests := mcpTestDaemon(t, func(request object) object {
+		return success(request.text("id"), object{"daemon": value("ok")})
+	})
+	s := &mcpSession{config: c}
+	defer func() {
+		if s.client != nil {
+			s.client.close()
+		}
+	}()
+	for _, args := range []object{{}, {"diagnostics": value(false)}, {"diagnostics": value(true)}} {
+		if _, err := s.handleTool(context.Background(), "browser_health", args, "modern"); err != nil {
+			t.Fatal(err)
+		}
+		request := <-requests
+		if request.text("method") != "health.ping" || !jsonEqual(request["params"], value(args)) {
+			t.Fatalf("health options were not forwarded: %s", value(request))
+		}
 	}
 }
 

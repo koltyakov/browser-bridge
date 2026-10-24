@@ -44,7 +44,7 @@ omit both for the group index.
 | `skill.get_runtime_context`        | No   | -          | system      | `-`                  | Live budget presets and method groups                                                      |
 | `setup.get_status`                 | No   | -          | system      | `-`                  | Global MCP config and CLI skill install status                                             |
 | `setup.install`                    | No   | -          | system      | `-`                  | Install or uninstall MCP/skill integration targets                                         |
-| `health.ping`                      | No   | -          | system      | `-`                  | Connectivity, routing, capture, and daemon/routed-extension recovery summaries             |
+| `health.ping`                      | No   | -          | system      | `diagnostics?`       | Compact connectivity, compatibility, and routing; `diagnostics: true` adds the full report |
 | `log.tail`                         | No   | -          | system      | `-`                  | Recent redacted bridge logs                                                                |
 | `daemon.metrics`                   | No   | -          | system      | `-`                  | Daemon health, performance, and process-local recovery metrics                              |
 | `page.get_state`                   | Yes  | -          | page        | `page.read`          | URL, readiness, focus, viewport, and observable dialog status                              |
@@ -572,7 +572,7 @@ They contain attempts/successes/failures/pending, bounded rates, saturation,
 last-event timestamps, and loop flags, but no page data, URL, selector, payload,
 error text, method name, tab identifier, or internal group name.
 
-`health.ping` includes daemon and available routed-extension summaries;
+`health.ping` with `diagnostics: true` includes daemon and available routed-extension summaries;
 `daemon.metrics` includes daemon scope. `bbx doctor` combines both, marks active
 loops as issues, and emits fixed guidance. Stop repeated attempts: re-query stale
 refs, close competing debuggers, reload extension/page after reinjection

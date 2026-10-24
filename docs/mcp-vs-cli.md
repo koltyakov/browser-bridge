@@ -25,7 +25,7 @@ Short version:
 
 | Capability | MCP Tool | CLI Command | Notes |
 |------------|----------|-------------|-------|
-| Health check | `browser_status`, `browser_health` | `bbx status`, `bbx doctor` | Includes content-free recovery summaries; Doctor is local-only |
+| Health check | `browser_status`, `browser_health` | `bbx status`, `bbx doctor` | Ping is compact by default; `diagnostics: true` or Doctor adds recovery summaries. Doctor is local-only |
 | Request access | `browser_access` | `bbx access-request` | Surfaces Enable prompt in extension UI |
 | Setup status | `browser_setup` | `bbx doctor` | Check MCP/skill installation |
 | Request logs | `browser_logs` | `bbx logs` | Equivalent |

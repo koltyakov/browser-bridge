@@ -73,7 +73,7 @@ func TestDaemonHealthAuthoritativeFieldsAndRetryTelemetry(t *testing.T) {
 	meta := object{"source": value("mcp"), "automatic_retry": value(object{"attempt": value(2), "reason": value("retryable_error")})}
 	d.recordOutcome("dom.query", meta, false)
 	forged := object{"daemonVersion": value("forged"), "socketPath": value("forged"), "connectedExtensions": value([]string{"forged"}), "protocol_version": value("999.9"), "supported_versions": value([]string{"1.2", "secret"}), "extension": value("ok"), "extensionVersion": value("1.2.3"), "unknown": value("secret"), "access": value(object{"enabled": value(true), "windowId": value(-1), "reason": value("private"), "secret": value("hidden")}), "debugger": value(object{"status": value("active"), "attachedTabCount": value(20000), "heldTabCount": value(-1), "recentReason": value("debugger_conflict")})}
-	health := d.health(forged)
+	health := d.health(forged, true)
 	if health.text("daemonVersion") != version || health.text("socketPath") != d.config.address || health.text("protocol_version") != protocolVersion() || health["unknown"] != nil || strings.Contains(string(value(health)), "forged") || strings.Contains(string(value(health)), "secret") || health.object("access")["windowId"] != nil || health.object("debugger").number("attachedTabCount") != 10000 || !health.object("proxy").boolean("enabled") {
 		t.Fatalf("health normalization failed: %s", value(health))
 	}
@@ -163,5 +163,68 @@ func TestDaemonHealthDropsExtensionCostEnvelope(t *testing.T) {
 	meta := serviceNextMessage(t, agent).object("response").object("meta")
 	if len(meta) != 3 || meta.object("timing") == nil || meta.text("method") != "health.ping" || meta.text("protocol_version") != protocolVersion() {
 		t.Fatal("health reconstruction retained extension cost metadata")
+	}
+}
+
+func TestDaemonHealthCompactAndDiagnosticResponses(t *testing.T) {
+	d := serviceTestDaemon(t)
+	agent := serviceTestPeer(t, d, "agent")
+	extension := serviceTestPeer(t, d, "extension")
+	d.identity(extension, object{"browserName": value("chrome"), "profileLabel": value("Work")})
+	telemetry := recoveryTelemetry{}
+	source := object{
+		"extension": value("ok"), "extensionVersion": value("1.2.3"),
+		"supported_versions": value([]string{protocolVersion()}),
+		"access":             value(object{"enabled": value(true), "routeReady": value(true), "routeTabId": value(12), "reason": value("enabled")}),
+		"loadedBuild":        value(object{"workerId": value("12345678-1234-1234-1234-123456789abc"), "startedAt": value("2026-10-24T00:00:00Z"), "sourceDigest": value[*string](nil)}),
+		"debugger":           value(object{"status": value("idle")}),
+		"capture":            value(object{"state": value("stopped")}),
+		"domBaselines":       value(object{"baselineCount": value(0)}),
+		"recovery":           value(telemetry.snapshot("routedExtension")),
+	}
+	for _, params := range []object{{}, {"diagnostics": value(false)}, {"diagnostics": value(true)}} {
+		diagnostics := params.boolean("diagnostics")
+		d.route(agent, newRequest("health.ping", params, nil, 0))
+		routed := serviceNextMessage(t, extension).object("request")
+		if !jsonEqual(routed["params"], value(params)) {
+			t.Fatalf("ping options changed in transit: %s", value(routed))
+		}
+		// Older extensions may still send their full report for compact pings.
+		d.response(extension, success(routed.text("id"), source))
+		response := serviceNextMessage(t, agent).object("response")
+		health := response.object("result")
+		if !response.boolean("ok") || health.text("daemon") != "ok" || !health.boolean("extensionConnected") || health.text("extensionVersion") != "1.2.3" || !health.object("access").boolean("routeReady") || health.object("access").number("routeTabId") != 12 || !jsonEqual(health["extension_supported_versions"], value([]string{protocolVersion()})) || !jsonEqual(health["connectedExtensions"], value(d.snapshot())) {
+			t.Fatalf("ping lost core readiness or routing fields: %s", value(response))
+		}
+		for _, key := range []string{"loadedBuild", "debugger", "capture", "domBaselines", "recovery", "socketPath", "transport", "proxy"} {
+			if (health[key] != nil) != diagnostics {
+				t.Fatalf("diagnostics=%t: unexpected %s in %s", diagnostics, key, value(health))
+			}
+		}
+		if diagnostics && health.object("recovery").object("routedExtension") == nil {
+			t.Fatal("diagnostic ping lost extension recovery telemetry")
+		}
+		if !diagnostics && len(value(health)) > 1024 {
+			t.Fatalf("compact ping exceeded 1 KiB: %s", value(health))
+		}
+	}
+}
+
+func TestDaemonHealthWithoutExtensionAndInvalidDiagnostics(t *testing.T) {
+	d := serviceTestDaemon(t)
+	agent := serviceTestPeer(t, d, "agent")
+	for _, diagnostics := range []bool{false, true} {
+		d.route(agent, newRequest("health.ping", object{"diagnostics": value(diagnostics)}, nil, 0))
+		health := serviceNextMessage(t, agent).object("response").object("result")
+		if health.text("daemon") != "ok" || health.boolean("extensionConnected") || !jsonEqual(health["connectedExtensions"], value([]object{})) || (health["recovery"] != nil) != diagnostics {
+			t.Fatalf("disconnected health mismatch: %s", value(health))
+		}
+	}
+	for _, invalid := range []json.RawMessage{value("true"), value(1), value(0), value[*bool](nil), value(object{}), value([]bool{})} {
+		d.route(agent, newRequest("health.ping", object{"diagnostics": invalid}, nil, 0))
+		response := serviceNextMessage(t, agent).object("response")
+		if response.boolean("ok") || response.object("error").text("code") != "INVALID_REQUEST" {
+			t.Fatalf("invalid diagnostics accepted: %s", value(response))
+		}
 	}
 }

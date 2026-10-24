@@ -6307,6 +6307,52 @@ func (v *NormalizedLogTailParams) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+type HealthPingParams struct {
+	Diagnostics Optional[bool] `json:"diagnostics,omitzero"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v HealthPingParams) MarshalJSON() ([]byte, error) {
+	type alias HealthPingParams
+	return marshalOpen(alias(v), v.Extra, []string{"diagnostics"})
+}
+
+func (v *HealthPingParams) UnmarshalJSON(data []byte) error {
+	type alias HealthPingParams
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"diagnostics"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = HealthPingParams(decoded)
+	return nil
+}
+
+type NormalizedHealthPingParams struct {
+	Diagnostics bool `json:"diagnostics"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v NormalizedHealthPingParams) MarshalJSON() ([]byte, error) {
+	type alias NormalizedHealthPingParams
+	return marshalOpen(alias(v), v.Extra, []string{"diagnostics"})
+}
+
+func (v *NormalizedHealthPingParams) UnmarshalJSON(data []byte) error {
+	type alias NormalizedHealthPingParams
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"diagnostics"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = NormalizedHealthPingParams(decoded)
+	return nil
+}
+
 type ViewportResizeParams struct {
 	Width Optional[float64] `json:"width,omitzero"`
 

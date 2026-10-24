@@ -99,11 +99,15 @@
     {
       "name": "browser_health",
       "title": "Browser Bridge Health",
-      "description": "Ping the bridge to verify daemon and extension connectivity.",
+      "description": "Check connectivity, compatibility, and access routing with a compact response. Set diagnostics:true for the full diagnostic report.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
+          "diagnostics": {
+            "description": "Include build, debugger, capture, baseline, transport, and recovery details. Defaults to false.",
+            "type": "boolean"
+          },
           "destinationId": {
             "description": "Optional Browser Bridge destination ID from browser_status/browser_tabs; omit for local.",
             "type": "string"
