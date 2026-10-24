@@ -144,6 +144,9 @@
         "artifactId": {
           "type": "string"
         },
+        "tabId": {
+          "type": "number"
+        },
         "artifact": {
           "type": "object",
           "additionalProperties": {}
@@ -312,6 +315,9 @@
         "screenshot.capture_region",
         "screenshot.capture_element",
         "screenshot.capture_full_page",
+        "screenshot.baseline.create",
+        "screenshot.baseline.compare",
+        "screenshot.baseline.release",
         "artifact.read",
         "artifact.delete",
         "patch.apply_styles",
@@ -793,6 +799,9 @@
         "DOM_BASELINE_NOT_FOUND",
         "DOM_BASELINE_INVALIDATED",
         "DOM_BASELINE_QUOTA_EXCEEDED",
+        "VISUAL_BASELINE_NOT_FOUND",
+        "VISUAL_BASELINE_INVALIDATED",
+        "VISUAL_BASELINE_QUOTA_EXCEEDED",
         "INTERNAL_ERROR",
         "INVALID_REQUEST",
         "NATIVE_HOST_UNAVAILABLE",
@@ -4632,6 +4641,355 @@
         }
       },
       "required": [],
+      "additionalProperties": true
+    },
+    "VisualRect": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number"
+        },
+        "height": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "additionalProperties": true
+    },
+    "VisualBaselineInvalidationMessage": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "host.visual_baseline_invalidated",
+            "extension.visual_baseline_invalidated"
+          ]
+        },
+        "tabId": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "tabId"
+      ],
+      "additionalProperties": true
+    },
+    "VisualBaselineCreateParams": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "type": "string"
+        },
+        "rect": {
+          "$ref": "#/$defs/VisualRect"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "VisualBaselineCompareParams": {
+      "type": "object",
+      "properties": {
+        "baselineId": {
+          "type": "string"
+        },
+        "advance": {
+          "type": "boolean"
+        },
+        "includeBefore": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "baselineId"
+      ],
+      "additionalProperties": true
+    },
+    "VisualBaselineReleaseParams": {
+      "type": "object",
+      "properties": {
+        "baselineId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "baselineId"
+      ],
+      "additionalProperties": true
+    },
+    "VisualFrameScope": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "number"
+        },
+        "windowId": {
+          "type": "number"
+        },
+        "documentId": {
+          "type": "string"
+        },
+        "rect": {
+          "$ref": "#/$defs/VisualRect"
+        },
+        "viewportWidth": {
+          "type": "number"
+        },
+        "viewportHeight": {
+          "type": "number"
+        },
+        "scrollX": {
+          "type": "number"
+        },
+        "scrollY": {
+          "type": "number"
+        },
+        "devicePixelRatio": {
+          "type": "number"
+        },
+        "viewportScale": {
+          "type": "number"
+        },
+        "visualViewportX": {
+          "type": "number"
+        },
+        "visualViewportY": {
+          "type": "number"
+        },
+        "visualViewportWidth": {
+          "type": "number"
+        },
+        "visualViewportHeight": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "tabId",
+        "windowId",
+        "documentId",
+        "rect",
+        "viewportWidth",
+        "viewportHeight",
+        "scrollX",
+        "scrollY",
+        "devicePixelRatio",
+        "viewportScale",
+        "visualViewportX",
+        "visualViewportY",
+        "visualViewportWidth",
+        "visualViewportHeight"
+      ],
+      "additionalProperties": true
+    },
+    "VisualCaptureFrame": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "string"
+        },
+        "capturedAt": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/VisualFrameScope"
+        },
+        "contexts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VisualRect"
+          }
+        }
+      },
+      "required": [
+        "image",
+        "capturedAt",
+        "scope",
+        "contexts"
+      ],
+      "additionalProperties": true
+    },
+    "VisualBaselineDescriptor": {
+      "type": "object",
+      "properties": {
+        "baselineId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/VisualFrameScope"
+        },
+        "dimensions": {
+          "type": "object",
+          "properties": {
+            "width": {
+              "type": "number"
+            },
+            "height": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "width",
+            "height"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "baselineId",
+        "createdAt",
+        "expiresAt",
+        "scope",
+        "dimensions"
+      ],
+      "additionalProperties": true
+    },
+    "VisualEvidenceImage": {
+      "type": "object",
+      "properties": {
+        "phase": {
+          "type": "string",
+          "enum": [
+            "before",
+            "after"
+          ]
+        },
+        "image": {
+          "type": "string"
+        },
+        "rect": {
+          "$ref": "#/$defs/VisualRect"
+        }
+      },
+      "required": [
+        "phase",
+        "image",
+        "rect"
+      ],
+      "additionalProperties": true
+    },
+    "VisualBaselineCompareResult": {
+      "type": "object",
+      "properties": {
+        "baselineId": {
+          "type": "string"
+        },
+        "comparable": {
+          "type": "boolean"
+        },
+        "equal": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "changedPixels": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "changedPixelRatio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "strategy": {
+          "type": "string",
+          "enum": [
+            "none",
+            "crop",
+            "full"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "advanced": {
+          "type": "boolean"
+        },
+        "requiresNewBaseline": {
+          "type": "boolean"
+        },
+        "beforeScope": {
+          "$ref": "#/$defs/VisualFrameScope"
+        },
+        "afterScope": {
+          "$ref": "#/$defs/VisualFrameScope"
+        },
+        "dimensions": {
+          "type": "object",
+          "properties": {
+            "width": {
+              "type": "number"
+            },
+            "height": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "width",
+            "height"
+          ],
+          "additionalProperties": true
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VisualEvidenceImage"
+          }
+        },
+        "guidance": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "baselineId",
+        "comparable",
+        "equal",
+        "changedPixels",
+        "changedPixelRatio",
+        "strategy",
+        "reason",
+        "advanced",
+        "requiresNewBaseline",
+        "beforeScope",
+        "afterScope",
+        "dimensions",
+        "images",
+        "guidance"
+      ],
       "additionalProperties": true
     },
     "NormalizedScreenshotParams": {

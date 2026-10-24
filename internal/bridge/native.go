@@ -76,7 +76,7 @@ func nativeToDaemon(message object) object {
 	}
 	switch kind {
 	case "host.setup_status.request", "host.identity", "host.access_update", "host.activity",
-		"host.mutation_ready",
+		"host.mutation_ready", "host.visual_baseline_invalidated",
 		"host.window_action.request", "host.window_action.result", "host.journal.begin", "host.journal.append",
 		"host.artifact.begin", "host.artifact.append", "host.artifact.finish", "host.artifact.abort":
 		message["type"] = value("extension." + strings.TrimPrefix(kind, "host."))

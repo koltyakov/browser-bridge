@@ -1174,7 +1174,7 @@
     {
       "name": "browser_capture",
       "title": "Browser Capture",
-      "description": "Capture screenshots or CDP snapshots. Debugger-backed and token-expensive - use only when structured reads (browser_dom, browser_styles_layout) are insufficient. Prefer element, then tight region; full_page only for document-level context.",
+      "description": "Capture screenshots or CDP snapshots only when structured reads are insufficient. Opt-in visual_baseline_create/compare/release is for CSS, canvas, charts or visual regressions that DOM diffs cannot verify. Create a complete component selector or viewport rect before the action, compare afterward, release when done. Exact Go comparison emits no images when unchanged, context-expanded before/after crops for local changes, and full scoped evidence otherwise. Coordinates are screenshot pixels with scope metadata. Not proof of action success; animations count as changes. Normal screenshots never retain visual baselines.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1185,6 +1185,9 @@
               "element",
               "region",
               "full_page",
+              "visual_baseline_create",
+              "visual_baseline_compare",
+              "visual_baseline_release",
               "cdp_document",
               "cdp_dom_snapshot",
               "cdp_box_model",
@@ -1230,6 +1233,19 @@
               "minLength": 1,
               "maxLength": 128
             }
+          },
+          "baselineId": {
+            "description": "Secret visual baseline handle returned by visual_baseline_create. Expires after five minutes; keep the same destination, extension and tab.",
+            "type": "string",
+            "pattern": "^visual_[a-f0-9]{32}$"
+          },
+          "advance": {
+            "description": "Advance the reference only after a successful comparable visual comparison. Default false; does not extend expiry. Use for explicitly requested successive-frame checks.",
+            "type": "boolean"
+          },
+          "includeBefore": {
+            "description": "Include before pixels for comparable changes, default true. Set false only when prior visual context is known; after-only evidence cannot establish disappearance.",
+            "type": "boolean"
           },
           "rect": {
             "description": "Viewport region for region action (keep crop tight)",
@@ -1551,7 +1567,7 @@
     {
       "name": "browser_call",
       "title": "Raw Browser Bridge Call",
-      "description": "Call any bridge method by name through one approvable MCP tool. tabs.list returns 30 tabs by default; if a requested URL is missing, follow pagination.nextOffset via params.offset until null before concluding the tab is not open. For unfamiliar parameters, protocol.describe with params.method returns on-demand schemas and examples for common methods. Act directly on known semantic targets. For authorized known flows, input.perform combines ordered steps, optional DOM/URL/fresh fetch-XHR outcomes, and returnLastResult for bounded final evidence. OUTCOME_NOT_MET is not retryable. Stop for new decisions or approval; never blindly replay a partial flow.",
+      "description": "Call any bridge method by name through one approvable MCP tool. tabs.list returns 30 tabs by default; follow pagination.nextOffset until null before concluding a requested URL is missing. protocol.describe with params.method returns on-demand schemas and examples. Prefer structured reads and semantic DOM baselines. Only when DOM diffs cannot verify CSS, canvas, charts or visual regressions, opt in to screenshot.baseline.create/compare/release for local Go pixel comparison and bounded visual evidence; inspect its schema first. Normal screenshots do not retain baselines. For authorized known flows, input.perform combines ordered steps, DOM/URL/fresh fetch-XHR outcomes, and returnLastResult. OUTCOME_NOT_MET is not retryable. Stop for new decisions or approval; never blindly replay a partial flow.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",

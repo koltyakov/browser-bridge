@@ -255,6 +255,7 @@
       "authToken": "wire-✓",
       "at": 1.25,
       "artifactId": "wire-✓",
+      "tabId": 1.25,
       "artifact": {
         "future_extension": {
           "arbitrary": [
@@ -4426,6 +4427,445 @@
       "quality": 1.25,
       "delivery": "auto",
       "scale": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "VisualRect",
+    "valid": true,
+    "input": {
+      "x": 1.25,
+      "y": 1.25,
+      "width": 1.25,
+      "height": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "VisualBaselineInvalidationMessage",
+    "valid": true,
+    "input": {
+      "type": "host.visual_baseline_invalidated",
+      "tabId": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "VisualBaselineCreateParams",
+    "valid": true,
+    "input": {
+      "selector": "wire-✓",
+      "rect": {
+        "x": 1.25,
+        "y": 1.25,
+        "width": 1.25,
+        "height": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "VisualBaselineCompareParams",
+    "valid": true,
+    "input": {
+      "baselineId": "wire-✓",
+      "advance": false,
+      "includeBefore": false,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "VisualBaselineReleaseParams",
+    "valid": true,
+    "input": {
+      "baselineId": "wire-✓",
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "VisualFrameScope",
+    "valid": true,
+    "input": {
+      "tabId": 1.25,
+      "windowId": 1.25,
+      "documentId": "wire-✓",
+      "rect": {
+        "x": 1.25,
+        "y": 1.25,
+        "width": 1.25,
+        "height": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "viewportWidth": 1.25,
+      "viewportHeight": 1.25,
+      "scrollX": 1.25,
+      "scrollY": 1.25,
+      "devicePixelRatio": 1.25,
+      "viewportScale": 1.25,
+      "visualViewportX": 1.25,
+      "visualViewportY": 1.25,
+      "visualViewportWidth": 1.25,
+      "visualViewportHeight": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "VisualCaptureFrame",
+    "valid": true,
+    "input": {
+      "image": "wire-✓",
+      "capturedAt": "wire-✓",
+      "scope": {
+        "tabId": 1.25,
+        "windowId": 1.25,
+        "documentId": "wire-✓",
+        "rect": {
+          "x": 1.25,
+          "y": 1.25,
+          "width": 1.25,
+          "height": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "viewportWidth": 1.25,
+        "viewportHeight": 1.25,
+        "scrollX": 1.25,
+        "scrollY": 1.25,
+        "devicePixelRatio": 1.25,
+        "viewportScale": 1.25,
+        "visualViewportX": 1.25,
+        "visualViewportY": 1.25,
+        "visualViewportWidth": 1.25,
+        "visualViewportHeight": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "contexts": [
+        {
+          "x": 1.25,
+          "y": 1.25,
+          "width": 1.25,
+          "height": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        }
+      ],
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "VisualBaselineDescriptor",
+    "valid": true,
+    "input": {
+      "baselineId": "wire-✓",
+      "createdAt": "wire-✓",
+      "expiresAt": "wire-✓",
+      "scope": {
+        "tabId": 1.25,
+        "windowId": 1.25,
+        "documentId": "wire-✓",
+        "rect": {
+          "x": 1.25,
+          "y": 1.25,
+          "width": 1.25,
+          "height": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "viewportWidth": 1.25,
+        "viewportHeight": 1.25,
+        "scrollX": 1.25,
+        "scrollY": 1.25,
+        "devicePixelRatio": 1.25,
+        "viewportScale": 1.25,
+        "visualViewportX": 1.25,
+        "visualViewportY": 1.25,
+        "visualViewportWidth": 1.25,
+        "visualViewportHeight": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "dimensions": {
+        "width": 1.25,
+        "height": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "VisualEvidenceImage",
+    "valid": true,
+    "input": {
+      "phase": "before",
+      "image": "wire-✓",
+      "rect": {
+        "x": 1.25,
+        "y": 1.25,
+        "width": 1.25,
+        "height": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "VisualBaselineCompareResult",
+    "valid": true,
+    "input": {
+      "baselineId": "wire-✓",
+      "comparable": false,
+      "equal": false,
+      "changedPixels": 1.25,
+      "changedPixelRatio": 1.25,
+      "strategy": "none",
+      "reason": "wire-✓",
+      "advanced": false,
+      "requiresNewBaseline": false,
+      "beforeScope": {
+        "tabId": 1.25,
+        "windowId": 1.25,
+        "documentId": "wire-✓",
+        "rect": {
+          "x": 1.25,
+          "y": 1.25,
+          "width": 1.25,
+          "height": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "viewportWidth": 1.25,
+        "viewportHeight": 1.25,
+        "scrollX": 1.25,
+        "scrollY": 1.25,
+        "devicePixelRatio": 1.25,
+        "viewportScale": 1.25,
+        "visualViewportX": 1.25,
+        "visualViewportY": 1.25,
+        "visualViewportWidth": 1.25,
+        "visualViewportHeight": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "afterScope": {
+        "tabId": 1.25,
+        "windowId": 1.25,
+        "documentId": "wire-✓",
+        "rect": {
+          "x": 1.25,
+          "y": 1.25,
+          "width": 1.25,
+          "height": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "viewportWidth": 1.25,
+        "viewportHeight": 1.25,
+        "scrollX": 1.25,
+        "scrollY": 1.25,
+        "devicePixelRatio": 1.25,
+        "viewportScale": 1.25,
+        "visualViewportX": 1.25,
+        "visualViewportY": 1.25,
+        "visualViewportWidth": 1.25,
+        "visualViewportHeight": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "dimensions": {
+        "width": 1.25,
+        "height": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "images": [
+        {
+          "phase": "before",
+          "image": "wire-✓",
+          "rect": {
+            "x": 1.25,
+            "y": 1.25,
+            "width": 1.25,
+            "height": 1.25,
+            "future_extension": {
+              "arbitrary": [
+                null,
+                false,
+                0,
+                "JSON"
+              ]
+            }
+          },
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        }
+      ],
+      "guidance": "wire-✓",
       "future_extension": {
         "arbitrary": [
           null,

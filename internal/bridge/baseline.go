@@ -15,16 +15,22 @@ type baselineOwner struct {
 }
 
 type baselineRegistry struct {
+	visual    map[string]*visualBaseline
 	owners    map[string]baselineOwner
 	abandoned map[string]baselineOwner
 	sequence  uint64
 }
 
 func newBaselineRegistry() *baselineRegistry {
-	return &baselineRegistry{owners: make(map[string]baselineOwner), abandoned: make(map[string]baselineOwner)}
+	return &baselineRegistry{owners: make(map[string]baselineOwner), abandoned: make(map[string]baselineOwner), visual: make(map[string]*visualBaseline)}
 }
 func (b *baselineRegistry) prune() {
 	now := time.Now()
+	for id, baseline := range b.visual {
+		if !baseline.expires.After(now) {
+			delete(b.visual, id)
+		}
+	}
 	for id, r := range b.owners {
 		if !r.expires.After(now) {
 			delete(b.owners, id)
@@ -90,6 +96,12 @@ func (b *baselineRegistry) abandon(id string, pending *pendingRequest) {
 }
 
 func (b *baselineRegistry) clear(p *peer) {
+	p.accessEpoch++
+	for id, baseline := range b.visual {
+		if baseline.target == p {
+			delete(b.visual, id)
+		}
+	}
 	for id, r := range b.owners {
 		if r.target == p {
 			delete(b.owners, id)

@@ -2361,6 +2361,7 @@ export function createRuntimeContext() {
       "Reuse elementRef; don't re-query",
       'Set attributeAllowlist for focused DOM reads',
       'Use dom.baseline.create / compare for bounded semantic DOM change detection; release when done',
+      'Only when DOM diffs cannot verify CSS, canvas, charts or visual regressions: opt in to screenshot.baseline.create with one complete component selector or viewport rect, compare after the action, then release. Exact Go comparison returns no images for unchanged frames, context-expanded crops with before/after coordinates for local changes, or full scoped evidence. Not proof of action success. advance=true explicitly advances comparable frames without extending the five-minute expiry; geometry changes require a new baseline.',
       'patch.apply_styles before patch.apply_dom',
       'Verify with get_box_model not screenshots',
       'batch independent reads',

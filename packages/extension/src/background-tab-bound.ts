@@ -150,6 +150,8 @@ const TAB_BOUND_METHODS = new Set([
   'screenshot.capture_region',
   'screenshot.capture_element',
   'screenshot.capture_full_page',
+  'screenshot.baseline.create',
+  'screenshot.baseline.compare',
 ]);
 
 export function isTabBoundMethod(method: string): boolean {
@@ -213,6 +215,7 @@ export async function handleTabBoundRequest(
       request.params,
       request.id
     );
+    assertAccess();
     return createSuccess(request.id, result, { method: request.method });
   }
 

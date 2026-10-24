@@ -246,6 +246,12 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
   'screenshot.capture_region': 'Capture a screenshot of a viewport region.',
   'screenshot.capture_element': 'Capture a screenshot of one element.',
   'screenshot.capture_full_page': 'Capture a full-page screenshot beyond the viewport.',
+  'screenshot.baseline.create':
+    'Opt in to a five-minute memory-only visual baseline of one selector or viewport CSS rect. Use only when semantic DOM diffs cannot verify CSS, canvas, charts, or visual regressions. Returns metadata, no image.',
+  'screenshot.baseline.compare':
+    'Compare exact pixels locally in Go. Unchanged returns no images; changes return a context-expanded union crop with coordinates and before/after evidence, or full scoped evidence when crops are unsuitable. Geometry changes return one current scoped image and require a new baseline. Not proof of action success. Defaults includeBefore=true, advance=false; advance never extends expiry.',
+  'screenshot.baseline.release':
+    'Release retained visual pixels. Idempotent; use after visual verification.',
   'artifact.read': 'Read one bounded chunk from a daemon-owned artifact.',
   'artifact.delete': 'Delete one daemon-owned artifact.',
   'patch.apply_styles': 'Apply a reversible inline style patch.',
@@ -918,6 +924,41 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
     }
   ),
   // capture - high (screenshots, CDP)
+  'screenshot.baseline.create': createRegistryEntry(
+    'screenshot.baseline.create',
+    'capture',
+    true,
+    ['selector', 'rect'],
+    'high',
+    METHOD_POLICIES.screenshotPartialDebugger,
+    { paramsType: 'VisualBaselineCreateParams', example: { selector: '#chart-card' } }
+  ),
+  'screenshot.baseline.compare': createRegistryEntry(
+    'screenshot.baseline.compare',
+    'capture',
+    true,
+    ['baselineId', 'advance', 'includeBefore'],
+    'high',
+    METHOD_POLICIES.screenshotPartialDebugger,
+    {
+      paramsType: 'VisualBaselineCompareParams',
+      required: ['baselineId'],
+      example: { baselineId: 'visual_...', includeBefore: true },
+    }
+  ),
+  'screenshot.baseline.release': createRegistryEntry(
+    'screenshot.baseline.release',
+    'capture',
+    true,
+    ['baselineId'],
+    'low',
+    METHOD_POLICIES.screenshotPartialDebugger,
+    {
+      paramsType: 'VisualBaselineReleaseParams',
+      required: ['baselineId'],
+      example: { baselineId: 'visual_...' },
+    }
+  ),
   'screenshot.capture_region': createRegistryEntry(
     'screenshot.capture_region',
     'capture',

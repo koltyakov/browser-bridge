@@ -409,6 +409,25 @@ function summarizeBridgeResponseBody(response, method) {
       evidence: result,
     };
   }
+  if (method?.startsWith('screenshot.baseline.')) {
+    const evidence = { ...result };
+    delete evidence.image;
+    if (Array.isArray(result.images))
+      evidence.images = result.images.map((image) => {
+        const entry = toRecord(image);
+        return { phase: entry.phase, rect: entry.rect };
+      });
+    return {
+      ok: true,
+      summary: appendProtocolWarning(
+        method === 'screenshot.baseline.compare'
+          ? `Visual comparison: ${result.reason ?? 'unknown'}. ${result.guidance ?? ''}`
+          : `Visual baseline ${result.baselineId ?? ''}.`,
+        protocolWarning
+      ),
+      evidence,
+    };
+  }
   if (method === 'dom.baseline.compare') {
     const counts = toRecord(result.counts);
     const added = typeof counts.added === 'number' ? counts.added : 0;

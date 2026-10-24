@@ -44,6 +44,7 @@ export interface DaemonMessage {
   authToken?: string;
   at?: number;
   artifactId?: string;
+  tabId?: number;
   artifact?: Record<string, unknown>;
   chunkIndex?: number;
   data?: string;
@@ -141,6 +142,9 @@ export type ErrorCode =
   | 'DOM_BASELINE_NOT_FOUND'
   | 'DOM_BASELINE_INVALIDATED'
   | 'DOM_BASELINE_QUOTA_EXCEEDED'
+  | 'VISUAL_BASELINE_NOT_FOUND'
+  | 'VISUAL_BASELINE_INVALIDATED'
+  | 'VISUAL_BASELINE_QUOTA_EXCEEDED'
   | 'INTERNAL_ERROR'
   | 'INVALID_REQUEST'
   | 'NATIVE_HOST_UNAVAILABLE'
@@ -235,6 +239,9 @@ export type BridgeMethod =
   | 'screenshot.capture_region'
   | 'screenshot.capture_element'
   | 'screenshot.capture_full_page'
+  | 'screenshot.baseline.create'
+  | 'screenshot.baseline.compare'
+  | 'screenshot.baseline.release'
   | 'artifact.read'
   | 'artifact.delete'
   | 'patch.apply_styles'
@@ -1230,6 +1237,96 @@ export interface ScreenshotParams extends BridgeParams {
   quality?: number;
   delivery?: ScreenshotDelivery;
   scale?: number;
+}
+
+/** Coordinates are viewport CSS pixels on input, screenshot pixels for evidence. */
+export interface VisualRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Content-free lifecycle signal. Native must discard pixels even if no further compare is requested. */
+export interface VisualBaselineInvalidationMessage {
+  type: 'host.visual_baseline_invalidated' | 'extension.visual_baseline_invalidated';
+  tabId: number;
+}
+
+export interface VisualBaselineCreateParams {
+  /** Choose a complete component, including labels, or supply rect. Exactly one is required. */
+  selector?: string;
+  rect?: VisualRect;
+}
+
+export interface VisualBaselineCompareParams {
+  baselineId: string;
+  /** Advance only after successful comparable evidence. Default false. Does not extend expiry. */
+  advance?: boolean;
+  /** Default true. Before evidence is needed for disappearance and uncertain prior context. */
+  includeBefore?: boolean;
+}
+
+export interface VisualBaselineReleaseParams {
+  baselineId: string;
+}
+
+export interface VisualFrameScope {
+  tabId: number;
+  windowId: number;
+  documentId: string;
+  rect: VisualRect;
+  viewportWidth: number;
+  viewportHeight: number;
+  scrollX: number;
+  scrollY: number;
+  devicePixelRatio: number;
+  viewportScale: number;
+  visualViewportX: number;
+  visualViewportY: number;
+  visualViewportWidth: number;
+  visualViewportHeight: number;
+}
+
+/** Internal renderer response. Native Go retains and compares pixels, never the model. */
+export interface VisualCaptureFrame {
+  image: string;
+  capturedAt: string;
+  scope: VisualFrameScope;
+  /** Bounded complete semantic component rectangles in viewport CSS pixels. */
+  contexts: VisualRect[];
+}
+
+export interface VisualBaselineDescriptor {
+  baselineId: string;
+  createdAt: string;
+  expiresAt: string;
+  scope: VisualFrameScope;
+  dimensions: { width: number; height: number };
+}
+
+export interface VisualEvidenceImage {
+  phase: 'before' | 'after';
+  image: string;
+  /** Rectangle within the original capture, in screenshot pixels. */
+  rect: VisualRect;
+}
+
+export interface VisualBaselineCompareResult {
+  baselineId: string;
+  comparable: boolean;
+  equal: boolean | null;
+  changedPixels: number | null;
+  changedPixelRatio: number | null;
+  strategy: 'none' | 'crop' | 'full';
+  reason: string;
+  advanced: boolean;
+  requiresNewBaseline: boolean;
+  beforeScope: VisualFrameScope;
+  afterScope: VisualFrameScope;
+  dimensions: { width: number; height: number };
+  images: VisualEvidenceImage[];
+  guidance: string;
 }
 
 export interface NormalizedScreenshotParams extends BridgeParams {

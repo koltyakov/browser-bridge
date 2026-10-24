@@ -71,7 +71,7 @@ var mcpActions = map[string]map[string]string{
 	},
 	"browser_navigation": {"navigate": "navigation.navigate|url waitForLoad timeoutMs", "reload": "navigation.reload|waitForLoad timeoutMs", "go_back": "navigation.go_back|waitForLoad timeoutMs", "go_forward": "navigation.go_forward|waitForLoad timeoutMs", "scroll": "viewport.scroll|top left behavior relative", "resize": "viewport.resize|width height deviceScaleFactor reset"},
 	"browser_tabs":       {"list": "tabs.list|limit offset", "create": "tabs.create|url active", "close": "tabs.close|tabId", "activate": "tabs.activate|tabId"},
-	"browser_capture":    {"element": "screenshot.capture_element!|format quality delivery scale", "region": "screenshot.capture_region|format quality delivery scale", "full_page": "screenshot.capture_full_page|format quality delivery scale", "cdp_document": "cdp.get_document|", "cdp_dom_snapshot": "cdp.get_dom_snapshot|computedStyles", "cdp_box_model": "cdp.get_box_model|nodeId", "cdp_computed_styles": "cdp.get_computed_styles_for_node|nodeId"},
+	"browser_capture":    {"element": "screenshot.capture_element!|format quality delivery scale", "region": "screenshot.capture_region|format quality delivery scale", "full_page": "screenshot.capture_full_page|format quality delivery scale", "visual_baseline_create": "screenshot.baseline.create|selector rect", "visual_baseline_compare": "screenshot.baseline.compare|baselineId advance includeBefore", "visual_baseline_release": "screenshot.baseline.release|baselineId", "cdp_document": "cdp.get_document|", "cdp_dom_snapshot": "cdp.get_dom_snapshot|computedStyles", "cdp_box_model": "cdp.get_box_model|nodeId", "cdp_computed_styles": "cdp.get_computed_styles_for_node|nodeId"},
 	"browser_patch":      {"apply_styles": "patch.apply_styles!|declarations important patchId verify", "apply_dom": "patch.apply_dom!|operation value name patchId verify", "list": "patch.list|", "rollback": "patch.rollback|patchId", "commit_baseline": "patch.commit_session_baseline|"},
 	"browser_artifact":   {"read": "artifact.read|artifactId offset limit:maxBytes", "delete": "artifact.delete|artifactId"},
 	"browser_intercept":  {"add": "network.intercept.add|urlPattern ruleAction:action statusCode body headers", "remove": "network.intercept.remove|ruleId", "list": "network.intercept.list|", "clear": "network.intercept.clear|"},
@@ -218,7 +218,7 @@ func (s *mcpSession) handleTool(ctx context.Context, name string, args object, e
 			}
 		}
 	}
-	if name == "browser_capture" && strings.HasPrefix(method, "screenshot.") {
+	if name == "browser_capture" && strings.HasPrefix(method, "screenshot.") && !isVisualBaseline(method) {
 		if params["delivery"] == nil {
 			params["delivery"] = value("auto")
 		}

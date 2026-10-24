@@ -105,6 +105,7 @@ import {
   primeWindowConsoleCapture,
 } from './background-console.js';
 import { handleScreenshot } from './background-screenshots.js';
+import { captureVisualBaseline, invalidateVisualBaselines } from './background-visual-baselines.js';
 import {
   createTabCleanupController,
   createTabMoveCleanupController,
@@ -413,6 +414,10 @@ const tabCleanupController = createTabCleanupController(chrome, {
   discardCdpNetworkCapture: (tabId) => cdpNetworkCapture.handleDetach(tabId),
   cancelNavigationWaitsForWindow: (windowId) => navigationWaits.cancelWindow(windowId),
   resources: [
+    {
+      name: 'visual baselines',
+      clear: (tabId) => invalidateVisualBaselines(state.nativePort, tabId),
+    },
     { name: 'DOM baselines', clear: (tabId) => domBaselines.clearTab(tabId) },
     { name: 'WebMCP', clear: (tabId) => webmcp.clearTab(tabId) },
     {
@@ -926,7 +931,7 @@ const tabBoundRequestDependencies: Parameters<typeof executeTabBoundRequest>[1] 
   chooseInputExecutionMode,
   ensureContentScript,
   handleScreenshot: (target, method, params, requestId) =>
-    handleScreenshot(
+    (method.startsWith('screenshot.baseline.') ? captureVisualBaseline : handleScreenshot)(
       target,
       method,
       params,
@@ -991,6 +996,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'loading' || typeof changeInfo.url === 'string') {
     mutationGate.invalidate(tabId);
     domBaselines.invalidateNavigation(tabId);
+    invalidateVisualBaselines(state.nativePort, tabId);
     void webmcp.clearTab(tabId).catch(reportAsyncError);
   }
   navigationWaits.handleTabUpdated(tabId, changeInfo, tab);
@@ -998,6 +1004,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 });
 
 chrome.tabs.onDetached?.addListener((tabId, detachInfo) => {
+  invalidateVisualBaselines(state.nativePort, tabId);
   mutationGate.invalidate(tabId);
   void webmcp.clearTab(tabId).catch(reportAsyncError);
   tabMoveCleanup.handleDetached(tabId, detachInfo);
@@ -1021,6 +1028,7 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
   mutationGate.invalidate(tabId);
   void webmcp.clearTab(tabId).catch(reportAsyncError);
   domBaselines.clearTab(tabId);
+  invalidateVisualBaselines(state.nativePort, tabId);
   void clearActionLogForTab(tabId)
     .finally(() => emitUiState())
     .catch(reportAsyncError);
@@ -1076,6 +1084,7 @@ chrome.runtime.onMessage.addListener(
     onWebMcpApproval: webmcp.handleMessage,
     onNavigationSignal: (tabId, kind, channel) => {
       domBaselines.invalidateNavigation(tabId);
+      invalidateVisualBaselines(state.nativePort, tabId);
       void webmcp.clearTab(tabId).catch(reportAsyncError);
       navigationWaits.handleSpaSignal(tabId, kind, channel);
     },

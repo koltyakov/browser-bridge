@@ -354,6 +354,7 @@ export function enforceTokenBudget(
     );
   }
   if (
+    method.startsWith('screenshot.baseline.') ||
     method === 'dom.baseline.create' ||
     method === 'dom.baseline.describe' ||
     method === 'dom.baseline.release' ||

@@ -133,6 +133,8 @@ func mcpBoundValue(raw json.RawMessage, maxEntries, maxCharacters, maxString int
 func mcpResponse(response object, method string, params object) object {
 	if response.boolean("ok") {
 		switch {
+		case isVisualBaseline(method):
+			return mcpVisualBaseline(response.object("result"), method)
 		case strings.HasPrefix(method, "screenshot."):
 			return mcpScreenshot(response.object("result"), method)
 		case method == "sensitive.read":
@@ -152,6 +154,41 @@ func mcpResponse(response object, method string, params object) object {
 	}
 	structured := mcpStructuredResponse(response, method, params)
 	return mcpResult(structured.text("summary"), structured, !structured.boolean("ok"))
+}
+
+// Keep image bytes out of structured text. Each image has an immediately preceding
+// phase/coordinate label, so disappearance and before/after order remain explicit.
+func mcpVisualBaseline(result object, method string) object {
+	out := mcpClone(result)
+	out["ok"], out["method"] = value(true), value(method)
+	images, _ := cliArray(result["images"])
+	metadata := []object{}
+	content := []object{}
+	for _, raw := range images {
+		entry := cliRecord(raw)
+		imageResult := mcpScreenshot(object{"image": entry["image"], "complete": value(true), "rect": entry["rect"]}, method)
+		if imageResult.boolean("isError") {
+			return imageResult
+		}
+		parts, _ := cliArray(imageResult["content"])
+		label := object{"phase": entry["phase"], "rect": entry["rect"]}
+		metadata = append(metadata, label)
+		content = append(content, object{"type": value("text"), "text": value(string(value(label)))})
+		for _, part := range parts {
+			item := cliRecord(part)
+			if item.text("type") == "image" {
+				content = append(content, item)
+			}
+		}
+	}
+	if result["images"] != nil {
+		out["images"] = value(metadata)
+	}
+	summary := "Visual baseline metadata. Use only when semantic DOM evidence is insufficient; release retained pixels when done."
+	if method == "screenshot.baseline.compare" {
+		summary = "Visual comparison: " + result.text("reason") + ". " + result.text("guidance")
+	}
+	return mcpResult(summary, out, false, content...)
 }
 
 // Share bounded evidence and error shaping between standalone and batch calls.
