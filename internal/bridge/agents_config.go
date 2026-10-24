@@ -1,12 +1,15 @@
 package bridge
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -340,39 +343,155 @@ func installMCPConfigured(raw, client, path string, scope installScope) bool {
 	return err == nil && installJSONLookup(root, installMCPKey(client, path, scope), "browser-bridge") != nil
 }
 
-// installMCPStale reports a configured JSON entry whose command or arguments
-// name an absolute path that no longer exists, such as a launcher left behind
-// by a removed checkout. Clients fail to start such servers without telling
-// the user why, so presence alone does not prove a working configuration.
+// installMCPStale reports a configured entry whose command or arguments name
+// an absolute path that no longer exists, such as a launcher left behind by a
+// removed checkout. Clients fail to start such servers without telling the
+// user why, so presence alone does not prove a working configuration.
 func installMCPStale(raw, client, path string, scope installScope) bool {
+	return len(installMCPMissingPaths(raw, client, path, scope)) > 0
+}
+
+// installMCPRepairable reports a stale entry that Browser Bridge itself wrote.
+// v1 on Windows launched node with the package's packages/mcp-server/src/bin.js,
+// which v2 no longer ships. Other missing paths may be the user's own wrapper,
+// so those are reported by doctor rather than rewritten.
+func installMCPRepairable(raw, client, path string, scope installScope) bool {
+	return slices.ContainsFunc(installMCPMissingPaths(raw, client, path, scope), installLegacyLauncher)
+}
+
+func installLegacyLauncher(path string) bool {
+	slashed := strings.ToLower(strings.ReplaceAll(path, `\`, "/"))
+	if strings.HasSuffix(slashed, "/packages/mcp-server/src/bin.js") {
+		return true
+	}
+	base := slashed[strings.LastIndex(slashed, "/")+1:]
+	for _, name := range []string{"bbx", "bbx-mcp"} {
+		for _, extension := range []string{"", ".exe", ".cmd", ".ps1", ".js"} {
+			if base == name+extension {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func installMCPMissingPaths(raw, client, path string, scope installScope) []string {
+	missing := []string{}
+	for _, text := range installMCPLaunchStrings(raw, client, path, scope) {
+		if filepath.IsAbs(text) {
+			if _, err := os.Stat(text); errors.Is(err, os.ErrNotExist) {
+				missing = append(missing, text)
+			}
+		}
+	}
+	return missing
+}
+
+// installMCPLaunchStrings returns the browser-bridge entry's command and
+// argument strings. Unparseable values are skipped, so detection stays
+// conservative for hand-edited configurations.
+func installMCPLaunchStrings(raw, client, path string, scope installScope) []string {
 	agent := installAgentByKey(client)
-	if agent == nil || agent.mcp.format == installConfigYAML || agent.mcp.format == installConfigTOML {
-		return false
+	if agent == nil || agent.mcp.format == installConfigYAML {
+		return nil
+	}
+	if agent.mcp.format == installConfigTOML {
+		return installCodexLaunchStrings(raw)
 	}
 	root, err := installParseJSON(raw)
 	if err != nil {
-		return false
+		return nil
 	}
 	entry := installJSONLookup(root, installMCPKey(client, path, scope), "browser-bridge")
 	if entry == nil || entry.kind != '{' {
-		return false
+		return nil
 	}
 	scopes := []*installJSONNode{entry}
 	if nested := installJSONLookup(entry, "transport"); nested != nil && nested.kind == '{' {
 		scopes = append(scopes, nested)
 	}
+	out := []string{}
 	for _, node := range scopes {
 		for _, field := range []string{"command", "args"} {
-			for _, text := range installJSONStrings(raw, installJSONLookup(node, field)) {
-				if filepath.IsAbs(text) {
-					if _, err := os.Stat(text); err != nil {
-						return true
-					}
-				}
-			}
+			out = append(out, installJSONStrings(raw, installJSONLookup(node, field))...)
 		}
 	}
-	return false
+	return out
+}
+
+// v1 wrote Codex values with JSON.stringify, which is also valid TOML.
+func installCodexLaunchStrings(raw string) []string {
+	statements, err := installTOMLStatements(raw)
+	if err != nil {
+		return nil
+	}
+	out := []string{}
+	inMain := false
+	for _, statement := range statements {
+		if strings.HasPrefix(statement.text, "[") {
+			match := installCodexHeader.FindStringSubmatch(statement.text)
+			inMain = match != nil && match[1] == ""
+			continue
+		}
+		if !inMain || !installCodexAssignment.MatchString(statement.text) {
+			continue
+		}
+		equals := strings.Index(raw[statement.start:statement.valueEnd], "=") + statement.start
+		text := strings.TrimSpace(raw[equals+1 : statement.valueEnd])
+		var one string
+		var many []string
+		if json.Unmarshal([]byte(text), &one) == nil {
+			out = append(out, one)
+		} else if json.Unmarshal([]byte(text), &many) == nil {
+			out = append(out, many...)
+		}
+	}
+	return out
+}
+
+// installNonNil keeps empty lists as [] rather than null in JSON evidence.
+func installNonNil(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
+}
+
+// installRepairStaleMCP rewrites global Browser Bridge MCP entries that still
+// launch a removed v1 entrypoint, keeping their env, disabled flags, and
+// timeouts. Upgrades run it so existing clients keep working without a manual
+// `bbx install-mcp`. Files owned by another account are left alone: a
+// rename-based write from an elevated install would take over the user's
+// config. Failures are returned for reporting and never stop installation.
+func installRepairStaleMCP(ctx context.Context) (repaired, failed []string) {
+	scope, err := installCurrentScope()
+	if err != nil {
+		return nil, []string{err.Error()}
+	}
+	for _, target := range installAgentNames {
+		if !installMCPSupported(target, scope) {
+			continue
+		}
+		for _, path := range installMCPPaths(target, scope) {
+			if ctx.Err() != nil {
+				return repaired, failed
+			}
+			data, err := os.ReadFile(path)
+			if err != nil || !installMCPConfigured(string(data), target, path, scope) || !installMCPRepairable(string(data), target, path, scope) {
+				continue
+			}
+			if !installOwnedByCurrentUser(path) {
+				failed = append(failed, fmt.Sprintf("%s MCP config %s belongs to another user; run `bbx install-mcp %s` as its owner.", installAgentLabels[target], path, target))
+				continue
+			}
+			if _, err := installWriteMCPConfig(target, path, scope, false); err != nil {
+				failed = append(failed, fmt.Sprintf("%s MCP config %s could not be repaired (%v); run `bbx install-mcp %s`.", installAgentLabels[target], path, err, target))
+				continue
+			}
+			repaired = append(repaired, path)
+		}
+	}
+	return repaired, failed
 }
 
 // installJSONStrings decodes a string node or the string members of an array.

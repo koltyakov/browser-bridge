@@ -252,7 +252,8 @@ func installSelfFinish(ctx context.Context, c config, restart bool) error {
 	if err != nil {
 		return err
 	}
-	evidence := object{"executable": value(executable), "nativeRegistrations": value(registrations), "nativeUpdateSelectionCleared": value(cleared), "restartSkipped": value(!restart)}
+	repaired, repairFailures := installRepairStaleMCP(ctx)
+	evidence := object{"executable": value(executable), "nativeRegistrations": value(registrations), "nativeUpdateSelectionCleared": value(cleared), "restartSkipped": value(!restart), "mcpConfigsRepaired": value(installNonNil(repaired)), "mcpRepairWarnings": value(installNonNil(repairFailures))}
 	summary := "Browser Bridge installed."
 	ok := true
 	if restart {

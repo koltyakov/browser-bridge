@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -460,4 +461,83 @@ func TestMCPStaleDetectsMissingLauncherPaths(t *testing.T) {
 	if !installMCPStale(string(nested), "cline", clinePath, scope) {
 		t.Error("nested transport args should be checked")
 	}
+}
+
+func TestRepairStaleMCPMigratesV1Launchers(t *testing.T) {
+	_, scope := installTestScope(t)
+	node, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// v1 on Windows launched node with the package's MCP script, which v2 removed.
+	legacy := filepath.Join(scope.home, "npm", "node_modules", "@browserbridge", "bbx", "packages", "mcp-server", "src", "bin.js")
+	quoted := func(s string) string { raw, _ := json.Marshal(s); return string(raw) }
+	claude := installMCPPath("claude", scope)
+	installTestWrite(t, claude, `{"mcpServers":{"browser-bridge":{"type":"stdio","command":`+quoted(node)+`,"args":[`+quoted(legacy)+`],"env":{"KEEP":"1"}},"other":{"command":"x"}}}`)
+	opencode := installMCPPath("opencode", scope)
+	installTestWrite(t, opencode, `{"mcp":{"browser-bridge":{"type":"local","command":[`+quoted(node)+`,`+quoted(legacy)+`]}}}`)
+	codex := installMCPPath("codex", scope)
+	installTestWrite(t, codex, "model = \"x\"\n\n[mcp_servers.browser-bridge]\ncommand = "+quoted(node)+"\nargs = ["+quoted(legacy)+"]\n")
+	// A missing user wrapper is reported by doctor but not rewritten.
+	custom := filepath.Join(scope.home, "bin", "my-wrapper.sh")
+	cursor := installMCPPath("cursor", scope)
+	installTestWrite(t, cursor, `{"mcpServers":{"browser-bridge":{"command":`+quoted(custom)+`}}}`)
+	healthy := installMCPPath("copilot", scope)
+	installTestWrite(t, healthy, `{"servers":{"browser-bridge":{"type":"stdio","command":"bbx","args":["mcp","serve"]}}}`)
+	before, _ := os.ReadFile(healthy)
+
+	if !installMCPStale(mustRead(t, codex), "codex", codex, scope) {
+		t.Fatal("Codex TOML launchers should be checked")
+	}
+	repaired, failed := installRepairStaleMCP(context.Background())
+	if len(failed) != 0 {
+		t.Fatalf("unexpected failures: %v", failed)
+	}
+	if !installContains(repaired, claude) || !installContains(repaired, opencode) || !installContains(repaired, codex) || len(repaired) != 3 {
+		t.Fatalf("repaired %v", repaired)
+	}
+	for target, path := range map[string]string{"claude": claude, "opencode": opencode, "codex": codex} {
+		raw := mustRead(t, path)
+		if installMCPStale(raw, target, path, scope) || !strings.Contains(raw, "bbx") || strings.Contains(raw, "bin.js") {
+			t.Errorf("%s not repaired: %s", target, raw)
+		}
+	}
+	if raw := mustRead(t, claude); !strings.Contains(raw, `"KEEP":"1"`) || !strings.Contains(raw, `"other":{"command":"x"}`) {
+		t.Errorf("repair should keep env and other servers: %s", raw)
+	}
+	if !strings.HasPrefix(mustRead(t, codex), "model = \"x\"") {
+		t.Errorf("repair should keep unrelated Codex settings: %s", mustRead(t, codex))
+	}
+	if !strings.Contains(mustRead(t, cursor), "my-wrapper.sh") {
+		t.Error("an unrecognized missing launcher must not be rewritten")
+	}
+	if after, _ := os.ReadFile(healthy); string(after) != string(before) {
+		t.Error("a working entry must not be rewritten")
+	}
+	if repaired, _ := installRepairStaleMCP(context.Background()); len(repaired) != 0 {
+		t.Fatalf("repair should be idempotent, got %v", repaired)
+	}
+}
+
+func TestLegacyLauncherRecognition(t *testing.T) {
+	for path, want := range map[string]bool{
+		"/usr/lib/node_modules/@browserbridge/bbx/packages/mcp-server/src/bin.js": true,
+		`C:\Users\a\AppData\Roaming\npm\bbx-mcp.cmd`:                              true,
+		"/usr/local/bin/bbx":                         true,
+		"/opt/tools/bbx-wrapper.sh":                  false,
+		"/home/a/project/packages/server/src/bin.js": false,
+	} {
+		if got := installLegacyLauncher(path); got != want {
+			t.Errorf("%s: %v, want %v", path, got, want)
+		}
+	}
+}
+
+func mustRead(t *testing.T, path string) string {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
 }
