@@ -4830,7 +4830,7 @@
       "compact": false,
       "interactiveOnly": false,
       "source": "dom",
-      "format": "outline",
+      "format": "tree",
       "future_extension": {
         "arbitrary": [
           null,

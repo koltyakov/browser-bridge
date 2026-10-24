@@ -5613,6 +5613,7 @@
         "format": {
           "type": "string",
           "enum": [
+            "tree",
             "outline"
           ]
         }

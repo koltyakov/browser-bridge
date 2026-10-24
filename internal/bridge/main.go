@@ -251,7 +251,7 @@ func parseCLI(args []string) (object, error) {
 	method := rest[0]
 	rest = rest[1:]
 	if method == "call" {
-		if len(rest) == 0 {
+		if len(rest) == 0 || rest[0] == "--help" || rest[0] == "-h" || rest[0] == "help" {
 			return nil, errors.New(cliCallUsage)
 		}
 		method, rest = rest[0], rest[1:]

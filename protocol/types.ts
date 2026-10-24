@@ -1362,7 +1362,7 @@ export interface NormalizedAccessibilityTreeParams extends BridgeParams {
   compact: boolean;
   interactiveOnly: boolean;
   source?: 'dom';
-  format?: 'outline';
+  format?: 'tree' | 'outline';
 }
 
 export interface AccessibilityTreeNode {

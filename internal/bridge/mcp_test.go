@@ -463,3 +463,63 @@ func TestMCPOversizedRequestFailsWithoutEndingTheSession(t *testing.T) {
 		})
 	}
 }
+
+func TestMCPQueryEvidenceTreatsNullFieldsAsMissing(t *testing.T) {
+	node := object{"elementRef": value("el_1"), "tag": value("button"), "role": value[*string](nil), "name": value[*string](nil), "attrs": value(object{"role": value("tab"), "aria-label": value("Settings")})}
+	evidence := mcpResponse(success("q", object{"nodes": value([]object{node, {"elementRef": value("el_2"), "tag": value("a"), "role": value[*string](nil)}})}), "dom.query", object{}).object("structuredContent")["evidence"]
+	var nodes []object
+	if err := json.Unmarshal(evidence, &nodes); err != nil || len(nodes) != 2 {
+		t.Fatalf("unexpected evidence: %s", evidence)
+	}
+	if nodes[0].text("role") != "tab" || nodes[0].text("label") != "Settings" {
+		t.Fatalf("null node fields blocked attribute fallback: %s", value(nodes[0]))
+	}
+	if _, ok := nodes[1]["role"]; ok {
+		t.Fatalf("null field was delivered: %s", value(nodes[1]))
+	}
+}
+
+func TestMCPBatchDescribesLocallyAndCompactsItems(t *testing.T) {
+	c, requests := mcpTestDaemon(t, func(request object) object {
+		response := success(request.text("id"), object{"nodes": value([]object{{"elementRef": value("el_1"), "tag": value("a"), "text": value("Docs")}})})
+		response["meta"] = value(object{"protocol_version": value(protocolVersion()), "timing": value(object{"totalMs": value(3), "scheduled": value(false)})})
+		return response
+	})
+	s := &mcpSession{config: c, agentSession: "batch-test"}
+	t.Cleanup(func() {
+		for _, cl := range s.clients {
+			cl.close()
+		}
+	})
+	result, err := s.batch(context.Background(), object{"extensionId": value("ext-1"), "calls": value([]object{
+		{"method": value("protocol.describe"), "params": value(object{"method": value("dom.query")})},
+		{"method": value("dom.query"), "tabId": value(4), "params": value(object{"selector": value("a")})},
+	})}, "legacy")
+	if err != nil || result.boolean("isError") {
+		t.Fatalf("batch failed: %v %s", err, value(result))
+	}
+	var items []object
+	_ = json.Unmarshal(result.object("structuredContent")["results"], &items)
+	if len(items) != 2 || !items[0].boolean("ok") || items[0].object("evidence").text("method") != "dom.query" {
+		t.Fatalf("protocol.describe was not answered locally: %s", value(items))
+	}
+	if request := <-requests; request.text("method") != "dom.query" || len(requests) != 0 {
+		t.Fatalf("unexpected bridge traffic: %s", value(request))
+	}
+	query := items[1]
+	for _, key := range []string{"destinationId", "error", "meta", "timing", "extensionId", "transportTokens", "summaryBytes"} {
+		if _, ok := query[key]; ok {
+			t.Fatalf("batch item kept redundant %s: %s", key, value(query))
+		}
+	}
+	single := mcpResponse(success("q", object{"nodes": value([]object{{"elementRef": value("el_1"), "tag": value("a"), "text": value("Docs")}})}), "dom.query", object{"selector": value("a")}).object("structuredContent")
+	if !jsonEqual(query["evidence"], single["evidence"]) || query.number("tabId") != 4 || query["approxTokens"] == nil || query["durationMs"] == nil {
+		t.Fatalf("batch evidence differs from browser_call: %s vs %s", value(query), single["evidence"])
+	}
+	rejected, _ := s.batch(context.Background(), object{"calls": value([]object{{"method": value("input.click")}})}, "legacy")
+	var content []object
+	_ = json.Unmarshal(rejected["content"], &content)
+	if text := content[0].text("text"); !strings.Contains(text, "browser_call") || strings.Contains(text, "Malformed") {
+		t.Fatalf("rejection hint is misleading: %s", text)
+	}
+}

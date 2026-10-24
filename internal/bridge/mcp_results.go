@@ -30,8 +30,14 @@ func mcpResult(summary string, structured object, isError bool, images ...object
 	return result
 }
 
-func mcpErrorResult(code, message string) object {
+// mcpErrorResult reports a typed failure. An optional hint replaces the
+// generic recovery hint for the code when the caller knows the precise fix.
+func mcpErrorResult(code, message string, hint ...string) object {
 	recovery := cliErrorRecovery(code)
+	if len(hint) > 0 {
+		recovery = mcpClone(recovery)
+		recovery["hint"] = value(hint[0])
+	}
 	summary := code + ": " + message
 	if hint := recovery.text("hint"); hint != "" {
 		summary += " " + hint
@@ -154,7 +160,7 @@ func mcpResponse(response object, method string, params object) object {
 		evidence, truncated, limit := mcpEvidence(response["result"], method, params, structured["evidence"])
 		structured["evidence"] = evidence
 		if method == "dom.get_accessibility_tree" && response.object("result")["nodes"] != nil {
-			structured["evidenceMeta"] = value(mcpPick(response.object("result"), "rootIds count total rawTotal source compact interactiveOnly truncated truncation continuationHint"))
+			structured["evidenceMeta"] = value(mcpPick(response.object("result"), "rootIds count total rawTotal source format scanned compact interactiveOnly truncated truncation continuationHint"))
 		}
 		if truncated {
 			structured["outputTruncated"], structured["outputLimit"] = value(true), value(limit)
@@ -292,9 +298,15 @@ func mcpEvidence(raw json.RawMessage, method string, params object, fallback jso
 				if method == "dom.query" {
 					attrs := node.object("attrs")
 					compact := mcpPick(node, "elementRef:ref tag id role name:label")
+					// Null node fields are absent evidence: fall back to attributes, then omit.
 					for _, pair := range [][2]string{{"id", "id"}, {"role", "role"}, {"aria-label", "label"}, {"data-testid", "testId"}} {
-						if compact[pair[1]] == nil && attrs[pair[0]] != nil {
+						if !cliPresent(compact[pair[1]]) && cliPresent(attrs[pair[0]]) {
 							compact[pair[1]] = attrs[pair[0]]
+						}
+					}
+					for key, v := range compact {
+						if !cliPresent(v) {
+							delete(compact, key)
 						}
 					}
 					if classes := attrs.text("class"); mcpIsString(attrs["class"]) {
@@ -312,6 +324,9 @@ func mcpEvidence(raw json.RawMessage, method string, params object, fallback jso
 						compact["childCount"] = value(len(children))
 					}
 					out = append(out, compact)
+				} else if r.text("source") == "dom" {
+					// DOM trees carry actionable refs and states, not CDP node IDs.
+					out = append(out, mcpPick(node, "ref role name depth states"))
 				} else {
 					compact := mcpPick(node, "nodeId role name value childIds")
 					for _, key := range []string{"interactive", "semanticInteractive", "focusableAndEnabled"} {

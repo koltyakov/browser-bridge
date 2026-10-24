@@ -155,6 +155,7 @@ var extractHiddenStyle = regexp.MustCompile(`(?i)display\s*:\s*none|visibility\s
 var extractBlankLines = regexp.MustCompile(`\n{3,}`)
 var extractTrailingSpace = regexp.MustCompile(`[ \t]+\n`)
 var extractHorizontalSpace = regexp.MustCompile(`[ \t]+`)
+var extractLineEdgeSpace = regexp.MustCompile(` ?\n ?`)
 
 // Parse only the captured bytes. A nil Readability base URL preserves relative
 // links, matching the npm parser's synthetic document, and never fetches URLs.
@@ -343,7 +344,10 @@ func extractContentHTML(source, format string, budget int, title string, metadat
 		content = extractMarkdown(root)
 		content = extractTrailingSpace.ReplaceAllString(content, "\n")
 	} else {
+		// Template indentation leaves whitespace-only lines; drop it so blank
+		// lines collapse instead of costing tokens.
 		content = extractHorizontalSpace.ReplaceAllString(content, " ")
+		content = extractLineEdgeSpace.ReplaceAllString(content, "\n")
 	}
 	content = strings.TrimSpace(extractBlankLines.ReplaceAllString(content, "\n\n"))
 	length := mcpStringLength(content)
