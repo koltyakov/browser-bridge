@@ -14,19 +14,37 @@ const tabs = Array.from({ length: 47 }, (_, index) => ({
   title: `Tab ${index + 1}`,
 }));
 
-test('tab summaries expose their preview limit without changing the evidence array', () => {
+test('tab summaries include more than 10 tabs by default', () => {
   const summary = summarizeBridgeResponse(createSuccess('tabs', { tabs }), 'tabs.list');
-  assert.match(summary.summary, /showing 10.*37 omitted/);
+  assert.match(summary.summary, /showing 30.*17 omitted/);
   assert.ok(Array.isArray(summary.evidence));
-  assert.equal(summary.evidence.length, 10);
+  assert.equal(summary.evidence.length, 30);
   assert.deepEqual(summary.pagination, {
     totalCount: 47,
-    returnedCount: 10,
+    returnedCount: 30,
     offset: 0,
-    omittedCount: 37,
+    omittedCount: 17,
     truncated: true,
-    nextOffset: 10,
+    nextOffset: 30,
   });
+});
+
+test('tab summaries report the 30-tab preview boundary', () => {
+  const manyTabs = Array.from({ length: 147 }, (_, index) => ({ ...tabs[0], tabId: index + 1 }));
+  const summary = summarizeBridgeResponse(createSuccess('tabs', { tabs: manyTabs }), 'tabs.list');
+  assert.match(summary.summary, /showing 30.*117 omitted/);
+  assert.ok(Array.isArray(summary.evidence));
+  assert.equal(summary.evidence.length, 30);
+  assert.equal(summary.pagination?.nextOffset, 30);
+});
+
+test('offset-only tab pages default to 30 while explicit smaller pages are respected', () => {
+  const manyTabs = Array.from({ length: 147 }, (_, index) => ({ ...tabs[0], tabId: index + 1 }));
+  const page = paginateTabList(manyTabs, { offset: 10 });
+  assert.equal(page.tabs.length, 30);
+  assert.equal(page.tabs[0].tabId, 11);
+  assert.equal(page.pagination.nextOffset, 40);
+  assert.equal(paginateTabList(manyTabs, { limit: 5, offset: 10 }).tabs.length, 5);
 });
 
 test('requested tab pages are not clipped again by the summarizer', () => {

@@ -302,7 +302,9 @@ export function createCatalog(version, metadata, definitions) {
   return {
     version,
     methods,
-    mutationMethods: BRIDGE_METHODS.filter((method) => BRIDGE_METHOD_REGISTRY[method].exclusive),
+    mutationMethods: BRIDGE_METHODS.filter(
+      (method) => BRIDGE_METHOD_REGISTRY[method].exclusive && !isBatchSafeBridgeCall(method)
+    ),
     methodInputs: createMethodInputs(definitions),
     operationTimeouts: OPERATION_TIMEOUT_POLICIES,
     runtime: { ...createRuntimeContext(), v: deriveProtocolVersion(version) },

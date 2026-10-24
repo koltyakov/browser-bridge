@@ -33,7 +33,7 @@ func (d *daemon) scheduleMutation(id string, pending *pendingRequest) bool {
 	if len(s.entries) >= maxScheduledMutations || len(s.queues[pending.target]) >= 32 {
 		return false
 	}
-	entry := &scheduledMutation{id: id, target: pending.target}
+	entry := &scheduledMutation{id: id, target: pending.target, tab: pending.requestedTab}
 	s.entries[id] = entry
 	s.queues[pending.target] = append(s.queues[pending.target], entry)
 	pending.meta["mutation_schedule"] = value(true)
@@ -46,7 +46,7 @@ func (d *daemon) mutationReady(p *peer, message object) {
 		return
 	}
 	tab, valid := serviceInteger(message, "tabId")
-	if !valid || tab <= 0 || tab > 9_007_199_254_740_991 {
+	if !valid || tab <= 0 || tab > 9_007_199_254_740_991 || (entry.tab != 0 && entry.tab != tab) {
 		d.finish(entry.id, failure(entry.id, "INVALID_REQUEST", "Invalid mutation scheduling target."))
 		return
 	}
@@ -74,6 +74,10 @@ func (d *daemon) grantMutations(target *peer) {
 		// An earlier preparation has not identified its tab yet. Do not reorder
 		// later mutations around it until its target is known.
 		if entry.ready.IsZero() {
+			if entry.tab > 0 {
+				busy[entry.tab] = true
+				continue
+			}
 			break
 		}
 		if busy[entry.tab] {

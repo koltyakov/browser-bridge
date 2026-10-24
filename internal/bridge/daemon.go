@@ -46,17 +46,18 @@ type queuedMessage struct {
 }
 
 type pendingRequest struct {
-	owner      *peer
-	target     *peer
-	original   string
-	method     string
-	timer      *time.Timer
-	baselineID string
-	localError object
-	started    time.Time
-	prepared   time.Time
-	dispatched time.Time
-	meta       object
+	owner        *peer
+	target       *peer
+	original     string
+	method       string
+	timer        *time.Timer
+	baselineID   string
+	localError   object
+	started      time.Time
+	prepared     time.Time
+	dispatched   time.Time
+	requestedTab int64
+	meta         object
 }
 
 type daemon struct {
@@ -729,6 +730,7 @@ func (d *daemon) route(p *peer, request object) {
 	meta["deadline_ms"] = value(time.Now().Add(timeout).UnixMilli())
 	request["id"], request["meta"] = value(routedID), value(meta)
 	pending := &pendingRequest{owner: p, target: target, original: id, method: method, baselineID: params.text("baselineId"), started: time.Now(), meta: meta}
+	pending.requestedTab = request.number("tab_id")
 	if !d.scheduleMutation(routedID, pending) {
 		d.localResponse(p, request, failure(id, "INVALID_REQUEST", "Mutation scheduling capacity reached. Wait for running work to settle."))
 		return

@@ -138,7 +138,7 @@
     {
       "name": "browser_tabs",
       "title": "Browser Tabs",
-      "description": "List, create, close, or activate browser tabs. Unscoped list discovers tabs across enabled browser profiles and configured destinations. Reuse each tab's extensionId, destinationId, and tabId for subsequent calls. Other actions default to local. Only create a page when the user explicitly requests it. New tabs open in the background. You may activate tabs you opened for this task while the active tab is also in use for this task. Otherwise, activate only at the user's request or with their permission. Targeting tabId does not require activation.",
+      "description": "List, create, close, or activate browser tabs. List returns 30 tabs by default with totalCount, omittedCount, and nextOffset in pagination. Follow nextOffset until null before concluding a requested URL is not open. Unscoped list discovers tabs across enabled browser profiles and configured destinations. Reuse each tab's extensionId, destinationId, and tabId for subsequent calls. Other actions default to local. Only create a page when the user explicitly requests it. New tabs open in the background. You may activate tabs you opened for this task while the active tab is also in use for this task. Otherwise, activate only at the user's request or with their permission. Targeting tabId does not require activation.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -157,13 +157,13 @@
             "type": "boolean"
           },
           "limit": {
-            "description": "Requested tab page size. Omit for discovery of all tabs.",
+            "description": "Requested tab page size (default: 30). Follow pagination.nextOffset until null to discover remaining tabs.",
             "type": "integer",
             "minimum": 1,
             "maximum": 100
           },
           "offset": {
-            "description": "Tab page offset. With offset alone the page size is 10.",
+            "description": "Tab page offset. With offset alone the page size is 30. Use pagination.nextOffset from the preceding result.",
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991
@@ -1551,7 +1551,7 @@
     {
       "name": "browser_call",
       "title": "Raw Browser Bridge Call",
-      "description": "Call any bridge method by name through one approvable MCP tool. For unfamiliar parameters, protocol.describe with params.method returns on-demand schemas and examples for common methods. Act directly on known semantic targets. For authorized known flows, input.perform combines ordered steps, optional DOM/URL/fresh fetch-XHR outcomes, and returnLastResult for bounded final evidence. OUTCOME_NOT_MET is not retryable. Stop for new decisions or approval; never blindly replay a partial flow.",
+      "description": "Call any bridge method by name through one approvable MCP tool. tabs.list returns 30 tabs by default; if a requested URL is missing, follow pagination.nextOffset via params.offset until null before concluding the tab is not open. For unfamiliar parameters, protocol.describe with params.method returns on-demand schemas and examples for common methods. Act directly on known semantic targets. For authorized known flows, input.perform combines ordered steps, optional DOM/URL/fresh fetch-XHR outcomes, and returnLastResult for bounded final evidence. OUTCOME_NOT_MET is not retryable. Stop for new decisions or approval; never blindly replay a partial flow.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",

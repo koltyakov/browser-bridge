@@ -462,8 +462,8 @@ func (s *mcpSession) batch(ctx context.Context, args object, era string) (object
 					}
 				}
 				if method == "tabs.list" && err == nil {
-					discovery := mcpResponse(response, method, object{}).object("structuredContent")
-					for _, key := range []string{"summary", "evidence", "outputTruncated"} {
+					discovery := mcpResponse(response, method, params).object("structuredContent")
+					for _, key := range []string{"summary", "evidence", "pagination", "outputTruncated"} {
 						if discovery[key] != nil {
 							item[key] = discovery[key]
 						}

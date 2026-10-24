@@ -47,6 +47,31 @@ test('on-demand discovery schemas inline wire types and examples normalize succe
   assert.throws(() => createCatalog('2.0.0', source, {}), /Missing input type/);
 });
 
+test('mutation scheduling excludes read-only methods and file transfer bookkeeping', async () => {
+  const catalog = createCatalog('2.0.0', await metadata(), wire.$defs) as {
+    mutationMethods: string[];
+  };
+  for (const method of [
+    'input.click',
+    'input.perform',
+    'input.set_files',
+    'navigation.navigate',
+    'patch.apply_styles',
+  ]) {
+    assert.ok(catalog.mutationMethods.includes(method), method);
+  }
+  for (const method of [
+    'page.get_state',
+    'patch.list',
+    'network.intercept.list',
+    'files.stage',
+    'files.release',
+    'page.handle_dialog',
+  ]) {
+    assert.ok(!catalog.mutationMethods.includes(method), method);
+  }
+});
+
 test('canonical MCP metadata reproduces every catalog field and its serialization', async () => {
   const source = await metadata();
   const generated = await fs.readFile(

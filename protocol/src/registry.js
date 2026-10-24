@@ -78,7 +78,7 @@ const METHOD_POLICIES = Object.freeze({
     debuggerBacked: true,
     exclusive: true,
   }),
-  automationInput: Object.freeze({ capability: CAPABILITIES.AUTOMATION_INPUT, exclusive: true }),
+  automationInput: Object.freeze({ capability: CAPABILITIES.AUTOMATION_INPUT }),
   automationInputDebugger: Object.freeze({
     capability: CAPABILITIES.AUTOMATION_INPUT,
     debuggerBacked: true,
@@ -168,7 +168,8 @@ const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
     'Request Browser Bridge access for the focused window. Do not repeat while access is already pending.',
   'protocol.describe':
     'Describe bridge method parameters and metadata by method or registry group.',
-  'tabs.list': 'List tabs in the enabled window.',
+  'tabs.list':
+    'List tabs in the enabled window. Agent-facing discovery defaults to 30 tabs; follow pagination.nextOffset until null before concluding a requested URL is not open.',
   'tabs.create':
     "Create a background tab in the enabled window. Set active:true when the current active tab is in use for this task, or at the user's request or with their permission.",
   'tabs.close': 'Close a tab in the enabled window.',

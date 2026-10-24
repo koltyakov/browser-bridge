@@ -304,7 +304,7 @@ func cliSummaryBody(response object, method string, now int64) object {
 				return (a.boolean("working") || a.boolean("active")) && !b.boolean("working") && !b.boolean("active")
 			})
 			total := len(tabs)
-			tabs = tabs[:min(10, total)]
+			tabs = tabs[:min(30, total)]
 			next := cliNull
 			if len(tabs) < total {
 				next = value(len(tabs))

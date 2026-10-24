@@ -677,7 +677,7 @@ function summarizeBridgeResponseBody(response, method) {
     const tabs = /** @type {TabResult[]} */ (result.tabs);
     const page = result.pagination
       ? { tabs, pagination: /** @type {import('./types.js').TabPagination} */ (result.pagination) }
-      : paginateTabList(tabs, { limit: 10 });
+      : paginateTabList(tabs, { limit: 30 });
     return {
       ok: true,
       summary: appendProtocolWarning(describeTabList(page.pagination), protocolWarning),
