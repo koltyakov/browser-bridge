@@ -449,6 +449,10 @@ func (s *mcpSession) batch(ctx context.Context, args object, era string) (object
 				item := cliBatchResult(method, call.number("tabId"), response, err, time.Since(start).Milliseconds(), time.Now().UnixMilli())
 				delete(item, "response")
 				item["meta"] = value(mcpPick(item.object("meta"), "protocol_version protocol_warning budget_truncated continuation_hint"))
+				if item.object("error") != nil {
+					// As with single calls, failure details are reported once, under error.
+					item["evidence"] = cliNull
+				}
 				if err != nil {
 					failure := mcpErrorResult("INTERNAL_ERROR", err.Error()).object("structuredContent")
 					for _, key := range []string{"evidence", "error", "recovery", "outputTruncated"} {

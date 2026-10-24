@@ -18,7 +18,9 @@ func cliSummarize(response object, method string, now int64) object {
 	if response.boolean("ok") {
 		_, tab := cliNumberValue(meta["tab_id"])
 		_, active := cliNumberValue(meta["active_tab_id"])
-		if tab && active {
+		// A caller that passed tabId already chose the tab; the note is for
+		// requests routed implicitly to a working tab.
+		if tab && active && meta.text("tab_routing") != "explicit" {
 			result["summary"] = cliStringValue(cliText(result, "summary") + fmt.Sprintf(" Ran in working tab %s; the user's active tab is %s (pass tabId to switch).", cliJSString(meta["tab_id"]), cliJSString(meta["active_tab_id"])))
 		}
 	}
@@ -448,7 +450,11 @@ func cliSummaryBody(response object, method string, now int64) object {
 		if len(nodes) > 15 {
 			suffix = "; showing first 15"
 		}
-		return done(fmt.Sprintf("DOM query returned %d element(s)%s.", len(nodes), suffix), value(compact), true)
+		text := fmt.Sprintf("DOM query returned %d element(s)%s.", len(nodes), suffix)
+		if matches := num("matchCount", 0); matches > 1 {
+			text += fmt.Sprintf(" The selector matched %g elements; only the first match's subtree is shown. Narrow the selector or use dom.find_by_role or dom.find_by_text to list matches.", matches)
+		}
+		return done(text, value(compact), true)
 	}
 	if cliBoolean(r["rolledBack"]) || cliBoolean(r["rolled_back"]) {
 		return done("Patch rolled back.", record, true)

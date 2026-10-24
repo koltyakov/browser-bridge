@@ -154,3 +154,29 @@ func TestCLICallArgumentErrorContracts(t *testing.T) {
 		})
 	}
 }
+
+func TestCLISummaryTabNoteOnlyForImplicitRouting(t *testing.T) {
+	for routing, want := range map[string]bool{"": true, "working": true, "active": true, "explicit": false} {
+		meta := object{"tab_id": value(5), "active_tab_id": value(7)}
+		if routing != "" {
+			meta["tab_routing"] = value(routing)
+		}
+		response := object{"ok": value(true), "result": value(object{"clicked": value(true)}), "meta": value(meta)}
+		got := strings.Contains(cliText(cliSummarize(response, "input.click", 1700000000000), "summary"), "Ran in working tab 5")
+		if got != want {
+			t.Errorf("tab_routing %q: note = %v, want %v", routing, got, want)
+		}
+	}
+}
+
+func TestCLISummaryDOMQueryReportsOtherMatches(t *testing.T) {
+	response := object{"ok": value(true), "result": value(object{"nodes": value([]object{{"tag": value("a")}}), "matchCount": value(14)})}
+	text := cliText(cliSummarize(response, "dom.query", 1700000000000), "summary")
+	if !strings.Contains(text, "The selector matched 14 elements") {
+		t.Fatalf("summary should mention other matches: %s", text)
+	}
+	response = object{"ok": value(true), "result": value(object{"nodes": value([]object{{"tag": value("a")}})})}
+	if text := cliText(cliSummarize(response, "dom.query", 1700000000000), "summary"); strings.Contains(text, "matched") {
+		t.Fatalf("single match should not mention other matches: %s", text)
+	}
+}

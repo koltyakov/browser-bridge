@@ -1058,3 +1058,33 @@ test('summarizeBatchErrorItem wraps string error', () => {
   assert.equal(item.ok, false);
   assert.match(item.summary, /something broke/);
 });
+
+test('tab routing note is omitted when the caller chose the tab explicitly', () => {
+  const response = (tabRouting?: 'active' | 'explicit' | 'working') =>
+    ok(
+      { clicked: true },
+      {
+        meta: makeMeta({
+          tab_id: 5,
+          active_tab_id: 7,
+          ...(tabRouting ? { tab_routing: tabRouting } : {}),
+        }),
+      }
+    ) as BridgeResponse;
+  const note = "Ran in working tab 5; the user's active tab is 7";
+  assert.match(summarizeBridgeResponse(response(), 'input.click').summary, new RegExp(note));
+  assert.doesNotMatch(
+    summarizeBridgeResponse(response('explicit'), 'input.click').summary,
+    new RegExp(note)
+  );
+});
+
+test('dom.query summary says when the selector matched more elements', () => {
+  const summary = (result: Record<string, unknown>) =>
+    summarizeBridgeResponse(ok(result) as BridgeResponse, 'dom.query').summary;
+  assert.match(
+    summary({ nodes: [{ tag: 'a' }], matchCount: 14 }),
+    /The selector matched 14 elements; only the first match's subtree is shown/
+  );
+  assert.doesNotMatch(summary({ nodes: [{ tag: 'a' }] }), /matched/);
+});

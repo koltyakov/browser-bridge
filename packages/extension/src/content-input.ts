@@ -20,6 +20,7 @@
         isElementVisible: (element: Element) => boolean;
         isNodeAttached: (node: Node | null | undefined) => boolean;
         querySelectorAllDeep: (selector: string, root?: ParentNode) => Element[];
+        delay: (ms: number) => Promise<void>;
       };
     }
   ).__BBX_CONTENT_HELPERS__;
@@ -51,6 +52,7 @@
   const {
     NON_TEXT_INPUT_TYPES,
     clamp,
+    delay,
     escapeTailwindSelector,
     getAccessibleName,
     getElementRoles,
@@ -626,7 +628,7 @@ interactions see the same transitions a real pointer would produce. */
   let pointerElement: Element | null = null;
 
   function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return delay(ms);
   }
 
   function normalizeHoldMs(value: unknown): number {
@@ -1089,6 +1091,17 @@ editing action. A canceled keydown suppresses both, as in real browsers. */
     );
   }
 
+  /** Email, number, and date inputs expose no selection, so setRangeText
+throws on them. Edit those at the end of the value, where a typed caret is. */
+  function setValueWithoutSelection(element: HTMLInputElement, value: string): void {
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+    if (descriptor?.set) {
+      descriptor.set.call(element, value);
+    } else {
+      element.value = value;
+    }
+  }
+
   function insertTextIntoEditable(
     element: HTMLInputElement | HTMLTextAreaElement | HTMLElement,
     value: string
@@ -1097,7 +1110,9 @@ editing action. A canceled keydown suppresses both, as in real browsers. */
       return false;
     }
 
-    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+    if (element instanceof HTMLInputElement && element.selectionStart === null) {
+      setValueWithoutSelection(element, `${element.value}${value}`);
+    } else if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
       const start = element.selectionStart ?? element.value.length;
       const end = element.selectionEnd ?? element.value.length;
       element.setRangeText(value, start, end, 'end');
@@ -1118,7 +1133,11 @@ editing action. A canceled keydown suppresses both, as in real browsers. */
       return false;
     }
 
-    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+    if (element instanceof HTMLInputElement && element.selectionStart === null) {
+      if (direction === 'backward') {
+        setValueWithoutSelection(element, element.value.slice(0, -1));
+      }
+    } else if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
       const start = element.selectionStart ?? element.value.length;
       const end = element.selectionEnd ?? element.value.length;
       if (start !== end) {
@@ -1626,16 +1645,12 @@ optionally holding the key down for holdMs before keyup. */
 
     const ref = rememberElement(element);
     if (duration > 0) {
-      return new Promise((resolve) => {
-        setTimeout(() => {
-          resolve({
-            elementRef: ref,
-            hovered: true,
-            resolution,
-            execution: getExecutionMetadata('dom', point),
-          });
-        }, duration);
-      });
+      return delay(duration).then(() => ({
+        elementRef: ref,
+        hovered: true,
+        resolution,
+        execution: getExecutionMetadata('dom', point),
+      }));
     }
     return {
       elementRef: ref,
@@ -2218,6 +2233,12 @@ large, exposed, CSS-scrollable ancestors qualify as implicit targets. */
   }
 
   /** Scroll the window or a specific scrollable element. */
+  /** A smooth scroll is still moving when this returns, so only an instant
+scroll can prove that the position did not change. */
+  function didScroll(before: number[], after: number[], behavior: 'auto' | 'smooth'): boolean {
+    return behavior === 'smooth' || before.some((value, index) => value !== after[index]);
+  }
+
   function scrollViewport(params: Record<string, unknown>): {
     scrolled: boolean;
     target: string;
@@ -2256,6 +2277,7 @@ large, exposed, CSS-scrollable ancestors qualify as implicit targets. */
           : { elementRef: detection.container?.elementRef }
       );
       const scrollTarget = getScrollableElementTarget(element);
+      const before = [scrollTarget.scrollLeft, scrollTarget.scrollTop];
       if (relative) {
         scrollTarget.scrollBy({
           top,
@@ -2271,7 +2293,7 @@ large, exposed, CSS-scrollable ancestors qualify as implicit targets. */
       }
 
       return {
-        scrolled: true,
+        scrolled: didScroll(before, [scrollTarget.scrollLeft, scrollTarget.scrollTop], behavior),
         target: rememberElement(scrollTarget),
         x: scrollTarget.scrollLeft,
         y: scrollTarget.scrollTop,
@@ -2283,6 +2305,7 @@ large, exposed, CSS-scrollable ancestors qualify as implicit targets. */
       };
     }
 
+    const before = [window.scrollX, window.scrollY];
     if (relative) {
       window.scrollBy({
         top,
@@ -2298,7 +2321,7 @@ large, exposed, CSS-scrollable ancestors qualify as implicit targets. */
     }
 
     return {
-      scrolled: true,
+      scrolled: didScroll(before, [window.scrollX, window.scrollY], behavior),
       target: 'window',
       x: window.scrollX,
       y: window.scrollY,
@@ -2346,12 +2369,11 @@ large, exposed, CSS-scrollable ancestors qualify as implicit targets. */
         if (done) return;
         done = true;
         observer?.disconnect();
-        clearTimeout(timer);
         resolve();
       };
-      const timer = setTimeout(finish, Math.max(0, ms));
+      void delay(ms).then(finish);
       if (typeof MutationObserver === 'function' && document.documentElement) {
-        observer = new MutationObserver(() => setTimeout(finish, 16));
+        observer = new MutationObserver(() => void delay(16).then(finish));
         observer.observe(document.documentElement, {
           childList: true,
           subtree: true,

@@ -15,9 +15,12 @@ async function checkBrowserScrolling(): Promise<void> {
     scrollViewport: (params: Record<string, unknown>) => {
       target: string;
       y: number;
+      scrolled: boolean;
       autoDetected?: boolean;
     };
     getScrollContainerDetection: () => ScrollContainerDetection;
+    typeIntoTarget: (params: Record<string, unknown>) => Promise<unknown>;
+    pressKeyTarget: (params: Record<string, unknown>) => Promise<unknown>;
   };
   const listener = Reflect.get(globalThis, '__bbxListener') as (
     message: { type: string; method: string; params: Record<string, unknown> },
@@ -161,10 +164,20 @@ async function checkBrowserScrolling(): Promise<void> {
     'body overflow does not override explicit root scrolling'
   );
   equal(window.scrollY, 250, 'root remains scrollable with hidden body overflow');
+  equal(input.scrollViewport({ top: 250 }).scrolled, false, 'unchanged position is not a scroll');
+
+  // Email and number inputs have no selection API, so setRangeText throws.
+  reset('<input id="email" type="email"><input id="count" type="number">');
+  await input.typeIntoTarget({ target: { selector: '#email' }, text: 'a@b.co' });
+  equal((get('email') as HTMLInputElement).value, 'a@b.co', 'typing into an email input');
+  await input.pressKeyTarget({ target: { selector: '#email' }, key: 'Backspace' });
+  equal((get('email') as HTMLInputElement).value, 'a@b.c', 'backspace in an email input');
+  await input.typeIntoTarget({ target: { selector: '#count' }, text: '42' });
+  equal((get('count') as HTMLInputElement).value, '42', 'typing into a number input');
 }
 
 test(
-  'nested scrolling handles primary, ambiguous, hidden, horizontal, and document layouts in Chrome',
+  'nested scrolling handles primary, ambiguous, hidden, horizontal, and document layouts, and selection-less inputs accept typing in Chrome',
   {
     skip: !process.env.BBX_TEST_CHROME && 'Set BBX_TEST_CHROME to a Chrome/Chromium executable',
     timeout: 45_000,

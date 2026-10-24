@@ -155,3 +155,31 @@ test('background runtime accepts navigation kinds only from sender tabs', () => 
   );
   assert.deepEqual(signals, [{ tabId: 19, kind: 'pushState', channel: 'channel-1' }]);
 });
+
+test('background runtime times content delays for tabs and ignores other senders', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const responses: RuntimeResponse[] = [];
+  const listener = createRuntimeMessageListener({ openSidePanelForTab: async () => {} });
+  const fromTab = { tab: { id: 4, windowId: 1 } } as unknown as chrome.runtime.MessageSender;
+
+  assert.equal(
+    listener({ type: 'bridge.delay', ms: 200 }, fromTab, (response) => responses.push(response)),
+    true
+  );
+  t.mock.timers.tick(199);
+  assert.equal(responses.length, 0);
+  t.mock.timers.tick(1);
+  assert.deepEqual(responses, [{ ok: true }]);
+
+  // Requests are capped so a content script cannot hold the worker indefinitely.
+  listener({ type: 'bridge.delay', ms: 10_000_000 }, fromTab, (response) =>
+    responses.push(response)
+  );
+  t.mock.timers.tick(30_000);
+  assert.equal(responses.length, 2);
+
+  assert.equal(
+    listener({ type: 'bridge.delay', ms: 10 }, {} as chrome.runtime.MessageSender, () => {}),
+    false
+  );
+});

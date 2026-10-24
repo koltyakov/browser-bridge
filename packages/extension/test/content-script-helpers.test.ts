@@ -33,6 +33,7 @@ type WaitElement = {
 };
 type Helpers = {
   clamp: (value: number, min: number, max: number) => number;
+  delay: (ms: number) => Promise<void>;
   truncateText: (
     value: string,
     budget: number
@@ -345,4 +346,43 @@ test('content script helpers visibility matching avoids duplicate layout reads',
 
   const mixedResult = runCase(mixedElements, 'hidden');
   assert.equal(mixedResult.match, null);
+});
+
+test('content delay asks the service worker to time waits in hidden documents', async (t) => {
+  const messages: unknown[] = [];
+  let reject = false;
+  const runtime = {
+    id: 'extension-id',
+    sendMessage: (message: unknown) => {
+      messages.push(message);
+      return reject
+        ? Promise.reject(new Error('Extension context invalidated.'))
+        : Promise.resolve();
+    },
+  };
+  const visibility = { visibilityState: 'hidden' };
+  // Node has neither global, so install them for this test only.
+  for (const [name, stub] of [
+    ['document', visibility],
+    ['chrome', { runtime }],
+  ] as const) {
+    const previous = Object.getOwnPropertyDescriptor(globalThis, name);
+    Object.defineProperty(globalThis, name, { value: stub, configurable: true, writable: true });
+    t.after(() => {
+      if (previous) Object.defineProperty(globalThis, name, previous);
+      else Reflect.deleteProperty(globalThis, name);
+    });
+  }
+
+  await helpers.delay(5_000);
+  assert.deepEqual(messages, [{ type: 'bridge.delay', ms: 5_000 }]);
+
+  // An invalidated extension context still resolves through a page timer.
+  reject = true;
+  await helpers.delay(1);
+  assert.equal(messages.length, 2);
+
+  visibility.visibilityState = 'visible';
+  await helpers.delay(1);
+  assert.equal(messages.length, 2);
 });
