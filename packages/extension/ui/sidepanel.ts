@@ -1547,8 +1547,7 @@ function renderActionLogEntry(
       parts.push('cdp');
     }
     tokenLine.textContent = parts.join(' \u00b7 ');
-    tokenLine.dataset.costClass =
-      repeatCount > 1 ? getAggregateCostClass(transportTokens) : entry.costClass;
+    tokenLine.dataset.costClass = getActivityTokenCostClass(transportTokens);
     badges.append(tokenLine);
   }
 
@@ -1719,17 +1718,8 @@ function formatCompactCount(value: number): string {
   return String(value);
 }
 
-function getAggregateCostClass(approxTokens: number): 'cheap' | 'moderate' | 'heavy' | 'extreme' {
-  if (approxTokens <= 250) {
-    return 'cheap';
-  }
-  if (approxTokens <= 1000) {
-    return 'moderate';
-  }
-  if (approxTokens <= 3000) {
-    return 'heavy';
-  }
-  return 'extreme';
+function getActivityTokenCostClass(approxTokens: number): 'cheap' | 'moderate' | 'extreme' {
+  return approxTokens >= 10_000 ? 'extreme' : approxTokens >= 5_000 ? 'moderate' : 'cheap';
 }
 
 function createHistogramBar(
