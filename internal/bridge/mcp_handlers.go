@@ -16,8 +16,9 @@ type mcpCatalog struct {
 }
 
 func mcpCatalogData() mcpCatalog {
-	var data mcpCatalog
-	_ = json.Unmarshal(catalogBytes, &data)
+	// The immutable catalog is decoded once at startup. Session enablement is
+	// filtered separately by tools(), so definitions can be shared safely.
+	data := mcpCatalog{AllTools: catalog.AllTools, LegacyTools: catalog.LegacyTools, LegacyInstructions: catalog.LegacyInstructions}
 	if len(data.AllTools) == 0 {
 		data.AllTools = catalog.Tools
 	}
@@ -451,35 +452,7 @@ func (s *mcpSession) batch(ctx context.Context, args object, era string) (object
 				}
 				start := time.Now()
 				response, err := s.bridge(ctx, method, params, call, era)
-				item := cliBatchResult(method, call.number("tabId"), response, err, time.Since(start).Milliseconds(), time.Now().UnixMilli())
-				delete(item, "response")
-				item["meta"] = value(mcpPick(item.object("meta"), "protocol_version protocol_warning budget_truncated continuation_hint"))
-				if item.object("error") != nil {
-					// As with single calls, failure details are reported once, under error.
-					item["evidence"] = cliNull
-				}
-				if err != nil {
-					failure := mcpErrorResult("INTERNAL_ERROR", err.Error()).object("structuredContent")
-					for _, key := range []string{"evidence", "error", "recovery", "outputTruncated"} {
-						if failure[key] != nil {
-							item[key] = failure[key]
-						}
-					}
-					item["summary"] = value("INTERNAL_ERROR: " + err.Error())
-					if hint := failure.object("recovery").text("hint"); hint != "" {
-						item["summary"] = value(item.text("summary") + " " + hint)
-					}
-				}
-				if err == nil && response.boolean("ok") {
-					// Batch items carry the same bounded evidence as browser_call.
-					shaped := mcpResponse(response, method, params).object("structuredContent")
-					for _, key := range []string{"summary", "evidence", "evidenceMeta", "pagination", "outputTruncated", "outputLimit"} {
-						if shaped[key] != nil {
-							item[key] = shaped[key]
-						}
-					}
-				}
-				mcpCompactBatchItem(item)
+				item := mcpBatchResult(response, method, params, err, time.Since(start).Milliseconds())
 				if call["destinationId"] != nil {
 					item["destinationId"] = call["destinationId"]
 				}
@@ -509,6 +482,22 @@ func (s *mcpSession) batch(ctx context.Context, args object, era string) (object
 		summary = fmt.Sprintf("Batch executed %d call(s) with %d error(s).", len(calls), failures)
 	}
 	return mcpResult(summary, object{"ok": value(failures == 0), "successCount": value(len(calls) - failures), "failureCount": value(failures), "compactOutput": value(true), "results": value(results)}, failures > 0), nil
+}
+
+func mcpBatchResult(response object, method string, params object, err error, duration int64) object {
+	if err != nil {
+		response = failure("batch_error", "INTERNAL_ERROR", err.Error())
+	}
+	// Shape evidence once, without constructing an MCP content envelope that
+	// would immediately be discarded by the batch.
+	item := mcpStructuredResponse(response, method, params)
+	item["method"], item["durationMs"], item["approxTokens"] = value(method), value(duration), item["transportTokens"]
+	if err != nil {
+		item["approxTokens"] = value(0)
+	}
+	item["meta"] = value(mcpPick(response.object("meta"), "protocol_version protocol_warning budget_truncated continuation_hint"))
+	mcpCompactBatchItem(item)
+	return item
 }
 
 // mcpCompactBatchItem drops per-item fields that repeat batch-level context or

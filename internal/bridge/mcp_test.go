@@ -108,6 +108,34 @@ func TestMCPLegacyToolsAreConnectionScoped(t *testing.T) {
 	}
 }
 
+func BenchmarkMCPLegacyTools(b *testing.B) {
+	s := &mcpSession{enabled: map[string]bool{"browser_dom": true}}
+	b.ReportAllocs()
+	for b.Loop() {
+		if len(s.tools("legacy")) == 0 {
+			b.Fatal("missing tools")
+		}
+	}
+}
+
+func BenchmarkMCPBatchShaping(b *testing.B) {
+	nodes := make([]object, 20)
+	for i := range nodes {
+		nodes[i] = object{"elementRef": value(fmt.Sprintf("el_%d", i)), "tag": value("a"), "textExcerpt": value("Documentation"), "attrs": value(object{"href": value("/docs"), "class": value("link primary")})}
+	}
+	response := success("batch", object{"nodes": value(nodes)})
+	params := object{"maxNodes": value(20)}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		for range 20 {
+			if !mcpBatchResult(response, "dom.query", params, nil, 3).boolean("ok") {
+				b.Fatal("shaping failed")
+			}
+		}
+	}
+}
+
 func TestMCPModernFixedToolsAndEnvelope(t *testing.T) {
 	peer := mcpTestStart(t, config{home: t.TempDir()})
 	peer.send(t, mcpTestRequest(0, "server/discover", nil, true))
@@ -464,6 +492,42 @@ func TestMCPOversizedRequestFailsWithoutEndingTheSession(t *testing.T) {
 	}
 }
 
+func TestMCPOversizedBatchResultPreservesSessionAndAtomicEvidence(t *testing.T) {
+	for _, modern := range []bool{false, true} {
+		t.Run(fmt.Sprintf("modern=%t", modern), func(t *testing.T) {
+			description := strings.Repeat("x", 60_000)
+			c, _ := mcpTestDaemon(t, func(request object) object {
+				return success(request.text("id"), object{"toolRef": value("tool_1"), "inputSchema": value(object{"type": value("object"), "description": value(description)})})
+			})
+			peer := mcpTestStart(t, c)
+			if !modern {
+				peer.send(t, mcpTestRequest(0, "initialize", object{"protocolVersion": value("2025-11-25")}, false))
+				peer.read(t)
+			}
+			calls := make([]object, 20)
+			for i := range calls {
+				calls[i] = object{"method": value("webmcp.get_tool"), "tabId": value(7), "params": value(object{"toolRef": value("tool_1")})}
+			}
+			peer.send(t, mcpTestCall(1, "browser_batch", object{"calls": value(calls)}, modern))
+			result := peer.read(t).object("result")
+			if !result.boolean("isError") || result.object("structuredContent").object("error").text("code") != "RESULT_TOO_LARGE" {
+				t.Fatalf("oversized output did not return a typed error: %s", value(result))
+			}
+			peer.send(t, mcpTestRequest(2, "ping", nil, modern))
+			if ping := peer.read(t); ping.number("id") != 2 || ping["error"] != nil {
+				t.Fatalf("oversized output broke the MCP session: %s", value(ping))
+			}
+			peer.send(t, mcpTestCall(3, "browser_batch", object{"calls": value(calls[:1])}, modern))
+			small := peer.read(t).object("result")
+			var items []object
+			_ = json.Unmarshal(small.object("structuredContent")["results"], &items)
+			if small.boolean("isError") || len(items) != 1 || items[0].object("evidence").object("inputSchema").text("description") != description {
+				t.Fatal("smaller batch truncated atomic schema evidence")
+			}
+		})
+	}
+}
+
 func TestMCPQueryEvidenceTreatsNullFieldsAsMissing(t *testing.T) {
 	node := object{"elementRef": value("el_1"), "tag": value("button"), "role": value[*string](nil), "name": value[*string](nil), "attrs": value(object{"role": value("tab"), "aria-label": value("Settings")})}
 	evidence := mcpResponse(success("q", object{"nodes": value([]object{node, {"elementRef": value("el_2"), "tag": value("a"), "role": value[*string](nil)}})}), "dom.query", object{}).object("structuredContent")["evidence"]
@@ -521,5 +585,46 @@ func TestMCPBatchDescribesLocallyAndCompactsItems(t *testing.T) {
 	_ = json.Unmarshal(rejected["content"], &content)
 	if text := content[0].text("text"); !strings.Contains(text, "browser_call") || strings.Contains(text, "Malformed") {
 		t.Fatalf("rejection hint is misleading: %s", text)
+	}
+}
+
+func TestMCPBatchEvidenceMatchesSingleCall(t *testing.T) {
+	for _, tc := range []struct {
+		name, method string
+		response     object
+		params       object
+		err          error
+	}{
+		{"text", "page.get_text", success("x", object{"value": value(strings.Repeat("text", 100)), "length": value(900)}), object{"textBudget": value(80)}, nil},
+		{"console", "page.get_console", success("x", object{"entries": value([]object{{"text": value("first")}, {"text": value("second")}})}), object{"limit": value(1)}, nil},
+		{"tabs", "tabs.list", success("x", object{"tabs": value([]object{{"tabId": value(1)}, {"tabId": value(2)}})}), object{"limit": value(1)}, nil},
+		{"outline", "dom.get_accessibility_tree", success("x", object{"nodes": value([]object{{"ref": value("el_1"), "role": value("button"), "name": value("Save")}}), "source": value("dom"), "count": value(1), "truncated": value(false)}), object{}, nil},
+		{"failure", "dom.describe", object{"ok": value(false), "error": value(object{"code": value("ELEMENT_STALE"), "message": value("Detached element"), "details": value(object{"text": value(strings.Repeat("x", 5000))})})}, object{}, nil},
+		{"transport", "page.get_state", nil, object{}, fmt.Errorf("connection unavailable")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			item := mcpBatchResult(tc.response, tc.method, tc.params, tc.err, 3)
+			response := tc.response
+			if tc.err != nil {
+				response = failure("batch_error", "INTERNAL_ERROR", tc.err.Error())
+			}
+			single := mcpResponse(response, tc.method, tc.params).object("structuredContent")
+			for _, key := range []string{"ok", "summary", "evidence", "evidenceMeta", "pagination", "error", "recovery", "outputTruncated", "outputLimit"} {
+				if item[key] == nil && single[key] == nil {
+					continue
+				}
+				if !jsonEqual(item[key], single[key]) {
+					t.Fatalf("batch %s differs from single call: %s vs %s", key, item[key], single[key])
+				}
+			}
+			if item.number("durationMs") != 3 || item["approxTokens"] == nil {
+				t.Fatalf("batch metrics missing: %s", value(item))
+			}
+			for _, key := range []string{"response", "content", "deliveredBytes", "deliveredTokens", "deliveredCostClass", "transportTokens", "summaryBytes"} {
+				if item[key] != nil {
+					t.Fatalf("redundant batch metric %s: %s", key, value(item))
+				}
+			}
+		})
 	}
 }

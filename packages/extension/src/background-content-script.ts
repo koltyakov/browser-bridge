@@ -75,6 +75,8 @@ export function createContentScriptBridge(
   uninstallNavigationSignals: (tabId: number, channel: string) => Promise<void>;
 } {
   const patchFrames = new Map<number, Set<number>>();
+  const contentScriptChecks = new Map<number, Promise<void>>();
+  const contentScriptRecoveries = new Map<number, Promise<void>>();
   function trackPatchFrame(tabId: number, frameId: number, message: Record<string, unknown>) {
     if (message.method !== 'patch.apply_styles' && message.method !== 'patch.apply_dom') return;
     const frames = patchFrames.get(tabId) ?? new Set<number>();
@@ -108,14 +110,22 @@ export function createContentScriptBridge(
     }
   }
 
-  async function recoverContentScript(tabId: number) {
-    try {
-      await injectContentScript(tabId);
-      deps.recordReinjection?.('success', String(tabId));
-    } catch (error) {
-      deps.recordReinjection?.('failure', String(tabId));
-      throw error;
-    }
+  function recoverContentScript(tabId: number): Promise<void> {
+    const pending = contentScriptRecoveries.get(tabId);
+    if (pending) return pending;
+    // Preflights and missing-receiver retries can race in the same batch.
+    // Share only the injection, never an executable command or its result.
+    const recovery = (async () => {
+      try {
+        await injectContentScript(tabId);
+        deps.recordReinjection?.('success', String(tabId));
+      } catch (error) {
+        deps.recordReinjection?.('failure', String(tabId));
+        throw error;
+      }
+    })().finally(() => contentScriptRecoveries.delete(tabId));
+    contentScriptRecoveries.set(tabId, recovery);
+    return recovery;
   }
 
   /** Install idempotent history hooks in the page's MAIN world. The hooks only
@@ -356,13 +366,23 @@ frames, which `<all_urls>` host access permits). */
   /** Ensure the content script is present on the target tab before issuing
 content-script-backed requests. This makes page operations resilient after
 extension reloads or on tabs that predate the current extension version. */
-  async function ensureContentScript(tabId: number): Promise<void> {
-    try {
-      await sendTabMessageWithTimeout(tabId, { type: 'bridge.ping' }, deps.contentScriptTimeoutMs);
-      return;
-    } catch {
-      await recoverContentScript(tabId);
-    }
+  function ensureContentScript(tabId: number): Promise<void> {
+    const pending = contentScriptChecks.get(tabId);
+    if (pending) return pending;
+    // Coalesce overlapping checks without caching readiness across navigation.
+    const check = (async () => {
+      try {
+        await sendTabMessageWithTimeout(
+          tabId,
+          { type: 'bridge.ping' },
+          deps.contentScriptTimeoutMs
+        );
+      } catch {
+        await recoverContentScript(tabId);
+      }
+    })().finally(() => contentScriptChecks.delete(tabId));
+    contentScriptChecks.set(tabId, check);
+    return check;
   }
 
   /** Proactively inject content scripts into all scriptable tabs in a window
