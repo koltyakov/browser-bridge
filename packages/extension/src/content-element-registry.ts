@@ -465,9 +465,16 @@ registry at once. */
         selector: target.selector,
       });
     }
+    // Semantic locators resolve only for input methods; say how to get a ref
+    // instead of reporting the target as missing.
+    const locator = ['role', 'name', 'text', 'label', 'placeholder', 'testId'].some(
+      (key) => key in target
+    );
     throw createRegistryError(
       'INVALID_REQUEST',
-      'target.elementRef or target.selector is required.',
+      locator
+        ? 'This method takes target.elementRef or target.selector. Find role, name, text, or label targets with dom.find_by_role or dom.find_by_text, then pass the returned elementRef.'
+        : 'target.elementRef or target.selector is required.',
       {}
     );
   }

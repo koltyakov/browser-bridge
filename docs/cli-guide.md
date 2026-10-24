@@ -238,6 +238,13 @@ you want up to 20 parallel reads with one CLI round trip. Batch preserves call
 order, executes at most five calls concurrently, and rejects clears, navigation,
 input, patches, interception changes, tab mutations, and sensitive reads.
 
+Each batch item has `method`, `tabId`, `ok`, `summary`, `evidence`,
+`durationMs`, and `approxTokens`. Failed items add `error` and `recovery`.
+`response` holds the raw result only when `evidence` is a bounded view of it,
+such as long page text or large DOM and accessibility reads. `meta` appears
+only for warnings, truncation, continuation hints, or the tab a call without
+`tabId` ran in.
+
 Both commands accept `--preset quick|normal|deep` to apply the shared budget
 presets (the same ones the MCP server exposes and `bbx skill` lists). A preset
 only fills gaps such as `maxNodes`, `maxDepth`, `textBudget`, or `limit`;

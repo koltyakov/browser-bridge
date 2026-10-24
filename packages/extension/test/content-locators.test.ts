@@ -106,6 +106,24 @@ test('locators find labelled textboxes by role and name', async () => {
   });
 });
 
+test('element reads explain how to resolve semantic locator targets', async () => {
+  await withDocument(FIXTURE, async () => {
+    await loadModules();
+    const registry = Reflect.get(globalThis, '__BBX_CONTENT_REGISTRY__') as {
+      resolveTarget: (target: Record<string, unknown>) => Element;
+    };
+    assert.throws(
+      () => registry.resolveTarget({ role: 'button', name: 'Place order' }),
+      (error: { code?: string; message?: string }) =>
+        error.code === 'INVALID_REQUEST' && /dom\.find_by_role/.test(String(error.message))
+    );
+    assert.throws(
+      () => registry.resolveTarget({}),
+      /target\.elementRef or target\.selector is required\./
+    );
+  });
+});
+
 test('text locators ignore script source and prefer the innermost element', async () => {
   await withDocument(FIXTURE, async () => {
     const { query } = await loadModules();

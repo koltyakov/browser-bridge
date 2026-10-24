@@ -233,7 +233,7 @@ test(
         method: string;
         ok: boolean;
         error: { code: string; message: string };
-        response: null;
+        response?: unknown;
       }>;
       assert.equal(batch[0].method, 'input.click');
       assert.equal(batch[0].ok, false);
@@ -242,7 +242,7 @@ test(
         batch[0].error.message,
         'input.click is not safe for batch execution. Call it sequentially.'
       );
-      assert.equal(batch[0].response, null);
+      assert.equal('response' in batch[0], false);
     } finally {
       await f.cleanup();
     }

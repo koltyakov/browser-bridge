@@ -76,16 +76,8 @@
         "daemon": "ready",
         "extensionConnected": false
       },
-      "transportBytes": 240,
-      "transportTokens": 60,
-      "transportCostClass": "cheap",
-      "summaryBytes": 120,
-      "summaryTokens": 30,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 60,
-      "meta": {},
-      "error": null,
       "response": {
         "daemon": "ready",
         "extensionConnected": false,
@@ -333,16 +325,8 @@
           "state": "running"
         }
       },
-      "transportBytes": 444,
-      "transportTokens": 111,
-      "transportCostClass": "cheap",
-      "summaryBytes": 575,
-      "summaryTokens": 144,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 111,
-      "meta": {},
-      "error": null,
       "response": {
         "daemon": "ready",
         "extensionConnected": true,
@@ -457,23 +441,8 @@
           "reason": "waiting"
         }
       },
-      "transportBytes": 63,
-      "transportTokens": 16,
-      "transportCostClass": "cheap",
-      "summaryBytes": 164,
-      "summaryTokens": 41,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 16,
-      "meta": {},
-      "error": null,
-      "response": {
-        "daemon": "ready",
-        "access": {
-          "enabled": true,
-          "reason": "waiting"
-        }
-      }
+      "approxTokens": 16
     }
   },
   {
@@ -543,22 +512,8 @@
           "enabled": false
         }
       },
-      "transportBytes": 45,
-      "transportTokens": 12,
-      "transportCostClass": "cheap",
-      "summaryBytes": 138,
-      "summaryTokens": 35,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 12,
-      "meta": {},
-      "error": null,
-      "response": {
-        "daemon": "ready",
-        "access": {
-          "enabled": false
-        }
-      }
+      "approxTokens": 12
     }
   },
   {
@@ -673,31 +628,8 @@
           }
         ]
       },
-      "transportBytes": 93,
-      "transportTokens": 24,
-      "transportCostClass": "cheap",
-      "summaryBytes": 200,
-      "summaryTokens": 50,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 24,
-      "meta": {},
-      "error": null,
-      "response": {
-        "mcpClients": [
-          {
-            "configured": true
-          },
-          {
-            "configured": false
-          }
-        ],
-        "skillTargets": [
-          {
-            "installed": true
-          }
-        ]
-      }
+      "approxTokens": 24
     }
   },
   {
@@ -817,32 +749,8 @@
           "width": 800
         }
       },
-      "transportBytes": 164,
-      "transportTokens": 41,
-      "transportCostClass": "cheap",
-      "summaryBytes": 247,
-      "summaryTokens": 62,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 41,
-      "meta": {},
-      "error": null,
-      "response": {
-        "url": "https://example.com/",
-        "title": "Title",
-        "origin": "https://example.com",
-        "hints": {
-          "spa": true,
-          "empty": false,
-          "forms": 1
-        },
-        "scroll": {
-          "x": 0
-        },
-        "viewport": {
-          "width": 800
-        }
-      }
+      "approxTokens": 41
     }
   },
   {
@@ -922,24 +830,8 @@
         "truncated": true,
         "settlement": "complete"
       },
-      "transportBytes": 124,
-      "transportTokens": 31,
-      "transportCostClass": "cheap",
-      "summaryBytes": 209,
-      "summaryTokens": 53,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 31,
-      "meta": {},
-      "error": null,
-      "response": {
-        "content": "some <&> text 😀",
-        "source": "article",
-        "format": "markdown",
-        "length": 17,
-        "truncated": true,
-        "settlement": "complete"
-      }
+      "approxTokens": 31
     }
   },
   {
@@ -1004,16 +896,8 @@
         "length": 8,
         "truncated": false
       },
-      "transportBytes": 40,
-      "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 108,
-      "summaryTokens": 27,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 10,
-      "meta": {},
-      "error": null,
       "response": {
         "value": "hello 😀",
         "truncated": false
@@ -1082,21 +966,8 @@
         "length": 99,
         "truncated": true
       },
-      "transportBytes": 44,
-      "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 112,
-      "summaryTokens": 28,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 11,
-      "meta": {},
-      "error": null,
-      "response": {
-        "text": "text",
-        "truncated": true,
-        "length": 99
-      }
+      "approxTokens": 11
     }
   },
   {
@@ -1240,16 +1111,8 @@
           "title": "one"
         }
       ],
-      "transportBytes": 131,
-      "transportTokens": 33,
-      "transportCostClass": "cheap",
-      "summaryBytes": 293,
-      "summaryTokens": 74,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 33,
-      "meta": {},
-      "error": null,
       "response": {
         "tabs": [
           {
@@ -1377,16 +1240,8 @@
           "active": false
         }
       ],
-      "transportBytes": 149,
-      "transportTokens": 38,
-      "transportCostClass": "cheap",
-      "summaryBytes": 298,
-      "summaryTokens": 75,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 38,
-      "meta": {},
-      "error": null,
       "response": {
         "tabs": [
           {
@@ -1452,16 +1307,8 @@
       "ok": true,
       "summary": "Accessibility outline: 1 node(s), truncated; refs work as input targets.",
       "evidence": "button Save",
-      "transportBytes": 67,
-      "transportTokens": 17,
-      "transportCostClass": "cheap",
-      "summaryBytes": 121,
-      "summaryTokens": 31,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 17,
-      "meta": {},
-      "error": null,
       "response": {
         "outline": "button Save",
         "count": 1,
@@ -1556,16 +1403,8 @@
           "value": "ok"
         }
       ],
-      "transportBytes": 143,
-      "transportTokens": 36,
-      "transportCostClass": "cheap",
-      "summaryBytes": 145,
-      "summaryTokens": 37,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 36,
-      "meta": {},
-      "error": null,
       "response": {
         "nodes": [
           {
@@ -1658,16 +1497,8 @@
           "name": "Title"
         }
       ],
-      "transportBytes": 71,
-      "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 115,
-      "summaryTokens": 29,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 18,
-      "meta": {},
-      "error": null,
       "response": {
         "nodes": [
           {
@@ -1795,16 +1626,8 @@
           "visible": false
         }
       ],
-      "transportBytes": 232,
-      "transportTokens": 58,
-      "transportCostClass": "cheap",
-      "summaryBytes": 217,
-      "summaryTokens": 55,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 58,
-      "meta": {},
-      "error": null,
       "response": {
         "nodes": [
           {
@@ -1943,16 +1766,8 @@
           }
         ]
       },
-      "transportBytes": 133,
-      "transportTokens": 34,
-      "transportCostClass": "cheap",
-      "summaryBytes": 304,
-      "summaryTokens": 76,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 34,
-      "meta": {},
-      "error": null,
       "response": {
         "nodes": [
           {
@@ -2064,16 +1879,8 @@
           }
         ]
       },
-      "transportBytes": 50,
-      "transportTokens": 13,
-      "transportCostClass": "cheap",
-      "summaryBytes": 199,
-      "summaryTokens": 50,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 13,
-      "meta": {},
-      "error": null,
       "response": {
         "nodes": [
           {
@@ -2162,16 +1969,8 @@
         "truncationReason": "limit",
         "nodes": []
       },
-      "transportBytes": 80,
-      "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 195,
-      "summaryTokens": 49,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 20,
-      "meta": {},
-      "error": null,
       "response": {
         "nodes": [],
         "count": 0,
@@ -2254,16 +2053,8 @@
         "truncationReason": null,
         "nodes": []
       },
-      "transportBytes": 12,
-      "transportTokens": 3,
-      "transportCostClass": "cheap",
-      "summaryBytes": 156,
-      "summaryTokens": 39,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 3,
-      "meta": {},
-      "error": null,
       "response": {
         "nodes": []
       }
@@ -2321,19 +2112,8 @@
       "evidence": {
         "patchId": "patch_a"
       },
-      "transportBytes": 21,
-      "transportTokens": 6,
-      "transportCostClass": "cheap",
-      "summaryBytes": 79,
-      "summaryTokens": 20,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 6,
-      "meta": {},
-      "error": null,
-      "response": {
-        "patchId": "patch_a"
-      }
+      "approxTokens": 6
     }
   },
   {
@@ -2388,19 +2168,8 @@
       "evidence": {
         "rolled_back": false
       },
-      "transportBytes": 21,
-      "transportTokens": 6,
-      "transportCostClass": "cheap",
-      "summaryBytes": 75,
-      "summaryTokens": 19,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 6,
-      "meta": {},
-      "error": null,
-      "response": {
-        "rolled_back": false
-      }
+      "approxTokens": 6
     }
   },
   {
@@ -2471,22 +2240,8 @@
           "kind": "styles"
         }
       ],
-      "transportBytes": 39,
-      "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 94,
-      "summaryTokens": 24,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 10,
-      "meta": {},
-      "error": null,
-      "response": [
-        {
-          "patchId": "patch_a",
-          "kind": "styles"
-        }
-      ]
+      "approxTokens": 10
     }
   },
   {
@@ -2532,17 +2287,8 @@
       "ok": true,
       "summary": "0 active patch(es).",
       "evidence": [],
-      "transportBytes": 2,
-      "transportTokens": 1,
-      "transportCostClass": "cheap",
-      "summaryBytes": 57,
-      "summaryTokens": 15,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 1,
-      "meta": {},
-      "error": null,
-      "response": []
+      "approxTokens": 1
     }
   },
   {
@@ -2609,16 +2355,8 @@
           "patchId": "patch_a"
         }
       ],
-      "transportBytes": 35,
-      "transportTokens": 9,
-      "transportCostClass": "cheap",
-      "summaryBytes": 78,
-      "summaryTokens": 20,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 9,
-      "meta": {},
-      "error": null,
       "response": {
         "patches": [
           {
@@ -2686,16 +2424,8 @@
         "elementRef": "el_a",
         "duration": 12
       },
-      "transportBytes": 48,
-      "transportTokens": 12,
-      "transportCostClass": "cheap",
-      "summaryBytes": 96,
-      "summaryTokens": 24,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 12,
-      "meta": {},
-      "error": null,
       "response": {
         "found": true,
         "elementRef": "el_a",
@@ -2755,16 +2485,8 @@
       "evidence": {
         "elementRef": null
       },
-      "transportBytes": 15,
-      "transportTokens": 4,
-      "transportCostClass": "cheap",
-      "summaryBytes": 96,
-      "summaryTokens": 24,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 4,
-      "meta": {},
-      "error": null,
       "response": {
         "found": false
       }
@@ -2827,20 +2549,8 @@
         "type": "string",
         "value": "hello"
       },
-      "transportBytes": 33,
-      "transportTokens": 9,
-      "transportCostClass": "cheap",
-      "summaryBytes": 95,
-      "summaryTokens": 24,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 9,
-      "meta": {},
-      "error": null,
-      "response": {
-        "type": "string",
-        "value": "hello"
-      }
+      "approxTokens": 9
     }
   },
   {
@@ -2900,20 +2610,8 @@
         "type": "object",
         "value": {}
       },
-      "transportBytes": 28,
-      "transportTokens": 7,
-      "transportCostClass": "cheap",
-      "summaryBytes": 143,
-      "summaryTokens": 36,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 7,
-      "meta": {},
-      "error": null,
-      "response": {
-        "type": "object",
-        "value": {}
-      }
+      "approxTokens": 7
     }
   },
   {
@@ -2973,20 +2671,8 @@
         "type": "object",
         "value": []
       },
-      "transportBytes": 28,
-      "transportTokens": 7,
-      "transportCostClass": "cheap",
-      "summaryBytes": 143,
-      "summaryTokens": 36,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 7,
-      "meta": {},
-      "error": null,
-      "response": {
-        "type": "object",
-        "value": []
-      }
+      "approxTokens": 7
     }
   },
   {
@@ -3046,20 +2732,8 @@
         "type": "object",
         "value": null
       },
-      "transportBytes": 30,
-      "transportTokens": 8,
-      "transportCostClass": "cheap",
-      "summaryBytes": 84,
-      "summaryTokens": 21,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 8,
-      "meta": {},
-      "error": null,
-      "response": {
-        "type": "object",
-        "value": null
-      }
+      "approxTokens": 8
     }
   },
   {
@@ -3119,20 +2793,8 @@
         "type": "undefined",
         "value": null
       },
-      "transportBytes": 33,
-      "transportTokens": 9,
-      "transportCostClass": "cheap",
-      "summaryBytes": 92,
-      "summaryTokens": 23,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 9,
-      "meta": {},
-      "error": null,
-      "response": {
-        "type": "undefined",
-        "value": null
-      }
+      "approxTokens": 9
     }
   },
   {
@@ -3207,23 +2869,8 @@
           "html": "<>&"
         }
       },
-      "transportBytes": 46,
-      "transportTokens": 12,
-      "transportCostClass": "cheap",
-      "summaryBytes": 129,
-      "summaryTokens": 33,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 12,
-      "meta": {},
-      "error": null,
-      "response": {
-        "type": "object",
-        "value": {
-          "a": 1,
-          "html": "<>&"
-        }
-      }
+      "approxTokens": 12
     }
   },
   {
@@ -3305,16 +2952,8 @@
           "source": "cli"
         }
       ],
-      "transportBytes": 79,
-      "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 118,
-      "summaryTokens": 30,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 20,
-      "meta": {},
-      "error": null,
       "response": {
         "entries": [
           {
@@ -3416,16 +3055,8 @@
           "resourceType": "Fetch"
         }
       ],
-      "transportBytes": 203,
-      "transportTokens": 51,
-      "transportCostClass": "cheap",
-      "summaryBytes": 205,
-      "summaryTokens": 52,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 51,
-      "meta": {},
-      "error": null,
       "response": {
         "entries": [
           {
@@ -3488,16 +3119,8 @@
       "ok": true,
       "summary": "Network: 0 requests (? total).",
       "evidence": [],
-      "transportBytes": 14,
-      "transportTokens": 4,
-      "transportCostClass": "cheap",
-      "summaryBytes": 68,
-      "summaryTokens": 17,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 4,
-      "meta": {},
-      "error": null,
       "response": {
         "entries": []
       }
@@ -3629,16 +3252,8 @@
         "total": 3,
         "truncated": true
       },
-      "transportBytes": 134,
-      "transportTokens": 34,
-      "transportCostClass": "cheap",
-      "summaryBytes": 188,
-      "summaryTokens": 47,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 34,
-      "meta": {},
-      "error": null,
       "response": {
         "type": "local",
         "count": 3,
@@ -3719,19 +3334,8 @@
         "source": "local",
         "exact": true
       },
-      "transportBytes": 0,
-      "transportTokens": 0,
-      "transportCostClass": "heavy",
-      "summaryBytes": 104,
-      "summaryTokens": 26,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 0,
-      "meta": {
-        "method": "sensitive.read",
-        "transport_cost_class": "heavy"
-      },
-      "error": null,
       "response": {
         "source": "local",
         "exact": true,
@@ -3839,16 +3443,8 @@
           "ago": "just now"
         }
       ],
-      "transportBytes": 129,
-      "transportTokens": 33,
-      "transportCostClass": "cheap",
-      "summaryBytes": 167,
-      "summaryTokens": 42,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 33,
-      "meta": {},
-      "error": null,
       "response": {
         "entries": [
           {
@@ -3923,20 +3519,8 @@
         "html": "<p>Hi 😀</p>",
         "truncated": false
       },
-      "transportBytes": 43,
-      "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 103,
-      "summaryTokens": 26,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 11,
-      "meta": {},
-      "error": null,
-      "response": {
-        "html": "<p>Hi 😀</p>",
-        "truncated": false
-      }
+      "approxTokens": 11
     }
   },
   {
@@ -4016,16 +3600,8 @@
           "changed": false
         }
       },
-      "transportBytes": 189,
-      "transportTokens": 48,
-      "transportCostClass": "cheap",
-      "summaryBytes": 125,
-      "summaryTokens": 32,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 48,
-      "meta": {},
-      "error": null,
       "response": {
         "clicked": true,
         "elementRef": "el_a",
@@ -4307,16 +3883,8 @@
           }
         }
       },
-      "transportBytes": 524,
-      "transportTokens": 131,
-      "transportCostClass": "cheap",
-      "summaryBytes": 757,
-      "summaryTokens": 190,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 131,
-      "meta": {},
-      "error": null,
       "response": {
         "clicked": true,
         "elementRef": "el_a",
@@ -4418,16 +3986,8 @@
       "evidence": {
         "elementRef": "el_a"
       },
-      "transportBytes": 37,
-      "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 78,
-      "summaryTokens": 20,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 10,
-      "meta": {},
-      "error": null,
       "response": {
         "hovered": false,
         "elementRef": "el_a"
@@ -4486,16 +4046,8 @@
       "evidence": {
         "elementRef": null
       },
-      "transportBytes": 16,
-      "transportTokens": 4,
-      "transportCostClass": "cheap",
-      "summaryBytes": 71,
-      "summaryTokens": 18,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 4,
-      "meta": {},
-      "error": null,
       "response": {
         "focused": true
       }
@@ -4558,16 +4110,8 @@
         "elementRef": null,
         "value": "hi"
       },
-      "transportBytes": 27,
-      "transportTokens": 7,
-      "transportCostClass": "cheap",
-      "summaryBytes": 87,
-      "summaryTokens": 22,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 7,
-      "meta": {},
-      "error": null,
       "response": {
         "typed": true,
         "value": "hi"
@@ -4666,27 +4210,8 @@
           "changed": false
         }
       },
-      "transportBytes": 111,
-      "transportTokens": 28,
-      "transportCostClass": "cheap",
-      "summaryBytes": 186,
-      "summaryTokens": 47,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 28,
-      "meta": {},
-      "error": null,
-      "response": {
-        "pressed": true,
-        "key": "Enter",
-        "elementRef": "el_a",
-        "execution": {
-          "actualMode": "cdp"
-        },
-        "effects": {
-          "changed": false
-        }
-      }
+      "approxTokens": 28
     }
   },
   {
@@ -4751,21 +4276,8 @@
         "sourceRef": "el_a",
         "destinationRef": "el_b"
       },
-      "transportBytes": 59,
-      "transportTokens": 15,
-      "transportCostClass": "cheap",
-      "summaryBytes": 125,
-      "summaryTokens": 32,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 15,
-      "meta": {},
-      "error": null,
-      "response": {
-        "dragged": true,
-        "sourceRef": "el_a",
-        "destinationRef": "el_b"
-      }
+      "approxTokens": 15
     }
   },
   {
@@ -4825,20 +4337,8 @@
         "closed": true,
         "tabId": 3
       },
-      "transportBytes": 25,
-      "transportTokens": 7,
-      "transportCostClass": "cheap",
-      "summaryBytes": 74,
-      "summaryTokens": 19,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 7,
-      "meta": {},
-      "error": null,
-      "response": {
-        "closed": true,
-        "tabId": 3
-      }
+      "approxTokens": 7
     }
   },
   {
@@ -4894,16 +4394,8 @@
       "evidence": {
         "url": "https://example.com"
       },
-      "transportBytes": 46,
-      "transportTokens": 12,
-      "transportCostClass": "cheap",
-      "summaryBytes": 98,
-      "summaryTokens": 25,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 12,
-      "meta": {},
-      "error": null,
       "response": {
         "navigated": true,
         "url": "https://example.com"
@@ -4972,21 +4464,8 @@
         "x": -1.5,
         "y": 0
       },
-      "transportBytes": 32,
-      "transportTokens": 8,
-      "transportCostClass": "cheap",
-      "summaryBytes": 90,
-      "summaryTokens": 23,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 8,
-      "meta": {},
-      "error": null,
-      "response": {
-        "scrolled": true,
-        "x": -1.5,
-        "y": 0
-      }
+      "approxTokens": 8
     }
   },
   {
@@ -5051,21 +4530,8 @@
         "width": 800,
         "height": 600
       },
-      "transportBytes": 41,
-      "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 106,
-      "summaryTokens": 27,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 11,
-      "meta": {},
-      "error": null,
-      "response": {
-        "resized": true,
-        "width": 800,
-        "height": 600
-      }
+      "approxTokens": 11
     }
   },
   {
@@ -5155,26 +4621,8 @@
           "truncated": true
         }
       },
-      "transportBytes": 105,
-      "transportTokens": 27,
-      "transportCostClass": "cheap",
-      "summaryBytes": 289,
-      "summaryTokens": 73,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 27,
-      "meta": {},
-      "error": null,
-      "response": {
-        "performed": true,
-        "completed": 2,
-        "total": 3,
-        "elapsedMs": 20,
-        "failures": [{}],
-        "lastResult": {
-          "truncated": true
-        }
-      }
+      "approxTokens": 27
     }
   },
   {
@@ -5249,23 +4697,8 @@
           "actualMode": "cdp"
         }
       },
-      "transportBytes": 64,
-      "transportTokens": 16,
-      "transportCostClass": "cheap",
-      "summaryBytes": 127,
-      "summaryTokens": 32,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 16,
-      "meta": {},
-      "error": null,
-      "response": {
-        "touched": true,
-        "pointCount": 2,
-        "execution": {
-          "actualMode": "cdp"
-        }
-      }
+      "approxTokens": 16
     }
   },
   {
@@ -5346,24 +4779,8 @@
           "actualMode": "cdp"
         }
       },
-      "transportBytes": 83,
-      "transportTokens": 21,
-      "transportCostClass": "cheap",
-      "summaryBytes": 156,
-      "summaryTokens": 39,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 21,
-      "meta": {},
-      "error": null,
-      "response": {
-        "elementRef": "el_a",
-        "execution": {
-          "actualMode": "cdp"
-        },
-        "mode": "auto",
-        "value": "test"
-      }
+      "approxTokens": 21
     }
   },
   {
@@ -5423,20 +4840,8 @@
         "tabId": 2,
         "url": "https://example.com"
       },
-      "transportBytes": 39,
-      "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 111,
-      "summaryTokens": 28,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 10,
-      "meta": {},
-      "error": null,
-      "response": {
-        "tabId": 2,
-        "url": "https://example.com"
-      }
+      "approxTokens": 10
     }
   },
   {
@@ -5497,20 +4902,8 @@
         "tabId": 2,
         "url": "https://example.com"
       },
-      "transportBytes": 39,
-      "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 113,
-      "summaryTokens": 29,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 10,
-      "meta": {},
-      "error": null,
-      "response": {
-        "tabId": 2,
-        "url": "https://example.com"
-      }
+      "approxTokens": 10
     }
   },
   {
@@ -5571,20 +4964,8 @@
         "tabId": 2,
         "url": "https://example.com"
       },
-      "transportBytes": 39,
-      "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 112,
-      "summaryTokens": 28,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 10,
-      "meta": {},
-      "error": null,
-      "response": {
-        "tabId": 2,
-        "url": "https://example.com"
-      }
+      "approxTokens": 10
     }
   },
   {
@@ -5645,20 +5026,8 @@
         "tabId": 2,
         "url": "https://example.com"
       },
-      "transportBytes": 39,
-      "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 121,
-      "summaryTokens": 31,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 10,
-      "meta": {},
-      "error": null,
-      "response": {
-        "tabId": 2,
-        "url": "https://example.com"
-      }
+      "approxTokens": 10
     }
   },
   {
@@ -5719,20 +5088,8 @@
         "tabId": 2,
         "url": "https://example.com"
       },
-      "transportBytes": 39,
-      "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 124,
-      "summaryTokens": 31,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 10,
-      "meta": {},
-      "error": null,
-      "response": {
-        "tabId": 2,
-        "url": "https://example.com"
-      }
+      "approxTokens": 10
     }
   },
   {
@@ -5803,22 +5160,8 @@
         "status": "complete",
         "tabId": 2
       },
-      "transportBytes": 75,
-      "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 144,
-      "summaryTokens": 36,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 19,
-      "meta": {},
-      "error": null,
-      "response": {
-        "tabId": 2,
-        "url": "https://example.com",
-        "title": "hello",
-        "status": "complete"
-      }
+      "approxTokens": 19
     }
   },
   {
@@ -5884,21 +5227,8 @@
         "url": "https://example.com",
         "status": "complete"
       },
-      "transportBytes": 59,
-      "transportTokens": 15,
-      "transportCostClass": "cheap",
-      "summaryBytes": 132,
-      "summaryTokens": 33,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 15,
-      "meta": {},
-      "error": null,
-      "response": {
-        "tabId": 2,
-        "url": "https://example.com",
-        "status": "complete"
-      }
+      "approxTokens": 15
     }
   },
   {
@@ -5964,21 +5294,8 @@
         "observedNavigationKind": "same-document",
         "elapsedMs": 5
       },
-      "transportBytes": 89,
-      "transportTokens": 23,
-      "transportCostClass": "cheap",
-      "summaryBytes": 165,
-      "summaryTokens": 42,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 23,
-      "meta": {},
-      "error": null,
-      "response": {
-        "finalUrl": "https://example.com",
-        "observedNavigationKind": "same-document",
-        "elapsedMs": 5
-      }
+      "approxTokens": 23
     }
   },
   {
@@ -6064,25 +5381,8 @@
           "kind": "raw_cdp_counters"
         }
       },
-      "transportBytes": 80,
-      "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 220,
-      "summaryTokens": 55,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 20,
-      "meta": {},
-      "error": null,
-      "response": {
-        "metrics": {
-          "Nodes": 30,
-          "Documents": 1
-        },
-        "measurement": {
-          "kind": "raw_cdp_counters"
-        }
-      }
+      "approxTokens": 20
     }
   },
   {
@@ -6139,16 +5439,8 @@
       "evidence": {
         "Nodes": 30
       },
-      "transportBytes": 24,
-      "transportTokens": 6,
-      "transportCostClass": "cheap",
-      "summaryBytes": 81,
-      "summaryTokens": 21,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 6,
-      "meta": {},
-      "error": null,
       "response": {
         "metrics": {
           "Nodes": 30
@@ -6250,16 +5542,8 @@
           "height": 10
         }
       },
-      "transportBytes": 120,
-      "transportTokens": 30,
-      "transportCostClass": "cheap",
-      "summaryBytes": 180,
-      "summaryTokens": 45,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 30,
-      "meta": {},
-      "error": null,
       "response": {
         "tag": "button",
         "elementRef": "el_a",
@@ -6330,16 +5614,8 @@
       "evidence": {
         "color": "red"
       },
-      "transportBytes": 50,
-      "transportTokens": 13,
-      "transportCostClass": "cheap",
-      "summaryBytes": 80,
-      "summaryTokens": 20,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 13,
-      "meta": {},
-      "error": null,
       "response": {
         "elementRef": "el_a",
         "properties": {
@@ -6401,19 +5677,8 @@
       "evidence": {
         "color": "red"
       },
-      "transportBytes": 15,
-      "transportTokens": 4,
-      "transportCostClass": "cheap",
-      "summaryBytes": 71,
-      "summaryTokens": 18,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 4,
-      "meta": {},
-      "error": null,
-      "response": {
-        "color": "red"
-      }
+      "approxTokens": 4
     }
   },
   {
@@ -6498,25 +5763,8 @@
         },
         "border": {}
       },
-      "transportBytes": 61,
-      "transportTokens": 16,
-      "transportCostClass": "cheap",
-      "summaryBytes": 126,
-      "summaryTokens": 32,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 16,
-      "meta": {},
-      "error": null,
-      "response": {
-        "content": {
-          "width": 100,
-          "height": 50,
-          "x": 2,
-          "y": 3
-        },
-        "border": {}
-      }
+      "approxTokens": 16
     }
   },
   {
@@ -6586,22 +5834,8 @@
         "x": 2,
         "y": 3
       },
-      "transportBytes": 37,
-      "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 102,
-      "summaryTokens": 26,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 10,
-      "meta": {},
-      "error": null,
-      "response": {
-        "width": 100,
-        "height": 50,
-        "x": 2,
-        "y": 3
-      }
+      "approxTokens": 10
     }
   },
   {
@@ -6677,23 +5911,8 @@
           "byteLength": 100
         }
       },
-      "transportBytes": 71,
-      "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 161,
-      "summaryTokens": 41,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 18,
-      "meta": {},
-      "error": null,
-      "response": {
-        "baselineId": "baseline_a",
-        "snapshot": {
-          "nodeCount": 5,
-          "byteLength": 100
-        }
-      }
+      "approxTokens": 18
     }
   },
   {
@@ -6754,20 +5973,8 @@
         "baselineId": "baseline_a",
         "snapshot": {}
       },
-      "transportBytes": 41,
-      "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 131,
-      "summaryTokens": 33,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 11,
-      "meta": {},
-      "error": null,
-      "response": {
-        "baselineId": "baseline_a",
-        "snapshot": {}
-      }
+      "approxTokens": 11
     }
   },
   {
@@ -6828,20 +6035,8 @@
         "baselineId": "baseline_a",
         "equal": true
       },
-      "transportBytes": 40,
-      "transportTokens": 10,
-      "transportCostClass": "cheap",
-      "summaryBytes": 124,
-      "summaryTokens": 31,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 10,
-      "meta": {},
-      "error": null,
-      "response": {
-        "baselineId": "baseline_a",
-        "equal": true
-      }
+      "approxTokens": 10
     }
   },
   {
@@ -6932,26 +6127,8 @@
         "truncated": true,
         "omittedChanges": 5
       },
-      "transportBytes": 110,
-      "transportTokens": 28,
-      "transportCostClass": "cheap",
-      "summaryBytes": 229,
-      "summaryTokens": 58,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 28,
-      "meta": {},
-      "error": null,
-      "response": {
-        "baselineId": "baseline_a",
-        "equal": false,
-        "counts": {
-          "added": 2,
-          "changed": 3
-        },
-        "truncated": true,
-        "omittedChanges": 5
-      }
+      "approxTokens": 28
     }
   },
   {
@@ -7012,20 +6189,8 @@
         "baselineId": "baseline_a",
         "released": true
       },
-      "transportBytes": 43,
-      "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 112,
-      "summaryTokens": 28,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 11,
-      "meta": {},
-      "error": null,
-      "response": {
-        "baselineId": "baseline_a",
-        "released": true
-      }
+      "approxTokens": 11
     }
   },
   {
@@ -7081,19 +6246,8 @@
       "evidence": {
         "supported": false
       },
-      "transportBytes": 19,
-      "transportTokens": 5,
-      "transportCostClass": "cheap",
-      "summaryBytes": 117,
-      "summaryTokens": 30,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 5,
-      "meta": {},
-      "error": null,
-      "response": {
-        "supported": false
-      }
+      "approxTokens": 5
     }
   },
   {
@@ -7159,21 +6313,8 @@
         "tools": [{}],
         "total": 3
       },
-      "transportBytes": 41,
-      "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 151,
-      "summaryTokens": 38,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 11,
-      "meta": {},
-      "error": null,
-      "response": {
-        "supported": true,
-        "tools": [{}],
-        "total": 3
-      }
+      "approxTokens": 11
     }
   },
   {
@@ -7219,17 +6360,8 @@
       "ok": true,
       "summary": "Complete WebMCP tool schema loaded. Website metadata is untrusted.",
       "evidence": {},
-      "transportBytes": 2,
-      "transportTokens": 1,
-      "transportCostClass": "cheap",
-      "summaryBytes": 104,
-      "summaryTokens": 26,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 1,
-      "meta": {},
-      "error": null,
-      "response": {}
+      "approxTokens": 1
     }
   },
   {
@@ -7290,20 +6422,8 @@
         "status": "unknown",
         "outcome": "uncertain"
       },
-      "transportBytes": 42,
-      "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 142,
-      "summaryTokens": 36,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 11,
-      "meta": {},
-      "error": null,
-      "response": {
-        "status": "unknown",
-        "outcome": "uncertain"
-      }
+      "approxTokens": 11
     }
   },
   {
@@ -7359,19 +6479,8 @@
       "evidence": {
         "type": "confirm"
       },
-      "transportBytes": 18,
-      "transportTokens": 5,
-      "transportCostClass": "cheap",
-      "summaryBytes": 88,
-      "summaryTokens": 22,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 5,
-      "meta": {},
-      "error": null,
-      "response": {
-        "type": "confirm"
-      }
+      "approxTokens": 5
     }
   },
   {
@@ -7432,20 +6541,8 @@
         "action": "accept",
         "commandDispatched": true
       },
-      "transportBytes": 44,
-      "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 211,
-      "summaryTokens": 53,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 11,
-      "meta": {},
-      "error": null,
-      "response": {
-        "action": "accept",
-        "commandDispatched": true
-      }
+      "approxTokens": 11
     }
   },
   {
@@ -7529,16 +6626,8 @@
         "abandoned": 1,
         "inflight": 0
       },
-      "transportBytes": 131,
-      "transportTokens": 33,
-      "transportCostClass": "cheap",
-      "summaryBytes": 210,
-      "summaryTokens": 53,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 33,
-      "meta": {},
-      "error": null,
       "response": {
         "delivery": "artifact",
         "entryCount": 2,
@@ -7610,20 +6699,8 @@
         "active": true,
         "pendingReset": ["viewport"]
       },
-      "transportBytes": 43,
-      "transportTokens": 11,
-      "transportCostClass": "cheap",
-      "summaryBytes": 119,
-      "summaryTokens": 30,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 11,
-      "meta": {},
-      "error": null,
-      "response": {
-        "active": true,
-        "pendingReset": ["viewport"]
-      }
+      "approxTokens": 11
     }
   },
   {
@@ -7684,20 +6761,8 @@
         "assigned": true,
         "count": 2
       },
-      "transportBytes": 27,
-      "transportTokens": 7,
-      "transportCostClass": "cheap",
-      "summaryBytes": 94,
-      "summaryTokens": 24,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 7,
-      "meta": {},
-      "error": null,
-      "response": {
-        "assigned": true,
-        "count": 2
-      }
+      "approxTokens": 7
     }
   },
   {
@@ -7758,20 +6823,8 @@
         "nextOffset": 4,
         "size": 10
       },
-      "transportBytes": 26,
-      "transportTokens": 7,
-      "transportCostClass": "cheap",
-      "summaryBytes": 86,
-      "summaryTokens": 22,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 7,
-      "meta": {},
-      "error": null,
-      "response": {
-        "nextOffset": 4,
-        "size": 10
-      }
+      "approxTokens": 7
     }
   },
   {
@@ -7827,19 +6880,8 @@
       "evidence": {
         "released": true
       },
-      "transportBytes": 17,
-      "transportTokens": 5,
-      "transportCostClass": "cheap",
-      "summaryBytes": 74,
-      "summaryTokens": 19,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 5,
-      "meta": {},
-      "error": null,
-      "response": {
-        "released": true
-      }
+      "approxTokens": 5
     }
   },
   {
@@ -7895,19 +6937,8 @@
       "evidence": {
         "artifact": {}
       },
-      "transportBytes": 15,
-      "transportTokens": 4,
-      "transportCostClass": "cheap",
-      "summaryBytes": 93,
-      "summaryTokens": 24,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 4,
-      "meta": {},
-      "error": null,
-      "response": {
-        "artifact": {}
-      }
+      "approxTokens": 4
     }
   },
   {
@@ -7973,21 +7004,8 @@
         "bytesReceived": 10,
         "totalBytes": 10
       },
-      "transportBytes": 55,
-      "transportTokens": 14,
-      "transportCostClass": "cheap",
-      "summaryBytes": 130,
-      "summaryTokens": 33,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 14,
-      "meta": {},
-      "error": null,
-      "response": {
-        "state": "complete",
-        "bytesReceived": 10,
-        "totalBytes": 10
-      }
+      "approxTokens": 14
     }
   },
   {
@@ -8043,19 +7061,8 @@
       "evidence": {
         "released": true
       },
-      "transportBytes": 17,
-      "transportTokens": 5,
-      "transportCostClass": "cheap",
-      "summaryBytes": 86,
-      "summaryTokens": 22,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 5,
-      "meta": {},
-      "error": null,
-      "response": {
-        "released": true
-      }
+      "approxTokens": 5
     }
   },
   {
@@ -8111,19 +7118,8 @@
       "evidence": {
         "dispatched": true
       },
-      "transportBytes": 19,
-      "transportTokens": 5,
-      "transportCostClass": "cheap",
-      "summaryBytes": 117,
-      "summaryTokens": 30,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 5,
-      "meta": {},
-      "error": null,
-      "response": {
-        "dispatched": true
-      }
+      "approxTokens": 5
     }
   },
   {
@@ -8189,21 +7185,8 @@
         "active": true,
         "gaps": 2
       },
-      "transportBytes": 48,
-      "transportTokens": 12,
-      "transportCostClass": "cheap",
-      "summaryBytes": 122,
-      "summaryTokens": 31,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 12,
-      "meta": {},
-      "error": null,
-      "response": {
-        "sessionId": "session_a",
-        "active": true,
-        "gaps": 2
-      }
+      "approxTokens": 12
     }
   },
   {
@@ -8253,16 +7236,8 @@
       "ok": true,
       "summary": "Bridge method succeeded with 4 top-level fields.",
       "evidence": ["2", "4", "z", "a"],
-      "transportBytes": 25,
-      "transportTokens": 7,
-      "transportCostClass": "cheap",
-      "summaryBytes": 101,
-      "summaryTokens": 26,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 7,
-      "meta": {},
-      "error": null,
       "response": {
         "2": 4,
         "4": 3,
@@ -8313,16 +7288,8 @@
       "ok": true,
       "summary": "Bridge method succeeded with 0 top-level fields.",
       "evidence": [],
-      "transportBytes": 4,
-      "transportTokens": 1,
-      "transportCostClass": "cheap",
-      "summaryBytes": 86,
-      "summaryTokens": 22,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 1,
-      "meta": {},
-      "error": null,
       "response": "hi"
     }
   },
@@ -8368,17 +7335,8 @@
       "ok": true,
       "summary": "Bridge method succeeded with 0 top-level fields.",
       "evidence": [],
-      "transportBytes": 4,
-      "transportTokens": 1,
-      "transportCostClass": "cheap",
-      "summaryBytes": 86,
-      "summaryTokens": 22,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 1,
-      "meta": {},
-      "error": null,
-      "response": null
+      "approxTokens": 1
     }
   },
   {
@@ -8437,20 +7395,11 @@
       "evidence": {
         "elementRef": null
       },
-      "transportBytes": 16,
-      "transportTokens": 4,
-      "transportCostClass": "cheap",
-      "summaryBytes": 176,
-      "summaryTokens": 44,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 4,
       "meta": {
-        "protocol_warning": "version drift",
-        "tab_id": 5,
-        "active_tab_id": 7
+        "protocol_warning": "version drift"
       },
-      "error": null,
       "response": {
         "clicked": true
       }
@@ -8521,20 +7470,8 @@
         "length": 2,
         "truncated": false
       },
-      "transportBytes": 5,
-      "transportTokens": 4,
-      "transportCostClass": "heavy",
-      "summaryBytes": 97,
-      "summaryTokens": 25,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 4,
-      "meta": {
-        "transport_bytes": 5,
-        "transport_approx_tokens": 4,
-        "transport_cost_class": "heavy"
-      },
-      "error": null,
       "response": {
         "text": "hi",
         "truncated": false
@@ -8606,20 +7543,8 @@
         "length": 2,
         "truncated": false
       },
-      "transportBytes": 7,
-      "transportTokens": 6,
-      "transportCostClass": "moderate",
-      "summaryBytes": 97,
-      "summaryTokens": 25,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 6,
-      "meta": {
-        "response_bytes": 7,
-        "approx_tokens": 6,
-        "cost_class": "moderate"
-      },
-      "error": null,
       "response": {
         "text": "hi",
         "truncated": false
@@ -8689,18 +7614,8 @@
         "length": 2,
         "truncated": false
       },
-      "transportBytes": 5,
-      "transportTokens": 8,
-      "transportCostClass": "cheap",
-      "summaryBytes": 97,
-      "summaryTokens": 25,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 8,
-      "meta": {
-        "transport_bytes": 5
-      },
-      "error": null,
       "response": {
         "text": "hi",
         "truncated": false
@@ -8785,12 +7700,6 @@
         "retry": false,
         "hint": "Custom recovery."
       },
-      "transportBytes": 129,
-      "transportTokens": 33,
-      "transportCostClass": "cheap",
-      "summaryBytes": 167,
-      "summaryTokens": 42,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 33,
       "meta": {
@@ -8806,8 +7715,7 @@
           "retry": false,
           "hint": "Custom recovery."
         }
-      },
-      "response": null
+      }
     }
   },
   {
@@ -8860,21 +7768,13 @@
       "summary": "CUSTOM: Broken",
       "evidence": null,
       "recovery": null,
-      "transportBytes": 61,
-      "transportTokens": 16,
-      "transportCostClass": "cheap",
-      "summaryBytes": 71,
-      "summaryTokens": 18,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 16,
-      "meta": {},
       "error": {
         "code": "CUSTOM",
         "message": "Broken",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -8938,16 +7838,8 @@
         "length": 501,
         "truncated": true
       },
-      "transportBytes": 531,
-      "transportTokens": 133,
-      "transportCostClass": "cheap",
-      "summaryBytes": 615,
-      "summaryTokens": 154,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 133,
-      "meta": {},
-      "error": null,
       "response": {
         "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀",
         "truncated": true
@@ -9011,20 +7903,8 @@
         "type": "string",
         "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
       },
-      "transportBytes": 211,
-      "transportTokens": 53,
-      "transportCostClass": "cheap",
-      "summaryBytes": 379,
-      "summaryTokens": 95,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 53,
-      "meta": {},
-      "error": null,
-      "response": {
-        "type": "string",
-        "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
-      }
+      "approxTokens": 53
     }
   },
   {
@@ -9094,22 +7974,8 @@
         "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀",
         "bbox": {}
       },
-      "transportBytes": 114,
-      "transportTokens": 29,
-      "transportCostClass": "cheap",
-      "summaryBytes": 227,
-      "summaryTokens": 57,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 29,
-      "meta": {},
-      "error": null,
-      "response": {
-        "bbox": {},
-        "elementRef": "el_a",
-        "tag": "p",
-        "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀"
-      }
+      "approxTokens": 29
     }
   },
   {
@@ -9174,21 +8040,13 @@
         "retry": false,
         "hint": "This document does not expose the current WebMCP consumer API. Use structured DOM/input methods; do not enable flags or inject a polyfill without user permission."
       },
-      "transportBytes": 74,
-      "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 430,
-      "summaryTokens": 108,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 19,
-      "meta": {},
       "error": {
         "code": "WEBMCP_UNAVAILABLE",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -9257,21 +8115,13 @@
         "alternativeMethod": "webmcp.list_tools",
         "hint": "The tool reference expired or its document, catalog, or access session changed. Discover and inspect a fresh tool before a new deliberate action."
       },
-      "transportBytes": 73,
-      "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 435,
-      "summaryTokens": 109,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 19,
-      "meta": {},
       "error": {
         "code": "WEBMCP_TOOL_STALE",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -9336,21 +8186,13 @@
         "retry": false,
         "hint": "Another WebMCP execution or approval is pending. Wait and inspect postconditions; a timed-out callback may still be running."
       },
-      "transportBytes": 67,
-      "transportTokens": 17,
-      "transportCostClass": "cheap",
-      "summaryBytes": 347,
-      "summaryTokens": 87,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 17,
-      "meta": {},
       "error": {
         "code": "WEBMCP_BUSY",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -9415,21 +8257,13 @@
         "retry": false,
         "hint": "User approval was denied, closed, expired, or revoked. No tool was dispatched. Do not repeat the request unless the user asks."
       },
-      "transportBytes": 78,
-      "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 362,
-      "summaryTokens": 91,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 20,
-      "meta": {},
       "error": {
         "code": "WEBMCP_APPROVAL_DENIED",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -9494,21 +8328,13 @@
         "retry": false,
         "hint": "The tool may have executed. Inspect DOM/page postconditions before another deliberate action. Never automatically retry or repeat the action through DOM input."
       },
-      "transportBytes": 82,
-      "transportTokens": 21,
-      "transportCostClass": "cheap",
-      "summaryBytes": 432,
-      "summaryTokens": 108,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 21,
-      "meta": {},
       "error": {
         "code": "WEBMCP_EXECUTION_UNCERTAIN",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -9573,21 +8399,13 @@
         "retry": false,
         "hint": "Access is off for this window. Ask the user to click Enable in the Browser Bridge popup or side panel. Do not request access again until that window is enabled."
       },
-      "transportBytes": 69,
-      "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 421,
-      "summaryTokens": 106,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 18,
-      "meta": {},
       "error": {
         "code": "ACCESS_DENIED",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -9652,21 +8470,13 @@
         "retry": false,
         "hint": "Result was truncated to fit the response budget. Narrow the query or raise the relevant budget if more detail is required."
       },
-      "transportBytes": 72,
-      "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 348,
-      "summaryTokens": 87,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 18,
-      "meta": {},
       "error": {
         "code": "RESULT_TRUNCATED",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -9731,21 +8541,13 @@
         "retry": false,
         "hint": "The result exceeds its atomic delivery limit. For screenshots, use artifact delivery, a smaller region, lower scale, or lossy compression. For sensitive reads, use a narrower exact target; partial values are never returned."
       },
-      "transportBytes": 72,
-      "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 550,
-      "summaryTokens": 138,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 18,
-      "meta": {},
       "error": {
         "code": "RESULT_TOO_LARGE",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -9814,21 +8616,13 @@
         "alternativeMethod": "page.get_storage",
         "hint": "The exact storage key does not exist. Use page.get_storage to inspect metadata before another deliberate sensitive read."
       },
-      "transportBytes": 82,
-      "transportTokens": 21,
-      "transportCostClass": "cheap",
-      "summaryBytes": 393,
-      "summaryTokens": 99,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 21,
-      "meta": {},
       "error": {
         "code": "SENSITIVE_TARGET_NOT_FOUND",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -9897,21 +8691,13 @@
         "alternativeMethod": "dom.query",
         "hint": "Element was removed from the DOM. Re-query for a fresh elementRef, or retry an input once with recoverStale=true when the same page and a strong unique descriptor still apply."
       },
-      "transportBytes": 69,
-      "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 483,
-      "summaryTokens": 121,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 18,
-      "meta": {},
       "error": {
         "code": "ELEMENT_STALE",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -9980,21 +8766,13 @@
         "alternativeMethod": "dom.query",
         "hint": "Multiple candidates matched, candidates tied, or a bounded stale-recovery scan could not prove uniqueness. Re-query and use a more specific selector or fresh elementRef."
       },
-      "transportBytes": 73,
-      "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 475,
-      "summaryTokens": 119,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 19,
-      "meta": {},
       "error": {
         "code": "ELEMENT_AMBIGUOUS",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -10063,21 +8841,13 @@
         "alternativeMethod": "dom.describe",
         "hint": "The target is hidden, disabled, inert, or has no rendered area. Inspect it and choose an actionable target."
       },
-      "transportBytes": 78,
-      "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 359,
-      "summaryTokens": 90,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 20,
-      "meta": {},
       "error": {
         "code": "ELEMENT_NOT_ACTIONABLE",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -10146,21 +8916,13 @@
         "alternativeMethod": "layout.hit_test",
         "hint": "Another element blocks the target point. Inspect the blocker or wait for the overlay to close."
       },
-      "transportBytes": 72,
-      "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 330,
-      "summaryTokens": 83,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 18,
-      "meta": {},
       "error": {
         "code": "ELEMENT_OBSCURED",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -10229,21 +8991,13 @@
         "alternativeMethod": "dom.query",
         "hint": "No element matched the target selector. Check or narrow the selector with dom.query."
       },
-      "transportBytes": 73,
-      "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 305,
-      "summaryTokens": 77,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 19,
-      "meta": {},
       "error": {
         "code": "ELEMENT_NOT_FOUND",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -10308,21 +9062,13 @@
         "retry": false,
         "hint": "The requested execution mode does not support this input operation. Use executionMode=dom or choose a CDP-supported input method."
       },
-      "transportBytes": 73,
-      "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 363,
-      "summaryTokens": 91,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 19,
-      "meta": {},
       "error": {
         "code": "INPUT_UNSUPPORTED",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -10391,21 +9137,13 @@
         "alternativeMethod": "dom.describe",
         "hint": "The target is not compatible with this input operation or the requested option does not exist. Inspect the target and choose the appropriate control."
       },
-      "transportBytes": 76,
-      "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 441,
-      "summaryTokens": 111,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 19,
-      "meta": {},
       "error": {
         "code": "INPUT_INVALID_TARGET",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -10474,21 +9212,13 @@
         "alternativeMethod": "dom.describe",
         "hint": "Focus moved away from the resolved editable target before native text dispatch. Inspect focus handlers or target the control that retained focus."
       },
-      "transportBytes": 75,
-      "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 432,
-      "summaryTokens": 108,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 19,
-      "meta": {},
       "error": {
         "code": "INPUT_FOCUS_CHANGED",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -10557,21 +9287,13 @@
         "alternativeMethod": "page.handle_dialog",
         "hint": "A JavaScript dialog blocked the operation. Inspect it with page.handle_dialog, then explicitly accept or dismiss it. The operation may already have taken effect and may finish after the dialog closes. Inspect postconditions; never automatically replay the action or sequence."
       },
-      "transportBytes": 70,
-      "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 693,
-      "summaryTokens": 174,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 18,
-      "meta": {},
       "error": {
         "code": "DIALOG_BLOCKED",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -10640,21 +9362,13 @@
         "alternativeMethod": "page.handle_dialog",
         "hint": "No JavaScript dialog is currently observable. Inspect or trigger the dialog before trying another explicit action."
       },
-      "transportBytes": 71,
-      "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 372,
-      "summaryTokens": 93,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 18,
-      "meta": {},
       "error": {
         "code": "DIALOG_NOT_OPEN",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -10723,21 +9437,13 @@
         "alternativeMethod": "page.handle_dialog",
         "hint": "The observed dialog changed before or during CDP dispatch. Do not repeat the action automatically; inspect the current dialog state first."
       },
-      "transportBytes": 78,
-      "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 427,
-      "summaryTokens": 107,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 20,
-      "meta": {},
       "error": {
         "code": "DIALOG_ACTION_CONFLICT",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -10806,21 +9512,13 @@
         "alternativeMethod": "tabs.list",
         "hint": "Tab was closed or not found. Use tabs.list to find an available tab."
       },
-      "transportBytes": 68,
-      "transportTokens": 17,
-      "transportCostClass": "cheap",
-      "summaryBytes": 268,
-      "summaryTokens": 67,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 17,
-      "meta": {},
       "error": {
         "code": "TAB_MISMATCH",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -10889,21 +9587,13 @@
         "retryAfterMs": 1000,
         "hint": "Operation exceeded the time limit. Retry once, or simplify the request (smaller maxNodes, narrower selector)."
       },
-      "transportBytes": 63,
-      "transportTokens": 16,
-      "transportCostClass": "cheap",
-      "summaryBytes": 332,
-      "summaryTokens": 83,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 16,
-      "meta": {},
       "error": {
         "code": "TIMEOUT",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -10968,21 +9658,13 @@
         "retry": false,
         "hint": "The page cannot host the Browser Bridge content script. Switch to a normal http(s) page in the enabled window."
       },
-      "transportBytes": 82,
-      "transportTokens": 21,
-      "transportCostClass": "cheap",
-      "summaryBytes": 334,
-      "summaryTokens": 84,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 21,
-      "meta": {},
       "error": {
         "code": "CONTENT_SCRIPT_UNAVAILABLE",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -11047,21 +9729,13 @@
         "retry": false,
         "hint": "The artifact is missing, expired, deleted, or owned by another client. Capture it again."
       },
-      "transportBytes": 74,
-      "transportTokens": 19,
-      "transportCostClass": "cheap",
-      "summaryBytes": 282,
-      "summaryTokens": 71,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 19,
-      "meta": {},
       "error": {
         "code": "ARTIFACT_NOT_FOUND",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -11126,21 +9800,13 @@
         "retry": false,
         "hint": "Artifact storage quota was exceeded. Delete unneeded artifacts or retry after expiry."
       },
-      "transportBytes": 79,
-      "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 281,
-      "summaryTokens": 71,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 20,
-      "meta": {},
       "error": {
         "code": "ARTIFACT_QUOTA_EXCEEDED",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -11205,21 +9871,13 @@
         "retry": false,
         "hint": "Artifact transfer validation failed. Capture the screenshot again."
       },
-      "transportBytes": 81,
-      "transportTokens": 21,
-      "transportCostClass": "cheap",
-      "summaryBytes": 245,
-      "summaryTokens": 62,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 21,
-      "meta": {},
       "error": {
         "code": "ARTIFACT_TRANSFER_INVALID",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -11288,21 +9946,13 @@
         "alternativeMethod": "dom.baseline.create",
         "hint": "The DOM baseline is missing, expired, or released. Create a new baseline before comparing or describing it."
       },
-      "transportBytes": 78,
-      "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 366,
-      "summaryTokens": 92,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 20,
-      "meta": {},
       "error": {
         "code": "DOM_BASELINE_NOT_FOUND",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -11371,21 +10021,13 @@
         "alternativeMethod": "dom.baseline.create",
         "hint": "The page document or baseline scope changed. Create a new baseline in the current document."
       },
-      "transportBytes": 80,
-      "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 336,
-      "summaryTokens": 84,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 20,
-      "meta": {},
       "error": {
         "code": "DOM_BASELINE_INVALIDATED",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -11454,21 +10096,13 @@
         "alternativeMethod": "dom.baseline.release",
         "hint": "DOM baseline storage quota was exceeded. Release unneeded baselines, narrow the selector, or reduce maxNodes and textBudget before creating another baseline."
       },
-      "transportBytes": 83,
-      "transportTokens": 21,
-      "transportCostClass": "cheap",
-      "summaryBytes": 472,
-      "summaryTokens": 118,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 21,
-      "meta": {},
       "error": {
         "code": "DOM_BASELINE_QUOTA_EXCEEDED",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -11541,21 +10175,13 @@
         "alternativeMethod": "health.ping",
         "hint": "Extension not connected. Check Chrome is running, then retry. Use health.ping to verify connectivity."
       },
-      "transportBytes": 78,
-      "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 365,
-      "summaryTokens": 92,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 20,
-      "meta": {},
       "error": {
         "code": "EXTENSION_DISCONNECTED",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -11620,21 +10246,13 @@
         "retry": false,
         "hint": "Native host not reachable. Run `bbx doctor` to diagnose the installation."
       },
-      "transportBytes": 79,
-      "transportTokens": 20,
-      "transportCostClass": "cheap",
-      "summaryBytes": 257,
-      "summaryTokens": 65,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 20,
-      "meta": {},
       "error": {
         "code": "NATIVE_HOST_UNAVAILABLE",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -11699,21 +10317,13 @@
         "retry": false,
         "hint": "Malformed method or params. Check the method name and parameter types."
       },
-      "transportBytes": 71,
-      "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 243,
-      "summaryTokens": 61,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 18,
-      "meta": {},
       "error": {
         "code": "INVALID_REQUEST",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -11782,21 +10392,13 @@
         "retryAfterMs": 1000,
         "hint": "Unexpected extension error. Retry once; if persistent, check page.get_console for details."
       },
-      "transportBytes": 70,
-      "transportTokens": 18,
-      "transportCostClass": "cheap",
-      "summaryBytes": 301,
-      "summaryTokens": 76,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 18,
-      "meta": {},
       "error": {
         "code": "INTERNAL_ERROR",
         "message": "Failure",
         "details": null
-      },
-      "response": null
+      }
     }
   },
   {
@@ -11860,16 +10462,8 @@
         "length": 503,
         "truncated": true
       },
-      "transportBytes": 533,
-      "transportTokens": 134,
-      "transportCostClass": "cheap",
-      "summaryBytes": 610,
-      "summaryTokens": 153,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 134,
-      "meta": {},
-      "error": null,
       "response": {
         "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa😀",
         "truncated": true
@@ -11933,20 +10527,8 @@
         "type": "string",
         "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
       },
-      "transportBytes": 208,
-      "transportTokens": 52,
-      "transportCostClass": "cheap",
-      "summaryBytes": 370,
-      "summaryTokens": 93,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 52,
-      "meta": {},
-      "error": null,
-      "response": {
-        "type": "string",
-        "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-      }
+      "approxTokens": 52
     }
   },
   {
@@ -12016,22 +10598,8 @@
           "long": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
         }
       },
-      "transportBytes": 237,
-      "transportTokens": 60,
-      "transportCostClass": "cheap",
-      "summaryBytes": 351,
-      "summaryTokens": 88,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 60,
-      "meta": {},
-      "error": null,
-      "response": {
-        "type": "object",
-        "value": {
-          "long": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-        }
-      }
+      "approxTokens": 60
     }
   },
   {
@@ -12126,27 +10694,8 @@
           123, 123, 123, 123, 123, 123, 123, 123, 123, 123
         ]
       },
-      "transportBytes": 427,
-      "transportTokens": 107,
-      "transportCostClass": "cheap",
-      "summaryBytes": 544,
-      "summaryTokens": 136,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
-      "approxTokens": 107,
-      "meta": {},
-      "error": null,
-      "response": {
-        "type": "object",
-        "value": [
-          123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123,
-          123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123,
-          123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123,
-          123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123,
-          123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123,
-          123, 123, 123, 123, 123, 123, 123, 123, 123, 123
-        ]
-      }
+      "approxTokens": 107
     }
   },
   {
@@ -12502,16 +11051,8 @@
           "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
         }
       ],
-      "transportBytes": 1969,
-      "transportTokens": 493,
-      "transportCostClass": "moderate",
-      "summaryBytes": 1698,
-      "summaryTokens": 425,
-      "summaryCostClass": "moderate",
       "durationMs": 12,
       "approxTokens": 493,
-      "meta": {},
-      "error": null,
       "response": {
         "nodes": [
           {
@@ -13023,16 +11564,8 @@
           "title": "Tab 10"
         }
       ],
-      "transportBytes": 901,
-      "transportTokens": 226,
-      "transportCostClass": "cheap",
-      "summaryBytes": 1066,
-      "summaryTokens": 267,
-      "summaryCostClass": "moderate",
       "durationMs": 12,
       "approxTokens": 226,
-      "meta": {},
-      "error": null,
       "response": {
         "tabs": [
           {
@@ -13168,16 +11701,8 @@
         "elementRef": null,
         "value": "a\u001b[31mred\u001b[0m<&> "
       },
-      "transportBytes": 54,
-      "transportTokens": 14,
-      "transportCostClass": "cheap",
-      "summaryBytes": 114,
-      "summaryTokens": 29,
-      "summaryCostClass": "cheap",
       "durationMs": 12,
       "approxTokens": 14,
-      "meta": {},
-      "error": null,
       "response": {
         "typed": true,
         "value": "a\u001b[31mred\u001b[0m<&> "

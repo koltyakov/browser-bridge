@@ -71,7 +71,7 @@ var mcpActions = map[string]map[string]string{
 	},
 	"browser_navigation": {"navigate": "navigation.navigate|url waitForLoad timeoutMs", "reload": "navigation.reload|waitForLoad timeoutMs", "go_back": "navigation.go_back|waitForLoad timeoutMs", "go_forward": "navigation.go_forward|waitForLoad timeoutMs", "scroll": "viewport.scroll|top left behavior relative", "resize": "viewport.resize|width height deviceScaleFactor reset"},
 	"browser_tabs":       {"list": "tabs.list|limit offset", "create": "tabs.create|url active", "close": "tabs.close|tabId", "activate": "tabs.activate|tabId"},
-	"browser_capture":    {"element": "screenshot.capture_element!|format quality delivery scale", "region": "screenshot.capture_region|format quality delivery scale", "full_page": "screenshot.capture_full_page|format quality delivery scale", "visual_baseline_create": "screenshot.baseline.create|selector rect", "visual_baseline_compare": "screenshot.baseline.compare|baselineId advance includeBefore", "visual_baseline_release": "screenshot.baseline.release|baselineId", "cdp_document": "cdp.get_document|", "cdp_dom_snapshot": "cdp.get_dom_snapshot|computedStyles", "cdp_box_model": "cdp.get_box_model|nodeId", "cdp_computed_styles": "cdp.get_computed_styles_for_node|nodeId"},
+	"browser_capture":    {"element": "screenshot.capture_element!|format quality delivery scale", "region": "screenshot.capture_region|format quality delivery scale", "full_page": "screenshot.capture_full_page|format quality delivery scale", "visual_baseline_create": "screenshot.baseline.create|selector rect", "visual_baseline_compare": "screenshot.baseline.compare|baselineId advance includeBefore fallback", "visual_baseline_release": "screenshot.baseline.release|baselineId", "cdp_document": "cdp.get_document|", "cdp_dom_snapshot": "cdp.get_dom_snapshot|computedStyles", "cdp_box_model": "cdp.get_box_model|nodeId", "cdp_computed_styles": "cdp.get_computed_styles_for_node|nodeId"},
 	"browser_patch":      {"apply_styles": "patch.apply_styles!|declarations important patchId verify", "apply_dom": "patch.apply_dom!|operation value name patchId verify", "list": "patch.list|", "rollback": "patch.rollback|patchId", "commit_baseline": "patch.commit_session_baseline|"},
 	"browser_artifact":   {"read": "artifact.read|artifactId offset limit:maxBytes", "delete": "artifact.delete|artifactId"},
 	"browser_intercept":  {"add": "network.intercept.add|urlPattern ruleAction:action statusCode body headers", "remove": "network.intercept.remove|ruleId", "list": "network.intercept.list|", "clear": "network.intercept.clear|"},
@@ -198,6 +198,13 @@ func (s *mcpSession) handleTool(ctx context.Context, name string, args object, e
 	if method == "protocol.describe" {
 		return mcpDescribe(params), nil
 	}
+	var warnings []string
+	if name == "browser_call" {
+		if key := misplacedRoutingParam(method, params); key != "" {
+			return mcpErrorResult("INVALID_REQUEST", key+" inside params is ignored by "+method+".", "Pass "+key+" beside method as a browser_call argument."), nil
+		}
+		warnings = paramWarnings(method, params)
+	}
 	if name == "browser_dom" {
 		if method == "dom.query" && params.text("selector") == "" {
 			params["selector"] = value("body")
@@ -311,7 +318,26 @@ func (s *mcpSession) handleTool(ctx context.Context, name string, args object, e
 		data, truncated := mcpBoundValue(response["result"], 500, 50000, 4000, true)
 		return mcpResult("Captured bounded structured data from "+method+".", object{"ok": value(true), "method": value(method), "data": data, "truncated": value(truncated)}, false), nil
 	}
-	return mcpResponse(response, method, params), nil
+	return mcpWithParamWarnings(mcpResponse(response, method, params), warnings), nil
+}
+
+// mcpWithParamWarnings appends near-miss param warnings to a result built by
+// mcpResult, so a call that silently fell back to defaults says so.
+func mcpWithParamWarnings(result object, warnings []string) object {
+	structured := result.object("structuredContent")
+	var content []object
+	if len(warnings) == 0 || structured["deliveredBytes"] == nil || json.Unmarshal(result["content"], &content) != nil || len(content) == 0 {
+		return result
+	}
+	for _, suffix := range []string{"Bytes", "Tokens", "CostClass"} {
+		delete(structured, "delivered"+suffix)
+	}
+	summary := content[0].text("text") + " Warning: " + strings.Join(warnings, " ")
+	if mcpIsString(structured["summary"]) {
+		structured["summary"] = value(summary)
+	}
+	structured["paramWarnings"] = value(warnings)
+	return mcpResult(summary, structured, result.boolean("isError"), content[1:]...)
 }
 
 func mcpValidateAction(name, method string, params, args object) string {
@@ -368,6 +394,12 @@ func (s *mcpSession) bridge(ctx context.Context, method string, params, args obj
 	}
 	if method == "page.extract_content" {
 		return s.extractContent(ctx, params, args, era)
+	}
+	if method == "dom.query" && params["includeBbox"] == nil {
+		// MCP query evidence omits boxes unless requested; skip the per-node
+		// layout reads and transport bytes too.
+		params = mcpClone(params)
+		params["includeBbox"] = value(false)
 	}
 	if method == "tabs.list" {
 		for _, key := range []string{"limit", "offset"} {
@@ -447,14 +479,25 @@ func (s *mcpSession) batch(ctx context.Context, args object, era string) (object
 				}
 				method := call.text("method")
 				params := mcpClone(call.object("params"))
+				warnings := paramWarnings(method, params)
 				for key, v := range catalog.Presets[call.text("budgetPreset")][method] {
 					if params[key] == nil {
 						params[key] = v
 					}
 				}
 				start := time.Now()
-				response, err := s.bridge(ctx, method, params, call, era)
+				var response object
+				var err error
+				if key := misplacedRoutingParam(method, params); key != "" {
+					response = failure("", "INVALID_REQUEST", key+" inside params is ignored by "+method+". Pass "+key+" on the batch call instead.")
+				} else {
+					response, err = s.bridge(ctx, method, params, call, era)
+				}
 				item := mcpBatchResult(response, method, params, err, time.Since(start).Milliseconds())
+				if len(warnings) > 0 {
+					item["summary"] = value(item.text("summary") + " Warning: " + strings.Join(warnings, " "))
+					item["paramWarnings"] = value(warnings)
+				}
 				if call["destinationId"] != nil {
 					item["destinationId"] = call["destinationId"]
 				}
@@ -474,16 +517,32 @@ func (s *mcpSession) batch(ctx context.Context, args object, era string) (object
 		return nil, err
 	}
 	failures := 0
-	for _, result := range results {
+	digest := []string{}
+	for i, result := range results {
 		if !result.boolean("ok") {
 			failures++
+			if len(digest) < 3 {
+				// Code and message only: each item's summary also repeats the
+				// generic recovery hint for its code.
+				reason := result.text("summary")
+				if err := result.object("error"); err.text("code") != "" {
+					reason = err.text("code") + ": " + err.text("message")
+				}
+				digest = append(digest, fmt.Sprintf("results[%d] %s %s", i, result.text("method"), mcpSlice(reason, 160)))
+			}
 		}
 	}
 	summary := fmt.Sprintf("Batch executed %d call(s).", len(calls))
 	if failures > 0 {
-		summary = fmt.Sprintf("Batch executed %d call(s) with %d error(s).", len(calls), failures)
+		if failures > len(digest) {
+			digest = append(digest, fmt.Sprintf("%d more.", failures-len(digest)))
+		}
+		summary = fmt.Sprintf("Batch executed %d call(s) with %d error(s): %s", len(calls), failures, strings.Join(digest, "; "))
 	}
-	return mcpResult(summary, object{"ok": value(failures == 0), "successCount": value(len(calls) - failures), "failureCount": value(failures), "compactOutput": value(true), "results": value(results)}, failures > 0), nil
+	// Item failures are evidence, not a failed tool call. Clients that render
+	// only the text of an error result would otherwise drop every successful
+	// result alongside the failures.
+	return mcpResult(summary, object{"ok": value(failures == 0), "successCount": value(len(calls) - failures), "failureCount": value(failures), "compactOutput": value(true), "results": value(results)}, failures == len(calls)), nil
 }
 
 func mcpBatchResult(response object, method string, params object, err error, duration int64) object {

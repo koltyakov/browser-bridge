@@ -4352,6 +4352,22 @@ func (v *VisualBaselineCreateParams) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+type VisualBaselineFallback string
+
+const (
+	VisualBaselineFallbackSummary VisualBaselineFallback = "summary"
+
+	VisualBaselineFallbackCurrent VisualBaselineFallback = "current"
+)
+
+func (v VisualBaselineFallback) Valid() bool {
+	switch v {
+	case VisualBaselineFallbackSummary, VisualBaselineFallbackCurrent:
+		return true
+	}
+	return false
+}
+
 type VisualBaselineCompareParams struct {
 	BaselineId string `json:"baselineId"`
 
@@ -4359,18 +4375,20 @@ type VisualBaselineCompareParams struct {
 
 	IncludeBefore Optional[bool] `json:"includeBefore,omitzero"`
 
+	Fallback Optional[VisualBaselineFallback] `json:"fallback,omitzero"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v VisualBaselineCompareParams) MarshalJSON() ([]byte, error) {
 	type alias VisualBaselineCompareParams
-	return marshalOpen(alias(v), v.Extra, []string{"baselineId", "advance", "includeBefore"})
+	return marshalOpen(alias(v), v.Extra, []string{"baselineId", "advance", "includeBefore", "fallback"})
 }
 
 func (v *VisualBaselineCompareParams) UnmarshalJSON(data []byte) error {
 	type alias VisualBaselineCompareParams
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"baselineId", "advance", "includeBefore"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"baselineId", "advance", "includeBefore", "fallback"})
 	if err != nil {
 		return err
 	}
@@ -4541,6 +4559,8 @@ func (v *VisualEvidenceImage) UnmarshalJSON(data []byte) error {
 type VisualBaselineCompareResult struct {
 	BaselineId string `json:"baselineId"`
 
+	Status string `json:"status"`
+
 	Comparable bool `json:"comparable"`
 
 	Equal Nullable[bool] `json:"equal"`
@@ -4548,6 +4568,10 @@ type VisualBaselineCompareResult struct {
 	ChangedPixels Nullable[float64] `json:"changedPixels"`
 
 	ChangedPixelRatio Nullable[float64] `json:"changedPixelRatio"`
+
+	ChangedRect Nullable[VisualRect] `json:"changedRect"`
+
+	CropAreaRatio Nullable[float64] `json:"cropAreaRatio"`
 
 	Strategy string `json:"strategy"`
 
@@ -4572,13 +4596,13 @@ type VisualBaselineCompareResult struct {
 
 func (v VisualBaselineCompareResult) MarshalJSON() ([]byte, error) {
 	type alias VisualBaselineCompareResult
-	return marshalOpen(alias(v), v.Extra, []string{"baselineId", "comparable", "equal", "changedPixels", "changedPixelRatio", "strategy", "reason", "advanced", "requiresNewBaseline", "beforeScope", "afterScope", "dimensions", "images", "guidance"})
+	return marshalOpen(alias(v), v.Extra, []string{"baselineId", "status", "comparable", "equal", "changedPixels", "changedPixelRatio", "changedRect", "cropAreaRatio", "strategy", "reason", "advanced", "requiresNewBaseline", "beforeScope", "afterScope", "dimensions", "images", "guidance"})
 }
 
 func (v *VisualBaselineCompareResult) UnmarshalJSON(data []byte) error {
 	type alias VisualBaselineCompareResult
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"baselineId", "comparable", "equal", "changedPixels", "changedPixelRatio", "strategy", "reason", "advanced", "requiresNewBaseline", "beforeScope", "afterScope", "dimensions", "images", "guidance"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"baselineId", "status", "comparable", "equal", "changedPixels", "changedPixelRatio", "changedRect", "cropAreaRatio", "strategy", "reason", "advanced", "requiresNewBaseline", "beforeScope", "afterScope", "dimensions", "images", "guidance"})
 	if err != nil {
 		return err
 	}

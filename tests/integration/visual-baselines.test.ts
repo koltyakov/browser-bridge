@@ -55,10 +55,11 @@ test('Go visual baselines retain pixels across CLI processes, compare exactly, a
     assert.match(descriptor.baselineId, /^visual_[a-f0-9]{32}$/u);
     assert(!JSON.stringify(descriptor).includes('base64'));
 
-    for (const [index, advance, equal] of [
-      [0, false, true],
-      [1, true, false],
-      [1, false, true],
+    for (const [index, advance, equal, fallback, advanced, imageCount] of [
+      [0, false, true, 'summary', false, 0],
+      [1, true, false, 'summary', false, 0],
+      [1, true, false, 'current', true, 1],
+      [1, false, true, 'summary', false, 0],
     ] as const) {
       const compare = runCli({
         args: [
@@ -66,7 +67,7 @@ test('Go visual baselines retain pixels across CLI processes, compare exactly, a
           '--tab',
           '42',
           'screenshot.baseline.compare',
-          JSON.stringify({ baselineId: descriptor.baselineId, advance }),
+          JSON.stringify({ baselineId: descriptor.baselineId, advance, fallback }),
         ],
         env: ctx.env,
       });
@@ -78,13 +79,13 @@ test('Go visual baselines retain pixels across CLI processes, compare exactly, a
       assert.equal(compared.status, 0, compared.stderr);
       const result = compared.json as VisualBaselineCompareResult;
       assert.equal(result.equal, equal);
-      assert.equal(result.advanced, advance);
+      assert.equal(result.advanced, advanced);
       assert.equal(result.changedPixels, equal ? 0 : 1);
-      assert.equal(result.images.length, equal ? 0 : 2);
+      assert.equal(result.images.length, imageCount);
       assert.deepEqual(result.beforeScope, frame.scope);
-      if (!equal) {
-        assert.equal(result.images[0].phase, 'before');
-        assert.equal(result.images[1].phase, 'after');
+      assert.equal(result.status, equal ? 'unchanged' : 'diff_not_useful');
+      if (imageCount) {
+        assert.equal(result.images[0].phase, 'after');
         assert.deepEqual(result.images[0].rect, { x: 0, y: 0, width: 1, height: 1 });
       }
     }

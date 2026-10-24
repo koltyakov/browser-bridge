@@ -1259,12 +1259,16 @@ export interface VisualBaselineCreateParams {
   rect?: VisualRect;
 }
 
+export type VisualBaselineFallback = 'summary' | 'current';
+
 export interface VisualBaselineCompareParams {
   baselineId: string;
-  /** Advance only after successful comparable evidence. Default false. Does not extend expiry. */
+  /** Advance only after comparable unchanged/cropped/current-image evidence. Never on a suppressed diff. Default false. Does not extend expiry. */
   advance?: boolean;
-  /** Default true. Before evidence is needed for disappearance and uncertain prior context. */
+  /** Include before evidence in useful crops, default true. Explicit current fallback is after-only. */
   includeBefore?: boolean;
+  /** Default summary: omit images when a compact diff is not useful or coordinates changed. current explicitly requests at most one full current scoped image instead. */
+  fallback?: VisualBaselineFallback;
 }
 
 export interface VisualBaselineReleaseParams {
@@ -1314,10 +1318,15 @@ export interface VisualEvidenceImage {
 
 export interface VisualBaselineCompareResult {
   baselineId: string;
+  status: 'unchanged' | 'changed' | 'diff_not_useful' | 'not_comparable';
   comparable: boolean;
   equal: boolean | null;
   changedPixels: number | null;
   changedPixelRatio: number | null;
+  /** Bounding rectangle of exact changed pixels, in original screenshot pixels. Not a semantic location. */
+  changedRect: VisualRect | null;
+  /** Area of the context-expanded candidate crop divided by full scope area, before evidence suppression. */
+  cropAreaRatio: number | null;
   strategy: 'none' | 'crop' | 'full';
   reason: string;
   advanced: boolean;

@@ -53,7 +53,12 @@ function verifyPixels(
 ): number {
   assert.equal(before.width, after.width);
   assert.equal(before.height, after.height);
+  assert.equal(compared.comparable, true);
   let count = 0;
+  let left = before.width;
+  let top = before.height;
+  let right = 0;
+  let bottom = 0;
   const rectangles = compared.images
     .filter((image) => image.phase === 'after')
     .map((image) => image.rect);
@@ -67,13 +72,18 @@ function verifyPixels(
       )
         continue;
       count++;
-      assert(
-        rectangles.some(
-          (rect) =>
-            x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height
-        ),
-        `changed pixel ${x},${y} omitted`
-      );
+      left = Math.min(left, x);
+      top = Math.min(top, y);
+      right = Math.max(right, x + 1);
+      bottom = Math.max(bottom, y + 1);
+      if (rectangles.length)
+        assert(
+          rectangles.some(
+            (rect) =>
+              x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height
+          ),
+          `changed pixel ${x},${y} omitted`
+        );
     }
   }
   assert.equal(
@@ -82,6 +92,16 @@ function verifyPixels(
     'native changed-pixel count must match independently captured/decoded originals'
   );
   assert.equal(compared.equal, count === 0);
+  assert.deepEqual(
+    compared.changedRect,
+    count ? { x: left, y: top, width: right - left, height: bottom - top } : null
+  );
+  if (count && !rectangles.length) {
+    assert.equal(compared.status, 'diff_not_useful');
+    assert.equal(compared.strategy, 'none');
+    assert.equal(compared.advanced, false);
+    assert.equal(compared.requiresNewBaseline, false);
+  }
   assert.equal(compared.images.length, blocks.length);
   assert.equal(
     JSON.stringify(compared).includes('base64'),
@@ -339,6 +359,7 @@ test(
         'remove',
         'subtle',
         'distant',
+        'dense',
         'outside',
       ]) {
         await scenario(name, async () => {
@@ -370,8 +391,17 @@ test(
           if (name === 'unchanged' || name === 'outside') {
             assert.equal(changed, 0);
             assert.equal(blocks.length, 0);
+          } else if (name === 'distant' || name === 'dense') {
+            assert(changed > 0);
+            assert.equal(compared.status, 'diff_not_useful');
+            assert.equal(
+              compared.reason,
+              name === 'dense' ? 'too_different' : 'changes_too_spread_out'
+            );
+            assert.equal(blocks.length, 0);
           } else {
             assert(changed > 0);
+            assert.equal(compared.status, 'changed');
             assert.equal(compared.images[0].phase, 'before');
             assert.equal(compared.images[1].phase, 'after');
           }
@@ -420,6 +450,10 @@ test(
             scenario: name,
             passed: true,
             changedPixels: changed,
+            status: compared.status,
+            reason: compared.reason,
+            changedRect: compared.changedRect,
+            cropAreaRatio: compared.cropAreaRatio,
             strategy: compared.strategy,
             captureMs: after.ms,
             compareMs: response.ms,
@@ -474,6 +508,49 @@ test(
         rows.push({ scenario: 'reference advance and release', passed: true });
       });
 
+      await scenario(
+        'unhelpful diffs preserve the reference and require explicit image fallback',
+        async () => {
+          await settle('resetFixture()');
+          const baseline = await create();
+          const before = await capture(baseline.scope.rect);
+          await settle("applyChange('distant')");
+          const summary = await call('screenshot.baseline.compare', {
+            baselineId: baseline.baselineId,
+            advance: true,
+          });
+          assert.equal(summary.evidence.status, 'diff_not_useful');
+          assert.equal(summary.evidence.advanced, false);
+          assert.equal(images(summary.result).length, 0);
+          const current = await call('screenshot.baseline.compare', {
+            baselineId: baseline.baselineId,
+            fallback: 'current',
+            includeBefore: true,
+            advance: true,
+          });
+          assert.equal(current.evidence.status, 'diff_not_useful');
+          assert.equal(current.evidence.advanced, true);
+          assert.equal(current.evidence.strategy, 'full');
+          assert.equal(images(current.result).length, 1);
+          const compared = current.evidence as unknown as VisualBaselineCompareResult;
+          assert.equal(compared.images[0].phase, 'after');
+          const after = await capture(baseline.scope.rect);
+          verifyPixels(before.pixels, after.pixels, compared, images(current.result));
+          assert.equal(
+            (await call('screenshot.baseline.compare', { baselineId: baseline.baselineId }))
+              .evidence.status,
+            'unchanged'
+          );
+          await release(baseline.baselineId);
+          rows.push({
+            scenario: 'explicit current-only fallback',
+            passed: true,
+            defaultImageCount: 0,
+            explicitImageCount: 1,
+          });
+        }
+      );
+
       await scenario('rect scope rejects misleading scroll comparison', async () => {
         await settle('resetFixture()');
         const scope = await create();
@@ -488,8 +565,20 @@ test(
         assert.equal(response.evidence.equal, null);
         assert.equal(response.evidence.requiresNewBaseline, true);
         assert.equal(response.evidence.advanced, false);
-        assert.equal(images(response.result).length, 1);
+        assert.equal(response.evidence.status, 'not_comparable');
+        assert.equal(images(response.result).length, 0);
         assert.equal((await release(baseline.baselineId)).released, false);
+        await settle('resetFixture()');
+        const explicit = await create({ rect: scope.scope.rect });
+        await settle('window.scrollTo(0, 90)');
+        const current = await call('screenshot.baseline.compare', {
+          baselineId: explicit.baselineId,
+          fallback: 'current',
+        });
+        assert.equal(current.evidence.status, 'not_comparable');
+        assert.equal(current.evidence.equal, null);
+        assert.equal(images(current.result).length, 1);
+        await release(explicit.baselineId);
         rows.push({ scenario: 'scroll fallback', passed: true });
       });
 
@@ -503,6 +592,7 @@ test(
         assert.equal(compared.evidence.comparable, false);
         assert.equal(compared.evidence.equal, null);
         assert.equal(compared.evidence.requiresNewBaseline, true);
+        assert.equal(images(compared.result).length, 0);
         await release(baseline.baselineId);
         rows.push({ scenario: 'layout fallback', passed: true });
       });
@@ -616,6 +706,8 @@ test(
               call('daemon.metrics'),
             ]);
             assert.equal(comparison.evidence.equal, false);
+            assert.equal(comparison.evidence.status, 'diff_not_useful');
+            assert.equal(images(comparison.result).length, 0);
             assert(
               typeof health.evidence.pendingRequests === 'number' ||
                 (Array.isArray(health.evidence.nodes) &&

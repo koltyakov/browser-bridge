@@ -8,14 +8,10 @@
       "evidence": null,
       "durationMs": 0,
       "approxTokens": 0,
-      "meta": {
-        "protocol_version": "$PROTOCOL_VERSION"
-      },
       "error": {
         "code": "INVALID_REQUEST",
         "message": "Each batch call needs a method."
-      },
-      "response": null
+      }
     },
     {
       "method": "",
@@ -25,14 +21,10 @@
       "evidence": null,
       "durationMs": 0,
       "approxTokens": 0,
-      "meta": {
-        "protocol_version": "$PROTOCOL_VERSION"
-      },
       "error": {
         "code": "INVALID_REQUEST",
         "message": "Each batch call needs a method."
-      },
-      "response": null
+      }
     },
     {
       "method": "",
@@ -42,14 +34,10 @@
       "evidence": null,
       "durationMs": 0,
       "approxTokens": 0,
-      "meta": {
-        "protocol_version": "$PROTOCOL_VERSION"
-      },
       "error": {
         "code": "INVALID_REQUEST",
         "message": "Each batch call needs a method."
-      },
-      "response": null
+      }
     },
     {
       "method": "",
@@ -59,14 +47,10 @@
       "evidence": null,
       "durationMs": 0,
       "approxTokens": 0,
-      "meta": {
-        "protocol_version": "$PROTOCOL_VERSION"
-      },
       "error": {
         "code": "INVALID_REQUEST",
         "message": "Each batch call needs a method."
-      },
-      "response": null
+      }
     }
   ],
   "[{\"method\":\"no.method\"}]": [
@@ -78,14 +62,10 @@
       "evidence": null,
       "durationMs": 0,
       "approxTokens": 0,
-      "meta": {
-        "protocol_version": "$PROTOCOL_VERSION"
-      },
       "error": {
         "code": "INVALID_REQUEST",
         "message": "Unknown bridge method \"no.method\"."
-      },
-      "response": null
+      }
     }
   ],
   "[{\"method\":\"page.get_console\",\"params\":{\"clear\":true}}]": [
@@ -97,14 +77,10 @@
       "evidence": null,
       "durationMs": 0,
       "approxTokens": 0,
-      "meta": {
-        "protocol_version": "$PROTOCOL_VERSION"
-      },
       "error": {
         "code": "INVALID_REQUEST",
         "message": "page.get_console is not safe for batch execution. Call it sequentially."
-      },
-      "response": null
+      }
     }
   ],
   "[{\"method\":\"page.get_state\",\"extensionId\":\"\"}]": [
@@ -116,14 +92,10 @@
       "evidence": null,
       "durationMs": 0,
       "approxTokens": 0,
-      "meta": {
-        "protocol_version": "$PROTOCOL_VERSION"
-      },
       "error": {
         "code": "INVALID_REQUEST",
         "message": "extensionId must be a non-empty string."
-      },
-      "response": null
+      }
     }
   ],
   "[{\"method\":\"page.get_state\",\"params\":null}]": [
@@ -135,14 +107,10 @@
       "evidence": null,
       "durationMs": 0,
       "approxTokens": 0,
-      "meta": {
-        "protocol_version": "$PROTOCOL_VERSION"
-      },
       "error": {
         "code": "INVALID_REQUEST",
         "message": "Batch call params must be a JSON object."
-      },
-      "response": null
+      }
     }
   ],
   "[{\"method\":\"page.get_state\"},{\"method\":\"input.click\",\"params\":{}}]": [
@@ -154,14 +122,10 @@
       "evidence": null,
       "durationMs": 0,
       "approxTokens": 0,
-      "meta": {
-        "protocol_version": "$PROTOCOL_VERSION"
-      },
       "error": {
         "code": "INVALID_REQUEST",
         "message": "Batch was not executed because another call failed validation."
-      },
-      "response": null
+      }
     },
     {
       "method": "input.click",
@@ -171,14 +135,10 @@
       "evidence": null,
       "durationMs": 0,
       "approxTokens": 0,
-      "meta": {
-        "protocol_version": "$PROTOCOL_VERSION"
-      },
       "error": {
         "code": "INVALID_REQUEST",
         "message": "input.click is not safe for batch execution. Call it sequentially."
-      },
-      "response": null
+      }
     }
   ],
   "[{\"method\":\"sensitive.read\"}]": [
@@ -190,14 +150,10 @@
       "evidence": null,
       "durationMs": 0,
       "approxTokens": 0,
-      "meta": {
-        "protocol_version": "$PROTOCOL_VERSION"
-      },
       "error": {
         "code": "INVALID_REQUEST",
         "message": "sensitive.read is never allowed in batch execution. Call it sequentially."
-      },
-      "response": null
+      }
     }
   ]
 }

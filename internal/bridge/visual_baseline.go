@@ -55,7 +55,7 @@ func (d *daemon) prepareVisualRequest(p *peer, request, params object, candidate
 		return candidates, false
 	}
 	var input protocol.VisualBaselineCompareParams
-	if json.Unmarshal(value(params), &input) != nil || !visualIDPattern.MatchString(input.BaselineId) {
+	if json.Unmarshal(value(params), &input) != nil || !visualIDPattern.MatchString(input.BaselineId) || (input.Fallback.Set && !input.Fallback.Value.Valid()) {
 		d.localResponse(p, request, failure(id, "INVALID_REQUEST", "Invalid visual baseline parameters."))
 		return nil, true
 	}
@@ -186,13 +186,33 @@ func visualContextRect(changed, bounds image.Rectangle, frames ...protocol.Visua
 	return result
 }
 
-func compareVisual(baseline *visualBaseline, frame protocol.VisualCaptureFrame, pixels *image.NRGBA, includeBefore bool) (protocol.VisualBaselineCompareResult, error) {
+type visualCompareOptions struct {
+	includeBefore   bool
+	fallbackCurrent bool
+}
+
+func visualRect(rect image.Rectangle) protocol.VisualRect {
+	return protocol.VisualRect{X: float64(rect.Min.X), Y: float64(rect.Min.Y), Width: float64(rect.Dx()), Height: float64(rect.Dy())}
+}
+
+// A suppressed diff is a successful observation, not an error or an invitation
+// to retry. Preserve exact counts while avoiding PNG encoding and image delivery.
+func suppressVisualDiff(result *protocol.VisualBaselineCompareResult, reason string) {
+	result.Status, result.Strategy, result.Reason = "diff_not_useful", "none", reason
+	result.Images = []protocol.VisualEvidenceImage{}
+	result.Guidance = "A useful compact visual diff is unavailable; no images were returned and the reference was not advanced. Inspect DOM/state or choose a narrower complete component. Only if a full current view is needed, explicitly request fallback=current or a scoped screenshot. Do not repeat an action or poll this same unhelpful diff. Pixel differences do not verify application success."
+}
+
+func compareVisual(baseline *visualBaseline, frame protocol.VisualCaptureFrame, pixels *image.NRGBA, options visualCompareOptions) (protocol.VisualBaselineCompareResult, error) {
 	bounds := pixels.Bounds()
-	result := protocol.VisualBaselineCompareResult{BeforeScope: baseline.frame.Scope, AfterScope: frame.Scope, Dimensions: protocol.VisualBaselineCompareResultDimensions{Width: float64(bounds.Dx()), Height: float64(bounds.Dy())}, Images: []protocol.VisualEvidenceImage{}, Strategy: "none", Reason: "unchanged", Guidance: "Visual evidence is not proof of action success. Inspect application postconditions. Crops may omit context; use a complete scoped screenshot when meaning is unclear."}
+	result := protocol.VisualBaselineCompareResult{BeforeScope: baseline.frame.Scope, AfterScope: frame.Scope, Dimensions: protocol.VisualBaselineCompareResultDimensions{Width: float64(bounds.Dx()), Height: float64(bounds.Dy())}, Images: []protocol.VisualEvidenceImage{}, Status: "unchanged", Strategy: "none", Reason: "unchanged", Guidance: "No visible pixels changed in this scope. This does not verify application success or readiness."}
 	result.Comparable = bytes.Equal(value(baseline.frame.Scope), value(frame.Scope)) && baseline.pixels.Bounds() == bounds
 	if !result.Comparable {
-		result.Strategy, result.Reason, result.RequiresNewBaseline = "full", "capture_geometry_changed", true
-		includeBefore = false // Different coordinate frames must not be presented as a pixel comparison.
+		result.Status, result.Reason, result.RequiresNewBaseline = "not_comparable", "capture_geometry_changed", true
+		result.Guidance = "The capture coordinate frame changed, so a pixel diff is not meaningful. No images were returned. The old handle is discarded; inspect current state and create a new reference. Request fallback=current only when a full current scoped image is needed."
+		if !options.fallbackCurrent {
+			return result, nil
+		}
 	} else {
 		changed, count := visualChanges(baseline.pixels, pixels)
 		result.Equal = protocol.Nullable[bool]{Value: count == 0, Valid: true}
@@ -201,34 +221,64 @@ func compareVisual(baseline *visualBaseline, frame protocol.VisualCaptureFrame, 
 		if count == 0 {
 			return result, nil
 		}
+		result.ChangedRect = protocol.Nullable[protocol.VisualRect]{Value: visualRect(changed), Valid: true}
 		crop := visualContextRect(changed, bounds, baseline.frame, frame)
+		area := float64(bounds.Dx() * bounds.Dy())
+		result.CropAreaRatio = protocol.Nullable[float64]{Value: float64(crop.Dx()*crop.Dy()) / area, Valid: true}
 		factor := 1
-		if includeBefore {
+		if options.includeBefore {
 			factor = 2
 		}
-		if crop.Dx()*crop.Dy()*factor < bounds.Dx()*bounds.Dy()/2 {
-			result.Strategy, result.Reason = "crop", "localized_change"
-			bounds = crop
+		if result.ChangedPixelRatio.Value < 0.35 && result.CropAreaRatio.Value*float64(factor) < 0.5 {
+			result.Status, result.Strategy, result.Reason = "changed", "crop", "localized_change"
+			result.Guidance = "Crops preserve changed pixels and bounded component context. Inspect a complete scoped view if meaning is unclear. Visual evidence is not proof of application success."
+			encodedBytes := 0
+			if options.includeBefore {
+				before, size, err := visualEvidence(baseline.pixels, crop, "before")
+				if err != nil {
+					return result, err
+				}
+				result.Images, encodedBytes = append(result.Images, before), size
+			}
+			after, size, err := visualEvidence(pixels, crop, "after")
+			if err != nil {
+				return result, err
+			}
+			if encodedBytes+size <= protocol.ScreenshotMaxInlineBytes {
+				result.Images = append(result.Images, after)
+				return result, nil
+			}
+			suppressVisualDiff(&result, "evidence_too_large")
 		} else {
-			result.Strategy, result.Reason = "full", "context_or_change_too_large"
+			reason := "context_too_large"
+			if result.ChangedPixelRatio.Value >= 0.35 {
+				reason = "too_different"
+			} else if float64(changed.Dx()*changed.Dy()*factor)/area >= 0.5 {
+				reason = "changes_too_spread_out"
+			}
+			suppressVisualDiff(&result, reason)
+		}
+		if !options.fallbackCurrent {
+			return result, nil
 		}
 	}
-	encodedBytes := 0
-	if includeBefore {
-		before, size, err := visualEvidence(baseline.pixels, bounds, "before")
-		if err != nil {
-			return result, err
-		}
-		result.Images, encodedBytes = append(result.Images, before), size
-	}
+	// Full-frame evidence is explicit and current-only, never an automatic pair.
 	after, size, err := visualEvidence(pixels, bounds, "after")
 	if err != nil {
 		return result, err
 	}
-	if encodedBytes+size > protocol.ScreenshotMaxInlineBytes {
-		return result, errors.New("visual evidence exceeds inline limit; narrow the scope or set includeBefore=false")
+	if size > protocol.ScreenshotMaxInlineBytes {
+		if result.Comparable {
+			suppressVisualDiff(&result, "evidence_too_large")
+		}
+		result.Guidance = "The requested current image exceeds the inline limit. No images were returned. Capture a smaller scope or use normal screenshot artifact delivery. Do not repeat the application action."
+		return result, nil
 	}
-	result.Images = append(result.Images, after)
+	result.Strategy, result.Images = "full", []protocol.VisualEvidenceImage{after}
+	result.Guidance = "A full current scoped image was explicitly requested because a compact diff is unavailable. This is after-only evidence, not a before/after diff or proof of success."
+	if result.RequiresNewBaseline {
+		result.Guidance += " The old handle is discarded; create a new reference before comparing again."
+	}
 	return result, nil
 }
 
@@ -241,7 +291,10 @@ func (d *daemon) visualResponse(p *peer, pending *pendingRequest, response objec
 		frame, pixels, err := decodeVisualFrame(response["result"])
 		var compared protocol.VisualBaselineCompareResult
 		if err == nil && baseline != nil && frame.Scope.DocumentId == baseline.frame.Scope.DocumentId {
-			compared, err = compareVisual(baseline, frame, pixels, pending.params["includeBefore"] == nil || pending.params.boolean("includeBefore"))
+			compared, err = compareVisual(baseline, frame, pixels, visualCompareOptions{
+				includeBefore:   pending.params["includeBefore"] == nil || pending.params.boolean("includeBefore"),
+				fallbackCurrent: pending.params.text("fallback") == "current",
+			})
 		}
 		return func() {
 			if d.pending[id] != pending {
@@ -297,7 +350,7 @@ func (d *daemon) visualResponse(p *peer, pending *pendingRequest, response objec
 			compared.BaselineId = pending.baselineID
 			if compared.RequiresNewBaseline {
 				delete(d.baselines.visual, pending.baselineID)
-			} else if pending.params.boolean("advance") {
+			} else if pending.params.boolean("advance") && (compared.Status == "unchanged" || len(compared.Images) > 0) {
 				updated := *baseline
 				updated.frame, updated.pixels = frame, pixels
 				d.baselines.visual[pending.baselineID] = &updated

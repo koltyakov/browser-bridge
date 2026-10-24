@@ -15,8 +15,8 @@ type BatchItem = {
   method: string;
   ok: boolean;
   summary: string;
-  error: { code: string; message: string } | null;
-  response: unknown;
+  error?: { code: string; message: string };
+  response?: unknown;
 };
 
 async function runCli(args: string[], env: NodeJS.ProcessEnv): Promise<ProcessResult> {
@@ -77,6 +77,12 @@ test(
         items.every((item) => item.ok),
         `expected all batch items to succeed: ${cliResult.stdout}`
       );
+      // Items carry evidence once; size triples and null errors are omitted.
+      for (const item of items) {
+        for (const key of ['error', 'transportBytes', 'summaryTokens']) {
+          assert.equal(key in item, false, `${item.method} kept ${key}`);
+        }
+      }
       assert.deepEqual(bridgeServer.requests.map((request) => request.method).sort(), [
         'dom.query',
         'page.get_state',
