@@ -279,7 +279,10 @@ export function getResponseDiagnostics(
     ...estimate,
     costClass: getCostClass(estimate.approxTokens),
     textCostClass: getCostClass(estimate.textApproxTokens),
-    debuggerBacked: isDebuggerBackedMethod(method),
+    debuggerBacked:
+      typeof response.meta?.debugger_backed === 'boolean'
+        ? response.meta.debugger_backed
+        : isDebuggerBackedMethod(method),
   };
 }
 

@@ -302,6 +302,9 @@ export async function handleTabBoundRequest(
     if (staleOutcome) dependencies.recordStaleRecovery?.(staleOutcome, request.method);
     return createSuccess(request.id, markInputExecution(response, autoSelection, guarded), {
       method: request.method,
+      ...(request.method === 'dom.get_accessibility_tree' && payload.source === 'dom'
+        ? { debugger_backed: false }
+        : {}),
       ...(guarded ? { debugger_backed: true } : {}),
       ...(staleOutcome ? { stale_recovery: staleOutcome } : {}),
     });

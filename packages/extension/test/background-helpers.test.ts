@@ -340,6 +340,17 @@ test('getResponseDiagnostics marks debugger-backed heavy responses', () => {
   assert.equal(diagnostics.costClass, 'heavy');
 });
 
+test('getResponseDiagnostics honors actual execution metadata over method defaults', () => {
+  for (const [method, debuggerBacked] of [
+    ['dom.get_accessibility_tree', false],
+    ['input.click', true],
+  ] as const) {
+    const response = successResponse('req_actual_execution', { count: 1 });
+    response.meta.debugger_backed = debuggerBacked;
+    assert.equal(getResponseDiagnostics(method, response).debuggerBacked, debuggerBacked);
+  }
+});
+
 test('enforceTokenBudget truncates oversized responses deterministically', () => {
   const result: NodesResult = {
     nodes: Array.from({ length: 12 }, (_, index) => ({

@@ -422,6 +422,9 @@ their host. Bounded so pathological pages cannot stall the content script. */
     const stack: Array<{ children: ArrayLike<Element>; index: number }> = [
       { children: root.children ?? [], index: 0 },
     ];
+    const rootShadow =
+      'nodeType' in root && root.nodeType === 1 ? getShadowRoot(root as Element) : null;
+    if (rootShadow?.children?.length) stack.push({ children: rootShadow.children, index: 0 });
     let yielded = 0;
     while (stack.length) {
       const frame = stack[stack.length - 1];
@@ -440,17 +443,18 @@ their host. Bounded so pathological pages cannot stall the content script. */
     }
   }
 
-  /** Collect every shadow root reachable from a root, including nested ones. */
-  function collectShadowRoots(root: ParentNode = document): ShadowRoot[] {
-    const roots: ShadowRoot[] = [];
+  /** Lazily visit shadow roots so first-match reads stop before unrelated trees. */
+  function* walkShadowRoots(root: ParentNode = document): Generator<ShadowRoot> {
     let scanned = 0;
     const started = performance.now();
+    const rootShadow =
+      'nodeType' in root && root.nodeType === 1 ? getShadowRoot(root as Element) : null;
+    if (rootShadow) yield rootShadow;
     for (const element of walkElementsDeep(root, DEEP_SCAN_LIMIT + 1)) {
       if (++scanned > DEEP_SCAN_LIMIT || performance.now() - started > 100) throw scanLimitError();
       const shadowRoot = getShadowRoot(element);
-      if (shadowRoot) roots.push(shadowRoot);
+      if (shadowRoot) yield shadowRoot;
     }
-    return roots;
   }
 
   /** `querySelectorAll` that also searches open (and, for the extension, closed)
@@ -462,7 +466,7 @@ shadow roots. Light-DOM matches come first. */
     root.querySelector(selector);
     if (selector.includes(':scope') || !('children' in root)) {
       const results: Element[] = [];
-      for (const scope of [root, ...collectShadowRoots(root)]) {
+      for (const scope of [root, ...walkShadowRoots(root)]) {
         const matches = scope.querySelectorAll(selector);
         if (matches.length + results.length > DEEP_SCAN_LIMIT) throw scanLimitError();
         for (const element of matches) results.push(element);
@@ -490,7 +494,7 @@ shadow roots. Light-DOM matches come first. */
   function querySelectorDeep(selector: string, root: ParentNode = document): Element | null {
     const light = root.querySelector(selector);
     if (light || !('children' in root)) return light;
-    for (const shadowRoot of collectShadowRoots(root)) {
+    for (const shadowRoot of walkShadowRoots(root)) {
       const match = shadowRoot.querySelector(selector);
       if (match) return match;
     }

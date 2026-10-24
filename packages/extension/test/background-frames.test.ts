@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { handleTabBoundRequest } from '../src/background-tab-bound.js';
+import { enrichBridgeResponse } from '../src/background-action-log.js';
 import { createFailure, createRequest } from '../../../protocol/src/index.js';
 import type { BridgeMethod, BridgeRequest } from '../../../protocol/src/types.js';
 
@@ -143,11 +144,11 @@ test('finders fan out to child frames when the top frame has no match', async ()
 
 test('the DOM outline includes iframe sections', async () => {
   const { dependencies } = createDependencies();
-  const response = await handleTabBoundRequest(
-    request('dom.get_accessibility_tree', { source: 'dom' }),
-    dependencies as never
-  );
+  const outlineRequest = request('dom.get_accessibility_tree', { source: 'dom' });
+  const response = await handleTabBoundRequest(outlineRequest, dependencies as never);
   assert.equal(response.ok, true);
+  assert.equal(response.meta.debugger_backed, false);
+  assert.equal(enrichBridgeResponse(outlineRequest, response).meta.debugger_backed, false);
   if (response.ok) {
     assert.equal(
       (response.result as { outline: string }).outline,

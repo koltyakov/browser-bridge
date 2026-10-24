@@ -101,7 +101,7 @@ func mcpBoundValue(raw json.RawMessage, maxEntries, maxCharacters, maxString int
 		}
 		if obj, err := decodeObject(raw); err == nil {
 			out := object{}
-			keys := cliKeys(raw)
+			keys := cliObjectKeys(raw)
 			if len(keys) > 100 {
 				keys = keys[:100]
 				state.truncated = true
@@ -111,7 +111,12 @@ func mcpBoundValue(raw json.RawMessage, maxEntries, maxCharacters, maxString int
 					state.truncated = true
 					break
 				}
-				state.characters += mcpStringLength(k)
+				keyLength := mcpStringLength(k)
+				if keyLength > maxCharacters-state.characters {
+					state.truncated = true
+					continue
+				}
+				state.characters += keyLength
 				out[k] = visit(obj[k], depth+1)
 			}
 			return value(out)

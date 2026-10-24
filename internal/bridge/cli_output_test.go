@@ -180,3 +180,39 @@ func TestCLISummaryDOMQueryReportsOtherMatches(t *testing.T) {
 		t.Fatalf("single match should not mention other matches: %s", text)
 	}
 }
+
+func TestCLIJSONPreservesObjectEnumeration(t *testing.T) {
+	for _, tc := range []struct {
+		name, raw, want string
+		sanitize        bool
+	}{
+		{"numeric keys", `{"z":0,"10":10,"2":2,"01":1,"4294967295":3,"0":4}`, `{"0":4,"2":2,"10":10,"z":0,"01":1,"4294967295":3}`, false},
+		{"duplicate keys", `{"z":1,"a":2,"z":3}`, `{"z":3,"a":2}`, false},
+		{"nested sanitized values", `{"outer":{"b":"\u001b[31mred\u001b[0m","1":{"z":1,"z":2}},"a":[{"2":2,"0":0}]}`, `{"outer":{"1":{"z":2},"b":"red"},"a":[{"0":0,"2":2}]}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := string(cliJSON(json.RawMessage(tc.raw), tc.sanitize)); got != tc.want {
+				t.Fatalf("got %s, want %s", got, tc.want)
+			}
+		})
+	}
+	for _, raw := range []string{`{"a":1`, `true`, `null`} {
+		if keys := cliKeys(json.RawMessage(raw)); len(keys) != 0 {
+			t.Fatalf("invalid object %s returned keys: %v", raw, keys)
+		}
+	}
+}
+
+func BenchmarkCLIJSONNestedResponse(b *testing.B) {
+	nodes := make([]object, 25)
+	for i := range nodes {
+		nodes[i] = object{"elementRef": value("el_fixture"), "tag": value("button"), "attrs": value(object{"id": value("save"), "class": value("button primary")}), "textExcerpt": value("Save changes")}
+	}
+	raw := value(object{"ok": value(true), "result": value(object{"nodes": value(nodes), "count": value(len(nodes))})})
+	b.ReportAllocs()
+	b.SetBytes(int64(len(raw)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = cliJSON(raw, true)
+	}
+}
