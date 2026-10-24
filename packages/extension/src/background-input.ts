@@ -33,6 +33,16 @@ const CDP_INPUT_METHODS = new Set([
   'input.touch',
 ]);
 
+/** Physical releases must survive cancellation and dialog interruption. */
+export function isNativeInputRelease(method: string, params: Record<string, unknown>): boolean {
+  return (
+    (method === 'Input.dispatchKeyEvent' && params.type === 'keyUp') ||
+    (method === 'Input.dispatchMouseEvent' && params.type === 'mouseReleased') ||
+    (method === 'Input.dispatchTouchEvent' &&
+      (params.type === 'touchEnd' || params.type === 'touchCancel'))
+  );
+}
+
 export type NativeTouchContact = {
   id: number;
   start: { x: number; y: number };
@@ -68,8 +78,7 @@ export function createBackgroundInputController(dependencies: {
     sendCommand: (target, method, params) => {
       // Always allow physical releases after interruption so a held key, mouse,
       // or touch contact cannot be left pressed.
-      if (!['keyUp', 'mouseReleased', 'touchEnd', 'touchCancel'].includes(String(params.type)))
-        guards.get(target)?.();
+      if (!isNativeInputRelease(method, params)) guards.get(target)?.();
       return originalSend(target, method, params);
     },
   };

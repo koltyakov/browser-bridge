@@ -51,6 +51,17 @@ type TabMessageCall = {
   message: Record<string, unknown>;
 };
 
+function withoutContentLifetimes(calls: TabMessageCall[]): TabMessageCall[] {
+  return calls.map((call) => {
+    if (call.message.type !== 'bridge.execute') return call;
+    const { requestId, deadlineMs, ...message } = call.message;
+    assert.equal(typeof requestId, 'string');
+    assert.equal(typeof deadlineMs, 'number');
+    assert(Number.isFinite(deadlineMs));
+    return { ...call, message };
+  });
+}
+
 type ChromeWithTabEvents = {
   tabs: {
     onUpdated: FakeChromeEvent;
@@ -841,7 +852,7 @@ test('background dispatch routes page.get_state through the tab-bound content sc
       ],
     },
   ]);
-  assert.deepEqual(sendMessageCalls, [
+  assert.deepEqual(withoutContentLifetimes(sendMessageCalls), [
     {
       tabId: 41,
       message: { type: 'bridge.ping' },
@@ -1104,7 +1115,7 @@ test('background dispatch reinjects and retries when content script receiver dis
       ],
     },
   ]);
-  assert.deepEqual(sendMessageCalls, [
+  assert.deepEqual(withoutContentLifetimes(sendMessageCalls), [
     {
       tabId: 42,
       message: { type: 'bridge.ping' },
@@ -1984,6 +1995,7 @@ for (const scenario of [
     let openDialog = () => {};
     let closeDialog = () => {};
     let actions = 0;
+    let releases = 0;
     const { loaded, activeTab } = await loadEnabledDispatchBackground({
       queryLabel: `test-dialog-guard-${scenario.method}`,
       chromeOverrides: {
@@ -1998,10 +2010,18 @@ for (const scenario of [
           },
         },
         debugger: {
-          async sendCommand(_target: chrome.debugger.Debuggee, method: string) {
+          async sendCommand(
+            _target: chrome.debugger.Debuggee,
+            method: string,
+            params: Record<string, unknown> = {}
+          ) {
             if (method === 'Page.handleJavaScriptDialog') {
               closeDialog();
               finishCommand({});
+              return {};
+            }
+            if (method === 'Input.dispatchKeyEvent' && params.type === 'keyUp') {
+              releases++;
               return {};
             }
             if (method === 'Runtime.evaluate' || method === 'Input.dispatchKeyEvent') {
@@ -2048,6 +2068,7 @@ for (const scenario of [
     );
     assert.equal(accepted.ok, true);
     assert.equal(actions, 1, 'the blocked mutation must never be replayed or continued');
+    assert.equal(releases, scenario.method === 'input.press_key' ? 1 : 0);
   });
 }
 
@@ -2985,7 +3006,7 @@ test('background dispatch captures full-page screenshots after reading page dime
   if (!response.ok) {
     assert.fail(response.error.message);
   }
-  assert.deepEqual(sendMessageCalls, [
+  assert.deepEqual(withoutContentLifetimes(sendMessageCalls), [
     {
       tabId: 81,
       message: { type: 'bridge.ping' },
@@ -3157,7 +3178,7 @@ test('background dispatch retries stale element screenshots before capturing', a
     assert.fail(response.error.message);
   }
   assert.equal(elementAttemptCount, 2);
-  assert.deepEqual(sendMessageCalls, [
+  assert.deepEqual(withoutContentLifetimes(sendMessageCalls), [
     {
       tabId: 81,
       message: { type: 'bridge.ping' },

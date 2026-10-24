@@ -54,23 +54,18 @@ class FakeRequest {
   }
 }
 
-class FakeXMLHttpRequest {
-  listeners: Map<string, () => void>;
+class FakeXMLHttpRequest extends EventTarget {
   status: number;
   responseHeaderValue: string | null;
   openArgs: unknown[] | null;
   sendArgs: unknown[] | null;
 
   constructor() {
-    this.listeners = new Map();
+    super();
     this.status = 0;
     this.responseHeaderValue = null;
     this.openArgs = null;
     this.sendArgs = null;
-  }
-
-  addEventListener(type: string, listener: () => void) {
-    this.listeners.set(type, listener);
   }
 
   open(method: string, url: string | URL, ...rest: unknown[]) {
@@ -88,7 +83,7 @@ class FakeXMLHttpRequest {
   }
 
   dispatch(type: string) {
-    this.listeners.get(type)?.();
+    this.dispatchEvent(new Event(type));
   }
 }
 
@@ -417,6 +412,51 @@ test('ensureNetworkInterceptor records xhr entries with captured and default met
     assert.equal(mutableGlobal.__bb_network_dropped, 2);
   } finally {
     Date.now = originalDateNow;
+    restoreGlobalDescriptors(snapshot);
+  }
+});
+
+test('reused XHR objects record each completion once and discard failed-send listeners', async () => {
+  const snapshot = snapshotGlobalDescriptors();
+  class ReusedXMLHttpRequest extends FakeXMLHttpRequest {
+    failSend = false;
+    override send(...args: unknown[]) {
+      if (this.failSend) throw new Error('send failed');
+      return super.send(...args);
+    }
+  }
+  Object.defineProperty(globalThis, 'XMLHttpRequest', {
+    configurable: true,
+    writable: true,
+    value: ReusedXMLHttpRequest,
+  });
+  try {
+    const injection = await captureInstallInjection();
+    const install = injection.func as () => void;
+    install();
+    const page = globalThis as unknown as InstalledNetworkGlobal;
+    const xhr = new ReusedXMLHttpRequest();
+    xhr.failSend = true;
+    xhr.open('POST', 'https://example.test/failed');
+    assert.throws(() => xhr.send(), /send failed/);
+    xhr.failSend = false;
+    for (let index = 0; index < 3; index++) {
+      xhr.open('GET', `https://example.test/request-${index}`);
+      xhr.status = 200 + index;
+      xhr.send();
+      xhr.dispatch('loadend');
+    }
+    xhr.dispatch('loadend');
+    const entries = page.__bb_network_buffer as Array<NetworkEntry & { sequence: number }>;
+    assert.deepEqual(
+      entries.map(({ url, status, sequence }) => ({ url, status, sequence })),
+      [0, 1, 2].map((index) => ({
+        url: `https://example.test/request-${index}`,
+        status: 200 + index,
+        sequence: index + 1,
+      }))
+    );
+  } finally {
     restoreGlobalDescriptors(snapshot);
   }
 });

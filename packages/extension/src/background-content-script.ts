@@ -1,4 +1,9 @@
-import { BridgeError, ERROR_CODES } from '../../../protocol/src/index.js';
+import {
+  BridgeError,
+  ERROR_CODES,
+  METHOD_SET,
+  isBatchSafeBridgeCall,
+} from '../../../protocol/src/index.js';
 import { requestLifetimes } from './background-request-lifetime.js';
 
 export type ContentScriptBridgeDeps = {
@@ -169,32 +174,82 @@ emit navigation-kind events; the background re-reads the authoritative URL. */
     timeoutMs: number
   ): Promise<unknown> {
     trackPatchFrame(tabId, 0, message);
+    return sendMessageWithTimeout(tabId, 0, message, timeoutMs);
+  }
+
+  async function sendMessageWithTimeout(
+    tabId: number,
+    frameId: number,
+    message: Record<string, unknown>,
+    timeoutMs: number
+  ): Promise<unknown> {
+    const executable = message.type === 'bridge.execute';
+    const requestId =
+      typeof message.requestId === 'string'
+        ? message.requestId
+        : executable
+          ? crypto.randomUUID()
+          : '';
+    const deadlineMs = Math.min(
+      Date.now() + timeoutMs,
+      typeof message.deadlineMs === 'number' && Number.isFinite(message.deadlineMs)
+        ? message.deadlineMs
+        : Infinity
+    );
+    const payload = executable ? { ...message, requestId, deadlineMs } : message;
+    const method = String(
+      message.method ?? ''
+    ) as import('../../../protocol/src/types.js').BridgeMethod;
+    const params =
+      message.params && typeof message.params === 'object'
+        ? (message.params as Record<string, unknown>)
+        : {};
+    const awaitSettlement =
+      executable && (!METHOD_SET.has(method) || !isBatchSafeBridgeCall(method, params));
+    const assertActive = requestLifetimes.guard(requestId, deadlineMs);
+    assertActive();
+    let canceled = false;
     const cancel = () => {
+      if (!executable || canceled) return;
+      canceled = true;
       void chromeObj.tabs
-        .sendMessage(tabId, { type: 'bridge.cancel', requestId: message.requestId }, { frameId: 0 })
+        .sendMessage(tabId, { type: 'bridge.cancel', requestId }, { frameId })
         .catch(() => {});
     };
-    const untrack =
-      typeof message.requestId === 'string'
-        ? requestLifetimes.track(message.requestId, cancel)
-        : () => {};
+    const untrack = requestLifetimes.track(requestId, cancel);
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
     const timeout = new Promise((_, reject) => {
       timeoutId = setTimeout(
-        () =>
-          reject(new Error(`Timed out waiting for content script response after ${timeoutMs}ms.`)),
-        timeoutMs
+        () => {
+          timedOut = true;
+          cancel();
+          reject(
+            new BridgeError(
+              ERROR_CODES.TIMEOUT,
+              `Timed out waiting for ${frameId === 0 ? 'content script response' : `frame ${frameId}`} after ${timeoutMs}ms.`,
+              { outcomeUncertain: awaitSettlement }
+            )
+          );
+        },
+        Math.max(0, deadlineMs - Date.now())
       );
     });
+    // Keep cancellation attached to the real operation, not the timeout race.
+    const operation = Promise.resolve()
+      .then(() => {
+        assertActive();
+        return chromeObj.tabs.sendMessage(tabId, payload, { frameId });
+      })
+      .finally(untrack);
     try {
-      // Pin the top frame: once child frames host content scripts, an
-      // unscoped sendMessage would race every frame for the first reply.
-      return await Promise.race([
-        chromeObj.tabs.sendMessage(tabId, message, { frameId: 0 }),
-        timeout,
-      ]);
+      return await Promise.race([operation, timeout]);
+    } catch (error) {
+      // A caller timing out does not mean a mutation has stopped. Hold its
+      // debugger/scheduler turn until the original content command settles.
+      if (timedOut && awaitSettlement) await operation.catch(() => {});
+      throw error;
     } finally {
-      untrack();
       clearTimeout(timeoutId);
     }
   }
@@ -275,29 +330,7 @@ frames, which `<all_urls>` host access permits). */
   ): Promise<unknown> {
     if (frameId === 0) return sendTabMessage(tabId, message, timeoutMs);
     trackPatchFrame(tabId, frameId, message);
-    const cancel = () => {
-      void chromeObj.tabs
-        .sendMessage(tabId, { type: 'bridge.cancel', requestId: message.requestId }, { frameId })
-        .catch(() => {});
-    };
-    const untrack =
-      typeof message.requestId === 'string'
-        ? requestLifetimes.track(message.requestId, cancel)
-        : () => {};
-
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise((_, reject) => {
-      timeoutId = setTimeout(
-        () => reject(new Error(`Timed out waiting for frame ${frameId} after ${timeoutMs}ms.`)),
-        timeoutMs
-      );
-    });
-    try {
-      return await Promise.race([chromeObj.tabs.sendMessage(tabId, message, { frameId }), timeout]);
-    } finally {
-      untrack();
-      clearTimeout(timeoutId);
-    }
+    return sendMessageWithTimeout(tabId, frameId, message, timeoutMs);
   }
 
   /** Ensure the content script is present on the target tab before issuing

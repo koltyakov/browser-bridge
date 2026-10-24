@@ -205,7 +205,7 @@ export async function ensureNetworkInterceptor(
           sequence: record.nextSequence++,
         };
         const startTime = performance.now();
-        this.addEventListener('loadend', () => {
+        const onLoadEnd = () => {
           entry.status = this.status;
           entry.duration = Math.round(performance.now() - startTime);
           const cl = this.getResponseHeader('content-length');
@@ -217,8 +217,14 @@ export async function ensureNetworkInterceptor(
             globalThis.__bb_network_dropped = record.dropped;
             buffer.splice(0, buffer.length - MAX);
           }
-        });
-        return originalSend.apply(this, args);
+        };
+        this.addEventListener('loadend', onLoadEnd, { once: true });
+        try {
+          return originalSend.apply(this, args);
+        } catch (error) {
+          this.removeEventListener('loadend', onLoadEnd);
+          throw error;
+        }
       };
       XMLHttpRequest.prototype.send = record.wrappedSend;
       record.enabled = true;
