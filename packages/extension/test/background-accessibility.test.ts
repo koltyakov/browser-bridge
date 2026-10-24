@@ -68,6 +68,52 @@ test('compact AX filtering promotes meaningful descendants through ignored and e
   assert.equal(tree.nodes[2]?.focusableAndEnabled, false);
 });
 
+test('compact AX filtering drops text fragments that repeat their parent name', () => {
+  const tree = buildAccessibilityTree(
+    [
+      { nodeId: 'root', role: { value: 'RootWebArea' }, childIds: ['heading', 'para'] },
+      {
+        nodeId: 'heading',
+        role: { value: 'heading' },
+        name: { value: 'Pricing' },
+        childIds: ['heading-text'],
+      },
+      {
+        nodeId: 'heading-text',
+        role: { value: 'StaticText' },
+        name: { value: 'Pricing' },
+        childIds: ['heading-box'],
+      },
+      { nodeId: 'heading-box', role: { value: 'InlineTextBox' }, name: { value: 'Pricing' } },
+      { nodeId: 'para', role: { value: 'paragraph' }, childIds: ['para-text', 'break'] },
+      {
+        nodeId: 'para-text',
+        role: { value: 'StaticText' },
+        name: { value: 'Plans start at $5' },
+        childIds: ['para-box'],
+      },
+      { nodeId: 'para-box', role: { value: 'InlineTextBox' }, name: { value: 'Plans start' } },
+      { nodeId: 'break', role: { value: 'LineBreak' }, name: { value: '\n' } },
+    ],
+    { compact: true, interactiveOnly: false, maxNodes: 10 }
+  );
+
+  assert.deepEqual(
+    tree.nodes.map((node) => node.nodeId),
+    ['root', 'heading', 'para-text']
+  );
+  assert.deepEqual(tree.nodes[0]?.childIds, ['heading', 'para-text']);
+
+  const full = buildAccessibilityTree(
+    [
+      { nodeId: 'text', role: { value: 'StaticText' }, name: { value: 'A' }, childIds: ['box'] },
+      { nodeId: 'box', role: { value: 'InlineTextBox' }, name: { value: 'A' } },
+    ],
+    { compact: false, interactiveOnly: false, maxNodes: 10 }
+  );
+  assert.equal(full.nodes.length, 2);
+});
+
 test('interactive-only AX filtering happens before maxNodes and excludes ignored controls', () => {
   const rawNodes: Array<Record<string, unknown>> = Array.from({ length: 20 }, (_, index) => ({
     nodeId: `text-${index}`,

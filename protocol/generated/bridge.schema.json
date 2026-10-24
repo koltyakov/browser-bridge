@@ -537,6 +537,9 @@
         },
         "configured": {
           "type": "boolean"
+        },
+        "stale": {
+          "type": "boolean"
         }
       },
       "required": [

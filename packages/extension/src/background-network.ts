@@ -9,6 +9,9 @@ export type NetworkInstrumentationRecord = {
   /** Highest sequence evicted from the bounded buffer, or -1. Evicting older
    * entries is routine; only evicting one at or after a cursor loses evidence. */
   evictedThrough: number;
+  /** Completed requests so far. Each buffered entry stores its position in
+   * this order, so a reader can ask for only what completed since its last read. */
+  completed: number;
   buffer: Array<{
     method: string;
     url: string;
@@ -18,6 +21,7 @@ export type NetworkInstrumentationRecord = {
     ts: number;
     size: number;
     sequence: number;
+    order?: number;
   }>;
   dropped: number;
   originalFetch: typeof globalThis.fetch;
@@ -33,7 +37,12 @@ export type NetworkCaptureCursor = {
   nextSequence: number;
   generation: number;
   evictedThrough?: number;
+  completed?: number;
 };
+
+/** Return only entries for requests started at or after `sequence` that
+ * completed after position `order`. */
+export type NetworkReadAfter = { sequence: number; order: number };
 
 export type ChromeWithScripting = {
   scripting: {
@@ -84,6 +93,7 @@ export async function ensureNetworkInterceptor(
           // could have evicted predates the next cursor taken from them.
           if (!Number.isSafeInteger(record.evictedThrough))
             record.evictedThrough = record.nextSequence - 1;
+          if (!Number.isSafeInteger(record.completed)) record.completed = 0;
           if (!record.enabled) {
             record.buffer.length = 0;
             record.dropped = 0;
@@ -113,6 +123,7 @@ export async function ensureNetworkInterceptor(
         ts: number;
         size: number;
         sequence: number;
+        order?: number;
       }> = [];
       const originalFetch = globalThis.fetch;
       const originalOpen = XMLHttpRequest.prototype.open;
@@ -124,6 +135,7 @@ export async function ensureNetworkInterceptor(
         nextSequence: 0,
         generation: 0,
         evictedThrough: -1,
+        completed: 0,
         buffer,
         dropped: 0,
         originalFetch,
@@ -168,6 +180,7 @@ export async function ensureNetworkInterceptor(
           ts: Date.now(),
           size: 0,
           sequence: record.nextSequence++,
+          order: 0,
         };
         const startTime = performance.now();
         try {
@@ -183,6 +196,7 @@ export async function ensureNetworkInterceptor(
           throw err;
         } finally {
           if (record.enabled) {
+            entry.order = ++record.completed;
             buffer.push(entry);
             if (buffer.length > MAX) {
               record.dropped += buffer.length - MAX;
@@ -219,6 +233,7 @@ export async function ensureNetworkInterceptor(
           ts: Date.now(),
           size: 0,
           sequence: record.nextSequence++,
+          order: 0,
         };
         const startTime = performance.now();
         const onLoadEnd = () => {
@@ -227,6 +242,7 @@ export async function ensureNetworkInterceptor(
           const cl = this.getResponseHeader('content-length');
           if (cl) entry.size = Number(cl);
           if (!record.enabled) return;
+          entry.order = ++record.completed;
           buffer.push(entry);
           if (buffer.length > MAX) {
             record.dropped += buffer.length - MAX;
@@ -292,7 +308,8 @@ export async function readNetworkBuffer(
   tabId: number,
   clear: boolean,
   chromeObj: ChromeWithScripting,
-  includeCursor = false
+  includeCursor = false,
+  after: NetworkReadAfter | null = null
 ): Promise<{
   entries: Array<{
     method: string;
@@ -313,7 +330,12 @@ export async function readNetworkBuffer(
   const results = await chromeObj.scripting.executeScript({
     target: { tabId },
     world: 'MAIN',
-    func: (shouldClear: boolean, recordKey: string, withCursor: boolean) => {
+    func: (
+      shouldClear: boolean,
+      recordKey: string,
+      withCursor: boolean,
+      readAfter?: NetworkReadAfter
+    ) => {
       const root = (globalThis as Record<string, unknown>)[recordKey];
       const record =
         root && typeof root === 'object'
@@ -336,6 +358,16 @@ export async function readNetworkBuffer(
       const boundedDropped =
         (typeof dropped === 'number' && Number.isFinite(dropped) && dropped >= 0 ? dropped : 0) +
         Math.max(0, buf.length - copy.length);
+      // A poller has already examined everything up to its last read. Entries
+      // without an order predate this build and are filtered by sequence only.
+      const entries = readAfter
+        ? copy.filter(
+            (entry) =>
+              typeof entry.sequence === 'number' &&
+              entry.sequence >= readAfter.sequence &&
+              !(typeof entry.order === 'number' && entry.order <= readAfter.order)
+          )
+        : copy;
       if (shouldClear) {
         buf.length = 0;
         if (record) record.dropped = 0;
@@ -344,7 +376,7 @@ export async function readNetworkBuffer(
         globalThis.__bb_network_dropped = 0;
       }
       return {
-        entries: copy,
+        entries,
         dropped: boundedDropped,
         ...(withCursor && record
           ? {
@@ -355,12 +387,16 @@ export async function readNetworkBuffer(
                 ...(Number.isSafeInteger(record.evictedThrough)
                   ? { evictedThrough: record.evictedThrough }
                   : {}),
+                ...(Number.isSafeInteger(record.completed) ? { completed: record.completed } : {}),
               },
             }
           : {}),
       };
     },
-    args: [clear, instrumentationKey, includeCursor],
+    // Ordinary reads keep their original argument list.
+    args: after
+      ? [clear, instrumentationKey, includeCursor, after]
+      : [clear, instrumentationKey, includeCursor],
   });
   const result = (
     results?.[0] as

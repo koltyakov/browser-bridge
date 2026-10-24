@@ -50,6 +50,7 @@ export type McpClientSetupState = {
   detected: boolean;
   configPath: string;
   configured: boolean;
+  stale?: boolean;
 };
 
 export type SkillInstallState = {
@@ -405,7 +406,7 @@ export function getMcpSetupCellState(
     return { kind: 'muted', text: '-' };
   }
 
-  if (entry.configured) {
+  if (entry.configured && !entry.stale) {
     return {
       kind: 'badge',
       label: 'Installed',

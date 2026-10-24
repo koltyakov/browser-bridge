@@ -461,8 +461,15 @@ registry at once. */
       if (element) {
         return element;
       }
+      throw createRegistryError('ELEMENT_NOT_FOUND', 'No element matched the target selector.', {
+        selector: target.selector,
+      });
     }
-    throw new Error('Target not found.');
+    throw createRegistryError(
+      'INVALID_REQUEST',
+      'target.elementRef or target.selector is required.',
+      {}
+    );
   }
 
   /** Resolve element-level read params from either a legacy top-level
@@ -476,7 +483,11 @@ registry at once. */
     if (params.target && typeof params.target === 'object') {
       return rememberElement(resolveTarget(params.target));
     }
-    throw new Error('Element target not found.');
+    throw createRegistryError(
+      'INVALID_REQUEST',
+      'elementRef or target is required. Pass a selector as target.selector.',
+      {}
+    );
   }
 
   let documentRevision = 0;

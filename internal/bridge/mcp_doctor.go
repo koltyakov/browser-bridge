@@ -181,12 +181,14 @@ func mcpDoctorMetrics(metrics object) object {
 	for _, key := range strings.Fields("uptimeMs activeAgents activeExtensions pendingRequests requestsProcessed requestsFailed avgResponseTimeMs") {
 		out[key] = value(mcpDoctorCount(metrics[key]))
 	}
-	out["recovery"] = value(normalizeRecovery(metrics.object("recovery"), "daemon"))
 	return out
 }
-func mcpDoctorRecovery(health, metrics object) object {
+
+// mcpDoctorRecovery reports daemon recovery once, under recovery.daemon, rather
+// than repeating the same snapshot inside metrics.
+func mcpDoctorRecovery(health, rawMetrics object) object {
 	recovery := health.object("recovery")
-	daemon := metrics.object("recovery")
+	daemon := normalizeRecovery(rawMetrics.object("recovery"), "daemon")
 	if daemon == nil {
 		daemon = normalizeRecovery(recovery.object("daemon"), "daemon")
 	}
@@ -222,7 +224,7 @@ func mcpDoctorSetup(status object, source string) object {
 	skills := counts(targets, []string{"detected", "installed", "managed", "updateAvailable"})
 	skills["updatesAvailable"] = skills["updateAvailable"]
 	delete(skills, "updateAvailable")
-	return object{"source": value(source), "scope": status["scope"], "mcp": value(counts(clients, []string{"detected", "configured"})), "skills": value(skills)}
+	return object{"source": value(source), "scope": status["scope"], "mcp": value(counts(clients, []string{"detected", "configured", "stale"})), "skills": value(skills)}
 }
 
 var mcpDoctorCauses = []struct {

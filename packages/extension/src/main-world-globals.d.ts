@@ -14,6 +14,9 @@ interface NetworkEntry {
   type: string;
   ts: number;
   size: number;
+  /** Set by the current interceptor; absent from page-replaced buffers. */
+  sequence?: number;
+  order?: number;
 }
 
 interface ConsoleEntry {

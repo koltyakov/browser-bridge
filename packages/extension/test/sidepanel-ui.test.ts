@@ -1232,7 +1232,7 @@ test('agent tab card appears only for sibling work and examples stay hidden duri
   });
 });
 
-test('sidepanel UI shows the global host CLI and daemon version', async (t) => {
+test('sidepanel UI shows the global host CLI and harness version', async (t) => {
   const sidepanelHtml = await readFile(SIDEPANEL_HTML_URL, 'utf8');
   const savedChrome = Object.prototype.hasOwnProperty.call(globalThis, 'chrome')
     ? globalThis.chrome
@@ -1277,7 +1277,7 @@ test('sidepanel UI shows the global host CLI and daemon version', async (t) => {
     assert.equal(document.getElementById('setup-host-version'), null);
     assert.equal(
       document.getElementById('extension-version')?.textContent,
-      'Extension: v1.2.9\nDaemon: v1.2.0'
+      'Extension: v1.2.9\nHarness: v1.2.0'
     );
     assert.doesNotMatch(
       document.getElementById('installation-section')?.textContent ?? '',

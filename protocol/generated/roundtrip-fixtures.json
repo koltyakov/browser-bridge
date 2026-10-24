@@ -96,6 +96,7 @@
             "configPath": "wire-✓",
             "configExists": false,
             "configured": false,
+            "stale": false,
             "future_extension": {
               "arbitrary": [
                 null,
@@ -411,6 +412,7 @@
           "configPath": "wire-✓",
           "configExists": false,
           "configured": false,
+          "stale": false,
           "future_extension": {
             "arbitrary": [
               null,
@@ -479,6 +481,7 @@
       "configPath": "wire-✓",
       "configExists": false,
       "configured": false,
+      "stale": false,
       "future_extension": {
         "arbitrary": [
           null,

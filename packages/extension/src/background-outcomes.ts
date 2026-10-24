@@ -15,7 +15,10 @@ export type OutcomeNetworkSnapshot = {
 export type OutcomeDependencies = {
   dispatch: (request: BridgeRequest) => Promise<BridgeResponse>;
   armNetwork?: (tabId: number) => Promise<void>;
-  readNetwork?: (tabId: number) => Promise<OutcomeNetworkSnapshot>;
+  readNetwork?: (
+    tabId: number,
+    after?: import('./background-network.js').NetworkReadAfter
+  ) => Promise<OutcomeNetworkSnapshot>;
 };
 
 /** Network evidence is latched while steps execute. DOM and URL conditions are
@@ -76,6 +79,9 @@ export async function armPerformOutcomes(
     const readNetwork = dependencies.readNetwork;
     const results = new Map<number, Result>();
     const pending = new Map(network.map((entry) => [entry.index, entry.condition]));
+    // Entries completed before arming cannot match. After each poll, ask only
+    // for what completed since; a capture without completion order is reread.
+    let readOrder = initial.cursor.completed;
     const interrupt = (status: 'timeout' | 'interrupted', reason: string) => {
       for (const index of pending.keys())
         results.set(index, {
@@ -90,7 +96,16 @@ export async function armPerformOutcomes(
       while (pending.size && !controller.signal.aborted && performance.now() < deadline) {
         // A hung renderer never answers the page read. Stop waiting for it at
         // the deadline or on cancellation so the request can still settle.
-        const read = await untilStopped(readNetwork(tabId), controller.signal, deadline);
+        const read = await untilStopped(
+          readNetwork(
+            tabId,
+            readOrder === undefined
+              ? undefined
+              : { sequence: baseline.nextSequence, order: readOrder }
+          ),
+          controller.signal,
+          deadline
+        );
         if (controller.signal.aborted) {
           interrupt('interrupted', 'observation_stopped');
           break;
@@ -114,6 +129,7 @@ export async function armPerformOutcomes(
           interrupt('interrupted', 'capture_gap_or_document_changed');
           break;
         }
+        readOrder = cursor.completed;
         for (const entry of snapshot.entries) {
           if (entry.sequence === undefined || entry.sequence < baseline.nextSequence) continue;
           for (const [index, condition] of pending) {

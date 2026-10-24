@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -337,6 +338,63 @@ func installMCPConfigured(raw, client, path string, scope installScope) bool {
 	}
 	root, err := installParseJSON(raw)
 	return err == nil && installJSONLookup(root, installMCPKey(client, path, scope), "browser-bridge") != nil
+}
+
+// installMCPStale reports a configured JSON entry whose command or arguments
+// name an absolute path that no longer exists, such as a launcher left behind
+// by a removed checkout. Clients fail to start such servers without telling
+// the user why, so presence alone does not prove a working configuration.
+func installMCPStale(raw, client, path string, scope installScope) bool {
+	agent := installAgentByKey(client)
+	if agent == nil || agent.mcp.format == installConfigYAML || agent.mcp.format == installConfigTOML {
+		return false
+	}
+	root, err := installParseJSON(raw)
+	if err != nil {
+		return false
+	}
+	entry := installJSONLookup(root, installMCPKey(client, path, scope), "browser-bridge")
+	if entry == nil || entry.kind != '{' {
+		return false
+	}
+	scopes := []*installJSONNode{entry}
+	if nested := installJSONLookup(entry, "transport"); nested != nil && nested.kind == '{' {
+		scopes = append(scopes, nested)
+	}
+	for _, node := range scopes {
+		for _, field := range []string{"command", "args"} {
+			for _, text := range installJSONStrings(raw, installJSONLookup(node, field)) {
+				if filepath.IsAbs(text) {
+					if _, err := os.Stat(text); err != nil {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+// installJSONStrings decodes a string node or the string members of an array.
+func installJSONStrings(raw string, node *installJSONNode) []string {
+	if node == nil {
+		return nil
+	}
+	nodes := []*installJSONNode{node}
+	if node.kind == '[' {
+		nodes = nodes[:0]
+		for _, member := range node.members {
+			nodes = append(nodes, member.value)
+		}
+	}
+	out := []string{}
+	for _, n := range nodes {
+		var text string
+		if n != nil && n.kind == '"' && json.Unmarshal([]byte(raw[n.start:n.end]), &text) == nil {
+			out = append(out, text)
+		}
+	}
+	return out
 }
 
 func installAgentMCP(client string, scope installScope, remove bool) ([]string, error) {

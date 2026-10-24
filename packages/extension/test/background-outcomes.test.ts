@@ -192,3 +192,28 @@ test('arming that never settles fails before any input runs', async () => {
     /did not arm/
   );
 });
+
+test('each network poll asks only for responses completed since the previous one', async () => {
+  const requested: unknown[] = [];
+  let reads = 0;
+  const monitor = await armPerformOutcomes(request(), 12, [condition], 1000, {
+    dispatch: async (req) => createSuccess(req.id, {}),
+    armNetwork: async () => {},
+    readNetwork: async (_tabId, after) => {
+      requested.push(after);
+      reads += 1;
+      return {
+        cursor: { ...cursor, nextSequence: 4, completed: 3 + reads },
+        dropped: 0,
+        entries:
+          reads === 3 ? [{ sequence: 4, method: 'POST', url: '/api/save', status: 201 }] : [],
+      };
+    },
+  });
+  try {
+    assert.equal((await monitor.complete())[0].status, 'matched');
+    assert.deepEqual(requested, [undefined, { sequence: 4, order: 4 }, { sequence: 4, order: 5 }]);
+  } finally {
+    monitor.stop();
+  }
+});
