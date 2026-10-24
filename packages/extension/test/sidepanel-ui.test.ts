@@ -1359,7 +1359,7 @@ test('sidepanel UI groups consecutive pings with a light counter and combined to
     assert.equal(counter?.nextElementSibling?.textContent, 'CLI');
     assert.equal(
       counter?.nextElementSibling?.querySelector('.activity-source-tag')?.getAttribute('title'),
-      'OpenCode\nDetected from OPENCODE\n\nClaude Code\nVersion: 2.1.0\nReported by MCP clientInfo'
+      'OpenCode\nDetected via env var\n\nClaude Code\nVersion: 2.1.0\nDetected with MCP client'
     );
     assert.equal(cards[0].querySelector('.activity-tokens')?.textContent, '≈600 tok');
     assert.equal(
@@ -1761,10 +1761,10 @@ test('sidepanel UI renders activity summaries, histogram families, and repeat wa
     assert.equal(legacyTag?.textContent, 'v1');
     assert.equal(
       legacyTag?.parentElement?.querySelector('.activity-source-tag')?.getAttribute('title'),
-      'Claude Code\nVersion: 2.1.0\nReported by MCP clientInfo'
+      'Claude Code\nVersion: 2.1.0\nDetected with MCP client'
     );
     const callerTag = [...actionLog.querySelectorAll('.activity-source-tag')].find(
-      (tag) => tag.getAttribute('title') === 'OpenCode\nDetected from OPENCODE'
+      (tag) => tag.getAttribute('title') === 'OpenCode\nDetected via env var'
     );
     assert.equal(callerTag?.textContent, 'CLI');
     assert.equal(

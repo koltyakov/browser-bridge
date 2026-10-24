@@ -319,13 +319,23 @@ errors for older content operations. */
     error: unknown
   ): string | { code: string; message: string; details: unknown } {
     if (error && typeof error === 'object') {
-      const candidate = error as { code?: unknown; message?: unknown; details?: unknown };
+      const candidate = error as {
+        code?: unknown;
+        name?: unknown;
+        message?: unknown;
+        details?: unknown;
+      };
       if (typeof candidate.code === 'string' && typeof candidate.message === 'string') {
         return {
           code: candidate.code,
           message: candidate.message,
           details: candidate.details ?? null,
         };
+      }
+      // DOM selector syntax errors cannot recover on retry. Chrome's
+      // DOMException.code is numeric, so it does not use the branch above.
+      if (candidate.name === 'SyntaxError' && typeof candidate.message === 'string') {
+        return { code: 'INVALID_REQUEST', message: candidate.message, details: null };
       }
     }
     return error instanceof Error ? error.message : String(error);

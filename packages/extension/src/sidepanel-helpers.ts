@@ -290,11 +290,11 @@ export function getActivityCallerTooltip(value: unknown): string {
   const lines = [caller.name];
   if (caller.version) lines.push(`Version: ${caller.version}`);
   if (caller.source === 'mcp') {
-    lines.push('Reported by MCP clientInfo');
+    lines.push('Detected with MCP client');
   } else if (caller.source === 'explicit') {
     lines.push('Reported by BBX_AGENT');
   } else {
-    lines.push(caller.signal ? `Detected from ${caller.signal}` : 'Detected from environment');
+    lines.push('Detected via env var');
   }
   return lines.join('\n');
 }

@@ -1112,6 +1112,33 @@ function installInputDomGlobals(
   };
 }
 
+test('selector syntax errors are non-retryable invalid requests, not internal failures', async (t) => {
+  await withDocument('<html><body></body></html>', async ({ document }) => {
+    const harness = createChromeHarness();
+    await loadContentScript(t, {
+      withHelpers: true,
+      preserveDomGlobals: true,
+      chrome: harness.chrome,
+    });
+    for (const error of [
+      new SyntaxError('Invalid selector'),
+      new DOMException('Invalid selector', 'SyntaxError'),
+    ]) {
+      Reflect.set(document, 'querySelector', () => {
+        throw error;
+      });
+      for (const method of ['dom.query', 'dom.wait_for', 'dom.get_accessibility_tree']) {
+        const result = await executeBridgeMethod(harness.getListener(), method, { selector: '[' });
+        assert.deepEqual(result.error, {
+          code: 'INVALID_REQUEST',
+          message: 'Invalid selector',
+          details: null,
+        });
+      }
+    }
+  });
+});
+
 test('text patches restore original subtree nodes and listeners, including nested patches', async (t) => {
   await withDocument(
     '<html><body><div id="target">Before <button>Save</button><!-- retained --></div></body></html>',

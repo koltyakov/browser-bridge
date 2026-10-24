@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 	"unicode"
-	"unicode/utf16"
+	"unicode/utf8"
 )
 
 func mcpCost(tokens int) string {
@@ -46,16 +46,40 @@ func mcpErrorResult(code, message string, hint ...string) object {
 	return mcpResult(summary, object{"ok": value(false), "evidence": value[*string](nil), "error": value(object{"code": value(code), "message": value(message), "details": value[*string](nil)}), "recovery": value(recovery)}, true)
 }
 
-func mcpStringLength(text string) int { return len(utf16.Encode([]rune(text))) }
+func mcpStringLength(text string) int {
+	length := 0
+	for _, r := range text {
+		length++
+		if r > 0xffff {
+			length++
+		}
+	}
+	return length
+}
+
+// Match JavaScript UTF-16 slicing without allocating a copy of the whole input.
+// A split surrogate pair becomes a replacement rune, as in the wire formatter.
 func mcpSlice(text string, limit int) string {
-	units := utf16.Encode([]rune(text))
-	if len(units) <= limit {
-		return text
+	limit = max(0, limit)
+	used := 0
+	for index, r := range text {
+		width := 1
+		if r > 0xffff {
+			width = 2
+		}
+		if used+width > limit {
+			prefix := text[:index]
+			if !utf8.ValidString(prefix) {
+				prefix = string([]rune(prefix))
+			}
+			if used < limit {
+				prefix += "�"
+			}
+			return prefix
+		}
+		used += width
 	}
-	if limit < 0 {
-		limit = 0
-	}
-	return string(utf16.Decode(units[:limit]))
+	return text
 }
 
 type mcpBoundState struct {
@@ -78,9 +102,10 @@ func mcpBoundValue(raw json.RawMessage, maxEntries, maxCharacters, maxString int
 		state.entries++
 		var text string
 		if len(raw) > 0 && raw[0] == '"' && json.Unmarshal(raw, &text) == nil {
-			limit := min(mcpStringLength(text), maxString, maxCharacters-state.characters)
+			length := mcpStringLength(text)
+			limit := min(length, maxString, maxCharacters-state.characters)
 			state.characters += limit
-			if limit < mcpStringLength(text) {
+			if limit < length {
 				state.truncated = true
 				if capture {
 					return value(mcpSlice(text, limit) + "[truncated]")
@@ -466,9 +491,10 @@ func mcpEvidence(raw json.RawMessage, method string, params object, fallback jso
 			limit = defaultBudget
 		}
 		limit = min(limit, cap)
+		length := mcpStringLength(text)
 		out := mcpClone(r)
 		if key == "text" {
-			out = object{"length": value(mcpStringLength(text)), "truncated": value(r.boolean("truncated"))}
+			out = object{"length": value(length), "truncated": value(r.boolean("truncated"))}
 			if mcpIsNumber(r["length"]) {
 				out["length"] = r["length"]
 			}
@@ -477,8 +503,8 @@ func mcpEvidence(raw json.RawMessage, method string, params object, fallback jso
 			out = object{"truncated": value(r.boolean("truncated"))}
 		}
 		out[key] = value(mcpSlice(text, limit))
-		out["returnedChars"] = value(min(mcpStringLength(text), limit))
-		return value(out), mcpStringLength(text) > limit, object{"maxCharacters": value(limit)}
+		out["returnedChars"] = value(min(length, limit))
+		return value(out), length > limit, object{"maxCharacters": value(limit)}
 	}
 	if method == "dom.query" || method == "dom.get_accessibility_tree" {
 		var nodes []object

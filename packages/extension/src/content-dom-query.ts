@@ -40,7 +40,6 @@
         getElementTextContent: (element: Element, budget?: number) => string;
         getShadowRoot: (element: Element) => ShadowRoot | null;
         isElementVisible: (element: Element) => boolean;
-        querySelectorAllDeep: (selector: string, root?: ParentNode) => Element[];
         querySelectorMatchesDeep: (selector: string, root?: ParentNode) => Generator<Element>;
         querySelectorDeep: (selector: string, root?: ParentNode) => Element | null;
         walkElementsDeep: (root?: ParentNode, limit?: number) => Generator<Element>;
@@ -76,7 +75,6 @@
     getElementRoles,
     getElementTextContent,
     isElementVisible,
-    querySelectorAllDeep,
     querySelectorMatchesDeep,
     querySelectorDeep,
     toRect,
@@ -360,17 +358,18 @@ element reference. */
           : querySelectorDeep(selector) !== null;
         return { found: !exists, element: null };
       }
-      const candidates = querySelectorAllDeep(selector);
-
-      const matched: Element[] = [];
-      for (const el of candidates) {
-        if (text !== null && !elementMatchesText(el, text)) {
-          continue;
+      let hasMatches = false;
+      function* matchingCandidates(): Generator<Element> {
+        for (const element of querySelectorMatchesDeep(selector)) {
+          if (text !== null && !elementMatchesText(element, text)) continue;
+          hasMatches = true;
+          yield element;
         }
-        if (waitState !== 'visible' && waitState !== 'hidden') {
-          return { found: true, element: el };
-        }
-        matched.push(el);
+      }
+      const matched = matchingCandidates();
+      if (waitState !== 'visible' && waitState !== 'hidden') {
+        const first = matched.next();
+        return { found: !first.done, element: first.value ?? null };
       }
 
       const matchedElement = findElementForWaitState({
@@ -379,7 +378,7 @@ element reference. */
         getRect: (element) => element.getBoundingClientRect(),
         getVisibility: (element) => getComputedStyle(element).visibility,
       });
-      if (waitState === 'hidden' && matched.length === 0) {
+      if (waitState === 'hidden' && !hasMatches) {
         return { found: true, element: null };
       }
       return { found: matchedElement !== null, element: matchedElement };
@@ -560,7 +559,7 @@ id across the light DOM and shadow roots. Hidden matches are counted but
 excluded unless `includeHidden` is set. */
   function locateElements(
     locator: ElementLocator,
-    options: { maxResults?: number; scanLimit?: number } = {}
+    options: { maxResults?: number; scanLimit?: number; lookahead?: boolean } = {}
   ): LocateResult {
     const maxResults = options.maxResults ?? 10;
     const scanLimit = options.scanLimit ?? 5_000;
@@ -592,6 +591,8 @@ excluded unless `includeHidden` is set. */
         break;
       }
       matches.push(element);
+      // Existence probes do not need the extra match used to report truncation.
+      if (options.lookahead === false && matches.length >= maxResults) break;
     }
     return {
       matches,
@@ -648,7 +649,10 @@ locator target. Hidden matches count: the action decides actionability. */
     try {
       if (spec.elementRef) return { found: true };
       if (isLocator(spec)) {
-        const located = locateElements({ ...spec, includeHidden: true }, { maxResults: 1 });
+        const located = locateElements(
+          { ...spec, includeHidden: true },
+          { maxResults: 1, lookahead: false }
+        );
         if (located.truncationReason === 'scanLimit' && !located.matches.length)
           throw Object.assign(new Error('Target probe scan was incomplete. Narrow the locator.'), {
             code: 'RESULT_TRUNCATED',
@@ -725,7 +729,7 @@ locator target. Hidden matches count: the action decides actionability. */
 
   /** Find the first element matching a selector whose text contains a string. */
   function findElementWithText(selector: string, text: string): Element | null {
-    for (const el of querySelectorAllDeep(selector)) {
+    for (const el of querySelectorMatchesDeep(selector)) {
       if (elementMatchesText(el, text)) {
         return el;
       }

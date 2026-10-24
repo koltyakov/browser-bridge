@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -59,7 +60,12 @@ func cliSummaryBody(response object, method string, now int64) object {
 	}
 	raw := response["result"]
 	r := cliRecord(raw)
-	record := value(r)
+	// Object results are already valid JSON. Reuse their bytes instead of
+	// serializing the decoded record even for branches that discard it.
+	record := raw
+	if trimmed := bytes.TrimSpace(raw); len(trimmed) == 0 || trimmed[0] != '{' {
+		record = value(r)
+	}
 	d := func(k, f string) string { return cliDefault(r, k, f) }
 	present := func(k string) bool { return cliPresent(r[k]) }
 	str := func(k string) bool { return cliString(r[k]) }
