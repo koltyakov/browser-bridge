@@ -940,6 +940,7 @@ const tabBoundRequestDependencies: Parameters<typeof executeTabBoundRequest>[1] 
         contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,
         ensureContentScript,
         sendTabMessage,
+        frames: { listFrames, getFrameForRef, sendFrameMessage },
         tabDebugger,
         storeArtifact: storeScreenshotArtifact,
       },

@@ -6,6 +6,7 @@ import {
   SCREENSHOT_AUTO_INLINE_BYTES,
   SCREENSHOT_MAX_INLINE_BYTES,
 } from '../../../protocol/src/index.js';
+import { resolveContentFrame } from './background-tab-bound.js';
 
 export type ResolvedTabTarget = import('./background-state.js').ResolvedTabTarget;
 
@@ -29,6 +30,7 @@ export type ScreenshotDeps = {
     message: Record<string, unknown>,
     timeoutMs: number
   ) => Promise<unknown>;
+  frames?: import('./background-tab-bound.js').TabBoundRequestDependencies['frames'];
   tabDebugger: TabDebuggerLike;
   storeArtifact: (
     requestId: string,
@@ -48,15 +50,22 @@ export async function handleScreenshot(
 ): Promise<import('../../../protocol/src/types.js').ScreenshotResult> {
   const startedAt = new Date().toISOString();
   const captureParams = params ?? {};
+  let frameId = 0;
+  let elementRef: string | null = null;
 
   const readGeometry = async (
     contentParams: Record<string, unknown>
   ): Promise<Record<string, unknown>> => {
-    const response = await deps.sendTabMessage(
-      target.tabId,
-      { type: 'bridge.execute', method, params: contentParams },
-      deps.contentScriptTimeoutMs
-    );
+    const message = { type: 'bridge.execute', method, params: contentParams };
+    const response =
+      frameId !== 0 && deps.frames
+        ? await deps.frames.sendFrameMessage(
+            target.tabId,
+            frameId,
+            message,
+            deps.contentScriptTimeoutMs
+          )
+        : await deps.sendTabMessage(target.tabId, message, deps.contentScriptTimeoutMs);
     const result =
       response && typeof response === 'object' ? (response as Record<string, unknown>) : {};
     if (result.error) {
@@ -99,14 +108,13 @@ export async function handleScreenshot(
         .filter((key) => captureParams[key] !== undefined)
         .map((key) => [key, captureParams[key]])
     );
+    frameId = await resolveContentFrame(method, elementParams, target.tabId, deps);
     try {
-      clip = (await readGeometry(elementParams)) as typeof clip;
+      const geometry = await readGeometry(elementParams);
+      clip = geometry as typeof clip;
+      elementRef = typeof geometry.elementRef === 'string' ? geometry.elementRef : null;
     } catch (err) {
-      // Retry once after a brief pause - the page may have been mid-render.
-      if (err instanceof Error && /stale/i.test(err.message)) {
-        await new Promise((resolve) => setTimeout(resolve, 250));
-        clip = (await readGeometry(elementParams)) as typeof clip;
-      } else if (err instanceof Error && /Complete capture is unsupported/.test(err.message)) {
+      if (err instanceof Error && /Complete capture is unsupported/.test(err.message)) {
         throw new BridgeError(ERROR_CODES.RESULT_TRUNCATED, err.message, {
           method,
           elementRef: captureParams.elementRef,
@@ -193,6 +201,17 @@ export async function handleScreenshot(
     async (debugTarget) => {
       let pageX = 0;
       let pageY = 0;
+      if (frameId !== 0) {
+        if (!elementRef)
+          throw new BridgeError(
+            ERROR_CODES.ELEMENT_STALE,
+            'Screenshot target ref is unavailable.',
+            { frameId }
+          );
+        const bounds = await readChildElementBounds(deps.chrome, debugTarget, elementRef);
+        clip = { ...bounds, scale: clip.scale };
+        assertScreenshotClipWithinLimits(method, clip);
+      }
       if (method === 'screenshot.capture_region') {
         const metrics = (await deps.chrome.debugger.sendCommand(
           debugTarget,
@@ -294,6 +313,210 @@ export async function handleScreenshot(
     delivery: 'inline',
     image: `data:${metadata.mimeType};base64,${data}`,
   };
+}
+
+/** Resolve the exact extension-owned node through CDP, whose box coordinates
+ * are relative to the top-level document, not the child viewport. Never use
+ * a same-named registry supplied by the page's MAIN world. Separate-process
+ * iframe sessions are attached without pausing and released after the read. */
+export async function readChildElementBounds(
+  chromeObj: typeof globalThis.chrome,
+  debugTarget: chrome.debugger.DebuggerSession,
+  elementRef: string
+): Promise<{ x: number; y: number; width: number; height: number }> {
+  type Session = { target: chrome.debugger.DebuggerSession; parent?: Session; frameId?: string };
+  const root: Session = { target: debugTarget };
+  const sessions = new Map<string, Session>();
+  const contexts: Array<{ id: number; session: Session }> = [];
+  const enabled: Session[] = [];
+  const attached: Session[] = [];
+  const extensionId = chromeObj.runtime.id;
+  const onEvent = (source: chrome.debugger.DebuggerSession, method: string, params?: object) => {
+    if (source.tabId !== debugTarget.tabId) return;
+    const session =
+      source.sessionId === debugTarget.sessionId ? root : sessions.get(source.sessionId ?? '');
+    if (!session) return;
+    if (method === 'Target.attachedToTarget') {
+      const entry = params as {
+        sessionId?: string;
+        targetInfo?: { type?: string; targetId?: string };
+      };
+      if (
+        entry.sessionId &&
+        entry.targetInfo?.type === 'iframe' &&
+        !sessions.has(entry.sessionId)
+      ) {
+        sessions.set(entry.sessionId, {
+          target: { ...debugTarget, sessionId: entry.sessionId },
+          parent: session,
+          frameId: entry.targetInfo.targetId,
+        });
+      }
+      return;
+    }
+    if (method !== 'Runtime.executionContextCreated') return;
+    const context = (
+      params as { context?: { id: number; origin?: string; auxData?: { isDefault?: boolean } } }
+    )?.context;
+    if (context?.auxData?.isDefault === false) contexts.push({ id: context.id, session });
+  };
+  const send = (session: Session, method: string, params: Record<string, unknown>) =>
+    chromeObj.debugger.sendCommand(session.target, method, params);
+  const attach = async (session: Session) => {
+    await send(session, 'Target.setAutoAttach', {
+      autoAttach: true,
+      waitForDebuggerOnStart: false,
+      flatten: true,
+      filter: [{ type: 'iframe', exclude: false }, { exclude: true }],
+    });
+    attached.push(session);
+  };
+  const enable = async (session: Session) => {
+    await send(session, 'Runtime.enable', {});
+    enabled.push(session);
+  };
+  chromeObj.debugger.onEvent.addListener(onEvent);
+  try {
+    await enable(root);
+    const tag = /^el_([0-9a-z]{4})_/.exec(elementRef)?.[1];
+    if (!tag) throw new BridgeError(ERROR_CODES.ELEMENT_STALE, 'Invalid screenshot element ref.');
+    let inspected = 0;
+    for (;;) {
+      while (inspected < contexts.length) {
+        const { id: contextId, session } = contexts[inspected++];
+        const probe = (await send(session, 'Runtime.evaluate', {
+          contextId,
+          expression: `globalThis.chrome?.runtime?.id === ${JSON.stringify(extensionId)} && globalThis.__BBX_CONTENT_REGISTRY__?.refDocumentTag === ${JSON.stringify(tag)}`,
+          returnByValue: true,
+        })) as { result?: { value?: unknown } };
+        if (probe.result?.value !== true) continue;
+        const resolved = (await send(session, 'Runtime.evaluate', {
+          contextId,
+          expression: `globalThis.__BBX_CONTENT_REGISTRY__.getRequiredElement(${JSON.stringify(elementRef)})`,
+          returnByValue: false,
+        })) as { result?: { objectId?: string }; exceptionDetails?: unknown };
+        const objectId = resolved.result?.objectId;
+        if (!objectId || resolved.exceptionDetails)
+          throw new BridgeError(
+            ERROR_CODES.ELEMENT_STALE,
+            'Screenshot target is no longer attached.'
+          );
+        try {
+          const box = (await send(session, 'DOM.getBoxModel', { objectId })) as {
+            model?: { border?: number[] };
+          };
+          const quad = box.model?.border;
+          if (!quad || quad.length !== 8 || quad.some((value) => !Number.isFinite(value)))
+            throw new BridgeError(
+              ERROR_CODES.ELEMENT_NOT_ACTIONABLE,
+              'Screenshot target has no rendered box.'
+            );
+          const xs = [quad[0], quad[2], quad[4], quad[6]];
+          const ys = [quad[1], quad[3], quad[5], quad[7]];
+          let bounds = {
+            x: Math.min(...xs),
+            y: Math.min(...ys),
+            width: Math.max(...xs) - Math.min(...xs),
+            height: Math.max(...ys) - Math.min(...ys),
+          };
+          let current = session;
+          while (current.parent && current.frameId) {
+            const owner = (await send(current.parent, 'DOM.getFrameOwner', {
+              frameId: current.frameId,
+            })) as { backendNodeId?: number };
+            const [ownerBox, metrics] = await Promise.all([
+              send(current.parent, 'DOM.getBoxModel', {
+                backendNodeId: owner.backendNodeId,
+              }) as Promise<{
+                model?: { content?: number[]; border?: number[]; width?: number; height?: number };
+              }>,
+              send(current, 'Page.getLayoutMetrics', {}) as Promise<{
+                cssLayoutViewport?: {
+                  pageX: number;
+                  pageY: number;
+                  clientWidth: number;
+                  clientHeight: number;
+                };
+              }>,
+            ]);
+            const content = ownerBox.model?.content;
+            const border = ownerBox.model?.border;
+            const width = Number(ownerBox.model?.width);
+            const height = Number(ownerBox.model?.height);
+            const viewport = metrics.cssLayoutViewport;
+            if (
+              !content ||
+              content.length !== 8 ||
+              content.some((value) => !Number.isFinite(value)) ||
+              !border ||
+              border.length !== 8 ||
+              border.some((value) => !Number.isFinite(value)) ||
+              !(width > 0) ||
+              !(height > 0) ||
+              !viewport ||
+              viewport.clientWidth <= 0 ||
+              viewport.clientHeight <= 0 ||
+              content[1] !== content[3] ||
+              content[0] !== content[6] ||
+              content[2] !== content[4] ||
+              content[5] !== content[7] ||
+              content[2] <= content[0] ||
+              content[5] <= content[1]
+            )
+              throw new BridgeError(
+                ERROR_CODES.RESULT_TRUNCATED,
+                'Complete iframe capture is unsupported for transformed or unavailable frame geometry.'
+              );
+            // Layout viewport sizes can differ from the embedded viewport due
+            // to scrollbars. Derive CSS transform scale from the owner's own
+            // border box instead, preserving exact untransformed coordinates.
+            const scaleX = (border[2] - border[0]) / width;
+            const scaleY = (border[5] - border[1]) / height;
+            bounds = {
+              x: content[0] + (bounds.x - viewport.pageX) * scaleX,
+              y: content[1] + (bounds.y - viewport.pageY) * scaleY,
+              width: bounds.width * scaleX,
+              height: bounds.height * scaleY,
+            };
+            current = current.parent;
+          }
+          const { x, y } = bounds;
+          if (x < 0 || y < 0)
+            throw new BridgeError(
+              ERROR_CODES.RESULT_TRUNCATED,
+              'Complete capture is unsupported outside page bounds.'
+            );
+          if (bounds.width < 1 || bounds.height < 1)
+            throw new BridgeError(
+              ERROR_CODES.ELEMENT_NOT_ACTIONABLE,
+              'Screenshot target has no rendered area.'
+            );
+          return bounds;
+        } finally {
+          await send(session, 'Runtime.releaseObject', { objectId }).catch(() => {});
+        }
+      }
+      if (!attached.length) await attach(root);
+      const next = [...sessions.values()].find((session) => !enabled.includes(session));
+      if (!next || enabled.length >= 12) break;
+      await enable(next);
+      await attach(next);
+    }
+    throw new BridgeError(
+      ERROR_CODES.INPUT_UNSUPPORTED,
+      'The iframe screenshot context is not reachable from this debugger target. Capture the outer iframe element instead.'
+    );
+  } finally {
+    chromeObj.debugger.onEvent.removeListener(onEvent);
+    for (const session of enabled.reverse())
+      await send(session, 'Runtime.disable', {}).catch(() => {});
+    for (const session of attached.reverse())
+      await send(session, 'Target.setAutoAttach', {
+        autoAttach: false,
+        waitForDebuggerOnStart: false,
+        flatten: true,
+      }).catch(() => {});
+  }
 }
 
 /** Sample document visibility in the isolated world without reading page content. */

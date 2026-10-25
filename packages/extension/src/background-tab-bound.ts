@@ -219,7 +219,50 @@ export async function handleTabBoundRequest(
     return createSuccess(request.id, result, { method: request.method });
   }
 
-  const frameId = await chooseFrame(request.method, payload, target.tabId, dependencies);
+  const frameSearchStarted = performance.now();
+  let frameId: number;
+  if (
+    request.method === 'dom.wait_for' &&
+    dependencies.frames &&
+    (payload.state === 'attached' || payload.state === 'visible')
+  ) {
+    const timeoutMs = Number(payload.timeoutMs) || 5000;
+    for (;;) {
+      assertAccess();
+      dependencies.assertNoDialog?.(target.tabId);
+      const foundFrame = await findContentFrame(
+        request.method,
+        payload,
+        target.tabId,
+        dependencies,
+        true,
+        frameSearchStarted + timeoutMs
+      );
+      assertAccess();
+      dependencies.assertNoDialog?.(target.tabId);
+      const remaining = timeoutMs - (performance.now() - frameSearchStarted);
+      if (remaining <= 0) {
+        return createSuccess(
+          request.id,
+          {
+            found: false,
+            elementRef: null,
+            duration: Math.round(performance.now() - frameSearchStarted),
+          },
+          { method: request.method }
+        );
+      }
+      if (foundFrame !== null) {
+        frameId = foundFrame;
+        payload = { ...payload, timeoutMs: Math.max(1, Math.floor(remaining)) };
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, Math.min(100, remaining)));
+    }
+  } else {
+    frameId = await resolveContentFrame(request.method, payload, target.tabId, dependencies);
+  }
+  const frameSearchMs = performance.now() - frameSearchStarted;
   assertAccess();
   if (frameId !== 0 && payload.executionMode === 'cdp') {
     throw new BridgeError(
@@ -282,6 +325,15 @@ export async function handleTabBoundRequest(
       frameId !== 0 && dependencies.frames
         ? await dependencies.frames.sendFrameMessage(target.tabId, frameId, message, timeoutMs)
         : await dependencies.sendTabMessage(target.tabId, message, timeoutMs);
+    if (
+      request.method === 'dom.wait_for' &&
+      response &&
+      typeof response === 'object' &&
+      'duration' in response &&
+      typeof response.duration === 'number'
+    ) {
+      response = { ...response, duration: Math.round(response.duration + frameSearchMs) };
+    }
     if (frameId !== 0 && response && typeof response === 'object' && !('error' in response)) {
       response = { ...response, frameId };
     } else if (frameId === 0 && FAN_OUT_METHODS.has(request.method) && dependencies.frames) {
@@ -322,6 +374,7 @@ const FAN_OUT_METHODS = new Set([
   'dom.find_by_text',
   'dom.find_by_role',
   'dom.get_accessibility_tree',
+  'page.get_text',
 ]);
 /** Methods whose selector/locator target is probed across frames. */
 const FRAME_PROBE_METHODS = new Set([
@@ -337,6 +390,8 @@ const FRAME_PROBE_METHODS = new Set([
   'input.scroll_into_view',
   'dom.query',
   'dom.wait_for',
+  'dom.get_accessibility_tree',
+  'screenshot.capture_element',
 ]);
 const FRAME_PROBE_TIMEOUT_MS = 1_500;
 
@@ -359,30 +414,54 @@ function collectPayloadRefs(payload: Record<string, unknown>): string[] {
 /** Pick the frame a tab-bound request runs in. Refs route to the frame that
 minted them; selector/locator inputs not found in the top document are
 probed in child frames. Everything else stays in the top frame. */
-async function chooseFrame(
+export async function resolveContentFrame(
   method: string,
   payload: Record<string, unknown>,
   tabId: number,
-  dependencies: TabBoundRequestDependencies
+  dependencies: Pick<TabBoundRequestDependencies, 'frames'>
 ): Promise<number> {
+  return (await findContentFrame(method, payload, tabId, dependencies)) ?? 0;
+}
+
+/** A null result distinguishes a not-yet-present target from a top-frame match.
+ * Waits refresh discovery so newly created/reloaded iframes can become owners. */
+async function findContentFrame(
+  method: string,
+  payload: Record<string, unknown>,
+  tabId: number,
+  dependencies: Pick<TabBoundRequestDependencies, 'frames'>,
+  refresh = false,
+  deadline = Infinity
+): Promise<number | null> {
   const frames = dependencies.frames;
   if (!frames) return 0;
   const refs = collectPayloadRefs(payload);
   if (refs.length) return frames.getFrameForRef(tabId, refs[0]);
   if (!FRAME_PROBE_METHODS.has(method)) return 0;
   const spec =
-    payload.target ??
-    payload.source ??
+    (payload.target && typeof payload.target === 'object' ? payload.target : undefined) ??
+    (payload.source && typeof payload.source === 'object' ? payload.source : undefined) ??
     (typeof payload.selector === 'string' ? { selector: payload.selector } : undefined);
   if (!spec || typeof spec !== 'object') return 0;
 
   const probe = async (frameId: number) => {
+    const remaining = deadline - performance.now();
+    if (remaining <= 0) return false;
     try {
       const result = (await frames.sendFrameMessage(
         tabId,
         frameId,
-        { type: 'bridge.execute', method: 'dom.probe_target', params: { target: spec } },
-        FRAME_PROBE_TIMEOUT_MS
+        {
+          type: 'bridge.execute',
+          method: 'dom.probe_target',
+          params: {
+            target: spec,
+            ...(method === 'dom.wait_for' && typeof payload.text === 'string' && payload.text.trim()
+              ? { waitText: payload.text }
+              : {}),
+          },
+        },
+        Math.max(1, Math.min(FRAME_PROBE_TIMEOUT_MS, Math.floor(remaining)))
       )) as { found?: boolean; error?: { code?: string; message?: string } } | null;
       if (result?.error?.code === ERROR_CODES.RESULT_TRUNCATED)
         throw new BridgeError(
@@ -396,15 +475,18 @@ async function chooseFrame(
     }
   };
   if (await probe(0)) return 0;
-  const childFrames = (await frames.listFrames(tabId)).filter((frame) => frame.frameId !== 0);
+  if (performance.now() >= deadline) return null;
+  const childFrames = (await frames.listFrames(tabId, { refresh })).filter(
+    (frame) => frame.frameId !== 0
+  );
   for (const frame of childFrames) {
     if (await probe(frame.frameId)) return frame.frameId;
   }
-  return 0;
+  return null;
 }
 
-/** Merge finder/outline results from child frames into the top-frame result.
-Finders only fan out when the top frame found nothing. */
+/** Merge frame reads under one response budget. Shell matches must not hide
+application controls in child frames. Scoped outlines use resolveContentFrame instead. */
 async function mergeChildFrameResults(
   method: string,
   message: Record<string, unknown>,
@@ -418,7 +500,9 @@ async function mergeChildFrameResults(
   }
   const top = topResponse as Record<string, unknown>;
   const isOutline = method === 'dom.get_accessibility_tree';
-  if (!isOutline && top.found === true) return topResponse;
+  const isPageText = method === 'page.get_text';
+  const params = message.params as Record<string, unknown>;
+  if (isOutline && params.selector) return topResponse;
   const childFrames = (await frames.listFrames(tabId)).filter((frame) => frame.frameId !== 0);
   if (!childFrames.length) return topResponse;
   const childResults = await Promise.all(
@@ -439,24 +523,82 @@ async function mergeChildFrameResults(
     })
   );
   const usable = childResults.filter((entry) => entry !== null);
+  const incompleteFrames = childFrames
+    .filter((_, index) => childResults[index] === null)
+    .map((frame) => frame.frameId);
+  const incomplete = incompleteFrames.length > 0;
+  const frameMetadata = incomplete ? { incompleteFrames } : {};
+  const scanned =
+    Number(top.scanned ?? 0) +
+    usable.reduce((total, entry) => total + Number(entry.result.scanned ?? 0), 0);
+  const sourceTruncated =
+    incomplete || top.truncated === true || usable.some((entry) => entry.result.truncated === true);
+  if (isPageText) {
+    const budget = Number(params.textBudget) || 8000;
+    const sections = usable
+      .filter((entry) => typeof entry.result.value === 'string' && entry.result.value)
+      .map((entry) => `[frame ${entry.frameId}]\n${String(entry.result.value)}`);
+    const combined = [top.value, ...sections].filter(Boolean).join('\n');
+    const sourceOmitted =
+      Number(top.omitted ?? 0) +
+      usable.reduce((total, entry) => total + Number(entry.result.omitted ?? 0), 0);
+    const omitted = sourceOmitted + Math.max(0, combined.length - budget);
+    return {
+      ...top,
+      value: combined.slice(0, budget),
+      length: combined.length + sourceOmitted,
+      omitted,
+      truncated: sourceTruncated || omitted > 0,
+      frames: usable.length,
+      ...frameMetadata,
+    };
+  }
   if (isOutline) {
+    const maxNodes = Number(params.maxNodes) || 150;
+    if (params.format === 'tree') {
+      const nodes = [
+        ...(Array.isArray(top.nodes) ? top.nodes : []),
+        ...usable.flatMap((entry) =>
+          (Array.isArray(entry.result.nodes) ? entry.result.nodes : []).map((node) => ({
+            ...(node as Record<string, unknown>),
+            frameId: entry.frameId,
+          }))
+        ),
+      ];
+      return {
+        ...top,
+        nodes: nodes.slice(0, maxNodes),
+        count: Math.min(nodes.length, maxNodes),
+        scanned,
+        truncated: sourceTruncated || nodes.length > maxNodes,
+        frames: usable.length,
+        ...frameMetadata,
+      };
+    }
+    let remaining = Math.max(0, maxNodes - Number(top.count ?? 0));
+    let omitted = 0;
     const sections = usable
       .filter((entry) => typeof entry.result.outline === 'string' && entry.result.outline)
-      .map(
-        (entry) =>
-          `- iframe [frame ${entry.frameId}]\n${String(entry.result.outline)
-            .split('\n')
-            .map((line) => `  ${line}`)
-            .join('\n')}`
-      );
-    if (!sections.length) return topResponse;
+      .flatMap((entry) => {
+        const lines = String(entry.result.outline).split('\n');
+        const selected = lines.slice(0, remaining);
+        remaining -= selected.length;
+        omitted += lines.length - selected.length;
+        return selected.length
+          ? [`- iframe [frame ${entry.frameId}]\n${selected.map((line) => `  ${line}`).join('\n')}`]
+          : [];
+      });
     return {
       ...top,
       outline: [top.outline, ...sections].filter(Boolean).join('\n'),
       count:
         Number(top.count ?? 0) +
-        usable.reduce((total, entry) => total + Number(entry.result.count ?? 0), 0),
+        usable.reduce((total, entry) => total + Number(entry.result.count ?? 0), 0) -
+        omitted,
+      scanned,
+      truncated: sourceTruncated || omitted > 0,
       frames: usable.length,
+      ...frameMetadata,
     };
   }
   const nodes = [
@@ -468,14 +610,22 @@ async function mergeChildFrameResults(
       }))
     ),
   ];
+  const maxResults = Number(params.maxResults) || 10;
+  const truncated = sourceTruncated || nodes.length > maxResults;
   return {
     ...top,
     found: nodes.length > 0,
-    nodes,
-    count: nodes.length,
-    scanned:
-      Number(top.scanned ?? 0) +
-      usable.reduce((total, entry) => total + Number(entry.result.scanned ?? 0), 0),
+    nodes: nodes.slice(0, maxResults),
+    count: Math.min(nodes.length, maxResults),
+    scanned,
+    truncated,
+    truncationReason:
+      nodes.length > maxResults
+        ? 'maxResults'
+        : (top.truncationReason ??
+          usable.find((entry) => entry.result.truncationReason)?.result.truncationReason ??
+          null),
+    ...frameMetadata,
   };
 }
 

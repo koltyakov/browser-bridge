@@ -168,6 +168,54 @@ test('input.perform never starts input when required network evidence cannot be 
   assert.equal(dispatched.length, 0);
 });
 
+test('unmet outcomes retain requested final action evidence without replay', async () => {
+  const final = { clicked: true, effects: { changed: true, target: { expanded: false } } };
+  const { dependencies, dispatched } = createHarness((request) =>
+    createSuccess(request.id, request.method === 'dom.wait_for' ? { found: false } : final)
+  );
+  const response = await executeInputPerform(
+    performRequest({
+      returnLastResult: true,
+      steps: [click('#accordion')],
+      outcomes: [{ kind: 'dom', selector: '#accordion[aria-expanded="true"]', timeoutMs: 100 }],
+    }),
+    dependencies
+  );
+  assert.equal(response.ok, false);
+  assert.equal(response.error?.code, 'OUTCOME_NOT_MET');
+  const details = response.error?.details as { lastResult: { index: number; result: unknown } };
+  assert.equal(details.lastResult.index, 0);
+  assert.deepEqual(details.lastResult.result, final);
+  assert.equal(dispatched.filter((entry) => entry.request.method === 'input.click').length, 1);
+});
+
+test('failed sequences retain bounded evidence of the last completed step only when requested', async () => {
+  for (const returnLastResult of [false, true]) {
+    for (const oversized of [false, true]) {
+      const final = { text: oversized ? '界'.repeat(MAX_PERFORM_RESULT_BYTES) : 'Saved' };
+      const { dependencies } = createHarness((request) =>
+        request.id === 'seq#1'
+          ? createFailure(request.id, 'ELEMENT_NOT_FOUND', 'Missing next control.')
+          : createSuccess(request.id, final)
+      );
+      const response = await executeInputPerform(
+        performRequest({ returnLastResult, steps: [click('#save'), click('#next')] }),
+        dependencies
+      );
+      assert.equal(response.ok, false);
+      const details = response.error?.details as {
+        lastResult?: { index: number; truncated: boolean; result?: unknown };
+      };
+      assert.equal(Boolean(details.lastResult), returnLastResult);
+      if (returnLastResult) {
+        assert.equal(details.lastResult?.index, 0);
+        assert.equal(details.lastResult?.truncated, oversized);
+        assert.deepEqual(details.lastResult?.result, oversized ? undefined : final);
+      }
+    }
+  }
+});
+
 test('input.perform schedules atMs steps from the sequence start without drift', async () => {
   const { dependencies, dispatched } = createHarness();
   const response = await executeInputPerform(
