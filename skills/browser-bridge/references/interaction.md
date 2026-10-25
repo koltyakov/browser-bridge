@@ -123,6 +123,20 @@ bbx call input.click '{"target":{"elementRef":"el_m2xa_1"}}'
 
 Usually you can skip the overview and act with a locator in one call: `{"target":{"role":"button","name":"Pay now"}}`.
 
+Finders search child frames even when the outer shell has matches. `maxResults`
+is a combined limit, and child matches include `frameId`. Use a returned ref
+when shell and app controls share a name. `page.get_text` includes labeled child
+frame sections under one `textBudget`. Unavailable frames are reported through
+`incompleteFrames` and `truncated`, not silently treated as complete reads.
+
+For an embedded app, scope the DOM outline to a unique app selector. The selector
+is resolved in its owning frame, so the result excludes unrelated shell controls.
+Unscoped outlines share one `maxNodes` budget across frames.
+Attached/visible DOM waits rediscover frames that appear during loading, and
+text conditions participate in frame selection instead of matching the shell's
+wildcard selector. The wait retains one timeout budget across discovery and
+the final frame-local condition.
+
 The default `source: "cdp"` returns Chrome's AX tree through the debugger. Use it for accessibility audits (`compact`, `interactiveOnly`, `maxDepth`, `format: "outline"`); its nodes have no refs.
 
 ## Multi-Tab Workflows
@@ -285,11 +299,25 @@ bbx call input.perform '{
 }'
 ```
 
-`returnLastResult: true` returns `lastResult` with `index`, `method`, `byteLength`, `truncated`, and `result` from the final successful step. It never returns all intermediate results. At most 16384 UTF-8 JSON bytes are retained. Larger results are omitted with `truncated: true` and `maxBytes`; inspect with a narrower read, never replay the actions just to recover evidence. If the final step fails, no earlier result is substituted.
+On success, `returnLastResult: true` returns `lastResult` with `index`, `method`, `byteLength`, `truncated`, and `result` from the final step. It never returns all intermediate results. At most 16384 UTF-8 JSON bytes are retained. Larger results are omitted with `truncated: true` and `maxBytes`; inspect with a narrower read, never replay the actions just to recover evidence. If `continueOnError` allows a failed final step, no earlier result is substituted in the success response.
+
+On a failed sequence, `error.details.lastResult` retains the last completed
+step's bounded result when requested. Its index identifies exactly what ran.
+This also preserves final action effects when outcomes fail, such as an
+accordion ending collapsed instead of expanded. It does not make the sequence
+successful or authorize replay.
 
 For an action as the final step, set its `observe: true` to receive effects without a separate read. Observation remains opt-in for every sequence step, preserving timed schedules. For asynchronous outcomes, include a specific wait before reading. Completed steps alone do not prove application success.
 
 Stop the sequence at any decision that requires new evidence or user approval. Keep `continueOnError` off for dependent steps. On failure, inspect progress and postconditions before deciding what to do next; mutations are not rolled back and must not be blindly retried.
+
+For native widget editors, open the editor and read one scoped DOM outline to
+discover controls and their expanded/checked states. Do not blindly toggle
+accordions: applications may remember the previous widget's open sections.
+Then batch known edits with `input.perform`, use idempotent `input.set_checked`
+for radios and switches, and verify the actual checked values with outcomes.
+Close the editor, reload after the app saves, and reopen settings to verify
+persistence. A dispatched click or changed DOM alone does not prove a save.
 
 ### Verify outcomes in the same call
 

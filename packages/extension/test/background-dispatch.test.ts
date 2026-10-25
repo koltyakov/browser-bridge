@@ -2035,6 +2035,7 @@ for (const scenario of [
       chromeOverrides: {
         tabs: {
           async sendMessage(_tabId: number, message: Record<string, unknown>) {
+            if (message.method === 'dom.probe_target') return { found: true };
             if (message.method === 'input.click' || message.method === 'dom.wait_for') {
               actions += 1;
               openDialog();
@@ -3165,7 +3166,7 @@ test('background dispatch defaults invalid full-page screenshot dimensions', asy
   });
 });
 
-test('background dispatch retries stale element screenshots before capturing', async () => {
+test('background dispatch captures selector screenshots after probing the frame', async () => {
   const sendMessageCalls: TabMessageCall[] = [];
   let elementAttemptCount = 0;
   const sendCommandCalls: DebuggerSendCommandCall[] = [];
@@ -3175,11 +3176,9 @@ test('background dispatch retries stale element screenshots before capturing', a
       tabs: {
         async sendMessage(tabId: number, message: Record<string, unknown>) {
           sendMessageCalls.push({ tabId, message });
+          if (message.method === 'dom.probe_target') return { found: true };
           if (message.type === 'bridge.execute') {
             elementAttemptCount += 1;
-            if (elementAttemptCount === 1) {
-              throw new Error('stale element reference');
-            }
             return {
               x: 5,
               y: '8',
@@ -3213,7 +3212,7 @@ test('background dispatch retries stale element screenshots before capturing', a
   if (!response.ok) {
     assert.fail(response.error.message);
   }
-  assert.equal(elementAttemptCount, 2);
+  assert.equal(elementAttemptCount, 1);
   assert.deepEqual(withoutContentLifetimes(sendMessageCalls), [
     {
       tabId: 81,
@@ -3227,9 +3226,9 @@ test('background dispatch retries stale element screenshots before capturing', a
       tabId: 81,
       message: {
         type: 'bridge.execute',
-        method: 'screenshot.capture_element',
+        method: 'dom.probe_target',
         params: {
-          selector: '#hero',
+          target: { selector: '#hero' },
         },
       },
     },
@@ -3289,6 +3288,7 @@ test('background dispatch surfaces non-stale element screenshot errors without r
     chromeOverrides: {
       tabs: {
         async sendMessage(_tabId: number, message: Record<string, unknown>) {
+          if (message.method === 'dom.probe_target') return { found: true };
           if (message.type === 'bridge.execute') {
             elementAttemptCount += 1;
             throw new Error('element lookup failed');

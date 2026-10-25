@@ -567,20 +567,33 @@ excluded unless `includeHidden` is set. */
 
     const candidates: Iterable<Element> = scope
       ? querySelectorMatchesDeep(escapeTailwindSelector(scope))
-      : walkElementsDeep(document.body ?? document.documentElement ?? document);
+      : walkElementsDeep(
+          document.body ?? document.documentElement ?? document,
+          Math.max(scanLimit, 20_000) + 1
+        );
 
     const matches: Element[] = [];
     let hiddenMatches = 0;
     let scanned = 0;
+    let evaluated = 0;
 
     let truncationReason: 'maxResults' | 'scanLimit' | null = null;
     const started = performance.now();
     for (const element of candidates) {
-      if (scanned >= scanLimit || performance.now() - started > 100) {
+      // Large charts can contain thousands of decorative nodes before an
+      // editor control. Spend the semantic scan budget on the requested role,
+      // while retaining an independent traversal/time bound for hostile DOMs.
+      if (
+        scanned >= Math.max(scanLimit, 20_000) ||
+        evaluated >= scanLimit ||
+        performance.now() - started > 100
+      ) {
         truncationReason = 'scanLimit';
         break;
       }
       scanned += 1;
+      if (locator.role && !getElementRoles(element).includes(locator.role.toLowerCase())) continue;
+      evaluated += 1;
       if (!matchesLocator(element, locator)) continue;
       if (locator.includeHidden !== true && !isElementVisible(element)) {
         hiddenMatches += 1;
@@ -647,6 +660,11 @@ locator target. Hidden matches count: the action decides actionability. */
     if (!target || typeof target !== 'object') return { found: false };
     const spec = target as Record<string, unknown>;
     try {
+      if (typeof params.waitText === 'string' && typeof spec.selector === 'string')
+        return {
+          found:
+            findElementWithText(escapeTailwindSelector(spec.selector), params.waitText) !== null,
+        };
       if (spec.elementRef) return { found: true };
       if (isLocator(spec)) {
         const located = locateElements(

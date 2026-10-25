@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { handleScreenshot } from '../src/background-screenshots.js';
+import { handleScreenshot, readChildElementBounds } from '../src/background-screenshots.js';
 import { ERROR_CODES, MAX_ARTIFACT_BYTES } from '../../../protocol/src/index.js';
 import { TabDebuggerCoordinator } from '../src/debugger-coordinator.js';
 import type { DebuggerRunOptions } from '../src/debugger-coordinator.js';
@@ -12,6 +12,177 @@ const target = {
   title: 'Capture',
   url: 'https://example.test/',
 };
+
+function frameScreenshotChrome(
+  options: {
+    missingContext?: boolean;
+    removed?: boolean;
+    invalidBox?: boolean;
+    childProcess?: boolean;
+  } = {}
+) {
+  type Listener = (
+    source: chrome.debugger.DebuggerSession,
+    method: string,
+    params?: object
+  ) => void;
+  const listeners = new Set<Listener>();
+  const commands: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const chromeObj = {
+    runtime: { id: 'bridge-extension' },
+    debugger: {
+      onEvent: {
+        addListener(listener: Listener) {
+          listeners.add(listener);
+        },
+        removeListener(listener: Listener) {
+          listeners.delete(listener);
+        },
+      },
+      async sendCommand(
+        debugTarget: chrome.debugger.DebuggerSession,
+        method: string,
+        params: Record<string, unknown>
+      ) {
+        commands.push({ method, params });
+        if (
+          method === 'Target.setAutoAttach' &&
+          params.autoAttach &&
+          !debugTarget.sessionId &&
+          options.childProcess
+        ) {
+          for (const listener of listeners)
+            listener({ tabId: 7 }, 'Target.attachedToTarget', {
+              sessionId: 'iframe-session',
+              targetInfo: { type: 'iframe', targetId: 'iframe-target' },
+            });
+        }
+        if (method === 'Runtime.enable') {
+          for (const listener of listeners) {
+            listener({ tabId: 99 }, 'Runtime.executionContextCreated', {
+              context: {
+                id: 99,
+                origin: 'chrome-extension://bridge-extension',
+                auxData: { isDefault: false },
+              },
+            });
+            listener({ tabId: 7 }, 'Runtime.executionContextCreated', {
+              context: { id: 1, origin: 'https://example.test', auxData: { isDefault: true } },
+            });
+            if (!options.missingContext && (!options.childProcess || debugTarget.sessionId)) {
+              listener(debugTarget, 'Runtime.executionContextCreated', {
+                context: { id: 13, origin: '', auxData: { isDefault: false } },
+              });
+            }
+          }
+        }
+        if (method === 'Runtime.evaluate') {
+          assert.equal(params.contextId, 13, 'never inspect a MAIN-world or unrelated context');
+          return params.returnByValue
+            ? { result: { value: true } }
+            : options.removed
+              ? { exceptionDetails: { text: 'Detached' } }
+              : { result: { objectId: 'element-object' } };
+        }
+        if (method === 'DOM.getBoxModel')
+          return params.backendNodeId
+            ? {
+                model: {
+                  content: [48, 10, 448, 10, 448, 310, 48, 310],
+                  border: [48, 10, 448, 10, 448, 310, 48, 310],
+                  width: 400,
+                  height: 300,
+                },
+              }
+            : {
+                model: {
+                  border: options.invalidBox ? [NaN] : [100, 200, 220, 200, 220, 245, 100, 245],
+                },
+              };
+        if (method === 'DOM.getFrameOwner') return { backendNodeId: 77 };
+        if (method === 'Page.getLayoutMetrics')
+          return {
+            cssLayoutViewport: { pageX: 10, pageY: 20, clientWidth: 400, clientHeight: 300 },
+          };
+        if (method === 'Page.captureScreenshot')
+          return { data: Buffer.from('image').toString('base64') };
+        return {};
+      },
+    },
+  } as unknown as typeof chrome;
+  return { chromeObj, commands, listeners };
+}
+
+test('iframe screenshots route geometry by ref and capture the exact extension-owned CDP box', async () => {
+  const { chromeObj, commands, listeners } = frameScreenshotChrome();
+  const deps = {
+    chrome: chromeObj,
+    contentScriptTimeoutMs: 1000,
+    async ensureContentScript() {},
+    async sendTabMessage() {
+      throw new Error('Child refs must not be sent to the shell');
+    },
+    frames: {
+      async listFrames() {
+        return [];
+      },
+      async getFrameForRef() {
+        return 7;
+      },
+      async sendFrameMessage(_tabId: number, frameId: number) {
+        assert.equal(frameId, 7);
+        return { elementRef: 'el_pay7_1', x: 5, y: 8, width: 120, height: 45, scale: 1 };
+      },
+    },
+    tabDebugger: {
+      async run(_tabId: number, callback: (target: chrome.debugger.Debuggee) => Promise<unknown>) {
+        return callback({ tabId: 7 });
+      },
+    },
+  } as unknown as Parameters<typeof handleScreenshot>[3];
+  const result = await handleScreenshot(
+    target,
+    'screenshot.capture_element',
+    { elementRef: 'el_pay7_1' },
+    deps,
+    'frame-capture'
+  );
+  assert.deepEqual(result.rect, { x: 100, y: 200, width: 120, height: 45, scale: 1 });
+  assert.deepEqual(result.context?.pageClip, result.rect);
+  assert.deepEqual(
+    commands.find((entry) => entry.method === 'Page.captureScreenshot')?.params.clip,
+    result.rect
+  );
+  assert.equal(listeners.size, 0);
+  assert(commands.some((entry) => entry.method === 'Runtime.releaseObject'));
+  assert(commands.some((entry) => entry.method === 'Runtime.disable'));
+});
+
+test('iframe screenshot lookup reports unavailable, removed and unrendered targets and cleans up', async () => {
+  for (const [options, code] of [
+    [{ missingContext: true }, 'INPUT_UNSUPPORTED'],
+    [{ removed: true }, 'ELEMENT_STALE'],
+    [{ invalidBox: true }, 'ELEMENT_NOT_ACTIONABLE'],
+  ] as const) {
+    const { chromeObj, listeners, commands } = frameScreenshotChrome(options);
+    await assert.rejects(readChildElementBounds(chromeObj, { tabId: 7 }, 'el_pay7_1'), { code });
+    assert.equal(listeners.size, 0);
+    assert(commands.some((entry) => entry.method === 'Runtime.disable'));
+  }
+});
+
+test('separate-process iframe boxes translate through the owner content box and detach', async () => {
+  const { chromeObj, commands, listeners } = frameScreenshotChrome({ childProcess: true });
+  const result = await readChildElementBounds(chromeObj, { tabId: 7 }, 'el_pay7_1');
+  assert.deepEqual(result, { x: 138, y: 190, width: 120, height: 45 });
+  assert.equal(listeners.size, 0);
+  assert.equal(
+    commands.filter(
+      (entry) => entry.method === 'Target.setAutoAttach' && entry.params.autoAttach === false
+    ).length,
+    2
+  );
+});
 
 test('screenshot preserves serialized content errors before computing geometry', async () => {
   const cases = [
@@ -49,6 +220,28 @@ test('screenshot preserves serialized content errors before computing geometry',
       message: scenario.message,
     });
   }
+});
+
+test('stale screenshot refs fail once without replaying the same lookup', async () => {
+  let reads = 0;
+  const deps = {
+    async ensureContentScript() {},
+    async sendTabMessage() {
+      reads += 1;
+      return { error: { code: 'ELEMENT_STALE', message: 'Stale element ref.' } };
+    },
+  } as unknown as Parameters<typeof handleScreenshot>[3];
+  await assert.rejects(
+    handleScreenshot(
+      target,
+      'screenshot.capture_element',
+      { elementRef: 'el_old0_1' },
+      deps,
+      'stale-once'
+    ),
+    { code: 'ELEMENT_STALE' }
+  );
+  assert.equal(reads, 1);
 });
 
 test('screenshot auto delivery uses artifact transport after a large-capture preflight', async () => {

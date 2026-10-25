@@ -532,6 +532,7 @@ Lightweight - only checks a few DOM/stylesheet signals. */
 
   /** Return the viewport rect for an element reference. */
   function getElementRect(elementRef: string): {
+    elementRef: string;
     x: number;
     y: number;
     width: number;
@@ -550,12 +551,24 @@ Lightweight - only checks a few DOM/stylesheet signals. */
     if (position === 'fixed' || position === 'sticky') {
       throw new Error(`Complete capture is unsupported for a ${position} element.`);
     }
+    if (
+      window !== window.top &&
+      (rect.left < 0 ||
+        rect.top < 0 ||
+        rect.right > window.innerWidth ||
+        rect.bottom > window.innerHeight)
+    ) {
+      throw new Error(
+        'Complete capture is unsupported outside the iframe viewport. Use input.scroll_into_view first.'
+      );
+    }
     const x = rect.x + window.scrollX;
     const y = rect.y + window.scrollY;
     if (x < 0 || y < 0) {
       throw new Error('Complete capture is unsupported for an element outside page bounds.');
     }
     return {
+      elementRef,
       x,
       y,
       width: rect.width,

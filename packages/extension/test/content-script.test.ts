@@ -1954,6 +1954,89 @@ test('content script dom.query works when randomUUID is unavailable', async (t) 
   );
 });
 
+test('frame wait probes preserve scoped descendant-text matching', async (t) => {
+  const harness = createChromeHarness();
+  await withDocument(
+    '<html><body><div id="status"><span>Saved changes</span></div></body></html>',
+    async () => {
+      await loadContentScript(t, {
+        withHelpers: true,
+        preserveDomGlobals: true,
+        chrome: harness.chrome,
+      });
+      for (const [waitText, found] of [
+        ['Saved', true],
+        ['Missing', false],
+      ] as const) {
+        const result = await executeBridgeMethod(harness.getListener(), 'dom.probe_target', {
+          target: { selector: '#status' },
+          waitText,
+        });
+        assert.deepEqual(result, { found });
+      }
+    }
+  );
+});
+
+test('role locators reach late editor controls without spending the semantic budget on chart decoration', async (t) => {
+  const harness = createChromeHarness();
+  const tabs = [1, 2].map(() =>
+    createFakeElement({
+      tagName: 'button',
+      attributes: { role: 'tab', 'aria-label': 'Visual' },
+    })
+  );
+  const body = createFakeElement({
+    tagName: 'body',
+    children: [
+      ...Array.from({ length: 6000 }, () => createFakeElement({ tagName: 'div' })),
+      ...tabs,
+    ],
+  });
+  await loadContentScript(t, {
+    withHelpers: true,
+    chrome: harness.chrome,
+    document: createDocumentHarness(body, {}),
+    window: { scrollX: 0, scrollY: 0 },
+  });
+  const result = expectFindResult(
+    await executeBridgeMethod(harness.getListener(), 'dom.find_by_role', {
+      role: 'tab',
+      name: 'Visual',
+      exact: true,
+      maxResults: 10,
+    })
+  );
+  assert.equal(result.error, undefined);
+  assert.equal(result.count, 2, 'later duplicates remain visible to uniqueness checks');
+  assert.equal(result.truncated, false);
+  assert.equal(result.scanned, 6002);
+});
+
+test('role locators still report incomplete traversal on oversized decorative DOMs', async (t) => {
+  const harness = createChromeHarness();
+  const body = createFakeElement({
+    tagName: 'body',
+    children: Array.from({ length: 20_001 }, () => createFakeElement({ tagName: 'div' })),
+  });
+  await loadContentScript(t, {
+    withHelpers: true,
+    chrome: harness.chrome,
+    document: createDocumentHarness(body, {}),
+  });
+  const result = expectFindResult(
+    await executeBridgeMethod(harness.getListener(), 'dom.find_by_role', {
+      role: 'tab',
+      name: 'Visual',
+      exact: true,
+    })
+  );
+  assert.equal(result.count, 0);
+  assert.equal(result.truncated, true);
+  assert.equal(result.truncationReason, 'scanLimit');
+  assert(result.scanned <= 20_000);
+});
+
 test('content script reuses the same elementRef for repeated dom.query calls', async (t) => {
   const saved = captureGlobals(['Node']);
   t.after(() => restoreGlobals(saved));
@@ -3376,7 +3459,16 @@ test('content script page state, storage, and screenshot helpers report page con
           guidance: 'Use a narrower exact target; partial sensitive values are never returned.',
         },
       });
-      assert.deepEqual(elementRect, { x: 62, y: 94, width: 200, height: 150, scale: 2 });
+      assert.equal(typeof elementRect.elementRef, 'string');
+      assert.match(String(elementRect.elementRef), /^el_[a-z0-9]{4}_/);
+      assert.deepEqual(elementRect, {
+        elementRef: elementRect.elementRef,
+        x: 62,
+        y: 94,
+        width: 200,
+        height: 150,
+        scale: 2,
+      });
       assert.deepEqual(fullPage, {
         scrollWidth: 18000,
         scrollHeight: 17000,

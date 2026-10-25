@@ -75,6 +75,7 @@ export async function executeInputPerform(
   const failures: PerformStepFailure[] = [];
 
   let lastResult: PerformLastResult | undefined;
+  let lastCompletedResult: PerformLastResult | undefined;
 
   const fail = (
     code: ErrorCode,
@@ -93,6 +94,7 @@ export async function executeInputPerform(
         startedAtMs,
         ...(failedStep ? { failedStep } : {}),
         ...(failures.length ? { failures } : {}),
+        ...(lastCompletedResult ? { lastResult: lastCompletedResult } : {}),
         ...details,
       },
       { method: request.method }
@@ -165,9 +167,9 @@ export async function executeInputPerform(
       });
       const failure = getStepFailure(response, step, index);
       if (!failure) {
-        if (params.returnLastResult && index === total - 1) {
+        if (params.returnLastResult) {
           const byteLength = getUtf8ByteLength(serializeJsonPayload(response.result));
-          lastResult =
+          lastCompletedResult =
             byteLength <= MAX_PERFORM_RESULT_BYTES
               ? {
                   index,
@@ -183,6 +185,7 @@ export async function executeInputPerform(
                   truncated: true,
                   maxBytes: MAX_PERFORM_RESULT_BYTES,
                 };
+          if (index === total - 1) lastResult = lastCompletedResult;
         }
         continue;
       }
