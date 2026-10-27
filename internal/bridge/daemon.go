@@ -539,10 +539,6 @@ func envelopeBody(message object) object {
 	return nil
 }
 
-func (d *daemon) handle(p *peer, message object) {
-	d.handleEnvelope(p, message, envelopeBody(message))
-}
-
 func (d *daemon) handleEnvelope(p *peer, message, body object) {
 	d.initServices()
 	kind := message.text("type")

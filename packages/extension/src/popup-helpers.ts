@@ -161,10 +161,6 @@ export function normalizePopupToggleError(errorMessage: string): string {
   return errorMessage.replace(/^CONTENT_SCRIPT_UNAVAILABLE:\s*/i, '');
 }
 
-export function getPopupInstallCommand(runtimeId: string, publishedExtensionId: string): string {
-  return runtimeId === publishedExtensionId ? 'bbx install' : `bbx install ${runtimeId}`;
-}
-
 /** Diagnostic shown when the native host connection keeps dropping and
 reconnecting (crash-looping daemon) instead of being merely offline. */
 export function getUnstableConnectionDiagnostic(): string {

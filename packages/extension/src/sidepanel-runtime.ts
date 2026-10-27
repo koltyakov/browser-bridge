@@ -126,7 +126,6 @@ export type SidePanelStateRenderOptions = {
   ) => void;
   renderActionLogEntry: (
     entry: ActionLogEntry,
-    setupStatus: SetupStatus | null,
     entries: ActionLogEntry[],
     index: number,
     repeatCount: number
@@ -239,9 +238,7 @@ export function renderSidepanelState(
         repeatCount += 1;
       }
     }
-    children.push(
-      options.renderActionLogEntry(entry, state.setupStatus, state.actionLog, index, repeatCount)
-    );
+    children.push(options.renderActionLogEntry(entry, state.actionLog, index, repeatCount));
     index += repeatCount;
   }
   options.replaceActionLogChildren(children);

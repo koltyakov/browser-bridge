@@ -29,14 +29,6 @@ func installCurrentScope() (installScope, error) {
 	return installScope{global: true, project: project, home: home}, err
 }
 
-func installMCPPath(client string, scope installScope) string {
-	paths := installMCPPaths(client, scope)
-	if len(paths) > 0 {
-		return paths[0]
-	}
-	return ""
-}
-
 func installVSCodeHome(scope installScope) string {
 	switch runtime.GOOS {
 	case "darwin":

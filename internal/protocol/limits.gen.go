@@ -3,13 +3,10 @@ package protocol
 
 const ArtifactChunkBytes = 196608
 const ArtifactTTLMS = 300000
-const ClientRequestTimeoutMarginMS = 4000
-const DaemonExistingSocketPingTimeoutMS = 500
 const DaemonPendingTimeoutMarginMS = 2000
 const DaemonRecentLogLimit = 200
 const DefaultA11YMaxDepth = 6
 const DefaultA11YMaxNodes = 500
-const DefaultClientRequestTimeoutMS = 8000
 const DefaultConsoleLimit = 50
 const DefaultDaemonPendingTimeoutMS = 30000
 const DefaultDeviceScaleFactor = 0
@@ -32,7 +29,6 @@ const DefaultViewportHeight = 720
 const DefaultViewportWidth = 1280
 const DefaultWaitTimeoutMS = 5000
 const DOMBaselineTTLMS = 300000
-const ExtractSettleQuietMS = 100
 const HARAutoInlineBytes = 262144
 const InputHoldTimeoutMarginMS = 5000
 const MaxArtifactsPerClient = 16

@@ -11,6 +11,14 @@ import (
 	"testing"
 )
 
+func installMCPPath(client string, scope installScope) string {
+	paths := installMCPPaths(client, scope)
+	if len(paths) > 0 {
+		return paths[0]
+	}
+	return ""
+}
+
 func TestAdditionalAgentPathsAndScope(t *testing.T) {
 	_, scope := installTestScope(t)
 	userMCP := map[string]string{

@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 
 import {
   createPopupToggleMessage,
-  getPopupInstallCommand,
   getPopupViewState,
   normalizePopupToggleError,
   renderPopupButtonState,
@@ -178,17 +177,6 @@ test('popup helpers normalize toggle errors and detect sync completion', () => {
       true
     ),
     false
-  );
-});
-
-test('getPopupInstallCommand uses the short published install command', () => {
-  assert.equal(
-    getPopupInstallCommand('jjjkmmcdkpcgamlopogicbnnhdgebhie', 'jjjkmmcdkpcgamlopogicbnnhdgebhie'),
-    'bbx install'
-  );
-  assert.equal(
-    getPopupInstallCommand('dev-extension-id', 'jjjkmmcdkpcgamlopogicbnnhdgebhie'),
-    'bbx install dev-extension-id'
   );
 });
 

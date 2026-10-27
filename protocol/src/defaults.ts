@@ -11,7 +11,6 @@ export const DEFAULT_TEXT_BUDGET = 600;
 export const DEFAULT_PAGE_TEXT_BUDGET = 8000;
 export const DEFAULT_EXTRACT_SETTLE_TIMEOUT_MS = 2000;
 export const MAX_EXTRACT_SETTLE_TIMEOUT_MS = 10_000;
-export const EXTRACT_SETTLE_QUIET_MS = 100;
 export const DEFAULT_WAIT_TIMEOUT_MS = 5000;
 export const DEFAULT_EVAL_TIMEOUT_MS = 5000;
 export const DEFAULT_NAV_TIMEOUT_MS = 15000;
@@ -106,20 +105,11 @@ export const DAEMON_PENDING_TIMEOUT_MARGIN_MS = 2_000;
 /** Upper bound for a daemon request awaiting an extension response. */
 export const MAX_DAEMON_PENDING_TIMEOUT_MS = 122_000;
 
-/** Default timeout for a BridgeClient request (ms). */
-export const DEFAULT_CLIENT_REQUEST_TIMEOUT_MS = 8_000;
-
-/** Transport allowance added after an operation timeout on the client side. */
-export const CLIENT_REQUEST_TIMEOUT_MARGIN_MS = 4_000;
-
 /** Upper bound for a client request, kept beyond the daemon's maximum deadline. */
 export const MAX_CLIENT_REQUEST_TIMEOUT_MS = 124_000;
 
 /** Maximum number of recent log entries retained by the daemon. */
 export const DAEMON_RECENT_LOG_LIMIT = 200;
-
-/** Maximum time to wait when probing an existing daemon socket during startup. */
-export const DAEMON_EXISTING_SOCKET_PING_TIMEOUT_MS = 500;
 
 /** Number of recent daemon log entries returned by `log.tail`. */
 export const DEFAULT_LOG_TAIL_LIMIT = 20;

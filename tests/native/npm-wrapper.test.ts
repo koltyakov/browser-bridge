@@ -9,7 +9,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { ensureNative, nativeTargets } from '../../packages/npm/src/runtime.js';
+import { resolveNative, nativeTargets } from '../../packages/npm/src/runtime.js';
 
 const exec = promisify(execFile);
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -119,7 +119,7 @@ test(
       npm_config_global: 'false',
     };
     let downloads = 0;
-    const cached = await ensureNative({
+    const { binary: cached } = await resolveNative({
       root: source,
       env,
       fetchFn: async (url) => {
