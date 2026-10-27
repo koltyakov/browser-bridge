@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PROTOCOL_VERSION } from '../../../protocol/src/index.js';
+import { getProtocolVersion } from '../../../protocol/src/index.js';
 import type { BridgeResponse } from '../../../protocol/src/types.js';
 
 import {
@@ -10,7 +10,6 @@ import {
   enforceTokenBudget,
   getErrorMessage,
   getResponseDiagnostics,
-  inferCapability,
   matchesConsoleLevel,
   normalizeCropRect,
   normalizeRuntimeErrorMessage,
@@ -49,7 +48,7 @@ function successResponse(id: string, result: unknown): BridgeResponse {
     ok: true,
     result,
     error: null,
-    meta: { protocol_version: PROTOCOL_VERSION },
+    meta: { protocol_version: getProtocolVersion() },
   };
 }
 
@@ -63,14 +62,11 @@ function failureResponse(id: string, code: string, message: string): BridgeRespo
         ? Failure
         : never
       : never,
-    meta: { protocol_version: PROTOCOL_VERSION },
+    meta: { protocol_version: getProtocolVersion() },
   };
 }
 
-test('background helpers infer capabilities and normalize runtime errors', () => {
-  assert.equal(inferCapability('page.evaluate'), 'page.evaluate');
-  assert.equal(inferCapability('tabs.create'), 'tabs.manage');
-  assert.equal(inferCapability('tabs.list'), null);
+test('background helpers normalize runtime errors', () => {
   assert.equal(normalizeRuntimeErrorMessage('No tab with id: 7.'), 'TAB_MISMATCH');
   assert.equal(normalizeRuntimeErrorMessage('Error: No tab with id: 7.'), 'TAB_MISMATCH');
   assert.equal(normalizeRuntimeErrorMessage('Error: boom'), 'boom');
@@ -580,7 +576,7 @@ test('enforceTokenBudget returns RESULT_TRUNCATED when even the compact fallback
     method,
     tokenBudget: 0.25,
   });
-  assert.equal(budgeted.meta.protocol_version, PROTOCOL_VERSION);
+  assert.equal(budgeted.meta.protocol_version, getProtocolVersion());
   assert.equal(budgeted.meta.budget_applied, true);
   assert.equal(budgeted.meta.budget_truncated, true);
   assert.equal(

@@ -1,8 +1,6 @@
-// @ts-check
-
 import { BridgeError, ERROR_CODES } from './errors.js';
 
-/** @typedef {import('./workflows.js').EmulationConfig} EmulationConfig */
+export type EmulationConfig = import('./workflows.js').EmulationConfig;
 
 /** Metrics presets deliberately do not impersonate a different browser engine. */
 export const DEVICE_PRESETS = Object.freeze({
@@ -19,29 +17,25 @@ export const NETWORK_PRESETS = Object.freeze({
   unthrottled: { offline: false, latencyMs: 0, downloadKbps: -1, uploadKbps: -1 },
 });
 
-/** @param {string} message @returns {never} */
-export function invalidWorkflow(message) {
+export function invalidWorkflow(message: string): never {
   throw new BridgeError(ERROR_CODES.INVALID_REQUEST, message);
 }
 
-/** @param {unknown} value @param {string} name @returns {Record<string, unknown>} */
-export function objectParam(value, name) {
+export function objectParam(value: unknown, name: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     invalidWorkflow(`${name} must be an object.`);
   }
-  return /** @type {Record<string, unknown>} */ (value);
+  return value as Record<string, unknown>;
 }
 
-/** @param {unknown} value @param {string} name @param {number} min @param {number} max @returns {number} */
-export function numberParam(value, name, min, max) {
+export function numberParam(value: unknown, name: string, min: number, max: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
     invalidWorkflow(`${name} must be between ${min} and ${max}.`);
   }
   return value;
 }
 
-/** @param {unknown} value @param {string} name @param {number} [max] @returns {string} */
-export function stringParam(value, name, max = 256) {
+export function stringParam(value: unknown, name: string, max: number = 256): string {
   if (
     typeof value !== 'string' ||
     !value.length ||
@@ -55,24 +49,21 @@ export function stringParam(value, name, max = 256) {
   return value;
 }
 
-/** @param {unknown} value @param {string} name @returns {boolean} */
-export function booleanParam(value, name) {
+export function booleanParam(value: unknown, name: string): boolean {
   if (typeof value !== 'boolean') invalidWorkflow(`${name} must be boolean.`);
   return value;
 }
 
-/** @param {Record<string, unknown>} value @param {string[]} keys */
-export function onlyKeys(value, keys) {
+export function onlyKeys(value: Record<string, unknown>, keys: string[]) {
   const unknown = Object.keys(value).find((key) => !keys.includes(key));
   if (unknown) invalidWorkflow(`Unknown parameter: ${unknown}.`);
 }
 
-/** Validate once at the shared boundary; repeated normalization is idempotent.
- * @param {Record<string, unknown>} params @returns {EmulationConfig} */
-export function normalizeEmulation(params) {
+/** Validate once at the shared boundary; repeated normalization is idempotent. */
+export function normalizeEmulation(params: Record<string, unknown>): EmulationConfig {
   onlyKeys(params, ['device', 'network', 'cpuRate', 'locale', 'timezoneId', 'geolocation']);
-  /** @type {EmulationConfig} */
-  const config = {};
+
+  const config: EmulationConfig = {};
   if (params.device !== undefined) {
     const input =
       typeof params.device === 'string'
@@ -83,11 +74,11 @@ export function normalizeEmulation(params) {
       input.preset === undefined
         ? {}
         : Object.hasOwn(DEVICE_PRESETS, String(input.preset))
-          ? DEVICE_PRESETS[/** @type {keyof typeof DEVICE_PRESETS} */ (input.preset)]
+          ? DEVICE_PRESETS[input.preset as keyof typeof DEVICE_PRESETS]
           : null;
     if (!preset) invalidWorkflow('device.preset must be phone, tablet, or desktop.');
-    /** @type {Record<string, unknown>} */
-    const device = { ...preset, ...input };
+
+    const device: Record<string, unknown> = { ...preset, ...input };
     config.device = {
       width: Math.round(numberParam(device.width, 'width', 1, 8192)),
       height: Math.round(numberParam(device.height, 'height', 1, 8192)),
@@ -106,7 +97,7 @@ export function normalizeEmulation(params) {
       input.preset === undefined
         ? NETWORK_PRESETS.unthrottled
         : Object.hasOwn(NETWORK_PRESETS, String(input.preset))
-          ? NETWORK_PRESETS[/** @type {keyof typeof NETWORK_PRESETS} */ (input.preset)]
+          ? NETWORK_PRESETS[input.preset as keyof typeof NETWORK_PRESETS]
           : null;
     if (!preset)
       invalidWorkflow(

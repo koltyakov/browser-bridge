@@ -1255,23 +1255,6 @@
     }
   },
   {
-    "type": "TruncateResult",
-    "valid": true,
-    "input": {
-      "value": "wire-✓",
-      "truncated": false,
-      "omitted": 1.25,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
     "type": "DomQueryParams",
     "valid": true,
     "input": {

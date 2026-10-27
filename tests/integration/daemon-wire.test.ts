@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { once } from 'node:events';
-import { getProtocolVersion, normalizeDomQuery, parseJsonLines } from '../../protocol/src/index.js';
+import { getProtocolVersion, normalizeDomQuery } from '../../protocol/src/index.js';
+import { parseJsonLines } from '../_helpers/jsonLines.js';
 import {
   connectFakeExtension,
   connectTestClient,

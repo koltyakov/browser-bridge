@@ -1,12 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  normalizeRecoveryTelemetrySummary,
-  RECOVERY_LOOP_THRESHOLD,
-  RECOVERY_WINDOW_MS,
-  RecoveryTelemetryCollector,
-} from '../src/recovery-telemetry.js';
+import { RECOVERY_LOOP_THRESHOLD, RecoveryTelemetryCollector } from '../src/recovery-telemetry.js';
 
 test('collector uses fixed buckets, detects three grouped failures, and decays predictably', () => {
   let now = 10_000;
@@ -90,15 +85,6 @@ test('collector retains boundary-bucket events for the full advertised window', 
   assert.equal(collector.snapshot('routedExtension').events.stale_ref_recovery.attempts, 0);
 });
 
-test('normalization accepts collector bucket grace at the window boundary', () => {
-  let now = 0;
-  const collector = new RecoveryTelemetryCollector({ now: () => now });
-  collector.record('request_outcome', 'success');
-  now = RECOVERY_WINDOW_MS + 1;
-  const snapshot = collector.snapshot('daemon');
-  assert.deepEqual(normalizeRecoveryTelemetrySummary(snapshot, 'daemon'), snapshot);
-});
-
 test('saturation preserves an active three-failure loop', () => {
   const collector = new RecoveryTelemetryCollector({ now: () => 1 });
   for (let index = 0; index < 99_997; index += 1) {
@@ -112,89 +98,4 @@ test('saturation preserves an active three-failure loop', () => {
   assert.equal(event.saturated, true);
   assert.equal(event.failures, RECOVERY_LOOP_THRESHOLD);
   assert.equal(event.activeLoop, true);
-  assert.deepEqual(normalizeRecoveryTelemetrySummary(snapshot, 'daemon'), snapshot);
-});
-
-test('normalizer reconstructs fixed fields and drops hostile extension data', () => {
-  const collector = new RecoveryTelemetryCollector({ now: () => 75_000 });
-  collector.record('stale_ref_recovery', 'failure');
-  const malicious = {
-    ...collector.snapshot('routedExtension'),
-    url: 'https://secret.example/path',
-    events: {
-      ...collector.snapshot('routedExtension').events,
-      stale_ref_recovery: {
-        ...collector.snapshot('routedExtension').events.stale_ref_recovery,
-        selector: '#secret',
-      },
-      attacker_event: { message: 'secret' },
-    },
-  };
-  const normalized = normalizeRecoveryTelemetrySummary(malicious, 'routedExtension');
-  assert.equal(normalized?.events.stale_ref_recovery.attempts, 1);
-  assert.equal(normalized?.events.stale_ref_recovery.failures, 1);
-  assert.equal(normalized?.events.stale_ref_recovery.failureRate, 1);
-  assert.doesNotMatch(JSON.stringify(normalized), /secret|selector|attacker|url/u);
-  assert.equal(normalizeRecoveryTelemetrySummary(malicious, 'daemon'), null);
-  assert.equal(
-    normalizeRecoveryTelemetrySummary(
-      {
-        ...malicious,
-        events: {
-          ...malicious.events,
-          stale_ref_recovery: {
-            ...malicious.events.stale_ref_recovery,
-            attempts: 1,
-            successes: 1,
-            failures: 1,
-          },
-        },
-      },
-      'routedExtension'
-    ),
-    null
-  );
-});
-
-test('normalizer rejects unsafe and inconsistent timestamps', () => {
-  const collector = new RecoveryTelemetryCollector({ now: () => 500_000 });
-  collector.record('stale_ref_recovery', 'failure');
-  const valid = collector.snapshot('routedExtension');
-  const withEventTimestamp = (lastEventAt: unknown) => ({
-    ...valid,
-    events: {
-      ...valid.events,
-      stale_ref_recovery: { ...valid.events.stale_ref_recovery, lastEventAt },
-    },
-  });
-
-  assert.equal(
-    normalizeRecoveryTelemetrySummary({ ...valid, asOf: 500_000.5 }, 'routedExtension'),
-    null
-  );
-  assert.equal(
-    normalizeRecoveryTelemetrySummary(withEventTimestamp(500_001), 'routedExtension'),
-    null
-  );
-  assert.equal(
-    normalizeRecoveryTelemetrySummary(withEventTimestamp(194_999), 'routedExtension'),
-    null
-  );
-  assert.equal(
-    normalizeRecoveryTelemetrySummary(
-      {
-        ...valid,
-        events: {
-          ...valid.events,
-          automatic_mcp_retry: { ...valid.events.automatic_mcp_retry, lastEventAt: 1 },
-        },
-      },
-      'routedExtension'
-    ),
-    null
-  );
-  assert.equal(
-    normalizeRecoveryTelemetrySummary(withEventTimestamp(Number.MAX_VALUE), 'routedExtension'),
-    null
-  );
 });

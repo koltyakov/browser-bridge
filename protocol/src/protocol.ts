@@ -1,8 +1,5 @@
-// @ts-check
-
 import { normalizeBridgeCaller } from './caller.js';
 import { applyBudget } from './budget.js';
-import { getOperationTimeout } from './operation-timeouts.js';
 import { normalizeWebMcpParams } from './webmcp.js';
 import { normalizeEmulation, onlyKeys } from './emulation.js';
 import { normalizeFileParams } from './files.js';
@@ -40,7 +37,6 @@ import {
   MAX_INPUT_WAIT_MS,
   DEFAULT_OBSERVE_SETTLE_MS,
   MAX_OBSERVE_SETTLE_MS,
-  INPUT_HOLD_TIMEOUT_MARGIN_MS,
   MAX_INTERCEPT_BODY_BYTES,
   MAX_INTERCEPT_HEADER_BYTES,
   MAX_INTERCEPT_HEADERS,
@@ -52,122 +48,120 @@ import {
   MAX_TOUCH_POINTS,
 } from './defaults.js';
 import { BridgeError, ERROR_CODES, getErrorRecovery } from './errors.js';
-import { BRIDGE_METHODS, METHOD_SET, createBridgeMethodGroups } from './registry.js';
+import { METHOD_SET, createBridgeMethodGroups } from './registry.js';
 
-/** @typedef {import('./types.js').AccessibilityTreeParams} AccessibilityTreeParams */
-/** @typedef {import('./types.js').ArtifactDeleteParams} ArtifactDeleteParams */
-/** @typedef {import('./types.js').ArtifactReadParams} ArtifactReadParams */
-/** @typedef {import('./types.js').AccessRequestParams} AccessRequestParams */
-/** @typedef {import('./types.js').BridgeFailureResponse} BridgeFailureResponse */
-/** @typedef {import('./types.js').BridgeMeta} BridgeMeta */
-/** @typedef {import('./types.js').BridgeMethod} BridgeMethod */
-/** @typedef {import('./types.js').BridgeRequest} BridgeRequest */
-/** @typedef {import('./types.js').BridgeSuccessResponse} BridgeSuccessResponse */
-/** @typedef {import('./types.js').CheckedActionParams} CheckedActionParams */
-/** @typedef {import('./types.js').CdpDispatchKeyEventParams} CdpDispatchKeyEventParams */
-/** @typedef {import('./types.js').CdpDomSnapshotParams} CdpDomSnapshotParams */
-/** @typedef {import('./types.js').CdpNodeIdParams} CdpNodeIdParams */
-/** @typedef {import('./types.js').ConsoleParams} ConsoleParams */
-/** @typedef {import('./types.js').DomQueryParams} DomQueryParams */
-/** @typedef {import('./types.js').DomBaselineCreateParams} DomBaselineCreateParams */
-/** @typedef {import('./types.js').DomBaselineCompareParams} DomBaselineCompareParams */
-/** @typedef {import('./types.js').DomBaselineHandleParams} DomBaselineHandleParams */
-/** @typedef {import('./types.js').DragParams} DragParams */
-/** @typedef {import('./types.js').EvaluateParams} EvaluateParams */
-/** @typedef {import('./types.js').ExtractContentParams} ExtractContentParams */
-/** @typedef {import('./types.js').FindByRoleParams} FindByRoleParams */
-/** @typedef {import('./types.js').FindByTextParams} FindByTextParams */
-/** @typedef {import('./types.js').GetHtmlParams} GetHtmlParams */
-/** @typedef {import('./types.js').HoverParams} HoverParams */
-/** @typedef {import('./types.js').HarExportParams} HarExportParams */
-/** @typedef {import('./types.js').HandleDialogParams} HandleDialogParams */
-/** @typedef {import('./types.js').HealthPingParams} HealthPingParams */
-/** @typedef {import('./types.js').InputActionParams} InputActionParams */
-/** @typedef {import('./types.js').LogTailParams} LogTailParams */
-/** @typedef {import('./types.js').NavigationActionParams} NavigationActionParams */
-/** @typedef {import('./types.js').NetworkInterceptAddParams} NetworkInterceptAddParams */
-/** @typedef {import('./types.js').NetworkParams} NetworkParams */
-/** @typedef {import('./types.js').NormalizedAccessibilityTreeParams} NormalizedAccessibilityTreeParams */
-/** @typedef {import('./types.js').NormalizedArtifactReadParams} NormalizedArtifactReadParams */
-/** @typedef {import('./types.js').NormalizedAccessRequestParams} NormalizedAccessRequestParams */
-/** @typedef {import('./types.js').NormalizedCheckedAction} NormalizedCheckedAction */
-/** @typedef {import('./types.js').NormalizedCdpDispatchKeyEventParams} NormalizedCdpDispatchKeyEventParams */
-/** @typedef {import('./types.js').NormalizedCdpDomSnapshotParams} NormalizedCdpDomSnapshotParams */
-/** @typedef {import('./types.js').NormalizedCdpNodeIdParams} NormalizedCdpNodeIdParams */
-/** @typedef {import('./types.js').NormalizedConsoleParams} NormalizedConsoleParams */
-/** @typedef {import('./types.js').NormalizedDomQuery} NormalizedDomQuery */
-/** @typedef {import('./types.js').NormalizedDomBaselineCreateParams} NormalizedDomBaselineCreateParams */
-/** @typedef {import('./types.js').NormalizedDomBaselineCompareParams} NormalizedDomBaselineCompareParams */
-/** @typedef {import('./types.js').NormalizedDomBaselineHandleParams} NormalizedDomBaselineHandleParams */
-/** @typedef {import('./types.js').NormalizedDragParams} NormalizedDragParams */
-/** @typedef {import('./types.js').NormalizedEvaluateParams} NormalizedEvaluateParams */
-/** @typedef {import('./types.js').NormalizedExtractContentParams} NormalizedExtractContentParams */
-/** @typedef {import('./types.js').NormalizedFindByRoleParams} NormalizedFindByRoleParams */
-/** @typedef {import('./types.js').NormalizedFindByTextParams} NormalizedFindByTextParams */
-/** @typedef {import('./types.js').NormalizedGetHtmlParams} NormalizedGetHtmlParams */
-/** @typedef {import('./types.js').NormalizedHoverParams} NormalizedHoverParams */
-/** @typedef {import('./types.js').NormalizedHarExportParams} NormalizedHarExportParams */
-/** @typedef {import('./types.js').NormalizedHandleDialogParams} NormalizedHandleDialogParams */
-/** @typedef {import('./types.js').NormalizedHealthPingParams} NormalizedHealthPingParams */
-/** @typedef {import('./types.js').NormalizedInputAction} NormalizedInputAction */
-/** @typedef {import('./types.js').NormalizedLogTailParams} NormalizedLogTailParams */
-/** @typedef {import('./types.js').NormalizedNavigationAction} NormalizedNavigationAction */
-/** @typedef {import('./types.js').NormalizedNetworkInterceptAddParams} NormalizedNetworkInterceptAddParams */
-/** @typedef {import('./types.js').NormalizedNetworkParams} NormalizedNetworkParams */
-/** @typedef {import('./types.js').NormalizedPageTextParams} NormalizedPageTextParams */
-/** @typedef {import('./types.js').NormalizedPatchOperation} NormalizedPatchOperation */
-/** @typedef {import('./types.js').NormalizedPerformParams} NormalizedPerformParams */
-/** @typedef {import('./types.js').NormalizedPerformStep} NormalizedPerformStep */
-/** @typedef {import('./types.js').NormalizedSelectAction} NormalizedSelectAction */
-/** @typedef {import('./types.js').NormalizedScreenshotParams} NormalizedScreenshotParams */
-/** @typedef {import('./types.js').NormalizedStorageParams} NormalizedStorageParams */
-/** @typedef {import('./types.js').NormalizedSensitiveReadParams} NormalizedSensitiveReadParams */
-/** @typedef {import('./types.js').NormalizedStyleQuery} NormalizedStyleQuery */
-/** @typedef {import('./types.js').NormalizedTabCloseParams} NormalizedTabCloseParams */
-/** @typedef {import('./types.js').NormalizedTabCreateParams} NormalizedTabCreateParams */
-/** @typedef {import('./types.js').NormalizedTouchParams} NormalizedTouchParams */
-/** @typedef {import('./types.js').NormalizedTouchPoint} NormalizedTouchPoint */
-/** @typedef {import('./types.js').NormalizedTouchPosition} NormalizedTouchPosition */
-/** @typedef {import('./types.js').NormalizedViewportAction} NormalizedViewportAction */
-/** @typedef {import('./types.js').NormalizedViewportResizeParams} NormalizedViewportResizeParams */
-/** @typedef {import('./types.js').NormalizedWaitForLoadStateParams} NormalizedWaitForLoadStateParams */
-/** @typedef {import('./types.js').NormalizedWaitForParams} NormalizedWaitForParams */
-/** @typedef {import('./types.js').PageTextParams} PageTextParams */
-/** @typedef {import('./types.js').PerformParams} PerformParams */
-/** @typedef {import('./types.js').PerformStepMethod} PerformStepMethod */
-/** @typedef {import('./types.js').TouchParams} TouchParams */
-/** @typedef {import('./types.js').PatchOperationParams} PatchOperationParams */
-/** @typedef {import('./types.js').SelectActionParams} SelectActionParams */
-/** @typedef {import('./types.js').ScreenshotParams} ScreenshotParams */
-/** @typedef {import('./types.js').StorageParams} StorageParams */
-/** @typedef {import('./types.js').SensitiveReadParams} SensitiveReadParams */
-/** @typedef {import('./types.js').StyleQueryParams} StyleQueryParams */
-/** @typedef {import('./types.js').TabCloseParams} TabCloseParams */
-/** @typedef {import('./types.js').TabCreateParams} TabCreateParams */
-/** @typedef {import('./types.js').ViewportActionParams} ViewportActionParams */
-/** @typedef {import('./types.js').ViewportResizeParams} ViewportResizeParams */
-/** @typedef {import('./types.js').WaitForLoadStateParams} WaitForLoadStateParams */
-/** @typedef {import('./types.js').WaitForParams} WaitForParams */
+export type AccessibilityTreeParams = import('./types.js').AccessibilityTreeParams;
+export type ArtifactDeleteParams = import('./types.js').ArtifactDeleteParams;
+export type ArtifactReadParams = import('./types.js').ArtifactReadParams;
+export type AccessRequestParams = import('./types.js').AccessRequestParams;
+export type BridgeFailureResponse = import('./types.js').BridgeFailureResponse;
+export type BridgeMeta = import('./types.js').BridgeMeta;
+export type BridgeMethod = import('./types.js').BridgeMethod;
+export type BridgeRequest = import('./types.js').BridgeRequest;
+export type BridgeSuccessResponse = import('./types.js').BridgeSuccessResponse;
+export type CheckedActionParams = import('./types.js').CheckedActionParams;
+export type CdpDispatchKeyEventParams = import('./types.js').CdpDispatchKeyEventParams;
+export type CdpDomSnapshotParams = import('./types.js').CdpDomSnapshotParams;
+export type CdpNodeIdParams = import('./types.js').CdpNodeIdParams;
+export type ConsoleParams = import('./types.js').ConsoleParams;
+export type DomQueryParams = import('./types.js').DomQueryParams;
+export type DomBaselineCreateParams = import('./types.js').DomBaselineCreateParams;
+export type DomBaselineCompareParams = import('./types.js').DomBaselineCompareParams;
+export type DomBaselineHandleParams = import('./types.js').DomBaselineHandleParams;
+export type DragParams = import('./types.js').DragParams;
+export type EvaluateParams = import('./types.js').EvaluateParams;
+export type ExtractContentParams = import('./types.js').ExtractContentParams;
+export type FindByRoleParams = import('./types.js').FindByRoleParams;
+export type FindByTextParams = import('./types.js').FindByTextParams;
+export type GetHtmlParams = import('./types.js').GetHtmlParams;
+export type HoverParams = import('./types.js').HoverParams;
+export type HarExportParams = import('./types.js').HarExportParams;
+export type HandleDialogParams = import('./types.js').HandleDialogParams;
+export type HealthPingParams = import('./types.js').HealthPingParams;
+export type InputActionParams = import('./types.js').InputActionParams;
+export type LogTailParams = import('./types.js').LogTailParams;
+export type NavigationActionParams = import('./types.js').NavigationActionParams;
+export type NetworkInterceptAddParams = import('./types.js').NetworkInterceptAddParams;
+export type NetworkParams = import('./types.js').NetworkParams;
+export type NormalizedAccessibilityTreeParams =
+  import('./types.js').NormalizedAccessibilityTreeParams;
+export type NormalizedArtifactReadParams = import('./types.js').NormalizedArtifactReadParams;
+export type NormalizedAccessRequestParams = import('./types.js').NormalizedAccessRequestParams;
+export type NormalizedCheckedAction = import('./types.js').NormalizedCheckedAction;
+export type NormalizedCdpDispatchKeyEventParams =
+  import('./types.js').NormalizedCdpDispatchKeyEventParams;
+export type NormalizedCdpDomSnapshotParams = import('./types.js').NormalizedCdpDomSnapshotParams;
+export type NormalizedCdpNodeIdParams = import('./types.js').NormalizedCdpNodeIdParams;
+export type NormalizedConsoleParams = import('./types.js').NormalizedConsoleParams;
+export type NormalizedDomQuery = import('./types.js').NormalizedDomQuery;
+export type NormalizedDomBaselineCreateParams =
+  import('./types.js').NormalizedDomBaselineCreateParams;
+export type NormalizedDomBaselineCompareParams =
+  import('./types.js').NormalizedDomBaselineCompareParams;
+export type NormalizedDomBaselineHandleParams =
+  import('./types.js').NormalizedDomBaselineHandleParams;
+export type NormalizedDragParams = import('./types.js').NormalizedDragParams;
+export type NormalizedEvaluateParams = import('./types.js').NormalizedEvaluateParams;
+export type NormalizedExtractContentParams = import('./types.js').NormalizedExtractContentParams;
+export type NormalizedFindByRoleParams = import('./types.js').NormalizedFindByRoleParams;
+export type NormalizedFindByTextParams = import('./types.js').NormalizedFindByTextParams;
+export type NormalizedGetHtmlParams = import('./types.js').NormalizedGetHtmlParams;
+export type NormalizedHoverParams = import('./types.js').NormalizedHoverParams;
+export type NormalizedHarExportParams = import('./types.js').NormalizedHarExportParams;
+export type NormalizedHandleDialogParams = import('./types.js').NormalizedHandleDialogParams;
+export type NormalizedHealthPingParams = import('./types.js').NormalizedHealthPingParams;
+export type NormalizedInputAction = import('./types.js').NormalizedInputAction;
+export type NormalizedLogTailParams = import('./types.js').NormalizedLogTailParams;
+export type NormalizedNavigationAction = import('./types.js').NormalizedNavigationAction;
+export type NormalizedNetworkInterceptAddParams =
+  import('./types.js').NormalizedNetworkInterceptAddParams;
+export type NormalizedNetworkParams = import('./types.js').NormalizedNetworkParams;
+export type NormalizedPageTextParams = import('./types.js').NormalizedPageTextParams;
+export type NormalizedPatchOperation = import('./types.js').NormalizedPatchOperation;
+export type NormalizedPerformParams = import('./types.js').NormalizedPerformParams;
+export type NormalizedPerformStep = import('./types.js').NormalizedPerformStep;
+export type NormalizedSelectAction = import('./types.js').NormalizedSelectAction;
+export type NormalizedScreenshotParams = import('./types.js').NormalizedScreenshotParams;
+export type NormalizedStorageParams = import('./types.js').NormalizedStorageParams;
+export type NormalizedSensitiveReadParams = import('./types.js').NormalizedSensitiveReadParams;
+export type NormalizedStyleQuery = import('./types.js').NormalizedStyleQuery;
+export type NormalizedTabCloseParams = import('./types.js').NormalizedTabCloseParams;
+export type NormalizedTabCreateParams = import('./types.js').NormalizedTabCreateParams;
+export type NormalizedTouchParams = import('./types.js').NormalizedTouchParams;
+export type NormalizedTouchPoint = import('./types.js').NormalizedTouchPoint;
+export type NormalizedTouchPosition = import('./types.js').NormalizedTouchPosition;
+export type NormalizedViewportAction = import('./types.js').NormalizedViewportAction;
+export type NormalizedViewportResizeParams = import('./types.js').NormalizedViewportResizeParams;
+export type NormalizedWaitForLoadStateParams =
+  import('./types.js').NormalizedWaitForLoadStateParams;
+export type NormalizedWaitForParams = import('./types.js').NormalizedWaitForParams;
+export type PageTextParams = import('./types.js').PageTextParams;
+export type PerformParams = import('./types.js').PerformParams;
+export type PerformStepMethod = import('./types.js').PerformStepMethod;
+export type TouchParams = import('./types.js').TouchParams;
+export type PatchOperationParams = import('./types.js').PatchOperationParams;
+export type SelectActionParams = import('./types.js').SelectActionParams;
+export type ScreenshotParams = import('./types.js').ScreenshotParams;
+export type StorageParams = import('./types.js').StorageParams;
+export type SensitiveReadParams = import('./types.js').SensitiveReadParams;
+export type StyleQueryParams = import('./types.js').StyleQueryParams;
+export type TabCloseParams = import('./types.js').TabCloseParams;
+export type TabCreateParams = import('./types.js').TabCreateParams;
+export type ViewportActionParams = import('./types.js').ViewportActionParams;
+export type ViewportResizeParams = import('./types.js').ViewportResizeParams;
+export type WaitForLoadStateParams = import('./types.js').WaitForLoadStateParams;
+export type WaitForParams = import('./types.js').WaitForParams;
 
-/** @type {string | null} */
-let protocolPackageVersion = null;
-
-/**
- * @param {string | null | undefined} packageVersion
- * @returns {string}
- */
-export function deriveProtocolVersion(packageVersion) {
+export function deriveProtocolVersion(packageVersion: string | null | undefined): string {
   const match = typeof packageVersion === 'string' ? /^(\d+)\.(\d+)/.exec(packageVersion) : null;
   return match ? `${match[1]}.${match[2]}` : '0.0';
 }
 
-/**
- * Minor and patch releases are compatible in either direction within a major.
- * @param {string} requestedVersion
- * @param {readonly string[]} supportedVersions
- * @returns {boolean}
- */
-export function isProtocolVersionSupported(requestedVersion, supportedVersions) {
+/** Minor and patch releases are compatible in either direction within a major. */
+export function isProtocolVersionSupported(
+  requestedVersion: string,
+  supportedVersions: readonly string[]
+): boolean {
   const major = /^(\d+)\.\d+$/.exec(requestedVersion)?.[1];
   return (
     major !== undefined &&
@@ -175,101 +169,47 @@ export function isProtocolVersionSupported(requestedVersion, supportedVersions) 
   );
 }
 
-/**
- * @returns {string | null}
- */
-function getRuntimePackageVersion() {
-  const chromeRuntime = /** @type {{ runtime?: { getManifest?: () => { version?: unknown } } }} */ (
-    globalThis.chrome ?? {}
-  ).runtime;
-  const manifestVersion = chromeRuntime?.getManifest?.().version;
-  if (typeof manifestVersion === 'string') {
-    return manifestVersion;
-  }
-
-  const npmPackageVersion = globalThis.process?.env?.npm_package_version;
-  return typeof npmPackageVersion === 'string' ? npmPackageVersion : null;
+export function getProtocolVersion(): string {
+  return deriveProtocolVersion(globalThis.chrome?.runtime?.getManifest?.().version);
 }
-
-/**
- * @param {string | null | undefined} packageVersion
- * @returns {void}
- */
-export function setProtocolPackageVersion(packageVersion) {
-  protocolPackageVersion = typeof packageVersion === 'string' ? packageVersion : null;
-}
-
-/**
- * @returns {string}
- */
-export function getProtocolVersion() {
-  return deriveProtocolVersion(protocolPackageVersion ?? getRuntimePackageVersion());
-}
-
-/** Snapshot retained for older callers; new code should call getProtocolVersion(). */
-export const PROTOCOL_VERSION = getProtocolVersion();
 
 /** Versions this build can speak. Newest first. */
 export function getSupportedProtocolVersions() {
   return Object.freeze([getProtocolVersion()]);
 }
 
-/** Snapshot retained for older callers; new code should call getSupportedProtocolVersions(). */
-export const SUPPORTED_VERSIONS = getSupportedProtocolVersions();
-
-/**
- * Clamp a numeric value between min and max, falling back to a default.
- *
- * @param {unknown} value
- * @param {number} min
- * @param {number} max
- * @param {number} fallback
- * @returns {number}
- */
-function clampInt(value, min, max, fallback) {
+/** Clamp a numeric value between min and max, falling back to a default. */
+function clampInt(value: unknown, min: number, max: number, fallback: number): number {
   const numeric = Number(value);
   const integer = Number.isFinite(numeric) && numeric !== 0 ? Math.trunc(numeric) : fallback;
   return Math.min(Math.max(integer, min), max);
 }
 
-/**
- * Clamp a finite number without discarding its fractional component.
- *
- * @param {unknown} value
- * @param {number} min
- * @param {number} max
- * @param {number} fallback
- * @returns {number}
- */
-function clampNumber(value, min, max, fallback) {
+/** Clamp a finite number without discarding its fractional component. */
+function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
   const numeric = typeof value === 'number' && Number.isFinite(value) ? value : fallback;
   return Math.min(Math.max(numeric, min), max);
 }
 
-/**
- * @param {unknown} value
- * @returns {value is Record<string, unknown>}
- */
-function isPlainRecord(value) {
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
 }
 
-/** @type {ReadonlyArray<BridgeMethod>} */
-export const METHODS = BRIDGE_METHODS;
-
-/**
- * @param {{
- *   id: string,
- *   method: BridgeMethod,
- *   tabId?: number | null,
- *   params?: Record<string, unknown>,
- *   meta?: BridgeMeta
- * }} input
- * @returns {BridgeRequest}
- */
-export function createRequest({ id, method, tabId = null, params = {}, meta = {} }) {
+export function createRequest({
+  id,
+  method,
+  tabId = null,
+  params = {},
+  meta = {},
+}: {
+  id: string;
+  method: BridgeMethod;
+  tabId?: number | null;
+  params?: Record<string, unknown>;
+  meta?: BridgeMeta;
+}): BridgeRequest {
   return validateBridgeRequest({
     id,
     method,
@@ -282,13 +222,11 @@ export function createRequest({ id, method, tabId = null, params = {}, meta = {}
   });
 }
 
-/**
- * @param {string} id
- * @param {unknown} result
- * @param {Record<string, unknown>} [meta={}]
- * @returns {BridgeSuccessResponse}
- */
-export function createSuccess(id, result, meta = {}) {
+export function createSuccess(
+  id: string,
+  result: unknown,
+  meta: Record<string, unknown> = {}
+): BridgeSuccessResponse {
   return {
     id,
     ok: true,
@@ -301,15 +239,13 @@ export function createSuccess(id, result, meta = {}) {
   };
 }
 
-/**
- * @param {string} id
- * @param {import('./types.js').ErrorCode} code
- * @param {string} message
- * @param {unknown} [details=null]
- * @param {Record<string, unknown>} [meta={}]
- * @returns {BridgeFailureResponse}
- */
-export function createFailure(id, code, message, details = null, meta = {}) {
+export function createFailure(
+  id: string,
+  code: import('./types.js').ErrorCode,
+  message: string,
+  details: unknown = null,
+  meta: Record<string, unknown> = {}
+): BridgeFailureResponse {
   const recovery = getRoutingRecovery(code, details) ?? getErrorRecovery(code);
   const effectiveRecovery =
     meta.method === 'webmcp.execute_tool'
@@ -343,13 +279,11 @@ export function createFailure(id, code, message, details = null, meta = {}) {
   };
 }
 
-/**
- * Routing errors need selection guidance, not closed-tab or global enable hints.
- * @param {import('./types.js').ErrorCode} code
- * @param {unknown} details
- * @returns {import('./types.js').BridgeRecovery | null}
- */
-function getRoutingRecovery(code, details) {
+/** Routing errors need selection guidance, not closed-tab or global enable hints. */
+function getRoutingRecovery(
+  code: import('./types.js').ErrorCode,
+  details: unknown
+): import('./types.js').BridgeRecovery | null {
   const reason =
     details && typeof details === 'object' && 'reason' in details ? details.reason : null;
   if (
@@ -372,16 +306,12 @@ function getRoutingRecovery(code, details) {
   return null;
 }
 
-/**
- * @param {unknown} request
- * @returns {BridgeRequest}
- */
-export function validateBridgeRequest(request) {
+export function validateBridgeRequest(request: unknown): BridgeRequest {
   if (!request || typeof request !== 'object') {
     throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'Request must be an object.');
   }
 
-  const candidate = /** @type {Record<string, unknown>} */ (request);
+  const candidate = request as Record<string, unknown>;
 
   if (
     typeof candidate.id !== 'string' ||
@@ -395,10 +325,7 @@ export function validateBridgeRequest(request) {
     );
   }
 
-  if (
-    typeof candidate.method !== 'string' ||
-    !METHOD_SET.has(/** @type {BridgeMethod} */ (candidate.method))
-  ) {
+  if (typeof candidate.method !== 'string' || !METHOD_SET.has(candidate.method as BridgeMethod)) {
     throw new BridgeError(
       ERROR_CODES.INVALID_REQUEST,
       `Unsupported method: ${String(candidate.method)}`
@@ -414,7 +341,7 @@ export function validateBridgeRequest(request) {
 
   const meta =
     candidate.meta && typeof candidate.meta === 'object'
-      ? /** @type {Record<string, unknown>} */ (candidate.meta)
+      ? (candidate.meta as Record<string, unknown>)
       : {};
   if (candidate.session_id != null) {
     throw new BridgeError(
@@ -430,8 +357,8 @@ export function validateBridgeRequest(request) {
   }
   const hasTabId = Object.hasOwn(candidate, 'tab_id');
   const candidateTabId = candidate.tab_id;
-  /** @type {number | null} */
-  let tabId = null;
+
+  let tabId: number | null = null;
   if (hasTabId && candidateTabId !== null) {
     if (
       typeof candidateTabId !== 'number' ||
@@ -446,10 +373,10 @@ export function validateBridgeRequest(request) {
     tabId = candidateTabId;
   }
 
-  const method = /** @type {BridgeMethod} */ (candidate.method);
+  const method = candidate.method as BridgeMethod;
   const params =
     candidate.params && typeof candidate.params === 'object'
-      ? /** @type {Record<string, unknown>} */ (candidate.params)
+      ? (candidate.params as Record<string, unknown>)
       : {};
 
   return {
@@ -479,19 +406,12 @@ export function validateBridgeRequest(request) {
   };
 }
 
-/**
- * Never turn a malformed explicit selector into implicit routing.
- * @param {Record<string, unknown>} meta
- * @returns {Pick<BridgeMeta, 'target_extension' | 'target_browser' | 'target_profile'>}
- */
-function normalizeBrowserTargetMeta(meta) {
-  /** @type {Pick<BridgeMeta, 'target_extension' | 'target_browser' | 'target_profile'>} */
-  const target = {};
-  for (const field of /** @type {const} */ ([
-    'target_extension',
-    'target_browser',
-    'target_profile',
-  ])) {
+/** Never turn a malformed explicit selector into implicit routing. */
+function normalizeBrowserTargetMeta(
+  meta: Record<string, unknown>
+): Pick<BridgeMeta, 'target_extension' | 'target_browser' | 'target_profile'> {
+  const target: Pick<BridgeMeta, 'target_extension' | 'target_browser' | 'target_profile'> = {};
+  for (const field of ['target_extension', 'target_browser', 'target_profile'] as const) {
     const value = meta[field];
     if (value === undefined) continue;
     if (
@@ -510,8 +430,7 @@ function normalizeBrowserTargetMeta(meta) {
   return target;
 }
 
-/** @param {string} value @returns {boolean} */
-function hasAsciiControlCharacters(value) {
+function hasAsciiControlCharacters(value: string): boolean {
   for (let index = 0; index < value.length; index += 1) {
     const code = value.charCodeAt(index);
     if (code < 32 || code === 127) return true;
@@ -519,21 +438,17 @@ function hasAsciiControlCharacters(value) {
   return false;
 }
 
-/**
- * @param {unknown} source
- * @param {unknown} value
- * @returns {import('./types.js').McpProtocolEra | undefined}
- */
-function normalizeMcpEra(source, value) {
+function normalizeMcpEra(
+  source: unknown,
+  value: unknown
+): import('./types.js').McpProtocolEra | undefined {
   return source === 'mcp' && (value === 'legacy' || value === 'modern') ? value : undefined;
 }
 
-/**
- * @param {unknown} source
- * @param {unknown} value
- * @returns {{ attempt: 2, reason: 'retryable_error' } | undefined}
- */
-function normalizeAutomaticRetryMeta(source, value) {
+function normalizeAutomaticRetryMeta(
+  source: unknown,
+  value: unknown
+): { attempt: 2; reason: 'retryable_error' } | undefined {
   if (source !== 'mcp' || !isPlainRecord(value)) return undefined;
   const keys = Object.keys(value).sort();
   return keys.length === 2 &&
@@ -545,16 +460,13 @@ function normalizeAutomaticRetryMeta(source, value) {
     : undefined;
 }
 
-/**
- * Normalize request params early so malformed payloads fail at the shared
- * protocol boundary before daemon or extension dispatch. Exported so later
- * stages re-normalize with the same per-method options (auto-wait, observe).
- *
- * @param {BridgeMethod} method
- * @param {Record<string, unknown>} params
- * @returns {Record<string, unknown>}
- */
-export function normalizeRequestParams(method, params) {
+/** Normalize request params early so malformed payloads fail at the shared
+protocol boundary before daemon or extension dispatch. Exported so later
+stages re-normalize with the same per-method options (auto-wait, observe). */
+export function normalizeRequestParams(
+  method: BridgeMethod,
+  params: Record<string, unknown>
+): Record<string, unknown> {
   switch (method) {
     case 'download.start':
     case 'download.status':
@@ -709,11 +621,9 @@ export function normalizeRequestParams(method, params) {
   }
 }
 
-/**
- * @param {AccessRequestParams} [params={}]
- * @returns {NormalizedAccessRequestParams}
- */
-export function normalizeAccessRequestParams(params = {}) {
+export function normalizeAccessRequestParams(
+  params: AccessRequestParams = {}
+): NormalizedAccessRequestParams {
   const intent = params.intent ?? 'general';
   if (
     intent !== 'inspect' &&
@@ -731,57 +641,7 @@ export function normalizeAccessRequestParams(params = {}) {
   return { intent };
 }
 
-/**
- * Return the browser-operation timeout for methods that wait asynchronously.
- * This lets clients and the daemon keep transport deadlines outside the
- * normalized operation deadline, including when callers omit timeoutMs.
- *
- * @param {BridgeMethod} method
- * @param {Record<string, unknown>} [params={}]
- * @returns {number | null}
- */
-export function getBridgeOperationTimeoutMs(method, params = {}) {
-  const shared = getOperationTimeout(method, params);
-  if (shared !== null) return shared;
-  switch (method) {
-    case 'page.extract_content': {
-      const normalized = normalizeExtractContentParams(params);
-      return normalized.consistency === 'settled' ? normalized.settleTimeoutMs : null;
-    }
-    case 'input.click':
-    case 'input.press_key':
-    case 'input.focus':
-    case 'input.type':
-    case 'input.fill':
-    case 'input.set_checked':
-    case 'input.select_option':
-    case 'input.hover':
-    case 'input.drag': {
-      const normalized =
-        /** @type {{ timeoutMs?: number, observe?: { settleMs: number } | null }} */ (
-          normalizeRequestParams(method, params)
-        );
-      const holdMs =
-        normalizeHoldMs(params.holdMs, 0) *
-        (method === 'input.click' && clampInt(params.clickCount, 1, 2, 1) === 2 ? 2 : 1);
-      const waitMs = normalized.timeoutMs ?? 0;
-      const settleMs = normalized.observe?.settleMs ?? 0;
-      const duration = method === 'input.hover' ? normalizeHoverParams(params).duration : 0;
-      const total = holdMs + waitMs + settleMs + duration;
-      return total > 0 ? total + INPUT_HOLD_TIMEOUT_MARGIN_MS : null;
-    }
-    case 'input.touch':
-      return normalizeHoldMs(params.holdMs, DEFAULT_TOUCH_HOLD_MS) + INPUT_HOLD_TIMEOUT_MARGIN_MS;
-    default:
-      return null;
-  }
-}
-
-/**
- * @param {DomQueryParams} [params={}]
- * @returns {NormalizedDomQuery}
- */
-export function normalizeDomQuery(params = {}) {
+export function normalizeDomQuery(params: DomQueryParams = {}): NormalizedDomQuery {
   const nestedBudget =
     params.budget && typeof params.budget === 'object' ? params.budget : undefined;
   return {
@@ -792,11 +652,9 @@ export function normalizeDomQuery(params = {}) {
   };
 }
 
-/**
- * @param {DomBaselineCreateParams} [params={}]
- * @returns {NormalizedDomBaselineCreateParams}
- */
-export function normalizeDomBaselineCreateParams(params = {}) {
+export function normalizeDomBaselineCreateParams(
+  params: DomBaselineCreateParams = {}
+): NormalizedDomBaselineCreateParams {
   const selector = typeof params.selector === 'string' ? params.selector.trim() : '';
   if (selector.length > 2_048) {
     throw new BridgeError(
@@ -838,44 +696,32 @@ export function normalizeDomBaselineCreateParams(params = {}) {
   };
 }
 
-/**
- * @param {DomBaselineCompareParams} [params={}]
- * @returns {NormalizedDomBaselineCompareParams}
- */
-export function normalizeDomBaselineCompareParams(params = {}) {
+export function normalizeDomBaselineCompareParams(
+  params: DomBaselineCompareParams = {}
+): NormalizedDomBaselineCompareParams {
   return {
     baselineId: normalizeDomBaselineId(params.baselineId),
     maxChanges: clampInt(params.maxChanges, 1, 200, 50),
   };
 }
 
-/**
- * @param {DomBaselineHandleParams} [params={}]
- * @returns {NormalizedDomBaselineHandleParams}
- */
-export function normalizeDomBaselineHandleParams(params = {}) {
+export function normalizeDomBaselineHandleParams(
+  params: DomBaselineHandleParams = {}
+): NormalizedDomBaselineHandleParams {
   return { baselineId: normalizeDomBaselineId(params.baselineId) };
 }
 
-/**
- * @param {unknown} value
- * @returns {string}
- */
-function normalizeDomBaselineId(value) {
+function normalizeDomBaselineId(value: unknown): string {
   if (typeof value !== 'string' || !/^baseline_[A-Za-z0-9_-]{32,64}$/u.test(value)) {
     throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'baselineId is invalid.');
   }
   return value;
 }
 
-/**
- * @param {StyleQueryParams} [params={}]
- * @returns {NormalizedStyleQuery}
- */
-export function normalizeStyleQuery(params = {}) {
+export function normalizeStyleQuery(params: StyleQueryParams = {}): NormalizedStyleQuery {
   const target = normalizeTarget(
     params.target && typeof params.target === 'object'
-      ? /** @type {{ elementRef?: string, selector?: string }} */ (params.target)
+      ? (params.target as { elementRef?: string; selector?: string })
       : undefined
   );
   const elementRef = String(params.elementRef || target.elementRef || '');
@@ -892,28 +738,17 @@ export function normalizeStyleQuery(params = {}) {
   };
 }
 
-const TARGET_LOCATOR_KEYS = /** @type {const} */ ([
-  'role',
-  'name',
-  'text',
-  'label',
-  'placeholder',
-  'testId',
-]);
+const TARGET_LOCATOR_KEYS = ['role', 'name', 'text', 'label', 'placeholder', 'testId'] as const;
 const MAX_LOCATOR_VALUE_LENGTH = 500;
 
-/**
- * Normalize an input target. Besides `elementRef` and `selector`, a target can
- * be a semantic locator (`role` + `name`, `text`, `label`, `placeholder`,
- * `testId`) so one action call can find and act on an element. `selector`
- * then narrows locator candidates; `nth` picks one of several matches.
- *
- * @param {Record<string, unknown> | null | undefined} target
- * @returns {import('./types.js').InputTarget}
- */
-function normalizeTarget(target) {
-  /** @type {import('./types.js').InputTarget} */
-  const normalized = {
+/** Normalize an input target. Besides `elementRef` and `selector`, a target can
+be a semantic locator (`role` + `name`, `text`, `label`, `placeholder`,
+`testId`) so one action call can find and act on an element. `selector`
+then narrows locator candidates; `nth` picks one of several matches. */
+function normalizeTarget(
+  target: Record<string, unknown> | null | undefined
+): import('./types.js').InputTarget {
+  const normalized: import('./types.js').InputTarget = {
     elementRef: typeof target?.elementRef === 'string' ? target.elementRef : undefined,
     selector: typeof target?.selector === 'string' ? target.selector : undefined,
   };
@@ -956,16 +791,14 @@ const OBSERVE_BY_DEFAULT_METHODS = new Set([
   'input.set_checked',
 ]);
 
-/**
- * @param {string} method
- * @param {unknown} value
- * @param {{ submit?: boolean }} normalized
- * @returns {{ settleMs: number } | null}
- */
-function normalizeObserveOption(method, value, normalized) {
+function normalizeObserveOption(
+  method: string,
+  value: unknown,
+  normalized: { submit?: boolean }
+): { settleMs: number } | null {
   if (value === false || value === null) return null;
   if (value && typeof value === 'object') {
-    const settleMs = /** @type {{ settleMs?: unknown }} */ (value).settleMs;
+    const settleMs = (value as { settleMs?: unknown }).settleMs;
     return {
       settleMs: clampInt(settleMs, 0, MAX_OBSERVE_SETTLE_MS, DEFAULT_OBSERVE_SETTLE_MS),
     };
@@ -976,16 +809,12 @@ function normalizeObserveOption(method, value, normalized) {
   return value === true || observeByDefault ? { settleMs: DEFAULT_OBSERVE_SETTLE_MS } : null;
 }
 
-/**
- * Add the shared auto-wait and observation options to normalized input params.
- *
- * @template {Record<string, unknown>} T
- * @param {string} method
- * @param {T} normalized
- * @param {Record<string, unknown>} raw
- * @returns {T & { timeoutMs: number, observe: { settleMs: number } | null }}
- */
-function withInputOptions(method, normalized, raw) {
+/** Add the shared auto-wait and observation options to normalized input params. */
+function withInputOptions<T extends Record<string, unknown>>(
+  method: string,
+  normalized: T,
+  raw: Record<string, unknown>
+): T & { timeoutMs: number; observe: { settleMs: number } | null } {
   return {
     ...normalized,
     timeoutMs:
@@ -996,22 +825,14 @@ function withInputOptions(method, normalized, raw) {
   };
 }
 
-/**
- * @param {unknown} value
- * @returns {import('./types.js').InputExecutionMode}
- */
-function normalizeInputExecutionMode(value) {
+function normalizeInputExecutionMode(value: unknown): import('./types.js').InputExecutionMode {
   if (value !== undefined && value !== 'dom' && value !== 'cdp' && value !== 'auto') {
     throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'executionMode must be dom, cdp, or auto.');
   }
   return value === 'cdp' || value === 'auto' ? value : 'dom';
 }
 
-/**
- * @param {InputActionParams} [params={}]
- * @returns {NormalizedInputAction}
- */
-export function normalizeInputAction(params = {}) {
+export function normalizeInputAction(params: InputActionParams = {}): NormalizedInputAction {
   const button = params.button === 'middle' || params.button === 'right' ? params.button : 'left';
   const mode =
     params.mode === 'setter' || params.mode === 'keystrokes' || params.mode === 'auto'
@@ -1021,7 +842,7 @@ export function normalizeInputAction(params = {}) {
   return {
     target: normalizeTarget(
       params.target && typeof params.target === 'object'
-        ? /** @type {{ elementRef?: string, selector?: string }} */ (params.target)
+        ? (params.target as { elementRef?: string; selector?: string })
         : undefined
     ),
     button,
@@ -1041,23 +862,12 @@ export function normalizeInputAction(params = {}) {
   };
 }
 
-/**
- * Normalize a press-and-hold duration, honoring an explicit zero.
- *
- * @param {unknown} value
- * @param {number} fallback
- * @returns {number}
- */
-function normalizeHoldMs(value, fallback) {
+/** Normalize a press-and-hold duration, honoring an explicit zero. */
+function normalizeHoldMs(value: unknown, fallback: number): number {
   return Math.round(clampNumber(value, 0, MAX_INPUT_HOLD_MS, fallback));
 }
 
-/**
- * @param {unknown} value
- * @param {string} label
- * @returns {NormalizedTouchPosition}
- */
-function normalizeTouchPosition(value, label) {
+function normalizeTouchPosition(value: unknown, label: string): NormalizedTouchPosition {
   if (!isPlainRecord(value)) {
     throw new BridgeError(
       ERROR_CODES.INVALID_REQUEST,
@@ -1078,25 +888,18 @@ function normalizeTouchPosition(value, label) {
   }
   if (hasTarget) {
     return {
-      target: normalizeTarget(
-        /** @type {{ elementRef?: string, selector?: string }} */ (value.target)
-      ),
+      target: normalizeTarget(value.target as { elementRef?: string; selector?: string }),
       x: null,
       y: null,
     };
   }
-  return { target: null, x: /** @type {number} */ (value.x), y: /** @type {number} */ (value.y) };
+  return { target: null, x: value.x as number, y: value.y as number };
 }
 
-/**
- * Normalize a simultaneous touch gesture: one to MAX_TOUCH_POINTS fingers,
- * each placed on a target or viewport point and optionally moved to an end
- * position while all fingers stay down for holdMs.
- *
- * @param {TouchParams} [params={}]
- * @returns {NormalizedTouchParams}
- */
-export function normalizeTouchParams(params = {}) {
+/** Normalize a simultaneous touch gesture: one to MAX_TOUCH_POINTS fingers,
+each placed on a target or viewport point and optionally moved to an end
+position while all fingers stay down for holdMs. */
+export function normalizeTouchParams(params: TouchParams = {}): NormalizedTouchParams {
   const rawPoints = params.points;
   if (!Array.isArray(rawPoints) || rawPoints.length < 1 || rawPoints.length > MAX_TOUCH_POINTS) {
     throw new BridgeError(
@@ -1104,8 +907,8 @@ export function normalizeTouchParams(params = {}) {
       `points must be an array of 1 to ${MAX_TOUCH_POINTS} touch points.`
     );
   }
-  /** @type {NormalizedTouchPoint[]} */
-  const points = rawPoints.map((point, index) => {
+
+  const points: NormalizedTouchPoint[] = rawPoints.map((point, index) => {
     const start = normalizeTouchPosition(point, `points[${index}]`);
     const rawEnd = isPlainRecord(point) ? point.to : undefined;
     return {
@@ -1155,13 +958,7 @@ const CDP_CAPABLE_STEP_METHODS = new Set([
   'input.touch',
 ]);
 
-/**
- * @param {unknown} value
- * @param {string} label
- * @param {number} maximum
- * @returns {number | null}
- */
-function normalizeStepTiming(value, label, maximum) {
+function normalizeStepTiming(value: unknown, label: string, maximum: number): number | null {
   if (value == null) return null;
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > maximum) {
     throw new BridgeError(
@@ -1172,17 +969,11 @@ function normalizeStepTiming(value, label, maximum) {
   return Math.round(value);
 }
 
-/**
- * Captured URLs are sanitized before outcome matching: the fragment is dropped,
- * the path is percent-encoded, and the query is reserialized with every value
- * redacted. Write the pattern in that form so a literal substring can match.
- *
- * @param {string} pattern
- * @returns {string}
- */
-function normalizeNetworkUrlPattern(pattern) {
-  const invalid = (/** @type {string} */ message) =>
-    new BridgeError(ERROR_CODES.INVALID_REQUEST, message);
+/** Captured URLs are sanitized before outcome matching: the fragment is dropped,
+the path is percent-encoded, and the query is reserialized with every value
+redacted. Write the pattern in that form so a literal substring can match. */
+function normalizeNetworkUrlPattern(pattern: string): string {
+  const invalid = (message: string) => new BridgeError(ERROR_CODES.INVALID_REQUEST, message);
   if (pattern.includes('#'))
     throw invalid('Network outcome urlPattern cannot include a fragment; captured URLs omit it.');
   // Without '?', a pattern can still begin inside the query at an '&'.
@@ -1217,14 +1008,9 @@ function normalizeNetworkUrlPattern(pattern) {
   }
 }
 
-/**
- * Normalize an ordered, timed input sequence. Each step reuses an existing
- * bridge method and its own normalizer; the sequence adds only scheduling.
- *
- * @param {PerformParams} [params={}]
- * @returns {NormalizedPerformParams}
- */
-export function normalizeInputPerformParams(params = {}) {
+/** Normalize an ordered, timed input sequence. Each step reuses an existing
+bridge method and its own normalizer; the sequence adds only scheduling. */
+export function normalizeInputPerformParams(params: PerformParams = {}): NormalizedPerformParams {
   const timeoutMs = clampInt(
     params.timeoutMs,
     100,
@@ -1240,8 +1026,8 @@ export function normalizeInputPerformParams(params = {}) {
       `steps must be an array of 1 to ${MAX_PERFORM_STEPS} steps.`
     );
   }
-  /** @type {NormalizedPerformStep[]} */
-  const steps = rawSteps.map((step, index) => {
+
+  const steps: NormalizedPerformStep[] = rawSteps.map((step, index) => {
     if (!isPlainRecord(step)) {
       throw new BridgeError(ERROR_CODES.INVALID_REQUEST, `steps[${index}] must be an object.`);
     }
@@ -1258,7 +1044,7 @@ export function normalizeInputPerformParams(params = {}) {
         `steps[${index}].params must be an object.`
       );
     }
-    const rawParams = /** @type {Record<string, unknown>} */ (step.params ?? {});
+    const rawParams = step.params ?? ({} as Record<string, unknown>);
     const stepParams =
       executionMode && CDP_CAPABLE_STEP_METHODS.has(method) && rawParams.executionMode === undefined
         ? { ...rawParams, executionMode }
@@ -1271,7 +1057,7 @@ export function normalizeInputPerformParams(params = {}) {
         `steps[${index}] accepts either delayMs or atMs, not both.`
       );
     }
-    const stepMethod = /** @type {PerformStepMethod} */ (method);
+    const stepMethod = method as PerformStepMethod;
     const normalizedStepParams = normalizeRequestParams(stepMethod, stepParams);
     // Timed sequences keep their schedule: steps observe effects only on request.
     if (rawParams.observe === undefined && 'observe' in normalizedStepParams) {
@@ -1284,8 +1070,8 @@ export function normalizeInputPerformParams(params = {}) {
       atMs,
     };
   });
-  /** @type {import('./types.js').NormalizedPerformOutcome[] | undefined} */
-  let outcomes;
+
+  let outcomes: import('./types.js').NormalizedPerformOutcome[] | undefined;
   if (params.outcomes !== undefined) {
     if (
       !Array.isArray(params.outcomes) ||
@@ -1297,7 +1083,7 @@ export function normalizeInputPerformParams(params = {}) {
         ERROR_CODES.INVALID_REQUEST,
         'outcomes must contain 1 to 8 conditions and requires continueOnError=false.'
       );
-    const rawOutcomes = /** @type {unknown[]} */ (params.outcomes);
+    const rawOutcomes = params.outcomes as unknown[];
     outcomes = rawOutcomes.map((condition, index) => {
       if (!isPlainRecord(condition))
         throw new BridgeError(ERROR_CODES.INVALID_REQUEST, `outcomes[${index}] must be an object.`);
@@ -1367,11 +1153,9 @@ export function normalizeInputPerformParams(params = {}) {
   };
 }
 
-/**
- * @param {CdpDispatchKeyEventParams} [params={}]
- * @returns {NormalizedCdpDispatchKeyEventParams}
- */
-export function normalizeCdpDispatchKeyEventParams(params = {}) {
+export function normalizeCdpDispatchKeyEventParams(
+  params: CdpDispatchKeyEventParams = {}
+): NormalizedCdpDispatchKeyEventParams {
   if (typeof params.key !== 'string' || !params.key.trim()) {
     throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'key must be a non-empty string.');
   }
@@ -1415,11 +1199,7 @@ export function normalizeCdpDispatchKeyEventParams(params = {}) {
   };
 }
 
-/**
- * @param {CdpNodeIdParams} [params={}]
- * @returns {NormalizedCdpNodeIdParams}
- */
-export function normalizeCdpNodeIdParams(params = {}) {
+export function normalizeCdpNodeIdParams(params: CdpNodeIdParams = {}): NormalizedCdpNodeIdParams {
   if (typeof params.nodeId !== 'number' || !Number.isFinite(params.nodeId)) {
     throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'nodeId must be a finite number.');
   }
@@ -1429,11 +1209,9 @@ export function normalizeCdpNodeIdParams(params = {}) {
   };
 }
 
-/**
- * @param {CdpDomSnapshotParams} [params={}]
- * @returns {NormalizedCdpDomSnapshotParams}
- */
-export function normalizeCdpDomSnapshotParams(params = {}) {
+export function normalizeCdpDomSnapshotParams(
+  params: CdpDomSnapshotParams = {}
+): NormalizedCdpDomSnapshotParams {
   const computedStyles = Array.isArray(params.computedStyles)
     ? params.computedStyles.filter(
         (property) => typeof property === 'string' && property.length > 0 && property.length <= 128
@@ -1448,15 +1226,11 @@ export function normalizeCdpDomSnapshotParams(params = {}) {
   return { computedStyles };
 }
 
-/**
- * @param {CheckedActionParams} [params={}]
- * @returns {NormalizedCheckedAction}
- */
-export function normalizeCheckedAction(params = {}) {
+export function normalizeCheckedAction(params: CheckedActionParams = {}): NormalizedCheckedAction {
   return {
     target: normalizeTarget(
       params.target && typeof params.target === 'object'
-        ? /** @type {{ elementRef?: string, selector?: string }} */ (params.target)
+        ? (params.target as { elementRef?: string; selector?: string })
         : undefined
     ),
     checked: params.checked !== false,
@@ -1465,15 +1239,11 @@ export function normalizeCheckedAction(params = {}) {
   };
 }
 
-/**
- * @param {SelectActionParams} [params={}]
- * @returns {NormalizedSelectAction}
- */
-export function normalizeSelectAction(params = {}) {
+export function normalizeSelectAction(params: SelectActionParams = {}): NormalizedSelectAction {
   return {
     target: normalizeTarget(
       params.target && typeof params.target === 'object'
-        ? /** @type {{ elementRef?: string, selector?: string }} */ (params.target)
+        ? (params.target as { elementRef?: string; selector?: string })
         : undefined
     ),
     values: Array.isArray(params.values)
@@ -1492,15 +1262,13 @@ export function normalizeSelectAction(params = {}) {
   };
 }
 
-/**
- * @param {ViewportActionParams} [params={}]
- * @returns {NormalizedViewportAction}
- */
-export function normalizeViewportAction(params = {}) {
+export function normalizeViewportAction(
+  params: ViewportActionParams = {}
+): NormalizedViewportAction {
   return {
     target: normalizeTarget(
       params.target && typeof params.target === 'object'
-        ? /** @type {{ elementRef?: string, selector?: string }} */ (params.target)
+        ? (params.target as { elementRef?: string; selector?: string })
         : undefined
     ),
     top: Number.isFinite(Number(params.top)) ? Number(params.top) : 0,
@@ -1510,11 +1278,9 @@ export function normalizeViewportAction(params = {}) {
   };
 }
 
-/**
- * @param {NavigationActionParams} [params={}]
- * @returns {NormalizedNavigationAction}
- */
-export function normalizeNavigationAction(params = {}) {
+export function normalizeNavigationAction(
+  params: NavigationActionParams = {}
+): NormalizedNavigationAction {
   const url = typeof params.url === 'string' ? params.url.trim() : '';
   if (url) {
     try {
@@ -1537,11 +1303,9 @@ export function normalizeNavigationAction(params = {}) {
   };
 }
 
-/**
- * @param {PatchOperationParams} [params={}]
- * @returns {NormalizedPatchOperation}
- */
-export function normalizePatchOperation(params = {}) {
+export function normalizePatchOperation(
+  params: PatchOperationParams = {}
+): NormalizedPatchOperation {
   const operation = typeof params.operation === 'string' ? params.operation : null;
   if (
     operation !== null &&
@@ -1563,13 +1327,13 @@ export function normalizePatchOperation(params = {}) {
     patchId: typeof params.patchId === 'string' ? params.patchId : null,
     target:
       params.target && typeof params.target === 'object'
-        ? /** @type {Record<string, unknown>} */ (params.target)
+        ? (params.target as Record<string, unknown>)
         : {},
     operation,
     name: typeof params.name === 'string' ? params.name : null,
     declarations:
       params.declarations && typeof params.declarations === 'object'
-        ? /** @type {Record<string, string>} */ (params.declarations)
+        ? (params.declarations as Record<string, string>)
         : {},
     value: params.value ?? null,
     important: Boolean(params.important),
@@ -1577,11 +1341,7 @@ export function normalizePatchOperation(params = {}) {
   };
 }
 
-/**
- * @param {EvaluateParams} [params={}]
- * @returns {NormalizedEvaluateParams}
- */
-export function normalizeEvaluateParams(params = {}) {
+export function normalizeEvaluateParams(params: EvaluateParams = {}): NormalizedEvaluateParams {
   const expression = typeof params.expression === 'string' ? params.expression : '';
   if (expression.length > 100_000) {
     throw new BridgeError(
@@ -1603,11 +1363,7 @@ export function normalizeEvaluateParams(params = {}) {
   };
 }
 
-/**
- * @param {ConsoleParams} [params={}]
- * @returns {NormalizedConsoleParams}
- */
-export function normalizeConsoleParams(params = {}) {
+export function normalizeConsoleParams(params: ConsoleParams = {}): NormalizedConsoleParams {
   const validLevels = ['all', 'log', 'warn', 'error', 'info', 'debug', 'exception', 'rejection'];
   return {
     level: validLevels.includes(String(params.level ?? '')) ? String(params.level) : 'all',
@@ -1616,11 +1372,9 @@ export function normalizeConsoleParams(params = {}) {
   };
 }
 
-/**
- * @param {HandleDialogParams} [params={}]
- * @returns {NormalizedHandleDialogParams}
- */
-export function normalizeHandleDialogParams(params = {}) {
+export function normalizeHandleDialogParams(
+  params: HandleDialogParams = {}
+): NormalizedHandleDialogParams {
   const action = params.action ?? 'inspect';
   if (action !== 'inspect' && action !== 'accept' && action !== 'dismiss') {
     throw new BridgeError(
@@ -1672,11 +1426,7 @@ export function normalizeHandleDialogParams(params = {}) {
   };
 }
 
-/**
- * @param {WaitForParams} [params={}]
- * @returns {NormalizedWaitForParams}
- */
-export function normalizeWaitForParams(params = {}) {
+export function normalizeWaitForParams(params: WaitForParams = {}): NormalizedWaitForParams {
   const validStates = ['attached', 'detached', 'visible', 'hidden'];
   const selector =
     typeof params.selector === 'string' && params.selector.trim() ? params.selector : '';
@@ -1691,17 +1441,15 @@ export function normalizeWaitForParams(params = {}) {
     selector: selector || '*',
     text,
     state: validStates.includes(String(params.state ?? ''))
-      ? /** @type {'attached' | 'detached' | 'visible' | 'hidden'} */ (String(params.state))
+      ? (String(params.state) as 'attached' | 'detached' | 'visible' | 'hidden')
       : 'attached',
     timeoutMs: clampInt(params.timeoutMs, 100, 30_000, 5_000),
   };
 }
 
-/**
- * @param {FindByTextParams} [params={}]
- * @returns {NormalizedFindByTextParams}
- */
-export function normalizeFindByTextParams(params = {}) {
+export function normalizeFindByTextParams(
+  params: FindByTextParams = {}
+): NormalizedFindByTextParams {
   return {
     text: typeof params.text === 'string' ? params.text : '',
     exact: Boolean(params.exact),
@@ -1711,11 +1459,9 @@ export function normalizeFindByTextParams(params = {}) {
   };
 }
 
-/**
- * @param {FindByRoleParams} [params={}]
- * @returns {NormalizedFindByRoleParams}
- */
-export function normalizeFindByRoleParams(params = {}) {
+export function normalizeFindByRoleParams(
+  params: FindByRoleParams = {}
+): NormalizedFindByRoleParams {
   return {
     role: typeof params.role === 'string' ? params.role : '',
     name: typeof params.name === 'string' ? params.name : '',
@@ -1726,14 +1472,10 @@ export function normalizeFindByRoleParams(params = {}) {
   };
 }
 
-/**
- * @param {GetHtmlParams} [params={}]
- * @returns {NormalizedGetHtmlParams}
- */
-export function normalizeGetHtmlParams(params = {}) {
+export function normalizeGetHtmlParams(params: GetHtmlParams = {}): NormalizedGetHtmlParams {
   const target = normalizeTarget(
     params.target && typeof params.target === 'object'
-      ? /** @type {{ elementRef?: string, selector?: string }} */ (params.target)
+      ? (params.target as { elementRef?: string; selector?: string })
       : undefined
   );
   return {
@@ -1744,15 +1486,11 @@ export function normalizeGetHtmlParams(params = {}) {
   };
 }
 
-/**
- * @param {HoverParams} [params={}]
- * @returns {NormalizedHoverParams}
- */
-export function normalizeHoverParams(params = {}) {
+export function normalizeHoverParams(params: HoverParams = {}): NormalizedHoverParams {
   return {
     target: normalizeTarget(
       params.target && typeof params.target === 'object'
-        ? /** @type {{ elementRef?: string, selector?: string }} */ (params.target)
+        ? (params.target as { elementRef?: string; selector?: string })
         : undefined
     ),
     duration: clampInt(params.duration, 0, 5_000, 0),
@@ -1764,20 +1502,16 @@ export function normalizeHoverParams(params = {}) {
   };
 }
 
-/**
- * @param {DragParams} [params={}]
- * @returns {NormalizedDragParams}
- */
-export function normalizeDragParams(params = {}) {
+export function normalizeDragParams(params: DragParams = {}): NormalizedDragParams {
   return {
     source: normalizeTarget(
       params.source && typeof params.source === 'object'
-        ? /** @type {{ elementRef?: string, selector?: string }} */ (params.source)
+        ? (params.source as { elementRef?: string; selector?: string })
         : undefined
     ),
     destination: normalizeTarget(
       params.destination && typeof params.destination === 'object'
-        ? /** @type {{ elementRef?: string, selector?: string }} */ (params.destination)
+        ? (params.destination as { elementRef?: string; selector?: string })
         : undefined
     ),
     offsetX: Number.isFinite(Number(params.offsetX)) ? Number(params.offsetX) : 0,
@@ -1787,11 +1521,7 @@ export function normalizeDragParams(params = {}) {
   };
 }
 
-/**
- * @param {StorageParams} [params={}]
- * @returns {NormalizedStorageParams}
- */
-export function normalizeStorageParams(params = {}) {
+export function normalizeStorageParams(params: StorageParams = {}): NormalizedStorageParams {
   const keys = Array.isArray(params.keys)
     ? params.keys.filter((key) => typeof key === 'string')
     : null;
@@ -1804,11 +1534,9 @@ export function normalizeStorageParams(params = {}) {
   };
 }
 
-/**
- * @param {Record<string, unknown>} params
- * @returns {NormalizedSensitiveReadParams}
- */
-export function normalizeSensitiveReadParams(params) {
+export function normalizeSensitiveReadParams(
+  params: Record<string, unknown>
+): NormalizedSensitiveReadParams {
   if (params?.source !== 'local_storage' && params?.source !== 'session_storage') {
     throw new BridgeError(
       ERROR_CODES.INVALID_REQUEST,
@@ -1831,11 +1559,9 @@ export function normalizeSensitiveReadParams(params) {
   };
 }
 
-/**
- * @param {WaitForLoadStateParams} [params={}]
- * @returns {NormalizedWaitForLoadStateParams}
- */
-export function normalizeWaitForLoadStateParams(params = {}) {
+export function normalizeWaitForLoadStateParams(
+  params: WaitForLoadStateParams = {}
+): NormalizedWaitForLoadStateParams {
   const url = typeof params.url === 'string' && params.url.length > 0 ? params.url : null;
   const requestedMatch = params.urlMatch ?? (url ? 'exact' : null);
   if (params.url !== undefined && params.url !== null && typeof params.url !== 'string') {
@@ -1872,16 +1598,11 @@ export function normalizeWaitForLoadStateParams(params = {}) {
   };
 }
 
-/**
- * URL waits accept a deliberately linear regular-expression subset. Patterns
- * may contain literals, escapes, anchors, dots, and character classes, but no
- * grouping, alternation, or quantifiers. With both pattern and input bounded,
- * the accepted subset cannot trigger backtracking through repeated matches.
- *
- * @param {string} pattern
- * @returns {void}
- */
-function validateSafeUrlRegex(pattern) {
+/** URL waits accept a deliberately linear regular-expression subset. Patterns
+may contain literals, escapes, anchors, dots, and character classes, but no
+grouping, alternation, or quantifiers. With both pattern and input bounded,
+the accepted subset cannot trigger backtracking through repeated matches. */
+function validateSafeUrlRegex(pattern: string): void {
   if (pattern.length > 256) {
     throw new BridgeError(
       ERROR_CODES.INVALID_REQUEST,
@@ -1928,11 +1649,7 @@ function validateSafeUrlRegex(pattern) {
   }
 }
 
-/**
- * @param {TabCreateParams} [params={}]
- * @returns {NormalizedTabCreateParams}
- */
-export function normalizeTabCreateParams(params = {}) {
+export function normalizeTabCreateParams(params: TabCreateParams = {}): NormalizedTabCreateParams {
   const url =
     typeof params.url === 'string' && params.url.trim() ? params.url.trim() : 'about:blank';
   if (url !== 'about:blank') {
@@ -1955,11 +1672,7 @@ export function normalizeTabCreateParams(params = {}) {
   };
 }
 
-/**
- * @param {TabCloseParams} [params={}]
- * @returns {NormalizedTabCloseParams}
- */
-export function normalizeTabCloseParams(params = {}) {
+export function normalizeTabCloseParams(params: TabCloseParams = {}): NormalizedTabCloseParams {
   const tabId = Number(params.tabId);
   if (!Number.isFinite(tabId) || tabId <= 0) {
     throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'tabId is required for tabs.close.');
@@ -1967,11 +1680,9 @@ export function normalizeTabCloseParams(params = {}) {
   return { tabId };
 }
 
-/**
- * @param {AccessibilityTreeParams} [params={}]
- * @returns {NormalizedAccessibilityTreeParams}
- */
-export function normalizeAccessibilityTreeParams(params = {}) {
+export function normalizeAccessibilityTreeParams(
+  params: AccessibilityTreeParams = {}
+): NormalizedAccessibilityTreeParams {
   const source = params.source ?? 'cdp';
   if (source !== 'cdp' && source !== 'dom') {
     throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'source must be cdp or dom.');
@@ -1995,11 +1706,9 @@ export function normalizeAccessibilityTreeParams(params = {}) {
   };
 }
 
-/**
- * @param {ScreenshotParams} [params={}]
- * @returns {NormalizedScreenshotParams}
- */
-export function normalizeScreenshotParams(params = {}) {
+export function normalizeScreenshotParams(
+  params: ScreenshotParams = {}
+): NormalizedScreenshotParams {
   const format = params.format ?? 'png';
   if (format !== 'png' && format !== 'jpeg' && format !== 'webp') {
     throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'format must be png, jpeg, or webp.');
@@ -2028,11 +1737,9 @@ export function normalizeScreenshotParams(params = {}) {
   };
 }
 
-/**
- * @param {ArtifactReadParams} [params={}]
- * @returns {NormalizedArtifactReadParams}
- */
-export function normalizeArtifactReadParams(params = {}) {
+export function normalizeArtifactReadParams(
+  params: ArtifactReadParams = {}
+): NormalizedArtifactReadParams {
   return {
     artifactId: normalizeArtifactId(params.artifactId),
     offset: clampInt(params.offset, 0, MAX_ARTIFACT_BYTES, 0),
@@ -2040,27 +1747,20 @@ export function normalizeArtifactReadParams(params = {}) {
   };
 }
 
-/**
- * @param {ArtifactDeleteParams} [params={}]
- * @returns {{ artifactId: string }}
- */
-export function normalizeArtifactDeleteParams(params = {}) {
+export function normalizeArtifactDeleteParams(params: ArtifactDeleteParams = {}): {
+  artifactId: string;
+} {
   return { artifactId: normalizeArtifactId(params.artifactId) };
 }
 
-/** @param {unknown} value */
-function normalizeArtifactId(value) {
+function normalizeArtifactId(value: unknown) {
   if (typeof value !== 'string' || !/^art_[A-Za-z0-9_-]{32,64}$/u.test(value)) {
     throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'artifactId is invalid.');
   }
   return value;
 }
 
-/**
- * @param {NetworkParams} [params={}]
- * @returns {NormalizedNetworkParams}
- */
-export function normalizeNetworkParams(params = {}) {
+export function normalizeNetworkParams(params: NetworkParams = {}): NormalizedNetworkParams {
   const source = params.source ?? 'fetch-xhr';
   if (source !== 'fetch-xhr' && source !== 'cdp') {
     throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'source must be fetch-xhr or cdp.');
@@ -2087,11 +1787,9 @@ export function normalizeNetworkParams(params = {}) {
   };
 }
 
-/**
- * @param {HarExportParams | NormalizedHarExportParams} [params={}]
- * @returns {NormalizedHarExportParams}
- */
-export function normalizeHarExportParams(params = {}) {
+export function normalizeHarExportParams(
+  params: HarExportParams | NormalizedHarExportParams = {}
+): NormalizedHarExportParams {
   if (
     params.limit !== undefined &&
     (typeof params.limit !== 'number' ||
@@ -2135,11 +1833,9 @@ export function normalizeHarExportParams(params = {}) {
   };
 }
 
-/**
- * @param {NetworkInterceptAddParams} [params={}]
- * @returns {NormalizedNetworkInterceptAddParams}
- */
-export function normalizeNetworkInterceptAddParams(params = {}) {
+export function normalizeNetworkInterceptAddParams(
+  params: NetworkInterceptAddParams = {}
+): NormalizedNetworkInterceptAddParams {
   if (typeof params.urlPattern !== 'string' || !params.urlPattern) {
     throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'urlPattern is required.');
   }
@@ -2179,8 +1875,7 @@ export function normalizeNetworkInterceptAddParams(params = {}) {
     );
   }
 
-  /** @type {Record<string, string> | undefined} */
-  let headers;
+  let headers: Record<string, string> | undefined;
   if (params.headers !== undefined) {
     if (!isPlainRecord(params.headers)) {
       throw new BridgeError(
@@ -2237,21 +1932,15 @@ export function normalizeNetworkInterceptAddParams(params = {}) {
   };
 }
 
-/**
- * @param {PageTextParams} [params={}]
- * @returns {NormalizedPageTextParams}
- */
-export function normalizePageTextParams(params = {}) {
+export function normalizePageTextParams(params: PageTextParams = {}): NormalizedPageTextParams {
   return {
     textBudget: clampInt(params.textBudget, 100, 100_000, DEFAULT_PAGE_TEXT_BUDGET),
   };
 }
 
-/**
- * @param {ExtractContentParams} [params={}]
- * @returns {NormalizedExtractContentParams}
- */
-export function normalizeExtractContentParams(params = {}) {
+export function normalizeExtractContentParams(
+  params: ExtractContentParams = {}
+): NormalizedExtractContentParams {
   const format = params.format ?? 'text';
   if (format !== 'text' && format !== 'markdown') {
     throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'format must be text or markdown.');
@@ -2285,32 +1974,24 @@ export function normalizeExtractContentParams(params = {}) {
   };
 }
 
-/**
- * @param {LogTailParams} [params={}]
- * @returns {NormalizedLogTailParams}
- */
-export function normalizeLogTailParams(params = {}) {
+export function normalizeLogTailParams(params: LogTailParams = {}): NormalizedLogTailParams {
   return {
     limit: clampInt(params.limit, 1, 200, DEFAULT_LOG_TAIL_LIMIT),
   };
 }
 
-/**
- * @param {HealthPingParams} [params={}]
- * @returns {NormalizedHealthPingParams}
- */
-export function normalizeHealthPingParams(params = {}) {
+export function normalizeHealthPingParams(
+  params: HealthPingParams = {}
+): NormalizedHealthPingParams {
   if (params.diagnostics !== undefined && typeof params.diagnostics !== 'boolean') {
     throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'diagnostics must be a boolean.');
   }
   return { diagnostics: params.diagnostics === true };
 }
 
-/**
- * @param {ViewportResizeParams} [params={}]
- * @returns {NormalizedViewportResizeParams}
- */
-export function normalizeViewportResizeParams(params = {}) {
+export function normalizeViewportResizeParams(
+  params: ViewportResizeParams = {}
+): NormalizedViewportResizeParams {
   return {
     width: clampInt(params.width, 320, 7680, DEFAULT_VIEWPORT_WIDTH),
     height: clampInt(params.height, 200, 4320, DEFAULT_VIEWPORT_HEIGHT),
@@ -2319,18 +2000,15 @@ export function normalizeViewportResizeParams(params = {}) {
   };
 }
 
-/**
- * @returns {{
- *   v: string,
- *   budgets: Record<string, { n: number, d: number, t: number }>,
- *   methods: Record<string, string[]>,
- *   errors: Record<string, string>,
- *   tips: string[],
- *   flow: BridgeMethod[],
- *   limits: Record<string, { min: number, max: number, default: number }>
- * }}
- */
-export function createRuntimeContext() {
+export function createRuntimeContext(): {
+  v: string;
+  budgets: Record<string, { n: number; d: number; t: number }>;
+  methods: Record<string, string[]>;
+  errors: Record<string, string>;
+  tips: string[];
+  flow: BridgeMethod[];
+  limits: Record<string, { min: number; max: number; default: number }>;
+} {
   const methodGroups = createBridgeMethodGroups();
 
   return {

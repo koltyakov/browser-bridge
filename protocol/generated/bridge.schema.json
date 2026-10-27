@@ -1373,26 +1373,6 @@
       ],
       "additionalProperties": true
     },
-    "TruncateResult": {
-      "type": "object",
-      "properties": {
-        "value": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        },
-        "omitted": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "value",
-        "truncated",
-        "omitted"
-      ],
-      "additionalProperties": true
-    },
     "DomQueryParams": {
       "type": "object",
       "properties": {

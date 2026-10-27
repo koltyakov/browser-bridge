@@ -19,9 +19,9 @@ import {
   ARTIFACT_CHUNK_BYTES,
   createSuccess,
   getProtocolVersion,
-  parseJsonLines,
-  setProtocolPackageVersion,
 } from '../../protocol/src/index.js';
+import { parseJsonLines } from '../_helpers/jsonLines.js';
+import { setProtocolPackageVersion } from '../_helpers/protocolVersion.js';
 import type { ArtifactDescriptor, BridgeRequest, BridgeResponse } from '../../protocol/types.js';
 
 const exec = promisify(execFile);

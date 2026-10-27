@@ -21,7 +21,7 @@ make package-native-all
 make test-native
 ```
 
-Change `protocol/types.ts` for wire type changes and `protocol/mcp-tools.json` for MCP tool metadata, then run `make generate-protocol`. The same target updates Go bindings, JSON Schema, runtime metadata, and embedded skills. Shared JavaScript helpers under `protocol/src/` serve the browser and build tooling. See [the shared protocol guide](../../protocol/README.md).
+Change `protocol/types.ts` for wire type changes and `protocol/mcp-tools.json` for MCP tool metadata, then run `make generate-protocol`. The same target updates Go bindings, JSON Schema, runtime metadata, and embedded skills. Shared TypeScript helpers under `protocol/src/` serve the browser and build tooling. See [the shared protocol guide](../../protocol/README.md).
 
 Release binaries go to `dist/cli`. The build rejects executables at or above **10,000,000 bytes** and prints each binary's size. Local builds derive the version from `manifest.json`; release pipelines derive it from the Git tag. The build uses `CGO_ENABLED=0`, strips debug information, and disables compiler inlining with `-gcflags=all=-l` to reduce executable size. Ordinary `go build` retains Go's default optimization settings and uses the checked-in catalog version. Interop tests use the repository's TypeScript/Node test runner.
 

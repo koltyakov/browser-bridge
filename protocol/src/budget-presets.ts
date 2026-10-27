@@ -1,5 +1,3 @@
-// @ts-check
-
 /**
  * Shared budget-preset merge helpers. Presets fill gaps in method params;
  * explicit per-call params always win. Used by both the MCP server and the
@@ -17,56 +15,50 @@ import {
   isBudgetPresetName,
 } from './defaults.js';
 
-/**
- * @param {unknown} value
- * @returns {import('./defaults.js').BudgetPresetName | null}
- */
-export function getBudgetPresetName(value) {
+export function getBudgetPresetName(
+  value: unknown
+): import('./defaults.js').BudgetPresetName | null {
   return isBudgetPresetName(value) ? value : null;
 }
 
-/**
- * @template {{ budgetPreset?: unknown, maxNodes?: unknown, maxDepth?: unknown, textBudget?: unknown }} T
- * @param {T} args
- * @returns {T}
- */
-export function applyTreeBudgetPreset(args) {
+export function applyTreeBudgetPreset<
+  T extends {
+    budgetPreset?: unknown;
+    maxNodes?: unknown;
+    maxDepth?: unknown;
+    textBudget?: unknown;
+  },
+>(args: T): T {
   const presetName = getBudgetPresetName(args.budgetPreset);
   if (!presetName) {
     return args;
   }
   const preset = getBudgetPreset(presetName);
-  return /** @type {T} */ ({
+  return {
     ...args,
     maxNodes: args.maxNodes ?? preset.maxNodes,
     maxDepth: args.maxDepth ?? preset.maxDepth,
     textBudget: args.textBudget ?? preset.textBudget,
-  });
+  } as T;
 }
 
-/**
- * @template {{ budgetPreset?: unknown, textBudget?: unknown }} T
- * @param {T} args
- * @returns {T}
- */
-export function applyTextBudgetPreset(args) {
+export function applyTextBudgetPreset<T extends { budgetPreset?: unknown; textBudget?: unknown }>(
+  args: T
+): T {
   const presetName = getBudgetPresetName(args.budgetPreset);
   if (!presetName) {
     return args;
   }
   const preset = getBudgetPreset(presetName);
-  return /** @type {T} */ ({
+  return {
     ...args,
     textBudget: args.textBudget ?? preset.textBudget,
-  });
+  } as T;
 }
 
-/**
- * @template {{ budgetPreset?: unknown, textBudget?: unknown }} T
- * @param {T} args
- * @returns {T}
- */
-export function applyPageTextBudgetPreset(args) {
+export function applyPageTextBudgetPreset<
+  T extends { budgetPreset?: unknown; textBudget?: unknown },
+>(args: T): T {
   const presetName = getBudgetPresetName(args.budgetPreset);
   if (!presetName) {
     return args;
@@ -76,35 +68,29 @@ export function applyPageTextBudgetPreset(args) {
     normal: DEFAULT_PAGE_TEXT_BUDGET,
     deep: DEFAULT_PAGE_TEXT_BUDGET * 2,
   };
-  return /** @type {T} */ ({
+  return {
     ...args,
     textBudget: args.textBudget ?? textBudgetByPreset[presetName],
-  });
+  } as T;
 }
 
-/**
- * @template {{ budgetPreset?: unknown, limit?: unknown }} T
- * @param {T} args
- * @param {{ quick: number, normal: number, deep: number }} defaults
- * @returns {T}
- */
-export function applyLimitBudgetPreset(args, defaults) {
+export function applyLimitBudgetPreset<T extends { budgetPreset?: unknown; limit?: unknown }>(
+  args: T,
+  defaults: { quick: number; normal: number; deep: number }
+): T {
   const presetName = getBudgetPresetName(args.budgetPreset);
   if (!presetName) {
     return args;
   }
-  return /** @type {T} */ ({
+  return {
     ...args,
     limit: args.limit ?? defaults[presetName],
-  });
+  } as T;
 }
 
-/**
- * @template {{ budgetPreset?: unknown, maxLength?: unknown }} T
- * @param {T} args
- * @returns {T}
- */
-export function applyHtmlBudgetPreset(args) {
+export function applyHtmlBudgetPreset<T extends { budgetPreset?: unknown; maxLength?: unknown }>(
+  args: T
+): T {
   const presetName = getBudgetPresetName(args.budgetPreset);
   if (!presetName) {
     return args;
@@ -114,25 +100,22 @@ export function applyHtmlBudgetPreset(args) {
     normal: DEFAULT_MAX_HTML_LENGTH,
     deep: 6000,
   };
-  return /** @type {T} */ ({
+  return {
     ...args,
     maxLength: args.maxLength ?? maxLengthByPreset[presetName],
-  });
+  } as T;
 }
 
-/**
- * Apply a preset to method parameters before dispatch. Explicit method params
- * always win over preset defaults.
- *
- * @param {import('./types.js').BridgeMethod} method
- * @param {Record<string, unknown>} params
- * @param {unknown} budgetPreset
- * @returns {Record<string, unknown>}
- */
-export function applyMethodBudgetPreset(method, params, budgetPreset) {
+/** Apply a preset to method parameters before dispatch. Explicit method params
+always win over preset defaults. */
+export function applyMethodBudgetPreset(
+  method: import('./types.js').BridgeMethod,
+  params: Record<string, unknown>,
+  budgetPreset: unknown
+): Record<string, unknown> {
   const args = { ...params, budgetPreset };
-  /** @type {Record<string, unknown>} */
-  let normalized = args;
+
+  let normalized: Record<string, unknown> = args;
   if (method === 'webmcp.list_tools') {
     normalized = applyLimitBudgetPreset(args, { quick: 5, normal: 20, deep: 100 });
   } else if (

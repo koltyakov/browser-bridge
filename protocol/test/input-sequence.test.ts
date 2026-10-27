@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 
 import {
   createRequest,
-  getBridgeOperationTimeoutMs,
   MAX_PERFORM_STEPS,
   MAX_TOUCH_POINTS,
   normalizeInputAction,
@@ -254,40 +253,6 @@ test('createRequest validates input.perform at the protocol boundary', () => {
     () => createRequest({ id: 'bad', method: 'input.perform', params: { steps: [] } }),
     { code: 'INVALID_REQUEST' }
   );
-});
-
-test('operation timeouts cover sequences and held input', () => {
-  assert.equal(
-    getBridgeOperationTimeoutMs('input.perform', { steps: [{ method: 'input.click' }] }),
-    30_000
-  );
-  assert.equal(
-    getBridgeOperationTimeoutMs('input.perform', {
-      timeoutMs: 90_000,
-      steps: [{ method: 'input.click' }],
-    }),
-    90_000
-  );
-  // Default auto-wait (2.5s) and observation settle (0.5s) extend the deadline.
-  assert.equal(getBridgeOperationTimeoutMs('input.click', {}), 8_000);
-  assert.equal(
-    getBridgeOperationTimeoutMs('input.click', {
-      holdMs: 10000,
-      clickCount: 2,
-      timeoutMs: 15000,
-      observe: { settleMs: 5000 },
-    }),
-    45000
-  );
-  assert.equal(getBridgeOperationTimeoutMs('input.click', { timeoutMs: 0, observe: false }), null);
-  assert.equal(
-    getBridgeOperationTimeoutMs('input.click', { holdMs: 2_000, timeoutMs: 0, observe: false }),
-    7_000
-  );
-  assert.equal(getBridgeOperationTimeoutMs('input.click', { holdMs: 2_000 }), 10_000);
-  assert.equal(getBridgeOperationTimeoutMs('input.press_key', { holdMs: 1_000 }), 9_000);
-  assert.equal(getBridgeOperationTimeoutMs('input.focus', {}), 7_500);
-  assert.equal(getBridgeOperationTimeoutMs('input.touch', { points: [{ x: 1, y: 1 }] }), 5_050);
 });
 
 test('summaries describe sequences, touch gestures, waits, and large evaluate values compactly', () => {

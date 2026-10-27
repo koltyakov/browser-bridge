@@ -30,8 +30,6 @@ import {
   createBridgeMethodGroups,
   createRequest,
   createRuntimeContext,
-  getMethodCapability,
-  getBridgeOperationTimeoutMs,
   isBatchSafeBridgeCall,
   normalizeCheckedAction,
   normalizeAccessRequestParams,
@@ -48,7 +46,6 @@ import {
   normalizePatchOperation,
   normalizeSelectAction,
   normalizeViewportAction,
-  truncateText,
   normalizeEvaluateParams,
   normalizeConsoleParams,
   normalizeHandleDialogParams,
@@ -76,7 +73,7 @@ import {
   normalizeViewportResizeParams,
   normalizeStyleQuery,
   getErrorRecovery,
-  PROTOCOL_VERSION,
+  getProtocolVersion,
   validateBridgeRequest,
 } from '../src/index.js';
 import type {
@@ -246,7 +243,7 @@ test('createRequest adds protocol metadata', () => {
     method: 'health.ping',
   });
 
-  assert.equal(request.meta.protocol_version, PROTOCOL_VERSION);
+  assert.equal(request.meta.protocol_version, getProtocolVersion());
 });
 
 test('createRequest includes explicit tab_id when provided', () => {
@@ -257,13 +254,6 @@ test('createRequest includes explicit tab_id when provided', () => {
   });
 
   assert.equal(request.tab_id, 5);
-});
-
-test('getBridgeOperationTimeoutMs returns normalized defaults and requested waits', () => {
-  assert.equal(getBridgeOperationTimeoutMs('navigation.navigate'), 15_000);
-  assert.equal(getBridgeOperationTimeoutMs('page.evaluate', { timeoutMs: 20_000 }), 20_000);
-  assert.equal(getBridgeOperationTimeoutMs('dom.wait_for', { timeoutMs: 60_000 }), 30_000);
-  assert.equal(getBridgeOperationTimeoutMs('page.get_state'), null);
 });
 
 test('validateBridgeRequest normalizes routing and metadata fallbacks', () => {
@@ -279,7 +269,7 @@ test('validateBridgeRequest normalizes routing and metadata fallbacks', () => {
   });
 
   assert.equal(request.tab_id, null);
-  assert.equal(request.meta.protocol_version, PROTOCOL_VERSION);
+  assert.equal(request.meta.protocol_version, getProtocolVersion());
   assert.equal(request.meta.token_budget, null);
   assert.equal(request.meta.source, undefined);
   assert.equal(request.meta.keep, 'value');
@@ -442,17 +432,10 @@ test('access denied recovery guidance tells the agent to wait for the user', () 
   assert.match(recovery.hint, /Do not request access again/i);
 });
 
-/** Ensure truncation metadata stays consistent. */
-test('truncateText reports truncation metadata', () => {
-  const result = truncateText('abcdef', 4);
-  assert.equal(result.truncated, true);
-  assert.equal(result.omitted, 2);
-});
-
 /** Ensure runtime guidance remains compact and opinionated. */
 test('runtime context stays compact and opinionated', () => {
   const context = createRuntimeContext();
-  assert.equal(context.v, PROTOCOL_VERSION);
+  assert.equal(context.v, getProtocolVersion());
   assert.ok(context.tips.length >= 3);
   assert.equal(context.flow.includes('page.get_state'), true);
   assert.ok(
@@ -477,15 +460,6 @@ test('bridge method groups are derived from the registry', () => {
   assert.ok(groups.tabs.includes('tabs.create'));
   assert.ok(groups.inspect.includes('dom.find_by_role'));
   assert.ok(groups.wait.includes('page.wait_for_load_state'));
-});
-
-test('method capability lookup stays aligned with bridge semantics', () => {
-  assert.equal(getMethodCapability('page.evaluate'), 'page.evaluate');
-  assert.equal(getMethodCapability('page.get_network'), 'network.read');
-  assert.equal(getMethodCapability('network.export_har'), 'network.read');
-  assert.equal(getMethodCapability('tabs.create'), 'tabs.manage');
-  assert.equal(getMethodCapability('tabs.list'), null);
-  assert.equal(getMethodCapability('health.ping'), null);
 });
 
 /** Ensure DOM patch metadata is preserved by normalization. */

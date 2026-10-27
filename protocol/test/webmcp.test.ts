@@ -3,12 +3,11 @@ import assert from 'node:assert/strict';
 import {
   normalizeRequestParams,
   normalizeWebMcpParams,
-  getBridgeOperationTimeoutMs,
   isBatchSafeBridgeCall,
   describeBridgeMethods,
   createFailure,
   createSuccess,
-  getMethodCapability,
+  BRIDGE_METHOD_REGISTRY,
   applyMethodBudgetPreset,
 } from '../src/index.js';
 import { loadExtensionModule } from '../../tests/_helpers/extensionBuild.ts';
@@ -19,9 +18,9 @@ const { enforceTokenBudget } = await loadExtensionModule<
 
 const toolRef = 'wm_12345678-1234-1234-1234-123456789012';
 
-test('WebMCP registry, capability, batching, and timeout policies', () => {
-  assert.equal(getMethodCapability('webmcp.list_tools'), 'page.read');
-  assert.equal(getMethodCapability('webmcp.execute_tool'), 'automation.input');
+test('WebMCP registry, capability, batching, and budget policies', () => {
+  assert.equal(BRIDGE_METHOD_REGISTRY['webmcp.list_tools'].capability, 'page.read');
+  assert.equal(BRIDGE_METHOD_REGISTRY['webmcp.execute_tool'].capability, 'automation.input');
   assert.equal(isBatchSafeBridgeCall('webmcp.list_tools'), true);
   assert.equal(isBatchSafeBridgeCall('webmcp.get_tool'), true);
   assert.equal(isBatchSafeBridgeCall('webmcp.execute_tool', { readOnlyHint: true }), false);
@@ -29,8 +28,6 @@ test('WebMCP registry, capability, batching, and timeout policies', () => {
   assert.ok('methods' in group);
   assert.equal(group.methods.length, 3);
   assert.equal(applyMethodBudgetPreset('webmcp.list_tools', {}, 'quick').limit, 5);
-  assert.equal(getBridgeOperationTimeoutMs('webmcp.execute_tool', { toolRef }), 80_000);
-  assert.equal(getBridgeOperationTimeoutMs('webmcp.list_tools'), 5000);
 });
 
 test('WebMCP normalization rejects non-JSON and malformed values without coercion', () => {

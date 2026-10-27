@@ -8,7 +8,7 @@ import {
   type FakeChromeEvent,
 } from '../../../tests/_helpers/chromeFake.ts';
 import { loadBackground } from '../../../tests/_helpers/loadBackground.ts';
-import { createRequest, ERROR_CODES, PROTOCOL_VERSION } from '../../../protocol/src/index.js';
+import { createRequest, ERROR_CODES, getProtocolVersion } from '../../../protocol/src/index.js';
 import type {
   BridgeMethod,
   BridgeRequest,
@@ -3764,7 +3764,7 @@ for (const method of [
       params: {
         nodeId: 'not-a-number',
       },
-      meta: { protocol_version: PROTOCOL_VERSION, token_budget: null },
+      meta: { protocol_version: getProtocolVersion(), token_budget: null },
     } as unknown as BridgeRequest);
 
     assert.equal(attachCalled, false);

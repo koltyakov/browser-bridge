@@ -7,6 +7,19 @@ import { extensionFile, loadExtensionModule } from '../../../tests/_helpers/exte
 
 const root = extensionFile('');
 
+test('shared browser helpers are TypeScript sources compiled to browser JavaScript', async () => {
+  const source = new URL('../../../protocol/src/', import.meta.url);
+  const files = await readdir(source);
+  assert(files.includes('index.ts'));
+  for (const filename of files) {
+    assert(!/\.[cm]?jsx?$/.test(filename), `JavaScript protocol source: ${filename}`);
+    if (filename.endsWith('.ts') && !filename.endsWith('.d.ts')) {
+      await access(extensionFile(`protocol/${filename.replace(/\.ts$/, '.js')}`));
+    }
+  }
+  await assert.rejects(access(extensionFile('protocol/json-lines.js')));
+});
+
 test('development build publishes a complete stamp matching its loaded health digest', async () => {
   const buildInfo =
     await loadExtensionModule<typeof import('../src/build-info.js')>('src/build-info.js');

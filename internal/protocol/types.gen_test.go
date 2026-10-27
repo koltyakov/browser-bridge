@@ -41,7 +41,6 @@ var wireRoundTrips = map[string]func([]byte) ([]byte, error){
 	"MutationGrantedMessage":              roundTrip[MutationGrantedMessage],
 	"BudgetOptions":                       roundTrip[BudgetOptions],
 	"Budget":                              roundTrip[Budget],
-	"TruncateResult":                      roundTrip[TruncateResult],
 	"DomQueryParams":                      roundTrip[DomQueryParams],
 	"NormalizedDomQuery":                  roundTrip[NormalizedDomQuery],
 	"DomBaselineCreateParams":             roundTrip[DomBaselineCreateParams],

@@ -9,11 +9,8 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { once } from 'node:events';
 import { createInterface } from 'node:readline';
-import {
-  createRequest,
-  getProtocolVersion,
-  setProtocolPackageVersion,
-} from '../../protocol/src/index.js';
+import { createRequest, getProtocolVersion } from '../../protocol/src/index.js';
+import { setProtocolPackageVersion } from '../_helpers/protocolVersion.js';
 import type { BridgeResponse } from '../../protocol/types.js';
 
 const execFileAsync = promisify(execFile);

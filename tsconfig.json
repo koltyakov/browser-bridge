@@ -15,7 +15,6 @@
     "allowImportingTsExtensions": true
   },
   "include": [
-    "protocol/**/*.js",
     "protocol/**/*.ts",
     "packages/**/*.js",
     "packages/**/*.ts",

@@ -1,6 +1,4 @@
-// @ts-check
-
-/** @typedef {import('./types.js').ErrorCode} ErrorCode */
+export type ErrorCode = import('./types.js').ErrorCode;
 
 export const ERROR_CODES = Object.freeze({
   WEBMCP_UNAVAILABLE: 'WEBMCP_UNAVAILABLE',
@@ -42,12 +40,13 @@ export const ERROR_CODES = Object.freeze({
   TIMEOUT: 'TIMEOUT',
 });
 
-/**
- * Machine-actionable recovery hints keyed by error code.
- *
- * @type {Readonly<Record<string, { retry: boolean, retryAfterMs?: number, alternativeMethod?: string, hint: string }>>}
- */
-export const ERROR_RECOVERY = Object.freeze({
+/** Machine-actionable recovery hints keyed by error code. */
+export const ERROR_RECOVERY: Readonly<
+  Record<
+    string,
+    { retry: boolean; retryAfterMs?: number; alternativeMethod?: string; hint: string }
+  >
+> = Object.freeze({
   [ERROR_CODES.VISUAL_BASELINE_NOT_FOUND]: {
     retry: false,
     alternativeMethod: 'screenshot.baseline.create',
@@ -221,29 +220,23 @@ export const ERROR_RECOVERY = Object.freeze({
   },
 });
 
-/**
- * Get recovery hints for a given error code.
- *
- * @param {string} code
- * @returns {{ retry: boolean, retryAfterMs?: number, alternativeMethod?: string, hint: string } | null}
- */
-export function getErrorRecovery(code) {
+/** Get recovery hints for a given error code. */
+export function getErrorRecovery(
+  code: string
+): { retry: boolean; retryAfterMs?: number; alternativeMethod?: string; hint: string } | null {
   return ERROR_RECOVERY[code] ?? null;
 }
 
-/** @extends {Error} */
 export class BridgeError extends Error {
-  /**
-   * @param {ErrorCode} code
-   * @param {string} message
-   * @param {unknown} [details=null]
-   */
-  constructor(code, message, details = null) {
+  declare code: ErrorCode;
+  declare details: unknown;
+
+  constructor(code: ErrorCode, message: string, details: unknown = null) {
     super(message);
     this.name = 'BridgeError';
-    /** @type {ErrorCode} */
+
     this.code = code;
-    /** @type {unknown} */
+
     this.details = details;
   }
 }

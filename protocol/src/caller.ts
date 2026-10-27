@@ -1,19 +1,15 @@
-// @ts-check
-
-/**
- * Retain only bounded, display-safe caller metadata, including from stored history.
- * @param {unknown} value
- * @returns {import('./types.js').BridgeCaller | undefined}
- */
-export function normalizeBridgeCaller(value) {
+/** Retain only bounded, display-safe caller metadata, including from stored history. */
+export function normalizeBridgeCaller(
+  value: unknown
+): import('./types.js').BridgeCaller | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const candidate = /** @type {Record<string, unknown>} */ (value);
+  const candidate = value as Record<string, unknown>;
   const name = typeof candidate.name === 'string' ? candidate.name.trim() : '';
   if (!/^[A-Za-z0-9][A-Za-z0-9 ._()+-]{0,127}$/.test(name)) return undefined;
   const source = candidate.source;
   if (source !== 'mcp' && source !== 'environment' && source !== 'explicit') return undefined;
-  /** @type {import('./types.js').BridgeCaller} */
-  const caller = { name, source };
+
+  const caller: import('./types.js').BridgeCaller = { name, source };
   const version = typeof candidate.version === 'string' ? candidate.version.trim() : '';
   if (/^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/.test(version)) caller.version = version;
   if (

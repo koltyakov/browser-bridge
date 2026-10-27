@@ -1,4 +1,4 @@
-// Code generated from protocol/src/defaults.js. DO NOT EDIT.
+// Code generated from protocol/src/defaults.ts. DO NOT EDIT.
 package protocol
 
 const ArtifactChunkBytes = 196608

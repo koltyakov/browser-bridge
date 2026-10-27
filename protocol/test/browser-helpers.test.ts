@@ -5,9 +5,8 @@ import { parseHTML } from 'linkedom';
 import { normalizeDownload } from '../src/downloads.js';
 import { normalizeEmulation } from '../src/emulation.js';
 import { FILE_CHUNK_BYTES, FILE_MAX_BYTES, normalizeFileParams } from '../src/files.js';
-import { isHarDocument, isHarLog } from '../src/har.js';
 import { normalizeRecording } from '../src/recording.js';
-import { correlateReplayEvents, parseRecordingJournal, renderReplay } from '../src/replay.js';
+import { correlateReplayEvents, renderReplay } from '../src/replay.js';
 
 const invalidRequest = { code: 'INVALID_REQUEST' };
 
@@ -313,75 +312,6 @@ test('emulation expands presets without user-agent spoofing and preserves normal
     { userAgent: 'OtherBrowser' },
   ])
     assert.throws(() => normalizeEmulation(params), invalidRequest);
-});
-
-test('HAR guards accept the 1.2 envelope while leaving entry validation to consumers', () => {
-  const log = { version: '1.2', entries: [{ request: { method: 'GET' } }] };
-  assert.equal(isHarLog(log), true);
-  assert.equal(isHarDocument({ log }), true);
-  assert.equal(isHarDocument({ log: { version: '1.2', entries: [] } }), true);
-  for (const value of [
-    null,
-    undefined,
-    0,
-    '1.2',
-    [],
-    {},
-    { version: '1.1', entries: [] },
-    { version: '1.2', entries: {} },
-  ]) {
-    assert.equal(isHarLog(value), false);
-    assert.equal(isHarDocument({ log: value }), false);
-  }
-  for (const value of [null, [], 'log', 1, {}]) assert.equal(isHarDocument(value), false);
-});
-
-test('journal recovery updates events in place, preserves bodies, and reports incomplete tails', () => {
-  const records = [
-    { kind: 'header', version: 1 },
-    { kind: 'event', event: { seq: 2, type: 'request', tabId: 7, at: 110 } },
-    {
-      kind: 'event',
-      event: {
-        seq: 1,
-        type: 'click',
-        tabId: 7,
-        at: 100,
-        origin: 'trusted-event',
-        label: 'é</script>',
-      },
-    },
-    { kind: 'event-update', event: { seq: 2, type: 'request', tabId: 7, at: 110, status: 200 } },
-    { kind: 'event-update', event: { seq: 3, type: 'page-error', tabId: 7, at: 120 } },
-    { kind: 'event', event: { type: 'navigation', tabId: 8, at: 120 } },
-    { kind: 'body', body: { requestId: 'request_1', data: 'résultat' } },
-    { kind: 'frame', frame: { at: 100, data: 'YQ==' } },
-    { kind: 'frame', frame: { at: 'bad', data: 'YQ==' } },
-    { kind: 'end', gaps: 2, dropped: 3 },
-  ];
-  const text = `${records.map((record) => JSON.stringify(record)).join('\n')}\n\n`;
-  const parsed = parseRecordingJournal(text);
-  assert.equal(parsed.gaps, 2);
-  assert.equal(parsed.dropped, 3);
-  assert.deepEqual(parsed.frames, [{ at: 100, data: 'YQ==' }]);
-  assert.deepEqual(parsed.bodies, [{ requestId: 'request_1', data: 'résultat' }]);
-  assert.deepEqual(
-    parsed.events.map((event) => event.seq),
-    [2, 1, 3, undefined]
-  );
-  assert.equal(parsed.events[0].status, 200);
-  assert.deepEqual(parsed.events[0].correlation, {
-    actionSeq: 1,
-    deltaMs: 10,
-    basis: 'same-tab-time-window',
-    causality: false,
-  });
-  assert.equal(parsed.events[3].correlation, undefined);
-  assert.equal(parseRecordingJournal(`${text}{"kind":`).gaps, 3);
-  assert.equal(parseRecordingJournal(`${JSON.stringify(records[1])}\n`).gaps, 1);
-  assert.equal(parseRecordingJournal(`${JSON.stringify(records[1])}\n{"kind":`).gaps, 2);
-  assert.throws(() => parseRecordingJournal('null\n'), /Invalid journal record/);
-  assert.throws(() => parseRecordingJournal('{broken}\n'), SyntaxError);
 });
 
 test('replay correlation uses the latest preceding trusted action in the same tab and bounded time window', () => {

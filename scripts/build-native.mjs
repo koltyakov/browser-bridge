@@ -19,7 +19,7 @@ for (const target of targets) {
 }
 
 // Generated files are checked in so ordinary Go builds need no Node runtime.
-execFileSync(process.execPath, ['scripts/generate-protocol.mjs', '--check'], {
+execFileSync(process.execPath, ['--import', 'tsx', 'scripts/generate-protocol.mjs', '--check'], {
   cwd: root,
   stdio: 'inherit',
 });

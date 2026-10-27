@@ -1,75 +1,36 @@
-// @ts-check
-
-import {
-  estimateSerializedPayloadCost,
-  getErrorRecovery,
-  getCostClass,
-  getProtocolVersion,
-  serializeJsonPayload,
-} from './index.js';
+import { getErrorRecovery } from './errors.js';
 import { sanitizeIncidentalUrl } from './incidental-sanitizer.js';
 import { describeTabList, paginateTabList } from './tab-list.js';
 
-/** @typedef {import('./types.js').BridgeResponse} BridgeResponse */
-/** @typedef {import('./types.js').BridgeMethod} SummaryMethod */
-/**
- * @typedef {{
- *   tabId: number,
- *   active: boolean,
- *   origin: string,
- *   title: string
- * }} TabResult
- */
+export type BridgeResponse = import('./types.js').BridgeResponse;
 
-/**
- * @typedef {{ text: (r: Record<string, unknown>) => string, evidence: (r: Record<string, unknown>) => unknown }} ActionSummary
- */
+export type TabResult = {
+  tabId: number;
+  active: boolean;
+  origin: string;
+  title: string;
+};
 
-/**
- * @typedef {{
- *   ok: boolean,
- *   summary: string,
- *   evidence: unknown,
- *   recovery?: import('./types.js').BridgeRecovery | null,
- *   pagination?: import('./types.js').TabPagination
- * }} BridgeSummary
- */
+export type ActionSummary = {
+  text: (r: Record<string, unknown>) => string;
+  evidence: (r: Record<string, unknown>) => unknown;
+};
 
-/**
- * @typedef {BridgeSummary & {
- *   transportBytes: number,
- *   transportTokens: number,
- *   transportCostClass: 'cheap' | 'moderate' | 'heavy' | 'extreme',
- *   summaryBytes: number,
- *   summaryTokens: number,
- *   summaryCostClass: 'cheap' | 'moderate' | 'heavy' | 'extreme'
- * }} AnnotatedBridgeSummary
- */
-
-/**
- * @typedef {AnnotatedBridgeSummary & {
- *   method: SummaryMethod,
- *   tabId: number | null,
- *   durationMs: number,
- *   approxTokens: number,
- *   meta?: Record<string, unknown>,
- *   error: unknown,
- *   response?: unknown
- * }} BatchItemSummary
- */
+export type BridgeSummary = {
+  ok: boolean;
+  summary: string;
+  evidence: unknown;
+  recovery?: import('./types.js').BridgeRecovery | null;
+  pagination?: import('./types.js').TabPagination;
+};
 
 /** Evaluate values longer than this stay out of the summary; evidence holds them. */
 const MAX_EVALUATE_SUMMARY_CHARS = 160;
 const EVALUATE_PREVIEW_CHARS = 80;
 
-/**
- * Keep evaluate summaries short: small values inline, larger ones as a shape
- * description, because the full value is already delivered in evidence.
- *
- * @param {unknown} value
- * @returns {string}
- */
-function summarizeEvaluateValue(value) {
+/** Keep evaluate summaries short: small values inline, larger ones as a shape
+description, because the full value is already delivered in evidence. */
+function summarizeEvaluateValue(value: unknown): string {
   const json = JSON.stringify(value) ?? String(value);
   if (json.length <= MAX_EVALUATE_SUMMARY_CHARS) return json;
   const shape = Array.isArray(value)
@@ -80,12 +41,7 @@ function summarizeEvaluateValue(value) {
   return `${shape}, ${json.length} chars as JSON; full value in evidence.value`;
 }
 
-/**
- * @param {string | undefined} method
- * @param {Record<string, unknown>} result
- * @returns {string}
- */
-function describeTabResult(method, result) {
+function describeTabResult(method: string | undefined, result: Record<string, unknown>): string {
   const url = typeof result.url === 'string' && result.url ? ` (${result.url})` : '';
   switch (method) {
     case 'navigation.reload':
@@ -105,18 +61,14 @@ function describeTabResult(method, result) {
 
 const ROUTINE_STRATEGIES = new Set(['elementRef', 'selector-first', 'locator-first']);
 
-/**
- * Keep input evidence lean: resolution/execution metadata only when something
- * notable happened (scroll, wait, ranking, recovery, CDP, fallback), plus any
- * observed effects. Routine successes cost a few tokens instead of ~100.
- *
- * @param {Record<string, unknown>} r
- * @param {Record<string, unknown>} [extra]
- * @returns {Record<string, unknown>}
- */
-function compactInputEvidence(r, extra = {}) {
-  /** @type {Record<string, unknown>} */
-  const evidence = { elementRef: r.elementRef ?? null, ...extra };
+/** Keep input evidence lean: resolution/execution metadata only when something
+notable happened (scroll, wait, ranking, recovery, CDP, fallback), plus any
+observed effects. Routine successes cost a few tokens instead of ~100. */
+function compactInputEvidence(
+  r: Record<string, unknown>,
+  extra: Record<string, unknown> = {}
+): Record<string, unknown> {
+  const evidence: Record<string, unknown> = { elementRef: r.elementRef ?? null, ...extra };
   const resolution = toRecord(r.resolution);
   if (
     resolution.scrolled === true ||
@@ -124,8 +76,7 @@ function compactInputEvidence(r, extra = {}) {
     (typeof resolution.waitedMs === 'number' && resolution.waitedMs > 0) ||
     (typeof resolution.strategy === 'string' && !ROUTINE_STRATEGIES.has(resolution.strategy))
   ) {
-    /** @type {Record<string, unknown>} */
-    const notable = { strategy: resolution.strategy };
+    const notable: Record<string, unknown> = { strategy: resolution.strategy };
     for (const key of ['scrolled', 'recovered', 'waitedMs', 'candidateCount', 'oldRef', 'newRef']) {
       const value = resolution[key];
       if (value !== undefined && value !== false && !(key === 'candidateCount' && value === 1)) {
@@ -145,20 +96,15 @@ function compactInputEvidence(r, extra = {}) {
   return Object.fromEntries(Object.entries(evidence).filter(([, value]) => value !== undefined));
 }
 
-/**
- * Health evidence without idle diagnostics: zero-valued recovery counters,
- * internal latency stats, and idle debugger/capture state are dropped, which
- * cuts a routine health check from ~1k tokens to ~200.
- *
- * @param {Record<string, unknown>} result
- * @returns {Record<string, unknown>}
- */
-function compactHealthEvidence(result) {
+/** Health evidence without idle diagnostics: zero-valued recovery counters,
+internal latency stats, and idle debugger/capture state are dropped, which
+cuts a routine health check from ~1k tokens to ~200. */
+function compactHealthEvidence(result: Record<string, unknown>): Record<string, unknown> {
   const { recovery, domBaselines, debugger: debuggerState, capture, ...rest } = result;
-  /** @type {Record<string, unknown>} */
-  const evidence = { ...rest };
-  /** @type {Record<string, Record<string, unknown>>} */
-  const activeRecovery = {};
+
+  const evidence: Record<string, unknown> = { ...rest };
+
+  const activeRecovery: Record<string, Record<string, unknown>> = {};
   for (const [scope, value] of Object.entries(toRecord(recovery))) {
     const events = toRecord(toRecord(value).events);
     for (const [event, stats] of Object.entries(events)) {
@@ -186,17 +132,12 @@ function compactHealthEvidence(result) {
   return evidence;
 }
 
-/**
- * One-line digest of observed post-action effects.
- *
- * @param {unknown} value
- * @returns {string}
- */
-function describeEffects(value) {
+/** One-line digest of observed post-action effects. */
+function describeEffects(value: unknown): string {
   if (!value || typeof value !== 'object') return '';
-  const effects = /** @type {Record<string, unknown>} */ (value);
-  /** @type {string[]} */
-  const parts = [];
+  const effects = value as Record<string, unknown>;
+
+  const parts: string[] = [];
   if (effects.navigation === 'unloading') parts.push('page is navigating');
   if (typeof effects.url === 'string') parts.push(`URL → ${truncateUrl(effects.url)}`);
   for (const dialog of Array.isArray(effects.dialogs) ? effects.dialogs : []) {
@@ -229,8 +170,7 @@ function describeEffects(value) {
   return ` Effects: ${parts.join('; ')}.`;
 }
 
-/** @type {Record<string, ActionSummary>} */
-const ACTION_SUMMARIES = {
+const ACTION_SUMMARIES: Record<string, ActionSummary> = {
   performed: {
     text: (r) => {
       const failures = Array.isArray(r.failures) ? r.failures.length : 0;
@@ -297,76 +237,7 @@ const ACTION_SUMMARIES = {
   },
 };
 
-/**
- * Add transport and summary payload estimates without changing the compact
- * shape consumed by existing clients.
- *
- * @param {BridgeSummary} summary
- * @param {BridgeResponse} response
- * @returns {AnnotatedBridgeSummary}
- */
-export function annotateBridgeSummary(summary, response) {
-  const sensitiveRead = response.meta?.method === 'sensitive.read';
-  const metaTransportBytes =
-    getNumericMetaField(response.meta, 'transport_bytes') ??
-    getNumericMetaField(response.meta, 'response_bytes');
-  const metaTransportTokens =
-    getNumericMetaField(response.meta, 'transport_approx_tokens') ??
-    getNumericMetaField(response.meta, 'approx_tokens');
-  const transportCost =
-    !sensitiveRead && (metaTransportBytes == null || metaTransportTokens == null)
-      ? estimateSerializedPayloadCost(
-          serializeJsonPayload(response.ok ? response.result : { error: response.error })
-        )
-      : null;
-  const transportBytes = sensitiveRead ? 0 : (metaTransportBytes ?? transportCost?.bytes ?? 0);
-  const transportTokens = sensitiveRead
-    ? 0
-    : (metaTransportTokens ?? transportCost?.approxTokens ?? 0);
-  const summaryCost = estimateSerializedPayloadCost(serializeJsonPayload(summary));
-
-  return {
-    ...summary,
-    transportBytes,
-    transportTokens,
-    transportCostClass:
-      getMetaCostClass(response.meta, 'transport_cost_class') ??
-      getMetaCostClass(response.meta, 'cost_class') ??
-      getCostClass(transportTokens),
-    summaryBytes: summaryCost.bytes,
-    summaryTokens: summaryCost.approxTokens,
-    summaryCostClass: summaryCost.costClass,
-  };
-}
-
-/**
- * @param {Record<string, unknown> | null | undefined} meta
- * @param {string} field
- * @returns {number | null}
- */
-function getNumericMetaField(meta, field) {
-  const value = meta?.[field];
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
-/**
- * @param {Record<string, unknown> | null | undefined} meta
- * @param {string} field
- * @returns {'cheap' | 'moderate' | 'heavy' | 'extreme' | null}
- */
-function getMetaCostClass(meta, field) {
-  const value = meta?.[field];
-  return value === 'moderate' || value === 'heavy' || value === 'extreme' || value === 'cheap'
-    ? value
-    : null;
-}
-
-/**
- * @param {BridgeResponse} response
- * @param {string} [method] - Optional bridge method name for disambiguation
- * @returns {BridgeSummary}
- */
-export function summarizeBridgeResponse(response, method) {
+export function summarizeBridgeResponse(response: BridgeResponse, method?: string): BridgeSummary {
   const summarized = summarizeBridgeResponseBody(response, method);
   const routingNote = response.ok ? getTabRoutingNote(response.meta) : null;
   return routingNote
@@ -374,12 +245,7 @@ export function summarizeBridgeResponse(response, method) {
     : summarized;
 }
 
-/**
- * @param {BridgeResponse} response
- * @param {string} [method]
- * @returns {BridgeSummary}
- */
-function summarizeBridgeResponseBody(response, method) {
+function summarizeBridgeResponseBody(response: BridgeResponse, method?: string): BridgeSummary {
   const protocolWarning = getProtocolWarning(response.meta);
   if (!response.ok) {
     const recovery = response.error.recovery ?? getErrorRecovery(response.error.code);
@@ -519,14 +385,14 @@ function summarizeBridgeResponseBody(response, method) {
         `HAR export delivered ${delivery}: ${entryCount}/${totalEntries} entries (${dropped} dropped, ${abandoned} abandoned, ${inflight} inflight).`,
         protocolWarning
       ),
-      evidence: /** @type {import('./types.js').HarExportEvidence} */ ({
+      evidence: {
         delivery,
         entryCount,
         totalEntries,
         dropped,
         abandoned,
         inflight,
-      }),
+      } as import('./types.js').HarExportEvidence,
     };
   }
   if (method?.startsWith('emulation.')) {
@@ -581,7 +447,7 @@ function summarizeBridgeResponseBody(response, method) {
   if (typeof result.daemon === 'string') {
     const access =
       result.access && typeof result.access === 'object'
-        ? /** @type {Record<string, unknown>} */ (result.access)
+        ? (result.access as Record<string, unknown>)
         : null;
     const accessSummary =
       access == null
@@ -590,7 +456,7 @@ function summarizeBridgeResponseBody(response, method) {
           ? ` Access: ${access.routeReady ? `ready on tab ${access.routeTabId}.` : `enabled${typeof access.reason === 'string' ? ` (${access.reason})` : '.'}`}${typeof access.workingTabId === 'number' && access.workingTabId !== access.routeTabId ? ` Your working tab is ${access.workingTabId}.` : ''}`
           : ' Access: disabled.';
     const connectedExtensions = Array.isArray(result.connectedExtensions)
-      ? /** @type {Array<Record<string, unknown>>} */ (result.connectedExtensions)
+      ? (result.connectedExtensions as Array<Record<string, unknown>>)
       : [];
     const extensionSummary = result.extensionConnected
       ? `connected (${connectedExtensions.length}: ${connectedExtensions
@@ -611,16 +477,10 @@ function summarizeBridgeResponseBody(response, method) {
   }
   if (Array.isArray(result.mcpClients) && Array.isArray(result.skillTargets)) {
     const configuredMcp = result.mcpClients.filter(
-      (entry) =>
-        entry &&
-        typeof entry === 'object' &&
-        /** @type {Record<string, unknown>} */ (entry).configured
+      (entry) => entry && typeof entry === 'object' && (entry as Record<string, unknown>).configured
     ).length;
     const installedSkills = result.skillTargets.filter(
-      (entry) =>
-        entry &&
-        typeof entry === 'object' &&
-        /** @type {Record<string, unknown>} */ (entry).installed
+      (entry) => entry && typeof entry === 'object' && (entry as Record<string, unknown>).installed
     ).length;
     return {
       ok: true,
@@ -653,8 +513,7 @@ function summarizeBridgeResponseBody(response, method) {
     typeof result.title === 'string' &&
     typeof result.origin === 'string'
   ) {
-    /** @type {string[]} */
-    const hints = [];
+    const hints: string[] = [];
     if (result.hints && typeof result.hints === 'object') {
       for (const [k, v] of Object.entries(result.hints)) {
         if (v) hints.push(k);
@@ -682,7 +541,7 @@ function summarizeBridgeResponseBody(response, method) {
     (typeof result.text === 'string' || typeof result.value === 'string') &&
     typeof result.truncated === 'boolean'
   ) {
-    const text = /** @type {string} */ (result.text ?? result.value);
+    const text = (result.text ?? result.value) as string;
     const len = typeof result.length === 'number' ? result.length : text.length;
     const count = text.length < len ? `${text.length}/${len}` : String(len);
     const label = method === 'dom.get_text' ? 'Element text' : 'Page text';
@@ -700,9 +559,9 @@ function summarizeBridgeResponseBody(response, method) {
     };
   }
   if (Array.isArray(result.tabs)) {
-    const tabs = /** @type {TabResult[]} */ (result.tabs);
+    const tabs = result.tabs as TabResult[];
     const page = result.pagination
-      ? { tabs, pagination: /** @type {import('./types.js').TabPagination} */ (result.pagination) }
+      ? { tabs, pagination: result.pagination as import('./types.js').TabPagination }
       : paginateTabList(tabs, { limit: 30 });
     return {
       ok: true,
@@ -729,7 +588,7 @@ function summarizeBridgeResponseBody(response, method) {
     };
   }
   if (Array.isArray(result.nodes) && result.source === 'dom' && result.format === 'tree') {
-    const nodes = /** @type {Array<Record<string, unknown>>} */ (result.nodes);
+    const nodes = result.nodes as Array<Record<string, unknown>>;
     const count = typeof result.count === 'number' ? result.count : nodes.length;
     return {
       ok: true,
@@ -738,8 +597,7 @@ function summarizeBridgeResponseBody(response, method) {
         protocolWarning
       ),
       evidence: nodes.slice(0, 20).map((n) => {
-        /** @type {Record<string, unknown>} */
-        const entry = {};
+        const entry: Record<string, unknown> = {};
         if ('ref' in n) entry.ref = n.ref;
         if ('role' in n) entry.role = n.role;
         if (n.name) entry.name = n.name;
@@ -753,14 +611,13 @@ function summarizeBridgeResponseBody(response, method) {
     typeof result.total === 'number' &&
     result.nodes[0]?.role !== undefined
   ) {
-    const nodes = /** @type {Array<Record<string, unknown>>} */ (result.nodes);
-    const interactive = nodes.filter((/** @type {Record<string, unknown>} */ n) => n.interactive);
+    const nodes = result.nodes as Array<Record<string, unknown>>;
+    const interactive = nodes.filter((n: Record<string, unknown>) => n.interactive);
     const shown =
       interactive.length > 0
         ? interactive
         : nodes.filter(
-            (/** @type {Record<string, unknown>} */ n) =>
-              n.role && n.role !== 'none' && n.role !== 'generic'
+            (n: Record<string, unknown>) => n.role && n.role !== 'none' && n.role !== 'generic'
           );
     return {
       ok: true,
@@ -768,9 +625,8 @@ function summarizeBridgeResponseBody(response, method) {
         `Accessibility tree: ${result.count ?? nodes.length} nodes (${interactive.length} interactive)${result.truncated ? ', truncated' : ''}.`,
         protocolWarning
       ),
-      evidence: shown.slice(0, 20).map((/** @type {Record<string, unknown>} */ n) => {
-        /** @type {Record<string, unknown>} */
-        const entry = { role: n.role, name: n.name };
+      evidence: shown.slice(0, 20).map((n: Record<string, unknown>) => {
+        const entry: Record<string, unknown> = { role: n.role, name: n.name };
         if (n.interactive) entry.interactive = true;
         if (n.value) entry.value = n.value;
         return entry;
@@ -778,13 +634,12 @@ function summarizeBridgeResponseBody(response, method) {
     };
   }
   if (Array.isArray(result.nodes)) {
-    const nodes = /** @type {Array<Record<string, unknown>>} */ (result.nodes);
+    const nodes = result.nodes as Array<Record<string, unknown>>;
     const compact = nodes.slice(0, 15).map((n) => {
-      /** @type {Record<string, unknown>} */
-      const entry = { ref: n.elementRef, tag: n.tag };
+      const entry: Record<string, unknown> = { ref: n.elementRef, tag: n.tag };
       if (n.id) entry.id = n.id;
       if (typeof n.attrs === 'object' && n.attrs !== null) {
-        const attrs = /** @type {Record<string, unknown>} */ (n.attrs);
+        const attrs = n.attrs as Record<string, unknown>;
         if (attrs.id) entry.id = attrs.id;
         if (typeof attrs.class === 'string')
           entry.cls = attrs.class.split(' ').slice(0, 3).join(' ');
@@ -920,11 +775,11 @@ function summarizeBridgeResponseBody(response, method) {
     typeof result.entries[0]?.at === 'string' &&
     typeof result.entries[0]?.method === 'string'
   ) {
-    const entries = /** @type {Array<Record<string, unknown>>} */ (result.entries);
+    const entries = result.entries as Array<Record<string, unknown>>;
     return {
       ok: true,
       summary: appendProtocolWarning(`Log: ${entries.length} entries.`, protocolWarning),
-      evidence: entries.slice(-10).map((/** @type {Record<string, unknown>} */ e) => ({
+      evidence: entries.slice(-10).map((e: Record<string, unknown>) => ({
         at: e.at,
         method: e.method,
         ok: e.ok,
@@ -940,16 +795,16 @@ function summarizeBridgeResponseBody(response, method) {
         typeof result.entries[0]?.resourceType === 'string'
       : method === 'page.get_network')
   ) {
-    const entries = /** @type {Array<Record<string, unknown>>} */ (result.entries);
+    const entries = result.entries as Array<Record<string, unknown>>;
     return {
       ok: true,
       summary: appendProtocolWarning(
         `Network: ${result.count ?? entries.length} requests (${result.total ?? '?'} total).`,
         protocolWarning
       ),
-      evidence: entries.slice(0, 20).map((/** @type {Record<string, unknown>} */ e) => ({
+      evidence: entries.slice(0, 20).map((e: Record<string, unknown>) => ({
         method: e.method,
-        url: truncateUrl(/** @type {string} */ (e.url)),
+        url: truncateUrl(e.url as string),
         status: e.status,
         duration: e.duration,
         ...(typeof e.resourceType === 'string' ? { resourceType: e.resourceType } : {}),
@@ -974,9 +829,7 @@ function summarizeBridgeResponseBody(response, method) {
     const entries = Array.isArray(result.entries)
       ? result.entries.map((entry) => {
           const candidate =
-            entry && typeof entry === 'object'
-              ? /** @type {Record<string, unknown>} */ (entry)
-              : {};
+            entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : {};
           return {
             key: typeof candidate.key === 'string' ? candidate.key : '',
             present: candidate.present === true,
@@ -997,16 +850,15 @@ function summarizeBridgeResponseBody(response, method) {
     };
   }
   if (Array.isArray(result.entries)) {
-    const consoleEntries = /** @type {Array<Record<string, unknown>>} */ (result.entries);
+    const consoleEntries = result.entries as Array<Record<string, unknown>>;
     return {
       ok: true,
       summary: appendProtocolWarning(
         `Console: ${result.count ?? consoleEntries.length} entries (${result.total ?? '?'} total).`,
         protocolWarning
       ),
-      evidence: consoleEntries.slice(0, 20).map((/** @type {Record<string, unknown>} */ e) => {
-        /** @type {Record<string, unknown>} */
-        const entry = { level: e.level, args: e.args };
+      evidence: consoleEntries.slice(0, 20).map((e: Record<string, unknown>) => {
+        const entry: Record<string, unknown> = { level: e.level, args: e.args };
         if (typeof e.ts === 'number') {
           entry.ago = formatRelativeTime(e.ts);
         }
@@ -1100,7 +952,7 @@ function summarizeBridgeResponseBody(response, method) {
     if (result.id) desc[0] += `#${result.id}`;
     const declaredText =
       typeof result.text === 'object' && result.text !== null && 'value' in result.text
-        ? /** @type {{ value: string }} */ (result.text).value
+        ? (result.text as { value: string }).value
         : typeof result.text === 'string'
           ? result.text
           : '';
@@ -1108,7 +960,7 @@ function summarizeBridgeResponseBody(response, method) {
     const textValue =
       declaredText || (typeof result.textExcerpt === 'string' ? result.textExcerpt : '');
     if (textValue) desc.push(String(textValue).slice(0, 60));
-    const bbox = /** @type {Record<string, number>} */ (result.bbox);
+    const bbox = result.bbox as Record<string, number>;
     if (bbox.width && bbox.height) {
       desc.push(`${bbox.width}\u00d7${bbox.height}`);
     }
@@ -1130,7 +982,7 @@ function summarizeBridgeResponseBody(response, method) {
     result.properties !== null &&
     typeof result.elementRef === 'string'
   ) {
-    const props = Object.keys(/** @type {object} */ (result.properties));
+    const props = Object.keys(result.properties as object);
     return {
       ok: true,
       summary: appendProtocolWarning(
@@ -1149,7 +1001,7 @@ function summarizeBridgeResponseBody(response, method) {
     };
   }
   if (typeof result.content === 'object' && typeof result.border === 'object') {
-    const c = /** @type {Record<string, number>} */ (result.content);
+    const c = result.content as Record<string, number>;
     return {
       ok: true,
       summary: appendProtocolWarning(
@@ -1183,7 +1035,7 @@ function summarizeBridgeResponseBody(response, method) {
     };
   }
   if (Array.isArray(response.result) && looksLikePatchArray(response.result, method)) {
-    const patches = /** @type {Array<Record<string, unknown>>} */ (response.result);
+    const patches = response.result as Array<Record<string, unknown>>;
     return {
       ok: true,
       summary: appendProtocolWarning(patchListSummary(patches.length), protocolWarning),
@@ -1208,122 +1060,31 @@ function summarizeBridgeResponseBody(response, method) {
   };
 }
 
-/**
- * @param {{ method: SummaryMethod, tabId: number | null, response: BridgeResponse, durationMs: number }} input
- * @param {{ compact?: boolean }} [options]
- * @returns {BatchItemSummary}
- */
-export function summarizeBatchResponseItem({ method, tabId, response, durationMs }, options = {}) {
-  const summary = annotateBridgeSummary(summarizeBridgeResponse(response, method), response);
-  return {
-    method,
-    tabId,
-    ...summary,
-    durationMs,
-    approxTokens: summary.transportTokens,
-    meta: options.compact ? compactBatchMeta(response.meta) : response.meta,
-    error: response.ok ? null : response.error,
-    ...(options.compact ? {} : { response: response.ok ? response.result : null }),
-  };
+function toRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
 }
 
-/**
- * @param {{ method: SummaryMethod, tabId: number | null, error: unknown, durationMs: number }} input
- * @param {{ compact?: boolean }} [options]
- * @returns {BatchItemSummary}
- */
-export function summarizeBatchErrorItem({ method, tabId, error, durationMs }, options = {}) {
-  const message = error instanceof Error ? error.message : String(error);
-  const response = /** @type {BridgeResponse} */ ({
-    id: 'batch_error',
-    ok: false,
-    result: null,
-    error: {
-      code: 'INTERNAL_ERROR',
-      message,
-      details: null,
-    },
-    meta: { protocol_version: getProtocolVersion() },
-  });
-  const summary = annotateBridgeSummary(summarizeBridgeResponse(response, method), response);
-  return {
-    method,
-    tabId,
-    ...summary,
-    durationMs,
-    approxTokens: 0,
-    meta: options.compact ? compactBatchMeta(response.meta) : response.meta,
-    error: response.error,
-    ...(options.compact ? {} : { response: null }),
-  };
-}
-
-/**
- * @param {Record<string, unknown>} meta
- * @returns {Record<string, unknown>}
- */
-function compactBatchMeta(meta) {
-  /** @type {Record<string, unknown>} */
-  const compact = {};
-  for (const key of [
-    'protocol_version',
-    'protocol_warning',
-    'budget_truncated',
-    'continuation_hint',
-  ]) {
-    if (meta[key] !== undefined && meta[key] !== null) compact[key] = meta[key];
-  }
-  return compact;
-}
-
-/**
- * @param {unknown} value
- * @returns {Record<string, unknown>}
- */
-function toRecord(value) {
-  return value && typeof value === 'object' ? /** @type {Record<string, unknown>} */ (value) : {};
-}
-
-/**
- * @param {Record<string, unknown> | null | undefined} meta
- * @returns {string | null}
- */
-function getProtocolWarning(meta) {
+function getProtocolWarning(meta: Record<string, unknown> | null | undefined): string | null {
   return typeof meta?.protocol_warning === 'string' && meta.protocol_warning.trim()
     ? meta.protocol_warning
     : null;
 }
 
-/**
- * Tell the agent when it kept working in its own tab while the user looked at
- * a different one, so "this tab" requests can be redirected explicitly.
- *
- * @param {Record<string, unknown> | null | undefined} meta
- * @returns {string | null}
- */
-function getTabRoutingNote(meta) {
+/** Tell the agent when it kept working in its own tab while the user looked at
+a different one, so "this tab" requests can be redirected explicitly. */
+function getTabRoutingNote(meta: Record<string, unknown> | null | undefined): string | null {
   if (typeof meta?.tab_id !== 'number' || typeof meta.active_tab_id !== 'number') return null;
   // A caller that passed tabId already chose the tab.
   if (meta.tab_routing === 'explicit') return null;
   return `Ran in working tab ${meta.tab_id}; the user's active tab is ${meta.active_tab_id} (pass tabId to switch).`;
 }
 
-/**
- * @param {string} summary
- * @param {string | null} warning
- * @returns {string}
- */
-function appendProtocolWarning(summary, warning) {
+function appendProtocolWarning(summary: string, warning: string | null): string {
   return warning ? `${summary} Protocol warning: ${warning}` : summary;
 }
 
-/**
- * Truncate a URL to a readable length, keeping origin + pathname and trimming query strings.
- *
- * @param {string} url
- * @returns {string}
- */
-function truncateUrl(url) {
+/** Truncate a URL to a readable length, keeping origin + pathname and trimming query strings. */
+function truncateUrl(url: string): string {
   const sanitized = sanitizeIncidentalUrl(url);
   if (!sanitized || sanitized.length <= 120) return sanitized;
   try {
@@ -1337,36 +1098,21 @@ function truncateUrl(url) {
   }
 }
 
-/**
- * @param {number} total
- * @returns {string}
- */
-function patchListSummary(total) {
+function patchListSummary(total: number): string {
   return total > 10 ? `${total} active patch(es); showing first 10.` : `${total} active patch(es).`;
 }
 
-/**
- * Check if an array looks like a list of patch entries.
- * Returns true for empty arrays when method context suggests patch.list.
- *
- * @param {unknown[]} arr
- * @param {string} [method]
- * @returns {boolean}
- */
-function looksLikePatchArray(arr, method) {
+/** Check if an array looks like a list of patch entries.
+Returns true for empty arrays when method context suggests patch.list. */
+function looksLikePatchArray(arr: unknown[], method?: string): boolean {
   if (!Array.isArray(arr)) return false;
   if (arr.length === 0) return method === 'patch.list';
   const first = arr[0];
   return first !== null && typeof first === 'object' && 'patchId' in first && 'kind' in first;
 }
 
-/**
- * Format a Unix-ms timestamp as a human-readable relative time (e.g., "2m ago", "just now").
- *
- * @param {number} ts
- * @returns {string}
- */
-function formatRelativeTime(ts) {
+/** Format a Unix-ms timestamp as a human-readable relative time (e.g., "2m ago", "just now"). */
+function formatRelativeTime(ts: number): string {
   const delta = Date.now() - ts;
   if (delta < 0) return 'just now';
   if (delta < 5_000) return 'just now';

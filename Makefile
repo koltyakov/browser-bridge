@@ -130,10 +130,10 @@ sync-version: ## Mirror manifest.json locally or the pipeline Git tag into packa
 	"$(NODE)" scripts/version.mjs --sync
 
 generate-protocol: sync-version ## Generate shared protocol types, schemas, catalog, and skills
-	"$(NODE)" scripts/generate-protocol.mjs
+	"$(NODE)" --import tsx scripts/generate-protocol.mjs
 
 check-protocol: ## Check that generated protocol files are current
-	"$(NODE)" scripts/generate-protocol.mjs --check
+	"$(NODE)" --import tsx scripts/generate-protocol.mjs --check
 
 check-release-version: ## Check release version consistency
 	"$(NODE)" scripts/check-release-version.mjs
