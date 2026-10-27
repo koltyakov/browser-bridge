@@ -23,7 +23,5 @@ export type WindowActionCommand = {
   enabledAt: number;
 };
 
-export type WindowActionRequest = WindowActionCommand & { extensionId: string };
-
 export type WindowActionResult = { requestId: string; ok: boolean; error?: string };
 export type WindowActionUiResult = { action: WindowAction; ok: boolean; error?: string };

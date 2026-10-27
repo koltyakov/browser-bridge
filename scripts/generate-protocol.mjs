@@ -4,10 +4,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { parse } from '@babel/parser';
-import { BRIDGE_METHODS, ERROR_CODES } from '../protocol/src/index.js';
+import { BRIDGE_METHODS, ERROR_CODES } from '../protocol/src/index.ts';
 import { generateCatalog } from './generate-catalog.mjs';
 import { generateSkills } from './generate-skills.mjs';
-import * as defaults from '../protocol/src/defaults.js';
+import * as defaults from '../protocol/src/defaults.ts';
 import { generateInstallTargets } from './generate-install-targets.mjs';
 
 /** @typedef {{type: string, [key: string]: unknown}} Node */
@@ -403,7 +403,7 @@ await write('internal/protocol/types.gen.go', goSource);
 await write(
   'internal/protocol/limits.gen.go',
   execFileSync('gofmt', [], {
-    input: `// Code generated from protocol/src/defaults.js. DO NOT EDIT.\npackage protocol\n${Object.entries(
+    input: `// Code generated from protocol/src/defaults.ts. DO NOT EDIT.\npackage protocol\n${Object.entries(
       defaults
     )
       .filter(([, value]) => typeof value === 'number')

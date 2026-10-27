@@ -479,12 +479,6 @@ export interface Budget {
   attributeAllowlist: string[];
 }
 
-export interface TruncateResult {
-  value: string;
-  truncated: boolean;
-  omitted: number;
-}
-
 export interface DomQueryParams extends BudgetOptions {
   selector?: string;
   withinRef?: string | null;

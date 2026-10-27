@@ -1,15 +1,12 @@
-// @ts-check
-
 import { BridgeError, ERROR_CODES } from './errors.js';
 
-/** @typedef {import('./types.js').TabPagination} TabPagination */
+export type TabPagination = import('./types.js').TabPagination;
 
-/**
- * Preserve unpaged raw listings, while allowing bounded pages when requested.
- * @param {Record<string, unknown>} params
- * @returns {{ offset: number, limit: number | null }}
- */
-export function normalizeTabListParams(params) {
+/** Preserve unpaged raw listings, while allowing bounded pages when requested. */
+export function normalizeTabListParams(params: Record<string, unknown>): {
+  offset: number;
+  limit: number | null;
+} {
   const offset = params.offset === undefined ? 0 : params.offset;
   const limit =
     params.limit === undefined ? (params.offset === undefined ? null : 30) : params.limit;
@@ -31,13 +28,11 @@ export function normalizeTabListParams(params) {
   return { offset, limit };
 }
 
-/**
- * @param {number} totalCount
- * @param {number} returnedCount
- * @param {number} offset
- * @returns {TabPagination}
- */
-export function describeTabPage(totalCount, returnedCount, offset) {
+export function describeTabPage(
+  totalCount: number,
+  returnedCount: number,
+  offset: number
+): TabPagination {
   return {
     totalCount,
     returnedCount,
@@ -48,19 +43,14 @@ export function describeTabPage(totalCount, returnedCount, offset) {
   };
 }
 
-/**
- * @template T
- * @param {T[]} tabs
- * @param {Record<string, unknown>} [params]
- * @returns {{ tabs: T[], pagination: TabPagination }}
- */
-export function paginateTabList(tabs, params = {}) {
+export function paginateTabList<T>(
+  tabs: T[],
+  params: Record<string, unknown> = {}
+): { tabs: T[]; pagination: TabPagination } {
   const { offset, limit } = normalizeTabListParams(params);
   const sorted = [...tabs].sort((left, right) => {
-    /** @param {unknown} tab @returns {number} */
-    const priority = (tab) => {
-      const record =
-        tab && typeof tab === 'object' ? /** @type {Record<string, unknown>} */ (tab) : {};
+    const priority = (tab: unknown): number => {
+      const record = tab && typeof tab === 'object' ? (tab as Record<string, unknown>) : {};
       return Number(record.working === true || record.active === true);
     };
     return priority(right) - priority(left);
@@ -69,8 +59,7 @@ export function paginateTabList(tabs, params = {}) {
   return { tabs: page, pagination: describeTabPage(tabs.length, page.length, offset) };
 }
 
-/** @param {TabPagination} page @returns {string} */
-export function describeTabList(page) {
+export function describeTabList(page: TabPagination): string {
   return page.truncated
     ? `Bridge listed ${page.totalCount} tab(s); showing ${page.returnedCount} at offset ${page.offset}, ${page.omittedCount} omitted. Use tabs.list with limit and offset to retrieve another page.`
     : `Bridge listed ${page.totalCount} tab(s).`;

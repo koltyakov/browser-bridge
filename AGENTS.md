@@ -28,7 +28,7 @@ Two transport segments:
 
 The runtime is a root Go module (`go.mod`). `cmd/bbx` is its executable; `internal/bridge` implements the CLI, native host, daemon, MCP server, and local setup services. Only the extension and npm launcher live under `packages/`. The published npm module is a bootstrap and launcher under `packages/npm`, with zero runtime npm dependencies. It does not export a JavaScript client library.
 
-`protocol/types.ts` is the canonical wire type source; `protocol/mcp-tools.json` owns MCP tool metadata. `make generate-protocol` generates Go bindings, JSON Schema, the native runtime catalog, and embedded skills. Generated files are checked in and verified with `make check-protocol`; do not edit them by hand. Shared JavaScript helpers under `protocol/src/` support the browser and build tooling, not a second runtime.
+`protocol/types.ts` is the canonical wire type source; `protocol/mcp-tools.json` owns MCP tool metadata. `make generate-protocol` generates Go bindings, JSON Schema, the native runtime catalog, and embedded skills. Generated files are checked in and verified with `make check-protocol`; do not edit them by hand. Shared TypeScript helpers under `protocol/src/` support the browser and build tooling, not a second runtime.
 
 | Package | Entry | Responsibility |
 |---|---|---|
@@ -43,11 +43,11 @@ The runtime is a root Go module (`go.mod`). `cmd/bbx` is its executable; `intern
 
 **Protocol concerns**:
 - Wire types & method shapes: `protocol/types.ts`
-- Method registry: `protocol/src/registry.js`
+- Method registry: `protocol/src/registry.ts`
 - MCP tool metadata: `protocol/mcp-tools.json`
-- Error codes & browser/build `BridgeError`: `protocol/src/errors.js`
-- Defaults & budget presets: `protocol/src/defaults.js`
-- Browser/build request/response helpers: `protocol/src/protocol.js`
+- Error codes & browser/build `BridgeError`: `protocol/src/errors.ts`
+- Defaults & budget presets: `protocol/src/defaults.ts`
+- Browser/build request/response helpers: `protocol/src/protocol.ts`
 
 **Daemon internals**:
 - Daemon and routing: `internal/bridge/daemon.go`
@@ -144,7 +144,7 @@ make daemon                    # start daemon locally
 
 ## Working Rules
 
-- **JavaScript ESM only** - `"type": "module"` in root package.json. JavaScript modules use `import`/`export`; injected extension scripts follow the classic-script rules below.
+- **TypeScript browser code, Go harness** - `protocol/src/` and extension source must be TypeScript with native type annotations, not JavaScript with JSDoc types. The CLI, daemon, native host, and MCP server are Go. JavaScript is limited to npm bootstrap/launchers and build tooling. `"type": "module"` in root package.json; modules use `import`/`export`, while injected extension scripts follow the classic-script rules below.
 - **Build output** - unpacked extension files go in `dist/ext`; local and release Go executables go in `dist/cli`. Extension ZIPs stay directly under `dist/`.
 - **Development installation** - `make install` regenerates metadata, builds both components, and runs the Go self-installer. Keep one executable in the user bin directory with lightweight aliases. Development extension builds detect completed on-disk builds on native reconnect and periodic alarms; release ZIPs must disable this behavior.
 - **Extension TypeScript build** - author extension background, content, and UI code in `.ts` with native type annotations. `make build-extension` uses esbuild to emit browser JavaScript at the existing manifest paths in `dist/ext`, with source maps for development. `make package-extension` compiles a release ZIP without TypeScript sources or source maps. npm launchers run directly from JavaScript source. Build Go from the root with `make build-native`.
@@ -156,6 +156,7 @@ make daemon                    # start daemon locally
 - Preserve the generic protocol shape. Do not add task-specific bridge commands for one-off actions when an existing RPC method can express the action.
 - Prefer improving the shared protocol, client ergonomics, or skill/docs over introducing special-case commands.
 - Keep the bridge token-efficient. Favor structured DOM/style data over screenshots or raw HTML dumps.
+- Remove unused pre-Go runtime helpers rather than migrating or retaining them. Check extension and generator consumers before deleting shared code; test-only transport utilities belong in `tests/_helpers/`, not `protocol/src/`.
 - Treat extension content scripts as classic scripts. Keep their IIFEs and injection order; do not add runtime ESM imports or exports. Injected functions must remain self-contained after compilation because Chrome serializes them. Keep manifest, HTML, and runtime injection paths ending in `.js`; source imports may use `.js` specifiers resolved to `.ts` by TypeScript.
 - Keep native-host startup robust for GUI launch contexts. Do not assume shell-specific `PATH` resolution.
 - Treat the top-level `README.md` as npm-facing documentation. When adding or editing links or image references there, prefer absolute GitHub URLs instead of relative paths so the npm package page renders them correctly.
@@ -163,7 +164,7 @@ make daemon                    # start daemon locally
 ## Typing Standards
 
 - Canonical wire types live in `protocol/types.ts`; browser-specific reusable types belong in TypeScript modules. Runtime implementation types belong in Go.
-- Extension source is TypeScript. npm launchers and shared browser/build JavaScript helpers must remain strongly typed with `// @ts-check` and complete JSDoc.
+- Extension and shared protocol helper sources are TypeScript. npm launchers and JavaScript build tooling must remain strongly typed with `// @ts-check` and complete JSDoc.
 - Raw `.js` source files must always include JSDoc typings.
 - Start raw JS modules with `// @ts-check`.
 - Add JSDoc typedefs and annotations for exported functions, key internal helpers, parameters, return values, and non-obvious structured data.

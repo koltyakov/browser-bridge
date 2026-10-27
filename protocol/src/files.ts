@@ -1,5 +1,3 @@
-// @ts-check
-
 import { invalidWorkflow, numberParam, objectParam, onlyKeys, stringParam } from './emulation.js';
 
 export const FILE_MAX_BYTES = 16 * 1024 * 1024;
@@ -7,12 +5,14 @@ export const FILE_CHUNK_BYTES = 192 * 1024;
 export const FILE_TOTAL_BYTES = 32 * 1024 * 1024;
 export const FILE_TTL_MS = 5 * 60 * 1000;
 
-/** @param {string} method @param {Record<string, unknown>} params @returns {Record<string, unknown>} */
-export function normalizeFileParams(method, params) {
+export function normalizeFileParams(
+  method: string,
+  params: Record<string, unknown>
+): Record<string, unknown> {
   if (method === 'files.stage') {
     onlyKeys(params, ['transferId', 'name', 'mimeType', 'size', 'offset', 'data']);
-    /** @type {Record<string, unknown>} */
-    const result = {};
+
+    const result: Record<string, unknown> = {};
     if (params.transferId !== undefined)
       result.transferId = stringParam(params.transferId, 'transferId', 80);
     else {

@@ -6,11 +6,9 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import {
-  parseJsonLines,
-  getProtocolVersion,
-  setProtocolPackageVersion,
-} from '../../protocol/src/index.js';
+import { getProtocolVersion } from '../../protocol/src/index.js';
+import { parseJsonLines } from './jsonLines.js';
+import { setProtocolPackageVersion } from './protocolVersion.js';
 import { isolatedBridgeEnv, nativeExecutable } from './runCli.ts';
 import { NativeWireClient } from './nativeWire.ts';
 import type { AddressInfo, Socket } from 'node:net';

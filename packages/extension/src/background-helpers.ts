@@ -2,7 +2,6 @@ import {
   createFailure,
   ERROR_CODES,
   estimateJsonPayloadCost,
-  getMethodCapability,
   getCostClass,
   getUtf8ByteLength,
   isDebuggerBackedMethod,
@@ -11,7 +10,7 @@ import {
 export { simplifyAXNode } from './background-accessibility.js';
 
 export type BridgeResponse = import('../../../protocol/src/types.js').BridgeResponse;
-export type Capability = import('../../../protocol/src/types.js').Capability;
+
 export type ErrorCode = import('../../../protocol/src/types.js').ErrorCode;
 
 const CDP_MODIFIER_BITS = Object.freeze({
@@ -638,8 +637,4 @@ export function safeOrigin(url: string): string {
   } catch {
     return '';
   }
-}
-
-export function inferCapability(method: string): Capability | null {
-  return getMethodCapability(method as import('../../../protocol/src/types.js').BridgeMethod);
 }

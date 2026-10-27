@@ -1,5 +1,5 @@
 import {
-  PROTOCOL_VERSION,
+  getProtocolVersion,
   createFailure as createBridgeFailure,
   createRequest as createBridgeRequest,
   createSuccess as createBridgeSuccess,
@@ -41,7 +41,7 @@ export type MakeFailureOptions = {
 // Build the shared protocol metadata envelope used across bridge fixtures.
 export function makeMeta(overrides: BridgeMeta = {}): { protocol_version: string } & BridgeMeta {
   return {
-    protocol_version: PROTOCOL_VERSION,
+    protocol_version: getProtocolVersion(),
     ...overrides,
   };
 }

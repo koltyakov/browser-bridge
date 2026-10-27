@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveVersion } from './version.mjs';
 import { generateGzip } from './generated-gzip.mjs';
-import { OPERATION_TIMEOUT_POLICIES } from '../protocol/src/operation-timeouts.js';
+import { OPERATION_TIMEOUT_POLICIES } from '../protocol/src/operation-timeouts.ts';
 import {
   BRIDGE_METHODS,
   BRIDGE_METHOD_REGISTRY,
@@ -16,7 +16,7 @@ import {
   applyMethodBudgetPreset,
   ERROR_RECOVERY,
   BUDGET_PRESETS,
-} from '../protocol/src/index.js';
+} from '../protocol/src/index.ts';
 
 /** @typedef {import('../protocol/mcp-metadata.js').McpMetadata} McpMetadata */
 

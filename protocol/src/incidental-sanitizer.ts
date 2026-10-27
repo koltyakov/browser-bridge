@@ -1,5 +1,3 @@
-// @ts-check
-
 const DEFAULT_MAX_STRING_LENGTH = 4_096;
 const DEFAULT_MAX_DEPTH = 8;
 const DEFAULT_MAX_NODES = 1_000;
@@ -25,21 +23,17 @@ const SENSITIVE_KEYS = new Set([
   'credentials',
 ]);
 
-/** @param {string} key */
-export function isSensitiveIncidentalKey(key) {
+export function isSensitiveIncidentalKey(key: string) {
   return SENSITIVE_KEYS.has(key.toLowerCase().replaceAll(/[^a-z0-9]/gu, ''));
 }
 
-/**
- * Sanitize a URL that appears incidentally in logs, activity, or diagnostics.
- * Query-key context is retained while credentials, values, and fragments are
- * discarded.
- *
- * @param {unknown} value
- * @param {number} [maxLength]
- * @returns {string}
- */
-export function sanitizeIncidentalUrl(value, maxLength = DEFAULT_MAX_STRING_LENGTH) {
+/** Sanitize a URL that appears incidentally in logs, activity, or diagnostics.
+Query-key context is retained while credentials, values, and fragments are
+discarded. */
+export function sanitizeIncidentalUrl(
+  value: unknown,
+  maxLength: number = DEFAULT_MAX_STRING_LENGTH
+): string {
   const raw = typeof value === 'string' ? value.slice(0, maxLength) : String(value ?? '');
   if (!raw) return '';
   if (/^data:/iu.test(raw)) {
@@ -80,26 +74,18 @@ export function sanitizeIncidentalUrl(value, maxLength = DEFAULT_MAX_STRING_LENG
   }
 }
 
-/**
- * Reduce a local path to a basename-only marker.
- *
- * @param {unknown} value
- * @returns {string}
- */
-export function sanitizeIncidentalPath(value) {
+/** Reduce a local path to a basename-only marker. */
+export function sanitizeIncidentalPath(value: unknown): string {
   const raw = typeof value === 'string' ? value : String(value ?? '');
   const basename = raw.split(/[\\/]/u).filter(Boolean).at(-1)?.slice(0, 160);
   return basename ? `${REDACTED_PATH}/${basename}` : REDACTED_PATH;
 }
 
-/**
- * Sanitize secrets, URLs, and paths embedded in an incidental text message.
- *
- * @param {unknown} value
- * @param {number} [maxLength]
- * @returns {string}
- */
-export function sanitizeIncidentalText(value, maxLength = DEFAULT_MAX_STRING_LENGTH) {
+/** Sanitize secrets, URLs, and paths embedded in an incidental text message. */
+export function sanitizeIncidentalText(
+  value: unknown,
+  maxLength: number = DEFAULT_MAX_STRING_LENGTH
+): string {
   let text = typeof value === 'string' ? value : String(value ?? '');
   text = text.replace(
     /\b(authorization|proxy-authorization)\s*:\s*[^\r\n,;]+/giu,
@@ -123,23 +109,19 @@ export function sanitizeIncidentalText(value, maxLength = DEFAULT_MAX_STRING_LEN
   return text.slice(0, maxLength);
 }
 
-/**
- * Recursively sanitize incidental structured data while bounding traversal.
- * Explicit sensitive-read values must never pass through this helper.
- *
- * @param {unknown} value
- * @param {{ maxDepth?: number, maxNodes?: number, maxStringLength?: number }} [options]
- * @returns {unknown}
- */
-export function sanitizeIncidentalValue(value, options = {}) {
+/** Recursively sanitize incidental structured data while bounding traversal.
+Explicit sensitive-read values must never pass through this helper. */
+export function sanitizeIncidentalValue(
+  value: unknown,
+  options: { maxDepth?: number; maxNodes?: number; maxStringLength?: number } = {}
+): unknown {
   const maxDepth = options.maxDepth ?? DEFAULT_MAX_DEPTH;
   const maxNodes = options.maxNodes ?? DEFAULT_MAX_NODES;
   const maxStringLength = options.maxStringLength ?? DEFAULT_MAX_STRING_LENGTH;
   const seen = new WeakSet();
   let nodes = 0;
 
-  /** @param {unknown} current @param {number} depth @param {string | null} key @returns {unknown} */
-  const visit = (current, depth, key) => {
+  const visit = (current: unknown, depth: number, key: string | null): unknown => {
     nodes += 1;
     if (nodes > maxNodes) return '[truncated]';
     if (key !== null && isSensitiveIncidentalKey(key)) return REDACTED;
@@ -179,7 +161,7 @@ export function sanitizeIncidentalValue(value, options = {}) {
     if (Array.isArray(current)) {
       return current.map((item) => visit(item, depth + 1, null));
     }
-    const result = /** @type {Record<string, unknown>} */ ({});
+    const result = {} as Record<string, unknown>;
     for (const [childKey, childValue] of Object.entries(current)) {
       result[sanitizeIncidentalText(childKey, 160)] = visit(childValue, depth + 1, childKey);
     }
@@ -189,8 +171,7 @@ export function sanitizeIncidentalValue(value, options = {}) {
   return visit(value, 0, null);
 }
 
-/** @param {string} value */
-function isAbsolutePath(value) {
+function isAbsolutePath(value: string) {
   return /^(?:[a-z]:\\|\\\\|\/(?:Users|home|private|var|tmp|opt|etc|root|usr|srv|mnt|Volumes|Library|Applications)\/)/iu.test(
     value
   );

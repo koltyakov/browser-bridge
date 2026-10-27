@@ -1,18 +1,13 @@
-// @ts-check
-
 import { BridgeError, ERROR_CODES } from './errors.js';
 
 export const MAX_WEBMCP_BYTES = 65_536;
 export const MAX_WEBMCP_ARGUMENT_BYTES = 16_384;
 
-/**
- * Reject coercion and non-JSON arguments before any browser work or approval.
- * @param {Record<string, unknown>} params
- * @returns {import('./types.js').WebMcpParams}
- */
-export function normalizeWebMcpParams(params = {}) {
-  /** @param {string} key @param {number} fallback @param {number} min @param {number} max */
-  const integer = (key, fallback, min, max) => {
+/** Reject coercion and non-JSON arguments before any browser work or approval. */
+export function normalizeWebMcpParams(
+  params: Record<string, unknown> = {}
+): import('./types.js').WebMcpParams {
+  const integer = (key: string, fallback: number, min: number, max: number) => {
     const value = params[key] === undefined ? fallback : params[key];
     if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) {
       throw new BridgeError(
@@ -48,8 +43,8 @@ export function normalizeWebMcpParams(params = {}) {
     throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'arguments must be a JSON object.');
   }
   let nodes = 0;
-  /** @param {unknown} value @param {number} depth */
-  const validate = (value, depth) => {
+
+  const validate = (value: unknown, depth: number) => {
     if (++nodes > 5000 || depth > 32)
       throw new BridgeError(
         ERROR_CODES.INVALID_REQUEST,
@@ -78,7 +73,7 @@ export function normalizeWebMcpParams(params = {}) {
   }
   return {
     ...(typeof params.toolRef === 'string' ? { toolRef: params.toolRef } : {}),
-    arguments: /** @type {Record<string, unknown>} */ (JSON.parse(json)),
+    arguments: JSON.parse(json) as Record<string, unknown>,
     limit: integer('limit', 20, 1, 100),
     offset: integer('offset', 0, 0, 1000),
     query: typeof params.query === 'string' ? params.query : '',

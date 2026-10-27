@@ -1,9 +1,9 @@
-// @ts-check
-
 import { booleanParam, invalidWorkflow, numberParam, onlyKeys, stringParam } from './emulation.js';
 
-/** @param {string} method @param {Record<string, unknown>} params @returns {Record<string, unknown>} */
-export function normalizeRecording(method, params) {
+export function normalizeRecording(
+  method: string,
+  params: Record<string, unknown>
+): Record<string, unknown> {
   if (method === 'session.journal_read' || method === 'session.journal_delete') {
     onlyKeys(params, [
       'journalId',

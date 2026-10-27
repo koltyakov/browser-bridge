@@ -1,5 +1,3 @@
-// @ts-check
-
 import { BRIDGE_METHODS, BRIDGE_METHOD_REGISTRY } from './registry.js';
 
 /**
@@ -28,8 +26,8 @@ export const DEFAULT_CONSOLE_LIMIT = 50;
 export const DEFAULT_VIEWPORT_WIDTH = 1280;
 export const DEFAULT_VIEWPORT_HEIGHT = 720;
 export const DEFAULT_DEVICE_SCALE_FACTOR = 0;
-/** @type {'continue'} */
-export const DEFAULT_NETWORK_INTERCEPT_ACTION = 'continue';
+
+export const DEFAULT_NETWORK_INTERCEPT_ACTION: 'continue' = 'continue';
 
 /** Maximum size of a Chrome native messaging message in bytes. */
 export const MAX_NATIVE_MESSAGE_BYTES = 1_048_576;
@@ -126,10 +124,14 @@ export const DAEMON_EXISTING_SOCKET_PING_TIMEOUT_MS = 500;
 /** Number of recent daemon log entries returned by `log.tail`. */
 export const DEFAULT_LOG_TAIL_LIMIT = 20;
 
-/** @typedef {'quick' | 'normal' | 'deep'} BudgetPresetName */
+export type BudgetPresetName = 'quick' | 'normal' | 'deep';
 
-/** @type {Readonly<Record<BudgetPresetName, { maxNodes: number, maxDepth: number, textBudget: number, tokenBudget: number }>>} */
-export const BUDGET_PRESETS = Object.freeze({
+export const BUDGET_PRESETS: Readonly<
+  Record<
+    BudgetPresetName,
+    { maxNodes: number; maxDepth: number; textBudget: number; tokenBudget: number }
+  >
+> = Object.freeze({
   quick: { maxNodes: 5, maxDepth: 2, textBudget: 300, tokenBudget: 500 },
   normal: {
     maxNodes: DEFAULT_MAX_NODES,
@@ -140,8 +142,7 @@ export const BUDGET_PRESETS = Object.freeze({
   deep: { maxNodes: 100, maxDepth: 8, textBudget: 2000, tokenBudget: 4000 },
 });
 
-/** @type {readonly import('./types.js').BridgeMethod[]} */
-const LEGACY_DEBUGGER_BACKED_METHOD_ORDER = [
+const LEGACY_DEBUGGER_BACKED_METHOD_ORDER: readonly import('./types.js').BridgeMethod[] = [
   'page.evaluate',
   'dom.get_accessibility_tree',
   'viewport.resize',
@@ -162,8 +163,7 @@ const LEGACY_DEBUGGER_BACKED_METHOD_ORDER = [
 
 const LEGACY_DEBUGGER_BACKED_METHODS = new Set(LEGACY_DEBUGGER_BACKED_METHOD_ORDER);
 
-/** @type {ReadonlySet<string>} */
-export const DEBUGGER_BACKED_METHODS = new Set([
+export const DEBUGGER_BACKED_METHODS: ReadonlySet<string> = new Set([
   ...LEGACY_DEBUGGER_BACKED_METHOD_ORDER.filter(
     (method) => BRIDGE_METHOD_REGISTRY[method].debuggerBacked
   ),
@@ -173,30 +173,23 @@ export const DEBUGGER_BACKED_METHODS = new Set([
   ),
 ]);
 
-/**
- * @param {unknown} value
- * @returns {value is BudgetPresetName}
- */
-export function isBudgetPresetName(value) {
+export function isBudgetPresetName(value: unknown): value is BudgetPresetName {
   return value === 'quick' || value === 'normal' || value === 'deep';
 }
 
-/**
- * @param {BudgetPresetName | null | undefined} presetName
- * @returns {{ maxNodes: number, maxDepth: number, textBudget: number, tokenBudget: number }}
- */
-export function getBudgetPreset(presetName) {
+export function getBudgetPreset(presetName: BudgetPresetName | null | undefined): {
+  maxNodes: number;
+  maxDepth: number;
+  textBudget: number;
+  tokenBudget: number;
+} {
   if (presetName && isBudgetPresetName(presetName)) {
     return BUDGET_PRESETS[presetName];
   }
   return BUDGET_PRESETS.normal;
 }
 
-/**
- * @param {number} approxTokens
- * @returns {'cheap' | 'moderate' | 'heavy' | 'extreme'}
- */
-export function getCostClass(approxTokens) {
+export function getCostClass(approxTokens: number): 'cheap' | 'moderate' | 'heavy' | 'extreme' {
   if (approxTokens <= 250) {
     return 'cheap';
   }
@@ -209,10 +202,6 @@ export function getCostClass(approxTokens) {
   return 'extreme';
 }
 
-/**
- * @param {string} method
- * @returns {boolean}
- */
-export function isDebuggerBackedMethod(method) {
+export function isDebuggerBackedMethod(method: string): boolean {
   return DEBUGGER_BACKED_METHODS.has(method);
 }

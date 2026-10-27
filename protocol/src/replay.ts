@@ -1,10 +1,15 @@
-// @ts-check
+export type Replay = {
+  frames: Array<{ at: number; data: string; width?: number; height?: number; tabId?: number }>;
+  events: Array<Record<string, unknown>>;
+  bodies?: Array<Record<string, unknown>>;
+  gaps: number;
+  dropped: number;
+  replayMode?: string;
+  memoryWindow?: boolean;
+};
 
-/** @typedef {{ frames: Array<{ at: number, data: string, width?: number, height?: number, tabId?: number }>, events: Array<Record<string, unknown>>, bodies?: Array<Record<string, unknown>>, gaps: number, dropped: number, replayMode?: string, memoryWindow?: boolean }} Replay */
-
-/** Offline renderer playback. Untrusted data is JSON text; only this fixed viewer script executes.
- * @param {Replay} recording @returns {string} */
-export function renderReplay(recording) {
+/** Offline renderer playback. Untrusted data is JSON text; only this fixed viewer script executes. */
+export function renderReplay(recording: Replay): string {
   const gaps = Number.isSafeInteger(recording.gaps) ? recording.gaps : 0;
   const dropped = Number.isSafeInteger(recording.dropped) ? recording.dropped : 0;
   const nonce = crypto.randomUUID().replaceAll('-', '');
@@ -35,69 +40,8 @@ function tick(now){if(playing){position=Math.min(end-start,position+(now-last)*N
 </script></html>`;
 }
 
-/** Recover complete records; report a partial tail instead of silently claiming a complete recording.
- * @param {string} text @returns {Replay} */
-export function parseRecordingJournal(text) {
-  /** @type {Replay} */
-  const result = {
-    frames: [],
-    events: [],
-    bodies: [],
-    gaps: 0,
-    dropped: 0,
-    replayMode: 'renderer-stream',
-  };
-  const lines = text.split('\n');
-  /** @type {Map<number, number>} */
-  const eventIndexes = new Map();
-  let ended = false;
-  if (lines.pop()) result.gaps++;
-  for (const line of lines) {
-    if (!line) continue;
-    const entry = /** @type {Record<string, unknown>} */ (JSON.parse(line));
-    if (!entry || typeof entry !== 'object') throw new Error('Invalid journal record.');
-    if (
-      entry.kind === 'frame' &&
-      entry.frame &&
-      typeof entry.frame === 'object' &&
-      'data' in entry.frame &&
-      typeof entry.frame.data === 'string' &&
-      'at' in entry.frame &&
-      typeof entry.frame.at === 'number'
-    )
-      result.frames.push(/** @type {Replay['frames'][number]} */ (entry.frame));
-    else if (
-      (entry.kind === 'event' || entry.kind === 'event-update') &&
-      entry.event &&
-      typeof entry.event === 'object'
-    ) {
-      const event = /** @type {Record<string, unknown>} */ (entry.event);
-      const index =
-        entry.kind === 'event-update' && typeof event.seq === 'number'
-          ? eventIndexes.get(event.seq)
-          : undefined;
-      if (index !== undefined) result.events[index] = event;
-      else {
-        if (typeof event.seq === 'number') eventIndexes.set(event.seq, result.events.length);
-        result.events.push(event);
-      }
-    } else if (entry.kind === 'body' && entry.body && typeof entry.body === 'object')
-      result.bodies?.push(/** @type {Record<string, unknown>} */ (entry.body));
-    else if (entry.kind === 'end') {
-      ended = true;
-      result.gaps += Number(entry.gaps) || 0;
-      result.dropped = Number(entry.dropped) || 0;
-    }
-  }
-  if (!ended) result.gaps++;
-  result.events = correlateReplayEvents(result.events);
-  return result;
-}
-
-/** @template {Record<string, unknown>} T @param {T[]} events @returns {T[]} */
-export function correlateReplayEvents(events) {
-  /** @type {Map<unknown, T[]>} */
-  const tabs = new Map();
+export function correlateReplayEvents<T extends Record<string, unknown>>(events: T[]): T[] {
+  const tabs: Map<unknown, T[]> = new Map();
   for (const event of events) {
     if (
       event.origin !== 'trusted-event' ||

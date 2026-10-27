@@ -1,42 +1,34 @@
-// @ts-check
-
 import { CAPABILITIES } from './capability-values.js';
 import { BridgeError, ERROR_CODES } from './errors.js';
 
-/**
- * @typedef {'trivial' | 'low' | 'moderate' | 'high'} BridgeMethodComplexity
- */
+export type BridgeMethodComplexity = 'trivial' | 'low' | 'moderate' | 'high';
 
-/**
- * @typedef {{
- *   group: string,
- *   tab: boolean,
- *   params: readonly string[],
- *   description: string,
- *   since: string,
- *   complexity: BridgeMethodComplexity,
- *   capability: import('./types.js').Capability | null,
- *   debuggerBacked: boolean
- *   discovery?: Readonly<BridgeMethodDiscovery>
- *   exclusive: boolean
- * }} BridgeMethodRegistryEntry
- */
+export type BridgeMethodRegistryEntry = {
+  group: string;
+  tab: boolean;
+  params: readonly string[];
+  description: string;
+  since: string;
+  complexity: BridgeMethodComplexity;
+  capability: import('./types.js').Capability | null;
+  debuggerBacked: boolean;
+  discovery?: Readonly<BridgeMethodDiscovery>;
+  exclusive: boolean;
+};
 
-/**
- * Canonical input type and minimal example for on-demand agent discovery.
- * @typedef {{paramsType: string, required?: readonly string[], example: Record<string, unknown>}} BridgeMethodDiscovery
- */
+export type BridgeMethodDiscovery = {
+  paramsType: string;
+  required?: readonly string[];
+  example: Record<string, unknown>;
+};
 
-/**
- * @typedef {{
- *   capability: import('./types.js').Capability | null,
- *   debuggerBacked?: boolean
- *   exclusive?: boolean
- * }} BridgeMethodPolicy
- */
+export type BridgeMethodPolicy = {
+  capability: import('./types.js').Capability | null;
+  debuggerBacked?: boolean;
+  exclusive?: boolean;
+};
 
-/** @type {Readonly<Record<string, Readonly<BridgeMethodPolicy>>>} */
-const METHOD_POLICIES = Object.freeze({
+const METHOD_POLICIES: Readonly<Record<string, Readonly<BridgeMethodPolicy>>> = Object.freeze({
   none: Object.freeze({ capability: null }),
   tabsManage: Object.freeze({ capability: CAPABILITIES.TABS_MANAGE }),
   pageRead: Object.freeze({ capability: CAPABILITIES.PAGE_READ }),
@@ -113,185 +105,173 @@ const METHOD_POLICIES = Object.freeze({
   }),
 });
 
-/**
- * Canonical bridge method registry. This is the shared source of truth for
- * method grouping, tab-routing requirements, exposed params, capability mapping,
- * and debugger policy so the protocol, CLI, MCP layer, and docs can stay aligned.
- *
- * @type {Readonly<Record<import('./types.js').BridgeMethod, string>>}
- */
-const BRIDGE_METHOD_DESCRIPTIONS = Object.freeze({
-  'session.journal_read':
-    'Read exact base64 bytes of a durable recording journal. Requires its secret journalId. Works after extension or daemon restart; page until nextOffset=null. Expires 24 hours after the last write.',
-  'session.journal_delete': 'Delete one durable recording journal using its secret journalId.',
-  'input.paste_image':
-    'Paste a staged PNG using the real clipboard and trusted Chrome input. Overwrites clipboard. Requires a focused top-document editor. Never automatically retry; verify insertion.',
-  'download.start':
-    'Start a browser-native download without the artifact size ceiling. Returns a secret downloadId for subsequent control. Saves on the browser machine.',
-  'download.status': 'Read progress and state of one BBX-created browser download.',
-  'download.pause': 'Pause one BBX-created browser download.',
-  'download.resume': 'Resume one resumable BBX-created browser download.',
-  'download.cancel': 'Cancel one BBX-created browser download.',
-  'download.release':
-    'Release a terminal download handle without deleting its file or browser history.',
-  'session.start':
-    'Start bounded recording. activity=true; network,bodies,messages,visual,followTabs,durable,replay default false. bodies/messages require network. durationMs=1000..1800000, default 60000. followTabs tracks up to eight opener descendants inside the enabled window. replay captures the root renderer stream. durable returns a secret journalId for crash recovery. Input values are redacted; pixels and binary bodies are not. Keep sessionId on one connection; two retained sessions maximum.',
-  'session.status':
-    'Probe a recording by sessionId, including the live page recorder, counters, gaps, body backlog and visual frame count. No event payloads.',
-  'session.read':
-    'Read bounded recording events with sessionId, cursor=0, limit=25 (max 100), waitMs=0 (max 25000). Cursors belong to this sessionId. Returns nextCursor and explicit capture gaps. No response bodies or images in this read.',
-  'session.stop':
-    'Stop intake, collect final activity, drain pending body reads and stop network capture. Retains evidence for five minutes for export. Failed cleanup is retryable.',
-  'session.export':
-    'Stop and drain a recording, then export a chunked artifact. format=json includes archived events, opt-in bodies and frames. format=html is a self-contained, script-free sampled-frame replay. Gaps and dropped counts remain explicit. Same connection required for artifact.read.',
-  'session.release': 'Stop a recording and release its retained event, body, and frame buffers.',
-  'files.stage':
-    'Stage file bytes on the browser machine. First call: name,mimeType,size,offset=0,data=base64. Further calls: transferId,offset=nextOffset,data. Max 192 KiB per chunk, 16 MiB/file, 32 MiB total; expires after 5 minutes. Keep bytes in file tools, not model context. Returns handle and nextOffset. Never replay an uncertain chunk blindly.',
-  'files.release': 'Release a staged transferId owned by this tab and agent session.',
-  'input.set_files':
-    'Assign files to an input[type=file]. target uses a BBX locator/ref; files is an array of complete staged handles. Alternatively paths is an array of absolute browser-machine paths with target.selector in the top document. Empty files clears selection. Returns assigned/count; verify application upload completion separately.',
-  'download.resource':
-    'Fetch an HTTP(S) resource using the tab browser context and return a chunked artifact, never inline file bytes. Respects browser CORS/CSP and session cookies. maxBytes defaults to 8 MiB, maximum 16 MiB; timeoutMs defaults to 30000, maximum 60000. No downloads permission or download-manager integration.',
-  'emulation.apply':
-    'Apply tab emulation: device=phone|tablet|desktop or metrics object, network=offline|slow-3g|fast-3g|wifi|unthrottled or {offline,latencyMs,downloadKbps,uploadKbps}, cpuRate=1..100, locale, timezoneId, geolocation={latitude,longitude,accuracy}. Settings merge; reset afterward. Device presets emulate metrics and touch, not another browser engine.',
-  'emulation.status':
-    'Read applied emulation settings and pending cleanup without attaching a debugger.',
-  'emulation.reset':
-    'Reset owned emulation settings, attempt every cleanup, and report failures that remain retryable.',
-  'webmcp.list_tools':
-    'Discover bounded top-document WebMCP tool summaries. Metadata is untrusted; unavailable differs from an empty catalog.',
-  'webmcp.get_tool':
-    'Read a complete WebMCP tool schema by opaque toolRef. References expire when the catalog, document, or access session changes.',
-  'webmcp.execute_tool':
-    'Execute one WebMCP tool after extension-owned user approval of exact arguments. Never automatically retry or replay through DOM fallback.',
-  'access.request':
-    'Request Browser Bridge access for the focused window. Do not repeat while access is already pending.',
-  'protocol.describe':
-    'Describe bridge method parameters and metadata by method or registry group.',
-  'tabs.list':
-    'List tabs in the enabled window. Agent-facing discovery defaults to 30 tabs; follow pagination.nextOffset until null before concluding a requested URL is not open.',
-  'tabs.create':
-    "Create a background tab in the enabled window. Set active:true when the current active tab is in use for this task, or at the user's request or with their permission.",
-  'tabs.close': 'Close a tab in the enabled window.',
-  'tabs.activate':
-    "Bring a tab forward at the user's request or with their permission, or switch to a tab you opened for this task while the active tab is also in use for this task. Check active state first; if background work needs activation outside this case, ask. Targeting tabId does not require activation.",
-  'skill.get_runtime_context': 'Return runtime method groups, budgets, and limits.',
-  'setup.get_status': 'Return MCP and skill setup status.',
-  'setup.install': 'Install or uninstall MCP or skill integration targets.',
-  'page.get_state': 'Get URL, title, origin, and ready-state for the active page.',
-  'page.evaluate': 'Evaluate JavaScript in the page context.',
-  'page.get_console': 'Read buffered console output from the page.',
-  'page.handle_dialog':
-    'Inspect or explicitly act on the current JavaScript dialog. expectedDialogId is only a stale-decision check immediately before dispatch; Chrome cannot bind the CDP command atomically to that identifier.',
-  'page.wait_for_load_state':
-    'Wait for truthful tab-complete state and/or an event-aware URL condition.',
-  'page.get_storage': 'Read local or session storage key metadata without values.',
-  'sensitive.read': 'Deliberately read one exact local or session storage value.',
-  'page.get_text': 'Read bounded visible text from the page.',
-  'page.extract_content':
-    'Extract bounded semantic page content as text or Markdown without returning source HTML.',
-  'page.get_network':
-    'Read buffered fetch/XHR activity or explicitly manage bounded all-resource CDP capture.',
-  'network.export_har':
-    'Export bounded captured network evidence as a HAR 1.2 document, inline or as a daemon-owned artifact.',
-  'network.intercept.add': 'Add a request interception rule (CDP Fetch domain).',
-  'network.intercept.remove': 'Remove a request interception rule by ID.',
-  'network.intercept.list': 'List active interception rules.',
-  'network.intercept.clear': 'Remove all interception rules and disable interception.',
-  'navigation.navigate': 'Navigate the current tab to a URL.',
-  'navigation.reload': 'Reload the current tab.',
-  'navigation.go_back': 'Navigate backward in tab history.',
-  'navigation.go_forward': 'Navigate forward in tab history.',
-  'dom.query': 'Query a DOM subtree and return compact node summaries.',
-  'dom.baseline.create': 'Create a short-lived compact semantic DOM baseline for later comparison.',
-  'dom.baseline.compare': 'Compare the current DOM with a retained semantic baseline.',
-  'dom.baseline.describe': 'Describe a retained semantic DOM baseline and its scope.',
-  'dom.baseline.release': 'Release a retained semantic DOM baseline.',
-  'dom.describe': 'Describe one element by elementRef.',
-  'dom.get_text': 'Read bounded text for one element.',
-  'dom.get_attributes': 'Read selected attributes for one element.',
-  'dom.wait_for': 'Wait for a selector or text condition in the DOM.',
-  'dom.find_by_text':
-    'Find the innermost visible elements by text, including open/closed shadow DOM.',
-  'dom.find_by_role':
-    'Find visible elements by ARIA role and accessible name (labels, aria-*, alt, content).',
-  'dom.get_html': 'Read inner or outer HTML for one element.',
-  'dom.get_accessibility_tree':
-    'Read an accessibility tree; source=dom returns a compact actionable outline with elementRefs and no debugger.',
-  'layout.get_box_model': 'Read the box model for one element.',
-  'layout.hit_test': 'Resolve the topmost element at a viewport point.',
-  'styles.get_computed':
-    'Read requested computed styles; omission returns display, position, width, height, and color.',
-  'styles.get_matched_rules':
-    'Read element classes and inline style context (not stylesheet cascade data).',
-  'viewport.scroll': 'Scroll the viewport or a scrollable element.',
-  'viewport.resize': 'Resize or reset the tab viewport.',
-  'input.click':
-    'Actionability-check and click an element through DOM or optional CDP input; holdMs keeps the button pressed.',
-  'input.focus': 'Actionability-check and focus an element through DOM input.',
-  'input.type': 'Actionability-check and type through DOM or optional CDP text input.',
-  'input.fill':
-    'Fill an editable target using a DOM strategy or optional CDP text input; verify afterward.',
-  'input.press_key':
-    'Send a key press to the page or an element through DOM or optional CDP input; holdMs keeps the key down.',
-  'input.set_checked': 'Set checkbox or radio checked state.',
-  'input.select_option': 'Select options in a select element.',
-  'input.hover': 'Actionability-check and hover through DOM or optional CDP pointer input.',
-  'input.drag': 'Actionability-check and drag through DOM or optional CDP pointer input.',
-  'input.touch':
-    'Press one or more touch points at the same time (chords, multi-finger taps, swipes, pinches) through DOM or optional CDP touch input.',
-  'input.perform':
-    'Run known input, wait, and bounded read steps in order inside the browser. Optional outcomes verify DOM, URL, and fresh fetch/XHR response conditions; network capture arms before steps. Use returnLastResult for final evidence. Never blindly replay a partial or unverified flow.',
-  'input.scroll_into_view': 'Scroll an element into the visible viewport.',
-  'screenshot.capture_region': 'Capture a screenshot of a viewport region.',
-  'screenshot.capture_element': 'Capture a screenshot of one element.',
-  'screenshot.capture_full_page': 'Capture a full-page screenshot beyond the viewport.',
-  'screenshot.baseline.create':
-    'Opt in to a five-minute memory-only visual baseline of one selector or viewport CSS rect. Use only when semantic DOM diffs cannot verify CSS, canvas, charts, or visual regressions. Returns metadata, no image.',
-  'screenshot.baseline.compare':
-    'Compare exact pixels locally in Go. Unchanged returns no images; useful local changes return context-expanded before/after crops. Broad, scattered or oversized diffs return status=diff_not_useful with counts/reason and no images, retaining the reference without advancing. Geometry changes return status=not_comparable without images and require a new baseline. fallback=current explicitly requests at most one current full scoped image instead, never a full before/after pair. Not proof of action success. Defaults includeBefore=true, advance=false, fallback=summary.',
-  'screenshot.baseline.release':
-    'Release retained visual pixels. Idempotent; use after visual verification.',
-  'artifact.read': 'Read one bounded chunk from a daemon-owned artifact.',
-  'artifact.delete': 'Delete one daemon-owned artifact.',
-  'patch.apply_styles': 'Apply a reversible inline style patch.',
-  'patch.apply_dom': 'Apply a reversible DOM patch.',
-  'patch.list': 'List active reversible patches.',
-  'patch.rollback': 'Rollback one reversible patch.',
-  'patch.commit_session_baseline':
-    'Keep current document mutations and discard their rollback history.',
-  'cdp.get_document': 'Read the CDP DOM document tree.',
-  'cdp.get_dom_snapshot': 'Read a CDP DOM snapshot.',
-  'cdp.get_box_model': 'Read a CDP box model for a node.',
-  'cdp.get_computed_styles_for_node': 'Read CDP computed styles for a node.',
-  'cdp.dispatch_key_event': 'Dispatch a key press through Chrome DevTools Protocol input.',
-  'performance.get_metrics':
-    'Read a raw Chrome/CDP counter point sample; names and units vary, and BBX measures no navigation window, LCP, CLS, or INP.',
-  'log.tail': 'Tail recent bridge log entries.',
-  'health.ping':
-    'Check connectivity, compatibility, and access routing. Set diagnostics:true for build, debugger, capture, baseline, transport, and recovery details.',
-  'daemon.metrics': 'Daemon health and performance metrics.',
-});
+/** Canonical bridge method registry. This is the shared source of truth for
+method grouping, tab-routing requirements, exposed params, capability mapping,
+and debugger policy so the protocol, CLI, MCP layer, and docs can stay aligned. */
+const BRIDGE_METHOD_DESCRIPTIONS: Readonly<Record<import('./types.js').BridgeMethod, string>> =
+  Object.freeze({
+    'session.journal_read':
+      'Read exact base64 bytes of a durable recording journal. Requires its secret journalId. Works after extension or daemon restart; page until nextOffset=null. Expires 24 hours after the last write.',
+    'session.journal_delete': 'Delete one durable recording journal using its secret journalId.',
+    'input.paste_image':
+      'Paste a staged PNG using the real clipboard and trusted Chrome input. Overwrites clipboard. Requires a focused top-document editor. Never automatically retry; verify insertion.',
+    'download.start':
+      'Start a browser-native download without the artifact size ceiling. Returns a secret downloadId for subsequent control. Saves on the browser machine.',
+    'download.status': 'Read progress and state of one BBX-created browser download.',
+    'download.pause': 'Pause one BBX-created browser download.',
+    'download.resume': 'Resume one resumable BBX-created browser download.',
+    'download.cancel': 'Cancel one BBX-created browser download.',
+    'download.release':
+      'Release a terminal download handle without deleting its file or browser history.',
+    'session.start':
+      'Start bounded recording. activity=true; network,bodies,messages,visual,followTabs,durable,replay default false. bodies/messages require network. durationMs=1000..1800000, default 60000. followTabs tracks up to eight opener descendants inside the enabled window. replay captures the root renderer stream. durable returns a secret journalId for crash recovery. Input values are redacted; pixels and binary bodies are not. Keep sessionId on one connection; two retained sessions maximum.',
+    'session.status':
+      'Probe a recording by sessionId, including the live page recorder, counters, gaps, body backlog and visual frame count. No event payloads.',
+    'session.read':
+      'Read bounded recording events with sessionId, cursor=0, limit=25 (max 100), waitMs=0 (max 25000). Cursors belong to this sessionId. Returns nextCursor and explicit capture gaps. No response bodies or images in this read.',
+    'session.stop':
+      'Stop intake, collect final activity, drain pending body reads and stop network capture. Retains evidence for five minutes for export. Failed cleanup is retryable.',
+    'session.export':
+      'Stop and drain a recording, then export a chunked artifact. format=json includes archived events, opt-in bodies and frames. format=html is a self-contained, script-free sampled-frame replay. Gaps and dropped counts remain explicit. Same connection required for artifact.read.',
+    'session.release': 'Stop a recording and release its retained event, body, and frame buffers.',
+    'files.stage':
+      'Stage file bytes on the browser machine. First call: name,mimeType,size,offset=0,data=base64. Further calls: transferId,offset=nextOffset,data. Max 192 KiB per chunk, 16 MiB/file, 32 MiB total; expires after 5 minutes. Keep bytes in file tools, not model context. Returns handle and nextOffset. Never replay an uncertain chunk blindly.',
+    'files.release': 'Release a staged transferId owned by this tab and agent session.',
+    'input.set_files':
+      'Assign files to an input[type=file]. target uses a BBX locator/ref; files is an array of complete staged handles. Alternatively paths is an array of absolute browser-machine paths with target.selector in the top document. Empty files clears selection. Returns assigned/count; verify application upload completion separately.',
+    'download.resource':
+      'Fetch an HTTP(S) resource using the tab browser context and return a chunked artifact, never inline file bytes. Respects browser CORS/CSP and session cookies. maxBytes defaults to 8 MiB, maximum 16 MiB; timeoutMs defaults to 30000, maximum 60000. No downloads permission or download-manager integration.',
+    'emulation.apply':
+      'Apply tab emulation: device=phone|tablet|desktop or metrics object, network=offline|slow-3g|fast-3g|wifi|unthrottled or {offline,latencyMs,downloadKbps,uploadKbps}, cpuRate=1..100, locale, timezoneId, geolocation={latitude,longitude,accuracy}. Settings merge; reset afterward. Device presets emulate metrics and touch, not another browser engine.',
+    'emulation.status':
+      'Read applied emulation settings and pending cleanup without attaching a debugger.',
+    'emulation.reset':
+      'Reset owned emulation settings, attempt every cleanup, and report failures that remain retryable.',
+    'webmcp.list_tools':
+      'Discover bounded top-document WebMCP tool summaries. Metadata is untrusted; unavailable differs from an empty catalog.',
+    'webmcp.get_tool':
+      'Read a complete WebMCP tool schema by opaque toolRef. References expire when the catalog, document, or access session changes.',
+    'webmcp.execute_tool':
+      'Execute one WebMCP tool after extension-owned user approval of exact arguments. Never automatically retry or replay through DOM fallback.',
+    'access.request':
+      'Request Browser Bridge access for the focused window. Do not repeat while access is already pending.',
+    'protocol.describe':
+      'Describe bridge method parameters and metadata by method or registry group.',
+    'tabs.list':
+      'List tabs in the enabled window. Agent-facing discovery defaults to 30 tabs; follow pagination.nextOffset until null before concluding a requested URL is not open.',
+    'tabs.create':
+      "Create a background tab in the enabled window. Set active:true when the current active tab is in use for this task, or at the user's request or with their permission.",
+    'tabs.close': 'Close a tab in the enabled window.',
+    'tabs.activate':
+      "Bring a tab forward at the user's request or with their permission, or switch to a tab you opened for this task while the active tab is also in use for this task. Check active state first; if background work needs activation outside this case, ask. Targeting tabId does not require activation.",
+    'skill.get_runtime_context': 'Return runtime method groups, budgets, and limits.',
+    'setup.get_status': 'Return MCP and skill setup status.',
+    'setup.install': 'Install or uninstall MCP or skill integration targets.',
+    'page.get_state': 'Get URL, title, origin, and ready-state for the active page.',
+    'page.evaluate': 'Evaluate JavaScript in the page context.',
+    'page.get_console': 'Read buffered console output from the page.',
+    'page.handle_dialog':
+      'Inspect or explicitly act on the current JavaScript dialog. expectedDialogId is only a stale-decision check immediately before dispatch; Chrome cannot bind the CDP command atomically to that identifier.',
+    'page.wait_for_load_state':
+      'Wait for truthful tab-complete state and/or an event-aware URL condition.',
+    'page.get_storage': 'Read local or session storage key metadata without values.',
+    'sensitive.read': 'Deliberately read one exact local or session storage value.',
+    'page.get_text': 'Read bounded visible text from the page.',
+    'page.extract_content':
+      'Extract bounded semantic page content as text or Markdown without returning source HTML.',
+    'page.get_network':
+      'Read buffered fetch/XHR activity or explicitly manage bounded all-resource CDP capture.',
+    'network.export_har':
+      'Export bounded captured network evidence as a HAR 1.2 document, inline or as a daemon-owned artifact.',
+    'network.intercept.add': 'Add a request interception rule (CDP Fetch domain).',
+    'network.intercept.remove': 'Remove a request interception rule by ID.',
+    'network.intercept.list': 'List active interception rules.',
+    'network.intercept.clear': 'Remove all interception rules and disable interception.',
+    'navigation.navigate': 'Navigate the current tab to a URL.',
+    'navigation.reload': 'Reload the current tab.',
+    'navigation.go_back': 'Navigate backward in tab history.',
+    'navigation.go_forward': 'Navigate forward in tab history.',
+    'dom.query': 'Query a DOM subtree and return compact node summaries.',
+    'dom.baseline.create':
+      'Create a short-lived compact semantic DOM baseline for later comparison.',
+    'dom.baseline.compare': 'Compare the current DOM with a retained semantic baseline.',
+    'dom.baseline.describe': 'Describe a retained semantic DOM baseline and its scope.',
+    'dom.baseline.release': 'Release a retained semantic DOM baseline.',
+    'dom.describe': 'Describe one element by elementRef.',
+    'dom.get_text': 'Read bounded text for one element.',
+    'dom.get_attributes': 'Read selected attributes for one element.',
+    'dom.wait_for': 'Wait for a selector or text condition in the DOM.',
+    'dom.find_by_text':
+      'Find the innermost visible elements by text, including open/closed shadow DOM.',
+    'dom.find_by_role':
+      'Find visible elements by ARIA role and accessible name (labels, aria-*, alt, content).',
+    'dom.get_html': 'Read inner or outer HTML for one element.',
+    'dom.get_accessibility_tree':
+      'Read an accessibility tree; source=dom returns a compact actionable outline with elementRefs and no debugger.',
+    'layout.get_box_model': 'Read the box model for one element.',
+    'layout.hit_test': 'Resolve the topmost element at a viewport point.',
+    'styles.get_computed':
+      'Read requested computed styles; omission returns display, position, width, height, and color.',
+    'styles.get_matched_rules':
+      'Read element classes and inline style context (not stylesheet cascade data).',
+    'viewport.scroll': 'Scroll the viewport or a scrollable element.',
+    'viewport.resize': 'Resize or reset the tab viewport.',
+    'input.click':
+      'Actionability-check and click an element through DOM or optional CDP input; holdMs keeps the button pressed.',
+    'input.focus': 'Actionability-check and focus an element through DOM input.',
+    'input.type': 'Actionability-check and type through DOM or optional CDP text input.',
+    'input.fill':
+      'Fill an editable target using a DOM strategy or optional CDP text input; verify afterward.',
+    'input.press_key':
+      'Send a key press to the page or an element through DOM or optional CDP input; holdMs keeps the key down.',
+    'input.set_checked': 'Set checkbox or radio checked state.',
+    'input.select_option': 'Select options in a select element.',
+    'input.hover': 'Actionability-check and hover through DOM or optional CDP pointer input.',
+    'input.drag': 'Actionability-check and drag through DOM or optional CDP pointer input.',
+    'input.touch':
+      'Press one or more touch points at the same time (chords, multi-finger taps, swipes, pinches) through DOM or optional CDP touch input.',
+    'input.perform':
+      'Run known input, wait, and bounded read steps in order inside the browser. Optional outcomes verify DOM, URL, and fresh fetch/XHR response conditions; network capture arms before steps. Use returnLastResult for final evidence. Never blindly replay a partial or unverified flow.',
+    'input.scroll_into_view': 'Scroll an element into the visible viewport.',
+    'screenshot.capture_region': 'Capture a screenshot of a viewport region.',
+    'screenshot.capture_element': 'Capture a screenshot of one element.',
+    'screenshot.capture_full_page': 'Capture a full-page screenshot beyond the viewport.',
+    'screenshot.baseline.create':
+      'Opt in to a five-minute memory-only visual baseline of one selector or viewport CSS rect. Use only when semantic DOM diffs cannot verify CSS, canvas, charts, or visual regressions. Returns metadata, no image.',
+    'screenshot.baseline.compare':
+      'Compare exact pixels locally in Go. Unchanged returns no images; useful local changes return context-expanded before/after crops. Broad, scattered or oversized diffs return status=diff_not_useful with counts/reason and no images, retaining the reference without advancing. Geometry changes return status=not_comparable without images and require a new baseline. fallback=current explicitly requests at most one current full scoped image instead, never a full before/after pair. Not proof of action success. Defaults includeBefore=true, advance=false, fallback=summary.',
+    'screenshot.baseline.release':
+      'Release retained visual pixels. Idempotent; use after visual verification.',
+    'artifact.read': 'Read one bounded chunk from a daemon-owned artifact.',
+    'artifact.delete': 'Delete one daemon-owned artifact.',
+    'patch.apply_styles': 'Apply a reversible inline style patch.',
+    'patch.apply_dom': 'Apply a reversible DOM patch.',
+    'patch.list': 'List active reversible patches.',
+    'patch.rollback': 'Rollback one reversible patch.',
+    'patch.commit_session_baseline':
+      'Keep current document mutations and discard their rollback history.',
+    'cdp.get_document': 'Read the CDP DOM document tree.',
+    'cdp.get_dom_snapshot': 'Read a CDP DOM snapshot.',
+    'cdp.get_box_model': 'Read a CDP box model for a node.',
+    'cdp.get_computed_styles_for_node': 'Read CDP computed styles for a node.',
+    'cdp.dispatch_key_event': 'Dispatch a key press through Chrome DevTools Protocol input.',
+    'performance.get_metrics':
+      'Read a raw Chrome/CDP counter point sample; names and units vary, and BBX measures no navigation window, LCP, CLS, or INP.',
+    'log.tail': 'Tail recent bridge log entries.',
+    'health.ping':
+      'Check connectivity, compatibility, and access routing. Set diagnostics:true for build, debugger, capture, baseline, transport, and recovery details.',
+    'daemon.metrics': 'Daemon health and performance metrics.',
+  });
 
-/**
- * @param {import('./types.js').BridgeMethod} method
- * @param {string} group
- * @param {boolean} tab
- * @param {readonly string[]} params
- * @param {BridgeMethodComplexity} [complexity='low']
- * @param {Readonly<BridgeMethodPolicy>} [policy=METHOD_POLICIES.none]
- * @param {Readonly<BridgeMethodDiscovery>} [discovery]
- * @returns {BridgeMethodRegistryEntry}
- */
 function createRegistryEntry(
-  method,
-  group,
-  tab,
-  params,
-  complexity = 'low',
-  policy = METHOD_POLICIES.none,
-  discovery
-) {
+  method: import('./types.js').BridgeMethod,
+  group: string,
+  tab: boolean,
+  params: readonly string[],
+  complexity: BridgeMethodComplexity = 'low',
+  policy: Readonly<BridgeMethodPolicy> = METHOD_POLICIES.none,
+  discovery?: Readonly<BridgeMethodDiscovery>
+): BridgeMethodRegistryEntry {
   const entry = {
     group,
     tab,
@@ -301,18 +281,17 @@ function createRegistryEntry(
     complexity,
   };
 
-  return /** @type {BridgeMethodRegistryEntry} */ (
-    Object.defineProperties(entry, {
-      capability: { value: policy.capability },
-      debuggerBacked: { value: policy.debuggerBacked ?? false },
-      discovery: { value: discovery },
-      exclusive: { value: policy.exclusive ?? false },
-    })
-  );
+  return Object.defineProperties(entry, {
+    capability: { value: policy.capability },
+    debuggerBacked: { value: policy.debuggerBacked ?? false },
+    discovery: { value: discovery },
+    exclusive: { value: policy.exclusive ?? false },
+  }) as BridgeMethodRegistryEntry;
 }
 
-/** @type {Readonly<Record<import('./types.js').BridgeMethod, BridgeMethodRegistryEntry>>} */
-export const BRIDGE_METHOD_REGISTRY = Object.freeze({
+export const BRIDGE_METHOD_REGISTRY: Readonly<
+  Record<import('./types.js').BridgeMethod, BridgeMethodRegistryEntry>
+> = Object.freeze({
   // system - trivial
   'access.request': createRegistryEntry('access.request', 'system', false, ['intent'], 'trivial'),
   'protocol.describe': createRegistryEntry(
@@ -1309,13 +1288,11 @@ export const BRIDGE_METHOD_REGISTRY = Object.freeze({
   ),
 });
 
-/** @type {ReadonlyArray<import('./types.js').BridgeMethod>} */
-export const BRIDGE_METHODS = Object.freeze(
-  /** @type {import('./types.js').BridgeMethod[]} */ (Object.keys(BRIDGE_METHOD_REGISTRY))
+export const BRIDGE_METHODS: ReadonlyArray<import('./types.js').BridgeMethod> = Object.freeze(
+  Object.keys(BRIDGE_METHOD_REGISTRY) as import('./types.js').BridgeMethod[]
 );
 
-/** @type {ReadonlySet<import('./types.js').BridgeMethod>} */
-export const METHOD_SET = new Set(BRIDGE_METHODS);
+export const METHOD_SET: ReadonlySet<import('./types.js').BridgeMethod> = new Set(BRIDGE_METHODS);
 
 /** Methods whose read-only forms may run concurrently without side effects. */
 const BATCH_SAFE_METHODS = new Set([
@@ -1355,16 +1332,13 @@ const BATCH_SAFE_METHODS = new Set([
   'performance.get_metrics',
 ]);
 
-/**
- * Classify a normalized or raw bridge call for parallel read-only execution.
- * Parameter checks deliberately reject malformed truthy mutation flags before
- * protocol normalization can coerce them.
- *
- * @param {import('./types.js').BridgeMethod} method
- * @param {Record<string, unknown>} [params]
- * @returns {boolean}
- */
-export function isBatchSafeBridgeCall(method, params = {}) {
+/** Classify a normalized or raw bridge call for parallel read-only execution.
+Parameter checks deliberately reject malformed truthy mutation flags before
+protocol normalization can coerce them. */
+export function isBatchSafeBridgeCall(
+  method: import('./types.js').BridgeMethod,
+  params: Record<string, unknown> = {}
+): boolean {
   if (!BATCH_SAFE_METHODS.has(method)) return false;
   if (
     (method === 'page.get_console' || method === 'page.get_network') &&
@@ -1384,12 +1358,8 @@ export function isBatchSafeBridgeCall(method, params = {}) {
   return true;
 }
 
-/**
- * @returns {Record<string, import('./types.js').BridgeMethod[]>}
- */
-export function createBridgeMethodGroups() {
-  /** @type {Record<string, import('./types.js').BridgeMethod[]>} */
-  const groups = {};
+export function createBridgeMethodGroups(): Record<string, import('./types.js').BridgeMethod[]> {
+  const groups: Record<string, import('./types.js').BridgeMethod[]> = {};
 
   for (const method of BRIDGE_METHODS) {
     const group = BRIDGE_METHOD_REGISTRY[method].group;
@@ -1402,22 +1372,18 @@ export function createBridgeMethodGroups() {
   return groups;
 }
 
-/**
- * @typedef {{
- *   method: import('./types.js').BridgeMethod,
- *   group: string,
- *   tab: boolean,
- *   params: readonly string[],
- *   description: string,
- *   complexity: BridgeMethodComplexity
- * }} BridgeMethodDescription
- */
+export type BridgeMethodDescription = {
+  method: import('./types.js').BridgeMethod;
+  group: string;
+  tab: boolean;
+  params: readonly string[];
+  description: string;
+  complexity: BridgeMethodComplexity;
+};
 
-/**
- * @param {import('./types.js').BridgeMethod} method
- * @returns {BridgeMethodDescription}
- */
-function createBridgeMethodDescription(method) {
+function createBridgeMethodDescription(
+  method: import('./types.js').BridgeMethod
+): BridgeMethodDescription {
   const entry = BRIDGE_METHOD_REGISTRY[method];
   return {
     method,
@@ -1429,13 +1395,13 @@ function createBridgeMethodDescription(method) {
   };
 }
 
-/**
- * Return a compact registry index or detailed descriptions for one method or group.
- *
- * @param {{ method?: unknown, group?: unknown }} [options]
- * @returns {{ groups: Array<{ group: string, count: number }> } | BridgeMethodDescription | { group: string, methods: BridgeMethodDescription[] }}
- */
-export function describeBridgeMethods(options = {}) {
+/** Return a compact registry index or detailed descriptions for one method or group. */
+export function describeBridgeMethods(
+  options: { method?: unknown; group?: unknown } = {}
+):
+  | { groups: Array<{ group: string; count: number }> }
+  | BridgeMethodDescription
+  | { group: string; methods: BridgeMethodDescription[] } {
   const { method, group } = options;
   if (method !== undefined && group !== undefined) {
     throw new BridgeError(
@@ -1475,34 +1441,10 @@ export function describeBridgeMethods(options = {}) {
   };
 }
 
-/**
- * @param {string} method
- * @returns {method is import('./types.js').BridgeMethod}
- */
-export function isBridgeMethod(method) {
+export function isBridgeMethod(method: string): method is import('./types.js').BridgeMethod {
   return Object.hasOwn(BRIDGE_METHOD_REGISTRY, method);
 }
 
-/**
- * @param {string} method
- * @returns {boolean}
- */
-export function bridgeMethodNeedsTab(method) {
+export function bridgeMethodNeedsTab(method: string): boolean {
   return isBridgeMethod(method) ? BRIDGE_METHOD_REGISTRY[method].tab : true;
-}
-
-/** @type {readonly BridgeMethodComplexity[]} */
-const COMPLEXITY_LEVELS = ['trivial', 'low', 'moderate', 'high'];
-
-/**
- * Return all bridge methods at or below the given complexity level.
- *
- * @param {BridgeMethodComplexity} maxComplexity
- * @returns {import('./types.js').BridgeMethod[]}
- */
-export function getMethodsByMaxComplexity(maxComplexity) {
-  const maxIndex = COMPLEXITY_LEVELS.indexOf(maxComplexity);
-  return BRIDGE_METHODS.filter(
-    (m) => COMPLEXITY_LEVELS.indexOf(BRIDGE_METHOD_REGISTRY[m].complexity) <= maxIndex
-  );
 }

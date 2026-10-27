@@ -1,13 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  summarizeBridgeResponse,
-  annotateBridgeSummary,
-  PROTOCOL_VERSION,
-  summarizeBatchResponseItem,
-  summarizeBatchErrorItem,
-} from '../src/index.js';
+import { summarizeBridgeResponse } from '../src/index.js';
 import { assertSummary } from '../../tests/_helpers/protocolSummary.ts';
 import {
   makeFailure as fail,
@@ -86,22 +80,6 @@ test('summarizes RESULT_TRUNCATED errors with budget recovery hint', () => {
   const summary = summarizeBridgeResponse(fail('RESULT_TRUNCATED', 'trimmed'));
   assert.match(summary.summary, /RESULT_TRUNCATED/);
   assert.match(summary.summary, /raise the relevant budget|Narrow the query/);
-});
-
-test('annotated sensitive-read summaries never expose value size', () => {
-  const summarize = (value: string) => {
-    const response = ok(
-      { source: 'local_storage', value, exact: true },
-      { meta: { method: 'sensitive.read' } }
-    );
-    return annotateBridgeSummary(summarizeBridgeResponse(response, 'sensitive.read'), response);
-  };
-  const short = summarize('a');
-  const long = summarize('a'.repeat(10_000));
-  assert.equal(short.transportBytes, 0);
-  assert.equal(short.transportTokens, 0);
-  assert.equal(long.transportBytes, 0);
-  assert.equal(long.transportTokens, 0);
 });
 
 test('includes protocol warning when present', () => {
@@ -1009,139 +987,6 @@ test('summarizeBridgeResponse falls back to generic shape for unknown methods', 
     summary: 'Bridge method succeeded with 2 top-level fields.',
     evidence: ['foo', 'bar'],
   });
-});
-
-// --- annotateBridgeSummary ---
-
-test('annotateBridgeSummary adds transport and summary cost estimates', () => {
-  const response = ok({ nodes: [{ tag: 'div' }] });
-  const summary = { ok: true, summary: 'Test summary', evidence: null };
-  const annotated = annotateBridgeSummary(summary, response);
-  assert.ok(typeof annotated.transportBytes === 'number');
-  assert.ok(typeof annotated.transportTokens === 'number');
-  assert.ok(typeof annotated.summaryBytes === 'number');
-  assert.ok(typeof annotated.summaryTokens === 'number');
-  assert.ok(['cheap', 'moderate', 'heavy', 'extreme'].includes(annotated.transportCostClass));
-  assert.ok(['cheap', 'moderate', 'heavy', 'extreme'].includes(annotated.summaryCostClass));
-});
-
-test('annotateBridgeSummary uses meta transport fields when available', () => {
-  const response = ok({ nodes: [] });
-  response.meta = {
-    protocol_version: PROTOCOL_VERSION,
-    transport_bytes: 42,
-    transport_approx_tokens: 11,
-    transport_cost_class: 'cheap',
-  };
-  const summary = { ok: true, summary: 'Test', evidence: null };
-  const annotated = annotateBridgeSummary(summary, response);
-  assert.equal(annotated.transportBytes, 42);
-  assert.equal(annotated.transportTokens, 11);
-  assert.equal(annotated.transportCostClass, 'cheap');
-});
-
-test('annotateBridgeSummary falls back to legacy meta fields', () => {
-  const response = ok({ nodes: [] });
-  response.meta = {
-    protocol_version: PROTOCOL_VERSION,
-    response_bytes: 100,
-    approx_tokens: 25,
-    cost_class: 'moderate',
-  };
-  const summary = { ok: true, summary: 'Test', evidence: null };
-  const annotated = annotateBridgeSummary(summary, response);
-  assert.equal(annotated.transportBytes, 100);
-  assert.equal(annotated.transportTokens, 25);
-  assert.equal(annotated.transportCostClass, 'moderate');
-});
-
-test('annotateBridgeSummary tolerates responses with missing meta', () => {
-  const response = {
-    id: 'r',
-    ok: true,
-    result: { ok: true },
-    error: null,
-  } as unknown as BridgeResponse;
-
-  const annotated = annotateBridgeSummary(
-    { ok: true, summary: 'Small summary', evidence: null },
-    response
-  );
-
-  assert.equal(annotated.transportCostClass, 'cheap');
-  assert.equal(annotated.summaryCostClass, 'cheap');
-});
-
-// --- summarizeBatchResponseItem ---
-
-test('summarizeBatchResponseItem produces complete batch item', () => {
-  const response = ok({ clicked: true, elementRef: 'el_1' });
-  const item = summarizeBatchResponseItem({
-    method: 'input.click' as unknown as BridgeMethod,
-    tabId: 5,
-    response,
-    durationMs: 42,
-  });
-  assert.equal(item.method, 'input.click');
-  assert.equal(item.tabId, 5);
-  assert.equal(item.ok, true);
-  assert.equal(item.durationMs, 42);
-  assert.ok(item.approxTokens >= 0);
-  assert.equal(item.error, null);
-  assert.deepEqual(item.response, { clicked: true, elementRef: 'el_1' });
-});
-
-test('summarizeBatchResponseItem compact mode omits raw responses and trims metadata', () => {
-  const response = ok({ value: 'x'.repeat(100_000) });
-  response.meta = {
-    protocol_version: PROTOCOL_VERSION,
-    budget_truncated: true,
-    continuation_hint: 'Retry with a larger budget.',
-    private_debug_field: 'omit me',
-  };
-  const item = summarizeBatchResponseItem(
-    {
-      method: 'page.get_text',
-      tabId: 5,
-      response,
-      durationMs: 42,
-    },
-    { compact: true }
-  );
-  assert.equal(Object.hasOwn(item, 'response'), false);
-  assert.deepEqual(item.meta, {
-    protocol_version: PROTOCOL_VERSION,
-    budget_truncated: true,
-    continuation_hint: 'Retry with a larger budget.',
-  });
-  assert.ok(JSON.stringify(item).length < 5_000);
-});
-
-// --- summarizeBatchErrorItem ---
-
-test('summarizeBatchErrorItem wraps Error into batch item', () => {
-  const item = summarizeBatchErrorItem({
-    method: 'dom.query' as unknown as BridgeMethod,
-    tabId: null,
-    error: new Error('connection failed'),
-    durationMs: 10,
-  });
-  assert.equal(item.ok, false);
-  assert.equal(item.method, 'dom.query');
-  assert.match(item.summary, /INTERNAL_ERROR/);
-  assert.equal(item.approxTokens, 0);
-  assert.equal(item.response, null);
-});
-
-test('summarizeBatchErrorItem wraps string error', () => {
-  const item = summarizeBatchErrorItem({
-    method: 'page.evaluate' as unknown as BridgeMethod,
-    tabId: 3,
-    error: 'something broke',
-    durationMs: 5,
-  });
-  assert.equal(item.ok, false);
-  assert.match(item.summary, /something broke/);
 });
 
 test('tab routing note is omitted when the caller chose the tab explicitly', () => {

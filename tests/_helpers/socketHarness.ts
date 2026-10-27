@@ -4,7 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 
-import { createSuccess, deriveProtocolVersion, parseJsonLines } from '../../protocol/src/index.js';
+import { createSuccess, deriveProtocolVersion } from '../../protocol/src/index.js';
+import { parseJsonLines } from './jsonLines.js';
 import type { BridgeRequest, BridgeResponse } from '../../protocol/src/types.js';
 
 export type BridgeSocketMessageContext = {

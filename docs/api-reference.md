@@ -101,7 +101,7 @@ credential. See [remote access](./remote-proxy.md) for configured remote destina
 ## Available methods
 
 The full method list lives in
-[`protocol/src/registry.js`](../protocol/src/registry.js),
+[`protocol/src/registry.ts`](../protocol/src/registry.ts),
 grouped here by domain.
 
 ### System

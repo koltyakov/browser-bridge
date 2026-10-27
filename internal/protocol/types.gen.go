@@ -1465,33 +1465,6 @@ func (v *Budget) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-type TruncateResult struct {
-	Value string `json:"value"`
-
-	Truncated bool `json:"truncated"`
-
-	Omitted float64 `json:"omitted"`
-
-	Extra map[string]json.RawMessage `json:"-"`
-}
-
-func (v TruncateResult) MarshalJSON() ([]byte, error) {
-	type alias TruncateResult
-	return marshalOpen(alias(v), v.Extra, []string{"value", "truncated", "omitted"})
-}
-
-func (v *TruncateResult) UnmarshalJSON(data []byte) error {
-	type alias TruncateResult
-	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"value", "truncated", "omitted"})
-	if err != nil {
-		return err
-	}
-	decoded.Extra = extra
-	*v = TruncateResult(decoded)
-	return nil
-}
-
 type DomQueryParams struct {
 	MaxNodes Optional[float64] `json:"maxNodes,omitzero"`
 

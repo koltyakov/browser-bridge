@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { applyBudget, truncateText, summarizeFields } from '../src/index.js';
+import { applyBudget } from '../src/index.js';
 
 // --- applyBudget ---
 
@@ -85,90 +85,4 @@ test('applyBudget normalizeList returns empty array for non-array', () => {
     attributeAllowlist: 'not-an-array',
   } as unknown as Parameters<typeof applyBudget>[0]);
   assert.deepEqual(budget.attributeAllowlist, []);
-});
-
-// --- truncateText ---
-
-test('truncateText returns empty string for falsy input', () => {
-  assert.deepEqual(truncateText('', 100), {
-    value: '',
-    truncated: false,
-    omitted: 0,
-  });
-  // @ts-expect-error - testing runtime behavior
-  assert.deepEqual(truncateText(null, 100), {
-    value: '',
-    truncated: false,
-    omitted: 0,
-  });
-  // @ts-expect-error - testing runtime behavior
-  assert.deepEqual(truncateText(undefined, 100), {
-    value: '',
-    truncated: false,
-    omitted: 0,
-  });
-});
-
-test('truncateText returns original when within budget', () => {
-  assert.deepEqual(truncateText('hello', 10), {
-    value: 'hello',
-    truncated: false,
-    omitted: 0,
-  });
-});
-
-test('truncateText returns original when exactly at budget', () => {
-  assert.deepEqual(truncateText('abcd', 4), {
-    value: 'abcd',
-    truncated: false,
-    omitted: 0,
-  });
-});
-
-test('truncateText truncates and appends ellipsis when over budget', () => {
-  const result = truncateText('abcdefgh', 5);
-  assert.equal(result.truncated, true);
-  assert.equal(result.omitted, 3);
-  assert.ok(result.value.endsWith('\u2026'));
-  assert.equal(result.value.length, 5);
-});
-
-test('truncateText handles budget of 1', () => {
-  const result = truncateText('abcdefgh', 1);
-  assert.equal(result.truncated, true);
-  assert.equal(result.value, '\u2026');
-});
-
-// --- summarizeFields ---
-
-test('summarizeFields picks specified fields from source', () => {
-  const result = summarizeFields({ a: 1, b: 2, c: 3 }, ['a', 'c']);
-  assert.deepEqual(result, { a: 1, c: 3 });
-});
-
-test('summarizeFields skips null and undefined fields', () => {
-  const result = summarizeFields({ a: 1, b: null, c: undefined }, ['a', 'b', 'c']);
-  assert.deepEqual(result, { a: 1 });
-});
-
-test('summarizeFields returns empty object for null source', () => {
-  assert.deepEqual(summarizeFields(null), {});
-  assert.deepEqual(summarizeFields(undefined), {});
-});
-
-test('summarizeFields returns empty object for non-object source', () => {
-  // @ts-expect-error - testing runtime behavior
-  assert.deepEqual(summarizeFields('string', ['a']), {});
-  // @ts-expect-error - testing runtime behavior
-  assert.deepEqual(summarizeFields(42, ['a']), {});
-});
-
-test('summarizeFields skips fields not present in source', () => {
-  const result = summarizeFields({ a: 1 }, ['a', 'b', 'c']);
-  assert.deepEqual(result, { a: 1 });
-});
-
-test('summarizeFields defaults to empty fields', () => {
-  const result = summarizeFields({ a: 1 });
-  assert.deepEqual(result, {});
 });

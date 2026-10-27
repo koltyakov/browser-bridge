@@ -26,7 +26,7 @@ The Go runtime lives in `cmd/bbx` and `internal/bridge`; its unit tests live bes
 - `internal/bridge/agents_registry.go` owns supported agents and their setup/detection behavior.
 - `internal/bridge/cli_registry.go` owns command metadata, shortcut parsers, help, targeting, and output policy. Command handlers still own execution.
 - `protocol/install-targets.json` owns native platforms, browser installation paths, asset names, the binary-size limit, and published extension/native-host identities. `make generate-protocol` updates all generated consumers, including marked installer and CI blocks.
-- `protocol/src/defaults.js` owns shared numeric limits; `protocol/src/errors.js` owns default error recovery. Generated Go limits and the catalog carry those policies into the native runtime.
+- `protocol/src/defaults.ts` owns shared numeric limits; `protocol/src/errors.ts` owns default error recovery. Generated Go limits and the catalog carry those policies into the native runtime.
 
 Do not add parallel command, platform, or browser lists. `make check-protocol` rejects stale generated consumers. Add behavioral tests alongside registry contract tests; metadata agreement alone does not verify dispatch or cleanup.
 
@@ -101,7 +101,7 @@ make bench-runtime
 
 ## Request lifetime and storage ordering
 
-The daemon advertises request cancellation during registration and overwrites routed deadlines and artifact-acknowledgement metadata. Timeout policies live in `protocol/src/operation-timeouts.js` and are generated into the native catalog. Keep approval waits and callback execution in the same transport budget.
+The daemon advertises request cancellation during registration and overwrites routed deadlines and artifact-acknowledgement metadata. Timeout policies live in `protocol/src/operation-timeouts.ts` and are generated into the native catalog. Keep approval waits and callback execution in the same transport budget.
 
 Cancellation stops queued work and later steps, including content-side auto-waits. It cannot undo a mutation already dispatched to Chrome. Treat a timed-out mutation as uncertain and inspect its postconditions rather than replaying it automatically.
 

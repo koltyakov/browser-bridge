@@ -8,24 +8,19 @@ import {
   BRIDGE_METHOD_REGISTRY,
   BridgeError,
   CAPABILITIES,
-  DEFAULT_CAPABILITIES,
   DEBUGGER_BACKED_METHODS,
   ERROR_CODES,
-  METHOD_CAPABILITIES,
   createBridgeMethodGroups,
   describeBridgeMethods,
   bridgeMethodNeedsTab,
   getBudgetPreset,
   getCostClass,
   getErrorRecovery,
-  getMethodCapability,
-  getMethodsByMaxComplexity,
   isBridgeMethod,
   isBudgetPresetName,
-  isCapability,
   isDebuggerBackedMethod,
-  parseJsonLines,
 } from '../src/index.js';
+import { parseJsonLines } from '../../tests/_helpers/jsonLines.js';
 import type { BridgeMethod, Capability } from '../src/types.js';
 
 const EXPECTED_BRIDGE_METHOD_ORDER: readonly BridgeMethod[] = [
@@ -156,68 +151,6 @@ class FakeSocket extends EventEmitter {
   }
 }
 
-test('capabilities helpers accept only declared capabilities and default unknown methods to null', () => {
-  assert.deepEqual(CAPABILITIES, {
-    PAGE_READ: 'page.read',
-    PAGE_EVALUATE: 'page.evaluate',
-    DOM_READ: 'dom.read',
-    STYLES_READ: 'styles.read',
-    LAYOUT_READ: 'layout.read',
-    VIEWPORT_CONTROL: 'viewport.control',
-    NAVIGATION_CONTROL: 'navigation.control',
-    SCREENSHOT_PARTIAL: 'screenshot.partial',
-    PATCH_DOM: 'patch.dom',
-    PATCH_STYLES: 'patch.styles',
-    CDP_DOM_SNAPSHOT: 'cdp.dom_snapshot',
-    CDP_BOX_MODEL: 'cdp.box_model',
-    CDP_STYLES: 'cdp.styles',
-    CDP_INPUT: 'cdp.input',
-    AUTOMATION_INPUT: 'automation.input',
-    TABS_MANAGE: 'tabs.manage',
-    PERFORMANCE_READ: 'performance.read',
-    NETWORK_READ: 'network.read',
-    NETWORK_INTERCEPT: 'network.intercept',
-    SENSITIVE_READ: 'sensitive.read',
-  });
-  assert.deepEqual(DEFAULT_CAPABILITIES, [
-    'page.read',
-    'page.evaluate',
-    'dom.read',
-    'styles.read',
-    'layout.read',
-    'viewport.control',
-    'navigation.control',
-    'screenshot.partial',
-    'patch.dom',
-    'patch.styles',
-    'automation.input',
-    'cdp.dom_snapshot',
-    'cdp.box_model',
-    'cdp.styles',
-    'cdp.input',
-    'tabs.manage',
-    'performance.read',
-    'network.read',
-    'network.intercept',
-    'sensitive.read',
-  ]);
-  assert.equal(isCapability(CAPABILITIES.PAGE_READ), true);
-  assert.equal(isCapability('page.read '), false);
-  assert.equal(isCapability('not-a-capability'), false);
-
-  for (const capability of DEFAULT_CAPABILITIES) {
-    assert.equal(
-      isCapability(capability),
-      true,
-      `expected valid default capability: ${capability}`
-    );
-  }
-
-  assert.equal(getMethodCapability('styles.get_computed'), CAPABILITIES.STYLES_READ);
-  assert.equal(getMethodCapability('input.drag'), CAPABILITIES.AUTOMATION_INPUT);
-  assert.equal(getMethodCapability('unknown.method' as unknown as BridgeMethod), null);
-});
-
 test('error helpers expose recovery guidance for known codes and preserve BridgeError details', () => {
   const timeoutRecovery = getErrorRecovery(ERROR_CODES.TIMEOUT);
   assert.deepEqual(timeoutRecovery, {
@@ -331,7 +264,7 @@ test('registry helpers keep metadata aligned across methods, groups, and complex
       'complexity',
     ]);
     assert.equal(
-      entry.capability === null || isCapability(entry.capability),
+      entry.capability === null || Object.values(CAPABILITIES).includes(entry.capability),
       true,
       `invalid capability for ${method}`
     );
@@ -355,21 +288,6 @@ test('registry helpers keep metadata aligned across methods, groups, and complex
   const groupedMethods = Object.values(groups).flat();
   assert.equal(groupedMethods.length, BRIDGE_METHODS.length);
   assert.deepEqual(new Set(groupedMethods), new Set(BRIDGE_METHODS));
-
-  assert.ok(getMethodsByMaxComplexity('trivial').includes('access.request'));
-  assert.ok(getMethodsByMaxComplexity('trivial').includes('tabs.create'));
-  assert.equal(getMethodsByMaxComplexity('trivial').includes('page.get_state'), false);
-
-  assert.ok(getMethodsByMaxComplexity('moderate').includes('page.evaluate'));
-  assert.ok(getMethodsByMaxComplexity('moderate').includes('input.drag'));
-  assert.equal(getMethodsByMaxComplexity('moderate').includes('screenshot.capture_region'), false);
-
-  assert.deepEqual(
-    getMethodsByMaxComplexity(
-      'invalid' as unknown as Parameters<typeof getMethodsByMaxComplexity>[0]
-    ),
-    []
-  );
 });
 
 test('describeBridgeMethods returns compact method, group, and index shapes', () => {
@@ -591,38 +509,8 @@ test('registry policies preserve every method capability classification', () => 
 
   assert.equal(expected.size, BRIDGE_METHODS.length);
   assert.deepEqual(new Set(expected.keys()), new Set(BRIDGE_METHODS));
-  const positionedMethods = new Set<BridgeMethod>([
-    'access.request',
-    'tabs.list',
-    'tabs.create',
-    'tabs.close',
-    'tabs.activate',
-    'skill.get_runtime_context',
-    'setup.get_status',
-    'setup.install',
-    'log.tail',
-    'health.ping',
-    'daemon.metrics',
-  ]);
-  assert.deepEqual(Object.keys(METHOD_CAPABILITIES), [
-    'access.request',
-    'tabs.list',
-    'tabs.create',
-    'tabs.close',
-    'tabs.activate',
-    'skill.get_runtime_context',
-    'setup.get_status',
-    'setup.install',
-    ...EXPECTED_BRIDGE_METHOD_ORDER.filter((method) => !positionedMethods.has(method)),
-    'log.tail',
-    'health.ping',
-    'daemon.metrics',
-  ]);
-
   for (const method of BRIDGE_METHODS) {
     assert.equal(BRIDGE_METHOD_REGISTRY[method].capability, expected.get(method), method);
-    assert.equal(METHOD_CAPABILITIES[method], expected.get(method), method);
-    assert.equal(getMethodCapability(method), expected.get(method), method);
   }
 });
 

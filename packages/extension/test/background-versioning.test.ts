@@ -2,10 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-import {
-  getSupportedProtocolVersions,
-  setProtocolPackageVersion,
-} from '../../../protocol/src/index.js';
+import { getSupportedProtocolVersions } from '../../../protocol/src/index.js';
+import { setProtocolPackageVersion } from '../../../tests/_helpers/protocolVersion.js';
 import {
   compareProtocolVersions,
   getVersionNegotiationPayload,

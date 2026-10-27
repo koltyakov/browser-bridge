@@ -1,16 +1,15 @@
-// @ts-check
+import { MAX_JSON_LINE_BYTES } from '../../protocol/src/defaults.js';
 
-import { MAX_JSON_LINE_BYTES } from './defaults.js';
-
-/**
- * Install a newline-delimited JSON parser on a socket's `data` event.
- *
- * @param {import('node:net').Socket} socket
- * @param {(message: unknown) => void} onMessage
- * @param {{ maxLineBytes?: number, onProtocolError?: (error: Error) => void, onInvalidLine?: (error: Error) => void }} [options]
- * @returns {void}
- */
-export function parseJsonLines(socket, onMessage, options = {}) {
+/** Install a newline-delimited JSON parser on a socket's `data` event. */
+export function parseJsonLines(
+  socket: import('node:net').Socket,
+  onMessage: (message: unknown) => void,
+  options: {
+    maxLineBytes?: number;
+    onProtocolError?: (error: Error) => void;
+    onInvalidLine?: (error: Error) => void;
+  } = {}
+): void {
   let buffer = '';
   const maxLineBytes =
     typeof options.maxLineBytes === 'number' && Number.isFinite(options.maxLineBytes)
@@ -18,20 +17,15 @@ export function parseJsonLines(socket, onMessage, options = {}) {
       : MAX_JSON_LINE_BYTES;
   socket.setEncoding('utf8');
 
-  /**
-   * @param {Error} error
-   * @returns {void}
-   */
-  function fail(error) {
+  function fail(error: Error): void {
     options.onProtocolError?.(error);
-    const destroy = /** @type {{ destroy?: (() => void) | undefined }} */ (socket).destroy;
+    const destroy = (socket as { destroy?: (() => void) | undefined }).destroy;
     if (typeof destroy === 'function') {
       destroy.call(socket);
     }
   }
 
-  /** @param {string} chunk */
-  socket.on('data', (chunk) => {
+  socket.on('data', (chunk: string) => {
     buffer += chunk;
     if (!buffer.includes('\n') && Buffer.byteLength(buffer, 'utf8') > maxLineBytes) {
       fail(new Error(`JSON line exceeds ${maxLineBytes} bytes.`));

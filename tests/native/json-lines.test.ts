@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import type { Socket } from 'node:net';
 
-import { parseJsonLines } from '../src/json-lines.js';
-import { MAX_JSON_LINE_BYTES } from '../src/defaults.js';
+import { parseJsonLines } from '../_helpers/jsonLines.js';
+import { MAX_JSON_LINE_BYTES } from '../../protocol/src/defaults.js';
 
 class FakeSocket extends EventEmitter {
   encoding: BufferEncoding | null;

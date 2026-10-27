@@ -1,8 +1,6 @@
-// @ts-check
 import { booleanParam, invalidWorkflow, onlyKeys, stringParam } from './emulation.js';
 
-/** @param {string} method @param {Record<string, unknown>} params */
-export function normalizeDownload(method, params) {
+export function normalizeDownload(method: string, params: Record<string, unknown>) {
   if (method !== 'download.start') {
     onlyKeys(params, ['downloadId']);
     return { downloadId: stringParam(params.downloadId, 'downloadId', 100) };

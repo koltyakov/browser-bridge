@@ -80,12 +80,17 @@ async function stageExtension() {
       await copyIntoStage(path.join(directory, file), path.join(outputDirectory, file));
     }
   }
-  // Shared browser helpers remain JavaScript. Type-only protocol
+  // Compile shared browser helpers alongside the extension. Type-only protocol
   // imports disappear during compilation and never enter the extension ZIP.
   const protocolDirectory = 'protocol/src';
   const protocolFiles = await fs.promises.readdir(path.join(repoRoot, protocolDirectory));
-  for (const file of protocolFiles.filter((file) => file.endsWith('.js'))) {
-    entryPoints[`protocol/${path.basename(file, '.js')}`] = path.join(protocolDirectory, file);
+  if (protocolFiles.some((file) => file.endsWith('.js'))) {
+    throw new Error(`Shared protocol sources must be TypeScript: ${protocolDirectory}`);
+  }
+  for (const file of protocolFiles.filter(
+    (file) => file.endsWith('.ts') && !file.endsWith('.d.ts')
+  )) {
+    entryPoints[`protocol/${path.basename(file, '.ts')}`] = path.join(protocolDirectory, file);
   }
   await build({
     absWorkingDir: repoRoot,
