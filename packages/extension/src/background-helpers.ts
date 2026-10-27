@@ -619,18 +619,6 @@ export function normalizeRuntimeErrorMessage(message: string): string {
     : normalizedMessage;
 }
 
-export function normalizeCropRect(
-  rect: { x?: number; y?: number; width?: number; height?: number; scale?: number } = {}
-): { x: number; y: number; width: number; height: number } {
-  const scale = Number(rect.scale) || 1;
-  return {
-    x: Math.max(0, Math.round((rect.x || 0) * scale)),
-    y: Math.max(0, Math.round((rect.y || 0) * scale)),
-    width: Math.max(1, Math.round((rect.width || 1) * scale)),
-    height: Math.max(1, Math.round((rect.height || 1) * scale)),
-  };
-}
-
 export function safeOrigin(url: string): string {
   try {
     return new URL(url).origin;

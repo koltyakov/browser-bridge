@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
 import {
-  ensureNative,
+  resolveNative,
   loadRelease,
   nativeTargets,
   isSourceCheckout,
@@ -72,19 +72,22 @@ async function fixture(t: TestContext) {
 
 test('npm bootstrap pins version and platform, verifies cache, and serializes concurrent downloads', async (t) => {
   const f = await fixture(t);
-  const binaries = await Promise.all(Array.from({ length: 8 }, () => ensureNative(f.options)));
+  const releases = await Promise.all(Array.from({ length: 8 }, () => resolveNative(f.options)));
+  const binaries = releases.map((release) => release.binary);
   assert.equal(new Set(binaries).size, 1);
   assert.deepEqual(f.counts(), { downloads: 1, probes: 1 });
   assert.deepEqual(f.urls, [
     `https://github.com/koltyakov/browser-bridge/releases/download/v1.14.2/${nativeTargets[f.target]}`,
   ]);
   assert.equal(
-    await ensureNative({
-      ...f.options,
-      fetchFn: async () => {
-        throw new Error('offline');
-      },
-    }),
+    (
+      await resolveNative({
+        ...f.options,
+        fetchFn: async () => {
+          throw new Error('offline');
+        },
+      })
+    ).binary,
     binaries[0]
   );
   assert.deepEqual(await fs.readdir(path.dirname(binaries[0])), [path.basename(binaries[0])]);
@@ -99,7 +102,7 @@ test('npm bootstrap never substitutes another platform or version', async (t) =>
   );
   f.manifest.version = '1.14.3';
   await f.writeManifest();
-  await assert.rejects(ensureNative(f.options), /does not match npm version/);
+  await assert.rejects(resolveNative(f.options), /does not match npm version/);
   assert.deepEqual(f.counts(), { downloads: 0, probes: 0 });
 });
 
@@ -148,16 +151,16 @@ test('npm bootstrap rejects missing or malformed release metadata before downloa
       filename,
       JSON.stringify({ version: f.manifest.version, artifacts: { [f.target]: artifact } })
     );
-    await assert.rejects(ensureNative(f.options), /Invalid native/);
+    await assert.rejects(resolveNative(f.options), /Invalid native/);
   }
   await fs.rm(filename);
-  await assert.rejects(ensureNative(f.options), /manifest is missing/);
+  await assert.rejects(resolveNative(f.options), /manifest is missing/);
   await f.writeManifest();
   await fs.writeFile(
     path.join(f.root, 'package.json'),
     JSON.stringify({ version: '../../latest' })
   );
-  await assert.rejects(ensureNative(f.options), /Invalid npm package version/);
+  await assert.rejects(resolveNative(f.options), /Invalid npm package version/);
   assert.equal(f.counts().downloads, 0);
 });
 
@@ -174,7 +177,7 @@ test('npm bootstrap rejects corrupt, oversized, truncated, and wrong-version bin
               ? f.body.subarray(1)
               : f.body;
       await assert.rejects(
-        ensureNative({
+        resolveNative({
           ...f.options,
           fetchFn: async () => new Response(bad),
           probeFn:
@@ -190,23 +193,26 @@ test('npm bootstrap rejects corrupt, oversized, truncated, and wrong-version bin
       await assert.rejects(fs.stat(release.binary), { code: 'ENOENT' });
       assert.deepEqual(await fs.readdir(path.dirname(release.binary)), []);
       if (kind !== 'probe') assert.equal(f.counts().probes, 0);
-      assert.equal(await ensureNative(f.options), release.binary);
+      assert.equal((await resolveNative(f.options)).binary, release.binary);
     });
   }
 });
 
 test('npm bootstrap refuses a modified cached binary rather than executing it', async (t) => {
   const f = await fixture(t);
-  const binary = await ensureNative(f.options);
+  const { binary } = await resolveNative(f.options);
   await fs.writeFile(binary, Buffer.alloc(f.body.length));
-  await assert.rejects(ensureNative(f.options), /Cached Browser Bridge binary failed verification/);
+  await assert.rejects(
+    resolveNative(f.options),
+    /Cached Browser Bridge binary failed verification/
+  );
   assert.deepEqual(f.counts(), { downloads: 1, probes: 1 });
 });
 
 test('npm bootstrap follows HTTPS release redirects and fails explicitly for unavailable versions', async (t) => {
   const f = await fixture(t);
   let calls = 0;
-  await ensureNative({
+  await resolveNative({
     ...f.options,
     fetchFn: async (url) => {
       calls++;
@@ -222,11 +228,11 @@ test('npm bootstrap follows HTTPS release redirects and fails explicitly for una
   assert.equal(calls, 2);
   const other = await fixture(t);
   await assert.rejects(
-    ensureNative({ ...other.options, fetchFn: async () => new Response(null, { status: 404 }) }),
+    resolveNative({ ...other.options, fetchFn: async () => new Response(null, { status: 404 }) }),
     /1\.14\.2.*HTTP 404/
   );
   await assert.rejects(
-    ensureNative({
+    resolveNative({
       ...other.options,
       fetchFn: async () =>
         new Response(null, { status: 302, headers: { location: 'http://example.test/bbx' } }),
@@ -234,18 +240,18 @@ test('npm bootstrap follows HTTPS release redirects and fails explicitly for una
     /HTTPS redirects/
   );
   await assert.rejects(
-    ensureNative({ ...other.options, fetchFn: async () => new Response(null, { status: 302 }) }),
+    resolveNative({ ...other.options, fetchFn: async () => new Response(null, { status: 302 }) }),
     /no location/
   );
   await assert.rejects(
-    ensureNative({
+    resolveNative({
       ...other.options,
       fetchFn: async () => new Response(null, { status: 302, headers: { location: '/loop' } }),
     }),
     /Too many/
   );
   await assert.rejects(
-    ensureNative({ ...other.options, fetchFn: async () => new Response(null) }),
+    resolveNative({ ...other.options, fetchFn: async () => new Response(null) }),
     /empty body/
   );
 });
@@ -256,7 +262,7 @@ test('npm bootstrap recovers abandoned download locks', async (t) => {
   const lock = path.join(path.dirname(release.binary), '.install-lock');
   await fs.mkdir(lock, { recursive: true });
   await fs.utimes(lock, new Date(0), new Date(0));
-  assert.equal(await ensureNative(f.options), release.binary);
+  assert.equal((await resolveNative(f.options)).binary, release.binary);
 });
 
 test('npm postinstall downloads locally, initializes globally, and skips source checkouts', async (t) => {

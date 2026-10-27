@@ -262,11 +262,6 @@ export async function resolveNative(options = {}) {
   }
 }
 
-/** @param {InstallOptions} [options] @returns {Promise<string>} */
-export async function ensureNative(options = {}) {
-  return (await resolveNative(options)).binary;
-}
-
 /** @param {string} [root] @returns {Promise<boolean>} */
 export async function isSourceCheckout(root = packageRoot) {
   return fs

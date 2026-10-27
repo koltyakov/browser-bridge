@@ -719,13 +719,11 @@ export function getSidepanelNativeStatusView({
   error,
   runtimeId,
   publishedExtensionId,
-  fallbackInstallCommand = 'bbx install',
 }: {
   connected: boolean;
   error?: string;
   runtimeId: string;
   publishedExtensionId: string;
-  fallbackInstallCommand?: string;
 }): SidepanelNativeStatusView {
   const installCommand =
     runtimeId === publishedExtensionId ? 'bbx install' : `bbx install ${runtimeId}`;
@@ -735,11 +733,8 @@ export function getSidepanelNativeStatusView({
     skillCommand: 'bbx install-skill',
     mcpCommand: 'bbx install-mcp',
     label: connected ? 'Native host connected' : error || 'Native host disconnected',
-    diagnosticCommand: connected ? installCommand : installCommand || fallbackInstallCommand,
-    diagnosticMessage: getNativeDiagnosticMessage(
-      connected ? undefined : error,
-      connected ? installCommand : installCommand || fallbackInstallCommand
-    ),
+    diagnosticCommand: installCommand,
+    diagnosticMessage: getNativeDiagnosticMessage(connected ? undefined : error, installCommand),
   };
 }
 

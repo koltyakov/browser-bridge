@@ -159,8 +159,8 @@ test('sidepanel runtime orchestrates full state rendering and collapses examples
     renderPromptExamples: (setupStatus) => calls.push(['prompts', setupStatus]),
     renderSetupStatus: (setupStatus, pending, error, installPendingKey, installError) =>
       calls.push(['setup', setupStatus, pending, error, installPendingKey, installError]),
-    renderActionLogEntry: (nextEntry, setupStatus, entries, index) => {
-      calls.push(['entry', nextEntry.id, setupStatus, entries.length, index]);
+    renderActionLogEntry: (nextEntry, entries, index, repeatCount) => {
+      calls.push(['entry', nextEntry.id, entries.length, index, repeatCount]);
       return { id: nextEntry.id } as unknown as HTMLElement;
     },
     replaceActionLogChildren: (children) => calls.push(['replace-log', children.length]),
@@ -180,7 +180,7 @@ test('sidepanel runtime orchestrates full state rendering and collapses examples
     ['agent', true],
     ['prompts', null],
     ['setup', null, false, null, null, null],
-    ['entry', 'entry-1', null, 1, 0],
+    ['entry', 'entry-1', 1, 0, 1],
     ['replace-log', 1],
     ['set-log', 1],
     ['update-activity'],

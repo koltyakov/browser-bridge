@@ -11,7 +11,6 @@ import {
   getErrorMessage,
   getResponseDiagnostics,
   matchesConsoleLevel,
-  normalizeCropRect,
   normalizeRuntimeErrorMessage,
   safeOrigin,
   shouldLogAction,
@@ -167,14 +166,7 @@ test('background helpers summarize responses and tabs', () => {
   );
 });
 
-test('background helpers normalize crop rects and accessibility nodes', () => {
-  assert.deepEqual(normalizeCropRect({ x: 10.4, y: -5, width: 0, height: 0, scale: 2 }), {
-    x: 21,
-    y: 0,
-    width: 2,
-    height: 2,
-  });
-
+test('background helpers normalize accessibility nodes', () => {
   assert.deepEqual(
     simplifyAXNode({
       nodeId: 5,

@@ -924,7 +924,6 @@ test('getSidepanelNativeStatusView derives install commands and disconnected lab
       error: 'bridge down',
       runtimeId: 'dev-extension-id',
       publishedExtensionId: 'jjjkmmcdkpcgamlopogicbnnhdgebhie',
-      fallbackInstallCommand: 'bbx install',
     }),
     {
       hidden: false,

@@ -8,6 +8,10 @@ import (
 	"time"
 )
 
+func (d *daemon) handle(p *peer, message object) {
+	d.handleEnvelope(p, message, envelopeBody(message))
+}
+
 func TestDaemonRejectsInvalidWireRegistration(t *testing.T) {
 	for _, registration := range []object{
 		{"type": value("register"), "role": value("agent"), "authToken": value("incorrect"), "clientId": value("test")},

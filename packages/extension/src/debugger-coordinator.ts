@@ -247,7 +247,7 @@ Dialog handling uses its separate lane to unblock that task. */
 
     let onDialog: (dialog: TrackedDialog) => void = (): void => {};
 
-    const blocked: Promise<never> = new Promise((resolve, reject) => {
+    const blocked: Promise<never> = new Promise((_resolve, reject) => {
       onDialog = (dialog) => {
         interrupted = createDialogBlockedError(tabId, dialog, started);
         reject(interrupted);

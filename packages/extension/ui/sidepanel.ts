@@ -966,7 +966,6 @@ function renderNativeStatus(
     error,
     runtimeId: chrome.runtime.id,
     publishedExtensionId: PUBLISHED_EXTENSION_ID,
-    fallbackInstallCommand: setupInstallCmd.textContent || 'bbx install',
   });
   nativeIndicator.dataset.connected = String(connected);
   nativeIndicator.title = view.label;
@@ -1446,7 +1445,6 @@ function createStatusPlaceholder(text: string): HTMLElement {
 
 function renderActionLogEntry(
   entry: ActionLogEntry,
-  setupStatus: SetupStatus | null,
   entries: ActionLogEntry[],
   index: number,
   repeatCount: number
