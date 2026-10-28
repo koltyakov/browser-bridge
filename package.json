@@ -55,9 +55,9 @@
     "prepack": "node scripts/prepare-npm.mjs"
   },
   "devDependencies": {
-    "@babel/parser": "^8.0.7",
-    "@modelcontextprotocol/client": "^2.3.1",
-    "@types/chrome": "^0.3.6",
+    "@babel/parser": "^8.0.8",
+    "@modelcontextprotocol/client": "^2.4.0",
+    "@types/chrome": "^0.3.7",
     "@types/node": "^26.6.5",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
@@ -65,8 +65,8 @@
     "esbuild": "^0.28.2",
     "har-schema": "^2.0.0",
     "linkedom": "^0.18.14",
-    "oxfmt": "^0.74.0",
-    "oxlint": "^1.89.0",
+    "oxfmt": "^0.75.0",
+    "oxlint": "^1.90.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   },
