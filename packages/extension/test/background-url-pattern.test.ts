@@ -30,11 +30,36 @@ test('URL patterns preserve Chromium wildcard, escape, Unicode and case semantic
     ['a*bc', 'abcbc', true],
     ['a?b', 'ab', true],
     ['?a', 'ba', true],
+    ['https://example.com/*a?b', 'https://example.com/aaxb', true],
+    ['*a?b', 'aaccb', false],
+    ['*a??b', 'aaxxb', true],
+    ['*a?b*c?d', 'aaxbccyd', true],
+    ['*💛?b', '💛💛xb', true],
+    ['*a?\\*', 'aax*', true],
   ];
   for (const [pattern, url, expected] of cases) {
     const matcher = compileUrlPattern(pattern);
     assert.equal(matcher.test(url), expected, JSON.stringify({ pattern, url }));
     assert.equal(matcher.test(url), expected, 'a matcher can be reused without state');
+  }
+});
+
+test('small wildcard combinations agree with a bounded regex reference', () => {
+  function strings(alphabet: string[], maxLength: number): string[] {
+    const values = [''];
+    let level = [''];
+    for (let length = 1; length <= maxLength; length += 1) {
+      level = level.flatMap((prefix) => alphabet.map((character) => prefix + character));
+      values.push(...level);
+    }
+    return values;
+  }
+  const urls = strings(['a', 'b'], 4);
+  for (const pattern of strings(['a', 'b', '*', '?'], 5)) {
+    const reference = new RegExp(`^${pattern.replaceAll('*', '.*').replaceAll('?', '.?')}$`, 'u');
+    const matcher = compileUrlPattern(pattern);
+    for (const url of urls)
+      assert.equal(matcher.test(url), reference.test(url), JSON.stringify({ pattern, url }));
   }
 });
 

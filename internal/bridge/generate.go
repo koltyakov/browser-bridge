@@ -1,3 +1,3 @@
 package bridge
 
-//go:generate node ../../scripts/generate-protocol.mjs
+//go:generate node --import tsx ../../scripts/generate-protocol.mjs
