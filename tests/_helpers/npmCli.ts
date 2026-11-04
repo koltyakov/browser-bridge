@@ -7,7 +7,7 @@ export function resolveNpmCli({
   execPath = process.execPath,
   env = process.env,
 }: { execPath?: string; env?: NodeJS.ProcessEnv } = {}): string {
-  const bin = path.dirname(fs.realpathSync(execPath));
+  const bin = path.dirname(fs.realpathSync.native(execPath));
   const candidates = [
     env.npm_execpath,
     path.join(bin, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
@@ -19,7 +19,7 @@ export function resolveNpmCli({
   ];
   for (const candidate of candidates) {
     if (!candidate || !fs.existsSync(candidate)) continue;
-    const resolved = fs.realpathSync(candidate);
+    const resolved = fs.realpathSync.native(candidate);
     // Other package managers can set npm_execpath to their own executable.
     if (path.basename(resolved) === 'npm-cli.js' && fs.statSync(resolved).isFile()) return resolved;
   }
