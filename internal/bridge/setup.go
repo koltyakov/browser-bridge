@@ -543,7 +543,7 @@ func installNativeCommand(ctx context.Context, c config, args []string) error {
 			return err
 		}
 		if remove {
-			paths, err := uninstallNativeRegistration(ctx, browser)
+			paths, err := uninstallNativeRegistration(ctx, c, browser)
 			if err != nil {
 				return err
 			}
@@ -616,7 +616,7 @@ func installUninstallAll(ctx context.Context, c config) error {
 		}
 	}
 	for _, browser := range installBrowsers {
-		paths, err := uninstallNativeRegistration(ctx, browser)
+		paths, err := uninstallNativeRegistration(ctx, c, browser)
 		if err != nil {
 			return err
 		}

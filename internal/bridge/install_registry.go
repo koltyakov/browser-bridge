@@ -1,7 +1,7 @@
 package bridge
 
 type browserDefinition struct {
-	key, macDir, windowsDir, linuxDir, registry string
+	key, macDir, windowsDir, windowsManifestDir, linuxDir, registry string
 }
 
 type nativePlatformDefinition struct {

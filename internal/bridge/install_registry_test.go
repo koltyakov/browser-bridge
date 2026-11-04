@@ -12,11 +12,11 @@ func TestInstallRegistryMatchesCanonicalSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	var source struct {
-		HostName       string                                                         `json:"hostName"`
-		ExtensionID    string                                                         `json:"extensionId"`
-		MaxBinaryBytes int64                                                          `json:"maxBinaryBytes"`
-		Platforms      []struct{ Key, GOOS, GOARCH, Asset string }                    `json:"platforms"`
-		Browsers       []struct{ Key, MacDir, WindowsDir, LinuxDir, Registry string } `json:"browsers"`
+		HostName       string                                                                             `json:"hostName"`
+		ExtensionID    string                                                                             `json:"extensionId"`
+		MaxBinaryBytes int64                                                                              `json:"maxBinaryBytes"`
+		Platforms      []struct{ Key, GOOS, GOARCH, Asset string }                                        `json:"platforms"`
+		Browsers       []struct{ Key, MacDir, WindowsDir, WindowsManifestDir, LinuxDir, Registry string } `json:"browsers"`
 	}
 	if err := json.Unmarshal(data, &source); err != nil {
 		t.Fatal(err)
@@ -35,7 +35,7 @@ func TestInstallRegistryMatchesCanonicalSource(t *testing.T) {
 	}
 	for i, browser := range source.Browsers {
 		got := installBrowserByKey(browser.Key)
-		if got == nil || installBrowsers[i] != browser.Key || got.macDir != browser.MacDir || got.windowsDir != browser.WindowsDir || got.linuxDir != browser.LinuxDir || got.registry != browser.Registry {
+		if got == nil || installBrowsers[i] != browser.Key || got.macDir != browser.MacDir || got.windowsDir != browser.WindowsDir || got.windowsManifestDir != browser.WindowsManifestDir || got.linuxDir != browser.LinuxDir || got.registry != browser.Registry {
 			t.Fatal("browser drift", browser.Key)
 		}
 	}
