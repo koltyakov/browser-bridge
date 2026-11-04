@@ -3,6 +3,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import {
   generateInstallTargets,
   validateInstallTargets,
@@ -13,6 +15,8 @@ import {
   nativeTargets,
   nativeMaxBytes,
 } from '../../../packages/npm/src/install-targets.js';
+
+const execute = promisify(execFile);
 
 async function source(): Promise<InstallTargets> {
   return JSON.parse(
@@ -59,6 +63,36 @@ test('installation target validation rejects collisions and unsafe generated ide
     mutate(input);
     assert.throws(() => validateInstallTargets(input));
   }
+});
+
+test('Windows-style Git checkouts preserve LF generated installation files', async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'bbx-targets-checkout-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const files = [
+    '.gitattributes',
+    'protocol/install-targets.json',
+    'packages/npm/src/install-targets.js',
+    'packages/extension/src/install-targets.ts',
+    'internal/bridge/install_targets.gen.go',
+    'scripts/install.sh',
+    'scripts/install.ps1',
+    '.github/workflows/native.yml',
+  ];
+  for (const file of files) {
+    await fs.mkdir(path.dirname(path.join(directory, file)), { recursive: true });
+    await fs.copyFile(new URL(`../../../${file}`, import.meta.url), path.join(directory, file));
+  }
+  await execute('git', ['init', '--quiet', directory]);
+  const git = (args: string[]) =>
+    execute('git', ['-c', 'core.autocrlf=true', ...args], { cwd: directory });
+  await git(['add', '--', ...files]);
+  for (const file of files.filter((name) => name !== '.gitattributes'))
+    await fs.rm(path.join(directory, file));
+  await git(['checkout-index', '--all', '--force']);
+  for (const file of files) {
+    assert.doesNotMatch(await fs.readFile(path.join(directory, file), 'utf8'), /\r\n/u, file);
+  }
+  await generateInstallTargets(true, directory);
 });
 
 test('one new platform generates every consumer and stale output fails check mode', async (t) => {

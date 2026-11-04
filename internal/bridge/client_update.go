@@ -28,6 +28,15 @@ func checkNativeClientUpdate(ctx context.Context, c config, health object, updat
 }
 
 func prepareNativeClient(ctx context.Context, c config, args []string) (bool, error) {
+	updated, err := prepareNativeClientUpdate(ctx, c, updateCompatibleNative)
+	if err != nil || !updated {
+		return updated, err
+	}
+	// A replacement MCP session can outlive update preparation's timeout.
+	return forwardNativeUpdate(ctx, c, args)
+}
+
+func prepareNativeClientUpdate(ctx context.Context, c config, update compatibleNativeUpdate) (bool, error) {
 	if c.remote || npmManagedRuntime() {
 		return false, nil
 	}
@@ -48,7 +57,7 @@ func prepareNativeClient(ctx context.Context, c config, args []string) (bool, er
 	if err != nil || !response.boolean("ok") {
 		return false, nil
 	}
-	result, err := checkNativeClientUpdate(ctx, c, response.object("result"), updateCompatibleNative)
+	result, err := checkNativeClientUpdate(ctx, c, response.object("result"), update)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Automatic Browser Bridge native update failed:", err)
 		return false, nil
@@ -66,5 +75,5 @@ func prepareNativeClient(ctx context.Context, c config, args []string) (bool, er
 			return true, err
 		}
 	}
-	return forwardNativeUpdate(ctx, c, args)
+	return true, nil
 }

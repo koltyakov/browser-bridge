@@ -1,51 +1,57 @@
-type PatternPart = { literal: string; maxSkip: number };
+type PatternToken = { kind: 'literal'; value: string } | { kind: 'star' } | { kind: 'question' };
 
 /** Match Chromium's case-sensitive base::MatchPattern used by Fetch.enable.
  * Wildcard runs permit up to N characters for N question marks, or any length
  * when they contain a star. Backslashes escape the next pattern character.
- * Search literal parts without regex backtracking: O(pattern.length * url.length)
+ * Track every reachable token without backtracking: O(pattern.length * url.length)
  * time and O(pattern.length) retained memory, even for adversarial patterns. */
 export function compileUrlPattern(pattern: string): { test: (url: string) => boolean } {
-  const parts: PatternPart[] = [];
-  let literal = '';
-  let maxSkip = 0;
+  const tokens: PatternToken[] = [];
   const characters = [...pattern];
   for (let index = 0; index < characters.length; index += 1) {
     const character = characters[index];
     if (character === '\\') {
-      literal += characters[++index] ?? '';
-    } else if (character === '*' || character === '?') {
-      if (literal) {
-        parts.push({ literal, maxSkip });
-        literal = '';
-        maxSkip = 0;
-      }
-      if (character === '*') maxSkip = -1;
-      else if (maxSkip !== -1) maxSkip += 1;
+      const escaped = characters[++index];
+      if (escaped !== undefined) tokens.push({ kind: 'literal', value: escaped });
+    } else if (character === '*') {
+      if (tokens.at(-1)?.kind !== 'star') tokens.push({ kind: 'star' });
+    } else if (character === '?') {
+      tokens.push({ kind: 'question' });
     } else {
-      literal += character;
+      tokens.push({ kind: 'literal', value: character });
     }
   }
-  parts.push({ literal, maxSkip });
+
+  function skipWildcards(states: Uint8Array): void {
+    for (let index = 0; index < tokens.length; index += 1) {
+      if (states[index] && tokens[index].kind !== 'literal') states[index + 1] = 1;
+    }
+  }
 
   return {
     test(url) {
-      let offset = 0;
-      for (const [index, part] of parts.entries()) {
-        const last = index === parts.length - 1;
-        if (last && !part.literal && part.maxSkip === -1) return true;
-        let skipped = 0;
-        while (
-          !url.startsWith(part.literal, offset) ||
-          (last && offset + part.literal.length !== url.length)
-        ) {
-          if (offset === url.length || skipped === part.maxSkip) return false;
-          offset += (url.codePointAt(offset) ?? 0) > 0xffff ? 2 : 1;
-          skipped += 1;
+      let active = new Uint8Array(tokens.length + 1);
+      let next = new Uint8Array(tokens.length + 1);
+      active[0] = 1;
+      skipWildcards(active);
+      for (const character of url) {
+        next.fill(0);
+        let matched = false;
+        for (let index = 0; index < tokens.length; index += 1) {
+          if (!active[index]) continue;
+          const token = tokens[index];
+          if (token.kind === 'star') next[index] = 1;
+          else if (token.kind === 'question' || token.value === character) next[index + 1] = 1;
+          else continue;
+          matched = true;
         }
-        offset += part.literal.length;
+        if (!matched) return false;
+        skipWildcards(next);
+        const previous = active;
+        active = next;
+        next = previous;
       }
-      return true;
+      return active[tokens.length] === 1;
     },
   };
 }

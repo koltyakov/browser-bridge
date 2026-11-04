@@ -804,6 +804,28 @@ test('pattern matching follows CDP glob semantics without treating ? as a regex 
   );
 });
 
+for (const action of ['block', 'fulfill'] as const) {
+  test(`${action} rules retain alternate matches before a bounded wildcard`, async () => {
+    const { interceptor, sent, filters } = createHarness();
+    await interceptor.addRule(1, {
+      urlPattern: 'https://example.com/*a?b',
+      action,
+      ...(action === 'fulfill' ? { body: 'intercepted' } : {}),
+    });
+    filters.get(1)?.('Fetch.requestPaused', {
+      requestId: 'alternate-match',
+      request: { url: 'https://example.com/aaxb', headers: {} },
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    const commands = sent.filter((command) => command.params.requestId === 'alternate-match');
+    assert.deepEqual(
+      commands.map((command) => command.method),
+      [action === 'block' ? 'Fetch.failRequest' : 'Fetch.fulfillRequest']
+    );
+    await interceptor.clearAllRules(1);
+  });
+}
+
 test('overlapping interception rules preserve path case and escaped wildcards', async () => {
   const { interceptor, sent, filters } = createHarness();
   await interceptor.addRule(1, { urlPattern: 'https://example.com/API/*', action: 'block' });
