@@ -148,13 +148,23 @@ test('Go daemon restart rejects in-flight work and accepts a fresh connection on
   const extension = await connectFakeExtension(ctx);
   const client = await connectTestClient(ctx);
   try {
-    const pending = client.request({ method: 'page.get_state' });
-    const rejected = assert.rejects(pending, /socket closed/i);
+    // Observe the rejection before killing the daemon. Keep the observation
+    // fulfilled so a failed assertion cannot become an unhandled rejection
+    // while this test is still waiting for the process to exit.
+    const pending = client.request({ method: 'page.get_state' }).then(
+      () => null,
+      (error: unknown) => error
+    );
     await extension.nextRequest();
     const exited = once(ctx.child, 'exit');
     ctx.child.kill('SIGKILL');
     await exited;
-    await rejected;
+    const error = await pending;
+    assert.ok(error instanceof Error, 'in-flight work must reject after daemon termination');
+    assert.ok(
+      /socket closed/i.test(error.message) || ('code' in error && error.code === 'ECONNRESET'),
+      `unexpected disconnect error: ${error.message}`
+    );
     const restarted = await startTestDaemon(ctx.address.port);
     try {
       const result = await runCli({ args: ['call', 'health.ping'], env: restarted.env });

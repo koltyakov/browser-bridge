@@ -246,11 +246,14 @@ func TestInstallMCPAllClientsAndCopilotProfiles(t *testing.T) {
 				}
 				if client == "copilot" {
 					key := installMCPKey(client, path, scope)
-					if path == filepath.Join(scope.home, ".copilot", "mcp-config.json") && key != "mcpServers" {
-						t.Fatal(key)
+					wantKey := "servers"
+					if path == filepath.Join(scope.home, ".copilot", "mcp-config.json") {
+						wantKey = "mcpServers"
 					}
-					if strings.Contains(path, "User") && key != "servers" {
-						t.Fatal(key)
+					// Match the config path, not "User", which also occurs in
+					// every Windows home under C:\Users.
+					if key != wantKey {
+						t.Fatalf("%s: key %q, want %q", path, key, wantKey)
 					}
 				}
 			}
