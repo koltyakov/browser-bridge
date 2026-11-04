@@ -31,6 +31,10 @@ runtime. It prepares existing npm installations for the Go-based v2 release.
 - Node 1.15 emits wire protocol `2.0`. Its method definitions, request types,
   normalization, limits, and operation timeout policies follow the v2 contract.
   It also accepts v1 peers while older clients and extensions are still running.
+- Node clients send an existing agent credential on local sockets and Windows
+  named pipes as well as TCP, so they can register with the authenticated Go
+  daemon. Older Node local daemons still work without credential files. This
+  handshake does not create or rotate credentials.
 - Missing update policy means `compatible`. Explicit `autoUpdate: "off"` and
   `BBX_AUTO_UPDATE=off` remain authoritative. Installation still requires a real
   global npm package; source checkouts, npm links, project dependencies, and

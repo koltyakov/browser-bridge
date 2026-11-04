@@ -306,12 +306,7 @@ export class BridgeClient extends EventEmitter {
     const registrationWrite = new AbortController();
     try {
       const writePromise = (async () => {
-        const authToken =
-          this.authToken === undefined
-            ? this.transport.type === 'tcp'
-              ? await readBridgeAuthToken()
-              : null
-            : normalizeBridgeAuthToken(this.authToken);
+        const authToken = await this.readRegistrationAuthToken();
         await writeSocketLine(
           socket,
           `${JSON.stringify({
@@ -381,6 +376,25 @@ export class BridgeClient extends EventEmitter {
       await this.disconnectForDaemonRestart();
       await this.restartDaemonFn({ transport: this.transport });
       await this.connect();
+    }
+  }
+
+  /**
+   * Go v2 authenticates local sockets and named pipes too. Older Node daemons
+   * ignore the optional token and can still work without a readable token file.
+   * TCP credential failures remain fatal rather than silently dropping auth.
+   *
+   * @returns {Promise<string | null>}
+   */
+  async readRegistrationAuthToken() {
+    if (this.authToken !== undefined) {
+      return normalizeBridgeAuthToken(this.authToken);
+    }
+    try {
+      return await readBridgeAuthToken();
+    } catch (error) {
+      if (this.transport.type === 'tcp') throw error;
+      return null;
     }
   }
 
