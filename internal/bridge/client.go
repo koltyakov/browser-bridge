@@ -50,9 +50,9 @@ func registerConnection(c config, role string) (net.Conn, *bufio.Reader, object,
 		return nil, nil, nil, err
 	}
 	token, err := c.credential(role)
-	// Existing Node Unix-socket daemons rely on filesystem access and may not
-	// have created credential files. TCP always requires credentials.
-	if errors.Is(err, os.ErrNotExist) && c.network == "unix" {
+	// Existing Node Unix-socket and named-pipe daemons rely on filesystem
+	// access and may not have created credentials. TCP always requires them.
+	if errors.Is(err, os.ErrNotExist) && (c.network == "unix" || c.network == "pipe") {
 		token, err = "", nil
 	}
 	if err != nil {

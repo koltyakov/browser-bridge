@@ -1,11 +1,19 @@
 package bridge
 
 import (
+	"errors"
 	"net"
+	"syscall"
 	"time"
 
 	"github.com/Microsoft/go-winio"
+	"golang.org/x/sys/windows"
 )
+
+func isRefused(err error) bool {
+	// TCP dials return Winsock errors, not Go's synthetic Windows errno values.
+	return errors.Is(err, windows.WSAECONNREFUSED) || errors.Is(err, syscall.ECONNREFUSED)
+}
 
 func dialTransport(network, address string, timeout time.Duration) (net.Conn, error) {
 	if network == "pipe" {

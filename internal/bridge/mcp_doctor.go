@@ -338,13 +338,25 @@ func (s *mcpSession) doctor(ctx context.Context) (object, error) {
 
 func mcpDoctorLocal(c config) (object, []string) {
 	home, _ := os.UserHomeDir()
-	manifestPath := filepath.Join(installManifestDir(runtime.GOOS, home, installDefaultBrowser(), os.Getenv), hostName+".json")
+	return mcpDoctorLocalWithSystem(c, nativeRegistrationSystem{runtime.GOOS, home, os.Getenv, readNativeRegistrationRegistry, installRegistry})
+}
+
+func mcpDoctorLocalWithSystem(c config, system nativeRegistrationSystem) (object, []string) {
+	manifestPath := system.candidates(c, installDefaultBrowser())[0]
 	browsers, manifestIssues := []object{}, []object{}
 	installedIDs := []string{}
 	allowedOrigins := []string{}
 	installed := false
 	for _, browser := range installBrowsers {
-		path := filepath.Join(installManifestDir(runtime.GOOS, home, browser, os.Getenv), hostName+".json")
+		path, _, lookupErr := system.resolve(context.Background(), c, browser)
+		if browser == installDefaultBrowser() {
+			manifestPath = path
+		}
+		if lookupErr != nil {
+			browsers = append(browsers, object{"browser": value(browser), "manifestPath": value(path), "installed": value(false)})
+			manifestIssues = append(manifestIssues, object{"browser": value(browser), "manifestPath": value(path), "code": value("registration_unavailable"), "message": value(lookupErr.Error())})
+			continue
+		}
 		data, err := os.ReadFile(path)
 		exists := err == nil
 		browsers = append(browsers, object{"browser": value(browser), "manifestPath": value(path), "installed": value(exists)})

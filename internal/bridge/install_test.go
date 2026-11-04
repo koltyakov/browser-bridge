@@ -51,7 +51,11 @@ func TestInstallManifestPaths(t *testing.T) {
 		seen := map[string]bool{}
 		for _, browser := range installBrowsers {
 			path := installManifestDir(platform, home, browser, env)
-			if !strings.HasPrefix(path, home+string(filepath.Separator)) || filepath.Base(path) != "NativeMessagingHosts" || seen[path] {
+			base := "NativeMessagingHosts"
+			if platform == "windows" {
+				base = browser
+			}
+			if !strings.HasPrefix(path, home+string(filepath.Separator)) || filepath.Base(path) != base || seen[path] {
 				t.Fatalf("invalid %s/%s path %s", platform, browser, path)
 			}
 			seen[path] = true
@@ -134,7 +138,7 @@ func TestInstallNativePreservesManifestAndUsesNativeRoles(t *testing.T) {
 	if len(origins) != 1 || origins[0] != "chrome-extension://"+publishedExtensionID+"/" {
 		t.Fatal(origins)
 	}
-	removed, err := uninstallNativeRegistration(context.Background(), "chrome")
+	removed, err := uninstallNativeRegistration(context.Background(), c, "chrome")
 	if err != nil || len(removed) != 1 {
 		t.Fatalf("uninstall: %v %v", removed, err)
 	}
@@ -145,13 +149,21 @@ func TestInstallNativePreservesManifestAndUsesNativeRoles(t *testing.T) {
 
 func TestInstallNativeRejectsInvalidConfiguration(t *testing.T) {
 	c, scope := installTestScope(t)
+	system := nativeRegistrationSystem{
+		platform: runtime.GOOS, home: scope.home, env: os.Getenv,
+		readRegistry: func(context.Context, string) (string, error) { return "", nil },
+		writeRegistry: func(context.Context, ...string) error {
+			t.Fatal("invalid configuration attempted registry mutation")
+			return nil
+		},
+	}
 	t.Setenv("BROWSER_BRIDGE_EXTENSION_ID", "")
-	if _, err := installNativeRegistration(context.Background(), c, "chrome", "", false); err == nil {
+	if _, err := installNativeRegistrationWithSystem(context.Background(), c, "chrome", "", false, system); err == nil {
 		t.Fatal("accepted invalid environment extension ID")
 	}
 	path := filepath.Join(installManifestDir(runtime.GOOS, scope.home, "chrome", os.Getenv), hostName+".json")
 	installTestWrite(t, path, "broken")
-	if _, err := installNativeRegistration(context.Background(), c, "chrome", publishedExtensionID, false); err == nil {
+	if _, err := installNativeRegistrationWithSystem(context.Background(), c, "chrome", publishedExtensionID, false, system); err == nil {
 		t.Fatal("overwrote corrupt manifest")
 	}
 	raw, _ := os.ReadFile(path)

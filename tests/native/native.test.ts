@@ -9,7 +9,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { once } from 'node:events';
 import { createInterface } from 'node:readline';
-import { createRequest, getProtocolVersion } from '../../protocol/src/index.js';
+import { createRequest, createSuccess, getProtocolVersion } from '../../protocol/src/index.js';
 import { setProtocolPackageVersion } from '../_helpers/protocolVersion.js';
 import type { BridgeResponse } from '../../protocol/types.js';
 
@@ -441,6 +441,75 @@ function nativeReader(process: ChildProcessWithoutNullStreams) {
     });
   };
 }
+
+test(
+  'Go native host cold-starts a local TCP daemon without replacing existing credentials',
+  { skip: !enabled, timeout: 15_000 },
+  async (t) => {
+    const f = await fixture();
+    let native: ChildProcessWithoutNullStreams | undefined;
+    t.after(async () => {
+      if (native && native.exitCode === null && native.signalCode === null) {
+        const closed = once(native, 'close');
+        native.kill();
+        await closed;
+      }
+      // The bootstrapped daemon is detached, so it is not the native host's
+      // ChildProcess. Its PID comes only from this test's isolated bridge home.
+      const pid = await fs.readFile(path.join(f.home, 'daemon.pid'), 'utf8').catch(() => '');
+      if (Number.isSafeInteger(Number(pid)) && Number(pid) > 1) {
+        try {
+          process.kill(Number(pid), 'SIGKILL');
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+        }
+      }
+      await f.cleanup();
+    });
+    const reservation = net.createServer().listen(0, '127.0.0.1');
+    await once(reservation, 'listening');
+    const address = reservation.address();
+    assert.ok(address && typeof address === 'object');
+    await new Promise<void>((resolve, reject) =>
+      reservation.close((error) => (error ? reject(error) : resolve()))
+    );
+    f.env.BBX_TCP_PORT = String(address.port);
+    await assert.rejects(fs.stat(path.join(f.home, 'daemon.pid')), { code: 'ENOENT' });
+    const credentials = await Promise.all(
+      ['daemon.auth', 'daemon.extension.auth'].map((name) => fs.readFile(path.join(f.home, name)))
+    );
+
+    // Launch only the native host. Its bootstrap must recognize the OS's real
+    // refused-dial error and start the daemon before relaying this Chrome frame.
+    native = spawn(executable, ['--native-host'], { env: f.env, stdio: 'pipe' });
+    const read = nativeReader(native);
+    native.stdin.write(nativeFrame({ type: 'host.setup_status.request', requestId: 'cold-start' }));
+    const status = await read();
+    assert.equal(status.type, 'host.setup_status.response', JSON.stringify(status));
+    assert.equal(status.requestId, 'cold-start');
+    const pid = Number(await fs.readFile(path.join(f.home, 'daemon.pid'), 'utf8'));
+    assert.ok(Number.isSafeInteger(pid) && pid > 1 && pid !== native.pid);
+    assert.deepEqual(
+      await Promise.all(
+        ['daemon.auth', 'daemon.extension.auth'].map((name) => fs.readFile(path.join(f.home, name)))
+      ),
+      credentials
+    );
+    const host = native;
+    const [{ stdout }] = await Promise.all([
+      execFileAsync(executable, ['call', 'health.ping', '{}'], { env: f.env, timeout: 5000 }),
+      (async () => {
+        const ping = await read();
+        assert.equal(ping.method, 'health.ping');
+        assert.ok(typeof ping.id === 'string');
+        host.stdin.write(nativeFrame({ ...createSuccess(ping.id, { extension: 'ok' }) }));
+      })(),
+    ]);
+    const health = JSON.parse(stdout) as { daemon: string; extensionConnected: boolean };
+    assert.equal(health.daemon, 'ok');
+    assert.equal(health.extensionConnected, true);
+  }
+);
 
 test(
   'Go native host relays fragmented Chrome frames through the Go daemon',

@@ -223,13 +223,16 @@ func installSelfFinish(ctx context.Context, c config, restart bool) error {
 	if err != nil {
 		return err
 	}
-	home, err := installUserHome()
+	system, err := nativeRegistrationHostSystem()
 	if err != nil {
 		return err
 	}
 	browsers := []string{}
 	for _, browser := range installBrowsers {
-		path := filepath.Join(installManifestDir(runtime.GOOS, home, browser, os.Getenv), hostName+".json")
+		path, _, lookupErr := system.resolve(ctx, c, browser)
+		if lookupErr != nil {
+			return lookupErr
+		}
 		if _, err := os.Lstat(path); err == nil {
 			browsers = append(browsers, browser)
 		} else if !errors.Is(err, os.ErrNotExist) {

@@ -42,6 +42,27 @@ func installManifestDir(platform, home, browser string, env func(string) string)
 	if definition == nil {
 		return ""
 	}
+	if platform == "windows" {
+		bridgeHome := env("BROWSER_BRIDGE_HOME")
+		if bridgeHome == "" {
+			local := env("LOCALAPPDATA")
+			if local == "" {
+				local = filepath.Join(home, "AppData", "Local")
+			}
+			bridgeHome = filepath.Join(local, "Browser Bridge")
+		}
+		return filepath.Join(bridgeHome, filepath.FromSlash(definition.windowsManifestDir))
+	}
+	return installLegacyManifestDir(platform, home, browser, env)
+}
+
+// The browser-owned directories remain valid discovery targets on Unix and
+// are retained for existing Windows installations instead of forcing a move.
+func installLegacyManifestDir(platform, home, browser string, env func(string) string) string {
+	definition := installBrowserByKey(browser)
+	if definition == nil {
+		return ""
+	}
 	var base, sub string
 	switch platform {
 	case "darwin":
@@ -169,7 +190,11 @@ func installAtomicWrite(path string, data []byte, mode os.FileMode) error {
 func installShellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
 
 func installLauncher(c config, executable string) (string, []byte) {
-	if runtime.GOOS == "windows" {
+	return installLauncherForPlatform(c, executable, runtime.GOOS)
+}
+
+func installLauncherForPlatform(c config, executable, platform string) (string, []byte) {
+	if platform == "windows" {
 		// Percent signs expand even inside cmd.exe double quotes.
 		escape := func(s string) string { return strings.ReplaceAll(s, "%", "%%") }
 		body := "@echo off\r\nsetlocal DisableDelayedExpansion\r\n"
@@ -197,18 +222,25 @@ func installLauncher(c config, executable string) (string, []byte) {
 }
 
 func installNativeRegistration(ctx context.Context, c config, browser, extensionID string, preserveOrigins bool) (object, error) {
-	if !installContains(installBrowsers, browser) {
-		return nil, fmt.Errorf("unsupported browser %q", browser)
-	}
-	home, err := installUserHome()
+	system, err := nativeRegistrationHostSystem()
 	if err != nil {
 		return nil, err
+	}
+	return installNativeRegistrationWithSystem(ctx, c, browser, extensionID, preserveOrigins, system)
+}
+
+func installNativeRegistrationWithSystem(ctx context.Context, c config, browser, extensionID string, preserveOrigins bool, system nativeRegistrationSystem) (object, error) {
+	if !installContains(installBrowsers, browser) {
+		return nil, fmt.Errorf("unsupported browser %q", browser)
 	}
 	executable, err := os.Executable()
 	if err != nil {
 		return nil, err
 	}
-	manifestPath := filepath.Join(installManifestDir(runtime.GOOS, home, browser, os.Getenv), hostName+".json")
+	manifestPath, _, err := system.resolve(ctx, c, browser)
+	if err != nil {
+		return nil, err
+	}
 	manifest := object{}
 	if data, readErr := os.ReadFile(manifestPath); readErr == nil {
 		manifest, err = decodeObject(data)
@@ -247,12 +279,24 @@ func installNativeRegistration(ctx context.Context, c config, browser, extension
 			}
 		}
 	}
-	launcherPath, launcher := installLauncher(c, executable)
+	launcherPath, launcher := installLauncherForPlatform(c, executable, system.platform)
 	manifest["name"], manifest["description"] = value(hostName), value("Browser Bridge native host")
 	manifest["path"], manifest["type"], manifest["allowed_origins"] = value(launcherPath), value("stdio"), value(origins)
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return nil, err
+	}
+	if system.platform == "windows" {
+		err = nativeRegistrationTransaction([]nativeRegistrationFile{
+			{launcherPath, launcher, 0755},
+			{manifestPath, append(data, '\n'), 0644},
+		}, func() error {
+			return system.writeRegistry(ctx, "add", installRegistryKey(browser), "/ve", "/t", "REG_SZ", "/d", manifestPath, "/f")
+		})
+		if err != nil {
+			return nil, err
+		}
+		return object{"manifestPath": value(manifestPath), "launcherPath": value(launcherPath), "allowedOrigins": value(origins), "extensionId": value(extensionID)}, nil
 	}
 	if err := installAtomicWrite(launcherPath, launcher, 0755); err != nil {
 		return nil, err
@@ -265,34 +309,13 @@ func installNativeRegistration(ctx context.Context, c config, browser, extension
 	if err := installAtomicWrite(manifestPath, append(data, '\n'), 0644); err != nil {
 		return nil, err
 	}
-	if runtime.GOOS == "windows" {
-		if err := installRegistry(ctx, "add", installRegistryKey(browser), "/ve", "/t", "REG_SZ", "/d", manifestPath, "/f"); err != nil {
-			return nil, err
-		}
-	}
 	return object{"manifestPath": value(manifestPath), "launcherPath": value(launcherPath), "allowedOrigins": value(origins), "extensionId": value(extensionID)}, nil
 }
 
-func uninstallNativeRegistration(ctx context.Context, browser string) ([]string, error) {
-	home, err := installUserHome()
+func uninstallNativeRegistration(ctx context.Context, c config, browser string) ([]string, error) {
+	system, err := nativeRegistrationHostSystem()
 	if err != nil {
 		return nil, err
 	}
-	path := filepath.Join(installManifestDir(runtime.GOOS, home, browser, os.Getenv), hostName+".json")
-	removed := []string{}
-	if err := os.Remove(path); err == nil {
-		removed = append(removed, path)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	}
-	if runtime.GOOS == "windows" {
-		// Query first: deleting an absent key is a successful no-op, while a
-		// failure deleting an existing key must be reported.
-		if err := installRegistry(ctx, "query", installRegistryKey(browser), "/ve"); err == nil {
-			if err := installRegistry(ctx, "delete", installRegistryKey(browser), "/f"); err != nil {
-				return removed, err
-			}
-		}
-	}
-	return removed, nil
+	return uninstallNativeRegistrationWithSystem(ctx, c, browser, system)
 }

@@ -5,10 +5,72 @@ import (
 	"context"
 	"errors"
 	"net"
+	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestClientLocalRegistrationNodeCompatibility(t *testing.T) {
+	t.Setenv("BBX_AUTH_TOKEN", "")
+	for _, present := range []bool{false, true} {
+		t.Run(map[bool]string{false: "legacy missing credential", true: "existing credential"}[present], func(t *testing.T) {
+			root, err := os.MkdirTemp("", "bbx-auth-")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.RemoveAll(root) })
+			c := config{home: root, network: "unix", address: filepath.Join(root, "s"), agentToken: filepath.Join(root, "daemon.auth")}
+			if runtime.GOOS == "windows" {
+				c.network, c.address = "pipe", windowsPipeAddress(root)
+			}
+			c.bind = c.address
+			token := ""
+			if present {
+				token = strings.Repeat("a", 43)
+				if err := os.WriteFile(c.agentToken, []byte(token), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			listener, err := c.listen()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = listener.Close() }()
+			registered := make(chan object, 1)
+			serverError := make(chan error, 1)
+			go func() {
+				conn, err := listener.Accept()
+				if err != nil {
+					serverError <- err
+					return
+				}
+				defer func() { _ = conn.Close() }()
+				_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+				message, err := readLine(bufio.NewReader(conn))
+				if err == nil {
+					registered <- message
+					writer := wireWriter{out: conn}
+					err = writer.send(object{"type": value("registered"), "role": value("agent")})
+				}
+				serverError <- err
+			}()
+			conn, _, _, err := registerConnection(c, "agent")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = conn.Close()
+			if err := <-serverError; err != nil {
+				t.Fatal(err)
+			}
+			if message := <-registered; message.text("authToken") != token {
+				t.Fatal("client did not preserve local credential semantics")
+			}
+		})
+	}
+}
 
 func TestClientCanceledQueuedMutationDoesNotDispatchOrCloseConnection(t *testing.T) {
 	local, remote := net.Pipe()

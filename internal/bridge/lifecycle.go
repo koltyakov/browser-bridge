@@ -9,7 +9,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -204,9 +203,14 @@ func doctorCLI(ctx context.Context, c config, args []string) error {
 	report["warnings"] = value(warnings)
 	manifests := []object{}
 	validManifest := false
-	if home, err := os.UserHomeDir(); err == nil {
+	if system, err := nativeRegistrationHostSystem(); err == nil {
 		for _, browser := range installBrowsers {
-			path := filepath.Join(installManifestDir(runtime.GOOS, home, browser, os.Getenv), hostName+".json")
+			path, _, lookupErr := system.resolve(ctx, c, browser)
+			if lookupErr != nil {
+				manifests = append(manifests, object{"browser": value(browser), "path": value(path), "error": value(lookupErr.Error())})
+				issues = append(issues, fmt.Sprintf("%s native registration lookup failed: %s", browser, lookupErr))
+				continue
+			}
 			b, err := os.ReadFile(path)
 			if errors.Is(err, os.ErrNotExist) {
 				continue

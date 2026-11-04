@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -40,7 +39,7 @@ func bootstrap(c config) error {
 	if err == nil {
 		return conn.Close()
 	}
-	if !errors.Is(err, os.ErrNotExist) && !errors.Is(err, syscall.ECONNREFUSED) {
+	if !errors.Is(err, os.ErrNotExist) && !isRefused(err) {
 		return err
 	}
 	// A remote connection must never trigger a local daemon start.
@@ -62,8 +61,6 @@ func bootstrap(c config) error {
 	}
 	return err
 }
-
-func isRefused(err error) bool { return errors.Is(err, syscall.ECONNREFUSED) }
 
 func nativeToDaemon(message object) object {
 	kind := message.text("type")
