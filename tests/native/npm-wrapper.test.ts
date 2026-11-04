@@ -10,6 +10,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { resolveNative, nativeTargets } from '../../packages/npm/src/runtime.js';
+import { resolveNpmCli } from '../_helpers/npmCli.js';
 
 const exec = promisify(execFile);
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -133,9 +134,11 @@ test(
     });
     assert.equal(downloads, 1);
     assert(!cached.includes('node_modules'));
-    const npm = process.env.npm_execpath;
+    // Match a direct make invocation even when this test's parent was npm or Bun.
+    delete env.npm_execpath;
+    const npm = resolveNpmCli({ env });
     const npmRun = (args: string[], cwd: string) =>
-      exec(npm ? process.execPath : 'npm', npm ? [npm, ...args] : args, {
+      exec(process.execPath, [npm, ...args], {
         cwd,
         env,
         timeout: 30_000,
