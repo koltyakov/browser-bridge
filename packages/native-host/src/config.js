@@ -412,6 +412,21 @@ function getLinuxConfigHome(env, home) {
  * @returns {string}
  */
 export function getManifestInstallDir(browser = getDefaultBrowser(), env = process.env) {
+  if (os.platform() === 'win32') {
+    return path.join(getBridgeDir(env), 'NativeMessagingHosts', browser);
+  }
+  return getLegacyManifestInstallDir(browser, env);
+}
+
+/**
+ * Keep the original browser-owned locations available for existing installs.
+ * macOS and Linux still require these locations for native host discovery.
+ *
+ * @param {SupportedBrowser} [browser=getDefaultBrowser()]
+ * @param {NodeJS.ProcessEnv} [env=process.env]
+ * @returns {string}
+ */
+export function getLegacyManifestInstallDir(browser = getDefaultBrowser(), env = process.env) {
   const platform = os.platform();
   const home = os.homedir();
 
@@ -460,4 +475,24 @@ export function getManifestInstallDir(browser = getDefaultBrowser(), env = proce
     arc: path.join(linuxConfigHome, 'Arc', 'User Data', 'NativeMessagingHosts'),
   };
   return linuxPaths[browser] ?? linuxPaths.chrome;
+}
+
+/**
+ * @param {SupportedBrowser} [browser=getDefaultBrowser()]
+ * @param {NodeJS.ProcessEnv} [env=process.env]
+ * @param {string} [bridgeDir=getBridgeDir(env)]
+ * @returns {string[]}
+ */
+export function getManifestPathCandidates(
+  browser = getDefaultBrowser(),
+  env = process.env,
+  bridgeDir = getBridgeDir(env)
+) {
+  const installDir =
+    os.platform() === 'win32'
+      ? path.join(bridgeDir, 'NativeMessagingHosts', browser)
+      : getManifestInstallDir(browser, env);
+  return [...new Set([installDir, getLegacyManifestInstallDir(browser, env)])].map((directory) =>
+    path.join(directory, `${APP_NAME}.json`)
+  );
 }

@@ -20,7 +20,9 @@ import {
   getDefaultBrowser,
   getBridgeDir,
   getLauncherFilename,
+  getLegacyManifestInstallDir,
   getManifestInstallDir,
+  getManifestPathCandidates,
   getSocketPath,
   readProxyConfig,
   SUPPORTED_BROWSERS,
@@ -475,7 +477,10 @@ test('getBridgeDir resolves platform-specific defaults', async () => {
         path.join('C:\\Users\\tester\\AppData\\Local', 'Browser Bridge')
       );
       assert.equal(getLauncherFilename(), 'native-host-launcher.cmd');
-      assert.match(getManifestInstallDir('brave'), /BraveSoftware/);
+      assert.equal(
+        getManifestInstallDir('brave'),
+        path.join(getBridgeDir(), 'NativeMessagingHosts', 'brave')
+      );
     }
   );
 });
@@ -623,12 +628,51 @@ test('getManifestInstallDir resolves every supported browser path on each platfo
     await withMockedConfigEnvironment(testCase, async () => {
       assert.deepEqual(
         Object.fromEntries(
-          SUPPORTED_BROWSERS.map((browser) => [browser, getManifestInstallDir(browser)])
+          SUPPORTED_BROWSERS.map((browser) => [browser, getLegacyManifestInstallDir(browser)])
         ),
         testCase.expected
       );
+      assert.deepEqual(
+        Object.fromEntries(
+          SUPPORTED_BROWSERS.map((browser) => [browser, getManifestInstallDir(browser)])
+        ),
+        testCase.platform === 'win32'
+          ? Object.fromEntries(
+              SUPPORTED_BROWSERS.map((browser) => [
+                browser,
+                path.join(getBridgeDir(), 'NativeMessagingHosts', browser),
+              ])
+            )
+          : testCase.expected
+      );
     });
   }
+});
+
+test('Windows manifest candidates honor a custom bridge home and retain legacy paths', async () => {
+  await withMockedConfigEnvironment(
+    {
+      platform: 'win32',
+      home: 'C:\\Users\\tester',
+      env: {
+        [BRIDGE_HOME_ENV]: 'D:\\BBX',
+        LOCALAPPDATA: 'C:\\Users\\tester\\AppData\\Local',
+      },
+    },
+    async () => {
+      for (const browser of SUPPORTED_BROWSERS) {
+        assert.deepEqual(getManifestPathCandidates(browser), [
+          path.join(
+            'D:\\BBX',
+            'NativeMessagingHosts',
+            browser,
+            'com.browserbridge.browser_bridge.json'
+          ),
+          path.join(getLegacyManifestInstallDir(browser), 'com.browserbridge.browser_bridge.json'),
+        ]);
+      }
+    }
+  );
 });
 
 test('getManifestInstallDir uses Chromium as the default Linux manifest target', async () => {

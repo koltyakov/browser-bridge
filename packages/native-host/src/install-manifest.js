@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { atomicWriteFile } from '../../agent-client/src/atomic-write.js';
 
 import {
   APP_NAME,
@@ -11,8 +12,9 @@ import {
   DEFAULT_WINDOWS_TCP_PORT,
   getBridgeDir,
   getLauncherFilename,
-  getManifestInstallDir,
+  getManifestPathCandidates,
   PUBLISHED_EXTENSION_ID,
+  SUPPORTED_BROWSERS,
 } from './config.js';
 
 export const DEFAULT_EXTENSION_ID_ENV = 'BROWSER_BRIDGE_EXTENSION_ID';
@@ -26,6 +28,8 @@ const CHROMIUM_FLATPAK_NATIVE_MESSAGING_RE =
 /** @typedef {import('./config.js').SupportedBrowser} SupportedBrowser */
 /** @typedef {'env' | 'built_in' | 'none' | 'invalid_env'} ExtensionIdSource */
 /** @typedef {NodeJS.ErrnoException & { cause?: unknown }} MaybeErrnoError */
+/** @typedef {(keyPath: string) => Promise<string | null> | string | null} RegistryValueReader */
+/** @typedef {{ env?: NodeJS.ProcessEnv, installDir?: string, bridgeDir?: string, readRegistryValue?: RegistryValueReader }} ManifestPathOptions */
 
 const execFileAsync = promisify(execFile);
 
@@ -68,6 +72,7 @@ export class NativeManifestInstallError extends Error {
  *   stdout?: Pick<NodeJS.WriteStream, 'write'>,
  *   stderr?: Pick<NodeJS.WriteStream, 'write'>,
  *   preserveCustomExtensionId?: boolean | undefined,
+ *   readRegistryValue?: RegistryValueReader,
  *   writeRegistryValue?: ((keyPath: string, value: string) => Promise<void> | void) | undefined,
  *   env?: NodeJS.ProcessEnv
  * }} InstallManifestOptions
@@ -79,6 +84,8 @@ export class NativeManifestInstallError extends Error {
  *   installDir?: string | undefined,
  *   bridgeDir?: string | undefined,
  *   removeBridgeDir?: boolean | undefined,
+ *   env?: NodeJS.ProcessEnv,
+ *   readRegistryValue?: RegistryValueReader,
  *   deleteRegistryKey?: ((keyPath: string) => Promise<boolean> | boolean) | undefined,
  *   stdout?: Pick<NodeJS.WriteStream, 'write'>
  * }} UninstallManifestOptions
@@ -100,6 +107,81 @@ export function getWindowsRegistryKey(browser = 'chrome') {
   };
 
   return `${roots[browser] || roots.chrome}\\${APP_NAME}`;
+}
+
+/**
+ * Read the default REG_SZ value without assuming an English default-value label.
+ * Fail closed on registry access errors rather than replacing an unknown registration.
+ *
+ * @param {string} keyPath
+ * @param {(file: string, args: string[]) => Promise<{ stdout: string }>} [execute=execFileAsync]
+ * @returns {Promise<string | null>}
+ */
+export async function readWindowsRegistryValue(keyPath, execute = execFileAsync) {
+  try {
+    const { stdout } = await execute(getWindowsRegistryExe(), ['query', keyPath, '/ve']);
+    const match = /^\s*.+?\s+REG_SZ\s+(.+?)\s*$/mu.exec(stdout);
+    if (!match?.[1]) {
+      throw new Error(`Native host registry value is not a REG_SZ path: ${keyPath}`);
+    }
+    return match[1];
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/unable to find|cannot find|was unable to find/i.test(message)) {
+      return null;
+    }
+    // reg.exe localizes errors and uses the same exit code for missing keys
+    // and access failures. Resolve ambiguous errors through the registry API
+    // so a non-English fresh install is not mistaken for a permission failure.
+    if (/** @type {{ code?: unknown }} */ (error)?.code === 1) {
+      const systemRoot = process.env.SystemRoot || process.env.WINDIR;
+      const powershell = systemRoot
+        ? path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+        : 'powershell.exe';
+      const fullKey = keyPath.replace(/^HKCU\\/u, 'HKEY_CURRENT_USER\\').replaceAll("'", "''");
+      const command = `$ErrorActionPreference = 'Stop'; ConvertTo-Json -Compress -InputObject ([Microsoft.Win32.Registry]::GetValue('${fullKey}', '', $null))`;
+      const { stdout } = await execute(powershell, [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        command,
+      ]);
+      /** @type {unknown} */
+      const value = JSON.parse(stdout.trim());
+      if (value === null || (typeof value === 'string' && value.length > 0)) return value;
+      throw new Error(`Native host registry value is not a string path: ${keyPath}`);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Registry registrations take precedence, including custom manifest locations.
+ * Without a registration, reuse a legacy file before creating a fresh install.
+ * An explicit installDir is an intentional override, primarily used by embedders.
+ *
+ * @param {SupportedBrowser} [browser]
+ * @param {ManifestPathOptions} [options={}]
+ * @returns {Promise<string>}
+ */
+export async function resolveNativeManifestPath(browser, options = {}) {
+  if (options.installDir !== undefined) {
+    return path.join(options.installDir, `${APP_NAME}.json`);
+  }
+  const candidates = getManifestPathCandidates(browser, options.env, options.bridgeDir);
+  if (process.platform !== 'win32') {
+    return candidates[0];
+  }
+  const registeredPath = await (options.readRegistryValue || readWindowsRegistryValue)(
+    getWindowsRegistryKey(browser)
+  );
+  if (registeredPath) {
+    if (!path.win32.isAbsolute(registeredPath)) {
+      throw new Error(`Native host registry path must be absolute: ${registeredPath}`);
+    }
+    return registeredPath;
+  }
+  return [...candidates].reverse().find((candidate) => fs.existsSync(candidate)) || candidates[0];
 }
 
 /**
@@ -236,12 +318,13 @@ export function escapeSingleQuotes(value) {
 
 /**
  * @param {string} filePath
- * @returns {Promise<{allowed_origins?: string[]} | null>}
+ * @returns {Promise<{name?: string, allowed_origins?: string[]} | null>}
  */
 export async function readExistingManifest(filePath) {
   try {
     const raw = await fs.promises.readFile(filePath, 'utf8');
-    return JSON.parse(raw);
+    const manifest = JSON.parse(raw);
+    return manifest && typeof manifest === 'object' && !Array.isArray(manifest) ? manifest : null;
   } catch {
     return null;
   }
@@ -258,11 +341,12 @@ export async function installNativeManifest(options) {
     browser,
     nodePath = process.execPath,
     env = process.env,
-    installDir = getManifestInstallDir(browser, env),
+    installDir: requestedInstallDir,
     bridgeDir = getBridgeDir(env),
     stdout = process.stdout,
     stderr = process.stderr,
-    preserveCustomExtensionId = false,
+    preserveCustomExtensionId = process.platform === 'win32',
+    readRegistryValue: readRegistryValueFn = readWindowsRegistryValue,
     writeRegistryValue: writeRegistryValueFn = writeRegistryValue,
   } = options;
 
@@ -282,7 +366,13 @@ export async function installNativeManifest(options) {
   const requestedExtensionId = parsedExtensionId || defaultExtensionId.extensionId;
   const hostPath = path.join(repoRoot, 'packages', 'native-host', 'bin', 'native-host.js');
   const launcherPath = path.join(bridgeDir, getLauncherFilename());
-  const manifestPath = path.join(installDir, `${APP_NAME}.json`);
+  const manifestPath = await resolveNativeManifestPath(browser, {
+    installDir: requestedInstallDir,
+    bridgeDir,
+    env,
+    readRegistryValue: readRegistryValueFn,
+  });
+  const installDir = path.dirname(manifestPath);
 
   const launcher =
     process.platform === 'win32'
@@ -301,7 +391,7 @@ exec '${escapeSingleQuotes(nodePath)}' '${escapeSingleQuotes(hostPath)}' "$@"
     extensionIdArg == null &&
     defaultExtensionId.source === BUILT_IN_EXTENSION_ID_SOURCE &&
     customExtensionIds.length > 0 &&
-    !hasStoreOrigin;
+    (process.platform === 'win32' || !hasStoreOrigin);
   const allowedOrigins = preservedCustomExtensionId
     ? getAllowedOrigins(existingManifest, null)
     : getAllowedOrigins(existingManifest, requestedExtensionId);
@@ -319,22 +409,56 @@ exec '${escapeSingleQuotes(nodePath)}' '${escapeSingleQuotes(hostPath)}' "$@"
   };
 
   let failingPath = installDir;
+  /** @type {Array<{ filePath: string, contents: Buffer | null }>} */
+  const backups = [];
+  /**
+   * @param {string} filePath
+   * @param {string} contents
+   * @returns {Promise<void>}
+   */
+  async function writeHostFile(filePath, contents) {
+    if (process.platform === 'win32') {
+      backups.push({ filePath, contents: await readFileIfExists(filePath) });
+      await atomicWriteFile(filePath, contents);
+    } else {
+      await fs.promises.writeFile(filePath, contents, 'utf8');
+    }
+  }
   try {
     await fs.promises.mkdir(installDir, { recursive: true });
     failingPath = bridgeDir;
     await fs.promises.mkdir(bridgeDir, { recursive: true });
     failingPath = launcherPath;
-    await fs.promises.writeFile(launcherPath, launcher, 'utf8');
+    await writeHostFile(launcherPath, launcher);
     if (process.platform !== 'win32') {
       await fs.promises.chmod(launcherPath, 0o755);
     }
     failingPath = manifestPath;
-    await fs.promises.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+    await writeHostFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
     if (process.platform === 'win32') {
       failingPath = getWindowsRegistryKey(browser);
       await writeRegistryValueFn(getWindowsRegistryKey(browser), manifestPath);
     }
   } catch (error) {
+    /** @type {unknown[]} */
+    const rollbackErrors = [];
+    for (const backup of backups.reverse()) {
+      try {
+        if (backup.contents === null) {
+          await fs.promises.rm(backup.filePath, { force: true });
+        } else {
+          await atomicWriteFile(backup.filePath, backup.contents);
+        }
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError);
+      }
+    }
+    if (rollbackErrors.length > 0) {
+      throw new NativeManifestInstallError(
+        failingPath,
+        new AggregateError([error, ...rollbackErrors], 'Native host install and rollback failed')
+      );
+    }
     throw new NativeManifestInstallError(failingPath, error);
   }
 
@@ -413,26 +537,83 @@ function isChromiumFlatpakManifestInstall(browser, installDir) {
 export async function uninstallNativeManifest(options = {}) {
   const {
     browser,
-    installDir = getManifestInstallDir(browser),
-    bridgeDir = getBridgeDir(),
+    installDir,
+    env = process.env,
+    bridgeDir = getBridgeDir(env),
     removeBridgeDir = false,
     deleteRegistryKey: deleteRegistryKeyFn = deleteRegistryKey,
+    readRegistryValue: readRegistryValueFn = readWindowsRegistryValue,
     stdout = process.stdout,
   } = options;
 
-  const manifestPath = path.join(installDir, `${APP_NAME}.json`);
+  const manifestPath = await resolveNativeManifestPath(browser, {
+    installDir,
+    bridgeDir,
+    env,
+    readRegistryValue: readRegistryValueFn,
+  });
+  const candidates =
+    installDir !== undefined ? [manifestPath] : getManifestPathCandidates(browser, env, bridgeDir);
   const registryKeyPath = process.platform === 'win32' ? getWindowsRegistryKey(browser) : null;
-  const removedManifest = await removePathIfExists(manifestPath);
-  if (removedManifest) {
-    stdout.write(`Removed ${manifestPath}\n`);
+  /** @type {string[]} */
+  const otherRegistrations = [];
+  if (registryKeyPath && installDir === undefined) {
+    for (const key of new Set(SUPPORTED_BROWSERS.map((entry) => getWindowsRegistryKey(entry)))) {
+      if (key === registryKeyPath) continue;
+      const registeredPath = await readRegistryValueFn(key);
+      if (registeredPath) otherRegistrations.push(registeredPath);
+    }
+    // Only remove an externally located manifest when it identifies this host.
+    if ((await readExistingManifest(manifestPath))?.name === APP_NAME) {
+      candidates.push(manifestPath);
+    }
   }
 
-  const removedRegistryKey = registryKeyPath ? await deleteRegistryKeyFn(registryKeyPath) : false;
+  // Arc and Chromium currently share a registry key. Do not unregister the
+  // other browser when its own manifest is the registered target.
+  const belongsToOtherBrowser =
+    registryKeyPath &&
+    installDir === undefined &&
+    !getManifestPathCandidates(browser, env, bridgeDir).some((candidate) =>
+      sameWindowsPath(candidate, manifestPath)
+    ) &&
+    SUPPORTED_BROWSERS.some(
+      (entry) =>
+        entry !== browser &&
+        getWindowsRegistryKey(entry) === registryKeyPath &&
+        getManifestPathCandidates(entry, env, bridgeDir).some((candidate) =>
+          sameWindowsPath(candidate, manifestPath)
+        )
+    );
+  const removedRegistryKey =
+    registryKeyPath && !belongsToOtherBrowser ? await deleteRegistryKeyFn(registryKeyPath) : false;
   if (removedRegistryKey && registryKeyPath) {
     stdout.write(`Removed ${registryKeyPath}\n`);
   }
 
-  const removedBridgeDir = removeBridgeDir ? await removePathIfExists(bridgeDir) : false;
+  if (belongsToOtherBrowser) otherRegistrations.push(manifestPath);
+  let removedManifest = false;
+  for (const candidate of new Set(candidates)) {
+    if (otherRegistrations.some((registeredPath) => sameWindowsPath(registeredPath, candidate))) {
+      continue;
+    }
+    if (await removePathIfExists(candidate)) {
+      removedManifest = true;
+      stdout.write(`Removed ${candidate}\n`);
+    }
+  }
+
+  const hasOtherManifests =
+    process.platform === 'win32' &&
+    installDir === undefined &&
+    (otherRegistrations.length > 0 ||
+      SUPPORTED_BROWSERS.some((entry) =>
+        getManifestPathCandidates(entry, env, bridgeDir).some((candidate) =>
+          fs.existsSync(candidate)
+        )
+      ));
+  const removedBridgeDir =
+    removeBridgeDir && !hasOtherManifests ? await removePathIfExists(bridgeDir) : false;
   if (removedBridgeDir) {
     stdout.write(`Removed ${bridgeDir}\n`);
   }
@@ -443,6 +624,21 @@ export async function uninstallNativeManifest(options = {}) {
     removedManifest,
     removedBridgeDir,
   };
+}
+
+/** @param {string} left @param {string} right @returns {boolean} */
+function sameWindowsPath(left, right) {
+  return path.win32.normalize(left).toLowerCase() === path.win32.normalize(right).toLowerCase();
+}
+
+/** @param {string} filePath @returns {Promise<Buffer | null>} */
+async function readFileIfExists(filePath) {
+  try {
+    return await fs.promises.readFile(filePath);
+  } catch (error) {
+    if (/** @type {NodeJS.ErrnoException} */ (error).code === 'ENOENT') return null;
+    throw error;
+  }
 }
 
 /**

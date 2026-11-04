@@ -10,6 +10,7 @@ import {
   getBridgeDir,
   getDaemonLogPath,
   getDaemonPidPath,
+  getDefaultBrowser,
   getBridgeTransport,
   getManifestInstallDir,
   getSocketPath,
@@ -20,7 +21,10 @@ import {
   readDaemonStartHistory,
   summarizeDaemonRestarts,
 } from '../../native-host/src/daemon-process.js';
-import { resolveDefaultExtensionId } from '../../native-host/src/install-manifest.js';
+import {
+  resolveDefaultExtensionId,
+  resolveNativeManifestPath,
+} from '../../native-host/src/install-manifest.js';
 import {
   BridgeError,
   BRIDGE_METHOD_REGISTRY,
@@ -228,11 +232,15 @@ export function getManifestPath(browser) {
 
 /**
  * @param {SupportedBrowser} [browser]
+ * @param {import('../../native-host/src/install-manifest.js').ManifestPathOptions} [options]
  * @returns {Promise<{allowed_origins?: string[]} | null>}
  */
-export async function loadInstalledManifest(browser) {
+export async function loadInstalledManifest(browser, options) {
   try {
-    const raw = await fs.promises.readFile(getManifestPath(browser), 'utf8');
+    const raw = await fs.promises.readFile(
+      await resolveNativeManifestPath(browser, options),
+      'utf8'
+    );
     return JSON.parse(raw);
   } catch {
     return null;
@@ -243,13 +251,15 @@ export async function loadInstalledManifest(browser) {
  * Check the native messaging manifest status for every supported browser on
  * the current platform.
  *
+ * @param {import('../../native-host/src/install-manifest.js').ManifestPathOptions} [options]
  * @returns {Promise<BrowserManifestStatus[]>}
  */
-export async function checkBrowserManifests() {
+export async function checkBrowserManifests(options) {
   return Promise.all(
     SUPPORTED_BROWSERS.map(async (browser) => {
-      const manifestPath = getManifestPath(browser);
+      let manifestPath = getManifestPath(browser);
       try {
+        manifestPath = await resolveNativeManifestPath(browser, options);
         await fs.promises.access(manifestPath);
         return { browser, manifestPath, installed: true };
       } catch {
@@ -962,7 +972,10 @@ export async function getDoctorReport(options = {}) {
   /** @type {DoctorReport} */
   const report = {
     manifestInstalled,
-    manifestPath: options.manifestPath || getManifestPath(),
+    manifestPath:
+      options.manifestPath ||
+      browserManifests.find((entry) => entry.browser === getDefaultBrowser())?.manifestPath ||
+      getManifestPath(),
     allowedOrigins,
     defaultExtensionId: defaultExtensionId.extensionId,
     defaultExtensionIdSource: defaultExtensionId.source,

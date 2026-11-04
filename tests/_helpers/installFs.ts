@@ -63,6 +63,7 @@ type HomeAppDataOptions = {
 type BrowserPathOptions = {
   home: string;
   localAppData: string;
+  bridgeHome: string;
 };
 
 type SkillPathOptions = {
@@ -107,7 +108,7 @@ function getVsCodeUserDir({ home, appData }: HomeAppDataOptions): string {
 
 function getManifestInstallDirForTest(
   browser: SupportedBrowser,
-  { home, localAppData }: BrowserPathOptions
+  { home, bridgeHome }: BrowserPathOptions
 ): string {
   if (process.platform === 'darwin') {
     const macBase = path.join(home, 'Library', 'Application Support');
@@ -122,20 +123,7 @@ function getManifestInstallDirForTest(
   }
 
   if (process.platform === 'win32') {
-    const winPaths = {
-      chrome: path.join(localAppData, 'Google', 'Chrome', 'User Data', 'NativeMessagingHosts'),
-      edge: path.join(localAppData, 'Microsoft', 'Edge', 'User Data', 'NativeMessagingHosts'),
-      brave: path.join(
-        localAppData,
-        'BraveSoftware',
-        'Brave-Browser',
-        'User Data',
-        'NativeMessagingHosts'
-      ),
-      chromium: path.join(localAppData, 'Chromium', 'User Data', 'NativeMessagingHosts'),
-      arc: path.join(localAppData, 'Arc', 'User Data', 'NativeMessagingHosts'),
-    };
-    return winPaths[browser];
+    return path.join(bridgeHome, 'NativeMessagingHosts', browser);
   }
 
   const linuxPaths = {
@@ -263,10 +251,11 @@ function buildLocalMcpClientMap({
 function buildBrowserManifestMap({
   home,
   localAppData,
+  bridgeHome,
 }: BrowserPathOptions): Record<SupportedBrowser, BrowserManifestPathSet> {
   return Object.fromEntries(
     SUPPORTED_BROWSERS.map((browser) => {
-      const installDir = getManifestInstallDirForTest(browser, { home, localAppData });
+      const installDir = getManifestInstallDirForTest(browser, { home, localAppData, bridgeHome });
       return [
         browser,
         {
@@ -329,7 +318,7 @@ export async function createInstallFs(options: CreateInstallFsOptions = {}): Pro
     localSkillTargets: buildLocalSkillTargetMap({ home, cwd }),
     globalMcpClients: buildGlobalMcpClientMap({ home, cwd, appData, codexHome }),
     localMcpClients: buildLocalMcpClientMap({ home, cwd, appData, codexHome }),
-    browserManifests: buildBrowserManifestMap({ home, localAppData }),
+    browserManifests: buildBrowserManifestMap({ home, localAppData, bridgeHome }),
     cleanup: async () => {
       await fs.promises.rm(root, { recursive: true, force: true });
     },

@@ -46,6 +46,13 @@ bbx install --browser arc       # Arc
 bbx install --all               # All supported browsers
 ```
 
+On Windows, fresh installs keep separate browser manifests under
+`%LOCALAPPDATA%\Browser Bridge\NativeMessagingHosts\<browser>\`, or under
+`BROWSER_BRIDGE_HOME` when set. Existing registered manifest paths and legacy
+browser-directory manifests remain supported. Reinstalling without an explicit
+extension ID preserves custom Windows extension allowlists. Diagnostics and
+uninstall support both layouts. macOS and Linux manifest locations are unchanged.
+
 On Ubuntu, the default Chromium package is usually a strict snap, and Flatpak
 Chromium is similarly sandboxed. If Chromium still reports the extension as
 disconnected after install, use a non-sandboxed Chromium-based browser such as
